@@ -68,6 +68,8 @@ from dashboard_services.matchups import (
     render_matchup_slide,
 )
 from dashboard_services.pages.graphs_page import build_graphs_body
+from dashboard_services.pages.scout_page import build_scout_body
+from dashboard_services.pages.weekly_hub_page import build_weekly_hub_body
 from dashboard_services.pages.history_page import (
     build_regular_season_team_stats,
     get_champion_and_runner_up,
@@ -9111,537 +9113,7 @@ def _render_weekly_highlights(
     return highest_card + lowest_card + closest_card + blowout_card
 
 
-def build_weekly_hub_body(ctx: dict) -> str:
-    import json
-
-    league_id = ctx["league_id"]
-    platform = ctx["platform"]
-    season = ctx["season"]  # viewed season
-    rosters = ctx["rosters"]
-    users = ctx["users"]
-    df_weekly = ctx["df_weekly"]
-    roster_map = ctx["roster_map"]
-    players_map = ctx["players_map"]
-    current_week = int(ctx.get("current_week") or 0)
-    players_index = ctx["players_index"]
-    teams_index = ctx["teams_index"]
-    proj_by_week = ctx["proj_by_week"]
-    weeks = int(ctx["weeks"])
-    statuses = ctx["statuses"]
-    team_game_lookup = ctx["team_game_lookup"]
-    matchups_by_week = ctx["matchups_by_week"]
-    season_complete = bool(ctx.get("season_complete", False))
-    offseason_mode = bool(ctx.get("offseason_mode", False))
-
-    if (
-            df_weekly is not None
-            and not df_weekly.empty
-            and "finalized" in df_weekly.columns
-            and "week" in df_weekly.columns
-    ):
-        finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
-    else:
-        finalized_df = pd.DataFrame()
-
-    if not finalized_df.empty and "week" in finalized_df.columns:
-        last_final_week = int(finalized_df["week"].max())
-    else:
-        last_final_week = 0  # no finalized weeks yet → show projections for current week
-
-    max_week = max(1, weeks)
-
-    def clamp_week(w: int) -> int:
-        return max(1, min(max_week, int(w)))
-
-    if season_complete or offseason_mode:
-        default_week = clamp_week(last_final_week)
-    else:
-        default_week = clamp_week(current_week or 1)
-
-    _hub_vid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
-    default_matchups = sorted(
-        matchups_by_week.get(default_week, []) or [],
-        key=lambda m: 0 if _hub_vid and _hub_vid in (str((m.get("left") or {}).get("roster_id", "")),
-                                                     str((m.get("right") or {}).get("roster_id", ""))) else 1,
-    )
-
-    # Pre-compute head-to-head records for each current-week matchup
-    def _h2h_record(rid_a: str, rid_b: str) -> tuple[int, int]:
-        """Return (a_wins, b_wins) across all completed weeks this season."""
-        a_wins = b_wins = 0
-        for wk, wk_matchups in matchups_by_week.items():
-            if int(wk) >= default_week:
-                continue  # only count past weeks
-            for wm in wk_matchups:
-                la = str((wm.get("left") or {}).get("roster_id", ""))
-                ra = str((wm.get("right") or {}).get("roster_id", ""))
-                if set([la, ra]) == set([rid_a, rid_b]):
-                    lp = (wm.get("left") or {}).get("pts_total") or 0
-                    rp = (wm.get("right") or {}).get("pts_total") or 0
-                    if lp == 0 and rp == 0:
-                        continue
-                    if (la == rid_a and lp > rp) or (ra == rid_a and rp > lp):
-                        a_wins += 1
-                    else:
-                        b_wins += 1
-        return a_wins, b_wins
-
-    for _m in default_matchups:
-        _la = str((_m.get("left") or {}).get("roster_id", ""))
-        _ra = str((_m.get("right") or {}).get("roster_id", ""))
-        if _la and _ra:
-            _aw, _bw = _h2h_record(_la, _ra)
-            _m["h2h"] = {"left_wins": _aw, "right_wins": _bw}
-
-    _fpts_against_weekly = _compute_fpts_against(season)
-    slides = [
-        render_matchup_slide(
-            season,
-            m,
-            default_week,
-            last_final_week,
-            status_by_pid=(statuses.get(default_week) or {}).get("statuses", {}) or {},
-            projections=proj_by_week,
-            players=players_index,
-            teams=teams_index,
-            team_game_lookup=team_game_lookup,
-            fpts_against=_fpts_against_weekly,
-            viewer_roster_id=_hub_vid,
-        )
-        for m in default_matchups
-    ]
-    slides_html = "".join(slides) if slides else "<div class='m-empty'>No matchups</div>"
-    slides_by_week = {default_week: slides_html}
-
-    matchup_html = render_matchup_carousel_weeks(
-        slides_by_week,
-        dashboard=False,
-        active_week=default_week,
-    )
-
-    options = []
-    for w in range(1, max_week + 1):
-        sel = " selected" if w == default_week else ""
-        options.append(f"<option value='{w}'{sel}>Week {w}</option>")
-    week_select_html = "".join(options)
-
-    top_scorers_html = render_weekly_top_scorers_for_week(
-        league_id,
-        df_weekly,
-        roster_map,
-        players_map,
-        proj_by_week,
-        rosters,
-        default_week,
-        users,
-        platform,
-        season,
-        roster_positions=ctx.get("roster_positions") or [],
-    )
-    proj_by_roster = ctx.get("proj_by_roster") or {}
-    highlights_html = _render_weekly_highlights(
-        df_weekly, default_week,
-        proj_by_roster=proj_by_roster,
-        matchups_by_week=matchups_by_week,
-    )
-
-    proj_warn_html = ""
-    if not proj_by_week.get("_available"):
-        proj_warn_html = (
-            "<div class='card' style='margin-bottom:12px;background:#fffbeb;border:1px solid #f59e0b;'>"
-            "  <div class='card-body' style='padding:10px 14px;font-size:13px;color:#92400e;'>"
-            "    <strong>Projections unavailable</strong> - projected scores can't be loaded right now. "
-            "    Actual scores will still appear once games are final."
-            "  </div>"
-            "</div>"
-        )
-
-    main_panel_html = f"""
-          <div class="week-main-panel active" data-week="{default_week}">
-            {proj_warn_html}
-            {top_scorers_html}
-          </div>
-    """
-    side_panel_html = f"""
-          <div class="week-side-panel active" data-week="{default_week}">
-            {highlights_html}
-          </div>
-    """
-
-    platform_js = json.dumps(platform)
-    season_js = json.dumps(season)
-    league_js = json.dumps(league_id)
-    # Live/Redzone elements (LIVE badge, Redzone CTA, auto-refresh) only apply
-    # when an actual game is scheduled for today. Check the current week's
-    # schedule file for a game dated today, gated to the active season (mirrors
-    # the Redzone page/nav, which is hidden in the offseason). Past seasons
-    # never match today's date, so they resolve to no live UI automatically.
-    games_today = (not offseason_mode) and _games_scheduled_today(season, current_week)
-    games_today_js = json.dumps(bool(games_today))
-
-    scout_tab_html = ""
-    try:
-        scout_tab_html = build_scout_body(ctx)
-    except Exception:
-        logger.debug("weekly: scout body build failed", exc_info=True)
-
-    _scout_sign_in_hint = (
-        "your ESPN team name" if platform == "espn" else "your Sleeper username"
-    )
-    _scout_unavail = (
-        "<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
-        f"Scout report unavailable - sign in with {_scout_sign_in_hint} to see your opponent's breakdown."
-        "</div>"
-    )
-    scout_panel_content = scout_tab_html if scout_tab_html else _scout_unavail
-
-    optimal_panel_content = ""
-    try:
-        optimal_panel_content = build_optimal_body(ctx)
-    except Exception:
-        optimal_panel_content = ("<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
-                                 "Optimal lineup data unavailable.</div>")
-
-    return f"""
-    <div class="page-layout weekly-hub">
-      <main class="page-main">
-        <div class="card">
-          <div class="card-header-row">
-            <div>
-              <h2>Weekly Hub</h2>
-            </div>
-            <div class="week-selector">
-              <select id="hubWeek" class="search">
-                {week_select_html}
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <div id="weekly-rz-cta" class="weekly-rz-cta" style="display:none">
-          <span class="weekly-rz-cta-dot"></span>
-          <span class="weekly-rz-cta-text">NFL games are live right now, track your players in real time.</span>
-          <a href="./redzone" class="weekly-rz-cta-link">Watch on Redzone →</a>
-        </div>
-
-        <div class="card-tabs weekly-hub-tabs" id="weeklyLeftTabs">
-          <div class="tab-bar">
-            <button class="tab-btn active" data-tab="matchups">Matchups</button>
-            <button class="tab-btn" data-tab="scorers">Scorers</button>
-            <button class="tab-btn" data-tab="scout">Scout</button>
-            <button class="tab-btn" data-tab="optimal">Lineup</button>
-          </div>
-          <div class="tab-panels">
-            <div class="tab-panel active" data-tab="matchups">
-              <div class="matchups-shell">
-                <div id="weeklyMatchupsContainer">
-                  {matchup_html}
-                </div>
-                <div id="weeklyMatchupsLoading" class="matchups-loading hidden">
-                  <div class="matchups-loading-inner">
-                    <div class="matchups-spinner"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="tab-panel" data-tab="scorers">
-              <div class="week-leaders-band">
-                <div class="week-leaders-title">Week Leaders</div>
-                <div class="week-side-panels">
-                  {side_panel_html}
-                </div>
-              </div>
-              <div class="week-main-panels">
-                {main_panel_html}
-              </div>
-            </div>
-            <div class="tab-panel" data-tab="scout">
-              {scout_panel_content}
-            </div>
-            <div class="tab-panel" data-tab="optimal">
-              {optimal_panel_content}
-            </div>
-          </div>
-        </div>
-      </main>
-    </div>
-
-<script>
-// Weekly Hub is a single one-section-at-a-time tab switcher: Matchups (default) /
-// Scorers / Scout / Lineup. The matchup cards live in the Matchups panel; the
-// Week Leaders band + top scorers live in the Scorers panel. The week-change JS
-// below finds .week-main-panels, .week-side-panels and #weeklyMatchupsContainer
-// by selector regardless of which panel holds them, so re-renders keep working.
-
-(function() {{
-  var leagueId  = {league_js};
-  var platform  = {platform_js};
-  var season    = {season_js};
-
-  var sel = document.getElementById('hubWeek');
-  if (!sel) return;
-  if (sel.__hubWeekBound) return;
-  sel.__hubWeekBound = true;
-
-  var matchupsContainer = document.getElementById('weeklyMatchupsContainer');
-  var loadingOverlay    = document.getElementById('weeklyMatchupsLoading');
-  var mainContainer = document.querySelector('.week-main-panels');
-  var sideContainer = document.querySelector('.week-side-panels');
-
-  function showLoading() {{
-    if (loadingOverlay) loadingOverlay.classList.remove('hidden');
-    sel.disabled = true;
-  }}
-
-  function hideLoading() {{
-    if (loadingOverlay) loadingOverlay.classList.add('hidden');
-    sel.disabled = false;
-  }}
-
-  var controller = null;
-  var requestSeq = 0;
-
-  sel.addEventListener('change', function() {{
-    var w = String(this.value || '');
-    if (!w) return;
-
-    if (controller) {{
-      try {{ controller.abort(); }} catch (e) {{}}
-    }}
-    controller = (window.AbortController ? new AbortController() : null);
-
-    var mySeq = ++requestSeq;
-    showLoading();
-
-    var url =
-      '/api/weekly-week?platform=' + encodeURIComponent(platform) +
-      '&season=' + encodeURIComponent(season) +
-      '&league_id=' + encodeURIComponent(leagueId) +
-      '&week=' + encodeURIComponent(w);
-
-    fetch(url, {{
-      signal: controller ? controller.signal : undefined
-    }})
-      .then(function(res) {{
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.json();
-      }})
-      .then(function(data) {{
-        if (mySeq !== requestSeq) return;
-        if (!data || !data.ok) {{
-          console.error('Failed to load week', w, data && data.error);
-          return;
-        }}
-
-        if (mainContainer && typeof data.top_html === 'string') {{
-          mainContainer.innerHTML =
-            '<div class="week-main-panel active" data-week="' + w + '">' +
-              data.top_html +
-            '</div>';
-        }}
-
-        if (sideContainer && typeof data.highlights_html === 'string') {{
-          sideContainer.innerHTML =
-            '<div class="week-side-panel active" data-week="' + w + '">' +
-              data.highlights_html +
-            '</div>';
-          if (window.brInitMoments) window.brInitMoments(sideContainer);
-        }}
-
-        if (matchupsContainer && typeof data.matchups_html === 'string') {{
-          matchupsContainer.innerHTML = data.matchups_html;
-
-          if (typeof window.resetMatchupCarousels === 'function') {{
-            window.resetMatchupCarousels(matchupsContainer);
-          }}
-          if (typeof window.initPageRoot === 'function') {{
-            window.initPageRoot(matchupsContainer);
-          }}
-          if (window.brInitMoments) window.brInitMoments(matchupsContainer);
-        }}
-      }})
-      .catch(function(err) {{
-        if (err && err.name === 'AbortError') return;
-        console.error('Error fetching week', w, err);
-      }})
-      .finally(function() {{
-        if (mySeq === requestSeq) hideLoading();
-      }});
-  }});
-}})();
-
-// ── Weekly: game-day auto-refresh ──────────────────────────────────────────────
-(function() {{
-  var sel = document.getElementById('hubWeek');
-  if (!sel) return;
-
-  // Live only when the current week's schedule actually has a game dated today
-  // (computed server-side from the schedule file), not merely a typical NFL day.
-  function liveActive() {{ return {games_today_js}; }}
-
-  // Show/hide Redzone CTA banner
-  var cta = document.getElementById('weekly-rz-cta');
-  if (cta && liveActive()) cta.style.display = '';
-
-  // Live badge next to "Weekly Hub" h2
-  if (liveActive()) {{
-    var h2 = document.querySelector('.card-header-row h2');
-    if (h2 && !h2.querySelector('.weekly-live-badge')) {{
-      var badge = document.createElement('span');
-      badge.className = 'weekly-live-badge';
-      badge.textContent = 'LIVE';
-      h2.appendChild(badge);
-    }}
-  }}
-
-  // Auto-refresh the week every 60 s only when a game is happening today
-  if (!liveActive()) return;
-  var _autoRefreshSeq = 0;
-  setInterval(function() {{
-    var w = String(sel.value || '');
-    if (!w) return;
-    var mySeq = ++_autoRefreshSeq;
-    var url = '/api/weekly-week?platform=' + encodeURIComponent({platform_js}) +
-      '&season=' + encodeURIComponent({season_js}) +
-      '&league_id=' + encodeURIComponent({league_js}) +
-      '&week=' + encodeURIComponent(w);
-    fetch(url).then(function(res) {{
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return res.json();
-    }}).then(function(data) {{
-      if (!data || !data.ok || mySeq !== _autoRefreshSeq) return; // stale or error
-      var mainContainer = document.querySelector('.week-main-panels');
-      var sideContainer = document.querySelector('.week-side-panels');
-      var matchupsContainer = document.getElementById('weeklyMatchupsContainer');
-      if (mainContainer && typeof data.top_html === 'string') {{
-        mainContainer.innerHTML = '<div class="week-main-panel active" data-week="' + w + '">' + data.top_html + '</div>';
-      }}
-      if (sideContainer && typeof data.highlights_html === 'string') {{
-        sideContainer.innerHTML = '<div class="week-side-panel active" data-week="' + w + '">' + data.highlights_html + '</div>';
-        if (window.brInitMoments) window.brInitMoments(sideContainer);
-      }}
-      if (matchupsContainer && typeof data.matchups_html === 'string') {{
-        var _applyMatchups = function() {{
-          matchupsContainer.innerHTML = data.matchups_html;
-          if (typeof window.resetMatchupCarousels === 'function') window.resetMatchupCarousels(matchupsContainer);
-          if (typeof window.initPageRoot === 'function') window.initPageRoot(matchupsContainer);
-          if (window.brInitMoments) window.brInitMoments(matchupsContainer);
-        }};
-        // Flash any matchup score that moved since the last refresh (green up /
-        // red down); falls back to a plain swap under reduced motion.
-        if (window.brFlashUpdates) window.brFlashUpdates(matchupsContainer, '.m-score-val', _applyMatchups);
-        else _applyMatchups();
-      }}
-    }}).catch(function() {{}});
-  }}, 60000);
-}})();
-
-// Activate a weekly left-tab by name and switch its panel
-function wkActivateTab(tab) {{
-  var container = document.getElementById('weeklyLeftTabs');
-  if (!container) return;
-  container.querySelectorAll('.tab-btn').forEach(function(b) {{ b.classList.remove('active'); }});
-  container.querySelectorAll('.tab-panel').forEach(function(p) {{ p.classList.remove('active'); }});
-  var btn   = container.querySelector('.tab-btn[data-tab="' + tab + '"]');
-  var panel = container.querySelector('.tab-panel[data-tab="' + tab + '"]');
-  if (btn)   btn.classList.add('active');
-  if (panel) panel.classList.add('active');
-}}
-
-// Activate left tab from ?tab= query param (e.g. ?tab=scout, ?tab=optimal)
-(function() {{
-  var tabParam = new URLSearchParams(window.location.search).get('tab');
-  if (!tabParam) return;
-  var container = document.getElementById('weeklyLeftTabs');
-  if (!container) return;
-  var btn = container.querySelector('.tab-btn[data-tab="' + tabParam + '"]');
-  if (!btn) return;
-  container.querySelectorAll('.tab-btn').forEach(function(b) {{ b.classList.remove('active'); }});
-  container.querySelectorAll('.tab-panel').forEach(function(p) {{ p.classList.remove('active'); }});
-  btn.classList.add('active');
-  var panel = container.querySelector('.tab-panel[data-tab="' + tabParam + '"]');
-  if (panel) panel.classList.add('active');
-}})();
-
-// Desktop layout (>=1100px): restore the pre-tab-switcher arrangement — the
-// Scorers/Scout/Lineup tabs in a left column, the matchup preview as the wide
-// right column, and Week Leaders in a right-hand "Weekly Tools" aside. Below
-// 1100px it stays the single 4-tab card (the mobile layout). Nodes are moved,
-// not duplicated, so the week-change / live-refresh JS keeps finding them.
-(function() {{
-  var tabs = document.getElementById('weeklyLeftTabs');
-  if (!tabs || tabs.__wkReflow) return;
-  tabs.__wkReflow = true;
-  var pageLayout = tabs.closest('.page-layout');
-  var main = tabs.closest('.page-main');
-  if (!pageLayout || !main) return;
-  var mq = window.matchMedia('(min-width: 1100px)');
-
-  function toDesktop() {{
-    if (tabs.__mode === 'desktop') return;
-    var bar   = tabs.querySelector('.tab-bar');
-    var mPanel = tabs.querySelector('.tab-panel[data-tab="matchups"]');
-    var mcEl  = document.getElementById('weeklyMatchupsContainer');
-    var shell = mcEl ? mcEl.closest('.matchups-shell') : null;
-    var band  = document.querySelector('.week-leaders-band');
-    if (!bar || !shell) return;
-    var two = document.createElement('div');
-    two.className = 'standings-main two-col-standings wk-desktop-two';
-    var leftCol = document.createElement('div');  leftCol.className = 'standings-col';
-    var rightCol = document.createElement('div'); rightCol.className = 'standings-col';
-    main.insertBefore(two, tabs);
-    leftCol.appendChild(tabs);          // tabs card -> left column
-    rightCol.appendChild(shell);        // matchup preview -> wide right column
-    two.appendChild(leftCol);
-    two.appendChild(rightCol);
-    if (band) {{
-      var aside = document.createElement('aside');
-      aside.className = 'page-sidebar wk-desktop-aside';
-      aside.setAttribute('data-sidebar-label', 'Weekly Tools');
-      aside.appendChild(band);          // Week Leaders -> right aside
-      pageLayout.appendChild(aside);
-    }}
-    var mBtn = bar.querySelector('.tab-btn[data-tab="matchups"]');
-    if (mBtn) mBtn.style.display = 'none';
-    wkActivateTab('scorers');
-    tabs.classList.add('wk-desktop');
-    tabs.__mode = 'desktop';
-  }}
-
-  function toMobile() {{
-    if (tabs.__mode === 'mobile') return;
-    var bar    = tabs.querySelector('.tab-bar');
-    var mPanel = tabs.querySelector('.tab-panel[data-tab="matchups"]');
-    var sPanel = tabs.querySelector('.tab-panel[data-tab="scorers"]');
-    var mcEl   = document.getElementById('weeklyMatchupsContainer');
-    var shell  = mcEl ? mcEl.closest('.matchups-shell') : null;
-    var band   = document.querySelector('.week-leaders-band');
-    if (shell && mPanel) mPanel.appendChild(shell);           // matchup -> back in its tab
-    if (band && sPanel) {{
-      var wmp = sPanel.querySelector('.week-main-panels');
-      if (wmp) sPanel.insertBefore(band, wmp); else sPanel.appendChild(band);
-    }}
-    var two = main.querySelector('.wk-desktop-two');
-    if (two) {{ main.insertBefore(tabs, two); main.removeChild(two); }}
-    var aside = pageLayout.querySelector('.wk-desktop-aside');
-    if (aside) pageLayout.removeChild(aside);
-    if (bar) {{
-      var mBtn = bar.querySelector('.tab-btn[data-tab="matchups"]');
-      if (mBtn) mBtn.style.display = '';
-    }}
-    wkActivateTab('matchups');
-    tabs.classList.remove('wk-desktop');
-    tabs.__mode = 'mobile';
-  }}
-
-  function apply() {{ if (mq.matches) toDesktop(); else toMobile(); }}
-  apply();
-  if (mq.addEventListener) mq.addEventListener('change', apply);
-  else if (mq.addListener) mq.addListener(apply);
-}})();
-</script>
-"""
-
+# build_weekly_hub_body lives in dashboard_services/pages/weekly_hub_page.py
 
 def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dict = None):
     from statistics import median
@@ -11999,70 +11471,33 @@ def api_start_sit_options():
         injury_status = None if raw_status in {"", "active", "Active", "ACT"} else raw_status
         _imp_ss = (game_conditions.get(team) or {}).get("implied_total") if not on_bye else None
 
-        # ── Start/sit score: one engine, six signals ────────────────────────────
-        # projection × form × matchup × usage × availability × vegas × floor.
-        # Projection is the base; every other signal is a capped multiplier so it
-        # can sway a close call but not overturn a meaningful projection gap. This
-        # is the SINGLE source of truth for the whole advisor: the START badges,
-        # the optimal-lineup banner, and the head-to-head Compare card all rank on
-        # this same score, so they can never contradict each other. The per-factor
-        # multipliers are published (score_factors) so the Compare card can explain
-        # which of the six signals decided the call.
+        # ── Start/sit score: one engine, six signals (utils.start_sit_score). ──
+        from utils.start_sit_score import compute_start_score
         _ut_ss = _ss_usage_trends.get(pid) or {}
         usage_delta = _ut_ss.get("delta")
-        demotion = None
-        # Consistency (floor/ceiling, boom/bust) is resolved here, not just in the
-        # payload below, so the floor signal can feed the score.
         _cons = _resolve_consistency(pid, pos)
-        _form = _mu = _ug = _avail = _vg = _fl = 1.0
-        if on_bye:
-            score = 0.0
-        else:
-            # Recent form: capped ±10%
-            if recent_ppg > 0 and s_ppg > 0:
-                _form = min(1.10, max(0.90, recent_ppg / s_ppg))
-
-            # Matchup ease: rank 1=easiest → +10%, rank 32=hardest → -10%
-            if def_rank and def_total and def_total > 1:
-                _ease = (def_total - def_rank) / (def_total - 1)  # 0–1
-                _mu = 0.90 + _ease * 0.20  # 0.90–1.10
-
-            # Usage trend: last-3-week role vs season avg, capped ±5%. A rising
-            # role means the trailing PPG (form) understates this week's
-            # opportunity; a shrinking one means it overstates it.
-            if usage_delta is not None and _ut_ss.get("season_avg"):
-                _rel = usage_delta / max(float(_ut_ss["season_avg"]), 1.0)
-                _ug = min(1.05, max(0.95, 1.0 + _rel * 0.25))
-
-            # Availability: injury status only. An OUT/IR/Doubtful player must
-            # never win a start; a Questionable one takes a haircut.
-            _st_up = (injury_status or "").upper()
-            if any(k in _st_up for k in ("OUT", "IR", "SUSP", "DOUBT", "PUP", "DNP")):
-                _avail = 0.0
-                demotion = "out"
-            elif "QUESTION" in _st_up or _st_up in ("GTD", "Q"):
-                _avail = 0.85
-                demotion = "questionable"
-
-            # Vegas game environment: a low implied total fades everyone in the
-            # game, a high one nudges them up. Its own factor (split out of
-            # availability) so the Compare card and the score weigh it identically.
-            if _imp_ss is not None:
-                if _imp_ss <= 17:
-                    _vg = 0.94
-                    demotion = demotion or "low_total"
-                elif _imp_ss >= 27:
-                    _vg = 1.04
-
-            # Floor safety: a player who rarely busts is a safer start. Mapped
-            # from the boom/bust bust-rate (0..1): no busts → +10%, always busts →
-            # -10%, coin-flip → neutral. Only when we have a real sample.
-            if _cons and not _cons.get("small_sample"):
-                _bust = _cons.get("bust_rate")
-                if _bust is not None:
-                    _fl = min(1.10, max(0.90, 1.0 + (0.5 - float(_bust)) * 0.4))
-
-            score = proj_pts * _form * _mu * _ug * _avail * _vg * _fl
+        _bust = None
+        if _cons and not _cons.get("small_sample"):
+            _bust = _cons.get("bust_rate")
+        score, _factors, demotion = compute_start_score(
+            proj_pts,
+            on_bye=on_bye,
+            recent_ppg=recent_ppg,
+            season_ppg=s_ppg,
+            def_rank=def_rank,
+            def_total=def_total,
+            usage_delta=usage_delta,
+            usage_season_avg=_ut_ss.get("season_avg"),
+            injury_status=injury_status,
+            implied_total=_imp_ss,
+            bust_rate=_bust,
+        )
+        _form = _factors["form"]
+        _mu = _factors["matchup"]
+        _ug = _factors["usage"]
+        _avail = _factors["avail"]
+        _vg = _factors["vegas"]
+        _fl = _factors["floor"]
 
         positions_out[pos].append({
             "player_id": pid,
@@ -14709,11 +14144,20 @@ def _page_skeleton(platform, season, league_id, cache_key, label) -> str:
     from urllib.parse import quote
     q = (f"page={quote(cache_key)}&platform={quote(str(platform))}"
          f"&league_id={quote(str(league_id))}&season={quote(str(season))}")
-    row = (
-        "<div class='card' style='padding:14px 16px;margin-bottom:10px;'>"
-        "<div class='sk-shimmer' style='width:40%;height:14px;border-radius:4px;margin-bottom:8px;'></div>"
-        "<div class='sk-shimmer' style='width:100%;height:70px;border-radius:6px;'></div></div>"
-    )
+    if "graphs" in str(cache_key):
+        # Chart-shaped shimmers (same language as Teams analytics-skeleton) so
+        # Graphs doesn't look like a generic list while Plotly payloads build.
+        row = (
+            "<div class='card graphs-skeleton'>"
+            "<div class='sk-shimmer sk-line' style='width:40%;height:14px;margin-bottom:12px;'></div>"
+            "<div class='sk-shimmer graphs-skeleton-chart'></div></div>"
+        )
+    else:
+        row = (
+            "<div class='card' style='padding:14px 16px;margin-bottom:10px;'>"
+            "<div class='sk-shimmer' style='width:40%;height:14px;border-radius:4px;margin-bottom:8px;'></div>"
+            "<div class='sk-shimmer' style='width:100%;height:70px;border-radius:6px;'></div></div>"
+        )
     return f"""
     <div class="page-main">
       <div class="teams-loading-indicator" id="brPageLoad" style="margin-bottom:14px;">
@@ -19080,14 +18524,7 @@ def api_trade_eval():
         te_premium = 0.0
     viewer_side = (payload.get("viewer_side") or "a").strip().lower()
 
-    # Position-based multipliers for non-PPR formats.
-    # RBs gain value in standard (rush-heavy); WRs/TEs lose value (fewer receptions).
-    _SCORING_MULTS = {
-        "ppr": {"QB": 1.00, "RB": 1.00, "WR": 1.00, "TE": 1.00},
-        "half": {"QB": 1.00, "RB": 1.06, "WR": 0.97, "TE": 0.94},
-        "std": {"QB": 1.00, "RB": 1.13, "WR": 0.93, "TE": 0.87},
-    }
-    scoring_mults = _SCORING_MULTS.get(scoring_format, _SCORING_MULTS["ppr"])
+    from utils.trade_value import player_trade_value
 
     side_a_players = [str(pid) for pid in payload.get("side_a_players", [])]
     side_b_players = [str(pid) for pid in payload.get("side_b_players", [])]
@@ -19163,30 +18600,18 @@ def api_trade_eval():
                 })
                 continue
 
-            # Use size/type-specific value, falling back to 10-team then base value.
-            # Redraft values are league-size agnostic (1QB vs SF only).
-            if scoring_type == "redraft":
-                val = float(
-                    player.get("redraft_value_sf") or player.get("redraft_value_1qb") or 0.0
-                ) if league_type == "sf" else float(player.get("redraft_value_1qb") or 0.0)
-            elif league_type == "sf":
-                size_key = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
-                val = float(player.get(size_key) or player.get("sf_value") or player.get("value") or 0.0)
-            else:
-                size_key = "value" if league_size == 10 else f"value_{league_size}"
-                val = float(player.get(size_key) or player.get("value") or 0.0)
-
             name = player.get("name")
             pos = player.get("position")
 
-            # Apply scoring format multiplier, plus TE-premium boost for tight ends.
-            # NOTE: this mirrors getPlayerValue() in static/app.js exactly (the
-            # _SCORING_MULTS table above matches SCORING_MULTS there, and both use
-            # round-half-up). tests/test_scoring_mult_parity.py pins the tables.
-            _mult = scoring_mults.get((pos or "").upper(), 1.0)
-            if te_premium and (pos or "").upper() == "TE":
-                _mult *= (1 + te_premium * 0.20)
-            val = math.floor(val * _mult * 10 + 0.5) / 10  # round half up, matching JS Math.round
+            # Same math as getPlayerValue() in static/app.js (utils.trade_value).
+            val = player_trade_value(
+                player,
+                league_type=league_type,
+                league_size=league_size,
+                scoring_format=scoring_format,
+                scoring_type=scoring_type,
+                te_premium=te_premium,
+            )
             team = player.get("team")
             age = player.get("age")
 
@@ -28674,289 +28099,7 @@ def build_portfolio_body(
             + top_strip + league_card + insights_label + insight_top + bottom_row + '</div>')
 
 
-def build_scout_body(ctx: dict) -> str:
-    viewer = ctx.get("viewer") or {}
-    viewer_roster_id = str(viewer.get("viewer_roster_id") or "")
-    platform = ctx.get("platform") or "sleeper"
-    league_id = ctx.get("league_id") or ""
-    season = ctx.get("season") or datetime.now().year
-    current_week = ctx.get("current_week") or 0
-
-    _NOT_SIGNED_IN = (
-        "<div class='card' style='text-align:center;padding:40px;'>"
-        "<h2 style='margin-bottom:8px;'>Sign in to view your scouting report</h2>"
-        "<p style='color:var(--muted);'>Enter your Sleeper username in the menu to unlock opponent scouting.</p>"
-        "</div>"
-    )
-
-    if not viewer_roster_id:
-        return _NOT_SIGNED_IN
-
-    if ctx.get("offseason_mode"):
-        return (
-            "<div class='card' style='text-align:center;padding:40px;'>"
-            "<h2 style='margin-bottom:8px;'>Scouting report is available during the regular season</h2>"
-            "<p style='color:var(--muted);'>Check back once the season starts.</p>"
-            "</div>"
-        )
-
-    rosters = ctx.get("rosters") or []
-    roster_map = ctx.get("roster_map") or {}
-    standings_map = ctx.get("standings_map") or {}
-    model_value_table = ctx.get("model_value_table") or []
-    try:
-        live = get_model_value_table_cached() or []
-        if live:
-            model_value_table = live
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
-    players_index = ctx.get("players_index") or {}
-    matchups_by_week = ctx.get("matchups_by_week") or {}
-    statuses = ctx.get("statuses") or {}
-    proj_by_roster = ctx.get("proj_by_roster") or {}
-
-    values_by_id = {str(r.get("id") or ""): r for r in model_value_table if r.get("id")}
-
-    # Find viewer's matchup for current week
-    current_matchups = matchups_by_week.get(current_week) or []
-    viewer_matchup = None
-    opponent_roster_id = None
-    opponent_team_block = None
-
-    for m in current_matchups:
-        t1 = m.get("team1") or {}
-        t2 = m.get("team2") or {}
-        if str(t1.get("roster_id")) == viewer_roster_id:
-            viewer_matchup = m
-            opponent_roster_id = str(t2.get("roster_id"))
-            opponent_team_block = t2
-            break
-        elif str(t2.get("roster_id")) == viewer_roster_id:
-            viewer_matchup = m
-            opponent_roster_id = str(t1.get("roster_id"))
-            opponent_team_block = t1
-            break
-
-    if not viewer_matchup or not opponent_roster_id:
-        return (
-            f"<div class='card' style='text-align:center;padding:40px;'>"
-            f"<h2 style='margin-bottom:8px;'>No matchup found for Week {current_week}</h2>"
-            f"<p style='color:var(--muted);'>Your current week matchup could not be determined.</p>"
-            f"</div>"
-        )
-
-    opponent_roster = next((r for r in rosters if str(r.get("roster_id")) == opponent_roster_id), None)
-    if not opponent_roster:
-        return "<div class='card'>Opponent roster not found.</div>"
-
-    opp_name = html.escape(roster_map.get(opponent_roster_id, f"Roster {opponent_roster_id}"))
-    opp_standing = standings_map.get(opponent_roster_id) or {}
-    opp_wins = int(opp_standing.get("wins") or 0)
-    opp_losses = int(opp_standing.get("losses") or 0)
-    opp_pf = float(opp_standing.get("pf") or 0)
-    opp_pa = float(opp_standing.get("pa") or 0)
-    opp_rec_cls = "color-win" if opp_wins > opp_losses else ("color-loss" if opp_losses > opp_wins else "")
-
-    # Starters from matchup block
-    starter_pids = {str(s.get("pid") or s) for s in (opponent_team_block.get("starters") or []) if s}
-    opp_pts = opponent_team_block.get("pts_total")
-
-    # Projected score for opponent
-    opp_proj = proj_by_roster.get((current_week, opponent_roster_id))
-
-    # Injury statuses
-    status_by_pid = (statuses.get(current_week) or {}).get("statuses", {}) or {}
-
-    # Build player list grouped by position
-    _POS_ORDER = ["QB", "RB", "WR", "TE", "K", "DEF"]
-    _POS_CLS = {"QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE", "K": "K", "DEF": "DEF"}
-    _INJ_CLS = {"Q": "inj-q", "D": "inj-d", "O": "inj-o", "IR": "inj-o", "Sus": "inj-o"}
-    _INJ_LABEL = {"Q": "Q", "D": "D", "O": "O", "IR": "IR", "Questionable": "Q", "Doubtful": "D", "Out": "O",
-                  "Suspended": "SUS"}
-
-    all_pids = [str(p) for p in (opponent_roster.get("players") or [])]
-    starters_by_pos: dict = {}
-    bench_players = []
-
-    for pid in all_pids:
-        v = values_by_id.get(pid) or {}
-        meta = players_index.get(pid) or {}
-        pos = (v.get("position") or meta.get("pos") or "?").upper()
-        val = float(v.get("value") or 0)
-        name = v.get("name") or meta.get("name") or f"Player {pid}"
-        team = (v.get("team") or meta.get("team") or "").upper()
-        pos_rank = v.get("pos_rank_label") or ""
-        is_starter = pid in starter_pids
-        raw_inj = str(status_by_pid.get(pid) or "")
-        inj_key = raw_inj if raw_inj in _INJ_CLS else None
-
-        entry = {
-            "pid": pid, "name": name, "pos": pos, "team": team,
-            "value": val, "pos_rank": pos_rank, "is_starter": is_starter,
-            "inj_key": inj_key,
-        }
-        if is_starter:
-            starters_by_pos.setdefault(pos, []).append(entry)
-        else:
-            bench_players.append(entry)
-
-    # Compute position group values and league-wide averages for strength/weakness
-    _STARTER_COUNTS = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
-    pos_group_vals = {}
-    for pos, players in starters_by_pos.items():
-        players.sort(key=lambda x: x["value"], reverse=True)
-        pos_group_vals[pos] = sum(p["value"] for p in players)
-
-    # League-wide average top-N value per position
-    league_pos_avgs = {}
-    for pos, top_n in _STARTER_COUNTS.items():
-        sums = []
-        for r in rosters:
-            r_pids = [str(p) for p in (r.get("players") or [])]
-            r_vals = sorted(
-                [float((values_by_id.get(p) or {}).get("value") or 0) for p in r_pids
-                 if (values_by_id.get(p) or {}).get("position", "").upper() == pos],
-                reverse=True,
-            )
-            sums.append(sum(r_vals[:top_n]))
-        league_pos_avgs[pos] = (sum(sums) / len(sums)) if sums else 0
-
-    # Build strength/weakness summary
-    strengths, weaknesses = [], []
-    for pos in ["QB", "RB", "WR", "TE"]:
-        opp_val = pos_group_vals.get(pos) or 0
-        avg = league_pos_avgs.get(pos) or 1
-        delta_pct = ((opp_val - avg) / avg) * 100 if avg else 0
-        if delta_pct >= 12:
-            strengths.append((pos, delta_pct, opp_val))
-        elif delta_pct <= -12:
-            weaknesses.append((pos, delta_pct, opp_val))
-
-    strengths.sort(key=lambda x: -x[1])
-    weaknesses.sort(key=lambda x: x[1])
-
-    # Build HTML
-    def _player_row(p, show_bench_label=False):
-        pc = _POS_CLS.get(p["pos"], "pos-k")
-        inj_html = ""
-        if p.get("inj_key"):
-            ic = _INJ_CLS.get(p["inj_key"], "")
-            il = _INJ_LABEL.get(p["inj_key"], p["inj_key"])
-            inj_html = f"<span class='inj-badge {ic}'>{il}</span>"
-        pr_html = f"<span class='scout-pos-rank'>{html.escape(p.get('pos_rank', ''))}</span>" if p.get(
-            "pos_rank") else ""
-        val_html = f"<span class='scout-val'>{p['value']:.0f}</span>" if p["value"] else ""
-        bench_cls = " scout-bench" if show_bench_label else ""
-        return (
-            f"<div class='scout-player-row{bench_cls}'>"
-            f"<span class='pos-badge {pc}'>{p['pos']}</span>"
-            f"<span class='scout-player-name'>{html.escape(p['name'])}</span>"
-            f"<span class='scout-team'>{html.escape(p['team'])}</span>"
-            f"{pr_html}{inj_html}{val_html}"
-            f"</div>"
-        )
-
-    # Starters section
-    starters_html = ""
-    for pos in _POS_ORDER:
-        for p in starters_by_pos.get(pos, []):
-            starters_html += _player_row(p)
-    # Handle any FLEX/unknown positions
-    for pos, players in starters_by_pos.items():
-        if pos not in _POS_ORDER:
-            for p in players:
-                starters_html += _player_row(p)
-
-    bench_players.sort(key=lambda x: x["value"], reverse=True)
-    bench_html = "".join(_player_row(p, show_bench_label=True) for p in bench_players[:10])
-
-    # Strengths / weaknesses cards
-    def _sw_chip(pos, delta_pct, val, is_strength):
-        color = "var(--color-win)" if is_strength else "var(--color-loss)"
-        arrow = "▲" if is_strength else "▼"
-        pc = _POS_CLS.get(pos, "pos-k")
-        return (
-            f"<div class='scout-sw-chip'>"
-            f"<span class='pos-badge {pc}'>{pos}</span>"
-            f"<span class='scout-sw-val' style='color:{color};'>{arrow} {abs(delta_pct):.0f}% vs avg</span>"
-            f"</div>"
-        )
-
-    sw_html = ""
-    if strengths or weaknesses:
-        s_chips = "".join(_sw_chip(pos, d, v, True) for pos, d, v in
-                          strengths) or "<span style='color:var(--muted);font-size:0.85em;'>None notable</span>"
-        w_chips = "".join(_sw_chip(pos, d, v, False) for pos, d, v in
-                          weaknesses) or "<span style='color:var(--muted);font-size:0.85em;'>None notable</span>"
-        sw_html = (
-            f"<div class='main-two-col' style='margin-bottom:14px;'>"
-            f"<div class='card'>"
-            f"<div class='card-header'><h2>Their Strengths</h2></div>"
-            f"<div class='card-body scout-sw-list'>{s_chips}</div>"
-            f"</div>"
-            f"<div class='card'>"
-            f"<div class='card-header'><h2>Their Weaknesses</h2></div>"
-            f"<div class='card-body scout-sw-list'>{w_chips}</div>"
-            f"</div>"
-            f"</div>"
-        )
-
-    proj_html = ""
-    if opp_proj is not None:
-        proj_html = f"<span class='scout-proj'>Proj: <strong>{opp_proj:.1f}</strong></span>"
-    pts_html = ""
-    if opp_pts is not None:
-        pts_html = f"<span class='scout-proj' style='color:var(--muted);'>Score: <strong>{opp_pts:.1f}</strong></span>"
-
-    return (
-            f"<style>"
-            f".scout-header-row{{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:4px;}}"
-            f".scout-opp-name{{font-size:1.3em;font-weight:700;}}"
-            f".scout-record{{font-size:0.9em;}}"
-            f".scout-proj{{font-size:0.9em;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:3px 8px;}}"
-            f".scout-stat-row{{display:flex;gap:20px;flex-wrap:wrap;margin-top:6px;margin-bottom:16px;}}"
-            f".scout-stat{{display:flex;flex-direction:column;gap:1px;}}"
-            f".scout-stat-lbl{{font-size:0.7em;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}}"
-            f".scout-stat-val{{font-size:1em;font-weight:600;}}"
-            f".scout-player-row{{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:0.88em;}}"
-            f".scout-player-row:last-child{{border-bottom:none;}}"
-            f".scout-bench{{opacity:.7;}}"
-            f".scout-player-name{{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;}}"
-            f".scout-team{{font-size:0.78em;color:var(--muted);min-width:28px;}}"
-            f".scout-pos-rank{{font-size:0.75em;color:var(--muted);}}"
-            f".scout-val{{font-weight:600;color:var(--accent);font-size:0.85em;min-width:32px;text-align:right;}}"
-            f".scout-sw-list{{display:flex;flex-direction:column;gap:8px;padding-top:4px;}}"
-            f".scout-sw-chip{{display:flex;align-items:center;gap:8px;}}"
-            f".scout-sw-val{{font-size:0.88em;font-weight:600;}}"
-            f".inj-badge{{font-size:0.7em;font-weight:700;padding:1px 5px;border-radius:4px;line-height:1.4;}}"
-            f".inj-q{{background:#fef08a;color:#713f12;}}"
-            f".inj-d{{background:#fed7aa;color:#7c2d12;}}"
-            f".inj-o{{background:#fecaca;color:#7f1d1d;}}"
-            f"</style>"
-            f"<div class='scout-header-row'>"
-            f"<span class='scout-opp-name'>{opp_name}</span>"
-            f"<span class='scout-record {opp_rec_cls}'>{opp_wins}-{opp_losses}</span>"
-            f"{proj_html}{pts_html}"
-            f"</div>"
-            f"<div class='scout-stat-row'>"
-            f"<div class='scout-stat'><span class='scout-stat-lbl'>Points For</span><span class='scout-stat-val'>{opp_pf:.1f}</span></div>"
-            f"<div class='scout-stat'><span class='scout-stat-lbl'>Points Against</span><span class='scout-stat-val'>{opp_pa:.1f}</span></div>"
-            f"</div>"
-            f"{sw_html}"
-            f"<div class='main-two-col'>"
-            f"<div class='card'>"
-            f"<div class='card-header'><h2>Week {current_week} Starters</h2></div>"
-            "<div class='card-body'>" + (
-                    starters_html or "<p style='color:var(--muted);font-size:0.85em;'>Lineup not yet set.</p>") + "</div>"
-                                                                                                                  "</div>"
-                                                                                                                  "<div class='card'>"
-                                                                                                                  f"<div class='card-header'><h2>Bench (Top 10)</h2></div>"
-                                                                                                                  "<div class='card-body'>" + (
-                    bench_html or "<p style='color:var(--muted);font-size:0.85em;'>No bench data.</p>") + "</div>"
-                                                                                                          "</div>"
-                                                                                                          "</div>"
-    )
-
+# build_scout_body / _week_proj_points live in dashboard_services/pages/scout_page.py
 
 def _run_startup_daily() -> None:
     """Fire daily data build in the background immediately on startup."""

@@ -90,12 +90,18 @@ def test_rookie_pipeline_pause_is_env_and_csv_is_dated():
     assert 'os.environ.get("ROOKIE_PIPELINE_PAUSED")' in CRON
     assert 'athleticism' in INGEST
     assert "Official Times & Measurements - {draft_year}" in INGEST
+    rookie_api = (ROOT / "dashboard_services" / "rookie_api.py").read_text(encoding="utf-8")
+    rookies = (ROOT / "dashboard_services" / "pages" / "rookies_page.py").read_text(encoding="utf-8")
+    assert '"paused": paused' in rookie_api or '"paused":paused' in rookie_api
+    assert "Prospect rankings paused" in rookies
+    assert "rkPipelinePaused" in rookies
 
 
 def test_scout_uses_live_value_cache():
-    scout = APP_PY[APP_PY.index("def build_scout_body"):]
-    scout = scout[:8000]
+    scout = (ROOT / "dashboard_services" / "pages" / "scout_page.py").read_text(encoding="utf-8")
     assert "get_model_value_table_cached()" in scout
+    assert "proj_ppg" in scout
+    assert "scout-ppg" in scout
 
 
 def test_add_pct_on_waivers_and_streaming():
@@ -121,6 +127,17 @@ def test_stripe_and_push_prefer_account_id():
     assert '"account_id": str(session.get("account_id") or "")' in BILLING
     assert 'meta.get("user_id") or meta.get("account_id")' in BILLING
     assert "owner_id:   (window._viewerUid || null)" not in APP_JS
+
+
+def test_weekly_hub_and_scout_live_in_page_modules():
+    hub = (ROOT / "dashboard_services" / "pages" / "weekly_hub_page.py").read_text(encoding="utf-8")
+    scout = (ROOT / "dashboard_services" / "pages" / "scout_page.py").read_text(encoding="utf-8")
+    assert "def build_weekly_hub_body" in hub
+    assert "def build_scout_body" in scout
+    assert "from dashboard_services.pages.weekly_hub_page import build_weekly_hub_body" in APP_PY
+    assert "from dashboard_services.pages.scout_page import build_scout_body" in APP_PY
+    assert "def build_weekly_hub_body" not in APP_PY
+    assert "def build_scout_body" not in APP_PY
 
 
 def test_graphs_data_contract_is_documented():
@@ -178,6 +195,9 @@ def test_pipeline_health_is_recorded_per_cron_step():
     assert "def record_pipeline_health" in CRON
     assert 'record_pipeline_health(step_name, "ok")' in CRON
     assert "pipeline_health.json" in CRON
+    health_bp = (ROOT / "routes" / "health_bp.py").read_text(encoding="utf-8")
+    assert '/api/health/pipeline' in health_bp
+    assert "pipeline_health.json" in health_bp
     assert "last_success" in CRON
 
 
@@ -212,6 +232,12 @@ def test_graphs_empty_weekly_is_a_static_card():
     assert "No weekly data available for this season." in GRAPHS
     body = GRAPHS[GRAPHS.index("def build_graphs_body"):]
     assert "getattr(df_weekly, \"empty\"" in body or "getattr(df_weekly, 'empty'" in body
+
+
+def test_graphs_cold_cache_uses_chart_skeleton():
+    skel = APP_PY[APP_PY.index("def _page_skeleton"):APP_PY.index("def api_page_ready")]
+    assert "graphs-skeleton" in skel
+    assert "graphs-skeleton-chart" in skel
 
 
 def test_breakout_candidates_alias_uses_opportunity_guard():

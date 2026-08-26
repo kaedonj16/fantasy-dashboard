@@ -4,6 +4,7 @@ Data contract for ``build_graphs_body(ctx)`` / ``render_graphs_html``:
 - ``ctx["team_stats"]``: PF/PA/AVG/STD per owner
 - ``ctx["df_weekly"]`` with ``finalized == True`` for in-season plots
 - Empty weekly data returns a static "No weekly data" card (never a spinner hang)
+- Cold-cache Graphs requests use a chart-shaped ``.graphs-skeleton`` (not a generic list)
 - Career view may render a skeleton while a background aggregation fills in
 """
 import html

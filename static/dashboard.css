@@ -25867,6 +25867,19 @@ button:disabled {
     margin-bottom: 0;
 }
 
+/* ── Graphs page skeleton (chart-shaped shimmers while Plotly builds) ─────── */
+.graphs-skeleton {
+    padding: 14px 16px;
+    margin-bottom: 10px;
+}
+
+.graphs-skeleton-chart {
+    width: 100%;
+    height: 220px;
+    min-height: 220px;
+    border-radius: 8px;
+}
+
 /* ── Empty state icon ─────────────────────────────────────────────────────── */
 .bract-empty-icon {
     margin-bottom: 10px;

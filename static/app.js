@@ -4703,8 +4703,8 @@ window.initTradePage = function initTradePage(root = document) {
     return Number(sel?.value || 0) || 0;
   }
 
-  // Position multipliers. MUST match the server-side _SCORING_MULTS table in
-  // app.py (build_side); tests/test_scoring_mult_parity.py fails if they drift.
+  // Position multipliers. MUST match SCORING_MULTS in utils/trade_value.py
+  // (player_trade_value / build_side); tests/test_scoring_mult_parity.py fails if they drift.
   const SCORING_MULTS = {
     ppr:  { QB: 1.00, RB: 1.00, WR: 1.00, TE: 1.00 },
     half: { QB: 1.00, RB: 1.06, WR: 0.97, TE: 0.94 },

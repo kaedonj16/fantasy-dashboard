@@ -309,3 +309,6 @@ def test_health_endpoints_work_with_admin_secret(offline_client, monkeypatch):
     r = offline_client.get("/api/health/errors", headers={"X-Admin-Secret": "s3cret"})
     assert r.status_code == 200
     assert "errors" in r.get_json()
+    r = offline_client.get("/api/health/pipeline", headers={"X-Admin-Secret": "s3cret"})
+    assert r.status_code == 200
+    assert r.get_json() == {}
