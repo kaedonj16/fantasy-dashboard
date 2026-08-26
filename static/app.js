@@ -558,6 +558,10 @@ function fmtInt(v) {
 /**
  * Toast notification system.
  * Usage: showToast('Copied!') / showToast('Error', 'error') / showToast('Saved', 'success', 3000)
+ *
+ * The second argument is a type ('info'|'success'|'error'|'warning'), never a
+ * duration. Callers that historically passed showToast(msg, 5000) are still
+ * accepted so a duration isn't treated as a CSS class.
  */
 window.showToast = (function () {
   var container = null;
@@ -575,8 +579,9 @@ window.showToast = (function () {
     return container;
   }
   return function showToast(message, type, duration) {
+    if (typeof type === 'number') { duration = type; type = 'info'; }
     type = type || 'info';
-    duration = duration == null ? 3000 : duration;
+    duration = (typeof duration === 'number') ? duration : 3000;
     var c = getContainer();
     var t = document.createElement('div');
     t.className = 'toast toast-' + type;
@@ -591,6 +596,53 @@ window.showToast = (function () {
       t.addEventListener('transitionend', function () { t.remove(); }, { once: true });
     }, duration);
   };
+})();
+
+/**
+ * Sign-in modal: dialog semantics, overlay dismiss, Escape, and a focus trap.
+ * The markup lives in the page shell; these helpers are the only supported
+ * open/close path so display:flex/none and aria-hidden stay in sync.
+ */
+(function initSigninModal() {
+  var prevFocus = null;
+  function modal() { return document.getElementById('signinModal'); }
+  function focusables(m) {
+    return m.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])');
+  }
+  window.brOpenSignin = function () {
+    var m = modal();
+    if (!m) return;
+    prevFocus = document.activeElement;
+    m.style.display = 'flex';
+    m.setAttribute('aria-hidden', 'false');
+    var nodes = focusables(m);
+    if (nodes.length) try { nodes[0].focus(); } catch (_) {}
+  };
+  window.brCloseSignin = function () {
+    var m = modal();
+    if (!m) return;
+    m.style.display = 'none';
+    m.setAttribute('aria-hidden', 'true');
+    if (prevFocus && typeof prevFocus.focus === 'function') {
+      try { prevFocus.focus(); } catch (_) {}
+    }
+  };
+  document.addEventListener('keydown', function (e) {
+    var m = modal();
+    if (!m || m.style.display !== 'flex') return;
+    if (e.key === 'Escape') { e.preventDefault(); window.brCloseSignin(); return; }
+    if (e.key !== 'Tab') return;
+    var nodes = focusables(m);
+    if (!nodes.length) return;
+    var first = nodes[0], last = nodes[nodes.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  document.addEventListener('click', function (e) {
+    var m = modal();
+    if (!m || m.style.display !== 'flex') return;
+    if (e.target === m) window.brCloseSignin();
+  });
 })();
 
 // Surface a friendly message when a Yahoo OAuth attempt bounced back with
@@ -713,6 +765,14 @@ window.brHaptic = function (pattern) {
     sheet.setAttribute('aria-hidden', o ? 'false' : 'true');
     if (tab) { tab.setAttribute('aria-expanded', o ? 'true' : 'false'); tab.classList.toggle('active', o); }
     if (o && window.brHaptic) window.brHaptic(10);
+    if (o) {
+      sheet._brPrevFocus = document.activeElement;
+      var first = sheet.querySelector('a, button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (first) try { first.focus(); } catch (_) {}
+    } else if (sheet._brPrevFocus && typeof sheet._brPrevFocus.focus === 'function') {
+      try { sheet._brPrevFocus.focus(); } catch (_) {}
+      sheet._brPrevFocus = null;
+    }
   }
   function openSearch() {
     var ss = document.getElementById('brSearchScreen'); if (!ss) return;
@@ -821,10 +881,20 @@ window.brHaptic = function (pattern) {
 
     if (!docBound) {
       document.addEventListener('keydown', function (e) {
-        if (e.key !== 'Escape') return;
         var ss = document.getElementById('brSearchScreen');
-        if (ss && ss.classList.contains('open')) { closeSearch(); return; }
-        if (sheetOpen()) setOpen(false);
+        if (e.key === 'Escape') {
+          if (ss && ss.classList.contains('open')) { closeSearch(); return; }
+          if (sheetOpen()) setOpen(false);
+          return;
+        }
+        if (e.key !== 'Tab' || !sheetOpen()) return;
+        var sheetEl = document.getElementById('brMoreSheet');
+        if (!sheetEl) return;
+        var nodes = sheetEl.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])');
+        if (!nodes.length) return;
+        var first = nodes[0], last = nodes[nodes.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
       });
       docBound = true;
     }
@@ -2129,7 +2199,7 @@ window._brPromoEligible = function () {
         var permission = await Notification.requestPermission();
         if (permission === 'granted') {
           await subscribePush();
-          if (typeof showToast === 'function') showToast('Notifications enabled! <a href="#" onclick="openNotifPrefs();return false;" style="color:inherit;text-decoration:underline;margin-left:6px;">Customize →</a>', 'success');
+          if (typeof showToast === 'function') showToast('Notifications enabled. Open Settings to customize.', 'success', 5000);
           localStorage.setItem(NOTIF_KEY, 'subscribed');
         } else {
           localStorage.setItem(NOTIF_KEY, 'denied');
@@ -2567,7 +2637,7 @@ function showLoginGate(target, opts) {
 
   if (!ctx.is_logged_in) {
     const signinBtn = hasLeague
-      ? `<button class="login-gate-btn" onclick="document.getElementById('signinModal').style.display='flex'">Sign In</button>`
+      ? `<button class="login-gate-btn" onclick="window.brOpenSignin && window.brOpenSignin()">Sign In</button>`
       : `<a class="login-gate-btn" href="/">Get Started</a>`;
     el.innerHTML = `
       <div class="login-gate">
@@ -5421,7 +5491,7 @@ window.initTradePage = function initTradePage(root = document) {
       const openLogin = "var t=document.getElementById('tradeLoginModal');"
         + "if(t){t.style.display='flex';document.body.style.overflow='hidden';return;}"
         + "var s=document.getElementById('signinModal');"
-        + "if(s){s.style.display='flex';return;}"
+        + "if(s){if(window.brOpenSignin)window.brOpenSignin();else s.style.display='flex';return;}"
         + "window.location.href='/';";
       const signInBtn = `<button class="pi-locked-btn" onclick="${openLogin}">Sign In</button>`;
       body.innerHTML = _piMessage(
@@ -16728,12 +16798,14 @@ function setupFunAwardsGrid() {
   const POS_COLORS = { QB: 'qb', RB: 'rb', WR: 'wr', TE: 'te', K: 'k', DEF: 'def' };
   let _players = null;
   let _loading = false;
+  let _loadFailed = false;
   let _debounce = null;
   let _focusIdx = -1;
 
   async function loadPlayers() {
-    if (_players !== null || _loading) return;
+    if ((_players !== null && !_loadFailed) || _loading) return;
     _loading = true;
+    _loadFailed = false;
     try {
       const res = await fetch('/api/league-players', { cache: 'default' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -16747,10 +16819,11 @@ function setupFunAwardsGrid() {
           pos:  String(p.position || '').toUpperCase(),
           team: String(p.team || p.nfl_team || ''),
           headshot: String(p.espnHeadshot || ''),
-        }));
+          }));
     } catch (e) {
       console.warn('[nav-search] Failed to load players:', e);
-      _players = [];
+      _players = null;
+      _loadFailed = true;
     }
     _loading = false;
     // If the user already typed while the list was loading, render now instead
@@ -16765,7 +16838,13 @@ function setupFunAwardsGrid() {
   function renderResults(query) {
     const q = query.trim().toLowerCase();
     if (!q) { closeDropdown(); return; }
-    if (!_players) { dropdown.innerHTML = '<div class="nav-search-empty">Loading…</div>'; openDropdown(); return; }
+    if (!_players) {
+      dropdown.innerHTML = _loadFailed
+        ? '<div class="nav-search-empty">Couldn’t load players. Type again to retry.</div>'
+        : '<div class="nav-search-empty">Loading…</div>';
+      openDropdown();
+      return;
+    }
 
     const words = q.split(/\s+/);
     const matches = _players

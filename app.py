@@ -1817,9 +1817,6 @@ BASE_HTML = """
     </footer>
 
     <!-- Page navigation loading overlay -->
-    <!-- Toast notifications -->
-    <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
-
     <!-- Cookie consent handled by Google's certified CMP (Funding Choices) -->
 
     <script src="/static/{app_js_file}?v={app_js_v}"></script>
@@ -1833,24 +1830,6 @@ BASE_HTML = """
         var el = document.getElementById('footer-year');
         if (el) el.textContent = new Date().getFullYear();
       }})();
-
-      // Toast notification utility
-      window.showToast = function(msg, duration) {{
-        duration = duration || 3000;
-        var container = document.getElementById('toastContainer');
-        if (!container) return;
-        var toast = document.createElement('div');
-        toast.className = 'toast';
-        toast.textContent = msg;
-        container.appendChild(toast);
-        requestAnimationFrame(function() {{
-          requestAnimationFrame(function() {{ toast.classList.add('toast--visible'); }});
-        }});
-        setTimeout(function() {{
-          toast.classList.remove('toast--visible');
-          toast.addEventListener('transitionend', function() {{ toast.remove(); }}, {{once: true}});
-        }}, duration);
-      }};
     </script>
   </body>
 </html>
@@ -1867,6 +1846,16 @@ def save_viewer_session(viewer: dict) -> None:
     session["viewer_user_id"] = viewer.get("viewer_user_id")
     session["viewer_roster_id"] = viewer.get("viewer_roster_id")
     session["viewer_team_name"] = viewer.get("viewer_team_name")
+
+
+def _session_signed_in() -> bool:
+    """True when the visitor has an account or a resolved team identity.
+
+    Google-only managers often have ``account_id`` with no Sleeper
+    ``viewer_username``. Treating only the username as signed-in sent them
+    through guest chrome, lite JS, and the logged-out landing page.
+    """
+    return bool(session.get("account_id") or session.get("viewer_username"))
 
 
 _SEED_SEMAPHORE = threading.Semaphore(1)
@@ -2686,7 +2675,7 @@ def _mobile_nav_guest(active: str) -> str:
     ])
 
     portfolio_link = ""
-    if session.get("viewer_username"):
+    if _session_signed_in():
         portfolio_link = (
             "<a class='br-sheet-link' href='/portfolio'>"
             f"{_nav_icon('users', size=20)}<span>My Leagues</span></a>"
@@ -3466,7 +3455,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         # Logged-out user on a league page - offer quick sign-in
         signin_item = (
                 "<button type='button' class='settings-menu-item' "
-                "        onclick='document.getElementById(\"signinModal\").style.display=\"flex\"'>"
+                "        onclick='window.brOpenSignin && window.brOpenSignin()'>"
                 "  " + _nav_icon("logout", cls="settings-menu-icon", style="transform:scaleX(-1);") +
                 "  <span class='settings-menu-label'>Sign In</span>"
                 "</button>"
@@ -3573,9 +3562,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     if league_id and _plat_key in _signin_copy:
         _signin_sub, _signin_ph = _signin_copy[_plat_key]
         signin_modal = (
-            f"<div id='signinModal' class='signin-modal-overlay'>"
+            f"<div id='signinModal' class='signin-modal-overlay' role='dialog' aria-modal='true' aria-labelledby='signinModalTitle' aria-hidden='true'>"
             f"  <div class='signin-modal-box'>"
-            f"    <h3 class='signin-modal-title'>Sign in to your team</h3>"
+            f"    <h3 class='signin-modal-title' id='signinModalTitle'>Sign in to your team</h3>"
             f"    <p class='signin-modal-sub'>{_signin_sub}</p>"
             f"    <form method='POST' action='/set-viewer'>"
             f"      <input type='hidden' name='platform' value='{platform}'>"
@@ -3586,7 +3575,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             f"      <div class='signin-modal-actions'>"
             f"        <button class='signin-modal-submit' type='submit'>Sign In</button>"
             f"        <button class='signin-modal-cancel' type='button'"
-            f"                onclick='document.getElementById(\"signinModal\").style.display=\"none\"'>Cancel</button>"
+            f"                onclick='window.brCloseSignin && window.brCloseSignin()'>Cancel</button>"
             f"      </div>"
             f"    </form>"
             f"    <div class='signin-modal-or'>or</div>"
@@ -3600,14 +3589,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         # so offer account sign-in instead of asking for a username that goes
         # nowhere. This is what a logged-out user actually wants from "Sign In".
         signin_modal = (
-            f"<div id='signinModal' class='signin-modal-overlay'>"
+            f"<div id='signinModal' class='signin-modal-overlay' role='dialog' aria-modal='true' aria-labelledby='signinModalTitle' aria-hidden='true'>"
             f"  <div class='signin-modal-box'>"
-            f"    <h3 class='signin-modal-title'>Sign in</h3>"
+            f"    <h3 class='signin-modal-title' id='signinModalTitle'>Sign in</h3>"
             f"    <p class='signin-modal-sub'>Sign in to access your saved leagues and personalized features.</p>"
             f"    {_google_btn}"
             f"    <div class='signin-modal-actions'>"
             f"      <button class='signin-modal-cancel' type='button'"
-            f"              onclick='document.getElementById(\"signinModal\").style.display=\"none\"'>Cancel</button>"
+            f"              onclick='window.brCloseSignin && window.brCloseSignin()'>Cancel</button>"
             f"    </div>"
             f"  </div>"
             f"</div>"
@@ -4132,7 +4121,7 @@ def render_page(
     _nav_platform = platform or session.get("last_platform") or None
     _nav_season_raw = session.get("last_season") if not season else None
     _nav_season = season or (int(_nav_season_raw) if _nav_season_raw else None)
-    _signed_in = bool(session.get("viewer_username"))
+    _signed_in = _session_signed_in()
     # League chrome (top nav + bottom dock) on real league pages, and on public
     # pages only for signed-in users with a remembered league. Everyone logged out
     # gets the guest chrome so the top nav and the dock always agree.
@@ -4164,7 +4153,7 @@ def render_page(
     # (see the ensureFeatures loader in app.js). Only go lite when that features
     # bundle actually built; otherwise serve the full app.js so nothing breaks.
     _use_lite = (bool(kwargs.get("lite_js"))
-                 and not session.get("viewer_username")
+                 and not _session_signed_in()
                  and bool(_FEATURES_JS_FILE))
     _page_js_file = _PUBLIC_JS_FILE if _use_lite else _APP_JS_FILE
     _page_js_v = _PUBLIC_JS_V if _use_lite else _APP_JS_V
@@ -4187,7 +4176,7 @@ def render_page(
     json_ld = _site_json_ld()
 
     banner_html = _discord_banner()
-    if session.get("viewer_username"):
+    if _session_signed_in():
         banner_html += _recap_ready_banner(league_id or "", platform or "", season or 0)
         banner_html += _draft_imminent_banner(
             _nav_lid or "", _nav_platform or "", _nav_season or 0, active,
@@ -4287,7 +4276,7 @@ def render_page(
         icons_v=_ICONS_V,
         viewer_roster_id_js=_json.dumps(str(viewer_roster_id)),
         viewer_user_id_js=_json.dumps(str(viewer_user_id)),
-        signed_in_js="true" if session.get("viewer_username") else "false",
+        signed_in_js="true" if _session_signed_in() else "false",
         has_account_js="true" if session.get("account_id") else "false",
         account_email_js=_json.dumps(session.get("account_email") or ""),
         features_js_js=_features_js_js,
@@ -12374,7 +12363,9 @@ def api_redzone_player(platform: str, season: int, league_id: str):
         return jsonify({}), 400
 
     try:
-        nfl_players = get_nfl_players() if platform == "sleeper" else {}
+        # Providers canonicalize roster pids to Sleeper ids, so the NFL player
+        # index resolves names/positions on ESPN, Yahoo, and MFL as well.
+        nfl_players = get_nfl_players() or {}
         player = nfl_players.get(pid, {})
         pos = (player.get("position") or "").upper()
 
@@ -16444,7 +16435,8 @@ def index():
     # Signed-in users skip the guest landing page entirely — otherwise they'd see
     # the logged-out "Get started" onboarding underneath their logged-in nav.
     # Send them to ?next= if provided, else their last league dashboard.
-    if session.get("viewer_username"):
+    # Google-only accounts have account_id without a Sleeper username.
+    if _session_signed_in():
         if next_url:
             return redirect(next_url)
         _lid = session.get("last_league_id")
@@ -16469,7 +16461,7 @@ def index():
         "BR Fantasy - Free Fantasy Football Trade Calculator & Dynasty Tools",
         None, "home", body_html,
         description=(
-            "Free fantasy football tools for Sleeper, ESPN, and Yahoo: a dynasty and "
+            "Free fantasy football tools for Sleeper, ESPN, Yahoo, and MFL: a dynasty and "
             "redraft trade calculator, daily player trade values, real-trade market data, "
             "power rankings, breakout candidates, and advanced metrics."
         ),

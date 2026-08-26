@@ -131,7 +131,7 @@ def build_players_shell() -> str:
         <!-- Loading: a skeleton list shaped like the ranked rows, so the table
              swaps in without a spinner and without the layout jumping. This
              block lives in a plain (non-f) string, so the rows are literal. -->
-        <div id="prLoading" class="sk-list" aria-hidden="true" style="margin-top:8px;">
+        <div id="prLoading" class="sk-list" role="status" aria-live="polite" aria-busy="true" style="margin-top:8px;">
           <div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line w-80"></div><div class="skeleton skeleton-line w-40"></div></div><div class="skeleton sk-chip"></div></div>
           <div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line w-60"></div><div class="skeleton skeleton-line w-40"></div></div><div class="skeleton sk-chip"></div></div>
           <div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line w-80"></div><div class="skeleton skeleton-line w-40"></div></div><div class="skeleton sk-chip"></div></div>

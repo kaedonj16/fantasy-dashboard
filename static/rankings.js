@@ -1129,6 +1129,15 @@ function prGetTier(p) {
 }
 
 // Load data
+function prLoadData() {
+  var loading = document.getElementById('prLoading');
+  if (loading) {
+    loading.style.display = '';
+    loading.setAttribute('aria-busy', 'true');
+    if (window.brLoadingState && loading.querySelector('.empty-state')) {
+      window.brLoadingState(loading, { spinner: true, message: 'Loading players…' });
+    }
+  }
 Promise.all([
   // Fail loud on a non-2xx: the server can return a 500 whose body is still
   // valid JSON (the _api_err shape), which would otherwise parse into an empty
@@ -1247,7 +1256,11 @@ Promise.all([
     throw new Error('league-players returned no players');
   }
 
-  document.getElementById('prLoading').style.display = 'none';
+  var _prLoadEl = document.getElementById('prLoading');
+  if (_prLoadEl) {
+    _prLoadEl.style.display = 'none';
+    _prLoadEl.setAttribute('aria-busy', 'false');
+  }
   prLoaded = true;
   prRender();
   // Lazy-load sparklines - re-render with sparkline data once ready
@@ -1259,6 +1272,16 @@ Promise.all([
   }).catch(function() {});
 }).catch(err => {
   console.error('Error loading player rankings:', err);
-  document.getElementById('prLoading').innerHTML =
-    '<div style="color:#ef4444;">Failed to load players. Please refresh.</div>';
+  var el = document.getElementById('prLoading');
+  if (!el) return;
+  el.style.display = '';
+  el.removeAttribute('aria-hidden');
+  el.setAttribute('aria-busy', 'false');
+  if (window.brErrorState) {
+    window.brErrorState(el, 'Failed to load players. Check your connection and try again.', prLoadData);
+  } else {
+    el.innerHTML = '<div class="empty-state empty-state-error">Failed to load players. Please refresh.</div>';
+  }
 });
+}
+prLoadData();
