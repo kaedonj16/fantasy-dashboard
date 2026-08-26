@@ -19635,12 +19635,37 @@ def _trade_intel_col_exists(conn, col: str) -> bool:
     return exists
 
 
+def _deny_unless_trade_intel_premium():
+    """403 the Trade Intel feed and history unless the viewer is PRO.
+
+    Per-player market summaries (``/api/trade-intel/player``) and similar-trade
+    comps stay free — those back the labeled calculator. The trending feed and
+    paginated trade history are the PRO product.
+    """
+    platform = request.args.get("platform") or session.get("last_platform") or "sleeper"
+    league_id = request.args.get("league_id") or session.get("last_league_id")
+    raw_season = request.args.get("season") or session.get("last_season")
+    try:
+        season = int(raw_season) if raw_season not in (None, "") else None
+    except (TypeError, ValueError):
+        season = None
+    if has_premium_for_viewer(
+        session.get("viewer_username"), session.get("viewer_user_id"),
+        league_id, str(platform).strip().lower() or "sleeper", season,
+    ):
+        return None
+    return jsonify({"paywall": True, "error": "Premium required"}), 403
+
+
 @app.route("/api/trade-intel/trending")
 def api_trade_intel_trending():
     """
     Most traded players in the last 7 days across all crawled leagues.
     Returns paginated players with trade counts and market vs model value delta.
     """
+    denied = _deny_unless_trade_intel_premium()
+    if denied is not None:
+        return denied
     from dashboard_services.db import get_conn
     try:
         season = int(request.args.get("season") or datetime.now().year)
@@ -20115,6 +20140,9 @@ def api_trade_intel_player_trades(player_id: str):
     ?season=<int>  &league_type=all|sf|1qb  &page=<int>  &limit=<int>
     Returns each trade with both sides and is_focus=True on the queried player.
     """
+    denied = _deny_unless_trade_intel_premium()
+    if denied is not None:
+        return denied
     try:
         season = int(request.args.get("season") or datetime.now().year)
         league_type = (request.args.get("league_type") or "all").strip().lower()

@@ -129,9 +129,10 @@ def top_movers_page():
         movers = {"risers": [], "fallers": []}
 
     from datetime import datetime as _dt
+    from app import _session_signed_in
     date_label = _dt.now().strftime("%B %d, %Y")
     body = build_risers_fallers_body(movers, as_of_date=date_label,
-                                     signed_in=bool(session.get("viewer_username")),
+                                     signed_in=_session_signed_in(),
                                      days=days)
 
     _win_label = {7: "week", 30: "30 days", 90: "90 days"}[days]

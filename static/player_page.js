@@ -86,9 +86,18 @@
 
     fetch("/api/trade-intel/player-trades/" + encodeURIComponent(pid) +
           "?season=" + encodeURIComponent(season) + "&limit=8")
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        var trades = (data && data.trades) || [];
+      .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d || {} }; }).catch(function () { return { status: r.status, data: {} }; }); })
+      .then(function (res) {
+        if (res.status === 403 && res.data.paywall) {
+          box.innerHTML = "<div style='padding:6px 0;'>Market trade history is a PRO feature. "
+            + "<button type='button' class='login-gate-btn' style='margin-left:6px;' id='ppTradesPaywallBtn'>Upgrade</button></div>";
+          var btn = document.getElementById("ppTradesPaywallBtn");
+          if (btn) btn.addEventListener("click", function () {
+            if (typeof showPaywall === "function") showPaywall("trade-history");
+          });
+          return;
+        }
+        var trades = (res.data && res.data.trades) || [];
         if (!trades.length) {
           box.innerHTML = "<div style='padding:6px 0;'>No logged trades for this player yet this season.</div>";
           return;
