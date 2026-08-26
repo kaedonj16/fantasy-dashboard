@@ -75,7 +75,11 @@ resolver never fails a page because a snapshot file is missing from this disk.
   take him (Sleeper records 999 / undrafted; ESPN and Yahoo omit him from the
   top-N board). Rows with `draftSelPct` below 25% are dropped at fetch *and* at
   snapshot read so they cannot leak into consensus or Draft Room recs. Missing
-  `draftSelPct` is left through (legacy snapshots / tests).
+  `draftSelPct` is left through on a snapshot that has no pcts at all (legacy /
+  tests). **Consensus still omits any player who appears only in MFL**: that
+  selected-only number must not become the Consensus ADP just because every
+  overall-ADP board skipped them. Pick the MFL source explicitly to see the
+  raw MFL board.
 
 ## Match quality and fallback hierarchy
 

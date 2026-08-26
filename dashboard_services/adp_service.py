@@ -878,24 +878,56 @@ def _is_pos_num(v) -> bool:
         return False
 
 
-def consensus_adp(source_maps) -> Dict[str, float]:
+# MFL ``averagePick`` is selected-only (mean among drafts that *took* the player).
+# A dart-throw listed only there (Sleeper 999 / ESPN+Yahoo omit) must not become
+# Consensus ADP — that is how Jam Miller showed 57.8 from 10% of MFL mocks.
+_SELECTED_ONLY_SOURCES = frozenset({"mfl"})
+
+
+def _all_selected_only(source_names) -> bool:
+    names = [n for n in (source_names or ()) if n]
+    return bool(names) and all(n in _SELECTED_ONLY_SOURCES for n in names)
+
+
+def consensus_adp(source_maps, source_names=None) -> Dict[str, float]:
     """Blend several ``{id: overall_adp}`` maps into one consensus map.
 
     A player's consensus is the arithmetic mean of its actual ADP from every
     available source that lists it. All source adapters normalize their output
     to overall pick already, so averaging the displayed values is both meaningful
-    and transparent to a viewer checking the calculation source by source."""
-    present = [m for m in source_maps if m]
+    and transparent to a viewer checking the calculation source by source.
+
+    When ``source_names`` is provided (the resolver always passes them), a
+    player that appears *only* in selected-only feeds is omitted. Unnamed
+    maps keep the legacy "average whoever is present" contract for tests."""
+    maps = list(source_maps or [])
+    if source_names is None:
+        present = [(None, m) for m in maps if m]
+        drop_unconfirmed = False
+    else:
+        names = list(source_names)
+        present = [(n, m) for n, m in zip(names, maps) if m]
+        drop_unconfirmed = True
     if not present:
         return {}
     if len(present) == 1:
-        return dict(present[0])
+        name, only = present[0]
+        if drop_unconfirmed and name in _SELECTED_ONLY_SOURCES:
+            return {}
+        return dict(only)
     agg: Dict[str, list] = {}
-    for source in present:
+    named: Dict[str, list] = {}
+    for name, source in present:
         for pid, value in source.items():
             if _is_pos_num(value):
                 agg.setdefault(pid, []).append(float(value))
-    return {pid: sum(values) / len(values) for pid, values in agg.items()}
+                named.setdefault(pid, []).append(name)
+    out: Dict[str, float] = {}
+    for pid, values in agg.items():
+        if drop_unconfirmed and _all_selected_only(named.get(pid)):
+            continue
+        out[pid] = sum(values) / len(values)
+    return out
 
 
 def ordinal_rank_adp(adp_map) -> Dict[str, float]:
@@ -944,7 +976,8 @@ def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
         return ordinal_rank_adp(m) if (as_rank and m) else m
 
     if source == "consensus":
-        blended = consensus_adp([_src(n) for n in valid])
+        names = list(valid)
+        blended = consensus_adp([_src(n) for n in names], names)
         if blended:
             return _finish(blended)
     elif source in valid:
@@ -1056,6 +1089,8 @@ def resolve_market_adp_detailed(
     all_ids = set().union(*[m.keys() for _n, _q, m in per_source]) if per_source else set()
     for pid in all_ids:
         contribs = [(n, q, m[pid]) for n, q, m in per_source if pid in m]
+        if _all_selected_only(n for n, _q, _v in contribs):
+            continue
         vals = [v for _n, _q, v in contribs]
         weights = [_TIER_WEIGHT.get(q, 1.0) for _n, q, _v in contribs]
         wsum = sum(weights) or 1.0
