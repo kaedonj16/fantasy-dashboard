@@ -21,6 +21,10 @@ if TYPE_CHECKING:
 
 from dashboard_services.api import get_nfl_state
 from dashboard_services.db import get_conn
+from utils.vorp import (
+    VALUE_STARTERS as _VALUE_STARTERS,
+    stamp_value_metrics,
+)
 
 # Columns sourced from PFF (premium, license-restricted). These must not be
 # served on the public site. They stay in the DB for private/local use, but the
@@ -1409,7 +1413,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     # ── Value (fantasy points above/over replacement) ────────────────────────
     # vorp/war are computed in Python (league-aware) by get_value_leaderboard,
     # not from a DB column, so they carry no computed_sql.
-    "vorp":                 {"label": "VORP",                "category": "Value", "positions": ["QB", "RB", "WR", "TE"], "value_metric": True, "desc": "Value Over Replacement Points: season PPR points minus the points of a replacement-level starter at the same position (league-size aware, FLEX included). Measures how much a player produced above a freely-available waiver option."},
+    "vorp":                 {"label": "VORP",                "category": "Value", "positions": ["QB", "RB", "WR", "TE"], "value_metric": True, "desc": "Value Over Replacement Points: season PPR points minus a replacement-level starter at the same position (league-size aware, FLEX included). This is a season total, so missed games (injury, bench) can make VORP negative even when per-game production was starter-level."},
     "war":                  {"label": "WAR",                 "category": "Value", "positions": ["QB", "RB", "WR", "TE"], "value_metric": True, "desc": "Wins Above Replacement: season VORP divided by points-per-win (≈ the league's weekly scoring spread). Translates points above replacement into the wins they were worth; elite players are typically 4-6+."},
     # ── General (cross-position production, usage, and grade) ─────────────────
     # Fantasy output first, then combined production, then usage/role, then grade.
@@ -2254,23 +2258,6 @@ VALUE_METRICS = ("vorp", "war")
 # weekly table rather than read as a column.
 _SEASON_FROM_WEEKLY = frozenset({"ppr_pts", "ppr_pts_per_game"})
 
-# Standard starters per team used to locate the replacement-level player.
-# FLEX is modeled as one extra RB/WR/TE slot per team, split by typical usage.
-_VALUE_STARTERS = {"QB": 1.0, "RB": 2.0, "WR": 3.0, "TE": 1.0}
-_VALUE_FLEX_ALLOC = {"RB": 0.45, "WR": 0.45, "TE": 0.10}
-# Marginal PPR points worth one head-to-head win (≈ weekly team-score stdev).
-# Overridable via the POINTS_PER_WIN env var for non-standard scoring.
-_POINTS_PER_WIN_DEFAULT = 28.0
-
-
-def _points_per_win() -> float:
-    try:
-        v = float(os.getenv("POINTS_PER_WIN", "").strip())
-        return v if v > 0 else _POINTS_PER_WIN_DEFAULT
-    except (TypeError, ValueError):
-        return _POINTS_PER_WIN_DEFAULT
-
-
 # In-process daily cache for _value_table. The full-season VORP/WAR computation is
 # identical for every player in a league, but the player modal calls it twice per
 # open (metrics + ranks) and the compare modal up to 4× — each previously a full
@@ -2340,7 +2327,6 @@ def _value_table(
         return _hit
     teams = int(num_teams) if num_teams and num_teams > 0 else 12
     start_slots = {**_VALUE_STARTERS, **(starters or {})}
-    ppw = points_per_win if (points_per_win and points_per_win > 0) else _points_per_win()
 
     # Season fantasy points live in player_weekly_metrics (Sleeper-sourced), not
     # player_advanced_metrics — there is no ppr_pts column on the latter. Aggregate
@@ -2383,36 +2369,13 @@ def _value_table(
                 cur["position"] = pos
             cur["games"] += gms
 
-    # Bucket season points by canonical position to find replacement levels.
-    pool_by_pos: Dict[str, List[float]] = {}
-    recs: List[Dict[str, Any]] = []
-    for rec in by_pid.values():
-        recs.append(rec)
-        pool_by_pos.setdefault(rec["position"], []).append(rec["pts"])
-
-    repl_pts: Dict[str, float] = {}
-    for pos, base in start_slots.items():
-        rank = base * teams + _VALUE_FLEX_ALLOC.get(pos, 0.0) * teams
-        pool = sorted(pool_by_pos.get(pos, []), reverse=True)
-        if not pool:
-            repl_pts[pos] = 0.0
-            continue
-        idx = int(round(rank)) - 1
-        idx = max(0, min(len(pool) - 1, idx))
-        repl_pts[pos] = pool[idx]
-
-    for rec in recs:
-        vorp = rec["pts"] - repl_pts.get(rec["position"], 0.0)
-        rec["vorp"] = round(vorp, 3)
-        rec["war"] = round(vorp / ppw, 3)
-
-    # Position-relative ranks (1 = best) for each value metric.
-    for pos_recs in (
-        [r for r in recs if r["position"] == p] for p in start_slots
-    ):
-        for key in ("vorp", "war"):
-            for i, rec in enumerate(sorted(pos_recs, key=lambda x: x[key], reverse=True), 1):
-                rec[f"{key}_rank"] = i
+    recs: List[Dict[str, Any]] = list(by_pid.values())
+    stamp_value_metrics(
+        recs,
+        num_teams=teams,
+        starters=starters,
+        points_per_win_value=points_per_win,
+    )
 
     _result = (season, recs)
     # Only cache a real result. An empty recs means there was no data to compute
