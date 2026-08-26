@@ -12849,7 +12849,7 @@ function initComparePage() {
         return b;
       });
     }
-    return fetch('/api/player-details/' + encodeURIComponent(pid))
+    return fetch(_cmpPlayerDetailsUrl(pid))
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
   }
 
@@ -13103,7 +13103,7 @@ function initComparePage() {
       if (q.length < 2) { results.innerHTML = ''; input.setAttribute('aria-expanded', 'false'); return; }
       currentQuery = q;
       debounce = setTimeout(function () {
-        fetch('/api/players?q=' + encodeURIComponent(q) + '&limit=20')
+        fetch(_cmpPlayersSearchUrl(q))
           .then(r => r.json())
           .then(list => { if (currentQuery === q) render(list, q); })
           .catch(() => { if (currentQuery === q) render([], q); });
@@ -13323,7 +13323,7 @@ function openCompareSearch(player1Data) {
       const isB = !!p.is_baseline;
       const meta = isB ? ((p.tier_range || p.position) + ' · PPR 12-team avg')
                        : ((p.position || '') + ' · ' + (p.team || ''));
-      const rightVal = isB ? ((p.stats && p.stats.value) || '-') : (p.value || '-');
+      const rightVal = _cmpDisplayValue(p);
       const ico = isB
         ? '<div class="compare-result-headshot compare-result-tier-ico" aria-hidden="true">Σ</div>'
         : `<img src="${_hiResHeadshot(p.espnHeadshot, 110)}" data-raw="${p.espnHeadshot || ''}" onerror="${_HS_FALLBACK}" class="compare-result-headshot" alt="${_cmpEsc(p.name)}" />`;
@@ -13334,7 +13334,7 @@ function openCompareSearch(player1Data) {
           <div class="compare-result-name">${_cmpEsc(p.name)}${isB ? '<span class="compare-pick-tag">TIER AVG</span>' : ''}</div>
           <div class="compare-result-meta">${_cmpEsc(meta)}</div>
         </div>
-        <div class="compare-result-value">${rightVal}</div>
+        <div class="compare-result-value">${rightVal != null ? rightVal : '-'}</div>
       </div>`;
     }).join('');
 
@@ -13349,15 +13349,7 @@ function openCompareSearch(player1Data) {
         }
         // Show loading state
         body.innerHTML = '<div class="player-modal-loading"><div class="loading-spinner"></div><div>Loading comparison...</div></div>';
-        // Fetch second player details
-        const pathParts = window.location.pathname.split('/').filter(p => p);
-        const platform = pathParts[0] || 'sleeper';
-        const season = pathParts[1] || new Date().getFullYear();
-        const leagueId = pathParts[2] || null;
-        const apiUrl = leagueId
-          ? `/api/player-details/${pid}?league_id=${leagueId}&platform=${platform}&season=${season}`
-          : `/api/player-details/${pid}`;
-        fetch(apiUrl)
+        fetch(_cmpPlayerDetailsUrl(pid))
           .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
           .then(p2Data => openComparisonView(player1Data, p2Data))
           .catch(() => {
@@ -13374,7 +13366,7 @@ function openCompareSearch(player1Data) {
     if (!q || q.length < 2) { resultsBox.innerHTML = ''; return; }
     _currentQuery = q;
     window.brLoadingState(resultsBox, { spinner: true, message: 'Searching…' });
-    fetch(`/api/players?q=${encodeURIComponent(q)}&limit=20`)
+    fetch(_cmpPlayersSearchUrl(q))
       .then(r => r.json())
       .then(list => {
         if (_currentQuery !== q) return; // stale response
@@ -13447,7 +13439,62 @@ function _buildComparePPGRow(p1, p2) {
 }
 
 
+// Compare surfaces follow the viewer's league type the same way pos rank does
+// on rankings: SF leagues use SF value / rank / ADP / history, 1QB leagues use
+// the 1QB fields. Both formats still appear; the matching one is primary.
+function _cmpIsSf() {
+  return (typeof brLeagueType === 'function' ? brLeagueType() : '1qb') === 'sf';
+}
+function _cmpHistValue(h) {
+  if (!h) return null;
+  const raw = _cmpIsSf()
+    ? (h.value_sf != null ? h.value_sf : h.value)
+    : (h.value_1qb != null ? h.value_1qb : h.value);
+  const n = Number(raw);
+  return isFinite(n) ? n : null;
+}
+function _cmpLeagueParams() {
+  return (typeof _wlLeagueParams === 'function')
+    ? _wlLeagueParams()
+    : ('league_type=' + encodeURIComponent(typeof brLeagueType === 'function' ? brLeagueType() : '1qb')
+       + '&league_size=' + encodeURIComponent(typeof brLeagueSize === 'function' ? brLeagueSize() : 10));
+}
+function _cmpPlayerDetailsUrl(pid) {
+  const params = _cmpLeagueParams();
+  const parts = (window.location.pathname || '').split('/').filter(Boolean);
+  const qs = (typeof URLSearchParams !== 'undefined')
+    ? new URLSearchParams(window.location.search || '')
+    : { get: function () { return null; } };
+  const ctx = window.__brctx || {};
+  const isLeaguePath = parts.length >= 3 && /^\d{4}$/.test(parts[1]);
+  const platform = isLeaguePath ? parts[0] : (qs.get('platform') || ctx.platform || '');
+  const season = isLeaguePath ? parts[1] : (qs.get('season') || ctx.season || '');
+  const leagueId = isLeaguePath ? parts[2]
+    : (qs.get('from_league') || qs.get('league_id') || ctx.leagueId || '');
+  let extra = '';
+  if (leagueId && String(leagueId) !== 'None') {
+    extra = '&league_id=' + encodeURIComponent(leagueId);
+    if (platform) extra += '&platform=' + encodeURIComponent(platform);
+    if (season) extra += '&season=' + encodeURIComponent(season);
+  }
+  return '/api/player-details/' + encodeURIComponent(pid) + '?' + params + extra;
+}
+function _cmpPlayersSearchUrl(q) {
+  return '/api/players?q=' + encodeURIComponent(q) + '&limit=20&' + _cmpLeagueParams();
+}
+function _cmpDisplayValue(p) {
+  if (!p) return null;
+  const stats = p.stats || {};
+  if (_cmpIsSf()) {
+    const v = p.sf_value != null ? p.sf_value : stats.sf_value;
+    if (v != null && v !== '') return v;
+  }
+  const v = p.value != null ? p.value : stats.value;
+  return (v != null && v !== '') ? v : null;
+}
+
 function _buildCompareHeroHTML(p, other) {
+  const isSf = _cmpIsSf();
   const val1qb = p.stats?.value || 0;
   const valsf  = p.stats?.sf_value || 0;
   const valPosRank  = p.stats?.pos_rank;
@@ -13477,7 +13524,7 @@ function _buildCompareHeroHTML(p, other) {
   const _win = (mine, theirs) => (mine != null && theirs != null && Number(mine) > Number(theirs));
   const win1qb = _win(p.stats?.value, _o.value) ? ' compare-hero-win' : '';
   const winsf  = _win(p.stats?.sf_value, _o.sf_value) ? ' compare-hero-win' : '';
-    const winppg = _win(ppg, _o.ppg) ? ' compare-hero-win' : '';
+  const winppg = _win(ppg, _o.ppg) ? ' compare-hero-win' : '';
   const wintot = _win(total, _o.total_pts) ? ' compare-hero-win' : '';
   const ss = p.stats?.start_score;
   const oSs = _o.start_score;
@@ -13501,10 +13548,11 @@ function _buildCompareHeroHTML(p, other) {
     </div>` : '';
 
   // ── ADP row (Dynasty + Redraft) ──────────────────────────────────────────
-  // From the same Sleeper feed the player modal and rankings use. The primary
-  // number is the 1QB ADP with SF in the sub-line. Lower ADP = drafted earlier,
-  // so the winner highlight flips vs the value cards (lower wins here). Tier
-  // averages have no ADP, so the whole row is dropped when neither value exists.
+  // Same Sleeper feed as the player modal. The primary number is the viewer's
+  // league type (SF in superflex, 1QB otherwise), with the other format in the
+  // sub-line — matching how pos rank already switches. Lower ADP = drafted
+  // earlier, so the winner highlight flips vs the value cards. Tier averages
+  // have no ADP, so the whole row is dropped when neither value exists.
   const adp = p.stats?.adp || null;
   const oAdp = (other && other.stats && other.stats.adp) || null;
   const _adpNum = v => (v == null || v === '' || isNaN(parseFloat(v))) ? null : parseFloat(v);
@@ -13512,32 +13560,39 @@ function _buildCompareHeroHTML(p, other) {
   const rdr1 = _adpNum(adp?.redraft_1qb), rdrSf = _adpNum(adp?.redraft_sf);
   const hasAdp = [dyn1, dynSf, rdr1, rdrSf].some(v => v != null);
   const _winLow = (mine, theirs) => (mine != null && theirs != null && Number(mine) < Number(theirs));
-  const winDyn = _winLow(dyn1, _adpNum(oAdp?.dynasty_1qb)) ? ' compare-hero-win' : '';
-  const winRdr = _winLow(rdr1, _adpNum(oAdp?.redraft_1qb)) ? ' compare-hero-win' : '';
-  const _adpCard = (label, primary, sf, winCls) => `
+  const dynPri = isSf ? dynSf : dyn1, dynOther = isSf ? dyn1 : dynSf;
+  const rdrPri = isSf ? rdrSf : rdr1, rdrOther = isSf ? rdr1 : rdrSf;
+  const winDyn = _winLow(dynPri, _adpNum(isSf ? oAdp?.dynasty_sf : oAdp?.dynasty_1qb)) ? ' compare-hero-win' : '';
+  const winRdr = _winLow(rdrPri, _adpNum(isSf ? oAdp?.redraft_sf : oAdp?.redraft_1qb)) ? ' compare-hero-win' : '';
+  const adpSubLbl = isSf ? '1QB' : 'SF';
+  const _adpCard = (label, primary, other, winCls) => `
       <div class="pm-hero-stat${winCls}" style="padding:10px 10px;">
         <div class="pm-hero-label">${label}</div>
         <div class="pm-hero-val" style="font-size:20px;">${primary != null ? primary : '-'}</div>
-        <div class="pm-hero-sub">${sf != null ? `SF : ${sf}` : '&nbsp;'}</div>
+        <div class="pm-hero-sub">${other != null ? `${adpSubLbl} : ${other}` : '&nbsp;'}</div>
       </div>`;
   const adpRow = hasAdp ? `
     <div class="compare-hero-row" style="grid-template-columns:1fr 1fr;margin-top:6px;">
-      ${_adpCard('Dynasty ADP', dyn1, dynSf, winDyn)}
-      ${_adpCard('Redraft ADP', rdr1, rdrSf, winRdr)}
+      ${_adpCard('Dynasty ADP', dynPri, dynOther, winDyn)}
+      ${_adpCard('Redraft ADP', rdrPri, rdrOther, winRdr)}
     </div>` : '';
+
+  const card1qb = `
+      <div class="pm-hero-stat${isSf ? '' : ' pm-hero-primary'}${win1qb}" style="padding:10px 10px;">
+        <div class="pm-hero-label">1QB Value</div>
+        <div class="pm-hero-val" style="font-size:20px;${isSf ? '' : 'color:#3b82f6;'}">${val1qb > 0 ? val1qb : '-'}</div>
+        <div class="pm-hero-sub">${isB ? valSub : (valPosRank ? `POS : ${valPosRank} · OVR : ${valOvrRank ?? '–'}` : '-')}</div>
+      </div>`;
+  const cardSf = `
+      <div class="pm-hero-stat${isSf ? ' pm-hero-primary' : ''}${winsf}" style="padding:10px 10px;">
+        <div class="pm-hero-label">SF Value</div>
+        <div class="pm-hero-val" style="font-size:20px;${isSf ? 'color:#3b82f6;' : ''}">${valsf > 0 ? valsf : '-'}</div>
+        <div class="pm-hero-sub">${isB ? valSub : (sfPosRank ? `POS : ${sfPosRank} · OVR : ${sfOvrRank ?? '–'}` : '-')}</div>
+      </div>`;
 
   return `
     <div class="compare-hero-row" style="grid-template-columns:1fr 1fr;">
-      <div class="pm-hero-stat pm-hero-primary${win1qb}" style="padding:10px 10px;">
-        <div class="pm-hero-label">1QB Value</div>
-        <div class="pm-hero-val" style="font-size:20px;color:#3b82f6;">${val1qb > 0 ? val1qb : '-'}</div>
-        <div class="pm-hero-sub">${isB ? valSub : (valPosRank ? `POS : ${valPosRank} · OVR : ${valOvrRank ?? '–'}` : '-')}</div>
-      </div>
-      <div class="pm-hero-stat${winsf}" style="padding:10px 10px;">
-        <div class="pm-hero-label">SF Value</div>
-        <div class="pm-hero-val" style="font-size:20px;">${valsf > 0 ? valsf : '-'}</div>
-        <div class="pm-hero-sub">${isB ? valSub : (sfPosRank ? `POS : ${sfPosRank} · OVR : ${sfOvrRank ?? '–'}` : '-')}</div>
-      </div>
+      ${isSf ? cardSf + card1qb : card1qb + cardSf}
     </div>
     ${scoringRow}
     ${(ss != null || oSs != null) ? `
@@ -14627,7 +14682,9 @@ function _compareWireView(p1, p2) {
     if (!_axis.length) _axis = [new Date().toISOString().slice(0, 10)];
     const makeTrace = (p, isB, color) => {
       if (isB) {
-        const v = (p.stats && p.stats.value) != null ? p.stats.value : null;
+        const v = _cmpIsSf()
+          ? ((p.stats && p.stats.sf_value) != null ? p.stats.sf_value : (p.stats && p.stats.value))
+          : ((p.stats && p.stats.value) != null ? p.stats.value : null);
         return {
           x: _axis, y: _axis.map(() => v), mode: 'lines', name: p.name,
           line: { color, width: 2, dash: 'dash' },
@@ -14635,7 +14692,7 @@ function _compareWireView(p1, p2) {
         };
       }
       const dates = (p.value_history || []).map(h => h.as_of_date || h.date);
-      const vals  = (p.value_history || []).map(h => h.value);
+      const vals  = (p.value_history || []).map(h => _cmpHistValue(h));
       return {
         x: dates, y: vals, mode: 'lines', name: p.name,
         line: { color, width: 2.5 },
@@ -14651,10 +14708,11 @@ function _compareWireView(p1, p2) {
     // range rather than a single hard line.
     const _bandShapes = [];
     [[p1, b1, '59,130,246'], [p2, b2, '245,158,11']].forEach(([p, isB, rgb]) => {
-      if (isB && Array.isArray(p.value_band) && p.value_band.length === 2) {
+      const band = _cmpIsSf() ? (p.sf_value_band || p.value_band) : p.value_band;
+      if (isB && Array.isArray(band) && band.length === 2) {
         _bandShapes.push({
           type: 'rect', xref: 'paper', x0: 0, x1: 1, yref: 'y',
-          y0: p.value_band[0], y1: p.value_band[1],
+          y0: band[0], y1: band[1],
           fillcolor: `rgba(${rgb},0.10)`, line: { width: 0 }, layer: 'below',
         });
       }
@@ -14739,13 +14797,19 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
     return '<tr><th class="cmp3-rowlbl">' + esc(label) + '</th>' + cells + '</tr>';
   }
 
+  const isSf = _cmpIsSf();
   const rows = [
-    row('Dynasty Value (1QB)', players.map(p => st(p).value), 'max', v => v == null ? '&ndash;' : Math.round(v)),
-    row('Superflex Value', players.map(p => st(p).sf_value), 'max', v => v == null ? '&ndash;' : Math.round(v)),
-    row('Overall Rank', players.map(p => st(p).value_ovr_rank), 'min', v => v == null ? '&ndash;' : ('#' + v)),
-    row('Position Rank', players.map(p => (p.pos_rank_label || st(p).pos_rank_label)), null, v => v || '&ndash;'),
-    row('Dynasty ADP', players.map(p => st(p).adp && st(p).adp.dynasty_1qb), 'min', v => (v == null || v === '') ? '&ndash;' : v),
-    row('Redraft ADP', players.map(p => st(p).adp && st(p).adp.redraft_1qb), 'min', v => (v == null || v === '') ? '&ndash;' : v),
+    row(isSf ? 'Superflex Value' : 'Dynasty Value (1QB)',
+      players.map(p => isSf ? st(p).sf_value : st(p).value), 'max', v => v == null ? '&ndash;' : Math.round(v)),
+    row(isSf ? '1QB Value' : 'Superflex Value',
+      players.map(p => isSf ? st(p).value : st(p).sf_value), 'max', v => v == null ? '&ndash;' : Math.round(v)),
+    row('Overall Rank', players.map(p => isSf ? st(p).sf_value_ovr_rank : st(p).value_ovr_rank), 'min', v => v == null ? '&ndash;' : ('#' + v)),
+    row('Position Rank', players.map(p => {
+      if (isSf) return p.sf_pos_rank_label || st(p).sf_pos_rank_label || p.pos_rank_label || st(p).pos_rank_label;
+      return p.pos_rank_label || st(p).pos_rank_label;
+    }), null, v => v || '&ndash;'),
+    row('Dynasty ADP', players.map(p => st(p).adp && (isSf ? st(p).adp.dynasty_sf : st(p).adp.dynasty_1qb)), 'min', v => (v == null || v === '') ? '&ndash;' : v),
+    row('Redraft ADP', players.map(p => st(p).adp && (isSf ? st(p).adp.redraft_sf : st(p).adp.redraft_1qb)), 'min', v => (v == null || v === '') ? '&ndash;' : v),
     row('Age', players.map(p => p.age), 'min', v => v == null ? '&ndash;' : (Math.round(v * 10) / 10)),
     row((ppgSeason ? ppgSeason + ' ' : '') + 'PPG', players.map(p => st(p).ppg), 'max', v => v == null ? '&ndash;' : v),
     row('Start/Sit score', players.map(p => st(p).start_score), 'max', v => v == null ? '&ndash;' : (Math.round(v * 10) / 10)),
@@ -15083,7 +15147,7 @@ function _renderTripleValueChart(players) {
   const textColor = _ct.text || (isDark ? '#9ca3af' : '#6b7280');
   const traces = players.map((p, i) => ({
     x: (p.value_history || []).map(h => h.as_of_date || h.date),
-    y: (p.value_history || []).map(h => h.value),
+    y: (p.value_history || []).map(h => _cmpHistValue(h)),
     mode: 'lines', name: p.name,
     line: { color: _CMP3_COLORS[i], width: 2.5 },
     hovertemplate: '<b>' + (p.name || '') + '</b><br>%{x}<br>Value: %{y}<extra></extra>',

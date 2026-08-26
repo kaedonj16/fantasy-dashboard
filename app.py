@@ -14396,18 +14396,21 @@ def _trade_future_outlook(give_ids, get_ids, is_sf=False, current_pids=None):
 
 @app.route("/api/players")
 def api_players():
-    """Compact player list for comparison search. No league context required.
+    """Compact player list for comparison search.
 
     Query params:
         page  (int, default 1)   -- 1-based page number
         limit (int, default 0)   -- results per page; 0 = return all (legacy)
         q     (str, optional)    -- prefix/substring filter applied before paging
+        league_type (str)        -- 1qb (default) or sf; controls sort value
     """
     try:
         from utils.utils import load_players_index
         players_index = load_players_index() or {}
         value_table = get_model_value_table_cached() or []
         value_map = {str(p.get("id")): p for p in value_table}
+        league_type = str(request.args.get("league_type", "1qb")).strip().lower()
+        is_sf = league_type in ("sf", "superflex")
 
         results = []
         for pid, meta in players_index.items():
@@ -14423,12 +14426,14 @@ def api_players():
                 "value": v.get("value", 0),
                 "sf_value": v.get("sf_value", 0),
                 "pos_rank_label": v.get("pos_rank_label", ""),
+                "sf_pos_rank_label": v.get("sf_pos_rank_label", ""),
                 "rank_change_7d": v.get("rank_change_7d"),
                 "espnHeadshot": meta.get("espnHeadshot", ""),
             })
 
-        # Sort by value descending so most relevant players appear first
-        results.sort(key=lambda x: x["value"] or 0, reverse=True)
+        # Sort by the viewer's format so SF search surfaces QBs the way pos rank does.
+        sort_key = "sf_value" if is_sf else "value"
+        results.sort(key=lambda x: x[sort_key] or 0, reverse=True)
 
         # Optional substring filter
         q = request.args.get("q", "").strip().lower()
@@ -16551,6 +16556,7 @@ def _compute_compare_baselines():
     out = []
     for pos, t, chunk, ids, lo, hi in tiers:
         _tier_vals = [v for v in (_val(i, "value") for i in ids) if v is not None]
+        _sf_tier_vals = [v for v in (_val(i, "sf_value") for i in ids) if v is not None]
         out.append({
             "player_id": f"avg-{pos}-{t}",
             "name": f"Avg {pos}{t}",
@@ -16561,6 +16567,7 @@ def _compute_compare_baselines():
             # Dynasty-value spread across the tier, so the compare chart can draw
             # the tier as a shaded band rather than a single flat line.
             "value_band": [round(min(_tier_vals)), round(max(_tier_vals))] if _tier_vals else None,
+            "sf_value_band": [round(min(_sf_tier_vals)), round(max(_sf_tier_vals))] if _sf_tier_vals else None,
             "espnHeadshot": "",
             "stats": {
                 "value": _mean([_val(i, "value") for i in ids]),
