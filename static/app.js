@@ -5949,15 +5949,25 @@ window.initTradePage = function initTradePage(root = document) {
       }).join('');
     }
 
-    function switchTab(name) {
+    function applySuggGating() {
+      // Non-PRO: show only the upgrade CTA. Hide Build Around / Strategy entirely
+      // so free users don't see a second locked "Pro Feature" panel under the paywall.
       const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+      const banner = root.querySelector("#otcSuggPaywall");
+      const content = root.querySelector("#otcSuggProContent");
+      if (banner) banner.style.display = hasPremium ? "none" : "";
+      if (content) content.style.display = hasPremium ? "" : "none";
+      return hasPremium;
+    }
+    applySuggGating();
+
+    function switchTab(name) {
+      const hasPremium = applySuggGating();
       if (name === "suggestions" && !hasPremium) {
         // Switch to the tab so the upgrade CTA is visible, then show the modal on top.
         tabs.forEach(t => t.classList.toggle("is-active", t.dataset.tab === name));
         calcTab.style.display = "none";
         suggTab.style.display = "";
-        const banner = root.querySelector("#otcSuggPaywall");
-        if (banner) banner.style.display = "";
         if (typeof showPaywall === "function") showPaywall("trade-suggestions");
         const url = new URL(window.location.href);
         url.searchParams.set("tab", "suggestions");
@@ -6077,9 +6087,9 @@ window.initTradePage = function initTradePage(root = document) {
     if (_btnSearchSend) _btnSearchSend.addEventListener("click", () => _setSearchMode("send"));
     _setSearchMode(_searchMode);  // apply persisted mode (sets active button + placeholder)
 
-    // Restore last searched player
+    // Restore last searched player (PRO only — the search UI is hidden otherwise)
     const _lastPlayer = (() => { try { return JSON.parse(localStorage.getItem('ti-last-player') || 'null'); } catch(_) { return null; } })();
-    if (_lastPlayer && _lastPlayer.id) {
+    if (applySuggGating() && _lastPlayer && _lastPlayer.id) {
       playerInput.value = _lastPlayer.name || '';
       runSearchForCurrent(_lastPlayer.id, _lastPlayer.name || '');
     }
@@ -8784,6 +8794,10 @@ window.initTradePage = function initTradePage(root = document) {
           if (premiumInput) premiumInput.value = "true";
           const lockIcon = root.querySelector("#targetsLockIcon");
           if (lockIcon) lockIcon.style.display = "none";
+          const banner = root.querySelector("#otcSuggPaywall");
+          const content = root.querySelector("#otcSuggProContent");
+          if (banner) banner.style.display = "none";
+          if (content) content.style.display = "";
         }
       } catch (_) {}
     })();

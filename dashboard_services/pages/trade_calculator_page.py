@@ -131,6 +131,9 @@ def build_trade_calculator_body(
 
     is_guest_str = 'true' if is_guest else 'false'
     has_premium_str = 'true' if has_premium else 'false'
+    # Non-PRO users only see the Suggestions paywall CTA — hide Build Around / Strategy.
+    sugg_paywall_display = "display:none;" if has_premium else ""
+    sugg_pro_display = "" if has_premium else "display:none;"
 
     # League type toggle: checkbox with 1QB and SF labels
     sf_checked = ' checked' if is_superflex else ''
@@ -924,7 +927,7 @@ def build_trade_calculator_body(
 
           <div id="otcSuggestionsTab" style="display:none;">
             <!-- Upgrade CTA shown when user doesn't have PRO (hidden by JS when premium) -->
-            <div id="otcSuggPaywall" style="display:none;text-align:center;padding:56px 16px 40px;">
+            <div id="otcSuggPaywall" style="{sugg_paywall_display}text-align:center;padding:56px 16px 40px;">
               <i class="fa-solid fa-lock" style="font-size:28px;color:var(--text-muted);opacity:.5;"></i>
               <div style="font-weight:700;font-size:17px;margin-top:14px;">Trade Suggestions is a PRO feature</div>
               <div style="font-size:13px;color:var(--text-muted);margin:6px 0 20px;max-width:340px;margin-left:auto;margin-right:auto;">
@@ -936,6 +939,8 @@ def build_trade_calculator_body(
                 Upgrade to PRO &rarr;
               </button>
             </div>
+            <!-- Build Around / Strategy tools — hidden when the user is not PRO -->
+            <div id="otcSuggProContent" style="{sugg_pro_display}">
             <!-- Sub-tab bar -->
             <div class="otc-sugg-subtab-bar">
               <div class="otc-sugg-subtab-toggle" data-br-slide-tabs>
@@ -1026,6 +1031,7 @@ def build_trade_calculator_body(
               <div id="otcStrategyCards"></div>
 
             </div><!-- /#otcStrategyPanel -->
+            </div><!-- /#otcSuggProContent -->
 
           </div><!-- /#otcSuggestionsTab -->
 
