@@ -146,6 +146,16 @@ def test_league_players_fills_missing_proj_ppg_from_sleeper():
     assert "fetch_sleeper_season_projections" in source
     assert "Sleeper projected PPG fill skipped" in source
     assert "if _player.get(\"proj_ppg\"):" in source
+    assert "unprojected_season_injury" in source
+    assert '_player["proj_ppg"] = 0.0' in source
+
+
+def test_draft_room_roster_projection_prefers_proj_ppg_over_last_season():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "function _pPpg(p){ return p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null); }" in source
+    assert "var _ppgv = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);" in source
+    assert "function _pPpg(p){ return p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null); }" not in source
 
 
 def test_recommendation_is_a_rank_not_a_declining_numeric_grade():

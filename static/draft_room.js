@@ -4283,8 +4283,9 @@
     if (bench.length){ bench.forEach(function(p){ html += slotRow('BN', p); }); }
     else { html += slotRow('BN', null); }
     html += '</div>';
-    // Roster projection: use Sleeper ppg (preferred) or proj_ppg fallback
-    function _pPpg(p){ return p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null); }
+    // Roster projection: upcoming-season proj_ppg (including explicit 0 for
+    // rest-of-season IR). Last-season actual ppg is only a missing-proj fallback.
+    function _pPpg(p){ return p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null); }
     var projPlayers = mine.filter(function(p){ return _pPpg(p) != null; });
     if (projPlayers.length >= 2){
       var myProjTotal = 0;
@@ -5549,7 +5550,7 @@
       var _ssSet = {};
       starters.forEach(function(s){ if (s.p) _ssSet[String(s.p.id)] = true; });
       mine.forEach(function(p){
-        var _ppgv = p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null);
+        var _ppgv = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
         if (_ppgv != null){ sumProjTotal += _ppgv; sumProjCount++; }
         var _fp = playersById[String(p.id)] || p;
         var _t = tierOf(_fp); if (_t != null && _t <= 2) sumT12++;

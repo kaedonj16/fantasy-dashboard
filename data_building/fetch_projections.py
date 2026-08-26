@@ -9,6 +9,26 @@ from typing import Optional
 
 _CACHE_DIR = Path(__file__).parent.parent / "cache"
 
+# Sleeper drops the weekly stat line (proj PPG 0) once a player is out for the
+# year. FantasyPros preseason files and last-season actuals still carry the
+# healthy number, so consumers must not refill those players from fallbacks.
+_SEASON_ENDING_INJURY = frozenset({"IR", "PUP", "NFI"})
+
+
+def unprojected_season_injury(injury_status: Optional[str], sleeper_ppg) -> bool:
+    """True when Sleeper has zeroed/omitted a player who is out for the year.
+
+    PUP/IR players Sleeper still projects (expected return) keep that number.
+    """
+    status = str(injury_status or "").strip().upper()
+    if status not in _SEASON_ENDING_INJURY:
+        return False
+    try:
+        ppg = float(sleeper_ppg or 0)
+    except (TypeError, ValueError):
+        ppg = 0.0
+    return ppg <= 0
+
 
 def fetch_sleeper_season_projections(
     year: int,

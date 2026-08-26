@@ -29,6 +29,14 @@ from utils.lineup_slots import canonicalize_slot
 
 logger = logging.getLogger(__name__)
 
+
+def _ctx_injury_status(ctx: dict, pid: str) -> str:
+    players = ctx.get("players") or {}
+    p = players.get(pid) or players.get(str(pid)) or {}
+    if isinstance(p, dict):
+        return str(p.get("injury_status") or "").strip()
+    return ""
+
 _MIN_STD      = 8.0    # floor on std dev
 _N_SIMS       = 10_000
 _BENCH_SLOTS  = {"BN", "IR", "TAXI"}
@@ -614,9 +622,12 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
             if _os.path.exists(_path):
                 with open(_path) as _f:
                     _usage_data = _json.load(_f)
+                from data_building.fetch_projections import unprojected_season_injury
                 for p in _usage_data:
                     pid = str(p.get("id") or "")
                     if not pid or pid in ppg_map:
+                        continue
+                    if unprojected_season_injury(_ctx_injury_status(ctx, pid), 0):
                         continue
                     ppg = float((p.get("usage") or {}).get(ppg_key) or 0)
                     pos = str(p.get("position") or "").upper()
@@ -1168,10 +1179,13 @@ def _estimate_from_rosters(
                     _usage_data = _json.load(_f)
                 break
         if _usage_data:
+            from data_building.fetch_projections import unprojected_season_injury
             for p in _usage_data:
                 pid = str(p.get("id") or "")
                 if not pid or pid in ppg_map:
                     continue  # already have a Sleeper projection for this player
+                if unprojected_season_injury(_ctx_injury_status(ctx, pid), 0):
+                    continue
                 ppg = float((p.get("usage") or {}).get(ppg_key) or 0)
                 pos = str(p.get("position") or "").upper()
                 ppg_map[pid] = {"ppg": ppg, "pos": pos}
