@@ -605,7 +605,7 @@ function openPlayerModal(playerId, playerName, opts) {
                   <span class="skeleton skeleton-line" style="width:26px;height:9px;"></span>
                   <span class="skeleton skeleton-line" style="width:42px;height:9px;"></span>
                 </div>
-                <div class="pm-adp-scale"><span class="skeleton skeleton-line" style="width:100%;height:6px;margin-top:20px;"></span></div>
+                <div class="pm-adp-scale"><span class="skeleton skeleton-line" style="width:100%;height:6px;margin-top:8px;"></span></div>
                 <div class="pm-adp-ends"></div>
               </div>`).join('')}
           </div>
@@ -954,10 +954,12 @@ function openPlayerModal(playerId, playerName, opts) {
             }
             const ticktext = tickvals.map(i => dates[i]);
 
-            const mutedColor = getComputedStyle(document.documentElement)
-              .getPropertyValue('--text-muted').trim() || '#6b7280';
-            const gridColor = getComputedStyle(document.documentElement)
-              .getPropertyValue('--border').trim() || 'rgba(127,127,127,.18)';
+            const rootStyle = getComputedStyle(document.documentElement);
+            const mutedColor = rootStyle.getPropertyValue('--text-muted').trim() || '#6b7280';
+            const gridColor = rootStyle.getPropertyValue('--border').trim() || 'rgba(127,127,127,.18)';
+            // Matches the .pm-adp-dot border (source-card surface) so the chart's
+            // end markers read like the ADP dots.
+            const rowColor = rootStyle.getPropertyValue('--row').trim() || '#ffffff';
 
             const hover1qb = dates.map((date, i) => `<b>${date}</b><br>1QB: ${y1qb[i]?.toFixed(1) || ''}`);
             const hoverSF  = dates.map((date, i) => `<b>${date}</b><br>SF: ${ysf[i]?.toFixed(1) || ''}`);
@@ -980,9 +982,22 @@ function openPlayerModal(playerId, playerName, opts) {
               text: hoverSF,
             };
 
-            const traces = hasDualSeries ? [trace1qb, traceSF] : [
+            const lineTraces = hasDualSeries ? [trace1qb, traceSF] : [
               { ...trace1qb, name: 'Value', text: dates.map((date, i) => `<b>${date}</b><br>Value: ${y1qb[i]?.toFixed(1) || ''}`) }
             ];
+            // A single marker at the latest point of each line — echoes the
+            // ADP source dots (colored fill, surface-colored ring) so the two
+            // blocks share a visual language.
+            const endDot = (color, yArr) => ({
+              x: [xIdx[n - 1]], y: [yArr[n - 1]],
+              type: 'scatter', mode: 'markers', showlegend: false, hoverinfo: 'skip',
+              marker: { color, size: 8, line: { color: rowColor, width: 2 } },
+            });
+            const traces = lineTraces.concat(
+              hasDualSeries
+                ? [endDot('#3b82f6', y1qb), endDot('#f59e0b', ysf)]
+                : [endDot('#3b82f6', y1qb)]
+            );
 
             const isMobile = window.innerWidth <= 768;
             const chartHeight = isMobile ? 200 : 250;
@@ -1012,11 +1027,13 @@ function openPlayerModal(playerId, playerName, opts) {
               yaxis: {
                 showgrid: true,
                 gridcolor: gridColor,
+                griddash: 'dot',
+                gridwidth: 1,
                 zeroline: false,
                 showticklabels: true,
                 range: [Math.min(yMin - yPad, yFloor), yMax + yPad],
                 tickfont: { size: 11, color: mutedColor },
-                nticks: 5,
+                nticks: 4,
               },
               hovermode: 'closest',
             };
