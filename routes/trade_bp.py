@@ -53,7 +53,8 @@ _TRADE_CALCULATOR_SEO_CONTENT = """
               <span style="font-size:13px;font-weight:700;">2. Compare Values</span>
             </div>
             <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.55;">
-              Values are built from thousands of real trades across Sleeper, ESPN, and Yahoo leagues, not guesses.
+              Values are built from thousands of real Sleeper dynasty trades, not guesses.
+              They still apply to ESPN, Yahoo, and MFL rosters.
             </p>
           </div>
           <div style="background:var(--bg-alt,rgba(0,0,0,.03));border:1px solid var(--border);border-radius:12px;padding:16px 18px;">
@@ -281,8 +282,8 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
         league_id, "trade", body, platform, season,
         description=(
             "Free fantasy football trade calculator. Compare any trade with dynasty and "
-            "redraft player values built from thousands of real Sleeper, ESPN, and Yahoo "
-            "trades. Get instant verdicts, superflex values, and pick valuations."
+            "redraft player values built from thousands of real Sleeper trades. "
+            "Get instant verdicts, superflex values, and pick valuations."
         ),
     )
 
@@ -1221,8 +1222,8 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         league_id, "trade-intel", body_html, platform, season,
         description=(
             "Live fantasy football trade values and market trends from thousands of real "
-            "dynasty and redraft trades. Spot buy-low and sell-high players with daily-updated "
-            "values for Sleeper, ESPN, and Yahoo leagues."
+            "Sleeper dynasty trades. Spot buy-low and sell-high players with daily-updated "
+            "values. ESPN, Yahoo, and MFL rosters still get the same values."
         ),
     )
 
@@ -1678,9 +1679,9 @@ def page_trade_database(platform: str, season: int, league_id: str):
         "Fantasy Football Trade Database - Search Real Dynasty Trades | BR Fantasy",
         league_id, "trade-database", body_html, platform, season,
         description=(
-            "Search thousands of real fantasy football trades to see how players and draft "
+            "Search thousands of real Sleeper dynasty trades to see how players and draft "
             "picks are actually valued. Filter by player to study dynasty and redraft market "
-            "prices across Sleeper, ESPN, and Yahoo leagues."
+            "prices. Values still apply to ESPN, Yahoo, and MFL rosters."
         ),
     )
 

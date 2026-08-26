@@ -20,7 +20,8 @@ import pandas as pd  # noqa: E402
 
 from dashboard_services.awards import compute_awards_season  # noqa: E402
 
-_APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app.py")
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_DASH = os.path.join(_ROOT, "dashboard_services", "pages", "dashboard_page.py")
 
 
 def test_dashboard_calls_awards_with_enough_args():
@@ -31,18 +32,18 @@ def test_dashboard_calls_awards_with_enough_args():
     ]
     n_required = len(required)
 
-    tree = ast.parse(open(_APP, encoding="utf-8").read())
+    tree = ast.parse(open(_DASH, encoding="utf-8").read())
     calls = [
         n for n in ast.walk(tree)
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
         and n.func.id == "compute_awards_season"
     ]
-    assert calls, "expected a compute_awards_season() call in app.py"
+    assert calls, "expected a compute_awards_season() call in dashboard_page.py"
     for c in calls:
         passed = len(c.args) + len(c.keywords)
         has_star = any(isinstance(a, ast.Starred) for a in c.args)
         assert has_star or passed >= n_required, (
-            f"compute_awards_season() call at app.py:{c.lineno} passes {passed} "
+            f"compute_awards_season() call at dashboard_page.py:{c.lineno} passes {passed} "
             f"args but the function requires {n_required} — the dashboard would "
             f"500 with a TypeError"
         )

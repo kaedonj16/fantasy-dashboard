@@ -1,4 +1,4 @@
-"""Scout tab smoke test: player rows include projected PPG.
+"""Scout tab smoke test: player rows include the week projection chip.
 
 Does not import Flask. Live value-table lookup is stubbed.
 Matchups must use the live hub shape (left/right), with team1/team2 fallback.
@@ -81,7 +81,7 @@ def test_scout_renders_from_live_left_right_matchups(monkeypatch):
     ]))
     assert "No matchup found" not in html
     assert "Rival Star" in html
-    assert "18.4 PPG" in html
+    assert "18.4 proj" in html
     assert "scout-ppg" in html
     assert "Rival FC" in html
     assert "Sleeper proj" in html
@@ -98,7 +98,7 @@ def test_scout_falls_back_to_team1_team2(monkeypatch):
         }
     ]))
     assert "Rival Star" in html
-    assert "18.4 PPG" in html
+    assert "18.4 proj" in html
 
 
 def test_scout_missing_proj_is_labeled(monkeypatch):

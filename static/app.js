@@ -13463,8 +13463,11 @@ function _buildCompareHeroHTML(p, other) {
   const _win = (mine, theirs) => (mine != null && theirs != null && Number(mine) > Number(theirs));
   const win1qb = _win(p.stats?.value, _o.value) ? ' compare-hero-win' : '';
   const winsf  = _win(p.stats?.sf_value, _o.sf_value) ? ' compare-hero-win' : '';
-  const winppg = _win(ppg, _o.ppg) ? ' compare-hero-win' : '';
+    const winppg = _win(ppg, _o.ppg) ? ' compare-hero-win' : '';
   const wintot = _win(total, _o.total_pts) ? ' compare-hero-win' : '';
+  const ss = p.stats?.start_score;
+  const oSs = _o.start_score;
+  const winss = _win(ss, oSs) ? ' compare-hero-win' : '';
 
   const scoringCols = (ppg != null ? 1 : 0) + (total != null ? 1 : 0);
   const scoringRow = hasScoringRow ? `
@@ -13523,6 +13526,14 @@ function _buildCompareHeroHTML(p, other) {
       </div>
     </div>
     ${scoringRow}
+    ${(ss != null || oSs != null) ? `
+    <div class="compare-hero-row" style="grid-template-columns:1fr;margin-top:6px;">
+      <div class="pm-hero-stat${winss}" style="padding:10px 10px;">
+        <div class="pm-hero-label">Start/Sit score</div>
+        <div class="pm-hero-val" style="font-size:20px;">${ss != null ? (Math.round(ss * 10) / 10) : '–'}</div>
+        <div class="pm-hero-sub">this week</div>
+      </div>
+    </div>` : ''}
     ${adpRow}
   `;
 }
