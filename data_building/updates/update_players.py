@@ -15,8 +15,6 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-import requests
-
 from data_building.external_data.player_current_team import (
     normalize_nfl_team,
     update_player_values_teams,
@@ -47,10 +45,13 @@ def _write_json(path: Union[str, Path], data: Any) -> None:
 
 
 def fetch_sleeper_players() -> dict:
+    # Lazy import: unit CI installs a slim dep set without requests; callers that
+    # only pass sleeper_players=... (tests) never need the network client.
+    import requests
+
     res = requests.get(SLEEPER_PLAYERS_URL, timeout=60)
     res.raise_for_status()
     return res.json()
-
 
 def _bye_by_team() -> Dict[str, int]:
     """team abbrev -> bye week from teams_index (best-effort)."""
