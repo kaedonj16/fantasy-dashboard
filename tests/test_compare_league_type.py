@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+# Rebased onto main for fresh CI.
+
 ROOT = Path(__file__).resolve().parents[1]
 APP_JS = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
 APP_PY = (ROOT / "app.py").read_text(encoding="utf-8")
