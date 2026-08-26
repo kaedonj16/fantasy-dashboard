@@ -132,12 +132,20 @@ def test_stripe_and_push_prefer_account_id():
 def test_weekly_hub_and_scout_live_in_page_modules():
     hub = (ROOT / "dashboard_services" / "pages" / "weekly_hub_page.py").read_text(encoding="utf-8")
     scout = (ROOT / "dashboard_services" / "pages" / "scout_page.py").read_text(encoding="utf-8")
+    optimal = (ROOT / "dashboard_services" / "pages" / "optimal_page.py").read_text(encoding="utf-8")
+    commish = (ROOT / "dashboard_services" / "pages" / "commissioner_page.py").read_text(encoding="utf-8")
     assert "def build_weekly_hub_body" in hub
     assert "def build_scout_body" in scout
+    assert "def build_optimal_body" in optimal
+    assert "def build_commissioner_body" in commish
     assert "from dashboard_services.pages.weekly_hub_page import build_weekly_hub_body" in APP_PY
     assert "from dashboard_services.pages.scout_page import build_scout_body" in APP_PY
+    assert "from dashboard_services.pages.optimal_page import build_optimal_body" in APP_PY
+    assert "from dashboard_services.pages.commissioner_page import" in APP_PY
     assert "def build_weekly_hub_body" not in APP_PY
     assert "def build_scout_body" not in APP_PY
+    assert "def build_optimal_body" not in APP_PY
+    assert "def build_commissioner_body" not in APP_PY
 
 
 def test_graphs_data_contract_is_documented():
@@ -146,9 +154,11 @@ def test_graphs_data_contract_is_documented():
 
 
 def test_commissioner_metrics_helpers():
-    assert "def commissioner_is_inactive" in APP_PY
-    assert "def commissioner_value_share_pct" in APP_PY
-    # Execute the helpers without importing app.py (Flask-heavy).
+    commish = (ROOT / "dashboard_services" / "pages" / "commissioner_page.py").read_text(encoding="utf-8")
+    assert "def commissioner_is_inactive" in commish
+    assert "def commissioner_value_share_pct" in commish
+    assert "Read-only analytics" in commish
+    # Execute the helpers without importing Flask-heavy modules.
     ns = {}
     exec(
         "def commissioner_is_inactive(txns, games_played):\n"

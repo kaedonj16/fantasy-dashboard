@@ -5747,13 +5747,14 @@ window.initTradePage = function initTradePage(root = document) {
 
     const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
     if (!hasPremium) {
-      window.brEmptyState(body, {
-        icon: 'lock',
-        title: 'PRO trade tools',
-        message: 'Unlock targets tailored to your roster gaps.',
-        compact: true,
-        cta: { label: 'Upgrade', className: 'pi-locked-btn', onClick: function () { if (typeof showPaywall === 'function') showPaywall('trade-suggestions'); } }
-      });
+      body.innerHTML = '<div class="otc-locked-preview" style="padding:4px 0 8px;">'
+        + '<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text-muted);">PRO preview</div>'
+        + '<div style="filter:blur(4px);user-select:none;pointer-events:none;border:1px solid var(--border);border-radius:10px;padding:12px;">'
+        + '<div style="font-weight:700;font-size:13px;">Target: a rival with surplus at your need</div>'
+        + '<div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Package a depth piece for their starter.</div>'
+        + '</div>'
+        + '<button type="button" class="pi-locked-btn" style="margin-top:10px;" onclick="if (typeof showPaywall === \'function\') showPaywall(\'trade-suggestions\')">Unlock roster suggestions</button>'
+        + '</div>';
       return;
     }
 
@@ -14652,6 +14653,7 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
     row('Redraft ADP', players.map(p => st(p).adp && st(p).adp.redraft_1qb), 'min', v => (v == null || v === '') ? '&ndash;' : v),
     row('Age', players.map(p => p.age), 'min', v => v == null ? '&ndash;' : (Math.round(v * 10) / 10)),
     row((ppgSeason ? ppgSeason + ' ' : '') + 'PPG', players.map(p => st(p).ppg), 'max', v => v == null ? '&ndash;' : v),
+    row('Start/Sit score', players.map(p => st(p).start_score), 'max', v => v == null ? '&ndash;' : (Math.round(v * 10) / 10)),
     row('Total Pts', players.map(p => st(p).total_pts), 'max', v => v == null ? '&ndash;' : v),
     row('Games', players.map(p => st(p).ppg_games), null, v => (v == null || v === '') ? '&ndash;' : v),
   ].join('');
@@ -14794,7 +14796,7 @@ function cmp3EnsureMetrics() {
     if (!host.isConnected) return;
     const cfg = res[0] || {};
     const datas = res.slice(1);
-    if (datas.every(function (d) { return d.premium; })) { host.innerHTML = '<div class="compare-pick-empty">Advanced metrics are a PRO feature.</div>'; return; }
+    if (datas.every(function (d) { return d.premium; })) { host.innerHTML = '<div class="compare-pick-empty">No advanced metrics available for this season.</div>'; return; }
     if (datas.every(function (d) { return !Object.keys(d.metrics).length; })) { host.innerHTML = '<div class="compare-pick-empty">No advanced metrics available for this season.</div>'; return; }
     host.innerHTML = _cmp3MetricTable(c.players, datas, cfg);
   }).catch(function () {
@@ -15424,12 +15426,15 @@ async function checkTradeOutcome(btn) {
       (data.sent    || []).forEach(r => { nowRows += buildNowRow(r, 'GAVE', 'outcome-gave'); });
 
       const thenSection = thenRows ? `<div class="outcome-section-label">At Trade Date</div><div class="outcome-rows">${thenRows}</div>` : '';
+      const thenNote = data.then_estimated
+        ? '<div class="outcome-est-badge">Approximate (nearest board).</div>' : '';
       resultEl.innerHTML = `
         <div class="trade-outcome-wrap">
           <div class="outcome-header">
             <span class="outcome-verdict ${verdictCls}">${data.verdict}</span>
             <span class="outcome-delta">${firstTeam.team_name || 'Team 1'}: ${sign}${data.net_delta_now.toFixed(0)} value since trade</span>
           </div>
+          ${thenNote}
           ${thenSection}
           <div class="outcome-section-label outcome-section-label--current">Current Value</div>
           <div class="outcome-rows">${nowRows}</div>

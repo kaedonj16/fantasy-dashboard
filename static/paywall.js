@@ -92,6 +92,9 @@ async function getSubscriptionInfo(userId, leagueId) {
           <li>✓ Breakout Engine candidate predictions</li>
           <li>✓ Playoff Impact simulations</li>
           <li>✓ Front Office Report</li>
+          <li>✓ Weekly Recap</li>
+          <li>✓ Custom Draft Board</li>
+          <li>✓ Draft Deep Dive Analyzer</li>
         </ul>
         <div class="paywall-pricing">
           <div class="pricing-option">

@@ -308,6 +308,13 @@ def rankings():
             "rankings": result,
             "paused": paused,
         }
+        as_of = None
+        for row in result:
+            lu = row.get("last_updated")
+            if lu and (as_of is None or str(lu) > str(as_of)):
+                as_of = lu
+        if as_of:
+            payload["last_updated"] = str(as_of)[:10]
         if paused:
             payload["reason"] = (
                 "Rookie prospect rankings are paused until the next draft cycle."

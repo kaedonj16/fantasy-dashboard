@@ -165,7 +165,7 @@ def refresh_espn_return_dates(*, force: bool = False) -> Dict[str, dict]:
     try:
         payload = _fetch_espn_json()
     except Exception:
-        logger.debug("espn injury fetch failed", exc_info=True)
+        logger.warning("espn injury fetch failed", exc_info=True)
         if disk:
             _CACHE["by_pid"] = disk
             _CACHE["ts"] = now

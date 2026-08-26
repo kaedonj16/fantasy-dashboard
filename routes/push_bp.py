@@ -353,6 +353,7 @@ def api_cron_notifications():
             run_hourly()
     except Exception as exc:
         logger.warning("[cron/notifications] failed: %s", exc)
+        return jsonify({"ok": False, "error": str(exc)}), 500
     return jsonify({"ok": True})
 
 

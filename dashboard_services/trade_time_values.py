@@ -107,6 +107,12 @@ def snapshot_trade_values(
 
 def get_trade_time_value(player_id: str, as_of) -> Optional[float]:
     """Exact-date lookup. ``None`` when we have no persisted row."""
+    row = get_trade_time_row(player_id, as_of)
+    return None if row is None else row[0]
+
+
+def get_trade_time_row(player_id: str, as_of) -> Optional[tuple]:
+    """Exact-date lookup as ``(value, source)`` or ``None``."""
     day = _as_date(as_of)
     pid = str(player_id or "").strip()
     if not day or not pid:
@@ -115,19 +121,20 @@ def get_trade_time_value(player_id: str, as_of) -> Optional[float]:
         init_trade_time_values_db()
         with get_conn() as conn:
             row = conn.execute(
-                "SELECT value, value_sf FROM trade_time_values "
+                "SELECT value, value_sf, source FROM trade_time_values "
                 "WHERE player_id = %s AND as_of_date = %s",
                 (pid, day),
             ).fetchone()
         if not row:
             return None
+        source = str(row["source"] or "snapshot")
         for key in ("value", "value_sf"):
             try:
                 v = float(row[key] or 0)
             except (TypeError, ValueError, KeyError):
                 continue
             if v > 0:
-                return round(v, 1)
+                return round(v, 1), source
         return None
     except Exception:
         logger.debug("trade_time_values lookup failed", exc_info=True)
@@ -136,9 +143,16 @@ def get_trade_time_value(player_id: str, as_of) -> Optional[float]:
 
 def get_or_persist_trade_value(player_id: str, as_of) -> Optional[float]:
     """Outcome lookup: persisted row, then today's live table, then history."""
-    hit = get_trade_time_value(player_id, as_of)
-    if hit is not None:
-        return hit
+    hit = get_or_persist_trade_value_meta(player_id, as_of)
+    return None if hit is None else hit[0]
+
+
+def get_or_persist_trade_value_meta(player_id: str, as_of) -> Optional[tuple]:
+    """Like ``get_or_persist_trade_value`` but returns ``(value, source)``."""
+    val = get_trade_time_value(player_id, as_of)
+    if val is not None:
+        row = get_trade_time_row(player_id, as_of)
+        return row if row is not None else (val, "snapshot")
     day = _as_date(as_of)
     pid = str(player_id or "").strip()
     if not day or not pid:
@@ -149,10 +163,15 @@ def get_or_persist_trade_value(player_id: str, as_of) -> Optional[float]:
             snapshot_trade_values(
                 [pid], day, values=ones, values_sf=sfs, source="snapshot",
             )
-            hit = get_trade_time_value(pid, day)
-            if hit is not None:
-                return hit
-    return persist_from_history(pid, day)
+            val = get_trade_time_value(pid, day)
+            if val is not None:
+                row = get_trade_time_row(pid, day)
+                return row if row is not None else (val, "snapshot")
+    persisted = persist_from_history(pid, day)
+    if persisted is None:
+        return None
+    row = get_trade_time_row(pid, day)
+    return row if row is not None else (persisted, "backfill")
 
 
 def persist_from_history(player_id: str, as_of, *, max_gap_days: int = 30) -> Optional[float]:

@@ -263,30 +263,65 @@ def _pricing_body() -> str:
       <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;text-align:center;">
         <h2 style="margin:0 0 6px;font-size:22px;">Premium</h2>
         <div style="font-size:14px;color:var(--text-muted);">
-          Unlock advanced analytics and insights for your dynasty league
+          Unlock the shipped PRO tools. Calculator, Advanced Metrics, and Auction Values stay free.
         </div>
       </div>
       <div class="card-body" style="padding-top:28px;">
 
-        <!-- Feature list -->
+        <!-- Feature list — must match static/paywall.js .paywall-features -->
         <div style="margin-bottom:28px;">
-          <div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:12px;">What you get</div>
+          <div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:12px;">What PRO includes</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
             <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
+              <i class="fa-solid fa-handshake" style="color:#2563eb;width:16px;text-align:center;"></i>
+              Roster-Based Trade Suggestions
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
               <i class="fa-solid fa-chart-line" style="color:#2563eb;width:16px;text-align:center;"></i>
-              Full Trade Intelligence feed
+              Full Trade Intelligence feed &amp; history
             </div>
             <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
               <i class="fa-solid fa-fire" style="color:#2563eb;width:16px;text-align:center;"></i>
-              All Breakout Engine candidates
+              Breakout Engine candidate predictions
             </div>
             <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-clock-rotate-left" style="color:#2563eb;width:16px;text-align:center;"></i>
-              Player trade history
+              <i class="fa-solid fa-trophy" style="color:#2563eb;width:16px;text-align:center;"></i>
+              Playoff Impact simulations
             </div>
             <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-star" style="color:#2563eb;width:16px;text-align:center;"></i>
-              All future premium features
+              <i class="fa-solid fa-briefcase" style="color:#2563eb;width:16px;text-align:center;"></i>
+              Front Office Report
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
+              <i class="fa-solid fa-newspaper" style="color:#2563eb;width:16px;text-align:center;"></i>
+              Weekly Recap
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
+              <i class="fa-solid fa-clipboard-list" style="color:#2563eb;width:16px;text-align:center;"></i>
+              Custom Draft Board
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
+              <i class="fa-solid fa-magnifying-glass-chart" style="color:#2563eb;width:16px;text-align:center;"></i>
+              Draft Deep Dive Analyzer
+            </div>
+          </div>
+          <div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin:20px 0 12px;">Free includes</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
+              <i class="fa-solid fa-calculator" style="color:#16a34a;width:16px;text-align:center;"></i>
+              Trade calculator &amp; Sleeper comps
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
+              <i class="fa-solid fa-table" style="color:#16a34a;width:16px;text-align:center;"></i>
+              Advanced Metrics
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
+              <i class="fa-solid fa-gavel" style="color:#16a34a;width:16px;text-align:center;"></i>
+              Auction Values
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
+              <i class="fa-solid fa-file-csv" style="color:#16a34a;width:16px;text-align:center;"></i>
+              Live cheat-sheet overlay &amp; CSV
             </div>
           </div>
         </div>
