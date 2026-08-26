@@ -12760,8 +12760,8 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         # the class — the old spinner-markup target silently no-op'd and left the
         # skeleton stranded above the SSR table.
         body_html = body_html.replace(
-            '<div id="prLoading" class="sk-list" aria-hidden="true" style="margin-top:8px;">',
-            '<div id="prLoading" class="sk-list" aria-hidden="true" style="margin-top:8px;display:none;">',
+            '<div id="prLoading" class="sk-list" role="status" aria-live="polite" aria-busy="true" style="margin-top:8px;">',
+            '<div id="prLoading" class="sk-list" role="status" aria-live="polite" aria-busy="false" style="margin-top:8px;display:none;">',
         )
         body_html = body_html.replace(
             '<div id="prTableHeader" style="display:none;',
