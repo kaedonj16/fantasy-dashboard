@@ -363,6 +363,30 @@
     return 1;
   }
 
+  // 1QB (not Superflex) and 1TE (no premium) are streamable weekly slots.
+  // An empty starter is a real hole, but live recs were treating it like a
+  // must-start WR/RB and leaping remaining skill-position depth by a full
+  // starter-vs-bench gap (~8 Decision Score points). Superflex QB and TEP
+  // keep full starter utility.
+  function isStreamableSingleSlot(pos, rc, opts) {
+    pos = String(pos || '').toUpperCase(); opts = opts || {}; rc = rc || {};
+    var dedicated = +(starterRequirements(rc, !!opts.sf)[pos] || 0);
+    return (pos === 'QB' && !opts.sf && dedicated <= 1)
+        || (pos === 'TE' && (+opts.tep || 0) <= 0 && dedicated <= 1);
+  }
+
+  // Scarcity-urgency scale for waitLoss. Multi-slot holes keep full (or near-
+  // full) cliff weight; a lone streamable QB/TE slot is muted so a shelf drop
+  // there cannot leap a similarly-valued WR/RB.
+  function waitLossScaleFor(pos, missingDedicated, opts) {
+    var miss = Math.max(0, +missingDedicated || 0);
+    if (miss >= 2) return 1;
+    pos = String(pos || '').toUpperCase(); opts = opts || {};
+    var streamable = (pos === 'QB' && !opts.sf) || (pos === 'TE' && (+opts.tep || 0) <= 0);
+    if (miss >= 1) return streamable ? 0.4 : 0.6;
+    return 0.4;
+  }
+
   // Live-draft fit pressure for the next player at a position.  The ordinary
   // slot utility intentionally answers only "starter, flex, or bench?"; this
   // adds a small amount of information about how many lineup paths remain.
@@ -373,9 +397,18 @@
     pos = String(pos || '').toUpperCase();
     var role = opts.role || rosterRole(pos, counts, rc, !!opts.sf);
     var base = rosterSlotUtility(pos, counts, rc, Object.assign({}, opts, { role: role }));
+    var req = starterRequirements(rc, !!opts.sf);
+
+    // Cap streamable 1QB/1TE starters so they compete with WR4/RB4 depth
+    // instead of outranking it. Redraft is the streamable case; dynasty keeps
+    // more of the starter premium (young QBs/TEs are long-term assets).
+    if (role === 'starter' && isStreamableSingleSlot(pos, rc, opts)) {
+      var cap = opts.draftType === 'redraft' ? 0.74 : 0.80;
+      if (base > cap) base = cap;
+    }
+
     if (role !== 'starter' && role !== 'flex') return base;
 
-    var req = starterRequirements(rc, !!opts.sf);
     var missingDedicated = Math.max(0, (+req[pos] || 0) - (+counts[pos] || 0));
     var flexUsed = Math.max(0, (+counts.RB || 0) - req.RB)
                  + Math.max(0, (+counts.WR || 0) - req.WR)
@@ -721,6 +754,7 @@
     tierOf: tierOf, maxVal: maxVal, posTargets: posTargets,
     starterRequirements: starterRequirements, rosterRole: rosterRole, candidateRosterRole: candidateRosterRole,
     rosterSlotUtility: rosterSlotUtility, positionNeedUtility: positionNeedUtility,
+    isStreamableSingleSlot: isStreamableSingleSlot, waitLossScaleFor: waitLossScaleFor,
     positionRosterLimit: positionRosterLimit,
     remainingObligations: remainingObligations,
     decisionScore: decisionScore, decisionBand: decisionBand, selectDecisionCandidate: selectDecisionCandidate,

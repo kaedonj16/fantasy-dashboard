@@ -311,8 +311,55 @@ def test_live_decision_pressure_balances_wr_need_and_qb_timing():
     assert out["balanced"]["dj"] > out["balanced"]["rb4"]
     assert out["balanced"]["jayden"] > out["balanced"]["caleb"]
     assert out["balanced"]["dj"] >= out["balanced"]["otherWr"]
-    # Stronger base value and a genuine availability cliff can still put QB1 first.
-    assert out["urgentJayden"]["jayden"] > out["urgentJayden"]["dj"]
+    # A 1QB shelf cliff is real, but it must not leap two missing WR starters.
+    assert out["urgentJayden"]["dj"] >= out["urgentJayden"]["jayden"]
+
+
+def test_streamable_qb_te_need_does_not_leap_skill_depth():
+    """Empty 1QB/1TE slots must not outrank remaining WR/RB depth on need alone.
+
+    Reported shape: pick 8.04, 4 RB / 3 WR / 0 QB / 0 TE, a WR run on the board,
+    and the rec list still led with QBs/TEs because an empty streamable starter
+    scored a full 1.0 utility (~8 Decision Score points over WR4).
+    """
+    out = _run_need_cases("""(() => {
+      const rc={QB:1,RB:2,WR:3,TE:1,FLEX:1,BN:7};
+      const counts={QB:0,RB:4,WR:3,TE:0};
+      const opts={draftType:'redraft'};
+      const util=p=>C.positionNeedUtility(p,counts,rc,opts);
+      const wls=(p,miss)=>C.waitLossScaleFor(p,miss,{sf:false,tep:0});
+      const score=(base,p,waitLoss)=>C.decisionScore({
+        base:base,utility:util(p),waitLoss:waitLoss,waitLossScale:wls(p,p==='WR'||p==='RB'?0:1)});
+      const dyn=p=>C.positionNeedUtility(p,counts,rc,{draftType:'startup'});
+      const sfQb=C.positionNeedUtility('QB',counts,Object.assign({},rc,{SF:1}),{draftType:'redraft',sf:true});
+      const tepTe=C.positionNeedUtility('TE',counts,rc,{draftType:'redraft',tep:1});
+      return {
+        utility:{qb:util('QB'),wr:util('WR'),te:util('TE'),rb:util('RB'),
+          dynQb:dyn('QB'),dynTe:dyn('TE'),sfQb:sfQb,tepTe:tepTe},
+        scale:{qb:wls('QB',1),te:wls('TE',1),wrShort:wls('WR',1),wrDepth:wls('WR',0),sfQb:C.waitLossScaleFor('QB',1,{sf:true,tep:0})},
+        recs:{wr:score(88,'WR',5),qb:score(88,'QB',5),te:score(88,'TE',5),
+          qbReach:score(86,'QB',3),wrValue:score(88,'WR',4)},
+        cliff:{wr:score(88,'WR',4),qb:score(92,'QB',18)}
+      };
+    })()""")
+
+    # Streamable empty starters sit near WR4/RB4 depth, not at full 1.0.
+    assert out["utility"]["qb"] < 0.85
+    assert out["utility"]["te"] < 0.85
+    assert abs(out["utility"]["qb"] - out["utility"]["wr"]) < 0.12
+    # Superflex QB and TEP keep the full starter premium.
+    assert out["utility"]["sfQb"] > out["utility"]["qb"]
+    assert out["utility"]["tepTe"] > out["utility"]["te"]
+    assert out["utility"]["dynQb"] >= out["utility"]["qb"]
+    # 1QB/1TE scarcity is muted; a WR still missing a dedicated slot is not.
+    assert out["scale"]["qb"] == out["scale"]["te"] == 0.4
+    assert out["scale"]["wrShort"] == 0.6
+    assert out["scale"]["sfQb"] == 0.6
+    # At-value WR depth beats an ordinary empty-slot QB/TE; a true cliff can still win.
+    assert out["recs"]["wr"] > out["recs"]["qb"]
+    assert out["recs"]["wrValue"] > out["recs"]["qbReach"]
+    assert out["recs"]["wr"] > out["recs"]["te"]
+    assert out["cliff"]["qb"] > out["cliff"]["wr"]
 
 
 def test_wait_loss_scale_damps_single_slot_scarcity():
