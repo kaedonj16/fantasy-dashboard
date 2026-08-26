@@ -19,6 +19,15 @@ def test_scout_unsigned_in_espn_hint():
     assert "ESPN team name" in html
 
 
+def test_scout_unsigned_in_yahoo_and_mfl_hints():
+    yahoo = build_scout_body({"viewer": {}, "platform": "yahoo"})
+    mfl = build_scout_body({"viewer": {}, "platform": "mfl"})
+    assert "Yahoo team name" in yahoo
+    assert "MFL team name" in mfl
+    assert "Sleeper username" not in yahoo
+    assert "Sleeper username" not in mfl
+
+
 def _ctx(matchups):
     return {
         "viewer": {"viewer_roster_id": "1"},

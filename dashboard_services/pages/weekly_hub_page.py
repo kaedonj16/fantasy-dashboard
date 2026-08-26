@@ -18,7 +18,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         render_matchup_carousel_weeks,
         render_matchup_slide,
     )
-    from dashboard_services.pages.scout_page import build_scout_body
+    from dashboard_services.pages.scout_page import build_scout_body, platform_sign_in_hint
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
         _compute_fpts_against,
         _games_scheduled_today,
@@ -197,9 +197,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
     except Exception:
         logger.debug("weekly: scout body build failed", exc_info=True)
 
-    _scout_sign_in_hint = (
-        "your ESPN team name" if platform == "espn" else "your Sleeper username"
-    )
+    _scout_sign_in_hint = platform_sign_in_hint(platform)
     _scout_unavail = (
         "<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
         f"Scout report unavailable - sign in with {_scout_sign_in_hint} to see your opponent's breakdown."

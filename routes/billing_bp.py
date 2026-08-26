@@ -45,7 +45,7 @@ _STRIPE_PRICES = {
     "combo":  {"unit_amount": 2000, "product": _STRIPE_COMBO_PRODUCT},
 }
 
-_SUPPORTED_PLATFORMS = {"sleeper", "espn", "yahoo"}
+_SUPPORTED_PLATFORMS = {"sleeper", "espn", "yahoo", "mfl"}
 
 
 def _request_platform(payload=None) -> str:
@@ -422,7 +422,12 @@ def page_pricing_guest():
 def create_checkout_session():
     # New subscriptions use the immutable provider account id. Existing rows
     # keyed by a username remain readable through the entitlement resolver.
-    user_id = session.get("viewer_user_id") or session.get("viewer_username")
+    # Google-only managers have account_id without a Sleeper viewer id.
+    user_id = (
+        session.get("viewer_user_id")
+        or session.get("viewer_username")
+        or (("acct:" + str(session.get("account_id")).strip()) if session.get("account_id") else None)
+    )
     logger.info("[checkout] Request from user: %s", user_id)
     if not user_id:
         return jsonify({"error": "Must be logged in to subscribe"}), 401

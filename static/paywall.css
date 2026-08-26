@@ -5,7 +5,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 10000;
+  z-index: var(--z-gate, 100000);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -80,8 +80,13 @@
 }
 
 .paywall-close:hover {
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--bg-alt, #f3f4f6);
+  color: var(--text, #374151);
+}
+
+[data-theme="dark"] .paywall-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
 }
 
 .paywall-body {

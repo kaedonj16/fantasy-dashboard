@@ -24,7 +24,7 @@ def test_rendered_page_exposes_espn_checkout_context(offline_client):
     assert 'platform:"espn",season:2026,leagueId:"123"' in html
 
 
-@pytest.mark.parametrize("platform", ["sleeper", "espn"])
+@pytest.mark.parametrize("platform", ["sleeper", "espn", "mfl"])
 @pytest.mark.parametrize("plan", ["league", "user", "combo"])
 def test_checkout_preserves_provider_at_every_plan_entry(
         offline_client, monkeypatch, platform, plan):
@@ -128,3 +128,32 @@ def test_subscription_status_uses_stable_id_and_espn_provider(offline_client, mo
     assert response.get_json()["has_premium"] is True
     assert "stripe_customer_id" not in response.get_json()
     assert calls == [("espn-owner-7", "123", "espn")]
+
+
+def test_checkout_allows_google_account_without_sleeper_viewer(offline_client, monkeypatch):
+    captured = {}
+
+    class _CheckoutSession:
+        @staticmethod
+        def create(**kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(url="https://checkout.stripe.test/session")
+
+    monkeypatch.setattr(
+        billing, "_stripe",
+        lambda: SimpleNamespace(checkout=SimpleNamespace(Session=_CheckoutSession)),
+    )
+    monkeypatch.setattr(billing, "has_premium_access", lambda *args, **kwargs: False)
+
+    with offline_client.session_transaction() as sess:
+        sess["account_id"] = 42
+        sess["account_email"] = "user@example.com"
+
+    response = offline_client.post("/api/create-checkout-session", json={
+        "plan": "user", "platform": "espn", "season": 2026,
+    })
+
+    assert response.status_code == 200
+    assert captured["metadata"]["user_id"] == "acct:42"
+    assert captured["metadata"]["account_id"] == "42"
+    assert captured["metadata"]["platform"] == "espn"

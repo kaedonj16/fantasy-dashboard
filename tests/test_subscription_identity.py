@@ -27,6 +27,19 @@ def test_account_entitlement_matches_stable_id_or_legacy_handle(monkeypatch):
     assert params[0] == 42
 
 
+def test_account_entitlement_matches_direct_acct_subscription(monkeypatch):
+    # Google-only checkout stores user_id as acct:<id> when no platform identity
+    # is linked yet. The JOIN against account_identities misses; the direct
+    # lookup must still grant.
+    cursor = _Cursor([None, {"exists": 1}])
+    monkeypatch.setattr(subscriptions, "get_conn", lambda: _Conn(cursor))
+    assert subscriptions.has_premium_access(None, None, account_id=42)
+    sql, params = cursor.queries[-1]
+    assert "user_id IN" in sql
+    assert params[0] == "acct:42"
+    assert params[1] == "42"
+
+
 def test_direct_entitlement_prefers_stable_provider_id(monkeypatch):
     calls = []
     monkeypatch.setattr(subscriptions, "has_premium_access",

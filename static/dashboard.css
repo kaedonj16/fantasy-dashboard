@@ -26609,7 +26609,7 @@ button:disabled {
     outline-offset: 2px;
 }
 
-/* ── Toast notifications ────────────────────────────────────────── */
+/* ── Toast notifications (legacy host; unused after the #toast-container API) ── */
 .toast-container {
     position: fixed;
     bottom: 24px;
@@ -26621,7 +26621,7 @@ button:disabled {
     pointer-events: none;
 }
 
-.toast {
+.toast-container .toast {
     background: var(--card);
     color: var(--text);
     border: 1px solid var(--border);
@@ -26637,7 +26637,7 @@ button:disabled {
     pointer-events: auto;
 }
 
-.toast--visible {
+.toast-container .toast--visible {
     opacity: 1;
     transform: translateY(0);
 }
@@ -33682,6 +33682,12 @@ a, button, [role="button"], [role="tab"], summary, label,
 @media (prefers-reduced-motion: reduce) {
     .br-update-banner {
         animation: none;
+    }
+}
+
+@media (max-width: 768px) {
+    .br-update-banner {
+        bottom: calc(var(--dock-safe-bottom) + 14px);
     }
 }
 
