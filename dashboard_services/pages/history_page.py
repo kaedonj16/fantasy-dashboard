@@ -1829,6 +1829,21 @@ def build_history_body(
 
     league_name = league.get("name") or "League History"
 
+    _partial_chip = ""
+    try:
+        _pw = _playoff_start_week(league)
+        if df_weekly is not None and not getattr(df_weekly, "empty", True) and "week" in df_weekly.columns:
+            _max_w = int(pd.to_numeric(df_weekly["week"], errors="coerce").max() or 0)
+            if 0 < _max_w < (_pw - 1):
+                _partial_chip = (
+                    f'<span class="history-partial-chip" style="display:inline-block;margin-top:8px;'
+                    f'padding:3px 8px;border-radius:999px;font-size:11px;font-weight:700;'
+                    f'background:color-mix(in srgb,#b45309 14%,transparent);color:#b45309;">'
+                    f'Partial season · through week {_max_w}</span>'
+                )
+    except Exception:
+        _partial_chip = ""
+
     # Season Wrapped: a stories-style recap, lazy-loaded on first click so its
     # per-week boxscore fetches never block the page render. Here we only build
     # the cheap (no-boxscore) slide set to decide whether to show the launcher.
@@ -1895,6 +1910,7 @@ def build_history_body(
             <span class="history-title-accent">{_esc(league_name)}</span> • {selected_history_season}
           </h1>
           <p class="history-subtitle">{_esc(recap_line)}</p>
+          {_partial_chip}
         </div>
 
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:12px;">

@@ -80,6 +80,13 @@ def render_keeper_html(seed: dict) -> str:
         if seed.get("draftUrl") else ""
     )
     auto = seed.get("autoDraft")
+    plat = str(seed.get("platform") or "").lower()
+    mfl_banner = (
+        '<div class="kpr-warn">MFL draft history is not auto-imported. '
+        'Set each player’s drafted round below — auction/FAAB costs stay manual.</div>'
+        if plat == "mfl" or (not auto and plat not in ("sleeper", "espn", "yahoo"))
+        else ""
+    )
     auto_badge = (
         '<span class="kpr-auto"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> '
         'Draft rounds auto-detected</span>'
@@ -298,6 +305,7 @@ def render_keeper_html(seed: dict) -> str:
   </div>
 
   <div class="card-body" style="padding-top:0;">
+    {mfl_banner}
     <div class="kpr-cfg">
       <div class="kpr-fields">
       {auto_badge}

@@ -1686,6 +1686,7 @@
       + panels
       + '</div>'
       + '</div>'
+      + '<p class="rz-source-note" style="margin:12px 16px 0;font-size:11px;color:var(--text-muted);">Live scores and player lines use Sleeper ids plus Tank01 box scores. Cross-league “My Leagues” follows your signed-in portfolio.</p>'
       + (_historyOpen ? _historyPanelHtml() : '');
 
     _syncFeed();

@@ -1245,7 +1245,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
       <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
         <h2 style="margin:0 0 4px;font-size:20px;">Trade Database</h2>
         <div style="font-size:13px;color:var(--text-muted);">
-          Explore thousands of real dynasty trades to understand player values and market trends
+          Explore thousands of real Sleeper dynasty trades to understand player values and market trends. {_TI_SOURCE_NOTE}
         </div>
       </div>
       <div class="card-body" style="padding-top:20px;">

@@ -64,7 +64,8 @@ def test_cron_backfills_trade_time_values_and_espn_returns():
 def test_waiver_blueprint_overlays_espn_weeks_out():
     assert "@waiver_api_bp.route(\"/api/waiver-candidates\")" in WAIVER_BP
     assert "weeks_out_for_player" in WAIVER_BP
-    assert "_espn_weeks if _espn_weeks is not None else _weeks_out_wv(_vpid)" in WAIVER_BP
+    assert "_v[\"weeks_out\"] = _espn_weeks" in WAIVER_BP
+    assert '_v["return_source"] = "espn"' in WAIVER_BP
     assert "app.register_blueprint(waiver_api_bp)" in APP_PY
 
 

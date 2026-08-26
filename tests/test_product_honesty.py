@@ -25,6 +25,30 @@ def test_home_platform_chips_label_yahoo_and_mfl():
     assert 'Yahoo <span class="home-chip-note">Soon</span>' in APP_PY
     assert 'MFL <span class="home-chip-note">Public leagues</span>' in APP_PY
     assert 'MFL <span class="platform-limit">Public</span>' in APP_PY
+    assert "Sleeper, ESPN, Yahoo, and MFL. Built for serious managers." not in APP_PY
+    assert "Yahoo coming soon" in APP_PY
+
+
+def test_paywall_and_pricing_list_the_same_pro_set():
+    billing = (ROOT / "routes" / "billing_bp.py").read_text(encoding="utf-8")
+    locked = [
+        "Roster-Based Trade Suggestions",
+        "Full Trade Intelligence feed &amp; history",
+        "Breakout Engine candidate predictions",
+        "Playoff Impact simulations",
+        "Front Office Report",
+        "Weekly Recap",
+        "Custom Draft Board",
+        "Draft Deep Dive Analyzer",
+    ]
+    for name in locked:
+        assert name in PAYWALL_JS
+        assert name in billing
+    assert "What PRO includes" in billing
+    assert "Free includes" in billing
+    assert "Advanced Metrics" in billing
+    assert "Auction Values" in billing
+    assert "All future premium features" not in billing
 
 
 def test_nav_shows_trade_intel_and_redzone_on_every_platform():
@@ -48,6 +72,15 @@ def test_paywall_lists_shipped_pro_features_only():
     assert "'gm-memo': 'Front Office Report'" in PAYWALL_JS
     assert "Playoff Impact simulations" in PAYWALL_JS
     assert "'weekly-recap': 'Weekly Recap'" in PAYWALL_JS
+    am = (ROOT / "dashboard_services" / "pages" / "advanced_metrics_page.py").read_text(encoding="utf-8")
+    assert "amPaywall" not in am
+    calc = (ROOT / "dashboard_services" / "pages" / "trade_calculator_page.py").read_text(encoding="utf-8")
+    assert "Sleeper dynasty comps" in calc
+    assert "Market comps come from real Sleeper dynasty trades" in TRADE_BP
+    rz = (ROOT / "static" / "redzone.js").read_text(encoding="utf-8")
+    assert "Tank01 box scores" in rz
+    assert "recap-preview-watermark" in APP_PY
+    assert "SAMPLE PREVIEW" in APP_PY
 
 
 def test_live_cheat_sheet_sync_is_not_premium_gated():

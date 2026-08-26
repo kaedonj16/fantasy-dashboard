@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import html
 import logging
+import time
 from datetime import datetime
 
 from flask import Blueprint, jsonify, redirect, request, session, url_for
@@ -154,6 +155,10 @@ def page_recap(platform: str, season: int, league_id: str):
     base_url = request.host_url.rstrip("/")
     week_param = f"?week={week}" if week else ""
     og_image = f"{base_url}/{platform}/{season}/{league_id}/recap/og.png{week_param}"
+    if week_param:
+        og_image += f"&v={int(time.time()) // 3600}"
+    else:
+        og_image += f"?v={int(time.time()) // 3600}"
     og_tags = (
         f"<meta property='og:title' content='{week_label} - {league_name} | BR Fantasy'>"
         f"<meta property='og:description' content='Weekly fantasy football recap: scoreboard, highlights, and AI analysis.'>"

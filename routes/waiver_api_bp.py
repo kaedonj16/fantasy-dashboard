@@ -453,7 +453,12 @@ def api_waiver_candidates():
                     _espn_weeks = _espn_wo(_vpid)
                 except Exception:
                     _espn_weeks = None
-                _v["weeks_out"] = _espn_weeks if _espn_weeks is not None else _weeks_out_wv(_vpid)
+                if _espn_weeks is not None:
+                    _v["weeks_out"] = _espn_weeks
+                    _v["return_source"] = "espn"
+                else:
+                    _v["weeks_out"] = _weeks_out_wv(_vpid)
+                    _v["return_source"] = "status"
             c["vacated"] = _vac
             c["injury_freshness"] = _freshness_wv(_inj_pids)
 

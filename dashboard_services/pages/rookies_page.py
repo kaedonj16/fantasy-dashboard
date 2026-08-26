@@ -18,6 +18,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
       <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
         Dynasty prospect rankings - production, athleticism, and draft capital combined
       </div>
+      <div id="rkPausedBanner" style="display:none;margin-top:10px;padding:8px 12px;border-radius:8px;
+           border:1px solid color-mix(in srgb,#b45309 35%,var(--border));background:color-mix(in srgb,#b45309 12%,transparent);
+           font-size:13px;color:var(--text);">
+        Prospect rankings are paused until the next draft cycle. Showing the last published board
+        <span id="rkPausedAsOf"></span>.
+      </div>
     </div>
     <!-- The full draft board is its own page (the "Draft" nav entry / Draft Room).
          The Prospects page is rankings-only. -->
@@ -1109,6 +1115,16 @@ def build_prospects_body(is_admin: bool = False) -> str:
       rkAllPlayers = data.rankings || [];
       rkLoaded = true;
       rkPipelinePaused = !!data.paused;
+      var pausedBanner = document.getElementById('rkPausedBanner');
+      if (pausedBanner) {
+        if (rkPipelinePaused && rkAllPlayers.length) {
+          pausedBanner.style.display = '';
+          var asOf = document.getElementById('rkPausedAsOf');
+          if (asOf && data.last_updated) asOf.textContent = '(as of ' + data.last_updated + ')';
+        } else {
+          pausedBanner.style.display = 'none';
+        }
+      }
       rkRender();
     })
     .catch(function(err) {

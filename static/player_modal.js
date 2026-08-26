@@ -787,7 +787,7 @@ function openPlayerModal(playerId, playerName, opts) {
         && String(pd.draft_class_year) === String(_currentNFLYear);
       if (tabProspect) tabProspect.style.display = _isCurrentYearProspect ? '' : 'none';
       const tabBreakout = document.getElementById('pmTabBreakout');
-      if (tabBreakout) tabBreakout.style.display = (isBreakout(pid) || (opts && opts.tab === 'breakout')) ? '' : 'none';
+      if (tabBreakout) tabBreakout.style.display = '';
 
       // Must be set before pmSwitchTab is called so the metrics lazy-load check works
       if (pmTabBar) pmTabBar.dataset.pmHasMetrics = hasMetrics ? '1' : '';
@@ -1150,6 +1150,10 @@ function pmSwitchTab(tab) {
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(data => {
         if (!panel.isConnected) return;
+        if (!data || data.available === false || (data.breakout_opportunity_score == null && !data.breakout_blend)) {
+          panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">Not in this week’s board.</div></div>';
+          return;
+        }
         const score = parseFloat(data.breakout_opportunity_score || 0);
         let scoreColor = '#10b981';
         if (score < 50) scoreColor = '#3b82f6';

@@ -471,7 +471,7 @@ def build_trade_calculator_body(
           <div id="similarTradesSection" style="display:none;margin-top:28px;">
             <div style="margin-bottom:14px;">
               <h3 class="stl-title">Recent Similar Trades</h3>
-              <div class="stl-sub">Real dynasty trades where these players moved to opposite sides</div>
+              <div class="stl-sub">Sleeper dynasty comps — real trades where these players moved to opposite sides. A teaser of the full Trade Intel feed.</div>
             </div>
             <div id="similarTradesList" class="stl-list"></div>
           </div>

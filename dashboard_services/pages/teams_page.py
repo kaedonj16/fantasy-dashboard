@@ -639,7 +639,12 @@ def build_teams_body(ctx: dict) -> str:
             elif _pk_yr == _pk_proj_year:
                 _pk_slot = _pk_slot_by_original.get(_pk_orig)
                 _pk_is_proj = _pk_slot is not None
-            _pk_lbl = _pk_pick_label(_pk_yr, _pk_rnd, _pk_slot)
+            _pk_lbl = (
+                _pk_pick_label(_pk_yr, _pk_rnd, _pk_slot)
+                if _pk_slot is not None
+                else (f"{_pk_yr} {_pk_rnd} · projected slot unavailable"
+                      if _pk_yr and _pk_rnd else "Projected slot unavailable")
+            )
             _pk_val = _pk_pick_value_from_table(
                 _pk_value_tbl, _pk_yr, _pk_rnd, _pk_slot, len(rosters) or 10
             )

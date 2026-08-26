@@ -15,6 +15,28 @@ load_dotenv()
 from dashboard_services.api import get_nfl_state
 from utils.paths import DATA_DIR, CACHE_DIR
 
+# Named cron steps recorded in pipeline_health.json. Intentional skips use
+# status "skipped"; WLS failures must surface as "error" via _run_step.
+CRON_STEPS = (
+    "build_matchup_ratings",
+    "build_daily_model_values",
+    "record_model_value_snapshot",
+    "notify_value_drops",
+    "notify_waiver_playoff",
+    "notify_top_movers",
+    "build_weekly_rookie_data",
+    "trade_intel_discovery",
+    "trade_intel_crawl",
+    "trade_intel_analytics",
+    "notify_rival_trades",
+    "trade_time_value_backfill",
+    "espn_injury_return_dates",
+    "wls_dynasty_10team",
+    "wls_dynasty_12team",
+    "wls_redraft_10team",
+    "wls_redraft_12team",
+)
+
 
 # ---------------------------------------------------------------------------
 # Cleanup: delete old date-stamped files left from before the undated migration
@@ -545,8 +567,10 @@ else:
     # ------------------------------------------------------------------ #
     if not in_season:
         print("[cron] Matchup ratings skipped - offseason")
+        record_pipeline_health("build_matchup_ratings", "skipped")
     elif today_weekday != 2:  # 0=Mon … 2=Wed … 6=Sun
         print(f"[cron] Matchup ratings skipped - not Wednesday (weekday={today_weekday})")
+        record_pipeline_health("build_matchup_ratings", "skipped")
     else:
         _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
@@ -705,6 +729,7 @@ print(f"[cron] Scoring: {{len(result.get('prospects', []))}} prospects")
     else:
         reason = "paused" if ROOKIE_PIPELINE_PAUSED else f"weekday={today_weekday}, season_type={season_type!r}"
         print(f"[cron] Rookie weekly run skipped - {reason}")
+        record_pipeline_health("build_weekly_rookie_data", "skipped")
 
     # ------------------------------------------------------------------ #
     # Step 7: Trade intel discovery + crawl + analytics                  #
@@ -756,6 +781,8 @@ print(f"[cron] Trade-time value backfill: {n} rows")
 from dotenv import load_dotenv; load_dotenv()
 from dashboard_services.injury_return import refresh_espn_return_dates
 rows = refresh_espn_return_dates(force=True)
+if not rows:
+    raise RuntimeError("ESPN injury return dates empty")
 print(f"[cron] ESPN injury return dates: {len(rows)} players")
 """, "espn_injury_return_dates")
 
@@ -796,11 +823,8 @@ print(f"[cron] Global ADP refresh: {{summary}}")
             _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
 from data_building.trade_intel.trade_value_model import run_trade_value_model
-try:
-    res = run_trade_value_model(season={season!r}, league_type={_lt}, league_size={_sz})
-    print(f"[cron] WLS {_lt_name} {_sz}-team: {{res}}")
-except Exception as e:
-    print(f"[cron] WLS {_lt_name} {_sz}-team failed: {{e}}")
+res = run_trade_value_model(season={season!r}, league_type={_lt}, league_size={_sz})
+print(f"[cron] WLS {_lt_name} {_sz}-team: {{res}}")
 """, f"wls_{_lt_name}_{_sz}team")
 
     # ------------------------------------------------------------------ #

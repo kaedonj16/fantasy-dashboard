@@ -172,7 +172,7 @@ def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | No
     </p>
     <div class="dvt-stat-pills">
       <span class="dvt-stat-pill"><strong>{player_count}</strong> players</span>
-      <span class="dvt-stat-pill">Updated weekly</span>
+      <span class="dvt-stat-pill">As of {html.escape(date_str)}</span>
       <span class="dvt-stat-pill">1QB &amp; Superflex</span>
     </div>
   </div>

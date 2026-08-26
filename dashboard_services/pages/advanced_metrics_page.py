@@ -1,10 +1,10 @@
 """
 Advanced Metrics leaderboard page.
 
-A premium page: pick an advanced metric (e.g. yards/carry) and see every player
-ranked at that metric in a sortable, searchable table with a relative bar. The
-position filter auto-narrows to the positions where the metric is meaningful
-(with manual override). Data comes from /api/advanced-metrics/leaderboard.
+Pick an advanced metric (e.g. yards/carry) and see every player ranked at that
+metric in a sortable, searchable table with a relative bar. The position filter
+auto-narrows to the positions where the metric is meaningful (with manual
+override). Data comes from /api/advanced-metrics/leaderboard. The page is free.
 """
 import logging
 import json
@@ -377,19 +377,6 @@ def build_advanced_metrics_body(
           <div class="sk-card-row"><div class="skeleton" style="width:20px;height:14px;border-radius:4px;flex:0 0 auto"></div><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:38%"></div><div class="skeleton skeleton-line" style="width:24%;height:9px"></div></div><div class="skeleton" style="width:56px;height:20px;border-radius:6px;flex:0 0 auto"></div></div>
           <div class="sk-card-row"><div class="skeleton" style="width:20px;height:14px;border-radius:4px;flex:0 0 auto"></div><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:48%"></div><div class="skeleton skeleton-line" style="width:28%;height:9px"></div></div><div class="skeleton" style="width:56px;height:20px;border-radius:6px;flex:0 0 auto"></div></div>
           <div class="sk-card-row"><div class="skeleton" style="width:20px;height:14px;border-radius:4px;flex:0 0 auto"></div><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:42%"></div><div class="skeleton skeleton-line" style="width:26%;height:9px"></div></div><div class="skeleton" style="width:56px;height:20px;border-radius:6px;flex:0 0 auto"></div></div>
-        </div>
-
-        <div id="amPaywall" style="display:none;text-align:center;padding:48px 16px;">
-          <i class="fa-solid fa-lock" style="font-size:26px;color:var(--text-muted);"></i>
-          <div style="font-weight:700;font-size:16px;margin-top:12px;">Advanced Metrics is a premium feature</div>
-          <div style="font-size:13px;color:var(--text-muted);margin:6px 0 16px;">
-            Unlock per-metric leaderboards across every player.
-          </div>
-          <button onclick="if(window.showPaywall)showPaywall('advanced-metrics')"
-            style="font-size:13px;font-weight:700;padding:8px 18px;border:none;border-radius:10px;
-                   background:linear-gradient(135deg,#122d4b,#2563eb);color:#fff;cursor:pointer;">
-            Upgrade &rarr;
-          </button>
         </div>
 
         <div id="amEmpty" style="display:none;">
@@ -1072,7 +1059,6 @@ _AM_JS = r"""
   const tbody     = document.getElementById('amTableBody');
   const loading   = document.getElementById('amLoading');
   const empty     = document.getElementById('amEmpty');
-  const paywall   = document.getElementById('amPaywall');
   if (!metricSel || !tbody) return;
 
   // ── Read URL params and pre-set controls so state inherits them ───────────
@@ -3593,7 +3579,7 @@ _AM_JS = r"""
   function fetchData() {
     // paywall removed — advanced metrics is available to all users
     state.fetching = true;
-    loading.style.display = ''; empty.style.display = 'none'; paywall.style.display = 'none'; tbody.innerHTML = '';
+    loading.style.display = ''; empty.style.display = 'none'; tbody.innerHTML = '';
     if (avgNote) avgNote.style.display = 'none';
     const params = new URLSearchParams({ metric: state.metric, platform: cfg.platform });
     if (cfg.leagueId) params.set('league_id', cfg.leagueId);
@@ -3629,7 +3615,7 @@ _AM_JS = r"""
 
     Promise.all([mainFetch, prevFetch])
       .then(([d, pd]) => {
-        if (!d) { state.fetching = false; paywall.style.display = ''; loading.style.display = 'none'; return; }
+        if (!d) { state.fetching = false; empty.style.display = ''; loading.style.display = 'none'; return; }
         state.fetching = false;
         state.rows = d.players || [];
         state.volCol = d.vol_col || 'games';

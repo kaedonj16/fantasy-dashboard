@@ -1742,7 +1742,19 @@ _DRAFT_HISTORY_HTML = r"""
         + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || ''), { cache: 'no-store' })
       .then(function(r){ return r.json(); })
       .then(function(resp){
-        if (resp.unsupported){ histEmpty('Sleeper only', 'Draft history is available for Sleeper leagues.'); return; }
+        if (resp.unsupported){
+          var plat = String(cfg.platform || '').toLowerCase();
+          if (plat === 'espn') {
+            histEmpty('ESPN drafts are not listed here', 'Open the Draft Room to run a mock. Live ESPN draft boards are not imported into Draft History.');
+          } else if (!cfg.hasLeague) {
+            histEmpty('Open from your league', '',
+              'Open Draft History from your league to see its drafts. '
+              + 'You can still run a mock in the <a href="' + esc(cfg.base) + '">Draft Room</a>.');
+          } else {
+            histEmpty('Sleeper only', 'Draft history is available for Sleeper leagues. Other platforms can still run a mock in the Draft Room.');
+          }
+          return;
+        }
         render(resp.drafts || []);
       })
       .catch(function(){
