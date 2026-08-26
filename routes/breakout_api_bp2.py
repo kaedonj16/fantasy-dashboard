@@ -202,7 +202,16 @@ def api_offseason_breakout_candidates():
         from datetime import datetime
         from data_building.offseason_opportunity import get_offseason_breakout_candidates
 
-        # Breakout candidates are now available to all users (no premium check)
+        # Breakout candidates are a PRO feature (3-candidate preview stays on
+        # /api/breakout/candidates). League-plan users need league context so
+        # membership can be verified.
+        league_id = request.args.get("league_id")
+        platform = request.args.get("platform") or "sleeper"
+        if not has_premium_for_viewer(
+            session.get("viewer_username"), session.get("viewer_user_id"),
+            league_id, platform, request.args.get("season"),
+        ):
+            return jsonify({"paywall": True, "error": "Premium required"}), 403
 
         # Get season (default to current year)
         nfl_state = get_nfl_state() or {}

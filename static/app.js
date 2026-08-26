@@ -4337,8 +4337,23 @@ window.initTradePage = function initTradePage(root = document) {
       const leagueType = getLeagueType();
       const nflState = await fetch('/api/nfl-state').then(r => r.json()).catch(() => ({}));
       const currentSeason = nflState.season || new Date().getFullYear();
-      
-      const res = await fetch(`/api/offseason-breakout-candidates?season=${currentSeason}&min_score=25`, { cache: "no-store" });
+      const ctx = window.__brctx || {};
+      const qs = new URLSearchParams({ season: String(currentSeason), min_score: "25" });
+      if (ctx.leagueId) qs.set("league_id", ctx.leagueId);
+      if (ctx.platform) qs.set("platform", ctx.platform);
+
+      const res = await fetch(`/api/offseason-breakout-candidates?${qs}`, { cache: "no-store" });
+      if (res.status === 403) {
+        window.brEmptyState(breakoutsEl, {
+          icon: 'lock',
+          title: 'Breakout Engine',
+          message: 'Upgrade to see offseason breakout candidates for your roster.',
+          compact: true,
+          cta: { label: 'Upgrade', onClick: function () { if (typeof showPaywall === 'function') showPaywall('breakout-candidates'); } }
+        });
+        if (moversPanel) moversPanel.classList.remove("otc-movers-loading");
+        return;
+      }
       if (!res.ok) throw new Error("Failed to load breakouts.");
 
       let candidates = await res.json();
@@ -5460,6 +5475,15 @@ window.initTradePage = function initTradePage(root = document) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ league_id: leagueId, platform, season, roster_id: rosterId, give_ids: giveIds, get_ids: getIds }),
       });
+      if (res.status === 403) {
+        body.innerHTML = _piMessage(
+          "fa-lock",
+          "Pro Feature",
+          "Upgrade to simulate how this trade affects your playoff odds.",
+          `<button class="pi-locked-btn" onclick="showPaywall('playoff-impact')">Unlock Playoff Impact</button>`
+        );
+        return;
+      }
       const data = res.ok ? await res.json() : null;
 
       // Stash for share-card inclusion

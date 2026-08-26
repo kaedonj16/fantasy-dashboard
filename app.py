@@ -1127,8 +1127,8 @@ FORM_BODY = """
       <div class="home-platform-row" aria-label="Supported platforms">
         <span class="home-platform-chip">Sleeper</span>
         <span class="home-platform-chip">ESPN</span>
-        <span class="home-platform-chip">Yahoo</span>
-        <span class="home-platform-chip">MFL</span>
+        <span class="home-platform-chip">Yahoo <span class="home-chip-note">Soon</span></span>
+        <span class="home-platform-chip">MFL <span class="home-chip-note">Public leagues</span></span>
       </div>
     </div>
 
@@ -1181,7 +1181,7 @@ FORM_BODY = """
             <button type="button" class="platform-btn platform-btn-disabled" disabled
                     title="Yahoo is temporarily unavailable while we finish Yahoo API setup.">Yahoo <span class="platform-soon">Soon</span></button>
             {% endif %}
-            <button type="button" class="platform-btn" data-platform="mfl">MFL</button>
+            <button type="button" class="platform-btn" data-platform="mfl">MFL <span class="platform-limit">Public</span></button>
           </div>
         </div>
 
@@ -2434,7 +2434,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             _sl("scout", "Opponent Scout"), _sl("optimal", "Lineup Efficiency"),
             _sl("waivers", "Waivers & Start/Sit"), _sl("schedule", "Schedule Assistant"),
         ]
-        if platform == "sleeper" and not offseason:
+        if not offseason:
             rows.append(_sl("redzone", "Redzone"))
         weekly_html = _sec("Weekly", rows)
 
@@ -2446,9 +2446,8 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     trade_rows = [
         _sl("trade", "Trade Calculator"), _sl("trade-suggestions", "Suggestions", pro=True),
         _sl("trade-database", "Trade Database"),
+        _sl("trade-intel", "Trade Intel", pro=True),
     ]
-    if platform != "espn":
-        trade_rows.append(_sl("trade-intel", "Trade Intel", pro=True))
     trades_html = _sec("Trades", trade_rows)
 
     players_html = _sec("Players", [
@@ -3243,15 +3242,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Navigation pills (no utilities)
     nav_pills = []
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
-    _is_espn = (platform == "espn")
     nav_pills.append(nav_pill_dropdown("Trades", [
         ("Trade Calculator", "trade.page_trade", "trade", False),
         ("Suggestions <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade-suggestions", False,
          "?tab=suggestions"),
         ("Trade Database", "trade.page_trade_database", "trade-database", False),
-        # Trade Intel uses Sleeper trade data - not applicable for ESPN
-        *([("Trade Intel <span class='nav-pro-badge'>PRO</span>", "trade.page_trade_intel", "trade-intel",
-            False)] if not _is_espn else []),
+        # Market comps are Sleeper-sourced; the page still applies to ESPN/Yahoo/MFL
+        # rosters and explains that on the Trade Intel screen.
+        ("Trade Intel <span class='nav-pro-badge'>PRO</span>", "trade.page_trade_intel", "trade-intel", False),
     ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
     # Weekly dropdown is available as soon as the draft is done
     draft_ended = has_draft_ended(league_id, platform, season)
@@ -3277,13 +3275,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 "<span class='rz-nav-live'><span class='rz-nav-dot'></span>Redzone</span>"
                 if _rz_live else "Redzone"
             )
-            # Redzone live tracking relies on the Sleeper player index + Tank01
-            # boxscores, so it only works for Sleeper leagues. Hide it elsewhere
-            # rather than showing a broken, name-less live view.
-            if platform == "sleeper":
-                _weekly_items.append((_rz_label, "page_redzone", "redzone", False))
-                if _rz_live:
-                    _rz_pulse = "nav-pill-redzone-live"
+            # Player IDs are canonicalized onto the Tank01 boxscore feed, so
+            # Redzone works on Sleeper, ESPN, Yahoo, and MFL.
+            _weekly_items.append((_rz_label, "page_redzone", "redzone", False))
+            if _rz_live:
+                _rz_pulse = "nav-pill-redzone-live"
         nav_pills.append(nav_pill_dropdown(
             "Weekly", _weekly_items,
             ["weekly", "recap", "redzone", "scout", "optimal", "waivers", "schedule"],
@@ -6406,12 +6402,17 @@ def build_dashboard_body(ctx: dict) -> str:
     viewer_roster_id = viewer.get("viewer_roster_id")
 
     gm_memo_html = ""
-
-    if viewer_roster_id:
-        try:
-            gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))
-        except Exception:
-            logger.debug("dashboard: gm memo failed", exc_info=True)
+    _fo_premium = False
+    if viewer_roster_id and has_request_context():
+        _fo_premium = has_premium_for_viewer(
+            session.get("viewer_username"), session.get("viewer_user_id"),
+            league_id, platform, season,
+        )
+        if _fo_premium:
+            try:
+                gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))
+            except Exception:
+                logger.debug("dashboard: gm memo failed", exc_info=True)
 
     standings_html = render_standings_compact(
         team_stats, movement=_standings_movement(df_weekly),
@@ -6509,6 +6510,38 @@ def build_dashboard_body(ctx: dict) -> str:
           </div>
           <div class="card-body">
             {gm_memo_html}
+          </div>
+        </div>
+        """
+    elif viewer_roster_id:
+        # Free users (and premium when AI is down) get the same Generate control
+        # as the offseason hub. The button is PRO-gated in JS and /api/gm-memo.
+        gm_card_html = f"""
+        <div class="card gm-card">
+          <div class="card-header">
+            <h2>Front Office Report</h2>
+            <div class="subtle-label">{viewer.get("viewer_team_name") or "Your Team"}</div>
+            <button type="button" id="generateGmMemoBtn" class="recap-generate-btn"
+                    data-league-id="{html.escape(str(league_id))}"
+                    data-season="{html.escape(str(season))}"
+                    data-platform="{html.escape(str(platform))}"
+                    data-viewer-roster-id="{html.escape(str(viewer_roster_id))}">
+              Generate Report
+            </button>
+          </div>
+          <div class="card-body">
+            <div class="otc-ai-empty" id="gm-memo-empty">
+              <div class="otc-ai-empty-sub">
+                Get personalized analysis on your roster, trade targets, and standings.
+              </div>
+            </div>
+            <div class="otc-ai-empty" id="gm-memo-loading" style="display:none;">
+              <div class="otc-ai-empty-title">Analyzing Your Roster...</div>
+              <div class="otc-ai-empty-sub">
+                <div class="loading-spinner" style="margin: 10px auto; width: 30px; height: 30px; border: 3px solid var(--border); border-radius: 50%; border-top-color: var(--accent); animation: spin 1s linear infinite; border-right-color: transparent;"></div>
+              </div>
+            </div>
+            <div id="gm-memo-result" style="display:none;"></div>
           </div>
         </div>
         """
@@ -19842,6 +19875,12 @@ def api_trade_eval_playoff_impact():
     give_ids = [str(p) for p in (payload.get("give_ids") or [])]
     get_ids = [str(p) for p in (payload.get("get_ids") or [])]
 
+    if not has_premium_for_viewer(
+        session.get("viewer_username"), session.get("viewer_user_id"),
+        league_id, platform, season,
+    ):
+        return jsonify({"paywall": True, "error": "Premium required", "available": False}), 403
+
     if not league_id or roster_id is None:
         return jsonify({"available": False, "reason": "no_league"})
 
@@ -29435,6 +29474,8 @@ def api_league_bulletins():
     season = int(request.args.get("season") or datetime.now().year)
     if not league_id:
         return jsonify({"error": "league_id required"}), 400
+    if (platform or "sleeper").strip().lower() != "sleeper":
+        return jsonify({"bulletins": [], "unavailable": True})
     try:
         import requests as _req
 
