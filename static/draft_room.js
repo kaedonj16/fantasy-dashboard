@@ -5520,7 +5520,7 @@
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses projected season fantasy points; VOR uses dynasty or redraft trade value. Last season\'s injury-shortened totals are not used.' },
     { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value. When a sample size (n=) is shown, a small n means the ADP is noisy.' },
     { term: 'Tier', def: 'Players grouped by talent gaps (Tier 1 = elite). A tier “cliff” means only a couple of players remain before a real drop-off at that position.' },
-    { term: 'PPG', def: 'Points per game - projected for the upcoming season, or last season’s actual when that’s shown.' },
+    { term: 'PPG', def: 'Points per game - projected for the upcoming season, or last season’s actual when that’s shown. On the draft report card, Proj PPG is the projected weekly total of your optimal starting lineup, not the sum of every player you drafted.' },
     { term: 'Survival %', def: 'The chance a player is still on the board at your next pick. Starts from consensus ADP, then adapts to how your draft is actually going - if the room is reaching, letting players slide, drafting unpredictably, or running on a position, the odds shift to match (kicks in after the first several picks).' },
     { term: 'Grade · Value', def: 'How strong your picks are by pick score, weighted toward the earlier rounds where it matters most.' },
     { term: 'Grade · Starters', def: 'How good your projected starting lineup is versus a league-average team. 100% is a league-average lineup; the rank is among teams in this draft. Snake drafts are close to zero-sum, so a lineup near 100% of average can still rank 1st or 2nd.' },
@@ -5591,10 +5591,16 @@
       var sumProjTotal = 0, sumProjCount = 0, sumT12 = 0;
       var sumAllPsTotal = 0, sumAllPsCount = 0, sumStarterPsTotal = 0, sumStarterPsCount = 0;
       var _ssSet = {};
-      starters.forEach(function(s){ if (s.p) _ssSet[String(s.p.id)] = true; });
-      mine.forEach(function(p){
-        var _ppgv = scoringProjPpg(p);
+      // Proj PPG is the optimal starting lineup's weekly total — the same
+      // strength playoff odds use — not every drafted player. Summing the
+      // bench made a start-9 look like ~20 PPG per starter.
+      starters.forEach(function(s){
+        if (!s.p) return;
+        _ssSet[String(s.p.id)] = true;
+        var _ppgv = scoringProjPpg(s.p);
         if (_ppgv != null){ sumProjTotal += _ppgv; sumProjCount++; }
+      });
+      mine.forEach(function(p){
         var _fp = playersById[String(p.id)] || p;
         var _t = tierOf(_fp); if (_t != null && _t <= 2) sumT12++;
         var _psShown = relPS(p);
