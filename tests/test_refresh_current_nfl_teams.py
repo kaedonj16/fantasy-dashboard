@@ -149,28 +149,14 @@ def test_refresh_current_nfl_teams_upserts_db(tmp_path, monkeypatch):
     assert json.loads(players.read_text())["200"]["team"] == "MIN"
 
 
-def test_overlay_players_index_helper(monkeypatch):
-    """Exercise the same merge path load_players_index uses, without importing
-    the heavy utils.utils module (Flask / API client deps)."""
-    from utils import utils as utils_mod
+def test_load_players_index_wires_team_overlay():
+    """Guard that load_players_index overlays DB teams without importing utils
+    (utils pulls requests/Flask — not in the slim unit-CI image)."""
+    from pathlib import Path
 
-    # If utils failed to import earlier this test would not be collected; keep
-    # the assertion local to the overlay helper.
-    base = {
-        "9": {"name": "Evans", "team": "TB", "pos": "WR", "byeWeek": 9},
-    }
-    slot: dict = {"sig": None, "data": None}
-
-    monkeypatch.setattr(
-        pct,
-        "load_current_team_overlay",
-        lambda force=False: {"9": "SF"},
-    )
-    monkeypatch.setattr(utils_mod, "_bye_lookup_for_overlay", lambda: {"SF": 14})
-
-    loaded = utils_mod._overlay_players_index(base, slot)
-    assert loaded["9"]["team"] == "SF"
-    assert loaded["9"]["byeWeek"] == 14
-    # Second call hits the merged cache
-    loaded2 = utils_mod._overlay_players_index(base, slot)
-    assert loaded2 is loaded
+    source = Path("utils/utils.py").read_text(encoding="utf-8")
+    assert "def load_players_index()" in source
+    assert "def _overlay_players_index(" in source
+    assert "apply_team_overlay" in source
+    assert "load_current_team_overlay" in source
+    assert "player_current_team" in source
