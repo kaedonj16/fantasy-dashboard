@@ -1391,7 +1391,16 @@
 
   // ── Simulation (mock draft) ─────────────────────────────────────────────────
   function simAdp(p){
-    var a = adpOf(p);
+    // CPU opponents draft against CONSENSUS ADP (blended Sleeper/BR/ESPN/MFL/Yahoo),
+    // not the display-selected ADP source. Consensus is the least single-source-biased,
+    // best-covered estimate of how the real market drafts, so the board plays out the
+    // same realistic way on every platform regardless of which source the viewer has
+    // chosen in the ADP dropdown (that dropdown is an analysis lens, not a sim knob).
+    // Falls back to adpOf() wherever consensus is absent (rookie axis, a historical
+    // completed-draft overlay, or a source-less payload), then to the SF-QB / K-DEF /
+    // value-derived sentinels below.
+    var a = consensusAdpOf(p);
+    if (a == null) a = adpOf(p);
     // In SF, if sf_avg_pick is missing for a QB but standard avg_pick exists, use
     // a deflated version (QBs are ~30% more valuable in SF so their pick comes earlier).
     if (a == null && state.sf && (p.position || '').toUpperCase() === 'QB' && p.avg_pick != null){
