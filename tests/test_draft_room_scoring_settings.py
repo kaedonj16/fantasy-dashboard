@@ -122,6 +122,25 @@ def test_compare_modal_uses_relative_pick_score():
     assert "var ps = psRelLive(p);" in row.group(1)
 
 
+def test_deep_dive_avg_pick_score_uses_relative():
+    """Deep Dive 'Avg pick score' must average relPS chips, not absolute kernel."""
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    match = re.search(
+        r"function gradePicks\(mine\)\{(.*?)\n  // At-pick tier-cliff map",
+        source,
+        re.DOTALL,
+    )
+    assert match
+    body = match.group(1)
+    assert "var relVals = mine.map(function(m){ return relPS(m.p, m.pn); })" in body
+    assert "var avgPs = relVals.length" in body
+    # Absolute kernel scores still feed the letter-grade composite — don't
+    # accidentally average those for the display chip again.
+    assert "picks.map(function(x){ return x.ps; })" not in body
+    assert "{ v: g.avgPs != null ? g.avgPs : '—', l: 'Avg pick score' }" in source
+    assert "Deep Dive’s Avg pick score, use the same relative scale" in source
+
+
 def test_preview_modal_uses_relative_pick_score():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
     match = re.search(

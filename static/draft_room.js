@@ -4028,8 +4028,15 @@
       picks.push({ id: m.p.id, pos: pos, ps: ps, pn: m.pn,
         val: full ? valOf(full) : (m.p.val || 0), ppg: full ? ppgOf(full) : null });
     });
-    var psVals = picks.map(function(x){ return x.ps; }).filter(function(v){ return v != null; });
-    var avgPs = psVals.length ? psVals.reduce(function(a, b){ return a + b; }, 0) / psVals.length : null;
+    // Absolute `ps` on each pick feeds the letter-grade Value component
+    // (round-weighted kernel via BRTeamGrade). avgPs is the Deep Dive / share
+    // "Avg pick score" chip — average the same pool-relative scores the board
+    // and Deep Dive ledger show (relPS), not the absolute kernel scale.
+    var relVals = mine.map(function(m){ return relPS(m.p, m.pn); })
+      .filter(function(v){ return v != null; });
+    var avgPs = relVals.length
+      ? relVals.reduce(function(a, b){ return a + b; }, 0) / relVals.length
+      : null;
 
     if (state.type === 'rookie'){
       // Overall letter grade uses the BPA/ADP-diff system (same as the Teams-tab draft
@@ -5508,7 +5515,7 @@
   // Single source of truth so the inline ⓘ tooltips and the help popover agree.
   var _GLOSSARY = [
     { term: 'Recommendation', def: 'The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. A major value fall can still overcome imperfect roster fit. Recommendation is shown as a rank rather than a grade because its internal utility naturally changes as the board is depleted.' },
-    { term: 'Pick Score (PS)', def: 'A 0-100 grade of pick quality. It is a composite of trade value, positional VOR, ADP, tier, roster need, and projected points — not a count of which compare-modal rows a player wins. On the live board, sidebar, compare modal, and player preview it is scaled relative to the best player still available (so a strong late pick still reads well). Made-pick chips on the report card / Deep Dive “Board PS” use the same relative scale at that historical slot. Your letter grade’s Value bar uses the absolute, round-weighted kernel score — those two numbers can differ. Kickers and defenses aren’t scored. Missing projections fall back to value rather than counting as zero.' },
+    { term: 'Pick Score (PS)', def: 'A 0-100 grade of pick quality. It is a composite of trade value, positional VOR, ADP, tier, roster need, and projected points — not a count of which compare-modal rows a player wins. On the live board, sidebar, compare modal, and player preview it is scaled relative to the best player still available (so a strong late pick still reads well). Made-pick chips on the report card / Deep Dive “Board PS”, and Deep Dive’s Avg pick score, use the same relative scale at that historical slot. Your letter grade’s Value bar uses the absolute, round-weighted kernel score — those two numbers can differ. Kickers and defenses aren’t scored. Missing projections fall back to value rather than counting as zero.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses projected season fantasy points; VOR uses dynasty or redraft trade value. Last season\'s injury-shortened totals are not used.' },
     { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value. When a sample size (n=) is shown, a small n means the ADP is noisy.' },
