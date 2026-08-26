@@ -81,3 +81,25 @@ def test_league_players_overlay_uses_projected_vorp():
     src = (Path(__file__).resolve().parents[1] / "app.py").read_text()
     assert "projected_vorp_map" in src
     assert "get_value_leaderboard as _get_vorp_lb" not in src
+    overlay = src.split("def _build_league_players_payload_uncached")[1].split("def api_market_intel_health")[0]
+    assert 'starters={"QB": 2.0}' in overlay
+    assert '_player["sf_vorp"]' in overlay
+
+
+def test_sf_qb_vorp_uses_deeper_replacement():
+    """Superflex starts two QBs, so replacement is ~QB24 not ~QB12."""
+    players = []
+    for i in range(1, 31):
+        pts = 400 - (i - 1) * 8
+        players.append({
+            "id": f"qb{i}",
+            "position": "QB",
+            "proj_pts": pts,
+            "proj_ppg": round(pts / PROJ_SEASON_GAMES, 2),
+        })
+    one_qb = projected_vorp_map(players, num_teams=12)
+    sf = projected_vorp_map(players, num_teams=12, starters={"QB": 2.0})
+    assert one_qb["qb15"] < 0
+    assert sf["qb15"] > 0
+    assert sf["qb1"] > one_qb["qb1"]
+

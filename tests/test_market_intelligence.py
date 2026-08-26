@@ -124,6 +124,21 @@ def test_attach_market_vs_adp_uses_redraft_avg_pick():
     assert diagnostics["missing_projection"] == 5
 
 
+def test_attach_market_vs_adp_uses_dynasty_adp_when_scoring_type_dynasty():
+    from dashboard_services.market_intelligence.adp import attach_market_vs_adp
+    players = [{"id": str(i), "position": "RB", "proj_ppg": ppg,
+                "avg_pick": dyn, "redraft_avg_pick": 200}
+               for i, (ppg, dyn) in enumerate(
+                    [(8, 120), (10, 90), (12, 60), (14, 40), (16, 20), (18, 5)])]
+    projections = {"2": {"fantasy_points": 12.5 * 17, "confidence": 0.8,
+                           "components": {"basis": "season_props", "baseline_points": 12 * 17}}}
+    attach_market_vs_adp(players, projections, scoring_type="dynasty")
+    assert players[2]["market_vs_adp"] is not None
+    # Expected ADP is offset from dynasty ADP 60, not the dummy redraft 200.
+    assert abs(players[2]["market_expected_adp"] - 200) > 50
+    assert abs(players[2]["market_expected_adp"] - 60) < 15
+
+
 def test_market_vs_adp_diagnostics_explain_unqualified_rows():
     from dashboard_services.market_intelligence.adp import attach_market_vs_adp
     players = [{"id": name, "position": "RB", "proj_ppg": ppg, "redraft_avg_pick": adp}

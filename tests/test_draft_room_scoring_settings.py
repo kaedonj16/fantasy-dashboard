@@ -156,8 +156,13 @@ def test_preview_modal_uses_relative_pick_score():
     assert "function psAbs" not in source
     assert "dr-prev-score-hero" in body
     assert "function draftPlayerFacts(p)" in source
-    assert "var projectedVorp = (p.vorp != null && isFinite(Number(p.vorp))) ? Number(p.vorp) : null;" in source
-    assert "var tradeVor = vorOf(p);" in source
+    facts = source[source.index("function draftPlayerFacts(p)"):source.index("function fmtSigned")]
+    assert "var isSf = !!(state && state.sf);" in facts
+    assert "p.sf_vorp != null ? p.sf_vorp : p.vorp" in facts
+    assert "p.sf_market_vs_adp != null ? p.sf_market_vs_adp : p.market_vs_adp" in facts
+    assert "var pr = posRankOf(p);" in facts
+    assert "posRank: pr.label" in facts
+    assert "var tradeVor = vorOf(p);" in facts
     assert "p.vorp != null ? Number(p.vorp) : vorOf(p)" not in source
     assert "statBox('Proj PPG'" in body
     assert "statBox('REC'" in body
