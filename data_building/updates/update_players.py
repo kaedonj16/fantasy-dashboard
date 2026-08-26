@@ -15,8 +15,6 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-import requests
-
 from data_building.external_data.player_current_team import (
     normalize_nfl_team,
     update_player_values_teams,
@@ -47,10 +45,16 @@ def _write_json(path: Union[str, Path], data: Any) -> None:
 
 
 def fetch_sleeper_players() -> dict:
-    res = requests.get(SLEEPER_PLAYERS_URL, timeout=60)
-    res.raise_for_status()
-    return res.json()
+    # stdlib only — unit CI installs a slim dep set without requests.
+    import json as _json
+    import urllib.request
 
+    req = urllib.request.Request(
+        SLEEPER_PLAYERS_URL,
+        headers={"User-Agent": "fantasy-dashboard-nfl-teams/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return _json.loads(resp.read().decode("utf-8"))
 
 def _bye_by_team() -> Dict[str, int]:
     """team abbrev -> bye week from teams_index (best-effort)."""
