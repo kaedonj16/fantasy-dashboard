@@ -132,6 +132,46 @@ def test_home_espn_account_choices_are_visible_before_validation():
     assert 'espnRequestedAction = "guest"' in script
 
 
+def test_link_modal_offers_espn_email_pathway():
+    source = Path("app.py").read_text()
+    modal = source[source.index("def _link_modal_html"):source.index("def build_nav")]
+    # Email method button + its email field are present (stripped only when the
+    # OTP broker is unconfigured), and both sit inside strip markers.
+    assert 'data-method="email"' in modal
+    assert "onclick=\"setEspnMethod('email')\"" in modal
+    assert 'id="linkEspnEmail"' in modal
+    assert "<!--ESPN_OTP_METHOD_START-->" in modal and "<!--ESPN_OTP_METHOD_END-->" in modal
+    assert "<!--ESPN_OTP_FIELDS_START-->" in modal and "<!--ESPN_OTP_FIELDS_END-->" in modal
+    # The Email method routes through the shared OTP modal instead of the cookie path.
+    assert "espnMethod==='email'" in modal
+    assert "window.brOpenEspnOtp" in modal
+
+
+def test_link_modal_ships_shared_otp_modal_and_strips_when_disabled():
+    source = Path("app.py").read_text()
+    # The OTP modal is emitted by a shared helper the link modal appends, so it
+    # reaches every page rather than only the home card.
+    assert "def _espn_otp_modal_html" in source
+    modal = source[source.index("def _link_modal_html"):source.index("def build_nav")]
+    assert "_espn_otp_modal_html()" in modal
+    # When the OTP feature is off, both the Email button and its field are removed.
+    assert 'ESPN_OTP_METHOD_START-->.*?<!--ESPN_OTP_METHOD_END' in source
+    assert 'ESPN_OTP_FIELDS_START-->.*?<!--ESPN_OTP_FIELDS_END' in source
+    # FORM_BODY no longer carries its own copy of the modal (avoids duplicate ids).
+    form_body = source[source.index("FORM_BODY = "):source.index("BASE_HTML = ")]
+    assert 'id="espnOtpModal"' not in form_body
+
+
+def test_otp_modal_open_is_reusable_across_league_sources():
+    script = Path("static/app.js").read_text()
+    otp_block = script[script.index('const otpModal = document.getElementById("espnOtpModal")'):]
+    otp_block = otp_block[:otp_block.index("googleContinueBtn")]
+    # A season override lets the link modal (its own season field) drive the modal,
+    # and a global entry point seeds an arbitrary league + email.
+    assert "otpSeasonOverride" in otp_block
+    assert "window.brOpenEspnOtp" in otp_block
+
+
 def test_every_google_action_gets_shared_google_logo():
     css = Path("static/dashboard.css").read_text()
     logo = Path("static/google-logo.svg").read_text()

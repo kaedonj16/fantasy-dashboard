@@ -1577,75 +1577,7 @@ FORM_BODY = """
   <div class="flo-progress-track"><div class="flo-progress-bar" id="floProgressBar"></div></div>
 </div>
 
-{% if espn_otp_enabled %}
-<div class="otp-ov" id="espnOtpModal" style="display:none;" role="dialog" aria-modal="true" aria-label="Sign in to ESPN with email">
-  <div class="otp-card">
-    <div class="otp-head"><span id="espnOtpTitle">Connect your ESPN league</span><button type="button" class="otp-x" id="espnOtpClose" aria-label="Close">&times;</button></div>
-
-    <div class="otp-step" id="espnOtpEmailStep">
-      <div class="otp-chip" id="espnOtpChip" hidden><span class="otp-chip-dot">E</span><span id="espnOtpChipLeague">ESPN league</span></div>
-      <label class="otp-lb" for="espnOtpEmail">ESPN email address</label>
-      <input class="otp-inp" type="email" id="espnOtpEmail" autocomplete="email" placeholder="you@email.com">
-      <button type="button" class="otp-btn" id="espnOtpSend">Email me a 6-digit code</button>
-      <p class="otp-help">We send a code to the email on your ESPN account. No password needed, and we never see it.</p>
-    </div>
-
-    <div class="otp-step" id="espnOtpCodeStep" hidden>
-      <p class="otp-sub">Enter the 6-digit code we emailed to <b id="espnOtpEmailEcho"></b>. It expires in 5 minutes.</p>
-      <label class="otp-lb" for="espnOtpCode">Verification code</label>
-      <input class="otp-inp otp-code" id="espnOtpCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="------">
-      <button type="button" class="otp-btn" id="espnOtpVerify">Verify and connect</button>
-      <div class="otp-resend"><button type="button" class="otp-link" id="espnOtpResend">Resend code</button><button type="button" class="otp-link" id="espnOtpBack">Wrong email?</button></div>
-    </div>
-
-    <div class="otp-step otp-verifying" id="espnOtpVerifying" hidden>
-      <div class="otp-spin"></div>
-      <p class="otp-verify-t">Signing you in to ESPN…</p>
-    </div>
-
-    <div class="otp-step" id="espnOtpTeamStep" hidden>
-      <p class="otp-sub">Connected. Which team is yours?</p>
-      <label class="otp-lb" for="espnOtpTeam">Your team</label>
-      <select class="otp-inp" id="espnOtpTeam"></select>
-      <button type="button" class="otp-btn" id="espnOtpTeamGo">Go to my dashboard</button>
-      <div class="otp-resend"><span></span><button type="button" class="otp-link" id="espnOtpTeamSkip">Skip for now</button></div>
-    </div>
-
-    <div class="otp-msg" id="espnOtpMsg" aria-live="polite"></div>
-  </div>
-</div>
-<style>
-.otp-ov{position:fixed;inset:0;z-index:var(--z-modal,10000);background:rgba(4,8,17,.5);display:flex;align-items:center;justify-content:center;padding:16px}
-.otp-card{background:var(--card);border:1px solid var(--border);border-radius:16px;width:100%;max-width:420px;padding:16px 18px;box-shadow:0 24px 60px -20px rgba(0,0,0,.5);color:var(--text)}
-.otp-head{display:flex;justify-content:space-between;align-items:center;font-size:16px;font-weight:800;margin-bottom:12px}
-.otp-x{border:0;background:none;font-size:24px;line-height:1;color:var(--text-muted);cursor:pointer;padding:0 4px}
-.otp-chip{display:inline-flex;align-items:center;gap:7px;background:var(--accent-soft);border:1px solid var(--border);border-radius:10px;padding:7px 11px;font-size:12.5px;font-weight:700;margin-bottom:14px}
-.otp-chip-dot{width:16px;height:16px;border-radius:5px;background:#cc0000;color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center}
-.otp-lb{display:block;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px}
-.otp-inp{width:100%;border:1px solid var(--border);background:var(--bg-alt);color:var(--text);border-radius:9px;padding:10px 11px;font-size:14px;box-sizing:border-box}
-.otp-inp:focus{outline:none;border-color:#8eb2e3;box-shadow:0 0 0 4px rgba(56,132,255,.1)}
-.otp-code{letter-spacing:.4em;text-align:center;font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;padding:12px}
-.otp-btn{width:100%;border:0;background:var(--accent);color:#fff;font-weight:700;font-size:13px;padding:11px 14px;border-radius:9px;cursor:pointer;margin-top:14px}
-.otp-btn:disabled{opacity:.6;cursor:default}
-.otp-help{font-size:12px;color:var(--text-muted);margin-top:10px;line-height:1.5}
-.otp-sub{font-size:12.5px;color:var(--text-muted);margin:0 0 14px;line-height:1.5}
-.otp-sub b{color:var(--text)}
-.otp-resend{display:flex;justify-content:space-between;margin-top:14px}
-.otp-link{border:0;background:none;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;padding:0}
-.otp-link:disabled{color:var(--text-subtle);cursor:default}
-.otp-verifying{text-align:center;padding:24px 0 8px}
-.otp-spin{width:34px;height:34px;margin:0 auto 14px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--accent);animation:otpspin .8s linear infinite}
-@keyframes otpspin{to{transform:rotate(360deg)}}
-.otp-verify-t{font-size:15px;font-weight:800;margin:0}
-.otp-msg{margin-top:12px;font-size:12.5px;font-weight:600;min-height:16px}
-.otp-msg.err{color:var(--loss)}
-.otp-msg.ok{color:var(--win)}
-.espn-otp-launch{width:100%;background:var(--rookie);color:var(--on-accent);border:1px solid var(--rookie);border-radius:10px;font-size:14px;font-weight:700;padding:10px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.28)}
-.espn-otp-launch:hover{filter:brightness(1.08)}
-.espn-otp-paste-toggle{color:#93c5fd;font-weight:700;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
-.espn-otp-paste-toggle:hover{color:#bfdbfe}
-</style>
-{% endif %}
+{# ESPN email OTP modal now rendered once via _link_modal_html so it reaches every page, not just home. #}
 """
 
 BASE_HTML = """
@@ -2724,6 +2656,84 @@ def _nav_icon(name: str, cls: str = "", style: str = "", size: int = 16) -> str:
     )
 
 
+def _espn_otp_modal_html() -> str:
+    """The ESPN email + one-time-code modal, shared by the home card and the
+    "Link a league" modal. Rendered once per page (appended by the link modal so
+    it travels to every page the link modal reaches, not just home) and only when
+    the OTP broker is configured. Returns "" when the feature is off."""
+    if not _espn_otp_ui_enabled():
+        return ""
+    return """
+<div class="otp-ov" id="espnOtpModal" style="display:none;" role="dialog" aria-modal="true" aria-label="Sign in to ESPN with email">
+  <div class="otp-card">
+    <div class="otp-head"><span id="espnOtpTitle">Connect your ESPN league</span><button type="button" class="otp-x" id="espnOtpClose" aria-label="Close">&times;</button></div>
+
+    <div class="otp-step" id="espnOtpEmailStep">
+      <div class="otp-chip" id="espnOtpChip" hidden><span class="otp-chip-dot">E</span><span id="espnOtpChipLeague">ESPN league</span></div>
+      <label class="otp-lb" for="espnOtpEmail">ESPN email address</label>
+      <input class="otp-inp" type="email" id="espnOtpEmail" autocomplete="email" placeholder="you@email.com">
+      <button type="button" class="otp-btn" id="espnOtpSend">Email me a 6-digit code</button>
+      <p class="otp-help">We send a code to the email on your ESPN account. No password needed, and we never see it.</p>
+    </div>
+
+    <div class="otp-step" id="espnOtpCodeStep" hidden>
+      <p class="otp-sub">Enter the 6-digit code we emailed to <b id="espnOtpEmailEcho"></b>. It expires in 5 minutes.</p>
+      <label class="otp-lb" for="espnOtpCode">Verification code</label>
+      <input class="otp-inp otp-code" id="espnOtpCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="------">
+      <button type="button" class="otp-btn" id="espnOtpVerify">Verify and connect</button>
+      <div class="otp-resend"><button type="button" class="otp-link" id="espnOtpResend">Resend code</button><button type="button" class="otp-link" id="espnOtpBack">Wrong email?</button></div>
+    </div>
+
+    <div class="otp-step otp-verifying" id="espnOtpVerifying" hidden>
+      <div class="otp-spin"></div>
+      <p class="otp-verify-t">Signing you in to ESPN…</p>
+    </div>
+
+    <div class="otp-step" id="espnOtpTeamStep" hidden>
+      <p class="otp-sub">Connected. Which team is yours?</p>
+      <label class="otp-lb" for="espnOtpTeam">Your team</label>
+      <select class="otp-inp" id="espnOtpTeam"></select>
+      <button type="button" class="otp-btn" id="espnOtpTeamGo">Go to my dashboard</button>
+      <div class="otp-resend"><span></span><button type="button" class="otp-link" id="espnOtpTeamSkip">Skip for now</button></div>
+    </div>
+
+    <div class="otp-msg" id="espnOtpMsg" aria-live="polite"></div>
+  </div>
+</div>
+<style>
+.otp-ov{position:fixed;inset:0;z-index:var(--z-modal,10000);background:rgba(4,8,17,.5);display:flex;align-items:center;justify-content:center;padding:16px}
+.otp-card{background:var(--card);border:1px solid var(--border);border-radius:16px;width:100%;max-width:420px;padding:16px 18px;box-shadow:0 24px 60px -20px rgba(0,0,0,.5);color:var(--text)}
+.otp-head{display:flex;justify-content:space-between;align-items:center;font-size:16px;font-weight:800;margin-bottom:12px}
+.otp-x{border:0;background:none;font-size:24px;line-height:1;color:var(--text-muted);cursor:pointer;padding:0 4px}
+.otp-chip{display:inline-flex;align-items:center;gap:7px;background:var(--accent-soft);border:1px solid var(--border);border-radius:10px;padding:7px 11px;font-size:12.5px;font-weight:700;margin-bottom:14px}
+.otp-chip-dot{width:16px;height:16px;border-radius:5px;background:#cc0000;color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.otp-lb{display:block;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px}
+.otp-inp{width:100%;border:1px solid var(--border);background:var(--bg-alt);color:var(--text);border-radius:9px;padding:10px 11px;font-size:14px;box-sizing:border-box}
+.otp-inp:focus{outline:none;border-color:#8eb2e3;box-shadow:0 0 0 4px rgba(56,132,255,.1)}
+.otp-code{letter-spacing:.4em;text-align:center;font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;padding:12px}
+.otp-btn{width:100%;border:0;background:var(--accent);color:#fff;font-weight:700;font-size:13px;padding:11px 14px;border-radius:9px;cursor:pointer;margin-top:14px}
+.otp-btn:disabled{opacity:.6;cursor:default}
+.otp-help{font-size:12px;color:var(--text-muted);margin-top:10px;line-height:1.5}
+.otp-sub{font-size:12.5px;color:var(--text-muted);margin:0 0 14px;line-height:1.5}
+.otp-sub b{color:var(--text)}
+.otp-resend{display:flex;justify-content:space-between;margin-top:14px}
+.otp-link{border:0;background:none;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;padding:0}
+.otp-link:disabled{color:var(--text-subtle);cursor:default}
+.otp-verifying{text-align:center;padding:24px 0 8px}
+.otp-spin{width:34px;height:34px;margin:0 auto 14px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--accent);animation:otpspin .8s linear infinite}
+@keyframes otpspin{to{transform:rotate(360deg)}}
+.otp-verify-t{font-size:15px;font-weight:800;margin:0}
+.otp-msg{margin-top:12px;font-size:12.5px;font-weight:600;min-height:16px}
+.otp-msg.err{color:var(--loss)}
+.otp-msg.ok{color:var(--win)}
+.espn-otp-launch{width:100%;background:var(--rookie);color:var(--on-accent);border:1px solid var(--rookie);border-radius:10px;font-size:14px;font-weight:700;padding:10px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.28)}
+.espn-otp-launch:hover{filter:brightness(1.08)}
+.espn-otp-paste-toggle{color:#93c5fd;font-weight:700;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.espn-otp-paste-toggle:hover{color:#bfdbfe}
+</style>
+"""
+
+
 def _link_modal_html() -> str:
     """Self-contained "Link a league" modal (Sleeper / ESPN / Yahoo).
 
@@ -2758,6 +2768,7 @@ def _link_modal_html() -> str:
           </div>
           <div class="link-pane" data-lp="espn" style="display:none;">
             <div class="espn-methods" role="radiogroup" aria-label="ESPN league type">
+              <!--ESPN_OTP_METHOD_START--><button type="button" class="espn-method" data-method="email" onclick="setEspnMethod('email')" aria-pressed="false">Email</button><!--ESPN_OTP_METHOD_END-->
               <button type="button" class="espn-method active" data-method="public" onclick="setEspnMethod('public')" aria-pressed="true">Public League</button>
               <button type="button" class="espn-method" data-method="private" onclick="setEspnMethod('private')" aria-pressed="false">Private League</button>
             </div>
@@ -2766,6 +2777,10 @@ def _link_modal_html() -> str:
             <input id="linkEspnId" class="link-inp link-full" inputmode="numeric" placeholder="e.g. 123456" autocomplete="off">
             <label class="link-lb link-field" for="linkEspnSeason">Season</label>
             <input id="linkEspnSeason" class="link-inp link-full" inputmode="numeric" placeholder="current season" autocomplete="off">
+            <!--ESPN_OTP_FIELDS_START--><div id="espnEmailFields" style="display:none;">
+              <label class="link-lb link-field" for="linkEspnEmail">ESPN email address</label>
+              <input id="linkEspnEmail" class="link-inp link-full" type="email" autocomplete="email" placeholder="you@email.com">
+            </div><!--ESPN_OTP_FIELDS_END-->
             <div id="espnPrivateFields" style="display:none;">
               <label class="link-lb link-field" for="linkEspnBlob">Paste your ESPN cookies</label>
               <textarea id="linkEspnBlob" class="link-inp link-full" rows="3" autocomplete="off" spellcheck="false" style="box-sizing:border-box;font:inherit;resize:vertical;" placeholder="Paste the whole cookie string, e.g. SWID=...; espn_s2=AEB…  We'll pull out both values."></textarea>
@@ -2941,13 +2956,16 @@ def _link_modal_html() -> str:
         else{st.textContent='';}
       });})();
       window.setEspnMethod=function(method){
-        espnMethod=method==='private'?'private':'public';
+        espnMethod=(method==='private'||method==='email')?method:'public';
+        var isEmail=espnMethod==='email',isPrivate=espnMethod==='private';
         document.querySelectorAll('.espn-method').forEach(function(b){var on=b.dataset.method===espnMethod;b.classList.toggle('active',on);b.setAttribute('aria-pressed',on?'true':'false');});
-        document.getElementById('espnPrivateFields').style.display=espnMethod==='private'?'block':'none';
-        document.getElementById('espnMethodHelp').textContent=espnMethod==='private'?'Connect a private ESPN league using its League ID and ESPN session credentials.':'Connect a publicly accessible ESPN league using its League ID.';
+        document.getElementById('espnPrivateFields').style.display=isPrivate?'block':'none';
+        var emailFields=document.getElementById('espnEmailFields');if(emailFields)emailFields.style.display=isEmail?'block':'none';
+        document.getElementById('espnMethodHelp').textContent=isEmail?"Sign in with the email on your ESPN account and we'll email you a 6-digit code — no cookies needed.":isPrivate?'Connect a private ESPN league using its League ID and ESPN session credentials.':'Connect a publicly accessible ESPN league using its League ID.';
         document.getElementById('linkEspnSwid').value=''; document.getElementById('linkEspnS2').value=''; (function(){var b=document.getElementById('linkEspnBlob');if(b)b.value='';var s=document.getElementById('linkEspnBlobStatus');if(s)s.textContent='';})(); linkSetMsg('','');
-        var connectBtn=document.getElementById('linkEspnConnect'),googleConnect=espnMethod==='private'&&!window._hasAccount;
-        connectBtn.textContent=googleConnect?'Sign in with Google to Connect':'Connect League';connectBtn.classList.toggle('google-continue-btn',googleConnect);
+        var connectBtn=document.getElementById('linkEspnConnect');
+        if(isEmail){connectBtn.textContent='Email me a code';connectBtn.classList.remove('google-continue-btn');}
+        else{var googleConnect=isPrivate&&!window._hasAccount;connectBtn.textContent=googleConnect?'Sign in with Google to Connect':'Connect League';connectBtn.classList.toggle('google-continue-btn',googleConnect);}
       };
       window.linkEspnConnect=function(){
         var id=(document.getElementById('linkEspnId').value||'').trim();
@@ -2956,6 +2974,13 @@ def _link_modal_html() -> str:
         var blobEl=document.getElementById('linkEspnBlob'), blob=(blobEl?blobEl.value:'').trim();
         if(blob&&(!swid||!s2)){ var bp=brLinkParseCookies(blob); swid=swid||bp.swid||blob; s2=s2||bp.espn_s2||blob; }
         if(!/^\\d+$/.test(id)){ linkSetMsg('Enter a valid numeric League ID.','err'); return; }
+        if(espnMethod==='email'){
+          var email=(document.getElementById('linkEspnEmail').value||'').trim();
+          if(!email||email.indexOf('@')<0){ linkSetMsg('Enter the email on your ESPN account.','err'); return; }
+          var opened=window.brOpenEspnOtp&&window.brOpenEspnOtp({league_id:id,season:yr?Number(yr):null,email:email});
+          if(opened){ linkSetMsg('',''); closeLinkModal(); } else { linkSetMsg('ESPN email sign-in is unavailable right now. Use Public or Private instead.','err'); }
+          return;
+        }
         if(!window._hasAccount){
           if(espnMethod==='private'){
             if(!swid||!s2){linkSetMsg('Enter SWID and ESPN_S2 before continuing with Google.','err');return;}
@@ -3041,14 +3066,21 @@ def _link_modal_html() -> str:
     })();
     </script>
     """
+    import re as _re
     if not _yahoo_ui_enabled():
-        import re as _re
         _modal = _modal.replace(
             "<button type=\"button\" class=\"link-tab\" data-lp=\"yahoo\" onclick=\"linkTab('yahoo')\">Yahoo</button>",
             "",
         )
         _modal = _re.sub(r"<!--YAHOO_PANE_START-->.*?<!--YAHOO_PANE_END-->", "", _modal, flags=_re.S)
-    return _modal
+    if not _espn_otp_ui_enabled():
+        # No ESPN OTP broker configured: drop the Email method button and its
+        # email field so the modal only offers the cookie-based paths.
+        _modal = _re.sub(r"<!--ESPN_OTP_METHOD_START-->.*?<!--ESPN_OTP_METHOD_END-->", "", _modal, flags=_re.S)
+        _modal = _re.sub(r"<!--ESPN_OTP_FIELDS_START-->.*?<!--ESPN_OTP_FIELDS_END-->", "", _modal, flags=_re.S)
+    # The OTP modal (email + code) rides along with the link modal so the Email
+    # method works on every page, not just home. Returns "" when the flag is off.
+    return _modal + _espn_otp_modal_html()
 
 
 def build_nav(league_id: Optional[str], active: str, platform: str, season: int) -> str:
