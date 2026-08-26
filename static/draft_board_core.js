@@ -568,6 +568,73 @@
     return nearValue ? AUTO_STARTER_BOOST : 1;
   }
 
+  // Deep Dive "reach" vs leftover ADP. Historical ADP is a mean across full
+  // drafts, so after picks 1–8 the best remaining player often has ADP 11 at
+  // pick 9 — a cluster, not a reach. Remaining-board BPA (and a tight ADP
+  // cluster with no clear favorite) plus players who would not last to the
+  // next pick are on-market. Raw Steal/Value (fell past ADP) is unchanged.
+  var ADP_REACH_CLUSTER = 1.0;   // within this many ADP of the remaining #1 = co-BPA
+  var ADP_REACH_SURVIVE = 20;    // below this % chance to last to the next pick = not a reach
+  var ADP_REACH_RAW = -5;        // same raw early-by-N threshold the ledger used
+
+  function isRemainingAdpBpa(playerAdp, bestRemainingAdp, cluster) {
+    if (playerAdp == null || bestRemainingAdp == null) return false;
+    var a = Number(playerAdp), b = Number(bestRemainingAdp);
+    if (!isFinite(a) || !isFinite(b)) return false;
+    var c = cluster == null ? ADP_REACH_CLUSTER : Number(cluster);
+    if (!isFinite(c)) c = ADP_REACH_CLUSTER;
+    return a <= b + c;
+  }
+
+  function bestRemainingAdp(pool, takenIds, adpFn) {
+    var best = null;
+    if (!pool || !pool.length) return best;
+    takenIds = takenIds || {};
+    for (var i = 0; i < pool.length; i++) {
+      var p = pool[i];
+      if (!p || takenIds[String(p.id)]) continue;
+      var a = adpFn ? adpFn(p) : p.adp;
+      if (a == null || !isFinite(Number(a))) continue;
+      a = Number(a);
+      if (best == null || a < best) best = a;
+    }
+    return best;
+  }
+
+  function adpDeltaVerdict(o) {
+    o = o || {};
+    var diff = o.diff;
+    if (diff == null || !isFinite(Number(diff))) return { label: '—', cls: 'na' };
+    diff = Number(diff);
+    if (diff >= 8) return { label: 'Steal', cls: 'steal' };
+    if (diff >= 3) return { label: 'Value', cls: 'value' };
+    if (diff > ADP_REACH_RAW) return { label: 'Fair', cls: 'fair' };
+    if (o.isBpa) return { label: 'Fair', cls: 'fair' };
+    var survive = o.survivePct;
+    if (survive != null && isFinite(Number(survive)) && Number(survive) < ADP_REACH_SURVIVE) {
+      return { label: 'Fair', cls: 'fair' };
+    }
+    return { label: 'Reach', cls: 'reach' };
+  }
+
+  // Timeline / net-ADP delta: leftover-ADP bias on a remaining BPA (or a
+  // player who would not last) sits on the line instead of in the reach zone.
+  // Steals (positive) and true reaches (skipped better ADP, likely to last)
+  // keep their raw pick − ADP.
+  function adpBoardDelta(o) {
+    o = o || {};
+    var diff = o.diff;
+    if (diff == null || !isFinite(Number(diff))) return null;
+    diff = Number(diff);
+    if (diff >= 0) return diff;
+    if (o.isBpa) return 0;
+    var survive = o.survivePct;
+    if (survive != null && isFinite(Number(survive)) && Number(survive) < ADP_REACH_SURVIVE) {
+      return 0;
+    }
+    return diff;
+  }
+
   // Last-resort K/DEF fill: which required special-teams slot to take when a
   // team has no discretionary picks left. Order follows that team's plan so
   // mocks are not a global kicker-then-defense script.
@@ -602,5 +669,8 @@
     availabilityProbability: availabilityProbability, calibrateAvailability: calibrateAvailability,
     autoDraftNeedMultiplier: autoDraftNeedMultiplier,
     specialTeamsFillPos: specialTeamsFillPos,
+    ADP_REACH_CLUSTER: ADP_REACH_CLUSTER, ADP_REACH_SURVIVE: ADP_REACH_SURVIVE,
+    isRemainingAdpBpa: isRemainingAdpBpa, bestRemainingAdp: bestRemainingAdp,
+    adpDeltaVerdict: adpDeltaVerdict, adpBoardDelta: adpBoardDelta,
   };
 });

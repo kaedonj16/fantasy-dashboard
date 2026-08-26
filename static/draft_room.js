@@ -161,6 +161,15 @@
     for (var i = 0; i < ups.length; i++){ if (ups[i] > state.current) return ups[i]; }
     return null;
   }
+  // Next owned pick number after `pn`, whether or not that pick is already
+  // filled. Deep Dive uses this as "your next turn" when grading a historical
+  // pick (unlike nextOwnedAfterCurrent, which only looks at unfilled picks
+  // from the live clock).
+  function nextOwnedPickAfter(pn){
+    var owned = ownedPicks();
+    for (var i = 0; i < owned.length; i++){ if (owned[i] > pn) return owned[i]; }
+    return null;
+  }
   // Upcoming owned picks that have not been made yet (current pick included).
   function upcomingOwnedPicks(){
     return ownedPicks().filter(function(pn){ return pn >= state.current && !state.picks[pn]; });
@@ -5666,14 +5675,57 @@
   //   • adpOf() with the app's pn - adp convention (positive = fell to you = value)
   // Gated behind cfg.hasPremium; available for every mock and live/synced draft.
   function ddGradeCol(s){ return s >= 75 ? '#22c55e' : s >= 60 ? '#38bdf8' : s >= 45 ? '#f59e0b' : '#ef4444'; }
-  // Verdict from the market delta (pn - adp). Reach and value read the SAME way the
-  // grade does: you drafted them later than ADP -> they fell to you -> value/steal.
-  function ddVerdict(diff){
+  // Verdict from the market delta (pn - adp), with remaining-board BPA and
+  // survival exemptions so leftover-ADP (best remaining at 11.0, pick 9) is
+  // Fair rather than Reach. Shared kernel in DraftBoardCore.adpDeltaVerdict.
+  function ddVerdict(p, useCons){
+    var Core = window.DraftBoardCore;
+    if (p == null || typeof p === 'number'){
+      return Core && Core.adpDeltaVerdict
+        ? Core.adpDeltaVerdict({ diff: p })
+        : { label:'—', cls:'na' };
+    }
+    var diff = (useCons && p.consDiff != null) ? p.consDiff : p.diff;
+    var bpa = useCons ? !!p.consIsBpa : !!p.isBpa;
+    if (Core && Core.adpDeltaVerdict){
+      return Core.adpDeltaVerdict({ diff: diff, isBpa: bpa, survivePct: p.survivePct });
+    }
     if (diff == null) return { label:'—', cls:'na' };
     if (diff >= 8)  return { label:'Steal', cls:'steal' };
     if (diff >= 3)  return { label:'Value', cls:'value' };
     if (diff > -5)  return { label:'Fair',  cls:'fair'  };
     return { label:'Reach', cls:'reach' };
+  }
+  // Players taken before `pn` (plus keepers that never landed on a pick slot).
+  function ddTakenBefore(pn){
+    var taken = {};
+    Object.keys(state.picks).forEach(function(k){
+      if (parseInt(k, 10) < pn && state.picks[k]) taken[String(state.picks[k].id)] = true;
+    });
+    if (keepersOn && keeperSet && keeperSet.length){
+      var onBoard = {};
+      Object.keys(state.picks).forEach(function(k){
+        if (state.picks[k]) onBoard[String(state.picks[k].id)] = true;
+      });
+      keeperSet.forEach(function(k){
+        if (k && k.id != null && !onBoard[String(k.id)]) taken[String(k.id)] = true;
+      });
+    }
+    return taken;
+  }
+  // Chance this player lasts to `nextPn` from ADP alone (no future-board
+  // leakage from the live observedDraftModel). No later pick → 0 (can't wait).
+  function ddSurvivePct(full, nextPn){
+    if (nextPn == null) return 0;
+    var a = adpOf(full);
+    if (a == null) return null;
+    if (window.DraftBoardCore && DraftBoardCore.availabilityProbability){
+      return DraftBoardCore.availabilityProbability({
+        center: a, pick: nextPn, sigma: simSigma(a),
+        draftType: state.type, sf: !!state.sf
+      });
+    }
+    return null;
   }
   // Signed ADP delta for display (pick number minus ADP). Keep full precision
   // on the raw `diff` for sorting; round here so the ledger doesn't print
@@ -5689,6 +5741,7 @@
   function ddMyPicks(){
     var rows = [];
     if (!hasOwned()) return rows;
+    var Core = window.DraftBoardCore;
     Object.keys(state.picks).forEach(function(k){
       var pn = parseInt(k, 10);
       if (!isMyPick(pn) || !state.picks[k]) return;
@@ -5698,8 +5751,35 @@
       var diff = (adp != null) ? (pn - adp) : null;
       var consAdp = consensusAdpOf(full);
       var consDiff = (consAdp != null) ? (pn - consAdp) : null;
+      var taken = ddTakenBefore(pn);
+      var remPool = players;
+      if (full && full.id != null && !playersById[String(full.id)]) remPool = players.concat([full]);
+      var bestAdp = Core && Core.bestRemainingAdp ? Core.bestRemainingAdp(remPool, taken, adpOf) : adp;
+      if (bestAdp == null && adp != null) bestAdp = adp;
+      var consAdpFn = function(p){ var c = consensusAdpOf(p); return c != null ? c : adpOf(p); };
+      var bestCons = Core && Core.bestRemainingAdp ? Core.bestRemainingAdp(remPool, taken, consAdpFn) : (consAdp != null ? consAdp : adp);
+      if (bestCons == null && (consAdp != null || adp != null)) bestCons = consAdp != null ? consAdp : adp;
+      var isBpa = Core && Core.isRemainingAdpBpa
+        ? Core.isRemainingAdpBpa(adp, bestAdp)
+        : (adp != null && bestAdp != null && adp <= bestAdp + 1);
+      var consIsBpa = Core && Core.isRemainingAdpBpa
+        ? Core.isRemainingAdpBpa(consAdp != null ? consAdp : adp, bestCons)
+        : isBpa;
+      var survivePct = ddSurvivePct(full, nextOwnedPickAfter(pn));
+      var boardDiff = Core && Core.adpBoardDelta
+        ? Core.adpBoardDelta({ diff: diff, isBpa: isBpa, survivePct: survivePct })
+        : diff;
+      var consBoardDiff = Core && Core.adpBoardDelta
+        ? Core.adpBoardDelta({
+            diff: consDiff != null ? consDiff : diff,
+            isBpa: consIsBpa,
+            survivePct: survivePct
+          })
+        : (consDiff != null ? consDiff : diff);
       rows.push({ pn: pn, pl: pl, full: full, pos: String(pl.position || '').toUpperCase(),
         adp: adp, diff: diff, consAdp: consAdp, consDiff: consDiff,
+        isBpa: isBpa, consIsBpa: consIsBpa, survivePct: survivePct,
+        boardDiff: boardDiff, consBoardDiff: consBoardDiff,
         ps: relPS(pl, pn), tier: tierOf(full) });
     });
     rows.sort(function(a, b){ return a.pn - b.pn; });
@@ -5761,12 +5841,16 @@
     var withAdp = picks.filter(function(p){ return p.diff != null; });
     // Cap each pick's contribution so one late-round freefall doesn't dominate
     // the "net ADP value" tile (a +40 slide in round 14 ≠ forty early-round steals).
+    // Use the remaining-board delta so leftover-ADP BPA picks don't look like
+    // systematic reaches.
     var netValue = withAdp.reduce(function(s, p){
-      return s + Math.max(-12, Math.min(12, p.diff));
+      var d = p.consBoardDiff != null ? p.consBoardDiff : p.boardDiff;
+      if (d == null) d = p.diff;
+      return s + Math.max(-12, Math.min(12, d));
     }, 0);
     netValue = Math.round(netValue * 10) / 10;
     var nValues = withAdp.filter(function(p){ return p.diff >= 3; }).length;
-    var nReaches = withAdp.filter(function(p){ return p.diff <= -5; }).length;
+    var nReaches = withAdp.filter(function(p){ return ddVerdict(p).cls === 'reach'; }).length;
 
     var html = '<button class="dr-prev-close" id="drDdClose" aria-label="Close">&times;</button>';
     html += '<div class="dd-head"><div class="dd-kicker">Draft Report · Deep Dive'
@@ -5852,7 +5936,7 @@
     var tileDefs = [
       { v: fmtAdpDelta(netValue), l: 'Net ADP value (capped)', cls: netValue >= 0 ? 'good' : 'bad' },
       { v: nValues, l: 'Values (fell 3+ to you)', cls: 'good' },
-      { v: nReaches, l: 'Reaches (early 5+)', cls: nReaches ? 'bad' : '' },
+      { v: nReaches, l: 'Reaches (early 5+, could wait)', cls: nReaches ? 'bad' : '' },
       { v: g.avgPs != null ? g.avgPs : '—', l: 'Avg pick score' }
     ];
     tileDefs.forEach(function(t){
@@ -5899,20 +5983,25 @@
   // ── Value-vs-ADP timeline (SVG) ──────────────────────────────────────────────
   // Plot against consensus ADP when the payload has it; otherwise the selected
   // source (adpOf). The heading subscript only appears when consensus is in use.
-  function ddTlDelta(p){ return p.consDiff != null ? p.consDiff : p.diff; }
+  function ddTlDelta(p){
+    if (p.consBoardDiff != null) return p.consBoardDiff;
+    if (p.boardDiff != null) return p.boardDiff;
+    return p.consDiff != null ? p.consDiff : p.diff;
+  }
   function ddTlAdp(p){ return p.consAdp != null ? p.consAdp : p.adp; }
   function ddTimelineHtml(picks){
     var hasCons = picks.some(function(p){ return p.consAdp != null; });
     var sub = hasCons ? '<small class="dd-h-sub">Consensus ADP</small>' : '';
     var blurb = hasCons
-      ? 'Each pick against consensus ADP. Above the line it fell to you (value); below, you reached. Dot size = pick score.'
-      : 'Each pick against where the market had it. Above the line it fell to you (value); below, you reached. Dot size = pick score.';
+      ? 'Each pick against consensus ADP. Above the line it fell to you (value). Best remaining ADP and players under 20% to last to your next pick sit on the line even if historical ADP is a couple of spots later; below is a reach past someone who was likely to last.'
+      : 'Each pick against where the market had it. Above the line it fell to you (value). Best remaining ADP and players under 20% to last to your next pick sit on the line even if historical ADP is a couple of spots later; below is a reach past someone who was likely to last.';
     return '<div class="dd-card">'
       + '<div class="dd-sec"><h4>Value vs ADP timeline' + sub + '</h4>'
       + '<p>' + blurb + '</p></div>'
       + '<div class="dd-legend">'
       + ['QB','RB','WR','TE'].map(function(p){ return '<span><i class="dd-dot" style="background:' + posColor(p) + '"></i>' + p + '</span>'; }).join('')
       + '<span style="margin-left:auto"><i class="dd-sq" style="background:color-mix(in srgb,#22c55e 22%,transparent);border:1px solid #22c55e"></i>value</span>'
+      + '<span><i class="dd-sq" style="background:color-mix(in srgb,#94a3b8 22%,transparent);border:1px solid #94a3b8"></i>on board</span>'
       + '<span><i class="dd-sq" style="background:color-mix(in srgb,#ef4444 22%,transparent);border:1px solid #ef4444"></i>reach</span>'
       + '</div>'
       + '<div class="dd-chartscroll"><svg id="drDdTl" width="900" height="340" viewBox="0 0 900 340" role="img" aria-label="Value versus consensus ADP by pick"></svg></div>'
@@ -5961,15 +6050,21 @@
   function ddTip(ev, p){
     var tip = document.getElementById('drDdTip');
     if (!tip){ tip = document.createElement('div'); tip.id = 'drDdTip'; tip.className = 'dd-tip'; document.body.appendChild(tip); }
-    var dlt = ddTlDelta(p), adp = ddTlAdp(p);
-    var vd = ddVerdict(dlt);
+    var dlt = p.consDiff != null ? p.consDiff : p.diff, adp = ddTlAdp(p);
+    var vd = ddVerdict(p, true);
     var adpLbl = p.consAdp != null ? 'Consensus ADP' : 'ADP';
+    var why = '';
+    if (vd.cls !== 'reach' && dlt != null && dlt < 0){
+      if (p.consIsBpa || p.isBpa) why = 'Best remaining ADP at the pick.';
+      else if (p.survivePct != null && p.survivePct < 20) why = 'Under 20% to last to your next pick.';
+    }
     tip.innerHTML = '<b>' + esc(p.pl.name) + '</b> <span style="color:var(--text-muted)">' + p.pos + (p.pl.team ? ' · ' + esc(p.pl.team) : '') + '</span>'
       + '<div class="dd-tip-r">Pick <b>' + roundPickStr(p.pn) + '</b></div>'
       + (adp != null ? '<div class="dd-tip-r">' + adpLbl + ' <b>' + Number(adp).toFixed(1) + '</b></div>' : '')
       + (dlt != null ? '<div class="dd-tip-r">± vs ADP <b style="color:' + (dlt >= 0 ? '#22c55e' : '#ef4444') + '">' + fmtAdpDelta(dlt) + '</b></div>' : '')
       + (p.ps != null ? '<div class="dd-tip-r">Board PS <b style="color:' + psColor(p.ps) + '">' + p.ps + '</b> <span style="color:var(--text-muted)">(vs best avail)</span></div>' : '')
-      + '<div class="dd-tip-r">Verdict <b>' + vd.label + '</b></div>';
+      + '<div class="dd-tip-r">Verdict <b>' + vd.label + '</b></div>'
+      + (why ? '<div class="dd-tip-r" style="color:var(--text-muted)">' + why + '</div>' : '');
     tip.classList.add('show');
     var tw = tip.offsetWidth, th = tip.offsetHeight;
     var lx = ev.clientX + 14, ty = ev.clientY - th - 8;
@@ -5982,7 +6077,7 @@
   // ── Pick ledger (sortable) ───────────────────────────────────────────────────
   function ddLedgerHtml(picks){
     return '<div class="dd-card">'
-      + '<div class="dd-sec"><h4>Pick ledger</h4><p>Every selection with market delta, board pick score (vs best available then), tier, and verdict. Click a header to sort.</p></div>'
+      + '<div class="dd-sec"><h4>Pick ledger</h4><p>Every selection with market delta, board pick score (vs best available then), tier, and verdict. Reach means you skipped a better remaining ADP and the player was likely to last to your next pick. Click a header to sort.</p></div>'
       + '<div class="dd-tablescroll"><table class="dd-ledger" id="drDdLedger">'
       + '<thead><tr>'
       + '<th data-k="pn" data-t="n">Pick</th><th data-k="name" data-t="s">Player</th><th data-k="pos" data-t="s">Pos</th>'
@@ -5993,7 +6088,7 @@
   }
   function ddLedgerRows(list){
     return list.map(function(p){
-      var vd = ddVerdict(p.diff);
+      var vd = ddVerdict(p);
       var dcl = p.diff == null ? 'z' : p.diff > 0 ? 'p' : p.diff < 0 ? 'n' : 'z';
       var dtxt = fmtAdpDelta(p.diff);
       return '<tr>'
@@ -6019,7 +6114,7 @@
         st.dir = (st.k === k) ? -st.dir : (t === 'n' ? -1 : 1); st.k = k;
         var list = picks.slice().sort(function(a, b){
           var av, bv;
-          if (k === 'vord'){ av = ddVerdict(a.diff).label; bv = ddVerdict(b.diff).label; return st.dir * String(av).localeCompare(String(bv)); }
+          if (k === 'vord'){ av = ddVerdict(a).label; bv = ddVerdict(b).label; return st.dir * String(av).localeCompare(String(bv)); }
           if (k === 'name'){ return st.dir * String(a.pl.name).localeCompare(String(b.pl.name)); }
           if (k === 'pos'){ return st.dir * String(a.pos).localeCompare(String(b.pos)); }
           av = a[k] == null ? -999 : a[k]; bv = b[k] == null ? -999 : b[k];
@@ -6141,7 +6236,8 @@
     var edges = '';
     if (withAdp.length){
       var steal = withAdp.slice().sort(function(a, b){ return b.diff - a.diff; })[0];
-      var reach = withAdp.slice().sort(function(a, b){ return a.diff - b.diff; })[0];
+      var reach = withAdp.filter(function(p){ return ddVerdict(p).cls === 'reach'; })
+        .sort(function(a, b){ return a.diff - b.diff; })[0];
       var best = picks.filter(function(p){ return p.ps != null; }).sort(function(a, b){ return b.ps - a.ps; })[0];
       function edge(kind, cls, p, extra){
         return '<div class="dd-edge ' + cls + '"><div class="dd-edge-k">' + kind + '</div>'
@@ -6158,8 +6254,8 @@
       if (best && (!steal || best !== steal || steal.diff < 3)){
         parts.push(edge('Best pick', 'winb', best, 'Your highest pick score at <b>' + best.ps + '</b>.'));
       }
-      if (reach && reach.diff <= -5){
-        parts.push(edge('Biggest reach', 'bad', reach, 'Taken <b>' + Math.abs(reach.diff).toFixed(1) + '</b> picks before ADP.'));
+      if (reach){
+        parts.push(edge('Biggest reach', 'bad', reach, 'Taken <b>' + Math.abs(reach.diff).toFixed(1) + '</b> picks before ADP with a better option still on the board.'));
       }
       if (parts.length) edges = '<div class="dd-edges">' + parts.join('') + '</div>';
     }

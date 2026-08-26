@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-08-26",
+        "tag": "fix",
+        "text": "Draft Room Deep Dive no longer labels leftover-ADP as a reach: taking the best remaining player (or anyone in a tight ADP cluster) is Fair even if historical ADP sits a couple of spots later, and so is anyone with under 20% chance to last to your next pick.",
+        "link": "/draft"
+    },
+    {
         "date": "2026-08-25",
         "tag": "fix",
         "text": "Player modal Trades tab: This League now looks across every season in the league's history (including offseason trades), shows real team names on each side, and aligns the two packages toward the swap.",
