@@ -9912,8 +9912,12 @@ if (!platformBtns.length) return;
     let otpLoginId = "";
     let otpLeagueId = "";
     let otpResendTimer = null;
+    // Set when the modal is opened for a specific league (e.g. from the Link a
+    // league modal, which carries its own season field); null falls back to the
+    // home card's season input.
+    let otpSeasonOverride = null;
 
-    const otpSeason = () => Number(document.querySelector('input[name="season"]')?.value || new Date().getFullYear());
+    const otpSeason = () => otpSeasonOverride || Number(document.querySelector('input[name="season"]')?.value || new Date().getFullYear());
     const setMsg = (text, kind) => {
       if (!otpMsg) return;
       otpMsg.textContent = text || "";
@@ -9961,12 +9965,37 @@ if (!platformBtns.length) return;
       }
       otpLeagueId = leagueId;
       otpLoginId = "";
+      otpSeasonOverride = null;
       if (otpChip && otpChipLeague) { otpChipLeague.textContent = "ESPN League " + leagueId; otpChip.hidden = false; }
       setMsg("");
       showStep("email");
       if (otpCode) otpCode.value = "";
       otpModal.style.display = "flex";
       setTimeout(() => otpEmail?.focus(), 40);
+    };
+
+    // Open the OTP modal for an arbitrary league — used by the "Link a league"
+    // modal, which has its own League ID + season + email fields. When an email
+    // is supplied we kick off the code send so the member lands on the code step.
+    // Returns false when the modal isn't present (feature flag off) so callers
+    // can fall back gracefully.
+    window.brOpenEspnOtp = (opts) => {
+      opts = opts || {};
+      const leagueId = String(opts.league_id || "").trim();
+      if (!leagueId || !/^\d+$/.test(leagueId)) return false;
+      otpLeagueId = leagueId;
+      otpLoginId = "";
+      otpSeasonOverride = opts.season ? Number(opts.season) : null;
+      if (otpChip && otpChipLeague) { otpChipLeague.textContent = "ESPN League " + leagueId; otpChip.hidden = false; }
+      setMsg("");
+      showStep("email");
+      if (otpCode) otpCode.value = "";
+      const email = String(opts.email || "").trim();
+      if (otpEmail) otpEmail.value = email;
+      otpModal.style.display = "flex";
+      if (email.includes("@")) { otpSend?.click(); }
+      else { setTimeout(() => otpEmail?.focus(), 40); }
+      return true;
     };
 
     // Email method: league ID + email are on the card. Validate the email, open
