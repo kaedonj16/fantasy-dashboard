@@ -177,9 +177,27 @@ def test_draft_room_roster_projection_uses_sleeper_proj_ppg_only():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
     assert "function _pPpg(p){ return scoringProjPpg(p); }" in source
-    assert "var _ppgv = scoringProjPpg(p);" in source
+    assert "var _ppgv = scoringProjPpg(s.p);" in source
     assert "p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null)" not in source
     assert "p.ppg != null ? Number(p.ppg) : scoringProjPpg" not in source
+
+
+def test_draft_summary_proj_ppg_is_starting_lineup_not_full_roster():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    match = re.search(
+        r"function openSummary\(\)\{(.*?)function closeSummary",
+        source,
+        re.DOTALL,
+    )
+    assert match
+    body = match.group(1)
+    assert "starters.forEach(function(s){" in body
+    assert "var _ppgv = scoringProjPpg(s.p);" in body
+    assert "if (_ppgv != null){ sumProjTotal += _ppgv; sumProjCount++; }" in body
+    assert "l: 'Proj PPG'" in body
+    # Full-roster sum was inflating a start-9 to ~20 PPG per starter.
+    assert "var _ppgv = scoringProjPpg(p);" not in body
+    assert "mine.forEach(function(p){\n        var _ppgv = scoringProjPpg(p);" not in body
 
 
 def test_recommendation_is_a_rank_not_a_declining_numeric_grade():
