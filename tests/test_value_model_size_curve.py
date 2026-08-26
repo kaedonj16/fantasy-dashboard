@@ -13,6 +13,8 @@ import os
 import pytest
 
 pytest.importorskip("requests")  # external_values_scraper imports requests at load
+pytest.importorskip("bs4")  # utils.utils (pulled in for DATA_DIR) imports BeautifulSoup
+pytest.importorskip("flask")  # utils.utils also imports dashboard_services.api
 
 from data_building.external_data import external_values_scraper as evs
 

@@ -9,6 +9,7 @@ before any offseason adjustment runs.
 import pytest
 
 pytest.importorskip("requests")  # dashboard_services.api imports requests at load
+pytest.importorskip("flask")  # api.py also imports Flask at module load
 
 from dashboard_services import api as dsapi
 

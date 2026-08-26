@@ -6,6 +6,7 @@ import pytest
 # dependencies are installed, instead of failing during test collection.
 pytest.importorskip("requests")
 pytest.importorskip("bs4")
+pytest.importorskip("flask")  # utils.utils imports dashboard_services.api
 
 from utils import utils
 from data_building import fetch_projections
