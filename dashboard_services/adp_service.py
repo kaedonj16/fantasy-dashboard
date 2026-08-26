@@ -188,7 +188,8 @@ def _hydrate_snapshot_from_db(source: str, axis: str, season: int) -> bool:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT DISTINCT ON (player_id) player_id, adp
+                    SELECT DISTINCT ON (player_id) player_id, adp,
+                           min_pick, max_pick, draft_pct
                     FROM adp_snapshots
                     WHERE source = %s AND season = %s AND draft_type = %s
                       AND adp IS NOT NULL AND adp > 0
@@ -201,19 +202,47 @@ def _hydrate_snapshot_from_db(source: str, axis: str, season: int) -> bool:
         logger.debug("adp_service: DB snapshot hydrate skipped", exc_info=True)
         return False
     adp: Dict[str, float] = {}
+    extra: Dict[str, dict] = {}
     for r in rows or []:
         try:
-            pid = r["player_id"] if isinstance(r, dict) else r[0]
-            val = r["adp"] if isinstance(r, dict) else r[1]
+            if isinstance(r, dict):
+                pid, val = r["player_id"], r["adp"]
+                min_pick, max_pick, draft_pct = r.get("min_pick"), r.get("max_pick"), r.get("draft_pct")
+            else:
+                pid, val = r[0], r[1]
+                min_pick = r[2] if len(r) > 2 else None
+                max_pick = r[3] if len(r) > 3 else None
+                draft_pct = r[4] if len(r) > 4 else None
             fv = float(val)
         except (TypeError, ValueError, KeyError, IndexError):
             continue
-        if fv > 0:
-            adp[str(pid)] = fv
+        if fv <= 0:
+            continue
+        sid = str(pid)
+        adp[sid] = fv
+        ex = {}
+        if min_pick is not None:
+            try:
+                ex["min_pick"] = float(min_pick)
+            except (TypeError, ValueError):
+                pass
+        if max_pick is not None:
+            try:
+                ex["max_pick"] = float(max_pick)
+            except (TypeError, ValueError):
+                pass
+        if draft_pct is not None:
+            try:
+                ex["draft_pct"] = float(draft_pct)
+            except (TypeError, ValueError):
+                pass
+        if ex:
+            extra[sid] = ex
     if not adp:
         return False
     return write_adp_snapshot(source, axis, int(season), {
         "adp": adp,
+        "extra": extra,
         "meta": {"draft_type": axis, "qb_format": "mixed", "scope": "global",
                  "hydrated_from": "db"},
         "mapped_count": len(adp),
@@ -819,11 +848,17 @@ def _espn_adp_source(season: int, is_sf: bool, scoring_type: str) -> Dict[str, f
 
 
 def _mfl_adp_source(season: int, is_sf: bool, scoring_type: str) -> Dict[str, float]:
-    """MFL global redraft ADP (redraft-only). Populates on miss like Sleeper."""
+    """MFL global redraft ADP (redraft-only). Populates on miss like Sleeper.
+
+    Re-filters the snapshot for selected-only ``averagePick`` rows (low
+    ``draftSelPct``) so an already-written snapshot cannot keep serving a
+    7th-round rookie as ADP 57 just because 10% of MFL mocks took him there.
+    """
     if scoring_type != "redraft":
         return {}
     ensure_global_adp_snapshot("mfl", int(season))
-    return snapshot_adp_map("mfl", "redraft", int(season))
+    from dashboard_services.providers.global_adp import filter_mfl_snapshot_adp
+    return filter_mfl_snapshot_adp(load_adp_snapshot("mfl", "redraft", int(season)))
 
 
 def espn_ppr_rank(season: int) -> Dict[str, float]:

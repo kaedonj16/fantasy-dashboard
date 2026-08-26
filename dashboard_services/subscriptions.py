@@ -132,6 +132,19 @@ def has_premium_access(
                     if cur.fetchone():
                         return True
 
+                    # Google-only checkout (no platform identity yet) stores the
+                    # subscription against acct:<id> (or the bare account id).
+                    cur.execute("""
+                        SELECT 1 FROM user_subscriptions
+                        WHERE user_id IN (%s, %s)
+                          AND subscription_status = 'active'
+                          AND expires_at > %s
+                        LIMIT 1
+                    """, (f"acct:{account_id}", str(account_id), now))
+
+                    if cur.fetchone():
+                        return True
+
                 return False
 
     except Exception as e:

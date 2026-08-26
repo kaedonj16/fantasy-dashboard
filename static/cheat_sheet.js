@@ -34,6 +34,8 @@
     posFilter: 'ALL',
     done: new Set(),
     pickSlot: 0,           // 1-based snake seat; 0 = no projected-pick lines
+    sortKey: 'vor',        // Big Board display sort; model order stays VOR
+    sortDir: -1,           // -1 desc, +1 asc. Default = VOR descending.
   };
   var teams = Number(cfg.numTeams) || 12;
   var allPlayers = [];
@@ -334,6 +336,80 @@
     return (v != null && isFinite(Number(v))) ? Number(v).toFixed(1) : '';
   }
 
+  // Display-only column sort on the Big Board. compute() still ranks by VOR
+  // (tiers, custom-board overrides, By Position). This reorders the table view
+  // without rewriting that model board. Default is VOR descending.
+  var SORT_DEFAULT_DIR = {
+    rk: 1, name: 1, pos: 1, vor: -1, projectedPpg: -1,
+    adp: 1, age: 1, value: -1, window: 1, scheduleRank: 1, market: -1
+  };
+  var POS_SORT = { QB: 0, RB: 1, WR: 2, TE: 3 };
+  var SORT_LABEL = {
+    rk: 'Rk', name: 'Player', pos: 'Pos', vor: 'VOR', projectedPpg: 'Proj PPG',
+    adp: 'ADP', age: 'Age', value: 'Value', window: 'Window',
+    scheduleRank: 'Sched Rk', market: 'Market vs ADP'
+  };
+  function isDefaultSort() {
+    // VOR desc and Rk asc are the same model-board order (Rk is assigned
+    // after the VOR rank + custom overrides). Treat both as the default view
+    // so tier cliffs and proj-pick lines stay put.
+    return (state.sortKey === 'vor' && state.sortDir === -1)
+        || (state.sortKey === 'rk' && state.sortDir === 1);
+  }
+  function sortVal(x, key) {
+    if (key === 'rk') return x.rk;
+    if (key === 'name') return (x.name || '').toLowerCase();
+    if (key === 'pos') return (POS_SORT[x.pos] != null ? POS_SORT[x.pos] : 9) * 1000 + (x.posRankN || 0);
+    if (key === 'vor') return x.vor;
+    if (key === 'projectedPpg') return x.projectedPpg;
+    if (key === 'adp') return x.adp;
+    if (key === 'age' || key === 'window') return x.age;
+    if (key === 'value') return x.value;
+    if (key === 'scheduleRank') return x.scheduleRank;
+    if (key === 'market') return x.marketVsAdp;
+    return null;
+  }
+  function cmpSort(a, b, dir) {
+    var aN = a == null || a === '' || (typeof a === 'number' && !isFinite(a));
+    var bN = b == null || b === '' || (typeof b === 'number' && !isFinite(b));
+    if (aN && bN) return 0;
+    if (aN) return 1;
+    if (bN) return -1;
+    if (a < b) return -dir;
+    if (a > b) return dir;
+    return 0;
+  }
+  function displayPlayers() {
+    if (isDefaultSort()) return players;
+    var key = state.sortKey, dir = state.sortDir;
+    return players.slice().sort(function (a, b) {
+      var c = cmpSort(sortVal(a, key), sortVal(b, key), dir);
+      return c || ((a.rk || 0) - (b.rk || 0));
+    });
+  }
+  function resetBoardSort() {
+    state.sortKey = 'vor';
+    state.sortDir = -1;
+  }
+  function setSort(key) {
+    if (!key || !SORT_DEFAULT_DIR[key]) return;
+    if (state.sortKey === key) state.sortDir = -state.sortDir;
+    else {
+      state.sortKey = key;
+      state.sortDir = SORT_DEFAULT_DIR[key];
+    }
+    if (!isDefaultSort() && editBoard) editBoard = false;
+  }
+  function sortTh(key, label, extraClass, title) {
+    var active = state.sortKey === key;
+    var aria = active ? (state.sortDir === 1 ? 'ascending' : 'descending') : 'none';
+    var cls = 'cs-sort' + (extraClass ? ' ' + extraClass : '')
+      + (active ? (state.sortDir === 1 ? ' cs-sort-asc' : ' cs-sort-desc') : '');
+    var tip = title || ('Sort by ' + label);
+    return '<th class="' + cls + '" data-sort="' + key + '" aria-sort="' + aria + '" title="' + tip + '">'
+      + '<button type="button" class="cs-sortbtn">' + label + '</button></th>';
+  }
+
   function compute() {
     // A sheet opened from the Draft Room must mirror that room exactly. Custom
     // pre-draft overrides still apply to the standalone value board, but not on
@@ -378,7 +454,6 @@
         age: (p.age != null ? Number(p.age) : null),
         adp: sheetAdpOf(p, mode, sf), vor: Math.round(value - (repl[pos] || 0)),
         projectedPpg: p.proj_ppg != null && isFinite(Number(p.proj_ppg)) ? Number(p.proj_ppg) : null,
-        lastPpg: p.ppg != null && isFinite(Number(p.ppg)) ? Number(p.ppg) : null,
         marketVsAdp: mode === 'redraft' && p.market_vs_adp != null ? Number(p.market_vs_adp) : null,
         marketExpectedAdp: mode === 'redraft' && p.market_expected_adp != null ? Number(p.market_expected_adp) : null,
         marketConfidence: mode === 'redraft' && p.market_confidence != null ? Number(p.market_confidence) : null,
@@ -402,7 +477,7 @@
       x.value = (x.adp != null && x.rk != null) ? Math.round(x.adp - x.rk) : null;
       x.good = state.mode === 'dynasty' ? (youthWindow(x.age, x.pos)[1] === 'win-asc' ? 1 : 0) : (x.value != null && x.value >= 5 ? 1 : 0);
       x.posfull = myCounts ? ((needByPos[x.pos] && needByPos[x.pos].need) <= 0 && (needByPos[x.pos] && needByPos[x.pos].have) > 0) : false;
-      pc[x.pos] = (pc[x.pos] || 0) + 1; x.prk = x.pos + pc[x.pos];
+      pc[x.pos] = (pc[x.pos] || 0) + 1; x.posRankN = pc[x.pos]; x.prk = x.pos + x.posRankN;
     });
     assignTiers();
     applyOverrides();
@@ -624,9 +699,14 @@
     var projNote = state.pickSlot
       ? '<span class="cs-lg"><b>Proj Pick</b> slot ' + state.pickSlot + ' snake windows on this board</span>'
       : '';
+    var sortNote = !isDefaultSort()
+      ? '<span class="cs-lg"><b>Sorted by ' + (SORT_LABEL[state.sortKey] || state.sortKey) + '</b> '
+        + (state.sortDir === 1 ? 'low → high' : 'high → low') + ' · click Rk or VOR to restore the board</span>'
+      : '';
     $('csLegend').innerHTML = recommendationOrder
       ? '<span class="cs-lg"><b>VOR</b> controls the cheat-sheet order</span>'
         + '<span class="cs-lg"><b>REC #</b> current Draft Room rank, shown for context</span>'
+        + sortNote
         + projNote
         + draftedNote
         + '<span class="cs-lg" id="csFmtNote">' + (dyn ? 'Dynasty ' : '') + (state.sf ? 'Superflex' : '1QB') + ' &middot; ' + teams + '-team</span>'
@@ -634,6 +714,7 @@
       ? '<span class="cs-lg"><b>VOR</b> dynasty value over replacement, the ranking</span>'
         + '<span class="cs-lg"><b>Age</b> drives the window</span>'
         + '<span class="cs-lg">' + winChip(23) + ' ascending</span>'
+        + sortNote
         + projNote
         + draftedNote
         + '<span class="cs-lg" id="csFmtNote">Dynasty ' + (state.sf ? 'Superflex' : '1QB') + ' &middot; ' + teams + '-team</span>'
@@ -641,6 +722,7 @@
         + '<span class="cs-lg"><span class="cs-val g">+7</span> above ADP, target it</span>'
         + '<span class="cs-lg"><span class="cs-val b">-4</span> going early, let it fall</span>'
         + '<span class="cs-lg"><b>Sched Rk</b> full-season schedule (1 = easiest)</span>'
+        + sortNote
         + projNote
         + draftedNote
         + '<span class="cs-lg" id="csFmtNote">' + (state.sf ? 'Superflex' : '1QB') + ' &middot; ' + teams + '-team</span>';
@@ -699,16 +781,27 @@
 
   function renderBoard(dyn) {
     var col5 = dyn ? 'Age' : 'ADP', col6 = dyn ? 'Window' : 'Value';
+    var col5Key = dyn ? 'age' : 'adp', col6Key = dyn ? 'window' : 'value';
     var editable = cfg.hasPremium;
     var editTh = editable ? '<th class="cs-edit-th"></th>' : '';
-    $('csBoardHead').innerHTML =
-      '<tr><th>Rk</th><th class="l">Player</th><th>Pos</th><th class="cs-vor-col">VOR</th><th title="Projected fantasy points per game">Proj PPG</th><th>' + col5 + '</th><th class="cs-value-col">' + col6 + '</th><th title="Full fantasy-season strength of schedule rank (1 = easiest)">Sched Rk</th>' + (showMarket(dyn) ? '<th class="cs-market-col">Market vs ADP</th>' : '') + editTh + '</tr>';
+    var boardSort = isDefaultSort();
+    $('csBoardHead').innerHTML = '<tr>'
+      + sortTh('rk', 'Rk', '', 'VOR board rank. Click to restore the default order.')
+      + sortTh('name', 'Player', 'l', 'Sort by player name')
+      + sortTh('pos', 'Pos', '', 'Sort by position, then positional rank')
+      + sortTh('vor', 'VOR', 'cs-vor-col', 'Value over replacement — the model ranking')
+      + sortTh('projectedPpg', 'Proj PPG', '', 'Projected fantasy points per game')
+      + sortTh(col5Key, col5, '', dyn ? 'Sort by age' : 'Sort by ADP')
+      + sortTh(col6Key, col6, 'cs-value-col', dyn ? 'Sort by career window (age)' : 'Sort by value vs ADP')
+      + sortTh('scheduleRank', 'Sched Rk', '', 'Full fantasy-season strength of schedule rank (1 = easiest)')
+      + (showMarket(dyn) ? sortTh('market', 'Market vs ADP', 'cs-market-col', 'Sort by market vs ADP') : '')
+      + editTh + '</tr>';
     var span = (editable ? 9 : 8) + (showMarket(dyn) ? 1 : 0);
     var lastT = null, html = '', shown = 0;
-    var pickAt = projPickMap();
-    players.forEach(function (x) {
+    var pickAt = boardSort ? projPickMap() : {};
+    displayPlayers().forEach(function (x) {
       if (!visiblePlayer(x)) return;
-      if (!recommendationOrder && x.grp !== lastT) { lastT = x.grp; html += '<tr class="cs-cliff"><td colspan="' + span + '"><div class="cs-cliffline">' + x.grpLabel + '</div></td></tr>'; }
+      if (boardSort && !recommendationOrder && x.grp !== lastT) { lastT = x.grp; html += '<tr class="cs-cliff"><td colspan="' + span + '"><div class="cs-cliffline">' + x.grpLabel + '</div></td></tr>'; }
       var pk = pickAt[x.rk];
       if (pk) html += projLineRow(pk, span, x.drafted);
       shown++;
@@ -734,7 +827,7 @@
         + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + recChip + projChip + ovChip(x) + '</span></td>'
         + '<td>' + posrk(x) + '</td>'
         + '<td class="cs-vor-col"><span class="cs-vorwrap"><span class="cs-num">' + x.vor + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.vor / maxVor * 100)) + '%"></i></span></span></td>'
-        + '<td class="cs-num">' + (x.projectedPpg != null ? x.projectedPpg.toFixed(1) : (x.lastPpg != null ? '<span class="cs-ppg-last" title="Last season actual — no upcoming-season projection on file">' + x.lastPpg.toFixed(1) + '</span>' : '&ndash;')) + '</td>'
+        + '<td class="cs-num">' + (x.projectedPpg != null ? x.projectedPpg.toFixed(1) : '&ndash;') + '</td>'
         + c5 + c6 + '<td class="cs-num" title="Full fantasy-season strength of schedule; 1 is easiest">' + (x.scheduleRank ? '#' + x.scheduleRank : '&ndash;') + '</td>' + market + ovControls(x) + '</tr>';
     });
     if (!shown) html = '<tr><td colspan="' + span + '" class="cs-empty">No players match this filter.</td></tr>';
@@ -744,7 +837,8 @@
       : dyn
       ? 'Ranked by value over replacement (dynasty value), youth-aware via the Window column. Tap a row to cross a player off.'
       : 'Ranked by value over replacement, so a scarce elite TE or QB can still outrank a higher-scoring skill player. Tap a row to cross a player off.';
-    if (state.pickSlot) foot += ' Proj Pick lines mark slot ' + state.pickSlot + ' snake windows.';
+    if (!boardSort) foot = 'Showing the board sorted by ' + (SORT_LABEL[state.sortKey] || state.sortKey) + '. Rk is still the VOR rank. Click VOR or Rk to restore the default order.';
+    if (state.pickSlot && boardSort) foot += ' Proj Pick lines mark slot ' + state.pickSlot + ' snake windows.';
     $('csBoardFoot').textContent = foot;
   }
 
@@ -1021,10 +1115,10 @@
     if (!players.length) return;
     var dyn = state.mode === 'dynasty';
     var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', 'Proj PPG', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Schedule Rank'].concat(showMarket(dyn) ? ['Market vs ADP'] : []).concat(['Tier']);
-    var rows = players.map(function (x) {
+    var rows = displayPlayers().map(function (x) {
       var c5 = dyn ? (x.age != null ? x.age : '') : fmtAdp(x.adp);
       var c6 = dyn ? youthWindow(x.age, x.pos)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
-      var ppgCsv = x.projectedPpg != null ? x.projectedPpg.toFixed(1) : (x.lastPpg != null ? x.lastPpg.toFixed(1) : '');
+      var ppgCsv = x.projectedPpg != null ? x.projectedPpg.toFixed(1) : '';
       return [x.rk, x.name, x.pos, x.prk, x.vor, ppgCsv, c5, c6, x.scheduleRank || ''].concat(showMarket(dyn) ? [x.marketVsAdp == null ? '' : x.marketVsAdp] : []).concat([x.dtier]);
     });
     var csv = [head].concat(rows).map(function (r) {
@@ -1089,10 +1183,11 @@
         document.querySelectorAll('#csMode button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
         state.mode = b.getAttribute('data-mode');
         state.adpSource = 'auto';
+        resetBoardSort();
         renderAdpSources(); compute(); render();
       });
     });
-    wireSeg('csQb', function (b) { recommendationOrder = null; state.sf = b.getAttribute('data-qb') === 'SF'; });
+    wireSeg('csQb', function (b) { recommendationOrder = null; state.sf = b.getAttribute('data-qb') === 'SF'; resetBoardSort(); });
 
     $('csValBtn').addEventListener('click', function () {
       state.filter = !state.filter; this.setAttribute('aria-pressed', String(state.filter));
@@ -1136,7 +1231,9 @@
     var editBtn = $('csEditBtn');
     if (editBtn) editBtn.addEventListener('click', function () {
       if (!cfg.hasPremium) { if (typeof window.showPaywall === 'function') window.showPaywall('draft-cheat-sheet'); return; }
-      editBoard = !editBoard; render();
+      editBoard = !editBoard;
+      if (editBoard) resetBoardSort();
+      render();
     });
     var resetBoardBtn = $('csResetBoardBtn');
     if (resetBoardBtn) resetBoardBtn.addEventListener('click', function () {
@@ -1159,6 +1256,13 @@
       // 'drag' is handled by the pointer-drag reorder below.
     }, true);   // capture: run before the document row-click (cross-off) handler
     if (boardPanel) setupDragReorder(boardPanel);
+    if (boardPanel) boardPanel.addEventListener('click', function (e) {
+      var th = e.target.closest('thead th[data-sort]');
+      if (!th) return;
+      e.preventDefault();
+      setSort(th.getAttribute('data-sort'));
+      render();
+    });
 
     // CSV export is free — it dumps the currently visible board order.
     var csvBtn = $('csCsvBtn');

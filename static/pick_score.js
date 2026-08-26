@@ -53,8 +53,12 @@
     var passTd = o.passTd != null ? +o.passTd : 4.0;
 
     var dbValueNorm = (maxVal && maxVal > 0) ? clamp01(value / maxVal) : 0;
+    // Skip the ADP-quality blend when the value board says the player is
+    // worthless — selected-only ADP must not manufacture round-5 quality for a
+    // 0-value, ~0-PPG player. Keep in lockstep with utils/pick_score.py.
+    var adpUntrusted = dbValueNorm < 0.05;
     var valueNorm;
-    if (avgPick != null && totalPicks > 0) {
+    if (avgPick != null && totalPicks > 0 && !adpUntrusted) {
       var adpQualNorm = clamp01(1 - avgPick / totalPicks);
       valueNorm = dbValueNorm * 0.35 + adpQualNorm * 0.65;
     } else {
@@ -69,6 +73,7 @@
       else if (rel >= -0.3) adpVal = 0.5 + rel;
       else adpVal = Math.max(0, 0.2 + rel * 0.25);
       if (avgPick <= 8) adpVal = Math.max(adpVal, clamp01(0.5 + (8 - avgPick) / 16));
+      if (adpUntrusted) adpVal = Math.min(adpVal, 0.5);
     } else {
       adpVal = 0.5;
     }

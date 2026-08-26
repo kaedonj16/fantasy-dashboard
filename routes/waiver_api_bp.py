@@ -242,10 +242,10 @@ def api_waiver_candidates():
     # recent ppg understates the role).
     _season_ppg_wv: dict = {}
     try:
-        from data_building.fetch_projections import fetch_fp_season_projections
+        from data_building.fetch_projections import fetch_sleeper_season_projections
         _nfl_pj = get_nfl_state() or {}
         _pj_season = int(_nfl_pj.get("season") or season)
-        for _pid, _row in (fetch_fp_season_projections(_pj_season, "ppr") or {}).items():
+        for _pid, _row in (fetch_sleeper_season_projections(_pj_season, "ppr") or {}).items():
             if isinstance(_row, dict) and _row.get("ppg") is not None:
                 _season_ppg_wv[str(_pid)] = _row.get("ppg")
     except Exception:

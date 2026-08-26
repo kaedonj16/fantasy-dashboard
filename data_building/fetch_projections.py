@@ -13,6 +13,26 @@ _CACHE_DIR = Path(__file__).parent.parent / "cache"
 # payload (ppr / half_ppr / std plus TE-premium and 6-point passing-TD layers).
 PROJ_VARIANTS = ("ppr", "half_ppr", "std", "tep", "6pt_ppr", "6pt_half", "6pt_tep")
 
+# Sleeper drops the weekly stat line (proj PPG 0) once a player is out for the
+# year. Displayed point projections must not refill those players from any
+# other source (FantasyPros preseason files, last-season actuals, etc.).
+_SEASON_ENDING_INJURY = frozenset({"IR", "PUP", "NFI"})
+
+
+def unprojected_season_injury(injury_status: Optional[str], sleeper_ppg) -> bool:
+    """True when Sleeper has zeroed/omitted a player who is out for the year.
+
+    PUP/IR players Sleeper still projects (expected return) keep that number.
+    """
+    status = str(injury_status or "").strip().upper()
+    if status not in _SEASON_ENDING_INJURY:
+        return False
+    try:
+        ppg = float(sleeper_ppg or 0)
+    except (TypeError, ValueError):
+        ppg = 0.0
+    return ppg <= 0
+
 
 def weekly_variant_values(weekly_maps) -> dict[str, dict[str, list[float]]]:
     """Collect positive weekly projection values per player and scoring variant.

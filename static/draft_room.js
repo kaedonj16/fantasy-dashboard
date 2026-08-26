@@ -3126,9 +3126,9 @@
       var o = draftPlayerFacts(other);
       var ps = psRelLive(p);
       var vorLbl = (p.vorp != null || other.vorp != null) ? 'VORP' : 'VOR';
-      var ppgRowLbl = (f.projPpg != null || o.projPpg != null) ? 'Proj PPG' : 'PPG';
-      var ppg = f.projPpg != null ? f.projPpg : f.lastPpg;
-      var oppg = o.projPpg != null ? o.projPpg : o.lastPpg;
+      var ppgRowLbl = 'Proj PPG';
+      var ppg = f.projPpg;
+      var oppg = o.projPpg;
       function statRow(lbl, val, oval, higherBetter, fmtFn){
         if (val == null && oval == null) return '';
         var vStr = fmtFn ? fmtFn(val) : (val != null ? String(val) : '-');
@@ -3149,7 +3149,7 @@
         + '<div class="dr-cmp-stats">'
         + statRow('Value', f.value, o.value, true, function(x){ return x != null ? String(Math.round(x)) : '-'; })
         + statRow(ppgRowLbl, ppg, oppg, true, function(x){ return x != null ? x.toFixed(1) : 'N/A'; })
-        + (f.projPpg != null && f.lastPpg != null ? statRow((f.ppgSeason || 'Last') + ' PPG', f.lastPpg, o.lastPpg, true, function(x){ return x != null ? x.toFixed(1) : '-'; }) : '')
+        + (f.lastPpg != null || o.lastPpg != null ? statRow((f.ppgSeason || 'Last') + ' PPG', f.lastPpg, o.lastPpg, true, function(x){ return x != null ? x.toFixed(1) : '-'; }) : '')
         + statRow(vorLbl, f.vor, o.vor, true, function(x){ return x != null ? fmtSigned(x, Number.isInteger(x) ? 0 : 1) : '-'; })
         + statRow('ADP', f.adp, o.adp, false, function(x){ return x != null ? Number(x).toFixed(1) : 'N/A'; })
         + statRow('vs ADP', f.vsAdp, o.vsAdp, true, function(x){ return fmtSigned(Math.round(x), 0); })
@@ -3461,8 +3461,9 @@
     var byeFlag = '';
     var bc = byeConflict(p);
     if (bc >= 2) byeFlag = '<span class="dr-bye-flag">Bye ' + p.bye_week + ' clash</span>';
-    // Projected PPG for meta line (scoring-adjusted upcoming season, last-season fallback)
-    var ppgNum = ppgOf(p);
+    // Projected PPG (scoring-adjusted Sleeper upcoming-season only). Last-season
+    // actual is a separate stat, never a projection stand-in.
+    var ppgNum = scoringProjPpg(p);
     var ppgPart = ppgNum != null ? ' · ' + ppgNum.toFixed(1) + ' proj' : '';
     // Compare button state
     var onCmp = compareIds.indexOf(String(p.id)) >= 0;
@@ -3756,14 +3757,13 @@
     if (window.DraftBoardCore && DraftBoardCore.scoringProjPts) return DraftBoardCore.scoringProjPts(full, scoringCfg());
     return (full.proj_pts != null && isFinite(Number(full.proj_pts))) ? Number(full.proj_pts) : null;
   }
-  // Projected PPG (upcoming season, scoring-adjusted) preferred; last-season actual as fallback.
+  // Projected PPG from Sleeper only (upcoming season, scoring-adjusted).
+  // Last-season actuals are a separate stat and are never used as a projection.
   function ppgOf(p){
     if (!p) return null;
     var full = (p.id != null && playersById[String(p.id)]) || p;
     if (window.DraftBoardCore) return DraftBoardCore.ppgOf(full, scoringCfg());
-    var proj = scoringProjPpg(full);
-    if (proj != null) return proj;
-    return (full.ppg != null) ? Number(full.ppg) : null;
+    return scoringProjPpg(full);
   }
 
   // ── Projected playoff odds (completed draft only) ───────────────────────────
@@ -4303,8 +4303,9 @@
     if (bench.length){ bench.forEach(function(p){ html += slotRow('BN', p); }); }
     else { html += slotRow('BN', null); }
     html += '</div>';
-    // Roster projection: use Sleeper ppg (preferred) or proj_ppg fallback
-    function _pPpg(p){ return p.ppg != null ? Number(p.ppg) : scoringProjPpg(p); }
+    // Roster projection: scoring-adjusted Sleeper upcoming-season proj_ppg only
+    // (including 0). Last-season actuals are never a projection stand-in.
+    function _pPpg(p){ return scoringProjPpg(p); }
     var projPlayers = mine.filter(function(p){ return _pPpg(p) != null; });
     if (projPlayers.length >= 2){
       var myProjTotal = 0;
@@ -5493,7 +5494,7 @@
     { term: 'Recommendation', def: 'The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. A major value fall can still overcome imperfect roster fit. Recommendation is shown as a rank rather than a grade because its internal utility naturally changes as the board is depleted.' },
     { term: 'Pick Score (PS)', def: 'A 0-100 grade of pick quality. On the live board, sidebar, compare modal, and player preview it is scaled relative to the best player still available (so a strong late pick still reads well). Made-pick chips on the report card / Deep Dive “Board PS” use the same relative scale at that historical slot. Your letter grade’s Value bar uses the absolute, round-weighted kernel score — those two numbers can differ. Kickers and defenses aren’t scored.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
-    { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses real fantasy points; VOR uses dynasty value.' },
+    { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses projected season fantasy points; VOR uses dynasty or redraft trade value. Last season\'s injury-shortened totals are not used.' },
     { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value. When a sample size (n=) is shown, a small n means the ADP is noisy.' },
     { term: 'Tier', def: 'Players grouped by talent gaps (Tier 1 = elite). A tier “cliff” means only a couple of players remain before a real drop-off at that position.' },
     { term: 'PPG', def: 'Points per game - projected for the upcoming season, or last season’s actual when that’s shown.' },
@@ -5569,7 +5570,7 @@
       var _ssSet = {};
       starters.forEach(function(s){ if (s.p) _ssSet[String(s.p.id)] = true; });
       mine.forEach(function(p){
-        var _ppgv = p.ppg != null ? Number(p.ppg) : scoringProjPpg(p);
+        var _ppgv = scoringProjPpg(p);
         if (_ppgv != null){ sumProjTotal += _ppgv; sumProjCount++; }
         var _fp = playersById[String(p.id)] || p;
         var _t = tierOf(_fp); if (_t != null && _t <= 2) sumT12++;
@@ -6684,7 +6685,7 @@
       // Stats grid
       + '<div class="dr-prev-stats">'
       + statBox('Value', Math.round(f.value), null, 'Trade value as an asset on a 0-999 scale (dynasty value, or redraft value in redraft).')
-      + statBox(f.vorLbl, vorStr, null, 'Value Over Replacement: how much better than a freely-available starter at this position. ' + (f.vorLbl === 'VORP' ? 'Based on real fantasy points.' : 'Based on dynasty value.'))
+      + statBox(f.vorLbl, vorStr, null, 'Value Over Replacement: how much better than a freely-available starter at this position. ' + (f.vorLbl === 'VORP' ? 'Based on projected season fantasy points, not last year\'s injury-shortened totals.' : 'Based on dynasty or redraft trade value.'))
       + statBox('ADP', f.adp != null ? (Number(f.adp).toFixed(1) + (f.adpN ? ' <span class="dr-adp-n">n=' + f.adpN + '</span>' : '')) : '-', null, 'Average Draft Position - the typical overall pick this player goes at in real drafts. n is how many real drafts the ADP is based on.')
       + statBox('vs ADP', vsAdp, null, 'How far this player has fallen past their ADP at the current pick. Positive = a value.')
       + (f.projPpg != null ? statBox('Proj PPG', f.projPpg.toFixed(1), 'projected', 'Points per game, projected for the upcoming season.') : '')

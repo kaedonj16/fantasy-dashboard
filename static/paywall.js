@@ -57,9 +57,10 @@ async function getSubscriptionInfo(userId, leagueId) {
  *
  * @param {string} feature - Feature name ('breakout-candidates', 'playoff-impact', 'gm-memo')
  */
-    window.showPaywall = function showPaywall(feature) {
+window.showPaywall = function showPaywall(feature) {
   const featureNames = {
     'breakout-candidates': 'Breakout Engine',
+    'breakout-analysis': 'Breakout Engine',
     'ai-insights': 'AI Insights',
     'trade-history': 'Trade Intelligence',
     'trade-suggestions': 'Roster-Based Trade Suggestions',
@@ -73,14 +74,19 @@ async function getSubscriptionInfo(userId, leagueId) {
 
   const featureName = featureNames[feature] || 'Premium Feature';
 
+  document.querySelectorAll('.paywall-modal').forEach(function (el) { el.remove(); });
+
   const modal = document.createElement('div');
   modal.className = 'paywall-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'paywallTitle');
   modal.innerHTML = `
     <div class="paywall-overlay"></div>
     <div class="paywall-content">
       <div class="paywall-header">
-        <h2><i class="fa-solid fa-lock" aria-hidden="true"></i> Premium Feature</h2>
-        <button class="paywall-close" onclick="this.closest('.paywall-modal').remove()">×</button>
+        <h2 id="paywallTitle"><i class="fa-solid fa-lock" aria-hidden="true"></i> Premium Feature</h2>
+        <button type="button" class="paywall-close" aria-label="Close">&times;</button>
       </div>
       <div class="paywall-body">
         <div class="paywall-icon"><i class="fa-solid fa-star" aria-hidden="true"></i></div>
@@ -135,10 +141,31 @@ async function getSubscriptionInfo(userId, leagueId) {
 
   document.body.appendChild(modal);
 
-  // Close on overlay click
-  modal.querySelector('.paywall-overlay').addEventListener('click', () => {
+  const prevFocus = document.activeElement;
+  function closePaywall() {
     modal.remove();
-  });
+    document.removeEventListener('keydown', onKey);
+    if (prevFocus && typeof prevFocus.focus === 'function') {
+      try { prevFocus.focus(); } catch (_) {}
+    }
+  }
+  function focusables() {
+    return modal.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])');
+  }
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); closePaywall(); return; }
+    if (e.key !== 'Tab') return;
+    const nodes = focusables();
+    if (!nodes.length) return;
+    const first = nodes[0], last = nodes[nodes.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+  document.addEventListener('keydown', onKey);
+  modal.querySelector('.paywall-overlay').addEventListener('click', closePaywall);
+  modal.querySelector('.paywall-close').addEventListener('click', closePaywall);
+  const first = focusables()[0];
+  if (first) try { first.focus(); } catch (_) {}
 }
 
 async function initiatePurchase(type, btn) {
@@ -149,7 +176,8 @@ async function initiatePurchase(type, btn) {
   if (!(ctx.is_logged_in || window._isSignedIn)) {
     const navModal = document.getElementById('signinModal');
     if (navModal) {
-      navModal.style.display = 'flex';
+      if (window.brOpenSignin) window.brOpenSignin();
+      else navModal.style.display = 'flex';
     } else {
       _showIdentifyModal(type, btn);
     }
@@ -188,11 +216,13 @@ async function initiatePurchase(type, btn) {
     } else {
       if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.origText; }
       if (_handleAlreadySubscribed(data, leagueId)) return;
-      alert(data.error || 'Could not start checkout. Make sure you are logged in.');
+      if (window.showToast) showToast(data.error || 'Could not start checkout. Make sure you are logged in.', 'error', 5000);
+      else alert(data.error || 'Could not start checkout. Make sure you are logged in.');
     }
   } catch (e) {
     if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.origText; }
-    alert('Checkout unavailable. Please try again.');
+    if (window.showToast) showToast('Checkout unavailable. Please try again.', 'error', 5000);
+    else alert('Checkout unavailable. Please try again.');
   }
 }
 
@@ -264,24 +294,32 @@ function _showIdentifyModal(planType, triggerBtn) {
   if (existing) existing.remove();
 
   const needsLeague = planType === 'league' || planType === 'combo';
+  const next = encodeURIComponent(window.location.pathname + window.location.search);
 
   const modal = document.createElement('div');
   modal.id = '_identifyModal';
   modal.className = 'signin-modal-overlay';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', '_identifyTitle');
   modal.style.display = 'flex';
   modal.innerHTML = `
     <div class="signin-modal-box">
-      <h3 class="signin-modal-title">Sign in to subscribe</h3>
-      <p class="signin-modal-sub" id="_identifySub">Enter your Sleeper username to continue.</p>
-      <input class="signin-modal-input" id="_identifyInput" type="text" placeholder="Sleeper username" autocomplete="username" autofocus>
+      <h3 class="signin-modal-title" id="_identifyTitle">Sign in to subscribe</h3>
+      <p class="signin-modal-sub" id="_identifySub">Continue with Google to use your account, or enter a Sleeper username.</p>
+      <a class="google-continue-btn" id="_identifyGoogle" href="/auth/google?intent=login&amp;next=${next}">
+        <span class="google-button-title">Continue with Google</span>
+      </a>
+      <div class="signin-modal-or">or</div>
+      <input class="signin-modal-input" id="_identifyInput" type="text" placeholder="Sleeper username" aria-label="Sleeper username" autocomplete="username">
       <div id="_identifyLeagueWrap" style="display:none;margin-bottom:16px;">
         <label style="display:block;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Select League</label>
         <select class="signin-modal-input" id="_identifyLeague" style="margin-bottom:0;cursor:pointer;"></select>
       </div>
       <div id="_identifyError" style="display:none;font-size:12px;color:#ef4444;margin:-8px 0 12px;"></div>
       <div class="signin-modal-actions">
-        <button class="signin-modal-submit" id="_identifySubmit">Continue</button>
-        <button class="signin-modal-cancel" onclick="document.getElementById('_identifyModal').remove()">Cancel</button>
+        <button type="button" class="signin-modal-submit" id="_identifySubmit">Continue</button>
+        <button type="button" class="signin-modal-cancel" id="_identifyCancel">Cancel</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
@@ -292,6 +330,32 @@ function _showIdentifyModal(planType, triggerBtn) {
   const leagueWrap = modal.querySelector('#_identifyLeagueWrap');
   const leagueSel = modal.querySelector('#_identifyLeague');
   const subText = modal.querySelector('#_identifySub');
+  const prevFocus = document.activeElement;
+
+  function focusables() {
+    return modal.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])');
+  }
+  function closeIdentify() {
+    document.removeEventListener('keydown', onKey);
+    modal.remove();
+    if (prevFocus && typeof prevFocus.focus === 'function') {
+      try { prevFocus.focus(); } catch (_) {}
+    }
+  }
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); closeIdentify(); return; }
+    if (e.key !== 'Tab') return;
+    const nodes = focusables();
+    if (!nodes.length) return;
+    const first = nodes[0], last = nodes[nodes.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+  document.addEventListener('keydown', onKey);
+  modal.addEventListener('click', e => { if (e.target === modal) closeIdentify(); });
+  modal.querySelector('#_identifyCancel').addEventListener('click', closeIdentify);
+  const first = focusables()[0];
+  if (first) try { first.focus(); } catch (_) {}
 
   let identified = false;
 
@@ -330,7 +394,6 @@ function _showIdentifyModal(planType, triggerBtn) {
       identified = true;
 
       if (needsLeague && data.leagues && data.leagues.length > 0) {
-        // Show league picker
         input.disabled = true;
         subText.textContent = 'Choose which league to subscribe for.';
         leagueSel.innerHTML = data.leagues
@@ -341,8 +404,7 @@ function _showIdentifyModal(planType, triggerBtn) {
         submitBtn.textContent = 'Continue to Checkout';
         leagueSel.focus();
       } else {
-        // No league needed (personal plan) or no leagues found - go straight to checkout
-        modal.remove();
+        closeIdentify();
         initiatePurchase(planType, triggerBtn);
       }
     } catch (e) {
@@ -356,14 +418,12 @@ function _showIdentifyModal(planType, triggerBtn) {
   function doCheckout() {
     const leagueId = leagueSel.value || '';
     if (window.__brctx) window.__brctx.leagueId = leagueId;
-    modal.remove();
-    // Pass the selected leagueId directly into the checkout payload
+    closeIdentify();
     _initiatePurchaseWithLeague(planType, triggerBtn, leagueId);
   }
 
   submitBtn.addEventListener('click', doStep);
   input.addEventListener('keydown', e => { if (e.key === 'Enter') doStep(); });
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 }
 
 async function _initiatePurchaseWithLeague(type, btn, leagueId) {
@@ -397,10 +457,12 @@ async function _initiatePurchaseWithLeague(type, btn, leagueId) {
     } else {
       if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.origText; }
       if (_handleAlreadySubscribed(data, leagueId)) return;
-      alert(data.error || 'Could not start checkout.');
+      if (window.showToast) showToast(data.error || 'Could not start checkout.', 'error', 5000);
+      else alert(data.error || 'Could not start checkout.');
     }
   } catch (e) {
     if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.origText; }
-    alert('Checkout unavailable. Please try again.');
+    if (window.showToast) showToast('Checkout unavailable. Please try again.', 'error', 5000);
+    else alert('Checkout unavailable. Please try again.');
   }
 }

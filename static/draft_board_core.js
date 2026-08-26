@@ -118,10 +118,11 @@
     return base;
   }
 
-  // Projected PPG for the given scoring. `proj_ppg` is the canonical PPR figure
-  // (FantasyPros, then Sleeper). When scoring is not full PPR / 4-pt passing TD,
-  // scale that figure by Sleeper's variant/PPR ratio so half-PPR and 6-pt TD
-  // change the number without swapping projection sources.
+  // Projected PPG for the given scoring. `proj_ppg` is Sleeper's upcoming-season
+  // PPR figure. When scoring is not full PPR / 4-pt passing TD, scale that
+  // figure by Sleeper's variant/PPR ratio so half-PPR and 6-pt TD change the
+  // number without swapping projection sources. Last-season actuals are never
+  // used as a projection stand-in.
   function scoringProjPpg(p, scoring) {
     if (!p) return null;
     var base = (p.proj_ppg != null && isFinite(Number(p.proj_ppg))) ? Number(p.proj_ppg) : null;
@@ -153,7 +154,7 @@
     var proj = scoring ? scoringProjPpg(p, scoring) : null;
     if (proj == null && p && p.proj_ppg != null) proj = Number(p.proj_ppg);
     if (proj != null && isFinite(proj)) return proj;
-    return (p && p.ppg != null) ? Number(p.ppg) : null;
+    return null;
   }
 
   // Position PPG scale (replacement -> ~0, elite -> ~1) for the production term.

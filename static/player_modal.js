@@ -82,13 +82,13 @@ function openPlayerModal(playerId, playerName, opts) {
         <button class="player-modal-close" onclick="closePlayerModal()" aria-label="Close">×</button>
       </div>
     </div>
-    <div class="pm-tab-bar" id="pmTabBar" style="display:none">
-      <button class="pm-tab active" data-tab="overview" onclick="pmSwitchTab('overview')">Overview</button>
-      <button class="pm-tab" data-tab="stats" onclick="pmSwitchTab('stats')">Stats</button>
-      <button class="pm-tab" id="pmTabMetrics" data-tab="metrics" onclick="pmSwitchTab('metrics')" style="display:none">Adv Metrics</button>
-      <button class="pm-tab" id="pmTabProspect" data-tab="prospect" onclick="pmSwitchTab('prospect')" style="display:none">Prospect</button>
-      <button class="pm-tab" id="pmTabBreakout" data-tab="breakout" onclick="pmSwitchTab('breakout')" style="display:none">Breakout</button>
-      <button class="pm-tab" data-tab="trades" onclick="pmSwitchTab('trades')">Trades</button>
+    <div class="pm-tab-bar" id="pmTabBar" role="tablist" aria-label="Player details" style="display:none">
+      <button class="pm-tab active" role="tab" aria-selected="true" data-tab="overview" onclick="pmSwitchTab('overview')">Overview</button>
+      <button class="pm-tab" role="tab" aria-selected="false" data-tab="stats" onclick="pmSwitchTab('stats')">Stats</button>
+      <button class="pm-tab" role="tab" aria-selected="false" id="pmTabMetrics" data-tab="metrics" onclick="pmSwitchTab('metrics')" style="display:none">Adv Metrics</button>
+      <button class="pm-tab" role="tab" aria-selected="false" id="pmTabProspect" data-tab="prospect" onclick="pmSwitchTab('prospect')" style="display:none">Prospect</button>
+      <button class="pm-tab" role="tab" aria-selected="false" id="pmTabBreakout" data-tab="breakout" onclick="pmSwitchTab('breakout')" style="display:none">Breakout</button>
+      <button class="pm-tab" role="tab" aria-selected="false" data-tab="trades" onclick="pmSwitchTab('trades')">Trades</button>
     </div>
     <div class="player-modal-body" id="playerModalBody">
       <div class="pm-skel" style="padding:16px 18px;">
@@ -179,12 +179,19 @@ function openPlayerModal(playerId, playerName, opts) {
       if (!modalBody) return; // modal was closed before fetch completed
 
       if (data.error) {
-        modalBody.innerHTML = `
-          <div class="player-modal-loading">
-            <div style="color: #ef4444; font-weight: 500;">Error loading player data</div>
-            <div style="font-size: 13px;">${data.error}</div>
-          </div>
-        `;
+        if (window.brErrorState) {
+          window.brErrorState(modalBody, data.error, function () {
+            closePlayerModal();
+            openPlayerModal(playerId, playerName, opts);
+          });
+        } else {
+          modalBody.innerHTML = `
+            <div class="player-modal-loading">
+              <div style="color: var(--loss); font-weight: 500;">Error loading player data</div>
+              <div style="font-size: 13px;">${data.error}</div>
+            </div>
+          `;
+        }
         return;
       }
 
@@ -1056,12 +1063,20 @@ function openPlayerModal(playerId, playerName, opts) {
     .catch(err => {
       console.error('Error loading player data:', err);
       const b = document.getElementById('playerModalBody');
-      if (b) b.innerHTML = `
-        <div class="player-modal-loading">
-          <div style="color: #ef4444; font-weight: 500;">Error loading player data</div>
-          <div style="font-size: 13px;">Please try again</div>
-        </div>
-      `;
+      if (!b) return;
+      if (window.brErrorState) {
+        window.brErrorState(b, 'Please try again.', function () {
+          closePlayerModal();
+          openPlayerModal(playerId, playerName, opts);
+        });
+      } else {
+        b.innerHTML = `
+          <div class="player-modal-loading">
+            <div style="color: var(--loss); font-weight: 500;">Error loading player data</div>
+            <div style="font-size: 13px;">Please try again</div>
+          </div>
+        `;
+      }
     });
 }
 
@@ -1102,11 +1117,17 @@ function pmSaveDraftYear(playerId) {
 // ── Player Modal Tab Switching (global) ──────────────────────────────────────
 function pmSwitchTab(tab) {
   document.querySelectorAll('.pm-panel').forEach(p => p.classList.remove('pm-panel-active'));
-  document.querySelectorAll('.pm-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.pm-tab').forEach(t => {
+    t.classList.remove('active');
+    t.setAttribute('aria-selected', 'false');
+  });
   const panel = document.getElementById('pm-panel-' + tab);
   const btn = document.querySelector('.pm-tab[data-tab="' + tab + '"]');
   if (panel) panel.classList.add('pm-panel-active');
-  if (btn) btn.classList.add('active');
+  if (btn) {
+    btn.classList.add('active');
+    btn.setAttribute('aria-selected', 'true');
+  }
   if (window._pmSlideTabs) window._pmSlideTabs.sync(true);
 
   const pmTabBar = document.getElementById('pmTabBar');
@@ -1118,7 +1139,7 @@ function pmSwitchTab(tab) {
   if (tab === 'metrics' && panel && !panel.dataset.loaded && pmTabBar && pmTabBar.dataset.pmHasMetrics) {
     panel.dataset.loaded = '1';
     const path = window.location.pathname;
-    const match = path.match(/\/(sleeper|espn)\/(\d+)\/([^\/]+)/);
+    const match = path.match(/\/(sleeper|espn|yahoo|mfl)\/(\d+)\/([^\/]+)/);
     const leagueIdForMetrics = match ? match[3] : null;
     loadAdvancedMetrics(playerId, leagueIdForMetrics, 'auto');
   }
@@ -1135,7 +1156,7 @@ function pmSwitchTab(tab) {
           <div style="font-size:13px;color:var(--text-muted);max-width:280px;line-height:1.5;">
             See breakout scores, opportunity drivers, hit probability, and PPG projections for every candidate.
           </div>
-          <button onclick="showPaywall('breakout-analysis')"
+          <button onclick="showPaywall('breakout-candidates')"
                   style="margin-top:4px;padding:9px 20px;background:linear-gradient(135deg,#122d4b,#2563eb);
                          color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;">
             Upgrade to PRO
@@ -1143,7 +1164,7 @@ function pmSwitchTab(tab) {
         </div>`;
       return;
     }
-    const _boMatch = window.location.pathname.match(/\/(sleeper|espn)\/(\d+)\/([^\/]+)/);
+    const _boMatch = window.location.pathname.match(/\/(sleeper|espn|yahoo|mfl)\/(\d+)\/([^\/]+)/);
     const _boLeague = _boMatch ? _boMatch[3] : '';
     const _boPlatform = _boMatch ? _boMatch[1] : 'sleeper';
     fetch(`/api/breakout/player/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}&league_id=${encodeURIComponent(_boLeague)}&platform=${encodeURIComponent(_boPlatform)}`)
@@ -1335,12 +1356,26 @@ function _pmFetchTradesInto(panel, playerId, season, ctx) {
     url = `/api/player-league-trades/${encodeURIComponent(playerId)}?platform=${encodeURIComponent(ctx.platform)}&league_id=${encodeURIComponent(ctx.leagueId)}&season=${encodeURIComponent(ctx.season || season)}&limit=50`;
   } else {
     url = `/api/trade-intel/player-trades/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}&limit=20`;
+    if (ctx.platform) url += `&platform=${encodeURIComponent(ctx.platform)}`;
+    if (ctx.leagueId) url += `&league_id=${encodeURIComponent(ctx.leagueId)}`;
   }
 
   fetch(url)
-    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(data => {
+    .then(r => r.json().then(d => ({ status: r.status, ok: r.ok, d: d || {} })).catch(() => ({ status: r.status, ok: r.ok, d: {} })))
+    .then(res => {
       if (!panel.isConnected || !body.isConnected) return;
+      if (res.status === 403 && res.d.paywall) {
+        body.innerHTML = '<div style="padding:18px 0;text-align:center;">'
+          + '<div style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">Market trade history is a PRO feature.</div>'
+          + '<button type="button" class="login-gate-btn" id="pmTradesPaywallBtn">Upgrade</button></div>';
+        var btn = body.querySelector('#pmTradesPaywallBtn');
+        if (btn) btn.addEventListener('click', function () {
+          if (typeof showPaywall === 'function') showPaywall('trade-history');
+        });
+        return;
+      }
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = res.d;
       const trades = data.trades || [];
       if (!trades.length) {
         const emptyMsg = scope === 'league'
@@ -2825,7 +2860,7 @@ function pmToggleWeeklyTrends(playerId) {
 
 const _ADV_METRIC_DESCS = {
   // keyed by metric key — used by renderCompareMetricRows
-  vorp: "Value Over Replacement Points: season PPR points minus a replacement-level starter at the same position (league-size aware, FLEX included). How much the player produced above a freely-available waiver option.",
+  vorp: "Value Over Replacement Points: season PPR points minus a replacement-level starter at the same position (league-size aware, FLEX included). This is a season total, so missed games (injury, bench) can make VORP negative even when per-game production was starter-level.",
   war: "Wins Above Replacement: season VORP divided by points-per-win (≈ the league's weekly scoring spread). Translates points above replacement into the wins they were worth; elite players are typically 4-6+.",
   role_score: "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position.",
   snap_share: "Percent of the team's offensive snaps the player was on the field for.",
@@ -2953,7 +2988,7 @@ const _ADV_METRIC_DESCS = {
   'Air Yds/Game': "Receiving air yards per game; a measure of downfield target volume.",
   'Air Yards Share': "Share of the team's total passing air yards directed at this player; combines target share with depth of target.",
   'WOPR': "Weighted Opportunity Rate: (1.5 × target share) + (0.7 × rush share). Combines air and ground touches into a single opportunity share signal; elite receivers typically exceed 0.50.",
-  'VORP': "Value Over Replacement Points: season PPR points minus a replacement-level starter at the same position (league-size aware, FLEX included). How much the player produced above a freely-available waiver option.",
+  'VORP': "Value Over Replacement Points: season PPR points minus a replacement-level starter at the same position (league-size aware, FLEX included). This is a season total, so missed games (injury, bench) can make VORP negative even when per-game production was starter-level.",
   'WAR': "Wins Above Replacement: season VORP divided by points-per-win (≈ the league's weekly scoring spread). Translates points above replacement into the wins they were worth; elite players are typically 4-6+.",
   'Target Quality': "Composite of how valuable a player's targets are (depth, location, situation).",
   'Slot Rate': "Percent of routes run from the slot.",

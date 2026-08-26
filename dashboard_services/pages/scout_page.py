@@ -13,6 +13,16 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
+def platform_sign_in_hint(platform: str) -> str:
+    """How to identify a team on this provider, used in unsigned-in empty states."""
+    p = str(platform or "sleeper").strip().lower()
+    return {
+        "espn": "your ESPN team name",
+        "yahoo": "your Yahoo team name",
+        "mfl": "your MFL team name",
+    }.get(p, "your Sleeper username")
+
+
 def _live_model_value_table():
     """Live dynasty values. Overridable in tests so they never import Flask."""
     from app import get_model_value_table_cached
@@ -41,9 +51,7 @@ def build_scout_body(ctx: dict) -> str:
     season = ctx.get("season") or datetime.now().year
     current_week = ctx.get("current_week") or 0
 
-    _sign_in_hint = (
-        "your ESPN team name" if str(platform).lower() == "espn" else "your Sleeper username"
-    )
+    _sign_in_hint = platform_sign_in_hint(platform)
     _NOT_SIGNED_IN = (
         "<div class='card' style='text-align:center;padding:40px;'>"
         "<h2 style='margin-bottom:8px;'>Sign in to view your scouting report</h2>"
@@ -230,7 +238,7 @@ def build_scout_body(ctx: dict) -> str:
         pr_html = f"<span class='scout-pos-rank'>{html.escape(p.get('pos_rank', ''))}</span>" if p.get(
             "pos_rank") else ""
         ppg_html = (
-            f"<span class='scout-ppg'>{p['proj_ppg']:.1f} PPG</span>"
+            f"<span class='scout-ppg'>{p['proj_ppg']:.1f} proj</span>"
             if p.get("proj_ppg") is not None
             else "<span class='scout-ppg scout-ppg-miss' title='Week projection unavailable'>Proj unavailable</span>"
         )

@@ -558,6 +558,10 @@ function fmtInt(v) {
 /**
  * Toast notification system.
  * Usage: showToast('Copied!') / showToast('Error', 'error') / showToast('Saved', 'success', 3000)
+ *
+ * The second argument is a type ('info'|'success'|'error'|'warning'), never a
+ * duration. Callers that historically passed showToast(msg, 5000) are still
+ * accepted so a duration isn't treated as a CSS class.
  */
 window.showToast = (function () {
   var container = null;
@@ -575,8 +579,9 @@ window.showToast = (function () {
     return container;
   }
   return function showToast(message, type, duration) {
+    if (typeof type === 'number') { duration = type; type = 'info'; }
     type = type || 'info';
-    duration = duration == null ? 3000 : duration;
+    duration = (typeof duration === 'number') ? duration : 3000;
     var c = getContainer();
     var t = document.createElement('div');
     t.className = 'toast toast-' + type;
@@ -591,6 +596,53 @@ window.showToast = (function () {
       t.addEventListener('transitionend', function () { t.remove(); }, { once: true });
     }, duration);
   };
+})();
+
+/**
+ * Sign-in modal: dialog semantics, overlay dismiss, Escape, and a focus trap.
+ * The markup lives in the page shell; these helpers are the only supported
+ * open/close path so display:flex/none and aria-hidden stay in sync.
+ */
+(function initSigninModal() {
+  var prevFocus = null;
+  function modal() { return document.getElementById('signinModal'); }
+  function focusables(m) {
+    return m.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])');
+  }
+  window.brOpenSignin = function () {
+    var m = modal();
+    if (!m) return;
+    prevFocus = document.activeElement;
+    m.style.display = 'flex';
+    m.setAttribute('aria-hidden', 'false');
+    var nodes = focusables(m);
+    if (nodes.length) try { nodes[0].focus(); } catch (_) {}
+  };
+  window.brCloseSignin = function () {
+    var m = modal();
+    if (!m) return;
+    m.style.display = 'none';
+    m.setAttribute('aria-hidden', 'true');
+    if (prevFocus && typeof prevFocus.focus === 'function') {
+      try { prevFocus.focus(); } catch (_) {}
+    }
+  };
+  document.addEventListener('keydown', function (e) {
+    var m = modal();
+    if (!m || m.style.display !== 'flex') return;
+    if (e.key === 'Escape') { e.preventDefault(); window.brCloseSignin(); return; }
+    if (e.key !== 'Tab') return;
+    var nodes = focusables(m);
+    if (!nodes.length) return;
+    var first = nodes[0], last = nodes[nodes.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  document.addEventListener('click', function (e) {
+    var m = modal();
+    if (!m || m.style.display !== 'flex') return;
+    if (e.target === m) window.brCloseSignin();
+  });
 })();
 
 // Surface a friendly message when a Yahoo OAuth attempt bounced back with
@@ -713,6 +765,14 @@ window.brHaptic = function (pattern) {
     sheet.setAttribute('aria-hidden', o ? 'false' : 'true');
     if (tab) { tab.setAttribute('aria-expanded', o ? 'true' : 'false'); tab.classList.toggle('active', o); }
     if (o && window.brHaptic) window.brHaptic(10);
+    if (o) {
+      sheet._brPrevFocus = document.activeElement;
+      var first = sheet.querySelector('a, button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (first) try { first.focus(); } catch (_) {}
+    } else if (sheet._brPrevFocus && typeof sheet._brPrevFocus.focus === 'function') {
+      try { sheet._brPrevFocus.focus(); } catch (_) {}
+      sheet._brPrevFocus = null;
+    }
   }
   function openSearch() {
     var ss = document.getElementById('brSearchScreen'); if (!ss) return;
@@ -821,10 +881,20 @@ window.brHaptic = function (pattern) {
 
     if (!docBound) {
       document.addEventListener('keydown', function (e) {
-        if (e.key !== 'Escape') return;
         var ss = document.getElementById('brSearchScreen');
-        if (ss && ss.classList.contains('open')) { closeSearch(); return; }
-        if (sheetOpen()) setOpen(false);
+        if (e.key === 'Escape') {
+          if (ss && ss.classList.contains('open')) { closeSearch(); return; }
+          if (sheetOpen()) setOpen(false);
+          return;
+        }
+        if (e.key !== 'Tab' || !sheetOpen()) return;
+        var sheetEl = document.getElementById('brMoreSheet');
+        if (!sheetEl) return;
+        var nodes = sheetEl.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])');
+        if (!nodes.length) return;
+        var first = nodes[0], last = nodes[nodes.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
       });
       docBound = true;
     }
@@ -2129,7 +2199,7 @@ window._brPromoEligible = function () {
         var permission = await Notification.requestPermission();
         if (permission === 'granted') {
           await subscribePush();
-          if (typeof showToast === 'function') showToast('Notifications enabled! <a href="#" onclick="openNotifPrefs();return false;" style="color:inherit;text-decoration:underline;margin-left:6px;">Customize →</a>', 'success');
+          if (typeof showToast === 'function') showToast('Notifications enabled. Open Settings to customize.', 'success', 5000);
           localStorage.setItem(NOTIF_KEY, 'subscribed');
         } else {
           localStorage.setItem(NOTIF_KEY, 'denied');
@@ -2567,7 +2637,7 @@ function showLoginGate(target, opts) {
 
   if (!ctx.is_logged_in) {
     const signinBtn = hasLeague
-      ? `<button class="login-gate-btn" onclick="document.getElementById('signinModal').style.display='flex'">Sign In</button>`
+      ? `<button class="login-gate-btn" onclick="window.brOpenSignin && window.brOpenSignin()">Sign In</button>`
       : `<a class="login-gate-btn" href="/">Get Started</a>`;
     el.innerHTML = `
       <div class="login-gate">
@@ -4458,19 +4528,10 @@ window.initTradePage = function initTradePage(root = document) {
     const targetsContent = root.querySelector("#targetsTabContent");
     const moversSub = root.querySelector("#moversSub");
     const dayFilters = root.querySelector(".otc-movers-panel .otc-day-filters");
-    const lockIcon = root.querySelector("#targetsLockIcon");
-    const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
-
-    if (hasPremium && lockIcon) lockIcon.style.display = "none";
 
     tabButtons.forEach(btn => {
       btn.addEventListener("click", () => {
         const tab = btn.dataset.tab;
-
-        if (tab === "targets" && !hasPremium) {
-          if (typeof showPaywall === "function") showPaywall("trade-suggestions");
-          return;
-        }
 
         tabButtons.forEach(b => b.classList.remove("is-active"));
         btn.classList.add("is-active");
@@ -5421,7 +5482,7 @@ window.initTradePage = function initTradePage(root = document) {
       const openLogin = "var t=document.getElementById('tradeLoginModal');"
         + "if(t){t.style.display='flex';document.body.style.overflow='hidden';return;}"
         + "var s=document.getElementById('signinModal');"
-        + "if(s){s.style.display='flex';return;}"
+        + "if(s){if(window.brOpenSignin)window.brOpenSignin();else s.style.display='flex';return;}"
         + "window.location.href='/';";
       const signInBtn = `<button class="pi-locked-btn" onclick="${openLogin}">Sign In</button>`;
       body.innerHTML = _piMessage(
@@ -5747,14 +5808,13 @@ window.initTradePage = function initTradePage(root = document) {
 
     const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
     if (!hasPremium) {
-      body.innerHTML = '<div class="otc-locked-preview" style="padding:4px 0 8px;">'
-        + '<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text-muted);">PRO preview</div>'
-        + '<div style="filter:blur(4px);user-select:none;pointer-events:none;border:1px solid var(--border);border-radius:10px;padding:12px;">'
-        + '<div style="font-weight:700;font-size:13px;">Target: a rival with surplus at your need</div>'
-        + '<div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Package a depth piece for their starter.</div>'
-        + '</div>'
-        + '<button type="button" class="pi-locked-btn" style="margin-top:10px;" onclick="if (typeof showPaywall === \'function\') showPaywall(\'trade-suggestions\')">Unlock roster suggestions</button>'
-        + '</div>';
+      window.brEmptyState(body, {
+        icon: 'lock',
+        title: 'Trade Targets',
+        message: 'Upgrade to see players to pursue based on your roster gaps.',
+        compact: true,
+        cta: { label: 'Upgrade', onClick: function () { if (typeof showPaywall === 'function') showPaywall('trade-suggestions'); } }
+      });
       return;
     }
 
@@ -5788,8 +5848,13 @@ window.initTradePage = function initTradePage(root = document) {
         { cache: "no-store" }
       );
       if (res.status === 403) {
-        if (typeof showPaywall === "function") showPaywall("trade-suggestions");
-        else body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">Upgrade to PRO to unlock trade tools.</div>';
+        window.brEmptyState(body, {
+          icon: 'lock',
+          title: 'Trade Targets',
+          message: 'Upgrade to see players to pursue based on your roster gaps.',
+          compact: true,
+          cta: { label: 'Upgrade', onClick: function () { if (typeof showPaywall === 'function') showPaywall('trade-suggestions'); } }
+        });
         return;
       }
       if (!res.ok) throw new Error("Failed");
@@ -5949,15 +6014,25 @@ window.initTradePage = function initTradePage(root = document) {
       }).join('');
     }
 
-    function switchTab(name) {
+    function applySuggGating() {
+      // Non-PRO: show only the upgrade CTA. Hide Build Around / Strategy entirely
+      // so free users don't see a second locked "Pro Feature" panel under the paywall.
       const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+      const banner = root.querySelector("#otcSuggPaywall");
+      const content = root.querySelector("#otcSuggProContent");
+      if (banner) banner.style.display = hasPremium ? "none" : "";
+      if (content) content.style.display = hasPremium ? "" : "none";
+      return hasPremium;
+    }
+    applySuggGating();
+
+    function switchTab(name) {
+      const hasPremium = applySuggGating();
       if (name === "suggestions" && !hasPremium) {
         // Switch to the tab so the upgrade CTA is visible, then show the modal on top.
         tabs.forEach(t => t.classList.toggle("is-active", t.dataset.tab === name));
         calcTab.style.display = "none";
         suggTab.style.display = "";
-        const banner = root.querySelector("#otcSuggPaywall");
-        if (banner) banner.style.display = "";
         if (typeof showPaywall === "function") showPaywall("trade-suggestions");
         const url = new URL(window.location.href);
         url.searchParams.set("tab", "suggestions");
@@ -6077,9 +6152,9 @@ window.initTradePage = function initTradePage(root = document) {
     if (_btnSearchSend) _btnSearchSend.addEventListener("click", () => _setSearchMode("send"));
     _setSearchMode(_searchMode);  // apply persisted mode (sets active button + placeholder)
 
-    // Restore last searched player
+    // Restore last searched player (PRO only — the search UI is hidden otherwise)
     const _lastPlayer = (() => { try { return JSON.parse(localStorage.getItem('ti-last-player') || 'null'); } catch(_) { return null; } })();
-    if (_lastPlayer && _lastPlayer.id) {
+    if (applySuggGating() && _lastPlayer && _lastPlayer.id) {
       playerInput.value = _lastPlayer.name || '';
       runSearchForCurrent(_lastPlayer.id, _lastPlayer.name || '');
     }
@@ -8782,8 +8857,10 @@ window.initTradePage = function initTradePage(root = document) {
         if (data.has_premium) {
           const premiumInput = root.querySelector("#otcHasPremium");
           if (premiumInput) premiumInput.value = "true";
-          const lockIcon = root.querySelector("#targetsLockIcon");
-          if (lockIcon) lockIcon.style.display = "none";
+          const banner = root.querySelector("#otcSuggPaywall");
+          const content = root.querySelector("#otcSuggProContent");
+          if (banner) banner.style.display = "none";
+          if (content) content.style.display = "";
         }
       } catch (_) {}
     })();
@@ -11649,13 +11726,20 @@ function _wlClearAll() {
 
 // ── Watchlist cross-device sync (server-backed when signed in) ───────────────
 function _wlSignedIn() {
-  // Gate on the SAME identity the server keys the watchlist on: viewer_user_id
-  // (window._viewerUid), not viewer_username (window._isSignedIn). The two can
-  // diverge, and the server returns synced:false for any request without a user
-  // id - so gating on the wrong field left a device silently unsynced (it kept
-  // its own local list and never pulled the account's).
+  // Match routes/watchlist_bp._user_key: Google account_id (window._hasAccount)
+  // or Sleeper viewer_user_id (window._viewerUid). A Google-only session has
+  // account_id with no Sleeper uid; gating on uid alone left those devices
+  // local-only even though the server stores acct:<id>.
   if (typeof window === 'undefined') return false;
+  if (window._hasAccount) return true;
   return window._viewerUid != null && String(window._viewerUid).trim() !== '';
+}
+
+function _wlIdentityKey() {
+  var uid = window._viewerUid != null ? String(window._viewerUid).trim() : '';
+  if (uid) return uid;
+  if (window._hasAccount) return 'acct:' + String(window._accountEmail || '1');
+  return '';
 }
 
 function _wlServerAdd(player) {
@@ -11770,7 +11854,7 @@ async function _wlServerSync() {
   // account. After that, the server is authoritative on load - we PULL and
   // replace rather than re-uploading, so a "clear all" on another device sticks
   // instead of being resurrected by this device's stale local list.
-  const migKey = '_wl_merged_' + String(window._viewerUid);
+  const migKey = '_wl_merged_' + _wlIdentityKey();
   let migrated = false;
   try { migrated = localStorage.getItem(migKey) === '1'; } catch (_) {}
   if (migrated) { await _wlServerPull(); return; }
@@ -13393,8 +13477,11 @@ function _buildCompareHeroHTML(p, other) {
   const _win = (mine, theirs) => (mine != null && theirs != null && Number(mine) > Number(theirs));
   const win1qb = _win(p.stats?.value, _o.value) ? ' compare-hero-win' : '';
   const winsf  = _win(p.stats?.sf_value, _o.sf_value) ? ' compare-hero-win' : '';
-  const winppg = _win(ppg, _o.ppg) ? ' compare-hero-win' : '';
+    const winppg = _win(ppg, _o.ppg) ? ' compare-hero-win' : '';
   const wintot = _win(total, _o.total_pts) ? ' compare-hero-win' : '';
+  const ss = p.stats?.start_score;
+  const oSs = _o.start_score;
+  const winss = _win(ss, oSs) ? ' compare-hero-win' : '';
 
   const scoringCols = (ppg != null ? 1 : 0) + (total != null ? 1 : 0);
   const scoringRow = hasScoringRow ? `
@@ -13453,6 +13540,14 @@ function _buildCompareHeroHTML(p, other) {
       </div>
     </div>
     ${scoringRow}
+    ${(ss != null || oSs != null) ? `
+    <div class="compare-hero-row" style="grid-template-columns:1fr;margin-top:6px;">
+      <div class="pm-hero-stat${winss}" style="padding:10px 10px;">
+        <div class="pm-hero-label">Start/Sit score</div>
+        <div class="pm-hero-val" style="font-size:20px;">${ss != null ? (Math.round(ss * 10) / 10) : '–'}</div>
+        <div class="pm-hero-sub">this week</div>
+      </div>
+    </div>` : ''}
     ${adpRow}
   `;
 }
@@ -16728,12 +16823,14 @@ function setupFunAwardsGrid() {
   const POS_COLORS = { QB: 'qb', RB: 'rb', WR: 'wr', TE: 'te', K: 'k', DEF: 'def' };
   let _players = null;
   let _loading = false;
+  let _loadFailed = false;
   let _debounce = null;
   let _focusIdx = -1;
 
   async function loadPlayers() {
-    if (_players !== null || _loading) return;
+    if ((_players !== null && !_loadFailed) || _loading) return;
     _loading = true;
+    _loadFailed = false;
     try {
       const res = await fetch('/api/league-players', { cache: 'default' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -16747,10 +16844,11 @@ function setupFunAwardsGrid() {
           pos:  String(p.position || '').toUpperCase(),
           team: String(p.team || p.nfl_team || ''),
           headshot: String(p.espnHeadshot || ''),
-        }));
+          }));
     } catch (e) {
       console.warn('[nav-search] Failed to load players:', e);
-      _players = [];
+      _players = null;
+      _loadFailed = true;
     }
     _loading = false;
     // If the user already typed while the list was loading, render now instead
@@ -16765,7 +16863,13 @@ function setupFunAwardsGrid() {
   function renderResults(query) {
     const q = query.trim().toLowerCase();
     if (!q) { closeDropdown(); return; }
-    if (!_players) { dropdown.innerHTML = '<div class="nav-search-empty">Loading…</div>'; openDropdown(); return; }
+    if (!_players) {
+      dropdown.innerHTML = _loadFailed
+        ? '<div class="nav-search-empty">Couldn’t load players. Type again to retry.</div>'
+        : '<div class="nav-search-empty">Loading…</div>';
+      openDropdown();
+      return;
+    }
 
     const words = q.split(/\s+/);
     const matches = _players

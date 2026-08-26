@@ -1,8 +1,8 @@
 """Server-synced player watchlist (per signed-in user).
 
-The watchlist is device-local (localStorage) by default; when the viewer is
-signed in (session has a Sleeper user id) it also syncs to the account so it
-follows them across devices. The client is local-first and write-through:
+The watchlist is device-local (localStorage) by default; when the visitor is
+signed in (Google account or Sleeper user id) it also syncs to the account so
+it follows them across devices. The client is local-first and write-through:
 localStorage updates immediately, and these endpoints mirror the change.
 
 Routes (all no-op with synced:false when not signed in, so the client falls
@@ -60,7 +60,15 @@ def _init_wl_table():
 
 
 def _user_key():
-    """Stable per-account key, or None when not signed in."""
+    """Stable per-account key, or None when not signed in.
+
+    Prefer the Google ``account_id`` so a watchlist follows the account across
+    devices and platforms. Fall back to the Sleeper ``viewer_user_id`` for
+    username-only sessions that never created an account.
+    """
+    account_id = session.get("account_id")
+    if account_id not in (None, ""):
+        return "acct:" + str(account_id).strip()
     return str(session.get("viewer_user_id") or "").strip() or None
 
 
