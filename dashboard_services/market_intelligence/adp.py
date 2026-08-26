@@ -21,14 +21,33 @@ BASIS_CAPS = {
 }
 
 
-def _adp_keys(is_superflex: bool = False) -> tuple[str, ...]:
+def _normalize_scoring_type(scoring_type: str | None) -> str:
+    s = str(scoring_type or "redraft").strip().lower()
+    if s in ("startup", "dynasty"):
+        return "dynasty"
+    if s == "rookie":
+        return "rookie"
+    return "redraft"
+
+
+def _adp_keys(is_superflex: bool = False, scoring_type: str = "redraft") -> tuple[str, ...]:
+    scoring = _normalize_scoring_type(scoring_type)
+    if scoring == "dynasty":
+        if is_superflex:
+            return ("sf_avg_pick", "avg_pick", "sf_redraft_avg_pick", "redraft_avg_pick")
+        return ("avg_pick", "redraft_avg_pick", "redraft_adp", "adp")
+    if scoring == "rookie":
+        if is_superflex:
+            return ("sf_rookie_avg_pick", "rookie_avg_pick", "sf_avg_pick", "avg_pick")
+        return ("rookie_avg_pick", "avg_pick", "redraft_avg_pick")
     if is_superflex:
         return ("sf_redraft_avg_pick", "redraft_avg_pick", "redraft_adp", "adp")
     return ("redraft_avg_pick", "redraft_adp", "adp", "sf_redraft_avg_pick")
 
 
-def _resolve_adp(player: dict, is_superflex: bool = False) -> float | None:
-    for key in _adp_keys(is_superflex):
+def _resolve_adp(player: dict, is_superflex: bool = False,
+                 scoring_type: str = "redraft") -> float | None:
+    for key in _adp_keys(is_superflex, scoring_type):
         try:
             adp = float(player.get(key))
         except (TypeError, ValueError):
@@ -70,7 +89,8 @@ def _pava_decreasing(values: list[float], weights: list[int]) -> list[float]:
 
 
 def build_adp_curve(player_pool: list[dict], position: str,
-                    is_superflex: bool = False) -> tuple[list[float], list[float]]:
+                    is_superflex: bool = False,
+                    scoring_type: str = "redraft") -> tuple[list[float], list[float]]:
     """Build a deterministic binned-median, monotonic curve for one position."""
     pos = str(position or "").upper()
     if pos not in SUPPORTED_POSITIONS:
@@ -80,7 +100,7 @@ def build_adp_curve(player_pool: list[dict], position: str,
         if _position(player) != pos:
             continue
         ppg = _projected_ppg(player)
-        adp = _resolve_adp(player, is_superflex)
+        adp = _resolve_adp(player, is_superflex, scoring_type)
         if ppg > 0 and adp is not None:
             samples.append((ppg, adp))
     samples.sort()
@@ -101,8 +121,9 @@ def build_adp_curve(player_pool: list[dict], position: str,
     return xs, ys
 
 
-def build_position_curves(player_pool: list[dict], is_superflex: bool = False):
-    return {position: build_adp_curve(player_pool, position, is_superflex)
+def build_position_curves(player_pool: list[dict], is_superflex: bool = False,
+                          scoring_type: str = "redraft"):
+    return {position: build_adp_curve(player_pool, position, is_superflex, scoring_type)
             for position in SUPPORTED_POSITIONS}
 
 
@@ -124,8 +145,9 @@ def interp_adp(curve: tuple[list[float], list[float]], projected_ppg: float) -> 
 
 
 def expected_adp(projected_ppg: float, player_pool: list[dict], position: str,
-                 is_superflex: bool = False) -> float | None:
-    return interp_adp(build_adp_curve(player_pool, position, is_superflex), projected_ppg)
+                 is_superflex: bool = False, scoring_type: str = "redraft") -> float | None:
+    return interp_adp(build_adp_curve(player_pool, position, is_superflex, scoring_type),
+                      projected_ppg)
 
 
 def _confidence_weight(confidence: float) -> float:
@@ -136,9 +158,10 @@ def _confidence_weight(confidence: float) -> float:
 
 
 def attach_market_vs_adp(players: list[dict], projections: dict[str, dict],
-                         is_superflex: bool = False) -> dict:
+                         is_superflex: bool = False,
+                         scoring_type: str = "redraft") -> dict:
     """Attach incremental market-driven ADP movement, never absolute mispricing."""
-    curves = build_position_curves(players, is_superflex)
+    curves = build_position_curves(players, is_superflex, scoring_type)
     diagnostics = {key: 0 for key in (
         "qualified", "capped", "projection_only", "low_confidence", "missing_adp",
         "missing_fantasy_points", "missing_projection", "invalid_curve", "stale",
@@ -146,7 +169,7 @@ def attach_market_vs_adp(players: list[dict], projections: dict[str, dict],
     )}
     diagnostics["curves"] = {position: {
         "samples": sum(1 for player in players if _position(player) == position and
-                       _resolve_adp(player, is_superflex) is not None and
+                       _resolve_adp(player, is_superflex, scoring_type) is not None and
                        _projected_ppg(player) > 0),
         "bins": len(curves[position][0]),
     } for position in SUPPORTED_POSITIONS}
@@ -198,7 +221,7 @@ def attach_market_vs_adp(players: list[dict], projections: dict[str, dict],
         if not curve or len(curve[0]) < 2:
             diagnostics["invalid_curve"] += 1
             continue
-        actual = _resolve_adp(player, is_superflex)
+        actual = _resolve_adp(player, is_superflex, scoring_type)
         if actual is None:
             diagnostics["missing_adp"] += 1
             continue

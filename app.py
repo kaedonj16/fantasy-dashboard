@@ -15658,13 +15658,19 @@ def api_league_players():
                                 player_ids=[str(p.get("id")) for p in _mi_players])
         if _mi_proj:
             _mi_is_sf = str(request.args.get("league_type") or "").lower() in ("sf", "superflex")
-            # Stamp both formats (pos-rank style) so the draft compare can switch
-            # without a second fetch. `market_vs_adp` stays the viewer's format.
-            _diag_1qb = _attach_mi_adp(_mi_players, _mi_proj, is_superflex=False)
+            _mi_scoring = str(request.args.get("scoring_type") or "redraft").strip().lower()
+            if _mi_scoring in ("startup",):
+                _mi_scoring = "dynasty"
+            if _mi_scoring not in ("redraft", "dynasty", "rookie"):
+                _mi_scoring = "redraft"
+            # Stamp both 1QB/SF formats for this scoring type (pos-rank style).
+            _diag_1qb = _attach_mi_adp(_mi_players, _mi_proj, is_superflex=False,
+                                       scoring_type=_mi_scoring)
             for _mp in _mi_players:
                 _mp["market_vs_adp_1qb"] = _mp.get("market_vs_adp")
                 _mp["market_vs_adp"] = None
-            _diag_sf = _attach_mi_adp(_mi_players, _mi_proj, is_superflex=True)
+            _diag_sf = _attach_mi_adp(_mi_players, _mi_proj, is_superflex=True,
+                                      scoring_type=_mi_scoring)
             for _mp in _mi_players:
                 _mp["sf_market_vs_adp"] = _mp.get("market_vs_adp")
                 _mp["market_vs_adp"] = (

@@ -972,6 +972,35 @@
     var v = state.sf ? (p.sf_value || p.value || p.val || 0) : (p.value || p.val || 0);
     return finiteVal(v);
   }
+  // Pos rank for the active board: rank every skill player within his position
+  // by valOf(), so compare/preview match rankings (redraft/dynasty × 1QB/SF)
+  // instead of the dynasty-only labels on the payload.
+  var _posRankById = {};
+  var _posRankSig = '';
+  function refreshPosRankMap(){
+    var sig = [state && state.type, state && state.sf ? 'sf' : '1qb', (players || []).length].join('|');
+    if (sig === _posRankSig) return;
+    _posRankSig = sig;
+    _posRankById = {};
+    var byPos = {};
+    (players || []).forEach(function(p){
+      if (!p) return;
+      var pos = (p.position || '').toUpperCase();
+      if (!pos || pos === 'PICK') return;
+      if (!(valOf(p) > 0)) return;
+      (byPos[pos] || (byPos[pos] = [])).push(p);
+    });
+    Object.keys(byPos).forEach(function(pos){
+      byPos[pos].sort(function(a, b){ return valOf(b) - valOf(a); });
+      byPos[pos].forEach(function(p, i){ _posRankById[String(p.id)] = i + 1; });
+    });
+  }
+  function posRankOf(p){
+    refreshPosRankMap();
+    var n = p ? _posRankById[String(p.id)] : null;
+    if (n == null) return { label: '', n: null };
+    return { label: ((p.position || '').toUpperCase()) + n, n: n };
+  }
   function adpOf(p){
     // Sleeper community ADP (server-side, aggregated from real Sleeper drafts).
     // Redraft has no Sleeper feed, so it falls back to a value-derived rank.
@@ -1017,9 +1046,11 @@
       if (cfg.leagueId) params.push('league_id=' + encodeURIComponent(cfg.leagueId));
       if (cfg.platform) params.push('platform=' + encodeURIComponent(cfg.platform));
     }
-    // League type so Market vs ADP (and any other per-request overlay) matches
-    // the SF/1QB switch pos rank already does on the compare modal.
+    // League type + scoring type so Market vs ADP matches the SF/1QB and
+    // redraft/dynasty switch pos rank already does on the compare modal.
     params.push('league_type=' + (state && state.sf ? 'sf' : '1qb'));
+    params.push('scoring_type=' + (state && state.type === 'redraft' ? 'redraft'
+      : (state && state.type === 'rookie' ? 'rookie' : 'dynasty')));
     if (state && state.teams) params.push('league_size=' + encodeURIComponent(String(state.teams)));
     var url = '/api/league-players' + (params.length ? ('?' + params.join('&')) : '');
     var _loadPlayerPayload = function(attempt){
@@ -1068,6 +1099,7 @@
         }
         playersById = {};
         players.forEach(function(p){ playersById[String(p.id)] = p; });
+        _posRankSig = '';
         // Live mode: re-apply picks now that values are available; else rebuild
         // the drafted set from saved picks.
         if (state.mode === 'live' && lastLivePicks){
@@ -2959,9 +2991,11 @@
   function draftPlayerFacts(p){
     var pos = (p.position || '').toUpperCase();
     var isSf = !!(state && state.sf);
+    var isRedraft = state && state.type === 'redraft';
+    var isRookie = state && state.type === 'rookie';
     var adp = adpOf(p);
-    var adpN = (state.type === 'rookie') ? p.rookie_adp_n
-      : (isSf ? p.sf_adp_n : p.adp_n);
+    var adpN = isRookie ? p.rookie_adp_n
+      : (isRedraft ? null : (isSf ? p.sf_adp_n : p.adp_n));
     var adpGap = (adp != null && state && state.current) ? (state.current - adp) : null;
     var proj = scoringProjPpg(p);
     var last = (p.ppg != null && isFinite(Number(p.ppg))) ? Number(p.ppg) : null;
@@ -2970,8 +3004,8 @@
     // Keep trade-value VOR and projected VORP separate. Mixing them in one
     // field made a player without projections look like a +400 VORP outlier
     // next to someone whose number was actually projected points.
-    // VORP / pos rank / market follow league type the same way: SF fields
-    // when Superflex is on, 1QB otherwise.
+    // VORP / market follow 1QB vs SF; pos rank is ranked by valOf() so it
+    // also follows redraft vs dynasty (and rookie pool) like rankings.
     var vorpRaw = isSf
       ? (p.sf_vorp != null ? p.sf_vorp : p.vorp)
       : p.vorp;
@@ -2980,6 +3014,7 @@
     var marketRaw = isSf
       ? (p.sf_market_vs_adp != null ? p.sf_market_vs_adp : p.market_vs_adp)
       : (p.market_vs_adp_1qb != null ? p.market_vs_adp_1qb : p.market_vs_adp);
+    var pr = posRankOf(p);
     return {
       pos: pos,
       adp: adp,
@@ -2995,8 +3030,8 @@
       lastPpg: last,
       ppgSeason: p.ppg_season,
       ppgRank: p.ppg_rank,
-      posRank: isSf ? (p.sf_pos_rank_label || '') : (p.pos_rank_label || ''),
-      posRankN: isSf ? p.sf_pos_rank : p.pos_rank,
+      posRank: pr.label,
+      posRankN: pr.n,
       bye: p.bye_week != null ? Number(p.bye_week) : null,
       rec: recRankOf(p),
       projPts: scoringProjPts(p),
@@ -3187,7 +3222,7 @@
             return String(x);
           }) : '')
         + (state.type !== 'redraft' ? statRow('Tier', f.tier, o.tier, false, function(x){ return x != null ? 'T' + x : '-'; }) : '')
-        + statRow('Age', f.age, o.age, false, function(x){ return x != null ? x.toFixed(0) : '-'; })
+        + (state.type !== 'redraft' ? statRow('Age', f.age, o.age, false, function(x){ return x != null ? x.toFixed(0) : '-'; }) : '')
         + (f.bye != null || o.bye != null ? statRow('Bye', f.bye, o.bye, false, function(x){ return x != null ? String(x) : '-'; }) : '')
         + (f.rec != null || o.rec != null ? statRow('REC', f.rec, o.rec, false, function(x){ return x != null ? '#' + x : '-'; }) : '')
         + (f.survive != null || o.survive != null ? statRow('Survive', f.survive, o.survive, true, function(x){ return x != null ? x + '%' : '-'; }) : '')
@@ -6826,7 +6861,7 @@
       + (f.projPts != null ? statBox('Proj Pts', Math.round(f.projPts), 'season', 'Projected fantasy points for the full upcoming season.') : '')
       + (f.market != null ? statBox('Mkt vs ADP', fmtSigned(Math.round(f.market), 0), null, 'How much earlier (positive) or later (negative) betting markets imply this player should go versus ADP.') : '')
       + (state.type !== 'redraft' && f.age != null ? statBox('Age', f.age.toFixed(0)) : '')
-      + statBox(pos + ' T1-2 left', f.scarce, null, 'How many Tier 1-2 (elite) players remain available at this position - a scarcity signal.')
+      + (state.type !== 'redraft' ? statBox(pos + ' T1-2 left', f.scarce, null, 'How many Tier 1-2 (elite) players remain available at this position - a scarcity signal.') : '')
       + '</div>';
     // Survival probability at the user's next upcoming pick
     if (f.survivePn && f.survive != null){

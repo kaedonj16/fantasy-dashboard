@@ -160,7 +160,8 @@ def test_preview_modal_uses_relative_pick_score():
     assert "var isSf = !!(state && state.sf);" in facts
     assert "p.sf_vorp != null ? p.sf_vorp : p.vorp" in facts
     assert "p.sf_market_vs_adp != null ? p.sf_market_vs_adp : p.market_vs_adp" in facts
-    assert "isSf ? (p.sf_pos_rank_label || '') : (p.pos_rank_label || '')" in facts
+    assert "var pr = posRankOf(p);" in facts
+    assert "posRank: pr.label" in facts
     assert "var tradeVor = vorOf(p);" in facts
     assert "p.vorp != null ? Number(p.vorp) : vorOf(p)" not in source
     assert "statBox('Proj PPG'" in body

@@ -15,13 +15,27 @@ def _slice(src: str, start: str, end: str) -> str:
 def test_draft_player_facts_switch_sf_fields():
     facts = _slice(DRAFT_JS, "function draftPlayerFacts(p)", "function fmtSigned")
     assert "var isSf = !!(state && state.sf);" in facts
+    assert "var isRedraft = state && state.type === 'redraft';" in facts
     assert "valOf(p)" in facts
     assert "adpOf(p)" in facts
     assert "vorOf(p)" in facts
-    assert "isSf ? (p.sf_pos_rank_label || '') : (p.pos_rank_label || '')" in facts
+    assert "var pr = posRankOf(p);" in facts
+    assert "posRank: pr.label" in facts
+    assert "p.sf_pos_rank_label" not in facts
     assert "p.sf_vorp != null ? p.sf_vorp : p.vorp" in facts
     assert "p.sf_market_vs_adp != null ? p.sf_market_vs_adp : p.market_vs_adp" in facts
-    assert "isSf ? p.sf_adp_n : p.adp_n" in facts
+    assert "isRedraft ? null : (isSf ? p.sf_adp_n : p.adp_n)" in facts
+
+
+def test_pos_rank_uses_board_value_not_dynasty_labels():
+    helper = _slice(DRAFT_JS, "function refreshPosRankMap()", "function posRankOf")
+    assert "valOf(b) - valOf(a)" in helper
+    assert "state.sf ? 'sf' : '1qb'" in helper
+    facts = _slice(DRAFT_JS, "function draftPlayerFacts(p)", "function fmtSigned")
+    assert "posRankOf(p)" in facts
+    cmp = _slice(DRAFT_JS, "function openCompare()", "function pickScore")
+    assert "statRow('Pos Rank'" in cmp
+    assert "p.pos_rank_label" not in cmp
 
 
 def test_compare_modal_reads_draft_player_facts():
@@ -41,6 +55,8 @@ def test_compare_modal_reads_draft_player_facts():
 def test_draft_room_fetches_league_type():
     load = _slice(DRAFT_JS, "function loadPlayers()", "function applyKeepers")
     assert "params.push('league_type=' + (state && state.sf ? 'sf' : '1qb'))" in load
+    assert "params.push('scoring_type='" in load
+    assert "state.type === 'redraft' ? 'redraft'" in load
     assert "params.push('league_size='" in load
 
 
@@ -51,6 +67,8 @@ def test_league_players_stamps_sf_vorp_and_sf_market():
 
     route = _slice(APP_PY, "def api_league_players():", "def api_teams():")
     assert 'request.args.get("league_type"' in route
+    assert 'request.args.get("scoring_type"' in route
+    assert "scoring_type=_mi_scoring" in route
     assert '["sf_market_vs_adp"]' in route
     assert '["market_vs_adp_1qb"]' in route
     assert "is_superflex=False" in route
