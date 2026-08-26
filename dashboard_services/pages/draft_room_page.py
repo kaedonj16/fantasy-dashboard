@@ -925,6 +925,9 @@ _DRAFT_ROOM_HTML = r"""
   .dr-grade-card { display: flex; align-items: center; gap: 12px; padding: 12px; margin: 10px 10px 4px;
     border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
   .dr-grade-letter { font-size: 34px; font-weight: 900; color: var(--accent,#38bdf8); line-height: 1; min-width: 48px; text-align: center; }
+  .dr-grade-mark { display: flex; flex-direction: column; align-items: center; min-width: 48px; flex-shrink: 0; }
+  .dr-grade-early { font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin-top: 3px; }
+  .dr-grade-early-inline { font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
   .dr-grade-meta { flex: 1; min-width: 0; }
   .dr-grade-pace { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
   .dr-gbar-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }

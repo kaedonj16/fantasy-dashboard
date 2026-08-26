@@ -3975,13 +3975,15 @@
       // Smooth 0-100: MEAN of each pick's canonical letter score, not the coarse
       // team-letter bucket (mirrors utils.draft_grade.dr_rookie_team_score; keep
       // the two in lock-step). An [A, B] class -> 78.5 (B+), not a rounded-up A.
+      // All-N/A (no ADP) is ungradeable — Python returns None, not N/A→55→C.
       var _rk = _letters.filter(function(L){ return L && L !== 'N/A'; })
                         .map(function(L){ return letterToScore(L); });
-      var rv = _rk.length ? _rk.reduce(function(a, b){ return a + b; }, 0) / _rk.length
-                          : letterToScore(teamLetterFromPicks(_letters));
+      if (!_rk.length) return null;
+      var rv = _rk.reduce(function(a, b){ return a + b; }, 0) / _rk.length;
       return { score: rv, value: avgPs != null ? Math.round(avgPs) : 50,
         balance: 0, tier: 0, count: mine.length,
-        avgPs: avgPs ? Math.round(avgPs) : null, window: null };
+        avgPs: avgPs ? Math.round(avgPs) : null, window: null,
+        provisional: gradeIsProvisional(mine.length) };
     }
 
     // Startup / redraft composite lives in static/draft_grade_team.js
@@ -3996,19 +3998,20 @@
     var _leaguePlayers = players.map(function(q){
       return { pos: String(q.position || '').toUpperCase(), ppg: ppgOf(q), val: valOf(q) };
     });
-    var _comp = BRTeamGrade.teamGradeComposite(
+    var _tg = window.BRTeamGrade;
+    if (!_tg || typeof _tg.teamGradeComposite !== 'function') return null;
+    var _comp = _tg.teamGradeComposite(
       picks, _slots, posTargets(), state.teams || 12, state.type,
       _leaguePpg, _leagueVal, _leaguePlayers
     );
-    if (!_comp){
-      return { score: 0, value: 0, balance: 0, tier: 0, count: mine.length,
-        avgPs: avgPs != null ? Math.round(avgPs) : null, window: null };
-    }
+    // Missing composite is ungradeable — do not invent score 0 (letter F).
+    if (!_comp) return null;
     var _starterArr = picks.filter(function(x){ return _comp.starterIds[String(x.id)]; });
     return { score: _comp.total, value: _comp.value, balance: _comp.balance, tier: _comp.starter,
       count: mine.length, avgPs: avgPs != null ? Math.round(avgPs) : null,
       strength: Math.round(_comp.strengthRatio * 100),
-      window: _competitiveWindow(_starterArr) };
+      window: _competitiveWindow(_starterArr),
+      provisional: gradeIsProvisional(mine.length) };
   }
   // At-pick tier-cliff map for grading: walk the full draft in order starting from
   // the full-pool tier counts, so each historical pick sees remaining-at-that-slot
@@ -4141,6 +4144,16 @@
     if (s>=60) return 'C+'; if (s>=55) return 'C'; if (s>=50) return 'C-';
     if (s>=40) return 'D';  return 'F';
   }
+  // Construction ramps with min(1, picks/8). Show the real letter from pick 1
+  // (including two-pick / start-of-round-3 boards — that F-grade bug is fixed)
+  // but mark it Early until the sample is large enough to trust construction.
+  function gradeIsProvisional(count){
+    if ((state && state.type) === 'rookie') return count < 3;
+    return count < 8;
+  }
+  function gradeEarlySuffix(g){
+    return (g && g.provisional) ? ' · Early' : '';
+  }
   function gradeBar(label, val, max, tip){
     var pct = max ? Math.round(val / max * 100) : 0;
     var col = pct >= 80 ? '#22c55e' : pct >= 60 ? '#38bdf8' : pct >= 40 ? '#f59e0b' : '#ef4444';
@@ -4186,7 +4199,9 @@
       var _ga = teamArchetype(); if (_ga) gSub = _ga.label;
       var _gwn = g.window;
       var gAgeSub = _gwn ? (esc(_gwn.label) + ' \xb7 Avg age ' + _gwn.avgAge.toFixed(1)) : '';
-      html += '<div class="dr-grade-card"><div class="dr-grade-letter">' + gradeLetter(g.score) + '</div>'
+      html += '<div class="dr-grade-card"><div class="dr-grade-mark"><div class="dr-grade-letter">' + gradeLetter(g.score) + '</div>'
+        + (g.provisional ? '<div class="dr-grade-early">Early</div>' : '')
+        + '</div>'
         + '<div class="dr-grade-meta">' + (gSub ? '<div class="dr-grade-pace">' + gSub + '</div>' : '')
         + (gAgeSub ? '<div class="dr-grade-pace" style="font-size:11px;color:var(--text-muted)">' + gAgeSub + '</div>' : '')
         + gradeBars(g)
@@ -4408,7 +4423,8 @@
         + '<span class="dr-sum-lname">' + esc(t.name) + stratTag + '</span>'
         + winTag
         + poTag
-        + '<span class="dr-sum-lgrade" style="color:' + tCol + '">' + gradeLetter(t.grade.score) + '</span>'
+        + '<span class="dr-sum-lgrade" style="color:' + tCol + '">' + gradeLetter(t.grade.score)
+        + (t.grade.provisional ? '<span class="dr-grade-early-inline"> Early</span>' : '') + '</span>'
         + '<span class="dr-sum-lchev">&#9660;</span>'
         + '</div>'
         + '<div class="dr-sum-ldtl" id="drLegLdtl' + t.slot + '"></div>';
@@ -4985,7 +5001,7 @@
     document.getElementById('drProgress').textContent = Math.min(state.current - 1, total) + ' / ' + total + ' picks';
     var gp = document.getElementById('drGradePill');
     var g = gradeTeam();
-    if (g){ gp.style.display = ''; gp.textContent = 'Grade ' + gradeLetter(g.score); } else { gp.style.display = 'none'; }
+    if (g){ gp.style.display = ''; gp.textContent = 'Grade ' + gradeLetter(g.score) + gradeEarlySuffix(g); } else { gp.style.display = 'none'; }
     // The pick-trade evaluator only makes sense while picks are still to be made;
     // hide it once the draft is done/complete (nothing left to trade for).
     var _ptBtn = document.getElementById('drPickTradeBtn');
@@ -5398,7 +5414,8 @@
     { term: 'Survival %', def: 'The chance a player is still on the board at your next pick. Starts from consensus ADP, then adapts to how your draft is actually going - if the room is reaching, letting players slide, drafting unpredictably, or running on a position, the odds shift to match (kicks in after the first several picks).' },
     { term: 'Grade · Value', def: 'How strong your picks are by pick score, weighted toward the earlier rounds where it matters most.' },
     { term: 'Grade · Starters', def: 'How good your projected starting lineup is versus a league-average team. 100% is a league-average lineup; the rank is among teams in this draft. Snake drafts are close to zero-sum, so a lineup near 100% of average can still rank 1st or 2nd.' },
-    { term: 'Grade · Construction', def: 'How well you’ve filled your starting slots and balanced your positions.' }
+    { term: 'Grade · Construction', def: 'How well you’ve filled your starting slots and balanced your positions.' },
+    { term: 'Grade · Early', def: 'Shown until your team has 8 picks (3 in a rookie draft). The letter is real — including at two picks / the start of round 3 — but construction is still ramping and the sample is small.' }
   ];
   // Inline info icon: data-tip drives a CSS hover/focus bubble. tabindex makes it
   // tap- and keyboard-accessible.
@@ -5452,7 +5469,9 @@
       ? ('<div class="dr-sum-grade-wrap">'
          + '<div class="dr-sum-grade-ring" style="border-color:' + gradeCol + ';color:' + gradeCol + '">'
          + '<span class="dr-sum-grade">' + gradeLetter(g.score) + '</span></div>'
-         + '<div class="dr-sum-grade-bars">' + gradeBars(g) + '</div>'
+         + '<div class="dr-sum-grade-bars">'
+         + (g.provisional ? '<div class="dr-grade-early">Early — still forming</div>' : '')
+         + gradeBars(g) + '</div>'
          + '</div>')
       : '';
 
@@ -5775,7 +5794,8 @@
     return '<div class="dd-card dd-overview">'
       + '<div class="dd-ov-top">'
       + '<div class="dd-ring" style="--pct:' + Math.max(0, Math.min(100, Math.round(g.score))) + ';--gc:' + col + '">'
-      + '<b style="color:' + col + '">' + gradeLetter(g.score) + '<small>' + Math.round(g.score) + '</small></b></div>'
+      + '<b style="color:' + col + '">' + gradeLetter(g.score) + '<small>' + Math.round(g.score)
+      + (g.provisional ? ' · Early' : '') + '</small></b></div>'
       + '<div class="dd-ov-txt"><h3>' + verdict.title + '</h3>'
       + '<div class="dd-rankline">Ranked <b>' + myRank + ordinalSuffix(myRank) + ' of ' + n + '</b>'
       + (arch ? ' · ' + esc(arch.label) : '') + '</div>'
@@ -5958,7 +5978,8 @@
       return '<tr class="' + (t.isMe ? 'dd-me' : '') + '">'
         + '<td class="num" style="color:var(--text-muted)">' + (i + 1) + '</td>'
         + '<td class="dd-plname">' + esc(t.name) + (t.isMe ? ' <span class="dd-youtag">YOU</span>' : '') + '</td>'
-        + '<td class="r"><span class="dd-gletter" style="color:' + col + '">' + gradeLetter(t.grade.score) + '</span></td>'
+        + '<td class="r"><span class="dd-gletter" style="color:' + col + '">' + gradeLetter(t.grade.score)
+        + (t.grade.provisional ? '<span class="dr-grade-early-inline"> Early</span>' : '') + '</span></td>'
         + '<td class="r num" style="color:var(--text-muted)">' + Math.round(t.grade.score) + '</td>'
         + '<td>' + odBar + '</td>'
         + '</tr>';
@@ -6444,7 +6465,7 @@
       var gp = (state.type === 'rookie' && g.avgPs != null) ? ('Avg pick score ' + g.avgPs) : null;
       if (!gp){ var _sa = teamArchetype(); if (_sa) gp = _sa.label; }
       ctx.fillStyle = clr.win; ctx.font = 'bold 15px system-ui,Arial,sans-serif';
-      ctx.fillText('Grade ' + gl + (gp ? ('  \xb7  ' + gp) : ''), pad, pad + 76);
+      ctx.fillText('Grade ' + gl + (g.provisional ? ' \xb7 Early' : '') + (gp ? ('  \xb7  ' + gp) : ''), pad, pad + 76);
     }
     // Divider below header
     ctx.fillStyle = clr.border; ctx.fillRect(0, headerH - 10, W, 1);
