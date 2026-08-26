@@ -10,8 +10,8 @@ from typing import Optional
 _CACHE_DIR = Path(__file__).parent.parent / "cache"
 
 # Sleeper drops the weekly stat line (proj PPG 0) once a player is out for the
-# year. FantasyPros preseason files and last-season actuals still carry the
-# healthy number, so consumers must not refill those players from fallbacks.
+# year. Displayed point projections must not refill those players from any
+# other source (FantasyPros preseason files, last-season actuals, etc.).
 _SEASON_ENDING_INJURY = frozenset({"IR", "PUP", "NFI"})
 
 

@@ -1,5 +1,9 @@
 """IR/PUP/NFI players with no Sleeper projection must not inherit a healthy PPG."""
+from pathlib import Path
+
 from data_building.fetch_projections import unprojected_season_injury
+
+_REPO = Path(__file__).resolve().parents[1]
 
 
 def test_ir_with_no_sleeper_proj_is_unprojected():
@@ -24,3 +28,15 @@ def test_healthy_or_week_to_week_injury_is_not_forced_to_zero():
     assert unprojected_season_injury("Questionable", 0) is False
     assert unprojected_season_injury("OUT", 0) is False
     assert unprojected_season_injury("Active", 9.8) is False
+
+
+def test_site_point_projections_do_not_read_fantasypros_files():
+    for rel in (
+        "app.py",
+        "routes/waiver_api_bp.py",
+        "data_building/simulate_playoff_odds.py",
+        "data_building/fetch_projections.py",
+    ):
+        text = (_REPO / rel).read_text(encoding="utf-8")
+        assert "fp_projections_" not in text, rel
+        assert "fetch_fp_season_projections" not in text, rel
