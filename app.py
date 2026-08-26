@@ -15368,11 +15368,16 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     # already zeroed above are omitted (no upcoming-season points).
     try:
         from utils.vorp import projected_vorp_map as _proj_vorp
+        # 1QB replacement uses 1 QB starter; SF uses 2 (QB + Superflex). Both
+        # land on the player so the draft compare/preview can switch like pos rank.
         _vorp_map = _proj_vorp(model_value_table, num_teams=12)
+        _sf_vorp_map = _proj_vorp(model_value_table, num_teams=12, starters={"QB": 2.0})
         for _player in model_value_table:
             _pid = str(_player.get("id") or "")
             if _pid in _vorp_map:
                 _player["vorp"] = round(_vorp_map[_pid], 1)
+            if _pid in _sf_vorp_map:
+                _player["sf_vorp"] = round(_sf_vorp_map[_pid], 1)
     except Exception as _e_vorp:
         logger.info(f"[api/league-players] VORP enrichment skipped: {_e_vorp}")
 
@@ -15653,7 +15658,19 @@ def api_league_players():
                                 player_ids=[str(p.get("id")) for p in _mi_players])
         if _mi_proj:
             _mi_is_sf = str(request.args.get("league_type") or "").lower() in ("sf", "superflex")
-            _mi_diagnostics = _attach_mi_adp(_mi_players, _mi_proj, is_superflex=_mi_is_sf)
+            # Stamp both formats (pos-rank style) so the draft compare can switch
+            # without a second fetch. `market_vs_adp` stays the viewer's format.
+            _diag_1qb = _attach_mi_adp(_mi_players, _mi_proj, is_superflex=False)
+            for _mp in _mi_players:
+                _mp["market_vs_adp_1qb"] = _mp.get("market_vs_adp")
+                _mp["market_vs_adp"] = None
+            _diag_sf = _attach_mi_adp(_mi_players, _mi_proj, is_superflex=True)
+            for _mp in _mi_players:
+                _mp["sf_market_vs_adp"] = _mp.get("market_vs_adp")
+                _mp["market_vs_adp"] = (
+                    _mp.get("sf_market_vs_adp") if _mi_is_sf else _mp.get("market_vs_adp_1qb")
+                )
+            _mi_diagnostics = _diag_sf if _mi_is_sf else _diag_1qb
             if os.getenv("MARKET_INTEL_DIAGNOSTICS", "").strip().lower() in ("1", "true", "yes"):
                 logger.info("[market] Market vs ADP curve diagnostics:")
                 for _position, _curve in _mi_diagnostics.get("curves", {}).items():

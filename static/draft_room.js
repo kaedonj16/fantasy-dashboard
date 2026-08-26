@@ -1017,6 +1017,10 @@
       if (cfg.leagueId) params.push('league_id=' + encodeURIComponent(cfg.leagueId));
       if (cfg.platform) params.push('platform=' + encodeURIComponent(cfg.platform));
     }
+    // League type so Market vs ADP (and any other per-request overlay) matches
+    // the SF/1QB switch pos rank already does on the compare modal.
+    params.push('league_type=' + (state && state.sf ? 'sf' : '1qb'));
+    if (state && state.teams) params.push('league_size=' + encodeURIComponent(String(state.teams)));
     var url = '/api/league-players' + (params.length ? ('?' + params.join('&')) : '');
     var _loadPlayerPayload = function(attempt){
       return fetch(url, { cache: 'no-store' }).then(function(r){
@@ -2954,9 +2958,10 @@
   // the two surfaces cannot drift (and so we only compute ADP/VOR/survival once).
   function draftPlayerFacts(p){
     var pos = (p.position || '').toUpperCase();
+    var isSf = !!(state && state.sf);
     var adp = adpOf(p);
     var adpN = (state.type === 'rookie') ? p.rookie_adp_n
-      : (state.sf ? p.sf_adp_n : p.adp_n);
+      : (isSf ? p.sf_adp_n : p.adp_n);
     var adpGap = (adp != null && state && state.current) ? (state.current - adp) : null;
     var proj = scoringProjPpg(p);
     var last = (p.ppg != null && isFinite(Number(p.ppg))) ? Number(p.ppg) : null;
@@ -2965,8 +2970,16 @@
     // Keep trade-value VOR and projected VORP separate. Mixing them in one
     // field made a player without projections look like a +400 VORP outlier
     // next to someone whose number was actually projected points.
-    var projectedVorp = (p.vorp != null && isFinite(Number(p.vorp))) ? Number(p.vorp) : null;
+    // VORP / pos rank / market follow league type the same way: SF fields
+    // when Superflex is on, 1QB otherwise.
+    var vorpRaw = isSf
+      ? (p.sf_vorp != null ? p.sf_vorp : p.vorp)
+      : p.vorp;
+    var projectedVorp = (vorpRaw != null && isFinite(Number(vorpRaw))) ? Number(vorpRaw) : null;
     var tradeVor = vorOf(p);
+    var marketRaw = isSf
+      ? (p.sf_market_vs_adp != null ? p.sf_market_vs_adp : p.market_vs_adp)
+      : (p.market_vs_adp_1qb != null ? p.market_vs_adp_1qb : p.market_vs_adp);
     return {
       pos: pos,
       adp: adp,
@@ -2982,15 +2995,15 @@
       lastPpg: last,
       ppgSeason: p.ppg_season,
       ppgRank: p.ppg_rank,
-      posRank: state && state.sf ? (p.sf_pos_rank_label || '') : (p.pos_rank_label || ''),
-      posRankN: state && state.sf ? p.sf_pos_rank : p.pos_rank,
+      posRank: isSf ? (p.sf_pos_rank_label || '') : (p.pos_rank_label || ''),
+      posRankN: isSf ? p.sf_pos_rank : p.pos_rank,
       bye: p.bye_week != null ? Number(p.bye_week) : null,
       rec: recRankOf(p),
       projPts: scoringProjPts(p),
       scarce: posTopRemaining(pos),
       survive: survive,
       survivePn: nextOwned,
-      market: p.market_vs_adp != null ? Number(p.market_vs_adp) : null,
+      market: marketRaw != null && isFinite(Number(marketRaw)) ? Number(marketRaw) : null,
       exp: expLabel(p),
       injury: p.injury || ''
     };
