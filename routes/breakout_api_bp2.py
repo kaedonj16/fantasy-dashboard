@@ -20,13 +20,45 @@ def get_nfl_state(*a, **k):
     from app import get_nfl_state as _fn
     return _fn(*a, **k)
 
-def get_top_movers(*a, **k):
-    from app import get_top_movers as _fn
-    return _fn(*a, **k)
-
 def has_premium_for_viewer(*a, **k):
     from app import has_premium_for_viewer as _fn
     return _fn(*a, **k)
+
+
+def _map_in_season_breakouts(breakout_ids, players_index, values_by_id):
+    """Shape engine rows into the public candidate payload."""
+    candidates = []
+    for b in breakout_ids or []:
+        player_id = str(b.get("player_id", ""))
+        player_meta = players_index.get(player_id, {})
+        player_value = values_by_id.get(player_id, {})
+        candidates.append({
+            "player_id": player_id,
+            "name": player_meta.get("name", "Unknown"),
+            "team": player_meta.get("team"),
+            "position": player_meta.get("pos"),
+            "age": player_value.get("age"),
+            "value": player_value.get("value", 0),
+            "sf_value": player_value.get("sf_value", player_value.get("value", 0)),
+            "pos_rank": player_value.get("pos_rank"),
+            "pos_rank_label": player_value.get("pos_rank_label"),
+            "breakout_score": b.get("score", 0),
+        })
+    return candidates
+
+
+def in_season_breakout_candidates(detect_fn, players_index, values_by_id):
+    """In-season breakouts from the usage/engine detector only.
+
+    If detection fails, return [] — never substitute 7-day value risers.
+    A price move is not a breakout.
+    """
+    try:
+        rows = detect_fn(lookback_days=14)
+    except Exception:
+        logger.exception("[breakout-candidates] In-season detection error")
+        return []
+    return _map_in_season_breakouts(rows, players_index or {}, values_by_id or {})
 
 
 @breakout_api_bp2.route("/api/breakout-candidates")
@@ -43,7 +75,6 @@ def api_breakout_candidates():
 
     try:
         from datetime import datetime
-        from utils.utils import load_players_index, load_model_value_table
 
         min_score = float(request.args.get("min_score", 40))  # Selective threshold
         limit = int(request.args.get("limit", 20))
@@ -67,69 +98,24 @@ def api_breakout_candidates():
                     max_per_team_position=2
                 )
                 logger.info(f"[breakout-candidates] Offseason mode: {len(candidates)} candidates")
-            except Exception as e:
-                logger.info(f"[breakout-candidates] Offseason detection error: {e}")
+            except Exception:
+                logger.exception("[breakout-candidates] Offseason detection error")
         else:
             # Use in-season breakout detection with enrichment
             try:
                 from data_building.advanced_metrics import detect_breakout_candidates
+                from utils.utils import load_players_index
 
-                breakout_ids = detect_breakout_candidates(lookback_days=14)
-
-                # Enrich with full player data
                 players_index = load_players_index() or {}
                 value_table = get_model_value_table_cached() or []
                 values_by_id = {str(p.get("id")): p for p in value_table}
-
-                for b in breakout_ids:
-                    player_id = str(b.get("player_id", ""))
-                    player_meta = players_index.get(player_id, {})
-                    player_value = values_by_id.get(player_id, {})
-
-                    candidates.append({
-                        "player_id": player_id,
-                        "name": player_meta.get("name", "Unknown"),
-                        "team": player_meta.get("team"),
-                        "position": player_meta.get("pos"),
-                        "age": player_value.get("age"),
-                        "value": player_value.get("value", 0),
-                        "sf_value": player_value.get("sf_value", player_value.get("value", 0)),
-                        "pos_rank": player_value.get("pos_rank"),
-                        "pos_rank_label": player_value.get("pos_rank_label"),
-                        "breakout_score": b.get("score", 0),
-                    })
-
+                candidates = in_season_breakout_candidates(
+                    detect_breakout_candidates, players_index, values_by_id)
                 logger.info(f"[breakout-candidates] In-season mode: {len(candidates)} candidates")
-            except Exception as e:
-                logger.info(f"[breakout-candidates] In-season detection error: {e}")
-                # Fallback to value movers
-                movers_data = get_top_movers(days=7, limit=100) or {}
-                players_index = load_players_index() or {}
-                value_table = list(get_model_value_table_cached() or [])
-                values_by_id = {str(p.get("id")): p for p in value_table}
-
-                for player in movers_data.get("risers", []):
-                    delta = player.get("delta", 0)
-                    position = player.get("position", "")
-                    threshold = 100 if position == "TE" else 75
-
-                    if delta >= threshold:
-                        player_id = str(player.get("player_id", ""))
-                        player_meta = players_index.get(player_id, {})
-                        player_value = values_by_id.get(player_id, {})
-
-                        candidates.append({
-                            "player_id": player_id,
-                            "name": player.get("name", "Unknown"),
-                            "team": player_meta.get("team"),
-                            "position": position,
-                            "age": player_value.get("age"),
-                            "value": player.get("value", 0),
-                            "sf_value": player.get("sf_value", player.get("value", 0)),
-                            "pos_rank": player_value.get("pos_rank"),
-                            "pos_rank_label": player_value.get("pos_rank_label"),
-                            "breakout_score": delta,
-                        })
+            except Exception:
+                logger.exception("[breakout-candidates] In-season detection error")
+                # Do not substitute 7-day value risers. A price move is not a
+                # breakout; return the empty list so the UI can show a real gap.
 
         # Sort by breakout score and limit
         candidates.sort(key=lambda x: x.get("breakout_score", 0), reverse=True)
