@@ -1124,16 +1124,9 @@
     }, true);   // capture: run before the document row-click (cross-off) handler
     if (boardPanel) setupDragReorder(boardPanel);
 
-    // CSV export is a pro feature; non-premium users get the upgrade prompt.
+    // CSV export is free — it dumps the currently visible board order.
     var csvBtn = $('csCsvBtn');
-    if (csvBtn && !cfg.hasPremium) csvBtn.textContent = 'CSV (Pro)';
-    if (csvBtn) csvBtn.addEventListener('click', function () {
-      if (!cfg.hasPremium) {
-        if (typeof window.showPaywall === 'function') window.showPaywall('draft-cheat-sheet');
-        return;
-      }
-      exportCsv();
-    });
+    if (csvBtn) csvBtn.addEventListener('click', function () { exportCsv(); });
     $('csPrintBtn').addEventListener('click', function () { window.print(); });
     var srcSel = $('csAdpSrc');
     if (srcSel) srcSel.addEventListener('change', function () { state.adpSource = this.value; compute(); render(); });

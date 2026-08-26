@@ -44,6 +44,18 @@ def test_cheat_sheet_config_cannot_break_out_of_script_element():
     assert _embedded_config(body)["leagueId"] == hostile_id
 
 
+def test_csv_export_is_free_for_non_premium_viewers():
+    body = build_cheat_sheet_body("league-123", 2026, "sleeper", has_premium=False)
+    script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+
+    assert 'id="csCsvBtn"' in body
+    assert "CSV (Pro)" not in script
+    assert "if (csvBtn) csvBtn.addEventListener('click', function () { exportCsv(); });" in script
+    # Custom-board edits stay gated; CSV is the only draft-cheat-sheet control
+    # that used to paywall on click and now always exports.
+    assert "if (!cfg.hasPremium) { if (typeof window.showPaywall === 'function') window.showPaywall('draft-cheat-sheet'); return; }" in script
+
+
 def test_live_sync_is_explicit_and_drafted_players_offer_board_reset():
     body = build_cheat_sheet_body(
         "league-123", 2026, "sleeper", has_premium=True,
