@@ -60,6 +60,7 @@ async function getSubscriptionInfo(userId, leagueId) {
     window.showPaywall = function showPaywall(feature) {
   const featureNames = {
     'breakout-candidates': 'Breakout Engine',
+    'breakout-analysis': 'Breakout Engine',
     'ai-insights': 'AI Insights',
     'trade-history': 'Trade Intelligence',
     'trade-suggestions': 'Roster-Based Trade Suggestions',

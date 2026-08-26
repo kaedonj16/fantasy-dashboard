@@ -230,7 +230,7 @@ def build_scout_body(ctx: dict) -> str:
         pr_html = f"<span class='scout-pos-rank'>{html.escape(p.get('pos_rank', ''))}</span>" if p.get(
             "pos_rank") else ""
         ppg_html = (
-            f"<span class='scout-ppg'>{p['proj_ppg']:.1f} PPG</span>"
+            f"<span class='scout-ppg'>{p['proj_ppg']:.1f} proj</span>"
             if p.get("proj_ppg") is not None
             else "<span class='scout-ppg scout-ppg-miss' title='Week projection unavailable'>Proj unavailable</span>"
         )

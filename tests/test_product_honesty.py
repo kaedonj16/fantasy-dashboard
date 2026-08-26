@@ -79,7 +79,8 @@ def test_paywall_lists_shipped_pro_features_only():
     assert "Market comps come from real Sleeper dynasty trades" in TRADE_BP
     rz = (ROOT / "static" / "redzone.js").read_text(encoding="utf-8")
     assert "Tank01 box scores" in rz
-    assert "recap-preview-watermark" in APP_PY
+    recap = (ROOT / "dashboard_services" / "pages" / "recap_page.py").read_text(encoding="utf-8")
+    assert "recap-preview-watermark" in recap
     assert "SAMPLE PREVIEW" in APP_PY
 
 
@@ -102,7 +103,7 @@ def test_playoff_impact_and_offseason_breakouts_are_server_gated():
 
 
 def test_in_season_front_office_is_premium_gated():
-    dash = APP_PY[APP_PY.index("def build_dashboard_body"):APP_PY.index("def render_power_and_playoffs")]
+    dash = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
     assert "if _fo_premium:" in dash
     assert "gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))" in dash
     assert 'id="generateGmMemoBtn"' in dash
