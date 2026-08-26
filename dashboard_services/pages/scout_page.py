@@ -41,10 +41,13 @@ def build_scout_body(ctx: dict) -> str:
     season = ctx.get("season") or datetime.now().year
     current_week = ctx.get("current_week") or 0
 
+    _sign_in_hint = (
+        "your ESPN team name" if str(platform).lower() == "espn" else "your Sleeper username"
+    )
     _NOT_SIGNED_IN = (
         "<div class='card' style='text-align:center;padding:40px;'>"
         "<h2 style='margin-bottom:8px;'>Sign in to view your scouting report</h2>"
-        "<p style='color:var(--muted);'>Enter your Sleeper username in the menu to unlock opponent scouting.</p>"
+        f"<p style='color:var(--muted);'>Enter {_sign_in_hint} in the menu to unlock opponent scouting.</p>"
         "</div>"
     )
 
@@ -94,8 +97,9 @@ def build_scout_body(ctx: dict) -> str:
     opponent_team_block = None
 
     for m in current_matchups:
-        t1 = m.get("team1") or {}
-        t2 = m.get("team2") or {}
+        # Live hub matchups use left/right; older/tour shapes used team1/team2.
+        t1 = m.get("left") or m.get("team1") or {}
+        t2 = m.get("right") or m.get("team2") or {}
         if str(t1.get("roster_id")) == viewer_roster_id:
             viewer_matchup = m
             opponent_roster_id = str(t2.get("roster_id"))
@@ -227,7 +231,8 @@ def build_scout_body(ctx: dict) -> str:
             "pos_rank") else ""
         ppg_html = (
             f"<span class='scout-ppg'>{p['proj_ppg']:.1f} PPG</span>"
-            if p.get("proj_ppg") is not None else ""
+            if p.get("proj_ppg") is not None
+            else "<span class='scout-ppg scout-ppg-miss' title='Week projection unavailable'>Proj unavailable</span>"
         )
         val_html = f"<span class='scout-val'>{p['value']:.0f}</span>" if p["value"] else ""
         bench_cls = " scout-bench" if show_bench_label else ""
@@ -309,6 +314,8 @@ def build_scout_body(ctx: dict) -> str:
             f".scout-team{{font-size:0.78em;color:var(--muted);min-width:28px;}}"
             f".scout-pos-rank{{font-size:0.75em;color:var(--muted);}}"
             f".scout-ppg{{font-size:0.75em;color:var(--muted);min-width:52px;text-align:right;}}"
+            f".scout-ppg-miss{{min-width:88px;font-style:italic;}}"
+            f".scout-proj-stamp{{font-size:0.75em;color:var(--muted);font-weight:500;margin-top:2px;}}"
             f".scout-val{{font-weight:600;color:var(--accent);font-size:0.85em;min-width:32px;text-align:right;}}"
             f".scout-sw-list{{display:flex;flex-direction:column;gap:8px;padding-top:4px;}}"
             f".scout-sw-chip{{display:flex;align-items:center;gap:8px;}}"
@@ -330,7 +337,8 @@ def build_scout_body(ctx: dict) -> str:
             f"{sw_html}"
             f"<div class='main-two-col'>"
             f"<div class='card'>"
-            f"<div class='card-header'><h2>Week {current_week} Starters</h2></div>"
+            f"<div class='card-header'><h2>Week {current_week} Starters</h2>"
+            f"<div class='scout-proj-stamp'>Week {current_week} Sleeper proj</div></div>"
             "<div class='card-body'>" + (
                     starters_html or "<p style='color:var(--muted);font-size:0.85em;'>Lineup not yet set.</p>") + "</div>"
                                                                                                                   "</div>"
