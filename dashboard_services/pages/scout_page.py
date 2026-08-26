@@ -29,18 +29,14 @@ def _live_model_value_table():
     return get_model_value_table_cached() or []
 
 
-def _week_proj_points(week_map, pid) -> "float | None":
-    """Numeric weekly projection for a player from a (possibly nested) week map."""
-    v = (week_map or {}).get(str(pid))
-    if isinstance(v, dict):
-        for key in ("ppr", "pts", "points", "proj", "half_ppr", "std"):
-            if key in v:
-                v = v[key]
-                break
-    try:
-        return float(v) if v is not None and not isinstance(v, dict) else None
-    except (TypeError, ValueError):
-        return None
+def _week_proj_points(week_map, pid, scoring=None, pos="") -> "float | None":
+    """Numeric weekly projection for a player, scored for the league.
+
+    Trusts Sleeper's published total for plain PPR/half/std leagues and
+    recomputes from the raw stat line for custom scoring.
+    """
+    from utils.fantasy_scoring import weekly_projection_points
+    return weekly_projection_points(week_map, pid, scoring, pos)
 
 
 def build_scout_body(ctx: dict) -> str:
@@ -180,7 +176,7 @@ def build_scout_body(ctx: dict) -> str:
         is_starter = pid in starter_pids
         raw_inj = str(status_by_pid.get(pid) or "")
         inj_key = raw_inj if raw_inj in _INJ_CLS else None
-        proj_ppg = _week_proj_points(week_proj_map, pid)
+        proj_ppg = _week_proj_points(week_proj_map, pid, ctx.get("raw_scoring_settings"), pos)
 
         entry = {
             "pid": pid, "name": name, "pos": pos, "team": team,

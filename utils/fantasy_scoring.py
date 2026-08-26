@@ -140,3 +140,25 @@ def projection_points(entry: dict, scoring_settings: dict, pos: str = "") -> flo
     from utils.proj_variant import pick_proj_variant
     variant = pick_proj_variant(scoring_settings or {})
     return float(entry.get(variant) or entry.get("ppr") or 0.0)
+
+
+def weekly_projection_points(week_map, pid, scoring_settings=None, pos: str = ""):
+    """Points for one player from a cached weekly projection map.
+
+    Honors Sleeper's own published totals for plain PPR/half/std leagues and
+    recomputes from the raw stat line for custom scoring (see projection_points).
+    Returns None when the player is absent from the map, so callers can tell
+    "no projection" apart from a real zero (bye / inactive).
+    """
+    if not isinstance(week_map, dict):
+        return None
+    entry = week_map.get(str(pid))
+    if entry is None:
+        entry = week_map.get(pid)
+    if entry is None:
+        return None
+    if isinstance(entry, (int, float)):
+        return float(entry)
+    if isinstance(entry, dict):
+        return projection_points(entry, scoring_settings or {}, pos)
+    return None

@@ -1,10 +1,54 @@
 """Pure aggregation of weekly scoring-variant projections into season PPG."""
 from data_building.fetch_projections import (
+    _published_base_points,
     fill_missing_from_season_totals,
     fill_missing_ppg_variants,
     season_ppg_from_weekly,
     weekly_variant_values,
 )
+
+
+def test_published_base_points_reads_sleeper_totals():
+    raw = {"rec": 6, "rec_yd": 80, "pts_ppr": 21.7, "pts_half_ppr": 18.7, "pts_std": 15.7}
+    assert _published_base_points(raw) == {"ppr": 21.7, "half_ppr": 18.7, "std": 15.7}
+    # No raw line / no precomputed totals -> nothing to prefer.
+    assert _published_base_points(None) == {}
+    assert _published_base_points({"rec": 6}) == {}
+
+
+def test_weekly_variant_values_prefers_published_totals():
+    # The recompute stored a lower ppr (15.76) than Sleeper's own published
+    # total (17.15); trust Sleeper for the plain PPR/half/std variants while the
+    # 6pt layer keeps the computed value.
+    weeks = [
+        {"6786": {
+            "ppr": 15.76, "half_ppr": 13.07, "std": 10.38, "6pt_ppr": 15.76,
+            "raw_stats": {"rec": 6, "pts_ppr": 17.15, "pts_half_ppr": 14.46, "pts_std": 11.77},
+        }},
+    ]
+    collected = weekly_variant_values(weeks)
+    assert collected["6786"]["ppr"] == [17.15]
+    assert collected["6786"]["half_ppr"] == [14.46]
+    assert collected["6786"]["std"] == [11.77]
+    assert collected["6786"]["6pt_ppr"] == [15.76]  # no published equivalent
+
+
+def test_weekly_variant_values_falls_back_without_raw_stats():
+    # Legacy cache rows (no raw_stats) still use the stored computed variants.
+    weeks = [{"6786": {"ppr": 15.76, "half_ppr": 13.07, "std": 10.38}}]
+    collected = weekly_variant_values(weeks)
+    assert collected["6786"]["ppr"] == [15.76]
+    assert collected["6786"]["half_ppr"] == [13.07]
+
+
+def test_season_ppg_uses_published_totals_when_present():
+    weeks = [
+        {"6786": {"ppr": 15.0, "raw_stats": {"pts_ppr": 17.15, "pts_half_ppr": 14.46, "pts_std": 11.77}}},
+        {"6786": {"ppr": 15.0, "raw_stats": {"pts_ppr": 17.15, "pts_half_ppr": 14.46, "pts_std": 11.77}}},
+    ]
+    out = season_ppg_from_weekly(weeks)
+    assert out["6786"]["ppr"] == 17.15
+    assert out["6786"]["std"] == 11.77
 
 
 def test_weekly_variant_values_skips_byes_and_falls_back_to_ppr():

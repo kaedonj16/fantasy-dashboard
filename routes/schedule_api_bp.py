@@ -137,9 +137,11 @@ def api_schedule_rankings():
         # Get roster pids (+ owning team name) for the on-roster badge
         roster_pids: set = set()
         owner_by_pid: dict = {}
+        _sched_scoring: dict = {}
         if league_id:
             try:
                 ctx = get_league_ctx_from_cache(platform, league_id, season)
+                _sched_scoring = ctx.get("raw_scoring_settings") or {}
                 users_by_id = {str(u.get("user_id")): u for u in (ctx.get("users") or [])}
                 for r in (ctx.get("rosters") or []):
                     owner = users_by_id.get(str(r.get("owner_id"))) or {}
@@ -205,13 +207,15 @@ def api_schedule_rankings():
         player_pts_proj: dict = {}
         try:
             from utils.utils import load_week_projection as _lp
+            from utils.fantasy_scoring import weekly_projection_points as _wpp
             for w in weeks:
                 if w in weeks_with_stats:
                     continue
                 _proj = _lp(season, w) or {}
-                for _pid, _val in _proj.items():
-                    _v = float(_val or 0)
-                    if _v > 0:
+                for _pid in _proj:
+                    _pos = (players_idx.get(str(_pid)) or {}).get("pos", "")
+                    _v = _wpp(_proj, _pid, _sched_scoring, _pos)
+                    if _v and _v > 0:
                         player_pts_proj.setdefault(str(_pid), {})[w] = round(_v, 1)
         except Exception:
             logger.debug("suppressed exception", exc_info=True)

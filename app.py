@@ -9333,19 +9333,32 @@ _RZ_PROJ_CACHE: dict = {}
 _RZ_PROJ_TTL = 900.0  # 15 min
 
 
-def _rz_get_projections(season: int, week: int) -> dict:
-    """Return {pid: projected_pts_ppr} for the week, cached 15 min."""
-    key = f"{season}:{week}"
+def _rz_get_projections(season: int, week: int, scoring: dict = None) -> dict:
+    """Return {pid: projected_pts} for the week using the league's scoring.
+
+    Trusts Sleeper's own published total for plain PPR/half/std leagues and
+    recomputes from the raw stat line for custom scoring, matching the live
+    point math this projection is added to. Cached 15 min per (season, week,
+    scoring signature) so different leagues do not share each other's numbers.
+    """
+    import hashlib
+    _sig = hashlib.md5(
+        json.dumps(scoring or {}, sort_keys=True, default=str).encode()
+    ).hexdigest()[:12]
+    key = f"{season}:{week}:{_sig}"
     entry = _RZ_PROJ_CACHE.get(key)
     if entry and time.time() - entry["ts"] < _RZ_PROJ_TTL:
         return entry["data"]
     data: dict = {}
     try:
-        from utils.utils import fetch_week_from_sleeper
+        from utils.utils import fetch_week_from_sleeper, load_players_index
+        from utils.fantasy_scoring import projection_points
+        _pidx = load_players_index() or {}
         raw = fetch_week_from_sleeper(season, week) or {}
         for pid, v in raw.items():
             if isinstance(v, dict):
-                data[str(pid)] = float(v.get("ppr") or v.get("half_ppr") or 0)
+                _pos = (_pidx.get(str(pid)) or {}).get("pos", "")
+                data[str(pid)] = float(projection_points(v, scoring or {}, _pos) or 0)
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
     _RZ_PROJ_CACHE[key] = {"ts": time.time(), "data": data}
@@ -9746,10 +9759,11 @@ def _redzone_collect(platform, league_id, season, week):
                     if ps:
                         pi["stat_line"] = _rz_stat_line_from_ps(ps)
 
-    # Projected points per matchup (PPR, cached 15 min)
+    # Projected points per matchup, scored with the league's settings so the
+    # remaining projection matches the live point math it is added to.
     proj_pts: dict = {}
     try:
-        proj_pts = _rz_get_projections(season, week)
+        proj_pts = _rz_get_projections(season, week, scoring)
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
@@ -17031,17 +17045,15 @@ def api_player_details(player_id: str):
             _ss_proj = 0.0
             if _ss_week:
                 from utils.utils import load_week_projection as _ss_load_wp
+                from utils.fantasy_scoring import weekly_projection_points as _ss_wpp
                 _ss_map = _ss_load_wp(int(season), int(_ss_week)) or {}
-                _ss_raw = (_ss_map or {}).get(str(player_id))
-                if isinstance(_ss_raw, dict):
-                    for _ss_key in ("ppr", "pts", "points", "proj", "half_ppr", "std"):
-                        if _ss_key in _ss_raw:
-                            _ss_raw = _ss_raw[_ss_key]
-                            break
-                try:
-                    _ss_proj = float(_ss_raw) if _ss_raw is not None and not isinstance(_ss_raw, dict) else 0.0
-                except (TypeError, ValueError):
-                    _ss_proj = 0.0
+                # Same scoring resolution as the matchups/start-sit page: trust
+                # Sleeper's published total for plain leagues, recompute for
+                # custom scoring.
+                _ss_proj = float(_ss_wpp(
+                    _ss_map, player_id, scoring_settings,
+                    (player_meta.get("pos") or "").upper(),
+                ) or 0.0)
             _ss_bye = False
             _ss_team = str(player_meta.get("team") or "").upper()
             if _ss_team and _ss_week:
@@ -17423,9 +17435,10 @@ def api_player_game_logs(player_id: str):
         # are still in the future (active season - fill the remaining weeks).
         if _upcoming not in game_logs_by_year or _actual_weeks:
             try:
-                from utils.utils import pick_proj_variant, load_week_projection
+                from utils.utils import load_week_projection
+                from utils.fantasy_scoring import projection_points as _proj_pts_fn
                 from statistics import median as _med_fn
-                _variant = pick_proj_variant(scoring_settings)
+                _pos_gl = (player_meta.get("pos") or "").upper()
 
                 _proj_vals: dict = {}
                 for _w in range(1, 19):
@@ -17435,8 +17448,13 @@ def api_player_game_logs(player_id: str):
                     _v = _wd.get(player_id)
                     if _v is None:
                         _v = _wd.get(str(player_id))
+                    # Trust Sleeper's own published total for plain PPR/half/std
+                    # scoring so the number matches the Sleeper app; only a
+                    # genuinely custom league recomputes from the raw stat line.
+                    # Legacy caches without a raw line fall back to the matching
+                    # precomputed variant inside projection_points().
                     if isinstance(_v, dict):
-                        _fv = float(_v.get(_variant) or _v.get("ppr") or 0)
+                        _fv = float(_proj_pts_fn(_v, scoring_settings, _pos_gl))
                     elif isinstance(_v, (int, float)):
                         _fv = float(_v)
                     else:

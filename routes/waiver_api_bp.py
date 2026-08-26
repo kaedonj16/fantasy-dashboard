@@ -278,18 +278,16 @@ def api_waiver_candidates():
         logger.debug("suppressed exception", exc_info=True)
 
     def _week_pts_wv(week_map, pid):
-        """Extract a numeric weekly projection for pid from a (possibly
-        variant-nested) week projection map; None when absent."""
-        v = (week_map or {}).get(str(pid))
-        if isinstance(v, dict):
-            for _k in ("ppr", "pts", "points", "proj", "half_ppr", "std"):
-                if _k in v:
-                    v = v[_k]
-                    break
-        try:
-            return float(v) if v is not None and not isinstance(v, dict) else None
-        except (TypeError, ValueError):
-            return None
+        """Numeric weekly projection for pid, scored for the league (Sleeper's
+        published total for plain leagues, recompute for custom); None when the
+        player is absent from the map."""
+        from utils.fantasy_scoring import weekly_projection_points
+        _pos = str(
+            (_full_players_wv.get(str(pid)) or players_index.get(str(pid)) or {}).get("pos") or ""
+        ).upper()
+        return weekly_projection_points(
+            week_map, pid, ctx.get("raw_scoring_settings"), _pos
+        )
 
     def _weeks_out_wv(pid):
         """Projection-derived weeks-out for an injured player, or None if the
