@@ -42,6 +42,7 @@ def test_season_ppg_uses_only_sleeper_weekly_values(monkeypatch):
     }
     monkeypatch.setattr(utils, "load_week_projection", lambda _year, week: weekly.get(week, {}))
     monkeypatch.setattr(utils, "load_players_index", lambda: {"9758": {"pos": "QB"}})
+    monkeypatch.setattr(fetch_projections, "load_sleeper_season_stat_lines", lambda _year: {})
 
     result = fetch_projections.fetch_sleeper_season_projections(2026, "ppr")
 
@@ -56,6 +57,7 @@ def test_season_ppg_variants_include_half_ppr_and_six_point(monkeypatch):
     }
     monkeypatch.setattr(utils, "load_week_projection", lambda _year, week: weekly.get(week, {}))
     monkeypatch.setattr(utils, "load_players_index", lambda: {"9758": {"pos": "QB"}})
+    monkeypatch.setattr(fetch_projections, "load_sleeper_season_stat_lines", lambda _year: {})
 
     variants = fetch_projections.fetch_sleeper_season_ppg_variants(2026)
     assert variants["9758"]["ppr"] == 15.0
@@ -65,3 +67,28 @@ def test_season_ppg_variants_include_half_ppr_and_six_point(monkeypatch):
     half = fetch_projections.fetch_sleeper_season_projections(2026, "half_ppr")
     assert half["9758"]["ppg"] == 14.0
     assert half["9758"]["season_pts"] == 28.0
+
+
+def test_season_ppg_fills_player_missing_from_weekly_files(monkeypatch):
+    weekly = {
+        1: {"9224": {"ppr": 14.9, "half_ppr": 13.5, "std": 12.5}},
+    }
+    monkeypatch.setattr(utils, "load_week_projection", lambda _year, week: weekly.get(week, {}))
+    monkeypatch.setattr(utils, "load_players_index", lambda: {
+        "9224": {"pos": "RB"}, "5859": {"pos": "WR"},
+    })
+    monkeypatch.setattr(fetch_projections, "load_sleeper_season_stat_lines", lambda _year: {
+        "5859": {"pts_ppr": 247.2, "pts_half_ppr": 207.7, "pts_std": 168.2, "gp": 18.0},
+        "9224": {"pts_ppr": 255.2, "gp": 18.0},
+    })
+
+    result = fetch_projections.fetch_sleeper_season_projections(2026, "ppr")
+    assert result["9224"]["ppg"] == 14.9
+    assert result["5859"]["pos"] == "WR"
+    assert result["5859"]["ppg"] == round(247.2 / 17.0, 2)
+    assert result["5859"]["season_pts"] == 247.2
+
+    variants = fetch_projections.fetch_sleeper_season_ppg_variants(2026)
+    assert variants["9224"]["ppr"] == 14.9
+    assert "5859" in variants
+    assert variants["5859"]["ppr"] == round(247.2 / 17.0, 2)

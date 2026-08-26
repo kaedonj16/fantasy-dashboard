@@ -2962,14 +2962,19 @@
     var last = (p.ppg != null && isFinite(Number(p.ppg))) ? Number(p.ppg) : null;
     var nextOwned = nextOwnedAfterCurrent();
     var survive = nextOwned ? availProb(p, nextOwned) : null;
-    var vorp = p.vorp != null ? Number(p.vorp) : vorOf(p);
+    // Keep trade-value VOR and projected VORP separate. Mixing them in one
+    // field made a player without projections look like a +400 VORP outlier
+    // next to someone whose number was actually projected points.
+    var projectedVorp = (p.vorp != null && isFinite(Number(p.vorp))) ? Number(p.vorp) : null;
+    var tradeVor = vorOf(p);
     return {
       pos: pos,
       adp: adp,
       adpN: adpN != null && isFinite(Number(adpN)) ? Number(adpN) : null,
       vsAdp: adpGap,
-      vor: vorp,
-      vorLbl: p.vorp != null ? 'VORP' : 'VOR',
+      vor: tradeVor,
+      vorp: projectedVorp,
+      vorLbl: projectedVorp != null ? 'VORP' : 'VOR',
       value: valOf(p),
       tier: tierOf(p),
       age: p.age != null ? Number(p.age) : null,
@@ -3134,7 +3139,6 @@
       var f = draftPlayerFacts(p);
       var o = draftPlayerFacts(other);
       var ps = psRelLive(p);
-      var vorLbl = (p.vorp != null || other.vorp != null) ? 'VORP' : 'VOR';
       var ppgRowLbl = 'Proj PPG';
       var ppg = f.projPpg;
       var oppg = o.projPpg;
@@ -3154,12 +3158,13 @@
         + '<div class="dr-cmp-meta">' + esc(metaBits.join(' · ')) + '</div>'
         + '</div></div>'
         + '<div class="dr-cmp-ps" style="color:' + sc + '">' + (ps != null ? ps : '&ndash;') + '</div>'
-        + '<div class="dr-cmp-ps-lbl">Pick Score</div>'
+        + '<div class="dr-cmp-ps-lbl">Pick Score' + infoIcon('A 0-100 composite of value, positional VOR, ADP, tier, roster need, and projected points — not a count of which compare rows you win. Missing projections are not treated as zeros.') + '</div>'
         + '<div class="dr-cmp-stats">'
         + statRow('Value', f.value, o.value, true, function(x){ return x != null ? String(Math.round(x)) : '-'; })
         + statRow(ppgRowLbl, ppg, oppg, true, function(x){ return x != null ? x.toFixed(1) : 'N/A'; })
         + (f.lastPpg != null || o.lastPpg != null ? statRow((f.ppgSeason || 'Last') + ' PPG', f.lastPpg, o.lastPpg, true, function(x){ return x != null ? x.toFixed(1) : '-'; }) : '')
-        + statRow(vorLbl, f.vor, o.vor, true, function(x){ return x != null ? fmtSigned(x, Number.isInteger(x) ? 0 : 1) : '-'; })
+        + statRow('VOR', f.vor, o.vor, true, function(x){ return x != null ? fmtSigned(x, Number.isInteger(x) ? 0 : 1) : '-'; })
+        + (f.vorp != null || o.vorp != null ? statRow('VORP', f.vorp, o.vorp, true, function(x){ return x != null ? fmtSigned(x, Number.isInteger(x) ? 0 : 1) : 'N/A'; }) : '')
         + statRow('ADP', f.adp, o.adp, false, function(x){ return x != null ? Number(x).toFixed(1) : 'N/A'; })
         + statRow('vs ADP', f.vsAdp, o.vsAdp, true, function(x){ return fmtSigned(Math.round(x), 0); })
         + (f.posRank || o.posRank ? statRow('Pos Rank', f.posRankN, o.posRankN, false, function(x){
@@ -5501,7 +5506,7 @@
   // Single source of truth so the inline ⓘ tooltips and the help popover agree.
   var _GLOSSARY = [
     { term: 'Recommendation', def: 'The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. A major value fall can still overcome imperfect roster fit. Recommendation is shown as a rank rather than a grade because its internal utility naturally changes as the board is depleted.' },
-    { term: 'Pick Score (PS)', def: 'A 0-100 grade of pick quality. On the live board, sidebar, compare modal, and player preview it is scaled relative to the best player still available (so a strong late pick still reads well). Made-pick chips on the report card / Deep Dive “Board PS” use the same relative scale at that historical slot. Your letter grade’s Value bar uses the absolute, round-weighted kernel score — those two numbers can differ. Kickers and defenses aren’t scored.' },
+    { term: 'Pick Score (PS)', def: 'A 0-100 grade of pick quality. It is a composite of trade value, positional VOR, ADP, tier, roster need, and projected points — not a count of which compare-modal rows a player wins. On the live board, sidebar, compare modal, and player preview it is scaled relative to the best player still available (so a strong late pick still reads well). Made-pick chips on the report card / Deep Dive “Board PS” use the same relative scale at that historical slot. Your letter grade’s Value bar uses the absolute, round-weighted kernel score — those two numbers can differ. Kickers and defenses aren’t scored. Missing projections fall back to value rather than counting as zero.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses projected season fantasy points; VOR uses dynasty or redraft trade value. Last season\'s injury-shortened totals are not used.' },
     { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value. When a sample size (n=) is shown, a small n means the ADP is noisy.' },
@@ -6756,7 +6761,8 @@
     if (_psPoolMax <= 0) refreshPsPool();
     var f = draftPlayerFacts(p);
     var t = f.tier, ps = psRelLive(p);
-    var vorStr = f.vor != null ? fmtSigned(f.vor, Number.isInteger(f.vor) ? 0 : 1) : '-';
+    var vorDisplay = f.vorp != null ? f.vorp : f.vor;
+    var vorStr = vorDisplay != null ? fmtSigned(vorDisplay, Number.isInteger(vorDisplay) ? 0 : 1) : '-';
     var pos = f.pos;
     var vsAdp = f.vsAdp != null ? fmtSigned(Math.round(f.vsAdp), 0) : '-';
     var sc = ps != null ? psColor(ps) : 'var(--text-muted)';
