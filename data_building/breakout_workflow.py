@@ -31,8 +31,18 @@ def calculate_and_store_breakout_scores(season: int, week: int, nfl_state: dict)
     """
     print(f"[workflow] 🎯 Calculating breakout scores from database")
 
+    # Live Sleeper players feed (depth_chart_order + injury_status): lets an
+    # injured starter sitting ahead of a candidate boost their breakout — the
+    # same "starter in front got hurt" opening that lifts waiver targets.
+    # Best-effort; a missing feed just leaves scores unchanged.
+    try:
+        from dashboard_services.api import get_nfl_players
+        _full_players = get_nfl_players() or {}
+    except Exception:
+        _full_players = {}
+
     # Initialize breakout engine
-    engine = BreakoutEngine(season=season, as_of_date=date.today())
+    engine = BreakoutEngine(season=season, as_of_date=date.today(), full_players=_full_players)
     season_type = str(nfl_state.get("season_type", "off"))
 
     # Load players and usage data

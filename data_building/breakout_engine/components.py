@@ -637,21 +637,77 @@ def _departure_competition_load(position: str, dep: Dict) -> Tuple[float, Dict]:
     return load, details
 
 
+def _injury_vacancy_score(depth_injury: Optional[Dict]) -> Tuple[float, List[Dict]]:
+    """Score (0-INJURY_VACANCY_MAX) from injured players sitting AHEAD of the
+    candidate on the live Sleeper depth chart.
+
+    ``depth_injury`` is the depth analysis for this player (from
+    ``utils.waiver_score.depth_analysis_for_player``, enriched with names)::
+
+        {"vacated": [{"status": "IR", "pid": "123", "name": "Starter X"}, ...],
+         "healthy_ahead": int}
+
+    Each injured starter ahead frees the role by their injury severity; the
+    benefit is discounted by any healthy blockers still between the candidate and
+    the vacancy (0 blockers = next man up = full credit). Returns
+    ``(score, key_injuries)`` where ``key_injuries`` describes each contributing
+    injury for explainability.
+    """
+    if not depth_injury:
+        return 0.0, []
+    vacated = depth_injury.get("vacated") or []
+    healthy_ahead = _safe_int(depth_injury.get("healthy_ahead"), 0)
+    if not vacated:
+        return 0.0, []
+    proximity = INJURY_VACANCY_PROXIMITY.get(healthy_ahead, 0.0)
+    if proximity <= 0:
+        return 0.0, []
+
+    total = 0.0
+    key_injuries: List[Dict] = []
+    for v in vacated:
+        status = str((v or {}).get("status") or "").upper()
+        sev = INJURY_VACANCY_SEVERITY.get(status, 0.0)
+        if sev <= 0:
+            continue
+        pts = INJURY_VACANCY_STARTER_POINTS * sev * proximity
+        total += pts
+        key_injuries.append({
+            "player_id": (v or {}).get("pid"),
+            "name": (v or {}).get("name"),
+            "injury_status": status,
+            "vacancy_points": round(pts, 2),
+        })
+
+    key_injuries.sort(key=lambda x: x["vacancy_points"], reverse=True)
+    return round(min(total, INJURY_VACANCY_MAX), 2), key_injuries
+
+
 def calculate_competition_removed_score(
         player_id: str,
         team: str,
         position: str,
         season: int,
         player_prev_usage: Dict,
-        departures_cache: Optional[Dict] = None
+        departures_cache: Optional[Dict] = None,
+        depth_injury: Optional[Dict] = None
 ) -> Tuple[float, Dict]:
     """
-    Score (0-100) based on meaningful same-position competition leaving the roster.
+    Score (0-100) based on same-position competition removed from ahead of the
+    player — permanent roster departures (free agency / trades / cuts) AND, when
+    a live depth chart is supplied, an injured starter temporarily sitting ahead.
 
     Args:
         departures_cache: Optional dict mapping (team, position) to list of departures.
                          If provided, uses O(1) cache lookup instead of DB query.
+        depth_injury: Optional live depth-chart injury analysis for this player
+                      (see ``_injury_vacancy_score``). Absent for historical
+                      rebuilds / backtests, leaving the score departure-only.
     """
+    # Live "starter in front got hurt" signal — additive on top of any permanent
+    # departures, so a buried backup jumps the moment the starter lands on IR.
+    injury_score, injury_vacancies = _injury_vacancy_score(depth_injury)
+
     # OPTIMIZED: Use cache if provided, otherwise fall back to DB query.
     # WR/TE pool pass-catcher departures so a TE sees a departing WR as removed
     # competition (and vice versa); RB/QB unchanged.
@@ -660,7 +716,7 @@ def calculate_competition_removed_score(
     )
 
     if not departures:
-        return 0.0, {
+        return round(min(injury_score, 100.0), 2), {
             "player_id": player_id,
             "team": team,
             "position": position,
@@ -669,6 +725,8 @@ def calculate_competition_removed_score(
             "total_departure_load": 0.0,
             "team_relief_bonus": 0.0,
             "key_departures": [],
+            "injury_vacancy_score": injury_score,
+            "injury_vacancies": injury_vacancies,
         }
 
     baseline = _build_player_baseline(position, player_prev_usage or {})
@@ -739,7 +797,7 @@ def calculate_competition_removed_score(
     else:
         team_relief_bonus = 0.0
 
-    final_score = min(total_score + team_relief_bonus, 100.0)
+    final_score = min(total_score + team_relief_bonus + injury_score, 100.0)
     key_departures.sort(key=lambda x: x["departure_score"], reverse=True)
 
     details = {
@@ -751,6 +809,8 @@ def calculate_competition_removed_score(
         "total_departure_load": round(total_departure_load, 2),
         "team_relief_bonus": round(team_relief_bonus, 2),
         "key_departures": key_departures,
+        "injury_vacancy_score": injury_score,
+        "injury_vacancies": injury_vacancies,
     }
 
     return round(final_score, 2), details

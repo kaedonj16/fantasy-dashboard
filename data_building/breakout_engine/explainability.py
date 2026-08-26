@@ -59,11 +59,16 @@ class ExplainabilityEngine:
         # Collect competition_removed data
         comp_fired = component_scores.get('competition_removed', 0) > EXPLAIN_COMPETITION_REMOVED_THRESHOLD
         comp_dep_name = ''
-        if comp_fired:
-            _comp_d = component_details.get('competition_removed', {})
-            _cdeps = _comp_d.get('key_departures', [])
-            if _cdeps:
-                comp_dep_name = _cdeps[0].get('name', '')
+        _comp_d = component_details.get('competition_removed', {})
+        _cdeps = _comp_d.get('key_departures', [])
+        if comp_fired and _cdeps:
+            comp_dep_name = _cdeps[0].get('name', '')
+
+        # Live depth-chart injury vacancy: a starter hurt ahead of this player.
+        # Surfaced independently of the permanent-departure text above, since it
+        # can fire on its own (no roster change, just an injury opening the role).
+        _injuries = _comp_d.get('injury_vacancies') or []
+        _top_injury = _injuries[0] if _injuries else None
 
         # 1+2. Opportunity opened / competition removed — always combine when both fire.
         # Use the competition_removed name as the display name because that player was
@@ -89,9 +94,21 @@ class ExplainabilityEngine:
                     reasons.append(f"{display_name} {verb} ({', '.join(vacancy_text)})")
                 else:
                     reasons.append(f"{display_name} {verb}")
-            else:
-                # Only competition_removed fired — no vacancy numbers
+            elif comp_dep_name:
+                # Only competition_removed fired via a permanent departure.
                 reasons.append(f"Key competitor {comp_dep_name} departed")
+
+        # 1b. Depth-chart injury vacancy — a starter hurt ahead opened the role.
+        # Fires independently (an injury can lift competition_removed with no
+        # roster departure at all), so a buried backup surfaces the week the
+        # starter lands on IR.
+        if _top_injury:
+            _inj_name = _top_injury.get('name') or 'Starter ahead'
+            _inj_status = (_top_injury.get('injury_status') or '').upper()
+            if _inj_status:
+                reasons.append(f"{_inj_name} out ahead of them ({_inj_status})")
+            else:
+                reasons.append(f"{_inj_name} out ahead of them")
 
         # 3. Player readiness (if score > threshold)
         if component_scores.get('player_readiness', 0) > EXPLAIN_PLAYER_READINESS_THRESHOLD:

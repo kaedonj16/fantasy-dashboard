@@ -20,6 +20,10 @@ def get_nfl_state(*a, **k):
     from app import get_nfl_state as _fn
     return _fn(*a, **k)
 
+def get_players_global(*a, **k):
+    from app import get_players_global as _fn
+    return _fn(*a, **k)
+
 def has_premium_for_viewer(*a, **k):
     from app import has_premium_for_viewer as _fn
     return _fn(*a, **k)
@@ -219,8 +223,15 @@ def api_calculate_breakout_scores():
         except (TypeError, ValueError):
             min_score = 30
 
-        # Initialize engine
-        engine = BreakoutEngine(season=season)
+        # Initialize engine. Pass the live Sleeper players feed so an injured
+        # starter sitting ahead of a candidate on the depth chart boosts their
+        # breakout (the same "starter in front got hurt" opening used for waiver
+        # targets). Best-effort — a missing feed just leaves the score as-is.
+        try:
+            _full_players = get_players_global() or {}
+        except Exception:
+            _full_players = {}
+        engine = BreakoutEngine(season=season, full_players=_full_players)
 
         # Get all players from usage table or players_index
         # This is a simplified version - in production you'd filter to relevant players
