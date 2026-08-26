@@ -18,6 +18,7 @@ from utils.paths import DATA_DIR, CACHE_DIR
 # Named cron steps recorded in pipeline_health.json. Intentional skips use
 # status "skipped"; WLS failures must surface as "error" via _run_step.
 CRON_STEPS = (
+    "refresh_current_nfl_teams",
     "build_matchup_ratings",
     "build_daily_model_values",
     "record_model_value_snapshot",
@@ -281,6 +282,27 @@ def main():
     n_cleaned = cleanup_dated_files()
     if n_cleaned:
         print(f"[cron] Cleaned up {n_cleaned} old dated file(s)")
+
+    # ------------------------------------------------------------------ #
+    # Step 0: Current NFL team affiliations (trades / FA / signings)      #
+    # Sleeper → players_index JSON (cron disk) + player_current_team DB   #
+    # (shared with web). Must run before usage/value builds so those      #
+    # snapshots stamp the post-trade team.                                #
+    # ------------------------------------------------------------------ #
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.updates.update_players import refresh_current_nfl_teams
+summary = refresh_current_nfl_teams()
+print(
+    "[cron] NFL team refresh: %d changed, %d indexed, db=%d, values=%d"
+    % (
+        summary.get("changed_count", 0),
+        summary.get("indexed_players", 0),
+        summary.get("db_upserted", 0),
+        summary.get("player_values_updated", 0),
+    )
+)
+""", "refresh_current_nfl_teams")
 
     # ------------------------------------------------------------------ #
     # Step 1: Vendor data + usage table                                   #
