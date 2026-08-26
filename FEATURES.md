@@ -94,7 +94,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
   - **Cheat Sheet** — Sortable, printable draft cheat sheet with live Sleeper draft sync (free), free CSV download, and an embeddable in-draft overlay. Custom board edits stay PRO.
   - **Draft History** — Review completed drafts.
 - **Keeper Assistant** — For keeper leagues: auto-detects each player's draft-round keeper cost from Sleeper, Yahoo, and ESPN drafts, then picks the best keepers under your league's keeper limit and cost rules, with a full sortable table and live re-calc as you tweak the limit.
-- **Breakout Engine (PRO)** — Breakout candidates with opportunity projections, vacated-target totals, historical peer comps from real breakout seasons, and confidence-adjusted projected PPG ranges. Also includes offseason breakout candidates.
+- **Breakout Engine (PRO)** — Breakout candidates with opportunity projections, vacated-target totals, historical peer comps from real breakout seasons, and confidence-adjusted projected PPG ranges. Also includes offseason breakout candidates. If roster-change data has not been loaded for the season, the board stays empty instead of ranking players on readiness alone.
 - **Waivers & Start/Sit** — Ranked free-agent targets with pickup signals (filter by position), plus a weekly Start/Sit Advisor showing starters, FLEX picks, and bench ranked by start score. Kicker and D/ST are included when the league starts them.
 - **Schedule Assistant** — Matchup difficulty for every rostered player across any chosen week range, with add/remove players.
 

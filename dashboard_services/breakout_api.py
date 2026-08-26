@@ -14,6 +14,8 @@ from flask import Blueprint, jsonify, request
 
 from dashboard_services.db import get_conn
 from dashboard_services.subscriptions import premium_required
+from data_building.breakout_opportunity_guard import UNAVAILABLE_BREAKOUT_REASON
+from data_building.breakout_engine.db_helpers import opportunity_data_ready
 
 logger = logging.getLogger(__name__)
 
@@ -607,6 +609,19 @@ def _get_peer_comparison(
     )
 
 
+def _unavailable_breakout_payload(season: Optional[int]) -> Dict:
+    """Honest empty payload when opportunity inputs are missing."""
+    return {
+        "season": season,
+        "candidates": [],
+        "count": 0,
+        "as_of_date": None,
+        "data_available": False,
+        "data_status": "unavailable",
+        "reason": UNAVAILABLE_BREAKOUT_REASON,
+    }
+
+
 def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0,
                             limit: Optional[int] = None) -> Dict:
     """
@@ -625,13 +640,17 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
             'season': int,
             'candidates': List[dict],
             'count': int,
-            'as_of_date': str
+            'as_of_date': str,
+            'data_available': bool,
         }
     """
     if season is None:
         from dashboard_services.api import get_nfl_state
         nfl_state = get_nfl_state() or {}
         season = int(nfl_state.get('season', 2026))
+
+    if not opportunity_data_ready(season):
+        return _unavailable_breakout_payload(season)
 
     query = """
         SELECT DISTINCT ON (player_id)
@@ -745,7 +764,9 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
         'season': season,
         'candidates': candidates,
         'count': len(candidates),
-        'as_of_date': candidates[0]['as_of_date'].isoformat() if candidates else None
+        'as_of_date': candidates[0]['as_of_date'].isoformat() if candidates else None,
+        'data_available': True,
+        'data_status': 'ok',
     }
 
 
@@ -782,7 +803,10 @@ def get_breakout_candidates_by_position(
         'season': result['season'],
         'position': position.upper(),
         'candidates': candidates,
-        'count': len(candidates)
+        'count': len(candidates),
+        'data_available': result.get('data_available', True),
+        'data_status': result.get('data_status', 'ok'),
+        'reason': result.get('reason'),
     }
 
 
@@ -831,6 +855,15 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) 
         from dashboard_services.api import get_nfl_state
         nfl_state = get_nfl_state() or {}
         season = int(nfl_state.get('season', 2026))
+
+    if not opportunity_data_ready(season):
+        return {
+            'error': UNAVAILABLE_BREAKOUT_REASON,
+            'player_id': player_id,
+            'season': season,
+            'data_available': False,
+            'data_status': 'unavailable',
+        }
 
     query = """
         SELECT
@@ -966,6 +999,18 @@ def get_breakout_statistics(season: Optional[int] = None) -> Dict:
         nfl_state = get_nfl_state() or {}
         season = int(nfl_state.get('season', 2026))
 
+    if not opportunity_data_ready(season):
+        return {
+            'season': season,
+            'by_position': {},
+            'score_distribution': {},
+            'top_opportunity_situations': [],
+            'top_readiness_prospects': [],
+            'data_available': False,
+            'data_status': 'unavailable',
+            'reason': UNAVAILABLE_BREAKOUT_REASON,
+        }
+
     # Get all candidates
     query = """
         SELECT DISTINCT ON (player_id)
@@ -1075,6 +1120,19 @@ def get_roster_situation(team: str, season: Optional[int] = None) -> Dict:
         from dashboard_services.api import get_nfl_state
         nfl_state = get_nfl_state() or {}
         season = int(nfl_state.get('season', 2026))
+
+    if not opportunity_data_ready(season):
+        return {
+            'team': team,
+            'season': season,
+            'departures': [],
+            'arrivals': [],
+            'vacated_opportunity_by_position': {},
+            'breakout_candidates': [],
+            'data_available': False,
+            'data_status': 'unavailable',
+            'reason': UNAVAILABLE_BREAKOUT_REASON,
+        }
 
     # Get departures
     dep_query = """
@@ -1221,6 +1279,8 @@ def aligned_breakout_scores(player_ids, requested_season: Optional[int] = None) 
     try:
         season = _resolve_bo_season(requested_season)
         if not season:
+            return out
+        if not opportunity_data_ready(season):
             return out
         # Same selection as get_breakout_candidates: latest snapshot + floor.
         query = """

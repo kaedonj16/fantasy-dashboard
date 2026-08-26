@@ -1130,6 +1130,10 @@ def get_offseason_breakout_candidates(
     Returns:
         List of top candidates sorted by breakout score (descending)
     """
+    from data_building.breakout_engine.db_helpers import opportunity_data_ready
+    if not opportunity_data_ready(season):
+        return []
+
     if not use_unified_engine:
         # Use legacy implementation
         return get_offseason_breakout_candidates_legacy(season, min_score, limit)

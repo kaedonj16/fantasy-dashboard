@@ -4363,7 +4363,7 @@ window.initTradePage = function initTradePage(root = document) {
         window.brEmptyState(breakoutsEl, {
           icon: 'chart',
           title: 'No breakouts yet',
-          message: 'Top breakout candidates will appear here once offseason roster changes are tracked.',
+          message: 'Top breakout candidates will appear here once offseason roster changes are tracked. We do not rank players on readiness alone.',
           compact: true
         });
         if (moversPanel) moversPanel.classList.remove("otc-movers-loading");
