@@ -140,12 +140,22 @@ def test_preview_modal_uses_relative_pick_score():
     assert "statRow('Survive'" in source
 
 
-def test_league_players_fills_missing_proj_ppg_from_sleeper():
+def test_league_players_uses_sleeper_only_for_proj_ppg():
     source = (REPO / "app.py").read_text(encoding="utf-8")
 
     assert "fetch_sleeper_season_projections" in source
     assert "Sleeper projected PPG fill skipped" in source
-    assert "if _player.get(\"proj_ppg\"):" in source
+    assert "unprojected_season_injury" in source
+    assert '_player["proj_ppg"] = 0.0' in source
+    assert "fp_projections_" not in source.split("def _build_league_players_payload_uncached")[1].split("def api_league_players")[0]
+
+
+def test_draft_room_roster_projection_uses_sleeper_proj_ppg_only():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "function _pPpg(p){ return p.proj_ppg != null ? Number(p.proj_ppg) : null; }" in source
+    assert "var _ppgv = p.proj_ppg != null ? Number(p.proj_ppg) : null;" in source
+    assert "p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null)" not in source
 
 
 def test_recommendation_is_a_rank_not_a_declining_numeric_grade():

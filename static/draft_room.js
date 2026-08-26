@@ -3125,9 +3125,9 @@
       var o = draftPlayerFacts(other);
       var ps = psRelLive(p);
       var vorLbl = (p.vorp != null || other.vorp != null) ? 'VORP' : 'VOR';
-      var ppgRowLbl = (f.projPpg != null || o.projPpg != null) ? 'Proj PPG' : 'PPG';
-      var ppg = f.projPpg != null ? f.projPpg : f.lastPpg;
-      var oppg = o.projPpg != null ? o.projPpg : o.lastPpg;
+      var ppgRowLbl = 'Proj PPG';
+      var ppg = f.projPpg;
+      var oppg = o.projPpg;
       function statRow(lbl, val, oval, higherBetter, fmtFn){
         if (val == null && oval == null) return '';
         var vStr = fmtFn ? fmtFn(val) : (val != null ? String(val) : '-');
@@ -3148,7 +3148,7 @@
         + '<div class="dr-cmp-stats">'
         + statRow('Value', f.value, o.value, true, function(x){ return x != null ? String(Math.round(x)) : '-'; })
         + statRow(ppgRowLbl, ppg, oppg, true, function(x){ return x != null ? x.toFixed(1) : 'N/A'; })
-        + (f.projPpg != null && f.lastPpg != null ? statRow((f.ppgSeason || 'Last') + ' PPG', f.lastPpg, o.lastPpg, true, function(x){ return x != null ? x.toFixed(1) : '-'; }) : '')
+        + (f.lastPpg != null || o.lastPpg != null ? statRow((f.ppgSeason || 'Last') + ' PPG', f.lastPpg, o.lastPpg, true, function(x){ return x != null ? x.toFixed(1) : '-'; }) : '')
         + statRow(vorLbl, f.vor, o.vor, true, function(x){ return x != null ? fmtSigned(x, Number.isInteger(x) ? 0 : 1) : '-'; })
         + statRow('ADP', f.adp, o.adp, false, function(x){ return x != null ? Number(x).toFixed(1) : 'N/A'; })
         + statRow('vs ADP', f.vsAdp, o.vsAdp, true, function(x){ return fmtSigned(Math.round(x), 0); })
@@ -3460,8 +3460,9 @@
     var byeFlag = '';
     var bc = byeConflict(p);
     if (bc >= 2) byeFlag = '<span class="dr-bye-flag">Bye ' + p.bye_week + ' clash</span>';
-    // Projected PPG for meta line (proj_ppg = upcoming season, ppg = last season fallback)
-    var ppgNum = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
+    // Projected PPG (Sleeper upcoming-season only). Last-season actual is a
+    // separate stat, never a projection stand-in.
+    var ppgNum = p.proj_ppg != null ? Number(p.proj_ppg) : null;
     var ppgPart = ppgNum != null ? ' · ' + ppgNum.toFixed(1) + ' proj' : '';
     // Compare button state
     var onCmp = compareIds.indexOf(String(p.id)) >= 0;
@@ -3743,8 +3744,9 @@
       + '<span class="dr-rslot-empty">open</span></div>';
   }
   // ── Draft grade / roster strength ───────────────────────────────────────────
-  // Projected PPG (upcoming season) preferred; last-season actual as fallback.
-  function ppgOf(p){ if (window.DraftBoardCore) return DraftBoardCore.ppgOf(p); return (p && p.proj_ppg != null) ? Number(p.proj_ppg) : ((p && p.ppg != null) ? Number(p.ppg) : null); }
+  // Projected PPG from Sleeper only (upcoming season). Last-season actuals
+  // are a separate stat and are never used as a projection.
+  function ppgOf(p){ if (window.DraftBoardCore) return DraftBoardCore.ppgOf(p); return (p && p.proj_ppg != null) ? Number(p.proj_ppg) : null; }
 
   // ── Projected playoff odds (completed draft only) ───────────────────────────
   // Once every team has a full roster we can project each team's season from its
@@ -4283,8 +4285,8 @@
     if (bench.length){ bench.forEach(function(p){ html += slotRow('BN', p); }); }
     else { html += slotRow('BN', null); }
     html += '</div>';
-    // Roster projection: use Sleeper ppg (preferred) or proj_ppg fallback
-    function _pPpg(p){ return p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null); }
+    // Roster projection: Sleeper upcoming-season proj_ppg only (including 0).
+    function _pPpg(p){ return p.proj_ppg != null ? Number(p.proj_ppg) : null; }
     var projPlayers = mine.filter(function(p){ return _pPpg(p) != null; });
     if (projPlayers.length >= 2){
       var myProjTotal = 0;
@@ -5549,7 +5551,7 @@
       var _ssSet = {};
       starters.forEach(function(s){ if (s.p) _ssSet[String(s.p.id)] = true; });
       mine.forEach(function(p){
-        var _ppgv = p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null);
+        var _ppgv = p.proj_ppg != null ? Number(p.proj_ppg) : null;
         if (_ppgv != null){ sumProjTotal += _ppgv; sumProjCount++; }
         var _fp = playersById[String(p.id)] || p;
         var _t = tierOf(_fp); if (_t != null && _t <= 2) sumT12++;

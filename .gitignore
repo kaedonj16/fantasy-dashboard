@@ -7,6 +7,8 @@ cache/target_share/
 # Weekly projections cache (generated at runtime)
 cache/projections/
 cache/sportsgameodds/
+# FantasyPros season dumps are unused; point projections come from Sleeper only
+cache/fp_projections_*.json
 
 # Generated data files
 data/engine_values.csv

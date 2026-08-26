@@ -54,8 +54,6 @@ def _ref_replacement(pool, starters, teams):
 def _ppg_of(p):
     if p.get("proj_ppg") is not None:
         return float(p["proj_ppg"])
-    if p.get("ppg") is not None:
-        return float(p["ppg"])
     return None
 
 

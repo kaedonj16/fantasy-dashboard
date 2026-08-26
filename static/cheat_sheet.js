@@ -734,7 +734,7 @@
         + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + recChip + projChip + ovChip(x) + '</span></td>'
         + '<td>' + posrk(x) + '</td>'
         + '<td class="cs-vor-col"><span class="cs-vorwrap"><span class="cs-num">' + x.vor + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.vor / maxVor * 100)) + '%"></i></span></span></td>'
-        + '<td class="cs-num">' + (x.projectedPpg != null ? x.projectedPpg.toFixed(1) : (x.lastPpg != null ? '<span class="cs-ppg-last" title="Last season actual — no upcoming-season projection on file">' + x.lastPpg.toFixed(1) + '</span>' : '&ndash;')) + '</td>'
+        + '<td class="cs-num">' + (x.projectedPpg != null ? x.projectedPpg.toFixed(1) : '&ndash;') + '</td>'
         + c5 + c6 + '<td class="cs-num" title="Full fantasy-season strength of schedule; 1 is easiest">' + (x.scheduleRank ? '#' + x.scheduleRank : '&ndash;') + '</td>' + market + ovControls(x) + '</tr>';
     });
     if (!shown) html = '<tr><td colspan="' + span + '" class="cs-empty">No players match this filter.</td></tr>';
@@ -1024,7 +1024,7 @@
     var rows = players.map(function (x) {
       var c5 = dyn ? (x.age != null ? x.age : '') : fmtAdp(x.adp);
       var c6 = dyn ? youthWindow(x.age, x.pos)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
-      var ppgCsv = x.projectedPpg != null ? x.projectedPpg.toFixed(1) : (x.lastPpg != null ? x.lastPpg.toFixed(1) : '');
+      var ppgCsv = x.projectedPpg != null ? x.projectedPpg.toFixed(1) : '';
       return [x.rk, x.name, x.pos, x.prk, x.vor, ppgCsv, c5, c6, x.scheduleRank || ''].concat(showMarket(dyn) ? [x.marketVsAdp == null ? '' : x.marketVsAdp] : []).concat([x.dtier]);
     });
     var csv = [head].concat(rows).map(function (r) {

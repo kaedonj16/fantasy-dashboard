@@ -541,11 +541,8 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
     """
     Build (ppg_map, pos_map).
 
-    Priority order:
-      1. Sleeper weekly projections for the upcoming week — same source used by
-         _blend_weekly_projections, so simulate_with_swap sees the same player
-         PPGs as the base simulation's team-avg blend.
-      2. Prior-season usage_rows cache — fills any remaining gaps.
+    Point projections come from Sleeper weekly lines only (upcoming week, or
+    week 1 in preseason). Players Sleeper does not project are omitted.
 
     Returns:
         ppg_map  — {str(player_id): {"ppg": float, "pos": str}}
@@ -553,18 +550,7 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
     """
     season       = int(ctx.get("season") or 0)
     current_week = int(ctx.get("current_week") or 0)
-    _ss    = ctx.get("scoring_settings") or {}
     _rss   = ctx.get("raw_scoring_settings") or {}
-    rec_pts = float(_ss.get("rec") or _ss.get("pointsPerReception") or 0)
-    if rec_pts >= 1.0:
-        scoring  = "ppr"
-        ppg_key  = "ppr_ppg"
-    elif rec_pts >= 0.5:
-        scoring  = "half_ppr"
-        ppg_key  = "half_ppr_ppg"
-    else:
-        scoring  = "std"
-        ppg_key  = "std_scoring_ppg"
 
     # pos_map built first — needed as position fallback for all PPG sources
     pos_map: dict = {}
@@ -602,29 +588,6 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
                     }
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
-
-    # Priority 2: Prior-season usage cache
-    try:
-        import os as _os, json as _json
-        from datetime import date as _date
-        _cache_dir = _os.path.join(_os.path.dirname(__file__), "..", "cache", "player_history")
-        _year = season or _date.today().year
-        for _y in [_year, _year - 1]:
-            _path = _os.path.join(_cache_dir, f"usage_rows_{_y}.json")
-            if _os.path.exists(_path):
-                with open(_path) as _f:
-                    _usage_data = _json.load(_f)
-                for p in _usage_data:
-                    pid = str(p.get("id") or "")
-                    if not pid or pid in ppg_map:
-                        continue
-                    ppg = float((p.get("usage") or {}).get(ppg_key) or 0)
-                    pos = str(p.get("position") or "").upper()
-                    if ppg > 0:
-                        ppg_map[pid] = {"ppg": ppg, "pos": pos}
-                break
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
 
     return ppg_map, pos_map
 
@@ -1077,11 +1040,8 @@ def _estimate_from_rosters(
     """
     Build synthetic team scoring profiles for preseason simulation.
 
-    PPG source priority (highest accuracy first):
-      1. Sleeper weekly projections aggregated into an active-week PPG.
-      2. Prior-season usage_rows cache (non-projection fallback when Sleeper has
-         no projection for the player)
-      3. Position-based rookie default (last resort)
+    PPG source: Sleeper weekly projections aggregated into an active-week PPG.
+    Players Sleeper does not project contribute 0.
 
     Uses position-aware lineup selection and per-team std dev estimated from
     the position composition of the projected starting lineup.
@@ -1133,13 +1093,10 @@ def _estimate_from_rosters(
     rec_pts = float(_ss.get("rec") or _ss.get("pointsPerReception") or 0)
     if rec_pts >= 1.0:
         scoring  = "ppr"
-        ppg_key  = "ppr_ppg"
     elif rec_pts >= 0.5:
         scoring  = "half_ppr"
-        ppg_key  = "half_ppr_ppg"
     else:
         scoring  = "std"
-        ppg_key  = "std_scoring_ppg"
 
     # ── Source 1: Sleeper season projection aggregate ────────────────────────
     ppg_map: dict[str, dict] = {}
@@ -1153,30 +1110,6 @@ def _estimate_from_rosters(
             logger.info("[playoff_odds] Using Sleeper projections: %d players", len(ppg_map))
     except Exception as exc:
         logger.warning("[playoff_odds] Sleeper projections unavailable: %s", exc)
-
-    # ── Source 2: prior-season usage_rows (fills gaps / full fallback) ────────
-    try:
-        import os as _os, json as _json
-        from datetime import date as _date
-        _cache_dir = _os.path.join(_os.path.dirname(__file__), "..", "cache", "player_history")
-        _year = season or _date.today().year
-        _usage_data = None
-        for _y in [_year, _year - 1]:
-            _path = _os.path.join(_cache_dir, f"usage_rows_{_y}.json")
-            if _os.path.exists(_path):
-                with open(_path) as _f:
-                    _usage_data = _json.load(_f)
-                break
-        if _usage_data:
-            for p in _usage_data:
-                pid = str(p.get("id") or "")
-                if not pid or pid in ppg_map:
-                    continue  # already have a Sleeper projection for this player
-                ppg = float((p.get("usage") or {}).get(ppg_key) or 0)
-                pos = str(p.get("position") or "").upper()
-                ppg_map[pid] = {"ppg": ppg, "pos": pos}
-    except Exception as exc:
-        logger.warning("[playoff_odds] Could not load usage_rows cache: %s", exc)
 
     # Load player positions from DB as fallback for rookies not in usage cache
     pos_map: dict[str, str] = {}
