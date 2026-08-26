@@ -63,78 +63,9 @@ def in_season_breakout_candidates(detect_fn, players_index, values_by_id):
 
 @breakout_api_bp2.route("/api/breakout-candidates")
 def api_breakout_candidates():
-    """
-    Get breakout candidates - automatically switches between offseason and in-season detection.
-    Returns full candidate objects with stats, not just IDs.
-    """
-    league_id = request.args.get("league_id")
-    platform = request.args.get("platform", "sleeper")
-    if not has_premium_for_viewer(session.get("viewer_username"), session.get("viewer_user_id"),
-                                  league_id, platform, request.args.get("season")):
-        return jsonify({"paywall": True, "error": "Premium required"}), 403
-
-    try:
-        from datetime import datetime
-
-        min_score = float(request.args.get("min_score", 40))  # Selective threshold
-        limit = int(request.args.get("limit", 20))
-
-        # Get current NFL state
-        nfl_state = get_nfl_state() or {}
-        current_season = int(nfl_state.get("season") or datetime.now().year)
-        season_type = str(nfl_state.get("season_type", "")).lower().strip()
-        is_offseason = season_type == "off"
-
-        candidates = []
-
-        if is_offseason:
-            # Use offseason opportunity-based detection (FAST - uses database)
-            try:
-                from data_building.breakout_engine.db_helpers import opportunity_data_ready
-                from data_building.breakout_opportunity_guard import UNAVAILABLE_BREAKOUT_REASON
-                from data_building.offseason_opportunity import get_offseason_breakout_candidates
-                if not opportunity_data_ready(current_season):
-                    return jsonify({
-                        "candidates": [],
-                        "count": 0,
-                        "data_available": False,
-                        "reason": UNAVAILABLE_BREAKOUT_REASON,
-                    })
-                candidates = get_offseason_breakout_candidates(
-                    current_season,
-                    min_score=min_score,
-                    limit=limit * 5,  # Get more initially for filtering
-                    max_per_team_position=2
-                )
-                logger.info(f"[breakout-candidates] Offseason mode: {len(candidates)} candidates")
-            except Exception:
-                logger.exception("[breakout-candidates] Offseason detection error")
-        else:
-            # Use in-season breakout detection with enrichment
-            try:
-                from data_building.advanced_metrics import detect_breakout_candidates
-                from utils.utils import load_players_index
-
-                players_index = load_players_index() or {}
-                value_table = get_model_value_table_cached() or []
-                values_by_id = {str(p.get("id")): p for p in value_table}
-                candidates = in_season_breakout_candidates(
-                    detect_breakout_candidates, players_index, values_by_id)
-                logger.info(f"[breakout-candidates] In-season mode: {len(candidates)} candidates")
-            except Exception:
-                logger.exception("[breakout-candidates] In-season detection error")
-                # Do not substitute 7-day value risers. A price move is not a
-                # breakout; return the empty list so the UI can show a real gap.
-
-        # Sort by breakout score and limit
-        candidates.sort(key=lambda x: x.get("breakout_score", 0), reverse=True)
-        return jsonify(candidates[:limit])
-
-    except Exception as e:
-        logger.exception("[breakout-candidates] Error")
-        import traceback
-        traceback.print_exc()
-        return jsonify([])
+    """Alias of ``/api/breakout/candidates`` — same envelope, same 3-preview."""
+    from dashboard_services.breakout_api import candidates as canonical
+    return canonical()
 
 
 @breakout_api_bp2.route("/api/offseason-breakout-candidates")
@@ -194,8 +125,8 @@ def api_offseason_breakout_candidates():
         ]
     """
     try:
-        from datetime import datetime
-        from data_building.offseason_opportunity import get_offseason_breakout_candidates
+        from data_building.breakout_opportunity_guard import UNAVAILABLE_BREAKOUT_REASON
+        from dashboard_services.breakout_api import get_breakout_candidates, _resolve_bo_season
 
         # Breakout candidates are a PRO feature (3-candidate preview stays on
         # /api/breakout/candidates). League-plan users need league context so
@@ -208,80 +139,43 @@ def api_offseason_breakout_candidates():
         ):
             return jsonify({"paywall": True, "error": "Premium required"}), 403
 
-        # Get season (default to current year)
-        nfl_state = get_nfl_state() or {}
-        default_season = int(nfl_state.get("season") or datetime.now().year)
-
-        try:
-            season = int(request.args.get("season", default_season))
-        except (TypeError, ValueError):
-            season = default_season
-
-        # Get min score threshold (default 40 for selectivity)
+        season = _resolve_bo_season(request.args.get("season", type=int))
         try:
             min_score = float(request.args.get("min_score", 40))
             min_score = max(0, min(min_score, 100))
         except (TypeError, ValueError):
             min_score = 40
 
-        # Get max per team/position (default 2, range 1-5)
-        try:
-            max_per_team_position = int(request.args.get("max_per_team_position", 2))
-            max_per_team_position = max(1, min(max_per_team_position, 5))
-        except (TypeError, ValueError):
-            max_per_team_position = 2
-
-        # Get position filter
         position = request.args.get("position")
         if position:
             position = position.upper().strip()
             if position not in ("QB", "RB", "WR", "TE"):
                 position = None
 
-        # Get candidates (FAST - uses database queries, no artificial filtering)
-        candidates = get_offseason_breakout_candidates(
-            season,
-            min_score=min_score,
-            max_per_team_position=max_per_team_position
-        )
-
-        # Filter by position if requested
+        result = get_breakout_candidates(season, min_score, limit=None)
+        if not result.get("data_available", True):
+            return jsonify({
+                "candidates": [],
+                "count": 0,
+                "data_available": False,
+                "reason": result.get("reason") or UNAVAILABLE_BREAKOUT_REASON,
+                "season": result.get("season") or season,
+            })
+        candidates = list(result.get("candidates") or [])
         if position:
             candidates = [c for c in candidates if c.get("position") == position]
-
-        # Filter out elite players (they shouldn't be breakout candidates)
-        # Load model values to check elite thresholds
-        model_values = get_model_value_table_cached() or []
-        values_by_id = {str(p["id"]): p for p in model_values if isinstance(p, dict) and p.get("id")}
-
-        # Position-specific elite thresholds
-        elite_thresholds = {
-            'RB': 650, 'WR': 650, 'TE': 550, 'QB': 400, 'K': 9999, 'DEF': 9999
-        }
-
-        filtered_candidates = []
-        for candidate in candidates:
-            player_id = str(candidate.get("player_id", ""))
-            pos = candidate.get("position", "")
-            threshold = elite_thresholds.get(pos, 750)
-
-            # Get player value
-            player_value = values_by_id.get(player_id, {})
-            value = float(player_value.get("value", 0)) if player_value.get("value") else 0
-
-            # Only include if not elite
-            if value < threshold:
-                filtered_candidates.append(candidate)
-
-        candidates = filtered_candidates
-
-        return jsonify(candidates)
+        return jsonify({
+            "candidates": candidates,
+            "count": len(candidates),
+            "data_available": True,
+            "season": result.get("season") or season,
+        })
 
     except Exception as e:
         logger.info(f"[offseason-breakout-candidates] Error: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify([])
+        return jsonify({"candidates": [], "count": 0, "data_available": False})
 
 
 @breakout_api_bp2.route("/api/calculate-breakout-scores")

@@ -13,6 +13,7 @@ CRON = (ROOT / "cron_daily.py").read_text(encoding="utf-8")
 INGEST = (ROOT / "data_building" / "rookie_pipeline" / "ingestion.py").read_text(encoding="utf-8")
 GRAPHS = (ROOT / "dashboard_services" / "pages" / "graphs_page.py").read_text(encoding="utf-8")
 WAIVERS = (ROOT / "dashboard_services" / "pages" / "waivers_page.py").read_text(encoding="utf-8")
+WAIVER_BP = (ROOT / "routes" / "waiver_api_bp.py").read_text(encoding="utf-8")
 BILLING = (ROOT / "routes" / "billing_bp.py").read_text(encoding="utf-8")
 RANKINGS = (ROOT / "dashboard_services" / "pages" / "dynasty_pages.py").read_text(encoding="utf-8")
 BREAKOUT_BP2 = (ROOT / "routes" / "breakout_api_bp2.py").read_text(encoding="utf-8")
@@ -98,8 +99,8 @@ def test_scout_uses_live_value_cache():
 
 
 def test_add_pct_on_waivers_and_streaming():
-    assert "adds_48h" in APP_PY
-    assert "rostered_pct" in APP_PY[APP_PY.index("def api_waiver_candidates"):APP_PY.index("def _sleeper_trending_adds")]
+    assert "adds_48h" in WAIVER_BP
+    assert "rostered_pct" in WAIVER_BP[WAIVER_BP.index("def api_waiver_candidates"):WAIVER_BP.index("def _sleeper_trending_adds")]
     assert "adds_48h" in WAIVERS
     assert "% rostered" in WAIVERS
 
@@ -214,9 +215,11 @@ def test_graphs_empty_weekly_is_a_static_card():
 
 
 def test_breakout_candidates_alias_uses_opportunity_guard():
-    assert "opportunity_data_ready(current_season)" in BREAKOUT_BP2
-    assert "UNAVAILABLE_BREAKOUT_REASON" in BREAKOUT_BP2
+    assert "from dashboard_services.breakout_api import candidates as canonical" in BREAKOUT_BP2
+    assert "opportunity_data_ready" in (ROOT / "dashboard_services" / "breakout_api.py").read_text(encoding="utf-8")
+    assert "get_breakout_candidates" in BREAKOUT_BP2
     assert '"data_available": False' in BREAKOUT_BP2
+    assert "UNAVAILABLE_BREAKOUT_REASON" in BREAKOUT_BP2
 
 
 def test_redis_url_is_wired_for_cross_worker_limits():

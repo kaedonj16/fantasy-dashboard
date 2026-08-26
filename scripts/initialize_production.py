@@ -103,7 +103,9 @@ def main():
 
                 for endpoint in endpoints:
                     response = client.get(endpoint)
-                    status = "✅" if response.status_code in [200, 302] else "❌"
+                    # 200 (canonical envelope / preview), 302 (auth redirect),
+                    # or 403 (offseason PRO gate) are all healthy.
+                    status = "✅" if response.status_code in [200, 302, 403] else "❌"
                     print(f"{status} {endpoint}: {response.status_code}")
 
         except Exception as e:

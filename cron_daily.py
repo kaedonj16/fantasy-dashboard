@@ -745,6 +745,20 @@ notify_rival_trades()
 print("[cron] Rival trade notifications dispatched")
 """, "notify_rival_trades")
 
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from dashboard_services.trade_time_values import backfill_from_trade_intel
+n = backfill_from_trade_intel()
+print(f"[cron] Trade-time value backfill: {n} rows")
+""", "trade_time_value_backfill")
+
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from dashboard_services.injury_return import refresh_espn_return_dates
+rows = refresh_espn_return_dates(force=True)
+print(f"[cron] ESPN injury return dates: {len(rows)} players")
+""", "espn_injury_return_dates")
+
     # ------------------------------------------------------------------ #
     # Step 8: Draft ADP crawl                                            #
     # ------------------------------------------------------------------ #
