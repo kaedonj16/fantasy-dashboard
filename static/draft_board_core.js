@@ -98,7 +98,63 @@
     return r;
   }
 
-  function ppgOf(p) { return (p && p.proj_ppg != null) ? Number(p.proj_ppg) : ((p && p.ppg != null) ? Number(p.ppg) : null); }
+  // Same keys as utils.proj_variant.pick_proj_variant. Draft-room scoring is
+  // {ppr, tep, passTd}; Sleeper settings {rec, bonus_rec_te, pass_td} also work.
+  function pickProjVariant(scoring) {
+    scoring = scoring || {};
+    var rec = scoring.ppr != null ? +scoring.ppr
+      : (scoring.rec != null ? +scoring.rec : 1);
+    var teBonus = scoring.tep != null ? +scoring.tep
+      : (scoring.bonus_rec_te != null ? +scoring.bonus_rec_te : 0);
+    var passTd = scoring.passTd != null ? +scoring.passTd
+      : (scoring.pass_td != null ? +scoring.pass_td : 4);
+    var tep = teBonus >= 0.25;
+    var six = passTd >= 5.5;
+    var base = rec >= 1 ? 'ppr' : rec >= 0.4 ? 'half_ppr' : 'std';
+    if (six && tep && base === 'ppr') return '6pt_tep';
+    if (six && base === 'ppr') return '6pt_ppr';
+    if (six && base === 'half_ppr') return '6pt_half';
+    if (tep && base === 'ppr') return 'tep';
+    return base;
+  }
+
+  // Projected PPG for the given scoring. `proj_ppg` is the canonical PPR figure
+  // (FantasyPros, then Sleeper). When scoring is not full PPR / 4-pt passing TD,
+  // scale that figure by Sleeper's variant/PPR ratio so half-PPR and 6-pt TD
+  // change the number without swapping projection sources.
+  function scoringProjPpg(p, scoring) {
+    if (!p) return null;
+    var base = (p.proj_ppg != null && isFinite(Number(p.proj_ppg))) ? Number(p.proj_ppg) : null;
+    var by = p.proj_ppg_by;
+    var key = pickProjVariant(scoring);
+    var variant = (by && by[key] != null && isFinite(Number(by[key]))) ? Number(by[key]) : null;
+    var pprVar = (by && by.ppr != null && isFinite(Number(by.ppr))) ? Number(by.ppr) : null;
+    if (variant != null && variant > 0) {
+      if (base != null && pprVar != null && pprVar > 0 && key !== 'ppr') {
+        return Math.round(base * (variant / pprVar) * 10) / 10;
+      }
+      if (key !== 'ppr' || base == null) return Math.round(variant * 10) / 10;
+    }
+    return base;
+  }
+
+  function scoringProjPts(p, scoring) {
+    if (!p) return null;
+    var pts = (p.proj_pts != null && isFinite(Number(p.proj_pts))) ? Number(p.proj_pts) : null;
+    var base = (p.proj_ppg != null && isFinite(Number(p.proj_ppg))) ? Number(p.proj_ppg) : null;
+    var adj = scoringProjPpg(p, scoring);
+    if (pts != null && base != null && base > 0 && adj != null) {
+      return Math.round(pts * (adj / base) * 10) / 10;
+    }
+    return pts;
+  }
+
+  function ppgOf(p, scoring) {
+    var proj = scoring ? scoringProjPpg(p, scoring) : null;
+    if (proj == null && p && p.proj_ppg != null) proj = Number(p.proj_ppg);
+    if (proj != null && isFinite(proj)) return proj;
+    return (p && p.ppg != null) ? Number(p.ppg) : null;
+  }
 
   // Position PPG scale (replacement -> ~0, elite -> ~1) for the production term.
   // Accessor-based for the same reason as computeReplacement.
@@ -591,6 +647,7 @@
     redraftVal: redraftVal, dynVal: dynVal, valOf: valOf, adpOf: adpOf,
     adpField: adpField, sourceAdpOf: sourceAdpOf, consensusAdpOf: consensusAdpOf,
     computeReplacement: computeReplacement, ppgOf: ppgOf,
+    pickProjVariant: pickProjVariant, scoringProjPpg: scoringProjPpg, scoringProjPts: scoringProjPts,
     computePpgScale: computePpgScale, ppgNorm: ppgNorm,
     empiricalSlotAllocation: empiricalSlotAllocation, effectiveStarters: effectiveStarters,
     tierOf: tierOf, maxVal: maxVal, posTargets: posTargets,

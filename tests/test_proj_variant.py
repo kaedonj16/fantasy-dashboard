@@ -3,7 +3,7 @@
 pick_proj_variant maps a league's raw Sleeper scoring to the projection set it
 should use. TE premium and 6pt-passing-TD only layer onto the full-PPR base.
 """
-from utils.proj_variant import pick_proj_variant
+from utils.proj_variant import pick_proj_variant, pick_proj_variant_from_draft_scoring
 
 
 def test_defaults_to_ppr():
@@ -50,3 +50,14 @@ def test_six_point_te_premium_combo():
     assert pick_proj_variant({"rec": 1.0, "pass_td": 6, "bonus_rec_te": 1.0}) == "6pt_tep"
     # 6pt + TEP on a half-PPR base -> no 6pt_tep variant, falls to 6pt_half
     assert pick_proj_variant({"rec": 0.5, "pass_td": 6, "bonus_rec_te": 1.0}) == "6pt_half"
+
+
+def test_draft_scoring_maps_ppr_tep_and_pass_td():
+    assert pick_proj_variant_from_draft_scoring(None) == "ppr"
+    assert pick_proj_variant_from_draft_scoring({"ppr": 1, "tep": 0, "passTd": 4}) == "ppr"
+    assert pick_proj_variant_from_draft_scoring({"ppr": 0.5, "tep": 0, "passTd": 4}) == "half_ppr"
+    assert pick_proj_variant_from_draft_scoring({"ppr": 0, "tep": 0, "passTd": 4}) == "std"
+    assert pick_proj_variant_from_draft_scoring({"ppr": 1, "tep": 0.5, "passTd": 4}) == "tep"
+    assert pick_proj_variant_from_draft_scoring({"ppr": 1, "tep": 0, "passTd": 6}) == "6pt_ppr"
+    assert pick_proj_variant_from_draft_scoring({"ppr": 0.5, "tep": 0, "passTd": 6}) == "6pt_half"
+    assert pick_proj_variant_from_draft_scoring({"ppr": 1, "tep": 1, "passTd": 6}) == "6pt_tep"

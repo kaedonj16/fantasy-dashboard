@@ -46,3 +46,22 @@ def test_season_ppg_uses_only_sleeper_weekly_values(monkeypatch):
     result = fetch_projections.fetch_sleeper_season_projections(2026, "ppr")
 
     assert result == {"9758": {"pos": "QB", "season_pts": 30.0, "ppg": 15.0}}
+
+
+def test_season_ppg_variants_include_half_ppr_and_six_point(monkeypatch):
+    weekly = {
+        1: {"9758": {"ppr": 12.0, "half_ppr": 11.0, "std": 10.0, "6pt_ppr": 14.0}},
+        2: {"9758": {"ppr": 18.0, "half_ppr": 17.0, "std": 16.0, "6pt_ppr": 20.0}},
+        3: {"9758": {"ppr": 0.0}},
+    }
+    monkeypatch.setattr(utils, "load_week_projection", lambda _year, week: weekly.get(week, {}))
+    monkeypatch.setattr(utils, "load_players_index", lambda: {"9758": {"pos": "QB"}})
+
+    variants = fetch_projections.fetch_sleeper_season_ppg_variants(2026)
+    assert variants["9758"]["ppr"] == 15.0
+    assert variants["9758"]["half_ppr"] == 14.0
+    assert variants["9758"]["6pt_ppr"] == 17.0
+
+    half = fetch_projections.fetch_sleeper_season_projections(2026, "half_ppr")
+    assert half["9758"]["ppg"] == 14.0
+    assert half["9758"]["season_pts"] == 28.0

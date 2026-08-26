@@ -144,8 +144,24 @@ def test_league_players_fills_missing_proj_ppg_from_sleeper():
     source = (REPO / "app.py").read_text(encoding="utf-8")
 
     assert "fetch_sleeper_season_projections" in source
+    assert "fetch_sleeper_season_ppg_variants" in source
     assert "Sleeper projected PPG fill skipped" in source
     assert "if _player.get(\"proj_ppg\"):" in source
+    assert '_player["proj_ppg_by"]' in source
+
+
+def test_draft_room_shows_scoring_adjusted_proj_ppg():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    body = build_draft_room_body(None, None, None, is_guest=True)
+
+    assert "function scoringProjPpg(p)" in source
+    assert "DraftBoardCore.scoringProjPpg(full, scoringCfg())" in source
+    assert "DraftBoardCore.ppgOf(full, scoringCfg())" in source
+    assert "var proj = scoringProjPpg(p);" in source
+    assert "var ppgNum = ppgOf(p);" in source
+    assert "select the projected PPG variant" in source
+    assert 'title="Projected PPG uses this reception scoring' in body
+    assert 'title="Adjusts quarterback projected PPG, recommendations, and pick grades"' in body
 
 
 def test_recommendation_is_a_rank_not_a_declining_numeric_grade():

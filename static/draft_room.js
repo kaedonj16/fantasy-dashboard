@@ -708,8 +708,9 @@
       queue:  []
     };
   }
-  // Scoring settings from setup. These shift the
-  // recommended roster build rather than recomputing raw player values.
+  // Scoring settings from setup. They reshape the recommended roster build
+  // (TEP / 6-pt passing TD / PPR weights) and select the projected PPG variant
+  // shown on the board (half PPR, 6-pt passing TDs, TE premium).
   function readScoring(){
     var pprEl = document.getElementById('drPpr');
     var tepEl = document.getElementById('drTep');
@@ -2948,7 +2949,7 @@
     var adpN = (state.type === 'rookie') ? p.rookie_adp_n
       : (state.sf ? p.sf_adp_n : p.adp_n);
     var adpGap = (adp != null && state && state.current) ? (state.current - adp) : null;
-    var proj = (p.proj_ppg != null && isFinite(Number(p.proj_ppg))) ? Number(p.proj_ppg) : null;
+    var proj = scoringProjPpg(p);
     var last = (p.ppg != null && isFinite(Number(p.ppg))) ? Number(p.ppg) : null;
     var nextOwned = nextOwnedAfterCurrent();
     var survive = nextOwned ? availProb(p, nextOwned) : null;
@@ -2971,7 +2972,7 @@
       posRankN: state && state.sf ? p.sf_pos_rank : p.pos_rank,
       bye: p.bye_week != null ? Number(p.bye_week) : null,
       rec: recRankOf(p),
-      projPts: p.proj_pts != null ? Number(p.proj_pts) : null,
+      projPts: scoringProjPts(p),
       scarce: posTopRemaining(pos),
       survive: survive,
       survivePn: nextOwned,
@@ -3460,8 +3461,8 @@
     var byeFlag = '';
     var bc = byeConflict(p);
     if (bc >= 2) byeFlag = '<span class="dr-bye-flag">Bye ' + p.bye_week + ' clash</span>';
-    // Projected PPG for meta line (proj_ppg = upcoming season, ppg = last season fallback)
-    var ppgNum = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
+    // Projected PPG for meta line (scoring-adjusted upcoming season, last-season fallback)
+    var ppgNum = ppgOf(p);
     var ppgPart = ppgNum != null ? ' · ' + ppgNum.toFixed(1) + ' proj' : '';
     // Compare button state
     var onCmp = compareIds.indexOf(String(p.id)) >= 0;
@@ -3743,8 +3744,27 @@
       + '<span class="dr-rslot-empty">open</span></div>';
   }
   // ── Draft grade / roster strength ───────────────────────────────────────────
-  // Projected PPG (upcoming season) preferred; last-season actual as fallback.
-  function ppgOf(p){ if (window.DraftBoardCore) return DraftBoardCore.ppgOf(p); return (p && p.proj_ppg != null) ? Number(p.proj_ppg) : ((p && p.ppg != null) ? Number(p.ppg) : null); }
+  function scoringProjPpg(p){
+    if (!p) return null;
+    var full = (p.id != null && playersById[String(p.id)]) || p;
+    if (window.DraftBoardCore && DraftBoardCore.scoringProjPpg) return DraftBoardCore.scoringProjPpg(full, scoringCfg());
+    return (full.proj_ppg != null && isFinite(Number(full.proj_ppg))) ? Number(full.proj_ppg) : null;
+  }
+  function scoringProjPts(p){
+    if (!p) return null;
+    var full = (p.id != null && playersById[String(p.id)]) || p;
+    if (window.DraftBoardCore && DraftBoardCore.scoringProjPts) return DraftBoardCore.scoringProjPts(full, scoringCfg());
+    return (full.proj_pts != null && isFinite(Number(full.proj_pts))) ? Number(full.proj_pts) : null;
+  }
+  // Projected PPG (upcoming season, scoring-adjusted) preferred; last-season actual as fallback.
+  function ppgOf(p){
+    if (!p) return null;
+    var full = (p.id != null && playersById[String(p.id)]) || p;
+    if (window.DraftBoardCore) return DraftBoardCore.ppgOf(full, scoringCfg());
+    var proj = scoringProjPpg(full);
+    if (proj != null) return proj;
+    return (full.ppg != null) ? Number(full.ppg) : null;
+  }
 
   // ── Projected playoff odds (completed draft only) ───────────────────────────
   // Once every team has a full roster we can project each team's season from its
@@ -4284,7 +4304,7 @@
     else { html += slotRow('BN', null); }
     html += '</div>';
     // Roster projection: use Sleeper ppg (preferred) or proj_ppg fallback
-    function _pPpg(p){ return p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null); }
+    function _pPpg(p){ return p.ppg != null ? Number(p.ppg) : scoringProjPpg(p); }
     var projPlayers = mine.filter(function(p){ return _pPpg(p) != null; });
     if (projPlayers.length >= 2){
       var myProjTotal = 0;
@@ -5549,7 +5569,7 @@
       var _ssSet = {};
       starters.forEach(function(s){ if (s.p) _ssSet[String(s.p.id)] = true; });
       mine.forEach(function(p){
-        var _ppgv = p.ppg != null ? Number(p.ppg) : (p.proj_ppg != null ? Number(p.proj_ppg) : null);
+        var _ppgv = p.ppg != null ? Number(p.ppg) : scoringProjPpg(p);
         if (_ppgv != null){ sumProjTotal += _ppgv; sumProjCount++; }
         var _fp = playersById[String(p.id)] || p;
         var _t = tierOf(_fp); if (_t != null && _t <= 2) sumT12++;

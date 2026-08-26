@@ -37,3 +37,13 @@ def pick_proj_variant(raw_sleeper_settings: dict) -> str:
     if tep and base == "ppr":
         return "tep"
     return base
+
+
+def pick_proj_variant_from_draft_scoring(scoring: dict | None) -> str:
+    """Map draft-room scoring ``{ppr, tep, passTd}`` onto pick_proj_variant keys."""
+    s = scoring or {}
+    return pick_proj_variant({
+        "rec": s.get("ppr", s.get("rec", 1.0)),
+        "bonus_rec_te": s.get("tep", s.get("bonus_rec_te", 0.0)),
+        "pass_td": s.get("passTd", s.get("pass_td", 4.0)),
+    })
