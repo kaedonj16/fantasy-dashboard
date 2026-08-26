@@ -440,3 +440,48 @@ def test_source_adp_reads_rankings_column_not_sleeper_overlay():
     assert out["sleeper"] == 9.1
     assert out["fallback"] == 7
     assert out["missing"] is None
+
+
+def test_scoring_proj_ppg_reflects_half_ppr_and_six_point_tds():
+    """Draft-room scoring settings rescale the displayed / ranked proj PPG."""
+    out = _run_need_cases("""(() => {
+      const wr = { proj_ppg: 20, proj_pts: 340,
+        proj_ppg_by: { ppr: 18, half_ppr: 15, std: 12, '6pt_ppr': 18, '6pt_half': 15 } };
+      const qb = { proj_ppg: 22, proj_pts: 374,
+        proj_ppg_by: { ppr: 20, half_ppr: 20, '6pt_ppr': 24, '6pt_half': 24 } };
+      const bare = { proj_ppg: 16 };
+      const ppr = { ppr: 1, tep: 0, passTd: 4 };
+      const half = { ppr: 0.5, tep: 0, passTd: 4 };
+      const six = { ppr: 1, tep: 0, passTd: 6 };
+      const halfSix = { ppr: 0.5, tep: 0, passTd: 6 };
+      return {
+        keys: { ppr: C.pickProjVariant(ppr), half: C.pickProjVariant(half),
+                six: C.pickProjVariant(six), halfSix: C.pickProjVariant(halfSix) },
+        wrPpr: C.scoringProjPpg(wr, ppr),
+        wrHalf: C.scoringProjPpg(wr, half),
+        wrSix: C.scoringProjPpg(wr, six),
+        wrPtsHalf: C.scoringProjPts(wr, half),
+        qbPpr: C.scoringProjPpg(qb, ppr),
+        qbSix: C.scoringProjPpg(qb, six),
+        qbPtsSix: C.scoringProjPts(qb, six),
+        bareHalf: C.scoringProjPpg(bare, half),
+        ppgOfHalf: C.ppgOf(wr, half),
+        ppgOfDefault: C.ppgOf(wr),
+      };
+    })()""")
+
+    assert out["keys"] == {"ppr": "ppr", "half": "half_ppr", "six": "6pt_ppr", "halfSix": "6pt_half"}
+    # Full PPR keeps the canonical FantasyPros/Sleeper PPR number.
+    assert out["wrPpr"] == 20
+    assert out["qbPpr"] == 22
+    assert out["ppgOfDefault"] == 20
+    # Half PPR scales the canonical number by Sleeper half/ppr (20 * 15/18 = 16.7).
+    assert out["wrHalf"] == 16.7
+    assert out["ppgOfHalf"] == 16.7
+    assert out["wrPtsHalf"] == 283.9  # 340 * 16.7/20
+    # 6-pt passing TDs lift QBs (22 * 24/20 = 26.4) and leave WRs unchanged.
+    assert out["qbSix"] == 26.4
+    assert out["qbPtsSix"] == 448.8  # 374 * 26.4/22
+    assert out["wrSix"] == 20
+    # No variant map -> keep the stored PPR projection.
+    assert out["bareHalf"] == 16

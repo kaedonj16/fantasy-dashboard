@@ -180,21 +180,21 @@ _DRAFT_ROOM_HTML = r"""
             </select>
           </div>
           <div class="dr-field"><span>PPR</span>
-            <select id="drPpr">
+            <select id="drPpr" aria-label="Reception scoring" title="Projected PPG uses this reception scoring (full, half, or standard).">
               <option value="1" selected>Full PPR</option>
               <option value="0.5">Half PPR</option>
               <option value="0">Standard</option>
             </select>
           </div>
           <div class="dr-field"><span>TE Premium</span>
-            <select id="drTep">
+            <select id="drTep" aria-label="Tight end premium" title="Projected PPG for tight ends includes this TE premium.">
               <option value="0" selected>None</option>
               <option value="0.5">+0.5 PPR</option>
               <option value="1">+1.0 PPR</option>
             </select>
           </div>
           <div class="dr-field"><span>Passing TDs</span>
-            <select id="drPassTd" aria-label="Points per passing touchdown" title="Adjusts quarterback recommendations and pick grades">
+            <select id="drPassTd" aria-label="Points per passing touchdown" title="Adjusts quarterback projected PPG, recommendations, and pick grades">
               <option value="4" selected>4 points</option>
               <option value="6">6 points</option>
             </select>

@@ -9,6 +9,10 @@ from typing import Optional
 
 _CACHE_DIR = Path(__file__).parent.parent / "cache"
 
+# Matches utils.proj_variant.pick_proj_variant keys and the weekly projection
+# payload (ppr / half_ppr / std plus TE-premium and 6-point passing-TD layers).
+PROJ_VARIANTS = ("ppr", "half_ppr", "std", "tep", "6pt_ppr", "6pt_half", "6pt_tep")
+
 # Sleeper drops the weekly stat line (proj PPG 0) once a player is out for the
 # year. Displayed point projections must not refill those players from any
 # other source (FantasyPros preseason files, last-season actuals, etc.).
@@ -30,6 +34,86 @@ def unprojected_season_injury(injury_status: Optional[str], sleeper_ppg) -> bool
     return ppg <= 0
 
 
+def weekly_variant_values(weekly_maps) -> dict[str, dict[str, list[float]]]:
+    """Collect positive weekly projection values per player and scoring variant.
+
+    ``weekly_maps`` is an iterable of week dicts as stored on disk:
+    ``{pid: {ppr, half_ppr, std, tep, 6pt_ppr, 6pt_half, 6pt_tep}}``.
+    A missing variant falls back to that week's ``ppr`` value so a sparse week
+    does not drop the player from a scoring-specific season average.
+    """
+    out: dict[str, dict[str, list[float]]] = {}
+    for week_map in weekly_maps or []:
+        if not isinstance(week_map, dict):
+            continue
+        for pid, row in week_map.items():
+            pid = str(pid)
+            if isinstance(row, dict):
+                ppr_fallback = row.get("ppr")
+                for key in PROJ_VARIANTS:
+                    value = row.get(key)
+                    if value is None:
+                        value = ppr_fallback
+                    try:
+                        value = float(value or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if value > 0:
+                        out.setdefault(pid, {}).setdefault(key, []).append(value)
+            else:
+                try:
+                    value = float(row or 0)
+                except (TypeError, ValueError):
+                    continue
+                if value > 0:
+                    out.setdefault(pid, {}).setdefault("ppr", []).append(value)
+    return out
+
+
+def season_ppg_from_weekly(weekly_maps) -> dict[str, dict[str, float]]:
+    """Median-of-weeks PPG for every scoring variant: ``{pid: {variant: ppg}}``."""
+    from statistics import median
+
+    result: dict[str, dict[str, float]] = {}
+    for pid, by_var in weekly_variant_values(weekly_maps).items():
+        result[pid] = {
+            key: round(float(median(vals)), 2)
+            for key, vals in by_var.items()
+            if vals
+        }
+    return result
+
+
+def _year_weekly_values(year: int) -> dict[str, dict[str, list[float]]]:
+    """Load weeks 1-18 and collect positive weekly values per scoring variant."""
+    from utils.utils import load_week_projection
+
+    weeks = [load_week_projection(year, week) or {} for week in range(1, 19)]
+    return weekly_variant_values(weeks)
+
+
+def fetch_sleeper_season_ppg_variants(
+    year: int,
+    players_index: Optional[dict] = None,
+) -> dict[str, dict[str, float]]:
+    """Season PPG for every scoring variant, keyed by Sleeper player id.
+
+    Shape: ``{pid: {ppr: 18.5, half_ppr: 16.2, 6pt_ppr: 20.1, ...}}``.
+    PPG is the median of positive weekly values so byes do not dilute it.
+    ``players_index`` is accepted so callers can share kwargs with the PPR helper.
+    """
+    collected = _year_weekly_values(year)
+    from statistics import median
+    result: dict[str, dict[str, float]] = {}
+    for pid, by_var in collected.items():
+        result[pid] = {
+            key: round(float(median(vals)), 2)
+            for key, vals in by_var.items()
+            if vals
+        }
+    return result
+
+
 def fetch_sleeper_season_projections(
     year: int,
     scoring: str = "ppr",
@@ -43,33 +127,21 @@ def fetch_sleeper_season_projections(
     consumers use one Sleeper-only source without maintaining parallel models.
     """
     from statistics import median
-    from utils.utils import load_players_index, load_week_projection
+    from utils.utils import load_players_index
 
     players_index = players_index or load_players_index() or {}
-    variant = {"half_ppr": "half_ppr", "std": "std"}.get(scoring, "ppr")
-    values: dict[str, list[float]] = {}
-    for week in range(1, 19):
-        for pid, row in (load_week_projection(year, week) or {}).items():
-            if isinstance(row, dict):
-                value = row.get(variant)
-                if value is None:
-                    value = row.get("ppr")
-            else:
-                value = row
-            try:
-                value = float(value or 0)
-            except (TypeError, ValueError):
-                continue
-            if value > 0:
-                values.setdefault(str(pid), []).append(value)
+    variant = scoring if scoring in PROJ_VARIANTS else "ppr"
+    collected = _year_weekly_values(year)
 
     result = {}
-    for pid, weekly in values.items():
-        ppg = round(float(median(weekly)), 2)
+    for pid, by_var in collected.items():
+        weekly = by_var.get(variant) or by_var.get("ppr") or []
+        if not weekly:
+            continue
         result[pid] = {
             "pos": str((players_index.get(pid) or {}).get("pos") or "").upper(),
             "season_pts": round(sum(weekly), 1),
-            "ppg": ppg,
+            "ppg": round(float(median(weekly)), 2),
         }
     return result
 

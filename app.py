@@ -15323,10 +15323,20 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     _sl_proj = {}
     try:
         from data_building.fetch_projections import fetch_sleeper_season_projections as _sl_season
+        from data_building.fetch_projections import fetch_sleeper_season_ppg_variants as _sl_ppg_by
         _sl_year = int((get_nfl_state() or {}).get("season") or date.today().year)
         _sl_proj = _sl_season(_sl_year, "ppr") or {}
+        _sl_by = _sl_ppg_by(_sl_year) or {}
         for _player in model_value_table:
-            _pe = _sl_proj.get(str(_player.get("id") or ""))
+            _pid = str(_player.get("id") or "")
+            _by = _sl_by.get(_pid)
+            if _by:
+                _player["proj_ppg_by"] = {
+                    _k: round(float(_v), 1)
+                    for _k, _v in _by.items()
+                    if _v
+                }
+            _pe = _sl_proj.get(_pid)
             if not _pe:
                 continue
             _pj = float(_pe.get("ppg") or 0)
@@ -15347,6 +15357,7 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
             if _unproj_lp(_inj, _sl_ppg):
                 _player["proj_ppg"] = 0.0
                 _player["proj_pts"] = 0.0
+                _player["proj_ppg_by"] = {}
     except Exception as _e_inj_ppg:
         logger.info(f"[api/league-players] IR proj PPG zero skipped: {_e_inj_ppg}")
 

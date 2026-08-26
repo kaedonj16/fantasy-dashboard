@@ -144,18 +144,35 @@ def test_league_players_uses_sleeper_only_for_proj_ppg():
     source = (REPO / "app.py").read_text(encoding="utf-8")
 
     assert "fetch_sleeper_season_projections" in source
+    assert "fetch_sleeper_season_ppg_variants" in source
     assert "Sleeper projected PPG fill skipped" in source
+    assert '_player["proj_ppg_by"]' in source
     assert "unprojected_season_injury" in source
     assert '_player["proj_ppg"] = 0.0' in source
     assert "fp_projections_" not in source.split("def _build_league_players_payload_uncached")[1].split("def api_league_players")[0]
 
 
+def test_draft_room_shows_scoring_adjusted_proj_ppg():
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    body = build_draft_room_body(None, None, None, is_guest=True)
+
+    assert "function scoringProjPpg(p)" in source
+    assert "DraftBoardCore.scoringProjPpg(full, scoringCfg())" in source
+    assert "DraftBoardCore.ppgOf(full, scoringCfg())" in source
+    assert "var proj = scoringProjPpg(p);" in source
+    assert "var ppgNum = scoringProjPpg(p);" in source
+    assert "select the projected PPG variant" in source
+    assert 'title="Projected PPG uses this reception scoring' in body
+    assert 'title="Adjusts quarterback projected PPG, recommendations, and pick grades"' in body
+
+
 def test_draft_room_roster_projection_uses_sleeper_proj_ppg_only():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
-    assert "function _pPpg(p){ return p.proj_ppg != null ? Number(p.proj_ppg) : null; }" in source
-    assert "var _ppgv = p.proj_ppg != null ? Number(p.proj_ppg) : null;" in source
+    assert "function _pPpg(p){ return scoringProjPpg(p); }" in source
+    assert "var _ppgv = scoringProjPpg(p);" in source
     assert "p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null)" not in source
+    assert "p.ppg != null ? Number(p.ppg) : scoringProjPpg" not in source
 
 
 def test_recommendation_is_a_rank_not_a_declining_numeric_grade():
