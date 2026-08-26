@@ -30816,10 +30816,11 @@ _notify_changelog_on_startup()
 def _start_notification_scheduler():
     """Background thread: run the time-sensitive hourly notification check.
 
-    Only lineup_lock lives here — it must be evaluated near kickoff, which the
-    once-a-day Render cron can't do. The daily batch (value drops, waivers,
-    playoff odds, rival trades, breakout roster) runs from cron_daily.py instead,
-    which is reliable even when this free-plan web service is asleep.
+    Production uses the Render cron ``hourly-notifications`` (POST
+    /api/cron/notifications) so lineup lock still fires when gunicorn workers
+    restart. This in-process loop is a local/dev fallback; enable it in
+    production with ENABLE_INPROCESS_NOTIFY_SCHEDULER=1 only if that cron is
+    missing. Daily alerts still run from cron_daily.py.
     """
     import threading
     import time as _time
@@ -30842,7 +30843,11 @@ def _start_notification_scheduler():
     threading.Thread(target=_run, daemon=True, name="notify-scheduler").start()
 
 
-_start_notification_scheduler()
+_inprocess_notify = (os.environ.get("ENABLE_INPROCESS_NOTIFY_SCHEDULER") or "").strip().lower()
+if _inprocess_notify in ("1", "true", "yes", "on"):
+    _start_notification_scheduler()
+elif (os.environ.get("PYTHON_ENV") or "").strip().lower() != "production":
+    _start_notification_scheduler()
 
 if __name__ == "__main__":
     # Debug mode (Werkzeug interactive debugger) is opt-in via FLASK_DEBUG=1 and

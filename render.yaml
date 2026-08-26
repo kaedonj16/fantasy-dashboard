@@ -43,6 +43,9 @@ services:
         sync: false
       - key: ADMIN_SECRET
         sync: false
+      # Shared with cron jobs (cache flush, hourly/weekly notification triggers).
+      - key: CRON_SECRET
+        sync: false
       - key: PYTHON_ENV
         value: production
       - key: TZ
@@ -159,6 +162,50 @@ services:
       - key: SPORTRADAR_ACCESS_LEVEL
         sync: false
       - key: CFBD_API_KEY
+        sync: false
+
+  - type: cron
+    name: hourly-notifications
+    runtime: python
+    # Hits the web service so VAPID keys stay on the app. No pip install —
+    # trigger_notifications.py is stdlib urllib only. Minute 5 avoids colliding
+    # with other top-of-hour jobs. Replaces the in-process gunicorn thread
+    # (disabled when PYTHON_ENV=production).
+    schedule: 5 * * * *
+    plan: starter
+    buildCommand: python -c "print('hourly-notifications: no Python deps')"
+    startCommand: python scripts/trigger_notifications.py hourly
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: TZ
+        value: America/New_York
+      - key: PYTHON_ENV
+        value: production
+      - key: APP_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+
+  - type: cron
+    name: weekly-email
+    runtime: python
+    # Tuesday 9am Eastern. send_weekly_digests de-dupes per account per ISO week,
+    # so a retry the same week is a no-op.
+    schedule: 0 9 * * 2
+    plan: starter
+    buildCommand: python -c "print('weekly-email: no Python deps')"
+    startCommand: python scripts/trigger_notifications.py weekly
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: TZ
+        value: America/New_York
+      - key: PYTHON_ENV
+        value: production
+      - key: APP_URL
+        sync: false
+      - key: CRON_SECRET
         sync: false
 
   - type: cron
