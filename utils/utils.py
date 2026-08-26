@@ -250,19 +250,86 @@ def write_json(path, data):
     tmp.replace(p)
 
 
+# Overlay cache for DB-backed current NFL teams on top of the JSON index.
+# Keyed by (base object id, overlay version) so a file reload or DB refresh
+# rebuilds the merged view without mutating the shared JSON parse.
+_PLAYERS_INDEX_MERGED: Dict[str, object] = {"sig": None, "data": None}
+_RELEVANT_INDEX_MERGED: Dict[str, object] = {"sig": None, "data": None}
+
+
+def _bye_lookup_for_overlay() -> Dict[str, int]:
+    """Best-effort team -> byeWeek map for overlay (avoids circular import cost)."""
+    try:
+        teams = read_json_cached(path_teams_index()) or {}
+    except Exception:
+        return {}
+    out: Dict[str, int] = {}
+    for abv, meta in teams.items():
+        if not isinstance(meta, dict):
+            continue
+        bye = meta.get("byeWeek")
+        if bye is None:
+            continue
+        try:
+            out[str(abv).strip().upper()] = int(bye)
+        except (TypeError, ValueError):
+            continue
+    # Alias variants used by some feeds.
+    if "WAS" in out and "WSH" not in out:
+        out["WSH"] = out["WAS"]
+    if "LAR" in out and "LA" not in out:
+        out["LA"] = out["LAR"]
+    if "JAX" in out and "JAC" not in out:
+        out["JAC"] = out["JAX"]
+    return out
+
+
+def _overlay_players_index(base: Optional[Dict], cache_slot: Dict[str, object]) -> Optional[Dict]:
+    """Apply player_current_team DB overlay onto a players index dict."""
+    if not isinstance(base, dict):
+        return base
+    try:
+        from data_building.external_data.player_current_team import (
+            apply_team_overlay,
+            load_current_team_overlay,
+        )
+    except Exception:
+        return base
+
+    overlay = load_current_team_overlay()
+    if not overlay:
+        return base
+
+    # Version the overlay by size + a few sample values so TTL expiry rebuilds.
+    overlay_ver = (len(overlay), sum(hash(f"{k}:{v}") & 0xFFFF for k, v in list(overlay.items())[:32]))
+    sig = (id(base), overlay_ver)
+    if cache_slot.get("sig") == sig and isinstance(cache_slot.get("data"), dict):
+        return cache_slot["data"]  # type: ignore[return-value]
+
+    merged = apply_team_overlay(base, overlay, bye_by_team=_bye_lookup_for_overlay())
+    cache_slot["sig"] = sig
+    cache_slot["data"] = merged
+    return merged
+
+
 def load_players_index() -> Optional[Dict]:
     """Returns the cached player index (Sleeper ↔ Tank01/name/team) or None.
 
     Uses an mtime-guarded in-memory cache: this 1.1 MB file is read dozens of
     times per request, so re-parsing it each time is pure CPU waste. The
     returned dict is shared — callers must treat it as read-only.
+
+    Current NFL team is overlaid from the shared ``player_current_team`` table
+    when available, so the web service picks up daily trade/FA updates written
+    by cron (cron and web do not share a filesystem).
     """
-    return read_json_cached(path_players_index())
+    base = read_json_cached(path_players_index())
+    return _overlay_players_index(base, _PLAYERS_INDEX_MERGED)
 
 
 def load_relevant_index() -> Optional[Dict]:
-    return read_json(path_relevant_index())
-
+    base = read_json(path_relevant_index())
+    return _overlay_players_index(base, _RELEVANT_INDEX_MERGED)
 
 def load_usage_table() -> Optional[Dict]:
     # Try today's file first, then fall back to most recent existing file
