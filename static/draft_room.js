@@ -752,6 +752,46 @@
     return { ppr: s.ppr != null ? s.ppr : 1.0, tep: s.tep != null ? s.tep : 0,
       passTd: s.passTd >= 6 ? 6 : 4 };
   }
+  // Which ADP sources the setup "CPU drafts from" selector offers per draft type.
+  // Mirrors the server's ADP_SOURCES (Yahoo/ESPN/MFL redraft-only; BR Fantasy on
+  // every axis) so the selector is filtered on the setup screen before any pool
+  // has loaded. Once a payload arrives, syncCpuAdpSourceOptions prefers its
+  // season-gated list (which also hides globals with no snapshot). Keeper runs
+  // as a redraft. Consensus is always offered and is the default.
+  var CPU_ADP_SOURCE_FALLBACK = {
+    startup: ['consensus', 'sleeper', 'brfantasy'],
+    rookie:  ['consensus', 'sleeper', 'brfantasy'],
+    redraft: ['consensus', 'sleeper', 'espn', 'yahoo', 'mfl', 'brfantasy']
+  };
+  var CPU_ADP_SOURCE_LABELS = {
+    consensus: 'Consensus (all platforms)', sleeper: 'Sleeper', espn: 'ESPN',
+    yahoo: 'Yahoo', mfl: 'MFL', brfantasy: 'BR Fantasy'
+  };
+  // Rebuild the "CPU drafts from" options for the currently selected draft type,
+  // preferring the payload's season-gated source list once a pool has loaded and
+  // falling back to the static map otherwise. Keeps the current (or a passed
+  // preferred) selection when it is still valid, else defaults to consensus.
+  function syncCpuAdpSourceOptions(preferred){
+    var sel = document.getElementById('drCpuAdpSource');
+    if (!sel) return;
+    var typeEl = document.getElementById('drType');
+    var t = typeEl ? typeEl.value : 'startup';
+    if (t === 'keeper') t = 'redraft';
+    var fromPayload = adpSourceOptions && adpSourceOptions[t] && adpSourceOptions[t].length
+      ? adpSourceOptions[t].map(function(o){ return o.value; }) : null;
+    var opts = (fromPayload || CPU_ADP_SOURCE_FALLBACK[t] || CPU_ADP_SOURCE_FALLBACK.redraft).slice();
+    // Consensus is always offered and always first.
+    var ci = opts.indexOf('consensus');
+    if (ci > 0) opts.splice(ci, 1);
+    if (ci !== 0) opts.unshift('consensus');
+    var want = preferred || sel.value || 'consensus';
+    if (opts.indexOf(want) < 0) want = 'consensus';
+    sel.innerHTML = opts.map(function(v){
+      return '<option value="' + esc(v) + '"' + (v === want ? ' selected' : '') + '>'
+        + esc(CPU_ADP_SOURCE_LABELS[v] || v) + '</option>';
+    }).join('');
+    sel.value = want;
+  }
   // Convert a Sleeper-style roster_positions array to the {QB:1, RB:2, ...} map
   // used by state.roster. Uses the same normalization as rosterFromLeague so the
   // live/connected path recognizes K/DEF (incl. DST) and FLEX variants identically.
@@ -875,8 +915,9 @@
       for (var ti = 0; ti < teamsEl.options.length; ti++){ if (teamsEl.options[ti].value === wt || teamsEl.options[ti].text === wt){ teamsEl.selectedIndex = ti; break; } }
     }
     var ordEl = document.getElementById('drOrder'); if (ordEl && state.order) ordEl.value = state.order;
-    var cpuSrcEl = document.getElementById('drCpuAdpSource');
-    if (cpuSrcEl && state.cpuAdpSource) cpuSrcEl.value = state.cpuAdpSource;
+    // drType is set above; rebuild the CPU-source options for it, then restore
+    // the saved pick (falls back to consensus if that source is invalid now).
+    syncCpuAdpSourceOptions(state.cpuAdpSource);
     var rEl = document.getElementById('drRounds'); if (rEl && state.rounds) rEl.value = String(state.rounds);
     fillSlotOptions(state.teams);   // slot options depend on team count
     var slotEl = document.getElementById('drSlot'); if (slotEl && state.slot) slotEl.value = String(state.slot);
@@ -1108,6 +1149,9 @@
         tierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
         adpSources = (!Array.isArray(resp) && resp.adp_sources) ? resp.adp_sources : {};
         if (!Array.isArray(resp) && resp.adp_source_options) adpSourceOptions = resp.adp_source_options;
+        // Refine the setup CPU-source options with the payload's season-gated
+        // list (hides globals with no snapshot); no-op once the draft is running.
+        syncCpuAdpSourceOptions((state && state.cpuAdpSource) || null);
         players = raw.filter(function(p){
           if (!p || p.id == null) return false;
           var pos = String(p.position || '').toUpperCase();
@@ -7269,6 +7313,7 @@
   }
   renderSetupRoster();
   renderSetupCapital();
+  syncCpuAdpSourceOptions();   // filter CPU-source options to the initial draft type
   document.getElementById('drSf').addEventListener('change', function(){ _rosterMode = 'auto'; _rosterPreset = null; _setupRoster = null; renderSetupRoster(); });
   document.getElementById('drType').addEventListener('change', function(){
     // Reset roster to defaults for the new type, then re-render.
@@ -7279,6 +7324,7 @@
     if (rf) rf.style.display = isRookie ? '' : 'none';
     if (isRookie) document.getElementById('drRounds').value = String(cfg.numRoundsRookie || 3);
     syncKeeperSetupFields(this.value === 'keeper');
+    syncCpuAdpSourceOptions();   // valid CPU sources depend on the draft type
     renderSetupCapital();   // refresh claimed-pick list after rounds change
   });
 

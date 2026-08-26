@@ -384,12 +384,30 @@ def test_cpu_drafts_from_source_selector():
 
     # Setup reads the field into state and hydrates it back for the Edit modal.
     assert "cpuAdpSource: (document.getElementById('drCpuAdpSource') || {}).value || 'consensus'" in source
-    assert "if (cpuSrcEl && state.cpuAdpSource) cpuSrcEl.value = state.cpuAdpSource;" in source
+    assert "syncCpuAdpSourceOptions(state.cpuAdpSource);" in source
 
     # simAdp honors the chosen source, then consensus, then adpOf().
     assert "var src = (state && state.cpuAdpSource) || 'consensus';" in source
     assert "var a = adpBySource(p, src);" in source
     assert "if (a == null && src !== 'consensus') a = consensusAdpOf(p);" in source
+
+
+def test_cpu_drafts_from_options_filtered_by_draft_type():
+    """The CPU-source selector is filtered per draft type: redraft offers the
+    global platforms, dynasty/rookie only Sleeper + BR Fantasy, consensus always."""
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    # Static fallback mirrors the server's ADP_SOURCES (redraft gets the globals;
+    # dynasty/rookie do not); keeper maps to redraft; consensus leads every list.
+    assert "startup: ['consensus', 'sleeper', 'brfantasy']" in source
+    assert "rookie:  ['consensus', 'sleeper', 'brfantasy']" in source
+    assert "redraft: ['consensus', 'sleeper', 'espn', 'yahoo', 'mfl', 'brfantasy']" in source
+    assert "if (t === 'keeper') t = 'redraft';" in source
+    # Prefers the payload's season-gated list when a pool has loaded.
+    assert "adpSourceOptions && adpSourceOptions[t] && adpSourceOptions[t].length" in source
+    # Rebuilt on draft-type change and on init.
+    assert "syncCpuAdpSourceOptions();   // valid CPU sources depend on the draft type" in source
+    assert "syncCpuAdpSourceOptions();   // filter CPU-source options to the initial draft type" in source
 
 
 def test_pick_ledger_formats_adp_delta_to_one_decimal():
