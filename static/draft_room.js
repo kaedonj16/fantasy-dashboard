@@ -191,6 +191,44 @@
     if (typeVal === 'startup') return String(cfg.numRoundsStartup || 15);
     return '15';
   }
+  // Drafted ids the overlay should cross off — same set that drops players out
+  // of best-available (includes keepers), not only cells already on the board.
+  function cheatDraftedIds(){
+    var ids = [];
+    Object.keys(drafted).forEach(function(id){ if (drafted[id]) ids.push(String(id)); });
+    return ids;
+  }
+  function cheatRecommendationOrder(){
+    if (!state || !players.length) return [];
+    refreshPsPool();
+    return rankedRecommendationPool()
+      .slice(0, 175).map(function(p){ return String(p.id); });
+  }
+  function cheatContextPayload(){
+    var counts = null;
+    try { counts = myPosCounts(); } catch (e) { counts = null; }
+    return {
+      type: 'drCheatContext',
+      drafted: cheatDraftedIds(),
+      rec_order: cheatRecommendationOrder(),
+      teams: state && state.teams ? state.teams : null,
+      slot: state && state.slot ? state.slot : null,
+      myCounts: counts
+    };
+  }
+  var _cheatCtxSig = null;
+  function pushCheatSheetContext(){
+    var overlay = document.getElementById('drCheatSheet');
+    var frame = document.getElementById('drCheatFrame');
+    if (!overlay || overlay.style.display !== 'flex' || !frame || !frame.contentWindow) return;
+    if (!state || (state.mode !== 'mock' && state.mode !== 'live')) return;
+    var payload = cheatContextPayload();
+    var sig = payload.drafted.join(',') + '#' + payload.rec_order.join(',')
+      + '#' + String(payload.slot || '') + '#' + String(payload.teams || '');
+    if (sig === _cheatCtxSig) return;
+    _cheatCtxSig = sig;
+    try { frame.contentWindow.postMessage(payload, window.location.origin); } catch (e) {}
+  }
   function applyCfgDefaults(){
     // Point the hero's Draft History link at the league-scoped page when available.
     var _hl = document.getElementById('drToHistory');
@@ -206,14 +244,9 @@
 
     // Carry this draft's context to the cheat sheet so it opens with who's already
     // gone crossed off and the exact Recommendation order currently shown in the
-    // room. Mock and live boards both open as snapshots; live polling remains an
-    // explicit choice on the cheat sheet itself.
-    function cheatRecommendationOrder(){
-      if (!players.length) return [];
-      refreshPsPool();
-      return rankedRecommendationPool()
-        .slice(0, 175).map(function(p){ return String(p.id); });
-    }
+    // room. The first paint is a snapshot in the URL; while the overlay stays
+    // open, render() pushes pick updates via postMessage so cross-off and REC #
+    // stay in sync. Live Sleeper polling remains an explicit choice on the sheet.
     function cheatCtxQuery(){
       // A restored draft can still exist in memory while Edit Setup is open. Do
       // not leak that stale board into the setup-page Cheat Sheet link; context
@@ -221,8 +254,7 @@
       var main = document.getElementById('drMain');
       if (!(state && state.picks && (state.mode === 'mock' || state.mode === 'live')
             && main && main.style.display !== 'none')) return '';
-      var ids = [];
-      Object.keys(state.picks).forEach(function(k){ var p = state.picks[k]; if (p && p.id) ids.push(p.id); });
+      var ids = cheatDraftedIds();
       var isLocal = state.mode === 'mock';
       var q = [];
       if (isLocal){
@@ -255,13 +287,13 @@
     function openCheatSheet(){
       if (!_csOverlay || !_csFrame) return;
       var url = cfg.cheatSheetEmbedUrl || '/draft/cheat-sheet/embed';
-      // Pass the visible board as a snapshot. Even for a live board, continued
-      // polling is opt-in from the cheat sheet's Connect live draft control.
+      // First paint is a URL snapshot. Continued Sleeper polling is still
+      // opt-in from Connect live draft; pick updates from THIS room are pushed
+      // into the iframe via postMessage while the overlay stays open.
       var main = document.getElementById('drMain');
       if (state && state.picks && (state.mode === 'mock' || state.mode === 'live')
           && main && main.style.display !== 'none'){
-        var ids = [];
-        Object.keys(state.picks).forEach(function(k){ var p = state.picks[k]; if (p && p.id) ids.push(p.id); });
+        var ids = cheatDraftedIds();
         var q = ['sf=' + (state.sf ? '1' : '0'), 'mode=' + (state.type === 'redraft' ? 'redraft' : 'dynasty')];
         if (ids.length) q.push('drafted=' + encodeURIComponent(ids.join(',')));
         var recOrder = cheatRecommendationOrder();
@@ -270,6 +302,7 @@
         if (state.slot) q.push('slot=' + encodeURIComponent(String(state.slot)));
         url += (url.indexOf('?') >= 0 ? '&' : '?') + q.join('&');
       }
+      _cheatCtxSig = null;
       _csFrame.src = url;   // (re)load -> re-syncs
       _csOverlay.style.display = 'flex';
       document.body.classList.add('dr-cheat-open');
@@ -280,6 +313,7 @@
       if (!_csOverlay) return;
       _csOverlay.style.display = 'none';
       document.body.classList.remove('dr-cheat-open');
+      _cheatCtxSig = null;
       if (_csFrame) _csFrame.src = 'about:blank';   // stop the embed's poll loop
     }
     if (_cs2) _cs2.addEventListener('click', function(e){
@@ -294,6 +328,18 @@
     if (_csOverlay) _csOverlay.addEventListener('click', function(e){ if (e.target === _csOverlay) closeCheatSheet(); });
     document.addEventListener('keydown', function(e){
       if (e.key === 'Escape' && _csOverlay && _csOverlay.style.display === 'flex') closeCheatSheet();
+    });
+    if (_csFrame) _csFrame.addEventListener('load', function(){
+      if (!_csFrame.src || _csFrame.src === 'about:blank') return;
+      _cheatCtxSig = null;
+      pushCheatSheetContext();
+    });
+    window.addEventListener('message', function(e){
+      if (e.origin !== window.location.origin) return;
+      if (e.data && e.data.type === 'drCheatReady') {
+        _cheatCtxSig = null;
+        pushCheatSheetContext();
+      }
     });
     if (cfg.numTeams) {
       var t = document.getElementById('drTeams');
@@ -1271,6 +1317,7 @@
     if (!state) return;
     if (!state.queue) state.queue = [];
     renderStatus(); renderBoard(); renderSide(); justPick = null; save();
+    pushCheatSheetContext();
     var _tot = state.teams * state.rounds;
     // Draft is over once current passes the last pick - open the summary regardless
     // of sim state (when the user makes the final pick, sim is still true here).

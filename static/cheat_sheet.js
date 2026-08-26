@@ -980,6 +980,42 @@
     compute(); render();
   }
 
+  // Draft Room overlay pushes pick updates while it stays open so this sheet
+  // stays crossed-off without turning on Sleeper live polling.
+  function applyDraftRoomContext(payload) {
+    if (!payload || payload.type !== 'drCheatContext') return;
+    var changed = false;
+    // When Connect live draft is polling Sleeper, that feed owns drafted/myCounts.
+    // Recommendation order still comes from the room (Sleeper has no REC #).
+    if (!liveDraftId && Object.prototype.hasOwnProperty.call(payload, 'drafted')) {
+      var list = Array.isArray(payload.drafted) ? payload.drafted : [];
+      draftedIds = list.length ? new Set(list.map(String)) : null;
+      changed = true;
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'rec_order')) {
+      var rec = Array.isArray(payload.rec_order) ? payload.rec_order : [];
+      if (!rec.length) {
+        recommendationOrder = null;
+      } else {
+        recommendationOrder = {};
+        rec.forEach(function (id, i) {
+          id = String(id);
+          if (recommendationOrder[id] == null) recommendationOrder[id] = i;
+        });
+      }
+      changed = true;
+    }
+    if (!liveDraftId && payload.myCounts && typeof payload.myCounts === 'object') {
+      myCounts = payload.myCounts;
+      changed = true;
+    }
+    var qTeams = parseInt(payload.teams, 10);
+    if (qTeams >= 2 && qTeams <= 32) { teams = qTeams; changed = true; }
+    var qSlot = parseInt(payload.slot, 10);
+    if (qSlot >= 1 && qSlot <= teams) { state.pickSlot = qSlot; changed = true; }
+    if (changed) { compute(); render(); }
+  }
+
   // ── CSV export ──────────────────────────────────────────────────────────────
   function exportCsv() {
     if (!players.length) return;
@@ -1184,9 +1220,19 @@
     });
 
     // Live sync is intentionally opt-in through "Connect live draft". A sheet
-    // opened from an active Draft Room may still start with that board's snapshot.
+    // opened from an active Draft Room still starts with that board's snapshot
+    // and then receives pick updates via postMessage while the overlay is open.
+    window.addEventListener('message', function (e) {
+      if (e.origin !== window.location.origin) return;
+      applyDraftRoomContext(e.data);
+    });
     loadPlayers();
     if (window.initCustomSelects) window.initCustomSelects(document.querySelector('.cs-wrap') || document);
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'drCheatReady' }, window.location.origin);
+      }
+    } catch (e) { /* not embedded */ }
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
