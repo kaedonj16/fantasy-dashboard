@@ -13998,7 +13998,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
         <!-- Empty State -->
         <div id="breakoutsEmpty" style="display: none; text-align: center; padding: 40px; color: var(--text-muted);">
           <div style="font-size: 24px; margin-bottom: 12px; opacity:0.4;"><i class="fa-solid fa-chart-bar"></i></div>
-          <div>No breakout candidates found</div>
+          <div id="breakoutsEmptyTitle">No breakout candidates found</div>
+          <div id="breakoutsEmptyDetail" style="font-size:13px;margin-top:8px;display:none;"></div>
         </div>
       </div>
     </div>
@@ -14019,7 +14020,16 @@ def page_breakouts(platform: str, season: int, league_id: str):
           lockedCount = data.locked_count || 0;
           document.getElementById('breakoutsLoading').style.display = 'none';
 
-          if (breakoutCandidates.length === 0 && lockedCount === 0) {{
+          if (data && data.data_available === false) {{
+            var emptyTitle = document.getElementById('breakoutsEmptyTitle');
+            var emptyDetail = document.getElementById('breakoutsEmptyDetail');
+            if (emptyTitle) emptyTitle.textContent = 'Breakout data is not ready';
+            if (emptyDetail) {{
+              emptyDetail.textContent = data.reason || 'Opportunity scores need roster-change data for this season. This page will fill in once that pipeline has run.';
+              emptyDetail.style.display = 'block';
+            }}
+            document.getElementById('breakoutsEmpty').style.display = 'block';
+          }} else if (breakoutCandidates.length === 0 && lockedCount === 0) {{
             document.getElementById('breakoutsEmpty').style.display = 'block';
           }} else {{
             renderBreakouts();

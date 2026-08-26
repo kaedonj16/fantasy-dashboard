@@ -22,8 +22,35 @@ from .config import (
     PLAYER_ADVANCED_METRICS_TABLE,
     BREAKOUT_SCORES_TABLE
 )
+from data_building.breakout_opportunity_guard import roster_changes_cover_season
 
 _ROSTER_CHANGES_COLUMNS_ENSURED = False
+
+
+def count_roster_changes_for_season(season: int) -> int:
+    """How many roster_changes rows exist for `season`. 0 on any DB error."""
+    if season is None:
+        return 0
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT COUNT(*) AS n FROM {ROSTER_CHANGES_TABLE} WHERE season = %s",
+                    [int(season)],
+                )
+                row = cur.fetchone() or {}
+                return int(row.get("n") or 0)
+    except Exception:
+        logging.getLogger(__name__).debug(
+            "roster_changes count failed", exc_info=True)
+        return 0
+
+
+def opportunity_data_ready(season) -> bool:
+    """False when this season has no roster-change rows (or the count failed)."""
+    if season is None:
+        return False
+    return roster_changes_cover_season(count_roster_changes_for_season(season))
 
 
 def _ensure_roster_changes_columns(conn) -> None:
