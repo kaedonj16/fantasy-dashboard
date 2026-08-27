@@ -17,6 +17,7 @@ from typing import Any, Mapping, Optional
 
 from dashboard_services.historical.definitions import (
     SKILL_POSITIONS,
+    EFFICIENCY_FIELDS,
     age_as_of_season_start,
     age_bucket,
     draft_capital_bucket,
@@ -67,6 +68,11 @@ CANONICAL_SEASON_COLUMNS = (
     "standard_ppg",
     # Coverage / provenance (not a fantasy stat).
     "source_schema",
+)
+
+# Filled by Phase 3 overlay when cache is present. Canonicalize emits None.
+EFFICIENCY_COVERAGE_COLUMNS = tuple(
+    dict.fromkeys(CANONICAL_SEASON_COLUMNS + EFFICIENCY_FIELDS)
 )
 
 def _f(value: Any) -> Optional[float]:
@@ -335,7 +341,7 @@ def canonicalize_usage_row(
 
     starts = _i(usage.get("starts") or usage.get("gs"))
 
-    return {
+    row = {
         "season": int(season),
         "player_id": sleeper_id,
         "sleeper_id": sleeper_id,
@@ -396,6 +402,9 @@ def canonicalize_usage_row(
         "rush_rz_att_pg": _per_game(rz_carries, games),
         "std_ppg": std_ppg,
     }
+    for field in EFFICIENCY_FIELDS:
+        row.setdefault(field, None)
+    return row
 
 
 def _per_game(total: Optional[float], games: Optional[float]) -> Optional[float]:
@@ -423,7 +432,7 @@ def coverage_counts(rows: list) -> dict:
     """Per-field non-null counts for a list of canonical season rows."""
     n = len(rows)
     fields = {}
-    for col in CANONICAL_SEASON_COLUMNS:
+    for col in EFFICIENCY_COVERAGE_COLUMNS:
         present = sum(1 for r in rows if r.get(col) is not None)
         fields[col] = {"present": present, "missing": n - present, "n": n}
     return {"n": n, "fields": fields}

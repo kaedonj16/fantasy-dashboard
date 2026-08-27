@@ -1,9 +1,9 @@
 # Historical Analytics
 
-Phase 1–2 of the Draft Cheat Sheet historical layer: a reusable
+Phase 1–3 of the Draft Cheat Sheet historical layer: a reusable
 player-season warehouse, positional finishes, leakage-safe prior-career
-features, and **descriptive** age / career-stage / prior-elite /
-draft-capital rates. Later phases (usage/efficiency, comps, ADP backfill,
+features, descriptive age / career-stage / draft-capital rates, and
+**previous-season usage/efficiency** (NGS + snaps). Later phases (comps, ADP,
 board columns, Pick Score) build on this. They are **not** in this PR.
 
 This document is the source of truth for datasets reused, season coverage,
@@ -49,8 +49,8 @@ meaningful zero.
 |---|---|---|
 | `nflverse_metrics._gsis_to_sleeper` (`import_ids`) | all nflverse ids | Authoritative GSIS↔Sleeper. Optional; Phase 1 also backfills GSIS from 2018–2022 usage_rows so we do not require `nfl_data_py` at rebuild time. |
 | `nflverse_metrics.season_team_by_sleeper` | roster seasons | Historical team stamp (already used by `build_usage_rows_for_season`) |
-| `nflverse_metrics` NGS / FTN / EPA | NGS **2016+**, FTN **2022+** | Phase 3 efficiency. Not joined in Phase 1 (`air_yards` / `adot` stay null). |
-| `pfr_snap_counts.fetch_season_snap_counts` | nflverse snap counts; breakout engine treats snaps as **~2022+** | Used by `sleeper_usage.py`, **not** yet by `player_history.py`. `snap_pct == 0` with real volume is treated as missing. |
+| `nflverse_metrics` NGS / FTN / EPA | NGS **2016+**, FTN **2022+** | Phase 3 joins NGS receiving/passing/rushing onto the warehouse via committed `nflverse_metrics_{season}.json` (same column names as `build_ngs_*`). FTN/PBP EPA is wired but **not cached** here (`nfl_data_py` unavailable in this environment; PBP dumps are heavy). |
+| `pfr_snap_counts.fetch_season_snap_counts` | nflverse snap counts | Name-keyed, used by `sleeper_usage.py`. Phase 3 does **not** call it (and does not use `estimate_snap_share_from_usage`). Snaps join `pfr_player_id` → sleeper via the same DynastyProcess ids file `nfl_data_py.import_ids` uses, cached as `snap_counts_{season}.json`. |
 | `sleeper_bulk_stats.fetch_season_stats` | weekly cache **2016+** | Fantasy points / volume backbone |
 | `sleeper_bulk_stats.fetch_season_redzone_stats` | cached **2016+** | `rec_rz_tgt_pg` / `rush_rz_att_pg` |
 | `nfl_target_share.fetch_league_target_share` | Footballguys scrape (current-ish) | Comment in `player_history` says “nfl_data_py PBP”; the implementation is Footballguys. 0-share with `targets > 0` is treated as missing. |
@@ -104,15 +104,18 @@ dashboard_services/historical/     # pure logic — pytest -m "not integration"
     finish_rates.py                # cohort rates, sample size, Bayes, confidence
     age_curves.py                  # distribution vs conditional; data-derived prime
     career_profiles.py             # stage / repeat / engine-breakout / capital
+    usage.py                       # overlay, prior-usage features, usage rates
 data_building/historical/          # pandas / parquet I/O
     build_player_seasons.py        # rebuild warehouse from cache
     build_outcomes.py              # finishes applied in the same rebuild
     build_profiles.py              # parquet → historical_profile_aggregates.json
+    build_usage_efficiency.py      # NGS/snap cache refresh + overlay loader
 data_building/external_data/player_history.py   # existing paths + new wrappers
 ```
 
 `definitions.py` / `seasons.py` / `finishes.py` / `finish_rates.py` /
-`age_curves.py` / `career_profiles.py` must not import pandas or Flask.
+`age_curves.py` / `career_profiles.py` / `usage.py` must not import pandas,
+Flask, or `nfl_data_py`.
 `test_product_honesty.py` and `test_adp_formats.py` stay green: this package is
 not on their import graph.
 
@@ -125,6 +128,7 @@ yet (next migration remains `031_*` when a request path needs it).
 Rebuild:
 
 ```bash
+python -m data_building.historical.build_usage_efficiency  # optional if JSON caches exist
 python -m data_building.historical.build_player_seasons
 python -m data_building.historical.build_profiles
 ```
@@ -177,13 +181,16 @@ zero-fills for live valuation. Do not point the historical layer at it.
 | Half-PPR / standard points | 2023+ recorded; 2018–22 **derived** as PPR − 0.5×rec / PPR − rec | Documented scoring identity, not an independent source. |
 | Target share | where Footballguys/legacy share is present and consistent with targets | Else `None`. |
 | Red-zone targets/carries | Sleeper RZ cache, 2016+ where joined | Per-game × games. |
-| Snap % / snaps | sparse before ~2022; 0% + real volume → `None` | PFR/nflverse snaps not joined in Phase 1. |
+| Air yards / aDOT | NGS **2016+** where a receiving summary row exists (~20–23% of appeared seasons) | `adot` from NGS intended air yards; `air_yards` = adot × targets when total air yards are absent. |
+| Snap % / snaps | stored **2018+** from nflverse PFR snaps + legacy `snap_share`; **rates use 2022+** priors (`SNAP_RELIABLE_FLOOR`) | 0% + real volume → `None`. Not estimated from touches. Live `avg_off_snap_pct` is **not** overwritten. |
+| NGS separation / YAC / CPOE / RYOE | **2016+** on NGS-covered players | Same names as `nflverse_metrics`. |
+| FTN drop / contested | **2022+** when cached | **Not in this cache** (needs FTN+PBP join). Overlay will fill if JSON later includes `drop_rate`. |
+| Starts | **not filled** | No reliable starts column in the NGS/snap files used here. |
 | Age as-of Sept 1 | players with `bDay` (~5.6k in current index) | Retired players missing from index → `None` unless birth date is on the usage row. |
 | Draft year | players_index + draft_history | |
 | Draft round / pick | `draft_history.parquet` (nflverse) | |
-| GSIS | 2018–22 usage_rows; 2023+ only if that sleeper id appeared in a legacy file | Full `import_ids` join is Phase 1-compatible but optional. |
-| Air yards / aDOT / starts | **not in Phase 1** | `None` until Phase 3 nflverse join. |
-| Historical ADP | **not in Phase 1** | |
+| GSIS | 2018–22 usage_rows; 2023+ only if that sleeper id appeared in a legacy file | Full `import_ids` join is Phase 1-compatible but optional. Overlay joins NGS/snaps by sleeper id from the ids file, so 2023+ NGS does not require GSIS on the warehouse row. |
+| Historical ADP | **not in Phase 1–3** | |
 | SF / TEP historical ADP | **does not exist** in free sources; deferred | |
 | Current-season projections | excluded from this warehouse | |
 
@@ -287,10 +294,52 @@ raw + smoothed + n are still stored.
 `cache/player_history/historical_profile_aggregates.json`. PPR-primary. No
 ADP columns, no `projected_*`.
 
-## Limitations (Phase 1–2)
+## Phase 3 — previous-season usage / efficiency
+
+Same-season NGS and snap values are **outcomes** of that season (like points).
+Hit rates that claim a usage → finish relationship use only
+**previous-season** fields (`previous_season_target_share`,
+`previous_season_snap_pct`, `previous_season_adot`, …). Mutating 2024
+actuals must not change 2024 prior-usage features.
+
+Two statistics, same rule as age:
+
+1. **Distribution** — among this-season WR1s, what share had 80%+ snaps last year.
+2. **Conditional** — among WRs who had 80%+ snaps last year, what share finished WR1.
+
+Missing previous usage is omitted from those cohorts, not bucketed as 0.
+Snap **rates** require `previous_season_year >= 2022`. NGS aDOT/RYOE use
+2016+. Target-share rates are WR/RB/TE only (QBs are not a target-share
+cohort). Estimated snaps from touches are never used. Overlay does not
+rewrite live-valuation `avg_*` columns.
+
+### Phase 3 snapshot (2018–2025 warehouse, PPR)
+
+NGS receiving summaries cover ~20–23% of appeared seasons (aDOT / air yards /
+separation). Snap % is present on nearly all appeared skill rows after the
+PFR join. FTN drop/contested is **empty** in this cache.
+
+| Signal | Example | Conditional P(top-12) | Share of top-12s | n / confidence |
+|---|---|---|---|---|
+| WR previous target share 25%+ | vs &lt;10% | 35% vs 1% | 36% vs 5% of WR1s | 61 good / 575 strong |
+| WR previous snap 80%+ | vs &lt;40% | 19% vs 0% | **61%** of WR1s vs 0% | 97 good / 224 strong |
+| WR previous aDOT 10–13 | vs 13+ | 16% vs 8% | 52% vs 14% of WR1s | 240 / 144 strong |
+| RB previous RYOE ≥ 0 | vs below expected | 26% vs 14% | 71% vs 29% of RB1s | 194 / 145 strong |
+
+61% of WR1 seasons had 80%+ snaps the year before, but only 19% of those
+high-snap WR seasons finished WR1 — the two stats stay apart.
+
+### I/O
+
+`python -m data_building.historical.build_usage_efficiency` refreshes
+`nflverse_metrics_{season}.json` and `snap_counts_{season}.json` from nflverse
+GitHub parquets. Warehouse rebuild is still cache-only. Cron does not fetch
+NGS live.
+
+## Limitations (Phase 1–3)
 
 - No comparable-player engine, no board UI columns, no ADP, no Pick Score
-  change. Phase 2 rates are informational.
+  change. Phase 2–3 rates are informational.
 - 2016–2017 not in the parquet warehouse yet (Sleeper week files are on disk).
 - 2023 usage_rows contain many null-name rows; identity join from
   `players_index` recovers current players, not all retirees.
@@ -299,9 +348,11 @@ ADP columns, no `projected_*`.
 - `historical_identity.py` is owner identity — player matching uses sleeper id
   plus `nflverse_metrics._gsis_to_sleeper` / usage_rows GSIS.
 - Age coverage is thin in 2018 (retired players missing from the current
-  `players_index`). Missing age/exp/capital must not be treated as 0 / rookie
-  / UDFA.
-- Snap % is not uniform before ~2022. Air yards / aDOT stay null until Phase 3.
+  `players_index`). Missing age/exp/capital/usage must not be treated as 0 /
+  rookie / UDFA.
+- Snap **rates** are 2022+ priors even though snap *values* are stored 2018+.
+- FTN drop/contested and PBP EPA are not in the committed cache (`nfl_data_py`
+  could not be installed here; PBP dumps are heavy). `starts` stay null.
 - Ranking integration is gated on backtesting (Phase 9).
 
 ## Phase 1 warehouse snapshot
@@ -322,25 +373,28 @@ Example (PPR positional finish, leakage-safe priors):
 | CeeDee Lamb | 2023 | 24.3 | 3 | R1 | 403.2 | WR1 | WR5 | 1 | no |
 | Sam LaPorta | 2023 | 22.6 | 0 | R2 | 239.3 | TE1 | — | 0 | yes |
 
-`air_yards` / `adot` / `starts` are null until Phase 3.
+`air_yards` / `adot` are filled from NGS when a receiving summary exists.
+`starts` stay null. JSN 2024: snap 86%, aDOT 8.8 (previous-season snap 65%).
 
 ## Rebuild
 
 ```bash
+python -m data_building.historical.build_usage_efficiency
 python -m data_building.historical.build_player_seasons
 python -m data_building.historical.build_profiles
 ```
 
 Writes `cache/player_history/player_history_{season}.parquet`,
-`player_history_all.parquet`, `historical_coverage.json`, and
+`player_history_all.parquet`, `historical_coverage.json`,
+`nflverse_metrics_{season}.json`, `snap_counts_{season}.json`, and
 `historical_profile_aggregates.json`. Empty games=0 padding rows from
 2023–2025 Sleeper dumps are dropped. Missing fields stay null; coverage JSON
 reports present/missing per field. Profile JSON is the request-path artifact
-for Phase 2 rates.
+for Phase 2–3 rates. The usage-efficiency refresh is optional when those JSON
+caches are already committed; warehouse rebuild does not call nflverse live.
 
 ## Follow-up (gated)
 
-3. Previous-season usage/efficiency (nflverse NGS/FTN) on this warehouse.
 4. Comps + smoothed board probabilities (Postgres `031_*` if a request path
    needs it).
 5–6. ADP snapshot preservation + multi-source backfill + hit rates.

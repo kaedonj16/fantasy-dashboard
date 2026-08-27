@@ -17,6 +17,7 @@ from dashboard_services.historical.definitions import (
     positional_tier_label,
     tier_flags,
 )
+from dashboard_services.historical.usage import prior_usage_features
 
 # Outcome / target columns that *may* change when a season's actuals change.
 # Everything else on a feature row is pre-season and must stay put.
@@ -49,6 +50,25 @@ OUTCOME_COLUMNS = frozenset(
         "half_ppr_ppg",
         "standard_ppg",
         "source_schema",
+        "ngs_avg_separation",
+        "ngs_avg_cushion",
+        "ngs_created_separation",
+        "ngs_avg_intended_air_yards",
+        "ngs_pct_share_intended_air_yards",
+        "ngs_avg_yac",
+        "ngs_avg_yac_above_expectation",
+        "ngs_catch_pct",
+        "ngs_rush_yards_over_expected_per_att",
+        "ngs_rush_efficiency",
+        "ngs_cpoe",
+        "ngs_avg_time_to_throw",
+        "drop_rate",
+        "contested_catch_rate",
+        "receiving_epa_per_target",
+        "rushing_epa_per_att",
+        "passing_epa",
+        "racr",
+        "pacr",
     }
     | {f"{fmt}_overall_finish" for fmt in SCORING_FORMATS}
     | {f"{fmt}_positional_finish" for fmt in SCORING_FORMATS}
@@ -247,6 +267,7 @@ def prior_career_features_for_player(
         # so a single row can carry all three without clobbering.
         if scoring == "ppr":
             feature_row.update(stats)
+            feature_row.update(prior_usage_features(prior[-1] if prior else None))
         else:
             for key, value in stats.items():
                 feature_row[f"{prefix}{key}"] = value

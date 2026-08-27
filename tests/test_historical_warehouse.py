@@ -104,6 +104,26 @@ def test_rebuild_from_injected_maps_does_not_scan_live_apis(monkeypatch, tmp_pat
     assert "projected_ppg" not in y2022_rb
 
 
+def test_efficiency_overlay_fills_adot_without_touching_avg_snap(monkeypatch):
+    from data_building.historical import build_player_seasons as B
+
+    usage = {2022: [_legacy("10", "RB", 260)]}
+    monkeypatch.setattr(B, "load_usage_rows", lambda season: usage.get(season, []))
+    monkeypatch.setattr(B, "build_identity_map", lambda: {
+        "10": {"birth_date": "3/3/1997", "draft_year": 2019, "nfl_draft_round": 1, "nfl_draft_pick": 8},
+    })
+    monkeypatch.setattr(B, "load_efficiency_overlay", lambda season: {
+        "10": {"snap_pct": 0.77, "ngs_avg_intended_air_yards": 4.2, "ngs_avg_separation": 2.0, "ngs_avg_cushion": 6.0},
+    })
+    rows = B.rebuild_historical_warehouse(seasons=(2022,), write=False)["rows"]
+    rb = rows[0]
+    assert abs(rb["snap_pct"] - 0.77) < 1e-9
+    assert rb["adot"] == 4.2
+    assert rb["ngs_created_separation"] == round(2.0 - 6.0, 2)
+    assert "projected_points" not in rb
+
+
+
 def test_profiles_rebuild_from_warehouse_rows_write_false(monkeypatch):
     from data_building.historical.build_profiles import rebuild_historical_profiles
     from data_building.historical import build_player_seasons as B
@@ -124,4 +144,6 @@ def test_profiles_rebuild_from_warehouse_rows_write_false(monkeypatch):
     assert "distribution" in payload["age_curves"]["RB"]["by_integer_age"]["24"]
     assert "conditional" in payload["age_curves"]["RB"]["by_integer_age"]["24"]
     assert payload["definitions"]["no_adp"] is True
+    assert payload["phase"] == 3
+    assert "prior_usage" in payload
     assert "adp" not in payload["draft_capital"]

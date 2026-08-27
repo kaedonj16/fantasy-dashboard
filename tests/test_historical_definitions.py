@@ -9,6 +9,10 @@ from dashboard_services.historical.definitions import (
     POSITION_TIER_WIDTH,
     RELIABLE_SEASON_FLOOR,
     SCORING_FORMATS,
+    SNAP_RELIABLE_FLOOR,
+    FTN_SEASON_FLOOR,
+    NGS_SEASON_FLOOR,
+    TARGET_SHARE_BUCKETS,
     TIER_CUTOFFS,
     age_as_of_season_start,
     age_bucket,
@@ -22,6 +26,7 @@ from dashboard_services.historical.definitions import (
     parse_birth_date,
     positional_tier_label,
     tier_flags,
+    value_bucket,
     years_experience_before_season,
 )
 
@@ -38,6 +43,9 @@ def test_reliable_floor_is_2016_not_a_uniform_2012():
         "top_36": 36,
     }
     assert POSITION_TIER_WIDTH == 12
+    assert NGS_SEASON_FLOOR == 2016
+    assert FTN_SEASON_FLOOR == 2022
+    assert SNAP_RELIABLE_FLOOR == 2022
 
 
 def test_parse_birth_date_accepts_sleeper_and_iso():
@@ -150,3 +158,12 @@ def test_absolute_bust_none_when_finish_missing():
     assert is_absolute_bust("RB", 12) is False
     assert is_absolute_bust("RB", None) is None
     assert is_absolute_bust("K", 40) is None
+
+
+def test_value_bucket_skips_missing_and_uses_exclusive_hi():
+    assert value_bucket(None, TARGET_SHARE_BUCKETS) is None
+    assert value_bucket(0.09, TARGET_SHARE_BUCKETS) == "<10%"
+    assert value_bucket(0.10, TARGET_SHARE_BUCKETS) == "10-15%"
+    assert value_bucket(0.25, TARGET_SHARE_BUCKETS) == "25%+"
+    assert value_bucket("", TARGET_SHARE_BUCKETS) is None
+

@@ -85,13 +85,13 @@
           "n": 545
         },
         "snaps": {
-          "present": 0,
-          "missing": 545,
+          "present": 543,
+          "missing": 2,
           "n": 545
         },
         "snap_pct": {
-          "present": 203,
-          "missing": 342,
+          "present": 544,
+          "missing": 1,
           "n": 545
         },
         "targets": {
@@ -120,13 +120,13 @@
           "n": 545
         },
         "air_yards": {
-          "present": 0,
-          "missing": 545,
+          "present": 125,
+          "missing": 420,
           "n": 545
         },
         "adot": {
-          "present": 0,
-          "missing": 545,
+          "present": 125,
+          "missing": 420,
           "n": 545
         },
         "carries": {
@@ -207,6 +207,101 @@
         "source_schema": {
           "present": 545,
           "missing": 0,
+          "n": 545
+        },
+        "ngs_avg_separation": {
+          "present": 125,
+          "missing": 420,
+          "n": 545
+        },
+        "ngs_avg_cushion": {
+          "present": 125,
+          "missing": 420,
+          "n": 545
+        },
+        "ngs_created_separation": {
+          "present": 125,
+          "missing": 420,
+          "n": 545
+        },
+        "ngs_avg_intended_air_yards": {
+          "present": 125,
+          "missing": 420,
+          "n": 545
+        },
+        "ngs_pct_share_intended_air_yards": {
+          "present": 125,
+          "missing": 420,
+          "n": 545
+        },
+        "ngs_avg_yac": {
+          "present": 125,
+          "missing": 420,
+          "n": 545
+        },
+        "ngs_avg_yac_above_expectation": {
+          "present": 125,
+          "missing": 420,
+          "n": 545
+        },
+        "ngs_catch_pct": {
+          "present": 125,
+          "missing": 420,
+          "n": 545
+        },
+        "ngs_rush_yards_over_expected_per_att": {
+          "present": 55,
+          "missing": 490,
+          "n": 545
+        },
+        "ngs_rush_efficiency": {
+          "present": 55,
+          "missing": 490,
+          "n": 545
+        },
+        "ngs_cpoe": {
+          "present": 39,
+          "missing": 506,
+          "n": 545
+        },
+        "ngs_avg_time_to_throw": {
+          "present": 39,
+          "missing": 506,
+          "n": 545
+        },
+        "drop_rate": {
+          "present": 0,
+          "missing": 545,
+          "n": 545
+        },
+        "contested_catch_rate": {
+          "present": 0,
+          "missing": 545,
+          "n": 545
+        },
+        "receiving_epa_per_target": {
+          "present": 0,
+          "missing": 545,
+          "n": 545
+        },
+        "rushing_epa_per_att": {
+          "present": 0,
+          "missing": 545,
+          "n": 545
+        },
+        "passing_epa": {
+          "present": 0,
+          "missing": 545,
+          "n": 545
+        },
+        "racr": {
+          "present": 0,
+          "missing": 545,
+          "n": 545
+        },
+        "pacr": {
+          "present": 0,
+          "missing": 545,
           "n": 545
         }
       }
@@ -296,13 +391,13 @@
           "n": 547
         },
         "snaps": {
-          "present": 0,
-          "missing": 547,
+          "present": 546,
+          "missing": 1,
           "n": 547
         },
         "snap_pct": {
-          "present": 206,
-          "missing": 341,
+          "present": 547,
+          "missing": 0,
           "n": 547
         },
         "targets": {
@@ -331,13 +426,13 @@
           "n": 547
         },
         "air_yards": {
-          "present": 0,
-          "missing": 547,
+          "present": 125,
+          "missing": 422,
           "n": 547
         },
         "adot": {
-          "present": 0,
-          "missing": 547,
+          "present": 125,
+          "missing": 422,
           "n": 547
         },
         "carries": {
@@ -418,6 +513,101 @@
         "source_schema": {
           "present": 547,
           "missing": 0,
+          "n": 547
+        },
+        "ngs_avg_separation": {
+          "present": 125,
+          "missing": 422,
+          "n": 547
+        },
+        "ngs_avg_cushion": {
+          "present": 125,
+          "missing": 422,
+          "n": 547
+        },
+        "ngs_created_separation": {
+          "present": 125,
+          "missing": 422,
+          "n": 547
+        },
+        "ngs_avg_intended_air_yards": {
+          "present": 125,
+          "missing": 422,
+          "n": 547
+        },
+        "ngs_pct_share_intended_air_yards": {
+          "present": 125,
+          "missing": 422,
+          "n": 547
+        },
+        "ngs_avg_yac": {
+          "present": 125,
+          "missing": 422,
+          "n": 547
+        },
+        "ngs_avg_yac_above_expectation": {
+          "present": 125,
+          "missing": 422,
+          "n": 547
+        },
+        "ngs_catch_pct": {
+          "present": 125,
+          "missing": 422,
+          "n": 547
+        },
+        "ngs_rush_yards_over_expected_per_att": {
+          "present": 48,
+          "missing": 499,
+          "n": 547
+        },
+        "ngs_rush_efficiency": {
+          "present": 48,
+          "missing": 499,
+          "n": 547
+        },
+        "ngs_cpoe": {
+          "present": 39,
+          "missing": 508,
+          "n": 547
+        },
+        "ngs_avg_time_to_throw": {
+          "present": 39,
+          "missing": 508,
+          "n": 547
+        },
+        "drop_rate": {
+          "present": 0,
+          "missing": 547,
+          "n": 547
+        },
+        "contested_catch_rate": {
+          "present": 0,
+          "missing": 547,
+          "n": 547
+        },
+        "receiving_epa_per_target": {
+          "present": 0,
+          "missing": 547,
+          "n": 547
+        },
+        "rushing_epa_per_att": {
+          "present": 0,
+          "missing": 547,
+          "n": 547
+        },
+        "passing_epa": {
+          "present": 0,
+          "missing": 547,
+          "n": 547
+        },
+        "racr": {
+          "present": 0,
+          "missing": 547,
+          "n": 547
+        },
+        "pacr": {
+          "present": 0,
+          "missing": 547,
           "n": 547
         }
       }
@@ -507,13 +697,13 @@
           "n": 580
         },
         "snaps": {
-          "present": 0,
-          "missing": 580,
+          "present": 578,
+          "missing": 2,
           "n": 580
         },
         "snap_pct": {
-          "present": 215,
-          "missing": 365,
+          "present": 580,
+          "missing": 0,
           "n": 580
         },
         "targets": {
@@ -542,13 +732,13 @@
           "n": 580
         },
         "air_yards": {
-          "present": 0,
-          "missing": 580,
+          "present": 132,
+          "missing": 448,
           "n": 580
         },
         "adot": {
-          "present": 0,
-          "missing": 580,
+          "present": 132,
+          "missing": 448,
           "n": 580
         },
         "carries": {
@@ -629,6 +819,101 @@
         "source_schema": {
           "present": 580,
           "missing": 0,
+          "n": 580
+        },
+        "ngs_avg_separation": {
+          "present": 132,
+          "missing": 448,
+          "n": 580
+        },
+        "ngs_avg_cushion": {
+          "present": 132,
+          "missing": 448,
+          "n": 580
+        },
+        "ngs_created_separation": {
+          "present": 132,
+          "missing": 448,
+          "n": 580
+        },
+        "ngs_avg_intended_air_yards": {
+          "present": 132,
+          "missing": 448,
+          "n": 580
+        },
+        "ngs_pct_share_intended_air_yards": {
+          "present": 132,
+          "missing": 448,
+          "n": 580
+        },
+        "ngs_avg_yac": {
+          "present": 132,
+          "missing": 448,
+          "n": 580
+        },
+        "ngs_avg_yac_above_expectation": {
+          "present": 132,
+          "missing": 448,
+          "n": 580
+        },
+        "ngs_catch_pct": {
+          "present": 132,
+          "missing": 448,
+          "n": 580
+        },
+        "ngs_rush_yards_over_expected_per_att": {
+          "present": 55,
+          "missing": 525,
+          "n": 580
+        },
+        "ngs_rush_efficiency": {
+          "present": 55,
+          "missing": 525,
+          "n": 580
+        },
+        "ngs_cpoe": {
+          "present": 41,
+          "missing": 539,
+          "n": 580
+        },
+        "ngs_avg_time_to_throw": {
+          "present": 41,
+          "missing": 539,
+          "n": 580
+        },
+        "drop_rate": {
+          "present": 0,
+          "missing": 580,
+          "n": 580
+        },
+        "contested_catch_rate": {
+          "present": 0,
+          "missing": 580,
+          "n": 580
+        },
+        "receiving_epa_per_target": {
+          "present": 0,
+          "missing": 580,
+          "n": 580
+        },
+        "rushing_epa_per_att": {
+          "present": 0,
+          "missing": 580,
+          "n": 580
+        },
+        "passing_epa": {
+          "present": 0,
+          "missing": 580,
+          "n": 580
+        },
+        "racr": {
+          "present": 0,
+          "missing": 580,
+          "n": 580
+        },
+        "pacr": {
+          "present": 0,
+          "missing": 580,
           "n": 580
         }
       }
@@ -718,13 +1003,13 @@
           "n": 595
         },
         "snaps": {
-          "present": 0,
-          "missing": 595,
+          "present": 594,
+          "missing": 1,
           "n": 595
         },
         "snap_pct": {
-          "present": 222,
-          "missing": 373,
+          "present": 595,
+          "missing": 0,
           "n": 595
         },
         "targets": {
@@ -753,13 +1038,13 @@
           "n": 595
         },
         "air_yards": {
-          "present": 0,
-          "missing": 595,
+          "present": 127,
+          "missing": 468,
           "n": 595
         },
         "adot": {
-          "present": 0,
-          "missing": 595,
+          "present": 127,
+          "missing": 468,
           "n": 595
         },
         "carries": {
@@ -840,6 +1125,101 @@
         "source_schema": {
           "present": 595,
           "missing": 0,
+          "n": 595
+        },
+        "ngs_avg_separation": {
+          "present": 127,
+          "missing": 468,
+          "n": 595
+        },
+        "ngs_avg_cushion": {
+          "present": 127,
+          "missing": 468,
+          "n": 595
+        },
+        "ngs_created_separation": {
+          "present": 127,
+          "missing": 468,
+          "n": 595
+        },
+        "ngs_avg_intended_air_yards": {
+          "present": 127,
+          "missing": 468,
+          "n": 595
+        },
+        "ngs_pct_share_intended_air_yards": {
+          "present": 127,
+          "missing": 468,
+          "n": 595
+        },
+        "ngs_avg_yac": {
+          "present": 127,
+          "missing": 468,
+          "n": 595
+        },
+        "ngs_avg_yac_above_expectation": {
+          "present": 127,
+          "missing": 468,
+          "n": 595
+        },
+        "ngs_catch_pct": {
+          "present": 127,
+          "missing": 468,
+          "n": 595
+        },
+        "ngs_rush_yards_over_expected_per_att": {
+          "present": 52,
+          "missing": 543,
+          "n": 595
+        },
+        "ngs_rush_efficiency": {
+          "present": 52,
+          "missing": 543,
+          "n": 595
+        },
+        "ngs_cpoe": {
+          "present": 38,
+          "missing": 557,
+          "n": 595
+        },
+        "ngs_avg_time_to_throw": {
+          "present": 38,
+          "missing": 557,
+          "n": 595
+        },
+        "drop_rate": {
+          "present": 0,
+          "missing": 595,
+          "n": 595
+        },
+        "contested_catch_rate": {
+          "present": 0,
+          "missing": 595,
+          "n": 595
+        },
+        "receiving_epa_per_target": {
+          "present": 0,
+          "missing": 595,
+          "n": 595
+        },
+        "rushing_epa_per_att": {
+          "present": 0,
+          "missing": 595,
+          "n": 595
+        },
+        "passing_epa": {
+          "present": 0,
+          "missing": 595,
+          "n": 595
+        },
+        "racr": {
+          "present": 0,
+          "missing": 595,
+          "n": 595
+        },
+        "pacr": {
+          "present": 0,
+          "missing": 595,
           "n": 595
         }
       }
@@ -929,13 +1309,13 @@
           "n": 574
         },
         "snaps": {
-          "present": 0,
-          "missing": 574,
+          "present": 573,
+          "missing": 1,
           "n": 574
         },
         "snap_pct": {
-          "present": 570,
-          "missing": 4,
+          "present": 574,
+          "missing": 0,
           "n": 574
         },
         "targets": {
@@ -964,13 +1344,13 @@
           "n": 574
         },
         "air_yards": {
-          "present": 0,
-          "missing": 574,
+          "present": 122,
+          "missing": 452,
           "n": 574
         },
         "adot": {
-          "present": 0,
-          "missing": 574,
+          "present": 122,
+          "missing": 452,
           "n": 574
         },
         "carries": {
@@ -1051,6 +1431,101 @@
         "source_schema": {
           "present": 574,
           "missing": 0,
+          "n": 574
+        },
+        "ngs_avg_separation": {
+          "present": 122,
+          "missing": 452,
+          "n": 574
+        },
+        "ngs_avg_cushion": {
+          "present": 122,
+          "missing": 452,
+          "n": 574
+        },
+        "ngs_created_separation": {
+          "present": 122,
+          "missing": 452,
+          "n": 574
+        },
+        "ngs_avg_intended_air_yards": {
+          "present": 122,
+          "missing": 452,
+          "n": 574
+        },
+        "ngs_pct_share_intended_air_yards": {
+          "present": 122,
+          "missing": 452,
+          "n": 574
+        },
+        "ngs_avg_yac": {
+          "present": 122,
+          "missing": 452,
+          "n": 574
+        },
+        "ngs_avg_yac_above_expectation": {
+          "present": 122,
+          "missing": 452,
+          "n": 574
+        },
+        "ngs_catch_pct": {
+          "present": 122,
+          "missing": 452,
+          "n": 574
+        },
+        "ngs_rush_yards_over_expected_per_att": {
+          "present": 48,
+          "missing": 526,
+          "n": 574
+        },
+        "ngs_rush_efficiency": {
+          "present": 48,
+          "missing": 526,
+          "n": 574
+        },
+        "ngs_cpoe": {
+          "present": 40,
+          "missing": 534,
+          "n": 574
+        },
+        "ngs_avg_time_to_throw": {
+          "present": 40,
+          "missing": 534,
+          "n": 574
+        },
+        "drop_rate": {
+          "present": 0,
+          "missing": 574,
+          "n": 574
+        },
+        "contested_catch_rate": {
+          "present": 0,
+          "missing": 574,
+          "n": 574
+        },
+        "receiving_epa_per_target": {
+          "present": 0,
+          "missing": 574,
+          "n": 574
+        },
+        "rushing_epa_per_att": {
+          "present": 0,
+          "missing": 574,
+          "n": 574
+        },
+        "passing_epa": {
+          "present": 0,
+          "missing": 574,
+          "n": 574
+        },
+        "racr": {
+          "present": 0,
+          "missing": 574,
+          "n": 574
+        },
+        "pacr": {
+          "present": 0,
+          "missing": 574,
           "n": 574
         }
       }
@@ -1145,8 +1620,8 @@
           "n": 598
         },
         "snap_pct": {
-          "present": 222,
-          "missing": 376,
+          "present": 598,
+          "missing": 0,
           "n": 598
         },
         "targets": {
@@ -1175,13 +1650,13 @@
           "n": 598
         },
         "air_yards": {
-          "present": 0,
-          "missing": 598,
+          "present": 114,
+          "missing": 484,
           "n": 598
         },
         "adot": {
-          "present": 0,
-          "missing": 598,
+          "present": 114,
+          "missing": 484,
           "n": 598
         },
         "carries": {
@@ -1262,6 +1737,101 @@
         "source_schema": {
           "present": 598,
           "missing": 0,
+          "n": 598
+        },
+        "ngs_avg_separation": {
+          "present": 114,
+          "missing": 484,
+          "n": 598
+        },
+        "ngs_avg_cushion": {
+          "present": 114,
+          "missing": 484,
+          "n": 598
+        },
+        "ngs_created_separation": {
+          "present": 114,
+          "missing": 484,
+          "n": 598
+        },
+        "ngs_avg_intended_air_yards": {
+          "present": 114,
+          "missing": 484,
+          "n": 598
+        },
+        "ngs_pct_share_intended_air_yards": {
+          "present": 114,
+          "missing": 484,
+          "n": 598
+        },
+        "ngs_avg_yac": {
+          "present": 114,
+          "missing": 484,
+          "n": 598
+        },
+        "ngs_avg_yac_above_expectation": {
+          "present": 114,
+          "missing": 484,
+          "n": 598
+        },
+        "ngs_catch_pct": {
+          "present": 114,
+          "missing": 484,
+          "n": 598
+        },
+        "ngs_rush_yards_over_expected_per_att": {
+          "present": 49,
+          "missing": 549,
+          "n": 598
+        },
+        "ngs_rush_efficiency": {
+          "present": 49,
+          "missing": 549,
+          "n": 598
+        },
+        "ngs_cpoe": {
+          "present": 45,
+          "missing": 553,
+          "n": 598
+        },
+        "ngs_avg_time_to_throw": {
+          "present": 45,
+          "missing": 553,
+          "n": 598
+        },
+        "drop_rate": {
+          "present": 0,
+          "missing": 598,
+          "n": 598
+        },
+        "contested_catch_rate": {
+          "present": 0,
+          "missing": 598,
+          "n": 598
+        },
+        "receiving_epa_per_target": {
+          "present": 0,
+          "missing": 598,
+          "n": 598
+        },
+        "rushing_epa_per_att": {
+          "present": 0,
+          "missing": 598,
+          "n": 598
+        },
+        "passing_epa": {
+          "present": 0,
+          "missing": 598,
+          "n": 598
+        },
+        "racr": {
+          "present": 0,
+          "missing": 598,
+          "n": 598
+        },
+        "pacr": {
+          "present": 0,
+          "missing": 598,
           "n": 598
         }
       }
@@ -1351,13 +1921,13 @@
           "n": 599
         },
         "snaps": {
-          "present": 598,
-          "missing": 1,
+          "present": 599,
+          "missing": 0,
           "n": 599
         },
         "snap_pct": {
-          "present": 248,
-          "missing": 351,
+          "present": 599,
+          "missing": 0,
           "n": 599
         },
         "targets": {
@@ -1386,13 +1956,13 @@
           "n": 599
         },
         "air_yards": {
-          "present": 0,
-          "missing": 599,
+          "present": 128,
+          "missing": 471,
           "n": 599
         },
         "adot": {
-          "present": 0,
-          "missing": 599,
+          "present": 128,
+          "missing": 471,
           "n": 599
         },
         "carries": {
@@ -1473,6 +2043,101 @@
         "source_schema": {
           "present": 599,
           "missing": 0,
+          "n": 599
+        },
+        "ngs_avg_separation": {
+          "present": 128,
+          "missing": 471,
+          "n": 599
+        },
+        "ngs_avg_cushion": {
+          "present": 128,
+          "missing": 471,
+          "n": 599
+        },
+        "ngs_created_separation": {
+          "present": 128,
+          "missing": 471,
+          "n": 599
+        },
+        "ngs_avg_intended_air_yards": {
+          "present": 128,
+          "missing": 471,
+          "n": 599
+        },
+        "ngs_pct_share_intended_air_yards": {
+          "present": 128,
+          "missing": 471,
+          "n": 599
+        },
+        "ngs_avg_yac": {
+          "present": 128,
+          "missing": 471,
+          "n": 599
+        },
+        "ngs_avg_yac_above_expectation": {
+          "present": 128,
+          "missing": 471,
+          "n": 599
+        },
+        "ngs_catch_pct": {
+          "present": 128,
+          "missing": 471,
+          "n": 599
+        },
+        "ngs_rush_yards_over_expected_per_att": {
+          "present": 47,
+          "missing": 552,
+          "n": 599
+        },
+        "ngs_rush_efficiency": {
+          "present": 47,
+          "missing": 552,
+          "n": 599
+        },
+        "ngs_cpoe": {
+          "present": 43,
+          "missing": 556,
+          "n": 599
+        },
+        "ngs_avg_time_to_throw": {
+          "present": 43,
+          "missing": 556,
+          "n": 599
+        },
+        "drop_rate": {
+          "present": 0,
+          "missing": 599,
+          "n": 599
+        },
+        "contested_catch_rate": {
+          "present": 0,
+          "missing": 599,
+          "n": 599
+        },
+        "receiving_epa_per_target": {
+          "present": 0,
+          "missing": 599,
+          "n": 599
+        },
+        "rushing_epa_per_att": {
+          "present": 0,
+          "missing": 599,
+          "n": 599
+        },
+        "passing_epa": {
+          "present": 0,
+          "missing": 599,
+          "n": 599
+        },
+        "racr": {
+          "present": 0,
+          "missing": 599,
+          "n": 599
+        },
+        "pacr": {
+          "present": 0,
+          "missing": 599,
           "n": 599
         }
       }
@@ -1567,8 +2232,8 @@
           "n": 609
         },
         "snap_pct": {
-          "present": 608,
-          "missing": 1,
+          "present": 609,
+          "missing": 0,
           "n": 609
         },
         "targets": {
@@ -1597,13 +2262,13 @@
           "n": 609
         },
         "air_yards": {
-          "present": 0,
-          "missing": 609,
+          "present": 120,
+          "missing": 489,
           "n": 609
         },
         "adot": {
-          "present": 0,
-          "missing": 609,
+          "present": 120,
+          "missing": 489,
           "n": 609
         },
         "carries": {
@@ -1684,6 +2349,101 @@
         "source_schema": {
           "present": 609,
           "missing": 0,
+          "n": 609
+        },
+        "ngs_avg_separation": {
+          "present": 120,
+          "missing": 489,
+          "n": 609
+        },
+        "ngs_avg_cushion": {
+          "present": 120,
+          "missing": 489,
+          "n": 609
+        },
+        "ngs_created_separation": {
+          "present": 120,
+          "missing": 489,
+          "n": 609
+        },
+        "ngs_avg_intended_air_yards": {
+          "present": 120,
+          "missing": 489,
+          "n": 609
+        },
+        "ngs_pct_share_intended_air_yards": {
+          "present": 120,
+          "missing": 489,
+          "n": 609
+        },
+        "ngs_avg_yac": {
+          "present": 120,
+          "missing": 489,
+          "n": 609
+        },
+        "ngs_avg_yac_above_expectation": {
+          "present": 120,
+          "missing": 489,
+          "n": 609
+        },
+        "ngs_catch_pct": {
+          "present": 120,
+          "missing": 489,
+          "n": 609
+        },
+        "ngs_rush_yards_over_expected_per_att": {
+          "present": 51,
+          "missing": 558,
+          "n": 609
+        },
+        "ngs_rush_efficiency": {
+          "present": 51,
+          "missing": 558,
+          "n": 609
+        },
+        "ngs_cpoe": {
+          "present": 42,
+          "missing": 567,
+          "n": 609
+        },
+        "ngs_avg_time_to_throw": {
+          "present": 42,
+          "missing": 567,
+          "n": 609
+        },
+        "drop_rate": {
+          "present": 0,
+          "missing": 609,
+          "n": 609
+        },
+        "contested_catch_rate": {
+          "present": 0,
+          "missing": 609,
+          "n": 609
+        },
+        "receiving_epa_per_target": {
+          "present": 0,
+          "missing": 609,
+          "n": 609
+        },
+        "rushing_epa_per_att": {
+          "present": 0,
+          "missing": 609,
+          "n": 609
+        },
+        "passing_epa": {
+          "present": 0,
+          "missing": 609,
+          "n": 609
+        },
+        "racr": {
+          "present": 0,
+          "missing": 609,
+          "n": 609
+        },
+        "pacr": {
+          "present": 0,
+          "missing": 609,
           "n": 609
         }
       }

@@ -19,14 +19,17 @@ from dashboard_services.historical.definitions import (
     CAREER_STAGE_ORDER,
     DEFAULT_BAYES_PRIOR_N,
     DRAFT_CAPITAL_ORDER,
+    FTN_SEASON_FLOOR,
     RELIABLE_SEASON_FLOOR,
     SKILL_POSITIONS,
+    SNAP_RELIABLE_FLOOR,
     TIER_CUTOFFS,
     age_bucket,
     career_stage,
     is_absolute_bust,
     _optional_int,
 )
+from dashboard_services.historical.usage import build_prior_usage_rates
 from dashboard_services.historical.finish_rates import (
     cohort_hit_rate,
     filter_era,
@@ -520,7 +523,7 @@ def assemble_profile_aggregates(
     bounds = season_bounds(era)
     return {
         "schema_version": 1,
-        "phase": 2,
+        "phase": 3,
         "scoring": scoring,
         "era_floor": season_from,
         "season_range": bounds,
@@ -555,6 +558,13 @@ def assemble_profile_aggregates(
             "missing_age": "omitted from age curves only",
             "missing_exp": "omitted from career-stage cohorts, not labeled rookie",
             "missing_capital": "omitted from draft-capital cohorts, not labeled UDFA",
+            "missing_usage": "omitted from prior-usage cohorts, not bucketed as 0",
+            "snap_reliable_floor": SNAP_RELIABLE_FLOOR,
+            "ftn_floor": FTN_SEASON_FLOOR,
+            "prior_usage": (
+                "P(this-season hit | previous-season usage bucket); "
+                "same-season NGS/snaps are outcomes, not features"
+            ),
             "no_adp": True,
             "no_projections": True,
         },
@@ -564,4 +574,5 @@ def assemble_profile_aggregates(
         "career_stages": build_stage_rates(era, scoring=scoring),
         "repeat_and_breakout": build_repeat_and_breakout_rates(era, scoring=scoring),
         "draft_capital": build_draft_capital_rates(era, scoring=scoring),
+        "prior_usage": build_prior_usage_rates(era, scoring=scoring),
     }

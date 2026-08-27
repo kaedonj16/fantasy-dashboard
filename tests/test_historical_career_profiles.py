@@ -281,6 +281,8 @@ def test_assemble_has_no_adp_or_projections_and_keeps_both_breakout_defs():
         ),
     ]
     payload = assemble_profile_aggregates(rows)
+    assert payload["phase"] == 3
+    assert "prior_usage" in payload
     assert payload["era_floor"] == 2016
     assert payload["n_player_seasons"] == 1
     assert payload["season_range"] == [2020, 2020]

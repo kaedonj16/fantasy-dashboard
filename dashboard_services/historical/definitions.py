@@ -15,6 +15,12 @@ from typing import Any, Mapping, Optional, Tuple
 # 2016 gate in nflverse_metrics. Earlier seasons may exist per-stat (PFR
 # snaps) but must not be advertised as a uniform "2012+" panel.
 RELIABLE_SEASON_FLOOR = 2016
+NGS_SEASON_FLOOR = 2016
+FTN_SEASON_FLOOR = 2022
+# Breakout engine SNAP_COUNT_SEASONS starts at 2022. Earlier snap_share on
+# 2018–2022 usage_rows is kept when present; rates that need uniform snap %
+# filter to this floor.
+SNAP_RELIABLE_FLOOR = 2022
 
 # Age is computed as of this calendar date of the NFL season so buckets
 # stay comparable across players and years (not "age today").
@@ -122,6 +128,58 @@ CAREER_STAGE_ORDER: Tuple[str, ...] = (
     CAREER_STAGE_YEAR_4,
     CAREER_STAGE_YEAR_5,
     CAREER_STAGE_YEAR_6_PLUS,
+)
+
+# Inclusive lo, exclusive hi (None = open). UI convenience only.
+# Prior-usage hit rates bin previous-season values; missing is not a bucket.
+_RateBound = Tuple[Optional[float], Optional[float], str]
+TARGET_SHARE_BUCKETS: Tuple[_RateBound, ...] = (
+    (None, 0.10, "<10%"),
+    (0.10, 0.15, "10-15%"),
+    (0.15, 0.20, "15-20%"),
+    (0.20, 0.25, "20-25%"),
+    (0.25, None, "25%+"),
+)
+SNAP_PCT_BUCKETS: Tuple[_RateBound, ...] = (
+    (None, 0.40, "<40%"),
+    (0.40, 0.60, "40-60%"),
+    (0.60, 0.80, "60-80%"),
+    (0.80, None, "80%+"),
+)
+ADOT_BUCKETS: Tuple[_RateBound, ...] = (
+    (None, 7.0, "<7"),
+    (7.0, 10.0, "7-10"),
+    (10.0, 13.0, "10-13"),
+    (13.0, None, "13+"),
+)
+RYOE_BUCKETS: Tuple[_RateBound, ...] = (
+    (None, 0.0, "below expected"),
+    (0.0, None, "at/above expected"),
+)
+
+# Overlay actuals. Names match nflverse_metrics. Missing stays None.
+EFFICIENCY_FIELDS: Tuple[str, ...] = (
+    "adot",
+    "air_yards",
+    "ngs_avg_separation",
+    "ngs_avg_cushion",
+    "ngs_created_separation",
+    "ngs_avg_intended_air_yards",
+    "ngs_pct_share_intended_air_yards",
+    "ngs_avg_yac",
+    "ngs_avg_yac_above_expectation",
+    "ngs_catch_pct",
+    "ngs_rush_yards_over_expected_per_att",
+    "ngs_rush_efficiency",
+    "ngs_cpoe",
+    "ngs_avg_time_to_throw",
+    "drop_rate",
+    "contested_catch_rate",
+    "receiving_epa_per_target",
+    "rushing_epa_per_att",
+    "passing_epa",
+    "racr",
+    "pacr",
 )
 
 # Sample-size confidence. Inspected against the Phase-1 warehouse; tune later
@@ -261,6 +319,24 @@ def career_stage(years_experience: Any) -> Optional[str]:
     if exp == 4:
         return CAREER_STAGE_YEAR_5
     return CAREER_STAGE_YEAR_6_PLUS
+
+
+def value_bucket(value: Any, bounds: Any) -> Optional[str]:
+    """Map a numeric value onto ``(lo, hi, label)`` bins.
+
+    ``lo`` inclusive, ``hi`` exclusive, ``None`` open. Missing/unparseable
+    value returns None — never the first bucket.
+    """
+    v = _optional_float(value)
+    if v is None:
+        return None
+    for lo, hi, label in bounds:
+        if lo is not None and v < lo:
+            continue
+        if hi is not None and v >= hi:
+            continue
+        return str(label)
+    return None
 
 
 def years_experience_before_season(

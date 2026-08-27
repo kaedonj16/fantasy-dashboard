@@ -8,6 +8,7 @@ paths must not call this — it is a cron / CLI rebuild.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any, Optional
 
 from utils.paths import PLAYER_HISTORY_DIR, PLAYER_INVESTMENT_DIR
@@ -27,6 +28,10 @@ from data_building.external_data.player_history import (
     save_combined_player_history_df,
     save_player_history_df,
     usage_rows_json_path_for_season,
+)
+from data_building.historical.build_usage_efficiency import (
+    load_efficiency_overlay,
+    overlay_season_rows,
 )
 
 DEFAULT_SEASONS = tuple(range(2018, 2026))
@@ -174,7 +179,7 @@ def rebuild_historical_warehouse(
     *,
     write: bool = True,
 ) -> dict:
-    """Canonicalize → positional finishes → prior-career features → parquet.
+    """Canonicalize → efficiency overlay → finishes → prior-career features → parquet.
 
     ``write=False`` is for tests. Coverage is always returned.
     """
@@ -187,6 +192,7 @@ def rebuild_historical_warehouse(
     for season in seasons:
         raw = load_usage_rows(season)
         rows = canonicalize_season(season, raw, identity_map)
+        rows = overlay_season_rows(rows, load_efficiency_overlay(season))
         rows = add_finishes(rows)
         by_season[season] = rows
         coverage["seasons"][str(season)] = {
