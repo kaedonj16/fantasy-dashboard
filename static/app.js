@@ -9502,6 +9502,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const espnFlow = document.getElementById("espnFlow");
   const yahooFlow = document.getElementById("yahooFlow");
   const mflFlow = document.getElementById("mflFlow");
+  const fleaflickerFlow = document.getElementById("fleaflickerFlow");
   const sleeperHint = document.getElementById("sleeperHint");
   const lookupBtn = document.getElementById("lookupBtn");
   const usernameInput = document.getElementById("username");
@@ -9566,6 +9567,18 @@ document.addEventListener("DOMContentLoaded", () => {
   const mflSeasonInput = document.getElementById("mflSeasonInput");
   const mflSubmitBtn = document.getElementById("mflSubmitBtn");
   const mflErrorBox = document.getElementById("mflError");
+  const mflPrivateFields = document.getElementById("mflHomePrivateFields");
+  const mflDescription = document.getElementById("mflHomeDescription");
+  const mflPrivateChoice = document.getElementById("mflPrivateChoice");
+  const mflMethodBtns = document.querySelectorAll(".mfl-home-method");
+  const fleaLeagueIdInput = document.getElementById("fleaLeagueIdInput");
+  const fleaSeasonInput = document.getElementById("fleaSeasonInput");
+  const fleaSubmitBtn = document.getElementById("fleaSubmitBtn");
+  const fleaErrorBox = document.getElementById("fleaError");
+  const fleaPrivateFields = document.getElementById("fleaHomePrivateFields");
+  const fleaDescription = document.getElementById("fleaHomeDescription");
+  const fleaPrivateChoice = document.getElementById("fleaPrivateChoice");
+  const fleaMethodBtns = document.querySelectorAll(".flea-home-method");
 
 if (!platformBtns.length) return;
 
@@ -9682,6 +9695,8 @@ if (!platformBtns.length) return;
   // which may overwrite it with a user-entered year, can be reverted on switch.
   const homeDefaultSeason = document.querySelector('#leagueSelectForm input[name="season"]')?.value || "";
   let homeEspnMethod = "public";
+  let homeMflMethod = "public";
+  let homeFleaMethod = "public";
   let espnRequestedAction = "";
   let sleeperLookupUser = null;
 
@@ -9777,10 +9792,10 @@ if (!platformBtns.length) return;
     if (leagueSelectWrap) leagueSelectWrap.style.display = "none";
     if (generateWrap) generateWrap.style.display = "none";
     if (errorBox) errorBox.style.display = "none";
-    // The MFL flow can overwrite the shared hidden season field with a
-    // user-entered year; restore the page default when leaving it so other
-    // platforms build for the current season.
-    if (platform !== "mfl") {
+    // The MFL / Fleaflicker flows can overwrite the shared hidden season field
+    // with a user-entered year; restore the page default when leaving them so
+    // other platforms build for the current season.
+    if (platform !== "mfl" && platform !== "fleaflicker") {
       const seasonEl = document.querySelector('#leagueSelectForm input[name="season"]');
       if (seasonEl && typeof homeDefaultSeason === "string") seasonEl.value = homeDefaultSeason;
     }
@@ -9789,13 +9804,54 @@ if (!platformBtns.length) return;
     if (espnFlow)    espnFlow.style.display    = platform === "espn"    ? "block" : "none";
     if (yahooFlow)   yahooFlow.style.display   = platform === "yahoo"   ? "block" : "none";
     if (mflFlow)     mflFlow.style.display     = platform === "mfl"     ? "block" : "none";
+    if (fleaflickerFlow) fleaflickerFlow.style.display = platform === "fleaflicker" ? "block" : "none";
     if (sleeperHint) sleeperHint.style.display = platform === "sleeper" ? ""      : "none";
     if (platform === "espn") setHomeEspnMethod(homeEspnMethod);
+    if (platform === "mfl") setHomeMflMethod(homeMflMethod);
+    if (platform === "fleaflicker") setHomeFleaMethod(homeFleaMethod);
     if (platform !== "espn") {
       if (espnSwidInput) espnSwidInput.value = "";
       if (espnS2Input) espnS2Input.value = "";
     }
   }
+
+  function setHomeMflMethod(method) {
+    homeMflMethod = method === "private" ? "private" : "public";
+    mflMethodBtns.forEach((btn) => {
+      const on = btn.dataset.mflMethod === homeMflMethod;
+      btn.classList.toggle("active", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    if (mflPrivateFields) mflPrivateFields.style.display = homeMflMethod === "private" ? "block" : "none";
+    if (mflPrivateChoice) mflPrivateChoice.style.display = "none";
+    if (mflDescription) {
+      mflDescription.textContent = homeMflMethod === "private"
+        ? "Connect a private MFL league with a league APIKEY and/or official login cookie."
+        : "Connect a publicly accessible MyFantasyLeague league using its League ID.";
+    }
+  }
+  mflMethodBtns.forEach((btn) => {
+    btn.addEventListener("click", () => setHomeMflMethod(btn.dataset.mflMethod));
+  });
+
+  function setHomeFleaMethod(method) {
+    homeFleaMethod = method === "private" ? "private" : "public";
+    fleaMethodBtns.forEach((btn) => {
+      const on = btn.dataset.fleaMethod === homeFleaMethod;
+      btn.classList.toggle("active", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    if (fleaPrivateFields) fleaPrivateFields.style.display = homeFleaMethod === "private" ? "block" : "none";
+    if (fleaPrivateChoice) fleaPrivateChoice.style.display = "none";
+    if (fleaDescription) {
+      fleaDescription.textContent = homeFleaMethod === "private"
+        ? "Connect a private Fleaflicker league with email sign-in or a login token."
+        : "Connect a publicly accessible Fleaflicker league using its League ID.";
+    }
+  }
+  fleaMethodBtns.forEach((btn) => {
+    btn.addEventListener("click", () => setHomeFleaMethod(btn.dataset.fleaMethod));
+  });
 
   // Platform switching
   platformBtns.forEach(btn => {
@@ -10285,9 +10341,8 @@ if (!platformBtns.length) return;
     });
   }
 
-  // MFL: public, read-only league. Validate the League ID + season, then reveal
-  // the same choose-league + Continue-with-Google / without-account choice the
-  // Sleeper and ESPN-public flows use.
+  // MFL: public preview, or private connect with cookie/APIKEY (password only
+  // used server-side to obtain a cookie; never persisted).
   if (mflSubmitBtn) {
     mflSubmitBtn.addEventListener("click", async () => {
       const leagueId = mflLeagueIdInput?.value.trim();
@@ -10312,30 +10367,86 @@ if (!platformBtns.length) return;
       }
 
       if (mflErrorBox) mflErrorBox.style.display = "none";
+      if (mflPrivateChoice) mflPrivateChoice.style.display = "none";
       mflSubmitBtn.disabled = true;
       mflSubmitBtn.textContent = "Validating...";
       try {
-        const res = await fetch(`/api/link/mfl/preview?league_id=${encodeURIComponent(leagueId)}&season=${encodeURIComponent(seasonRaw)}`);
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          throw new Error(data.error || "Unable to load MFL league.");
+        if (homeMflMethod === "public") {
+          const res = await fetch(`/api/link/mfl/preview?league_id=${encodeURIComponent(leagueId)}&season=${encodeURIComponent(seasonRaw)}`);
+          const data = await res.json();
+          if (!res.ok || !data.ok) throw new Error(data.error || "Unable to load MFL league.");
+          const season = String(data.season || seasonRaw);
+          if (seasonEl) seasonEl.value = season;
+          if (leagueSelect) {
+            leagueSelect.innerHTML = `<option value="${leagueId}" selected>${(data.name || "MFL League").replace(/[<>&]/g, "")}</option>`;
+          }
+          if (formPlatform) formPlatform.value = "mfl";
+          const formUsername = document.getElementById("formUsername");
+          if (formUsername) formUsername.value = "";
+          if (leagueSelectWrap) leagueSelectWrap.style.display = "block";
+          if (generateWrap) generateWrap.style.display = "block";
+          if (window._hasAccount && googleBtnEl) googleBtnEl.innerHTML = "Save league to my account";
+          syncHomeContinueState();
+          return;
         }
 
-        const season = String(data.season || seasonRaw);
-        // Carry the chosen season through both the guest form-submit and the
-        // Continue-with-Google paths, which read this hidden field.
-        if (seasonEl) seasonEl.value = season;
-        if (leagueSelect) {
-          leagueSelect.innerHTML = `<option value="${leagueId}" selected>${(data.name || "MFL League").replace(/[<>&]/g, "")}</option>`;
+        const payload = {
+          league_id: leagueId,
+          season: Number(seasonRaw),
+          apikey: document.getElementById("mflApikeyInput")?.value.trim() || "",
+          cookie: document.getElementById("mflCookieInput")?.value.trim() || "",
+          username: document.getElementById("mflUsernameInput")?.value.trim() || "",
+          password: document.getElementById("mflPasswordInput")?.value || "",
+        };
+        if (!payload.apikey) delete payload.apikey;
+        if (!payload.cookie) delete payload.cookie;
+        if (!payload.username) delete payload.username;
+        if (!payload.password) delete payload.password;
+        if (!payload.apikey && !payload.cookie && !(payload.username && payload.password)) {
+          if (window._hasAccount) {
+            const savedRes = await fetch("/api/link/mfl/private/saved", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ league_id: leagueId, season: Number(seasonRaw) }),
+            });
+            const savedData = await savedRes.json();
+            if (savedRes.ok && savedData.ok) {
+              window.location.href = savedData.redirect_url;
+              return;
+            }
+          }
+          throw new Error("Provide a league APIKEY, login cookie, or username + password.");
         }
-        if (formPlatform) formPlatform.value = "mfl";
-        const formUsername = document.getElementById("formUsername");
-        if (formUsername) formUsername.value = "";
 
-        if (leagueSelectWrap) leagueSelectWrap.style.display = "block";
-        if (generateWrap) generateWrap.style.display = "block";
-        if (window._hasAccount && googleBtnEl) googleBtnEl.innerHTML = "Save league to my account";
-        syncHomeContinueState();
+        if (!window._hasAccount) {
+          const pendingRes = await fetch("/api/link/mfl/private/pending", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const pendingData = await pendingRes.json();
+          if (!pendingRes.ok || !pendingData.ok) throw new Error(pendingData.error || "Unable to validate private MFL league.");
+          if (mflPrivateChoice) mflPrivateChoice.style.display = "block";
+          document.getElementById("mflPrivateGoogle")?.addEventListener("click", () => {
+            window.location.href = "/auth/google?intent=login&next=/";
+          }, { once: true });
+          document.getElementById("mflPrivateGuest")?.addEventListener("click", async () => {
+            const guestRes = await fetch("/api/link/mfl/private/guest", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ league_id: leagueId, season: Number(seasonRaw) }),
+            });
+            const guestData = await guestRes.json();
+            if (!guestRes.ok || !guestData.ok) throw new Error(guestData.error || "Unable to open private MFL league.");
+            window.location.href = guestData.redirect_url;
+          }, { once: true });
+          return;
+        }
+
+        const privateRes = await fetch("/api/link/mfl/private", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const privateData = await privateRes.json();
+        if (!privateRes.ok || !privateData.ok) throw new Error(privateData.error || "Unable to connect private MFL league.");
+        window.location.href = privateData.redirect_url;
       } catch (err) {
         if (mflErrorBox) {
           mflErrorBox.textContent = err.message || "Unable to load MFL league.";
@@ -10344,6 +10455,121 @@ if (!platformBtns.length) return;
       } finally {
         mflSubmitBtn.disabled = false;
         mflSubmitBtn.textContent = "Connect League";
+      }
+    });
+  }
+
+  // Fleaflicker: public preview, or private login-token connect (password never stored).
+  if (fleaSubmitBtn) {
+    fleaSubmitBtn.addEventListener("click", async () => {
+      const leagueId = fleaLeagueIdInput?.value.trim();
+      if (!leagueId || !/^\d+$/.test(leagueId)) {
+        if (fleaErrorBox) {
+          fleaErrorBox.textContent = "Enter a valid Fleaflicker League ID (numbers only).";
+          fleaErrorBox.style.display = "block";
+        }
+        window.brShake?.(fleaLeagueIdInput);
+        return;
+      }
+      const seasonEl = document.querySelector('#leagueSelectForm input[name="season"]');
+      const defaultSeason = seasonEl && seasonEl.value ? seasonEl.value : String(new Date().getFullYear());
+      const seasonRaw = fleaSeasonInput?.value.trim() || defaultSeason;
+      if (!/^\d{4}$/.test(seasonRaw)) {
+        if (fleaErrorBox) {
+          fleaErrorBox.textContent = "Enter a valid 4-digit season.";
+          fleaErrorBox.style.display = "block";
+        }
+        window.brShake?.(fleaSeasonInput);
+        return;
+      }
+
+      if (fleaErrorBox) fleaErrorBox.style.display = "none";
+      if (fleaPrivateChoice) fleaPrivateChoice.style.display = "none";
+      fleaSubmitBtn.disabled = true;
+      fleaSubmitBtn.textContent = "Validating...";
+      try {
+        if (homeFleaMethod === "public") {
+          const res = await fetch(`/api/link/fleaflicker/preview?league_id=${encodeURIComponent(leagueId)}&season=${encodeURIComponent(seasonRaw)}`);
+          const data = await res.json();
+          if (!res.ok || !data.ok) throw new Error(data.error || "Unable to load Fleaflicker league.");
+          const season = String(data.season || seasonRaw);
+          if (seasonEl) seasonEl.value = season;
+          if (leagueSelect) {
+            leagueSelect.innerHTML = `<option value="${leagueId}" selected>${(data.name || "Fleaflicker League").replace(/[<>&]/g, "")}</option>`;
+          }
+          if (formPlatform) formPlatform.value = "fleaflicker";
+          const formUsername = document.getElementById("formUsername");
+          if (formUsername) formUsername.value = "";
+          if (leagueSelectWrap) leagueSelectWrap.style.display = "block";
+          if (generateWrap) generateWrap.style.display = "block";
+          if (window._hasAccount && googleBtnEl) googleBtnEl.innerHTML = "Save league to my account";
+          syncHomeContinueState();
+          return;
+        }
+
+        const payload = {
+          league_id: leagueId,
+          season: Number(seasonRaw),
+          email: document.getElementById("fleaEmailInput")?.value.trim() || "",
+          password: document.getElementById("fleaPasswordInput")?.value || "",
+          token: document.getElementById("fleaTokenInput")?.value.trim() || "",
+        };
+        if (!payload.email) delete payload.email;
+        if (!payload.password) delete payload.password;
+        if (!payload.token) delete payload.token;
+        if (!payload.token && !(payload.email && payload.password)) {
+          if (window._hasAccount) {
+            const savedRes = await fetch("/api/link/fleaflicker/private/saved", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ league_id: leagueId, season: Number(seasonRaw) }),
+            });
+            const savedData = await savedRes.json();
+            if (savedRes.ok && savedData.ok) {
+              window.location.href = savedData.redirect_url;
+              return;
+            }
+          }
+          throw new Error("Provide email + password or a login token.");
+        }
+
+        if (!window._hasAccount) {
+          const pendingRes = await fetch("/api/link/fleaflicker/private/pending", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const pendingData = await pendingRes.json();
+          if (!pendingRes.ok || !pendingData.ok) throw new Error(pendingData.error || "Unable to validate private Fleaflicker league.");
+          if (fleaPrivateChoice) fleaPrivateChoice.style.display = "block";
+          document.getElementById("fleaPrivateGoogle")?.addEventListener("click", () => {
+            window.location.href = "/auth/google?intent=login&next=/";
+          }, { once: true });
+          document.getElementById("fleaPrivateGuest")?.addEventListener("click", async () => {
+            const guestRes = await fetch("/api/link/fleaflicker/private/guest", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ league_id: leagueId, season: Number(seasonRaw) }),
+            });
+            const guestData = await guestRes.json();
+            if (!guestRes.ok || !guestData.ok) throw new Error(guestData.error || "Unable to open private Fleaflicker league.");
+            window.location.href = guestData.redirect_url;
+          }, { once: true });
+          return;
+        }
+
+        const privateRes = await fetch("/api/link/fleaflicker/private", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const privateData = await privateRes.json();
+        if (!privateRes.ok || !privateData.ok) throw new Error(privateData.error || "Unable to connect private Fleaflicker league.");
+        window.location.href = privateData.redirect_url;
+      } catch (err) {
+        if (fleaErrorBox) {
+          fleaErrorBox.textContent = err.message || "Unable to load Fleaflicker league.";
+          fleaErrorBox.style.display = "block";
+        }
+      } finally {
+        fleaSubmitBtn.disabled = false;
+        fleaSubmitBtn.textContent = "Connect League";
       }
     });
   }

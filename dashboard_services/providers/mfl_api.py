@@ -2,12 +2,17 @@
 
 Raw MFL names remain in this module. Public methods return the existing
 Sleeper-compatible dictionaries consumed by BR Fantasy.
+
+Public leagues need no auth. Private leagues accept the official login cookie
+(``MFL_USER_ID``) and/or a league ``APIKEY``. Passwords used only to obtain a
+cookie are never stored — accounts persist the cookie and/or APIKEY encrypted.
 """
 from __future__ import annotations
 
 import logging
+import re
 import time
-from typing import Any
+from typing import Any, Optional
 
 from .base import (
     DRAFTS, DRAFT_RESULTS, FUTURE_PICKS, HISTORY, LEAGUE, MATCHUPS, ROSTERS,
@@ -19,8 +24,10 @@ from .base import (
 
 logger = logging.getLogger(__name__)
 BASE_URL = "https://api.myfantasyleague.com/{season}/export"
+LOGIN_URL = "https://api.myfantasyleague.com/{season}/login"
 TIMEOUT = (4, 15)
 _CACHE: dict[tuple, tuple[float, dict]] = {}
+_MFL_COOKIE_RE = re.compile(r"MFL_USER_ID\s*=\s*([^\s;]+)", re.IGNORECASE)
 
 
 def _request_get(url: str, **kwargs):
@@ -34,6 +41,16 @@ def _request_get(url: str, **kwargs):
     import requests
     try:
         return requests.get(url, **kwargs)
+    except (requests.Timeout, requests.ConnectionError) as exc:
+        raise ProviderUnavailableError("MyFantasyLeague is temporarily unavailable.") from exc
+    except requests.RequestException as exc:
+        raise ProviderUnavailableError("MyFantasyLeague returned an invalid response.") from exc
+
+
+def _request_post(url: str, **kwargs):
+    import requests
+    try:
+        return requests.post(url, **kwargs)
     except (requests.Timeout, requests.ConnectionError) as exc:
         raise ProviderUnavailableError("MyFantasyLeague is temporarily unavailable.") from exc
     except requests.RequestException as exc:
@@ -70,6 +87,93 @@ def _int(value, default=0):
     except (TypeError, ValueError): return default
 
 
+def normalize_mfl_cookie(cookie: Optional[str]) -> str:
+    """Accept a raw cookie value or a ``MFL_USER_ID=…`` cookie header fragment."""
+    value = str(cookie or "").strip()
+    if not value:
+        return ""
+    match = _MFL_COOKIE_RE.search(value)
+    if match:
+        return match.group(1).strip()
+    if value.lower().startswith("mfl_user_id="):
+        return value.split("=", 1)[1].strip()
+    return value
+
+
+def login(username: str, password: str, season: int) -> str:
+    """Official MFL login → ``MFL_USER_ID`` cookie. Password is not retained."""
+    username = str(username or "").strip()
+    password = str(password or "")
+    if not username or not password:
+        raise ProviderAuthenticationError("MFL username and password are required.")
+    if not (2000 <= _int(season) <= 2100):
+        raise LeagueNotFoundError("Invalid MFL season.")
+    try:
+        response = _request_post(
+            LOGIN_URL.format(season=int(season)),
+            data={"USERNAME": username, "PASSWORD": password, "XML": 1},
+            timeout=TIMEOUT,
+            headers={"User-Agent": "BR-Fantasy/1.0"},
+        )
+        if response.status_code in (401, 403):
+            raise ProviderAuthenticationError("MFL rejected that username or password.")
+        _raise_for_status(response)
+    except (ProviderAuthenticationError, ProviderUnavailableError):
+        raise
+    cookie = ""
+    try:
+        cookie = (response.cookies or {}).get("MFL_USER_ID") or ""
+    except Exception:
+        cookie = ""
+    if not cookie:
+        # Some responses only expose the Set-Cookie header / XML status attribute.
+        cookie = normalize_mfl_cookie(response.headers.get("Set-Cookie", ""))
+    if not cookie:
+        text = response.text or ""
+        match = re.search(r'cookie_name="MFL_USER_ID"[^>]*cookie_value="([^"]+)"', text)
+        if not match:
+            match = re.search(r'MFL_USER_ID["\s:=]+([A-Za-z0-9+/=_-]+)', text)
+        cookie = match.group(1) if match else ""
+    cookie = normalize_mfl_cookie(cookie)
+    if not cookie:
+        raise ProviderAuthenticationError("MFL login did not return a session cookie.")
+    return cookie
+
+
+def resolve_credentials(
+    league_id: str, season: int, *, cookie: Optional[str] = None, apikey: Optional[str] = None,
+) -> dict:
+    """Merge explicit auth with account-stored / staged private credentials."""
+    out = {
+        "cookie": normalize_mfl_cookie(cookie),
+        "apikey": str(apikey or "").strip(),
+    }
+    if out["cookie"] or out["apikey"]:
+        return out
+    try:
+        from flask import has_request_context, session
+        if not has_request_context():
+            return out
+        account_id = session.get("account_id")
+        stored = None
+        if account_id:
+            from dashboard_services.accounts import get_provider_league_credentials
+            stored = get_provider_league_credentials(
+                int(account_id), "mfl", league_id, season,
+            )
+        elif session.get("pending_provider_connection_token"):
+            from dashboard_services.accounts import peek_private_provider_connection
+            stored = peek_private_provider_connection(
+                session["pending_provider_connection_token"], "mfl", league_id, season,
+            )
+        if stored:
+            out["cookie"] = normalize_mfl_cookie(stored.get("cookie") or stored.get("mfl_user_id"))
+            out["apikey"] = str(stored.get("apikey") or "").strip()
+    except Exception:
+        logger.debug("MFL credential lookup failed", exc_info=True)
+    return out
+
+
 class MFLProvider(ProviderAdapter):
     metadata = ProviderMetadata(
         "mfl", "MyFantasyLeague", "league_id", capabilities=frozenset({
@@ -79,18 +183,32 @@ class MFLProvider(ProviderAdapter):
         }),
     )
 
-    def _export(self, export_type: str, league_id: str, season: int, *, ttl=300, **params) -> dict:
+    def _export(
+        self, export_type: str, league_id: str, season: int, *, ttl=300,
+        cookie: Optional[str] = None, apikey: Optional[str] = None, **params,
+    ) -> dict:
         league_id = str(league_id).strip()
         if not league_id.isdigit() or not (2000 <= _int(season) <= 2100):
             raise LeagueNotFoundError("Invalid MFL league ID or season.")
-        key = (export_type, league_id, int(season), tuple(sorted(params.items())))
+        creds = resolve_credentials(league_id, season, cookie=cookie, apikey=apikey)
+        key = (
+            export_type, league_id, int(season),
+            creds.get("cookie") or "", creds.get("apikey") or "",
+            tuple(sorted(params.items())),
+        )
         cached = _CACHE.get(key)
         if cached and time.monotonic() - cached[0] < ttl:
             return cached[1]
         query = {"TYPE": export_type, "L": league_id, "JSON": 1, **params}
+        if creds.get("apikey"):
+            query["APIKEY"] = creds["apikey"]
+        headers = {"User-Agent": "BR-Fantasy/1.0"}
+        cookies = {"MFL_USER_ID": creds["cookie"]} if creds.get("cookie") else None
         try:
-            response = _request_get(BASE_URL.format(season=int(season)), params=query,
-                                    timeout=TIMEOUT, headers={"User-Agent": "BR-Fantasy/1.0"})
+            response = _request_get(
+                BASE_URL.format(season=int(season)), params=query,
+                timeout=TIMEOUT, headers=headers, cookies=cookies,
+            )
             if response.status_code in (401, 403):
                 raise ProviderAuthenticationError("This MFL league is private or requires authentication.")
             if response.status_code == 404:
@@ -115,8 +233,15 @@ class MFLProvider(ProviderAdapter):
         _CACHE[key] = (time.monotonic(), payload)
         return payload
 
-    def get_league(self, league_id, season):
-        raw = self._export("league", league_id, season, ttl=1800)
+    def connect_league(
+        self, league_id: str, season: int, *, cookie: Optional[str] = None, apikey: Optional[str] = None,
+    ) -> dict:
+        league = self.get_league(league_id, season, cookie=cookie, apikey=apikey)
+        return {"name": league.get("name"), "league_id": league.get("league_id"),
+                "season": league.get("season"), "total_rosters": league.get("total_rosters")}
+
+    def get_league(self, league_id, season, *, cookie: Optional[str] = None, apikey: Optional[str] = None):
+        raw = self._export("league", league_id, season, ttl=1800, cookie=cookie, apikey=apikey)
         lg = raw.get("league") or {}
         if not isinstance(lg, dict) or not lg:
             raise LeagueNotFoundError("No MFL league was found for that ID and season.")

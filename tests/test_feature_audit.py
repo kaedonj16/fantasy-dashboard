@@ -50,7 +50,7 @@ def test_top_movers_treats_google_account_as_signed_in():
 
 
 def test_billing_accepts_mfl_and_account_id():
-    assert '_SUPPORTED_PLATFORMS = {"sleeper", "espn", "yahoo", "mfl"}' in BILLING
+    assert '_SUPPORTED_PLATFORMS = {"sleeper", "espn", "yahoo", "mfl", "fleaflicker"}' in BILLING
     checkout = BILLING[BILLING.index("def create_checkout_session"):]
     checkout = checkout[: checkout.index("if plan not in _STRIPE_PRICES")]
     assert 'session.get("account_id")' in checkout
@@ -115,6 +115,7 @@ def test_scout_hint_helper_covers_every_platform():
     assert "def platform_sign_in_hint(platform: str)" in SCOUT
     assert '"yahoo": "your Yahoo team name"' in SCOUT
     assert '"mfl": "your MFL team name"' in SCOUT
+    assert '"fleaflicker": "your Fleaflicker team name"' in SCOUT
 
 
 def test_nav_search_distinguishes_load_failure():

@@ -667,3 +667,425 @@ def link_mfl_preview():
              for u in users]
     return jsonify({"ok": True, "platform": "mfl", "league_id": league_id,
                     "season": season, "name": league.get("name"), "teams": teams})
+
+
+def _mfl_private_credentials(data: dict) -> dict:
+    """Derive storeable MFL auth from cookie, APIKEY, and/or username+password login."""
+    from dashboard_services.providers.mfl_api import login as mfl_login, normalize_mfl_cookie
+    cookie = normalize_mfl_cookie(data.get("cookie") or data.get("mfl_user_id"))
+    apikey = str(data.get("apikey") or "").strip()
+    username = str(data.get("username") or "").strip()
+    password = str(data.get("password") or "")
+    season = data.get("season")
+    if username and password:
+        cookie = mfl_login(username, password, int(season or _default_season()))
+    if not cookie and not apikey:
+        raise ValueError("MFL private leagues require a login cookie and/or league APIKEY.")
+    out = {}
+    if cookie:
+        out["cookie"] = cookie
+    if apikey:
+        out["apikey"] = apikey
+    return out
+
+
+def _provider_connect_error(exc: Exception, provider: str, method: str):
+    from dashboard_services.providers.base import (
+        ProviderAuthenticationError, LeagueNotFoundError, ProviderUnavailableError,
+    )
+    logger.warning("[link/%s/%s] failed error=%s", provider, method, type(exc).__name__)
+    if isinstance(exc, ProviderAuthenticationError):
+        return ({"ok": False, "error": f"This {provider.upper() if provider == 'mfl' else provider.title()} "
+                 "league is private or the credentials were rejected."}, 403)
+    if isinstance(exc, LeagueNotFoundError):
+        label = "MyFantasyLeague" if provider == "mfl" else "Fleaflicker"
+        return ({"ok": False, "error": f"No {label} league was found for that ID and season."}, 404)
+    if isinstance(exc, ProviderUnavailableError) or isinstance(exc, ValueError):
+        message = str(exc) if isinstance(exc, ValueError) and str(exc) else (
+            "MyFantasyLeague is temporarily unavailable." if provider == "mfl"
+            else "Fleaflicker is temporarily unavailable."
+        )
+        status = 400 if isinstance(exc, ValueError) else 503
+        return ({"ok": False, "error": message}, status)
+    label = "MyFantasyLeague" if provider == "mfl" else "Fleaflicker"
+    return ({"ok": False, "error": f"{label} is temporarily unavailable."}, 503)
+
+
+def _connect_mfl(method: str):
+    account_id = session.get("account_id")
+    if not account_id:
+        return jsonify({"ok": False, "error": "Sign in to connect a league."}), 401
+    data = request.get_json(silent=True) or {}
+    allowed = {"league_id", "season"} if method == "public" else {
+        "league_id", "season", "cookie", "mfl_user_id", "apikey", "username", "password",
+    }
+    if not isinstance(data, dict) or set(data) - allowed:
+        return jsonify({"ok": False, "error": "Unexpected fields for this connection method."}), 400
+    league_id = str(data.get("league_id") or "").strip()
+    try:
+        season = int(data.get("season") or _default_season())
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Season must be a valid year."}), 400
+    if not league_id.isdigit() or not (2000 <= season <= 2100):
+        return jsonify({"ok": False, "error": "Enter a valid numeric MFL League ID and season."}), 400
+    credentials = None
+    try:
+        from dashboard_services.providers.registry import get_provider
+        provider = get_provider("mfl")
+        if method == "private":
+            credentials = _mfl_private_credentials({**data, "season": season})
+            info = provider.connect_league(
+                league_id, season, cookie=credentials.get("cookie"), apikey=credentials.get("apikey"),
+            )
+        else:
+            info = provider.connect_league(league_id, season)
+        from dashboard_services.accounts import add_provider_league_connection
+        add_provider_league_connection(
+            account_id, "mfl", league_id, season,
+            info.get("name") or f"MFL League {league_id}", method,
+            credentials=credentials,
+        )
+    except Exception as exc:
+        error, status = _provider_connect_error(exc, "mfl", method)
+        return jsonify(error), status
+    return jsonify({
+        "ok": True, "platform": "mfl", "connection_method": method,
+        "league_id": league_id, "season": season, "name": info.get("name"),
+        "redirect_url": f"/mfl/{season}/{league_id}/dashboard",
+    })
+
+
+@link_bp.post("/api/link/mfl/public")
+def link_mfl_public():
+    return _connect_mfl("public")
+
+
+@link_bp.post("/api/link/mfl/private")
+def link_mfl_private():
+    return _connect_mfl("private")
+
+
+@link_bp.post("/api/link/mfl/private/pending")
+def link_mfl_private_pending():
+    data = request.get_json(silent=True) or {}
+    league_id = str(data.get("league_id") or "").strip()
+    try:
+        season = int(data.get("season") or _default_season())
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Invalid private MFL request."}), 400
+    if not league_id.isdigit():
+        return jsonify({"ok": False, "error": "Invalid private MFL request."}), 400
+    try:
+        from dashboard_services.providers.registry import get_provider
+        credentials = _mfl_private_credentials({**data, "season": season})
+        info = get_provider("mfl").connect_league(
+            league_id, season, cookie=credentials.get("cookie"), apikey=credentials.get("apikey"),
+        )
+        from dashboard_services.accounts import stage_private_provider_connection
+        token = stage_private_provider_connection(
+            "mfl", league_id, season, info.get("name") or f"MFL League {league_id}", credentials,
+        )
+        session["pending_provider_connection_token"] = token
+        return jsonify({
+            "ok": True, "provider": "mfl", "connection_method": "private",
+            "league_id": league_id, "season": season, "name": info.get("name"),
+        })
+    except Exception as exc:
+        error, status = _provider_connect_error(exc, "mfl", "private")
+        return jsonify(error), status
+
+
+@link_bp.post("/api/link/mfl/private/guest")
+def link_mfl_private_guest():
+    data = request.get_json(silent=True) or {}
+    league_id = str(data.get("league_id") or "").strip()
+    try:
+        season = int(data.get("season") or _default_season())
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Invalid request."}), 400
+    token = session.get("pending_provider_connection_token")
+    from dashboard_services.accounts import peek_private_provider_connection
+    if not peek_private_provider_connection(token, "mfl", league_id, season):
+        return jsonify({"ok": False, "error": "Private MFL session expired. Reconnect."}), 403
+    return jsonify({
+        "ok": True, "redirect_url": f"/mfl/{season}/{league_id}/dashboard",
+    })
+
+
+@link_bp.post("/api/link/mfl/private/saved")
+def link_mfl_private_saved():
+    account_id = session.get("account_id")
+    if not account_id:
+        return jsonify({"ok": False, "error": "Sign in to open a saved private league."}), 401
+    data = request.get_json(silent=True) or {}
+    league_id = str(data.get("league_id") or "").strip()
+    try:
+        season = int(data.get("season") or _default_season())
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Invalid request."}), 400
+    from dashboard_services.accounts import get_provider_league_credentials, mark_provider_connection_status
+    credentials = get_provider_league_credentials(account_id, "mfl", league_id, season) or {}
+    if not (credentials.get("cookie") or credentials.get("apikey")):
+        return jsonify({
+            "ok": False,
+            "error": "Enter an MFL login cookie and/or league APIKEY to connect this private league.",
+        }), 400
+    try:
+        from dashboard_services.providers.registry import get_provider
+        info = get_provider("mfl").connect_league(
+            league_id, season,
+            cookie=credentials.get("cookie"), apikey=credentials.get("apikey"),
+        )
+    except Exception as exc:
+        error, status = _provider_connect_error(exc, "mfl", "private")
+        try:
+            mark_provider_connection_status(
+                account_id, "mfl", league_id, season, "reauth_required", "mfl_auth_rejected",
+            )
+        except Exception:
+            pass
+        return jsonify(error), status
+    return jsonify({
+        "ok": True, "platform": "mfl", "connection_method": "private",
+        "league_id": league_id, "season": season, "name": info.get("name"),
+        "redirect_url": f"/mfl/{season}/{league_id}/dashboard",
+    })
+
+
+@link_bp.post("/api/link/mfl/reconnect")
+def link_mfl_reconnect():
+    account_id = session.get("account_id")
+    if not account_id:
+        return jsonify({"ok": False, "error": "Sign in to reconnect."}), 401
+    data = request.get_json(silent=True) or {}
+    allowed = {"league_id", "season", "cookie", "mfl_user_id", "apikey", "username", "password"}
+    if not isinstance(data, dict) or set(data) - allowed:
+        return jsonify({"ok": False, "error": "Unexpected fields for this connection method."}), 400
+    league_id = str(data.get("league_id") or "").strip()
+    try:
+        season = int(data.get("season") or _default_season())
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Invalid request."}), 400
+    from dashboard_services.accounts import owns_user_league, replace_provider_credentials
+    if not owns_user_league(account_id, "mfl", league_id, season):
+        return jsonify({"ok": False, "error": "League not found on this account."}), 404
+    try:
+        credentials = _mfl_private_credentials({**data, "season": season})
+        from dashboard_services.providers.registry import get_provider
+        get_provider("mfl").connect_league(
+            league_id, season, cookie=credentials.get("cookie"), apikey=credentials.get("apikey"),
+        )
+        if not replace_provider_credentials(account_id, "mfl", league_id, season, credentials):
+            return jsonify({"ok": False, "error": "Could not update credentials."}), 400
+    except Exception as exc:
+        error, status = _provider_connect_error(exc, "mfl", "private")
+        return jsonify(error), status
+    return jsonify({"ok": True, "redirect_url": f"/mfl/{season}/{league_id}/dashboard"})
+
+
+def _flea_private_credentials(data: dict) -> dict:
+    """Derive a storeable Fleaflicker token from login or a pasted token."""
+    from dashboard_services.providers.fleaflicker_api import login as flea_login, normalize_auth_token
+    token = normalize_auth_token(data.get("token") or data.get("authorization"))
+    email = str(data.get("email") or "").strip()
+    password = str(data.get("password") or "")
+    if email and password:
+        token = flea_login(email, password)
+    if not token:
+        raise ValueError("Fleaflicker private leagues require a login token (or email + password).")
+    return {"token": token}
+
+
+def _connect_fleaflicker(method: str):
+    account_id = session.get("account_id")
+    if not account_id:
+        return jsonify({"ok": False, "error": "Sign in to connect a league."}), 401
+    data = request.get_json(silent=True) or {}
+    allowed = {"league_id", "season"} if method == "public" else {
+        "league_id", "season", "token", "authorization", "email", "password",
+    }
+    if not isinstance(data, dict) or set(data) - allowed:
+        return jsonify({"ok": False, "error": "Unexpected fields for this connection method."}), 400
+    league_id = str(data.get("league_id") or "").strip()
+    try:
+        season = int(data.get("season") or _default_season())
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Season must be a valid year."}), 400
+    if not league_id.isdigit() or not (2000 <= season <= 2100):
+        return jsonify({"ok": False, "error": "Enter a valid numeric Fleaflicker League ID and season."}), 400
+    credentials = None
+    try:
+        from dashboard_services.providers.registry import get_provider
+        provider = get_provider("fleaflicker")
+        if method == "private":
+            credentials = _flea_private_credentials(data)
+            info = provider.connect_league(league_id, season, token=credentials.get("token"))
+        else:
+            info = provider.connect_league(league_id, season)
+        from dashboard_services.accounts import add_provider_league_connection
+        add_provider_league_connection(
+            account_id, "fleaflicker", league_id, season,
+            info.get("name") or f"Fleaflicker League {league_id}", method,
+            credentials=credentials,
+        )
+    except Exception as exc:
+        error, status = _provider_connect_error(exc, "fleaflicker", method)
+        return jsonify(error), status
+    return jsonify({
+        "ok": True, "platform": "fleaflicker", "connection_method": method,
+        "league_id": league_id, "season": season, "name": info.get("name"),
+        "redirect_url": f"/fleaflicker/{season}/{league_id}/dashboard",
+    })
+
+
+@link_bp.post("/api/link/fleaflicker/public")
+def link_fleaflicker_public():
+    return _connect_fleaflicker("public")
+
+
+@link_bp.post("/api/link/fleaflicker/private")
+def link_fleaflicker_private():
+    return _connect_fleaflicker("private")
+
+
+@link_bp.get("/api/link/fleaflicker/preview")
+def link_fleaflicker_preview():
+    league_id = str(request.args.get("league_id") or "").strip()
+    try:
+        season = int(request.args.get("season") or _default_season())
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Season must be a valid year."}), 400
+    if not league_id.isdigit() or not (2000 <= season <= 2100):
+        return jsonify({"ok": False, "error": "Enter a valid numeric Fleaflicker League ID and season."}), 400
+    token = str(request.args.get("token") or "").strip()
+    try:
+        from dashboard_services.providers.registry import get_provider
+        from dashboard_services.providers.fleaflicker_api import normalize_auth_token
+        provider = get_provider("fleaflicker")
+        league = provider.get_league(league_id, season, token=normalize_auth_token(token) or None)
+        users = provider.get_users(league_id, season, token=normalize_auth_token(token) or None)
+    except Exception as exc:
+        error, status = _provider_connect_error(exc, "fleaflicker", "preview")
+        return jsonify(error), status
+    teams = [{"team_id": str(u.get("roster_id") or u.get("user_id")),
+              "name": (u.get("metadata") or {}).get("team_name") or u.get("display_name")}
+             for u in users]
+    return jsonify({"ok": True, "platform": "fleaflicker", "league_id": league_id,
+                    "season": season, "name": league.get("name"), "teams": teams})
+
+
+@link_bp.post("/api/link/fleaflicker/private/pending")
+def link_fleaflicker_private_pending():
+    data = request.get_json(silent=True) or {}
+    league_id = str(data.get("league_id") or "").strip()
+    try:
+        season = int(data.get("season") or _default_season())
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Invalid private Fleaflicker request."}), 400
+    if not league_id.isdigit():
+        return jsonify({"ok": False, "error": "Invalid private Fleaflicker request."}), 400
+    try:
+        from dashboard_services.providers.registry import get_provider
+        credentials = _flea_private_credentials(data)
+        info = get_provider("fleaflicker").connect_league(
+            league_id, season, token=credentials.get("token"),
+        )
+        from dashboard_services.accounts import stage_private_provider_connection
+        token = stage_private_provider_connection(
+            "fleaflicker", league_id, season,
+            info.get("name") or f"Fleaflicker League {league_id}", credentials,
+        )
+        session["pending_provider_connection_token"] = token
+        return jsonify({
+            "ok": True, "provider": "fleaflicker", "connection_method": "private",
+            "league_id": league_id, "season": season, "name": info.get("name"),
+        })
+    except Exception as exc:
+        error, status = _provider_connect_error(exc, "fleaflicker", "private")
+        return jsonify(error), status
+
+
+@link_bp.post("/api/link/fleaflicker/private/guest")
+def link_fleaflicker_private_guest():
+    data = request.get_json(silent=True) or {}
+    league_id = str(data.get("league_id") or "").strip()
+    try:
+        season = int(data.get("season") or _default_season())
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Invalid request."}), 400
+    token = session.get("pending_provider_connection_token")
+    from dashboard_services.accounts import peek_private_provider_connection
+    if not peek_private_provider_connection(token, "fleaflicker", league_id, season):
+        return jsonify({"ok": False, "error": "Private Fleaflicker session expired. Reconnect."}), 403
+    return jsonify({
+        "ok": True, "redirect_url": f"/fleaflicker/{season}/{league_id}/dashboard",
+    })
+
+
+@link_bp.post("/api/link/fleaflicker/private/saved")
+def link_fleaflicker_private_saved():
+    account_id = session.get("account_id")
+    if not account_id:
+        return jsonify({"ok": False, "error": "Sign in to open a saved private league."}), 401
+    data = request.get_json(silent=True) or {}
+    league_id = str(data.get("league_id") or "").strip()
+    try:
+        season = int(data.get("season") or _default_season())
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Invalid request."}), 400
+    from dashboard_services.accounts import get_provider_league_credentials, mark_provider_connection_status
+    credentials = get_provider_league_credentials(account_id, "fleaflicker", league_id, season) or {}
+    if not credentials.get("token"):
+        return jsonify({
+            "ok": False,
+            "error": "Sign in to Fleaflicker or paste a login token to connect this private league.",
+        }), 400
+    try:
+        from dashboard_services.providers.registry import get_provider
+        info = get_provider("fleaflicker").connect_league(
+            league_id, season, token=credentials.get("token"),
+        )
+    except Exception as exc:
+        error, status = _provider_connect_error(exc, "fleaflicker", "private")
+        try:
+            mark_provider_connection_status(
+                account_id, "fleaflicker", league_id, season, "reauth_required",
+                "fleaflicker_auth_rejected",
+            )
+        except Exception:
+            pass
+        return jsonify(error), status
+    return jsonify({
+        "ok": True, "platform": "fleaflicker", "connection_method": "private",
+        "league_id": league_id, "season": season, "name": info.get("name"),
+        "redirect_url": f"/fleaflicker/{season}/{league_id}/dashboard",
+    })
+
+
+@link_bp.post("/api/link/fleaflicker/reconnect")
+def link_fleaflicker_reconnect():
+    account_id = session.get("account_id")
+    if not account_id:
+        return jsonify({"ok": False, "error": "Sign in to reconnect."}), 401
+    data = request.get_json(silent=True) or {}
+    allowed = {"league_id", "season", "token", "authorization", "email", "password"}
+    if not isinstance(data, dict) or set(data) - allowed:
+        return jsonify({"ok": False, "error": "Unexpected fields for this connection method."}), 400
+    league_id = str(data.get("league_id") or "").strip()
+    try:
+        season = int(data.get("season") or _default_season())
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Invalid request."}), 400
+    from dashboard_services.accounts import owns_user_league, replace_provider_credentials
+    if not owns_user_league(account_id, "fleaflicker", league_id, season):
+        return jsonify({"ok": False, "error": "League not found on this account."}), 404
+    try:
+        credentials = _flea_private_credentials(data)
+        from dashboard_services.providers.registry import get_provider
+        get_provider("fleaflicker").connect_league(league_id, season, token=credentials.get("token"))
+        if not replace_provider_credentials(account_id, "fleaflicker", league_id, season, credentials):
+            return jsonify({"ok": False, "error": "Could not update credentials."}), 400
+    except Exception as exc:
+        error, status = _provider_connect_error(exc, "fleaflicker", "private")
+        return jsonify(error), status
+    return jsonify({"ok": True, "redirect_url": f"/fleaflicker/{season}/{league_id}/dashboard"})
