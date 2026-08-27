@@ -106,7 +106,10 @@ def build_cheat_sheet_embed_document(*args, **kwargs) -> str:
 # Plain (non-f) string — safe to contain { } freely.
 _CHEAT_HTML = r"""
 <style>
-  .cs-wrap {
+  /* Tokens live on both the sheet and the Hist overlay. The overlay is a
+     sibling of .cs-wrap (so position:fixed is not clipped) and otherwise
+     would miss --cs-surface / --cs-ink, leaving a transparent unstyled card. */
+  .cs-wrap, .cs-hist-modal {
     --cs-surface: var(--card);
     --cs-surface-2: color-mix(in srgb, var(--text) 5%, var(--card));
     --cs-line: var(--border);
@@ -129,9 +132,11 @@ _CHEAT_HTML = r"""
     --cs-bar: color-mix(in srgb, var(--accent, #38bdf8) 55%, transparent);
     --cs-bar-track: color-mix(in srgb, var(--text) 9%, transparent);
     --cs-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  .cs-wrap {
     max-width: 1120px; margin: 0 auto; padding: 6px 4px 60px; color: var(--cs-ink);
   }
-  .cs-wrap * { box-sizing: border-box; }
+  .cs-wrap *, .cs-hist-modal, .cs-hist-modal * { box-sizing: border-box; }
 
   .cs-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: nowrap; }
   .cs-top > :first-child { flex: 1 1 390px; min-width: 300px; }
@@ -250,17 +255,24 @@ _CHEAT_HTML = r"""
   .cs-hist-cell { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; }
   .cs-hist-btn { font: inherit; font-family: var(--cs-mono); font-size: 10px; font-weight: 800; cursor: pointer; width: 18px; height: 18px; padding: 0; border-radius: 5px; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink-faint); line-height: 1; }
   .cs-hist-btn:hover { border-color: var(--cs-accent); color: var(--cs-accent); }
-  .cs-hist-modal { display: none; position: fixed; inset: 0; z-index: 40; background: color-mix(in srgb, #000 45%, transparent); align-items: flex-end; justify-content: center; padding: 12px; }
+  .cs-hist-modal { display: none; position: fixed; inset: 0; z-index: var(--z-modal, 10000); background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); align-items: center; justify-content: center; padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
   .cs-hist-modal.open { display: flex; }
-  .cs-hist-card { background: var(--cs-surface); color: var(--cs-ink); border: 1px solid var(--cs-line); border-radius: 14px; max-width: 560px; width: 100%; max-height: min(80vh, 640px); overflow: auto; padding: 16px 18px 18px; }
-  .cs-hist-card h2 { font-size: 16px; margin: 0 36px 6px 0; }
-  .cs-hist-sub { color: var(--cs-ink-soft); font-size: 12.5px; margin: 0 0 12px; line-height: 1.45; }
-  .cs-hist-close { float: right; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink-soft); border-radius: 8px; padding: 5px 9px; }
-  .cs-hist-dl { display: grid; grid-template-columns: 92px 1fr; gap: 6px 12px; font-size: 13px; margin: 0 0 14px; }
-  .cs-hist-dl dt { color: var(--cs-ink-faint); font-family: var(--cs-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; }
+  .cs-hist-card { background: var(--cs-surface, var(--card)); color: var(--cs-ink, var(--text)); border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; max-width: 560px; width: 100%; max-height: min(80vh, 640px); overflow: auto; padding: 18px 20px 20px; box-shadow: 0 16px 48px color-mix(in srgb, #000 28%, transparent); }
+  .cs-hist-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 0 0 14px; }
+  .cs-hist-head > div { min-width: 0; flex: 1; }
+  .cs-hist-card h2 { font-size: 16px; font-weight: 800; line-height: 1.2; margin: 0 0 6px; color: var(--cs-ink, var(--text)); }
+  .cs-hist-sub { color: var(--cs-ink-soft, var(--text-muted)); font-size: 12.5px; margin: 0 0 12px; line-height: 1.45; }
+  .cs-hist-head .cs-hist-sub { margin-bottom: 0; }
+  .cs-hist-close { flex-shrink: 0; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-line, var(--border)); background: var(--cs-surface, var(--card)); color: var(--cs-ink-soft, var(--text-muted)); border-radius: 8px; padding: 5px 9px; }
+  .cs-hist-close:hover { border-color: var(--cs-accent); color: var(--cs-accent); }
+  .cs-hist-dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 16px; row-gap: 10px; align-items: baseline; font-size: 13px; margin: 0 0 16px; }
+  .cs-hist-dl dt, .cs-hist-dl dd { margin: 0; }
+  .cs-hist-dl dt { grid-column: 1; color: var(--cs-ink-soft, var(--text-muted)); font-family: var(--cs-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+  .cs-hist-dl dd { grid-column: 2; color: var(--cs-ink, var(--text)); min-width: 0; overflow-wrap: anywhere; }
   .cs-hist-ex { list-style: none; margin: 0; padding: 0; }
-  .cs-hist-ex li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--cs-line); font-size: 13px; }
+  .cs-hist-ex li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--cs-line, var(--border)); font-size: 13px; }
   .cs-hist-ex li:last-child { border-bottom: 0; }
+  .cs-hist-ex li span:last-child { color: var(--cs-ink-soft, var(--text-muted)); font-family: var(--cs-mono); font-size: 12px; white-space: nowrap; }
 
   .cs-pos-badge { font-family: var(--cs-mono); font-weight: 800; font-size: 11px; padding: 3px 7px; border-radius: 6px; flex-shrink: 0; }
   .cs-pos-QB { color: var(--cs-qb); background: var(--cs-qb-bg); } .cs-pos-RB { color: var(--cs-rb); background: var(--cs-rb-bg); }
@@ -382,8 +394,11 @@ _CHEAT_HTML = r"""
     .cs-ovbtns { gap: 5px; }
     .cs-ovbtn { width: 34px; height: 34px; font-size: 14px; border-radius: 8px; }
     .cs-filterbar .cs-src, .cs-filterbar .csd-wrap { width: 100%; min-width: 0; }
+    .cs-hist-modal { align-items: flex-end; padding: 0; }
+    .cs-hist-card { max-width: none; border-radius: 14px 14px 0 0; max-height: min(88vh, 640px); }
   }
   @media print {
+    .cs-hist-modal, .cs-hist-btn { display: none !important; }
     .cs-controls, .cs-tabs, .cs-backlink, .cs-needs, .cs-filterbar, #csPrintBtn, #csValBtn, #csClearBtn, #csEditBtn, #csResetBoardBtn { display: none !important; }
     /* Never print the edit column even if edit mode is left on. */
     .cs-edit-th, .cs-board.editing .cs-edit-th, .cs-edit-cell, .cs-board.editing .cs-edit-cell { display: none !important; }
@@ -492,9 +507,13 @@ _CHEAT_HTML = r"""
 </div>
 <div class="cs-hist-modal" id="csHistModal" role="dialog" aria-modal="true" aria-labelledby="csHistTitle">
   <div class="cs-hist-card">
-    <button type="button" class="cs-hist-close" id="csHistClose">Close</button>
-    <h2 id="csHistTitle">History</h2>
-    <p class="cs-hist-sub" id="csHistSub">Descriptive similar-player rates. Not a ranking score.</p>
+    <div class="cs-hist-head">
+      <div>
+        <h2 id="csHistTitle">History</h2>
+        <p class="cs-hist-sub" id="csHistSub">Descriptive similar-player rates. Not a ranking score.</p>
+      </div>
+      <button type="button" class="cs-hist-close" id="csHistClose">Close</button>
+    </div>
     <div id="csHistBody"></div>
   </div>
 </div>

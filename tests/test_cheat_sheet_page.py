@@ -328,6 +328,15 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "histP" not in script.split("scored.sort(function (a, b) {")[1].split("scored.forEach")[0]
     assert "similar-profile P(top-12), not a rank" in script
     assert "the info button opens named comps" in body.lower()
+    assert ".cs-wrap, .cs-hist-modal {" in body
+    assert "z-index: var(--z-modal, 10000)" in body
+    assert ".cs-hist-head" in body
+    assert ".cs-hist-dl dt, .cs-hist-dl dd { margin: 0; }" in body
+    assert "grid-column: 1" in body
+    assert "grid-column: 2" in body
+    assert ".cs-hist-close { flex-shrink: 0;" in body
+    assert "float: right" not in body
+    assert ".cs-hist-modal, .cs-hist-btn { display: none !important; }" in body
     assert "p_hit_pct" not in pick
     assert "historical-player" not in core
     assert "p_hit_pct" not in core
