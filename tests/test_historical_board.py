@@ -1,5 +1,6 @@
 """Phase 8 compact board payload and deep panel (slim CI)."""
 from pathlib import Path
+import json
 
 import pytest
 
@@ -221,7 +222,7 @@ def test_hist_panel_copy_uses_bucket_hit_rates_not_snake_case():
     ]
     assert "Year 4" in values
     assert "Round 1" in values
-    assert "23–24" in values
+    assert "23-24" in values
     assert "20-25%" in values
     assert "80%+" in values
     assert copy["hit_rates"][1]["label"] == "Then finished top-12"
@@ -374,6 +375,9 @@ def test_hist_trends_are_descriptive_bucket_slices():
     assert "league_winner_smash" not in modal_kinds
     assert any(row.get("vs_label") for row in with_proj["copy"]["trends"])
     assert any(row.get("secondary") for row in with_proj["copy"]["trends"])
+    shown = json.dumps(with_proj["copy"], ensure_ascii=False)
+    assert "–" not in shown
+    assert "—" not in shown
     query = {
         "position": "RB",
         "years_experience": 3,
@@ -435,7 +439,7 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     assert isinstance(round1.get("vs_baseline"), int)
     assert round1["vs_baseline"] > 0
     pos_adp = next(sec for sec in rb["sections"] if sec["id"] == "adp_positional")
-    assert any(row["label"] == "Positional ADP 1–5" for row in pos_adp["rows"])
+    assert any(row["label"] == "Positional ADP 1-5" for row in pos_adp["rows"])
     winners = next(sec for sec in rb["sections"] if sec["id"] == "league_winner")
     assert any("top-5" in row["label"] for row in winners["rows"])
     miss = next(sec for sec in rb["sections"] if sec["id"] == "capital_miss")

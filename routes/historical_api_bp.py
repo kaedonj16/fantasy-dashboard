@@ -43,10 +43,10 @@ def api_historical_player(player_id: str):
         extra["adp_rk"] = adp_rk
     try:
         payload = build_deep_panel(player_id, aggs, extra=extra or None)
+        return jsonify(payload)
     except Exception:
         logger.exception("[historical-player] %s failed", player_id)
         return jsonify({"available": False, "player_id": str(player_id or "")})
-    return jsonify(payload)
 
 
 @historical_api_bp.route("/api/historical-trends")
@@ -57,7 +57,7 @@ def api_historical_trends():
         return jsonify({"available": False, "descriptive_only": True, "not_in_ranking": True})
     try:
         payload = build_historical_trends(aggs)
+        return jsonify(payload)
     except Exception:
         logger.exception("[historical-trends] failed")
         return jsonify({"available": False, "descriptive_only": True, "not_in_ranking": True})
-    return jsonify(payload)

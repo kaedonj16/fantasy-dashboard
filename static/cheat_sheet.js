@@ -42,6 +42,7 @@
     // Do not tint vs ADP: round-1 market hit rates are 60–90%, so the whole
     // top of the board would read as a miss.
     var HIST_STRONG_PCT = 25;
+    var HIST_TIER_SHORT = { top_5: 'top-5', top_12: 'top-12', top_24: 'top-24' };
 
     var state = {
         mode: cfg.mode === 'dynasty' ? 'dynasty' : 'redraft',
@@ -1165,9 +1166,9 @@
         var tip = 'Similar-profile top-12 trend (not this player\'s odds)'
             + (pct != null ? ': ' + pct + '%' : ': unknown')
             + (h.mkt_pct != null ? '. ADP-round trend: ' + h.mkt_pct + '%' : '')
-            + '. Open for bucket hit rates. Descriptive only — not a ranking input.';
+            + '. Open for bucket hit rates. Descriptive only - not a ranking input.';
         var cls = histPctClass(pct);
-        var body = pct == null ? '&ndash;' : (pct + '%');
+        var body = pct == null ? '-' : (pct + '%');
         return '<td class="cs-hist-col"><span class="cs-hist-cell">'
             + '<span class="cs-val ' + cls + '" title="' + esc(tip) + '">' + body + '</span>'
             + '<button type="button" class="cs-hist-btn" data-hist-id="' + esc(x.id) + '" data-hist-name="' + esc(x.name) + '" data-hist-adp="' + (x.adp != null && isFinite(Number(x.adp)) ? String(x.adp) : '') + '" data-hist-pos="' + esc(x.pos || '') + '" data-hist-proj="' + (x.projectedPpg != null && isFinite(Number(x.projectedPpg)) ? String(x.projectedPpg) : '') + '" data-hist-proj-rk="' + (h.proj_rk != null ? String(h.proj_rk) : '') + '" data-hist-adp-rk="' + (h.adp_rk != null ? String(h.adp_rk) : '') + '" title="Similar-player history">i</button>'
@@ -1998,7 +1999,7 @@
             : (hist.adp_rk != null ? Number(hist.adp_rk) : null);
         var fallbackMarket = hist.mkt_sentence;
         $('csHistTitle').textContent = name || 'History';
-        $('csHistSub').textContent = 'Historical trends for this profile — not a ranking or this player\'s odds.';
+        $('csHistSub').textContent = 'Historical trends for this profile - not a ranking or this player\'s odds.';
         $('csHistBody').innerHTML = '<p class="cs-hist-sub">Loading…</p>';
         modal.classList.add('open');
         var url = '/api/historical-player/' + encodeURIComponent(id);
@@ -2013,18 +2014,29 @@
         if (liveAdpRk != null && isFinite(liveAdpRk)) qs.push('adp_rk=' + encodeURIComponent(liveAdpRk));
         if (qs.length) url += '?' + qs.join('&');
         fetch(url, {cache: 'no-store'})
-            .then(function (r) { return r.json(); })
+            .then(function (r) {
+                if (!r.ok) throw new Error('hist ' + r.status);
+                return r.json();
+            })
             .then(function (resp) {
                 if (!modal.classList.contains('open')) return;
-                $('csHistBody').innerHTML = renderHistPanel(resp, fallbackMarket);
+                var body = $('csHistBody');
+                if (!body) return;
+                try {
+                    body.innerHTML = renderHistPanel(resp, fallbackMarket);
+                } catch (err) {
+                    body.innerHTML = '<p class="cs-hist-sub">Could not load similar-player history.</p>';
+                }
             })
             .catch(function () {
                 if (!modal.classList.contains('open')) return;
-                $('csHistBody').innerHTML = '<p class="cs-hist-sub">Could not load similar-player history.</p>';
+                var body = $('csHistBody');
+                if (body) body.innerHTML = '<p class="cs-hist-sub">Could not load similar-player history.</p>';
             });
     }
 
     function histTrendRow(row) {
+        row = row || {};
         var meta = [];
         if (row.bucket) meta.push(row.bucket);
         if (row.n != null) meta.push('n=' + row.n);
@@ -2033,13 +2045,14 @@
         if (row.secondary) meta.push(row.secondary);
         var shown = row.display != null && row.display !== ''
             ? row.display
-            : (row.pct != null ? row.pct + '%' : '—');
+            : (row.pct != null ? row.pct + '%' : '-');
         return '<div class="cs-hist-hit"><div><div class="cs-hist-hit-label">' + esc(row.sentence || row.label || '') + '</div>'
             + (meta.length ? '<div class="cs-hist-hit-meta">' + esc(meta.join(' · ')) + '</div>' : '')
             + '</div><div class="cs-hist-hit-pct">' + esc(String(shown)) + '</div></div>';
     }
 
     function trendsHitRow(row, polarity) {
+        row = row || {};
         var html = histTrendRow(row);
         if (row.pct != null && isFinite(Number(row.pct))) {
             var pct = Math.max(0, Math.min(100, Number(row.pct)));
@@ -2137,7 +2150,7 @@
             highlights.forEach(function (h) {
                 html += '<div class="cs-trends-callout"><div class="cs-trends-callout-k">' + esc(h.section || '')
                     + '</div><div class="cs-trends-callout-v">' + esc(h.label || '') + '</div>'
-                    + '<div class="cs-trends-callout-pct">' + (h.pct != null ? esc(String(h.pct)) + '%' : '—')
+                    + '<div class="cs-trends-callout-pct">' + (h.pct != null ? esc(String(h.pct)) + '%' : '-')
                     + (h.vs_label ? ' <span>' + esc(h.vs_label) + '</span>' : '') + '</div></div>';
             });
             html += '</div>';
@@ -2187,9 +2200,11 @@
 
         // Verdict first: lead with the top-12 rate for this similar group, with
         // the other tiers as supporting stats and the cohort spelled out below.
-        var hits = copy.hit_rates || [];
+        var hits = Array.isArray(copy.hit_rates) ? copy.hit_rates : [];
         var lead = null, i;
-        for (i = 0; i < hits.length; i++) { if (hits[i].tier === 'top_12') { lead = hits[i]; break; } }
+        for (i = 0; i < hits.length; i++) {
+            if (hits[i] && hits[i].tier === 'top_12') { lead = hits[i]; break; }
+        }
         if (!lead && hits.length) lead = hits[0];
         if (lead) {
             var confBits = [];
@@ -2197,7 +2212,7 @@
             if (lead.n != null) confBits.push('n=' + lead.n);
             html += '<div class="cs-hist-verdict">'
                 + '<div class="cs-hist-hero">'
-                + '<div class="cs-hist-big">' + (lead.pct != null ? lead.pct : '—') + '<sup>%</sup></div>'
+                + '<div class="cs-hist-big">' + (lead.pct != null ? lead.pct : '-') + '<sup>%</sup></div>'
                 + '<div class="cs-hist-hero-cap">'
                 + '<div class="cs-hist-hero-lead">finished top-12</div>'
                 + '<div class="cs-hist-hero-sub">among this similar group</div>'
@@ -2205,16 +2220,17 @@
                 + '</div></div>';
             html += '<div class="cs-hist-tiers">';
             hits.forEach(function (row) {
+                if (!row) return;
                 var short = HIST_TIER_SHORT[row.tier] || (row.label || '').replace('Then finished ', '');
                 html += '<div class="cs-hist-tier' + (row.tier === 'top_12' ? ' lead' : '') + '">'
                     + '<div class="cs-hist-tier-k">' + esc(short) + '</div>'
-                    + '<div class="cs-hist-tier-v">' + (row.pct != null ? row.pct + '%' : '—') + '</div></div>';
+                    + '<div class="cs-hist-tier-v">' + (row.pct != null ? row.pct + '%' : '-') + '</div></div>';
             });
             html += '</div>';
             if (copy.headline) html += '<p class="cs-hist-cohort">' + esc(copy.headline) + '</p>';
             html += '</div>';
         }
-        var projTrends = copy.projection_trends || [];
+        var projTrends = Array.isArray(copy.projection_trends) ? copy.projection_trends : [];
         if (projTrends.length) {
             html += '<section class="cs-hist-sec"><h3>' + esc(copy.projection_heading || 'This board\'s projection') + '</h3>';
             if (copy.projection_note) html += '<p class="cs-hist-note">' + esc(copy.projection_note) + '</p>';
@@ -2222,20 +2238,12 @@
             projTrends.forEach(function (row) { html += histTrendRow(row); });
             html += '</div></section>';
         }
-        var trends = copy.trends || [];
+        var trends = Array.isArray(copy.trends) ? copy.trends : [];
         if (trends.length) {
             html += '<section class="cs-hist-sec"><h3>' + esc(copy.trends_heading || 'Trends for this player\'s buckets') + '</h3>';
             if (copy.trends_note) html += '<p class="cs-hist-note">' + esc(copy.trends_note) + '</p>';
             html += '<div class="cs-hist-hits">';
-            trends.forEach(function (row) { html += trendsHitRow(row, row.polarity); });
-            html += '</div></section>';
-        }
-        var profile = copy.profile || [];
-        if (profile.length) {
-            html += '<section class="cs-hist-sec"><h3>' + esc(copy.profile_heading || 'This pre-season profile') + '</h3><div class="cs-hist-profile">';
-            profile.forEach(function (row) {
-                html += '<span class="cs-hist-chip"><span class="cs-hist-chip-k">' + esc(row.label || '') + '</span><span class="cs-hist-chip-v">' + esc(row.value || '') + '</span></span>';
-            });
+            trends.forEach(function (row) { html += trendsHitRow(row, row && row.polarity); });
             html += '</div></section>';
         }
 
@@ -2244,19 +2252,20 @@
         var sentence = copy.market_sentence || '';
         var missingAdp = mkt.p_top_12 == null && !mkt.adp_bucket;
         if (missingAdp && fallbackMarket) sentence = fallbackMarket;
-        var hasAdpTrend = trends.some(function (row) { return row.kind === 'adp'; });
+        var hasAdpTrend = trends.some(function (row) { return row && row.kind === 'adp'; });
         if (sentence && !hasAdpTrend) {
             html += '<section class="cs-hist-sec"><h3>' + esc(copy.market_heading || 'ADP bucket hit rate') + '</h3><p class="cs-hist-note">' + esc(sentence) + '</p></section>';
         }
 
         // Progressive disclosure: comps, dropped filters, and the full profile.
-        var examples = (resp.history && resp.history.examples) || [];
+        var examples = (resp.history && Array.isArray(resp.history.examples)) ? resp.history.examples : [];
         var detail = '';
         if (examples.length) {
             detail += '<div class="cs-hist-sec"><h3>' + esc(copy.examples_heading || 'Seasons from that similar group') + '</h3>';
             if (copy.examples_note) detail += '<p class="cs-hist-note">' + esc(copy.examples_note) + '</p>';
             detail += '<ul class="cs-hist-ex">';
             examples.forEach(function (ex) {
+                if (!ex) return;
                 detail += '<li><span>' + esc(ex.name || ex.sleeper_id || '') + (ex.season ? ' · ' + ex.season : '') + '</span><span>'
                     + (ex.positional_finish != null ? '#' + ex.positional_finish : '')
                     + (ex.ppr_points != null ? ' · ' + ex.ppr_points + ' pts' : '')
@@ -2267,12 +2276,13 @@
         if (copy.relaxed && copy.relaxed.length) {
             detail += '<div class="cs-hist-sec"><h3>' + esc(copy.relaxed_heading || 'Dropped to grow the sample') + '</h3>';
             if (copy.relaxed_note) detail += '<p class="cs-hist-note">' + esc(copy.relaxed_note) + '</p>';
-            detail += '<p class="cs-hist-note">' + copy.relaxed.map(function (row) { return esc(row.label || ''); }).join(' · ') + '</p></div>';
+            detail += '<p class="cs-hist-note">' + copy.relaxed.map(function (row) { return esc((row && row.label) || ''); }).join(' · ') + '</p></div>';
         }
         var profile = copy.profile || [];
         if (profile.length) {
             detail += '<div class="cs-hist-sec"><h3>' + esc(copy.profile_heading || 'This pre-season profile') + '</h3><div class="cs-hist-profile">';
             profile.forEach(function (row) {
+                if (!row) return;
                 detail += '<span class="cs-hist-chip"><span class="cs-hist-chip-k">' + esc(row.label || '') + '</span><span class="cs-hist-chip-v">' + esc(row.value || '') + '</span></span>';
             });
             detail += '</div></div>';
