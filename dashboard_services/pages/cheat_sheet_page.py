@@ -288,32 +288,71 @@ _CHEAT_HTML = r"""
   .cs-hist-ex li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--cs-line, var(--border)); font-size: 13px; }
   .cs-hist-ex li:last-child { border-bottom: 0; }
   .cs-hist-ex li span:last-child { color: var(--cs-ink-soft, var(--text-muted)); font-family: var(--cs-mono); font-size: 12px; white-space: nowrap; }
-  .cs-trends { padding: 4px 0 24px; }
+  .cs-trends { padding: 0 0 24px; }
+  .cs-trends-honesty { display: inline-flex; align-items: center; gap: 7px; font-family: var(--cs-mono); font-size: 10.5px; font-weight: 700; letter-spacing: .03em; color: var(--cs-amber); background: color-mix(in srgb, var(--cs-amber, #b5730b) 14%, transparent); border-radius: 999px; padding: 4px 10px; margin: 4px 0 12px; }
+  .cs-trends-honesty i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: inline-block; flex-shrink: 0; }
   .cs-trends-lede { color: var(--cs-ink-soft, var(--text-muted)); font-size: 13px; line-height: 1.45; margin: 0 0 14px; }
-  .cs-trends-pos { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 16px; }
-  .cs-trends-pos button { font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-line, var(--border)); background: var(--cs-surface, var(--card)); color: var(--cs-ink-soft, var(--text-muted)); border-radius: 8px; padding: 6px 10px; }
-  .cs-trends-pos button[aria-pressed="true"] { border-color: var(--cs-accent); color: var(--cs-accent); background: color-mix(in srgb, var(--cs-accent) 10%, var(--cs-surface, var(--card))); }
-  .cs-trends-summary { font-size: 13px; color: var(--cs-ink, var(--text)); margin: 0 0 16px; line-height: 1.45; }
-  .cs-trends-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
-  .cs-trends-card { background: var(--cs-surface, var(--card)); border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; padding: 14px 14px 10px; }
+  .cs-trends-pos, .cs-trends-lanes { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 16px; }
+  .cs-trends-pos button, .cs-trends-lanes button { font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-line, var(--border)); background: var(--cs-surface, var(--card)); color: var(--cs-ink-soft, var(--text-muted)); border-radius: 8px; padding: 6px 10px; }
+  .cs-trends-pos button[aria-pressed="true"], .cs-trends-lanes button[aria-pressed="true"] { border-color: var(--cs-accent); color: var(--cs-accent); background: color-mix(in srgb, var(--cs-accent) 10%, var(--cs-surface, var(--card))); }
+  .cs-trends-summary { display: flex; align-items: flex-end; gap: 16px; margin: 0 0 18px; padding: 4px 0 2px; }
+  .cs-trends-base-pct { font-weight: 800; font-size: 46px; line-height: .82; letter-spacing: -.03em; color: var(--cs-ink, var(--text)); font-variant-numeric: tabular-nums; }
+  .cs-trends-base-pct sup { font-size: 18px; font-weight: 800; color: var(--cs-ink-soft, var(--text-muted)); vertical-align: super; }
+  .cs-trends-base-copy { min-width: 0; padding-bottom: 2px; }
+  .cs-trends-base-k { font-size: 13.5px; font-weight: 700; color: var(--cs-ink, var(--text)); }
+  .cs-trends-base-v { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 3px; line-height: 1.45; }
+  .cs-trends-sec-head { margin: 0 0 10px; }
+  .cs-trends-sec-head h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 4px; }
+  .cs-trends-sec-head p { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.45; margin: 0; }
+  .cs-trends-board { margin: 0 0 18px; }
+  .cs-trends-callouts { display: flex; flex-direction: column; margin: 0; border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; overflow: hidden; background: var(--cs-surface, var(--card)); }
+  .cs-trends-callout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(110px, 1fr) auto; gap: 6px 14px; align-items: center; padding: 10px 14px; border: 0; border-bottom: 1px solid var(--cs-line, var(--border)); border-radius: 0; background: transparent; }
+  .cs-trends-callout:last-child { border-bottom: 0; }
+  .cs-trends-callout-k { font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); }
+  .cs-trends-callout-v { font-size: 13px; font-weight: 700; color: var(--cs-ink, var(--text)); margin: 2px 0 0; }
+  .cs-trends-callout-pct { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+  .cs-trends-callout-pct span { font-size: 11px; font-weight: 700; color: var(--cs-accent); }
+  .cs-trends-rail { position: relative; height: 14px; min-width: 88px; }
+  .cs-trends-rail-track, .cs-trends-rail-fill { position: absolute; left: 0; right: 0; top: 50%; height: 4px; transform: translateY(-50%); border-radius: 99px; }
+  .cs-trends-rail-track { background: color-mix(in srgb, var(--cs-ink, #0f172a) 10%, transparent); }
+  .cs-trends-rail-fill { right: auto; background: color-mix(in srgb, var(--cs-accent) 78%, var(--cs-ink, #0f172a)); }
+  .cs-trends-rail.is-down .cs-trends-rail-fill, .cs-trends-rail.is-miss .cs-trends-rail-fill { background: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-trends-rail-base { position: absolute; top: 1px; bottom: 1px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--cs-ink-soft, var(--text-muted)); opacity: .7; }
+  .cs-trends-rail-mark { position: absolute; top: 50%; width: 10px; height: 10px; margin-left: -5px; transform: translateY(-50%); border-radius: 50%; background: var(--cs-accent); box-shadow: 0 0 0 2px var(--cs-surface, var(--card)); }
+  .cs-trends-rail.is-down .cs-trends-rail-mark, .cs-trends-rail.is-miss .cs-trends-rail-mark { background: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-trends-agewrap { margin: 0 0 18px; }
+  .cs-trends-ages { margin: 0; padding: 10px 10px 8px; border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; background: var(--cs-surface, var(--card)); overflow-x: auto; }
+  .cs-trends-ages-plot { position: relative; display: flex; align-items: flex-end; gap: 4px; height: 92px; }
+  .cs-trends-ages-base { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed color-mix(in srgb, var(--cs-ink, #0f172a) 32%, transparent); pointer-events: none; z-index: 1; }
+  .cs-trends-age { flex: 1 0 16px; min-width: 16px; height: 100%; display: flex; align-items: flex-end; justify-content: center; position: relative; z-index: 2; }
+  .cs-trends-age-bar { width: 100%; max-width: 14px; border-radius: 4px 4px 0 0; background: color-mix(in srgb, var(--cs-accent) 45%, var(--cs-ink-faint, #94a3b8)); }
+  .cs-trends-age.is-prime .cs-trends-age-bar { background: var(--cs-accent); }
+  .cs-trends-ages-axis { display: flex; gap: 4px; margin-top: 4px; }
+  .cs-trends-ages-axis span { flex: 1 0 16px; min-width: 16px; text-align: center; font-family: var(--cs-mono); font-size: 9px; color: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-trends-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 268px), 1fr)); gap: 14px; align-items: stretch; }
+  .cs-trends-card { display: flex; flex-direction: column; height: 100%; background: var(--cs-surface, var(--card)); border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; padding: 14px 14px 12px; }
   .cs-trends-card h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 6px; }
   .cs-trends-card .cs-hist-note { margin-bottom: 10px; }
-  .cs-trends-card .cs-hist-hit { margin-top: 8px; }
-  .cs-trends-card .cs-hist-hit:first-of-type { margin-top: 0; }
+  .cs-trends-card-rows { display: flex; flex-direction: column; gap: 10px; }
+  .cs-trends-srow-top { display: flex; align-items: baseline; gap: 8px; }
+  .cs-trends-srow-label { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; color: var(--cs-ink, var(--text)); }
+  .cs-trends-srow-pct { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--cs-ink, var(--text)); white-space: nowrap; }
+  .cs-trends-srow-meta { font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 3px; }
+  .cs-trends-srow .cs-trends-rail { margin-top: 5px; }
+  .cs-trends-conf { display: inline-flex; align-items: center; flex-shrink: 0; color: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-trends-conf i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; display: inline-block; }
+  .cs-trends-conf-low { color: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-trends-conf-moderate { color: var(--cs-amber); }
+  .cs-trends-conf-good { color: var(--cs-accent); }
+  .cs-trends-conf-strong { color: var(--cs-good); }
   .cs-trends-bar { height: 6px; background: color-mix(in srgb, var(--cs-ink, #0f172a) 10%, transparent); border-radius: 99px; margin: 0; overflow: hidden; }
   .cs-trends-bar > span { display: block; height: 100%; background: color-mix(in srgb, var(--cs-accent) 78%, var(--cs-ink, #0f172a)); border-radius: 99px; }
   .cs-trends-bar-miss > span { background: var(--cs-ink-faint, var(--text-muted)); }
-  .cs-trends-callouts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 0 0 16px; }
-  .cs-trends-callout { border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; padding: 10px 12px; background: color-mix(in srgb, var(--cs-accent) 8%, var(--cs-surface, var(--card))); }
-  .cs-trends-callout-k { font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); }
-  .cs-trends-callout-v { font-size: 13px; font-weight: 700; color: var(--cs-ink, var(--text)); margin: 3px 0 6px; }
-  .cs-trends-callout-pct { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .cs-trends-callout-pct span { font-size: 11px; font-weight: 700; color: var(--cs-accent); }
-  .cs-trends-ages { display: flex; align-items: flex-end; gap: 4px; height: 92px; margin: 4px 0 8px; padding: 8px 8px 0; border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; background: var(--cs-surface, var(--card)); overflow-x: auto; }
-  .cs-trends-age { flex: 1 0 16px; min-width: 16px; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; }
-  .cs-trends-age-bar { width: 100%; max-width: 14px; border-radius: 4px 4px 0 0; background: color-mix(in srgb, var(--cs-accent) 45%, var(--cs-ink-faint, #94a3b8)); }
-  .cs-trends-age.is-prime .cs-trends-age-bar { background: var(--cs-accent); }
-  .cs-trends-age-n { font-family: var(--cs-mono); font-size: 9px; color: var(--cs-ink-faint, var(--text-muted)); padding-bottom: 4px; }
+  @media (max-width: 640px) {
+    .cs-trends-callout { grid-template-columns: 1fr auto; }
+    .cs-trends-callout .cs-trends-rail { grid-column: 1 / -1; }
+    .cs-trends-summary { align-items: flex-start; }
+  }
   .cs-tabs button.cs-hidden { display: none; }
 
   /* Verdict-first layout: lead with the top-12 rate, then per-bucket trends.
@@ -577,6 +616,7 @@ _CHEAT_HTML = r"""
   </section>
 
   <section class="cs-hidden" id="cs-panel-trends">
+    <span class="cs-trends-honesty"><i></i>Descriptive — not a ranking input</span>
     <div class="cs-trends" id="csTrends">
       <p class="cs-trends-lede">Historical top-12 rates by bucket. Not a ranking score.</p>
     </div>
