@@ -6,6 +6,7 @@ import pytest
 from dashboard_services.historical.board import (
     attach_historical_signals,
     build_deep_panel,
+    build_hist_panel_copy,
     build_preseason_profiles,
     compact_signal,
     live_redraft_adp,
@@ -159,6 +160,71 @@ def test_attach_compact_payload_and_deep_panel_are_descriptive():
     assert panel["not_in_ranking"] is True
     assert panel["history"]["kind"] == "conditional"
     assert isinstance(panel["history"]["examples"], list)
+    copy = panel["copy"]
+    assert copy["hit_rates"]
+    assert copy["hit_rates"][0]["label"].startswith("Finished as a ")
+    assert all("_" not in row["label"] for row in copy["profile"])
+    assert all("_" not in row["label"] for row in copy["relaxed"])
+    with_adp = build_deep_panel("r0", payload, extra={"redraft_avg_pick": 3.0})
+    assert "Players drafted in Round 1" in with_adp["copy"]["market_sentence"]
+
+
+def test_hist_panel_copy_uses_bucket_hit_rates_not_snake_case():
+    history = {
+        "n": 35,
+        "key_used": {
+            "position": "RB",
+            "career_stage": "year_4",
+            "draft_capital": "round_1",
+            "prior_finish": "top_12",
+            "age_bucket": "23-24",
+            "target_share": "20-25%",
+            "snap_pct": "80%+",
+        },
+        "dropped": ["target_share", "snap_pct"],
+        "fallback": True,
+        "rates": {
+            "top_5": {"display_pct": 18, "sample_size": 35, "confidence": "moderate"},
+            "top_12": {"display_pct": 37, "sample_size": 35, "confidence": "moderate"},
+            "top_24": {"display_pct": 62, "sample_size": 35, "confidence": "moderate"},
+        },
+    }
+    market = {
+        "p_top_12": 0.82,
+        "adp_bucket": "round_1",
+        "sample_size": 140,
+        "confidence": "strong",
+        "overall_adp": 3.2,
+    }
+    copy = build_hist_panel_copy(history, market)
+    labels = [row["label"] for row in copy["profile"]]
+    values = [row["value"] for row in copy["profile"]]
+    assert labels == [
+        "Position",
+        "Career stage",
+        "Draft capital",
+        "Last year finish",
+        "Age",
+        "Last year targets",
+        "Last year snaps",
+    ]
+    assert "Year 4" in values
+    assert "Round 1" in values
+    assert "23–24" in values
+    assert "20-25%" in values
+    assert "80%+" in values
+    assert copy["hit_rates"][1]["label"] == "Finished as a top-12 RB"
+    assert copy["hit_rates"][1]["pct"] == 37
+    assert copy["relaxed"][0]["label"] == "Last year targets"
+    shown = " ".join(
+        f"{row['label']} {row['value']}" for row in copy["profile"]
+    ) + " " + " ".join(row["label"] for row in copy["relaxed"])
+    assert "age_bucket" not in shown
+    assert "career_stage" not in shown
+    assert "draft_capital" not in shown
+    assert "Players drafted in Round 1 historically finished top-12 82%" in copy["market_sentence"]
+    missing = build_hist_panel_copy(history, {})
+    assert "no live ADP" in missing["market_sentence"]
 
 
 def test_compact_signal_never_blends():
@@ -230,3 +296,5 @@ def test_deep_panel_route_serves_json_leaves():
     assert body["no_blended_score"] is True
     assert body["history"]["kind"] == "conditional"
     assert "examples" in body["history"]
+    assert body["copy"]["hit_rates"]
+    assert all("_" not in row["label"] for row in body["copy"]["profile"])

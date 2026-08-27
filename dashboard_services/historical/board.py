@@ -20,6 +20,8 @@ from dashboard_services.historical.comps import (
     lookup_board_probabilities,
 )
 from dashboard_services.historical.definitions import (
+    COMP_BOARD_TIERS,
+    COMP_DIMENSION_ORDER,
     SKILL_POSITIONS,
     display_percent,
     draft_capital_bucket,
@@ -43,6 +45,60 @@ PRESEASON_FIELDS: tuple[str, ...] = (
     "previous_season_snap_pct",
     "previous_season_year",
 )
+
+# Modal copy only. Matching still uses the snake_case keys in comps.
+COMP_FEATURE_LABELS: dict[str, str] = {
+    "position": "Position",
+    "career_stage": "Career stage",
+    "draft_capital": "Draft capital",
+    "prior_finish": "Last year finish",
+    "age_bucket": "Age",
+    "target_share": "Last year targets",
+    "snap_pct": "Last year snaps",
+}
+CAREER_STAGE_DISPLAY: dict[str, str] = {
+    "rookie": "Rookie",
+    "year_2": "Year 2",
+    "year_3": "Year 3",
+    "year_4": "Year 4",
+    "year_5": "Year 5",
+    "year_6_plus": "Year 6+",
+}
+DRAFT_CAPITAL_DISPLAY: dict[str, str] = {
+    "round_1": "Round 1",
+    "day_2": "Day 2 (rounds 2–3)",
+    "day_3": "Day 3 (rounds 4–7)",
+    "undrafted": "Undrafted",
+}
+PRIOR_FINISH_DISPLAY: dict[str, str] = {
+    "none": "No prior season",
+    "top_5": "Top 5",
+    "top_12": "Top 12",
+    "top_24": "Top 24",
+    "top_36": "Top 36",
+    "outside_36": "Outside top 36",
+}
+ADP_BUCKET_DISPLAY: dict[str, str] = {
+    "round_1": "Round 1",
+    "round_2": "Round 2",
+    "round_3": "Round 3",
+    "round_4": "Round 4",
+    "round_5": "Round 5",
+    "rounds_6_7": "Rounds 6–7",
+    "rounds_8_10": "Rounds 8–10",
+    "rounds_11_plus": "Rounds 11+",
+}
+TIER_FINISH_DISPLAY: dict[str, str] = {
+    "top_5": "top-5",
+    "top_12": "top-12",
+    "top_24": "top-24",
+}
+CONFIDENCE_DISPLAY: dict[str, str] = {
+    "low": "small sample",
+    "moderate": "moderate sample",
+    "good": "solid sample",
+    "strong": "large sample",
+}
 
 
 def board_contract() -> dict:
@@ -267,6 +323,161 @@ def attach_historical_signals(
     return compact_out
 
 
+def _title_from_key(key: str) -> str:
+    return str(key or "").replace("_", " ").strip().title()
+
+
+def format_age_bucket_label(value: Any) -> str:
+    """Turn warehouse age bins into readable age copy."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.startswith("<="):
+        years = text[2:].strip()
+        return f"{years} or younger" if years else text
+    if text.endswith("+") and text[:-1].replace(".", "", 1).isdigit():
+        return f"{text[:-1]} or older"
+    return text.replace("-", "–")
+
+
+def format_comp_bucket_value(dim: str, value: Any) -> str:
+    """Human value for one matching dimension. Missing stays empty."""
+    if value is None or value == "":
+        return ""
+    text = str(value)
+    if dim == "position":
+        return text.upper()
+    if dim == "career_stage":
+        return CAREER_STAGE_DISPLAY.get(text, _title_from_key(text))
+    if dim == "draft_capital":
+        return DRAFT_CAPITAL_DISPLAY.get(text, _title_from_key(text))
+    if dim == "prior_finish":
+        return PRIOR_FINISH_DISPLAY.get(text, _title_from_key(text))
+    if dim == "age_bucket":
+        return format_age_bucket_label(text)
+    return text
+
+
+def format_adp_bucket_label(bucket: Any) -> str:
+    if bucket in (None, ""):
+        return ""
+    text = str(bucket)
+    return ADP_BUCKET_DISPLAY.get(text, _title_from_key(text))
+
+
+def _confidence_label(confidence: Any) -> Optional[str]:
+    if confidence in (None, ""):
+        return None
+    text = str(confidence)
+    return CONFIDENCE_DISPLAY.get(text, text.replace("_", " "))
+
+
+def _sample_clause(n: Any, confidence: Any) -> str:
+    bits: list[str] = []
+    sample = _optional_int(n)
+    if sample is not None:
+        bits.append(f"n={sample}")
+    conf = _confidence_label(confidence)
+    if conf:
+        bits.append(conf)
+    if not bits:
+        return ""
+    return ", ".join(bits)
+
+
+def build_hist_panel_copy(
+    history: Mapping[str, Any],
+    market: Optional[Mapping[str, Any]] = None,
+) -> dict:
+    """Display payload for the Hist modal. No matching math."""
+    hist = history if isinstance(history, Mapping) else {}
+    mkt = market if isinstance(market, Mapping) else {}
+    key_used = hist.get("key_used") if isinstance(hist.get("key_used"), Mapping) else {}
+    pos = str(key_used.get("position") or "").upper()
+    rates = hist.get("rates") if isinstance(hist.get("rates"), Mapping) else {}
+    hit_rates: list[dict] = []
+    for tier in COMP_BOARD_TIERS:
+        rec = rates.get(tier) if isinstance(rates.get(tier), Mapping) else {}
+        finish = TIER_FINISH_DISPLAY.get(tier, tier.replace("_", "-"))
+        label = f"Finished as a {finish}"
+        if pos:
+            label = f"{label} {pos}"
+        n = rec.get("sample_size")
+        if n in (None, 0):
+            n = hist.get("n")
+        hit_rates.append({
+            "tier": tier,
+            "label": label,
+            "pct": rec.get("display_pct"),
+            "n": n,
+            "confidence": rec.get("confidence"),
+            "confidence_label": _confidence_label(rec.get("confidence")),
+        })
+
+    profile: list[dict] = []
+    for dim in COMP_DIMENSION_ORDER:
+        if dim not in key_used:
+            continue
+        value = format_comp_bucket_value(dim, key_used.get(dim))
+        if not value:
+            continue
+        profile.append({
+            "key": dim,
+            "label": COMP_FEATURE_LABELS.get(dim, _title_from_key(dim)),
+            "value": value,
+        })
+
+    dropped = [str(d) for d in (hist.get("dropped") or []) if d]
+    relaxed = [
+        {"key": dim, "label": COMP_FEATURE_LABELS.get(dim, _title_from_key(dim))}
+        for dim in dropped
+    ]
+    relaxed_note = None
+    if relaxed:
+        relaxed_note = (
+            "These filters were dropped so the comparison pool could reach "
+            "at least 15 similar seasons."
+        )
+
+    bucket_label = format_adp_bucket_label(mkt.get("adp_bucket"))
+    mkt_pct = display_percent(mkt.get("p_top_12"))
+    sample_bit = _sample_clause(mkt.get("sample_size"), mkt.get("confidence"))
+    if mkt_pct is not None and bucket_label:
+        market_sentence = (
+            f"Players drafted in {bucket_label} historically finished top-12 "
+            f"{mkt_pct}% of the time"
+        )
+        if sample_bit:
+            market_sentence += f" ({sample_bit})"
+        market_sentence += "."
+    elif bucket_label:
+        market_sentence = (
+            f"ADP is in {bucket_label}, but that historical bucket has no "
+            "top-12 hit rate yet."
+        )
+    else:
+        market_sentence = (
+            "This sheet has no live ADP for this player, so there is no "
+            "ADP-bucket hit rate."
+        )
+
+    return {
+        "headline": "How often similar pre-season profiles hit each finish line",
+        "hit_rates": hit_rates,
+        "profile_heading": "This pre-season profile",
+        "profile": profile,
+        "relaxed_heading": "Dropped to grow the sample",
+        "relaxed": relaxed,
+        "relaxed_note": relaxed_note,
+        "market_heading": "ADP bucket hit rate",
+        "market_sentence": market_sentence,
+        "examples_heading": "Players with a similar pre-season profile",
+        "examples_note": (
+            "This player is excluded. Rank and PPR points are from that season."
+        ),
+    }
+
+
 def build_deep_panel(
     player_id: str,
     aggregates: Mapping[str, Any],
@@ -291,6 +502,15 @@ def build_deep_panel(
     comps = aggregates.get("comps") if isinstance(aggregates.get("comps"), Mapping) else aggregates
     looked = lookup_board_probabilities(query, comps if isinstance(comps, Mapping) else {})
     market = lookup_market_probability(query, aggregates)
+    history = {
+        "n": looked.get("n"),
+        "key_used": looked.get("key_used"),
+        "dropped": looked.get("dropped"),
+        "fallback": looked.get("fallback"),
+        "rates": looked.get("rates"),
+        "examples": looked.get("examples") or [],
+        "kind": "conditional",
+    }
     return {
         "available": True,
         "player_id": pid,
@@ -298,14 +518,7 @@ def build_deep_panel(
         "no_blended_score": True,
         "not_in_ranking": True,
         "preseason": extract_comp_query(query),
-        "history": {
-            "n": looked.get("n"),
-            "key_used": looked.get("key_used"),
-            "dropped": looked.get("dropped"),
-            "fallback": looked.get("fallback"),
-            "rates": looked.get("rates"),
-            "examples": looked.get("examples") or [],
-            "kind": "conditional",
-        },
+        "history": history,
         "market": market,
+        "copy": build_hist_panel_copy(history, market),
     }

@@ -341,6 +341,16 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert ".cs-hist-close { flex-shrink: 0;" in body
     assert "float: right" not in body
     assert ".cs-hist-modal, .cs-hist-btn { display: none !important; }" in body
+    assert ".cs-hist-modal { align-items: flex-end" not in body
+    assert "14px 14px 0 0" not in body
+    assert ".cs-hist-chip" in body
+    assert ".cs-hist-hit-pct" in body
+    assert "align-items: center" in body
+    assert "data-hist-adp" in script
+    assert "copy.hit_rates" in script
+    assert "redraft_avg_pick=" in script
+    assert "Object.keys((resp.preseason)" not in script
+    assert "Named comps (this player excluded)" not in script
     assert "p_hit_pct" not in pick
     assert "historical-player" not in core
     assert "p_hit_pct" not in core

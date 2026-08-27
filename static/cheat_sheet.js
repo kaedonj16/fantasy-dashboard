@@ -1161,7 +1161,7 @@
         var body = pct == null ? '&ndash;' : (pct + '%');
         return '<td class="cs-hist-col"><span class="cs-hist-cell">'
             + '<span class="cs-val ' + cls + '" title="' + esc(tip) + '">' + body + '</span>'
-            + '<button type="button" class="cs-hist-btn" data-hist-id="' + esc(x.id) + '" data-hist-name="' + esc(x.name) + '" title="Similar-player history">i</button>'
+            + '<button type="button" class="cs-hist-btn" data-hist-id="' + esc(x.id) + '" data-hist-name="' + esc(x.name) + '" data-hist-adp="' + (x.adp != null && isFinite(Number(x.adp)) ? String(x.adp) : '') + '" data-hist-pos="' + esc(x.pos || '') + '" title="Similar-player history">i</button>'
             + '</span></td>';
     }
 
@@ -1940,14 +1940,21 @@
         modal.classList.remove('open');
     }
 
-    function openHistPanel(id, name) {
+    function openHistPanel(id, name, adp, pos) {
         var modal = $('csHistModal');
         if (!modal || !id) return;
         $('csHistTitle').textContent = name || 'History';
-        $('csHistSub').textContent = 'Descriptive similar-player rates. Not a ranking score.';
+        $('csHistSub').textContent = 'How often similar pre-season profiles finished top-5, top-12, and top-24. Not a ranking score.';
         $('csHistBody').innerHTML = '<p class="cs-hist-sub">Loading…</p>';
         modal.classList.add('open');
         var url = '/api/historical-player/' + encodeURIComponent(id);
+        var qs = [];
+        if (adp != null && adp !== '' && isFinite(Number(adp))) {
+            qs.push('adp=' + encodeURIComponent(adp));
+            qs.push('redraft_avg_pick=' + encodeURIComponent(adp));
+        }
+        if (pos) qs.push('position=' + encodeURIComponent(pos));
+        if (qs.length) url += '?' + qs.join('&');
         fetch(url, {cache: 'no-store'})
             .then(function (r) { return r.json(); })
             .then(function (resp) {
@@ -1964,34 +1971,51 @@
         if (!resp || resp.available === false) {
             return '<p class="cs-hist-sub">No historical profile for this player yet.</p>';
         }
-        var rates = (resp.history && resp.history.rates) || {};
-        var top12 = rates.top_12 || {};
-        var pct = top12.display_pct;
-        var n = resp.history && resp.history.n;
-        var dropped = (resp.history && resp.history.dropped) || [];
-        var mkt = resp.market || {};
-        var mktPct = mkt.p_top_12 != null ? Math.round(Number(mkt.p_top_12) * 100) : null;
-        var html = '<dl class="cs-hist-dl">'
-            + '<dt>P(top-12)</dt><dd>' + (pct != null ? pct + '%' : '—')
-            + (n != null ? ' · n=' + n : '')
-            + (top12.confidence ? ' · ' + top12.confidence : '') + '</dd>'
-            + '<dt>Market</dt><dd>' + (mktPct != null ? mktPct + '%' : '—')
-            + (mkt.adp_bucket ? ' at ' + mkt.adp_bucket : '') + '</dd>'
-            + '<dt>Matched</dt><dd>' + esc(Object.keys((resp.preseason) || {}).join(', ') || 'position only') + '</dd>'
-            + '<dt>Relaxed</dt><dd>' + (dropped.length ? esc(dropped.join(', ')) : 'none') + '</dd>'
-            + '</dl>';
+        var copy = resp.copy || {};
+        var html = '';
+        var hits = copy.hit_rates || [];
+        if (hits.length) {
+            html += '<section class="cs-hist-sec"><h3>' + esc(copy.headline || 'Hit rates') + '</h3><div class="cs-hist-hits">';
+            hits.forEach(function (row) {
+                var meta = [];
+                if (row.n != null) meta.push('n=' + row.n);
+                if (row.confidence_label) meta.push(row.confidence_label);
+                html += '<div class="cs-hist-hit"><div><div class="cs-hist-hit-label">' + esc(row.label || '') + '</div>'
+                    + (meta.length ? '<div class="cs-hist-hit-meta">' + esc(meta.join(' · ')) + '</div>' : '')
+                    + '</div><div class="cs-hist-hit-pct">' + (row.pct != null ? row.pct + '%' : '—') + '</div></div>';
+            });
+            html += '</div></section>';
+        }
+        var profile = copy.profile || [];
+        if (profile.length) {
+            html += '<section class="cs-hist-sec"><h3>' + esc(copy.profile_heading || 'This pre-season profile') + '</h3><div class="cs-hist-profile">';
+            profile.forEach(function (row) {
+                html += '<span class="cs-hist-chip"><span class="cs-hist-chip-k">' + esc(row.label || '') + '</span><span class="cs-hist-chip-v">' + esc(row.value || '') + '</span></span>';
+            });
+            html += '</div></section>';
+        }
+        if (copy.relaxed && copy.relaxed.length) {
+            html += '<section class="cs-hist-sec"><h3>' + esc(copy.relaxed_heading || 'Dropped to grow the sample') + '</h3>';
+            if (copy.relaxed_note) html += '<p class="cs-hist-note">' + esc(copy.relaxed_note) + '</p>';
+            html += '<p class="cs-hist-note">' + copy.relaxed.map(function (row) { return esc(row.label || ''); }).join(' · ') + '</p></section>';
+        }
+        if (copy.market_sentence) {
+            html += '<section class="cs-hist-sec"><h3>' + esc(copy.market_heading || 'ADP bucket hit rate') + '</h3><p class="cs-hist-note">' + esc(copy.market_sentence) + '</p></section>';
+        }
         var examples = (resp.history && resp.history.examples) || [];
         if (examples.length) {
-            html += '<p class="cs-hist-sub">Named comps (this player excluded)</p><ul class="cs-hist-ex">';
+            html += '<section class="cs-hist-sec"><h3>' + esc(copy.examples_heading || 'Players with a similar pre-season profile') + '</h3>';
+            if (copy.examples_note) html += '<p class="cs-hist-note">' + esc(copy.examples_note) + '</p>';
+            html += '<ul class="cs-hist-ex">';
             examples.forEach(function (ex) {
                 html += '<li><span>' + esc(ex.name || ex.sleeper_id || '') + (ex.season ? ' · ' + ex.season : '') + '</span><span>'
                     + (ex.positional_finish != null ? '#' + ex.positional_finish : '')
                     + (ex.ppr_points != null ? ' · ' + ex.ppr_points + ' pts' : '')
                     + '</span></li>';
             });
-            html += '</ul>';
+            html += '</ul></section>';
         }
-        return html;
+        return html || '<p class="cs-hist-sub">No historical profile for this player yet.</p>';
     }
 
     function init() {
@@ -2190,7 +2214,12 @@
             if (histBtn) {
                 e.preventDefault();
                 e.stopPropagation();
-                openHistPanel(histBtn.getAttribute('data-hist-id'), histBtn.getAttribute('data-hist-name'));
+                openHistPanel(
+                    histBtn.getAttribute('data-hist-id'),
+                    histBtn.getAttribute('data-hist-name'),
+                    histBtn.getAttribute('data-hist-adp'),
+                    histBtn.getAttribute('data-hist-pos')
+                );
                 return;
             }
             var el = e.target.closest('[data-name]');
