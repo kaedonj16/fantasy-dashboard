@@ -554,3 +554,40 @@ def test_future_pick_decision_score_drops_zero_survival_elites():
     assert out["likely"] == pytest.approx(70 * (0.08 + 0.92 * 0.40))
     assert out["gibbs"] < out["likely"]
     assert out["nullSurvive"] == 80
+
+
+def test_late_round_upside_is_smooth_and_requires_a_role_path():
+    out = _run_need_cases("""(() => ({
+      early:C.lateRoundUpsideBonus({round:2,totalRounds:16,path:1,aboveReplacement:.7,tierQuality:.7,ppgQuality:.7,functionalUtility:.8,rosterNeedPath:1,youngWithPath:true}),
+      latePath:C.lateRoundUpsideBonus({round:15,totalRounds:16,path:.9,aboveReplacement:.6,tierQuality:.6,ppgQuality:.6,functionalUtility:.8,rosterNeedPath:1,youngWithPath:true}),
+      lateNoPath:C.lateRoundUpsideBonus({round:15,totalRounds:16,path:0,aboveReplacement:.1,tierQuality:.1,ppgQuality:.1,functionalUtility:.8,rosterNeedPath:.3,youngWithPath:false})
+    }))()""")
+    assert out["early"] == 0
+    assert out["latePath"] > 0
+    assert out["lateNoPath"] < 0
+
+
+def test_opportunity_cost_requires_market_survival_and_material_gap():
+    out = _run_need_cases("""(() => ({
+      tiny:C.opportunityCostVerdict({selectedScore:84,bestAlternativeScore:85,outsideMarketRange:true,isBpa:false,survivePct:70}),
+      large:C.opportunityCostVerdict({selectedScore:71,bestAlternativeScore:91,outsideMarketRange:true,isBpa:false,survivePct:70}),
+      adpOnly:C.opportunityCostVerdict({selectedScore:84,bestAlternativeScore:85,outsideMarketRange:true,isBpa:false,survivePct:70}),
+      wontLast:C.opportunityCostVerdict({selectedScore:71,bestAlternativeScore:91,outsideMarketRange:true,isBpa:false,survivePct:10})
+    }))()""")
+    assert out["tiny"]["severity"] == "none"
+    assert out["tiny"]["significantReach"] is False
+    assert out["large"]["severity"] == "severe"
+    assert out["large"]["significantReach"] is True
+    assert out["adpOnly"]["significantReach"] is False
+    assert out["wontLast"]["significantReach"] is False
+
+
+def test_bye_severity_uses_starter_impact_not_raw_count():
+    out = _run_need_cases("""(() => ({
+      bench:C.byeWeekSeverity([
+        {bye:7,pos:'WR',role:'fringe',quality:.3},{bye:7,pos:'RB',role:'fringe',quality:.3},{bye:7,pos:'WR',role:'fringe',quality:.3}],{}),
+      starters:C.byeWeekSeverity([
+        {bye:7,pos:'RB',role:'starter',quality:1},{bye:7,pos:'RB',role:'starter',quality:.9},{bye:7,pos:'WR',role:'starter',quality:.9}],{})
+    }))()""")
+    assert out["bench"][0]["level"] == "none"
+    assert out["starters"][0]["level"] in {"meaningful", "severe"}

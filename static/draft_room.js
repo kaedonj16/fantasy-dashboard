@@ -3562,6 +3562,24 @@
       });
       if (myRBTeams[p.team]) handcuffBonus = 5;
     }
+    var upsideBonus = 0;
+    if (state.type === 'redraft' && DraftBoardCore.lateRoundUpsideBonus){
+      var rd = Math.floor(((state.current || 1) - 1) / Math.max(1, state.teams || 12)) + 1;
+      var path = 0;
+      if (p.breakout_score != null) path = Math.max(path, clamp01(Number(p.breakout_score) / 100));
+      if (p.projected_role != null && isFinite(Number(p.projected_role))) path = Math.max(path, clamp01(Number(p.projected_role)));
+      if (handcuffBonus > 0) path = Math.max(path, 0.75);
+      var ppgn = ppgNormOf(p); if (ppgn != null) path = Math.max(path, ppgn * 0.65);
+      var age = p.age != null ? Number(p.age) : null;
+      upsideBonus = DraftBoardCore.lateRoundUpsideBonus({
+        round: rd, totalRounds: state.rounds || 16, path: path,
+        aboveReplacement: vorOf(p) > 0 ? clamp01(vorOf(p) / Math.max(1, valOf(p))) : 0,
+        tierQuality: tierOf(p) ? clamp01((10 - Math.min(9, tierOf(p))) / 9) : 0,
+        ppgQuality: ppgn == null ? 0 : ppgn, functionalUtility: util,
+        rosterNeedPath: role === 'starter' || role === 'flex' || role === 'bench1' ? 1 : 0.35,
+        youngWithPath: path > 0 && age != null && (pos === 'RB' || pos === 'WR') && age <= (pos === 'RB' ? 24 : 25)
+      });
+    }
     // Positional-scarcity urgency scales with how many dedicated STARTERS are
     // still open at this position, not just whether the next one starts. A single
     // remaining slot (TE, or QB in 1QB) produces a real but muted cliff; a
@@ -3577,7 +3595,7 @@
       quality: ppgNormOf(p) || 0, required: c.obligations.required,
       freePicks: c.obligations.freePicks,
       waitLoss: Math.max(0, base - expected) * (1 + demandRisk), waitLossScale: waitLossScale,
-      waitPenalty: waitPenalty, handcuffBonus: handcuffBonus });
+      waitPenalty: waitPenalty, handcuffBonus: handcuffBonus, upsideBonus: upsideBonus });
     // While waiting, rank by expected value at YOUR pick so Gibbs at 0% at #9
     // cannot sit at #1 REC above players who will actually be there.
     if (advisingFuture && DraftBoardCore.futurePickDecisionScore){
@@ -4338,7 +4356,7 @@
     if (!_tg || typeof _tg.teamGradeComposite !== 'function') return null;
     var _comp = _tg.teamGradeComposite(
       picks, _slots, posTargets(), state.teams || 12, state.type,
-      _leaguePpg, _leagueVal, _leaguePlayers
+      _leaguePpg, _leagueVal, _leaguePlayers, { sf: !!state.sf, tep: scoringCfg().tep }
     );
     // Missing composite is ungradeable — do not invent score 0 (letter F).
     if (!_comp) return null;
@@ -4346,6 +4364,8 @@
     return { score: _comp.total, value: _comp.value, balance: _comp.balance, tier: _comp.starter,
       count: mine.length, avgPs: avgPs != null ? Math.round(avgPs) : null,
       strength: Math.round(_comp.strengthRatio * 100),
+      starterIds: _comp.starterIds, functionalDepth: _comp.functionalDepth,
+      benchEfficiency: _comp.benchEfficiency,
       window: _competitiveWindow(_starterArr),
       provisional: gradeIsProvisional(mine.length) };
   }
@@ -5743,7 +5763,9 @@
   // Single source of truth so the inline ⓘ tooltips and the help popover agree.
   var _GLOSSARY = [
     { term: 'Recommendation', def: 'The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. A major value fall can still overcome imperfect roster fit. When it is not your turn, the order is for your next owned pick and players unlikely to last there are ranked down. Recommendation is shown as a rank rather than a grade because its internal utility naturally changes as the board is depleted.' },
-    { term: 'Pick Score (PS)', def: 'A 0-100 grade of pick quality. It is a composite of trade value, positional VOR, ADP, tier, roster need, and projected points — not a count of which compare-modal rows a player wins. On the live board, sidebar, compare modal, and player preview it is scaled relative to the best player still available (so a strong late pick still reads well). Made-pick chips on the report card / Deep Dive “Board PS”, and Deep Dive’s Avg pick score, use the same relative scale at that historical slot. Your letter grade’s Value bar uses the absolute, round-weighted kernel score — those two numbers can differ. Kickers and defenses aren’t scored. Missing projections fall back to value rather than counting as zero.' },
+    { term: 'Pick Score (PS)', def: 'How good is this player at this pick? The absolute 0-100 quality kernel combines model value, positional VOR, ADP, tier, roster need, and projected points. It does not include live survival timing or the Recommendation rank. Kickers and defenses are not scored.' },
+    { term: 'Board PS', def: 'How good was this selection relative to what was available at that moment? Made-pick chips replay the historical remaining pool and scale the absolute Pick Score against its best option. Deep Dive’s Avg pick score, use the same relative scale. Board PS can therefore differ from absolute Pick Score and Recommendation.' },
+    { term: 'Draft Grade', def: 'How good is the resulting roster? It primarily evaluates the optimal starters, functional bench depth, efficient construction, and role- and round-weighted pick quality. It is not an average Recommendation rank, and K/DEF are grade-neutral.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses projected season fantasy points; VOR uses dynasty or redraft trade value. Last season\'s injury-shortened totals are not used.' },
     { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value. When a sample size (n=) is shown, a small n means the ADP is noisy.' },
@@ -5957,8 +5979,10 @@
     var diff = deepDiveDiff(p);
     var bpa = p.consAdp != null ? !!p.consIsBpa : !!p.isBpa;
     if (Core && Core.adpDeltaVerdict){
-      return Core.adpDeltaVerdict({ diff: diff, isBpa: bpa, survivePct: p.survivePct,
+      var verdict = Core.adpDeltaVerdict({ diff: diff, isBpa: bpa, survivePct: p.survivePct,
         tolerance: p.adpTolerance });
+      if (verdict.cls === 'reach' && !p.significantReach) return {label:'Aggressive',cls:'aggressive'};
+      return verdict;
     }
     if (diff == null) return { label:'—', cls:'na' };
     if (diff >= 8)  return { label:'Steal', cls:'steal' };
@@ -6007,6 +6031,36 @@
     if (Number(s) === 0) return '0.0';
     return (Number(s) > 0 ? '+' : '') + s;
   }
+  function ddHistoricalAlternatives(pn, selected, taken){
+    var Core = window.DraftBoardCore; if (!Core || !Core.decisionScore) return null;
+    var counts = { QB:0, RB:0, WR:0, TE:0 }, qualities = [], qualByPos = {};
+    Object.keys(state.picks).forEach(function(k){
+      var n = parseInt(k,10), pk = state.picks[k]; if (!pk || n >= pn || !isMyPick(n)) return;
+      var f = playersById[String(pk.id)] || pk, pos = String(f.position || '').toUpperCase();
+      if (counts[pos] == null) return; counts[pos]++;
+      var q = ppgNormOf(f); qualities.push({pos:pos, quality:q == null ? 0.35 : q});
+      if (vorOf(f) == null || vorOf(f) > 0) qualByPos[pos] = (qualByPos[pos] || 0) + 1;
+    });
+    var remaining = players.filter(function(p){
+      var pos = String(p.position || '').toUpperCase();
+      return !taken[String(p.id)] && ['K','DEF','DST','D/ST'].indexOf(pos) < 0;
+    });
+    if (selected && !remaining.some(function(p){return String(p.id)===String(selected.id);})) remaining.push(selected);
+    var maxV = 0; remaining.forEach(function(p){maxV=Math.max(maxV,valOf(p));});
+    var rs = (state && state.roster) || defaultRoster(), opts = {sf:!!state.sf,tep:scoringCfg().tep,draftType:state.type};
+    var rows = remaining.map(function(p){
+      var pos = String(p.position || '').toUpperCase();
+      var abs = pickScore(p,maxV,counts,{grading:true,pickNo:pn,qualByPos:qualByPos});
+      if (abs == null) return null;
+      var role = Core.candidateRosterRole(pos,ppgNormOf(p)||0,qualities,rs,!!state.sf);
+      var util = Core.positionNeedUtility(pos,counts,rs,Object.assign({},opts,{role:role}));
+      return { player:p, absolutePickScore:abs, decisionScore:Core.decisionScore({base:abs,utility:util,bench:role==='bench1'||role==='bench2',deepBench:role==='bench2',quality:ppgNormOf(p)||0}) };
+    }).filter(Boolean).sort(function(a,b){return b.decisionScore-a.decisionScore||b.absolutePickScore-a.absolutePickScore;});
+    var sel = rows.filter(function(r){return String(r.player.id)===String(selected.id);})[0];
+    if (!sel || !rows.length) return null;
+    return { selectedScore:sel.decisionScore,bestAlternativeScore:rows[0].decisionScore,
+      bestAlternative:rows[0].player,topAlternatives:rows.filter(function(r){return String(r.player.id)!==String(selected.id);}).slice(0,5) };
+  }
   // My picks in draft order, each carrying the market delta + pool-relative pick
   // score (relPS = the exact number the report-card rows show).
   function ddMyPicks(){
@@ -6046,6 +6100,12 @@
       var adpTolerance = Core && Core.adpUncertainty
         ? Core.adpUncertainty(full, Math.floor((pn - 1) / Math.max(1, state.teams || 12)) + 1, sourceValues)
         : 5;
+      var alternatives = ddHistoricalAlternatives(pn, full, taken);
+      var opp = alternatives && Core && Core.opportunityCostVerdict ? Core.opportunityCostVerdict({
+        selectedScore: alternatives.selectedScore, bestAlternativeScore: alternatives.bestAlternativeScore,
+        outsideMarketRange: (consDiff != null ? consDiff : diff) != null && (consDiff != null ? consDiff : diff) <= -adpTolerance,
+        isBpa: consAdp != null ? consIsBpa : isBpa, survivePct: survivePct
+      }) : null;
       var boardDiff = Core && Core.adpBoardDelta
         ? Core.adpBoardDelta({ diff: diff, isBpa: isBpa, survivePct: survivePct })
         : diff;
@@ -6060,7 +6120,9 @@
         adp: adp, diff: diff, consAdp: consAdp, consDiff: consDiff,
         isBpa: isBpa, consIsBpa: consIsBpa, survivePct: survivePct, adpTolerance: adpTolerance,
         boardDiff: boardDiff, consBoardDiff: consBoardDiff,
-        ps: relPS(pl, pn), tier: tierOf(full) });
+        ps: relPS(pl, pn), tier: tierOf(full), alternatives: alternatives,
+        opportunityCost: opp ? opp.gap : null, opportunitySeverity: opp ? opp.severity : 'none',
+        significantReach: !!(opp && opp.significantReach) });
     });
     rows.sort(function(a, b){ return a.pn - b.pn; });
     return rows;
@@ -6519,12 +6581,18 @@
         + '</div>';
     }).join('');
     var strength = (me.grade.strength != null) ? me.grade.strength : null;
+    var depth = me.grade.functionalDepth, eff = me.grade.benchEfficiency;
+    var benchSummary = depth == null ? '' : (depth >= 0.68 && eff >= 0.60
+      ? '<p><b>Strong functional depth.</b> Your first reserves provide useful injury and FLEX cover, with efficient emphasis on startable bench paths.</p>'
+      : eff < 0.45
+        ? '<p><b>Redundant single-slot depth.</b> Reserve usage is weighted down where backup QB/TE spots have limited weekly utility in this format.</p>'
+        : '<p><b>Usable roster floor.</b> Your reserves provide some coverage, though their paths to the weekly lineup are mixed.</p>');
 
     return '<div class="dd-card"><div class="dd-two">'
       + '<div><div class="dd-sec"><h4>Draft capital</h4><p>Share of your value spent per position vs the league average (tick).</p></div>' + capBars + '</div>'
       + '<div><div class="dd-sec"><h4>Starters vs league</h4><p>'
       + (strength != null ? 'Your starters project <b>' + strength + '%</b> of a league-average lineup.' : 'Your starting lineup, ranked by position.')
-      + '</p></div>' + starterRows + '</div>'
+      + '</p>' + benchSummary + '</div>' + starterRows + '</div>'
       + '</div></div>';
   }
 
@@ -6546,30 +6614,41 @@
       var parts = [];
       // Only label Steal/Reach when the market delta clears the same thresholds
       // the ledger uses — otherwise a "Fair" pick was being sold as an edge.
-      if (steal && deepDiveDiff(steal) >= 3){
+      var stealSig = steal && window.DraftBoardCore && DraftBoardCore.significantSteal
+        ? DraftBoardCore.significantSteal({marketFall:deepDiveDiff(steal),adpUncertainty:steal.adpTolerance,boardPickScore:steal.ps})
+        : steal && deepDiveDiff(steal) >= 8;
+      if (steal && stealSig){
         parts.push(edge('Biggest steal', 'win', steal, 'Fell <b>' + Math.abs(deepDiveDiff(steal)).toFixed(1) + '</b> picks past ADP' + (steal.ps != null ? ' — a ' + steal.ps + ' pick score.' : '.')));
       }
-      if (best && (!steal || best !== steal || deepDiveDiff(steal) < 3)){
+      if (best && (!steal || best !== steal || !stealSig)){
         parts.push(edge('Best pick', 'winb', best, 'Your highest pick score at <b>' + best.ps + '</b>.'));
       }
       if (reach){
-        parts.push(edge('Biggest reach', 'bad', reach, 'Taken <b>' + Math.abs(deepDiveDiff(reach)).toFixed(1) + '</b> picks before ADP with a better option still on the board.'));
+        var alt = reach.alternatives && reach.alternatives.bestAlternative;
+        parts.push(edge('Biggest reach', 'bad', reach, '<b>' + Math.abs(deepDiveDiff(reach)).toFixed(1) + '</b> picks outside the expected market range'
+          + (alt ? '; ' + esc(alt.name) + ' carried a <b>' + Math.round(reach.opportunityCost) + '-point</b> historical Decision Score advantage.' : '.')));
+      } else {
+        parts.push('<div class="dd-edge winb"><div class="dd-edge-k">No major reaches</div><div class="dd-edge-say">Your picks stayed within reasonable market ranges or close decision-quality bands; late swings used wider ADP uncertainty.</div></div>');
       }
       if (parts.length) edges = '<div class="dd-edges">' + parts.join('') + '</div>';
     }
     // Risk flags
     var flags = [];
     if (state.type === 'redraft'){
-      var byeMap = {};
-      picks.forEach(function(p){
-        var bw = p.full && p.full.bye_week ? Number(p.full.bye_week) : null;
-        if (bw){ (byeMap[bw] = byeMap[bw] || []).push(p.pl.name); }
+      var benchSeen = {}, byePlayers = picks.map(function(p){
+        var starter = me.grade.starterIds && me.grade.starterIds[String(p.pl.id)];
+        var role = starter ? 'starter' : (!benchSeen[p.pos] ? 'primary' : 'fringe');
+        if (!starter) benchSeen[p.pos] = true;
+        return {name:p.pl.name,pos:p.pos,bye:p.full&&p.full.bye_week,role:role,quality:ppgNormOf(p.full)||0,coverQuality:0};
       });
-      var worst = null;
-      Object.keys(byeMap).forEach(function(w){ if (!worst || byeMap[w].length > byeMap[worst].length) worst = w; });
-      if (worst && byeMap[worst].length >= 3){
-        flags.push({ cls: 'crit', ttl: 'Week ' + worst + ' bye cluster — ' + byeMap[worst].length + ' players out',
-          ds: byeMap[worst].join(', ') + ' all sit on the same week. Plan a stopgap before then.' });
+      var byeRows = window.DraftBoardCore && DraftBoardCore.byeWeekSeverity
+        ? DraftBoardCore.byeWeekSeverity(byePlayers,{sf:!!state.sf,tep:scoringCfg().tep}) : [];
+      var worstBye = byeRows[0];
+      if (worstBye && worstBye.level !== 'none'){
+        var severe = worstBye.level === 'severe';
+        flags.push({ cls: severe ? 'crit' : 'warn', ttl: 'Week ' + worstBye.week + ' — '
+          + (severe ? 'severe bye-week crunch' : worstBye.level === 'meaningful' ? 'meaningful starter overlap' : 'mild bye concentration'),
+          ds: 'This is a manageable scheduling risk based on projected starter impact, positional streamability, and reserve roles — not a verdict on the draft.' });
       }
     }
     // Thin position: rostered count at or below starter demand, including FLEX/SF

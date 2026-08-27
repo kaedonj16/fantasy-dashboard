@@ -383,3 +383,52 @@ def test_redraft_empty_slot_lowers_grade():
         league_players=pool,
     )
     assert dr_team_grade_score(filled, **kw) > dr_team_grade_score(holes, **kw)
+
+
+def test_redraft_useful_rb_wr_bench_beats_redundant_qb_te_depth():
+    slots = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"]
+    targets = {"QB": 1, "RB": 5, "WR": 5, "TE": 1}
+    starters = [
+        {"id":"q","pos":"QB","ps":75,"pn":1,"val":7000,"ppg":20},
+        {"id":"r1","pos":"RB","ps":75,"pn":2,"val":6800,"ppg":17},
+        {"id":"r2","pos":"RB","ps":75,"pn":3,"val":6500,"ppg":16},
+        {"id":"w1","pos":"WR","ps":75,"pn":4,"val":6400,"ppg":16},
+        {"id":"w2","pos":"WR","ps":75,"pn":5,"val":6200,"ppg":15},
+        {"id":"w3","pos":"WR","ps":75,"pn":6,"val":6000,"ppg":14},
+        {"id":"t","pos":"TE","ps":75,"pn":7,"val":5000,"ppg":12},
+    ]
+    useful = starters + [
+        {"id":"r3","pos":"RB","ps":70,"pn":100,"val":4500,"ppg":11},
+        {"id":"r4","pos":"RB","ps":68,"pn":120,"val":4000,"ppg":10},
+        {"id":"w4","pos":"WR","ps":70,"pn":110,"val":4400,"ppg":11},
+        {"id":"w5","pos":"WR","ps":68,"pn":130,"val":3900,"ppg":9},
+    ]
+    redundant = starters + [
+        {"id":"q2","pos":"QB","ps":70,"pn":100,"val":4500,"ppg":19},
+        {"id":"q3","pos":"QB","ps":68,"pn":120,"val":4000,"ppg":18},
+        {"id":"t2","pos":"TE","ps":70,"pn":110,"val":4400,"ppg":11},
+        {"id":"t3","pos":"TE","ps":68,"pn":130,"val":3900,"ppg":10},
+    ]
+    pool = [{"pos":p["pos"],"ppg":p["ppg"],"val":p["val"]} for p in useful + redundant]
+    kw = dict(slots=slots,targets=targets,num_teams=2,draft_type="redraft",
+              league_ppg_list=[p["ppg"] for p in pool],league_val_list=[p["val"] for p in pool],league_players=pool)
+    assert dr_team_grade_score(useful, **kw) > dr_team_grade_score(redundant, **kw)
+
+
+def test_final_fringe_pick_has_less_grade_influence_than_early_starter():
+    slots = ["QB","RB","WR","TE"]
+    targets = {"QB":1,"RB":3,"WR":3,"TE":1}
+    base = [
+        {"id":"q","pos":"QB","ps":90,"pn":1,"val":8000,"ppg":20},
+        {"id":"r","pos":"RB","ps":90,"pn":2,"val":7500,"ppg":18},
+        {"id":"w","pos":"WR","ps":90,"pn":3,"val":7000,"ppg":17},
+        {"id":"t","pos":"TE","ps":90,"pn":4,"val":6000,"ppg":14},
+        {"id":"r2","pos":"RB","ps":70,"pn":90,"val":3500,"ppg":9},
+        {"id":"r3","pos":"RB","ps":50,"pn":180,"val":1000,"ppg":3},
+    ]
+    pool=[{"pos":p["pos"],"ppg":p["ppg"],"val":p["val"]} for p in base]
+    kw=dict(slots=slots,targets=targets,num_teams=12,draft_type="redraft",league_ppg_list=[p["ppg"] for p in pool],league_val_list=[p["val"] for p in pool],league_players=pool)
+    score=dr_team_grade_score(base,**kw)
+    late=[dict(p) for p in base]; late[-1]["ps"]=90
+    early=[dict(p) for p in base]; early[1]["ps"]=40
+    assert abs(score-dr_team_grade_score(late,**kw)) < abs(score-dr_team_grade_score(early,**kw))

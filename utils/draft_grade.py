@@ -163,6 +163,7 @@ def dr_team_grade_score(
     league_players: Optional["list[dict]"] = None,
     value_weight: Optional[float] = None, starter_weight: Optional[float] = None,
     balance_weight: Optional[float] = None,
+    sf: Optional[bool] = None, tep: float = 0.0,
 ) -> Optional[float]:
     """Mirror gradePicks() (startup/redraft branch) -> raw 0-100 composite.
     `picks` items: {id, pos, ps, pn, val, ppg}. Returns None if not gradeable.
@@ -184,16 +185,42 @@ def dr_team_grade_score(
     starter_ids = dr_optimal_lineup(picks, slots)
     # Each starter occupies exactly one slot, so filled slots == starters chosen.
     coverage = (len(starter_ids) / len(slots)) if slots else 0.0
+    is_sf = ("SF" in slots) if sf is None else bool(sf)
+    bench_by_pos = {p: [] for p in ("QB", "RB", "WR", "TE")}
+    for p in picks:
+        pos = str(p.get("pos") or "").upper()
+        if pos in bench_by_pos and str(p.get("id")) not in starter_ids:
+            bench_by_pos[pos].append(p)
+    def _lineup_score(p):
+        return float(p.get("ppg") if p.get("ppg") is not None else (p.get("val") or 0) / 1000)
+    for arr in bench_by_pos.values():
+        arr.sort(key=_lineup_score, reverse=True)
+    def _bench_utility(p):
+        pos = str(p.get("pos") or "").upper()
+        arr = bench_by_pos.get(pos, [])
+        idx = arr.index(p) if p in arr else -1
+        if pos == "QB": return (0.78 if is_sf else 0.32) if idx == 0 else (0.55 if is_sf else 0.12)
+        if pos == "TE": return (0.72 if tep > 0 else 0.32) if idx == 0 else (0.48 if tep > 0 else 0.16)
+        if pos == "RB": return 0.82 if idx == 0 else 0.68
+        if pos == "WR": return 0.78 if idx == 0 else 0.64
+        return 0.0
+    def _role(p):
+        if str(p.get("id")) in starter_ids: return "starter"
+        pos = str(p.get("pos") or "").upper()
+        return "primary" if bench_by_pos.get(pos) and bench_by_pos[pos][0] is p else "fringe"
 
     # 1) Starter quality: round-weighted (1/round^0.60) avg PS of starters.
     w_sum, w_tot = 0.0, 0.0
     avg_ps_vals = [p["ps"] for p in picks if p.get("ps") is not None]
     avg_ps = (sum(avg_ps_vals) / len(avg_ps_vals)) if avg_ps_vals else None
     for x in picks:
-        if str(x.get("id")) not in starter_ids or x.get("ps") is None:
+        if x.get("ps") is None or str(x.get("pos") or "").upper() in {"K", "DEF", "DST", "D/ST"}:
             continue
         rnd = max(1, math.ceil((x.get("pn") or 1) / max(num_teams, 1)))
-        wt = 1.0 / (rnd ** 0.60)
+        role = _role(x)
+        role_w = 1.0 if role == "starter" else 0.55 if role == "primary" else 0.18
+        utility = 1.0 if role == "starter" else _bench_utility(x)
+        wt = (1.0 / ((1 + (rnd - 1) / 5) ** 0.85)) * role_w * (0.55 + 0.45 * utility)
         w_sum += x["ps"] * wt
         w_tot += wt
     starter_avg_ps = (w_sum / w_tot) if w_tot > 0 else avg_ps
@@ -238,22 +265,28 @@ def dr_team_grade_score(
             strength_ratio = ppg_ratio if ppg_ratio is not None else (value_ratio if value_ratio is not None else 0.80)
     starter_pts = math.floor(clamp01((strength_ratio - 0.80) / 0.40) * starter_weight + 0.5)
 
-    # 3) Construction: coverage + balance + efficiency.
+    # 3) Construction: coverage + functional cover + efficient bench use.
     counts = {"QB": 0, "RB": 0, "WR": 0, "TE": 0}
     for p in picks:
         pos = str(p.get("pos") or "").upper()
         if pos in counts:
             counts[pos] += 1
-    bsum, useful_picks, graded_picks = 0.0, 0, 0
-    for pos in ("QB", "RB", "WR", "TE"):
-        t = targets.get(pos, 0) or 0
-        bsum += (min(counts[pos], t) / t) if t else 0.0
-        cap = t + 1
-        useful_picks += min(counts[pos], cap)
-        graded_picks += counts[pos]
-    efficiency = (useful_picks / graded_picks) if graded_picks > 0 else 1.0
-    cov_w, bal_w, eff_w = dr_construction_mix(draft_type)
-    construction_raw = clamp01(cov_w * coverage + bal_w * (bsum / 4) + eff_w * efficiency)
+    bench = [p for p in picks if str(p.get("id")) not in starter_ids and str(p.get("pos") or "").upper() in counts]
+    utility_vals = [_bench_utility(p) for p in bench]
+    efficiency = sum(utility_vals) / len(utility_vals) if utility_vals else 1.0
+    primary = [p for p in bench if _role(p) == "primary"]
+    functional_depth = sum(_bench_utility(p) for p in primary) / len(primary) if primary else 0.0
+    if draft_type == "redraft":
+        construction_raw = clamp01(0.45 * coverage + 0.35 * functional_depth + 0.20 * efficiency)
+    else:
+        bsum = useful_picks = graded_picks = 0.0
+        for pos in ("QB", "RB", "WR", "TE"):
+            t = targets.get(pos, 0) or 0
+            bsum += (min(counts[pos], t) / t) if t else 0.0
+            useful_picks += min(counts[pos], t + 1)
+            graded_picks += counts[pos]
+        cov_w, bal_w, eff_w = dr_construction_mix(draft_type)
+        construction_raw = clamp01(cov_w * coverage + bal_w * (bsum / 4) + eff_w * (useful_picks / graded_picks if graded_picks else 1.0))
     ramp = min(1.0, len(picks) / 8)
     balance_pts = math.floor(((1 - ramp) * 0.85 + ramp * construction_raw) * balance_weight + 0.5)
 

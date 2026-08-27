@@ -524,7 +524,81 @@
     // the shared pick-score kernel so it can't be double-counted or warped by
     // the kernel's depth-normalization / display-relabel math.
     score += Math.max(0, Math.min(8, +o.handcuffBonus || 0));
+    // Draft phase changes the question gradually: late reserve picks should
+    // prefer a credible path to useful workload over tiny projection/ADP edges.
+    // The caller supplies an evidence-based utility; age alone is never enough.
+    score += Math.max(-3, Math.min(7, +o.upsideBonus || 0));
     return Math.max(1, Math.min(99, Math.round(score)));
+  }
+
+  function draftPhase(round, totalRounds) {
+    var den = Math.max(1, (+totalRounds || 16) - 4);
+    var x = Math.max(0, Math.min(1, ((+round || 1) - 4) / den));
+    return x * x * (3 - 2 * x);
+  }
+
+  // Conservative late-round signal. `path` must describe an actual workload,
+  // handcuff, breakout-role, or lineup path. Youth only interacts with that
+  // path, so a young player with no role receives no automatic preference.
+  function lateRoundUtility(o) {
+    o = o || {};
+    var path = Math.max(0, Math.min(1, +o.path || 0));
+    var above = Math.max(0, Math.min(1, +o.aboveReplacement || 0));
+    var tier = Math.max(0, Math.min(1, +o.tierQuality || 0));
+    var ppg = Math.max(0, Math.min(1, +o.ppgQuality || 0));
+    var quality = 0.55 * above + 0.25 * tier + 0.20 * ppg;
+    var ageInteraction = o.youngWithPath ? path * 0.10 : 0;
+    var upside = Math.max(0, Math.min(1, 0.55 * path + 0.45 * quality + ageInteraction));
+    var utility = Math.max(0, Math.min(1, o.functionalUtility == null ? 1 : +o.functionalUtility));
+    var need = Math.max(0, Math.min(1, o.rosterNeedPath == null ? 0.5 : +o.rosterNeedPath));
+    return Math.max(0, Math.min(1, upside * utility * (0.65 + 0.35 * need)));
+  }
+
+  function lateRoundUpsideBonus(o) {
+    o = o || {};
+    var phase = draftPhase(o.round, o.totalRounds);
+    return Math.max(-3, Math.min(7, phase * 10 * (lateRoundUtility(o) - 0.35)));
+  }
+
+  function opportunityCostVerdict(o) {
+    o = o || {};
+    var gap = Math.max(0, (+o.bestAlternativeScore || 0) - (+o.selectedScore || 0));
+    var severity = gap < 4 ? 'none' : gap < 9 ? 'modest' : gap < 15 ? 'material' : 'severe';
+    var significantReach = gap >= 9 && !!o.outsideMarketRange && !o.isBpa
+      && (o.survivePct == null || +o.survivePct >= ADP_REACH_SURVIVE);
+    return { gap: gap, severity: severity, significantReach: significantReach };
+  }
+
+  function significantSteal(o) {
+    o = o || {};
+    var threshold = Math.max(8, 0.5 * Math.max(0, +o.adpUncertainty || 0));
+    return (+o.marketFall || 0) >= threshold && (+o.boardPickScore || 0) >= 80;
+  }
+
+  // Impact-based bye concentration. Callers classify roles from the same
+  // optimal lineup used by grading and provide each player's best unused cover.
+  function byeWeekSeverity(players, opts) {
+    opts = opts || {}; var weeks = {};
+    (players || []).forEach(function(p){
+      var week = +p.bye || 0; if (!week) return;
+      var role = p.role || 'fringe';
+      var roleImpact = role === 'starter' ? 1 : role === 'primary' ? 0.30 : 0.08;
+      var quality = 0.60 + 0.40 * Math.max(0, Math.min(1, +p.quality || 0));
+      var pos = String(p.pos || '').toUpperCase();
+      var stream = ((pos === 'QB' && !opts.sf) || (pos === 'TE' && !(+opts.tep > 0))) ? 0.55 : 1;
+      var relief = 0.35 * Math.max(0, Math.min(1, +p.coverQuality || 0));
+      var impact = Math.max(0, roleImpact * quality * stream - relief);
+      if (!weeks[week]) weeks[week] = { week: week, score: 0, starters: 0, players: [] };
+      weeks[week].score += impact; weeks[week].players.push(p);
+      if (role === 'starter' && impact >= 0.35) weeks[week].starters++;
+    });
+    var out = Object.keys(weeks).map(function(k){
+      var w = weeks[k]; w.score += 0.25 * Math.max(0, w.starters - 2);
+      w.level = (w.score >= 2.8 || w.starters >= 4) ? 'severe'
+        : w.score >= 1.8 ? 'meaningful' : w.score >= 1 ? 'mild' : 'none';
+      return w;
+    });
+    out.sort(function(a,b){ return b.score - a.score; }); return out;
   }
 
   // When ranking recommendations for a future owned pick (you pick at #9,
@@ -799,6 +873,10 @@
     positionRosterLimit: positionRosterLimit,
     remainingObligations: remainingObligations,
     decisionScore: decisionScore, futurePickDecisionScore: futurePickDecisionScore,
+    draftPhase: draftPhase, lateRoundUtility: lateRoundUtility,
+    lateRoundUpsideBonus: lateRoundUpsideBonus,
+    opportunityCostVerdict: opportunityCostVerdict, significantSteal: significantSteal,
+    byeWeekSeverity: byeWeekSeverity,
     REC_FUTURE_SURVIVE_FLOOR: REC_FUTURE_SURVIVE_FLOOR,
     decisionBand: decisionBand, selectDecisionCandidate: selectDecisionCandidate,
     availabilityProbability: availabilityProbability, calibrateAvailability: calibrateAvailability,
