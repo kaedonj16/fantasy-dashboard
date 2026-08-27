@@ -79,7 +79,7 @@
   var CONSTRUCTION_STARTUP = [0.45, 0.30, 0.25];
   var CONSTRUCTION_REDRAFT = [0.70, 0.20, 0.10];
 
-  function teamGradeComposite(picks, slots, targets, numTeams, draftType, leaguePpg, leagueVal, leaguePlayers) {
+  function teamGradeComposite(picks, slots, targets, numTeams, draftType, leaguePpg, leagueVal, leaguePlayers, options) {
     if (!picks || !picks.length) return null;
     var redraft = draftType === 'redraft';
     var split = redraft ? SPLIT_REDRAFT : SPLIT_STARTUP;
@@ -88,15 +88,38 @@
     var nStartFilled = 0;
     for (var _k in starterIds) if (starterIds.hasOwnProperty(_k)) nStartFilled++;
     var coverage = slots.length ? nStartFilled / slots.length : 0;
+    options = options || {};
+    var sf = slots.indexOf('SF') >= 0 || !!options.sf, tep = +options.tep || 0;
+    var benchByPos = { QB: [], RB: [], WR: [], TE: [] };
+    picks.forEach(function(p){
+      var pos = String(p.pos || '').toUpperCase();
+      if (benchByPos[pos] && !starterIds[String(p.id)]) benchByPos[pos].push(p);
+    });
+    Object.keys(benchByPos).forEach(function(pos){ benchByPos[pos].sort(function(a,b){ return lineupScore(b)-lineupScore(a); }); });
+    function benchUtility(p) {
+      var pos = String(p.pos || '').toUpperCase(), idx = benchByPos[pos] ? benchByPos[pos].indexOf(p) : -1;
+      if (pos === 'QB') return idx === 0 ? (sf ? 0.78 : 0.32) : (sf ? 0.55 : 0.12);
+      if (pos === 'TE') return idx === 0 ? (tep > 0 ? 0.72 : 0.32) : (tep > 0 ? 0.48 : 0.16);
+      if (pos === 'RB') return idx === 0 ? 0.82 : 0.68;
+      if (pos === 'WR') return idx === 0 ? 0.78 : 0.64;
+      return 0;
+    }
+    function roleOf(p) {
+      if (starterIds[String(p.id)]) return 'starter';
+      var pos = String(p.pos || '').toUpperCase();
+      return benchByPos[pos] && benchByPos[pos][0] === p ? 'primary' : 'fringe';
+    }
 
     // 1) Starter quality: round-weighted (1/round^0.60) avg PS of starters.
     var wSum = 0, wTot = 0;
     var avgPsVals = picks.filter(function (p) { return p.ps != null; }).map(function (p) { return +p.ps; });
     var avgPs = avgPsVals.length ? avgPsVals.reduce(function (a, b) { return a + b; }, 0) / avgPsVals.length : null;
     picks.forEach(function (x) {
-      if (!starterIds[String(x.id)] || x.ps == null) return;
+      if (x.ps == null || ['K','DEF','DST','D/ST'].indexOf(String(x.pos || '').toUpperCase()) >= 0) return;
       var r = Math.max(1, Math.ceil((x.pn || 1) / Math.max(numTeams, 1)));
-      var wt = 1.0 / Math.pow(r, 0.60);
+      var role = roleOf(x), rw = role === 'starter' ? 1 : role === 'primary' ? 0.55 : 0.18;
+      var util = role === 'starter' ? 1 : benchUtility(x);
+      var wt = (1 / Math.pow(1 + (r - 1) / 5, 0.85)) * rw * (0.55 + 0.45 * util);
       wSum += (+x.ps) * wt; wTot += wt;
     });
     var starterAvgPs = wTot > 0 ? wSum / wTot : avgPs;
@@ -142,22 +165,22 @@
     }
     var starterPts = rnd(clamp01((strengthRatio - 0.80) / 0.40) * starterWeight);
 
-    // 3) Construction: coverage + balance + efficiency.
+    // 3) Construction: coverage + functional cover + efficient bench use.
     var counts = { QB: 0, RB: 0, WR: 0, TE: 0 };
     picks.forEach(function (p) {
       var pos = String(p.pos || '').toUpperCase();
       if (counts[pos] != null) counts[pos]++;
     });
-    var bsum = 0, usefulPicks = 0, gradedPicks = 0;
-    ['QB', 'RB', 'WR', 'TE'].forEach(function (pos) {
-      var t = targets[pos] || 0;
-      bsum += t ? Math.min(counts[pos], t) / t : 0;
-      usefulPicks += Math.min(counts[pos], t + 1);
-      gradedPicks += counts[pos];
-    });
-    var efficiency = gradedPicks > 0 ? usefulPicks / gradedPicks : 1;
-    var mix = redraft ? CONSTRUCTION_REDRAFT : CONSTRUCTION_STARTUP;
-    var constructionRaw = clamp01(mix[0] * coverage + mix[1] * (bsum / 4) + mix[2] * efficiency);
+    var bench = picks.filter(function(p){ return !starterIds[String(p.id)] && ['QB','RB','WR','TE'].indexOf(String(p.pos || '').toUpperCase()) >= 0; });
+    var utilVals = bench.map(benchUtility), efficiency = utilVals.length ? utilVals.reduce(function(a,b){return a+b;},0)/utilVals.length : 1;
+    var primary = bench.filter(function(p){ return roleOf(p) === 'primary'; });
+    var functionalDepth = primary.length ? primary.map(benchUtility).reduce(function(a,b){return a+b;},0)/primary.length : 0;
+    var constructionRaw = redraft
+      ? clamp01(0.45 * coverage + 0.35 * functionalDepth + 0.20 * efficiency)
+      : (function(){
+          var bsum=0,useful=0,graded=0; ['QB','RB','WR','TE'].forEach(function(pos){var t=targets[pos]||0;bsum+=t?Math.min(counts[pos],t)/t:0;useful+=Math.min(counts[pos],t+1);graded+=counts[pos];});
+          var mix=CONSTRUCTION_STARTUP; return clamp01(mix[0]*coverage+mix[1]*(bsum/4)+mix[2]*(graded?useful/graded:1));
+        })();
     var ramp = Math.min(1, picks.length / 8);
     var balancePts = rnd(((1 - ramp) * 0.85 + ramp * constructionRaw) * balanceWeight);
 
@@ -165,6 +188,7 @@
       total: valuePts + starterPts + balancePts,
       value: valuePts, starter: starterPts, balance: balancePts,
       strengthRatio: strengthRatio, avgPs: avgPs, starterIds: starterIds,
+      functionalDepth: functionalDepth, benchEfficiency: efficiency,
     };
   }
 
