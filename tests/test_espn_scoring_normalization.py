@@ -3,6 +3,14 @@ from types import SimpleNamespace
 
 import pytest
 
+# The lightweight CI job installs only pytest. This module's imports pull in the
+# third-party ESPN client and the Flask/requests app stack, so skip during
+# collection there and run it in the full-stack job (which installs
+# requirements.txt), just like the other integration modules. The flask hint
+# also auto-marks this module `integration` (see tests/conftest.py).
+pytest.importorskip("espn_api")  # third-party ESPN client (pip: espn-api)
+pytest.importorskip("flask")     # dashboard_services.pages/providers import the app stack
+
 from dashboard_services.pages.draft_room_page import build_draft_room_body
 from dashboard_services.providers import espn_api
 from utils.fantasy_scoring import score_stats
