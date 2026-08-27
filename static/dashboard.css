@@ -1966,7 +1966,9 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 }
 
 .br-ctx-menu-item {
-    display: block;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
     width: 100%;
     margin: 0;
     padding: 8px 10px;
@@ -1979,6 +1981,22 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
     font-weight: 600;
     text-align: left;
     cursor: pointer;
+}
+
+.br-ctx-menu-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.br-ctx-menu-platform {
+    flex: 0 0 auto;
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--text-muted);
 }
 
 .br-ctx-menu-item:hover,
@@ -2445,6 +2463,18 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 .ls-item.is-current {
     color: var(--accent);
     font-weight: 800;
+}
+
+.ls-item-platform {
+    margin-left: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.ls-item.is-current .ls-item-platform {
+    color: var(--accent);
+    opacity: 0.7;
 }
 
 .ls-item.is-current::after {

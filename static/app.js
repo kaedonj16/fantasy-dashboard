@@ -10845,6 +10845,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const currentSeason = leagueSwitcher.getAttribute('data-current-season');
     const username = leagueSwitcher.getAttribute('data-current-username');
 
+    // Pretty platform name for the muted platform tag shown beside each league
+    // in both switchers (chrome chip menu + settings list).
+    function platformLabel(platform) {
+      const p = String(platform || '').toLowerCase();
+      const map = { sleeper: 'Sleeper', espn: 'ESPN', yahoo: 'Yahoo' };
+      return map[p] || (p ? p.charAt(0).toUpperCase() + p.slice(1) : '');
+    }
+
     // Fetch user leagues (account-scoped, cross-platform; falls back to Sleeper
     // discovery server-side for users without an account yet).
     fetch('/api/my-leagues')
@@ -10937,7 +10945,17 @@ document.addEventListener('DOMContentLoaded', function() {
               row.dataset.league = league.league_id;
               row.dataset.season = league.season || currentSeason;
               row.dataset.platform = league.platform || currentPlatform;
-              row.textContent = league.label;
+              const rowLabel = document.createElement('span');
+              rowLabel.className = 'ls-item-label';
+              rowLabel.textContent = league.label;
+              row.appendChild(rowLabel);
+              const rowPlat = platformLabel(league.platform);
+              if (rowPlat) {
+                const platEl = document.createElement('span');
+                platEl.className = 'ls-item-platform';
+                platEl.textContent = rowPlat;
+                row.appendChild(platEl);
+              }
               row.addEventListener('click', function () {
                 navigateToLeague(this.dataset.league, this.dataset.platform, this.dataset.season);
               });
@@ -11029,7 +11047,17 @@ document.addEventListener('DOMContentLoaded', function() {
         item.type = 'button';
         item.className = 'br-ctx-menu-item' + (String(lg.league_id) === String(currentLeagueId) ? ' is-current' : '');
         item.setAttribute('role', 'option');
-        item.textContent = lg.name || lg.label || 'Unnamed League';
+        var itemName = document.createElement('span');
+        itemName.className = 'br-ctx-menu-name';
+        itemName.textContent = lg.name || lg.label || 'Unnamed League';
+        item.appendChild(itemName);
+        var itemPlat = platformLabel(lg.platform);
+        if (itemPlat) {
+          var platSpan = document.createElement('span');
+          platSpan.className = 'br-ctx-menu-platform';
+          platSpan.textContent = itemPlat;
+          item.appendChild(platSpan);
+        }
         item.addEventListener('click', function () {
           menu.hidden = true;
           btn.setAttribute('aria-expanded', 'false');
