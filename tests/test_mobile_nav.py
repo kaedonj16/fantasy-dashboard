@@ -9,7 +9,7 @@ The dock replaces the top nav pills on phones, so the assertions here are the
 contract the CSS/JS relies on:
   - a dynamic dock (`.br-tabbar`) with a More button and a More sheet,
   - mount points the client moves Search and the settings menu into,
-  - top-nav marker classes so CSS keeps logo + league/week chip on phones,
+  - top-nav marker classes so CSS keeps the logo + league chip on phones,
   - the page you're on always earning a dock tab (here: Graphs).
 """
 import pytest
@@ -48,21 +48,19 @@ def test_dock_and_sheet_present(offline_client):
 
 def test_top_bar_marker_off_dashboard(offline_client):
     # The bar carries the br-mnav marker on every league page (CSS slims it to
-    # logo + league/week chip on phones); br-mnav-home marks only the dashboard.
+    # logo + league chip on phones); br-mnav-home marks only the dashboard.
     html = _html(offline_client, GRAPHS)
     assert "top-nav br-mnav" in html
     assert "br-mnav-home" not in html
 
 
-def test_league_week_chip_lives_in_chrome(offline_client):
-    # League + week belong in the top bar on every league page. Hub title
-    # assertions live in test_league_chrome (static) so we don't pay for a
-    # second dashboard render here. Tour NFL state is offseason, so the
-    # dashboard *would* be Offseason Hub anyway.
+def test_league_chip_omits_week_and_season_state(offline_client):
+    # The league belongs in the top bar on every league page, without adding
+    # regular-season, preseason, or offseason status text beside it.
     html = _html(offline_client, GRAPHS)
     assert "id='brLeagueChrome'" in html
     assert "br-ctx-name" in html
-    assert "br-ctx-week" in html or "Offseason" in html or "Week " in html
+    assert "br-ctx-week" not in html
 
 
 def test_current_page_earns_a_dock_tab(offline_client):

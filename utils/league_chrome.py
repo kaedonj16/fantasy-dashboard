@@ -21,18 +21,7 @@ def format_label(size: int, is_sf: bool) -> str:
 
 
 def week_label(week: int, *, season_type: str = "", offseason: bool = False) -> str:
-    """Short week chip: ``Week 14``, ``Preseason``, or ``Offseason``."""
-    st = (season_type or "").lower()
-    try:
-        wk = int(week or 0)
-    except (TypeError, ValueError):
-        wk = 0
-    if offseason or st in ("off", "pre"):
-        if st == "pre":
-            return f"Preseason · Wk {wk}" if wk else "Preseason"
-        return "Offseason"
-    if wk > 0:
-        return f"Week {wk}"
+    """Keep week and season-state text out of the persistent league chrome."""
     return ""
 
 
