@@ -2129,6 +2129,15 @@
         ['all', 'All'], ['adp', 'ADP'], ['career', 'Career'],
         ['capital', 'Capital'], ['age', 'Age'], ['usage', 'Usage']
     ];
+    var TRENDS_LABEL_PREFIX = {
+        adp: 'ADP',
+        draft_capital: 'NFL',
+        target_share: 'Targets',
+        snap_pct: 'Snaps',
+        adot: 'aDOT',
+        ryoe: 'RYOE',
+        age: 'Age'
+    };
 
     function trendsConfKey(label) {
         var t = String(label || '').toLowerCase();
@@ -2186,6 +2195,14 @@
         return html;
     }
 
+    function trendsQualifyLabel(sid, label) {
+        label = String(label || '');
+        var prefix = TRENDS_LABEL_PREFIX[sid];
+        if (!prefix) return label;
+        if (label.toLowerCase().indexOf(prefix.toLowerCase()) >= 0) return label;
+        return prefix + ' ' + label;
+    }
+
     function trendsTopEdges(sections, limit) {
         var scored = [];
         (sections || []).forEach(function (sec) {
@@ -2194,8 +2211,10 @@
                 var vs = row && row.vs_baseline;
                 if (typeof vs !== 'number' || vs <= 0) return;
                 scored.push({
+                    sid: sec.id || '',
+                    lane: TRENDS_LANE_OF[sec.id] || '',
                     section: sec.heading || '',
-                    label: row.label || '',
+                    label: trendsQualifyLabel(sec.id, row.label || ''),
                     pct: row.pct,
                     vs_baseline: vs,
                     vs_label: row.vs_label,
@@ -2253,6 +2272,9 @@
         }
         var edges = trendsTopEdges(sections, 10);
         var span = trendsRailSpan(baselinePct, sections, edges.map(function (e) { return e.pct; }));
+        var compact = false;
+        try { compact = window.matchMedia('(max-width: 720px)').matches; } catch (e) { compact = false; }
+        host.className = 'cs-trends cs-trends-' + String(trendsPos || '').toLowerCase();
         var html = '<p class="cs-trends-lede">' + esc(data.note || data.headline || '') + '</p>';
         html += '<div class="cs-trends-pos" role="group" aria-label="Trends position">';
         positions.forEach(function (pos) {
@@ -2273,21 +2295,27 @@
         if (page.prime_window) bits.push('Prime window is ages ' + esc(page.prime_window) + '.');
         html += bits.join(' ') + '</div></div></div>';
         if (edges.length) {
+            var mid = Math.ceil(edges.length / 2);
             html += '<section class="cs-trends-board"><div class="cs-trends-sec-head">'
                 + '<h3>Top 10 edges vs typical</h3>'
                 + '<p>Biggest lifts versus the position baseline. The tick is typical; the marker is this bucket.</p>'
                 + '</div><div class="cs-trends-callouts">';
-            edges.forEach(function (h, idx) {
-                var vsShort = (typeof h.vs_baseline === 'number' && h.vs_baseline > 0)
-                    ? '+' + h.vs_baseline : (h.vs_label || '');
-                html += '<div class="cs-trends-callout">'
-                    + '<div class="cs-trends-callout-copy">'
-                    + '<div class="cs-trends-callout-k">' + (idx + 1) + ' · ' + esc(h.section || '') + '</div>'
-                    + '<div class="cs-trends-callout-v">' + esc(h.label || '') + '</div></div>'
-                    + trendsRailHtml(h.pct, baselinePct, null, span)
-                    + '<div class="cs-trends-callout-pct">'
-                    + (h.pct != null ? esc(String(h.pct)) + '%' : '-')
-                    + (vsShort ? ' <span>' + esc(String(vsShort)) + '</span>' : '') + '</div></div>';
+            [edges.slice(0, mid), edges.slice(mid)].forEach(function (col, colIdx) {
+                html += '<div class="cs-trends-callout-col">';
+                col.forEach(function (h, i) {
+                    var idx = colIdx === 0 ? i : i + mid;
+                    var vsShort = (typeof h.vs_baseline === 'number' && h.vs_baseline > 0)
+                        ? '+' + h.vs_baseline : (h.vs_label || '');
+                    html += '<div class="cs-trends-callout">'
+                        + '<div class="cs-trends-callout-copy">'
+                        + '<span class="cs-trends-rk">' + (idx + 1) + '</span>'
+                        + '<div class="cs-trends-callout-v">' + esc(h.label || '') + '</div></div>'
+                        + trendsRailHtml(h.pct, baselinePct, null, span)
+                        + '<div class="cs-trends-callout-pct">'
+                        + (h.pct != null ? esc(String(h.pct)) + '%' : '-')
+                        + (vsShort ? ' <span>' + esc(String(vsShort)) + '</span>' : '') + '</div></div>';
+                });
+                html += '</div>';
             });
             html += '</div></section>';
         }
@@ -2309,15 +2337,18 @@
                 + '<h3>Age curve</h3>'
                 + '<p>Top-12 rate by integer age. Highlighted columns are the prime window'
                 + (baselinePct != null ? '; the line is typical (' + esc(String(baselinePct)) + '%).' : '.')
-                + '</p></div>';
-            html += '<div class="cs-trends-ages" role="img" aria-label="Top-12 rate by age">';
-            html += '<div class="cs-trends-ages-plot">' + baseLine;
+                + ' Hover or tap a bar for the sample size.</p></div>';
+            html += '<div class="cs-trends-ages">';
+            html += '<div class="cs-trends-ages-plot" role="img" aria-label="Top-12 rate by age">' + baseLine;
             curve.forEach(function (pt) {
                 var h = Math.max(8, Math.round(100 * Number(pt.pct || 0) / maxP));
                 var cls = prime[String(pt.age)] ? ' is-prime' : '';
-                html += '<div class="cs-trends-age' + cls + '" title="Age ' + esc(String(pt.age))
-                    + ': ' + esc(String(pt.pct)) + '%"><span class="cs-trends-age-bar" style="height:'
-                    + h + '%"></span></div>';
+                var nBit = pt.n != null ? ' · ' + pt.n + ' player-seasons' : '';
+                var tip = 'Age ' + pt.age + ': ' + pt.pct + '%' + nBit;
+                html += '<button type="button" class="cs-trends-age' + cls + '" data-age-tip="1" aria-label="'
+                    + esc(tip) + '"><span class="cs-trends-age-bar" style="height:' + h
+                    + '%"></span><span class="cs-trends-age-tip">' + esc('Age ' + pt.age + ' · ' + pt.pct + '%'
+                    + (pt.n != null ? ' · n=' + pt.n : '')) + '</span></button>';
             });
             html += '</div><div class="cs-trends-ages-axis">';
             curve.forEach(function (pt) {
@@ -2331,19 +2362,34 @@
             html += '<button type="button" data-trends-lane="' + pair[0] + '" aria-pressed="'
                 + String(pair[0] === lane) + '">' + pair[1] + '</button>';
         });
-        html += '</div>';
         var shown = sections.filter(function (sec) {
             return lane === 'all' || TRENDS_LANE_OF[sec.id] === lane;
         });
+        html += '<span class="cs-trends-lane-n">' + shown.length + ' table'
+            + (shown.length === 1 ? '' : 's')
+            + (compact ? '. Open one, or pick a lane.' : '') + '</span>';
+        html += '</div>';
         html += '<div class="cs-trends-grid">';
         shown.forEach(function (sec) {
-            html += '<article class="cs-trends-card"><h3>' + esc(sec.heading || '') + '</h3>';
+            var laneId = TRENDS_LANE_OF[sec.id] || 'all';
+            var peekRow = null;
+            (sec.rows || []).forEach(function (row) {
+                if (!peekRow) peekRow = row;
+                else if ((row.vs_baseline || 0) > (peekRow.vs_baseline || 0)) peekRow = row;
+            });
+            var peek = peekRow && peekRow.pct != null
+                ? trendsQualifyLabel(sec.id, peekRow.label || '') + ' ' + peekRow.pct + '%'
+                : ((sec.rows || []).length + ' buckets');
+            html += '<details class="cs-trends-card" data-lane="' + esc(laneId) + '"'
+                + (compact ? '' : ' open') + '>'
+                + '<summary><h3>' + esc(sec.heading || '') + '</h3>'
+                + '<span class="cs-trends-card-peek">' + esc(peek) + '</span></summary>';
             if (sec.note) html += '<p class="cs-hist-note">' + esc(sec.note) + '</p>';
             html += '<div class="cs-trends-card-rows">';
             (sec.rows || []).forEach(function (row) {
                 html += trendsSectionRow(row, sec.polarity, baselinePct, span);
             });
-            html += '</div></article>';
+            html += '</div></details>';
         });
         html += '</div>';
         host.innerHTML = html;
@@ -2357,6 +2403,22 @@
             b.addEventListener('click', function () {
                 host.setAttribute('data-trends-lane', b.getAttribute('data-trends-lane') || 'all');
                 renderTrends();
+            });
+        });
+        host.querySelectorAll('.cs-trends-card > summary').forEach(function (s) {
+            s.addEventListener('click', function (e) {
+                var wide = false;
+                try { wide = window.matchMedia('(min-width: 721px)').matches; } catch (err) { wide = false; }
+                if (wide) e.preventDefault();
+            });
+        });
+        host.querySelectorAll('[data-age-tip]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                var on = b.classList.contains('is-open');
+                host.querySelectorAll('[data-age-tip].is-open').forEach(function (x) {
+                    x.classList.remove('is-open');
+                });
+                if (!on) b.classList.add('is-open');
             });
         });
     }
