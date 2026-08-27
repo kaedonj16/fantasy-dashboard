@@ -28,15 +28,16 @@ from utils.draft_grade import clamp01
 # now firmed toward the validated youth-0.10 winner (the 60-league pass went only
 # halfway).
 #
-# Redraft tuned on a 1,573-team same-season backtest (base r +0.150): adp-down,
-# ppg-up, tier-up were the top nudges, all monotonic. ADP-steal chasing was
-# over-weighted (0.33 was the biggest lever) while projected points (ppg) — what
-# actually wins a win-now format — was under-weighted. Modest, direction-
-# consistent move (single sample, per-lever effects ~0.5 SE): adp 0.33->0.30,
-# ppg 0.18->0.20, tier 0.08->0.10.
+# Redraft's prior 0.30 explicit ADP weight also leaked ADP into 65% of the 0.24
+# value component (~45.6% effective market influence). Value is now DB-only,
+# explicit ADP is 0.18 early and decays by round, and the freed mass moves to
+# VOR, production, tier, model value, and roster fit. The existing 1,573-team
+# run established the direction (ADP down; PPG/tier up); CI parity tests pin the
+# shipped JS/Python implementation. Re-running the external evaluation requires
+# its league portfolio, DATABASE_URL, and completed-season outcome data.
 PS_WEIGHTS = {
     "rookie":  {"vor": 0.06, "value": 0.20, "adp": 0.30, "tier": 0.15, "need": 0.05, "youth": 0.16, "mom": 0.03, "ppg": 0.10},
-    "redraft": {"vor": 0.10, "value": 0.24, "adp": 0.30, "tier": 0.10, "need": 0.07, "youth": 0.00, "mom": 0.03, "ppg": 0.20},
+    "redraft": {"vor": 0.15, "value": 0.25, "adp": 0.18, "tier": 0.12, "need": 0.09, "youth": 0.00, "mom": 0.03, "ppg": 0.22},
     "startup": {"vor": 0.07, "value": 0.24, "adp": 0.30, "tier": 0.15, "need": 0.09, "youth": 0.05, "mom": 0.03, "ppg": 0.12},
 }
 PS_AGE_PEAKS = {"RB": 24, "WR": 27, "TE": 27, "QB": 29}
@@ -144,18 +145,10 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
     need_raw = float(need_raw) if need_raw is not None else 0.0
     total_picks = float(total_picks) if total_picks is not None else 0.0
     db_value_norm = clamp01(value / max_val) if max_val and max_val > 0 else 0.0
-    # Blend DB dynasty value with ADP-implied quality so market consensus
-    # prevents DB value gaps (especially new rookies) from dragging the score
-    # unfairly low when ADP says the player is a legitimate round-2/3 pick.
-    # Skip that blend when the value board says the player is worthless —
-    # selected-only ADP (a backup taken in 10% of mocks around pick 58) must
-    # not manufacture round-5 quality for a 0-value, ~0-PPG player.
+    # Model/database value is independent of the explicit market component.
+    # A near-zero value also caps selected-only ADP below.
     adp_untrusted = db_value_norm < 0.05
-    if avg_pick is not None and total_picks > 0 and not adp_untrusted:
-        adp_qual_norm = clamp01(1.0 - avg_pick / total_picks)
-        value_norm = db_value_norm * 0.35 + adp_qual_norm * 0.65
-    else:
-        value_norm = db_value_norm
+    value_norm = db_value_norm
     vor_norm = clamp01(vor / max(max_val, 1)) if vor is not None else value_norm * 0.8
 
     # ADP component: proportional gap so a 2-pick fall from ADP 2 == a 10-pick
@@ -202,6 +195,16 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
     # (data_building/draft_grade_backtest.py) without touching the shipped
     # PS_WEIGHTS. Defaults to the live table, so the parity test is unaffected.
     w = weights if weights is not None else PS_WEIGHTS.get(draft_type, PS_WEIGHTS["startup"])
+    if draft_type == "redraft" and weights is None:
+        teams0 = max(1, int(num_teams or 12))
+        round0 = (int(pick_no) - 1) // teams0 + 1 if pick_no else 1
+        adp_factor = max(0.15, 1.0 - max(0, round0 - 2) * 0.075)
+        w = dict(w)
+        freed = w["adp"] * (1.0 - adp_factor)
+        base = sum(w[k] for k in ("vor", "value", "tier", "need", "ppg"))
+        w["adp"] *= adp_factor
+        for key in ("vor", "value", "tier", "need", "ppg"):
+            w[key] += freed * w[key] / base
     s = (w["vor"] * vor_norm + w["value"] * value_norm + w["adp"] * adp_val
          + w["tier"] * tier_score + w["need"] * need + w["youth"] * youth
          + w["mom"] * mom + w.get("ppg", 0.0) * ppg_n)

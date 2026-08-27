@@ -23,10 +23,12 @@
   // a 509-team backtest. Rookie & startup youth trimmed / tier & ppg raised,
   // CONFIRMED at 600-league scale on multi-year outcomes (youth-0.10 was the #1
   // nudge for both startup and rookie, monotonic & replicated). Keep in lockstep
-  // with PS_WEIGHTS in utils/pick_score.py.
+  // with PS_WEIGHTS in utils/pick_score.py. Redraft model value is deliberately
+  // DB-only (not an ADP blend); its explicit market weight starts at .18 and
+  // decays with round depth, with the released weight redistributed exactly.
   var WEIGHTS = {
     rookie:  { vor: 0.06, value: 0.20, adp: 0.30, tier: 0.15, need: 0.05, youth: 0.16, mom: 0.03, ppg: 0.10 },
-    redraft: { vor: 0.10, value: 0.24, adp: 0.30, tier: 0.10, need: 0.07, youth: 0.00, mom: 0.03, ppg: 0.20 },
+    redraft: { vor: 0.15, value: 0.25, adp: 0.18, tier: 0.12, need: 0.09, youth: 0.00, mom: 0.03, ppg: 0.22 },
     startup: { vor: 0.07, value: 0.24, adp: 0.30, tier: 0.15, need: 0.09, youth: 0.05, mom: 0.03, ppg: 0.12 },
   };
   var AGE_PEAKS = { RB: 24, WR: 27, TE: 27, QB: 29 };
@@ -53,17 +55,10 @@
     var passTd = o.passTd != null ? +o.passTd : 4.0;
 
     var dbValueNorm = (maxVal && maxVal > 0) ? clamp01(value / maxVal) : 0;
-    // Skip the ADP-quality blend when the value board says the player is
-    // worthless — selected-only ADP must not manufacture round-5 quality for a
-    // 0-value, ~0-PPG player. Keep in lockstep with utils/pick_score.py.
+    // Keep model/database value independent from the explicit market component.
+    // A near-zero value also caps selected-only ADP below.
     var adpUntrusted = dbValueNorm < 0.05;
-    var valueNorm;
-    if (avgPick != null && totalPicks > 0 && !adpUntrusted) {
-      var adpQualNorm = clamp01(1 - avgPick / totalPicks);
-      valueNorm = dbValueNorm * 0.35 + adpQualNorm * 0.65;
-    } else {
-      valueNorm = dbValueNorm;
-    }
+    var valueNorm = dbValueNorm;
     var vorNorm = (vor != null) ? clamp01(vor / Math.max(maxVal, 1)) : valueNorm * 0.8;
 
     var adpVal;
@@ -95,6 +90,15 @@
     var ppgN = o.ppgNorm != null ? +o.ppgNorm : valueNorm;
 
     var w = WEIGHTS[o.draftType] || WEIGHTS.startup;
+    if (o.draftType === 'redraft') {
+      var teams0 = Math.max(1, +o.numTeams || 12);
+      var round0 = pickNo ? Math.floor((pickNo - 1) / teams0) + 1 : 1;
+      var adpFactor = Math.max(0.15, 1 - Math.max(0, round0 - 2) * 0.075);
+      var freed = w.adp * (1 - adpFactor), base = w.vor + w.value + w.tier + w.need + w.ppg;
+      w = Object.assign({}, w);
+      w.adp *= adpFactor;
+      ['vor','value','tier','need','ppg'].forEach(function(k){ w[k] += freed * w[k] / base; });
+    }
     var s = w.vor * vorNorm + w.value * valueNorm + w.adp * adpVal
           + w.tier * tierScore + w.need * need + w.youth * youth
           + w.mom * mom + (w.ppg || 0) * ppgN;
