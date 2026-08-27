@@ -410,6 +410,29 @@ def test_cpu_drafts_from_options_filtered_by_draft_type():
     assert "syncCpuAdpSourceOptions();   // filter CPU-source options to the initial draft type" in source
 
 
+def test_random_pick_slot_option_and_resolution():
+    """The pick selector offers Random, which resolves to a concrete slot at
+    draft start and seeds that seat's natural draft capital."""
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    # fillSlotOptions prepends a Random option and never silently switches a
+    # numbered pick to Random on a team-count change.
+    assert "rnd.value = 'random'; rnd.textContent = '\U0001f3b2 Random';" in source
+    assert "sel.value = (prev === 'random' || (pn >= 1 && pn <= teams)) ? prev : '1';" in source
+
+    # readSetup resolves Random to a concrete 1..teams slot and flags it.
+    assert "var randomSlot = slotRaw === 'random';" in source
+    assert "(1 + Math.floor(Math.random() * teams))" in source
+    assert "randomSlot: randomSlot," in source
+
+    # Both start paths seed the resolved seat's capital via the shared helper.
+    assert "function _seedOwnedForRandomSlot(st){" in source
+    assert source.count("_seedOwnedForRandomSlot(state);") == 2
+
+    # The capital editor shows a note (not Pick 1's picks) while Random is chosen.
+    assert "Your pick is random" in source
+
+
 def test_pick_ledger_formats_adp_delta_to_one_decimal():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 

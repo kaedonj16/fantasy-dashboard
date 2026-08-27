@@ -202,12 +202,22 @@
 
   function fillSlotOptions(teams){
     var sel = document.getElementById('drSlot');
+    var prev = sel.value;   // preserve the current pick (incl. 'random') across team-count changes
     sel.innerHTML = '';
+    // Random draws a slot when the draft starts, so a mock plays out from a
+    // different seat each time without the user having to pick one.
+    var rnd = document.createElement('option');
+    rnd.value = 'random'; rnd.textContent = '🎲 Random';
+    sel.appendChild(rnd);
     for (var i = 1; i <= teams; i++){
       var o = document.createElement('option');
       o.value = i; o.textContent = 'Pick ' + i;
       sel.appendChild(o);
     }
+    // Keep the prior selection when still valid; otherwise fall back to Pick 1
+    // (never silently switch a numbered pick to Random on a team-count change).
+    var pn = parseInt(prev, 10);
+    sel.value = (prev === 'random' || (pn >= 1 && pn <= teams)) ? prev : '1';
   }
 
   // ── Setup ────────────────────────────────────────────────────────────────
@@ -630,6 +640,15 @@
     for (var r = 1; r <= c.rounds; r++) o[pickNum(r, c.slot, c.teams, c.order)] = true;
     return o;
   }
+  // When readSetup resolved a "Random" pick, seed the resolved seat's natural
+  // draft capital — the capital editor couldn't, with the seat unknown until
+  // draft start. No-op for an explicitly chosen pick.
+  function _seedOwnedForRandomSlot(st){
+    if (!st || !st.randomSlot) return;
+    _setupOwned = defaultSetupOwned({ teams: st.teams, rounds: st.rounds,
+      order: st.order, slot: st.slot });
+    _setupOwnedSig = [st.teams, st.rounds, st.order, st.slot].join('|');
+  }
   // Picks owned in a given round, sorted by overall pick number.
   function roundPicks(r, c){
     var out = [];
@@ -671,6 +690,15 @@
     return h;
   }
   function renderSetupCapital(){
+    // With a Random pick the seat is unknown until the draft starts, so there is
+    // no meaningful capital to edit yet; show a note instead of Pick-1's picks.
+    var slotEl = document.getElementById('drSlot');
+    if (slotEl && slotEl.value === 'random'){
+      document.getElementById('drCapitalSection').innerHTML =
+        '<p class="dr-setup-desc">Your pick is random — you’ll be assigned a seat when the draft starts, '
+        + 'and your draft capital will be set from it.</p>';
+      return;
+    }
     var c = setupCtl();
     var sig = [c.teams, c.rounds, c.order, c.slot].join('|');
     if (!_setupOwned || _setupOwnedSig !== sig){
@@ -716,6 +744,15 @@
     var rd = keeper || rawType === 'redraft';
     var kcEl = document.getElementById('drKeeperCount');
     var ksEl = document.getElementById('drKeeperSource');
+    // "Random" draws a draft slot now, at draft start, so the mock runs from a
+    // concrete seat; startDraft seeds that seat's natural draft capital. The
+    // resolved slot is stored on state, so an Edit-Setup re-read stays put
+    // rather than re-rolling.
+    var slotRaw = document.getElementById('drSlot').value;
+    var randomSlot = slotRaw === 'random';
+    var slot = randomSlot
+      ? (1 + Math.floor(Math.random() * teams))
+      : Math.min(teams, Math.max(1, parseInt(slotRaw, 10) || 1));
     return {
       type:   keeper ? 'redraft' : rawType,
       keeper: keeper,
@@ -724,7 +761,8 @@
       teams:  teams,
       rounds: Math.max(1, Math.min(40, parseInt(document.getElementById('drRounds').value, 10) || 15)),
       sf:     sf,
-      slot:   Math.min(teams, Math.max(1, parseInt(document.getElementById('drSlot').value, 10) || 1)),
+      slot:   slot,
+      randomSlot: randomSlot,
       order:  document.getElementById('drOrder').value,
       cpuAdpSource: (document.getElementById('drCpuAdpSource') || {}).value || 'consensus',
       roster: _setupRoster || defaultRoster(sf, rd),
@@ -819,6 +857,7 @@
     var prev = state;
     _resetTransient();
     state = readSetup();
+    _seedOwnedForRandomSlot(state);
     state.owned = _setupOwned || defaultOwned();
     // Editing the setup mid-draft (e.g. fixing the round count) shouldn't wipe
     // the board. When the pick numbering is unchanged (same teams / order /
@@ -982,7 +1021,10 @@
     var prevTeams = state.teams, prevOrder = state.order, prevSlot = state.slot;
     var nextTeams = parseInt(document.getElementById('drTeams').value, 10);
     var nextOrder = document.getElementById('drOrder').value;
-    var nextSlot = parseInt(document.getElementById('drSlot').value, 10) || 1;
+    // 'random' is a sentinel, not a seat: it never equals a numeric prevSlot, so
+    // re-selecting Random counts as a change and the board rebuilds from a fresh draw.
+    var nextSlotRaw = document.getElementById('drSlot').value;
+    var nextSlot = nextSlotRaw === 'random' ? 'random' : (parseInt(nextSlotRaw, 10) || 1);
     var hasPicks = !!(state.picks && Object.keys(state.picks).some(function(k){ return !!state.picks[k]; }));
     var willWipe = hasPicks && (prevTeams !== nextTeams || prevOrder !== nextOrder || prevSlot !== nextSlot);
     function go(){
@@ -2491,6 +2533,7 @@
     var prev = state;
     _resetTransient();
     state = readSetup();
+    _seedOwnedForRandomSlot(state);
     state.owned = _setupOwned || defaultOwned();
     // Editing a mock's setup should not wipe the board. When the pick numbering is
     // unchanged (same teams / order / slot), carry over the picks already made
