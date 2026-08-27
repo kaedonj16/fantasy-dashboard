@@ -23820,16 +23820,23 @@ if os.environ.get("RUN_STARTUP_DAILY_BUILD") == "1":
 
 def _warm_global_caches() -> None:
     """Best-effort warm of the league-independent caches (model value table +
-    players index) so the first user request after a deploy doesn't pay the
-    cold-load cost. Deliberately DELAYED and backgrounded so it never competes
-    with the health probe during Render's port-scan window (the daily build was
-    disabled for exactly that reason). These two loads are far lighter than the
-    daily build, but this stays opt-in via WARM_CACHES_ON_START=1 out of caution."""
+    players index + the enriched league-players payload) so the first user
+    request after a deploy doesn't pay the cold-load cost. Deliberately DELAYED
+    and backgrounded so it never competes with the health probe during Render's
+    port-scan window (the daily build was disabled for exactly that reason).
+    These loads are far lighter than the daily build, but this stays opt-in via
+    WARM_CACHES_ON_START=1 out of caution.
+
+    The enriched payload is the pool the cheat sheet and Draft Room fetch on
+    load; its memoized build is the "first load is slow, the rest are fast"
+    cost, so warming it here removes the cold hit after a deploy."""
     try:
         time.sleep(float(os.environ.get("WARM_CACHES_DELAY", "30") or 30))
         t0 = time.perf_counter()
         for name, fn in (("model value table", get_model_value_table_cached),
-                         ("players index", get_players_index_global)):
+                         ("players index", get_players_index_global),
+                         ("league-players payload",
+                          lambda: _build_league_players_payload(kdef=False))):
             try:
                 fn()
             except Exception:
@@ -23839,8 +23846,29 @@ def _warm_global_caches() -> None:
         logger.debug("cache warm failed", exc_info=True)
 
 
+def _keep_league_players_warm() -> None:
+    """Keep the enriched league-players payload hot in the background so no real
+    user hits the cold rebuild. Its memoized cache invalidates whenever the model
+    value cache refreshes (~15 min TTL, the daily cron, or a manual flush), which
+    is what makes the *first* cheat-sheet / Draft Room load after each refresh
+    slow. Rebuild on an interval shorter than that TTL: each pass is a cheap dict
+    hit until the values actually change, so the real rebuild runs at most once
+    per refresh and always off the request path. Opt-in with the warm flag; tune
+    with LEAGUE_PLAYERS_WARM_INTERVAL (seconds, default 300)."""
+    interval = float(os.environ.get("LEAGUE_PLAYERS_WARM_INTERVAL", "300") or 300)
+    if interval <= 0:
+        return
+    while True:
+        try:
+            time.sleep(interval)
+            _build_league_players_payload(kdef=False)
+        except Exception:
+            logger.debug("league-players keep-warm failed", exc_info=True)
+
+
 if os.environ.get("WARM_CACHES_ON_START") == "1":
     threading.Thread(target=_warm_global_caches, daemon=True, name="cache-warm").start()
+    threading.Thread(target=_keep_league_players_warm, daemon=True, name="cache-keep-warm").start()
 
 
 # ── Feature 12: League Bulletins ─────────────────────────────────────────────
