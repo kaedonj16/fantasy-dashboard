@@ -604,7 +604,7 @@ _CHEAT_HTML = r"""
     <div class="cs-hist-head">
       <div>
         <h2 id="csHistTitle">History</h2>
-        <p class="cs-hist-sub" id="csHistSub">Historical trends for this profile — not a ranking or this player's odds.</p>
+        <p class="cs-hist-sub" id="csHistSub">Historical trends for this profile - not a ranking or this player's odds.</p>
       </div>
       <button type="button" class="cs-hist-close" id="csHistClose">Close</button>
     </div>

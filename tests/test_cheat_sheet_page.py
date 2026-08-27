@@ -330,10 +330,15 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "historical trends for this profile" in body.lower()
     assert "return !dyn && SHOW_HISTORICAL" in script
     assert "var HIST_STRONG_PCT = 25" in script
+    assert "var HIST_TIER_SHORT = { top_5: 'top-5', top_12: 'top-12', top_24: 'top-24' }" in script
+    assert "(lead.pct != null ? lead.pct : '-')" in script
+    assert "(row.pct != null ? row.pct + '%' : '-')" in script
+    assert "—" not in script.split("function renderHistPanel")[1].split("function init()")[0]
+    assert "–" not in script.split("function renderHistPanel")[1].split("function init()")[0]
     assert "market_higher" not in script.split("function histCell")[1].split("function smallVal")[0]
     assert "Hist is redraft-only" in body
     assert "copy.trends" in script or "Trends for this player's buckets" in script
-    assert "trendsHitRow(row, row.polarity)" in script
+    assert "trendsHitRow(row, row && row.polarity)" in script
     assert ".cs-wrap, .cs-hist-modal {" in body
     assert "z-index: var(--z-modal, 10000)" in body
     assert ".cs-hist-head" in body

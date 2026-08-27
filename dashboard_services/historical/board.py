@@ -92,8 +92,8 @@ CAREER_STAGE_DISPLAY: dict[str, str] = {
 }
 DRAFT_CAPITAL_DISPLAY: dict[str, str] = {
     "round_1": "Round 1",
-    "day_2": "Day 2 (rounds 2–3)",
-    "day_3": "Day 3 (rounds 4–7)",
+    "day_2": "Day 2 (rounds 2-3)",
+    "day_3": "Day 3 (rounds 4-7)",
     "undrafted": "Undrafted",
 }
 PRIOR_FINISH_DISPLAY: dict[str, str] = {
@@ -118,15 +118,15 @@ ADP_BUCKET_DISPLAY: dict[str, str] = {
     "round_3": "Round 3",
     "round_4": "Round 4",
     "round_5": "Round 5",
-    "rounds_6_7": "Rounds 6–7",
-    "rounds_8_10": "Rounds 8–10",
+    "rounds_6_7": "Rounds 6-7",
+    "rounds_8_10": "Rounds 8-10",
     "rounds_11_plus": "Rounds 11+",
 }
 ADP_POSITIONAL_DISPLAY: dict[str, str] = {
-    "top_5": "Positional ADP 1–5",
-    "top_12": "Positional ADP 6–12",
-    "top_24": "Positional ADP 13–24",
-    "top_36": "Positional ADP 25–36",
+    "top_5": "Positional ADP 1-5",
+    "top_12": "Positional ADP 6-12",
+    "top_24": "Positional ADP 13-24",
+    "top_36": "Positional ADP 25-36",
     "outside_36": "Positional ADP 37+",
 }
 CUMULATIVE_TREND_WINDOWS: tuple[tuple[str, str, str], ...] = (
@@ -411,7 +411,7 @@ def format_age_bucket_label(value: Any) -> str:
         return f"{years} or younger" if years else text
     if text.endswith("+") and text[:-1].replace(".", "", 1).isdigit():
         return f"{text[:-1]} or older"
-    return text.replace("-", "–")
+    return text
 
 
 def format_comp_bucket_value(dim: str, value: Any) -> str:
@@ -440,7 +440,7 @@ def format_adp_bucket_label(bucket: Any) -> str:
 
 
 def format_adot_bucket_label(bucket: Any) -> str:
-    text = str(bucket or "").replace("-", "–")
+    text = str(bucket or "").strip()
     if not text:
         return ""
     return f"aDOT {text} yards"
@@ -773,8 +773,8 @@ def build_hist_trends(
         add(_trend_row(
             kind="prime",
             label="Prime window",
-            bucket=f"{lo}–{hi}",
-            sentence=f"{pos} hit rates have peaked at ages {lo}–{hi}",
+            bucket=f"{lo}-{hi}",
+            sentence=f"{pos} hit rates have peaked at ages {lo}-{hi}",
             rate=pair.get("conditional") if isinstance(pair, Mapping) else None,
         ))
 
@@ -914,7 +914,7 @@ def build_projection_trends(
             kind="projection_vs_history",
             label="Projection vs history",
             sentence=sentence,
-            display=f"{hist_pct}%" if hist_pct is not None else "—",
+            display=f"{hist_pct}%" if hist_pct is not None else "-",
             pct=hist_pct,
             n=hist.get("n") or top12.get("sample_size"),
         ))
@@ -1091,8 +1091,8 @@ def build_deep_panel(
 def _era_label(aggregates: Mapping[str, Any]) -> str:
     rng = aggregates.get("season_range") or []
     if isinstance(rng, (list, tuple)) and len(rng) >= 2 and rng[0] is not None and rng[1] is not None:
-        return f"{rng[0]}–{rng[1]}"
-    return "2018–2025"
+        return f"{rng[0]}-{rng[1]}"
+    return "2018-2025"
 
 
 def _section_row(
@@ -1208,7 +1208,7 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
     baseline_pct = baseline.get("display_pct") if isinstance(baseline, Mapping) else None
     prime = age_block.get("prime_window") if isinstance(age_block.get("prime_window"), Mapping) else {}
     lo, hi = prime.get("age_start"), prime.get("age_end")
-    prime_label = f"{lo}–{hi}" if lo is not None and hi is not None else ""
+    prime_label = f"{lo}-{hi}" if lo is not None and hi is not None else ""
     prime_ages = prime.get("ages") if isinstance(prime.get("ages"), list) else []
     if not prime_ages and lo is not None and hi is not None:
         try:
@@ -1391,7 +1391,7 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
     tgt_rows = []
     for _lo, _hi, key in TARGET_SHARE_BUCKETS:
         row = _section_row(
-            str(key).replace("-", "–"),
+            str(key),
             tgt_map.get(key),
             baseline_pct=baseline_pct,
         )
@@ -1409,7 +1409,7 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
     snap_rows = []
     for _lo, _hi, key in SNAP_PCT_BUCKETS:
         row = _section_row(
-            str(key).replace("-", "–"),
+            str(key),
             snap_map.get(key),
             baseline_pct=baseline_pct,
         )
