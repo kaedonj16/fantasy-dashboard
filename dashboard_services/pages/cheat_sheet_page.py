@@ -246,6 +246,21 @@ _CHEAT_HTML = r"""
   .cs-vorbar { width: 60px; height: 6px; border-radius: 12px; background: var(--cs-bar-track); overflow: hidden; flex-shrink: 0; }
   .cs-vorbar > i { display: block; height: 100%; background: var(--cs-bar); border-radius: 12px; }
   /* Market vs ADP remains part of the same primary table as VOR and Value. */
+  .cs-hist-col { white-space: nowrap; }
+  .cs-hist-cell { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; }
+  .cs-hist-btn { font: inherit; font-family: var(--cs-mono); font-size: 10px; font-weight: 800; cursor: pointer; width: 18px; height: 18px; padding: 0; border-radius: 5px; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink-faint); line-height: 1; }
+  .cs-hist-btn:hover { border-color: var(--cs-accent); color: var(--cs-accent); }
+  .cs-hist-modal { display: none; position: fixed; inset: 0; z-index: 40; background: color-mix(in srgb, #000 45%, transparent); align-items: flex-end; justify-content: center; padding: 12px; }
+  .cs-hist-modal.open { display: flex; }
+  .cs-hist-card { background: var(--cs-surface); color: var(--cs-ink); border: 1px solid var(--cs-line); border-radius: 14px; max-width: 560px; width: 100%; max-height: min(80vh, 640px); overflow: auto; padding: 16px 18px 18px; }
+  .cs-hist-card h2 { font-size: 16px; margin: 0 36px 6px 0; }
+  .cs-hist-sub { color: var(--cs-ink-soft); font-size: 12.5px; margin: 0 0 12px; line-height: 1.45; }
+  .cs-hist-close { float: right; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink-soft); border-radius: 8px; padding: 5px 9px; }
+  .cs-hist-dl { display: grid; grid-template-columns: 92px 1fr; gap: 6px 12px; font-size: 13px; margin: 0 0 14px; }
+  .cs-hist-dl dt { color: var(--cs-ink-faint); font-family: var(--cs-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; }
+  .cs-hist-ex { list-style: none; margin: 0; padding: 0; }
+  .cs-hist-ex li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--cs-line); font-size: 13px; }
+  .cs-hist-ex li:last-child { border-bottom: 0; }
 
   .cs-pos-badge { font-family: var(--cs-mono); font-weight: 800; font-size: 11px; padding: 3px 7px; border-radius: 6px; flex-shrink: 0; }
   .cs-pos-QB { color: var(--cs-qb); background: var(--cs-qb-bg); } .cs-pos-RB { color: var(--cs-rb); background: var(--cs-rb-bg); }
@@ -352,7 +367,7 @@ _CHEAT_HTML = r"""
     .cs-ctrl-row:last-child .cs-btn { min-width: 0; width: 100%; justify-content: center; white-space: normal; padding: 8px 6px; }
     /* Keep every primary signal on mobile. The table scrolls horizontally, as
        it did before Market vs ADP was added, rather than hiding VOR or Value. */
-    .cs-wrap table { min-width: 830px; }
+    .cs-wrap table { min-width: 910px; }
     .cs-tbl-scroll, .cs-pgrid-scroll { max-height: none; height: auto; }
     .cs-wrap thead th, .cs-wrap tbody td { padding-left: 6px; padding-right: 6px; }
     .cs-pcell { gap: 5px; min-width: 0; }
@@ -467,11 +482,20 @@ _CHEAT_HTML = r"""
       <div class="cs-rule"><span class="cs-k">Proj Pick</span><div><h3>Your snake slot on this board</h3><p>Choose a draft slot to draw labeled lines at each of that seat's snake-draft picks — Proj Pick 1.05, 2.08, and so on. The player under each line is who this ranking would take there. Lines follow the displayed order, including any custom-board moves, and they print with the sheet.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Proj PPG</span><div><h3>Expected weekly scoring</h3><p>Projected PPG is the player's upcoming-season fantasy points per game from Sleeper, the same projection pool used by the Draft Room. Players Sleeper does not project show a dash rather than last-season actuals.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Schedule</span><div><h3>Full-season matchup context</h3><p>Schedule Rank compares each player's position-specific matchups across fantasy Weeks 1-17. Rank 1 is the easiest schedule. It is useful context for close calls inside a tier, but it does not change the stable VOR order.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">Hist</span><div><h3>What similar pre-season profiles did</h3><p>Hist is the smoothed chance a comparable pre-season profile finished top-12, from the historical warehouse, not a ranking input. Market in that column is historical hit rate at the player's current ADP bucket. Projection rank is current Sleeper PPG among this board. Missing values show a dash. The info button opens named comps; it does not change VOR or Pick Score.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Live</span><div><h3>It knows your live draft</h3><p>Open the sheet from your league during a draft and players already taken are struck through automatically. REC badges show the current Draft Room view without changing the VOR board. Reopen the sheet after more picks to refresh those ranks, or use Connect live draft to keep drafted-player status synchronized.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Dynasty</span><div><h3>Dynasty values the window, not just this year</h3><p>Dynasty mode ranks on dynasty value, which already weights youth and multi-year outlook, and swaps in Age and a career-window tag in place of ADP, because you are drafting the next several seasons.</p></div></div>
     </div>
   </section>
 
-  <p class="cs-foot">Computed for your league's scoring, roster and format from the same projections and values the Draft Room uses. Tap a player to cross him off; use Print for a paper copy.</p>
+  <p class="cs-foot">Computed for your league's scoring, roster and format from the same projections and values the Draft Room uses. Tap a player to cross him off; use the Hist info button for similar-player history. Print for a paper copy.</p>
+</div>
+<div class="cs-hist-modal" id="csHistModal" role="dialog" aria-modal="true" aria-labelledby="csHistTitle">
+  <div class="cs-hist-card">
+    <button type="button" class="cs-hist-close" id="csHistClose">Close</button>
+    <h2 id="csHistTitle">History</h2>
+    <p class="cs-hist-sub" id="csHistSub">Descriptive similar-player rates. Not a ranking score.</p>
+    <div id="csHistBody"></div>
+  </div>
 </div>
 """

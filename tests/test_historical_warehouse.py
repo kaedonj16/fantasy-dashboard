@@ -144,11 +144,13 @@ def test_profiles_rebuild_from_warehouse_rows_write_false(monkeypatch):
     assert "distribution" in payload["age_curves"]["RB"]["by_integer_age"]["24"]
     assert "conditional" in payload["age_curves"]["RB"]["by_integer_age"]["24"]
     assert payload["definitions"]["no_adp"] is False
-    assert payload["phase"] == 7
+    assert payload["phase"] == 8
     assert "prior_usage" in payload
     assert "comps" in payload
     assert "adp" in payload
     assert payload["signals"]["no_blended_score"] is True
+    assert payload["board"]["not_in_ranking"] is True
+    assert "preseason_profiles" in payload
     assert payload["adp"]["sf_tep_historical"] is False
     assert payload["comps"]["walk_forward"] is False
     assert payload["comps"]["pooled_historical"] is True

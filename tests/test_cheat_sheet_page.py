@@ -91,7 +91,7 @@ def test_market_column_is_conditionally_omitted_from_table_and_export():
     body = build_cheat_sheet_body("league-123", 2026, "sleeper")
     script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
 
-    assert ".cs-wrap table { min-width: 830px; }" in body
+    assert ".cs-wrap table { min-width: 910px; }" in body
     assert ".cs-vor-col, .cs-value-col { display: none; }" not in body
     assert ".cs-market-col { display: none; }" not in body
     assert "sortTh('market', 'Market vs ADP', 'cs-market-col'" in script
@@ -101,6 +101,7 @@ def test_market_column_is_conditionally_omitted_from_table_and_export():
     assert "SHOW_MARKET_VS_ADP = resp.market_vs_adp_available === true" in script
     assert "showMarket(dyn) ? sortTh('market'" in script
     assert "showMarket(dyn) ? ['Market vs ADP'] : []" in script
+    assert "showHist() ? ['Hist P(top-12)'] : []" in script
     assert "Not enough independent market data yet." in script
     assert "marketBasis" in script
     assert "marketConfidenceLabel" in script
@@ -288,7 +289,7 @@ def test_cheat_sheet_big_board_columns_are_sortable():
     body = build_cheat_sheet_body("league-123", 2026, "sleeper")
     script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
 
-    for key in ("rk", "name", "pos", "vor", "projectedPpg", "scheduleRank", "market"):
+    for key in ("rk", "name", "pos", "vor", "projectedPpg", "scheduleRank", "market", "hist"):
         assert "sortTh('%s'" % key in script
     assert "col5Key = dyn ? 'age' : 'adp'" in script
     assert "col6Key = dyn ? 'window' : 'value'" in script
@@ -307,3 +308,27 @@ def test_cheat_sheet_big_board_columns_are_sortable():
     assert "Click a column header (ADP, Value, Proj PPG, Sched Rk" in body
     # Custom edits snap back to the VOR board so drag-reorder isn't fighting ADP.
     assert "if (editBoard) resetBoardSort()" in script
+
+
+def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
+    body = build_cheat_sheet_body("league-123", 2026, "sleeper")
+    script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+    core = (Path(__file__).parents[1] / "static" / "draft_board_core.js").read_text()
+    pick = (Path(__file__).parents[1] / "static" / "pick_score.js").read_text()
+
+    assert "var SHOW_HISTORICAL = false" in script
+    assert "SHOW_HISTORICAL = resp.historical_available === true" in script
+    assert "sortTh('hist', 'Hist'" in script
+    assert "function histCell(x)" in script
+    assert "/api/historical-player/" in script
+    assert "openHistPanel" in script
+    assert "e.target.closest('.cs-hist-btn')" in script
+    assert "scored.sort(function (a, b) {" in script
+    assert "var aVor = Number(a.vorRaw);" in script
+    assert "histP" not in script.split("scored.sort(function (a, b) {")[1].split("scored.forEach")[0]
+    assert "similar-profile P(top-12), not a rank" in script
+    assert "the info button opens named comps" in body.lower()
+    assert "p_hit_pct" not in pick
+    assert "historical-player" not in core
+    assert "p_hit_pct" not in core
+

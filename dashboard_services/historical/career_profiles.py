@@ -32,6 +32,7 @@ from dashboard_services.historical.definitions import (
 from dashboard_services.historical.usage import build_prior_usage_rates
 from dashboard_services.historical.comps import build_comp_aggregates
 from dashboard_services.historical.adp import build_adp_hit_rates
+from dashboard_services.historical.board import board_contract, build_preseason_profiles
 from dashboard_services.historical.signals import signal_contract
 from dashboard_services.historical.finish_rates import (
     cohort_hit_rate,
@@ -523,13 +524,14 @@ def assemble_profile_aggregates(
     PPR-primary. ADP hit rates are descriptive market stats (Phase 5–6), not
     ranking inputs and not comp-matching features. Warehouse rows have no
     projection columns. Live Sleeper PPG is a separate Phase 7 signal compared
-    in native units (probability vs rank), never blended into a score.
+    in native units (probability vs rank), never blended into a score. Phase 8
+    stamps a compact board payload from this JSON; it does not enter ranking.
     """
     era = filter_era(rows, season_from, season_to)
     bounds = season_bounds(era)
     return {
         "schema_version": 1,
-        "phase": 7,
+        "phase": 8,
         "scoring": scoring,
         "era_floor": season_from,
         "season_range": bounds,
@@ -607,6 +609,8 @@ def assemble_profile_aggregates(
             ),
         },
         "signals": signal_contract(),
+        "board": board_contract(),
+        "preseason_profiles": build_preseason_profiles(era),
         "age_curves": build_age_curves(
             era, scoring=scoring, season_from=season_from, season_to=season_to
         ),

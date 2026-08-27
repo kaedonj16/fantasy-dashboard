@@ -173,7 +173,7 @@ def _warehouse_for_signals():
 
 def test_board_signals_keep_native_units_and_missing_unknown():
     payload = assemble_profile_aggregates(_warehouse_for_signals())
-    assert payload["phase"] == 7
+    assert payload["phase"] == 8
     assert payload["definitions"]["no_projections"] is True
     assert payload["definitions"]["projections_in_comps"] is False
     assert payload["definitions"]["projections_in_ranking"] is False

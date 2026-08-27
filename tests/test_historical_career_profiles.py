@@ -281,7 +281,7 @@ def test_assemble_has_no_adp_or_projections_and_keeps_both_breakout_defs():
         ),
     ]
     payload = assemble_profile_aggregates(rows)
-    assert payload["phase"] == 7
+    assert payload["phase"] == 8
     assert "prior_usage" in payload
     assert "comps" in payload
     assert "adp" in payload
@@ -299,6 +299,8 @@ def test_assemble_has_no_adp_or_projections_and_keeps_both_breakout_defs():
     assert defs["no_projections"] is True
     assert payload["signals"]["no_blended_score"] is True
     assert payload["signals"]["warehouse_has_projections"] is False
+    assert payload["board"]["not_in_ranking"] is True
+    assert "preseason_profiles" in payload
     assert "engine_breakout" in defs and "first_time_elite" in defs
 
     def _keys(obj):

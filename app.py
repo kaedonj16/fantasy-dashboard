@@ -987,6 +987,14 @@ except Exception as e:
     logger.warning("[players-bp] skipped: %s", e)
 
 try:
+    from routes.historical_api_bp import historical_api_bp
+
+    app.register_blueprint(historical_api_bp)
+    logger.info("[historical-api-bp] registered")
+except Exception as e:
+    logger.warning("[historical-api-bp] skipped: %s", e)
+
+try:
     from routes.yahoo_auth_bp import yahoo_auth_bp
 
     app.register_blueprint(yahoo_auth_bp)
@@ -15716,6 +15724,20 @@ def api_market_intel_health():
     return resp
 
 
+def _league_players_response(payload: dict):
+    """Stamp compact historical signals, then jsonify. Does not change ranking inputs."""
+    try:
+        from dashboard_services.historical.aggregates_store import stamp_historical_on_payload
+        payload = stamp_historical_on_payload(payload)
+    except Exception:
+        logger.debug("[api/league-players] historical stamp skipped", exc_info=True)
+        payload = dict(payload or {})
+        payload["historical_available"] = False
+    resp = jsonify(_sanitize_for_json(payload))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.route("/api/league-players")
 def api_league_players():
     payload = _build_league_players_payload(kdef=bool(request.args.get("kdef")))
@@ -15852,9 +15874,7 @@ def api_league_players():
         payload["players"] = _players
         payload["adp_sources"] = _adp_sources
         payload["adp_season"] = _want_season
-        resp = jsonify(_sanitize_for_json(payload))
-        resp.headers["Cache-Control"] = "no-store"  # season-specific, not the shared pool
-        return resp
+        return _league_players_response(payload)
 
     if _adp_source:
         _lg = (request.args.get("league_id") or session.get("last_league_id") or "").strip()
@@ -15873,9 +15893,7 @@ def api_league_players():
         payload["players"] = _players
         payload["adp_sources"] = _adp_sources
         payload["adp_source"] = _adp_source
-        resp = jsonify(_sanitize_for_json(payload))
-        resp.headers["Cache-Control"] = "no-store"  # source-specific, not the shared pool
-        return resp
+        return _league_players_response(payload)
 
     # Yahoo ADP column (redraft-only): for a viewer in a connected Yahoo league,
     # overlay Yahoo's league-format-aware ADP (needs a league id + token) in place
@@ -15911,15 +15929,11 @@ def api_league_players():
                 payload = dict(payload)
                 payload["players"] = _players
                 payload["adp_columns"] = _rest + _yahoo + _cons
-                resp = jsonify(_sanitize_for_json(payload))
-                resp.headers["Cache-Control"] = "no-store"
-                return resp
+                return _league_players_response(payload)
 
-    resp = jsonify(_sanitize_for_json(payload))
     # Projection rows vary by scoring fingerprint and schema version. Do not let
     # a CDN/browser retain a pre-contract or differently scored player payload.
-    resp.headers["Cache-Control"] = "no-store"
-    return resp
+    return _league_players_response(payload)
 
 
 @app.route("/api/teams")

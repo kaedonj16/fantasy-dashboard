@@ -1,12 +1,13 @@
 # Historical Analytics
 
-Phase 1–7 of the Draft Cheat Sheet historical layer: a reusable
+Phase 1–8 of the Draft Cheat Sheet historical layer: a reusable
 player-season warehouse, positional finishes, leakage-safe prior-career
 features, descriptive age / career-stage / draft-capital rates,
 previous-season usage/efficiency (NGS + snaps), comparable-player cells
 with smoothed board probabilities, frozen preseason ADP with hit rates,
-and **History vs Projection vs Market** as three separate live signals.
-Board columns and Pick Score are later. They are **not** in this PR.
+History vs Projection vs Market as three separate live signals, and
+**compact Hist columns plus a lazy similar-player panel** on the cheat
+sheet. Pick Score is later. It is **not** in this PR.
 
 This document is the source of truth for datasets reused, season coverage,
 scoring/tier definitions, age methodology, leakage rules, and how the two
@@ -23,12 +24,12 @@ The following are the datasets and functions this layer extends.
 |---|---|
 | `dashboard_services/pages/cheat_sheet_page.py` | Server-built `window.__cheatCfg` blob |
 | `static/cheat_sheet.js` | Board UI; strings asserted by `test_product_honesty.py` / `test_cheat_sheet_page.py` |
-| `static/draft_board_core.js`, `static/pick_score.js` | Shared board/Pick Score kernels — **untouched** |
-| `dashboard_services/pages/draft_room_page.py`, `static/draft_room.js` | Draft Room — **untouched** |
+| `static/draft_board_core.js`, `static/pick_score.js` | Shared board/Pick Score kernels — **untouched** (Hist is display-only) |
+| `dashboard_services/pages/draft_room_page.py`, `static/draft_room.js` | Draft Room UI — **untouched**; `/api/league-players` may carry `historical` |
 
-Board data is batch (`/api/league-players`), not per-player REST. Historical
-summaries will ride that payload in Phase 8. A per-player REST endpoint is for
-the deep modal only (Phase 8). Core analytical logic must not live in JS.
+Board data is batch (`/api/league-players`). Compact Hist fields ride that
+payload. A per-player REST endpoint (`/api/historical-player/<id>`) is for
+the deep modal only. Core analytical logic must not live in JS.
 
 ### Historical warehouse (extended)
 
@@ -117,6 +118,8 @@ dashboard_services/historical/     # pure logic — pytest -m "not integration"
     comps.py                       # pre-season matching, cells, board lookup
     adp.py                         # normalize 999→None, ADP hit rates, ADP-bust
     signals.py                     # History vs Projection vs Market (no blend)
+    board.py                       # compact board payload + deep-panel lookup
+    aggregates_store.py            # JSON load + mtime cache (no pandas/Flask)
 data_building/historical/          # pandas / parquet I/O
     build_player_seasons.py        # rebuild warehouse from cache
     build_outcomes.py              # finishes applied in the same rebuild
@@ -128,7 +131,8 @@ data_building/external_data/player_history.py   # existing paths + new wrappers
 
 `definitions.py` / `seasons.py` / `finishes.py` / `finish_rates.py` /
 `age_curves.py` / `career_profiles.py` / `usage.py` / `comps.py` / `adp.py`
-/ `signals.py` must not import pandas, Flask, or `nfl_data_py`.
+/ `signals.py` / `board.py` must not import pandas, Flask, or `nfl_data_py`.
+`aggregates_store.py` reads the JSON artifact (pathlib + json only).
 `test_product_honesty.py` and `test_adp_formats.py` stay green: this package is
 not on their import graph.
 
@@ -395,8 +399,9 @@ That walk-forward comparison is Phase 9 via the existing backtester.
 Descriptive only — comps do not enter ranking or Pick Score.
 
 No `031_*` migration. The request-path artifact remains
-`historical_profile_aggregates.json` (`phase: 7`, `comps` + `adp` + `signals`
-sections). Live PPG is supplied by the caller, not stored on warehouse rows.
+`historical_profile_aggregates.json` (`phase: 8`, `comps` + `adp` + `signals`
++ `board` + `preseason_profiles`). Live PPG is supplied by the caller, not
+stored on warehouse rows.
 
 ### Phase 4 snapshot (2018–2025 warehouse, PPR)
 
@@ -492,14 +497,34 @@ Rules:
   fake `P(top-12)`. Sleeper cannot backfill historical preseason projections,
   so there is no honest `P(hit | projected WR1)` table.
 
-Phase 8 can attach a compact slice of this payload onto `/api/league-players`.
-This phase does not change cheat-sheet JS, Draft Room, or Pick Score.
+Phase 8 attaches a compact slice of this payload onto `/api/league-players`.
+This phase does not change Pick Score.
 
-## Limitations (Phase 1–7)
+## Phase 8 — compact Hist column + lazy deep panel
 
-- No board UI columns, no Pick Score change. Phase 2–7 rates and signal
-  comparisons are informational. Comps, ADP, and live projections do not
-  enter ranking.
+Display only. VOR order and Pick Score are unchanged. JS does not compute
+rates; it renders `player.historical` from the batch payload.
+
+- **Batch:** `_league_players_response` stamps a compact `historical` dict
+  on skill-position players after projections and ADP overlays, then
+  jsonifies. Fields: `p_hit` / `p_hit_pct`, `mkt_p` / `mkt_pct`, `h_vs_m`,
+  `proj_rk`, `adp_rk`, `p_vs_m`, `p_vs_h`. Missing stays `null` / `unknown`.
+- **Preseason profiles** live on the JSON (`preseason_profiles.by_player`).
+  Each player's last warehouse season supplies previous finish/usage; years
+  experience and Sept-1 age step forward to `upcoming_season`. Request paths
+  do not scan parquet.
+- **Cheat sheet:** a Hist column (percent + disagreement tint) with an `i`
+  button. Row tap still crosses a player off. The button opens a lazy panel.
+- **Deep panel:** `GET /api/historical-player/<id>` returns named comps,
+  dropped dimensions, and market bucket rate from JSON leaves.
+- **ADP axis** remains redraft 1QB. Superflex / TEP historical ADP is not
+  claimed. Dynasty `avg_pick` is not used as market ADP.
+- Draft Room UI is unchanged; it may ignore the extra payload field.
+
+## Limitations (Phase 1–8)
+
+- No Pick Score change. Phase 2–8 rates and the Hist column are
+  informational. Comps, ADP, and live projections do not enter ranking.
 - Comp cell rates and ADP hit rates are pooled historical, not walk-forward.
 - Current projections are a live signal only. There is no historical
   preseason projection archive, so projection vs history cannot be a
@@ -560,16 +585,14 @@ Writes `cache/player_history/player_history_{season}.parquet`,
 `historical_profile_aggregates.json`. Empty games=0 padding rows from
 2023–2025 Sleeper dumps are dropped. Missing fields stay null; coverage JSON
 reports present/missing per field. Profile JSON is the request-path artifact
-for Phase 2–7 rates (comp leaves + ADP hit rates + signal contract). The usage-efficiency and
+for Phase 2–8 rates (comp leaves + ADP hit rates + signal contract +
+preseason profiles for the board). The usage-efficiency and
 ADP backfills are optional when those JSON caches are already committed;
 warehouse rebuild does not call nflverse or ADP APIs live. Live projections
 are not written into this JSON.
 
 ## Follow-up (gated)
 
-8. Compact board columns + lazy deep panel (JSON lookup, no parquet scan).
-   History / market probabilities and projection rank ride `/api/league-players`;
-   the deep modal can call `lookup_board_probabilities` for named comps.
 9+. League-winner proxy, walk-forward comparison via existing backtester, bounded
     Pick Score only if validated. Postgres `031_*` only if a request path
     outgrows the JSON artifact.

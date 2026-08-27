@@ -55,7 +55,7 @@ def rebuild_historical_profiles(
     scoring: str = "ppr",
     attach_adp: Optional[bool] = None,
 ) -> dict:
-    """Assemble Phase 2–7 aggregates. ``write=False`` for tests.
+    """Assemble Phase 2–8 aggregates. ``write=False`` for tests.
 
     ADP is joined from committed frozen snapshots when loading the warehouse.
     Injected test rows skip that join unless ``attach_adp=True``.
