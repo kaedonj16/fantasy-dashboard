@@ -6263,6 +6263,7 @@
       + '<span><i class="dd-sq" style="background:color-mix(in srgb,#94a3b8 22%,transparent);border:1px solid #94a3b8"></i>on board</span>'
       + '<span><i class="dd-sq" style="background:color-mix(in srgb,#ef4444 22%,transparent);border:1px solid #ef4444"></i>reach</span>'
       + '</div>'
+      + '<div class="dd-chart-hint" aria-hidden="true">Swipe to explore · Tap a pick for details</div>'
       + '<div class="dd-chartscroll"><svg id="drDdTl" width="900" height="340" viewBox="0 0 900 340" role="img" aria-label="Value versus consensus ADP by pick"></svg></div>'
       + '</div>';
   }
@@ -6272,7 +6273,13 @@
     if (!pts.length){ svg.parentNode.parentNode.style.display = 'none'; return; }
     var NS = 'http://www.w3.org/2000/svg';
     function el(nm, a){ var e = document.createElementNS(NS, nm); for (var k in a) e.setAttribute(k, a[k]); return e; }
-    var W = 900, H = 340, mr = { l: 42, r: 14, t: 16, b: 30 };
+    // On phones, favor legibility over fitting the whole draft at once. Giving
+    // every pick a generous horizontal slot keeps dots and round labels readable;
+    // the chart container provides native horizontal scrolling.
+    var compact = window.matchMedia && window.matchMedia('(max-width: 720px)').matches;
+    var W = compact ? Math.max(720, 56 + (pts.length - 1) * 72) : 900;
+    var H = 340, mr = { l: compact ? 44 : 42, r: 14, t: 16, b: compact ? 34 : 30 };
+    svg.setAttribute('width', W); svg.setAttribute('height', H); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
     var iw = W - mr.l - mr.r, ih = H - mr.t - mr.b;
     var maxD = 2, minD = -2;
     pts.forEach(function(p){ var d = ddTlDelta(p); if (d > maxD) maxD = d; if (d < minD) minD = d; });
@@ -6285,7 +6292,7 @@
     var step = (maxD - minD) > 40 ? 15 : (maxD - minD) > 20 ? 10 : 5;
     for (var d = Math.ceil(minD / step) * step; d <= maxD; d += step){
       svg.appendChild(el('line', { x1: mr.l, y1: y(d), x2: mr.l + iw, y2: y(d), stroke: 'var(--border)', 'stroke-width': d === 0 ? 1.4 : 1, opacity: d === 0 ? 1 : 0.6 }));
-      var tx = el('text', { x: mr.l - 7, y: y(d) + 4, 'text-anchor': 'end', 'font-size': 10.5, fill: 'var(--text-muted)' });
+      var tx = el('text', { x: mr.l - 7, y: y(d) + 4, 'text-anchor': 'end', 'font-size': compact ? 12 : 10.5, fill: 'var(--text-muted)' });
       tx.textContent = (d > 0 ? '+' : '') + d; svg.appendChild(tx);
     }
     // cumulative value line
@@ -6297,12 +6304,15 @@
     pts.forEach(function(p, i){
       var px = x(i), py = y(ddTlDelta(p)), c = posColor(p.pos);
       svg.appendChild(el('line', { x1: px, y1: y0, x2: px, y2: py, stroke: c, 'stroke-width': 1.3, opacity: 0.32 }));
-      var r = p.ps == null ? 5 : Math.max(4, 4 + (p.ps - 40) / 60 * 6);
-      var dot = el('circle', { cx: px, cy: py, r: r, fill: c, 'fill-opacity': 0.9, stroke: 'var(--card)', 'stroke-width': 1.5, class: 'dd-tl-dot', style: 'cursor:pointer' });
+      var r = p.ps == null ? (compact ? 8 : 5) : Math.max(compact ? 8 : 4, 4 + (p.ps - 40) / 60 * 6);
+      var dot = el('circle', { cx: px, cy: py, r: r, fill: c, 'fill-opacity': 0.9, stroke: 'var(--card)', 'stroke-width': 1.5, class: 'dd-tl-dot', style: 'cursor:pointer', tabindex: '0', role: 'button', 'aria-label': p.pl.name + ', pick ' + roundPickStr(p.pn) + ', ' + fmtAdpDelta(ddTlDelta(p)) + ' versus ADP' });
       dot.addEventListener('mousemove', function(ev){ ddTip(ev, p); });
       dot.addEventListener('mouseleave', ddTipHide);
+      dot.addEventListener('click', function(ev){ ddTip(ev, p); });
+      dot.addEventListener('focus', function(){ var box = dot.getBoundingClientRect(); ddTip({ clientX: box.left + box.width / 2, clientY: box.top }, p); });
+      dot.addEventListener('blur', ddTipHide);
       svg.appendChild(dot);
-      var rl = el('text', { x: px, y: H - mr.b + 17, 'text-anchor': 'middle', 'font-size': 9, fill: 'var(--text-subtle,var(--text-muted))' });
+      var rl = el('text', { x: px, y: H - mr.b + 19, 'text-anchor': 'middle', 'font-size': compact ? 11 : 9, fill: 'var(--text-subtle,var(--text-muted))' });
       rl.textContent = roundPickStr(p.pn); svg.appendChild(rl);
     });
   }

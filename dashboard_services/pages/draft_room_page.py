@@ -1297,7 +1297,10 @@ _DRAFT_ROOM_HTML = r"""
   .dd-legend span { display:inline-flex; align-items:center; gap:6px; }
   .dd-dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
   .dd-sq { width:11px; height:11px; border-radius:3px; display:inline-block; }
+  .dd-chart-hint { display:none; }
   .dd-chartscroll, .dd-tablescroll { overflow-x:auto; }
+  .dd-chartscroll { overscroll-behavior-x:contain; scrollbar-width:thin; }
+  .dd-chartscroll svg { display:block; max-width:none; }
   .dd-tl-dot:hover { stroke:var(--text); stroke-width:1.6; }
   .dd-tip { position:fixed; z-index:12800; pointer-events:none; background:var(--tooltip-bg,var(--card)); color:var(--tooltip-fg,var(--text)); border:1px solid var(--tooltip-border,var(--border)); box-shadow:var(--tooltip-shadow,0 12px 40px rgba(0,0,0,.4)); border-radius:var(--tooltip-radius,10px); padding:var(--tooltip-pad,8px 12px); font-size:var(--tooltip-fs,12px); line-height:var(--tooltip-lh,1.45); opacity:0; transform:translateY(4px); transition:opacity .12s; max-width:230px; }
   .dd-tip.show { opacity:1; transform:none; }
@@ -1374,6 +1377,12 @@ _DRAFT_ROOM_HTML = r"""
     .dd-tiles { grid-template-columns:repeat(2,1fr); }
     .dd-two { grid-template-columns:1fr; }
     .dd-edges { grid-template-columns:1fr; }
+    .dd-card { padding:14px; }
+    .dd-legend { gap:8px 11px; }
+    .dd-legend span:nth-last-child(3) { margin-left:0 !important; }
+    .dd-chart-hint { display:block; margin:-2px 0 7px; color:var(--text-muted); font-size:11px; font-weight:650; }
+    .dd-chartscroll { margin:0 -6px -4px; padding:0 6px 4px; -webkit-overflow-scrolling:touch; scroll-snap-type:x proximity; }
+    .dd-chartscroll svg { touch-action:pan-x; scroll-snap-align:start; }
   }
   /* ── Roster slots (setup page) ── */
   .dr-setup-roster { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:8px; }
