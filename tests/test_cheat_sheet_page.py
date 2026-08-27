@@ -332,7 +332,8 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "var HIST_STRONG_PCT = 25" in script
     assert "market_higher" not in script.split("function histCell")[1].split("function smallVal")[0]
     assert "Hist is redraft-only" in body
-    assert "Trends for this player's buckets" in script or "copy.trends" in script
+    assert "copy.trends" in script or "Trends for this player's buckets" in script
+    assert "trendsHitRow(row, row.polarity)" in script
     assert ".cs-wrap, .cs-hist-modal {" in body
     assert "z-index: var(--z-modal, 10000)" in body
     assert ".cs-hist-head" in body

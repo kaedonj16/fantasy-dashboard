@@ -2225,7 +2225,7 @@
             html += '<section class="cs-hist-sec"><h3>' + esc(copy.trends_heading || 'Trends for this player\'s buckets') + '</h3>';
             if (copy.trends_note) html += '<p class="cs-hist-note">' + esc(copy.trends_note) + '</p>';
             html += '<div class="cs-hist-hits">';
-            trends.forEach(function (row) { html += histTrendRow(row); });
+            trends.forEach(function (row) { html += trendsHitRow(row, row.polarity); });
             html += '</div></section>';
         }
         var profile = copy.profile || [];

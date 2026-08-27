@@ -66,6 +66,7 @@ def test_preseason_profile_steps_forward_from_last_observed_season():
     assert rec["previous_season_finish"] == 5
     assert rec["previous_season_year"] == 2024
     assert rec["draft_capital_bucket"] == "round_1"
+    assert rec["prior_top12_count"] == 1
     assert "projected_ppg" not in rec
     assert "ppr_ppg" not in rec
 
@@ -352,6 +353,8 @@ def test_hist_trends_are_descriptive_bucket_slices():
             "proj_ppg": 18.4,
             "projected_positional_rank": 2,
             "adp_positional_rank": 1,
+            "prior_top12_count": 3,
+            "previous_season_ngs_rush_yards_over_expected_per_att": 0.7,
         },
     )
     proj = with_proj["copy"]["projection_trends"]
@@ -361,6 +364,16 @@ def test_hist_trends_are_descriptive_bucket_slices():
     assert any("18.4 PPG" == row.get("display") for row in proj)
     assert any(row.get("display") == "#2" for row in proj)
     assert all("p_top_12" not in row for row in proj)
+    modal_kinds = [row["kind"] for row in with_proj["copy"]["trends"]]
+    assert "adp_positional" in modal_kinds
+    assert "capital_miss" in modal_kinds
+    assert "top12_as_rookie" in modal_kinds
+    assert "top12_by_year_2" in modal_kinds
+    assert "two_plus" in modal_kinds
+    assert "ryoe" in modal_kinds
+    assert "league_winner_smash" not in modal_kinds
+    assert any(row.get("vs_label") for row in with_proj["copy"]["trends"])
+    assert any(row.get("secondary") for row in with_proj["copy"]["trends"])
     query = {
         "position": "RB",
         "years_experience": 3,
@@ -375,6 +388,14 @@ def test_hist_trends_are_descriptive_bucket_slices():
     trends = build_hist_trends(query, aggs, panel["market"])
     assert trends
     assert all(row.get("pct") is not None for row in trends)
+    breakout_q = dict(query)
+    breakout_q["previous_season_finish"] = 28
+    breakout_q["years_experience"] = 4
+    smash = build_hist_trends(breakout_q, aggs, panel["market"])
+    smash_kinds = [row["kind"] for row in smash]
+    assert "league_winner_smash" in smash_kinds
+    assert "first_time_elite" in smash_kinds
+    assert "repeat" not in smash_kinds
 
 
 def test_historical_trends_tab_is_position_wide_and_descriptive():

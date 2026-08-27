@@ -272,7 +272,7 @@ _CHEAT_HTML = r"""
   .cs-hist-sec { margin: 0 0 16px; }
   .cs-hist-sec:last-child { margin-bottom: 0; }
   .cs-hist-sec h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 8px; }
-  .cs-hist-hits { display: flex; flex-direction: column; gap: 8px; }
+  .cs-hist-hits .cs-trends-bar { margin-top: -2px; margin-bottom: 2px; }
   .cs-hist-hit { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 9px 11px; border: 1px solid var(--cs-line, var(--border)); border-radius: 10px; background: color-mix(in srgb, var(--cs-ink, #0f172a) 3%, var(--cs-surface, var(--card))); }
   .cs-hist-hit-label { font-size: 13px; font-weight: 700; color: var(--cs-ink, var(--text)); }
   .cs-hist-hit-meta { font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 2px; }
