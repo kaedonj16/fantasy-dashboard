@@ -2184,33 +2184,35 @@
         }
         var copy = resp.copy || {};
         var html = '';
+
+        // Verdict first: lead with the top-12 rate for this similar group, with
+        // the other tiers as supporting stats and the cohort spelled out below.
         var hits = copy.hit_rates || [];
-        if (hits.length) {
-            html += '<section class="cs-hist-sec"><h3>' + esc(copy.headline || 'Closest historical group') + '</h3>';
-            if (copy.cohort_note) html += '<p class="cs-hist-note">' + esc(copy.cohort_note) + '</p>';
-            html += '<div class="cs-hist-hits">';
+        var lead = null, i;
+        for (i = 0; i < hits.length; i++) { if (hits[i].tier === 'top_12') { lead = hits[i]; break; } }
+        if (!lead && hits.length) lead = hits[0];
+        if (lead) {
+            var confBits = [];
+            if (lead.confidence_label) confBits.push(lead.confidence_label);
+            if (lead.n != null) confBits.push('n=' + lead.n);
+            html += '<div class="cs-hist-verdict">'
+                + '<div class="cs-hist-hero">'
+                + '<div class="cs-hist-big">' + (lead.pct != null ? lead.pct : '—') + '<sup>%</sup></div>'
+                + '<div class="cs-hist-hero-cap">'
+                + '<div class="cs-hist-hero-lead">finished top-12</div>'
+                + '<div class="cs-hist-hero-sub">among this similar group</div>'
+                + (confBits.length ? '<span class="cs-hist-conf"><i></i>' + esc(confBits.join(' · ')) + '</span>' : '')
+                + '</div></div>';
+            html += '<div class="cs-hist-tiers">';
             hits.forEach(function (row) {
-                var meta = [];
-                if (row.n != null) meta.push('n=' + row.n);
-                if (row.confidence_label) meta.push(row.confidence_label);
-                html += '<div class="cs-hist-hit"><div><div class="cs-hist-hit-label">' + esc(row.label || '') + '</div>'
-                    + (meta.length ? '<div class="cs-hist-hit-meta">' + esc(meta.join(' · ')) + '</div>' : '')
-                    + '</div><div class="cs-hist-hit-pct">' + (row.pct != null ? row.pct + '%' : '—') + '</div></div>';
+                var short = HIST_TIER_SHORT[row.tier] || (row.label || '').replace('Then finished ', '');
+                html += '<div class="cs-hist-tier' + (row.tier === 'top_12' ? ' lead' : '') + '">'
+                    + '<div class="cs-hist-tier-k">' + esc(short) + '</div>'
+                    + '<div class="cs-hist-tier-v">' + (row.pct != null ? row.pct + '%' : '—') + '</div></div>';
             });
-            html += '</div></section>';
-        }
-        var examples = (resp.history && resp.history.examples) || [];
-        if (examples.length) {
-            html += '<section class="cs-hist-sec"><h3>' + esc(copy.examples_heading || 'Seasons from that similar group') + '</h3>';
-            if (copy.examples_note) html += '<p class="cs-hist-note">' + esc(copy.examples_note) + '</p>';
-            html += '<ul class="cs-hist-ex">';
-            examples.forEach(function (ex) {
-                html += '<li><span>' + esc(ex.name || ex.sleeper_id || '') + (ex.season ? ' · ' + ex.season : '') + '</span><span>'
-                    + (ex.positional_finish != null ? '#' + ex.positional_finish : '')
-                    + (ex.ppr_points != null ? ' · ' + ex.ppr_points + ' pts' : '')
-                    + '</span></li>';
-            });
-            html += '</ul></section>';
+            html += '</div>';
+            if (copy.headline) html += '<p class="cs-hist-cohort">' + esc(copy.headline) + '</p>';
+            html += '</div>';
         }
         var projTrends = copy.projection_trends || [];
         if (projTrends.length) {
@@ -2236,11 +2238,8 @@
             });
             html += '</div></section>';
         }
-        if (copy.relaxed && copy.relaxed.length) {
-            html += '<section class="cs-hist-sec"><h3>' + esc(copy.relaxed_heading || 'Dropped to grow the sample') + '</h3>';
-            if (copy.relaxed_note) html += '<p class="cs-hist-note">' + esc(copy.relaxed_note) + '</p>';
-            html += '<p class="cs-hist-note">' + copy.relaxed.map(function (row) { return esc(row.label || ''); }).join(' · ') + '</p></section>';
-        }
+
+        // ADP-bucket sentence, only when it is not already one of the trend rows.
         var mkt = resp.market || {};
         var sentence = copy.market_sentence || '';
         var missingAdp = mkt.p_top_12 == null && !mkt.adp_bucket;
@@ -2249,6 +2248,40 @@
         if (sentence && !hasAdpTrend) {
             html += '<section class="cs-hist-sec"><h3>' + esc(copy.market_heading || 'ADP bucket hit rate') + '</h3><p class="cs-hist-note">' + esc(sentence) + '</p></section>';
         }
+
+        // Progressive disclosure: comps, dropped filters, and the full profile.
+        var examples = (resp.history && resp.history.examples) || [];
+        var detail = '';
+        if (examples.length) {
+            detail += '<div class="cs-hist-sec"><h3>' + esc(copy.examples_heading || 'Seasons from that similar group') + '</h3>';
+            if (copy.examples_note) detail += '<p class="cs-hist-note">' + esc(copy.examples_note) + '</p>';
+            detail += '<ul class="cs-hist-ex">';
+            examples.forEach(function (ex) {
+                detail += '<li><span>' + esc(ex.name || ex.sleeper_id || '') + (ex.season ? ' · ' + ex.season : '') + '</span><span>'
+                    + (ex.positional_finish != null ? '#' + ex.positional_finish : '')
+                    + (ex.ppr_points != null ? ' · ' + ex.ppr_points + ' pts' : '')
+                    + '</span></li>';
+            });
+            detail += '</ul></div>';
+        }
+        if (copy.relaxed && copy.relaxed.length) {
+            detail += '<div class="cs-hist-sec"><h3>' + esc(copy.relaxed_heading || 'Dropped to grow the sample') + '</h3>';
+            if (copy.relaxed_note) detail += '<p class="cs-hist-note">' + esc(copy.relaxed_note) + '</p>';
+            detail += '<p class="cs-hist-note">' + copy.relaxed.map(function (row) { return esc(row.label || ''); }).join(' · ') + '</p></div>';
+        }
+        var profile = copy.profile || [];
+        if (profile.length) {
+            detail += '<div class="cs-hist-sec"><h3>' + esc(copy.profile_heading || 'This pre-season profile') + '</h3><div class="cs-hist-profile">';
+            profile.forEach(function (row) {
+                detail += '<span class="cs-hist-chip"><span class="cs-hist-chip-k">' + esc(row.label || '') + '</span><span class="cs-hist-chip-v">' + esc(row.value || '') + '</span></span>';
+            });
+            detail += '</div></div>';
+        }
+        if (detail) {
+            var summaryLabel = examples.length ? 'Comparable seasons &amp; profile' : 'Profile &amp; detail';
+            html += '<details class="cs-hist-more"><summary>' + summaryLabel + '</summary><div class="cs-hist-more-inner">' + detail + '</div></details>';
+        }
+
         return html || '<p class="cs-hist-sub">No historical profile for this player yet.</p>';
     }
 

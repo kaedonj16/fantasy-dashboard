@@ -315,6 +315,50 @@ _CHEAT_HTML = r"""
   .cs-trends-age-n { font-family: var(--cs-mono); font-size: 9px; color: var(--cs-ink-faint, var(--text-muted)); padding-bottom: 4px; }
   .cs-tabs button.cs-hidden { display: none; }
 
+  /* Verdict-first layout: lead with the top-12 rate, then per-bucket trends.
+     The hero number is the one figure a drafter opened the card for; the
+     tier stats, cohort line, and bucket trends supply the supporting story,
+     and comps/profile tuck into a disclosure so the card reads in a glance. */
+  .cs-hist-verdict { margin: 0 0 16px; }
+  .cs-hist-hero { display: flex; align-items: flex-end; gap: 16px; padding: 2px 0 14px; }
+  .cs-hist-big { font-weight: 800; font-size: 58px; line-height: .82; letter-spacing: -.03em; color: var(--cs-ink, var(--text)); font-variant-numeric: tabular-nums; }
+  .cs-hist-big sup { font-size: 22px; font-weight: 800; color: var(--cs-ink-soft, var(--text-muted)); vertical-align: super; }
+  .cs-hist-hero-cap { padding-bottom: 5px; min-width: 0; }
+  .cs-hist-hero-lead { font-size: 13.5px; font-weight: 700; color: var(--cs-ink, var(--text)); }
+  .cs-hist-hero-sub { font-size: 12px; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 2px; }
+  .cs-hist-conf { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-family: var(--cs-mono); font-size: 10.5px; font-weight: 700; letter-spacing: .03em; color: var(--cs-amber); background: color-mix(in srgb, var(--cs-amber, #b5730b) 14%, transparent); border-radius: 999px; padding: 3px 9px; }
+  .cs-hist-conf i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: inline-block; flex-shrink: 0; }
+  .cs-hist-tiers { display: flex; gap: 8px; }
+  .cs-hist-tier { flex: 1; border: 1px solid var(--cs-line, var(--border)); border-radius: 10px; padding: 9px 10px; background: color-mix(in srgb, var(--cs-ink, #0f172a) 3%, var(--cs-surface, var(--card))); }
+  .cs-hist-tier-k { font-family: var(--cs-mono); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-hist-tier-v { font-weight: 800; font-size: 20px; color: var(--cs-ink, var(--text)); margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .cs-hist-tier.lead { border-color: var(--cs-accent); background: var(--cs-accent-soft); }
+  .cs-hist-tier.lead .cs-hist-tier-v { color: var(--cs-accent); }
+  .cs-hist-cohort { font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-soft, var(--text-muted)); margin: 13px 0 0; line-height: 1.5; }
+
+  .cs-hist-tlist { display: flex; flex-direction: column; }
+  .cs-hist-trow { padding: 10px 0; border-bottom: 1px dashed var(--cs-line, var(--border)); }
+  .cs-hist-trow:first-child { padding-top: 2px; }
+  .cs-hist-trow:last-child { border-bottom: 0; padding-bottom: 0; }
+  .cs-hist-ttop { display: flex; align-items: baseline; gap: 10px; }
+  .cs-hist-tcat { font-family: var(--cs-mono); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-faint, var(--text-muted)); border: 1px solid var(--cs-line, var(--border)); border-radius: 5px; padding: 2px 5px; white-space: nowrap; flex-shrink: 0; min-width: 62px; text-align: center; }
+  .cs-hist-tsent { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--cs-ink, var(--text)); line-height: 1.3; }
+  .cs-hist-tpct { font-weight: 800; font-size: 15px; color: var(--cs-ink, var(--text)); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cs-hist-tbarline { display: flex; align-items: center; gap: 10px; margin-top: 7px; padding-left: 72px; }
+  .cs-hist-tbar { flex: 1; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--cs-ink, #0f172a) 8%, transparent); overflow: hidden; }
+  .cs-hist-tbar > i { display: block; height: 100%; background: var(--cs-accent); border-radius: 3px; }
+  .cs-hist-tmeta { font-family: var(--cs-mono); font-size: 9.5px; color: var(--cs-ink-faint, var(--text-muted)); white-space: nowrap; }
+
+  .cs-hist-more { margin-top: 16px; border-top: 1px solid var(--cs-line, var(--border)); padding-top: 12px; }
+  .cs-hist-more > summary { cursor: pointer; list-style: none; font-family: var(--cs-mono); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-accent); display: flex; align-items: center; gap: 8px; }
+  .cs-hist-more > summary::-webkit-details-marker { display: none; }
+  .cs-hist-more > summary::after { content: "+"; margin-left: auto; font-size: 15px; line-height: 1; }
+  .cs-hist-more[open] > summary::after { content: "\2013"; }
+  .cs-hist-more:focus-within > summary { color: var(--cs-accent); }
+  .cs-hist-more > summary:focus-visible { outline: 2px solid var(--cs-accent); outline-offset: 3px; border-radius: 4px; }
+  .cs-hist-more-inner { padding-top: 14px; display: flex; flex-direction: column; gap: 16px; }
+  .cs-hist-more-inner .cs-hist-sec { margin: 0; }
+
   .cs-pos-badge { font-family: var(--cs-mono); font-weight: 800; font-size: 11px; padding: 3px 7px; border-radius: 6px; flex-shrink: 0; }
   .cs-pos-QB { color: var(--cs-qb); background: var(--cs-qb-bg); } .cs-pos-RB { color: var(--cs-rb); background: var(--cs-rb-bg); }
   .cs-pos-WR { color: var(--cs-wr); background: var(--cs-wr-bg); } .cs-pos-TE { color: var(--cs-te); background: var(--cs-te-bg); }
@@ -437,6 +481,8 @@ _CHEAT_HTML = r"""
     .cs-filterbar .cs-src, .cs-filterbar .csd-wrap { width: 100%; min-width: 0; }
     .cs-hist-modal { align-items: center; justify-content: center; padding: 16px 12px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
     .cs-hist-card { width: 100%; max-width: min(420px, 100%); max-height: min(78vh, 640px); border-radius: 14px; margin: 0; }
+    .cs-hist-big { font-size: 50px; }
+    .cs-hist-tbarline { padding-left: 0; }
   }
   @media print {
     .cs-hist-modal, .cs-hist-btn { display: none !important; }
