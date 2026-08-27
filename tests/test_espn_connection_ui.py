@@ -172,6 +172,17 @@ def test_otp_modal_open_is_reusable_across_league_sources():
     assert "window.brOpenEspnOtp" in otp_block
 
 
+def test_sleeper_link_add_sends_username_for_verification():
+    # /api/link/add verifies the Sleeper user by username; the modal must include
+    # it in the add/pending payload or the server returns "Could not verify …".
+    source = Path("app.py").read_text()
+    modal = source[source.index("function linkAdd("):source.index("window.linkSleeperLookup")]
+    assert "payload.username=uv" in modal
+    assert "getElementById('linkSleeperUser')" in modal
+    # The body is the assembled payload (not an inline object missing username).
+    assert "body:JSON.stringify(payload)" in modal
+
+
 def test_every_google_action_gets_shared_google_logo():
     css = Path("static/dashboard.css").read_text()
     logo = Path("static/google-logo.svg").read_text()

@@ -2898,10 +2898,16 @@ def _link_modal_html() -> str:
       function linkAdd(platform,league_id,season,team_id,name,btn){
         var hasAcct=!!window._hasAccount;
         if(btn){ btn.disabled=true; btn.textContent=hasAcct?'Adding…':'Continuing…'; }
+        var payload={platform:platform,league_id:league_id,season:season,team_id:team_id,name:name};
+        // Sleeper add/pending both key off the username the user looked up with:
+        // /api/link/add verifies league membership through it (and sets team_id),
+        // and /api/link/pending stashes it to set the viewer after Google. Without
+        // it the server can't resolve the Sleeper user ("Could not verify …").
+        if(platform==='sleeper'){ var su=document.getElementById('linkSleeperUser'); var uv=su?(su.value||'').trim():''; if(uv)payload.username=uv; }
         // With an account: save straight away. Without: stash the pick and send
         // the user to Google; the callback attaches it and lands them in-league.
         fetch(hasAcct?'/api/link/add':'/api/link/pending',{method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({platform:platform,league_id:league_id,season:season,team_id:team_id,name:name})})
+          body:JSON.stringify(payload)})
           .then(function(r){return r.json();}).then(function(d){
             if(d.ok){
               if(hasAcct){ linkSetMsg('Added '+(name||'league')+'. Refreshing…','ok');
