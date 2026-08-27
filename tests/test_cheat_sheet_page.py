@@ -380,6 +380,13 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "Descriptive — not a ranking input" not in body
     assert "cs-trends-honesty" not in body
     assert "Not a ranking score." in body
+    assert ".cs-trends-callout-col" in body
+    assert "grid-template-columns: 1fr 1fr" in body
+    assert "cs-trends-age-tip" in body
+    assert "trendsQualifyLabel" in script
+    assert "function trendsQualifyLabel" in script
+    assert "data-age-tip" in script
+    assert "Open one, or pick a lane." in script
     assert "trendsTopEdges(sections, 10)" in script
     assert "data-trends-lane" in script
     assert "row.vs_label" in script
