@@ -97,6 +97,31 @@ def test_rebuild_from_injected_maps_does_not_scan_live_apis(monkeypatch, tmp_pat
     assert y2022_rb["previous_season_finish"] == 1  # only RB in 2021
     assert y2022_rb["ppr_positional_finish"] == 1
     assert y2022_rb["years_experience"] == 3
+    assert y2022_rb["ppr_top_5"] is True
+    assert y2022_rb["previously_top5"] is True  # 2021 was the only RB, finish 1
     # Current-season projections must not appear on historical rows.
     assert "projected_points" not in y2022_rb
     assert "projected_ppg" not in y2022_rb
+
+
+def test_profiles_rebuild_from_warehouse_rows_write_false(monkeypatch):
+    from data_building.historical.build_profiles import rebuild_historical_profiles
+    from data_building.historical import build_player_seasons as B
+
+    usage = {
+        2021: [_legacy("10", "RB", 180), _legacy("11", "WR", 220)],
+        2022: [_legacy("10", "RB", 260), _legacy("11", "WR", 90)],
+    }
+    monkeypatch.setattr(B, "load_usage_rows", lambda season: usage.get(season, []))
+    monkeypatch.setattr(B, "build_identity_map", lambda: {
+        "10": {"birth_date": "3/3/1997", "draft_year": 2019, "nfl_draft_round": 1, "nfl_draft_pick": 8, "name": "RB Ten", "position": "RB"},
+        "11": {"birth_date": "4/4/1998", "draft_year": 2020, "nfl_draft_round": 2, "nfl_draft_pick": 40, "name": "WR Eleven", "position": "WR"},
+    })
+    rows = B.rebuild_historical_warehouse(seasons=(2021, 2022), write=False)["rows"]
+    payload = rebuild_historical_profiles(rows, write=False)
+    assert payload["written_path"] is None
+    assert payload["n_player_seasons"] == 4
+    assert "distribution" in payload["age_curves"]["RB"]["by_integer_age"]["24"]
+    assert "conditional" in payload["age_curves"]["RB"]["by_integer_age"]["24"]
+    assert payload["definitions"]["no_adp"] is True
+    assert "adp" not in payload["draft_capital"]

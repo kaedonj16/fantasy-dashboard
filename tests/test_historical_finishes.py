@@ -242,6 +242,7 @@ def test_prior_career_features_are_preseason_only():
     assert y2022["career_best_ppg_before_season"] == 15.0
     assert y2022["prior_top12_count"] == 1
     assert y2022["previously_top12"] is True
+    assert y2022["previously_top5"] is False
     assert y2022["first_time_top12_candidate"] is False
 
     y2023 = by_year[2023]
@@ -249,7 +250,9 @@ def test_prior_career_features_are_preseason_only():
     assert y2023["previous_season_finish"] == 3
     assert y2023["career_best_finish_before_season"] == 3
     assert y2023["prior_top3_count"] == 1
+    assert y2023["prior_top5_count"] == 1
     assert y2023["prior_top12_count"] == 2
+    assert y2023["previously_top5"] is True
 
 
 def test_2022_feature_row_does_not_change_when_2022_actuals_change():

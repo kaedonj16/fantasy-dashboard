@@ -1,12 +1,14 @@
 # Historical Analytics
 
-Phase 1 of the Draft Cheat Sheet historical layer: a reusable player-season
-warehouse, positional finishes, and leakage-safe prior-career features.
-Later phases (age curves, comps, ADP backfill, board columns, Pick Score)
-build on this. They are **not** in this PR.
+Phase 1–2 of the Draft Cheat Sheet historical layer: a reusable
+player-season warehouse, positional finishes, leakage-safe prior-career
+features, and **descriptive** age / career-stage / prior-elite /
+draft-capital rates. Later phases (usage/efficiency, comps, ADP backfill,
+board columns, Pick Score) build on this. They are **not** in this PR.
 
 This document is the source of truth for datasets reused, season coverage,
-scoring/tier definitions, age methodology, and leakage rules.
+scoring/tier definitions, age methodology, leakage rules, and how the two
+age statistics and the two “breakout” labels differ.
 
 ## Phase 1 audit — what already exists (reused, not replaced)
 
@@ -99,24 +101,36 @@ dashboard_services/historical/     # pure logic — pytest -m "not integration"
     definitions.py                 # tiers, age-as-of, buckets, bust, smoothing
     seasons.py                     # canonicalize both usage_rows schemas
     finishes.py                    # ranks + prior-career features
+    finish_rates.py                # cohort rates, sample size, Bayes, confidence
+    age_curves.py                  # distribution vs conditional; data-derived prime
+    career_profiles.py             # stage / repeat / engine-breakout / capital
 data_building/historical/          # pandas / parquet I/O
     build_player_seasons.py        # rebuild warehouse from cache
     build_outcomes.py              # finishes applied in the same rebuild
+    build_profiles.py              # parquet → historical_profile_aggregates.json
 data_building/external_data/player_history.py   # existing paths + new wrappers
 ```
 
-`definitions.py` / `seasons.py` / `finishes.py` must not import pandas or Flask.
+`definitions.py` / `seasons.py` / `finishes.py` / `finish_rates.py` /
+`age_curves.py` / `career_profiles.py` must not import pandas or Flask.
 `test_product_honesty.py` and `test_adp_formats.py` stay green: this package is
 not on their import graph.
 
 Persistence: large per-season rows stay in committed parquet under
-`cache/player_history/`. No Postgres table in Phase 1 (next migration remains
-`031_*` when aggregates need it). Request paths call
-`load_player_history_df` / `load_canonical_history` — they never scan parquet
-row-by-row per player and never parse `usage_rows_*.json`.
+`cache/player_history/`. Precomputed **profile aggregates** are a small JSON
+file (`historical_profile_aggregates.json`) rebuilt in cron after the
+warehouse. Request paths must not scan parquet row-by-row. No Postgres table
+yet (next migration remains `031_*` when a request path needs it).
 
-Rebuild: `cron_daily.py` step `rebuild_historical_warehouse` (cache only, no
-live NFL APIs).
+Rebuild:
+
+```bash
+python -m data_building.historical.build_player_seasons
+python -m data_building.historical.build_profiles
+```
+
+Cron steps: `rebuild_historical_warehouse` then `rebuild_historical_profiles`
+(cache only, no live NFL APIs).
 
 ## Scoring, tiers, age
 
@@ -127,6 +141,8 @@ live NFL APIs).
   `None`, not last place.
 - **Positional labels:** `RB1` = ranks 1–12, `RB2` = 13–24, same width for
   WR/TE/QB. Cutoffs live only in `TIER_CUTOFFS` / `POSITION_TIER_WIDTH`.
+  `top_5` is in that map so “previous RB1 → top-5” does not invent a second
+  cutoff.
 - **Age:** `(season_start − birth_date) / 365.25`, truncated to 1 decimal,
   `season_start = Sept 1 of the season`. Buckets are UI convenience only
   (`AGE_BUCKETS`); exact age is stored.
@@ -140,8 +156,8 @@ live NFL APIs).
 For player-season **S**, only seasons **&lt; S** enter:
 
 `previous_season_finish/ppg/games`, `career_best_finish_before_season`,
-`career_best_ppg_before_season`, `prior_top{3,6,12,24}_count`,
-`previously_top{3,6,12,24}`, `first_time_top12_candidate`,
+`career_best_ppg_before_season`, `prior_top{3,5,6,12,24}_count`,
+`previously_top{3,5,6,12,24}`, `first_time_top12_candidate`,
 `career_seasons_before_current`.
 
 PPR uses those names; half-PPR / standard are prefixed (`half_ppr_previous_season_finish`).
@@ -173,10 +189,108 @@ zero-fills for live valuation. Do not point the historical layer at it.
 
 Do not claim “2012+” uniformly.
 
-## Limitations (Phase 1)
+## Phase 2 — age, career-stage, prior-elite, draft-capital rates
 
-- No comparable-player engine, no smoothed board probabilities, no ADP, no UI
-  columns, no Pick Score change.
+Descriptive only. Qualifying set is Phase 1 **appeared** rows (games > 0).
+Default era is **2016+** (warehouse rows are 2018+). Age known preseason +
+same-season finish is not leakage for `P(hit | age)`. Repeat rates use Phase 1
+prior-career fields (pre-season). Nothing here enters ranking or Pick Score.
+
+Every rate record has `sample_size`, `season_range`, `raw_rate`,
+`smoothed_rate` (`empirical_bayes`, prior = position baseline,
+`DEFAULT_BAYES_PRIOR_N = 10`), `confidence` (&lt;15 low / 15–39 moderate /
+40–99 good / 100+ strong), and `display_pct` (whole percent). Empty cohorts
+keep `raw_rate=None` (not a fake 0%). Small samples still emit raw + smoothed
++ n; they do not fake precision.
+
+### Two age statistics (never collapse these)
+
+1. **Distribution** — among seasons that *did* hit (e.g. RB1), what share
+   sat in an age window. “X% of RB1 seasons came from ages 23–27.”
+2. **Conditional hit rate** — among qualifying seasons *in* that window, what
+   share hit. “X% of age-23–27 RB seasons finished RB1.”
+
+Exact age is canonical; `AGE_BUCKETS` are UI-only. Rows with **missing age
+are omitted from age curves only** (not treated as 0).
+
+**Prime window** is data-derived, not hard-coded 23–27: Bayes-smoothed
+`P(top-12 | integer age, position)` vs the known-age position baseline;
+prime ages are at/above baseline with n ≥ 15 (not “low”). The window is the
+longest consecutive run (ties broken by successes). The JSON stores both
+stats on that derived window as `prime_window_pair`.
+
+### Engine breakout vs first-time elite (both kept)
+
+Copied from `breakout_engine/backtest_breakout_model.py` — do not “fix”:
+
+- `BREAKOUT_RANK_THRESHOLD = 12`
+- `PRIOR_NON_STARTER_RANK = 13`
+- `was_non_starter = prior is None or prior > 13` (rank 13 is **not** a
+  non-starter)
+- Engine breakout = non-starter AND this season ≤ 12
+
+**First-time elite** = `not previously_top12` AND this season ≤ 12.
+
+These disagree: prior rank 13 → top-12 is first-time elite but not an engine
+breakout; a former RB1 who was RB20 last year → RB8 is an engine breakout
+but not first-time. Prior rank is Phase 1 `previous_season_finish` (last
+*observed* prior season, not a calendar year-1 join). Slim tests
+string-assert the engine source still has those constant lines.
+
+Also emitted: previous top-12 → top-12, previous top-12 → top-5, 2+ prior
+top-12 → top-12 (WR/TE/QB equivalents).
+
+### Career stage
+
+From `years_experience` (0 = rookie year): `rookie` / `year_2` / `year_3` /
+`year_4` / `year_5` / `year_6_plus` (≥5). **Missing exp is omitted, not
+labeled rookie.** Stage × draft-capital × UI age-bucket cells emit only when
+n > 0.
+
+### Draft capital (descriptive)
+
+Buckets: `round_1` / `day_2` / `day_3` / `undrafted`. **Missing capital is
+omitted, not labeled UDFA.** Season-level P(top-12 / top-5 / top-24) and
+absolute-bust rates, plus player-level cumulative windows once the calendar
+window has closed (`draft_year + max_exp <= max warehouse season`):
+
+- `top12_as_rookie` (exp 0)
+- `top12_by_year_2` (exp 0–1)
+- `top12_in_years_2_4` (exp 1–3)
+
+The `undrafted` bucket is only players **explicitly** flagged UDFA (draft
+round 0). Missing round stays excluded, so that bucket can be empty even
+though many UDFAs appear in the warehouse. Do not backfill them.
+
+### Phase 2 snapshot (2018–2025 warehouse, PPR)
+
+Rebuilt aggregates: 4,647 appeared skill-position seasons. Prime windows are
+data-derived (not 23–27):
+
+| Pos | Known-age n | P(top-12) | Prime ages | % of top-12s in prime | P(top-12 \| prime) | Prev top-12 → top-12 | Engine BO among non-starters | R1 top-12 by year 2 |
+|---|---|---|---|---|---|---|---|---|
+| QB | 585 | 16% | 22–23 | 22% | 23% | 52% (n=83) | 9% | 32% (n=40, good) |
+| RB | 957 | 10% | 25–27 | 40% | 11% | 40% (n=84) | 5% | 29% (n=15, moderate) |
+| WR | 1,640 | 6% | 28–30 | 20% | 8% | 35% (n=84) | 4% | 13% (n=50, good) |
+| TE | 866 | 10% | 28–30 | 24% | 14% | 42% (n=82) | 6% | 35% (n=11, low) |
+
+Distribution vs conditional stay apart: 40% of RB1 seasons are ages 25–27,
+but only 11% of age-25–27 RB seasons finish RB1. Age is missing for a
+non-trivial slice (especially 2018); those rows are omitted from the age
+columns above, not zero-filled. R1 TE-by-year-2 is a low-confidence cell —
+raw + smoothed + n are still stored.
+
+### I/O
+
+`assemble_profile_aggregates` is pure (slim CI). `build_profiles.py` loads
+`player_history_all.parquet`, writes
+`cache/player_history/historical_profile_aggregates.json`. PPR-primary. No
+ADP columns, no `projected_*`.
+
+## Limitations (Phase 1–2)
+
+- No comparable-player engine, no board UI columns, no ADP, no Pick Score
+  change. Phase 2 rates are informational.
 - 2016–2017 not in the parquet warehouse yet (Sleeper week files are on disk).
 - 2023 usage_rows contain many null-name rows; identity join from
   `players_index` recovers current players, not all retirees.
@@ -184,10 +298,11 @@ Do not claim “2012+” uniformly.
   name wins when present.
 - `historical_identity.py` is owner identity — player matching uses sleeper id
   plus `nflverse_metrics._gsis_to_sleeper` / usage_rows GSIS.
-- Historical probabilities in later phases must show `sample_size` and use
-  `empirical_bayes` in `definitions.py`. Confidence: &lt;15 low / 15–39 moderate /
-  40–99 good / 100+ strong.
-- Ranking integration is gated on backtesting (Phase 9). Informational only until then.
+- Age coverage is thin in 2018 (retired players missing from the current
+  `players_index`). Missing age/exp/capital must not be treated as 0 / rookie
+  / UDFA.
+- Snap % is not uniform before ~2022. Air yards / aDOT stay null until Phase 3.
+- Ranking integration is gated on backtesting (Phase 9).
 
 ## Phase 1 warehouse snapshot
 
@@ -207,27 +322,30 @@ Example (PPR positional finish, leakage-safe priors):
 | CeeDee Lamb | 2023 | 24.3 | 3 | R1 | 403.2 | WR1 | WR5 | 1 | no |
 | Sam LaPorta | 2023 | 22.6 | 0 | R2 | 239.3 | TE1 | — | 0 | yes |
 
-`air_yards` / `adot` / `starts` are null until Phase 3. 2018 age coverage is
-thin (retired players missing from the current `players_index`).
+`air_yards` / `adot` / `starts` are null until Phase 3.
 
 ## Rebuild
 
 ```bash
 python -m data_building.historical.build_player_seasons
+python -m data_building.historical.build_profiles
 ```
 
 Writes `cache/player_history/player_history_{season}.parquet`,
-`player_history_all.parquet`, and `historical_coverage.json`. Empty
-games=0 padding rows from 2023–2025 Sleeper dumps are dropped. Missing
-fields stay null; coverage JSON reports present/missing per field.
+`player_history_all.parquet`, `historical_coverage.json`, and
+`historical_profile_aggregates.json`. Empty games=0 padding rows from
+2023–2025 Sleeper dumps are dropped. Missing fields stay null; coverage JSON
+reports present/missing per field. Profile JSON is the request-path artifact
+for Phase 2 rates.
 
 ## Follow-up (gated)
 
-2. Age curves + career-stage × prior-elite rates on the breakout-engine labels.
-3. Draft-capital descriptive rates + previous-season usage/efficiency (nflverse NGS/FTN).
-4. Comps + smoothed probabilities + precomputed aggregates (Postgres `031_*` if needed).
+3. Previous-season usage/efficiency (nflverse NGS/FTN) on this warehouse.
+4. Comps + smoothed board probabilities (Postgres `031_*` if a request path
+   needs it).
 5–6. ADP snapshot preservation + multi-source backfill + hit rates.
 7. Current projections as a **separate** signal; History vs Projection vs Market.
 8. Compact board columns + lazy deep panel.
 9+. League-winner proxy, walk-forward comparison via existing backtester, bounded
     Pick Score only if validated.
+

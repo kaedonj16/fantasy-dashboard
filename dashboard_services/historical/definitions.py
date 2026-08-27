@@ -40,8 +40,10 @@ PPG_COLUMNS: Mapping[str, str] = {
 
 # Single source of truth for finish-tier flags. Rank 1 is best.
 # A player finishing exactly at the cutoff (e.g. RB12) is inside the tier.
+# top_5 is required for "previous RB1 → top-5" repeat rates (Phase 2).
 TIER_CUTOFFS: Mapping[str, int] = {
     "top_3": 3,
+    "top_5": 5,
     "top_6": 6,
     "top_12": 12,
     "top_24": 24,
@@ -98,6 +100,29 @@ DRAFT_CAPITAL_ROUND_1 = "round_1"
 DRAFT_CAPITAL_DAY_2 = "day_2"
 DRAFT_CAPITAL_DAY_3 = "day_3"
 DRAFT_CAPITAL_UNDRAFTED = "undrafted"
+DRAFT_CAPITAL_ORDER: Tuple[str, ...] = (
+    DRAFT_CAPITAL_ROUND_1,
+    DRAFT_CAPITAL_DAY_2,
+    DRAFT_CAPITAL_DAY_3,
+    DRAFT_CAPITAL_UNDRAFTED,
+)
+
+# Career stage from completed seasons before this year (0 = rookie year).
+# Missing years_experience is None — never mapped to rookie.
+CAREER_STAGE_ROOKIE = "rookie"
+CAREER_STAGE_YEAR_2 = "year_2"
+CAREER_STAGE_YEAR_3 = "year_3"
+CAREER_STAGE_YEAR_4 = "year_4"
+CAREER_STAGE_YEAR_5 = "year_5"
+CAREER_STAGE_YEAR_6_PLUS = "year_6_plus"
+CAREER_STAGE_ORDER: Tuple[str, ...] = (
+    CAREER_STAGE_ROOKIE,
+    CAREER_STAGE_YEAR_2,
+    CAREER_STAGE_YEAR_3,
+    CAREER_STAGE_YEAR_4,
+    CAREER_STAGE_YEAR_5,
+    CAREER_STAGE_YEAR_6_PLUS,
+)
 
 # Sample-size confidence. Inspected against the Phase-1 warehouse; tune later
 # if real bucket sizes cluster elsewhere. n < 15 is always low.
@@ -203,6 +228,39 @@ def age_bucket(position: Any, age: Any) -> Optional[str]:
             continue
         return label
     return None
+
+
+def integer_age(age: Any) -> Optional[int]:
+    """Floor of exact age for age-curve bins. Missing/unparseable → None."""
+    try:
+        years = int(math.floor(float(age)))
+    except (TypeError, ValueError):
+        return None
+    if years < 0 or years > 80:
+        return None
+    return years
+
+
+def career_stage(years_experience: Any) -> Optional[str]:
+    """Map completed seasons-before-this-year onto a career-stage label.
+
+    0 → ``rookie``, 1 → ``year_2``, …, ≥5 → ``year_6_plus``. Missing
+    experience is None, never a fake rookie.
+    """
+    exp = _optional_int(years_experience)
+    if exp is None or exp < 0:
+        return None
+    if exp == 0:
+        return CAREER_STAGE_ROOKIE
+    if exp == 1:
+        return CAREER_STAGE_YEAR_2
+    if exp == 2:
+        return CAREER_STAGE_YEAR_3
+    if exp == 3:
+        return CAREER_STAGE_YEAR_4
+    if exp == 4:
+        return CAREER_STAGE_YEAR_5
+    return CAREER_STAGE_YEAR_6_PLUS
 
 
 def years_experience_before_season(

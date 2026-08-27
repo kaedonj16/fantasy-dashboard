@@ -37,6 +37,7 @@ CRON_STEPS = (
     "wls_redraft_10team",
     "wls_redraft_12team",
     "rebuild_historical_warehouse",
+    "rebuild_historical_profiles",
 )
 
 
@@ -863,6 +864,19 @@ coverage = rebuild_historical_warehouse()
 print("[cron] Historical warehouse: %s combined rows, seasons=%s"
       % (coverage.get("combined_rows"), coverage.get("written_seasons")))
 """, "rebuild_historical_warehouse")
+
+    # ------------------------------------------------------------------ #
+    # Step 9c: Historical profile aggregates (parquet → small JSON)      #
+    # Age curves, career-stage / repeat / breakout / draft-capital rates.#
+    # Request paths read this JSON; they never scan parquet.             #
+    # ------------------------------------------------------------------ #
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.historical.build_profiles import rebuild_historical_profiles
+payload = rebuild_historical_profiles()
+print("[cron] Historical profiles: %s player-seasons, range=%s"
+      % (payload.get("n_player_seasons"), payload.get("season_range")))
+""", "rebuild_historical_profiles")
 
     # ------------------------------------------------------------------ #
     # Step 10: Calibrated history snapshot                               #

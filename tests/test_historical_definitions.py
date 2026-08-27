@@ -4,6 +4,7 @@ from datetime import date
 from dashboard_services.historical.definitions import (
     ABSOLUTE_BUST_OUTSIDE,
     AGE_BUCKETS,
+    CAREER_STAGE_ORDER,
     DEFAULT_BAYES_PRIOR_N,
     POSITION_TIER_WIDTH,
     RELIABLE_SEASON_FLOOR,
@@ -11,10 +12,12 @@ from dashboard_services.historical.definitions import (
     TIER_CUTOFFS,
     age_as_of_season_start,
     age_bucket,
+    career_stage,
     confidence_label,
     display_percent,
     draft_capital_bucket,
     empirical_bayes,
+    integer_age,
     is_absolute_bust,
     parse_birth_date,
     positional_tier_label,
@@ -26,7 +29,14 @@ from dashboard_services.historical.definitions import (
 def test_reliable_floor_is_2016_not_a_uniform_2012():
     assert RELIABLE_SEASON_FLOOR == 2016
     assert SCORING_FORMATS == ("ppr", "half_ppr", "standard")
-    assert TIER_CUTOFFS == {"top_3": 3, "top_6": 6, "top_12": 12, "top_24": 24, "top_36": 36}
+    assert TIER_CUTOFFS == {
+        "top_3": 3,
+        "top_5": 5,
+        "top_6": 6,
+        "top_12": 12,
+        "top_24": 24,
+        "top_36": 36,
+    }
     assert POSITION_TIER_WIDTH == 12
 
 
@@ -63,6 +73,22 @@ def test_age_bucket_uses_floor_and_position_map():
     assert age_bucket("QB", None) is None
     assert age_bucket("K", 28) is None
     assert set(AGE_BUCKETS) == {"RB", "WR", "TE", "QB"}
+    assert integer_age(22.9) == 22
+    assert integer_age(None) is None
+    assert integer_age("") is None
+
+
+def test_career_stage_rookie_is_zero_missing_is_none():
+    assert career_stage(0) == "rookie"
+    assert career_stage(1) == "year_2"
+    assert career_stage(2) == "year_3"
+    assert career_stage(3) == "year_4"
+    assert career_stage(4) == "year_5"
+    assert career_stage(5) == "year_6_plus"
+    assert career_stage(12) == "year_6_plus"
+    assert career_stage(None) is None
+    assert career_stage("") is None
+    assert CAREER_STAGE_ORDER[0] == "rookie"
 
 
 def test_years_experience_rookie_is_zero_missing_is_none():
@@ -95,6 +121,8 @@ def test_positional_tier_label_and_flags():
     assert positional_tier_label("RB", None) is None
     flags = tier_flags(12)
     assert flags["top_12"] is True and flags["top_6"] is False and flags["top_24"] is True
+    assert flags["top_5"] is False
+    assert tier_flags(5)["top_5"] is True and tier_flags(5)["top_3"] is False
     assert tier_flags(None) == {k: False for k in TIER_CUTOFFS}
 
 
