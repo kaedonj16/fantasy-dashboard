@@ -146,6 +146,12 @@ one-source result is never labelled "Consensus".
   (migration `029_adp_snapshots.sql`, additive). Disk is the fast path; the
   table is how a new web disk recovers data the cron already fetched.
 - **Stale retention:** an empty/error fetch never overwrites a non-empty snapshot.
+- **Frozen historical boards:** `write_adp_snapshot(..., frozen=True)` and
+  `freeze_prior_season_global_snapshots` mark completed-season files immutable
+  so cron cannot refresh 2024 ADP into a 2026 market. Historical analytics
+  copies live under `cache/player_history/adp/` (see
+  `docs/historical_analytics.md`). Superflex / TEP historical ADP is still
+  not claimed.
 - A provider outage cannot affect Sleeper, BR Fantasy, the Draft Room, or player
   pages — each source degrades to empty independently.
 - No credentials are involved in any global feed; none are committed.

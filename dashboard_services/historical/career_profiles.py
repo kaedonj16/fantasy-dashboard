@@ -31,6 +31,7 @@ from dashboard_services.historical.definitions import (
 )
 from dashboard_services.historical.usage import build_prior_usage_rates
 from dashboard_services.historical.comps import build_comp_aggregates
+from dashboard_services.historical.adp import build_adp_hit_rates
 from dashboard_services.historical.finish_rates import (
     cohort_hit_rate,
     filter_era,
@@ -518,14 +519,14 @@ def assemble_profile_aggregates(
 ) -> dict:
     """Pure aggregator: warehouse records → small JSON-ready dict.
 
-    PPR-primary. No ADP, no projections, no ranking inputs. Phase 4 adds
-    comps / smoothed board probabilities from pre-season features.
+    PPR-primary. ADP hit rates are descriptive market stats (Phase 5–6), not
+    ranking inputs and not comp-matching features. No projections.
     """
     era = filter_era(rows, season_from, season_to)
     bounds = season_bounds(era)
     return {
         "schema_version": 1,
-        "phase": 4,
+        "phase": 6,
         "scoring": scoring,
         "era_floor": season_from,
         "season_range": bounds,
@@ -575,13 +576,22 @@ def assemble_profile_aggregates(
                 "pooled historical, not walk-forward. Request path reads "
                 "precomputed JSON leaves; no parquet scan, no 031_* table"
             ),
+            "missing_adp": "omitted from ADP cohorts; Sleeper 999 is missing, not pick 999",
+            "adp": (
+                "P(this-season hit | preseason redraft PPR 1QB ADP). "
+                "Source order sleeper → mfl → espn → yahoo. Superflex/TEP "
+                "historical ADP is not claimed. Not a comp feature and not a "
+                "ranking input. Frozen snapshots are not overwritten by cron"
+            ),
+            "adp_in_comps": False,
+            "adp_in_ranking": False,
             "snap_reliable_floor": SNAP_RELIABLE_FLOOR,
             "ftn_floor": FTN_SEASON_FLOOR,
             "prior_usage": (
                 "P(this-season hit | previous-season usage bucket); "
                 "same-season NGS/snaps are outcomes, not features"
             ),
-            "no_adp": True,
+            "no_adp": False,
             "no_projections": True,
         },
         "age_curves": build_age_curves(
@@ -592,4 +602,5 @@ def assemble_profile_aggregates(
         "draft_capital": build_draft_capital_rates(era, scoring=scoring),
         "prior_usage": build_prior_usage_rates(era, scoring=scoring),
         "comps": build_comp_aggregates(era, scoring=scoring),
+        "adp": build_adp_hit_rates(era, scoring=scoring),
     }

@@ -143,10 +143,13 @@ def test_profiles_rebuild_from_warehouse_rows_write_false(monkeypatch):
     assert payload["n_player_seasons"] == 4
     assert "distribution" in payload["age_curves"]["RB"]["by_integer_age"]["24"]
     assert "conditional" in payload["age_curves"]["RB"]["by_integer_age"]["24"]
-    assert payload["definitions"]["no_adp"] is True
-    assert payload["phase"] == 4
+    assert payload["definitions"]["no_adp"] is False
+    assert payload["phase"] == 6
     assert "prior_usage" in payload
     assert "comps" in payload
+    assert "adp" in payload
+    assert payload["adp"]["sf_tep_historical"] is False
     assert payload["comps"]["walk_forward"] is False
     assert payload["comps"]["pooled_historical"] is True
+    assert payload["definitions"]["adp_in_comps"] is False
     assert "adp" not in payload["draft_capital"]

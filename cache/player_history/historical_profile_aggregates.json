@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "phase": 4,
+  "phase": 6,
   "scoring": "ppr",
   "era_floor": 2016,
   "season_range": [
@@ -29,10 +29,14 @@
     "missing_usage": "omitted from prior-usage cohorts, not bucketed as 0",
     "missing_comp_dimension": "omitted from matching; not 0 / UDFA / last-place. Rookie prior_finish is the explicit label none",
     "comps": "P(this-season hit | pre-season profile). Matching uses position, career stage, draft capital, prior finish, age bucket, previous-season usage. Same-season actuals, ADP, and projections are not features. Tiny cells relax in COMP_RELAXATION_ORDER and shrink toward the position baseline. Named comps exclude the query player. Rates are pooled historical, not walk-forward. Request path reads precomputed JSON leaves; no parquet scan, no 031_* table",
+    "missing_adp": "omitted from ADP cohorts; Sleeper 999 is missing, not pick 999",
+    "adp": "P(this-season hit | preseason redraft PPR 1QB ADP). Source order sleeper \u2192 mfl \u2192 espn \u2192 yahoo. Superflex/TEP historical ADP is not claimed. Not a comp feature and not a ranking input. Frozen snapshots are not overwritten by cron",
+    "adp_in_comps": false,
+    "adp_in_ranking": false,
     "snap_reliable_floor": 2022,
     "ftn_floor": 2022,
     "prior_usage": "P(this-season hit | previous-season usage bucket); same-season NGS/snaps are outcomes, not features",
-    "no_adp": true,
+    "no_adp": false,
     "no_projections": true
   },
   "age_curves": {
@@ -67753,6 +67757,2040 @@
             ]
           }
         ]
+      }
+    }
+  },
+  "adp": {
+    "axis": "redraft",
+    "scoring": "ppr",
+    "qb_format": "1qb",
+    "source_preference": [
+      "sleeper",
+      "mfl",
+      "espn",
+      "yahoo"
+    ],
+    "sf_tep_historical": false,
+    "pooled_historical": true,
+    "descriptive_only": true,
+    "by_position": {
+      "QB": {
+        "position": "QB",
+        "n_with_adp": 451,
+        "n_missing_excluded": 185,
+        "baseline": {
+          "sample_size": 451,
+          "successes": 93,
+          "raw_rate": 0.206208,
+          "smoothed_rate": 0.206208,
+          "confidence": "strong",
+          "season_range": [
+            2018,
+            2025
+          ],
+          "display_pct": 21
+        },
+        "by_overall_bucket": {
+          "round_1": {
+            "position": "QB",
+            "field": "adp_overall",
+            "bucket": "round_1",
+            "n_known": 451,
+            "n_hits": 93,
+            "distribution": {
+              "count": 1,
+              "total": 93,
+              "share": 0.010753,
+              "sample_size": 93,
+              "successes": 1,
+              "raw_rate": 0.010753,
+              "smoothed_rate": 0.010753,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 1,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 1,
+              "successes": 1,
+              "raw_rate": 1.0,
+              "smoothed_rate": 0.278371,
+              "confidence": "low",
+              "season_range": [
+                2020,
+                2020
+              ],
+              "display_pct": 28
+            }
+          },
+          "round_2": {
+            "position": "QB",
+            "field": "adp_overall",
+            "bucket": "round_2",
+            "n_known": 451,
+            "n_hits": 93,
+            "distribution": {
+              "count": 11,
+              "total": 93,
+              "share": 0.11828,
+              "sample_size": 93,
+              "successes": 11,
+              "raw_rate": 0.11828,
+              "smoothed_rate": 0.11828,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 12,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 12,
+              "successes": 11,
+              "raw_rate": 0.916667,
+              "smoothed_rate": 0.593731,
+              "confidence": "low",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 59
+            }
+          },
+          "round_3": {
+            "position": "QB",
+            "field": "adp_overall",
+            "bucket": "round_3",
+            "n_known": 451,
+            "n_hits": 93,
+            "distribution": {
+              "count": 10,
+              "total": 93,
+              "share": 0.107527,
+              "sample_size": 93,
+              "successes": 10,
+              "raw_rate": 0.107527,
+              "smoothed_rate": 0.107527,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 11,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 13,
+              "successes": 10,
+              "raw_rate": 0.769231,
+              "smoothed_rate": 0.524438,
+              "confidence": "low",
+              "season_range": [
+                2019,
+                2025
+              ],
+              "display_pct": 52
+            }
+          },
+          "round_4": {
+            "position": "QB",
+            "field": "adp_overall",
+            "bucket": "round_4",
+            "n_known": 451,
+            "n_hits": 93,
+            "distribution": {
+              "count": 5,
+              "total": 93,
+              "share": 0.053763,
+              "sample_size": 93,
+              "successes": 5,
+              "raw_rate": 0.053763,
+              "smoothed_rate": 0.053763,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 5,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 14,
+              "successes": 5,
+              "raw_rate": 0.357143,
+              "smoothed_rate": 0.294253,
+              "confidence": "low",
+              "season_range": [
+                2018,
+                2024
+              ],
+              "display_pct": 29
+            }
+          },
+          "round_5": {
+            "position": "QB",
+            "field": "adp_overall",
+            "bucket": "round_5",
+            "n_known": 451,
+            "n_hits": 93,
+            "distribution": {
+              "count": 7,
+              "total": 93,
+              "share": 0.075269,
+              "sample_size": 93,
+              "successes": 7,
+              "raw_rate": 0.075269,
+              "smoothed_rate": 0.075269,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 8,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 16,
+              "successes": 7,
+              "raw_rate": 0.4375,
+              "smoothed_rate": 0.348542,
+              "confidence": "moderate",
+              "season_range": [
+                2019,
+                2025
+              ],
+              "display_pct": 35
+            }
+          },
+          "rounds_6_7": {
+            "position": "QB",
+            "field": "adp_overall",
+            "bucket": "rounds_6_7",
+            "n_known": 451,
+            "n_hits": 93,
+            "distribution": {
+              "count": 14,
+              "total": 93,
+              "share": 0.150538,
+              "sample_size": 93,
+              "successes": 14,
+              "raw_rate": 0.150538,
+              "smoothed_rate": 0.150538,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 15,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 21,
+              "successes": 14,
+              "raw_rate": 0.666667,
+              "smoothed_rate": 0.518132,
+              "confidence": "moderate",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 52
+            }
+          },
+          "rounds_8_10": {
+            "position": "QB",
+            "field": "adp_overall",
+            "bucket": "rounds_8_10",
+            "n_known": 451,
+            "n_hits": 93,
+            "distribution": {
+              "count": 20,
+              "total": 93,
+              "share": 0.215054,
+              "sample_size": 93,
+              "successes": 20,
+              "raw_rate": 0.215054,
+              "smoothed_rate": 0.215054,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 22,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 51,
+              "successes": 20,
+              "raw_rate": 0.392157,
+              "smoothed_rate": 0.361673,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 36
+            }
+          },
+          "rounds_11_plus": {
+            "position": "QB",
+            "field": "adp_overall",
+            "bucket": "rounds_11_plus",
+            "n_known": 451,
+            "n_hits": 93,
+            "distribution": {
+              "count": 25,
+              "total": 93,
+              "share": 0.268817,
+              "sample_size": 93,
+              "successes": 25,
+              "raw_rate": 0.268817,
+              "smoothed_rate": 0.268817,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 27,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 323,
+              "successes": 25,
+              "raw_rate": 0.077399,
+              "smoothed_rate": 0.081268,
+              "confidence": "strong",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 8
+            }
+          }
+        },
+        "by_positional_bucket": {
+          "top_5": {
+            "position": "QB",
+            "field": "adp_positional",
+            "bucket": "top_5",
+            "n_known": 451,
+            "n_hits": 93,
+            "distribution": {
+              "count": 29,
+              "total": 93,
+              "share": 0.311828,
+              "sample_size": 93,
+              "successes": 29,
+              "raw_rate": 0.311828,
+              "smoothed_rate": 0.311828,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 31,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 40,
+              "successes": 29,
+              "raw_rate": 0.725,
+              "smoothed_rate": 0.621242,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 62
+            }
+          },
+          "top_12": {
+            "position": "QB",
+            "field": "adp_positional",
+            "bucket": "top_12",
+            "n_known": 451,
+            "n_hits": 93,
+            "distribution": {
+              "count": 25,
+              "total": 93,
+              "share": 0.268817,
+              "sample_size": 93,
+              "successes": 25,
+              "raw_rate": 0.268817,
+              "smoothed_rate": 0.268817,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 27,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 56,
+              "successes": 25,
+              "raw_rate": 0.446429,
+              "smoothed_rate": 0.410032,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 41
+            }
+          },
+          "top_24": {
+            "position": "QB",
+            "field": "adp_positional",
+            "bucket": "top_24",
+            "n_known": 451,
+            "n_hits": 93,
+            "distribution": {
+              "count": 29,
+              "total": 93,
+              "share": 0.311828,
+              "sample_size": 93,
+              "successes": 29,
+              "raw_rate": 0.311828,
+              "smoothed_rate": 0.311828,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 31,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 96,
+              "successes": 29,
+              "raw_rate": 0.302083,
+              "smoothed_rate": 0.293038,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 29
+            }
+          },
+          "top_36": {
+            "position": "QB",
+            "field": "adp_positional",
+            "bucket": "top_36",
+            "n_known": 451,
+            "n_hits": 93,
+            "distribution": {
+              "count": 5,
+              "total": 93,
+              "share": 0.053763,
+              "sample_size": 93,
+              "successes": 5,
+              "raw_rate": 0.053763,
+              "smoothed_rate": 0.053763,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 5,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 94,
+              "successes": 5,
+              "raw_rate": 0.053191,
+              "smoothed_rate": 0.067905,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 7
+            }
+          },
+          "outside_36": {
+            "position": "QB",
+            "field": "adp_positional",
+            "bucket": "outside_36",
+            "n_known": 451,
+            "n_hits": 93,
+            "distribution": {
+              "count": 5,
+              "total": 93,
+              "share": 0.053763,
+              "sample_size": 93,
+              "successes": 5,
+              "raw_rate": 0.053763,
+              "smoothed_rate": 0.053763,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 5,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 165,
+              "successes": 5,
+              "raw_rate": 0.030303,
+              "smoothed_rate": 0.040355,
+              "confidence": "strong",
+              "season_range": [
+                2020,
+                2025
+              ],
+              "display_pct": 4
+            }
+          }
+        },
+        "adp_relative_bust": {
+          "sample_size": 96,
+          "successes": 42,
+          "raw_rate": 0.4375,
+          "smoothed_rate": 0.4375,
+          "confidence": "good",
+          "season_range": [
+            2018,
+            2025
+          ],
+          "display_pct": 44
+        }
+      },
+      "RB": {
+        "position": "RB",
+        "n_with_adp": 825,
+        "n_missing_excluded": 321,
+        "baseline": {
+          "sample_size": 825,
+          "successes": 94,
+          "raw_rate": 0.113939,
+          "smoothed_rate": 0.113939,
+          "confidence": "strong",
+          "season_range": [
+            2018,
+            2025
+          ],
+          "display_pct": 11
+        },
+        "by_overall_bucket": {
+          "round_1": {
+            "position": "RB",
+            "field": "adp_overall",
+            "bucket": "round_1",
+            "n_known": 825,
+            "n_hits": 94,
+            "distribution": {
+              "count": 36,
+              "total": 94,
+              "share": 0.382979,
+              "sample_size": 94,
+              "successes": 36,
+              "raw_rate": 0.382979,
+              "smoothed_rate": 0.382979,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 38,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 55,
+              "successes": 36,
+              "raw_rate": 0.654545,
+              "smoothed_rate": 0.571375,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 57
+            }
+          },
+          "round_2": {
+            "position": "RB",
+            "field": "adp_overall",
+            "bucket": "round_2",
+            "n_known": 825,
+            "n_hits": 94,
+            "distribution": {
+              "count": 18,
+              "total": 94,
+              "share": 0.191489,
+              "sample_size": 94,
+              "successes": 18,
+              "raw_rate": 0.191489,
+              "smoothed_rate": 0.191489,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 19,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 33,
+              "successes": 18,
+              "raw_rate": 0.545455,
+              "smoothed_rate": 0.445102,
+              "confidence": "moderate",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 45
+            }
+          },
+          "round_3": {
+            "position": "RB",
+            "field": "adp_overall",
+            "bucket": "round_3",
+            "n_known": 825,
+            "n_hits": 94,
+            "distribution": {
+              "count": 11,
+              "total": 94,
+              "share": 0.117021,
+              "sample_size": 94,
+              "successes": 11,
+              "raw_rate": 0.117021,
+              "smoothed_rate": 0.117021,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 12,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 31,
+              "successes": 11,
+              "raw_rate": 0.354839,
+              "smoothed_rate": 0.296083,
+              "confidence": "moderate",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 30
+            }
+          },
+          "round_4": {
+            "position": "RB",
+            "field": "adp_overall",
+            "bucket": "round_4",
+            "n_known": 825,
+            "n_hits": 94,
+            "distribution": {
+              "count": 7,
+              "total": 94,
+              "share": 0.074468,
+              "sample_size": 94,
+              "successes": 7,
+              "raw_rate": 0.074468,
+              "smoothed_rate": 0.074468,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 7,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 30,
+              "successes": 7,
+              "raw_rate": 0.233333,
+              "smoothed_rate": 0.203485,
+              "confidence": "moderate",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 20
+            }
+          },
+          "round_5": {
+            "position": "RB",
+            "field": "adp_overall",
+            "bucket": "round_5",
+            "n_known": 825,
+            "n_hits": 94,
+            "distribution": {
+              "count": 3,
+              "total": 94,
+              "share": 0.031915,
+              "sample_size": 94,
+              "successes": 3,
+              "raw_rate": 0.031915,
+              "smoothed_rate": 0.031915,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 3,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 26,
+              "successes": 3,
+              "raw_rate": 0.115385,
+              "smoothed_rate": 0.114983,
+              "confidence": "moderate",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 11
+            }
+          },
+          "rounds_6_7": {
+            "position": "RB",
+            "field": "adp_overall",
+            "bucket": "rounds_6_7",
+            "n_known": 825,
+            "n_hits": 94,
+            "distribution": {
+              "count": 8,
+              "total": 94,
+              "share": 0.085106,
+              "sample_size": 94,
+              "successes": 8,
+              "raw_rate": 0.085106,
+              "smoothed_rate": 0.085106,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 9,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 69,
+              "successes": 8,
+              "raw_rate": 0.115942,
+              "smoothed_rate": 0.115688,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 12
+            }
+          },
+          "rounds_8_10": {
+            "position": "RB",
+            "field": "adp_overall",
+            "bucket": "rounds_8_10",
+            "n_known": 825,
+            "n_hits": 94,
+            "distribution": {
+              "count": 6,
+              "total": 94,
+              "share": 0.06383,
+              "sample_size": 94,
+              "successes": 6,
+              "raw_rate": 0.06383,
+              "smoothed_rate": 0.06383,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 6,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 89,
+              "successes": 6,
+              "raw_rate": 0.067416,
+              "smoothed_rate": 0.072115,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 7
+            }
+          },
+          "rounds_11_plus": {
+            "position": "RB",
+            "field": "adp_overall",
+            "bucket": "rounds_11_plus",
+            "n_known": 825,
+            "n_hits": 94,
+            "distribution": {
+              "count": 5,
+              "total": 94,
+              "share": 0.053191,
+              "sample_size": 94,
+              "successes": 5,
+              "raw_rate": 0.053191,
+              "smoothed_rate": 0.053191,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 5,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 492,
+              "successes": 5,
+              "raw_rate": 0.010163,
+              "smoothed_rate": 0.01223,
+              "confidence": "strong",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 1
+            }
+          }
+        },
+        "by_positional_bucket": {
+          "top_5": {
+            "position": "RB",
+            "field": "adp_positional",
+            "bucket": "top_5",
+            "n_known": 825,
+            "n_hits": 94,
+            "distribution": {
+              "count": 28,
+              "total": 94,
+              "share": 0.297872,
+              "sample_size": 94,
+              "successes": 28,
+              "raw_rate": 0.297872,
+              "smoothed_rate": 0.297872,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 30,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 40,
+              "successes": 28,
+              "raw_rate": 0.7,
+              "smoothed_rate": 0.582788,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 58
+            }
+          },
+          "top_12": {
+            "position": "RB",
+            "field": "adp_positional",
+            "bucket": "top_12",
+            "n_known": 825,
+            "n_hits": 94,
+            "distribution": {
+              "count": 32,
+              "total": 94,
+              "share": 0.340426,
+              "sample_size": 94,
+              "successes": 32,
+              "raw_rate": 0.340426,
+              "smoothed_rate": 0.340426,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 34,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 56,
+              "successes": 32,
+              "raw_rate": 0.571429,
+              "smoothed_rate": 0.502112,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 50
+            }
+          },
+          "top_24": {
+            "position": "RB",
+            "field": "adp_positional",
+            "bucket": "top_24",
+            "n_known": 825,
+            "n_hits": 94,
+            "distribution": {
+              "count": 16,
+              "total": 94,
+              "share": 0.170213,
+              "sample_size": 94,
+              "successes": 16,
+              "raw_rate": 0.170213,
+              "smoothed_rate": 0.170213,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 17,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 96,
+              "successes": 16,
+              "raw_rate": 0.166667,
+              "smoothed_rate": 0.161692,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 16
+            }
+          },
+          "top_36": {
+            "position": "RB",
+            "field": "adp_positional",
+            "bucket": "top_36",
+            "n_known": 825,
+            "n_hits": 94,
+            "distribution": {
+              "count": 8,
+              "total": 94,
+              "share": 0.085106,
+              "sample_size": 94,
+              "successes": 8,
+              "raw_rate": 0.085106,
+              "smoothed_rate": 0.085106,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 9,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 96,
+              "successes": 8,
+              "raw_rate": 0.083333,
+              "smoothed_rate": 0.086221,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 9
+            }
+          },
+          "outside_36": {
+            "position": "RB",
+            "field": "adp_positional",
+            "bucket": "outside_36",
+            "n_known": 825,
+            "n_hits": 94,
+            "distribution": {
+              "count": 10,
+              "total": 94,
+              "share": 0.106383,
+              "sample_size": 94,
+              "successes": 10,
+              "raw_rate": 0.106383,
+              "smoothed_rate": 0.106383,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 11,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 537,
+              "successes": 10,
+              "raw_rate": 0.018622,
+              "smoothed_rate": 0.020365,
+              "confidence": "strong",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 2
+            }
+          }
+        },
+        "adp_relative_bust": {
+          "sample_size": 96,
+          "successes": 36,
+          "raw_rate": 0.375,
+          "smoothed_rate": 0.375,
+          "confidence": "good",
+          "season_range": [
+            2018,
+            2025
+          ],
+          "display_pct": 38
+        }
+      },
+      "WR": {
+        "position": "WR",
+        "n_with_adp": 1201,
+        "n_missing_excluded": 638,
+        "baseline": {
+          "sample_size": 1201,
+          "successes": 95,
+          "raw_rate": 0.079101,
+          "smoothed_rate": 0.079101,
+          "confidence": "strong",
+          "season_range": [
+            2018,
+            2025
+          ],
+          "display_pct": 8
+        },
+        "by_overall_bucket": {
+          "round_1": {
+            "position": "WR",
+            "field": "adp_overall",
+            "bucket": "round_1",
+            "n_known": 1201,
+            "n_hits": 95,
+            "distribution": {
+              "count": 26,
+              "total": 95,
+              "share": 0.273684,
+              "sample_size": 95,
+              "successes": 26,
+              "raw_rate": 0.273684,
+              "smoothed_rate": 0.273684,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 27,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 36,
+              "successes": 26,
+              "raw_rate": 0.722222,
+              "smoothed_rate": 0.582413,
+              "confidence": "moderate",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 58
+            }
+          },
+          "round_2": {
+            "position": "WR",
+            "field": "adp_overall",
+            "bucket": "round_2",
+            "n_known": 1201,
+            "n_hits": 95,
+            "distribution": {
+              "count": 18,
+              "total": 95,
+              "share": 0.189474,
+              "sample_size": 95,
+              "successes": 18,
+              "raw_rate": 0.189474,
+              "smoothed_rate": 0.189474,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 19,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 41,
+              "successes": 18,
+              "raw_rate": 0.439024,
+              "smoothed_rate": 0.368451,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 37
+            }
+          },
+          "round_3": {
+            "position": "WR",
+            "field": "adp_overall",
+            "bucket": "round_3",
+            "n_known": 1201,
+            "n_hits": 95,
+            "distribution": {
+              "count": 11,
+              "total": 95,
+              "share": 0.115789,
+              "sample_size": 95,
+              "successes": 11,
+              "raw_rate": 0.115789,
+              "smoothed_rate": 0.115789,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 12,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 38,
+              "successes": 11,
+              "raw_rate": 0.289474,
+              "smoothed_rate": 0.245646,
+              "confidence": "moderate",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 25
+            }
+          },
+          "round_4": {
+            "position": "WR",
+            "field": "adp_overall",
+            "bucket": "round_4",
+            "n_known": 1201,
+            "n_hits": 95,
+            "distribution": {
+              "count": 11,
+              "total": 95,
+              "share": 0.115789,
+              "sample_size": 95,
+              "successes": 11,
+              "raw_rate": 0.115789,
+              "smoothed_rate": 0.115789,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 12,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 45,
+              "successes": 11,
+              "raw_rate": 0.244444,
+              "smoothed_rate": 0.214382,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 21
+            }
+          },
+          "round_5": {
+            "position": "WR",
+            "field": "adp_overall",
+            "bucket": "round_5",
+            "n_known": 1201,
+            "n_hits": 95,
+            "distribution": {
+              "count": 6,
+              "total": 95,
+              "share": 0.063158,
+              "sample_size": 95,
+              "successes": 6,
+              "raw_rate": 0.063158,
+              "smoothed_rate": 0.063158,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 6,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 38,
+              "successes": 6,
+              "raw_rate": 0.157895,
+              "smoothed_rate": 0.141479,
+              "confidence": "moderate",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 14
+            }
+          },
+          "rounds_6_7": {
+            "position": "WR",
+            "field": "adp_overall",
+            "bucket": "rounds_6_7",
+            "n_known": 1201,
+            "n_hits": 95,
+            "distribution": {
+              "count": 11,
+              "total": 95,
+              "share": 0.115789,
+              "sample_size": 95,
+              "successes": 11,
+              "raw_rate": 0.115789,
+              "smoothed_rate": 0.115789,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 12,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 92,
+              "successes": 11,
+              "raw_rate": 0.119565,
+              "smoothed_rate": 0.115598,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 12
+            }
+          },
+          "rounds_8_10": {
+            "position": "WR",
+            "field": "adp_overall",
+            "bucket": "rounds_8_10",
+            "n_known": 1201,
+            "n_hits": 95,
+            "distribution": {
+              "count": 6,
+              "total": 95,
+              "share": 0.063158,
+              "sample_size": 95,
+              "successes": 6,
+              "raw_rate": 0.063158,
+              "smoothed_rate": 0.063158,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 6,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 116,
+              "successes": 6,
+              "raw_rate": 0.051724,
+              "smoothed_rate": 0.053897,
+              "confidence": "strong",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 5
+            }
+          },
+          "rounds_11_plus": {
+            "position": "WR",
+            "field": "adp_overall",
+            "bucket": "rounds_11_plus",
+            "n_known": 1201,
+            "n_hits": 95,
+            "distribution": {
+              "count": 6,
+              "total": 95,
+              "share": 0.063158,
+              "sample_size": 95,
+              "successes": 6,
+              "raw_rate": 0.063158,
+              "smoothed_rate": 0.063158,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 6,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 795,
+              "successes": 6,
+              "raw_rate": 0.007547,
+              "smoothed_rate": 0.008436,
+              "confidence": "strong",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 1
+            }
+          }
+        },
+        "by_positional_bucket": {
+          "top_5": {
+            "position": "WR",
+            "field": "adp_positional",
+            "bucket": "top_5",
+            "n_known": 1201,
+            "n_hits": 95,
+            "distribution": {
+              "count": 29,
+              "total": 95,
+              "share": 0.305263,
+              "sample_size": 95,
+              "successes": 29,
+              "raw_rate": 0.305263,
+              "smoothed_rate": 0.305263,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 31,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 40,
+              "successes": 29,
+              "raw_rate": 0.725,
+              "smoothed_rate": 0.59582,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 60
+            }
+          },
+          "top_12": {
+            "position": "WR",
+            "field": "adp_positional",
+            "bucket": "top_12",
+            "n_known": 1201,
+            "n_hits": 95,
+            "distribution": {
+              "count": 23,
+              "total": 95,
+              "share": 0.242105,
+              "sample_size": 95,
+              "successes": 23,
+              "raw_rate": 0.242105,
+              "smoothed_rate": 0.242105,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 24,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 56,
+              "successes": 23,
+              "raw_rate": 0.410714,
+              "smoothed_rate": 0.36047,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 36
+            }
+          },
+          "top_24": {
+            "position": "WR",
+            "field": "adp_positional",
+            "bucket": "top_24",
+            "n_known": 1201,
+            "n_hits": 95,
+            "distribution": {
+              "count": 20,
+              "total": 95,
+              "share": 0.210526,
+              "sample_size": 95,
+              "successes": 20,
+              "raw_rate": 0.210526,
+              "smoothed_rate": 0.210526,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 21,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 96,
+              "successes": 20,
+              "raw_rate": 0.208333,
+              "smoothed_rate": 0.196142,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 20
+            }
+          },
+          "top_36": {
+            "position": "WR",
+            "field": "adp_positional",
+            "bucket": "top_36",
+            "n_known": 1201,
+            "n_hits": 95,
+            "distribution": {
+              "count": 10,
+              "total": 95,
+              "share": 0.105263,
+              "sample_size": 95,
+              "successes": 10,
+              "raw_rate": 0.105263,
+              "smoothed_rate": 0.105263,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 11,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 96,
+              "successes": 10,
+              "raw_rate": 0.104167,
+              "smoothed_rate": 0.101802,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 10
+            }
+          },
+          "outside_36": {
+            "position": "WR",
+            "field": "adp_positional",
+            "bucket": "outside_36",
+            "n_known": 1201,
+            "n_hits": 95,
+            "distribution": {
+              "count": 13,
+              "total": 95,
+              "share": 0.136842,
+              "sample_size": 95,
+              "successes": 13,
+              "raw_rate": 0.136842,
+              "smoothed_rate": 0.136842,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 14,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 913,
+              "successes": 13,
+              "raw_rate": 0.014239,
+              "smoothed_rate": 0.014942,
+              "confidence": "strong",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 1
+            }
+          }
+        },
+        "adp_relative_bust": {
+          "sample_size": 96,
+          "successes": 44,
+          "raw_rate": 0.458333,
+          "smoothed_rate": 0.458333,
+          "confidence": "good",
+          "season_range": [
+            2018,
+            2025
+          ],
+          "display_pct": 46
+        }
+      },
+      "TE": {
+        "position": "TE",
+        "n_with_adp": 611,
+        "n_missing_excluded": 415,
+        "baseline": {
+          "sample_size": 611,
+          "successes": 86,
+          "raw_rate": 0.140753,
+          "smoothed_rate": 0.140753,
+          "confidence": "strong",
+          "season_range": [
+            2018,
+            2025
+          ],
+          "display_pct": 14
+        },
+        "by_overall_bucket": {
+          "round_1": {
+            "position": "TE",
+            "field": "adp_overall",
+            "bucket": "round_1",
+            "n_known": 611,
+            "n_hits": 86,
+            "distribution": {
+              "count": 3,
+              "total": 86,
+              "share": 0.034884,
+              "sample_size": 86,
+              "successes": 3,
+              "raw_rate": 0.034884,
+              "smoothed_rate": 0.034884,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 3,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 3,
+              "successes": 3,
+              "raw_rate": 1.0,
+              "smoothed_rate": 0.339041,
+              "confidence": "low",
+              "season_range": [
+                2020,
+                2023
+              ],
+              "display_pct": 34
+            }
+          },
+          "round_2": {
+            "position": "TE",
+            "field": "adp_overall",
+            "bucket": "round_2",
+            "n_known": 611,
+            "n_hits": 86,
+            "distribution": {
+              "count": 7,
+              "total": 86,
+              "share": 0.081395,
+              "sample_size": 86,
+              "successes": 7,
+              "raw_rate": 0.081395,
+              "smoothed_rate": 0.081395,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 8,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 7,
+              "successes": 7,
+              "raw_rate": 1.0,
+              "smoothed_rate": 0.494561,
+              "confidence": "low",
+              "season_range": [
+                2019,
+                2025
+              ],
+              "display_pct": 49
+            }
+          },
+          "round_3": {
+            "position": "TE",
+            "field": "adp_overall",
+            "bucket": "round_3",
+            "n_known": 611,
+            "n_hits": 86,
+            "distribution": {
+              "count": 6,
+              "total": 86,
+              "share": 0.069767,
+              "sample_size": 86,
+              "successes": 6,
+              "raw_rate": 0.069767,
+              "smoothed_rate": 0.069767,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 7,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 12,
+              "successes": 6,
+              "raw_rate": 0.5,
+              "smoothed_rate": 0.336706,
+              "confidence": "low",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 34
+            }
+          },
+          "round_4": {
+            "position": "TE",
+            "field": "adp_overall",
+            "bucket": "round_4",
+            "n_known": 611,
+            "n_hits": 86,
+            "distribution": {
+              "count": 8,
+              "total": 86,
+              "share": 0.093023,
+              "sample_size": 86,
+              "successes": 8,
+              "raw_rate": 0.093023,
+              "smoothed_rate": 0.093023,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 9,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 11,
+              "successes": 8,
+              "raw_rate": 0.727273,
+              "smoothed_rate": 0.447978,
+              "confidence": "low",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 45
+            }
+          },
+          "round_5": {
+            "position": "TE",
+            "field": "adp_overall",
+            "bucket": "round_5",
+            "n_known": 611,
+            "n_hits": 86,
+            "distribution": {
+              "count": 6,
+              "total": 86,
+              "share": 0.069767,
+              "sample_size": 86,
+              "successes": 6,
+              "raw_rate": 0.069767,
+              "smoothed_rate": 0.069767,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 7,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 15,
+              "successes": 6,
+              "raw_rate": 0.4,
+              "smoothed_rate": 0.296301,
+              "confidence": "moderate",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 30
+            }
+          },
+          "rounds_6_7": {
+            "position": "TE",
+            "field": "adp_overall",
+            "bucket": "rounds_6_7",
+            "n_known": 611,
+            "n_hits": 86,
+            "distribution": {
+              "count": 11,
+              "total": 86,
+              "share": 0.127907,
+              "sample_size": 86,
+              "successes": 11,
+              "raw_rate": 0.127907,
+              "smoothed_rate": 0.127907,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 13,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 35,
+              "successes": 11,
+              "raw_rate": 0.314286,
+              "smoothed_rate": 0.275723,
+              "confidence": "moderate",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 28
+            }
+          },
+          "rounds_8_10": {
+            "position": "TE",
+            "field": "adp_overall",
+            "bucket": "rounds_8_10",
+            "n_known": 611,
+            "n_hits": 86,
+            "distribution": {
+              "count": 14,
+              "total": 86,
+              "share": 0.162791,
+              "sample_size": 86,
+              "successes": 14,
+              "raw_rate": 0.162791,
+              "smoothed_rate": 0.162791,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 16,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 40,
+              "successes": 14,
+              "raw_rate": 0.35,
+              "smoothed_rate": 0.308151,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 31
+            }
+          },
+          "rounds_11_plus": {
+            "position": "TE",
+            "field": "adp_overall",
+            "bucket": "rounds_11_plus",
+            "n_known": 611,
+            "n_hits": 86,
+            "distribution": {
+              "count": 31,
+              "total": 86,
+              "share": 0.360465,
+              "sample_size": 86,
+              "successes": 31,
+              "raw_rate": 0.360465,
+              "smoothed_rate": 0.360465,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 36,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 488,
+              "successes": 31,
+              "raw_rate": 0.063525,
+              "smoothed_rate": 0.065075,
+              "confidence": "strong",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 7
+            }
+          }
+        },
+        "by_positional_bucket": {
+          "top_5": {
+            "position": "TE",
+            "field": "adp_positional",
+            "bucket": "top_5",
+            "n_known": 611,
+            "n_hits": 86,
+            "distribution": {
+              "count": 25,
+              "total": 86,
+              "share": 0.290698,
+              "sample_size": 86,
+              "successes": 25,
+              "raw_rate": 0.290698,
+              "smoothed_rate": 0.290698,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 29,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 40,
+              "successes": 25,
+              "raw_rate": 0.625,
+              "smoothed_rate": 0.528151,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 53
+            }
+          },
+          "top_12": {
+            "position": "TE",
+            "field": "adp_positional",
+            "bucket": "top_12",
+            "n_known": 611,
+            "n_hits": 86,
+            "distribution": {
+              "count": 20,
+              "total": 86,
+              "share": 0.232558,
+              "sample_size": 86,
+              "successes": 20,
+              "raw_rate": 0.232558,
+              "smoothed_rate": 0.232558,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 23,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 56,
+              "successes": 20,
+              "raw_rate": 0.357143,
+              "smoothed_rate": 0.324357,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 32
+            }
+          },
+          "top_24": {
+            "position": "TE",
+            "field": "adp_positional",
+            "bucket": "top_24",
+            "n_known": 611,
+            "n_hits": 86,
+            "distribution": {
+              "count": 27,
+              "total": 86,
+              "share": 0.313953,
+              "sample_size": 86,
+              "successes": 27,
+              "raw_rate": 0.313953,
+              "smoothed_rate": 0.313953,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 31,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 132,
+              "successes": 27,
+              "raw_rate": 0.204545,
+              "smoothed_rate": 0.200053,
+              "confidence": "strong",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 20
+            }
+          },
+          "top_36": {
+            "position": "TE",
+            "field": "adp_positional",
+            "bucket": "top_36",
+            "n_known": 611,
+            "n_hits": 86,
+            "distribution": {
+              "count": 8,
+              "total": 86,
+              "share": 0.093023,
+              "sample_size": 86,
+              "successes": 8,
+              "raw_rate": 0.093023,
+              "smoothed_rate": 0.093023,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 9,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 72,
+              "successes": 8,
+              "raw_rate": 0.111111,
+              "smoothed_rate": 0.114726,
+              "confidence": "good",
+              "season_range": [
+                2020,
+                2025
+              ],
+              "display_pct": 11
+            }
+          },
+          "outside_36": {
+            "position": "TE",
+            "field": "adp_positional",
+            "bucket": "outside_36",
+            "n_known": 611,
+            "n_hits": 86,
+            "distribution": {
+              "count": 6,
+              "total": 86,
+              "share": 0.069767,
+              "sample_size": 86,
+              "successes": 6,
+              "raw_rate": 0.069767,
+              "smoothed_rate": 0.069767,
+              "confidence": "good",
+              "season_range": [
+                2018,
+                2025
+              ],
+              "display_pct": 7,
+              "kind": "distribution"
+            },
+            "conditional": {
+              "sample_size": 311,
+              "successes": 6,
+              "raw_rate": 0.019293,
+              "smoothed_rate": 0.023076,
+              "confidence": "strong",
+              "season_range": [
+                2020,
+                2025
+              ],
+              "display_pct": 2
+            }
+          }
+        },
+        "adp_relative_bust": {
+          "sample_size": 96,
+          "successes": 51,
+          "raw_rate": 0.53125,
+          "smoothed_rate": 0.53125,
+          "confidence": "good",
+          "season_range": [
+            2018,
+            2025
+          ],
+          "display_pct": 53
+        }
+      }
+    },
+    "coverage_by_season": {
+      "2018": {
+        "n": 545,
+        "n_with_adp": 296,
+        "by_source": {
+          "mfl": 137,
+          "espn": 159
+        }
+      },
+      "2019": {
+        "n": 547,
+        "n_with_adp": 168,
+        "by_source": {
+          "mfl": 168
+        }
+      },
+      "2020": {
+        "n": 580,
+        "n_with_adp": 472,
+        "by_source": {
+          "sleeper": 372,
+          "espn": 73,
+          "mfl": 27
+        }
+      },
+      "2021": {
+        "n": 595,
+        "n_with_adp": 332,
+        "by_source": {
+          "sleeper": 318,
+          "mfl": 14
+        }
+      },
+      "2022": {
+        "n": 574,
+        "n_with_adp": 269,
+        "by_source": {
+          "sleeper": 248,
+          "mfl": 21
+        }
+      },
+      "2023": {
+        "n": 598,
+        "n_with_adp": 389,
+        "by_source": {
+          "espn": 104,
+          "mfl": 15,
+          "sleeper": 270
+        }
+      },
+      "2024": {
+        "n": 599,
+        "n_with_adp": 558,
+        "by_source": {
+          "sleeper": 555,
+          "espn": 3
+        }
+      },
+      "2025": {
+        "n": 609,
+        "n_with_adp": 604,
+        "by_source": {
+          "sleeper": 604
+        }
       }
     }
   }

@@ -13,6 +13,7 @@ from utils.paths import PLAYER_HISTORY_DIR
 
 from dashboard_services.historical.career_profiles import assemble_profile_aggregates
 from data_building.external_data.player_history import load_player_history_df
+from data_building.historical.build_adp import attach_historical_adp
 
 PROFILE_PATH = PLAYER_HISTORY_DIR / "historical_profile_aggregates.json"
 
@@ -52,9 +53,18 @@ def rebuild_historical_profiles(
     *,
     write: bool = True,
     scoring: str = "ppr",
+    attach_adp: Optional[bool] = None,
 ) -> dict:
-    """Assemble Phase 2–4 aggregates. ``write=False`` for tests."""
+    """Assemble Phase 2–6 aggregates. ``write=False`` for tests.
+
+    ADP is joined from committed frozen snapshots when loading the warehouse.
+    Injected test rows skip that join unless ``attach_adp=True``.
+    """
     records = rows if rows is not None else records_from_warehouse()
+    if attach_adp is None:
+        attach_adp = rows is None
+    if attach_adp:
+        records = attach_historical_adp(records)
     payload = assemble_profile_aggregates(records, scoring=scoring)
     if write:
         PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)

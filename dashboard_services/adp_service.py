@@ -134,15 +134,31 @@ def global_adp_snapshot_signature() -> float:
     return latest
 
 
-def write_adp_snapshot(source: str, axis: str, season: int, payload: dict) -> bool:
+def write_adp_snapshot(
+    source: str,
+    axis: str,
+    season: int,
+    payload: dict,
+    *,
+    frozen: bool = False,
+    force: bool = False,
+) -> bool:
     """Persist a normalized snapshot, retaining the last good data on empty input.
 
     Returns True if a new snapshot was written. If ``payload`` carries no ADP rows
     but a non-empty snapshot already exists on disk, the write is *skipped* so an
-    upstream outage or empty response never clobbers valid cached data."""
+    upstream outage or empty response never clobbers valid cached data.
+
+    Frozen snapshots (completed / historical preseason boards) are also skipped
+    unless ``force=True``. Cron must not refresh a finished season into a new
+    market.
+    """
+    existing = load_adp_snapshot(source, axis, season)
     adp = (payload or {}).get("adp") or {}
+    if not force and existing.get("frozen") and (existing.get("adp") or {}):
+        logger.info("adp_service: keeping frozen %s/%s/%s snapshot", source, axis, season)
+        return False
     if not adp:
-        existing = load_adp_snapshot(source, axis, season)
         if (existing.get("adp") or {}):
             logger.info("adp_service: keeping last-good %s/%s snapshot (empty fetch)",
                         source, axis)
@@ -157,6 +173,7 @@ def write_adp_snapshot(source: str, axis: str, season: int, payload: dict) -> bo
         "meta": (payload or {}).get("meta") or {},
         "raw_count": (payload or {}).get("raw_count"),
         "mapped_count": (payload or {}).get("mapped_count"),
+        "frozen": bool(frozen),
     }
     if (payload or {}).get("ppr_rank"):
         record["ppr_rank"] = payload["ppr_rank"]
@@ -167,6 +184,31 @@ def write_adp_snapshot(source: str, axis: str, season: int, payload: dict) -> bo
         return False
     _persist_snapshot_db(record)  # best-effort, never raises
     return True
+
+
+def freeze_adp_snapshot(source: str, axis: str, season: int) -> bool:
+    """Mark an existing non-empty snapshot immutable. No-op if already frozen."""
+    snap = load_adp_snapshot(source, axis, season)
+    if not (snap.get("adp") or {}):
+        return False
+    if snap.get("frozen"):
+        return True
+    snap["frozen"] = True
+    try:
+        _atomic_json_write(_snapshot_path(source, axis, season), snap)
+    except Exception:
+        logger.warning("adp_service: failed to freeze %s/%s/%s", source, axis, season, exc_info=True)
+        return False
+    return True
+
+
+def freeze_prior_season_global_snapshots(current_season: int) -> dict:
+    """Freeze Yahoo/ESPN/MFL redraft snapshots for ``current_season - 1``."""
+    prior = int(current_season) - 1
+    return {
+        source: freeze_adp_snapshot(source, "redraft", prior)
+        for source in ("yahoo", "espn", "mfl")
+    }
 
 
 _GLOBAL_ADP_ENSURE_LOCK = threading.Lock()

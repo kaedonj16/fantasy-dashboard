@@ -174,6 +174,28 @@ COMP_BOARD_TIERS: Tuple[str, ...] = ("top_5", "top_12", "top_24")
 MIN_COMP_CELL_N = 15
 NAMED_EXAMPLES_PER_CELL = 3
 
+# Sleeper reports 999 for undrafted / unpriced. That is missing, never ADP 999.
+SLEEPER_UNDRAFTED_ADP = 999.0
+
+# Redraft PPR 1QB source order for a single historical ADP on a player-season.
+# Exact PPR (Sleeper) before MFL (compatible 1QB PPR) before generic mixed boards.
+# Superflex / TEP historical ADP is not in this list — it does not exist in
+# free sources (Yahoo has no season axis; ESPN is mixed; Sleeper 2QB is a
+# compatible proxy stored separately, not blended into 1QB hit rates).
+ADP_SOURCE_PREFERENCE: Tuple[str, ...] = ("sleeper", "mfl", "espn", "yahoo")
+
+# 12-team overall pick buckets. Inclusive lo, exclusive hi.
+ADP_OVERALL_BUCKETS: Tuple[Tuple[Optional[float], Optional[float], str], ...] = (
+    (1.0, 13.0, "round_1"),
+    (13.0, 25.0, "round_2"),
+    (25.0, 37.0, "round_3"),
+    (37.0, 49.0, "round_4"),
+    (49.0, 61.0, "round_5"),
+    (61.0, 85.0, "rounds_6_7"),
+    (85.0, 121.0, "rounds_8_10"),
+    (121.0, None, "rounds_11_plus"),
+)
+
 # Inclusive lo, exclusive hi (None = open). UI convenience only.
 # Prior-usage hit rates bin previous-season values; missing is not a bucket.
 _RateBound = Tuple[Optional[float], Optional[float], str]
@@ -524,6 +546,69 @@ def empirical_bayes(
     if denom <= 0:
         return None
     return (s + ps) / denom
+
+
+def normalize_adp(value: Any) -> Optional[float]:
+    """Overall ADP pick. ``None`` when missing, non-positive, or Sleeper 999."""
+    adp = _optional_float(value)
+    if adp is None or adp <= 0:
+        return None
+    if adp >= SLEEPER_UNDRAFTED_ADP:
+        return None
+    return adp
+
+
+def adp_overall_bucket(adp: Any) -> Optional[str]:
+    """Map overall ADP onto a 12-team round bucket. Missing → None."""
+    return value_bucket(normalize_adp(adp), ADP_OVERALL_BUCKETS)
+
+
+def is_adp_relative_bust(
+    adp_positional: Any,
+    positional_finish: Any,
+    *,
+    cutoff: int = 12,
+) -> Optional[bool]:
+    """True when drafted inside positional ADP top-N and finished outside.
+
+    None when ADP or finish is missing — not a fake bust. Players drafted
+    outside the ADP cutoff are not in this cohort (also None).
+    """
+    adp_rank = _optional_int(adp_positional)
+    finish = _optional_int(positional_finish)
+    if adp_rank is None or finish is None:
+        return None
+    if adp_rank < 1 or cutoff < 1:
+        return None
+    if adp_rank > cutoff:
+        return None
+    return finish > cutoff
+
+
+def source_map_is_usable(
+    adp_map: Any,
+    *,
+    min_players: int = 40,
+    max_first: float = 8.0,
+    max_twelfth: float = 36.0,
+) -> bool:
+    """Reject boards that are clearly not a preseason draft (e.g. ESPN 170-wall)."""
+    if not isinstance(adp_map, dict):
+        return False
+    vals = []
+    for raw in adp_map.values():
+        adp = normalize_adp(raw)
+        if adp is not None:
+            vals.append(adp)
+    vals.sort()
+    if len(vals) < min_players:
+        return False
+    if vals[0] > max_first:
+        return False
+    twelfth = vals[11] if len(vals) > 11 else vals[-1]
+    if twelfth > max_twelfth:
+        return False
+    return True
 
 
 def is_absolute_bust(position: Any, positional_finish: Any) -> Optional[bool]:

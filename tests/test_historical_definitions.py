@@ -13,6 +13,7 @@ from dashboard_services.historical.definitions import (
     PRIOR_FINISH_NONE,
     RELIABLE_SEASON_FLOOR,
     SCORING_FORMATS,
+    SLEEPER_UNDRAFTED_ADP,
     SNAP_RELIABLE_FLOOR,
     FTN_SEASON_FLOOR,
     NGS_SEASON_FLOOR,
@@ -27,6 +28,8 @@ from dashboard_services.historical.definitions import (
     empirical_bayes,
     integer_age,
     is_absolute_bust,
+    is_adp_relative_bust,
+    normalize_adp,
     parse_birth_date,
     positional_tier_label,
     prior_finish_bucket,
@@ -188,4 +191,7 @@ def test_prior_finish_bucket_rookie_none_veteran_missing_omitted():
     assert COMP_BOARD_TIERS == ("top_5", "top_12", "top_24")
     assert COMP_RELAXATION_ORDER[0] == "target_share"
     assert "position" not in COMP_RELAXATION_ORDER
+    assert SLEEPER_UNDRAFTED_ADP == 999.0
+    assert normalize_adp(999) is None
+    assert is_adp_relative_bust(None, 1) is None
 

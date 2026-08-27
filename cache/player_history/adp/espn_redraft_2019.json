@@ -1,0 +1,20 @@
+{
+  "source": "espn",
+  "axis": "redraft",
+  "season": 2019,
+  "frozen": true,
+  "usable": false,
+  "collected_at": 1787853927.6039548,
+  "adp": {},
+  "extra": {},
+  "meta": {
+    "draft_type": "redraft",
+    "scoring": "mixed",
+    "qb_format": "mixed",
+    "scope": "global"
+  },
+  "raw_count": 400,
+  "mapped_count": 0,
+  "ppr_rank": {},
+  "fields": {}
+}

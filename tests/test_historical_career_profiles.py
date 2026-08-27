@@ -281,15 +281,18 @@ def test_assemble_has_no_adp_or_projections_and_keeps_both_breakout_defs():
         ),
     ]
     payload = assemble_profile_aggregates(rows)
-    assert payload["phase"] == 4
+    assert payload["phase"] == 6
     assert "prior_usage" in payload
     assert "comps" in payload
+    assert "adp" in payload
     assert payload["era_floor"] == 2016
     assert payload["n_player_seasons"] == 1
     assert payload["season_range"] == [2020, 2020]
     assert payload["descriptive_only"] is True
     defs = payload["definitions"]
-    assert defs["no_adp"] is True
+    assert defs["no_adp"] is False
+    assert defs["adp_in_comps"] is False
+    assert defs["adp_in_ranking"] is False
     assert defs["no_projections"] is True
     assert "engine_breakout" in defs and "first_time_elite" in defs
 
@@ -303,10 +306,9 @@ def test_assemble_has_no_adp_or_projections_and_keeps_both_breakout_defs():
                 yield from _keys(item)
 
     keys = set(_keys(payload))
-    forbidden = [
-        k for k in keys
-        if k != "no_adp" and (k.startswith("projected_") or k.endswith("_adp") or k == "adp")
-    ]
+    forbidden = [k for k in keys if k.startswith("projected_")]
     assert forbidden == []
+    for leaf in payload["comps"]["by_position"]["RB"]["leaves"]:
+        assert "adp" not in (leaf.get("key") or {})
     rb_age = payload["age_curves"]["RB"]["by_integer_age"]["24"]
     assert "distribution" in rb_age and "conditional" in rb_age

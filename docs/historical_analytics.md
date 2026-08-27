@@ -1,11 +1,12 @@
 # Historical Analytics
 
-Phase 1–4 of the Draft Cheat Sheet historical layer: a reusable
+Phase 1–6 of the Draft Cheat Sheet historical layer: a reusable
 player-season warehouse, positional finishes, leakage-safe prior-career
 features, descriptive age / career-stage / draft-capital rates,
-previous-season usage/efficiency (NGS + snaps), and **comparable-player
-cells with smoothed board probabilities**. Later phases (ADP, board
-columns, Pick Score) build on this. They are **not** in this PR.
+previous-season usage/efficiency (NGS + snaps), comparable-player cells
+with smoothed board probabilities, and **frozen preseason ADP with hit
+rates**. Later phases (projections as a separate signal, board columns,
+Pick Score) build on this. They are **not** in this PR.
 
 This document is the source of truth for datasets reused, season coverage,
 scoring/tier definitions, age methodology, leakage rules, and how the two
@@ -83,7 +84,10 @@ must use this labeling.
 | `migrations/029_adp_snapshots.sql` | normalized mirror | Persist via `write_adp_snapshot` |
 | `docs/adp_sources.md` | source matrix | Superflex / TEP historical ADP essentially does not exist in free sources |
 
-Phase 1–4 has **zero ADP dependency**. All analytics work with ADP absent.
+Phase 5–6 **reuse** this store: completed-season snapshots are frozen so
+cron cannot overwrite a preseason board, and usable historical maps are
+committed under `cache/player_history/adp/`. Superflex / TEP historical
+ADP still does not exist in free sources.
 
 ### Projections (Phase 7; keep out of historical comps)
 
@@ -107,17 +111,19 @@ dashboard_services/historical/     # pure logic — pytest -m "not integration"
     career_profiles.py             # stage / repeat / engine-breakout / capital
     usage.py                       # overlay, prior-usage features, usage rates
     comps.py                       # pre-season matching, cells, board lookup
+    adp.py                         # normalize 999→None, ADP hit rates, ADP-bust
 data_building/historical/          # pandas / parquet I/O
     build_player_seasons.py        # rebuild warehouse from cache
     build_outcomes.py              # finishes applied in the same rebuild
     build_profiles.py              # parquet → historical_profile_aggregates.json
     build_usage_efficiency.py      # NGS/snap cache refresh + overlay loader
+    build_adp.py                   # frozen ADP backfill + join onto profiles
 data_building/external_data/player_history.py   # existing paths + new wrappers
 ```
 
 `definitions.py` / `seasons.py` / `finishes.py` / `finish_rates.py` /
-`age_curves.py` / `career_profiles.py` / `usage.py` / `comps.py` must not
-import pandas, Flask, or `nfl_data_py`.
+`age_curves.py` / `career_profiles.py` / `usage.py` / `comps.py` / `adp.py`
+must not import pandas, Flask, or `nfl_data_py`.
 `test_product_honesty.py` and `test_adp_formats.py` stay green: this package is
 not on their import graph.
 
@@ -126,12 +132,13 @@ Persistence: large per-season rows stay in committed parquet under
 file (`historical_profile_aggregates.json`) rebuilt in cron after the
 warehouse. Request paths must not scan parquet row-by-row. No Postgres table
 yet (next migration remains `031_*` when a request path needs it). Phase 4
-board probabilities are JSON leaf lookups, not a new table.
+board probabilities and Phase 6 ADP rates are JSON lookups, not a new table.
 
 Rebuild:
 
 ```bash
 python -m data_building.historical.build_usage_efficiency  # optional if JSON caches exist
+python -m data_building.historical.build_adp               # optional if ADP caches exist
 python -m data_building.historical.build_player_seasons
 python -m data_building.historical.build_profiles
 ```
@@ -193,8 +200,8 @@ zero-fills for live valuation. Do not point the historical layer at it.
 | Draft year | players_index + draft_history | |
 | Draft round / pick | `draft_history.parquet` (nflverse) | |
 | GSIS | 2018–22 usage_rows; 2023+ only if that sleeper id appeared in a legacy file | Full `import_ids` join is Phase 1-compatible but optional. Overlay joins NGS/snaps by sleeper id from the ids file, so 2023+ NGS does not require GSIS on the warehouse row. |
-| Historical ADP | **not in Phase 1–4** | |
-| SF / TEP historical ADP | **does not exist** in free sources; deferred | |
+| Historical ADP | **redraft PPR 1QB**, frozen snapshots **2018–2025** | Sleeper `adp_ppr` 2020+ (empty 2018–19); MFL PPR 12-team real drafts 2018+ (selected-only ≥25%); ESPN only when the board passes a preseason quality gate (2021/22/25 fail the “170 wall”). Yahoo has **no season axis**. Sleeper 999 → missing. |
+| SF / TEP historical ADP | **does not exist** in free sources | Not claimed. Sleeper `adp_2qb` is stored on the Sleeper snapshot but is not blended into 1QB hit rates. |
 | Current-season projections | excluded from this warehouse | |
 
 Do not claim “2012+” uniformly.
@@ -382,7 +389,7 @@ That walk-forward comparison is Phase 9 via the existing backtester.
 Descriptive only — comps do not enter ranking or Pick Score.
 
 No `031_*` migration. The request-path artifact remains
-`historical_profile_aggregates.json` (`phase: 4`, `comps` section).
+`historical_profile_aggregates.json` (`phase: 6`, `comps` + `adp` sections).
 
 ### Phase 4 snapshot (2018–2025 warehouse, PPR)
 
@@ -402,11 +409,61 @@ toward the position baseline. 0% raw with n>0 is a real zero and still
 smooths up slightly (the day-3 cell). Request-path lookup passes
 `sleeper_id` so a player is not listed as their own comp.
 
-## Limitations (Phase 1–4)
+## Phase 5–6 — frozen ADP + hit rates
 
-- No board UI columns, no ADP, no Pick Score change. Phase 2–4 rates are
-  informational. Comps do not enter ranking.
-- Comp cell rates are pooled historical, not walk-forward / leave-one-out.
+ADP is a **preseason market** signal, kept separate from comps (profile) and
+from current projections (Phase 7). It does not enter ranking or Pick Score.
+
+**Preservation (Phase 5).** `write_adp_snapshot(..., frozen=True)` refuses later
+overwrites. Cron freezes Yahoo/ESPN/MFL for `current_season - 1` before
+refreshing the live season. Empty fetches still cannot clobber last-good
+data. Historical copies live under `cache/player_history/adp/` (committed);
+`data/adp_snapshots/` stays the gitignored live resolver disk.
+
+**Backfill (Phase 6).** Reuses `fetch_sleeper_adp`, `fetch_mfl_adp`
+(`is_mock=0`, `MIN_MFL_DRAFT_PCT=25`), and `fetch_espn_global_adp`. Yahoo is
+not backfilled. ESPN boards that fail `source_map_is_usable` (no first-round
+picks, or the 12th player later than pick 36) are stored as `usable: false`
+and skipped at join time.
+
+One overall ADP per player-season, source order **sleeper → mfl → espn →
+yahoo**. Positional ADP is a competition rank among that season’s position
+mates who have ADP (missing stays `None`, not last place).
+
+Two statistics, same split as age/usage:
+
+1. **Distribution** — among this-season WR1s, what share were ADP round 1.
+2. **Conditional** — among ADP round-1 WRs, what share finished WR1.
+
+ADP-relative bust: drafted inside positional ADP top-12 and finished
+outside. Missing ADP is not a bust. Absolute bust (NFL draft capital)
+stays a separate definition.
+
+### Phase 6 snapshot (2018–2025 warehouse, redraft PPR 1QB)
+
+Coverage is uneven: 2019 is MFL-only (168 of 547 appeared skill rows); 2024–25
+are nearly complete via Sleeper. 3,088 of 4,647 seasons have an ADP.
+
+| Signal | Conditional P(top-12) | Share of top-12s | n / confidence |
+|---|---|---|---|
+| WR ADP round 1 vs rounds 11+ | **58%** vs 1% | 27% of WR1s vs 8% | 36 moderate / 795 strong |
+| WR ADP positional top-12 vs outside 36 | **36%** vs 1% | 24% of WR1s | 56 good / 913 strong |
+| RB ADP round 1 vs rounds 11+ | **57%** vs 1% | 38% of RB1s | 55 good / 492 strong |
+| WR ADP-relative bust (ADP WR1 → outside WR1) | **46%** | — | 96 good |
+
+Round-1 TE/QB cells are tiny (those positions rarely go in the first 12
+picks); use positional ADP top-12 there. Comps keys still have no ADP
+dimension.
+
+## Limitations (Phase 1–6)
+
+- No board UI columns, no Pick Score change. Phase 2–6 rates are
+  informational. Comps and ADP do not enter ranking.
+- Comp cell rates and ADP hit rates are pooled historical, not walk-forward.
+- Superflex / TEP historical ADP does not exist in free sources.
+- Yahoo public ADP has no season parameter; it is current-only.
+- ESPN 2021/2022/2025 boards fail the preseason quality gate and are unused.
+- Sleeper ADP is empty for 2018–2019; MFL 2018 mapping is thin (~149 ids).
 - 2016–2017 not in the parquet warehouse yet (Sleeper week files are on disk).
 - 2023 usage_rows contain many null-name rows; identity join from
   `players_index` recovers current players, not all retirees.
@@ -447,23 +504,24 @@ Example (PPR positional finish, leakage-safe priors):
 
 ```bash
 python -m data_building.historical.build_usage_efficiency
+python -m data_building.historical.build_adp
 python -m data_building.historical.build_player_seasons
 python -m data_building.historical.build_profiles
 ```
 
 Writes `cache/player_history/player_history_{season}.parquet`,
 `player_history_all.parquet`, `historical_coverage.json`,
-`nflverse_metrics_{season}.json`, `snap_counts_{season}.json`, and
+`nflverse_metrics_{season}.json`, `snap_counts_{season}.json`,
+`adp/{source}_redraft_{season}.json`, `historical_adp_coverage.json`, and
 `historical_profile_aggregates.json`. Empty games=0 padding rows from
 2023–2025 Sleeper dumps are dropped. Missing fields stay null; coverage JSON
 reports present/missing per field. Profile JSON is the request-path artifact
-for Phase 2–4 rates (including comp leaves). The usage-efficiency refresh is
-optional when those JSON caches are already committed; warehouse rebuild does
-not call nflverse live.
+for Phase 2–6 rates (comp leaves + ADP hit rates). The usage-efficiency and
+ADP backfills are optional when those JSON caches are already committed;
+warehouse rebuild does not call nflverse or ADP APIs live.
 
 ## Follow-up (gated)
 
-5–6. ADP snapshot preservation + multi-source backfill + hit rates.
 7. Current projections as a **separate** signal; History vs Projection vs Market.
 8. Compact board columns + lazy deep panel (JSON lookup, no parquet scan).
 9+. League-winner proxy, walk-forward comparison via existing backtester, bounded

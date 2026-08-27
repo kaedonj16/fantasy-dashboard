@@ -826,8 +826,13 @@ print(f"[cron] Draft ADP: {result}")
     # ------------------------------------------------------------------ #
     _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
-from dashboard_services.adp_service import refresh_global_adp_sources
+from dashboard_services.adp_service import (
+    refresh_global_adp_sources,
+    freeze_prior_season_global_snapshots,
+)
+frozen = freeze_prior_season_global_snapshots({season!r})
 summary = refresh_global_adp_sources({season!r})
+print(f"[cron] Global ADP freeze prior season: {{frozen}}")
 print(f"[cron] Global ADP refresh: {{summary}}")
 """, "refresh_global_adp", timeout=600)
 
