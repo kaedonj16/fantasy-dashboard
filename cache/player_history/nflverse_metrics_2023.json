@@ -1,0 +1,2061 @@
+{
+  "9997": {
+    "ngs_avg_separation": 3.6810160964910574,
+    "ngs_avg_cushion": 7.666698113207548,
+    "ngs_avg_intended_air_yards": 8.651944444444444,
+    "ngs_pct_share_intended_air_yards": 22.834430159502062,
+    "ngs_avg_yac": 5.084415584415586,
+    "ngs_avg_expected_yac": 4.108854807018525,
+    "ngs_avg_yac_above_expectation": 0.9755607773970612,
+    "ngs_catch_pct": 71.29629629629629,
+    "adot": 8.651944444444444,
+    "avg_depth_of_target": 8.651944444444444,
+    "ngs_created_separation": -3.99
+  },
+  "5947": {
+    "ngs_avg_separation": 2.7319104935965197,
+    "ngs_avg_cushion": 7.315252525252526,
+    "ngs_avg_intended_air_yards": 9.59179245283019,
+    "ngs_pct_share_intended_air_yards": 24.79043230195304,
+    "ngs_avg_yac": 3.5307042253521126,
+    "ngs_avg_expected_yac": 3.664057657346567,
+    "ngs_avg_yac_above_expectation": -0.13335343199445449,
+    "ngs_catch_pct": 66.98113207547169,
+    "adot": 9.59179245283019,
+    "avg_depth_of_target": 9.59179245283019,
+    "ngs_created_separation": -4.58
+  },
+  "7601": {
+    "ngs_avg_separation": 4.4956080947627575,
+    "ngs_avg_cushion": 7.297755102040817,
+    "ngs_avg_intended_air_yards": 5.064838709677419,
+    "ngs_pct_share_intended_air_yards": 7.9904731127526425,
+    "ngs_avg_yac": 5.4735,
+    "ngs_avg_expected_yac": 5.674917814881669,
+    "ngs_avg_yac_above_expectation": -0.201417814881669,
+    "ngs_catch_pct": 64.51612903225806,
+    "adot": 5.064838709677419,
+    "avg_depth_of_target": 5.064838709677419,
+    "ngs_created_separation": -2.8
+  },
+  "6783": {
+    "ngs_avg_separation": 3.6293528534451753,
+    "ngs_avg_cushion": 7.224875,
+    "ngs_avg_intended_air_yards": 12.650574712643676,
+    "ngs_pct_share_intended_air_yards": 30.843819185606584,
+    "ngs_avg_yac": 6.215000000000002,
+    "ngs_avg_expected_yac": 5.317385990388565,
+    "ngs_avg_yac_above_expectation": 0.8976140096114369,
+    "ngs_catch_pct": 62.06896551724138,
+    "adot": 12.650574712643676,
+    "avg_depth_of_target": 12.650574712643676,
+    "ngs_created_separation": -3.6
+  },
+  "9486": {
+    "ngs_avg_separation": 3.1723428820324013,
+    "ngs_avg_cushion": 7.1657142857142855,
+    "ngs_avg_intended_air_yards": 10.272758620689654,
+    "ngs_pct_share_intended_air_yards": 12.373219254890557,
+    "ngs_avg_yac": 5.646923076923078,
+    "ngs_avg_expected_yac": 3.491224749100244,
+    "ngs_avg_yac_above_expectation": 2.155698327822834,
+    "ngs_catch_pct": 67.24137931034483,
+    "adot": 10.272758620689654,
+    "avg_depth_of_target": 10.272758620689654,
+    "ngs_created_separation": -3.99
+  },
+  "7596": {
+    "ngs_avg_separation": 3.6944083650887194,
+    "ngs_avg_cushion": 7.149148936170213,
+    "ngs_avg_intended_air_yards": 11.010576923076922,
+    "ngs_pct_share_intended_air_yards": 22.355803020600685,
+    "ngs_avg_yac": 3.5438983050847455,
+    "ngs_avg_expected_yac": 3.7462336709182105,
+    "ngs_avg_yac_above_expectation": -0.202335365833465,
+    "ngs_catch_pct": 56.730769230769226,
+    "adot": 11.010576923076922,
+    "avg_depth_of_target": 11.010576923076922,
+    "ngs_created_separation": -3.45
+  },
+  "4454": {
+    "ngs_avg_separation": 2.7471220936956757,
+    "ngs_avg_cushion": 7.143272727272727,
+    "ngs_avg_intended_air_yards": 10.090000000000002,
+    "ngs_pct_share_intended_air_yards": 14.125106266003534,
+    "ngs_avg_yac": 5.406756756756757,
+    "ngs_avg_expected_yac": 3.793554141119025,
+    "ngs_avg_yac_above_expectation": 1.6132026156377326,
+    "ngs_catch_pct": 67.27272727272727,
+    "adot": 10.090000000000002,
+    "avg_depth_of_target": 10.090000000000002,
+    "ngs_created_separation": -4.4
+  },
+  "8119": {
+    "ngs_avg_separation": 2.586194076625611,
+    "ngs_avg_cushion": 7.126538461538462,
+    "ngs_avg_intended_air_yards": 9.839397590361447,
+    "ngs_pct_share_intended_air_yards": 18.336394376063698,
+    "ngs_avg_yac": 2.3300000000000005,
+    "ngs_avg_expected_yac": 2.868707727311854,
+    "ngs_avg_yac_above_expectation": -0.5387077273118535,
+    "ngs_catch_pct": 59.036144578313255,
+    "adot": 9.839397590361447,
+    "avg_depth_of_target": 9.839397590361447,
+    "ngs_created_separation": -4.54
+  },
+  "4039": {
+    "ngs_avg_separation": 3.3519765706679183,
+    "ngs_avg_cushion": 7.09406976744186,
+    "ngs_avg_intended_air_yards": 8.138842105263157,
+    "ngs_pct_share_intended_air_yards": 18.019338645362616,
+    "ngs_avg_yac": 5.816610169491526,
+    "ngs_avg_expected_yac": 4.61507445529143,
+    "ngs_avg_yac_above_expectation": 1.2015357142000962,
+    "ngs_catch_pct": 62.10526315789474,
+    "adot": 8.138842105263157,
+    "avg_depth_of_target": 8.138842105263157,
+    "ngs_created_separation": -3.74
+  },
+  "1352": {
+    "ngs_avg_separation": 2.6228678300843162,
+    "ngs_avg_cushion": 7.074848484848485,
+    "ngs_avg_intended_air_yards": 9.988,
+    "ngs_pct_share_intended_air_yards": 14.797241640872075,
+    "ngs_avg_yac": 3.3567500000000003,
+    "ngs_avg_expected_yac": 3.132723177813903,
+    "ngs_avg_yac_above_expectation": 0.22402682218609726,
+    "ngs_catch_pct": 53.333333333333336,
+    "adot": 9.988,
+    "avg_depth_of_target": 9.988,
+    "ngs_created_separation": -4.45
+  },
+  "7600": {
+    "ngs_avg_separation": 2.954802799154321,
+    "ngs_avg_cushion": 7.044166666666666,
+    "ngs_avg_intended_air_yards": 6.752340425531914,
+    "ngs_pct_share_intended_air_yards": 8.715855848928095,
+    "ngs_avg_yac": 4.5981250000000005,
+    "ngs_avg_expected_yac": 3.69807839259292,
+    "ngs_avg_yac_above_expectation": 0.9000466074070803,
+    "ngs_catch_pct": 68.08510638297872,
+    "adot": 6.752340425531914,
+    "avg_depth_of_target": 6.752340425531914,
+    "ngs_created_separation": -4.09
+  },
+  "9488": {
+    "ngs_avg_separation": 3.7858879094775504,
+    "ngs_avg_cushion": 7.028426966292136,
+    "ngs_avg_intended_air_yards": 6.213440860215052,
+    "ngs_pct_share_intended_air_yards": 13.533706036241336,
+    "ngs_avg_yac": 5.916190476190475,
+    "ngs_avg_expected_yac": 5.616324505481724,
+    "ngs_avg_yac_above_expectation": 0.2998659707087512,
+    "ngs_catch_pct": 67.74193548387096,
+    "adot": 6.213440860215052,
+    "avg_depth_of_target": 6.213440860215052,
+    "ngs_created_separation": -3.24
+  },
+  "4040": {
+    "ngs_avg_separation": 2.4220562074219356,
+    "ngs_avg_cushion": 7.014888888888888,
+    "ngs_avg_intended_air_yards": 7.197872340425533,
+    "ngs_pct_share_intended_air_yards": 8.6107279030345,
+    "ngs_avg_yac": 3.3879310344827585,
+    "ngs_avg_expected_yac": 4.099745854290936,
+    "ngs_avg_yac_above_expectation": -0.7118148198081777,
+    "ngs_catch_pct": 61.702127659574465,
+    "adot": 7.197872340425533,
+    "avg_depth_of_target": 7.197872340425533,
+    "ngs_created_separation": -4.59
+  },
+  "8126": {
+    "ngs_avg_separation": 3.973480571288485,
+    "ngs_avg_cushion": 6.9703389830508495,
+    "ngs_avg_intended_air_yards": 5.239102564102563,
+    "ngs_pct_share_intended_air_yards": 11.493622466916984,
+    "ngs_avg_yac": 5.0440000000000005,
+    "ngs_avg_expected_yac": 4.384356634702925,
+    "ngs_avg_yac_above_expectation": 0.6596433652970752,
+    "ngs_catch_pct": 76.92307692307693,
+    "adot": 5.239102564102563,
+    "avg_depth_of_target": 5.239102564102563,
+    "ngs_created_separation": -3.0
+  },
+  "5937": {
+    "ngs_avg_separation": 2.9033799106617955,
+    "ngs_avg_cushion": 6.955529411764705,
+    "ngs_avg_intended_air_yards": 12.482298850574711,
+    "ngs_pct_share_intended_air_yards": 29.82439758539814,
+    "ngs_avg_yac": 5.040196078431372,
+    "ngs_avg_expected_yac": 3.993679082424847,
+    "ngs_avg_yac_above_expectation": 1.0465169960065253,
+    "ngs_catch_pct": 58.620689655172406,
+    "adot": 12.482298850574711,
+    "avg_depth_of_target": 12.482298850574711,
+    "ngs_created_separation": -4.05
+  },
+  "4037": {
+    "ngs_avg_separation": 2.9221610769328694,
+    "ngs_avg_cushion": 6.940731707317076,
+    "ngs_avg_intended_air_yards": 9.345615384615385,
+    "ngs_pct_share_intended_air_yards": 25.63841214170101,
+    "ngs_avg_yac": 4.781927710843373,
+    "ngs_avg_expected_yac": 4.131302451876124,
+    "ngs_avg_yac_above_expectation": 0.6506252589672492,
+    "ngs_catch_pct": 63.84615384615384,
+    "adot": 9.345615384615385,
+    "avg_depth_of_target": 9.345615384615385,
+    "ngs_created_separation": -4.02
+  },
+  "9502": {
+    "ngs_avg_separation": 2.946577120404939,
+    "ngs_avg_cushion": 6.899866666666667,
+    "ngs_avg_intended_air_yards": 14.231333333333332,
+    "ngs_pct_share_intended_air_yards": 21.083748318495275,
+    "ngs_avg_yac": 3.1906382978723404,
+    "ngs_avg_expected_yac": 2.97705863581291,
+    "ngs_avg_yac_above_expectation": 0.21357966205943058,
+    "ngs_catch_pct": 62.66666666666667,
+    "adot": 14.231333333333332,
+    "avg_depth_of_target": 14.231333333333332,
+    "ngs_created_separation": -3.95
+  },
+  "4082": {
+    "ngs_avg_separation": 3.28831749243485,
+    "ngs_avg_cushion": 6.842162162162162,
+    "ngs_avg_intended_air_yards": 7.140659340659339,
+    "ngs_pct_share_intended_air_yards": 14.589722979375006,
+    "ngs_avg_yac": 4.412741935483871,
+    "ngs_avg_expected_yac": 4.120330881905434,
+    "ngs_avg_yac_above_expectation": 0.2924110535784372,
+    "ngs_catch_pct": 68.13186813186813,
+    "adot": 7.140659340659339,
+    "avg_depth_of_target": 7.140659340659339,
+    "ngs_created_separation": -3.55
+  },
+  "1479": {
+    "ngs_avg_separation": 3.0652255961221413,
+    "ngs_avg_cushion": 6.78274074074074,
+    "ngs_avg_intended_air_yards": 9.456199999999999,
+    "ngs_pct_share_intended_air_yards": 30.103718104083143,
+    "ngs_avg_yac": 4.035740740740741,
+    "ngs_avg_expected_yac": 3.919318986116947,
+    "ngs_avg_yac_above_expectation": 0.11642175462379445,
+    "ngs_catch_pct": 72.0,
+    "adot": 9.456199999999999,
+    "avg_depth_of_target": 9.456199999999999,
+    "ngs_created_separation": -3.72
+  },
+  "9501": {
+    "ngs_avg_separation": 3.0733747606638384,
+    "ngs_avg_cushion": 6.782602739726027,
+    "ngs_avg_intended_air_yards": 8.114810126582277,
+    "ngs_pct_share_intended_air_yards": 16.31711302630306,
+    "ngs_avg_yac": 6.970204081632653,
+    "ngs_avg_expected_yac": 6.969532827809275,
+    "ngs_avg_yac_above_expectation": 0.0006712538233779597,
+    "ngs_catch_pct": 62.0253164556962,
+    "adot": 8.114810126582277,
+    "avg_depth_of_target": 8.114810126582277,
+    "ngs_created_separation": -3.71
+  },
+  "6819": {
+    "ngs_avg_separation": 2.940494004551059,
+    "ngs_avg_cushion": 6.778235294117646,
+    "ngs_avg_intended_air_yards": 7.922564102564103,
+    "ngs_pct_share_intended_air_yards": 30.054885329299825,
+    "ngs_avg_yac": 4.893119266055046,
+    "ngs_avg_expected_yac": 4.606101742793048,
+    "ngs_avg_yac_above_expectation": 0.2870175232619978,
+    "ngs_catch_pct": 69.87179487179486,
+    "adot": 7.922564102564103,
+    "avg_depth_of_target": 7.922564102564103,
+    "ngs_created_separation": -3.84
+  },
+  "7670": {
+    "ngs_avg_separation": 2.610418173436483,
+    "ngs_avg_cushion": 6.777894736842107,
+    "ngs_avg_intended_air_yards": 11.401803278688522,
+    "ngs_pct_share_intended_air_yards": 14.76099418270261,
+    "ngs_avg_yac": 5.628947368421053,
+    "ngs_avg_expected_yac": 5.063283970482872,
+    "ngs_avg_yac_above_expectation": 0.5656633979381809,
+    "ngs_catch_pct": 62.295081967213115,
+    "adot": 11.401803278688522,
+    "avg_depth_of_target": 11.401803278688522,
+    "ngs_created_separation": -4.17
+  },
+  "5872": {
+    "ngs_avg_separation": 3.6988329008754164,
+    "ngs_avg_cushion": 6.773552631578947,
+    "ngs_avg_intended_air_yards": 6.787640449438203,
+    "ngs_pct_share_intended_air_yards": 15.35368630799886,
+    "ngs_avg_yac": 8.8665,
+    "ngs_avg_expected_yac": 4.939954389052084,
+    "ngs_avg_yac_above_expectation": 3.926545610947916,
+    "ngs_catch_pct": 67.41573033707866,
+    "adot": 6.787640449438203,
+    "avg_depth_of_target": 6.787640449438203,
+    "ngs_created_separation": -3.07
+  },
+  "2374": {
+    "ngs_avg_separation": 2.8155919124350035,
+    "ngs_avg_cushion": 6.754347826086957,
+    "ngs_avg_intended_air_yards": 11.501967213114753,
+    "ngs_pct_share_intended_air_yards": 32.86499551491787,
+    "ngs_avg_yac": 2.7499999999999996,
+    "ngs_avg_expected_yac": 2.994652692906812,
+    "ngs_avg_yac_above_expectation": -0.24465269290681224,
+    "ngs_catch_pct": 64.75409836065575,
+    "adot": 11.501967213114753,
+    "avg_depth_of_target": 11.501967213114753,
+    "ngs_created_separation": -3.94
+  },
+  "7496": {
+    "ngs_avg_separation": 2.9041093336940706,
+    "ngs_avg_cushion": 6.747,
+    "ngs_avg_intended_air_yards": 12.316444444444445,
+    "ngs_pct_share_intended_air_yards": 12.491322965967994,
+    "ngs_avg_yac": 4.5178571428571415,
+    "ngs_avg_expected_yac": 4.270141777171776,
+    "ngs_avg_yac_above_expectation": 0.2477153656853659,
+    "ngs_catch_pct": 62.22222222222222,
+    "adot": 12.316444444444445,
+    "avg_depth_of_target": 12.316444444444445,
+    "ngs_created_separation": -3.84
+  },
+  "6826": {
+    "ngs_avg_separation": 4.0935738951342,
+    "ngs_avg_cushion": 6.725428571428573,
+    "ngs_avg_intended_air_yards": 6.372777777777778,
+    "ngs_pct_share_intended_air_yards": 15.235431309734421,
+    "ngs_avg_yac": 4.32027397260274,
+    "ngs_avg_expected_yac": 4.2399657100092645,
+    "ngs_avg_yac_above_expectation": 0.08030826259347545,
+    "ngs_catch_pct": 81.11111111111111,
+    "adot": 6.372777777777778,
+    "avg_depth_of_target": 6.372777777777778,
+    "ngs_created_separation": -2.63
+  },
+  "7525": {
+    "ngs_avg_separation": 2.8183215114185023,
+    "ngs_avg_cushion": 6.725047619047618,
+    "ngs_avg_intended_air_yards": 12.455892857142858,
+    "ngs_pct_share_intended_air_yards": 30.350682153913766,
+    "ngs_avg_yac": 3.58246913580247,
+    "ngs_avg_expected_yac": 3.3807397849825884,
+    "ngs_avg_yac_above_expectation": 0.20172935081988141,
+    "ngs_catch_pct": 72.32142857142857,
+    "adot": 12.455892857142858,
+    "avg_depth_of_target": 12.455892857142858,
+    "ngs_created_separation": -3.91
+  },
+  "4234": {
+    "ngs_avg_separation": 3.1158447851991857,
+    "ngs_avg_cushion": 6.723269230769231,
+    "ngs_avg_intended_air_yards": 12.267272727272728,
+    "ngs_pct_share_intended_air_yards": 13.327591690156709,
+    "ngs_avg_yac": 6.909090909090907,
+    "ngs_avg_expected_yac": 3.851183452361014,
+    "ngs_avg_yac_above_expectation": 3.0579074567298936,
+    "ngs_catch_pct": 60.0,
+    "adot": 12.267272727272728,
+    "avg_depth_of_target": 12.267272727272728,
+    "ngs_created_separation": -3.61
+  },
+  "7526": {
+    "ngs_avg_separation": 3.422396920632551,
+    "ngs_avg_cushion": 6.708163265306122,
+    "ngs_avg_intended_air_yards": 10.001923076923077,
+    "ngs_pct_share_intended_air_yards": 24.382411472531697,
+    "ngs_avg_yac": 6.176111111111111,
+    "ngs_avg_expected_yac": 5.0442734680156995,
+    "ngs_avg_yac_above_expectation": 1.1318376430954116,
+    "ngs_catch_pct": 69.23076923076923,
+    "adot": 10.001923076923077,
+    "avg_depth_of_target": 10.001923076923077,
+    "ngs_created_separation": -3.29
+  },
+  "7547": {
+    "ngs_avg_separation": 3.2143896515204062,
+    "ngs_avg_cushion": 6.702364864864865,
+    "ngs_avg_intended_air_yards": 7.6571341463414635,
+    "ngs_pct_share_intended_air_yards": 31.26979621107991,
+    "ngs_avg_yac": 5.752268907563025,
+    "ngs_avg_expected_yac": 4.702549366044615,
+    "ngs_avg_yac_above_expectation": 1.0497195415184093,
+    "ngs_catch_pct": 72.5609756097561,
+    "adot": 7.6571341463414635,
+    "avg_depth_of_target": 7.6571341463414635,
+    "ngs_created_separation": -3.49
+  },
+  "4080": {
+    "ngs_avg_separation": 2.4790105738790205,
+    "ngs_avg_cushion": 6.69393442622951,
+    "ngs_avg_intended_air_yards": 13.430000000000001,
+    "ngs_pct_share_intended_air_yards": 17.47265324044617,
+    "ngs_avg_yac": 1.9041176470588237,
+    "ngs_avg_expected_yac": 1.9868346562572023,
+    "ngs_avg_yac_above_expectation": -0.08271700919837865,
+    "ngs_catch_pct": 53.125,
+    "adot": 13.430000000000001,
+    "avg_depth_of_target": 13.430000000000001,
+    "ngs_created_separation": -4.21
+  },
+  "1992": {
+    "ngs_avg_separation": 2.5720438307195455,
+    "ngs_avg_cushion": 6.691276595744681,
+    "ngs_avg_intended_air_yards": 7.605,
+    "ngs_pct_share_intended_air_yards": 10.025321461723948,
+    "ngs_avg_yac": 2.1799999999999997,
+    "ngs_avg_expected_yac": 2.3026620394752637,
+    "ngs_avg_yac_above_expectation": -0.122662039475264,
+    "ngs_catch_pct": 68.75,
+    "adot": 7.605,
+    "avg_depth_of_target": 7.605,
+    "ngs_created_separation": -4.12
+  },
+  "1466": {
+    "ngs_avg_separation": 3.659598831305704,
+    "ngs_avg_cushion": 6.682815533980583,
+    "ngs_avg_intended_air_yards": 6.757603305785126,
+    "ngs_pct_share_intended_air_yards": 20.941519359514828,
+    "ngs_avg_yac": 5.156021505376345,
+    "ngs_avg_expected_yac": 4.95582791957286,
+    "ngs_avg_yac_above_expectation": 0.20019358580348534,
+    "ngs_catch_pct": 76.85950413223141,
+    "adot": 6.757603305785126,
+    "avg_depth_of_target": 6.757603305785126,
+    "ngs_created_separation": -3.02
+  },
+  "5022": {
+    "ngs_avg_separation": 2.9058752182169036,
+    "ngs_avg_cushion": 6.660144927536232,
+    "ngs_avg_intended_air_yards": 5.503132530120482,
+    "ngs_pct_share_intended_air_yards": 9.937190931301629,
+    "ngs_avg_yac": 5.530508474576273,
+    "ngs_avg_expected_yac": 4.6805739228750936,
+    "ngs_avg_yac_above_expectation": 0.8499345517011792,
+    "ngs_catch_pct": 71.08433734939759,
+    "adot": 5.503132530120482,
+    "avg_depth_of_target": 5.503132530120482,
+    "ngs_created_separation": -3.75
+  },
+  "4144": {
+    "ngs_avg_separation": 3.8862629343069037,
+    "ngs_avg_cushion": 6.647090909090909,
+    "ngs_avg_intended_air_yards": 6.078571428571428,
+    "ngs_pct_share_intended_air_yards": 10.22278708493202,
+    "ngs_avg_yac": 7.592000000000001,
+    "ngs_avg_expected_yac": 5.325441756004859,
+    "ngs_avg_yac_above_expectation": 2.266558243995142,
+    "ngs_catch_pct": 71.42857142857143,
+    "adot": 6.078571428571428,
+    "avg_depth_of_target": 6.078571428571428,
+    "ngs_created_separation": -2.76
+  },
+  "7562": {
+    "ngs_avg_separation": 2.612631787522305,
+    "ngs_avg_cushion": 6.6187499999999995,
+    "ngs_avg_intended_air_yards": 11.21507462686567,
+    "ngs_pct_share_intended_air_yards": 17.511751641267896,
+    "ngs_avg_yac": 2.6676923076923087,
+    "ngs_avg_expected_yac": 2.863889600831324,
+    "ngs_avg_yac_above_expectation": -0.19619729313901546,
+    "ngs_catch_pct": 58.2089552238806,
+    "adot": 11.21507462686567,
+    "avg_depth_of_target": 11.21507462686567,
+    "ngs_created_separation": -4.01
+  },
+  "8676": {
+    "ngs_avg_separation": 2.821496012206108,
+    "ngs_avg_cushion": 6.603750000000001,
+    "ngs_avg_intended_air_yards": 14.519866666666667,
+    "ngs_pct_share_intended_air_yards": 22.1063102016788,
+    "ngs_avg_yac": 3.552826086956522,
+    "ngs_avg_expected_yac": 4.107798483661812,
+    "ngs_avg_yac_above_expectation": -0.5549723967052897,
+    "ngs_catch_pct": 61.33333333333333,
+    "adot": 14.519866666666667,
+    "avg_depth_of_target": 14.519866666666667,
+    "ngs_created_separation": -3.78
+  },
+  "10222": {
+    "ngs_avg_separation": 3.444667961961241,
+    "ngs_avg_cushion": 6.5816470588235285,
+    "ngs_avg_intended_air_yards": 9.965851063829785,
+    "ngs_pct_share_intended_air_yards": 19.454043277816996,
+    "ngs_avg_yac": 5.59359375,
+    "ngs_avg_expected_yac": 5.308712973978235,
+    "ngs_avg_yac_above_expectation": 0.2848807760217653,
+    "ngs_catch_pct": 68.08510638297872,
+    "adot": 9.965851063829785,
+    "avg_depth_of_target": 9.965851063829785,
+    "ngs_created_separation": -3.14
+  },
+  "5859": {
+    "ngs_avg_separation": 2.436500003793638,
+    "ngs_avg_cushion": 6.579358974358975,
+    "ngs_avg_intended_air_yards": 12.156582278481013,
+    "ngs_pct_share_intended_air_yards": 41.787284590131115,
+    "ngs_avg_yac": 4.522075471698113,
+    "ngs_avg_expected_yac": 2.754841859450974,
+    "ngs_avg_yac_above_expectation": 1.7672336122471388,
+    "ngs_catch_pct": 67.08860759493672,
+    "adot": 12.156582278481013,
+    "avg_depth_of_target": 12.156582278481013,
+    "ngs_created_separation": -4.14
+  },
+  "6794": {
+    "ngs_avg_separation": 2.7057248300904826,
+    "ngs_avg_cushion": 6.570744680851064,
+    "ngs_avg_intended_air_yards": 12.523399999999999,
+    "ngs_pct_share_intended_air_yards": 26.29071908267781,
+    "ngs_avg_yac": 4.1061764705882355,
+    "ngs_avg_expected_yac": 3.517767338649681,
+    "ngs_avg_yac_above_expectation": 0.5884091319385547,
+    "ngs_catch_pct": 68.0,
+    "adot": 12.523399999999999,
+    "avg_depth_of_target": 12.523399999999999,
+    "ngs_created_separation": -3.87
+  },
+  "2216": {
+    "ngs_avg_separation": 2.370892184852302,
+    "ngs_avg_cushion": 6.5689473684210515,
+    "ngs_avg_intended_air_yards": 14.374999999999998,
+    "ngs_pct_share_intended_air_yards": 41.255953624509615,
+    "ngs_avg_yac": 4.552784810126583,
+    "ngs_avg_expected_yac": 3.6714221989243585,
+    "ngs_avg_yac_above_expectation": 0.8813626112022241,
+    "ngs_catch_pct": 58.08823529411765,
+    "adot": 14.374999999999998,
+    "avg_depth_of_target": 14.374999999999998,
+    "ngs_created_separation": -4.2
+  },
+  "6149": {
+    "ngs_avg_separation": 2.867353654183732,
+    "ngs_avg_cushion": 6.545,
+    "ngs_avg_intended_air_yards": 12.377468354430379,
+    "ngs_pct_share_intended_air_yards": 27.502003965742727,
+    "ngs_avg_yac": 6.171200000000002,
+    "ngs_avg_expected_yac": 4.285543233297966,
+    "ngs_avg_yac_above_expectation": 1.8856567667020352,
+    "ngs_catch_pct": 63.29113924050633,
+    "adot": 12.377468354430379,
+    "avg_depth_of_target": 12.377468354430379,
+    "ngs_created_separation": -3.68
+  },
+  "8111": {
+    "ngs_avg_separation": 3.4357684048952217,
+    "ngs_avg_cushion": 6.5016,
+    "ngs_avg_intended_air_yards": 6.52955223880597,
+    "ngs_pct_share_intended_air_yards": 9.232048384475943,
+    "ngs_avg_yac": 4.98468085106383,
+    "ngs_avg_expected_yac": 4.620845476133046,
+    "ngs_avg_yac_above_expectation": 0.3638353749307841,
+    "ngs_catch_pct": 70.1492537313433,
+    "adot": 6.52955223880597,
+    "avg_depth_of_target": 6.52955223880597,
+    "ngs_created_separation": -3.07
+  },
+  "6943": {
+    "ngs_avg_separation": 2.8100075784507923,
+    "ngs_avg_cushion": 6.501518987341774,
+    "ngs_avg_intended_air_yards": 15.063703703703707,
+    "ngs_pct_share_intended_air_yards": 26.057095997129835,
+    "ngs_avg_yac": 4.312222222222221,
+    "ngs_avg_expected_yac": 3.238600483909495,
+    "ngs_avg_yac_above_expectation": 1.0736217383127262,
+    "ngs_catch_pct": 55.55555555555556,
+    "adot": 15.063703703703707,
+    "avg_depth_of_target": 15.063703703703707,
+    "ngs_created_separation": -3.69
+  },
+  "9756": {
+    "ngs_avg_separation": 2.7593986201497493,
+    "ngs_avg_cushion": 6.434134615384616,
+    "ngs_avg_intended_air_yards": 12.408148148148147,
+    "ngs_pct_share_intended_air_yards": 28.132669106085313,
+    "ngs_avg_yac": 3.8542857142857136,
+    "ngs_avg_expected_yac": 2.4167099140357435,
+    "ngs_avg_yac_above_expectation": 1.4375758002499701,
+    "ngs_catch_pct": 64.81481481481481,
+    "adot": 12.408148148148147,
+    "avg_depth_of_target": 12.408148148148147,
+    "ngs_created_separation": -3.67
+  },
+  "2251": {
+    "ngs_avg_separation": 3.2774368740565443,
+    "ngs_avg_cushion": 6.41725806451613,
+    "ngs_avg_intended_air_yards": 6.296666666666667,
+    "ngs_pct_share_intended_air_yards": 11.027387725592861,
+    "ngs_avg_yac": 4.364545454545455,
+    "ngs_avg_expected_yac": 3.9465727722914017,
+    "ngs_avg_yac_above_expectation": 0.4179726822540535,
+    "ngs_catch_pct": 70.51282051282051,
+    "adot": 6.296666666666667,
+    "avg_depth_of_target": 6.296666666666667,
+    "ngs_created_separation": -3.14
+  },
+  "9492": {
+    "ngs_avg_separation": 3.070626674677751,
+    "ngs_avg_cushion": 6.416212121212121,
+    "ngs_avg_intended_air_yards": 10.158823529411766,
+    "ngs_pct_share_intended_air_yards": 14.57780704031266,
+    "ngs_avg_yac": 3.0753846153846154,
+    "ngs_avg_expected_yac": 3.64057688110388,
+    "ngs_avg_yac_above_expectation": -0.5651922657192645,
+    "ngs_catch_pct": 57.35294117647059,
+    "adot": 10.158823529411766,
+    "avg_depth_of_target": 10.158823529411766,
+    "ngs_created_separation": -3.35
+  },
+  "8167": {
+    "ngs_avg_separation": 2.913774136445268,
+    "ngs_avg_cushion": 6.401,
+    "ngs_avg_intended_air_yards": 16.26811320754717,
+    "ngs_pct_share_intended_air_yards": 17.90526228350708,
+    "ngs_avg_yac": 3.7060714285714296,
+    "ngs_avg_expected_yac": 1.8670894164674061,
+    "ngs_avg_yac_above_expectation": 1.8389820121040235,
+    "ngs_catch_pct": 52.83018867924528,
+    "adot": 16.26811320754717,
+    "avg_depth_of_target": 16.26811320754717,
+    "ngs_created_separation": -3.49
+  },
+  "2325": {
+    "ngs_avg_separation": 3.5799465724612403,
+    "ngs_avg_cushion": 6.395348837209302,
+    "ngs_avg_intended_air_yards": 9.390000000000002,
+    "ngs_pct_share_intended_air_yards": 10.325968754505622,
+    "ngs_avg_yac": 4.260000000000001,
+    "ngs_avg_expected_yac": 4.3074649168500185,
+    "ngs_avg_yac_above_expectation": -0.04746491685001786,
+    "ngs_catch_pct": 77.77777777777779,
+    "adot": 9.390000000000002,
+    "avg_depth_of_target": 9.390000000000002,
+    "ngs_created_separation": -2.82
+  },
+  "7602": {
+    "ngs_avg_separation": 3.503700410756128,
+    "ngs_avg_cushion": 6.391794871794872,
+    "ngs_avg_intended_air_yards": 8.0102,
+    "ngs_pct_share_intended_air_yards": 9.73953178461217,
+    "ngs_avg_yac": 4.546666666666668,
+    "ngs_avg_expected_yac": 4.640754739754702,
+    "ngs_avg_yac_above_expectation": -0.09408807308803446,
+    "ngs_catch_pct": 60.0,
+    "adot": 8.0102,
+    "avg_depth_of_target": 8.0102,
+    "ngs_created_separation": -2.89
+  },
+  "5045": {
+    "ngs_avg_separation": 2.9192387594368774,
+    "ngs_avg_cushion": 6.368977272727273,
+    "ngs_avg_intended_air_yards": 12.706555555555555,
+    "ngs_pct_share_intended_air_yards": 32.0485945688423,
+    "ngs_avg_yac": 3.080508474576272,
+    "ngs_avg_expected_yac": 3.186886052609805,
+    "ngs_avg_yac_above_expectation": -0.10637757803353276,
+    "ngs_catch_pct": 65.55555555555556,
+    "adot": 12.706555555555555,
+    "avg_depth_of_target": 12.706555555555555,
+    "ngs_created_separation": -3.45
+  },
+  "10229": {
+    "ngs_avg_separation": 4.154307669667891,
+    "ngs_avg_cushion": 6.355957446808511,
+    "ngs_avg_intended_air_yards": 4.994411764705883,
+    "ngs_pct_share_intended_air_yards": 13.0471195070354,
+    "ngs_avg_yac": 8.406455696202531,
+    "ngs_avg_expected_yac": 6.544876055216359,
+    "ngs_avg_yac_above_expectation": 1.8615796409861725,
+    "ngs_catch_pct": 77.45098039215686,
+    "adot": 4.994411764705883,
+    "avg_depth_of_target": 4.994411764705883,
+    "ngs_created_separation": -2.2
+  },
+  "8112": {
+    "ngs_avg_separation": 2.2239363759101027,
+    "ngs_avg_cushion": 6.327870370370371,
+    "ngs_avg_intended_air_yards": 11.36718181818182,
+    "ngs_pct_share_intended_air_yards": 30.04105932580059,
+    "ngs_avg_yac": 3.037101449275362,
+    "ngs_avg_expected_yac": 2.754265736881031,
+    "ngs_avg_yac_above_expectation": 0.28283571239433103,
+    "ngs_catch_pct": 62.727272727272734,
+    "adot": 11.36718181818182,
+    "avg_depth_of_target": 11.36718181818182,
+    "ngs_created_separation": -4.1
+  },
+  "1689": {
+    "ngs_avg_separation": 2.88760037104662,
+    "ngs_avg_cushion": 6.30520325203252,
+    "ngs_avg_intended_air_yards": 7.6350364963503665,
+    "ngs_pct_share_intended_air_yards": 26.349465453482875,
+    "ngs_avg_yac": 3.4421359223300967,
+    "ngs_avg_expected_yac": 4.513196068744899,
+    "ngs_avg_yac_above_expectation": -1.0710601464148026,
+    "ngs_catch_pct": 75.18248175182481,
+    "adot": 7.6350364963503665,
+    "avg_depth_of_target": 7.6350364963503665,
+    "ngs_created_separation": -3.42
+  },
+  "5409": {
+    "ngs_avg_separation": 3.0683933297976207,
+    "ngs_avg_cushion": 6.304736842105264,
+    "ngs_avg_intended_air_yards": 5.111199999999999,
+    "ngs_pct_share_intended_air_yards": 6.812099499941357,
+    "ngs_avg_yac": 4.068205128205128,
+    "ngs_avg_expected_yac": 3.7983991775846415,
+    "ngs_avg_yac_above_expectation": 0.2698059506204866,
+    "ngs_catch_pct": 78.0,
+    "adot": 5.111199999999999,
+    "avg_depth_of_target": 5.111199999999999,
+    "ngs_created_separation": -3.24
+  },
+  "5185": {
+    "ngs_avg_separation": 2.209960657840716,
+    "ngs_avg_cushion": 6.3046938775510215,
+    "ngs_avg_intended_air_yards": 12.02795918367347,
+    "ngs_pct_share_intended_air_yards": 15.389214989973263,
+    "ngs_avg_yac": 2.4143478260869577,
+    "ngs_avg_expected_yac": 2.301296873140357,
+    "ngs_avg_yac_above_expectation": 0.11305095294660061,
+    "ngs_catch_pct": 46.93877551020408,
+    "adot": 12.02795918367347,
+    "avg_depth_of_target": 12.02795918367347,
+    "ngs_created_separation": -4.09
+  },
+  "10232": {
+    "ngs_avg_separation": 2.6488132385599372,
+    "ngs_avg_cushion": 6.301454545454545,
+    "ngs_avg_intended_air_yards": 12.617894736842105,
+    "ngs_pct_share_intended_air_yards": 18.301089332379963,
+    "ngs_avg_yac": 3.9810810810810797,
+    "ngs_avg_expected_yac": 2.8111865367577447,
+    "ngs_avg_yac_above_expectation": 1.169894544323335,
+    "ngs_catch_pct": 64.91228070175438,
+    "adot": 12.617894736842105,
+    "avg_depth_of_target": 12.617894736842105,
+    "ngs_created_separation": -3.65
+  },
+  "8144": {
+    "ngs_avg_separation": 2.9562174364804776,
+    "ngs_avg_cushion": 6.290930232558139,
+    "ngs_avg_intended_air_yards": 13.260652173913044,
+    "ngs_pct_share_intended_air_yards": 37.148077098748516,
+    "ngs_avg_yac": 4.0537931034482755,
+    "ngs_avg_expected_yac": 4.314998608790422,
+    "ngs_avg_yac_above_expectation": -0.26120550534214626,
+    "ngs_catch_pct": 63.04347826086957,
+    "adot": 13.260652173913044,
+    "avg_depth_of_target": 13.260652173913044,
+    "ngs_created_separation": -3.33
+  },
+  "7553": {
+    "ngs_avg_separation": 2.374324590543921,
+    "ngs_avg_cushion": 6.277875000000001,
+    "ngs_avg_intended_air_yards": 11.448666666666666,
+    "ngs_pct_share_intended_air_yards": 24.75524173107463,
+    "ngs_avg_yac": 2.84188679245283,
+    "ngs_avg_expected_yac": 3.0283869693294316,
+    "ngs_avg_yac_above_expectation": -0.18650017687660148,
+    "ngs_catch_pct": 58.88888888888889,
+    "adot": 11.448666666666666,
+    "avg_depth_of_target": 11.448666666666666,
+    "ngs_created_separation": -3.9
+  },
+  "4983": {
+    "ngs_avg_separation": 2.737857989088661,
+    "ngs_avg_cushion": 6.275075757575757,
+    "ngs_avg_intended_air_yards": 11.488823529411766,
+    "ngs_pct_share_intended_air_yards": 41.50476281550665,
+    "ngs_avg_yac": 5.904062500000001,
+    "ngs_avg_expected_yac": 4.328296013823823,
+    "ngs_avg_yac_above_expectation": 1.5757664861761782,
+    "ngs_catch_pct": 70.58823529411765,
+    "adot": 11.488823529411766,
+    "avg_depth_of_target": 11.488823529411766,
+    "ngs_created_separation": -3.54
+  },
+  "2505": {
+    "ngs_avg_separation": 2.943662681780704,
+    "ngs_avg_cushion": 6.261833333333333,
+    "ngs_avg_intended_air_yards": 7.649459459459459,
+    "ngs_pct_share_intended_air_yards": 15.920910152020134,
+    "ngs_avg_yac": 4.318461538461539,
+    "ngs_avg_expected_yac": 4.538782680184086,
+    "ngs_avg_yac_above_expectation": -0.2203211417225477,
+    "ngs_catch_pct": 70.27027027027027,
+    "adot": 7.649459459459459,
+    "avg_depth_of_target": 7.649459459459459,
+    "ngs_created_separation": -3.32
+  },
+  "3271": {
+    "ngs_avg_separation": 3.6782785886710037,
+    "ngs_avg_cushion": 6.260967741935484,
+    "ngs_avg_intended_air_yards": 5.5282857142857145,
+    "ngs_pct_share_intended_air_yards": 9.018641820228439,
+    "ngs_avg_yac": 5.460851063829787,
+    "ngs_avg_expected_yac": 5.374312893558835,
+    "ngs_avg_yac_above_expectation": 0.08653817027095201,
+    "ngs_catch_pct": 67.14285714285714,
+    "adot": 5.5282857142857145,
+    "avg_depth_of_target": 5.5282857142857145,
+    "ngs_created_separation": -2.58
+  },
+  "8142": {
+    "ngs_avg_separation": 2.1531582713154367,
+    "ngs_avg_cushion": 6.241076923076923,
+    "ngs_avg_intended_air_yards": 15.014923076923077,
+    "ngs_pct_share_intended_air_yards": 23.733466919247807,
+    "ngs_avg_yac": 3.371249999999999,
+    "ngs_avg_expected_yac": 3.4087338932165405,
+    "ngs_avg_yac_above_expectation": -0.03748389321654155,
+    "ngs_catch_pct": 49.23076923076923,
+    "adot": 15.014923076923077,
+    "avg_depth_of_target": 15.014923076923077,
+    "ngs_created_separation": -4.09
+  },
+  "2197": {
+    "ngs_avg_separation": 2.6307468618744485,
+    "ngs_avg_cushion": 6.225844155844156,
+    "ngs_avg_intended_air_yards": 13.360875000000002,
+    "ngs_pct_share_intended_air_yards": 22.29520438365765,
+    "ngs_avg_yac": 2.42037037037037,
+    "ngs_avg_expected_yac": 2.5458696226366526,
+    "ngs_avg_yac_above_expectation": -0.12549925226628256,
+    "ngs_catch_pct": 66.66666666666666,
+    "adot": 13.360875000000002,
+    "avg_depth_of_target": 13.360875000000002,
+    "ngs_created_separation": -3.6
+  },
+  "4066": {
+    "ngs_avg_separation": 3.3855664522896727,
+    "ngs_avg_cushion": 6.220818181818182,
+    "ngs_avg_intended_air_yards": 4.732657342657342,
+    "ngs_pct_share_intended_air_yards": 13.757640931609217,
+    "ngs_avg_yac": 4.796666666666666,
+    "ngs_avg_expected_yac": 4.30911290606087,
+    "ngs_avg_yac_above_expectation": 0.48755376060579625,
+    "ngs_catch_pct": 79.72027972027972,
+    "adot": 4.732657342657342,
+    "avg_depth_of_target": 4.732657342657342,
+    "ngs_created_separation": -2.84
+  },
+  "10225": {
+    "ngs_avg_separation": 2.76853596969463,
+    "ngs_avg_cushion": 6.17345238095238,
+    "ngs_avg_intended_air_yards": 10.28376470588235,
+    "ngs_pct_share_intended_air_yards": 22.01968904607881,
+    "ngs_avg_yac": 3.695813953488373,
+    "ngs_avg_expected_yac": 4.364936336585179,
+    "ngs_avg_yac_above_expectation": -0.6691223830968065,
+    "ngs_catch_pct": 50.588235294117645,
+    "adot": 10.28376470588235,
+    "avg_depth_of_target": 10.28376470588235,
+    "ngs_created_separation": -3.4
+  },
+  "3225": {
+    "ngs_avg_separation": 3.093340407220002,
+    "ngs_avg_cushion": 6.135444444444444,
+    "ngs_avg_intended_air_yards": 6.739693877551019,
+    "ngs_pct_share_intended_air_yards": 17.605742677712737,
+    "ngs_avg_yac": 4.486567164179106,
+    "ngs_avg_expected_yac": 3.419008793415187,
+    "ngs_avg_yac_above_expectation": 1.0675583707639187,
+    "ngs_catch_pct": 68.36734693877551,
+    "adot": 6.739693877551019,
+    "avg_depth_of_target": 6.739693877551019,
+    "ngs_created_separation": -3.04
+  },
+  "5038": {
+    "ngs_avg_separation": 2.3062134999520603,
+    "ngs_avg_cushion": 6.134736842105264,
+    "ngs_avg_intended_air_yards": 10.862105263157893,
+    "ngs_pct_share_intended_air_yards": 12.914435658309987,
+    "ngs_avg_yac": 3.130588235294118,
+    "ngs_avg_expected_yac": 2.9070451469240584,
+    "ngs_avg_yac_above_expectation": 0.22354308837005954,
+    "ngs_catch_pct": 59.64912280701754,
+    "adot": 10.862105263157893,
+    "avg_depth_of_target": 10.862105263157893,
+    "ngs_created_separation": -3.83
+  },
+  "9500": {
+    "ngs_avg_separation": 3.252041622825177,
+    "ngs_avg_cushion": 6.089431818181819,
+    "ngs_avg_intended_air_yards": 6.937244897959182,
+    "ngs_pct_share_intended_air_yards": 16.53247280659305,
+    "ngs_avg_yac": 5.655147058823529,
+    "ngs_avg_expected_yac": 5.0905534744864145,
+    "ngs_avg_yac_above_expectation": 0.5645935843371142,
+    "ngs_catch_pct": 69.38775510204081,
+    "adot": 6.937244897959182,
+    "avg_depth_of_target": 6.937244897959182,
+    "ngs_created_separation": -2.84
+  },
+  "9754": {
+    "ngs_avg_separation": 2.3844210874041636,
+    "ngs_avg_cushion": 6.0782089552238805,
+    "ngs_avg_intended_air_yards": 13.080895522388062,
+    "ngs_pct_share_intended_air_yards": 18.60049535104345,
+    "ngs_avg_yac": 3.8905263157894736,
+    "ngs_avg_expected_yac": 3.2215256877116474,
+    "ngs_avg_yac_above_expectation": 0.6690006280778262,
+    "ngs_catch_pct": 56.71641791044776,
+    "adot": 13.080895522388062,
+    "avg_depth_of_target": 13.080895522388062,
+    "ngs_created_separation": -3.69
+  },
+  "4950": {
+    "ngs_avg_separation": 3.1287428175873155,
+    "ngs_avg_cushion": 6.069625,
+    "ngs_avg_intended_air_yards": 9.938823529411765,
+    "ngs_pct_share_intended_air_yards": 17.173419417266526,
+    "ngs_avg_yac": 4.696666666666665,
+    "ngs_avg_expected_yac": 4.4858077150461195,
+    "ngs_avg_yac_above_expectation": 0.2108589516205459,
+    "ngs_catch_pct": 67.05882352941175,
+    "adot": 9.938823529411765,
+    "avg_depth_of_target": 9.938823529411765,
+    "ngs_created_separation": -2.94
+  },
+  "10236": {
+    "ngs_avg_separation": 3.8297439689369206,
+    "ngs_avg_cushion": 6.065569620253164,
+    "ngs_avg_intended_air_yards": 5.867582417582418,
+    "ngs_pct_share_intended_air_yards": 11.402755710453933,
+    "ngs_avg_yac": 4.487123287671233,
+    "ngs_avg_expected_yac": 4.331444572997653,
+    "ngs_avg_yac_above_expectation": 0.15567871467357985,
+    "ngs_catch_pct": 80.21978021978022,
+    "adot": 5.867582417582418,
+    "avg_depth_of_target": 5.867582417582418,
+    "ngs_created_separation": -2.24
+  },
+  "5848": {
+    "ngs_avg_separation": 2.5148956893887444,
+    "ngs_avg_cushion": 6.064591836734693,
+    "ngs_avg_intended_air_yards": 11.86178217821782,
+    "ngs_pct_share_intended_air_yards": 30.485021361703634,
+    "ngs_avg_yac": 3.385294117647059,
+    "ngs_avg_expected_yac": 3.803695691253705,
+    "ngs_avg_yac_above_expectation": -0.4184015736066464,
+    "ngs_catch_pct": 50.495049504950494,
+    "adot": 11.86178217821782,
+    "avg_depth_of_target": 11.86178217821782,
+    "ngs_created_separation": -3.55
+  },
+  "3214": {
+    "ngs_avg_separation": 2.3545327314122955,
+    "ngs_avg_cushion": 6.016346153846153,
+    "ngs_avg_intended_air_yards": 8.838524590163933,
+    "ngs_pct_share_intended_air_yards": 13.722949893352201,
+    "ngs_avg_yac": 2.106428571428572,
+    "ngs_avg_expected_yac": 2.1691862762598357,
+    "ngs_avg_yac_above_expectation": -0.06275770483126353,
+    "ngs_catch_pct": 68.85245901639344,
+    "adot": 8.838524590163933,
+    "avg_depth_of_target": 8.838524590163933,
+    "ngs_created_separation": -3.66
+  },
+  "5374": {
+    "ngs_avg_separation": 2.480391722434109,
+    "ngs_avg_cushion": 6.009183673469387,
+    "ngs_avg_intended_air_yards": 17.542307692307695,
+    "ngs_pct_share_intended_air_yards": 23.362547188657313,
+    "ngs_avg_yac": 2.281153846153846,
+    "ngs_avg_expected_yac": 3.2326761635915813,
+    "ngs_avg_yac_above_expectation": -0.9515223174377354,
+    "ngs_catch_pct": 50.0,
+    "adot": 17.542307692307695,
+    "avg_depth_of_target": 17.542307692307695,
+    "ngs_created_separation": -3.53
+  },
+  "9493": {
+    "ngs_avg_separation": 2.890085917127662,
+    "ngs_avg_cushion": 5.996315789473686,
+    "ngs_avg_intended_air_yards": 8.9824375,
+    "ngs_pct_share_intended_air_yards": 33.49398376560574,
+    "ngs_avg_yac": 6.342952380952381,
+    "ngs_avg_expected_yac": 4.402659577029722,
+    "ngs_avg_yac_above_expectation": 1.9402928039226595,
+    "ngs_catch_pct": 65.625,
+    "adot": 8.9824375,
+    "avg_depth_of_target": 8.9824375,
+    "ngs_created_separation": -3.11
+  },
+  "5844": {
+    "ngs_avg_separation": 3.0763958807720653,
+    "ngs_avg_cushion": 5.983300970873788,
+    "ngs_avg_intended_air_yards": 7.235826771653542,
+    "ngs_pct_share_intended_air_yards": 19.29177084579808,
+    "ngs_avg_yac": 3.886315789473685,
+    "ngs_avg_expected_yac": 3.789140176613115,
+    "ngs_avg_yac_above_expectation": 0.09717561286056986,
+    "ngs_catch_pct": 74.80314960629921,
+    "adot": 7.235826771653542,
+    "avg_depth_of_target": 7.235826771653542,
+    "ngs_created_separation": -2.91
+  },
+  "5133": {
+    "ngs_avg_separation": 3.450107991712769,
+    "ngs_avg_cushion": 5.97304347826087,
+    "ngs_avg_intended_air_yards": 6.715747126436782,
+    "ngs_pct_share_intended_air_yards": 15.256047376336902,
+    "ngs_avg_yac": 4.45655737704918,
+    "ngs_avg_expected_yac": 4.224486263641857,
+    "ngs_avg_yac_above_expectation": 0.232071113407323,
+    "ngs_catch_pct": 70.11494252873564,
+    "adot": 6.715747126436782,
+    "avg_depth_of_target": 6.715747126436782,
+    "ngs_created_separation": -2.52
+  },
+  "2449": {
+    "ngs_avg_separation": 2.8111488611452033,
+    "ngs_avg_cushion": 5.956666666666667,
+    "ngs_avg_intended_air_yards": 10.102187499999998,
+    "ngs_pct_share_intended_air_yards": 34.517921514359415,
+    "ngs_avg_yac": 3.9614953271028037,
+    "ngs_avg_expected_yac": 3.6623475355368162,
+    "ngs_avg_yac_above_expectation": 0.2991477915659875,
+    "ngs_catch_pct": 66.875,
+    "adot": 10.102187499999998,
+    "avg_depth_of_target": 10.102187499999998,
+    "ngs_created_separation": -3.15
+  },
+  "6801": {
+    "ngs_avg_separation": 2.3280172055338837,
+    "ngs_avg_cushion": 5.940675675675675,
+    "ngs_avg_intended_air_yards": 13.094078947368422,
+    "ngs_pct_share_intended_air_yards": 26.526298393201763,
+    "ngs_avg_yac": 5.437380952380953,
+    "ngs_avg_expected_yac": 3.4750294206585552,
+    "ngs_avg_yac_above_expectation": 1.9623515317223976,
+    "ngs_catch_pct": 55.26315789473685,
+    "adot": 13.094078947368422,
+    "avg_depth_of_target": 13.094078947368422,
+    "ngs_created_separation": -3.61
+  },
+  "7564": {
+    "ngs_avg_separation": 3.1961065643824584,
+    "ngs_avg_cushion": 5.9384732824427475,
+    "ngs_avg_intended_air_yards": 8.601310344827585,
+    "ngs_pct_share_intended_air_yards": 33.24457025877235,
+    "ngs_avg_yac": 5.5698,
+    "ngs_avg_expected_yac": 4.346315288918142,
+    "ngs_avg_yac_above_expectation": 1.2234847110818583,
+    "ngs_catch_pct": 68.96551724137932,
+    "adot": 8.601310344827585,
+    "avg_depth_of_target": 8.601310344827585,
+    "ngs_created_separation": -2.74
+  },
+  "4089": {
+    "ngs_avg_separation": 3.984096198460132,
+    "ngs_avg_cushion": 5.935892857142855,
+    "ngs_avg_intended_air_yards": 3.9628571428571426,
+    "ngs_pct_share_intended_air_yards": 5.8873341667002705,
+    "ngs_avg_yac": 5.588431372549021,
+    "ngs_avg_expected_yac": 4.945532954593304,
+    "ngs_avg_yac_above_expectation": 0.6428984179557169,
+    "ngs_catch_pct": 72.85714285714285,
+    "adot": 3.9628571428571426,
+    "avg_depth_of_target": 3.9628571428571426,
+    "ngs_created_separation": -1.95
+  },
+  "7090": {
+    "ngs_avg_separation": 3.0754228055485706,
+    "ngs_avg_cushion": 5.909999999999999,
+    "ngs_avg_intended_air_yards": 10.59934426229508,
+    "ngs_pct_share_intended_air_yards": 17.174824283186968,
+    "ngs_avg_yac": 6.174838709677419,
+    "ngs_avg_expected_yac": 4.722360336693859,
+    "ngs_avg_yac_above_expectation": 1.4524783729835606,
+    "ngs_catch_pct": 50.81967213114754,
+    "adot": 10.59934426229508,
+    "avg_depth_of_target": 10.59934426229508,
+    "ngs_created_separation": -2.83
+  },
+  "8121": {
+    "ngs_avg_separation": 2.7151352640385693,
+    "ngs_avg_cushion": 5.904,
+    "ngs_avg_intended_air_yards": 12.163854166666667,
+    "ngs_pct_share_intended_air_yards": 24.24990654981933,
+    "ngs_avg_yac": 2.398644067796609,
+    "ngs_avg_expected_yac": 2.606293386064356,
+    "ngs_avg_yac_above_expectation": -0.2076493182677468,
+    "ngs_catch_pct": 61.458333333333336,
+    "adot": 12.163854166666667,
+    "avg_depth_of_target": 12.163854166666667,
+    "ngs_created_separation": -3.19
+  },
+  "7066": {
+    "ngs_avg_separation": 3.273960466134413,
+    "ngs_avg_cushion": 5.884931506849315,
+    "ngs_avg_intended_air_yards": 8.998666666666667,
+    "ngs_pct_share_intended_air_yards": 14.168361873691854,
+    "ngs_avg_yac": 3.967708333333334,
+    "ngs_avg_expected_yac": 3.734539317801738,
+    "ngs_avg_yac_above_expectation": 0.23316901553159575,
+    "ngs_catch_pct": 64.0,
+    "adot": 8.998666666666667,
+    "avg_depth_of_target": 8.998666666666667,
+    "ngs_created_separation": -2.61
+  },
+  "10859": {
+    "ngs_avg_separation": 3.3862175699388692,
+    "ngs_avg_cushion": 5.842929292929293,
+    "ngs_avg_intended_air_yards": 7.0575,
+    "ngs_pct_share_intended_air_yards": 21.088567501344652,
+    "ngs_avg_yac": 4.3477906976744185,
+    "ngs_avg_expected_yac": 3.5326838418786606,
+    "ngs_avg_yac_above_expectation": 0.8151068557957579,
+    "ngs_catch_pct": 71.66666666666667,
+    "adot": 7.0575,
+    "avg_depth_of_target": 7.0575,
+    "ngs_created_separation": -2.46
+  },
+  "2319": {
+    "ngs_avg_separation": 1.994365960655412,
+    "ngs_avg_cushion": 5.841272727272728,
+    "ngs_avg_intended_air_yards": 10.968363636363636,
+    "ngs_pct_share_intended_air_yards": 15.354737554787443,
+    "ngs_avg_yac": 4.203333333333333,
+    "ngs_avg_expected_yac": 3.882395272665118,
+    "ngs_avg_yac_above_expectation": 0.3209380606682153,
+    "ngs_catch_pct": 60.0,
+    "adot": 10.968363636363636,
+    "avg_depth_of_target": 10.968363636363636,
+    "ngs_created_separation": -3.85
+  },
+  "7569": {
+    "ngs_avg_separation": 3.0195786656265766,
+    "ngs_avg_cushion": 5.8057943925233655,
+    "ngs_avg_intended_air_yards": 11.175321100917433,
+    "ngs_pct_share_intended_air_yards": 24.06176480464916,
+    "ngs_avg_yac": 7.0005,
+    "ngs_avg_expected_yac": 4.5269986945302385,
+    "ngs_avg_yac_above_expectation": 2.473501305469761,
+    "ngs_catch_pct": 73.39449541284404,
+    "adot": 11.175321100917433,
+    "avg_depth_of_target": 11.175321100917433,
+    "ngs_created_separation": -2.79
+  },
+  "4993": {
+    "ngs_avg_separation": 3.0910282097670505,
+    "ngs_avg_cushion": 5.805142857142857,
+    "ngs_avg_intended_air_yards": 8.692444444444446,
+    "ngs_pct_share_intended_air_yards": 9.956170045968001,
+    "ngs_avg_yac": 3.23551724137931,
+    "ngs_avg_expected_yac": 3.6871654864536643,
+    "ngs_avg_yac_above_expectation": -0.4516482450743542,
+    "ngs_catch_pct": 64.44444444444444,
+    "adot": 8.692444444444446,
+    "avg_depth_of_target": 8.692444444444446,
+    "ngs_created_separation": -2.71
+  },
+  "5846": {
+    "ngs_avg_separation": 2.447393521119554,
+    "ngs_avg_cushion": 5.799243697478992,
+    "ngs_avg_intended_air_yards": 13.753781512605041,
+    "ngs_pct_share_intended_air_yards": 38.332814172391096,
+    "ngs_avg_yac": 5.923636363636363,
+    "ngs_avg_expected_yac": 3.9779730717729547,
+    "ngs_avg_yac_above_expectation": 1.9456632918634083,
+    "ngs_catch_pct": 55.46218487394958,
+    "adot": 13.753781512605041,
+    "avg_depth_of_target": 13.753781512605041,
+    "ngs_created_separation": -3.35
+  },
+  "1426": {
+    "ngs_avg_separation": 2.271084470396227,
+    "ngs_avg_cushion": 5.7894656488549625,
+    "ngs_avg_intended_air_yards": 14.190510948905109,
+    "ngs_pct_share_intended_air_yards": 43.815641199008326,
+    "ngs_avg_yac": 3.3619999999999997,
+    "ngs_avg_expected_yac": 3.5594040097784805,
+    "ngs_avg_yac_above_expectation": -0.19740400977848083,
+    "ngs_catch_pct": 54.74452554744526,
+    "adot": 14.190510948905109,
+    "avg_depth_of_target": 14.190510948905109,
+    "ngs_created_separation": -3.52
+  },
+  "5001": {
+    "ngs_avg_separation": 3.3139522000525816,
+    "ngs_avg_cushion": 5.774852941176471,
+    "ngs_avg_intended_air_yards": 7.986022727272727,
+    "ngs_pct_share_intended_air_yards": 13.882068492798915,
+    "ngs_avg_yac": 4.621864406779661,
+    "ngs_avg_expected_yac": 4.154948978031588,
+    "ngs_avg_yac_above_expectation": 0.4669154287480728,
+    "ngs_catch_pct": 67.04545454545455,
+    "adot": 7.986022727272727,
+    "avg_depth_of_target": 7.986022727272727,
+    "ngs_created_separation": -2.46
+  },
+  "4171": {
+    "ngs_avg_separation": 2.4974598711844074,
+    "ngs_avg_cushion": 5.765,
+    "ngs_avg_intended_air_yards": 11.148124999999999,
+    "ngs_pct_share_intended_air_yards": 17.766290165142735,
+    "ngs_avg_yac": 4.96475,
+    "ngs_avg_expected_yac": 4.0006322476732,
+    "ngs_avg_yac_above_expectation": 0.9641177523268007,
+    "ngs_catch_pct": 62.5,
+    "adot": 11.148124999999999,
+    "avg_depth_of_target": 11.148124999999999,
+    "ngs_created_separation": -3.27
+  },
+  "3321": {
+    "ngs_avg_separation": 3.2584266384584817,
+    "ngs_avg_cushion": 5.756883116883117,
+    "ngs_avg_intended_air_yards": 10.837251461988304,
+    "ngs_pct_share_intended_air_yards": 43.43852477268945,
+    "ngs_avg_yac": 5.770504201680673,
+    "ngs_avg_expected_yac": 5.0039547432324385,
+    "ngs_avg_yac_above_expectation": 0.7665494584482344,
+    "ngs_catch_pct": 69.5906432748538,
+    "adot": 10.837251461988304,
+    "avg_depth_of_target": 10.837251461988304,
+    "ngs_created_separation": -2.5
+  },
+  "5927": {
+    "ngs_avg_separation": 2.6397086943460537,
+    "ngs_avg_cushion": 5.750472440944881,
+    "ngs_avg_intended_air_yards": 11.435151515151516,
+    "ngs_pct_share_intended_air_yards": 33.8909071314063,
+    "ngs_avg_yac": 4.558987341772152,
+    "ngs_avg_expected_yac": 3.93883858413503,
+    "ngs_avg_yac_above_expectation": 0.6201487576371219,
+    "ngs_catch_pct": 59.84848484848485,
+    "adot": 11.435151515151516,
+    "avg_depth_of_target": 11.435151515151516,
+    "ngs_created_separation": -3.11
+  },
+  "6803": {
+    "ngs_avg_separation": 2.895383651341387,
+    "ngs_avg_cushion": 5.748058252427185,
+    "ngs_avg_intended_air_yards": 14.090095238095241,
+    "ngs_pct_share_intended_air_yards": 37.60166321011752,
+    "ngs_avg_yac": 5.1179999999999986,
+    "ngs_avg_expected_yac": 3.2573604113830474,
+    "ngs_avg_yac_above_expectation": 1.8606395886169511,
+    "ngs_catch_pct": 71.42857142857143,
+    "adot": 14.090095238095241,
+    "avg_depth_of_target": 14.090095238095241,
+    "ngs_created_separation": -2.85
+  },
+  "4951": {
+    "ngs_avg_separation": 2.2882380354006724,
+    "ngs_avg_cushion": 5.74609375,
+    "ngs_avg_intended_air_yards": 15.091818181818182,
+    "ngs_pct_share_intended_air_yards": 25.091442217587133,
+    "ngs_avg_yac": 2.792285714285714,
+    "ngs_avg_expected_yac": 2.556324468783374,
+    "ngs_avg_yac_above_expectation": 0.23596124550233988,
+    "ngs_catch_pct": 53.03030303030303,
+    "adot": 15.091818181818182,
+    "avg_depth_of_target": 15.091818181818182,
+    "ngs_created_separation": -3.46
+  },
+  "8134": {
+    "ngs_avg_separation": 3.5099802895777232,
+    "ngs_avg_cushion": 5.6899999999999995,
+    "ngs_avg_intended_air_yards": 8.300222222222223,
+    "ngs_pct_share_intended_air_yards": 7.976483351271933,
+    "ngs_avg_yac": 7.648717948717947,
+    "ngs_avg_expected_yac": 4.607449878110796,
+    "ngs_avg_yac_above_expectation": 3.041268070607151,
+    "ngs_catch_pct": 86.66666666666667,
+    "adot": 8.300222222222223,
+    "avg_depth_of_target": 8.300222222222223,
+    "ngs_created_separation": -2.18
+  },
+  "9481": {
+    "ngs_avg_separation": 4.323183076949761,
+    "ngs_avg_cushion": 5.604285714285714,
+    "ngs_avg_intended_air_yards": 7.0997826086956515,
+    "ngs_pct_share_intended_air_yards": 6.782198778917638,
+    "ngs_avg_yac": 5.332058823529412,
+    "ngs_avg_expected_yac": 5.280687320491923,
+    "ngs_avg_yac_above_expectation": 0.05137150303748861,
+    "ngs_catch_pct": 73.91304347826086,
+    "adot": 7.0997826086956515,
+    "avg_depth_of_target": 7.0997826086956515,
+    "ngs_created_separation": -1.28
+  },
+  "4981": {
+    "ngs_avg_separation": 2.2906645676241943,
+    "ngs_avg_cushion": 5.580962962962964,
+    "ngs_avg_intended_air_yards": 13.753235294117646,
+    "ngs_pct_share_intended_air_yards": 38.02302392854166,
+    "ngs_avg_yac": 2.7048684210526317,
+    "ngs_avg_expected_yac": 3.136831703162853,
+    "ngs_avg_yac_above_expectation": -0.4319632821102215,
+    "ngs_catch_pct": 55.88235294117647,
+    "adot": 13.753235294117646,
+    "avg_depth_of_target": 13.753235294117646,
+    "ngs_created_separation": -3.29
+  },
+  "8146": {
+    "ngs_avg_separation": 2.4560430800553723,
+    "ngs_avg_cushion": 5.552670807453415,
+    "ngs_avg_intended_air_yards": 10.21154761904762,
+    "ngs_pct_share_intended_air_yards": 44.794974097593595,
+    "ngs_avg_yac": 3.5825263157894733,
+    "ngs_avg_expected_yac": 3.1155671375856677,
+    "ngs_avg_yac_above_expectation": 0.4669591782038056,
+    "ngs_catch_pct": 56.547619047619044,
+    "adot": 10.21154761904762,
+    "avg_depth_of_target": 10.21154761904762,
+    "ngs_created_separation": -3.1
+  },
+  "5012": {
+    "ngs_avg_separation": 3.212977322272524,
+    "ngs_avg_cushion": 5.551836734693877,
+    "ngs_avg_intended_air_yards": 7.859836065573769,
+    "ngs_pct_share_intended_air_yards": 11.716449460058499,
+    "ngs_avg_yac": 5.036222222222222,
+    "ngs_avg_expected_yac": 4.969058108286893,
+    "ngs_avg_yac_above_expectation": 0.06716411393532962,
+    "ngs_catch_pct": 73.77049180327869,
+    "adot": 7.859836065573769,
+    "avg_depth_of_target": 7.859836065573769,
+    "ngs_created_separation": -2.34
+  },
+  "6786": {
+    "ngs_avg_separation": 2.710044245469009,
+    "ngs_avg_cushion": 5.5458181818181815,
+    "ngs_avg_intended_air_yards": 9.6685635359116,
+    "ngs_pct_share_intended_air_yards": 36.502877453240075,
+    "ngs_avg_yac": 5.220222222222222,
+    "ngs_avg_expected_yac": 4.466668216701805,
+    "ngs_avg_yac_above_expectation": 0.7535540055204164,
+    "ngs_catch_pct": 74.58563535911603,
+    "adot": 9.6685635359116,
+    "avg_depth_of_target": 9.6685635359116,
+    "ngs_created_separation": -2.84
+  },
+  "7571": {
+    "ngs_avg_separation": 2.5042399791084753,
+    "ngs_avg_cushion": 5.542727272727273,
+    "ngs_avg_intended_air_yards": 14.243035714285716,
+    "ngs_pct_share_intended_air_yards": 19.491411521195666,
+    "ngs_avg_yac": 1.7765624999999996,
+    "ngs_avg_expected_yac": 2.2661838246674595,
+    "ngs_avg_yac_above_expectation": -0.4896213246674599,
+    "ngs_catch_pct": 57.14285714285714,
+    "adot": 14.243035714285716,
+    "avg_depth_of_target": 14.243035714285716,
+    "ngs_created_separation": -3.04
+  },
+  "8210": {
+    "ngs_avg_separation": 3.7728061529462757,
+    "ngs_avg_cushion": 5.491607142857143,
+    "ngs_avg_intended_air_yards": 6.883376623376623,
+    "ngs_pct_share_intended_air_yards": 11.945458643227402,
+    "ngs_avg_yac": 5.2650000000000015,
+    "ngs_avg_expected_yac": 5.10412924298922,
+    "ngs_avg_yac_above_expectation": 0.16087075701078124,
+    "ngs_catch_pct": 70.12987012987013,
+    "adot": 6.883376623376623,
+    "avg_depth_of_target": 6.883376623376623,
+    "ngs_created_separation": -1.72
+  },
+  "8110": {
+    "ngs_avg_separation": 3.3389146940786287,
+    "ngs_avg_cushion": 5.467215189873418,
+    "ngs_avg_intended_air_yards": 5.659019607843137,
+    "ngs_pct_share_intended_air_yards": 12.04004029894643,
+    "ngs_avg_yac": 6.023380281690141,
+    "ngs_avg_expected_yac": 4.623660029048658,
+    "ngs_avg_yac_above_expectation": 1.3997202526414831,
+    "ngs_catch_pct": 69.6078431372549,
+    "adot": 5.659019607843137,
+    "avg_depth_of_target": 5.659019607843137,
+    "ngs_created_separation": -2.13
+  },
+  "2309": {
+    "ngs_avg_separation": 2.1661048539902095,
+    "ngs_avg_cushion": 5.39536,
+    "ngs_avg_intended_air_yards": 14.031640625000001,
+    "ngs_pct_share_intended_air_yards": 35.06430880722197,
+    "ngs_avg_yac": 4.271666666666667,
+    "ngs_avg_expected_yac": 2.654604355379979,
+    "ngs_avg_yac_above_expectation": 1.6170623112866882,
+    "ngs_catch_pct": 56.25,
+    "adot": 14.031640625000001,
+    "avg_depth_of_target": 14.031640625000001,
+    "ngs_created_separation": -3.23
+  },
+  "4217": {
+    "ngs_avg_separation": 3.295197448332169,
+    "ngs_avg_cushion": 5.385774647887324,
+    "ngs_avg_intended_air_yards": 9.630555555555558,
+    "ngs_pct_share_intended_air_yards": 22.029146842340694,
+    "ngs_avg_yac": 7.660153846153846,
+    "ngs_avg_expected_yac": 4.81255162666852,
+    "ngs_avg_yac_above_expectation": 2.847602219485326,
+    "ngs_catch_pct": 72.22222222222221,
+    "adot": 9.630555555555558,
+    "avg_depth_of_target": 9.630555555555558,
+    "ngs_created_separation": -2.09
+  },
+  "2078": {
+    "ngs_avg_separation": 2.676241473295458,
+    "ngs_avg_cushion": 5.309375,
+    "ngs_avg_intended_air_yards": 14.2384375,
+    "ngs_pct_share_intended_air_yards": 22.268707341689247,
+    "ngs_avg_yac": 4.87,
+    "ngs_avg_expected_yac": 3.728633918944001,
+    "ngs_avg_yac_above_expectation": 1.141366081055999,
+    "ngs_catch_pct": 54.6875,
+    "adot": 14.2384375,
+    "avg_depth_of_target": 14.2384375,
+    "ngs_created_separation": -2.63
+  },
+  "2133": {
+    "ngs_avg_separation": 2.551200385892476,
+    "ngs_avg_cushion": 5.252865497076024,
+    "ngs_avg_intended_air_yards": 10.426914285714286,
+    "ngs_pct_share_intended_air_yards": 44.49101504401043,
+    "ngs_avg_yac": 3.4702912621359223,
+    "ngs_avg_expected_yac": 3.1265960632043384,
+    "ngs_avg_yac_above_expectation": 0.34369519893158396,
+    "ngs_catch_pct": 58.857142857142854,
+    "adot": 10.426914285714286,
+    "avg_depth_of_target": 10.426914285714286,
+    "ngs_created_separation": -2.7
+  },
+  "3199": {
+    "ngs_avg_separation": 1.9965129264071915,
+    "ngs_avg_cushion": 5.113833333333333,
+    "ngs_avg_intended_air_yards": 10.17125,
+    "ngs_pct_share_intended_air_yards": 13.214376338519942,
+    "ngs_avg_yac": 2.8933333333333326,
+    "ngs_avg_expected_yac": 2.5124562542642357,
+    "ngs_avg_yac_above_expectation": 0.38087707906909696,
+    "ngs_catch_pct": 60.9375,
+    "adot": 10.17125,
+    "avg_depth_of_target": 10.17125,
+    "ngs_created_separation": -3.12
+  },
+  "8130": {
+    "ngs_avg_separation": 3.46436421046467,
+    "ngs_avg_cushion": 5.107714285714285,
+    "ngs_avg_intended_air_yards": 5.949999999999999,
+    "ngs_pct_share_intended_air_yards": 16.04863190947421,
+    "ngs_avg_yac": 5.447037037037037,
+    "ngs_avg_expected_yac": 4.4959268952530556,
+    "ngs_avg_yac_above_expectation": 0.9511101417839818,
+    "ngs_catch_pct": 76.41509433962264,
+    "adot": 5.949999999999999,
+    "avg_depth_of_target": 5.949999999999999,
+    "ngs_created_separation": -1.64
+  },
+  "4033": {
+    "ngs_avg_separation": 3.48310974053397,
+    "ngs_avg_cushion": 5.078837209302325,
+    "ngs_avg_intended_air_yards": 4.926991869918699,
+    "ngs_pct_share_intended_air_yards": 11.831336779796025,
+    "ngs_avg_yac": 7.611975308641974,
+    "ngs_avg_expected_yac": 5.396506014491641,
+    "ngs_avg_yac_above_expectation": 2.215469294150333,
+    "ngs_catch_pct": 65.85365853658537,
+    "adot": 4.926991869918699,
+    "avg_depth_of_target": 4.926991869918699,
+    "ngs_created_separation": -1.6
+  },
+  "8137": {
+    "ngs_avg_separation": 2.270821970280402,
+    "ngs_avg_cushion": 5.0578095238095235,
+    "ngs_avg_intended_air_yards": 13.19,
+    "ngs_pct_share_intended_air_yards": 38.39799185978172,
+    "ngs_avg_yac": 6.6466666666666665,
+    "ngs_avg_expected_yac": 3.7060502696805933,
+    "ngs_avg_yac_above_expectation": 2.9406163969860732,
+    "ngs_catch_pct": 59.43396226415094,
+    "adot": 13.19,
+    "avg_depth_of_target": 13.19,
+    "ngs_created_separation": -2.79
+  },
+  "7002": {
+    "ngs_avg_separation": 2.802762570983399,
+    "ngs_avg_cushion": 4.9534,
+    "ngs_avg_intended_air_yards": 7.829322033898304,
+    "ngs_pct_share_intended_air_yards": 9.377099763506997,
+    "ngs_avg_yac": 3.9802702702702697,
+    "ngs_avg_expected_yac": 3.7542252943325094,
+    "ngs_avg_yac_above_expectation": 0.2260449759377603,
+    "ngs_catch_pct": 62.71186440677966,
+    "adot": 7.829322033898304,
+    "avg_depth_of_target": 7.829322033898304,
+    "ngs_created_separation": -2.15
+  },
+  "6111": {
+    "ngs_avg_time_to_throw": 2.7286131687242796,
+    "ngs_aggressiveness": 16.46090534979424,
+    "ngs_avg_completed_air_yards": 4.683040935672515,
+    "ngs_cpoe": 3.286588940110221
+  },
+  "8159": {
+    "ngs_avg_time_to_throw": 2.695108808290155,
+    "ngs_aggressiveness": 14.948453608247423,
+    "ngs_avg_completed_air_yards": 6.240160642570281,
+    "ngs_cpoe": -1.4484118170959448
+  },
+  "6011": {
+    "ngs_avg_time_to_throw": 2.7341408163265313,
+    "ngs_aggressiveness": 15.714285714285714,
+    "ngs_avg_completed_air_yards": 5.573049180327868,
+    "ngs_cpoe": -1.5642817390664447
+  },
+  "9999": {
+    "ngs_avg_time_to_throw": 2.845932806324111,
+    "ngs_aggressiveness": 15.686274509803921,
+    "ngs_avg_completed_air_yards": 6.7208053691275165,
+    "ngs_cpoe": -3.1809527580352324
+  },
+  "6904": {
+    "ngs_avg_time_to_throw": 3.031875464684015,
+    "ngs_aggressiveness": 15.427509293680297,
+    "ngs_avg_completed_air_yards": 6.172329545454545,
+    "ngs_cpoe": 4.130073480972797
+  },
+  "5870": {
+    "ngs_avg_time_to_throw": 2.7349875,
+    "ngs_aggressiveness": 10.0,
+    "ngs_avg_completed_air_yards": 4.137314814814814,
+    "ngs_cpoe": 0.47623476944863796
+  },
+  "8160": {
+    "ngs_avg_time_to_throw": 2.810829721362229,
+    "ngs_aggressiveness": 20.061728395061728,
+    "ngs_avg_completed_air_yards": 4.873482587064676,
+    "ngs_cpoe": 0.3078535417623769
+  },
+  "8183": {
+    "ngs_avg_time_to_throw": 2.8775656108597287,
+    "ngs_aggressiveness": 12.837837837837837,
+    "ngs_avg_completed_air_yards": 7.221785714285716,
+    "ngs_cpoe": 2.5246851373346146
+  },
+  "1049": {
+    "ngs_avg_time_to_throw": 2.6920175438596496,
+    "ngs_aggressiveness": 13.91304347826087,
+    "ngs_avg_completed_air_yards": 5.1991946308724835,
+    "ngs_cpoe": 0.351014562437058
+  },
+  "1373": {
+    "ngs_avg_time_to_throw": 2.8358363636363633,
+    "ngs_aggressiveness": 14.629258517034069,
+    "ngs_avg_completed_air_yards": 5.950371517027864,
+    "ngs_cpoe": 2.202350830095625
+  },
+  "3294": {
+    "ngs_avg_time_to_throw": 2.7137779661016945,
+    "ngs_aggressiveness": 18.305084745762713,
+    "ngs_avg_completed_air_yards": 6.307731707317074,
+    "ngs_cpoe": 4.6566804460549776
+  },
+  "827": {
+    "ngs_avg_time_to_throw": 2.8041724137931032,
+    "ngs_aggressiveness": 11.11111111111111,
+    "ngs_avg_completed_air_yards": 6.239137931034483,
+    "ngs_cpoe": 1.8974407472544215
+  },
+  "6185": {
+    "ngs_avg_time_to_throw": 2.8234161849710984,
+    "ngs_aggressiveness": 16.091954022988507,
+    "ngs_avg_completed_air_yards": 4.689099099099099,
+    "ngs_cpoe": -1.8855958213580024
+  },
+  "4984": {
+    "ngs_avg_time_to_throw": 2.8837850953206248,
+    "ngs_aggressiveness": 14.853195164075995,
+    "ngs_avg_completed_air_yards": 5.924831168831169,
+    "ngs_cpoe": 1.8684794804618576
+  },
+  "10866": {
+    "ngs_avg_time_to_throw": 2.80093567251462,
+    "ngs_aggressiveness": 15.743440233236154,
+    "ngs_avg_completed_air_yards": 5.3081220657277,
+    "ngs_cpoe": -2.321355544443378
+  },
+  "11256": {
+    "ngs_avg_time_to_throw": 2.886426573426574,
+    "ngs_aggressiveness": 12.587412587412588,
+    "ngs_avg_completed_air_yards": 3.678617021276596,
+    "ngs_cpoe": -1.8967781294059165
+  },
+  "6768": {
+    "ngs_avg_time_to_throw": 2.3633458781362013,
+    "ngs_aggressiveness": 12.5,
+    "ngs_avg_completed_air_yards": 6.112989690721649,
+    "ngs_cpoe": 1.4830488718247636
+  },
+  "8162": {
+    "ngs_avg_time_to_throw": 2.816995098039216,
+    "ngs_aggressiveness": 15.032679738562091,
+    "ngs_avg_completed_air_yards": 4.874639175257731,
+    "ngs_cpoe": 0.16813674345124952
+  },
+  "4017": {
+    "ngs_avg_time_to_throw": 3.057511764705882,
+    "ngs_aggressiveness": 15.789473684210526,
+    "ngs_avg_completed_air_yards": 5.588952380952382,
+    "ngs_cpoe": -2.8315740937029332
+  },
+  "5849": {
+    "ngs_avg_time_to_throw": 2.799786516853933,
+    "ngs_aggressiveness": 15.298507462686567,
+    "ngs_avg_completed_air_yards": 4.470170454545454,
+    "ngs_cpoe": -2.941961761619609
+  },
+  "1837": {
+    "ngs_avg_time_to_throw": 2.9377440476190477,
+    "ngs_aggressiveness": 15.976331360946746,
+    "ngs_avg_completed_air_yards": 6.565636363636364,
+    "ngs_cpoe": -0.9077813542453441
+  },
+  "19": {
+    "ngs_avg_time_to_throw": 3.013539215686275,
+    "ngs_aggressiveness": 19.11764705882353,
+    "ngs_avg_completed_air_yards": 7.51349593495935,
+    "ngs_cpoe": -1.0432828628622488
+  },
+  "4046": {
+    "ngs_avg_time_to_throw": 2.970268907563025,
+    "ngs_aggressiveness": 9.715242881072026,
+    "ngs_avg_completed_air_yards": 3.9728678304239406,
+    "ngs_cpoe": -1.7467177724169431
+  },
+  "7523": {
+    "ngs_avg_time_to_throw": 2.5098102836879432,
+    "ngs_aggressiveness": 14.00709219858156,
+    "ngs_avg_completed_air_yards": 5.939432432432433,
+    "ngs_cpoe": -0.5478826281284341
+  },
+  "7527": {
+    "ngs_avg_time_to_throw": 2.461666666666667,
+    "ngs_aggressiveness": 18.55072463768116,
+    "ngs_avg_completed_air_yards": 4.006517857142857,
+    "ngs_cpoe": -0.5906992200492169
+  },
+  "4179": {
+    "ngs_avg_time_to_throw": 2.9532470023980815,
+    "ngs_aggressiveness": 15.587529976019185,
+    "ngs_avg_completed_air_yards": 5.453893129770993,
+    "ngs_cpoe": -0.35204306262716756
+  },
+  "4464": {
+    "ngs_avg_time_to_throw": 3.065013605442177,
+    "ngs_aggressiveness": 16.89189189189189,
+    "ngs_avg_completed_air_yards": 8.1991,
+    "ngs_cpoe": 5.405573365656103
+  },
+  "2549": {
+    "ngs_avg_time_to_throw": 2.526712418300653,
+    "ngs_aggressiveness": 16.99346405228758,
+    "ngs_avg_completed_air_yards": 2.6498837209302324,
+    "ngs_cpoe": -8.787909432563907
+  },
+  "421": {
+    "ngs_avg_time_to_throw": 2.6840888030888035,
+    "ngs_aggressiveness": 12.859884836852206,
+    "ngs_avg_completed_air_yards": 6.240306748466257,
+    "ngs_cpoe": -1.2519217230336679
+  },
+  "2028": {
+    "ngs_avg_time_to_throw": 2.6946897810218977,
+    "ngs_aggressiveness": 14.78102189781022,
+    "ngs_avg_completed_air_yards": 5.7949600000000006,
+    "ngs_cpoe": 3.992335620016732
+  },
+  "7538": {
+    "ngs_avg_time_to_throw": 2.9054986301369863,
+    "ngs_aggressiveness": 18.75,
+    "ngs_avg_completed_air_yards": 5.049547511312216,
+    "ngs_cpoe": -1.5491468259943275
+  },
+  "11292": {
+    "ngs_avg_time_to_throw": 2.987988764044944,
+    "ngs_aggressiveness": 10.112359550561797,
+    "ngs_avg_completed_air_yards": 4.523245614035085,
+    "ngs_cpoe": -3.5634298672836877
+  },
+  "7591": {
+    "ngs_avg_time_to_throw": 3.2297918918918924,
+    "ngs_aggressiveness": 12.162162162162163,
+    "ngs_avg_completed_air_yards": 5.829603524229076,
+    "ngs_cpoe": 0.3631126246339562
+  },
+  "6797": {
+    "ngs_avg_time_to_throw": 2.796739035087719,
+    "ngs_aggressiveness": 16.666666666666664,
+    "ngs_avg_completed_air_yards": 5.081144781144781,
+    "ngs_cpoe": 0.475220069730355
+  },
+  "8157": {
+    "ngs_avg_time_to_throw": 2.7442654028436015,
+    "ngs_aggressiveness": 19.81132075471698,
+    "ngs_avg_completed_air_yards": 4.77031496062992,
+    "ngs_cpoe": -2.2098271843959623
+  },
+  "2711": {
+    "ngs_avg_time_to_throw": 2.8820298507462687,
+    "ngs_aggressiveness": 13.23529411764706,
+    "ngs_avg_completed_air_yards": 5.001621621621623,
+    "ngs_cpoe": -8.70852181687951
+  },
+  "6770": {
+    "ngs_avg_time_to_throw": 2.5382170329670326,
+    "ngs_aggressiveness": 11.506849315068493,
+    "ngs_avg_completed_air_yards": 4.483483606557377,
+    "ngs_cpoe": 1.2590562934948935
+  },
+  "9758": {
+    "ngs_avg_time_to_throw": 3.0369837728194717,
+    "ngs_aggressiveness": 13.827655310621243,
+    "ngs_avg_completed_air_yards": 7.36780564263323,
+    "ngs_cpoe": 0.9318001280895203
+  },
+  "4892": {
+    "ngs_avg_time_to_throw": 2.7054540636042397,
+    "ngs_aggressiveness": 16.784452296819786,
+    "ngs_avg_completed_air_yards": 5.641895604395605,
+    "ngs_cpoe": 0.15867046399746698
+  },
+  "4881": {
+    "ngs_avg_time_to_throw": 2.9540131578947366,
+    "ngs_aggressiveness": 11.37855579868709,
+    "ngs_avg_completed_air_yards": 6.259185667752442,
+    "ngs_cpoe": 1.7051842650581932
+  },
+  "1166": {
+    "ngs_avg_time_to_throw": 2.858812297734628,
+    "ngs_aggressiveness": 13.826366559485532,
+    "ngs_avg_completed_air_yards": 6.119861111111111,
+    "ngs_cpoe": 4.559056105098165
+  },
+  "6804": {
+    "ngs_avg_time_to_throw": 2.7743032928942806,
+    "ngs_aggressiveness": 16.234887737478413,
+    "ngs_avg_completed_air_yards": 6.006344086021505,
+    "ngs_cpoe": -1.400608232885034
+  },
+  "3163": {
+    "ngs_avg_time_to_throw": 2.7206905158069885,
+    "ngs_aggressiveness": 12.892561983471074,
+    "ngs_avg_completed_air_yards": 5.844692874692875,
+    "ngs_cpoe": 1.0573786281603361
+  },
+  "1234": {
+    "ngs_avg_time_to_throw": 3.06003611738149,
+    "ngs_aggressiveness": 12.304250559284116,
+    "ngs_avg_completed_air_yards": 4.578552188552189,
+    "ngs_cpoe": 1.3374375491934245
+  },
+  "9228": {
+    "ngs_avg_time_to_throw": 2.900344106463878,
+    "ngs_aggressiveness": 11.57495256166983,
+    "ngs_avg_completed_air_yards": 4.890412698412699,
+    "ngs_cpoe": -1.574165521426373
+  },
+  "4137": {
+    "ngs_rush_yards_over_expected_per_att": 1.0193930426618725,
+    "ngs_rush_efficiency": 3.746038461538462,
+    "ngs_avg_time_to_los": 2.958704301075268,
+    "ngs_percent_attempts_gte_eight_defenders": 25.0
+  },
+  "5892": {
+    "ngs_rush_yards_over_expected_per_att": 0.28799864556395244,
+    "ngs_rush_efficiency": 3.455369458128078,
+    "ngs_avg_time_to_los": 2.5513284313725495,
+    "ngs_percent_attempts_gte_eight_defenders": 21.00456621004566
+  },
+  "8228": {
+    "ngs_rush_yards_over_expected_per_att": 1.1077232765795288,
+    "ngs_rush_efficiency": 3.6289540816326533,
+    "ngs_avg_time_to_los": 2.8620751879699244,
+    "ngs_percent_attempts_gte_eight_defenders": 12.080536912751679
+  },
+  "8138": {
+    "ngs_rush_yards_over_expected_per_att": 0.4491424129986836,
+    "ngs_rush_efficiency": 3.471907308377897,
+    "ngs_avg_time_to_los": 2.6385209302325574,
+    "ngs_percent_attempts_gte_eight_defenders": 10.126582278481013
+  },
+  "4111": {
+    "ngs_rush_yards_over_expected_per_att": 0.07683526101856765,
+    "ngs_rush_efficiency": 3.828047058823529,
+    "ngs_avg_time_to_los": 2.6336938775510212,
+    "ngs_percent_attempts_gte_eight_defenders": 20.18348623853211
+  },
+  "3198": {
+    "ngs_rush_yards_over_expected_per_att": 0.30520720208711866,
+    "ngs_rush_efficiency": 3.9126306769494414,
+    "ngs_avg_time_to_los": 2.801296442687748,
+    "ngs_percent_attempts_gte_eight_defenders": 35.35714285714286
+  },
+  "8154": {
+    "ngs_rush_yards_over_expected_per_att": 0.2160194209271247,
+    "ngs_rush_efficiency": 3.689972714870395,
+    "ngs_avg_time_to_los": 2.7781785714285725,
+    "ngs_percent_attempts_gte_eight_defenders": 14.04494382022472
+  },
+  "7611": {
+    "ngs_rush_yards_over_expected_per_att": -0.11986027197915934,
+    "ngs_rush_efficiency": 3.4691599353796434,
+    "ngs_avg_time_to_los": 2.5158750000000007,
+    "ngs_percent_attempts_gte_eight_defenders": 16.666666666666664
+  },
+  "8205": {
+    "ngs_rush_yards_over_expected_per_att": 0.4525696224958682,
+    "ngs_rush_efficiency": 3.5736470588235294,
+    "ngs_avg_time_to_los": 2.762369791666666,
+    "ngs_percent_attempts_gte_eight_defenders": 12.195121951219512
+  },
+  "8230": {
+    "ngs_rush_yards_over_expected_per_att": -0.13713790181932461,
+    "ngs_rush_efficiency": 3.738722891566265,
+    "ngs_avg_time_to_los": 2.906308510638297,
+    "ngs_percent_attempts_gte_eight_defenders": 17.0
+  },
+  "3164": {
+    "ngs_rush_yards_over_expected_per_att": -0.38770911985637196,
+    "ngs_rush_efficiency": 3.909688473520248,
+    "ngs_avg_time_to_los": 2.7091197604790422,
+    "ngs_percent_attempts_gte_eight_defenders": 17.934782608695652
+  },
+  "8150": {
+    "ngs_rush_yards_over_expected_per_att": 0.6502996098307398,
+    "ngs_rush_efficiency": 3.2243444055944064,
+    "ngs_avg_time_to_los": 2.6345117370892037,
+    "ngs_percent_attempts_gte_eight_defenders": 4.824561403508771
+  },
+  "9221": {
+    "ngs_rush_yards_over_expected_per_att": 0.3974964610155695,
+    "ngs_rush_efficiency": 3.748931216931216,
+    "ngs_avg_time_to_los": 2.8919575757575755,
+    "ngs_percent_attempts_gte_eight_defenders": 15.934065934065933
+  },
+  "4663": {
+    "ngs_rush_yards_over_expected_per_att": -0.26958667353009613,
+    "ngs_rush_efficiency": 4.149633757961783,
+    "ngs_avg_time_to_los": 2.634852760736196,
+    "ngs_percent_attempts_gte_eight_defenders": 15.083798882681565
+  },
+  "6813": {
+    "ngs_rush_yards_over_expected_per_att": 0.32421286623157275,
+    "ngs_rush_efficiency": 3.4509716599190283,
+    "ngs_avg_time_to_los": 2.7430000000000003,
+    "ngs_percent_attempts_gte_eight_defenders": 14.201183431952662
+  },
+  "2749": {
+    "ngs_rush_yards_over_expected_per_att": 0.6140348002523186,
+    "ngs_rush_efficiency": 4.2526185770751,
+    "ngs_avg_time_to_los": 2.93470588235294,
+    "ngs_percent_attempts_gte_eight_defenders": 14.354066985645932
+  },
+  "6828": {
+    "ngs_rush_yards_over_expected_per_att": -0.3620871918608508,
+    "ngs_rush_efficiency": 4.137830342577488,
+    "ngs_avg_time_to_los": 2.5971656441717803,
+    "ngs_percent_attempts_gte_eight_defenders": 25.280898876404496
+  },
+  "8139": {
+    "ngs_rush_yards_over_expected_per_att": 0.32539999491460314,
+    "ngs_rush_efficiency": 3.703725055432374,
+    "ngs_avg_time_to_los": 2.854360824742268,
+    "ngs_percent_attempts_gte_eight_defenders": 15.384615384615385
+  },
+  "4035": {
+    "ngs_rush_yards_over_expected_per_att": -0.5646350217817696,
+    "ngs_rush_efficiency": 4.052824207492796,
+    "ngs_avg_time_to_los": 2.613817073170731,
+    "ngs_percent_attempts_gte_eight_defenders": 21.11111111111111
+  },
+  "6845": {
+    "ngs_rush_yards_over_expected_per_att": 0.711456028129064,
+    "ngs_rush_efficiency": 3.3064357682619647,
+    "ngs_avg_time_to_los": 2.669816568047336,
+    "ngs_percent_attempts_gte_eight_defenders": 14.754098360655737
+  },
+  "4018": {
+    "ngs_rush_yards_over_expected_per_att": 0.02303762615104432,
+    "ngs_rush_efficiency": 3.7781721470019343,
+    "ngs_avg_time_to_los": 2.599106382978724,
+    "ngs_percent_attempts_gte_eight_defenders": 15.17509727626459
+  },
+  "9226": {
+    "ngs_rush_yards_over_expected_per_att": 2.8725543338099215,
+    "ngs_rush_efficiency": 3.035487500000001,
+    "ngs_avg_time_to_los": 2.9290107526881717,
+    "ngs_percent_attempts_gte_eight_defenders": 11.650485436893204
+  },
+  "6790": {
+    "ngs_rush_yards_over_expected_per_att": -0.28729898933841164,
+    "ngs_rush_efficiency": 3.58252621544328,
+    "ngs_avg_time_to_los": 2.7691225490196074,
+    "ngs_percent_attempts_gte_eight_defenders": 17.903930131004365
+  },
+  "4034": {
+    "ngs_rush_yards_over_expected_per_att": 1.3232235299779604,
+    "ngs_rush_efficiency": 3.5888485263879377,
+    "ngs_avg_time_to_los": 2.8048097165991908,
+    "ngs_percent_attempts_gte_eight_defenders": 36.029411764705884
+  },
+  "6151": {
+    "ngs_rush_yards_over_expected_per_att": -0.41969197892223775,
+    "ngs_rush_efficiency": 4.656921296296296,
+    "ngs_avg_time_to_los": 2.8923392857142853,
+    "ngs_percent_attempts_gte_eight_defenders": 9.30232558139535
+  },
+  "8136": {
+    "ngs_rush_yards_over_expected_per_att": -0.4129066085841839,
+    "ngs_rush_efficiency": 3.921323232323232,
+    "ngs_avg_time_to_los": 2.673349019607844,
+    "ngs_percent_attempts_gte_eight_defenders": 16.911764705882355
+  },
+  "5987": {
+    "ngs_rush_yards_over_expected_per_att": -0.2541227712899943,
+    "ngs_rush_efficiency": 4.053242857142858,
+    "ngs_avg_time_to_los": 2.8353741935483874,
+    "ngs_percent_attempts_gte_eight_defenders": 21.666666666666668
+  },
+  "7528": {
+    "ngs_rush_yards_over_expected_per_att": 0.31331209617124217,
+    "ngs_rush_efficiency": 3.840309178743961,
+    "ngs_avg_time_to_los": 2.784302222222223,
+    "ngs_percent_attempts_gte_eight_defenders": 20.784313725490197
+  },
+  "8129": {
+    "ngs_rush_yards_over_expected_per_att": -0.5905703319418226,
+    "ngs_rush_efficiency": 5.183173076923074,
+    "ngs_avg_time_to_los": 3.001359999999999,
+    "ngs_percent_attempts_gte_eight_defenders": 26.20689655172414
+  },
+  "8151": {
+    "ngs_rush_yards_over_expected_per_att": -0.12910396886200898,
+    "ngs_rush_efficiency": 4.542696132596685,
+    "ngs_avg_time_to_los": 3.093364102564103,
+    "ngs_percent_attempts_gte_eight_defenders": 19.63470319634703
+  },
+  "5248": {
+    "ngs_rush_yards_over_expected_per_att": 0.2636956236124147,
+    "ngs_rush_efficiency": 3.5705925925925937,
+    "ngs_avg_time_to_los": 2.6410833333333326,
+    "ngs_percent_attempts_gte_eight_defenders": 34.34343434343434
+  },
+  "9753": {
+    "ngs_rush_yards_over_expected_per_att": 0.17666671853818064,
+    "ngs_rush_efficiency": 3.733658008658009,
+    "ngs_avg_time_to_los": 2.8933854166666664,
+    "ngs_percent_attempts_gte_eight_defenders": 13.88888888888889
+  },
+  "4199": {
+    "ngs_rush_yards_over_expected_per_att": 0.11821121583122172,
+    "ngs_rush_efficiency": 3.6695731707317076,
+    "ngs_avg_time_to_los": 2.658450381679389,
+    "ngs_percent_attempts_gte_eight_defenders": 23.239436619718308
+  },
+  "8155": {
+    "ngs_rush_yards_over_expected_per_att": 0.6719800630039181,
+    "ngs_rush_efficiency": 4.017012072434608,
+    "ngs_avg_time_to_los": 2.962166666666668,
+    "ngs_percent_attempts_gte_eight_defenders": 19.282511210762333
+  },
+  "5967": {
+    "ngs_rush_yards_over_expected_per_att": -0.16139468680076496,
+    "ngs_rush_efficiency": 3.8082388059701495,
+    "ngs_avg_time_to_los": 2.6277399103139016,
+    "ngs_percent_attempts_gte_eight_defenders": 11.11111111111111
+  },
+  "7608": {
+    "ngs_rush_yards_over_expected_per_att": 0.2947648379339257,
+    "ngs_rush_efficiency": 3.6099836333878876,
+    "ngs_avg_time_to_los": 2.762788617886179,
+    "ngs_percent_attempts_gte_eight_defenders": 31.818181818181817
+  },
+  "7588": {
+    "ngs_rush_yards_over_expected_per_att": -0.3839068104232842,
+    "ngs_rush_efficiency": 4.47624031007752,
+    "ngs_avg_time_to_los": 2.935947368421053,
+    "ngs_percent_attempts_gte_eight_defenders": 16.589861751152075
+  },
+  "4149": {
+    "ngs_rush_yards_over_expected_per_att": -0.9768571853988163,
+    "ngs_rush_efficiency": 4.582712418300657,
+    "ngs_avg_time_to_los": 2.651135416666666,
+    "ngs_percent_attempts_gte_eight_defenders": 29.245283018867923
+  },
+  "8132": {
+    "ngs_rush_yards_over_expected_per_att": -0.3306910293206128,
+    "ngs_rush_efficiency": 4.595680819912154,
+    "ngs_avg_time_to_los": 2.9704444444444427,
+    "ngs_percent_attempts_gte_eight_defenders": 30.64516129032258
+  },
+  "8143": {
+    "ngs_rush_yards_over_expected_per_att": -0.020902046263689102,
+    "ngs_rush_efficiency": 4.6835793357933575,
+    "ngs_avg_time_to_los": 3.162694117647059,
+    "ngs_percent_attempts_gte_eight_defenders": 18.627450980392158
+  },
+  "6130": {
+    "ngs_rush_yards_over_expected_per_att": 0.15451809050589752,
+    "ngs_rush_efficiency": 3.7120489977728286,
+    "ngs_avg_time_to_los": 2.8448730964466997,
+    "ngs_percent_attempts_gte_eight_defenders": 23.14814814814815
+  },
+  "5850": {
+    "ngs_rush_yards_over_expected_per_att": -0.3739304610770163,
+    "ngs_rush_efficiency": 4.270993788819878,
+    "ngs_avg_time_to_los": 2.7845555555555563,
+    "ngs_percent_attempts_gte_eight_defenders": 21.45922746781116
+  },
+  "7045": {
+    "ngs_rush_yards_over_expected_per_att": -0.24136324825514663,
+    "ngs_rush_efficiency": 3.985876543209876,
+    "ngs_avg_time_to_los": 2.6957628865979397,
+    "ngs_percent_attempts_gte_eight_defenders": 8.411214953271028
+  },
+  "4098": {
+    "ngs_rush_yards_over_expected_per_att": -0.7519423386282502,
+    "ngs_rush_efficiency": 4.509099756690996,
+    "ngs_avg_time_to_los": 2.6836229508196734,
+    "ngs_percent_attempts_gte_eight_defenders": 31.851851851851855
+  },
+  "7594": {
+    "ngs_rush_yards_over_expected_per_att": 0.1933784009930784,
+    "ngs_rush_efficiency": 3.797172949002217,
+    "ngs_avg_time_to_los": 2.7180511627906982,
+    "ngs_percent_attempts_gte_eight_defenders": 19.327731092436977
+  },
+  "7543": {
+    "ngs_rush_yards_over_expected_per_att": -0.2905687251472002,
+    "ngs_rush_efficiency": 4.162361111111111,
+    "ngs_avg_time_to_los": 2.8270086206896545,
+    "ngs_percent_attempts_gte_eight_defenders": 22.846441947565545
+  },
+  "9508": {
+    "ngs_rush_yards_over_expected_per_att": -0.14689076787716818,
+    "ngs_rush_efficiency": 3.6344150110375284,
+    "ngs_avg_time_to_los": 2.7257272727272723,
+    "ngs_percent_attempts_gte_eight_defenders": 12.0
+  },
+  "4866": {
+    "ngs_rush_yards_over_expected_per_att": 0.3893385699122722,
+    "ngs_rush_efficiency": 3.850904365904367,
+    "ngs_avg_time_to_los": 2.7226220095693794,
+    "ngs_percent_attempts_gte_eight_defenders": 14.979757085020243
+  },
+  "9509": {
+    "ngs_rush_yards_over_expected_per_att": 0.39162466330403795,
+    "ngs_rush_efficiency": 4.3663831967213085,
+    "ngs_avg_time_to_los": 2.9893730569948165,
+    "ngs_percent_attempts_gte_eight_defenders": 20.5607476635514
+  }
+}

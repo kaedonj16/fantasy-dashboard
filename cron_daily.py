@@ -36,6 +36,8 @@ CRON_STEPS = (
     "wls_dynasty_12team",
     "wls_redraft_10team",
     "wls_redraft_12team",
+    "rebuild_historical_warehouse",
+    "rebuild_historical_profiles",
 )
 
 
@@ -824,8 +826,13 @@ print(f"[cron] Draft ADP: {result}")
     # ------------------------------------------------------------------ #
     _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
-from dashboard_services.adp_service import refresh_global_adp_sources
+from dashboard_services.adp_service import (
+    refresh_global_adp_sources,
+    freeze_prior_season_global_snapshots,
+)
+frozen = freeze_prior_season_global_snapshots({season!r})
 summary = refresh_global_adp_sources({season!r})
+print(f"[cron] Global ADP freeze prior season: {{frozen}}")
 print(f"[cron] Global ADP refresh: {{summary}}")
 """, "refresh_global_adp", timeout=600)
 
@@ -848,6 +855,33 @@ from data_building.trade_intel.trade_value_model import run_trade_value_model
 res = run_trade_value_model(season={season!r}, league_type={_lt}, league_size={_sz})
 print(f"[cron] WLS {_lt_name} {_sz}-team: {{res}}")
 """, f"wls_{_lt_name}_{_sz}team")
+
+    # ------------------------------------------------------------------ #
+    # Step 9b: Historical analytics warehouse (usage_rows → parquet)     #
+    # Rebuilds canonical player-seasons + finishes + prior-career        #
+    # features from committed cache. No live NFL APIs; request paths     #
+    # only read the parquet this writes.                                 #
+    # ------------------------------------------------------------------ #
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.historical.build_player_seasons import rebuild_historical_warehouse
+coverage = rebuild_historical_warehouse()
+print("[cron] Historical warehouse: %s combined rows, seasons=%s"
+      % (coverage.get("combined_rows"), coverage.get("written_seasons")))
+""", "rebuild_historical_warehouse")
+
+    # ------------------------------------------------------------------ #
+    # Step 9c: Historical profile aggregates (parquet → small JSON)      #
+    # Age curves, career-stage / repeat / breakout / draft-capital rates.#
+    # Request paths read this JSON; they never scan parquet.             #
+    # ------------------------------------------------------------------ #
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.historical.build_profiles import rebuild_historical_profiles
+payload = rebuild_historical_profiles()
+print("[cron] Historical profiles: %s player-seasons, range=%s"
+      % (payload.get("n_player_seasons"), payload.get("season_range")))
+""", "rebuild_historical_profiles")
 
     # ------------------------------------------------------------------ #
     # Step 10: Calibrated history snapshot                               #

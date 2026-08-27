@@ -1,0 +1,381 @@
+{
+  "axis": "redraft",
+  "scoring": "ppr",
+  "qb_format": "1qb",
+  "sf_tep_historical": false,
+  "yahoo_historical": false,
+  "seasons": [
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ],
+  "by_season": {
+    "2018": {
+      "sleeper": {
+        "n": 0,
+        "usable": false
+      },
+      "mfl": {
+        "n": 149,
+        "usable": true
+      },
+      "espn": {
+        "n": 400,
+        "usable": true
+      },
+      "yahoo": {
+        "n": 0,
+        "usable": false
+      }
+    },
+    "2019": {
+      "sleeper": {
+        "n": 0,
+        "usable": false
+      },
+      "mfl": {
+        "n": 183,
+        "usable": true
+      },
+      "espn": {
+        "n": 0,
+        "usable": false
+      },
+      "yahoo": {
+        "n": 0,
+        "usable": false
+      }
+    },
+    "2020": {
+      "sleeper": {
+        "n": 494,
+        "usable": true
+      },
+      "mfl": {
+        "n": 211,
+        "usable": true
+      },
+      "espn": {
+        "n": 391,
+        "usable": true
+      },
+      "yahoo": {
+        "n": 0,
+        "usable": false
+      }
+    },
+    "2021": {
+      "sleeper": {
+        "n": 821,
+        "usable": true
+      },
+      "mfl": {
+        "n": 218,
+        "usable": true
+      },
+      "espn": {
+        "n": 398,
+        "usable": false
+      },
+      "yahoo": {
+        "n": 0,
+        "usable": false
+      }
+    },
+    "2022": {
+      "sleeper": {
+        "n": 689,
+        "usable": true
+      },
+      "mfl": {
+        "n": 224,
+        "usable": true
+      },
+      "espn": {
+        "n": 398,
+        "usable": false
+      },
+      "yahoo": {
+        "n": 0,
+        "usable": false
+      }
+    },
+    "2023": {
+      "sleeper": {
+        "n": 720,
+        "usable": true
+      },
+      "mfl": {
+        "n": 225,
+        "usable": true
+      },
+      "espn": {
+        "n": 367,
+        "usable": true
+      },
+      "yahoo": {
+        "n": 0,
+        "usable": false
+      }
+    },
+    "2024": {
+      "sleeper": {
+        "n": 1887,
+        "usable": true
+      },
+      "mfl": {
+        "n": 218,
+        "usable": true
+      },
+      "espn": {
+        "n": 368,
+        "usable": true
+      },
+      "yahoo": {
+        "n": 0,
+        "usable": false
+      }
+    },
+    "2025": {
+      "sleeper": {
+        "n": 2895,
+        "usable": true
+      },
+      "mfl": {
+        "n": 201,
+        "usable": true
+      },
+      "espn": {
+        "n": 368,
+        "usable": false
+      },
+      "yahoo": {
+        "n": 0,
+        "usable": false
+      }
+    }
+  },
+  "fetch": {
+    "2018": {
+      "season": 2018,
+      "sources": {
+        "sleeper": {
+          "ok": true,
+          "n": 0,
+          "usable": false
+        },
+        "mfl": {
+          "ok": true,
+          "n": 149,
+          "usable": true
+        },
+        "espn": {
+          "ok": true,
+          "n": 400,
+          "usable": true
+        },
+        "yahoo": {
+          "ok": true,
+          "n": 0,
+          "usable": false,
+          "skipped": true,
+          "reason": "public Yahoo ADP endpoint has no season axis"
+        }
+      }
+    },
+    "2019": {
+      "season": 2019,
+      "sources": {
+        "sleeper": {
+          "ok": true,
+          "n": 0,
+          "usable": false
+        },
+        "mfl": {
+          "ok": true,
+          "n": 183,
+          "usable": true
+        },
+        "espn": {
+          "ok": true,
+          "n": 0,
+          "usable": false
+        },
+        "yahoo": {
+          "ok": true,
+          "n": 0,
+          "usable": false,
+          "skipped": true,
+          "reason": "public Yahoo ADP endpoint has no season axis"
+        }
+      }
+    },
+    "2020": {
+      "season": 2020,
+      "sources": {
+        "sleeper": {
+          "ok": true,
+          "n": 494,
+          "usable": true
+        },
+        "mfl": {
+          "ok": true,
+          "n": 211,
+          "usable": true
+        },
+        "espn": {
+          "ok": true,
+          "n": 391,
+          "usable": true
+        },
+        "yahoo": {
+          "ok": true,
+          "n": 0,
+          "usable": false,
+          "skipped": true,
+          "reason": "public Yahoo ADP endpoint has no season axis"
+        }
+      }
+    },
+    "2021": {
+      "season": 2021,
+      "sources": {
+        "sleeper": {
+          "ok": true,
+          "n": 821,
+          "usable": true
+        },
+        "mfl": {
+          "ok": true,
+          "n": 218,
+          "usable": true
+        },
+        "espn": {
+          "ok": true,
+          "n": 398,
+          "usable": false
+        },
+        "yahoo": {
+          "ok": true,
+          "n": 0,
+          "usable": false,
+          "skipped": true,
+          "reason": "public Yahoo ADP endpoint has no season axis"
+        }
+      }
+    },
+    "2022": {
+      "season": 2022,
+      "sources": {
+        "sleeper": {
+          "ok": true,
+          "n": 689,
+          "usable": true
+        },
+        "mfl": {
+          "ok": true,
+          "n": 224,
+          "usable": true
+        },
+        "espn": {
+          "ok": true,
+          "n": 398,
+          "usable": false
+        },
+        "yahoo": {
+          "ok": true,
+          "n": 0,
+          "usable": false,
+          "skipped": true,
+          "reason": "public Yahoo ADP endpoint has no season axis"
+        }
+      }
+    },
+    "2023": {
+      "season": 2023,
+      "sources": {
+        "sleeper": {
+          "ok": true,
+          "n": 720,
+          "usable": true
+        },
+        "mfl": {
+          "ok": true,
+          "n": 225,
+          "usable": true
+        },
+        "espn": {
+          "ok": true,
+          "n": 367,
+          "usable": true
+        },
+        "yahoo": {
+          "ok": true,
+          "n": 0,
+          "usable": false,
+          "skipped": true,
+          "reason": "public Yahoo ADP endpoint has no season axis"
+        }
+      }
+    },
+    "2024": {
+      "season": 2024,
+      "sources": {
+        "sleeper": {
+          "ok": true,
+          "n": 1887,
+          "usable": true
+        },
+        "mfl": {
+          "ok": true,
+          "n": 218,
+          "usable": true
+        },
+        "espn": {
+          "ok": true,
+          "n": 368,
+          "usable": true
+        },
+        "yahoo": {
+          "ok": true,
+          "n": 0,
+          "usable": false,
+          "skipped": true,
+          "reason": "public Yahoo ADP endpoint has no season axis"
+        }
+      }
+    },
+    "2025": {
+      "season": 2025,
+      "sources": {
+        "sleeper": {
+          "ok": true,
+          "n": 2895,
+          "usable": true
+        },
+        "mfl": {
+          "ok": true,
+          "n": 201,
+          "usable": true
+        },
+        "espn": {
+          "ok": true,
+          "n": 368,
+          "usable": false
+        },
+        "yahoo": {
+          "ok": true,
+          "n": 0,
+          "usable": false,
+          "skipped": true,
+          "reason": "public Yahoo ADP endpoint has no season axis"
+        }
+      }
+    }
+  }
+}

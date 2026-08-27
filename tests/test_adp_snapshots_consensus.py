@@ -35,6 +35,26 @@ def test_snapshot_empty_does_not_clobber_last_good():
     assert A.snapshot_adp_map("mfl", "redraft", 2026) == {"a": 5.0}
 
 
+def test_frozen_snapshot_is_not_overwritten():
+    assert A.write_adp_snapshot("mfl", "redraft", 2024, {"adp": {"a": 1.5}}, frozen=True)
+    assert A.write_adp_snapshot("mfl", "redraft", 2024, {"adp": {"a": 99.0}}) is False
+    assert A.snapshot_adp_map("mfl", "redraft", 2024) == {"a": 1.5}
+    assert A.load_adp_snapshot("mfl", "redraft", 2024)["frozen"] is True
+    # force can replace a frozen board (explicit backfill repair only).
+    assert A.write_adp_snapshot("mfl", "redraft", 2024, {"adp": {"a": 2.0}}, frozen=True, force=True)
+    assert A.snapshot_adp_map("mfl", "redraft", 2024) == {"a": 2.0}
+
+
+def test_freeze_prior_season_marks_existing_snapshots():
+    A.write_adp_snapshot("espn", "redraft", 2025, {"adp": {"p": 3.0}})
+    A.write_adp_snapshot("yahoo", "redraft", 2025, {"adp": {"p": 4.0}})
+    out = A.freeze_prior_season_global_snapshots(2026)
+    assert out["espn"] is True and out["yahoo"] is True
+    assert A.load_adp_snapshot("espn", "redraft", 2025)["frozen"] is True
+    assert A.write_adp_snapshot("espn", "redraft", 2025, {"adp": {"p": 30.0}}) is False
+    assert A.snapshot_adp_map("espn", "redraft", 2025) == {"p": 3.0}
+
+
 def test_snapshot_map_filters_bad_and_nonpositive():
     A.write_adp_snapshot("espn", "redraft", 2026,
                          {"adp": {"a": 1.0, "b": 0, "c": -3, "d": "x", "e": "4.5"}})

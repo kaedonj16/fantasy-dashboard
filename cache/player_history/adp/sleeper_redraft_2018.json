@@ -1,0 +1,19 @@
+{
+  "source": "sleeper",
+  "axis": "redraft",
+  "season": 2018,
+  "frozen": true,
+  "usable": false,
+  "collected_at": 1787853923.3060615,
+  "adp": {},
+  "extra": {},
+  "meta": {
+    "ppr": 1.0,
+    "qb_format": "1qb",
+    "draft_type": "redraft"
+  },
+  "raw_count": 0,
+  "mapped_count": 0,
+  "ppr_rank": {},
+  "fields": {}
+}

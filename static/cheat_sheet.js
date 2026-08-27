@@ -21,8 +21,12 @@
     // on every load, so an unavailable signal cannot leave an invisible/stale
     // column (or CSV field) behind and automatically returns after a good refresh.
     var SHOW_MARKET_VS_ADP = false;
+    var SHOW_HISTORICAL = false;
     var showMarket = function (dyn) {
         return !dyn && SHOW_MARKET_VS_ADP;
+    };
+    var showHist = function () {
+        return SHOW_HISTORICAL;
     };
 
     var state = {
@@ -621,13 +625,13 @@
     // without rewriting that model board. Default is VOR descending.
     var SORT_DEFAULT_DIR = {
         rk: 1, name: 1, pos: 1, vor: -1, projectedPpg: -1,
-        adp: 1, age: 1, value: -1, window: 1, scheduleRank: 1, market: -1
+        adp: 1, age: 1, value: -1, window: 1, scheduleRank: 1, market: -1, hist: -1
     };
     var POS_SORT = {QB: 0, RB: 1, WR: 2, TE: 3};
     var SORT_LABEL = {
         rk: 'Rk', name: 'Player', pos: 'Pos', vor: 'VOR', projectedPpg: 'Proj PPG',
         adp: 'ADP', age: 'Age', value: 'Value', window: 'Window',
-        scheduleRank: 'Sched Rk', market: 'Market vs ADP'
+        scheduleRank: 'Sched Rk', market: 'Market vs ADP', hist: 'Hist'
     };
 
     function isDefaultSort() {
@@ -653,6 +657,7 @@
         if (key === 'value') return x.value;
         if (key === 'scheduleRank') return x.scheduleRank;
         if (key === 'market') return x.marketVsAdp;
+        if (key === 'hist') return x.histP;
         return null;
     }
 
@@ -819,6 +824,12 @@
 
                 scheduleRank:
                     scheduleRanks[String(p.id)] || null,
+
+                historical: p.historical || null,
+                histP:
+                    p.historical && p.historical.p_hit_pct != null
+                        ? Number(p.historical.p_hit_pct)
+                        : null,
             };
         });
 
@@ -1128,6 +1139,24 @@
         return v > 0 ? '<span class="cs-val g">+' + v + '</span>' : (v < 0 ? '<span class="cs-val b">' + v + '</span>' : '<span class="cs-val n">even</span>');
     }
 
+    function histCell(x) {
+        if (!showHist()) return '';
+        var h = x.historical || {};
+        var pct = h.p_hit_pct;
+        var vs = h.h_vs_m || 'unknown';
+        var tip = 'History P(top-12) from similar pre-season profiles'
+            + (pct != null ? ': ' + pct + '%' : ': unknown')
+            + (h.mkt_pct != null ? '. Market at this ADP bucket: ' + h.mkt_pct + '%' : '')
+            + (h.proj_rk != null ? '. Projected rank among this board: ' + h.proj_rk : '')
+            + '. Descriptive only — not a ranking input.';
+        var cls = vs === 'history_higher' ? 'g' : (vs === 'market_higher' ? 'b' : 'n');
+        var body = pct == null ? '&ndash;' : (pct + '%');
+        return '<td class="cs-hist-col"><span class="cs-hist-cell">'
+            + '<span class="cs-val ' + cls + '" title="' + esc(tip) + '">' + body + '</span>'
+            + '<button type="button" class="cs-hist-btn" data-hist-id="' + esc(x.id) + '" data-hist-name="' + esc(x.name) + '" title="Similar-player history">i</button>'
+            + '</span></td>';
+    }
+
     function smallVal(v) {
         if (v == null) return '';
         return v > 0 ? '<span class="cs-pgv cs-val g">+' + v + '</span>' : (v < 0 ? '<span class="cs-pgv cs-val b">' + v + '</span>' : '');
@@ -1310,6 +1339,7 @@
                 + '<span class="cs-lg"><span class="cs-val g">+7</span> above ADP, target it</span>'
                 + '<span class="cs-lg"><span class="cs-val b">-4</span> going early, let it fall</span>'
                 + '<span class="cs-lg"><b>Sched Rk</b> full-season schedule (1 = easiest)</span>'
+                + (showHist() ? '<span class="cs-lg"><b>Hist</b> similar-profile P(top-12), not a rank</span>' : '')
                 + sortNote
                 + projNote
                 + draftedNote
@@ -1387,9 +1417,10 @@
             + sortTh(col5Key, col5, '', dyn ? 'Sort by age' : 'Sort by ADP')
             + sortTh(col6Key, col6, 'cs-value-col', dyn ? 'Sort by career window (age)' : 'Sort by value vs ADP')
             + sortTh('scheduleRank', 'Sched Rk', '', 'Full fantasy-season strength of schedule rank (1 = easiest)')
+            + (showHist() ? sortTh('hist', 'Hist', 'cs-hist-col', 'Similar-profile P(top-12). Descriptive; not a ranking input.') : '')
             + (showMarket(dyn) ? sortTh('market', 'Market vs ADP', 'cs-market-col', 'Sort by market vs ADP') : '')
             + editTh + '</tr>';
-        var span = (editable ? 9 : 8) + (showMarket(dyn) ? 1 : 0);
+        var span = (editable ? 9 : 8) + (showMarket(dyn) ? 1 : 0) + (showHist() ? 1 : 0);
         var lastT = null, html = '', shown = 0;
         var pickAt = boardSort ? projPickMap() : {};
         displayPlayers().forEach(function (x) {
@@ -1416,6 +1447,7 @@
                     market = '<td class="cs-market-col"><span class="cs-val ' + mcls + '" title="' + esc(mtip) + '">' + (x.marketVsAdp > 0 ? '+' : '') + Math.round(x.marketVsAdp) + '</span></td>';
                 }
             }
+            var hist = histCell(x);
             var recChip = x.recRank != null ? '<span class="cs-ovchip bump">REC #' + x.recRank + '</span>' : '';
             var projChip = pk ? '<span class="cs-ovchip bump" title="Projected pick ' + pk.label + ' (overall #' + pk.pn + ')">Proj ' + pk.label + '</span>' : '';
             var vorDisplay =
@@ -1486,6 +1518,7 @@
                         : '&ndash;'
                 ) +
                 '</td>' +
+                hist +
                 market +
                 ovControls(x) +
                 '</tr>';
@@ -1652,8 +1685,10 @@
                     if (resp.tier_thresholds) tierThresholds = resp.tier_thresholds;
                     if (resp.adp_source_options) adpSourceOptions = resp.adp_source_options;
                     SHOW_MARKET_VS_ADP = resp.market_vs_adp_available === true;
+                    SHOW_HISTORICAL = resp.historical_available === true;
                 } else {
                     SHOW_MARKET_VS_ADP = false;
+                    SHOW_HISTORICAL = false;
                 }
                 allPlayers = raw.filter(function (p) {
                     return p && p.id != null && ['QB', 'RB', 'WR', 'TE'].indexOf(String(p.position || '').toUpperCase()) >= 0;
@@ -1672,6 +1707,8 @@
                 loadError = 'Could not load players. Refresh to retry.';
                 allPlayers = [];
                 players = [];
+                SHOW_MARKET_VS_ADP = false;
+                SHOW_HISTORICAL = false;
                 render();
                 $('csPosGrid').innerHTML = '<div class="cs-empty">' + loadError + '</div>';
             });
@@ -1848,12 +1885,12 @@
     function exportCsv() {
         if (!players.length) return;
         var dyn = state.mode === 'dynasty';
-        var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', 'Proj PPG', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Schedule Rank'].concat(showMarket(dyn) ? ['Market vs ADP'] : []).concat(['Tier']);
+        var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', 'Proj PPG', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Schedule Rank'].concat(showHist() ? ['Hist P(top-12)'] : []).concat(showMarket(dyn) ? ['Market vs ADP'] : []).concat(['Tier']);
         var rows = displayPlayers().map(function (x) {
             var c5 = dyn ? (x.age != null ? x.age : '') : fmtAdp(x.adp);
             var c6 = dyn ? youthWindow(x.age, x.pos)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
             var ppgCsv = x.projectedPpg != null ? x.projectedPpg.toFixed(1) : '';
-            return [x.rk, x.name, x.pos, x.prk, x.vor, ppgCsv, c5, c6, x.scheduleRank || ''].concat(showMarket(dyn) ? [x.marketVsAdp == null ? '' : x.marketVsAdp] : []).concat([x.dtier]);
+            return [x.rk, x.name, x.pos, x.prk, x.vor, ppgCsv, c5, c6, x.scheduleRank || ''].concat(showHist() ? [x.histP == null ? '' : x.histP] : []).concat(showMarket(dyn) ? [x.marketVsAdp == null ? '' : x.marketVsAdp] : []).concat([x.dtier]);
         });
         var csv = [head].concat(rows).map(function (r) {
             return r.map(function (v) {
@@ -1887,6 +1924,66 @@
                 render();
             });
         });
+    }
+
+    function closeHistPanel() {
+        var modal = $('csHistModal');
+        if (!modal) return;
+        modal.classList.remove('open');
+    }
+
+    function openHistPanel(id, name) {
+        var modal = $('csHistModal');
+        if (!modal || !id) return;
+        $('csHistTitle').textContent = name || 'History';
+        $('csHistSub').textContent = 'Descriptive similar-player rates. Not a ranking score.';
+        $('csHistBody').innerHTML = '<p class="cs-hist-sub">Loading…</p>';
+        modal.classList.add('open');
+        var url = '/api/historical-player/' + encodeURIComponent(id);
+        fetch(url, {cache: 'no-store'})
+            .then(function (r) { return r.json(); })
+            .then(function (resp) {
+                if (!modal.classList.contains('open')) return;
+                $('csHistBody').innerHTML = renderHistPanel(resp);
+            })
+            .catch(function () {
+                if (!modal.classList.contains('open')) return;
+                $('csHistBody').innerHTML = '<p class="cs-hist-sub">Could not load similar-player history.</p>';
+            });
+    }
+
+    function renderHistPanel(resp) {
+        if (!resp || resp.available === false) {
+            return '<p class="cs-hist-sub">No historical profile for this player yet.</p>';
+        }
+        var rates = (resp.history && resp.history.rates) || {};
+        var top12 = rates.top_12 || {};
+        var pct = top12.display_pct;
+        var n = resp.history && resp.history.n;
+        var dropped = (resp.history && resp.history.dropped) || [];
+        var mkt = resp.market || {};
+        var mktPct = mkt.p_top_12 != null ? Math.round(Number(mkt.p_top_12) * 100) : null;
+        var html = '<dl class="cs-hist-dl">'
+            + '<dt>P(top-12)</dt><dd>' + (pct != null ? pct + '%' : '—')
+            + (n != null ? ' · n=' + n : '')
+            + (top12.confidence ? ' · ' + top12.confidence : '') + '</dd>'
+            + '<dt>Market</dt><dd>' + (mktPct != null ? mktPct + '%' : '—')
+            + (mkt.adp_bucket ? ' at ' + mkt.adp_bucket : '') + '</dd>'
+            + '<dt>Matched</dt><dd>' + esc(Object.keys((resp.preseason) || {}).join(', ') || 'position only') + '</dd>'
+            + '<dt>Relaxed</dt><dd>' + (dropped.length ? esc(dropped.join(', ')) : 'none') + '</dd>'
+            + '</dl>';
+        var examples = (resp.history && resp.history.examples) || [];
+        if (examples.length) {
+            html += '<p class="cs-hist-sub">Named comps (this player excluded)</p><ul class="cs-hist-ex">';
+            examples.forEach(function (ex) {
+                html += '<li><span>' + esc(ex.name || ex.sleeper_id || '') + (ex.season ? ' · ' + ex.season : '') + '</span><span>'
+                    + (ex.positional_finish != null ? '#' + ex.positional_finish : '')
+                    + (ex.ppr_points != null ? ' · ' + ex.ppr_points + ' pts' : '')
+                    + '</span></li>';
+            });
+            html += '</ul>';
+        }
+        return html;
     }
 
     function init() {
@@ -2081,6 +2178,13 @@
         });
 
         document.addEventListener('click', function (e) {
+            var histBtn = e.target.closest('.cs-hist-btn');
+            if (histBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                openHistPanel(histBtn.getAttribute('data-hist-id'), histBtn.getAttribute('data-hist-name'));
+                return;
+            }
             var el = e.target.closest('[data-name]');
             if (!el || !e.target.closest('#cs-panel-board, #cs-panel-pos')) return;
             var playerId = el.getAttribute('data-id');
@@ -2137,6 +2241,15 @@
         });
         loadPlayers();
         if (window.initCustomSelects) window.initCustomSelects(document.querySelector('.cs-wrap') || document);
+        var histClose = $('csHistClose');
+        if (histClose) histClose.addEventListener('click', closeHistPanel);
+        var histModal = $('csHistModal');
+        if (histModal) histModal.addEventListener('click', function (e) {
+            if (e.target === histModal) closeHistPanel();
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') closeHistPanel();
+        });
         try {
             if (window.parent && window.parent !== window) {
                 window.parent.postMessage({type: 'drCheatReady'}, window.location.origin);
