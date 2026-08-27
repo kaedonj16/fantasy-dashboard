@@ -288,9 +288,7 @@ _CHEAT_HTML = r"""
   .cs-hist-ex li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--cs-line, var(--border)); font-size: 13px; }
   .cs-hist-ex li:last-child { border-bottom: 0; }
   .cs-hist-ex li span:last-child { color: var(--cs-ink-soft, var(--text-muted)); font-family: var(--cs-mono); font-size: 12px; white-space: nowrap; }
-  .cs-trends { padding: 0 0 24px; }
-  .cs-trends-honesty { display: inline-flex; align-items: center; gap: 7px; font-family: var(--cs-mono); font-size: 10.5px; font-weight: 700; letter-spacing: .03em; color: var(--cs-amber); background: color-mix(in srgb, var(--cs-amber, #b5730b) 14%, transparent); border-radius: 999px; padding: 4px 10px; margin: 4px 0 12px; }
-  .cs-trends-honesty i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: inline-block; flex-shrink: 0; }
+  .cs-trends { padding: 4px 0 24px; }
   .cs-trends-lede { color: var(--cs-ink-soft, var(--text-muted)); font-size: 13px; line-height: 1.45; margin: 0 0 14px; }
   .cs-trends-pos, .cs-trends-lanes { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 16px; }
   .cs-trends-pos button, .cs-trends-lanes button { font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-line, var(--border)); background: var(--cs-surface, var(--card)); color: var(--cs-ink-soft, var(--text-muted)); border-radius: 8px; padding: 6px 10px; }
@@ -616,7 +614,6 @@ _CHEAT_HTML = r"""
   </section>
 
   <section class="cs-hidden" id="cs-panel-trends">
-    <span class="cs-trends-honesty"><i></i>Descriptive — not a ranking input</span>
     <div class="cs-trends" id="csTrends">
       <p class="cs-trends-lede">Historical top-12 rates by bucket. Not a ranking score.</p>
     </div>

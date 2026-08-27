@@ -377,7 +377,9 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert ".cs-trends-rail" in body
     assert ".cs-trends-lanes" in body
     assert ".cs-trends-conf" in body
-    assert "Descriptive — not a ranking input" in body
+    assert "Descriptive — not a ranking input" not in body
+    assert "cs-trends-honesty" not in body
+    assert "Not a ranking score." in body
     assert "trendsTopEdges(sections, 10)" in script
     assert "data-trends-lane" in script
     assert "row.vs_label" in script
