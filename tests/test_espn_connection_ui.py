@@ -172,6 +172,20 @@ def test_otp_modal_open_is_reusable_across_league_sources():
     assert "window.brOpenEspnOtp" in otp_block
 
 
+def test_otp_wiring_runs_off_the_home_page():
+    # The Link-a-league modal (and its Email pathway) renders on every page, but
+    # the home-card init bails early with `if (!platformBtns.length) return;` off
+    # the landing page. The OTP modal wiring — and window.brOpenEspnOtp — must be
+    # defined BEFORE that guard (in its own page-level init), or the Email button
+    # dead-ends everywhere except home.
+    script = Path("static/app.js").read_text()
+    define = script.index("window.brOpenEspnOtp =")
+    guard = script.index("if (!platformBtns.length) return;")
+    assert define < guard, "brOpenEspnOtp is gated behind the home-card early return"
+    # It also has to stay in the public (lite) bundle for logged-out visitors.
+    assert define < script.index("// @public-js:core-end")
+
+
 def test_sleeper_link_add_sends_username_for_verification():
     # /api/link/add verifies the Sleeper user by username; the modal must include
     # it in the add/pending payload or the server returns "Could not verify …".
