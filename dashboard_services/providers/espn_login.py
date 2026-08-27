@@ -226,6 +226,7 @@ class PlaywrightEspnLoginBroker(EspnLoginBroker):
 # (and the broker/mock tests run) without it.
 _ONEID_BASE = "https://registerdisney.go.com/jgc/v8/client/ESPN-ONESITE.WEB-PROD"
 _ONEID_TIMEOUT = 15.0
+_ONEID_REDEEM_RETRY_DELAY = 0.35
 
 
 class OneIdOtpBroker(EspnLoginBroker):
@@ -288,13 +289,23 @@ class OneIdOtpBroker(EspnLoginBroker):
         conversation_id, api_key, session_id = session["conversation_id"], session["api_key"], session["session_id"]
         try:
             with httpx.Client(base_url=_ONEID_BASE, timeout=_ONEID_TIMEOUT) as client:
-                redeem = client.post("/otp/redeem", json={"passcode": code, "sessionIds": [session_id]},
-                                     headers=self._headers(conversation_id, api_key))
-                if redeem.status_code in (400, 401, 403):
-                    raise EspnLoginInvalidCode("That code isn't right. Check your email and try again.")
-                redeemed = self._data(redeem)
-                swid = redeemed.get("swid")
-                recovery_token = (redeemed.get("recoveryToken") or {}).get("access_token")
+                # OneID can briefly reject the first redemption while its newly
+                # issued OTP session propagates. Retrying the exact redemption
+                # once here avoids making the member re-enter a correct code.
+                # This remains one user verification attempt in the broker's
+                # attempt cap, and a genuinely bad code is still rejected.
+                swid = recovery_token = None
+                for attempt in range(2):
+                    redeem = client.post("/otp/redeem", json={"passcode": code, "sessionIds": [session_id]},
+                                         headers=self._headers(conversation_id, api_key))
+                    if redeem.status_code not in (400, 401, 403):
+                        redeemed = self._data(redeem)
+                        swid = redeemed.get("swid")
+                        recovery_token = (redeemed.get("recoveryToken") or {}).get("access_token")
+                        if swid and recovery_token:
+                            break
+                    if attempt == 0:
+                        time.sleep(_ONEID_REDEEM_RETRY_DELAY)
                 if not swid or not recovery_token:
                     raise EspnLoginInvalidCode("That code isn't right. Check your email and try again.")
                 login = self._data(client.post("/guest/login/recoveryToken",

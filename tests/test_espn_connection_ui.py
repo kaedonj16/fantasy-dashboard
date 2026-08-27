@@ -186,6 +186,18 @@ def test_otp_wiring_runs_off_the_home_page():
     assert define < script.index("// @public-js:core-end")
 
 
+def test_otp_team_continue_shows_league_loading_state():
+    source = Path("app.py").read_text()
+    script = Path("static/app.js").read_text()
+
+    assert 'id="espnOtpLeagueLoading"' in source
+    assert "Loading your league…" in source
+    assert 'role="status" aria-live="polite"' in source
+    assert 'showStep("league-loading")' in script
+    assert "await showLeagueLoading();" in script
+    assert "requestAnimationFrame(() => requestAnimationFrame(resolve))" in script
+
+
 def test_sleeper_link_add_sends_username_for_verification():
     # /api/link/add verifies the Sleeper user by username; the modal must include
     # it in the add/pending payload or the server returns "Could not verify …".

@@ -9246,6 +9246,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const otpCodeStep = $("espnOtpCodeStep");
     const otpVerifying = $("espnOtpVerifying");
     const otpTeamStep = $("espnOtpTeamStep");
+    const otpLeagueLoading = $("espnOtpLeagueLoading");
     const otpTeam = $("espnOtpTeam");
     const otpEmail = $("espnOtpEmail");
     const otpEmailEcho = $("espnOtpEmailEcho");
@@ -9277,6 +9278,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (otpCodeStep) otpCodeStep.hidden = step !== "code";
       if (otpVerifying) otpVerifying.hidden = step !== "verifying";
       if (otpTeamStep) otpTeamStep.hidden = step !== "team";
+      if (otpLeagueLoading) otpLeagueLoading.hidden = step !== "league-loading";
     };
     let otpRedirectUrl = "";
     const startResendCooldown = () => {
@@ -9458,8 +9460,20 @@ document.addEventListener("DOMContentLoaded", () => {
       setTimeout(() => otpEmail?.focus(), 40);
     });
 
-    const otpGoToDashboard = () => { window.location.href = otpRedirectUrl || "/"; };
+    // Give the browser a chance to paint the progress state before navigation.
+    // This is especially useful while saving the selected team on a slower
+    // connection, where the old UI appeared to ignore the click.
+    const showLeagueLoading = () => {
+      setMsg("");
+      showStep("league-loading");
+      return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    };
+    const otpGoToDashboard = async () => {
+      await showLeagueLoading();
+      window.location.href = otpRedirectUrl || "/";
+    };
     document.getElementById("espnOtpTeamGo")?.addEventListener("click", async () => {
+      await showLeagueLoading();
       const opt = otpTeam?.selectedOptions?.[0];
       const rosterId = otpTeam?.value || "";
       const teamName = opt ? opt.textContent : "";
@@ -9476,7 +9490,7 @@ document.addEventListener("DOMContentLoaded", () => {
           });
         } catch (_) { /* non-fatal: fall through to the dashboard either way */ }
       }
-      otpGoToDashboard();
+      window.location.href = otpRedirectUrl || "/";
     });
     document.getElementById("espnOtpTeamSkip")?.addEventListener("click", otpGoToDashboard);
   }
