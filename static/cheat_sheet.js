@@ -1418,15 +1418,77 @@
             }
             var recChip = x.recRank != null ? '<span class="cs-ovchip bump">REC #' + x.recRank + '</span>' : '';
             var projChip = pk ? '<span class="cs-ovchip bump" title="Projected pick ' + pk.label + ' (overall #' + pk.pn + ')">Proj ' + pk.label + '</span>' : '';
-            html += '<tr class="' + cls + '" data-good="' + x.good + '" data-posfull="' + (x.posfull ? 1 : 0) + '" data-name="' + esc(x.name) + '" data-id="' + esc(x.id) + '">'
-            + '<td class="cs-rk">' + (x.rk == null ? '&ndash;' : x.rk) + '</td>'
-            + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + recChip + projChip + ovChip(x) + '</span></td>'
-            + '<td>' + posrk(x) + '</td>'
-            + '<td class="cs-vor-col"><span class="cs-vorwrap"><span class="cs-num">' + x.vorRaw != null
-                ? Number(x.vorRaw).toFixed(1)
-                : '&ndash;' + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.vor / maxVor * 100)) + '%"></i></span></span></td>'
-                + '<td class="cs-num">' + (x.projectedPpg != null ? x.projectedPpg.toFixed(1) : '&ndash;') + '</td>'
-                + c5 + c6 + '<td class="cs-num" title="Full fantasy-season strength of schedule; 1 is easiest">' + (x.scheduleRank ? '#' + x.scheduleRank : '&ndash;') + '</td>' + market + ovControls(x) + '</tr>';
+            var vorDisplay =
+                x.vorRaw != null &&
+                isFinite(Number(x.vorRaw))
+                    ? Number(x.vorRaw).toFixed(1)
+                    : '&ndash;';
+
+            var vorBarPct =
+                x.vorRaw != null &&
+                isFinite(Number(x.vorRaw))
+                    ? Math.max(
+                        0,
+                        Math.round(
+                            Math.max(0, Number(x.vorRaw)) /
+                            maxVor *
+                            100
+                        )
+                    )
+                    : 0;
+            html +=
+                '<tr class="' + cls + '"' +
+                ' data-good="' + x.good + '"' +
+                ' data-posfull="' + (x.posfull ? 1 : 0) + '"' +
+                ' data-name="' + esc(x.name) + '"' +
+                ' data-id="' + esc(x.id) + '">' +
+                '<td class="cs-rk">' +
+                (x.rk == null ? '&ndash;' : x.rk) +
+                '</td>' +
+                '<td>' +
+                '<span class="cs-pcell">' +
+                badge(x.pos) +
+                '<span class="cs-pname">' +
+                esc(x.name) +
+                '</span>' +
+                recChip +
+                projChip +
+                ovChip(x) +
+                '</span>' +
+                '</td>' +
+                '<td>' +
+                posrk(x) +
+                '</td>' +
+                '<td class="cs-vor-col">' +
+                '<span class="cs-vorwrap">' +
+                '<span class="cs-num">' +
+                vorDisplay +
+                '</span>' +
+                '<span class="cs-vorbar">' +
+                '<i style="width:' + vorBarPct + '%"></i>' +
+                '</span>' +
+                '</span>' +
+                '</td>' +
+                '<td class="cs-num">' +
+                (
+                    x.projectedPpg != null
+                        ? Number(x.projectedPpg).toFixed(1)
+                        : '&ndash;'
+                ) +
+                '</td>' +
+                c5 +
+                c6 +
+                '<td class="cs-num"' +
+                ' title="Full fantasy-season strength of schedule; 1 is easiest">' +
+                (
+                    x.scheduleRank
+                        ? '#' + x.scheduleRank
+                        : '&ndash;'
+                ) +
+                '</td>' +
+                market +
+                ovControls(x) +
+                '</tr>';
         });
         if (!shown) html = '<tr><td colspan="' + span + '" class="cs-empty">No players match this filter.</td></tr>';
         $('csBoardBody').innerHTML = html;
