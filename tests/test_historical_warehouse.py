@@ -144,6 +144,9 @@ def test_profiles_rebuild_from_warehouse_rows_write_false(monkeypatch):
     assert "distribution" in payload["age_curves"]["RB"]["by_integer_age"]["24"]
     assert "conditional" in payload["age_curves"]["RB"]["by_integer_age"]["24"]
     assert payload["definitions"]["no_adp"] is True
-    assert payload["phase"] == 3
+    assert payload["phase"] == 4
     assert "prior_usage" in payload
+    assert "comps" in payload
+    assert payload["comps"]["walk_forward"] is False
+    assert payload["comps"]["pooled_historical"] is True
     assert "adp" not in payload["draft_capital"]

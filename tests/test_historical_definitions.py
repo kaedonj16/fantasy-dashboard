@@ -5,8 +5,12 @@ from dashboard_services.historical.definitions import (
     ABSOLUTE_BUST_OUTSIDE,
     AGE_BUCKETS,
     CAREER_STAGE_ORDER,
+    COMP_BOARD_TIERS,
+    COMP_RELAXATION_ORDER,
     DEFAULT_BAYES_PRIOR_N,
+    MIN_COMP_CELL_N,
     POSITION_TIER_WIDTH,
+    PRIOR_FINISH_NONE,
     RELIABLE_SEASON_FLOOR,
     SCORING_FORMATS,
     SNAP_RELIABLE_FLOOR,
@@ -25,6 +29,7 @@ from dashboard_services.historical.definitions import (
     is_absolute_bust,
     parse_birth_date,
     positional_tier_label,
+    prior_finish_bucket,
     tier_flags,
     value_bucket,
     years_experience_before_season,
@@ -166,4 +171,21 @@ def test_value_bucket_skips_missing_and_uses_exclusive_hi():
     assert value_bucket(0.10, TARGET_SHARE_BUCKETS) == "10-15%"
     assert value_bucket(0.25, TARGET_SHARE_BUCKETS) == "25%+"
     assert value_bucket("", TARGET_SHARE_BUCKETS) is None
+
+
+def test_prior_finish_bucket_rookie_none_veteran_missing_omitted():
+    assert prior_finish_bucket(None, years_experience=0) == PRIOR_FINISH_NONE
+    assert prior_finish_bucket(None, years_experience=3) is None
+    assert prior_finish_bucket(None, years_experience=None) is None
+    assert prior_finish_bucket(5) == "top_5"
+    assert prior_finish_bucket(6) == "top_12"
+    assert prior_finish_bucket(12) == "top_12"
+    assert prior_finish_bucket(13) == "top_24"
+    assert prior_finish_bucket(24) == "top_24"
+    assert prior_finish_bucket(36) == "top_36"
+    assert prior_finish_bucket(37) == "outside_36"
+    assert MIN_COMP_CELL_N == 15
+    assert COMP_BOARD_TIERS == ("top_5", "top_12", "top_24")
+    assert COMP_RELAXATION_ORDER[0] == "target_share"
+    assert "position" not in COMP_RELAXATION_ORDER
 

@@ -225,7 +225,7 @@ def test_snap_rates_require_reliable_prior_season():
 
 def test_usage_modules_stay_pure_and_do_not_estimate_snaps():
     hist = ROOT / "dashboard_services" / "historical"
-    for name in ("usage.py", "seasons.py", "finishes.py"):
+    for name in ("usage.py", "seasons.py", "finishes.py", "comps.py"):
         text = (hist / name).read_text(encoding="utf-8")
         assert "import pandas" not in text
         assert "import nfl_data_py" not in text

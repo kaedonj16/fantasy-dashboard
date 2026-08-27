@@ -60,7 +60,8 @@ TIER_CUTOFFS: Mapping[str, int] = {
 # Width is the same at every skill position; the label prefix is the position.
 POSITION_TIER_WIDTH = 12
 
-# UI convenience only. Exact age is stored; these bins never enter matching.
+# UI convenience and Phase 4 matching. Exact age is stored; bins are used
+# as a matching dimension when present (missing age is omitted, not age 0).
 # Inclusive integer age on both ends; None means open.
 # RB  <=22 / 23-24 / 25-26 / 27-28 / 29-30 / 31+
 # WR  <=22 / 23-24 / 25-27 / 28-30 / 31-32 / 33+
@@ -129,6 +130,49 @@ CAREER_STAGE_ORDER: Tuple[str, ...] = (
     CAREER_STAGE_YEAR_5,
     CAREER_STAGE_YEAR_6_PLUS,
 )
+
+# Last-season positional finish as a matching feature. Inclusive lo, exclusive
+# hi. ``none`` is *only* for rookies (exp 0) with no prior finish — veterans
+# with a missing prior are omitted from this dimension, not labeled ``none``.
+PRIOR_FINISH_NONE = "none"
+PRIOR_FINISH_BUCKETS: Tuple[Tuple[Optional[int], Optional[int], str], ...] = (
+    (1, 6, "top_5"),
+    (6, 13, "top_12"),
+    (13, 25, "top_24"),
+    (25, 37, "top_36"),
+    (37, None, "outside_36"),
+)
+PRIOR_FINISH_ORDER: Tuple[str, ...] = (
+    PRIOR_FINISH_NONE,
+    "top_5",
+    "top_12",
+    "top_24",
+    "top_36",
+    "outside_36",
+)
+
+# Comp matching dimensions, coarsest → finest. Relaxation drops from the
+# right (finest first) when a cell is below MIN_COMP_CELL_N.
+COMP_DIMENSION_ORDER: Tuple[str, ...] = (
+    "position",
+    "career_stage",
+    "draft_capital",
+    "prior_finish",
+    "age_bucket",
+    "target_share",
+    "snap_pct",
+)
+COMP_RELAXATION_ORDER: Tuple[str, ...] = (
+    "target_share",
+    "snap_pct",
+    "age_bucket",
+    "draft_capital",
+    "career_stage",
+    "prior_finish",
+)
+COMP_BOARD_TIERS: Tuple[str, ...] = ("top_5", "top_12", "top_24")
+MIN_COMP_CELL_N = 15
+NAMED_EXAMPLES_PER_CELL = 3
 
 # Inclusive lo, exclusive hi (None = open). UI convenience only.
 # Prior-usage hit rates bin previous-season values; missing is not a bucket.
@@ -297,6 +341,28 @@ def integer_age(age: Any) -> Optional[int]:
     if years < 0 or years > 80:
         return None
     return years
+
+
+def prior_finish_bucket(
+    previous_season_finish: Any,
+    *,
+    years_experience: Any = None,
+) -> Optional[str]:
+    """Bucket last season's positional finish for matching.
+
+    Rookies (``years_experience == 0``) with no prior finish → ``none``.
+    Veterans with a missing prior → None (dimension omitted, not a fake
+    last-place or undrafted-style bucket). Rank 13 is ``top_24``, not ``top_12``.
+    """
+    finish = _optional_int(previous_season_finish)
+    if finish is None:
+        exp = _optional_int(years_experience)
+        if exp == 0:
+            return PRIOR_FINISH_NONE
+        return None
+    if finish < 1:
+        return None
+    return value_bucket(finish, PRIOR_FINISH_BUCKETS)
 
 
 def career_stage(years_experience: Any) -> Optional[str]:

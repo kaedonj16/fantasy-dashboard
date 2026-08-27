@@ -53,7 +53,7 @@ def rebuild_historical_profiles(
     write: bool = True,
     scoring: str = "ppr",
 ) -> dict:
-    """Assemble Phase 2 aggregates. ``write=False`` for tests."""
+    """Assemble Phase 2–4 aggregates. ``write=False`` for tests."""
     records = rows if rows is not None else records_from_warehouse()
     payload = assemble_profile_aggregates(records, scoring=scoring)
     if write:

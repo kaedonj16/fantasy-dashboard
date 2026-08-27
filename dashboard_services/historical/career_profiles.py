@@ -30,6 +30,7 @@ from dashboard_services.historical.definitions import (
     _optional_int,
 )
 from dashboard_services.historical.usage import build_prior_usage_rates
+from dashboard_services.historical.comps import build_comp_aggregates
 from dashboard_services.historical.finish_rates import (
     cohort_hit_rate,
     filter_era,
@@ -517,13 +518,14 @@ def assemble_profile_aggregates(
 ) -> dict:
     """Pure aggregator: warehouse records → small JSON-ready dict.
 
-    PPR-primary. No ADP, no projections, no ranking inputs.
+    PPR-primary. No ADP, no projections, no ranking inputs. Phase 4 adds
+    comps / smoothed board probabilities from pre-season features.
     """
     era = filter_era(rows, season_from, season_to)
     bounds = season_bounds(era)
     return {
         "schema_version": 1,
-        "phase": 3,
+        "phase": 4,
         "scoring": scoring,
         "era_floor": season_from,
         "season_range": bounds,
@@ -559,6 +561,20 @@ def assemble_profile_aggregates(
             "missing_exp": "omitted from career-stage cohorts, not labeled rookie",
             "missing_capital": "omitted from draft-capital cohorts, not labeled UDFA",
             "missing_usage": "omitted from prior-usage cohorts, not bucketed as 0",
+            "missing_comp_dimension": (
+                "omitted from matching; not 0 / UDFA / last-place. "
+                "Rookie prior_finish is the explicit label none"
+            ),
+            "comps": (
+                "P(this-season hit | pre-season profile). Matching uses "
+                "position, career stage, draft capital, prior finish, age "
+                "bucket, previous-season usage. Same-season actuals, ADP, "
+                "and projections are not features. Tiny cells relax in "
+                "COMP_RELAXATION_ORDER and shrink toward the position "
+                "baseline. Named comps exclude the query player. Rates are "
+                "pooled historical, not walk-forward. Request path reads "
+                "precomputed JSON leaves; no parquet scan, no 031_* table"
+            ),
             "snap_reliable_floor": SNAP_RELIABLE_FLOOR,
             "ftn_floor": FTN_SEASON_FLOOR,
             "prior_usage": (
@@ -575,4 +591,5 @@ def assemble_profile_aggregates(
         "repeat_and_breakout": build_repeat_and_breakout_rates(era, scoring=scoring),
         "draft_capital": build_draft_capital_rates(era, scoring=scoring),
         "prior_usage": build_prior_usage_rates(era, scoring=scoring),
+        "comps": build_comp_aggregates(era, scoring=scoring),
     }
