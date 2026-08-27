@@ -66,6 +66,7 @@ def test_preseason_profile_steps_forward_from_last_observed_season():
     assert rec["previous_season_finish"] == 5
     assert rec["previous_season_year"] == 2024
     assert rec["draft_capital_bucket"] == "round_1"
+    assert rec["prior_top12_count"] == 1
     assert "projected_ppg" not in rec
     assert "ppr_ppg" not in rec
 
@@ -215,7 +216,7 @@ def test_hist_panel_copy_uses_bucket_hit_rates_not_snake_case():
         "Draft capital",
         "Last year finish",
         "Age",
-        "Last year targets",
+        "Last year target share",
         "Last year snaps",
     ]
     assert "Year 4" in values
@@ -227,7 +228,7 @@ def test_hist_panel_copy_uses_bucket_hit_rates_not_snake_case():
     assert copy["hit_rates"][1]["pct"] == 37
     assert "Among RBs" in copy["headline"]
     assert "not this player's odds" in copy["cohort_note"]
-    assert copy["relaxed"][0]["label"] == "Last year targets"
+    assert copy["relaxed"][0]["label"] == "Last year target share"
     shown = " ".join(
         f"{row['label']} {row['value']}" for row in copy["profile"]
     ) + " " + " ".join(row["label"] for row in copy["relaxed"])
@@ -271,6 +272,7 @@ def test_board_modules_stay_pure():
         assert "static/pick_score" not in text
     bp = (ROOT / "routes" / "historical_api_bp.py").read_text(encoding="utf-8")
     assert "/api/historical-player/" in bp
+    assert "/api/historical-trends" in bp
     assert "read_parquet" not in bp
     assert "load_player_history_df" not in bp
     pick = (ROOT / "static" / "pick_score.js").read_text(encoding="utf-8")
@@ -339,7 +341,39 @@ def test_hist_trends_are_descriptive_bucket_slices():
     assert "age" in kinds
     sentences = [row["sentence"] for row in copy["trends"]]
     assert any("taken in fantasy Round 1 finished top-12" in s for s in sentences)
+    assert any("target share last year" in s for s in sentences)
+    assert not any("targets last year" in s for s in sentences)
     assert all("_" not in row["label"] for row in copy["trends"])
+    with_proj = build_deep_panel(
+        "9221",
+        aggs,
+        extra={
+            "redraft_avg_pick": 2.0,
+            "position": "RB",
+            "proj_ppg": 18.4,
+            "projected_positional_rank": 2,
+            "adp_positional_rank": 1,
+            "prior_top12_count": 3,
+            "previous_season_ngs_rush_yards_over_expected_per_att": 0.7,
+        },
+    )
+    proj = with_proj["copy"]["projection_trends"]
+    kinds = [row["kind"] for row in proj]
+    assert "projection_ppg" in kinds
+    assert "projection_rank" in kinds
+    assert any("18.4 PPG" == row.get("display") for row in proj)
+    assert any(row.get("display") == "#2" for row in proj)
+    assert all("p_top_12" not in row for row in proj)
+    modal_kinds = [row["kind"] for row in with_proj["copy"]["trends"]]
+    assert "adp_positional" in modal_kinds
+    assert "capital_miss" in modal_kinds
+    assert "top12_as_rookie" in modal_kinds
+    assert "top12_by_year_2" in modal_kinds
+    assert "two_plus" in modal_kinds
+    assert "ryoe" in modal_kinds
+    assert "league_winner_smash" not in modal_kinds
+    assert any(row.get("vs_label") for row in with_proj["copy"]["trends"])
+    assert any(row.get("secondary") for row in with_proj["copy"]["trends"])
     query = {
         "position": "RB",
         "years_experience": 3,
@@ -354,3 +388,95 @@ def test_hist_trends_are_descriptive_bucket_slices():
     trends = build_hist_trends(query, aggs, panel["market"])
     assert trends
     assert all(row.get("pct") is not None for row in trends)
+    breakout_q = dict(query)
+    breakout_q["previous_season_finish"] = 28
+    breakout_q["years_experience"] = 4
+    smash = build_hist_trends(breakout_q, aggs, panel["market"])
+    smash_kinds = [row["kind"] for row in smash]
+    assert "league_winner_smash" in smash_kinds
+    assert "first_time_elite" in smash_kinds
+    assert "repeat" not in smash_kinds
+
+
+def test_historical_trends_tab_is_position_wide_and_descriptive():
+    from dashboard_services.historical.aggregates_store import load_profile_aggregates
+    from dashboard_services.historical.board import board_contract, build_historical_trends
+
+    assert board_contract()["trends_tab"] == "/api/historical-trends"
+    aggs = load_profile_aggregates()
+    if not aggs:
+        pytest.skip("profile JSON missing")
+    payload = build_historical_trends(aggs)
+    assert payload["available"] is True
+    assert payload["descriptive_only"] is True
+    assert payload["not_in_ranking"] is True
+    assert payload["not_in_pick_score"] is True
+    assert payload["positions"] == ["QB", "RB", "WR", "TE"]
+    rb = payload["by_position"]["RB"]
+    assert rb["baseline_pct"] is None or isinstance(rb["baseline_pct"], (int, float))
+    ids = [sec["id"] for sec in rb["sections"]]
+    assert "adp" in ids
+    assert "adp_positional" in ids
+    assert "repeat" in ids
+    assert "league_winner" in ids
+    assert "career_stage" in ids
+    assert "draft_capital" in ids
+    assert "top12_as_rookie" in ids
+    assert "capital_miss" in ids
+    assert "age" in ids
+    assert "ryoe" in ids
+    adp = next(sec for sec in rb["sections"] if sec["id"] == "adp")
+    assert adp["heading"] == "Fantasy ADP round"
+    assert "not fantasy ADP" in next(
+        sec["note"] for sec in rb["sections"] if sec["id"] == "draft_capital"
+    )
+    assert any(row["label"] == "Round 1" for row in adp["rows"])
+    round1 = next(row for row in adp["rows"] if row["label"] == "Round 1")
+    assert isinstance(round1.get("vs_baseline"), int)
+    assert round1["vs_baseline"] > 0
+    pos_adp = next(sec for sec in rb["sections"] if sec["id"] == "adp_positional")
+    assert any(row["label"] == "Positional ADP 1–5" for row in pos_adp["rows"])
+    winners = next(sec for sec in rb["sections"] if sec["id"] == "league_winner")
+    assert any("top-5" in row["label"] for row in winners["rows"])
+    miss = next(sec for sec in rb["sections"] if sec["id"] == "capital_miss")
+    assert miss["polarity"] == "miss"
+    assert rb["highlights"]
+    assert rb["age_curve"]
+    assert any(pt.get("age") for pt in rb["age_curve"])
+    wr = payload["by_position"]["WR"]
+    wr_ids = [sec["id"] for sec in wr["sections"]]
+    assert "adot" in wr_ids
+    for pos_page in payload["by_position"].values():
+        for sec in pos_page["sections"]:
+            assert "_" not in sec["heading"]
+            for row in sec["rows"]:
+                assert "_" not in row["label"]
+                assert row.get("pct") is not None
+    blob = " ".join(
+        f"{sec['heading']} {sec['note']} " + " ".join(row["label"] for row in sec["rows"])
+        for pos_page in payload["by_position"].values()
+        for sec in pos_page["sections"]
+    )
+    assert "age_bucket" not in blob
+    assert "snap_pct" not in blob
+    assert "target_share" not in blob
+
+
+def test_historical_trends_route_serves_json_leaves():
+    pytest.importorskip("flask")
+    from flask import Flask
+    from dashboard_services.historical.aggregates_store import load_profile_aggregates
+    from routes.historical_api_bp import historical_api_bp
+
+    if not load_profile_aggregates():
+        pytest.skip("profile JSON missing")
+    app = Flask(__name__)
+    app.register_blueprint(historical_api_bp)
+    with app.test_client() as client:
+        resp = client.get("/api/historical-trends")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["available"] is True
+    assert body["descriptive_only"] is True
+    assert "RB" in body["by_position"]
+    assert body["by_position"]["RB"]["sections"]

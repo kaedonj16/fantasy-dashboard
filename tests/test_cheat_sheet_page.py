@@ -332,7 +332,8 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "var HIST_STRONG_PCT = 25" in script
     assert "market_higher" not in script.split("function histCell")[1].split("function smallVal")[0]
     assert "Hist is redraft-only" in body
-    assert "Trends for this player's buckets" in script or "copy.trends" in script
+    assert "copy.trends" in script or "Trends for this player's buckets" in script
+    assert "trendsHitRow(row, row.polarity)" in script
     assert ".cs-wrap, .cs-hist-modal {" in body
     assert "z-index: var(--z-modal, 10000)" in body
     assert ".cs-hist-head" in body
@@ -350,10 +351,25 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "data-hist-adp" in script
     assert "liveHistAdp" in script
     assert "mkt_sentence" in script
-    assert "copy.hit_rates" in script
+    assert "copy.projection_trends" in script
+    assert "proj_ppg=" in script
+    assert "data-hist-proj" in script
     assert "redraft_avg_pick=" in script
     assert "Object.keys((resp.preseason)" not in script
     assert "Named comps (this player excluded)" not in script
+    assert 'data-tab="trends"' in body
+    assert 'id="cs-panel-trends"' in body
+    assert "/api/historical-trends" in script
+    assert "function loadTrends" in script
+    assert "function renderTrends" in script
+    assert "cs-panel-trends" in script
+    assert "if (!on && currentTab === 'trends') showSheetTab('board')" in script
+    assert ".cs-trends-grid" in body
+    assert ".cs-trends-bar" in body
+    assert ".cs-trends-callouts" in body
+    assert ".cs-trends-ages" in body
+    assert "row.vs_label" in script
+    assert "The Trends tab shows position-wide rates" in body
     assert "p_hit_pct" not in pick
     assert "historical-player" not in core
     assert "p_hit_pct" not in core
