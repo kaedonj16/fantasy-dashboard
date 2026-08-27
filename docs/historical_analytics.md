@@ -1,12 +1,12 @@
 # Historical Analytics
 
-Phase 1–6 of the Draft Cheat Sheet historical layer: a reusable
+Phase 1–7 of the Draft Cheat Sheet historical layer: a reusable
 player-season warehouse, positional finishes, leakage-safe prior-career
 features, descriptive age / career-stage / draft-capital rates,
 previous-season usage/efficiency (NGS + snaps), comparable-player cells
-with smoothed board probabilities, and **frozen preseason ADP with hit
-rates**. Later phases (projections as a separate signal, board columns,
-Pick Score) build on this. They are **not** in this PR.
+with smoothed board probabilities, frozen preseason ADP with hit rates,
+and **History vs Projection vs Market** as three separate live signals.
+Board columns and Pick Score are later. They are **not** in this PR.
 
 This document is the source of truth for datasets reused, season coverage,
 scoring/tier definitions, age methodology, leakage rules, and how the two
@@ -89,15 +89,19 @@ cron cannot overwrite a preseason board, and usable historical maps are
 committed under `cache/player_history/adp/`. Superflex / TEP historical
 ADP still does not exist in free sources.
 
-### Projections (Phase 7; keep out of historical comps)
+### Projections (Phase 7; live signal, not a warehouse column)
 
 | Dataset / function | Notes |
 |---|---|
 | `data_building/fetch_projections.py` | Sleeper-only; current/upcoming season |
-| `utils/projection_resolver.py` + tests | Current-year signal |
+| `utils/projection_resolver.py` + tests | Current-year signal. Callers of `compare_board_signals` must pass this PPG. |
 | `breakout_engine/projections.py` | Live engine |
+| `dashboard_services/historical/signals.py` | History vs Projection vs Market. Does not fetch. |
 
 Canonical season rows have **no** `projected_*` columns. Tests lock that.
+Sleeper has no honest historical preseason projection archive, so Phase 7
+does **not** backfill `P(hit | projected WR1)`. PPG is never converted into
+a fake probability.
 
 ## Architecture (slim-CI split)
 
@@ -112,6 +116,7 @@ dashboard_services/historical/     # pure logic — pytest -m "not integration"
     usage.py                       # overlay, prior-usage features, usage rates
     comps.py                       # pre-season matching, cells, board lookup
     adp.py                         # normalize 999→None, ADP hit rates, ADP-bust
+    signals.py                     # History vs Projection vs Market (no blend)
 data_building/historical/          # pandas / parquet I/O
     build_player_seasons.py        # rebuild warehouse from cache
     build_outcomes.py              # finishes applied in the same rebuild
@@ -123,7 +128,7 @@ data_building/external_data/player_history.py   # existing paths + new wrappers
 
 `definitions.py` / `seasons.py` / `finishes.py` / `finish_rates.py` /
 `age_curves.py` / `career_profiles.py` / `usage.py` / `comps.py` / `adp.py`
-must not import pandas, Flask, or `nfl_data_py`.
+/ `signals.py` must not import pandas, Flask, or `nfl_data_py`.
 `test_product_honesty.py` and `test_adp_formats.py` stay green: this package is
 not on their import graph.
 
@@ -132,7 +137,8 @@ Persistence: large per-season rows stay in committed parquet under
 file (`historical_profile_aggregates.json`) rebuilt in cron after the
 warehouse. Request paths must not scan parquet row-by-row. No Postgres table
 yet (next migration remains `031_*` when a request path needs it). Phase 4
-board probabilities and Phase 6 ADP rates are JSON lookups, not a new table.
+board probabilities, Phase 6 ADP rates, and Phase 7 live-signal comparison
+are JSON lookups plus caller-supplied current PPG/ADP, not a new table.
 
 Rebuild:
 
@@ -202,7 +208,7 @@ zero-fills for live valuation. Do not point the historical layer at it.
 | GSIS | 2018–22 usage_rows; 2023+ only if that sleeper id appeared in a legacy file | Full `import_ids` join is Phase 1-compatible but optional. Overlay joins NGS/snaps by sleeper id from the ids file, so 2023+ NGS does not require GSIS on the warehouse row. |
 | Historical ADP | **redraft PPR 1QB**, frozen snapshots **2018–2025** | Sleeper `adp_ppr` 2020+ (empty 2018–19); MFL PPR 12-team real drafts 2018+ (selected-only ≥25%); ESPN only when the board passes a preseason quality gate (2021/22/25 fail the “170 wall”). Yahoo has **no season axis**. Sleeper 999 → missing. |
 | SF / TEP historical ADP | **does not exist** in free sources | Not claimed. Sleeper `adp_2qb` is stored on the Sleeper snapshot but is not blended into 1QB hit rates. |
-| Current-season projections | excluded from this warehouse | |
+| Current-season projections | live Sleeper only (Phase 7) | Not stored on warehouse rows. No historical preseason backfill. |
 
 Do not claim “2012+” uniformly.
 
@@ -389,7 +395,8 @@ That walk-forward comparison is Phase 9 via the existing backtester.
 Descriptive only — comps do not enter ranking or Pick Score.
 
 No `031_*` migration. The request-path artifact remains
-`historical_profile_aggregates.json` (`phase: 6`, `comps` + `adp` sections).
+`historical_profile_aggregates.json` (`phase: 7`, `comps` + `adp` + `signals`
+sections). Live PPG is supplied by the caller, not stored on warehouse rows.
 
 ### Phase 4 snapshot (2018–2025 warehouse, PPR)
 
@@ -455,11 +462,48 @@ Round-1 TE/QB cells are tiny (those positions rarely go in the first 12
 picks); use positional ADP top-12 there. Comps keys still have no ADP
 dimension.
 
-## Limitations (Phase 1–6)
+## Phase 7 — History vs Projection vs Market
 
-- No board UI columns, no Pick Score change. Phase 2–6 rates are
-  informational. Comps and ADP do not enter ranking.
+Three live signals, compared in **native units**. Descriptive only — nothing
+here enters ranking or Pick Score. Warehouse parquet still has no
+`projected_*` columns. Comps matching still ignores projections and ADP.
+
+| Signal | Source | Unit |
+|---|---|---|
+| **History** | `lookup_board_probabilities` on JSON comps leaves | `P(top-12)` (smoothed) |
+| **Market** | current overall ADP → Phase 6 `by_overall_bucket` conditional rate | `P(top-12)` (smoothed) |
+| **Projection** | caller-supplied current Sleeper PPG (`utils.projection_resolver`) | PPG + implied positional rank among the live projected field |
+
+`compare_board_signals` is the request-path primitive: one batch over the
+board so implied ranks are well-defined. It does not scan parquet, fetch
+Sleeper, or invent a blended score (`blended_score` is always `None`).
+
+Rules:
+
+- Missing projection / ADP / empty rate cell → `unknown`, not 0% or last place.
+- Board `ppg` / warehouse `ppr_ppg` / season `projected_points` are **not**
+  read as a projection. Only `projected_ppg` / `proj_ppg`.
+- Sleeper ADP `999` is missing market, same as Phase 6.
+- History vs market: `|ΔP| < 0.10` is aligned; otherwise `history_higher` /
+  `market_higher`.
+- Projection vs market: `|Δ rank| ≤ 6` is aligned (competition rank, 1/2/2/4).
+- Projection vs history is **qualitative** (`history_skeptical` /
+  `history_bullish` / `agree_hit` / `agree_miss`). PPG is not turned into a
+  fake `P(top-12)`. Sleeper cannot backfill historical preseason projections,
+  so there is no honest `P(hit | projected WR1)` table.
+
+Phase 8 can attach a compact slice of this payload onto `/api/league-players`.
+This phase does not change cheat-sheet JS, Draft Room, or Pick Score.
+
+## Limitations (Phase 1–7)
+
+- No board UI columns, no Pick Score change. Phase 2–7 rates and signal
+  comparisons are informational. Comps, ADP, and live projections do not
+  enter ranking.
 - Comp cell rates and ADP hit rates are pooled historical, not walk-forward.
+- Current projections are a live signal only. There is no historical
+  preseason projection archive, so projection vs history cannot be a
+  calibrated probability.
 - Superflex / TEP historical ADP does not exist in free sources.
 - Yahoo public ADP has no season parameter; it is current-only.
 - ESPN 2021/2022/2025 boards fail the preseason quality gate and are unused.
@@ -516,14 +560,16 @@ Writes `cache/player_history/player_history_{season}.parquet`,
 `historical_profile_aggregates.json`. Empty games=0 padding rows from
 2023–2025 Sleeper dumps are dropped. Missing fields stay null; coverage JSON
 reports present/missing per field. Profile JSON is the request-path artifact
-for Phase 2–6 rates (comp leaves + ADP hit rates). The usage-efficiency and
+for Phase 2–7 rates (comp leaves + ADP hit rates + signal contract). The usage-efficiency and
 ADP backfills are optional when those JSON caches are already committed;
-warehouse rebuild does not call nflverse or ADP APIs live.
+warehouse rebuild does not call nflverse or ADP APIs live. Live projections
+are not written into this JSON.
 
 ## Follow-up (gated)
 
-7. Current projections as a **separate** signal; History vs Projection vs Market.
 8. Compact board columns + lazy deep panel (JSON lookup, no parquet scan).
+   History / market probabilities and projection rank ride `/api/league-players`;
+   the deep modal can call `lookup_board_probabilities` for named comps.
 9+. League-winner proxy, walk-forward comparison via existing backtester, bounded
     Pick Score only if validated. Postgres `031_*` only if a request path
     outgrows the JSON artifact.

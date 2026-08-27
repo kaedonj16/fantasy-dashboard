@@ -32,6 +32,7 @@ from dashboard_services.historical.definitions import (
 from dashboard_services.historical.usage import build_prior_usage_rates
 from dashboard_services.historical.comps import build_comp_aggregates
 from dashboard_services.historical.adp import build_adp_hit_rates
+from dashboard_services.historical.signals import signal_contract
 from dashboard_services.historical.finish_rates import (
     cohort_hit_rate,
     filter_era,
@@ -520,13 +521,15 @@ def assemble_profile_aggregates(
     """Pure aggregator: warehouse records → small JSON-ready dict.
 
     PPR-primary. ADP hit rates are descriptive market stats (Phase 5–6), not
-    ranking inputs and not comp-matching features. No projections.
+    ranking inputs and not comp-matching features. Warehouse rows have no
+    projection columns. Live Sleeper PPG is a separate Phase 7 signal compared
+    in native units (probability vs rank), never blended into a score.
     """
     era = filter_era(rows, season_from, season_to)
     bounds = season_bounds(era)
     return {
         "schema_version": 1,
-        "phase": 6,
+        "phase": 7,
         "scoring": scoring,
         "era_floor": season_from,
         "season_range": bounds,
@@ -585,6 +588,8 @@ def assemble_profile_aggregates(
             ),
             "adp_in_comps": False,
             "adp_in_ranking": False,
+            "projections_in_comps": False,
+            "projections_in_ranking": False,
             "snap_reliable_floor": SNAP_RELIABLE_FLOOR,
             "ftn_floor": FTN_SEASON_FLOOR,
             "prior_usage": (
@@ -593,7 +598,15 @@ def assemble_profile_aggregates(
             ),
             "no_adp": False,
             "no_projections": True,
+            "signals": (
+                "History = comps P(top-12). Market = historical P(top-12 | "
+                "current ADP overall bucket). Projection = current Sleeper "
+                "PPG and implied positional rank among the live projected "
+                "field. PPG is not converted to a probability. Missing "
+                "signals stay unknown. No blended ranking score"
+            ),
         },
+        "signals": signal_contract(),
         "age_curves": build_age_curves(
             era, scoring=scoring, season_from=season_from, season_to=season_to
         ),

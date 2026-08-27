@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "phase": 6,
+  "phase": 7,
   "scoring": "ppr",
   "era_floor": 2016,
   "season_range": [
@@ -33,11 +33,45 @@
     "adp": "P(this-season hit | preseason redraft PPR 1QB ADP). Source order sleeper \u2192 mfl \u2192 espn \u2192 yahoo. Superflex/TEP historical ADP is not claimed. Not a comp feature and not a ranking input. Frozen snapshots are not overwritten by cron",
     "adp_in_comps": false,
     "adp_in_ranking": false,
+    "projections_in_comps": false,
+    "projections_in_ranking": false,
     "snap_reliable_floor": 2022,
     "ftn_floor": 2022,
     "prior_usage": "P(this-season hit | previous-season usage bucket); same-season NGS/snaps are outcomes, not features",
     "no_adp": false,
-    "no_projections": true
+    "no_projections": true,
+    "signals": "History = comps P(top-12). Market = historical P(top-12 | current ADP overall bucket). Projection = current Sleeper PPG and implied positional rank among the live projected field. PPG is not converted to a probability. Missing signals stay unknown. No blended ranking score"
+  },
+  "signals": {
+    "descriptive_only": true,
+    "no_blended_score": true,
+    "no_historical_projection_backfill": true,
+    "warehouse_has_projections": false,
+    "request_path": "compare_board_signals(board, historical_profile_aggregates.json); no parquet scan, no new Postgres table",
+    "projection_resolver": "utils.projection_resolver (Sleeper-authoritative)",
+    "native_units": {
+      "history": "P(top-12) from comps leaves",
+      "market": "P(top-12) from historical ADP overall bucket",
+      "projection": "current PPG + implied positional rank among the projected field; not a probability",
+      "history_vs_market": "probability",
+      "projection_vs_market": "positional_rank",
+      "projection_vs_history": "qualitative_only"
+    },
+    "align": {
+      "probability_delta": 0.1,
+      "rank_spots": 6,
+      "history_skeptical_p": 0.25,
+      "history_bullish_p": 0.5,
+      "tier": "top_12"
+    },
+    "ignored_as_projection": [
+      "ppg",
+      "ppr_ppg",
+      "half_ppr_ppg",
+      "standard_ppg",
+      "projected_points",
+      "ppr_points"
+    ]
   },
   "age_curves": {
     "QB": {

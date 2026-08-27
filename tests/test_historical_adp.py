@@ -172,7 +172,7 @@ def test_comps_ignore_adp_and_assemble_keeps_adp_out_of_comps():
     assert "adp_bucket" not in feats
     assert set(feats).isdisjoint(set(ADP_FEATURE_FIELDS))
     payload = assemble_profile_aggregates([row])
-    assert payload["phase"] == 6
+    assert payload["phase"] == 7
     assert payload["definitions"]["adp_in_comps"] is False
     assert payload["definitions"]["adp_in_ranking"] is False
     assert payload["definitions"]["no_adp"] is False

@@ -196,6 +196,14 @@ ADP_OVERALL_BUCKETS: Tuple[Tuple[Optional[float], Optional[float], str], ...] = 
     (121.0, None, "rounds_11_plus"),
 )
 
+# Phase 7 live-signal comparison. These are descriptive labels, not a blended
+# ranking score. PPG is never converted into a fake P(top-12).
+SIGNAL_PROB_ALIGN_DELTA = 0.10
+SIGNAL_RANK_ALIGN_SPOTS = 6
+SIGNAL_HISTORY_SKEPTICAL_P = 0.25
+SIGNAL_HISTORY_BULLISH_P = 0.50
+SIGNAL_BOARD_TIER = "top_12"
+
 # Inclusive lo, exclusive hi (None = open). UI convenience only.
 # Prior-usage hit rates bin previous-season values; missing is not a bucket.
 _RateBound = Tuple[Optional[float], Optional[float], str]
