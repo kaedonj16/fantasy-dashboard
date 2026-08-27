@@ -1410,13 +1410,16 @@
     // Keep the details panel open across re-renders (the toggle rebuilds this
     // markup, which would otherwise collapse the list the user just opened).
     var _wasOpen = (function(){ var l = document.getElementById('drKeeperList'); return l && !l.hidden; })();
+    el.className = 'dr-keeper-banner' + (keepersOn ? ' is-on' : '');
     el.innerHTML =
       '<div class="dr-keeper-head">' +
-        '<b>Keepers ' + (keepersOn ? 'applied' : 'off') + '</b>' +
+        '<span class="dr-keeper-title"><b>Keepers ' + (keepersOn ? 'applied' : 'off') + '</b></span>' +
         '<span class="dr-keeper-sub">' + keeperSet.length + ' off the board · ' +
           mine + ' yours, ' + proj + ' projected</span>' +
-        '<button type="button" id="drKeeperView" class="dr-keeper-btn">Details</button>' +
-        '<button type="button" id="drKeeperToggle" class="dr-keeper-btn">' +
+        '<button type="button" id="drKeeperView" class="dr-keeper-btn dr-keeper-view' + (_wasOpen ? ' is-open' : '') + '"' +
+          ' aria-expanded="' + (_wasOpen ? 'true' : 'false') + '">Details' +
+          '<span class="dr-keeper-caret" aria-hidden="true"></span></button>' +
+        '<button type="button" id="drKeeperToggle" class="dr-keeper-btn dr-keeper-btn-primary">' +
           (keepersOn ? 'Turn off' : 'Apply') + '</button>' +
       '</div>' +
       '<div id="drKeeperList" class="dr-keeper-list"' + (_wasOpen ? '' : ' hidden') + '>' + rows +
@@ -1425,7 +1428,11 @@
     var vbtn = document.getElementById('drKeeperView');
     var tbtn = document.getElementById('drKeeperToggle');
     var list = document.getElementById('drKeeperList');
-    if (vbtn && list) vbtn.addEventListener('click', function(){ list.hidden = !list.hidden; });
+    if (vbtn && list) vbtn.addEventListener('click', function(){
+      list.hidden = !list.hidden;
+      vbtn.classList.toggle('is-open', !list.hidden);
+      vbtn.setAttribute('aria-expanded', String(!list.hidden));
+    });
     if (tbtn) tbtn.addEventListener('click', function(){ setKeepersOn(!keepersOn); });
   }
 

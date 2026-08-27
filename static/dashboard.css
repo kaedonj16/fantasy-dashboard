@@ -11916,48 +11916,116 @@ a.signed-home-league:hover {
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 12px;
-    padding: 12px 14px;
+    padding: 11px 14px;
     margin: 0 0 14px;
+    box-shadow: var(--shadow-sm);
 }
 
 .dr-keeper-head {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px 12px;
     flex-wrap: wrap;
     font-size: 14px;
     color: var(--text);
 }
 
+/* Title carries a small status dot: green when keepers are on the board,
+   muted when they've been turned off. */
+.dr-keeper-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+}
+
+.dr-keeper-title::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-subtle);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-subtle) 18%, transparent);
+    flex: none;
+}
+
+.dr-keeper-banner.is-on .dr-keeper-title::before {
+    background: var(--win);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--win) 20%, transparent);
+}
+
 .dr-keeper-sub {
     color: var(--text-muted);
     font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
 }
 
 .dr-keeper-btn {
     font: inherit;
     font-size: 12px;
     font-weight: 600;
-    color: var(--accent);
+    color: var(--text-muted);
     background: transparent;
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 5px 11px;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: border-color .15s ease, background .15s ease, color .15s ease;
 }
 
 .dr-keeper-btn:hover {
     border-color: var(--accent);
+    color: var(--text);
 }
 
-.dr-keeper-head .dr-keeper-btn:last-child {
+.dr-keeper-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* Caret on the Details toggle; rotates when the list is open. */
+.dr-keeper-caret {
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid currentColor;
+    transition: transform .18s ease;
+}
+
+.dr-keeper-view.is-open .dr-keeper-caret {
+    transform: rotate(180deg);
+}
+
+/* Primary toggle (Turn off / Apply) reads as the active control — an
+   accent-tinted chip rather than a plain outline button. */
+.dr-keeper-btn-primary {
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.dr-keeper-btn-primary:hover {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.dr-keeper-head .dr-keeper-btn-primary {
     margin-left: auto;
 }
 
+/* Keeper roster: a responsive grid so a full slate of keepers packs into a
+   couple of tidy columns instead of one long stack. */
 .dr-keeper-list {
-    margin-top: 10px;
-    display: flex;
-    flex-direction: column;
+    margin-top: 11px;
+    padding-top: 11px;
+    border-top: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
     gap: 6px;
 }
 
@@ -11967,25 +12035,39 @@ a.signed-home-league:hover {
     justify-content: space-between;
     gap: 10px;
     font-size: 13px;
+    font-weight: 600;
     color: var(--text);
-    padding: 6px 8px;
+    padding: 7px 10px;
     border-radius: 8px;
     background: var(--card-soft);
+    border: 1px solid transparent;
+    transition: border-color .15s ease, background .15s ease;
+}
+
+.dr-keeper-item:hover {
+    border-color: var(--border);
+    background: var(--row);
 }
 
 .dr-keeper-pos {
-    font-size: 10px;
-    font-weight: 700;
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: .04em;
     color: var(--text-muted);
+    padding: 1px 5px;
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--text-muted) 12%, transparent);
 }
 
 .dr-keeper-tag {
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: .03em;
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: .05em;
+    text-transform: uppercase;
     padding: 2px 8px;
-    border-radius: 12px;
+    border-radius: 999px;
     white-space: nowrap;
+    flex: none;
 }
 
 .dr-keeper-tag.mine {
@@ -11999,9 +12081,10 @@ a.signed-home-league:hover {
 }
 
 .dr-keeper-note {
+    grid-column: 1 / -1;
     font-size: 11.5px;
     color: var(--text-muted);
-    margin-top: 4px;
+    margin-top: 3px;
 }
 
 .inj-list {
