@@ -895,6 +895,12 @@
     closeEditSetup();
     document.getElementById('drSetup').style.display = 'none';
     var hero = document.getElementById('drHero'); if (hero) hero.style.display = 'none';
+    // Collapse the keeper list when entering the board. Its keepers are already
+    // seeded onto the board here, so the expanded roster only clutters the top
+    // of the draft view; leave the compact header (Details / Turn off) in place.
+    // renderKeeperBanner reads the list's open state from the DOM, so collapsing
+    // it now keeps it collapsed across the re-renders that follow.
+    var _kl = document.getElementById('drKeeperList'); if (_kl) _kl.hidden = true;
     var isLive = !!(state && state.mode === 'live');
     // Practice Mock is only relevant when connected to an upcoming league draft.
     // Edit Setup is hidden during live drafts (settings are locked to the real draft).
@@ -1446,13 +1452,16 @@
     // Keep the details panel open across re-renders (the toggle rebuilds this
     // markup, which would otherwise collapse the list the user just opened).
     var _wasOpen = (function(){ var l = document.getElementById('drKeeperList'); return l && !l.hidden; })();
+    el.className = 'dr-keeper-banner' + (keepersOn ? ' is-on' : '');
     el.innerHTML =
       '<div class="dr-keeper-head">' +
-        '<b>Keepers ' + (keepersOn ? 'applied' : 'off') + '</b>' +
+        '<span class="dr-keeper-title"><b>Keepers ' + (keepersOn ? 'applied' : 'off') + '</b></span>' +
         '<span class="dr-keeper-sub">' + keeperSet.length + ' off the board · ' +
           mine + ' yours, ' + proj + ' projected</span>' +
-        '<button type="button" id="drKeeperView" class="dr-keeper-btn">Details</button>' +
-        '<button type="button" id="drKeeperToggle" class="dr-keeper-btn">' +
+        '<button type="button" id="drKeeperView" class="dr-keeper-btn dr-keeper-view' + (_wasOpen ? ' is-open' : '') + '"' +
+          ' aria-expanded="' + (_wasOpen ? 'true' : 'false') + '">Details' +
+          '<span class="dr-keeper-caret" aria-hidden="true"></span></button>' +
+        '<button type="button" id="drKeeperToggle" class="dr-keeper-btn dr-keeper-btn-primary">' +
           (keepersOn ? 'Turn off' : 'Apply') + '</button>' +
       '</div>' +
       '<div id="drKeeperList" class="dr-keeper-list"' + (_wasOpen ? '' : ' hidden') + '>' + rows +
@@ -1461,7 +1470,11 @@
     var vbtn = document.getElementById('drKeeperView');
     var tbtn = document.getElementById('drKeeperToggle');
     var list = document.getElementById('drKeeperList');
-    if (vbtn && list) vbtn.addEventListener('click', function(){ list.hidden = !list.hidden; });
+    if (vbtn && list) vbtn.addEventListener('click', function(){
+      list.hidden = !list.hidden;
+      vbtn.classList.toggle('is-open', !list.hidden);
+      vbtn.setAttribute('aria-expanded', String(!list.hidden));
+    });
     if (tbtn) tbtn.addEventListener('click', function(){ setKeepersOn(!keepersOn); });
   }
 
