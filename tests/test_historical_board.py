@@ -358,13 +358,11 @@ def test_hist_trends_are_descriptive_bucket_slices():
             "previous_season_ngs_rush_yards_over_expected_per_att": 0.7,
         },
     )
-    proj = with_proj["copy"]["projection_trends"]
-    kinds = [row["kind"] for row in proj]
-    assert "projection_ppg" in kinds
-    assert "projection_rank" in kinds
-    assert any("18.4 PPG" == row.get("display") for row in proj)
-    assert any(row.get("display") == "#2" for row in proj)
-    assert all("p_top_12" not in row for row in proj)
+    assert "projection_trends" not in with_proj["copy"]
+    shown_copy = json.dumps(with_proj["copy"], ensure_ascii=False)
+    assert "This board's projection" not in shown_copy
+    assert "Sleeper projection for this season" not in shown_copy
+    assert "both point at a top-12" not in shown_copy
     modal_kinds = [row["kind"] for row in with_proj["copy"]["trends"]]
     assert "adp_positional" in modal_kinds
     assert "capital_miss" in modal_kinds
