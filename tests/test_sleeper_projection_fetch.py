@@ -24,6 +24,9 @@ class _Response:
             "pts_std": 14.57,
         }]
 
+    def raise_for_status(self):
+        return None
+
 
 def test_fetch_preserves_sleeper_totals_outside_stats(monkeypatch):
     monkeypatch.setattr(utils.requests, "get", lambda *args, **kwargs: _Response())
@@ -33,6 +36,23 @@ def test_fetch_preserves_sleeper_totals_outside_stats(monkeypatch):
 
     assert result["9758"]["raw_stats"]["pts_ppr"] == 14.57
     assert result["9758"]["ppr"] == 12.0
+
+
+def test_season_cache_v2_preserves_raw_stats_for_custom_scoring(monkeypatch, tmp_path):
+    class SeasonResponse(_Response):
+        def json(self):
+            return [{"player_id": "wr", "stats": {
+                "rec": 100, "rec_yd": 1000, "rec_td": 10, "gp": 17,
+                "pts_ppr": 260, "pts_half_ppr": 210, "pts_std": 160,
+            }}]
+
+    import requests
+    monkeypatch.setattr(fetch_projections, "_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: SeasonResponse())
+    out = fetch_projections.load_sleeper_season_stat_lines(2026)
+    assert out["wr"]["raw_stats"]["rec"] == 100
+    assert out["wr"]["pts_ppr"] == 260
+    assert list(tmp_path.glob("sleeper_season_proj_v2_2026_*.json"))
 
 
 def test_season_ppg_uses_only_sleeper_weekly_values(monkeypatch):
@@ -84,12 +104,12 @@ def test_season_ppg_fills_player_missing_from_weekly_files(monkeypatch):
     })
 
     result = fetch_projections.fetch_sleeper_season_projections(2026, "ppr")
-    assert result["9224"]["ppg"] == 14.9
+    assert result["9224"]["ppg"] == round(255.2 / 17.0, 2)
     assert result["5859"]["pos"] == "WR"
     assert result["5859"]["ppg"] == round(247.2 / 17.0, 2)
     assert result["5859"]["season_pts"] == 247.2
 
     variants = fetch_projections.fetch_sleeper_season_ppg_variants(2026)
-    assert variants["9224"]["ppr"] == 14.9
+    assert variants["9224"]["ppr"] == round(255.2 / 17.0, 2)
     assert "5859" in variants
     assert variants["5859"]["ppr"] == round(247.2 / 17.0, 2)

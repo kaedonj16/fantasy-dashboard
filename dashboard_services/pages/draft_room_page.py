@@ -1544,7 +1544,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-lg-need b { font-weight: 800; }
   .dr-lg-picks { font-size: 10px; color: var(--text-muted); margin-top: 4px; line-height: 1.4; }
   /* ── Roster projection card ── */
-  .dr-proj-card { margin: 10px 0 2px; padding: 10px 12px; border-radius: 10px;
+  .dr-proj-card { margin: 6px 10px 2px; padding: 10px 12px; border-radius: 10px;
     border: 1px solid var(--border); background: var(--bg); }
   .dr-proj-title { font-size: 9px; font-weight: 800; text-transform: uppercase;
     letter-spacing: .06em; color: var(--text-muted); margin-bottom: 8px; }

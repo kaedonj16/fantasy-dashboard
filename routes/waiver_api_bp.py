@@ -242,12 +242,18 @@ def api_waiver_candidates():
     # recent ppg understates the role).
     _season_ppg_wv: dict = {}
     try:
-        from data_building.fetch_projections import fetch_sleeper_season_projections
+        from utils.projection_resolver import resolve_projected_ppg_many
         _nfl_pj = get_nfl_state() or {}
         _pj_season = int(_nfl_pj.get("season") or season)
-        for _pid, _row in (fetch_sleeper_season_projections(_pj_season, "ppr") or {}).items():
-            if isinstance(_row, dict) and _row.get("ppg") is not None:
-                _season_ppg_wv[str(_pid)] = _row.get("ppg")
+        _ids_wv = list(_full_players_wv)
+        _pos_wv = {str(pid): str((row or {}).get("position") or (row or {}).get("pos") or "")
+                   for pid, row in _full_players_wv.items()}
+        _resolved_wv = resolve_projected_ppg_many(
+            _ids_wv, ctx.get("raw_scoring_settings") or {}, _pj_season,
+            positions=_pos_wv)
+        for _pid, _row in _resolved_wv.items():
+            if _row.get("ppg") is not None:
+                _season_ppg_wv[str(_pid)] = _row["ppg"]
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 

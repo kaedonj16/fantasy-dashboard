@@ -971,6 +971,70 @@ _ESPN_SLOT_TO_SLEEPER: Dict[str, str] = {
     "IR": "IR",
 }
 
+# ESPN mSettings scoringItems statId -> the provider-agnostic keys consumed by
+# score_stats, projections, Player Modal and Draft Room. ESPN's canonical
+# reception scoring item is statId 53 ("Each reception"), not the league's
+# coarse scoring_type label.
+_ESPN_SCORING_STAT_KEYS: Dict[int, str] = {
+    0: "pass_att", 1: "pass_cmp", 2: "pass_inc",
+    3: "pass_yd", 4: "pass_td", 19: "pass_2pt", 20: "pass_int",
+    23: "rush_att", 24: "rush_yd", 25: "rush_td", 26: "rush_2pt",
+    42: "rec_yd", 43: "rec_td", 44: "rec_2pt", 53: "rec", 58: "rec_tgt",
+    68: "fum", 72: "fum_lost",
+    74: "fgm_50p", 77: "fgm_40_49", 80: "fgm_0_39", 83: "fgm",
+    76: "fgmiss_50p", 79: "fgmiss_40_49", 82: "fgmiss_0_39", 85: "fgmiss",
+    86: "xpm", 88: "xpmiss",
+    89: "pts_allow_0", 90: "pts_allow_1_6", 91: "pts_allow_7_13",
+    92: "pts_allow_14_17", 121: "pts_allow_18_21", 122: "pts_allow_22_27",
+    123: "pts_allow_28_34", 124: "pts_allow_35_45", 125: "pts_allow_46p",
+    95: "int", 96: "fum_rec", 97: "blk_kick", 98: "safe", 99: "sack",
+    105: "def_st_td", 106: "fum_forced",
+    211: "pass_fd", 212: "rush_fd", 213: "rec_fd",
+}
+
+
+def _espn_scoring_item_points(item: dict):
+    """Read ESPN points without dropping an explicit zero override."""
+    overrides = item.get("pointsOverrides") or {}
+    if isinstance(overrides, dict) and "16" in overrides and overrides["16"] is not None:
+        return overrides["16"]
+    return item.get("points")
+
+
+def normalize_espn_scoring_items(scoring_items: List[dict]) -> Dict[str, float]:
+    """Normalize raw ESPN mSettings scoringItems into the shared scoring shape."""
+    normalized: Dict[str, float] = {}
+    for item in scoring_items or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            stat_id = int(item.get("statId"))
+        except (TypeError, ValueError):
+            continue
+        key = _ESPN_SCORING_STAT_KEYS.get(stat_id)
+        value = _espn_scoring_item_points(item)
+        if key is None or value is None:
+            continue
+        try:
+            normalized[key] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return normalized
+
+
+def _raw_espn_scoring_items(lg) -> List[dict]:
+    """Fetch mSettings scoringItems from the already credential-scoped league."""
+    try:
+        payload = lg.espn_request.league_get(params={"view": "mSettings"})
+    except Exception as exc:
+        logger.warning("[espn-scoring] mSettings unavailable: %s", type(exc).__name__)
+        return []
+    if not isinstance(payload, dict):
+        return []
+    items = (((payload.get("settings") or {}).get("scoringSettings") or {})
+             .get("scoringItems") or [])
+    return items if isinstance(items, list) else []
+
 
 def get_league_globals(season: int, league_id: str) -> Dict[str, Any]:
     """
@@ -986,13 +1050,11 @@ def get_league_globals(season: int, league_id: str) -> Dict[str, Any]:
 
     settings = getattr(lg, "settings", None)
 
-    # Scoring type -> PPR value
-    scoring_type = (getattr(settings, "scoring_type", None) or "standard").lower().replace(" ", "_")
-    ppr_map = {"ppr": 1.0, "half_ppr": 0.5, "half-ppr": 0.5, "standard": 0.0}
-    ppr = ppr_map.get(scoring_type, 0.0)
-
+    # Use ESPN's raw scoring items, not espn_api's coarse/missing scoring_type.
+    # Keep defaults only for categories ESPN omitted; explicit zeroes in the
+    # raw list override them below.
     scoring_settings: Dict[str, Any] = {
-        "rec": ppr,
+        "rec": 0.0,
         "pass_yd": 0.04,
         "pass_td": 4.0,
         "pass_int": -2.0,
@@ -1009,6 +1071,35 @@ def get_league_globals(season: int, league_id: str) -> Dict[str, Any]:
         "fg_50p": 5.0,
         "xpt": 1.0,
     }
+    scoring_items = _raw_espn_scoring_items(lg)
+    normalized_scoring = normalize_espn_scoring_items(scoring_items)
+    scoring_settings.update(normalized_scoring)
+    from utils.league_scoring import normalize_league_scoring
+    scoring_settings = normalize_league_scoring(
+        "espn", scoring_settings, league_id=league_id, season=season)
+    # Transitional aliases for older consumers of dashboard_services.api's
+    # provider-agnostic contract. Both families carry the same value; new point
+    # math uses the Sleeper-style keys above.
+    scoring_settings.update({
+        "pointsPerReception": scoring_settings["rec"],
+        "passYards": scoring_settings["pass_yd"],
+        "passTD": scoring_settings["pass_td"],
+        "passInterceptions": scoring_settings["pass_int"],
+        "rushYards": scoring_settings["rush_yd"],
+        "rushTD": scoring_settings["rush_td"],
+        "receivingYards": scoring_settings["rec_yd"],
+        "receivingTD": scoring_settings["rec_td"],
+        "fumbles": scoring_settings["fum_lost"],
+    })
+    if "rec" not in normalized_scoring:
+        logger.warning("[espn-scoring] reception item statId=53 missing "
+                       "platform=espn league_id=%s season=%s scoring_items=%s",
+                       league_id, season, len(scoring_items))
+    else:
+        logger.info("[espn-scoring] platform=espn league_id=%s season=%s "
+                    "normalized_rec=%s normalized_pass_td=%s scoring_items=%s",
+                    league_id, season, scoring_settings["rec"],
+                    scoring_settings.get("pass_td"), len(scoring_items))
 
     # Roster positions
     raw_slots = getattr(settings, "roster_slots", None) or []

@@ -137,11 +137,28 @@
   // used as a projection stand-in.
   function scoringProjPpg(p, scoring) {
     if (!p) return null;
-    var base = (p.proj_ppg != null && isFinite(Number(p.proj_ppg))) ? Number(p.proj_ppg) : null;
+    var projectionPos = String(p.position || p.pos || '').toUpperCase();
+    function unitSafe(v) {
+      if (v == null || !isFinite(Number(v))) return null;
+      v = Number(v);
+      // Corruption detector only: a K/DST value this large is a season total or
+      // malformed category, never a credible PPG. Do not clamp it into a score.
+      if ((projectionPos === 'K' && v > 30) ||
+          ((projectionPos === 'DEF' || projectionPos === 'DST' || projectionPos === 'D/ST') && v > 40)) return null;
+      return v;
+    }
+    // New payloads carry the already-scored canonical result. Never silently
+    // rescale that displayed/model input in the browser.
+    if (p.projection && p.projection.projection_type === 'season_average'
+        && p.projection.unit === 'points_per_game'
+        && p.projection.ppg != null && isFinite(Number(p.projection.ppg))) {
+      return unitSafe(p.projection.ppg);
+    }
+    var base = unitSafe(p.proj_ppg);
     var by = p.proj_ppg_by;
     var key = pickProjVariant(scoring);
-    var variant = (by && by[key] != null && isFinite(Number(by[key]))) ? Number(by[key]) : null;
-    var pprVar = (by && by.ppr != null && isFinite(Number(by.ppr))) ? Number(by.ppr) : null;
+    var variant = unitSafe(by && by[key]);
+    var pprVar = unitSafe(by && by.ppr);
     if (variant != null && variant > 0) {
       if (base != null && pprVar != null && pprVar > 0 && key !== 'ppr') {
         return Math.round(base * (variant / pprVar) * 10) / 10;
