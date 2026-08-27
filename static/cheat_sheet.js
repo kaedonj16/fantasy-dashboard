@@ -25,9 +25,13 @@
     var showMarket = function (dyn) {
         return !dyn && SHOW_MARKET_VS_ADP;
     };
-    var showHist = function () {
-        return SHOW_HISTORICAL;
+    var showHist = function (dyn) {
+        return !dyn && SHOW_HISTORICAL;
     };
+    // Warehouse P(top-12) at a skill position is ~5–8%. 25%+ is a strong cell.
+    // Do not tint vs ADP: round-1 market hit rates are 60–90%, so the whole
+    // top of the board would read as a miss.
+    var HIST_STRONG_PCT = 25;
 
     var state = {
         mode: cfg.mode === 'dynasty' ? 'dynasty' : 'redraft',
@@ -1139,17 +1143,21 @@
         return v > 0 ? '<span class="cs-val g">+' + v + '</span>' : (v < 0 ? '<span class="cs-val b">' + v + '</span>' : '<span class="cs-val n">even</span>');
     }
 
-    function histCell(x) {
-        if (!showHist()) return '';
+    function histPctClass(pct) {
+        if (pct == null || !isFinite(Number(pct))) return 'n';
+        return Number(pct) >= HIST_STRONG_PCT ? 'g' : 'n';
+    }
+
+    function histCell(x, dyn) {
+        if (!showHist(dyn)) return '';
         var h = x.historical || {};
         var pct = h.p_hit_pct;
-        var vs = h.h_vs_m || 'unknown';
         var tip = 'History P(top-12) from similar pre-season profiles'
             + (pct != null ? ': ' + pct + '%' : ': unknown')
             + (h.mkt_pct != null ? '. Market at this ADP bucket: ' + h.mkt_pct + '%' : '')
             + (h.proj_rk != null ? '. Projected rank among this board: ' + h.proj_rk : '')
             + '. Descriptive only — not a ranking input.';
-        var cls = vs === 'history_higher' ? 'g' : (vs === 'market_higher' ? 'b' : 'n');
+        var cls = histPctClass(pct);
         var body = pct == null ? '&ndash;' : (pct + '%');
         return '<td class="cs-hist-col"><span class="cs-hist-cell">'
             + '<span class="cs-val ' + cls + '" title="' + esc(tip) + '">' + body + '</span>'
@@ -1339,7 +1347,7 @@
                 + '<span class="cs-lg"><span class="cs-val g">+7</span> above ADP, target it</span>'
                 + '<span class="cs-lg"><span class="cs-val b">-4</span> going early, let it fall</span>'
                 + '<span class="cs-lg"><b>Sched Rk</b> full-season schedule (1 = easiest)</span>'
-                + (showHist() ? '<span class="cs-lg"><b>Hist</b> similar-profile P(top-12), not a rank</span>' : '')
+                + (showHist(dyn) ? '<span class="cs-lg"><b>Hist</b> similar-profile P(top-12), not a rank</span>' : '')
                 + sortNote
                 + projNote
                 + draftedNote
@@ -1417,10 +1425,10 @@
             + sortTh(col5Key, col5, '', dyn ? 'Sort by age' : 'Sort by ADP')
             + sortTh(col6Key, col6, 'cs-value-col', dyn ? 'Sort by career window (age)' : 'Sort by value vs ADP')
             + sortTh('scheduleRank', 'Sched Rk', '', 'Full fantasy-season strength of schedule rank (1 = easiest)')
-            + (showHist() ? sortTh('hist', 'Hist', 'cs-hist-col', 'Similar-profile P(top-12). Descriptive; not a ranking input.') : '')
+            + (showHist(dyn) ? sortTh('hist', 'Hist', 'cs-hist-col', 'Similar-profile P(top-12). Descriptive; not a ranking input.') : '')
             + (showMarket(dyn) ? sortTh('market', 'Market vs ADP', 'cs-market-col', 'Sort by market vs ADP') : '')
             + editTh + '</tr>';
-        var span = (editable ? 9 : 8) + (showMarket(dyn) ? 1 : 0) + (showHist() ? 1 : 0);
+        var span = (editable ? 9 : 8) + (showMarket(dyn) ? 1 : 0) + (showHist(dyn) ? 1 : 0);
         var lastT = null, html = '', shown = 0;
         var pickAt = boardSort ? projPickMap() : {};
         displayPlayers().forEach(function (x) {
@@ -1447,7 +1455,7 @@
                     market = '<td class="cs-market-col"><span class="cs-val ' + mcls + '" title="' + esc(mtip) + '">' + (x.marketVsAdp > 0 ? '+' : '') + Math.round(x.marketVsAdp) + '</span></td>';
                 }
             }
-            var hist = histCell(x);
+            var hist = histCell(x, dyn);
             var recChip = x.recRank != null ? '<span class="cs-ovchip bump">REC #' + x.recRank + '</span>' : '';
             var projChip = pk ? '<span class="cs-ovchip bump" title="Projected pick ' + pk.label + ' (overall #' + pk.pn + ')">Proj ' + pk.label + '</span>' : '';
             var vorDisplay =
@@ -1885,12 +1893,12 @@
     function exportCsv() {
         if (!players.length) return;
         var dyn = state.mode === 'dynasty';
-        var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', 'Proj PPG', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Schedule Rank'].concat(showHist() ? ['Hist P(top-12)'] : []).concat(showMarket(dyn) ? ['Market vs ADP'] : []).concat(['Tier']);
+        var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', 'Proj PPG', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Schedule Rank'].concat(showHist(dyn) ? ['Hist P(top-12)'] : []).concat(showMarket(dyn) ? ['Market vs ADP'] : []).concat(['Tier']);
         var rows = displayPlayers().map(function (x) {
             var c5 = dyn ? (x.age != null ? x.age : '') : fmtAdp(x.adp);
             var c6 = dyn ? youthWindow(x.age, x.pos)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
             var ppgCsv = x.projectedPpg != null ? x.projectedPpg.toFixed(1) : '';
-            return [x.rk, x.name, x.pos, x.prk, x.vor, ppgCsv, c5, c6, x.scheduleRank || ''].concat(showHist() ? [x.histP == null ? '' : x.histP] : []).concat(showMarket(dyn) ? [x.marketVsAdp == null ? '' : x.marketVsAdp] : []).concat([x.dtier]);
+            return [x.rk, x.name, x.pos, x.prk, x.vor, ppgCsv, c5, c6, x.scheduleRank || ''].concat(showHist(dyn) ? [x.histP == null ? '' : x.histP] : []).concat(showMarket(dyn) ? [x.marketVsAdp == null ? '' : x.marketVsAdp] : []).concat([x.dtier]);
         });
         var csv = [head].concat(rows).map(function (r) {
             return r.map(function (v) {
