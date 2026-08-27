@@ -271,6 +271,7 @@ def test_board_modules_stay_pure():
         assert "static/pick_score" not in text
     bp = (ROOT / "routes" / "historical_api_bp.py").read_text(encoding="utf-8")
     assert "/api/historical-player/" in bp
+    assert "/api/historical-trends" in bp
     assert "read_parquet" not in bp
     assert "load_player_history_df" not in bp
     pick = (ROOT / "static" / "pick_score.js").read_text(encoding="utf-8")
@@ -374,3 +375,67 @@ def test_hist_trends_are_descriptive_bucket_slices():
     trends = build_hist_trends(query, aggs, panel["market"])
     assert trends
     assert all(row.get("pct") is not None for row in trends)
+
+
+def test_historical_trends_tab_is_position_wide_and_descriptive():
+    from dashboard_services.historical.aggregates_store import load_profile_aggregates
+    from dashboard_services.historical.board import board_contract, build_historical_trends
+
+    assert board_contract()["trends_tab"] == "/api/historical-trends"
+    aggs = load_profile_aggregates()
+    if not aggs:
+        pytest.skip("profile JSON missing")
+    payload = build_historical_trends(aggs)
+    assert payload["available"] is True
+    assert payload["descriptive_only"] is True
+    assert payload["not_in_ranking"] is True
+    assert payload["not_in_pick_score"] is True
+    assert payload["positions"] == ["QB", "RB", "WR", "TE"]
+    rb = payload["by_position"]["RB"]
+    assert rb["baseline_pct"] is None or isinstance(rb["baseline_pct"], (int, float))
+    ids = [sec["id"] for sec in rb["sections"]]
+    assert "adp" in ids
+    assert "repeat" in ids
+    assert "career_stage" in ids
+    assert "draft_capital" in ids
+    assert "age" in ids
+    adp = next(sec for sec in rb["sections"] if sec["id"] == "adp")
+    assert adp["heading"] == "Fantasy ADP round"
+    assert "not fantasy ADP" in next(
+        sec["note"] for sec in rb["sections"] if sec["id"] == "draft_capital"
+    )
+    assert any(row["label"] == "Round 1" for row in adp["rows"])
+    for pos_page in payload["by_position"].values():
+        for sec in pos_page["sections"]:
+            assert "_" not in sec["heading"]
+            for row in sec["rows"]:
+                assert "_" not in row["label"]
+                assert row.get("pct") is not None
+    blob = " ".join(
+        f"{sec['heading']} {sec['note']} " + " ".join(row["label"] for row in sec["rows"])
+        for pos_page in payload["by_position"].values()
+        for sec in pos_page["sections"]
+    )
+    assert "age_bucket" not in blob
+    assert "snap_pct" not in blob
+    assert "target_share" not in blob
+
+
+def test_historical_trends_route_serves_json_leaves():
+    pytest.importorskip("flask")
+    from flask import Flask
+    from dashboard_services.historical.aggregates_store import load_profile_aggregates
+    from routes.historical_api_bp import historical_api_bp
+
+    if not load_profile_aggregates():
+        pytest.skip("profile JSON missing")
+    app = Flask(__name__)
+    app.register_blueprint(historical_api_bp)
+    with app.test_client() as client:
+        resp = client.get("/api/historical-trends")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["available"] is True
+    assert body["descriptive_only"] is True
+    assert "RB" in body["by_position"]
+    assert body["by_position"]["RB"]["sections"]

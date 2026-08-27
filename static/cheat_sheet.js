@@ -28,6 +28,16 @@
     var showHist = function (dyn) {
         return !dyn && SHOW_HISTORICAL;
     };
+    var currentTab = 'board';
+    var trendsCache = null;
+    var trendsPos = '';
+    var trendsRequest = 0;
+    var TAB_PANELS = {
+        board: 'cs-panel-board',
+        pos: 'cs-panel-pos',
+        trends: 'cs-panel-trends',
+        logic: 'cs-panel-logic'
+    };
     // Warehouse P(top-12) at a skill position is ~5–8%. 25%+ is a strong cell.
     // Do not tint vs ADP: round-1 market hit rates are 60–90%, so the whole
     // top of the board would read as a miss.
@@ -1254,6 +1264,7 @@
 
     function render() {
         var dyn = state.mode === 'dynasty';
+        syncHistSurfaces();
         $('csTitle').textContent = dyn ? 'Dynasty Cheat Sheet' : 'Redraft Cheat Sheet';
         $('csSub').textContent = recommendationOrder
             ? 'The stable VOR board, with live Draft Room Recommendation ranks shown as supplemental context.'
@@ -2026,6 +2037,114 @@
             + '</div><div class="cs-hist-hit-pct">' + esc(String(shown)) + '</div></div>';
     }
 
+    function trendsHitRow(row) {
+        var html = histTrendRow(row);
+        if (row.pct != null && isFinite(Number(row.pct))) {
+            var pct = Math.max(0, Math.min(100, Number(row.pct)));
+            html += '<div class="cs-trends-bar" aria-hidden="true"><span style="width:' + pct + '%"></span></div>';
+        }
+        return html;
+    }
+
+    function defaultTrendsPos() {
+        var p = String(state.posFilter || 'ALL').toUpperCase();
+        if (['QB', 'RB', 'WR', 'TE'].indexOf(p) >= 0) return p;
+        return 'RB';
+    }
+
+    function showSheetTab(tab) {
+        if (!TAB_PANELS[tab]) tab = 'board';
+        currentTab = tab;
+        document.querySelectorAll('.cs-tabs [role=tab]').forEach(function (x) {
+            x.setAttribute('aria-selected', String(x.getAttribute('data-tab') === tab));
+        });
+        Object.keys(TAB_PANELS).forEach(function (k) {
+            var el = $(TAB_PANELS[k]);
+            if (el) el.classList.toggle('cs-hidden', k !== tab);
+        });
+        var hideBoardChrome = tab === 'logic' || tab === 'trends';
+        var legend = $('csLegend');
+        if (legend) legend.style.display = hideBoardChrome ? 'none' : '';
+        var fb = $('csFilterbar');
+        if (fb) fb.style.display = hideBoardChrome ? 'none' : '';
+        if (tab === 'trends') loadTrends();
+    }
+
+    function syncHistSurfaces() {
+        var on = showHist(state.mode === 'dynasty');
+        var tab = document.querySelector('.cs-tabs [data-tab="trends"]');
+        if (tab) tab.classList.toggle('cs-hidden', !on);
+        if (!on && currentTab === 'trends') showSheetTab('board');
+    }
+
+    function loadTrends() {
+        if (!trendsPos) trendsPos = defaultTrendsPos();
+        if (trendsCache) {
+            renderTrends();
+            return;
+        }
+        var host = $('csTrends');
+        if (host) host.innerHTML = '<p class="cs-hist-sub">Loading historical trends…</p>';
+        var req = ++trendsRequest;
+        fetch('/api/historical-trends', {cache: 'no-store'})
+            .then(function (r) { return r.json(); })
+            .then(function (resp) {
+                if (req !== trendsRequest) return;
+                trendsCache = resp;
+                renderTrends();
+            })
+            .catch(function () {
+                if (req !== trendsRequest) return;
+                var el = $('csTrends');
+                if (el) el.innerHTML = '<p class="cs-hist-sub">Could not load historical trends.</p>';
+            });
+    }
+
+    function renderTrends() {
+        var host = $('csTrends');
+        if (!host) return;
+        var data = trendsCache;
+        if (!data || data.available === false) {
+            host.innerHTML = '<p class="cs-hist-sub">Historical trends are not available yet.</p>';
+            return;
+        }
+        var positions = data.positions || ['QB', 'RB', 'WR', 'TE'];
+        if (!trendsPos || positions.indexOf(trendsPos) < 0) trendsPos = positions[0] || 'RB';
+        var page = (data.by_position || {})[trendsPos] || {};
+        var html = '<p class="cs-trends-lede">' + esc(data.note || data.headline || '') + '</p>';
+        html += '<div class="cs-trends-pos" role="group" aria-label="Trends position">';
+        positions.forEach(function (pos) {
+            html += '<button type="button" data-trends-pos="' + esc(pos) + '" aria-pressed="'
+                + String(pos === trendsPos) + '">' + esc(pos) + '</button>';
+        });
+        html += '</div>';
+        var summary = [];
+        if (page.baseline_pct != null) {
+            summary.push(esc(trendsPos) + 's finished top-12 in ' + esc(String(page.baseline_pct))
+                + '% of player-seasons'
+                + (page.baseline_n != null ? ' (n=' + esc(String(page.baseline_n)) + ')' : '') + '.');
+        }
+        if (page.prime_window) {
+            summary.push('Prime window is ages ' + esc(page.prime_window) + '.');
+        }
+        if (summary.length) html += '<p class="cs-trends-summary">' + summary.join(' ') + '</p>';
+        html += '<div class="cs-trends-grid">';
+        (page.sections || []).forEach(function (sec) {
+            html += '<article class="cs-trends-card"><h3>' + esc(sec.heading || '') + '</h3>';
+            if (sec.note) html += '<p class="cs-hist-note">' + esc(sec.note) + '</p>';
+            (sec.rows || []).forEach(function (row) { html += trendsHitRow(row); });
+            html += '</article>';
+        });
+        html += '</div>';
+        host.innerHTML = html;
+        host.querySelectorAll('[data-trends-pos]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                trendsPos = b.getAttribute('data-trends-pos') || 'RB';
+                renderTrends();
+            });
+        });
+    }
+
     function renderHistPanel(resp, fallbackMarket) {
         if (!resp || resp.available === false) {
             return '<p class="cs-hist-sub">No historical profile for this player yet.</p>';
@@ -2322,21 +2441,14 @@
         });
 
         var tabs = document.querySelectorAll('.cs-tabs [role=tab]');
-        var panels = {board: 'cs-panel-board', pos: 'cs-panel-pos', logic: 'cs-panel-logic'};
         tabs.forEach(function (t) {
             t.addEventListener('click', function () {
-                tabs.forEach(function (x) {
-                    x.setAttribute('aria-selected', String(x === t));
-                });
-                Object.keys(panels).forEach(function (k) {
-                    $(panels[k]).classList.toggle('cs-hidden', k !== t.getAttribute('data-tab'));
-                });
-                var onLogic = t.getAttribute('data-tab') === 'logic';
-                $('csLegend').style.display = onLogic ? 'none' : '';
-                var fb = $('csFilterbar');
-                if (fb) fb.style.display = onLogic ? 'none' : '';
+                var tab = t.getAttribute('data-tab');
+                if (tab === 'trends' && !showHist(state.mode === 'dynasty')) return;
+                showSheetTab(tab);
             });
         });
+        syncHistSurfaces();
 
         document.querySelectorAll('#csMode button').forEach(function (b) {
             b.setAttribute('aria-pressed', String(b.getAttribute('data-mode') === state.mode));

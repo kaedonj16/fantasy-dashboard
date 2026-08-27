@@ -356,6 +356,16 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "redraft_avg_pick=" in script
     assert "Object.keys((resp.preseason)" not in script
     assert "Named comps (this player excluded)" not in script
+    assert 'data-tab="trends"' in body
+    assert 'id="cs-panel-trends"' in body
+    assert "/api/historical-trends" in script
+    assert "function loadTrends" in script
+    assert "function renderTrends" in script
+    assert "cs-panel-trends" in script
+    assert "if (!on && currentTab === 'trends') showSheetTab('board')" in script
+    assert ".cs-trends-grid" in body
+    assert ".cs-trends-bar" in body
+    assert "The Trends tab shows position-wide rates" in body
     assert "p_hit_pct" not in pick
     assert "historical-player" not in core
     assert "p_hit_pct" not in core

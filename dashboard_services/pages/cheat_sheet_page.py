@@ -287,6 +287,21 @@ _CHEAT_HTML = r"""
   .cs-hist-ex li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--cs-line, var(--border)); font-size: 13px; }
   .cs-hist-ex li:last-child { border-bottom: 0; }
   .cs-hist-ex li span:last-child { color: var(--cs-ink-soft, var(--text-muted)); font-family: var(--cs-mono); font-size: 12px; white-space: nowrap; }
+  .cs-trends { padding: 4px 0 24px; }
+  .cs-trends-lede { color: var(--cs-ink-soft, var(--text-muted)); font-size: 13px; line-height: 1.45; margin: 0 0 14px; }
+  .cs-trends-pos { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 16px; }
+  .cs-trends-pos button { font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-line, var(--border)); background: var(--cs-surface, var(--card)); color: var(--cs-ink-soft, var(--text-muted)); border-radius: 8px; padding: 6px 10px; }
+  .cs-trends-pos button[aria-pressed="true"] { border-color: var(--cs-accent); color: var(--cs-accent); background: color-mix(in srgb, var(--cs-accent) 10%, var(--cs-surface, var(--card))); }
+  .cs-trends-summary { font-size: 13px; color: var(--cs-ink, var(--text)); margin: 0 0 16px; line-height: 1.45; }
+  .cs-trends-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .cs-trends-card { background: var(--cs-surface, var(--card)); border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; padding: 14px 14px 10px; }
+  .cs-trends-card h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 6px; }
+  .cs-trends-card .cs-hist-note { margin-bottom: 10px; }
+  .cs-trends-card .cs-hist-hit { margin-top: 8px; }
+  .cs-trends-card .cs-hist-hit:first-of-type { margin-top: 0; }
+  .cs-trends-bar { height: 4px; background: color-mix(in srgb, var(--cs-ink, #0f172a) 8%, transparent); border-radius: 99px; margin: 4px 0 2px; overflow: hidden; }
+  .cs-trends-bar > span { display: block; height: 100%; background: var(--cs-accent); border-radius: 99px; }
+  .cs-tabs button.cs-hidden { display: none; }
 
   .cs-pos-badge { font-family: var(--cs-mono); font-weight: 800; font-size: 11px; padding: 3px 7px; border-radius: 6px; flex-shrink: 0; }
   .cs-pos-QB { color: var(--cs-qb); background: var(--cs-qb-bg); } .cs-pos-RB { color: var(--cs-rb); background: var(--cs-rb-bg); }
@@ -473,6 +488,7 @@ _CHEAT_HTML = r"""
   <nav class="cs-tabs" role="tablist">
     <button role="tab" aria-selected="true" data-tab="board">Big Board</button>
     <button role="tab" aria-selected="false" data-tab="pos">By Position</button>
+    <button role="tab" aria-selected="false" data-tab="trends" class="cs-hidden">Trends</button>
     <button role="tab" aria-selected="false" data-tab="logic">The Logic</button>
   </nav>
 
@@ -501,6 +517,12 @@ _CHEAT_HTML = r"""
     <p class="cs-foot" id="csPosFoot"></p>
   </section>
 
+  <section class="cs-hidden" id="cs-panel-trends">
+    <div class="cs-trends" id="csTrends">
+      <p class="cs-trends-lede">Historical top-12 rates by bucket. Not a ranking score.</p>
+    </div>
+  </section>
+
   <section class="cs-hidden" id="cs-panel-logic">
     <div class="cs-prose">
       <div class="cs-rule"><span class="cs-k">VOR</span><div><h3>Ranked by value over replacement</h3><p>The board is ordered by VOR: a player's value minus the value of the last startable player at his position in your league. Each position is measured against its own replacement, so QB, RB, WR and TE compare fairly on one board instead of by raw points. It is the honest cross-position value, which is what a draft board should sort on. Click a column header (ADP, Value, Proj PPG, Sched Rk, and the rest) to reorder the Big Board without changing that model ranking; Rk stays the VOR rank, and By Position stays on VOR order.</p></div></div>
@@ -511,7 +533,7 @@ _CHEAT_HTML = r"""
       <div class="cs-rule"><span class="cs-k">Proj Pick</span><div><h3>Your snake slot on this board</h3><p>Choose a draft slot to draw labeled lines at each of that seat's snake-draft picks — Proj Pick 1.05, 2.08, and so on. The player under each line is who this ranking would take there. Lines follow the displayed order, including any custom-board moves, and they print with the sheet.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Proj PPG</span><div><h3>Expected weekly scoring</h3><p>Projected PPG is the player's upcoming-season fantasy points per game from Sleeper, the same projection pool used by the Draft Room. Players Sleeper does not project show a dash rather than last-season actuals.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Schedule</span><div><h3>Full-season matchup context</h3><p>Schedule Rank compares each player's position-specific matchups across fantasy Weeks 1-17. Rank 1 is the easiest schedule. It is useful context for close calls inside a tier, but it does not change the stable VOR order.</p></div></div>
-      <div class="cs-rule"><span class="cs-k">Hist</span><div><h3>Historical trends, not a ranking</h3><p>Hist is redraft-only context. The compact number is how often a similar pre-season profile finished top-12, not this player's odds and not a Pick Score input. The info button opens the trends: last-year repeat rates, ADP-round hit rates, career stage, draft capital, age, prior target share and snaps, plus this board's Sleeper projection and implied rank. Projection is PPG and rank, not a made-up hit rate. Green is a strong similar-profile cell (about 25% or higher). First-round ADP hit rates are usually higher than the similar-profile number because the market already knows who the star is. Missing values show a dash. Hist does not change VOR or Pick Score.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">Hist</span><div><h3>Historical trends, not a ranking</h3><p>Hist is redraft-only context. The compact number is how often a similar pre-season profile finished top-12, not this player's odds and not a Pick Score input. The Trends tab shows position-wide rates for ADP rounds, repeats, career stage, draft capital, age, and prior usage. The info button on a player opens that player's own mix, including this board's Sleeper projection. Projection is PPG and rank, not a made-up hit rate. Green is a strong similar-profile cell (about 25% or higher). Missing values show a dash. Hist does not change VOR or Pick Score.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Live</span><div><h3>It knows your live draft</h3><p>Open the sheet from your league during a draft and players already taken are struck through automatically. REC badges show the current Draft Room view without changing the VOR board. Reopen the sheet after more picks to refresh those ranks, or use Connect live draft to keep drafted-player status synchronized.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Dynasty</span><div><h3>Dynasty values the window, not just this year</h3><p>Dynasty mode ranks on dynasty value, which already weights youth and multi-year outlook, and swaps in Age and a career-window tag in place of ADP, because you are drafting the next several seasons.</p></div></div>
     </div>

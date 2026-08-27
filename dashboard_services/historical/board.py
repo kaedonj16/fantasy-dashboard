@@ -20,9 +20,15 @@ from dashboard_services.historical.comps import (
     lookup_board_probabilities,
 )
 from dashboard_services.historical.definitions import (
+    ADP_OVERALL_BUCKETS,
+    AGE_BUCKETS,
+    CAREER_STAGE_ORDER,
     COMP_BOARD_TIERS,
     COMP_DIMENSION_ORDER,
+    DRAFT_CAPITAL_ORDER,
     SKILL_POSITIONS,
+    SNAP_PCT_BUCKETS,
+    TARGET_SHARE_BUCKETS,
     display_percent,
     draft_capital_bucket,
     integer_age,
@@ -120,6 +126,7 @@ def board_contract() -> dict:
         "not_in_pick_score": True,
         "rides": "/api/league-players",
         "deep_panel": "/api/historical-player/<player_id>",
+        "trends_tab": "/api/historical-trends",
         "compact_fields": [
             "p_hit",
             "p_hit_pct",
@@ -899,4 +906,172 @@ def build_deep_panel(
         "history": history,
         "market": market,
         "copy": copy,
+    }
+
+
+def _section_row(label: str, rate: Any) -> Optional[dict]:
+    rec = _as_rate(rate)
+    pct = rec.get("display_pct")
+    if pct is None:
+        return None
+    return {
+        "label": label,
+        "pct": pct,
+        "n": rec.get("sample_size"),
+        "confidence": rec.get("confidence"),
+        "confidence_label": _confidence_label(rec.get("confidence")),
+    }
+
+
+def _append_section(sections: list[dict], *, sid: str, heading: str, note: str, rows: list[dict]) -> None:
+    if rows:
+        sections.append({"id": sid, "heading": heading, "note": note, "rows": rows})
+
+
+def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> dict:
+    """Display tables for one position. JSON lookup only."""
+    pos = str(position or "").upper()
+    sections: list[dict] = []
+    adp_pos = ((aggregates.get("adp") or {}).get("by_position") or {}).get(pos) or {}
+    adp_rows = []
+    for _lo, _hi, key in ADP_OVERALL_BUCKETS:
+        row = _section_row(
+            format_adp_bucket_label(key),
+            (adp_pos.get("by_overall_bucket") or {}).get(key),
+        )
+        if row:
+            adp_rows.append(row)
+    _append_section(
+        sections,
+        sid="adp",
+        heading="Fantasy ADP round",
+        note=f"How often {pos}s taken in that redraft round finished top-12.",
+        rows=adp_rows,
+    )
+
+    repeat = (aggregates.get("repeat_and_breakout") or {}).get(pos) or {}
+    repeat_rows = []
+    for label, key in (
+        ("Last-year top-12 finished top-12 again", "prev_top12_to_top12"),
+        ("Last-year top-12 finished top-5 next", "prev_top12_to_top5"),
+        ("Outside last-year top-12 broke into top-12", "engine_breakout_among_non_starters"),
+    ):
+        row = _section_row(label, repeat.get(key))
+        if row:
+            repeat_rows.append(row)
+    _append_section(
+        sections,
+        sid="repeat",
+        heading="Repeat and breakout",
+        note=f"What {pos}s did the year after an elite or non-elite finish.",
+        rows=repeat_rows,
+    )
+
+    stage_map = ((aggregates.get("career_stages") or {}).get(pos) or {}).get("by_stage") or {}
+    stage_rows = []
+    for key in CAREER_STAGE_ORDER:
+        row = _section_row(CAREER_STAGE_DISPLAY.get(key, _title_from_key(key)), stage_map.get(key))
+        if row:
+            stage_rows.append(row)
+    _append_section(
+        sections,
+        sid="career_stage",
+        heading="Career stage",
+        note=f"Top-12 rate for {pos}s at that point in a career.",
+        rows=stage_rows,
+    )
+
+    cap_map = ((aggregates.get("draft_capital") or {}).get(pos) or {}).get("season_level_by_capital") or {}
+    cap_rows = []
+    for key in DRAFT_CAPITAL_ORDER:
+        rec = (cap_map.get(key) or {}).get("top_12")
+        row = _section_row(DRAFT_CAPITAL_DISPLAY.get(key, _title_from_key(key)), rec)
+        if row:
+            cap_rows.append(row)
+    _append_section(
+        sections,
+        sid="draft_capital",
+        heading="NFL draft capital",
+        note=f"Season-level top-12 rate for {pos}s by NFL draft capital, not fantasy ADP.",
+        rows=cap_rows,
+    )
+
+    age_block = (aggregates.get("age_curves") or {}).get(pos) or {}
+    age_rows = []
+    for _lo, _hi, key in AGE_BUCKETS.get(pos, ()):
+        row = _section_row(
+            format_age_bucket_label(key),
+            (age_block.get("by_bucket") or {}).get(key),
+        )
+        if row:
+            age_rows.append(row)
+    _append_section(
+        sections,
+        sid="age",
+        heading="Age",
+        note=f"Top-12 rate for {pos}s in that age bucket.",
+        rows=age_rows,
+    )
+
+    usage = aggregates.get("prior_usage") if isinstance(aggregates.get("prior_usage"), Mapping) else {}
+    tgt_map = (((usage.get("target_share") or {}).get("by_position") or {}).get(pos) or {}).get("by_bucket") or {}
+    tgt_rows = []
+    for _lo, _hi, key in TARGET_SHARE_BUCKETS:
+        row = _section_row(str(key).replace("-", "–"), tgt_map.get(key))
+        if row:
+            tgt_rows.append(row)
+    _append_section(
+        sections,
+        sid="target_share",
+        heading="Last year target share",
+        note=f"How often {pos}s with that prior-season target share finished top-12.",
+        rows=tgt_rows,
+    )
+
+    snap_map = (((usage.get("snap_pct") or {}).get("by_position") or {}).get(pos) or {}).get("by_bucket") or {}
+    snap_rows = []
+    for _lo, _hi, key in SNAP_PCT_BUCKETS:
+        row = _section_row(str(key).replace("-", "–"), snap_map.get(key))
+        if row:
+            snap_rows.append(row)
+    _append_section(
+        sections,
+        sid="snap_pct",
+        heading="Last year snap share",
+        note=f"How often {pos}s with that prior-season snap share finished top-12.",
+        rows=snap_rows,
+    )
+
+    baseline = age_block.get("baseline") if isinstance(age_block.get("baseline"), Mapping) else {}
+    if not baseline:
+        baseline = ((aggregates.get("career_stages") or {}).get(pos) or {}).get("baseline") or {}
+    prime = age_block.get("prime_window") if isinstance(age_block.get("prime_window"), Mapping) else {}
+    lo, hi = prime.get("age_start"), prime.get("age_end")
+    prime_label = f"{lo}–{hi}" if lo is not None and hi is not None else ""
+    return {
+        "position": pos,
+        "baseline_pct": baseline.get("display_pct") if isinstance(baseline, Mapping) else None,
+        "baseline_n": baseline.get("sample_size") if isinstance(baseline, Mapping) else None,
+        "prime_window": prime_label,
+        "sections": sections,
+    }
+
+
+def build_historical_trends(aggregates: Mapping[str, Any]) -> dict:
+    """Position-level trend tables for the cheat-sheet Trends tab."""
+    if not aggregates:
+        return {"available": False, "descriptive_only": True, "not_in_ranking": True}
+    by_pos = {pos: build_position_trend_page(aggregates, pos) for pos in SKILL_POSITIONS}
+    return {
+        "available": True,
+        "descriptive_only": True,
+        "not_in_ranking": True,
+        "not_in_pick_score": True,
+        "headline": "Historical top-12 rates by bucket. Not a ranking score.",
+        "note": (
+            "Each table is one slice from 2018–2025. Open a player's Hist button "
+            "on the Big Board for that player's own mix of buckets."
+        ),
+        "positions": list(SKILL_POSITIONS),
+        "by_position": by_pos,
     }

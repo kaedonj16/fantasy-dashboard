@@ -6,7 +6,7 @@ import logging
 from flask import Blueprint, jsonify, request
 
 from dashboard_services.historical.aggregates_store import load_profile_aggregates
-from dashboard_services.historical.board import build_deep_panel
+from dashboard_services.historical.board import build_deep_panel, build_historical_trends
 
 logger = logging.getLogger(__name__)
 
@@ -46,4 +46,18 @@ def api_historical_player(player_id: str):
     except Exception:
         logger.exception("[historical-player] %s failed", player_id)
         return jsonify({"available": False, "player_id": str(player_id or "")})
+    return jsonify(payload)
+
+
+@historical_api_bp.route("/api/historical-trends")
+def api_historical_trends():
+    """Position-level historical trend tables for the cheat-sheet Trends tab."""
+    aggs = load_profile_aggregates()
+    if not aggs:
+        return jsonify({"available": False, "descriptive_only": True, "not_in_ranking": True})
+    try:
+        payload = build_historical_trends(aggs)
+    except Exception:
+        logger.exception("[historical-trends] failed")
+        return jsonify({"available": False, "descriptive_only": True, "not_in_ranking": True})
     return jsonify(payload)
