@@ -1152,16 +1152,15 @@
         if (!showHist(dyn)) return '';
         var h = x.historical || {};
         var pct = h.p_hit_pct;
-        var tip = 'History P(top-12) from similar pre-season profiles'
+        var tip = 'Similar-profile top-12 trend (not this player\'s odds)'
             + (pct != null ? ': ' + pct + '%' : ': unknown')
-            + (h.mkt_pct != null ? '. Market at this ADP bucket: ' + h.mkt_pct + '%' : '')
-            + (h.proj_rk != null ? '. Projected rank among this board: ' + h.proj_rk : '')
-            + '. Descriptive only — not a ranking input.';
+            + (h.mkt_pct != null ? '. ADP-round trend: ' + h.mkt_pct + '%' : '')
+            + '. Open for bucket hit rates. Descriptive only — not a ranking input.';
         var cls = histPctClass(pct);
         var body = pct == null ? '&ndash;' : (pct + '%');
         return '<td class="cs-hist-col"><span class="cs-hist-cell">'
             + '<span class="cs-val ' + cls + '" title="' + esc(tip) + '">' + body + '</span>'
-            + '<button type="button" class="cs-hist-btn" data-hist-id="' + esc(x.id) + '" data-hist-name="' + esc(x.name) + '" title="Similar-player history">i</button>'
+            + '<button type="button" class="cs-hist-btn" data-hist-id="' + esc(x.id) + '" data-hist-name="' + esc(x.name) + '" data-hist-adp="' + (x.adp != null && isFinite(Number(x.adp)) ? String(x.adp) : '') + '" data-hist-pos="' + esc(x.pos || '') + '" title="Similar-player history">i</button>'
             + '</span></td>';
     }
 
@@ -1347,7 +1346,7 @@
                 + '<span class="cs-lg"><span class="cs-val g">+7</span> above ADP, target it</span>'
                 + '<span class="cs-lg"><span class="cs-val b">-4</span> going early, let it fall</span>'
                 + '<span class="cs-lg"><b>Sched Rk</b> full-season schedule (1 = easiest)</span>'
-                + (showHist(dyn) ? '<span class="cs-lg"><b>Hist</b> similar-profile P(top-12), not a rank</span>' : '')
+                + (showHist(dyn) ? '<span class="cs-lg"><b>Hist</b> similar-profile trend, not a rank</span>' : '')
                 + sortNote
                 + projNote
                 + draftedNote
@@ -1425,7 +1424,7 @@
             + sortTh(col5Key, col5, '', dyn ? 'Sort by age' : 'Sort by ADP')
             + sortTh(col6Key, col6, 'cs-value-col', dyn ? 'Sort by career window (age)' : 'Sort by value vs ADP')
             + sortTh('scheduleRank', 'Sched Rk', '', 'Full fantasy-season strength of schedule rank (1 = easiest)')
-            + (showHist(dyn) ? sortTh('hist', 'Hist', 'cs-hist-col', 'Similar-profile P(top-12). Descriptive; not a ranking input.') : '')
+            + (showHist(dyn) ? sortTh('hist', 'Hist', 'cs-hist-col', 'Similar-profile top-12 trend. Open for bucket rates. Descriptive; not a ranking input.') : '')
             + (showMarket(dyn) ? sortTh('market', 'Market vs ADP', 'cs-market-col', 'Sort by market vs ADP') : '')
             + editTh + '</tr>';
         var span = (editable ? 9 : 8) + (showMarket(dyn) ? 1 : 0) + (showHist(dyn) ? 1 : 0);
@@ -1940,19 +1939,60 @@
         modal.classList.remove('open');
     }
 
-    function openHistPanel(id, name) {
+    function findSheetPlayer(id) {
+        id = String(id || '');
+        var i;
+        for (i = 0; i < players.length; i++) {
+            if (String(players[i].id) === id) return players[i];
+        }
+        for (i = 0; i < allPlayers.length; i++) {
+            if (String(allPlayers[i].id) === id) return allPlayers[i];
+        }
+        return null;
+    }
+
+    function liveHistAdp(id, attrAdp) {
+        if (attrAdp != null && attrAdp !== '' && isFinite(Number(attrAdp)) && Number(attrAdp) > 0 && Number(attrAdp) < 999) {
+            return Number(attrAdp);
+        }
+        var row = findSheetPlayer(id);
+        if (!row) return null;
+        var candidates = [row.adp, row.marketAdp, row.redraft_avg_pick, row.adp_overall];
+        if (row.position || row.pos) {
+            try { candidates.push(sheetAdpOf(row, state.mode, state.sf)); } catch (e) {}
+        }
+        var i;
+        for (i = 0; i < candidates.length; i++) {
+            var v = candidates[i];
+            if (v != null && isFinite(Number(v)) && Number(v) > 0 && Number(v) < 999) return Number(v);
+        }
+        return null;
+    }
+
+    function openHistPanel(id, name, adp, pos) {
         var modal = $('csHistModal');
         if (!modal || !id) return;
+        var row = findSheetPlayer(id);
+        var liveAdp = liveHistAdp(id, adp);
+        var livePos = pos || (row && (row.pos || row.position)) || '';
+        var fallbackMarket = row && row.historical && row.historical.mkt_sentence;
         $('csHistTitle').textContent = name || 'History';
-        $('csHistSub').textContent = 'Descriptive similar-player rates. Not a ranking score.';
+        $('csHistSub').textContent = 'Historical trends for this profile — not a ranking or this player\'s odds.';
         $('csHistBody').innerHTML = '<p class="cs-hist-sub">Loading…</p>';
         modal.classList.add('open');
         var url = '/api/historical-player/' + encodeURIComponent(id);
+        var qs = [];
+        if (liveAdp != null) {
+            qs.push('adp=' + encodeURIComponent(liveAdp));
+            qs.push('redraft_avg_pick=' + encodeURIComponent(liveAdp));
+        }
+        if (livePos) qs.push('position=' + encodeURIComponent(livePos));
+        if (qs.length) url += '?' + qs.join('&');
         fetch(url, {cache: 'no-store'})
             .then(function (r) { return r.json(); })
             .then(function (resp) {
                 if (!modal.classList.contains('open')) return;
-                $('csHistBody').innerHTML = renderHistPanel(resp);
+                $('csHistBody').innerHTML = renderHistPanel(resp, fallbackMarket);
             })
             .catch(function () {
                 if (!modal.classList.contains('open')) return;
@@ -1960,38 +2000,78 @@
             });
     }
 
-    function renderHistPanel(resp) {
+    function renderHistPanel(resp, fallbackMarket) {
         if (!resp || resp.available === false) {
             return '<p class="cs-hist-sub">No historical profile for this player yet.</p>';
         }
-        var rates = (resp.history && resp.history.rates) || {};
-        var top12 = rates.top_12 || {};
-        var pct = top12.display_pct;
-        var n = resp.history && resp.history.n;
-        var dropped = (resp.history && resp.history.dropped) || [];
-        var mkt = resp.market || {};
-        var mktPct = mkt.p_top_12 != null ? Math.round(Number(mkt.p_top_12) * 100) : null;
-        var html = '<dl class="cs-hist-dl">'
-            + '<dt>P(top-12)</dt><dd>' + (pct != null ? pct + '%' : '—')
-            + (n != null ? ' · n=' + n : '')
-            + (top12.confidence ? ' · ' + top12.confidence : '') + '</dd>'
-            + '<dt>Market</dt><dd>' + (mktPct != null ? mktPct + '%' : '—')
-            + (mkt.adp_bucket ? ' at ' + mkt.adp_bucket : '') + '</dd>'
-            + '<dt>Matched</dt><dd>' + esc(Object.keys((resp.preseason) || {}).join(', ') || 'position only') + '</dd>'
-            + '<dt>Relaxed</dt><dd>' + (dropped.length ? esc(dropped.join(', ')) : 'none') + '</dd>'
-            + '</dl>';
+        var copy = resp.copy || {};
+        var html = '';
+        var hits = copy.hit_rates || [];
+        if (hits.length) {
+            html += '<section class="cs-hist-sec"><h3>' + esc(copy.headline || 'Closest historical group') + '</h3>';
+            if (copy.cohort_note) html += '<p class="cs-hist-note">' + esc(copy.cohort_note) + '</p>';
+            html += '<div class="cs-hist-hits">';
+            hits.forEach(function (row) {
+                var meta = [];
+                if (row.n != null) meta.push('n=' + row.n);
+                if (row.confidence_label) meta.push(row.confidence_label);
+                html += '<div class="cs-hist-hit"><div><div class="cs-hist-hit-label">' + esc(row.label || '') + '</div>'
+                    + (meta.length ? '<div class="cs-hist-hit-meta">' + esc(meta.join(' · ')) + '</div>' : '')
+                    + '</div><div class="cs-hist-hit-pct">' + (row.pct != null ? row.pct + '%' : '—') + '</div></div>';
+            });
+            html += '</div></section>';
+        }
         var examples = (resp.history && resp.history.examples) || [];
         if (examples.length) {
-            html += '<p class="cs-hist-sub">Named comps (this player excluded)</p><ul class="cs-hist-ex">';
+            html += '<section class="cs-hist-sec"><h3>' + esc(copy.examples_heading || 'Seasons from that similar group') + '</h3>';
+            if (copy.examples_note) html += '<p class="cs-hist-note">' + esc(copy.examples_note) + '</p>';
+            html += '<ul class="cs-hist-ex">';
             examples.forEach(function (ex) {
                 html += '<li><span>' + esc(ex.name || ex.sleeper_id || '') + (ex.season ? ' · ' + ex.season : '') + '</span><span>'
                     + (ex.positional_finish != null ? '#' + ex.positional_finish : '')
                     + (ex.ppr_points != null ? ' · ' + ex.ppr_points + ' pts' : '')
                     + '</span></li>';
             });
-            html += '</ul>';
+            html += '</ul></section>';
         }
-        return html;
+        var trends = copy.trends || [];
+        if (trends.length) {
+            html += '<section class="cs-hist-sec"><h3>' + esc(copy.trends_heading || 'Trends for this player\'s buckets') + '</h3>';
+            if (copy.trends_note) html += '<p class="cs-hist-note">' + esc(copy.trends_note) + '</p>';
+            html += '<div class="cs-hist-hits">';
+            trends.forEach(function (row) {
+                var meta = [];
+                if (row.bucket) meta.push(row.bucket);
+                if (row.n != null) meta.push('n=' + row.n);
+                if (row.confidence_label) meta.push(row.confidence_label);
+                html += '<div class="cs-hist-hit"><div><div class="cs-hist-hit-label">' + esc(row.sentence || row.label || '') + '</div>'
+                    + (meta.length ? '<div class="cs-hist-hit-meta">' + esc(meta.join(' · ')) + '</div>' : '')
+                    + '</div><div class="cs-hist-hit-pct">' + (row.pct != null ? row.pct + '%' : '—') + '</div></div>';
+            });
+            html += '</div></section>';
+        }
+        var profile = copy.profile || [];
+        if (profile.length) {
+            html += '<section class="cs-hist-sec"><h3>' + esc(copy.profile_heading || 'This pre-season profile') + '</h3><div class="cs-hist-profile">';
+            profile.forEach(function (row) {
+                html += '<span class="cs-hist-chip"><span class="cs-hist-chip-k">' + esc(row.label || '') + '</span><span class="cs-hist-chip-v">' + esc(row.value || '') + '</span></span>';
+            });
+            html += '</div></section>';
+        }
+        if (copy.relaxed && copy.relaxed.length) {
+            html += '<section class="cs-hist-sec"><h3>' + esc(copy.relaxed_heading || 'Dropped to grow the sample') + '</h3>';
+            if (copy.relaxed_note) html += '<p class="cs-hist-note">' + esc(copy.relaxed_note) + '</p>';
+            html += '<p class="cs-hist-note">' + copy.relaxed.map(function (row) { return esc(row.label || ''); }).join(' · ') + '</p></section>';
+        }
+        var mkt = resp.market || {};
+        var sentence = copy.market_sentence || '';
+        var missingAdp = mkt.p_top_12 == null && !mkt.adp_bucket;
+        if (missingAdp && fallbackMarket) sentence = fallbackMarket;
+        var hasAdpTrend = trends.some(function (row) { return row.kind === 'adp'; });
+        if (sentence && !hasAdpTrend) {
+            html += '<section class="cs-hist-sec"><h3>' + esc(copy.market_heading || 'ADP bucket hit rate') + '</h3><p class="cs-hist-note">' + esc(sentence) + '</p></section>';
+        }
+        return html || '<p class="cs-hist-sub">No historical profile for this player yet.</p>';
     }
 
     function init() {
@@ -2190,7 +2270,12 @@
             if (histBtn) {
                 e.preventDefault();
                 e.stopPropagation();
-                openHistPanel(histBtn.getAttribute('data-hist-id'), histBtn.getAttribute('data-hist-name'));
+                openHistPanel(
+                    histBtn.getAttribute('data-hist-id'),
+                    histBtn.getAttribute('data-hist-name'),
+                    histBtn.getAttribute('data-hist-adp'),
+                    histBtn.getAttribute('data-hist-pos')
+                );
                 return;
             }
             var el = e.target.closest('[data-name]');

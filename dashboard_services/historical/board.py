@@ -20,9 +20,12 @@ from dashboard_services.historical.comps import (
     lookup_board_probabilities,
 )
 from dashboard_services.historical.definitions import (
+    COMP_BOARD_TIERS,
+    COMP_DIMENSION_ORDER,
     SKILL_POSITIONS,
     display_percent,
     draft_capital_bucket,
+    integer_age,
     normalize_adp,
     _optional_float,
     _optional_int,
@@ -43,6 +46,68 @@ PRESEASON_FIELDS: tuple[str, ...] = (
     "previous_season_snap_pct",
     "previous_season_year",
 )
+
+# Modal copy only. Matching still uses the snake_case keys in comps.
+COMP_FEATURE_LABELS: dict[str, str] = {
+    "position": "Position",
+    "career_stage": "Career stage",
+    "draft_capital": "Draft capital",
+    "prior_finish": "Last year finish",
+    "age_bucket": "Age",
+    "target_share": "Last year targets",
+    "snap_pct": "Last year snaps",
+}
+CAREER_STAGE_DISPLAY: dict[str, str] = {
+    "rookie": "Rookie",
+    "year_2": "Year 2",
+    "year_3": "Year 3",
+    "year_4": "Year 4",
+    "year_5": "Year 5",
+    "year_6_plus": "Year 6+",
+}
+DRAFT_CAPITAL_DISPLAY: dict[str, str] = {
+    "round_1": "Round 1",
+    "day_2": "Day 2 (rounds 2–3)",
+    "day_3": "Day 3 (rounds 4–7)",
+    "undrafted": "Undrafted",
+}
+PRIOR_FINISH_DISPLAY: dict[str, str] = {
+    "none": "No prior season",
+    "top_5": "Top 5",
+    "top_12": "Top 12",
+    "top_24": "Top 24",
+    "top_36": "Top 36",
+    "outside_36": "Outside top 36",
+}
+PRIOR_FINISH_TREND: dict[str, str] = {
+    "none": "no prior season",
+    "top_5": "top-5",
+    "top_12": "top-12",
+    "top_24": "top-24",
+    "top_36": "top-36",
+    "outside_36": "outside the top 36",
+}
+ADP_BUCKET_DISPLAY: dict[str, str] = {
+    "round_1": "Round 1",
+    "round_2": "Round 2",
+    "round_3": "Round 3",
+    "round_4": "Round 4",
+    "round_5": "Round 5",
+    "rounds_6_7": "Rounds 6–7",
+    "rounds_8_10": "Rounds 8–10",
+    "rounds_11_plus": "Rounds 11+",
+}
+TIER_FINISH_DISPLAY: dict[str, str] = {
+    "top_5": "top-5",
+    "top_12": "top-12",
+    "top_24": "top-24",
+}
+CONFIDENCE_DISPLAY: dict[str, str] = {
+    "low": "small sample",
+    "moderate": "moderate sample",
+    "good": "solid sample",
+    "strong": "large sample",
+}
 
 
 def board_contract() -> dict:
@@ -221,6 +286,7 @@ def compact_signal(full: Mapping[str, Any]) -> dict:
         "mkt_p": mkt_p,
         "mkt_pct": display_percent(mkt_p),
         "mkt_bucket": market.get("adp_bucket"),
+        "mkt_sentence": format_market_sentence(market),
         "h_vs_m": h_vs_m.get("label") or "unknown",
         "proj_rk": projection.get("implied_positional_rank"),
         "adp_rk": p_vs_m.get("adp_positional_rank"),
@@ -267,6 +333,396 @@ def attach_historical_signals(
     return compact_out
 
 
+def _title_from_key(key: str) -> str:
+    return str(key or "").replace("_", " ").strip().title()
+
+
+def format_age_bucket_label(value: Any) -> str:
+    """Turn warehouse age bins into readable age copy."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.startswith("<="):
+        years = text[2:].strip()
+        return f"{years} or younger" if years else text
+    if text.endswith("+") and text[:-1].replace(".", "", 1).isdigit():
+        return f"{text[:-1]} or older"
+    return text.replace("-", "–")
+
+
+def format_comp_bucket_value(dim: str, value: Any) -> str:
+    """Human value for one matching dimension. Missing stays empty."""
+    if value is None or value == "":
+        return ""
+    text = str(value)
+    if dim == "position":
+        return text.upper()
+    if dim == "career_stage":
+        return CAREER_STAGE_DISPLAY.get(text, _title_from_key(text))
+    if dim == "draft_capital":
+        return DRAFT_CAPITAL_DISPLAY.get(text, _title_from_key(text))
+    if dim == "prior_finish":
+        return PRIOR_FINISH_DISPLAY.get(text, _title_from_key(text))
+    if dim == "age_bucket":
+        return format_age_bucket_label(text)
+    return text
+
+
+def format_adp_bucket_label(bucket: Any) -> str:
+    if bucket in (None, ""):
+        return ""
+    text = str(bucket)
+    return ADP_BUCKET_DISPLAY.get(text, _title_from_key(text))
+
+
+def _confidence_label(confidence: Any) -> Optional[str]:
+    if confidence in (None, ""):
+        return None
+    text = str(confidence)
+    return CONFIDENCE_DISPLAY.get(text, text.replace("_", " "))
+
+
+def _sample_clause(n: Any, confidence: Any) -> str:
+    bits: list[str] = []
+    sample = _optional_int(n)
+    if sample is not None:
+        bits.append(f"n={sample}")
+    conf = _confidence_label(confidence)
+    if conf:
+        bits.append(conf)
+    if not bits:
+        return ""
+    return ", ".join(bits)
+
+
+def format_market_sentence(
+    market: Optional[Mapping[str, Any]],
+    *,
+    missing: str = "none",
+) -> Optional[str]:
+    """ADP-bucket hit-rate sentence. None when there is no rate to show.
+
+    ``missing='no_adp'`` is for the lazy modal, which should explain a blank
+    instead of looking empty. Compact board rows omit that copy.
+    """
+    mkt = market if isinstance(market, Mapping) else {}
+    bucket_label = format_adp_bucket_label(mkt.get("adp_bucket"))
+    mkt_pct = display_percent(mkt.get("p_top_12"))
+    sample_bit = _sample_clause(mkt.get("sample_size"), mkt.get("confidence"))
+    if mkt_pct is not None and bucket_label:
+        sentence = (
+            f"Players drafted in {bucket_label} historically finished top-12 "
+            f"{mkt_pct}% of the time"
+        )
+        if sample_bit:
+            sentence += f" ({sample_bit})"
+        return sentence + "."
+    if bucket_label:
+        return (
+            f"ADP is in {bucket_label}, but that historical bucket has no "
+            "top-12 hit rate yet."
+        )
+    if missing == "no_adp":
+        return (
+            "This sheet has no live ADP for this player, so there is no "
+            "ADP-bucket hit rate."
+        )
+    return None
+
+
+def _as_rate(rec: Any) -> dict:
+    if not isinstance(rec, Mapping):
+        return {}
+    if rec.get("display_pct") is not None or rec.get("sample_size") is not None:
+        return dict(rec)
+    cond = rec.get("conditional")
+    if isinstance(cond, Mapping):
+        return dict(cond)
+    return {}
+
+
+def _trend_row(
+    *,
+    kind: str,
+    label: str,
+    bucket: str,
+    sentence: str,
+    rate: Any,
+) -> Optional[dict]:
+    rec = _as_rate(rate)
+    pct = rec.get("display_pct")
+    if pct is None:
+        return None
+    return {
+        "kind": kind,
+        "label": label,
+        "bucket": bucket,
+        "sentence": sentence,
+        "pct": pct,
+        "n": rec.get("sample_size"),
+        "confidence": rec.get("confidence"),
+        "confidence_label": _confidence_label(rec.get("confidence")),
+    }
+
+
+def cohort_sentence(key_used: Optional[Mapping[str, Any]]) -> str:
+    """Human description of the similar-profile group that produced Hist."""
+    key = key_used if isinstance(key_used, Mapping) else {}
+    pos = str(key.get("position") or "").upper() or "skill players"
+    extras: list[str] = []
+    stage = format_comp_bucket_value("career_stage", key.get("career_stage")) if key.get("career_stage") else ""
+    cap = format_comp_bucket_value("draft_capital", key.get("draft_capital")) if key.get("draft_capital") else ""
+    if stage and cap:
+        extras.append(f"{stage.lower()} {cap.lower()} capital")
+    elif stage:
+        extras.append(stage.lower())
+    elif cap:
+        extras.append(f"{cap.lower()} capital")
+    if key.get("age_bucket"):
+        extras.append(f"age {format_comp_bucket_value('age_bucket', key.get('age_bucket'))}")
+    prior = key.get("prior_finish")
+    if prior:
+        phrase = PRIOR_FINISH_TREND.get(str(prior), format_comp_bucket_value("prior_finish", prior).lower())
+        if prior == "none":
+            extras.append("with no prior season")
+        else:
+            extras.append(f"who finished {phrase} last year")
+    if key.get("target_share"):
+        extras.append(f"with {key.get('target_share')} targets last year")
+    if key.get("snap_pct"):
+        extras.append(f"{key.get('snap_pct')} snaps last year")
+    head = f"Among {pos}s" if pos != "skill players" else "Among similar players"
+    if extras:
+        return f"{head} {', '.join(extras)}"
+    return head
+
+
+def build_hist_trends(
+    query: Mapping[str, Any],
+    aggregates: Mapping[str, Any],
+    market: Optional[Mapping[str, Any]] = None,
+) -> list[dict]:
+    """Single-dimension historical slices for this player's buckets. Display only."""
+    feats = extract_comp_query(query)
+    pos = str(feats.get("position") or "").upper()
+    if pos not in SKILL_POSITIONS:
+        return []
+    mkt = market if isinstance(market, Mapping) else {}
+    rows: list[dict] = []
+
+    def add(row: Optional[dict]) -> None:
+        if row:
+            rows.append(row)
+
+    bucket_label = format_adp_bucket_label(mkt.get("adp_bucket"))
+    add(_trend_row(
+        kind="adp",
+        label="ADP round",
+        bucket=bucket_label,
+        sentence=f"{pos}s taken in fantasy {bucket_label} finished top-12",
+        rate={
+            "display_pct": display_percent(mkt.get("p_top_12")),
+            "sample_size": mkt.get("sample_size"),
+            "confidence": mkt.get("confidence"),
+        },
+    ) if bucket_label else None)
+
+    repeat = (aggregates.get("repeat_and_breakout") or {}).get(pos) or {}
+    prior = feats.get("prior_finish")
+    if prior in ("top_5", "top_12"):
+        add(_trend_row(
+            kind="repeat",
+            label="Last-year elite",
+            bucket="Top-12 last year",
+            sentence=f"{pos}s who finished top-12 last year finished top-12 again",
+            rate=repeat.get("prev_top12_to_top12"),
+        ))
+        add(_trend_row(
+            kind="repeat_top5",
+            label="Last-year elite",
+            bucket="Top-12 last year",
+            sentence=f"{pos}s who finished top-12 last year finished top-5 the next year",
+            rate=repeat.get("prev_top12_to_top5"),
+        ))
+    elif prior in ("none", "top_24", "top_36", "outside_36") or not prior:
+        add(_trend_row(
+            kind="breakout",
+            label="Breakout",
+            bucket="Outside last year's top-12",
+            sentence=f"{pos}s outside last year's top-12 broke into top-12",
+            rate=repeat.get("engine_breakout_among_non_starters"),
+        ))
+
+    stage = feats.get("career_stage")
+    if stage:
+        stage_rate = (((aggregates.get("career_stages") or {}).get(pos) or {}).get("by_stage") or {}).get(stage)
+        stage_label = format_comp_bucket_value("career_stage", stage)
+        add(_trend_row(
+            kind="career_stage",
+            label="Career stage",
+            bucket=stage_label,
+            sentence=f"{stage_label} {pos}s finished top-12",
+            rate=stage_rate,
+        ))
+
+    cap = feats.get("draft_capital")
+    if cap:
+        cap_rate = (
+            (((aggregates.get("draft_capital") or {}).get(pos) or {}).get("season_level_by_capital") or {}).get(cap) or {}
+        ).get("top_12")
+        cap_label = format_comp_bucket_value("draft_capital", cap)
+        add(_trend_row(
+            kind="draft_capital",
+            label="Draft capital",
+            bucket=cap_label,
+            sentence=f"NFL {cap_label} {pos}s finished top-12",
+            rate=cap_rate,
+        ))
+
+    age_block = (aggregates.get("age_curves") or {}).get(pos) or {}
+    age_b = feats.get("age_bucket")
+    if age_b:
+        age_label = format_comp_bucket_value("age_bucket", age_b)
+        add(_trend_row(
+            kind="age",
+            label="Age",
+            bucket=age_label,
+            sentence=f"{pos}s age {age_label} finished top-12",
+            rate=(age_block.get("by_bucket") or {}).get(age_b),
+        ))
+    age_int = integer_age(query.get("age"))
+    if age_int is not None:
+        add(_trend_row(
+            kind="age_exact",
+            label="Age",
+            bucket=str(age_int),
+            sentence=f"Age-{age_int} {pos}s finished top-12",
+            rate=(age_block.get("by_integer_age") or {}).get(str(age_int)),
+        ))
+    prime = age_block.get("prime_window") if isinstance(age_block.get("prime_window"), Mapping) else {}
+    lo, hi = prime.get("age_start"), prime.get("age_end")
+    if lo is not None and hi is not None:
+        pair = age_block.get("prime_window_pair") if isinstance(age_block.get("prime_window_pair"), Mapping) else {}
+        add(_trend_row(
+            kind="prime",
+            label="Prime window",
+            bucket=f"{lo}–{hi}",
+            sentence=f"{pos} hit rates have peaked at ages {lo}–{hi}",
+            rate=pair.get("conditional") if isinstance(pair, Mapping) else None,
+        ))
+
+    usage = aggregates.get("prior_usage") if isinstance(aggregates.get("prior_usage"), Mapping) else {}
+    tgt = feats.get("target_share")
+    if tgt:
+        tgt_rate = (
+            (((usage.get("target_share") or {}).get("by_position") or {}).get(pos) or {}).get("by_bucket") or {}
+        ).get(tgt)
+        add(_trend_row(
+            kind="target_share",
+            label="Last year targets",
+            bucket=str(tgt),
+            sentence=f"{pos}s with {tgt} targets last year finished top-12",
+            rate=tgt_rate,
+        ))
+    snap = feats.get("snap_pct")
+    if snap:
+        snap_rate = (
+            (((usage.get("snap_pct") or {}).get("by_position") or {}).get(pos) or {}).get("by_bucket") or {}
+        ).get(snap)
+        add(_trend_row(
+            kind="snap_pct",
+            label="Last year snaps",
+            bucket=str(snap),
+            sentence=f"{pos}s with {snap} snaps last year finished top-12",
+            rate=snap_rate,
+        ))
+    return rows
+
+
+def build_hist_panel_copy(
+    history: Mapping[str, Any],
+    market: Optional[Mapping[str, Any]] = None,
+) -> dict:
+    """Display payload for the Hist modal. No matching math."""
+    hist = history if isinstance(history, Mapping) else {}
+    mkt = market if isinstance(market, Mapping) else {}
+    key_used = hist.get("key_used") if isinstance(hist.get("key_used"), Mapping) else {}
+    rates = hist.get("rates") if isinstance(hist.get("rates"), Mapping) else {}
+    hit_rates: list[dict] = []
+    for tier in COMP_BOARD_TIERS:
+        rec = rates.get(tier) if isinstance(rates.get(tier), Mapping) else {}
+        finish = TIER_FINISH_DISPLAY.get(tier, tier.replace("_", "-"))
+        label = f"Then finished {finish}"
+        n = rec.get("sample_size")
+        if n in (None, 0):
+            n = hist.get("n")
+        hit_rates.append({
+            "tier": tier,
+            "label": label,
+            "pct": rec.get("display_pct"),
+            "n": n,
+            "confidence": rec.get("confidence"),
+            "confidence_label": _confidence_label(rec.get("confidence")),
+        })
+
+    profile: list[dict] = []
+    for dim in COMP_DIMENSION_ORDER:
+        if dim not in key_used:
+            continue
+        value = format_comp_bucket_value(dim, key_used.get(dim))
+        if not value:
+            continue
+        profile.append({
+            "key": dim,
+            "label": COMP_FEATURE_LABELS.get(dim, _title_from_key(dim)),
+            "value": value,
+        })
+
+    dropped = [str(d) for d in (hist.get("dropped") or []) if d]
+    relaxed = [
+        {"key": dim, "label": COMP_FEATURE_LABELS.get(dim, _title_from_key(dim))}
+        for dim in dropped
+    ]
+    relaxed_note = None
+    if relaxed:
+        relaxed_note = (
+            "These filters were dropped so the comparison pool could reach "
+            "at least 15 similar seasons."
+        )
+
+    market_sentence = format_market_sentence(mkt, missing="no_adp")
+    cohort = cohort_sentence(key_used)
+    cohort_note = (
+        "This is a historical hit rate for that group, not this player's odds."
+    )
+    if relaxed_note:
+        cohort_note = f"{cohort_note} {relaxed_note}"
+
+    return {
+        "headline": cohort,
+        "cohort_note": cohort_note,
+        "hit_rates": hit_rates,
+        "profile_heading": "This pre-season profile",
+        "profile": profile,
+        "relaxed_heading": "Dropped to grow the sample",
+        "relaxed": relaxed,
+        "relaxed_note": relaxed_note,
+        "trends_heading": "Trends for this player's buckets",
+        "trends_note": (
+            "Each row is one historical slice for a bucket this player is in. "
+            "They are not combined into a ranking score."
+        ),
+        "trends": [],
+        "market_heading": "ADP bucket hit rate",
+        "market_sentence": market_sentence,
+        "examples_heading": "Seasons from that similar group",
+        "examples_note": (
+            "Notable finishes from the group above. This player is excluded. "
+            "These are the hits, not a typical outcome."
+        ),
+    }
+
+
 def build_deep_panel(
     player_id: str,
     aggregates: Mapping[str, Any],
@@ -291,6 +747,17 @@ def build_deep_panel(
     comps = aggregates.get("comps") if isinstance(aggregates.get("comps"), Mapping) else aggregates
     looked = lookup_board_probabilities(query, comps if isinstance(comps, Mapping) else {})
     market = lookup_market_probability(query, aggregates)
+    history = {
+        "n": looked.get("n"),
+        "key_used": looked.get("key_used"),
+        "dropped": looked.get("dropped"),
+        "fallback": looked.get("fallback"),
+        "rates": looked.get("rates"),
+        "examples": looked.get("examples") or [],
+        "kind": "conditional",
+    }
+    copy = build_hist_panel_copy(history, market)
+    copy["trends"] = build_hist_trends(query, aggregates, market)
     return {
         "available": True,
         "player_id": pid,
@@ -298,14 +765,7 @@ def build_deep_panel(
         "no_blended_score": True,
         "not_in_ranking": True,
         "preseason": extract_comp_query(query),
-        "history": {
-            "n": looked.get("n"),
-            "key_used": looked.get("key_used"),
-            "dropped": looked.get("dropped"),
-            "fallback": looked.get("fallback"),
-            "rates": looked.get("rates"),
-            "examples": looked.get("examples") or [],
-            "kind": "conditional",
-        },
+        "history": history,
         "market": market,
+        "copy": copy,
     }
