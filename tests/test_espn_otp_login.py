@@ -4,6 +4,7 @@ Broker-level tests need no flask and run everywhere; the HTTP tests use the
 mock broker behind the feature flag and skip where flask isn't installed.
 """
 import time
+import types
 
 import pytest
 
@@ -102,6 +103,51 @@ def test_oneid_broker_unavailable_without_api_key(monkeypatch):
         b.start("t@example.com")
     monkeypatch.setenv("ESPN_ONEID_API_KEY", "APIKEY test-value")
     assert b.available() is True
+
+
+def test_oneid_retries_first_transient_code_rejection(monkeypatch):
+    responses = [
+        (400, {}),
+        (200, {"data": {"swid": "{SWID}", "recoveryToken": {"access_token": "token"}}}),
+        (200, {"data": {"s2": "cookie", "token": {"swid": "{SWID}"}}}),
+    ]
+    calls = []
+
+    class Response:
+        def __init__(self, status_code, body):
+            self.status_code = status_code
+            self._body = body
+
+        def json(self):
+            return self._body
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def post(self, path, **kwargs):
+            calls.append(path)
+            return Response(*responses.pop(0))
+
+    sleeps = []
+    fake_httpx = types.SimpleNamespace(Client=Client, HTTPError=OSError)
+    monkeypatch.setitem(__import__("sys").modules, "httpx", fake_httpx)
+    monkeypatch.setattr(time, "sleep", sleeps.append)
+
+    creds = L.OneIdOtpBroker()._submit(
+        {"conversation_id": "conversation", "api_key": "key", "session_id": "session"},
+        "123456",
+    )
+
+    assert creds == {"swid": "{SWID}", "espn_s2": "cookie"}
+    assert calls == ["/otp/redeem", "/otp/redeem", "/guest/login/recoveryToken"]
+    assert sleeps == [L._ONEID_REDEEM_RETRY_DELAY]
 
 
 # ── HTTP endpoints (flask; skipped where unavailable) ─────────────────────────

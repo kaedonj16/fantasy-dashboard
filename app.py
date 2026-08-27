@@ -2697,6 +2697,12 @@ def _espn_otp_modal_html() -> str:
       <div class="otp-resend"><span></span><button type="button" class="otp-link" id="espnOtpTeamSkip">Skip for now</button></div>
     </div>
 
+    <div class="otp-step otp-verifying" id="espnOtpLeagueLoading" hidden role="status" aria-live="polite">
+      <div class="otp-spin"></div>
+      <p class="otp-verify-t">Loading your league…</p>
+      <p class="otp-loading-sub">Setting up your dashboard with the latest league data.</p>
+    </div>
+
     <div class="otp-msg" id="espnOtpMsg" aria-live="polite"></div>
   </div>
 </div>
@@ -2723,6 +2729,7 @@ def _espn_otp_modal_html() -> str:
 .otp-spin{width:34px;height:34px;margin:0 auto 14px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--accent);animation:otpspin .8s linear infinite}
 @keyframes otpspin{to{transform:rotate(360deg)}}
 .otp-verify-t{font-size:15px;font-weight:800;margin:0}
+.otp-loading-sub{font-size:12.5px;color:var(--text-muted);line-height:1.5;margin:7px auto 0;max-width:280px}
 .otp-msg{margin-top:12px;font-size:12.5px;font-weight:600;min-height:16px}
 .otp-msg.err{color:var(--loss)}
 .otp-msg.ok{color:var(--win)}
