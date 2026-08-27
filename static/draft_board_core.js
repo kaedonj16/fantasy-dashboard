@@ -137,6 +137,12 @@
   // used as a projection stand-in.
   function scoringProjPpg(p, scoring) {
     if (!p) return null;
+    // New payloads carry the already-scored canonical result. Never silently
+    // rescale that displayed/model input in the browser.
+    if (p.projection && p.projection.projection_type === 'season_average'
+        && p.projection.ppg != null && isFinite(Number(p.projection.ppg))) {
+      return Number(p.projection.ppg);
+    }
     var base = (p.proj_ppg != null && isFinite(Number(p.proj_ppg))) ? Number(p.proj_ppg) : null;
     var by = p.proj_ppg_by;
     var key = pickProjVariant(scoring);

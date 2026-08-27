@@ -15711,6 +15711,33 @@ def api_market_intel_health():
 def api_league_players():
     payload = _build_league_players_payload(kdef=bool(request.args.get("kdef")))
 
+    # Resolve the exact season-average projection context once on the backend.
+    # All board consumers (display, Pick Score, recommendation, grade and VOR)
+    # receive this same value and its provenance; the browser does not choose a
+    # provider or perform a second scoring adjustment.
+    try:
+        from utils.projection_resolver import resolve_projected_ppg_many as _resolve_ppg_many
+        _projection_settings = {
+            "rec": float(request.args.get("proj_rec", 1.0)),
+            "bonus_rec_te": float(request.args.get("proj_te_bonus", 0.0)),
+            "pass_td": float(request.args.get("proj_pass_td", 4.0)),
+        }
+        _projection_season = int(request.args.get("season") or (get_nfl_state() or {}).get("season") or datetime.now().year)
+        _projection_players = payload.get("players") or []
+        _projection_results = _resolve_ppg_many(
+            [str(p.get("id")) for p in _projection_players], _projection_settings,
+            _projection_season,
+            positions={str(p.get("id")): str(p.get("position") or "") for p in _projection_players},
+        )
+        for _projection_player in _projection_players:
+            _projection = _projection_results.get(str(_projection_player.get("id")))
+            if not _projection:
+                continue
+            _projection_player["projection"] = _projection
+            _projection_player["proj_ppg"] = _projection.get("ppg")
+    except Exception as _projection_error:
+        logger.info("[api/league-players] canonical projection resolution skipped: %s", _projection_error)
+
     # Season context only. Weekly props are deliberately never annualized for
     # the Cheat Sheet. The copy keeps the shared cached player pool immutable.
     try:
