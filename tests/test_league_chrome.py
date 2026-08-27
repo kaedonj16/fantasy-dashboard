@@ -13,13 +13,14 @@ def test_format_label_includes_size_and_qb_type():
     assert format_label(1, True) == "SF"
 
 
-def test_week_label_regular_and_offseason():
-    assert week_label(14) == "Week 14"
+def test_week_label_is_hidden_for_all_season_states():
+    assert week_label(14) == ""
     assert week_label(0) == ""
-    assert week_label(3, offseason=True) == "Offseason"
-    assert week_label(2, season_type="pre") == "Preseason · Wk 2"
-    assert week_label(0, season_type="pre") == "Preseason"
-    assert week_label(18, season_type="off") == "Offseason"
+    assert week_label(3, offseason=True) == ""
+    assert week_label(2, season_type="pre") == ""
+    assert week_label(0, season_type="pre") == ""
+    assert week_label(3, season_type="pre", offseason=True) == ""
+    assert week_label(18, season_type="off") == ""
 
 
 def test_build_chrome_superflex_from_slots():
@@ -33,7 +34,7 @@ def test_build_chrome_superflex_from_slots():
     assert meta["name"] == "Dynasty Warriors"
     assert meta["raw_name"] == "Dynasty Warriors"
     assert meta["format"] == "12tm SF"
-    assert meta["week_label"] == "Week 14"
+    assert meta["week_label"] == ""
     assert meta["sf"] is True
 
 
@@ -42,11 +43,11 @@ def test_build_chrome_fallback_name_and_1qb():
     assert meta["name"] == "This league"
     assert meta["raw_name"] == ""
     assert meta["format"] == "10tm 1QB"
-    assert meta["week_label"] == "Week 1"
+    assert meta["week_label"] == ""
 
 
 def test_hub_page_titles_do_not_restate_week():
-    """Season/Offseason Hub H1s stay just the hub name; week lives in chrome."""
+    """Season/Offseason Hub H1s stay just the hub name."""
     src = (
         (_PAGES / "dashboard_page.py").read_text(encoding="utf-8")
         + (_PAGES / "offseason_dashboard_page.py").read_text(encoding="utf-8")
