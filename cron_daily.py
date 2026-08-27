@@ -36,6 +36,7 @@ CRON_STEPS = (
     "wls_dynasty_12team",
     "wls_redraft_10team",
     "wls_redraft_12team",
+    "rebuild_historical_warehouse",
 )
 
 
@@ -848,6 +849,20 @@ from data_building.trade_intel.trade_value_model import run_trade_value_model
 res = run_trade_value_model(season={season!r}, league_type={_lt}, league_size={_sz})
 print(f"[cron] WLS {_lt_name} {_sz}-team: {{res}}")
 """, f"wls_{_lt_name}_{_sz}team")
+
+    # ------------------------------------------------------------------ #
+    # Step 9b: Historical analytics warehouse (usage_rows → parquet)     #
+    # Rebuilds canonical player-seasons + finishes + prior-career        #
+    # features from committed cache. No live NFL APIs; request paths     #
+    # only read the parquet this writes.                                 #
+    # ------------------------------------------------------------------ #
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.historical.build_player_seasons import rebuild_historical_warehouse
+coverage = rebuild_historical_warehouse()
+print("[cron] Historical warehouse: %s combined rows, seasons=%s"
+      % (coverage.get("combined_rows"), coverage.get("written_seasons")))
+""", "rebuild_historical_warehouse")
 
     # ------------------------------------------------------------------ #
     # Step 10: Calibrated history snapshot                               #

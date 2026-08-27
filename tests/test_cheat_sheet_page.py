@@ -50,10 +50,12 @@ def test_csv_export_is_free_for_non_premium_viewers():
 
     assert 'id="csCsvBtn"' in body
     assert "CSV (Pro)" not in script
-    assert "if (csvBtn) csvBtn.addEventListener('click', function () { exportCsv(); });" in script
+    assert "if (csvBtn) csvBtn.addEventListener('click', function () {" in script
+    assert "exportCsv();" in script
     # Custom-board edits stay gated; CSV is the only draft-cheat-sheet control
     # that used to paywall on click and now always exports.
-    assert "if (!cfg.hasPremium) { if (typeof window.showPaywall === 'function') window.showPaywall('draft-cheat-sheet'); return; }" in script
+    assert "if (!cfg.hasPremium) {" in script
+    assert "window.showPaywall('draft-cheat-sheet')" in script
 
 
 def test_live_sync_is_explicit_and_drafted_players_offer_board_reset():
@@ -120,7 +122,8 @@ def test_cheat_sheet_adds_projected_ppg_to_board_and_export():
     script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
 
     assert "Projected PPG is the player's upcoming-season fantasy points per game from Sleeper" in body
-    assert "projectedPpg: p.proj_ppg" in script
+    assert "projectedPpg:" in script
+    assert "p.proj_ppg" in script
     assert "sortTh('projectedPpg', 'Proj PPG'" in script
     assert "'Proj PPG'" in script
     assert "x.projectedPpg.toFixed(1)" in script
@@ -193,10 +196,12 @@ def test_draft_room_cheat_sheet_shows_recommendation_context_without_reordering(
     assert "function cheatRecommendationOrder()" in room
     assert "rec_order=" in room
     assert "var recommendationOrder = null" in sheet
-    assert "x.recRank = recommendationOrder" in sheet
+    assert "x.recRank =" in sheet
+    assert "recommendationOrder[x.id]" in sheet
     assert "REC #' + x.recRank" in sheet
     assert "applyOverrides();" in sheet
-    assert "scored.sort(function (a, b) { return b.vor - a.vor" in sheet
+    assert "scored.sort(function (a, b) {" in sheet
+    assert "var aVor = Number(a.vorRaw);" in sheet
     assert "recommendationOrder[a.id]" not in sheet
     assert "Live context without reordering the sheet" in body
 
@@ -293,7 +298,8 @@ def test_cheat_sheet_big_board_columns_are_sortable():
     assert "thead th[data-sort]" in script
     assert "displayPlayers().forEach" in script
     assert "displayPlayers().map" in script
-    assert "scored.sort(function (a, b) { return b.vor - a.vor" in script
+    assert "scored.sort(function (a, b) {" in script
+    assert "var aVor = Number(a.vorRaw);" in script
     assert "boardSort && !recommendationOrder && x.grp !== lastT" in script
     assert "var pickAt = boardSort ? projPickMap() : {}" in script
     assert "th.cs-sort" in body

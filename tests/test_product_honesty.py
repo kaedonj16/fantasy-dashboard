@@ -92,8 +92,10 @@ def test_live_cheat_sheet_sync_is_not_premium_gated():
     assert "if (!cfg.hasPremium || !cfg.leagueId || !cfg.platform)" not in CHEAT_JS
     assert "if (!cfg.leagueId || !cfg.platform) return Promise.resolve(false);" in CHEAT_JS
     assert "window.showPaywall('draft-cheat-sheet')" not in DRAFT_JS
-    # Custom board edits remain PRO. CSV export is free.
-    assert "if (!cfg.hasPremium) { if (typeof window.showPaywall === 'function') window.showPaywall('draft-cheat-sheet'); return; }" in CHEAT_JS
+    # Custom board edits remain PRO. CSV export is free. (Multiline after
+    # the cheat-sheet script wrap; keep the paywall call next to the gate.)
+    assert "if (!cfg.hasPremium) {" in CHEAT_JS
+    assert "window.showPaywall('draft-cheat-sheet')" in CHEAT_JS
 
 
 def test_playoff_impact_and_offseason_breakouts_are_server_gated():

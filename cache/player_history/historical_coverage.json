@@ -1,0 +1,1706 @@
+{
+  "seasons": {
+    "2018": {
+      "usage_rows": 545,
+      "canonical_rows": 545,
+      "fields": {
+        "season": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "player_id": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "sleeper_id": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "gsis_id": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "name": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "position": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "team": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "age": {
+          "present": 290,
+          "missing": 255,
+          "n": 545
+        },
+        "age_bucket": {
+          "present": 290,
+          "missing": 255,
+          "n": 545
+        },
+        "years_experience": {
+          "present": 233,
+          "missing": 312,
+          "n": 545
+        },
+        "draft_year": {
+          "present": 258,
+          "missing": 287,
+          "n": 545
+        },
+        "nfl_draft_round": {
+          "present": 221,
+          "missing": 324,
+          "n": 545
+        },
+        "nfl_draft_pick": {
+          "present": 221,
+          "missing": 324,
+          "n": 545
+        },
+        "draft_capital_bucket": {
+          "present": 221,
+          "missing": 324,
+          "n": 545
+        },
+        "games": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "starts": {
+          "present": 0,
+          "missing": 545,
+          "n": 545
+        },
+        "snaps": {
+          "present": 0,
+          "missing": 545,
+          "n": 545
+        },
+        "snap_pct": {
+          "present": 203,
+          "missing": 342,
+          "n": 545
+        },
+        "targets": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "target_share": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "receptions": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "receiving_yards": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "receiving_tds": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "air_yards": {
+          "present": 0,
+          "missing": 545,
+          "n": 545
+        },
+        "adot": {
+          "present": 0,
+          "missing": 545,
+          "n": 545
+        },
+        "carries": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "rush_yards": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "rush_tds": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "red_zone_targets": {
+          "present": 0,
+          "missing": 545,
+          "n": 545
+        },
+        "red_zone_carries": {
+          "present": 0,
+          "missing": 545,
+          "n": 545
+        },
+        "passing_attempts": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "passing_yards": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "passing_tds": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "interceptions": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "ppr_points": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "half_ppr_points": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "standard_points": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "ppr_ppg": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "half_ppr_ppg": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "standard_ppg": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        },
+        "source_schema": {
+          "present": 545,
+          "missing": 0,
+          "n": 545
+        }
+      }
+    },
+    "2019": {
+      "usage_rows": 547,
+      "canonical_rows": 547,
+      "fields": {
+        "season": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "player_id": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "sleeper_id": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "gsis_id": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "name": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "position": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "team": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "age": {
+          "present": 370,
+          "missing": 177,
+          "n": 547
+        },
+        "age_bucket": {
+          "present": 370,
+          "missing": 177,
+          "n": 547
+        },
+        "years_experience": {
+          "present": 303,
+          "missing": 244,
+          "n": 547
+        },
+        "draft_year": {
+          "present": 323,
+          "missing": 224,
+          "n": 547
+        },
+        "nfl_draft_round": {
+          "present": 270,
+          "missing": 277,
+          "n": 547
+        },
+        "nfl_draft_pick": {
+          "present": 270,
+          "missing": 277,
+          "n": 547
+        },
+        "draft_capital_bucket": {
+          "present": 270,
+          "missing": 277,
+          "n": 547
+        },
+        "games": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "starts": {
+          "present": 0,
+          "missing": 547,
+          "n": 547
+        },
+        "snaps": {
+          "present": 0,
+          "missing": 547,
+          "n": 547
+        },
+        "snap_pct": {
+          "present": 206,
+          "missing": 341,
+          "n": 547
+        },
+        "targets": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "target_share": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "receptions": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "receiving_yards": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "receiving_tds": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "air_yards": {
+          "present": 0,
+          "missing": 547,
+          "n": 547
+        },
+        "adot": {
+          "present": 0,
+          "missing": 547,
+          "n": 547
+        },
+        "carries": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "rush_yards": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "rush_tds": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "red_zone_targets": {
+          "present": 0,
+          "missing": 547,
+          "n": 547
+        },
+        "red_zone_carries": {
+          "present": 0,
+          "missing": 547,
+          "n": 547
+        },
+        "passing_attempts": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "passing_yards": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "passing_tds": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "interceptions": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "ppr_points": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "half_ppr_points": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "standard_points": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "ppr_ppg": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "half_ppr_ppg": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "standard_ppg": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        },
+        "source_schema": {
+          "present": 547,
+          "missing": 0,
+          "n": 547
+        }
+      }
+    },
+    "2020": {
+      "usage_rows": 580,
+      "canonical_rows": 580,
+      "fields": {
+        "season": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "player_id": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "sleeper_id": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "gsis_id": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "name": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "position": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "team": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "age": {
+          "present": 464,
+          "missing": 116,
+          "n": 580
+        },
+        "age_bucket": {
+          "present": 464,
+          "missing": 116,
+          "n": 580
+        },
+        "years_experience": {
+          "present": 383,
+          "missing": 197,
+          "n": 580
+        },
+        "draft_year": {
+          "present": 407,
+          "missing": 173,
+          "n": 580
+        },
+        "nfl_draft_round": {
+          "present": 331,
+          "missing": 249,
+          "n": 580
+        },
+        "nfl_draft_pick": {
+          "present": 331,
+          "missing": 249,
+          "n": 580
+        },
+        "draft_capital_bucket": {
+          "present": 331,
+          "missing": 249,
+          "n": 580
+        },
+        "games": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "starts": {
+          "present": 0,
+          "missing": 580,
+          "n": 580
+        },
+        "snaps": {
+          "present": 0,
+          "missing": 580,
+          "n": 580
+        },
+        "snap_pct": {
+          "present": 215,
+          "missing": 365,
+          "n": 580
+        },
+        "targets": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "target_share": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "receptions": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "receiving_yards": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "receiving_tds": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "air_yards": {
+          "present": 0,
+          "missing": 580,
+          "n": 580
+        },
+        "adot": {
+          "present": 0,
+          "missing": 580,
+          "n": 580
+        },
+        "carries": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "rush_yards": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "rush_tds": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "red_zone_targets": {
+          "present": 0,
+          "missing": 580,
+          "n": 580
+        },
+        "red_zone_carries": {
+          "present": 0,
+          "missing": 580,
+          "n": 580
+        },
+        "passing_attempts": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "passing_yards": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "passing_tds": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "interceptions": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "ppr_points": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "half_ppr_points": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "standard_points": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "ppr_ppg": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "half_ppr_ppg": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "standard_ppg": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        },
+        "source_schema": {
+          "present": 580,
+          "missing": 0,
+          "n": 580
+        }
+      }
+    },
+    "2021": {
+      "usage_rows": 595,
+      "canonical_rows": 595,
+      "fields": {
+        "season": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "player_id": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "sleeper_id": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "gsis_id": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "name": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "position": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "team": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "age": {
+          "present": 545,
+          "missing": 50,
+          "n": 595
+        },
+        "age_bucket": {
+          "present": 545,
+          "missing": 50,
+          "n": 595
+        },
+        "years_experience": {
+          "present": 436,
+          "missing": 159,
+          "n": 595
+        },
+        "draft_year": {
+          "present": 474,
+          "missing": 121,
+          "n": 595
+        },
+        "nfl_draft_round": {
+          "present": 377,
+          "missing": 218,
+          "n": 595
+        },
+        "nfl_draft_pick": {
+          "present": 377,
+          "missing": 218,
+          "n": 595
+        },
+        "draft_capital_bucket": {
+          "present": 377,
+          "missing": 218,
+          "n": 595
+        },
+        "games": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "starts": {
+          "present": 0,
+          "missing": 595,
+          "n": 595
+        },
+        "snaps": {
+          "present": 0,
+          "missing": 595,
+          "n": 595
+        },
+        "snap_pct": {
+          "present": 222,
+          "missing": 373,
+          "n": 595
+        },
+        "targets": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "target_share": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "receptions": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "receiving_yards": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "receiving_tds": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "air_yards": {
+          "present": 0,
+          "missing": 595,
+          "n": 595
+        },
+        "adot": {
+          "present": 0,
+          "missing": 595,
+          "n": 595
+        },
+        "carries": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "rush_yards": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "rush_tds": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "red_zone_targets": {
+          "present": 0,
+          "missing": 595,
+          "n": 595
+        },
+        "red_zone_carries": {
+          "present": 0,
+          "missing": 595,
+          "n": 595
+        },
+        "passing_attempts": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "passing_yards": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "passing_tds": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "interceptions": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "ppr_points": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "half_ppr_points": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "standard_points": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "ppr_ppg": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "half_ppr_ppg": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "standard_ppg": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        },
+        "source_schema": {
+          "present": 595,
+          "missing": 0,
+          "n": 595
+        }
+      }
+    },
+    "2022": {
+      "usage_rows": 574,
+      "canonical_rows": 574,
+      "fields": {
+        "season": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "player_id": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "sleeper_id": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "gsis_id": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "name": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "position": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "team": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "age": {
+          "present": 573,
+          "missing": 1,
+          "n": 574
+        },
+        "age_bucket": {
+          "present": 573,
+          "missing": 1,
+          "n": 574
+        },
+        "years_experience": {
+          "present": 499,
+          "missing": 75,
+          "n": 574
+        },
+        "draft_year": {
+          "present": 538,
+          "missing": 36,
+          "n": 574
+        },
+        "nfl_draft_round": {
+          "present": 422,
+          "missing": 152,
+          "n": 574
+        },
+        "nfl_draft_pick": {
+          "present": 422,
+          "missing": 152,
+          "n": 574
+        },
+        "draft_capital_bucket": {
+          "present": 422,
+          "missing": 152,
+          "n": 574
+        },
+        "games": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "starts": {
+          "present": 0,
+          "missing": 574,
+          "n": 574
+        },
+        "snaps": {
+          "present": 0,
+          "missing": 574,
+          "n": 574
+        },
+        "snap_pct": {
+          "present": 570,
+          "missing": 4,
+          "n": 574
+        },
+        "targets": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "target_share": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "receptions": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "receiving_yards": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "receiving_tds": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "air_yards": {
+          "present": 0,
+          "missing": 574,
+          "n": 574
+        },
+        "adot": {
+          "present": 0,
+          "missing": 574,
+          "n": 574
+        },
+        "carries": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "rush_yards": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "rush_tds": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "red_zone_targets": {
+          "present": 0,
+          "missing": 574,
+          "n": 574
+        },
+        "red_zone_carries": {
+          "present": 0,
+          "missing": 574,
+          "n": 574
+        },
+        "passing_attempts": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "passing_yards": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "passing_tds": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "interceptions": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "ppr_points": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "half_ppr_points": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "standard_points": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "ppr_ppg": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "half_ppr_ppg": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "standard_ppg": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        },
+        "source_schema": {
+          "present": 574,
+          "missing": 0,
+          "n": 574
+        }
+      }
+    },
+    "2023": {
+      "usage_rows": 2777,
+      "canonical_rows": 598,
+      "fields": {
+        "season": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "player_id": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "sleeper_id": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "gsis_id": {
+          "present": 469,
+          "missing": 129,
+          "n": 598
+        },
+        "name": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "position": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "team": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "age": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "age_bucket": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "years_experience": {
+          "present": 550,
+          "missing": 48,
+          "n": 598
+        },
+        "draft_year": {
+          "present": 583,
+          "missing": 15,
+          "n": 598
+        },
+        "nfl_draft_round": {
+          "present": 434,
+          "missing": 164,
+          "n": 598
+        },
+        "nfl_draft_pick": {
+          "present": 434,
+          "missing": 164,
+          "n": 598
+        },
+        "draft_capital_bucket": {
+          "present": 434,
+          "missing": 164,
+          "n": 598
+        },
+        "games": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "starts": {
+          "present": 0,
+          "missing": 598,
+          "n": 598
+        },
+        "snaps": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "snap_pct": {
+          "present": 222,
+          "missing": 376,
+          "n": 598
+        },
+        "targets": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "target_share": {
+          "present": 136,
+          "missing": 462,
+          "n": 598
+        },
+        "receptions": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "receiving_yards": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "receiving_tds": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "air_yards": {
+          "present": 0,
+          "missing": 598,
+          "n": 598
+        },
+        "adot": {
+          "present": 0,
+          "missing": 598,
+          "n": 598
+        },
+        "carries": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "rush_yards": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "rush_tds": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "red_zone_targets": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "red_zone_carries": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "passing_attempts": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "passing_yards": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "passing_tds": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "interceptions": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "ppr_points": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "half_ppr_points": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "standard_points": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "ppr_ppg": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "half_ppr_ppg": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "standard_ppg": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        },
+        "source_schema": {
+          "present": 598,
+          "missing": 0,
+          "n": 598
+        }
+      }
+    },
+    "2024": {
+      "usage_rows": 1699,
+      "canonical_rows": 599,
+      "fields": {
+        "season": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "player_id": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "sleeper_id": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "gsis_id": {
+          "present": 379,
+          "missing": 220,
+          "n": 599
+        },
+        "name": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "position": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "team": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "age": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "age_bucket": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "years_experience": {
+          "present": 567,
+          "missing": 32,
+          "n": 599
+        },
+        "draft_year": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "nfl_draft_round": {
+          "present": 438,
+          "missing": 161,
+          "n": 599
+        },
+        "nfl_draft_pick": {
+          "present": 438,
+          "missing": 161,
+          "n": 599
+        },
+        "draft_capital_bucket": {
+          "present": 438,
+          "missing": 161,
+          "n": 599
+        },
+        "games": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "starts": {
+          "present": 0,
+          "missing": 599,
+          "n": 599
+        },
+        "snaps": {
+          "present": 598,
+          "missing": 1,
+          "n": 599
+        },
+        "snap_pct": {
+          "present": 248,
+          "missing": 351,
+          "n": 599
+        },
+        "targets": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "target_share": {
+          "present": 415,
+          "missing": 184,
+          "n": 599
+        },
+        "receptions": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "receiving_yards": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "receiving_tds": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "air_yards": {
+          "present": 0,
+          "missing": 599,
+          "n": 599
+        },
+        "adot": {
+          "present": 0,
+          "missing": 599,
+          "n": 599
+        },
+        "carries": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "rush_yards": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "rush_tds": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "red_zone_targets": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "red_zone_carries": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "passing_attempts": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "passing_yards": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "passing_tds": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "interceptions": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "ppr_points": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "half_ppr_points": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "standard_points": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "ppr_ppg": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "half_ppr_ppg": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "standard_ppg": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        },
+        "source_schema": {
+          "present": 599,
+          "missing": 0,
+          "n": 599
+        }
+      }
+    },
+    "2025": {
+      "usage_rows": 2832,
+      "canonical_rows": 609,
+      "fields": {
+        "season": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "player_id": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "sleeper_id": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "gsis_id": {
+          "present": 317,
+          "missing": 292,
+          "n": 609
+        },
+        "name": {
+          "present": 607,
+          "missing": 2,
+          "n": 609
+        },
+        "position": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "team": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "age": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "age_bucket": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "years_experience": {
+          "present": 587,
+          "missing": 22,
+          "n": 609
+        },
+        "draft_year": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "nfl_draft_round": {
+          "present": 437,
+          "missing": 172,
+          "n": 609
+        },
+        "nfl_draft_pick": {
+          "present": 437,
+          "missing": 172,
+          "n": 609
+        },
+        "draft_capital_bucket": {
+          "present": 437,
+          "missing": 172,
+          "n": 609
+        },
+        "games": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "starts": {
+          "present": 0,
+          "missing": 609,
+          "n": 609
+        },
+        "snaps": {
+          "present": 607,
+          "missing": 2,
+          "n": 609
+        },
+        "snap_pct": {
+          "present": 608,
+          "missing": 1,
+          "n": 609
+        },
+        "targets": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "target_share": {
+          "present": 527,
+          "missing": 82,
+          "n": 609
+        },
+        "receptions": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "receiving_yards": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "receiving_tds": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "air_yards": {
+          "present": 0,
+          "missing": 609,
+          "n": 609
+        },
+        "adot": {
+          "present": 0,
+          "missing": 609,
+          "n": 609
+        },
+        "carries": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "rush_yards": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "rush_tds": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "red_zone_targets": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "red_zone_carries": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "passing_attempts": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "passing_yards": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "passing_tds": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "interceptions": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "ppr_points": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "half_ppr_points": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "standard_points": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "ppr_ppg": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "half_ppr_ppg": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "standard_ppg": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        },
+        "source_schema": {
+          "present": 609,
+          "missing": 0,
+          "n": 609
+        }
+      }
+    }
+  },
+  "identity": {
+    "n": 6256
+  },
+  "written_seasons": [
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ],
+  "combined_rows": 4647
+}

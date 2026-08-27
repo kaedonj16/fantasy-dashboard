@@ -317,6 +317,47 @@ def build_player_history_features(history_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def build_prior_career_features(history_df: pd.DataFrame) -> pd.DataFrame:
+    """One row per player-season of *pre-season* career features.
+
+    Unlike ``build_player_history_features`` (latest-season collapse for live
+    valuation), this emits a 2022 row that does not change if 2022 actuals
+    change — only outcome/target columns on that row may change. See
+    ``dashboard_services.historical.finishes``.
+    """
+    from dashboard_services.historical.finishes import attach_prior_career_features
+
+    if history_df is None or history_df.empty:
+        return pd.DataFrame()
+    records = history_df.to_dict(orient="records")
+    return pd.DataFrame(attach_prior_career_features(records))
+
+
+def build_canonical_player_history_for_season(
+        season: int,
+        usage_rows: list[dict[str, Any]],
+        identity_by_id: dict[str, dict[str, Any]] | None = None,
+) -> pd.DataFrame:
+    """Canonical Phase-1 warehouse rows for one season (null, not zero)."""
+    from dashboard_services.historical.seasons import canonicalize_usage_row, row_appeared
+
+    identity_by_id = identity_by_id or {}
+    rows = []
+    seen: set[str] = set()
+    for raw in usage_rows:
+        pid = str(raw.get("sleeper_id") or raw.get("player_id") or raw.get("id") or "")
+        row = canonicalize_usage_row(raw, int(season), identity_by_id.get(pid) or {})
+        if row is None:
+            continue
+        if row["sleeper_id"] in seen:
+            continue
+        if not row_appeared(row):
+            continue
+        seen.add(row["sleeper_id"])
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def _calculate_rolling_windows(weekly_stats: list[dict], window_size: int = 4) -> dict:
     """
     CRITICAL FIX: Calculate rolling window features to capture recent performance and trends.
