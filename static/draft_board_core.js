@@ -73,6 +73,18 @@
     var v = sourceAdpOf(p, 'consensus', mode, sf);
     return v != null ? v : adpOf(p, mode, sf);
   }
+  // Canonical ADP resolution for every draft-board surface.  In particular,
+  // redraft never reads the dynasty avg_pick axis when its format is missing.
+  function resolveAdp(p, selectedSource, mode, sf) {
+    var source = selectedSource && selectedSource !== 'auto' ? selectedSource : 'consensus';
+    var consensus = sourceAdpOf(p, 'consensus', mode, sf);
+    var selected = sourceAdpOf(p, source, mode, sf);
+    if (source === 'consensus') selected = consensus;
+    if (selected == null) selected = consensus;
+    if (selected == null) selected = adpOf(p, mode, sf);
+    return { selectedAdp: selected, consensusAdp: consensus != null ? consensus : selected,
+      selectedSource: source };
+  }
 
   // Effective starters {QB,RB,WR,TE} from a roster_positions array.
   function startersFor(rosterPositions, sf) { return PS().starterCounts(rosterCounts(rosterPositions, sf)); }
@@ -680,6 +692,20 @@
   var ADP_REACH_SURVIVE = 20;    // below this % chance to last to the next pick = not a reach
   var ADP_REACH_RAW = -5;        // same raw early-by-N threshold the ledger used
 
+  function adpUncertainty(player, round, sourceValues) {
+    var vals = (sourceValues || []).map(Number).filter(function(v){ return isFinite(v) && v > 0; })
+      .sort(function(a, b){ return a - b; });
+    var spread = 0;
+    if (vals.length >= 3) {
+      var med = vals[Math.floor(vals.length / 2)];
+      var dev = vals.map(function(v){ return Math.abs(v - med); }).sort(function(a,b){ return a-b; });
+      spread = 1.4826 * dev[Math.floor(dev.length / 2)];
+    }
+    var r = Math.max(1, Number(round) || 1);
+    var depth = r <= 2 ? 4 : r <= 4 ? 7 : r <= 6 ? 11 : r <= 9 ? 17 : r <= 12 ? 25 : 32 + (r - 13) * 2;
+    return Math.max(depth, spread * 1.5);
+  }
+
   function isRemainingAdpBpa(playerAdp, bestRemainingAdp, cluster) {
     if (playerAdp == null || bestRemainingAdp == null) return false;
     var a = Number(playerAdp), b = Number(bestRemainingAdp);
@@ -711,7 +737,9 @@
     diff = Number(diff);
     if (diff >= 8) return { label: 'Steal', cls: 'steal' };
     if (diff >= 3) return { label: 'Value', cls: 'value' };
-    if (diff > ADP_REACH_RAW) return { label: 'Fair', cls: 'fair' };
+    var tolerance = o.tolerance != null ? Math.max(0, Number(o.tolerance)) : Math.abs(ADP_REACH_RAW);
+    if (diff > -tolerance) return diff < ADP_REACH_RAW
+      ? { label: 'Aggressive', cls: 'aggressive' } : { label: 'Fair', cls: 'fair' };
     if (o.isBpa) return { label: 'Fair', cls: 'fair' };
     var survive = o.survivePct;
     if (survive != null && isFinite(Number(survive)) && Number(survive) < ADP_REACH_SURVIVE) {
@@ -759,7 +787,7 @@
   return {
     rosterCounts: rosterCounts, startersFor: startersFor,
     redraftVal: redraftVal, dynVal: dynVal, valOf: valOf, adpOf: adpOf,
-    adpField: adpField, sourceAdpOf: sourceAdpOf, consensusAdpOf: consensusAdpOf,
+    adpField: adpField, sourceAdpOf: sourceAdpOf, consensusAdpOf: consensusAdpOf, resolveAdp: resolveAdp,
     computeReplacement: computeReplacement, ppgOf: ppgOf,
     pickProjVariant: pickProjVariant, scoringProjPpg: scoringProjPpg, scoringProjPts: scoringProjPts,
     computePpgScale: computePpgScale, ppgNorm: ppgNorm,
@@ -777,6 +805,7 @@
     autoDraftNeedMultiplier: autoDraftNeedMultiplier,
     specialTeamsFillPos: specialTeamsFillPos,
     ADP_REACH_CLUSTER: ADP_REACH_CLUSTER, ADP_REACH_SURVIVE: ADP_REACH_SURVIVE,
+    adpUncertainty: adpUncertainty,
     isRemainingAdpBpa: isRemainingAdpBpa, bestRemainingAdp: bestRemainingAdp,
     adpDeltaVerdict: adpDeltaVerdict, adpBoardDelta: adpBoardDelta,
   };
