@@ -32,6 +32,8 @@ from dashboard_services.historical.definitions import (
 )
 from dashboard_services.historical.signals import (
     compare_board_signals,
+    compare_projection_vs_history,
+    compare_projection_vs_market,
     lookup_market_probability,
     projected_ppg_of,
 )
@@ -54,7 +56,7 @@ COMP_FEATURE_LABELS: dict[str, str] = {
     "draft_capital": "Draft capital",
     "prior_finish": "Last year finish",
     "age_bucket": "Age",
-    "target_share": "Last year targets",
+    "target_share": "Last year target share",
     "snap_pct": "Last year snaps",
 }
 CAREER_STAGE_DISPLAY: dict[str, str] = {
@@ -264,6 +266,18 @@ def query_for_board_player(
     if ppg is not None:
         query["projected_ppg"] = ppg
         query["proj_ppg"] = ppg
+    proj_rk = _optional_int(
+        player.get("projected_positional_rank") or player.get("proj_rk")
+    )
+    if proj_rk is not None:
+        query["projected_positional_rank"] = proj_rk
+        query["proj_rk"] = proj_rk
+    adp_rk = _optional_int(
+        player.get("adp_positional_rank") or player.get("adp_rk")
+    )
+    if adp_rk is not None:
+        query["adp_positional_rank"] = adp_rk
+        query["adp_rk"] = adp_rk
     return query
 
 
@@ -488,7 +502,7 @@ def cohort_sentence(key_used: Optional[Mapping[str, Any]]) -> str:
         else:
             extras.append(f"who finished {phrase} last year")
     if key.get("target_share"):
-        extras.append(f"with {key.get('target_share')} targets last year")
+        extras.append(f"with {key.get('target_share')} target share last year")
     if key.get("snap_pct"):
         extras.append(f"{key.get('snap_pct')} snaps last year")
     head = f"Among {pos}s" if pos != "skill players" else "Among similar players"
@@ -619,9 +633,9 @@ def build_hist_trends(
         ).get(tgt)
         add(_trend_row(
             kind="target_share",
-            label="Last year targets",
+            label="Last year target share",
             bucket=str(tgt),
-            sentence=f"{pos}s with {tgt} targets last year finished top-12",
+            sentence=f"{pos}s with {tgt} target share last year finished top-12",
             rate=tgt_rate,
         ))
     snap = feats.get("snap_pct")
@@ -635,6 +649,116 @@ def build_hist_trends(
             bucket=str(snap),
             sentence=f"{pos}s with {snap} snaps last year finished top-12",
             rate=snap_rate,
+        ))
+    return rows
+
+
+def _info_row(
+    *,
+    kind: str,
+    label: str,
+    sentence: str,
+    display: str,
+    bucket: str = "",
+    pct: Any = None,
+    n: Any = None,
+) -> dict:
+    return {
+        "kind": kind,
+        "label": label,
+        "bucket": bucket,
+        "sentence": sentence,
+        "display": display,
+        "pct": pct,
+        "n": n,
+        "confidence": None,
+        "confidence_label": None,
+    }
+
+
+def build_projection_trends(
+    query: Mapping[str, Any],
+    history: Optional[Mapping[str, Any]] = None,
+) -> list[dict]:
+    """Live board projection context. PPG is never turned into a hit rate."""
+    hist = history if isinstance(history, Mapping) else {}
+    pos = str(query.get("position") or "").upper() or "player"
+    ppg = projected_ppg_of(query)
+    rank = _optional_int(
+        query.get("projected_positional_rank") or query.get("proj_rk")
+    )
+    adp_rk = _optional_int(
+        query.get("adp_positional_rank") or query.get("adp_rk")
+    )
+    top12 = hist.get("rates") if isinstance(hist.get("rates"), Mapping) else {}
+    top12 = top12.get("top_12") if isinstance(top12.get("top_12"), Mapping) else {}
+    history_p = top12.get("smoothed_rate")
+    hist_pct = top12.get("display_pct")
+    implies = (rank <= 12) if rank is not None else None
+    rows: list[dict] = []
+    if ppg is not None:
+        rows.append(_info_row(
+            kind="projection_ppg",
+            label="Projection",
+            bucket="Sleeper PPG",
+            sentence="Sleeper projection for this season",
+            display=f"{ppg:.1f} PPG",
+        ))
+    if rank is not None:
+        band = "inside the top-12" if implies else "outside the top-12"
+        rows.append(_info_row(
+            kind="projection_rank",
+            label="Implied rank",
+            bucket=band,
+            sentence=f"Implied {pos} rank among this board's projections",
+            display=f"#{rank}",
+        ))
+    vs_h = compare_projection_vs_history(implies, history_p)
+    vs_h_copy = {
+        "history_skeptical": (
+            "Projection is a top-12; similar profiles finished top-12 less often"
+        ),
+        "history_bullish": (
+            "Projection is outside the top-12; similar profiles finished top-12 more often"
+        ),
+        "agree_hit": "Projection and similar-profile history both point at a top-12",
+        "agree_miss": "Projection and similar-profile history both sit outside the top-12",
+    }
+    sentence = vs_h_copy.get(str(vs_h.get("label") or ""))
+    if sentence:
+        rows.append(_info_row(
+            kind="projection_vs_history",
+            label="Projection vs history",
+            sentence=sentence,
+            display=f"{hist_pct}%" if hist_pct is not None else "—",
+            pct=hist_pct,
+            n=hist.get("n") or top12.get("sample_size"),
+        ))
+    vs_m = compare_projection_vs_market(rank, adp_rk)
+    mlabel = vs_m.get("label")
+    if mlabel == "projection_higher" and rank is not None and adp_rk is not None:
+        rows.append(_info_row(
+            kind="projection_vs_market",
+            label="Projection vs ADP",
+            sentence=f"Projection ranks him #{rank} vs ADP rank #{adp_rk} on this board",
+            display=f"#{rank}",
+            bucket=f"ADP #{adp_rk}",
+        ))
+    elif mlabel == "market_higher" and rank is not None and adp_rk is not None:
+        rows.append(_info_row(
+            kind="projection_vs_market",
+            label="Projection vs ADP",
+            sentence=f"ADP ranks him #{adp_rk} vs projected #{rank} on this board",
+            display=f"#{adp_rk}",
+            bucket=f"projected #{rank}",
+        ))
+    elif mlabel == "aligned" and rank is not None and adp_rk is not None:
+        rows.append(_info_row(
+            kind="projection_vs_market",
+            label="Projection vs ADP",
+            sentence=f"Projection (#{rank}) and ADP rank (#{adp_rk}) are in the same range",
+            display=f"#{rank}",
+            bucket=f"ADP #{adp_rk}",
         ))
     return rows
 
@@ -713,6 +837,12 @@ def build_hist_panel_copy(
             "They are not combined into a ranking score."
         ),
         "trends": [],
+        "projection_heading": "This board's projection",
+        "projection_note": (
+            "Sleeper PPG and implied rank among this cheat sheet. "
+            "PPG is not turned into a hit rate."
+        ),
+        "projection_trends": [],
         "market_heading": "ADP bucket hit rate",
         "market_sentence": market_sentence,
         "examples_heading": "Seasons from that similar group",
@@ -758,6 +888,7 @@ def build_deep_panel(
     }
     copy = build_hist_panel_copy(history, market)
     copy["trends"] = build_hist_trends(query, aggregates, market)
+    copy["projection_trends"] = build_projection_trends(query, history)
     return {
         "available": True,
         "player_id": pid,

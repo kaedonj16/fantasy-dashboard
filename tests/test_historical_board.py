@@ -215,7 +215,7 @@ def test_hist_panel_copy_uses_bucket_hit_rates_not_snake_case():
         "Draft capital",
         "Last year finish",
         "Age",
-        "Last year targets",
+        "Last year target share",
         "Last year snaps",
     ]
     assert "Year 4" in values
@@ -227,7 +227,7 @@ def test_hist_panel_copy_uses_bucket_hit_rates_not_snake_case():
     assert copy["hit_rates"][1]["pct"] == 37
     assert "Among RBs" in copy["headline"]
     assert "not this player's odds" in copy["cohort_note"]
-    assert copy["relaxed"][0]["label"] == "Last year targets"
+    assert copy["relaxed"][0]["label"] == "Last year target share"
     shown = " ".join(
         f"{row['label']} {row['value']}" for row in copy["profile"]
     ) + " " + " ".join(row["label"] for row in copy["relaxed"])
@@ -339,7 +339,27 @@ def test_hist_trends_are_descriptive_bucket_slices():
     assert "age" in kinds
     sentences = [row["sentence"] for row in copy["trends"]]
     assert any("taken in fantasy Round 1 finished top-12" in s for s in sentences)
+    assert any("target share last year" in s for s in sentences)
+    assert not any("targets last year" in s for s in sentences)
     assert all("_" not in row["label"] for row in copy["trends"])
+    with_proj = build_deep_panel(
+        "9221",
+        aggs,
+        extra={
+            "redraft_avg_pick": 2.0,
+            "position": "RB",
+            "proj_ppg": 18.4,
+            "projected_positional_rank": 2,
+            "adp_positional_rank": 1,
+        },
+    )
+    proj = with_proj["copy"]["projection_trends"]
+    kinds = [row["kind"] for row in proj]
+    assert "projection_ppg" in kinds
+    assert "projection_rank" in kinds
+    assert any("18.4 PPG" == row.get("display") for row in proj)
+    assert any(row.get("display") == "#2" for row in proj)
+    assert all("p_top_12" not in row for row in proj)
     query = {
         "position": "RB",
         "years_experience": 3,

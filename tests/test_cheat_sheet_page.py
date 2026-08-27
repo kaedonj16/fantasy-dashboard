@@ -350,7 +350,9 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "data-hist-adp" in script
     assert "liveHistAdp" in script
     assert "mkt_sentence" in script
-    assert "copy.hit_rates" in script
+    assert "copy.projection_trends" in script
+    assert "proj_ppg=" in script
+    assert "data-hist-proj" in script
     assert "redraft_avg_pick=" in script
     assert "Object.keys((resp.preseason)" not in script
     assert "Named comps (this player excluded)" not in script

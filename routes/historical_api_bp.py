@@ -29,6 +29,18 @@ def api_historical_player(player_id: str):
     pos = request.args.get("position")
     if pos:
         extra["position"] = pos
+    proj = request.args.get("proj_ppg")
+    if proj not in (None, ""):
+        extra["proj_ppg"] = proj
+        extra["projected_ppg"] = proj
+    proj_rk = request.args.get("proj_rk")
+    if proj_rk not in (None, ""):
+        extra["projected_positional_rank"] = proj_rk
+        extra["proj_rk"] = proj_rk
+    adp_rk = request.args.get("adp_rk")
+    if adp_rk not in (None, ""):
+        extra["adp_positional_rank"] = adp_rk
+        extra["adp_rk"] = adp_rk
     try:
         payload = build_deep_panel(player_id, aggs, extra=extra or None)
     except Exception:

@@ -1160,7 +1160,7 @@
         var body = pct == null ? '&ndash;' : (pct + '%');
         return '<td class="cs-hist-col"><span class="cs-hist-cell">'
             + '<span class="cs-val ' + cls + '" title="' + esc(tip) + '">' + body + '</span>'
-            + '<button type="button" class="cs-hist-btn" data-hist-id="' + esc(x.id) + '" data-hist-name="' + esc(x.name) + '" data-hist-adp="' + (x.adp != null && isFinite(Number(x.adp)) ? String(x.adp) : '') + '" data-hist-pos="' + esc(x.pos || '') + '" title="Similar-player history">i</button>'
+            + '<button type="button" class="cs-hist-btn" data-hist-id="' + esc(x.id) + '" data-hist-name="' + esc(x.name) + '" data-hist-adp="' + (x.adp != null && isFinite(Number(x.adp)) ? String(x.adp) : '') + '" data-hist-pos="' + esc(x.pos || '') + '" data-hist-proj="' + (x.projectedPpg != null && isFinite(Number(x.projectedPpg)) ? String(x.projectedPpg) : '') + '" data-hist-proj-rk="' + (h.proj_rk != null ? String(h.proj_rk) : '') + '" data-hist-adp-rk="' + (h.adp_rk != null ? String(h.adp_rk) : '') + '" title="Similar-player history">i</button>'
             + '</span></td>';
     }
 
@@ -1969,13 +1969,23 @@
         return null;
     }
 
-    function openHistPanel(id, name, adp, pos) {
+    function openHistPanel(id, name, adp, pos, projPpg, projRk, adpRk) {
         var modal = $('csHistModal');
         if (!modal || !id) return;
         var row = findSheetPlayer(id);
+        var hist = (row && row.historical) || {};
         var liveAdp = liveHistAdp(id, adp);
         var livePos = pos || (row && (row.pos || row.position)) || '';
-        var fallbackMarket = row && row.historical && row.historical.mkt_sentence;
+        var liveProj = (projPpg != null && projPpg !== '' && isFinite(Number(projPpg)))
+            ? Number(projPpg)
+            : (row && row.projectedPpg != null && isFinite(Number(row.projectedPpg)) ? Number(row.projectedPpg) : null);
+        var liveProjRk = (projRk != null && projRk !== '' && isFinite(Number(projRk)))
+            ? Number(projRk)
+            : (hist.proj_rk != null ? Number(hist.proj_rk) : null);
+        var liveAdpRk = (adpRk != null && adpRk !== '' && isFinite(Number(adpRk)))
+            ? Number(adpRk)
+            : (hist.adp_rk != null ? Number(hist.adp_rk) : null);
+        var fallbackMarket = hist.mkt_sentence;
         $('csHistTitle').textContent = name || 'History';
         $('csHistSub').textContent = 'Historical trends for this profile — not a ranking or this player\'s odds.';
         $('csHistBody').innerHTML = '<p class="cs-hist-sub">Loading…</p>';
@@ -1987,6 +1997,9 @@
             qs.push('redraft_avg_pick=' + encodeURIComponent(liveAdp));
         }
         if (livePos) qs.push('position=' + encodeURIComponent(livePos));
+        if (liveProj != null) qs.push('proj_ppg=' + encodeURIComponent(liveProj));
+        if (liveProjRk != null && isFinite(liveProjRk)) qs.push('proj_rk=' + encodeURIComponent(liveProjRk));
+        if (liveAdpRk != null && isFinite(liveAdpRk)) qs.push('adp_rk=' + encodeURIComponent(liveAdpRk));
         if (qs.length) url += '?' + qs.join('&');
         fetch(url, {cache: 'no-store'})
             .then(function (r) { return r.json(); })
@@ -1998,6 +2011,19 @@
                 if (!modal.classList.contains('open')) return;
                 $('csHistBody').innerHTML = '<p class="cs-hist-sub">Could not load similar-player history.</p>';
             });
+    }
+
+    function histTrendRow(row) {
+        var meta = [];
+        if (row.bucket) meta.push(row.bucket);
+        if (row.n != null) meta.push('n=' + row.n);
+        if (row.confidence_label) meta.push(row.confidence_label);
+        var shown = row.display != null && row.display !== ''
+            ? row.display
+            : (row.pct != null ? row.pct + '%' : '—');
+        return '<div class="cs-hist-hit"><div><div class="cs-hist-hit-label">' + esc(row.sentence || row.label || '') + '</div>'
+            + (meta.length ? '<div class="cs-hist-hit-meta">' + esc(meta.join(' · ')) + '</div>' : '')
+            + '</div><div class="cs-hist-hit-pct">' + esc(String(shown)) + '</div></div>';
     }
 
     function renderHistPanel(resp, fallbackMarket) {
@@ -2034,20 +2060,20 @@
             });
             html += '</ul></section>';
         }
+        var projTrends = copy.projection_trends || [];
+        if (projTrends.length) {
+            html += '<section class="cs-hist-sec"><h3>' + esc(copy.projection_heading || 'This board\'s projection') + '</h3>';
+            if (copy.projection_note) html += '<p class="cs-hist-note">' + esc(copy.projection_note) + '</p>';
+            html += '<div class="cs-hist-hits">';
+            projTrends.forEach(function (row) { html += histTrendRow(row); });
+            html += '</div></section>';
+        }
         var trends = copy.trends || [];
         if (trends.length) {
             html += '<section class="cs-hist-sec"><h3>' + esc(copy.trends_heading || 'Trends for this player\'s buckets') + '</h3>';
             if (copy.trends_note) html += '<p class="cs-hist-note">' + esc(copy.trends_note) + '</p>';
             html += '<div class="cs-hist-hits">';
-            trends.forEach(function (row) {
-                var meta = [];
-                if (row.bucket) meta.push(row.bucket);
-                if (row.n != null) meta.push('n=' + row.n);
-                if (row.confidence_label) meta.push(row.confidence_label);
-                html += '<div class="cs-hist-hit"><div><div class="cs-hist-hit-label">' + esc(row.sentence || row.label || '') + '</div>'
-                    + (meta.length ? '<div class="cs-hist-hit-meta">' + esc(meta.join(' · ')) + '</div>' : '')
-                    + '</div><div class="cs-hist-hit-pct">' + (row.pct != null ? row.pct + '%' : '—') + '</div></div>';
-            });
+            trends.forEach(function (row) { html += histTrendRow(row); });
             html += '</div></section>';
         }
         var profile = copy.profile || [];
@@ -2274,7 +2300,10 @@
                     histBtn.getAttribute('data-hist-id'),
                     histBtn.getAttribute('data-hist-name'),
                     histBtn.getAttribute('data-hist-adp'),
-                    histBtn.getAttribute('data-hist-pos')
+                    histBtn.getAttribute('data-hist-pos'),
+                    histBtn.getAttribute('data-hist-proj'),
+                    histBtn.getAttribute('data-hist-proj-rk'),
+                    histBtn.getAttribute('data-hist-adp-rk')
                 );
                 return;
             }
