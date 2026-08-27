@@ -277,6 +277,7 @@ def compact_signal(full: Mapping[str, Any]) -> dict:
         "mkt_p": mkt_p,
         "mkt_pct": display_percent(mkt_p),
         "mkt_bucket": market.get("adp_bucket"),
+        "mkt_sentence": format_market_sentence(market),
         "h_vs_m": h_vs_m.get("label") or "unknown",
         "proj_rk": projection.get("implied_positional_rank"),
         "adp_rk": p_vs_m.get("adp_positional_rank"),
@@ -385,6 +386,41 @@ def _sample_clause(n: Any, confidence: Any) -> str:
     return ", ".join(bits)
 
 
+def format_market_sentence(
+    market: Optional[Mapping[str, Any]],
+    *,
+    missing: str = "none",
+) -> Optional[str]:
+    """ADP-bucket hit-rate sentence. None when there is no rate to show.
+
+    ``missing='no_adp'`` is for the lazy modal, which should explain a blank
+    instead of looking empty. Compact board rows omit that copy.
+    """
+    mkt = market if isinstance(market, Mapping) else {}
+    bucket_label = format_adp_bucket_label(mkt.get("adp_bucket"))
+    mkt_pct = display_percent(mkt.get("p_top_12"))
+    sample_bit = _sample_clause(mkt.get("sample_size"), mkt.get("confidence"))
+    if mkt_pct is not None and bucket_label:
+        sentence = (
+            f"Players drafted in {bucket_label} historically finished top-12 "
+            f"{mkt_pct}% of the time"
+        )
+        if sample_bit:
+            sentence += f" ({sample_bit})"
+        return sentence + "."
+    if bucket_label:
+        return (
+            f"ADP is in {bucket_label}, but that historical bucket has no "
+            "top-12 hit rate yet."
+        )
+    if missing == "no_adp":
+        return (
+            "This sheet has no live ADP for this player, so there is no "
+            "ADP-bucket hit rate."
+        )
+    return None
+
+
 def build_hist_panel_copy(
     history: Mapping[str, Any],
     market: Optional[Mapping[str, Any]] = None,
@@ -439,27 +475,7 @@ def build_hist_panel_copy(
             "at least 15 similar seasons."
         )
 
-    bucket_label = format_adp_bucket_label(mkt.get("adp_bucket"))
-    mkt_pct = display_percent(mkt.get("p_top_12"))
-    sample_bit = _sample_clause(mkt.get("sample_size"), mkt.get("confidence"))
-    if mkt_pct is not None and bucket_label:
-        market_sentence = (
-            f"Players drafted in {bucket_label} historically finished top-12 "
-            f"{mkt_pct}% of the time"
-        )
-        if sample_bit:
-            market_sentence += f" ({sample_bit})"
-        market_sentence += "."
-    elif bucket_label:
-        market_sentence = (
-            f"ADP is in {bucket_label}, but that historical bucket has no "
-            "top-12 hit rate yet."
-        )
-    else:
-        market_sentence = (
-            "This sheet has no live ADP for this player, so there is no "
-            "ADP-bucket hit rate."
-        )
+    market_sentence = format_market_sentence(mkt, missing="no_adp")
 
     return {
         "headline": "How often similar pre-season profiles hit each finish line",

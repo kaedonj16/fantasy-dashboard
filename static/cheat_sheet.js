@@ -1940,26 +1940,60 @@
         modal.classList.remove('open');
     }
 
+    function findSheetPlayer(id) {
+        id = String(id || '');
+        var i;
+        for (i = 0; i < players.length; i++) {
+            if (String(players[i].id) === id) return players[i];
+        }
+        for (i = 0; i < allPlayers.length; i++) {
+            if (String(allPlayers[i].id) === id) return allPlayers[i];
+        }
+        return null;
+    }
+
+    function liveHistAdp(id, attrAdp) {
+        if (attrAdp != null && attrAdp !== '' && isFinite(Number(attrAdp)) && Number(attrAdp) > 0 && Number(attrAdp) < 999) {
+            return Number(attrAdp);
+        }
+        var row = findSheetPlayer(id);
+        if (!row) return null;
+        var candidates = [row.adp, row.marketAdp, row.redraft_avg_pick, row.adp_overall];
+        if (row.position || row.pos) {
+            try { candidates.push(sheetAdpOf(row, state.mode, state.sf)); } catch (e) {}
+        }
+        var i;
+        for (i = 0; i < candidates.length; i++) {
+            var v = candidates[i];
+            if (v != null && isFinite(Number(v)) && Number(v) > 0 && Number(v) < 999) return Number(v);
+        }
+        return null;
+    }
+
     function openHistPanel(id, name, adp, pos) {
         var modal = $('csHistModal');
         if (!modal || !id) return;
+        var row = findSheetPlayer(id);
+        var liveAdp = liveHistAdp(id, adp);
+        var livePos = pos || (row && (row.pos || row.position)) || '';
+        var fallbackMarket = row && row.historical && row.historical.mkt_sentence;
         $('csHistTitle').textContent = name || 'History';
         $('csHistSub').textContent = 'How often similar pre-season profiles finished top-5, top-12, and top-24. Not a ranking score.';
         $('csHistBody').innerHTML = '<p class="cs-hist-sub">Loading…</p>';
         modal.classList.add('open');
         var url = '/api/historical-player/' + encodeURIComponent(id);
         var qs = [];
-        if (adp != null && adp !== '' && isFinite(Number(adp))) {
-            qs.push('adp=' + encodeURIComponent(adp));
-            qs.push('redraft_avg_pick=' + encodeURIComponent(adp));
+        if (liveAdp != null) {
+            qs.push('adp=' + encodeURIComponent(liveAdp));
+            qs.push('redraft_avg_pick=' + encodeURIComponent(liveAdp));
         }
-        if (pos) qs.push('position=' + encodeURIComponent(pos));
+        if (livePos) qs.push('position=' + encodeURIComponent(livePos));
         if (qs.length) url += '?' + qs.join('&');
         fetch(url, {cache: 'no-store'})
             .then(function (r) { return r.json(); })
             .then(function (resp) {
                 if (!modal.classList.contains('open')) return;
-                $('csHistBody').innerHTML = renderHistPanel(resp);
+                $('csHistBody').innerHTML = renderHistPanel(resp, fallbackMarket);
             })
             .catch(function () {
                 if (!modal.classList.contains('open')) return;
@@ -1967,7 +2001,7 @@
             });
     }
 
-    function renderHistPanel(resp) {
+    function renderHistPanel(resp, fallbackMarket) {
         if (!resp || resp.available === false) {
             return '<p class="cs-hist-sub">No historical profile for this player yet.</p>';
         }
@@ -1999,8 +2033,12 @@
             if (copy.relaxed_note) html += '<p class="cs-hist-note">' + esc(copy.relaxed_note) + '</p>';
             html += '<p class="cs-hist-note">' + copy.relaxed.map(function (row) { return esc(row.label || ''); }).join(' · ') + '</p></section>';
         }
-        if (copy.market_sentence) {
-            html += '<section class="cs-hist-sec"><h3>' + esc(copy.market_heading || 'ADP bucket hit rate') + '</h3><p class="cs-hist-note">' + esc(copy.market_sentence) + '</p></section>';
+        var mkt = resp.market || {};
+        var sentence = copy.market_sentence || '';
+        var missingAdp = mkt.p_top_12 == null && !mkt.adp_bucket;
+        if (missingAdp && fallbackMarket) sentence = fallbackMarket;
+        if (sentence) {
+            html += '<section class="cs-hist-sec"><h3>' + esc(copy.market_heading || 'ADP bucket hit rate') + '</h3><p class="cs-hist-note">' + esc(sentence) + '</p></section>';
         }
         var examples = (resp.history && resp.history.examples) || [];
         if (examples.length) {

@@ -165,7 +165,13 @@ def test_attach_compact_payload_and_deep_panel_are_descriptive():
     assert copy["hit_rates"][0]["label"].startswith("Finished as a ")
     assert all("_" not in row["label"] for row in copy["profile"])
     assert all("_" not in row["label"] for row in copy["relaxed"])
+    # Warehouse profiles have no current ADP, so Market is unknown until the
+    # live board pick is passed in. That is the modal dash, not a missing rate.
+    assert panel["market"]["unknown_reason"] == "missing_adp"
+    assert panel["market"]["p_top_12"] is None
     with_adp = build_deep_panel("r0", payload, extra={"redraft_avg_pick": 3.0})
+    assert with_adp["market"]["unknown_reason"] is None
+    assert with_adp["market"]["p_top_12"] is not None
     assert "Players drafted in Round 1" in with_adp["copy"]["market_sentence"]
 
 
@@ -242,6 +248,7 @@ def test_compact_signal_never_blends():
     out = compact_signal(full)
     assert out["p_hit_pct"] == 14
     assert out["mkt_pct"] == 58
+    assert "Players drafted in Round 1 historically finished top-12 58%" in out["mkt_sentence"]
     assert "blended_score" not in out
     assert out["h_vs_m"] == "market_higher"
 
