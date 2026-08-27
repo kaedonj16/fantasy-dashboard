@@ -856,6 +856,12 @@
     closeEditSetup();
     document.getElementById('drSetup').style.display = 'none';
     var hero = document.getElementById('drHero'); if (hero) hero.style.display = 'none';
+    // Collapse the keeper list when entering the board. Its keepers are already
+    // seeded onto the board here, so the expanded roster only clutters the top
+    // of the draft view; leave the compact header (Details / Turn off) in place.
+    // renderKeeperBanner reads the list's open state from the DOM, so collapsing
+    // it now keeps it collapsed across the re-renders that follow.
+    var _kl = document.getElementById('drKeeperList'); if (_kl) _kl.hidden = true;
     var isLive = !!(state && state.mode === 'live');
     // Practice Mock is only relevant when connected to an upcoming league draft.
     // Edit Setup is hidden during live drafts (settings are locked to the real draft).
