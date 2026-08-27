@@ -24,7 +24,20 @@ from .base import (
 logger = logging.getLogger(__name__)
 BASE_URL = "https://www.fleaflicker.com/api"
 SPORT = "NFL"
-TIMEOUT = (4, 15)
+TIMEOUT = (5, 20)
+# Browser-like UA: some Fleaflicker edge configs are picky about obvious bots.
+_UA = (
+    "Mozilla/5.0 (compatible; BR-Fantasy/1.0; +https://www.brfantasyfootball.com) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+_HEADERS = {
+    "User-Agent": _UA,
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.fleaflicker.com/",
+}
+# Endpoints whose OpenAPI signatures do not take ``season``.
+_NO_SEASON = frozenset({"FetchLeagueRules"})
 _CACHE: dict[tuple, tuple[float, dict]] = {}
 
 
@@ -65,6 +78,35 @@ def _raise_for_status(response) -> None:
         response.raise_for_status()
     except requests.RequestException as exc:
         raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.") from exc
+
+
+def _response_looks_like_html(response) -> bool:
+    content_type = str((getattr(response, "headers", None) or {}).get("Content-Type") or "").lower()
+    if "text/html" in content_type or "application/xhtml" in content_type:
+        return True
+    text = (getattr(response, "text", None) or "")[:200].lstrip().lower()
+    return text.startswith("<!doctype html") or text.startswith("<html")
+
+
+def _classify_http_error(response, method: str, league_id: str):
+    """Map upstream HTTP failures to provider errors without leaking bodies."""
+    status = getattr(response, "status_code", None)
+    logger.warning(
+        "Fleaflicker HTTP failure method=%s league=%s status=%s content_type=%s html=%s",
+        method, league_id, status,
+        (getattr(response, "headers", None) or {}).get("Content-Type"),
+        _response_looks_like_html(response),
+    )
+    # Edge/WAF HTML blocks are infrastructure, not "private league" auth.
+    if status in (401, 403) and _response_looks_like_html(response):
+        raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
+    if status in (401, 403):
+        raise ProviderAuthenticationError(
+            "This Fleaflicker league is private or requires authentication."
+        )
+    if status == 404:
+        raise LeagueNotFoundError("No Fleaflicker league was found for that ID and season.")
+    raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
 
 
 def _num(value, default=0.0):
@@ -114,8 +156,7 @@ def login(email: str, password: str) -> str:
             f"{BASE_URL}/Login",
             json={"email": email, "password": password},
             timeout=TIMEOUT,
-            headers={"User-Agent": "BR-Fantasy/1.0", "Accept": "application/json",
-                     "Content-Type": "application/json"},
+            headers={**_HEADERS, "Content-Type": "application/json"},
         )
         if response.status_code in (401, 403):
             raise ProviderAuthenticationError("Fleaflicker rejected that email or password.")
@@ -178,36 +219,47 @@ class FleaflickerProvider(ProviderAdapter):
 
     def _call(
         self, method: str, league_id: str, season: int, *, ttl=300,
-        token: Optional[str] = None, **params,
+        token: Optional[str] = None, include_season: Optional[bool] = None, **params,
     ) -> dict:
         league_id = str(league_id).strip()
         if not league_id.isdigit() or not (2000 <= _int(season) <= 2100):
             raise LeagueNotFoundError("Invalid Fleaflicker league ID or season.")
         auth = resolve_credentials(league_id, season, token=token)
-        key = (method, league_id, int(season), auth or "", tuple(sorted(params.items())))
+        if include_season is None:
+            include_season = method not in _NO_SEASON
+        key = (
+            method, league_id, int(season) if include_season else 0,
+            auth or "", include_season, tuple(sorted(params.items())),
+        )
         cached = _CACHE.get(key)
         if cached and time.monotonic() - cached[0] < ttl:
             return cached[1]
-        query = {"sport": SPORT, "league_id": int(league_id), "season": int(season), **params}
-        headers = {"User-Agent": "BR-Fantasy/1.0", "Accept": "application/json"}
+        query = {"sport": SPORT, "league_id": int(league_id), **params}
+        if include_season:
+            query["season"] = int(season)
+        headers = dict(_HEADERS)
         if auth:
             headers["Authorization"] = auth
         try:
-            response = _request_get(f"{BASE_URL}/{method}", params=query,
-                                    timeout=TIMEOUT, headers=headers)
-            if response.status_code in (401, 403):
-                raise ProviderAuthenticationError(
-                    "This Fleaflicker league is private or requires authentication."
+            response = _request_get(
+                f"{BASE_URL}/{method}", params=query, timeout=TIMEOUT, headers=headers,
+            )
+            if response.status_code >= 400:
+                _classify_http_error(response, method, league_id)
+            if _response_looks_like_html(response):
+                logger.warning(
+                    "Fleaflicker non-JSON body method=%s league=%s status=%s",
+                    method, league_id, response.status_code,
                 )
-            if response.status_code == 404:
-                raise LeagueNotFoundError("No Fleaflicker league was found for that ID and season.")
-            _raise_for_status(response)
+                raise ProviderUnavailableError("Fleaflicker returned an invalid response.")
             payload = response.json()
         except (ProviderAuthenticationError, LeagueNotFoundError, ProviderUnavailableError):
             raise
         except ValueError as exc:
-            logger.warning("Fleaflicker call failed method=%s league=%s error=%s",
-                           method, league_id, type(exc).__name__)
+            logger.warning(
+                "Fleaflicker call failed method=%s league=%s error=%s",
+                method, league_id, type(exc).__name__,
+            )
             raise ProviderUnavailableError("Fleaflicker returned an invalid response.") from exc
         if not isinstance(payload, dict):
             raise ProviderUnavailableError("Fleaflicker returned an invalid response.")
@@ -220,6 +272,10 @@ class FleaflickerProvider(ProviderAdapter):
                 )
             if "not found" in message:
                 raise LeagueNotFoundError("No Fleaflicker league was found for that ID and season.")
+            logger.warning(
+                "Fleaflicker API error method=%s league=%s message=%s",
+                method, league_id, message[:120],
+            )
             raise ProviderUnavailableError("Fleaflicker returned an invalid response.")
         _CACHE[key] = (time.monotonic(), payload)
         return payload
@@ -231,15 +287,42 @@ class FleaflickerProvider(ProviderAdapter):
                 "season": league.get("season"), "total_rosters": league.get("total_rosters")}
 
     def get_league(self, league_id, season, *, token: Optional[str] = None):
-        standings = self._call("FetchLeagueStandings", league_id, season, ttl=1800, token=token)
-        rules = self._call("FetchLeagueRules", league_id, season, ttl=3600, token=token)
-        league = standings.get("league") or {}
-        teams = self._teams_from_standings(standings)
+        standings = None
+        try:
+            standings = self._call(
+                "FetchLeagueStandings", league_id, season, ttl=1800, token=token,
+            )
+        except LeagueNotFoundError:
+            standings = None
+        league = (standings or {}).get("league") or {}
+        teams = self._teams_from_standings(standings or {})
+        # Early / rolled season: season-specific standings can 404 or come back
+        # empty before Fleaflicker opens that year — retry without season.
+        if not league and not teams:
+            standings = self._call(
+                "FetchLeagueStandings", league_id, season, ttl=1800, token=token,
+                include_season=False,
+            )
+            league = standings.get("league") or {}
+            teams = self._teams_from_standings(standings)
         if not league and not teams:
             raise LeagueNotFoundError("No Fleaflicker league was found for that ID and season.")
+        # Rules are optional for connect/preview: standings alone identifies the league.
+        # FetchLeagueRules does not take season; never fail the whole connect on rules.
+        rules: dict = {}
+        try:
+            rules = self._call(
+                "FetchLeagueRules", league_id, season, ttl=3600, token=token,
+                include_season=False,
+            )
+        except Exception:
+            logger.warning(
+                "Fleaflicker rules unavailable league=%s season=%s", league_id, season,
+                exc_info=True,
+            )
         return {
             "league_id": str(_get(league, "id") or league_id),
-            "season": int(season),
+            "season": int(_get(standings or {}, "season") or season),
             "name": _get(league, "name") or f"Fleaflicker League {league_id}",
             "total_rosters": _int(_get(league, "size")) or len(teams),
             "settings": {"league_type": "redraft"},
