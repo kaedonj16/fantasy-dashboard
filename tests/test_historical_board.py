@@ -123,7 +123,7 @@ def test_attach_compact_payload_and_deep_panel_are_descriptive():
             previous_season_finish=18,
         ))
     payload = assemble_profile_aggregates(rows)
-    assert payload["phase"] == 8
+    assert payload["phase"] == 9
     assert payload["board"]["not_in_ranking"] is True
     assert payload["board"]["not_in_pick_score"] is True
     assert payload["preseason_profiles"]["n_players"] == 12

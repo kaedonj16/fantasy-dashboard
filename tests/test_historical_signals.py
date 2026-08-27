@@ -173,7 +173,7 @@ def _warehouse_for_signals():
 
 def test_board_signals_keep_native_units_and_missing_unknown():
     payload = assemble_profile_aggregates(_warehouse_for_signals())
-    assert payload["phase"] == 8
+    assert payload["phase"] == 9
     assert payload["definitions"]["no_projections"] is True
     assert payload["definitions"]["projections_in_comps"] is False
     assert payload["definitions"]["projections_in_ranking"] is False
@@ -297,7 +297,7 @@ def test_signal_contract_and_modules_stay_pure():
     assert "031_" not in text
     assert "static/pick_score" not in text
     assert "build_player_history_features" not in text
-    for name in ("definitions.py", "comps.py", "adp.py", "career_profiles.py"):
+    for name in ("definitions.py", "comps.py", "adp.py", "career_profiles.py", "walkforward.py"):
         src = (hist / name).read_text(encoding="utf-8")
         assert "import pandas" not in src
         assert "from utils.projection_resolver" not in src

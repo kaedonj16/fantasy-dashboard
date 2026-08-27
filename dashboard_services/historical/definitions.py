@@ -174,6 +174,26 @@ COMP_BOARD_TIERS: Tuple[str, ...] = ("top_5", "top_12", "top_24")
 MIN_COMP_CELL_N = 15
 NAMED_EXAMPLES_PER_CELL = 3
 
+# Phase 9 league-winner proxy. Reuses the existing top_5 cutoff; do not invent
+# a new rank line. Smash prior is "worse than top-12 or no prior" — rank 13
+# last year finishing top-5 is a smash. That is *not* the engine non-starter
+# cutoff (prior > 13).
+LEAGUE_WINNER_TIER = "top_5"
+LEAGUE_WINNER_SMASH_PRIOR_CUTOFF = 12
+
+# Walk-forward test window. 2018–2019 ADP is too thin for a fair market
+# comparison; warehouse outcomes still start at 2018 for training.
+WALKFORWARD_TEST_SEASONS: Tuple[int, ...] = (2021, 2022, 2023, 2024, 2025)
+
+# Conservative Pick Score gate. All of these must hold on the primary label
+# or live ranking / Pick Score stay untouched.
+PICK_SCORE_PRIMARY_LABEL = "league_winner"
+PICK_SCORE_MIN_TEST_SEASONS = 3
+PICK_SCORE_MIN_SCORED_PER_SEASON = 50
+PICK_SCORE_MIN_SCORED_TOTAL = 200
+PICK_SCORE_MIN_HIST_AUC = 0.55
+PICK_SCORE_MIN_AUC_MARGIN_VS_MARKET = 0.02
+
 # Sleeper reports 999 for undrafted / unpriced. That is missing, never ADP 999.
 SLEEPER_UNDRAFTED_ADP = 999.0
 

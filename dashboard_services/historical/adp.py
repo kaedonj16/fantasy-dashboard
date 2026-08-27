@@ -201,6 +201,7 @@ def build_adp_hit_rates(
         "scoring": scoring,
         "qb_format": "1qb",
         "source_preference": list(ADP_SOURCE_PREFERENCE),
+        "hit_tier": tier,
         "sf_tep_historical": False,
         "pooled_historical": True,
         "descriptive_only": True,

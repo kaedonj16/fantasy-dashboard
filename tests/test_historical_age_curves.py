@@ -122,10 +122,10 @@ def test_era_filter_drops_pre_floor_seasons():
 
 def test_age_curve_modules_stay_pure():
     root = Path(__file__).resolve().parents[1]
-    for name in ("age_curves.py", "finish_rates.py", "career_profiles.py", "definitions.py", "usage.py"):
+    for name in ("age_curves.py", "finish_rates.py", "career_profiles.py", "definitions.py", "usage.py", "walkforward.py"):
         text = (root / "dashboard_services" / "historical" / name).read_text(encoding="utf-8")
         assert "import pandas" not in text
         assert "import flask" not in text.lower()
-        if name == "career_profiles.py":
+        if name in ("career_profiles.py", "walkforward.py"):
             assert "from data_building.breakout_engine" not in text
             assert "import data_building.breakout_engine" not in text

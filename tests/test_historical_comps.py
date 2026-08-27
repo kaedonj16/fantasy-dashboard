@@ -346,6 +346,21 @@ def test_board_prob_is_conditional_not_distribution():
     assert payload["descriptive_only"] is True
 
 
+def test_include_named_false_skips_examples():
+    rows = [
+        _row(sleeper_id="a", ppr_positional_finish=2, years_experience=1),
+        _row(sleeper_id="b", ppr_positional_finish=40, years_experience=1),
+    ]
+    named = build_comp_aggregates(rows, include_named=True)
+    skip = build_comp_aggregates(rows, include_named=False)
+    assert named["named_examples"] is True
+    assert skip["named_examples"] is False
+    named_ex = named["by_position"]["WR"]["leaves"][0]["examples"]
+    skip_ex = skip["by_position"]["WR"]["leaves"][0]["examples"]
+    assert named_ex
+    assert skip_ex == []
+
+
 def test_comps_modules_stay_pure_and_skip_adp_projections():
     hist = ROOT / "dashboard_services" / "historical"
     text = (hist / "comps.py").read_text(encoding="utf-8")

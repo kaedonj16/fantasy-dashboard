@@ -315,9 +315,14 @@ def build_comp_leaves(
             "n": len(group),
             "successes": _successes(group, scoring),
             "season_range": bounds,
-            "examples": pick_named_examples(group, limit=examples_per_cell)
-            if len(group) >= 2
-            else pick_named_examples(group, limit=1),
+            "examples": (
+                []
+                if examples_per_cell <= 0
+                else pick_named_examples(
+                    group,
+                    limit=examples_per_cell if len(group) >= 2 else min(1, examples_per_cell),
+                )
+            ),
         })
     return leaves
 
@@ -456,14 +461,22 @@ def build_comp_aggregates(
     rows: Sequence[Mapping[str, Any]],
     *,
     scoring: str = "ppr",
+    include_named: bool = True,
 ) -> dict:
-    """Warehouse records → compact JSON section for board lookup."""
+    """Warehouse records → compact JSON section for board lookup.
+
+    ``include_named=False`` skips example players (walk-forward rebuilds).
+    Live board JSON keeps named comps on.
+    """
     era = filter_era(rows)
     by_position: dict[str, dict] = {}
     all_leaves: list[dict] = []
+    examples_per_cell = NAMED_EXAMPLES_PER_CELL if include_named else 0
     for pos in SKILL_POSITIONS:
         pos_rows = filter_position(era, pos)
-        pos_leaves = build_comp_leaves(pos_rows, scoring=scoring)
+        pos_leaves = build_comp_leaves(
+            pos_rows, scoring=scoring, examples_per_cell=examples_per_cell
+        )
         all_leaves.extend(pos_leaves)
         baseline = {
             tier: position_baseline(pos_rows, pos, tier=tier, scoring=scoring)
@@ -485,6 +498,7 @@ def build_comp_aggregates(
         "board_tiers": list(COMP_BOARD_TIERS),
         "pooled_historical": True,
         "walk_forward": False,
+        "named_examples": include_named,
         "descriptive_only": True,
         "n_leaves": len(all_leaves),
         "by_position": by_position,

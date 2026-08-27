@@ -1,13 +1,14 @@
 # Historical Analytics
 
-Phase 1–8 of the Draft Cheat Sheet historical layer: a reusable
+Phase 1–9 of the Draft Cheat Sheet historical layer: a reusable
 player-season warehouse, positional finishes, leakage-safe prior-career
 features, descriptive age / career-stage / draft-capital rates,
 previous-season usage/efficiency (NGS + snaps), comparable-player cells
 with smoothed board probabilities, frozen preseason ADP with hit rates,
-History vs Projection vs Market as three separate live signals, and
-**compact Hist columns plus a lazy similar-player panel** on the cheat
-sheet. Pick Score is later. It is **not** in this PR.
+History vs Projection vs Market as three separate live signals, a
+**compact Hist column plus a lazy similar-player panel** on the cheat
+sheet, league-winner labels, and a **walk-forward honesty check** of
+History P vs Market P. Pick Score is unchanged: the gate did not pass.
 
 This document is the source of truth for datasets reused, season coverage,
 scoring/tier definitions, age methodology, leakage rules, and how the two
@@ -68,8 +69,8 @@ meaningful zero.
 |---|---|---|
 | `breakout_engine/backtest_breakout_model.py` | walk-forward; outcomes from `usage_rows_{N+1}` | Breakout = not top-12 prior → top-12 next. `BREAKOUT_RANK_THRESHOLD = 12`. |
 | `breakout_engine/build_historical_scores.py` | scores labelled season=N predict N+1 | Anti-leakage season labeling. `SNAP_COUNT_SEASONS = {2022,2023,2024}`. `lookback_start = max(..., 2016)`. |
-| `breakout_engine/train_hit_probability.py` + `hit_probability_model.json` | trained 2022–2024 | Calibrated hit model. Phase 9 reuses this harness. |
-| `_load_historical_fantasy_rankings` | prefers `fantasy_rankings_{season}.json` (absent); falls back to usage proxy | Phase 1 **replaces the proxy** with real total-points positional finishes on the warehouse. Later phases should read those finishes instead of re-deriving. |
+| `breakout_engine/train_hit_probability.py` + `hit_probability_model.json` | trained 2022–2024 | Calibrated hit model. Phase 9 does **not** call this; it reuses the walk-forward *pattern* (train < S, test S) with warehouse finishes. |
+| `_load_historical_fantasy_rankings` | prefers `fantasy_rankings_{season}.json` (absent); falls back to usage proxy | Phase 1 **replaces the proxy** with real total-points positional finishes on the warehouse. Phase 9 scores those finishes — it does not call this helper. |
 
 Phase 1 does **not** add a second backtester. Repeat/breakout *rates* (Phase 2)
 must use this labeling.
@@ -394,14 +395,14 @@ Two products stay distinct:
    `match_comps` is the in-memory primitive; the request path reads
    examples off the JSON leaves and must not scan parquet.
 
-Rates are **pooled historical** (all warehouse seasons), not walk-forward.
-That walk-forward comparison is Phase 9 via the existing backtester.
+Rates are **pooled historical** (all warehouse seasons) on the live board.
+Walk-forward of the same lookups is Phase 9 (`walkforward` on the JSON).
 Descriptive only — comps do not enter ranking or Pick Score.
 
 No `031_*` migration. The request-path artifact remains
-`historical_profile_aggregates.json` (`phase: 8`, `comps` + `adp` + `signals`
-+ `board` + `preseason_profiles`). Live PPG is supplied by the caller, not
-stored on warehouse rows.
+`historical_profile_aggregates.json` (`phase: 9`, `comps` + `adp` + `signals`
++ `board` + `preseason_profiles` + `walkforward`). Live PPG is supplied by
+the caller, not stored on warehouse rows.
 
 ### Phase 4 snapshot (2018–2025 warehouse, PPR)
 
@@ -521,11 +522,68 @@ rates; it renders `player.historical` from the batch payload.
   claimed. Dynasty `avg_pick` is not used as market ADP.
 - Draft Room UI is unchanged; it may ignore the extra payload field.
 
-## Limitations (Phase 1–8)
+## Phase 9 — league-winner proxy + walk-forward gate
 
-- No Pick Score change. Phase 2–8 rates and the Hist column are
-  informational. Comps, ADP, and live projections do not enter ranking.
-- Comp cell rates and ADP hit rates are pooled historical, not walk-forward.
+Honesty check, not a second backtester. Live Hist stays pooled and
+display-only. `pick_score.js`, `utils/pick_score.py`, and
+`draft_board_core.js` are untouched.
+
+**Labels** (warehouse positional finish, PPR totals):
+
+| Label | Definition |
+|---|---|
+| League winner | this-season finish ≤ 5 (`TIER_CUTOFFS['top_5']` — no new cutoff) |
+| League-winner smash | that finish **and** prior finish is None or **> 12**. Rank 13 last year finishing top-5 *is* a smash. That is not the engine non-starter cut (prior > 13). |
+| Engine breakout / first-time elite | unchanged from Phase 2 |
+
+**Walk-forward.** `dashboard_services/historical/walkforward.py` rebuilds
+comps (no named examples) and ADP hit rates on seasons **< S**, then scores
+season **S** with the existing `lookup_board_probabilities` /
+`lookup_market_probability`. Outcomes are warehouse finishes, not the
+breakout engine's usage-points proxy, and not `BreakoutEngine`. Missing P
+is skipped, never 0. Test seasons **2021–2025** (2018–19 ADP is too thin).
+History P for league-winner is comps `P(top-5)`; for top-12 / breakout it
+is comps `P(top-12)`. Market P is the matching ADP-bucket rate rebuilt on
+train. Position baseline is the train P(hit | position). Metrics are
+Mann–Whitney AUC and Brier (no sklearn).
+
+**Pick Score gate** (all must hold on `league_winner`): ≥3 test seasons,
+≥50 scored player-seasons with both P per season, ≥200 History-P rows
+total, hist AUC ≥ 0.55, and hist AUC ≥ market AUC + 0.02. Even a passing
+gate does not mutate live ranking in this phase
+(`pick_score_in_live_ranking: false`).
+
+### Phase 9 snapshot (2018–2025 warehouse, PPR)
+
+5 folds, 2,975 test player-seasons, 2,152 with both History and Market P.
+JSON ≈ 2.48 MB. Gate **failed** (0/3 seasons beat market by 0.02).
+`pick_score.validated = false`. Mean league-winner AUC: History **0.825**,
+Market **0.878**, position baseline ~0.60. History is real information vs
+a position prior; ADP is still the better ranking of league winners.
+
+| Test S | n train / test / both | Hist AUC (LW) | Mkt AUC (LW) | Margin | Hist AUC (top-12) | Mkt AUC (top-12) |
+|---|---|---|---|---|---|---|
+| 2021 | 1672 / 595 / 332 | 0.701 | 0.896 | −0.195 | 0.687 | 0.861 |
+| 2022 | 2267 / 574 / 269 | 0.906 | 0.904 | +0.001 | 0.904 | 0.809 |
+| 2023 | 2841 / 598 / 389 | 0.797 | 0.822 | −0.025 | 0.767 | 0.817 |
+| 2024 | 3439 / 599 / 558 | 0.883 | 0.909 | −0.026 | 0.849 | 0.888 |
+| 2025 | 4038 / 609 / 604 | 0.839 | 0.860 | −0.021 | 0.865 | 0.888 |
+
+2022 is a near-tie on league-winner and the one season where History P
+beats market on top-12. That is not three seasons with a 0.02 margin.
+Smash / engine-breakout / first-time-elite AUCs are lower for both
+signals (rarer positives); market still leads on mean AUC.
+
+No `031_*` table. Request path is still the JSON artifact.
+
+## Limitations (Phase 1–9)
+
+- No Pick Score change. Phase 2–9 rates, the Hist column, and the
+  walk-forward verdict are informational. Comps, ADP, and live projections
+  do not enter ranking. The gate requires History P to beat Market P; it
+  did not.
+- Live comp cell rates and ADP hit rates stay pooled historical. Walk-forward
+  is the validation section on the JSON, not a replacement of board leaves.
 - Current projections are a live signal only. There is no historical
   preseason projection archive, so projection vs history cannot be a
   calibrated probability.
@@ -546,7 +604,8 @@ rates; it renders `player.historical` from the batch payload.
 - Snap **rates** are 2022+ priors even though snap *values* are stored 2018+.
 - FTN drop/contested and PBP EPA are not in the committed cache (`nfl_data_py`
   could not be installed here; PBP dumps are heavy). `starts` stay null.
-- Ranking integration is gated on backtesting (Phase 9).
+- Ranking integration is gated on walk-forward beating the market (Phase 9
+  ran; gate failed).
 
 ## Phase 1 warehouse snapshot
 
@@ -585,15 +644,16 @@ Writes `cache/player_history/player_history_{season}.parquet`,
 `historical_profile_aggregates.json`. Empty games=0 padding rows from
 2023–2025 Sleeper dumps are dropped. Missing fields stay null; coverage JSON
 reports present/missing per field. Profile JSON is the request-path artifact
-for Phase 2–8 rates (comp leaves + ADP hit rates + signal contract +
-preseason profiles for the board). The usage-efficiency and
+for Phase 2–9 rates (comp leaves + ADP hit rates + signal contract +
+preseason profiles for the board + walk-forward verdict). The usage-efficiency and
 ADP backfills are optional when those JSON caches are already committed;
 warehouse rebuild does not call nflverse or ADP APIs live. Live projections
 are not written into this JSON.
 
 ## Follow-up (gated)
 
-9+. League-winner proxy, walk-forward comparison via existing backtester, bounded
-    Pick Score only if validated. Postgres `031_*` only if a request path
-    outgrows the JSON artifact.
+- Bounded Pick Score term **only if** a later walk-forward passes the gate
+  (History P beating Market P with the documented margins). Do not add Hist
+  to VOR / Recommendation / `decisionScore` on the same evidence.
+- Postgres `031_*` only if a request path outgrows the JSON artifact.
 

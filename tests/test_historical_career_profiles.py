@@ -10,6 +10,8 @@ from dashboard_services.historical.career_profiles import (
     build_stage_rates,
     is_engine_breakout,
     is_first_time_elite,
+    is_league_winner,
+    is_league_winner_smash,
     was_engine_non_starter,
 )
 from dashboard_services.historical.definitions import DEFAULT_BAYES_PRIOR_N, empirical_bayes
@@ -60,6 +62,22 @@ def test_engine_breakout_is_not_first_time_elite():
     assert is_first_time_elite(True, 4) is False
 
 
+def test_league_winner_reuses_top_5_and_smash_is_not_engine_cut():
+    # Finish 5 is inside the existing top_5 cutoff; 6 is not.
+    assert is_league_winner(5) is True
+    assert is_league_winner(6) is False
+    assert is_league_winner(None) is False
+    # Rank 13 last year finishing top-5 is a smash, not an engine breakout.
+    assert is_league_winner_smash(13, 3) is True
+    assert is_engine_breakout(13, 3) is False
+    # Rank 12 last year is already elite — league winner but not smash.
+    assert is_league_winner(2) is True
+    assert is_league_winner_smash(12, 2) is False
+    # No prior + top-5 is a smash (and an engine breakout, which uses top-12).
+    assert is_league_winner_smash(None, 4) is True
+    assert is_engine_breakout(None, 4) is True
+
+
 def test_repeat_rates_use_previous_season_not_missing_as_zero():
     rows = [
         _row(
@@ -98,6 +116,9 @@ def test_repeat_rates_use_previous_season_not_missing_as_zero():
     assert rates["first_time_elite_among_candidates"]["successes"] == 1
     assert rates["n_engine_non_starters"] == 1
     assert rates["engine_breakout_among_non_starters"]["successes"] == 1
+    assert rates["league_winner"]["successes"] == 2  # finish 2 and finish 1
+    assert rates["n_league_winner_smash_candidates"] == 1
+    assert rates["league_winner_smash_among_non_top12"]["successes"] == 1
 
 
 def test_prev_top12_to_top5_uses_top_5_cutoff():
@@ -281,11 +302,12 @@ def test_assemble_has_no_adp_or_projections_and_keeps_both_breakout_defs():
         ),
     ]
     payload = assemble_profile_aggregates(rows)
-    assert payload["phase"] == 8
+    assert payload["phase"] == 9
     assert "prior_usage" in payload
     assert "comps" in payload
     assert "adp" in payload
     assert "signals" in payload
+    assert "walkforward" in payload
     assert payload["era_floor"] == 2016
     assert payload["n_player_seasons"] == 1
     assert payload["season_range"] == [2020, 2020]
@@ -297,9 +319,16 @@ def test_assemble_has_no_adp_or_projections_and_keeps_both_breakout_defs():
     assert defs["projections_in_comps"] is False
     assert defs["projections_in_ranking"] is False
     assert defs["no_projections"] is True
+    assert defs["pick_score_validated"] is False
+    assert defs["pick_score_in_live_ranking"] is False
+    assert "league_winner" in defs and "league_winner_smash" in defs
     assert payload["signals"]["no_blended_score"] is True
     assert payload["signals"]["warehouse_has_projections"] is False
     assert payload["board"]["not_in_ranking"] is True
+    assert payload["board"]["not_in_pick_score"] is True
+    assert payload["walkforward"]["not_a_second_engine"] is True
+    assert payload["walkforward"]["pick_score"]["validated"] is False
+    assert payload["walkforward"]["pick_score"]["in_live_ranking"] is False
     assert "preseason_profiles" in payload
     assert "engine_breakout" in defs and "first_time_elite" in defs
 

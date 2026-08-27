@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "phase": 8,
+  "phase": 9,
   "scoring": "ppr",
   "era_floor": 2016,
   "season_range": [
@@ -14,6 +14,8 @@
     "prior_non_starter_rank": 13,
     "engine_breakout": "previous_season_finish is None or > 13, AND this season positional finish <= 12 (copied from the breakout engine; rank 13 is not a non-starter)",
     "first_time_elite": "not previously_top12 AND this season positional finish <= 12",
+    "league_winner": "this-season positional finish <= 5 (TIER_CUTOFFS top_5); no new cutoff",
+    "league_winner_smash": "previous_season_finish is None or > 12 (BREAKOUT_RANK_THRESHOLD / top_12), AND this season finish <= 5. Rank 13 last year finishing top-5 is a smash; this is not the engine non-starter cutoff (prior > 13)",
     "prior_rank_source": "Phase 1 previous_season_finish (last observed prior season, not a calendar year-1 join)",
     "prime_window_method": "smoothed P(top-12 | integer age, position) >= known-age position baseline and n >= 15; longest consecutive run",
     "bayes_prior_n": 10,
@@ -28,7 +30,7 @@
     "missing_capital": "omitted from draft-capital cohorts, not labeled UDFA",
     "missing_usage": "omitted from prior-usage cohorts, not bucketed as 0",
     "missing_comp_dimension": "omitted from matching; not 0 / UDFA / last-place. Rookie prior_finish is the explicit label none",
-    "comps": "P(this-season hit | pre-season profile). Matching uses position, career stage, draft capital, prior finish, age bucket, previous-season usage. Same-season actuals, ADP, and projections are not features. Tiny cells relax in COMP_RELAXATION_ORDER and shrink toward the position baseline. Named comps exclude the query player. Rates are pooled historical, not walk-forward. Request path reads precomputed JSON leaves; no parquet scan, no 031_* table",
+    "comps": "P(this-season hit | pre-season profile). Matching uses position, career stage, draft capital, prior finish, age bucket, previous-season usage. Same-season actuals, ADP, and projections are not features. Tiny cells relax in COMP_RELAXATION_ORDER and shrink toward the position baseline. Named comps exclude the query player. Live board rates stay pooled historical. Walk-forward of the same lookups is the separate JSON walkforward section. Request path reads precomputed JSON leaves; no parquet scan, no 031_* table",
     "missing_adp": "omitted from ADP cohorts; Sleeper 999 is missing, not pick 999",
     "adp": "P(this-season hit | preseason redraft PPR 1QB ADP). Source order sleeper \u2192 mfl \u2192 espn \u2192 yahoo. Superflex/TEP historical ADP is not claimed. Not a comp feature and not a ranking input. Frozen snapshots are not overwritten by cron",
     "adp_in_comps": false,
@@ -40,7 +42,10 @@
     "prior_usage": "P(this-season hit | previous-season usage bucket); same-season NGS/snaps are outcomes, not features",
     "no_adp": false,
     "no_projections": true,
-    "signals": "History = comps P(top-12). Market = historical P(top-12 | current ADP overall bucket). Projection = current Sleeper PPG and implied positional rank among the live projected field. PPG is not converted to a probability. Missing signals stay unknown. No blended ranking score"
+    "signals": "History = comps P(top-12). Market = historical P(top-12 | current ADP overall bucket). Projection = current Sleeper PPG and implied positional rank among the live projected field. PPG is not converted to a probability. Missing signals stay unknown. No blended ranking score",
+    "walk_forward": "Train seasons < S, test S. History P from comps rebuilt on train; market P from ADP rates rebuilt on train. Warehouse positional finishes are ground truth \u2014 not the breakout engine usage-points proxy, and not a second BreakoutEngine. Missing P is skipped, never 0. Pick Score stays untouched unless pick_score.validated",
+    "pick_score_validated": false,
+    "pick_score_in_live_ranking": false
   },
   "signals": {
     "descriptive_only": true,
@@ -93,6 +98,564 @@
     "request_path": "JSON preseason_profiles + live redraft ADP + resolver proj_ppg; no parquet scan, no new Postgres table",
     "adp_axis": "redraft_1qb",
     "sf_tep_historical": false
+  },
+  "walkforward": {
+    "method": "walk_forward",
+    "train": "seasons < S",
+    "test": "season == S",
+    "outcomes": "warehouse positional finishes",
+    "not_usage_proxy": true,
+    "not_a_second_engine": true,
+    "live_comps_stay_pooled": true,
+    "missing_p": "skipped, never 0",
+    "request_path": "precomputed JSON; no parquet scan, no new Postgres table",
+    "pick_score_in_live_ranking": false,
+    "scoring": "ppr",
+    "test_seasons_requested": [
+      2021,
+      2022,
+      2023,
+      2024,
+      2025
+    ],
+    "n_folds": 5,
+    "folds": [
+      {
+        "test_season": 2021,
+        "n_train": 1672,
+        "n_test": 595,
+        "train_season_range": [
+          2018,
+          2020
+        ],
+        "by_label": {
+          "top_12": {
+            "n_test": 595,
+            "n_pos": 48,
+            "n_hist": 595,
+            "n_market": 332,
+            "n_baseline": 595,
+            "n_both": 332,
+            "hist_auc": 0.6865,
+            "market_auc": 0.8608,
+            "baseline_auc": 0.6117,
+            "hist_brier": 0.0723,
+            "market_brier": 0.0918,
+            "baseline_brier": 0.0732,
+            "residual_auc": 0.1737,
+            "tier": "top_12"
+          },
+          "league_winner": {
+            "n_test": 595,
+            "n_pos": 20,
+            "n_hist": 595,
+            "n_market": 332,
+            "n_baseline": 595,
+            "n_both": 332,
+            "hist_auc": 0.7012,
+            "market_auc": 0.8962,
+            "baseline_auc": 0.6063,
+            "hist_brier": 0.0323,
+            "market_brier": 0.0472,
+            "baseline_brier": 0.0323,
+            "residual_auc": 0.1658,
+            "tier": "top_5"
+          },
+          "league_winner_smash": {
+            "n_test": 595,
+            "n_pos": 9,
+            "n_hist": 595,
+            "n_market": 332,
+            "n_baseline": 595,
+            "n_both": 332,
+            "hist_auc": 0.575,
+            "market_auc": 0.8326,
+            "baseline_auc": 0.4669,
+            "hist_brier": 0.0156,
+            "market_brier": 0.028,
+            "baseline_brier": 0.0156,
+            "residual_auc": 0.2711,
+            "tier": "top_5"
+          },
+          "engine_breakout": {
+            "n_test": 595,
+            "n_pos": 21,
+            "n_hist": 595,
+            "n_market": 332,
+            "n_baseline": 595,
+            "n_both": 332,
+            "hist_auc": 0.5543,
+            "market_auc": 0.7344,
+            "baseline_auc": 0.5665,
+            "hist_brier": 0.0374,
+            "market_brier": 0.0653,
+            "baseline_brier": 0.0372,
+            "residual_auc": 0.2825,
+            "tier": "top_12"
+          },
+          "first_time_elite": {
+            "n_test": 595,
+            "n_pos": 14,
+            "n_hist": 595,
+            "n_market": 332,
+            "n_baseline": 595,
+            "n_both": 332,
+            "hist_auc": 0.4627,
+            "market_auc": 0.6986,
+            "baseline_auc": 0.546,
+            "hist_brier": 0.028,
+            "market_brier": 0.0532,
+            "baseline_brier": 0.0277,
+            "residual_auc": 0.2738,
+            "tier": "top_12"
+          }
+        }
+      },
+      {
+        "test_season": 2022,
+        "n_train": 2267,
+        "n_test": 574,
+        "train_season_range": [
+          2018,
+          2021
+        ],
+        "by_label": {
+          "top_12": {
+            "n_test": 574,
+            "n_pos": 48,
+            "n_hist": 574,
+            "n_market": 269,
+            "n_baseline": 574,
+            "n_both": 269,
+            "hist_auc": 0.9042,
+            "market_auc": 0.8087,
+            "baseline_auc": 0.6074,
+            "hist_brier": 0.0611,
+            "market_brier": 0.117,
+            "baseline_brier": 0.0757,
+            "residual_auc": 0.465,
+            "tier": "top_12"
+          },
+          "league_winner": {
+            "n_test": 574,
+            "n_pos": 20,
+            "n_hist": 574,
+            "n_market": 269,
+            "n_baseline": 574,
+            "n_both": 269,
+            "hist_auc": 0.9056,
+            "market_auc": 0.9043,
+            "baseline_auc": 0.602,
+            "hist_brier": 0.0291,
+            "market_brier": 0.0523,
+            "baseline_brier": 0.0335,
+            "residual_auc": 0.3821,
+            "tier": "top_5"
+          },
+          "league_winner_smash": {
+            "n_test": 574,
+            "n_pos": 7,
+            "n_hist": 574,
+            "n_market": 269,
+            "n_baseline": 574,
+            "n_both": 269,
+            "hist_auc": 0.8062,
+            "market_auc": 0.8035,
+            "baseline_auc": 0.599,
+            "hist_brier": 0.0141,
+            "market_brier": 0.0268,
+            "baseline_brier": 0.0127,
+            "residual_auc": 0.2925,
+            "tier": "top_5"
+          },
+          "engine_breakout": {
+            "n_test": 574,
+            "n_pos": 21,
+            "n_hist": 574,
+            "n_market": 269,
+            "n_baseline": 574,
+            "n_both": 269,
+            "hist_auc": 0.8064,
+            "market_auc": 0.6437,
+            "baseline_auc": 0.5709,
+            "hist_brier": 0.04,
+            "market_brier": 0.0867,
+            "baseline_brier": 0.0381,
+            "residual_auc": 0.5621,
+            "tier": "top_12"
+          },
+          "first_time_elite": {
+            "n_test": 574,
+            "n_pos": 13,
+            "n_hist": 574,
+            "n_market": 269,
+            "n_baseline": 574,
+            "n_both": 269,
+            "hist_auc": 0.7886,
+            "market_auc": 0.5266,
+            "baseline_auc": 0.6011,
+            "hist_brier": 0.0304,
+            "market_brier": 0.076,
+            "baseline_brier": 0.0266,
+            "residual_auc": 0.7153,
+            "tier": "top_12"
+          }
+        }
+      },
+      {
+        "test_season": 2023,
+        "n_train": 2841,
+        "n_test": 598,
+        "train_season_range": [
+          2018,
+          2022
+        ],
+        "by_label": {
+          "top_12": {
+            "n_test": 598,
+            "n_pos": 48,
+            "n_hist": 598,
+            "n_market": 389,
+            "n_baseline": 598,
+            "n_both": 389,
+            "hist_auc": 0.7674,
+            "market_auc": 0.8167,
+            "baseline_auc": 0.6059,
+            "hist_brier": 0.0642,
+            "market_brier": 0.087,
+            "baseline_brier": 0.0729,
+            "residual_auc": 0.3868,
+            "tier": "top_12"
+          },
+          "league_winner": {
+            "n_test": 598,
+            "n_pos": 20,
+            "n_hist": 598,
+            "n_market": 389,
+            "n_baseline": 598,
+            "n_both": 389,
+            "hist_auc": 0.797,
+            "market_auc": 0.8215,
+            "baseline_auc": 0.6008,
+            "hist_brier": 0.0286,
+            "market_brier": 0.0418,
+            "baseline_brier": 0.0322,
+            "residual_auc": 0.4325,
+            "tier": "top_5"
+          },
+          "league_winner_smash": {
+            "n_test": 598,
+            "n_pos": 10,
+            "n_hist": 598,
+            "n_market": 389,
+            "n_baseline": 598,
+            "n_both": 389,
+            "hist_auc": 0.6033,
+            "market_auc": 0.6967,
+            "baseline_auc": 0.6567,
+            "hist_brier": 0.0193,
+            "market_brier": 0.0281,
+            "baseline_brier": 0.0167,
+            "residual_auc": 0.3789,
+            "tier": "top_5"
+          },
+          "engine_breakout": {
+            "n_test": 598,
+            "n_pos": 28,
+            "n_hist": 598,
+            "n_market": 389,
+            "n_baseline": 598,
+            "n_both": 389,
+            "hist_auc": 0.5992,
+            "market_auc": 0.694,
+            "baseline_auc": 0.6328,
+            "hist_brier": 0.0547,
+            "market_brier": 0.0756,
+            "baseline_brier": 0.0456,
+            "residual_auc": 0.3404,
+            "tier": "top_12"
+          },
+          "first_time_elite": {
+            "n_test": 598,
+            "n_pos": 21,
+            "n_hist": 598,
+            "n_market": 389,
+            "n_baseline": 598,
+            "n_both": 389,
+            "hist_auc": 0.534,
+            "market_auc": 0.6232,
+            "baseline_auc": 0.6372,
+            "hist_brier": 0.0468,
+            "market_brier": 0.0675,
+            "baseline_brier": 0.0362,
+            "residual_auc": 0.3691,
+            "tier": "top_12"
+          }
+        }
+      },
+      {
+        "test_season": 2024,
+        "n_train": 3439,
+        "n_test": 599,
+        "train_season_range": [
+          2018,
+          2023
+        ],
+        "by_label": {
+          "top_12": {
+            "n_test": 599,
+            "n_pos": 48,
+            "n_hist": 599,
+            "n_market": 558,
+            "n_baseline": 599,
+            "n_both": 558,
+            "hist_auc": 0.8491,
+            "market_auc": 0.8875,
+            "baseline_auc": 0.6127,
+            "hist_brier": 0.0613,
+            "market_brier": 0.0548,
+            "baseline_brier": 0.0727,
+            "residual_auc": 0.366,
+            "tier": "top_12"
+          },
+          "league_winner": {
+            "n_test": 599,
+            "n_pos": 20,
+            "n_hist": 599,
+            "n_market": 558,
+            "n_baseline": 599,
+            "n_both": 558,
+            "hist_auc": 0.8827,
+            "market_auc": 0.9092,
+            "baseline_auc": 0.6073,
+            "hist_brier": 0.0286,
+            "market_brier": 0.0268,
+            "baseline_brier": 0.0321,
+            "residual_auc": 0.333,
+            "tier": "top_5"
+          },
+          "league_winner_smash": {
+            "n_test": 599,
+            "n_pos": 9,
+            "n_hist": 599,
+            "n_market": 558,
+            "n_baseline": 599,
+            "n_both": 558,
+            "hist_auc": 0.7703,
+            "market_auc": 0.8573,
+            "baseline_auc": 0.5603,
+            "hist_brier": 0.018,
+            "market_brier": 0.0175,
+            "baseline_brier": 0.0153,
+            "residual_auc": 0.2949,
+            "tier": "top_5"
+          },
+          "engine_breakout": {
+            "n_test": 599,
+            "n_pos": 26,
+            "n_hist": 599,
+            "n_market": 558,
+            "n_baseline": 599,
+            "n_both": 558,
+            "hist_auc": 0.7186,
+            "market_auc": 0.7887,
+            "baseline_auc": 0.5855,
+            "hist_brier": 0.0509,
+            "market_brier": 0.0485,
+            "baseline_brier": 0.0432,
+            "residual_auc": 0.3403,
+            "tier": "top_12"
+          },
+          "first_time_elite": {
+            "n_test": 599,
+            "n_pos": 15,
+            "n_hist": 599,
+            "n_market": 558,
+            "n_baseline": 599,
+            "n_both": 558,
+            "hist_auc": 0.6672,
+            "market_auc": 0.7327,
+            "baseline_auc": 0.5026,
+            "hist_brier": 0.0378,
+            "market_brier": 0.0398,
+            "baseline_brier": 0.0287,
+            "residual_auc": 0.3726,
+            "tier": "top_12"
+          }
+        }
+      },
+      {
+        "test_season": 2025,
+        "n_train": 4038,
+        "n_test": 609,
+        "train_season_range": [
+          2018,
+          2024
+        ],
+        "by_label": {
+          "top_12": {
+            "n_test": 609,
+            "n_pos": 48,
+            "n_hist": 609,
+            "n_market": 604,
+            "n_baseline": 609,
+            "n_both": 604,
+            "hist_auc": 0.8649,
+            "market_auc": 0.888,
+            "baseline_auc": 0.6094,
+            "hist_brier": 0.0569,
+            "market_brier": 0.0531,
+            "baseline_brier": 0.0716,
+            "residual_auc": 0.482,
+            "tier": "top_12"
+          },
+          "league_winner": {
+            "n_test": 609,
+            "n_pos": 20,
+            "n_hist": 609,
+            "n_market": 604,
+            "n_baseline": 609,
+            "n_both": 604,
+            "hist_auc": 0.8388,
+            "market_auc": 0.8597,
+            "baseline_auc": 0.6042,
+            "hist_brier": 0.0284,
+            "market_brier": 0.0272,
+            "baseline_brier": 0.0316,
+            "residual_auc": 0.4557,
+            "tier": "top_5"
+          },
+          "league_winner_smash": {
+            "n_test": 609,
+            "n_pos": 10,
+            "n_hist": 609,
+            "n_market": 604,
+            "n_baseline": 609,
+            "n_both": 604,
+            "hist_auc": 0.6928,
+            "market_auc": 0.7384,
+            "baseline_auc": 0.6936,
+            "hist_brier": 0.0191,
+            "market_brier": 0.019,
+            "baseline_brier": 0.0163,
+            "residual_auc": 0.5564,
+            "tier": "top_5"
+          },
+          "engine_breakout": {
+            "n_test": 609,
+            "n_pos": 25,
+            "n_hist": 609,
+            "n_market": 604,
+            "n_baseline": 609,
+            "n_both": 604,
+            "hist_auc": 0.7288,
+            "market_auc": 0.7933,
+            "baseline_auc": 0.5772,
+            "hist_brier": 0.0486,
+            "market_brier": 0.0456,
+            "baseline_brier": 0.0415,
+            "residual_auc": 0.4902,
+            "tier": "top_12"
+          },
+          "first_time_elite": {
+            "n_test": 609,
+            "n_pos": 13,
+            "n_hist": 609,
+            "n_market": 604,
+            "n_baseline": 609,
+            "n_both": 604,
+            "hist_auc": 0.6442,
+            "market_auc": 0.7591,
+            "baseline_auc": 0.5322,
+            "hist_brier": 0.0351,
+            "market_brier": 0.0355,
+            "baseline_brier": 0.0256,
+            "residual_auc": 0.5254,
+            "tier": "top_12"
+          }
+        }
+      }
+    ],
+    "pooled": {
+      "top_12": {
+        "n_test": 2975,
+        "n_pos": 240,
+        "n_hist": 2975,
+        "n_market": 2152,
+        "n_baseline": 2975,
+        "n_both": 2152,
+        "n_seasons_with_auc": 5,
+        "mean_hist_auc": 0.8144,
+        "mean_market_auc": 0.8523,
+        "pooled_auc_not_computed": true
+      },
+      "league_winner": {
+        "n_test": 2975,
+        "n_pos": 100,
+        "n_hist": 2975,
+        "n_market": 2152,
+        "n_baseline": 2975,
+        "n_both": 2152,
+        "n_seasons_with_auc": 5,
+        "mean_hist_auc": 0.8251,
+        "mean_market_auc": 0.8782,
+        "pooled_auc_not_computed": true
+      },
+      "league_winner_smash": {
+        "n_test": 2975,
+        "n_pos": 45,
+        "n_hist": 2975,
+        "n_market": 2152,
+        "n_baseline": 2975,
+        "n_both": 2152,
+        "n_seasons_with_auc": 5,
+        "mean_hist_auc": 0.6895,
+        "mean_market_auc": 0.7857,
+        "pooled_auc_not_computed": true
+      },
+      "engine_breakout": {
+        "n_test": 2975,
+        "n_pos": 121,
+        "n_hist": 2975,
+        "n_market": 2152,
+        "n_baseline": 2975,
+        "n_both": 2152,
+        "n_seasons_with_auc": 5,
+        "mean_hist_auc": 0.6815,
+        "mean_market_auc": 0.7308,
+        "pooled_auc_not_computed": true
+      },
+      "first_time_elite": {
+        "n_test": 2975,
+        "n_pos": 76,
+        "n_hist": 2975,
+        "n_market": 2152,
+        "n_baseline": 2975,
+        "n_both": 2152,
+        "n_seasons_with_auc": 5,
+        "mean_hist_auc": 0.6193,
+        "mean_market_auc": 0.668,
+        "pooled_auc_not_computed": true
+      }
+    },
+    "pick_score": {
+      "validated": false,
+      "reason": "gate failed: 0/3 test seasons beat market AUC by 0.02 with hist_auc>=0.55; n_hist=2975 (need 200). Pick Score unchanged.",
+      "primary_label": "league_winner",
+      "qualifying_seasons": [],
+      "n_hist_total": 2975,
+      "n_both_total": 2152,
+      "in_live_ranking": false,
+      "gate": {
+        "primary_label": "league_winner",
+        "min_test_seasons": 3,
+        "min_scored_per_season": 50,
+        "min_scored_total": 200,
+        "min_hist_auc": 0.55,
+        "min_auc_margin_vs_market": 0.02
+      }
+    },
+    "descriptive_only": true
   },
   "preseason_profiles": {
     "upcoming_season": 2026,
@@ -16765,10 +17328,35 @@
         ],
         "display_pct": 8
       },
+      "league_winner": {
+        "sample_size": 636,
+        "successes": 40,
+        "raw_rate": 0.062893,
+        "smoothed_rate": 0.064256,
+        "confidence": "strong",
+        "season_range": [
+          2018,
+          2025
+        ],
+        "display_pct": 6
+      },
+      "league_winner_smash_among_non_top12": {
+        "sample_size": 553,
+        "successes": 17,
+        "raw_rate": 0.030741,
+        "smoothed_rate": 0.032876,
+        "confidence": "strong",
+        "season_range": [
+          2018,
+          2025
+        ],
+        "display_pct": 3
+      },
       "n_prev_top12": 83,
       "n_two_plus_prior_top12": 69,
       "n_engine_non_starters": 546,
-      "n_first_time_candidates": 493
+      "n_first_time_candidates": 493,
+      "n_league_winner_smash_candidates": 553
     },
     "RB": {
       "position": "RB",
@@ -16844,10 +17432,35 @@
         ],
         "display_pct": 4
       },
+      "league_winner": {
+        "sample_size": 1146,
+        "successes": 40,
+        "raw_rate": 0.034904,
+        "smoothed_rate": 0.035327,
+        "confidence": "strong",
+        "season_range": [
+          2018,
+          2025
+        ],
+        "display_pct": 4
+      },
+      "league_winner_smash_among_non_top12": {
+        "sample_size": 1062,
+        "successes": 23,
+        "raw_rate": 0.021657,
+        "smoothed_rate": 0.022237,
+        "confidence": "strong",
+        "season_range": [
+          2018,
+          2025
+        ],
+        "display_pct": 2
+      },
       "n_prev_top12": 84,
       "n_two_plus_prior_top12": 72,
       "n_engine_non_starters": 1055,
-      "n_first_time_candidates": 990
+      "n_first_time_candidates": 990,
+      "n_league_winner_smash_candidates": 1062
     },
     "WR": {
       "position": "WR",
@@ -16923,10 +17536,35 @@
         ],
         "display_pct": 3
       },
+      "league_winner": {
+        "sample_size": 1839,
+        "successes": 40,
+        "raw_rate": 0.021751,
+        "smoothed_rate": 0.021916,
+        "confidence": "strong",
+        "season_range": [
+          2018,
+          2025
+        ],
+        "display_pct": 2
+      },
+      "league_winner_smash_among_non_top12": {
+        "sample_size": 1755,
+        "successes": 21,
+        "raw_rate": 0.011966,
+        "smoothed_rate": 0.012194,
+        "confidence": "strong",
+        "season_range": [
+          2018,
+          2025
+        ],
+        "display_pct": 1
+      },
       "n_prev_top12": 84,
       "n_two_plus_prior_top12": 71,
       "n_engine_non_starters": 1747,
-      "n_first_time_candidates": 1665
+      "n_first_time_candidates": 1665,
+      "n_league_winner_smash_candidates": 1755
     },
     "TE": {
       "position": "TE",
@@ -17002,10 +17640,35 @@
         ],
         "display_pct": 5
       },
+      "league_winner": {
+        "sample_size": 1026,
+        "successes": 40,
+        "raw_rate": 0.038986,
+        "smoothed_rate": 0.039513,
+        "confidence": "strong",
+        "season_range": [
+          2018,
+          2025
+        ],
+        "display_pct": 4
+      },
+      "league_winner_smash_among_non_top12": {
+        "sample_size": 944,
+        "successes": 21,
+        "raw_rate": 0.022246,
+        "smoothed_rate": 0.022993,
+        "confidence": "strong",
+        "season_range": [
+          2018,
+          2025
+        ],
+        "display_pct": 2
+      },
       "n_prev_top12": 82,
       "n_two_plus_prior_top12": 79,
       "n_engine_non_starters": 937,
-      "n_first_time_candidates": 877
+      "n_first_time_candidates": 877,
+      "n_league_winner_smash_candidates": 944
     }
   },
   "draft_capital": {
@@ -23996,6 +24659,7 @@
     ],
     "pooled_historical": true,
     "walk_forward": false,
+    "named_examples": true,
     "descriptive_only": true,
     "n_leaves": 1676,
     "by_position": {
@@ -80654,6 +81318,7 @@
       "espn",
       "yahoo"
     ],
+    "hit_tier": "top_12",
     "sf_tep_historical": false,
     "pooled_historical": true,
     "descriptive_only": true,

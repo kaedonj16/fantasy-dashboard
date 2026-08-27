@@ -2,6 +2,7 @@
 
 Request paths must read ``historical_profile_aggregates.json``, never scan
 parquet per player. Rebuild from cron after the warehouse step.
+Phase 2–9: rates, comps, ADP, signals, board profiles, walk-forward verdict.
 """
 from __future__ import annotations
 
@@ -55,7 +56,7 @@ def rebuild_historical_profiles(
     scoring: str = "ppr",
     attach_adp: Optional[bool] = None,
 ) -> dict:
-    """Assemble Phase 2–8 aggregates. ``write=False`` for tests.
+    """Assemble Phase 2–9 aggregates. ``write=False`` for tests.
 
     ADP is joined from committed frozen snapshots when loading the warehouse.
     Injected test rows skip that join unless ``attach_adp=True``.

@@ -1,14 +1,19 @@
-"""Career-stage, prior-elite, breakout, and draft-capital rates (pure).
+"""Career-stage, prior-elite, breakout, draft-capital, and league-winner rates (pure).
 
 Breakout labeling copies the existing engine's constants and comparison
 (``prior is None or prior > 13``, this season ≤ 12). That is *not* the
 same as first-time elite (never previously top-12 and this season ≤ 12).
 Both are kept.
 
+League-winner is this-season finish ≤ 5 (``TIER_CUTOFFS['top_5']``). Smash
+is that finish from outside last year's top-12 (prior None or > 12). Rank
+13 last year can smash into top-5; that is not the engine non-starter cut.
+
 Draft-capital rates exclude missing capital; they are never labeled UDFA.
 Missing years_experience is not mapped to rookie.
 
-Descriptive only — these rates do not enter ranking or Pick Score.
+Descriptive only — these rates do not enter ranking or Pick Score unless
+the Phase 9 walk-forward gate sets ``pick_score.validated``.
 """
 from __future__ import annotations
 
@@ -20,6 +25,8 @@ from dashboard_services.historical.definitions import (
     DEFAULT_BAYES_PRIOR_N,
     DRAFT_CAPITAL_ORDER,
     FTN_SEASON_FLOOR,
+    LEAGUE_WINNER_SMASH_PRIOR_CUTOFF,
+    LEAGUE_WINNER_TIER,
     RELIABLE_SEASON_FLOOR,
     SKILL_POSITIONS,
     SNAP_RELIABLE_FLOOR,
@@ -93,6 +100,38 @@ def is_first_time_elite(
     if finish is None or finish > cutoff:
         return False
     return not bool(previously_top12)
+
+
+def is_league_winner(
+    this_finish: Any,
+    *,
+    cutoff: Optional[int] = None,
+) -> bool:
+    """This-season positional finish inside ``top_5``. Unranked is not a hit."""
+    cut = TIER_CUTOFFS[LEAGUE_WINNER_TIER] if cutoff is None else cutoff
+    finish = _optional_int(this_finish)
+    return finish is not None and finish <= cut
+
+
+def is_league_winner_smash(
+    prior_rank: Any,
+    this_finish: Any,
+    *,
+    smash_prior: Optional[int] = None,
+    cutoff: Optional[int] = None,
+) -> bool:
+    """League-winner from outside last year's top-12 (or no prior finish).
+
+    Rank 13 last year finishing top-5 *is* a smash. That is intentionally
+    not the engine non-starter cutoff (prior > 13).
+    """
+    if not is_league_winner(this_finish, cutoff=cutoff):
+        return False
+    prior = _optional_int(prior_rank)
+    prior_cut = (
+        LEAGUE_WINNER_SMASH_PRIOR_CUTOFF if smash_prior is None else smash_prior
+    )
+    return prior is None or prior > prior_cut
 
 
 def _prior_rank(row: Mapping[str, Any]) -> Optional[int]:
@@ -242,6 +281,20 @@ def build_repeat_and_breakout_rates(
                 return False
             return is_first_time_elite(prev, positional_finish(row, scoring))
 
+        def _smash_hit(row: Mapping[str, Any]) -> bool:
+            return is_league_winner_smash(
+                _prior_rank(row), positional_finish(row, scoring)
+            )
+
+        smash_cands = [
+            r
+            for r in pos_rows
+            if (
+                _prior_rank(r) is None
+                or _prior_rank(r) > LEAGUE_WINNER_SMASH_PRIOR_CUTOFF
+            )
+        ]
+
         out[pos] = {
             "position": pos,
             "baseline": baseline,
@@ -260,10 +313,20 @@ def build_repeat_and_breakout_rates(
             "first_time_elite_among_candidates": cohort_hit_rate(
                 first_cands, scoring=scoring, prior_rate=prior_rate, hit_pred=_first_hit
             ),
+            "league_winner": cohort_hit_rate(
+                pos_rows, tier=LEAGUE_WINNER_TIER, scoring=scoring, prior_rate=prior_rate
+            ),
+            "league_winner_smash_among_non_top12": cohort_hit_rate(
+                smash_cands,
+                scoring=scoring,
+                prior_rate=prior_rate,
+                hit_pred=_smash_hit,
+            ),
             "n_prev_top12": len(prev_top12),
             "n_two_plus_prior_top12": len(two_plus),
             "n_engine_non_starters": len(non_starters),
             "n_first_time_candidates": len(first_cands),
+            "n_league_winner_smash_candidates": len(smash_cands),
         }
     return out
 
@@ -526,17 +589,24 @@ def assemble_profile_aggregates(
     projection columns. Live Sleeper PPG is a separate Phase 7 signal compared
     in native units (probability vs rank), never blended into a score. Phase 8
     stamps a compact board payload from this JSON; it does not enter ranking.
+    Phase 9 adds a walk-forward verdict. Pick Score stays out of live ranking
+    unless that gate passes — and even then this assembler does not mutate
+    ``pick_score.js``.
     """
+    from dashboard_services.historical.walkforward import run_walk_forward
+
     era = filter_era(rows, season_from, season_to)
     bounds = season_bounds(era)
+    walkforward = run_walk_forward(era, scoring=scoring)
+    pick_validated = bool((walkforward.get("pick_score") or {}).get("validated"))
     return {
         "schema_version": 1,
-        "phase": 8,
+        "phase": 9,
         "scoring": scoring,
         "era_floor": season_from,
         "season_range": bounds,
         "n_player_seasons": len(era),
-        "descriptive_only": True,
+        "descriptive_only": not pick_validated,
         "definitions": {
             "breakout_rank_threshold": BREAKOUT_RANK_THRESHOLD,
             "prior_non_starter_rank": PRIOR_NON_STARTER_RANK,
@@ -547,6 +617,16 @@ def assemble_profile_aggregates(
             ),
             "first_time_elite": (
                 "not previously_top12 AND this season positional finish <= 12"
+            ),
+            "league_winner": (
+                "this-season positional finish <= 5 (TIER_CUTOFFS top_5); "
+                "no new cutoff"
+            ),
+            "league_winner_smash": (
+                "previous_season_finish is None or > 12 "
+                "(BREAKOUT_RANK_THRESHOLD / top_12), AND this season "
+                "finish <= 5. Rank 13 last year finishing top-5 is a smash; "
+                "this is not the engine non-starter cutoff (prior > 13)"
             ),
             "prior_rank_source": (
                 "Phase 1 previous_season_finish (last observed prior season, "
@@ -577,9 +657,11 @@ def assemble_profile_aggregates(
                 "bucket, previous-season usage. Same-season actuals, ADP, "
                 "and projections are not features. Tiny cells relax in "
                 "COMP_RELAXATION_ORDER and shrink toward the position "
-                "baseline. Named comps exclude the query player. Rates are "
-                "pooled historical, not walk-forward. Request path reads "
-                "precomputed JSON leaves; no parquet scan, no 031_* table"
+                "baseline. Named comps exclude the query player. Live board "
+                "rates stay pooled historical. Walk-forward of the same "
+                "lookups is the separate JSON walkforward section. Request "
+                "path reads precomputed JSON leaves; no parquet scan, no "
+                "031_* table"
             ),
             "missing_adp": "omitted from ADP cohorts; Sleeper 999 is missing, not pick 999",
             "adp": (
@@ -607,9 +689,20 @@ def assemble_profile_aggregates(
                 "field. PPG is not converted to a probability. Missing "
                 "signals stay unknown. No blended ranking score"
             ),
+            "walk_forward": (
+                "Train seasons < S, test S. History P from comps rebuilt on "
+                "train; market P from ADP rates rebuilt on train. Warehouse "
+                "positional finishes are ground truth — not the breakout "
+                "engine usage-points proxy, and not a second BreakoutEngine. "
+                "Missing P is skipped, never 0. Pick Score stays untouched "
+                "unless pick_score.validated"
+            ),
+            "pick_score_validated": pick_validated,
+            "pick_score_in_live_ranking": False,
         },
         "signals": signal_contract(),
         "board": board_contract(),
+        "walkforward": walkforward,
         "preseason_profiles": build_preseason_profiles(era),
         "age_curves": build_age_curves(
             era, scoring=scoring, season_from=season_from, season_to=season_to
