@@ -2035,7 +2035,7 @@
             });
     }
 
-    function histTrendRow(row) {
+    function histTrendRow(row, barHtml) {
         row = row || {};
         var meta = [];
         if (row.bucket) meta.push(row.bucket);
@@ -2046,20 +2046,21 @@
         var shown = row.display != null && row.display !== ''
             ? row.display
             : (row.pct != null ? row.pct + '%' : '-');
-        return '<div class="cs-hist-hit"><div><div class="cs-hist-hit-label">' + esc(row.sentence || row.label || '') + '</div>'
+        return '<div class="cs-hist-hit"><div class="cs-hist-hit-top"><div><div class="cs-hist-hit-label">' + esc(row.sentence || row.label || '') + '</div>'
             + (meta.length ? '<div class="cs-hist-hit-meta">' + esc(meta.join(' · ')) + '</div>' : '')
-            + '</div><div class="cs-hist-hit-pct">' + esc(String(shown)) + '</div></div>';
+            + '</div><div class="cs-hist-hit-pct">' + esc(String(shown)) + '</div></div>'
+            + (barHtml || '') + '</div>';
     }
 
     function trendsHitRow(row, polarity) {
         row = row || {};
-        var html = histTrendRow(row);
+        var bar = '';
         if (row.pct != null && isFinite(Number(row.pct))) {
             var pct = Math.max(0, Math.min(100, Number(row.pct)));
             var barClass = polarity === 'miss' ? 'cs-trends-bar cs-trends-bar-miss' : 'cs-trends-bar';
-            html += '<div class="' + barClass + '" aria-hidden="true"><span style="width:' + pct + '%"></span></div>';
+            bar = '<div class="' + barClass + '" aria-hidden="true"><span style="width:' + pct + '%"></span></div>';
         }
-        return html;
+        return histTrendRow(row, bar);
     }
 
     function defaultTrendsPos() {
@@ -2229,14 +2230,6 @@
             html += '</div>';
             if (copy.headline) html += '<p class="cs-hist-cohort">' + esc(copy.headline) + '</p>';
             html += '</div>';
-        }
-        var projTrends = Array.isArray(copy.projection_trends) ? copy.projection_trends : [];
-        if (projTrends.length) {
-            html += '<section class="cs-hist-sec"><h3>' + esc(copy.projection_heading || 'This board\'s projection') + '</h3>';
-            if (copy.projection_note) html += '<p class="cs-hist-note">' + esc(copy.projection_note) + '</p>';
-            html += '<div class="cs-hist-hits">';
-            projTrends.forEach(function (row) { html += histTrendRow(row); });
-            html += '</div></section>';
         }
         var trends = Array.isArray(copy.trends) ? copy.trends : [];
         if (trends.length) {

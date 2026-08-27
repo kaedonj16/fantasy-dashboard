@@ -339,6 +339,10 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "Hist is redraft-only" in body
     assert "copy.trends" in script or "Trends for this player's buckets" in script
     assert "trendsHitRow(row, row && row.polarity)" in script
+    assert "copy.projection_trends" not in script
+    assert "This board's projection" not in script
+    assert "cs-hist-hit-top" in script
+    assert "margin-top: -2px" not in body
     assert ".cs-wrap, .cs-hist-modal {" in body
     assert "z-index: var(--z-modal, 10000)" in body
     assert ".cs-hist-head" in body
@@ -356,9 +360,6 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "data-hist-adp" in script
     assert "liveHistAdp" in script
     assert "mkt_sentence" in script
-    assert "copy.projection_trends" in script
-    assert "proj_ppg=" in script
-    assert "data-hist-proj" in script
     assert "redraft_avg_pick=" in script
     assert "Object.keys((resp.preseason)" not in script
     assert "Named comps (this player excluded)" not in script
