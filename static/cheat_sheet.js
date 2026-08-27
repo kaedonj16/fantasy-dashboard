@@ -1152,11 +1152,10 @@
         if (!showHist(dyn)) return '';
         var h = x.historical || {};
         var pct = h.p_hit_pct;
-        var tip = 'History P(top-12) from similar pre-season profiles'
+        var tip = 'Similar-profile top-12 trend (not this player\'s odds)'
             + (pct != null ? ': ' + pct + '%' : ': unknown')
-            + (h.mkt_pct != null ? '. Market at this ADP bucket: ' + h.mkt_pct + '%' : '')
-            + (h.proj_rk != null ? '. Projected rank among this board: ' + h.proj_rk : '')
-            + '. Descriptive only — not a ranking input.';
+            + (h.mkt_pct != null ? '. ADP-round trend: ' + h.mkt_pct + '%' : '')
+            + '. Open for bucket hit rates. Descriptive only — not a ranking input.';
         var cls = histPctClass(pct);
         var body = pct == null ? '&ndash;' : (pct + '%');
         return '<td class="cs-hist-col"><span class="cs-hist-cell">'
@@ -1347,7 +1346,7 @@
                 + '<span class="cs-lg"><span class="cs-val g">+7</span> above ADP, target it</span>'
                 + '<span class="cs-lg"><span class="cs-val b">-4</span> going early, let it fall</span>'
                 + '<span class="cs-lg"><b>Sched Rk</b> full-season schedule (1 = easiest)</span>'
-                + (showHist(dyn) ? '<span class="cs-lg"><b>Hist</b> similar-profile P(top-12), not a rank</span>' : '')
+                + (showHist(dyn) ? '<span class="cs-lg"><b>Hist</b> similar-profile trend, not a rank</span>' : '')
                 + sortNote
                 + projNote
                 + draftedNote
@@ -1425,7 +1424,7 @@
             + sortTh(col5Key, col5, '', dyn ? 'Sort by age' : 'Sort by ADP')
             + sortTh(col6Key, col6, 'cs-value-col', dyn ? 'Sort by career window (age)' : 'Sort by value vs ADP')
             + sortTh('scheduleRank', 'Sched Rk', '', 'Full fantasy-season strength of schedule rank (1 = easiest)')
-            + (showHist(dyn) ? sortTh('hist', 'Hist', 'cs-hist-col', 'Similar-profile P(top-12). Descriptive; not a ranking input.') : '')
+            + (showHist(dyn) ? sortTh('hist', 'Hist', 'cs-hist-col', 'Similar-profile top-12 trend. Open for bucket rates. Descriptive; not a ranking input.') : '')
             + (showMarket(dyn) ? sortTh('market', 'Market vs ADP', 'cs-market-col', 'Sort by market vs ADP') : '')
             + editTh + '</tr>';
         var span = (editable ? 9 : 8) + (showMarket(dyn) ? 1 : 0) + (showHist(dyn) ? 1 : 0);
@@ -1978,7 +1977,7 @@
         var livePos = pos || (row && (row.pos || row.position)) || '';
         var fallbackMarket = row && row.historical && row.historical.mkt_sentence;
         $('csHistTitle').textContent = name || 'History';
-        $('csHistSub').textContent = 'How often similar pre-season profiles finished top-5, top-12, and top-24. Not a ranking score.';
+        $('csHistSub').textContent = 'Historical trends for this profile — not a ranking or this player\'s odds.';
         $('csHistBody').innerHTML = '<p class="cs-hist-sub">Loading…</p>';
         modal.classList.add('open');
         var url = '/api/historical-player/' + encodeURIComponent(id);
@@ -2009,12 +2008,43 @@
         var html = '';
         var hits = copy.hit_rates || [];
         if (hits.length) {
-            html += '<section class="cs-hist-sec"><h3>' + esc(copy.headline || 'Hit rates') + '</h3><div class="cs-hist-hits">';
+            html += '<section class="cs-hist-sec"><h3>' + esc(copy.headline || 'Closest historical group') + '</h3>';
+            if (copy.cohort_note) html += '<p class="cs-hist-note">' + esc(copy.cohort_note) + '</p>';
+            html += '<div class="cs-hist-hits">';
             hits.forEach(function (row) {
                 var meta = [];
                 if (row.n != null) meta.push('n=' + row.n);
                 if (row.confidence_label) meta.push(row.confidence_label);
                 html += '<div class="cs-hist-hit"><div><div class="cs-hist-hit-label">' + esc(row.label || '') + '</div>'
+                    + (meta.length ? '<div class="cs-hist-hit-meta">' + esc(meta.join(' · ')) + '</div>' : '')
+                    + '</div><div class="cs-hist-hit-pct">' + (row.pct != null ? row.pct + '%' : '—') + '</div></div>';
+            });
+            html += '</div></section>';
+        }
+        var examples = (resp.history && resp.history.examples) || [];
+        if (examples.length) {
+            html += '<section class="cs-hist-sec"><h3>' + esc(copy.examples_heading || 'Seasons from that similar group') + '</h3>';
+            if (copy.examples_note) html += '<p class="cs-hist-note">' + esc(copy.examples_note) + '</p>';
+            html += '<ul class="cs-hist-ex">';
+            examples.forEach(function (ex) {
+                html += '<li><span>' + esc(ex.name || ex.sleeper_id || '') + (ex.season ? ' · ' + ex.season : '') + '</span><span>'
+                    + (ex.positional_finish != null ? '#' + ex.positional_finish : '')
+                    + (ex.ppr_points != null ? ' · ' + ex.ppr_points + ' pts' : '')
+                    + '</span></li>';
+            });
+            html += '</ul></section>';
+        }
+        var trends = copy.trends || [];
+        if (trends.length) {
+            html += '<section class="cs-hist-sec"><h3>' + esc(copy.trends_heading || 'Trends for this player\'s buckets') + '</h3>';
+            if (copy.trends_note) html += '<p class="cs-hist-note">' + esc(copy.trends_note) + '</p>';
+            html += '<div class="cs-hist-hits">';
+            trends.forEach(function (row) {
+                var meta = [];
+                if (row.bucket) meta.push(row.bucket);
+                if (row.n != null) meta.push('n=' + row.n);
+                if (row.confidence_label) meta.push(row.confidence_label);
+                html += '<div class="cs-hist-hit"><div><div class="cs-hist-hit-label">' + esc(row.sentence || row.label || '') + '</div>'
                     + (meta.length ? '<div class="cs-hist-hit-meta">' + esc(meta.join(' · ')) + '</div>' : '')
                     + '</div><div class="cs-hist-hit-pct">' + (row.pct != null ? row.pct + '%' : '—') + '</div></div>';
             });
@@ -2037,21 +2067,9 @@
         var sentence = copy.market_sentence || '';
         var missingAdp = mkt.p_top_12 == null && !mkt.adp_bucket;
         if (missingAdp && fallbackMarket) sentence = fallbackMarket;
-        if (sentence) {
+        var hasAdpTrend = trends.some(function (row) { return row.kind === 'adp'; });
+        if (sentence && !hasAdpTrend) {
             html += '<section class="cs-hist-sec"><h3>' + esc(copy.market_heading || 'ADP bucket hit rate') + '</h3><p class="cs-hist-note">' + esc(sentence) + '</p></section>';
-        }
-        var examples = (resp.history && resp.history.examples) || [];
-        if (examples.length) {
-            html += '<section class="cs-hist-sec"><h3>' + esc(copy.examples_heading || 'Players with a similar pre-season profile') + '</h3>';
-            if (copy.examples_note) html += '<p class="cs-hist-note">' + esc(copy.examples_note) + '</p>';
-            html += '<ul class="cs-hist-ex">';
-            examples.forEach(function (ex) {
-                html += '<li><span>' + esc(ex.name || ex.sleeper_id || '') + (ex.season ? ' · ' + ex.season : '') + '</span><span>'
-                    + (ex.positional_finish != null ? '#' + ex.positional_finish : '')
-                    + (ex.ppr_points != null ? ' · ' + ex.ppr_points + ' pts' : '')
-                    + '</span></li>';
-            });
-            html += '</ul></section>';
         }
         return html || '<p class="cs-hist-sub">No historical profile for this player yet.</p>';
     }

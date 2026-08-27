@@ -7,6 +7,7 @@ from dashboard_services.historical.board import (
     attach_historical_signals,
     build_deep_panel,
     build_hist_panel_copy,
+    build_hist_trends,
     build_preseason_profiles,
     compact_signal,
     live_redraft_adp,
@@ -162,7 +163,10 @@ def test_attach_compact_payload_and_deep_panel_are_descriptive():
     assert isinstance(panel["history"]["examples"], list)
     copy = panel["copy"]
     assert copy["hit_rates"]
-    assert copy["hit_rates"][0]["label"].startswith("Finished as a ")
+    assert copy["hit_rates"][0]["label"].startswith("Then finished ")
+    assert copy["headline"].startswith("Among ")
+    assert "not this player's odds" in copy["cohort_note"]
+    assert isinstance(copy["trends"], list)
     assert all("_" not in row["label"] for row in copy["profile"])
     assert all("_" not in row["label"] for row in copy["relaxed"])
     # Warehouse profiles have no current ADP, so Market is unknown until the
@@ -219,8 +223,10 @@ def test_hist_panel_copy_uses_bucket_hit_rates_not_snake_case():
     assert "23–24" in values
     assert "20-25%" in values
     assert "80%+" in values
-    assert copy["hit_rates"][1]["label"] == "Finished as a top-12 RB"
+    assert copy["hit_rates"][1]["label"] == "Then finished top-12"
     assert copy["hit_rates"][1]["pct"] == 37
+    assert "Among RBs" in copy["headline"]
+    assert "not this player's odds" in copy["cohort_note"]
     assert copy["relaxed"][0]["label"] == "Last year targets"
     shown = " ".join(
         f"{row['label']} {row['value']}" for row in copy["profile"]
@@ -305,3 +311,46 @@ def test_deep_panel_route_serves_json_leaves():
     assert "examples" in body["history"]
     assert body["copy"]["hit_rates"]
     assert all("_" not in row["label"] for row in body["copy"]["profile"])
+    assert isinstance(body["copy"]["trends"], list)
+    with app.test_client() as client:
+        resp2 = client.get(f"/api/historical-player/{pid}?adp=3&redraft_avg_pick=3&position=RB")
+    body2 = resp2.get_json()
+    kinds = {row["kind"] for row in body2["copy"]["trends"]}
+    assert "adp" in kinds or body2["market"]["p_top_12"] is None
+    shown = " ".join(row["sentence"] for row in body2["copy"]["trends"])
+    assert "age_bucket" not in shown
+    assert "snap_pct" not in shown
+
+
+def test_hist_trends_are_descriptive_bucket_slices():
+    from dashboard_services.historical.aggregates_store import load_profile_aggregates
+
+    aggs = load_profile_aggregates()
+    if not aggs:
+        pytest.skip("profile JSON missing")
+    panel = build_deep_panel("9221", aggs, extra={"redraft_avg_pick": 2.0, "position": "RB"})
+    copy = panel["copy"]
+    assert copy["headline"].startswith("Among RBs")
+    assert "not this player's odds" in copy["cohort_note"]
+    kinds = [row["kind"] for row in copy["trends"]]
+    assert "adp" in kinds
+    assert "career_stage" in kinds
+    assert "draft_capital" in kinds
+    assert "age" in kinds
+    sentences = [row["sentence"] for row in copy["trends"]]
+    assert any("taken in fantasy Round 1 finished top-12" in s for s in sentences)
+    assert all("_" not in row["label"] for row in copy["trends"])
+    query = {
+        "position": "RB",
+        "years_experience": 3,
+        "age": 24.4,
+        "draft_capital_bucket": "round_1",
+        "previous_season_finish": 3,
+        "previous_season_target_share": 0.17,
+        "previous_season_snap_pct": 0.61,
+        "previous_season_year": 2025,
+        "adp_overall": 2.0,
+    }
+    trends = build_hist_trends(query, aggs, panel["market"])
+    assert trends
+    assert all(row.get("pct") is not None for row in trends)

@@ -326,12 +326,13 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "scored.sort(function (a, b) {" in script
     assert "var aVor = Number(a.vorRaw);" in script
     assert "histP" not in script.split("scored.sort(function (a, b) {")[1].split("scored.forEach")[0]
-    assert "similar-profile P(top-12), not a rank" in script
-    assert "the info button opens named comps" in body.lower()
+    assert "Similar-profile top-12 trend" in script
+    assert "historical trends for this profile" in body.lower()
     assert "return !dyn && SHOW_HISTORICAL" in script
     assert "var HIST_STRONG_PCT = 25" in script
     assert "market_higher" not in script.split("function histCell")[1].split("function smallVal")[0]
     assert "Hist is redraft-only" in body
+    assert "Trends for this player's buckets" in script or "copy.trends" in script
     assert ".cs-wrap, .cs-hist-modal {" in body
     assert "z-index: var(--z-modal, 10000)" in body
     assert ".cs-hist-head" in body
