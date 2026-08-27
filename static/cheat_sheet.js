@@ -534,6 +534,84 @@
         return C.adpOf(p, mode, sf);
     }
 
+    // Real market ADP for late-board ordering.
+//
+// IMPORTANT:
+// This intentionally NEVER falls back to _radp.
+//
+// _radp is derived from the site's redraft-value ordering. Using it as the
+// late-round fallback just reproduces the same model/VOR ordering and can
+// create positional walls such as 30+ TEs appearing consecutively.
+    function marketAdpOf(p, mode, sf) {
+        var src = sheetAdpSource();
+
+        // Selected source first.
+        var selected = C.sourceAdpOf
+            ? C.sourceAdpOf(p, src, mode, sf)
+            : null;
+
+        if (
+            selected != null &&
+            isFinite(Number(selected)) &&
+            Number(selected) > 0
+        ) {
+            return Number(selected);
+        }
+
+        // Consensus second.
+        var consensus = C.sourceAdpOf
+            ? C.sourceAdpOf(p, 'consensus', mode, sf)
+            : null;
+
+        if (
+            consensus != null &&
+            isFinite(Number(consensus)) &&
+            Number(consensus) > 0
+        ) {
+            return Number(consensus);
+        }
+
+        // If the precomputed consensus is missing, calculate a median from the
+        // actual ADP sources attached to the player.
+        var field = mode === 'dynasty'
+            ? (sf ? 'sf_avg_pick' : 'avg_pick')
+            : (sf ? 'sf_redraft_avg_pick' : 'redraft_avg_pick');
+
+        var vals = [];
+        var by = p && p.adp_by_source;
+
+        if (by) {
+            Object.keys(by).forEach(function (key) {
+                if (key === 'consensus') return;
+
+                var row = by[key];
+                var value = row && row[field];
+
+                if (
+                    value != null &&
+                    isFinite(Number(value)) &&
+                    Number(value) > 0
+                ) {
+                    vals.push(Number(value));
+                }
+            });
+        }
+
+        if (vals.length) {
+            vals.sort(function (a, b) {
+                return a - b;
+            });
+
+            var mid = Math.floor(vals.length / 2);
+
+            return vals.length % 2
+                ? vals[mid]
+                : (vals[mid - 1] + vals[mid]) / 2;
+        }
+
+        return null;
+    }
+
     function fmtAdp(v) {
         return (v != null && isFinite(Number(v))) ? Number(v).toFixed(1) : '';
     }
@@ -564,7 +642,11 @@
         if (key === 'rk') return x.rk;
         if (key === 'name') return (x.name || '').toLowerCase();
         if (key === 'pos') return (POS_SORT[x.pos] != null ? POS_SORT[x.pos] : 9) * 1000 + (x.posRankN || 0);
-        if (key === 'vor') return x.vor;
+        if (key === 'vor') {
+            return x.vorRaw != null
+                ? Number(x.vorRaw)
+                : -9999;
+        }
         if (key === 'projectedPpg') return x.projectedPpg;
         if (key === 'adp') return x.adp;
         if (key === 'age' || key === 'window') return x.age;
@@ -667,44 +749,228 @@
         var scored = pool.map(function (p) {
             var pos = (p.position || '').toUpperCase();
             var value = C.valOf(p, mode, sf);
+
+            var replacement =
+                repl[pos] != null &&
+                isFinite(Number(repl[pos]))
+                    ? Number(repl[pos])
+                    : 0;
+
+            // Keep full precision for ranking.
+            // Do NOT round VOR before sorting.
+            var vorRaw = Number(value) - replacement;
+
             return {
-                id: String(p.id), pos: pos, name: p.name || String(p.id),
-                age: (p.age != null ? Number(p.age) : null),
-                adp: sheetAdpOf(p, mode, sf), vor: Math.round(value - (repl[pos] || 0)),
-                projectedPpg: p.proj_ppg != null && isFinite(Number(p.proj_ppg)) ? Number(p.proj_ppg) : null,
-                marketVsAdp: mode === 'redraft' && p.market_vs_adp != null ? Number(p.market_vs_adp) : null,
-                marketExpectedAdp: mode === 'redraft' && p.market_expected_adp != null ? Number(p.market_expected_adp) : null,
-                marketConfidence: mode === 'redraft' && p.market_confidence != null ? Number(p.market_confidence) : null,
-                marketConfidenceLabel: mode === 'redraft' ? (p.market_confidence_label || null) : null,
-                marketBasis: mode === 'redraft' ? (p.market_basis || null) : null,
-                scheduleRank: scheduleRanks[String(p.id)] || null,
+                id: String(p.id),
+                pos: pos,
+                name: p.name || String(p.id),
+
+                age:
+                    p.age != null
+                        ? Number(p.age)
+                        : null,
+
+                // Existing display ADP.
+                adp: sheetAdpOf(p, mode, sf),
+
+                // Real market ADP for late-board ordering.
+                // This helper should NOT fall back to _radp.
+                marketAdp: marketAdpOf(p, mode, sf),
+
+                // Full-precision VOR.
+                vorRaw: vorRaw,
+
+                // Keep vor for compatibility with the rest of the file.
+                vor: vorRaw,
+
+                projectedPpg:
+                    p.proj_ppg != null &&
+                    isFinite(Number(p.proj_ppg))
+                        ? Number(p.proj_ppg)
+                        : null,
+
+                marketVsAdp:
+                    mode === 'redraft' &&
+                    p.market_vs_adp != null
+                        ? Number(p.market_vs_adp)
+                        : null,
+
+                marketExpectedAdp:
+                    mode === 'redraft' &&
+                    p.market_expected_adp != null
+                        ? Number(p.market_expected_adp)
+                        : null,
+
+                marketConfidence:
+                    mode === 'redraft' &&
+                    p.market_confidence != null
+                        ? Number(p.market_confidence)
+                        : null,
+
+                marketConfidenceLabel:
+                    mode === 'redraft'
+                        ? (p.market_confidence_label || null)
+                        : null,
+
+                marketBasis:
+                    mode === 'redraft'
+                        ? (p.market_basis || null)
+                        : null,
+
+                scheduleRank:
+                    scheduleRanks[String(p.id)] || null,
             };
         });
+
         scored.sort(function (a, b) {
-            return b.vor - a.vor || ((a.adp || 9999) - (b.adp || 9999));
+            var aVor = Number(a.vorRaw);
+            var bVor = Number(b.vorRaw);
+
+            var aAboveReplacement = aVor > 0;
+            var bAboveReplacement = bVor > 0;
+
+            // Above replacement: rank primarily by VOR.
+            if (aAboveReplacement && bAboveReplacement) {
+                var vorDifference = bVor - aVor;
+
+                if (Math.abs(vorDifference) > 1e-9) {
+                    return vorDifference;
+                }
+
+                // Real tie -> use actual market ADP.
+                var aMarket =
+                    a.marketAdp != null
+                        ? Number(a.marketAdp)
+                        : 9999;
+
+                var bMarket =
+                    b.marketAdp != null
+                        ? Number(b.marketAdp)
+                        : 9999;
+
+                return aMarket - bMarket;
+            }
+
+            // Above-replacement players always stay ahead of below-replacement players.
+            if (aAboveReplacement !== bAboveReplacement) {
+                return aAboveReplacement ? -1 : 1;
+            }
+
+            // Both are below replacement:
+            // stop comparing cross-position negative VOR and use actual market order.
+            var aHasMarket =
+                a.marketAdp != null &&
+                isFinite(Number(a.marketAdp));
+
+            var bHasMarket =
+                b.marketAdp != null &&
+                isFinite(Number(b.marketAdp));
+
+            if (aHasMarket && !bHasMarket) {
+                return -1;
+            }
+
+            if (!aHasMarket && bHasMarket) {
+                return 1;
+            }
+
+            if (aHasMarket && bHasMarket) {
+                var marketDifference =
+                    Number(a.marketAdp) -
+                    Number(b.marketAdp);
+
+                if (Math.abs(marketDifference) > 1e-9) {
+                    return marketDifference;
+                }
+            }
+
+            // No real market data: fall back to raw VOR.
+            var tailVorDifference = bVor - aVor;
+
+            if (Math.abs(tailVorDifference) > 1e-9) {
+                return tailVorDifference;
+            }
+
+            // Next fallback: projected PPG.
+            var aPpg =
+                a.projectedPpg != null
+                    ? Number(a.projectedPpg)
+                    : -9999;
+
+            var bPpg =
+                b.projectedPpg != null
+                    ? Number(b.projectedPpg)
+                    : -9999;
+
+            if (Math.abs(bPpg - aPpg) > 1e-9) {
+                return bPpg - aPpg;
+            }
+
+            return String(a.name || '')
+                .localeCompare(String(b.name || ''));
         });
+
         scored.forEach(function (x, i) {
             x._mr = i;
         });
+
         players = scored.slice(0, LIMIT);
 
-        maxVor = players.length ? Math.max.apply(null, players.map(function (x) {
-            return Math.max(1, x.vor);
-        })) : 1;
+        maxVor = players.length
+            ? Math.max.apply(
+                null,
+                players.map(function (x) {
+                    return Math.max(
+                        1,
+                        x.vorRaw != null
+                            ? Number(x.vorRaw)
+                            : 0
+                    );
+                })
+            )
+            : 1;
+
         var pc = {};
         var availableRank = 0;
+
         players.forEach(function (x, i) {
-            x.drafted = draftedIds ? draftedIds.has(x.id) : false;
+            x.drafted = draftedIds
+                ? draftedIds.has(x.id)
+                : false;
+
             x.rk = i + 1;
-            x.recRank = recommendationOrder && recommendationOrder[x.id] != null
-                ? recommendationOrder[x.id] + 1 : null;
-            x.value = (x.adp != null && x.rk != null) ? Math.round(x.adp - x.rk) : null;
-            x.good = state.mode === 'dynasty' ? (youthWindow(x.age, x.pos)[1] === 'win-asc' ? 1 : 0) : (x.value != null && x.value >= 5 ? 1 : 0);
-            x.posfull = myCounts ? ((needByPos[x.pos] && needByPos[x.pos].need) <= 0 && (needByPos[x.pos] && needByPos[x.pos].have) > 0) : false;
+
+            x.recRank =
+                recommendationOrder &&
+                recommendationOrder[x.id] != null
+                    ? recommendationOrder[x.id] + 1
+                    : null;
+
+            x.value =
+                x.adp != null &&
+                x.rk != null
+                    ? Math.round(x.adp - x.rk)
+                    : null;
+
+            x.good =
+                state.mode === 'dynasty'
+                    ? (youthWindow(x.age, x.pos)[1] === 'win-asc' ? 1 : 0)
+                    : (x.value != null && x.value >= 5 ? 1 : 0);
+
+            x.posfull =
+                myCounts
+                    ? (
+                        (needByPos[x.pos] && needByPos[x.pos].need) <= 0 &&
+                        (needByPos[x.pos] && needByPos[x.pos].have) > 0
+                    )
+                    : false;
+
             pc[x.pos] = (pc[x.pos] || 0) + 1;
+
             x.posRankN = pc[x.pos];
             x.prk = x.pos + x.posRankN;
         });
+
         assignTiers();
         applyOverrides();
     }
@@ -719,9 +985,15 @@
     function assignTiers() {
         var n = players.length;
         if (!n) return;
-        var vals = players.map(function (p) {
-            return p.vor;
-        });   // already sorted desc
+        var vals = players.map(function (p, i) {
+            if (
+                p.vorRaw != null &&
+                Number(p.vorRaw) > 0
+            ) {
+                return 10000 + Number(p.vorRaw);
+            }
+            return -i;
+        });
 
         var NUM_TIERS = 12, MIN_SIZE = 5, ELITE_MIN = 3, MAX_SPAN = 220, WINDOW = 10, SIG_MIN = 2.0;
 
@@ -1147,10 +1419,12 @@
             var recChip = x.recRank != null ? '<span class="cs-ovchip bump">REC #' + x.recRank + '</span>' : '';
             var projChip = pk ? '<span class="cs-ovchip bump" title="Projected pick ' + pk.label + ' (overall #' + pk.pn + ')">Proj ' + pk.label + '</span>' : '';
             html += '<tr class="' + cls + '" data-good="' + x.good + '" data-posfull="' + (x.posfull ? 1 : 0) + '" data-name="' + esc(x.name) + '" data-id="' + esc(x.id) + '">'
-                + '<td class="cs-rk">' + (x.rk == null ? '&ndash;' : x.rk) + '</td>'
-                + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + recChip + projChip + ovChip(x) + '</span></td>'
-                + '<td>' + posrk(x) + '</td>'
-                + '<td class="cs-vor-col"><span class="cs-vorwrap"><span class="cs-num">' + x.vor + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.vor / maxVor * 100)) + '%"></i></span></span></td>'
+            + '<td class="cs-rk">' + (x.rk == null ? '&ndash;' : x.rk) + '</td>'
+            + '<td><span class="cs-pcell">' + badge(x.pos) + '<span class="cs-pname">' + esc(x.name) + '</span>' + recChip + projChip + ovChip(x) + '</span></td>'
+            + '<td>' + posrk(x) + '</td>'
+            + '<td class="cs-vor-col"><span class="cs-vorwrap"><span class="cs-num">' + x.vorRaw != null
+                ? Number(x.vorRaw).toFixed(1)
+                : '&ndash;' + '</span><span class="cs-vorbar"><i style="width:' + Math.max(0, Math.round(x.vor / maxVor * 100)) + '%"></i></span></span></td>'
                 + '<td class="cs-num">' + (x.projectedPpg != null ? x.projectedPpg.toFixed(1) : '&ndash;') + '</td>'
                 + c5 + c6 + '<td class="cs-num" title="Full fantasy-season strength of schedule; 1 is easiest">' + (x.scheduleRank ? '#' + x.scheduleRank : '&ndash;') + '</td>' + market + ovControls(x) + '</tr>';
         });
