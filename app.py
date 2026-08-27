@@ -3291,7 +3291,8 @@ def _link_modal_html() -> str:
       };
     })();
     </script>
-    """    import re as _re
+    """
+    import re as _re
     if not _yahoo_ui_enabled():
         _modal = _modal.replace(
             "<button type=\"button\" class=\"link-tab\" data-lp=\"yahoo\" onclick=\"linkTab('yahoo')\">Yahoo</button>",
