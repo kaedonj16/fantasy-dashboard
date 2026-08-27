@@ -101,7 +101,7 @@ def test_market_column_is_conditionally_omitted_from_table_and_export():
     assert "SHOW_MARKET_VS_ADP = resp.market_vs_adp_available === true" in script
     assert "showMarket(dyn) ? sortTh('market'" in script
     assert "showMarket(dyn) ? ['Market vs ADP'] : []" in script
-    assert "showHist() ? ['Hist P(top-12)'] : []" in script
+    assert "showHist(dyn) ? ['Hist P(top-12)'] : []" in script
     assert "Not enough independent market data yet." in script
     assert "marketBasis" in script
     assert "marketConfidenceLabel" in script
@@ -319,7 +319,7 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "var SHOW_HISTORICAL = false" in script
     assert "SHOW_HISTORICAL = resp.historical_available === true" in script
     assert "sortTh('hist', 'Hist'" in script
-    assert "function histCell(x)" in script
+    assert "function histCell(x, dyn)" in script
     assert "/api/historical-player/" in script
     assert "openHistPanel" in script
     assert "e.target.closest('.cs-hist-btn')" in script
@@ -328,6 +328,10 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "histP" not in script.split("scored.sort(function (a, b) {")[1].split("scored.forEach")[0]
     assert "similar-profile P(top-12), not a rank" in script
     assert "the info button opens named comps" in body.lower()
+    assert "return !dyn && SHOW_HISTORICAL" in script
+    assert "var HIST_STRONG_PCT = 25" in script
+    assert "market_higher" not in script.split("function histCell")[1].split("function smallVal")[0]
+    assert "Hist is redraft-only" in body
     assert ".cs-wrap, .cs-hist-modal {" in body
     assert "z-index: var(--z-modal, 10000)" in body
     assert ".cs-hist-head" in body
