@@ -12,15 +12,26 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 import json
+import logging
 from statistics import median
 from typing import Any, Mapping, Optional
 
 from utils.fantasy_scoring import projection_points
 from utils.proj_variant import pick_proj_variant
 
-PROJECTION_CACHE_VERSION = "canonical-projection-v1"
+PROJECTION_CACHE_VERSION = "canonical-projection-v2"
 SEASON_AVERAGE = "season_average"
 WEEKLY = "weekly"
+POINTS_PER_GAME = "points_per_game"
+POINTS = "points"
+_LOG = logging.getLogger(__name__)
+
+# These are corruption detectors, not fantasy-performance caps. Even extreme
+# historical K/DST weeks remain far below this value; a 50-150 value in a PPG
+# field is overwhelmingly a season total. Skill-position projections use a
+# wider guard solely to reject obvious unit/category corruption.
+_MAX_PLAUSIBLE_PPG = {"K": 30.0, "DEF": 40.0}
+_DEFAULT_MAX_PLAUSIBLE_PPG = 80.0
 
 
 def scoring_fingerprint(settings: Optional[Mapping[str, Any]]) -> str:
@@ -49,6 +60,11 @@ class ProjectionResult:
     season: int
     week: Optional[int]
     fallback_used: bool
+    source_projection_type: Optional[str] = None
+    unit: str = POINTS_PER_GAME
+    position: str = ""
+    season_points: Optional[float] = None
+    projected_games: Optional[float] = None
     cache_version: str = PROJECTION_CACHE_VERSION
 
     def to_dict(self) -> dict:
@@ -63,10 +79,50 @@ def _positive(value) -> Optional[float]:
     return round(value, 2) if value > 0 else None
 
 
-def _sleeper_week_value(entry, settings, pos="") -> Optional[float]:
+def _valid_ppg(value, pos="", *, player_id="", origin="") -> Optional[float]:
+    value = _positive(value)
+    if value is None:
+        return None
+    normalized_pos = str(pos or "").upper()
+    ceiling = _MAX_PLAUSIBLE_PPG.get(normalized_pos, _DEFAULT_MAX_PLAUSIBLE_PPG)
+    if value > ceiling:
+        _LOG.warning("Rejected implausible projected PPG (possible season-total unit): "
+                     "player=%s pos=%s value=%s origin=%s", player_id,
+                     normalized_pos or "unknown", value, origin or "unknown")
+        return None
+    return value
+
+
+def _sleeper_week_value(entry, settings, pos="", player_id="") -> Optional[float]:
     if entry is None:
         return None
-    return _positive(projection_points(entry, dict(settings or {}), pos))
+    return _valid_ppg(projection_points(entry, dict(settings or {}), pos), pos,
+                      player_id=player_id, origin="sleeper_week")
+
+
+def _season_total_projection(entry, settings, pos="", player_id=""):
+    """Return ``(ppg, season_points, projected_games)`` from explicit totals.
+
+    Sleeper occasionally reports ``gp=18`` with the bye included. Reuse the
+    fetch pipeline's active-game semantics rather than blindly dividing by 17.
+    """
+    if not isinstance(entry, Mapping):
+        return None, None, None
+    from data_building.fetch_projections import season_games_for_ppg
+    # projection_points uses Sleeper's published pts_* total for standard
+    # formats and centrally scores preserved raw season stats for custom rules.
+    raw_stats = entry.get("raw_stats")
+    if not isinstance(raw_stats, Mapping) and any(entry.get(k) is not None for k in
+                                                  ("pts_ppr", "pts_half_ppr", "pts_std")):
+        raw_stats = entry
+    score_entry = {"raw_stats": raw_stats} if isinstance(raw_stats, Mapping) else entry
+    points = _positive(projection_points(score_entry, dict(settings or {}), pos))
+    if points is None:
+        return None, None, None
+    games = season_games_for_ppg(entry.get("gp"))
+    ppg = _valid_ppg(points / games, pos, player_id=player_id,
+                     origin=f"sleeper_season/{games:g}")
+    return ppg, round(points, 2), games
 
 
 def resolve_projected_ppg(player_id: str, scoring_settings: Optional[Mapping] = None,
@@ -74,12 +130,13 @@ def resolve_projected_ppg(player_id: str, scoring_settings: Optional[Mapping] = 
                           projection_type: str = SEASON_AVERAGE, *,
                           weekly_maps: Optional[Mapping[int, Mapping]] = None,
                           position: str = "", secondary_ppg=None,
-                          conservative_ppg=None, sleeper_season_ppg=None) -> dict:
+                          conservative_ppg=None, sleeper_season_ppg=None,
+                          sleeper_season_entry=None) -> dict:
     """Resolve one explicit projection context using a uniform fallback order.
 
     ``weekly_maps`` is injectable to keep the kernel pure and testable.  Without
-    it, cached Sleeper week files are loaded.  Season average is the median of
-    positive active-week projections (byes do not become zero-point games).
+    it, cached Sleeper week files are loaded. Season average uses the Sleeper
+    season product first; a positive-week median is only its explicit fallback.
     """
     if projection_type not in (SEASON_AVERAGE, WEEKLY):
         raise ValueError("projection_type must be 'season_average' or 'weekly'")
@@ -93,26 +150,48 @@ def resolve_projected_ppg(player_id: str, scoring_settings: Optional[Mapping] = 
         weeks = [int(week)] if projection_type == WEEKLY else list(range(1, 19))
         weekly_maps = {w: load_week_projection(int(season), w) or {} for w in weeks}
     weeks = [int(week)] if projection_type == WEEKLY else sorted(weekly_maps)
-    values = [_sleeper_week_value((weekly_maps.get(w) or {}).get(pid), settings, position)
+    values = [_sleeper_week_value((weekly_maps.get(w) or {}).get(pid), settings, position, pid)
               for w in weeks]
     values = [v for v in values if v is not None]
-    if values:
-        ppg, source, fallback = (values[0] if projection_type == WEEKLY else round(median(values), 2)), "sleeper", False
-    else:
-        # Sleeper's season feed covers players absent from preseason week files.
-        # It is still primary, not a provider fallback.
-        ppg = _positive(sleeper_season_ppg) if projection_type == SEASON_AVERAGE else None
-        source, fallback = ("sleeper", False) if ppg is not None else (None, True)
-    if ppg is None:
-        ppg = _positive(secondary_ppg)
-        source, fallback = ("secondary", True) if ppg is not None else (None, True)
-        if ppg is None:
-            ppg = _positive(conservative_ppg)
+    season_points = projected_games = None
+    ppg = source = source_projection_type = None
+    fallback = True
+    if projection_type == SEASON_AVERAGE:
+        # Strict authority: Sleeper's season product outranks any aggregation of
+        # weekly products. Weekly-derived PPG exists only as a source fallback.
+        ppg, season_points, projected_games = _season_total_projection(
+            sleeper_season_entry, settings, position, pid)
+        if ppg is not None:
+            source, source_projection_type, fallback = "sleeper", "sleeper_season", False
+        elif sleeper_season_entry is None and sleeper_season_ppg is not None:
+            # Unit-safe compatibility input from older callers, never preferred
+            # over an explicit season stat line.
+            ppg = _valid_ppg(sleeper_season_ppg, position, player_id=pid,
+                             origin="sleeper_season_ppg")
             if ppg is not None:
-                source = "conservative"
+                source, source_projection_type, fallback = "sleeper", "sleeper_season", False
+        if ppg is None and values:
+            ppg = round(median(values), 2)
+            source, source_projection_type, fallback = "sleeper", "sleeper_weekly_derived", True
+    elif values:
+        ppg = values[0]
+        source, source_projection_type, fallback = "sleeper", "sleeper_week", False
+    if ppg is None:
+        ppg = _valid_ppg(secondary_ppg, position, player_id=pid, origin="secondary_ppg")
+        source, source_projection_type, fallback = (("secondary", projection_type, True)
+                                                    if ppg is not None else (None, None, True))
+        if ppg is None:
+            ppg = _valid_ppg(conservative_ppg, position, player_id=pid,
+                             origin="conservative_ppg")
+            if ppg is not None:
+                source, source_projection_type = "conservative", projection_type
     return ProjectionResult(ppg, source, projection_type, variant,
                             scoring_fingerprint(settings), int(season),
-                            int(week) if week is not None else None, fallback).to_dict()
+                            int(week) if week is not None else None, fallback,
+                            source_projection_type=source_projection_type,
+                            position=str(position or "").upper(),
+                            season_points=season_points,
+                            projected_games=projected_games).to_dict()
 
 
 def resolve_projected_ppg_many(player_ids, scoring_settings=None, season=2026,
@@ -124,17 +203,14 @@ def resolve_projected_ppg_many(player_ids, scoring_settings=None, season=2026,
         from utils.utils import load_week_projection
         weeks = [int(week)] if projection_type == WEEKLY else list(range(1, 19))
         weekly_maps = {w: load_week_projection(int(season), w) or {} for w in weeks}
-    sleeper_season = {}
+    sleeper_season_lines = {}
     if projection_type == SEASON_AVERAGE:
         # This compatibility fill is provider data, not a different authority.
-        from data_building.fetch_projections import fetch_sleeper_season_ppg_variants
-        by_player = fetch_sleeper_season_ppg_variants(int(season)) or {}
-        variant = pick_proj_variant(dict(scoring_settings or {}))
-        sleeper_season = {str(pid): (row or {}).get(variant) or (row or {}).get("ppr")
-                          for pid, row in by_player.items()}
+        from data_building.fetch_projections import load_sleeper_season_stat_lines
+        sleeper_season_lines = load_sleeper_season_stat_lines(int(season)) or {}
     return {str(pid): resolve_projected_ppg(
         str(pid), scoring_settings, season, week, projection_type,
         weekly_maps=weekly_maps, position=(positions or {}).get(str(pid), ""),
         secondary_ppg=(secondary or {}).get(str(pid)),
         conservative_ppg=(conservative or {}).get(str(pid)),
-        sleeper_season_ppg=sleeper_season.get(str(pid))) for pid in player_ids}
+        sleeper_season_entry=sleeper_season_lines.get(str(pid))) for pid in player_ids}

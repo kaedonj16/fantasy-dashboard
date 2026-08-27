@@ -4534,10 +4534,19 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         total_rosters = int((league or {}).get("total_rosters") or 0)
     else:
         scoring_settings = get_effective_scoring_settings()
-        raw_scoring_settings = {}
+        # Provider adapters normalize into the same Sleeper-style keys. Preserve
+        # that object as the raw scoring contract used by projections and weekly
+        # features instead of silently falling back to Standard scoring.
+        raw_scoring_settings = dict(scoring_settings)
         roster_positions = get_roster_positions()
         league_settings = get_league_settings()
         total_rosters = get_total_rosters()
+
+    from utils.league_scoring import normalize_league_scoring
+    scoring_settings = normalize_league_scoring(
+        platform, scoring_settings, league_id=resolved_league_id, season=season)
+    raw_scoring_settings = normalize_league_scoring(
+        platform, raw_scoring_settings, league_id=resolved_league_id, season=season)
 
     # Core computed tables
     if offseason_mode:
@@ -15736,7 +15745,24 @@ def api_league_players():
             _projection_player["projection"] = _projection
             _projection_player["proj_ppg"] = _projection.get("ppg")
     except Exception as _projection_error:
-        logger.info("[api/league-players] canonical projection resolution skipped: %s", _projection_error)
+        logger.exception("[api/league-players] canonical projection resolution failed")
+        # The production contract always carries explicit canonical metadata,
+        # even during an upstream/cache failure. Legacy proj_ppg remains only a
+        # client compatibility field; it is not silently promoted to canonical.
+        from utils.projection_resolver import (PROJECTION_CACHE_VERSION as _pcv,
+                                               scoring_fingerprint as _scoring_fp)
+        _failed_fp = _scoring_fp(locals().get("_projection_settings") or {})
+        _failed_season = int(locals().get("_projection_season") or datetime.now().year)
+        for _projection_player in payload.get("players") or []:
+            _projection_player["projection"] = {
+                "ppg": None, "season_points": None, "projected_games": None,
+                "source": None, "source_projection_type": None,
+                "projection_type": "season_average", "unit": "points_per_game",
+                "scoring_variant": None, "scoring_fingerprint": _failed_fp,
+                "season": _failed_season, "week": None, "fallback_used": True,
+                "position": str(_projection_player.get("position") or "").upper(),
+                "cache_version": _pcv,
+            }
 
     # Season context only. Weekly props are deliberately never annualized for
     # the Cheat Sheet. The copy keeps the shared cached player pool immutable.
@@ -15890,10 +15916,9 @@ def api_league_players():
                 return resp
 
     resp = jsonify(_sanitize_for_json(payload))
-    # Payload is global (varies only by kdef) and refreshes at most every ~15 min,
-    # so a short shared cache is safe and trims repeat loads. The Draft Room still
-    # fetches with cache:'no-store', so it always re-validates.
-    resp.headers["Cache-Control"] = "public, max-age=120"
+    # Projection rows vary by scoring fingerprint and schema version. Do not let
+    # a CDN/browser retain a pre-contract or differently scored player payload.
+    resp.headers["Cache-Control"] = "no-store"
     return resp
 
 
@@ -16940,7 +16965,11 @@ def api_player_details(player_id: str):
         _total_pts_ovr_rank = None
         try:
             import os as _os, json as _json2
-            _ppr_val = scoring_settings.get("pointsPerReception", 0.5)
+            _ppr_val = scoring_settings.get("rec")
+            if _ppr_val is None:
+                _ppr_val = scoring_settings.get("pointsPerReception")
+            if _ppr_val is None:
+                _ppr_val = 0.5
 
             def _pick_ppg(u):
                 if _ppr_val >= 1.0:

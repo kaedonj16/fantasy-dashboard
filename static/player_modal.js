@@ -155,7 +155,9 @@ function openPlayerModal(playerId, playerName, opts) {
   } catch (_) {}
 
   // Fetch player data (with 5-min localStorage cache to speed up re-opens)
-  const _cacheKey = 'pm_cache_' + apiUrl;
+  // Contract version prevents pre-canonical projection/scoring payloads from
+  // surviving a deploy. apiUrl already carries platform/league/season context.
+  const _cacheKey = 'pm_cache_v3_' + apiUrl;
   const _cacheTTL = 5 * 60 * 1000;
   let _cachedRaw = null;
   try {

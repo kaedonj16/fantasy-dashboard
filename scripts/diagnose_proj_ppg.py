@@ -110,8 +110,13 @@ def main() -> int:
                 for pid, v in site_flat.items() if v}
 
     print("=" * 64)
+    from utils.projection_resolver import scoring_fingerprint
     print(f"League {platform}:{league_id}:{season}  current_week={current_week}  "
-          f"variant={variant}")
+          f"variant={variant} scoring_fingerprint={scoring_fingerprint(raw_ss)}")
+    print("Normalized scoring: " + " ".join(
+        f"{key}={raw_ss.get(key)!r}" for key in
+        ("rec", "pass_td", "bonus_rec_te", "pass_yd", "rush_yd", "rec_yd")
+    ))
     print(f"SIM   map: {len(sim_ppg):>5} players (build_ppg_map, proj_week="
           f"{current_week + 1 if current_week > 0 else 1})")
     print(f"SITE  map: {len(site_ppg):>5} players (build_projections_by_week "
@@ -155,8 +160,13 @@ def main() -> int:
             src = "neither"
         nm = names.get(str(pid), str(pid))[:24]
         cv = (canonical.get(str(pid)) or {}).get("ppg")
-        provenance = (canonical.get(str(pid)) or {}).get("source") or "unavailable"
-        return (pos, nm, cv, sv, wv, src, provenance)
+        result = canonical.get(str(pid)) or {}
+        provenance = result.get("source") or "unavailable"
+        source_type = result.get("source_projection_type") or "none"
+        season_detail = ""
+        if result.get("season_points") is not None:
+            season_detail = f" {result['season_points']:.1f}pts/{result.get('projected_games') or '?'}g"
+        return (pos, nm, cv, sv, wv, src, provenance + "/" + source_type + season_detail)
 
     rows = sorted((_row(p) for p in pids), key=lambda x: max(x[2] or 0, x[3], x[4]), reverse=True)
     for pos, nm, cv, sv, wv, src, provenance in rows:

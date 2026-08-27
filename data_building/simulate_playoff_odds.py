@@ -1088,24 +1088,22 @@ def _estimate_from_rosters(
             })
         return teams
 
-    # Detect scoring format — Sleeper uses "rec", non-Sleeper uses "pointsPerReception"
-    _ss = ctx.get("scoring_settings") or {}
-    rec_pts = float(_ss.get("rec") or _ss.get("pointsPerReception") or 0)
-    if rec_pts >= 1.0:
-        scoring  = "ppr"
-    elif rec_pts >= 0.5:
-        scoring  = "half_ppr"
-    else:
-        scoring  = "std"
-
-    # ── Source 1: Sleeper season projection aggregate ────────────────────────
+    # ── Source 1: canonical Sleeper season projection ────────────────────────
     ppg_map: dict[str, dict] = {}
     try:
-        from data_building.fetch_projections import fetch_sleeper_season_projections
-        sleeper_data = fetch_sleeper_season_projections(season, scoring)
+        from utils.projection_resolver import resolve_projected_ppg_many
+        from utils.utils import load_players_index
+        _players_idx = load_players_index() or {}
+        _roster_ids = {str(pid) for roster in (ctx.get("rosters") or [])
+                       for pid in (roster.get("players") or [])}
+        _positions = {pid: str((_players_idx.get(pid) or {}).get("pos") or "")
+                      for pid in _roster_ids}
+        sleeper_data = resolve_projected_ppg_many(
+            _roster_ids, ctx.get("raw_scoring_settings") or ctx.get("scoring_settings") or {},
+            season, positions=_positions)
         for pid, info in sleeper_data.items():
-            if info.get("ppg", 0) > 0:
-                ppg_map[str(pid)] = {"ppg": info["ppg"], "pos": info.get("pos", "")}
+            if (info.get("ppg") or 0) > 0:
+                ppg_map[str(pid)] = {"ppg": info["ppg"], "pos": _positions.get(str(pid), "")}
         if ppg_map:
             logger.info("[playoff_odds] Using Sleeper projections: %d players", len(ppg_map))
     except Exception as exc:

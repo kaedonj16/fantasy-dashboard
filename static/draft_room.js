@@ -4570,16 +4570,6 @@
         + gradeBars(g)
         + '</div></div>';
     }
-    html += '<div class="dr-roster">';
-    // Highest-projected legal lineup (projection-first, value fallback), so the
-    // strongest scorer fills each slot - a high-proj QB takes SF over a weaker flex.
-    var _olN = optimalLineup(mine, lineupSlots());
-    _olN.starters.forEach(function(s){ html += slotRow(s.slot, s.p); });
-    var bench = _olN.bench;
-    html += '<div class="dr-roster-div">Bench</div>';
-    if (bench.length){ bench.forEach(function(p){ html += slotRow('BN', p); }); }
-    else { html += slotRow('BN', null); }
-    html += '</div>';
     // Roster projection: scoring-adjusted Sleeper upcoming-season proj_ppg only
     // (including 0). Last-season actuals are never a projection stand-in.
     function _pPpg(p){ return scoringProjPpg(p); }
@@ -4608,6 +4598,16 @@
           + '<div class="dr-proj-bar-lbl">' + projPlayers.length + ' of ' + mine.length + ' picks have projection data</div></div>' : '')
         + '</div>';
     }
+    html += '<div class="dr-roster">';
+    // Highest-projected legal lineup (projection-first, value fallback), so the
+    // strongest scorer fills each slot - a high-proj QB takes SF over a weaker flex.
+    var _olN = optimalLineup(mine, lineupSlots());
+    _olN.starters.forEach(function(s){ html += slotRow(s.slot, s.p); });
+    var bench = _olN.bench;
+    html += '<div class="dr-roster-div">Bench</div>';
+    if (bench.length){ bench.forEach(function(p){ html += slotRow('BN', p); }); }
+    else { html += slotRow('BN', null); }
+    html += '</div>';
     listInto(html);
   }
 
