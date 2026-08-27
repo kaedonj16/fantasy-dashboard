@@ -466,12 +466,12 @@
   // Each preset carries the full format it implies - draft type, Superflex,
   // and PPR - so applying one lines the whole setup up, not just the slots.
   var ROSTER_PRESETS = {
-    espn:      { label:'ESPN',       type:'redraft', ppr:0.5, QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:8 },
-    sleeper:   { label:'Sleeper',    type:'redraft', ppr:0.5, QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:2,K:0,DEF:0,BN:7 },
-    yahoo:     { label:'Yahoo',      type:'redraft', ppr:0.5, QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:6 },
+    espn:      { label:'ESPN',       type:'redraft', ppr:1,   QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:8 },
+    sleeper:   { label:'Sleeper',    type:'redraft', ppr:1,   QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:2,K:0,DEF:0,BN:7 },
+    yahoo:     { label:'Yahoo',      type:'redraft', ppr:1,   QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:6 },
     standard:  { label:'Standard',   type:'redraft', ppr:0,   QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:6 },
-    sfredraft: { label:'Superflex',  type:'redraft', ppr:0.5, QB:1,SF:1,RB:2,WR:2,TE:1,FLEX:1,K:0,DEF:0,BN:7 },
-    bestball:  { label:'Best Ball',  type:'redraft', ppr:0.5, QB:1,SF:0,RB:2,WR:3,TE:1,FLEX:1,K:0,DEF:0,BN:12 },
+    sfredraft: { label:'Superflex',  type:'redraft', ppr:1,   QB:1,SF:1,RB:2,WR:2,TE:1,FLEX:1,K:0,DEF:0,BN:7 },
+    bestball:  { label:'Best Ball',  type:'redraft', ppr:1,   QB:1,SF:0,RB:2,WR:3,TE:1,FLEX:1,K:0,DEF:0,BN:12 },
     dynasty:   { label:'Dynasty SF', type:'startup', ppr:1,   QB:1,SF:1,RB:2,WR:3,TE:1,FLEX:2,K:0,DEF:0,BN:15 },
     dynasty1q: { label:'Dynasty 1QB',type:'startup', ppr:1,   QB:1,SF:0,RB:2,WR:3,TE:1,FLEX:2,K:0,DEF:0,BN:15 }
   };
