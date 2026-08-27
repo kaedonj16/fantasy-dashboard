@@ -49,6 +49,17 @@ def _request_post(url: str, **kwargs):
 
 
 def _raise_for_status(response) -> None:
+    """Translate checked HTTP failures without importing requests at collection.
+
+    Successful mocked responses must not require ``requests`` so the lightweight
+    unit-test job (pytest only) can exercise provider auth paths.
+    """
+    status = getattr(response, "status_code", None)
+    try:
+        if status is not None and 200 <= int(status) < 400:
+            return
+    except (TypeError, ValueError):
+        pass
     import requests
     try:
         response.raise_for_status()
