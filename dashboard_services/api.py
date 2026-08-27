@@ -630,7 +630,7 @@ def _previous_league_id(league: dict) -> str:
 
 
 def _probe_same_id_history(platform: str, league_id: str, season: int) -> dict[int, str]:
-    """ESPN / Yahoo / MFL reuse one league id across years — probe prior seasons.
+    """Providers that reuse one league id across years — probe prior seasons.
 
     Stops after two consecutive misses so a first-year league doesn't hammer
     a decade of 404s. The requested season is always included.
@@ -639,16 +639,9 @@ def _probe_same_id_history(platform: str, league_id: str, season: int) -> dict[i
     if ".l." in lid:
         lid = lid.split(".l.")[-1]
     season_map: dict[int, str] = {int(season): lid}
+    platform = str(platform or "").strip().lower()
 
     def _exists(year: int) -> bool:
-        if platform == "espn":
-            from dashboard_services.providers.espn_api import _league_cached as _espn_league
-            _espn_league(year, lid)
-            return True
-        if platform == "mfl":
-            from dashboard_services.providers.registry import get_provider
-            get_provider("mfl").get_league(lid, year)
-            return True
         if platform == "yahoo":
             from dashboard_services.platform_api import _yahoo_token
             from dashboard_services.providers import yahoo_api
@@ -656,7 +649,11 @@ def _probe_same_id_history(platform: str, league_id: str, season: int) -> dict[i
             if not token:
                 return False
             return yahoo_api.yahoo_league_exists_for_season(token, lid, year)
-        return False
+        # Registry-backed providers (ESPN, MFL, Fleaflicker, …) share this path
+        # so feature code never grows per-platform history branches.
+        from dashboard_services.providers.registry import get_provider
+        get_provider(platform).get_league(lid, year)
+        return True
 
     consecutive_failures = 0
     for yr in range(int(season) - 1, max(int(season) - 10, 2010) - 1, -1):
@@ -679,12 +676,13 @@ def build_league_history_map(platform: str, league_id: str, season: int) -> dict
         {season_int: league_id}
 
     Walks backward through previous_league_id for Sleeper.
-    For ESPN, Yahoo, and MFL, the same league_id is reused across years —
+    For other registry providers that reuse one league id across years,
     probe prior seasons directly.
     """
     platform = str(platform or "").strip().lower()
 
-    if platform in ("espn", "yahoo", "mfl"):
+    from dashboard_services.providers.registry import provider_keys
+    if platform in provider_keys() and platform != "sleeper":
         cache_key = f"{platform}:{league_id}"
         now = time.time()
         cached = LEAGUE_HISTORY_CACHE.get(cache_key)

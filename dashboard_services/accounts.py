@@ -132,10 +132,13 @@ def init_accounts_tables() -> None:
                 last_synced_at        TIMESTAMPTZ,
                 last_successful_sync_at TIMESTAMPTZ,
                 last_error_code       TEXT,
-                credential_expires_at TIMESTAMPTZ,
-                UNIQUE (account_id, provider, connection_method)
+                credential_expires_at TIMESTAMPTZ
             )
             """
+        )
+        conn.execute(
+            """CREATE INDEX IF NOT EXISTS fantasy_provider_connections_account_provider_idx
+               ON fantasy_provider_connections (account_id, provider, connection_method)"""
         )
         for col, defn in (
             ("last_synced_at", "TIMESTAMPTZ"),
@@ -205,33 +208,49 @@ def _decrypt_provider_credentials(encrypted: str) -> Optional[dict]:
         return None
 
 
-def get_espn_league_credentials(account_id: int, league_id: str, season: int) -> Optional[dict]:
+def get_provider_league_credentials(
+    account_id: int, provider: str, league_id: str, season: int,
+) -> Optional[dict]:
     """Return decrypted credentials only to backend provider code."""
+    provider = str(provider or "").strip().lower()
     init_accounts_tables()
     from dashboard_services.db import get_conn
     with get_conn() as conn:
         row = conn.execute(
             """SELECT c.encrypted_credentials FROM user_leagues l
                JOIN fantasy_provider_connections c ON c.id = l.provider_connection_id
-               WHERE l.account_id = %s AND l.platform = 'espn' AND l.league_id = %s
+               WHERE l.account_id = %s AND l.platform = %s AND l.league_id = %s
                  AND l.season = %s AND c.status = 'connected'""",
-            (account_id, str(league_id), int(season)),
+            (account_id, provider, str(league_id), int(season)),
         ).fetchone()
     if not row or not row["encrypted_credentials"]:
         return None
     credentials = _decrypt_provider_credentials(row["encrypted_credentials"])
     if credentials is None:
-        logger.warning("Unable to decrypt stored ESPN credentials for connection")
+        logger.warning("Unable to decrypt stored %s credentials for connection", provider)
     return credentials
 
 
-def stage_private_espn_connection(
-    league_id: str, season: int, name: str, swid: str, espn_s2: str,
+def get_espn_league_credentials(account_id: int, league_id: str, season: int) -> Optional[dict]:
+    """ESPN-specific alias for get_provider_league_credentials."""
+    return get_provider_league_credentials(account_id, "espn", league_id, season)
+
+
+def stage_private_provider_connection(
+    provider: str, league_id: str, season: int, name: str, credentials: dict,
 ) -> str:
     """Store validated onboarding secrets behind a short-lived opaque token."""
+    provider = str(provider or "").strip().lower()
+    if not provider or not isinstance(credentials, dict) or not credentials:
+        raise ValueError("Private provider connections require credentials.")
+    # Never persist passwords — callers must pass derived tokens/cookies/keys only.
+    safe = {k: v for k, v in credentials.items()
+            if k.lower() not in {"password", "passwd", "pass"} and v}
+    if not safe:
+        raise ValueError("Private provider connections require credentials.")
     token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token.encode()).hexdigest()
-    encrypted = _encrypt_provider_credentials({"swid": swid, "espn_s2": espn_s2})
+    encrypted = _encrypt_provider_credentials(safe)
     init_accounts_tables()
     from dashboard_services.db import get_conn
     with get_conn() as conn:
@@ -240,14 +259,23 @@ def stage_private_espn_connection(
             """INSERT INTO pending_provider_connections
                (token_hash,provider,connection_method,league_id,season,league_name,
                 encrypted_credentials,expires_at)
-               VALUES (%s,'espn','private',%s,%s,%s,%s,now()+interval '15 minutes')""",
-            (token_hash, str(league_id), int(season), name, encrypted),
+               VALUES (%s,%s,'private',%s,%s,%s,%s,now()+interval '15 minutes')""",
+            (token_hash, provider, str(league_id), int(season), name, encrypted),
         )
         conn.commit()
     return token
 
 
-def consume_private_espn_connection(token: str) -> Optional[dict]:
+def stage_private_espn_connection(
+    league_id: str, season: int, name: str, swid: str, espn_s2: str,
+) -> str:
+    """Store validated ESPN onboarding secrets behind a short-lived opaque token."""
+    return stage_private_provider_connection(
+        "espn", league_id, season, name, {"swid": swid, "espn_s2": espn_s2},
+    )
+
+
+def consume_private_provider_connection(token: str) -> Optional[dict]:
     """Atomically consume one staged connection after Google authentication."""
     if not token:
         return None
@@ -257,7 +285,8 @@ def consume_private_espn_connection(token: str) -> Optional[dict]:
     with get_conn() as conn:
         row = conn.execute(
             """DELETE FROM pending_provider_connections WHERE token_hash=%s
-               AND expires_at >= now() RETURNING league_id,season,league_name,encrypted_credentials""",
+               AND expires_at >= now()
+               RETURNING provider,league_id,season,league_name,encrypted_credentials""",
             (token_hash,),
         ).fetchone()
         conn.commit()
@@ -267,15 +296,27 @@ def consume_private_espn_connection(token: str) -> Optional[dict]:
     if not credentials:
         return None
     return {
-        "league_id": row["league_id"], "season": row["season"],
-        "name": row["league_name"], **credentials,
+        "provider": row["provider"], "league_id": row["league_id"],
+        "season": row["season"], "name": row["league_name"], **credentials,
     }
 
 
-def peek_private_espn_connection(token: str, league_id: str, season: int) -> Optional[dict]:
+def consume_private_espn_connection(token: str) -> Optional[dict]:
+    """ESPN-compatible consume; drops the provider key for historical callers."""
+    pending = consume_private_provider_connection(token)
+    if not pending:
+        return None
+    pending.pop("provider", None)
+    return pending
+
+
+def peek_private_provider_connection(
+    token: str, provider: str, league_id: str, season: int,
+) -> Optional[dict]:
     """Read an unexpired staged connection for an anonymous dashboard session."""
     if not token:
         return None
+    provider = str(provider or "").strip().lower()
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     init_accounts_tables()
     from dashboard_services.db import get_conn
@@ -283,8 +324,8 @@ def peek_private_espn_connection(token: str, league_id: str, season: int) -> Opt
         row = conn.execute(
             """SELECT league_id,season,league_name,encrypted_credentials
                FROM pending_provider_connections WHERE token_hash=%s AND expires_at>=now()
-               AND league_id=%s AND season=%s""",
-            (token_hash, str(league_id), int(season)),
+               AND provider=%s AND league_id=%s AND season=%s""",
+            (token_hash, provider, str(league_id), int(season)),
         ).fetchone()
     if not row:
         return None
@@ -293,47 +334,105 @@ def peek_private_espn_connection(token: str, league_id: str, season: int) -> Opt
              "name": row["league_name"], **credentials} if credentials else None)
 
 
-def add_espn_league_connection(
-    account_id: int, league_id: str, season: int, name: str,
-    connection_method: str, *, swid: Optional[str] = None, espn_s2: Optional[str] = None,
+def peek_private_espn_connection(token: str, league_id: str, season: int) -> Optional[dict]:
+    return peek_private_provider_connection(token, "espn", league_id, season)
+
+
+def add_provider_league_connection(
+    account_id: int, provider: str, league_id: str, season: int, name: str,
+    connection_method: str, *, credentials: Optional[dict] = None,
 ) -> None:
-    """Atomically persist a validated ESPN league and optional encrypted auth."""
+    """Atomically persist a validated league and optional encrypted auth.
+
+    Private credentials are stored per league via ``provider_connection_id``.
+    Passwords must never appear in ``credentials``.
+    """
+    provider = str(provider or "").strip().lower()
     if connection_method not in ("public", "private"):
-        raise ValueError("Invalid ESPN connection method.")
+        raise ValueError("Invalid provider connection method.")
     encrypted = None
     if connection_method == "private":
-        if not swid or not espn_s2:
-            raise ValueError("Private ESPN connections require both credentials.")
-        encrypted = _encrypt_provider_credentials({"swid": swid, "espn_s2": espn_s2})
+        if not isinstance(credentials, dict) or not credentials:
+            raise ValueError("Private provider connections require credentials.")
+        safe = {k: v for k, v in credentials.items()
+                if k.lower() not in {"password", "passwd", "pass"} and v}
+        if not safe:
+            raise ValueError("Private provider connections require credentials.")
+        encrypted = _encrypt_provider_credentials(safe)
     init_accounts_tables()
     from dashboard_services.db import get_conn
     with get_conn() as conn:
         connection_id = None
         if connection_method == "private":
-            connection_id = conn.execute(
-                """INSERT INTO fantasy_provider_connections
-                       (account_id, provider, connection_method, encrypted_credentials,
-                        status, last_authenticated_at)
-                   VALUES (%s, 'espn', 'private', %s, 'connected', now())
-                   ON CONFLICT (account_id, provider, connection_method) DO UPDATE SET
-                       encrypted_credentials = EXCLUDED.encrypted_credentials,
-                       status = 'connected', last_authenticated_at = now(), updated_at = now()
-                   RETURNING id""",
-                (account_id, encrypted),
-            ).fetchone()["id"]
+            existing = conn.execute(
+                """SELECT c.id FROM user_leagues l
+                   JOIN fantasy_provider_connections c ON c.id = l.provider_connection_id
+                   WHERE l.account_id=%s AND l.platform=%s AND l.league_id=%s AND l.season=%s""",
+                (account_id, provider, str(league_id), int(season)),
+            ).fetchone()
+            if existing:
+                connection_id = conn.execute(
+                    """UPDATE fantasy_provider_connections SET encrypted_credentials=%s,
+                           status='connected', last_authenticated_at=now(), updated_at=now(),
+                           last_error_code=NULL
+                       WHERE id=%s RETURNING id""",
+                    (encrypted, existing["id"]),
+                ).fetchone()["id"]
+            else:
+                # ESPN historically shared one private cookie row per account.
+                # Reuse that shared row when present so existing leagues keep working.
+                if provider == "espn":
+                    shared = conn.execute(
+                        """SELECT id FROM fantasy_provider_connections
+                           WHERE account_id=%s AND provider='espn' AND connection_method='private'
+                           LIMIT 1""",
+                        (account_id,),
+                    ).fetchone()
+                    if shared:
+                        connection_id = conn.execute(
+                            """UPDATE fantasy_provider_connections SET encrypted_credentials=%s,
+                                   status='connected', last_authenticated_at=now(), updated_at=now(),
+                                   last_error_code=NULL
+                               WHERE id=%s RETURNING id""",
+                            (encrypted, shared["id"]),
+                        ).fetchone()["id"]
+                if connection_id is None:
+                    connection_id = conn.execute(
+                        """INSERT INTO fantasy_provider_connections
+                               (account_id, provider, connection_method, encrypted_credentials,
+                                status, last_authenticated_at)
+                           VALUES (%s, %s, 'private', %s, 'connected', now())
+                           RETURNING id""",
+                        (account_id, provider, encrypted),
+                    ).fetchone()["id"]
         conn.execute(
             """INSERT INTO user_leagues
                    (account_id, platform, league_id, season, name, provider_connection_id)
-               VALUES (%s, 'espn', %s, %s, %s, %s)
+               VALUES (%s, %s, %s, %s, %s, %s)
                ON CONFLICT (account_id, platform, league_id, season) DO UPDATE SET
                    name = EXCLUDED.name,
                    provider_connection_id = COALESCE(
                        EXCLUDED.provider_connection_id, user_leagues.provider_connection_id
                    )""",
-            (account_id, str(league_id), int(season), name, connection_id),
+            (account_id, provider, str(league_id), int(season), name, connection_id),
         )
         conn.commit()
 
+
+def add_espn_league_connection(
+    account_id: int, league_id: str, season: int, name: str,
+    connection_method: str, *, swid: Optional[str] = None, espn_s2: Optional[str] = None,
+) -> None:
+    """Atomically persist a validated ESPN league and optional encrypted auth."""
+    credentials = None
+    if connection_method == "private":
+        if not swid or not espn_s2:
+            raise ValueError("Private ESPN connections require both credentials.")
+        credentials = {"swid": swid, "espn_s2": espn_s2}
+    add_provider_league_connection(
+        account_id, "espn", league_id, season, name, connection_method,
+        credentials=credentials,
+    )
 
 def consume_league_visit(
     account_id: int,
@@ -819,30 +918,46 @@ def get_post_login_destination(account_id: int) -> Optional[str]:
     return "/portfolio"
 
 
-def mark_espn_connection_status(
-    account_id: int, league_id: str, season: int, status: str,
+def mark_provider_connection_status(
+    account_id: int, provider: str, league_id: str, season: int, status: str,
     error_code: Optional[str] = None,
 ) -> None:
     """Update provider status through an account-owned league association."""
     if status not in ("connected", "reauth_required", "sync_error", "disconnected"):
         raise ValueError("Invalid provider connection status")
+    provider = str(provider or "").strip().lower()
     init_accounts_tables()
     from dashboard_services.db import get_conn
     with get_conn() as conn:
         conn.execute(
             """UPDATE fantasy_provider_connections c SET status=%s,last_error_code=%s,updated_at=now()
                FROM user_leagues l WHERE l.provider_connection_id=c.id AND l.account_id=%s
-               AND l.platform='espn' AND l.league_id=%s AND l.season=%s""",
-            (status, (error_code or "")[:64] or None, account_id, str(league_id), int(season)),
+               AND l.platform=%s AND l.league_id=%s AND l.season=%s""",
+            (status, (error_code or "")[:64] or None, account_id, provider,
+             str(league_id), int(season)),
         )
         conn.commit()
 
 
-def replace_espn_credentials(
-    account_id: int, league_id: str, season: int, swid: str, espn_s2: str,
+def mark_espn_connection_status(
+    account_id: int, league_id: str, season: int, status: str,
+    error_code: Optional[str] = None,
+) -> None:
+    mark_provider_connection_status(
+        account_id, "espn", league_id, season, status, error_code=error_code,
+    )
+
+
+def replace_provider_credentials(
+    account_id: int, provider: str, league_id: str, season: int, credentials: dict,
 ) -> bool:
     """Replace credentials only through an account-owned league connection."""
-    encrypted = _encrypt_provider_credentials({"swid": swid, "espn_s2": espn_s2})
+    provider = str(provider or "").strip().lower()
+    safe = {k: v for k, v in (credentials or {}).items()
+            if k.lower() not in {"password", "passwd", "pass"} and v}
+    if not safe:
+        return False
+    encrypted = _encrypt_provider_credentials(safe)
     init_accounts_tables()
     from dashboard_services.db import get_conn
     with get_conn() as conn:
@@ -850,12 +965,20 @@ def replace_espn_credentials(
             """UPDATE fantasy_provider_connections c SET encrypted_credentials=%s,
                status='connected',last_error_code=NULL,last_authenticated_at=now(),updated_at=now()
                FROM user_leagues l WHERE l.provider_connection_id=c.id AND l.account_id=%s
-               AND l.platform='espn' AND l.league_id=%s AND l.season=%s RETURNING c.id""",
-            (encrypted, account_id, str(league_id), int(season)),
+               AND l.platform=%s AND l.league_id=%s AND l.season=%s RETURNING c.id""",
+            (encrypted, account_id, provider, str(league_id), int(season)),
         ).fetchone()
         conn.commit()
     return bool(row)
 
+
+def replace_espn_credentials(
+    account_id: int, league_id: str, season: int, swid: str, espn_s2: str,
+) -> bool:
+    """Replace ESPN credentials only through an account-owned league connection."""
+    return replace_provider_credentials(
+        account_id, "espn", league_id, season, {"swid": swid, "espn_s2": espn_s2},
+    )
 
 def owns_user_league(account_id: int, platform: str, league_id: str, season: int) -> bool:
     """Authorization primitive for authenticated league mutations."""

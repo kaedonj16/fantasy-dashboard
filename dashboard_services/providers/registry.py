@@ -28,11 +28,14 @@ def get_provider(platform: str | None):
     if key == "mfl":
         from .mfl_api import MFLProvider
         return MFLProvider()
+    if key == "fleaflicker":
+        from .fleaflicker_api import FleaflickerProvider
+        return FleaflickerProvider()
     raise ProviderNotFoundError(f"Unknown fantasy provider: {key or '<empty>'}")
 
 
 def provider_keys() -> frozenset[str]:
-    return frozenset({"sleeper", "espn", "yahoo", "mfl"})
+    return frozenset({"sleeper", "espn", "yahoo", "mfl", "fleaflicker"})
 
 
 def get_provider_capabilities(platform: str) -> frozenset[str]:

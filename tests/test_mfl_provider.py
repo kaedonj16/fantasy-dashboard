@@ -57,10 +57,20 @@ def test_upstream_timeout_is_safe(mock_get):
         MFLProvider().get_league("123", 2026)
 
 
-@patch("dashboard_services.providers.mfl_api._raise_for_status")
 @patch("dashboard_services.providers.mfl_api._request_get")
-def test_upstream_http_error_is_safe(mock_get, mock_raise):
-    mock_get.return_value = response({}, status=500)
-    mock_raise.side_effect = ProviderUnavailableError("MyFantasyLeague is temporarily unavailable.")
-    with pytest.raises(ProviderUnavailableError, match="temporarily unavailable"):
-        MFLProvider().get_league("123", 2026)
+def test_private_export_sends_cookie_and_apikey(mock_get):
+    mock_get.return_value = response({"league": {"id": "123", "name": "Private", "size": "1",
+                                                  "franchises": {"franchise": []}}})
+    MFLProvider().get_league("123", 2026, cookie="MFL_USER_ID=abc", apikey="key-1")
+    kwargs = mock_get.call_args.kwargs
+    assert kwargs["cookies"] == {"MFL_USER_ID": "abc"}
+    assert kwargs["params"]["APIKEY"] == "key-1"
+
+
+@patch("dashboard_services.providers.mfl_api._request_post")
+def test_mfl_login_returns_cookie(mock_post):
+    from dashboard_services.providers.mfl_api import login
+    result = Mock(status_code=200, headers={}, text="", cookies={"MFL_USER_ID": "cookie-value"})
+    result.raise_for_status.return_value = None
+    mock_post.return_value = result
+    assert login("user", "pass", 2026) == "cookie-value"

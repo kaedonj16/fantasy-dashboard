@@ -45,7 +45,7 @@ _STRIPE_PRICES = {
     "combo":  {"unit_amount": 2000, "product": _STRIPE_COMBO_PRODUCT},
 }
 
-_SUPPORTED_PLATFORMS = {"sleeper", "espn", "yahoo", "mfl"}
+_SUPPORTED_PLATFORMS = {"sleeper", "espn", "yahoo", "mfl", "fleaflicker"}
 
 
 def _request_platform(payload=None) -> str:

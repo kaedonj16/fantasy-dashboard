@@ -1192,13 +1192,14 @@ FORM_BODY = """
       <p class="home-brand">BR Fantasy</p>
       <h1 class="home-title">Your dynasty league,<br><span class="home-rot" aria-label="upgraded"><span class="home-rot-track"><span>upgraded.</span><span>decoded.</span><span>dominated.</span><span>upgraded.</span></span></span></h1>
       <p class="home-subtitle">
-        Trade values, AI analysis, and league tools for Sleeper and ESPN. MFL public leagues supported. Yahoo coming soon.
+        Trade values, AI analysis, and league tools for Sleeper, ESPN, MFL, and Fleaflicker. Yahoo coming soon.
       </p>
       <div class="home-platform-row" aria-label="Supported platforms">
         <span class="home-platform-chip">Sleeper</span>
         <span class="home-platform-chip">ESPN</span>
         <span class="home-platform-chip">Yahoo <span class="home-chip-note">Soon</span></span>
-        <span class="home-platform-chip">MFL <span class="home-chip-note">Public leagues</span></span>
+        <span class="home-platform-chip">MFL</span>
+        <span class="home-platform-chip">Fleaflicker</span>
       </div>
     </div>
 
@@ -1251,7 +1252,8 @@ FORM_BODY = """
             <button type="button" class="platform-btn platform-btn-disabled" disabled
                     title="Yahoo is temporarily unavailable while we finish Yahoo API setup.">Yahoo <span class="platform-soon">Soon</span></button>
             {% endif %}
-            <button type="button" class="platform-btn" data-platform="mfl">MFL <span class="platform-limit">Public</span></button>
+            <button type="button" class="platform-btn" data-platform="mfl">MFL</button>
+            <button type="button" class="platform-btn" data-platform="fleaflicker">Fleaflicker</button>
           </div>
         </div>
 
@@ -1353,7 +1355,11 @@ FORM_BODY = """
 
         <!-- MFL Flow -->
         <div id="mflFlow" style="display:none;">
-          <p class="hint">Connect a public MyFantasyLeague league using its League ID.</p>
+          <div class="espn-home-methods" role="radiogroup" aria-label="MFL league type">
+            <button type="button" class="mfl-home-method active" data-mfl-method="public" aria-pressed="true">Public League</button>
+            <button type="button" class="mfl-home-method" data-mfl-method="private" aria-pressed="false">Private League</button>
+          </div>
+          <p class="hint" id="mflHomeDescription">Connect a publicly accessible MyFantasyLeague league using its League ID.</p>
           <div class="row">
             <label for="mflLeagueIdInput">MFL League ID</label>
             <input type="text" id="mflLeagueIdInput" inputmode="numeric" placeholder="e.g. 12345" autocomplete="off">
@@ -1362,10 +1368,93 @@ FORM_BODY = """
             <label for="mflSeasonInput">Season</label>
             <input type="text" id="mflSeasonInput" inputmode="numeric" placeholder="{{ viewed_season }}" autocomplete="off">
           </div>
+          <div id="mflHomePrivateFields" style="display:none;">
+            <div class="row">
+              <label for="mflApikeyInput">League APIKEY <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
+              <input type="password" id="mflApikeyInput" autocomplete="off" spellcheck="false" placeholder="From MFL Help → Developer's API">
+            </div>
+            <div class="row">
+              <label for="mflCookieInput">MFL_USER_ID cookie <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
+              <input type="password" id="mflCookieInput" autocomplete="off" spellcheck="false" placeholder="Cookie value or MFL_USER_ID=…">
+            </div>
+            <details class="espn-home-help"><summary>Or sign in once to obtain the cookie</summary>
+              <div class="row">
+                <label for="mflUsernameInput">MFL username</label>
+                <input type="text" id="mflUsernameInput" autocomplete="username">
+              </div>
+              <div class="row">
+                <label for="mflPasswordInput">MFL password</label>
+                <input type="password" id="mflPasswordInput" autocomplete="current-password">
+              </div>
+              <p class="hint">Password is used only to fetch the official login cookie and is never stored.</p>
+            </details>
+          </div>
           <div class="row">
             <button type="button" id="mflSubmitBtn">Connect League</button>
           </div>
           <div id="mflError" class="error-message" style="display:none;"></div>
+          <div id="mflPrivateChoice" class="provider-account-choice" style="display:none;">
+            <button type="button" id="mflPrivateGoogle" class="google-continue-btn">
+              <span class="google-button-title">Continue with Google</span>
+              <span>Save your leagues &amp; settings, synced across devices</span>
+              <small>Free &middot; no password</small>
+            </button>
+            <div class="provider-choice-or">OR</div>
+            <button type="button" id="mflPrivateGuest" class="continue-without-account-btn">
+              <strong>Continue without account</strong>
+              <span>Quick view on this device &middot; nothing saved</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Fleaflicker Flow -->
+        <div id="fleaflickerFlow" style="display:none;">
+          <div class="espn-home-methods" role="radiogroup" aria-label="Fleaflicker league type">
+            <button type="button" class="flea-home-method active" data-flea-method="public" aria-pressed="true">Public League</button>
+            <button type="button" class="flea-home-method" data-flea-method="private" aria-pressed="false">Private League</button>
+          </div>
+          <p class="hint" id="fleaHomeDescription">Connect a publicly accessible Fleaflicker league using its League ID.</p>
+          <div class="row">
+            <label for="fleaLeagueIdInput">Fleaflicker League ID</label>
+            <input type="text" id="fleaLeagueIdInput" inputmode="numeric" placeholder="e.g. 14153" autocomplete="off">
+          </div>
+          <div class="row">
+            <label for="fleaSeasonInput">Season</label>
+            <input type="text" id="fleaSeasonInput" inputmode="numeric" placeholder="{{ viewed_season }}" autocomplete="off">
+          </div>
+          <div id="fleaHomePrivateFields" style="display:none;">
+            <div class="row">
+              <label for="fleaEmailInput">Fleaflicker email</label>
+              <input type="email" id="fleaEmailInput" autocomplete="email" placeholder="you@email.com">
+            </div>
+            <div class="row">
+              <label for="fleaPasswordInput">Password</label>
+              <input type="password" id="fleaPasswordInput" autocomplete="current-password">
+            </div>
+            <p class="hint">We exchange these for a login token and never store your password.</p>
+            <details class="espn-home-help"><summary>Or paste an existing login token</summary>
+              <div class="row">
+                <label for="fleaTokenInput">Authorization token</label>
+                <input type="password" id="fleaTokenInput" autocomplete="off" spellcheck="false" placeholder="Token from /api/Login">
+              </div>
+            </details>
+          </div>
+          <div class="row">
+            <button type="button" id="fleaSubmitBtn">Connect League</button>
+          </div>
+          <div id="fleaError" class="error-message" style="display:none;"></div>
+          <div id="fleaPrivateChoice" class="provider-account-choice" style="display:none;">
+            <button type="button" id="fleaPrivateGoogle" class="google-continue-btn">
+              <span class="google-button-title">Continue with Google</span>
+              <span>Save your leagues &amp; settings, synced across devices</span>
+              <small>Free &middot; no password</small>
+            </button>
+            <div class="provider-choice-or">OR</div>
+            <button type="button" id="fleaPrivateGuest" class="continue-without-account-btn">
+              <strong>Continue without account</strong>
+              <span>Quick view on this device &middot; nothing saved</span>
+            </button>
+          </div>
         </div>
 
 <form method="post" id="leagueSelectForm">
@@ -2773,6 +2862,7 @@ def _link_modal_html() -> str:
             <button type="button" class="link-tab active" data-lp="sleeper" onclick="linkTab('sleeper')">Sleeper</button>
             <button type="button" class="link-tab" data-lp="espn" onclick="linkTab('espn')">ESPN</button>
             <button type="button" class="link-tab" data-lp="mfl" onclick="linkTab('mfl')">MFL</button>
+            <button type="button" class="link-tab" data-lp="fleaflicker" onclick="linkTab('fleaflicker')">Fleaflicker</button>
             <button type="button" class="link-tab" data-lp="yahoo" onclick="linkTab('yahoo')">Yahoo</button>
           </div>
           <div class="link-pane" data-lp="sleeper">
@@ -2814,13 +2904,54 @@ def _link_modal_html() -> str:
             <button type="button" id="linkEspnConnect" class="link-btn link-connect" onclick="linkEspnConnect()">Connect League</button>
           </div>
           <div class="link-pane" data-lp="mfl" style="display:none;">
-            <p class="link-help">Use the League ID number from your public MyFantasyLeague URL.</p>
+            <div class="espn-methods" role="radiogroup" aria-label="MFL league type">
+              <button type="button" class="mfl-method active" data-method="public" onclick="setMflMethod('public')" aria-pressed="true">Public League</button>
+              <button type="button" class="mfl-method" data-method="private" onclick="setMflMethod('private')" aria-pressed="false">Private League</button>
+            </div>
+            <p id="mflMethodHelp" class="link-help">Use the League ID number from your public MyFantasyLeague URL.</p>
             <label class="link-lb" for="linkMflId">League ID</label>
             <input id="linkMflId" class="link-inp link-full" inputmode="numeric" autocomplete="off">
             <label class="link-lb link-field" for="linkMflSeason">Season</label>
             <input id="linkMflSeason" class="link-inp link-full" inputmode="numeric" placeholder="current season" autocomplete="off">
-            <button type="button" class="link-btn link-connect" onclick="linkMflPreview()">Connect League</button>
+            <div id="mflPrivateFields" style="display:none;">
+              <label class="link-lb link-field" for="linkMflApikey">League APIKEY</label>
+              <input id="linkMflApikey" class="link-inp link-full" type="password" autocomplete="off" placeholder="Optional — from Help → Developer's API">
+              <label class="link-lb link-field" for="linkMflCookie">MFL_USER_ID cookie</label>
+              <input id="linkMflCookie" class="link-inp link-full" type="password" autocomplete="off" placeholder="Optional — cookie value">
+              <details class="espn-credential-help"><summary>Or sign in once for the cookie</summary>
+                <label class="link-lb link-field" for="linkMflUser">MFL username</label>
+                <input id="linkMflUser" class="link-inp link-full" autocomplete="username">
+                <label class="link-lb link-field" for="linkMflPass">MFL password</label>
+                <input id="linkMflPass" class="link-inp link-full" type="password" autocomplete="current-password">
+                <p class="link-help">Password is used only to obtain the official login cookie and is never stored.</p>
+              </details>
+            </div>
+            <button type="button" class="link-btn link-connect" onclick="linkMflConnect()">Connect League</button>
             <div id="linkMflResult" class="link-list"></div>
+          </div>
+          <div class="link-pane" data-lp="fleaflicker" style="display:none;">
+            <div class="espn-methods" role="radiogroup" aria-label="Fleaflicker league type">
+              <button type="button" class="flea-method active" data-method="public" onclick="setFleaMethod('public')" aria-pressed="true">Public League</button>
+              <button type="button" class="flea-method" data-method="private" onclick="setFleaMethod('private')" aria-pressed="false">Private League</button>
+            </div>
+            <p id="fleaMethodHelp" class="link-help">Use the League ID from your public Fleaflicker URL.</p>
+            <label class="link-lb" for="linkFleaId">League ID</label>
+            <input id="linkFleaId" class="link-inp link-full" inputmode="numeric" autocomplete="off">
+            <label class="link-lb link-field" for="linkFleaSeason">Season</label>
+            <input id="linkFleaSeason" class="link-inp link-full" inputmode="numeric" placeholder="current season" autocomplete="off">
+            <div id="fleaPrivateFields" style="display:none;">
+              <label class="link-lb link-field" for="linkFleaEmail">Fleaflicker email</label>
+              <input id="linkFleaEmail" class="link-inp link-full" type="email" autocomplete="email">
+              <label class="link-lb link-field" for="linkFleaPass">Password</label>
+              <input id="linkFleaPass" class="link-inp link-full" type="password" autocomplete="current-password">
+              <p class="link-help">We exchange these for a login token and never store your password.</p>
+              <details class="espn-credential-help"><summary>Or paste an existing login token</summary>
+                <label class="link-lb link-field" for="linkFleaToken">Authorization token</label>
+                <input id="linkFleaToken" class="link-inp link-full" type="password" autocomplete="off">
+              </details>
+            </div>
+            <button type="button" class="link-btn link-connect" onclick="linkFleaConnect()">Connect League</button>
+            <div id="linkFleaResult" class="link-list"></div>
           </div>
           <!--YAHOO_PANE_START--><div class="link-pane" data-lp="yahoo" style="display:none;">
             <label class="link-lb">Yahoo league ID</label>
@@ -2856,6 +2987,8 @@ def _link_modal_html() -> str:
       .espn-methods{display:flex;gap:4px;padding:4px;background:var(--accent-soft);border:1px solid var(--border);border-radius:11px}
       .espn-method{flex:1;border:0;background:none;color:var(--text-muted);font-weight:700;padding:8px;border-radius:8px;cursor:pointer}
       .espn-method.active{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+      .mfl-method,.flea-method{flex:1;border:0;background:none;color:var(--text-muted);font-weight:700;padding:8px;border-radius:8px;cursor:pointer}
+      .mfl-method.active,.flea-method.active{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.12)}
       .link-help{font-size:12px;color:var(--text-muted);margin:8px 0 14px}.link-connect{width:100%;margin-top:14px}
       .espn-credential-help{font-size:12px;color:var(--text-muted);margin-top:12px}.espn-credential-help summary{cursor:pointer;font-weight:700;color:var(--accent)}
       .espn-credential-help ol{padding-left:20px;line-height:1.5}
@@ -3073,15 +3206,87 @@ def _link_modal_html() -> str:
           linkSetMsg('',''); renderTeamPick(box,'yahoo',d.league_id,d.season,d.name,d.teams||[],d.my_team_id);
         }).catch(function(){ linkSetMsg('Network error.','err'); });
       };
-      window.linkMflPreview=function(){
+      window.linkMflPreview=function(){ linkMflConnect(); };
+      var mflMethod='public';
+      window.setMflMethod=function(method){
+        mflMethod=(method==='private')?'private':'public';
+        document.querySelectorAll('.mfl-method').forEach(function(b){
+          var on=b.dataset.method===mflMethod; b.classList.toggle('active',on); b.setAttribute('aria-pressed',on?'true':'false');
+        });
+        var priv=document.getElementById('mflPrivateFields'); if(priv) priv.style.display=mflMethod==='private'?'block':'none';
+        var help=document.getElementById('mflMethodHelp');
+        if(help) help.textContent=mflMethod==='private'
+          ?'Connect a private MFL league with a league APIKEY and/or official login cookie.'
+          :'Use the League ID number from your public MyFantasyLeague URL.';
+      };
+      window.linkMflConnect=function(){
         var id=(document.getElementById('linkMflId').value||'').trim(), yr=(document.getElementById('linkMflSeason').value||'').trim();
         var box=document.getElementById('linkMflResult');
         if(!/^\\d+$/.test(id)){linkSetMsg('Enter a valid numeric MFL League ID.','err');return;}
-        linkSetMsg('Loading…','');box.innerHTML='';
-        fetch('/api/link/mfl/preview?league_id='+encodeURIComponent(id)+(yr?'&season='+encodeURIComponent(yr):''))
+        if(mflMethod==='public'){
+          linkSetMsg('Loading…','');box.innerHTML='';
+          fetch('/api/link/mfl/preview?league_id='+encodeURIComponent(id)+(yr?'&season='+encodeURIComponent(yr):''))
+            .then(function(r){return r.json();}).then(function(d){
+              if(!d.ok){linkSetMsg(d.error||'Could not load that MFL league.','err');return;}
+              linkSetMsg('','');renderTeamPick(box,'mfl',d.league_id,d.season,d.name,d.teams||[],null);
+            }).catch(function(){linkSetMsg('Network error.','err');});
+          return;
+        }
+        var payload={league_id:id}; if(yr) payload.season=Number(yr);
+        var apikey=(document.getElementById('linkMflApikey').value||'').trim();
+        var cookie=(document.getElementById('linkMflCookie').value||'').trim();
+        var user=(document.getElementById('linkMflUser').value||'').trim();
+        var pass=document.getElementById('linkMflPass').value||'';
+        if(apikey) payload.apikey=apikey; if(cookie) payload.cookie=cookie;
+        if(user) payload.username=user; if(pass) payload.password=pass;
+        if(!payload.apikey && !payload.cookie && !(payload.username && payload.password)){
+          linkSetMsg('Provide a league APIKEY, login cookie, or username + password.','err'); return;
+        }
+        linkSetMsg('Connecting…','');
+        fetch('/api/link/mfl/private',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
           .then(function(r){return r.json();}).then(function(d){
-            if(!d.ok){linkSetMsg(d.error||'Could not load that MFL league.','err');return;}
-            linkSetMsg('','');renderTeamPick(box,'mfl',d.league_id,d.season,d.name,d.teams||[],null);
+            if(!d.ok){linkSetMsg(d.error||'Could not connect that MFL league.','err');return;}
+            linkSetMsg('League connected. Opening dashboard…','ok'); location.href=d.redirect_url;
+          }).catch(function(){linkSetMsg('Network error.','err');});
+      };
+      var fleaMethod='public';
+      window.setFleaMethod=function(method){
+        fleaMethod=(method==='private')?'private':'public';
+        document.querySelectorAll('.flea-method').forEach(function(b){
+          var on=b.dataset.method===fleaMethod; b.classList.toggle('active',on); b.setAttribute('aria-pressed',on?'true':'false');
+        });
+        var priv=document.getElementById('fleaPrivateFields'); if(priv) priv.style.display=fleaMethod==='private'?'block':'none';
+        var help=document.getElementById('fleaMethodHelp');
+        if(help) help.textContent=fleaMethod==='private'
+          ?'Connect a private Fleaflicker league with email sign-in or a login token.'
+          :'Use the League ID from your public Fleaflicker URL.';
+      };
+      window.linkFleaConnect=function(){
+        var id=(document.getElementById('linkFleaId').value||'').trim(), yr=(document.getElementById('linkFleaSeason').value||'').trim();
+        var box=document.getElementById('linkFleaResult');
+        if(!/^\\d+$/.test(id)){linkSetMsg('Enter a valid numeric Fleaflicker League ID.','err');return;}
+        if(fleaMethod==='public'){
+          linkSetMsg('Loading…','');box.innerHTML='';
+          fetch('/api/link/fleaflicker/preview?league_id='+encodeURIComponent(id)+(yr?'&season='+encodeURIComponent(yr):''))
+            .then(function(r){return r.json();}).then(function(d){
+              if(!d.ok){linkSetMsg(d.error||'Could not load that Fleaflicker league.','err');return;}
+              linkSetMsg('','');renderTeamPick(box,'fleaflicker',d.league_id,d.season,d.name,d.teams||[],null);
+            }).catch(function(){linkSetMsg('Network error.','err');});
+          return;
+        }
+        var payload={league_id:id}; if(yr) payload.season=Number(yr);
+        var email=(document.getElementById('linkFleaEmail').value||'').trim();
+        var pass=document.getElementById('linkFleaPass').value||'';
+        var token=(document.getElementById('linkFleaToken').value||'').trim();
+        if(email) payload.email=email; if(pass) payload.password=pass; if(token) payload.token=token;
+        if(!payload.token && !(payload.email && payload.password)){
+          linkSetMsg('Provide email + password or a login token.','err'); return;
+        }
+        linkSetMsg('Connecting…','');
+        fetch('/api/link/fleaflicker/private',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+          .then(function(r){return r.json();}).then(function(d){
+            if(!d.ok){linkSetMsg(d.error||'Could not connect that Fleaflicker league.','err');return;}
+            linkSetMsg('League connected. Opening dashboard…','ok'); location.href=d.redirect_url;
           }).catch(function(){linkSetMsg('Network error.','err');});
       };
     })();
@@ -3598,6 +3803,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "espn":    ("Enter your ESPN team name to restore personalized features.", "Your ESPN team name"),
         "yahoo":   ("Enter your Yahoo team name to restore personalized features.", "Your Yahoo team name"),
         "mfl":     ("Enter your MFL team or manager name to restore personalized features.", "Your MFL team name"),
+        "fleaflicker": ("Enter your Fleaflicker team or manager name to restore personalized features.", "Your Fleaflicker team name"),
         "sleeper": ("Enter your Sleeper username to restore personalized features.", "Sleeper username"),
     }
     _plat_key = (platform or "").lower()
@@ -4029,7 +4235,7 @@ DEFAULT_META_DESCRIPTION = (
     "BR Fantasy is a free fantasy football toolkit: a dynasty and redraft trade "
     "calculator, daily-updated player trade values, real-trade market data, breakout "
     "candidate rankings, and advanced metrics for Sleeper and ESPN leagues. "
-    "MFL public leagues supported. Yahoo coming soon."
+    "MFL and Fleaflicker leagues supported. Yahoo coming soon."
 )
 
 
@@ -13149,7 +13355,7 @@ def index():
             "Free fantasy football tools for Sleeper and ESPN: a dynasty and "
             "redraft trade calculator, daily player trade values, real-trade market data, "
             "power rankings, breakout candidates, and advanced metrics. "
-            "MFL public leagues supported. Yahoo coming soon."
+            "MFL and Fleaflicker leagues supported. Yahoo coming soon."
         ),
         lite_js=True,
     )

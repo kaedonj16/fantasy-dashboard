@@ -20,6 +20,7 @@ def platform_sign_in_hint(platform: str) -> str:
         "espn": "your ESPN team name",
         "yahoo": "your Yahoo team name",
         "mfl": "your MFL team name",
+        "fleaflicker": "your Fleaflicker team name",
     }.get(p, "your Sleeper username")
 
 
