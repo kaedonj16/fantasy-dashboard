@@ -365,6 +365,9 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "if (!on && currentTab === 'trends') showSheetTab('board')" in script
     assert ".cs-trends-grid" in body
     assert ".cs-trends-bar" in body
+    assert ".cs-trends-callouts" in body
+    assert ".cs-trends-ages" in body
+    assert "row.vs_label" in script
     assert "The Trends tab shows position-wide rates" in body
     assert "p_hit_pct" not in pick
     assert "historical-player" not in core

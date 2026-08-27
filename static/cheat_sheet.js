@@ -2029,6 +2029,8 @@
         if (row.bucket) meta.push(row.bucket);
         if (row.n != null) meta.push('n=' + row.n);
         if (row.confidence_label) meta.push(row.confidence_label);
+        if (row.vs_label) meta.push(row.vs_label);
+        if (row.secondary) meta.push(row.secondary);
         var shown = row.display != null && row.display !== ''
             ? row.display
             : (row.pct != null ? row.pct + '%' : '—');
@@ -2037,11 +2039,12 @@
             + '</div><div class="cs-hist-hit-pct">' + esc(String(shown)) + '</div></div>';
     }
 
-    function trendsHitRow(row) {
+    function trendsHitRow(row, polarity) {
         var html = histTrendRow(row);
         if (row.pct != null && isFinite(Number(row.pct))) {
             var pct = Math.max(0, Math.min(100, Number(row.pct)));
-            html += '<div class="cs-trends-bar" aria-hidden="true"><span style="width:' + pct + '%"></span></div>';
+            var barClass = polarity === 'miss' ? 'cs-trends-bar cs-trends-bar-miss' : 'cs-trends-bar';
+            html += '<div class="' + barClass + '" aria-hidden="true"><span style="width:' + pct + '%"></span></div>';
         }
         return html;
     }
@@ -2128,11 +2131,41 @@
             summary.push('Prime window is ages ' + esc(page.prime_window) + '.');
         }
         if (summary.length) html += '<p class="cs-trends-summary">' + summary.join(' ') + '</p>';
+        var highlights = page.highlights || [];
+        if (highlights.length) {
+            html += '<div class="cs-trends-callouts">';
+            highlights.forEach(function (h) {
+                html += '<div class="cs-trends-callout"><div class="cs-trends-callout-k">' + esc(h.section || '')
+                    + '</div><div class="cs-trends-callout-v">' + esc(h.label || '') + '</div>'
+                    + '<div class="cs-trends-callout-pct">' + (h.pct != null ? esc(String(h.pct)) + '%' : '—')
+                    + (h.vs_label ? ' <span>' + esc(h.vs_label) + '</span>' : '') + '</div></div>';
+            });
+            html += '</div>';
+        }
+        var curve = page.age_curve || [];
+        if (curve.length) {
+            var maxP = 1;
+            curve.forEach(function (pt) {
+                if (pt && pt.pct != null && Number(pt.pct) > maxP) maxP = Number(pt.pct);
+            });
+            var prime = {};
+            (page.prime_ages || []).forEach(function (a) { prime[String(a)] = true; });
+            html += '<div class="cs-trends-ages" role="img" aria-label="Top-12 rate by age">';
+            curve.forEach(function (pt) {
+                var h = Math.max(8, Math.round(100 * Number(pt.pct || 0) / maxP));
+                var cls = prime[String(pt.age)] ? ' is-prime' : '';
+                html += '<div class="cs-trends-age' + cls + '" title="Age ' + esc(String(pt.age))
+                    + ': ' + esc(String(pt.pct)) + '%"><span class="cs-trends-age-bar" style="height:'
+                    + h + '%"></span><span class="cs-trends-age-n">' + esc(String(pt.age)) + '</span></div>';
+            });
+            html += '</div>';
+            html += '<p class="cs-hist-note">Top-12 rate by integer age. Highlighted columns are the prime window.</p>';
+        }
         html += '<div class="cs-trends-grid">';
         (page.sections || []).forEach(function (sec) {
             html += '<article class="cs-trends-card"><h3>' + esc(sec.heading || '') + '</h3>';
             if (sec.note) html += '<p class="cs-hist-note">' + esc(sec.note) + '</p>';
-            (sec.rows || []).forEach(function (row) { html += trendsHitRow(row); });
+            (sec.rows || []).forEach(function (row) { html += trendsHitRow(row, sec.polarity); });
             html += '</article>';
         });
         html += '</div>';

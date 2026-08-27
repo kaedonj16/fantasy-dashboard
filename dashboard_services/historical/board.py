@@ -20,12 +20,16 @@ from dashboard_services.historical.comps import (
     lookup_board_probabilities,
 )
 from dashboard_services.historical.definitions import (
+    ABSOLUTE_BUST_OUTSIDE,
     ADP_OVERALL_BUCKETS,
+    ADOT_BUCKETS,
     AGE_BUCKETS,
     CAREER_STAGE_ORDER,
     COMP_BOARD_TIERS,
     COMP_DIMENSION_ORDER,
     DRAFT_CAPITAL_ORDER,
+    PRIOR_FINISH_BUCKETS,
+    RYOE_BUCKETS,
     SKILL_POSITIONS,
     SNAP_PCT_BUCKETS,
     TARGET_SHARE_BUCKETS,
@@ -105,6 +109,25 @@ ADP_BUCKET_DISPLAY: dict[str, str] = {
     "rounds_8_10": "Rounds 8–10",
     "rounds_11_plus": "Rounds 11+",
 }
+ADP_POSITIONAL_DISPLAY: dict[str, str] = {
+    "top_5": "Positional ADP 1–5",
+    "top_12": "Positional ADP 6–12",
+    "top_24": "Positional ADP 13–24",
+    "top_36": "Positional ADP 25–36",
+    "outside_36": "Positional ADP 37+",
+}
+CUMULATIVE_TREND_WINDOWS: tuple[tuple[str, str, str], ...] = (
+    (
+        "top12_as_rookie",
+        "Hit top-12 as a rookie",
+        "Share of that NFL draft class who posted a top-12 season in year 1. Player-level, not a single-season rate.",
+    ),
+    (
+        "top12_by_year_2",
+        "Hit top-12 by year 2",
+        "Share who posted a top-12 season in year 1 or year 2.",
+    ),
+)
 TIER_FINISH_DISPLAY: dict[str, str] = {
     "top_5": "top-5",
     "top_12": "top-12",
@@ -909,35 +932,141 @@ def build_deep_panel(
     }
 
 
-def _section_row(label: str, rate: Any) -> Optional[dict]:
+def _era_label(aggregates: Mapping[str, Any]) -> str:
+    rng = aggregates.get("season_range") or []
+    if isinstance(rng, (list, tuple)) and len(rng) >= 2 and rng[0] is not None and rng[1] is not None:
+        return f"{rng[0]}–{rng[1]}"
+    return "2018–2025"
+
+
+def _section_row(
+    label: str,
+    rate: Any,
+    *,
+    baseline_pct: Any = None,
+    secondary: Optional[str] = None,
+) -> Optional[dict]:
     rec = _as_rate(rate)
     pct = rec.get("display_pct")
     if pct is None:
         return None
-    return {
+    sample = rec.get("sample_size")
+    if sample is None:
+        sample = rec.get("n_players")
+    row: dict[str, Any] = {
         "label": label,
         "pct": pct,
-        "n": rec.get("sample_size"),
+        "n": sample,
         "confidence": rec.get("confidence"),
         "confidence_label": _confidence_label(rec.get("confidence")),
     }
+    if secondary:
+        row["secondary"] = secondary
+    if isinstance(baseline_pct, (int, float)):
+        delta = int(pct) - int(baseline_pct)
+        row["vs_baseline"] = delta
+        if delta > 0:
+            row["vs_label"] = f"+{delta} vs typical"
+        elif delta < 0:
+            row["vs_label"] = f"{delta} vs typical"
+        else:
+            row["vs_label"] = "in line with typical"
+    return row
 
 
-def _append_section(sections: list[dict], *, sid: str, heading: str, note: str, rows: list[dict]) -> None:
-    if rows:
-        sections.append({"id": sid, "heading": heading, "note": note, "rows": rows})
+def _append_section(
+    sections: list[dict],
+    *,
+    sid: str,
+    heading: str,
+    note: str,
+    rows: list[dict],
+    polarity: Optional[str] = None,
+) -> None:
+    if not rows:
+        return
+    rec: dict[str, Any] = {"id": sid, "heading": heading, "note": note, "rows": rows}
+    if polarity:
+        rec["polarity"] = polarity
+    sections.append(rec)
+
+
+def _trend_highlights(sections: Sequence[Mapping[str, Any]], *, limit: int = 4) -> list[dict]:
+    """Biggest above-typical buckets, preferring one from each table first."""
+    best_by_section: list[dict] = []
+    leftovers: list[dict] = []
+    for sec in sections:
+        if str(sec.get("polarity") or "") == "miss":
+            continue
+        scored = []
+        for row in sec.get("rows") or []:
+            vs = row.get("vs_baseline")
+            if not isinstance(vs, int) or vs <= 0:
+                continue
+            scored.append({
+                "section": sec.get("heading"),
+                "label": row.get("label"),
+                "pct": row.get("pct"),
+                "vs_baseline": vs,
+                "vs_label": row.get("vs_label"),
+                "n": row.get("n"),
+            })
+        scored.sort(key=lambda r: (-int(r.get("vs_baseline") or 0), -int(r.get("pct") or 0)))
+        if scored:
+            best_by_section.append(scored[0])
+            leftovers.extend(scored[1:])
+    best_by_section.sort(key=lambda r: (-int(r.get("vs_baseline") or 0), -int(r.get("pct") or 0)))
+    leftovers.sort(key=lambda r: (-int(r.get("vs_baseline") or 0), -int(r.get("pct") or 0)))
+    picked = best_by_section[:limit]
+    if len(picked) < limit:
+        picked.extend(leftovers[: limit - len(picked)])
+    return picked[:limit]
+
+
+def _age_curve_points(age_block: Mapping[str, Any]) -> list[dict]:
+    by_int = age_block.get("by_integer_age") if isinstance(age_block.get("by_integer_age"), Mapping) else {}
+    points: list[dict] = []
+    for key in sorted(by_int.keys(), key=lambda k: int(k) if str(k).isdigit() else 99):
+        if not str(key).isdigit():
+            continue
+        rec = _as_rate(by_int.get(key))
+        pct = rec.get("display_pct")
+        if pct is None:
+            continue
+        points.append({
+            "age": int(key),
+            "pct": pct,
+            "n": rec.get("sample_size"),
+        })
+    return points
 
 
 def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> dict:
     """Display tables for one position. JSON lookup only."""
     pos = str(position or "").upper()
     sections: list[dict] = []
+    age_block = (aggregates.get("age_curves") or {}).get(pos) or {}
+    baseline = age_block.get("baseline") if isinstance(age_block.get("baseline"), Mapping) else {}
+    if not baseline:
+        baseline = ((aggregates.get("career_stages") or {}).get(pos) or {}).get("baseline") or {}
+    baseline_pct = baseline.get("display_pct") if isinstance(baseline, Mapping) else None
+    prime = age_block.get("prime_window") if isinstance(age_block.get("prime_window"), Mapping) else {}
+    lo, hi = prime.get("age_start"), prime.get("age_end")
+    prime_label = f"{lo}–{hi}" if lo is not None and hi is not None else ""
+    prime_ages = prime.get("ages") if isinstance(prime.get("ages"), list) else []
+    if not prime_ages and lo is not None and hi is not None:
+        try:
+            prime_ages = list(range(int(lo), int(hi) + 1))
+        except (TypeError, ValueError):
+            prime_ages = []
+
     adp_pos = ((aggregates.get("adp") or {}).get("by_position") or {}).get(pos) or {}
     adp_rows = []
     for _lo, _hi, key in ADP_OVERALL_BUCKETS:
         row = _section_row(
             format_adp_bucket_label(key),
             (adp_pos.get("by_overall_bucket") or {}).get(key),
+            baseline_pct=baseline_pct,
         )
         if row:
             adp_rows.append(row)
@@ -949,14 +1078,33 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         rows=adp_rows,
     )
 
+    pos_adp_rows = []
+    for _lo, _hi, key in PRIOR_FINISH_BUCKETS:
+        row = _section_row(
+            ADP_POSITIONAL_DISPLAY.get(key, _title_from_key(key)),
+            (adp_pos.get("by_positional_bucket") or {}).get(key),
+            baseline_pct=baseline_pct,
+        )
+        if row:
+            pos_adp_rows.append(row)
+    _append_section(
+        sections,
+        sid="adp_positional",
+        heading="Fantasy ADP rank",
+        note=f"Preseason positional ADP, not last year's finish. How often {pos}s drafted in that rank band finished top-12.",
+        rows=pos_adp_rows,
+    )
+
     repeat = (aggregates.get("repeat_and_breakout") or {}).get(pos) or {}
     repeat_rows = []
     for label, key in (
         ("Last-year top-12 finished top-12 again", "prev_top12_to_top12"),
         ("Last-year top-12 finished top-5 next", "prev_top12_to_top5"),
+        ("Two-time top-12 finished top-12 again", "two_plus_prior_top12_to_top12"),
         ("Outside last-year top-12 broke into top-12", "engine_breakout_among_non_starters"),
+        ("Never-elite broke into top-12", "first_time_elite_among_candidates"),
     ):
-        row = _section_row(label, repeat.get(key))
+        row = _section_row(label, repeat.get(key), baseline_pct=baseline_pct)
         if row:
             repeat_rows.append(row)
     _append_section(
@@ -967,10 +1115,30 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         rows=repeat_rows,
     )
 
+    winner_rows = []
+    for label, key in (
+        ("Finished top-5 that season", "league_winner"),
+        ("Outside last-year top-12 then top-5", "league_winner_smash_among_non_top12"),
+    ):
+        row = _section_row(label, repeat.get(key))
+        if row:
+            winner_rows.append(row)
+    _append_section(
+        sections,
+        sid="league_winner",
+        heading="League winners",
+        note=f"Top-5 finishes for {pos}s. Smash is a top-5 from outside last year's top-12.",
+        rows=winner_rows,
+    )
+
     stage_map = ((aggregates.get("career_stages") or {}).get(pos) or {}).get("by_stage") or {}
     stage_rows = []
     for key in CAREER_STAGE_ORDER:
-        row = _section_row(CAREER_STAGE_DISPLAY.get(key, _title_from_key(key)), stage_map.get(key))
+        row = _section_row(
+            CAREER_STAGE_DISPLAY.get(key, _title_from_key(key)),
+            stage_map.get(key),
+            baseline_pct=baseline_pct,
+        )
         if row:
             stage_rows.append(row)
     _append_section(
@@ -981,11 +1149,19 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         rows=stage_rows,
     )
 
-    cap_map = ((aggregates.get("draft_capital") or {}).get(pos) or {}).get("season_level_by_capital") or {}
+    capital = (aggregates.get("draft_capital") or {}).get(pos) or {}
+    cap_map = capital.get("season_level_by_capital") or {}
     cap_rows = []
     for key in DRAFT_CAPITAL_ORDER:
         rec = (cap_map.get(key) or {}).get("top_12")
-        row = _section_row(DRAFT_CAPITAL_DISPLAY.get(key, _title_from_key(key)), rec)
+        top5 = _as_rate((cap_map.get(key) or {}).get("top_5")).get("display_pct")
+        secondary = f"{top5}% top-5" if top5 is not None else None
+        row = _section_row(
+            DRAFT_CAPITAL_DISPLAY.get(key, _title_from_key(key)),
+            rec,
+            baseline_pct=baseline_pct,
+            secondary=secondary,
+        )
         if row:
             cap_rows.append(row)
     _append_section(
@@ -996,12 +1172,53 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         rows=cap_rows,
     )
 
-    age_block = (aggregates.get("age_curves") or {}).get(pos) or {}
+    for window_id, heading, note in CUMULATIVE_TREND_WINDOWS:
+        window = (capital.get("cumulative") or {}).get(window_id) or {}
+        by_cap = window.get("by_capital") or {}
+        rows = []
+        for key in DRAFT_CAPITAL_ORDER:
+            row = _section_row(
+                DRAFT_CAPITAL_DISPLAY.get(key, _title_from_key(key)),
+                by_cap.get(key),
+            )
+            if row:
+                rows.append(row)
+        _append_section(
+            sections,
+            sid=window_id,
+            heading=heading,
+            note=f"{note} NFL draft capital, not fantasy ADP.",
+            rows=rows,
+        )
+
+    bust_cut = ABSOLUTE_BUST_OUTSIDE.get(pos)
+    bust_rows = []
+    if bust_cut is not None:
+        for key in DRAFT_CAPITAL_ORDER:
+            row = _section_row(
+                DRAFT_CAPITAL_DISPLAY.get(key, _title_from_key(key)),
+                (cap_map.get(key) or {}).get("absolute_bust"),
+            )
+            if row:
+                bust_rows.append(row)
+        _append_section(
+            sections,
+            sid="capital_miss",
+            heading="Miss rates by NFL capital",
+            note=(
+                f"Share of {pos}s who finished outside the top-{bust_cut}. "
+                "Higher is a miss, not a hit."
+            ),
+            rows=bust_rows,
+            polarity="miss",
+        )
+
     age_rows = []
     for _lo, _hi, key in AGE_BUCKETS.get(pos, ()):
         row = _section_row(
             format_age_bucket_label(key),
             (age_block.get("by_bucket") or {}).get(key),
+            baseline_pct=baseline_pct,
         )
         if row:
             age_rows.append(row)
@@ -1017,7 +1234,11 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
     tgt_map = (((usage.get("target_share") or {}).get("by_position") or {}).get(pos) or {}).get("by_bucket") or {}
     tgt_rows = []
     for _lo, _hi, key in TARGET_SHARE_BUCKETS:
-        row = _section_row(str(key).replace("-", "–"), tgt_map.get(key))
+        row = _section_row(
+            str(key).replace("-", "–"),
+            tgt_map.get(key),
+            baseline_pct=baseline_pct,
+        )
         if row:
             tgt_rows.append(row)
     _append_section(
@@ -1031,7 +1252,11 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
     snap_map = (((usage.get("snap_pct") or {}).get("by_position") or {}).get(pos) or {}).get("by_bucket") or {}
     snap_rows = []
     for _lo, _hi, key in SNAP_PCT_BUCKETS:
-        row = _section_row(str(key).replace("-", "–"), snap_map.get(key))
+        row = _section_row(
+            str(key).replace("-", "–"),
+            snap_map.get(key),
+            baseline_pct=baseline_pct,
+        )
         if row:
             snap_rows.append(row)
     _append_section(
@@ -1042,17 +1267,49 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         rows=snap_rows,
     )
 
-    baseline = age_block.get("baseline") if isinstance(age_block.get("baseline"), Mapping) else {}
-    if not baseline:
-        baseline = ((aggregates.get("career_stages") or {}).get(pos) or {}).get("baseline") or {}
-    prime = age_block.get("prime_window") if isinstance(age_block.get("prime_window"), Mapping) else {}
-    lo, hi = prime.get("age_start"), prime.get("age_end")
-    prime_label = f"{lo}–{hi}" if lo is not None and hi is not None else ""
+    adot_map = (((usage.get("adot") or {}).get("by_position") or {}).get(pos) or {}).get("by_bucket") or {}
+    adot_rows = []
+    for _lo, _hi, key in ADOT_BUCKETS:
+        label = str(key).replace("-", "–")
+        if label.startswith("<"):
+            shown = f"aDOT {label} yards"
+        elif label.endswith("+"):
+            shown = f"aDOT {label} yards"
+        else:
+            shown = f"aDOT {label} yards"
+        row = _section_row(shown, adot_map.get(key), baseline_pct=baseline_pct)
+        if row:
+            adot_rows.append(row)
+    _append_section(
+        sections,
+        sid="adot",
+        heading="Last year aDOT",
+        note=f"How often {pos}s with that prior-season average depth of target finished top-12.",
+        rows=adot_rows,
+    )
+
+    ryoe_map = (((usage.get("ryoe") or {}).get("by_position") or {}).get(pos) or {}).get("by_bucket") or {}
+    ryoe_rows = []
+    for _lo, _hi, key in RYOE_BUCKETS:
+        row = _section_row(str(key), ryoe_map.get(key), baseline_pct=baseline_pct)
+        if row:
+            ryoe_rows.append(row)
+    _append_section(
+        sections,
+        sid="ryoe",
+        heading="Last year rush yards over expected",
+        note=f"How often {pos}s with that prior-season RYOE finished top-12.",
+        rows=ryoe_rows,
+    )
+
     return {
         "position": pos,
-        "baseline_pct": baseline.get("display_pct") if isinstance(baseline, Mapping) else None,
+        "baseline_pct": baseline_pct if isinstance(baseline, Mapping) else None,
         "baseline_n": baseline.get("sample_size") if isinstance(baseline, Mapping) else None,
         "prime_window": prime_label,
+        "prime_ages": prime_ages,
+        "age_curve": _age_curve_points(age_block),
+        "highlights": _trend_highlights(sections),
         "sections": sections,
     }
 
@@ -1061,16 +1318,19 @@ def build_historical_trends(aggregates: Mapping[str, Any]) -> dict:
     """Position-level trend tables for the cheat-sheet Trends tab."""
     if not aggregates:
         return {"available": False, "descriptive_only": True, "not_in_ranking": True}
+    era = _era_label(aggregates)
     by_pos = {pos: build_position_trend_page(aggregates, pos) for pos in SKILL_POSITIONS}
     return {
         "available": True,
         "descriptive_only": True,
         "not_in_ranking": True,
         "not_in_pick_score": True,
+        "era": era,
         "headline": "Historical top-12 rates by bucket. Not a ranking score.",
         "note": (
-            "Each table is one slice from 2018–2025. Open a player's Hist button "
-            "on the Big Board for that player's own mix of buckets."
+            f"Each table is one slice from {era}. Callouts are the biggest edges "
+            "versus a typical player-season at this position. Open a player's Hist "
+            "button on the Big Board for that player's own mix of buckets."
         ),
         "positions": list(SKILL_POSITIONS),
         "by_position": by_pos,

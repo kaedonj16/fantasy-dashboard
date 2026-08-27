@@ -395,16 +395,36 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     assert rb["baseline_pct"] is None or isinstance(rb["baseline_pct"], (int, float))
     ids = [sec["id"] for sec in rb["sections"]]
     assert "adp" in ids
+    assert "adp_positional" in ids
     assert "repeat" in ids
+    assert "league_winner" in ids
     assert "career_stage" in ids
     assert "draft_capital" in ids
+    assert "top12_as_rookie" in ids
+    assert "capital_miss" in ids
     assert "age" in ids
+    assert "ryoe" in ids
     adp = next(sec for sec in rb["sections"] if sec["id"] == "adp")
     assert adp["heading"] == "Fantasy ADP round"
     assert "not fantasy ADP" in next(
         sec["note"] for sec in rb["sections"] if sec["id"] == "draft_capital"
     )
     assert any(row["label"] == "Round 1" for row in adp["rows"])
+    round1 = next(row for row in adp["rows"] if row["label"] == "Round 1")
+    assert isinstance(round1.get("vs_baseline"), int)
+    assert round1["vs_baseline"] > 0
+    pos_adp = next(sec for sec in rb["sections"] if sec["id"] == "adp_positional")
+    assert any(row["label"] == "Positional ADP 1–5" for row in pos_adp["rows"])
+    winners = next(sec for sec in rb["sections"] if sec["id"] == "league_winner")
+    assert any("top-5" in row["label"] for row in winners["rows"])
+    miss = next(sec for sec in rb["sections"] if sec["id"] == "capital_miss")
+    assert miss["polarity"] == "miss"
+    assert rb["highlights"]
+    assert rb["age_curve"]
+    assert any(pt.get("age") for pt in rb["age_curve"])
+    wr = payload["by_position"]["WR"]
+    wr_ids = [sec["id"] for sec in wr["sections"]]
+    assert "adot" in wr_ids
     for pos_page in payload["by_position"].values():
         for sec in pos_page["sections"]:
             assert "_" not in sec["heading"]
