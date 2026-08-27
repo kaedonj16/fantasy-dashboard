@@ -17,6 +17,20 @@ def test_draft_room_offers_four_and_six_point_passing_touchdowns():
     assert '<option value="6">6 points</option>' in body
 
 
+def test_draft_room_scoring_defaults_to_full_ppr():
+    body = build_draft_room_body(None, None, None, is_guest=True)
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert '<option value="1" selected>Full PPR</option>' in body
+    assert '<option value="0.5">Half PPR</option>' in body
+    # Roster presets may change the league shape, but should retain the Draft
+    # Room's full-PPR default. The explicitly named Standard preset is the only
+    # intentional non-PPR exception.
+    for key in ("espn", "sleeper", "yahoo", "sfredraft", "bestball", "dynasty", "dynasty1q"):
+        assert re.search(rf"{key}:\s+\{{[^\n]+ppr:1,", source)
+    assert re.search(r"standard:\s+\{[^\n]+ppr:0,", source)
+
+
 def test_league_scoring_is_available_to_live_and_mock_drafts():
     body = build_draft_room_body(
         "league", 2026, "sleeper", scoring={"ppr": 0.5, "tep": 0, "passTd": 6},
