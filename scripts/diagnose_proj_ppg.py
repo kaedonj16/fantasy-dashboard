@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Diagnose the Playoff-Impact "Proj PPG" gap.
+"""Site-wide projected-PPG consistency diagnostic.
 
 Puts the TWO projection pipelines side by side for one roster so we can see
 exactly where they diverge (different fallback source, different week, missing
@@ -12,8 +11,10 @@ players, or a flat scale difference):
                 (what Start/Sit, the player modal, and matchups show — the
                  number you compare against, e.g. "my lineup projects 134")
 
-Both feed the SAME optimal-lineup solver (_position_aware_lineup) so the only
-variable is the projection map itself.
+The canonical season-average value is printed with provenance beside the
+weekly site and simulation contexts.  Weekly disagreement with season average
+is allowed and explicitly labelled; disagreement between a season consumer and
+CANONICAL is a failure.
 
 Usage:
     python scripts/diagnose_proj_ppg.py --league sleeper:LEAGUE_ID:SEASON
@@ -69,12 +70,17 @@ def main() -> int:
     from app import build_league_context, build_projections_by_week
     from data_building.simulate_playoff_odds import build_ppg_map, _position_aware_lineup
     from utils.utils import pick_proj_variant
+    from utils.projection_resolver import resolve_projected_ppg_many
 
     try:
         from utils.utils import load_players_index
-        names = {str(k): (v or {}).get("name", k) for k, v in (load_players_index() or {}).items()}
+        _player_index = load_players_index() or {}
+        names = {str(k): (v or {}).get("name", k) for k, v in _player_index.items()}
+        positions = {str(k): str((v or {}).get("pos") or (v or {}).get("position") or "")
+                     for k, v in _player_index.items()}
     except Exception:
         names = {}
+        positions = {}
 
     ctx = build_league_context(platform, league_id, season)
     rosters          = ctx.get("rosters") or []
@@ -82,6 +88,10 @@ def main() -> int:
     current_week     = int(ctx.get("current_week") or 0)
     raw_ss           = ctx.get("raw_scoring_settings") or {}
     variant          = pick_proj_variant(raw_ss)
+
+    all_pids = sorted({str(pid) for r in rosters for pid in (r.get("players") or [])})
+    canonical = resolve_projected_ppg_many(all_pids, raw_ss, season,
+        positions=positions)
 
     if not rosters:
         print("[error] no rosters in context", file=sys.stderr)
@@ -126,8 +136,8 @@ def main() -> int:
 
     pids = detail_roster.get("players") or []
     print(f"\n{'='*64}\nRoster {detail_rid} — per-player projection (starters first)\n{'='*64}")
-    print(f"{'player':<24} {'pos':>4} {'SIM':>7} {'SITE':>7} {'gap':>7}  source")
-    print("-" * 64)
+    print(f"{'player':<24} {'pos':>4} {'CANON':>7} {'SIM/wk':>7} {'SITE/wk':>8}  status/source")
+    print("-" * 78)
 
     def _row(pid):
         s  = sim_ppg.get(str(pid))
@@ -144,11 +154,14 @@ def main() -> int:
         else:
             src = "neither"
         nm = names.get(str(pid), str(pid))[:24]
-        return (pos, nm, sv, wv, src)
+        cv = (canonical.get(str(pid)) or {}).get("ppg")
+        provenance = (canonical.get(str(pid)) or {}).get("source") or "unavailable"
+        return (pos, nm, cv, sv, wv, src, provenance)
 
-    rows = sorted((_row(p) for p in pids), key=lambda x: max(x[2], x[3]), reverse=True)
-    for pos, nm, sv, wv, src in rows:
-        print(f"{nm:<24} {pos:>4} {sv:>7.1f} {wv:>7.1f} {wv - sv:>+7.1f}  {src}")
+    rows = sorted((_row(p) for p in pids), key=lambda x: max(x[2] or 0, x[3], x[4]), reverse=True)
+    for pos, nm, cv, sv, wv, src, provenance in rows:
+        canon_text = f"{cv:.1f}" if cv is not None else "—"
+        print(f"{nm:<24} {pos:>4} {canon_text:>7} {sv:>7.1f} {wv:>8.1f}  weekly:{src}; season:{provenance}")
 
     sim_tot,  _ = _position_aware_lineup(pids, sim_ppg,  sim_pos, roster_positions)
     site_tot, _ = _position_aware_lineup(pids, site_ppg, sim_pos, roster_positions)
@@ -161,6 +174,8 @@ def main() -> int:
     print("  - gaps roughly proportional across all players → a flat scale/variant")
     print("    difference between the two fallback sources.")
     print("  - big per-player gaps on a few names → stale/backup listings differ.")
+    print("  - CANONICAL is season_average; SIM/wk and SITE/wk are explicitly weekly")
+    print("    and may differ. Season consumers must equal CANONICAL exactly.")
     return 0
 
 

@@ -1173,6 +1173,13 @@
     params.push('league_type=' + (state && state.sf ? 'sf' : '1qb'));
     params.push('scoring_type=' + (state && state.type === 'redraft' ? 'redraft'
       : (state && state.type === 'rookie' ? 'rookie' : 'dynasty')));
+    // Projection context is part of the API cache identity. The backend returns
+    // one canonical Sleeper value for this exact scoring context; the browser
+    // formats/consumes it but does not select a provider or rescale it.
+    var _projectionScoring = scoringCfg();
+    params.push('proj_rec=' + encodeURIComponent(String(_projectionScoring.ppr)));
+    params.push('proj_te_bonus=' + encodeURIComponent(String(_projectionScoring.tep)));
+    params.push('proj_pass_td=' + encodeURIComponent(String(_projectionScoring.passTd)));
     if (state && state.teams) params.push('league_size=' + encodeURIComponent(String(state.teams)));
     var url = '/api/league-players' + (params.length ? ('?' + params.join('&')) : '');
     var _loadPlayerPayload = function(attempt){
