@@ -10923,7 +10923,7 @@ document.addEventListener('DOMContentLoaded', function() {
             tLabel.textContent = 'Switch league';
             const tCur = document.createElement('span');
             tCur.className = 'ls-toggle-cur';
-            tCur.textContent = curLeague ? curLeague.label : '';
+            tCur.textContent = curLeague ? (curLeague.name || curLeague.label) : '';
             const tChev = document.createElement('span');
             tChev.className = 'ls-toggle-chev';
             tChev.setAttribute('aria-hidden', 'true');
@@ -10947,7 +10947,7 @@ document.addEventListener('DOMContentLoaded', function() {
               row.dataset.platform = league.platform || currentPlatform;
               const rowLabel = document.createElement('span');
               rowLabel.className = 'ls-item-label';
-              rowLabel.textContent = league.label;
+              rowLabel.textContent = league.name || league.label;
               row.appendChild(rowLabel);
               const rowPlat = platformLabel(league.platform);
               if (rowPlat) {
