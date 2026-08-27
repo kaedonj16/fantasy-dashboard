@@ -9227,6 +9227,261 @@ bindOnce(document, "domContentLoadedInit", "DOMContentLoaded", () => {
   });
 })();
 
+// ── ESPN email OTP modal wiring (page-level) ───────────────────────────────
+// Standalone init, NOT gated on the home card, so the Link-a-league modal's
+// Email pathway works on every page (the home-card init returns early off the
+// landing page, which used to leave window.brOpenEspnOtp undefined elsewhere).
+// Keyed only on the modal existing (server renders it when the OTP flag is on).
+document.addEventListener("DOMContentLoaded", () => {
+  const espnLeagueIdInput = document.getElementById("espnLeagueIdInput");
+  const espnErrorBox = document.getElementById("espnError");
+  // ── ESPN email + one-time-code sign-in modal ───────────────────────────────
+  // Present only when the server rendered it (feature flag on). Drives the three
+  // /api/link/espn/otp endpoints; on success the server tells us where to go
+  // (an account holder gets redirect_url, a guest gets a Google auth_url).
+  const otpModal = document.getElementById("espnOtpModal");
+  if (otpModal) {
+    const $ = (id) => document.getElementById(id);
+    const otpEmailStep = $("espnOtpEmailStep");
+    const otpCodeStep = $("espnOtpCodeStep");
+    const otpVerifying = $("espnOtpVerifying");
+    const otpTeamStep = $("espnOtpTeamStep");
+    const otpTeam = $("espnOtpTeam");
+    const otpEmail = $("espnOtpEmail");
+    const otpEmailEcho = $("espnOtpEmailEcho");
+    const otpCode = $("espnOtpCode");
+    const otpSend = $("espnOtpSend");
+    const otpVerify = $("espnOtpVerify");
+    const otpResend = $("espnOtpResend");
+    const otpBack = $("espnOtpBack");
+    const otpClose = $("espnOtpClose");
+    const otpMsg = $("espnOtpMsg");
+    const otpChip = $("espnOtpChip");
+    const otpChipLeague = $("espnOtpChipLeague");
+    let otpLoginId = "";
+    let otpLeagueId = "";
+    let otpResendTimer = null;
+    // Set when the modal is opened for a specific league (e.g. from the Link a
+    // league modal, which carries its own season field); null falls back to the
+    // home card's season input.
+    let otpSeasonOverride = null;
+
+    const otpSeason = () => otpSeasonOverride || Number(document.querySelector('input[name="season"]')?.value || new Date().getFullYear());
+    const setMsg = (text, kind) => {
+      if (!otpMsg) return;
+      otpMsg.textContent = text || "";
+      otpMsg.className = "otp-msg" + (kind ? " " + kind : "");
+    };
+    const showStep = (step) => {
+      if (otpEmailStep) otpEmailStep.hidden = step !== "email";
+      if (otpCodeStep) otpCodeStep.hidden = step !== "code";
+      if (otpVerifying) otpVerifying.hidden = step !== "verifying";
+      if (otpTeamStep) otpTeamStep.hidden = step !== "team";
+    };
+    let otpRedirectUrl = "";
+    const startResendCooldown = () => {
+      if (!otpResend) return;
+      let left = 45;
+      otpResend.disabled = true;
+      clearInterval(otpResendTimer);
+      const tick = () => {
+        otpResend.textContent = left > 0 ? `Resend code in 0:${String(left).padStart(2, "0")}` : "Resend code";
+        if (left <= 0) { clearInterval(otpResendTimer); otpResend.disabled = false; }
+        left -= 1;
+      };
+      tick();
+      otpResendTimer = setInterval(tick, 1000);
+    };
+    const otpReadJson = async (res) => {
+      const body = await res.text();
+      try { return JSON.parse(body); }
+      catch (_) { throw new Error("The server returned an invalid response. Please try again."); }
+    };
+
+    const closeOtp = () => {
+      otpModal.style.display = "none";
+      clearInterval(otpResendTimer);
+    };
+    const openOtp = () => {
+      const leagueId = espnLeagueIdInput?.value.trim() || "";
+      if (!leagueId || !/^\d+$/.test(leagueId)) {
+        if (espnErrorBox) {
+          espnErrorBox.textContent = "Enter a valid ESPN League ID (numbers only) first.";
+          espnErrorBox.style.display = "block";
+        }
+        window.brShake?.(espnLeagueIdInput);
+        return;
+      }
+      otpLeagueId = leagueId;
+      otpLoginId = "";
+      otpSeasonOverride = null;
+      if (otpChip && otpChipLeague) { otpChipLeague.textContent = "ESPN League " + leagueId; otpChip.hidden = false; }
+      setMsg("");
+      showStep("email");
+      if (otpCode) otpCode.value = "";
+      otpModal.style.display = "flex";
+      setTimeout(() => otpEmail?.focus(), 40);
+    };
+
+    // Open the OTP modal for an arbitrary league — used by the "Link a league"
+    // modal, which has its own League ID + season + email fields. When an email
+    // is supplied we kick off the code send so the member lands on the code step.
+    // Returns false when the modal isn't present (feature flag off) so callers
+    // can fall back gracefully.
+    window.brOpenEspnOtp = (opts) => {
+      opts = opts || {};
+      const leagueId = String(opts.league_id || "").trim();
+      if (!leagueId || !/^\d+$/.test(leagueId)) return false;
+      otpLeagueId = leagueId;
+      otpLoginId = "";
+      otpSeasonOverride = opts.season ? Number(opts.season) : null;
+      if (otpChip && otpChipLeague) { otpChipLeague.textContent = "ESPN League " + leagueId; otpChip.hidden = false; }
+      setMsg("");
+      showStep("email");
+      if (otpCode) otpCode.value = "";
+      const email = String(opts.email || "").trim();
+      if (otpEmail) otpEmail.value = email;
+      otpModal.style.display = "flex";
+      if (email.includes("@")) { otpSend?.click(); }
+      else { setTimeout(() => otpEmail?.focus(), 40); }
+      return true;
+    };
+
+    // Email method: league ID + email are on the card. Validate the email, open
+    // the modal on the league the card names, prefill it, and start the code send
+    // so the member goes straight to entering the code.
+    $("espnEmailSendBtn")?.addEventListener("click", () => {
+      const email = document.getElementById("espnHomeEmailInput")?.value.trim() || "";
+      if (!email || !email.includes("@")) {
+        if (espnErrorBox) { espnErrorBox.textContent = "Enter the email on your ESPN account."; espnErrorBox.style.display = "block"; }
+        window.brShake?.(document.getElementById("espnHomeEmailInput"));
+        return;
+      }
+      openOtp();
+      if (otpModal.style.display !== "flex") return;  // openOtp bailed on a bad league ID
+      if (otpEmail) otpEmail.value = email;
+      otpSend?.click();
+    });
+    otpClose?.addEventListener("click", closeOtp);
+    otpModal.addEventListener("click", (event) => { if (event.target === otpModal) closeOtp(); });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && otpModal.style.display === "flex") closeOtp();
+    });
+
+    otpSend?.addEventListener("click", async () => {
+      const email = otpEmail?.value.trim() || "";
+      if (!email || !email.includes("@")) { setMsg("Enter the email on your ESPN account.", "err"); window.brShake?.(otpEmail); return; }
+      otpSend.disabled = true; otpSend.textContent = "Sending…"; setMsg("");
+      try {
+        const res = await fetch("/api/link/espn/otp/start", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, league_id: otpLeagueId, season: otpSeason() }),
+        });
+        const data = await otpReadJson(res);
+        if (!res.ok || !data.ok) throw new Error(data.error || "Couldn't send a code. Try again.");
+        otpLoginId = data.login_id;
+        if (otpEmailEcho) otpEmailEcho.textContent = email;
+        showStep("code");
+        startResendCooldown();
+        setTimeout(() => otpCode?.focus(), 40);
+      } catch (err) {
+        setMsg(err.message || "Couldn't send a code. Try again.", "err");
+      } finally {
+        otpSend.disabled = false; otpSend.textContent = "Email me a 6-digit code";
+      }
+    });
+
+    otpCode?.addEventListener("input", () => {
+      otpCode.value = otpCode.value.replace(/\D/g, "").slice(0, 6);
+      if (otpCode.value.length === 6) otpVerify?.focus();
+    });
+
+    otpVerify?.addEventListener("click", async () => {
+      const code = otpCode?.value.trim() || "";
+      if (code.length !== 6) { setMsg("Enter the 6-digit code from your email.", "err"); window.brShake?.(otpCode); return; }
+      otpVerify.disabled = true; setMsg(""); showStep("verifying");
+      try {
+        const res = await fetch("/api/link/espn/otp/verify", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ login_id: otpLoginId, code, league_id: otpLeagueId, season: otpSeason() }),
+        });
+        const data = await otpReadJson(res);
+        if (!res.ok || !data.ok) throw new Error(data.error || "That code didn't work. Try again.");
+        // Connected. If the league gave us teams, let them pick which is theirs
+        // before we send them to the dashboard.
+        if (data.redirect_url && Array.isArray(data.teams) && data.teams.length && otpTeam) {
+          otpRedirectUrl = data.redirect_url;
+          otpTeam.innerHTML = data.teams
+            .map((t) => `<option value="${String(t.id)}">${(t.name || ("Team " + t.id)).replace(/[<>&]/g, "")}</option>`)
+            .join("");
+          setMsg("");
+          showStep("team");
+          return;
+        }
+        if (data.redirect_url) { window.location.href = data.redirect_url; return; }
+        if (data.auth_url) { window.location.href = data.auth_url; return; }
+        // No redirect handed back: refresh saved leagues and close.
+        await window.refreshHomeLeagues?.();
+        window.setHomeCardState?.("connected");
+        closeOtp();
+      } catch (err) {
+        showStep("code");
+        setMsg(err.message || "That code didn't work. Try again.", "err");
+      } finally {
+        otpVerify.disabled = false;
+      }
+    });
+
+    otpResend?.addEventListener("click", async () => {
+      if (!otpLoginId) return;
+      otpResend.disabled = true; setMsg("");
+      try {
+        const res = await fetch("/api/link/espn/otp/resend", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ login_id: otpLoginId }),
+        });
+        const data = await otpReadJson(res);
+        if (!res.ok || !data.ok) throw new Error(data.error || "Couldn't resend. Start over.");
+        setMsg("A new code is on the way.", "ok");
+        startResendCooldown();
+      } catch (err) {
+        otpResend.disabled = false;
+        setMsg(err.message || "Couldn't resend. Start over.", "err");
+      }
+    });
+
+    otpBack?.addEventListener("click", () => {
+      otpLoginId = "";
+      if (otpCode) otpCode.value = "";
+      setMsg("");
+      showStep("email");
+      setTimeout(() => otpEmail?.focus(), 40);
+    });
+
+    const otpGoToDashboard = () => { window.location.href = otpRedirectUrl || "/"; };
+    document.getElementById("espnOtpTeamGo")?.addEventListener("click", async () => {
+      const opt = otpTeam?.selectedOptions?.[0];
+      const rosterId = otpTeam?.value || "";
+      const teamName = opt ? opt.textContent : "";
+      if (rosterId && teamName) {
+        try {
+          // Trusted data we just fetched for this league; set the viewer so the
+          // dashboard opens as this team (same session shape as sign-in-league).
+          await fetch("/api/quick-set-viewer", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              username: teamName, team_name: teamName, roster_id: rosterId,
+              platform: "espn", league_id: otpLeagueId, season: otpSeason(),
+            }),
+          });
+        } catch (_) { /* non-fatal: fall through to the dashboard either way */ }
+      }
+      otpGoToDashboard();
+    });
+    document.getElementById("espnOtpTeamSkip")?.addEventListener("click", otpGoToDashboard);
+  }
+});
+
 document.addEventListener("DOMContentLoaded", () => {
   const platformBtns = document.querySelectorAll(".platform-btn");
   const sleeperFlow = document.getElementById("sleeperFlow");
@@ -9366,6 +9621,7 @@ if (!platformBtns.length) return;
     if (homeCardTitle) homeCardTitle.textContent = connected ? "Your leagues" : returning ? "Welcome back" : "Get started";
     document.querySelector(".home-card")?.setAttribute("data-home-state", state);
   }
+  window.setHomeCardState = setHomeCardState;
 
   if (signedInHome && signedInLeagueList) {
     const loadSignedInLeagues = () => fetch("/api/my-leagues").then((response) => response.json()).then((data) => {
@@ -9886,251 +10142,6 @@ if (!platformBtns.length) return;
     espnSubmitBtn?.click();
   });
 
-  // ── ESPN email + one-time-code sign-in modal ───────────────────────────────
-  // Present only when the server rendered it (feature flag on). Drives the three
-  // /api/link/espn/otp endpoints; on success the server tells us where to go
-  // (an account holder gets redirect_url, a guest gets a Google auth_url).
-  const otpModal = document.getElementById("espnOtpModal");
-  if (otpModal) {
-    const $ = (id) => document.getElementById(id);
-    const otpEmailStep = $("espnOtpEmailStep");
-    const otpCodeStep = $("espnOtpCodeStep");
-    const otpVerifying = $("espnOtpVerifying");
-    const otpTeamStep = $("espnOtpTeamStep");
-    const otpTeam = $("espnOtpTeam");
-    const otpEmail = $("espnOtpEmail");
-    const otpEmailEcho = $("espnOtpEmailEcho");
-    const otpCode = $("espnOtpCode");
-    const otpSend = $("espnOtpSend");
-    const otpVerify = $("espnOtpVerify");
-    const otpResend = $("espnOtpResend");
-    const otpBack = $("espnOtpBack");
-    const otpClose = $("espnOtpClose");
-    const otpMsg = $("espnOtpMsg");
-    const otpChip = $("espnOtpChip");
-    const otpChipLeague = $("espnOtpChipLeague");
-    let otpLoginId = "";
-    let otpLeagueId = "";
-    let otpResendTimer = null;
-    // Set when the modal is opened for a specific league (e.g. from the Link a
-    // league modal, which carries its own season field); null falls back to the
-    // home card's season input.
-    let otpSeasonOverride = null;
-
-    const otpSeason = () => otpSeasonOverride || Number(document.querySelector('input[name="season"]')?.value || new Date().getFullYear());
-    const setMsg = (text, kind) => {
-      if (!otpMsg) return;
-      otpMsg.textContent = text || "";
-      otpMsg.className = "otp-msg" + (kind ? " " + kind : "");
-    };
-    const showStep = (step) => {
-      if (otpEmailStep) otpEmailStep.hidden = step !== "email";
-      if (otpCodeStep) otpCodeStep.hidden = step !== "code";
-      if (otpVerifying) otpVerifying.hidden = step !== "verifying";
-      if (otpTeamStep) otpTeamStep.hidden = step !== "team";
-    };
-    let otpRedirectUrl = "";
-    const startResendCooldown = () => {
-      if (!otpResend) return;
-      let left = 45;
-      otpResend.disabled = true;
-      clearInterval(otpResendTimer);
-      const tick = () => {
-        otpResend.textContent = left > 0 ? `Resend code in 0:${String(left).padStart(2, "0")}` : "Resend code";
-        if (left <= 0) { clearInterval(otpResendTimer); otpResend.disabled = false; }
-        left -= 1;
-      };
-      tick();
-      otpResendTimer = setInterval(tick, 1000);
-    };
-    const otpReadJson = async (res) => {
-      const body = await res.text();
-      try { return JSON.parse(body); }
-      catch (_) { throw new Error("The server returned an invalid response. Please try again."); }
-    };
-
-    const closeOtp = () => {
-      otpModal.style.display = "none";
-      clearInterval(otpResendTimer);
-    };
-    const openOtp = () => {
-      const leagueId = espnLeagueIdInput?.value.trim() || "";
-      if (!leagueId || !/^\d+$/.test(leagueId)) {
-        if (espnErrorBox) {
-          espnErrorBox.textContent = "Enter a valid ESPN League ID (numbers only) first.";
-          espnErrorBox.style.display = "block";
-        }
-        window.brShake?.(espnLeagueIdInput);
-        return;
-      }
-      otpLeagueId = leagueId;
-      otpLoginId = "";
-      otpSeasonOverride = null;
-      if (otpChip && otpChipLeague) { otpChipLeague.textContent = "ESPN League " + leagueId; otpChip.hidden = false; }
-      setMsg("");
-      showStep("email");
-      if (otpCode) otpCode.value = "";
-      otpModal.style.display = "flex";
-      setTimeout(() => otpEmail?.focus(), 40);
-    };
-
-    // Open the OTP modal for an arbitrary league — used by the "Link a league"
-    // modal, which has its own League ID + season + email fields. When an email
-    // is supplied we kick off the code send so the member lands on the code step.
-    // Returns false when the modal isn't present (feature flag off) so callers
-    // can fall back gracefully.
-    window.brOpenEspnOtp = (opts) => {
-      opts = opts || {};
-      const leagueId = String(opts.league_id || "").trim();
-      if (!leagueId || !/^\d+$/.test(leagueId)) return false;
-      otpLeagueId = leagueId;
-      otpLoginId = "";
-      otpSeasonOverride = opts.season ? Number(opts.season) : null;
-      if (otpChip && otpChipLeague) { otpChipLeague.textContent = "ESPN League " + leagueId; otpChip.hidden = false; }
-      setMsg("");
-      showStep("email");
-      if (otpCode) otpCode.value = "";
-      const email = String(opts.email || "").trim();
-      if (otpEmail) otpEmail.value = email;
-      otpModal.style.display = "flex";
-      if (email.includes("@")) { otpSend?.click(); }
-      else { setTimeout(() => otpEmail?.focus(), 40); }
-      return true;
-    };
-
-    // Email method: league ID + email are on the card. Validate the email, open
-    // the modal on the league the card names, prefill it, and start the code send
-    // so the member goes straight to entering the code.
-    $("espnEmailSendBtn")?.addEventListener("click", () => {
-      const email = document.getElementById("espnHomeEmailInput")?.value.trim() || "";
-      if (!email || !email.includes("@")) {
-        if (espnErrorBox) { espnErrorBox.textContent = "Enter the email on your ESPN account."; espnErrorBox.style.display = "block"; }
-        window.brShake?.(document.getElementById("espnHomeEmailInput"));
-        return;
-      }
-      openOtp();
-      if (otpModal.style.display !== "flex") return;  // openOtp bailed on a bad league ID
-      if (otpEmail) otpEmail.value = email;
-      otpSend?.click();
-    });
-    otpClose?.addEventListener("click", closeOtp);
-    otpModal.addEventListener("click", (event) => { if (event.target === otpModal) closeOtp(); });
-    document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && otpModal.style.display === "flex") closeOtp();
-    });
-
-    otpSend?.addEventListener("click", async () => {
-      const email = otpEmail?.value.trim() || "";
-      if (!email || !email.includes("@")) { setMsg("Enter the email on your ESPN account.", "err"); window.brShake?.(otpEmail); return; }
-      otpSend.disabled = true; otpSend.textContent = "Sending…"; setMsg("");
-      try {
-        const res = await fetch("/api/link/espn/otp/start", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, league_id: otpLeagueId, season: otpSeason() }),
-        });
-        const data = await otpReadJson(res);
-        if (!res.ok || !data.ok) throw new Error(data.error || "Couldn't send a code. Try again.");
-        otpLoginId = data.login_id;
-        if (otpEmailEcho) otpEmailEcho.textContent = email;
-        showStep("code");
-        startResendCooldown();
-        setTimeout(() => otpCode?.focus(), 40);
-      } catch (err) {
-        setMsg(err.message || "Couldn't send a code. Try again.", "err");
-      } finally {
-        otpSend.disabled = false; otpSend.textContent = "Email me a 6-digit code";
-      }
-    });
-
-    otpCode?.addEventListener("input", () => {
-      otpCode.value = otpCode.value.replace(/\D/g, "").slice(0, 6);
-      if (otpCode.value.length === 6) otpVerify?.focus();
-    });
-
-    otpVerify?.addEventListener("click", async () => {
-      const code = otpCode?.value.trim() || "";
-      if (code.length !== 6) { setMsg("Enter the 6-digit code from your email.", "err"); window.brShake?.(otpCode); return; }
-      otpVerify.disabled = true; setMsg(""); showStep("verifying");
-      try {
-        const res = await fetch("/api/link/espn/otp/verify", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ login_id: otpLoginId, code, league_id: otpLeagueId, season: otpSeason() }),
-        });
-        const data = await otpReadJson(res);
-        if (!res.ok || !data.ok) throw new Error(data.error || "That code didn't work. Try again.");
-        // Connected. If the league gave us teams, let them pick which is theirs
-        // before we send them to the dashboard.
-        if (data.redirect_url && Array.isArray(data.teams) && data.teams.length && otpTeam) {
-          otpRedirectUrl = data.redirect_url;
-          otpTeam.innerHTML = data.teams
-            .map((t) => `<option value="${String(t.id)}">${(t.name || ("Team " + t.id)).replace(/[<>&]/g, "")}</option>`)
-            .join("");
-          setMsg("");
-          showStep("team");
-          return;
-        }
-        if (data.redirect_url) { window.location.href = data.redirect_url; return; }
-        if (data.auth_url) { window.location.href = data.auth_url; return; }
-        // No redirect handed back: refresh saved leagues and close.
-        await window.refreshHomeLeagues?.();
-        setHomeCardState("connected");
-        closeOtp();
-      } catch (err) {
-        showStep("code");
-        setMsg(err.message || "That code didn't work. Try again.", "err");
-      } finally {
-        otpVerify.disabled = false;
-      }
-    });
-
-    otpResend?.addEventListener("click", async () => {
-      if (!otpLoginId) return;
-      otpResend.disabled = true; setMsg("");
-      try {
-        const res = await fetch("/api/link/espn/otp/resend", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ login_id: otpLoginId }),
-        });
-        const data = await otpReadJson(res);
-        if (!res.ok || !data.ok) throw new Error(data.error || "Couldn't resend. Start over.");
-        setMsg("A new code is on the way.", "ok");
-        startResendCooldown();
-      } catch (err) {
-        otpResend.disabled = false;
-        setMsg(err.message || "Couldn't resend. Start over.", "err");
-      }
-    });
-
-    otpBack?.addEventListener("click", () => {
-      otpLoginId = "";
-      if (otpCode) otpCode.value = "";
-      setMsg("");
-      showStep("email");
-      setTimeout(() => otpEmail?.focus(), 40);
-    });
-
-    const otpGoToDashboard = () => { window.location.href = otpRedirectUrl || "/"; };
-    document.getElementById("espnOtpTeamGo")?.addEventListener("click", async () => {
-      const opt = otpTeam?.selectedOptions?.[0];
-      const rosterId = otpTeam?.value || "";
-      const teamName = opt ? opt.textContent : "";
-      if (rosterId && teamName) {
-        try {
-          // Trusted data we just fetched for this league; set the viewer so the
-          // dashboard opens as this team (same session shape as sign-in-league).
-          await fetch("/api/quick-set-viewer", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              username: teamName, team_name: teamName, roster_id: rosterId,
-              platform: "espn", league_id: otpLeagueId, season: otpSeason(),
-            }),
-          });
-        } catch (_) { /* non-fatal: fall through to the dashboard either way */ }
-      }
-      otpGoToDashboard();
-    });
-    document.getElementById("espnOtpTeamSkip")?.addEventListener("click", otpGoToDashboard);
-  }
 
   // "Continue with Google" on the home card: take the league the user just
   // selected and sign them in with Google, so instead of a throwaway session
