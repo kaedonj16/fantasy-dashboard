@@ -541,6 +541,20 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     assert "capital_miss" in ids
     assert "age" in ids
     assert "ryoe" in ids
+    wr = payload["by_position"]["WR"]
+    wr_ids = [sec["id"] for sec in wr["sections"]]
+    qb_ids = [sec["id"] for sec in payload["by_position"]["QB"]["sections"]]
+    te_ids = [sec["id"] for sec in payload["by_position"]["TE"]["sections"]]
+    assert "touches" in ids
+    assert "carries" in ids
+    assert "games" in ids
+    assert "receptions" in wr_ids
+    assert "targets" in wr_ids
+    assert "receptions" in te_ids
+    assert "pass_attempts" in qb_ids
+    assert "touches" not in wr_ids
+    assert "receptions" not in ids
+    assert "pass_attempts" not in ids
     assert "not fantasy ADP" in next(
         sec["note"] for sec in rb["sections"] if sec["id"] == "draft_capital"
     )
@@ -573,6 +587,23 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     from dashboard_services.historical.board import matches_trend_filter
     assert any(f.get("ryoe") for f in feats.values())
     assert any(f.get("adot") for f in feats.values())
+    assert any(f.get("position") == "RB" and f.get("touches") == "400+" for f in feats.values())
+    assert any(f.get("position") == "WR" and f.get("receptions") for f in feats.values())
+    touches_sec = next(sec for sec in rb["sections"] if sec["id"] == "touches")
+    cliff = next(row for row in touches_sec["rows"] if (row.get("match") or {}).get("eq") == "400+")
+    assert cliff.get("pct") is not None
+    assert cliff.get("pcts", {}).get("top_5") is not None
+    assert cliff.get("pcts", {}).get("top_24") is not None
+    assert any(
+        f.get("position") == "RB" and matches_trend_filter(f, cliff["match"])
+        for f in feats.values()
+    )
+    rec_sec = next(sec for sec in payload["by_position"]["WR"]["sections"] if sec["id"] == "receptions")
+    rec_row = rec_sec["rows"][0]
+    assert any(
+        f.get("position") == "WR" and matches_trend_filter(f, rec_row["match"])
+        for f in feats.values()
+    )
     ryoe_sec = next(sec for sec in rb["sections"] if sec["id"] == "ryoe")
     below = next(row for row in ryoe_sec["rows"] if (row.get("match") or {}).get("eq") == "below expected")
     above = next(row for row in ryoe_sec["rows"] if "above" in str((row.get("match") or {}).get("eq") or ""))

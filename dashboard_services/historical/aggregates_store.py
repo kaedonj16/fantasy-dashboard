@@ -12,6 +12,10 @@ from utils.paths import PLAYER_HISTORY_DIR
 
 PROFILE_PATH = PLAYER_HISTORY_DIR / "historical_profile_aggregates.json"
 CAREER_PATH_OVERLAY_PATH = PLAYER_HISTORY_DIR / "career_path_overlay.json"
+USAGE_VOLUME_OVERLAY_PATH = PLAYER_HISTORY_DIR / "usage_volume_overlay.json"
+
+from dashboard_services.historical.usage import VOLUME_USAGE_IDS
+
 
 _CACHE: dict[str, Any] = {"mtime": None, "data": None}
 
@@ -103,6 +107,42 @@ def _merge_career_path_overlay(data: dict, overlay: Mapping[str, Any]) -> dict:
     return data
 
 
+def _merge_usage_volume_overlay(data: dict, overlay: Mapping[str, Any]) -> dict:
+    """Stamp last-year volume rates and live totals. Does not replace share/snap/aDOT."""
+    if not overlay:
+        return data
+    usage = data.get("prior_usage") if isinstance(data.get("prior_usage"), dict) else {}
+    extra_usage = overlay.get("prior_usage") if isinstance(overlay.get("prior_usage"), dict) else {}
+    data["prior_usage"] = usage
+    for key, block in extra_usage.items():
+        if key in VOLUME_USAGE_IDS and isinstance(block, dict):
+            usage[key] = block
+    dest_tiers = data.get("prior_usage_by_tier")
+    if not isinstance(dest_tiers, dict):
+        dest_tiers = {}
+        data["prior_usage_by_tier"] = dest_tiers
+    extra_tiers = overlay.get("prior_usage_by_tier")
+    if isinstance(extra_tiers, dict):
+        for tier, metrics in extra_tiers.items():
+            if not isinstance(metrics, dict):
+                continue
+            dest = dest_tiers.setdefault(str(tier), {})
+            if not isinstance(dest, dict):
+                dest = {}
+                dest_tiers[str(tier)] = dest
+            for key, block in metrics.items():
+                if key in VOLUME_USAGE_IDS and isinstance(block, dict):
+                    dest[key] = block
+    pre = data.get("preseason_profiles") if isinstance(data.get("preseason_profiles"), dict) else {}
+    by_player = pre.get("by_player") if isinstance(pre.get("by_player"), dict) else {}
+    extras = overlay.get("preseason_volume") if isinstance(overlay.get("preseason_volume"), dict) else {}
+    for pid, extra in extras.items():
+        rec = by_player.get(str(pid))
+        if isinstance(rec, dict) and isinstance(extra, dict):
+            rec.update(extra)
+    return data
+
+
 def load_profile_aggregates(*, path: Optional[Any] = None) -> dict:
     """Return the precomputed JSON, or ``{}`` when the file is missing."""
     target = path if path is not None else PROFILE_PATH
@@ -111,11 +151,13 @@ def load_profile_aggregates(*, path: Optional[Any] = None) -> dict:
     except OSError:
         return {}
     overlay_mtime = None
+    volume_mtime = None
     nflverse_mtime = None
     if path is None:
         overlay_mtime = _file_mtime(CAREER_PATH_OVERLAY_PATH)
+        volume_mtime = _file_mtime(USAGE_VOLUME_OVERLAY_PATH)
         nflverse_mtime = _nflverse_mtime_token()
-    cache_key = (mtime, overlay_mtime, nflverse_mtime)
+    cache_key = (mtime, overlay_mtime, volume_mtime, nflverse_mtime)
     cached = _CACHE.get("data")
     if cached is not None and _CACHE.get("mtime") == cache_key and path is None:
         return cached
@@ -132,6 +174,12 @@ def load_profile_aggregates(*, path: Optional[Any] = None) -> dict:
             overlay = {}
         if isinstance(overlay, dict) and overlay:
             _merge_career_path_overlay(data, overlay)
+        try:
+            volume = json.loads(USAGE_VOLUME_OVERLAY_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            volume = {}
+        if isinstance(volume, dict) and volume:
+            _merge_usage_volume_overlay(data, volume)
         _merge_nflverse_preseason_usage(data)
         _CACHE["mtime"] = cache_key
         _CACHE["data"] = data

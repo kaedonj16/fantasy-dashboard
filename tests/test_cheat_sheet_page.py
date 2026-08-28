@@ -425,6 +425,10 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert ".cs-c-QB .cs-pname" not in body
     assert "id !== 'adp' && id !== 'adp_positional'" in script
     assert "['career', 'Career']" in script
+    assert "ryoe: 'usage'" in script
+    assert "touches: 'usage'" in script
+    assert "receptions: 'usage'" in script
+    assert "pass_attempts: 'usage'" in script
     assert "['adp', 'ADP']" not in script
     assert "p_hit_pct" not in pick
     assert "historical-player" not in core
@@ -479,6 +483,16 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert trends_place["link"] == "/draft/cheat-sheet"
     assert "—" not in trends_place["text"]
     assert "–" not in trends_place["text"]
+    volume = next(
+        entry for entry in CHANGELOG
+        if "400+" in entry.get("text", "")
+        and "touches" in entry.get("text", "").lower()
+    )
+    assert volume["tag"] == "update"
+    assert volume["link"] == "/draft/cheat-sheet"
+    assert "receptions" in volume["text"].lower()
+    assert "—" not in volume["text"]
+    assert "–" not in volume["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():

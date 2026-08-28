@@ -47,6 +47,11 @@ from dashboard_services.historical.signals import (
     lookup_market_probability,
     projected_ppg_of,
 )
+from dashboard_services.historical.usage import (
+    USAGE_RATE_SPECS,
+    VOLUME_USAGE_IDS,
+    last_season_volume_from_outcome,
+)
 
 PRESEASON_FIELDS: tuple[str, ...] = (
     "position",
@@ -58,6 +63,12 @@ PRESEASON_FIELDS: tuple[str, ...] = (
     "previous_season_snap_pct",
     "previous_season_adot",
     "previous_season_ngs_rush_yards_over_expected_per_att",
+    "previous_season_carries",
+    "previous_season_receptions",
+    "previous_season_targets",
+    "previous_season_games",
+    "previous_season_passing_attempts",
+    "previous_season_touches",
     "previous_season_year",
     "prior_top12_count",
 )
@@ -192,6 +203,12 @@ HIST_TREND_PREFIX: dict[str, str] = {
     "snap_pct": "Snaps",
     "adot": "aDOT",
     "ryoe": "RYOE",
+    "touches": "Touches",
+    "carries": "Carries",
+    "receptions": "Receptions",
+    "targets": "Targets",
+    "games": "Games",
+    "pass_attempts": "Attempts",
     "age": "Age",
     "age_exact": "Age",
 }
@@ -203,7 +220,37 @@ HIST_TREND_GENERIC_LABELS: frozenset[str] = frozenset({
     "last year snaps",
     "last year adot",
     "last year rush yards over expected",
+    "last year touches",
+    "last year carries",
+    "last year receptions",
+    "last year targets",
+    "last year games played",
+    "last year pass attempts",
 })
+VOLUME_TREND_HEADINGS: dict[str, str] = {
+    "touches": "Last year touches",
+    "carries": "Last year carries",
+    "receptions": "Last year receptions",
+    "targets": "Last year targets",
+    "games": "Last year games played",
+    "pass_attempts": "Last year pass attempts",
+}
+VOLUME_TREND_NOTES: dict[str, str] = {
+    "touches": "How often {pos}s with that many carries plus receptions last year hit the selected finish. 400+ is the famous workhorse cliff; 350-399 is the rest of the high-workload group.",
+    "carries": "How often {pos}s with that many carries last year hit the selected finish.",
+    "receptions": "How often {pos}s with that many receptions last year hit the selected finish.",
+    "targets": "How often {pos}s with that many targets last year hit the selected finish.",
+    "games": "How often {pos}s who played that many games last year hit the selected finish.",
+    "pass_attempts": "How often {pos}s with that many pass attempts last year hit the selected finish.",
+}
+VOLUME_TREND_METRIC: dict[str, str] = {
+    "touches": "touches",
+    "carries": "carries",
+    "receptions": "receptions",
+    "targets": "targets",
+    "games": "games played",
+    "pass_attempts": "pass attempts",
+}
 TIER_FINISH_DISPLAY: dict[str, str] = {
     "top_5": "top-5",
     "top_12": "top-12",
@@ -322,6 +369,7 @@ def build_preseason_profiles(
             "previous_season_year": last_season,
             "prior_top12_count": _upcoming_top12_count(by_player.get(pid) or (row,)),
         }
+        rec.update(last_season_volume_from_outcome(row))
         profiles[pid] = {k: v for k, v in rec.items() if v is not None}
     return {
         "upcoming_season": upcoming_season,
@@ -642,6 +690,13 @@ def build_player_feature_index(aggregates: Mapping[str, Any]) -> dict[str, dict]
         )
         if ryoe:
             feats["ryoe"] = ryoe
+        for spec in USAGE_RATE_SPECS:
+            spec_id = spec["id"]
+            if spec_id not in VOLUME_USAGE_IDS:
+                continue
+            bucket = value_bucket(prof.get(spec["field"]), spec["buckets"])
+            if bucket:
+                feats[spec_id] = bucket
         out[str(pid)] = feats
     return out
 
@@ -1028,6 +1083,29 @@ def build_hist_trends(
             bucket=str(ryoe),
             sentence=f"{pos}s with {ryoe} last-year RYOE finished top-12",
             rate=ryoe_rate,
+            baseline_pct=baseline_pct,
+        ))
+    for spec in USAGE_RATE_SPECS:
+        spec_id = spec["id"]
+        if spec_id not in VOLUME_USAGE_IDS:
+            continue
+        if pos not in spec["positions"]:
+            continue
+        bucket = value_bucket(query.get(spec["field"]), spec["buckets"])
+        if not bucket:
+            bucket = feats.get(spec_id)
+        if not bucket:
+            continue
+        vol_rate = (
+            (((usage.get(spec_id) or {}).get("by_position") or {}).get(pos) or {}).get("by_bucket") or {}
+        ).get(bucket)
+        metric = VOLUME_TREND_METRIC.get(spec_id, spec_id.replace("_", " "))
+        add(_trend_row(
+            kind=spec_id,
+            label=VOLUME_TREND_HEADINGS.get(spec_id, spec_id.replace("_", " ")),
+            bucket=str(bucket),
+            sentence=f"{pos}s with {bucket} {metric} last season finished top-12",
+            rate=vol_rate,
             baseline_pct=baseline_pct,
         ))
     return rows
@@ -1619,6 +1697,24 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         "Last year rush yards over expected",
         f"How often {pos}s with that prior-season RYOE hit the selected finish.",
     )
+    for spec in USAGE_RATE_SPECS:
+        spec_id = spec["id"]
+        if spec_id not in VOLUME_USAGE_IDS:
+            continue
+        if pos not in spec["positions"]:
+            continue
+        heading = VOLUME_TREND_HEADINGS.get(spec_id)
+        note_tmpl = VOLUME_TREND_NOTES.get(spec_id)
+        if not heading or not note_tmpl:
+            continue
+        _usage_rows(
+            spec_id,
+            spec["buckets"],
+            str,
+            spec_id,
+            heading,
+            note_tmpl.format(pos=pos),
+        )
 
     curve_by_tier = _age_curve_by_tier(aggregates, pos)
     return {

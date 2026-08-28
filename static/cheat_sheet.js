@@ -2087,7 +2087,10 @@
         var generic = {
             age: 1, 'draft capital': 1, 'career stage': 1,
             'last year target share': 1, 'last year snaps': 1,
-            'last year adot': 1, 'last year rush yards over expected': 1
+            'last year adot': 1, 'last year rush yards over expected': 1,
+            'last year touches': 1, 'last year carries': 1,
+            'last year receptions': 1, 'last year targets': 1,
+            'last year games played': 1, 'last year pass attempts': 1
         };
         if (label && !generic[label.toLowerCase()]) return label;
         return qualified || label || row.sentence || '';
@@ -2188,7 +2191,9 @@
         draft_capital: 'capital', top12_as_rookie: 'capital', top12_by_year_2: 'capital',
         capital_miss: 'capital',
         age: 'age', age_exact: 'age', prime: 'age',
-        target_share: 'usage', snap_pct: 'usage', adot: 'usage', ryoe: 'usage'
+        target_share: 'usage', snap_pct: 'usage', adot: 'usage', ryoe: 'usage',
+        touches: 'usage', carries: 'usage', receptions: 'usage',
+        targets: 'usage', games: 'usage', pass_attempts: 'usage'
     };
     var TRENDS_LANES = [
         ['all', 'All'], ['career', 'Career'],
@@ -2203,6 +2208,12 @@
         snap_pct: 'Snaps',
         adot: 'aDOT',
         ryoe: 'RYOE',
+        touches: 'Touches',
+        carries: 'Carries',
+        receptions: 'Receptions',
+        targets: 'Targets',
+        games: 'Games',
+        pass_attempts: 'Attempts',
         age: 'Age',
         age_exact: 'Age'
     };

@@ -11,6 +11,7 @@ from typing import Any
 from dashboard_services.historical.aggregates_store import (
     CAREER_PATH_OVERLAY_PATH,
     PROFILE_PATH,
+    USAGE_VOLUME_OVERLAY_PATH,
 )
 from dashboard_services.historical.career_profiles import build_career_path_overlay
 from dashboard_services.historical.definitions import DRAFT_CAPITAL_ORDER
@@ -23,6 +24,7 @@ from dashboard_services.historical.seasons import (
     identity_from_players_index_entry,
     row_appeared,
 )
+from dashboard_services.historical.usage import build_usage_volume_overlay
 from utils.paths import CACHE_DIR, PLAYER_HISTORY_DIR
 
 DEFAULT_SEASONS = tuple(range(2018, 2026))
@@ -79,7 +81,7 @@ def _stamp_capital_from_profiles(rows: list[dict], by_player: dict) -> None:
             row["draft_capital_bucket"] = cap
 
 
-def rebuild_career_path_overlay(*, write: bool = True) -> dict[str, Any]:
+def rebuild_career_path_overlay(*, write: bool = True) -> tuple[dict[str, Any], list[dict]]:
     identity_map = _identity_map()
     combined: list[dict] = []
     for season in DEFAULT_SEASONS:
@@ -98,14 +100,33 @@ def rebuild_career_path_overlay(*, write: bool = True) -> dict[str, Any]:
             json.dumps(overlay, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+    return overlay, featured
+
+
+def rebuild_usage_volume_overlay(
+    featured: list[dict],
+    *,
+    write: bool = True,
+) -> dict[str, Any]:
+    overlay = build_usage_volume_overlay(featured)
+    if write:
+        USAGE_VOLUME_OVERLAY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        USAGE_VOLUME_OVERLAY_PATH.write_text(
+            json.dumps(overlay, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     return overlay
 
 
 if __name__ == "__main__":
-    payload = rebuild_career_path_overlay(write=True)
+    payload, featured = rebuild_career_path_overlay(write=True)
+    volume = rebuild_usage_volume_overlay(featured, write=True)
     counts = payload.get("prior_top12_count") or {}
     bounce = payload.get("bounce_back") or {}
     wr_n = (bounce.get("WR") or {}).get("n_bounce_back")
+    rb_touches = (
+        ((volume.get("prior_usage") or {}).get("touches") or {}).get("by_position") or {}
+    ).get("RB") or {}
     print(
         "wrote "
         + str(CAREER_PATH_OVERLAY_PATH)
@@ -115,4 +136,12 @@ if __name__ == "__main__":
         + str(counts.get("11631"))
         + " wr_bounce_n="
         + str(wr_n)
+    )
+    print(
+        "wrote "
+        + str(USAGE_VOLUME_OVERLAY_PATH)
+        + " n_players="
+        + str(volume.get("n_players"))
+        + " rb_touches_known="
+        + str(rb_touches.get("n_known"))
     )
