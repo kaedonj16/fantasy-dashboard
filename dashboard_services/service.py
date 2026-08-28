@@ -1357,7 +1357,7 @@ def render_teams_sidebar(teams: List[dict]) -> str:
 
         picks = t.get("picks") or []
         picks_out: list[str] = []
-        if t.get("picks"):
+        if picks:
             picks_out.append("<div class='team-section'>")
             picks_out.append("<div class='team-section-title'>Picks</div>")
             picks_out.append("<div class='player-list picks-list'>")
@@ -1369,7 +1369,7 @@ def render_teams_sidebar(teams: List[dict]) -> str:
                 picks_out.append(
                     f"<div class='pick-row'>{season} • Round {rnd}{via_txt}</div>"
                 )
-        picks_out.append("</div></div>")
+            picks_out.append("</div></div>")
 
         body_html = (
                 "<div class='team-body'>"
