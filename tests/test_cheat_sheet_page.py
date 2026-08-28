@@ -500,6 +500,14 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "Hist" in hist_fix["text"]
     assert "—" not in hist_fix["text"]
     assert "–" not in hist_fix["text"]
+    example_tags = next(
+        entry for entry in CHANGELOG
+        if "closest-example tags" in entry.get("text", "").lower()
+    )
+    assert example_tags["tag"] == "fix"
+    assert example_tags["link"] == "/draft/cheat-sheet"
+    assert "—" not in example_tags["text"]
+    assert "–" not in example_tags["text"]
     capital_split = next(
         entry for entry in CHANGELOG
         if "Top 10" in entry.get("text", "") and "rest of Round 1" in entry.get("text", "")

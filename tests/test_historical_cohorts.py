@@ -510,12 +510,51 @@ def test_closest_examples_are_a_subset_not_the_cohort():
     matched = index["observations"]
     examples = closest_examples(matched, filters=[AGE_23, DAY_2], limit=8)
     assert 1 <= len(examples) <= 8
+    for ex in examples:
+        for trait in ex.get("traits") or []:
+            assert "_" not in str(trait)
     summary = examples_summary(examples)
     assert summary["n"] == len(examples)
     assert summary["top_12"] == 3
     assert "Top-12" in summary["label"]
     assert len(matched) == 12
     assert summary["n"] < len(matched)
+
+
+def test_closest_example_traits_use_readable_bucket_labels():
+    rows = [
+        _obs_row(
+            sleeper_id="saquon",
+            name="Saquon Barkley",
+            season=2023,
+            years_experience=5,
+            age=26.2,
+            draft_capital_bucket="round_1",
+            previous_season_finish=3,
+        )
+    ]
+    examples = closest_examples(build_cohort_index(rows)["observations"])
+    assert examples
+    traits = examples[0]["traits"]
+    assert "Year 6+" in traits
+    assert "Round 1" in traits
+    assert "Top 5" in traits
+    assert all("_" not in str(t) for t in traits)
+    assert "year_6_plus" not in traits
+    assert "round_1" not in traits
+    assert "top_5" not in traits
+    day2 = closest_examples(build_cohort_index([
+        _obs_row(
+            sleeper_id="achane",
+            name="De'Von Achane",
+            years_experience=2,
+            draft_capital_bucket="day_2",
+            previous_season_finish=5,
+        )
+    ])["observations"])
+    assert "Day 2" in day2[0]["traits"]
+    assert "Year 3" in day2[0]["traits"]
+    assert all("_" not in str(t) for t in day2[0]["traits"])
 
 
 def test_index_trajectory_ignores_outcome_year_actuals():

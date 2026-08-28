@@ -407,8 +407,38 @@ def _market_adjusted(
     return empty
 
 
+_COMPACT_CAPITAL_LABELS = {
+    "round_1": "Round 1",
+    "day_2": "Day 2",
+    "day_3": "Day 3",
+    "undrafted": "Undrafted",
+}
+
+
+def _human_feat_label(dim: str, value: Any) -> str:
+    """Readable bucket copy for closest-example tags. Never leak underscored keys."""
+    if value is None or value == "":
+        return ""
+    text = str(value)
+    if dim == "draft_capital":
+        compact = _COMPACT_CAPITAL_LABELS.get(text)
+        if compact:
+            return compact
+    from dashboard_services.historical.board import format_comp_bucket_value
+
+    label = format_comp_bucket_value(dim, value) or text
+    if "_" in label:
+        label = label.replace("_", " ").strip()
+    return label
+
+
 def _example_traits(feats: Mapping[str, Any], filters: Sequence[Mapping[str, Any]]) -> list[str]:
-    labels = matched_filter_labels(feats, filters)
+    labels = [
+        item.replace("_", " ").strip() if "_" in item else item
+        for item in matched_filter_labels(feats, filters)
+        if item
+    ]
+    labels = [item for item in labels if item]
     if labels:
         return labels
     order = (
@@ -427,8 +457,11 @@ def _example_traits(feats: Mapping[str, Any], filters: Sequence[Mapping[str, Any
     out = []
     for key in order:
         val = feats.get(key)
-        if val:
-            out.append(str(val))
+        if val is None or val == "":
+            continue
+        label = _human_feat_label(key, val)
+        if label:
+            out.append(label)
         if len(out) >= 4:
             break
     return out
