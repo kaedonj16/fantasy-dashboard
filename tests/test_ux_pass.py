@@ -104,11 +104,14 @@ def test_do_next_waiver_card_helper():
     assert "def _render_do_next_waiver_card" in app_src
     assert "Do this next" in app_src
     assert "os-do-next-collapsed" in app_src
+    assert "os-do-next-draft" in app_src
+    assert "Draft prep" in app_src
 
 
 def test_dashboard_css_action_and_palette_styles():
     assert ".os-action-queue" in DASH_CSS
     assert ".os-do-next-card" in DASH_CSS
+    assert ".os-do-next-draft" in DASH_CSS
     assert ".nav-search-group-label" in DASH_CSS
     assert ".br-pro-preview" in DASH_CSS
     assert ".pr-advanced-col" not in DASH_CSS

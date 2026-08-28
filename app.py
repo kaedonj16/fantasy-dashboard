@@ -8217,17 +8217,24 @@ def _render_do_next_waiver_card(
         )
 
     if draft_prep_hrefs:
-        subtitle = "Waiver pickups and draft prep"
+        subtitle = "Top waiver pickups for your roster"
     else:
         subtitle = "Smart pickups based on value + trend + breakout potential"
 
     draft_links_html = ""
     if draft_prep_hrefs:
-        links = " · ".join(
-            f'<a class="os-do-next-link" href="{html.escape(href)}">{html.escape(label)}</a>'
+        links = "".join(
+            f'<a class="os-do-next-draft-link" href="{html.escape(href)}">'
+            f'<span>{html.escape(label)}</span>'
+            f'<span class="os-do-next-draft-arrow" aria-hidden="true">&rarr;</span>'
+            f"</a>"
             for label, href in draft_prep_hrefs
         )
-        draft_links_html = f'<div class="os-do-next-links">{links}</div>'
+        draft_links_html = f"""
+          <div class="os-do-next-draft">
+            <div class="os-do-next-draft-head">Draft prep</div>
+            <div class="os-do-next-draft-links">{links}</div>
+          </div>"""
 
     waiver_body = full_rows or '<p class="os-do-next-empty">No waiver values available yet.</p>'
 
