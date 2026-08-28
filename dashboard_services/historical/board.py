@@ -655,12 +655,12 @@ def _hist_compare_copy(
     if gap < 0:
         extra = " Early ADP is a high bar." if early else ""
         out["gap_note"] = (
-            f"{round_name} hits {abs_gap} pts more often.{extra} "
+            f"{round_name} hits {abs_gap} percent more often.{extra} "
             "Two groups, not a combined chance or a ranking."
         )
         return out
     out["gap_note"] = (
-        f"Players like this hit {abs_gap} pts more often than {round_name}. "
+        f"Players like this hit {abs_gap} percent more often than {round_name}. "
         "Two groups, not a combined chance or a ranking."
     )
     return out
