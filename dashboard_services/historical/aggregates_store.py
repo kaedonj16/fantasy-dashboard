@@ -155,14 +155,30 @@ def _merge_cohort_index(data: dict, overlay: Mapping[str, Any]) -> dict:
     Cron rebuilds stamp ``cohort_index`` onto ``historical_profile_aggregates.json``.
     Until that rebuild, a sibling ``cohort_index.json`` overlay is enough for
     ``POST /api/historical-cohort`` without a request-time parquet scan.
+
+    ``preseason_trajectory`` is stamped onto live preseason profiles so Scout
+    uses the same YoY buckets as historical matching.
     """
     if not overlay:
         return data
     existing = data.get("cohort_index") if isinstance(data.get("cohort_index"), dict) else {}
-    if existing.get("observations"):
-        return data
-    if overlay.get("observations"):
-        data["cohort_index"] = dict(overlay)
+    if overlay.get("observations") and not existing.get("observations"):
+        data["cohort_index"] = {
+            key: value
+            for key, value in overlay.items()
+            if key != "preseason_trajectory"
+        }
+    extras = overlay.get("preseason_trajectory")
+    if isinstance(extras, dict) and extras:
+        pre = data.get("preseason_profiles") if isinstance(data.get("preseason_profiles"), dict) else {}
+        by_player = pre.get("by_player") if isinstance(pre.get("by_player"), dict) else {}
+        for pid, extra in extras.items():
+            rec = by_player.get(str(pid))
+            if not isinstance(rec, dict) or not isinstance(extra, dict):
+                continue
+            for key, value in extra.items():
+                if value and rec.get(key) is None:
+                    rec[key] = value
     return data
 
 

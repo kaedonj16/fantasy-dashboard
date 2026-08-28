@@ -1,5 +1,6 @@
 """True multi-factor historical cohorts (slim CI, no pandas)."""
 from pathlib import Path
+import json
 
 from dashboard_services.historical.cohorts import (
     EDGE_RANK_PRIOR_N,
@@ -463,11 +464,56 @@ def test_cohort_modules_stay_pure_and_off_ranking():
         assert "from utils.projection_resolver" not in text
     pick = (ROOT / "static" / "pick_score.js").read_text(encoding="utf-8")
     core = (ROOT / "static" / "draft_board_core.js").read_text(encoding="utf-8")
+    grade = (ROOT / "utils" / "draft_grade.py").read_text(encoding="utf-8")
     assert "p_hit_pct" not in pick
     assert "historical" not in pick
     assert "p_hit_pct" not in core
     assert "/api/historical-cohort" not in core
+    assert "p_hit_pct" not in grade
+    assert "historical-cohort" not in grade
     bp = (ROOT / "routes" / "historical_api_bp.py").read_text(encoding="utf-8")
     assert "/api/historical-cohort" in bp
     assert "evaluate_cohort" in bp
     assert "read_parquet" not in bp
+
+
+def test_overlay_stamps_live_trajectory_without_leaking_into_index_payload():
+    from dashboard_services.historical.aggregates_store import _merge_cohort_index
+
+    data = {
+        "preseason_profiles": {
+            "by_player": {"p1": {"position": "WR", "age": 24}},
+        }
+    }
+    overlay = {
+        "kind": "player_season",
+        "observations": [{"pid": "h1", "pos": "WR", "feats": {"position": "WR"}}],
+        "preseason_trajectory": {"p1": {"target_share_change": "+5 pts or more"}},
+    }
+    _merge_cohort_index(data, overlay)
+    assert data["preseason_profiles"]["by_player"]["p1"]["target_share_change"] == "+5 pts or more"
+    assert "preseason_trajectory" not in data["cohort_index"]
+    assert data["cohort_index"]["observations"]
+
+
+def test_live_overlay_combined_cohort_is_an_intersection():
+    from dashboard_services.historical.aggregates_store import load_profile_aggregates
+
+    reset_cohort_cache()
+    aggs = load_profile_aggregates()
+    assert ((aggs.get("cohort_index") or {}).get("observations")), "cohort overlay missing"
+    age = evaluate_cohort(aggs, position="WR", filters=[AGE_23], data_version="live")
+    cap = evaluate_cohort(aggs, position="WR", filters=[DAY_2], data_version="live")
+    both = evaluate_cohort(aggs, position="WR", filters=[AGE_23, DAY_2], data_version="live")
+    assert both["available"] is True
+    assert both["sample_size"] > 0
+    assert both["n_players"] <= both["sample_size"]
+    assert both["sample_size"] <= age["sample_size"]
+    assert both["sample_size"] <= cap["sample_size"]
+    assert both["raw_rate"] == both["rates"]["top_12"]["raw_rate"]
+    assert both["ci_low"] is not None
+    feats = {}
+    from dashboard_services.historical.board import build_player_feature_index
+    feats = build_player_feature_index(aggs)
+    assert any(f.get("target_share_change") or f.get("workload_change") for f in feats.values())
+    assert "observations" not in json.dumps(feats)

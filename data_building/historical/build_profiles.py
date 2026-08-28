@@ -91,6 +91,7 @@ def rebuild_cohort_index_overlay(
     Used when the warehouse parquet exists (or rows are injected) but a full
     profile rebuild is not required. Request paths still never scan parquet.
     """
+    from dashboard_services.historical.board import build_preseason_profiles
     from dashboard_services.historical.cohorts import build_cohort_index
 
     overlay_path = PLAYER_HISTORY_DIR / "cohort_index.json"
@@ -98,6 +99,20 @@ def rebuild_cohort_index_overlay(
     if records:
         records = attach_historical_adp(records)
     index = build_cohort_index(records)
+    pre = build_preseason_profiles(records)
+    traj: dict[str, dict] = {}
+    for pid, rec in ((pre.get("by_player") or {}) if isinstance(pre, dict) else {}).items():
+        if not isinstance(rec, dict):
+            continue
+        bits = {
+            key: rec[key]
+            for key in ("target_share_change", "snap_pct_change", "workload_change")
+            if rec.get(key)
+        }
+        if bits:
+            traj[str(pid)] = bits
+    if traj:
+        index["preseason_trajectory"] = traj
     if write:
         overlay_path.write_text(
             json.dumps(index, separators=(",", ":"), default=str),

@@ -706,10 +706,12 @@ def test_historical_cohort_route_counts_matched_rows():
     assert body["not_in_ranking"] is True
     assert body["kind"] == "player_season"
     assert "observations" not in body
-    if body.get("available") and body.get("sample_size"):
-        assert body["raw_rate"] == body["rates"]["top_12"]["raw_rate"]
-        assert body["ci_low"] is not None
-        assert body["adjusted_edge"] is not None
+    assert body.get("available") is True
+    assert body.get("sample_size", 0) > 0
+    assert body["n_players"] <= body["sample_size"]
+    assert body["raw_rate"] == body["rates"]["top_12"]["raw_rate"]
+    assert body["ci_low"] is not None
+    assert body["adjusted_edge"] is not None
 
 
 def test_hist_trend_titles_keep_distinct_capital_and_age_rows():
