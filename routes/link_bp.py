@@ -18,6 +18,7 @@ import hashlib
 import re
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from flask import Blueprint, jsonify, request, session
 
@@ -911,6 +912,27 @@ def _resolve_fleaflicker_team(provider, league_id, season, *, token=None, team_i
     )
 
 
+def _persist_fleaflicker_viewer(
+    league_id: str, season: int, team_id: Optional[str], *, token: Optional[str] = None,
+) -> None:
+    """Resolve a Fleaflicker team id into the Flask viewer session."""
+    if not team_id:
+        return
+    try:
+        from dashboard_services.providers.registry import get_provider
+        from utils.viewer_resolve import resolve_viewer_for_league
+        provider = get_provider("fleaflicker")
+        users = provider.get_users(league_id, season, token=token)
+        rosters = provider.get_rosters(league_id, season, token=token)
+        viewer = resolve_viewer_for_league(users, rosters, "", user_id=str(team_id))
+        if viewer:
+            from app import save_viewer_session
+            save_viewer_session(viewer)
+            session["viewer_platform"] = "fleaflicker"
+    except Exception:
+        logger.warning("[link/fleaflicker] viewer resolution failed", exc_info=True)
+
+
 def _apply_fleaflicker_guest_viewer(token: str, league_id: str, season: int) -> None:
     """Set the viewer session for a guest private connect when owner id is known."""
     from dashboard_services.accounts import peek_private_provider_connection
@@ -923,20 +945,11 @@ def _apply_fleaflicker_guest_viewer(token: str, league_id: str, season: int) -> 
         return
     try:
         from dashboard_services.providers.registry import get_provider
-        from utils.viewer_resolve import resolve_viewer_for_league
         provider = get_provider("fleaflicker")
-        users = provider.get_users(league_id, season, token=auth_token)
-        rosters = provider.get_rosters(league_id, season, token=auth_token)
         team_id = _resolve_fleaflicker_team(
             provider, league_id, season, token=auth_token, flea_user_id=flea_user_id,
         )
-        if not team_id:
-            return
-        viewer = resolve_viewer_for_league(users, rosters, "", user_id=str(team_id))
-        if viewer:
-            from app import save_viewer_session
-            save_viewer_session(viewer)
-            session["viewer_platform"] = "fleaflicker"
+        _persist_fleaflicker_viewer(league_id, season, team_id, token=auth_token)
     except Exception:
         logger.warning("[link/fleaflicker/guest] viewer resolution failed", exc_info=True)
 
@@ -981,6 +994,7 @@ def _connect_fleaflicker(method: str):
             info.get("name") or f"Fleaflicker League {league_id}", method,
             credentials=credentials, team_id=team_id,
         )
+        _persist_fleaflicker_viewer(league_id, season, team_id, token=auth_token)
     except Exception as exc:
         error, status = _provider_connect_error(exc, "fleaflicker", method)
         return jsonify(error), status
@@ -1126,6 +1140,18 @@ def link_fleaflicker_private_saved():
         except Exception:
             pass
         return jsonify(error), status
+    team_id = None
+    try:
+        from dashboard_services.providers.registry import get_provider
+        from dashboard_services.providers.fleaflicker_api import resolve_fleaflicker_team_id
+        provider = get_provider("fleaflicker")
+        users = provider.get_users(league_id, season, token=credentials.get("token"))
+        flea_uid = str(credentials.get("flea_user_id") or "").strip()
+        if flea_uid:
+            team_id = resolve_fleaflicker_team_id(users, flea_user_id=flea_uid)
+        _persist_fleaflicker_viewer(league_id, season, team_id, token=credentials.get("token"))
+    except Exception:
+        logger.warning("[link/fleaflicker/saved] viewer resolution failed", exc_info=True)
     return jsonify({
         "ok": True, "platform": "fleaflicker", "connection_method": "private",
         "league_id": league_id, "season": season, "name": info.get("name"),

@@ -853,6 +853,29 @@ def resolve_account_viewer_for_league(
     if roster is None and identities:
         roster = next((r for r in rosters or []
                        if str(r.get("owner_id") or "") in identities), None)
+    # Fleaflicker stores team ids on rosters, but private-login credentials carry the
+    # Fleaflicker owner id — match via metadata.flea_owner_id when team_id was never
+    # persisted (common on reconnect / saved-league open paths).
+    if roster is None and platform == "fleaflicker":
+        from dashboard_services.providers.fleaflicker_api import resolve_fleaflicker_team_id
+        resolved_team_id = None
+        try:
+            credentials = get_provider_league_credentials(account_id, platform, league_id, season) or {}
+        except Exception:
+            credentials = {}
+        flea_uid = str(credentials.get("flea_user_id") or "").strip()
+        if flea_uid:
+            resolved_team_id = resolve_fleaflicker_team_id(users, flea_user_id=flea_uid)
+        if not resolved_team_id and identities:
+            for platform_uid in identities:
+                resolved_team_id = resolve_fleaflicker_team_id(users, flea_user_id=platform_uid)
+                if resolved_team_id:
+                    break
+        if resolved_team_id:
+            roster = next(
+                (r for r in rosters or [] if str(r.get("roster_id") or "") == str(resolved_team_id)),
+                None,
+            )
     if roster is None:
         return None
 
