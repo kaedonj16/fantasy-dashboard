@@ -12587,9 +12587,6 @@ a.signed-home-league:hover {
     font-weight: 700;
     color: var(--text-muted);
     transition: background .14s ease, color .14s ease, border-color .14s ease;
-    max-width: 180px;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .manager-pill.active {
@@ -14704,9 +14701,12 @@ img, svg, canvas {
     }
 
     .os-hero-stats .os-stat-value-name {
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        white-space: normal;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        line-height: 1.15;
     }
 
     .os-hero-top {
