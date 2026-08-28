@@ -341,6 +341,7 @@ def peek_private_espn_connection(token: str, league_id: str, season: int) -> Opt
 def add_provider_league_connection(
     account_id: int, provider: str, league_id: str, season: int, name: str,
     connection_method: str, *, credentials: Optional[dict] = None,
+    team_id: Optional[str] = None,
 ) -> None:
     """Atomically persist a validated league and optional encrypted auth.
 
@@ -407,14 +408,15 @@ def add_provider_league_connection(
                     ).fetchone()["id"]
         conn.execute(
             """INSERT INTO user_leagues
-                   (account_id, platform, league_id, season, name, provider_connection_id)
-               VALUES (%s, %s, %s, %s, %s, %s)
+                   (account_id, platform, league_id, season, name, team_id, provider_connection_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)
                ON CONFLICT (account_id, platform, league_id, season) DO UPDATE SET
                    name = EXCLUDED.name,
+                   team_id = COALESCE(EXCLUDED.team_id, user_leagues.team_id),
                    provider_connection_id = COALESCE(
                        EXCLUDED.provider_connection_id, user_leagues.provider_connection_id
                    )""",
-            (account_id, provider, str(league_id), int(season), name, connection_id),
+            (account_id, provider, str(league_id), int(season), name, team_id, connection_id),
         )
         conn.commit()
 

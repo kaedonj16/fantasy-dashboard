@@ -56,14 +56,36 @@ def test_normalizes_league_users_rosters_and_matchups(monkeypatch):
     league = provider.get_league("14153", 2026)
     assert league["total_rosters"] == 2
     assert league["roster_positions"] == ["QB", "RB", "RB"]
-    assert provider.get_users("14153", 2026)[0]["user_id"] == "9"
+    user = provider.get_users("14153", 2026)[0]
+    assert user["user_id"] == "1"
+    assert user["metadata"]["flea_owner_id"] == "9"
     roster = provider.get_rosters("14153", 2026)[0]
+    assert roster["owner_id"] == "1"
+    assert roster["metadata"]["team_name"] == "Owls"
     assert roster["players"] == ["canon-9"]
     assert roster["metadata"]["unmapped_player_count"] == 1
     assert provider.get_matchups("14153", 2026, 1)[0]["points"] == 101.5
 
 
-def test_bracket_is_unsupported():
+def test_resolve_fleaflicker_team_id_matches_owner_or_team():
+    from dashboard_services.providers.fleaflicker_api import resolve_fleaflicker_team_id
+    users = [
+        {"user_id": "1020439", "roster_id": 1020439,
+         "metadata": {"team_name": "East Bay Biters", "flea_owner_id": "532417"}},
+    ]
+    assert resolve_fleaflicker_team_id(users, team_id="1020439") == "1020439"
+    assert resolve_fleaflicker_team_id(users, flea_user_id="532417") == "1020439"
+    assert resolve_fleaflicker_team_id(users, flea_user_id="999") is None
+
+
+def test_build_roster_map_uses_fleaflicker_team_names():
+    from utils.league_payload import build_roster_map
+    users = [
+        {"user_id": "1", "display_name": "Ada",
+         "metadata": {"team_name": "Owls", "flea_owner_id": "9"}},
+    ]
+    rosters = [{"roster_id": 1, "owner_id": "1", "metadata": {"team_name": "Owls"}}]
+    assert build_roster_map(users, rosters) == {"1": "Owls"}
     with pytest.raises(UnsupportedCapabilityError):
         FleaflickerProvider().get_bracket("1", 2026, "winners")
 
@@ -77,15 +99,16 @@ def test_upstream_timeout_is_safe(mock_get):
 
 @patch("dashboard_services.providers.fleaflicker_api._request_post")
 def test_login_returns_token_without_exposing_password(mock_post):
-    mock_post.return_value = response({"user": {"token": "abc123"}})
-    assert login("a@b.com", "secret") == "abc123"
+    mock_post.return_value = response({"user": {"token": "abc123", "id": 532417}})
+    session = login("a@b.com", "secret")
+    assert session == {"token": "abc123", "user_id": "532417"}
     body = mock_post.call_args.kwargs.get("json") or {}
     assert body == {"loginId": "a@b.com", "password": "secret"}
     assert "email" not in body
     params = mock_post.call_args.kwargs.get("params") or {}
     assert params.get("sport") == "NFL"
     # Callers must never persist the password; only the token is returned.
-    assert "password" not in {"token": login("a@b.com", "secret")}
+    assert "password" not in session
 
 
 @patch("dashboard_services.providers.fleaflicker_api._request_post")

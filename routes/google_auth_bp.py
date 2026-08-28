@@ -179,13 +179,29 @@ def google_auth_callback():
                 provider = str(pending_provider.get("provider") or "espn").strip().lower()
                 credentials = {
                     k: v for k, v in pending_provider.items()
-                    if k not in {"provider", "league_id", "season", "name"}
+                    if k not in {"provider", "league_id", "season", "name", "team_id"}
                 }
+                team_id = pending_provider.get("team_id")
+                if provider == "fleaflicker" and not team_id:
+                    try:
+                        from dashboard_services.providers.registry import get_provider
+                        from dashboard_services.providers.fleaflicker_api import resolve_fleaflicker_team_id
+                        flea_provider = get_provider("fleaflicker")
+                        users = flea_provider.get_users(
+                            pending_provider["league_id"],
+                            pending_provider["season"],
+                            token=credentials.get("token"),
+                        )
+                        team_id = resolve_fleaflicker_team_id(
+                            users, flea_user_id=credentials.get("flea_user_id"),
+                        )
+                    except Exception:
+                        logger.warning("[google_auth] fleaflicker team resolution failed", exc_info=True)
                 add_provider_league_connection(
                     account_id, provider, pending_provider["league_id"],
                     pending_provider["season"],
                     pending_provider.get("name") or f"{provider.title()} League",
-                    "private", credentials=credentials,
+                    "private", credentials=credentials, team_id=team_id,
                 )
                 session.pop("onboarding_progress", None)
                 return redirect(
@@ -243,6 +259,23 @@ def google_auth_callback():
                             link_platform_identity(account_id, "sleeper", str(vuid), uname)
                 except Exception:
                     logger.warning("[google_auth] sleeper viewer resolve failed", exc_info=True)
+            elif pending.get("team_id") and not session.get("viewer_roster_id"):
+                try:
+                    from app import (
+                        get_league_ctx_from_cache, resolve_viewer_for_league, save_viewer_session,
+                    )
+                    lctx = get_league_ctx_from_cache(
+                        pending["platform"], pending["league_id"], pending.get("season"),
+                    )
+                    viewer = resolve_viewer_for_league(
+                        lctx.get("users"), lctx.get("rosters"), "",
+                        user_id=str(pending["team_id"]),
+                    )
+                    if viewer:
+                        save_viewer_session(viewer)
+                        session["viewer_platform"] = pending["platform"]
+                except Exception:
+                    logger.warning("[google_auth] pending team viewer resolve failed", exc_info=True)
             return redirect(
                 f"/{pending['platform']}/{pending.get('season') or ''}/{pending['league_id']}/dashboard"
             )

@@ -86,21 +86,27 @@ def test_fleaflicker_public_connection_succeeds(client, monkeypatch):
 def test_fleaflicker_private_login_stores_token_only(client, monkeypatch):
     captured = {}
 
-    def add_conn(account_id, provider, league_id, season, name, method, *, credentials=None):
+    def add_conn(account_id, provider, league_id, season, name, method, *, credentials=None, team_id=None):
         captured["credentials"] = credentials
+        captured["team_id"] = team_id
 
     import dashboard_services.accounts as accounts
     monkeypatch.setattr(accounts, "add_provider_league_connection", add_conn)
     monkeypatch.setattr(
         "dashboard_services.providers.fleaflicker_api.login",
-        lambda email, password: "session-token",
+        lambda email, password: {"token": "session-token", "user_id": "532417"},
     )
-    _patch_flea(monkeypatch)
+    provider = _patch_flea(monkeypatch)
+    provider.get_users = lambda *a, **k: [
+        {"roster_id": 1020439, "user_id": "1020439",
+         "metadata": {"team_name": "East Bay Biters", "flea_owner_id": "532417"}},
+    ]
     response = client.post("/api/link/fleaflicker/private", json={
         "league_id": "14153", "season": 2026, "email": "a@b.com", "password": "secret",
     })
     assert response.status_code == 200
-    assert captured["credentials"] == {"token": "session-token"}
+    assert captured["credentials"] == {"token": "session-token", "flea_user_id": "532417"}
+    assert captured["team_id"] == "1020439"
     assert "password" not in response.get_data(as_text=True)
     assert "secret" not in response.get_data(as_text=True)
 
