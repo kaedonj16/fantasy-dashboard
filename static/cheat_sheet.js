@@ -2404,13 +2404,17 @@
     }
 
     function trendsScoutHtml(data, picks, pickCount) {
-        var html = '<section class="cs-trends-scout">';
-        html += '<div class="cs-trends-sec-head"><h3>Board players who match</h3><p>';
+        var hits = pickCount ? trendsScoutHits(data, trendsPos, picks) : [];
+        var premium = !!cfg.hasPremium;
+        var shown = premium ? hits : hits.slice(0, TRENDS_SCOUT_PREVIEW);
+        var html = '<section class="cs-trends-scout' + (pickCount ? '' : ' is-idle') + '">';
+        html += '<div class="cs-trends-sec-head"><h3>';
         if (!pickCount) {
-            html += 'Tap one or more buckets. Matching uses AND across tables and OR within the same table.';
-            html += '</p></div></section>';
+            html += 'Board players who match</h3><p>Tap a bucket. Names stay here while you keep browsing the tables.</p></div></section>';
             return html;
         }
+        html += esc(String(hits.length)) + ' matching ' + esc(trendsPos)
+            + (hits.length === 1 ? '' : 's') + '</h3><p>';
         var labels = Object.keys(picks).map(function (id) { return picks[id].label; }).filter(Boolean);
         html += esc(labels.join(' + '));
         html += '</p></div>';
@@ -2421,9 +2425,6 @@
         });
         html += '<button type="button" class="cs-trends-chip is-clear" data-trends-clear="1">Clear</button>';
         html += '</div>';
-        var hits = trendsScoutHits(data, trendsPos, picks);
-        var premium = !!cfg.hasPremium;
-        var shown = premium ? hits : hits.slice(0, TRENDS_SCOUT_PREVIEW);
         if (!hits.length) {
             html += '<p class="cs-hist-sub">No current-board ' + esc(trendsPos)
                 + 's match those buckets. Try fewer filters, or load the Big Board first.</p>';
@@ -2446,13 +2447,85 @@
                 html += '<p class="cs-trends-scout-more">' + (hits.length - TRENDS_SCOUT_PREVIEW)
                     + ' more matching ' + esc(trendsPos) + 's. '
                     + '<button type="button" data-trends-unlock="1">Unlock the full list</button></p>';
-            } else {
-                html += '<p class="cs-hist-sub">' + hits.length + ' matching '
-                    + esc(trendsPos) + (hits.length === 1 ? '' : 's') + ' on this board.</p>';
             }
         }
         html += '</section>';
         return html;
+    }
+
+    function trendsPickRecord(id, sections) {
+        var found = null;
+        (sections || []).forEach(function (sec) {
+            (sec.rows || []).forEach(function (row) {
+                if (row && row.id === id) found = { row: row, sec: sec };
+            });
+        });
+        if (!found || !found.row || !found.row.match) return null;
+        return {
+            id: id,
+            label: trendsQualifyLabel(found.sec.id, found.row.label || ''),
+            match: found.row.match,
+            sid: found.sec.id
+        };
+    }
+
+    function toggleTrendsPick(id, sections) {
+        if (!id) return;
+        var bag = trendsPicksFor(trendsPos);
+        if (bag[id]) delete bag[id];
+        else {
+            var rec = trendsPickRecord(id, sections);
+            if (rec) bag[id] = rec;
+        }
+        paintTrendsSelection(sections);
+    }
+
+    function paintTrendsSelection(sections) {
+        var host = $('csTrends');
+        if (!host) return;
+        var picks = trendsPicksFor(trendsPos);
+        host.querySelectorAll('.cs-trends-srow.is-pick').forEach(function (row) {
+            var id = row.getAttribute('data-trends-pick');
+            row.classList.toggle('is-on', !!(id && picks[id]));
+        });
+        var dock = host.querySelector('.cs-trends-scout');
+        var wrap = document.createElement('div');
+        wrap.innerHTML = trendsScoutHtml(trendsCache, picks, Object.keys(picks).length);
+        var next = wrap.firstElementChild;
+        if (dock && next) dock.replaceWith(next);
+        bindTrendsDock(host, sections);
+    }
+
+    function bindTrendsDock(host, sections) {
+        var dock = host && host.querySelector('.cs-trends-scout');
+        if (!dock) return;
+        dock.querySelectorAll('[data-trends-pick]').forEach(function (b) {
+            b.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleTrendsPick(b.getAttribute('data-trends-pick'), sections);
+            });
+        });
+        var clearPicks = dock.querySelector('[data-trends-clear]');
+        if (clearPicks) clearPicks.addEventListener('click', function () {
+            trendsPicks[trendsPos] = {};
+            paintTrendsSelection(sections);
+        });
+        dock.querySelectorAll('[data-trends-unlock]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                if (typeof window.showPaywall === 'function') window.showPaywall('draft-trends-scout');
+            });
+        });
+        dock.querySelectorAll('[data-trends-player]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                var id = b.getAttribute('data-trends-player');
+                var name = b.getAttribute('data-trends-name') || '';
+                var pos = b.getAttribute('data-trends-ppos') || trendsPos;
+                var adp = b.getAttribute('data-trends-adp') || '';
+                var proj = b.getAttribute('data-trends-proj') || '';
+                if (id) openHistPanel(id, name, adp, pos, proj, '', '');
+            });
+        });
     }
 
     function trendsTopEdges(sections, limit, tier) {
@@ -2515,8 +2588,6 @@
     function renderTrends(opts) {
         var host = $('csTrends');
         if (!host) return;
-        opts = opts || {};
-        var keepY = opts.keepScroll ? window.pageYOffset : null;
         var data = trendsCache;
         if (!data || data.available === false) {
             host.innerHTML = '<p class="cs-hist-sub">Historical trends are not available yet.</p>';
@@ -2643,6 +2714,7 @@
             });
             html += '</div></div></section>';
         }
+        html += '<div class="cs-trends-sticky">';
         html += '<div class="cs-trends-lanes" role="group" aria-label="Trends lane">';
         TRENDS_LANES.forEach(function (pair) {
             if (pair[0] !== 'all' && !present[pair[0]]) return;
@@ -2661,7 +2733,9 @@
         html += '<span class="cs-trends-lane-n">' + shown.length + ' table'
             + (shown.length === 1 ? '' : 's')
             + (compact ? '. Open one, or pick a lane.' : '')
-            + ' Tap a bucket to filter the board.</span>';
+            + ' Tap a bucket to list matching players.</span>';
+        html += '</div>';
+        html += trendsScoutHtml(data, picks, pickCount);
         html += '</div>';
         html += '<div class="cs-trends-grid">';
         shown.forEach(function (sec) {
@@ -2690,17 +2764,7 @@
             html += '</div></details>';
         });
         html += '</div>';
-        html += trendsScoutHtml(data, picks, pickCount);
         host.innerHTML = html;
-        if (keepY != null) {
-            try { window.scrollTo(0, keepY); } catch (err) {}
-        }
-        if (opts.keepScroll && pickCount) {
-            var scout = host.querySelector('.cs-trends-scout');
-            if (scout) {
-                try { scout.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (err2) {}
-            }
-        }
         host.querySelectorAll('[data-trends-pos]').forEach(function (b) {
             b.addEventListener('click', function () {
                 trendsPos = b.getAttribute('data-trends-pos') || 'RB';
@@ -2719,53 +2783,14 @@
                 renderTrends();
             });
         });
-        host.querySelectorAll('[data-trends-pick]').forEach(function (b) {
+        host.querySelectorAll('.cs-trends-srow.is-pick').forEach(function (b) {
             b.addEventListener('click', function (e) {
                 e.preventDefault();
                 e.stopPropagation();
-                var id = b.getAttribute('data-trends-pick');
-                if (!id) return;
-                var bag = trendsPicksFor(trendsPos);
-                if (bag[id]) delete bag[id];
-                else {
-                    var found = null;
-                    sections.forEach(function (sec) {
-                        (sec.rows || []).forEach(function (row) {
-                            if (row && row.id === id) found = { row: row, sec: sec };
-                        });
-                    });
-                    if (found && found.row.match) {
-                        bag[id] = {
-                            id: id,
-                            label: trendsQualifyLabel(found.sec.id, found.row.label || ''),
-                            match: found.row.match,
-                            sid: found.sec.id
-                        };
-                    }
-                }
-                renderTrends({ keepScroll: true });
+                toggleTrendsPick(b.getAttribute('data-trends-pick'), sections);
             });
         });
-        var clearPicks = host.querySelector('[data-trends-clear]');
-        if (clearPicks) clearPicks.addEventListener('click', function () {
-            trendsPicks[trendsPos] = {};
-            renderTrends({ keepScroll: true });
-        });
-        host.querySelectorAll('[data-trends-unlock]').forEach(function (b) {
-            b.addEventListener('click', function () {
-                if (typeof window.showPaywall === 'function') window.showPaywall('draft-trends-scout');
-            });
-        });
-        host.querySelectorAll('[data-trends-player]').forEach(function (b) {
-            b.addEventListener('click', function () {
-                var id = b.getAttribute('data-trends-player');
-                var name = b.getAttribute('data-trends-name') || '';
-                var pos = b.getAttribute('data-trends-ppos') || trendsPos;
-                var adp = b.getAttribute('data-trends-adp') || '';
-                var proj = b.getAttribute('data-trends-proj') || '';
-                if (id) openHistPanel(id, name, adp, pos, proj, '', '');
-            });
-        });
+        bindTrendsDock(host, sections);
         host.querySelectorAll('.cs-trends-card > summary').forEach(function (s) {
             s.addEventListener('click', function (e) {
                 var wide = false;

@@ -380,6 +380,7 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert ".cs-trends-lanes" in body
     assert ".cs-trends-tiers" in body
     assert ".cs-trends-scout" in body
+    assert ".cs-trends-sticky" in body
     assert ".cs-trends-conf" in body
     assert "Descriptive — not a ranking input" not in body
     assert "cs-trends-honesty" not in body
@@ -395,12 +396,15 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "data-trends-tier" in script
     assert "function trendsScoutHtml" in script
     assert "draft-trends-scout" in script
-    assert "Tap a bucket to filter the board." in script
+    assert "Tap a bucket to list matching players." in script
     assert "Board players who match" in script
     grid_at = script.find("html += '<div class=\"cs-trends-grid\">'")
     scout_at = script.find("html += trendsScoutHtml")
-    assert grid_at >= 0 and scout_at > grid_at
-    assert "renderTrends({ keepScroll: true })" in script
+    sticky_at = script.find("html += '<div class=\"cs-trends-sticky\">'")
+    assert sticky_at >= 0 and scout_at > sticky_at and grid_at > scout_at
+    assert "function paintTrendsSelection" in script
+    assert "function bindTrendsDock" in script
+    assert "renderTrends({ keepScroll: true })" not in script
     scout_css = body.split(".cs-trends-scout-list")[1][:280]
     assert "grid-template-columns: 1fr 1fr" in scout_css
     assert "data-trends-lane" in script
@@ -493,6 +497,15 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "receptions" in volume["text"].lower()
     assert "—" not in volume["text"]
     assert "–" not in volume["text"]
+    dock = next(
+        entry for entry in CHANGELOG
+        if "sticky dock" in entry.get("text", "").lower()
+    )
+    assert dock["tag"] == "fix"
+    assert dock["link"] == "/draft/cheat-sheet"
+    assert "Pro" in dock["text"]
+    assert "—" not in dock["text"]
+    assert "–" not in dock["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():

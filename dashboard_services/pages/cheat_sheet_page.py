@@ -309,6 +309,7 @@ _CHEAT_HTML = r"""
   .cs-trends-pos button[data-trends-pos="TE"][aria-pressed="true"] { border-color: var(--cs-te); color: var(--cs-te); background: var(--cs-te-bg); }
   .cs-trends-lanes button[aria-pressed="true"], .cs-trends-tiers button[aria-pressed="true"] { border-color: var(--cs-pos); color: var(--cs-pos); background: var(--cs-pos-bg); }
   .cs-trends-lane-n, .cs-trends-tier-n { margin-left: auto; font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-trends-sticky { position: sticky; top: 0; z-index: 5; background: var(--cs-surface, var(--card)); padding: 8px 0 10px; margin: 0 0 14px; border-bottom: 1px solid var(--cs-line, var(--border)); }
   .cs-trends-summary { display: flex; align-items: flex-end; gap: 16px; margin: 0 0 18px; padding: 12px 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--cs-pos) 28%, var(--cs-line, var(--border))); background: var(--cs-pos-bg); }
   .cs-trends-base-pct { font-weight: 800; font-size: 46px; line-height: .82; letter-spacing: -.03em; color: var(--cs-pos); font-variant-numeric: tabular-nums; }
   .cs-trends-base-pct sup { font-size: 18px; font-weight: 800; color: var(--cs-ink-soft, var(--text-muted)); vertical-align: super; }
@@ -366,7 +367,8 @@ _CHEAT_HTML = r"""
   .cs-trends-srow.is-on { border-color: var(--cs-pos); background: var(--cs-pos-bg); }
   .cs-trends-minipcts { display: flex; gap: 8px; margin-top: 4px; font-family: var(--cs-mono); font-size: 10px; color: var(--cs-ink-faint, var(--text-muted)); }
   .cs-trends-minipcts .is-on { color: var(--cs-pos); font-weight: 800; }
-  .cs-trends-scout { margin: 18px 0 0; padding: 12px 14px; border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; background: var(--cs-surface, var(--card)); }
+  .cs-trends-scout { margin: 10px 0 0; padding: 12px 14px; border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; background: var(--cs-surface, var(--card)); max-height: min(36vh, 280px); overflow: auto; }
+  .cs-trends-scout.is-idle { max-height: none; overflow: visible; padding: 8px 12px; }
   .cs-trends-scout-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
   .cs-trends-chip { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-pos); color: var(--cs-pos); background: var(--cs-pos-bg); border-radius: 999px; padding: 4px 10px; }
   .cs-trends-chip.is-clear { border-color: var(--cs-line, var(--border)); color: var(--cs-ink-soft, var(--text-muted)); background: transparent; }
@@ -393,7 +395,7 @@ _CHEAT_HTML = r"""
     .cs-trends-callout .cs-trends-rail { display: none; }
     .cs-trends-callout-v { font-size: 12px; }
     .cs-trends-summary { align-items: flex-start; }
-    .cs-trends-lanes { position: sticky; top: 0; z-index: 4; background: var(--cs-surface, var(--card)); padding: 8px 0; margin: 0 0 10px; border-bottom: 1px solid var(--cs-line, var(--border)); }
+    .cs-trends-lanes { margin: 0 0 8px; }
     .cs-trends-lane-n { flex: 1 0 100%; margin: 2px 0 0; }
     .cs-trends-grid { grid-template-columns: 1fr; gap: 8px; }
     .cs-trends-scout-list { grid-template-columns: 1fr; }
@@ -594,6 +596,7 @@ _CHEAT_HTML = r"""
     /* Undo the on-screen height cap so the whole board flows onto pages. */
     .cs-tbl-scroll, .cs-pgrid-scroll { overflow: visible; border: 0; max-height: none; }
     .cs-wrap thead th { position: static; }
+    .cs-trends-sticky { position: static; max-height: none; }
     /* Keep a tier heading with the rows under it, and don't split a row. */
     .cs-wrap tr.cs-cliff, .cs-wrap tr.cs-proj { break-before: auto; break-after: avoid; }
     .cs-wrap tbody tr { break-inside: avoid; }
