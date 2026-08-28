@@ -1410,7 +1410,7 @@ def build_teams_overview(
             "name": user.get("metadata", {}).get("team_name")
                     or user.get("display_name")
                     or f"Team {rid}",
-            "username": user.get("username") or "",
+            "username": user.get("username") or user.get("display_name") or "",
             "avatar": user.get("avatar_url") or user.get("avatar"),
             "record": record,
             "starters": enrich_list(starters_pids),

@@ -2981,9 +2981,20 @@ function bindOnce(el, key, type, handler, options) {
 function initManagerPills(root = document) {
   const pills = Array.from(root.querySelectorAll(".manager-pill"));
   const panels = Array.from(root.querySelectorAll(".team-panel"));
+  const carousel = root.querySelector(".manager-pills-carousel");
+  const pillsRow = root.querySelector(".manager-pills-row");
   const leftArrow = root.querySelector(".pill-arrow-left");
   const rightArrow = root.querySelector(".pill-arrow-right");
   if (!pills.length) return;
+
+  const syncPillArrowVisibility = () => {
+    if (!pillsRow || !leftArrow || !rightArrow) return;
+    const overflow = pillsRow.scrollWidth > pillsRow.clientWidth + 1;
+    const hide = overflow ? "" : "none";
+    leftArrow.style.display = hide;
+    rightArrow.style.display = hide;
+    if (carousel) carousel.classList.toggle("manager-pills-carousel--compact", !overflow);
+  };
 
   const stateHost = root.querySelector(".manager-pills") || root;
   let currentIndex = Number(stateHost.__currentIndex ?? -1);
@@ -3019,6 +3030,16 @@ function initManagerPills(root = document) {
   bindOnce(rightArrow, "pillArrowRight", "click", () => activateIndex(currentIndex + 1));
 
   activateIndex(currentIndex, false);  // initial activation must not scroll the page (mobile jumped to mid-page)
+  syncPillArrowVisibility();
+  if (pillsRow) {
+    bindOnce(pillsRow, "managerPillsResize", "scroll", syncPillArrowVisibility);
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(syncPillArrowVisibility);
+      ro.observe(pillsRow);
+    } else {
+      window.addEventListener("resize", syncPillArrowVisibility);
+    }
+  }
 }
 
 function initCardTabs(root = document) {
