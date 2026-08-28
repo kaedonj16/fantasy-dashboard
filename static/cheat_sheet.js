@@ -1141,10 +1141,6 @@
         });
     }
 
-    function badge(pos) {
-        return '<span class="cs-pos-badge cs-pos-' + pos + '">' + pos + '</span>';
-    }
-
     function posrk(x) {
         return '<span class="cs-posrk cs-pos-' + x.pos + '">' + x.prk + '</span>';
     }
@@ -1451,7 +1447,7 @@
             var pk = pickAt[x.rk];
             if (pk) html += projLineRow(pk, span, x.drafted);
             shown++;
-            var cls = 'cs-p' + (state.done.has(x.id) ? ' done' : '') + (x.drafted ? ' drafted' : '') + (x.ov === 'mute' ? ' cs-muted' : '') + (x.ov ? ' cs-ov' : '') + (x.id === _flashId ? ' cs-flash' : '') + (pk ? ' cs-proj-row' : '');
+            var cls = 'cs-p cs-c-' + x.pos + (state.done.has(x.id) ? ' done' : '') + (x.drafted ? ' drafted' : '') + (x.ov === 'mute' ? ' cs-muted' : '') + (x.ov ? ' cs-ov' : '') + (x.id === _flashId ? ' cs-flash' : '') + (pk ? ' cs-proj-row' : '');
             var c5 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + fmtAdp(x.adp) + '</td>';
             var c6 = dyn ? '<td class="cs-value-col">' + winChip(x.age, x.pos) + '</td>' : '<td class="cs-value-col">' + valChip(x.value) + '</td>';
             var market = '';
@@ -1498,7 +1494,6 @@
                 '</td>' +
                 '<td>' +
                 '<span class="cs-pcell">' +
-                badge(x.pos) +
                 '<span class="cs-pname">' +
                 esc(x.name) +
                 '</span>' +
@@ -1583,7 +1578,7 @@
         }
 
         var out = '<div class="cs-pgrid-head">' + POS.map(function (p) {
-            return '<div>' + p + '</div>';
+            return '<div class="cs-c-' + p + '">' + p + '</div>';
         }).join('') + '</div>';
         var ri = 0;
         groups.forEach(function (g) {
@@ -1948,7 +1943,50 @@
     function closeHistPanel() {
         var modal = $('csHistModal');
         if (!modal) return;
-        modal.classList.remove('open');
+        modal.classList.remove('open', 'cs-hist-qb', 'cs-hist-rb', 'cs-hist-wr', 'cs-hist-te');
+        var posEl = $('csHistPos');
+        if (posEl) {
+            posEl.hidden = true;
+            posEl.textContent = '';
+            posEl.className = 'cs-pos-badge';
+        }
+    }
+
+    function histPosKey(value) {
+        var p = String(value || '').toUpperCase();
+        return (p === 'QB' || p === 'RB' || p === 'WR' || p === 'TE') ? p : '';
+    }
+
+    function histPosOf(resp, fallback) {
+        var found = histPosKey(fallback);
+        if (found) return found;
+        if (!resp) return '';
+        var pre = resp.preseason || {};
+        found = histPosKey(pre.position || pre.pos);
+        if (found) return found;
+        var hist = resp.history || {};
+        var key = hist.key_used || {};
+        return histPosKey(key.position);
+    }
+
+    function applyHistPos(pos) {
+        var modal = $('csHistModal');
+        var key = histPosKey(pos);
+        if (modal) {
+            modal.classList.remove('cs-hist-qb', 'cs-hist-rb', 'cs-hist-wr', 'cs-hist-te');
+            if (key) modal.classList.add('cs-hist-' + key.toLowerCase());
+        }
+        var posEl = $('csHistPos');
+        if (!posEl) return;
+        if (key) {
+            posEl.hidden = false;
+            posEl.className = 'cs-pos-badge cs-pos-' + key;
+            posEl.textContent = key;
+        } else {
+            posEl.hidden = true;
+            posEl.textContent = '';
+            posEl.className = 'cs-pos-badge';
+        }
     }
 
     function findSheetPlayer(id) {
@@ -2001,6 +2039,7 @@
         $('csHistTitle').textContent = name || 'History';
         $('csHistSub').textContent = 'Historical trends for this profile - not a ranking or this player\'s odds.';
         $('csHistBody').innerHTML = '<p class="cs-hist-sub">Loading…</p>';
+        applyHistPos(livePos);
         modal.classList.add('open');
         var url = '/api/historical-player/' + encodeURIComponent(id);
         var qs = [];
@@ -2023,7 +2062,7 @@
                 var body = $('csHistBody');
                 if (!body) return;
                 try {
-                    body.innerHTML = renderHistPanel(resp, fallbackMarket);
+                    body.innerHTML = renderHistPanel(resp, fallbackMarket, livePos);
                 } catch (err) {
                     body.innerHTML = '<p class="cs-hist-sub">Could not load similar-player history.</p>';
                 }
@@ -2035,32 +2074,55 @@
             });
     }
 
+    function histTrendTitle(row) {
+        row = row || {};
+        var bucket = String(row.bucket || '').trim();
+        var label = String(row.label || '').trim();
+        var kind = row.kind || '';
+        if (bucket && TRENDS_LABEL_PREFIX[kind]) return trendsQualifyLabel(kind, bucket);
+        if (bucket && label) {
+            var qualified = trendsQualifyLabel(kind, bucket);
+            var lowLabel = label.toLowerCase();
+            var lowQual = qualified.toLowerCase();
+            if (lowQual.indexOf(lowLabel) >= 0 || lowLabel.indexOf(lowQual) >= 0) return qualified;
+            return label + ' · ' + qualified;
+        }
+        if (bucket) return trendsQualifyLabel(kind, bucket);
+        return label || row.sentence || '';
+    }
+
+    function trendsBaselineOf(row) {
+        if (!row || row.pct == null || !isFinite(Number(row.pct))) return null;
+        if (typeof row.vs_baseline !== 'number') return null;
+        return Number(row.pct) - Number(row.vs_baseline);
+    }
+
     function histTrendRow(row, barHtml) {
         row = row || {};
         var meta = [];
-        if (row.bucket) meta.push(row.bucket);
         if (row.n != null) meta.push('n=' + row.n);
-        if (row.confidence_label) meta.push(row.confidence_label);
-        if (row.vs_label) meta.push(row.vs_label);
         if (row.secondary) meta.push(row.secondary);
         var shown = row.display != null && row.display !== ''
             ? row.display
             : (row.pct != null ? row.pct + '%' : '-');
-        return '<div class="cs-hist-hit"><div class="cs-hist-hit-top"><div><div class="cs-hist-hit-label">' + esc(row.sentence || row.label || '') + '</div>'
+        var vsShort = (typeof row.vs_baseline === 'number' && row.vs_baseline !== 0)
+            ? ((row.vs_baseline > 0 ? '+' : '') + row.vs_baseline)
+            : '';
+        return '<div class="cs-hist-hit' + (row.polarity === 'miss' ? ' is-miss' : '') + '"><div class="cs-hist-hit-top">'
+            + trendsConfDot(row.confidence_label)
+            + '<div><div class="cs-hist-hit-label">' + esc(histTrendTitle(row)) + '</div>'
             + (meta.length ? '<div class="cs-hist-hit-meta">' + esc(meta.join(' · ')) + '</div>' : '')
-            + '</div><div class="cs-hist-hit-pct">' + esc(String(shown)) + '</div></div>'
+            + '</div><div class="cs-hist-hit-pct">' + esc(String(shown))
+            + (vsShort ? ' <span>' + esc(String(vsShort)) + '</span>' : '')
+            + '</div></div>'
             + (barHtml || '') + '</div>';
     }
 
-    function trendsHitRow(row, polarity) {
+    function trendsHitRow(row, polarity, baselinePct, span) {
         row = row || {};
-        var bar = '';
-        if (row.pct != null && isFinite(Number(row.pct))) {
-            var pct = Math.max(0, Math.min(100, Number(row.pct)));
-            var barClass = polarity === 'miss' ? 'cs-trends-bar cs-trends-bar-miss' : 'cs-trends-bar';
-            bar = '<div class="' + barClass + '" aria-hidden="true"><span style="width:' + pct + '%"></span></div>';
-        }
-        return histTrendRow(row, bar);
+        var pol = polarity || row.polarity;
+        var base = pol === 'miss' ? null : (baselinePct != null ? baselinePct : trendsBaselineOf(row));
+        return histTrendRow(row, trendsRailHtml(row.pct, base, pol, span));
     }
 
     function defaultTrendsPos() {
@@ -2120,9 +2182,11 @@
     var TRENDS_LANE_OF = {
         adp: 'adp', adp_positional: 'adp',
         repeat: 'career', league_winner: 'career', career_stage: 'career',
+        repeat_top5: 'career', two_plus: 'career', breakout: 'career',
+        first_time_elite: 'career', league_winner_smash: 'career',
         draft_capital: 'capital', top12_as_rookie: 'capital', top12_by_year_2: 'capital',
         capital_miss: 'capital',
-        age: 'age',
+        age: 'age', age_exact: 'age', prime: 'age',
         target_share: 'usage', snap_pct: 'usage', adot: 'usage', ryoe: 'usage'
     };
     var TRENDS_LANES = [
@@ -2132,11 +2196,15 @@
     var TRENDS_LABEL_PREFIX = {
         adp: 'ADP',
         draft_capital: 'NFL',
+        capital_miss: 'NFL',
+        top12_as_rookie: 'NFL',
+        top12_by_year_2: 'NFL',
         target_share: 'Targets',
         snap_pct: 'Snaps',
         adot: 'aDOT',
         ryoe: 'RYOE',
-        age: 'Age'
+        age: 'Age',
+        age_exact: 'Age'
     };
 
     function trendsConfKey(label) {
@@ -2423,10 +2491,11 @@
         });
     }
 
-    function renderHistPanel(resp, fallbackMarket) {
+    function renderHistPanel(resp, fallbackMarket, posHint) {
         if (!resp || resp.available === false) {
             return '<p class="cs-hist-sub">No historical profile for this player yet.</p>';
         }
+        applyHistPos(histPosOf(resp, posHint));
         var copy = resp.copy || {};
         var html = '';
 
@@ -2464,10 +2533,18 @@
         }
         var trends = Array.isArray(copy.trends) ? copy.trends : [];
         if (trends.length) {
+            var histBaseline = null;
+            trends.forEach(function (row) {
+                var inferred = trendsBaselineOf(row);
+                if (histBaseline == null && inferred != null) histBaseline = inferred;
+            });
+            var histSpan = trendsRailSpan(histBaseline, [], trends.map(function (row) {
+                return row && row.pct;
+            }));
             html += '<section class="cs-hist-sec"><h3>' + esc(copy.trends_heading || 'Trends for this player\'s buckets') + '</h3>';
             if (copy.trends_note) html += '<p class="cs-hist-note">' + esc(copy.trends_note) + '</p>';
             html += '<div class="cs-hist-hits">';
-            trends.forEach(function (row) { html += trendsHitRow(row, row && row.polarity); });
+            trends.forEach(function (row) { html += trendsHitRow(row, row && row.polarity, histBaseline, histSpan); });
             html += '</div></section>';
         }
 
