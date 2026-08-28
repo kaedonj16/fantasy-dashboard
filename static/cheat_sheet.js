@@ -1162,14 +1162,14 @@
         if (!showHist(dyn)) return '';
         var h = x.historical || {};
         var pct = h.p_hit_pct;
-        var tip = 'Similar-profile top-12 trend (not this player\'s odds)'
+        var tip = 'Historical top-12 chance given this career and situation'
             + (pct != null ? ': ' + pct + '%' : ': unknown')
             + '. Open for bucket hit rates. Descriptive only - not a ranking input.';
         var cls = histPctClass(pct);
         var body = pct == null ? '-' : (pct + '%');
         return '<td class="cs-hist-col"><span class="cs-hist-cell">'
             + '<span class="cs-val ' + cls + '" title="' + esc(tip) + '">' + body + '</span>'
-            + '<button type="button" class="cs-hist-btn" data-hist-id="' + esc(x.id) + '" data-hist-name="' + esc(x.name) + '" data-hist-adp="' + (x.adp != null && isFinite(Number(x.adp)) ? String(x.adp) : '') + '" data-hist-pos="' + esc(x.pos || '') + '" data-hist-proj="' + (x.projectedPpg != null && isFinite(Number(x.projectedPpg)) ? String(x.projectedPpg) : '') + '" data-hist-proj-rk="' + (h.proj_rk != null ? String(h.proj_rk) : '') + '" data-hist-adp-rk="' + (h.adp_rk != null ? String(h.adp_rk) : '') + '" title="Similar-player history">i</button>'
+            + '<button type="button" class="cs-hist-btn" data-hist-id="' + esc(x.id) + '" data-hist-name="' + esc(x.name) + '" data-hist-adp="' + (x.adp != null && isFinite(Number(x.adp)) ? String(x.adp) : '') + '" data-hist-pos="' + esc(x.pos || '') + '" data-hist-proj="' + (x.projectedPpg != null && isFinite(Number(x.projectedPpg)) ? String(x.projectedPpg) : '') + '" data-hist-proj-rk="' + (h.proj_rk != null ? String(h.proj_rk) : '') + '" data-hist-adp-rk="' + (h.adp_rk != null ? String(h.adp_rk) : '') + '" title="This player\'s historical chance">i</button>'
             + '</span></td>';
     }
 
@@ -1356,7 +1356,7 @@
                 + '<span class="cs-lg"><span class="cs-val g">+7</span> above ADP, target it</span>'
                 + '<span class="cs-lg"><span class="cs-val b">-4</span> going early, let it fall</span>'
                 + '<span class="cs-lg"><b>Sched Rk</b> full-season schedule (1 = easiest)</span>'
-                + (showHist(dyn) ? '<span class="cs-lg"><b>Hist</b> similar-profile trend, not a rank</span>' : '')
+                + (showHist(dyn) ? '<span class="cs-lg"><b>Hist</b> this player\'s historical chance, not a rank</span>' : '')
                 + sortNote
                 + projNote
                 + draftedNote
@@ -1434,7 +1434,7 @@
             + sortTh(col5Key, col5, '', dyn ? 'Sort by age' : 'Sort by ADP')
             + sortTh(col6Key, col6, 'cs-value-col', dyn ? 'Sort by career window (age)' : 'Sort by value vs ADP')
             + sortTh('scheduleRank', 'Sched Rk', '', 'Full fantasy-season strength of schedule rank (1 = easiest)')
-            + (showHist(dyn) ? sortTh('hist', 'Hist', 'cs-hist-col', 'Similar-profile top-12 trend. Open for bucket rates. Descriptive; not a ranking input.') : '')
+            + (showHist(dyn) ? sortTh('hist', 'Hist', 'cs-hist-col', 'Historical top-12 chance given this career and situation. Open for the full mix. Not a ranking input.') : '')
             + (showMarket(dyn) ? sortTh('market', 'Market vs ADP', 'cs-market-col', 'Sort by market vs ADP') : '')
             + editTh + '</tr>';
         var span = (editable ? 9 : 8) + (showMarket(dyn) ? 1 : 0) + (showHist(dyn) ? 1 : 0);
@@ -2040,7 +2040,7 @@
             : (hist.adp_rk != null ? Number(hist.adp_rk) : null);
         var fallbackMarket = hist.mkt_sentence;
         $('csHistTitle').textContent = name || 'History';
-        $('csHistSub').textContent = 'Historical trends for this profile - not a ranking or this player\'s odds.';
+        $('csHistSub').textContent = 'Historical chance for this career and situation - not a ranking or Pick Score.';
         $('csHistBody').innerHTML = '<p class="cs-hist-sub">Loading…</p>';
         applyHistPos(livePos);
         modal.classList.add('open');
@@ -2770,8 +2770,8 @@
         var copy = resp.copy || {};
         var html = '';
 
-        // Verdict first: lead with the top-12 rate for this similar group, with
-        // the other tiers as supporting stats and the cohort spelled out below.
+        // Verdict first: lead with this player's historical top-12 chance given
+        // career and situation, with other tiers as supporting stats below.
         var hits = Array.isArray(copy.hit_rates) ? copy.hit_rates : [];
         var lead = null, i;
         for (i = 0; i < hits.length; i++) {
@@ -2787,7 +2787,7 @@
                 + '<div class="cs-hist-big">' + (lead.pct != null ? lead.pct : '-') + '<sup>%</sup></div>'
                 + '<div class="cs-hist-hero-cap">'
                 + '<div class="cs-hist-hero-lead">finished top-12</div>'
-                + '<div class="cs-hist-hero-sub">among this similar group</div>'
+                + '<div class="cs-hist-hero-sub">this player\'s historical chance</div>'
                 + (confBits.length ? '<span class="cs-hist-conf"><i></i>' + esc(confBits.join(' · ')) + '</span>' : '')
                 + '</div></div>';
             html += '<div class="cs-hist-tiers">';

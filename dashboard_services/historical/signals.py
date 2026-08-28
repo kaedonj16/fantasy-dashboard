@@ -29,6 +29,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Optional, Sequence
 
 from dashboard_services.historical.comps import lookup_board_probabilities
+from dashboard_services.historical.career_path import apply_career_path_history
 from dashboard_services.historical.definitions import (
     SIGNAL_BOARD_TIER,
     SIGNAL_HISTORY_BULLISH_P,
@@ -205,6 +206,7 @@ def lookup_history_probability(
     """Comps P(hit) from JSON leaves. Does not scan parquet."""
     comps = aggregates.get("comps") if isinstance(aggregates.get("comps"), Mapping) else aggregates
     looked = lookup_board_probabilities(player, comps if isinstance(comps, Mapping) else {})
+    looked = apply_career_path_history(player, looked, aggregates)
     rate = (looked.get("rates") or {}).get(tier) or {}
     p = probability_from_rate(rate)
     n = _optional_int(looked.get("n")) or 0
@@ -219,7 +221,7 @@ def lookup_history_probability(
         "relaxed": bool(looked.get("fallback")),
         "dropped": list(looked.get("dropped") or []),
         "key_used": dict(looked.get("key_used") or {}),
-        "source": "comps",
+        "source": looked.get("source") or "comps",
         "unknown_reason": unknown,
     }
 

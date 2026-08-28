@@ -326,8 +326,10 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "scored.sort(function (a, b) {" in script
     assert "var aVor = Number(a.vorRaw);" in script
     assert "histP" not in script.split("scored.sort(function (a, b) {")[1].split("scored.forEach")[0]
-    assert "Similar-profile top-12 trend" in script
-    assert "historical trends for this profile" in body.lower()
+    assert "Historical top-12 chance given this career and situation" in script
+    assert "historical chance for this career and situation" in body.lower()
+    assert "this player\\'s historical chance, not a rank" in script
+    assert "title=\"This player\\'s historical chance\"" in script
     assert "return !dyn && SHOW_HISTORICAL" in script
     assert "var HIST_STRONG_PCT = 25" in script
     assert "var HIST_TIER_SHORT = { top_5: 'top-5', top_12: 'top-12', top_24: 'top-24' }" in script
@@ -452,6 +454,16 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "Hist" in hist_fix["text"]
     assert "—" not in hist_fix["text"]
     assert "–" not in hist_fix["text"]
+    chance = next(
+        entry for entry in CHANGELOG
+        if "historical chance" in entry.get("text", "").lower()
+        and "current situation" in entry.get("text", "").lower()
+    )
+    assert chance["tag"] == "fix"
+    assert chance["link"] == "/draft/cheat-sheet"
+    assert "Hist" in chance["text"]
+    assert "—" not in chance["text"]
+    assert "–" not in chance["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():

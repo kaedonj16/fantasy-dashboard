@@ -19,6 +19,7 @@ from dashboard_services.historical.comps import (
     extract_comp_query,
     lookup_board_probabilities,
 )
+from dashboard_services.historical.career_path import apply_career_path_history
 from dashboard_services.historical.definitions import (
     ABSOLUTE_BUST_OUTSIDE,
     ADP_OVERALL_BUCKETS,
@@ -114,6 +115,7 @@ COMP_FEATURE_LABELS: dict[str, str] = {
     "career_stage": "Career stage",
     "draft_capital": "Draft capital",
     "prior_finish": "Last year finish",
+    "prior_elite": "Career elite",
     "age_bucket": "Age",
     "target_share": "Last year target share",
     "snap_pct": "Last year snaps",
@@ -139,6 +141,10 @@ PRIOR_FINISH_DISPLAY: dict[str, str] = {
     "top_24": "Top 24",
     "top_36": "Top 36",
     "outside_36": "Outside top 36",
+}
+PRIOR_ELITE_DISPLAY: dict[str, str] = {
+    "has_been": "Had been top-12 before",
+    "never": "Never previously top-12",
 }
 PRIOR_FINISH_TREND: dict[str, str] = {
     "none": "no prior season",
@@ -488,6 +494,8 @@ def format_comp_bucket_value(dim: str, value: Any) -> str:
         return DRAFT_CAPITAL_DISPLAY.get(text, _title_from_key(text))
     if dim == "prior_finish":
         return PRIOR_FINISH_DISPLAY.get(text, _title_from_key(text))
+    if dim == "prior_elite":
+        return PRIOR_ELITE_DISPLAY.get(text, _title_from_key(text))
     if dim == "age_bucket":
         return format_age_bucket_label(text)
     return text
@@ -791,6 +799,11 @@ def cohort_sentence(key_used: Optional[Mapping[str, Any]]) -> str:
         extras.append(f"{cap.lower()} capital")
     if key.get("age_bucket"):
         extras.append(f"age {format_comp_bucket_value('age_bucket', key.get('age_bucket'))}")
+    prior_elite = key.get("prior_elite")
+    if prior_elite == "has_been":
+        extras.append("who had already been top-12")
+    elif prior_elite == "never":
+        extras.append("who had never been top-12")
     prior = key.get("prior_finish")
     if prior:
         phrase = PRIOR_FINISH_TREND.get(str(prior), format_comp_bucket_value("prior_finish", prior).lower())
@@ -1028,6 +1041,7 @@ def build_hist_panel_copy(
     hist = history if isinstance(history, Mapping) else {}
     mkt = market if isinstance(market, Mapping) else {}
     key_used = hist.get("key_used") if isinstance(hist.get("key_used"), Mapping) else {}
+    profile_key = hist.get("profile_key") if isinstance(hist.get("profile_key"), Mapping) else key_used
     rates = hist.get("rates") if isinstance(hist.get("rates"), Mapping) else {}
     hit_rates: list[dict] = []
     for tier in COMP_BOARD_TIERS:
@@ -1047,10 +1061,11 @@ def build_hist_panel_copy(
         })
 
     profile: list[dict] = []
-    for dim in COMP_DIMENSION_ORDER:
-        if dim not in key_used:
+    for dim in COMP_DIMENSION_ORDER + ("prior_elite",):
+        source = profile_key if dim in (profile_key or {}) else key_used
+        if dim not in source:
             continue
-        value = format_comp_bucket_value(dim, key_used.get(dim))
+        value = format_comp_bucket_value(dim, source.get(dim))
         if not value:
             continue
         profile.append({
@@ -1073,9 +1088,21 @@ def build_hist_panel_copy(
 
     market_sentence = format_market_sentence(mkt, missing="no_adp")
     cohort = cohort_sentence(key_used)
-    cohort_note = (
-        "This is a historical hit rate for that group, not this player's odds."
-    )
+    if hist.get("career_path") == "bounce_back":
+        cohort_note = (
+            "This player's historical chance given a prior top-12 and last "
+            "year's finish. Not a Pick Score input."
+        )
+        if hist.get("career_path_rate") != "stage":
+            cohort_note += (
+                " Year and draft capital are this player's current situation; "
+                "the percent uses that career path at this position."
+            )
+    else:
+        cohort_note = (
+            "This player's historical chance given this career and current "
+            "situation. Not a Pick Score input."
+        )
     if relaxed_note:
         cohort_note = f"{cohort_note} {relaxed_note}"
 
@@ -1129,15 +1156,19 @@ def build_deep_panel(
     query = query_for_board_player(seed, by_player)
     comps = aggregates.get("comps") if isinstance(aggregates.get("comps"), Mapping) else aggregates
     looked = lookup_board_probabilities(query, comps if isinstance(comps, Mapping) else {})
+    looked = apply_career_path_history(query, looked, aggregates)
     market = lookup_market_probability(query, aggregates)
     history = {
         "n": looked.get("n"),
         "key_used": looked.get("key_used"),
+        "profile_key": looked.get("profile_key") or looked.get("key_used"),
         "dropped": looked.get("dropped"),
         "fallback": looked.get("fallback"),
         "rates": looked.get("rates"),
         "examples": looked.get("examples") or [],
         "kind": "conditional",
+        "career_path": looked.get("career_path"),
+        "career_path_rate": looked.get("career_path_rate"),
     }
     copy = build_hist_panel_copy(history, market)
     copy["trends"] = build_hist_trends(query, aggregates, market)

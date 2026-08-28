@@ -215,7 +215,7 @@ def test_attach_compact_payload_and_deep_panel_are_descriptive():
     assert copy["hit_rates"]
     assert copy["hit_rates"][0]["label"].startswith("Then finished ")
     assert copy["headline"].startswith("Among ")
-    assert "not this player's odds" in copy["cohort_note"]
+    assert "this player's historical chance" in copy["cohort_note"].lower()
     assert isinstance(copy["trends"], list)
     assert all("_" not in row["label"] for row in copy["profile"])
     assert all("_" not in row["label"] for row in copy["relaxed"])
@@ -276,7 +276,7 @@ def test_hist_panel_copy_uses_bucket_hit_rates_not_snake_case():
     assert copy["hit_rates"][1]["label"] == "Then finished top-12"
     assert copy["hit_rates"][1]["pct"] == 37
     assert "Among RBs" in copy["headline"]
-    assert "not this player's odds" in copy["cohort_note"]
+    assert "this player's historical chance" in copy["cohort_note"].lower()
     assert copy["relaxed"][0]["label"] == "Last year target share"
     shown = " ".join(
         f"{row['label']} {row['value']}" for row in copy["profile"]
@@ -311,7 +311,7 @@ def test_compact_signal_never_blends():
 
 def test_board_modules_stay_pure():
     hist = ROOT / "dashboard_services" / "historical"
-    for name in ("board.py", "aggregates_store.py"):
+    for name in ("board.py", "aggregates_store.py", "career_path.py"):
         text = (hist / name).read_text(encoding="utf-8")
         assert "import pandas" not in text
         assert "import nfl_data_py" not in text
@@ -383,7 +383,7 @@ def test_hist_trends_are_descriptive_bucket_slices():
     panel = build_deep_panel("9221", aggs, extra={"redraft_avg_pick": 2.0, "position": "RB"})
     copy = panel["copy"]
     assert copy["headline"].startswith("Among RBs")
-    assert "not this player's odds" in copy["cohort_note"]
+    assert "this player's historical chance" in copy["cohort_note"].lower()
     kinds = [row["kind"] for row in copy["trends"]]
     assert "adp" not in kinds
     assert "adp_positional" not in kinds
@@ -485,6 +485,7 @@ def test_btj_hist_does_not_claim_never_previously_top12():
     profiles = ((aggs.get("preseason_profiles") or {}).get("by_player") or {})
     if "11631" not in profiles:
         pytest.skip("BTJ preseason profile missing")
+    assert profiles["11631"].get("prior_top12_count") == 1
     panel = build_deep_panel("11631", aggs, extra={"position": "WR"})
     kinds = [row["kind"] for row in panel["copy"]["trends"]]
     assert "first_time_elite" not in kinds
@@ -493,7 +494,24 @@ def test_btj_hist_does_not_claim_never_previously_top12():
     headline = str(panel["copy"].get("headline") or "").lower()
     assert "year 3" in headline
     assert "outside the top 36 last year" in headline
+    assert "already been top-12" in headline
     assert "never" not in headline
+    assert panel["history"].get("career_path") == "bounce_back"
+    assert panel["history"].get("examples") == []
+    top12 = next(
+        row for row in panel["copy"]["hit_rates"] if row.get("tier") == "top_12"
+    )
+    assert top12.get("pct") is not None
+    from dashboard_services.historical.board import query_for_board_player
+    from dashboard_services.historical.comps import lookup_board_probabilities
+    query = query_for_board_player({"id": "11631", "position": "WR"}, profiles)
+    comps_pct = (
+        (lookup_board_probabilities(query, aggs.get("comps") or aggs).get("rates") or {})
+        .get("top_12") or {}
+    ).get("display_pct")
+    assert top12["pct"] > (comps_pct or 0)
+    labels = [row["label"] for row in panel["copy"]["profile"]]
+    assert "Career elite" in labels
 
 
 def test_historical_trends_tab_is_position_wide_and_descriptive():

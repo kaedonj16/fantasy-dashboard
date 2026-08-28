@@ -52,6 +52,7 @@ from dashboard_services.historical.finish_rates import (
     position_baseline,
     season_bounds,
 )
+from dashboard_services.historical.career_path import build_bounce_back_rates
 
 # Copied from data_building/breakout_engine/backtest_breakout_model.py.
 # Do not "fix" `>` to `>=`. Rank 13 is *not* a non-starter under the engine.
@@ -329,7 +330,39 @@ def build_repeat_and_breakout_rates(
             "n_first_time_candidates": len(first_cands),
             "n_league_winner_smash_candidates": len(smash_cands),
         }
+        out[pos].update(
+            build_bounce_back_rates(pos_rows, scoring=scoring, prior_rate=prior_rate)
+        )
     return out
+
+
+def build_career_path_overlay(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    scoring: str = "ppr",
+) -> dict:
+    """Sidecar for request-path Hist: prior top-12 counts + bounce-back rates."""
+    packed = build_preseason_profiles(rows)
+    counts: dict[str, int] = {}
+    for pid, rec in (packed.get("by_player") or {}).items():
+        if not isinstance(rec, Mapping):
+            continue
+        count = _optional_int(rec.get("prior_top12_count"))
+        if count is not None:
+            counts[str(pid)] = count
+    bounce: dict[str, Any] = {}
+    for pos in SKILL_POSITIONS:
+        pos_rows = filter_position(rows, pos)
+        baseline = position_baseline(pos_rows, pos, scoring=scoring)
+        bounce[pos] = build_bounce_back_rates(
+            pos_rows, scoring=scoring, prior_rate=baseline.get("raw_rate")
+        )
+    return {
+        "prior_top12_count": counts,
+        "bounce_back": bounce,
+        "upcoming_season": packed.get("upcoming_season"),
+        "n_players": packed.get("n_players"),
+    }
 
 
 # ---------------------------------------------------------------------------
