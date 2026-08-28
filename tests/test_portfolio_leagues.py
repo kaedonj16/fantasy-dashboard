@@ -40,3 +40,18 @@ def test_unlinked_team_cards_offer_link_my_team_for_every_platform():
     assert "linkYahooPreview" in js
     assert "linkMflConnect" in js
     assert "linkFleaConnect" in js
+
+
+def test_positional_strength_card_renders_percentiles_not_signed_deltas():
+    fn = _portfolio_fn()
+    assert "avg percentile across your leagues" in fn
+    assert "vs. league averages" not in fn
+    assert "from utils.format import ordinal" in fn
+    assert "d_str = ordinal(pct_i)" in fn
+    assert "left:50%" in fn
+    assert "pct >= 67" in fn
+    assert "pct <= 33" in fn
+    # Old signed % vs median must not come back — that is what painted
+    # mixed portfolios all-negative.
+    assert "(ratio - 1.0) * 100" not in fn
+    assert "max_ratio" not in fn

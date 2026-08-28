@@ -23631,7 +23631,7 @@ def build_portfolio_body(
         ".pf-pos-bar-wrap{flex:1;height:8px;background:var(--border);border-radius:4px;overflow:hidden;position:relative;}"
         ".pf-pos-bar{height:100%;border-radius:4px;}"
         ".pf-pos-avg-tick{position:absolute;top:0;bottom:0;width:2px;background:var(--text-subtle);opacity:.4;}"
-        ".pf-pos-delta{font-size:0.78em;font-weight:700;min-width:44px;text-align:right;}"
+        ".pf-pos-delta{font-size:0.78em;font-weight:700;min-width:52px;text-align:right;}"
         ".nfl-row{padding:6px 0;border-top:1px solid var(--grid);cursor:pointer;}"
         ".nfl-row:first-child{border-top:none;}"
         ".nfl-row-main{display:flex;align-items:center;gap:8px;}"
@@ -23978,40 +23978,42 @@ def build_portfolio_body(
     )
 
     # ── Positional strength ───────────────────────────────────────────────
+    # cross_pos is mean in-league percentile (0-100) per position. A typical
+    # team sits at ~50th; stacked finishes in some leagues can no longer be
+    # dragged negative by a thin league the way signed % vs median was.
     pos_card = ""
     if cross_pos:
+        from utils.format import ordinal
         pos_rows = ""
-        max_ratio = max(max(cross_pos.values()), 1.5)
         for pos in ["QB", "RB", "WR", "TE"]:
-            ratio = cross_pos.get(pos, 1.0)
+            pct = max(0.0, min(100.0, float(cross_pos.get(pos, 50.0) or 50.0)))
             color = _POS_COLORS.get(pos, "#6b7280")
-            bar_w = min(100, int((ratio / max_ratio) * 100))
-            avg_tick = min(98, int((1.0 / max_ratio) * 100))
-            delta = (ratio - 1.0) * 100
-            if delta > 8:
-                d_str, d_color = f"+{delta:.0f}%", "var(--win)"
-            elif delta < -8:
-                d_str, d_color = f"{delta:.0f}%", "var(--loss)"
-            elif delta >= 0:
-                d_str, d_color = f"+{delta:.0f}%", "var(--text-muted)"
+            bar_w = int(round(pct))
+            pct_i = max(0, min(100, int(pct + 0.5)))
+            if pct >= 67:
+                d_color = "var(--win)"
+            elif pct <= 33:
+                d_color = "var(--loss)"
             else:
-                d_str, d_color = f"{delta:.0f}%", "var(--text-muted)"
+                d_color = "var(--text-muted)"
+            d_str = ordinal(pct_i)
             _pos_cls = _POS_CLS_MAP.get(pos, "pos-k")
             pos_rows += (
                 f"<div class='pf-pos-row'>"
                 f"<span style='min-width:32px;'><span class='pos-badge {_pos_cls}'>{pos}</span></span>"
                 f"<div class='pf-pos-bar-wrap'>"
                 f"<div class='pf-pos-bar' style='width:{bar_w}%;background:{color};'></div>"
-                f"<div class='pf-pos-avg-tick' style='left:{avg_tick}%;'></div>"
+                f"<div class='pf-pos-avg-tick' style='left:50%;' title='50th percentile'></div>"
                 f"</div>"
-                f"<span class='pf-pos-delta' style='color:{d_color};'>{d_str}</span>"
+                f"<span class='pf-pos-delta' style='color:{d_color};' "
+                f"title='Average of your in-league percentile at {pos}. 50th is a typical team.'>{d_str}</span>"
                 f"</div>"
             )
         pos_card = (
             f"<div class='card' style='display:flex;flex-direction:column;'>"
             f"<div class='card-header'>"
             f"<h2>Positional Strength</h2>"
-            f"<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>vs. league averages</span>"
+            f"<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>avg percentile across your leagues</span>"
             f"</div>"
             f"<div class='card-body' style='flex:1;display:flex;flex-direction:column;justify-content:space-evenly;'>{pos_rows}</div>"
             f"</div>"
