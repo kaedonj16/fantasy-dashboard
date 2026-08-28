@@ -319,7 +319,8 @@ def test_deep_panel_route_serves_json_leaves():
         resp2 = client.get(f"/api/historical-player/{pid}?adp=3&redraft_avg_pick=3&position=RB")
     body2 = resp2.get_json()
     kinds = {row["kind"] for row in body2["copy"]["trends"]}
-    assert "adp" in kinds or body2["market"]["p_top_12"] is None
+    assert "adp" not in kinds
+    assert "adp_positional" not in kinds
     shown = " ".join(row["sentence"] for row in body2["copy"]["trends"])
     assert "age_bucket" not in shown
     assert "snap_pct" not in shown
@@ -336,12 +337,13 @@ def test_hist_trends_are_descriptive_bucket_slices():
     assert copy["headline"].startswith("Among RBs")
     assert "not this player's odds" in copy["cohort_note"]
     kinds = [row["kind"] for row in copy["trends"]]
-    assert "adp" in kinds
+    assert "adp" not in kinds
+    assert "adp_positional" not in kinds
     assert "career_stage" in kinds
     assert "draft_capital" in kinds
     assert "age" in kinds
     sentences = [row["sentence"] for row in copy["trends"]]
-    assert any("taken in fantasy Round 1 finished top-12" in s for s in sentences)
+    assert not any("taken in fantasy Round 1 finished top-12" in s for s in sentences)
     assert any("target share last year" in s for s in sentences)
     assert not any("targets last year" in s for s in sentences)
     assert all("_" not in row["label"] for row in copy["trends"])
@@ -364,7 +366,8 @@ def test_hist_trends_are_descriptive_bucket_slices():
     assert "Sleeper projection for this season" not in shown_copy
     assert "both point at a top-12" not in shown_copy
     modal_kinds = [row["kind"] for row in with_proj["copy"]["trends"]]
-    assert "adp_positional" in modal_kinds
+    assert "adp" not in modal_kinds
+    assert "adp_positional" not in modal_kinds
     assert "capital_miss" in modal_kinds
     assert "top12_as_rookie" in modal_kinds
     assert "top12_by_year_2" in modal_kinds
@@ -417,8 +420,8 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     rb = payload["by_position"]["RB"]
     assert rb["baseline_pct"] is None or isinstance(rb["baseline_pct"], (int, float))
     ids = [sec["id"] for sec in rb["sections"]]
-    assert "adp" in ids
-    assert "adp_positional" in ids
+    assert "adp" not in ids
+    assert "adp_positional" not in ids
     assert "repeat" in ids
     assert "league_winner" in ids
     assert "career_stage" in ids
@@ -427,17 +430,9 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     assert "capital_miss" in ids
     assert "age" in ids
     assert "ryoe" in ids
-    adp = next(sec for sec in rb["sections"] if sec["id"] == "adp")
-    assert adp["heading"] == "Fantasy ADP round"
     assert "not fantasy ADP" in next(
         sec["note"] for sec in rb["sections"] if sec["id"] == "draft_capital"
     )
-    assert any(row["label"] == "Round 1" for row in adp["rows"])
-    round1 = next(row for row in adp["rows"] if row["label"] == "Round 1")
-    assert isinstance(round1.get("vs_baseline"), int)
-    assert round1["vs_baseline"] > 0
-    pos_adp = next(sec for sec in rb["sections"] if sec["id"] == "adp_positional")
-    assert any(row["label"] == "Positional ADP 1-5" for row in pos_adp["rows"])
     winners = next(sec for sec in rb["sections"] if sec["id"] == "league_winner")
     assert any("top-5" in row["label"] for row in winners["rows"])
     miss = next(sec for sec in rb["sections"] if sec["id"] == "capital_miss")

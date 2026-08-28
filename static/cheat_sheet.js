@@ -1161,7 +1161,6 @@
         var pct = h.p_hit_pct;
         var tip = 'Similar-profile top-12 trend (not this player\'s odds)'
             + (pct != null ? ': ' + pct + '%' : ': unknown')
-            + (h.mkt_pct != null ? '. ADP-round trend: ' + h.mkt_pct + '%' : '')
             + '. Open for bucket hit rates. Descriptive only - not a ranking input.';
         var cls = histPctClass(pct);
         var body = pct == null ? '-' : (pct + '%');
@@ -2180,7 +2179,6 @@
     }
 
     var TRENDS_LANE_OF = {
-        adp: 'adp', adp_positional: 'adp',
         repeat: 'career', league_winner: 'career', career_stage: 'career',
         repeat_top5: 'career', two_plus: 'career', breakout: 'career',
         first_time_elite: 'career', league_winner_smash: 'career',
@@ -2190,11 +2188,10 @@
         target_share: 'usage', snap_pct: 'usage', adot: 'usage', ryoe: 'usage'
     };
     var TRENDS_LANES = [
-        ['all', 'All'], ['adp', 'ADP'], ['career', 'Career'],
+        ['all', 'All'], ['career', 'Career'],
         ['capital', 'Capital'], ['age', 'Age'], ['usage', 'Usage']
     ];
     var TRENDS_LABEL_PREFIX = {
-        adp: 'ADP',
         draft_capital: 'NFL',
         capital_miss: 'NFL',
         top12_as_rookie: 'NFL',
@@ -2326,7 +2323,10 @@
         var positions = data.positions || ['QB', 'RB', 'WR', 'TE'];
         if (!trendsPos || positions.indexOf(trendsPos) < 0) trendsPos = positions[0] || 'RB';
         var page = (data.by_position || {})[trendsPos] || {};
-        var sections = page.sections || [];
+        var sections = (page.sections || []).filter(function (sec) {
+            var id = sec && sec.id;
+            return id !== 'adp' && id !== 'adp_positional';
+        });
         var baselinePct = page.baseline_pct;
         var lane = host.getAttribute('data-trends-lane') || 'all';
         var present = {};
@@ -2531,7 +2531,10 @@
             if (copy.headline) html += '<p class="cs-hist-cohort">' + esc(copy.headline) + '</p>';
             html += '</div>';
         }
-        var trends = Array.isArray(copy.trends) ? copy.trends : [];
+        var trends = (Array.isArray(copy.trends) ? copy.trends : []).filter(function (row) {
+            var kind = row && row.kind;
+            return kind !== 'adp' && kind !== 'adp_positional';
+        });
         if (trends.length) {
             var histBaseline = null;
             trends.forEach(function (row) {
@@ -2546,16 +2549,6 @@
             html += '<div class="cs-hist-hits">';
             trends.forEach(function (row) { html += trendsHitRow(row, row && row.polarity, histBaseline, histSpan); });
             html += '</div></section>';
-        }
-
-        // ADP-bucket sentence, only when it is not already one of the trend rows.
-        var mkt = resp.market || {};
-        var sentence = copy.market_sentence || '';
-        var missingAdp = mkt.p_top_12 == null && !mkt.adp_bucket;
-        if (missingAdp && fallbackMarket) sentence = fallbackMarket;
-        var hasAdpTrend = trends.some(function (row) { return row && row.kind === 'adp'; });
-        if (sentence && !hasAdpTrend) {
-            html += '<section class="cs-hist-sec"><h3>' + esc(copy.market_heading || 'ADP bucket hit rate') + '</h3><p class="cs-hist-note">' + esc(sentence) + '</p></section>';
         }
 
         // Progressive disclosure: comps, dropped filters, and the full profile.

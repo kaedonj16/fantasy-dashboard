@@ -612,34 +612,6 @@ def build_hist_trends(
         if row:
             rows.append(row)
 
-    bucket_label = format_adp_bucket_label(mkt.get("adp_bucket"))
-    add(_trend_row(
-        kind="adp",
-        label="ADP round",
-        bucket=bucket_label,
-        sentence=f"{pos}s taken in fantasy {bucket_label} finished top-12",
-        rate={
-            "display_pct": display_percent(mkt.get("p_top_12")),
-            "sample_size": mkt.get("sample_size"),
-            "confidence": mkt.get("confidence"),
-        },
-        baseline_pct=baseline_pct,
-    ) if bucket_label else None)
-
-    adp_rk = _optional_int(query.get("adp_positional_rank") or query.get("adp_rk"))
-    pos_bucket = value_bucket(adp_rk, PRIOR_FINISH_BUCKETS) if adp_rk is not None else None
-    if pos_bucket:
-        pos_label = ADP_POSITIONAL_DISPLAY.get(pos_bucket, _title_from_key(pos_bucket))
-        adp_pos = ((aggregates.get("adp") or {}).get("by_position") or {}).get(pos) or {}
-        add(_trend_row(
-            kind="adp_positional",
-            label="ADP rank",
-            bucket=pos_label,
-            sentence=f"{pos}s with {pos_label} finished top-12",
-            rate=(adp_pos.get("by_positional_bucket") or {}).get(pos_bucket),
-            baseline_pct=baseline_pct,
-        ))
-
     repeat = (aggregates.get("repeat_and_breakout") or {}).get(pos) or {}
     prior = feats.get("prior_finish")
     if prior in ("top_5", "top_12"):
@@ -1096,41 +1068,6 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
             prime_ages = list(range(int(lo), int(hi) + 1))
         except (TypeError, ValueError):
             prime_ages = []
-
-    adp_pos = ((aggregates.get("adp") or {}).get("by_position") or {}).get(pos) or {}
-    adp_rows = []
-    for _lo, _hi, key in ADP_OVERALL_BUCKETS:
-        row = _section_row(
-            format_adp_bucket_label(key),
-            (adp_pos.get("by_overall_bucket") or {}).get(key),
-            baseline_pct=baseline_pct,
-        )
-        if row:
-            adp_rows.append(row)
-    _append_section(
-        sections,
-        sid="adp",
-        heading="Fantasy ADP round",
-        note=f"How often {pos}s taken in that redraft round finished top-12.",
-        rows=adp_rows,
-    )
-
-    pos_adp_rows = []
-    for _lo, _hi, key in PRIOR_FINISH_BUCKETS:
-        row = _section_row(
-            ADP_POSITIONAL_DISPLAY.get(key, _title_from_key(key)),
-            (adp_pos.get("by_positional_bucket") or {}).get(key),
-            baseline_pct=baseline_pct,
-        )
-        if row:
-            pos_adp_rows.append(row)
-    _append_section(
-        sections,
-        sid="adp_positional",
-        heading="Fantasy ADP rank",
-        note=f"Preseason positional ADP, not last year's finish. How often {pos}s drafted in that rank band finished top-12.",
-        rows=pos_adp_rows,
-    )
 
     repeat = (aggregates.get("repeat_and_breakout") or {}).get(pos) or {}
     repeat_rows = []

@@ -244,7 +244,7 @@ _CHEAT_HTML = r"""
   .cs-empty { text-align: center !important; color: var(--cs-ink-faint); padding: 26px 14px !important; }
   .cs-rk { font-family: var(--cs-mono); font-weight: 800; color: var(--cs-ink); }
   .cs-pcell { text-align: left; display: flex; align-items: center; gap: 9px; }
-  .cs-pname { font-weight: 600; white-space: nowrap; }
+  .cs-pname { font-weight: 600; white-space: nowrap; color: var(--cs-ink); }
   .cs-num { font-family: var(--cs-mono); color: var(--cs-ink-soft); font-variant-numeric: tabular-nums; }
   .cs-ppg-last { color: var(--cs-ink-faint, var(--cs-ink-soft)); }
   .cs-posrk { font-family: var(--cs-mono); font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 6px; }
@@ -492,10 +492,10 @@ _CHEAT_HTML = r"""
   .cs-pgc:hover { background: var(--cs-accent-soft); }
   .cs-pgn { font-size: 12.5px; font-weight: 600; line-height: 1.18; display: inline-flex; align-items: baseline; gap: 6px; }
   .cs-pgc .cs-pgv { font-family: var(--cs-mono); font-size: 10px; font-weight: 800; }
-  .cs-c-QB .cs-pgn, .cs-c-QB .cs-pname, .cs-pgrid-head > .cs-c-QB { color: var(--cs-qb); }
-  .cs-c-RB .cs-pgn, .cs-c-RB .cs-pname, .cs-pgrid-head > .cs-c-RB { color: var(--cs-rb); }
-  .cs-c-WR .cs-pgn, .cs-c-WR .cs-pname, .cs-pgrid-head > .cs-c-WR { color: var(--cs-wr); }
-  .cs-c-TE .cs-pgn, .cs-c-TE .cs-pname, .cs-pgrid-head > .cs-c-TE { color: var(--cs-te); }
+  .cs-c-QB .cs-pgn, .cs-pgrid-head > .cs-c-QB { color: var(--cs-qb); }
+  .cs-c-RB .cs-pgn, .cs-pgrid-head > .cs-c-RB { color: var(--cs-rb); }
+  .cs-c-WR .cs-pgn, .cs-pgrid-head > .cs-c-WR { color: var(--cs-wr); }
+  .cs-c-TE .cs-pgn, .cs-pgrid-head > .cs-c-TE { color: var(--cs-te); }
   .cs-pgc.done .cs-pgn { text-decoration: line-through; opacity: .4; }
   .cs-board.filteron .cs-pgc[data-good="0"] { opacity: .3; }
   .cs-pgtier { display: flex; align-items: center; gap: 10px; font-family: var(--cs-mono); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--cs-ink-faint); background: var(--cs-surface-2); padding: 7px 12px; border-top: 1px solid var(--cs-line-strong); border-bottom: 1px solid var(--cs-line); }
@@ -673,7 +673,7 @@ _CHEAT_HTML = r"""
       <div class="cs-rule"><span class="cs-k">Proj Pick</span><div><h3>Your snake slot on this board</h3><p>Choose a draft slot to draw labeled lines at each of that seat's snake-draft picks — Proj Pick 1.05, 2.08, and so on. The player under each line is who this ranking would take there. Lines follow the displayed order, including any custom-board moves, and they print with the sheet.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Proj PPG</span><div><h3>Expected weekly scoring</h3><p>Projected PPG is the player's upcoming-season fantasy points per game from Sleeper, the same projection pool used by the Draft Room. Players Sleeper does not project show a dash rather than last-season actuals.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Schedule</span><div><h3>Full-season matchup context</h3><p>Schedule Rank compares each player's position-specific matchups across fantasy Weeks 1-17. Rank 1 is the easiest schedule. It is useful context for close calls inside a tier, but it does not change the stable VOR order.</p></div></div>
-      <div class="cs-rule"><span class="cs-k">Hist</span><div><h3>Historical trends, not a ranking</h3><p>Hist is redraft-only context. The compact number is how often a similar pre-season profile finished top-12, not this player's odds and not a Pick Score input. The Trends tab shows position-wide rates for ADP rounds and positional ADP, repeats, league-winner smashes, career stage, NFL draft capital (including early-career hit and miss rates), age, and prior usage. Callouts flag the biggest edges versus a typical player-season. The info button on a player opens that player's own mix of those buckets. Green is a strong similar-profile cell (about 25% or higher). Missing values show a dash. Hist does not change VOR or Pick Score.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">Hist</span><div><h3>Historical trends, not a ranking</h3><p>Hist is redraft-only context. The compact number is how often a similar pre-season profile finished top-12, not this player's odds and not a Pick Score input. The Trends tab shows position-wide rates for repeats, league-winner smashes, career stage, NFL draft capital (including early-career hit and miss rates), age, and prior usage. Callouts flag the biggest edges versus a typical player-season. The info button on a player opens that player's own mix of those buckets. Green is a strong similar-profile cell (about 25% or higher). Missing values show a dash. Hist does not change VOR or Pick Score.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Live</span><div><h3>It knows your live draft</h3><p>Open the sheet from your league during a draft and players already taken are struck through automatically. REC badges show the current Draft Room view without changing the VOR board. Reopen the sheet after more picks to refresh those ranks, or use Connect live draft to keep drafted-player status synchronized.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Dynasty</span><div><h3>Dynasty values the window, not just this year</h3><p>Dynasty mode ranks on dynasty value, which already weights youth and multi-year outlook, and swaps in Age and a career-window tag in place of ADP, because you are drafting the next several seasons.</p></div></div>
     </div>

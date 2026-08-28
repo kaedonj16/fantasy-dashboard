@@ -406,7 +406,11 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "badge(x.pos)" not in script
     assert "function badge(" not in script
     assert "cs-p cs-c-' + x.pos" in script
-    assert ".cs-c-QB .cs-pname" in body
+    assert ".cs-c-QB .cs-pgn" in body
+    assert ".cs-c-QB .cs-pname" not in body
+    assert "id !== 'adp' && id !== 'adp_positional'" in script
+    assert "['career', 'Career']" in script
+    assert "['adp', 'ADP']" not in script
     assert "p_hit_pct" not in pick
     assert "historical-player" not in core
     assert "p_hit_pct" not in core
