@@ -12373,7 +12373,7 @@ a.signed-home-league:hover {
     letter-spacing: .05em;
     text-transform: uppercase;
     padding: 2px 8px;
-    border-radius: 12px;
+    border-radius: 999px;
     white-space: nowrap;
     flex: none;
 }
