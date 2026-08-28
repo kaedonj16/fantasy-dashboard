@@ -194,7 +194,35 @@ def login(email: str, password: str) -> str:
     token = normalize_auth_token(user.get("token") if isinstance(user, dict) else "")
     if not token:
         raise ProviderAuthenticationError("Fleaflicker login did not return a session token.")
-    return token
+    owner_id = _get(user, "id") if isinstance(user, dict) else None
+    return {
+        "token": token,
+        "user_id": str(owner_id) if owner_id is not None else None,
+    }
+
+
+def resolve_fleaflicker_team_id(
+    users: list[dict],
+    *,
+    team_id: Optional[str] = None,
+    flea_user_id: Optional[str] = None,
+) -> Optional[str]:
+    """Map an explicit team id or Fleaflicker owner id to a league roster id."""
+    if team_id:
+        wanted = str(team_id)
+        for user in users or []:
+            roster_id = str(user.get("roster_id") or user.get("user_id") or "")
+            if roster_id == wanted or str(user.get("user_id") or "") == wanted:
+                return roster_id or wanted
+        return wanted
+    if not flea_user_id:
+        return None
+    wanted_owner = str(flea_user_id)
+    for user in users or []:
+        meta = user.get("metadata") or {}
+        if str(meta.get("flea_owner_id") or "") == wanted_owner:
+            return str(user.get("roster_id") or user.get("user_id") or "") or None
+    return None
 
 
 def resolve_credentials(
@@ -364,15 +392,19 @@ class FleaflickerProvider(ProviderAdapter):
                 or _get(team, "name")
                 or f"Team {team_id}"
             )
+            team_name = _get(team, "name") or f"Team {team_id}"
+            owner_id = _get(owner, "id")
             out.append({
-                "user_id": str(_get(owner, "id") or team_id),
+                # Align with rosters.owner_id (team id), same pattern as MFL franchises.
+                "user_id": str(team_id),
                 "roster_id": _int(team_id),
                 "display_name": display,
                 "avatar": _get(owner, "avatarUrl", "avatar_url"),
                 "league_id": str(league_id),
                 "metadata": {
-                    "team_name": _get(team, "name") or f"Team {team_id}",
+                    "team_name": team_name,
                     "provider_team_id": str(team_id),
+                    "flea_owner_id": str(owner_id) if owner_id is not None else None,
                 },
             })
         return out
@@ -410,12 +442,24 @@ class FleaflickerProvider(ProviderAdapter):
     def get_rosters(self, league_id, season, *, token: Optional[str] = None):
         raw = self._call("FetchLeagueRosters", league_id, season, ttl=300, token=token)
         xwalk = self._canonical_map(league_id, season, token=token)
+        team_names = {}
+        try:
+            standings = self._call(
+                "FetchLeagueStandings", league_id, season, ttl=1800, token=token,
+            )
+            for team in self._teams_from_standings(standings):
+                tid = _get(team, "id")
+                if tid is not None:
+                    team_names[str(tid)] = _get(team, "name") or f"Team {tid}"
+        except Exception:
+            logger.debug("Fleaflicker standings unavailable for roster names", exc_info=True)
         out = []
         for roster in raw.get("rosters") or []:
             team = roster.get("team") or {}
             team_id = _get(team, "id")
             if team_id is None:
                 continue
+            team_name = team_names.get(str(team_id)) or _get(team, "name") or f"Team {team_id}"
             players, starters, reserve = [], [], []
             # Prefer the flat players list; fall back to FetchRoster groups when absent.
             entries = roster.get("players") or []
@@ -461,6 +505,7 @@ class FleaflickerProvider(ProviderAdapter):
                     "unmapped_player_count": max(0, len(entries or []) - len(players))
                     if entries is not None else 0,
                     "provider_team_id": str(team_id),
+                    "team_name": team_name,
                 },
             })
         return out

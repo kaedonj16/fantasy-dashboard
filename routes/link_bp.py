@@ -888,13 +888,57 @@ def _flea_private_credentials(data: dict) -> dict:
     """Derive a storeable Fleaflicker token from login or a pasted token."""
     from dashboard_services.providers.fleaflicker_api import login as flea_login, normalize_auth_token
     token = normalize_auth_token(data.get("token") or data.get("authorization"))
+    flea_user_id = None
     email = str(data.get("email") or "").strip()
     password = str(data.get("password") or "")
     if email and password:
-        token = flea_login(email, password)
+        session = flea_login(email, password)
+        token = session["token"]
+        flea_user_id = session.get("user_id")
     if not token:
         raise ValueError("Fleaflicker private leagues require a login token (or email + password).")
-    return {"token": token}
+    out = {"token": token}
+    if flea_user_id:
+        out["flea_user_id"] = str(flea_user_id)
+    return out
+
+
+def _resolve_fleaflicker_team(provider, league_id, season, *, token=None, team_id=None, flea_user_id=None):
+    from dashboard_services.providers.fleaflicker_api import resolve_fleaflicker_team_id
+    users = provider.get_users(league_id, season, token=token)
+    return resolve_fleaflicker_team_id(
+        users, team_id=team_id, flea_user_id=flea_user_id,
+    )
+
+
+def _apply_fleaflicker_guest_viewer(token: str, league_id: str, season: int) -> None:
+    """Set the viewer session for a guest private connect when owner id is known."""
+    from dashboard_services.accounts import peek_private_provider_connection
+    pending = peek_private_provider_connection(token, "fleaflicker", league_id, season)
+    if not pending:
+        return
+    flea_user_id = pending.get("flea_user_id")
+    auth_token = pending.get("token")
+    if not flea_user_id or not auth_token:
+        return
+    try:
+        from dashboard_services.providers.registry import get_provider
+        from utils.viewer_resolve import resolve_viewer_for_league
+        provider = get_provider("fleaflicker")
+        users = provider.get_users(league_id, season, token=auth_token)
+        rosters = provider.get_rosters(league_id, season, token=auth_token)
+        team_id = _resolve_fleaflicker_team(
+            provider, league_id, season, token=auth_token, flea_user_id=flea_user_id,
+        )
+        if not team_id:
+            return
+        viewer = resolve_viewer_for_league(users, rosters, "", user_id=str(team_id))
+        if viewer:
+            from app import save_viewer_session
+            save_viewer_session(viewer)
+            session["viewer_platform"] = "fleaflicker"
+    except Exception:
+        logger.warning("[link/fleaflicker/guest] viewer resolution failed", exc_info=True)
 
 
 def _connect_fleaflicker(method: str):
@@ -902,8 +946,8 @@ def _connect_fleaflicker(method: str):
     if not account_id:
         return jsonify({"ok": False, "error": "Sign in to connect a league."}), 401
     data = request.get_json(silent=True) or {}
-    allowed = {"league_id", "season"} if method == "public" else {
-        "league_id", "season", "token", "authorization", "email", "password",
+    allowed = {"league_id", "season", "team_id"} if method == "public" else {
+        "league_id", "season", "team_id", "token", "authorization", "email", "password",
     }
     if not isinstance(data, dict) or set(data) - allowed:
         return jsonify({"ok": False, "error": "Unexpected fields for this connection method."}), 400
@@ -914,20 +958,28 @@ def _connect_fleaflicker(method: str):
         return jsonify({"ok": False, "error": "Season must be a valid year."}), 400
     if not league_id.isdigit() or not (2000 <= season <= 2100):
         return jsonify({"ok": False, "error": "Enter a valid numeric Fleaflicker League ID and season."}), 400
+    requested_team_id = (str(data.get("team_id")).strip() or None) if data.get("team_id") else None
     credentials = None
+    auth_token = None
     try:
         from dashboard_services.providers.registry import get_provider
         provider = get_provider("fleaflicker")
         if method == "private":
             credentials = _flea_private_credentials(data)
-            info = provider.connect_league(league_id, season, token=credentials.get("token"))
+            auth_token = credentials.get("token")
+            info = provider.connect_league(league_id, season, token=auth_token)
         else:
             info = provider.connect_league(league_id, season)
+        team_id = _resolve_fleaflicker_team(
+            provider, league_id, season, token=auth_token,
+            team_id=requested_team_id,
+            flea_user_id=(credentials or {}).get("flea_user_id"),
+        )
         from dashboard_services.accounts import add_provider_league_connection
         add_provider_league_connection(
             account_id, "fleaflicker", league_id, season,
             info.get("name") or f"Fleaflicker League {league_id}", method,
-            credentials=credentials,
+            credentials=credentials, team_id=team_id,
         )
     except Exception as exc:
         error, status = _provider_connect_error(exc, "fleaflicker", method)
@@ -935,6 +987,7 @@ def _connect_fleaflicker(method: str):
     return jsonify({
         "ok": True, "platform": "fleaflicker", "connection_method": method,
         "league_id": league_id, "season": season, "name": info.get("name"),
+        "team_id": team_id,
         "redirect_url": f"/fleaflicker/{season}/{league_id}/dashboard",
     })
 
@@ -971,8 +1024,23 @@ def link_fleaflicker_preview():
     teams = [{"team_id": str(u.get("roster_id") or u.get("user_id")),
               "name": (u.get("metadata") or {}).get("team_name") or u.get("display_name")}
              for u in users]
+    my_team_id = None
+    if token:
+        from dashboard_services.providers.fleaflicker_api import resolve_fleaflicker_team_id
+        pending = session.get("pending_provider_connection_token")
+        flea_user_id = None
+        if pending:
+            from dashboard_services.accounts import peek_private_provider_connection
+            staged = peek_private_provider_connection(
+                pending, "fleaflicker", league_id, season,
+            ) or {}
+            flea_user_id = staged.get("flea_user_id")
+        my_team_id = resolve_fleaflicker_team_id(
+            users, flea_user_id=flea_user_id,
+        )
     return jsonify({"ok": True, "platform": "fleaflicker", "league_id": league_id,
-                    "season": season, "name": league.get("name"), "teams": teams})
+                    "season": season, "name": league.get("name"), "teams": teams,
+                    "my_team_id": my_team_id})
 
 
 @link_bp.post("/api/link/fleaflicker/private/pending")
@@ -1019,6 +1087,7 @@ def link_fleaflicker_private_guest():
     from dashboard_services.accounts import peek_private_provider_connection
     if not peek_private_provider_connection(token, "fleaflicker", league_id, season):
         return jsonify({"ok": False, "error": "Private Fleaflicker session expired. Reconnect."}), 403
+    _apply_fleaflicker_guest_viewer(token, league_id, season)
     return jsonify({
         "ok": True, "redirect_url": f"/fleaflicker/{season}/{league_id}/dashboard",
     })

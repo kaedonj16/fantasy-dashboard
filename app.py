@@ -1443,6 +1443,10 @@ FORM_BODY = """
             <button type="button" id="fleaSubmitBtn">Connect League</button>
           </div>
           <div id="fleaError" class="error-message" style="display:none;"></div>
+          <div class="row" id="fleaTeamPickWrap" style="display:none;">
+            <label for="fleaTeamSelect">Your team</label>
+            <select id="fleaTeamSelect"></select>
+          </div>
           <div id="fleaPrivateChoice" class="provider-account-choice" style="display:none;">
             <button type="button" id="fleaPrivateGoogle" class="google-continue-btn">
               <span class="google-button-title">Continue with Google</span>
@@ -1461,6 +1465,7 @@ FORM_BODY = """
           <input type="hidden" name="platform" id="formPlatform" value="sleeper">
           <input type="hidden" name="season" value="{{ viewed_season }}">
           <input type="hidden" name="username" id="formUsername" value="">
+          <input type="hidden" name="team_id" id="formTeamId" value="">
           <input type="hidden" name="next" id="formNext" value="{{ next_url or '' }}">
 
           <div class="row" id="leagueSelectWrap" style="display:none;">
@@ -13336,6 +13341,7 @@ def index():
         league_id = (request.form.get("league") or "").strip()
         season = int(request.form.get("season") or viewed_season)
         username = (request.form.get("username") or "").strip()
+        team_id = (request.form.get("team_id") or "").strip()
 
         ok, err = validate_league_id(platform, league_id)
         if not ok:
@@ -13352,9 +13358,11 @@ def index():
 
         # If username/team-name provided, set viewer session
         # For ESPN leagues the "username" field holds the team owner's name or team name
-        if username:
+        if username or team_id:
             ctx = get_league_ctx_from_cache(platform, league_id, season)
-            viewer = resolve_viewer_for_league(ctx["users"], ctx["rosters"], username)
+            viewer = resolve_viewer_for_league(
+                ctx["users"], ctx["rosters"], username, user_id=team_id or None,
+            )
 
             if viewer:
                 save_viewer_session(viewer)
@@ -13363,7 +13371,7 @@ def index():
                     _background_seed_user(viewer["viewer_user_id"], viewer.get("viewer_username"))
             else:
                 # For ESPN, skip the hard error - viewer matching is optional
-                if platform != "espn":
+                if platform not in ("espn", "fleaflicker", "mfl"):
                     body_html = render_template_string(
                         FORM_BODY,
                         username=username,

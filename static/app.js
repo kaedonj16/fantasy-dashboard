@@ -9585,6 +9585,33 @@ document.addEventListener("DOMContentLoaded", () => {
   const fleaPrivateGoogle = document.getElementById("fleaPrivateGoogle");
   const fleaPrivateGuest = document.getElementById("fleaPrivateGuest");
   const fleaMethodBtns = document.querySelectorAll(".flea-home-method");
+  const fleaTeamPickWrap = document.getElementById("fleaTeamPickWrap");
+  const fleaTeamSelect = document.getElementById("fleaTeamSelect");
+  const formTeamId = document.getElementById("formTeamId");
+
+  function syncFleaTeamSelection() {
+    if (!fleaTeamSelect || !formTeamId) return;
+    const opt = fleaTeamSelect.options[fleaTeamSelect.selectedIndex];
+    formTeamId.value = fleaTeamSelect.value || "";
+    const formUsername = document.getElementById("formUsername");
+    if (formUsername && opt) formUsername.value = (opt.textContent || "").trim();
+  }
+
+  function showFleaTeamPick(teams, myTeamId) {
+    if (!fleaTeamPickWrap || !fleaTeamSelect || !teams?.length) return;
+    fleaTeamSelect.innerHTML = teams.map((team) => {
+      const id = String(team.team_id || "");
+      const name = String(team.name || id).replace(/[<>&"]/g, "");
+      const selected = String(myTeamId || "") === id ? " selected" : "";
+      return `<option value="${id.replace(/[<>&"]/g, "")}"${selected}>${name}</option>`;
+    }).join("");
+    fleaTeamPickWrap.style.display = "block";
+    if (!fleaTeamSelect.dataset.bound) {
+      fleaTeamSelect.dataset.bound = "1";
+      fleaTeamSelect.addEventListener("change", syncFleaTeamSelection);
+    }
+    syncFleaTeamSelection();
+  }
 
 if (!platformBtns.length) return;
 
@@ -9865,6 +9892,9 @@ if (!platformBtns.length) return;
     }
     if (fleaPrivateChoice) fleaPrivateChoice.style.display = !window._hasAccount ? "flex" : "none";
     if (fleaSubmitRow) fleaSubmitRow.style.display = window._hasAccount ? "flex" : "none";
+    if (fleaTeamPickWrap) fleaTeamPickWrap.style.display = "none";
+    if (fleaTeamSelect) fleaTeamSelect.innerHTML = "";
+    if (formTeamId) formTeamId.value = "";
     if (fleaSubmitBtn) {
       const googleConnect = isPrivate && !window._hasAccount;
       fleaSubmitBtn.textContent = googleConnect ? "Sign in with Google to Connect" : "Connect League";
@@ -10255,12 +10285,13 @@ if (!platformBtns.length) return;
       // Sleeper: pass the username so the callback can set the viewer identity.
       const uEl = document.getElementById("username") || document.getElementById("formUsername");
       const username = uEl && uEl.value ? uEl.value.trim() : "";
+      const teamId = formTeamId && formTeamId.value ? formTeamId.value.trim() : "";
       googleContinueBtn.disabled = true;
       googleContinueBtn.textContent = window._hasAccount ? "Saving..." : "Continuing...";
       if (window._hasAccount) {
         try {
           await saveLeagueToSignedInAccount({
-            platform, league_id: leagueId, season, name, username,
+            platform, league_id: leagueId, season, name, username, team_id: teamId || null,
             platform_user_id: sleeperLookupUser?.user_id || null,
           });
           googleContinueBtn.disabled = false;
@@ -10277,7 +10308,7 @@ if (!platformBtns.length) return;
       showDashboardLoadingOverlay("Signing you in…", "Loading " + (name || "your league"));
       fetch("/api/link/pending", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform, league_id: leagueId, season, name, username }),
+        body: JSON.stringify({ platform, league_id: leagueId, season, name, username, team_id: teamId || null }),
       }).then(r => r.json()).then(d => {
         window.location.href = (d && d.auth_url) || "/auth/google";
       }).catch(() => { window.location.href = "/auth/google"; });
@@ -10548,13 +10579,24 @@ if (!platformBtns.length) return;
           if (!res.ok || !data.ok) throw new Error(data.error || "Unable to load Fleaflicker league.");
           const season = String(data.season || seasonRaw);
           if (!window._hasAccount && fleaRequestedAction === "guest") {
-            window.location.href = `/fleaflicker/${encodeURIComponent(season)}/${encodeURIComponent(leagueId)}/dashboard`;
+            if (seasonEl) seasonEl.value = season;
+            if (leagueSelect) {
+              leagueSelect.innerHTML = `<option value="${leagueId}" selected>${(data.name || "Fleaflicker League").replace(/[<>&"]/g, "")}</option>`;
+            }
+            if (formPlatform) formPlatform.value = "fleaflicker";
+            showFleaTeamPick(data.teams || [], data.my_team_id || null);
+            syncFleaTeamSelection();
+            document.getElementById("leagueSelectForm")?.submit();
             return;
           }
           if (!window._hasAccount && fleaRequestedAction === "google") {
+            syncFleaTeamSelection();
             const pending = await fetch("/api/link/pending", {
               method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ platform: "fleaflicker", league_id: leagueId, season: Number(season), name: data.name }),
+              body: JSON.stringify({
+                platform: "fleaflicker", league_id: leagueId, season: Number(season),
+                name: data.name, team_id: formTeamId?.value || null,
+              }),
             });
             const pendingData = await pending.json();
             if (!pending.ok || !pendingData.ok) throw new Error(pendingData.error || "Could not save this league.");
@@ -10566,8 +10608,7 @@ if (!platformBtns.length) return;
             leagueSelect.innerHTML = `<option value="${leagueId}" selected>${(data.name || "Fleaflicker League").replace(/[<>&"]/g, "")}</option>`;
           }
           if (formPlatform) formPlatform.value = "fleaflicker";
-          const formUsername = document.getElementById("formUsername");
-          if (formUsername) formUsername.value = "";
+          showFleaTeamPick(data.teams || [], data.my_team_id || null);
           if (leagueSelectWrap) leagueSelectWrap.style.display = "block";
           if (generateWrap) generateWrap.style.display = "block";
           if (window._hasAccount && googleBtnEl) googleBtnEl.innerHTML = "Save league to my account";
