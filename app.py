@@ -3539,7 +3539,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Prospects", "/prospects", "prospects"),
             ], ["players", "prospects", "breakouts", "top-movers", "compare"], "playersNavDropdown"),
             simple_dropdown("Draft", [
-                ("Draft Room <span class='nav-capability-note'>Sleeper live</span>", "/draft", "draft"),
+                ("Draft Room", "/draft", "draft"),
                 ("Cheat Sheet", "/draft/cheat-sheet", "draft-cheat-sheet"),
                 ("Draft History", "/draft/history", "draft-history"),
             ], ["draft", "draft-cheat-sheet", "draft-history"], "draftNavDropdown"),
@@ -3719,7 +3719,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Keeper Assistant only applies to keeper leagues; hide it for dynasty and
     # plain redraft leagues.
     _draft_items = [
-        ("Draft Room <span class='nav-capability-note'>Sleeper live</span>", "tool_pages.page_draft_room", "draft", False),
+        ("Draft Room", "tool_pages.page_draft_room", "draft", False),
         ("Cheat Sheet", "tool_pages.page_cheat_sheet", "draft-cheat-sheet", False),
     ]
     if _nav_show_keeper(platform, league_id, season):

@@ -157,8 +157,10 @@ def test_player_insights_targets_tab_shows_upgrade_state_like_breakouts():
     assert "Upgrade to see offseason breakout candidates for your roster." in js
 
 
-def test_draft_room_nav_labels_sleeper_live_only():
-    assert "Draft Room <span class='nav-capability-note'>Sleeper live</span>" in APP_PY
+def test_draft_room_nav_does_not_claim_sleeper_live_only():
+    assert "nav-capability-note'>Sleeper live" not in APP_PY
+    assert '("Draft Room", "/draft", "draft")' in APP_PY
+    assert '("Draft Room", "tool_pages.page_draft_room", "draft", False)' in APP_PY
     bulletins = APP_PY[APP_PY.index("def api_league_bulletins"):]
     bulletins = bulletins[:bulletins.index("logger.warning(\"[api-league-bulletins]")]
     assert '(platform or "sleeper").strip().lower() != "sleeper"' in bulletins

@@ -1,0 +1,57 @@
+"""Draft Room UI/source guards for ESPN live companion sync."""
+from pathlib import Path
+
+from dashboard_services.pages.draft_room_page import build_draft_room_body
+
+REPO = Path(__file__).resolve().parents[1]
+ROOM_JS = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+PAGE = (REPO / "dashboard_services" / "pages" / "draft_room_page.py").read_text(encoding="utf-8")
+
+
+def test_espn_sync_indicator_and_fallback_markup():
+    body = build_draft_room_body("123", 2026, "espn", viewer_user_id="{AAA}", viewer_roster_id="3")
+    assert 'id="drEspnSync"' in body
+    assert 'id="drEspnFallback"' in body
+    assert "ESPN live sync unavailable" in ROOM_JS
+    assert "Switch to Manual Tracking" in ROOM_JS
+    assert "ESPN Draft · LIVE" in ROOM_JS
+    assert "ESPN Draft · Sync Unavailable" in ROOM_JS
+    assert "ESPN Draft · Not Started" in ROOM_JS
+    assert ".dr-pill-espn" in body
+    assert '"viewerRosterId": "3"' in body
+
+
+def test_live_detect_requests_espn_sync_flag():
+    assert "detectUrl += '&sync=1'" in ROOM_JS
+    assert "Live sync currently supports Sleeper and ESPN leagues." in ROOM_JS
+
+
+def test_sequential_missing_picks_and_idempotent_apply():
+    assert "function applyOneLivePick(p)" in ROOM_JS
+    assert "function applyMissingLivePicks(picks)" in ROOM_JS
+    assert "if (state.picks[p.pick_no]) return false;" in ROOM_JS
+    assert "if (pid && !p.unresolved) drafted[pid] = true;" in ROOM_JS
+    assert "applyMissingLivePicks(d.picks)" in ROOM_JS
+
+
+def test_auth_errors_do_not_retry_and_fallback_stops_polling():
+    assert "d.error === 'auth_denied'" in ROOM_JS
+    assert "_espnAuthFailed = true" in ROOM_JS
+    assert "function switchEspnToManual()" in ROOM_JS
+    assert "state.mode = undefined;" in ROOM_JS
+    assert "if (_pollInFlight) return;" in ROOM_JS
+
+
+def test_refresh_forces_full_reconcile():
+    assert "lastLivePicks = null;  // force a full ESPN/Sleeper reconcile on the first poll" in ROOM_JS
+    assert "lastLivePicks = null;  // refresh reconcile after the tab was away" in ROOM_JS
+
+
+def test_sleeper_live_path_still_uses_apply_live_picks():
+    assert "applyLivePicks(d.picks);" in ROOM_JS
+    assert "ms = 2000;  // active Sleeper draft" in ROOM_JS
+
+
+def test_poll_interval_uses_espn_payload():
+    assert "state.pollIntervalMs" in ROOM_JS
+    assert "espnToStart > _START_WINDOW_MS) ms = 60000" in ROOM_JS
