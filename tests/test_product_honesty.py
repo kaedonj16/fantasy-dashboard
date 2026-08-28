@@ -75,6 +75,7 @@ def test_paywall_lists_shipped_pro_features_only():
     assert "'auction-values'" not in PAYWALL_JS
     assert "'advanced-metrics'" not in PAYWALL_JS
     assert "'draft-cheat-sheet': 'Custom Draft Board'" in PAYWALL_JS
+    assert "'draft-trends-scout': 'Trend Scout'" in PAYWALL_JS
     assert "'playoff-impact': 'Playoff Impact'" in PAYWALL_JS
     assert "'gm-memo': 'Front Office Report'" in PAYWALL_JS
     assert "Playoff Impact simulations" in PAYWALL_JS

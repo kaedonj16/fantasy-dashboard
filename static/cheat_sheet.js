@@ -32,6 +32,12 @@
     var trendsCache = null;
     var trendsPos = '';
     var trendsRequest = 0;
+    var trendsTier = 'top_12';
+    var trendsPicks = {};
+    var trendsCohort = null;
+    var trendsCohortRequest = 0;
+    var trendsDockOpen = true;
+    var TRENDS_SCOUT_PREVIEW = 3;
     var TAB_PANELS = {
         board: 'cs-panel-board',
         pos: 'cs-panel-pos',
@@ -43,6 +49,33 @@
     // top of the board would read as a miss.
     var HIST_STRONG_PCT = 25;
     var HIST_TIER_SHORT = { top_5: 'top-5', top_12: 'top-12', top_24: 'top-24' };
+
+    function histExampleHit(finish, fallback) {
+        if (fallback && fallback.hit_label) {
+            return { tier: fallback.hit_tier || '', label: fallback.hit_label };
+        }
+        var n = Number(finish);
+        if (!isFinite(n) || n < 1) return null;
+        if (n <= 5) return { tier: 'top_5', label: 'Top 5' };
+        if (n <= 12) return { tier: 'top_12', label: 'Top 12' };
+        if (n <= 24) return { tier: 'top_24', label: 'Top 24' };
+        return { tier: 'miss', label: 'Outside top 24' };
+    }
+
+    function setTrendsNavOffset() {
+        var nav = document.querySelector('.top-nav');
+        var h = nav ? Math.round(nav.getBoundingClientRect().height) : 0;
+        document.documentElement.style.setProperty('--cs-nav-offset', h + 'px');
+    }
+    setTrendsNavOffset();
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setTrendsNavOffset);
+    }
+    window.addEventListener('resize', setTrendsNavOffset);
+    if (typeof ResizeObserver === 'function') {
+        var navEl = document.querySelector('.top-nav');
+        if (navEl) new ResizeObserver(setTrendsNavOffset).observe(navEl);
+    }
 
     var state = {
         mode: cfg.mode === 'dynasty' ? 'dynasty' : 'redraft',
@@ -1159,14 +1192,14 @@
         if (!showHist(dyn)) return '';
         var h = x.historical || {};
         var pct = h.p_hit_pct;
-        var tip = 'Similar-profile top-12 trend (not this player\'s odds)'
+        var tip = 'Historical top-12 chance given this career and situation'
             + (pct != null ? ': ' + pct + '%' : ': unknown')
             + '. Open for bucket hit rates. Descriptive only - not a ranking input.';
         var cls = histPctClass(pct);
         var body = pct == null ? '-' : (pct + '%');
         return '<td class="cs-hist-col"><span class="cs-hist-cell">'
             + '<span class="cs-val ' + cls + '" title="' + esc(tip) + '">' + body + '</span>'
-            + '<button type="button" class="cs-hist-btn" data-hist-id="' + esc(x.id) + '" data-hist-name="' + esc(x.name) + '" data-hist-adp="' + (x.adp != null && isFinite(Number(x.adp)) ? String(x.adp) : '') + '" data-hist-pos="' + esc(x.pos || '') + '" data-hist-proj="' + (x.projectedPpg != null && isFinite(Number(x.projectedPpg)) ? String(x.projectedPpg) : '') + '" data-hist-proj-rk="' + (h.proj_rk != null ? String(h.proj_rk) : '') + '" data-hist-adp-rk="' + (h.adp_rk != null ? String(h.adp_rk) : '') + '" title="Similar-player history">i</button>'
+            + '<button type="button" class="cs-hist-btn" data-hist-id="' + esc(x.id) + '" data-hist-name="' + esc(x.name) + '" data-hist-adp="' + (x.adp != null && isFinite(Number(x.adp)) ? String(x.adp) : '') + '" data-hist-pos="' + esc(x.pos || '') + '" data-hist-proj="' + (x.projectedPpg != null && isFinite(Number(x.projectedPpg)) ? String(x.projectedPpg) : '') + '" data-hist-proj-rk="' + (h.proj_rk != null ? String(h.proj_rk) : '') + '" data-hist-adp-rk="' + (h.adp_rk != null ? String(h.adp_rk) : '') + '" title="This player\'s historical chance">i</button>'
             + '</span></td>';
     }
 
@@ -1353,7 +1386,7 @@
                 + '<span class="cs-lg"><span class="cs-val g">+7</span> above ADP, target it</span>'
                 + '<span class="cs-lg"><span class="cs-val b">-4</span> going early, let it fall</span>'
                 + '<span class="cs-lg"><b>Sched Rk</b> full-season schedule (1 = easiest)</span>'
-                + (showHist(dyn) ? '<span class="cs-lg"><b>Hist</b> similar-profile trend, not a rank</span>' : '')
+                + (showHist(dyn) ? '<span class="cs-lg"><b>Hist</b> this player\'s historical chance, not a rank</span>' : '')
                 + sortNote
                 + projNote
                 + draftedNote
@@ -1423,16 +1456,16 @@
         var editTh = editable ? '<th class="cs-edit-th"></th>' : '';
         var boardSort = isDefaultSort();
         $('csBoardHead').innerHTML = '<tr>'
-            + sortTh('rk', 'Rk', '', 'VOR board rank. Click to restore the default order.')
-            + sortTh('name', 'Player', 'l', 'Sort by player name')
+            + sortTh('rk', 'Rk', 'cs-rk', 'VOR board rank. Click to restore the default order.')
+            + sortTh('name', 'Player', 'l cs-player', 'Sort by player name')
             + sortTh('pos', 'Pos', '', 'Sort by position, then positional rank')
-            + sortTh('vor', 'VOR', 'cs-vor-col', 'Value over replacement — the model ranking')
-            + sortTh('projectedPpg', 'Proj PPG', '', 'Projected fantasy points per game')
-            + sortTh(col5Key, col5, '', dyn ? 'Sort by age' : 'Sort by ADP')
-            + sortTh(col6Key, col6, 'cs-value-col', dyn ? 'Sort by career window (age)' : 'Sort by value vs ADP')
-            + sortTh('scheduleRank', 'Sched Rk', '', 'Full fantasy-season strength of schedule rank (1 = easiest)')
-            + (showHist(dyn) ? sortTh('hist', 'Hist', 'cs-hist-col', 'Similar-profile top-12 trend. Open for bucket rates. Descriptive; not a ranking input.') : '')
-            + (showMarket(dyn) ? sortTh('market', 'Market vs ADP', 'cs-market-col', 'Sort by market vs ADP') : '')
+            + sortTh('vor', 'VOR', 'cs-vor-col', 'VALUE: Value over replacement — the model ranking')
+            + sortTh('projectedPpg', 'Proj PPG', '', 'PROJECTION: Projected fantasy points per game')
+            + sortTh(col5Key, col5, '', dyn ? 'Sort by age' : 'MARKET: Sort by ADP')
+            + sortTh(col6Key, col6, 'cs-value-col', dyn ? 'Sort by career window (age)' : 'VALUE: Sort by value vs ADP')
+            + sortTh('scheduleRank', 'Sched Rk', '', 'PROJECTION: Full fantasy-season strength of schedule rank (1 = easiest)')
+            + (showHist(dyn) ? sortTh('hist', 'Hist', 'cs-hist-col', 'HISTORY: Historical top-12 chance given this career and situation. Open for the full mix. Not a ranking input.') : '')
+            + (showMarket(dyn) ? sortTh('market', 'Market vs ADP', 'cs-market-col', 'MARKET: Where market signals imply this player should be drafted vs ADP') : '')
             + editTh + '</tr>';
         var span = (editable ? 9 : 8) + (showMarket(dyn) ? 1 : 0) + (showHist(dyn) ? 1 : 0);
         var lastT = null, html = '', shown = 0;
@@ -1491,7 +1524,7 @@
                 '<td class="cs-rk">' +
                 (x.rk == null ? '&ndash;' : x.rk) +
                 '</td>' +
-                '<td>' +
+                '<td class="cs-player">' +
                 '<span class="cs-pcell">' +
                 '<span class="cs-pname">' +
                 esc(x.name) +
@@ -2037,7 +2070,7 @@
             : (hist.adp_rk != null ? Number(hist.adp_rk) : null);
         var fallbackMarket = hist.mkt_sentence;
         $('csHistTitle').textContent = name || 'History';
-        $('csHistSub').textContent = 'Historical trends for this profile - not a ranking or this player\'s odds.';
+        $('csHistSub').textContent = 'Historical chance for this career and situation - not a ranking or Pick Score.';
         $('csHistBody').innerHTML = '<p class="cs-hist-sub">Loading…</p>';
         applyHistPos(livePos);
         modal.classList.add('open');
@@ -2076,19 +2109,21 @@
 
     function histTrendTitle(row) {
         row = row || {};
+        if (row.title) return String(row.title);
         var bucket = String(row.bucket || '').trim();
         var label = String(row.label || '').trim();
         var kind = row.kind || '';
-        if (bucket && TRENDS_LABEL_PREFIX[kind]) return trendsQualifyLabel(kind, bucket);
-        if (bucket && label) {
-            var qualified = trendsQualifyLabel(kind, bucket);
-            var lowLabel = label.toLowerCase();
-            var lowQual = qualified.toLowerCase();
-            if (lowQual.indexOf(lowLabel) >= 0 || lowLabel.indexOf(lowQual) >= 0) return qualified;
-            return label + ' · ' + qualified;
-        }
-        if (bucket) return trendsQualifyLabel(kind, bucket);
-        return label || row.sentence || '';
+        var qualified = bucket ? trendsQualifyLabel(kind, bucket) : '';
+        var generic = {
+            age: 1, 'draft capital': 1, 'career stage': 1,
+            'last year target share': 1, 'last year snaps': 1,
+            'last year adot': 1, 'last year rush yards over expected': 1,
+            'last year touches': 1, 'last year carries': 1,
+            'last year receptions': 1, 'last year targets': 1,
+            'last year games played': 1, 'last year pass attempts': 1
+        };
+        if (label && !generic[label.toLowerCase()]) return label;
+        return qualified || label || row.sentence || '';
     }
 
     function trendsBaselineOf(row) {
@@ -2146,7 +2181,10 @@
         if (legend) legend.style.display = hideBoardChrome ? 'none' : '';
         var fb = $('csFilterbar');
         if (fb) fb.style.display = hideBoardChrome ? 'none' : '';
-        if (tab === 'trends') loadTrends();
+        if (tab === 'trends') {
+            setTrendsNavOffset();
+            loadTrends();
+        }
     }
 
     function syncHistSurfaces() {
@@ -2186,7 +2224,11 @@
         draft_capital: 'capital', top12_as_rookie: 'capital', top12_by_year_2: 'capital',
         capital_miss: 'capital',
         age: 'age', age_exact: 'age', prime: 'age',
-        target_share: 'usage', snap_pct: 'usage', adot: 'usage', ryoe: 'usage'
+        target_share: 'usage', snap_pct: 'usage', adot: 'usage', ryoe: 'usage',
+        touches: 'usage', carries: 'usage', receptions: 'usage',
+        targets: 'usage', games: 'usage', pass_attempts: 'usage',
+        target_share_change: 'usage', snap_pct_change: 'usage',
+        workload_change: 'usage'
     };
     var TRENDS_LANES = [
         ['all', 'All'], ['career', 'Career'],
@@ -2201,8 +2243,17 @@
         snap_pct: 'Snaps',
         adot: 'aDOT',
         ryoe: 'RYOE',
+        touches: 'Touches',
+        carries: 'Carries',
+        receptions: 'Receptions',
+        targets: 'Targets',
+        games: 'Games',
+        pass_attempts: 'Attempts',
         age: 'Age',
-        age_exact: 'Age'
+        age_exact: 'Age',
+        target_share_change: 'Targets',
+        snap_pct_change: 'Snaps',
+        workload_change: 'Workload'
     };
 
     function trendsConfKey(label) {
@@ -2269,51 +2320,623 @@
         return prefix + ' ' + label;
     }
 
-    function trendsTopEdges(sections, limit) {
+    function trendsFinishLabel(tier) {
+        return HIST_TIER_SHORT[tier] || String(tier || '').replace('_', '-');
+    }
+
+    function trendsPicksFor(pos) {
+        var key = String(pos || trendsPos || 'RB');
+        if (!trendsPicks[key]) trendsPicks[key] = {};
+        return trendsPicks[key];
+    }
+
+    function trendsRowView(row, sec, tier) {
+        row = row || {};
+        var tied = !!(sec && sec.finish_tied);
+        var pct = row.pct;
+        var vs = row.vs_baseline;
+        var vsLabel = row.vs_label;
+        if (tied && row.pcts && row.pcts[tier] != null) {
+            pct = row.pcts[tier];
+            if (row.vs_by_tier && row.vs_by_tier[tier] != null) vs = row.vs_by_tier[tier];
+            if (row.vs_label_by_tier && row.vs_label_by_tier[tier]) vsLabel = row.vs_label_by_tier[tier];
+        }
+        return { pct: pct, vs: vs, vsLabel: vsLabel };
+    }
+
+    function trendsPageBaseline(page, tier) {
+        var block = ((page && page.baselines) || {})[tier] || {};
+        if (block.pct != null && isFinite(Number(block.pct))) {
+            return { pct: Number(block.pct), n: block.n };
+        }
+        if (tier === 'top_12') {
+            return { pct: page && page.baseline_pct, n: page && page.baseline_n };
+        }
+        return { pct: null, n: null };
+    }
+
+    function trendsFeatsMatch(feats, spec) {
+        if (!spec) return true;
+        if (spec.all) {
+            return (spec.all || []).every(function (part) {
+                return trendsFeatsMatch(feats, part);
+            });
+        }
+        var val = feats ? feats[spec.field] : undefined;
+        if (spec.null_as != null && (val == null || val === '')) val = spec.null_as;
+        if (spec.eq !== undefined) {
+            return val == spec.eq || (val != null && String(val) === String(spec.eq));
+        }
+        if (spec.in) {
+            var opts = spec.in || [];
+            if (opts.indexOf(val) >= 0) return true;
+            var s = val != null ? String(val) : '';
+            return opts.some(function (x) { return String(x) === s; });
+        }
+        if (spec.gte !== undefined) {
+            if (val == null || !isFinite(Number(val))) return false;
+            return Number(val) >= Number(spec.gte);
+        }
+        if (spec.lte !== undefined) {
+            if (val == null || !isFinite(Number(val))) return false;
+            return Number(val) <= Number(spec.lte);
+        }
+        if (spec.between) {
+            if (val == null || !isFinite(Number(val)) || spec.between.length < 2) return false;
+            var n = Number(val);
+            return n >= Number(spec.between[0]) && n <= Number(spec.between[1]);
+        }
+        return false;
+    }
+
+    function trendsCareerStage(ye) {
+        if (ye == null || !isFinite(Number(ye))) return '';
+        var n = Number(ye);
+        if (n < 0) return '';
+        if (n === 0) return 'rookie';
+        if (n === 1) return 'year_2';
+        if (n === 2) return 'year_3';
+        if (n === 3) return 'year_4';
+        if (n === 4) return 'year_5';
+        return 'year_6_plus';
+    }
+
+    function trendsDraftCapitalOf(p) {
+        var cap = (p && (p.draft_capital_bucket || p.draft_capital)) || '';
+        if (cap) return String(cap);
+        if (p && p.undrafted) return 'undrafted';
+        var rnd = p && (p.draft_round != null ? p.draft_round : p.nfl_draft_round);
+        var pick = p && (p.draft_pick != null ? p.draft_pick : p.nfl_draft_pick);
+        rnd = rnd != null && isFinite(Number(rnd)) ? Number(rnd) : null;
+        pick = pick != null && isFinite(Number(pick)) ? Number(pick) : null;
+        if (rnd == null && pick != null) rnd = Math.min(7, Math.max(1, Math.floor((pick - 1) / 32) + 1));
+        if (rnd == null) return '';
+        if (rnd <= 0) return 'undrafted';
+        if (rnd === 1) return 'round_1';
+        if (rnd === 2 || rnd === 3) return 'day_2';
+        if (rnd >= 4) return 'day_3';
+        return '';
+    }
+
+    function trendsLivePlayerFeatures(p) {
+        var pos = String((p && (p.pos || p.position)) || '').toUpperCase();
+        if (!pos) return {};
+        var feats = { position: pos };
+        var ye = p && (p.years_experience != null ? p.years_experience : p.years_exp);
+        if (ye != null && isFinite(Number(ye))) {
+            ye = Number(ye);
+            var stage = trendsCareerStage(ye);
+            if (stage) feats.career_stage = stage;
+            if (ye === 0) feats.prior_top12_count = 0;
+        }
+        var cap = trendsDraftCapitalOf(p || {});
+        if (cap) feats.draft_capital = cap;
+        var pick = p && (p.nfl_draft_pick != null ? p.nfl_draft_pick : null);
+        if (pick == null && ye === 0 && p && p.draft_pick != null) {
+            pick = p.draft_pick;
+        }
+        if (pick != null && isFinite(Number(pick)) && Number(pick) > 0) {
+            feats.nfl_draft_pick = Number(pick);
+        }
+        var age = p && p.age;
+        if (age != null && isFinite(Number(age))) feats.age = Math.floor(Number(age));
+        return feats;
+    }
+
+    function trendsFeatsForPlayer(featsIndex, p) {
+        var id = String((p && p.id) || '');
+        var live = trendsLivePlayerFeatures(p || {});
+        var ware = (featsIndex && id) ? featsIndex[id] : null;
+        if (!ware) return live;
+        var out = {};
+        Object.keys(live).forEach(function (k) { out[k] = live[k]; });
+        Object.keys(ware).forEach(function (k) { out[k] = ware[k]; });
+        return out;
+    }
+
+    function trendsPlayerMatchesPicks(feats, picks) {
+        var groups = {};
+        Object.keys(picks || {}).forEach(function (id) {
+            var spec = picks[id] && picks[id].match;
+            if (!spec) return;
+            var g = spec.group || spec.field || id;
+            if (!groups[g]) groups[g] = [];
+            groups[g].push(spec);
+        });
+        var keys = Object.keys(groups);
+        if (!keys.length) return false;
+        return keys.every(function (g) {
+            return groups[g].some(function (spec) { return trendsFeatsMatch(feats, spec); });
+        });
+    }
+
+    function trendsWhyLabels(feats, picks) {
+        var labels = [];
+        Object.keys(picks || {}).forEach(function (id) {
+            var rec = picks[id];
+            if (!rec || !rec.match) return;
+            if (trendsFeatsMatch(feats, rec.match) && rec.label) labels.push(rec.label);
+        });
+        return labels;
+    }
+
+    function trendsSignedPts(pts) {
+        if (pts == null || !isFinite(Number(pts))) return '';
+        var n = Number(pts);
+        if (n > 0) return '+' + n + ' pts';
+        if (n < 0) return String(n) + ' pts';
+        return '0 pts';
+    }
+
+    function trendsFiltersPayload(picks) {
+        return Object.keys(picks || {}).map(function (id) {
+            var rec = picks[id] || {};
+            var spec = rec.match || {};
+            var out = {
+                group: spec.group || spec.field || rec.sid || id,
+                field: spec.field,
+                label: rec.label || spec.eq || spec.field
+            };
+            ['eq', 'in', 'gte', 'lte', 'between', 'null_as'].forEach(function (k) {
+                if (spec[k] !== undefined) out[k] = spec[k];
+            });
+            return out;
+        }).filter(function (f) { return f.field; });
+    }
+
+    function loadTrendsCohort(picks, done) {
+        var filters = trendsFiltersPayload(picks);
+        if (!filters.length) {
+            trendsCohort = null;
+            if (done) done(null);
+            return;
+        }
+        var req = ++trendsCohortRequest;
+        fetch('/api/historical-cohort', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-store',
+            body: JSON.stringify({
+                position: trendsPos,
+                filters: filters,
+                tier: trendsTier
+            })
+        }).then(function (r) { return r.json(); }).then(function (resp) {
+            if (req !== trendsCohortRequest) return;
+            trendsCohort = resp;
+            if (done) done(resp);
+        }).catch(function () {
+            if (req !== trendsCohortRequest) return;
+            trendsCohort = null;
+            if (done) done(null);
+        });
+    }
+
+    function trendsCohortPct(cohort, key) {
+        if (!cohort) return null;
+        if (key === 'top_12' && cohort.display_pct != null) return cohort.display_pct;
+        var rec = ((cohort.rates || {})[key]) || {};
+        return rec.display_pct != null ? rec.display_pct : rec.pct;
+    }
+
+    function trendsScoutHits(data, pos, picks) {
+        var featsIndex = (data && data.player_features) || {};
+        var src = (players && players.length) ? players : allPlayers;
+        var hits = [];
+        src.forEach(function (p) {
+            if (!p) return;
+            var id = String(p.id || '');
+            var ppos = String(p.pos || p.position || '').toUpperCase();
+            if (!id || ppos !== pos) return;
+            var feats = trendsFeatsForPlayer(featsIndex, p);
+            if (!feats || !trendsPlayerMatchesPicks(feats, picks)) return;
+            var hist = p.historical || {};
+            var mktPct = hist.mkt_pct != null ? Number(hist.mkt_pct) : null;
+            var cohortPct = trendsCohortPct(trendsCohort, 'top_12');
+            var edge = (cohortPct != null && mktPct != null && isFinite(mktPct))
+                ? Number(cohortPct) - Number(mktPct) : null;
+            hits.push({
+                id: id,
+                name: p.name || id,
+                pos: ppos,
+                adp: p.adp != null ? p.adp : p.redraft_avg_pick,
+                vor: p.vorRaw != null ? p.vorRaw : p.vor,
+                projectedPpg: p.projectedPpg != null ? p.projectedPpg : p.proj_ppg,
+                hist: hist,
+                drafted: !!(p.drafted || (draftedIds && draftedIds.has(id)) || (state.done && state.done.has(id))),
+                why: trendsWhyLabels(feats, picks),
+                cohortPct: cohortPct,
+                mktPct: mktPct,
+                profileEdge: edge
+            });
+        });
+        hits.sort(function (a, b) {
+            var av = a.vor != null && isFinite(Number(a.vor)) ? Number(a.vor) : -9999;
+            var bv = b.vor != null && isFinite(Number(b.vor)) ? Number(b.vor) : -9999;
+            return bv - av;
+        });
+        return hits;
+    }
+
+    function trendsMiniPcts(row, tier) {
+        var pcts = (row && row.pcts) || {};
+        var keys = ['top_5', 'top_12', 'top_24'].filter(function (k) { return pcts[k] != null; });
+        if (keys.length < 2) return '';
+        return '<div class="cs-trends-minipcts">' + keys.map(function (k) {
+            return '<span' + (k === tier ? ' class="is-on"' : '') + '>'
+                + esc(trendsFinishLabel(k)) + ' ' + esc(String(pcts[k])) + '%</span>';
+        }).join('') + '</div>';
+    }
+
+    function trendsProfileHtml(cohort, picks, pickCount) {
+        var html = '<section class="cs-trends-profile' + (pickCount ? '' : ' is-idle') + '">';
+        if (!pickCount) {
+            html += '<p class="cs-hist-sub">Tap historical buckets to build a profile.</p></section>';
+            return html;
+        }
+        var labels = Object.keys(picks || {}).map(function (id) {
+            return picks[id] && picks[id].label;
+        }).filter(Boolean);
+        var n = cohort && cohort.sample_size;
+        var players = cohort && cohort.n_players;
+        html += '<div class="cs-trends-sec-head"><div><h3>Selected profile</h3><p>'
+            + esc(trendsPos) + (labels.length ? ' · ' + esc(labels.join(' · ')) : '')
+            + '</p></div>';
+        if (cohort && cohort.available !== false) {
+            html += '<div class="cs-trends-profile-n">n=' + esc(String(n == null ? 0 : n))
+                + (players != null ? ' · ' + esc(String(players)) + ' players' : '')
+                + '</div>';
+        }
+        html += '</div>';
+        if (!cohort || cohort.available === false) {
+            var reason = cohort && cohort.unknown_reason;
+            html += '<p class="cs-hist-sub">'
+                + (reason === 'cohort_index_missing'
+                    ? 'Combined historical rates need a rebuilt observation index.'
+                    : (reason === 'empty_cohort'
+                        ? 'No historical player-seasons match that mix.'
+                        : 'Loading combined historical rate…'))
+                + '</p></section>';
+            return html;
+        }
+        var rates = cohort.rates || {};
+        html += '<div class="cs-trends-profile-stats">';
+        html += '<div class="cs-trends-profile-tiers">';
+        ['top_5', 'top_12', 'top_24'].forEach(function (tier) {
+            var rec = rates[tier] || {};
+            var pct = rec.display_pct;
+            if (pct == null && tier === 'top_12') pct = cohort.display_pct;
+            var on = tier === (cohort.tier || trendsTier);
+            html += '<div class="cs-trends-profile-tier' + (on ? ' is-on' : '') + '">'
+                + '<div class="cs-trends-profile-k">' + esc(trendsFinishLabel(tier)) + '</div>'
+                + '<div class="cs-trends-profile-v">' + (pct != null ? esc(String(pct)) + '%' : '-') + '</div>'
+                + (tier === 'top_12' && rec.ci_low_pct != null && rec.ci_high_pct != null
+                    ? '<div class="cs-trends-profile-ci">' + esc(String(rec.ci_low_pct)) + '-'
+                        + esc(String(rec.ci_high_pct)) + '%</div>'
+                    : (tier === 'top_12' && cohort.ci_low_pct != null && cohort.ci_high_pct != null
+                        ? '<div class="cs-trends-profile-ci">' + esc(String(cohort.ci_low_pct)) + '-'
+                            + esc(String(cohort.ci_high_pct)) + '%</div>'
+                        : ''))
+                + '</div>';
+        });
+        html += '</div>';
+        html += '<dl class="cs-trends-profile-dl">';
+        if (cohort.baseline_pct != null) {
+            html += '<div><dt>Typical ' + esc(trendsPos) + ' ' + esc(trendsFinishLabel(cohort.tier || 'top_12'))
+                + '</dt><dd>' + esc(String(cohort.baseline_pct)) + '%</dd></div>';
+        }
+        if (cohort.adjusted_edge_pts != null) {
+            html += '<div><dt>Adjusted edge</dt><dd class="'
+                + (Number(cohort.adjusted_edge_pts) > 0 ? 'is-up' : (Number(cohort.adjusted_edge_pts) < 0 ? 'is-down' : ''))
+                + '">' + esc(trendsSignedPts(cohort.adjusted_edge_pts)) + '</dd></div>';
+        }
+        var mkt = cohort.market || {};
+        if (mkt.expected_market_pct != null) {
+            html += '<div><dt>At historical ADP</dt><dd>' + esc(String(mkt.expected_market_pct)) + '%</dd></div>';
+        }
+        if (mkt.market_adjusted_edge_pts != null) {
+            html += '<div><dt>Vs market</dt><dd class="'
+                + (Number(mkt.market_adjusted_edge_pts) > 0 ? 'is-up' : (Number(mkt.market_adjusted_edge_pts) < 0 ? 'is-down' : ''))
+                + '">' + esc(trendsSignedPts(mkt.market_adjusted_edge_pts)) + '</dd></div>';
+        }
+        if (cohort.confidence_short) {
+            html += '<div class="is-conf"><dt>Confidence</dt><dd>' + esc(String(cohort.confidence_short)) + '</dd></div>';
+        }
+        html += '</dl>';
+        html += '<p class="cs-hist-note">Actual matching seasons. Not a ranking input.</p>';
+        html += '</div></section>';
+        return html;
+    }
+
+    function trendsScoutHtml(data, picks, pickCount) {
+        var hits = pickCount ? trendsScoutHits(data, trendsPos, picks) : [];
+        var premium = !!cfg.hasPremium;
+        var shown = premium ? hits : hits.slice(0, TRENDS_SCOUT_PREVIEW);
+        var html = '<section class="cs-trends-scout' + (pickCount ? '' : ' is-idle') + '">';
+        html += '<div class="cs-trends-sec-head"><h3>';
+        if (!pickCount) {
+            html += 'Board players who match</h3><p>Tap historical buckets to build a profile.</p></div></section>';
+            return html;
+        }
+        html += esc(String(hits.length)) + ' matching ' + esc(trendsPos)
+            + (hits.length === 1 ? '' : 's') + '</h3><p>';
+        var labels = Object.keys(picks).map(function (id) { return picks[id].label; }).filter(Boolean);
+        html += esc(labels.join(' + '));
+        html += '</p></div>';
+        html += '<div class="cs-trends-scout-chips">';
+        Object.keys(picks).forEach(function (id) {
+            html += '<button type="button" class="cs-trends-chip" data-trends-pick="' + esc(id)
+                + '">' + esc(picks[id].label || id) + ' ×</button>';
+        });
+        html += '<button type="button" class="cs-trends-chip is-clear" data-trends-clear="1">Clear</button>';
+        html += '</div>';
+        if (!hits.length) {
+            html += '<p class="cs-hist-sub">No current-board ' + esc(trendsPos)
+                + 's match those buckets. Try fewer filters, or load the Big Board first.</p>';
+        } else {
+            html += '<div class="cs-trends-scout-list">';
+            shown.forEach(function (hit) {
+                var adpBit = hit.adp != null && isFinite(Number(hit.adp)) ? 'ADP ' + Number(hit.adp).toFixed(1) : '';
+                var edgeBits = [];
+                if (hit.cohortPct != null) edgeBits.push(hit.cohortPct + '% hist');
+                if (hit.mktPct != null && isFinite(Number(hit.mktPct))) {
+                    edgeBits.push(Number(hit.mktPct) + '% at ADP');
+                }
+                if (hit.profileEdge != null && isFinite(Number(hit.profileEdge))) {
+                    edgeBits.push(trendsSignedPts(hit.profileEdge));
+                }
+                html += '<button type="button" class="cs-trends-player' + (hit.drafted ? ' is-drafted' : '')
+                    + '" data-trends-player="' + esc(hit.id) + '" data-trends-name="' + esc(hit.name)
+                    + '" data-trends-ppos="' + esc(hit.pos) + '" data-trends-adp="'
+                    + (hit.adp != null ? esc(String(hit.adp)) : '') + '" data-trends-proj="'
+                    + (hit.projectedPpg != null ? esc(String(hit.projectedPpg)) : '') + '">'
+                    + '<span class="cs-pos-badge cs-pos-' + esc(hit.pos) + '">' + esc(hit.pos) + '</span>'
+                    + '<span class="cs-trends-player-copy">'
+                    + '<span class="cs-trends-player-n">' + esc(hit.name) + '</span>'
+                    + (adpBit ? '<span class="cs-trends-player-adp">' + esc(adpBit) + '</span>' : '')
+                    + (edgeBits.length ? '<span class="cs-trends-player-edge">' + esc(edgeBits.join(' · ')) + '</span>' : '')
+                    + '</span></button>';
+            });
+            html += '</div>';
+            if (!premium && hits.length > TRENDS_SCOUT_PREVIEW) {
+                html += '<p class="cs-trends-scout-more">' + (hits.length - TRENDS_SCOUT_PREVIEW)
+                    + ' more matching ' + esc(trendsPos) + 's. '
+                    + '<button type="button" data-trends-unlock="1">Unlock the full list</button></p>';
+            }
+        }
+        html += '</section>';
+        return html;
+    }
+
+    function trendsPickRecord(id, sections) {
+        var found = null;
+        (sections || []).forEach(function (sec) {
+            (sec.rows || []).forEach(function (row) {
+                if (row && row.id === id) found = { row: row, sec: sec };
+            });
+        });
+        if (!found || !found.row || !found.row.match) return null;
+        return {
+            id: id,
+            label: trendsQualifyLabel(found.sec.id, found.row.label || ''),
+            match: found.row.match,
+            sid: found.sec.id
+        };
+    }
+
+    function toggleTrendsPick(id, sections) {
+        if (!id) return;
+        var bag = trendsPicksFor(trendsPos);
+        if (bag[id]) delete bag[id];
+        else {
+            var rec = trendsPickRecord(id, sections);
+            if (rec) bag[id] = rec;
+        }
+        paintTrendsSelection(sections);
+    }
+
+    function paintTrendsSelection(sections) {
+        var host = $('csTrends');
+        if (!host) return;
+        var picks = trendsPicksFor(trendsPos);
+        host.querySelectorAll('.cs-trends-srow.is-pick').forEach(function (row) {
+            var id = row.getAttribute('data-trends-pick');
+            row.classList.toggle('is-on', !!(id && picks[id]));
+        });
+        function swapDock() {
+            var pickCount = Object.keys(picks).length;
+            var sticky = host.querySelector('.cs-trends-sticky');
+            if (sticky) {
+                sticky.classList.toggle('is-picked', !!pickCount);
+                sticky.classList.toggle('is-collapsed', !trendsDockOpen);
+            }
+            var wrap = document.createElement('div');
+            wrap.innerHTML = trendsProfileHtml(trendsCohort, picks, pickCount)
+                + trendsScoutHtml(trendsCache, picks, pickCount);
+            var profileHost = host.querySelector('.cs-trends-profile');
+            var scoutHost = host.querySelector('.cs-trends-scout');
+            var nextProfile = wrap.querySelector('.cs-trends-profile');
+            var nextScout = wrap.querySelector('.cs-trends-scout');
+            if (profileHost && nextProfile) profileHost.replaceWith(nextProfile);
+            if (scoutHost && nextScout) scoutHost.replaceWith(nextScout);
+            syncTrendsDockToggle(host);
+            bindTrendsDock(host, sections);
+        }
+        loadTrendsCohort(picks, function () { swapDock(); });
+        swapDock();
+    }
+
+    function trendsDockToggleLabel() {
+        if (trendsDockOpen) return 'Hide';
+        var n = Object.keys(trendsPicksFor(trendsPos)).length;
+        return n ? ('Show · ' + n) : 'Show';
+    }
+
+    function syncTrendsDockToggle(host) {
+        var sticky = host && host.querySelector('.cs-trends-sticky');
+        if (!sticky) return;
+        sticky.classList.toggle('is-collapsed', !trendsDockOpen);
+        var btn = sticky.querySelector('[data-trends-dock]');
+        if (!btn) return;
+        btn.setAttribute('aria-expanded', trendsDockOpen ? 'true' : 'false');
+        btn.textContent = trendsDockToggleLabel();
+    }
+
+    function setTrendsDockOpen(on) {
+        trendsDockOpen = !!on;
+        syncTrendsDockToggle($('csTrends'));
+    }
+
+    function bindTrendsDock(host, sections) {
+        var dock = host && host.querySelector('.cs-trends-scout');
+        if (!dock) return;
+        dock.querySelectorAll('[data-trends-pick]').forEach(function (b) {
+            b.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleTrendsPick(b.getAttribute('data-trends-pick'), sections);
+            });
+        });
+        var clearPicks = dock.querySelector('[data-trends-clear]');
+        if (clearPicks) clearPicks.addEventListener('click', function () {
+            trendsPicks[trendsPos] = {};
+            paintTrendsSelection(sections);
+        });
+        dock.querySelectorAll('[data-trends-unlock]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                if (typeof window.showPaywall === 'function') window.showPaywall('draft-trends-scout');
+            });
+        });
+        dock.querySelectorAll('[data-trends-player]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                var id = b.getAttribute('data-trends-player');
+                var name = b.getAttribute('data-trends-name') || '';
+                var pos = b.getAttribute('data-trends-ppos') || trendsPos;
+                var adp = b.getAttribute('data-trends-adp') || '';
+                var proj = b.getAttribute('data-trends-proj') || '';
+                if (id) openHistPanel(id, name, adp, pos, proj, '', '');
+            });
+        });
+    }
+
+    function trendsRowEdge(row, sec, tier) {
+        row = row || {};
+        var by = row.ranking_edge_by_tier || {};
+        if (by[tier] != null && isFinite(Number(by[tier]))) return Number(by[tier]);
+        if (tier === 'top_12' && typeof row.ranking_edge === 'number') return row.ranking_edge;
+        if (typeof row.adjusted_edge === 'number') return row.adjusted_edge;
+        var view = trendsRowView(row, sec, tier || 'top_12');
+        return view.vs;
+    }
+
+    function trendsTopEdges(sections, limit, tier) {
         var scored = [];
         (sections || []).forEach(function (sec) {
             if (String(sec.polarity || '') === 'miss') return;
             (sec.rows || []).forEach(function (row) {
-                var vs = row && row.vs_baseline;
-                if (typeof vs !== 'number' || vs <= 0) return;
+                var view = trendsRowView(row, sec, tier || 'top_12');
+                var edge = trendsRowEdge(row, sec, tier || 'top_12');
+                if (typeof edge !== 'number' || edge <= 0) return;
                 scored.push({
                     sid: sec.id || '',
                     lane: TRENDS_LANE_OF[sec.id] || '',
                     section: sec.heading || '',
                     label: trendsQualifyLabel(sec.id, row.label || ''),
-                    pct: row.pct,
-                    vs_baseline: vs,
-                    vs_label: row.vs_label,
+                    pct: view.pct,
+                    vs_baseline: view.vs,
+                    ranking_edge: edge,
+                    vs_label: view.vsLabel,
                     n: row.n,
                     confidence_label: row.confidence_label
                 });
             });
         });
         scored.sort(function (a, b) {
-            return (b.vs_baseline - a.vs_baseline) || (Number(b.pct || 0) - Number(a.pct || 0));
+            return (Number(b.ranking_edge || 0) - Number(a.ranking_edge || 0))
+                || (Number(b.pct || 0) - Number(a.pct || 0));
         });
         return scored.slice(0, limit || 10);
     }
 
-    function trendsSectionRow(row, polarity, baselinePct, span) {
+    function trendsRedFlags(sections, limit, tier) {
+        var scored = [];
+        (sections || []).forEach(function (sec) {
+            if (String(sec.polarity || '') === 'miss') return;
+            (sec.rows || []).forEach(function (row) {
+                var view = trendsRowView(row, sec, tier || 'top_12');
+                var edge = trendsRowEdge(row, sec, tier || 'top_12');
+                if (typeof edge !== 'number' || edge >= 0) return;
+                scored.push({
+                    sid: sec.id || '',
+                    label: trendsQualifyLabel(sec.id, row.label || ''),
+                    pct: view.pct,
+                    ranking_edge: edge,
+                    vs_label: view.vsLabel,
+                    n: row.n,
+                    confidence_label: row.confidence_label
+                });
+            });
+        });
+        scored.sort(function (a, b) {
+            return Number(a.ranking_edge || 0) - Number(b.ranking_edge || 0);
+        });
+        return scored.slice(0, limit || 6);
+    }
+
+    function trendsSectionRow(row, polarity, baselinePct, span, opts) {
         row = row || {};
-        var vs = row.vs_label;
+        opts = opts || {};
+        var view = trendsRowView(row, opts.sec, opts.tier || 'top_12');
+        var vs = view.vsLabel;
+        var selectable = !!(row.match && row.id);
+        var on = selectable && opts.selected && opts.selected[row.id];
         var meta = [];
         if (row.n != null) meta.push('n=' + row.n);
         if (vs) meta.push(vs);
-        if (row.secondary) meta.push(row.secondary);
-        var shown = row.pct != null ? row.pct + '%' : '-';
-        return '<div class="cs-trends-srow' + (polarity === 'miss' ? ' is-miss' : '') + '">'
+        if (row.secondary && (opts.tier || 'top_12') === 'top_12') meta.push(row.secondary);
+        if (on && row.ci_low != null && row.ci_high != null) {
+            meta.push('95% CI ' + row.ci_low + '% to ' + row.ci_high + '%');
+        }
+        var shown = view.pct != null ? view.pct + '%' : '-';
+        var cls = 'cs-trends-srow'
+            + (polarity === 'miss' ? ' is-miss' : '')
+            + (selectable ? ' is-pick' : '')
+            + (on ? ' is-on' : '');
+        var tag = selectable ? 'button type="button"' : 'div';
+        var close = selectable ? 'button' : 'div';
+        var pickAttr = selectable ? ' data-trends-pick="' + esc(row.id) + '"' : '';
+        return '<' + tag + ' class="' + cls + '"' + pickAttr + '>'
             + '<div class="cs-trends-srow-top">'
             + trendsConfDot(row.confidence_label)
             + '<span class="cs-trends-srow-label">' + esc(row.label || '') + '</span>'
             + '<span class="cs-trends-srow-pct">' + esc(shown) + '</span></div>'
-            + trendsRailHtml(row.pct, polarity === 'miss' ? null : baselinePct, polarity, span)
+            + trendsRailHtml(view.pct, polarity === 'miss' ? null : baselinePct, polarity, span)
+            + trendsMiniPcts(row, opts.tier || 'top_12')
             + (meta.length ? '<div class="cs-trends-srow-meta">' + esc(meta.join(' · ')) + '</div>' : '')
-            + '</div>';
+            + '</' + close + '>';
     }
 
-    function renderTrends() {
+    function renderTrends(opts) {
         var host = $('csTrends');
         if (!host) return;
         var data = trendsCache;
@@ -2328,7 +2951,14 @@
             var id = sec && sec.id;
             return id !== 'adp' && id !== 'adp_positional';
         });
-        var baselinePct = page.baseline_pct;
+        var finishTiers = data.finish_tiers || page.finish_tiers || ['top_5', 'top_12', 'top_24'];
+        if (finishTiers.indexOf(trendsTier) < 0) trendsTier = 'top_12';
+        var baseline = trendsPageBaseline(page, trendsTier);
+        var baselinePct = baseline.pct;
+        var baselineN = baseline.n != null ? baseline.n : page.baseline_n;
+        var finishName = trendsFinishLabel(trendsTier);
+        var picks = trendsPicksFor(trendsPos);
+        var pickCount = Object.keys(picks).length;
         var lane = host.getAttribute('data-trends-lane') || 'all';
         var present = {};
         sections.forEach(function (sec) {
@@ -2339,8 +2969,9 @@
             lane = 'all';
             host.setAttribute('data-trends-lane', 'all');
         }
-        var edges = trendsTopEdges(sections, 10);
-        var span = trendsRailSpan(baselinePct, sections, edges.map(function (e) { return e.pct; }));
+        var edges = trendsTopEdges(sections, 10, trendsTier);
+        var flags = trendsRedFlags(sections, 6, trendsTier);
+        var span = trendsRailSpan(baselinePct, sections, edges.map(function (e) { return e.pct; }).concat(flags.map(function (e) { return e.pct; })));
         var compact = false;
         try { compact = window.matchMedia('(max-width: 720px)').matches; } catch (e) { compact = false; }
         host.className = 'cs-trends cs-trends-' + String(trendsPos || '').toLowerCase();
@@ -2351,30 +2982,41 @@
                 + String(pos === trendsPos) + '">' + esc(pos) + '</button>';
         });
         html += '</div>';
+        html += '<div class="cs-trends-tiers" role="group" aria-label="Finish line">';
+        finishTiers.forEach(function (tier) {
+            html += '<button type="button" data-trends-tier="' + esc(tier) + '" aria-pressed="'
+                + String(tier === trendsTier) + '">' + esc(trendsFinishLabel(tier)) + '</button>';
+        });
+        var finishCopy = page.finish_tier_copy || data.finish_tier_copy
+            || 'Top 5 is the league-winner line. Top 12 is a starter. Top 24 is the next skill-position line.';
+        html += '<span class="cs-trends-tier-n">' + esc(finishCopy) + '</span>';
+        html += '</div>';
         html += '<div class="cs-trends-summary">';
         html += '<div class="cs-trends-base-pct">'
             + (baselinePct != null ? esc(String(baselinePct)) + '<sup>%</sup>' : '-') + '</div>';
         html += '<div class="cs-trends-base-copy"><div class="cs-trends-base-k">Typical '
-            + esc(trendsPos) + ' top-12</div><div class="cs-trends-base-v">';
+            + esc(trendsPos) + ' ' + esc(finishName) + '</div><div class="cs-trends-base-v">';
         var bits = [];
-        bits.push(esc(trendsPos) + 's finished top-12 in '
+        bits.push(esc(trendsPos) + 's finished ' + esc(finishName) + ' in '
             + (baselinePct != null ? esc(String(baselinePct)) + '%' : 'an unknown share')
             + ' of player-seasons'
-            + (page.baseline_n != null ? ' (n=' + esc(String(page.baseline_n)) + ')' : '') + '.');
+            + (baselineN != null ? ' (n=' + esc(String(baselineN)) + ')' : '') + '.');
         if (page.prime_window) bits.push('Prime window is ages ' + esc(page.prime_window) + '.');
         html += bits.join(' ') + '</div></div></div>';
         if (edges.length) {
             var mid = Math.ceil(edges.length / 2);
             html += '<section class="cs-trends-board"><div class="cs-trends-sec-head">'
                 + '<h3>Top 10 edges vs typical</h3>'
-                + '<p>Biggest lifts versus the position baseline. The tick is typical; the marker is this bucket.</p>'
+                + '<p>Ranked by shrinkage-adjusted lift versus the position ' + esc(finishName)
+                + ' baseline, so a tiny sample cannot automatically outrank a large one. The tick is typical; the marker is this bucket.</p>'
                 + '</div><div class="cs-trends-callouts">';
             [edges.slice(0, mid), edges.slice(mid)].forEach(function (col, colIdx) {
                 html += '<div class="cs-trends-callout-col">';
                 col.forEach(function (h, i) {
                     var idx = colIdx === 0 ? i : i + mid;
-                    var vsShort = (typeof h.vs_baseline === 'number' && h.vs_baseline > 0)
-                        ? '+' + h.vs_baseline : (h.vs_label || '');
+                    var edgeShow = (typeof h.ranking_edge === 'number') ? h.ranking_edge : h.vs_baseline;
+                    var vsShort = (typeof edgeShow === 'number' && edgeShow > 0)
+                        ? '+' + edgeShow : (h.vs_label || '');
                     html += '<div class="cs-trends-callout">'
                         + '<div class="cs-trends-callout-copy">'
                         + '<span class="cs-trends-rk">' + (idx + 1) + '</span>'
@@ -2388,7 +3030,26 @@
             });
             html += '</div></section>';
         }
-        var curve = page.age_curve || [];
+        if (flags.length) {
+            html += '<section class="cs-trends-board cs-trends-redflags"><div class="cs-trends-sec-head">'
+                + '<h3>Historical red flags</h3>'
+                + '<p>Strongest negative adjusted edges versus a typical ' + esc(trendsPos)
+                + ' player-season. Only patterns present in the tables, not invented heuristics.</p>'
+                + '</div><div class="cs-trends-callouts">';
+            flags.forEach(function (h, i) {
+                html += '<div class="cs-trends-callout is-down">'
+                    + '<div class="cs-trends-callout-copy">'
+                    + '<span class="cs-trends-rk">' + (i + 1) + '</span>'
+                    + '<div class="cs-trends-callout-v">' + esc(h.label || '') + '</div></div>'
+                    + trendsRailHtml(h.pct, baselinePct, 'miss', span)
+                    + '<div class="cs-trends-callout-pct">'
+                    + (h.pct != null ? esc(String(h.pct)) + '%' : '-')
+                    + (typeof h.ranking_edge === 'number' ? ' <span>' + esc(String(h.ranking_edge)) + '</span>' : '')
+                    + '</div></div>';
+            });
+            html += '</div></section>';
+        }
+        var curve = ((page.age_curve_by_tier || {})[trendsTier]) || (trendsTier === 'top_12' ? (page.age_curve || []) : []);
         if (curve.length) {
             var maxP = 1;
             curve.forEach(function (pt) {
@@ -2404,11 +3065,13 @@
             }
             html += '<section class="cs-trends-agewrap"><div class="cs-trends-sec-head">'
                 + '<h3>Age curve</h3>'
-                + '<p>Top-12 rate by integer age. Highlighted columns are the prime window'
+                + '<p>' + esc(finishName.charAt(0).toUpperCase() + finishName.slice(1))
+                + ' rate by integer age. Highlighted columns are the prime window'
                 + (baselinePct != null ? '; the line is typical (' + esc(String(baselinePct)) + '%).' : '.')
                 + ' Hover or tap a bar for the sample size.</p></div>';
             html += '<div class="cs-trends-ages">';
-            html += '<div class="cs-trends-ages-plot" role="img" aria-label="Top-12 rate by age">' + baseLine;
+            html += '<div class="cs-trends-ages-plot" role="img" aria-label="'
+                + esc(finishName) + ' rate by age">' + baseLine;
             curve.forEach(function (pt) {
                 var h = Math.max(8, Math.round(100 * Number(pt.pct || 0) / maxP));
                 var cls = prime[String(pt.age)] ? ' is-prime' : '';
@@ -2425,6 +3088,9 @@
             });
             html += '</div></div></section>';
         }
+        html += '<div class="cs-trends-sticky'
+            + (pickCount ? ' is-picked' : '')
+            + (trendsDockOpen ? '' : ' is-collapsed') + '">';
         html += '<div class="cs-trends-lanes" role="group" aria-label="Trends lane">';
         TRENDS_LANES.forEach(function (pair) {
             if (pair[0] !== 'all' && !present[pair[0]]) return;
@@ -2433,21 +3099,38 @@
         });
         var shown = sections.filter(function (sec) {
             return lane === 'all' || TRENDS_LANE_OF[sec.id] === lane;
-        });
+        }).map(function (sec) {
+            if (!sec.finish_tied || trendsTier === 'top_12') return sec;
+            var rows = (sec.rows || []).filter(function (row) {
+                return row.pcts && row.pcts[trendsTier] != null;
+            });
+            return rows.length ? { id: sec.id, heading: sec.heading, note: sec.note, polarity: sec.polarity, finish_tied: sec.finish_tied, rows: rows } : null;
+        }).filter(Boolean);
         html += '<span class="cs-trends-lane-n">' + shown.length + ' table'
             + (shown.length === 1 ? '' : 's')
-            + (compact ? '. Open one, or pick a lane.' : '') + '</span>';
+            + (compact ? '. Open one, or pick a lane.' : '')
+            + ' Tap a bucket to list matching players.</span>';
+        html += '<button type="button" class="cs-trends-sticky-toggle" data-trends-dock="1"'
+            + ' aria-expanded="' + (trendsDockOpen ? 'true' : 'false') + '"'
+            + ' aria-controls="cs-trends-sticky-body">'
+            + esc(trendsDockToggleLabel()) + '</button>';
         html += '</div>';
+        html += '<div class="cs-trends-sticky-body" id="cs-trends-sticky-body">';
+        html += trendsProfileHtml(trendsCohort, picks, pickCount);
+        html += trendsScoutHtml(data, picks, pickCount);
+        html += '</div></div>';
         html += '<div class="cs-trends-grid">';
         shown.forEach(function (sec) {
             var laneId = TRENDS_LANE_OF[sec.id] || 'all';
             var peekRow = null;
+            var peekView = null;
             (sec.rows || []).forEach(function (row) {
-                if (!peekRow) peekRow = row;
-                else if ((row.vs_baseline || 0) > (peekRow.vs_baseline || 0)) peekRow = row;
+                var view = trendsRowView(row, sec, trendsTier);
+                if (!peekRow) { peekRow = row; peekView = view; }
+                else if ((view.vs || 0) > (peekView.vs || 0)) { peekRow = row; peekView = view; }
             });
-            var peek = peekRow && peekRow.pct != null
-                ? trendsQualifyLabel(sec.id, peekRow.label || '') + ' ' + peekRow.pct + '%'
+            var peek = peekRow && peekView && peekView.pct != null
+                ? trendsQualifyLabel(sec.id, peekRow.label || '') + ' ' + peekView.pct + '%'
                 : ((sec.rows || []).length + ' buckets');
             html += '<details class="cs-trends-card" data-lane="' + esc(laneId) + '"'
                 + (compact ? '' : ' open') + '>'
@@ -2456,7 +3139,9 @@
             if (sec.note) html += '<p class="cs-hist-note">' + esc(sec.note) + '</p>';
             html += '<div class="cs-trends-card-rows">';
             (sec.rows || []).forEach(function (row) {
-                html += trendsSectionRow(row, sec.polarity, baselinePct, span);
+                html += trendsSectionRow(row, sec.polarity, baselinePct, span, {
+                    sec: sec, tier: trendsTier, selected: picks
+                });
             });
             html += '</div></details>';
         });
@@ -2468,12 +3153,36 @@
                 renderTrends();
             });
         });
+        host.querySelectorAll('[data-trends-tier]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                trendsTier = b.getAttribute('data-trends-tier') || 'top_12';
+                renderTrends();
+            });
+        });
         host.querySelectorAll('[data-trends-lane]').forEach(function (b) {
             b.addEventListener('click', function () {
                 host.setAttribute('data-trends-lane', b.getAttribute('data-trends-lane') || 'all');
                 renderTrends();
             });
         });
+        host.querySelectorAll('[data-trends-dock]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                setTrendsDockOpen(!trendsDockOpen);
+            });
+        });
+        host.querySelectorAll('.cs-trends-srow.is-pick').forEach(function (b) {
+            b.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleTrendsPick(b.getAttribute('data-trends-pick'), sections);
+            });
+        });
+        bindTrendsDock(host, sections);
+        if (pickCount) {
+            loadTrendsCohort(picks, function () { paintTrendsSelection(sections); });
+        } else {
+            trendsCohort = null;
+        }
         host.querySelectorAll('.cs-trends-card > summary').forEach(function (s) {
             s.addEventListener('click', function (e) {
                 var wide = false;
@@ -2500,8 +3209,8 @@
         var copy = resp.copy || {};
         var html = '';
 
-        // Verdict first: lead with the top-12 rate for this similar group, with
-        // the other tiers as supporting stats and the cohort spelled out below.
+        // Verdict first: lead with this player's historical top-12 chance given
+        // career and situation, with other tiers as supporting stats below.
         var hits = Array.isArray(copy.hit_rates) ? copy.hit_rates : [];
         var lead = null, i;
         for (i = 0; i < hits.length; i++) {
@@ -2512,12 +3221,15 @@
             var confBits = [];
             if (lead.confidence_label) confBits.push(lead.confidence_label);
             if (lead.n != null) confBits.push('n=' + lead.n);
+            if (lead.ci_low != null && lead.ci_high != null) {
+                confBits.push('95% CI ' + lead.ci_low + '% to ' + lead.ci_high + '%');
+            }
             html += '<div class="cs-hist-verdict">'
                 + '<div class="cs-hist-hero">'
                 + '<div class="cs-hist-big">' + (lead.pct != null ? lead.pct : '-') + '<sup>%</sup></div>'
                 + '<div class="cs-hist-hero-cap">'
                 + '<div class="cs-hist-hero-lead">finished top-12</div>'
-                + '<div class="cs-hist-hero-sub">among this similar group</div>'
+                + '<div class="cs-hist-hero-sub">this player\'s historical chance</div>'
                 + (confBits.length ? '<span class="cs-hist-conf"><i></i>' + esc(confBits.join(' · ')) + '</span>' : '')
                 + '</div></div>';
             html += '<div class="cs-hist-tiers">';
@@ -2529,8 +3241,73 @@
                     + '<div class="cs-hist-tier-v">' + (row.pct != null ? row.pct + '%' : '-') + '</div></div>';
             });
             html += '</div>';
+            var histPct = copy.history_pct != null ? copy.history_pct : lead.pct;
+            var mktPct = copy.market_pct;
+            if (histPct != null || mktPct != null) {
+                html += '<div class="cs-hist-market">';
+                html += '<div class="cs-hist-compare-h">'
+                    + esc(copy.market_compare_heading || 'Two groups, not one chance')
+                    + '</div>';
+                html += '<div class="cs-hist-compare">';
+                html += '<div class="cs-hist-compare-col">'
+                    + '<div class="cs-hist-compare-k">'
+                    + esc(copy.history_group_label || 'Players like this') + '</div>'
+                    + '<div class="cs-hist-compare-v">'
+                    + (histPct != null ? histPct + '%' : '-') + '</div>'
+                    + '<div class="cs-hist-compare-s">'
+                    + esc(copy.history_group_hint || 'this career and situation')
+                    + '</div></div>';
+                html += '<div class="cs-hist-compare-col">'
+                    + '<div class="cs-hist-compare-k">'
+                    + esc(copy.market_group_label || 'That ADP round') + '</div>'
+                    + '<div class="cs-hist-compare-v">'
+                    + (mktPct != null ? mktPct + '%' : 'need ADP') + '</div>'
+                    + '<div class="cs-hist-compare-s">'
+                    + esc(copy.market_group_hint || 'anyone taken in that fantasy round')
+                    + '</div></div>';
+                html += '</div>';
+                var gapNote = copy.gap_note;
+                if (!gapNote && mktPct == null) {
+                    gapNote = 'Need live ADP to show the other group.';
+                }
+                if (gapNote) html += '<p class="cs-hist-gap">' + esc(gapNote) + '</p>';
+                html += '</div>';
+            }
             if (copy.headline) html += '<p class="cs-hist-cohort">' + esc(copy.headline) + '</p>';
             html += '</div>';
+        }
+        var examples = (resp.history && Array.isArray(resp.history.closest_examples) && resp.history.closest_examples.length)
+            ? resp.history.closest_examples
+            : ((resp.history && Array.isArray(resp.history.examples)) ? resp.history.examples : []);
+        if (examples.length) {
+            var sum = copy.examples_summary || (resp.history && resp.history.closest_summary) || {};
+            html += '<section class="cs-hist-sec cs-hist-closest"><h3>'
+                + esc(copy.examples_heading || 'Closest historical examples') + '</h3>';
+            if (copy.examples_note) html += '<p class="cs-hist-note">' + esc(copy.examples_note) + '</p>';
+            if (copy.examples_vs_cohort_note) {
+                html += '<p class="cs-hist-note">' + esc(copy.examples_vs_cohort_note) + '</p>';
+            }
+            if (sum.label) html += '<p class="cs-hist-ex-sum">' + esc(sum.label) + '</p>';
+            html += '<ul class="cs-hist-ex">';
+            examples.forEach(function (ex) {
+                if (!ex) return;
+                var left = esc(ex.name || ex.sleeper_id || '') + (ex.season ? ' · ' + esc(String(ex.season)) : '');
+                var right = [];
+                if (ex.adp != null && isFinite(Number(ex.adp))) right.push('ADP ' + Number(ex.adp).toFixed(1));
+                if (ex.positional_finish != null) right.push('#' + ex.positional_finish);
+                if (ex.ppr_points != null) right.push(ex.ppr_points + ' pts');
+                var hit = histExampleHit(ex.positional_finish, ex);
+                var traits = Array.isArray(ex.traits)
+                    ? ex.traits.filter(Boolean).map(function (t) { return esc(String(t)); }).join(' · ')
+                    : '';
+                html += '<li' + (hit && hit.tier ? ' class="is-' + esc(hit.tier) + '"' : '') + '><span>' + left
+                    + (traits ? '<small>' + traits + '</small>' : '')
+                    + '</span><span class="cs-hist-ex-right">'
+                    + (right.length ? '<span class="cs-hist-ex-meta">' + esc(right.join(' · ')) + '</span>' : '')
+                    + (hit ? '<b class="cs-hist-ex-hit">' + esc(hit.label) + '</b>' : '')
+                    + '</span></li>';
+            });
+            html += '</ul></section>';
         }
         var trends = (Array.isArray(copy.trends) ? copy.trends : []).filter(function (row) {
             var kind = row && row.kind;
@@ -2552,22 +3329,8 @@
             html += '</div></section>';
         }
 
-        // Progressive disclosure: comps, dropped filters, and the full profile.
-        var examples = (resp.history && Array.isArray(resp.history.examples)) ? resp.history.examples : [];
+        // Progressive disclosure: dropped filters and the full profile.
         var detail = '';
-        if (examples.length) {
-            detail += '<div class="cs-hist-sec"><h3>' + esc(copy.examples_heading || 'Seasons from that similar group') + '</h3>';
-            if (copy.examples_note) detail += '<p class="cs-hist-note">' + esc(copy.examples_note) + '</p>';
-            detail += '<ul class="cs-hist-ex">';
-            examples.forEach(function (ex) {
-                if (!ex) return;
-                detail += '<li><span>' + esc(ex.name || ex.sleeper_id || '') + (ex.season ? ' · ' + ex.season : '') + '</span><span>'
-                    + (ex.positional_finish != null ? '#' + ex.positional_finish : '')
-                    + (ex.ppr_points != null ? ' · ' + ex.ppr_points + ' pts' : '')
-                    + '</span></li>';
-            });
-            detail += '</ul></div>';
-        }
         if (copy.relaxed && copy.relaxed.length) {
             detail += '<div class="cs-hist-sec"><h3>' + esc(copy.relaxed_heading || 'Dropped to grow the sample') + '</h3>';
             if (copy.relaxed_note) detail += '<p class="cs-hist-note">' + esc(copy.relaxed_note) + '</p>';
@@ -2583,8 +3346,7 @@
             detail += '</div></div>';
         }
         if (detail) {
-            var summaryLabel = examples.length ? 'Comparable seasons &amp; profile' : 'Profile &amp; detail';
-            html += '<details class="cs-hist-more"><summary>' + summaryLabel + '</summary><div class="cs-hist-more-inner">' + detail + '</div></details>';
+            html += '<details class="cs-hist-more"><summary>Profile &amp; detail</summary><div class="cs-hist-more-inner">' + detail + '</div></details>';
         }
 
         return html || '<p class="cs-hist-sub">No historical profile for this player yet.</p>';

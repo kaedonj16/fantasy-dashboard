@@ -81,6 +81,51 @@ def rebuild_historical_profiles(
     return payload
 
 
+def rebuild_cohort_index_overlay(
+    rows: Optional[list[dict]] = None,
+    *,
+    write: bool = True,
+) -> dict:
+    """Write the compact observation index without rewriting profile rates.
+
+    Used when the warehouse parquet exists (or rows are injected) but a full
+    profile rebuild is not required. Request paths still never scan parquet.
+    """
+    from dashboard_services.historical.board import build_preseason_profiles
+    from dashboard_services.historical.cohorts import build_cohort_index
+
+    overlay_path = PLAYER_HISTORY_DIR / "cohort_index.json"
+    records = rows if rows is not None else records_from_warehouse()
+    if records:
+        records = attach_historical_adp(records)
+    index = build_cohort_index(records)
+    pre = build_preseason_profiles(records)
+    traj: dict[str, dict] = {}
+    for pid, rec in ((pre.get("by_player") or {}) if isinstance(pre, dict) else {}).items():
+        if not isinstance(rec, dict):
+            continue
+        bits = {
+            key: rec[key]
+            for key in ("target_share_change", "snap_pct_change", "workload_change")
+            if rec.get(key)
+        }
+        if bits:
+            traj[str(pid)] = bits
+    if traj:
+        index["preseason_trajectory"] = traj
+    if write:
+        overlay_path.write_text(
+            json.dumps(index, separators=(",", ":"), default=str),
+            encoding="utf-8",
+        )
+        print(
+            f"[historical] cohort index {index.get('n')} observations "
+            f"({index.get('n_with_trajectory')} with trajectory) → {overlay_path}"
+        )
+    index["written_path"] = str(overlay_path) if write else None
+    return index
+
+
 def load_historical_profiles() -> dict:
     """Request-path reader: precomputed JSON only."""
     if not PROFILE_PATH.exists():

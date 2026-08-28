@@ -431,6 +431,13 @@ def add_provider_league_connection(
             (account_id, provider, str(league_id), int(season), name, team_id, connection_id),
         )
         conn.commit()
+    # Fleaflicker private login stores the owner id (metadata.flea_owner_id), not
+    # the team/roster id. Persist it as a platform identity so saved leagues can
+    # resolve "your team" on reconnect even when team_id was never picked.
+    if provider == "fleaflicker" and credentials:
+        flea_uid = str(credentials.get("flea_user_id") or "").strip()
+        if flea_uid:
+            link_platform_identity(account_id, "fleaflicker", flea_uid)
 
 
 def add_espn_league_connection(
@@ -865,6 +872,14 @@ def resolve_account_viewer_for_league(
         # ESPN league IDs persist year to year; the portfolio bumps the display
         # season without copying the user_leagues row.
         if not membership and platform == "espn":
+            membership = conn.execute(
+                """SELECT team_id, season FROM user_leagues WHERE account_id=%s AND platform=%s
+                   AND league_id=%s ORDER BY season DESC LIMIT 1""",
+                (account_id, platform, str(league_id)),
+            ).fetchone()
+        # Fleaflicker saves are keyed by season; opening a new year before re-saving
+        # should still resolve the stored team from the latest membership row.
+        if not membership and platform == "fleaflicker":
             membership = conn.execute(
                 """SELECT team_id, season FROM user_leagues WHERE account_id=%s AND platform=%s
                    AND league_id=%s ORDER BY season DESC LIMIT 1""",

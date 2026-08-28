@@ -3120,6 +3120,7 @@ def _link_modal_html() -> str:
         box.innerHTML='<div class="link-item"><span>'+esc(name)+'</span></div>'+
           (teams.length?'<select class="link-sel" id="linkTeamSel">'+opts+'</select>':'')+
           '<div style="margin-top:10px;text-align:right;"><button type="button" class="link-btn" id="linkConfirm">Add league</button></div>';
+        if(teams.length && window.initCustomSelects) window.initCustomSelects(box);
         document.getElementById('linkConfirm').addEventListener('click',function(){
           var sel=document.getElementById('linkTeamSel');
           linkAdd(platform, league_id, season, sel?sel.value:null, name, this);
@@ -3584,7 +3585,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 "  <div class='nav-search-inner'>"
                 "    " + _nav_icon("search", cls="nav-search-icon") +
                 "    <input type='text' id='navPlayerSearch' class='nav-search-input'"
-                "           placeholder='Search players…' autocomplete='off' spellcheck='false' aria-label='Search players'/>"
+                "           placeholder='Search players or jump to…' autocomplete='off' spellcheck='false' aria-label='Search players and tools'/>"
                 "    <button type='button' class='nav-search-clear' id='navSearchClear' aria-label='Clear search'>×</button>"
                 "  </div>"
                 "  <div class='nav-search-dropdown' id='navSearchDropdown'></div>"
@@ -3902,7 +3903,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "  <div class='nav-search-inner'>"
             "    " + _nav_icon("search", cls="nav-search-icon") +
             "    <input type='text' id='navPlayerSearch' class='nav-search-input'"
-            "           placeholder='Search players…' autocomplete='off' spellcheck='false' aria-label='Search players'/>"
+            "           placeholder='Search players or jump to…' autocomplete='off' spellcheck='false' aria-label='Search players and tools'/>"
             "    <button type='button' class='nav-search-clear' id='navSearchClear' aria-label='Clear search'>×</button>"
             "  </div>"
             "  <div class='nav-search-dropdown' id='navSearchDropdown'></div>"
@@ -5364,12 +5365,14 @@ def get_trade_ai_analysis(
         side_a: dict,
         side_b: dict,
         opponent_roster_id: str = "",
+        scoring_type: str = "dynasty",
 ) -> str:
     """Get AI analysis for a trade using the new generator module"""
     from dashboard_services.ai.renderer import get_trade_ai_analysis as renderer_analysis
     return renderer_analysis(
         ctx, viewer_roster_id, viewer_side, side_a, side_b,
         opponent_roster_id=opponent_roster_id,
+        scoring_type=scoring_type,
     )
 
 
@@ -6661,13 +6664,19 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
             who = "Sellers to call" if verdict == "buy" else "Buyers to call"
             lines.append(f"{who}: {', '.join(html.escape(p) for p in partners)}.")
 
+        platform = ctx.get("platform", "sleeper")
+        season = ctx.get("current_season") or ctx.get("season")
+        league_id = ctx.get("league_id", "")
+        _trade_url = url_for(
+            "trade.page_trade", platform=platform, season=season, league_id=league_id,
+        ) + "?tab=suggestions"
         items = "".join(f"<li>{line}</li>" for line in lines)
         urgent_cls = " tw-urgent" if vw["urgent"] and verdict != "hold" else ""
         return f"""
         <section class="os-card trade-window-card tw-{verdict}{urgent_cls}">
           <div class="lineup-alert-head">
             <span class="lineup-alert-title">Trade window: {titles[verdict]}</span>
-            <a class="os-section-link" href="/trade?tab=suggestions">Trade suggestions &rarr;</a>
+            <a class="os-section-link" href="{html.escape(_trade_url)}">Find trade targets &rarr;</a>
           </div>
           <ul class="lineup-alert-list">{items}</ul>
         </section>"""
@@ -13725,10 +13734,12 @@ def api_refresh_page():
             rec = float(_ss.get("rec") or 0)
             scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
             te_premium = float(_ss.get("bonus_rec_te") or 0)
+            scoring_type = "redraft" if _league_is_redraft(ctx) else "dynasty"
             body_html = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
                                                     scoring_format=scoring_format,
                                                     te_premium=te_premium,
-                                                    platform=platform)
+                                                    platform=platform,
+                                                    scoring_type=scoring_type)
 
         else:
             body_html = ""
@@ -14396,6 +14407,8 @@ def api_trade_eval():
     league_size = int(payload.get("league_size") or 10)
     scoring_format = str(payload.get("scoring_format") or "ppr").strip().lower()
     scoring_type = str(payload.get("scoring_type") or "dynasty").strip().lower()
+    if scoring_type != "redraft":
+        scoring_type = "dynasty"
     try:
         te_premium = float(payload.get("te_premium") or 0)
     except Exception:
@@ -14618,6 +14631,7 @@ def api_trade_eval():
                 side_a=side_a,
                 side_b=side_b,
                 opponent_roster_id=str(payload.get("opponent_roster_id") or ""),
+                scoring_type=scoring_type,
             )
             # Compute post-trade depth warnings for the viewer's roster
             rosters = ctx.get("rosters") or []
@@ -24858,95 +24872,6 @@ def share_card_og_image(platform: str, season: int, league_id: str, roster_id: s
         return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png")
     return Response(png, mimetype="image/png",
                     headers={"Cache-Control": "public, max-age=3600"})
-
-
-# ── Feature 1: Live Draft Board Suggest ──────────────────────────────────────
-@app.route("/api/live-draft-suggest")
-def api_live_draft_suggest():
-    """
-    Given drafted player IDs and a team's positional needs, return a re-sorted
-    best-available list tuned to fill the biggest positional gaps.
-    """
-    try:
-        from utils.utils import load_players_index, load_model_value_table
-        league_id = request.args.get("league_id", "").strip()
-        platform = request.args.get("platform", "sleeper")
-        season = int(request.args.get("season") or datetime.now().year)
-        roster_id = request.args.get("roster_id", "").strip()
-        drafted_raw = request.args.get("drafted", "")
-        drafted_ids = set(str(x).strip() for x in drafted_raw.split(",") if x.strip())
-        format_raw = request.args.get("format", "").lower()
-        page = max(1, int(request.args.get("page") or 1))
-        limit = min(50, max(10, int(request.args.get("limit") or 25)))
-
-        value_table = list(get_model_value_table_cached() or [])
-        players_index = load_players_index() or {}
-
-        # Determine scoring format
-        is_sf = format_raw == "sf"
-        if league_id and not format_raw:
-            try:
-                league_info = get_league(platform, league_id, season) or {}
-                is_sf = _is_superflex_lineup(league_info.get("roster_positions") or [])
-            except Exception:
-                logger.debug("suppressed exception", exc_info=True)
-        vfield = "sf_value" if is_sf else "value"
-
-        # Build needs vector for the drafting team
-        needs: dict = {}
-        if league_id and roster_id:
-            try:
-                from routes.league_meta_bp import api_draft_needs
-                needs_resp = api_draft_needs()
-                if hasattr(needs_resp, "get_json"):
-                    ndata = needs_resp.get_json() or {}
-                    needs = ndata.get("needs") or {}
-            except Exception:
-                logger.debug("suppressed exception", exc_info=True)
-
-        NEED_BOOST = {2: 1.30, 1: 1.12, 0: 1.0, -1: 0.95, -2: 0.90}
-
-        available = []
-        for row in value_table:
-            if not isinstance(row, dict):
-                continue
-            pid = str(row.get("id") or row.get("player_id") or "")
-            if not pid or pid in drafted_ids:
-                continue
-            base_val = float(row.get(vfield) or row.get("value") or 0)
-            if base_val <= 0:
-                continue
-            meta = players_index.get(pid) or {}
-            pos = str(meta.get("pos") or row.get("position") or "").upper()
-            need_level = needs.get(pos, 0)
-            boost = NEED_BOOST.get(need_level, 1.0)
-            available.append({
-                "id": pid,
-                "name": meta.get("full_name") or meta.get("name") or row.get("name") or pid,
-                "pos": pos,
-                "team": meta.get("team") or row.get("team") or "",
-                "age": meta.get("age") or row.get("age") or "",
-                "value": round(base_val),
-                "adj_value": round(base_val * boost, 1),
-                "need_level": need_level,
-            })
-
-        available.sort(key=lambda x: -x["adj_value"])
-        total = len(available)
-        offset = (page - 1) * limit
-        page_data = available[offset: offset + limit]
-
-        return jsonify({
-            "players": page_data,
-            "total": total,
-            "page": page,
-            "pages": -(-total // limit),
-            "is_sf": is_sf,
-            "needs": needs,
-        })
-    except Exception as exc:
-        logger.exception("[api-live-draft-suggest] %s", exc)
-        return _api_err("Request failed", exc)
 
 
 # robots.txt / sitemap.xml are served by routes/public_bp.py.

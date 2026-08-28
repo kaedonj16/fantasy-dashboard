@@ -139,6 +139,19 @@ def api_draft_detect():
             "season": d.get("season"),
             "start_time": d.get("start_time"),
         } for d in _drafts]})
+    if platform == "fleaflicker":
+        try:
+            _drafts = get_drafts("fleaflicker", league_id, season) or []
+        except Exception as exc:
+            logger.warning("[draft-detect] fleaflicker error_type=%s", type(exc).__name__)
+            _drafts = []
+        return jsonify({"drafts": [{
+            "draft_id": d.get("draft_id"),
+            "status": d.get("status"),
+            "type": d.get("type"),
+            "season": d.get("season"),
+            "start_time": d.get("start_time"),
+        } for d in _drafts]})
     if platform != "sleeper":
         return jsonify({"drafts": [], "unsupported": True})
     # The draft-history page wants every season's draft; the dashboard countdown
@@ -218,6 +231,11 @@ def api_draft_live():
     settings = draft.get("settings") or {}
     picks = []
     for p in picks_raw:
+        pid = str(p.get("player_id") or "").strip()
+        if not pid or pid in ("0", "None"):
+            # Predraft slot placeholders are not selections; skip so the board
+            # stays empty until a player is actually picked.
+            continue
         meta = p.get("metadata") or {}
         nm = (str(meta.get("first_name") or "") + " " + str(meta.get("last_name") or "")).strip()
         picks.append({
@@ -225,7 +243,7 @@ def api_draft_live():
             "round": p.get("round"),
             "draft_slot": p.get("draft_slot"),
             "picked_by": p.get("picked_by"),   # user_id of who made the pick (for ownership)
-            "player_id": str(p.get("player_id") or ""),
+            "player_id": pid,
             "name": nm or (meta.get("player_name") or "Unknown"),
             "position": (meta.get("position") or "").upper(),
             "team": meta.get("team") or "",

@@ -23,6 +23,12 @@ CHANGELOG = [
         "link": "/draft/cheat-sheet"
     },
     {
+        "date": "2026-08-28",
+        "tag": "fix",
+        "text": "My Leagues positional strength now shows your average percentile at each position across leagues (50th is a typical team) instead of a signed percent vs league median, so a stacked finish in one league is no longer dragged negative by a thin one.",
+        "link": "/portfolio"
+    },
+    {
         "date": "2026-08-26",
         "tag": "fix",
         "text": "Draft Room recommendations for your first pick no longer label every player Best available: while you wait, Rec ranks who is actually likely to be there (not 1.01 talent at 0%), and Best available is reserved for the top rec rather than used as a generic fallback.",

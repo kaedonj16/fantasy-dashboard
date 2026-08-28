@@ -2293,6 +2293,142 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
     line-height: 1.45;
 }
 
+.nav-search-group-label {
+    padding: 8px 14px 4px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.nav-search-cmd {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.nav-search-cmd:last-child {
+    border-bottom: none;
+}
+
+.nav-search-cmd:hover,
+.nav-search-cmd.focused {
+    background: var(--accent-soft);
+}
+
+.nav-search-cmd-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface2);
+    color: var(--accent);
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.nav-search-cmd-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+/* Dashboard action-first queue */
+.os-action-queue {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 4px;
+}
+
+.os-action-queue .os-action-card {
+    margin: 0;
+}
+
+.os-action-link-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 18px;
+    padding: 4px 16px 14px;
+}
+
+.os-waiver-preview .os-waiver-row:nth-child(n+4) {
+    display: none;
+}
+
+/* PRO preview cards */
+.br-pro-preview {
+    text-align: center;
+    padding: 20px 16px;
+}
+
+.br-pro-preview-count {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 6px;
+}
+
+.br-pro-preview-msg {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin-bottom: 14px;
+    max-width: 320px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.br-pro-preview-cta {
+    padding: 9px 18px;
+    border-radius: 8px;
+    border: none;
+    background: linear-gradient(135deg, #122d4b, #2563eb);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+/* Player modal context actions */
+.pm-context-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 16px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.pm-ctx-link {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+    padding: 5px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+}
+
+.pm-ctx-link:hover {
+    background: var(--accent-soft);
+}
+
+@media (min-width: 1181px) {
+    .os-action-queue.os-tab-panel {
+        display: flex !important;
+    }
+}
+
 @media (max-width: 768px) {
     .nav-search-wrapper:focus-within .nav-search-inner {
         width: 200px;
@@ -7082,9 +7218,11 @@ select:focus {
    fill the row to match the native layout. */
 .home-card .csd-wrap,
 .trade-login-row .csd-wrap,
-.otc-setup-form .csd-wrap {
+.otc-setup-form .csd-wrap,
+#linkModal .csd-wrap {
     display: block;
     width: 100%;
+    margin-top: 8px;
 }
 
 .csd-trigger {
@@ -27878,50 +28016,6 @@ button:disabled {
     color: var(--text);
 }
 
-@keyframes livePulse {
-    0%, 100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: .3;
-    }
-}
-
-.ld-need-pill {
-    font-size: 9.5px;
-    font-weight: 700;
-    padding: 1px 5px;
-    border-radius: 6px;
-    text-transform: uppercase;
-    letter-spacing: .4px;
-    flex-shrink: 0;
-}
-
-.ld-need-pill--major {
-    background: rgba(239, 68, 68, .15);
-    color: #f87171;
-}
-
-.ld-need-pill--need {
-    background: rgba(245, 158, 11, .15);
-    color: #fbbf24;
-}
-
-.ld-need-pill--neutral {
-    background: rgba(100, 116, 139, .12);
-    color: #64748b;
-}
-
-.ld-need-pill--depth {
-    background: rgba(16, 185, 129, .10);
-    color: #34d399;
-}
-
-.ld-need-pill--stacked {
-    background: rgba(99, 102, 241, .12);
-    color: #818cf8;
-}
-
 
 /* Shared title rhythm for public tool pages */
 .dvt-title, .rf-title, .rnk-title {
@@ -34472,7 +34566,6 @@ a, button, [role="button"], [role="tab"], summary, label,
 .rivalry-chip,
 .pill-arrow,
 .sc-pos-pill,
-.ld-need-pill,
 .pm-tep-pill,
 .otc-filter-chip,
 .otc-day-filter,

@@ -548,3 +548,47 @@ def test_deep_dive_reach_uses_remaining_adp_and_survival():
     assert "ddVerdict(p).cls === 'reach'" in source
     assert "under 20% to last to your next pick" in source
     assert "Best remaining ADP and players under 20%" in source
+
+
+def test_deep_dive_includes_descriptive_historical_trends():
+    """Redraft Deep Dive shows Hist vs ADP-bucket rates without mixing into grades."""
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    body = build_draft_room_body(None, None, None, is_guest=True)
+    grade = source.split("function gradePicks(mine){")[1].split("function gradeAllTeams")[0]
+
+    assert "function ddHistHtml" in source
+    assert "html += ddHistHtml(picks)" in source
+    assert "Two groups per pick: players like this, and anyone taken in that ADP round." in source
+    assert "They are not averaged into one chance." in source
+    assert "Descriptive only. Not a ranking, Pick Score, or Draft Grade input." in source
+    assert "Hist below ADP bucket" not in source
+    assert "Historical miss vs market" not in source
+    assert "ADP round is a higher bar" in source
+    assert "Hist group higher" in source
+    assert 'data-k="hist"' in source
+    assert "ddHistPct(p)" in source
+    assert "p_hit_pct" in source
+    assert "historicalAvailable" in source
+    assert "p_hit_pct" not in grade
+    assert "historical.p_hit" not in grade
+    assert ".dd-hist-pct" in body
+    assert "{ term: 'Hist'" in source
+    from dashboard_services.changelog import CHANGELOG
+    entry = next(
+        item for item in CHANGELOG
+        if "deep dive" in item.get("text", "").lower()
+        and "historical top-12" in item.get("text", "").lower()
+    )
+    assert entry["tag"] == "update"
+    assert entry["link"] == "/draft"
+    assert "descriptive only" in entry["text"].lower()
+    assert "—" not in entry["text"]
+    assert "–" not in entry["text"]
+    groups = next(
+        item for item in CHANGELOG
+        if "lower hist than the adp round is not painted as a miss" in item.get("text", "").lower()
+    )
+    assert groups["tag"] == "fix"
+    assert groups["link"] == "/draft"
+    assert "—" not in groups["text"]
+    assert "–" not in groups["text"]

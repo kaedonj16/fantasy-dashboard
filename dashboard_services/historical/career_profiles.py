@@ -22,8 +22,10 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 from dashboard_services.historical.age_curves import build_age_curves
 from dashboard_services.historical.definitions import (
     CAREER_STAGE_ORDER,
+    COMP_BOARD_TIERS,
     DEFAULT_BAYES_PRIOR_N,
     DRAFT_CAPITAL_ORDER,
+    EDGE_RANK_PRIOR_N,
     FTN_SEASON_FLOOR,
     LEAGUE_WINNER_SMASH_PRIOR_CUTOFF,
     LEAGUE_WINNER_TIER,
@@ -51,6 +53,7 @@ from dashboard_services.historical.finish_rates import (
     position_baseline,
     season_bounds,
 )
+from dashboard_services.historical.career_path import build_bounce_back_rates
 
 # Copied from data_building/breakout_engine/backtest_breakout_model.py.
 # Do not "fix" `>` to `>=`. Rank 13 is *not* a non-starter under the engine.
@@ -328,7 +331,39 @@ def build_repeat_and_breakout_rates(
             "n_first_time_candidates": len(first_cands),
             "n_league_winner_smash_candidates": len(smash_cands),
         }
+        out[pos].update(
+            build_bounce_back_rates(pos_rows, scoring=scoring, prior_rate=prior_rate)
+        )
     return out
+
+
+def build_career_path_overlay(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    scoring: str = "ppr",
+) -> dict:
+    """Sidecar for request-path Hist: prior top-12 counts + bounce-back rates."""
+    packed = build_preseason_profiles(rows)
+    counts: dict[str, int] = {}
+    for pid, rec in (packed.get("by_player") or {}).items():
+        if not isinstance(rec, Mapping):
+            continue
+        count = _optional_int(rec.get("prior_top12_count"))
+        if count is not None:
+            counts[str(pid)] = count
+    bounce: dict[str, Any] = {}
+    for pos in SKILL_POSITIONS:
+        pos_rows = filter_position(rows, pos)
+        baseline = position_baseline(pos_rows, pos, scoring=scoring)
+        bounce[pos] = build_bounce_back_rates(
+            pos_rows, scoring=scoring, prior_rate=baseline.get("raw_rate")
+        )
+    return {
+        "prior_top12_count": counts,
+        "bounce_back": bounce,
+        "upcoming_season": packed.get("upcoming_season"),
+        "n_players": packed.get("n_players"),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -594,6 +629,7 @@ def assemble_profile_aggregates(
     ``pick_score.js``.
     """
     from dashboard_services.historical.walkforward import run_walk_forward
+    from dashboard_services.historical.cohorts import build_cohort_index as _build_cohort_index
 
     era = filter_era(rows, season_from, season_to)
     bounds = season_bounds(era)
@@ -637,6 +673,25 @@ def assemble_profile_aggregates(
                 "position baseline and n >= 15; longest consecutive run"
             ),
             "bayes_prior_n": DEFAULT_BAYES_PRIOR_N,
+            "edge_rank_prior_n": EDGE_RANK_PRIOR_N,
+            "edge_ranking": (
+                "Top edges and historical red flags rank by empirical-Bayes "
+                "adjusted_edge with prior_n=30 toward the positional baseline. "
+                "Table display percents still use bayes_prior_n=10 smoothed_rate. "
+                "Do not multiply single-bucket rates to estimate a combination."
+            ),
+            "wilson_interval": (
+                "95% Wilson score interval on the binomial raw rate. Shown on "
+                "the selected multi-factor cohort, expanded Hist, and expanded "
+                "trend detail — not every table row."
+            ),
+            "multi_factor_cohort": (
+                "POST /api/historical-cohort counts actual matching "
+                "player-seasons from a compact observation index. Same-group "
+                "filters OR, cross-group AND. Same predicates as Scout. "
+                "Player-season denominator, never mixed with cumulative "
+                "career windows."
+            ),
             "confidence": {
                 "low": "<15",
                 "moderate": "15-39",
@@ -707,10 +762,26 @@ def assemble_profile_aggregates(
         "age_curves": build_age_curves(
             era, scoring=scoring, season_from=season_from, season_to=season_to
         ),
+        "age_curves_by_tier": {
+            tier: build_age_curves(
+                era, scoring=scoring, tier=tier,
+                season_from=season_from, season_to=season_to,
+            )
+            for tier in COMP_BOARD_TIERS
+        },
         "career_stages": build_stage_rates(era, scoring=scoring),
+        "career_stages_by_tier": {
+            tier: build_stage_rates(era, scoring=scoring, tier=tier)
+            for tier in COMP_BOARD_TIERS
+        },
         "repeat_and_breakout": build_repeat_and_breakout_rates(era, scoring=scoring),
         "draft_capital": build_draft_capital_rates(era, scoring=scoring),
         "prior_usage": build_prior_usage_rates(era, scoring=scoring),
+        "prior_usage_by_tier": {
+            tier: build_prior_usage_rates(era, scoring=scoring, tier=tier)
+            for tier in COMP_BOARD_TIERS
+        },
         "comps": build_comp_aggregates(era, scoring=scoring),
         "adp": build_adp_hit_rates(era, scoring=scoring),
+        "cohort_index": _build_cohort_index(era),
     }

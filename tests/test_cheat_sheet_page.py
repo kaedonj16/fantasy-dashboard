@@ -87,11 +87,27 @@ def test_mobile_header_has_no_flex_basis_gap_and_controls_wrap():
     assert ".cs-ctrl-row:last-child .cs-src, .cs-ctrl-row:last-child .csd-wrap { grid-column: 1 / -1;" in body
 
 
+def test_mobile_big_board_pins_rank_and_player():
+    body = build_cheat_sheet_body("league-123", 2026, "sleeper")
+    script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+    mobile = body.split("@media (max-width: 640px)")[1].split("@media")[0]
+
+    assert "sortTh('rk', 'Rk', 'cs-rk'" in script
+    assert "sortTh('name', 'Player', 'l cs-player'" in script
+    assert '<td class="cs-player">' in script
+    assert "left: 0" in mobile
+    assert "left: 42px" in mobile
+    assert "position: sticky" in mobile
+    assert ".cs-wrap thead th.cs-rk" in mobile
+    assert ".cs-wrap thead th.cs-player" in mobile
+    assert "border-collapse: separate" in mobile
+
+
 def test_market_column_is_conditionally_omitted_from_table_and_export():
     body = build_cheat_sheet_body("league-123", 2026, "sleeper")
     script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
 
-    assert ".cs-wrap table { min-width: 910px; }" in body
+    assert "min-width: 910px" in body
     assert ".cs-vor-col, .cs-value-col { display: none; }" not in body
     assert ".cs-market-col { display: none; }" not in body
     assert "sortTh('market', 'Market vs ADP', 'cs-market-col'" in script
@@ -326,11 +342,16 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "scored.sort(function (a, b) {" in script
     assert "var aVor = Number(a.vorRaw);" in script
     assert "histP" not in script.split("scored.sort(function (a, b) {")[1].split("scored.forEach")[0]
-    assert "Similar-profile top-12 trend" in script
-    assert "historical trends for this profile" in body.lower()
+    assert "Historical top-12 chance given this career and situation" in script
+    assert "historical chance for this career and situation" in body.lower()
+    assert "this player\\'s historical chance, not a rank" in script
+    assert "title=\"This player\\'s historical chance\"" in script
     assert "return !dyn && SHOW_HISTORICAL" in script
     assert "var HIST_STRONG_PCT = 25" in script
     assert "var HIST_TIER_SHORT = { top_5: 'top-5', top_12: 'top-12', top_24: 'top-24' }" in script
+    assert "function histExampleHit" in script
+    assert "cs-hist-ex-hit" in script
+    assert ".cs-hist-ex-hit" in body
     assert "(lead.pct != null ? lead.pct : '-')" in script
     assert "(row.pct != null ? row.pct + '%' : '-')" in script
     assert "—" not in script.split("function renderHistPanel")[1].split("function init()")[0]
@@ -376,6 +397,25 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert ".cs-trends-ages" in body
     assert ".cs-trends-rail" in body
     assert ".cs-trends-lanes" in body
+    assert ".cs-trends-tiers" in body
+    assert ".cs-trends-scout" in body
+    assert ".cs-trends-sticky" in body
+    assert "top: var(--cs-nav-offset, 0px)" in body
+    assert "max-height: min(42vh, 340px)" in body
+    assert ".cs-trends-sticky.is-picked" in body
+    assert ".cs-trends-sticky.is-collapsed" in body
+    assert ".cs-trends-sticky-body" in body
+    assert ".cs-trends-sticky-toggle" in body
+    assert ".cs-trends-profile-tier.is-on" in body
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in body
+    assert "box-shadow: inset 3px 0 0 var(--cs-pos)" in body
+    mobile_trends = body.split("@media (max-width: 720px)")[1].split("@media")[0]
+    assert "grid-template-columns: minmax(0, 1fr)" in mobile_trends
+    peek_css = mobile_trends.split(".cs-trends-card-peek")[1].split("}")[0]
+    assert "white-space: normal" in peek_css
+    assert "overflow-wrap: anywhere" in peek_css
+    assert "display: inline;" not in peek_css
+    assert "backdrop-filter: blur(10px)" in body
     assert ".cs-trends-conf" in body
     assert "Descriptive — not a ranking input" not in body
     assert "cs-trends-honesty" not in body
@@ -387,7 +427,56 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "function trendsQualifyLabel" in script
     assert "data-age-tip" in script
     assert "Open one, or pick a lane." in script
-    assert "trendsTopEdges(sections, 10)" in script
+    assert "trendsTopEdges(sections, 10, trendsTier)" in script
+    assert "data-trends-tier" in script
+    assert "function trendsScoutHtml" in script
+    assert "function trendsLivePlayerFeatures" in script
+    assert "feats.nfl_draft_pick" in script
+    assert "function trendsFeatsForPlayer" in script
+    assert "trendsFeatsForPlayer(featsIndex, p)" in script
+    assert "sticky.classList.toggle('is-picked'" in script
+    assert "sticky.classList.toggle('is-collapsed'" in script
+    assert "function setTrendsDockOpen" in script
+    assert "var trendsDockOpen" in script
+    assert 'data-trends-dock="1"' in script
+    assert "cs-trends-sticky-body" in script
+    assert "Actual matching seasons. Not a ranking input." in script
+    assert "draft-trends-scout" in script
+    assert "Tap a bucket to list matching players." in script
+    assert "Tap historical buckets to build a profile." in script
+    assert "function loadTrendsCohort" in script
+    assert "/api/historical-cohort" in script
+    assert "Historical red flags" in script
+    assert "Closest historical examples" in script
+    assert "Two groups, not one chance" in script
+    assert "Players like this" in script
+    assert "anyone taken in that fantasy round" in script
+    assert "Need live ADP to show the other group." in script
+    assert "Expected at current ADP" not in script
+    assert "Historical edge vs market" not in script
+    assert ".cs-hist-compare" in body
+    assert ".cs-hist-gap" in body
+    assert "function trendsRedFlags" in script
+    assert "ranking_edge" in script
+    assert "spec.lte" in script
+    assert ".cs-trends-profile" in body
+    assert ".cs-hist-market" in body
+    assert ".cs-hist-ex-sum" in body
+    assert "shrinkage-adjusted lift" in script
+    assert "Top 24 is the flex line" not in script
+    assert "Board players who match" in script
+    grid_at = script.find("html += '<div class=\"cs-trends-grid\">'")
+    scout_at = script.find("html += trendsScoutHtml")
+    sticky_at = script.find("html += '<div class=\"cs-trends-sticky'")
+    assert sticky_at >= 0 and scout_at > sticky_at and grid_at > scout_at
+    assert "function paintTrendsSelection" in script
+    assert "function bindTrendsDock" in script
+    assert "function setTrendsNavOffset" in script
+    assert "--cs-nav-offset" in script
+    assert "querySelector('.top-nav')" in script
+    assert "renderTrends({ keepScroll: true })" not in script
+    scout_css = body.split(".cs-trends-scout-list")[1][:280]
+    assert "grid-template-columns: 1fr 1fr" in scout_css
     assert "data-trends-lane" in script
     assert "row.vs_label" in script
     assert "The Trends tab shows position-wide rates" in body
@@ -410,6 +499,10 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert ".cs-c-QB .cs-pname" not in body
     assert "id !== 'adp' && id !== 'adp_positional'" in script
     assert "['career', 'Career']" in script
+    assert "ryoe: 'usage'" in script
+    assert "touches: 'usage'" in script
+    assert "receptions: 'usage'" in script
+    assert "pass_attempts: 'usage'" in script
     assert "['adp', 'ADP']" not in script
     assert "p_hit_pct" not in pick
     assert "historical-player" not in core
@@ -419,13 +512,182 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
 def test_changelog_announces_trends_and_hist_without_em_dashes():
     from dashboard_services.changelog import CHANGELOG
 
-    entry = next(e for e in CHANGELOG if e.get("link") == "/draft/cheat-sheet")
-    assert entry["date"] == "2026-08-28"
-    assert entry["tag"] == "new"
-    assert "Trends" in entry["text"]
-    assert "Hist" in entry["text"]
-    assert "—" not in entry["text"]
-    assert "–" not in entry["text"]
+    launch = next(
+        entry for entry in CHANGELOG
+        if entry.get("link") == "/draft/cheat-sheet" and entry.get("tag") == "new"
+    )
+    assert launch["date"] == "2026-08-28"
+    assert "Trends" in launch["text"]
+    assert "Hist" in launch["text"]
+    assert "—" not in launch["text"]
+    assert "–" not in launch["text"]
+    scout = next(
+        entry for entry in CHANGELOG
+        if entry.get("tag") == "update" and "Pro" in entry.get("text", "")
+    )
+    assert "top-5" in scout["text"]
+    assert "top-24" in scout["text"]
+    assert "—" not in scout["text"]
+    assert "–" not in scout["text"]
+    hist_fix = next(
+        entry for entry in CHANGELOG
+        if "never top-12" in entry.get("text", "") and "Hist" in entry.get("text", "")
+    )
+    assert hist_fix["tag"] == "fix"
+    assert hist_fix["link"] == "/draft/cheat-sheet"
+    assert "Hist" in hist_fix["text"]
+    assert "—" not in hist_fix["text"]
+    assert "–" not in hist_fix["text"]
+    example_tags = next(
+        entry for entry in CHANGELOG
+        if "closest-example tags" in entry.get("text", "").lower()
+    )
+    assert example_tags["tag"] == "fix"
+    assert example_tags["link"] == "/draft/cheat-sheet"
+    assert "—" not in example_tags["text"]
+    assert "–" not in example_tags["text"]
+    mobile_peek = next(
+        entry for entry in CHANGELOG
+        if "clipped off the right edge" in entry.get("text", "").lower()
+    )
+    assert mobile_peek["tag"] == "fix"
+    assert mobile_peek["link"] == "/draft/cheat-sheet"
+    assert "—" not in mobile_peek["text"]
+    assert "–" not in mobile_peek["text"]
+    example_hits = next(
+        entry for entry in CHANGELOG
+        if "closest examples now mark" in entry.get("text", "").lower()
+    )
+    assert example_hits["tag"] == "update"
+    assert example_hits["link"] == "/draft/cheat-sheet"
+    assert "Top-5" in example_hits["text"]
+    assert "—" not in example_hits["text"]
+    assert "–" not in example_hits["text"]
+    capital_split = next(
+        entry for entry in CHANGELOG
+        if "Top 10" in entry.get("text", "") and "rest of Round 1" in entry.get("text", "")
+    )
+    assert capital_split["tag"] == "update"
+    assert capital_split["link"] == "/draft/cheat-sheet"
+    assert "—" not in capital_split["text"]
+    assert "–" not in capital_split["text"]
+    chance = next(
+        entry for entry in CHANGELOG
+        if "historical chance" in entry.get("text", "").lower()
+        and "current situation" in entry.get("text", "").lower()
+    )
+    assert chance["tag"] == "fix"
+    assert chance["link"] == "/draft/cheat-sheet"
+    assert "Hist" in chance["text"]
+    assert "—" not in chance["text"]
+    assert "–" not in chance["text"]
+    trends_place = next(
+        entry for entry in CHANGELOG
+        if "two columns" in entry.get("text", "").lower()
+        and "RYOE" in entry.get("text", "")
+    )
+    assert trends_place["tag"] == "fix"
+    assert trends_place["link"] == "/draft/cheat-sheet"
+    assert "—" not in trends_place["text"]
+    assert "–" not in trends_place["text"]
+    volume = next(
+        entry for entry in CHANGELOG
+        if "400+" in entry.get("text", "")
+        and "touches" in entry.get("text", "").lower()
+    )
+    assert volume["tag"] == "update"
+    assert volume["link"] == "/draft/cheat-sheet"
+    assert "receptions" in volume["text"].lower()
+    assert "—" not in volume["text"]
+    assert "–" not in volume["text"]
+    dock = next(
+        entry for entry in CHANGELOG
+        if "sticky dock" in entry.get("text", "").lower()
+    )
+    assert dock["tag"] == "fix"
+    assert dock["link"] == "/draft/cheat-sheet"
+    assert "Pro" in dock["text"]
+    assert "—" not in dock["text"]
+    assert "–" not in dock["text"]
+    nav_clear = next(
+        entry for entry in CHANGELOG
+        if "site nav" in entry.get("text", "").lower()
+        and "dock" in entry.get("text", "").lower()
+    )
+    assert nav_clear["tag"] == "fix"
+    assert nav_clear["link"] == "/draft/cheat-sheet"
+    assert "—" not in nav_clear["text"]
+    assert "–" not in nav_clear["text"]
+    cohort = next(
+        entry for entry in CHANGELOG
+        if "combined historical hit rate" in entry.get("text", "").lower()
+    )
+    assert cohort["tag"] == "update"
+    assert cohort["link"] == "/draft/cheat-sheet"
+    assert "descriptive-only" in cohort["text"].lower()
+    assert "—" not in cohort["text"]
+    assert "–" not in cohort["text"]
+    compact = next(
+        entry for entry in CHANGELOG
+        if "selected-bucket dock is compact" in entry.get("text", "").lower()
+    )
+    assert compact["tag"] == "fix"
+    assert compact["link"] == "/draft/cheat-sheet"
+    assert "rookies" in compact["text"].lower()
+    assert "—" not in compact["text"]
+    assert "–" not in compact["text"]
+    profile_css = next(
+        entry for entry in CHANGELOG
+        if "selected profile is a compact verdict card" in entry.get("text", "").lower()
+    )
+    assert profile_css["tag"] == "update"
+    assert profile_css["link"] == "/draft/cheat-sheet"
+    assert "—" not in profile_css["text"]
+    assert "–" not in profile_css["text"]
+    mix = next(
+        entry for entry in CHANGELOG
+        if "never top-12) no longer fails" in entry.get("text", "").lower()
+        or "numeric one" in entry.get("text", "").lower()
+    )
+    assert mix["tag"] == "fix"
+    assert mix["link"] == "/draft/cheat-sheet"
+    assert "—" not in mix["text"]
+    assert "–" not in mix["text"]
+    collapse = next(
+        entry for entry in CHANGELOG
+        if "collapsed so the tables stay in view" in entry.get("text", "").lower()
+    )
+    assert collapse["tag"] == "update"
+    assert collapse["link"] == "/draft/cheat-sheet"
+    assert "Lane chips" in collapse["text"]
+    assert "—" not in collapse["text"]
+    assert "–" not in collapse["text"]
+    example_context = next(
+        entry for entry in CHANGELOG
+        if "exp: year 4" in entry.get("text", "").lower()
+        and "last year: top 5" in entry.get("text", "").lower()
+    )
+    assert example_context["tag"] == "fix"
+    assert example_context["link"] == "/draft/cheat-sheet"
+    assert "—" not in example_context["text"]
+    assert "–" not in example_context["text"]
+    pin_board = next(
+        entry for entry in CHANGELOG
+        if "rk and player stay pinned" in entry.get("text", "").lower()
+    )
+    assert pin_board["tag"] == "fix"
+    assert pin_board["link"] == "/draft/cheat-sheet"
+    assert "—" not in pin_board["text"]
+    assert "–" not in pin_board["text"]
+    two_groups = next(
+        entry for entry in CHANGELOG
+        if "two groups (players like this vs that adp round)" in entry.get("text", "").lower()
+    )
+    assert two_groups["tag"] == "fix"
+    assert two_groups["link"] == "/draft/cheat-sheet"
+    assert "combined chance" in two_groups["text"].lower()
+    assert "—" not in two_groups["text"]
+    assert "–" not in two_groups["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():

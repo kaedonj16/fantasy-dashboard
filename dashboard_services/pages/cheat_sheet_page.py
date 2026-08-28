@@ -292,32 +292,57 @@ _CHEAT_HTML = r"""
   .cs-hist-note { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.45; margin: 0 0 8px; }
   .cs-hist-note:last-child { margin-bottom: 0; }
   .cs-hist-ex { list-style: none; margin: 0; padding: 0; }
-  .cs-hist-ex li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--cs-line, var(--border)); font-size: 13px; }
+  .cs-hist-ex li { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--cs-line, var(--border)); font-size: 13px; align-items: flex-start; }
   .cs-hist-ex li:last-child { border-bottom: 0; }
-  .cs-hist-ex li span:last-child { color: var(--cs-ink-soft, var(--text-muted)); font-family: var(--cs-mono); font-size: 12px; white-space: nowrap; }
+  .cs-hist-ex li > span:first-child { min-width: 0; }
+  .cs-hist-ex-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; color: var(--cs-ink-soft, var(--text-muted)); font-family: var(--cs-mono); font-size: 12px; text-align: right; }
+  .cs-hist-ex-meta { white-space: nowrap; }
+  .cs-hist-ex-hit { font-size: 10.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-hist-ex li.is-top_5 .cs-hist-ex-hit, .cs-hist-ex li.is-top_12 .cs-hist-ex-hit { color: var(--cs-pos); }
+  .cs-hist-ex li.is-top_24 .cs-hist-ex-hit { color: var(--cs-ink, var(--text)); }
+  .cs-hist-ex small { display: block; font-size: 11.5px; font-weight: 500; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 2px; line-height: 1.4; overflow-wrap: anywhere; }
+  .cs-hist-ex-sum { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 8px; }
+  .cs-hist-closest { margin-top: 4px; }
+  .cs-hist-market { display: grid; gap: 8px; margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; background: color-mix(in srgb, var(--cs-pos) 8%, transparent); }
+  .cs-hist-compare-h { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); }
+  .cs-hist-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .cs-hist-compare-col { min-width: 0; }
+  .cs-hist-compare-k { font-size: 12.5px; font-weight: 700; color: var(--cs-ink, var(--text)); }
+  .cs-hist-compare-v { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; margin: 2px 0; color: var(--cs-ink, var(--text)); }
+  .cs-hist-compare-s { font-size: 11.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.35; }
+  .cs-hist-gap { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.45; margin: 2px 0 0; }
   .cs-trends-qb, .cs-hist-modal.cs-hist-qb { --cs-pos: var(--cs-qb); --cs-pos-bg: var(--cs-qb-bg); }
   .cs-trends-rb, .cs-hist-modal.cs-hist-rb { --cs-pos: var(--cs-rb); --cs-pos-bg: var(--cs-rb-bg); }
   .cs-trends-wr, .cs-hist-modal.cs-hist-wr { --cs-pos: var(--cs-wr); --cs-pos-bg: var(--cs-wr-bg); }
   .cs-trends-te, .cs-hist-modal.cs-hist-te { --cs-pos: var(--cs-te); --cs-pos-bg: var(--cs-te-bg); }
   .cs-trends { padding: 4px 0 24px; }
   .cs-trends-lede { color: var(--cs-ink-soft, var(--text-muted)); font-size: 13px; line-height: 1.45; margin: 0 0 14px; }
-  .cs-trends-pos, .cs-trends-lanes { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 0 0 16px; }
-  .cs-trends-pos button, .cs-trends-lanes button { font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-line, var(--border)); background: var(--cs-surface, var(--card)); color: var(--cs-ink-soft, var(--text-muted)); border-radius: 8px; padding: 6px 10px; }
+  .cs-trends-pos, .cs-trends-lanes, .cs-trends-tiers { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 0 0 16px; }
+  .cs-trends-pos button, .cs-trends-lanes button, .cs-trends-tiers button { font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-line, var(--border)); background: var(--cs-surface, var(--card)); color: var(--cs-ink-soft, var(--text-muted)); border-radius: 8px; padding: 6px 10px; }
   .cs-trends-pos button[data-trends-pos="QB"][aria-pressed="true"] { border-color: var(--cs-qb); color: var(--cs-qb); background: var(--cs-qb-bg); }
   .cs-trends-pos button[data-trends-pos="RB"][aria-pressed="true"] { border-color: var(--cs-rb); color: var(--cs-rb); background: var(--cs-rb-bg); }
   .cs-trends-pos button[data-trends-pos="WR"][aria-pressed="true"] { border-color: var(--cs-wr); color: var(--cs-wr); background: var(--cs-wr-bg); }
   .cs-trends-pos button[data-trends-pos="TE"][aria-pressed="true"] { border-color: var(--cs-te); color: var(--cs-te); background: var(--cs-te-bg); }
-  .cs-trends-lanes button[aria-pressed="true"] { border-color: var(--cs-pos); color: var(--cs-pos); background: var(--cs-pos-bg); }
-  .cs-trends-lane-n { margin-left: auto; font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-trends-lanes button[aria-pressed="true"], .cs-trends-tiers button[aria-pressed="true"] { border-color: var(--cs-pos); color: var(--cs-pos); background: var(--cs-pos-bg); }
+  .cs-trends-lane-n, .cs-trends-tier-n { margin-left: auto; font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-trends-sticky { position: sticky; top: var(--cs-nav-offset, 0px); z-index: 5; display: grid; gap: 8px; margin: 0 0 12px; padding: 8px 10px 10px; border: 1px solid color-mix(in srgb, var(--cs-pos) 22%, var(--cs-line, var(--border))); border-radius: 14px; background: color-mix(in srgb, var(--cs-surface, var(--card)) 86%, var(--cs-pos-bg)); box-shadow: 0 8px 18px color-mix(in srgb, #000 12%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); max-height: min(42vh, 340px); overflow: auto; }
+  .cs-trends-sticky.is-picked { grid-template-columns: minmax(240px, .95fr) minmax(0, 1.15fr); align-items: stretch; }
+  .cs-trends-sticky.is-picked .cs-trends-lanes { grid-column: 1 / -1; }
+  .cs-trends-sticky .cs-trends-lanes { margin: 0; }
+  .cs-trends-sticky-body { display: contents; }
+  .cs-trends-sticky.is-collapsed { max-height: none; overflow: visible; grid-template-columns: 1fr; padding: 6px 10px; }
+  .cs-trends-sticky.is-collapsed .cs-trends-sticky-body { display: none; }
+  .cs-trends-lanes button.cs-trends-sticky-toggle { margin-left: auto; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-pos); border-color: color-mix(in srgb, var(--cs-pos) 35%, var(--cs-line, var(--border))); background: var(--cs-pos-bg); }
+  .cs-trends-sticky .cs-hist-note { font-size: 10.5px; margin: 6px 0 0; line-height: 1.3; }
   .cs-trends-summary { display: flex; align-items: flex-end; gap: 16px; margin: 0 0 18px; padding: 12px 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--cs-pos) 28%, var(--cs-line, var(--border))); background: var(--cs-pos-bg); }
   .cs-trends-base-pct { font-weight: 800; font-size: 46px; line-height: .82; letter-spacing: -.03em; color: var(--cs-pos); font-variant-numeric: tabular-nums; }
   .cs-trends-base-pct sup { font-size: 18px; font-weight: 800; color: var(--cs-ink-soft, var(--text-muted)); vertical-align: super; }
   .cs-trends-base-copy { min-width: 0; padding-bottom: 2px; }
   .cs-trends-base-k { font-size: 13.5px; font-weight: 700; color: var(--cs-ink, var(--text)); }
   .cs-trends-base-v { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 3px; line-height: 1.45; }
-  .cs-trends-sec-head { margin: 0 0 10px; }
-  .cs-trends-sec-head h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 4px; }
-  .cs-trends-sec-head p { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.45; margin: 0; }
+  .cs-trends-sec-head { margin: 0 0 6px; }
+  .cs-trends-sec-head h3 { font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 2px; }
+  .cs-trends-sec-head p { font-size: 12px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.35; margin: 0; }
   .cs-trends-board { margin: 0 0 18px; }
   .cs-trends-callouts { display: grid; grid-template-columns: 1fr 1fr; margin: 0; border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; overflow: hidden; background: var(--cs-surface, var(--card)); }
   .cs-trends-callout-col { display: flex; flex-direction: column; min-width: 0; }
@@ -361,6 +386,52 @@ _CHEAT_HTML = r"""
   .cs-trends-srow-pct { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--cs-ink, var(--text)); white-space: nowrap; }
   .cs-trends-srow-meta { font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 3px; }
   .cs-trends-srow .cs-trends-rail { margin-top: 5px; }
+  .cs-trends-srow.is-pick { display: block; width: 100%; text-align: left; font: inherit; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 10px; padding: 6px 8px; margin: 0 -8px; cursor: pointer; }
+  .cs-trends-srow.is-pick:hover { background: color-mix(in srgb, var(--cs-pos) 8%, transparent); }
+  .cs-trends-srow.is-on { border-color: var(--cs-pos); background: var(--cs-pos-bg); }
+  .cs-trends-minipcts { display: flex; gap: 8px; margin-top: 4px; font-family: var(--cs-mono); font-size: 10px; color: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-trends-minipcts .is-on { color: var(--cs-pos); font-weight: 800; }
+  .cs-trends-scout { margin: 0; padding: 10px 12px; border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; background: var(--cs-surface, var(--card)); min-height: 0; overflow: auto; }
+  .cs-trends-scout.is-idle { max-height: none; overflow: visible; padding: 8px 10px; }
+  .cs-trends-scout-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
+  .cs-trends-chip { font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-pos); color: var(--cs-pos); background: var(--cs-pos-bg); border-radius: 999px; padding: 2px 8px; }
+  .cs-trends-chip.is-clear { border-color: var(--cs-line, var(--border)); color: var(--cs-ink-soft, var(--text-muted)); background: transparent; }
+  .cs-trends-scout-list { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; }
+  .cs-trends-player { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; font: inherit; cursor: pointer; border: 0; background: transparent; border-radius: 8px; padding: 4px 2px; color: var(--cs-ink, var(--text)); }
+  .cs-trends-player:hover { background: color-mix(in srgb, var(--cs-pos) 8%, transparent); }
+  .cs-trends-player.is-drafted { opacity: .45; }
+  .cs-trends-player { align-items: flex-start; }
+  .cs-trends-player-copy { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 0; }
+  .cs-trends-player-n { font-weight: 700; font-size: 12.5px; }
+  .cs-trends-player-adp { font-family: var(--cs-mono); font-size: 10.5px; color: var(--cs-ink-soft, var(--text-muted)); }
+  .cs-trends-player-why { display: none; }
+  .cs-trends-player-edge { font-size: 10.5px; color: var(--cs-ink, var(--text)); font-weight: 650; line-height: 1.3; }
+  .cs-trends-callout.is-down .cs-trends-callout-pct span { color: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-trends-profile { margin: 0; padding: 10px 12px 11px; border: 1px solid color-mix(in srgb, var(--cs-pos) 26%, var(--cs-line, var(--border))); border-radius: 12px; background: var(--cs-surface, var(--card)); box-shadow: inset 3px 0 0 var(--cs-pos); min-height: 0; }
+  .cs-trends-profile.is-idle { padding: 8px 10px; box-shadow: none; }
+  .cs-trends-profile > .cs-trends-sec-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin: 0 0 8px; }
+  .cs-trends-profile > .cs-trends-sec-head > div { min-width: 0; }
+  .cs-trends-profile > .cs-trends-sec-head h3 { margin: 0 0 2px; }
+  .cs-trends-profile > .cs-trends-sec-head p { font-size: 13.5px; font-weight: 800; color: var(--cs-ink, var(--text)); line-height: 1.25; }
+  .cs-trends-profile-n { flex-shrink: 0; font-family: var(--cs-mono); font-size: 10.5px; font-weight: 700; color: var(--cs-ink-soft, var(--text-muted)); margin: 0; padding: 3px 8px; border-radius: 999px; background: color-mix(in srgb, var(--cs-ink, #0f172a) 6%, transparent); }
+  .cs-trends-profile-stats { display: grid; gap: 8px; }
+  .cs-trends-profile-tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0; }
+  .cs-trends-profile-tier { min-width: 0; border: 1px solid var(--cs-line, var(--border)); border-radius: 10px; padding: 7px 8px 8px; background: color-mix(in srgb, var(--cs-ink, #0f172a) 3%, var(--cs-surface, var(--card))); }
+  .cs-trends-profile-tier.is-on { border-color: var(--cs-pos); background: var(--cs-pos-bg); }
+  .cs-trends-profile-k { font-family: var(--cs-mono); font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-trends-profile-v { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; margin-top: 3px; color: var(--cs-ink, var(--text)); }
+  .cs-trends-profile-tier.is-on .cs-trends-profile-v { color: var(--cs-pos); }
+  .cs-trends-profile-ci { font-family: var(--cs-mono); font-size: 10px; color: var(--cs-ink-faint, var(--text-muted)); margin-top: 2px; }
+  .cs-trends-profile-dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr)); gap: 6px; margin: 0; }
+  .cs-trends-profile-dl > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; border: 1px solid var(--cs-line, var(--border)); border-radius: 8px; padding: 6px 8px; background: color-mix(in srgb, var(--cs-ink, #0f172a) 2.5%, var(--cs-surface, var(--card))); }
+  .cs-trends-profile-dl dt { color: var(--cs-ink-faint, var(--text-muted)); font-family: var(--cs-mono); font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+  .cs-trends-profile-dl dd { margin: 0; font-size: 13px; font-weight: 800; color: var(--cs-ink, var(--text)); font-variant-numeric: tabular-nums; }
+  .cs-trends-profile-dl dd.is-up { color: var(--cs-good); }
+  .cs-trends-profile-dl dd.is-down { color: var(--cs-ink-soft, var(--text-muted)); }
+  .cs-trends-profile-dl > div.is-conf { border-color: color-mix(in srgb, var(--cs-pos) 35%, var(--cs-line, var(--border))); background: var(--cs-pos-bg); }
+  .cs-trends-profile-dl > div.is-conf dd { color: var(--cs-pos); }
+  .cs-trends-scout-more { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); margin: 8px 0 0; }
+  .cs-trends-scout-more button { font: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer; border: 0; background: none; color: var(--cs-pos); padding: 0; }
   .cs-trends-conf { display: inline-flex; align-items: center; flex-shrink: 0; color: var(--cs-ink-faint, var(--text-muted)); }
   .cs-trends-conf i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; display: inline-block; }
   .cs-trends-conf-low { color: var(--cs-ink-faint, var(--text-muted)); }
@@ -376,12 +447,29 @@ _CHEAT_HTML = r"""
     .cs-trends-callout .cs-trends-rail { display: none; }
     .cs-trends-callout-v { font-size: 12px; }
     .cs-trends-summary { align-items: flex-start; }
-    .cs-trends-lanes { position: sticky; top: 0; z-index: 4; background: var(--cs-surface, var(--card)); padding: 8px 0; margin: 0 0 10px; border-bottom: 1px solid var(--cs-line, var(--border)); }
-    .cs-trends-lane-n { flex: 1 0 100%; margin: 2px 0 0; }
+    .cs-trends-lanes { margin: 0 0 8px; }
+    .cs-trends-sticky { padding: 8px 10px 10px; gap: 8px; }
+    .cs-trends-sticky.is-picked { grid-template-columns: 1fr; }
+    .cs-trends-profile-v { font-size: 18px; }
+    .cs-trends-lane-n { flex: 1 0 100%; margin: 2px 0 0; order: 2; }
+    .cs-trends-sticky-toggle { order: 1; margin-left: auto; }
     .cs-trends-grid { grid-template-columns: 1fr; gap: 8px; }
+    .cs-trends-scout-list { grid-template-columns: 1fr; }
     .cs-trends-card { height: auto; padding: 0; }
-    .cs-trends-card > summary { padding: 12px 14px; }
-    .cs-trends-card-peek { display: inline; }
+    .cs-trends-card > summary {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      align-items: start;
+      gap: 4px;
+      padding: 12px 14px;
+    }
+    .cs-trends-card h3 { min-width: 0; overflow-wrap: anywhere; }
+    .cs-trends-card-peek {
+      display: block;
+      min-width: 0;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
     .cs-trends-card .cs-hist-note, .cs-trends-card-rows { padding: 0 14px 12px; margin-top: 0; }
     .cs-trends-card .cs-hist-note { margin: 0 0 8px; }
   }
@@ -546,11 +634,25 @@ _CHEAT_HTML = r"""
     .cs-ctrl-row:last-child .cs-btn { min-width: 0; width: 100%; justify-content: center; white-space: normal; padding: 8px 6px; }
     /* Keep every primary signal on mobile. The table scrolls horizontally, as
        it did before Market vs ADP was added, rather than hiding VOR or Value. */
-    .cs-wrap table { min-width: 910px; }
+    .cs-wrap table { min-width: 910px; border-collapse: separate; border-spacing: 0; }
+    .cs-wrap thead th.cs-rk, .cs-wrap tbody td.cs-rk {
+      position: sticky; left: 0; z-index: 4; width: 42px; min-width: 42px; max-width: 42px;
+      box-sizing: border-box; background: var(--cs-surface); padding-left: 8px; padding-right: 6px;
+    }
+    .cs-wrap thead th.cs-player, .cs-wrap tbody td.cs-player {
+      position: sticky; left: 42px; z-index: 4; min-width: 132px; max-width: 148px;
+      box-sizing: border-box; background: var(--cs-surface); padding-right: 8px;
+      border-right: 1px solid var(--cs-line); box-shadow: 6px 0 7px -5px color-mix(in srgb, #000 18%, transparent);
+    }
+    .cs-wrap thead th.cs-rk, .cs-wrap thead th.cs-player { z-index: 6; top: 0; }
+    .cs-wrap tbody tr.cs-p:hover td.cs-rk, .cs-wrap tbody tr.cs-p:hover td.cs-player { background: var(--cs-surface-2); }
+    .cs-wrap tbody tr.done td.cs-rk, .cs-wrap tbody tr.done td.cs-player,
+    .cs-wrap tbody tr.cs-muted td.cs-rk, .cs-wrap tbody tr.cs-muted td.cs-player { opacity: 1; }
+    .cs-wrap tbody tr.done td.cs-rk, .cs-wrap tbody tr.done td.cs-player .cs-pname { opacity: .4; }
     .cs-tbl-scroll, .cs-pgrid-scroll { max-height: none; height: auto; }
     .cs-wrap thead th, .cs-wrap tbody td { padding-left: 6px; padding-right: 6px; }
     .cs-pcell { gap: 5px; min-width: 0; }
-    .cs-pname { overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+    .cs-pname { overflow: hidden; text-overflow: ellipsis; max-width: 108px; }
     /* Tabs scroll sideways rather than wrapping onto a second line. */
     .cs-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .cs-tabs::-webkit-scrollbar { display: none; }
@@ -576,6 +678,10 @@ _CHEAT_HTML = r"""
     /* Undo the on-screen height cap so the whole board flows onto pages. */
     .cs-tbl-scroll, .cs-pgrid-scroll { overflow: visible; border: 0; max-height: none; }
     .cs-wrap thead th { position: static; }
+    .cs-wrap tbody td.cs-rk, .cs-wrap tbody td.cs-player { position: static; box-shadow: none; }
+    .cs-trends-sticky { position: static; max-height: none; }
+    .cs-trends-sticky.is-collapsed .cs-trends-sticky-body { display: contents; }
+    .cs-trends-sticky-toggle { display: none !important; }
     /* Keep a tier heading with the rows under it, and don't split a row. */
     .cs-wrap tr.cs-cliff, .cs-wrap tr.cs-proj { break-before: auto; break-after: avoid; }
     .cs-wrap tbody tr { break-inside: avoid; }
@@ -659,7 +765,7 @@ _CHEAT_HTML = r"""
 
   <section class="cs-hidden" id="cs-panel-trends">
     <div class="cs-trends" id="csTrends">
-      <p class="cs-trends-lede">Historical top-12 rates by bucket. Not a ranking score.</p>
+      <p class="cs-trends-lede">Historical finish rates by bucket. Not a ranking score.</p>
     </div>
   </section>
 
@@ -673,7 +779,7 @@ _CHEAT_HTML = r"""
       <div class="cs-rule"><span class="cs-k">Proj Pick</span><div><h3>Your snake slot on this board</h3><p>Choose a draft slot to draw labeled lines at each of that seat's snake-draft picks — Proj Pick 1.05, 2.08, and so on. The player under each line is who this ranking would take there. Lines follow the displayed order, including any custom-board moves, and they print with the sheet.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Proj PPG</span><div><h3>Expected weekly scoring</h3><p>Projected PPG is the player's upcoming-season fantasy points per game from Sleeper, the same projection pool used by the Draft Room. Players Sleeper does not project show a dash rather than last-season actuals.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Schedule</span><div><h3>Full-season matchup context</h3><p>Schedule Rank compares each player's position-specific matchups across fantasy Weeks 1-17. Rank 1 is the easiest schedule. It is useful context for close calls inside a tier, but it does not change the stable VOR order.</p></div></div>
-      <div class="cs-rule"><span class="cs-k">Hist</span><div><h3>Historical trends, not a ranking</h3><p>Hist is redraft-only context. The compact number is how often a similar pre-season profile finished top-12, not this player's odds and not a Pick Score input. The Trends tab shows position-wide rates for repeats, league-winner smashes, career stage, NFL draft capital (including early-career hit and miss rates), age, and prior usage. Callouts flag the biggest edges versus a typical player-season. The info button on a player opens that player's own mix of those buckets. Green is a strong similar-profile cell (about 25% or higher). Missing values show a dash. Hist does not change VOR or Pick Score.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">Hist</span><div><h3>Historical chance, not a ranking</h3><p>Hist is redraft-only context. The compact number is this player's historical chance of a top-12 season given his career and current situation (stage, capital, last year, and whether he has already been elite). It is not a Pick Score input. The Trends tab shows position-wide rates for repeats, league-winner smashes, career stage, NFL draft capital (including early-career hit and miss rates), age, and prior usage. Finish chips switch typical top-5, top-12, and top-24 odds. Select buckets to list current-board players who match those traits. Callouts flag the biggest edges versus a typical player-season. The info button on a player opens that player's own mix of those buckets. Green is a strong cell (about 25% or higher). Missing values show a dash. Hist does not change VOR or Pick Score.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Live</span><div><h3>It knows your live draft</h3><p>Open the sheet from your league during a draft and players already taken are struck through automatically. REC badges show the current Draft Room view without changing the VOR board. Reopen the sheet after more picks to refresh those ranks, or use Connect live draft to keep drafted-player status synchronized.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Dynasty</span><div><h3>Dynasty values the window, not just this year</h3><p>Dynasty mode ranks on dynasty value, which already weights youth and multi-year outlook, and swaps in Age and a career-window tag in place of ADP, because you are drafting the next several seasons.</p></div></div>
     </div>
@@ -686,7 +792,7 @@ _CHEAT_HTML = r"""
     <div class="cs-hist-head">
       <div>
         <h2><span id="csHistPos" class="cs-pos-badge" hidden></span><span id="csHistTitle">History</span></h2>
-        <p class="cs-hist-sub" id="csHistSub">Historical trends for this profile - not a ranking or this player's odds.</p>
+        <p class="cs-hist-sub" id="csHistSub">Historical chance for this career and situation - not a ranking or Pick Score.</p>
       </div>
       <button type="button" class="cs-hist-close" id="csHistClose">Close</button>
     </div>

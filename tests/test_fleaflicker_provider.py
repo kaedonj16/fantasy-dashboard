@@ -197,3 +197,83 @@ def test_preview_survives_rules_season_html_400(mock_get):
     league = FleaflickerProvider().get_league("92916", 2026)
     assert league["name"] == "All American All Star League"
     assert league["roster_positions"] == ["QB"]
+
+
+def test_get_league_exposes_scheduled_draft_day(monkeypatch):
+    provider = FleaflickerProvider()
+    draft_ms = 1_735_689_600_000  # Aug 2025-ish
+    monkeypatch.setattr(
+        provider,
+        "_call",
+        lambda method, *a, **k: {
+            "league": {
+                "id": 92916,
+                "name": "All American",
+                "size": 12,
+                "draft_status": "NOT_YET_DRAFTED",
+                "draft_live_time_epoch_milli": str(draft_ms),
+            },
+            "divisions": [{"teams": [{"id": 1, "name": "Owls", "owners": [{"id": 9}]}]}],
+            "season": 2026,
+        } if method == "FetchLeagueStandings" else {"groups": []},
+    )
+    league = provider.get_league("92916", 2026)
+    assert league["draft_day"] == draft_ms
+    assert league["settings"]["draft_status"] == "NOT_YET_DRAFTED"
+
+
+def test_get_drafts_reports_upcoming_start_time_and_status(monkeypatch):
+    provider = FleaflickerProvider()
+    draft_ms = 1_735_689_600_000
+
+    def fake_call(method, *a, **k):
+        if method == "FetchLeagueStandings":
+            return {
+                "league": {
+                    "id": 92916,
+                    "draft_status": "NOT_YET_DRAFTED",
+                    "draft_live_time_epoch_milli": str(draft_ms),
+                },
+            }
+        if method == "FetchLeagueDraftBoard":
+            return {"rows": [], "is_in_progress": False}
+        raise AssertionError(method)
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    drafts = provider.get_drafts("92916", 2026)
+    assert len(drafts) == 1
+    assert drafts[0]["start_time"] == draft_ms
+    assert drafts[0]["status"] == "pre_draft"
+    assert drafts[0]["picks"] == []
+
+
+def test_get_drafts_marks_post_draft_complete(monkeypatch):
+    provider = FleaflickerProvider()
+    draft_ms = 1_735_689_600_000
+
+    def fake_call(method, *a, **k):
+        if method == "FetchLeagueStandings":
+            return {
+                "league": {
+                    "id": 92916,
+                    "draft_status": "POST_DRAFT",
+                    "draft_live_time_epoch_milli": str(draft_ms),
+                },
+            }
+        if method == "FetchLeagueDraftBoard":
+            return {
+                "rows": [{
+                    "round": 1,
+                    "cells": [{
+                        "team": {"id": 1},
+                        "player": {"proPlayer": {"id": 99, "nameFull": "Player", "position": "QB"}},
+                    }],
+                }],
+                "is_in_progress": False,
+            }
+        raise AssertionError(method)
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    drafts = provider.get_drafts("92916", 2026)
+    assert drafts[0]["status"] == "complete"
+    assert len(drafts[0]["picks"]) == 1

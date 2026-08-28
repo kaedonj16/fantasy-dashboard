@@ -53,11 +53,41 @@ async function getSubscriptionInfo(userId, leagueId) {
 }
 
 /**
+ * Show a value-forward PRO preview in a container (does not expose gated content).
+ */
+window.brProPreview = function brProPreview(container, opts) {
+  opts = opts || {};
+  var el = (typeof container === 'string') ? document.getElementById(container) : container;
+  if (!el) return;
+  var count = opts.count;
+  var countHtml = (count != null && count !== '')
+    ? '<div class="br-pro-preview-count">' + count + '</div>'
+    : '';
+  var msg = opts.message || 'Unlock the full analysis for your league.';
+  var ctaLabel = opts.ctaLabel || 'Unlock';
+  var feature = opts.feature || 'trade-suggestions';
+  el.innerHTML =
+    '<div class="br-pro-preview">' +
+      countHtml +
+      '<div class="br-pro-preview-msg">' + msg + '</div>' +
+      '<button type="button" class="br-pro-preview-cta" data-pro-feature="' + feature + '">' + ctaLabel + ' &rarr;</button>' +
+    '</div>';
+  var btn = el.querySelector('.br-pro-preview-cta');
+  if (btn) {
+    btn.addEventListener('click', function () {
+      if (typeof showPaywall === 'function') showPaywall(feature, opts);
+    });
+  }
+};
+
+/**
  * Show paywall modal for a specific feature
  *
  * @param {string} feature - Feature name ('breakout-candidates', 'playoff-impact', 'gm-memo')
+ * @param {object} [opts] - Optional preview context (count, message) for the modal headline
  */
-window.showPaywall = function showPaywall(feature) {
+window.showPaywall = function showPaywall(feature, opts) {
+  opts = opts || {};
   const featureNames = {
     'breakout-candidates': 'Breakout Engine',
     'breakout-analysis': 'Breakout Engine',
@@ -69,10 +99,14 @@ window.showPaywall = function showPaywall(feature) {
     'gm-memo': 'Front Office Report',
     'weekly-recap': 'Weekly Recap',
     'draft-cheat-sheet': 'Custom Draft Board',
+    'draft-trends-scout': 'Trend Scout',
     'draft-analyzer': 'Draft Deep Dive Analyzer'
   };
 
   const featureName = featureNames[feature] || 'Premium Feature';
+  const previewLine = opts.count != null
+    ? `<p class="paywall-preview-line"><strong>${opts.count}</strong> ${opts.message || 'available with PRO'}</p>`
+    : (opts.message ? `<p class="paywall-preview-line">${opts.message}</p>` : '');
 
   document.querySelectorAll('.paywall-modal').forEach(function (el) { el.remove(); });
 
@@ -91,6 +125,7 @@ window.showPaywall = function showPaywall(feature) {
       <div class="paywall-body">
         <div class="paywall-icon"><i class="fa-solid fa-star" aria-hidden="true"></i></div>
         <h3>${featureName}</h3>
+        ${previewLine}
         <p>This is a premium feature. Upgrade to access:</p>
         <ul class="paywall-features">
           <li>✓ Roster-Based Trade Suggestions</li>

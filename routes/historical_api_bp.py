@@ -5,8 +5,9 @@ import logging
 
 from flask import Blueprint, jsonify, request
 
-from dashboard_services.historical.aggregates_store import load_profile_aggregates
+from dashboard_services.historical.aggregates_store import aggregates_version, load_profile_aggregates
 from dashboard_services.historical.board import build_deep_panel, build_historical_trends
+from dashboard_services.historical.cohorts import evaluate_cohort
 
 logger = logging.getLogger(__name__)
 
@@ -61,3 +62,46 @@ def api_historical_trends():
     except Exception:
         logger.exception("[historical-trends] failed")
         return jsonify({"available": False, "descriptive_only": True, "not_in_ranking": True})
+
+
+@historical_api_bp.route("/api/historical-cohort", methods=["POST"])
+def api_historical_cohort():
+    """Combined historical hit rate for selected Trends buckets. JSON index only."""
+    aggs = load_profile_aggregates()
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        body = {}
+    pos = body.get("position")
+    filters = body.get("filters") or []
+    if not isinstance(filters, list):
+        filters = []
+    tier = body.get("tier") or "top_12"
+    if not aggs:
+        return jsonify({
+            "available": False,
+            "descriptive_only": True,
+            "not_in_ranking": True,
+            "not_in_pick_score": True,
+            "position": pos,
+            "unknown_reason": "aggregates_missing",
+        })
+    try:
+        payload = evaluate_cohort(
+            aggs,
+            position=pos,
+            filters=filters,
+            tier=tier,
+            data_version=aggregates_version(),
+        )
+        return jsonify(payload)
+    except Exception:
+        logger.exception("[historical-cohort] failed")
+        return jsonify({
+            "available": False,
+            "descriptive_only": True,
+            "not_in_ranking": True,
+            "not_in_pick_score": True,
+            "position": pos,
+            "unknown_reason": "error",
+        })
+

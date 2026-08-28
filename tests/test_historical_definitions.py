@@ -128,6 +128,28 @@ def test_draft_capital_bucket_does_not_infer_undrafted():
     assert draft_capital_bucket(0) == "undrafted"
 
 
+def test_trends_round1_pick_ranges_are_disjoint():
+    from dashboard_services.historical.definitions import (
+        TRENDS_ROUND1_PICK_RANGES,
+        trends_round1_pick_range,
+    )
+
+    assert draft_capital_bucket(1, 3) == "round_1"
+    assert trends_round1_pick_range(1)[0] == "picks_1_10"
+    assert trends_round1_pick_range(10)[1] == "Top 10"
+    assert trends_round1_pick_range(11)[0] == "picks_11_25"
+    assert trends_round1_pick_range(25)[0] == "picks_11_25"
+    assert trends_round1_pick_range(26)[0] == "picks_26_32"
+    assert trends_round1_pick_range(32)[1] == "Rest of Round 1"
+    assert trends_round1_pick_range(33) is None
+    assert trends_round1_pick_range(None) is None
+    assert trends_round1_pick_range(0) is None
+    covered = []
+    for _key, _label, lo, hi in TRENDS_ROUND1_PICK_RANGES:
+        covered.extend(range(lo, hi + 1))
+    assert covered == list(range(1, 33))
+
+
 def test_positional_tier_label_and_flags():
     assert positional_tier_label("RB", 1) == "RB1"
     assert positional_tier_label("RB", 12) == "RB1"
@@ -194,4 +216,26 @@ def test_prior_finish_bucket_rookie_none_veteran_missing_omitted():
     assert SLEEPER_UNDRAFTED_ADP == 999.0
     assert normalize_adp(999) is None
     assert is_adp_relative_bust(None, 1) is None
+
+
+def test_ranking_shrinkage_and_wilson_interval():
+    from dashboard_services.historical.definitions import (
+        EDGE_RANK_PRIOR_N,
+        WILSON_Z_95,
+        ranking_adjusted_rate,
+        wilson_interval,
+    )
+
+    assert EDGE_RANK_PRIOR_N == 30
+    assert abs(WILSON_Z_95 - 1.959964) < 1e-6
+    # n=84, 31% vs 8% baseline → about +17 pts after k=30 shrinkage.
+    adjusted = ranking_adjusted_rate(26, 84, 0.08)
+    assert abs((adjusted - 0.08) * 100 - 17) < 1
+    noisy = ranking_adjusted_rate(5, 12, 0.08)
+    solid = ranking_adjusted_rate(109, 420, 0.08)
+    assert (solid - 0.08) > (noisy - 0.08)
+    lo, hi = wilson_interval(0, 0)
+    assert lo is None and hi is None
+    lo, hi = wilson_interval(26, 84)
+    assert 0.0 <= lo < 26 / 84 < hi <= 1.0
 

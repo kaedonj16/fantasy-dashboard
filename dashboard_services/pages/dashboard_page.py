@@ -35,6 +35,7 @@ def build_dashboard_body(ctx: dict) -> str:
         render_standings_compact,
         render_teams_sidebar,
         session,
+        url_for,
     )
 
     league_id = ctx["league_id"]
@@ -91,9 +92,23 @@ def build_dashboard_body(ctx: dict) -> str:
     # Waiver Wire Targets card (same builder as the offseason hub). Uses the
     # live model-value cache rather than the ctx copy, which can go stale.
     waiver_card_html = ""
+    action_waiver_html = ""
     try:
         _wv_table = list(get_model_value_table_cached() or []) or (ctx.get("model_value_table") or [])
         _wv_rows = _build_waiver_targets_rows(ctx, _wv_table)
+        _wv_preview_rows = _build_waiver_targets_rows(ctx, _wv_table, limit=3)
+        _wv_url = url_for(
+            "league_pages.page_waivers", platform=platform, season=season, league_id=league_id,
+        )
+        if _wv_preview_rows:
+            action_waiver_html = f"""
+        <section class="os-card os-action-card">
+          <div class="lineup-alert-head">
+            <span class="lineup-alert-title">Best waiver available</span>
+            <a class="os-section-link" href="{html.escape(_wv_url)}">View waivers &rarr;</a>
+          </div>
+          <div class="os-waiver-list os-waiver-preview">{_wv_preview_rows}</div>
+        </section>"""
         if _wv_rows:
             waiver_card_html = f"""
         <section class="os-card os-col-fill">
@@ -314,10 +329,18 @@ def build_dashboard_body(ctx: dict) -> str:
 
     _viewer_team = viewer.get("viewer_team_name")
     _hero_copy = (
-        f"Welcome back, {html.escape(str(_viewer_team))}. Your matchup, standings, and moves at a glance."
+        f"Welcome back, {html.escape(str(_viewer_team))}. Here is what changed and what needs your attention."
         if _viewer_team else
-        "Your matchups, standings, and weekly moves at a glance."
+        "What changed, what needs attention, and your next moves."
     )
+
+    _action_queue_html = f"""
+        <div class="os-action-queue os-tab-panel os-tab-active" id="os-jump-actions">
+          {lineup_alert_html}
+          {roster_moves_html}
+          {trade_window_html}
+          {action_waiver_html}
+        </div>"""
 
     body = f"""
     <div class="os-layout">
@@ -352,26 +375,25 @@ def build_dashboard_body(ctx: dict) -> str:
           </div>
         </section>
 
+        <div id="sinceLastVisitCard" class="slv-wrap" data-slv-init="1"></div>
+
         <nav class="os-jump-nav" aria-label="Jump to section">
-          <button type="button" class="active" data-jump="os-jump-report">Report</button>
+          <button type="button" class="active" data-jump="os-jump-actions">Actions</button>
+          <button type="button" data-jump="os-jump-report">Report</button>
           <button type="button" data-jump="os-jump-standings">Standings</button>
           <button type="button" data-jump="os-jump-waivers">Waivers</button>
           <button type="button" data-jump="os-jump-teams">Team Values</button>
         </nav>
 
-        <div id="sinceLastVisitCard" class="slv-wrap" data-slv-init="1"></div>
-        {_dash_bulletins_html}
+        {_action_queue_html}
 
-        <div id="os-jump-report" class="os-tab-panel os-tab-active">
-          {lineup_alert_html}
-          {roster_moves_html}
+        <div id="os-jump-report" class="os-tab-panel">
           {gm_card_html}
-          {trade_window_html}
           {usage_movers_html}
-
           {matchup_html}
           {bench_check_html}
           {season_review_html}
+          {_dash_bulletins_html}
         </div>
 
         <div id="os-jump-waivers" class="os-tab-panel">

@@ -34,6 +34,7 @@ from dashboard_services.historical.definitions import (
     TARGET_SHARE_BUCKETS,
     age_bucket,
     career_stage,
+    draft_capital_bucket,
     prior_finish_bucket,
     value_bucket,
     _optional_float,
@@ -75,6 +76,12 @@ def extract_comp_query(row: Mapping[str, Any]) -> dict[str, str]:
     cap = row.get("draft_capital_bucket")
     if cap not in DRAFT_CAPITAL_ORDER:
         cap = row.get("draft_capital")
+    if cap not in DRAFT_CAPITAL_ORDER:
+        cap = draft_capital_bucket(
+            row.get("draft_round") or row.get("nfl_draft_round"),
+            row.get("draft_pick") or row.get("nfl_draft_pick"),
+            undrafted=bool(row.get("undrafted")),
+        )
     if cap in DRAFT_CAPITAL_ORDER:
         feats["draft_capital"] = str(cap)
 

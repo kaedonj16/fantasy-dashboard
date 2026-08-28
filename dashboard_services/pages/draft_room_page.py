@@ -1,12 +1,10 @@
 """
-Standalone Draft Room (Draft Assistant) page.
+Standalone Draft Room page.
 
-Phase 2: a dedicated, self-contained draft board that supersedes the old
-Prospects→Draft tab. Supports manual drafting for both startup (all players)
-and rookie drafts, with snake / linear / third-round-reversal pick order.
-Live Sleeper sync, ESPN live companion sync (observe-only), persistence/history,
-and the full command-center panels land in later phases; this establishes the
-standalone page + board grid + best-available picker + the pickOrder foundation.
+Supports manual drafting for both startup (all players) and rookie drafts,
+with snake / linear / third-round-reversal pick order. Live Sleeper sync,
+ESPN live companion sync (observe-only), persistence/history, and the full
+command-center panels.
 
 The page is self-contained: its CSS is inlined here and its JS lives in
 static/draft_room.js (loaded as a deferred external script so the browser caches
@@ -1363,6 +1361,10 @@ _DRAFT_ROOM_HTML = r"""
   .dd-st-ppg small { font-family:"Inter",sans-serif; font-weight:500; color:var(--text-muted); font-size:10px; margin-left:2px; }
   .dd-st-rank { font-size:11.5px; color:var(--text-muted); white-space:nowrap; }
   .dd-st-rank b { color:var(--text); }
+  .dd-hist-pct { font-family:"Archivo",sans-serif; font-weight:800; font-variant-numeric:tabular-nums; }
+  .dd-hist-pct.is-strong { color:#16a34a; }
+  .dd-hist-vs.up { color:#16a34a; font-weight:700; }
+  .dd-hist-vs.down { color:#dc2626; font-weight:700; }
   /* edges + flags */
   .dd-edges { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
   .dd-edge { padding:14px; border-radius:12px; border:1px solid var(--border); background:var(--bg); }
