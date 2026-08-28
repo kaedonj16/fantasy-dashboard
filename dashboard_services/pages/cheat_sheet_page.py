@@ -442,8 +442,20 @@ _CHEAT_HTML = r"""
     .cs-trends-grid { grid-template-columns: 1fr; gap: 8px; }
     .cs-trends-scout-list { grid-template-columns: 1fr; }
     .cs-trends-card { height: auto; padding: 0; }
-    .cs-trends-card > summary { padding: 12px 14px; }
-    .cs-trends-card-peek { display: inline; }
+    .cs-trends-card > summary {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      align-items: start;
+      gap: 4px;
+      padding: 12px 14px;
+    }
+    .cs-trends-card h3 { min-width: 0; overflow-wrap: anywhere; }
+    .cs-trends-card-peek {
+      display: block;
+      min-width: 0;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
     .cs-trends-card .cs-hist-note, .cs-trends-card-rows { padding: 0 14px 12px; margin-top: 0; }
     .cs-trends-card .cs-hist-note { margin: 0 0 8px; }
   }

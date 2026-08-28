@@ -165,8 +165,14 @@ def test_extract_trend_features_uses_live_draft_round():
     assert feats["draft_capital"] == "round_1"
     assert feats["career_stage"] == "rookie"
     assert feats["prior_top12_count"] == 0
+    assert feats["nfl_draft_pick"] == 4
     round_1 = {"group": "draft_capital", "field": "draft_capital", "eq": "round_1"}
+    top_10 = {"group": "draft_capital", "field": "nfl_draft_pick", "between": [1, 10]}
+    late_first = {"group": "draft_capital", "field": "nfl_draft_pick", "between": [26, 32]}
     assert matches_filter_groups(feats, [round_1]) is True
+    assert matches_filter_groups(feats, [top_10]) is True
+    assert matches_filter_groups(feats, [late_first]) is False
+    assert matches_trend_filter({}, top_10) is False
 
 
 def test_stamp_live_draft_class_adds_unprofiled_round_1_rookie():
@@ -190,11 +196,38 @@ def test_stamp_live_draft_class_adds_unprofiled_round_1_rookie():
     added = stamp_live_draft_class_profiles(by_player, picks, index, upcoming_season=2026)
     assert added == 1
     assert by_player["13287"]["draft_capital_bucket"] == "round_1"
+    assert by_player["13287"]["nfl_draft_pick"] == 3
     assert by_player["13287"]["years_experience"] == 0
     assert by_player["12527"]["years_experience"] == 1
     feats = extract_trend_features(by_player["13287"])
     assert feats["draft_capital"] == "round_1"
+    assert feats["nfl_draft_pick"] == 3
     assert feats["career_stage"] == "rookie"
+
+
+def test_apply_nfl_draft_pick_overlay_stamps_feats_and_profiles():
+    from dashboard_services.historical.filters import apply_nfl_draft_pick_overlay
+
+    data = {
+        "cohort_index": {
+            "observations": [
+                {"pid": "4034", "pos": "RB", "feats": {"position": "RB", "draft_capital": "round_1"}},
+                {"pid": "x", "pos": "WR", "feats": {"position": "WR", "nfl_draft_pick": 22}},
+            ]
+        },
+        "preseason_profiles": {
+            "by_player": {
+                "4034": {"position": "RB", "draft_capital_bucket": "round_1"},
+                "x": {"position": "WR", "nfl_draft_pick": 22},
+            }
+        },
+    }
+    n = apply_nfl_draft_pick_overlay(data, {"picks": {"4034": 8, "x": 99}})
+    assert n == 2
+    assert data["cohort_index"]["observations"][0]["feats"]["nfl_draft_pick"] == 8
+    assert data["cohort_index"]["observations"][1]["feats"]["nfl_draft_pick"] == 22
+    assert data["preseason_profiles"]["by_player"]["4034"]["nfl_draft_pick"] == 8
+    assert data["preseason_profiles"]["by_player"]["x"]["nfl_draft_pick"] == 22
 
 
 def test_canonical_filter_key_sorts_mixed_eq_types():
@@ -206,6 +239,9 @@ def test_canonical_filter_key_sorts_mixed_eq_types():
     key = canonical_filter_key([round_1, never])
     assert key == canonical_filter_key([never, round_1])
     assert key != canonical_filter_key([round_1, two_plus])
+    top_10 = {"group": "draft_capital", "field": "nfl_draft_pick", "between": [1, 10], "label": "Top 10"}
+    mixed = canonical_filter_key([top_10, never])
+    assert mixed == canonical_filter_key([never, top_10])
     reset_cohort_cache()
     index = build_cohort_index(_combo_warehouse())
     out = evaluate_cohort(
@@ -474,12 +510,51 @@ def test_closest_examples_are_a_subset_not_the_cohort():
     matched = index["observations"]
     examples = closest_examples(matched, filters=[AGE_23, DAY_2], limit=8)
     assert 1 <= len(examples) <= 8
+    for ex in examples:
+        for trait in ex.get("traits") or []:
+            assert "_" not in str(trait)
     summary = examples_summary(examples)
     assert summary["n"] == len(examples)
     assert summary["top_12"] == 3
     assert "Top-12" in summary["label"]
     assert len(matched) == 12
     assert summary["n"] < len(matched)
+
+
+def test_closest_example_traits_use_readable_bucket_labels():
+    rows = [
+        _obs_row(
+            sleeper_id="saquon",
+            name="Saquon Barkley",
+            season=2023,
+            years_experience=5,
+            age=26.2,
+            draft_capital_bucket="round_1",
+            previous_season_finish=3,
+        )
+    ]
+    examples = closest_examples(build_cohort_index(rows)["observations"])
+    assert examples
+    traits = examples[0]["traits"]
+    assert "Year 6+" in traits
+    assert "Round 1" in traits
+    assert "Top 5" in traits
+    assert all("_" not in str(t) for t in traits)
+    assert "year_6_plus" not in traits
+    assert "round_1" not in traits
+    assert "top_5" not in traits
+    day2 = closest_examples(build_cohort_index([
+        _obs_row(
+            sleeper_id="achane",
+            name="De'Von Achane",
+            years_experience=2,
+            draft_capital_bucket="day_2",
+            previous_season_finish=5,
+        )
+    ])["observations"])
+    assert "Day 2" in day2[0]["traits"]
+    assert "Year 3" in day2[0]["traits"]
+    assert all("_" not in str(t) for t in day2[0]["traits"])
 
 
 def test_index_trajectory_ignores_outcome_year_actuals():

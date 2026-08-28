@@ -7,6 +7,24 @@ CHANGELOG = [
     {
         "date": "2026-08-28",
         "tag": "fix",
+        "text": "Draft Cheat Sheet Trends: collapsed tables on a phone stack the heading and the peek line so NFL Round 1 52% is not clipped off the right edge.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
+        "tag": "fix",
+        "text": "Draft Cheat Sheet Hist: closest-example tags now read Year 6+, Round 1, and Top 5 instead of underscored keys.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
+        "tag": "update",
+        "text": "Draft Cheat Sheet Trends: NFL Round 1 capital is split into Top 10, picks 11-25, and the rest of Round 1, so early and late first-rounders are not mixed. Still NFL draft capital, not fantasy ADP.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
+        "tag": "fix",
         "text": "Draft Cheat Sheet Trends: combining a named bucket (NFL Round 1) with a numeric one (never top-12) no longer fails to load the selected profile.",
         "link": "/draft/cheat-sheet"
     },

@@ -387,6 +387,12 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert ".cs-trends-profile-tier.is-on" in body
     assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in body
     assert "box-shadow: inset 3px 0 0 var(--cs-pos)" in body
+    mobile_trends = body.split("@media (max-width: 720px)")[1].split("@media")[0]
+    assert "grid-template-columns: minmax(0, 1fr)" in mobile_trends
+    peek_css = mobile_trends.split(".cs-trends-card-peek")[1].split("}")[0]
+    assert "white-space: normal" in peek_css
+    assert "overflow-wrap: anywhere" in peek_css
+    assert "display: inline;" not in peek_css
     assert "backdrop-filter: blur(10px)" in body
     assert ".cs-trends-conf" in body
     assert "Descriptive — not a ranking input" not in body
@@ -403,6 +409,7 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "data-trends-tier" in script
     assert "function trendsScoutHtml" in script
     assert "function trendsLivePlayerFeatures" in script
+    assert "feats.nfl_draft_pick" in script
     assert "function trendsFeatsForPlayer" in script
     assert "trendsFeatsForPlayer(featsIndex, p)" in script
     assert "sticky.classList.toggle('is-picked'" in script
@@ -499,6 +506,30 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "Hist" in hist_fix["text"]
     assert "—" not in hist_fix["text"]
     assert "–" not in hist_fix["text"]
+    example_tags = next(
+        entry for entry in CHANGELOG
+        if "closest-example tags" in entry.get("text", "").lower()
+    )
+    assert example_tags["tag"] == "fix"
+    assert example_tags["link"] == "/draft/cheat-sheet"
+    assert "—" not in example_tags["text"]
+    assert "–" not in example_tags["text"]
+    mobile_peek = next(
+        entry for entry in CHANGELOG
+        if "clipped off the right edge" in entry.get("text", "").lower()
+    )
+    assert mobile_peek["tag"] == "fix"
+    assert mobile_peek["link"] == "/draft/cheat-sheet"
+    assert "—" not in mobile_peek["text"]
+    assert "–" not in mobile_peek["text"]
+    capital_split = next(
+        entry for entry in CHANGELOG
+        if "Top 10" in entry.get("text", "") and "rest of Round 1" in entry.get("text", "")
+    )
+    assert capital_split["tag"] == "update"
+    assert capital_split["link"] == "/draft/cheat-sheet"
+    assert "—" not in capital_split["text"]
+    assert "–" not in capital_split["text"]
     chance = next(
         entry for entry in CHANGELOG
         if "historical chance" in entry.get("text", "").lower()

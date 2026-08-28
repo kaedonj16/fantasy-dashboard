@@ -29,6 +29,8 @@ from dashboard_services.historical.definitions import (
     COMP_BOARD_TIERS,
     COMP_DIMENSION_ORDER,
     DRAFT_CAPITAL_ORDER,
+    DRAFT_CAPITAL_ROUND_1,
+    TRENDS_ROUND1_PICK_RANGES,
     PRIOR_FINISH_BUCKETS,
     RYOE_BUCKETS,
     SKILL_POSITIONS,
@@ -36,6 +38,7 @@ from dashboard_services.historical.definitions import (
     TARGET_SHARE_BUCKETS,
     display_percent,
     draft_capital_bucket,
+    trends_round1_pick_range,
     wilson_interval,
     integer_age,
     normalize_adp,
@@ -63,6 +66,7 @@ PRESEASON_FIELDS: tuple[str, ...] = (
     "years_experience",
     "age",
     "draft_capital_bucket",
+    "nfl_draft_pick",
     "previous_season_finish",
     "previous_season_target_share",
     "previous_season_snap_pct",
@@ -368,6 +372,11 @@ def build_preseason_profiles(
             "years_experience": new_ye,
             "age": new_age,
             "draft_capital_bucket": capital,
+            "nfl_draft_pick": _optional_int(
+                row.get("nfl_draft_pick")
+                if row.get("nfl_draft_pick") is not None
+                else row.get("draft_pick")
+            ),
             "previous_season_finish": _optional_int(row.get("ppr_positional_finish")),
             "previous_season_target_share": _optional_float(row.get("target_share")),
             "previous_season_snap_pct": _optional_float(row.get("snap_pct")),
@@ -443,6 +452,12 @@ def query_for_board_player(
         )
         if cap:
             query["draft_capital_bucket"] = cap
+    if query.get("nfl_draft_pick") is None:
+        pick = _optional_int(player.get("nfl_draft_pick"))
+        if pick is None and _optional_int(query.get("years_experience")) == 0:
+            pick = _optional_int(player.get("draft_pick"))
+        if pick is not None and pick > 0:
+            query["nfl_draft_pick"] = pick
     if query.get("prior_top12_count") is None and _optional_int(query.get("years_experience")) == 0:
         query["prior_top12_count"] = 0
     adp = live_redraft_adp(player)
@@ -651,6 +666,32 @@ def _as_rate(rec: Any) -> dict:
     return {}
 
 
+def _cohort_rate_for_filters(
+    aggregates: Mapping[str, Any],
+    pos: str,
+    filters: Sequence[Mapping[str, Any]],
+) -> dict:
+    """Season-level hit rates for one Trends match spec, from the cohort index."""
+    from dashboard_services.historical.cohorts import evaluate_cohort
+
+    out = evaluate_cohort(aggregates, position=pos, filters=list(filters))
+    if not isinstance(out, Mapping) or not out.get("sample_size"):
+        return {}
+    rates = out.get("rates") if isinstance(out.get("rates"), Mapping) else {}
+    lead = rates.get("top_12") if isinstance(rates.get("top_12"), Mapping) else out
+    bundle = dict(lead) if isinstance(lead, Mapping) else {}
+    if bundle.get("display_pct") is None and out.get("display_pct") is not None:
+        bundle["display_pct"] = out.get("display_pct")
+    if bundle.get("sample_size") is None:
+        bundle["sample_size"] = out.get("sample_size")
+    if rates:
+        bundle["by_tier"] = dict(rates)
+        for tier, rec in rates.items():
+            if isinstance(rec, Mapping):
+                bundle[str(tier)] = rec
+    return bundle
+
+
 def build_player_feature_index(aggregates: Mapping[str, Any]) -> dict[str, dict]:
     """Compact preseason buckets for Trends matching. JSON lookup only."""
     pre = aggregates.get("preseason_profiles") or {}
@@ -712,6 +753,14 @@ def _match_eq(group: str, field: str, value: str) -> dict:
 
 def _match_in(group: str, field: str, values: Sequence[str]) -> dict:
     return {"group": group, "field": field, "in": list(values)}
+
+
+def _match_between(group: str, field: str, lo: int, hi: int) -> dict:
+    return {"group": group, "field": field, "between": [lo, hi]}
+
+
+def _round1_pick_match(lo: int, hi: int) -> dict:
+    return _match_between("draft_capital", "nfl_draft_pick", lo, hi)
 
 
 def _display_pct_block(block: Any) -> Optional[dict]:
@@ -938,36 +987,48 @@ def build_hist_trends(
 
     capital = (aggregates.get("draft_capital") or {}).get(pos) or {}
     cap = feats.get("draft_capital")
-    cap_label = format_comp_bucket_value("draft_capital", cap) if cap else ""
-    cap_rec = ((capital.get("season_level_by_capital") or {}).get(cap) or {}) if cap else {}
-    if cap:
-        top5 = _as_rate(cap_rec.get("top_5")).get("display_pct")
+    pick = _optional_int(query.get("nfl_draft_pick") or feats.get("nfl_draft_pick"))
+    pick_band = trends_round1_pick_range(pick)
+    cap_label = ""
+    cap_rec: Mapping[str, Any] = {}
+    if pick_band:
+        _key, cap_label, lo, hi = pick_band
+        cap_rec = _cohort_rate_for_filters(
+            aggregates, pos, [_round1_pick_match(lo, hi)]
+        )
+    if not cap_rec and cap:
+        cap_label = format_comp_bucket_value("draft_capital", cap) if cap else ""
+        cap_rec = ((capital.get("season_level_by_capital") or {}).get(cap) or {}) if cap else {}
+    if cap_label:
+        top5 = _as_rate(cap_rec.get("top_5") if isinstance(cap_rec, Mapping) else None).get("display_pct")
         add(_trend_row(
             kind="draft_capital",
             label="Draft capital",
             bucket=cap_label,
             sentence=f"NFL {cap_label} {pos}s finished top-12",
-            rate=cap_rec.get("top_12"),
+            rate=cap_rec.get("top_12") if isinstance(cap_rec, Mapping) and "top_12" in cap_rec else cap_rec,
             baseline_pct=baseline_pct,
             secondary=f"{top5}% top-5" if top5 is not None else None,
         ))
         bust_cut = ABSOLUTE_BUST_OUTSIDE.get(pos)
         if bust_cut is not None:
+            coarse_label = format_comp_bucket_value("draft_capital", cap) if cap else cap_label
             add(_trend_row(
                 kind="capital_miss",
                 label="Miss rate",
-                bucket=cap_label,
-                sentence=f"NFL {cap_label} {pos}s finished outside the top-{bust_cut}",
-                rate=cap_rec.get("absolute_bust"),
+                bucket=coarse_label,
+                sentence=f"NFL {coarse_label} {pos}s finished outside the top-{bust_cut}",
+                rate=((capital.get("season_level_by_capital") or {}).get(cap) or {}).get("absolute_bust") if cap else None,
                 polarity="miss",
             ))
         for window_id, heading, _note in CUMULATIVE_TREND_WINDOWS:
             window = (capital.get("cumulative") or {}).get(window_id) or {}
             when = "as a rookie" if window_id == "top12_as_rookie" else "by year 2"
+            coarse_label = format_comp_bucket_value("draft_capital", cap) if cap else cap_label
             add(_trend_row(
                 kind=window_id,
                 label=heading,
-                bucket=cap_label,
+                bucket=coarse_label,
                 sentence=f"NFL {cap_label} {pos}s posted a top-12 {when}",
                 rate=(window.get("by_capital") or {}).get(cap),
             ))
@@ -1627,7 +1688,27 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
     capital = (aggregates.get("draft_capital") or {}).get(pos) or {}
     cap_map = capital.get("season_level_by_capital") or {}
     cap_rows = []
+    pick_rows = []
+    for key, label, lo, hi in TRENDS_ROUND1_PICK_RANGES:
+        match = _round1_pick_match(lo, hi)
+        bundle = _cohort_rate_for_filters(aggregates, pos, [match])
+        rec = bundle.get("top_12") or bundle
+        top5 = _as_rate(bundle.get("top_5")).get("display_pct")
+        row = _section_row(
+            label,
+            rec,
+            baseline_pct=baseline_pct,
+            baselines=finish_baselines,
+            secondary=f"{top5}% top-5" if top5 is not None else None,
+            row_id=f"draft_capital:{key}",
+            match=match,
+            pcts=_collect_pcts(bundle),
+        )
+        if row:
+            pick_rows.append(row)
     for key in DRAFT_CAPITAL_ORDER:
+        if key == DRAFT_CAPITAL_ROUND_1 and pick_rows:
+            continue
         bundle = cap_map.get(key) or {}
         rec = bundle.get("top_12")
         top5 = _as_rate(bundle.get("top_5")).get("display_pct")
@@ -1644,11 +1725,15 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         )
         if row:
             cap_rows.append(row)
+    cap_rows = pick_rows + cap_rows
     _append_section(
         sections,
         sid="draft_capital",
         heading="NFL draft capital",
-        note=f"Season-level hit rate for {pos}s by NFL draft capital, not fantasy ADP.",
+        note=(
+            f"Season-level hit rate for {pos}s by NFL draft capital, not fantasy ADP. "
+            "Round 1 is split by overall pick (Top 10, 11-25, rest of Round 1)."
+        ),
         rows=cap_rows,
         finish_tied=True,
     )

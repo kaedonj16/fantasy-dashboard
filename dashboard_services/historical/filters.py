@@ -201,6 +201,11 @@ def extract_trend_features(row: Mapping[str, Any]) -> dict[str, Any]:
     feats = extract_comp_query(row)
     if not feats:
         return {}
+    pick = _optional_int(row.get("nfl_draft_pick"))
+    if pick is None:
+        pick = _optional_int(row.get("draft_pick"))
+    if pick is not None and pick > 0:
+        feats["nfl_draft_pick"] = pick
     age = integer_age(row.get("age"))
     if age is not None:
         feats["age"] = age
@@ -269,6 +274,13 @@ def live_board_trend_features(player: Mapping[str, Any]) -> dict[str, Any]:
         )
     if cap:
         row["draft_capital_bucket"] = cap
+    pick = _optional_int(
+        player.get("nfl_draft_pick")
+        if player.get("nfl_draft_pick") is not None
+        else player.get("draft_pick")
+    )
+    if pick is not None and pick > 0:
+        row["nfl_draft_pick"] = pick
     age = integer_age(player.get("age"))
     if age is None:
         age_f = _optional_float(player.get("age"))
@@ -301,6 +313,9 @@ def live_class_preseason_profile(
     }
     if cap:
         rec["draft_capital_bucket"] = cap
+    overall = _optional_int(pick.get("pick") if pick.get("pick") is not None else pick.get("draft_pick"))
+    if overall is not None and overall > 0:
+        rec["nfl_draft_pick"] = overall
     age = age_as_of_season_start(
         identity.get("bDay") or identity.get("bday") or identity.get("birth_date"),
         upcoming_season,
@@ -366,6 +381,54 @@ def stamp_live_draft_class_profiles(
         by_player[pid] = rec
         added += 1
     return added
+
+
+def apply_nfl_draft_pick_overlay(data: dict, pick_map: Mapping[str, Any]) -> int:
+    """Stamp overall NFL pick onto cohort feats and preseason profiles.
+
+    Pick is player-constant. Existing values win. Missing pick stays omitted
+    (unknown does not match a pick-range filter).
+    """
+    if not isinstance(data, dict) or not isinstance(pick_map, Mapping) or not pick_map:
+        return 0
+    resolved: dict[str, int] = {}
+    raw = pick_map.get("picks") if isinstance(pick_map.get("picks"), Mapping) else pick_map
+    if not isinstance(raw, Mapping):
+        return 0
+    for pid, value in raw.items():
+        pick = _optional_int(value)
+        if pick is None or pick <= 0:
+            continue
+        resolved[str(pid)] = pick
+    if not resolved:
+        return 0
+    stamped = 0
+    index = data.get("cohort_index") if isinstance(data.get("cohort_index"), dict) else {}
+    for obs in index.get("observations") or []:
+        if not isinstance(obs, dict):
+            continue
+        pid = str(obs.get("pid") or "")
+        pick = resolved.get(pid)
+        if pick is None:
+            continue
+        feats = obs.get("feats")
+        if not isinstance(feats, dict):
+            feats = {}
+            obs["feats"] = feats
+        if feats.get("nfl_draft_pick") is None:
+            feats["nfl_draft_pick"] = pick
+            stamped += 1
+    pre = data.get("preseason_profiles") if isinstance(data.get("preseason_profiles"), dict) else {}
+    by_player = pre.get("by_player") if isinstance(pre.get("by_player"), dict) else {}
+    for pid, rec in by_player.items():
+        if not isinstance(rec, dict):
+            continue
+        pick = resolved.get(str(pid))
+        if pick is None or rec.get("nfl_draft_pick") is not None:
+            continue
+        rec["nfl_draft_pick"] = pick
+        stamped += 1
+    return stamped
 
 
 def matched_filter_labels(
