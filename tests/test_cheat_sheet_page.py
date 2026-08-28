@@ -170,6 +170,8 @@ def test_cheat_sheet_consensus_adp_matches_rankings_to_one_decimal():
     assert "x.adp != null ? Math.round(x.adp) : ''" not in script
     assert "adp_source=' + encodeURIComponent(state.adpSource)" not in script
     assert "params = params.concat(leagueParams());" in script
+    assert "params = ['view=board']" in script
+    assert "window.__cheatPlayersP" in script
     # Rankings Consensus column is the same 1-decimal adp_by_source field.
     assert "prAdpSourceVal(p, c.value)" in rankings
     assert "(v != null ? v.toFixed(1) : '–')" in rankings
@@ -283,6 +285,40 @@ def test_in_draft_cheat_sheet_is_a_full_screen_mobile_dialog():
     assert ".dr-cheat-frame { height: 0; }" in body
     assert "document.body.classList.add('dr-cheat-open')" in script
     assert "document.body.classList.remove('dr-cheat-open')" in script
+
+
+def test_in_draft_cheat_sheet_sits_beside_undo_not_in_settings():
+    """On the live/mock board, Cheat Sheet is one tap — not buried in Settings.
+
+    The control lives in the always-visible .dr-side-opts cluster (Undo, Cheat,
+    Trade, Settings). That wrap relocates to the status bar on desktop and
+    beside the side-panel tabs on mobile, so the link stays reachable either
+    way. Setup-page hero #drToCheatSheet is unchanged. Unmodified click still
+    opens the overlay; Cmd/Ctrl/middle-click still opens a tab.
+    """
+    from dashboard_services.pages.draft_room_page import build_draft_room_body
+
+    body = build_draft_room_body(None, None, None)
+    script = (Path(__file__).parents[1] / "static" / "draft_room.js").read_text()
+
+    opts_start = body.index('class="dr-side-opts"')
+    panel_start = body.index('id="drOptsPanel"')
+    cluster = body[opts_start:panel_start]
+    panel = body[panel_start:body.index('id="drBestControls"')]
+
+    assert 'id="drOptsCheatSheet"' in cluster
+    assert 'id="drUndo"' in cluster
+    assert 'id="drPickTradeBtn"' in cluster
+    assert 'id="drOptsBtn"' in cluster
+    assert 'class="dr-opts-trigger dr-cs-trigger"' in cluster
+    assert 'id="drOptsCheatSheet"' not in panel
+    assert 'id="drSummaryBtn"' in panel
+    assert 'id="drToCheatSheet"' in body
+
+    assert "var _cs2 = document.getElementById('drOptsCheatSheet');" in script
+    assert "if (_cs2) _cs2.addEventListener('click', function(e){" in script
+    assert "openCheatSheet();" in script
+    assert "if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;" in script
 
 
 def test_embedded_cheat_sheet_keeps_mobile_content_scrollable():
@@ -720,6 +756,21 @@ def test_changelog_announces_predraft_cheat_sheet_sidebar():
     assert entry["tag"] == "fix"
     assert entry["link"] == "/draft/cheat-sheet"
     assert "cheat sheet" in entry["text"].lower()
+    assert "—" not in entry["text"]
+    assert "–" not in entry["text"]
+
+
+def test_changelog_announces_in_draft_cheat_sheet_control():
+    from dashboard_services.changelog import CHANGELOG
+
+    entry = next(
+        e for e in CHANGELOG
+        if "settings dropdown" in e.get("text", "").lower()
+        and "cheat sheet" in e.get("text", "").lower()
+    )
+    assert entry["date"] == "2026-08-28"
+    assert entry["tag"] == "update"
+    assert entry["link"] == "/draft"
     assert "—" not in entry["text"]
     assert "–" not in entry["text"]
 

@@ -15051,6 +15051,13 @@ def api_sparklines():
 
 _LP_PAYLOAD_CACHE: dict = {}  # kdef(bool) -> {"ts": model_ts, "payload": dict}
 _LP_PAYLOAD_LOCK = threading.Lock()
+# Overlay = canonical projections + Market vs ADP + Hist, on a copy of the
+# memoized pool. Cached separately because that work used to run on every
+# /api/league-players hit even after the base pool was warm — the cheat sheet's
+# first paint paid it in full. Board JSON is the slim view=board body.
+_LP_OVERLAY_CACHE: dict = {}
+_LP_OVERLAY_LOCK = threading.Lock()
+_LP_BOARD_JSON_CACHE: dict = {}
 
 _ADP_FIELDS = ("avg_pick", "sf_avg_pick", "rookie_avg_pick",
                "sf_rookie_avg_pick", "redraft_avg_pick", "sf_redraft_avg_pick")
@@ -16158,15 +16165,193 @@ def api_market_intel_health():
     return resp
 
 
+def _lp_overlay_cache_key(kdef, projection_settings, projection_season, scoring_type):
+    """Identity for the per-request overlay (projections + Market vs ADP + Hist)."""
+    from utils.projection_resolver import scoring_fingerprint as _scoring_fp
+    get_model_value_table_cached()
+    model_ts = _MODEL_VALUE_CACHE_TS
+    try:
+        from dashboard_services.adp_service import global_adp_snapshot_signature
+        adp_sig = global_adp_snapshot_signature()
+    except Exception:
+        adp_sig = 0.0
+    return (
+        bool(kdef), model_ts, adp_sig, _scoring_fp(projection_settings or {}),
+        int(projection_season), str(scoring_type or "redraft"),
+    )
+
+
+def _overlay_league_players_payload(
+    payload: dict,
+    *,
+    kdef: bool,
+    projection_settings: dict,
+    projection_season: int,
+    scoring_type: str,
+) -> dict:
+    """Copy the memoized pool and stamp canonical projections, Market vs ADP, and Hist.
+
+    The copy keeps the shared cached player pool immutable. Results are memoized
+    so the cheat sheet / Draft Room do not rebuild this overlay on every hit.
+    ``market_vs_adp`` is the 1QB axis; callers that need Superflex flip it from
+    ``sf_market_vs_adp`` on a copy at serve time.
+    """
+    key = _lp_overlay_cache_key(kdef, projection_settings, projection_season, scoring_type)
+    with _LP_OVERLAY_LOCK:
+        cached = _LP_OVERLAY_CACHE.get(key)
+        if cached and cached.get("key") == key:
+            return cached["payload"]
+
+        payload = dict(payload or {})
+        payload["players"] = [dict(p) for p in (payload.get("players") or [])]
+
+        # Resolve the exact season-average projection context once on the backend.
+        # All board consumers (display, Pick Score, recommendation, grade and VOR)
+        # receive this same value and its provenance; the browser does not choose a
+        # provider or perform a second scoring adjustment.
+        try:
+            from utils.projection_resolver import resolve_projected_ppg_many as _resolve_ppg_many
+            _projection_players = payload.get("players") or []
+            _projection_results = _resolve_ppg_many(
+                [str(p.get("id")) for p in _projection_players], projection_settings,
+                projection_season,
+                positions={str(p.get("id")): str(p.get("position") or "") for p in _projection_players},
+            )
+            for _projection_player in _projection_players:
+                _projection = _projection_results.get(str(_projection_player.get("id")))
+                if not _projection:
+                    continue
+                _projection_player["projection"] = _projection
+                _projection_player["proj_ppg"] = _projection.get("ppg")
+        except Exception:
+            logger.exception("[api/league-players] canonical projection resolution failed")
+            from utils.projection_resolver import (PROJECTION_CACHE_VERSION as _pcv,
+                                                   scoring_fingerprint as _scoring_fp)
+            _failed_fp = _scoring_fp(projection_settings or {})
+            _failed_season = int(projection_season or datetime.now().year)
+            for _projection_player in payload.get("players") or []:
+                _projection_player["projection"] = {
+                    "ppg": None, "season_points": None, "projected_games": None,
+                    "source": None, "source_projection_type": None,
+                    "projection_type": "season_average", "unit": "points_per_game",
+                    "scoring_variant": None, "scoring_fingerprint": _failed_fp,
+                    "season": _failed_season, "week": None, "fallback_used": True,
+                    "position": str(_projection_player.get("position") or "").upper(),
+                    "cache_version": _pcv,
+                }
+
+        # Season context only. Weekly props are deliberately never annualized for
+        # the Cheat Sheet. The copy keeps the shared cached player pool immutable.
+        try:
+            from dashboard_services.market_intelligence.adp import attach_market_vs_adp as _attach_mi_adp
+            from dashboard_services.market_intelligence.repository import load_market_projections as _load_mi_adp
+            _mi_season = int(projection_season)
+            _mi_players = payload.get("players") or []
+            _mi_proj = _load_mi_adp(_mi_season, None, context="season",
+                                    player_ids=[str(p.get("id")) for p in _mi_players])
+            if _mi_proj:
+                _mi_scoring = str(scoring_type or "redraft").strip().lower()
+                if _mi_scoring in ("startup",):
+                    _mi_scoring = "dynasty"
+                if _mi_scoring not in ("redraft", "dynasty", "rookie"):
+                    _mi_scoring = "redraft"
+                # Stamp both 1QB/SF formats for this scoring type (pos-rank style).
+                _diag_1qb = _attach_mi_adp(_mi_players, _mi_proj, is_superflex=False,
+                                           scoring_type=_mi_scoring)
+                for _mp in _mi_players:
+                    _mp["market_vs_adp_1qb"] = _mp.get("market_vs_adp")
+                    _mp["market_vs_adp"] = None
+                _diag_sf = _attach_mi_adp(_mi_players, _mi_proj, is_superflex=True,
+                                          scoring_type=_mi_scoring)
+                for _mp in _mi_players:
+                    _mp["sf_market_vs_adp"] = _mp.get("market_vs_adp")
+                    _mp["market_vs_adp"] = _mp.get("market_vs_adp_1qb")
+                if os.getenv("MARKET_INTEL_DIAGNOSTICS", "").strip().lower() in ("1", "true", "yes"):
+                    logger.info("[market] Market vs ADP curve diagnostics:")
+                    for _position, _curve in _diag_1qb.get("curves", {}).items():
+                        logger.info("[market]   %s samples: %s bins: %s", _position,
+                                    _curve.get("samples", 0), _curve.get("bins", 0))
+                    logger.info("[market]   qualified values: %s", _diag_1qb.get("qualified", 0))
+                    logger.info("[market]   capped values: %s", _diag_1qb.get("capped", 0))
+                    logger.info("[market]   max positive edge: %+0.1f",
+                                _diag_1qb.get("max_positive_edge", 0))
+                    logger.info("[market]   max negative edge: %+0.1f",
+                                _diag_1qb.get("max_negative_edge", 0))
+                    for _example in _diag_1qb.get("examples", []):
+                        logger.info("[market] Market vs ADP example: %s", _example)
+            from dashboard_services.market_intelligence.repository import market_vs_adp_availability
+            payload["players"] = _mi_players
+            payload["market_vs_adp"] = market_vs_adp_availability(_mi_players, _mi_proj)
+            payload["market_vs_adp_available"] = payload["market_vs_adp"]["available"]
+            payload["market_vs_adp_meta"] = {
+                "season_rows": len(_mi_proj),
+                "players_covered": payload["market_vs_adp"]["qualified_players"],
+                "as_of": payload["market_vs_adp"]["last_updated"],
+            }
+        except Exception:
+            logger.debug("season market intelligence unavailable", exc_info=True)
+            payload["market_vs_adp_available"] = False
+            payload["market_vs_adp"] = {"available": False, "qualified_players": 0,
+                                        "last_updated": None, "source_status": "unavailable"}
+
+        try:
+            from dashboard_services.historical.aggregates_store import stamp_historical_on_payload
+            payload = stamp_historical_on_payload(payload)
+        except Exception:
+            logger.debug("[api/league-players] historical stamp skipped", exc_info=True)
+            payload["historical_available"] = False
+
+        _LP_BOARD_JSON_CACHE.clear()
+        if len(_LP_OVERLAY_CACHE) > 12:
+            _LP_OVERLAY_CACHE.clear()
+        _LP_OVERLAY_CACHE[key] = {"key": key, "payload": payload}
+        return payload
+
+
+def _apply_league_type_market(payload: dict, *, is_sf: bool) -> dict:
+    """Point ``market_vs_adp`` at the requested 1QB/SF axis without mutating cache."""
+    if not is_sf:
+        return payload
+    payload = dict(payload)
+    payload["players"] = [
+        {**p, "market_vs_adp": p.get("sf_market_vs_adp")}
+        for p in (payload.get("players") or [])
+    ]
+    return payload
+
+
+def _dumps_league_players(payload: dict) -> str:
+    body = json.dumps(_sanitize_for_json(payload), separators=(",", ":"), default=str)
+    return body.replace("<", "\\u003c").replace(">", "\\u003e")
+
+
+def _board_league_players_response(payload: dict, *, overlay_key, is_sf: bool):
+    """Cheat-sheet JSON: skill players, board columns, compact encoding."""
+    cache_key = overlay_key + (bool(is_sf),)
+    cached = _LP_BOARD_JSON_CACHE.get(cache_key)
+    if cached is not None:
+        resp = app.response_class(cached, mimetype="application/json")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+    from dashboard_services.league_players_board import slim_board_payload
+    slim = slim_board_payload(payload, is_superflex=is_sf)
+    body = _dumps_league_players(slim)
+    _LP_BOARD_JSON_CACHE[cache_key] = body
+    resp = app.response_class(body, mimetype="application/json")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 def _league_players_response(payload: dict):
     """Stamp compact historical signals, then jsonify. Does not change ranking inputs."""
-    try:
-        from dashboard_services.historical.aggregates_store import stamp_historical_on_payload
-        payload = stamp_historical_on_payload(payload)
-    except Exception:
-        logger.debug("[api/league-players] historical stamp skipped", exc_info=True)
-        payload = dict(payload or {})
-        payload["historical_available"] = False
+    if "historical_available" not in (payload or {}):
+        try:
+            from dashboard_services.historical.aggregates_store import stamp_historical_on_payload
+            payload = stamp_historical_on_payload(payload)
+        except Exception:
+            logger.debug("[api/league-players] historical stamp skipped", exc_info=True)
+            payload = dict(payload or {})
+            payload["historical_available"] = False
     resp = jsonify(_sanitize_for_json(payload))
     resp.headers["Cache-Control"] = "no-store"
     return resp
@@ -16174,114 +16359,138 @@ def _league_players_response(payload: dict):
 
 @app.route("/api/league-players")
 def api_league_players():
-    payload = _build_league_players_payload(kdef=bool(request.args.get("kdef")))
+    kdef = bool(request.args.get("kdef"))
+    payload = _build_league_players_payload(kdef=kdef)
 
-    # Resolve the exact season-average projection context once on the backend.
-    # All board consumers (display, Pick Score, recommendation, grade and VOR)
-    # receive this same value and its provenance; the browser does not choose a
-    # provider or perform a second scoring adjustment.
     try:
-        from utils.projection_resolver import resolve_projected_ppg_many as _resolve_ppg_many
         _projection_settings = {
             "rec": float(request.args.get("proj_rec", 1.0)),
             "bonus_rec_te": float(request.args.get("proj_te_bonus", 0.0)),
             "pass_td": float(request.args.get("proj_pass_td", 4.0)),
         }
-        _projection_season = int(request.args.get("season") or (get_nfl_state() or {}).get("season") or datetime.now().year)
-        _projection_players = payload.get("players") or []
-        _projection_results = _resolve_ppg_many(
-            [str(p.get("id")) for p in _projection_players], _projection_settings,
-            _projection_season,
-            positions={str(p.get("id")): str(p.get("position") or "") for p in _projection_players},
-        )
-        for _projection_player in _projection_players:
-            _projection = _projection_results.get(str(_projection_player.get("id")))
-            if not _projection:
-                continue
-            _projection_player["projection"] = _projection
-            _projection_player["proj_ppg"] = _projection.get("ppg")
-    except Exception as _projection_error:
-        logger.exception("[api/league-players] canonical projection resolution failed")
-        # The production contract always carries explicit canonical metadata,
-        # even during an upstream/cache failure. Legacy proj_ppg remains only a
-        # client compatibility field; it is not silently promoted to canonical.
-        from utils.projection_resolver import (PROJECTION_CACHE_VERSION as _pcv,
-                                               scoring_fingerprint as _scoring_fp)
-        _failed_fp = _scoring_fp(locals().get("_projection_settings") or {})
-        _failed_season = int(locals().get("_projection_season") or datetime.now().year)
-        for _projection_player in payload.get("players") or []:
-            _projection_player["projection"] = {
-                "ppg": None, "season_points": None, "projected_games": None,
-                "source": None, "source_projection_type": None,
-                "projection_type": "season_average", "unit": "points_per_game",
-                "scoring_variant": None, "scoring_fingerprint": _failed_fp,
-                "season": _failed_season, "week": None, "fallback_used": True,
-                "position": str(_projection_player.get("position") or "").upper(),
-                "cache_version": _pcv,
-            }
+    except (TypeError, ValueError):
+        _projection_settings = {"rec": 1.0, "bonus_rec_te": 0.0, "pass_td": 4.0}
+    _projection_season = int(
+        request.args.get("season") or (get_nfl_state() or {}).get("season") or datetime.now().year
+    )
+    _mi_scoring = str(request.args.get("scoring_type") or "redraft").strip().lower()
+    if _mi_scoring in ("startup",):
+        _mi_scoring = "dynasty"
+    if _mi_scoring not in ("redraft", "dynasty", "rookie"):
+        _mi_scoring = "redraft"
+    _mi_is_sf = str(request.args.get("league_type") or "").lower() in ("sf", "superflex")
+    _view_board = str(request.args.get("view") or "").strip().lower() == "board"
+    overlay_key = _lp_overlay_cache_key(
+        kdef, _projection_settings, _projection_season, _mi_scoring,
+    )
+    payload = _overlay_league_players_payload(
+        payload,
+        kdef=kdef,
+        projection_settings=_projection_settings,
+        projection_season=_projection_season,
+        scoring_type=_mi_scoring,
+    )
 
-    # Season context only. Weekly props are deliberately never annualized for
-    # the Cheat Sheet. The copy keeps the shared cached player pool immutable.
-    try:
-        from dashboard_services.market_intelligence.adp import attach_market_vs_adp as _attach_mi_adp
-        from dashboard_services.market_intelligence.repository import load_market_projections as _load_mi_adp
-        _mi_season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
-        _mi_players = [dict(p) for p in (payload.get("players") or [])]
-        _mi_proj = _load_mi_adp(_mi_season, None, context="season",
-                                player_ids=[str(p.get("id")) for p in _mi_players])
-        if _mi_proj:
-            _mi_is_sf = str(request.args.get("league_type") or "").lower() in ("sf", "superflex")
-            _mi_scoring = str(request.args.get("scoring_type") or "redraft").strip().lower()
-            if _mi_scoring in ("startup",):
-                _mi_scoring = "dynasty"
-            if _mi_scoring not in ("redraft", "dynasty", "rookie"):
-                _mi_scoring = "redraft"
-            # Stamp both 1QB/SF formats for this scoring type (pos-rank style).
-            _diag_1qb = _attach_mi_adp(_mi_players, _mi_proj, is_superflex=False,
-                                       scoring_type=_mi_scoring)
-            for _mp in _mi_players:
-                _mp["market_vs_adp_1qb"] = _mp.get("market_vs_adp")
-                _mp["market_vs_adp"] = None
-            _diag_sf = _attach_mi_adp(_mi_players, _mi_proj, is_superflex=True,
-                                      scoring_type=_mi_scoring)
-            for _mp in _mi_players:
-                _mp["sf_market_vs_adp"] = _mp.get("market_vs_adp")
-                _mp["market_vs_adp"] = (
-                    _mp.get("sf_market_vs_adp") if _mi_is_sf else _mp.get("market_vs_adp_1qb")
+    def _finish(result, *, board_cacheable=True):
+        if _view_board:
+            if board_cacheable:
+                return _board_league_players_response(
+                    result, overlay_key=overlay_key, is_sf=_mi_is_sf,
                 )
-            _mi_diagnostics = _diag_sf if _mi_is_sf else _diag_1qb
-            if os.getenv("MARKET_INTEL_DIAGNOSTICS", "").strip().lower() in ("1", "true", "yes"):
-                logger.info("[market] Market vs ADP curve diagnostics:")
-                for _position, _curve in _mi_diagnostics.get("curves", {}).items():
-                    logger.info("[market]   %s samples: %s bins: %s", _position,
-                                _curve.get("samples", 0), _curve.get("bins", 0))
-                logger.info("[market]   qualified values: %s", _mi_diagnostics.get("qualified", 0))
-                logger.info("[market]   capped values: %s", _mi_diagnostics.get("capped", 0))
-                logger.info("[market]   max positive edge: %+0.1f",
-                            _mi_diagnostics.get("max_positive_edge", 0))
-                logger.info("[market]   max negative edge: %+0.1f",
-                            _mi_diagnostics.get("max_negative_edge", 0))
-                for _example in _mi_diagnostics.get("examples", []):
-                    logger.info("[market] Market vs ADP example: %s", _example)
-        from dashboard_services.market_intelligence.repository import market_vs_adp_availability
-        payload = dict(payload)
-        payload["players"] = _mi_players
-        payload["market_vs_adp"] = market_vs_adp_availability(_mi_players, _mi_proj)
-        payload["market_vs_adp_available"] = payload["market_vs_adp"]["available"]
-        # Retain the old summary for clients which already consume it.
-        payload["market_vs_adp_meta"] = {
-            "season_rows": len(_mi_proj),
-            "players_covered": payload["market_vs_adp"]["qualified_players"],
-            "as_of": payload["market_vs_adp"]["last_updated"],
-        }
-    except Exception:
-        logger.debug("season market intelligence unavailable", exc_info=True)
-        payload = dict(payload)
-        payload["market_vs_adp_available"] = False
-        payload["market_vs_adp"] = {"available": False, "qualified_players": 0,
-                                    "last_updated": None, "source_status": "unavailable"}
+            from dashboard_services.league_players_board import slim_board_payload
+            slim = slim_board_payload(result, is_superflex=_mi_is_sf)
+            resp = app.response_class(_dumps_league_players(slim), mimetype="application/json")
+            resp.headers["Cache-Control"] = "no-store"
+            return resp
+        return _league_players_response(_apply_league_type_market(result, is_sf=_mi_is_sf))
 
     # Historical draft views pass ?season=<yr> so grades use the ADP OF THAT
+    # SEASON (Sleeper's projections API is season-keyed; the crawl fallback too),
+    # not today's. We overlay onto a COPY so the shared memoized payload — which
+    # carries current-season ADP — is never mutated. Player value stays current
+    # (no historical value snapshots exist), so only the ADP term is point-in-time.
+    _cur_season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
+    _season_arg = request.args.get("season")
+    try:
+        _want_season = int(_season_arg) if _season_arg else _cur_season
+    except (TypeError, ValueError):
+        _want_season = _cur_season
+
+    # Explicit ADP source selector (rankings / draft room dropdowns). "auto"
+    # (or absent) keeps the memoized default attach; any real source overlays
+    # onto a copy so one user's choice never leaks into the shared pool.
+    from dashboard_services.adp_service import ADP_SOURCE_LABELS
+    _adp_source = (request.args.get("adp_source") or "").strip().lower()
+    if _adp_source not in ADP_SOURCE_LABELS:
+        _adp_source = ""
+
+    if _want_season != _cur_season:
+        _players = [dict(_p) for _p in (payload.get("players") or [])]
+        _adp_sources = _attach_adp_to_players(_players, _want_season, clear_first=True, sleeper_only=True)
+        payload = dict(payload)
+        payload["players"] = _players
+        payload["adp_sources"] = _adp_sources
+        payload["adp_season"] = _want_season
+        return _finish(payload, board_cacheable=False)
+
+    if _adp_source:
+        _lg = (request.args.get("league_id") or session.get("last_league_id") or "").strip()
+        _plat = (request.args.get("platform") or session.get("last_platform") or "").strip().lower()
+        _tok = None
+        if _adp_source in ("yahoo", "consensus") and _plat == "yahoo" and _lg:
+            try:
+                from dashboard_services.providers.yahoo_api import get_league_token
+                _tok = get_league_token(_lg, _cur_season)
+            except Exception:
+                _tok = None
+        _players = [dict(_p) for _p in (payload.get("players") or [])]
+        _adp_sources = _attach_adp_from_source(_players, _cur_season, _adp_source,
+                                               league_id=_lg or None, token=_tok)
+        payload = dict(payload)
+        payload["players"] = _players
+        payload["adp_sources"] = _adp_sources
+        payload["adp_source"] = _adp_source
+        return _finish(payload, board_cacheable=False)
+
+    # Yahoo ADP column (redraft-only): for a viewer in a connected Yahoo league,
+    # overlay Yahoo's league-format-aware ADP (needs a league id + token) in place
+    # of the tokenless global Yahoo column the base payload already carries.
+    # Overlaid on a copy so it never leaks into the shared memoized payload, and
+    # inserted BEFORE consensus so consensus stays the last column.
+    _lg = (request.args.get("league_id") or session.get("last_league_id") or "").strip()
+    _plat = (request.args.get("platform") or session.get("last_platform") or "").strip().lower()
+    if _plat == "yahoo" and _lg and payload.get("adp_columns"):
+        try:
+            from dashboard_services.providers.yahoo_api import get_league_token
+            _ytok = get_league_token(_lg, _cur_season)
+        except Exception:
+            _ytok = None
+        if _ytok:
+            # Copy players AND their adp_by_source dict so attaching Yahoo doesn't
+            # mutate the shared cache (only a new 'yahoo' key is added to the copy).
+            _players = [{**_p, "adp_by_source": dict(_p.get("adp_by_source") or {})}
+                        for _p in (payload.get("players") or [])]
+            # Rebuild consensus alongside the league-specific Yahoo column. The
+            # cached consensus used tokenless global Yahoo; resolving both here
+            # makes the displayed consensus use every source available to this
+            # viewer, including the connected league's Yahoo data.
+            _ycols = _attach_all_adp_sources(_players, _cur_season, ["yahoo", "consensus"],
+                                             league_id=_lg, token=_ytok)
+            if _ycols:
+                _cols = list(payload.get("adp_columns") or [])
+                _cons = [c for c in _ycols if c.get("value") == "consensus"]
+                _yahoo = [c for c in _ycols if c.get("value") == "yahoo"]
+                # Drop the global Yahoo column too, so the league-token Yahoo
+                # column replaces it rather than showing two "Yahoo" columns.
+                _rest = [c for c in _cols if c.get("value") not in ("consensus", "yahoo")]
+                payload = dict(payload)
+                payload["players"] = _players
+                payload["adp_columns"] = _rest + _yahoo + _cons
+                return _finish(payload, board_cacheable=False)
+
+    # Projection rows vary by scoring fingerprint and schema version. Do not let
+    # a CDN/browser retain a pre-contract or differently scored player payload.
+    return _finish(payload)
     # SEASON (Sleeper's projections API is season-keyed; the crawl fallback too),
     # not today's. We overlay onto a COPY so the shared memoized payload — which
     # carries current-season ADP — is never mutated. Player value stays current
@@ -24351,6 +24560,23 @@ if os.environ.get("RUN_STARTUP_DAILY_BUILD") == "1":
     threading.Thread(target=_run_startup_daily, daemon=True).start()
 
 
+def _warm_league_players_board() -> None:
+    """Warm the overlay + slim cheat-sheet JSON the redraft sheet fetches."""
+    payload = _build_league_players_payload(kdef=False)
+    season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
+    settings = {"rec": 1.0, "bonus_rec_te": 0.0, "pass_td": 4.0}
+    overlay = _overlay_league_players_payload(
+        payload,
+        kdef=False,
+        projection_settings=settings,
+        projection_season=season,
+        scoring_type="redraft",
+    )
+    overlay_key = _lp_overlay_cache_key(False, settings, season, "redraft")
+    for is_sf in (False, True):
+        _board_league_players_response(overlay, overlay_key=overlay_key, is_sf=is_sf)
+
+
 def _warm_global_caches() -> None:
     """Best-effort warm of the league-independent caches (model value table +
     players index + the enriched league-players payload) so the first user
@@ -24362,14 +24588,15 @@ def _warm_global_caches() -> None:
 
     The enriched payload is the pool the cheat sheet and Draft Room fetch on
     load; its memoized build is the "first load is slow, the rest are fast"
-    cost, so warming it here removes the cold hit after a deploy."""
+    cost, so warming it here removes the cold hit after a deploy. The cheat
+    sheet's view=board JSON is warmed too so the first redraft open is a
+    cached dump rather than a rebuild."""
     try:
         time.sleep(float(os.environ.get("WARM_CACHES_DELAY", "30") or 30))
         t0 = time.perf_counter()
         for name, fn in (("model value table", get_model_value_table_cached),
                          ("players index", get_players_index_global),
-                         ("league-players payload",
-                          lambda: _build_league_players_payload(kdef=False))):
+                         ("league-players board", _warm_league_players_board)):
             try:
                 fn()
             except Exception:
@@ -24394,7 +24621,7 @@ def _keep_league_players_warm() -> None:
     while True:
         try:
             time.sleep(interval)
-            _build_league_players_payload(kdef=False)
+            _warm_league_players_board()
         except Exception:
             logger.debug("league-players keep-warm failed", exc_info=True)
 

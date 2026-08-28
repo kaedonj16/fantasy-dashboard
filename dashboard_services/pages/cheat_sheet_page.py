@@ -69,8 +69,21 @@ def build_cheat_sheet_body(
         .replace(">", "\\u003e")
         .replace("&", "\\u0026")
     )
+    # Kick the player-pool fetch before the deferred board scripts download so
+    # the redraft sheet's first paint overlaps JS parse instead of waiting on it.
+    prefetch = (
+        "<script>(function(){var c=window.__cheatCfg||{};"
+        "var p=['view=board','league_type='+(c.isSuperflex?'sf':'1qb')];"
+        "if(c.leagueId)p.push('league_id='+encodeURIComponent(c.leagueId));"
+        "if(c.platform)p.push('platform='+encodeURIComponent(c.platform));"
+        "var url='/api/league-players?'+p.join('&');"
+        "var req=fetch(url,{cache:'no-store'}).then(function(r){"
+        "if(!r.ok)throw new Error('Players request failed ('+r.status+')');"
+        "return r.json();});req.url=url;window.__cheatPlayersP=req;})();</script>\n"
+    )
     return (
         f"<script>window.__cheatCfg = {cfg_json};</script>\n"
+        + prefetch
         + _CHEAT_HTML
         + f'\n<script src="/static/pick_score.js?v={_static_v("pick_score.js")}" defer></script>\n'
         + f'\n<script src="/static/draft_board_core.js?v={_static_v("draft_board_core.js")}" defer></script>\n'

@@ -322,6 +322,7 @@ _DRAFT_ROOM_HTML = r"""
           <button class="otc-main-tab" data-stab="league">League</button>
           <div class="dr-side-opts">
             <button class="dr-opts-trigger dr-undo-trigger" id="drUndo" aria-label="Undo last pick" title="Undo last pick"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+            <a class="dr-opts-trigger dr-cs-trigger" id="drOptsCheatSheet" href="/draft/cheat-sheet" rel="noopener" title="Open your value board / cheat sheet (Cmd/Ctrl-click for a new tab)" aria-label="Cheat Sheet"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/></svg><span class="dr-cs-trigger-lbl">Cheat</span></a>
             <button class="dr-opts-trigger dr-pt-trigger" id="drPickTradeBtn" aria-label="Pick trade evaluator" title="Pick trade evaluator">Trade</button>
             <button class="dr-opts-trigger" id="drOptsBtn" aria-label="Settings" title="Settings"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
             <div class="dr-opts-panel" id="drOptsPanel">
@@ -356,11 +357,7 @@ _DRAFT_ROOM_HTML = r"""
                 </div>
               </div>
               <div class="dr-opts-sec">
-                <div class="dr-opts-label">Board</div>
-                <a class="dr-btn dr-btn-ghost" id="drOptsCheatSheet" href="/draft/cheat-sheet" rel="noopener" title="Open your value board / cheat sheet (Cmd/Ctrl-click for a new tab)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/></svg>Cheat Sheet</a>
                 <button class="dr-btn dr-btn-ghost" id="drSummaryBtn" style="display:none;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Summary</button>
-              </div>
-              <div class="dr-opts-sec">
                 <button class="dr-btn dr-btn-ghost" id="drShare"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>Share</button>
                 <button class="dr-btn dr-btn-ghost" id="drEdit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Edit Setup</button>
                 <button class="dr-btn dr-btn-ghost dr-btn-danger" id="drReset"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>Reset</button>
@@ -610,9 +607,12 @@ _DRAFT_ROOM_HTML = r"""
   .dr-btn-ghost { background: transparent; font-weight: 600; }
   /* Settings gear button — sits beside the side-panel tabs — + dropdown panel */
   .dr-side-opts { position: relative; flex: 0 0 auto; display: flex; align-items: stretch; }
-  .dr-opts-trigger { display: flex; align-items: center; justify-content: center;
+  .dr-opts-trigger { display: flex; align-items: center; justify-content: center; gap: 5px;
     background: transparent; border: none; cursor: pointer; color: var(--text-muted);
-    font-size: 14px; padding: 0 9px; border-radius: 8px; }
+    font-size: 14px; padding: 0 9px; border-radius: 8px; text-decoration: none; }
+  a.dr-opts-trigger { color: var(--text-muted); }
+  .dr-cs-trigger { font-size: 12px; font-weight: 700; white-space: nowrap; }
+  .dr-cs-trigger-lbl { line-height: 1; }
   .dr-opts-trigger:hover, .dr-opts-trigger[aria-expanded="true"] {
     color: var(--accent,#38bdf8); background: color-mix(in srgb, var(--accent) 12%, transparent); }
   .dr-opts-panel {
