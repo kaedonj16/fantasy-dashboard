@@ -29,6 +29,14 @@ def test_my_leagues_cards_show_a_platform_script():
     assert '"fleaflicker": "Fleaflicker"' in fn
 
 
+def test_predraft_league_cards_use_draft_status_pill():
+    fn = _portfolio_fn()
+    assert "pf-status-pill--draft" in fn
+    assert "pf-lg-pending--draft" in fn
+    assert "pf-pending-cta--draft" in fn
+    assert "Mock draft &rarr;" in fn
+
+
 def test_unlinked_team_cards_offer_link_my_team_for_every_platform():
     fn = _portfolio_fn()
     assert "linkMyTeam(" in fn
@@ -63,7 +71,7 @@ def test_undrafted_league_cards_show_draft_countdown():
     assert "data-draft-ts" in fn
     assert "draft_countdown_copy" in fn
     assert "Join Draft Room →" in fn
-    assert "Mock draft →" in fn
+    assert "Mock draft →" in fn or "Mock draft &rarr;" in fn
     assert "draft_countdown_copy" in fn
     assert "setInterval(tick,1000)" in fn
     # Positional rank chips must not be the predraft card body.

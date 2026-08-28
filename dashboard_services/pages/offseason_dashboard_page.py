@@ -313,7 +313,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             </div>"""
 
     _draft_url = url_for("tool_pages.page_draft_room", platform=platform, season=season, league_id=ctx.get("league_id"))
-    _trade_url = url_for("trade.page_trade", platform=platform, season=season, league_id=ctx.get("league_id"))
     _cheat_url = url_for("tool_pages.page_cheat_sheet", platform=platform, season=season, league_id=ctx.get("league_id"))
 
     _do_next_html = _render_do_next_waiver_card(
@@ -325,7 +324,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         draft_prep_hrefs=[
             ("Draft Room", _draft_url),
             ("Cheat Sheet", _cheat_url),
-            ("Trade targets", f"{_trade_url}?tab=suggestions"),
         ],
     )
 

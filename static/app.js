@@ -9113,6 +9113,79 @@ function initRecapPage(root = document) {
 }
 
 // ------------------------------------------------------------
+// Hub column height sync (dashboard / offseason hub)
+// ------------------------------------------------------------
+
+(function initHubColumnHeightSyncModule() {
+  var mq = window.matchMedia('(min-width: 1181px)');
+  var ro = null;
+  var observedMain = null;
+  var observedLayout = null;
+
+  function clearSideCaps(layout) {
+    if (!layout) return;
+    layout.classList.remove('os-hub-cols-synced');
+    layout.style.removeProperty('--os-hub-main-h');
+  }
+
+  function teardown() {
+    if (ro && observedMain) ro.unobserve(observedMain);
+    observedMain = null;
+    if (observedLayout) clearSideCaps(observedLayout);
+    observedLayout = null;
+  }
+
+  function apply(layout, main) {
+    if (!layout || !main || !mq.matches) {
+      teardown();
+      return;
+    }
+    layout.classList.add('os-hub-cols-synced');
+    observedLayout = layout;
+    var h = Math.ceil(main.getBoundingClientRect().height);
+    if (h > 0) layout.style.setProperty('--os-hub-main-h', h + 'px');
+  }
+
+  window.initHubColumnHeightSync = function initHubColumnHeightSync(root) {
+    root = root || document;
+    var layout = root.querySelector ? root.querySelector('.os-layout') : null;
+    if (!layout) {
+      teardown();
+      return;
+    }
+    var main = layout.querySelector('.os-main-col');
+    var sides = layout.querySelectorAll('.os-left-col, .os-right-col');
+    if (!main || !sides.length) {
+      teardown();
+      return;
+    }
+
+    if (!mq.matches) {
+      teardown();
+      return;
+    }
+
+    if (!ro) {
+      ro = new ResizeObserver(function() {
+        if (observedLayout && observedMain) apply(observedLayout, observedMain);
+      });
+    }
+
+    if (observedMain && observedMain !== main) ro.unobserve(observedMain);
+    observedMain = main;
+    ro.observe(main);
+    apply(layout, main);
+  };
+
+  if (!window._hubColMqBound) {
+    var onMq = function() { window.initHubColumnHeightSync(document); };
+    if (mq.addEventListener) mq.addEventListener('change', onMq);
+    else if (mq.addListener) mq.addListener(onMq);
+    window._hubColMqBound = true;
+  }
+})();
+
+// ------------------------------------------------------------
 // Master Initializer
 // ------------------------------------------------------------
 
@@ -9148,6 +9221,9 @@ window.initPageRoot = function initPageRoot(root = document) {
 
   // Dashboard "since your last visit" digest (fires on in-app nav too).
   if (typeof initSinceLastVisit === 'function') initSinceLastVisit();
+
+  // Cap hub side columns to the centre column height on desktop.
+  if (typeof window.initHubColumnHeightSync === 'function') window.initHubColumnHeightSync(root);
 
   // Full watchlist page (fires on in-app nav too).
   if (typeof initWatchlistPage === 'function' && root.querySelector('#wlPageTable')) initWatchlistPage();

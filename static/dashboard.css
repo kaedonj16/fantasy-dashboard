@@ -772,11 +772,24 @@ ul {
     display: grid;
     grid-template-columns: 340px minmax(0, 1fr) 340px;
     gap: 16px;
-    /* start: side columns (especially the teams roster card) must not stretch the
-     centre column to their height — Fleaflicker benches are often much taller than
-     Sleeper and were leaving a large blank band under the hub content. */
+    /* start: side columns must not stretch the centre column to their natural
+     height (Fleaflicker benches used to leave a blank band under the hub).
+     On desktop, initHubColumnHeightSync caps side columns to --os-hub-main-h. */
     align-items: start;
     overflow-x: hidden;
+}
+
+/* Desktop hub: left/right columns scroll internally, capped to centre height. */
+@media (min-width: 1181px) {
+    .os-layout.os-hub-cols-synced > .os-left-col,
+    .os-layout.os-hub-cols-synced > .os-right-col {
+        max-height: var(--os-hub-main-h);
+        overflow-y: auto;
+        overflow-x: hidden;
+        overscroll-behavior: contain;
+        min-height: 0;
+        scrollbar-width: thin;
+    }
 }
 
 .os-left-col, .os-main-col, .os-right-col {
@@ -13759,15 +13772,28 @@ html[data-theme="dark"] .podium .bar {
 .pf-status-pill {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 0 14px;
+    border-radius: 12px;
     font-size: 11px;
     font-weight: 700;
-    letter-spacing: 0.02em;
-    padding: 2px 9px;
-    border-radius: var(--radius-pill);
-    color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 14%, transparent);
-    border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+    letter-spacing: normal;
+    text-transform: none;
     white-space: nowrap;
+    line-height: 1;
+}
+
+.pf-status-pill--draft {
+    color: color-mix(in srgb, var(--warning) 88%, var(--text));
+    background: color-mix(in srgb, var(--warning) 14%, var(--card));
+    border: 1px solid color-mix(in srgb, var(--warning) 38%, var(--border));
+}
+
+.pf-status-pill--link {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, var(--card));
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
 }
 
 .pf-pending-cta {
@@ -13784,8 +13810,34 @@ html[data-theme="dark"] .podium .bar {
     cursor: pointer;
 }
 
+.pf-pending-cta--draft {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+    background: var(--surface2);
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 700;
+    text-decoration: none;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.pf-pending-cta--draft:hover {
+    background: var(--card);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    text-decoration: none;
+}
+
 .pf-pending-cta:hover {
     text-decoration: underline;
+}
+
+.pf-pending-cta--draft:hover {
+    text-decoration: none;
 }
 
 /* Unlink (×) button on My Leagues cards for account-linked leagues. */
