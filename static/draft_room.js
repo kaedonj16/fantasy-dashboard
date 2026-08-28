@@ -1282,6 +1282,8 @@
   // actually chose on the keeper page (handed off in sessionStorage).
   var keeperProjected = [];
   var keeperOverride = null;   // {rosterId, ids} for this league, if handed off
+  var keeperPage = 1;          // 1-based page for the Details list (5 per page)
+  var KEEPER_PAGE_SIZE = 5;
 
   function initKeepers(){
     var kp = cfg.keepers;
@@ -1444,6 +1446,27 @@
     renderKeeperBanner();
   }
 
+  // Viewer roster for ownership counts/tags. Prefer the handoff roster when the
+  // session never got viewer_roster_id (server then sends viewerRoster null).
+  function viewerKeeperRoster(){
+    if (keeperOverride && keeperOverride.rosterId) return String(keeperOverride.rosterId);
+    var vr = cfg.keepers && cfg.keepers.viewerRoster;
+    return (vr != null && vr !== '') ? String(vr) : '';
+  }
+
+  function isMyKeeper(k){
+    var vr = viewerKeeperRoster();
+    return !!(vr && k && String(k.rosterId) === vr);
+  }
+
+  function sortedKeeperSet(){
+    // Yours first (whether from the assistant projection or a handoff), then
+    // rival projections — matches the "X yours, Y projected" summary order.
+    return keeperSet.slice().sort(function(a, b){
+      return (isMyKeeper(a) ? 0 : 1) - (isMyKeeper(b) ? 0 : 1);
+    });
+  }
+
   function renderKeeperBanner(){
     if (!keeperSet.length) return;
     var wrap = document.querySelector('.dr-wrap');
@@ -1455,24 +1478,46 @@
       el.className = 'dr-keeper-banner';
       wrap.insertBefore(el, wrap.firstChild);
     }
-    var mine = keeperSet.filter(function(k){ return !k.projected; }).length;
+    // Ownership, not the server's projected flag: every keeper on your roster
+    // is "yours" even when the assistant projected them for you.
+    var mine = keeperSet.filter(isMyKeeper).length;
     var proj = keeperSet.length - mine;
     var esc = function(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
+    var sorted = sortedKeeperSet();
+    var pages = Math.max(1, Math.ceil(sorted.length / KEEPER_PAGE_SIZE));
+    if (keeperPage > pages) keeperPage = pages;
+    if (keeperPage < 1) keeperPage = 1;
+    var start = (keeperPage - 1) * KEEPER_PAGE_SIZE;
+    var pageItems = sorted.slice(start, start + KEEPER_PAGE_SIZE);
     // Your own handed-off picks carry only an id when the server's projection
     // didn't include them for your team, so fill name/position from the loaded
     // player pool rather than rendering a raw "Player 8134".
-    var rows = keeperSet.slice().sort(function(a,b){ return (a.projected?1:0) - (b.projected?1:0); }).map(function(k){
+    var rows = pageItems.map(function(k){
       var meta = playersById[String(k.id)] || {};
       var nm  = k.name || meta.name;
       var pos = k.pos  || meta.position;
-      var tag = k.projected
-        ? '<span class="dr-keeper-tag proj">projected</span>'
-        : '<span class="dr-keeper-tag mine">your keeper</span>';
+      var tag = isMyKeeper(k)
+        ? '<span class="dr-keeper-tag mine">your keeper</span>'
+        : '<span class="dr-keeper-tag proj">projected</span>';
       var cost = k.costRound ? (' · R' + k.costRound) : '';
       return '<div class="dr-keeper-item"><span>' + esc(nm || ('Player ' + k.id)) +
         (pos ? ' <span class="dr-keeper-pos">' + esc(pos) + '</span>' : '') +
         cost + '</span>' + tag + '</div>';
     }).join('');
+    var pager = '';
+    if (sorted.length > KEEPER_PAGE_SIZE){
+      var showingFrom = start + 1;
+      var showingTo = Math.min(start + KEEPER_PAGE_SIZE, sorted.length);
+      pager =
+        '<div class="dr-keeper-pager pagination pagination--center" role="navigation" aria-label="Keeper list pages">' +
+          '<button type="button" class="pagination-btn" id="drKeeperPrev"' +
+            (keeperPage <= 1 ? ' disabled' : '') + '>&#8592; Prev</button>' +
+          '<span class="pagination-label">' + showingFrom + '\u2013' + showingTo +
+            ' of ' + sorted.length + '</span>' +
+          '<button type="button" class="pagination-btn" id="drKeeperNext"' +
+            (keeperPage >= pages ? ' disabled' : '') + '>Next &#8594;</button>' +
+        '</div>';
+    }
     // Keep the details panel open across re-renders (the toggle rebuilds this
     // markup, which would otherwise collapse the list the user just opened).
     var _wasOpen = (function(){ var l = document.getElementById('drKeeperList'); return l && !l.hidden; })();
@@ -1488,7 +1533,8 @@
         '<button type="button" id="drKeeperToggle" class="dr-keeper-btn dr-keeper-btn-primary">' +
           (keepersOn ? 'Turn off' : 'Apply') + '</button>' +
       '</div>' +
-      '<div id="drKeeperList" class="dr-keeper-list"' + (_wasOpen ? '' : ' hidden') + '>' + rows +
+      '<div id="drKeeperList" class="dr-keeper-list"' + (_wasOpen ? '' : ' hidden') + '>' +
+        '<div class="dr-keeper-items">' + rows + '</div>' + pager +
         '<div class="dr-keeper-note">Other teams’ keepers are projected from the same surplus model. They are estimates, not their declared keepers.</div>' +
       '</div>';
     var vbtn = document.getElementById('drKeeperView');
@@ -1500,6 +1546,18 @@
       vbtn.setAttribute('aria-expanded', String(!list.hidden));
     });
     if (tbtn) tbtn.addEventListener('click', function(){ setKeepersOn(!keepersOn); });
+    var prev = document.getElementById('drKeeperPrev');
+    var next = document.getElementById('drKeeperNext');
+    if (prev) prev.addEventListener('click', function(){
+      if (keeperPage <= 1) return;
+      keeperPage--;
+      renderKeeperBanner();
+    });
+    if (next) next.addEventListener('click', function(){
+      if (keeperPage >= pages) return;
+      keeperPage++;
+      renderKeeperBanner();
+    });
   }
 
   // ── Render ───────────────────────────────────────────────────────────────

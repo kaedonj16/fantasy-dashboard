@@ -12396,12 +12396,15 @@ a.signed-home-league:hover {
     margin-left: auto;
 }
 
-/* Keeper roster: a responsive grid so a full slate of keepers packs into a
-   couple of tidy columns instead of one long stack. */
+/* Keeper roster details: items paginate 5 per page; the page of rows is a
+   responsive grid so a short slate still packs into tidy columns. */
 .dr-keeper-list {
     margin-top: 11px;
     padding-top: 11px;
     border-top: 1px solid var(--border);
+}
+
+.dr-keeper-items {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
     gap: 6px;
@@ -12425,6 +12428,12 @@ a.signed-home-league:hover {
 .dr-keeper-item:hover {
     border-color: var(--border);
     background: var(--row);
+}
+
+.dr-keeper-pager {
+    margin-top: 8px;
+    padding: 8px 0 2px;
+    border-top: none;
 }
 
 .dr-keeper-pos {
@@ -12459,10 +12468,9 @@ a.signed-home-league:hover {
 }
 
 .dr-keeper-note {
-    grid-column: 1 / -1;
     font-size: 11.5px;
     color: var(--text-muted);
-    margin-top: 3px;
+    margin-top: 8px;
 }
 
 .inj-list {

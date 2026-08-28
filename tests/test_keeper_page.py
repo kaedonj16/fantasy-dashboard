@@ -187,6 +187,30 @@ def test_keeper_limit_falls_back_to_league_default(monkeypatch):
     assert out["byTeam"]["2"] == ["d", "e"]
 
 
+def test_viewer_roster_keepers_are_not_projected(monkeypatch):
+    """Draft room banner counts "yours" vs "projected" from this flag. Viewer
+    roster keepers must be yours even when the ids came from the optimizer
+    (no viewer_kept_ids handoff) — otherwise the banner shows 0 yours."""
+    ctx = _league_ctx_for_limits(monkeypatch)
+    out = kp.compute_league_keepers(ctx, platform="sleeper", league_id="L",
+                                    viewer_roster_id="1", limit_override=2)
+    mine = [k for k in out["kept"] if str(k["rosterId"]) == "1"]
+    rivals = [k for k in out["kept"] if str(k["rosterId"]) != "1"]
+    assert mine and all(k["projected"] is False for k in mine)
+    assert rivals and all(k["projected"] is True for k in rivals)
+
+
+def test_viewer_kept_ids_override_still_marks_yours(monkeypatch):
+    ctx = _league_ctx_for_limits(monkeypatch)
+    out = kp.compute_league_keepers(
+        ctx, platform="sleeper", league_id="L",
+        viewer_roster_id="1", viewer_kept_ids=["c"], limit_override=2,
+    )
+    mine = [k for k in out["kept"] if str(k["rosterId"]) == "1"]
+    assert [k["id"] for k in mine] == ["c"]
+    assert all(k["projected"] is False for k in mine)
+
+
 def test_undrafted_cost_override_repricing(monkeypatch):
     """With no drafted rounds (a dynasty roster), every player prices at the
     undrafted default - the deepest round the league ever drafted. The keeper

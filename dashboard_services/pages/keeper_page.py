@@ -540,10 +540,14 @@ def compute_league_keepers(
             # optimizer (which analyzes every candidate and, under one_per_round,
             # resolves cost collisions) over these same objects in place. Re-running
             # analyze would recompute the raw cost and undo any collision bump.
+            # "projected" means a rival team's estimated keepers. The viewer's
+            # own roster is always "yours" — whether those ids came from the
+            # optimizer or an explicit viewer_kept_ids override — so the draft
+            # room banner can count ownership without a separate handoff.
             kept.append({
                 "id": pid, "name": c.name, "pos": c.position,
                 "rosterId": rid, "costRound": c.cost_round,
-                "projected": not (vr is not None and rid == vr and viewer_kept_ids is not None),
+                "projected": not (vr is not None and rid == vr),
             })
     return {
         "limit": limit, "viewerRoster": vr, "autoDraft": bool(drafted),
