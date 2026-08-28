@@ -108,6 +108,13 @@ def test_do_next_waiver_card_helper():
     assert "Draft prep" in app_src
 
 
+def test_hub_column_height_sync_helper():
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert "initHubColumnHeightSync" in app_js
+    assert "os-hub-cols-synced" in app_js
+    assert "ResizeObserver" in app_js
+
+
 def test_dashboard_css_action_and_palette_styles():
     assert ".os-action-queue" in DASH_CSS
     assert ".os-do-next-card" in DASH_CSS

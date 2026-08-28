@@ -46,7 +46,7 @@ def _mobile_block(css: str) -> str:
     raise AssertionError("expected a mobile @media (max-width: 1180px) os-tab-panel block")
 
 
-def test_os_layout_does_not_stretch_columns_to_tallest_sidebar():
+def test_os_layout_side_columns_capped_to_center_height():
     css = _css()
     m = re.search(r"\.os-layout\s*\{([^}]+)\}", css)
     assert m, ".os-layout rule missing"
@@ -54,7 +54,9 @@ def test_os_layout_does_not_stretch_columns_to_tallest_sidebar():
     assert "align-items: start" in body
     assert "align-items: stretch" not in body
     assert "minmax(0, 1fr)" in body
-    assert "min-width: 0" in body
+    assert "min-width: 0" in css
+    assert "os-hub-cols-synced" in css
+    assert "--os-hub-main-h" in css
 
 
 def test_mobile_inactive_tab_panels_removed_from_layout():
