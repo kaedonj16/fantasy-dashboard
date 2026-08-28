@@ -338,7 +338,7 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "market_higher" not in script.split("function histCell")[1].split("function smallVal")[0]
     assert "Hist is redraft-only" in body
     assert "copy.trends" in script or "Trends for this player's buckets" in script
-    assert "trendsHitRow(row, row && row.polarity)" in script
+    assert "trendsHitRow(row, row && row.polarity, histBaseline, histSpan)" in script
     assert "copy.projection_trends" not in script
     assert "This board's projection" not in script
     assert "cs-hist-hit-top" in script
@@ -391,6 +391,18 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "data-trends-lane" in script
     assert "row.vs_label" in script
     assert "The Trends tab shows position-wide rates" in body
+    assert "--cs-qb: #3b82f6" in body
+    assert "--cs-rb: #22c55e" in body
+    assert "--cs-wr: #f59e0b" in body
+    assert "--cs-te: #8b5cf6" in body
+    assert "--cs-pos:" in body
+    assert "cs-hist-modal.cs-hist-wr" in body
+    assert "background: var(--cs-pos)" in body
+    assert "function applyHistPos" in script
+    assert "function histTrendTitle" in script
+    assert "function trendsBaselineOf" in script
+    assert "trendsRailHtml(row.pct, base, pol, span)" in script
+    assert 'id="csHistPos"' in body
     assert "p_hit_pct" not in pick
     assert "historical-player" not in core
     assert "p_hit_pct" not in core
