@@ -431,6 +431,25 @@ PlayerLookup = Callable[[str], Mapping[str, Any]]
 DstMapper = Callable[[str], Optional[str]]
 
 
+def espn_player_id_is_selected(player_id: Optional[str]) -> bool:
+    """True when ESPN assigned a real player, not a predraft empty slot.
+
+    Predraft ``mDraftDetail`` often returns the full pick grid with
+    ``playerId`` 0 / -1 / null. Those are seat placeholders, not selections.
+    D/ST ids are negative (``-160xx``) and count as selected.
+    """
+    if player_id is None:
+        return False
+    text = str(player_id).strip()
+    if text in ("", "0", "-1", "None", "null"):
+        return False
+    try:
+        n = int(text)
+    except (TypeError, ValueError):
+        return bool(text)
+    return n != 0 and n != -1
+
+
 def map_espn_player_id(
     espn_player_id: Optional[str],
     espn_to_canon: Mapping[str, str],
@@ -440,7 +459,7 @@ def map_espn_player_id(
 
     Does not fuzzy-match names. Unresolved ids return ``(None, True)``.
     """
-    if espn_player_id is None or str(espn_player_id).strip() in ("", "0", "None"):
+    if not espn_player_id_is_selected(espn_player_id):
         return None, True
     key = str(espn_player_id)
     canonical = espn_to_canon.get(key)
@@ -495,6 +514,10 @@ def normalize_espn_picks(
     Duplicate ``overall_pick`` values keep the first occurrence. Picks without a
     usable overall number are derived from round + round-pick when possible,
     otherwise skipped (an incomplete ESPN row must not invent a board slot).
+
+    Predraft placeholder rows (overall number + team, but no player) are
+    dropped so Connect Live does not paint a full board of "Unknown" names.
+    Keepers and any other row with a real ``playerId`` still land on the board.
     """
     canon = espn_to_canon or {}
     owners = team_owner_map or {}
@@ -503,6 +526,8 @@ def normalize_espn_picks(
     out: List[NormalizedDraftPick] = []
     seen: set[int] = set()
     for raw in detail.picks:
+        if not espn_player_id_is_selected(raw.player_id):
+            continue
         overall = raw.overall_pick
         if overall is None and raw.round_id and raw.round_pick and teams_n:
             overall = (int(raw.round_id) - 1) * teams_n + int(raw.round_pick)

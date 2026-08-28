@@ -34,14 +34,15 @@ class _FakeProvider:
 
 
 def _snap(status="drafting", picks=None):
-    picks = picks or [
-        NormalizedDraftPick(
-            source="espn", overall_pick=1, canonical_player_id="5938",
-            external_player_id="4039057", external_team_id="1",
-            picked_by="{AAA}", roster_id="1", name="Justin Jefferson",
-            position="WR", team="MIN",
-        )
-    ]
+    if picks is None:
+        picks = [
+            NormalizedDraftPick(
+                source="espn", overall_pick=1, canonical_player_id="5938",
+                external_player_id="4039057", external_team_id="1",
+                picked_by="{AAA}", roster_id="1", name="Justin Jefferson",
+                position="WR", team="MIN",
+            )
+        ]
     return DraftSyncSnapshot(
         source="espn", draft_id="espn_99_2026", league_id="99", season=2026,
         status=status, drafted=(status == "complete"),
@@ -150,6 +151,17 @@ def test_espn_detect_without_sync_does_not_call_provider(client, monkeypatch):
     assert resp.status_code == 200
     assert called == []
     assert resp.get_json()["drafts"][0]["status"] == "pre_draft"
+
+
+def test_espn_live_predraft_returns_empty_picks(client, monkeypatch):
+    import dashboard_services.draft_sync as ds
+    fake = _FakeProvider(snapshot=_snap("pre_draft", picks=[]))
+    monkeypatch.setattr(ds, "get_draft_sync_provider", lambda platform: fake)
+    resp = client.get("/api/draft/live?platform=espn&draft_id=espn_99_2026")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["status"] == "pre_draft"
+    assert data["picks"] == []
 
 
 def test_sleeper_live_still_rejects_empty_draft_id(client):

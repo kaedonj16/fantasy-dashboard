@@ -64,3 +64,8 @@ Optional:
 `mDraftDetail` is undocumented. ESPN often snapshots `picks` at draft start or
 only after completion; some live mocks never update the REST view. This feature
 treats that as **sync unavailable**, not as a successful empty draft.
+
+Predraft `picks` is often a full grid of empty slots (`playerId` 0 / -1 / null).
+Those are not selections: Draft Room leaves the board empty (no Unknown names,
+no grade) until a real player id appears. Keepers with a real `playerId` still
+show.
