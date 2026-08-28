@@ -8,12 +8,15 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping, Optional
 
-from utils.paths import PLAYER_HISTORY_DIR
+from utils.paths import CACHE_DIR, PLAYER_HISTORY_DIR, ROOT_DIR
 
 PROFILE_PATH = PLAYER_HISTORY_DIR / "historical_profile_aggregates.json"
 CAREER_PATH_OVERLAY_PATH = PLAYER_HISTORY_DIR / "career_path_overlay.json"
 USAGE_VOLUME_OVERLAY_PATH = PLAYER_HISTORY_DIR / "usage_volume_overlay.json"
 COHORT_INDEX_PATH = PLAYER_HISTORY_DIR / "cohort_index.json"
+LIVE_DRAFT_PICKS_PATH = ROOT_DIR / "picks.json"
+PLAYERS_INDEX_RELEVANT_PATH = CACHE_DIR / "players_index_relevant.json"
+PLAYERS_INDEX_PATH = CACHE_DIR / "players_index.json"
 
 from dashboard_services.historical.usage import VOLUME_USAGE_IDS
 
@@ -31,6 +34,48 @@ def _file_mtime(path: Any) -> Any:
         return path.stat().st_mtime
     except OSError:
         return None
+
+
+def _read_json(path: Any) -> Any:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, AttributeError, TypeError):
+        return None
+    return data
+
+
+def _merge_live_draft_class(data: dict) -> None:
+    """Stub preseason rows for this year's draftees missing a warehouse season.
+
+    Scout matches current-board players against preseason feature buckets.
+    2026 rookies have no NFL season yet, so they are absent from the warehouse
+    index unless we stamp NFL draft capital from the committed picks file.
+    Does not invent usage, finishes, or ADP. Does not overwrite warehouse rows.
+    """
+    pre = data.get("preseason_profiles")
+    if not isinstance(pre, dict):
+        return
+    by_player = pre.get("by_player")
+    if not isinstance(by_player, dict):
+        return
+    picks = _read_json(LIVE_DRAFT_PICKS_PATH)
+    if not isinstance(picks, list) or not picks:
+        return
+    index = _read_json(PLAYERS_INDEX_RELEVANT_PATH)
+    if not isinstance(index, dict) or not index:
+        index = _read_json(PLAYERS_INDEX_PATH)
+    if not isinstance(index, dict) or not index:
+        return
+    from dashboard_services.historical.filters import stamp_live_draft_class_profiles
+
+    added = stamp_live_draft_class_profiles(
+        by_player,
+        picks,
+        index,
+        upcoming_season=pre.get("upcoming_season"),
+    )
+    if added:
+        pre["n_players"] = len(by_player)
 
 
 def _nflverse_mtime_token() -> Any:
@@ -193,12 +238,19 @@ def load_profile_aggregates(*, path: Optional[Any] = None) -> dict:
     volume_mtime = None
     nflverse_mtime = None
     cohort_mtime = None
+    picks_mtime = None
+    index_mtime = None
     if path is None:
         overlay_mtime = _file_mtime(CAREER_PATH_OVERLAY_PATH)
         volume_mtime = _file_mtime(USAGE_VOLUME_OVERLAY_PATH)
         nflverse_mtime = _nflverse_mtime_token()
         cohort_mtime = _file_mtime(COHORT_INDEX_PATH)
-    cache_key = (mtime, overlay_mtime, volume_mtime, nflverse_mtime, cohort_mtime)
+        picks_mtime = _file_mtime(LIVE_DRAFT_PICKS_PATH)
+        index_mtime = _file_mtime(PLAYERS_INDEX_RELEVANT_PATH) or _file_mtime(PLAYERS_INDEX_PATH)
+    cache_key = (
+        mtime, overlay_mtime, volume_mtime, nflverse_mtime, cohort_mtime,
+        picks_mtime, index_mtime,
+    )
     cached = _CACHE.get("data")
     if cached is not None and _CACHE.get("mtime") == cache_key and path is None:
         return cached
@@ -228,6 +280,7 @@ def load_profile_aggregates(*, path: Optional[Any] = None) -> dict:
         if isinstance(cohort, dict) and cohort:
             _merge_cohort_index(data, cohort)
         _merge_nflverse_preseason_usage(data)
+        _merge_live_draft_class(data)
         _CACHE["mtime"] = cache_key
         _CACHE["data"] = data
     return data

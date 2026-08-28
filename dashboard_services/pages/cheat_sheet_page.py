@@ -316,18 +316,20 @@ _CHEAT_HTML = r"""
   .cs-trends-pos button[data-trends-pos="TE"][aria-pressed="true"] { border-color: var(--cs-te); color: var(--cs-te); background: var(--cs-te-bg); }
   .cs-trends-lanes button[aria-pressed="true"], .cs-trends-tiers button[aria-pressed="true"] { border-color: var(--cs-pos); color: var(--cs-pos); background: var(--cs-pos-bg); }
   .cs-trends-lane-n, .cs-trends-tier-n { margin-left: auto; font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-faint, var(--text-muted)); }
-  .cs-trends-sticky { position: sticky; top: var(--cs-nav-offset, 0px); z-index: 5; display: grid; gap: 10px; margin: 0 0 16px; padding: 10px 12px 12px; border: 1px solid color-mix(in srgb, var(--cs-pos) 22%, var(--cs-line, var(--border))); border-radius: 14px; background: color-mix(in srgb, var(--cs-surface, var(--card)) 86%, var(--cs-pos-bg)); box-shadow: 0 10px 24px color-mix(in srgb, #000 12%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); max-height: calc(100dvh - var(--cs-nav-offset, 0px) - 12px); overflow: auto; }
+  .cs-trends-sticky { position: sticky; top: var(--cs-nav-offset, 0px); z-index: 5; display: grid; gap: 6px; margin: 0 0 12px; padding: 6px 8px 8px; border: 1px solid color-mix(in srgb, var(--cs-pos) 22%, var(--cs-line, var(--border))); border-radius: 12px; background: color-mix(in srgb, var(--cs-surface, var(--card)) 86%, var(--cs-pos-bg)); box-shadow: 0 8px 18px color-mix(in srgb, #000 12%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); max-height: min(36vh, 280px); overflow: auto; }
+  .cs-trends-sticky.is-picked { grid-template-columns: minmax(200px, .9fr) minmax(0, 1.15fr); align-items: start; }
+  .cs-trends-sticky.is-picked .cs-trends-lanes { grid-column: 1 / -1; }
   .cs-trends-sticky .cs-trends-lanes { margin: 0; }
-  .cs-trends-sticky .cs-trends-profile, .cs-trends-sticky .cs-trends-scout { margin: 0; background: var(--cs-surface, var(--card)); }
+  .cs-trends-sticky .cs-hist-note { font-size: 10.5px; margin: 4px 0 0; line-height: 1.3; }
   .cs-trends-summary { display: flex; align-items: flex-end; gap: 16px; margin: 0 0 18px; padding: 12px 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--cs-pos) 28%, var(--cs-line, var(--border))); background: var(--cs-pos-bg); }
   .cs-trends-base-pct { font-weight: 800; font-size: 46px; line-height: .82; letter-spacing: -.03em; color: var(--cs-pos); font-variant-numeric: tabular-nums; }
   .cs-trends-base-pct sup { font-size: 18px; font-weight: 800; color: var(--cs-ink-soft, var(--text-muted)); vertical-align: super; }
   .cs-trends-base-copy { min-width: 0; padding-bottom: 2px; }
   .cs-trends-base-k { font-size: 13.5px; font-weight: 700; color: var(--cs-ink, var(--text)); }
   .cs-trends-base-v { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 3px; line-height: 1.45; }
-  .cs-trends-sec-head { margin: 0 0 10px; }
-  .cs-trends-sec-head h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 4px; }
-  .cs-trends-sec-head p { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.45; margin: 0; }
+  .cs-trends-sec-head { margin: 0 0 6px; }
+  .cs-trends-sec-head h3 { font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 2px; }
+  .cs-trends-sec-head p { font-size: 12px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.35; margin: 0; }
   .cs-trends-board { margin: 0 0 18px; }
   .cs-trends-callouts { display: grid; grid-template-columns: 1fr 1fr; margin: 0; border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; overflow: hidden; background: var(--cs-surface, var(--card)); }
   .cs-trends-callout-col { display: flex; flex-direction: column; min-width: 0; }
@@ -376,31 +378,31 @@ _CHEAT_HTML = r"""
   .cs-trends-srow.is-on { border-color: var(--cs-pos); background: var(--cs-pos-bg); }
   .cs-trends-minipcts { display: flex; gap: 8px; margin-top: 4px; font-family: var(--cs-mono); font-size: 10px; color: var(--cs-ink-faint, var(--text-muted)); }
   .cs-trends-minipcts .is-on { color: var(--cs-pos); font-weight: 800; }
-  .cs-trends-scout { margin: 10px 0 0; padding: 12px 14px; border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; background: var(--cs-surface, var(--card)); max-height: min(36vh, 280px); overflow: auto; }
-  .cs-trends-scout.is-idle { max-height: none; overflow: visible; padding: 8px 12px; }
-  .cs-trends-scout-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
-  .cs-trends-chip { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-pos); color: var(--cs-pos); background: var(--cs-pos-bg); border-radius: 999px; padding: 4px 10px; }
+  .cs-trends-scout { margin: 0; padding: 8px 10px; border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; background: var(--cs-surface, var(--card)); max-height: min(22vh, 160px); overflow: auto; }
+  .cs-trends-scout.is-idle { max-height: none; overflow: visible; padding: 6px 8px; }
+  .cs-trends-scout-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
+  .cs-trends-chip { font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-pos); color: var(--cs-pos); background: var(--cs-pos-bg); border-radius: 999px; padding: 2px 8px; }
   .cs-trends-chip.is-clear { border-color: var(--cs-line, var(--border)); color: var(--cs-ink-soft, var(--text-muted)); background: transparent; }
   .cs-trends-scout-list { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; }
-  .cs-trends-player { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; font: inherit; cursor: pointer; border: 0; background: transparent; border-radius: 8px; padding: 6px 4px; color: var(--cs-ink, var(--text)); }
+  .cs-trends-player { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; font: inherit; cursor: pointer; border: 0; background: transparent; border-radius: 8px; padding: 4px 2px; color: var(--cs-ink, var(--text)); }
   .cs-trends-player:hover { background: color-mix(in srgb, var(--cs-pos) 8%, transparent); }
   .cs-trends-player.is-drafted { opacity: .45; }
   .cs-trends-player { align-items: flex-start; }
-  .cs-trends-player-copy { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
-  .cs-trends-player-n { font-weight: 700; font-size: 13px; }
-  .cs-trends-player-adp { font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-soft, var(--text-muted)); }
-  .cs-trends-player-why, .cs-trends-player-edge { font-size: 11.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.35; }
-  .cs-trends-player-edge { color: var(--cs-ink, var(--text)); font-weight: 650; }
+  .cs-trends-player-copy { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 0; }
+  .cs-trends-player-n { font-weight: 700; font-size: 12.5px; }
+  .cs-trends-player-adp { font-family: var(--cs-mono); font-size: 10.5px; color: var(--cs-ink-soft, var(--text-muted)); }
+  .cs-trends-player-why { display: none; }
+  .cs-trends-player-edge { font-size: 10.5px; color: var(--cs-ink, var(--text)); font-weight: 650; line-height: 1.3; }
   .cs-trends-callout.is-down .cs-trends-callout-pct span { color: var(--cs-ink-faint, var(--text-muted)); }
-  .cs-trends-profile { margin: 0 0 10px; padding: 12px 14px; border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; background: var(--cs-surface, var(--card)); }
-  .cs-trends-profile.is-idle { padding: 8px 12px; }
-  .cs-trends-profile-n { font-family: var(--cs-mono); font-size: 12px; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 8px; }
-  .cs-trends-profile-tiers { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 0 0 10px; }
-  .cs-trends-profile-k { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); }
-  .cs-trends-profile-v { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .cs-trends-profile-ci { font-family: var(--cs-mono); font-size: 10.5px; color: var(--cs-ink-faint, var(--text-muted)); }
-  .cs-trends-profile-dl { display: grid; gap: 6px; margin: 0; font-size: 13px; }
-  .cs-trends-profile-dl > div { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 14px; align-items: baseline; }
+  .cs-trends-profile { margin: 0; padding: 8px 10px; border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; background: var(--cs-surface, var(--card)); }
+  .cs-trends-profile.is-idle { padding: 6px 8px; }
+  .cs-trends-profile-n { font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 4px; }
+  .cs-trends-profile-tiers { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0 0 6px; }
+  .cs-trends-profile-k { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); }
+  .cs-trends-profile-v { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .cs-trends-profile-ci { font-family: var(--cs-mono); font-size: 10px; color: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-trends-profile-dl { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0; font-size: 11.5px; }
+  .cs-trends-profile-dl > div { display: flex; gap: 6px; align-items: baseline; }
   .cs-trends-profile-dl dt { color: var(--cs-ink-soft, var(--text-muted)); }
   .cs-trends-profile-dl dd { margin: 0; font-weight: 700; }
   .cs-trends-scout-more { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); margin: 8px 0 0; }
@@ -421,7 +423,8 @@ _CHEAT_HTML = r"""
     .cs-trends-callout-v { font-size: 12px; }
     .cs-trends-summary { align-items: flex-start; }
     .cs-trends-lanes { margin: 0 0 8px; }
-    .cs-trends-sticky { padding: 8px 10px 10px; gap: 8px; }
+    .cs-trends-sticky { padding: 6px 8px 8px; gap: 6px; }
+    .cs-trends-sticky.is-picked { grid-template-columns: 1fr; }
     .cs-trends-lane-n { flex: 1 0 100%; margin: 2px 0 0; }
     .cs-trends-grid { grid-template-columns: 1fr; gap: 8px; }
     .cs-trends-scout-list { grid-template-columns: 1fr; }

@@ -149,6 +149,54 @@ def test_or_within_group_and_across_groups():
     assert matches_filter_groups(feats, []) is False
 
 
+def test_extract_trend_features_uses_live_draft_round():
+    from dashboard_services.historical.filters import live_board_trend_features
+
+    feats = live_board_trend_features({
+        "id": "13287",
+        "name": "Jeremiyah Love",
+        "position": "RB",
+        "years_exp": 0,
+        "draft_round": 1,
+        "draft_pick": 4,
+        "age": 21,
+    })
+    assert feats["position"] == "RB"
+    assert feats["draft_capital"] == "round_1"
+    assert feats["career_stage"] == "rookie"
+    assert feats["prior_top12_count"] == 0
+    round_1 = {"group": "draft_capital", "field": "draft_capital", "eq": "round_1"}
+    assert matches_filter_groups(feats, [round_1]) is True
+
+
+def test_stamp_live_draft_class_adds_unprofiled_round_1_rookie():
+    from dashboard_services.historical.filters import stamp_live_draft_class_profiles
+
+    by_player = {
+        "12527": {
+            "position": "RB",
+            "years_experience": 1,
+            "draft_capital_bucket": "round_1",
+        }
+    }
+    picks = [
+        {"player_name": "Jeremiyah Love", "position": "RB", "pick": 3, "round": 1, "nfl_team": "ARI"},
+        {"player_name": "Ashton Jeanty", "position": "RB", "pick": 6, "round": 1, "nfl_team": "LV"},
+    ]
+    index = {
+        "13287": {"name": "Jeremiyah Love", "pos": "RB", "team": "ARI", "bDay": "5/31/2005"},
+        "12527": {"name": "Ashton Jeanty", "pos": "RB", "team": "LV", "bDay": "12/2/2003"},
+    }
+    added = stamp_live_draft_class_profiles(by_player, picks, index, upcoming_season=2026)
+    assert added == 1
+    assert by_player["13287"]["draft_capital_bucket"] == "round_1"
+    assert by_player["13287"]["years_experience"] == 0
+    assert by_player["12527"]["years_experience"] == 1
+    feats = extract_trend_features(by_player["13287"])
+    assert feats["draft_capital"] == "round_1"
+    assert feats["career_stage"] == "rookie"
+
+
 def test_combined_rate_uses_matched_rows_not_multiplied_marginals():
     reset_cohort_cache()
     index = build_cohort_index(_combo_warehouse())
@@ -517,3 +565,7 @@ def test_live_overlay_combined_cohort_is_an_intersection():
     feats = build_player_feature_index(aggs)
     assert any(f.get("target_share_change") or f.get("workload_change") for f in feats.values())
     assert "observations" not in json.dumps(feats)
+    love = feats.get("13287") or {}
+    assert love.get("draft_capital") == "round_1"
+    assert love.get("career_stage") == "rookie"
+    assert love.get("position") == "RB"

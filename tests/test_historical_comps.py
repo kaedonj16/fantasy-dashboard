@@ -46,6 +46,13 @@ def test_extract_omits_missing_and_ignores_same_season_actuals():
     assert rookie["career_stage"] == "rookie"
     assert rookie["prior_finish"] == "none"
     assert "draft_capital" not in rookie
+    from_round = extract_comp_query(_row(
+        years_experience=0,
+        draft_capital_bucket=None,
+        draft_round=1,
+        draft_pick=4,
+    ))
+    assert from_round["draft_capital"] == "round_1"
     assert "age_bucket" not in rookie
     assert "target_share" not in rookie
     assert "snap_pct" not in rookie

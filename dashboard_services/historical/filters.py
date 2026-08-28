@@ -18,6 +18,7 @@ from dashboard_services.historical.usage import USAGE_RATE_SPECS, VOLUME_USAGE_I
 from dashboard_services.historical.definitions import (
     ADOT_BUCKETS,
     RYOE_BUCKETS,
+    SKILL_POSITIONS,
     SNAP_RELIABLE_FLOOR,
     TRAJECTORY_SNAP_DOWN,
     TRAJECTORY_SNAP_UP,
@@ -28,6 +29,8 @@ from dashboard_services.historical.definitions import (
     SNAP_PCT_UP_PTS,
     TARGET_SHARE_UP_PTS,
     WORKLOAD_CHANGE_CLIFFS,
+    age_as_of_season_start,
+    draft_capital_bucket,
     integer_age,
     value_bucket,
     _optional_float,
@@ -229,6 +232,140 @@ def extract_trend_features(row: Mapping[str, Any]) -> dict[str, Any]:
         if isinstance(val, str) and val:
             feats[key] = val
     return feats
+
+
+def _norm_player_name(name: Any) -> str:
+    return "".join(ch for ch in str(name or "").lower() if ch.isalnum())
+
+
+def live_board_trend_features(player: Mapping[str, Any]) -> dict[str, Any]:
+    """Scout buckets from a live board / identity row. No warehouse actuals.
+
+    Draft capital comes from an explicit bucket or from NFL round/pick.
+    Rookies (``years_experience`` / ``years_exp`` == 0) get prior_top12_count=0.
+    Missing dims stay omitted. Does not invent usage or trajectory.
+    """
+    if not isinstance(player, Mapping):
+        return {}
+    pos = str(player.get("position") or player.get("pos") or "").upper()
+    if pos not in SKILL_POSITIONS:
+        return {}
+    row: dict[str, Any] = {"position": pos}
+    ye = _optional_int(
+        player.get("years_experience")
+        if player.get("years_experience") is not None
+        else player.get("years_exp")
+    )
+    if ye is not None:
+        row["years_experience"] = ye
+        if ye == 0:
+            row["prior_top12_count"] = 0
+    cap = player.get("draft_capital_bucket") or player.get("draft_capital")
+    if not cap:
+        cap = draft_capital_bucket(
+            player.get("draft_round") or player.get("nfl_draft_round"),
+            player.get("draft_pick") or player.get("nfl_draft_pick"),
+            undrafted=bool(player.get("undrafted")),
+        )
+    if cap:
+        row["draft_capital_bucket"] = cap
+    age = integer_age(player.get("age"))
+    if age is None:
+        age_f = _optional_float(player.get("age"))
+        age = integer_age(age_f) if age_f is not None else None
+    if age is not None:
+        row["age"] = age
+    count = _optional_int(player.get("prior_top12_count"))
+    if count is not None:
+        row["prior_top12_count"] = count
+    return extract_trend_features(row)
+
+
+def live_class_preseason_profile(
+    pick: Mapping[str, Any],
+    identity: Mapping[str, Any],
+    *,
+    upcoming_season: Any = None,
+) -> dict[str, Any]:
+    """Stub preseason row for a current-class draftee with no warehouse season."""
+    pos = str(
+        pick.get("position") or identity.get("position") or identity.get("pos") or ""
+    ).upper()
+    if pos not in SKILL_POSITIONS:
+        return {}
+    cap = draft_capital_bucket(pick.get("round") or pick.get("draft_round"), pick.get("pick") or pick.get("draft_pick"))
+    rec: dict[str, Any] = {
+        "position": pos,
+        "years_experience": 0,
+        "prior_top12_count": 0,
+    }
+    if cap:
+        rec["draft_capital_bucket"] = cap
+    age = age_as_of_season_start(
+        identity.get("bDay") or identity.get("bday") or identity.get("birth_date"),
+        upcoming_season,
+    )
+    if age is None:
+        age_f = _optional_float(identity.get("age") or pick.get("age"))
+        age = age_f
+    if age is not None:
+        rec["age"] = age
+    return rec
+
+
+def stamp_live_draft_class_profiles(
+    by_player: dict[str, Any],
+    picks: Sequence[Mapping[str, Any]],
+    players_index: Mapping[str, Any],
+    *,
+    upcoming_season: Any = None,
+) -> int:
+    """Add current-class draftees who have no warehouse preseason profile.
+
+    Name + position must uniquely match (team breaks ties). Existing warehouse
+    rows are left untouched. Returns how many stubs were inserted.
+    """
+    if not isinstance(by_player, dict) or not picks or not isinstance(players_index, Mapping):
+        return 0
+    by_key: dict[tuple[str, str], list[tuple[str, Mapping[str, Any]]]] = {}
+    for pid, meta in players_index.items():
+        sid = str(pid or "").strip()
+        if not sid or sid in by_player or not isinstance(meta, Mapping):
+            continue
+        pos = str(meta.get("pos") or meta.get("position") or "").upper()
+        if pos not in SKILL_POSITIONS:
+            continue
+        key = (_norm_player_name(meta.get("name") or meta.get("full_name")), pos)
+        if not key[0]:
+            continue
+        by_key.setdefault(key, []).append((sid, meta))
+    added = 0
+    for pick in picks:
+        if not isinstance(pick, Mapping):
+            continue
+        pos = str(pick.get("position") or "").upper()
+        key = (_norm_player_name(pick.get("player_name") or pick.get("name")), pos)
+        if not key[0] or pos not in SKILL_POSITIONS:
+            continue
+        cands = list(by_key.get(key) or [])
+        if len(cands) != 1:
+            team = str(pick.get("nfl_team") or pick.get("team") or "").upper()
+            if team:
+                cands = [
+                    item for item in cands
+                    if str((item[1] or {}).get("team") or "").upper() == team
+                ]
+        if len(cands) != 1:
+            continue
+        pid, ident = cands[0]
+        if pid in by_player:
+            continue
+        rec = live_class_preseason_profile(pick, ident, upcoming_season=upcoming_season)
+        if not rec.get("draft_capital_bucket"):
+            continue
+        by_player[pid] = rec
+        added += 1
+    return added
 
 
 def matched_filter_labels(
