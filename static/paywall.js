@@ -69,6 +69,7 @@ window.showPaywall = function showPaywall(feature) {
     'gm-memo': 'Front Office Report',
     'weekly-recap': 'Weekly Recap',
     'draft-cheat-sheet': 'Custom Draft Board',
+    'draft-trends-scout': 'Trend Scout',
     'draft-analyzer': 'Draft Deep Dive Analyzer'
   };
 

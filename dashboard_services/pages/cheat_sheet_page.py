@@ -301,14 +301,14 @@ _CHEAT_HTML = r"""
   .cs-trends-te, .cs-hist-modal.cs-hist-te { --cs-pos: var(--cs-te); --cs-pos-bg: var(--cs-te-bg); }
   .cs-trends { padding: 4px 0 24px; }
   .cs-trends-lede { color: var(--cs-ink-soft, var(--text-muted)); font-size: 13px; line-height: 1.45; margin: 0 0 14px; }
-  .cs-trends-pos, .cs-trends-lanes { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 0 0 16px; }
-  .cs-trends-pos button, .cs-trends-lanes button { font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-line, var(--border)); background: var(--cs-surface, var(--card)); color: var(--cs-ink-soft, var(--text-muted)); border-radius: 8px; padding: 6px 10px; }
+  .cs-trends-pos, .cs-trends-lanes, .cs-trends-tiers { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 0 0 16px; }
+  .cs-trends-pos button, .cs-trends-lanes button, .cs-trends-tiers button { font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-line, var(--border)); background: var(--cs-surface, var(--card)); color: var(--cs-ink-soft, var(--text-muted)); border-radius: 8px; padding: 6px 10px; }
   .cs-trends-pos button[data-trends-pos="QB"][aria-pressed="true"] { border-color: var(--cs-qb); color: var(--cs-qb); background: var(--cs-qb-bg); }
   .cs-trends-pos button[data-trends-pos="RB"][aria-pressed="true"] { border-color: var(--cs-rb); color: var(--cs-rb); background: var(--cs-rb-bg); }
   .cs-trends-pos button[data-trends-pos="WR"][aria-pressed="true"] { border-color: var(--cs-wr); color: var(--cs-wr); background: var(--cs-wr-bg); }
   .cs-trends-pos button[data-trends-pos="TE"][aria-pressed="true"] { border-color: var(--cs-te); color: var(--cs-te); background: var(--cs-te-bg); }
-  .cs-trends-lanes button[aria-pressed="true"] { border-color: var(--cs-pos); color: var(--cs-pos); background: var(--cs-pos-bg); }
-  .cs-trends-lane-n { margin-left: auto; font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-trends-lanes button[aria-pressed="true"], .cs-trends-tiers button[aria-pressed="true"] { border-color: var(--cs-pos); color: var(--cs-pos); background: var(--cs-pos-bg); }
+  .cs-trends-lane-n, .cs-trends-tier-n { margin-left: auto; font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-faint, var(--text-muted)); }
   .cs-trends-summary { display: flex; align-items: flex-end; gap: 16px; margin: 0 0 18px; padding: 12px 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--cs-pos) 28%, var(--cs-line, var(--border))); background: var(--cs-pos-bg); }
   .cs-trends-base-pct { font-weight: 800; font-size: 46px; line-height: .82; letter-spacing: -.03em; color: var(--cs-pos); font-variant-numeric: tabular-nums; }
   .cs-trends-base-pct sup { font-size: 18px; font-weight: 800; color: var(--cs-ink-soft, var(--text-muted)); vertical-align: super; }
@@ -361,6 +361,23 @@ _CHEAT_HTML = r"""
   .cs-trends-srow-pct { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--cs-ink, var(--text)); white-space: nowrap; }
   .cs-trends-srow-meta { font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 3px; }
   .cs-trends-srow .cs-trends-rail { margin-top: 5px; }
+  .cs-trends-srow.is-pick { display: block; width: 100%; text-align: left; font: inherit; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 10px; padding: 6px 8px; margin: 0 -8px; cursor: pointer; }
+  .cs-trends-srow.is-pick:hover { background: color-mix(in srgb, var(--cs-pos) 8%, transparent); }
+  .cs-trends-srow.is-on { border-color: var(--cs-pos); background: var(--cs-pos-bg); }
+  .cs-trends-minipcts { display: flex; gap: 8px; margin-top: 4px; font-family: var(--cs-mono); font-size: 10px; color: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-trends-minipcts .is-on { color: var(--cs-pos); font-weight: 800; }
+  .cs-trends-scout { margin: 0 0 18px; padding: 12px 14px; border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; background: var(--cs-surface, var(--card)); }
+  .cs-trends-scout-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+  .cs-trends-chip { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-pos); color: var(--cs-pos); background: var(--cs-pos-bg); border-radius: 999px; padding: 4px 10px; }
+  .cs-trends-chip.is-clear { border-color: var(--cs-line, var(--border)); color: var(--cs-ink-soft, var(--text-muted)); background: transparent; }
+  .cs-trends-scout-list { display: flex; flex-direction: column; gap: 4px; }
+  .cs-trends-player { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; font: inherit; cursor: pointer; border: 0; background: transparent; border-radius: 8px; padding: 6px 4px; color: var(--cs-ink, var(--text)); }
+  .cs-trends-player:hover { background: color-mix(in srgb, var(--cs-pos) 8%, transparent); }
+  .cs-trends-player.is-drafted { opacity: .45; }
+  .cs-trends-player-n { flex: 1; min-width: 0; font-weight: 700; font-size: 13px; }
+  .cs-trends-player-adp { font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-soft, var(--text-muted)); }
+  .cs-trends-scout-more { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); margin: 8px 0 0; }
+  .cs-trends-scout-more button { font: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer; border: 0; background: none; color: var(--cs-pos); padding: 0; }
   .cs-trends-conf { display: inline-flex; align-items: center; flex-shrink: 0; color: var(--cs-ink-faint, var(--text-muted)); }
   .cs-trends-conf i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; display: inline-block; }
   .cs-trends-conf-low { color: var(--cs-ink-faint, var(--text-muted)); }
@@ -659,7 +676,7 @@ _CHEAT_HTML = r"""
 
   <section class="cs-hidden" id="cs-panel-trends">
     <div class="cs-trends" id="csTrends">
-      <p class="cs-trends-lede">Historical top-12 rates by bucket. Not a ranking score.</p>
+      <p class="cs-trends-lede">Historical finish rates by bucket. Not a ranking score.</p>
     </div>
   </section>
 
@@ -673,7 +690,7 @@ _CHEAT_HTML = r"""
       <div class="cs-rule"><span class="cs-k">Proj Pick</span><div><h3>Your snake slot on this board</h3><p>Choose a draft slot to draw labeled lines at each of that seat's snake-draft picks — Proj Pick 1.05, 2.08, and so on. The player under each line is who this ranking would take there. Lines follow the displayed order, including any custom-board moves, and they print with the sheet.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Proj PPG</span><div><h3>Expected weekly scoring</h3><p>Projected PPG is the player's upcoming-season fantasy points per game from Sleeper, the same projection pool used by the Draft Room. Players Sleeper does not project show a dash rather than last-season actuals.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Schedule</span><div><h3>Full-season matchup context</h3><p>Schedule Rank compares each player's position-specific matchups across fantasy Weeks 1-17. Rank 1 is the easiest schedule. It is useful context for close calls inside a tier, but it does not change the stable VOR order.</p></div></div>
-      <div class="cs-rule"><span class="cs-k">Hist</span><div><h3>Historical trends, not a ranking</h3><p>Hist is redraft-only context. The compact number is how often a similar pre-season profile finished top-12, not this player's odds and not a Pick Score input. The Trends tab shows position-wide rates for repeats, league-winner smashes, career stage, NFL draft capital (including early-career hit and miss rates), age, and prior usage. Callouts flag the biggest edges versus a typical player-season. The info button on a player opens that player's own mix of those buckets. Green is a strong similar-profile cell (about 25% or higher). Missing values show a dash. Hist does not change VOR or Pick Score.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">Hist</span><div><h3>Historical trends, not a ranking</h3><p>Hist is redraft-only context. The compact number is how often a similar pre-season profile finished top-12, not this player's odds and not a Pick Score input. The Trends tab shows position-wide rates for repeats, league-winner smashes, career stage, NFL draft capital (including early-career hit and miss rates), age, and prior usage. Finish chips switch typical top-5, top-12, and top-24 odds. Select buckets to list current-board players who match those traits. Callouts flag the biggest edges versus a typical player-season. The info button on a player opens that player's own mix of those buckets. Green is a strong similar-profile cell (about 25% or higher). Missing values show a dash. Hist does not change VOR or Pick Score.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Live</span><div><h3>It knows your live draft</h3><p>Open the sheet from your league during a draft and players already taken are struck through automatically. REC badges show the current Draft Room view without changing the VOR board. Reopen the sheet after more picks to refresh those ranks, or use Connect live draft to keep drafted-player status synchronized.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Dynasty</span><div><h3>Dynasty values the window, not just this year</h3><p>Dynasty mode ranks on dynasty value, which already weights youth and multi-year outlook, and swaps in Age and a career-window tag in place of ADP, because you are drafting the next several seasons.</p></div></div>
     </div>

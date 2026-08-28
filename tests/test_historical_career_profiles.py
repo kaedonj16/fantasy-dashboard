@@ -330,6 +330,9 @@ def test_assemble_has_no_adp_or_projections_and_keeps_both_breakout_defs():
     assert payload["walkforward"]["pick_score"]["validated"] is False
     assert payload["walkforward"]["pick_score"]["in_live_ranking"] is False
     assert "preseason_profiles" in payload
+    assert "age_curves_by_tier" in payload
+    assert "career_stages_by_tier" in payload
+    assert "prior_usage_by_tier" in payload
     assert "engine_breakout" in defs and "first_time_elite" in defs
 
     def _keys(obj):

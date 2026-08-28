@@ -22,6 +22,7 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 from dashboard_services.historical.age_curves import build_age_curves
 from dashboard_services.historical.definitions import (
     CAREER_STAGE_ORDER,
+    COMP_BOARD_TIERS,
     DEFAULT_BAYES_PRIOR_N,
     DRAFT_CAPITAL_ORDER,
     FTN_SEASON_FLOOR,
@@ -707,10 +708,25 @@ def assemble_profile_aggregates(
         "age_curves": build_age_curves(
             era, scoring=scoring, season_from=season_from, season_to=season_to
         ),
+        "age_curves_by_tier": {
+            tier: build_age_curves(
+                era, scoring=scoring, tier=tier,
+                season_from=season_from, season_to=season_to,
+            )
+            for tier in COMP_BOARD_TIERS
+        },
         "career_stages": build_stage_rates(era, scoring=scoring),
+        "career_stages_by_tier": {
+            tier: build_stage_rates(era, scoring=scoring, tier=tier)
+            for tier in COMP_BOARD_TIERS
+        },
         "repeat_and_breakout": build_repeat_and_breakout_rates(era, scoring=scoring),
         "draft_capital": build_draft_capital_rates(era, scoring=scoring),
         "prior_usage": build_prior_usage_rates(era, scoring=scoring),
+        "prior_usage_by_tier": {
+            tier: build_prior_usage_rates(era, scoring=scoring, tier=tier)
+            for tier in COMP_BOARD_TIERS
+        },
         "comps": build_comp_aggregates(era, scoring=scoring),
         "adp": build_adp_hit_rates(era, scoring=scoring),
     }
