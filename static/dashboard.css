@@ -12373,7 +12373,7 @@ a.signed-home-league:hover {
     letter-spacing: .05em;
     text-transform: uppercase;
     padding: 2px 8px;
-    border-radius: 999px;
+    border-radius: 12px;
     white-space: nowrap;
     flex: none;
 }
@@ -13705,7 +13705,7 @@ html[data-theme="dark"] .podium .bar {
     justify-content: center;
     min-height: 28px;
     padding: 0 14px;
-    border-radius: 999px;
+    border-radius: 12px;
     font-size: 11px;
     font-weight: 700;
     letter-spacing: normal;
@@ -13746,7 +13746,7 @@ html[data-theme="dark"] .podium .bar {
     justify-content: center;
     min-height: 28px;
     padding: 0 14px;
-    border-radius: 999px;
+    border-radius: 12px;
     border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
     background: var(--surface2);
     color: var(--text);
