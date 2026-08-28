@@ -10,6 +10,7 @@ import json
 import random
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -26,15 +27,21 @@ pytestmark = pytest.mark.skipif(
 
 
 def _js_scores(cases):
-    driver = (
-        "const {computePickScore} = require(%s);\n"
-        "const cases = %s;\n"
-        "process.stdout.write(JSON.stringify(cases.map(computePickScore)));\n"
-        % (json.dumps(str(PICK_JS)), json.dumps(cases))
-    )
-    res = subprocess.run(["node", "-e", driver], capture_output=True, text=True, timeout=30)
-    assert res.returncode == 0, res.stderr
-    return json.loads(res.stdout)
+    tmp = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+    try:
+        json.dump(cases, tmp)
+        tmp.close()
+        driver = (
+            "const {computePickScore} = require(%s);\n"
+            "const cases = require(%s);\n"
+            "process.stdout.write(JSON.stringify(cases.map(computePickScore)));\n"
+            % (json.dumps(str(PICK_JS)), json.dumps(tmp.name))
+        )
+        res = subprocess.run(["node", "-e", driver], capture_output=True, text=True, timeout=30)
+        assert res.returncode == 0, res.stderr
+        return json.loads(res.stdout)
+    finally:
+        Path(tmp.name).unlink(missing_ok=True)
 
 
 def _build_cases():
@@ -66,6 +73,7 @@ def _build_cases():
             "tep": rng.choice([0.0, 0.5, 1.0]),
             "passTd": rng.choice([4.0, 6.0]),
             "isTierCliff": rng.choice([True, False]),
+            "starterSlots": rng.choice([None, 1, 2, 3]),
         }
         cases.append(c)
     return cases
@@ -79,6 +87,7 @@ def _py_score(c):
         is_sf=c["isSf"], need_raw=c["needRaw"], qb_count=c["qbCount"],
         total_picks=c["totalPicks"], num_teams=c["numTeams"], ppg_norm=c["ppgNorm"],
         ppr=c["ppr"], tep=c["tep"], pass_td=c["passTd"], is_tier_cliff=c["isTierCliff"],
+        starter_slots=c.get("starterSlots"),
     )
 
 

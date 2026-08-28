@@ -939,7 +939,7 @@ def _synthetic_samples(seed: int = 7, n_teams: int = 60, picks_per_team: int = 1
             value = max(200.0, base + skill + rnd.uniform(-500, 500))
             true_quality += value
             picks.append(dict(
-                pos=pos, value=value, vor=value * 0.5, tier=1 + i // 2, age=24,
+                pos=pos, value=value, vor=max(0.0, value - 2500.0), tier=1 + i // 2, age=24,
                 rank_change_7d=0, avg_pick=pick_no, pick_no=pick_no,
                 max_val=max_val, draft_type="startup", is_sf=False,
                 need_raw=0.5, qb_count=0, total_picks=picks_per_team * n_teams,

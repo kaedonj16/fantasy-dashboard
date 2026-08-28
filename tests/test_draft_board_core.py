@@ -587,7 +587,37 @@ def test_bye_severity_uses_starter_impact_not_raw_count():
       bench:C.byeWeekSeverity([
         {bye:7,pos:'WR',role:'fringe',quality:.3},{bye:7,pos:'RB',role:'fringe',quality:.3},{bye:7,pos:'WR',role:'fringe',quality:.3}],{}),
       starters:C.byeWeekSeverity([
-        {bye:7,pos:'RB',role:'starter',quality:1},{bye:7,pos:'RB',role:'starter',quality:.9},{bye:7,pos:'WR',role:'starter',quality:.9}],{})
+        {bye:7,pos:'RB',role:'starter',quality:1},{bye:7,pos:'RB',role:'starter',quality:.9},{bye:7,pos:'WR',role:'starter',quality:.9}],{}),
+      covered:C.byeWeekSeverity([
+        {id:'s1',bye:7,pos:'RB',role:'starter',quality:1},
+        {id:'c1',bye:10,pos:'RB',role:'primary',quality:.8}],{})
     }))()""")
     assert out["bench"][0]["level"] == "none"
     assert out["starters"][0]["level"] in {"meaningful", "severe"}
+    assert out["covered"][0]["players"][0]["coverQuality"] == pytest.approx(0.8)
+
+
+def test_late_round_path_ignores_ppg_and_requires_a_role():
+    out = _run_need_cases("""(() => ({
+      ppgOnly:C.lateRoundPathEvidence({}),
+      breakout:C.lateRoundPathEvidence({breakoutScore:80}),
+      handcuff:C.lateRoundPathEvidence({handcuff:true}),
+      none:C.lateRoundPathEvidence({projectedRole:null})
+    }))()""")
+    assert out["ppgOnly"] == 0
+    assert out["none"] == 0
+    assert out["breakout"] == pytest.approx(0.8)
+    assert out["handcuff"] == pytest.approx(0.75)
+
+
+def test_historical_alternatives_rank_by_decision_score():
+    out = _run_need_cases("""(() => {
+      const rows=[
+        {id:'a',decisionScore:71,absolutePickScore:80,player:{name:'A'}},
+        {id:'b',decisionScore:91,absolutePickScore:82,player:{name:'B'}}
+      ];
+      return C.summarizeHistoricalAlternatives(rows,'a');
+    })()""")
+    assert out["selectedScore"] == 71
+    assert out["bestAlternativeScore"] == 91
+    assert out["bestAlternative"]["id"] == "b"

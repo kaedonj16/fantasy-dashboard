@@ -19736,6 +19736,7 @@ def api_draft_grades():
         ps_targets: dict[str, float] = {}
         ps_pool_sorted: list = []
         ps_ready = False
+        ps_slot_counts = {"QB": 1, "SF": 0, "RB": 2, "WR": 3, "TE": 1}
         # Pick-score ADP (separate from the letter-grade adp_info): sourced from
         # the SAME league-players payload the Draft Room uses, so the score's ADP
         # term matches the front-end exactly.
@@ -19926,6 +19927,7 @@ def api_draft_grades():
                 {"QB": 2.7, "RB": 4.45, "WR": 5.8, "TE": 2.05} if is_sf
                 else {"QB": 1.7, "RB": 5.45, "WR": 5.8, "TE": 2.05}
             )
+            ps_slot_counts = dict(_rp_counts)
             ps_ready = True
         except Exception as _e_ps:
             logger.info("[draft-grades] pick-score inputs skipped: %s", _e_ps)
@@ -20147,6 +20149,10 @@ def api_draft_grades():
                         and pick_no > _num_teams
                         and tier_remaining.get(f"{pos}|{_tier}", 0) <= 2
                     )
+                    _starter_slots = (
+                        (ps_slot_counts.get("QB", 0) + ps_slot_counts.get("SF", 0))
+                        if pos == "QB" else ps_slot_counts.get(pos)
+                    )
                     pick_score = _compute_pick_score(
                         pos=pos, value=_val, vor=_vor, tier=_tier,
                         age=_d.get("age"), rank_change_7d=mom_by_id.get(player_id),
@@ -20156,6 +20162,7 @@ def api_draft_grades():
                         total_picks=_num_teams * _draft_rounds,
                         num_teams=_num_teams, ppg_norm=_ppg_n,
                         ppr=_ppr, tep=_tep, pass_td=_pass_td, is_tier_cliff=_is_cliff,
+                        starter_slots=_starter_slots,
                     )
                     # Consume this player from the at-pick cliff counts for later picks.
                     if _tier is not None:
