@@ -465,6 +465,7 @@
 .has-tabbar {
     flex: 1 1 auto;
     min-width: 0;
+    width: 100%;
 }
 
 #page-root, .page-shell {
@@ -762,6 +763,7 @@ ul {
 
 .os-layout {
     width: 100%;
+    min-width: 0;
     /* Cap the width and centre it on wide screens: filling edge-to-edge stretched
      the centre column (and its rows) too far, and leaving it uncapped left it
      pinned to the left with a big gap on the right. */
@@ -770,7 +772,10 @@ ul {
     display: grid;
     grid-template-columns: 340px minmax(0, 1fr) 340px;
     gap: 16px;
-    align-items: stretch;
+    /* start: side columns (especially the teams roster card) must not stretch the
+     centre column to their height — Fleaflicker benches are often much taller than
+     Sleeper and were leaving a large blank band under the hub content. */
+    align-items: start;
     overflow-x: hidden;
 }
 
@@ -8312,6 +8317,47 @@ select:focus {
     .os-tab-panel.os-tab-active {
         display: block !important;
     }
+
+    /* Hub side columns are flex stacks on desktop; block would drop that layout
+     when a jump tab activates the left/right panel on phones. */
+    .os-tab-panel.os-tab-active.os-left-col,
+    .os-tab-panel.os-tab-active.os-right-col {
+        display: flex !important;
+        flex-direction: column;
+    }
+
+    /* Mobile hub: flex column instead of grid so hidden tab panels cannot leave
+     implicit grid tracks or stretch rows (the pre-tab-panel left column bug). */
+    .os-layout {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    /* Do not grow side shells to fill a stretched grid/flex track — content sets
+     height; inactive panels are display:none and must reserve no space. */
+    .os-left-col .os-col-fill,
+    .os-right-col > .os-sidebar-shell,
+    .os-sidebar-shell > .card {
+        flex-grow: 0;
+    }
+
+    /* Roster sidebar: visibility-hidden inactive team panels still sized the
+     shared grid cell to the tallest bench on desktop; on mobile remove them
+     from flow so the active team panel alone sets height. */
+    .team-panels {
+        display: block;
+    }
+
+    .team-panel {
+        display: none;
+        visibility: visible;
+        pointer-events: auto;
+    }
+
+    .team-panel.active {
+        display: flex;
+    }
 }
 
 .os-hero-title {
@@ -14660,6 +14706,7 @@ img, svg, canvas {
         scroll-padding: 0;
         max-width: 100vw;
         overflow-x: hidden;
+        width: 100%;
     }
 
     .os-left-col {
