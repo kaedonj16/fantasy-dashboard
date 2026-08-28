@@ -29,6 +29,14 @@ def test_my_leagues_cards_show_a_platform_script():
     assert '"fleaflicker": "Fleaflicker"' in fn
 
 
+def test_predraft_league_cards_use_draft_status_pill():
+    fn = _portfolio_fn()
+    assert "pf-status-pill--draft" in fn
+    assert "pf-lg-pending--draft" in fn
+    assert "pf-pending-cta--draft" in fn
+    assert "Mock draft &rarr;" in fn
+
+
 def test_unlinked_team_cards_offer_link_my_team_for_every_platform():
     fn = _portfolio_fn()
     assert "linkMyTeam(" in fn

@@ -23877,8 +23877,21 @@ def build_portfolio_body(
             reason = html.escape(lg.get("reason") or "Not drafted yet")
             _predraft = bool(lg.get("predraft"))
             _lg_season = lg.get("season") or season
+            _pill_cls = (
+                "pf-status-pill pf-status-pill--draft"
+                if _predraft
+                else "pf-status-pill pf-status-pill--link"
+            )
+            _card_pending_cls = (
+                "pf-lg-card pf-lg-pending pf-lg-pending--draft"
+                if _predraft
+                else "pf-lg-card pf-lg-pending pf-lg-pending--link"
+            )
             if _predraft:
-                action = f"<a href='/{plat}/{season}/{lid}/draft' class='pf-pending-cta'>Mock draft →</a>"
+                action = (
+                    f"<a href='/{plat}/{season}/{lid}/draft' "
+                    f"class='pf-pending-cta pf-pending-cta--draft'>Mock draft &rarr;</a>"
+                )
             else:
                 # "Team not linked yet" — open the link modal pointed at this
                 # league's team picker so the user can set their team in one click
@@ -23891,7 +23904,7 @@ def build_portfolio_body(
                     f"onclick=\"linkMyTeam('{_js_plat}','{_js_lid}','{_js_season}')\">Link my team →</button>"
                 )
             league_rows += (
-                f"<div class='pf-lg-card pf-lg-pending' data-lg-key='{plat}:{lid}'>"
+                f"<div class='{_card_pending_cls}' data-lg-key='{plat}:{lid}'>"
                 f"<div class='pf-lg-top'>"
                 f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
                 f"{_lg_id(name_link, plat)}"
@@ -23899,7 +23912,7 @@ def build_portfolio_body(
                 f"{_unlink_btn(plat, lid)}"
                 f"</div>"
                 f"<div class='pf-lg-pending-row'>"
-                f"<span class='pf-status-pill'>{reason}</span>"
+                f"<span class='{_pill_cls}'>{reason}</span>"
                 f"{action}"
                 f"</div>"
                 f"</div>"
@@ -24009,7 +24022,8 @@ def build_portfolio_body(
         ".pf-lg-foot{display:flex;align-items:center;gap:12px;border-top:1px solid var(--grid);padding-top:10px;flex-wrap:wrap;}"
         ".pf-lg-foot .pf-pos-chips{margin-top:0;}"
         ".pf-lg-open{margin-left:auto;font-weight:800;font-size:12.5px;color:var(--accent);text-decoration:none;white-space:nowrap;}"
-        ".pf-lg-pending-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}"
+        ".pf-lg-pending-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;"
+        "border-top:1px solid var(--grid);padding-top:10px;margin-top:2px;}"
         ".pf-lg-err{font-size:12px;color:var(--text-subtle);}"
         ".pf-lg-fav{flex:0 0 auto;background:none;border:0;cursor:pointer;font-size:16px;line-height:1;"
         "color:var(--text-subtle);padding:2px;opacity:.5;transition:opacity .12s,color .12s;}"

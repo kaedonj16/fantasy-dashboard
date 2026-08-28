@@ -13699,18 +13699,60 @@ html[data-theme="dark"] .podium .bar {
     flex: 1 1 auto;
 }
 
+.pf-lg-card.pf-lg-pending--draft {
+    background: color-mix(in srgb, var(--warning) 5%, var(--card));
+    border-color: color-mix(in srgb, var(--warning) 24%, var(--grid));
+}
+
+.pf-lg-card.pf-lg-pending--link {
+    background: color-mix(in srgb, var(--accent) 4%, var(--card));
+    border-color: color-mix(in srgb, var(--accent) 20%, var(--grid));
+}
+
 .pf-status-pill {
     display: inline-flex;
     align-items: center;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    padding: 2px 9px;
-    border-radius: var(--radius-pill);
-    color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 14%, transparent);
-    border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+    gap: 7px;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 6px 11px;
+    border-radius: 10px;
     white-space: nowrap;
+    line-height: 1.2;
+}
+
+.pf-status-pill--draft {
+    color: color-mix(in srgb, var(--warning) 88%, var(--text));
+    background: color-mix(in srgb, var(--warning) 14%, var(--card));
+    border: 1px solid color-mix(in srgb, var(--warning) 38%, var(--border));
+}
+
+.pf-status-pill--draft::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--warning);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 28%, transparent);
+    flex-shrink: 0;
+}
+
+.pf-status-pill--link {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, var(--card));
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+
+.pf-status-pill--link::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    opacity: 0.85;
+    flex-shrink: 0;
 }
 
 .pf-pending-cta {
@@ -13727,8 +13769,32 @@ html[data-theme="dark"] .podium .bar {
     cursor: pointer;
 }
 
+.pf-pending-cta--draft {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 7px 12px;
+    border-radius: 10px;
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+    background: var(--surface2);
+    color: var(--text);
+    text-decoration: none;
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.pf-pending-cta--draft:hover {
+    background: var(--card);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    transform: translateY(-1px);
+    text-decoration: none;
+}
+
 .pf-pending-cta:hover {
     text-decoration: underline;
+}
+
+.pf-pending-cta--draft:hover {
+    text-decoration: none;
 }
 
 /* Unlink (×) button on My Leagues cards for account-linked leagues. */
