@@ -6,6 +6,30 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-08-28",
+        "tag": "fix",
+        "text": "Draft Cheat Sheet: on a phone, Rk and Player stay pinned while the rest of the big board scrolls sideways.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
+        "tag": "fix",
+        "text": "Draft Cheat Sheet Hist: closest-example tags now read Exp: Year 4, Draft: Round 1, Age: 23-24, and Last Year: Top 5.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
+        "tag": "fix",
+        "text": "Draft Cheat Sheet Hist: closest-example tags now say NFL year, NFL Round 1, age, and last year Top 5, so they are not mixed up with the season year or this season's finish.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
+        "tag": "update",
+        "text": "Draft Cheat Sheet Trends: the sticky profile and matching-player dock can be collapsed so the tables stay in view. Lane chips stay on screen.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
         "tag": "update",
         "text": "Draft Cheat Sheet Hist: closest examples now mark Top-5, Top-12, and Top-24 hits on each row and in the summary, so a #1 is a Top 5 and a #20 is a Top 24.",
         "link": "/draft/cheat-sheet"
