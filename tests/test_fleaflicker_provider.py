@@ -41,6 +41,25 @@ def test_normalizes_league_users_rosters_and_matchups(monkeypatch):
                 {"proPlayer": {"id": 404, "nameFull": "Unknown", "position": "WR"}},
             ]}],
         },
+        "FetchRoster": {
+            "groups": [{
+                "group": "START",
+                "slots": [{
+                    "position": {"label": "QB", "group": "START"},
+                    "leaguePlayer": {
+                        "proPlayer": {"id": 9, "nameFull": "Known Player", "position": "QB"},
+                    },
+                }],
+            }, {
+                "group": "BENCH",
+                "slots": [{
+                    "position": {"label": "BN", "group": "BENCH"},
+                    "leaguePlayer": {
+                        "proPlayer": {"id": 404, "nameFull": "Unknown", "position": "WR"},
+                    },
+                }],
+            }],
+        },
         "FetchLeagueScoreboard": {
             "games": [{
                 "id": "g1",
@@ -63,6 +82,7 @@ def test_normalizes_league_users_rosters_and_matchups(monkeypatch):
     assert roster["owner_id"] == "1"
     assert roster["metadata"]["team_name"] == "Owls"
     assert roster["players"] == ["canon-9"]
+    assert roster["starters"] == ["canon-9"]
     assert roster["metadata"]["unmapped_player_count"] == 1
     assert provider.get_matchups("14153", 2026, 1)[0]["points"] == 101.5
 
@@ -277,3 +297,55 @@ def test_get_drafts_marks_post_draft_complete(monkeypatch):
     drafts = provider.get_drafts("92916", 2026)
     assert drafts[0]["status"] == "complete"
     assert len(drafts[0]["picks"]) == 1
+
+
+def test_get_rosters_uses_fetch_roster_starters_when_bulk_list_exists(monkeypatch):
+    provider = FleaflickerProvider()
+
+    def fake_call(method, *args, **kwargs):
+        if method == "FetchLeagueRosters":
+            return {
+                "rosters": [{
+                    "team": {"id": 1, "name": "Owls"},
+                    "players": [
+                        {"proPlayer": {"id": 9, "nameFull": "Starter QB", "position": "QB"}},
+                        {"proPlayer": {"id": 10, "nameFull": "Bench RB", "position": "RB"}},
+                    ],
+                }],
+            }
+        if method == "FetchLeagueStandings":
+            return {
+                "league": {"id": 14153, "name": "Dynasty", "size": 1},
+                "divisions": [{"teams": [{"id": 1, "name": "Owls"}]}],
+            }
+        if method == "FetchRoster":
+            return {
+                "groups": [
+                    {
+                        "group": "START",
+                        "slots": [{
+                            "position": {"label": "QB", "group": "START"},
+                            "leaguePlayer": {
+                                "proPlayer": {"id": 9, "nameFull": "Starter QB", "position": "QB"},
+                            },
+                        }],
+                    },
+                    {
+                        "group": "BENCH",
+                        "slots": [{
+                            "position": {"label": "RB", "group": "BENCH"},
+                            "leaguePlayer": {
+                                "proPlayer": {"id": 10, "nameFull": "Bench RB", "position": "RB"},
+                            },
+                        }],
+                    },
+                ],
+            }
+        raise AssertionError(method)
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    monkeypatch.setattr(provider, "_canonical_map", lambda *a, **k: {"9": "canon-qb", "10": "canon-rb"})
+    roster = provider.get_rosters("14153", 2026)[0]
+    assert roster["players"] == ["canon-qb", "canon-rb"]
+    assert roster["starters"] == ["canon-qb"]
+    assert "canon-rb" not in roster["starters"]
