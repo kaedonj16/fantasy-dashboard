@@ -451,6 +451,31 @@ def matched_filter_labels(
     return labels
 
 
+def scout_matching_players(
+    board_features: Mapping[str, Any],
+    filters: Sequence[Mapping[str, Any]],
+) -> list[dict]:
+    """Board players whose stamped trend feats match the selected profile.
+
+    Authoritative Scout path — same predicates as historical cohort matching.
+    ``board_features`` maps player id → feature dict. Display only.
+    """
+    if not isinstance(board_features, Mapping) or not filters:
+        return []
+    out: list[dict] = []
+    for pid, feats in board_features.items():
+        sid = str(pid or "").strip()
+        if not sid or not isinstance(feats, Mapping):
+            continue
+        if not matches_filter_groups(feats, filters):
+            continue
+        out.append({
+            "id": sid,
+            "why": matched_filter_labels(feats, filters),
+        })
+    return out
+
+
 def _cache_value(value: Any) -> tuple:
     """Orderable stand-in so mixed int/str filter specs can share a cache key."""
     if isinstance(value, tuple):

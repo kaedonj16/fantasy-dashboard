@@ -74,7 +74,7 @@ LABELS: dict[str, dict[str, str]] = {
     "historical_hit_rate": {
         "label": "Hist",
         "category": CATEGORY_HISTORY,
-        "tooltip": "Historical top-12 chance for players with this career profile and situation. Not a ranking input.",
+        "tooltip": "Hist vs ADP-bucket top-12 rate for this career profile. Open for absolute rates.",
     },
     "historical_comps": {
         "label": "Players like this",

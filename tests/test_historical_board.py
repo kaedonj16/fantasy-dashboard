@@ -226,6 +226,8 @@ def test_attach_compact_payload_and_deep_panel_are_descriptive():
     assert board[0]["historical"]["h_vs_m"] in {
         "aligned", "history_higher", "market_higher", "unknown",
     }
+    assert "trend_feats" in board[0]["historical"]
+    assert board[0]["historical"]["trend_feats"].get("position") == "WR"
     assert "examples" not in board[0]["historical"]
     assert compact[2] == {}
     assert "historical" not in board[2]
@@ -346,7 +348,7 @@ def test_compact_signal_never_blends():
         "market": {"p_top_12": 0.58, "adp_bucket": "round_1"},
         "projection": {"implied_positional_rank": 4, "implies_top_12": True},
         "comparison": {
-            "history_vs_market": {"label": "market_higher"},
+            "history_vs_market": {"label": "market_higher", "delta": -0.44},
             "projection_vs_market": {"label": "aligned", "adp_positional_rank": 3},
             "projection_vs_history": {"label": "history_skeptical"},
             "blended_score": 0.99,
@@ -355,6 +357,7 @@ def test_compact_signal_never_blends():
     out = compact_signal(full)
     assert out["p_hit_pct"] == 14
     assert out["mkt_pct"] == 58
+    assert out["h_vs_m_pts"] == -44
     assert "Players drafted in Round 1 historically finished top-12 58%" in out["mkt_sentence"]
     assert "blended_score" not in out
     assert out["h_vs_m"] == "market_higher"

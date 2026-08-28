@@ -117,7 +117,7 @@ def test_market_column_is_conditionally_omitted_from_table_and_export():
     assert "SHOW_MARKET_VS_ADP = resp.market_vs_adp_available === true" in script
     assert "showMarket(dyn) ? sortTh('market'" in script
     assert "showMarket(dyn) ? ['Market vs ADP'] : []" in script
-    assert "showHist(dyn) ? ['Hist P(top-12)'] : []" in script
+    assert "showHist(dyn) ? ['Hist vs ADP'] : []" in script
     assert "Not enough independent market data yet." in script
     assert "marketBasis" in script
     assert "marketConfidenceLabel" in script
@@ -378,12 +378,16 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "scored.sort(function (a, b) {" in script
     assert "var aVor = Number(a.vorRaw);" in script
     assert "histP" not in script.split("scored.sort(function (a, b) {")[1].split("scored.forEach")[0]
-    assert "Historical top-12 chance given this career and situation" in script
+    assert "function histEdgeClass" in script
+    assert "function histEdgeBody" in script
+    assert "Hist vs ADP bucket" in script
     assert "historical chance for this career and situation" in body.lower()
-    assert "this player\\'s historical chance, not a rank" in script
-    assert "title=\"This player\\'s historical chance\"" in script
+    assert "vs ADP bucket (signed pts)" in script
+    assert "title=\"Hist vs ADP bucket\"" in script
     assert "return !dyn && SHOW_HISTORICAL" in script
-    assert "var HIST_STRONG_PCT = 25" in script
+    assert "var showTrends = function ()" in script
+    assert "return SHOW_HISTORICAL;" in script.split("var showTrends = function ()")[1].split("var currentTab")[0]
+    assert "HIST_STRONG_PCT" not in script
     assert "var HIST_TIER_SHORT = { top_5: 'top-5', top_12: 'top-12', top_24: 'top-24' }" in script
     assert "function histExampleHit" in script
     assert "cs-hist-ex-hit" in script
@@ -392,8 +396,8 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "(row.pct != null ? row.pct + '%' : '-')" in script
     assert "—" not in script.split("function renderHistPanel")[1].split("function init()")[0]
     assert "–" not in script.split("function renderHistPanel")[1].split("function init()")[0]
-    assert "market_higher" not in script.split("function histCell")[1].split("function smallVal")[0]
-    assert "Hist is redraft-only" in body
+    assert "market_higher" in script.split("function histEdgeClass")[1].split("function histEdgeBody")[0]
+    assert "Hist vs the ADP bucket" in body
     assert "copy.trends" in script or "Trends for this player's buckets" in script
     assert "trendsHitRow(row, row && row.polarity, histBaseline, histSpan)" in script
     assert "copy.projection_trends" not in script
@@ -426,7 +430,8 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "function loadTrends" in script
     assert "function renderTrends" in script
     assert "cs-panel-trends" in script
-    assert "if (!on && currentTab === 'trends') showSheetTab('board')" in script
+    assert "if (!trendsOn && currentTab === 'trends') showSheetTab('board')" in script
+    assert "1QB redraft history" in script
     assert ".cs-trends-grid" in body
     assert ".cs-trends-bar" in body
     assert ".cs-trends-callouts" in body
@@ -455,7 +460,8 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert ".cs-trends-conf" in body
     assert "Descriptive — not a ranking input" not in body
     assert "cs-trends-honesty" not in body
-    assert "Not a ranking score." in body
+    assert "Historical finish rates by bucket." in body
+    assert "Not a ranking score." not in body
     assert ".cs-trends-callout-col" in body
     assert "grid-template-columns: 1fr 1fr" in body
     assert "cs-trends-age-tip" in body
@@ -466,17 +472,19 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "trendsTopEdges(sections, 10, trendsTier)" in script
     assert "data-trends-tier" in script
     assert "function trendsScoutHtml" in script
-    assert "function trendsLivePlayerFeatures" in script
-    assert "feats.nfl_draft_pick" in script
-    assert "function trendsFeatsForPlayer" in script
-    assert "trendsFeatsForPlayer(featsIndex, p)" in script
+    assert "function trendsBoardFeaturesPayload" in script
+    assert "board_features" in script
+    assert "scout_matches" in script
+    assert "function trendsFeatsForPlayer" not in script
+    assert "function trendsLivePlayerFeatures" not in script
     assert "sticky.classList.toggle('is-picked'" in script
     assert "sticky.classList.toggle('is-collapsed'" in script
     assert "function setTrendsDockOpen" in script
     assert "var trendsDockOpen" in script
     assert 'data-trends-dock="1"' in script
     assert "cs-trends-sticky-body" in script
-    assert "Actual matching seasons. Not a ranking input." in script
+    assert "Actual matching seasons." in script
+    assert "Actual matching seasons. Not a ranking input." not in script
     assert "draft-trends-scout" in script
     assert "Tap a bucket to list matching players." in script
     assert "Tap historical buckets to build a profile." in script
@@ -494,7 +502,7 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert ".cs-hist-gap" in body
     assert "function trendsRedFlags" in script
     assert "ranking_edge" in script
-    assert "spec.lte" in script
+    assert "'lte'" in script
     assert ".cs-trends-profile" in body
     assert ".cs-hist-market" in body
     assert ".cs-hist-ex-sum" in body
@@ -515,7 +523,7 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "grid-template-columns: 1fr 1fr" in scout_css
     assert "data-trends-lane" in script
     assert "row.vs_label" in script
-    assert "The Trends tab shows position-wide rates" in body
+    assert "stays available in dynasty" in body
     assert "--cs-qb: #3b82f6" in body
     assert "--cs-rb: #22c55e" in body
     assert "--cs-wr: #f59e0b" in body

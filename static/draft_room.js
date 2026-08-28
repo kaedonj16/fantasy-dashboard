@@ -81,7 +81,7 @@
   var tierThresholds = {}; // {leagueType:{size:[...]}} from /api/league-players
   var adpSources = {};     // {startup|rookie|redraft: 'Sleeper'|'none'} from /api/league-players
   var historicalAvailable = false; // compact Hist on /api/league-players; descriptive only
-  var DD_HIST_STRONG = 25; // same strong-cell cutoff as Cheat Sheet Hist
+  var DD_HIST_EDGE = 10; // pts — same order as SIGNAL_PROB_ALIGN_DELTA (0.10)
   var adpSourceOptions = {}; // {startup|rookie|redraft: [{value,label}]} from payload
   var adpSource = 'consensus'; // selected source; saved sessions may override this.
                              // 'auto' = server default, any real source
@@ -6115,7 +6115,7 @@
     { term: 'Grade · Starters', def: 'How good your projected starting lineup is versus a league-average team. 100% is a league-average lineup; the rank is among teams in this draft. Snake drafts are close to zero-sum, so a lineup near 100% of average can still rank 1st or 2nd.' },
     { term: 'Grade · Construction', def: 'How well you’ve filled your starting slots and balanced your positions.' },
     { term: 'Grade · Early', def: 'Shown until your team has 8 picks (3 in a rookie draft). The letter is real — including at two picks / the start of round 3 — but construction is still ramping and the sample is small.' },
-    { term: 'Hist', def: 'This player\'s historical chance of a top-12 season given career stage, NFL draft capital, age, and last year. Descriptive only. It is not a Pick Score, Recommendation, VOR, or Draft Grade input.' }
+    { term: 'Hist', def: 'Hist vs the ADP-bucket top-12 rate for this career profile and situation. Absolute rates sit in the deep panel. Not a Pick Score, Recommendation, VOR, or Draft Grade input.' }
   ];
   // Inline info icon: data-tip drives a CSS hover/focus bubble. tabindex makes it
   // tap- and keyboard-accessible.
@@ -6775,7 +6775,7 @@
       + '<thead><tr>'
       + '<th data-k="pn" data-t="n">Pick</th><th data-k="name" data-t="s">Player</th><th data-k="pos" data-t="s">Pos</th>'
       + '<th data-k="adp" data-t="n" class="r">ADP</th><th data-k="diff" data-t="n" class="r dd-sorted">± ADP</th>'
-      + '<th data-k="hist" data-t="n" class="r" title="Historical top-12 chance given this career and situation. Descriptive only.">Hist</th>'
+      + '<th data-k="hist" data-t="n" class="r" title="Historical top-12 chance for this career and situation. Compare to the ADP round.">Hist</th>'
       + '<th data-k="ps" data-t="n" class="r" title="Board pick score vs best available at that slot">Board PS</th><th data-k="tier" data-t="n" class="r">Tier</th>'
       + '<th data-k="vord" data-t="s">Verdict</th>'
       + '</tr></thead><tbody id="drDdLedgerBody"></tbody></table></div></div>';
@@ -6794,7 +6794,7 @@
         + '<td><span class="dd-posbadge" style="background:' + posColor(p.pos) + '">' + p.pos + '</span></td>'
         + '<td class="r num">' + (da != null ? Number(da).toFixed(1) : '—') + '</td>'
         + '<td class="r num"><span class="dd-diff ' + dcl + '">' + dtxt + '</span></td>'
-        + '<td class="r"><span class="dd-hist-pct' + (ddHistPct(p) != null && ddHistPct(p) >= DD_HIST_STRONG ? ' is-strong' : '') + '">'
+        + '<td class="r"><span class="dd-hist-pct' + (ddHist(p).h_vs_m === 'history_higher' ? ' is-strong' : '') + '">'
         + (ddHistPct(p) != null ? ddHistPct(p) + '%' : '-') + '</span></td>'
         + '<td class="r">' + (p.ps != null ? '<span class="num" style="font-weight:700;color:' + psColor(p.ps) + '">' + p.ps + '</span>' : '<span style="color:var(--text-subtle,var(--text-muted))">—</span>') + '</td>'
         + '<td class="r"><span style="color:var(--text-muted);font-size:12px">' + (p.tier != null ? 'T' + p.tier : '—') + '</span></td>'
@@ -6975,9 +6975,12 @@
     var rows = (picks || []).filter(function(p){ return ddHistPct(p) != null; });
     if (!rows.length) return '';
     var avg = Math.round(rows.reduce(function(s, p){ return s + ddHistPct(p); }, 0) / rows.length);
-    var strong = rows.filter(function(p){ return ddHistPct(p) >= DD_HIST_STRONG; }).length;
     var above = rows.filter(function(p){ return ddHist(p).h_vs_m === 'history_higher'; }).length;
     var below = rows.filter(function(p){ return ddHist(p).h_vs_m === 'market_higher'; }).length;
+    var edgeRows = rows.filter(function(p){ return ddHistVsPts(p) != null; });
+    var avgEdge = edgeRows.length
+      ? Math.round(edgeRows.reduce(function(s, p){ return s + ddHistVsPts(p); }, 0) / edgeRows.length)
+      : null;
     var ranked = rows.slice().sort(function(a, b){
       var ad = ddHistVsPts(a), bd = ddHistVsPts(b);
       if (ad == null && bd == null) return (ddHistPct(b) || 0) - (ddHistPct(a) || 0);
@@ -6986,9 +6989,9 @@
       return bd - ad;
     });
     var tiles = [
-      { v: avg + '%', l: 'Avg Hist top-12', cls: avg >= DD_HIST_STRONG ? 'good' : '' },
-      { v: strong, l: 'Strong profiles (25%+)', cls: strong ? 'good' : '' },
-      { v: above, l: 'Hist group higher', cls: '' },
+      { v: avg + '%', l: 'Avg Hist top-12', cls: '' },
+      { v: avgEdge == null ? '-' : ((avgEdge > 0 ? '+' : '') + avgEdge), l: 'Avg vs ADP bucket', cls: avgEdge != null && avgEdge >= DD_HIST_EDGE ? 'good' : '' },
+      { v: above, l: 'Hist group higher', cls: above ? 'good' : '' },
       { v: below, l: 'ADP round higher', cls: '' }
     ].map(function(t){
       return '<div class="dd-tile ' + (t.cls || '') + '"><div class="dd-tile-v">' + t.v + '</div><div class="dd-tile-l">' + t.l + '</div></div>';
@@ -7024,14 +7027,14 @@
         + '<td class="num" style="color:var(--text-muted)">' + roundPickStr(p.pn) + '</td>'
         + '<td class="dd-plname">' + esc(p.pl.name) + '</td>'
         + '<td><span class="dd-posbadge" style="background:' + posColor(p.pos) + '">' + p.pos + '</span></td>'
-        + '<td class="r"><span class="dd-hist-pct' + (pct >= DD_HIST_STRONG ? ' is-strong' : '') + '">'
+        + '<td class="r"><span class="dd-hist-pct' + (ddHist(p).h_vs_m === 'history_higher' ? ' is-strong' : '') + '">'
         + (pct != null ? pct + '%' : '-') + '</span></td>'
         + '<td class="r num">' + (mkt != null ? mkt + '%' : '-') + '</td>'
         + '<td class="r"><span class="dd-hist-vs">' + (vs || '-') + '</span></td>'
         + '</tr>';
     }).join('');
     return '<div class="dd-card"><div class="dd-sec"><h4>Historical trends</h4>'
-      + '<p>Two groups per pick: players like this, and anyone taken in that ADP round. They are not averaged into one chance. Descriptive only. Not a ranking, Pick Score, or Draft Grade input.</p></div>'
+      + '<p>Two groups per pick: players like this, and anyone taken in that ADP round. Lead with the gap between them.</p></div>'
       + '<div class="dd-tiles">' + tiles + '</div>'
       + callouts
       + '<div class="dd-tablescroll" style="margin-top:14px"><table class="dd-ledger">'
