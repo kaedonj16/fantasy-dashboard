@@ -347,7 +347,11 @@ def page_portfolio():
         logger.debug("suppressed exception", exc_info=True)
 
     body = build_portfolio_body(
-        viewer_username, valid_leagues, leagues_data, season,
+        viewer_username
+        or session.get("account_email")
+        or session.get("account_first_name")
+        or "your account",
+        valid_leagues, leagues_data, season,
         holdings, num_leagues, nfl_exposure, cross_pos,
         total_wins, total_losses, total_ties,
     )

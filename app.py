@@ -23678,12 +23678,13 @@ def build_portfolio_body(
     # ── Summary card ────────────────────────────────────────────────────────
     rec_str = f"{total_wins}-{total_losses}" + (f"-{total_ties}" if total_ties else "")
     rec_cls = "color-win" if total_wins > total_losses else ("color-loss" if total_losses > total_wins else "")
+    _who = html.escape(username or "your account")
     top_strip = (
         f"<div class='card' style='margin-bottom:14px;'>"
         f"<div class='pf-summary'>"
         f"<div>"
         f"<div class='pf-summary-title'>My Leagues</div>"
-        f"<div class='pf-summary-sub'>Signed in as <strong>{html.escape(username)}</strong></div>"
+        f"<div class='pf-summary-sub'>Signed in as <strong>{_who}</strong></div>"
         f"</div>"
         f"<div class='pf-stat-bar'>"
         f"<div class='pf-stat'><div class='pf-stat-val'>{num_leagues}</div><div class='pf-stat-label'>Leagues</div></div>"
