@@ -275,9 +275,9 @@
     var _hl = document.getElementById('drToHistory');
     if (_hl && cfg.historyUrl) _hl.setAttribute('href', cfg.historyUrl);
     var _cs = document.getElementById('drToCheatSheet');
-    // In-draft cheat sheet: the options-menu link opens the sheet in an overlay
-    // (iframe of the chrome-less embed) so you never leave the draft. Cmd/Ctrl/
-    // middle-click still opens the full page in a new tab.
+    // In-draft cheat sheet: the always-visible board control opens the sheet in
+    // an overlay (iframe of the chrome-less embed) so you never leave the draft.
+    // Cmd/Ctrl/middle-click still opens the full page in a new tab.
     var _cs2 = document.getElementById('drOptsCheatSheet');
     var _csPop = document.getElementById('drCheatPop');
     var _csOverlay = document.getElementById('drCheatSheet');
