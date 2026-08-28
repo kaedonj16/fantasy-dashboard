@@ -6,6 +6,18 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-08-28",
+        "tag": "fix",
+        "text": "Draft Cheat Sheet Hist: the modal now shows two groups (players like this vs that ADP round) instead of a vs-market edge, so 37% and 57% are not read as one combined chance.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
+        "tag": "fix",
+        "text": "Draft Room Deep Dive: Hist vs ADP is labeled as two groups, and a lower Hist than the ADP round is not painted as a miss.",
+        "link": "/draft"
+    },
+    {
+        "date": "2026-08-28",
         "tag": "update",
         "text": "Draft Room Deep Dive: redraft reports now include historical top-12 trends for your skill picks versus the ADP-bucket hit rate. Descriptive only. Not a ranking or Pick Score input.",
         "link": "/draft"

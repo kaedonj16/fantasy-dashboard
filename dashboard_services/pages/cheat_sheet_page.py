@@ -303,10 +303,14 @@ _CHEAT_HTML = r"""
   .cs-hist-ex small { display: block; font-size: 11.5px; font-weight: 500; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 2px; line-height: 1.4; overflow-wrap: anywhere; }
   .cs-hist-ex-sum { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 8px; }
   .cs-hist-closest { margin-top: 4px; }
-  .cs-hist-market { display: grid; gap: 6px; margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; background: color-mix(in srgb, var(--cs-pos) 8%, transparent); }
-  .cs-hist-market > div { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; font-size: 13px; }
-  .cs-hist-market span { color: var(--cs-ink-soft, var(--text-muted)); }
-  .cs-hist-market strong { font-weight: 800; font-variant-numeric: tabular-nums; }
+  .cs-hist-market { display: grid; gap: 8px; margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; background: color-mix(in srgb, var(--cs-pos) 8%, transparent); }
+  .cs-hist-compare-h { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); }
+  .cs-hist-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .cs-hist-compare-col { min-width: 0; }
+  .cs-hist-compare-k { font-size: 12.5px; font-weight: 700; color: var(--cs-ink, var(--text)); }
+  .cs-hist-compare-v { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; margin: 2px 0; color: var(--cs-ink, var(--text)); }
+  .cs-hist-compare-s { font-size: 11.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.35; }
+  .cs-hist-gap { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.45; margin: 2px 0 0; }
   .cs-trends-qb, .cs-hist-modal.cs-hist-qb { --cs-pos: var(--cs-qb); --cs-pos-bg: var(--cs-qb-bg); }
   .cs-trends-rb, .cs-hist-modal.cs-hist-rb { --cs-pos: var(--cs-rb); --cs-pos-bg: var(--cs-rb-bg); }
   .cs-trends-wr, .cs-hist-modal.cs-hist-wr { --cs-pos: var(--cs-wr); --cs-pos-bg: var(--cs-wr-bg); }

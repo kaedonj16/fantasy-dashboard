@@ -3243,15 +3243,34 @@
             html += '</div>';
             var histPct = copy.history_pct != null ? copy.history_pct : lead.pct;
             var mktPct = copy.market_pct;
-            var edgePts = copy.history_vs_market_pts;
             if (histPct != null || mktPct != null) {
                 html += '<div class="cs-hist-market">';
-                html += '<div><span>Historical profile</span><strong>'
-                    + (histPct != null ? histPct + '% Top-12' : '-') + '</strong></div>';
-                html += '<div><span>Expected at current ADP</span><strong>'
-                    + (mktPct != null ? mktPct + '%' : 'unknown') + '</strong></div>';
-                html += '<div><span>Historical edge vs market</span><strong>'
-                    + (edgePts != null ? trendsSignedPts(edgePts) : 'unknown') + '</strong></div>';
+                html += '<div class="cs-hist-compare-h">'
+                    + esc(copy.market_compare_heading || 'Two groups, not one chance')
+                    + '</div>';
+                html += '<div class="cs-hist-compare">';
+                html += '<div class="cs-hist-compare-col">'
+                    + '<div class="cs-hist-compare-k">'
+                    + esc(copy.history_group_label || 'Players like this') + '</div>'
+                    + '<div class="cs-hist-compare-v">'
+                    + (histPct != null ? histPct + '%' : '-') + '</div>'
+                    + '<div class="cs-hist-compare-s">'
+                    + esc(copy.history_group_hint || 'this career and situation')
+                    + '</div></div>';
+                html += '<div class="cs-hist-compare-col">'
+                    + '<div class="cs-hist-compare-k">'
+                    + esc(copy.market_group_label || 'That ADP round') + '</div>'
+                    + '<div class="cs-hist-compare-v">'
+                    + (mktPct != null ? mktPct + '%' : 'need ADP') + '</div>'
+                    + '<div class="cs-hist-compare-s">'
+                    + esc(copy.market_group_hint || 'anyone taken in that fantasy round')
+                    + '</div></div>';
+                html += '</div>';
+                var gapNote = copy.gap_note;
+                if (!gapNote && mktPct == null) {
+                    gapNote = 'Need live ADP to show the other group.';
+                }
+                if (gapNote) html += '<p class="cs-hist-gap">' + esc(gapNote) + '</p>';
                 html += '</div>';
             }
             if (copy.headline) html += '<p class="cs-hist-cohort">' + esc(copy.headline) + '</p>';

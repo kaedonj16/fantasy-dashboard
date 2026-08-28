@@ -448,9 +448,14 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "/api/historical-cohort" in script
     assert "Historical red flags" in script
     assert "Closest historical examples" in script
-    assert "Historical profile" in script
-    assert "Expected at current ADP" in script
-    assert "Historical edge vs market" in script
+    assert "Two groups, not one chance" in script
+    assert "Players like this" in script
+    assert "anyone taken in that fantasy round" in script
+    assert "Need live ADP to show the other group." in script
+    assert "Expected at current ADP" not in script
+    assert "Historical edge vs market" not in script
+    assert ".cs-hist-compare" in body
+    assert ".cs-hist-gap" in body
     assert "function trendsRedFlags" in script
     assert "ranking_edge" in script
     assert "spec.lte" in script
@@ -674,6 +679,15 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert pin_board["link"] == "/draft/cheat-sheet"
     assert "—" not in pin_board["text"]
     assert "–" not in pin_board["text"]
+    two_groups = next(
+        entry for entry in CHANGELOG
+        if "two groups (players like this vs that adp round)" in entry.get("text", "").lower()
+    )
+    assert two_groups["tag"] == "fix"
+    assert two_groups["link"] == "/draft/cheat-sheet"
+    assert "combined chance" in two_groups["text"].lower()
+    assert "—" not in two_groups["text"]
+    assert "–" not in two_groups["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():

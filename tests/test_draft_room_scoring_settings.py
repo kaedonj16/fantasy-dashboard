@@ -558,7 +558,13 @@ def test_deep_dive_includes_descriptive_historical_trends():
 
     assert "function ddHistHtml" in source
     assert "html += ddHistHtml(picks)" in source
+    assert "Two groups per pick: players like this, and anyone taken in that ADP round." in source
+    assert "They are not averaged into one chance." in source
     assert "Descriptive only. Not a ranking, Pick Score, or Draft Grade input." in source
+    assert "Hist below ADP bucket" not in source
+    assert "Historical miss vs market" not in source
+    assert "ADP round is a higher bar" in source
+    assert "Hist group higher" in source
     assert 'data-k="hist"' in source
     assert "ddHistPct(p)" in source
     assert "p_hit_pct" in source
@@ -578,3 +584,11 @@ def test_deep_dive_includes_descriptive_historical_trends():
     assert "descriptive only" in entry["text"].lower()
     assert "—" not in entry["text"]
     assert "–" not in entry["text"]
+    groups = next(
+        item for item in CHANGELOG
+        if "lower hist than the adp round is not painted as a miss" in item.get("text", "").lower()
+    )
+    assert groups["tag"] == "fix"
+    assert groups["link"] == "/draft"
+    assert "—" not in groups["text"]
+    assert "–" not in groups["text"]
