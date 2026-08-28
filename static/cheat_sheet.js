@@ -3278,9 +3278,11 @@
                 if (ex.positional_finish != null) right.push('#' + ex.positional_finish);
                 if (ex.ppr_points != null) right.push(ex.ppr_points + ' pts');
                 var hit = histExampleHit(ex.positional_finish, ex);
-                var traits = Array.isArray(ex.traits) ? ex.traits.join(' · ') : '';
+                var traits = Array.isArray(ex.traits)
+                    ? ex.traits.filter(Boolean).map(function (t) { return esc(String(t)); }).join(' · ')
+                    : '';
                 html += '<li' + (hit && hit.tier ? ' class="is-' + esc(hit.tier) + '"' : '') + '><span>' + left
-                    + (traits ? '<small>' + esc(traits) + '</small>' : '')
+                    + (traits ? '<small>' + traits + '</small>' : '')
                     + '</span><span class="cs-hist-ex-right">'
                     + (right.length ? '<span class="cs-hist-ex-meta">' + esc(right.join(' · ')) + '</span>' : '')
                     + (hit ? '<b class="cs-hist-ex-hit">' + esc(hit.label) + '</b>' : '')

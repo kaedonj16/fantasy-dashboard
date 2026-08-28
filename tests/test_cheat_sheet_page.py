@@ -641,6 +641,15 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "Lane chips" in collapse["text"]
     assert "—" not in collapse["text"]
     assert "–" not in collapse["text"]
+    example_context = next(
+        entry for entry in CHANGELOG
+        if "last year top 5" in entry.get("text", "").lower()
+        and "nfl year" in entry.get("text", "").lower()
+    )
+    assert example_context["tag"] == "fix"
+    assert example_context["link"] == "/draft/cheat-sheet"
+    assert "—" not in example_context["text"]
+    assert "–" not in example_context["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():

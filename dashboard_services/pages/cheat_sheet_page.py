@@ -300,7 +300,7 @@ _CHEAT_HTML = r"""
   .cs-hist-ex-hit { font-size: 10.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-ink-faint, var(--text-muted)); }
   .cs-hist-ex li.is-top_5 .cs-hist-ex-hit, .cs-hist-ex li.is-top_12 .cs-hist-ex-hit { color: var(--cs-pos); }
   .cs-hist-ex li.is-top_24 .cs-hist-ex-hit { color: var(--cs-ink, var(--text)); }
-  .cs-hist-ex small { display: block; font-size: 11.5px; font-weight: 500; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 2px; }
+  .cs-hist-ex small { display: block; font-size: 11.5px; font-weight: 500; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 2px; line-height: 1.4; overflow-wrap: anywhere; }
   .cs-hist-ex-sum { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 8px; }
   .cs-hist-closest { margin-top: 4px; }
   .cs-hist-market { display: grid; gap: 6px; margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; background: color-mix(in srgb, var(--cs-pos) 8%, transparent); }

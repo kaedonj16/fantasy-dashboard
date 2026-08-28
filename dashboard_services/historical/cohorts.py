@@ -41,8 +41,8 @@ from dashboard_services.historical.definitions import (
 from dashboard_services.historical.filters import (
     canonical_filter_key,
     extract_trend_features,
-    matched_filter_labels,
     matches_filter_groups,
+    matches_trend_filter,
     trajectory_buckets,
 )
 from dashboard_services.historical.finish_rates import (
@@ -420,6 +420,30 @@ _COMPACT_CAPITAL_LABELS = {
     "day_3": "Day 3",
     "undrafted": "Undrafted",
 }
+_USAGE_TRAIT_UNITS = {
+    "target_share": "targets",
+    "snap_pct": "snaps",
+    "touches": "touches",
+    "carries": "carries",
+    "receptions": "receptions",
+    "targets": "targets",
+    "games": "games",
+    "pass_attempts": "pass attempts",
+    "ryoe": "RYOE",
+}
+_EXAMPLE_TRAIT_ORDER = (
+    "career_stage",
+    "draft_capital",
+    "age_bucket",
+    "prior_finish",
+    "target_share",
+    "snap_pct",
+    "adot",
+    "ryoe",
+    "target_share_change",
+    "snap_pct_change",
+    "workload_change",
+)
 
 
 def _human_feat_label(dim: str, value: Any) -> str:
@@ -439,36 +463,108 @@ def _human_feat_label(dim: str, value: Any) -> str:
     return label
 
 
+def _example_trait_phrase(
+    dim: str,
+    value: Any,
+    feats: Optional[Mapping[str, Any]] = None,
+) -> str:
+    """One labeled tag: NFL year, draft capital, age, last-year finish, usage."""
+    key = str(dim or "")
+    if key == "nfl_draft_pick":
+        from dashboard_services.historical.definitions import trends_round1_pick_range
+
+        band = trends_round1_pick_range(value)
+        if band:
+            name = str(band[1] or "").strip()
+            if name.lower().startswith("nfl "):
+                return name
+            return f"NFL {name}" if name else ""
+        cap = (feats or {}).get("draft_capital")
+        if cap:
+            return _example_trait_phrase("draft_capital", cap, feats)
+        return ""
+    raw = _human_feat_label(key, value)
+    if not raw:
+        return ""
+    low = raw.lower()
+    if key == "career_stage":
+        if low == "rookie":
+            return "NFL rookie"
+        if low.startswith("year "):
+            return f"NFL year {raw[5:].strip()}"
+        if "nfl" in low:
+            return raw
+        return f"NFL {raw}"
+    if key == "draft_capital":
+        if low == "undrafted":
+            return "undrafted"
+        if low.startswith("nfl "):
+            return raw
+        return f"NFL {raw}"
+    if key in ("age_bucket", "age"):
+        if low.startswith("age "):
+            return raw
+        return f"age {raw}"
+    if key == "prior_finish":
+        if "last year" in low or low.startswith("no "):
+            return raw
+        return f"last year {raw}"
+    if key == "prior_elite":
+        return raw
+    if key == "adot":
+        from dashboard_services.historical.board import format_adot_bucket_label
+
+        labeled = format_adot_bucket_label(value) or raw
+        if labeled.lower().startswith("last year"):
+            return labeled
+        return f"last year {labeled}"
+    unit = _USAGE_TRAIT_UNITS.get(key)
+    if unit:
+        if "last year" in low:
+            return raw
+        return f"last year {raw} {unit}"
+    if key.endswith("_change"):
+        metric = key[: -len("_change")].replace("_", " ")
+        return f"{metric} {raw}"
+    return raw
+
+
 def _example_traits(feats: Mapping[str, Any], filters: Sequence[Mapping[str, Any]]) -> list[str]:
-    labels = [
-        item.replace("_", " ").strip() if "_" in item else item
-        for item in matched_filter_labels(feats, filters)
-        if item
-    ]
-    labels = [item for item in labels if item]
-    if labels:
-        return labels
-    order = (
-        "career_stage",
-        "draft_capital",
-        "age_bucket",
-        "prior_finish",
-        "target_share",
-        "snap_pct",
-        "adot",
-        "ryoe",
-        "target_share_change",
-        "snap_pct_change",
-        "workload_change",
-    )
-    out = []
-    for key in order:
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add(dim: str, value: Any) -> None:
+        phrase = _example_trait_phrase(dim, value, feats)
+        if not phrase or phrase in seen:
+            return
+        seen.add(phrase)
+        out.append(phrase)
+
+    for spec in filters or ():
+        if not isinstance(spec, Mapping):
+            continue
+        if not matches_trend_filter(feats, spec):
+            continue
+        field = str(spec.get("field") or spec.get("group") or "")
+        value = feats.get(field) if field and feats.get(field) not in (None, "") else spec.get("eq")
+        if field and value not in (None, ""):
+            add(field, value)
+            continue
+        label = str(spec.get("label") or "").strip()
+        if not label:
+            continue
+        group = str(spec.get("group") or field)
+        phrase = _example_trait_phrase(group, label, feats) or label.replace("_", " ").strip()
+        if phrase and phrase not in seen:
+            seen.add(phrase)
+            out.append(phrase)
+    if out:
+        return out
+    for key in _EXAMPLE_TRAIT_ORDER:
         val = feats.get(key)
         if val is None or val == "":
             continue
-        label = _human_feat_label(key, val)
-        if label:
-            out.append(label)
+        add(key, val)
         if len(out) >= 4:
             break
     return out
