@@ -693,13 +693,33 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
 def test_changelog_announces_portfolio_positional_percentiles():
     from dashboard_services.changelog import CHANGELOG
 
-    entry = next(
-        item for item in CHANGELOG
-        if item.get("link") == "/portfolio" and "percentile" in item.get("text", "").lower()
-    )
+    entry = next(e for e in CHANGELOG if "percentile" in e.get("text", "").lower())
     assert entry["date"] == "2026-08-28"
     assert entry["tag"] == "fix"
     assert entry["link"] == "/portfolio"
+    assert "—" not in entry["text"]
+    assert "–" not in entry["text"]
+
+
+def test_changelog_announces_undrafted_draft_countdown():
+    from dashboard_services.changelog import CHANGELOG
+
+    entry = next(e for e in CHANGELOG if "countdown" in e.get("text", "").lower())
+    assert entry["date"] == "2026-08-28"
+    assert entry["tag"] == "fix"
+    assert entry["link"] == "/portfolio"
+    assert "—" not in entry["text"]
+    assert "–" not in entry["text"]
+
+
+def test_changelog_announces_predraft_cheat_sheet_sidebar():
+    from dashboard_services.changelog import CHANGELOG
+
+    entry = next(e for e in CHANGELOG if "empty roster sidebar" in e.get("text", "").lower())
+    assert entry["date"] == "2026-08-28"
+    assert entry["tag"] == "fix"
+    assert entry["link"] == "/draft/cheat-sheet"
+    assert "cheat sheet" in entry["text"].lower()
     assert "—" not in entry["text"]
     assert "–" not in entry["text"]
 

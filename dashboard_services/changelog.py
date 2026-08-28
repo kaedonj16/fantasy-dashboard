@@ -7,6 +7,18 @@ CHANGELOG = [
     {
         "date": "2026-08-28",
         "tag": "fix",
+        "text": "Dashboard: leagues that have not drafted yet replace the empty roster sidebar with a Draft Cheat Sheet preview and a link to the full board.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
+        "tag": "fix",
+        "text": "My Leagues: leagues that have not drafted (empty roster shells) now show a draft countdown instead of fake positional ranks.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-08-28",
+        "tag": "fix",
         "text": "Draft Cheat Sheet Hist: the modal now shows two groups (players like this vs that ADP round) instead of a vs-market edge, so 37% and 57% are not read as one combined chance.",
         "link": "/draft/cheat-sheet"
     },

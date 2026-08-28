@@ -101,6 +101,25 @@ def page_portfolio():
         model_value_table = lctx.get("model_value_table") or []
         players_index = lctx.get("players_index") or {}
         values_by_id = {str(r.get("id") or ""): r for r in model_value_table if r.get("id")}
+        league_obj = lctx.get("league") or {}
+        latest_draft = lctx.get("latest_draft") if isinstance(lctx.get("latest_draft"), dict) else {}
+        from utils.league_payload import draft_start_ms, startup_draft_phase
+        draft_phase = startup_draft_phase(league_obj, latest_draft, rosters)
+        if draft_phase != "drafted":
+            # Roster shells exist before a startup/redraft, so a linked team used
+            # to look "drafted" and get fake positional ranks. Treat thin rosters
+            # as pending and show the draft countdown instead.
+            return {
+                "league_id": lid,
+                "name": league_obj.get("name") or lg.get("name") or "Unknown",
+                "platform": lg_platform,
+                "season": lg_season,
+                "pending": True,
+                "predraft": True,
+                "draft_phase": draft_phase,
+                "draft_start_ms": draft_start_ms(league_obj, latest_draft),
+                "reason": "Drafting now" if draft_phase == "drafting" else "Draft not started",
+            }
         # Which roster is "yours": prefer the account's stored team (and ESPN SWID /
         # Sleeper identity), then the session viewer. A leftover ESPN owner id in
         # the session must not mark every Sleeper league as "Team not linked yet".
@@ -129,21 +148,16 @@ def page_portfolio():
                 owner_id=viewer_user_id if lg_platform == "sleeper" else None,
             )
         if not viewer_roster:
-            # The league loaded but there's no roster for you yet. Most often that's
-            # a linked league whose draft hasn't happened (no rosters populated) —
-            # a normal pending state, not an error. Distinguish it from a genuine
-            # wrong-team link so the card can read "Draft not started" instead of a
-            # scary "unavailable".
-            _status = str(((lctx.get("league") or {}).get("status")) or "").lower()
-            _predraft = (_status in ("pre_draft", "drafting", "predraft")) or not rosters
+            # Startup/redraft-not-started already returned above. A full roster
+            # league with no matching team is a link problem, not a draft one.
             return {
                 "league_id": lid,
-                "name": lg.get("name", "Unknown"),
+                "name": league_obj.get("name") or lg.get("name") or "Unknown",
                 "platform": lg_platform,
                 "season": lg_season,
                 "pending": True,
-                "predraft": _predraft,
-                "reason": "Draft not started" if _predraft else "Team not linked yet",
+                "predraft": False,
+                "reason": "Team not linked yet",
             }
         rid = str(viewer_roster.get("roster_id"))
         std = standings_map.get(rid) or {}
@@ -245,7 +259,6 @@ def page_portfolio():
                         streak.append("W" if pts > opp else "L")
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
-        league_obj = lctx.get("league") or {}
         # Urgency score: lower = needs more attention
         urgency = wins - losses + (rank if isinstance(rank, int) else 0) * -0.1
         return {

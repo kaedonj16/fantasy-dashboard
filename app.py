@@ -108,6 +108,7 @@ from dashboard_services.service import (
     matchup_cards_last_week,
     pill,
     playoff_bracket,
+    render_dashboard_teams_sidebar,
     render_teams_sidebar,
     render_top_three,
     seed_top6_from_team_stats,
@@ -23887,12 +23888,35 @@ def build_portfolio_body(
                 if _predraft
                 else "pf-lg-card pf-lg-pending pf-lg-pending--link"
             )
+            _draft_phase = (lg.get("draft_phase") or ("predraft" if _predraft else ""))
             if _predraft:
-                action = (
-                    f"<a href='/{plat}/{season}/{lid}/draft' "
-                    f"class='pf-pending-cta pf-pending-cta--draft'>Mock draft &rarr;</a>"
+                from utils.league_payload import draft_countdown_copy
+                _start_ms = int(lg.get("draft_start_ms") or 0)
+                _cd = draft_countdown_copy(_start_ms or None, phase=_draft_phase)
+                _cd_val = html.escape(_cd["value"])
+                _cd_label = html.escape(_cd["label"])
+                _cd_sub = html.escape(_cd["sub"])
+                countdown = (
+                    f"<div class='pf-lg-mid pf-lg-draft'>"
+                    f"<div>"
+                    f"<div class='pf-lg-v pf-draft-cd' data-draft-ts='{_start_ms}' "
+                    f"data-draft-phase='{html.escape(_draft_phase)}'>{_cd_val}</div>"
+                    f"<div class='pf-lg-l'>{_cd_label}</div>"
+                    f"<div class='pf-draft-when'>{_cd_sub}</div>"
+                    f"</div></div>"
                 )
+                if _draft_phase == "drafting":
+                    action = (
+                        f"<a href='/{plat}/{season}/{lid}/draft' "
+                        f"class='pf-pending-cta pf-pending-cta--draft'>Join Draft Room →</a>"
+                    )
+                else:
+                    action = (
+                        f"<a href='/{plat}/{season}/{lid}/draft' "
+                        f"class='pf-pending-cta pf-pending-cta--draft'>Mock draft &rarr;</a>"
+                    )
             else:
+                countdown = ""
                 # "Team not linked yet" — open the link modal pointed at this
                 # league's team picker so the user can set their team in one click
                 # (no re-typing the league id, and the right season is preserved).
@@ -23911,6 +23935,7 @@ def build_portfolio_body(
                 f"<button type='button' class='pf-lg-fav' aria-label='Favorite league' aria-pressed='false' title='Favorite'>&#9733;</button>"
                 f"{_unlink_btn(plat, lid)}"
                 f"</div>"
+                f"{countdown}"
                 f"<div class='pf-lg-pending-row'>"
                 f"<span class='{_pill_cls}'>{reason}</span>"
                 f"{action}"
@@ -24017,7 +24042,10 @@ def build_portfolio_body(
         ".pf-lg-plat-mfl{color:#3B7DD8;}"
         ".pf-lg-plat-fleaflicker{color:#E08A1E;}"
         ".pf-lg-mid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center;}"
+        ".pf-lg-mid.pf-lg-draft{grid-template-columns:1fr;}"
         ".pf-lg-v{font-size:16px;font-weight:800;}"
+        ".pf-draft-cd{font-variant-numeric:tabular-nums;}"
+        ".pf-draft-when{font-size:11px;color:var(--text-muted);margin-top:3px;}"
         ".pf-lg-l{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-subtle);margin-top:2px;}"
         ".pf-lg-foot{display:flex;align-items:center;gap:12px;border-top:1px solid var(--grid);padding-top:10px;flex-wrap:wrap;}"
         ".pf-lg-foot .pf-pos-chips{margin-top:0;}"
@@ -24075,6 +24103,25 @@ def build_portfolio_body(
         "if(prev)prev.addEventListener('click',function(){if(page>0){page--;render();}});"
         "if(next)next.addEventListener('click',function(){page++;render();});"
         "render();})();</script>"
+        # Live-tick draft countdowns on undrafted league cards.
+        "<script>(function(){"
+        "function pad(n){return (n<10?'0':'')+n;}"
+        "function fmt(ms){"
+        "if(ms<=0)return 'Soon';"
+        "var t=Math.floor(ms/1000),d=Math.floor(t/86400),h=Math.floor((t%86400)/3600),"
+        "m=Math.floor((t%3600)/60),s=t%60;"
+        "var clock=pad(h)+':'+pad(m)+':'+pad(s);"
+        "return d>0?(d+'d '+clock):clock;}"
+        "function tick(){"
+        "document.querySelectorAll('.pf-draft-cd[data-draft-ts]').forEach(function(el){"
+        "if(el.getAttribute('data-draft-phase')==='drafting')return;"
+        "var ts=parseInt(el.getAttribute('data-draft-ts')||'0',10);"
+        "if(!ts)return;"
+        "el.textContent=fmt(ts-Date.now());"
+        "var when=el.parentNode&&el.parentNode.querySelector('.pf-draft-when');"
+        "if(when)when.textContent=new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});"
+        "});}"
+        "tick();setInterval(tick,1000);})();</script>"
     )
 
     # ── Positional strength ───────────────────────────────────────────────
