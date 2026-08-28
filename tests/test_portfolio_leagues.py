@@ -55,3 +55,18 @@ def test_positional_strength_card_renders_percentiles_not_signed_deltas():
     # mixed portfolios all-negative.
     assert "(ratio - 1.0) * 100" not in fn
     assert "max_ratio" not in fn
+
+
+def test_undrafted_league_cards_show_draft_countdown():
+    fn = _portfolio_fn()
+    assert "pf-draft-cd" in fn
+    assert "data-draft-ts" in fn
+    assert "draft_countdown_copy" in fn
+    assert "Join Draft Room →" in fn
+    assert "Mock draft →" in fn
+    assert "draft_countdown_copy" in fn
+    assert "setInterval(tick,1000)" in fn
+    # Positional rank chips must not be the predraft card body.
+    pending = fn.split("if lg.get(\"pending\")")[1].split("if lg.get(\"error\")")[0]
+    assert "rank_chips" not in pending
+    assert "pos_user_rank" not in pending

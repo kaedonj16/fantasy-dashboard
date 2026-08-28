@@ -28,7 +28,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         html,
         load_pick_value_table,
         logger,
-        render_teams_sidebar,
+        render_dashboard_teams_sidebar,
         te_premium_from_settings,
         url_for,
     )
@@ -154,7 +154,10 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         teams_index=ctx["teams_index"],
         platform=platform,
     )
-    teams_sidebar_html = render_teams_sidebar(teams_ctx)
+    ctx["model_value_table"] = model_value_table
+    teams_sidebar_html, teams_tab_label = render_dashboard_teams_sidebar(
+        ctx, teams_ctx, filled_label="Roster",
+    )
 
     values_by_id = {}
     for row in model_value_table:
@@ -555,7 +558,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
           <button type="button" class="active" data-jump="os-jump-actions">Actions</button>
           <button type="button" data-jump="os-jump-report">Report</button>
           <button type="button" data-jump="os-jump-roster">Team Values</button>
-          <button type="button" data-jump="os-jump-teams">Roster</button>
+          <button type="button" data-jump="os-jump-teams">{teams_tab_label}</button>
         </nav>
 
         {_action_queue_html}

@@ -4,8 +4,13 @@ Pure logic — no app / DB import — so these run anywhere pytest does.
 """
 from utils.league_payload import (
     build_roster_map,
+    draft_countdown_copy,
+    draft_start_ms,
     format_sleeper_league_option,
     get_most_recent_valid_draft_for_season,
+    rosters_look_undrafted,
+    startup_draft_phase,
+    top_board_preview,
 )
 
 
@@ -81,3 +86,83 @@ def test_orphan_roster_uses_roster_id_label():
     users = []
     rosters = [{"roster_id": 7, "owner_id": "99", "metadata": {}}]
     assert build_roster_map(users, rosters) == {"7": "Roster 7"}
+
+
+def _empty_rosters(n=12):
+    return [{"roster_id": i, "players": []} for i in range(n)]
+
+
+def _filled_rosters(n=12, players=15):
+    return [{"roster_id": i, "players": [f"p{i}-{j}" for j in range(players)]} for i in range(n)]
+
+
+def test_empty_rosters_look_undrafted():
+    assert rosters_look_undrafted([]) is True
+    assert rosters_look_undrafted(_empty_rosters()) is True
+
+
+def test_full_rosters_do_not_look_undrafted():
+    assert rosters_look_undrafted(_filled_rosters()) is False
+
+
+def test_keeper_stubs_still_look_undrafted():
+    stubs = [{"roster_id": i, "players": ["a", "b"]} for i in range(12)]
+    assert rosters_look_undrafted(stubs) is True
+
+
+def test_startup_phase_empty_shells_are_predraft_even_if_marked_complete():
+    # Yahoo/MFL/Flea and ESPN's no-date fallback report complete before a pick.
+    assert startup_draft_phase(
+        {"status": "in_season"},
+        {"status": "complete", "start_time": 1},
+        _empty_rosters(),
+    ) == "predraft"
+
+
+def test_startup_phase_live_draft_with_empty_rosters():
+    assert startup_draft_phase(
+        {"status": "drafting"}, {}, _empty_rosters(),
+    ) == "drafting"
+
+
+def test_dynasty_pre_draft_with_full_rosters_stays_drafted():
+    # Rookie-draft waiting room: last year's team is still the team.
+    assert startup_draft_phase(
+        {"status": "pre_draft"},
+        {"status": "pre_draft", "start_time": 9_999_999_999_000},
+        _filled_rosters(),
+    ) == "drafted"
+
+
+def test_draft_start_ms_converts_seconds_and_prefers_draft_record():
+    assert draft_start_ms({}, {"start_time": 1_700_000_000}) == 1_700_000_000_000
+    assert draft_start_ms({"draft_day": 1_800_000_000_000}, {"start_time": 0}) == 1_800_000_000_000
+    assert draft_start_ms({}, {}) is None
+
+
+def test_countdown_copy_formats_days_and_live():
+    start = 1_700_000_000_000
+    now = start - (2 * 86400 + 5) * 1000
+    copy = draft_countdown_copy(start, now_ms=now, phase="predraft")
+    assert copy["label"] == "Draft countdown"
+    assert copy["value"].startswith("2d ")
+    assert copy["sub"]  # date string
+
+    live = draft_countdown_copy(start, now_ms=now, phase="drafting")
+    assert live["value"] == "Live now"
+
+    missing = draft_countdown_copy(None, phase="predraft")
+    assert missing["value"] == "TBD"
+
+
+def test_top_board_preview_ranks_skill_positions_and_prefers_sf_value():
+    table = [
+        {"id": "1", "name": "QB A", "position": "QB", "value": 100, "sf_value": 900},
+        {"id": "2", "name": "WR B", "pos": "WR", "value": 400, "sf_value": 200},
+        {"id": "3", "name": "Kicker", "position": "K", "value": 999, "sf_value": 999},
+        {"id": "4", "name": "Zero", "position": "RB", "value": 0},
+    ]
+    one_qb = top_board_preview(table, is_sf=False, limit=10)
+    assert [p["name"] for p in one_qb] == ["WR B", "QB A"]
+    sf = top_board_preview(table, is_sf=True, limit=10)
+    assert [p["name"] for p in sf] == ["QB A", "WR B"]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, date
@@ -1393,6 +1394,94 @@ def render_teams_sidebar(teams: List[dict]) -> str:
         "</div>"
     )
     return card_html
+
+
+def render_predraft_sidebar(
+        platform: str,
+        season,
+        league_id: str,
+        preview: Optional[List[dict]] = None,
+) -> str:
+    """Roster-sidebar stand-in when the league has not drafted yet.
+
+    Empty team shells used to render an empty manager-pill card. Replace that
+    with the cheat sheet (preview + link) so the right column is useful.
+    """
+    plat = html.escape(str(platform or "sleeper"))
+    seas = html.escape(str(season or ""))
+    lid = html.escape(str(league_id or ""))
+    sheet_href = f"/{plat}/{seas}/{lid}/draft/cheat-sheet"
+    room_href = f"/{plat}/{seas}/{lid}/draft"
+
+    rows = []
+    for i, p in enumerate(preview or [], start=1):
+        pos = html.escape(str(p.get("pos") or ""))
+        name = html.escape(str(p.get("name") or "Player"))
+        pid = html.escape(str(p.get("id") or ""))
+        if pid:
+            name_html = (
+                f"<span class='pname player-clickable' style='cursor:pointer;' "
+                f"data-player-id='{pid}' data-player-name='{name}'>{name}</span>"
+            )
+        else:
+            name_html = f"<span class='pname'>{name}</span>"
+        pos_badge = f"<span class='pos-badge {pos}'>{pos}</span>" if pos else ""
+        rows.append(
+            f"<div class='player-row'>"
+            f"<span class='os-draft-prep-rk'>{i}</span>"
+            f"{pos_badge}{name_html}"
+            f"</div>"
+        )
+    list_html = (
+        f"<div class='player-list os-draft-prep-list'>{''.join(rows)}</div>"
+        if rows else
+        "<p class='os-draft-prep-empty'>Open the cheat sheet to rank this league's board.</p>"
+    )
+    return (
+        "<div class='card teams-card os-draft-prep' data-section='draft-prep'>"
+        "<div class='os-section-head'>"
+        "<div class='os-section-head-content'>"
+        "<h2 class='os-section-title'>Draft Cheat Sheet</h2>"
+        "<div class='os-section-subtitle'>Rosters aren't set yet. Rank the board before you draft.</div>"
+        "</div></div>"
+        f"{list_html}"
+        "<div class='os-draft-prep-actions'>"
+        f"<a class='os-draft-prep-primary' href='{sheet_href}'>Open cheat sheet</a>"
+        f"<a class='os-draft-prep-secondary' href='{room_href}'>Draft Room</a>"
+        "</div></div>"
+    )
+
+
+def render_dashboard_teams_sidebar(
+        ctx: dict,
+        teams: List[dict],
+        filled_label: str = "Roster",
+):
+    """Roster sidebar, or the cheat-sheet stand-in when the league is undrafted.
+
+    Returns ``(html, jump_nav_label)``.
+    """
+    from utils.league_payload import startup_draft_pending, top_board_preview
+    from utils.lineup_slots import canonicalize_slot
+
+    rosters = (ctx or {}).get("rosters") or []
+    if startup_draft_pending(
+        (ctx or {}).get("league"),
+        (ctx or {}).get("latest_draft"),
+        rosters,
+    ):
+        rp = (ctx or {}).get("roster_positions") or []
+        is_sf = any(canonicalize_slot(s) == "SUPER_FLEX" for s in rp)
+        html_out = render_predraft_sidebar(
+            platform=(ctx or {}).get("platform") or "sleeper",
+            season=(ctx or {}).get("season") or (ctx or {}).get("current_season"),
+            league_id=str((ctx or {}).get("league_id") or ""),
+            preview=top_board_preview(
+                (ctx or {}).get("model_value_table") or [], is_sf=is_sf,
+            ),
+        )
+        return html_out, "Cheat Sheet"
+    return render_teams_sidebar(teams), filled_label
 
 
 def build_picks_by_roster(
