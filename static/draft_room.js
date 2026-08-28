@@ -6971,6 +6971,16 @@
     return 'ADP round +' + Math.round(Math.abs(pts));
   }
 
+  function ddHistVsClass(p){
+    var pts = ddHistVsPts(p);
+    var lab = ddHist(p).h_vs_m;
+    if (pts == null && lab !== 'aligned') return '';
+    if (lab === 'aligned' || (pts != null && Math.abs(pts) < 1)) return 'is-flat';
+    if (lab === 'history_higher' || (pts != null && pts > 0)) return 'is-up';
+    if (lab === 'market_higher' || (pts != null && pts < 0)) return 'is-bar';
+    return '';
+  }
+
   function ddHistHtml(picks){
     if (!state || state.type !== 'redraft' || !historicalAvailable) return '';
     var rows = (picks || []).filter(function(p){ return ddHistPct(p) != null; });
@@ -6990,56 +7000,76 @@
       return bd - ad;
     });
     var tiles = [
-      { v: avg + '%', l: 'Avg Hist top-12', cls: avg >= 25 ? 'good' : '' },
-      { v: above, l: 'Hist group higher', cls: above ? 'good' : '' },
-      { v: below, l: 'ADP round higher', cls: '' },
-      { v: avgEdge == null ? '-' : ((avgEdge > 0 ? '+' : '') + avgEdge), l: 'Avg vs ADP (info)', cls: '' }
+      { v: avg + '%', l: 'Avg Hist top-12', cls: avg >= 25 ? 'is-good' : '', kind: 'lead' },
+      { v: above, l: 'Hist ahead of ADP', cls: above ? 'is-good' : '', kind: '' },
+      { v: below, l: 'ADP round higher', cls: 'is-muted', kind: '' },
+      {
+        v: avgEdge == null ? '—' : ((avgEdge > 0 ? '+' : '') + avgEdge),
+        l: 'Avg pts vs ADP',
+        cls: 'is-muted',
+        kind: 'info'
+      }
     ].map(function(t){
-      return '<div class="dd-tile ' + (t.cls || '') + '"><div class="dd-tile-v">' + t.v + '</div><div class="dd-tile-l">' + t.l + '</div></div>';
+      return '<div class="dd-hist-stat ' + (t.cls || '') + (t.kind ? ' is-' + t.kind : '') + '">'
+        + '<div class="dd-hist-stat-v">' + t.v + '</div>'
+        + '<div class="dd-hist-stat-l">' + t.l + '</div></div>';
     }).join('');
     var callouts = '';
     var best = ranked[0], worst = ranked[ranked.length - 1];
     var bestPts = best ? ddHistVsPts(best) : null;
     var worstPts = worst ? ddHistVsPts(worst) : null;
-    function histEdge(kind, cls, p, extra){
-      return '<div class="dd-edge ' + cls + '"><div class="dd-edge-k">' + kind + '</div>'
-        + '<div class="dd-edge-pl">' + esc(p.pl.name) + '</div>'
-        + '<div class="dd-edge-sub">' + p.pos + ' · ' + roundPickStr(p.pn)
-        + (ddHistPct(p) != null ? ' · Hist ' + ddHistPct(p) + '%' : '') + '</div>'
-        + '<div class="dd-edge-say">' + extra + '</div></div>';
+    function histCallout(kind, tone, p, extra){
+      var pct = ddHistPct(p);
+      var mkt = ddHistMkt(p);
+      return '<article class="dd-hist-callout ' + tone + '">'
+        + '<div class="dd-hist-callout-k">' + kind + '</div>'
+        + '<div class="dd-hist-callout-pl">' + esc(p.pl.name) + '</div>'
+        + '<div class="dd-hist-callout-sub">' + p.pos + ' · ' + roundPickStr(p.pn) + '</div>'
+        + '<div class="dd-hist-compare" aria-hidden="true">'
+        + '<div class="dd-hist-compare-col is-hist"><span class="dd-hist-compare-k">Players like this</span>'
+        + '<span class="dd-hist-compare-v">' + (pct != null ? pct + '%' : '—') + '</span></div>'
+        + '<div class="dd-hist-compare-col is-adp"><span class="dd-hist-compare-k">That ADP round</span>'
+        + '<span class="dd-hist-compare-v">' + (mkt != null ? mkt + '%' : '—') + '</span></div>'
+        + '</div>'
+        + '<p class="dd-hist-callout-say">' + extra + '</p></article>';
     }
     var parts = [];
     if (best && bestPts != null && bestPts >= 10){
-      parts.push(histEdge('Hist group higher', 'winb', best,
-        'Players like this hit top-12 <b>' + ddHistPct(best) + '%</b>. Anyone in that ADP round hit <b>'
-        + ddHistMkt(best) + '%</b>. Two groups, not a combined chance.'));
+      parts.push(histCallout('Hist group higher', 'is-ahead', best,
+        'Two groups, not a combined chance. History is ahead of that ADP round here.'));
     }
     if (worst && worst !== best && worstPts != null && worstPts <= -10){
-      parts.push(histEdge('ADP round is a higher bar', '', worst,
-        'Anyone in that ADP round hit top-12 <b>' + ddHistMkt(worst) + '%</b>. Players like this hit <b>'
-        + ddHistPct(worst) + '%</b>. Early ADP is a high bar. Two groups, not a ranking.'));
+      parts.push(histCallout('ADP round is a higher bar', 'is-bar', worst,
+        'Early ADP is a high bar, not a miss. Two groups, not a ranking.'));
     }
-    if (parts.length) callouts = '<div class="dd-edges" style="margin-bottom:14px">' + parts.join('') + '</div>';
+    if (parts.length) callouts = '<div class="dd-hist-callouts">' + parts.join('') + '</div>';
     var tableRows = ranked.map(function(p){
       var pct = ddHistPct(p);
       var mkt = ddHistMkt(p);
       var vs = ddHistVsCopy(p);
+      var vsCls = ddHistVsClass(p);
       return '<tr>'
-        + '<td class="num" style="color:var(--text-muted)">' + roundPickStr(p.pn) + '</td>'
+        + '<td class="num dd-hist-pick">' + roundPickStr(p.pn) + '</td>'
         + '<td class="dd-plname">' + esc(p.pl.name) + '</td>'
         + '<td><span class="dd-posbadge" style="background:' + posColor(p.pos) + '">' + p.pos + '</span></td>'
         + '<td class="r"><span class="dd-hist-pct' + (ddHist(p).h_vs_m === 'history_higher' ? ' is-strong' : '') + '">'
-        + (pct != null ? pct + '%' : '-') + '</span></td>'
-        + '<td class="r num">' + (mkt != null ? mkt + '%' : '-') + '</td>'
-        + '<td class="r"><span class="dd-hist-vs">' + (vs || '-') + '</span></td>'
+        + (pct != null ? pct + '%' : '—') + '</span></td>'
+        + '<td class="r"><span class="dd-hist-mkt">' + (mkt != null ? mkt + '%' : '—') + '</span></td>'
+        + '<td class="r"><span class="dd-hist-vs' + (vsCls ? ' ' + vsCls : '') + '">' + (vs || '—') + '</span></td>'
         + '</tr>';
     }).join('');
-    return '<div class="dd-card"><div class="dd-sec"><h4>Historical trends</h4>'
+    return '<div class="dd-card dd-hist">'
+      + '<div class="dd-sec"><h4>Historical trends</h4>'
       + '<p>Two groups per pick: players like this, and anyone taken in that ADP round. Early ADP is a high bar, not a miss.</p></div>'
-      + '<div class="dd-tiles">' + tiles + '</div>'
+      + '<div class="dd-hist-stats">' + tiles + '</div>'
       + callouts
-      + '<div class="dd-tablescroll" style="margin-top:14px"><table class="dd-ledger">'
-      + '<thead><tr><th>Pick</th><th>Player</th><th>Pos</th><th class="r">Hist</th><th class="r">ADP round</th><th class="r">groups</th></tr></thead>'
+      + '<div class="dd-tablescroll dd-hist-tablewrap"><table class="dd-ledger dd-hist-table">'
+      + '<thead><tr>'
+      + '<th>Pick</th><th>Player</th><th>Pos</th>'
+      + '<th class="r" title="Historical top-12 chance for this career and situation">Hist</th>'
+      + '<th class="r" title="Historical top-12 rate for anyone taken in that ADP round">ADP round</th>'
+      + '<th class="r" title="Gap between the two groups">Groups</th>'
+      + '</tr></thead>'
       + '<tbody>' + tableRows + '</tbody></table></div></div>';
   }
 
