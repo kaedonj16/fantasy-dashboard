@@ -567,11 +567,17 @@ def test_deep_dive_includes_descriptive_historical_trends():
     assert "Historical miss vs market" not in source
     assert "ADP round is a higher bar" in source
     assert "Hist group higher" in source
-    assert "Avg vs ADP (info)" in source
+    assert "Avg pts vs ADP" in source
+    assert "Avg vs ADP (info)" not in source
     assert "Avg vs ADP bucket" not in source
     assert "Strong profiles (25%+)" not in source
     assert "DD_HIST_STRONG" not in source
     assert "DD_HIST_EDGE" not in source
+    assert "dd-hist-stats" in source
+    assert "dd-hist-callout" in source
+    assert "dd-hist-compare" in source
+    assert "function ddHistVsClass" in source
+    assert "is-bar" in source
     assert 'data-k="hist"' in source
     assert "ddHistPct(p)" in source
     assert "p_hit_pct" in source
@@ -579,6 +585,9 @@ def test_deep_dive_includes_descriptive_historical_trends():
     assert "p_hit_pct" not in grade
     assert "historical.p_hit" not in grade
     assert ".dd-hist-pct" in body
+    assert ".dd-hist-stats" in body
+    assert ".dd-hist-callout.is-bar" in body
+    assert ".dd-hist-vs.is-up" in body
     assert "{ term: 'Hist'" in source
     from dashboard_services.changelog import CHANGELOG
     entry = next(
