@@ -104,10 +104,20 @@
       if (pos === 'WR') return idx === 0 ? 0.78 : 0.64;
       return 0;
     }
+    var hasFlex = slots.indexOf('FLEX') >= 0;
     function roleOf(p) {
       if (starterIds[String(p.id)]) return 'starter';
       var pos = String(p.pos || '').toUpperCase();
-      return benchByPos[pos] && benchByPos[pos][0] === p ? 'primary' : 'fringe';
+      var arr = benchByPos[pos] || [];
+      var idx = arr.indexOf(p);
+      // RB3/WR4 (first bench) are primary cover. A second RB/WR is still
+      // primary when FLEX exists — that is the injury/bye path, not QB2/TE2.
+      if (pos === 'RB' || pos === 'WR') {
+        if (idx === 0) return 'primary';
+        if (idx === 1 && hasFlex) return 'primary';
+        return 'fringe';
+      }
+      return idx === 0 ? 'primary' : 'fringe';
     }
 
     // 1) Starter quality: round-weighted (1/round^0.60) avg PS of starters.

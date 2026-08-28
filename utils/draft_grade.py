@@ -204,10 +204,22 @@ def dr_team_grade_score(
         if pos == "RB": return 0.82 if idx == 0 else 0.68
         if pos == "WR": return 0.78 if idx == 0 else 0.64
         return 0.0
+    has_flex = any(str(s).upper() == "FLEX" for s in (slots or []))
     def _role(p):
-        if str(p.get("id")) in starter_ids: return "starter"
+        if str(p.get("id")) in starter_ids:
+            return "starter"
         pos = str(p.get("pos") or "").upper()
-        return "primary" if bench_by_pos.get(pos) and bench_by_pos[pos][0] is p else "fringe"
+        arr = bench_by_pos.get(pos, [])
+        idx = arr.index(p) if p in arr else -1
+        # RB3/WR4 (first bench) are primary cover. A second RB/WR is still
+        # primary when FLEX exists — that is the injury/bye path, not QB2/TE2.
+        if pos in ("RB", "WR"):
+            if idx == 0:
+                return "primary"
+            if idx == 1 and has_flex:
+                return "primary"
+            return "fringe"
+        return "primary" if idx == 0 else "fringe"
 
     # 1) Starter quality: round-weighted (1/round^0.60) avg PS of starters.
     w_sum, w_tot = 0.0, 0.0

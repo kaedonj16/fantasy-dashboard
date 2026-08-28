@@ -2,6 +2,8 @@
 
 Pure logic — no app / DB import — so these run anywhere pytest does.
 """
+import pytest
+
 from utils.pick_score import PS_WEIGHTS, compute_pick_score, empirical_slot_allocation, ps_tier_of
 
 
@@ -119,6 +121,46 @@ def test_rookie_momentum_is_down_weighted():
     # a rookie's season, so rookie momentum stays low (was 0.06, cut to 0.03).
     # Don't restore it without re-running data_building/run_draft_backtest.py.
     assert PS_WEIGHTS["rookie"]["mom"] <= 0.03
+
+
+def test_youth_weight_is_the_backtest_winner():
+    # 600-league multi-year sweep: youth 0.10 was #1 for startup and rookie.
+    assert PS_WEIGHTS["rookie"]["youth"] == pytest.approx(0.10)
+    assert PS_WEIGHTS["startup"]["youth"] == pytest.approx(0.10)
+    # Need was not part of this change.
+    assert PS_WEIGHTS["rookie"]["need"] == pytest.approx(0.05)
+    assert PS_WEIGHTS["startup"]["need"] == pytest.approx(0.09)
+    assert PS_WEIGHTS["redraft"]["need"] == pytest.approx(0.09)
+
+
+def test_kernel_has_no_live_timing_parameters():
+    import inspect
+    names = set(inspect.signature(compute_pick_score).parameters)
+    leaked = {"wait_penalty", "survive", "survive_pct", "handcuff", "handcuff_bonus",
+              "upside", "upside_bonus", "wait_loss"}
+    assert not (names & leaked)
+
+
+def test_vor_is_scarcity_residual_not_a_second_value_copy():
+    # Same value, higher VOR/value share (scarcer position) scores higher.
+    common = dict(_base(pos="RB", value=5000, need_raw=1.0, max_val=10000))
+    scarce = compute_pick_score(**dict(common, vor=4000))
+    deep = compute_pick_score(**dict(common, vor=2000))
+    assert scarce > deep
+    # Same scarcity ratio: VOR no longer re-ranks two close same-position stars
+    # the way vor/max_val did. Value still separates them.
+    bijan = compute_pick_score(**_base(value=9990, vor=7990, need_raw=1.0, max_val=10000))
+    gibbs = compute_pick_score(**_base(value=9800, vor=7800, need_raw=1.0, max_val=10000))
+    # Residual shares are 7990/9990 ≈ 7800/9800, so VOR no longer doubles the
+    # 190-value gap. The integer grade may even tie.
+    assert abs(bijan - gibbs) <= 2
+
+
+def test_two_te_league_is_not_punished_like_one_te():
+    # Dedicated 2-TE start uses the milder multi-slot redundancy penalty.
+    one = compute_pick_score(**_base(pos="TE", need_raw=0.0, pick_no=25, starter_slots=1))
+    two = compute_pick_score(**_base(pos="TE", need_raw=0.0, pick_no=25, starter_slots=2))
+    assert two > one
 
 
 def test_empirical_superflex_is_filled_by_best_available_qb():

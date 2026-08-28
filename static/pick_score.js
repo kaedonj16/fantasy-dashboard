@@ -20,16 +20,17 @@
   function clamp01(x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
 
   // Rookie momentum down-weighted 0.06 -> 0.03 (freed weight to value/adp) after
-  // a 509-team backtest. Rookie & startup youth trimmed / tier & ppg raised,
-  // CONFIRMED at 600-league scale on multi-year outcomes (youth-0.10 was the #1
-  // nudge for both startup and rookie, monotonic & replicated). Keep in lockstep
-  // with PS_WEIGHTS in utils/pick_score.py. Redraft model value is deliberately
-  // DB-only (not an ADP blend); its explicit market weight starts at .18 and
-  // decays with round depth, with the released weight redistributed exactly.
+  // a 509-team backtest. Rookie & startup youth set to the validated 0.10 winner
+  // (600-league multi-year). Rookie 0.16 -> 0.10 (freed mass to tier/ppg);
+  // startup 0.05 -> 0.10 (taken from ADP). Need weights are unchanged. Keep in
+  // lockstep with PS_WEIGHTS in utils/pick_score.py. Redraft model value is
+  // deliberately DB-only (not an ADP blend); its explicit market weight starts
+  // at .18 and decays with round depth, with the released weight redistributed
+  // exactly. Live timing (survival, handcuff, late-round upside) is NOT here.
   var WEIGHTS = {
-    rookie:  { vor: 0.06, value: 0.20, adp: 0.30, tier: 0.15, need: 0.05, youth: 0.16, mom: 0.03, ppg: 0.10 },
+    rookie:  { vor: 0.06, value: 0.20, adp: 0.30, tier: 0.18, need: 0.05, youth: 0.10, mom: 0.03, ppg: 0.13 },
     redraft: { vor: 0.15, value: 0.25, adp: 0.18, tier: 0.12, need: 0.09, youth: 0.00, mom: 0.03, ppg: 0.22 },
-    startup: { vor: 0.07, value: 0.24, adp: 0.30, tier: 0.15, need: 0.09, youth: 0.05, mom: 0.03, ppg: 0.12 },
+    startup: { vor: 0.07, value: 0.24, adp: 0.25, tier: 0.15, need: 0.09, youth: 0.10, mom: 0.03, ppg: 0.12 },
   };
   var AGE_PEAKS = { RB: 24, WR: 27, TE: 27, QB: 29 };
   var CORE = { QB: 1, RB: 1, WR: 1, TE: 1 };
@@ -59,7 +60,12 @@
     // A near-zero value also caps selected-only ADP below.
     var adpUntrusted = dbValueNorm < 0.05;
     var valueNorm = dbValueNorm;
-    var vorNorm = (vor != null) ? clamp01(vor / Math.max(maxVal, 1)) : valueNorm * 0.8;
+    // Scarcity residual: share of this player's own value above replacement.
+    // Same-position players with similar value get nearly the same residual.
+    var vorNorm;
+    if (vor != null && value > 0) vorNorm = clamp01(Math.max(vor, 0) / value);
+    else if (vor != null) vorNorm = 0;
+    else vorNorm = valueNorm * 0.8;
 
     var adpVal;
     if (avgPick != null) {
@@ -126,13 +132,15 @@
 
     // Redundancy: a pick at a skill position already stocked to its realistic
     // depth target (needRaw == 0) is a bench body at a full spot while other
-    // starting needs may remain - the opportunity cost the old score ignored.
-    // Penalize it, hardest at single-start TE and in the early rounds; late-round
-    // bench depth is normal so the penalty tapers out. QB has its own rule above.
+    // starting needs may remain. Penalize it, hardest at a true single-starter
+    // slot (1-TE, or starterSlots <= 1) and in the early rounds. Need math is
+    // unchanged — only the single-vs-multi classification uses roster slots.
     if (needRaw <= 0 && (pos === 'RB' || pos === 'WR' || pos === 'TE')) {
       var teams2 = o.numTeams ? +o.numTeams : 12;
       var rd2 = pickNo ? Math.floor((pickNo - 1) / Math.max(teams2, 1)) + 1 : 1;
-      var single = pos === 'TE';   // standard 1-TE start; RB/WR are multi-start depth
+      var single = (o.starterSlots != null && isFinite(+o.starterSlots))
+        ? (+o.starterSlots <= 1)
+        : (pos === 'TE');
       var rp = rd2 <= 3 ? (single ? 0.55 : 0.82)
              : rd2 <= 6 ? (single ? 0.72 : 0.90)
              : rd2 <= 9 ? (single ? 0.86 : 0.96)

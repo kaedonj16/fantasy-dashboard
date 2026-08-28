@@ -727,6 +727,72 @@
         return Math.max(-3, Math.min(7, phase * 10 * (lateRoundUtility(o) - 0.35)));
     }
 
+    // Role/path evidence only. Projected PPG is quality (ppgQuality), not a path.
+    // Youth without a workload, handcuff, or breakout role must stay at 0.
+    function lateRoundPathEvidence(o) {
+        o = o || {};
+        var path = 0;
+        if (o.breakoutScore != null && isFinite(+o.breakoutScore)) {
+            path = Math.max(path, clamp01(+o.breakoutScore / 100));
+        }
+        if (o.projectedRole != null && isFinite(+o.projectedRole)) {
+            path = Math.max(path, clamp01(+o.projectedRole));
+        }
+        if (o.handcuff) path = Math.max(path, 0.75);
+        return path;
+    }
+
+    function summarizeHistoricalAlternatives(rows, selectedId) {
+        rows = (rows || []).slice().sort(function (a, b) {
+            return (+b.decisionScore || 0) - (+a.decisionScore || 0)
+                || (+b.absolutePickScore || 0) - (+a.absolutePickScore || 0);
+        });
+        var sel = null;
+        for (var i = 0; i < rows.length; i++) {
+            if (String(rows[i].id) === String(selectedId)) { sel = rows[i]; break; }
+        }
+        if (!sel || !rows.length) return null;
+        var alts = rows.filter(function (r) { return String(r.id) !== String(selectedId); }).slice(0, 5);
+        return {
+            selectedScore: sel.decisionScore,
+            bestAlternativeScore: rows[0].decisionScore,
+            bestAlternative: alts[0] || null,
+            topAlternatives: alts
+        };
+    }
+
+    // One unused bench cover per starter. Same-position first, then FLEX-eligible
+    // (RB/WR/TE). A single reserve cannot cover two starters on the same bye.
+    function assignByeCover(players) {
+        var used = {};
+        (players || []).forEach(function (p) {
+            if (!p || p.role !== 'starter') return;
+            if (p.coverQuality != null && isFinite(+p.coverQuality)) return;
+            var pos = String(p.pos || '').toUpperCase();
+            var best = null, bestQ = -1;
+            (players || []).forEach(function (c, idx) {
+                if (!c || c === p || c.role === 'starter') return;
+                var key = String(c.id != null ? c.id : (c.name || idx));
+                if (used[key]) return;
+                if (+c.bye && +p.bye && +c.bye === +p.bye) return;
+                var cpos = String(c.pos || '').toUpperCase();
+                var same = cpos === pos;
+                var flex = ['RB', 'WR', 'TE'].indexOf(pos) >= 0 && ['RB', 'WR', 'TE'].indexOf(cpos) >= 0;
+                if (!same && !flex) return;
+                var q = Math.max(0, Math.min(1, +c.quality || 0));
+                var score = q + (same ? 0.05 : 0);
+                if (score > bestQ) { bestQ = score; best = {c: c, key: key, q: q}; }
+            });
+            if (best) {
+                used[best.key] = true;
+                p.coverQuality = best.q;
+            } else {
+                p.coverQuality = 0;
+            }
+        });
+        return players || [];
+    }
+
     function opportunityCostVerdict(o) {
         o = o || {};
         var gap = Math.max(0, (+o.bestAlternativeScore || 0) - (+o.selectedScore || 0));
@@ -746,6 +812,7 @@
     // optimal lineup used by grading and provide each player's best unused cover.
     function byeWeekSeverity(players, opts) {
         opts = opts || {};
+        players = assignByeCover(players || []);
         var weeks = {};
         (players || []).forEach(function (p) {
             var week = +p.bye || 0;
@@ -1077,6 +1144,9 @@
         decisionScore: decisionScore, futurePickDecisionScore: futurePickDecisionScore,
         draftPhase: draftPhase, lateRoundUtility: lateRoundUtility,
         lateRoundUpsideBonus: lateRoundUpsideBonus,
+        lateRoundPathEvidence: lateRoundPathEvidence,
+        summarizeHistoricalAlternatives: summarizeHistoricalAlternatives,
+        assignByeCover: assignByeCover,
         opportunityCostVerdict: opportunityCostVerdict, significantSteal: significantSteal,
         byeWeekSeverity: byeWeekSeverity,
         REC_FUTURE_SURVIVE_FLOOR: REC_FUTURE_SURVIVE_FLOOR,

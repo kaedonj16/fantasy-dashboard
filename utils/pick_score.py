@@ -18,15 +18,15 @@ from utils.draft_grade import clamp01
 # 7-day ranking blip is noise for predicting a full season. The freed 0.03 went
 # to value/adp, the levers that held up in the same sweep.
 #
-# Rookie & startup youth trimmed / tier & ppg raised. Tuned modestly on 60
+# Rookie & startup youth set to the validated 0.10 winner. Tuned modestly on 60
 # leagues, then CONFIRMED at 10x scale on 600 leagues with multi-year outcomes:
 #   startup multi-year (5,882 teams, base r +0.091): youth-0.10 #1 (+0.106), ppg/tier up
 #   rookie  multi-year (9,725 teams, base r +0.082): youth-0.10 #1 (+0.095), tier/ppg up
 # Both monotonic and replicated across independent samples. Youth double-counts
 # (a young player already carries high dynasty value), while tier (scarcity) and
-# ppg (production) predict multi-year success and were under-weighted. Weights
-# now firmed toward the validated youth-0.10 winner (the 60-league pass went only
-# halfway).
+# ppg (production) predict multi-year success and were under-weighted. Rookie
+# youth 0.16 -> 0.10 (freed mass to tier/ppg); startup youth 0.05 -> 0.10
+# (taken from the 0.30 ADP term). Need weights are unchanged.
 #
 # Redraft's prior 0.30 explicit ADP weight also leaked ADP into 65% of the 0.24
 # value component (~45.6% effective market influence). Value is now DB-only,
@@ -36,9 +36,9 @@ from utils.draft_grade import clamp01
 # shipped JS/Python implementation. Re-running the external evaluation requires
 # its league portfolio, DATABASE_URL, and completed-season outcome data.
 PS_WEIGHTS = {
-    "rookie":  {"vor": 0.06, "value": 0.20, "adp": 0.30, "tier": 0.15, "need": 0.05, "youth": 0.16, "mom": 0.03, "ppg": 0.10},
+    "rookie":  {"vor": 0.06, "value": 0.20, "adp": 0.30, "tier": 0.18, "need": 0.05, "youth": 0.10, "mom": 0.03, "ppg": 0.13},
     "redraft": {"vor": 0.15, "value": 0.25, "adp": 0.18, "tier": 0.12, "need": 0.09, "youth": 0.00, "mom": 0.03, "ppg": 0.22},
-    "startup": {"vor": 0.07, "value": 0.24, "adp": 0.30, "tier": 0.15, "need": 0.09, "youth": 0.05, "mom": 0.03, "ppg": 0.12},
+    "startup": {"vor": 0.07, "value": 0.24, "adp": 0.25, "tier": 0.15, "need": 0.09, "youth": 0.10, "mom": 0.03, "ppg": 0.12},
 }
 PS_AGE_PEAKS = {"RB": 24, "WR": 27, "TE": 27, "QB": 29}
 
@@ -123,15 +123,15 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
                        avg_pick, pick_no, max_val, draft_type, is_sf,
                        need_raw, qb_count, total_picks=None, num_teams=None,
                        ppg_norm=None, ppr=1.0, tep=0.0, pass_td=4.0, is_tier_cliff=False,
+                       starter_slots=None,
                        weights=None,
                        depth_slope=None, depth_floor=None) -> int:
     """Mirror of static/pick_score.js `computePickScore`; the two are pinned
     identical by tests/test_pick_score_parity.py. This kernel is pure pick
     QUALITY only: live-draft timing (survival to the next pick, redraft
-    handcuff insurance) lives entirely in the Draft Room's decision layer
-    (static/draft_board_core.js ``decisionScore``), NOT here. Keeping it out
-    means the timing signal is counted exactly once and is never distorted by
-    the depth-normalization / display-relabel shaping below. Do not edit this
+    handcuff insurance, late-round upside) lives entirely in the Draft Room's
+    decision layer (static/draft_board_core.js ``decisionScore``), NOT here.
+    Do not add wait/survive/handcuff/upside parameters. Do not edit this
     without editing the JS (and vice versa)."""
     pos = (pos or "").upper()
     # DB-sourced numbers arrive as decimal.Decimal; coerce to float so they mix
@@ -149,7 +149,17 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
     # A near-zero value also caps selected-only ADP below.
     adp_untrusted = db_value_norm < 0.05
     value_norm = db_value_norm
-    vor_norm = clamp01(vor / max(max_val, 1)) if vor is not None else value_norm * 0.8
+    # Scarcity residual: share of this player's own value that sits above
+    # replacement. Same-position players with similar value get nearly the same
+    # residual (VOR no longer re-ranks Bijan vs Gibbs). Scarce positions — low
+    # replacement relative to value — score higher. Do not divide VOR by the
+    # global max value; that just copies value_norm.
+    if vor is not None and value > 0:
+        vor_norm = clamp01(max(vor, 0.0) / value)
+    elif vor is not None:
+        vor_norm = 0.0
+    else:
+        vor_norm = value_norm * 0.8
 
     # ADP component: proportional gap so a 2-pick fall from ADP 2 == a 10-pick
     # fall from ADP 20, with an elite-ADP floor for top-8 players.
@@ -249,13 +259,21 @@ def compute_pick_score(*, pos, value, vor, tier, age, rank_change_7d,
     # Redundancy: a pick at a skill position already stocked to its realistic
     # depth target (need_raw == 0) is a bench body at a full spot while other
     # starting needs may remain - the opportunity cost the old score ignored
-    # (it just dropped the need bonus). Penalize it, hardest at single-start TE
-    # and in the early rounds; bench depth in the late rounds is normal, so the
-    # penalty tapers out. QB overfill has its own rule above.
+    # (it just dropped the need bonus). Penalize it, hardest at a true
+    # single-starter slot (1-TE, or any position whose dedicated starter count
+    # is <= 1) and in the early rounds; bench depth in the late rounds is
+    # normal, so the penalty tapers out. QB overfill has its own rule above.
+    # Need math itself is unchanged — only the single-vs-multi classification.
     if need_raw <= 0 and pos in ("RB", "WR", "TE"):
         _teams2 = int(num_teams) if num_teams else 12
         _rd2 = (int(pick_no) - 1) // max(_teams2, 1) + 1 if pick_no else 1
-        _single = pos == "TE"   # standard 1-TE start; RB/WR are multi-start depth
+        if starter_slots is not None:
+            try:
+                _single = float(starter_slots) <= 1
+            except (TypeError, ValueError):
+                _single = pos == "TE"
+        else:
+            _single = pos == "TE"
         if _rd2 <= 3:
             _rp = 0.55 if _single else 0.82
         elif _rd2 <= 6:

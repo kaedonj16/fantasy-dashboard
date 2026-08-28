@@ -2145,8 +2145,27 @@
         else if (pos === 'QB' && _myPassTeams[_tmU]) w *= 1.06;
         if (state.type === 'redraft' && pos === 'RB' && _myRbTeams[_tmU]) w *= 1.05;
       }
-      if (state.type === 'redraft' && p.bye_week && (_myByes[Number(p.bye_week)] || 0) >= 2){
-        w *= 0.92;
+      if (state.type === 'redraft' && p.bye_week && window.DraftBoardCore && DraftBoardCore.byeWeekSeverity){
+        var _cpuBye = [];
+        (cpuCtx.picksList || []).forEach(function(mp){
+          var f = playersById[String(mp.id)] || mp;
+          var bp = String(f.position || '').toUpperCase();
+          if (['QB','RB','WR','TE'].indexOf(bp) < 0) return;
+          _cpuBye.push({id:String(f.id||mp.id),pos:bp,bye:f.bye_week!=null?Number(f.bye_week):null,quality:ppgNormOf(f)||0});
+        });
+        _cpuBye.push({id:String(p.id),pos:pos,bye:Number(p.bye_week),quality:ppgNormOf(p)||0});
+        var _creq = window.DraftBoardCore.starterRequirements
+          ? DraftBoardCore.starterRequirements(_rs, !!state.sf)
+          : {QB:1,RB:2,WR:2,TE:1,FLEX:1};
+        var _cby = {QB:[],RB:[],WR:[],TE:[]};
+        _cpuBye.forEach(function(r){ if (_cby[r.pos]) _cby[r.pos].push(r); });
+        Object.keys(_cby).forEach(function(bp){
+          _cby[bp].sort(function(a,b){ return (b.quality||0)-(a.quality||0); });
+          _cby[bp].forEach(function(r,i){ r.role = i < (_creq[bp]||0) ? 'starter' : (i===(_creq[bp]||0)?'primary':'fringe'); });
+        });
+        var _week = DraftBoardCore.byeWeekSeverity(_cpuBye,{sf:!!state.sf,tep:scoringCfg().tep})
+          .filter(function(w){ return +w.week === Number(p.bye_week); })[0];
+        if (_week && (_week.level === 'severe' || _week.level === 'meaningful')) w *= 0.92;
       }
       // Hard guard: a backup at a starter-filled slot has little marginal value,
       // so the CPU must never REACH for one - only take it if its real ADP has
@@ -3305,16 +3324,68 @@
   }
 
   // ── Bye week conflict ───────────────────────────────────────────────────────
-  // Returns how many already-owned players share this player's bye week.
-  function byeConflict(p){
-    if (state.type !== 'redraft' || !p.bye_week) return 0;
-    var bw = Number(p.bye_week);
-    var count = 0;
+  // Impact-based: classify current roster roles, then ask whether adding this
+  // player worsens starter-overlap severity. Raw body count is not enough —
+  // three fringe bench players on one week are not a crunch.
+  function myByeSnapshot(extra){
+    var rows = [];
     myPicksList().forEach(function(mp){
-      var full = playersById[String(mp.id)];
-      if (full && Number(full.bye_week) === bw) count++;
+      var full = playersById[String(mp.id)] || mp;
+      var pos = String(full.position || mp.position || '').toUpperCase();
+      if (['K','DEF','DST','D/ST'].indexOf(pos) >= 0) return;
+      rows.push({
+        id: String(full.id || mp.id), pos: pos,
+        bye: full.bye_week != null ? Number(full.bye_week) : null,
+        quality: ppgNormOf(full) || 0
+      });
     });
-    return count;
+    if (extra){
+      var epos = String(extra.position || '').toUpperCase();
+      if (['QB','RB','WR','TE'].indexOf(epos) >= 0){
+        rows.push({
+          id: String(extra.id || 'cand'), pos: epos,
+          bye: extra.bye_week != null ? Number(extra.bye_week) : null,
+          quality: ppgNormOf(extra) || 0
+        });
+      }
+    }
+    var rs = (state && state.roster) || defaultRoster();
+    var req = window.DraftBoardCore && DraftBoardCore.starterRequirements
+      ? DraftBoardCore.starterRequirements(rs, !!state.sf)
+      : {QB: rs.QB || 1, RB: rs.RB || 2, WR: rs.WR || 2, TE: rs.TE || 1, FLEX: rs.FLEX || 0};
+    var byPos = {QB: [], RB: [], WR: [], TE: []};
+    rows.forEach(function(r){ if (byPos[r.pos]) byPos[r.pos].push(r); });
+    Object.keys(byPos).forEach(function(pos){
+      byPos[pos].sort(function(a,b){ return (b.quality||0) - (a.quality||0); });
+      byPos[pos].forEach(function(r, i){
+        r.role = i < (req[pos] || 0) ? 'starter' : (i === (req[pos] || 0) ? 'primary' : 'fringe');
+      });
+    });
+    if (req.FLEX > 0){
+      var flexPool = [];
+      ['RB','WR','TE'].forEach(function(pos){
+        byPos[pos].slice(req[pos] || 0).forEach(function(r){ flexPool.push(r); });
+      });
+      flexPool.sort(function(a,b){ return (b.quality||0) - (a.quality||0); });
+      flexPool.slice(0, req.FLEX).forEach(function(r){
+        if (r.role !== 'starter') r.role = 'starter';
+      });
+    }
+    return rows;
+  }
+  function byeConflictLevel(p){
+    if (state.type !== 'redraft' || !p.bye_week || !window.DraftBoardCore || !DraftBoardCore.byeWeekSeverity) return '';
+    var opts = {sf: !!state.sf, tep: scoringCfg().tep};
+    var without = DraftBoardCore.byeWeekSeverity(myByeSnapshot(), opts);
+    var withP = DraftBoardCore.byeWeekSeverity(myByeSnapshot(p), opts);
+    var w0 = without[0], w1 = withP.filter(function(w){ return +w.week === Number(p.bye_week); })[0] || withP[0];
+    if (!w1 || w1.level === 'none') return '';
+    var base = (w0 && +w0.week === +w1.week) ? (w0.score || 0) : 0;
+    if (w1.score > base + 0.15) return w1.level;
+    return '';
+  }
+  function byeConflict(p){
+    return byeConflictLevel(p) ? 2 : 0;
   }
 
   // ── Player comparison ───────────────────────────────────────────────────────
@@ -3457,6 +3528,10 @@
     else if (opts && opts.grading && _gradeCliffByPn && _pn && _gradeCliffByPn[_pn] != null)
       _cliff = !!_gradeCliffByPn[_pn];
     else _cliff = isTierCliff(p, _pn);
+    var _rs = (state && state.roster) || defaultRoster();
+    var _starterSlots = pos === 'QB'
+      ? ((_rs.QB || 0) + (_rs.SF || 0))
+      : (_rs[pos] || 0);
     return BRPickScore.computePickScore({
       pos: pos, value: valOf(p), vor: vorOf(p), tier: tierOf(p),
       age: (p.age != null ? Number(p.age) : null), rankChange7d: p.rank_change_7d,
@@ -3465,6 +3540,7 @@
       qbCount: counts['QB'] || 0, totalPicks: (state.teams || 12) * (state.rounds || 16),
       numTeams: state.teams || 12, ppgNorm: ppgN,
       ppr: _sc.ppr, tep: _sc.tep, passTd: _sc.passTd, isTierCliff: _cliff,
+      starterSlots: _starterSlots,
     });
   }
 
@@ -3582,11 +3658,13 @@
     var upsideBonus = 0;
     if (state.type === 'redraft' && DraftBoardCore.lateRoundUpsideBonus){
       var rd = Math.floor(((state.current || 1) - 1) / Math.max(1, state.teams || 12)) + 1;
-      var path = 0;
-      if (p.breakout_score != null) path = Math.max(path, clamp01(Number(p.breakout_score) / 100));
-      if (p.projected_role != null && isFinite(Number(p.projected_role))) path = Math.max(path, clamp01(Number(p.projected_role)));
-      if (handcuffBonus > 0) path = Math.max(path, 0.75);
-      var ppgn = ppgNormOf(p); if (ppgn != null) path = Math.max(path, ppgn * 0.65);
+      var path = DraftBoardCore.lateRoundPathEvidence
+        ? DraftBoardCore.lateRoundPathEvidence({
+            breakoutScore: p.breakout_score, projectedRole: p.projected_role,
+            handcuff: handcuffBonus > 0
+          })
+        : 0;
+      var ppgn = ppgNormOf(p);
       var age = p.age != null ? Number(p.age) : null;
       upsideBonus = DraftBoardCore.lateRoundUpsideBonus({
         round: rd, totalRounds: state.rounds || 16, path: path,
@@ -3737,8 +3815,11 @@
     }
     // Bye week conflict flag (redraft only)
     var byeFlag = '';
-    var bc = byeConflict(p);
-    if (bc >= 2) byeFlag = '<span class="dr-bye-flag">Bye ' + p.bye_week + ' clash</span>';
+    var byeLvl = byeConflictLevel(p);
+    if (byeLvl === 'severe' || byeLvl === 'meaningful')
+      byeFlag = '<span class="dr-bye-flag">Bye ' + p.bye_week + ' starters</span>';
+    else if (byeLvl === 'mild')
+      byeFlag = '<span class="dr-bye-flag">Bye ' + p.bye_week + '</span>';
     // Projected PPG (scoring-adjusted Sleeper upcoming-season only). Last-season
     // actual is a separate stat, never a projection stand-in.
     var ppgNum = scoringProjPpg(p);
@@ -6103,7 +6184,7 @@
   // Single source of truth so the inline ⓘ tooltips and the help popover agree.
   var _GLOSSARY = [
     { term: 'Recommendation', def: 'The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. A major value fall can still overcome imperfect roster fit. When it is not your turn, the order is for your next owned pick and players unlikely to last there are ranked down. Recommendation is shown as a rank rather than a grade because its internal utility naturally changes as the board is depleted.' },
-    { term: 'Pick Score (PS)', def: 'How good is this player at this pick? The absolute 0-100 quality kernel combines model value, positional VOR, ADP, tier, roster need, and projected points. It does not include live survival timing or the Recommendation rank. Kickers and defenses are not scored.' },
+    { term: 'Pick Score (PS)', def: 'How good is this player at this pick? The absolute 0-100 quality kernel combines model value, a scarcity residual (VOR as a share of the player\'s own value, so same-position stars are not double-counted), ADP, tier, roster need, and projected points. Live survival, handcuffs, and late-round upside live in Recommendation, not here. Kickers and defenses are not scored.' },
     { term: 'Board PS', def: 'How good was this selection relative to what was available at that moment? Made-pick chips replay the historical remaining pool and scale the absolute Pick Score against its best option. Deep Dive’s Avg pick score, use the same relative scale. Board PS can therefore differ from absolute Pick Score and Recommendation.' },
     { term: 'Draft Grade', def: 'How good is the resulting roster? It primarily evaluates the optimal starters, functional bench depth, efficient construction, and role- and round-weighted pick quality. It is not an average Recommendation rank, and K/DEF are grade-neutral.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
@@ -6389,18 +6470,67 @@
     if (selected && !remaining.some(function(p){return String(p.id)===String(selected.id);})) remaining.push(selected);
     var maxV = 0; remaining.forEach(function(p){maxV=Math.max(maxV,valOf(p));});
     var rs = (state && state.roster) || defaultRoster(), opts = {sf:!!state.sf,tep:scoringCfg().tep,draftType:state.type};
+    var myRbTeams = {};
+    Object.keys(state.picks).forEach(function(k){
+      var n = parseInt(k,10), pk = state.picks[k]; if (!pk || n >= pn || !isMyPick(n)) return;
+      var f = playersById[String(pk.id)] || pk;
+      if ((f.position || '').toUpperCase() === 'RB' && f.team) myRbTeams[f.team] = true;
+    });
+    var rd = Math.floor((pn - 1) / Math.max(1, state.teams || 12)) + 1;
+    var expectedByPos = {};
+    remaining.forEach(function(p){
+      var pos = String(p.position || '').toUpperCase();
+      var abs = pickScore(p,maxV,counts,{grading:true,pickNo:pn,qualByPos:qualByPos});
+      if (abs == null) return;
+      if (expectedByPos[pos] == null) expectedByPos[pos] = [];
+      expectedByPos[pos].push(abs);
+    });
+    Object.keys(expectedByPos).forEach(function(pos){
+      expectedByPos[pos].sort(function(a,b){ return b - a; });
+    });
     var rows = remaining.map(function(p){
       var pos = String(p.position || '').toUpperCase();
       var abs = pickScore(p,maxV,counts,{grading:true,pickNo:pn,qualByPos:qualByPos});
       if (abs == null) return null;
       var role = Core.candidateRosterRole(pos,ppgNormOf(p)||0,qualities,rs,!!state.sf);
       var util = Core.positionNeedUtility(pos,counts,rs,Object.assign({},opts,{role:role}));
-      return { player:p, absolutePickScore:abs, decisionScore:Core.decisionScore({base:abs,utility:util,bench:role==='bench1'||role==='bench2',deepBench:role==='bench2',quality:ppgNormOf(p)||0}) };
-    }).filter(Boolean).sort(function(a,b){return b.decisionScore-a.decisionScore||b.absolutePickScore-a.absolutePickScore;});
-    var sel = rows.filter(function(r){return String(r.player.id)===String(selected.id);})[0];
-    if (!sel || !rows.length) return null;
-    return { selectedScore:sel.decisionScore,bestAlternativeScore:rows[0].decisionScore,
-      bestAlternative:rows[0].player,topAlternatives:rows.filter(function(r){return String(r.player.id)!==String(selected.id);}).slice(0,5) };
+      var path = Core.lateRoundPathEvidence
+        ? Core.lateRoundPathEvidence({
+            breakoutScore: p.breakout_score, projectedRole: p.projected_role,
+            handcuff: !!(state.type === 'redraft' && pos === 'RB' && p.team && myRbTeams[p.team])
+          })
+        : 0;
+      var age = p.age != null ? Number(p.age) : null;
+      var upside = (state.type === 'redraft' && Core.lateRoundUpsideBonus)
+        ? Core.lateRoundUpsideBonus({
+            round: rd, totalRounds: state.rounds || 16, path: path,
+            aboveReplacement: vorOf(p) > 0 ? clamp01(vorOf(p) / Math.max(1, valOf(p))) : 0,
+            tierQuality: tierOf(p) ? clamp01((10 - Math.min(9, tierOf(p))) / 9) : 0,
+            ppgQuality: ppgNormOf(p) || 0, functionalUtility: util,
+            rosterNeedPath: role === 'starter' || role === 'flex' || role === 'bench1' ? 1 : 0.35,
+            youngWithPath: path > 0 && age != null && (pos === 'RB' || pos === 'WR') && age <= (pos === 'RB' ? 24 : 25)
+          })
+        : 0;
+      var shelf = expectedByPos[pos] || [];
+      var expected = shelf.length > 1 ? shelf[1] : 0;
+      var waitLoss = Math.max(0, abs - expected);
+      var ds = Core.decisionScore({
+        base: abs, utility: util, bench: role === 'bench1' || role === 'bench2',
+        deepBench: role === 'bench2', quality: ppgNormOf(p) || 0,
+        waitLoss: waitLoss, upsideBonus: upside
+      });
+      return { id: p.id, player: p, absolutePickScore: abs, decisionScore: ds };
+    }).filter(Boolean);
+    var summary = Core.summarizeHistoricalAlternatives
+      ? Core.summarizeHistoricalAlternatives(rows, selected.id)
+      : null;
+    if (!summary) return null;
+    return {
+      selectedScore: summary.selectedScore,
+      bestAlternativeScore: summary.bestAlternativeScore,
+      bestAlternative: summary.bestAlternative && summary.bestAlternative.player,
+      topAlternatives: (summary.topAlternatives || []).map(function(r){ return r.player; })
+    };
   }
   // My picks in draft order, each carrying the market delta + pool-relative pick
   // score (relPS = the exact number the report-card rows show).
@@ -7116,7 +7246,7 @@
         var starter = me.grade.starterIds && me.grade.starterIds[String(p.pl.id)];
         var role = starter ? 'starter' : (!benchSeen[p.pos] ? 'primary' : 'fringe');
         if (!starter) benchSeen[p.pos] = true;
-        return {name:p.pl.name,pos:p.pos,bye:p.full&&p.full.bye_week,role:role,quality:ppgNormOf(p.full)||0,coverQuality:0};
+        return {id:String(p.pl.id),name:p.pl.name,pos:p.pos,bye:p.full&&p.full.bye_week,role:role,quality:ppgNormOf(p.full)||0};
       });
       var byeRows = window.DraftBoardCore && DraftBoardCore.byeWeekSeverity
         ? DraftBoardCore.byeWeekSeverity(byePlayers,{sf:!!state.sf,tep:scoringCfg().tep}) : [];
