@@ -10707,6 +10707,7 @@ select:focus {
 #lookupBtn,
 #espnSubmitBtn,
 #mflSubmitBtn,
+#fleaSubmitBtn,
 #yahooConnectBtn,
 #generateWrap button {
     margin-top: 2px;
@@ -10726,6 +10727,7 @@ select:focus {
 #lookupBtn:hover,
 #espnSubmitBtn:hover,
 #mflSubmitBtn:hover,
+#fleaSubmitBtn:hover,
 #yahooConnectBtn:hover,
 #generateWrap button:hover {
     filter: brightness(1.08);
@@ -10735,6 +10737,7 @@ select:focus {
 #lookupBtn:active,
 #espnSubmitBtn:active,
 #mflSubmitBtn:active,
+#fleaSubmitBtn:active,
 #yahooConnectBtn:active,
 #generateWrap button:active {
     transform: translateY(1px);
@@ -10746,6 +10749,7 @@ select:focus {
 #lookupBtn:disabled,
 #espnSubmitBtn:disabled,
 #mflSubmitBtn:disabled,
+#fleaSubmitBtn:disabled,
 #yahooConnectBtn:disabled {
     opacity: 0.6;
     cursor: default;
@@ -10880,7 +10884,9 @@ select:focus {
    the ESPN private-connect choice), that IS the create-account step, so hide the
    generic bottom button to avoid two competing CTAs. */
 .home-card:has(#generateWrap[style*="block"]) #homeAcctBottom,
-.home-card:has(#espnPrivateChoice[style*="flex"]) #homeAcctBottom {
+.home-card:has(#espnPrivateChoice[style*="flex"]) #homeAcctBottom,
+.home-card:has(#mflPrivateChoice[style*="flex"]) #homeAcctBottom,
+.home-card:has(#fleaPrivateChoice[style*="flex"]) #homeAcctBottom {
     display: none;
 }
 
@@ -11148,23 +11154,7 @@ a.signed-home-league:hover {
     background: var(--accent-soft);
 }
 
-.espn-home-method {
-    flex: 1;
-    padding: 9px 10px;
-    border: 0;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--text-muted);
-    font-weight: 700;
-    cursor: pointer;
-}
-
-.espn-home-method.active {
-    background: var(--card);
-    color: var(--text);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, .14);
-}
-
+.espn-home-method,
 .mfl-home-method,
 .flea-home-method {
     flex: 1;
@@ -11177,6 +11167,7 @@ a.signed-home-league:hover {
     cursor: pointer;
 }
 
+.espn-home-method.active,
 .mfl-home-method.active,
 .flea-home-method.active {
     background: var(--card);
