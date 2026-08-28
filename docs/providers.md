@@ -51,7 +51,8 @@ is not implied by the draft-results capability.
 Fleaflicker uses the public JSON API at `https://www.fleaflicker.com/api`.
 Public leagues need no auth. Private leagues use the undocumented `/api/Login`
 token in the `Authorization` header. Email/password may be used once to obtain
-the token; only the token is stored encrypted. The provider implements
+the token (`POST /api/Login` with `loginId` + `password`; do not send `email` —
+that returns HTML 400). Only the token is stored encrypted. The provider implements
 standings, rules, rosters, scoreboard, transactions, draft board, and team
 future picks, normalized to the Sleeper-shaped dictionaries used elsewhere.
 Playoff brackets are not claimed.
