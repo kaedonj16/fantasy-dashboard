@@ -397,6 +397,12 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "draft-trends-scout" in script
     assert "Tap a bucket to filter the board." in script
     assert "Board players who match" in script
+    grid_at = script.find("html += '<div class=\"cs-trends-grid\">'")
+    scout_at = script.find("html += trendsScoutHtml")
+    assert grid_at >= 0 and scout_at > grid_at
+    assert "renderTrends({ keepScroll: true })" in script
+    scout_css = body.split(".cs-trends-scout-list")[1][:280]
+    assert "grid-template-columns: 1fr 1fr" in scout_css
     assert "data-trends-lane" in script
     assert "row.vs_label" in script
     assert "The Trends tab shows position-wide rates" in body
@@ -464,6 +470,15 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "Hist" in chance["text"]
     assert "—" not in chance["text"]
     assert "–" not in chance["text"]
+    trends_place = next(
+        entry for entry in CHANGELOG
+        if "two columns" in entry.get("text", "").lower()
+        and "RYOE" in entry.get("text", "")
+    )
+    assert trends_place["tag"] == "fix"
+    assert trends_place["link"] == "/draft/cheat-sheet"
+    assert "—" not in trends_place["text"]
+    assert "–" not in trends_place["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():

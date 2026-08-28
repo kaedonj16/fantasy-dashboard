@@ -2501,9 +2501,11 @@
             + '</' + close + '>';
     }
 
-    function renderTrends() {
+    function renderTrends(opts) {
         var host = $('csTrends');
         if (!host) return;
+        opts = opts || {};
+        var keepY = opts.keepScroll ? window.pageYOffset : null;
         var data = trendsCache;
         if (!data || data.available === false) {
             host.innerHTML = '<p class="cs-hist-sub">Historical trends are not available yet.</p>';
@@ -2565,7 +2567,6 @@
             + (baselineN != null ? ' (n=' + esc(String(baselineN)) + ')' : '') + '.');
         if (page.prime_window) bits.push('Prime window is ages ' + esc(page.prime_window) + '.');
         html += bits.join(' ') + '</div></div></div>';
-        html += trendsScoutHtml(data, picks, pickCount);
         if (edges.length) {
             var mid = Math.ceil(edges.length / 2);
             html += '<section class="cs-trends-board"><div class="cs-trends-sec-head">'
@@ -2678,7 +2679,17 @@
             html += '</div></details>';
         });
         html += '</div>';
+        html += trendsScoutHtml(data, picks, pickCount);
         host.innerHTML = html;
+        if (keepY != null) {
+            try { window.scrollTo(0, keepY); } catch (err) {}
+        }
+        if (opts.keepScroll && pickCount) {
+            var scout = host.querySelector('.cs-trends-scout');
+            if (scout) {
+                try { scout.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (err2) {}
+            }
+        }
         host.querySelectorAll('[data-trends-pos]').forEach(function (b) {
             b.addEventListener('click', function () {
                 trendsPos = b.getAttribute('data-trends-pos') || 'RB';
@@ -2721,13 +2732,13 @@
                         };
                     }
                 }
-                renderTrends();
+                renderTrends({ keepScroll: true });
             });
         });
         var clearPicks = host.querySelector('[data-trends-clear]');
         if (clearPicks) clearPicks.addEventListener('click', function () {
             trendsPicks[trendsPos] = {};
-            renderTrends();
+            renderTrends({ keepScroll: true });
         });
         host.querySelectorAll('[data-trends-unlock]').forEach(function (b) {
             b.addEventListener('click', function () {

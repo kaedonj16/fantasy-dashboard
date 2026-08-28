@@ -366,11 +366,11 @@ _CHEAT_HTML = r"""
   .cs-trends-srow.is-on { border-color: var(--cs-pos); background: var(--cs-pos-bg); }
   .cs-trends-minipcts { display: flex; gap: 8px; margin-top: 4px; font-family: var(--cs-mono); font-size: 10px; color: var(--cs-ink-faint, var(--text-muted)); }
   .cs-trends-minipcts .is-on { color: var(--cs-pos); font-weight: 800; }
-  .cs-trends-scout { margin: 0 0 18px; padding: 12px 14px; border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; background: var(--cs-surface, var(--card)); }
+  .cs-trends-scout { margin: 18px 0 0; padding: 12px 14px; border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; background: var(--cs-surface, var(--card)); }
   .cs-trends-scout-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
   .cs-trends-chip { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-pos); color: var(--cs-pos); background: var(--cs-pos-bg); border-radius: 999px; padding: 4px 10px; }
   .cs-trends-chip.is-clear { border-color: var(--cs-line, var(--border)); color: var(--cs-ink-soft, var(--text-muted)); background: transparent; }
-  .cs-trends-scout-list { display: flex; flex-direction: column; gap: 4px; }
+  .cs-trends-scout-list { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; }
   .cs-trends-player { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; font: inherit; cursor: pointer; border: 0; background: transparent; border-radius: 8px; padding: 6px 4px; color: var(--cs-ink, var(--text)); }
   .cs-trends-player:hover { background: color-mix(in srgb, var(--cs-pos) 8%, transparent); }
   .cs-trends-player.is-drafted { opacity: .45; }
@@ -396,6 +396,7 @@ _CHEAT_HTML = r"""
     .cs-trends-lanes { position: sticky; top: 0; z-index: 4; background: var(--cs-surface, var(--card)); padding: 8px 0; margin: 0 0 10px; border-bottom: 1px solid var(--cs-line, var(--border)); }
     .cs-trends-lane-n { flex: 1 0 100%; margin: 2px 0 0; }
     .cs-trends-grid { grid-template-columns: 1fr; gap: 8px; }
+    .cs-trends-scout-list { grid-template-columns: 1fr; }
     .cs-trends-card { height: auto; padding: 0; }
     .cs-trends-card > summary { padding: 12px 14px; }
     .cs-trends-card-peek { display: inline; }

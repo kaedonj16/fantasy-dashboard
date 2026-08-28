@@ -570,6 +570,26 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     assert feats
     sample_pid = next(iter(feats))
     assert feats[sample_pid].get("position") in ("QB", "RB", "WR", "TE")
+    from dashboard_services.historical.board import matches_trend_filter
+    assert any(f.get("ryoe") for f in feats.values())
+    assert any(f.get("adot") for f in feats.values())
+    ryoe_sec = next(sec for sec in rb["sections"] if sec["id"] == "ryoe")
+    below = next(row for row in ryoe_sec["rows"] if (row.get("match") or {}).get("eq") == "below expected")
+    above = next(row for row in ryoe_sec["rows"] if "above" in str((row.get("match") or {}).get("eq") or ""))
+    assert any(
+        f.get("position") == "RB" and matches_trend_filter(f, below["match"])
+        for f in feats.values()
+    )
+    assert any(
+        f.get("position") == "RB" and matches_trend_filter(f, above["match"])
+        for f in feats.values()
+    )
+    adot_sec = next(sec for sec in payload["by_position"]["WR"]["sections"] if sec["id"] == "adot")
+    adot_row = adot_sec["rows"][0]
+    assert any(
+        f.get("position") == "WR" and matches_trend_filter(f, adot_row["match"])
+        for f in feats.values()
+    )
     wr = payload["by_position"]["WR"]
     wr_ids = [sec["id"] for sec in wr["sections"]]
     assert "adot" in wr_ids

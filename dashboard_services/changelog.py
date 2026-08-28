@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-08-28",
         "tag": "fix",
+        "text": "Draft Cheat Sheet Trends: matching board players sit below the tables in two columns so tapping a bucket does not send you back to the top. Last-year RYOE and aDOT filters now list current-board players who actually have those stats.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
+        "tag": "fix",
         "text": "Draft Cheat Sheet Hist: the headline percent is this player's historical chance given his career (already top-12 or not) and current situation (year, capital, last year), not last-year lookalikes alone.",
         "link": "/draft/cheat-sheet"
     },
