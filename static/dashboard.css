@@ -2399,52 +2399,6 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
     cursor: pointer;
 }
 
-/* Rankings / table advanced columns */
-.pr-advanced-col {
-    display: none;
-}
-
-body.pr-show-advanced .pr-advanced-col,
-body.pr-show-advanced #prTableHeader .pr-advanced-col {
-    display: revert;
-}
-
-body.pr-show-advanced .pr-grid-row:not(.pr-adp-mode) {
-    grid-template-columns: 54px 42px 1fr 52px 46px 46px 60px !important;
-}
-
-.br-table-advanced-toggle {
-    padding: 6px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-}
-
-.br-table-advanced-toggle.active {
-    background: var(--accent-soft);
-    color: var(--accent);
-    border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
-}
-
-/* Cheat sheet advanced columns */
-.cs-advanced-col {
-    display: none;
-}
-
-body.cs-show-advanced .cs-advanced-col {
-    display: table-cell;
-}
-
-body.cs-show-advanced .cs-advanced-col.cs-hist-col,
-body.cs-show-advanced .cs-advanced-col.cs-market-col {
-    display: table-cell;
-}
-
 /* Player modal context actions */
 .pm-context-actions {
     display: flex;
@@ -2472,20 +2426,6 @@ body.cs-show-advanced .cs-advanced-col.cs-market-col {
 @media (min-width: 1181px) {
     .os-action-queue.os-tab-panel {
         display: flex !important;
-    }
-}
-
-@media (max-width: 480px) {
-    body:not(.pr-show-advanced) .pr-grid-row:not(.pr-adp-mode) {
-        grid-template-columns: 50px 42px 1fr 56px !important;
-    }
-
-    body:not(.pr-show-advanced) .pr-advanced-col {
-        display: none !important;
-    }
-
-    body.pr-show-advanced .pr-arrows {
-        display: none;
     }
 }
 

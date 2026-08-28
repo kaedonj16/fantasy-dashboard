@@ -124,7 +124,6 @@ def build_players_shell() -> str:
                   <option value="total_pts">Total Points</option>
                 </select>
               </div>
-              <button type="button" id="prAdvancedToggle" class="br-table-advanced-toggle" onclick="prToggleAdvanced()" title="Show Pos, Age, Team, and trend columns">More columns</button>
             </div>
           </div>
         </div>
@@ -155,12 +154,12 @@ def build_players_shell() -> str:
              font-weight:700;color:var(--accent);letter-spacing:0.04em;
              text-transform:uppercase;" class="pr-grid-row">
           <span>#</span>
-          <span class="pr-advanced-col" style="text-align:center;"></span>
+          <span style="text-align:center;"></span>
           <span>Player</span>
-          <span class="pr-advanced-col" style="text-align:center;">Pos</span>
-          <span id="prAgeHeader" class="pr-advanced-col" style="text-align:center;">Age</span>
-          <span class="pr-advanced-col" style="text-align:right;">Team</span>
-          <span id="prSortHeader" style="text-align:right;" title="VALUE: Dynasty trade value from the BR model">Value</span>
+          <span style="text-align:center;">Pos</span>
+          <span id="prAgeHeader" style="text-align:center;">Age</span>
+          <span style="text-align:right;">Team</span>
+          <span id="prSortHeader" style="text-align:right;">Value</span>
         </div>
 
         <!-- Player rows -->

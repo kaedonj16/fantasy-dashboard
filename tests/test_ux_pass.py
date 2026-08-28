@@ -10,9 +10,7 @@ DASH = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(e
 OS_DASH = (ROOT / "dashboard_services" / "pages" / "offseason_dashboard_page.py").read_text(encoding="utf-8")
 APP_JS = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
 PAYWALL_JS = (ROOT / "static" / "paywall.js").read_text(encoding="utf-8")
-RANKINGS_JS = (ROOT / "static" / "rankings.js").read_text(encoding="utf-8")
 CHEAT_JS = (ROOT / "static" / "cheat_sheet.js").read_text(encoding="utf-8")
-PLAYERS_PAGE = (ROOT / "dashboard_services" / "pages" / "players_page.py").read_text(encoding="utf-8")
 PLAYER_MODAL = (ROOT / "static" / "player_modal.js").read_text(encoding="utf-8")
 WAIVERS = (ROOT / "dashboard_services" / "pages" / "waivers_page.py").read_text(encoding="utf-8")
 DASH_CSS = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
@@ -34,18 +32,18 @@ def test_offseason_dashboard_action_queue():
     assert "Best waiver available" in OS_DASH
 
 
-def test_rankings_advanced_columns_toggle():
-    assert "prToggleAdvanced" in RANKINGS_JS
-    assert "prShowAdvanced" in RANKINGS_JS
-    assert "pr-advanced-col" in RANKINGS_JS
-    assert "prAdvancedToggle" in PLAYERS_PAGE
-    assert "More columns" in PLAYERS_PAGE
+def test_cheat_sheet_terminology_tooltips():
+    assert "VALUE: Value over replacement" in CHEAT_JS
+    assert "MARKET: Where market signals" in CHEAT_JS
+    assert "cs-advanced-col" not in CHEAT_JS
+    assert "csShowAdvanced" not in CHEAT_JS
 
 
-def test_cheat_sheet_advanced_columns_toggle():
-    assert "csShowAdvanced" in CHEAT_JS
-    assert "cs-advanced-col" in CHEAT_JS
-    assert "csAdvancedBtn" in (ROOT / "dashboard_services" / "pages" / "cheat_sheet_page.py").read_text(encoding="utf-8")
+def test_rankings_table_unchanged_from_main():
+    rankings = (ROOT / "static" / "rankings.js").read_text(encoding="utf-8")
+    players_page = (ROOT / "dashboard_services" / "pages" / "players_page.py").read_text(encoding="utf-8")
+    assert "prShowAdvanced" not in rankings
+    assert "prAdvancedToggle" not in players_page
 
 
 def test_cross_feature_links():
@@ -100,4 +98,5 @@ def test_dashboard_css_action_and_palette_styles():
     assert ".os-action-queue" in DASH_CSS
     assert ".nav-search-group-label" in DASH_CSS
     assert ".br-pro-preview" in DASH_CSS
-    assert ".pr-advanced-col" in DASH_CSS
+    assert ".pr-advanced-col" not in DASH_CSS
+    assert ".cs-advanced-col" not in DASH_CSS

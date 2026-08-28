@@ -719,7 +719,6 @@ _CHEAT_HTML = r"""
         <button class="cs-btn" id="csConnectLive" style="display:none;">Connect live draft</button>
         <button class="cs-btn" id="csEditBtn" aria-pressed="false" style="display:none;" title="Make this your board: reorder, pin or mute players (Pro)">Edit board</button>
         <button class="cs-btn" id="csValBtn" aria-pressed="false">Values only</button>
-        <button class="cs-btn br-table-advanced-toggle" id="csAdvancedBtn" aria-pressed="false" title="Show Proj PPG, Sched Rk, Hist, and Market vs ADP">More columns</button>
         <button class="cs-btn" id="csCsvBtn">CSV</button>
         <button class="cs-btn" id="csPrintBtn">Print</button>
         <button class="cs-btn cs-btn-reset" id="csClearBtn" style="display:none;">Clear marks</button>
