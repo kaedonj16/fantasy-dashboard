@@ -75,10 +75,15 @@ def test_mobile_hub_uses_flex_column_not_grid_tracks():
     assert "flex-direction: column" in body
 
 
-def test_mobile_inactive_team_panels_use_display_none():
-    mobile = _mobile_block(_css())
-    assert re.search(r"\.team-panel\s*\{[^}]*display:\s*none", mobile)
-    assert re.search(r"\.team-panel\.active\s*\{[^}]*display:\s*flex", mobile)
+def test_inactive_team_panels_use_display_none_globally():
+    css = _css()
+    m = re.search(r"\.team-panel\s*\{([^}]+)\}", css)
+    assert m, ".team-panel rule missing"
+    body = m.group(1)
+    assert "display: none" in body or "display:none" in body.replace(" ", "")
+    active = re.search(r"\.team-panel\.active\s*\{([^}]+)\}", css)
+    assert active, ".team-panel.active rule missing"
+    assert "display: flex" in active.group(1)
 
 
 def test_dashboard_hubs_share_os_layout_tab_structure():

@@ -788,7 +788,7 @@ ul {
 }
 
 .os-col-fill {
-    flex-grow: 1;
+    flex-grow: 0;
     margin-bottom: 0;
     display: flex;
     flex-direction: column;
@@ -796,13 +796,13 @@ ul {
 
 .os-right-col > .os-sidebar-shell {
     margin-bottom: 18px;
-    flex-grow: 1;
+    flex-grow: 0;
     display: flex;
     flex-direction: column;
 }
 
 .os-sidebar-shell > .card {
-    flex-grow: 1;
+    flex-grow: 0;
     margin-bottom: 0;
 }
 
@@ -2716,9 +2716,8 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
     overflow: hidden;
     width: 100%;
     max-width: 100%;
-    max-height: 800px;
-    min-height: 400px;
-    max-height: 1225px;
+    min-height: 0;
+    max-height: min(1225px, 70vh);
 }
 
 .gm-card {
@@ -8329,7 +8328,7 @@ select:focus {
     /* Mobile hub: flex column instead of grid so hidden tab panels cannot leave
      implicit grid tracks or stretch rows (the pre-tab-panel left column bug). */
     .os-layout {
-        display: flex;
+        display: flex !important;
         flex-direction: column;
         gap: 16px;
     }
@@ -8340,23 +8339,6 @@ select:focus {
     .os-right-col > .os-sidebar-shell,
     .os-sidebar-shell > .card {
         flex-grow: 0;
-    }
-
-    /* Roster sidebar: visibility-hidden inactive team panels still sized the
-     shared grid cell to the tallest bench on desktop; on mobile remove them
-     from flow so the active team panel alone sets height. */
-    .team-panels {
-        display: block;
-    }
-
-    .team-panel {
-        display: none;
-        visibility: visible;
-        pointer-events: auto;
-    }
-
-    .team-panel.active {
-        display: flex;
     }
 }
 
@@ -13672,22 +13654,19 @@ html[data-theme="dark"] .contact-social-pill img {
 }
 
 .team-panel {
-    grid-area: 1 / 1;
-    display: flex;
+    display: none;
     flex-direction: column;
-    height: 100%;
     min-height: 0;
-    visibility: hidden;
-    pointer-events: none;
 }
 
 .team-panel.active {
+    display: flex;
     visibility: visible;
     pointer-events: auto;
 }
 
 .team-panels {
-    display: grid;
+    display: block;
     flex: 1;
     position: relative;
     overflow-y: auto;
