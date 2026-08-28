@@ -117,7 +117,7 @@ def test_market_column_is_conditionally_omitted_from_table_and_export():
     assert "SHOW_MARKET_VS_ADP = resp.market_vs_adp_available === true" in script
     assert "showMarket(dyn) ? sortTh('market'" in script
     assert "showMarket(dyn) ? ['Market vs ADP'] : []" in script
-    assert "showHist(dyn) ? ['Hist vs ADP'] : []" in script
+    assert "showHist(dyn) ? ['Hist P(top-12)'] : []" in script
     assert "Not enough independent market data yet." in script
     assert "marketBasis" in script
     assert "marketConfidenceLabel" in script
@@ -378,16 +378,25 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "scored.sort(function (a, b) {" in script
     assert "var aVor = Number(a.vorRaw);" in script
     assert "histP" not in script.split("scored.sort(function (a, b) {")[1].split("scored.forEach")[0]
-    assert "function histEdgeClass" in script
-    assert "function histEdgeBody" in script
-    assert "Hist vs ADP bucket" in script
-    assert "historical chance for this career and situation" in body.lower()
-    assert "vs ADP bucket (signed pts)" in script
-    assert "title=\"Hist vs ADP bucket\"" in script
+    assert "function histPctClass" in script
+    assert "HIST_STRONG_PCT" in script
+    assert "history_higher" in script.split("function histPctClass")[1].split("function histCell")[0]
+    assert "return 'b'" not in script.split("function histPctClass")[1].split("function histCell")[0]
+    assert "Never paint market_higher red" in script
+    assert "Players like this:" in script
+    assert "title=\"This player\\'s historical chance\"" in script
+    assert "top-12 chance for this profile" in script
+    assert "Historical top-12 chance" in body
+    assert "stars like Chase or Bijan" in body
+    assert "Hist vs the ADP bucket" not in body
+    assert "vs ADP bucket (signed pts)" not in script
+    assert "function histEdgeClass" not in script
+    assert "function histEdgeBody" not in script
     assert "return !dyn && SHOW_HISTORICAL" in script
     assert "var showTrends = function ()" in script
     assert "return SHOW_HISTORICAL;" in script.split("var showTrends = function ()")[1].split("var currentTab")[0]
-    assert "HIST_STRONG_PCT" not in script
+    assert "var HIST_STRONG_PCT = 25" in script
+    assert "historical chance for this career and situation" in body.lower()
     assert "var HIST_TIER_SHORT = { top_5: 'top-5', top_12: 'top-12', top_24: 'top-24' }" in script
     assert "function histExampleHit" in script
     assert "cs-hist-ex-hit" in script
@@ -396,8 +405,6 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "(row.pct != null ? row.pct + '%' : '-')" in script
     assert "—" not in script.split("function renderHistPanel")[1].split("function init()")[0]
     assert "–" not in script.split("function renderHistPanel")[1].split("function init()")[0]
-    assert "market_higher" in script.split("function histEdgeClass")[1].split("function histEdgeBody")[0]
-    assert "Hist vs the ADP bucket" in body
     assert "copy.trends" in script or "Trends for this player's buckets" in script
     assert "trendsHitRow(row, row && row.polarity, histBaseline, histSpan)" in script
     assert "copy.projection_trends" not in script

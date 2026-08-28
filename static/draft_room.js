@@ -81,7 +81,8 @@
   var tierThresholds = {}; // {leagueType:{size:[...]}} from /api/league-players
   var adpSources = {};     // {startup|rookie|redraft: 'Sleeper'|'none'} from /api/league-players
   var historicalAvailable = false; // compact Hist on /api/league-players; descriptive only
-  var DD_HIST_EDGE = 10; // pts — same order as SIGNAL_PROB_ALIGN_DELTA (0.10)
+  // Tint Deep Dive Hist % only when history beats the ADP bucket. Do not use an
+  // absolute 25% cutoff or paint market_higher as a miss — early ADP is a high bar.
   var adpSourceOptions = {}; // {startup|rookie|redraft: [{value,label}]} from payload
   var adpSource = 'consensus'; // selected source; saved sessions may override this.
                              // 'auto' = server default, any real source
@@ -6115,7 +6116,7 @@
     { term: 'Grade · Starters', def: 'How good your projected starting lineup is versus a league-average team. 100% is a league-average lineup; the rank is among teams in this draft. Snake drafts are close to zero-sum, so a lineup near 100% of average can still rank 1st or 2nd.' },
     { term: 'Grade · Construction', def: 'How well you’ve filled your starting slots and balanced your positions.' },
     { term: 'Grade · Early', def: 'Shown until your team has 8 picks (3 in a rookie draft). The letter is real — including at two picks / the start of round 3 — but construction is still ramping and the sample is small.' },
-    { term: 'Hist', def: 'Hist vs the ADP-bucket top-12 rate for this career profile and situation. Absolute rates sit in the deep panel. Not a Pick Score, Recommendation, VOR, or Draft Grade input.' }
+    { term: 'Hist', def: 'Historical top-12 chance for this career profile and situation. Compare it to the ADP-round rate in Deep Dive — early ADP is a high bar. Not a Pick Score, Recommendation, VOR, or Draft Grade input.' }
   ];
   // Inline info icon: data-tip drives a CSS hover/focus bubble. tabindex makes it
   // tap- and keyboard-accessible.
@@ -6989,10 +6990,10 @@
       return bd - ad;
     });
     var tiles = [
-      { v: avg + '%', l: 'Avg Hist top-12', cls: '' },
-      { v: avgEdge == null ? '-' : ((avgEdge > 0 ? '+' : '') + avgEdge), l: 'Avg vs ADP bucket', cls: avgEdge != null && avgEdge >= DD_HIST_EDGE ? 'good' : '' },
+      { v: avg + '%', l: 'Avg Hist top-12', cls: avg >= 25 ? 'good' : '' },
       { v: above, l: 'Hist group higher', cls: above ? 'good' : '' },
-      { v: below, l: 'ADP round higher', cls: '' }
+      { v: below, l: 'ADP round higher', cls: '' },
+      { v: avgEdge == null ? '-' : ((avgEdge > 0 ? '+' : '') + avgEdge), l: 'Avg vs ADP (info)', cls: '' }
     ].map(function(t){
       return '<div class="dd-tile ' + (t.cls || '') + '"><div class="dd-tile-v">' + t.v + '</div><div class="dd-tile-l">' + t.l + '</div></div>';
     }).join('');
@@ -7034,7 +7035,7 @@
         + '</tr>';
     }).join('');
     return '<div class="dd-card"><div class="dd-sec"><h4>Historical trends</h4>'
-      + '<p>Two groups per pick: players like this, and anyone taken in that ADP round. Lead with the gap between them.</p></div>'
+      + '<p>Two groups per pick: players like this, and anyone taken in that ADP round. Early ADP is a high bar, not a miss.</p></div>'
       + '<div class="dd-tiles">' + tiles + '</div>'
       + callouts
       + '<div class="dd-tablescroll" style="margin-top:14px"><table class="dd-ledger">'

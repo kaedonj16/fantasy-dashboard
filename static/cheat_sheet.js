@@ -49,8 +49,10 @@
         trends: 'cs-panel-trends',
         logic: 'cs-panel-logic'
     };
-    // Board Hist leads with History P vs ADP-bucket P (signed pts). Aligned
-    // when |Δ| < 10 pts — same threshold as signals.SIGNAL_PROB_ALIGN_DELTA.
+    // Warehouse P(top-12) at a skill position is ~5–8%. 25%+ is a strong cell.
+    // Do not tint market_higher / signed ADP edge on the board: round-1 market
+    // hit rates are 60–90%, so Bijan / Gibbs / Chase would all read as -20.
+    var HIST_STRONG_PCT = 25;
     var HIST_TIER_SHORT = { top_5: 'top-5', top_12: 'top-12', top_24: 'top-24' };
 
     function histExampleHit(finish, fallback) {
@@ -708,7 +710,7 @@
         if (key === 'value') return x.value;
         if (key === 'scheduleRank') return x.scheduleRank;
         if (key === 'market') return x.marketVsAdp;
-        if (key === 'hist') return x.histEdge != null ? x.histEdge : x.histP;
+        if (key === 'hist') return x.histP;
         return null;
     }
 
@@ -1190,46 +1192,41 @@
         return v > 0 ? '<span class="cs-val g">+' + v + '</span>' : (v < 0 ? '<span class="cs-val b">' + v + '</span>' : '<span class="cs-val n">even</span>');
     }
 
-    function histEdgeClass(label) {
-        if (label === 'history_higher') return 'g';
-        if (label === 'market_higher') return 'b';
+    function histPctClass(h) {
+        if (!h) return 'n';
+        // Green only for a strong absolute cell or history beating the ADP
+        // bucket. Never paint market_higher red — early ADP is a high bar.
+        if (h.h_vs_m === 'history_higher') return 'g';
+        var pct = h.p_hit_pct;
+        if (pct != null && isFinite(Number(pct)) && Number(pct) >= HIST_STRONG_PCT) return 'g';
         return 'n';
-    }
-
-    function histEdgeBody(h) {
-        var pts = h && h.h_vs_m_pts != null && isFinite(Number(h.h_vs_m_pts))
-            ? Number(h.h_vs_m_pts) : null;
-        var label = h && h.h_vs_m;
-        if (pts != null && label && label !== 'unknown') {
-            if (label === 'aligned' || Math.abs(pts) < 1) return '=';
-            return (pts > 0 ? '+' : '') + pts;
-        }
-        // No market bucket → fall back to absolute Hist % (modal has the mix).
-        if (h && h.p_hit_pct != null && isFinite(Number(h.p_hit_pct))) {
-            return Number(h.p_hit_pct) + '%';
-        }
-        return '-';
     }
 
     function histCell(x, dyn) {
         if (!showHist(dyn)) return '';
         var h = x.historical || {};
         var pct = h.p_hit_pct;
-        var pts = h.h_vs_m_pts;
         var tipBits = [];
-        if (pts != null && isFinite(Number(pts)) && h.h_vs_m && h.h_vs_m !== 'unknown') {
-            tipBits.push('Hist vs ADP bucket: '
-                + (Number(pts) > 0 ? '+' : '') + Number(pts) + ' pts');
-        }
-        if (pct != null) tipBits.push('players like this: ' + pct + '% top-12');
+        if (pct != null) tipBits.push('Players like this: ' + pct + '% top-12');
         if (h.mkt_pct != null) tipBits.push('that ADP round: ' + h.mkt_pct + '%');
+        if (h.h_vs_m_pts != null && isFinite(Number(h.h_vs_m_pts)) && h.h_vs_m && h.h_vs_m !== 'unknown') {
+            var pts = Number(h.h_vs_m_pts);
+            if (h.h_vs_m === 'history_higher') {
+                tipBits.push('history ahead of that ADP round by ' + pts + ' pts');
+            } else if (h.h_vs_m === 'aligned') {
+                tipBits.push('in line with that ADP round');
+            } else if (h.h_vs_m === 'market_higher') {
+                tipBits.push('early ADP is a high bar ('
+                    + (pts > 0 ? '+' : '') + pts + ' vs that round)');
+            }
+        }
         if (!tipBits.length) tipBits.push('Historical top-12 chance unknown');
         tipBits.push('Open for the full mix.');
-        var cls = histEdgeClass(h.h_vs_m);
-        var body = histEdgeBody(h);
+        var cls = histPctClass(h);
+        var body = pct == null ? '-' : (pct + '%');
         return '<td class="cs-hist-col"><span class="cs-hist-cell">'
             + '<span class="cs-val ' + cls + '" title="' + esc(tipBits.join('. ')) + '">' + body + '</span>'
-            + '<button type="button" class="cs-hist-btn" data-hist-id="' + esc(x.id) + '" data-hist-name="' + esc(x.name) + '" data-hist-adp="' + (x.adp != null && isFinite(Number(x.adp)) ? String(x.adp) : '') + '" data-hist-pos="' + esc(x.pos || '') + '" data-hist-proj="' + (x.projectedPpg != null && isFinite(Number(x.projectedPpg)) ? String(x.projectedPpg) : '') + '" data-hist-proj-rk="' + (h.proj_rk != null ? String(h.proj_rk) : '') + '" data-hist-adp-rk="' + (h.adp_rk != null ? String(h.adp_rk) : '') + '" title="Hist vs ADP bucket">i</button>'
+            + '<button type="button" class="cs-hist-btn" data-hist-id="' + esc(x.id) + '" data-hist-name="' + esc(x.name) + '" data-hist-adp="' + (x.adp != null && isFinite(Number(x.adp)) ? String(x.adp) : '') + '" data-hist-pos="' + esc(x.pos || '') + '" data-hist-proj="' + (x.projectedPpg != null && isFinite(Number(x.projectedPpg)) ? String(x.projectedPpg) : '') + '" data-hist-proj-rk="' + (h.proj_rk != null ? String(h.proj_rk) : '') + '" data-hist-adp-rk="' + (h.adp_rk != null ? String(h.adp_rk) : '') + '" title="This player\'s historical chance">i</button>'
             + '</span></td>';
     }
 
@@ -1416,7 +1413,7 @@
                 + '<span class="cs-lg"><span class="cs-val g">+7</span> above ADP, target it</span>'
                 + '<span class="cs-lg"><span class="cs-val b">-4</span> going early, let it fall</span>'
                 + '<span class="cs-lg"><b>Sched Rk</b> full-season schedule (1 = easiest)</span>'
-                + (showHist(dyn) ? '<span class="cs-lg"><b>Hist</b> vs ADP bucket (signed pts)</span>' : '')
+                + (showHist(dyn) ? '<span class="cs-lg"><b>Hist</b> top-12 chance for this profile</span>' : '')
                 + sortNote
                 + projNote
                 + draftedNote
@@ -1494,7 +1491,7 @@
             + sortTh(col5Key, col5, '', dyn ? 'Sort by age' : 'MARKET: Sort by ADP')
             + sortTh(col6Key, col6, 'cs-value-col', dyn ? 'Sort by career window (age)' : 'VALUE: Sort by value vs ADP')
             + sortTh('scheduleRank', 'Sched Rk', '', 'PROJECTION: Full fantasy-season strength of schedule rank (1 = easiest)')
-            + (showHist(dyn) ? sortTh('hist', 'Hist', 'cs-hist-col', 'HISTORY: Hist vs ADP-bucket top-12 rate. Green = history higher; red = that ADP round higher. Open for absolute rates.') : '')
+            + (showHist(dyn) ? sortTh('hist', 'Hist', 'cs-hist-col', 'HISTORY: Historical top-12 chance for this career and situation. Green when the cell is strong or history beats that ADP round. Early ADP is a high bar, not a miss.') : '')
             + (showMarket(dyn) ? sortTh('market', 'Market vs ADP', 'cs-market-col', 'MARKET: Where market signals imply this player should be drafted vs ADP') : '')
             + editTh + '</tr>';
         var span = (editable ? 9 : 8) + (showMarket(dyn) ? 1 : 0) + (showHist(dyn) ? 1 : 0);
@@ -1976,13 +1973,12 @@
     function exportCsv() {
         if (!players.length) return;
         var dyn = state.mode === 'dynasty';
-        var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', 'Proj PPG', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Schedule Rank'].concat(showHist(dyn) ? ['Hist vs ADP'] : []).concat(showMarket(dyn) ? ['Market vs ADP'] : []).concat(['Tier']);
+        var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', 'Proj PPG', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Schedule Rank'].concat(showHist(dyn) ? ['Hist P(top-12)'] : []).concat(showMarket(dyn) ? ['Market vs ADP'] : []).concat(['Tier']);
         var rows = displayPlayers().map(function (x) {
             var c5 = dyn ? (x.age != null ? x.age : '') : fmtAdp(x.adp);
             var c6 = dyn ? youthWindow(x.age, x.pos)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
             var ppgCsv = x.projectedPpg != null ? x.projectedPpg.toFixed(1) : '';
-            var histCsv = x.histEdge != null ? x.histEdge : (x.histP == null ? '' : x.histP);
-            return [x.rk, x.name, x.pos, x.prk, x.vor, ppgCsv, c5, c6, x.scheduleRank || ''].concat(showHist(dyn) ? [histCsv] : []).concat(showMarket(dyn) ? [x.marketVsAdp == null ? '' : x.marketVsAdp] : []).concat([x.dtier]);
+            return [x.rk, x.name, x.pos, x.prk, x.vor, ppgCsv, c5, c6, x.scheduleRank || ''].concat(showHist(dyn) ? [x.histP == null ? '' : x.histP] : []).concat(showMarket(dyn) ? [x.marketVsAdp == null ? '' : x.marketVsAdp] : []).concat([x.dtier]);
         });
         var csv = [head].concat(rows).map(function (r) {
             return r.map(function (v) {

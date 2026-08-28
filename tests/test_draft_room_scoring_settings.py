@@ -559,17 +559,19 @@ def test_deep_dive_includes_descriptive_historical_trends():
     assert "function ddHistHtml" in source
     assert "html += ddHistHtml(picks)" in source
     assert "Two groups per pick: players like this, and anyone taken in that ADP round." in source
-    assert "Lead with the gap between them." in source
+    assert "Early ADP is a high bar, not a miss." in source
+    assert "Lead with the gap between them." not in source
     assert "They are not averaged into one chance." not in source
     assert "Descriptive only. Not a ranking, Pick Score, or Draft Grade input." not in source
     assert "Hist below ADP bucket" not in source
     assert "Historical miss vs market" not in source
     assert "ADP round is a higher bar" in source
     assert "Hist group higher" in source
-    assert "Avg vs ADP bucket" in source
+    assert "Avg vs ADP (info)" in source
+    assert "Avg vs ADP bucket" not in source
     assert "Strong profiles (25%+)" not in source
     assert "DD_HIST_STRONG" not in source
-    assert "DD_HIST_EDGE" in source
+    assert "DD_HIST_EDGE" not in source
     assert 'data-k="hist"' in source
     assert "ddHistPct(p)" in source
     assert "p_hit_pct" in source
