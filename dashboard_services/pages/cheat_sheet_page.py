@@ -292,9 +292,14 @@ _CHEAT_HTML = r"""
   .cs-hist-note { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.45; margin: 0 0 8px; }
   .cs-hist-note:last-child { margin-bottom: 0; }
   .cs-hist-ex { list-style: none; margin: 0; padding: 0; }
-  .cs-hist-ex li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--cs-line, var(--border)); font-size: 13px; }
+  .cs-hist-ex li { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--cs-line, var(--border)); font-size: 13px; align-items: flex-start; }
   .cs-hist-ex li:last-child { border-bottom: 0; }
-  .cs-hist-ex li span:last-child { color: var(--cs-ink-soft, var(--text-muted)); font-family: var(--cs-mono); font-size: 12px; white-space: nowrap; }
+  .cs-hist-ex li > span:first-child { min-width: 0; }
+  .cs-hist-ex-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; color: var(--cs-ink-soft, var(--text-muted)); font-family: var(--cs-mono); font-size: 12px; text-align: right; }
+  .cs-hist-ex-meta { white-space: nowrap; }
+  .cs-hist-ex-hit { font-size: 10.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-hist-ex li.is-top_5 .cs-hist-ex-hit, .cs-hist-ex li.is-top_12 .cs-hist-ex-hit { color: var(--cs-pos); }
+  .cs-hist-ex li.is-top_24 .cs-hist-ex-hit { color: var(--cs-ink, var(--text)); }
   .cs-hist-ex small { display: block; font-size: 11.5px; font-weight: 500; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 2px; }
   .cs-hist-ex-sum { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 8px; }
   .cs-hist-closest { margin-top: 4px; }

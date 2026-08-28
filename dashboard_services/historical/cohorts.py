@@ -57,6 +57,13 @@ _CACHE_MAX = 256
 
 CLOSEST_EXAMPLE_LIMIT = NAMED_CLOSEST_EXAMPLES
 
+HIT_TIER_LABELS: dict[str, str] = {
+    "top_5": "Top 5",
+    "top_12": "Top 12",
+    "top_24": "Top 24",
+    "miss": "Outside top 24",
+}
+
 FINISH_TIER_COPY: dict[str, str] = {
     "QB": (
         "Top 5 is the league-winner line. Top 12 is a weekly starter. "
@@ -467,6 +474,31 @@ def _example_traits(feats: Mapping[str, Any], filters: Sequence[Mapping[str, Any
     return out
 
 
+def example_finish_hit(finish: Any) -> dict[str, Any]:
+    """Best board finish line this example hit. Missing finish stays unknown."""
+    rank = _optional_int(finish)
+    hits = {tier: False for tier in COMP_BOARD_TIERS}
+    if rank is None or rank < 1:
+        return {"hit_tier": None, "hit_label": None, "hits": hits}
+    for tier in COMP_BOARD_TIERS:
+        cut = TIER_CUTOFFS.get(tier)
+        if cut is not None and rank <= int(cut):
+            hits[str(tier)] = True
+    if hits.get("top_5"):
+        tier = "top_5"
+    elif hits.get("top_12"):
+        tier = "top_12"
+    elif hits.get("top_24"):
+        tier = "top_24"
+    else:
+        tier = "miss"
+    return {
+        "hit_tier": tier,
+        "hit_label": HIT_TIER_LABELS.get(tier, tier),
+        "hits": hits,
+    }
+
+
 def closest_examples(
     matched: Sequence[Mapping[str, Any]],
     *,
@@ -526,6 +558,7 @@ def closest_examples(
             "adp_bucket": obs.get("adp_bucket"),
             "traits": _example_traits(feats, filters or ()),
         }
+        rec.update(example_finish_hit(obs.get("finish")))
         out.append(rec)
         if len(out) >= limit:
             break
@@ -534,15 +567,18 @@ def closest_examples(
 
 def examples_summary(examples: Sequence[Mapping[str, Any]]) -> dict:
     n = len(examples)
-    top12 = sum(1 for ex in examples if (_optional_int(ex.get("positional_finish")) or 999) <= 12)
-    top24 = sum(1 for ex in examples if (_optional_int(ex.get("positional_finish")) or 999) <= 24)
-    top5 = sum(1 for ex in examples if (_optional_int(ex.get("positional_finish")) or 999) <= 5)
+    top5 = sum(1 for ex in examples if (_optional_int(ex.get("positional_finish")) or 999) <= TIER_CUTOFFS["top_5"])
+    top12 = sum(1 for ex in examples if (_optional_int(ex.get("positional_finish")) or 999) <= TIER_CUTOFFS["top_12"])
+    top24 = sum(1 for ex in examples if (_optional_int(ex.get("positional_finish")) or 999) <= TIER_CUTOFFS["top_24"])
     return {
         "n": n,
         "top_5": top5,
         "top_12": top12,
         "top_24": top24,
-        "label": f"{top12}/{n} Top-12 · {top24}/{n} Top-24" if n else None,
+        "label": (
+            f"{top5}/{n} Top-5 · {top12}/{n} Top-12 · {top24}/{n} Top-24"
+            if n else None
+        ),
     }
 
 
