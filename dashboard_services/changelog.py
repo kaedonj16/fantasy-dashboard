@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-08-28",
         "tag": "new",
-        "text": "Draft Cheat Sheet: Trends tab and Hist player cards. Trends shows position-wide historical top-12 rates (ADP, career, capital, age, usage) versus a typical player at that position. Hist opens a player's own mix of those buckets. Descriptive only, not a ranking input.",
+        "text": "Draft Cheat Sheet: Trends tab and Hist player cards. Trends shows position-wide historical top-12 rates (ADP, career, capital, age, usage) versus a typical player at that position. Hist opens a player's own mix of those buckets.",
         "link": "/draft/cheat-sheet"
     },
     {
