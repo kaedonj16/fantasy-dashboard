@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-08-28",
+        "tag": "update",
+        "text": "Draft Cheat Sheet Hist: closest examples now mark Top-5, Top-12, and Top-24 hits on each row and in the summary, so a #1 is a Top 5 and a #20 is a Top 24.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
         "tag": "fix",
         "text": "Draft Cheat Sheet Trends: collapsed tables on a phone stack the heading and the peek line so NFL Round 1 52% is not clipped off the right edge.",
         "link": "/draft/cheat-sheet"

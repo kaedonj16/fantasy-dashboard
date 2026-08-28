@@ -333,6 +333,9 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "return !dyn && SHOW_HISTORICAL" in script
     assert "var HIST_STRONG_PCT = 25" in script
     assert "var HIST_TIER_SHORT = { top_5: 'top-5', top_12: 'top-12', top_24: 'top-24' }" in script
+    assert "function histExampleHit" in script
+    assert "cs-hist-ex-hit" in script
+    assert ".cs-hist-ex-hit" in body
     assert "(lead.pct != null ? lead.pct : '-')" in script
     assert "(row.pct != null ? row.pct + '%' : '-')" in script
     assert "—" not in script.split("function renderHistPanel")[1].split("function init()")[0]
@@ -522,6 +525,15 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert mobile_peek["link"] == "/draft/cheat-sheet"
     assert "—" not in mobile_peek["text"]
     assert "–" not in mobile_peek["text"]
+    example_hits = next(
+        entry for entry in CHANGELOG
+        if "closest examples now mark" in entry.get("text", "").lower()
+    )
+    assert example_hits["tag"] == "update"
+    assert example_hits["link"] == "/draft/cheat-sheet"
+    assert "Top-5" in example_hits["text"]
+    assert "—" not in example_hits["text"]
+    assert "–" not in example_hits["text"]
     capital_split = next(
         entry for entry in CHANGELOG
         if "Top 10" in entry.get("text", "") and "rest of Round 1" in entry.get("text", "")

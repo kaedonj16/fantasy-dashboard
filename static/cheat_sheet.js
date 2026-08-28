@@ -49,6 +49,18 @@
     var HIST_STRONG_PCT = 25;
     var HIST_TIER_SHORT = { top_5: 'top-5', top_12: 'top-12', top_24: 'top-24' };
 
+    function histExampleHit(finish, fallback) {
+        if (fallback && fallback.hit_label) {
+            return { tier: fallback.hit_tier || '', label: fallback.hit_label };
+        }
+        var n = Number(finish);
+        if (!isFinite(n) || n < 1) return null;
+        if (n <= 5) return { tier: 'top_5', label: 'Top 5' };
+        if (n <= 12) return { tier: 'top_12', label: 'Top 12' };
+        if (n <= 24) return { tier: 'top_24', label: 'Top 24' };
+        return { tier: 'miss', label: 'Outside top 24' };
+    }
+
     function setTrendsNavOffset() {
         var nav = document.querySelector('.top-nav');
         var h = nav ? Math.round(nav.getBoundingClientRect().height) : 0;
@@ -3227,10 +3239,14 @@
                 if (ex.adp != null && isFinite(Number(ex.adp))) right.push('ADP ' + Number(ex.adp).toFixed(1));
                 if (ex.positional_finish != null) right.push('#' + ex.positional_finish);
                 if (ex.ppr_points != null) right.push(ex.ppr_points + ' pts');
+                var hit = histExampleHit(ex.positional_finish, ex);
                 var traits = Array.isArray(ex.traits) ? ex.traits.join(' · ') : '';
-                html += '<li><span>' + left
+                html += '<li' + (hit && hit.tier ? ' class="is-' + esc(hit.tier) + '"' : '') + '><span>' + left
                     + (traits ? '<small>' + esc(traits) + '</small>' : '')
-                    + '</span><span>' + esc(right.join(' · ')) + '</span></li>';
+                    + '</span><span class="cs-hist-ex-right">'
+                    + (right.length ? '<span class="cs-hist-ex-meta">' + esc(right.join(' · ')) + '</span>' : '')
+                    + (hit ? '<b class="cs-hist-ex-hit">' + esc(hit.label) + '</b>' : '')
+                    + '</span></li>';
             });
             html += '</ul></section>';
         }

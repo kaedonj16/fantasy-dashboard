@@ -516,7 +516,10 @@ def test_closest_examples_are_a_subset_not_the_cohort():
     summary = examples_summary(examples)
     assert summary["n"] == len(examples)
     assert summary["top_12"] == 3
+    assert summary["top_5"] == 0
+    assert "Top-5" in summary["label"]
     assert "Top-12" in summary["label"]
+    assert "Top-24" in summary["label"]
     assert len(matched) == 12
     assert summary["n"] < len(matched)
 
@@ -555,6 +558,36 @@ def test_closest_example_traits_use_readable_bucket_labels():
     assert "Day 2" in day2[0]["traits"]
     assert "Year 3" in day2[0]["traits"]
     assert all("_" not in str(t) for t in day2[0]["traits"])
+
+
+def test_closest_examples_mark_top5_top12_top24_hits():
+    from dashboard_services.historical.cohorts import example_finish_hit
+
+    assert example_finish_hit(1)["hit_tier"] == "top_5"
+    assert example_finish_hit(5)["hit_label"] == "Top 5"
+    assert example_finish_hit(9)["hit_tier"] == "top_12"
+    assert example_finish_hit(12)["hits"]["top_12"] is True
+    assert example_finish_hit(12)["hits"]["top_5"] is False
+    assert example_finish_hit(20)["hit_label"] == "Top 24"
+    assert example_finish_hit(35)["hit_tier"] == "miss"
+    assert example_finish_hit(None)["hit_tier"] is None
+    rows = [
+        _obs_row(sleeper_id="a", ppr_positional_finish=1),
+        _obs_row(sleeper_id="b", ppr_positional_finish=10),
+        _obs_row(sleeper_id="c", ppr_positional_finish=22),
+        _obs_row(sleeper_id="d", ppr_positional_finish=40),
+    ]
+    examples = closest_examples(build_cohort_index(rows)["observations"])
+    by_id = {ex["sleeper_id"]: ex for ex in examples}
+    assert by_id["a"]["hit_label"] == "Top 5"
+    assert by_id["b"]["hit_label"] == "Top 12"
+    assert by_id["c"]["hit_label"] == "Top 24"
+    assert by_id["d"]["hit_label"] == "Outside top 24"
+    summary = examples_summary(examples)
+    assert summary["top_5"] == 1
+    assert summary["top_12"] == 2
+    assert summary["top_24"] == 3
+    assert summary["label"] == "1/4 Top-5 · 2/4 Top-12 · 3/4 Top-24"
 
 
 def test_index_trajectory_ignores_outcome_year_actuals():
