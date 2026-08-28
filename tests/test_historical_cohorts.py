@@ -539,10 +539,10 @@ def test_closest_example_traits_use_readable_bucket_labels():
     examples = closest_examples(build_cohort_index(rows)["observations"])
     assert examples
     traits = examples[0]["traits"]
-    assert "NFL year 6+" in traits
-    assert "NFL Round 1" in traits
-    assert "last year Top 5" in traits
-    assert any(str(t).startswith("age ") for t in traits)
+    assert "Exp: Year 6+" in traits
+    assert "Draft: Round 1" in traits
+    assert "Last Year: Top 5" in traits
+    assert any(str(t).startswith("Age:") for t in traits)
     assert all("_" not in str(t) for t in traits)
     assert "year_6_plus" not in traits
     assert "round_1" not in traits
@@ -557,8 +557,8 @@ def test_closest_example_traits_use_readable_bucket_labels():
             previous_season_finish=5,
         )
     ])["observations"])
-    assert "NFL Day 2" in day2[0]["traits"]
-    assert "NFL year 3" in day2[0]["traits"]
+    assert "Draft: Day 2" in day2[0]["traits"]
+    assert "Exp: Year 3" in day2[0]["traits"]
     assert all("_" not in str(t) for t in day2[0]["traits"])
     filtered = closest_examples(
         build_cohort_index([
@@ -574,8 +574,8 @@ def test_closest_example_traits_use_readable_bucket_labels():
         filters=[AGE_23, DAY_2],
     )
     assert filtered
-    assert "age 23-24" in filtered[0]["traits"]
-    assert "NFL Day 2" in filtered[0]["traits"]
+    assert "Age: 23-24" in filtered[0]["traits"]
+    assert "Draft: Day 2" in filtered[0]["traits"]
 
 
 def test_closest_examples_mark_top5_top12_top24_hits():

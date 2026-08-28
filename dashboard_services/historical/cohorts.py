@@ -463,22 +463,46 @@ def _human_feat_label(dim: str, value: Any) -> str:
     return label
 
 
+def _bare_trait_value(text: str, *prefixes: str) -> str:
+    """Strip a leading NFL / Label: prefix so we can reattach a short label."""
+    out = str(text or "").strip()
+    changed = True
+    while out and changed:
+        changed = False
+        low = out.lower()
+        if low.startswith("nfl "):
+            out = out[4:].strip()
+            changed = True
+            continue
+        for prefix in prefixes:
+            token = str(prefix or "").strip().rstrip(":").lower()
+            if not token:
+                continue
+            if low.startswith(token + ":"):
+                out = out.split(":", 1)[1].strip()
+                changed = True
+                break
+            if low.startswith(token + " "):
+                out = out[len(token) + 1:].strip()
+                changed = True
+                break
+    return out
+
+
 def _example_trait_phrase(
     dim: str,
     value: Any,
     feats: Optional[Mapping[str, Any]] = None,
 ) -> str:
-    """One labeled tag: NFL year, draft capital, age, last-year finish, usage."""
+    """One labeled tag: Exp: Year 4 · Draft: Round 1 · Age: 23-24 · Last Year: Top 5."""
     key = str(dim or "")
     if key == "nfl_draft_pick":
         from dashboard_services.historical.definitions import trends_round1_pick_range
 
         band = trends_round1_pick_range(value)
         if band:
-            name = str(band[1] or "").strip()
-            if name.lower().startswith("nfl "):
-                return name
-            return f"NFL {name}" if name else ""
+            name = _bare_trait_value(band[1], "Draft")
+            return f"Draft: {name}" if name else ""
         cap = (feats or {}).get("draft_capital")
         if cap:
             return _example_trait_phrase("draft_capital", cap, feats)
@@ -486,46 +510,39 @@ def _example_trait_phrase(
     raw = _human_feat_label(key, value)
     if not raw:
         return ""
-    low = raw.lower()
     if key == "career_stage":
+        val = _bare_trait_value(raw, "Exp")
+        low = val.lower()
         if low == "rookie":
-            return "NFL rookie"
+            return "Exp: Rookie"
         if low.startswith("year "):
-            return f"NFL year {raw[5:].strip()}"
-        if "nfl" in low:
-            return raw
-        return f"NFL {raw}"
+            return f"Exp: Year {val[5:].strip()}"
+        return f"Exp: {val}"
     if key == "draft_capital":
-        if low == "undrafted":
-            return "undrafted"
-        if low.startswith("nfl "):
-            return raw
-        return f"NFL {raw}"
+        val = _bare_trait_value(raw, "Draft")
+        return f"Draft: {val}" if val else ""
     if key in ("age_bucket", "age"):
-        if low.startswith("age "):
-            return raw
-        return f"age {raw}"
+        val = _bare_trait_value(raw, "Age")
+        return f"Age: {val}" if val else ""
     if key == "prior_finish":
-        if "last year" in low or low.startswith("no "):
-            return raw
-        return f"last year {raw}"
+        val = _bare_trait_value(raw, "Last Year")
+        return f"Last Year: {val}" if val else ""
     if key == "prior_elite":
         return raw
     if key == "adot":
         from dashboard_services.historical.board import format_adot_bucket_label
 
-        labeled = format_adot_bucket_label(value) or raw
-        if labeled.lower().startswith("last year"):
-            return labeled
-        return f"last year {labeled}"
+        labeled = _bare_trait_value(format_adot_bucket_label(value) or raw, "aDOT", "Last Year")
+        return f"aDOT: {labeled}" if labeled else ""
     unit = _USAGE_TRAIT_UNITS.get(key)
     if unit:
-        if "last year" in low:
-            return raw
-        return f"last year {raw} {unit}"
+        val = _bare_trait_value(raw, unit, "Last Year")
+        label = unit[0].upper() + unit[1:] if unit != "RYOE" else "RYOE"
+        return f"{label}: {val}" if val else ""
     if key.endswith("_change"):
         metric = key[: -len("_change")].replace("_", " ")
-        return f"{metric} {raw}"
+        val = _bare_trait_value(raw, metric)
+        return f"{metric[0].upper() + metric[1:]}: {val}" if val else ""
     return raw
 
 

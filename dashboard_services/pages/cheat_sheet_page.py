@@ -630,11 +630,25 @@ _CHEAT_HTML = r"""
     .cs-ctrl-row:last-child .cs-btn { min-width: 0; width: 100%; justify-content: center; white-space: normal; padding: 8px 6px; }
     /* Keep every primary signal on mobile. The table scrolls horizontally, as
        it did before Market vs ADP was added, rather than hiding VOR or Value. */
-    .cs-wrap table { min-width: 910px; }
+    .cs-wrap table { min-width: 910px; border-collapse: separate; border-spacing: 0; }
+    .cs-wrap thead th.cs-rk, .cs-wrap tbody td.cs-rk {
+      position: sticky; left: 0; z-index: 4; width: 42px; min-width: 42px; max-width: 42px;
+      box-sizing: border-box; background: var(--cs-surface); padding-left: 8px; padding-right: 6px;
+    }
+    .cs-wrap thead th.cs-player, .cs-wrap tbody td.cs-player {
+      position: sticky; left: 42px; z-index: 4; min-width: 132px; max-width: 148px;
+      box-sizing: border-box; background: var(--cs-surface); padding-right: 8px;
+      border-right: 1px solid var(--cs-line); box-shadow: 6px 0 7px -5px color-mix(in srgb, #000 18%, transparent);
+    }
+    .cs-wrap thead th.cs-rk, .cs-wrap thead th.cs-player { z-index: 6; top: 0; }
+    .cs-wrap tbody tr.cs-p:hover td.cs-rk, .cs-wrap tbody tr.cs-p:hover td.cs-player { background: var(--cs-surface-2); }
+    .cs-wrap tbody tr.done td.cs-rk, .cs-wrap tbody tr.done td.cs-player,
+    .cs-wrap tbody tr.cs-muted td.cs-rk, .cs-wrap tbody tr.cs-muted td.cs-player { opacity: 1; }
+    .cs-wrap tbody tr.done td.cs-rk, .cs-wrap tbody tr.done td.cs-player .cs-pname { opacity: .4; }
     .cs-tbl-scroll, .cs-pgrid-scroll { max-height: none; height: auto; }
     .cs-wrap thead th, .cs-wrap tbody td { padding-left: 6px; padding-right: 6px; }
     .cs-pcell { gap: 5px; min-width: 0; }
-    .cs-pname { overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+    .cs-pname { overflow: hidden; text-overflow: ellipsis; max-width: 108px; }
     /* Tabs scroll sideways rather than wrapping onto a second line. */
     .cs-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .cs-tabs::-webkit-scrollbar { display: none; }
@@ -660,6 +674,7 @@ _CHEAT_HTML = r"""
     /* Undo the on-screen height cap so the whole board flows onto pages. */
     .cs-tbl-scroll, .cs-pgrid-scroll { overflow: visible; border: 0; max-height: none; }
     .cs-wrap thead th { position: static; }
+    .cs-wrap tbody td.cs-rk, .cs-wrap tbody td.cs-player { position: static; box-shadow: none; }
     .cs-trends-sticky { position: static; max-height: none; }
     .cs-trends-sticky.is-collapsed .cs-trends-sticky-body { display: contents; }
     .cs-trends-sticky-toggle { display: none !important; }

@@ -1456,8 +1456,8 @@
         var editTh = editable ? '<th class="cs-edit-th"></th>' : '';
         var boardSort = isDefaultSort();
         $('csBoardHead').innerHTML = '<tr>'
-            + sortTh('rk', 'Rk', '', 'VOR board rank. Click to restore the default order.')
-            + sortTh('name', 'Player', 'l', 'Sort by player name')
+            + sortTh('rk', 'Rk', 'cs-rk', 'VOR board rank. Click to restore the default order.')
+            + sortTh('name', 'Player', 'l cs-player', 'Sort by player name')
             + sortTh('pos', 'Pos', '', 'Sort by position, then positional rank')
             + sortTh('vor', 'VOR', 'cs-vor-col', 'Value over replacement — the model ranking')
             + sortTh('projectedPpg', 'Proj PPG', '', 'Projected fantasy points per game')
@@ -1524,7 +1524,7 @@
                 '<td class="cs-rk">' +
                 (x.rk == null ? '&ndash;' : x.rk) +
                 '</td>' +
-                '<td>' +
+                '<td class="cs-player">' +
                 '<span class="cs-pcell">' +
                 '<span class="cs-pname">' +
                 esc(x.name) +

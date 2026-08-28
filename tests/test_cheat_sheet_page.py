@@ -87,11 +87,27 @@ def test_mobile_header_has_no_flex_basis_gap_and_controls_wrap():
     assert ".cs-ctrl-row:last-child .cs-src, .cs-ctrl-row:last-child .csd-wrap { grid-column: 1 / -1;" in body
 
 
+def test_mobile_big_board_pins_rank_and_player():
+    body = build_cheat_sheet_body("league-123", 2026, "sleeper")
+    script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+    mobile = body.split("@media (max-width: 640px)")[1].split("@media")[0]
+
+    assert "sortTh('rk', 'Rk', 'cs-rk'" in script
+    assert "sortTh('name', 'Player', 'l cs-player'" in script
+    assert '<td class="cs-player">' in script
+    assert "left: 0" in mobile
+    assert "left: 42px" in mobile
+    assert "position: sticky" in mobile
+    assert ".cs-wrap thead th.cs-rk" in mobile
+    assert ".cs-wrap thead th.cs-player" in mobile
+    assert "border-collapse: separate" in mobile
+
+
 def test_market_column_is_conditionally_omitted_from_table_and_export():
     body = build_cheat_sheet_body("league-123", 2026, "sleeper")
     script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
 
-    assert ".cs-wrap table { min-width: 910px; }" in body
+    assert "min-width: 910px" in body
     assert ".cs-vor-col, .cs-value-col { display: none; }" not in body
     assert ".cs-market-col { display: none; }" not in body
     assert "sortTh('market', 'Market vs ADP', 'cs-market-col'" in script
@@ -643,13 +659,21 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "–" not in collapse["text"]
     example_context = next(
         entry for entry in CHANGELOG
-        if "last year top 5" in entry.get("text", "").lower()
-        and "nfl year" in entry.get("text", "").lower()
+        if "exp: year 4" in entry.get("text", "").lower()
+        and "last year: top 5" in entry.get("text", "").lower()
     )
     assert example_context["tag"] == "fix"
     assert example_context["link"] == "/draft/cheat-sheet"
     assert "—" not in example_context["text"]
     assert "–" not in example_context["text"]
+    pin_board = next(
+        entry for entry in CHANGELOG
+        if "rk and player stay pinned" in entry.get("text", "").lower()
+    )
+    assert pin_board["tag"] == "fix"
+    assert pin_board["link"] == "/draft/cheat-sheet"
+    assert "—" not in pin_board["text"]
+    assert "–" not in pin_board["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():
