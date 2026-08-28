@@ -458,15 +458,21 @@ class FleaflickerProvider(ProviderAdapter):
 
     @staticmethod
     def _build_name_index() -> dict:
-        from utils.utils import load_players_index, normalize_name
-        index = load_players_index() or {}
-        by_name = {}
-        for canonical, info in index.items():
-            name = normalize_name(info.get("full_name") or info.get("name") or "")
-            pos = str(info.get("position") or "").upper()
-            if name:
-                by_name[(name, pos)] = str(canonical)
-        return by_name
+        # utils.utils imports requests at module load. The unit-test CI job does
+        # not install that stack, so fail soft and let xwalk handle IDs.
+        try:
+            from utils.utils import load_players_index, normalize_name
+            index = load_players_index() or {}
+            by_name = {}
+            for canonical, info in index.items():
+                name = normalize_name(info.get("full_name") or info.get("name") or "")
+                pos = str(info.get("position") or "").upper()
+                if name:
+                    by_name[(name, pos)] = str(canonical)
+            return by_name
+        except Exception as exc:
+            logger.debug("Fleaflicker name index unavailable error=%s", type(exc).__name__)
+            return {}
 
     @staticmethod
     def _canonical_lookup(pro: dict, xwalk: dict, by_name: dict) -> Optional[str]:
@@ -475,8 +481,11 @@ class FleaflickerProvider(ProviderAdapter):
             cached = xwalk.get(str(pid))
             if cached:
                 return cached
-        from utils.utils import normalize_name
-        name = normalize_name(_get(pro, "nameFull", "name_full") or "")
+        try:
+            from utils.utils import normalize_name
+            name = normalize_name(_get(pro, "nameFull", "name_full") or "")
+        except Exception:
+            return None
         pos = str(_get(pro, "position") or "").upper()
         if not name:
             return None
