@@ -2577,9 +2577,17 @@
         var labels = Object.keys(picks || {}).map(function (id) {
             return picks[id] && picks[id].label;
         }).filter(Boolean);
-        html += '<div class="cs-trends-sec-head"><h3>Selected profile</h3><p>'
+        var n = cohort && cohort.sample_size;
+        var players = cohort && cohort.n_players;
+        html += '<div class="cs-trends-sec-head"><div><h3>Selected profile</h3><p>'
             + esc(trendsPos) + (labels.length ? ' · ' + esc(labels.join(' · ')) : '')
             + '</p></div>';
+        if (cohort && cohort.available !== false) {
+            html += '<div class="cs-trends-profile-n">n=' + esc(String(n == null ? 0 : n))
+                + (players != null ? ' · ' + esc(String(players)) + ' players' : '')
+                + '</div>';
+        }
+        html += '</div>';
         if (!cohort || cohort.available === false) {
             var reason = cohort && cohort.unknown_reason;
             html += '<p class="cs-hist-sub">'
@@ -2591,26 +2599,22 @@
                 + '</p></section>';
             return html;
         }
-        var n = cohort.sample_size;
-        var players = cohort.n_players;
-        html += '<div class="cs-trends-profile-stats">';
-        html += '<div class="cs-trends-profile-n">n=' + esc(String(n == null ? 0 : n))
-            + (players != null ? ' · ' + esc(String(players)) + ' players' : '')
-            + '</div>';
         var rates = cohort.rates || {};
+        html += '<div class="cs-trends-profile-stats">';
         html += '<div class="cs-trends-profile-tiers">';
         ['top_5', 'top_12', 'top_24'].forEach(function (tier) {
             var rec = rates[tier] || {};
             var pct = rec.display_pct;
             if (pct == null && tier === 'top_12') pct = cohort.display_pct;
-            html += '<div class="cs-trends-profile-tier' + (tier === (cohort.tier || trendsTier) ? ' is-on' : '') + '">'
+            var on = tier === (cohort.tier || trendsTier);
+            html += '<div class="cs-trends-profile-tier' + (on ? ' is-on' : '') + '">'
                 + '<div class="cs-trends-profile-k">' + esc(trendsFinishLabel(tier)) + '</div>'
                 + '<div class="cs-trends-profile-v">' + (pct != null ? esc(String(pct)) + '%' : '-') + '</div>'
                 + (tier === 'top_12' && rec.ci_low_pct != null && rec.ci_high_pct != null
-                    ? '<div class="cs-trends-profile-ci">' + esc(String(rec.ci_low_pct)) + '% to '
+                    ? '<div class="cs-trends-profile-ci">' + esc(String(rec.ci_low_pct)) + '-'
                         + esc(String(rec.ci_high_pct)) + '%</div>'
                     : (tier === 'top_12' && cohort.ci_low_pct != null && cohort.ci_high_pct != null
-                        ? '<div class="cs-trends-profile-ci">' + esc(String(cohort.ci_low_pct)) + '% to '
+                        ? '<div class="cs-trends-profile-ci">' + esc(String(cohort.ci_low_pct)) + '-'
                             + esc(String(cohort.ci_high_pct)) + '%</div>'
                         : ''))
                 + '</div>';
@@ -2622,17 +2626,21 @@
                 + '</dt><dd>' + esc(String(cohort.baseline_pct)) + '%</dd></div>';
         }
         if (cohort.adjusted_edge_pts != null) {
-            html += '<div><dt>Adjusted edge</dt><dd>' + esc(trendsSignedPts(cohort.adjusted_edge_pts)) + '</dd></div>';
+            html += '<div><dt>Adjusted edge</dt><dd class="'
+                + (Number(cohort.adjusted_edge_pts) > 0 ? 'is-up' : (Number(cohort.adjusted_edge_pts) < 0 ? 'is-down' : ''))
+                + '">' + esc(trendsSignedPts(cohort.adjusted_edge_pts)) + '</dd></div>';
         }
         var mkt = cohort.market || {};
         if (mkt.expected_market_pct != null) {
-            html += '<div><dt>Expected at historical ADP</dt><dd>' + esc(String(mkt.expected_market_pct)) + '%</dd></div>';
+            html += '<div><dt>At historical ADP</dt><dd>' + esc(String(mkt.expected_market_pct)) + '%</dd></div>';
         }
         if (mkt.market_adjusted_edge_pts != null) {
-            html += '<div><dt>Market-adjusted edge</dt><dd>' + esc(trendsSignedPts(mkt.market_adjusted_edge_pts)) + '</dd></div>';
+            html += '<div><dt>Vs market</dt><dd class="'
+                + (Number(mkt.market_adjusted_edge_pts) > 0 ? 'is-up' : (Number(mkt.market_adjusted_edge_pts) < 0 ? 'is-down' : ''))
+                + '">' + esc(trendsSignedPts(mkt.market_adjusted_edge_pts)) + '</dd></div>';
         }
         if (cohort.confidence_short) {
-            html += '<div><dt>Confidence</dt><dd>' + esc(String(cohort.confidence_short)) + '</dd></div>';
+            html += '<div class="is-conf"><dt>Confidence</dt><dd>' + esc(String(cohort.confidence_short)) + '</dd></div>';
         }
         html += '</dl>';
         html += '<p class="cs-hist-note">Actual matching seasons. Not a ranking input.</p>';

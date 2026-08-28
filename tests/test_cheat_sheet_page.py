@@ -382,8 +382,11 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert ".cs-trends-scout" in body
     assert ".cs-trends-sticky" in body
     assert "top: var(--cs-nav-offset, 0px)" in body
-    assert "max-height: min(36vh, 280px)" in body
+    assert "max-height: min(42vh, 340px)" in body
     assert ".cs-trends-sticky.is-picked" in body
+    assert ".cs-trends-profile-tier.is-on" in body
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in body
+    assert "box-shadow: inset 3px 0 0 var(--cs-pos)" in body
     assert "backdrop-filter: blur(10px)" in body
     assert ".cs-trends-conf" in body
     assert "Descriptive — not a ranking input" not in body
@@ -561,6 +564,14 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "rookies" in compact["text"].lower()
     assert "—" not in compact["text"]
     assert "–" not in compact["text"]
+    profile_css = next(
+        entry for entry in CHANGELOG
+        if "selected profile is a compact verdict card" in entry.get("text", "").lower()
+    )
+    assert profile_css["tag"] == "update"
+    assert profile_css["link"] == "/draft/cheat-sheet"
+    assert "—" not in profile_css["text"]
+    assert "–" not in profile_css["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():

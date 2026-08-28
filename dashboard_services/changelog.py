@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-08-28",
+        "tag": "update",
+        "text": "Draft Cheat Sheet Trends: the selected profile is a compact verdict card with hit-rate tiles, edge chips, and a sample-size pill, so the mix stays readable without covering the tables.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
         "tag": "fix",
         "text": "Draft Cheat Sheet Trends: the selected-bucket dock is compact so the tables stay on screen, and this year's rookies (including 1st-rounders with no NFL season yet) show in matching-player lists from their NFL draft capital.",
         "link": "/draft/cheat-sheet"

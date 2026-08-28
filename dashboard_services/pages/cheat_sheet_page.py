@@ -316,11 +316,11 @@ _CHEAT_HTML = r"""
   .cs-trends-pos button[data-trends-pos="TE"][aria-pressed="true"] { border-color: var(--cs-te); color: var(--cs-te); background: var(--cs-te-bg); }
   .cs-trends-lanes button[aria-pressed="true"], .cs-trends-tiers button[aria-pressed="true"] { border-color: var(--cs-pos); color: var(--cs-pos); background: var(--cs-pos-bg); }
   .cs-trends-lane-n, .cs-trends-tier-n { margin-left: auto; font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-faint, var(--text-muted)); }
-  .cs-trends-sticky { position: sticky; top: var(--cs-nav-offset, 0px); z-index: 5; display: grid; gap: 6px; margin: 0 0 12px; padding: 6px 8px 8px; border: 1px solid color-mix(in srgb, var(--cs-pos) 22%, var(--cs-line, var(--border))); border-radius: 12px; background: color-mix(in srgb, var(--cs-surface, var(--card)) 86%, var(--cs-pos-bg)); box-shadow: 0 8px 18px color-mix(in srgb, #000 12%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); max-height: min(36vh, 280px); overflow: auto; }
-  .cs-trends-sticky.is-picked { grid-template-columns: minmax(200px, .9fr) minmax(0, 1.15fr); align-items: start; }
+  .cs-trends-sticky { position: sticky; top: var(--cs-nav-offset, 0px); z-index: 5; display: grid; gap: 8px; margin: 0 0 12px; padding: 8px 10px 10px; border: 1px solid color-mix(in srgb, var(--cs-pos) 22%, var(--cs-line, var(--border))); border-radius: 14px; background: color-mix(in srgb, var(--cs-surface, var(--card)) 86%, var(--cs-pos-bg)); box-shadow: 0 8px 18px color-mix(in srgb, #000 12%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); max-height: min(42vh, 340px); overflow: auto; }
+  .cs-trends-sticky.is-picked { grid-template-columns: minmax(240px, .95fr) minmax(0, 1.15fr); align-items: stretch; }
   .cs-trends-sticky.is-picked .cs-trends-lanes { grid-column: 1 / -1; }
   .cs-trends-sticky .cs-trends-lanes { margin: 0; }
-  .cs-trends-sticky .cs-hist-note { font-size: 10.5px; margin: 4px 0 0; line-height: 1.3; }
+  .cs-trends-sticky .cs-hist-note { font-size: 10.5px; margin: 6px 0 0; line-height: 1.3; }
   .cs-trends-summary { display: flex; align-items: flex-end; gap: 16px; margin: 0 0 18px; padding: 12px 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--cs-pos) 28%, var(--cs-line, var(--border))); background: var(--cs-pos-bg); }
   .cs-trends-base-pct { font-weight: 800; font-size: 46px; line-height: .82; letter-spacing: -.03em; color: var(--cs-pos); font-variant-numeric: tabular-nums; }
   .cs-trends-base-pct sup { font-size: 18px; font-weight: 800; color: var(--cs-ink-soft, var(--text-muted)); vertical-align: super; }
@@ -378,8 +378,8 @@ _CHEAT_HTML = r"""
   .cs-trends-srow.is-on { border-color: var(--cs-pos); background: var(--cs-pos-bg); }
   .cs-trends-minipcts { display: flex; gap: 8px; margin-top: 4px; font-family: var(--cs-mono); font-size: 10px; color: var(--cs-ink-faint, var(--text-muted)); }
   .cs-trends-minipcts .is-on { color: var(--cs-pos); font-weight: 800; }
-  .cs-trends-scout { margin: 0; padding: 8px 10px; border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; background: var(--cs-surface, var(--card)); max-height: min(22vh, 160px); overflow: auto; }
-  .cs-trends-scout.is-idle { max-height: none; overflow: visible; padding: 6px 8px; }
+  .cs-trends-scout { margin: 0; padding: 10px 12px; border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; background: var(--cs-surface, var(--card)); min-height: 0; overflow: auto; }
+  .cs-trends-scout.is-idle { max-height: none; overflow: visible; padding: 8px 10px; }
   .cs-trends-scout-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
   .cs-trends-chip { font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-pos); color: var(--cs-pos); background: var(--cs-pos-bg); border-radius: 999px; padding: 2px 8px; }
   .cs-trends-chip.is-clear { border-color: var(--cs-line, var(--border)); color: var(--cs-ink-soft, var(--text-muted)); background: transparent; }
@@ -394,17 +394,29 @@ _CHEAT_HTML = r"""
   .cs-trends-player-why { display: none; }
   .cs-trends-player-edge { font-size: 10.5px; color: var(--cs-ink, var(--text)); font-weight: 650; line-height: 1.3; }
   .cs-trends-callout.is-down .cs-trends-callout-pct span { color: var(--cs-ink-faint, var(--text-muted)); }
-  .cs-trends-profile { margin: 0; padding: 8px 10px; border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; background: var(--cs-surface, var(--card)); }
-  .cs-trends-profile.is-idle { padding: 6px 8px; }
-  .cs-trends-profile-n { font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 4px; }
-  .cs-trends-profile-tiers { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0 0 6px; }
-  .cs-trends-profile-k { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); }
-  .cs-trends-profile-v { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .cs-trends-profile-ci { font-family: var(--cs-mono); font-size: 10px; color: var(--cs-ink-faint, var(--text-muted)); }
-  .cs-trends-profile-dl { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0; font-size: 11.5px; }
-  .cs-trends-profile-dl > div { display: flex; gap: 6px; align-items: baseline; }
-  .cs-trends-profile-dl dt { color: var(--cs-ink-soft, var(--text-muted)); }
-  .cs-trends-profile-dl dd { margin: 0; font-weight: 700; }
+  .cs-trends-profile { margin: 0; padding: 10px 12px 11px; border: 1px solid color-mix(in srgb, var(--cs-pos) 26%, var(--cs-line, var(--border))); border-radius: 12px; background: var(--cs-surface, var(--card)); box-shadow: inset 3px 0 0 var(--cs-pos); min-height: 0; }
+  .cs-trends-profile.is-idle { padding: 8px 10px; box-shadow: none; }
+  .cs-trends-profile > .cs-trends-sec-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin: 0 0 8px; }
+  .cs-trends-profile > .cs-trends-sec-head > div { min-width: 0; }
+  .cs-trends-profile > .cs-trends-sec-head h3 { margin: 0 0 2px; }
+  .cs-trends-profile > .cs-trends-sec-head p { font-size: 13.5px; font-weight: 800; color: var(--cs-ink, var(--text)); line-height: 1.25; }
+  .cs-trends-profile-n { flex-shrink: 0; font-family: var(--cs-mono); font-size: 10.5px; font-weight: 700; color: var(--cs-ink-soft, var(--text-muted)); margin: 0; padding: 3px 8px; border-radius: 999px; background: color-mix(in srgb, var(--cs-ink, #0f172a) 6%, transparent); }
+  .cs-trends-profile-stats { display: grid; gap: 8px; }
+  .cs-trends-profile-tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0; }
+  .cs-trends-profile-tier { min-width: 0; border: 1px solid var(--cs-line, var(--border)); border-radius: 10px; padding: 7px 8px 8px; background: color-mix(in srgb, var(--cs-ink, #0f172a) 3%, var(--cs-surface, var(--card))); }
+  .cs-trends-profile-tier.is-on { border-color: var(--cs-pos); background: var(--cs-pos-bg); }
+  .cs-trends-profile-k { font-family: var(--cs-mono); font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-trends-profile-v { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; margin-top: 3px; color: var(--cs-ink, var(--text)); }
+  .cs-trends-profile-tier.is-on .cs-trends-profile-v { color: var(--cs-pos); }
+  .cs-trends-profile-ci { font-family: var(--cs-mono); font-size: 10px; color: var(--cs-ink-faint, var(--text-muted)); margin-top: 2px; }
+  .cs-trends-profile-dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr)); gap: 6px; margin: 0; }
+  .cs-trends-profile-dl > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; border: 1px solid var(--cs-line, var(--border)); border-radius: 8px; padding: 6px 8px; background: color-mix(in srgb, var(--cs-ink, #0f172a) 2.5%, var(--cs-surface, var(--card))); }
+  .cs-trends-profile-dl dt { color: var(--cs-ink-faint, var(--text-muted)); font-family: var(--cs-mono); font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+  .cs-trends-profile-dl dd { margin: 0; font-size: 13px; font-weight: 800; color: var(--cs-ink, var(--text)); font-variant-numeric: tabular-nums; }
+  .cs-trends-profile-dl dd.is-up { color: var(--cs-good); }
+  .cs-trends-profile-dl dd.is-down { color: var(--cs-ink-soft, var(--text-muted)); }
+  .cs-trends-profile-dl > div.is-conf { border-color: color-mix(in srgb, var(--cs-pos) 35%, var(--cs-line, var(--border))); background: var(--cs-pos-bg); }
+  .cs-trends-profile-dl > div.is-conf dd { color: var(--cs-pos); }
   .cs-trends-scout-more { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); margin: 8px 0 0; }
   .cs-trends-scout-more button { font: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer; border: 0; background: none; color: var(--cs-pos); padding: 0; }
   .cs-trends-conf { display: inline-flex; align-items: center; flex-shrink: 0; color: var(--cs-ink-faint, var(--text-muted)); }
@@ -423,8 +435,9 @@ _CHEAT_HTML = r"""
     .cs-trends-callout-v { font-size: 12px; }
     .cs-trends-summary { align-items: flex-start; }
     .cs-trends-lanes { margin: 0 0 8px; }
-    .cs-trends-sticky { padding: 6px 8px 8px; gap: 6px; }
+    .cs-trends-sticky { padding: 8px 10px 10px; gap: 8px; }
     .cs-trends-sticky.is-picked { grid-template-columns: 1fr; }
+    .cs-trends-profile-v { font-size: 18px; }
     .cs-trends-lane-n { flex: 1 0 100%; margin: 2px 0 0; }
     .cs-trends-grid { grid-template-columns: 1fr; gap: 8px; }
     .cs-trends-scout-list { grid-template-columns: 1fr; }
