@@ -197,6 +197,27 @@ def test_stamp_live_draft_class_adds_unprofiled_round_1_rookie():
     assert feats["career_stage"] == "rookie"
 
 
+def test_canonical_filter_key_sorts_mixed_eq_types():
+    from dashboard_services.historical.filters import canonical_filter_key
+
+    round_1 = {"group": "draft_capital", "field": "draft_capital", "eq": "round_1", "label": "NFL Round 1"}
+    never = {"group": "never_elite", "field": "prior_top12_count", "eq": 0, "label": "Never top-12"}
+    two_plus = {"group": "prior_top12", "field": "prior_top12_count", "gte": 2}
+    key = canonical_filter_key([round_1, never])
+    assert key == canonical_filter_key([never, round_1])
+    assert key != canonical_filter_key([round_1, two_plus])
+    reset_cohort_cache()
+    index = build_cohort_index(_combo_warehouse())
+    out = evaluate_cohort(
+        _baseline_aggs(index),
+        position="WR",
+        filters=[round_1, never],
+        data_version="mix",
+    )
+    assert out["unknown_reason"] != "error"
+    assert "sample_size" in out
+
+
 def test_combined_rate_uses_matched_rows_not_multiplied_marginals():
     reset_cohort_cache()
     index = build_cohort_index(_combo_warehouse())
