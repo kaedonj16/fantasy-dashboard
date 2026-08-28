@@ -6,6 +6,8 @@ pandas/DB stack. All pure — dict in, dict/value out.
 from __future__ import annotations
 
 from typing import Optional
+import time
+from datetime import datetime, timezone
 
 from utils.validation import safe_int
 
@@ -81,3 +83,107 @@ def build_roster_map(users: list, rosters: list) -> dict:
             owner_id, f"Roster {rid}"
         )
     return roster_map
+
+
+# A completed startup/redraft leaves every team with a full lineup (~9+). Empty
+# pre-draft shells are 0; keeper stubs are a handful. Dynasty rosters waiting on
+# a rookie draft still hold last year's 15–25 players, so they do not look
+# undrafted. Fewer than half the teams clearing this bar means the draft has
+# not filled the league.
+_FILLED_ROSTER_MIN_PLAYERS = 5
+_LIVE_DRAFT_STATUSES = {"drafting"}
+
+
+def _norm_status(value) -> str:
+    return str(value or "").strip().lower()
+
+
+def _as_epoch_ms(value) -> Optional[int]:
+    ts = safe_int(value, None)
+    if not ts or ts <= 0:
+        return None
+    # Seconds vs milliseconds: current epoch seconds are ~1.7e9.
+    if ts < 100_000_000_000:
+        ts *= 1000
+    return ts
+
+
+def rosters_look_undrafted(rosters: list, min_players: int = _FILLED_ROSTER_MIN_PLAYERS) -> bool:
+    """True when fewer than half the teams have a real roster."""
+    counts = [len(r.get("players") or []) for r in (rosters or [])]
+    if not counts:
+        return True
+    filled = sum(1 for c in counts if c >= min_players)
+    return filled * 2 < len(counts)
+
+
+def draft_start_ms(league: Optional[dict], latest_draft: Optional[dict]) -> Optional[int]:
+    """Scheduled draft start in epoch ms, or None if unset."""
+    for src in (latest_draft, league):
+        if not isinstance(src, dict):
+            continue
+        for key in ("start_time", "draft_day"):
+            ts = _as_epoch_ms(src.get(key))
+            if ts:
+                return ts
+    return None
+
+
+def startup_draft_phase(
+    league: Optional[dict],
+    latest_draft: Optional[dict],
+    rosters: Optional[list],
+) -> str:
+    """Classify the league's startup/redraft: ``drafting``, ``predraft``, or ``drafted``.
+
+    Thin rosters beat a stale ``complete`` flag (Yahoo/MFL/Flea and the ESPN
+    no-date fallback all report complete before anyone has been picked). Full
+    rosters stay ``drafted`` even when league status is still ``pre_draft``, so
+    dynasty teams waiting on a rookie draft keep their real positional ranks.
+    """
+    thin = rosters_look_undrafted(rosters)
+    if not thin:
+        return "drafted"
+    lg_status = _norm_status((league or {}).get("status"))
+    d_status = _norm_status(
+        (latest_draft or {}).get("status") if isinstance(latest_draft, dict) else ""
+    )
+    if lg_status in _LIVE_DRAFT_STATUSES or d_status in _LIVE_DRAFT_STATUSES:
+        return "drafting"
+    return "predraft"
+
+
+def startup_draft_pending(
+    league: Optional[dict],
+    latest_draft: Optional[dict],
+    rosters: Optional[list],
+) -> bool:
+    return startup_draft_phase(league, latest_draft, rosters) != "drafted"
+
+
+def draft_countdown_copy(
+    start_ms: Optional[int],
+    *,
+    now_ms: Optional[int] = None,
+    phase: str = "predraft",
+) -> dict:
+    """Label/value/subtext for a My Leagues draft-countdown tile."""
+    if phase == "drafting":
+        return {"label": "Draft", "value": "Live now", "sub": "Picks are in progress"}
+    if not start_ms:
+        return {"label": "Draft countdown", "value": "TBD", "sub": "Date not set"}
+    now = int(now_ms if now_ms is not None else time.time() * 1000)
+    remaining = int(start_ms) - now
+    if remaining <= 0:
+        return {"label": "Draft countdown", "value": "Soon", "sub": "Waiting to start"}
+    seconds = remaining // 1000
+    days = seconds // 86400
+    hours = (seconds % 86400) // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+    if days > 0:
+        value = f"{days}d {hours:02d}:{minutes:02d}:{secs:02d}"
+    else:
+        value = f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    when = datetime.fromtimestamp(int(start_ms) / 1000, tz=timezone.utc).strftime("%b %d, %Y")
+    return {"label": "Draft countdown", "value": value, "sub": when}

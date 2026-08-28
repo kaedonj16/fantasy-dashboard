@@ -431,11 +431,22 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
 def test_changelog_announces_portfolio_positional_percentiles():
     from dashboard_services.changelog import CHANGELOG
 
+    entry = next(e for e in CHANGELOG if "percentile" in e.get("text", "").lower())
+    assert entry["date"] == "2026-08-28"
+    assert entry["tag"] == "fix"
+    assert entry["link"] == "/portfolio"
+    assert "—" not in entry["text"]
+    assert "–" not in entry["text"]
+
+
+def test_changelog_announces_undrafted_draft_countdown():
+    from dashboard_services.changelog import CHANGELOG
+
     entry = CHANGELOG[0]
     assert entry["date"] == "2026-08-28"
     assert entry["tag"] == "fix"
     assert entry["link"] == "/portfolio"
-    assert "percentile" in entry["text"].lower()
+    assert "countdown" in entry["text"].lower()
     assert "—" not in entry["text"]
     assert "–" not in entry["text"]
 

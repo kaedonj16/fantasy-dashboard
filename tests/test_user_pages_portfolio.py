@@ -15,6 +15,21 @@ def test_portfolio_uses_account_viewer_resolution():
     assert 'str(r.get("owner_id")) == str(viewer_user_id)' not in fn
 
 
+def test_portfolio_undrafted_leagues_use_startup_draft_phase():
+    source = (ROOT / "routes" / "user_pages_bp.py").read_text()
+    summary = source.split("def _league_summary")[1].split("\n    leagues_data")[0]
+    assert "startup_draft_phase" in summary
+    assert "draft_start_ms" in summary
+    assert '"draft_phase": draft_phase' in summary
+    assert 'draft_phase != "drafted"' in summary
+    # Thin pre-draft shells must not fall through to positional ranks.
+    assert "pos_user_rank" in summary
+    phase_gate = summary.split('draft_phase != "drafted"')[0]
+    ranks_after = summary.split('draft_phase != "drafted"')[1]
+    assert "pos_user_rank" in ranks_after
+    assert "pos_user_rank" not in phase_gate
+
+
 def test_portfolio_positional_strength_uses_in_league_percentiles():
     source = (ROOT / "routes" / "user_pages_bp.py").read_text()
     summary = source.split("def _league_summary")[1].split("\n    leagues_data")[0]
