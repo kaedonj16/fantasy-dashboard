@@ -620,6 +620,52 @@ def _sample_clause(n: Any, confidence: Any) -> str:
     return ", ".join(bits)
 
 
+def _hist_compare_copy(
+    hist_p: Any,
+    mkt_p: Any,
+    market: Mapping[str, Any],
+) -> dict:
+    """Two labeled groups for the Hist modal. Not a blended chance or a grade."""
+    mkt = market if isinstance(market, Mapping) else {}
+    bucket = str(mkt.get("adp_bucket") or "")
+    bucket_label = format_adp_bucket_label(bucket)
+    round_name = bucket_label or "That ADP round"
+    early = bucket in {"round_1", "round_2"}
+    out: dict[str, Any] = {
+        "market_compare_heading": "Two groups, not one chance",
+        "history_group_label": "Players like this",
+        "history_group_hint": "this career and situation",
+        "market_group_label": round_name,
+        "market_group_hint": "anyone taken in that fantasy round",
+        "gap_note": None,
+    }
+    if hist_p is None:
+        return out
+    if mkt_p is None:
+        out["gap_note"] = "Need live ADP to show the other group."
+        return out
+    gap = int(hist_p) - int(mkt_p)
+    abs_gap = abs(gap)
+    if abs_gap < 10:
+        out["gap_note"] = (
+            f"{round_name} and players like this are in line. "
+            "Two groups, not a combined chance or a ranking."
+        )
+        return out
+    if gap < 0:
+        extra = " Early ADP is a high bar." if early else ""
+        out["gap_note"] = (
+            f"{round_name} hits {abs_gap} percent more often.{extra} "
+            "Two groups, not a combined chance or a ranking."
+        )
+        return out
+    out["gap_note"] = (
+        f"Players like this hit {abs_gap} percent more often than {round_name}. "
+        "Two groups, not a combined chance or a ranking."
+    )
+    return out
+
+
 def format_market_sentence(
     market: Optional[Mapping[str, Any]],
     *,
@@ -1260,12 +1306,13 @@ def build_hist_panel_copy(
             "typical outcomes."
         ),
         "examples_vs_cohort_note": None,
-        "market_profile_heading": "Historical profile vs current ADP",
+        "market_profile_heading": "Two groups, not one chance",
         "history_pct": hist_p,
         "market_pct": mkt_p,
         "history_vs_market_pts": market_edge,
         "history_ci_low": t12_ci_low,
         "history_ci_high": t12_ci_high,
+        **_hist_compare_copy(hist_p, mkt_p, mkt),
     }
 
 
