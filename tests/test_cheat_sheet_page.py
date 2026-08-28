@@ -376,6 +376,8 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert ".cs-trends-ages" in body
     assert ".cs-trends-rail" in body
     assert ".cs-trends-lanes" in body
+    assert ".cs-trends-tiers" in body
+    assert ".cs-trends-scout" in body
     assert ".cs-trends-conf" in body
     assert "Descriptive — not a ranking input" not in body
     assert "cs-trends-honesty" not in body
@@ -387,7 +389,12 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "function trendsQualifyLabel" in script
     assert "data-age-tip" in script
     assert "Open one, or pick a lane." in script
-    assert "trendsTopEdges(sections, 10)" in script
+    assert "trendsTopEdges(sections, 10, trendsTier)" in script
+    assert "data-trends-tier" in script
+    assert "function trendsScoutHtml" in script
+    assert "draft-trends-scout" in script
+    assert "Tap a bucket to filter the board." in script
+    assert "Board players who match" in script
     assert "data-trends-lane" in script
     assert "row.vs_label" in script
     assert "The Trends tab shows position-wide rates" in body
@@ -419,12 +426,20 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
 def test_changelog_announces_trends_and_hist_without_em_dashes():
     from dashboard_services.changelog import CHANGELOG
 
-    entry = CHANGELOG[0]
-    assert entry["date"] == "2026-08-28"
-    assert entry["tag"] == "new"
-    assert entry["link"] == "/draft/cheat-sheet"
-    assert "Trends" in entry["text"]
-    assert "Hist" in entry["text"]
-    assert "—" not in entry["text"]
-    assert "–" not in entry["text"]
+    launch = next(
+        entry for entry in CHANGELOG
+        if entry.get("link") == "/draft/cheat-sheet" and entry.get("tag") == "new"
+    )
+    assert launch["date"] == "2026-08-28"
+    assert "Trends" in launch["text"]
+    assert "Hist" in launch["text"]
+    assert "—" not in launch["text"]
+    assert "–" not in launch["text"]
+    scout = CHANGELOG[0]
+    assert scout["tag"] == "update"
+    assert "top-5" in scout["text"]
+    assert "top-24" in scout["text"]
+    assert "Pro" in scout["text"]
+    assert "—" not in scout["text"]
+    assert "–" not in scout["text"]
 

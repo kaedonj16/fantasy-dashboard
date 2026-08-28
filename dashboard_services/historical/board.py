@@ -510,6 +510,151 @@ def _as_rate(rec: Any) -> dict:
     return {}
 
 
+def matches_trend_filter(feats: Mapping[str, Any], spec: Any) -> bool:
+    """AND/OR-free predicate for one trend row's match spec. Display only."""
+    if not isinstance(spec, Mapping) or not spec:
+        return True
+    if spec.get("all"):
+        return all(matches_trend_filter(feats, part) for part in spec.get("all") or [])
+    field = spec.get("field")
+    val = feats.get(field) if field else None
+    if spec.get("null_as") is not None and val is None:
+        val = spec.get("null_as")
+    if "eq" in spec:
+        want = spec.get("eq")
+        return val == want or (val is not None and str(val) == str(want))
+    if "in" in spec:
+        options = list(spec.get("in") or [])
+        return val in options or (val is not None and str(val) in {str(x) for x in options})
+    if "gte" in spec:
+        try:
+            return val is not None and float(val) >= float(spec.get("gte"))
+        except (TypeError, ValueError):
+            return False
+    if "between" in spec:
+        bounds = spec.get("between") or []
+        if len(bounds) < 2:
+            return False
+        try:
+            number = float(val)
+            return float(bounds[0]) <= number <= float(bounds[1])
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
+def build_player_feature_index(aggregates: Mapping[str, Any]) -> dict[str, dict]:
+    """Compact preseason buckets for Trends matching. JSON lookup only."""
+    pre = aggregates.get("preseason_profiles") or {}
+    by_player = pre.get("by_player") if isinstance(pre, Mapping) else {}
+    if not isinstance(by_player, Mapping):
+        return {}
+    out: dict[str, dict] = {}
+    for pid, prof in by_player.items():
+        if not isinstance(prof, Mapping):
+            continue
+        feats = extract_comp_query(prof)
+        if not feats:
+            continue
+        age = integer_age(prof.get("age"))
+        if age is not None:
+            feats["age"] = age
+        count = _optional_int(prof.get("prior_top12_count"))
+        if count is not None:
+            feats["prior_top12_count"] = count
+        adot = value_bucket(prof.get("previous_season_adot"), ADOT_BUCKETS)
+        if adot:
+            feats["adot"] = adot
+        ryoe = value_bucket(
+            prof.get("previous_season_ngs_rush_yards_over_expected_per_att"),
+            RYOE_BUCKETS,
+        )
+        if ryoe:
+            feats["ryoe"] = ryoe
+        out[str(pid)] = feats
+    return out
+
+
+def _collect_pcts(rate: Any) -> dict[str, int]:
+    """Whole-percent hit rates by finish tier when the leaf has them."""
+    pcts: dict[str, int] = {}
+    rec = rate if isinstance(rate, Mapping) else {}
+    nested = rec.get("by_tier") if isinstance(rec.get("by_tier"), Mapping) else {}
+    for tier in COMP_BOARD_TIERS:
+        block = nested.get(tier) if nested else None
+        if not isinstance(block, Mapping):
+            block = rec.get(tier)
+        if isinstance(block, Mapping) and block.get("display_pct") is not None:
+            pcts[str(tier)] = int(block["display_pct"])
+    if "top_12" not in pcts:
+        simple = _as_rate(rate)
+        if simple.get("display_pct") is not None:
+            pcts["top_12"] = int(simple["display_pct"])
+    return pcts
+
+
+def _pcts_from_tiered(lookup, fallback: Any) -> dict[str, int]:
+    pcts = _collect_pcts(fallback)
+    for tier in COMP_BOARD_TIERS:
+        rec = _as_rate(lookup(tier))
+        if rec.get("display_pct") is not None:
+            pcts[str(tier)] = int(rec["display_pct"])
+    return pcts
+
+
+def _vs_parts(pct: Any, baseline_pct: Any) -> tuple[Optional[int], Optional[str]]:
+    if not isinstance(pct, (int, float)) or not isinstance(baseline_pct, (int, float)):
+        return None, None
+    delta = int(pct) - int(baseline_pct)
+    if delta > 0:
+        return delta, f"+{delta} vs typical"
+    if delta < 0:
+        return delta, f"{delta} vs typical"
+    return 0, "in line with typical"
+
+
+def _match_eq(group: str, field: str, value: str) -> dict:
+    return {"group": group, "field": field, "eq": value}
+
+
+def _match_in(group: str, field: str, values: Sequence[str]) -> dict:
+    return {"group": group, "field": field, "in": list(values)}
+
+
+def _display_pct_block(block: Any) -> Optional[dict]:
+    rec = block if isinstance(block, Mapping) else {}
+    pct = rec.get("display_pct")
+    if pct is None:
+        return None
+    return {"pct": int(pct), "n": rec.get("sample_size")}
+
+
+def _finish_baselines(
+    aggregates: Mapping[str, Any],
+    pos: str,
+    *,
+    t12_pct: Any,
+    t12_n: Any,
+) -> dict[str, dict]:
+    """Typical hit rates for the three board finish lines."""
+    comps_base = (
+        ((aggregates.get("comps") or {}).get("by_position") or {}).get(pos) or {}
+    ).get("baseline") or {}
+    age_tiered = aggregates.get("age_curves_by_tier") or {}
+    out: dict[str, dict] = {}
+    for tier in COMP_BOARD_TIERS:
+        if tier == "top_12" and isinstance(t12_pct, (int, float)):
+            out[tier] = {"pct": int(t12_pct), "n": t12_n}
+            continue
+        dedicated = ((age_tiered.get(tier) or {}).get(pos) or {}).get("baseline")
+        block = _display_pct_block(dedicated) or _display_pct_block(
+            comps_base.get(tier) if isinstance(comps_base, Mapping) else None
+        )
+        if block:
+            out[tier] = block
+    return out
+
+
 def _trend_row(
     *,
     kind: str,
@@ -953,10 +1098,19 @@ def _section_row(
     rate: Any,
     *,
     baseline_pct: Any = None,
+    baselines: Optional[Mapping[str, Any]] = None,
     secondary: Optional[str] = None,
+    row_id: Optional[str] = None,
+    match: Optional[Mapping[str, Any]] = None,
+    pcts: Optional[Mapping[str, Any]] = None,
 ) -> Optional[dict]:
     rec = _as_rate(rate)
     pct = rec.get("display_pct")
+    collected = dict(pcts or {})
+    if not collected:
+        collected = _collect_pcts(rate)
+    if pct is None and collected.get("top_12") is not None:
+        pct = collected["top_12"]
     if pct is None:
         return None
     sample = rec.get("sample_size")
@@ -969,17 +1123,32 @@ def _section_row(
         "confidence": rec.get("confidence"),
         "confidence_label": _confidence_label(rec.get("confidence")),
     }
+    if row_id:
+        row["id"] = row_id
+    if match:
+        row["match"] = dict(match)
+    if collected:
+        row["pcts"] = {str(k): int(v) for k, v in collected.items() if v is not None}
     if secondary:
         row["secondary"] = secondary
-    if isinstance(baseline_pct, (int, float)):
-        delta = int(pct) - int(baseline_pct)
-        row["vs_baseline"] = delta
-        if delta > 0:
-            row["vs_label"] = f"+{delta} vs typical"
-        elif delta < 0:
-            row["vs_label"] = f"{delta} vs typical"
-        else:
-            row["vs_label"] = "in line with typical"
+    vs, vs_label = _vs_parts(pct, baseline_pct)
+    if vs is not None:
+        row["vs_baseline"] = vs
+        row["vs_label"] = vs_label
+    if isinstance(baselines, Mapping) and collected:
+        vs_by: dict[str, int] = {}
+        vs_label_by: dict[str, str] = {}
+        for tier, tier_pct in collected.items():
+            base = baselines.get(tier)
+            base_pct = base.get("pct") if isinstance(base, Mapping) else None
+            delta, label_bit = _vs_parts(tier_pct, base_pct)
+            if delta is not None:
+                vs_by[str(tier)] = delta
+                if label_bit:
+                    vs_label_by[str(tier)] = label_bit
+        if vs_by:
+            row["vs_by_tier"] = vs_by
+            row["vs_label_by_tier"] = vs_label_by
     return row
 
 
@@ -991,10 +1160,17 @@ def _append_section(
     note: str,
     rows: list[dict],
     polarity: Optional[str] = None,
+    finish_tied: bool = False,
 ) -> None:
     if not rows:
         return
-    rec: dict[str, Any] = {"id": sid, "heading": heading, "note": note, "rows": rows}
+    rec: dict[str, Any] = {
+        "id": sid,
+        "heading": heading,
+        "note": note,
+        "rows": rows,
+        "finish_tied": bool(finish_tied),
+    }
     if polarity:
         rec["polarity"] = polarity
     sections.append(rec)
@@ -1050,6 +1226,21 @@ def _age_curve_points(age_block: Mapping[str, Any]) -> list[dict]:
     return points
 
 
+def _age_curve_by_tier(aggregates: Mapping[str, Any], pos: str) -> dict[str, list[dict]]:
+    dedicated = aggregates.get("age_curves_by_tier") if isinstance(
+        aggregates.get("age_curves_by_tier"), Mapping
+    ) else {}
+    out: dict[str, list[dict]] = {}
+    for tier in COMP_BOARD_TIERS:
+        block = ((dedicated or {}).get(tier) or {}).get(pos) or {}
+        if not block and tier == "top_12":
+            block = (aggregates.get("age_curves") or {}).get(pos) or {}
+        points = _age_curve_points(block) if isinstance(block, Mapping) else []
+        if points:
+            out[str(tier)] = points
+    return out
+
+
 def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> dict:
     """Display tables for one position. JSON lookup only."""
     pos = str(position or "").upper()
@@ -1059,6 +1250,13 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
     if not baseline:
         baseline = ((aggregates.get("career_stages") or {}).get(pos) or {}).get("baseline") or {}
     baseline_pct = baseline.get("display_pct") if isinstance(baseline, Mapping) else None
+    baseline_n = baseline.get("sample_size") if isinstance(baseline, Mapping) else None
+    finish_baselines = _finish_baselines(
+        aggregates, pos, t12_pct=baseline_pct, t12_n=baseline_n
+    )
+    age_tiered = aggregates.get("age_curves_by_tier") or {}
+    stage_tiered = aggregates.get("career_stages_by_tier") or {}
+    usage_tiered = aggregates.get("prior_usage_by_tier") or {}
     prime = age_block.get("prime_window") if isinstance(age_block.get("prime_window"), Mapping) else {}
     lo, hi = prime.get("age_start"), prime.get("age_end")
     prime_label = f"{lo}-{hi}" if lo is not None and hi is not None else ""
@@ -1069,16 +1267,34 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         except (TypeError, ValueError):
             prime_ages = []
 
+    last_year_elite = _match_in("prior_finish", "prior_finish", ("top_5", "top_12"))
+    outside_elite = _match_in(
+        "prior_finish", "prior_finish", ("none", "top_24", "top_36", "outside_36")
+    )
+    never_elite = {
+        "group": "never_elite",
+        "field": "prior_top12_count",
+        "eq": 0,
+        "null_as": 0,
+    }
+    two_plus = {"group": "prior_top12", "field": "prior_top12_count", "gte": 2}
+
     repeat = (aggregates.get("repeat_and_breakout") or {}).get(pos) or {}
     repeat_rows = []
-    for label, key in (
-        ("Last-year top-12 finished top-12 again", "prev_top12_to_top12"),
-        ("Last-year top-12 finished top-5 next", "prev_top12_to_top5"),
-        ("Two-time top-12 finished top-12 again", "two_plus_prior_top12_to_top12"),
-        ("Outside last-year top-12 broke into top-12", "engine_breakout_among_non_starters"),
-        ("Never-elite broke into top-12", "first_time_elite_among_candidates"),
+    for label, key, match in (
+        ("Last-year top-12 finished top-12 again", "prev_top12_to_top12", last_year_elite),
+        ("Last-year top-12 finished top-5 next", "prev_top12_to_top5", last_year_elite),
+        ("Two-time top-12 finished top-12 again", "two_plus_prior_top12_to_top12", two_plus),
+        ("Outside last-year top-12 broke into top-12", "engine_breakout_among_non_starters", outside_elite),
+        ("Never-elite broke into top-12", "first_time_elite_among_candidates", never_elite),
     ):
-        row = _section_row(label, repeat.get(key), baseline_pct=baseline_pct)
+        row = _section_row(
+            label,
+            repeat.get(key),
+            baseline_pct=baseline_pct,
+            row_id=f"repeat:{key}",
+            match=match,
+        )
         if row:
             repeat_rows.append(row)
     _append_section(
@@ -1090,11 +1306,16 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
     )
 
     winner_rows = []
-    for label, key in (
-        ("Finished top-5 that season", "league_winner"),
-        ("Outside last-year top-12 then top-5", "league_winner_smash_among_non_top12"),
+    for label, key, match in (
+        ("Finished top-5 that season", "league_winner", None),
+        ("Outside last-year top-12 then top-5", "league_winner_smash_among_non_top12", outside_elite),
     ):
-        row = _section_row(label, repeat.get(key))
+        row = _section_row(
+            label,
+            repeat.get(key),
+            row_id=f"league_winner:{key}",
+            match=match,
+        )
         if row:
             winner_rows.append(row)
     _append_section(
@@ -1108,10 +1329,19 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
     stage_map = ((aggregates.get("career_stages") or {}).get(pos) or {}).get("by_stage") or {}
     stage_rows = []
     for key in CAREER_STAGE_ORDER:
+        fallback = stage_map.get(key)
+
+        def _stage_lookup(tier, stage_key=key):
+            return (((stage_tiered.get(tier) or {}).get(pos) or {}).get("by_stage") or {}).get(stage_key)
+
         row = _section_row(
             CAREER_STAGE_DISPLAY.get(key, _title_from_key(key)),
-            stage_map.get(key),
+            fallback,
             baseline_pct=baseline_pct,
+            baselines=finish_baselines,
+            row_id=f"career_stage:{key}",
+            match=_match_eq("career_stage", "career_stage", key),
+            pcts=_pcts_from_tiered(_stage_lookup, fallback),
         )
         if row:
             stage_rows.append(row)
@@ -1119,22 +1349,28 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         sections,
         sid="career_stage",
         heading="Career stage",
-        note=f"Top-12 rate for {pos}s at that point in a career.",
+        note=f"Hit rate for {pos}s at that point in a career. Switch the finish chips to compare top-5, top-12, and top-24.",
         rows=stage_rows,
+        finish_tied=True,
     )
 
     capital = (aggregates.get("draft_capital") or {}).get(pos) or {}
     cap_map = capital.get("season_level_by_capital") or {}
     cap_rows = []
     for key in DRAFT_CAPITAL_ORDER:
-        rec = (cap_map.get(key) or {}).get("top_12")
-        top5 = _as_rate((cap_map.get(key) or {}).get("top_5")).get("display_pct")
+        bundle = cap_map.get(key) or {}
+        rec = bundle.get("top_12")
+        top5 = _as_rate(bundle.get("top_5")).get("display_pct")
         secondary = f"{top5}% top-5" if top5 is not None else None
         row = _section_row(
             DRAFT_CAPITAL_DISPLAY.get(key, _title_from_key(key)),
             rec,
             baseline_pct=baseline_pct,
+            baselines=finish_baselines,
             secondary=secondary,
+            row_id=f"draft_capital:{key}",
+            match=_match_eq("draft_capital", "draft_capital", key),
+            pcts=_collect_pcts(bundle),
         )
         if row:
             cap_rows.append(row)
@@ -1142,8 +1378,9 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         sections,
         sid="draft_capital",
         heading="NFL draft capital",
-        note=f"Season-level top-12 rate for {pos}s by NFL draft capital, not fantasy ADP.",
+        note=f"Season-level hit rate for {pos}s by NFL draft capital, not fantasy ADP.",
         rows=cap_rows,
+        finish_tied=True,
     )
 
     for window_id, heading, note in CUMULATIVE_TREND_WINDOWS:
@@ -1154,6 +1391,8 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
             row = _section_row(
                 DRAFT_CAPITAL_DISPLAY.get(key, _title_from_key(key)),
                 by_cap.get(key),
+                row_id=f"{window_id}:{key}",
+                match=_match_eq("draft_capital", "draft_capital", key),
             )
             if row:
                 rows.append(row)
@@ -1172,6 +1411,8 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
             row = _section_row(
                 DRAFT_CAPITAL_DISPLAY.get(key, _title_from_key(key)),
                 (cap_map.get(key) or {}).get("absolute_bust"),
+                row_id=f"capital_miss:{key}",
+                match=_match_eq("draft_capital", "draft_capital", key),
             )
             if row:
                 bust_rows.append(row)
@@ -1189,97 +1430,119 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
 
     age_rows = []
     for _lo, _hi, key in AGE_BUCKETS.get(pos, ()):
+        fallback = (age_block.get("by_bucket") or {}).get(key)
+
+        def _age_lookup(tier, bucket_key=key):
+            return (((age_tiered.get(tier) or {}).get(pos) or {}).get("by_bucket") or {}).get(bucket_key)
+
         row = _section_row(
             format_age_bucket_label(key),
-            (age_block.get("by_bucket") or {}).get(key),
+            fallback,
             baseline_pct=baseline_pct,
+            baselines=finish_baselines,
+            row_id=f"age:{key}",
+            match=_match_eq("age_bucket", "age_bucket", key),
+            pcts=_pcts_from_tiered(_age_lookup, fallback),
         )
         if row:
             age_rows.append(row)
+    if lo is not None and hi is not None:
+        pair = age_block.get("prime_window_pair") if isinstance(age_block.get("prime_window_pair"), Mapping) else {}
+        prime_row = _section_row(
+            f"Prime window {lo}-{hi}",
+            pair.get("conditional") if isinstance(pair, Mapping) else pair,
+            row_id="age:prime",
+            match={"group": "prime", "field": "age", "between": [lo, hi]},
+        )
+        if prime_row:
+            age_rows.append(prime_row)
     _append_section(
         sections,
         sid="age",
         heading="Age",
-        note=f"Top-12 rate for {pos}s in that age bucket.",
+        note=f"Hit rate for {pos}s in that age bucket.",
         rows=age_rows,
+        finish_tied=True,
     )
 
     usage = aggregates.get("prior_usage") if isinstance(aggregates.get("prior_usage"), Mapping) else {}
-    tgt_map = (((usage.get("target_share") or {}).get("by_position") or {}).get(pos) or {}).get("by_bucket") or {}
-    tgt_rows = []
-    for _lo, _hi, key in TARGET_SHARE_BUCKETS:
-        row = _section_row(
-            str(key),
-            tgt_map.get(key),
-            baseline_pct=baseline_pct,
+
+    def _usage_rows(metric: str, buckets, label_fn, sid: str, heading: str, note: str) -> None:
+        tgt_map = (((usage.get(metric) or {}).get("by_position") or {}).get(pos) or {}).get("by_bucket") or {}
+        rows = []
+        for _lo, _hi, key in buckets:
+            fallback = tgt_map.get(key)
+
+            def _usage_lookup(tier, bucket_key=key, metric_id=metric):
+                return (
+                    ((((usage_tiered.get(tier) or {}).get(metric_id) or {}).get("by_position") or {}).get(pos) or {}).get("by_bucket")
+                    or {}
+                ).get(bucket_key)
+
+            row = _section_row(
+                label_fn(key),
+                fallback,
+                baseline_pct=baseline_pct,
+                baselines=finish_baselines,
+                row_id=f"{sid}:{key}",
+                match=_match_eq(sid, sid, key),
+                pcts=_pcts_from_tiered(_usage_lookup, fallback),
+            )
+            if row:
+                rows.append(row)
+        _append_section(
+            sections,
+            sid=sid,
+            heading=heading,
+            note=note,
+            rows=rows,
+            finish_tied=True,
         )
-        if row:
-            tgt_rows.append(row)
-    _append_section(
-        sections,
-        sid="target_share",
-        heading="Last year target share",
-        note=f"How often {pos}s with that prior-season target share finished top-12.",
-        rows=tgt_rows,
+
+    _usage_rows(
+        "target_share",
+        TARGET_SHARE_BUCKETS,
+        str,
+        "target_share",
+        "Last year target share",
+        f"How often {pos}s with that prior-season target share hit the selected finish.",
+    )
+    _usage_rows(
+        "snap_pct",
+        SNAP_PCT_BUCKETS,
+        str,
+        "snap_pct",
+        "Last year snap share",
+        f"How often {pos}s with that prior-season snap share hit the selected finish.",
+    )
+    _usage_rows(
+        "adot",
+        ADOT_BUCKETS,
+        format_adot_bucket_label,
+        "adot",
+        "Last year aDOT",
+        f"How often {pos}s with that prior-season average depth of target hit the selected finish.",
+    )
+    _usage_rows(
+        "ryoe",
+        RYOE_BUCKETS,
+        str,
+        "ryoe",
+        "Last year rush yards over expected",
+        f"How often {pos}s with that prior-season RYOE hit the selected finish.",
     )
 
-    snap_map = (((usage.get("snap_pct") or {}).get("by_position") or {}).get(pos) or {}).get("by_bucket") or {}
-    snap_rows = []
-    for _lo, _hi, key in SNAP_PCT_BUCKETS:
-        row = _section_row(
-            str(key),
-            snap_map.get(key),
-            baseline_pct=baseline_pct,
-        )
-        if row:
-            snap_rows.append(row)
-    _append_section(
-        sections,
-        sid="snap_pct",
-        heading="Last year snap share",
-        note=f"How often {pos}s with that prior-season snap share finished top-12.",
-        rows=snap_rows,
-    )
-
-    adot_map = (((usage.get("adot") or {}).get("by_position") or {}).get(pos) or {}).get("by_bucket") or {}
-    adot_rows = []
-    for _lo, _hi, key in ADOT_BUCKETS:
-        row = _section_row(
-            format_adot_bucket_label(key),
-            adot_map.get(key),
-            baseline_pct=baseline_pct,
-        )
-        if row:
-            adot_rows.append(row)
-    _append_section(
-        sections,
-        sid="adot",
-        heading="Last year aDOT",
-        note=f"How often {pos}s with that prior-season average depth of target finished top-12.",
-        rows=adot_rows,
-    )
-
-    ryoe_map = (((usage.get("ryoe") or {}).get("by_position") or {}).get(pos) or {}).get("by_bucket") or {}
-    ryoe_rows = []
-    for _lo, _hi, key in RYOE_BUCKETS:
-        row = _section_row(str(key), ryoe_map.get(key), baseline_pct=baseline_pct)
-        if row:
-            ryoe_rows.append(row)
-    _append_section(
-        sections,
-        sid="ryoe",
-        heading="Last year rush yards over expected",
-        note=f"How often {pos}s with that prior-season RYOE finished top-12.",
-        rows=ryoe_rows,
-    )
-
+    curve_by_tier = _age_curve_by_tier(aggregates, pos)
     return {
         "position": pos,
         "baseline_pct": baseline_pct if isinstance(baseline, Mapping) else None,
-        "baseline_n": baseline.get("sample_size") if isinstance(baseline, Mapping) else None,
+        "baseline_n": baseline_n,
+        "baselines": finish_baselines,
+        "finish_tiers": list(COMP_BOARD_TIERS),
         "prime_window": prime_label,
         "prime_ages": prime_ages,
-        "age_curve": _age_curve_points(age_block),
+        "age_curve": curve_by_tier.get("top_12") or _age_curve_points(age_block),
+        "age_curve_by_tier": curve_by_tier,
         "highlights": _trend_highlights(sections),
         "sections": sections,
     }
@@ -1297,12 +1560,16 @@ def build_historical_trends(aggregates: Mapping[str, Any]) -> dict:
         "not_in_ranking": True,
         "not_in_pick_score": True,
         "era": era,
-        "headline": "Historical top-12 rates by bucket. Not a ranking score.",
+        "headline": "Historical finish rates by bucket. Not a ranking score.",
         "note": (
-            f"Each table is one slice from {era}. Callouts are the biggest edges "
-            "versus a typical player-season at this position. Open a player's Hist "
-            "button on the Big Board for that player's own mix of buckets."
+            f"Each table is one slice from {era}. Select buckets to list current "
+            "board players who match (AND across different tables, OR within one). "
+            "Finish chips switch typical top-5, top-12, and top-24 odds. Callouts "
+            "are the biggest edges versus a typical player-season. Open Hist on "
+            "the Big Board for one player's mix."
         ),
         "positions": list(SKILL_POSITIONS),
+        "finish_tiers": list(COMP_BOARD_TIERS),
+        "player_features": build_player_feature_index(aggregates),
         "by_position": by_pos,
     }

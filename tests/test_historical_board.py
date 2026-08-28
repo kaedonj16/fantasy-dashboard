@@ -440,6 +440,21 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     assert rb["highlights"]
     assert rb["age_curve"]
     assert any(pt.get("age") for pt in rb["age_curve"])
+    assert "top_5" in (rb.get("baselines") or {})
+    assert "top_24" in (rb.get("baselines") or {})
+    capital = next(sec for sec in rb["sections"] if sec["id"] == "draft_capital")
+    assert capital.get("finish_tied") is True
+    cap_row = capital["rows"][0]
+    assert cap_row.get("match")
+    assert cap_row["match"]["field"] == "draft_capital"
+    assert cap_row.get("pcts", {}).get("top_12") is not None
+    assert cap_row.get("pcts", {}).get("top_5") is not None
+    assert cap_row.get("pcts", {}).get("top_24") is not None
+    assert any(row.get("match") for row in next(sec for sec in rb["sections"] if sec["id"] == "repeat")["rows"])
+    feats = payload.get("player_features") or {}
+    assert feats
+    sample_pid = next(iter(feats))
+    assert feats[sample_pid].get("position") in ("QB", "RB", "WR", "TE")
     wr = payload["by_position"]["WR"]
     wr_ids = [sec["id"] for sec in wr["sections"]]
     assert "adot" in wr_ids
@@ -477,3 +492,28 @@ def test_historical_trends_route_serves_json_leaves():
     assert body["descriptive_only"] is True
     assert "RB" in body["by_position"]
     assert body["by_position"]["RB"]["sections"]
+    assert body.get("player_features")
+
+
+def test_trend_filter_matching_is_and_across_groups():
+    from dashboard_services.historical.board import matches_trend_filter
+
+    feats = {
+        "position": "RB",
+        "draft_capital": "round_1",
+        "career_stage": "year_2",
+        "prior_finish": "top_24",
+        "age_bucket": "23-24",
+        "prior_top12_count": 0,
+    }
+    assert matches_trend_filter(feats, {"field": "draft_capital", "eq": "round_1"})
+    assert not matches_trend_filter(feats, {"field": "draft_capital", "eq": "day_2"})
+    assert matches_trend_filter(
+        feats, {"field": "prior_finish", "in": ["none", "top_24", "top_36", "outside_36"]}
+    )
+    assert matches_trend_filter(
+        {"prior_top12_count": None},
+        {"field": "prior_top12_count", "eq": 0, "null_as": 0},
+    )
+    assert matches_trend_filter({"age": 24}, {"field": "age", "between": [23, 27]})
+    assert not matches_trend_filter({"age": 31}, {"field": "age", "between": [23, 27]})

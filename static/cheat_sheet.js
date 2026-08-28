@@ -32,6 +32,9 @@
     var trendsCache = null;
     var trendsPos = '';
     var trendsRequest = 0;
+    var trendsTier = 'top_12';
+    var trendsPicks = {};
+    var TRENDS_SCOUT_PREVIEW = 3;
     var TAB_PANELS = {
         board: 'cs-panel-board',
         pos: 'cs-panel-pos',
@@ -2269,21 +2272,195 @@
         return prefix + ' ' + label;
     }
 
-    function trendsTopEdges(sections, limit) {
+    function trendsFinishLabel(tier) {
+        return HIST_TIER_SHORT[tier] || String(tier || '').replace('_', '-');
+    }
+
+    function trendsPicksFor(pos) {
+        var key = String(pos || trendsPos || 'RB');
+        if (!trendsPicks[key]) trendsPicks[key] = {};
+        return trendsPicks[key];
+    }
+
+    function trendsRowView(row, sec, tier) {
+        row = row || {};
+        var tied = !!(sec && sec.finish_tied);
+        var pct = row.pct;
+        var vs = row.vs_baseline;
+        var vsLabel = row.vs_label;
+        if (tied && row.pcts && row.pcts[tier] != null) {
+            pct = row.pcts[tier];
+            if (row.vs_by_tier && row.vs_by_tier[tier] != null) vs = row.vs_by_tier[tier];
+            if (row.vs_label_by_tier && row.vs_label_by_tier[tier]) vsLabel = row.vs_label_by_tier[tier];
+        }
+        return { pct: pct, vs: vs, vsLabel: vsLabel };
+    }
+
+    function trendsPageBaseline(page, tier) {
+        var block = ((page && page.baselines) || {})[tier] || {};
+        if (block.pct != null && isFinite(Number(block.pct))) {
+            return { pct: Number(block.pct), n: block.n };
+        }
+        if (tier === 'top_12') {
+            return { pct: page && page.baseline_pct, n: page && page.baseline_n };
+        }
+        return { pct: null, n: null };
+    }
+
+    function trendsFeatsMatch(feats, spec) {
+        if (!spec) return true;
+        if (spec.all) {
+            return (spec.all || []).every(function (part) {
+                return trendsFeatsMatch(feats, part);
+            });
+        }
+        var val = feats ? feats[spec.field] : undefined;
+        if (spec.null_as != null && (val == null || val === '')) val = spec.null_as;
+        if (spec.eq !== undefined) {
+            return val == spec.eq || (val != null && String(val) === String(spec.eq));
+        }
+        if (spec.in) {
+            var opts = spec.in || [];
+            if (opts.indexOf(val) >= 0) return true;
+            var s = val != null ? String(val) : '';
+            return opts.some(function (x) { return String(x) === s; });
+        }
+        if (spec.gte !== undefined) {
+            if (val == null || !isFinite(Number(val))) return false;
+            return Number(val) >= Number(spec.gte);
+        }
+        if (spec.between) {
+            if (val == null || !isFinite(Number(val)) || spec.between.length < 2) return false;
+            var n = Number(val);
+            return n >= Number(spec.between[0]) && n <= Number(spec.between[1]);
+        }
+        return false;
+    }
+
+    function trendsPlayerMatchesPicks(feats, picks) {
+        var groups = {};
+        Object.keys(picks || {}).forEach(function (id) {
+            var spec = picks[id] && picks[id].match;
+            if (!spec) return;
+            var g = spec.group || spec.field || id;
+            if (!groups[g]) groups[g] = [];
+            groups[g].push(spec);
+        });
+        var keys = Object.keys(groups);
+        if (!keys.length) return false;
+        return keys.every(function (g) {
+            return groups[g].some(function (spec) { return trendsFeatsMatch(feats, spec); });
+        });
+    }
+
+    function trendsScoutHits(data, pos, picks) {
+        var featsIndex = (data && data.player_features) || {};
+        var src = (players && players.length) ? players : allPlayers;
+        var hits = [];
+        src.forEach(function (p) {
+            if (!p) return;
+            var id = String(p.id || '');
+            var ppos = String(p.pos || p.position || '').toUpperCase();
+            if (!id || ppos !== pos) return;
+            var feats = featsIndex[id];
+            if (!feats || !trendsPlayerMatchesPicks(feats, picks)) return;
+            hits.push({
+                id: id,
+                name: p.name || id,
+                pos: ppos,
+                adp: p.adp != null ? p.adp : p.redraft_avg_pick,
+                vor: p.vorRaw != null ? p.vorRaw : p.vor,
+                projectedPpg: p.projectedPpg != null ? p.projectedPpg : p.proj_ppg,
+                hist: p.historical || {},
+                drafted: !!(p.drafted || (draftedIds && draftedIds.has(id)) || (state.done && state.done.has(id)))
+            });
+        });
+        hits.sort(function (a, b) {
+            var av = a.vor != null && isFinite(Number(a.vor)) ? Number(a.vor) : -9999;
+            var bv = b.vor != null && isFinite(Number(b.vor)) ? Number(b.vor) : -9999;
+            return bv - av;
+        });
+        return hits;
+    }
+
+    function trendsMiniPcts(row, tier) {
+        var pcts = (row && row.pcts) || {};
+        var keys = ['top_5', 'top_12', 'top_24'].filter(function (k) { return pcts[k] != null; });
+        if (keys.length < 2) return '';
+        return '<div class="cs-trends-minipcts">' + keys.map(function (k) {
+            return '<span' + (k === tier ? ' class="is-on"' : '') + '>'
+                + esc(trendsFinishLabel(k)) + ' ' + esc(String(pcts[k])) + '%</span>';
+        }).join('') + '</div>';
+    }
+
+    function trendsScoutHtml(data, picks, pickCount) {
+        var html = '<section class="cs-trends-scout">';
+        html += '<div class="cs-trends-sec-head"><h3>Board players who match</h3><p>';
+        if (!pickCount) {
+            html += 'Tap one or more buckets. Matching uses AND across tables and OR within the same table.';
+            html += '</p></div></section>';
+            return html;
+        }
+        var labels = Object.keys(picks).map(function (id) { return picks[id].label; }).filter(Boolean);
+        html += esc(labels.join(' + '));
+        html += '</p></div>';
+        html += '<div class="cs-trends-scout-chips">';
+        Object.keys(picks).forEach(function (id) {
+            html += '<button type="button" class="cs-trends-chip" data-trends-pick="' + esc(id)
+                + '">' + esc(picks[id].label || id) + ' ×</button>';
+        });
+        html += '<button type="button" class="cs-trends-chip is-clear" data-trends-clear="1">Clear</button>';
+        html += '</div>';
+        var hits = trendsScoutHits(data, trendsPos, picks);
+        var premium = !!cfg.hasPremium;
+        var shown = premium ? hits : hits.slice(0, TRENDS_SCOUT_PREVIEW);
+        if (!hits.length) {
+            html += '<p class="cs-hist-sub">No current-board ' + esc(trendsPos)
+                + 's match those buckets. Try fewer filters, or load the Big Board first.</p>';
+        } else {
+            html += '<div class="cs-trends-scout-list">';
+            shown.forEach(function (hit) {
+                var adpBit = hit.adp != null && isFinite(Number(hit.adp)) ? 'ADP ' + Number(hit.adp).toFixed(1) : '';
+                html += '<button type="button" class="cs-trends-player' + (hit.drafted ? ' is-drafted' : '')
+                    + '" data-trends-player="' + esc(hit.id) + '" data-trends-name="' + esc(hit.name)
+                    + '" data-trends-ppos="' + esc(hit.pos) + '" data-trends-adp="'
+                    + (hit.adp != null ? esc(String(hit.adp)) : '') + '" data-trends-proj="'
+                    + (hit.projectedPpg != null ? esc(String(hit.projectedPpg)) : '') + '">'
+                    + '<span class="cs-pos-badge cs-pos-' + esc(hit.pos) + '">' + esc(hit.pos) + '</span>'
+                    + '<span class="cs-trends-player-n">' + esc(hit.name) + '</span>'
+                    + (adpBit ? '<span class="cs-trends-player-adp">' + esc(adpBit) + '</span>' : '')
+                    + '</button>';
+            });
+            html += '</div>';
+            if (!premium && hits.length > TRENDS_SCOUT_PREVIEW) {
+                html += '<p class="cs-trends-scout-more">' + (hits.length - TRENDS_SCOUT_PREVIEW)
+                    + ' more matching ' + esc(trendsPos) + 's. '
+                    + '<button type="button" data-trends-unlock="1">Unlock the full list</button></p>';
+            } else {
+                html += '<p class="cs-hist-sub">' + hits.length + ' matching '
+                    + esc(trendsPos) + (hits.length === 1 ? '' : 's') + ' on this board.</p>';
+            }
+        }
+        html += '</section>';
+        return html;
+    }
+
+    function trendsTopEdges(sections, limit, tier) {
         var scored = [];
         (sections || []).forEach(function (sec) {
             if (String(sec.polarity || '') === 'miss') return;
             (sec.rows || []).forEach(function (row) {
-                var vs = row && row.vs_baseline;
+                var view = trendsRowView(row, sec, tier || 'top_12');
+                var vs = view.vs;
                 if (typeof vs !== 'number' || vs <= 0) return;
                 scored.push({
                     sid: sec.id || '',
                     lane: TRENDS_LANE_OF[sec.id] || '',
                     section: sec.heading || '',
                     label: trendsQualifyLabel(sec.id, row.label || ''),
-                    pct: row.pct,
+                    pct: view.pct,
                     vs_baseline: vs,
-                    vs_label: row.vs_label,
+                    vs_label: view.vsLabel,
                     n: row.n,
                     confidence_label: row.confidence_label
                 });
@@ -2295,22 +2472,34 @@
         return scored.slice(0, limit || 10);
     }
 
-    function trendsSectionRow(row, polarity, baselinePct, span) {
+    function trendsSectionRow(row, polarity, baselinePct, span, opts) {
         row = row || {};
-        var vs = row.vs_label;
+        opts = opts || {};
+        var view = trendsRowView(row, opts.sec, opts.tier || 'top_12');
+        var vs = view.vsLabel;
         var meta = [];
         if (row.n != null) meta.push('n=' + row.n);
         if (vs) meta.push(vs);
-        if (row.secondary) meta.push(row.secondary);
-        var shown = row.pct != null ? row.pct + '%' : '-';
-        return '<div class="cs-trends-srow' + (polarity === 'miss' ? ' is-miss' : '') + '">'
+        if (row.secondary && (opts.tier || 'top_12') === 'top_12') meta.push(row.secondary);
+        var shown = view.pct != null ? view.pct + '%' : '-';
+        var selectable = !!(row.match && row.id);
+        var on = selectable && opts.selected && opts.selected[row.id];
+        var cls = 'cs-trends-srow'
+            + (polarity === 'miss' ? ' is-miss' : '')
+            + (selectable ? ' is-pick' : '')
+            + (on ? ' is-on' : '');
+        var tag = selectable ? 'button type="button"' : 'div';
+        var close = selectable ? 'button' : 'div';
+        var pickAttr = selectable ? ' data-trends-pick="' + esc(row.id) + '"' : '';
+        return '<' + tag + ' class="' + cls + '"' + pickAttr + '>'
             + '<div class="cs-trends-srow-top">'
             + trendsConfDot(row.confidence_label)
             + '<span class="cs-trends-srow-label">' + esc(row.label || '') + '</span>'
             + '<span class="cs-trends-srow-pct">' + esc(shown) + '</span></div>'
-            + trendsRailHtml(row.pct, polarity === 'miss' ? null : baselinePct, polarity, span)
+            + trendsRailHtml(view.pct, polarity === 'miss' ? null : baselinePct, polarity, span)
+            + trendsMiniPcts(row, opts.tier || 'top_12')
             + (meta.length ? '<div class="cs-trends-srow-meta">' + esc(meta.join(' · ')) + '</div>' : '')
-            + '</div>';
+            + '</' + close + '>';
     }
 
     function renderTrends() {
@@ -2328,7 +2517,14 @@
             var id = sec && sec.id;
             return id !== 'adp' && id !== 'adp_positional';
         });
-        var baselinePct = page.baseline_pct;
+        var finishTiers = data.finish_tiers || page.finish_tiers || ['top_5', 'top_12', 'top_24'];
+        if (finishTiers.indexOf(trendsTier) < 0) trendsTier = 'top_12';
+        var baseline = trendsPageBaseline(page, trendsTier);
+        var baselinePct = baseline.pct;
+        var baselineN = baseline.n != null ? baseline.n : page.baseline_n;
+        var finishName = trendsFinishLabel(trendsTier);
+        var picks = trendsPicksFor(trendsPos);
+        var pickCount = Object.keys(picks).length;
         var lane = host.getAttribute('data-trends-lane') || 'all';
         var present = {};
         sections.forEach(function (sec) {
@@ -2339,7 +2535,7 @@
             lane = 'all';
             host.setAttribute('data-trends-lane', 'all');
         }
-        var edges = trendsTopEdges(sections, 10);
+        var edges = trendsTopEdges(sections, 10, trendsTier);
         var span = trendsRailSpan(baselinePct, sections, edges.map(function (e) { return e.pct; }));
         var compact = false;
         try { compact = window.matchMedia('(max-width: 720px)').matches; } catch (e) { compact = false; }
@@ -2351,23 +2547,32 @@
                 + String(pos === trendsPos) + '">' + esc(pos) + '</button>';
         });
         html += '</div>';
+        html += '<div class="cs-trends-tiers" role="group" aria-label="Finish line">';
+        finishTiers.forEach(function (tier) {
+            html += '<button type="button" data-trends-tier="' + esc(tier) + '" aria-pressed="'
+                + String(tier === trendsTier) + '">' + esc(trendsFinishLabel(tier)) + '</button>';
+        });
+        html += '<span class="cs-trends-tier-n">Top 5 is the league-winner line. Top 24 is the flex line.</span>';
+        html += '</div>';
         html += '<div class="cs-trends-summary">';
         html += '<div class="cs-trends-base-pct">'
             + (baselinePct != null ? esc(String(baselinePct)) + '<sup>%</sup>' : '-') + '</div>';
         html += '<div class="cs-trends-base-copy"><div class="cs-trends-base-k">Typical '
-            + esc(trendsPos) + ' top-12</div><div class="cs-trends-base-v">';
+            + esc(trendsPos) + ' ' + esc(finishName) + '</div><div class="cs-trends-base-v">';
         var bits = [];
-        bits.push(esc(trendsPos) + 's finished top-12 in '
+        bits.push(esc(trendsPos) + 's finished ' + esc(finishName) + ' in '
             + (baselinePct != null ? esc(String(baselinePct)) + '%' : 'an unknown share')
             + ' of player-seasons'
-            + (page.baseline_n != null ? ' (n=' + esc(String(page.baseline_n)) + ')' : '') + '.');
+            + (baselineN != null ? ' (n=' + esc(String(baselineN)) + ')' : '') + '.');
         if (page.prime_window) bits.push('Prime window is ages ' + esc(page.prime_window) + '.');
         html += bits.join(' ') + '</div></div></div>';
+        html += trendsScoutHtml(data, picks, pickCount);
         if (edges.length) {
             var mid = Math.ceil(edges.length / 2);
             html += '<section class="cs-trends-board"><div class="cs-trends-sec-head">'
                 + '<h3>Top 10 edges vs typical</h3>'
-                + '<p>Biggest lifts versus the position baseline. The tick is typical; the marker is this bucket.</p>'
+                + '<p>Biggest lifts versus the position ' + esc(finishName)
+                + ' baseline. The tick is typical; the marker is this bucket.</p>'
                 + '</div><div class="cs-trends-callouts">';
             [edges.slice(0, mid), edges.slice(mid)].forEach(function (col, colIdx) {
                 html += '<div class="cs-trends-callout-col">';
@@ -2388,7 +2593,7 @@
             });
             html += '</div></section>';
         }
-        var curve = page.age_curve || [];
+        var curve = ((page.age_curve_by_tier || {})[trendsTier]) || (trendsTier === 'top_12' ? (page.age_curve || []) : []);
         if (curve.length) {
             var maxP = 1;
             curve.forEach(function (pt) {
@@ -2404,11 +2609,13 @@
             }
             html += '<section class="cs-trends-agewrap"><div class="cs-trends-sec-head">'
                 + '<h3>Age curve</h3>'
-                + '<p>Top-12 rate by integer age. Highlighted columns are the prime window'
+                + '<p>' + esc(finishName.charAt(0).toUpperCase() + finishName.slice(1))
+                + ' rate by integer age. Highlighted columns are the prime window'
                 + (baselinePct != null ? '; the line is typical (' + esc(String(baselinePct)) + '%).' : '.')
                 + ' Hover or tap a bar for the sample size.</p></div>';
             html += '<div class="cs-trends-ages">';
-            html += '<div class="cs-trends-ages-plot" role="img" aria-label="Top-12 rate by age">' + baseLine;
+            html += '<div class="cs-trends-ages-plot" role="img" aria-label="'
+                + esc(finishName) + ' rate by age">' + baseLine;
             curve.forEach(function (pt) {
                 var h = Math.max(8, Math.round(100 * Number(pt.pct || 0) / maxP));
                 var cls = prime[String(pt.age)] ? ' is-prime' : '';
@@ -2433,21 +2640,30 @@
         });
         var shown = sections.filter(function (sec) {
             return lane === 'all' || TRENDS_LANE_OF[sec.id] === lane;
-        });
+        }).map(function (sec) {
+            if (!sec.finish_tied || trendsTier === 'top_12') return sec;
+            var rows = (sec.rows || []).filter(function (row) {
+                return row.pcts && row.pcts[trendsTier] != null;
+            });
+            return rows.length ? { id: sec.id, heading: sec.heading, note: sec.note, polarity: sec.polarity, finish_tied: sec.finish_tied, rows: rows } : null;
+        }).filter(Boolean);
         html += '<span class="cs-trends-lane-n">' + shown.length + ' table'
             + (shown.length === 1 ? '' : 's')
-            + (compact ? '. Open one, or pick a lane.' : '') + '</span>';
+            + (compact ? '. Open one, or pick a lane.' : '')
+            + ' Tap a bucket to filter the board.</span>';
         html += '</div>';
         html += '<div class="cs-trends-grid">';
         shown.forEach(function (sec) {
             var laneId = TRENDS_LANE_OF[sec.id] || 'all';
             var peekRow = null;
+            var peekView = null;
             (sec.rows || []).forEach(function (row) {
-                if (!peekRow) peekRow = row;
-                else if ((row.vs_baseline || 0) > (peekRow.vs_baseline || 0)) peekRow = row;
+                var view = trendsRowView(row, sec, trendsTier);
+                if (!peekRow) { peekRow = row; peekView = view; }
+                else if ((view.vs || 0) > (peekView.vs || 0)) { peekRow = row; peekView = view; }
             });
-            var peek = peekRow && peekRow.pct != null
-                ? trendsQualifyLabel(sec.id, peekRow.label || '') + ' ' + peekRow.pct + '%'
+            var peek = peekRow && peekView && peekView.pct != null
+                ? trendsQualifyLabel(sec.id, peekRow.label || '') + ' ' + peekView.pct + '%'
                 : ((sec.rows || []).length + ' buckets');
             html += '<details class="cs-trends-card" data-lane="' + esc(laneId) + '"'
                 + (compact ? '' : ' open') + '>'
@@ -2456,7 +2672,9 @@
             if (sec.note) html += '<p class="cs-hist-note">' + esc(sec.note) + '</p>';
             html += '<div class="cs-trends-card-rows">';
             (sec.rows || []).forEach(function (row) {
-                html += trendsSectionRow(row, sec.polarity, baselinePct, span);
+                html += trendsSectionRow(row, sec.polarity, baselinePct, span, {
+                    sec: sec, tier: trendsTier, selected: picks
+                });
             });
             html += '</div></details>';
         });
@@ -2468,10 +2686,63 @@
                 renderTrends();
             });
         });
+        host.querySelectorAll('[data-trends-tier]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                trendsTier = b.getAttribute('data-trends-tier') || 'top_12';
+                renderTrends();
+            });
+        });
         host.querySelectorAll('[data-trends-lane]').forEach(function (b) {
             b.addEventListener('click', function () {
                 host.setAttribute('data-trends-lane', b.getAttribute('data-trends-lane') || 'all');
                 renderTrends();
+            });
+        });
+        host.querySelectorAll('[data-trends-pick]').forEach(function (b) {
+            b.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                var id = b.getAttribute('data-trends-pick');
+                if (!id) return;
+                var bag = trendsPicksFor(trendsPos);
+                if (bag[id]) delete bag[id];
+                else {
+                    var found = null;
+                    sections.forEach(function (sec) {
+                        (sec.rows || []).forEach(function (row) {
+                            if (row && row.id === id) found = { row: row, sec: sec };
+                        });
+                    });
+                    if (found && found.row.match) {
+                        bag[id] = {
+                            id: id,
+                            label: trendsQualifyLabel(found.sec.id, found.row.label || ''),
+                            match: found.row.match,
+                            sid: found.sec.id
+                        };
+                    }
+                }
+                renderTrends();
+            });
+        });
+        var clearPicks = host.querySelector('[data-trends-clear]');
+        if (clearPicks) clearPicks.addEventListener('click', function () {
+            trendsPicks[trendsPos] = {};
+            renderTrends();
+        });
+        host.querySelectorAll('[data-trends-unlock]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                if (typeof window.showPaywall === 'function') window.showPaywall('draft-trends-scout');
+            });
+        });
+        host.querySelectorAll('[data-trends-player]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                var id = b.getAttribute('data-trends-player');
+                var name = b.getAttribute('data-trends-name') || '';
+                var pos = b.getAttribute('data-trends-ppos') || trendsPos;
+                var adp = b.getAttribute('data-trends-adp') || '';
+                var proj = b.getAttribute('data-trends-proj') || '';
+                if (id) openHistPanel(id, name, adp, pos, proj, '', '');
             });
         });
         host.querySelectorAll('.cs-trends-card > summary').forEach(function (s) {
