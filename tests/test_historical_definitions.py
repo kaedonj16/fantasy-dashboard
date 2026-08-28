@@ -128,6 +128,28 @@ def test_draft_capital_bucket_does_not_infer_undrafted():
     assert draft_capital_bucket(0) == "undrafted"
 
 
+def test_trends_round1_pick_ranges_are_disjoint():
+    from dashboard_services.historical.definitions import (
+        TRENDS_ROUND1_PICK_RANGES,
+        trends_round1_pick_range,
+    )
+
+    assert draft_capital_bucket(1, 3) == "round_1"
+    assert trends_round1_pick_range(1)[0] == "picks_1_10"
+    assert trends_round1_pick_range(10)[1] == "Top 10"
+    assert trends_round1_pick_range(11)[0] == "picks_11_25"
+    assert trends_round1_pick_range(25)[0] == "picks_11_25"
+    assert trends_round1_pick_range(26)[0] == "picks_26_32"
+    assert trends_round1_pick_range(32)[1] == "Rest of Round 1"
+    assert trends_round1_pick_range(33) is None
+    assert trends_round1_pick_range(None) is None
+    assert trends_round1_pick_range(0) is None
+    covered = []
+    for _key, _label, lo, hi in TRENDS_ROUND1_PICK_RANGES:
+        covered.extend(range(lo, hi + 1))
+    assert covered == list(range(1, 33))
+
+
 def test_positional_tier_label_and_flags():
     assert positional_tier_label("RB", 1) == "RB1"
     assert positional_tier_label("RB", 12) == "RB1"

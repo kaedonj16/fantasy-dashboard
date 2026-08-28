@@ -14,6 +14,7 @@ PROFILE_PATH = PLAYER_HISTORY_DIR / "historical_profile_aggregates.json"
 CAREER_PATH_OVERLAY_PATH = PLAYER_HISTORY_DIR / "career_path_overlay.json"
 USAGE_VOLUME_OVERLAY_PATH = PLAYER_HISTORY_DIR / "usage_volume_overlay.json"
 COHORT_INDEX_PATH = PLAYER_HISTORY_DIR / "cohort_index.json"
+NFL_DRAFT_PICKS_PATH = PLAYER_HISTORY_DIR / "nfl_draft_picks.json"
 LIVE_DRAFT_PICKS_PATH = ROOT_DIR / "picks.json"
 PLAYERS_INDEX_RELEVANT_PATH = CACHE_DIR / "players_index_relevant.json"
 PLAYERS_INDEX_PATH = CACHE_DIR / "players_index.json"
@@ -76,6 +77,16 @@ def _merge_live_draft_class(data: dict) -> None:
     )
     if added:
         pre["n_players"] = len(by_player)
+
+
+def _stamp_nfl_draft_picks(data: dict) -> None:
+    """Attach overall NFL pick so Trends can split Round 1 into pick bands."""
+    raw = _read_json(NFL_DRAFT_PICKS_PATH)
+    if not isinstance(raw, dict) or not raw:
+        return
+    from dashboard_services.historical.filters import apply_nfl_draft_pick_overlay
+
+    apply_nfl_draft_pick_overlay(data, raw)
 
 
 def _nflverse_mtime_token() -> Any:
@@ -240,6 +251,7 @@ def load_profile_aggregates(*, path: Optional[Any] = None) -> dict:
     cohort_mtime = None
     picks_mtime = None
     index_mtime = None
+    draft_picks_mtime = None
     if path is None:
         overlay_mtime = _file_mtime(CAREER_PATH_OVERLAY_PATH)
         volume_mtime = _file_mtime(USAGE_VOLUME_OVERLAY_PATH)
@@ -247,9 +259,10 @@ def load_profile_aggregates(*, path: Optional[Any] = None) -> dict:
         cohort_mtime = _file_mtime(COHORT_INDEX_PATH)
         picks_mtime = _file_mtime(LIVE_DRAFT_PICKS_PATH)
         index_mtime = _file_mtime(PLAYERS_INDEX_RELEVANT_PATH) or _file_mtime(PLAYERS_INDEX_PATH)
+        draft_picks_mtime = _file_mtime(NFL_DRAFT_PICKS_PATH)
     cache_key = (
         mtime, overlay_mtime, volume_mtime, nflverse_mtime, cohort_mtime,
-        picks_mtime, index_mtime,
+        picks_mtime, index_mtime, draft_picks_mtime,
     )
     cached = _CACHE.get("data")
     if cached is not None and _CACHE.get("mtime") == cache_key and path is None:
@@ -281,6 +294,7 @@ def load_profile_aggregates(*, path: Optional[Any] = None) -> dict:
             _merge_cohort_index(data, cohort)
         _merge_nflverse_preseason_usage(data)
         _merge_live_draft_class(data)
+        _stamp_nfl_draft_picks(data)
         _CACHE["mtime"] = cache_key
         _CACHE["data"] = data
     return data

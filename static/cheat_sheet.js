@@ -2418,6 +2418,13 @@
         }
         var cap = trendsDraftCapitalOf(p || {});
         if (cap) feats.draft_capital = cap;
+        var pick = p && (p.nfl_draft_pick != null ? p.nfl_draft_pick : null);
+        if (pick == null && ye === 0 && p && p.draft_pick != null) {
+            pick = p.draft_pick;
+        }
+        if (pick != null && isFinite(Number(pick)) && Number(pick) > 0) {
+            feats.nfl_draft_pick = Number(pick);
+        }
         var age = p && p.age;
         if (age != null && isFinite(Number(age))) feats.age = Math.floor(Number(age));
         return feats;

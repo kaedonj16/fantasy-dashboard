@@ -171,11 +171,16 @@ def test_query_fills_live_draft_capital_for_unprofiled_rookies():
         {},
     )
     assert q["draft_capital_bucket"] == "round_1"
+    assert q["nfl_draft_pick"] == 4
     assert q["years_experience"] == 0
     assert q["prior_top12_count"] == 0
     feats = extract_comp_query(q)
     assert feats["draft_capital"] == "round_1"
     assert feats["career_stage"] == "rookie"
+    from dashboard_services.historical.filters import extract_trend_features
+
+    trend = extract_trend_features(q)
+    assert trend["nfl_draft_pick"] == 4
 
 
 def test_attach_compact_payload_and_deep_panel_are_descriptive():
@@ -607,13 +612,26 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     assert "top_24" in (rb.get("baselines") or {})
     capital = next(sec for sec in rb["sections"] if sec["id"] == "draft_capital")
     assert capital.get("finish_tied") is True
+    cap_labels = [row["label"] for row in capital["rows"]]
+    assert "Top 10" in cap_labels
+    assert "Picks 11-25" in cap_labels
+    assert "Rest of Round 1" in cap_labels
+    assert "Round 1" not in cap_labels
+    assert "Day 2 (rounds 2-3)" in cap_labels
     cap_row = capital["rows"][0]
     assert cap_row.get("match")
-    assert cap_row["match"]["field"] == "draft_capital"
+    assert cap_row["match"]["group"] == "draft_capital"
+    assert cap_row["match"]["field"] == "nfl_draft_pick"
+    assert cap_row["match"]["between"] == [1, 10]
     assert cap_row.get("ranking_edge") is not None or cap_row.get("adjusted_edge") is not None
     assert cap_row.get("pcts", {}).get("top_12") is not None
     assert cap_row.get("pcts", {}).get("top_5") is not None
     assert cap_row.get("pcts", {}).get("top_24") is not None
+    from dashboard_services.historical.board import matches_trend_filter as _match_pick
+    assert any(
+        f.get("position") == "RB" and _match_pick(f, cap_row["match"])
+        for f in (payload.get("player_features") or {}).values()
+    )
     assert any(row.get("match") for row in next(sec for sec in rb["sections"] if sec["id"] == "repeat")["rows"])
     feats = payload.get("player_features") or {}
     assert feats
@@ -738,6 +756,8 @@ def test_hist_trend_titles_keep_distinct_capital_and_age_rows():
     from dashboard_services.historical.board import format_hist_trend_title
 
     assert format_hist_trend_title(kind="draft_capital", label="Draft capital", bucket="Round 1") == "NFL Round 1"
+    assert format_hist_trend_title(kind="draft_capital", label="Draft capital", bucket="Top 10") == "NFL Top 10"
+    assert format_hist_trend_title(kind="draft_capital", label="Draft capital", bucket="Picks 11-25") == "NFL Picks 11-25"
     assert format_hist_trend_title(kind="capital_miss", label="Miss rate", bucket="Round 1") == "Miss rate"
     assert format_hist_trend_title(
         kind="top12_as_rookie", label="Hit top-12 as a rookie", bucket="Round 1"

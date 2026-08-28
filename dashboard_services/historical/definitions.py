@@ -114,6 +114,14 @@ DRAFT_CAPITAL_ORDER: Tuple[str, ...] = (
     DRAFT_CAPITAL_UNDRAFTED,
 )
 
+# Trends-only split of Round 1 by overall NFL pick. Disjoint bands so early
+# and late first-rounders are not mixed. Comps still use DRAFT_CAPITAL_ORDER.
+TRENDS_ROUND1_PICK_RANGES: Tuple[Tuple[str, str, int, int], ...] = (
+    ("picks_1_10", "Top 10", 1, 10),
+    ("picks_11_25", "Picks 11-25", 11, 25),
+    ("picks_26_32", "Rest of Round 1", 26, 32),
+)
+
 # Career stage from completed seasons before this year (0 = rookie year).
 # Missing years_experience is None — never mapped to rookie.
 CAREER_STAGE_ROOKIE = "rookie"
@@ -584,6 +592,18 @@ def draft_capital_bucket(
         return DRAFT_CAPITAL_DAY_2
     if rnd >= 4:
         return DRAFT_CAPITAL_DAY_3
+    return None
+
+
+def trends_round1_pick_range(pick: Any) -> Optional[Tuple[str, str, int, int]]:
+    """Trends Round 1 pick band for an overall NFL pick, or None."""
+    value = _optional_int(pick)
+    if value is None or value <= 0:
+        return None
+    for rec in TRENDS_ROUND1_PICK_RANGES:
+        _key, _label, lo, hi = rec
+        if lo <= value <= hi:
+            return rec
     return None
 
 

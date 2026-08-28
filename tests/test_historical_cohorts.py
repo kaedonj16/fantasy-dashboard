@@ -165,8 +165,14 @@ def test_extract_trend_features_uses_live_draft_round():
     assert feats["draft_capital"] == "round_1"
     assert feats["career_stage"] == "rookie"
     assert feats["prior_top12_count"] == 0
+    assert feats["nfl_draft_pick"] == 4
     round_1 = {"group": "draft_capital", "field": "draft_capital", "eq": "round_1"}
+    top_10 = {"group": "draft_capital", "field": "nfl_draft_pick", "between": [1, 10]}
+    late_first = {"group": "draft_capital", "field": "nfl_draft_pick", "between": [26, 32]}
     assert matches_filter_groups(feats, [round_1]) is True
+    assert matches_filter_groups(feats, [top_10]) is True
+    assert matches_filter_groups(feats, [late_first]) is False
+    assert matches_trend_filter({}, top_10) is False
 
 
 def test_stamp_live_draft_class_adds_unprofiled_round_1_rookie():
@@ -190,11 +196,38 @@ def test_stamp_live_draft_class_adds_unprofiled_round_1_rookie():
     added = stamp_live_draft_class_profiles(by_player, picks, index, upcoming_season=2026)
     assert added == 1
     assert by_player["13287"]["draft_capital_bucket"] == "round_1"
+    assert by_player["13287"]["nfl_draft_pick"] == 3
     assert by_player["13287"]["years_experience"] == 0
     assert by_player["12527"]["years_experience"] == 1
     feats = extract_trend_features(by_player["13287"])
     assert feats["draft_capital"] == "round_1"
+    assert feats["nfl_draft_pick"] == 3
     assert feats["career_stage"] == "rookie"
+
+
+def test_apply_nfl_draft_pick_overlay_stamps_feats_and_profiles():
+    from dashboard_services.historical.filters import apply_nfl_draft_pick_overlay
+
+    data = {
+        "cohort_index": {
+            "observations": [
+                {"pid": "4034", "pos": "RB", "feats": {"position": "RB", "draft_capital": "round_1"}},
+                {"pid": "x", "pos": "WR", "feats": {"position": "WR", "nfl_draft_pick": 22}},
+            ]
+        },
+        "preseason_profiles": {
+            "by_player": {
+                "4034": {"position": "RB", "draft_capital_bucket": "round_1"},
+                "x": {"position": "WR", "nfl_draft_pick": 22},
+            }
+        },
+    }
+    n = apply_nfl_draft_pick_overlay(data, {"picks": {"4034": 8, "x": 99}})
+    assert n == 2
+    assert data["cohort_index"]["observations"][0]["feats"]["nfl_draft_pick"] == 8
+    assert data["cohort_index"]["observations"][1]["feats"]["nfl_draft_pick"] == 22
+    assert data["preseason_profiles"]["by_player"]["4034"]["nfl_draft_pick"] == 8
+    assert data["preseason_profiles"]["by_player"]["x"]["nfl_draft_pick"] == 22
 
 
 def test_canonical_filter_key_sorts_mixed_eq_types():
@@ -206,6 +239,9 @@ def test_canonical_filter_key_sorts_mixed_eq_types():
     key = canonical_filter_key([round_1, never])
     assert key == canonical_filter_key([never, round_1])
     assert key != canonical_filter_key([round_1, two_plus])
+    top_10 = {"group": "draft_capital", "field": "nfl_draft_pick", "between": [1, 10], "label": "Top 10"}
+    mixed = canonical_filter_key([top_10, never])
+    assert mixed == canonical_filter_key([never, top_10])
     reset_cohort_cache()
     index = build_cohort_index(_combo_warehouse())
     out = evaluate_cohort(

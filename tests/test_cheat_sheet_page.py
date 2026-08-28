@@ -403,6 +403,7 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "data-trends-tier" in script
     assert "function trendsScoutHtml" in script
     assert "function trendsLivePlayerFeatures" in script
+    assert "feats.nfl_draft_pick" in script
     assert "function trendsFeatsForPlayer" in script
     assert "trendsFeatsForPlayer(featsIndex, p)" in script
     assert "sticky.classList.toggle('is-picked'" in script
@@ -499,6 +500,14 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "Hist" in hist_fix["text"]
     assert "—" not in hist_fix["text"]
     assert "–" not in hist_fix["text"]
+    capital_split = next(
+        entry for entry in CHANGELOG
+        if "Top 10" in entry.get("text", "") and "rest of Round 1" in entry.get("text", "")
+    )
+    assert capital_split["tag"] == "update"
+    assert capital_split["link"] == "/draft/cheat-sheet"
+    assert "—" not in capital_split["text"]
+    assert "–" not in capital_split["text"]
     chance = next(
         entry for entry in CHANGELOG
         if "historical chance" in entry.get("text", "").lower()
