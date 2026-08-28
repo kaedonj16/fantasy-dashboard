@@ -25,8 +25,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
         <span id="rkPausedAsOf"></span>.
       </div>
     </div>
-    <!-- The full draft board is its own page (the "Draft" nav entry / Draft Room).
-         The Prospects page is rankings-only. -->
   </div>
 
   <!-- Rankings panel -->

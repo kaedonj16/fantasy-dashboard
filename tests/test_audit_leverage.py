@@ -50,6 +50,6 @@ def test_paywall_names_breakout_analysis():
 
 def test_share_card_og_cache_key_includes_value_bust():
     app = (ROOT / "app.py").read_text(encoding="utf-8")
-    og = app[app.index("def share_card_og_image"): app.index("def api_live_draft_suggest")]
+    og = app[app.index("def share_card_og_image"): app.index("def api_save_trade")]
     assert "_value_cache_bust_mtime()" in og
     assert 'cache_key=f"team:{platform}:{season}:{league_id}:{roster_id}:v{int(_value_cache_bust_mtime() or 0)}"' in og

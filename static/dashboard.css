@@ -27880,50 +27880,6 @@ button:disabled {
     color: var(--text);
 }
 
-@keyframes livePulse {
-    0%, 100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: .3;
-    }
-}
-
-.ld-need-pill {
-    font-size: 9.5px;
-    font-weight: 700;
-    padding: 1px 5px;
-    border-radius: 6px;
-    text-transform: uppercase;
-    letter-spacing: .4px;
-    flex-shrink: 0;
-}
-
-.ld-need-pill--major {
-    background: rgba(239, 68, 68, .15);
-    color: #f87171;
-}
-
-.ld-need-pill--need {
-    background: rgba(245, 158, 11, .15);
-    color: #fbbf24;
-}
-
-.ld-need-pill--neutral {
-    background: rgba(100, 116, 139, .12);
-    color: #64748b;
-}
-
-.ld-need-pill--depth {
-    background: rgba(16, 185, 129, .10);
-    color: #34d399;
-}
-
-.ld-need-pill--stacked {
-    background: rgba(99, 102, 241, .12);
-    color: #818cf8;
-}
-
 
 /* Shared title rhythm for public tool pages */
 .dvt-title, .rf-title, .rnk-title {
@@ -34474,7 +34430,6 @@ a, button, [role="button"], [role="tab"], summary, label,
 .rivalry-chip,
 .pill-arrow,
 .sc-pos-pill,
-.ld-need-pill,
 .pm-tep-pill,
 .otc-filter-chip,
 .otc-day-filter,

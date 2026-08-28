@@ -98,6 +98,29 @@ def test_rookie_pipeline_pause_is_env_and_csv_is_dated():
     assert "rkPipelinePaused" in rookies
 
 
+def test_prospects_page_has_no_draft_assistant():
+    """The Rookie Draft Assistant (Prospects Draft Board tab) is gone."""
+    rookies = (ROOT / "dashboard_services" / "pages" / "rookies_page.py").read_text(encoding="utf-8")
+    app_py = (ROOT / "app.py").read_text(encoding="utf-8")
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    meta = (ROOT / "routes" / "league_meta_bp.py").read_text(encoding="utf-8")
+    features = (ROOT / "FEATURES.md").read_text(encoding="utf-8")
+    assert "daBoardList" not in rookies
+    assert "daNeedsPanel" not in rookies
+    assert "rkPageTab" not in rookies
+    assert "Draft Board" not in rookies
+    assert "initLiveDraftBoard" not in app_js
+    assert "liveDraftModeBtn" not in app_js
+    assert "/api/live-draft-suggest" not in app_py
+    assert "def api_live_draft_suggest" not in app_py
+    assert "/api/draft-needs" not in meta
+    assert "ld-need-pill" not in css
+    assert not (ROOT / "static" / "draft_assistant.js").exists()
+    assert "Rookie Draft Assistant" not in features
+    assert "Draft Board that analyzes positional needs" not in features
+
+
 def test_scout_uses_live_value_cache():
     scout = (ROOT / "dashboard_services" / "pages" / "scout_page.py").read_text(encoding="utf-8")
     assert "get_model_value_table_cached()" in scout
