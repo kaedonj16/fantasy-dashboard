@@ -18,6 +18,7 @@ from dashboard_services.ai.prompts import (
     generate_team_ai_result,
     generate_power_rankings_result,
     generate_trade_suggestions_result,
+    normalize_trade_scoring_type,
 )
 import logging
 
@@ -205,10 +206,14 @@ def get_trade_ai_analysis(
         side_a: dict,
         side_b: dict,
         opponent_roster_id: str = "",
+        scoring_type: str = "dynasty",
 ) -> str:
     team_ctx = build_team_gm_context(ctx, viewer_roster_id)
     if not team_ctx or not isinstance(team_ctx, dict):
         return ""
+
+    scoring_type = normalize_trade_scoring_type(scoring_type)
+    is_redraft = scoring_type == "redraft"
 
     viewer_side = (viewer_side or "a").lower().strip()
 
@@ -318,23 +323,43 @@ def get_trade_ai_analysis(
     # Starter format the analyst should reason from (QB value swings hard on this).
     _qb_slots = _slots.get("QB", 0)
     _sf_slots = _slots.get("SUPER_FLEX", 0)
-    league_format = {
-        "qb_format": "Superflex/2QB" if is_sf else "1QB",
-        "superflex": is_sf,
-        "qb_starter_slots": _qb_slots + _sf_slots,
-        "starting_lineup": _roster_positions or None,
-        "note": (
+    if is_redraft:
+        _format_note = (
+            "REDRAFT league: players are owned for this NFL season only. Draft picks "
+            "cannot be traded. Never recommend a pick as a counter or sweetener. "
+            "Market values in this JSON are redraft (this-season) values."
+        )
+        if is_sf:
+            _format_note += (
+                " Superflex/2QB: quarterbacks carry premium value this season. The "
+                "market values already reflect the format."
+            )
+        else:
+            _format_note += (
+                " 1QB: standard single-QB scarcity. The market values already "
+                "reflect the league format."
+            )
+    else:
+        _format_note = (
             "Superflex/2QB league: quarterbacks carry premium value; weight QB assets and QB "
             "rookie picks up. The market values in this JSON already reflect the league format."
             if is_sf else
             "1QB league: standard single-QB scarcity. The market values in this JSON already "
             "reflect the league format."
-        ),
+        )
+    league_format = {
+        "scoring_type": scoring_type,
+        "picks_tradable": not is_redraft,
+        "qb_format": "Superflex/2QB" if is_sf else "1QB",
+        "superflex": is_sf,
+        "qb_starter_slots": _qb_slots + _sf_slots,
+        "starting_lineup": _roster_positions or None,
+        "note": _format_note,
     }
     all_pick_ids = list(viewer_gets.get("pick_ids") or []) + list(viewer_gives.get("pick_ids") or [])
 
     pick_prospects: dict = {}
-    if all_pick_ids:
+    if (not is_redraft) and all_pick_ids:
         try:
             from dashboard_services.adp_service import fetch_league_adp_from_db, build_model_adp_fallback
             adp_raw = fetch_league_adp_from_db(is_sf=is_sf, season=current_season, draft_type="rookie") or {}
@@ -444,11 +469,12 @@ def get_trade_ai_analysis(
             "market_delta": market_delta,
         },
         "league_format": league_format,
+        "scoring_type": scoring_type,
         "opponent_team": opponent_ctx or None,
     }
 
     # Build cache key for trade analysis
-    cache_key = build_ai_cache_key("trade_analysis", payload, "v7")
+    cache_key = build_ai_cache_key("trade_analysis", payload, "v8")
 
     # Try to get from cache first
     cached = load_cached_ai_text(cache_key)
@@ -481,7 +507,7 @@ def get_trade_ai_analysis(
         fallback = {
             "verdict": verdict,
             "summary": f"AI analysis {reason}. Market delta: {market_delta:.1f} - verdict based on value differential only.",
-            "helps": ["Market value calculation is based on current dynasty rankings."],
+            "helps": [f"Market value calculation is based on current {scoring_type} rankings."],
             "risks": [f"AI is {reason}; this is a data-only estimate without roster context."],
             "counter": "Try again shortly for a full AI-powered front-office recommendation.",
             "confidence": "low",
@@ -497,7 +523,7 @@ def get_trade_ai_analysis(
             "summary": f"The trade is evaluated for a {team_ctx.get('direction') or 'balanced'} roster profile. Market delta: {market_delta:.1f}.",
             "helps": ["The return may line up with your current roster direction."],
             "risks": ["AI call failed; this is a simplified market-value estimate."],
-            "counter": "Try adjusting the pick side or a secondary asset if the deal feels close.",
+            "counter": "Try adjusting a secondary player if the deal feels close." if is_redraft else "Try adjusting the pick side or a secondary asset if the deal feels close.",
             "confidence": "low",
         }
         html_out = _ai_error_notice() + render_trade_ai_html(fallback)

@@ -225,6 +225,22 @@ def _draft_time_ms(league: dict) -> Optional[int]:
     )
 
 
+def _fleaflicker_sleeper_league_type(max_keepers: int, team_count: int) -> tuple[int, str]:
+    """Map Fleaflicker keeper limits to Sleeper settings.type + league_type.
+
+    Fleaflicker publishes ``max_keepers`` on the league object from
+    FetchLeagueStandings. ffscrapr treats ``max_keepers * team_count > 250`` as
+    dynasty (whole-roster retention); smaller positive limits are keeper leagues.
+    """
+    keepers = max(0, int(max_keepers or 0))
+    teams = max(1, int(team_count or 1))
+    if keepers <= 0:
+        return 0, "redraft"
+    if keepers * teams > 250:
+        return 2, "dynasty"
+    return 1, "keeper"
+
+
 def _normalize_fleaflicker_draft_status(
     flea_status: Optional[str],
     *,
@@ -410,16 +426,25 @@ class FleaflickerProvider(ProviderAdapter):
                 "Fleaflicker rules unavailable league=%s season=%s", league_id, season,
                 exc_info=True,
             )
+        total_rosters = _int(_get(league, "size")) or len(teams)
+        max_keepers = _int(_get(league, "max_keepers", "maxKeepers"))
+        sleeper_type, league_type = _fleaflicker_sleeper_league_type(
+            max_keepers, total_rosters,
+        )
+        settings: dict[str, Any] = {
+            "type": sleeper_type,
+            "league_type": league_type,
+            "draft_status": str(_get(league, "draft_status", "draftStatus") or ""),
+        }
+        if max_keepers > 0:
+            settings["max_keepers"] = max_keepers
         return {
             "league_id": str(_get(league, "id") or league_id),
             "season": int(_get(standings or {}, "season") or season),
             "name": _get(league, "name") or f"Fleaflicker League {league_id}",
-            "total_rosters": _int(_get(league, "size")) or len(teams),
+            "total_rosters": total_rosters,
             "draft_day": _draft_time_ms(league),
-            "settings": {
-                "league_type": "redraft",
-                "draft_status": str(_get(league, "draft_status", "draftStatus") or ""),
-            },
+            "settings": settings,
             "scoring_settings": self._scoring(rules),
             "roster_positions": self._positions(rules),
             "metadata": {"provider": "fleaflicker"},
@@ -456,6 +481,72 @@ class FleaflickerProvider(ProviderAdapter):
             })
         return out
 
+    @staticmethod
+    def _build_name_index() -> dict:
+        # utils.utils imports requests at module load. The unit-test CI job does
+        # not install that stack, so fail soft and let xwalk handle IDs.
+        try:
+            from utils.utils import load_players_index, normalize_name
+            index = load_players_index() or {}
+            by_name = {}
+            for canonical, info in index.items():
+                name = normalize_name(info.get("full_name") or info.get("name") or "")
+                pos = str(info.get("position") or "").upper()
+                if name:
+                    by_name[(name, pos)] = str(canonical)
+            return by_name
+        except Exception as exc:
+            logger.debug("Fleaflicker name index unavailable error=%s", type(exc).__name__)
+            return {}
+
+    @staticmethod
+    def _canonical_lookup(pro: dict, xwalk: dict, by_name: dict) -> Optional[str]:
+        pid = _get(pro, "id")
+        if pid is not None:
+            cached = xwalk.get(str(pid))
+            if cached:
+                return cached
+        try:
+            from utils.utils import normalize_name
+            name = normalize_name(_get(pro, "nameFull", "name_full") or "")
+        except Exception:
+            return None
+        pos = str(_get(pro, "position") or "").upper()
+        if not name:
+            return None
+        return by_name.get((name, pos)) or next(
+            (v for (n, _), v in by_name.items() if n == name), None
+        )
+
+    @staticmethod
+    def _slot_group_label(group_label: str, slot: dict) -> str:
+        pos = slot.get("position") or {}
+        return str(_get(pos, "group") or group_label or "").upper()
+
+    def _parse_fetch_roster_groups(
+        self, detail: dict, xwalk: dict, by_name: dict,
+    ) -> tuple[list[str], list[str], list[str], set[str]]:
+        players, starters, reserve = [], [], []
+        seen: set[str] = set()
+        for group in detail.get("groups") or []:
+            group_label = str(group.get("group") or "").upper()
+            for slot in group.get("slots") or []:
+                lp = slot.get("leaguePlayer") or slot.get("league_player") or {}
+                pro = lp.get("proPlayer") or lp.get("pro_player") or {}
+                if _get(pro, "id") is None:
+                    continue
+                cid = self._canonical_lookup(pro, xwalk, by_name)
+                if not cid or cid in seen:
+                    continue
+                seen.add(cid)
+                players.append(cid)
+                bucket = self._slot_group_label(group_label, slot)
+                if bucket == "START":
+                    starters.append(cid)
+                elif bucket in {"INJURED", "IR", "INJURED_RESERVE", "TAXI"}:
+                    reserve.append(cid)
+        return players, starters, reserve, seen
+
     def _canonical_map(self, league_id, season, *, token: Optional[str] = None):
         try:
             from utils.utils import load_players_index, normalize_name
@@ -488,6 +579,7 @@ class FleaflickerProvider(ProviderAdapter):
 
     def get_rosters(self, league_id, season, *, token: Optional[str] = None):
         raw = self._call("FetchLeagueRosters", league_id, season, ttl=300, token=token)
+        by_name = self._build_name_index()
         xwalk = self._canonical_map(league_id, season, token=token)
         team_names = {}
         try:
@@ -507,50 +599,43 @@ class FleaflickerProvider(ProviderAdapter):
             if team_id is None:
                 continue
             team_name = team_names.get(str(team_id)) or _get(team, "name") or f"Team {team_id}"
-            players, starters, reserve = [], [], []
-            # Prefer the flat players list; fall back to FetchRoster groups when absent.
             entries = roster.get("players") or []
-            if not entries:
-                try:
-                    detail = self._call(
-                        "FetchRoster", league_id, season, ttl=300, token=token,
-                        team_id=int(team_id),
-                    )
-                    for group in detail.get("groups") or []:
-                        group_label = str(group.get("group") or "").upper()
-                        for slot in group.get("slots") or []:
-                            lp = slot.get("leaguePlayer") or slot.get("league_player") or {}
-                            pro = lp.get("proPlayer") or lp.get("pro_player") or {}
-                            pid = _get(pro, "id")
-                            if pid is None:
-                                continue
-                            cid = xwalk.get(str(pid))
-                            if not cid:
-                                continue
-                            players.append(cid)
-                            if group_label == "START":
-                                starters.append(cid)
-                            elif group_label in {"IR", "INJURED_RESERVE"}:
-                                reserve.append(cid)
-                    entries = None
-                except Exception:
-                    logger.debug("Fleaflicker FetchRoster fallback failed", exc_info=True)
-            if entries is not None:
-                for player in entries:
-                    pro = player.get("proPlayer") or player.get("pro_player") or {}
-                    pid = _get(pro, "id")
-                    if pid is None:
-                        continue
-                    cid = xwalk.get(str(pid))
-                    if cid:
-                        players.append(cid)
+            players, starters, reserve = [], [], []
+            seen: set[str] = set()
+            mapped_flat = 0
+            # FetchRoster carries START/BENCH groups; the bulk roster list does not.
+            try:
+                detail = self._call(
+                    "FetchRoster", league_id, season, ttl=300, token=token,
+                    team_id=int(team_id),
+                )
+                players, starters, reserve, seen = self._parse_fetch_roster_groups(
+                    detail, xwalk, by_name,
+                )
+            except Exception:
+                logger.debug("Fleaflicker FetchRoster lineup parse failed", exc_info=True)
+            starter_set = set(starters)
+            for player in entries:
+                pro = player.get("proPlayer") or player.get("pro_player") or {}
+                if _get(pro, "id") is None:
+                    continue
+                cid = self._canonical_lookup(pro, xwalk, by_name)
+                if not cid:
+                    continue
+                mapped_flat += 1
+                if cid not in seen:
+                    seen.add(cid)
+                    players.append(cid)
+                display = str(_get(player, "display_group", "displayGroup") or "").lower()
+                if cid not in starter_set and "start" in display:
+                    starters.append(cid)
+                    starter_set.add(cid)
             out.append({
                 "league_id": str(league_id), "roster_id": _int(team_id),
                 "owner_id": str(team_id), "players": players,
                 "starters": starters, "reserve": reserve, "taxi": None,
                 "settings": {}, "metadata": {
-                    "unmapped_player_count": max(0, len(entries or []) - len(players))
-                    if entries is not None else 0,
+                    "unmapped_player_count": max(0, len(entries) - mapped_flat),
                     "provider_team_id": str(team_id),
                     "team_name": team_name,
                 },

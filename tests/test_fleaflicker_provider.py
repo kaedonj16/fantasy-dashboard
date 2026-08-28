@@ -5,7 +5,9 @@ import pytest
 from dashboard_services.providers.base import (
     ProviderAuthenticationError, ProviderUnavailableError, UnsupportedCapabilityError,
 )
-from dashboard_services.providers.fleaflicker_api import FleaflickerProvider, _CACHE, login
+from dashboard_services.providers.fleaflicker_api import (
+    FleaflickerProvider, _CACHE, _fleaflicker_sleeper_league_type, login,
+)
 
 
 def response(payload, status=200):
@@ -41,6 +43,25 @@ def test_normalizes_league_users_rosters_and_matchups(monkeypatch):
                 {"proPlayer": {"id": 404, "nameFull": "Unknown", "position": "WR"}},
             ]}],
         },
+        "FetchRoster": {
+            "groups": [{
+                "group": "START",
+                "slots": [{
+                    "position": {"label": "QB", "group": "START"},
+                    "leaguePlayer": {
+                        "proPlayer": {"id": 9, "nameFull": "Known Player", "position": "QB"},
+                    },
+                }],
+            }, {
+                "group": "BENCH",
+                "slots": [{
+                    "position": {"label": "BN", "group": "BENCH"},
+                    "leaguePlayer": {
+                        "proPlayer": {"id": 404, "nameFull": "Unknown", "position": "WR"},
+                    },
+                }],
+            }],
+        },
         "FetchLeagueScoreboard": {
             "games": [{
                 "id": "g1",
@@ -55,6 +76,8 @@ def test_normalizes_league_users_rosters_and_matchups(monkeypatch):
     monkeypatch.setattr(provider, "_canonical_map", lambda *a, **k: {"9": "canon-9"})
     league = provider.get_league("14153", 2026)
     assert league["total_rosters"] == 2
+    assert league["settings"]["type"] == 0
+    assert league["settings"]["league_type"] == "redraft"
     assert league["roster_positions"] == ["QB", "RB", "RB"]
     user = provider.get_users("14153", 2026)[0]
     assert user["user_id"] == "1"
@@ -63,6 +86,7 @@ def test_normalizes_league_users_rosters_and_matchups(monkeypatch):
     assert roster["owner_id"] == "1"
     assert roster["metadata"]["team_name"] == "Owls"
     assert roster["players"] == ["canon-9"]
+    assert roster["starters"] == ["canon-9"]
     assert roster["metadata"]["unmapped_player_count"] == 1
     assert provider.get_matchups("14153", 2026, 1)[0]["points"] == 101.5
 
@@ -247,6 +271,40 @@ def test_get_drafts_reports_upcoming_start_time_and_status(monkeypatch):
     assert drafts[0]["picks"] == []
 
 
+@pytest.mark.parametrize(
+    ("max_keepers", "teams", "sleeper_type", "label"),
+    [
+        (0, 12, 0, "redraft"),
+        (2, 12, 1, "keeper"),
+        (25, 12, 2, "dynasty"),
+    ],
+)
+def test_fleaflicker_sleeper_league_type_mapping(max_keepers, teams, sleeper_type, label):
+    assert _fleaflicker_sleeper_league_type(max_keepers, teams) == (sleeper_type, label)
+
+
+def test_get_league_detects_keeper_league(monkeypatch):
+    provider = FleaflickerProvider()
+    monkeypatch.setattr(
+        provider,
+        "_call",
+        lambda method, *a, **k: {
+            "league": {
+                "id": 92916,
+                "name": "Keeper League",
+                "size": 12,
+                "maxKeepers": 3,
+            },
+            "divisions": [{"teams": [{"id": 1, "name": "Owls", "owners": [{"id": 9}]}]}],
+            "season": 2026,
+        } if method == "FetchLeagueStandings" else {"groups": []},
+    )
+    league = provider.get_league("92916", 2026)
+    assert league["settings"]["type"] == 1
+    assert league["settings"]["league_type"] == "keeper"
+    assert league["settings"]["max_keepers"] == 3
+
+
 def test_get_drafts_marks_post_draft_complete(monkeypatch):
     provider = FleaflickerProvider()
     draft_ms = 1_735_689_600_000
@@ -277,3 +335,55 @@ def test_get_drafts_marks_post_draft_complete(monkeypatch):
     drafts = provider.get_drafts("92916", 2026)
     assert drafts[0]["status"] == "complete"
     assert len(drafts[0]["picks"]) == 1
+
+
+def test_get_rosters_uses_fetch_roster_starters_when_bulk_list_exists(monkeypatch):
+    provider = FleaflickerProvider()
+
+    def fake_call(method, *args, **kwargs):
+        if method == "FetchLeagueRosters":
+            return {
+                "rosters": [{
+                    "team": {"id": 1, "name": "Owls"},
+                    "players": [
+                        {"proPlayer": {"id": 9, "nameFull": "Starter QB", "position": "QB"}},
+                        {"proPlayer": {"id": 10, "nameFull": "Bench RB", "position": "RB"}},
+                    ],
+                }],
+            }
+        if method == "FetchLeagueStandings":
+            return {
+                "league": {"id": 14153, "name": "Dynasty", "size": 1},
+                "divisions": [{"teams": [{"id": 1, "name": "Owls"}]}],
+            }
+        if method == "FetchRoster":
+            return {
+                "groups": [
+                    {
+                        "group": "START",
+                        "slots": [{
+                            "position": {"label": "QB", "group": "START"},
+                            "leaguePlayer": {
+                                "proPlayer": {"id": 9, "nameFull": "Starter QB", "position": "QB"},
+                            },
+                        }],
+                    },
+                    {
+                        "group": "BENCH",
+                        "slots": [{
+                            "position": {"label": "RB", "group": "BENCH"},
+                            "leaguePlayer": {
+                                "proPlayer": {"id": 10, "nameFull": "Bench RB", "position": "RB"},
+                            },
+                        }],
+                    },
+                ],
+            }
+        raise AssertionError(method)
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    monkeypatch.setattr(provider, "_canonical_map", lambda *a, **k: {"9": "canon-qb", "10": "canon-rb"})
+    roster = provider.get_rosters("14153", 2026)[0]
+    assert roster["players"] == ["canon-qb", "canon-rb"]
+    assert roster["starters"] == ["canon-qb"]
+    assert "canon-rb" not in roster["starters"]

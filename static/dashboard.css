@@ -2943,7 +2943,6 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
     width: 100%;
     max-width: 100%;
     min-height: 0;
-    max-height: min(1225px, 70vh);
 }
 
 .gm-card {
