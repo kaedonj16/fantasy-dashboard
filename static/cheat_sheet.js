@@ -1141,10 +1141,6 @@
         });
     }
 
-    function badge(pos) {
-        return '<span class="cs-pos-badge cs-pos-' + pos + '">' + pos + '</span>';
-    }
-
     function posrk(x) {
         return '<span class="cs-posrk cs-pos-' + x.pos + '">' + x.prk + '</span>';
     }
@@ -1451,7 +1447,7 @@
             var pk = pickAt[x.rk];
             if (pk) html += projLineRow(pk, span, x.drafted);
             shown++;
-            var cls = 'cs-p' + (state.done.has(x.id) ? ' done' : '') + (x.drafted ? ' drafted' : '') + (x.ov === 'mute' ? ' cs-muted' : '') + (x.ov ? ' cs-ov' : '') + (x.id === _flashId ? ' cs-flash' : '') + (pk ? ' cs-proj-row' : '');
+            var cls = 'cs-p cs-c-' + x.pos + (state.done.has(x.id) ? ' done' : '') + (x.drafted ? ' drafted' : '') + (x.ov === 'mute' ? ' cs-muted' : '') + (x.ov ? ' cs-ov' : '') + (x.id === _flashId ? ' cs-flash' : '') + (pk ? ' cs-proj-row' : '');
             var c5 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + fmtAdp(x.adp) + '</td>';
             var c6 = dyn ? '<td class="cs-value-col">' + winChip(x.age, x.pos) + '</td>' : '<td class="cs-value-col">' + valChip(x.value) + '</td>';
             var market = '';
@@ -1498,7 +1494,6 @@
                 '</td>' +
                 '<td>' +
                 '<span class="cs-pcell">' +
-                badge(x.pos) +
                 '<span class="cs-pname">' +
                 esc(x.name) +
                 '</span>' +
@@ -1583,7 +1578,7 @@
         }
 
         var out = '<div class="cs-pgrid-head">' + POS.map(function (p) {
-            return '<div>' + p + '</div>';
+            return '<div class="cs-c-' + p + '">' + p + '</div>';
         }).join('') + '</div>';
         var ri = 0;
         groups.forEach(function (g) {

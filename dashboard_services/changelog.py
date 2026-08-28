@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-08-28",
+        "tag": "new",
+        "text": "Draft Cheat Sheet: Trends tab and Hist player cards. Trends shows position-wide historical top-12 rates (ADP, career, capital, age, usage) versus a typical player at that position. Hist opens a player's own mix of those buckets. Descriptive only, not a ranking input.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
         "date": "2026-08-26",
         "tag": "fix",
         "text": "Draft Room recommendations for your first pick no longer label every player Best available: while you wait, Rec ranks who is actually likely to be there (not 1.01 talent at 0%), and Best available is reserved for the top rec rather than used as a generic fallback.",

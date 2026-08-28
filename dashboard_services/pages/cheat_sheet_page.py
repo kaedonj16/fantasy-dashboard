@@ -492,8 +492,10 @@ _CHEAT_HTML = r"""
   .cs-pgc:hover { background: var(--cs-accent-soft); }
   .cs-pgn { font-size: 12.5px; font-weight: 600; line-height: 1.18; display: inline-flex; align-items: baseline; gap: 6px; }
   .cs-pgc .cs-pgv { font-family: var(--cs-mono); font-size: 10px; font-weight: 800; }
-  .cs-c-QB .cs-pgn { color: var(--cs-qb); } .cs-c-RB .cs-pgn { color: var(--cs-rb); }
-  .cs-c-WR .cs-pgn { color: var(--cs-wr); } .cs-c-TE .cs-pgn { color: var(--cs-te); }
+  .cs-c-QB .cs-pgn, .cs-c-QB .cs-pname, .cs-pgrid-head > .cs-c-QB { color: var(--cs-qb); }
+  .cs-c-RB .cs-pgn, .cs-c-RB .cs-pname, .cs-pgrid-head > .cs-c-RB { color: var(--cs-rb); }
+  .cs-c-WR .cs-pgn, .cs-c-WR .cs-pname, .cs-pgrid-head > .cs-c-WR { color: var(--cs-wr); }
+  .cs-c-TE .cs-pgn, .cs-c-TE .cs-pname, .cs-pgrid-head > .cs-c-TE { color: var(--cs-te); }
   .cs-pgc.done .cs-pgn { text-decoration: line-through; opacity: .4; }
   .cs-board.filteron .cs-pgc[data-good="0"] { opacity: .3; }
   .cs-pgtier { display: flex; align-items: center; gap: 10px; font-family: var(--cs-mono); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--cs-ink-faint); background: var(--cs-surface-2); padding: 7px 12px; border-top: 1px solid var(--cs-line-strong); border-bottom: 1px solid var(--cs-line); }
@@ -505,6 +507,10 @@ _CHEAT_HTML = r"""
   .cs-search { flex: 1 1 200px; min-width: 140px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--cs-line); background: var(--cs-surface); color: var(--cs-ink); font: inherit; font-size: 13px; outline: none; }
   .cs-search:focus { border-color: var(--cs-accent); }
   .cs-posf { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .cs-wrap .cs-posf button[data-pos="QB"][aria-pressed="true"] { border-color: var(--cs-qb); color: var(--cs-qb); background: var(--cs-qb-bg); }
+  .cs-wrap .cs-posf button[data-pos="RB"][aria-pressed="true"] { border-color: var(--cs-rb); color: var(--cs-rb); background: var(--cs-rb-bg); }
+  .cs-wrap .cs-posf button[data-pos="WR"][aria-pressed="true"] { border-color: var(--cs-wr); color: var(--cs-wr); background: var(--cs-wr-bg); }
+  .cs-wrap .cs-posf button[data-pos="TE"][aria-pressed="true"] { border-color: var(--cs-te); color: var(--cs-te); background: var(--cs-te-bg); }
   .cs-pick { font-family: var(--cs-mono); font-weight: 800; font-size: 13px; text-align: center; }
   .cs-pick small { display: block; font-size: 9px; font-weight: 600; color: var(--cs-ink-faint); letter-spacing: .06em; }
   .cs-dtiers { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
