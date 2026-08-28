@@ -110,7 +110,7 @@ def test_market_column_is_conditionally_omitted_from_table_and_export():
     assert "min-width: 910px" in body
     assert ".cs-vor-col, .cs-value-col { display: none; }" not in body
     assert ".cs-market-col { display: none; }" not in body
-    assert "sortTh('market', 'Market vs ADP', 'cs-market-col'" in script
+    assert "sortTh('market', 'Market vs ADP', 'cs-advanced-col cs-market-col'" in script
     assert 'class="cs-vor-col"' in script
     assert 'class="cs-value-col"' in script
     assert "var SHOW_MARKET_VS_ADP = false" in script

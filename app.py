@@ -3585,7 +3585,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 "  <div class='nav-search-inner'>"
                 "    " + _nav_icon("search", cls="nav-search-icon") +
                 "    <input type='text' id='navPlayerSearch' class='nav-search-input'"
-                "           placeholder='Search players…' autocomplete='off' spellcheck='false' aria-label='Search players'/>"
+                "           placeholder='Search players or jump to…' autocomplete='off' spellcheck='false' aria-label='Search players and tools'/>"
                 "    <button type='button' class='nav-search-clear' id='navSearchClear' aria-label='Clear search'>×</button>"
                 "  </div>"
                 "  <div class='nav-search-dropdown' id='navSearchDropdown'></div>"
@@ -3903,7 +3903,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "  <div class='nav-search-inner'>"
             "    " + _nav_icon("search", cls="nav-search-icon") +
             "    <input type='text' id='navPlayerSearch' class='nav-search-input'"
-            "           placeholder='Search players…' autocomplete='off' spellcheck='false' aria-label='Search players'/>"
+            "           placeholder='Search players or jump to…' autocomplete='off' spellcheck='false' aria-label='Search players and tools'/>"
             "    <button type='button' class='nav-search-clear' id='navSearchClear' aria-label='Clear search'>×</button>"
             "  </div>"
             "  <div class='nav-search-dropdown' id='navSearchDropdown'></div>"
@@ -6662,13 +6662,19 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
             who = "Sellers to call" if verdict == "buy" else "Buyers to call"
             lines.append(f"{who}: {', '.join(html.escape(p) for p in partners)}.")
 
+        platform = ctx.get("platform", "sleeper")
+        season = ctx.get("current_season") or ctx.get("season")
+        league_id = ctx.get("league_id", "")
+        _trade_url = url_for(
+            "trade.page_trade", platform=platform, season=season, league_id=league_id,
+        ) + "?tab=suggestions"
         items = "".join(f"<li>{line}</li>" for line in lines)
         urgent_cls = " tw-urgent" if vw["urgent"] and verdict != "hold" else ""
         return f"""
         <section class="os-card trade-window-card tw-{verdict}{urgent_cls}">
           <div class="lineup-alert-head">
             <span class="lineup-alert-title">Trade window: {titles[verdict]}</span>
-            <a class="os-section-link" href="/trade?tab=suggestions">Trade suggestions &rarr;</a>
+            <a class="os-section-link" href="{html.escape(_trade_url)}">Find trade targets &rarr;</a>
           </div>
           <ul class="lineup-alert-list">{items}</ul>
         </section>"""

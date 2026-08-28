@@ -90,7 +90,10 @@
         pickSlot: 0,           // 1-based snake seat; 0 = no projected-pick lines
         sortKey: 'vor',        // Big Board display sort; model order stays VOR
         sortDir: -1,           // -1 desc, +1 asc. Default = VOR descending.
+        showAdvanced: false,
     };
+    try { state.showAdvanced = localStorage.getItem('csShowAdvanced') === '1'; } catch (e) {}
+    if (state.showAdvanced) document.body.classList.add('cs-show-advanced');
     var teams = Number(cfg.numTeams) || 12;
     var allPlayers = [];
     var players = [];
@@ -1197,7 +1200,7 @@
             + '. Open for bucket hit rates. Descriptive only - not a ranking input.';
         var cls = histPctClass(pct);
         var body = pct == null ? '-' : (pct + '%');
-        return '<td class="cs-hist-col"><span class="cs-hist-cell">'
+        return '<td class="cs-hist-col cs-advanced-col"><span class="cs-hist-cell">'
             + '<span class="cs-val ' + cls + '" title="' + esc(tip) + '">' + body + '</span>'
             + '<button type="button" class="cs-hist-btn" data-hist-id="' + esc(x.id) + '" data-hist-name="' + esc(x.name) + '" data-hist-adp="' + (x.adp != null && isFinite(Number(x.adp)) ? String(x.adp) : '') + '" data-hist-pos="' + esc(x.pos || '') + '" data-hist-proj="' + (x.projectedPpg != null && isFinite(Number(x.projectedPpg)) ? String(x.projectedPpg) : '') + '" data-hist-proj-rk="' + (h.proj_rk != null ? String(h.proj_rk) : '') + '" data-hist-adp-rk="' + (h.adp_rk != null ? String(h.adp_rk) : '') + '" title="This player\'s historical chance">i</button>'
             + '</span></td>';
@@ -1459,13 +1462,13 @@
             + sortTh('rk', 'Rk', 'cs-rk', 'VOR board rank. Click to restore the default order.')
             + sortTh('name', 'Player', 'l cs-player', 'Sort by player name')
             + sortTh('pos', 'Pos', '', 'Sort by position, then positional rank')
-            + sortTh('vor', 'VOR', 'cs-vor-col', 'Value over replacement — the model ranking')
-            + sortTh('projectedPpg', 'Proj PPG', '', 'Projected fantasy points per game')
-            + sortTh(col5Key, col5, '', dyn ? 'Sort by age' : 'Sort by ADP')
-            + sortTh(col6Key, col6, 'cs-value-col', dyn ? 'Sort by career window (age)' : 'Sort by value vs ADP')
-            + sortTh('scheduleRank', 'Sched Rk', '', 'Full fantasy-season strength of schedule rank (1 = easiest)')
-            + (showHist(dyn) ? sortTh('hist', 'Hist', 'cs-hist-col', 'Historical top-12 chance given this career and situation. Open for the full mix. Not a ranking input.') : '')
-            + (showMarket(dyn) ? sortTh('market', 'Market vs ADP', 'cs-market-col', 'Sort by market vs ADP') : '')
+            + sortTh('vor', 'VOR', 'cs-vor-col', 'VALUE: Value over replacement — the model ranking')
+            + sortTh('projectedPpg', 'Proj PPG', 'cs-advanced-col', 'PROJECTION: Projected fantasy points per game')
+            + sortTh(col5Key, col5, '', dyn ? 'Sort by age' : 'MARKET: Sort by ADP')
+            + sortTh(col6Key, col6, 'cs-value-col', dyn ? 'Sort by career window (age)' : 'VALUE: Sort by value vs ADP')
+            + sortTh('scheduleRank', 'Sched Rk', 'cs-advanced-col', 'PROJECTION: Full fantasy-season strength of schedule rank (1 = easiest)')
+            + (showHist(dyn) ? sortTh('hist', 'Hist', 'cs-advanced-col cs-hist-col', 'HISTORY: Historical top-12 chance given this career and situation. Not a ranking input.') : '')
+            + (showMarket(dyn) ? sortTh('market', 'Market vs ADP', 'cs-advanced-col cs-market-col', 'MARKET: Where market signals imply this player should be drafted vs ADP') : '')
             + editTh + '</tr>';
         var span = (editable ? 9 : 8) + (showMarket(dyn) ? 1 : 0) + (showHist(dyn) ? 1 : 0);
         var lastT = null, html = '', shown = 0;
@@ -1484,14 +1487,14 @@
             var c6 = dyn ? '<td class="cs-value-col">' + winChip(x.age, x.pos) + '</td>' : '<td class="cs-value-col">' + valChip(x.value) + '</td>';
             var market = '';
             if (showMarket(dyn)) {
-                if (x.marketVsAdp == null) market = '<td class="cs-num cs-market-col" title="Not enough independent market data yet.">&ndash;</td>';
+                if (x.marketVsAdp == null) market = '<td class="cs-num cs-market-col cs-advanced-col" title="Not enough independent market data yet.">&ndash;</td>';
                 else {
                     var mcls = x.marketVsAdp > 0 ? 'g' : (x.marketVsAdp < 0 ? 'b' : 'n');
                     var basisLabel = x.marketBasis === 'season_props' ? 'season-long player markets' : x.marketBasis === 'rolling_market' ? 'multiple recent weekly player markets' : x.marketBasis === 'team_environment' ? 'team betting environment' : 'a blend of available market signals';
                     var confLabel = x.marketConfidenceLabel || (x.marketConfidence >= .7 ? 'High' : (x.marketConfidence >= .5 ? 'Moderate' : 'Low'));
                     var direction = x.marketVsAdp > 0 ? 'earlier' : (x.marketVsAdp < 0 ? 'later' : 'near its current ADP');
                     var mtip = 'Market context implies this player should be drafted ' + (x.marketVsAdp === 0 ? direction : 'about ' + Math.abs(Math.round(x.marketVsAdp)) + ' picks ' + direction) + '. Expected Pick ' + Math.round(x.marketExpectedAdp) + '; current ADP ' + (x.adp != null ? Number(x.adp).toFixed(1) : '—') + '. Confidence: ' + confLabel + ' (' + Math.round((x.marketConfidence || 0) * 100) + '%). Based primarily on ' + basisLabel + '.';
-                    market = '<td class="cs-market-col"><span class="cs-val ' + mcls + '" title="' + esc(mtip) + '">' + (x.marketVsAdp > 0 ? '+' : '') + Math.round(x.marketVsAdp) + '</span></td>';
+                    market = '<td class="cs-market-col cs-advanced-col"><span class="cs-val ' + mcls + '" title="' + esc(mtip) + '">' + (x.marketVsAdp > 0 ? '+' : '') + Math.round(x.marketVsAdp) + '</span></td>';
                 }
             }
             var hist = histCell(x, dyn);
@@ -1547,7 +1550,7 @@
                 '</span>' +
                 '</span>' +
                 '</td>' +
-                '<td class="cs-num">' +
+                '<td class="cs-num cs-advanced-col">' +
                 (
                     x.projectedPpg != null
                         ? Number(x.projectedPpg).toFixed(1)
@@ -1556,7 +1559,7 @@
                 '</td>' +
                 c5 +
                 c6 +
-                '<td class="cs-num"' +
+                '<td class="cs-num cs-advanced-col"' +
                 ' title="Full fantasy-season strength of schedule; 1 is easiest">' +
                 (
                     x.scheduleRank
@@ -3405,6 +3408,20 @@
                 b.classList.toggle('filteron', state.filter);
             });
         });
+        var csAdv = $('csAdvancedBtn');
+        if (csAdv) {
+            csAdv.setAttribute('aria-pressed', String(state.showAdvanced));
+            csAdv.classList.toggle('active', state.showAdvanced);
+            csAdv.textContent = state.showAdvanced ? 'Fewer columns' : 'More columns';
+            csAdv.addEventListener('click', function () {
+                state.showAdvanced = !state.showAdvanced;
+                try { localStorage.setItem('csShowAdvanced', state.showAdvanced ? '1' : '0'); } catch (e) {}
+                document.body.classList.toggle('cs-show-advanced', state.showAdvanced);
+                csAdv.setAttribute('aria-pressed', String(state.showAdvanced));
+                csAdv.classList.toggle('active', state.showAdvanced);
+                csAdv.textContent = state.showAdvanced ? 'Fewer columns' : 'More columns';
+            });
+        }
         var hd = $('csHideDrafted');
         if (hd) hd.addEventListener('click', function () {
             state.hideDrafted = !state.hideDrafted;

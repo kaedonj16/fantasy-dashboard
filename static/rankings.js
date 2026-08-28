@@ -60,6 +60,24 @@ var prAdpSource = 'auto';       // currently selected ADP source ('auto' = serve
 var prAdpReloading = false;     // guards concurrent source re-fetches
 var prAdpColumns = [];          // [{value,label}] per-source ADP columns for the sort-by-ADP view
 var prAdpSortSource = '';       // which source column the ADP view is sorted by ('' = default)
+var prShowAdvanced = false;
+
+(function prInitAdvancedToggle() {
+  try { prShowAdvanced = localStorage.getItem('prShowAdvanced') === '1'; } catch (e) {}
+  if (prShowAdvanced) document.body.classList.add('pr-show-advanced');
+})();
+
+function prToggleAdvanced() {
+  prShowAdvanced = !prShowAdvanced;
+  try { localStorage.setItem('prShowAdvanced', prShowAdvanced ? '1' : '0'); } catch (e) {}
+  document.body.classList.toggle('pr-show-advanced', prShowAdvanced);
+  var btn = document.getElementById('prAdvancedToggle');
+  if (btn) {
+    btn.classList.toggle('active', prShowAdvanced);
+    btn.textContent = prShowAdvanced ? 'Fewer columns' : 'More columns';
+  }
+  prRender();
+}
 var PR_ADP_COL_W = 82;            // compact source columns; the table scrolls horizontally when every source is visible
 var PR_ADP_COL_W_MOBILE = 76;     // touch-friendly source cols — mobile scrolls instead of squeezing to fit
 var PR_ADP_RANK_W_MOBILE = 40;    // sticky # column width on mobile (must match CSS left offset)
@@ -662,6 +680,12 @@ function prRender() {
   const tableScroll = document.getElementById('prTableScroll');
   if (tableScroll) tableScroll.classList.toggle('pr-adp-scroll', adpView);
   prSetupAdpHeader(adpView, adpCols, adpActive, ADP_GRID, adpExtra);
+  const _prFullGrid = '54px 42px 1fr 52px 46px 46px 60px';
+  const _prCompactGrid = '54px 1fr 60px';
+  const header = document.getElementById('prTableHeader');
+  if (!adpView && header) {
+    header.style.gridTemplateColumns = prShowAdvanced ? _prFullGrid : _prCompactGrid;
+  }
   if (!adpView) {
     // On mobile (≤768px) the Age column is hidden, so switch the sort column
     // to show whatever is being sorted. On desktop all columns are visible.
@@ -785,7 +809,6 @@ function prRender() {
   const list   = document.getElementById('prList');
   const empty  = document.getElementById('prEmpty');
   const count  = document.getElementById('prCount');
-  const header = document.getElementById('prTableHeader');
 
   if (players.length === 0) {
     list.innerHTML = '';
@@ -952,13 +975,14 @@ function prRender() {
             '<span class="pr-adp-num">' + (v != null ? v.toFixed(1) : '–') + arrow + '</span></span>';
         }).join('');
     } else {
+      row.style.gridTemplateColumns = prShowAdvanced ? _prFullGrid : _prCompactGrid;
       row.innerHTML =
         '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '–') + rankDeltaHTML + '</span>' +
-        '<span class="pr-arrows">' + arrowCell + '</span>' +
+        '<span class="pr-arrows pr-advanced-col">' + arrowCell + '</span>' +
         '<span class="pr-name' + (isPick ? '' : ' player-clickable') + '">'  + (p.name || 'Unknown') + badges + '</span>' +
-        '<span class="pr-pos-cell">' + posRank + '</span>' +
-        '<span class="pr-age">'   + (p.position === 'PICK' ? '–' : age) + '</span>' +
-        '<span class="pr-team">'  + (p.team || '–') + '</span>' +
+        '<span class="pr-pos-cell pr-advanced-col">' + posRank + '</span>' +
+        '<span class="pr-age pr-advanced-col">'   + (p.position === 'PICK' ? '–' : age) + '</span>' +
+        '<span class="pr-team pr-advanced-col">'  + (p.team || '–') + '</span>' +
         '<span class="pr-value">' + sortDisplayHTML + '</span>';
 
       if (sparkData && sparkData.length >= 2) {
@@ -1262,6 +1286,13 @@ Promise.all([
     _prLoadEl.setAttribute('aria-busy', 'false');
   }
   prLoaded = true;
+  (function () {
+    var btn = document.getElementById('prAdvancedToggle');
+    if (btn && prShowAdvanced) {
+      btn.classList.add('active');
+      btn.textContent = 'Fewer columns';
+    }
+  })();
   prRender();
   // Lazy-load sparklines - re-render with sparkline data once ready
   fetch('/api/sparklines?v=4').then(r => r.json()).then(function(data) {
