@@ -107,7 +107,6 @@ def test_offseason_jump_nav_targets_match_tab_panel_ids():
         "os-jump-actions",
         "os-jump-report",
         "os-jump-roster",
-        "os-jump-waivers",
         "os-jump-teams",
     ]
     for panel_id in jumps:
@@ -128,7 +127,6 @@ def test_inseason_jump_nav_targets_match_tab_panel_ids():
         "os-jump-actions",
         "os-jump-report",
         "os-jump-standings",
-        "os-jump-waivers",
         "os-jump-teams",
     ]
     for panel_id in jumps:

@@ -8184,6 +8184,72 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
     return "".join(waiver_html)
 
 
+def _render_do_next_waiver_card(
+    ctx: dict,
+    model_value_table: list,
+    *,
+    platform,
+    season,
+    league_id,
+    draft_prep_hrefs: list[tuple[str, str]] | None = None,
+    preview_limit: int = 2,
+) -> str:
+    """Merged dashboard waiver card: preview rows, optional show-all, draft prep links."""
+    full_rows = _build_waiver_targets_rows(ctx, model_value_table, limit=10)
+    if not full_rows and not draft_prep_hrefs:
+        return ""
+
+    _wv_url = url_for(
+        "league_pages.page_waivers",
+        platform=platform,
+        season=season,
+        league_id=league_id,
+    )
+    row_count = full_rows.count('class="os-waiver-row"') if full_rows else 0
+    show_expand = row_count > preview_limit
+    collapsed_cls = " os-do-next-collapsed" if show_expand else ""
+
+    expand_btn = ""
+    if show_expand:
+        expand_btn = (
+            '<button type="button" class="os-waiver-expand-toggle" '
+            'aria-expanded="false" aria-controls="do-next-waiver-body">Show all</button>'
+        )
+
+    if draft_prep_hrefs:
+        subtitle = "Waiver pickups and draft prep"
+    else:
+        subtitle = "Smart pickups based on value + trend + breakout potential"
+
+    draft_links_html = ""
+    if draft_prep_hrefs:
+        links = " · ".join(
+            f'<a class="os-do-next-link" href="{html.escape(href)}">{html.escape(label)}</a>'
+            for label, href in draft_prep_hrefs
+        )
+        draft_links_html = f'<div class="os-do-next-links">{links}</div>'
+
+    waiver_body = full_rows or '<p class="os-do-next-empty">No waiver values available yet.</p>'
+
+    return f"""
+        <section class="os-card os-action-card os-do-next-card{collapsed_cls}">
+          <div class="os-section-head">
+            <div class="os-section-head-content">
+              <h2 class="os-section-title">Do this next</h2>
+              <div class="os-section-subtitle">{subtitle}</div>
+            </div>
+            <div class="os-section-head-actions">
+              <a class="os-section-link" href="{html.escape(_wv_url)}">View waivers &rarr;</a>
+              {expand_btn}
+            </div>
+          </div>
+          <div class="os-waiver-list" id="do-next-waiver-body">
+            {waiver_body}
+          </div>
+          {draft_links_html}
+        </section>"""
+
+
 _WEEK1_KICKOFF_CACHE: dict = {}  # season -> (fetched_at, ts_ms | None)
 _WEEK1_KICKOFF_TTL = 6 * 3600  # 6h — the schedule is static once published
 

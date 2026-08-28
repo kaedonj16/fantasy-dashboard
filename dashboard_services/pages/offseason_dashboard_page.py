@@ -10,7 +10,7 @@ from typing import Dict
 def build_offseason_dashboard_body(ctx: dict) -> str:
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
         EASTERN,
-        _build_waiver_targets_rows,
+        _render_do_next_waiver_card,
         _league_is_redraft,
         _nfl_regular_season_kickoff_ms,
         _playoff_sim_cached,
@@ -312,41 +312,26 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
               <div class="os-stat-sub"><a class="os-stat-sub-link" href="{_breakdown_href}">View team breakdown &rarr;</a></div>
             </div>"""
 
-    # Waiver card rows are shared with the in-season Season Hub.
-    top_waiver_assets_html = _build_waiver_targets_rows(ctx, model_value_table)
-    _wv_preview_rows = _build_waiver_targets_rows(ctx, model_value_table, limit=3)
-    _wv_url = url_for("league_pages.page_waivers", platform=platform, season=season, league_id=ctx.get("league_id"))
     _draft_url = url_for("tool_pages.page_draft_room", platform=platform, season=season, league_id=ctx.get("league_id"))
     _trade_url = url_for("trade.page_trade", platform=platform, season=season, league_id=ctx.get("league_id"))
     _cheat_url = url_for("tool_pages.page_cheat_sheet", platform=platform, season=season, league_id=ctx.get("league_id"))
 
-    _action_waiver_html = ""
-    if _wv_preview_rows:
-        _action_waiver_html = f"""
-        <section class="os-card os-action-card">
-          <div class="lineup-alert-head">
-            <span class="lineup-alert-title">Best waiver available</span>
-            <a class="os-section-link" href="{html.escape(_wv_url)}">View waivers &rarr;</a>
-          </div>
-          <div class="os-waiver-list os-waiver-preview">{_wv_preview_rows}</div>
-        </section>"""
-
-    _draft_action_html = f"""
-        <section class="os-card os-action-card os-action-links">
-          <div class="lineup-alert-head">
-            <span class="lineup-alert-title">Draft prep</span>
-          </div>
-          <div class="os-action-link-row">
-            <a class="os-section-link" href="{html.escape(_draft_url)}">Draft Room &rarr;</a>
-            <a class="os-section-link" href="{html.escape(_cheat_url)}">Cheat Sheet &rarr;</a>
-            <a class="os-section-link" href="{html.escape(_trade_url)}?tab=suggestions">Trade targets &rarr;</a>
-          </div>
-        </section>"""
+    _do_next_html = _render_do_next_waiver_card(
+        ctx,
+        model_value_table,
+        platform=platform,
+        season=season,
+        league_id=ctx.get("league_id"),
+        draft_prep_hrefs=[
+            ("Draft Room", _draft_url),
+            ("Cheat Sheet", _cheat_url),
+            ("Trade targets", f"{_trade_url}?tab=suggestions"),
+        ],
+    )
 
     _action_queue_html = f"""
         <div class="os-action-queue os-tab-panel os-tab-active" id="os-jump-actions">
-          {_action_waiver_html}
-          {_draft_action_html}
+          {_do_next_html}
         </div>"""
 
     gm_card_html = ""
@@ -584,20 +569,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
           {season_review_html}
         </div>
 
-        <section class="os-card os-col-fill os-tab-panel" id="os-jump-waivers">
-          <div class="os-section-head">
-            <div class="os-section-head-content">
-              {_section_title_link("Waiver Wire Targets", "league_pages.page_waivers", platform, season, ctx.get("league_id"))}
-              <div class="os-section-subtitle">Smart pickups based on value + trend + breakout potential</div>
-            </div>
-            <div class="os-section-head-actions">
-              <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="waiver-assets-body">▼</button>
-            </div>
-          </div>
-          <div class="os-waiver-list card-collapsible-body" id="waiver-assets-body">
-            {top_waiver_assets_html or "<p>No waiver values available yet.</p>"}
-          </div>
-        </section>
       </main>
 
       <aside class="os-right-col os-tab-panel" id="os-jump-teams">
