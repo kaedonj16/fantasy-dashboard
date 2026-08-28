@@ -47,6 +47,21 @@
     var HIST_STRONG_PCT = 25;
     var HIST_TIER_SHORT = { top_5: 'top-5', top_12: 'top-12', top_24: 'top-24' };
 
+    function setTrendsNavOffset() {
+        var nav = document.querySelector('.top-nav');
+        var h = nav ? Math.round(nav.getBoundingClientRect().height) : 0;
+        document.documentElement.style.setProperty('--cs-nav-offset', h + 'px');
+    }
+    setTrendsNavOffset();
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setTrendsNavOffset);
+    }
+    window.addEventListener('resize', setTrendsNavOffset);
+    if (typeof ResizeObserver === 'function') {
+        var navEl = document.querySelector('.top-nav');
+        if (navEl) new ResizeObserver(setTrendsNavOffset).observe(navEl);
+    }
+
     var state = {
         mode: cfg.mode === 'dynasty' ? 'dynasty' : 'redraft',
         sf: !!cfg.isSuperflex,
@@ -2151,7 +2166,10 @@
         if (legend) legend.style.display = hideBoardChrome ? 'none' : '';
         var fb = $('csFilterbar');
         if (fb) fb.style.display = hideBoardChrome ? 'none' : '';
-        if (tab === 'trends') loadTrends();
+        if (tab === 'trends') {
+            setTrendsNavOffset();
+            loadTrends();
+        }
     }
 
     function syncHistSurfaces() {

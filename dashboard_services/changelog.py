@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-08-28",
         "tag": "fix",
+        "text": "Draft Cheat Sheet Trends: the matching-player dock sits below the site nav instead of sliding under it.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
+        "tag": "fix",
         "text": "Draft Cheat Sheet Trends: matching board players sit in a sticky dock above the tables, so tapping a bucket lists names in place instead of rebuilding the page. Browsing stays free; the full matching list is still the existing Pro scout preview.",
         "link": "/draft/cheat-sheet"
     },

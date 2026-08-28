@@ -381,6 +381,7 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert ".cs-trends-tiers" in body
     assert ".cs-trends-scout" in body
     assert ".cs-trends-sticky" in body
+    assert "top: var(--cs-nav-offset, 0px)" in body
     assert ".cs-trends-conf" in body
     assert "Descriptive — not a ranking input" not in body
     assert "cs-trends-honesty" not in body
@@ -404,6 +405,9 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert sticky_at >= 0 and scout_at > sticky_at and grid_at > scout_at
     assert "function paintTrendsSelection" in script
     assert "function bindTrendsDock" in script
+    assert "function setTrendsNavOffset" in script
+    assert "--cs-nav-offset" in script
+    assert "querySelector('.top-nav')" in script
     assert "renderTrends({ keepScroll: true })" not in script
     scout_css = body.split(".cs-trends-scout-list")[1][:280]
     assert "grid-template-columns: 1fr 1fr" in scout_css
@@ -506,6 +510,15 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "Pro" in dock["text"]
     assert "—" not in dock["text"]
     assert "–" not in dock["text"]
+    nav_clear = next(
+        entry for entry in CHANGELOG
+        if "site nav" in entry.get("text", "").lower()
+        and "dock" in entry.get("text", "").lower()
+    )
+    assert nav_clear["tag"] == "fix"
+    assert nav_clear["link"] == "/draft/cheat-sheet"
+    assert "—" not in nav_clear["text"]
+    assert "–" not in nav_clear["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():
