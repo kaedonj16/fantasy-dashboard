@@ -386,7 +386,7 @@ def test_board_modules_stay_pure():
     assert "def _league_players_response" in app_py
     assert "stamp_historical_on_payload" in app_py
     assert "historical_api_bp" in app_py
-    assert "return _league_players_response(payload)" in app_py
+    assert "return _league_players_response" in app_py
 
 
 def test_deep_panel_route_serves_json_leaves():

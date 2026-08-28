@@ -455,6 +455,10 @@ def load_week_schedule(season: int, w: int):
     return schedule
 
 
+_WEEK_PROJ_MEMO: dict = {}
+_WEEK_PROJ_MEMO_LOCK = _threading.Lock()
+
+
 def load_week_projection(season: int, w: int, force_refresh: bool = False) -> Optional[Dict]:
     """
     Load projections cache for (season, week). Returns multi-variant dict or {}.
@@ -471,12 +475,27 @@ def load_week_projection(season: int, w: int, force_refresh: bool = False) -> Op
         return {}
 
     try:
+        mtime = proj_path.stat().st_mtime
+    except OSError:
+        mtime = None
+    memo_key = (int(season), int(w), mtime)
+    if not force_refresh:
+        cached = _WEEK_PROJ_MEMO.get(memo_key)
+        if cached is not None:
+            return cached
+
+    try:
         with open(proj_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return data if isinstance(data, dict) else {}
+        data = data if isinstance(data, dict) else {}
     except Exception as e:
         print(f"[projections] load failed for {season} w{w}: {e}")
         return {}
+    with _WEEK_PROJ_MEMO_LOCK:
+        if len(_WEEK_PROJ_MEMO) > 48:
+            _WEEK_PROJ_MEMO.clear()
+        _WEEK_PROJ_MEMO[memo_key] = data
+    return data
 
 
 def save_week_projections(season: int, week: int, proj_map: dict) -> None:

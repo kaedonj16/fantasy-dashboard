@@ -65,7 +65,7 @@ def test_league_players_stamps_sf_vorp_and_sf_market():
     assert 'starters={"QB": 2.0}' in overlay
     assert '_player["sf_vorp"]' in overlay
 
-    route = _slice(APP_PY, "def api_league_players():", "def api_teams():")
+    route = _slice(APP_PY, "def _overlay_league_players_payload", "def api_teams():")
     assert 'request.args.get("league_type"' in route
     assert 'request.args.get("scoring_type"' in route
     assert "scoring_type=_mi_scoring" in route

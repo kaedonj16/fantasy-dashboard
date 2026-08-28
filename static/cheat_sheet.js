@@ -1710,7 +1710,7 @@
         playerAbort = typeof AbortController !== 'undefined' ? new AbortController() : null;
         loading = true;
         loadError = '';
-        var params = [];
+        var params = ['view=board'];
         params.push('league_type=' + (state.sf ? 'sf' : '1qb'));
         // Always send league context so Yahoo viewers get the same rebuilt
         // consensus column Player Rankings shows. Do not pass adp_source: the
@@ -1719,11 +1719,25 @@
         // onto avg_pick and rounding it.
         params = params.concat(leagueParams());
         var url = '/api/league-players' + (params.length ? ('?' + params.join('&')) : '');
-        return fetch(url, {cache: 'no-store', signal: playerAbort ? playerAbort.signal : undefined})
-            .then(function (r) {
-                if (!r.ok) throw new Error('Players request failed (' + r.status + ')');
-                return r.json();
-            })
+        var pending = window.__cheatPlayersP;
+        var req;
+        if (pending && pending.url === url) {
+            window.__cheatPlayersP = null;
+            req = pending.catch(function () {
+                return fetch(url, {cache: 'no-store', signal: playerAbort ? playerAbort.signal : undefined})
+                    .then(function (r) {
+                        if (!r.ok) throw new Error('Players request failed (' + r.status + ')');
+                        return r.json();
+                    });
+            });
+        } else {
+            req = fetch(url, {cache: 'no-store', signal: playerAbort ? playerAbort.signal : undefined})
+                .then(function (r) {
+                    if (!r.ok) throw new Error('Players request failed (' + r.status + ')');
+                    return r.json();
+                });
+        }
+        return req
             .then(function (resp) {
                 if (requestId !== playerRequest) return;
                 var raw = Array.isArray(resp) ? resp : (resp.players || []);

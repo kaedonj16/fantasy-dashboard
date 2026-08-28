@@ -170,6 +170,8 @@ def test_cheat_sheet_consensus_adp_matches_rankings_to_one_decimal():
     assert "x.adp != null ? Math.round(x.adp) : ''" not in script
     assert "adp_source=' + encodeURIComponent(state.adpSource)" not in script
     assert "params = params.concat(leagueParams());" in script
+    assert "params = ['view=board']" in script
+    assert "window.__cheatPlayersP" in script
     # Rankings Consensus column is the same 1-decimal adp_by_source field.
     assert "prAdpSourceVal(p, c.value)" in rankings
     assert "(v != null ? v.toFixed(1) : '–')" in rankings

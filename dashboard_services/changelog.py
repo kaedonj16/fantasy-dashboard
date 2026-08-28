@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-08-28",
+        "tag": "update",
+        "text": "Redraft Cheat Sheet: the board starts loading immediately and uses a smaller player payload, so the first paint is faster.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
         "tag": "fix",
         "text": "Dashboard: leagues that have not drafted yet replace the empty roster sidebar with a Draft Cheat Sheet preview and a link to the full board.",
         "link": "/draft/cheat-sheet"
