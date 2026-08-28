@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, request
 from dashboard_services.historical.aggregates_store import aggregates_version, load_profile_aggregates
 from dashboard_services.historical.board import build_deep_panel, build_historical_trends
 from dashboard_services.historical.cohorts import evaluate_cohort
+from dashboard_services.historical.filters import scout_matching_players
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,12 @@ def api_historical_cohort():
             tier=tier,
             data_version=aggregates_version(),
         )
+        # Scout matches use the same Python predicates as the cohort index.
+        # board_features is request-scoped and must not enter the cohort cache.
+        board_features = body.get("board_features")
+        if isinstance(board_features, dict) and filters:
+            payload = dict(payload)
+            payload["scout_matches"] = scout_matching_players(board_features, filters)
         return jsonify(payload)
     except Exception:
         logger.exception("[historical-cohort] failed")

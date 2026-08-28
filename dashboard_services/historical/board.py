@@ -494,6 +494,9 @@ def compact_signal(full: Mapping[str, Any]) -> dict:
     p_vs_h = comparison.get("projection_vs_history") if isinstance(comparison.get("projection_vs_history"), Mapping) else {}
     p_hit = history.get("p_top_12")
     mkt_p = market.get("p_top_12")
+    # Signed percentage-point edge vs the ADP-bucket rate. Board UI leads with
+    # this disagreement signal; absolute P(hit) stays in the deep panel.
+    h_vs_m_pts = display_percent(h_vs_m.get("delta"))
     return {
         "p_hit": p_hit,
         "p_hit_pct": display_percent(p_hit),
@@ -504,6 +507,7 @@ def compact_signal(full: Mapping[str, Any]) -> dict:
         "mkt_bucket": market.get("adp_bucket"),
         "mkt_sentence": format_market_sentence(market),
         "h_vs_m": h_vs_m.get("label") or "unknown",
+        "h_vs_m_pts": h_vs_m_pts,
         "proj_rk": projection.get("implied_positional_rank"),
         "adp_rk": p_vs_m.get("adp_positional_rank"),
         "p_vs_m": p_vs_m.get("label") or "unknown",
@@ -543,6 +547,11 @@ def attach_historical_signals(
             compact_out.append({})
             continue
         compact = compact_signal(compared[qi])
+        # Stamp Scout features from the same merged preseason query used for
+        # History P so JS never re-buckets career stage / capital / age.
+        feats = extract_trend_features(queries[qi])
+        if feats:
+            compact["trend_feats"] = feats
         if isinstance(row, dict):
             row["historical"] = compact
         compact_out.append(compact)
@@ -2024,7 +2033,7 @@ def build_historical_trends(aggregates: Mapping[str, Any]) -> dict:
         "not_in_ranking": True,
         "not_in_pick_score": True,
         "era": era,
-        "headline": "Historical finish rates by bucket. Not a ranking score.",
+        "headline": "Historical finish rates by bucket.",
         "note": (
             f"Each table is one slice from {era}. Select buckets to list current "
             "board players who match (AND across different tables, OR within one). "

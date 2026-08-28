@@ -428,6 +428,24 @@ def test_scout_matching_parity_with_historical_matching():
     assert live_feats["target_share"] == hist_feats["target_share"]
 
 
+def test_scout_matching_players_uses_shared_predicates():
+    from dashboard_services.historical.filters import scout_matching_players
+
+    feats = {
+        "hit": {"position": "WR", "age_bucket": "23-24", "draft_capital": "day_2"},
+        "miss": {"position": "WR", "age_bucket": "27-28", "draft_capital": "day_2"},
+    }
+    filters = [
+        {**AGE_23, "label": "Age 23-24"},
+        {**DAY_2, "label": "Day 2"},
+    ]
+    out = scout_matching_players(feats, filters)
+    assert [row["id"] for row in out] == ["hit"]
+    assert out[0]["why"] == ["Age 23-24", "Day 2"]
+    assert scout_matching_players({}, filters) == []
+    assert scout_matching_players(feats, []) == []
+
+
 def test_missing_feature_stays_unknown_and_does_not_match():
     feats = extract_trend_features(_obs_row(previous_season_target_share=None))
     assert "target_share" not in feats
@@ -669,6 +687,8 @@ def test_cohort_modules_stay_pure_and_off_ranking():
     bp = (ROOT / "routes" / "historical_api_bp.py").read_text(encoding="utf-8")
     assert "/api/historical-cohort" in bp
     assert "evaluate_cohort" in bp
+    assert "scout_matching_players" in bp
+    assert "board_features" in bp
     assert "read_parquet" not in bp
 
 
