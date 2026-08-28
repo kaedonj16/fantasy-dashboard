@@ -20,6 +20,7 @@ def build_trade_calculator_body(
         platform: Optional[str] = None,
         te_premium: float = 0.0,
         seo_footer: str = "",
+        scoring_type: Optional[str] = None,
 ) -> str:
     league_val = league_id or ""
     season_val = season if season is not None else ""
@@ -171,12 +172,19 @@ def build_trade_calculator_body(
                 </select>
               </div>"""
 
-    # Scoring type dropdown: Dynasty (default) vs Redraft
-    scoring_type_block = """
+    # Scoring type dropdown: Dynasty (default) vs Redraft. When the league is a
+    # Sleeper redraft/keeper league, pre-select redraft so the analyst sees the
+    # right format instead of dynasty pick-based counters.
+    scoring_type_val = (scoring_type or "dynasty").strip().lower()
+    if scoring_type_val not in ("dynasty", "redraft"):
+        scoring_type_val = "dynasty"
+    _st_dyn = " selected" if scoring_type_val == "dynasty" else ""
+    _st_rd = " selected" if scoring_type_val == "redraft" else ""
+    scoring_type_block = f"""
               <div class="otc-ctrl-group otc-toggle-divider" id="scoringTypeControl">
                 <select class="otc-ctrl-select" id="scoringTypeSelect" name="scoringType">
-                  <option value="dynasty" selected>Dynasty</option>
-                  <option value="redraft">Redraft</option>
+                  <option value="dynasty"{_st_dyn}>Dynasty</option>
+                  <option value="redraft"{_st_rd}>Redraft</option>
                 </select>
               </div>"""
 

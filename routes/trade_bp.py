@@ -237,6 +237,7 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
     from app import (
         build_trade_calculator_body, get_league_ctx_from_cache,
         get_nfl_state, get_viewer_session_for_league, render_page,
+        _league_is_redraft,
     )
     user_id = session.get("viewer_username") or None
     # Redirect to league-specific URL when user is logged in but hit the public /trade path
@@ -263,13 +264,15 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
         has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper", season)
         _rp = ctx.get("roster_positions") or []
         _is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp)
+        scoring_type = "redraft" if _league_is_redraft(ctx) else "dynasty"
         body = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
                                            scoring_format=scoring_format,
                                            viewer_roster_id=viewer_roster_id,
                                            has_premium=has_premium,
                                            is_superflex=_is_sf,
                                            te_premium=te_premium,
-                                           platform=platform)
+                                           platform=platform,
+                                           scoring_type=scoring_type)
     else:
         state = get_nfl_state() or {}
         current_season = int(state.get("season") or datetime.now().year)

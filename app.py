@@ -5365,12 +5365,14 @@ def get_trade_ai_analysis(
         side_a: dict,
         side_b: dict,
         opponent_roster_id: str = "",
+        scoring_type: str = "dynasty",
 ) -> str:
     """Get AI analysis for a trade using the new generator module"""
     from dashboard_services.ai.renderer import get_trade_ai_analysis as renderer_analysis
     return renderer_analysis(
         ctx, viewer_roster_id, viewer_side, side_a, side_b,
         opponent_roster_id=opponent_roster_id,
+        scoring_type=scoring_type,
     )
 
 
@@ -13732,10 +13734,12 @@ def api_refresh_page():
             rec = float(_ss.get("rec") or 0)
             scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
             te_premium = float(_ss.get("bonus_rec_te") or 0)
+            scoring_type = "redraft" if _league_is_redraft(ctx) else "dynasty"
             body_html = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
                                                     scoring_format=scoring_format,
                                                     te_premium=te_premium,
-                                                    platform=platform)
+                                                    platform=platform,
+                                                    scoring_type=scoring_type)
 
         else:
             body_html = ""
@@ -14403,6 +14407,8 @@ def api_trade_eval():
     league_size = int(payload.get("league_size") or 10)
     scoring_format = str(payload.get("scoring_format") or "ppr").strip().lower()
     scoring_type = str(payload.get("scoring_type") or "dynasty").strip().lower()
+    if scoring_type != "redraft":
+        scoring_type = "dynasty"
     try:
         te_premium = float(payload.get("te_premium") or 0)
     except Exception:
@@ -14625,6 +14631,7 @@ def api_trade_eval():
                 side_a=side_a,
                 side_b=side_b,
                 opponent_roster_id=str(payload.get("opponent_roster_id") or ""),
+                scoring_type=scoring_type,
             )
             # Compute post-trade depth warnings for the viewer's roster
             rosters = ctx.get("rosters") or []
