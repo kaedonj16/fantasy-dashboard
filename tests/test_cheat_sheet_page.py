@@ -446,6 +446,7 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     hist_fix = CHANGELOG[0]
     assert hist_fix["tag"] == "fix"
     assert "Hist" in hist_fix["text"]
+    assert "never top-12" in hist_fix["text"]
     assert "—" not in hist_fix["text"]
     assert "–" not in hist_fix["text"]
 

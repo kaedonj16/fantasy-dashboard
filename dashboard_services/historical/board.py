@@ -62,13 +62,51 @@ PRESEASON_FIELDS: tuple[str, ...] = (
 )
 
 
-def _upcoming_top12_count(row: Mapping[str, Any]) -> Optional[int]:
-    """Top-12 seasons through the last warehouse year, for the upcoming preseason."""
-    prev = _optional_int(row.get("prior_top12_count"))
-    last_finish = _optional_int(row.get("ppr_positional_finish"))
+def _upcoming_top12_count(rows: Sequence[Mapping[str, Any]]) -> Optional[int]:
+    """Top-12 seasons through the last warehouse year, for the upcoming preseason.
+
+    Count every observed positional finish, not only the latest row. The
+    latest row's ``prior_top12_count`` can be missing on later seasons,
+    which would hide a rookie smash after a down year.
+    """
+    player_rows = [row for row in rows if isinstance(row, Mapping)]
+    if not player_rows:
+        return None
+    finishes: list[int] = []
+    for row in player_rows:
+        finish = _optional_int(row.get("ppr_positional_finish"))
+        if finish is not None:
+            finishes.append(finish)
+    from_finishes = (
+        sum(1 for finish in finishes if finish <= 12) if finishes else None
+    )
+    latest = max(
+        player_rows,
+        key=lambda row: _optional_int(row.get("season")) or -1,
+    )
+    prev = _optional_int(latest.get("prior_top12_count"))
+    last_finish = _optional_int(latest.get("ppr_positional_finish"))
     if last_finish is not None and last_finish <= 12:
-        return (prev or 0) + 1
-    return prev
+        from_stamp = (prev or 0) + 1
+    else:
+        from_stamp = prev
+    if from_stamp is None:
+        return from_finishes
+    if from_finishes is None:
+        return from_stamp
+    return max(from_finishes, from_stamp)
+
+
+def _never_previously_elite(query: Mapping[str, Any], prior: Any) -> bool:
+    """True when this player has never posted a top-12 season.
+
+    Last year's finish is not a career elite record. A missing count is
+    only treated as never-elite for rookies (``prior_finish == none``).
+    """
+    count = _optional_int(query.get("prior_top12_count"))
+    if count is not None:
+        return count == 0
+    return prior == "none"
 
 # Modal copy only. Matching still uses the snake_case keys in comps.
 COMP_FEATURE_LABELS: dict[str, str] = {
@@ -215,6 +253,7 @@ def build_preseason_profiles(
     omitted, never 0 / UDFA / last place.
     """
     latest: dict[str, dict] = {}
+    by_player: dict[str, list[dict]] = {}
     max_season: Optional[int] = None
     for row in rows:
         season = _optional_int(row.get("season"))
@@ -223,6 +262,7 @@ def build_preseason_profiles(
         if season is None or not pid or pos not in SKILL_POSITIONS:
             continue
         max_season = season if max_season is None else max(max_season, season)
+        by_player.setdefault(pid, []).append(dict(row))
         prev = latest.get(pid)
         if prev is None or season > int(prev["season"]):
             latest[pid] = dict(row)
@@ -274,7 +314,7 @@ def build_preseason_profiles(
                 row.get("ngs_rush_yards_over_expected_per_att")
             ),
             "previous_season_year": last_season,
-            "prior_top12_count": _upcoming_top12_count(row),
+            "prior_top12_count": _upcoming_top12_count(by_player.get(pid) or (row,)),
         }
         profiles[pid] = {k: v for k, v in rec.items() if v is not None}
     return {
@@ -327,6 +367,8 @@ def query_for_board_player(
         ye = _optional_int(player.get("years_exp") if player.get("years_exp") is not None else player.get("years_experience"))
         if ye is not None:
             query["years_experience"] = ye
+    if query.get("prior_top12_count") is None and _optional_int(query.get("years_experience")) == 0:
+        query["prior_top12_count"] = 0
     adp = live_redraft_adp(player)
     if adp is not None:
         query["adp_overall"] = adp
@@ -829,14 +871,15 @@ def build_hist_trends(
             rate=repeat.get("engine_breakout_among_non_starters"),
             baseline_pct=baseline_pct,
         ))
-        add(_trend_row(
-            kind="first_time_elite",
-            label="First-time elite",
-            bucket="Never previously top-12",
-            sentence=f"{pos}s who had never been top-12 broke into top-12",
-            rate=repeat.get("first_time_elite_among_candidates"),
-            baseline_pct=baseline_pct,
-        ))
+        if _never_previously_elite(query, prior):
+            add(_trend_row(
+                kind="first_time_elite",
+                label="First-time elite",
+                bucket="Never previously top-12",
+                sentence=f"{pos}s who had never been top-12 broke into top-12",
+                rate=repeat.get("first_time_elite_among_candidates"),
+                baseline_pct=baseline_pct,
+            ))
         add(_trend_row(
             kind="league_winner_smash",
             label="League-winner smash",
@@ -1300,7 +1343,6 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         "group": "never_elite",
         "field": "prior_top12_count",
         "eq": 0,
-        "null_as": 0,
     }
     two_plus = {"group": "prior_top12", "field": "prior_top12_count", "gte": 2}
 

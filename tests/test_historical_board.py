@@ -67,9 +67,39 @@ def test_preseason_profile_steps_forward_from_last_observed_season():
     assert rec["previous_season_finish"] == 5
     assert rec["previous_season_year"] == 2024
     assert rec["draft_capital_bucket"] == "round_1"
-    assert rec["prior_top12_count"] == 1
+    assert rec["prior_top12_count"] == 2
     assert "projected_ppg" not in rec
     assert "ppr_ppg" not in rec
+
+
+def test_preseason_profile_counts_rookie_smash_after_a_down_year():
+    """WR4 as a rookie, then WR42, is still previously top-12 (BTJ 2024/2025)."""
+    rows = [
+        _wh(
+            sleeper_id="btj",
+            season=2024,
+            years_experience=0,
+            draft_year=2024,
+            age=21.8,
+            draft_capital_bucket="round_1",
+            ppr_positional_finish=4,
+        ),
+        _wh(
+            sleeper_id="btj",
+            season=2025,
+            years_experience=1,
+            draft_year=2024,
+            age=22.8,
+            draft_capital_bucket="round_1",
+            ppr_positional_finish=42,
+        ),
+    ]
+    packed = build_preseason_profiles(rows, upcoming_season=2026)
+    rec = packed["by_player"]["btj"]
+    assert rec["years_experience"] == 2
+    assert rec["previous_season_finish"] == 42
+    assert rec["previous_season_year"] == 2025
+    assert rec["prior_top12_count"] == 1
 
 
 def test_live_redraft_adp_ignores_dynasty_and_sleeper_999():
@@ -108,6 +138,24 @@ def test_query_uses_json_priors_and_live_proj_not_actuals():
     feats = extract_comp_query(q)
     assert "projected_ppg" not in feats
     assert "adp_overall" not in feats
+
+
+def test_query_defaults_rookie_top12_count_without_claiming_veterans():
+    rookie = query_for_board_player(
+        {"id": "r", "position": "WR", "years_experience": 0},
+        {},
+    )
+    assert rookie["prior_top12_count"] == 0
+    veteran = query_for_board_player(
+        {
+            "id": "v",
+            "position": "WR",
+            "years_experience": 2,
+            "previous_season_finish": 42,
+        },
+        {},
+    )
+    assert "prior_top12_count" not in veteran
 
 
 def test_attach_compact_payload_and_deep_panel_are_descriptive():
@@ -413,8 +461,39 @@ def test_hist_trends_are_descriptive_bucket_slices():
     smash = build_hist_trends(breakout_q, aggs, panel["market"])
     smash_kinds = [row["kind"] for row in smash]
     assert "league_winner_smash" in smash_kinds
-    assert "first_time_elite" in smash_kinds
+    assert "breakout" in smash_kinds
+    assert "first_time_elite" not in smash_kinds
     assert "repeat" not in smash_kinds
+    never_elite_q = dict(breakout_q)
+    never_elite_q["prior_top12_count"] = 0
+    never_kinds = [row["kind"] for row in build_hist_trends(never_elite_q, aggs, panel["market"])]
+    assert "first_time_elite" in never_kinds
+    prior_smash_q = dict(breakout_q)
+    prior_smash_q["prior_top12_count"] = 1
+    prior_kinds = [row["kind"] for row in build_hist_trends(prior_smash_q, aggs, panel["market"])]
+    assert "breakout" in prior_kinds
+    assert "league_winner_smash" in prior_kinds
+    assert "first_time_elite" not in prior_kinds
+
+
+def test_btj_hist_does_not_claim_never_previously_top12():
+    from dashboard_services.historical.aggregates_store import load_profile_aggregates
+
+    aggs = load_profile_aggregates()
+    if not aggs:
+        pytest.skip("profile JSON missing")
+    profiles = ((aggs.get("preseason_profiles") or {}).get("by_player") or {})
+    if "11631" not in profiles:
+        pytest.skip("BTJ preseason profile missing")
+    panel = build_deep_panel("11631", aggs, extra={"position": "WR"})
+    kinds = [row["kind"] for row in panel["copy"]["trends"]]
+    assert "first_time_elite" not in kinds
+    assert "breakout" in kinds
+    assert "league_winner_smash" in kinds
+    headline = str(panel["copy"].get("headline") or "").lower()
+    assert "year 3" in headline
+    assert "outside the top 36 last year" in headline
+    assert "never" not in headline
 
 
 def test_historical_trends_tab_is_position_wide_and_descriptive():
@@ -449,6 +528,10 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     )
     winners = next(sec for sec in rb["sections"] if sec["id"] == "league_winner")
     assert any("top-5" in row["label"] for row in winners["rows"])
+    repeat = next(sec for sec in rb["sections"] if sec["id"] == "repeat")
+    never_row = next(row for row in repeat["rows"] if "Never-elite" in row["label"])
+    assert never_row["match"] == {"group": "never_elite", "field": "prior_top12_count", "eq": 0}
+    assert "null_as" not in never_row["match"]
     miss = next(sec for sec in rb["sections"] if sec["id"] == "capital_miss")
     assert miss["polarity"] == "miss"
     assert rb["highlights"]
@@ -537,6 +620,14 @@ def test_hist_trend_titles_keep_distinct_capital_and_age_rows():
     assert matches_trend_filter(
         {"prior_top12_count": None},
         {"field": "prior_top12_count", "eq": 0, "null_as": 0},
+    )
+    assert not matches_trend_filter(
+        {"prior_top12_count": None},
+        {"field": "prior_top12_count", "eq": 0},
+    )
+    assert not matches_trend_filter(
+        {"prior_top12_count": 1},
+        {"field": "prior_top12_count", "eq": 0},
     )
     assert matches_trend_filter({"age": 24}, {"field": "age", "between": [23, 27]})
     assert not matches_trend_filter({"age": 31}, {"field": "age", "between": [23, 27]})

@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-08-28",
         "tag": "fix",
+        "text": "Draft Cheat Sheet Hist: a down year no longer reads as never top-12. First-time elite uses every observed season, not just last year's finish. Breakout and smash still follow last year.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
+        "tag": "fix",
         "text": "Draft Cheat Sheet Hist: capital and age rows no longer repeat the same bucket under one title. Miss rate, rookie, and year-2 rates keep their own labels, and exact age drops when the age band is already shown.",
         "link": "/draft/cheat-sheet"
     },
