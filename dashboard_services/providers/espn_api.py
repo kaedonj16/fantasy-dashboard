@@ -471,12 +471,24 @@ def get_teams(season: int, league_id: str) -> List[Dict[str, Any]]:
 
     ESPN membership isn't tied to our identity, so linking an ESPN league means
     the user selects their team by hand; this returns the choices as
-    ``{team_id, name}``. ``is_mine`` is set when the server's SWID owns the team
-    (only useful when server-level cookies happen to be the user's).
+    ``{team_id, name}``. ``is_mine`` is set when the signed-in account's stored
+    SWID owns the team (falling back to server-level cookies).
     """
     lg = _league(season, league_id)
-    _, swid = _espn_creds()
-    swid = (swid or "").strip()
+    swid = ""
+    try:
+        from flask import has_request_context, session
+        if has_request_context() and session.get("account_id"):
+            from dashboard_services.accounts import get_espn_league_credentials
+            stored = get_espn_league_credentials(session["account_id"], league_id, season) or {}
+            swid = str(stored.get("swid") or "").strip()
+    except Exception:
+        swid = ""
+    if not swid:
+        _, env_swid = _espn_creds()
+        swid = (env_swid or "").strip()
+    from utils.redzone_user import owner_id_variants
+    swid_ids = owner_id_variants(swid)
     out: List[Dict[str, Any]] = []
     for t in lg.teams or []:
         tid = _safe_int(getattr(t, "team_id", None) or getattr(t, "id", None))
@@ -488,7 +500,7 @@ def get_teams(season: int, league_id: str) -> List[Dict[str, Any]]:
         out.append({
             "team_id": str(tid),
             "name": str(name),
-            "is_mine": bool(swid and swid in owner_ids),
+            "is_mine": bool(swid_ids and owner_ids & swid_ids),
         })
     return out
 

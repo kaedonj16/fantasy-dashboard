@@ -28,6 +28,31 @@ def test_match_viewer_miss_returns_none():
     assert match_viewer_roster([{"roster_id": 1, "owner_id": "x"}], team_id="9") is None
 
 
+def test_match_viewer_team_id_can_be_an_owner_id():
+    rosters = [
+        {"roster_id": 1, "owner_id": "u-alice"},
+        {"roster_id": 7, "owner_id": "{SW-OWNER}"},
+    ]
+    hit = match_viewer_roster(rosters, team_id="{SW-OWNER}")
+    assert hit["roster_id"] == 7
+
+
+def test_match_viewer_owner_ids_select_the_platform_identity():
+    rosters = [
+        {"roster_id": 1, "owner_id": "sleeper-user"},
+        {"roster_id": 2, "owner_id": "{ESPN-SWID}"},
+    ]
+    assert match_viewer_roster(rosters, owner_ids=["sleeper-user"])["roster_id"] == 1
+    assert match_viewer_roster(rosters, owner_ids=["{ESPN-SWID}"])["roster_id"] == 2
+
+
+def test_swid_brace_variants_match():
+    from utils.redzone_user import owner_id_variants
+    raw = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    assert "{" + raw + "}" in owner_id_variants(raw)
+    assert raw in owner_id_variants("{" + raw + "}")
+
+
 def test_account_portfolio_is_cross_platform_and_capped():
     saved = [
         {"platform": "espn", "league_id": "111", "season": 2025, "team_id": "3", "name": "ESPN Keepers"},

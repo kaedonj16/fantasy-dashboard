@@ -27,3 +27,16 @@ def test_my_leagues_cards_show_a_platform_script():
     assert '"yahoo": "Yahoo"' in fn
     assert '"mfl": "MFL"' in fn
     assert '"fleaflicker": "Fleaflicker"' in fn
+
+
+def test_unlinked_team_cards_offer_link_my_team_for_every_platform():
+    fn = _portfolio_fn()
+    assert "linkMyTeam(" in fn
+    assert "Link my team →" in fn
+    modal = (ROOT / "app.py").read_text()
+    js = modal.split("window.linkMyTeam=function")[1].split("function linkSetMsg")[0]
+    assert "/api/link/espn/preview" in js
+    assert 'id="linkEspnResult"' in modal
+    assert "linkYahooPreview" in js
+    assert "linkMflConnect" in js
+    assert "linkFleaConnect" in js

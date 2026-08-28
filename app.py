@@ -2907,6 +2907,7 @@ def _link_modal_html() -> str:
               </details>
             </div>
             <button type="button" id="linkEspnConnect" class="link-btn link-connect" onclick="linkEspnConnect()">Connect League</button>
+            <div id="linkEspnResult" class="link-list"></div>
           </div>
           <div class="link-pane" data-lp="mfl" style="display:none;">
             <div class="espn-methods" role="radiogroup" aria-label="MFL league type">
@@ -3027,13 +3028,42 @@ def _link_modal_html() -> str:
       };
       // Open the link modal already pointed at a specific league's team picker, so
       // "Link my team" on a not-yet-linked league is one click (no re-typing the
-      // id, right season preserved). Currently ESPN only.
+      // id, right season preserved). ESPN/Yahoo/MFL/Fleaflicker load the team list;
+      // Sleeper lands on the username lookup.
       window.linkMyTeam=function(platform, leagueId, season){
         if(window.openLinkModal) window.openLinkModal();
+        platform=String(platform||'').toLowerCase();
+        leagueId=String(leagueId||'');
+        var yr=season?String(season):'';
         if(window.linkTab) window.linkTab(platform);
+        function fill(id,val){ var el=document.getElementById(id); if(el && val) el.value=val; }
+        function mineId(teams){
+          var hit=(teams||[]).find(function(t){ return t && t.is_mine; });
+          return hit?hit.team_id:null;
+        }
         if(platform==='espn'){
-          var idEl=document.getElementById('linkEspnId'); if(idEl) idEl.value=leagueId||'';
-          var seEl=document.getElementById('linkEspnSeason'); if(seEl && season) seEl.value=season;
+          fill('linkEspnId', leagueId); fill('linkEspnSeason', yr);
+          var box=document.getElementById('linkEspnResult'); if(box) box.innerHTML='';
+          linkSetMsg('Loading teams…','');
+          fetch('/api/link/espn/preview?league_id='+encodeURIComponent(leagueId)+(yr?'&season='+encodeURIComponent(yr):''))
+            .then(function(r){return r.json();}).then(function(d){
+              if(!d.ok){ linkSetMsg(d.error||'Could not load teams. Connect the league below.','err'); return; }
+              linkSetMsg('Pick your team in this league.','');
+              renderTeamPick(box||document.getElementById('linkEspnResult'),'espn',d.league_id,d.season,d.name,d.teams||[],mineId(d.teams));
+            }).catch(function(){ linkSetMsg('Network error.','err'); });
+        } else if(platform==='yahoo'){
+          fill('linkYahooId', leagueId);
+          if(window.linkYahooPreview) window.linkYahooPreview();
+        } else if(platform==='mfl'){
+          fill('linkMflId', leagueId); fill('linkMflSeason', yr);
+          if(window.setMflMethod) window.setMflMethod('public');
+          if(window.linkMflConnect) window.linkMflConnect();
+        } else if(platform==='fleaflicker'){
+          fill('linkFleaId', leagueId); fill('linkFleaSeason', yr);
+          if(window.setFleaMethod) window.setFleaMethod('public');
+          if(window.linkFleaConnect) window.linkFleaConnect();
+        } else {
+          linkSetMsg('Look up your Sleeper username to attach this league.','');
         }
       };
       function linkSetMsg(t,kind){ var el=document.getElementById('linkMsg'); if(!el)return; el.textContent=t||''; el.className='link-msg'+(kind?' '+kind:''); }
@@ -23762,16 +23792,17 @@ def build_portfolio_body(
             _lg_season = lg.get("season") or season
             if _predraft:
                 action = f"<a href='/{plat}/{season}/{lid}/draft' class='pf-pending-cta'>Mock draft →</a>"
-            elif plat == "espn":
-                # "Team not linked yet" — open the link modal pointed at this ESPN
+            else:
+                # "Team not linked yet" — open the link modal pointed at this
                 # league's team picker so the user can set their team in one click
                 # (no re-typing the league id, and the right season is preserved).
+                _js_plat = html.escape(str(plat), quote=True)
+                _js_lid = html.escape(str(lid), quote=True)
+                _js_season = html.escape(str(_lg_season), quote=True)
                 action = (
                     f"<button type='button' class='pf-pending-cta' "
-                    f"onclick=\"linkMyTeam('espn','{lid}','{_lg_season}')\">Link my team →</button>"
+                    f"onclick=\"linkMyTeam('{_js_plat}','{_js_lid}','{_js_season}')\">Link my team →</button>"
                 )
-            else:
-                action = f"<a href='{href}' class='pf-pending-cta'>Open league →</a>"
             league_rows += (
                 f"<div class='pf-lg-card pf-lg-pending' data-lg-key='{plat}:{lid}'>"
                 f"<div class='pf-lg-top'>"
