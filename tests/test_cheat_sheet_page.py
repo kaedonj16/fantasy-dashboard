@@ -443,10 +443,13 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "top-24" in scout["text"]
     assert "—" not in scout["text"]
     assert "–" not in scout["text"]
-    hist_fix = CHANGELOG[0]
+    hist_fix = next(
+        entry for entry in CHANGELOG
+        if "never top-12" in entry.get("text", "")
+    )
     assert hist_fix["tag"] == "fix"
+    assert hist_fix["link"] == "/draft/cheat-sheet"
     assert "Hist" in hist_fix["text"]
-    assert "never top-12" in hist_fix["text"]
     assert "—" not in hist_fix["text"]
     assert "–" not in hist_fix["text"]
 
@@ -454,11 +457,13 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
 def test_changelog_announces_portfolio_positional_percentiles():
     from dashboard_services.changelog import CHANGELOG
 
-    entry = CHANGELOG[0]
+    entry = next(
+        item for item in CHANGELOG
+        if item.get("link") == "/portfolio" and "percentile" in item.get("text", "").lower()
+    )
     assert entry["date"] == "2026-08-28"
     assert entry["tag"] == "fix"
     assert entry["link"] == "/portfolio"
-    assert "percentile" in entry["text"].lower()
     assert "—" not in entry["text"]
     assert "–" not in entry["text"]
 
