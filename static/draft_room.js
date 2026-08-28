@@ -80,6 +80,8 @@
   var _capLateOpen = false;// whether the combined late-rounds section is expanded
   var tierThresholds = {}; // {leagueType:{size:[...]}} from /api/league-players
   var adpSources = {};     // {startup|rookie|redraft: 'Sleeper'|'none'} from /api/league-players
+  var historicalAvailable = false; // compact Hist on /api/league-players; descriptive only
+  var DD_HIST_STRONG = 25; // same strong-cell cutoff as Cheat Sheet Hist
   var adpSourceOptions = {}; // {startup|rookie|redraft: [{value,label}]} from payload
   var adpSource = 'consensus'; // selected source; saved sessions may override this.
                              // 'auto' = server default, any real source
@@ -1216,6 +1218,7 @@
         }
         tierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
         adpSources = (!Array.isArray(resp) && resp.adp_sources) ? resp.adp_sources : {};
+        historicalAvailable = !Array.isArray(resp) && resp.historical_available === true;
         if (!Array.isArray(resp) && resp.adp_source_options) adpSourceOptions = resp.adp_source_options;
         // Refine the setup CPU-source options with the payload's season-gated
         // list (hides globals with no snapshot); no-op once the draft is running.
@@ -6111,7 +6114,8 @@
     { term: 'Grade · Value', def: 'How strong your picks are by pick score, weighted toward the earlier rounds where it matters most.' },
     { term: 'Grade · Starters', def: 'How good your projected starting lineup is versus a league-average team. 100% is a league-average lineup; the rank is among teams in this draft. Snake drafts are close to zero-sum, so a lineup near 100% of average can still rank 1st or 2nd.' },
     { term: 'Grade · Construction', def: 'How well you’ve filled your starting slots and balanced your positions.' },
-    { term: 'Grade · Early', def: 'Shown until your team has 8 picks (3 in a rookie draft). The letter is real — including at two picks / the start of round 3 — but construction is still ramping and the sample is small.' }
+    { term: 'Grade · Early', def: 'Shown until your team has 8 picks (3 in a rookie draft). The letter is real — including at two picks / the start of round 3 — but construction is still ramping and the sample is small.' },
+    { term: 'Hist', def: 'This player\'s historical chance of a top-12 season given career stage, NFL draft capital, age, and last year. Descriptive only. It is not a Pick Score, Recommendation, VOR, or Draft Grade input.' }
   ];
   // Inline info icon: data-tip drives a CSS hover/focus bubble. tabindex makes it
   // tap- and keyboard-accessible.
@@ -6543,6 +6547,7 @@
     if (me) html += ddLedgerHtml(picks);
     html += ddLeagueHtml(field, odds, n);
     if (me) html += ddConstructionHtml(me, field);
+    if (me) html += ddHistHtml(picks);
     if (me) html += ddEdgesHtml(picks, me);
     html += '</div>';
     html += '<div class="dd-foot"><button class="dr-btn" id="drDdCloseBtn">Close</button></div>';
@@ -6770,6 +6775,7 @@
       + '<thead><tr>'
       + '<th data-k="pn" data-t="n">Pick</th><th data-k="name" data-t="s">Player</th><th data-k="pos" data-t="s">Pos</th>'
       + '<th data-k="adp" data-t="n" class="r">ADP</th><th data-k="diff" data-t="n" class="r dd-sorted">± ADP</th>'
+      + '<th data-k="hist" data-t="n" class="r" title="Historical top-12 chance given this career and situation. Descriptive only.">Hist</th>'
       + '<th data-k="ps" data-t="n" class="r" title="Board pick score vs best available at that slot">Board PS</th><th data-k="tier" data-t="n" class="r">Tier</th>'
       + '<th data-k="vord" data-t="s">Verdict</th>'
       + '</tr></thead><tbody id="drDdLedgerBody"></tbody></table></div></div>';
@@ -6788,6 +6794,8 @@
         + '<td><span class="dd-posbadge" style="background:' + posColor(p.pos) + '">' + p.pos + '</span></td>'
         + '<td class="r num">' + (da != null ? Number(da).toFixed(1) : '—') + '</td>'
         + '<td class="r num"><span class="dd-diff ' + dcl + '">' + dtxt + '</span></td>'
+        + '<td class="r"><span class="dd-hist-pct' + (ddHistPct(p) != null && ddHistPct(p) >= DD_HIST_STRONG ? ' is-strong' : '') + '">'
+        + (ddHistPct(p) != null ? ddHistPct(p) + '%' : '-') + '</span></td>'
         + '<td class="r">' + (p.ps != null ? '<span class="num" style="font-weight:700;color:' + psColor(p.ps) + '">' + p.ps + '</span>' : '<span style="color:var(--text-subtle,var(--text-muted))">—</span>') + '</td>'
         + '<td class="r"><span style="color:var(--text-muted);font-size:12px">' + (p.tier != null ? 'T' + p.tier : '—') + '</span></td>'
         + '<td><span class="dd-verd dd-v-' + vd.cls + '">' + vd.label + '</span></td>'
@@ -6811,8 +6819,8 @@
           if (k === 'vord'){ av = ddVerdict(a).label; bv = ddVerdict(b).label; return st.dir * String(av).localeCompare(String(bv)); }
           if (k === 'name'){ return st.dir * String(a.pl.name).localeCompare(String(b.pl.name)); }
           if (k === 'pos'){ return st.dir * String(a.pos).localeCompare(String(b.pos)); }
-          av = k === 'adp' ? deepDiveAdp(a) : k === 'diff' ? deepDiveDiff(a) : a[k];
-          bv = k === 'adp' ? deepDiveAdp(b) : k === 'diff' ? deepDiveDiff(b) : b[k];
+          av = k === 'adp' ? deepDiveAdp(a) : k === 'diff' ? deepDiveDiff(a) : k === 'hist' ? ddHistPct(a) : a[k];
+          bv = k === 'adp' ? deepDiveAdp(b) : k === 'diff' ? deepDiveDiff(b) : k === 'hist' ? ddHistPct(b) : b[k];
           av = av == null ? -999 : av; bv = bv == null ? -999 : bv;
           return st.dir * (av - bv);
         });
@@ -6932,6 +6940,111 @@
       + '</div></div>';
   }
 
+  function ddHist(p){
+    var full = (p && p.full) || {};
+    var h = full.historical;
+    return (h && typeof h === 'object') ? h : {};
+  }
+  function ddHistPct(p){
+    var n = ddHist(p).p_hit_pct;
+    return (n != null && isFinite(Number(n))) ? Number(n) : null;
+  }
+  function ddHistMkt(p){
+    var n = ddHist(p).mkt_pct;
+    return (n != null && isFinite(Number(n))) ? Number(n) : null;
+  }
+  function ddHistVsPts(p){
+    var h = ddHistPct(p), m = ddHistMkt(p);
+    if (h == null || m == null) return null;
+    return h - m;
+  }
+  function ddHistSigned(n){
+    if (n == null || !isFinite(Number(n))) return '';
+    var v = Math.round(Number(n));
+    return (v > 0 ? '+' : '') + v;
+  }
+  function ddHistVsCopy(p){
+    var pts = ddHistVsPts(p);
+    if (pts == null){
+      var lab = ddHist(p).h_vs_m;
+      if (lab === 'aligned') return 'in line with ADP bucket';
+      return '';
+    }
+    if (Math.abs(pts) < 1) return 'in line with ADP bucket';
+    return ddHistSigned(pts) + ' vs ADP bucket';
+  }
+
+  function ddHistHtml(picks){
+    if (!state || state.type !== 'redraft' || !historicalAvailable) return '';
+    var rows = (picks || []).filter(function(p){ return ddHistPct(p) != null; });
+    if (!rows.length) return '';
+    var avg = Math.round(rows.reduce(function(s, p){ return s + ddHistPct(p); }, 0) / rows.length);
+    var strong = rows.filter(function(p){ return ddHistPct(p) >= DD_HIST_STRONG; }).length;
+    var above = rows.filter(function(p){ return ddHist(p).h_vs_m === 'history_higher'; }).length;
+    var below = rows.filter(function(p){ return ddHist(p).h_vs_m === 'market_higher'; }).length;
+    var ranked = rows.slice().sort(function(a, b){
+      var ad = ddHistVsPts(a), bd = ddHistVsPts(b);
+      if (ad == null && bd == null) return (ddHistPct(b) || 0) - (ddHistPct(a) || 0);
+      if (ad == null) return 1;
+      if (bd == null) return -1;
+      return bd - ad;
+    });
+    var tiles = [
+      { v: avg + '%', l: 'Avg Hist top-12', cls: avg >= DD_HIST_STRONG ? 'good' : '' },
+      { v: strong, l: 'Strong profiles (25%+)', cls: strong ? 'good' : '' },
+      { v: above, l: 'Hist above ADP bucket', cls: above ? 'good' : '' },
+      { v: below, l: 'Hist below ADP bucket', cls: below ? 'bad' : '' }
+    ].map(function(t){
+      return '<div class="dd-tile ' + (t.cls || '') + '"><div class="dd-tile-v">' + t.v + '</div><div class="dd-tile-l">' + t.l + '</div></div>';
+    }).join('');
+    var callouts = '';
+    var best = ranked[0], worst = ranked[ranked.length - 1];
+    var bestPts = best ? ddHistVsPts(best) : null;
+    var worstPts = worst ? ddHistVsPts(worst) : null;
+    function histEdge(kind, cls, p, extra){
+      return '<div class="dd-edge ' + cls + '"><div class="dd-edge-k">' + kind + '</div>'
+        + '<div class="dd-edge-pl">' + esc(p.pl.name) + '</div>'
+        + '<div class="dd-edge-sub">' + p.pos + ' · ' + roundPickStr(p.pn)
+        + (ddHistPct(p) != null ? ' · Hist ' + ddHistPct(p) + '%' : '') + '</div>'
+        + '<div class="dd-edge-say">' + extra + '</div></div>';
+    }
+    var parts = [];
+    if (best && bestPts != null && bestPts >= 10){
+      parts.push(histEdge('Historical edge', 'win', best,
+        'Similar player-seasons hit top-12 <b>' + ddHistPct(best) + '%</b> versus <b>'
+        + ddHistMkt(best) + '%</b> at this ADP bucket (' + ddHistSigned(bestPts) + '). Descriptive only.'));
+    }
+    if (worst && worst !== best && worstPts != null && worstPts <= -10){
+      parts.push(histEdge('Historical miss vs market', 'bad', worst,
+        'The ADP bucket hits top-12 <b>' + ddHistMkt(worst) + '%</b>, but this profile is <b>'
+        + ddHistPct(worst) + '%</b> (' + ddHistSigned(worstPts) + '). Not a ranking input.'));
+    }
+    if (parts.length) callouts = '<div class="dd-edges" style="margin-bottom:14px">' + parts.join('') + '</div>';
+    var tableRows = ranked.map(function(p){
+      var pct = ddHistPct(p);
+      var mkt = ddHistMkt(p);
+      var vs = ddHistVsCopy(p);
+      var pts = ddHistVsPts(p);
+      var vsCls = pts == null ? '' : pts >= 10 ? 'up' : pts <= -10 ? 'down' : '';
+      return '<tr>'
+        + '<td class="num" style="color:var(--text-muted)">' + roundPickStr(p.pn) + '</td>'
+        + '<td class="dd-plname">' + esc(p.pl.name) + '</td>'
+        + '<td><span class="dd-posbadge" style="background:' + posColor(p.pos) + '">' + p.pos + '</span></td>'
+        + '<td class="r"><span class="dd-hist-pct' + (pct >= DD_HIST_STRONG ? ' is-strong' : '') + '">'
+        + (pct != null ? pct + '%' : '-') + '</span></td>'
+        + '<td class="r num">' + (mkt != null ? mkt + '%' : '-') + '</td>'
+        + '<td class="r"><span class="dd-hist-vs ' + vsCls + '">' + (vs || '-') + '</span></td>'
+        + '</tr>';
+    }).join('');
+    return '<div class="dd-card"><div class="dd-sec"><h4>Historical trends</h4>'
+      + '<p>Each skill pick\'s historical top-12 chance given career stage, NFL draft capital, age, and last year, versus the hit rate at its ADP bucket. Descriptive only. Not a ranking, Pick Score, or Draft Grade input.</p></div>'
+      + '<div class="dd-tiles">' + tiles + '</div>'
+      + callouts
+      + '<div class="dd-tablescroll" style="margin-top:14px"><table class="dd-ledger">'
+      + '<thead><tr><th>Pick</th><th>Player</th><th>Pos</th><th class="r">Hist</th><th class="r">ADP bucket</th><th class="r">vs market</th></tr></thead>'
+      + '<tbody>' + tableRows + '</tbody></table></div></div>';
+  }
+
   // ── Edges & risks ────────────────────────────────────────────────────────────
   function ddEdgesHtml(picks, me){
     var withAdp = picks.filter(function(p){ return deepDiveDiff(p) != null; });
@@ -7008,6 +7121,13 @@
           ds: 'You have no margin behind your ' + pos + ' starters. Prioritize depth on the waiver wire.' });
       }
     });
+    if (state.type === 'redraft'){
+      var histBelow = picks.filter(function(p){ return ddHist(p).h_vs_m === 'market_higher'; });
+      if (histBelow.length >= 3){
+        flags.push({ cls: 'warn', ttl: histBelow.length + ' picks sit below ADP-bucket hit rates',
+          ds: 'Those historical profiles hit top-12 less often than typical players drafted in the same ADP band. Descriptive only, not a ranking input.' });
+      }
+    }
     var flagsHtml = flags.length ? '<div class="dd-flags">' + flags.map(function(f){
       return '<div class="dd-flag dd-flag-' + f.cls + '"><div class="dd-flag-ic">' + (f.cls === 'crit' ? '!' : '▾') + '</div>'
         + '<div><div class="dd-flag-ttl">' + f.ttl + '</div><div class="dd-flag-ds">' + esc(f.ds) + '</div></div></div>';

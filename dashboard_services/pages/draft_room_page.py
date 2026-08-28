@@ -1363,6 +1363,10 @@ _DRAFT_ROOM_HTML = r"""
   .dd-st-ppg small { font-family:"Inter",sans-serif; font-weight:500; color:var(--text-muted); font-size:10px; margin-left:2px; }
   .dd-st-rank { font-size:11.5px; color:var(--text-muted); white-space:nowrap; }
   .dd-st-rank b { color:var(--text); }
+  .dd-hist-pct { font-family:"Archivo",sans-serif; font-weight:800; font-variant-numeric:tabular-nums; }
+  .dd-hist-pct.is-strong { color:#16a34a; }
+  .dd-hist-vs.up { color:#16a34a; font-weight:700; }
+  .dd-hist-vs.down { color:#dc2626; font-weight:700; }
   /* edges + flags */
   .dd-edges { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
   .dd-edge { padding:14px; border-radius:12px; border:1px solid var(--border); background:var(--bg); }
