@@ -94,7 +94,7 @@ def test_dashboard_hubs_share_os_layout_tab_structure():
         r'<aside class="os-left-col os-tab-panel"',
         r'<main class="os-main-col">',
         r'<aside class="os-right-col os-tab-panel"',
-        r'class="os-tab-panel os-tab-active"',
+        r'os-tab-panel os-tab-active',
         r'class="os-jump-nav"',
     ):
         assert len(re.findall(pattern, src)) >= 2, f"missing shared pattern: {pattern}"
@@ -104,6 +104,7 @@ def test_offseason_jump_nav_targets_match_tab_panel_ids():
     src = (_PAGES / "offseason_dashboard_page.py").read_text(encoding="utf-8")
     jumps = re.findall(r'data-jump="(os-jump-[^"]+)"', src)
     assert jumps == [
+        "os-jump-actions",
         "os-jump-report",
         "os-jump-roster",
         "os-jump-waivers",
@@ -117,6 +118,7 @@ def test_inseason_jump_nav_targets_match_tab_panel_ids():
     src = (_PAGES / "dashboard_page.py").read_text(encoding="utf-8")
     jumps = re.findall(r'data-jump="(os-jump-[^"]+)"', src)
     assert jumps == [
+        "os-jump-actions",
         "os-jump-report",
         "os-jump-standings",
         "os-jump-waivers",

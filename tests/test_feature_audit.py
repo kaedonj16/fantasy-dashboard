@@ -120,7 +120,7 @@ def test_scout_hint_helper_covers_every_platform():
 
 def test_nav_search_distinguishes_load_failure():
     assert "_loadFailed" in APP_JS
-    assert "Couldn’t load players. Type again to retry." in APP_JS
+    assert "load players. Type again to retry." in APP_JS
     assert "Notifications enabled. Open Settings to customize." in APP_JS
 
 

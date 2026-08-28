@@ -72,6 +72,9 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   text-transform: uppercase; color: var(--text-muted); white-space: nowrap;
 }
 .wv-value { font-size: 13px; font-weight: 700; color: var(--text); }
+.wv-ctx-links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.wv-ctx-link { font-size: 11px; font-weight: 600; color: var(--accent); text-decoration: none; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); }
+.wv-ctx-link:hover { background: var(--accent-soft); }
 .wv-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .wv-faab-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); cursor: pointer; }
 .wv-faab-toggle input { accent-color: var(--accent); width: 14px; height: 14px; margin: 0; }
@@ -419,6 +422,10 @@ let wvCompare = [null, null]; // [playerA, playerB]
 if (!window.__brctx) window.__brctx = {{}};
 if (!window.__brctx.leagueId) window.__brctx.leagueId = WV_LEAGUE_ID;
 
+function wvLeaguePath(suffix) {{
+  return '/' + WV_PLATFORM + '/' + WV_SEASON + '/' + WV_LEAGUE_ID + suffix;
+}}
+
 function wvSetTab(tab) {{
   const isWaivers = tab === 'waivers';
   document.getElementById('wvSectionWaivers').classList.toggle('wv-tab-active', isWaivers);
@@ -651,6 +658,10 @@ function wvRenderWaivers() {{
         <div class="wv-player-sub">${{[p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : '', p.rostered_pct != null ? Math.round(p.rostered_pct) + '% rostered' : '', p.adds_48h ? ('+' + p.adds_48h + ' adds') : ''].filter(Boolean).join(' · ')}}${{usageChip}}</div>
         ${{dropHint}}
         ${{returnHint}}
+        <div class="wv-ctx-links" onclick="event.stopPropagation()">
+          <a class="wv-ctx-link" href="${{wvLeaguePath('/compare')}}?a=${{encodeURIComponent(p.player_id)}}">Compare to roster</a>
+          <a class="wv-ctx-link" href="#" onclick="event.preventDefault();openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">Open player</a>
+        </div>
       </div>
       <div class="wv-right">
         <span class="wv-advice-metric"><span class="wv-advice-label">Why add</span><span class="chip chip--sm ${{p.signal_class}}">${{p.signal}}</span></span>
@@ -997,6 +1008,11 @@ function wvRenderStartSit() {{
               ${{demoteNote}}
             </div>
             <div class="wv-ss-actions">
+              <button class="wv-cmp-btn" type="button"
+                onclick="event.stopPropagation();openPlayerModal('${{p.player_id}}', '${{(p.name||'').replace(/'/g,"\\'")}}')">
+                Open player
+              </button>
+              <a class="wv-cmp-btn" href="${{wvLeaguePath('/schedule')}}" onclick="event.stopPropagation()">View schedule</a>
               <button class="wv-cmp-btn ${{isSelected ? 'selected' : ''}}"
                 onclick="event.stopPropagation();wvToggleCompare(${{JSON.stringify(p).replace(/"/g,'&quot;')}})">
                 ${{isSelected ? '✓' : '+'}} Compare

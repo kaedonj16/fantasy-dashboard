@@ -7060,13 +7060,21 @@ window.initTradePage = function initTradePage(root = document) {
       const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
       if (!hasPremium) {
         suggTargetsLoaded = true;
-        window.brEmptyState(container, {
-          icon: 'lock',
-          title: 'PRO trade tools',
-          message: 'Unlock targets tailored to your roster gaps.',
-          compact: true,
-          cta: { label: 'Upgrade', className: 'pi-locked-btn', onClick: function () { if (typeof showPaywall === 'function') showPaywall('trade-suggestions'); } }
-        });
+        if (typeof window.brProPreview === 'function') {
+          window.brProPreview(container, {
+            message: 'Unlock trade targets tailored to your roster gaps and positional needs.',
+            feature: 'trade-suggestions',
+            ctaLabel: 'Unlock targets'
+          });
+        } else {
+          window.brEmptyState(container, {
+            icon: 'lock',
+            title: 'PRO trade tools',
+            message: 'Unlock targets tailored to your roster gaps.',
+            compact: true,
+            cta: { label: 'Unlock targets', className: 'pi-locked-btn', onClick: function () { if (typeof showPaywall === 'function') showPaywall('trade-suggestions'); } }
+          });
+        }
         return;
       }
 
@@ -17347,8 +17355,38 @@ function setupFunAwardsGrid() {
   window.addEventListener('resize', setup);
 })();
 
-// ── Nav-wide player search ────────────────────────────────────────────────────
+// ── Nav-wide player search + command palette ─────────────────────────────────
 (function initNavSearch() {
+  function brNavLeagueUrl(path, suffix) {
+    var c = window.__brctx || {};
+    var sfx = suffix || '';
+    if (c.leagueId && c.platform && c.season) {
+      return '/' + c.platform + '/' + c.season + '/' + c.leagueId + path + sfx;
+    }
+    return path + sfx;
+  }
+
+  var NAV_COMMANDS = [
+    { label: 'Trade Calculator', keywords: ['trade', 'calculator', 'otc'], path: '/trade', icon: 'fa-right-left' },
+    { label: 'Trade Database', keywords: ['trade', 'database', 'trades'], path: '/trade/database', icon: 'fa-database' },
+    { label: 'Trade Targets', keywords: ['trade', 'targets', 'suggestions'], path: '/trade', suffix: '?tab=suggestions', icon: 'fa-bullseye' },
+    { label: 'Trade Intel', keywords: ['trade', 'intel', 'intelligence'], path: '/trade/intel', icon: 'fa-chart-line' },
+    { label: 'Waivers', keywords: ['waiver', 'waivers', 'pickup', 'faab'], path: '/waivers', icon: 'fa-inbox' },
+    { label: 'Start/Sit', keywords: ['start', 'sit', 'lineup'], path: '/waivers', suffix: '?tab=startsit', icon: 'fa-clipboard-list' },
+    { label: 'Draft Room', keywords: ['draft', 'room'], path: '/draft', icon: 'fa-clipboard' },
+    { label: 'Cheat Sheet', keywords: ['cheat', 'sheet', 'board'], path: '/cheat-sheet', icon: 'fa-table-list' },
+    { label: 'Draft History', keywords: ['draft', 'history'], path: '/draft-history', icon: 'fa-clock-rotate-left' },
+    { label: 'Keepers', keywords: ['keeper', 'keepers'], path: '/keeper', icon: 'fa-shield' },
+    { label: 'Prospects', keywords: ['prospect', 'prospects', 'rookie'], path: '/prospects', icon: 'fa-seedling' },
+    { label: 'Player Rankings', keywords: ['rankings', 'players', 'values'], path: '/players', icon: 'fa-ranking-star' },
+    { label: 'Dashboard', keywords: ['home', 'dashboard', 'hub'], path: '/dashboard', icon: 'fa-house' },
+    { label: 'Teams', keywords: ['teams', 'roster'], path: '/teams', icon: 'fa-users' },
+    { label: 'Matchups', keywords: ['matchup', 'weekly'], path: '/weekly', icon: 'fa-swords' },
+    { label: 'Breakout Engine', keywords: ['breakout'], path: '/breakouts', icon: 'fa-fire' },
+    { label: 'Compare Players', keywords: ['compare'], path: '/compare', icon: 'fa-scale-balanced' },
+    { label: 'Advanced Metrics', keywords: ['metrics', 'advanced'], path: '/advanced-metrics', icon: 'fa-chart-bar' },
+  ];
+
   function setup() {
   const wrapper  = document.getElementById('navSearchWrapper');
   const input    = document.getElementById('navPlayerSearch');
@@ -17362,6 +17400,7 @@ function setupFunAwardsGrid() {
   let _loadFailed = false;
   let _debounce = null;
   let _focusIdx = -1;
+  let _flatResults = [];
 
   async function loadPlayers() {
     if ((_players !== null && !_loadFailed) || _loading) return;
@@ -17396,43 +17435,83 @@ function setupFunAwardsGrid() {
     return POS_COLORS[pos] || 'def';
   }
 
+  function matchCommands(query) {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const words = q.split(/\s+/);
+    return NAV_COMMANDS.filter(cmd =>
+      words.every(w => cmd.keywords.some(k => k.includes(w) || w.includes(k)) || cmd.label.toLowerCase().includes(w))
+    ).slice(0, 6);
+  }
+
   function renderResults(query) {
     const q = query.trim().toLowerCase();
     if (!q) { closeDropdown(); return; }
+
+    const cmdMatches = matchCommands(q);
+    let playerHtml = '';
+    let playerCount = 0;
+
     if (!_players) {
-      dropdown.innerHTML = _loadFailed
-        ? '<div class="nav-search-empty">Couldn’t load players. Type again to retry.</div>'
-        : '<div class="nav-search-empty">Loading…</div>';
-      openDropdown();
-      return;
+      playerHtml = _loadFailed
+        ? '<div class="nav-search-empty">Couldn\u2019t load players. Type again to retry.</div>'
+        : '<div class="nav-search-empty">Loading\u2026</div>';
+    } else {
+      const words = q.split(/\s+/);
+      const matches = _players
+        .filter(p => {
+          const n = p.name.toLowerCase();
+          return words.every(w => n.includes(w));
+        })
+        .slice(0, 8);
+
+      playerCount = matches.length;
+      if (!matches.length && !cmdMatches.length) {
+        dropdown.innerHTML = '<div class="nav-search-empty">No results found</div>';
+        openDropdown();
+        _flatResults = [];
+        return;
+      }
+
+      if (matches.length) {
+        playerHtml = matches.map((p, i) => `
+          <div class="nav-search-result" data-idx="${i}" data-ns-kind="player" data-ns-pid="${p.id}" data-ns-name="${p.name.replace(/"/g, '&quot;')}">
+            <img class="nav-search-avatar" src="${_hiResHeadshot(p.headshot, 80)}" data-raw="${p.headshot}" alt="" loading="lazy"
+                 onerror="this.style.visibility='hidden'" />
+            <div class="nav-search-info">
+              <div class="nav-search-name">${p.name}</div>
+              <div class="nav-search-meta">${p.team || '\u2013'}</div>
+            </div>
+            <span class="nav-search-pos nav-search-pos-${posColor(p.pos)}">${p.pos}</span>
+          </div>
+        `).join('');
+      }
     }
 
-    const words = q.split(/\s+/);
-    const matches = _players
-      .filter(p => {
-        const n = p.name.toLowerCase();
-        return words.every(w => n.includes(w));
-      })
-      .slice(0, 8);
-
-    if (!matches.length) {
-      dropdown.innerHTML = '<div class="nav-search-empty">No players found</div>';
-      openDropdown();
-      return;
+    let cmdHtml = '';
+    if (cmdMatches.length) {
+      cmdHtml = cmdMatches.map((cmd, i) => {
+        const idx = playerCount + i;
+        const href = brNavLeagueUrl(cmd.path, cmd.suffix || '');
+        return `<a class="nav-search-cmd" data-idx="${idx}" data-ns-kind="cmd" href="${href}">` +
+          `<span class="nav-search-cmd-icon"><i class="fa-solid ${cmd.icon}" aria-hidden="true"></i></span>` +
+          `<span><span>${cmd.label}</span><div class="nav-search-cmd-meta">Tool</div></span></a>`;
+      }).join('');
     }
 
-    dropdown.innerHTML = matches.map((p, i) => `
-      <div class="nav-search-result" data-idx="${i}" data-ns-pid="${p.id}" data-ns-name="${p.name.replace(/"/g, '&quot;')}">
-        <img class="nav-search-avatar" src="${_hiResHeadshot(p.headshot, 80)}" data-raw="${p.headshot}" alt="" loading="lazy"
-             onerror="this.style.visibility='hidden'" />
-        <div class="nav-search-info">
-          <div class="nav-search-name">${p.name}</div>
-          <div class="nav-search-meta">${p.team || '–'}</div>
-        </div>
-        <span class="nav-search-pos nav-search-pos-${posColor(p.pos)}">${p.pos}</span>
-      </div>
-    `).join('');
+    let html = '';
+    if (playerHtml) {
+      html += '<div class="nav-search-group-label">Players</div>' + playerHtml;
+    }
+    if (cmdHtml) {
+      html += '<div class="nav-search-group-label">Tools</div>' + cmdHtml;
+    }
+    if (!html) {
+      html = '<div class="nav-search-empty">No results found</div>';
+    }
 
+    dropdown.innerHTML = html;
+    _flatResults = Array.from(dropdown.querySelectorAll('[data-ns-kind]'));
     _focusIdx = -1;
     openDropdown();
   }
@@ -17441,7 +17520,7 @@ function setupFunAwardsGrid() {
   function closeDropdown() { dropdown.classList.remove('open'); _focusIdx = -1; }
 
   function setFocus(idx) {
-    const items = dropdown.querySelectorAll('.nav-search-result');
+    const items = dropdown.querySelectorAll('.nav-search-result, .nav-search-cmd');
     items.forEach(el => el.classList.remove('focused'));
     if (idx >= 0 && idx < items.length) {
       items[idx].classList.add('focused');
@@ -17451,10 +17530,14 @@ function setupFunAwardsGrid() {
   }
 
   function selectCurrent() {
-    const items = dropdown.querySelectorAll('.nav-search-result');
+    const items = dropdown.querySelectorAll('.nav-search-result, .nav-search-cmd');
     const el = _focusIdx >= 0 ? items[_focusIdx] : items[0];
     if (!el) return;
-    openPlayerModal(el.dataset.nsPid, el.dataset.nsName);
+    if (el.dataset.nsKind === 'cmd' || el.classList.contains('nav-search-cmd')) {
+      window.location.href = el.getAttribute('href');
+    } else {
+      openPlayerModal(el.dataset.nsPid, el.dataset.nsName);
+    }
     input.value = '';
     clearBtn.style.display = 'none';
     closeDropdown();
@@ -17478,7 +17561,7 @@ function setupFunAwardsGrid() {
   });
 
   input.addEventListener('keydown', e => {
-    const items = dropdown.querySelectorAll('.nav-search-result');
+    const items = dropdown.querySelectorAll('.nav-search-result, .nav-search-cmd');
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       setFocus(Math.min(_focusIdx + 1, items.length - 1));
@@ -17502,6 +17585,15 @@ function setupFunAwardsGrid() {
   });
 
   dropdown.addEventListener('click', e => {
+    const cmd = e.target.closest('.nav-search-cmd');
+    if (cmd) {
+      e.preventDefault();
+      window.location.href = cmd.getAttribute('href');
+      input.value = '';
+      clearBtn.style.display = 'none';
+      closeDropdown();
+      return;
+    }
     const row = e.target.closest('.nav-search-result');
     if (!row) return;
     e.stopPropagation();

@@ -896,6 +896,8 @@ function openPlayerModal(playerId, playerName, opts) {
         cmpBtn.addEventListener('click', () => openCompareSearch(data));
       }
 
+      pmInjectContextActions(playerId, playerName, data, leagueId, platform, season);
+
       // The "vs Avg <pos><tier>" benchmark is reachable from the Compare Player
       // search (it offers the positional-tier averages as pickable opponents),
       // so it is no longer surfaced as a standalone header chip.
@@ -1131,6 +1133,49 @@ function pmSaveDraftYear(playerId) {
       }
     })
     .catch(() => {});
+}
+
+function pmLeaguePath(suffix) {
+  const parts = window.location.pathname.split('/').filter(Boolean);
+  if (parts.length >= 3 && !isNaN(parseInt(parts[1], 10))) {
+    return '/' + parts.slice(0, 3).join('/') + suffix;
+  }
+  const c = window.__brctx || {};
+  if (c.leagueId && c.platform && c.season) {
+    return '/' + c.platform + '/' + c.season + '/' + c.leagueId + suffix;
+  }
+  return suffix;
+}
+
+function pmInjectContextActions(playerId, playerName, data, leagueId, platform, season) {
+  const modal = document.getElementById('playerModal');
+  if (!modal || !leagueId) return;
+  let bar = document.getElementById('pmContextActions');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'pmContextActions';
+    bar.className = 'pm-context-actions';
+    const tabBar = document.getElementById('pmTabBar');
+    if (tabBar) tabBar.parentNode.insertBefore(bar, tabBar);
+    else modal.querySelector('.player-modal-header').after(bar);
+  }
+  const tradeUrl = pmLeaguePath('/trade') + '?add=' + encodeURIComponent(playerId);
+  const tradesTab = "pmSwitchTab('trades')";
+  const slug = pmSlugify(playerName);
+  const links = [
+    { label: 'Compare', action: "document.getElementById('playerModalCompareBtn') && document.getElementById('playerModalCompareBtn').click()" },
+    { label: 'Trade For', href: tradeUrl },
+    { label: 'Recent Trades', action: tradesTab },
+  ];
+  if (slug) {
+    links.push({ label: 'Full Analysis', href: '/player/' + slug + '/trade-value' });
+  }
+  bar.innerHTML = links.map(function (l) {
+    if (l.href) {
+      return '<a class="pm-ctx-link" href="' + l.href + '">' + l.label + '</a>';
+    }
+    return '<button type="button" class="pm-ctx-link" onclick="' + l.action + '">' + l.label + '</button>';
+  }).join('');
 }
 
 // ── Player Modal Tab Switching (global) ──────────────────────────────────────

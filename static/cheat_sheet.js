@@ -1459,13 +1459,13 @@
             + sortTh('rk', 'Rk', 'cs-rk', 'VOR board rank. Click to restore the default order.')
             + sortTh('name', 'Player', 'l cs-player', 'Sort by player name')
             + sortTh('pos', 'Pos', '', 'Sort by position, then positional rank')
-            + sortTh('vor', 'VOR', 'cs-vor-col', 'Value over replacement — the model ranking')
-            + sortTh('projectedPpg', 'Proj PPG', '', 'Projected fantasy points per game')
-            + sortTh(col5Key, col5, '', dyn ? 'Sort by age' : 'Sort by ADP')
-            + sortTh(col6Key, col6, 'cs-value-col', dyn ? 'Sort by career window (age)' : 'Sort by value vs ADP')
-            + sortTh('scheduleRank', 'Sched Rk', '', 'Full fantasy-season strength of schedule rank (1 = easiest)')
-            + (showHist(dyn) ? sortTh('hist', 'Hist', 'cs-hist-col', 'Historical top-12 chance given this career and situation. Open for the full mix. Not a ranking input.') : '')
-            + (showMarket(dyn) ? sortTh('market', 'Market vs ADP', 'cs-market-col', 'Sort by market vs ADP') : '')
+            + sortTh('vor', 'VOR', 'cs-vor-col', 'VALUE: Value over replacement — the model ranking')
+            + sortTh('projectedPpg', 'Proj PPG', '', 'PROJECTION: Projected fantasy points per game')
+            + sortTh(col5Key, col5, '', dyn ? 'Sort by age' : 'MARKET: Sort by ADP')
+            + sortTh(col6Key, col6, 'cs-value-col', dyn ? 'Sort by career window (age)' : 'VALUE: Sort by value vs ADP')
+            + sortTh('scheduleRank', 'Sched Rk', '', 'PROJECTION: Full fantasy-season strength of schedule rank (1 = easiest)')
+            + (showHist(dyn) ? sortTh('hist', 'Hist', 'cs-hist-col', 'HISTORY: Historical top-12 chance given this career and situation. Open for the full mix. Not a ranking input.') : '')
+            + (showMarket(dyn) ? sortTh('market', 'Market vs ADP', 'cs-market-col', 'MARKET: Where market signals imply this player should be drafted vs ADP') : '')
             + editTh + '</tr>';
         var span = (editable ? 9 : 8) + (showMarket(dyn) ? 1 : 0) + (showHist(dyn) ? 1 : 0);
         var lastT = null, html = '', shown = 0;

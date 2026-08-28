@@ -311,6 +311,40 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
     # Waiver card rows are shared with the in-season Season Hub.
     top_waiver_assets_html = _build_waiver_targets_rows(ctx, model_value_table)
+    _wv_preview_rows = _build_waiver_targets_rows(ctx, model_value_table, limit=3)
+    _wv_url = url_for("league_pages.page_waivers", platform=platform, season=season, league_id=ctx.get("league_id"))
+    _draft_url = url_for("tool_pages.page_draft_room", platform=platform, season=season, league_id=ctx.get("league_id"))
+    _trade_url = url_for("trade.page_trade", platform=platform, season=season, league_id=ctx.get("league_id"))
+    _cheat_url = url_for("tool_pages.page_cheat_sheet", platform=platform, season=season, league_id=ctx.get("league_id"))
+
+    _action_waiver_html = ""
+    if _wv_preview_rows:
+        _action_waiver_html = f"""
+        <section class="os-card os-action-card">
+          <div class="lineup-alert-head">
+            <span class="lineup-alert-title">Best waiver available</span>
+            <a class="os-section-link" href="{html.escape(_wv_url)}">View waivers &rarr;</a>
+          </div>
+          <div class="os-waiver-list os-waiver-preview">{_wv_preview_rows}</div>
+        </section>"""
+
+    _draft_action_html = f"""
+        <section class="os-card os-action-card os-action-links">
+          <div class="lineup-alert-head">
+            <span class="lineup-alert-title">Draft prep</span>
+          </div>
+          <div class="os-action-link-row">
+            <a class="os-section-link" href="{html.escape(_draft_url)}">Draft Room &rarr;</a>
+            <a class="os-section-link" href="{html.escape(_cheat_url)}">Cheat Sheet &rarr;</a>
+            <a class="os-section-link" href="{html.escape(_trade_url)}?tab=suggestions">Trade targets &rarr;</a>
+          </div>
+        </section>"""
+
+    _action_queue_html = f"""
+        <div class="os-action-queue os-tab-panel os-tab-active" id="os-jump-actions">
+          {_action_waiver_html}
+          {_draft_action_html}
+        </div>"""
 
     gm_card_html = ""
     if viewer_roster_id:
@@ -399,7 +433,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             <div>
               <h1 class="os-hero-title">Offseason Hub</h1>
               <p class="os-hero-copy">
-                Focus on roster building, draft prep, waiver value, and trade opportunities.
+                What changed, what needs attention, and your next offseason moves.
               </p>
             </div>
           </div>
@@ -530,16 +564,19 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         }})();
         </script>
 
+        <div id="sinceLastVisitCard" class="slv-wrap" data-slv-init="1"></div>
+
         <nav class="os-jump-nav" aria-label="Jump to section">
-          <button type="button" class="active" data-jump="os-jump-report">Report</button>
+          <button type="button" class="active" data-jump="os-jump-actions">Actions</button>
+          <button type="button" data-jump="os-jump-report">Report</button>
           <button type="button" data-jump="os-jump-roster">Team Values</button>
           <button type="button" data-jump="os-jump-waivers">Waivers</button>
           <button type="button" data-jump="os-jump-teams">Roster</button>
         </nav>
 
-        <div id="sinceLastVisitCard" class="slv-wrap" data-slv-init="1"></div>
+        {_action_queue_html}
 
-        <div id="os-jump-report" class="os-tab-panel os-tab-active">
+        <div id="os-jump-report" class="os-tab-panel">
           {gm_card_html}
           {season_review_html}
         </div>
