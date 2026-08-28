@@ -187,3 +187,34 @@ def draft_countdown_copy(
         value = f"{hours:02d}:{minutes:02d}:{secs:02d}"
     when = datetime.fromtimestamp(int(start_ms) / 1000, tz=timezone.utc).strftime("%b %d, %Y")
     return {"label": "Draft countdown", "value": value, "sub": when}
+
+
+def top_board_preview(
+    value_table: Optional[list],
+    *,
+    is_sf: bool = False,
+    limit: int = 10,
+) -> list:
+    """Top skill-position names from the model table, for a pre-draft sidebar."""
+    field = "sf_value" if is_sf else "value"
+    ranked = []
+    for row in value_table or []:
+        if not isinstance(row, dict):
+            continue
+        pos = str(row.get("position") or row.get("pos") or "").upper()
+        if pos not in ("QB", "RB", "WR", "TE"):
+            continue
+        try:
+            val = float(row.get(field) or row.get("value") or 0)
+        except (TypeError, ValueError):
+            val = 0.0
+        if val <= 0:
+            continue
+        ranked.append({
+            "id": str(row.get("id") or ""),
+            "name": row.get("name") or "Player",
+            "pos": pos,
+            "value": val,
+        })
+    ranked.sort(key=lambda r: -r["value"])
+    return ranked[: max(0, int(limit))]

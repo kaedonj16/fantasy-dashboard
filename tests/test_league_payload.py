@@ -10,6 +10,7 @@ from utils.league_payload import (
     get_most_recent_valid_draft_for_season,
     rosters_look_undrafted,
     startup_draft_phase,
+    top_board_preview,
 )
 
 
@@ -152,3 +153,16 @@ def test_countdown_copy_formats_days_and_live():
 
     missing = draft_countdown_copy(None, phase="predraft")
     assert missing["value"] == "TBD"
+
+
+def test_top_board_preview_ranks_skill_positions_and_prefers_sf_value():
+    table = [
+        {"id": "1", "name": "QB A", "position": "QB", "value": 100, "sf_value": 900},
+        {"id": "2", "name": "WR B", "pos": "WR", "value": 400, "sf_value": 200},
+        {"id": "3", "name": "Kicker", "position": "K", "value": 999, "sf_value": 999},
+        {"id": "4", "name": "Zero", "position": "RB", "value": 0},
+    ]
+    one_qb = top_board_preview(table, is_sf=False, limit=10)
+    assert [p["name"] for p in one_qb] == ["WR B", "QB A"]
+    sf = top_board_preview(table, is_sf=True, limit=10)
+    assert [p["name"] for p in sf] == ["QB A", "WR B"]

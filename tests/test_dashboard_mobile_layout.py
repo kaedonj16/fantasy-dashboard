@@ -114,6 +114,13 @@ def test_offseason_jump_nav_targets_match_tab_panel_ids():
         assert f'id="{panel_id}"' in src, f"missing tab panel id {panel_id}"
 
 
+def test_hubs_swap_empty_roster_sidebar_for_cheat_sheet():
+    for name in ("dashboard_page.py", "offseason_dashboard_page.py"):
+        src = (_PAGES / name).read_text(encoding="utf-8")
+        assert "render_dashboard_teams_sidebar" in src, name
+        assert "{teams_tab_label}" in src, name
+
+
 def test_inseason_jump_nav_targets_match_tab_panel_ids():
     src = (_PAGES / "dashboard_page.py").read_text(encoding="utf-8")
     jumps = re.findall(r'data-jump="(os-jump-[^"]+)"', src)

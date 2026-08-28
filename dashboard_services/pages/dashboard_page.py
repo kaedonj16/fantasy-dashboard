@@ -33,7 +33,7 @@ def build_dashboard_body(ctx: dict) -> str:
         render_matchup_carousel_weeks,
         render_matchup_slide,
         render_standings_compact,
-        render_teams_sidebar,
+        render_dashboard_teams_sidebar,
         session,
         url_for,
     )
@@ -169,7 +169,10 @@ def build_dashboard_body(ctx: dict) -> str:
         teams_index=teams_index,
         platform=platform,
     )
-    teams_sidebar_html = render_teams_sidebar(teams_ctx)
+    ctx["model_value_table"] = list(get_model_value_table_cached() or []) or (ctx.get("model_value_table") or [])
+    teams_sidebar_html, teams_tab_label = render_dashboard_teams_sidebar(
+        ctx, teams_ctx, filled_label="Team Values",
+    )
 
     gm_card_html = ""
     if gm_memo_html:
@@ -382,7 +385,7 @@ def build_dashboard_body(ctx: dict) -> str:
           <button type="button" data-jump="os-jump-report">Report</button>
           <button type="button" data-jump="os-jump-standings">Standings</button>
           <button type="button" data-jump="os-jump-waivers">Waivers</button>
-          <button type="button" data-jump="os-jump-teams">Team Values</button>
+          <button type="button" data-jump="os-jump-teams">{teams_tab_label}</button>
         </nav>
 
         {_action_queue_html}

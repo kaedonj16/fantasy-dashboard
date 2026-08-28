@@ -108,6 +108,7 @@ from dashboard_services.service import (
     matchup_cards_last_week,
     pill,
     playoff_bracket,
+    render_dashboard_teams_sidebar,
     render_teams_sidebar,
     render_top_three,
     seed_top6_from_team_stats,
