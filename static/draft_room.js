@@ -4101,7 +4101,12 @@
     return odds;
   }
   function _poColor(po){ return po >= 60 ? '#22c55e' : po >= 35 ? '#f59e0b' : '#ef4444'; }
-  function _draftComplete(){ return !!state && (!!state.isComplete || state.current > (state.teams || 12) * (state.rounds || 0)); }
+  function _draftComplete(){
+    if (!state) return false;
+    // Predraft placeholder slots must never look like a finished draft.
+    if (state.mode === 'live' && String(state.status) === 'pre_draft' && !state.isComplete) return false;
+    return !!state.isComplete || state.current > (state.teams || 12) * (state.rounds || 0);
+  }
 
   // Server-computed playoff odds - the SAME engine the standings page uses
   // (simulate_playoff_odds, preseason mode). For a completed draft we ONLY show
@@ -4859,12 +4864,32 @@
     if (!state || !state.queue) return;
     state.queue = state.queue.filter(function(id){ return !drafted[String(id)]; });
   }
+  // A live pick is a real selection, not a predraft empty slot. ESPN's
+  // mDraftDetail often returns the full board with playerId 0 / -1 / null
+  // before anyone is picked; those must not fill cells with "Unknown".
+  function livePickIsSelection(p){
+    if (!p || p.pick_no == null) return false;
+    function _realId(v){
+      if (v == null || v === '') return false;
+      var s = String(v).trim();
+      if (!s || s === '0' || s === '-1' || s === 'None' || s === 'null') return false;
+      var n = Number(s);
+      if (Number.isFinite(n) && (n === 0 || n === -1)) return false;
+      return true;
+    }
+    return _realId(p.player_id) || _realId(p.external_player_id);
+  }
+  function liveSelectionCount(picks){
+    var n = 0;
+    (picks || []).forEach(function(p){ if (livePickIsSelection(p)) n++; });
+    return n;
+  }
   function applyLivePicks(picks){
     lastLivePicks = picks;
     state.picks = {}; drafted = {};
     var latestPickedAt = 0;
     (picks || []).forEach(function(p){
-      if (p.pick_no == null) return;
+      if (!livePickIsSelection(p)) return;
       var pid = p.player_id ? String(p.player_id) : '';
       state.picks[p.pick_no] = {
         id: pid,
@@ -4889,7 +4914,7 @@
   // cannot create a second copy. Unresolved ESPN ids never mark a canonical
   // player drafted.
   function applyOneLivePick(p){
-    if (!state || !p || p.pick_no == null) return false;
+    if (!state || !livePickIsSelection(p)) return false;
     if (state.picks[p.pick_no]) return false;
     var pid = p.player_id ? String(p.player_id) : '';
     var row = pid ? playersById[pid] : null;
@@ -4920,7 +4945,7 @@
   }
   function applyMissingLivePicks(picks){
     lastLivePicks = picks;
-    var remote = (picks || []).slice().filter(function(p){ return p && p.pick_no != null; });
+    var remote = (picks || []).slice().filter(livePickIsSelection);
     remote.sort(function(a, b){ return (a.pick_no || 0) - (b.pick_no || 0); });
     var remoteCount = remote.length;
     var localCount = 0;
@@ -5019,7 +5044,7 @@
     var owned = {};
     var madePickNos = {};
     (d.picks || []).forEach(function(p){
-      if (p.pick_no == null) return;
+      if (!livePickIsSelection(p)) return;
       madePickNos[p.pick_no] = true;
       if (cfg.viewerUserId && p.picked_by === cfg.viewerUserId) owned[p.pick_no] = true;
       else if (_livePickIsMine(p)) owned[p.pick_no] = true;
@@ -5081,7 +5106,7 @@
     if (!Object.keys(rosterToSlot).length) return null;
     var owners = {};
     (d.picks || []).forEach(function(p){
-      if (p.pick_no == null) return;
+      if (!livePickIsSelection(p)) return;
       if (p.roster_id != null && rosterToSlot[p.roster_id] != null) owners[p.pick_no] = rosterToSlot[p.roster_id];
     });
     var tradedPickMap = {};
@@ -5174,7 +5199,7 @@
           roster: _parseRosterPositions(d.roster_positions) || rosterFromLeague() || defaultRoster(),
           scoring: cfg.scoring || readScoring()
         };
-        _espnStallPolls = 0; _espnEverGrew = !!(d.picks && d.picks.length); _espnLastPickCount = (d.picks || []).length;
+        _espnStallPolls = 0; _espnEverGrew = liveSelectionCount(d.picks) > 0; _espnLastPickCount = liveSelectionCount(d.picks);
         _espnAuthFailed = false; _espnFallbackShown = false;
         hideEspnFallback();
         applyLivePicks(d.picks || []);
@@ -5292,7 +5317,7 @@
     render();
   }
   function _noteEspnPollGrowth(d){
-    var count = (d && d.picks) ? d.picks.length : 0;
+    var count = liveSelectionCount(d && d.picks);
     if (count > _espnLastPickCount){
       _espnEverGrew = true;
       _espnStallPolls = 0;
@@ -5635,7 +5660,7 @@
 
   function renderStatus(){
     var total = state.teams * state.rounds;
-    var done = state.current > total;
+    var done = _draftComplete();
     var r = Math.ceil(state.current / state.teams);
     var pickInRound = ((state.current - 1) % state.teams) + 1;
     document.getElementById('drPickPill').textContent = done ? 'Done' : ('Pick: ' + r + '.' + (pickInRound < 10 ? '0' : '') + pickInRound);

@@ -102,6 +102,50 @@ def test_parse_draft_not_started():
     assert espn_status_from_flags(detail.drafted, detail.in_progress, pick_count=0) == "pre_draft"
 
 
+def test_normalize_skips_predraft_placeholder_grid():
+    """ESPN predraft mDraftDetail often lists every seat with playerId 0."""
+    from dashboard_services.draft_sync import espn_player_id_is_selected
+    assert espn_player_id_is_selected("0") is False
+    assert espn_player_id_is_selected("-1") is False
+    assert espn_player_id_is_selected(None) is False
+    assert espn_player_id_is_selected("4039057") is True
+    assert espn_player_id_is_selected("-16033") is True
+    placeholders = [
+        _pick(i, 0, ((i - 1) % 4) + 1, rnd=(i - 1) // 4 + 1, slot=((i - 1) % 4) + 1)
+        for i in range(1, 17)
+    ]
+    picks = _norm(_detail(picks=placeholders, drafted=False, in_progress=False))
+    assert picks == []
+    assert espn_status_from_flags(False, False, pick_count=len(picks)) == "pre_draft"
+
+
+def test_normalize_skips_null_and_sentinel_player_placeholders():
+    rows = [
+        {"playerId": None, "teamId": 1, "overallPickNumber": 1, "roundId": 1, "roundPickNumber": 1},
+        {"playerId": -1, "teamId": 2, "overallPickNumber": 2, "roundId": 1, "roundPickNumber": 2},
+        {"playerId": "", "teamId": 3, "overallPickNumber": 3, "roundId": 1, "roundPickNumber": 3},
+    ]
+    picks = _norm(_detail(picks=rows, drafted=False, in_progress=False))
+    assert picks == []
+
+
+def test_normalize_keeps_keepers_among_placeholders():
+    rows = [_pick(i, 0, ((i - 1) % 4) + 1) for i in range(1, 9)]
+    rows[0] = _pick(1, 4039057, 1, keeper=True)
+    picks = _norm(_detail(picks=rows, drafted=False, in_progress=False))
+    assert [p.overall_pick for p in picks] == [1]
+    assert picks[0].canonical_player_id == "5938"
+    assert picks[0].keeper is True
+
+
+def test_placeholder_picks_do_not_count_as_drafting_when_flags_missing():
+    placeholders = [_pick(i, 0, 1) for i in range(1, 5)]
+    detail = parse_espn_draft_detail(_detail(picks=placeholders))
+    real = _norm(_detail(picks=placeholders))
+    assert espn_status_from_flags(detail.drafted, detail.in_progress, pick_count=len(real)) != "drafting"
+    assert real == []
+
+
 def test_parse_draft_in_progress():
     picks = [_pick(1, 4039057, 1)]
     detail = parse_espn_draft_detail(_detail(picks=picks, drafted=False, in_progress=True))
@@ -277,6 +321,19 @@ def test_provider_not_started(monkeypatch):
     snap = _provider(monkeypatch, _detail(picks=[], drafted=False, in_progress=False)).get_snapshot("1", 2026)
     assert snap.status == "pre_draft"
     assert snap.picks == []
+
+
+def test_provider_predraft_placeholder_grid_is_empty(monkeypatch):
+    placeholders = [
+        _pick(i, 0, ((i - 1) % 4) + 1, rnd=(i - 1) // 4 + 1, slot=((i - 1) % 4) + 1)
+        for i in range(1, 17)
+    ]
+    snap = _provider(monkeypatch, _detail(picks=placeholders, drafted=False, in_progress=False)).get_snapshot("1", 2026)
+    assert snap.status == "pre_draft"
+    assert snap.picks == []
+    body = snapshot_to_live_payload(snap)
+    assert body["picks"] == []
+    assert body["status"] == "pre_draft"
 
 
 def test_provider_complete(monkeypatch):

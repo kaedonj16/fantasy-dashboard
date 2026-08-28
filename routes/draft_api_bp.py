@@ -218,6 +218,11 @@ def api_draft_live():
     settings = draft.get("settings") or {}
     picks = []
     for p in picks_raw:
+        pid = str(p.get("player_id") or "").strip()
+        if not pid or pid in ("0", "None"):
+            # Predraft slot placeholders are not selections; skip so the board
+            # stays empty until a player is actually picked.
+            continue
         meta = p.get("metadata") or {}
         nm = (str(meta.get("first_name") or "") + " " + str(meta.get("last_name") or "")).strip()
         picks.append({
@@ -225,7 +230,7 @@ def api_draft_live():
             "round": p.get("round"),
             "draft_slot": p.get("draft_slot"),
             "picked_by": p.get("picked_by"),   # user_id of who made the pick (for ownership)
-            "player_id": str(p.get("player_id") or ""),
+            "player_id": pid,
             "name": nm or (meta.get("player_name") or "Unknown"),
             "position": (meta.get("position") or "").upper(),
             "team": meta.get("team") or "",

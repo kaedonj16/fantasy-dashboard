@@ -5,7 +5,8 @@ Pure logic — no app / DB import — so these run anywhere pytest does.
 import pytest
 
 from utils.roster_strength import (
-    fit_roster_component_weights, positional_strength_profile, weighted_pos_strength,
+    average_league_percentiles, fit_roster_component_weights,
+    positional_strength_profile, strength_percentile, weighted_pos_strength,
 )
 
 
@@ -105,6 +106,54 @@ def test_te_weighting_uses_flex_variant():
     # TE2/TE3 would separate them. Here confirm both stay at the starter value.
     assert no_flex == pytest.approx(100.0)
     assert with_flex == pytest.approx(100.0)
+
+
+def test_strength_percentile_empty_or_solo_is_median():
+    assert strength_percentile(100, []) == pytest.approx(50.0)
+    assert strength_percentile(100, [100]) == pytest.approx(50.0)
+
+
+def test_strength_percentile_best_and_worst_in_twelve():
+    field = list(range(12))  # 0 worst … 11 best
+    assert strength_percentile(11, field) == pytest.approx(100.0)
+    assert strength_percentile(0, field) == pytest.approx(0.0)
+    # 6 of 11 others are worse -> ~54.5th, not a signed-percent hole.
+    assert strength_percentile(6, field) == pytest.approx(100.0 * 6 / 11)
+
+
+def test_strength_percentile_splits_ties():
+    field = [100, 100, 50, 40]
+    # Two tied for first: 2 strictly worse + half of 1 tied other, over 3 others.
+    assert strength_percentile(100, field) == pytest.approx(100.0 * 2.5 / 3)
+
+
+def test_average_league_percentiles_blends_without_ratio_drag():
+    # Elite in one league and last in another is a typical 50th, not negative.
+    blended = average_league_percentiles([
+        {"QB": 100, "RB": 90, "WR": 80, "TE": 70},
+        {"QB": 0, "RB": 10, "WR": 20, "TE": 30},
+    ])
+    assert blended["QB"] == pytest.approx(50.0)
+    assert blended["RB"] == pytest.approx(50.0)
+    assert blended["WR"] == pytest.approx(50.0)
+    assert blended["TE"] == pytest.approx(50.0)
+
+
+def test_average_league_percentiles_skips_missing_positions():
+    blended = average_league_percentiles([
+        {"QB": 80, "RB": 40},
+        {"QB": 60, "TE": 20},
+    ])
+    assert blended["QB"] == pytest.approx(70.0)
+    assert blended["RB"] == pytest.approx(40.0)
+    assert blended["TE"] == pytest.approx(20.0)
+    assert blended["WR"] == pytest.approx(50.0)
+
+
+def test_average_league_percentiles_empty_is_median():
+    assert average_league_percentiles([]) == {
+        "QB": 50.0, "RB": 50.0, "WR": 50.0, "TE": 50.0,
+    }
 
 
 def test_strength_profile_separates_starters_depth_and_fragility():
