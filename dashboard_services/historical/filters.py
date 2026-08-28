@@ -1,0 +1,270 @@
+"""Shared Trends matching predicates and preseason feature extraction (pure).
+
+Scout (current board players) and historical cohort matching MUST use the
+same feature keys and the same AND/OR grouping:
+
+* same logical group → OR
+* different groups → AND
+
+A missing feature does not match a required filter (unknown stays unknown).
+This module does not scan parquet and does not enter ranking / Pick Score.
+"""
+from __future__ import annotations
+
+from typing import Any, Iterable, Mapping, Optional, Sequence
+
+from dashboard_services.historical.comps import extract_comp_query
+from dashboard_services.historical.usage import USAGE_RATE_SPECS, VOLUME_USAGE_IDS
+from dashboard_services.historical.definitions import (
+    ADOT_BUCKETS,
+    RYOE_BUCKETS,
+    SNAP_RELIABLE_FLOOR,
+    TRAJECTORY_SNAP_DOWN,
+    TRAJECTORY_SNAP_UP,
+    TRAJECTORY_TARGET_SHARE_DOWN,
+    TRAJECTORY_TARGET_SHARE_UP,
+    TRAJECTORY_WORKLOAD_DOWN,
+    TRAJECTORY_WORKLOAD_UP,
+    SNAP_PCT_UP_PTS,
+    TARGET_SHARE_UP_PTS,
+    WORKLOAD_CHANGE_CLIFFS,
+    integer_age,
+    value_bucket,
+    _optional_float,
+    _optional_int,
+)
+
+
+def matches_trend_filter(feats: Mapping[str, Any], spec: Any) -> bool:
+    """AND/OR-free predicate for one trend row's match spec. Display only."""
+    if not isinstance(spec, Mapping) or not spec:
+        return True
+    if spec.get("all"):
+        return all(matches_trend_filter(feats, part) for part in spec.get("all") or [])
+    field = spec.get("field")
+    val = feats.get(field) if field else None
+    if spec.get("null_as") is not None and val is None:
+        val = spec.get("null_as")
+    if "eq" in spec:
+        want = spec.get("eq")
+        return val == want or (val is not None and str(val) == str(want))
+    if "in" in spec:
+        options = list(spec.get("in") or [])
+        return val in options or (val is not None and str(val) in {str(x) for x in options})
+    if "gte" in spec:
+        try:
+            return val is not None and float(val) >= float(spec.get("gte"))
+        except (TypeError, ValueError):
+            return False
+    if "lte" in spec:
+        try:
+            return val is not None and float(val) <= float(spec.get("lte"))
+        except (TypeError, ValueError):
+            return False
+    if "between" in spec:
+        bounds = spec.get("between") or []
+        if len(bounds) < 2:
+            return False
+        try:
+            number = float(val)
+            return float(bounds[0]) <= number <= float(bounds[1])
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
+def filter_group_id(spec: Mapping[str, Any], fallback: Any = None) -> str:
+    """Logical group for OR-within / AND-across semantics."""
+    group = spec.get("group") or spec.get("field") or fallback
+    return str(group or "")
+
+
+def group_filters(filters: Sequence[Mapping[str, Any]]) -> dict[str, list[dict]]:
+    """Bucket filter specs by logical group. Empty / non-mapping entries drop."""
+    groups: dict[str, list[dict]] = {}
+    for i, spec in enumerate(filters or []):
+        if not isinstance(spec, Mapping) or not spec:
+            continue
+        rec = dict(spec)
+        gid = filter_group_id(rec, fallback=rec.get("id") or i)
+        if not gid:
+            continue
+        groups.setdefault(gid, []).append(rec)
+    return groups
+
+
+def matches_filter_groups(feats: Mapping[str, Any], filters: Sequence[Mapping[str, Any]]) -> bool:
+    """True when ``feats`` satisfies OR-within-group, AND-across-groups.
+
+    No filters → False (a profile is not "all players"; it is a selected set).
+    """
+    groups = group_filters(filters)
+    if not groups:
+        return False
+    return all(
+        any(matches_trend_filter(feats, spec) for spec in specs)
+        for specs in groups.values()
+    )
+
+
+def _volume_of(row: Mapping[str, Any], field: str) -> Optional[float]:
+    """Outcome volume on this player-season row (not previous_season_*)."""
+    if field == "touches":
+        carries = _optional_float(row.get("carries"))
+        recs = _optional_float(row.get("receptions"))
+        if carries is None and recs is None:
+            return _optional_float(row.get("touches"))
+        return float((carries or 0.0) + (recs or 0.0))
+    if field == "targets":
+        return _optional_float(row.get("targets"))
+    if field == "passing_attempts":
+        return _optional_float(row.get("passing_attempts"))
+    return _optional_float(row.get(field))
+
+
+def trajectory_buckets(
+    prev: Optional[Mapping[str, Any]],
+    last: Optional[Mapping[str, Any]],
+    *,
+    position: Any = None,
+    require_consecutive: bool = True,
+    current_season: Any = None,
+) -> dict[str, str]:
+    """Bucket YoY pre-outcome change from two prior seasons.
+
+    ``prev`` is S-2 actuals, ``last`` is S-1 actuals. Neither may be the
+    season whose finish is the outcome. Non-consecutive seasons, a gap
+    before ``current_season``, or a missing value → that key is omitted.
+    """
+    if not isinstance(prev, Mapping) or not isinstance(last, Mapping):
+        return {}
+    prev_s = _optional_int(prev.get("season"))
+    last_s = _optional_int(last.get("season"))
+    if prev_s is None or last_s is None:
+        return {}
+    if require_consecutive and last_s != prev_s + 1:
+        return {}
+    cur = _optional_int(current_season)
+    if cur is not None and last_s != cur - 1:
+        return {}
+    pos = str(position or last.get("position") or prev.get("position") or "").upper()
+    out: dict[str, str] = {}
+
+    ts_last = _optional_float(last.get("target_share"))
+    ts_prev = _optional_float(prev.get("target_share"))
+    if ts_last is not None and ts_prev is not None:
+        delta = ts_last - ts_prev
+        if delta >= TARGET_SHARE_UP_PTS:
+            out["target_share_change"] = TRAJECTORY_TARGET_SHARE_UP
+        elif delta <= -TARGET_SHARE_UP_PTS:
+            out["target_share_change"] = TRAJECTORY_TARGET_SHARE_DOWN
+
+    snap_last = _optional_float(last.get("snap_pct"))
+    snap_prev = _optional_float(prev.get("snap_pct"))
+    if (
+        snap_last is not None
+        and snap_prev is not None
+        and last_s >= SNAP_RELIABLE_FLOOR
+        and prev_s >= SNAP_RELIABLE_FLOOR
+    ):
+        delta = snap_last - snap_prev
+        if delta >= SNAP_PCT_UP_PTS:
+            out["snap_pct_change"] = TRAJECTORY_SNAP_UP
+        elif delta <= -SNAP_PCT_UP_PTS:
+            out["snap_pct_change"] = TRAJECTORY_SNAP_DOWN
+
+    cliff = WORKLOAD_CHANGE_CLIFFS.get(pos)
+    if cliff:
+        field, cutoff = cliff
+        vol_last = _volume_of(last, field)
+        vol_prev = _volume_of(prev, field)
+        if vol_last is not None and vol_prev is not None:
+            delta = vol_last - vol_prev
+            if delta >= cutoff:
+                out["workload_change"] = TRAJECTORY_WORKLOAD_UP
+            elif delta <= -cutoff:
+                out["workload_change"] = TRAJECTORY_WORKLOAD_DOWN
+    return out
+
+
+def extract_trend_features(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Compact preseason buckets used by Scout and historical cohort matching.
+
+    Same keys as ``build_player_feature_index``. Missing dims are omitted.
+    Same-season actuals / ADP / projections are not features.
+    """
+    if not isinstance(row, Mapping):
+        return {}
+    feats = extract_comp_query(row)
+    if not feats:
+        return {}
+    age = integer_age(row.get("age"))
+    if age is not None:
+        feats["age"] = age
+    count = _optional_int(row.get("prior_top12_count"))
+    if count is not None:
+        feats["prior_top12_count"] = count
+    adot = value_bucket(row.get("previous_season_adot"), ADOT_BUCKETS)
+    if adot:
+        feats["adot"] = adot
+    ryoe = value_bucket(
+        row.get("previous_season_ngs_rush_yards_over_expected_per_att"),
+        RYOE_BUCKETS,
+    )
+    if ryoe:
+        feats["ryoe"] = ryoe
+    for spec in USAGE_RATE_SPECS:
+        spec_id = spec["id"]
+        if spec_id not in VOLUME_USAGE_IDS:
+            continue
+        bucket = value_bucket(row.get(spec["field"]), spec["buckets"])
+        if bucket:
+            feats[spec_id] = bucket
+    for key in (
+        "target_share_change",
+        "snap_pct_change",
+        "workload_change",
+    ):
+        val = row.get(key)
+        if isinstance(val, str) and val:
+            feats[key] = val
+    return feats
+
+
+def matched_filter_labels(
+    feats: Mapping[str, Any],
+    filters: Sequence[Mapping[str, Any]],
+) -> list[str]:
+    """Human labels of the selected filters this feature row actually hit."""
+    labels: list[str] = []
+    seen: set[str] = set()
+    for spec in filters or []:
+        if not isinstance(spec, Mapping):
+            continue
+        if not matches_trend_filter(feats, spec):
+            continue
+        label = str(spec.get("label") or spec.get("eq") or spec.get("field") or "").strip()
+        if not label or label in seen:
+            continue
+        seen.add(label)
+        labels.append(label)
+    return labels
+
+
+def canonical_filter_key(filters: Iterable[Mapping[str, Any]]) -> tuple:
+    """Stable cache key. Labels are display-only and ignored."""
+    parts = []
+    for spec in filters or []:
+        if not isinstance(spec, Mapping):
+            continue
+        rec = {
+            str(k): spec[k]
+            for k in ("group", "field", "eq", "in", "gte", "lte", "between", "null_as")
+            if k in spec and spec[k] is not None
+        }
+        if rec.get("in") is not None:
+            rec["in"] = tuple(rec["in"])
+        if rec.get("between") is not None:
+            rec["between"] = tuple(rec["between"])
+        parts.append(tuple(sorted((k, rec[k] if not isinstance(rec[k], list) else tuple(rec[k])) for k in rec)))
+    return tuple(sorted(parts))

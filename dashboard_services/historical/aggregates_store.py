@@ -13,11 +13,17 @@ from utils.paths import PLAYER_HISTORY_DIR
 PROFILE_PATH = PLAYER_HISTORY_DIR / "historical_profile_aggregates.json"
 CAREER_PATH_OVERLAY_PATH = PLAYER_HISTORY_DIR / "career_path_overlay.json"
 USAGE_VOLUME_OVERLAY_PATH = PLAYER_HISTORY_DIR / "usage_volume_overlay.json"
+COHORT_INDEX_PATH = PLAYER_HISTORY_DIR / "cohort_index.json"
 
 from dashboard_services.historical.usage import VOLUME_USAGE_IDS
 
 
 _CACHE: dict[str, Any] = {"mtime": None, "data": None}
+
+
+def aggregates_version() -> Any:
+    """mtime token for the loaded JSON (+ overlays). None if nothing is cached."""
+    return _CACHE.get("mtime")
 
 
 def _file_mtime(path: Any) -> Any:
@@ -143,6 +149,23 @@ def _merge_usage_volume_overlay(data: dict, overlay: Mapping[str, Any]) -> dict:
     return data
 
 
+def _merge_cohort_index(data: dict, overlay: Mapping[str, Any]) -> dict:
+    """Attach the compact observation index when the main JSON lacks one.
+
+    Cron rebuilds stamp ``cohort_index`` onto ``historical_profile_aggregates.json``.
+    Until that rebuild, a sibling ``cohort_index.json`` overlay is enough for
+    ``POST /api/historical-cohort`` without a request-time parquet scan.
+    """
+    if not overlay:
+        return data
+    existing = data.get("cohort_index") if isinstance(data.get("cohort_index"), dict) else {}
+    if existing.get("observations"):
+        return data
+    if overlay.get("observations"):
+        data["cohort_index"] = dict(overlay)
+    return data
+
+
 def load_profile_aggregates(*, path: Optional[Any] = None) -> dict:
     """Return the precomputed JSON, or ``{}`` when the file is missing."""
     target = path if path is not None else PROFILE_PATH
@@ -153,11 +176,13 @@ def load_profile_aggregates(*, path: Optional[Any] = None) -> dict:
     overlay_mtime = None
     volume_mtime = None
     nflverse_mtime = None
+    cohort_mtime = None
     if path is None:
         overlay_mtime = _file_mtime(CAREER_PATH_OVERLAY_PATH)
         volume_mtime = _file_mtime(USAGE_VOLUME_OVERLAY_PATH)
         nflverse_mtime = _nflverse_mtime_token()
-    cache_key = (mtime, overlay_mtime, volume_mtime, nflverse_mtime)
+        cohort_mtime = _file_mtime(COHORT_INDEX_PATH)
+    cache_key = (mtime, overlay_mtime, volume_mtime, nflverse_mtime, cohort_mtime)
     cached = _CACHE.get("data")
     if cached is not None and _CACHE.get("mtime") == cache_key and path is None:
         return cached
@@ -180,6 +205,12 @@ def load_profile_aggregates(*, path: Optional[Any] = None) -> dict:
             volume = {}
         if isinstance(volume, dict) and volume:
             _merge_usage_volume_overlay(data, volume)
+        try:
+            cohort = json.loads(COHORT_INDEX_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            cohort = {}
+        if isinstance(cohort, dict) and cohort:
+            _merge_cohort_index(data, cohort)
         _merge_nflverse_preseason_usage(data)
         _CACHE["mtime"] = cache_key
         _CACHE["data"] = data

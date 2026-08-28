@@ -295,6 +295,13 @@ _CHEAT_HTML = r"""
   .cs-hist-ex li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--cs-line, var(--border)); font-size: 13px; }
   .cs-hist-ex li:last-child { border-bottom: 0; }
   .cs-hist-ex li span:last-child { color: var(--cs-ink-soft, var(--text-muted)); font-family: var(--cs-mono); font-size: 12px; white-space: nowrap; }
+  .cs-hist-ex small { display: block; font-size: 11.5px; font-weight: 500; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 2px; }
+  .cs-hist-ex-sum { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 8px; }
+  .cs-hist-closest { margin-top: 4px; }
+  .cs-hist-market { display: grid; gap: 6px; margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; background: color-mix(in srgb, var(--cs-pos) 8%, transparent); }
+  .cs-hist-market > div { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; font-size: 13px; }
+  .cs-hist-market span { color: var(--cs-ink-soft, var(--text-muted)); }
+  .cs-hist-market strong { font-weight: 800; font-variant-numeric: tabular-nums; }
   .cs-trends-qb, .cs-hist-modal.cs-hist-qb { --cs-pos: var(--cs-qb); --cs-pos-bg: var(--cs-qb-bg); }
   .cs-trends-rb, .cs-hist-modal.cs-hist-rb { --cs-pos: var(--cs-rb); --cs-pos-bg: var(--cs-rb-bg); }
   .cs-trends-wr, .cs-hist-modal.cs-hist-wr { --cs-pos: var(--cs-wr); --cs-pos-bg: var(--cs-wr-bg); }
@@ -376,8 +383,24 @@ _CHEAT_HTML = r"""
   .cs-trends-player { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; font: inherit; cursor: pointer; border: 0; background: transparent; border-radius: 8px; padding: 6px 4px; color: var(--cs-ink, var(--text)); }
   .cs-trends-player:hover { background: color-mix(in srgb, var(--cs-pos) 8%, transparent); }
   .cs-trends-player.is-drafted { opacity: .45; }
-  .cs-trends-player-n { flex: 1; min-width: 0; font-weight: 700; font-size: 13px; }
+  .cs-trends-player { align-items: flex-start; }
+  .cs-trends-player-copy { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
+  .cs-trends-player-n { font-weight: 700; font-size: 13px; }
   .cs-trends-player-adp { font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-soft, var(--text-muted)); }
+  .cs-trends-player-why, .cs-trends-player-edge { font-size: 11.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.35; }
+  .cs-trends-player-edge { color: var(--cs-ink, var(--text)); font-weight: 650; }
+  .cs-trends-callout.is-down .cs-trends-callout-pct span { color: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-trends-profile { margin: 0 0 10px; padding: 12px 14px; border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; background: var(--cs-surface, var(--card)); }
+  .cs-trends-profile.is-idle { padding: 8px 12px; }
+  .cs-trends-profile-n { font-family: var(--cs-mono); font-size: 12px; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 8px; }
+  .cs-trends-profile-tiers { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 0 0 10px; }
+  .cs-trends-profile-k { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); }
+  .cs-trends-profile-v { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .cs-trends-profile-ci { font-family: var(--cs-mono); font-size: 10.5px; color: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-trends-profile-dl { display: grid; gap: 6px; margin: 0; font-size: 13px; }
+  .cs-trends-profile-dl > div { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 14px; align-items: baseline; }
+  .cs-trends-profile-dl dt { color: var(--cs-ink-soft, var(--text-muted)); }
+  .cs-trends-profile-dl dd { margin: 0; font-weight: 700; }
   .cs-trends-scout-more { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); margin: 8px 0 0; }
   .cs-trends-scout-more button { font: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer; border: 0; background: none; color: var(--cs-pos); padding: 0; }
   .cs-trends-conf { display: inline-flex; align-items: center; flex-shrink: 0; color: var(--cs-ink-faint, var(--text-muted)); }

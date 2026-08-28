@@ -311,7 +311,7 @@ def test_compact_signal_never_blends():
 
 def test_board_modules_stay_pure():
     hist = ROOT / "dashboard_services" / "historical"
-    for name in ("board.py", "aggregates_store.py", "career_path.py"):
+    for name in ("board.py", "aggregates_store.py", "career_path.py", "cohorts.py", "filters.py"):
         text = (hist / name).read_text(encoding="utf-8")
         assert "import pandas" not in text
         assert "import nfl_data_py" not in text
@@ -322,6 +322,7 @@ def test_board_modules_stay_pure():
     bp = (ROOT / "routes" / "historical_api_bp.py").read_text(encoding="utf-8")
     assert "/api/historical-player/" in bp
     assert "/api/historical-trends" in bp
+    assert "/api/historical-cohort" in bp
     assert "read_parquet" not in bp
     assert "load_player_history_df" not in bp
     pick = (ROOT / "static" / "pick_score.js").read_text(encoding="utf-8")
@@ -361,6 +362,8 @@ def test_deep_panel_route_serves_json_leaves():
     assert body["history"]["kind"] == "conditional"
     assert "examples" in body["history"]
     assert body["copy"]["hit_rates"]
+    if body["history"].get("closest_examples"):
+        assert body["copy"].get("examples_heading") == "Closest historical examples"
     assert all("_" not in row["label"] for row in body["copy"]["profile"])
     assert isinstance(body["copy"]["trends"], list)
     with app.test_client() as client:
@@ -498,6 +501,7 @@ def test_btj_hist_does_not_claim_never_previously_top12():
     assert "never" not in headline
     assert panel["history"].get("career_path") == "bounce_back"
     assert panel["history"].get("examples") == []
+    assert panel["history"].get("closest_examples")
     top12 = next(
         row for row in panel["copy"]["hit_rates"] if row.get("tier") == "top_12"
     )
@@ -519,6 +523,7 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     from dashboard_services.historical.board import board_contract, build_historical_trends
 
     assert board_contract()["trends_tab"] == "/api/historical-trends"
+    assert board_contract()["cohort"] == "/api/historical-cohort"
     aggs = load_profile_aggregates()
     if not aggs:
         pytest.skip("profile JSON missing")
@@ -567,6 +572,15 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     miss = next(sec for sec in rb["sections"] if sec["id"] == "capital_miss")
     assert miss["polarity"] == "miss"
     assert rb["highlights"]
+    assert all("ranking_edge" in h for h in rb["highlights"])
+    assert rb.get("red_flags") is not None
+    assert rb.get("finish_tier_copy")
+    assert "Top 24 is the flex line" not in payload["by_position"]["QB"]["finish_tier_copy"]
+    assert "Top 24 is the flex line" not in payload["by_position"]["TE"]["finish_tier_copy"]
+    assert "streaming" in payload["by_position"]["QB"]["finish_tier_copy"]
+    dumped = json.dumps(payload)
+    assert "observations" not in dumped
+    assert "cohort_index" not in dumped
     assert rb["age_curve"]
     assert any(pt.get("age") for pt in rb["age_curve"])
     assert "top_5" in (rb.get("baselines") or {})
@@ -576,6 +590,7 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     cap_row = capital["rows"][0]
     assert cap_row.get("match")
     assert cap_row["match"]["field"] == "draft_capital"
+    assert cap_row.get("ranking_edge") is not None or cap_row.get("adjusted_edge") is not None
     assert cap_row.get("pcts", {}).get("top_12") is not None
     assert cap_row.get("pcts", {}).get("top_5") is not None
     assert cap_row.get("pcts", {}).get("top_24") is not None
@@ -661,6 +676,42 @@ def test_historical_trends_route_serves_json_leaves():
     assert body.get("player_features")
 
 
+def test_historical_cohort_route_counts_matched_rows():
+    pytest.importorskip("flask")
+    from flask import Flask
+    from dashboard_services.historical.aggregates_store import load_profile_aggregates
+    from routes.historical_api_bp import historical_api_bp
+
+    aggs = load_profile_aggregates()
+    if not aggs:
+        pytest.skip("profile JSON missing")
+    if not ((aggs.get("cohort_index") or {}).get("observations")):
+        pytest.skip("cohort index missing")
+    app = Flask(__name__)
+    app.register_blueprint(historical_api_bp)
+    with app.test_client() as client:
+        resp = client.post(
+            "/api/historical-cohort",
+            json={
+                "position": "WR",
+                "filters": [
+                    {"group": "age_bucket", "field": "age_bucket", "eq": "23-24"},
+                    {"group": "draft_capital", "field": "draft_capital", "eq": "day_2"},
+                ],
+            },
+        )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["descriptive_only"] is True
+    assert body["not_in_ranking"] is True
+    assert body["kind"] == "player_season"
+    assert "observations" not in body
+    if body.get("available") and body.get("sample_size"):
+        assert body["raw_rate"] == body["rates"]["top_12"]["raw_rate"]
+        assert body["ci_low"] is not None
+        assert body["adjusted_edge"] is not None
+
+
 def test_hist_trend_titles_keep_distinct_capital_and_age_rows():
     from dashboard_services.historical.board import format_hist_trend_title
 
@@ -700,3 +751,6 @@ def test_hist_trend_titles_keep_distinct_capital_and_age_rows():
     )
     assert matches_trend_filter({"age": 24}, {"field": "age", "between": [23, 27]})
     assert not matches_trend_filter({"age": 31}, {"field": "age", "between": [23, 27]})
+    assert matches_trend_filter({"age": 22}, {"field": "age", "lte": 24})
+    assert not matches_trend_filter({"age": 25}, {"field": "age", "lte": 24})
+    assert not matches_trend_filter({"age": None}, {"field": "age", "lte": 24})

@@ -25,6 +25,7 @@ from dashboard_services.historical.definitions import (
     COMP_BOARD_TIERS,
     DEFAULT_BAYES_PRIOR_N,
     DRAFT_CAPITAL_ORDER,
+    EDGE_RANK_PRIOR_N,
     FTN_SEASON_FLOOR,
     LEAGUE_WINNER_SMASH_PRIOR_CUTOFF,
     LEAGUE_WINNER_TIER,
@@ -628,6 +629,7 @@ def assemble_profile_aggregates(
     ``pick_score.js``.
     """
     from dashboard_services.historical.walkforward import run_walk_forward
+    from dashboard_services.historical.cohorts import build_cohort_index as _build_cohort_index
 
     era = filter_era(rows, season_from, season_to)
     bounds = season_bounds(era)
@@ -671,6 +673,25 @@ def assemble_profile_aggregates(
                 "position baseline and n >= 15; longest consecutive run"
             ),
             "bayes_prior_n": DEFAULT_BAYES_PRIOR_N,
+            "edge_rank_prior_n": EDGE_RANK_PRIOR_N,
+            "edge_ranking": (
+                "Top edges and historical red flags rank by empirical-Bayes "
+                "adjusted_edge with prior_n=30 toward the positional baseline. "
+                "Table display percents still use bayes_prior_n=10 smoothed_rate. "
+                "Do not multiply single-bucket rates to estimate a combination."
+            ),
+            "wilson_interval": (
+                "95% Wilson score interval on the binomial raw rate. Shown on "
+                "the selected multi-factor cohort, expanded Hist, and expanded "
+                "trend detail — not every table row."
+            ),
+            "multi_factor_cohort": (
+                "POST /api/historical-cohort counts actual matching "
+                "player-seasons from a compact observation index. Same-group "
+                "filters OR, cross-group AND. Same predicates as Scout. "
+                "Player-season denominator, never mixed with cumulative "
+                "career windows."
+            ),
             "confidence": {
                 "low": "<15",
                 "moderate": "15-39",
@@ -762,4 +783,5 @@ def assemble_profile_aggregates(
         },
         "comps": build_comp_aggregates(era, scoring=scoring),
         "adp": build_adp_hit_rates(era, scoring=scoring),
+        "cohort_index": _build_cohort_index(era),
     }

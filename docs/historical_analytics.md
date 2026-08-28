@@ -119,6 +119,8 @@ dashboard_services/historical/     # pure logic — pytest -m "not integration"
     comps.py                       # pre-season matching, cells, board lookup
     adp.py                         # normalize 999→None, ADP hit rates, ADP-bust
     signals.py                     # History vs Projection vs Market (no blend)
+    filters.py                     # shared Scout / cohort predicates (OR/AND)
+    cohorts.py                     # compact observation index + combined rates
     board.py                       # compact board payload + deep-panel lookup
     aggregates_store.py            # JSON load + mtime cache (no pandas/Flask)
 data_building/historical/          # pandas / parquet I/O
@@ -132,10 +134,48 @@ data_building/external_data/player_history.py   # existing paths + new wrappers
 
 `definitions.py` / `seasons.py` / `finishes.py` / `finish_rates.py` /
 `age_curves.py` / `career_profiles.py` / `usage.py` / `comps.py` / `adp.py`
-/ `signals.py` / `board.py` must not import pandas, Flask, or `nfl_data_py`.
+/ `signals.py` / `filters.py` / `cohorts.py` / `board.py` must not import pandas, Flask, or `nfl_data_py`.
 `aggregates_store.py` reads the JSON artifact (pathlib + json only).
 `test_product_honesty.py` and `test_adp_formats.py` stay green: this package is
 not on their import graph.
+
+## Combined cohorts, shrinkage, and Wilson intervals
+
+Selected Trends buckets are evaluated against a compact in-memory observation
+index (`cohort_index` in `historical_profile_aggregates.json`, or the sibling
+`cohort_index.json` overlay). Hits are counted from actual matching
+player-seasons. Intersections are never estimated by multiplying bucket
+probabilities.
+
+Same-group filters OR; different groups AND. Scout (current-board matching)
+uses the same predicates in `filters.py`.
+
+Display rates on the selected-profile card are **raw** observed percents.
+Ranking / selected-profile **adjusted_edge** uses empirical-Bayes shrinkage
+with prior n=30 toward the positional baseline:
+
+`adjusted_rate = (successes + baseline * 30) / (n + 30)`
+
+Table cells still use prior n=10 (`DEFAULT_BAYES_PRIOR_N`). Top 10 edges and
+Historical red flags rank by `adjusted_edge`, not raw lift.
+
+Wilson 95% intervals (`ci_low` / `ci_high`) appear on the selected multi-factor
+cohort, expanded Hist, and the selected trend row only.
+
+Market-adjusted cohort edge is Top-12 only: for each matched observation with
+a historical preseason ADP bucket, look up the existing ADP-bucket P(top-12),
+average those probabilities, and compare to the observed raw rate. If coverage
+is thin (`n_with_adp < 15` or share `< 0.40`), the field is omitted rather than
+faked.
+
+Year-over-year trajectory buckets (target share +5 pts, snap +15 pts, workload
+cliffs) use two consecutive **prior** seasons only. Outcome year S never
+enters those deltas. Missing change is omitted, never 0.
+
+`POST /api/historical-cohort` reads the compact index. It does not scan parquet
+and does not send the warehouse to the browser. Historical outputs remain
+excluded from Pick Score, Recommendation, VOR, Draft Grade, and Cheat Sheet
+ranking.
 
 Persistence: large per-season rows stay in committed parquet under
 `cache/player_history/`. Precomputed **profile aggregates** are a small JSON

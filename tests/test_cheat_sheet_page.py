@@ -398,6 +398,22 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "function trendsScoutHtml" in script
     assert "draft-trends-scout" in script
     assert "Tap a bucket to list matching players." in script
+    assert "Tap historical buckets to build a profile." in script
+    assert "function loadTrendsCohort" in script
+    assert "/api/historical-cohort" in script
+    assert "Historical red flags" in script
+    assert "Closest historical examples" in script
+    assert "Historical profile" in script
+    assert "Expected at current ADP" in script
+    assert "Historical edge vs market" in script
+    assert "function trendsRedFlags" in script
+    assert "ranking_edge" in script
+    assert "spec.lte" in script
+    assert ".cs-trends-profile" in body
+    assert ".cs-hist-market" in body
+    assert ".cs-hist-ex-sum" in body
+    assert "shrinkage-adjusted lift" in script
+    assert "Top 24 is the flex line" not in script
     assert "Board players who match" in script
     grid_at = script.find("html += '<div class=\"cs-trends-grid\">'")
     scout_at = script.find("html += trendsScoutHtml")
@@ -519,6 +535,15 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert nav_clear["link"] == "/draft/cheat-sheet"
     assert "—" not in nav_clear["text"]
     assert "–" not in nav_clear["text"]
+    cohort = next(
+        entry for entry in CHANGELOG
+        if "combined historical hit rate" in entry.get("text", "").lower()
+    )
+    assert cohort["tag"] == "update"
+    assert cohort["link"] == "/draft/cheat-sheet"
+    assert "descriptive-only" in cohort["text"].lower()
+    assert "—" not in cohort["text"]
+    assert "–" not in cohort["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():
