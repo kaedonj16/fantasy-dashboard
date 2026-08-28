@@ -23700,6 +23700,32 @@ def build_portfolio_body(
             f"data-league='{_lid}' title='Unlink this league' aria-label='Unlink league'>&times;</button>"
         )
 
+    _PLAT_LABELS = {
+        "sleeper": "Sleeper",
+        "espn": "ESPN",
+        "yahoo": "Yahoo",
+        "mfl": "MFL",
+        "fleaflicker": "Fleaflicker",
+    }
+
+    def _plat_script(_plat):
+        key = str(_plat or "").lower()
+        label = _PLAT_LABELS.get(key)
+        if not label and key:
+            label = key[:1].upper() + key[1:]
+        if not label:
+            return ""
+        return (
+            f"<span class='pf-lg-plat pf-lg-plat-{html.escape(key)}'>"
+            f"{html.escape(label)}</span>"
+        )
+
+    def _lg_id(name_inner, _plat, extra=""):
+        return (
+            f"<div class='pf-lg-id'><div class='pf-lg-title'>{name_inner}{extra}</div>"
+            f"{_plat_script(_plat)}</div>"
+        )
+
     all_rows = valid_leagues + [
         lg for lg in all_leagues_data
         if lg.get("error") or lg.get("not_in_league") or lg.get("pending")
@@ -23710,6 +23736,7 @@ def build_portfolio_body(
         href = f"/{plat}/{season}/{lid}/dashboard"
         _raw_name = lg.get("name") or "?"
         name = html.escape(_raw_name)
+        name_link = f"<a href='{href}' class='pf-league-link pf-lg-name'>{name}</a>"
         # Presentational crest for the league card: initials + a stable hue from
         # the name (no new data — derived from the league name we already show).
         _ini = html.escape("".join(w[0] for w in _raw_name.split()[:2]).upper() or "?")
@@ -23739,7 +23766,7 @@ def build_portfolio_body(
                 f"<div class='pf-lg-card pf-lg-pending' data-lg-key='{plat}:{lid}'>"
                 f"<div class='pf-lg-top'>"
                 f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
-                f"<div class='pf-lg-id'><a href='{href}' class='pf-league-link pf-lg-name'>{name}</a></div>"
+                f"{_lg_id(name_link, plat)}"
                 f"<button type='button' class='pf-lg-fav' aria-label='Favorite league' aria-pressed='false' title='Favorite'>&#9733;</button>"
                 f"{_unlink_btn(plat, lid)}"
                 f"</div>"
@@ -23756,7 +23783,7 @@ def build_portfolio_body(
                 f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}'>"
                 f"<div class='pf-lg-top'>"
                 f"<span class='pf-lg-crest' style='background:var(--border);color:var(--text-muted);'>{_ini}</span>"
-                f"<div class='pf-lg-id'><span class='pf-lg-name' style='color:var(--text-muted);'>{name}</span></div>"
+                f"{_lg_id(f'<span class=\"pf-lg-name\" style=\"color:var(--text-muted);\">{name}</span>', plat)}"
                 f"<button type='button' class='pf-lg-fav' aria-label='Favorite league' aria-pressed='false' title='Favorite'>&#9733;</button>"
                 f"{_unlink_btn(plat, lid)}"
                 f"</div>"
@@ -23814,7 +23841,7 @@ def build_portfolio_body(
             f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}'>"
             f"<div class='pf-lg-top'>"
             f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
-            f"<div class='pf-lg-id'><a href='{href}' class='pf-league-link pf-lg-name'>{name}</a>{off_note}</div>"
+            f"{_lg_id(name_link, plat, off_note)}"
             f"<button type='button' class='pf-lg-fav' aria-label='Favorite league' aria-pressed='false' title='Favorite'>&#9733;</button>"
             f"{arch_badge}"
             f"{_unlink_btn(plat, lid)}"
@@ -23837,10 +23864,17 @@ def build_portfolio_body(
         ".pf-lg-top{display:flex;align-items:center;gap:10px;}"
         ".pf-lg-crest{width:34px;height:34px;border-radius:9px;flex:0 0 auto;display:grid;place-items:center;"
         "color:#fff;font-weight:800;font-size:13px;}"
-        ".pf-lg-id{flex:1;min-width:0;}"
+        ".pf-lg-id{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:2px;}"
+        ".pf-lg-title{min-width:0;max-width:100%;display:flex;align-items:baseline;gap:4px;}"
         ".pf-lg-name{font-weight:800;font-size:14.5px;text-decoration:none;color:var(--text);"
         "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-block;max-width:100%;vertical-align:bottom;}"
         ".pf-lg-name:hover{color:var(--accent);}"
+        ".pf-lg-plat{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;line-height:1.2;}"
+        ".pf-lg-plat-sleeper{color:#6C4BF0;}"
+        ".pf-lg-plat-espn{color:#D33A46;}"
+        ".pf-lg-plat-yahoo{color:#12A4A0;}"
+        ".pf-lg-plat-mfl{color:#3B7DD8;}"
+        ".pf-lg-plat-fleaflicker{color:#E08A1E;}"
         ".pf-lg-mid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center;}"
         ".pf-lg-v{font-size:16px;font-weight:800;}"
         ".pf-lg-l{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-subtle);margin-top:2px;}"
