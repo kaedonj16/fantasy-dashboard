@@ -11790,6 +11790,16 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
+  document.addEventListener('click', function(event) {
+    const expandBtn = event.target.closest('.os-waiver-expand-toggle');
+    if (!expandBtn) return;
+    const card = expandBtn.closest('.os-do-next-card');
+    if (!card) return;
+    const expanded = card.classList.toggle('is-expanded');
+    expandBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    expandBtn.textContent = expanded ? 'Show less' : 'Show all';
+  });
+
   // GM Memo generation functionality
   // The dashboard body can be replaced after a cold-cache background build.
   // Delegate this click from document instead of binding only to the button
