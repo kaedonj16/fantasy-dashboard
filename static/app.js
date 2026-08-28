@@ -9705,7 +9705,7 @@ if (!platformBtns.length) return;
   window.setHomeCardState = setHomeCardState;
 
   if (signedInHome && signedInLeagueList) {
-    const loadSignedInLeagues = () => fetch("/api/my-leagues").then((response) => response.json()).then((data) => {
+    const loadSignedInLeagues = () => fetch("/api/my-leagues", { cache: "no-store" }).then((response) => response.json()).then((data) => {
       const leagues = data.leagues || [];
       if (!leagues.length) {
         signedInLeagueList.textContent = "Connect your first fantasy league below.";
@@ -11218,9 +11218,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Fetch user leagues (account-scoped, cross-platform; falls back to Sleeper
     // discovery server-side for users without an account yet).
-    fetch('/api/my-leagues')
-      .then(res => res.json())
-      .then(data => {
+    function applyLeagueSwitcherData(data) {
         // Handle error response
         if (!data.ok) {
           console.warn('League switcher API error:', data.error || 'Unknown error');
@@ -11248,6 +11246,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         if (leagues.length > 1) {
+          const wrapper = leagueSwitcher.closest('.league-switcher-wrapper');
+          if (wrapper) wrapper.style.display = '';
           leagueSwitcher.innerHTML = '';
           leagues.forEach(league => {
             const option = document.createElement('option');
@@ -11368,12 +11368,19 @@ document.addEventListener('DOMContentLoaded', function() {
           if (wrapper) wrapper.style.display = 'none';
           fillLeagueChromeMenu(leagues);
         }
-      })
-      .catch(err => {
-        console.error('Failed to load leagues:', err);
-        leagueSwitcher.innerHTML = '<option value="">Error loading leagues</option>';
-        fillLeagueChromeMenu([]);
-      });
+    }
+
+    window.refreshLeagueSwitcher = function () {
+      return fetch('/api/my-leagues', { cache: 'no-store' })
+        .then(res => res.json())
+        .then(applyLeagueSwitcherData)
+        .catch(err => {
+          console.error('Failed to load leagues:', err);
+          leagueSwitcher.innerHTML = '<option value="">Error loading leagues</option>';
+          fillLeagueChromeMenu([]);
+        });
+    };
+    window.refreshLeagueSwitcher();
 
     // Shared navigation for both the desktop <select> and the mobile list rows.
     // Uses the target league's OWN season/platform (not the current page's) so
@@ -11459,6 +11466,26 @@ document.addEventListener('DOMContentLoaded', function() {
     leagueSwitcher.addEventListener('change', function() {
       const opt = this.options[this.selectedIndex];
       navigateToLeague(this.value, opt && opt.dataset.platform, opt && opt.dataset.season);
+    });
+  }
+
+  // Cross-device: refetch saved leagues when returning to this tab or restoring
+  // from bfcache so leagues added on another signed-in device appear promptly.
+  if (window._hasAccount) {
+    let lastMyLeaguesRefresh = 0;
+    function refreshSavedLeaguesFromServer() {
+      if (document.visibilityState === 'hidden') return;
+      const now = Date.now();
+      if (now - lastMyLeaguesRefresh < 2000) return;
+      lastMyLeaguesRefresh = now;
+      window.refreshHomeLeagues?.();
+      window.refreshLeagueSwitcher?.();
+    }
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') refreshSavedLeaguesFromServer();
+    });
+    window.addEventListener('pageshow', function (e) {
+      if (e.persisted) refreshSavedLeaguesFromServer();
     });
   }
 });

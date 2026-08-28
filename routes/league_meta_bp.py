@@ -248,7 +248,11 @@ def api_my_leagues():
     except Exception as exc:
         logger.warning("[my-leagues] resolve failed: %s", exc)
 
-    return jsonify({"ok": True, "leagues": out})
+    resp = jsonify({"ok": True, "leagues": out})
+    # Account-scoped list must never be cached — leagues added on another device
+    # need to appear on the next refresh/tab focus here.
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @league_meta_bp.route("/api/weekly-trends")
