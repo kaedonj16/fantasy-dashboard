@@ -23,13 +23,18 @@ def test_dashboard_action_first_hierarchy():
     assert "lineup_alert_html" in DASH
     assert DASH.index("sinceLastVisitCard") < DASH.index("os-jump-report")
     assert "matchup_html" in DASH
-    assert DASH.index("matchup_html") > DASH.index("action_waiver_html")
+    assert DASH.index("matchup_html") > DASH.index("do_next_waiver_html")
+    assert "Waiver Wire Targets" not in DASH
+    assert "_render_do_next_waiver_card" in DASH
 
 
 def test_offseason_dashboard_action_queue():
     assert "os-action-queue" in OS_DASH
+    assert "_render_do_next_waiver_card" in OS_DASH
+    assert "draft_prep_hrefs" in OS_DASH
     assert "Draft Room" in OS_DASH
-    assert "Best waiver available" in OS_DASH
+    assert "Waiver Wire Targets" not in OS_DASH
+    assert "Best waiver available" not in OS_DASH
 
 
 def test_cheat_sheet_terminology_tooltips():
@@ -94,8 +99,16 @@ def test_analytics_terminology_module():
     assert LABELS["historical_hit_rate"]["category"] == "HISTORY"
 
 
+def test_do_next_waiver_card_helper():
+    app_src = (ROOT / "app.py").read_text(encoding="utf-8")
+    assert "def _render_do_next_waiver_card" in app_src
+    assert "Do this next" in app_src
+    assert "os-do-next-collapsed" in app_src
+
+
 def test_dashboard_css_action_and_palette_styles():
     assert ".os-action-queue" in DASH_CSS
+    assert ".os-do-next-card" in DASH_CSS
     assert ".nav-search-group-label" in DASH_CSS
     assert ".br-pro-preview" in DASH_CSS
     assert ".pr-advanced-col" not in DASH_CSS

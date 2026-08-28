@@ -7,7 +7,7 @@ from __future__ import annotations
 
 def build_dashboard_body(ctx: dict) -> str:
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
-        _build_waiver_targets_rows,
+        _render_do_next_waiver_card,
         _compute_fpts_against,
         _owner_to_rid_map,
         _playoff_sim_cached,
@@ -89,42 +89,17 @@ def build_dashboard_body(ctx: dict) -> str:
 
     bench_check_html = _render_bench_check(ctx, viewer_roster_id, last_final_week)
 
-    # Waiver Wire Targets card (same builder as the offseason hub). Uses the
-    # live model-value cache rather than the ctx copy, which can go stale.
-    waiver_card_html = ""
-    action_waiver_html = ""
+    # Merged waiver card (preview + show all) lives in the Actions queue only.
+    do_next_waiver_html = ""
     try:
         _wv_table = list(get_model_value_table_cached() or []) or (ctx.get("model_value_table") or [])
-        _wv_rows = _build_waiver_targets_rows(ctx, _wv_table)
-        _wv_preview_rows = _build_waiver_targets_rows(ctx, _wv_table, limit=3)
-        _wv_url = url_for(
-            "league_pages.page_waivers", platform=platform, season=season, league_id=league_id,
+        do_next_waiver_html = _render_do_next_waiver_card(
+            ctx,
+            _wv_table,
+            platform=platform,
+            season=season,
+            league_id=league_id,
         )
-        if _wv_preview_rows:
-            action_waiver_html = f"""
-        <section class="os-card os-action-card">
-          <div class="lineup-alert-head">
-            <span class="lineup-alert-title">Best waiver available</span>
-            <a class="os-section-link" href="{html.escape(_wv_url)}">View waivers &rarr;</a>
-          </div>
-          <div class="os-waiver-list os-waiver-preview">{_wv_preview_rows}</div>
-        </section>"""
-        if _wv_rows:
-            waiver_card_html = f"""
-        <section class="os-card os-col-fill">
-          <div class="os-section-head">
-            <div class="os-section-head-content">
-              {_section_title_link("Waiver Wire Targets", "league_pages.page_waivers", platform, season, league_id)}
-              <div class="os-section-subtitle">Smart pickups based on value + trend + breakout potential</div>
-            </div>
-            <div class="os-section-head-actions">
-              <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-waiver-body">&#9660;</button>
-            </div>
-          </div>
-          <div class="os-waiver-list card-collapsible-body" id="dash-waiver-body">
-            {_wv_rows}
-          </div>
-        </section>"""
     except Exception:
         logger.debug("dashboard waiver card failed", exc_info=True)
 
@@ -339,7 +314,7 @@ def build_dashboard_body(ctx: dict) -> str:
           {lineup_alert_html}
           {roster_moves_html}
           {trade_window_html}
-          {action_waiver_html}
+          {do_next_waiver_html}
         </div>"""
 
     body = f"""
@@ -381,7 +356,6 @@ def build_dashboard_body(ctx: dict) -> str:
           <button type="button" class="active" data-jump="os-jump-actions">Actions</button>
           <button type="button" data-jump="os-jump-report">Report</button>
           <button type="button" data-jump="os-jump-standings">Standings</button>
-          <button type="button" data-jump="os-jump-waivers">Waivers</button>
           <button type="button" data-jump="os-jump-teams">Team Values</button>
         </nav>
 
@@ -394,10 +368,6 @@ def build_dashboard_body(ctx: dict) -> str:
           {bench_check_html}
           {season_review_html}
           {_dash_bulletins_html}
-        </div>
-
-        <div id="os-jump-waivers" class="os-tab-panel">
-          {waiver_card_html}
         </div>
       </main>
 

@@ -225,6 +225,22 @@ def _draft_time_ms(league: dict) -> Optional[int]:
     )
 
 
+def _fleaflicker_sleeper_league_type(max_keepers: int, team_count: int) -> tuple[int, str]:
+    """Map Fleaflicker keeper limits to Sleeper settings.type + league_type.
+
+    Fleaflicker publishes ``max_keepers`` on the league object from
+    FetchLeagueStandings. ffscrapr treats ``max_keepers * team_count > 250`` as
+    dynasty (whole-roster retention); smaller positive limits are keeper leagues.
+    """
+    keepers = max(0, int(max_keepers or 0))
+    teams = max(1, int(team_count or 1))
+    if keepers <= 0:
+        return 0, "redraft"
+    if keepers * teams > 250:
+        return 2, "dynasty"
+    return 1, "keeper"
+
+
 def _normalize_fleaflicker_draft_status(
     flea_status: Optional[str],
     *,
@@ -410,16 +426,25 @@ class FleaflickerProvider(ProviderAdapter):
                 "Fleaflicker rules unavailable league=%s season=%s", league_id, season,
                 exc_info=True,
             )
+        total_rosters = _int(_get(league, "size")) or len(teams)
+        max_keepers = _int(_get(league, "max_keepers", "maxKeepers"))
+        sleeper_type, league_type = _fleaflicker_sleeper_league_type(
+            max_keepers, total_rosters,
+        )
+        settings: dict[str, Any] = {
+            "type": sleeper_type,
+            "league_type": league_type,
+            "draft_status": str(_get(league, "draft_status", "draftStatus") or ""),
+        }
+        if max_keepers > 0:
+            settings["max_keepers"] = max_keepers
         return {
             "league_id": str(_get(league, "id") or league_id),
             "season": int(_get(standings or {}, "season") or season),
             "name": _get(league, "name") or f"Fleaflicker League {league_id}",
-            "total_rosters": _int(_get(league, "size")) or len(teams),
+            "total_rosters": total_rosters,
             "draft_day": _draft_time_ms(league),
-            "settings": {
-                "league_type": "redraft",
-                "draft_status": str(_get(league, "draft_status", "draftStatus") or ""),
-            },
+            "settings": settings,
             "scoring_settings": self._scoring(rules),
             "roster_positions": self._positions(rules),
             "metadata": {"provider": "fleaflicker"},
