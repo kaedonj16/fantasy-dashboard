@@ -419,12 +419,23 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
 def test_changelog_announces_trends_and_hist_without_em_dashes():
     from dashboard_services.changelog import CHANGELOG
 
-    entry = CHANGELOG[0]
+    entry = next(e for e in CHANGELOG if e.get("link") == "/draft/cheat-sheet")
     assert entry["date"] == "2026-08-28"
     assert entry["tag"] == "new"
-    assert entry["link"] == "/draft/cheat-sheet"
     assert "Trends" in entry["text"]
     assert "Hist" in entry["text"]
+    assert "—" not in entry["text"]
+    assert "–" not in entry["text"]
+
+
+def test_changelog_announces_portfolio_positional_percentiles():
+    from dashboard_services.changelog import CHANGELOG
+
+    entry = CHANGELOG[0]
+    assert entry["date"] == "2026-08-28"
+    assert entry["tag"] == "fix"
+    assert entry["link"] == "/portfolio"
+    assert "percentile" in entry["text"].lower()
     assert "—" not in entry["text"]
     assert "–" not in entry["text"]
 

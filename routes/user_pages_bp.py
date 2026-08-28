@@ -187,12 +187,15 @@ def page_portfolio():
             return s[m] if n % 2 else (s[m - 1] + s[m]) / 2
 
         # Positional strength uses the SAME starter-weighted strength as the
-        # league-card ranks, so the two never disagree — a mid-pack rank now reads
-        # ~0% on the portfolio bar instead of a big negative. weighted_pos_strength
-        # emphasizes startable top-end talent and only lightly credits bench depth,
-        # so a thin roster no longer structurally drags a position negative the way
-        # the old fixed top-N (1 QB / 2 RB / 3 WR / 1 TE) value sum did. Both the
-        # user value and the league baseline come from one pass over the rosters.
+        # league-card ranks, so a #2 WR chip and a high WR percentile never
+        # disagree. weighted_pos_strength emphasizes startable top-end talent
+        # and only lightly credits bench depth.
+        #
+        # The My Leagues summary card shows the in-league PERCENTILE of that
+        # strength (then averages those percentiles across leagues). Percentiles
+        # stay centered at 50th for a typical team; averaging signed % vs median
+        # let one thin league drag a stacked position negative.
+        from utils.roster_strength import strength_percentile
         roster_positions = lctx.get("roster_positions") or []
         try:
             slot_counts = count_roster_positions(roster_positions)
@@ -200,6 +203,7 @@ def page_portfolio():
             slot_counts = {"QB": 1, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1}
         pos_user_rank = {}
         pos_user_vals = {}
+        pos_user_pctile = {}
         pos_league_avgs = {}
         for pos in ["QB", "RB", "WR", "TE"]:
             all_strengths = []
@@ -215,11 +219,13 @@ def page_portfolio():
                 all_strengths.append((str(r.get("roster_id")), strength))
                 if str(r.get("roster_id")) == rid:
                     user_strength = strength
-            # Baseline against the league MEDIAN team, not the mean: strengths are
-            # right-skewed (a few stacked teams), so a mean baseline pushes every
-            # typical roster negative. Median keeps a mid-pack team at ~0%.
+            # Median is still used for the per-league "WR-Spread" archetype
+            # badge (ratio vs a typical team). The summary card uses percentile.
             pos_user_vals[pos] = user_strength
             pos_league_avgs[pos] = _median([s for _, s in all_strengths]) or 1
+            pos_user_pctile[pos] = strength_percentile(
+                user_strength, [s for _, s in all_strengths],
+            )
             if len(all_strengths) > 1:
                 ranked = sorted(all_strengths, key=lambda x: -x[1])
                 pos_user_rank[pos] = next((i + 1 for i, (r_id, _) in enumerate(ranked) if r_id == rid), "?")
@@ -257,6 +263,7 @@ def page_portfolio():
             "urgency": urgency,
             "pos_user_vals": pos_user_vals,
             "pos_league_avgs": pos_league_avgs,
+            "pos_user_pctile": pos_user_pctile,
             "pos_user_rank": pos_user_rank,
             "offseason": lctx.get("offseason_mode", False),
         }
@@ -275,15 +282,13 @@ def page_portfolio():
     total_losses = sum(lg.get("losses", 0) for lg in valid_leagues)
     total_ties = sum(lg.get("ties", 0) for lg in valid_leagues)
 
-    # Cross-league avg positional value vs league average
-    cross_pos = {}
-    for pos in ["QB", "RB", "WR", "TE"]:
-        ratios = []
-        for lg in valid_leagues:
-            u = (lg.get("pos_user_vals") or {}).get(pos, 0)
-            a = (lg.get("pos_league_avgs") or {}).get(pos) or 1
-            ratios.append(u / a)
-        cross_pos[pos] = round((sum(ratios) / len(ratios)) if ratios else 1.0, 2)
+    # Cross-league positional strength: mean in-league percentile per position.
+    # Empty portfolio omits the card rather than rendering fake 50ths.
+    from utils.roster_strength import average_league_percentiles
+    cross_pos = (
+        average_league_percentiles(lg.get("pos_user_pctile") or {} for lg in valid_leagues)
+        if valid_leagues else {}
+    )
 
     # Sort valid leagues by urgency: losing records and low standings first
     valid_leagues.sort(key=lambda lg: (

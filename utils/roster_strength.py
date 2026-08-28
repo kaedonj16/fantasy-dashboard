@@ -10,7 +10,7 @@ adapt to how many FLEX slots the league runs (more flex -> more depth credit).
 """
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict, Iterable, List, Mapping, Sequence
 
 from utils.lineup_slots import (
     FLEX_SLOT_NAMES as _FLEX_SLOT_NAMES,
@@ -82,6 +82,62 @@ def weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, in
     used = vals[:len(weights)]
     denom = sum(weights[:len(used)]) or 1.0
     return sum(v * w for v, w in zip(used, weights)) / denom
+
+
+CORE_POSITIONS = ("QB", "RB", "WR", "TE")
+
+
+def strength_percentile(user_strength: float, all_strengths: Sequence[float]) -> float:
+    """0-100 percentile of ``user_strength`` among ``all_strengths``.
+
+    100 means strictly best (better than every other roster), 0 means strictly
+    worst. Ties split the difference with the other tied rosters, so two teams
+    tied for first in a 12-team league land around the 95th percentile rather
+    than both claiming 100. A one-team (or empty) league returns 50 — there is
+    no field to outrank.
+
+    Averaging this across leagues is what the My Leagues positional-strength
+    card shows: a #1 finish in one league and a #12 in another read as ~50th,
+    instead of a signed percent-vs-median that the weak league drags negative.
+    """
+    strengths = [float(s or 0.0) for s in (all_strengths or [])]
+    n = len(strengths)
+    if n <= 1:
+        return 50.0
+    user = float(user_strength or 0.0)
+    n_worse = sum(1 for s in strengths if s < user)
+    n_equal = sum(1 for s in strengths if s == user)
+    others = n - 1
+    if n_equal <= 0:
+        # Caller compared against a field that does not include the user.
+        return 100.0 * n_worse / n
+    tied_others = n_equal - 1
+    return 100.0 * (n_worse + 0.5 * tied_others) / others
+
+
+def average_league_percentiles(
+    league_pctiles: Iterable[Mapping[str, float]],
+    positions: Sequence[str] = CORE_POSITIONS,
+) -> Dict[str, float]:
+    """Mean in-league percentile per position, rounded to one decimal.
+
+    Missing positions are skipped, not treated as zero — a league that could
+    not score TE must not pull the cross-league TE number to 0th. An empty
+    input yields 50 for every requested position.
+    """
+    buckets: Dict[str, List[float]] = {pos: [] for pos in positions}
+    for row in league_pctiles or []:
+        for pos in positions:
+            if pos not in row:
+                continue
+            raw = row.get(pos)
+            if raw is None:
+                continue
+            buckets[pos].append(float(raw))
+    return {
+        pos: round((sum(vals) / len(vals)) if vals else 50.0, 1)
+        for pos, vals in buckets.items()
+    }
 
 
 # Holdout-oriented composite: starter utility is the primary outcome, while
