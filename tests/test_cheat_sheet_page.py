@@ -715,7 +715,7 @@ def test_changelog_announces_undrafted_draft_countdown():
 def test_changelog_announces_predraft_cheat_sheet_sidebar():
     from dashboard_services.changelog import CHANGELOG
 
-    entry = CHANGELOG[0]
+    entry = next(e for e in CHANGELOG if "empty roster sidebar" in e.get("text", "").lower())
     assert entry["date"] == "2026-08-28"
     assert entry["tag"] == "fix"
     assert entry["link"] == "/draft/cheat-sheet"
