@@ -13699,11 +13699,6 @@ html[data-theme="dark"] .podium .bar {
     flex: 1 1 auto;
 }
 
-.pf-lg-card.pf-lg-pending--draft,
-.pf-lg-card.pf-lg-pending--link {
-    /* Pending cards use the default card shell; status lives in the pills. */
-}
-
 .pf-status-pill {
     display: inline-flex;
     align-items: center;
