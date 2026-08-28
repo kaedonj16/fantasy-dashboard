@@ -13,31 +13,48 @@ from typing import Any, Dict, List, Optional
 MAX_USER_LEAGUES = 12
 
 
+def owner_id_variants(value: Optional[str]) -> set[str]:
+    """IDs that should be treated as the same owner (ESPN SWID with/without braces)."""
+    raw = str(value or "").strip()
+    if not raw:
+        return set()
+    out = {raw}
+    if raw.startswith("{") and raw.endswith("}") and len(raw) > 2:
+        out.add(raw[1:-1])
+    elif "-" in raw:
+        out.add("{" + raw.strip("{}") + "}")
+    return out
+
+
 def match_viewer_roster(
     rosters: List[dict],
     *,
     team_id: Optional[str] = None,
     owner_id: Optional[str] = None,
+    owner_ids: Optional[List[str]] = None,
 ) -> Optional[dict]:
     """Pick the viewer's roster from a league's roster list.
 
-    Stored ``team_id`` (the league-scoped roster id on the account) wins.
-    Otherwise match ``owner_id`` (Sleeper user id, ESPN/Yahoo owner guid).
+    Stored ``team_id`` (the league-scoped roster id on the account) wins, then
+    ``owner_id`` / ``owner_ids`` (Sleeper user id, ESPN/Yahoo owner guid).
+    ``team_id`` is also tried as an owner id because some link flows persist the
+    platform user id rather than the roster id.
     """
+    rows = rosters or []
     tid = str(team_id or "")
     if tid:
-        hit = next(
-            (r for r in (rosters or []) if str(r.get("roster_id") or "") == tid),
-            None,
-        )
+        hit = next((r for r in rows if str(r.get("roster_id") or "") == tid), None)
         if hit:
             return hit
-    oid = str(owner_id or "")
-    if oid:
-        return next(
-            (r for r in (rosters or []) if str(r.get("owner_id") or "") == oid),
-            None,
-        )
+        tid_owners = owner_id_variants(tid)
+        hit = next((r for r in rows if str(r.get("owner_id") or "") in tid_owners), None)
+        if hit:
+            return hit
+    wanted: set[str] = set()
+    for oid in [owner_id, *(owner_ids or [])]:
+        wanted |= owner_id_variants(oid)
+    if wanted:
+        return next((r for r in rows if str(r.get("owner_id") or "") in wanted), None)
     return None
 
 

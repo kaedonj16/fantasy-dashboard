@@ -11,7 +11,7 @@ class FakeConnection:
         self.updated = []
 
     def execute(self, sql, params):
-        if "SELECT team_id FROM user_leagues" in sql:
+        if "SELECT team_id" in sql and "FROM user_leagues" in sql:
             return FakeResult(self.membership)
         if "SELECT platform_user_id,handle" in sql:
             return FakeResult(self.identities)

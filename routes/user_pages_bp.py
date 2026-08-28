@@ -101,18 +101,33 @@ def page_portfolio():
         model_value_table = lctx.get("model_value_table") or []
         players_index = lctx.get("players_index") or {}
         values_by_id = {str(r.get("id") or ""): r for r in model_value_table if r.get("id")}
-        # Which roster is "yours": Sleeper matches the viewer's user id; ESPN/Yahoo
-        # have no shared identity, so use the team_id captured when the league was
-        # linked.
-        if lg_platform == "sleeper":
-            viewer_roster = next(
-                (r for r in rosters if str(r.get("owner_id")) == str(viewer_user_id)), None
+        # Which roster is "yours": prefer the account's stored team (and ESPN SWID /
+        # Sleeper identity), then the session viewer. A leftover ESPN owner id in
+        # the session must not mark every Sleeper league as "Team not linked yet".
+        viewer_roster = None
+        _account_id = session.get("account_id")
+        if _account_id:
+            try:
+                from dashboard_services.accounts import resolve_account_viewer_for_league
+                _av = resolve_account_viewer_for_league(
+                    _account_id, lg_platform, lid, lg_season,
+                    lctx.get("users") or [], rosters,
+                )
+                _rid = str((_av or {}).get("viewer_roster_id") or "")
+                if _rid:
+                    viewer_roster = next(
+                        (r for r in rosters if str(r.get("roster_id") or "") == _rid),
+                        None,
+                    )
+            except Exception:
+                logger.debug("portfolio account viewer resolve failed", exc_info=True)
+        if viewer_roster is None:
+            from utils.redzone_user import match_viewer_roster
+            viewer_roster = match_viewer_roster(
+                rosters,
+                team_id=lg.get("team_id"),
+                owner_id=viewer_user_id if lg_platform == "sleeper" else None,
             )
-        else:
-            _tid = str(lg.get("team_id") or "")
-            viewer_roster = next(
-                (r for r in rosters if str(r.get("roster_id")) == _tid), None
-            ) if _tid else None
         if not viewer_roster:
             # The league loaded but there's no roster for you yet. Most often that's
             # a linked league whose draft hasn't happened (no rosters populated) —

@@ -223,6 +223,18 @@ def get_provider_league_credentials(
                  AND l.season = %s AND c.status = 'connected'""",
             (account_id, provider, str(league_id), int(season)),
         ).fetchone()
+        # ESPN league IDs persist across seasons; My Leagues bumps the display
+        # year without rewriting the saved row, so fall back to the latest
+        # connected credentials for that league.
+        if (not row or not row["encrypted_credentials"]) and provider == "espn":
+            row = conn.execute(
+                """SELECT c.encrypted_credentials FROM user_leagues l
+                   JOIN fantasy_provider_connections c ON c.id = l.provider_connection_id
+                   WHERE l.account_id = %s AND l.platform = %s AND l.league_id = %s
+                     AND c.status = 'connected'
+                   ORDER BY l.season DESC LIMIT 1""",
+                (account_id, provider, str(league_id)),
+            ).fetchone()
     if not row or not row["encrypted_credentials"]:
         return None
     credentials = _decrypt_provider_credentials(row["encrypted_credentials"])
@@ -435,6 +447,15 @@ def add_espn_league_connection(
         account_id, "espn", league_id, season, name, connection_method,
         credentials=credentials,
     )
+    # The SWID is the ESPN owner id on rosters. Storing it as a platform
+    # identity lets My Leagues and the dashboard resolve "your team" even when
+    # the user connected cookies without picking a roster in the link modal.
+    if swid:
+        normalized = str(swid).strip()
+        if normalized and not (normalized.startswith("{") and normalized.endswith("}")):
+            normalized = "{" + normalized.strip("{}") + "}"
+        if normalized:
+            link_platform_identity(account_id, "espn", normalized)
 
 def consume_league_visit(
     account_id: int,
@@ -833,12 +854,22 @@ def resolve_account_viewer_for_league(
         return None
     init_accounts_tables()
     from dashboard_services.db import get_conn
+    from utils.redzone_user import match_viewer_roster, owner_id_variants
+    platform = str(platform).lower()
     key = (account_id, platform, str(league_id), int(season))
     with get_conn() as conn:
         membership = conn.execute(
-            """SELECT team_id FROM user_leagues WHERE account_id=%s AND platform=%s
+            """SELECT team_id, season FROM user_leagues WHERE account_id=%s AND platform=%s
                AND league_id=%s AND season=%s""", key,
         ).fetchone()
+        # ESPN league IDs persist year to year; the portfolio bumps the display
+        # season without copying the user_leagues row.
+        if not membership and platform == "espn":
+            membership = conn.execute(
+                """SELECT team_id, season FROM user_leagues WHERE account_id=%s AND platform=%s
+                   AND league_id=%s ORDER BY season DESC LIMIT 1""",
+                (account_id, platform, str(league_id)),
+            ).fetchone()
         if not membership:
             return None
         identity_rows = conn.execute(
@@ -848,11 +879,16 @@ def resolve_account_viewer_for_league(
 
     identities = {str(row["platform_user_id"]): row.get("handle") for row in identity_rows}
     stored_team_id = str(membership.get("team_id") or "")
-    roster = next((r for r in rosters or []
-                   if stored_team_id and str(r.get("roster_id") or "") == stored_team_id), None)
-    if roster is None and identities:
-        roster = next((r for r in rosters or []
-                       if str(r.get("owner_id") or "") in identities), None)
+    stored_season = int(membership.get("season") or season)
+    ident_ids = []
+    for pid in identities:
+        ident_ids.extend(owner_id_variants(pid))
+    roster = match_viewer_roster(
+        rosters, team_id=stored_team_id, owner_ids=ident_ids,
+    )
+    if roster is None and platform == "espn":
+        creds = get_espn_league_credentials(account_id, league_id, int(season)) or {}
+        roster = match_viewer_roster(rosters, owner_ids=list(owner_id_variants(creds.get("swid"))))
     # Fleaflicker stores team ids on rosters, but private-login credentials carry the
     # Fleaflicker owner id — match via metadata.flea_owner_id when team_id was never
     # persisted (common on reconnect / saved-league open paths).
@@ -884,14 +920,21 @@ def resolve_account_viewer_for_league(
     user = next((u for u in users or []
                  if str(u.get("user_id") or "") == owner_id), None) or {}
     user_meta, roster_meta = user.get("metadata") or {}, roster.get("metadata") or {}
-    username = user.get("username") or identities.get(owner_id) or user.get("display_name") or owner_id
+    username = (
+        user.get("username")
+        or identities.get(owner_id)
+        or next((identities[k] for k in identities if owner_id in owner_id_variants(k)), None)
+        or user.get("display_name")
+        or owner_id
+    )
     team_name = (roster_meta.get("team_name") or user_meta.get("team_name")
                  or user.get("display_name") or username or f"Roster {roster_id}")
     if roster_id and roster_id != stored_team_id:
         with get_conn() as conn:
             conn.execute(
                 """UPDATE user_leagues SET team_id=%s WHERE account_id=%s AND platform=%s
-                   AND league_id=%s AND season=%s""", (roster_id, *key),
+                   AND league_id=%s AND season=%s""",
+                (roster_id, account_id, platform, str(league_id), stored_season),
             )
             conn.commit()
     return {"viewer_username": username, "viewer_user_id": owner_id or None,
