@@ -359,7 +359,6 @@ def build_dashboard_body(ctx: dict) -> str:
           <button type="button" class="active" data-jump="os-jump-actions">Actions</button>
           <button type="button" data-jump="os-jump-report">Report</button>
           <button type="button" data-jump="os-jump-standings">Standings</button>
-          <button type="button" data-jump="os-jump-waivers">Waivers</button>
           <button type="button" data-jump="os-jump-teams">{teams_tab_label}</button>
         </nav>
 
