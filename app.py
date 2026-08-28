@@ -23737,6 +23737,7 @@ def build_portfolio_body(
         _raw_name = lg.get("name") or "?"
         name = html.escape(_raw_name)
         name_link = f"<a href='{href}' class='pf-league-link pf-lg-name'>{name}</a>"
+        name_muted = f"<span class='pf-lg-name' style='color:var(--text-muted);'>{name}</span>"
         # Presentational crest for the league card: initials + a stable hue from
         # the name (no new data — derived from the league name we already show).
         _ini = html.escape("".join(w[0] for w in _raw_name.split()[:2]).upper() or "?")
@@ -23783,7 +23784,7 @@ def build_portfolio_body(
                 f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}'>"
                 f"<div class='pf-lg-top'>"
                 f"<span class='pf-lg-crest' style='background:var(--border);color:var(--text-muted);'>{_ini}</span>"
-                f"{_lg_id(f'<span class=\"pf-lg-name\" style=\"color:var(--text-muted);\">{name}</span>', plat)}"
+                f"{_lg_id(name_muted, plat)}"
                 f"<button type='button' class='pf-lg-fav' aria-label='Favorite league' aria-pressed='false' title='Favorite'>&#9733;</button>"
                 f"{_unlink_btn(plat, lid)}"
                 f"</div>"
