@@ -435,11 +435,17 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "Hist" in launch["text"]
     assert "—" not in launch["text"]
     assert "–" not in launch["text"]
-    scout = CHANGELOG[0]
-    assert scout["tag"] == "update"
+    scout = next(
+        entry for entry in CHANGELOG
+        if entry.get("tag") == "update" and "Pro" in entry.get("text", "")
+    )
     assert "top-5" in scout["text"]
     assert "top-24" in scout["text"]
-    assert "Pro" in scout["text"]
     assert "—" not in scout["text"]
     assert "–" not in scout["text"]
+    hist_fix = CHANGELOG[0]
+    assert hist_fix["tag"] == "fix"
+    assert "Hist" in hist_fix["text"]
+    assert "—" not in hist_fix["text"]
+    assert "–" not in hist_fix["text"]
 

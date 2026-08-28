@@ -2079,19 +2079,18 @@
 
     function histTrendTitle(row) {
         row = row || {};
+        if (row.title) return String(row.title);
         var bucket = String(row.bucket || '').trim();
         var label = String(row.label || '').trim();
         var kind = row.kind || '';
-        if (bucket && TRENDS_LABEL_PREFIX[kind]) return trendsQualifyLabel(kind, bucket);
-        if (bucket && label) {
-            var qualified = trendsQualifyLabel(kind, bucket);
-            var lowLabel = label.toLowerCase();
-            var lowQual = qualified.toLowerCase();
-            if (lowQual.indexOf(lowLabel) >= 0 || lowLabel.indexOf(lowQual) >= 0) return qualified;
-            return label + ' · ' + qualified;
-        }
-        if (bucket) return trendsQualifyLabel(kind, bucket);
-        return label || row.sentence || '';
+        var qualified = bucket ? trendsQualifyLabel(kind, bucket) : '';
+        var generic = {
+            age: 1, 'draft capital': 1, 'career stage': 1,
+            'last year target share': 1, 'last year snaps': 1,
+            'last year adot': 1, 'last year rush yards over expected': 1
+        };
+        if (label && !generic[label.toLowerCase()]) return label;
+        return qualified || label || row.sentence || '';
     }
 
     function trendsBaselineOf(row) {

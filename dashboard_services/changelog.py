@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-08-28",
+        "tag": "fix",
+        "text": "Draft Cheat Sheet Hist: capital and age rows no longer repeat the same bucket under one title. Miss rate, rookie, and year-2 rates keep their own labels, and exact age drops when the age band is already shown.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
         "tag": "update",
         "text": "Draft Cheat Sheet Trends: tap buckets to list current-board players who match (AND across tables). Finish chips show typical top-5, top-12, and top-24 rates. Browsing stays free; the matching player list is a Pro scout with a short preview.",
         "link": "/draft/cheat-sheet"

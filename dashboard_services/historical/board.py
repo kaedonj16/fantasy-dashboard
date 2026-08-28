@@ -139,6 +139,27 @@ CUMULATIVE_TREND_WINDOWS: tuple[tuple[str, str, str], ...] = (
         "Share who posted a top-12 season in year 1 or year 2.",
     ),
 )
+HIST_TREND_PREFIX: dict[str, str] = {
+    "draft_capital": "NFL",
+    "capital_miss": "NFL",
+    "top12_as_rookie": "NFL",
+    "top12_by_year_2": "NFL",
+    "target_share": "Targets",
+    "snap_pct": "Snaps",
+    "adot": "aDOT",
+    "ryoe": "RYOE",
+    "age": "Age",
+    "age_exact": "Age",
+}
+HIST_TREND_GENERIC_LABELS: frozenset[str] = frozenset({
+    "age",
+    "draft capital",
+    "career stage",
+    "last year target share",
+    "last year snaps",
+    "last year adot",
+    "last year rush yards over expected",
+})
 TIER_FINISH_DISPLAY: dict[str, str] = {
     "top_5": "top-5",
     "top_12": "top-12",
@@ -655,6 +676,19 @@ def _finish_baselines(
     return out
 
 
+def format_hist_trend_title(*, kind: str, label: str, bucket: str) -> str:
+    """One line for the Hist list. Distinctive labels win; generic ones yield to the bucket."""
+    lab = str(label or "").strip()
+    buck = str(bucket or "").strip()
+    prefix = HIST_TREND_PREFIX.get(str(kind or ""))
+    qualified = buck
+    if prefix and buck and prefix.lower() not in buck.lower():
+        qualified = f"{prefix} {buck}"
+    if lab and lab.lower() not in HIST_TREND_GENERIC_LABELS:
+        return lab
+    return qualified or lab
+
+
 def _trend_row(
     *,
     kind: str,
@@ -677,6 +711,7 @@ def _trend_row(
         "kind": kind,
         "label": label,
         "bucket": bucket,
+        "title": format_hist_trend_title(kind=kind, label=label, bucket=bucket),
         "sentence": sentence,
         "pct": pct,
         "n": sample,
@@ -762,7 +797,7 @@ def build_hist_trends(
     if prior in ("top_5", "top_12"):
         add(_trend_row(
             kind="repeat",
-            label="Last-year elite",
+            label="Top-12 again",
             bucket="Top-12 last year",
             sentence=f"{pos}s who finished top-12 last year finished top-12 again",
             rate=repeat.get("prev_top12_to_top12"),
@@ -770,7 +805,7 @@ def build_hist_trends(
         ))
         add(_trend_row(
             kind="repeat_top5",
-            label="Last-year elite",
+            label="Then top-5",
             bucket="Top-12 last year",
             sentence=f"{pos}s who finished top-12 last year finished top-5 the next year",
             rate=repeat.get("prev_top12_to_top5"),
@@ -871,27 +906,17 @@ def build_hist_trends(
             rate=(age_block.get("by_bucket") or {}).get(age_b),
             baseline_pct=baseline_pct,
         ))
-    age_int = integer_age(query.get("age"))
-    if age_int is not None:
-        add(_trend_row(
-            kind="age_exact",
-            label="Age",
-            bucket=str(age_int),
-            sentence=f"Age-{age_int} {pos}s finished top-12",
-            rate=(age_block.get("by_integer_age") or {}).get(str(age_int)),
-            baseline_pct=baseline_pct,
-        ))
-    prime = age_block.get("prime_window") if isinstance(age_block.get("prime_window"), Mapping) else {}
-    lo, hi = prime.get("age_start"), prime.get("age_end")
-    if lo is not None and hi is not None:
-        pair = age_block.get("prime_window_pair") if isinstance(age_block.get("prime_window_pair"), Mapping) else {}
-        add(_trend_row(
-            kind="prime",
-            label="Prime window",
-            bucket=f"{lo}-{hi}",
-            sentence=f"{pos} hit rates have peaked at ages {lo}-{hi}",
-            rate=pair.get("conditional") if isinstance(pair, Mapping) else None,
-        ))
+    else:
+        age_int = integer_age(query.get("age"))
+        if age_int is not None:
+            add(_trend_row(
+                kind="age_exact",
+                label="Age",
+                bucket=str(age_int),
+                sentence=f"Age-{age_int} {pos}s finished top-12",
+                rate=(age_block.get("by_integer_age") or {}).get(str(age_int)),
+                baseline_pct=baseline_pct,
+            ))
 
     usage = aggregates.get("prior_usage") if isinstance(aggregates.get("prior_usage"), Mapping) else {}
     tgt = feats.get("target_share")
@@ -1446,16 +1471,6 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         )
         if row:
             age_rows.append(row)
-    if lo is not None and hi is not None:
-        pair = age_block.get("prime_window_pair") if isinstance(age_block.get("prime_window_pair"), Mapping) else {}
-        prime_row = _section_row(
-            f"Prime window {lo}-{hi}",
-            pair.get("conditional") if isinstance(pair, Mapping) else pair,
-            row_id="age:prime",
-            match={"group": "prime", "field": "age", "between": [lo, hi]},
-        )
-        if prime_row:
-            age_rows.append(prime_row)
     _append_section(
         sections,
         sid="age",

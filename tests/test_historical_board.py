@@ -393,6 +393,20 @@ def test_hist_trends_are_descriptive_bucket_slices():
     trends = build_hist_trends(query, aggs, panel["market"])
     assert trends
     assert all(row.get("pct") is not None for row in trends)
+    hist_kinds = [row["kind"] for row in trends]
+    assert "age" in hist_kinds
+    assert "age_exact" not in hist_kinds
+    assert "prime" not in hist_kinds
+    titles = [row["title"] for row in trends]
+    assert len(titles) == len(set(titles))
+    assert titles.count("NFL Round 1") == 1
+    assert "Miss rate" in titles
+    assert "Hit top-12 as a rookie" in titles
+    assert "Hit top-12 by year 2" in titles
+    assert "Top-12 again" in titles
+    assert "Then top-5" in titles
+    assert "Age 24" not in titles
+    assert any(str(t).startswith("Age ") and "-" in str(t) for t in titles)
     breakout_q = dict(query)
     breakout_q["previous_season_finish"] = 28
     breakout_q["years_experience"] = 4
@@ -495,7 +509,16 @@ def test_historical_trends_route_serves_json_leaves():
     assert body.get("player_features")
 
 
-def test_trend_filter_matching_is_and_across_groups():
+def test_hist_trend_titles_keep_distinct_capital_and_age_rows():
+    from dashboard_services.historical.board import format_hist_trend_title
+
+    assert format_hist_trend_title(kind="draft_capital", label="Draft capital", bucket="Round 1") == "NFL Round 1"
+    assert format_hist_trend_title(kind="capital_miss", label="Miss rate", bucket="Round 1") == "Miss rate"
+    assert format_hist_trend_title(
+        kind="top12_as_rookie", label="Hit top-12 as a rookie", bucket="Round 1"
+    ) == "Hit top-12 as a rookie"
+    assert format_hist_trend_title(kind="age", label="Age", bucket="23-24") == "Age 23-24"
+    assert format_hist_trend_title(kind="age_exact", label="Age", bucket="24") == "Age 24"
     from dashboard_services.historical.board import matches_trend_filter
 
     feats = {
