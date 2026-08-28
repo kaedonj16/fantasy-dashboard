@@ -382,6 +382,7 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert ".cs-trends-scout" in body
     assert ".cs-trends-sticky" in body
     assert "top: var(--cs-nav-offset, 0px)" in body
+    assert "backdrop-filter: blur(10px)" in body
     assert ".cs-trends-conf" in body
     assert "Descriptive — not a ranking input" not in body
     assert "cs-trends-honesty" not in body

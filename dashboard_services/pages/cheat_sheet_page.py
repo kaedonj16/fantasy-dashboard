@@ -316,7 +316,9 @@ _CHEAT_HTML = r"""
   .cs-trends-pos button[data-trends-pos="TE"][aria-pressed="true"] { border-color: var(--cs-te); color: var(--cs-te); background: var(--cs-te-bg); }
   .cs-trends-lanes button[aria-pressed="true"], .cs-trends-tiers button[aria-pressed="true"] { border-color: var(--cs-pos); color: var(--cs-pos); background: var(--cs-pos-bg); }
   .cs-trends-lane-n, .cs-trends-tier-n { margin-left: auto; font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-faint, var(--text-muted)); }
-  .cs-trends-sticky { position: sticky; top: var(--cs-nav-offset, 0px); z-index: 5; background: var(--cs-surface, var(--card)); padding: 8px 0 10px; margin: 0 0 14px; border-bottom: 1px solid var(--cs-line, var(--border)); }
+  .cs-trends-sticky { position: sticky; top: var(--cs-nav-offset, 0px); z-index: 5; display: grid; gap: 10px; margin: 0 0 16px; padding: 10px 12px 12px; border: 1px solid color-mix(in srgb, var(--cs-pos) 22%, var(--cs-line, var(--border))); border-radius: 14px; background: color-mix(in srgb, var(--cs-surface, var(--card)) 86%, var(--cs-pos-bg)); box-shadow: 0 10px 24px color-mix(in srgb, #000 12%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); max-height: calc(100dvh - var(--cs-nav-offset, 0px) - 12px); overflow: auto; }
+  .cs-trends-sticky .cs-trends-lanes { margin: 0; }
+  .cs-trends-sticky .cs-trends-profile, .cs-trends-sticky .cs-trends-scout { margin: 0; background: var(--cs-surface, var(--card)); }
   .cs-trends-summary { display: flex; align-items: flex-end; gap: 16px; margin: 0 0 18px; padding: 12px 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--cs-pos) 28%, var(--cs-line, var(--border))); background: var(--cs-pos-bg); }
   .cs-trends-base-pct { font-weight: 800; font-size: 46px; line-height: .82; letter-spacing: -.03em; color: var(--cs-pos); font-variant-numeric: tabular-nums; }
   .cs-trends-base-pct sup { font-size: 18px; font-weight: 800; color: var(--cs-ink-soft, var(--text-muted)); vertical-align: super; }
@@ -419,6 +421,7 @@ _CHEAT_HTML = r"""
     .cs-trends-callout-v { font-size: 12px; }
     .cs-trends-summary { align-items: flex-start; }
     .cs-trends-lanes { margin: 0 0 8px; }
+    .cs-trends-sticky { padding: 8px 10px 10px; gap: 8px; }
     .cs-trends-lane-n { flex: 1 0 100%; margin: 2px 0 0; }
     .cs-trends-grid { grid-template-columns: 1fr; gap: 8px; }
     .cs-trends-scout-list { grid-template-columns: 1fr; }
