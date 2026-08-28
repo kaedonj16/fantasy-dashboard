@@ -203,6 +203,17 @@ def google_auth_callback():
                     pending_provider.get("name") or f"{provider.title()} League",
                     "private", credentials=credentials, team_id=team_id,
                 )
+                if provider == "fleaflicker" and team_id:
+                    try:
+                        from routes.link_bp import _persist_fleaflicker_viewer
+                        _persist_fleaflicker_viewer(
+                            pending_provider["league_id"],
+                            pending_provider["season"],
+                            str(team_id),
+                            token=credentials.get("token"),
+                        )
+                    except Exception:
+                        logger.warning("[google_auth] fleaflicker viewer persist failed", exc_info=True)
                 session.pop("onboarding_progress", None)
                 return redirect(
                     f"/{provider}/{pending_provider['season']}/"

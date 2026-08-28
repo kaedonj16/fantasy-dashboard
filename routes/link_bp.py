@@ -633,7 +633,36 @@ def link_add():
                             if str(roster.get("owner_id") or "") == platform_user_id), None)
             link_platform_identity(account_id, "sleeper", platform_user_id,
                                    (sleeper_user or {}).get("username") or username)
+        flea_auth_token = None
+        if platform == "fleaflicker":
+            try:
+                from dashboard_services.accounts import get_provider_league_credentials
+                from dashboard_services.providers.registry import get_provider
+                from dashboard_services.providers.fleaflicker_api import resolve_fleaflicker_team_id
+                creds = get_provider_league_credentials(
+                    account_id, platform, league_id, season,
+                ) or {}
+                flea_auth_token = creds.get("token")
+                flea_uid = str(creds.get("flea_user_id") or "").strip()
+                if flea_uid:
+                    link_platform_identity(account_id, "fleaflicker", flea_uid)
+                if not team_id and (flea_uid or flea_auth_token):
+                    provider = get_provider("fleaflicker")
+                    lookup_season = season if season is not None else _default_season()
+                    users = provider.get_users(
+                        league_id, lookup_season, token=flea_auth_token,
+                    )
+                    team_id = resolve_fleaflicker_team_id(
+                        users, team_id=team_id, flea_user_id=flea_uid or None,
+                    ) or team_id
+            except Exception:
+                logger.warning("[link/add/fleaflicker] team resolution failed", exc_info=True)
         add_user_league(account_id, platform, league_id, season=season, team_id=team_id, name=name)
+        if platform == "fleaflicker":
+            lookup_season = season if season is not None else _default_season()
+            _persist_fleaflicker_viewer(
+                league_id, lookup_season, team_id, token=flea_auth_token,
+            )
     except Exception as exc:
         logger.warning("[link/add] failed: %s", exc)
         return jsonify({"ok": False, "error": "Could not save that league."}), 500
@@ -1182,6 +1211,15 @@ def link_fleaflicker_reconnect():
         get_provider("fleaflicker").connect_league(league_id, season, token=credentials.get("token"))
         if not replace_provider_credentials(account_id, "fleaflicker", league_id, season, credentials):
             return jsonify({"ok": False, "error": "Could not update credentials."}), 400
+        flea_uid = str(credentials.get("flea_user_id") or "").strip()
+        if flea_uid:
+            from dashboard_services.accounts import link_platform_identity
+            link_platform_identity(account_id, "fleaflicker", flea_uid)
+        team_id = _resolve_fleaflicker_team(
+            get_provider("fleaflicker"), league_id, season,
+            token=credentials.get("token"), flea_user_id=flea_uid or None,
+        )
+        _persist_fleaflicker_viewer(league_id, season, team_id, token=credentials.get("token"))
     except Exception as exc:
         error, status = _provider_connect_error(exc, "fleaflicker", "private")
         return jsonify(error), status
