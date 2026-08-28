@@ -90,3 +90,72 @@ def test_login_failure_is_auth_error(mock_post):
     mock_post.return_value = response({"failure": "LOGIN_INVALID_PASSWORD"})
     with pytest.raises(ProviderAuthenticationError):
         login("a@b.com", "bad")
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_rules_request_omits_season_by_default(mock_get):
+    """FetchLeagueRules OpenAPI has no season; passing one returns HTML 400 upstream."""
+    mock_get.return_value = response({"rosterPositions": []})
+    FleaflickerProvider()._call("FetchLeagueRules", "92916", 2026)
+    params = mock_get.call_args.kwargs["params"]
+    assert "season" not in params
+    assert params["league_id"] == 92916
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_html_forbidden_is_unavailable_not_private_auth(mock_get):
+    html = response("<html>Forbidden</html>", status=403)
+    html.headers = {"Content-Type": "text/html"}
+    html.text = "<html>Forbidden</html>"
+    html.json.side_effect = ValueError("no json")
+    mock_get.return_value = html
+    with pytest.raises(ProviderUnavailableError, match="temporarily unavailable"):
+        FleaflickerProvider()._call("FetchLeagueStandings", "14153", 2026)
+
+
+def test_get_league_survives_rules_failure(monkeypatch):
+    provider = FleaflickerProvider()
+
+    def fake_call(method, *a, **k):
+        if method == "FetchLeagueRules":
+            raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
+        return {
+            "league": {"id": 14153, "name": "Dynasty", "size": 2},
+            "divisions": [{"teams": [{"id": 1, "name": "Owls", "owners": [{"id": 9}]}]}],
+            "season": 2026,
+        }
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    league = provider.get_league("14153", 2026)
+    assert league["name"] == "Dynasty"
+    assert league["roster_positions"] == []
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_preview_survives_rules_season_html_400(mock_get):
+    """Regression: rules+season HTML 400 used to 503 the whole /preview path."""
+    standings = response({
+        "league": {"id": 92916, "name": "All American All Star League", "size": 12},
+        "divisions": [{"teams": [{"id": 1, "name": "East Bay Biters", "owners": [{"id": 9}]}]}],
+        "season": 2026,
+    })
+    rules_ok = response({"rosterPositions": [{"label": "QB", "start": 1}]})
+    rules_bad = response("<!DOCTYPE html><html>Error 400</html>", status=400)
+    rules_bad.headers = {"Content-Type": "text/html;charset=utf-8"}
+    rules_bad.text = "<!DOCTYPE html><html>Error 400</html>"
+    rules_bad.json.side_effect = ValueError("no json")
+
+    def side_effect(url, **kwargs):
+        params = kwargs.get("params") or {}
+        if "FetchLeagueStandings" in url:
+            return standings
+        if "FetchLeagueRules" in url:
+            if "season" in params:
+                return rules_bad
+            return rules_ok
+        raise AssertionError(f"unexpected url {url}")
+
+    mock_get.side_effect = side_effect
+    league = FleaflickerProvider().get_league("92916", 2026)
+    assert league["name"] == "All American All Star League"
+    assert league["roster_positions"] == ["QB"]

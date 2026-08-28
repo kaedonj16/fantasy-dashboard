@@ -1359,7 +1359,7 @@ FORM_BODY = """
             <button type="button" class="mfl-home-method active" data-mfl-method="public" aria-pressed="true">Public League</button>
             <button type="button" class="mfl-home-method" data-mfl-method="private" aria-pressed="false">Private League</button>
           </div>
-          <p class="hint" id="mflHomeDescription">Connect a publicly accessible MyFantasyLeague league using its League ID.</p>
+          <p class="hint espn-home-description" id="mflHomeDescription">Connect a publicly accessible MyFantasyLeague league using its League ID.</p>
           <div class="row">
             <label for="mflLeagueIdInput">MFL League ID</label>
             <input type="text" id="mflLeagueIdInput" inputmode="numeric" placeholder="e.g. 12345" autocomplete="off">
@@ -1389,7 +1389,7 @@ FORM_BODY = """
               <p class="hint">Password is used only to fetch the official login cookie and is never stored.</p>
             </details>
           </div>
-          <div class="row">
+          <div class="row" id="mflSubmitRow">
             <button type="button" id="mflSubmitBtn">Connect League</button>
           </div>
           <div id="mflError" class="error-message" style="display:none;"></div>
@@ -1413,7 +1413,7 @@ FORM_BODY = """
             <button type="button" class="flea-home-method active" data-flea-method="public" aria-pressed="true">Public League</button>
             <button type="button" class="flea-home-method" data-flea-method="private" aria-pressed="false">Private League</button>
           </div>
-          <p class="hint" id="fleaHomeDescription">Connect a publicly accessible Fleaflicker league using its League ID.</p>
+          <p class="hint espn-home-description" id="fleaHomeDescription">Connect a publicly accessible Fleaflicker league using its League ID.</p>
           <div class="row">
             <label for="fleaLeagueIdInput">Fleaflicker League ID</label>
             <input type="text" id="fleaLeagueIdInput" inputmode="numeric" placeholder="e.g. 14153" autocomplete="off">
@@ -1439,7 +1439,7 @@ FORM_BODY = """
               </div>
             </details>
           </div>
-          <div class="row">
+          <div class="row" id="fleaSubmitRow">
             <button type="button" id="fleaSubmitBtn">Connect League</button>
           </div>
           <div id="fleaError" class="error-message" style="display:none;"></div>
@@ -2926,7 +2926,7 @@ def _link_modal_html() -> str:
                 <p class="link-help">Password is used only to obtain the official login cookie and is never stored.</p>
               </details>
             </div>
-            <button type="button" class="link-btn link-connect" onclick="linkMflConnect()">Connect League</button>
+            <button type="button" id="linkMflConnect" class="link-btn link-connect" onclick="linkMflConnect()">Connect League</button>
             <div id="linkMflResult" class="link-list"></div>
           </div>
           <div class="link-pane" data-lp="fleaflicker" style="display:none;">
@@ -2950,7 +2950,7 @@ def _link_modal_html() -> str:
                 <input id="linkFleaToken" class="link-inp link-full" type="password" autocomplete="off">
               </details>
             </div>
-            <button type="button" class="link-btn link-connect" onclick="linkFleaConnect()">Connect League</button>
+            <button type="button" id="linkFleaConnect" class="link-btn link-connect" onclick="linkFleaConnect()">Connect League</button>
             <div id="linkFleaResult" class="link-list"></div>
           </div>
           <!--YAHOO_PANE_START--><div class="link-pane" data-lp="yahoo" style="display:none;">
@@ -2985,10 +2985,8 @@ def _link_modal_html() -> str:
       .link-inp.link-sm{max-width:88px;flex:0 0 auto;}
       .link-full{display:block;width:100%;box-sizing:border-box}.link-field{margin-top:12px}
       .espn-methods{display:flex;gap:4px;padding:4px;background:var(--accent-soft);border:1px solid var(--border);border-radius:11px}
-      .espn-method{flex:1;border:0;background:none;color:var(--text-muted);font-weight:700;padding:8px;border-radius:8px;cursor:pointer}
-      .espn-method.active{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.12)}
-      .mfl-method,.flea-method{flex:1;border:0;background:none;color:var(--text-muted);font-weight:700;padding:8px;border-radius:8px;cursor:pointer}
-      .mfl-method.active,.flea-method.active{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+      .espn-method,.mfl-method,.flea-method{flex:1;border:0;background:none;color:var(--text-muted);font-weight:700;padding:8px;border-radius:8px;cursor:pointer}
+      .espn-method.active,.mfl-method.active,.flea-method.active{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.12)}
       .link-help{font-size:12px;color:var(--text-muted);margin:8px 0 14px}.link-connect{width:100%;margin-top:14px}
       .espn-credential-help{font-size:12px;color:var(--text-muted);margin-top:12px}.espn-credential-help summary{cursor:pointer;font-weight:700;color:var(--accent)}
       .espn-credential-help ol{padding-left:20px;line-height:1.5}
@@ -3218,12 +3216,46 @@ def _link_modal_html() -> str:
         if(help) help.textContent=mflMethod==='private'
           ?'Connect a private MFL league with a league APIKEY and/or official login cookie.'
           :'Use the League ID number from your public MyFantasyLeague URL.';
+        var oldPub=document.getElementById('linkMflPublicChoice'); if(oldPub) oldPub.remove();
+        var oldPriv=document.getElementById('linkMflPrivateChoice'); if(oldPriv) oldPriv.remove();
+        linkSetMsg('','');
+        var connectBtn=document.getElementById('linkMflConnect');
+        if(connectBtn){
+          var googleConnect=mflMethod==='private'&&!window._hasAccount;
+          connectBtn.textContent=googleConnect?'Sign in with Google to Connect':'Connect League';
+          connectBtn.classList.toggle('google-continue-btn',googleConnect);
+        }
       };
       window.linkMflConnect=function(){
         var id=(document.getElementById('linkMflId').value||'').trim(), yr=(document.getElementById('linkMflSeason').value||'').trim();
         var box=document.getElementById('linkMflResult');
         if(!/^\\d+$/.test(id)){linkSetMsg('Enter a valid numeric MFL League ID.','err');return;}
         if(mflMethod==='public'){
+          if(!window._hasAccount){
+            linkSetMsg('Validating league before Google sign-in…','');
+            fetch('/api/link/mfl/preview?league_id='+encodeURIComponent(id)+(yr?'&season='+encodeURIComponent(yr):''))
+              .then(function(r){return r.json();}).then(function(d){
+                if(!d.ok){linkSetMsg(d.error||'Could not load that MFL league.','err');return;}
+                linkSetMsg('','');
+                var pane=document.querySelector('.link-pane[data-lp="mfl"]');
+                var old=document.getElementById('linkMflPublicChoice'); if(old) old.remove();
+                var choice=document.createElement('div'); choice.id='linkMflPublicChoice'; choice.className='link-public-choice';
+                choice.innerHTML='<div class="link-item"><strong>'+esc(d.name||'MFL League')+'</strong></div>'+
+                  '<button type="button" class="google-continue-btn" id="linkMflGoogle"><span class="google-button-title">Continue with Google</span><span>Save your leagues &amp; settings, synced across devices</span><small>Free &middot; no password</small></button>'+
+                  '<div class="link-choice-or">OR</div>'+
+                  '<button type="button" class="continue-without-account-btn" id="linkMflGuest"><strong>Continue without account</strong><span>Quick view on this device &middot; nothing saved</span></button>';
+                pane.appendChild(choice);
+                document.getElementById('linkMflGoogle').addEventListener('click',function(){
+                  this.disabled=true; this.textContent='Continuing…';
+                  fetch('/api/link/pending',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({platform:'mfl',league_id:d.league_id,season:d.season,name:d.name})})
+                    .then(function(r){return r.json();}).then(function(saved){if(saved.ok)location.href=saved.auth_url||'/auth/google';else linkSetMsg(saved.error||'Could not save league.','err');});
+                });
+                document.getElementById('linkMflGuest').addEventListener('click',function(){
+                  location.href='/mfl/'+encodeURIComponent(d.season)+'/'+encodeURIComponent(d.league_id)+'/dashboard';
+                });
+              }).catch(function(){linkSetMsg('Network error.','err');});
+            return;
+          }
           linkSetMsg('Loading…','');box.innerHTML='';
           fetch('/api/link/mfl/preview?league_id='+encodeURIComponent(id)+(yr?'&season='+encodeURIComponent(yr):''))
             .then(function(r){return r.json();}).then(function(d){
@@ -3241,6 +3273,24 @@ def _link_modal_html() -> str:
         if(user) payload.username=user; if(pass) payload.password=pass;
         if(!payload.apikey && !payload.cookie && !(payload.username && payload.password)){
           linkSetMsg('Provide a league APIKEY, login cookie, or username + password.','err'); return;
+        }
+        if(!window._hasAccount){
+          linkSetMsg('Validating MFL before Google sign-in…','');
+          fetch('/api/link/mfl/private/pending',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+            .then(function(r){return r.json();}).then(function(d){
+              if(!d.ok){linkSetMsg(d.error||'Could not validate private MFL league.','err');return;}
+              var pane=document.querySelector('.link-pane[data-lp="mfl"]'),old=document.getElementById('linkMflPrivateChoice');if(old)old.remove();
+              var choice=document.createElement('div');choice.id='linkMflPrivateChoice';choice.className='link-public-choice';
+              choice.innerHTML='<button type="button" class="google-continue-btn" id="linkMflPrivateGoogle"><span class="google-button-title">Continue with Google</span><span>Save your leagues &amp; settings, synced across devices</span><small>Free &middot; no password</small></button>'+
+                '<div class="link-choice-or">OR</div><button type="button" class="continue-without-account-btn" id="linkMflPrivateGuest"><strong>Continue without account</strong><span>Quick view on this device &middot; nothing saved</span></button>';
+              pane.appendChild(choice);
+              document.getElementById('linkMflPrivateGoogle').addEventListener('click',function(){location.href=d.auth_url||'/auth/google?intent=onboarding&next=/';});
+              document.getElementById('linkMflPrivateGuest').addEventListener('click',function(){
+                fetch('/api/link/mfl/private/guest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({league_id:d.league_id,season:d.season})})
+                  .then(function(r){return r.json();}).then(function(g){if(g.ok)location.href=g.redirect_url;else linkSetMsg(g.error||'Could not open private league.','err');});
+              });
+            }).catch(function(){linkSetMsg('Network error.','err');});
+          return;
         }
         linkSetMsg('Connecting…','');
         fetch('/api/link/mfl/private',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
@@ -3260,12 +3310,46 @@ def _link_modal_html() -> str:
         if(help) help.textContent=fleaMethod==='private'
           ?'Connect a private Fleaflicker league with email sign-in or a login token.'
           :'Use the League ID from your public Fleaflicker URL.';
+        var oldPub=document.getElementById('linkFleaPublicChoice'); if(oldPub) oldPub.remove();
+        var oldPriv=document.getElementById('linkFleaPrivateChoice'); if(oldPriv) oldPriv.remove();
+        linkSetMsg('','');
+        var connectBtn=document.getElementById('linkFleaConnect');
+        if(connectBtn){
+          var googleConnect=fleaMethod==='private'&&!window._hasAccount;
+          connectBtn.textContent=googleConnect?'Sign in with Google to Connect':'Connect League';
+          connectBtn.classList.toggle('google-continue-btn',googleConnect);
+        }
       };
       window.linkFleaConnect=function(){
         var id=(document.getElementById('linkFleaId').value||'').trim(), yr=(document.getElementById('linkFleaSeason').value||'').trim();
         var box=document.getElementById('linkFleaResult');
         if(!/^\\d+$/.test(id)){linkSetMsg('Enter a valid numeric Fleaflicker League ID.','err');return;}
         if(fleaMethod==='public'){
+          if(!window._hasAccount){
+            linkSetMsg('Validating league before Google sign-in…','');
+            fetch('/api/link/fleaflicker/preview?league_id='+encodeURIComponent(id)+(yr?'&season='+encodeURIComponent(yr):''))
+              .then(function(r){return r.json();}).then(function(d){
+                if(!d.ok){linkSetMsg(d.error||'Could not load that Fleaflicker league.','err');return;}
+                linkSetMsg('','');
+                var pane=document.querySelector('.link-pane[data-lp="fleaflicker"]');
+                var old=document.getElementById('linkFleaPublicChoice'); if(old) old.remove();
+                var choice=document.createElement('div'); choice.id='linkFleaPublicChoice'; choice.className='link-public-choice';
+                choice.innerHTML='<div class="link-item"><strong>'+esc(d.name||'Fleaflicker League')+'</strong></div>'+
+                  '<button type="button" class="google-continue-btn" id="linkFleaGoogle"><span class="google-button-title">Continue with Google</span><span>Save your leagues &amp; settings, synced across devices</span><small>Free &middot; no password</small></button>'+
+                  '<div class="link-choice-or">OR</div>'+
+                  '<button type="button" class="continue-without-account-btn" id="linkFleaGuest"><strong>Continue without account</strong><span>Quick view on this device &middot; nothing saved</span></button>';
+                pane.appendChild(choice);
+                document.getElementById('linkFleaGoogle').addEventListener('click',function(){
+                  this.disabled=true; this.textContent='Continuing…';
+                  fetch('/api/link/pending',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({platform:'fleaflicker',league_id:d.league_id,season:d.season,name:d.name})})
+                    .then(function(r){return r.json();}).then(function(saved){if(saved.ok)location.href=saved.auth_url||'/auth/google';else linkSetMsg(saved.error||'Could not save league.','err');});
+                });
+                document.getElementById('linkFleaGuest').addEventListener('click',function(){
+                  location.href='/fleaflicker/'+encodeURIComponent(d.season)+'/'+encodeURIComponent(d.league_id)+'/dashboard';
+                });
+              }).catch(function(){linkSetMsg('Network error.','err');});
+            return;
+          }
           linkSetMsg('Loading…','');box.innerHTML='';
           fetch('/api/link/fleaflicker/preview?league_id='+encodeURIComponent(id)+(yr?'&season='+encodeURIComponent(yr):''))
             .then(function(r){return r.json();}).then(function(d){
@@ -3281,6 +3365,24 @@ def _link_modal_html() -> str:
         if(email) payload.email=email; if(pass) payload.password=pass; if(token) payload.token=token;
         if(!payload.token && !(payload.email && payload.password)){
           linkSetMsg('Provide email + password or a login token.','err'); return;
+        }
+        if(!window._hasAccount){
+          linkSetMsg('Validating Fleaflicker before Google sign-in…','');
+          fetch('/api/link/fleaflicker/private/pending',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+            .then(function(r){return r.json();}).then(function(d){
+              if(!d.ok){linkSetMsg(d.error||'Could not validate private Fleaflicker league.','err');return;}
+              var pane=document.querySelector('.link-pane[data-lp="fleaflicker"]'),old=document.getElementById('linkFleaPrivateChoice');if(old)old.remove();
+              var choice=document.createElement('div');choice.id='linkFleaPrivateChoice';choice.className='link-public-choice';
+              choice.innerHTML='<button type="button" class="google-continue-btn" id="linkFleaPrivateGoogle"><span class="google-button-title">Continue with Google</span><span>Save your leagues &amp; settings, synced across devices</span><small>Free &middot; no password</small></button>'+
+                '<div class="link-choice-or">OR</div><button type="button" class="continue-without-account-btn" id="linkFleaPrivateGuest"><strong>Continue without account</strong><span>Quick view on this device &middot; nothing saved</span></button>';
+              pane.appendChild(choice);
+              document.getElementById('linkFleaPrivateGoogle').addEventListener('click',function(){location.href=d.auth_url||'/auth/google?intent=onboarding&next=/';});
+              document.getElementById('linkFleaPrivateGuest').addEventListener('click',function(){
+                fetch('/api/link/fleaflicker/private/guest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({league_id:d.league_id,season:d.season})})
+                  .then(function(r){return r.json();}).then(function(g){if(g.ok)location.href=g.redirect_url;else linkSetMsg(g.error||'Could not open private league.','err');});
+              });
+            }).catch(function(){linkSetMsg('Network error.','err');});
+          return;
         }
         linkSetMsg('Connecting…','');
         fetch('/api/link/fleaflicker/private',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})

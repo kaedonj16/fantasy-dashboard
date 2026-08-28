@@ -789,6 +789,7 @@ def link_mfl_private_pending():
         return jsonify({
             "ok": True, "provider": "mfl", "connection_method": "private",
             "league_id": league_id, "season": season, "name": info.get("name"),
+            "auth_url": "/auth/google?intent=onboarding&next=/",
         })
     except Exception as exc:
         error, status = _provider_connect_error(exc, "mfl", "private")
@@ -999,6 +1000,7 @@ def link_fleaflicker_private_pending():
         return jsonify({
             "ok": True, "provider": "fleaflicker", "connection_method": "private",
             "league_id": league_id, "season": season, "name": info.get("name"),
+            "auth_url": "/auth/google?intent=onboarding&next=/",
         })
     except Exception as exc:
         error, status = _provider_connect_error(exc, "fleaflicker", "private")
