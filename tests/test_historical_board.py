@@ -318,7 +318,7 @@ def test_hist_panel_copy_uses_bucket_hit_rates_not_snake_case():
     assert copy["history_pct"] == 37
     assert copy["market_pct"] == 82
     assert copy["history_vs_market_pts"] == -45
-    assert "Round 1 hits 45 pts more often" in copy["gap_note"]
+    assert "Round 1 hits 45 percent more often" in copy["gap_note"]
     assert "Early ADP is a high bar" in copy["gap_note"]
     assert "not a combined chance" in copy["gap_note"].lower()
     assert "—" not in copy["gap_note"]
@@ -336,7 +336,7 @@ def test_hist_panel_copy_uses_bucket_hit_rates_not_snake_case():
         history,
         {"p_top_12": 0.20, "adp_bucket": "rounds_8_10"},
     )
-    assert "Players like this hit 17 pts more often than Rounds 8-10" in ahead["gap_note"]
+    assert "Players like this hit 17 percent more often than Rounds 8-10" in ahead["gap_note"]
     assert "Early ADP is a high bar" not in ahead["gap_note"]
 
 
