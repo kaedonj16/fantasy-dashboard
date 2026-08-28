@@ -7082,9 +7082,11 @@ select:focus {
    fill the row to match the native layout. */
 .home-card .csd-wrap,
 .trade-login-row .csd-wrap,
-.otc-setup-form .csd-wrap {
+.otc-setup-form .csd-wrap,
+#linkModal .csd-wrap {
     display: block;
     width: 100%;
+    margin-top: 8px;
 }
 
 .csd-trigger {
