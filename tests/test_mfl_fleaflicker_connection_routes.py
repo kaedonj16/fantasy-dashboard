@@ -117,3 +117,27 @@ def test_fleaflicker_preview_public(client, monkeypatch):
     assert response.status_code == 200
     assert response.json["ok"] is True
     assert response.json["teams"][0]["name"] == "Owls"
+
+
+def test_fleaflicker_draft_detect(monkeypatch):
+    from routes.draft_api_bp import draft_api_bp
+    app = flask.Flask(__name__)
+    app.register_blueprint(draft_api_bp)
+    draft_ms = 1_735_689_600_000
+    monkeypatch.setattr(
+        "routes.draft_api_bp.get_drafts",
+        lambda platform, league_id, season: [{
+            "draft_id": "fleaflicker:2026:14153",
+            "league_id": "14153",
+            "season": "2026",
+            "status": "pre_draft",
+            "type": "snake",
+            "start_time": draft_ms,
+        }],
+    )
+    with app.test_client() as client:
+        response = client.get("/api/draft/detect?platform=fleaflicker&league_id=14153&season=2026")
+    assert response.status_code == 200
+    body = response.json
+    assert body["drafts"][0]["start_time"] == draft_ms
+    assert body["drafts"][0]["status"] == "pre_draft"
