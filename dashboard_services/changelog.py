@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-08-28",
         "tag": "update",
+        "text": "Draft Cheat Sheet Trends: the sticky profile and matching-player dock can be collapsed so the tables stay in view. Lane chips stay on screen.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
+        "tag": "update",
         "text": "Draft Cheat Sheet Hist: closest examples now mark Top-5, Top-12, and Top-24 hits on each row and in the summary, so a #1 is a Top 5 and a #20 is a Top 24.",
         "link": "/draft/cheat-sheet"
     },

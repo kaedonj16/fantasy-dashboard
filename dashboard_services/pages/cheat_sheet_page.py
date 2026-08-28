@@ -325,6 +325,10 @@ _CHEAT_HTML = r"""
   .cs-trends-sticky.is-picked { grid-template-columns: minmax(240px, .95fr) minmax(0, 1.15fr); align-items: stretch; }
   .cs-trends-sticky.is-picked .cs-trends-lanes { grid-column: 1 / -1; }
   .cs-trends-sticky .cs-trends-lanes { margin: 0; }
+  .cs-trends-sticky-body { display: contents; }
+  .cs-trends-sticky.is-collapsed { max-height: none; overflow: visible; grid-template-columns: 1fr; padding: 6px 10px; }
+  .cs-trends-sticky.is-collapsed .cs-trends-sticky-body { display: none; }
+  .cs-trends-lanes button.cs-trends-sticky-toggle { margin-left: auto; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-pos); border-color: color-mix(in srgb, var(--cs-pos) 35%, var(--cs-line, var(--border))); background: var(--cs-pos-bg); }
   .cs-trends-sticky .cs-hist-note { font-size: 10.5px; margin: 6px 0 0; line-height: 1.3; }
   .cs-trends-summary { display: flex; align-items: flex-end; gap: 16px; margin: 0 0 18px; padding: 12px 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--cs-pos) 28%, var(--cs-line, var(--border))); background: var(--cs-pos-bg); }
   .cs-trends-base-pct { font-weight: 800; font-size: 46px; line-height: .82; letter-spacing: -.03em; color: var(--cs-pos); font-variant-numeric: tabular-nums; }
@@ -443,7 +447,8 @@ _CHEAT_HTML = r"""
     .cs-trends-sticky { padding: 8px 10px 10px; gap: 8px; }
     .cs-trends-sticky.is-picked { grid-template-columns: 1fr; }
     .cs-trends-profile-v { font-size: 18px; }
-    .cs-trends-lane-n { flex: 1 0 100%; margin: 2px 0 0; }
+    .cs-trends-lane-n { flex: 1 0 100%; margin: 2px 0 0; order: 2; }
+    .cs-trends-sticky-toggle { order: 1; margin-left: auto; }
     .cs-trends-grid { grid-template-columns: 1fr; gap: 8px; }
     .cs-trends-scout-list { grid-template-columns: 1fr; }
     .cs-trends-card { height: auto; padding: 0; }
@@ -656,6 +661,8 @@ _CHEAT_HTML = r"""
     .cs-tbl-scroll, .cs-pgrid-scroll { overflow: visible; border: 0; max-height: none; }
     .cs-wrap thead th { position: static; }
     .cs-trends-sticky { position: static; max-height: none; }
+    .cs-trends-sticky.is-collapsed .cs-trends-sticky-body { display: contents; }
+    .cs-trends-sticky-toggle { display: none !important; }
     /* Keep a tier heading with the rows under it, and don't split a row. */
     .cs-wrap tr.cs-cliff, .cs-wrap tr.cs-proj { break-before: auto; break-after: avoid; }
     .cs-wrap tbody tr { break-inside: avoid; }

@@ -387,6 +387,9 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "top: var(--cs-nav-offset, 0px)" in body
     assert "max-height: min(42vh, 340px)" in body
     assert ".cs-trends-sticky.is-picked" in body
+    assert ".cs-trends-sticky.is-collapsed" in body
+    assert ".cs-trends-sticky-body" in body
+    assert ".cs-trends-sticky-toggle" in body
     assert ".cs-trends-profile-tier.is-on" in body
     assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in body
     assert "box-shadow: inset 3px 0 0 var(--cs-pos)" in body
@@ -416,6 +419,11 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "function trendsFeatsForPlayer" in script
     assert "trendsFeatsForPlayer(featsIndex, p)" in script
     assert "sticky.classList.toggle('is-picked'" in script
+    assert "sticky.classList.toggle('is-collapsed'" in script
+    assert "function setTrendsDockOpen" in script
+    assert "var trendsDockOpen" in script
+    assert 'data-trends-dock="1"' in script
+    assert "cs-trends-sticky-body" in script
     assert "Actual matching seasons. Not a ranking input." in script
     assert "draft-trends-scout" in script
     assert "Tap a bucket to list matching players." in script
@@ -624,6 +632,15 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert mix["link"] == "/draft/cheat-sheet"
     assert "—" not in mix["text"]
     assert "–" not in mix["text"]
+    collapse = next(
+        entry for entry in CHANGELOG
+        if "collapsed so the tables stay in view" in entry.get("text", "").lower()
+    )
+    assert collapse["tag"] == "update"
+    assert collapse["link"] == "/draft/cheat-sheet"
+    assert "Lane chips" in collapse["text"]
+    assert "—" not in collapse["text"]
+    assert "–" not in collapse["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():

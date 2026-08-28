@@ -36,6 +36,7 @@
     var trendsPicks = {};
     var trendsCohort = null;
     var trendsCohortRequest = 0;
+    var trendsDockOpen = true;
     var TRENDS_SCOUT_PREVIEW = 3;
     var TAB_PANELS = {
         board: 'cs-panel-board',
@@ -2765,7 +2766,10 @@
         function swapDock() {
             var pickCount = Object.keys(picks).length;
             var sticky = host.querySelector('.cs-trends-sticky');
-            if (sticky) sticky.classList.toggle('is-picked', !!pickCount);
+            if (sticky) {
+                sticky.classList.toggle('is-picked', !!pickCount);
+                sticky.classList.toggle('is-collapsed', !trendsDockOpen);
+            }
             var wrap = document.createElement('div');
             wrap.innerHTML = trendsProfileHtml(trendsCohort, picks, pickCount)
                 + trendsScoutHtml(trendsCache, picks, pickCount);
@@ -2775,10 +2779,32 @@
             var nextScout = wrap.querySelector('.cs-trends-scout');
             if (profileHost && nextProfile) profileHost.replaceWith(nextProfile);
             if (scoutHost && nextScout) scoutHost.replaceWith(nextScout);
+            syncTrendsDockToggle(host);
             bindTrendsDock(host, sections);
         }
         loadTrendsCohort(picks, function () { swapDock(); });
         swapDock();
+    }
+
+    function trendsDockToggleLabel() {
+        if (trendsDockOpen) return 'Hide';
+        var n = Object.keys(trendsPicksFor(trendsPos)).length;
+        return n ? ('Show · ' + n) : 'Show';
+    }
+
+    function syncTrendsDockToggle(host) {
+        var sticky = host && host.querySelector('.cs-trends-sticky');
+        if (!sticky) return;
+        sticky.classList.toggle('is-collapsed', !trendsDockOpen);
+        var btn = sticky.querySelector('[data-trends-dock]');
+        if (!btn) return;
+        btn.setAttribute('aria-expanded', trendsDockOpen ? 'true' : 'false');
+        btn.textContent = trendsDockToggleLabel();
+    }
+
+    function setTrendsDockOpen(on) {
+        trendsDockOpen = !!on;
+        syncTrendsDockToggle($('csTrends'));
     }
 
     function bindTrendsDock(host, sections) {
@@ -3062,7 +3088,9 @@
             });
             html += '</div></div></section>';
         }
-        html += '<div class="cs-trends-sticky' + (pickCount ? ' is-picked' : '') + '">';
+        html += '<div class="cs-trends-sticky'
+            + (pickCount ? ' is-picked' : '')
+            + (trendsDockOpen ? '' : ' is-collapsed') + '">';
         html += '<div class="cs-trends-lanes" role="group" aria-label="Trends lane">';
         TRENDS_LANES.forEach(function (pair) {
             if (pair[0] !== 'all' && !present[pair[0]]) return;
@@ -3082,10 +3110,15 @@
             + (shown.length === 1 ? '' : 's')
             + (compact ? '. Open one, or pick a lane.' : '')
             + ' Tap a bucket to list matching players.</span>';
+        html += '<button type="button" class="cs-trends-sticky-toggle" data-trends-dock="1"'
+            + ' aria-expanded="' + (trendsDockOpen ? 'true' : 'false') + '"'
+            + ' aria-controls="cs-trends-sticky-body">'
+            + esc(trendsDockToggleLabel()) + '</button>';
         html += '</div>';
+        html += '<div class="cs-trends-sticky-body" id="cs-trends-sticky-body">';
         html += trendsProfileHtml(trendsCohort, picks, pickCount);
         html += trendsScoutHtml(data, picks, pickCount);
-        html += '</div>';
+        html += '</div></div>';
         html += '<div class="cs-trends-grid">';
         shown.forEach(function (sec) {
             var laneId = TRENDS_LANE_OF[sec.id] || 'all';
@@ -3130,6 +3163,11 @@
             b.addEventListener('click', function () {
                 host.setAttribute('data-trends-lane', b.getAttribute('data-trends-lane') || 'all');
                 renderTrends();
+            });
+        });
+        host.querySelectorAll('[data-trends-dock]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                setTrendsDockOpen(!trendsDockOpen);
             });
         });
         host.querySelectorAll('.cs-trends-srow.is-pick').forEach(function (b) {
