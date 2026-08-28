@@ -1,12 +1,10 @@
 """
-Standalone Draft Room (Draft Assistant) page.
+Standalone Draft Room page.
 
-Phase 2: a dedicated, self-contained draft board that supersedes the old
-Prospects→Draft tab. Supports manual drafting for both startup (all players)
-and rookie drafts, with snake / linear / third-round-reversal pick order.
-Live Sleeper sync, ESPN live companion sync (observe-only), persistence/history,
-and the full command-center panels land in later phases; this establishes the
-standalone page + board grid + best-available picker + the pickOrder foundation.
+Supports manual drafting for both startup (all players) and rookie drafts,
+with snake / linear / third-round-reversal pick order. Live Sleeper sync,
+ESPN live companion sync (observe-only), persistence/history, and the full
+command-center panels.
 
 The page is self-contained: its CSS is inlined here and its JS lives in
 static/draft_room.js (loaded as a deferred external script so the browser caches

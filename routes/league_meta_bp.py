@@ -16,14 +16,6 @@ league_meta_bp = Blueprint("league_meta_bp", __name__)
 
 
 # ── Lazy shims to app.py internals (resolved at request time) ──
-def _api_err(*a, **k):
-    from app import _api_err as _fn
-    return _fn(*a, **k)
-
-def _weighted_pos_strength(*a, **k):
-    from app import _weighted_pos_strength as _fn
-    return _fn(*a, **k)
-
 def format_sleeper_league_option(*a, **k):
     # Lives in utils.league_payload (a pure module), not app.py — import it
     # directly so the Sleeper league-option formatting doesn't depend on app
@@ -35,133 +27,17 @@ def get_available_history_seasons(*a, **k):
     from app import get_available_history_seasons as _fn
     return _fn(*a, **k)
 
-def get_league(*a, **k):
-    from app import get_league as _fn
-    return _fn(*a, **k)
-
 def get_league_ctx_from_cache(*a, **k):
     from app import get_league_ctx_from_cache as _fn
-    return _fn(*a, **k)
-
-def get_model_value_table_cached(*a, **k):
-    from app import get_model_value_table_cached as _fn
     return _fn(*a, **k)
 
 def get_nfl_state(*a, **k):
     from app import get_nfl_state as _fn
     return _fn(*a, **k)
 
-def get_rosters(*a, **k):
-    from app import get_rosters as _fn
-    return _fn(*a, **k)
-
 def resolve_league_id_for_season(*a, **k):
     from app import resolve_league_id_for_season as _fn
     return _fn(*a, **k)
-
-
-@league_meta_bp.route("/api/draft-needs")
-def api_draft_needs():
-    """
-    Returns positional needs for a team relative to league averages.
-    Uses the same weighted positional strength + z-score approach as the Teams page.
-    Need levels: -2 stacked, -1 depth, 0 neutral, 1 need, 2 major need.
-    """
-    try:
-        from utils.utils import load_players_index, load_model_value_table
-        league_id = request.args.get("league_id")
-        platform  = request.args.get("platform", "sleeper")
-        season    = int(request.args.get("season") or datetime.now().year)
-        roster_id = request.args.get("roster_id") or ""
-
-        # Fall back to the session viewer when roster_id is absent or the sentinel
-        if not roster_id or roster_id == "viewer":
-            roster_id = session.get("viewer_roster_id") or ""
-
-        if not league_id or not roster_id:
-            return jsonify({"error": "league_id and roster_id required"}), 400
-
-        rosters = get_rosters(platform, league_id, season) or []
-        league  = get_league(platform, league_id, season) or {}
-        players_index = load_players_index() or {}
-        value_table   = list(get_model_value_table_cached() or [])
-
-        roster_positions = (league.get("roster_positions") or [])
-        is_sf  = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in roster_positions)
-        vfield = "sf_value" if is_sf else "value"
-
-        values_by_id = {str(r["id"]): r for r in value_table if isinstance(r, dict) and r.get("id")}
-
-        CORE = ("QB", "RB", "WR", "TE")
-
-        # Count roster slots for _weighted_pos_strength
-        slot_counts: dict[str, int] = {}
-        for rp in roster_positions:
-            rp_str = str(rp).upper()
-            slot_counts[rp_str] = slot_counts.get(rp_str, 0) + 1
-
-        # Build per-roster positional value lists (same as teams page)
-        roster_pos_vals: dict[str, dict[str, list]] = {}
-        for r in rosters:
-            rid = str(r.get("roster_id", ""))
-            pv: dict[str, list] = {p: [] for p in CORE}
-            for pid in (r.get("players") or []):
-                meta = players_index.get(str(pid)) or {}
-                pos  = str(meta.get("pos") or "").upper()
-                if pos not in CORE:
-                    continue
-                vrow = values_by_id.get(str(pid)) or {}
-                val  = float(vrow.get(vfield) or vrow.get("value") or 0)
-                pv[pos].append(val)
-            roster_pos_vals[rid] = pv
-
-        if not roster_pos_vals:
-            return jsonify({"needs": {}, "league_type": "sf" if is_sf else "1qb"})
-
-        # Compute weighted positional strength per roster (mirrors _weighted_pos_strength)
-        roster_strength: dict[str, dict[str, float]] = {}
-        for rid, pv in roster_pos_vals.items():
-            roster_strength[rid] = {
-                pos: _weighted_pos_strength(pv[pos], pos, slot_counts)
-                for pos in CORE
-            }
-
-        # League avg + std per position
-        import math
-        n = len(roster_strength)
-        league_avg = {pos: sum(rv[pos] for rv in roster_strength.values()) / n for pos in CORE}
-        league_std = {}
-        for pos in CORE:
-            variance = sum((rv[pos] - league_avg[pos]) ** 2 for rv in roster_strength.values()) / n
-            league_std[pos] = math.sqrt(variance) if variance > 0 else 1.0
-
-        viewer = roster_strength.get(str(roster_id), {p: 0.0 for p in CORE})
-
-        needs: dict = {}
-        for pos in CORE:
-            mu    = league_avg[pos]
-            sigma = league_std[pos]
-            z     = (viewer[pos] - mu) / sigma if sigma > 0 else 0.0
-            # Map z-score to need level (same thresholds as teams page z-score usage)
-            if   z >= 1.0:  level = -2   # stacked
-            elif z >= 0.35: level = -1   # depth
-            elif z >= -0.35:level =  0   # neutral
-            elif z >= -1.0: level =  1   # need
-            else:           level =  2   # major need
-            needs[pos]              = level
-            needs[f"{pos}_count"]   = len(roster_pos_vals.get(str(roster_id), {}).get(pos, []))
-            needs[f"{pos}_value"]   = round(viewer[pos], 1)
-            needs[f"{pos}_avg"]     = round(league_avg[pos], 1)
-
-        return jsonify({
-            "needs": needs,
-            "league_type": "sf" if is_sf else "1qb",
-            "league_size": len(rosters),
-        })
-
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return _api_err("Request failed", e)
 
 
 @league_meta_bp.route("/api/sleeper-user-leagues")
