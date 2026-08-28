@@ -201,6 +201,49 @@ def login(email: str, password: str) -> str:
     }
 
 
+def _epoch_ms(value) -> Optional[int]:
+    """Parse Fleaflicker int64 epoch-milli fields (often returned as strings)."""
+    if value is None or value == "":
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _draft_time_ms(league: dict) -> Optional[int]:
+    """Scheduled live-draft start from the league payload, if set."""
+    if not isinstance(league, dict):
+        return None
+    return _epoch_ms(
+        _get(
+            league,
+            "draft_live_time_epoch_milli",
+            "draftLiveTimeEpochMilli",
+        )
+    )
+
+
+def _normalize_fleaflicker_draft_status(
+    flea_status: Optional[str],
+    *,
+    is_in_progress: bool = False,
+    pick_count: int = 0,
+) -> str:
+    """Map Fleaflicker draft state to Sleeper-compatible status strings."""
+    status = str(flea_status or "").upper()
+    if is_in_progress or status == "DRAFT_IN_PROGRESS":
+        return "drafting"
+    if status == "POST_DRAFT":
+        return "complete"
+    if status == "NOT_YET_DRAFTED":
+        return "pre_draft"
+    if pick_count > 0:
+        return "complete"
+    return "pre_draft"
+
+
 def resolve_fleaflicker_team_id(
     users: list[dict],
     *,
@@ -372,7 +415,11 @@ class FleaflickerProvider(ProviderAdapter):
             "season": int(_get(standings or {}, "season") or season),
             "name": _get(league, "name") or f"Fleaflicker League {league_id}",
             "total_rosters": _int(_get(league, "size")) or len(teams),
-            "settings": {"league_type": "redraft"},
+            "draft_day": _draft_time_ms(league),
+            "settings": {
+                "league_type": "redraft",
+                "draft_status": str(_get(league, "draft_status", "draftStatus") or ""),
+            },
             "scoring_settings": self._scoring(rules),
             "roster_positions": self._positions(rules),
             "metadata": {"provider": "fleaflicker"},
@@ -553,6 +600,12 @@ class FleaflickerProvider(ProviderAdapter):
         return out
 
     def get_drafts(self, league_id, season, *, token: Optional[str] = None):
+        standings = self._call(
+            "FetchLeagueStandings", league_id, season, ttl=1800, token=token,
+        )
+        league = (standings or {}).get("league") or {}
+        draft_ts_ms = _draft_time_ms(league)
+        flea_status = _get(league, "draft_status", "draftStatus")
         raw = self._call("FetchLeagueDraftBoard", league_id, season, ttl=3600, token=token)
         picks = []
         overall = 0
@@ -562,6 +615,8 @@ class FleaflickerProvider(ProviderAdapter):
                 team = cell.get("team") or {}
                 drafted = cell.get("player") or {}
                 pro = drafted.get("proPlayer") or drafted.get("pro_player") or drafted
+                if not _get(pro, "id"):
+                    continue
                 picks.append({
                     "round": _int(row.get("round")),
                     "pick_no": overall,
@@ -573,10 +628,17 @@ class FleaflickerProvider(ProviderAdapter):
                         "position": _get(pro, "position"),
                     },
                 })
+        status = _normalize_fleaflicker_draft_status(
+            flea_status,
+            is_in_progress=bool(raw.get("is_in_progress") or raw.get("isInProgress")),
+            pick_count=len(picks),
+        )
         return [{
             "draft_id": f"fleaflicker:{season}:{league_id}",
             "league_id": str(league_id), "season": str(season),
-            "status": "complete", "type": "snake",
+            "status": status,
+            "type": "snake",
+            "start_time": draft_ts_ms,
             "metadata": {"name": "Fleaflicker Draft"}, "settings": {},
             "draft_order": {}, "slot_to_roster_id": {}, "last_picked": 0,
             "picks": picks,

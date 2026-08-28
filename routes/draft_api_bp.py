@@ -139,6 +139,19 @@ def api_draft_detect():
             "season": d.get("season"),
             "start_time": d.get("start_time"),
         } for d in _drafts]})
+    if platform == "fleaflicker":
+        try:
+            _drafts = get_drafts("fleaflicker", league_id, season) or []
+        except Exception as exc:
+            logger.warning("[draft-detect] fleaflicker error_type=%s", type(exc).__name__)
+            _drafts = []
+        return jsonify({"drafts": [{
+            "draft_id": d.get("draft_id"),
+            "status": d.get("status"),
+            "type": d.get("type"),
+            "season": d.get("season"),
+            "start_time": d.get("start_time"),
+        } for d in _drafts]})
     if platform != "sleeper":
         return jsonify({"drafts": [], "unsupported": True})
     # The draft-history page wants every season's draft; the dashboard countdown
