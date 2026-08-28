@@ -1,7 +1,9 @@
 """
-Live-draft API endpoints (Sleeper): detect a league's drafts and poll live state.
+Live-draft API endpoints: detect a league's drafts and poll live state.
 
-Routes:
+Sleeper remains the original live board. ESPN uses the DraftSyncProvider
+companion (observe picks only; never submit). Routes:
+
     /api/draft/detect   (api_draft_detect)
     /api/draft/live     (api_draft_live)
 
@@ -15,7 +17,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 
 from dashboard_services.api import build_league_history_map
 from dashboard_services.platform_api import (
@@ -39,6 +41,77 @@ def _order_from_sleeper(*args, **kwargs):
     return _fn(*args, **kwargs)
 
 
+def _viewer_ids():
+    try:
+        return (
+            str(session.get("viewer_user_id") or "") or None,
+            str(session.get("viewer_roster_id") or "") or None,
+        )
+    except RuntimeError:
+        return None, None
+
+
+def _espn_detect_sync(league_id: str, season: int):
+    from dashboard_services.draft_sync import (
+        DraftSyncAuthError,
+        DraftSyncError,
+        get_draft_sync_provider,
+        snapshot_to_detect_record,
+    )
+    try:
+        viewer_uid, viewer_rid = _viewer_ids()
+        snapshot = get_draft_sync_provider("espn").get_snapshot(
+            league_id, season,
+            viewer_user_id=viewer_uid, viewer_roster_id=viewer_rid,
+        )
+    except DraftSyncAuthError:
+        return jsonify({"drafts": [], "error": "auth_denied", "retry": False})
+    except DraftSyncError as exc:
+        logger.warning("[draft-detect] espn sync error_type=%s code=%s", type(exc).__name__, exc.code)
+        return jsonify({"drafts": [], "error": exc.code, "retry": bool(exc.retry)})
+    except Exception:
+        logger.warning("[draft-detect] espn sync error_type=Exception")
+        return jsonify({"drafts": [], "error": "fetch_failed"})
+    return jsonify({"drafts": [snapshot_to_detect_record(snapshot)], "source": "espn"})
+
+
+def _espn_live(draft_id: str, league_id: str, season: int):
+    from dashboard_services.draft_sync import (
+        DraftSyncAuthError,
+        DraftSyncError,
+        get_draft_sync_provider,
+        parse_espn_draft_id,
+        snapshot_to_live_payload,
+    )
+    parsed = parse_espn_draft_id(draft_id) if draft_id else None
+    if parsed:
+        league_id, season = parsed[0], parsed[1]
+    if not league_id:
+        return jsonify({"error": "league_required", "retry": False}), 400
+    if not season:
+        season = datetime.now().year
+    try:
+        viewer_uid, viewer_rid = _viewer_ids()
+        snapshot = get_draft_sync_provider("espn").get_snapshot(
+            league_id, int(season),
+            viewer_user_id=viewer_uid, viewer_roster_id=viewer_rid,
+        )
+    except DraftSyncAuthError:
+        return jsonify({"error": "auth_denied", "retry": False}), 403
+    except DraftSyncError as exc:
+        logger.warning("[draft-live] espn error_type=%s code=%s", type(exc).__name__, exc.code)
+        status = 404 if exc.code == "not_found" else 502
+        return jsonify({"error": exc.code, "retry": bool(exc.retry)}), status
+    except Exception:
+        logger.warning("[draft-live] espn error_type=Exception")
+        return jsonify({"error": "fetch_failed", "retry": True}), 502
+    payload = snapshot_to_live_payload(snapshot)
+    # Never echo provider secrets even if a future field is added upstream.
+    for secret_key in ("espn_s2", "swid", "SWID", "cookie", "cookies"):
+        payload.pop(secret_key, None)
+    return jsonify(payload)
+
+
 @draft_api_bp.route("/api/draft/detect")
 def api_draft_detect():
     """List drafts for a league so the user can connect a live draft (Sleeper)."""
@@ -47,14 +120,17 @@ def api_draft_detect():
     season = int(request.args.get("season") or datetime.now().year)
     if not league_id:
         return jsonify({"drafts": [], "error": "league_required"})
-    # ESPN: return the minimal draft record (start_time + status) so the dashboard
-    # countdown card can tick to the real draft date. Live-draft connect (order /
-    # rounds enrichment below) stays Sleeper-only.
+    # ESPN: the dashboard countdown card only needs start_time + status and must
+    # not hit mDraftDetail on every tick. Draft Room / cheat-sheet live connect
+    # pass sync=1 to fetch the companion snapshot (inProgress, rounds, teams).
     if platform == "espn":
+        want_sync = (request.args.get("sync") or "").strip().lower() in ("1", "true", "yes")
+        if want_sync:
+            return _espn_detect_sync(league_id, season)
         try:
             _drafts = get_drafts("espn", league_id, season) or []
         except Exception as exc:
-            logger.warning("[draft-detect] espn error: %s", exc)
+            logger.warning("[draft-detect] espn error_type=%s", type(exc).__name__)
             _drafts = []
         return jsonify({"drafts": [{
             "draft_id": d.get("draft_id"),
@@ -116,9 +192,20 @@ def api_draft_detect():
 
 @draft_api_bp.route("/api/draft/live")
 def api_draft_live():
-    """Current state + picks for a Sleeper draft (polled by the live board)."""
+    """Current state + picks for a live draft (polled by the live board).
+
+    Sleeper is keyed by ``draft_id``. ESPN is keyed by ``espn_{league_id}_{season}``
+    (or ``league_id`` + ``season``) and is observe-only.
+    """
     platform = (request.args.get("platform") or "sleeper").strip().lower()
     draft_id = (request.args.get("draft_id") or "").strip()
+    if platform == "espn":
+        league_id = (request.args.get("league_id") or "").strip()
+        try:
+            season = int(request.args.get("season") or 0)
+        except (TypeError, ValueError):
+            season = 0
+        return _espn_live(draft_id, league_id, season)
     if not draft_id or platform != "sleeper":
         return jsonify({"error": "unsupported"}), 400
     try:

@@ -56,3 +56,10 @@ that returns HTML 400). Only the token is stored encrypted. The provider impleme
 standings, rules, rosters, scoreboard, transactions, draft board, and team
 future picks, normalized to the Sleeper-shaped dictionaries used elsewhere.
 Playoff brackets are not claimed.
+
+## ESPN live draft (Draft Room companion)
+
+ESPN leagues can open Draft Room as an observe-only companion while the actual
+picks happen on ESPN. See `docs/espn-live-draft-sync.md`. Credentials (`espn_s2`,
+`SWID`) stay server-side; this app never submits picks to ESPN.
+

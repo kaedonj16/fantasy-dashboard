@@ -57,6 +57,11 @@
   var _pickLagMsg = null;  // diagnostic: "pick +Xs late" shown briefly after each new pick
   var POLL_MS = 4000;      // base cadence (just above the 3s picks cache TTL)
   var POLL_FULL_EVERY = 60;// every N light polls, do a full refresh to catch trades/slot names
+  var _espnStallPolls = 0; // consecutive in-progress polls with no new ESPN picks
+  var _espnEverGrew = false;
+  var _espnLastPickCount = 0;
+  var _espnAuthFailed = false;
+  var _espnFallbackShown = false;
   var sim = false;         // mock-draft simulation active
   var simTimer = null;
   var simSpeed = 700;      // ms between CPU picks
@@ -2639,6 +2644,7 @@
       simSpeed = parseInt(sp.value, 10) || 700;
       document.getElementById('drLiveBadge').style.display = 'none';
       document.getElementById('drUpcomingBadge').style.display = 'none';
+      hideEspnSyncPill();
       document.getElementById('drSide').style.display = '';
       syncSimControls();
       _setUpcomingMode(false);
@@ -4841,23 +4847,100 @@
     });
   }
 
-  // ── Live draft (P5, Sleeper) ────────────────────────────────────────────────
+  // ── Live draft (Sleeper + ESPN companion) ───────────────────────────────────
   function valLookup(id){ var p = playersById[String(id)]; return (p && state) ? Math.round(valOf(p)) : null; }
+  function _livePickIsMine(p){
+    if (!p) return false;
+    if (cfg.viewerUserId && String(p.picked_by || '') === String(cfg.viewerUserId)) return true;
+    if (cfg.viewerRosterId && p.roster_id != null && String(p.roster_id) === String(cfg.viewerRosterId)) return true;
+    return false;
+  }
+  function _pruneQueueOfDrafted(){
+    if (!state || !state.queue) return;
+    state.queue = state.queue.filter(function(id){ return !drafted[String(id)]; });
+  }
   function applyLivePicks(picks){
     lastLivePicks = picks;
     state.picks = {}; drafted = {};
     var latestPickedAt = 0;
-    picks.forEach(function(p){
+    (picks || []).forEach(function(p){
       if (p.pick_no == null) return;
-      state.picks[p.pick_no] = { id: p.player_id, name: p.name, position: p.position, team: p.team, val: valLookup(p.player_id) };
-      if (p.player_id) drafted[String(p.player_id)] = true;
+      var pid = p.player_id ? String(p.player_id) : '';
+      state.picks[p.pick_no] = {
+        id: pid,
+        name: p.name,
+        position: p.position,
+        team: p.team,
+        val: valLookup(pid),
+        unresolved: !!p.unresolved
+      };
+      if (pid && !p.unresolved) drafted[pid] = true;
       if (p.picked_at && p.picked_at > latestPickedAt) latestPickedAt = p.picked_at;
     });
+    _pruneQueueOfDrafted();
     state.lastPickedAt = latestPickedAt || state.lastPickedAt || 0;
     var _tot = (state.teams || 12) * (state.rounds || 15), _next = _tot + 1;
     for (var _pn = 1; _pn <= _tot; _pn++){ if (!state.picks[_pn]){ _next = _pn; break; } }
     state.current = _next;
     _boardSig = null;   // force a full board rebuild on the next render
+  }
+  // Apply one newly observed live pick in order. Idempotent: an overall pick
+  // that is already on the board is left alone so duplicate ESPN responses
+  // cannot create a second copy. Unresolved ESPN ids never mark a canonical
+  // player drafted.
+  function applyOneLivePick(p){
+    if (!state || !p || p.pick_no == null) return false;
+    if (state.picks[p.pick_no]) return false;
+    var pid = p.player_id ? String(p.player_id) : '';
+    var row = pid ? playersById[pid] : null;
+    var pickObj = {
+      id: pid,
+      name: (row && row.name) || p.name || 'Unknown',
+      position: (row && row.position) || p.position || '',
+      team: (row && row.team) || p.team || '',
+      val: row ? Math.round(valOf(row)) : valLookup(pid),
+      unresolved: !!p.unresolved
+    };
+    if (row){
+      try { pickObj.ps = pickScoreFor(row); } catch (e){}
+      try { pickObj.psRel = psDisplay(pickObj.ps); } catch (e){}
+    }
+    state.picks[p.pick_no] = pickObj;
+    if (pid && !p.unresolved) drafted[pid] = true;
+    if (pid && state.queue){
+      var qi = state.queue.indexOf(pid);
+      if (qi >= 0) state.queue.splice(qi, 1);
+    }
+    var tot = (state.teams || 12) * (state.rounds || 15), next = tot + 1;
+    for (var pn = 1; pn <= tot; pn++){ if (!state.picks[pn]){ next = pn; break; } }
+    state.current = next;
+    justPick = p.pick_no;
+    _boardSig = null;
+    return true;
+  }
+  function applyMissingLivePicks(picks){
+    lastLivePicks = picks;
+    var remote = (picks || []).slice().filter(function(p){ return p && p.pick_no != null; });
+    remote.sort(function(a, b){ return (a.pick_no || 0) - (b.pick_no || 0); });
+    var remoteCount = remote.length;
+    var localCount = 0;
+    if (state && state.picks){
+      Object.keys(state.picks).forEach(function(k){ if (state.picks[k]) localCount++; });
+    }
+    // ESPN is authoritative for pick occupancy. A shorter remote list (commissioner
+    // rollback) rebuilds from the snapshot instead of leaving stale local picks.
+    if (remoteCount < localCount){
+      applyLivePicks(picks);
+      return remoteCount;
+    }
+    var applied = 0;
+    remote.forEach(function(p){
+      if (applyOneLivePick(p)){
+        applied++;
+        try { psCtxInvalidate(); refreshPsPool(); } catch (e){}
+      }
+    });
+    return applied;
   }
   // Friendly label for a Sleeper draft status (raw values are snake_case).
   function liveStatusLabel(s){
@@ -4886,10 +4969,17 @@
     }
     var box = document.getElementById('drLiveList');
     box.style.display = ''; box.innerHTML = '<div class="dr-live-head">Detecting drafts…</div>';
-    fetch('/api/draft/detect?platform=' + encodeURIComponent(cfg.platform) + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || ''))
+    var detectUrl = '/api/draft/detect?platform=' + encodeURIComponent(cfg.platform)
+      + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || '');
+    if (String(cfg.platform || '').toLowerCase() === 'espn') detectUrl += '&sync=1';
+    fetch(detectUrl)
       .then(function(r){ return r.json(); })
       .then(function(resp){
-        if (resp.unsupported){ box.innerHTML = '<div class="dr-live-head">Live sync currently supports Sleeper leagues.</div>'; return; }
+        if (resp.unsupported){ box.innerHTML = '<div class="dr-live-head">Live sync currently supports Sleeper and ESPN leagues.</div>'; return; }
+        if (resp.error === 'auth_denied'){
+          box.innerHTML = '<div class="dr-live-head">ESPN denied access to this league. Reconnect the league, then try again.</div>';
+          return;
+        }
         var all = resp.drafts || [];
         if (!all.length){ box.innerHTML = '<div class="dr-live-head">No drafts found for this league yet.</div>'; return; }
         // Prefer live/upcoming drafts; only if there are none do we fall back to
@@ -4932,6 +5022,7 @@
       if (p.pick_no == null) return;
       madePickNos[p.pick_no] = true;
       if (cfg.viewerUserId && p.picked_by === cfg.viewerUserId) owned[p.pick_no] = true;
+      else if (_livePickIsMine(p)) owned[p.pick_no] = true;
     });
     if (String(d.status) !== 'complete'){
       // Sleeper traded_picks uses roster_id (original owner) not a slot field.
@@ -4950,6 +5041,7 @@
         if (tp.roster_id != null && tp.round != null) tradedPickMap[tp.roster_id + ':' + tp.round] = tp.owner_id;
       });
       var viewerRosterId = (cfg.viewerUserId && d.user_roster_map) ? (d.user_roster_map[cfg.viewerUserId] || null) : null;
+      if (viewerRosterId == null && cfg.viewerRosterId) viewerRosterId = cfg.viewerRosterId;
       for (var pn2 = 1; pn2 <= teams * rounds; pn2++){
         if (madePickNos[pn2]) continue;
         var pn2Slot = slotOnClock(pn2, teams, order);
@@ -5015,13 +5107,25 @@
 
   function connectLive(draftId){
     stopPolling(); stopPickTimer();
-    fetch('/api/draft/live?platform=' + encodeURIComponent(cfg.platform) + '&draft_id=' + encodeURIComponent(draftId), { cache: 'no-store' })
+    if (String(cfg.platform || '').toLowerCase() === 'espn') updateEspnSyncPill('connecting');
+    fetch('/api/draft/live?platform=' + encodeURIComponent(cfg.platform) + '&draft_id=' + encodeURIComponent(draftId)
+      + (cfg.leagueId ? ('&league_id=' + encodeURIComponent(cfg.leagueId)) : '')
+      + (cfg.season ? ('&season=' + encodeURIComponent(cfg.season)) : ''), { cache: 'no-store' })
       .then(function(r){
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
+        return r.json().then(function(body){ return { ok: r.ok, body: body }; });
       })
-      .then(function(d){
-        if (!d || d.error){ drAlert('Could not load that draft.'); return; }
+      .then(function(res){
+        var d = res.body;
+        if (!d || d.error){
+          if (d && d.error === 'auth_denied'){
+            drAlert('ESPN denied access to this draft. Reconnect the league, then try again.');
+            if (String(cfg.platform || '').toLowerCase() === 'espn') showEspnFallback();
+            return;
+          }
+          drAlert('Could not load that draft.');
+          if (String(cfg.platform || '').toLowerCase() === 'espn') hideEspnSyncPill();
+          return;
+        }
         try { _connectLiveApply(d, draftId); }
         catch(err){
           if (window.console) console.error('[draft] connect processing error', err);
@@ -5031,6 +5135,7 @@
       .catch(function(err){
         if (window.console) console.error('[draft] connect fetch error', err);
         drAlert('Could not connect to the live draft.');
+        if (String(cfg.platform || '').toLowerCase() === 'espn') hideEspnSyncPill();
       });
   }
   function _connectLiveApply(d, draftId){
@@ -5042,6 +5147,12 @@
         if (cfg.viewerUserId && d.draft_order && d.draft_order[cfg.viewerUserId]) {
           slot = parseInt(d.draft_order[cfg.viewerUserId], 10) || 0;
         }
+        if (!slot && cfg.viewerRosterId && d.draft_order && d.draft_order[cfg.viewerRosterId]) {
+          slot = parseInt(d.draft_order[cfg.viewerRosterId], 10) || 0;
+        }
+        if (!slot && d.viewer_team_id && d.draft_order && d.draft_order[String(d.viewer_team_id)]) {
+          slot = parseInt(d.draft_order[String(d.viewer_team_id)], 10) || 0;
+        }
         var isComplete = String(d.status) === 'complete';
         var isDrafting = String(d.status) === 'drafting';
         var draftType = d.draft_type || (parseInt(d.rounds) <= 5 ? 'rookie' : 'startup');
@@ -5050,15 +5161,22 @@
           slot: slot, order: order, picks: {}, current: 1,
           owned: buildOwnedFromResponse(d, teams, rounds, order, slot),
           mode: 'live', isComplete: isComplete, isDrafting: isDrafting, sourceDraftId: draftId,
+          syncSource: d.source || (String(cfg.platform || '').toLowerCase() === 'espn' ? 'espn' : 'sleeper'),
+          pollIntervalMs: parseInt(d.poll_interval_ms, 10) || 0,
+          stallPolls: parseInt(d.stall_polls, 10) || 8,
+          viewerTeamId: d.viewer_team_id || cfg.viewerRosterId || '',
           season: parseInt(d.season, 10) || 0,   // draft's season, for point-in-time ADP grading
           status: String(d.status || ''),
           pickTimer: parseInt(d.pick_timer) || 0,
           startTime: parseInt(d.start_time) || 0,
           slotNames: d.slot_names || {}, queue: [],
           pickOwners: buildPickOwnersFromResponse(d, teams, rounds, order),
-          roster: _parseRosterPositions(d.roster_positions),
+          roster: _parseRosterPositions(d.roster_positions) || rosterFromLeague() || defaultRoster(),
           scoring: cfg.scoring || readScoring()
         };
+        _espnStallPolls = 0; _espnEverGrew = !!(d.picks && d.picks.length); _espnLastPickCount = (d.picks || []).length;
+        _espnAuthFailed = false; _espnFallbackShown = false;
+        hideEspnFallback();
         applyLivePicks(d.picks || []);
         // Completed draft: reload the pool against that season's ADP so grades
         // reflect ADP at draft time, not today. No-op cost for the current season
@@ -5069,16 +5187,27 @@
         showMain();
         updateDraftBanner();
         document.getElementById('drUndo').style.display = 'none';
-        document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
-        _setStatusBadge(isDrafting, isComplete, String(d.status));
+        if (state.syncSource === 'espn'){
+          document.getElementById('drLiveBadge').style.display = 'none';
+          document.getElementById('drUpcomingBadge').style.display = 'none';
+          updateEspnSyncPill(isDrafting ? 'live' : (isComplete ? 'complete' : 'connecting'));
+        } else {
+          hideEspnSyncPill();
+          document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
+          _setStatusBadge(isDrafting, isComplete, String(d.status));
+        }
         if (isComplete){
           showCompleteSidebar();
+          if (state.syncSource === 'espn') updateEspnSyncPill('complete');
         } else {
           document.getElementById('drSide').style.display = '';
           _setUpcomingMode(!isDrafting);
           startPolling();
           _liveSig = liveSig(d);  // re-seed after startPolling resets it so first auto-poll skips a redundant rebuild
           if (isDrafting) startPickTimer();
+          if (state.syncSource === 'espn'){
+            updateEspnSyncPill(isDrafting ? 'live' : (String(d.status) === 'pre_draft' ? 'not_started' : 'synced'));
+          }
         }
         loadPlayers();
     }
@@ -5088,7 +5217,102 @@
   function liveSig(d){
     var ps = d.picks || [];
     var last = ps.length ? ps[ps.length - 1] : null;
-    return String(d.status || '') + '|' + ps.length + '|' + (last && last.pick_no != null ? last.pick_no : 0);
+    var fp = d.fingerprint || '';
+    return String(d.status || '') + '|' + ps.length + '|' + (last && last.pick_no != null ? last.pick_no : 0) + (fp ? ('|' + fp) : '');
+  }
+  function _espnPickLabel(){
+    if (!state) return '';
+    var pn = state.current || 1;
+    var teams = state.teams || 12;
+    var rd = Math.ceil(pn / teams);
+    var pk = pn - (rd - 1) * teams;
+    return rd + '.' + (pk < 10 ? '0' + pk : String(pk));
+  }
+  function hideEspnSyncPill(){
+    var el = document.getElementById('drEspnSync');
+    if (!el) return;
+    el.style.display = 'none';
+    el.hidden = true;
+  }
+  function updateEspnSyncPill(kind){
+    var el = document.getElementById('drEspnSync');
+    if (!el) return;
+    if (!state && String(cfg.platform || '').toLowerCase() !== 'espn'){ hideEspnSyncPill(); return; }
+    if (state && state.syncSource && state.syncSource !== 'espn'){ hideEspnSyncPill(); return; }
+    if (String(cfg.platform || '').toLowerCase() !== 'espn' && !(state && state.syncSource === 'espn')){
+      hideEspnSyncPill(); return;
+    }
+    var label = 'ESPN Draft';
+    var cls = 'dr-pill dr-pill-espn';
+    if (kind === 'connecting'){ label = 'ESPN Draft · Connecting'; cls += ' is-warn'; }
+    else if (kind === 'not_started'){ label = 'ESPN Draft · Not Started'; cls += ' is-muted'; }
+    else if (kind === 'live'){ label = 'ESPN Draft · LIVE · Pick ' + _espnPickLabel(); cls += ' is-live'; }
+    else if (kind === 'synced'){ label = 'ESPN Draft · Synced'; cls += ' is-ok'; }
+    else if (kind === 'unavailable'){ label = 'ESPN Draft · Sync Unavailable'; cls += ' is-warn'; }
+    else if (kind === 'complete'){ label = 'ESPN Draft · Complete'; cls += ' is-ok'; }
+    el.className = cls;
+    el.textContent = label;
+    el.hidden = false;
+    el.style.display = '';
+  }
+  function hideEspnFallback(){
+    var el = document.getElementById('drEspnFallback');
+    if (!el) return;
+    el.style.display = 'none';
+    el.hidden = true;
+    el.innerHTML = '';
+  }
+  function showEspnFallback(){
+    var el = document.getElementById('drEspnFallback');
+    if (!el) return;
+    _espnFallbackShown = true;
+    el.hidden = false;
+    el.style.display = '';
+    el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-unlink"></i></span>'
+      + '<div class="dr-banner-txt"><b>ESPN live sync unavailable</b>'
+      + '<span>ESPN isn\'t exposing live draft updates for this draft. You can continue using manual draft tracking.</span></div>'
+      + '<button type="button" class="dr-banner-join" id="drEspnManual">Switch to Manual Tracking</button>';
+    updateEspnSyncPill('unavailable');
+  }
+  function switchEspnToManual(){
+    stopPolling(); stopPickTimer();
+    hideEspnFallback();
+    if (!state) return;
+    state.mode = undefined;
+    state.syncSource = undefined;
+    state.isDrafting = false;
+    hideEspnSyncPill();
+    var liveBadge = document.getElementById('drLiveBadge');
+    if (liveBadge) liveBadge.style.display = 'none';
+    var upcoming = document.getElementById('drUpcomingBadge');
+    if (upcoming) upcoming.style.display = 'none';
+    var undo = document.getElementById('drUndo');
+    if (undo) undo.style.display = '';
+    save();
+    render();
+  }
+  function _noteEspnPollGrowth(d){
+    var count = (d && d.picks) ? d.picks.length : 0;
+    if (count > _espnLastPickCount){
+      _espnEverGrew = true;
+      _espnStallPolls = 0;
+    } else if (state && state.isDrafting && !_espnEverGrew && !(d && d.picks_observed === false && count > 0)){
+      _espnStallPolls++;
+    } else {
+      _espnStallPolls = 0;
+    }
+    _espnLastPickCount = count;
+  }
+  function _espnShouldFallback(d){
+    if (!state || state.syncSource !== 'espn' || _espnFallbackShown || _espnAuthFailed) return false;
+    if (String(d && d.status) === 'complete') return false;
+    var stallLimit = parseInt(state.stallPolls, 10) || 8;
+    var drafting = String(d && d.status) === 'drafting' || d && d.in_progress === true;
+    if (!drafting) return false;
+    if (d && d.live_detail_present === false && _espnStallPolls >= 3) return true;
+    if (d && d.picks_observed === false && _espnStallPolls >= 3) return true;
+    if (!_espnEverGrew && _espnStallPolls >= stallLimit) return true;
+    return false;
   }
   function _fmtAgo(ms){
     if (!ms) return '';
@@ -5126,6 +5350,15 @@
       return 'https://sleeper.com/draft/nfl/' + encodeURIComponent(state.sourceDraftId);
     return null;
   }
+  function espnDraftUrl(){
+    if ((cfg.platform === 'espn' || (state && state.syncSource === 'espn')) && cfg.leagueId)
+      return 'https://fantasy.espn.com/football/draft?leagueId=' + encodeURIComponent(cfg.leagueId)
+        + (cfg.season ? ('&seasonId=' + encodeURIComponent(cfg.season)) : '');
+    return null;
+  }
+  function livePlatformDraftUrl(){
+    return sleeperDraftUrl() || espnDraftUrl();
+  }
   function updateDraftBanner(){
     var el = document.getElementById('drStartBanner');
     if (!el) return;
@@ -5138,8 +5371,9 @@
     if (mode === 'none'){ el.style.display = 'none'; el.removeAttribute('data-bk'); return; }
     if (el.getAttribute('data-bk') !== mode){
       el.setAttribute('data-bk', mode);
-      var url = sleeperDraftUrl();
-      var joinBtn = url ? '<a class="dr-banner-join" href="' + url + '" target="_blank" rel="noopener">Open in Sleeper <i class="fa-solid fa-arrow-right-long"></i></a>' : '';
+      var url = livePlatformDraftUrl();
+      var joinLabel = (state && state.syncSource === 'espn') ? 'Open in ESPN' : 'Open in Sleeper';
+      var joinBtn = url ? '<a class="dr-banner-join" href="' + url + '" target="_blank" rel="noopener">' + joinLabel + ' <i class="fa-solid fa-arrow-right-long"></i></a>' : '';
       el.className = 'dr-start-banner';
       el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-calendar-days"></i></span>'
         + '<div class="dr-banner-txt"><b>Your draft starts in <span class="dr-start-cd"></span></b>'
@@ -5164,8 +5398,22 @@
     // pre-draft flips to live within a couple seconds of the draft actually
     // starting, instead of waiting out the normal cadence.
     if (state && state.mode === 'live' && !state.isComplete){
-      if (state.isDrafting){
-        ms = 2000;  // active draft: poll every 2s so picks surface quickly
+      if (typeof document !== 'undefined' && document.hidden){
+        ms = 30000;
+      } else if (state.syncSource === 'espn'){
+        var espnMs = parseInt(state.pollIntervalMs, 10) || 8000;
+        if (state.isDrafting){
+          ms = espnMs;
+        } else if (state.startTime){
+          var espnToStart = state.startTime - Date.now();
+          if (espnToStart > _START_WINDOW_MS) ms = 60000;  // not started: don't hammer ESPN
+          else if (espnToStart <= 60000 && espnToStart > -900000) ms = espnMs;
+          else ms = Math.max(espnMs, 15000);
+        } else {
+          ms = 30000;
+        }
+      } else if (state.isDrafting){
+        ms = 2000;  // active Sleeper draft: poll every 2s so picks surface quickly
       } else if (state.startTime){
         // Clean gradient: poll harder as the scheduled start nears so the board
         // flips to live promptly, but keep checking often enough far out that a
@@ -5185,24 +5433,58 @@
   // periodic full poll refreshes slot names and trade-based ownership.
   function pollOnce(){
     if (!state || state.mode !== 'live'){ stopPolling(); return; }
+    if (_pollInFlight) return;  // never overlap ESPN/Sleeper live requests
+    if (_espnAuthFailed || _espnFallbackShown) return;
     _pollCount++;
     var full = (_pollCount === 1) || (_pollCount % POLL_FULL_EVERY === 0);
     var url = '/api/draft/live?platform=' + encodeURIComponent(cfg.platform)
             + '&draft_id=' + encodeURIComponent(state.sourceDraftId)
             + (full ? '' : '&light=1');
+    if (state.syncSource === 'espn' && cfg.leagueId){
+      url += '&league_id=' + encodeURIComponent(cfg.leagueId)
+          + '&season=' + encodeURIComponent(cfg.season || state.season || '');
+    }
     _pollInFlight = true; updatePollStatus();
+    if (state.syncSource === 'espn' && !state.isDrafting && !state.isComplete){
+      updateEspnSyncPill(String(state.status) === 'pre_draft' ? 'not_started' : 'connecting');
+    }
     var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    var to = setTimeout(function(){ if (ctrl) ctrl.abort(); }, 8000);  // don't let a hung request stall the cadence
+    var abortMs = (state.syncSource === 'espn') ? 12000 : 8000;
+    var to = setTimeout(function(){ if (ctrl) ctrl.abort(); }, abortMs);
     fetch(url, ctrl ? { signal: ctrl.signal, cache: 'no-store' } : { cache: 'no-store' })
-      .then(function(r){ return r.json(); })
-      .then(function(d){
+      .then(function(r){ return r.json().then(function(body){ return { ok: r.ok, status: r.status, body: body }; }); })
+      .then(function(res){
         clearTimeout(to); _pollInFlight = false;
         // Guard: if mode changed while this fetch was in-flight (e.g. user started
         // a Practice Mock), discard the response so it can't re-show the LIVE badge.
         if (!state || state.mode !== 'live'){ return; }
-        if (!d || !d.picks){ _pollLastAt = Date.now(); return; }
+        var d = res.body || {};
+        if (d.error === 'auth_denied' || d.retry === false){
+          _espnAuthFailed = true;
+          stopPolling();
+          if (state.syncSource === 'espn') showEspnFallback();
+          return;
+        }
+        if (!res.ok || d.error){
+          if (state.syncSource === 'espn') _espnStallPolls++;
+          if (state.syncSource === 'espn' && _espnShouldFallback(d)){
+            stopPolling(); showEspnFallback();
+          }
+          return;
+        }
+        if (!d || !Array.isArray(d.picks)){ _pollLastAt = Date.now(); return; }
+        if (d.poll_interval_ms) state.pollIntervalMs = parseInt(d.poll_interval_ms, 10) || state.pollIntervalMs;
+        if (d.stall_polls) state.stallPolls = parseInt(d.stall_polls, 10) || state.stallPolls;
         if (d.start_time != null) state.startTime = parseInt(d.start_time) || 0;
         if (d.pick_timer != null) state.pickTimer = parseInt(d.pick_timer) || 0;
+        var isEspn = state.syncSource === 'espn';
+        if (isEspn){
+          _noteEspnPollGrowth(d);
+          if (_espnShouldFallback(d)){
+            stopPolling(); showEspnFallback();
+            return;
+          }
+        }
         var sig = liveSig(d);
         if (sig !== _liveSig){
           _liveSig = sig;
@@ -5215,7 +5497,7 @@
           if (_newPickedAt){
             var lagS = Math.round((Date.now() - _newPickedAt) / 1000);
             _pickLagMsg = 'pick +' + Math.max(0, lagS) + 's';
-          } else {
+          } else if (!isEspn){
             _pickLagMsg = 'pick (no ts)';
           }
           setTimeout(function(){ _pickLagMsg = null; }, 15000);
@@ -5225,27 +5507,49 @@
             state.pickOwners = buildPickOwnersFromResponse(d, state.teams, state.rounds, state.order) || state.pickOwners;
             if (d.slot_names) state.slotNames = d.slot_names;
           }
-          applyLivePicks(d.picks); render();
+          if (isEspn && lastLivePicks){
+            applyMissingLivePicks(d.picks);
+          } else {
+            applyLivePicks(d.picks);
+          }
+          render();
           var isDrafting = String(d.status) === 'drafting';
           state.isDrafting = isDrafting;
           state.status = String(d.status || '');
-          document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
-          _setStatusBadge(isDrafting, String(d.status) === 'complete', String(d.status));
+          if (isEspn){
+            document.getElementById('drLiveBadge').style.display = 'none';
+            updateEspnSyncPill(isDrafting ? 'live' : (String(d.status) === 'pre_draft' ? 'not_started' : (String(d.status) === 'complete' ? 'complete' : 'synced')));
+          } else {
+            document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
+            _setStatusBadge(isDrafting, String(d.status) === 'complete', String(d.status));
+          }
           _setUpcomingMode(!isDrafting && String(d.status) !== 'complete');
           if (isDrafting && (!prevDrafting || state.current !== prevCurrent)) startPickTimer();
           if (String(d.status) === 'complete'){
             stopPolling(); stopPickTimer(); state.isComplete = true; save();
             showCompleteSidebar();
+            if (isEspn) updateEspnSyncPill('complete');
             return;
           }
+        } else if (isEspn){
+          updateEspnSyncPill(state.isDrafting ? 'live' : (String(state.status) === 'pre_draft' ? 'not_started' : 'synced'));
         }
         _pollLastAt = Date.now();
       })
-      .catch(function(){ clearTimeout(to); _pollInFlight = false; })
+      .catch(function(){
+        clearTimeout(to); _pollInFlight = false;
+        if (state && state.syncSource === 'espn' && state.isDrafting){
+          _espnStallPolls++;
+          if (!_espnEverGrew && _espnStallPolls >= (parseInt(state.stallPolls, 10) || 8)){
+            stopPolling(); showEspnFallback();
+          }
+        }
+      })
       .then(function(){
         // Schedule the next poll once this one settles (success or failure),
         // unless polling was torn down (e.g. draft completed).
-        if (pollTickTimer && state && state.mode === 'live' && !state.isComplete) schedulePoll();
+        if (pollTickTimer && state && state.mode === 'live' && !state.isComplete
+            && !_espnAuthFailed && !_espnFallbackShown) schedulePoll();
       });
   }
   function stopPolling(){
@@ -7249,6 +7553,19 @@
   document.getElementById('drLiveList').addEventListener('click', function(e){
     var b = e.target.closest('.dr-live-item'); if (b) connectLive(b.getAttribute('data-id'));
   });
+  var _espnFb = document.getElementById('drEspnFallback');
+  if (_espnFb) _espnFb.addEventListener('click', function(e){
+    if (e.target && e.target.id === 'drEspnManual') switchEspnToManual();
+  });
+  if (typeof document !== 'undefined' && document.addEventListener){
+    document.addEventListener('visibilitychange', function(){
+      if (document.hidden) return;
+      if (state && state.mode === 'live' && !state.isComplete && !_espnFallbackShown && !_espnAuthFailed){
+        lastLivePicks = null;  // refresh reconcile after the tab was away
+        if (!_pollInFlight) pollOnce();
+      }
+    });
+  }
   document.getElementById('drCellToggle').addEventListener('click', function(e){
     var opt = e.target.closest('.dr-ct-opt'); if (!opt) return;
     var mode = opt.getAttribute('data-mode');
@@ -7606,14 +7923,23 @@
       if (state.mode !== 'live' && !state.owned) state.owned = defaultOwned();
       if (state.mode === 'live'){
         document.getElementById('drUndo').style.display = 'none';
+        lastLivePicks = null;  // force a full ESPN/Sleeper reconcile on the first poll
+        if (state.syncSource === 'espn'){
+          document.getElementById('drLiveBadge').style.display = 'none';
+          document.getElementById('drUpcomingBadge').style.display = 'none';
+          updateEspnSyncPill(state.isComplete ? 'complete' : 'connecting');
+        }
         if (state.isComplete){
           showCompleteSidebar();
           document.getElementById('drLiveBadge').style.display = 'none';
           document.getElementById('drUpcomingBadge').style.display = 'none';
+          if (state.syncSource === 'espn') updateEspnSyncPill('complete');
         } else {
           // Badges are refreshed on the first poll; hide both until confirmed
-          document.getElementById('drLiveBadge').style.display = 'none';
-          document.getElementById('drUpcomingBadge').style.display = 'none';
+          if (state.syncSource !== 'espn'){
+            document.getElementById('drLiveBadge').style.display = 'none';
+            document.getElementById('drUpcomingBadge').style.display = 'none';
+          }
         }
       } else if (state.mode === 'mock'){
         // Restore the mock: a not-yet-started draft comes back to the Start

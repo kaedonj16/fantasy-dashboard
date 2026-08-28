@@ -154,6 +154,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
         roster_positions=roster_positions,
         scoring=scoring,
         viewer_user_id=session.get("viewer_user_id"),
+        viewer_roster_id=session.get("viewer_roster_id"),
         num_rounds_rookie=num_rounds_rookie,
         num_rounds_startup=num_rounds_startup,
         keepers=keepers_payload,

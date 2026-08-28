@@ -1762,7 +1762,8 @@
         // Live Sleeper draft sync (auto cross-off + real-time board) is free once
         // the viewer has a connected league. Custom board edits stay PRO.
         if (!cfg.leagueId || !cfg.platform) return Promise.resolve(false);
-        return fetch('/api/draft/detect?platform=' + encodeURIComponent(cfg.platform) + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || ''))
+        return fetch('/api/draft/detect?platform=' + encodeURIComponent(cfg.platform) + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || '')
+            + (String(cfg.platform || '').toLowerCase() === 'espn' ? '&sync=1' : ''))
             .then(function (r) {
                 return r.json();
             })

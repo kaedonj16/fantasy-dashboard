@@ -4,9 +4,9 @@ Standalone Draft Room (Draft Assistant) page.
 Phase 2: a dedicated, self-contained draft board that supersedes the old
 Prospects→Draft tab. Supports manual drafting for both startup (all players)
 and rookie drafts, with snake / linear / third-round-reversal pick order.
-Live Sleeper sync, persistence/history, and the full command-center panels
-land in later phases; this establishes the standalone page + board grid +
-best-available picker + the pickOrder foundation.
+Live Sleeper sync, ESPN live companion sync (observe-only), persistence/history,
+and the full command-center panels land in later phases; this establishes the
+standalone page + board grid + best-available picker + the pickOrder foundation.
 
 The page is self-contained: its CSS is inlined here and its JS lives in
 static/draft_room.js (loaded as a deferred external script so the browser caches
@@ -57,6 +57,7 @@ def build_draft_room_body(
         roster_positions: Optional[list] = None,
         scoring: Optional[dict] = None,
         viewer_user_id: Optional[str] = None,
+        viewer_roster_id: Optional[str] = None,
         num_rounds_rookie: Optional[int] = None,
         num_rounds_startup: Optional[int] = None,
         keepers: Optional[dict] = None,
@@ -87,6 +88,7 @@ def build_draft_room_body(
         "rosterPositions": list(roster_positions) if roster_positions else None,
         "scoring": scoring or None,
         "viewerUserId": str(viewer_user_id) if viewer_user_id else "",
+        "viewerRosterId": str(viewer_roster_id) if viewer_roster_id else "",
         "numRoundsRookie": int(num_rounds_rookie) if num_rounds_rookie else None,
         "numRoundsStartup": int(num_rounds_startup) if num_rounds_startup else None,
         # League keepers (from the keeper tool) to drop from the board. Omitted /
@@ -121,7 +123,7 @@ _DRAFT_ROOM_HTML = r"""
 <div class="dr-wrap">
   <div class="dr-hero" id="drHero">
     <h1 class="dr-title">Draft Room</h1>
-    <p class="dr-sub">Mock against CPU teams, draft manually, or sync a live Sleeper draft with best-available ranks, tiers, and a live grade.</p>
+    <p class="dr-sub">Mock against CPU teams, draft manually, or sync a live Sleeper or ESPN draft with best-available ranks, tiers, and a live grade.</p>
     <div class="dr-hero-actions">
       <a class="dr-hero-link" id="drToCheatSheet" href="/draft/cheat-sheet">Cheat Sheet</a>
       <a class="dr-hero-link" id="drToHistory" href="/draft/history">Draft History</a>
@@ -273,6 +275,7 @@ _DRAFT_ROOM_HTML = r"""
   <!-- Board + side -->
   <div class="dr-main" id="drMain" style="display:none;">
     <div class="dr-start-banner" id="drStartBanner" style="display:none;"></div>
+    <div class="dr-start-banner dr-espn-fallback" id="drEspnFallback" style="display:none;" hidden></div>
     <div class="dr-statusbar">
       <div class="dr-status-info">
         <div class="dr-onclock" id="drOnClockWrap">
@@ -285,6 +288,7 @@ _DRAFT_ROOM_HTML = r"""
           <span class="dr-pick-timer" id="drPickTimer" style="display:none;"></span>
           <span class="dr-pill dr-pill-live" id="drLiveBadge" style="display:none;">&#9679; LIVE</span>
           <span class="dr-pill dr-pill-upcoming" id="drUpcomingBadge" style="display:none;">Upcoming</span>
+          <span class="dr-pill dr-pill-espn" id="drEspnSync" style="display:none;" hidden>ESPN Draft</span>
           <span class="dr-progress" id="drProgress"></span>
           <span class="dr-save" id="drSave"></span>
           <span class="dr-poll-status" id="drPollStatus" style="display:none;"></span>
@@ -685,6 +689,13 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pill-live { background: color-mix(in srgb, var(--loss) 16%, transparent); color: var(--loss); animation: drPulse 1.6s ease-in-out infinite; }
   .dr-pill-upcoming { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
   .dr-pill-paused   { background: rgba(148,163,184,.16); color: var(--text-subtle); }
+  .dr-pill-espn { background: color-mix(in srgb, var(--accent,#38bdf8) 14%, transparent); color: var(--accent,#38bdf8); font-variant-numeric: tabular-nums; }
+  .dr-pill-espn.is-live { background: color-mix(in srgb, var(--loss) 16%, transparent); color: var(--loss); animation: drPulse 1.6s ease-in-out infinite; }
+  .dr-pill-espn.is-ok { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
+  .dr-pill-espn.is-warn { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
+  .dr-pill-espn.is-muted { background: rgba(148,163,184,.16); color: var(--text-subtle); animation: none; }
+  .dr-espn-fallback { background: linear-gradient(90deg, color-mix(in srgb, var(--warning) 16%, transparent), color-mix(in srgb, var(--warning) 5%, transparent)); border-color: var(--warning); }
+  .dr-espn-fallback .dr-banner-join { background: var(--warning); color: #111; cursor: pointer; border: 0; font: inherit; }
   .dr-pick-timer { font-size: 14px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums;
     min-width: 40px; padding: 2px 8px; border-radius: 7px; background: rgba(127,127,127,.1); text-align: center; }
   .dr-pick-timer.urgent { color: #fff; background: var(--loss); animation: drPulse 1s ease-in-out infinite; }
