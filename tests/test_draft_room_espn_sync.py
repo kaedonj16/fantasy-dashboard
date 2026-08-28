@@ -34,6 +34,14 @@ def test_sequential_missing_picks_and_idempotent_apply():
     assert "applyMissingLivePicks(d.picks)" in ROOM_JS
 
 
+def test_predraft_placeholder_picks_are_not_applied():
+    assert "function livePickIsSelection(p)" in ROOM_JS
+    assert "if (!livePickIsSelection(p)) return;" in ROOM_JS
+    assert "var remote = (picks || []).slice().filter(livePickIsSelection);" in ROOM_JS
+    assert "if (state.mode === 'live' && String(state.status) === 'pre_draft' && !state.isComplete) return false;" in ROOM_JS
+    assert "var done = _draftComplete();" in ROOM_JS
+
+
 def test_auth_errors_do_not_retry_and_fallback_stops_polling():
     assert "d.error === 'auth_denied'" in ROOM_JS
     assert "_espnAuthFailed = true" in ROOM_JS
