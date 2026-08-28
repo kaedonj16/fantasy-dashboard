@@ -3120,6 +3120,7 @@ def _link_modal_html() -> str:
         box.innerHTML='<div class="link-item"><span>'+esc(name)+'</span></div>'+
           (teams.length?'<select class="link-sel" id="linkTeamSel">'+opts+'</select>':'')+
           '<div style="margin-top:10px;text-align:right;"><button type="button" class="link-btn" id="linkConfirm">Add league</button></div>';
+        if(teams.length && window.initCustomSelects) window.initCustomSelects(box);
         document.getElementById('linkConfirm').addEventListener('click',function(){
           var sel=document.getElementById('linkTeamSel');
           linkAdd(platform, league_id, season, sel?sel.value:null, name, this);
