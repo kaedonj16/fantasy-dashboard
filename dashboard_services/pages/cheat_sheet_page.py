@@ -366,11 +366,11 @@ _CHEAT_HTML = r"""
   .cs-trends-srow.is-on { border-color: var(--cs-pos); background: var(--cs-pos-bg); }
   .cs-trends-minipcts { display: flex; gap: 8px; margin-top: 4px; font-family: var(--cs-mono); font-size: 10px; color: var(--cs-ink-faint, var(--text-muted)); }
   .cs-trends-minipcts .is-on { color: var(--cs-pos); font-weight: 800; }
-  .cs-trends-scout { margin: 0 0 18px; padding: 12px 14px; border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; background: var(--cs-surface, var(--card)); }
+  .cs-trends-scout { margin: 18px 0 0; padding: 12px 14px; border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; background: var(--cs-surface, var(--card)); }
   .cs-trends-scout-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
   .cs-trends-chip { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid var(--cs-pos); color: var(--cs-pos); background: var(--cs-pos-bg); border-radius: 999px; padding: 4px 10px; }
   .cs-trends-chip.is-clear { border-color: var(--cs-line, var(--border)); color: var(--cs-ink-soft, var(--text-muted)); background: transparent; }
-  .cs-trends-scout-list { display: flex; flex-direction: column; gap: 4px; }
+  .cs-trends-scout-list { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; }
   .cs-trends-player { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; font: inherit; cursor: pointer; border: 0; background: transparent; border-radius: 8px; padding: 6px 4px; color: var(--cs-ink, var(--text)); }
   .cs-trends-player:hover { background: color-mix(in srgb, var(--cs-pos) 8%, transparent); }
   .cs-trends-player.is-drafted { opacity: .45; }
@@ -396,6 +396,7 @@ _CHEAT_HTML = r"""
     .cs-trends-lanes { position: sticky; top: 0; z-index: 4; background: var(--cs-surface, var(--card)); padding: 8px 0; margin: 0 0 10px; border-bottom: 1px solid var(--cs-line, var(--border)); }
     .cs-trends-lane-n { flex: 1 0 100%; margin: 2px 0 0; }
     .cs-trends-grid { grid-template-columns: 1fr; gap: 8px; }
+    .cs-trends-scout-list { grid-template-columns: 1fr; }
     .cs-trends-card { height: auto; padding: 0; }
     .cs-trends-card > summary { padding: 12px 14px; }
     .cs-trends-card-peek { display: inline; }
@@ -690,7 +691,7 @@ _CHEAT_HTML = r"""
       <div class="cs-rule"><span class="cs-k">Proj Pick</span><div><h3>Your snake slot on this board</h3><p>Choose a draft slot to draw labeled lines at each of that seat's snake-draft picks — Proj Pick 1.05, 2.08, and so on. The player under each line is who this ranking would take there. Lines follow the displayed order, including any custom-board moves, and they print with the sheet.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Proj PPG</span><div><h3>Expected weekly scoring</h3><p>Projected PPG is the player's upcoming-season fantasy points per game from Sleeper, the same projection pool used by the Draft Room. Players Sleeper does not project show a dash rather than last-season actuals.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Schedule</span><div><h3>Full-season matchup context</h3><p>Schedule Rank compares each player's position-specific matchups across fantasy Weeks 1-17. Rank 1 is the easiest schedule. It is useful context for close calls inside a tier, but it does not change the stable VOR order.</p></div></div>
-      <div class="cs-rule"><span class="cs-k">Hist</span><div><h3>Historical trends, not a ranking</h3><p>Hist is redraft-only context. The compact number is how often a similar pre-season profile finished top-12, not this player's odds and not a Pick Score input. The Trends tab shows position-wide rates for repeats, league-winner smashes, career stage, NFL draft capital (including early-career hit and miss rates), age, and prior usage. Finish chips switch typical top-5, top-12, and top-24 odds. Select buckets to list current-board players who match those traits. Callouts flag the biggest edges versus a typical player-season. The info button on a player opens that player's own mix of those buckets. Green is a strong similar-profile cell (about 25% or higher). Missing values show a dash. Hist does not change VOR or Pick Score.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">Hist</span><div><h3>Historical chance, not a ranking</h3><p>Hist is redraft-only context. The compact number is this player's historical chance of a top-12 season given his career and current situation (stage, capital, last year, and whether he has already been elite). It is not a Pick Score input. The Trends tab shows position-wide rates for repeats, league-winner smashes, career stage, NFL draft capital (including early-career hit and miss rates), age, and prior usage. Finish chips switch typical top-5, top-12, and top-24 odds. Select buckets to list current-board players who match those traits. Callouts flag the biggest edges versus a typical player-season. The info button on a player opens that player's own mix of those buckets. Green is a strong cell (about 25% or higher). Missing values show a dash. Hist does not change VOR or Pick Score.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Live</span><div><h3>It knows your live draft</h3><p>Open the sheet from your league during a draft and players already taken are struck through automatically. REC badges show the current Draft Room view without changing the VOR board. Reopen the sheet after more picks to refresh those ranks, or use Connect live draft to keep drafted-player status synchronized.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Dynasty</span><div><h3>Dynasty values the window, not just this year</h3><p>Dynasty mode ranks on dynasty value, which already weights youth and multi-year outlook, and swaps in Age and a career-window tag in place of ADP, because you are drafting the next several seasons.</p></div></div>
     </div>
@@ -703,7 +704,7 @@ _CHEAT_HTML = r"""
     <div class="cs-hist-head">
       <div>
         <h2><span id="csHistPos" class="cs-pos-badge" hidden></span><span id="csHistTitle">History</span></h2>
-        <p class="cs-hist-sub" id="csHistSub">Historical trends for this profile - not a ranking or this player's odds.</p>
+        <p class="cs-hist-sub" id="csHistSub">Historical chance for this career and situation - not a ranking or Pick Score.</p>
       </div>
       <button type="button" class="cs-hist-close" id="csHistClose">Close</button>
     </div>

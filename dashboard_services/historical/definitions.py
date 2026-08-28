@@ -250,6 +250,43 @@ RYOE_BUCKETS: Tuple[_RateBound, ...] = (
     (None, 0.0, "below expected"),
     (0.0, None, "at/above expected"),
 )
+# Last-year volume. Inclusive lo, exclusive hi. 400+ is the famous
+# workhorse cliff; 350-399 holds the rest of the high-workload sample.
+TOUCHES_BUCKETS: Tuple[_RateBound, ...] = (
+    (None, 200.0, "<200"),
+    (200.0, 300.0, "200-299"),
+    (300.0, 350.0, "300-349"),
+    (350.0, 400.0, "350-399"),
+    (400.0, None, "400+"),
+)
+CARRIES_BUCKETS: Tuple[_RateBound, ...] = (
+    (None, 150.0, "<150"),
+    (150.0, 250.0, "150-249"),
+    (250.0, 300.0, "250-299"),
+    (300.0, None, "300+"),
+)
+RECEPTIONS_BUCKETS: Tuple[_RateBound, ...] = (
+    (None, 50.0, "<50"),
+    (50.0, 80.0, "50-79"),
+    (80.0, 110.0, "80-109"),
+    (110.0, None, "110+"),
+)
+TARGETS_BUCKETS: Tuple[_RateBound, ...] = (
+    (None, 70.0, "<70"),
+    (70.0, 110.0, "70-109"),
+    (110.0, 140.0, "110-139"),
+    (140.0, None, "140+"),
+)
+GAMES_BUCKETS: Tuple[_RateBound, ...] = (
+    (None, 10.0, "<10"),
+    (10.0, 15.0, "10-14"),
+    (15.0, None, "15+"),
+)
+PASS_ATTEMPTS_BUCKETS: Tuple[_RateBound, ...] = (
+    (None, 400.0, "<400"),
+    (400.0, 550.0, "400-549"),
+    (550.0, None, "550+"),
+)
 
 # Overlay actuals. Names match nflverse_metrics. Missing stays None.
 EFFICIENCY_FIELDS: Tuple[str, ...] = (

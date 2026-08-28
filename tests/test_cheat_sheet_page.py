@@ -326,8 +326,10 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "scored.sort(function (a, b) {" in script
     assert "var aVor = Number(a.vorRaw);" in script
     assert "histP" not in script.split("scored.sort(function (a, b) {")[1].split("scored.forEach")[0]
-    assert "Similar-profile top-12 trend" in script
-    assert "historical trends for this profile" in body.lower()
+    assert "Historical top-12 chance given this career and situation" in script
+    assert "historical chance for this career and situation" in body.lower()
+    assert "this player\\'s historical chance, not a rank" in script
+    assert "title=\"This player\\'s historical chance\"" in script
     assert "return !dyn && SHOW_HISTORICAL" in script
     assert "var HIST_STRONG_PCT = 25" in script
     assert "var HIST_TIER_SHORT = { top_5: 'top-5', top_12: 'top-12', top_24: 'top-24' }" in script
@@ -395,6 +397,12 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "draft-trends-scout" in script
     assert "Tap a bucket to filter the board." in script
     assert "Board players who match" in script
+    grid_at = script.find("html += '<div class=\"cs-trends-grid\">'")
+    scout_at = script.find("html += trendsScoutHtml")
+    assert grid_at >= 0 and scout_at > grid_at
+    assert "renderTrends({ keepScroll: true })" in script
+    scout_css = body.split(".cs-trends-scout-list")[1][:280]
+    assert "grid-template-columns: 1fr 1fr" in scout_css
     assert "data-trends-lane" in script
     assert "row.vs_label" in script
     assert "The Trends tab shows position-wide rates" in body
@@ -417,6 +425,10 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert ".cs-c-QB .cs-pname" not in body
     assert "id !== 'adp' && id !== 'adp_positional'" in script
     assert "['career', 'Career']" in script
+    assert "ryoe: 'usage'" in script
+    assert "touches: 'usage'" in script
+    assert "receptions: 'usage'" in script
+    assert "pass_attempts: 'usage'" in script
     assert "['adp', 'ADP']" not in script
     assert "p_hit_pct" not in pick
     assert "historical-player" not in core
@@ -452,6 +464,35 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "Hist" in hist_fix["text"]
     assert "—" not in hist_fix["text"]
     assert "–" not in hist_fix["text"]
+    chance = next(
+        entry for entry in CHANGELOG
+        if "historical chance" in entry.get("text", "").lower()
+        and "current situation" in entry.get("text", "").lower()
+    )
+    assert chance["tag"] == "fix"
+    assert chance["link"] == "/draft/cheat-sheet"
+    assert "Hist" in chance["text"]
+    assert "—" not in chance["text"]
+    assert "–" not in chance["text"]
+    trends_place = next(
+        entry for entry in CHANGELOG
+        if "two columns" in entry.get("text", "").lower()
+        and "RYOE" in entry.get("text", "")
+    )
+    assert trends_place["tag"] == "fix"
+    assert trends_place["link"] == "/draft/cheat-sheet"
+    assert "—" not in trends_place["text"]
+    assert "–" not in trends_place["text"]
+    volume = next(
+        entry for entry in CHANGELOG
+        if "400+" in entry.get("text", "")
+        and "touches" in entry.get("text", "").lower()
+    )
+    assert volume["tag"] == "update"
+    assert volume["link"] == "/draft/cheat-sheet"
+    assert "receptions" in volume["text"].lower()
+    assert "—" not in volume["text"]
+    assert "–" not in volume["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():

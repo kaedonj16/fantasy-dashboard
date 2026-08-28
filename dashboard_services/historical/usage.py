@@ -13,14 +13,22 @@ from typing import Any, Mapping, Optional, Sequence
 
 from dashboard_services.historical.definitions import (
     ADOT_BUCKETS,
+    CARRIES_BUCKETS,
+    COMP_BOARD_TIERS,
     EFFICIENCY_FIELDS,
     FTN_SEASON_FLOOR,
+    GAMES_BUCKETS,
     NGS_SEASON_FLOOR,
+    PASS_ATTEMPTS_BUCKETS,
+    RECEPTIONS_BUCKETS,
+    RELIABLE_SEASON_FLOOR,
     RYOE_BUCKETS,
     SKILL_POSITIONS,
     SNAP_PCT_BUCKETS,
     SNAP_RELIABLE_FLOOR,
+    TARGETS_BUCKETS,
     TARGET_SHARE_BUCKETS,
+    TOUCHES_BUCKETS,
     value_bucket,
     _optional_float,
     _optional_int,
@@ -41,8 +49,10 @@ PRIOR_USAGE_SOURCE_FIELDS: tuple[str, ...] = (
     "targets",
     "carries",
     "receptions",
+    "games",
     "red_zone_targets",
     "red_zone_carries",
+    "passing_attempts",
     "adot",
     "air_yards",
     "ngs_avg_separation",
@@ -54,6 +64,31 @@ PRIOR_USAGE_SOURCE_FIELDS: tuple[str, ...] = (
     "contested_catch_rate",
     "receiving_epa_per_target",
 )
+VOLUME_COUNT_FIELDS: tuple[str, ...] = (
+    "targets",
+    "carries",
+    "receptions",
+    "games",
+    "red_zone_targets",
+    "red_zone_carries",
+    "passing_attempts",
+)
+# Last-year outcome → preseason "previous_season_*" for live Trends matching.
+PRESEASON_VOLUME_FROM_OUTCOME: tuple[tuple[str, str], ...] = (
+    ("previous_season_carries", "carries"),
+    ("previous_season_receptions", "receptions"),
+    ("previous_season_targets", "targets"),
+    ("previous_season_games", "games"),
+    ("previous_season_passing_attempts", "passing_attempts"),
+)
+VOLUME_USAGE_IDS: frozenset[str] = frozenset({
+    "touches",
+    "carries",
+    "receptions",
+    "targets",
+    "games",
+    "pass_attempts",
+})
 
 OVERLAY_FIELDS: tuple[str, ...] = EFFICIENCY_FIELDS + ("snap_pct", "snaps")
 
@@ -152,7 +187,10 @@ def apply_efficiency_overlay(
 
 def prior_usage_features(prev: Optional[Mapping[str, Any]]) -> dict:
     """Leakage-safe previous-season usage. Missing prev → all None, not 0."""
-    out: dict[str, Any] = {"previous_season_year": None}
+    out: dict[str, Any] = {
+        "previous_season_year": None,
+        "previous_season_touches": None,
+    }
     for field in PRIOR_USAGE_SOURCE_FIELDS:
         out[f"previous_season_{field}"] = None
     if not prev:
@@ -164,18 +202,35 @@ def prior_usage_features(prev: Optional[Mapping[str, Any]]) -> dict:
             out[f"previous_season_{field}"] = normalize_snap_pct(value)
         else:
             out[f"previous_season_{field}"] = (
-                _optional_int(value) if field in (
-                    "targets", "carries", "receptions",
-                    "red_zone_targets", "red_zone_carries",
-                ) else _optional_float(value)
+                _optional_int(value) if field in VOLUME_COUNT_FIELDS
+                else _optional_float(value)
             )
-            # Keep ints that were floats (137.0 targets) as float if int-cast
-            # lost nothing; otherwise store the float.
-            if field in (
-                "targets", "carries", "receptions",
-                "red_zone_targets", "red_zone_carries",
-            ) and out[f"previous_season_{field}"] is None:
+            if field in VOLUME_COUNT_FIELDS and out[f"previous_season_{field}"] is None:
                 out[f"previous_season_{field}"] = _optional_float(value)
+    stamp_derived_prior_volume(out)
+    return out
+
+
+def stamp_derived_prior_volume(row: dict[str, Any]) -> dict[str, Any]:
+    """Touches = last-year carries + receptions. Missing both stays unset."""
+    carries = _optional_float(row.get("previous_season_carries"))
+    recs = _optional_float(row.get("previous_season_receptions"))
+    if carries is None and recs is None:
+        return row
+    row["previous_season_touches"] = int(round((carries or 0.0) + (recs or 0.0)))
+    return row
+
+
+def last_season_volume_from_outcome(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Map this season's totals onto next-preseason previous_season_* fields."""
+    out: dict[str, Any] = {}
+    for dest, src in PRESEASON_VOLUME_FROM_OUTCOME:
+        val = _optional_int(row.get(src))
+        if val is None:
+            val = _optional_float(row.get(src))
+        if val is not None:
+            out[dest] = val
+    stamp_derived_prior_volume(out)
     return out
 
 
@@ -248,6 +303,48 @@ USAGE_RATE_SPECS: tuple[dict, ...] = (
         "min_prior_season": FTN_SEASON_FLOOR,
         "positions": ("WR", "TE"),
     },
+    {
+        "id": "touches",
+        "field": "previous_season_touches",
+        "buckets": TOUCHES_BUCKETS,
+        "min_prior_season": RELIABLE_SEASON_FLOOR,
+        "positions": ("RB",),
+    },
+    {
+        "id": "carries",
+        "field": "previous_season_carries",
+        "buckets": CARRIES_BUCKETS,
+        "min_prior_season": RELIABLE_SEASON_FLOOR,
+        "positions": ("RB",),
+    },
+    {
+        "id": "receptions",
+        "field": "previous_season_receptions",
+        "buckets": RECEPTIONS_BUCKETS,
+        "min_prior_season": RELIABLE_SEASON_FLOOR,
+        "positions": ("WR", "TE"),
+    },
+    {
+        "id": "targets",
+        "field": "previous_season_targets",
+        "buckets": TARGETS_BUCKETS,
+        "min_prior_season": RELIABLE_SEASON_FLOOR,
+        "positions": ("WR", "TE"),
+    },
+    {
+        "id": "games",
+        "field": "previous_season_games",
+        "buckets": GAMES_BUCKETS,
+        "min_prior_season": RELIABLE_SEASON_FLOOR,
+        "positions": SKILL_POSITIONS,
+    },
+    {
+        "id": "pass_attempts",
+        "field": "previous_season_passing_attempts",
+        "buckets": PASS_ATTEMPTS_BUCKETS,
+        "min_prior_season": RELIABLE_SEASON_FLOOR,
+        "positions": ("QB",),
+    },
 )
 
 
@@ -295,10 +392,14 @@ def build_prior_usage_rates(
     scoring: str = "ppr",
     tier: str = "top_12",
     season_from: int = NGS_SEASON_FLOOR,
+    ids: Optional[Sequence[str]] = None,
 ) -> dict:
-    era = filter_era(rows, season_from)
+    era = [stamp_derived_prior_volume(row) for row in filter_era(rows, season_from)]
+    wanted = set(ids) if ids is not None else None
     out: dict[str, dict] = {}
     for spec in USAGE_RATE_SPECS:
+        if wanted is not None and spec["id"] not in wanted:
+            continue
         metric = {
             "field": spec["field"],
             "min_prior_season": spec["min_prior_season"],
@@ -337,3 +438,47 @@ def build_prior_usage_rates(
             }
         out[spec["id"]] = metric
     return out
+
+
+def _volume_only(rates: Mapping[str, Any]) -> dict[str, Any]:
+    return {key: rates[key] for key in VOLUME_USAGE_IDS if key in rates}
+
+
+def build_usage_volume_overlay(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    scoring: str = "ppr",
+) -> dict[str, Any]:
+    """Sidecar prior-usage rates + live last-year totals. Does not rewrite aggregates."""
+    prepared = [stamp_derived_prior_volume(dict(row)) for row in rows]
+    prior_usage = _volume_only(
+        build_prior_usage_rates(prepared, scoring=scoring, ids=tuple(VOLUME_USAGE_IDS))
+    )
+    prior_usage_by_tier = {
+        tier: _volume_only(
+            build_prior_usage_rates(
+                prepared, scoring=scoring, tier=tier, ids=tuple(VOLUME_USAGE_IDS)
+            )
+        )
+        for tier in COMP_BOARD_TIERS
+    }
+    latest: dict[str, dict] = {}
+    for row in prepared:
+        pid = str(row.get("sleeper_id") or row.get("player_id") or "")
+        if not pid:
+            continue
+        season = _optional_int(row.get("season")) or -1
+        prev = latest.get(pid)
+        if prev is None or season >= (_optional_int(prev.get("season")) or -1):
+            latest[pid] = row
+    preseason_volume: dict[str, dict] = {}
+    for pid, row in latest.items():
+        extra = last_season_volume_from_outcome(row)
+        if extra:
+            preseason_volume[pid] = extra
+    return {
+        "prior_usage": prior_usage,
+        "prior_usage_by_tier": prior_usage_by_tier,
+        "preseason_volume": preseason_volume,
+        "n_players": len(preseason_volume),
+    }

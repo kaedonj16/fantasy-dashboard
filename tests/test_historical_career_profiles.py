@@ -5,6 +5,7 @@ from dashboard_services.historical.career_profiles import (
     BREAKOUT_RANK_THRESHOLD,
     PRIOR_NON_STARTER_RANK,
     assemble_profile_aggregates,
+    build_career_path_overlay,
     build_draft_capital_rates,
     build_repeat_and_breakout_rates,
     build_stage_rates,
@@ -152,6 +153,50 @@ def test_prev_top12_to_top5_uses_top_5_cutoff():
     rates2 = build_repeat_and_breakout_rates(two)["RB"]
     assert rates2["two_plus_prior_top12_to_top12"]["sample_size"] == 2
     assert rates2["two_plus_prior_top12_to_top12"]["successes"] == 1
+
+
+def test_bounce_back_rates_need_prior_elite_and_a_down_year():
+    rows = [
+        _row(
+            sleeper_id="down",
+            years_experience=2,
+            draft_capital_bucket="round_1",
+            previous_season_finish=42,
+            ppr_positional_finish=8,
+            prior_top12_count=1,
+        ),
+        _row(
+            sleeper_id="down-miss",
+            years_experience=2,
+            draft_capital_bucket="round_1",
+            previous_season_finish=50,
+            ppr_positional_finish=30,
+            prior_top12_count=1,
+        ),
+        _row(
+            sleeper_id="still-elite",
+            years_experience=2,
+            previous_season_finish=4,
+            ppr_positional_finish=3,
+            prior_top12_count=1,
+        ),
+        _row(
+            sleeper_id="never",
+            years_experience=2,
+            previous_season_finish=42,
+            ppr_positional_finish=8,
+            prior_top12_count=0,
+        ),
+    ]
+    rates = build_repeat_and_breakout_rates(rows)["RB"]
+    assert rates["n_bounce_back"] == 2
+    assert rates["bounce_back"]["top_12"]["successes"] == 1
+    assert rates["bounce_back"]["top_12"]["sample_size"] == 2
+    assert rates["bounce_back_by_stage"]["year_3"]["top_12"]["sample_size"] == 2
+    assert rates["bounce_back_by_capital"]["round_1"]["top_12"]["sample_size"] == 2
+    overlay = build_career_path_overlay(rows)
+    assert overlay["bounce_back"]["RB"]["n_bounce_back"] == 2
+    assert overlay["prior_top12_count"]["down"] >= 1
 
 
 def test_missing_exp_is_not_rookie():

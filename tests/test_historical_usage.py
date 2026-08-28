@@ -59,6 +59,8 @@ def test_prior_usage_is_none_not_zero_without_previous_season():
     assert feats["previous_season_year"] is None
     assert feats["previous_season_target_share"] is None
     assert feats["previous_season_snap_pct"] is None
+    assert feats["previous_season_touches"] is None
+    assert feats["previous_season_games"] is None
 
 
 def test_prior_usage_does_not_leak_same_season_actuals():
@@ -221,6 +223,104 @@ def test_snap_rates_require_reliable_prior_season():
     assert SNAP_RELIABLE_FLOOR == 2022
     assert rb["n_known"] == 1
     assert rb["by_bucket"]["80%+"]["conditional"]["sample_size"] == 1
+
+
+def test_prior_usage_stamps_touches_from_carries_and_receptions():
+    feats = prior_usage_features({
+        "season": 2023,
+        "carries": 320,
+        "receptions": 90,
+        "targets": 110,
+        "games": 17,
+    })
+    assert feats["previous_season_carries"] == 320
+    assert feats["previous_season_receptions"] == 90
+    assert feats["previous_season_touches"] == 410
+    assert feats["previous_season_games"] == 17
+    empty = prior_usage_features({"season": 2023, "target_share": 0.2})
+    assert empty["previous_season_touches"] is None
+
+
+def test_touches_rates_skip_missing_and_flag_workhorse_cliff():
+    rows = [
+        {
+            "sleeper_id": "work",
+            "season": 2024,
+            "position": "RB",
+            "previous_season_year": 2023,
+            "previous_season_carries": 320,
+            "previous_season_receptions": 90,
+            "ppr_positional_finish": 18,
+        },
+        {
+            "sleeper_id": "committee",
+            "season": 2024,
+            "position": "RB",
+            "previous_season_year": 2023,
+            "previous_season_carries": 140,
+            "previous_season_receptions": 20,
+            "ppr_positional_finish": 8,
+        },
+        {
+            "sleeper_id": "unknown",
+            "season": 2024,
+            "position": "RB",
+            "previous_season_year": 2023,
+            "ppr_positional_finish": 1,
+        },
+    ]
+    rates = build_prior_usage_rates(rows)
+    rb = rates["touches"]["by_position"]["RB"]
+    assert rb["n_known"] == 2
+    assert rb["n_missing_excluded"] == 1
+    assert rb["by_bucket"]["400+"]["conditional"]["sample_size"] == 1
+    assert rb["by_bucket"]["<200"]["conditional"]["sample_size"] == 1
+    assert rb["by_bucket"]["200-299"]["conditional"]["sample_size"] == 0
+    assert "WR" not in rates["touches"]["by_position"]
+    rec = rates["receptions"]["by_position"]["WR"]
+    assert rec["n_known"] == 0
+
+
+def test_usage_volume_overlay_keeps_share_tables_intact():
+    from dashboard_services.historical.aggregates_store import _merge_usage_volume_overlay
+    from dashboard_services.historical.usage import build_usage_volume_overlay
+
+    aggs = {
+        "prior_usage": {
+            "target_share": {"keep": True},
+            "touches": {"stale": True},
+        },
+        "prior_usage_by_tier": {
+            "top_12": {"target_share": {"keep": True}},
+        },
+        "preseason_profiles": {
+            "by_player": {
+                "1": {"position": "RB", "previous_season_target_share": 0.2},
+            }
+        },
+    }
+    overlay = build_usage_volume_overlay([
+        {
+            "sleeper_id": "1",
+            "season": 2025,
+            "position": "RB",
+            "carries": 250,
+            "receptions": 40,
+            "games": 16,
+            "previous_season_year": 2024,
+            "previous_season_carries": 250,
+            "previous_season_receptions": 40,
+            "ppr_positional_finish": 10,
+        }
+    ])
+    _merge_usage_volume_overlay(aggs, overlay)
+    assert aggs["prior_usage"]["target_share"] == {"keep": True}
+    assert aggs["prior_usage"]["touches"]["by_position"]["RB"]["n_known"] >= 1
+    assert aggs["prior_usage_by_tier"]["top_12"]["target_share"] == {"keep": True}
+    rec = aggs["preseason_profiles"]["by_player"]["1"]
+    assert rec["previous_season_target_share"] == 0.2
+    assert rec["previous_season_touches"] == 290
+    assert rec["previous_season_carries"] == 250
 
 
 def test_usage_modules_stay_pure_and_do_not_estimate_snaps():

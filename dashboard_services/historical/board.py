@@ -19,6 +19,7 @@ from dashboard_services.historical.comps import (
     extract_comp_query,
     lookup_board_probabilities,
 )
+from dashboard_services.historical.career_path import apply_career_path_history
 from dashboard_services.historical.definitions import (
     ABSOLUTE_BUST_OUTSIDE,
     ADP_OVERALL_BUCKETS,
@@ -46,6 +47,11 @@ from dashboard_services.historical.signals import (
     lookup_market_probability,
     projected_ppg_of,
 )
+from dashboard_services.historical.usage import (
+    USAGE_RATE_SPECS,
+    VOLUME_USAGE_IDS,
+    last_season_volume_from_outcome,
+)
 
 PRESEASON_FIELDS: tuple[str, ...] = (
     "position",
@@ -57,6 +63,12 @@ PRESEASON_FIELDS: tuple[str, ...] = (
     "previous_season_snap_pct",
     "previous_season_adot",
     "previous_season_ngs_rush_yards_over_expected_per_att",
+    "previous_season_carries",
+    "previous_season_receptions",
+    "previous_season_targets",
+    "previous_season_games",
+    "previous_season_passing_attempts",
+    "previous_season_touches",
     "previous_season_year",
     "prior_top12_count",
 )
@@ -114,6 +126,7 @@ COMP_FEATURE_LABELS: dict[str, str] = {
     "career_stage": "Career stage",
     "draft_capital": "Draft capital",
     "prior_finish": "Last year finish",
+    "prior_elite": "Career elite",
     "age_bucket": "Age",
     "target_share": "Last year target share",
     "snap_pct": "Last year snaps",
@@ -139,6 +152,10 @@ PRIOR_FINISH_DISPLAY: dict[str, str] = {
     "top_24": "Top 24",
     "top_36": "Top 36",
     "outside_36": "Outside top 36",
+}
+PRIOR_ELITE_DISPLAY: dict[str, str] = {
+    "has_been": "Had been top-12 before",
+    "never": "Never previously top-12",
 }
 PRIOR_FINISH_TREND: dict[str, str] = {
     "none": "no prior season",
@@ -186,6 +203,12 @@ HIST_TREND_PREFIX: dict[str, str] = {
     "snap_pct": "Snaps",
     "adot": "aDOT",
     "ryoe": "RYOE",
+    "touches": "Touches",
+    "carries": "Carries",
+    "receptions": "Receptions",
+    "targets": "Targets",
+    "games": "Games",
+    "pass_attempts": "Attempts",
     "age": "Age",
     "age_exact": "Age",
 }
@@ -197,7 +220,37 @@ HIST_TREND_GENERIC_LABELS: frozenset[str] = frozenset({
     "last year snaps",
     "last year adot",
     "last year rush yards over expected",
+    "last year touches",
+    "last year carries",
+    "last year receptions",
+    "last year targets",
+    "last year games played",
+    "last year pass attempts",
 })
+VOLUME_TREND_HEADINGS: dict[str, str] = {
+    "touches": "Last year touches",
+    "carries": "Last year carries",
+    "receptions": "Last year receptions",
+    "targets": "Last year targets",
+    "games": "Last year games played",
+    "pass_attempts": "Last year pass attempts",
+}
+VOLUME_TREND_NOTES: dict[str, str] = {
+    "touches": "How often {pos}s with that many carries plus receptions last year hit the selected finish. 400+ is the famous workhorse cliff; 350-399 is the rest of the high-workload group.",
+    "carries": "How often {pos}s with that many carries last year hit the selected finish.",
+    "receptions": "How often {pos}s with that many receptions last year hit the selected finish.",
+    "targets": "How often {pos}s with that many targets last year hit the selected finish.",
+    "games": "How often {pos}s who played that many games last year hit the selected finish.",
+    "pass_attempts": "How often {pos}s with that many pass attempts last year hit the selected finish.",
+}
+VOLUME_TREND_METRIC: dict[str, str] = {
+    "touches": "touches",
+    "carries": "carries",
+    "receptions": "receptions",
+    "targets": "targets",
+    "games": "games played",
+    "pass_attempts": "pass attempts",
+}
 TIER_FINISH_DISPLAY: dict[str, str] = {
     "top_5": "top-5",
     "top_12": "top-12",
@@ -316,6 +369,7 @@ def build_preseason_profiles(
             "previous_season_year": last_season,
             "prior_top12_count": _upcoming_top12_count(by_player.get(pid) or (row,)),
         }
+        rec.update(last_season_volume_from_outcome(row))
         profiles[pid] = {k: v for k, v in rec.items() if v is not None}
     return {
         "upcoming_season": upcoming_season,
@@ -488,6 +542,8 @@ def format_comp_bucket_value(dim: str, value: Any) -> str:
         return DRAFT_CAPITAL_DISPLAY.get(text, _title_from_key(text))
     if dim == "prior_finish":
         return PRIOR_FINISH_DISPLAY.get(text, _title_from_key(text))
+    if dim == "prior_elite":
+        return PRIOR_ELITE_DISPLAY.get(text, _title_from_key(text))
     if dim == "age_bucket":
         return format_age_bucket_label(text)
     return text
@@ -634,6 +690,13 @@ def build_player_feature_index(aggregates: Mapping[str, Any]) -> dict[str, dict]
         )
         if ryoe:
             feats["ryoe"] = ryoe
+        for spec in USAGE_RATE_SPECS:
+            spec_id = spec["id"]
+            if spec_id not in VOLUME_USAGE_IDS:
+                continue
+            bucket = value_bucket(prof.get(spec["field"]), spec["buckets"])
+            if bucket:
+                feats[spec_id] = bucket
         out[str(pid)] = feats
     return out
 
@@ -791,6 +854,11 @@ def cohort_sentence(key_used: Optional[Mapping[str, Any]]) -> str:
         extras.append(f"{cap.lower()} capital")
     if key.get("age_bucket"):
         extras.append(f"age {format_comp_bucket_value('age_bucket', key.get('age_bucket'))}")
+    prior_elite = key.get("prior_elite")
+    if prior_elite == "has_been":
+        extras.append("who had already been top-12")
+    elif prior_elite == "never":
+        extras.append("who had never been top-12")
     prior = key.get("prior_finish")
     if prior:
         phrase = PRIOR_FINISH_TREND.get(str(prior), format_comp_bucket_value("prior_finish", prior).lower())
@@ -1017,6 +1085,29 @@ def build_hist_trends(
             rate=ryoe_rate,
             baseline_pct=baseline_pct,
         ))
+    for spec in USAGE_RATE_SPECS:
+        spec_id = spec["id"]
+        if spec_id not in VOLUME_USAGE_IDS:
+            continue
+        if pos not in spec["positions"]:
+            continue
+        bucket = value_bucket(query.get(spec["field"]), spec["buckets"])
+        if not bucket:
+            bucket = feats.get(spec_id)
+        if not bucket:
+            continue
+        vol_rate = (
+            (((usage.get(spec_id) or {}).get("by_position") or {}).get(pos) or {}).get("by_bucket") or {}
+        ).get(bucket)
+        metric = VOLUME_TREND_METRIC.get(spec_id, spec_id.replace("_", " "))
+        add(_trend_row(
+            kind=spec_id,
+            label=VOLUME_TREND_HEADINGS.get(spec_id, spec_id.replace("_", " ")),
+            bucket=str(bucket),
+            sentence=f"{pos}s with {bucket} {metric} last season finished top-12",
+            rate=vol_rate,
+            baseline_pct=baseline_pct,
+        ))
     return rows
 
 
@@ -1028,6 +1119,7 @@ def build_hist_panel_copy(
     hist = history if isinstance(history, Mapping) else {}
     mkt = market if isinstance(market, Mapping) else {}
     key_used = hist.get("key_used") if isinstance(hist.get("key_used"), Mapping) else {}
+    profile_key = hist.get("profile_key") if isinstance(hist.get("profile_key"), Mapping) else key_used
     rates = hist.get("rates") if isinstance(hist.get("rates"), Mapping) else {}
     hit_rates: list[dict] = []
     for tier in COMP_BOARD_TIERS:
@@ -1047,10 +1139,11 @@ def build_hist_panel_copy(
         })
 
     profile: list[dict] = []
-    for dim in COMP_DIMENSION_ORDER:
-        if dim not in key_used:
+    for dim in COMP_DIMENSION_ORDER + ("prior_elite",):
+        source = profile_key if dim in (profile_key or {}) else key_used
+        if dim not in source:
             continue
-        value = format_comp_bucket_value(dim, key_used.get(dim))
+        value = format_comp_bucket_value(dim, source.get(dim))
         if not value:
             continue
         profile.append({
@@ -1073,9 +1166,21 @@ def build_hist_panel_copy(
 
     market_sentence = format_market_sentence(mkt, missing="no_adp")
     cohort = cohort_sentence(key_used)
-    cohort_note = (
-        "This is a historical hit rate for that group, not this player's odds."
-    )
+    if hist.get("career_path") == "bounce_back":
+        cohort_note = (
+            "This player's historical chance given a prior top-12 and last "
+            "year's finish. Not a Pick Score input."
+        )
+        if hist.get("career_path_rate") != "stage":
+            cohort_note += (
+                " Year and draft capital are this player's current situation; "
+                "the percent uses that career path at this position."
+            )
+    else:
+        cohort_note = (
+            "This player's historical chance given this career and current "
+            "situation. Not a Pick Score input."
+        )
     if relaxed_note:
         cohort_note = f"{cohort_note} {relaxed_note}"
 
@@ -1129,15 +1234,19 @@ def build_deep_panel(
     query = query_for_board_player(seed, by_player)
     comps = aggregates.get("comps") if isinstance(aggregates.get("comps"), Mapping) else aggregates
     looked = lookup_board_probabilities(query, comps if isinstance(comps, Mapping) else {})
+    looked = apply_career_path_history(query, looked, aggregates)
     market = lookup_market_probability(query, aggregates)
     history = {
         "n": looked.get("n"),
         "key_used": looked.get("key_used"),
+        "profile_key": looked.get("profile_key") or looked.get("key_used"),
         "dropped": looked.get("dropped"),
         "fallback": looked.get("fallback"),
         "rates": looked.get("rates"),
         "examples": looked.get("examples") or [],
         "kind": "conditional",
+        "career_path": looked.get("career_path"),
+        "career_path_rate": looked.get("career_path_rate"),
     }
     copy = build_hist_panel_copy(history, market)
     copy["trends"] = build_hist_trends(query, aggregates, market)
@@ -1588,6 +1697,24 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         "Last year rush yards over expected",
         f"How often {pos}s with that prior-season RYOE hit the selected finish.",
     )
+    for spec in USAGE_RATE_SPECS:
+        spec_id = spec["id"]
+        if spec_id not in VOLUME_USAGE_IDS:
+            continue
+        if pos not in spec["positions"]:
+            continue
+        heading = VOLUME_TREND_HEADINGS.get(spec_id)
+        note_tmpl = VOLUME_TREND_NOTES.get(spec_id)
+        if not heading or not note_tmpl:
+            continue
+        _usage_rows(
+            spec_id,
+            spec["buckets"],
+            str,
+            spec_id,
+            heading,
+            note_tmpl.format(pos=pos),
+        )
 
     curve_by_tier = _age_curve_by_tier(aggregates, pos)
     return {
