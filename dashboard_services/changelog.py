@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-08-28",
         "tag": "fix",
+        "text": "Draft Cheat Sheet Trends: collapsed tables on a phone stack the heading and the peek line so NFL Round 1 52% is not clipped off the right edge.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
+        "tag": "fix",
         "text": "Draft Cheat Sheet Hist: closest-example tags now read Year 6+, Round 1, and Top 5 instead of underscored keys.",
         "link": "/draft/cheat-sheet"
     },
