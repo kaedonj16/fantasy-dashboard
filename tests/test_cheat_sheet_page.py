@@ -492,7 +492,7 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "–" not in scout["text"]
     hist_fix = next(
         entry for entry in CHANGELOG
-        if "never top-12" in entry.get("text", "")
+        if "never top-12" in entry.get("text", "") and "Hist" in entry.get("text", "")
     )
     assert hist_fix["tag"] == "fix"
     assert hist_fix["link"] == "/draft/cheat-sheet"
@@ -572,6 +572,15 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert profile_css["link"] == "/draft/cheat-sheet"
     assert "—" not in profile_css["text"]
     assert "–" not in profile_css["text"]
+    mix = next(
+        entry for entry in CHANGELOG
+        if "never top-12) no longer fails" in entry.get("text", "").lower()
+        or "numeric one" in entry.get("text", "").lower()
+    )
+    assert mix["tag"] == "fix"
+    assert mix["link"] == "/draft/cheat-sheet"
+    assert "—" not in mix["text"]
+    assert "–" not in mix["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():

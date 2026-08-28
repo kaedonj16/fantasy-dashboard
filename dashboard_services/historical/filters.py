@@ -388,6 +388,23 @@ def matched_filter_labels(
     return labels
 
 
+def _cache_value(value: Any) -> tuple:
+    """Orderable stand-in so mixed int/str filter specs can share a cache key."""
+    if isinstance(value, tuple):
+        return ("tuple",) + tuple(_cache_value(v) for v in value)
+    if isinstance(value, list):
+        return ("list",) + tuple(_cache_value(v) for v in value)
+    if isinstance(value, bool):
+        return ("bool", value)
+    if isinstance(value, int):
+        return ("int", value)
+    if isinstance(value, float):
+        return ("float", value)
+    if value is None:
+        return ("none",)
+    return ("str", str(value))
+
+
 def canonical_filter_key(filters: Iterable[Mapping[str, Any]]) -> tuple:
     """Stable cache key. Labels are display-only and ignored."""
     parts = []
@@ -403,5 +420,5 @@ def canonical_filter_key(filters: Iterable[Mapping[str, Any]]) -> tuple:
             rec["in"] = tuple(rec["in"])
         if rec.get("between") is not None:
             rec["between"] = tuple(rec["between"])
-        parts.append(tuple(sorted((k, rec[k] if not isinstance(rec[k], list) else tuple(rec[k])) for k in rec)))
+        parts.append(tuple(sorted((k, _cache_value(rec[k])) for k in rec)))
     return tuple(sorted(parts))
