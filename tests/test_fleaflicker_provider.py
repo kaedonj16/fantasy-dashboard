@@ -80,7 +80,10 @@ def test_login_returns_token_without_exposing_password(mock_post):
     mock_post.return_value = response({"user": {"token": "abc123"}})
     assert login("a@b.com", "secret") == "abc123"
     body = mock_post.call_args.kwargs.get("json") or {}
-    assert body["password"] == "secret"
+    assert body == {"loginId": "a@b.com", "password": "secret"}
+    assert "email" not in body
+    params = mock_post.call_args.kwargs.get("params") or {}
+    assert params.get("sport") == "NFL"
     # Callers must never persist the password; only the token is returned.
     assert "password" not in {"token": login("a@b.com", "secret")}
 
@@ -90,6 +93,18 @@ def test_login_failure_is_auth_error(mock_post):
     mock_post.return_value = response({"failure": "LOGIN_INVALID_PASSWORD"})
     with pytest.raises(ProviderAuthenticationError):
         login("a@b.com", "bad")
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_post")
+def test_login_html_400_from_wrong_field_is_unavailable(mock_post):
+    """Regression: posting ``email`` instead of ``loginId`` returns HTML 400."""
+    html = response("<!DOCTYPE html><html>Error 400</html>", status=400)
+    html.headers = {"Content-Type": "text/html;charset=utf-8"}
+    html.text = "<!DOCTYPE html><html>Error 400</html>"
+    html.json.side_effect = ValueError("no json")
+    mock_post.return_value = html
+    with pytest.raises(ProviderUnavailableError, match="temporarily unavailable"):
+        login("a@b.com", "secret")
 
 
 @patch("dashboard_services.providers.fleaflicker_api._request_get")

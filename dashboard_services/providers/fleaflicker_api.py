@@ -146,7 +146,11 @@ def normalize_auth_token(token: Optional[str]) -> str:
 
 
 def login(email: str, password: str) -> str:
-    """Exchange email/password for a session token. Does not persist the password."""
+    """Exchange email/password for a session token. Does not persist the password.
+
+    Fleaflicker's undocumented ``/api/Login`` expects ``loginId`` (typically the
+    account email), not ``email``. Sending ``email`` returns an HTML 400.
+    """
     email = str(email or "").strip()
     password = str(password or "")
     if not email or not password:
@@ -154,13 +158,26 @@ def login(email: str, password: str) -> str:
     try:
         response = _request_post(
             f"{BASE_URL}/Login",
-            json={"email": email, "password": password},
+            params={"sport": SPORT},
+            json={"loginId": email, "password": password},
             timeout=TIMEOUT,
             headers={**_HEADERS, "Content-Type": "application/json"},
         )
-        if response.status_code in (401, 403):
+        # Bad request bodies used to be HTML 400 and looked like an outage.
+        if response.status_code >= 400:
+            if response.status_code in (401, 403) and not _response_looks_like_html(response):
+                raise ProviderAuthenticationError("Fleaflicker rejected that email or password.")
+            if _response_looks_like_html(response) or response.status_code >= 500:
+                logger.warning(
+                    "Fleaflicker Login HTTP failure status=%s content_type=%s html=%s",
+                    response.status_code,
+                    (getattr(response, "headers", None) or {}).get("Content-Type"),
+                    _response_looks_like_html(response),
+                )
+                raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
             raise ProviderAuthenticationError("Fleaflicker rejected that email or password.")
-        _raise_for_status(response)
+        if _response_looks_like_html(response):
+            raise ProviderUnavailableError("Fleaflicker returned an invalid login response.")
         payload = response.json()
     except (ProviderAuthenticationError, ProviderUnavailableError):
         raise
@@ -170,6 +187,8 @@ def login(email: str, password: str) -> str:
         raise ProviderUnavailableError("Fleaflicker returned an invalid login response.")
     failure = payload.get("failure")
     if failure:
+        # LOGIN_CAPTCHA_REQUIRED / unknown ids still mean the user cannot proceed
+        # with password auth — surface as auth, not as a generic outage.
         raise ProviderAuthenticationError("Fleaflicker rejected that email or password.")
     user = payload.get("user") or {}
     token = normalize_auth_token(user.get("token") if isinstance(user, dict) else "")
