@@ -158,6 +158,26 @@ def test_query_defaults_rookie_top12_count_without_claiming_veterans():
     assert "prior_top12_count" not in veteran
 
 
+def test_query_fills_live_draft_capital_for_unprofiled_rookies():
+    q = query_for_board_player(
+        {
+            "id": "13287",
+            "position": "RB",
+            "years_exp": 0,
+            "draft_round": 1,
+            "draft_pick": 4,
+            "age": 21.0,
+        },
+        {},
+    )
+    assert q["draft_capital_bucket"] == "round_1"
+    assert q["years_experience"] == 0
+    assert q["prior_top12_count"] == 0
+    feats = extract_comp_query(q)
+    assert feats["draft_capital"] == "round_1"
+    assert feats["career_stage"] == "rookie"
+
+
 def test_attach_compact_payload_and_deep_panel_are_descriptive():
     rows = []
     for i in range(12):

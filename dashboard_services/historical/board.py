@@ -435,6 +435,14 @@ def query_for_board_player(
         ye = _optional_int(player.get("years_exp") if player.get("years_exp") is not None else player.get("years_experience"))
         if ye is not None:
             query["years_experience"] = ye
+    if "draft_capital_bucket" not in query:
+        cap = draft_capital_bucket(
+            player.get("draft_round") or player.get("nfl_draft_round"),
+            player.get("draft_pick") or player.get("nfl_draft_pick"),
+            undrafted=bool(player.get("undrafted")),
+        )
+        if cap:
+            query["draft_capital_bucket"] = cap
     if query.get("prior_top12_count") is None and _optional_int(query.get("years_experience")) == 0:
         query["prior_top12_count"] = 0
     adp = live_redraft_adp(player)
