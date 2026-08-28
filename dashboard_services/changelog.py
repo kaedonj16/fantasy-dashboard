@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-08-28",
+        "tag": "update",
+        "text": "Draft Cheat Sheet Trends: selected buckets now return the true combined historical hit rate from matching player-seasons (not multiplied odds), with shrinkage-adjusted edges, Wilson intervals, market-adjusted Top-12 when ADP coverage is solid, Scout match reasons, and closest historical examples in Hist. Historical data stays descriptive-only.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-08-28",
         "tag": "fix",
         "text": "Draft Cheat Sheet Trends: the matching-player dock sits below the site nav instead of sliding under it.",
         "link": "/draft/cheat-sheet"

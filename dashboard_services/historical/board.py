@@ -36,11 +36,16 @@ from dashboard_services.historical.definitions import (
     TARGET_SHARE_BUCKETS,
     display_percent,
     draft_capital_bucket,
+    wilson_interval,
     integer_age,
     normalize_adp,
     value_bucket,
     _optional_float,
     _optional_int,
+)
+from dashboard_services.historical.filters import (
+    extract_trend_features,
+    matches_trend_filter,
 )
 from dashboard_services.historical.signals import (
     compare_board_signals,
@@ -71,6 +76,9 @@ PRESEASON_FIELDS: tuple[str, ...] = (
     "previous_season_touches",
     "previous_season_year",
     "prior_top12_count",
+    "target_share_change",
+    "snap_pct_change",
+    "workload_change",
 )
 
 
@@ -273,6 +281,7 @@ def board_contract() -> dict:
         "rides": "/api/league-players",
         "deep_panel": "/api/historical-player/<player_id>",
         "trends_tab": "/api/historical-trends",
+        "cohort": "/api/historical-cohort",
         "compact_fields": [
             "p_hit",
             "p_hit_pct",
@@ -370,6 +379,11 @@ def build_preseason_profiles(
             "prior_top12_count": _upcoming_top12_count(by_player.get(pid) or (row,)),
         }
         rec.update(last_season_volume_from_outcome(row))
+        from dashboard_services.historical.cohorts import preseason_trajectory_fields
+        rec.update(preseason_trajectory_fields(
+            by_player.get(pid) or (row,),
+            upcoming_season=upcoming_season,
+        ))
         profiles[pid] = {k: v for k, v in rec.items() if v is not None}
     return {
         "upcoming_season": upcoming_season,
@@ -629,39 +643,6 @@ def _as_rate(rec: Any) -> dict:
     return {}
 
 
-def matches_trend_filter(feats: Mapping[str, Any], spec: Any) -> bool:
-    """AND/OR-free predicate for one trend row's match spec. Display only."""
-    if not isinstance(spec, Mapping) or not spec:
-        return True
-    if spec.get("all"):
-        return all(matches_trend_filter(feats, part) for part in spec.get("all") or [])
-    field = spec.get("field")
-    val = feats.get(field) if field else None
-    if spec.get("null_as") is not None and val is None:
-        val = spec.get("null_as")
-    if "eq" in spec:
-        want = spec.get("eq")
-        return val == want or (val is not None and str(val) == str(want))
-    if "in" in spec:
-        options = list(spec.get("in") or [])
-        return val in options or (val is not None and str(val) in {str(x) for x in options})
-    if "gte" in spec:
-        try:
-            return val is not None and float(val) >= float(spec.get("gte"))
-        except (TypeError, ValueError):
-            return False
-    if "between" in spec:
-        bounds = spec.get("between") or []
-        if len(bounds) < 2:
-            return False
-        try:
-            number = float(val)
-            return float(bounds[0]) <= number <= float(bounds[1])
-        except (TypeError, ValueError):
-            return False
-    return False
-
-
 def build_player_feature_index(aggregates: Mapping[str, Any]) -> dict[str, dict]:
     """Compact preseason buckets for Trends matching. JSON lookup only."""
     pre = aggregates.get("preseason_profiles") or {}
@@ -672,31 +653,9 @@ def build_player_feature_index(aggregates: Mapping[str, Any]) -> dict[str, dict]
     for pid, prof in by_player.items():
         if not isinstance(prof, Mapping):
             continue
-        feats = extract_comp_query(prof)
+        feats = extract_trend_features(prof)
         if not feats:
             continue
-        age = integer_age(prof.get("age"))
-        if age is not None:
-            feats["age"] = age
-        count = _optional_int(prof.get("prior_top12_count"))
-        if count is not None:
-            feats["prior_top12_count"] = count
-        adot = value_bucket(prof.get("previous_season_adot"), ADOT_BUCKETS)
-        if adot:
-            feats["adot"] = adot
-        ryoe = value_bucket(
-            prof.get("previous_season_ngs_rush_yards_over_expected_per_att"),
-            RYOE_BUCKETS,
-        )
-        if ryoe:
-            feats["ryoe"] = ryoe
-        for spec in USAGE_RATE_SPECS:
-            spec_id = spec["id"]
-            if spec_id not in VOLUME_USAGE_IDS:
-                continue
-            bucket = value_bucket(prof.get(spec["field"]), spec["buckets"])
-            if bucket:
-                feats[spec_id] = bucket
         out[str(pid)] = feats
     return out
 
@@ -1129,6 +1088,12 @@ def build_hist_panel_copy(
         n = rec.get("sample_size")
         if n in (None, 0):
             n = hist.get("n")
+        ci_lo = rec.get("ci_low_pct")
+        ci_hi = rec.get("ci_high_pct")
+        if ci_lo is None:
+            lo, hi = wilson_interval(rec.get("successes"), n)
+            ci_lo = display_percent(lo)
+            ci_hi = display_percent(hi)
         hit_rates.append({
             "tier": tier,
             "label": label,
@@ -1136,6 +1101,8 @@ def build_hist_panel_copy(
             "n": n,
             "confidence": rec.get("confidence"),
             "confidence_label": _confidence_label(rec.get("confidence")),
+            "ci_low": ci_lo,
+            "ci_high": ci_hi,
         })
 
     profile: list[dict] = []
@@ -1165,6 +1132,20 @@ def build_hist_panel_copy(
         )
 
     market_sentence = format_market_sentence(mkt, missing="no_adp")
+    hist_p = None
+    t12 = rates.get("top_12") if isinstance(rates.get("top_12"), Mapping) else {}
+    if t12.get("display_pct") is not None:
+        hist_p = t12.get("display_pct")
+    elif hist.get("p_top_12") is not None:
+        from dashboard_services.historical.definitions import display_percent as _dp
+        hist_p = _dp(hist.get("p_top_12"))
+    mkt_p = display_percent(mkt.get("p_top_12"))
+    market_edge = None
+    if isinstance(hist_p, (int, float)) and isinstance(mkt_p, (int, float)):
+        market_edge = int(hist_p) - int(mkt_p)
+    lead_hit = next((row for row in hit_rates if row.get("tier") == "top_12"), None)
+    t12_ci_low = (lead_hit or {}).get("ci_low")
+    t12_ci_high = (lead_hit or {}).get("ci_high")
     cohort = cohort_sentence(key_used)
     if hist.get("career_path") == "bounce_back":
         cohort_note = (
@@ -1203,11 +1184,19 @@ def build_hist_panel_copy(
         "trends": [],
         "market_heading": "ADP bucket hit rate",
         "market_sentence": market_sentence,
-        "examples_heading": "Seasons from that similar group",
+        "examples_heading": "Closest historical examples",
         "examples_note": (
-            "Notable finishes from the group above. This player is excluded. "
-            "These are the hits, not a typical outcome."
+            "A handful of the closest player-seasons, not the full comparison "
+            "pool. This player is excluded. Hits are easier to remember than "
+            "typical outcomes."
         ),
+        "examples_vs_cohort_note": None,
+        "market_profile_heading": "Historical profile vs current ADP",
+        "history_pct": hist_p,
+        "market_pct": mkt_p,
+        "history_vs_market_pts": market_edge,
+        "history_ci_low": t12_ci_low,
+        "history_ci_high": t12_ci_high,
     }
 
 
@@ -1250,6 +1239,30 @@ def build_deep_panel(
     }
     copy = build_hist_panel_copy(history, market)
     copy["trends"] = build_hist_trends(query, aggregates, market)
+    from dashboard_services.historical.cohorts import (
+        closest_examples_for_query,
+        examples_summary,
+    )
+    closest = closest_examples_for_query(
+        query,
+        aggregates,
+        exclude_pid=pid,
+    )
+    if closest:
+        history["closest_examples"] = closest
+        history["closest_summary"] = examples_summary(closest)
+        copy["examples_heading"] = "Closest historical examples"
+        n_full = history.get("n")
+        copy["examples_vs_cohort_note"] = (
+            f"These are the closest examples, not the full historical cohort"
+            + (f" (n={n_full})." if n_full not in (None, 0) else ".")
+        )
+        copy["examples_summary"] = history["closest_summary"]
+    elif history.get("n") not in (None, 0):
+        copy["examples_vs_cohort_note"] = (
+            f"Full historical cohort n={history.get('n')}. Named examples "
+            "are a subset, not the rate's denominator."
+        )
     return {
         "available": True,
         "player_id": pid,
@@ -1326,6 +1339,38 @@ def _section_row(
         if vs_by:
             row["vs_by_tier"] = vs_by
             row["vs_label_by_tier"] = vs_label_by
+    baseline_rate = None
+    if isinstance(baseline_pct, (int, float)):
+        baseline_rate = float(baseline_pct) / 100.0
+    from dashboard_services.historical.cohorts import attach_row_edges, edge_bundle
+    attach_row_edges(row, rec, baseline_rate)
+    ranking_by: dict[str, int] = {}
+    src = rate if isinstance(rate, Mapping) else {}
+    nested = src.get("by_tier") if isinstance(src.get("by_tier"), Mapping) else src
+    for tier in COMP_BOARD_TIERS:
+        block = nested.get(tier) if isinstance(nested, Mapping) else None
+        if not isinstance(block, Mapping) or (
+            block.get("raw_rate") is None and block.get("sample_size") is None
+        ):
+            if tier == "top_12":
+                block = rec
+            else:
+                continue
+        base = (baselines or {}).get(tier) if isinstance(baselines, Mapping) else None
+        br = None
+        if isinstance(base, Mapping) and base.get("pct") is not None:
+            br = float(base["pct"]) / 100.0
+        elif tier == "top_12":
+            br = baseline_rate
+        bundle = edge_bundle(block, br)
+        pts = bundle.get("adjusted_edge_pts")
+        if pts is not None:
+            ranking_by[str(tier)] = int(pts)
+    if ranking_by:
+        row["ranking_edge_by_tier"] = ranking_by
+        if row.get("ranking_edge") is None and ranking_by.get("top_12") is not None:
+            row["ranking_edge"] = ranking_by["top_12"]
+            row["adjusted_edge"] = ranking_by["top_12"]
     return row
 
 
@@ -1353,8 +1398,21 @@ def _append_section(
     sections.append(rec)
 
 
+def _row_ranking_edge(row: Mapping[str, Any], *, tier: str = "top_12") -> Optional[int]:
+    by_tier = row.get("ranking_edge_by_tier") if isinstance(row.get("ranking_edge_by_tier"), Mapping) else {}
+    if by_tier.get(tier) is not None:
+        try:
+            return int(by_tier[tier])
+        except (TypeError, ValueError):
+            pass
+    if tier == "top_12" and isinstance(row.get("ranking_edge"), int):
+        return int(row["ranking_edge"])
+    vs = row.get("vs_baseline")
+    return int(vs) if isinstance(vs, int) else None
+
+
 def _trend_highlights(sections: Sequence[Mapping[str, Any]], *, limit: int = 4) -> list[dict]:
-    """Biggest above-typical buckets, preferring one from each table first."""
+    """Biggest above-typical buckets, ranked by shrinkage-adjusted edge."""
     best_by_section: list[dict] = []
     leftovers: list[dict] = []
     for sec in sections:
@@ -1362,27 +1420,55 @@ def _trend_highlights(sections: Sequence[Mapping[str, Any]], *, limit: int = 4) 
             continue
         scored = []
         for row in sec.get("rows") or []:
-            vs = row.get("vs_baseline")
-            if not isinstance(vs, int) or vs <= 0:
+            edge = _row_ranking_edge(row)
+            if not isinstance(edge, int) or edge <= 0:
                 continue
             scored.append({
                 "section": sec.get("heading"),
                 "label": row.get("label"),
                 "pct": row.get("pct"),
-                "vs_baseline": vs,
+                "vs_baseline": row.get("vs_baseline"),
+                "ranking_edge": edge,
                 "vs_label": row.get("vs_label"),
                 "n": row.get("n"),
+                "confidence_label": row.get("confidence_label"),
             })
-        scored.sort(key=lambda r: (-int(r.get("vs_baseline") or 0), -int(r.get("pct") or 0)))
+        scored.sort(key=lambda r: (-int(r.get("ranking_edge") or 0), -int(r.get("pct") or 0)))
         if scored:
             best_by_section.append(scored[0])
             leftovers.extend(scored[1:])
-    best_by_section.sort(key=lambda r: (-int(r.get("vs_baseline") or 0), -int(r.get("pct") or 0)))
-    leftovers.sort(key=lambda r: (-int(r.get("vs_baseline") or 0), -int(r.get("pct") or 0)))
+    best_by_section.sort(key=lambda r: (-int(r.get("ranking_edge") or 0), -int(r.get("pct") or 0)))
+    leftovers.sort(key=lambda r: (-int(r.get("ranking_edge") or 0), -int(r.get("pct") or 0)))
     picked = best_by_section[:limit]
     if len(picked) < limit:
         picked.extend(leftovers[: limit - len(picked)])
     return picked[:limit]
+
+
+def _trend_red_flags(sections: Sequence[Mapping[str, Any]], *, limit: int = 6) -> list[dict]:
+    """Strongest negative adjusted edges actually present in the tables."""
+    scored = []
+    for sec in sections:
+        if str(sec.get("polarity") or "") == "miss":
+            continue
+        for row in sec.get("rows") or []:
+            edge = _row_ranking_edge(row)
+            if not isinstance(edge, int) or edge >= 0:
+                continue
+            scored.append({
+                "section": sec.get("heading"),
+                "label": row.get("label"),
+                "pct": row.get("pct"),
+                "vs_baseline": row.get("vs_baseline"),
+                "ranking_edge": edge,
+                "vs_label": row.get("vs_label"),
+                "n": row.get("n"),
+                "confidence_label": row.get("confidence_label"),
+                "id": row.get("id"),
+                "match": row.get("match"),
+            })
+    scored.sort(key=lambda r: (int(r.get("ranking_edge") or 0), int(r.get("pct") or 0)))
+    return scored[:limit]
 
 
 def _age_curve_points(age_block: Mapping[str, Any]) -> list[dict]:
@@ -1716,6 +1802,58 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
             note_tmpl.format(pos=pos),
         )
 
+    traj = ((aggregates.get("cohort_index") or {}).get("trajectory_rates") or {}).get(pos) or {}
+    traj_specs = (
+        (
+            "target_share_change",
+            "Target share change",
+            f"How often {pos}s whose target share rose or fell that much from two years ago to last year hit the selected finish. Uses only seasons before the outcome.",
+        ),
+        (
+            "snap_pct_change",
+            "Snap share change",
+            f"How often {pos}s whose snap share rose or fell that much year over year hit the selected finish. Both years must be {2022}+ snap data.",
+        ),
+        (
+            "workload_change",
+            "Workload change",
+            f"How often {pos}s whose last-year workload rose or fell materially versus the year before hit the selected finish.",
+        ),
+    )
+    for metric, heading, note in traj_specs:
+        block = traj.get(metric) if isinstance(traj, Mapping) else None
+        by_bucket = (block.get("by_bucket") or {}) if isinstance(block, Mapping) else {}
+        rows = []
+        for label, cell in by_bucket.items():
+            if not isinstance(cell, Mapping):
+                continue
+            fallback = cell.get("top_12") or cell
+            nested = cell.get("by_tier") if isinstance(cell.get("by_tier"), Mapping) else {}
+
+            def _traj_lookup(tier, nest=nested, fb=fallback):
+                return nest.get(tier) or fb
+
+            row = _section_row(
+                str(label),
+                fallback,
+                baseline_pct=baseline_pct,
+                baselines=finish_baselines,
+                row_id=f"{metric}:{label}",
+                match=_match_eq(metric, metric, label),
+                pcts=_pcts_from_tiered(_traj_lookup, fallback),
+            )
+            if row:
+                rows.append(row)
+        _append_section(
+            sections,
+            sid=metric,
+            heading=heading,
+            note=note,
+            rows=rows,
+            finish_tied=True,
+        )
+
+    from dashboard_services.historical.cohorts import FINISH_TIER_COPY
     curve_by_tier = _age_curve_by_tier(aggregates, pos)
     return {
         "position": pos,
@@ -1728,6 +1866,8 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         "age_curve": curve_by_tier.get("top_12") or _age_curve_points(age_block),
         "age_curve_by_tier": curve_by_tier,
         "highlights": _trend_highlights(sections),
+        "red_flags": _trend_red_flags(sections),
+        "finish_tier_copy": FINISH_TIER_COPY.get(pos),
         "sections": sections,
     }
 
@@ -1749,7 +1889,9 @@ def build_historical_trends(aggregates: Mapping[str, Any]) -> dict:
             f"Each table is one slice from {era}. Select buckets to list current "
             "board players who match (AND across different tables, OR within one). "
             "Finish chips switch typical top-5, top-12, and top-24 odds. Callouts "
-            "are the biggest edges versus a typical player-season. Open Hist on "
+            "are the biggest shrinkage-adjusted edges versus a typical player-season. "
+            "Select buckets to see the true combined historical hit rate for that mix. "
+            "Open Hist on "
             "the Big Board for one player's mix."
         ),
         "positions": list(SKILL_POSITIONS),

@@ -297,7 +297,7 @@ def test_signal_contract_and_modules_stay_pure():
     assert "031_" not in text
     assert "static/pick_score" not in text
     assert "build_player_history_features" not in text
-    for name in ("definitions.py", "comps.py", "adp.py", "career_profiles.py", "walkforward.py"):
+    for name in ("definitions.py", "comps.py", "adp.py", "career_profiles.py", "walkforward.py", "cohorts.py", "filters.py"):
         src = (hist / name).read_text(encoding="utf-8")
         assert "import pandas" not in src
         assert "from utils.projection_resolver" not in src

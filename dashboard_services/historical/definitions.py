@@ -288,6 +288,27 @@ PASS_ATTEMPTS_BUCKETS: Tuple[_RateBound, ...] = (
     (550.0, None, "550+"),
 )
 
+# Year-over-year *pre-outcome* change. For season S these compare S-2 vs S-1
+# actuals (information available before S). Missing / non-consecutive priors
+# stay omitted, never 0. Snap-share change additionally requires both years
+# at SNAP_RELIABLE_FLOOR.
+TARGET_SHARE_UP_PTS = 0.05
+SNAP_PCT_UP_PTS = 0.15
+TRAJECTORY_TARGET_SHARE_UP = "+5 pts or more"
+TRAJECTORY_TARGET_SHARE_DOWN = "down 5 pts or more"
+TRAJECTORY_SNAP_UP = "+15 pts or more"
+TRAJECTORY_SNAP_DOWN = "down 15 pts or more"
+TRAJECTORY_WORKLOAD_UP = "materially increased"
+TRAJECTORY_WORKLOAD_DOWN = "materially declined"
+# Absolute YoY volume cliffs by the position's primary workload stat.
+# RB touches / WR-TE targets / QB pass attempts. Not a ranking heuristic.
+WORKLOAD_CHANGE_CLIFFS: Mapping[str, Tuple[str, int]] = {
+    "RB": ("touches", 40),
+    "WR": ("targets", 20),
+    "TE": ("targets", 20),
+    "QB": ("passing_attempts", 50),
+}
+
 # Overlay actuals. Names match nflverse_metrics. Missing stays None.
 EFFICIENCY_FIELDS: Tuple[str, ...] = (
     "adot",
@@ -341,6 +362,18 @@ ABSOLUTE_BUST_OUTSIDE: Mapping[str, int] = {
 # The prior rate is the broader position-level rate; prior_n is a small
 # pseudo-count so tiny samples shrink toward that rate instead of looking exact.
 DEFAULT_BAYES_PRIOR_N = 10
+# Stronger prior used only to *rank* edges / red flags so a noisy n=12 cell
+# cannot outrank a well-estimated n=420 lift. Displayed table percents still
+# use DEFAULT_BAYES_PRIOR_N. k=30 is the value that maps the documented
+# n=84 / 31% vs 8% example onto a +17 pt adjusted edge.
+EDGE_RANK_PRIOR_N = 30
+# 95% Wilson score interval (z = 1.959964 ≈ 1.96).
+WILSON_Z_95 = 1.959964
+# Market-adjusted cohort edge is omitted unless enough matched seasons have
+# a historical preseason ADP bucket. Do not invent a rate from thin coverage.
+MARKET_ADP_MIN_N = 15
+MARKET_ADP_MIN_SHARE = 0.40
+NAMED_CLOSEST_EXAMPLES = 8
 
 
 def parse_birth_date(value: Any) -> Optional[date]:
@@ -611,6 +644,51 @@ def empirical_bayes(
     if denom <= 0:
         return None
     return (s + ps) / denom
+
+
+def ranking_adjusted_rate(
+    successes: Any,
+    n: Any,
+    baseline_rate: Any,
+    prior_n: Any = EDGE_RANK_PRIOR_N,
+) -> Optional[float]:
+    """Bayes shrink toward ``baseline_rate`` with the ranking prior (k=30)."""
+    base = _optional_float(baseline_rate)
+    pn = _optional_float(prior_n)
+    if base is None or pn is None:
+        return None
+    return empirical_bayes(successes, n, base * pn, pn)
+
+
+def wilson_interval(
+    successes: Any,
+    n: Any,
+    *,
+    z: float = WILSON_Z_95,
+) -> tuple[Optional[float], Optional[float]]:
+    """95% Wilson score interval for a binomial rate. Empty n → (None, None)."""
+    hits = _optional_float(successes)
+    sample = _optional_float(n)
+    if hits is None or sample is None or sample <= 0:
+        return None, None
+    if hits < 0:
+        hits = 0.0
+    if hits > sample:
+        hits = sample
+    p = hits / sample
+    z2 = float(z) * float(z)
+    denom = 1.0 + z2 / sample
+    center = (p + z2 / (2.0 * sample)) / denom
+    margin = (
+        float(z) * math.sqrt((p * (1.0 - p) + z2 / (4.0 * sample)) / sample) / denom
+    )
+    lo = center - margin
+    hi = center + margin
+    if lo < 0.0:
+        lo = 0.0
+    if hi > 1.0:
+        hi = 1.0
+    return lo, hi
 
 
 def normalize_adp(value: Any) -> Optional[float]:
