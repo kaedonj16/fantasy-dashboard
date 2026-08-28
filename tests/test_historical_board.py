@@ -310,8 +310,34 @@ def test_hist_panel_copy_uses_bucket_hit_rates_not_snake_case():
     assert "career_stage" not in shown
     assert "draft_capital" not in shown
     assert "Players drafted in Round 1 historically finished top-12 82%" in copy["market_sentence"]
+    assert copy["market_compare_heading"] == "Two groups, not one chance"
+    assert copy["history_group_label"] == "Players like this"
+    assert copy["history_group_hint"] == "this career and situation"
+    assert copy["market_group_label"] == "Round 1"
+    assert copy["market_group_hint"] == "anyone taken in that fantasy round"
+    assert copy["history_pct"] == 37
+    assert copy["market_pct"] == 82
+    assert copy["history_vs_market_pts"] == -45
+    assert "Round 1 hits 45 pts more often" in copy["gap_note"]
+    assert "Early ADP is a high bar" in copy["gap_note"]
+    assert "not a combined chance" in copy["gap_note"].lower()
+    assert "—" not in copy["gap_note"]
+    assert "–" not in copy["gap_note"]
     missing = build_hist_panel_copy(history, {})
     assert "no live ADP" in missing["market_sentence"]
+    assert missing["gap_note"] == "Need live ADP to show the other group."
+    assert missing["market_group_label"] == "That ADP round"
+    aligned = build_hist_panel_copy(
+        history,
+        {"p_top_12": 0.40, "adp_bucket": "round_3"},
+    )
+    assert aligned["gap_note"].startswith("Round 3 and players like this are in line")
+    ahead = build_hist_panel_copy(
+        history,
+        {"p_top_12": 0.20, "adp_bucket": "rounds_8_10"},
+    )
+    assert "Players like this hit 17 pts more often than Rounds 8-10" in ahead["gap_note"]
+    assert "Early ADP is a high bar" not in ahead["gap_note"]
 
 
 def test_compact_signal_never_blends():

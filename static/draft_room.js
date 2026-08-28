@@ -6958,20 +6958,16 @@
     if (h == null || m == null) return null;
     return h - m;
   }
-  function ddHistSigned(n){
-    if (n == null || !isFinite(Number(n))) return '';
-    var v = Math.round(Number(n));
-    return (v > 0 ? '+' : '') + v;
-  }
   function ddHistVsCopy(p){
     var pts = ddHistVsPts(p);
     if (pts == null){
       var lab = ddHist(p).h_vs_m;
-      if (lab === 'aligned') return 'in line with ADP bucket';
+      if (lab === 'aligned') return 'in line';
       return '';
     }
-    if (Math.abs(pts) < 1) return 'in line with ADP bucket';
-    return ddHistSigned(pts) + ' vs ADP bucket';
+    if (Math.abs(pts) < 1) return 'in line';
+    if (pts > 0) return 'Hist +' + Math.round(pts);
+    return 'ADP round +' + Math.round(Math.abs(pts));
   }
 
   function ddHistHtml(picks){
@@ -6992,8 +6988,8 @@
     var tiles = [
       { v: avg + '%', l: 'Avg Hist top-12', cls: avg >= DD_HIST_STRONG ? 'good' : '' },
       { v: strong, l: 'Strong profiles (25%+)', cls: strong ? 'good' : '' },
-      { v: above, l: 'Hist above ADP bucket', cls: above ? 'good' : '' },
-      { v: below, l: 'Hist below ADP bucket', cls: below ? 'bad' : '' }
+      { v: above, l: 'Hist group higher', cls: '' },
+      { v: below, l: 'ADP round higher', cls: '' }
     ].map(function(t){
       return '<div class="dd-tile ' + (t.cls || '') + '"><div class="dd-tile-v">' + t.v + '</div><div class="dd-tile-l">' + t.l + '</div></div>';
     }).join('');
@@ -7010,22 +7006,20 @@
     }
     var parts = [];
     if (best && bestPts != null && bestPts >= 10){
-      parts.push(histEdge('Historical edge', 'win', best,
-        'Similar player-seasons hit top-12 <b>' + ddHistPct(best) + '%</b> versus <b>'
-        + ddHistMkt(best) + '%</b> at this ADP bucket (' + ddHistSigned(bestPts) + '). Descriptive only.'));
+      parts.push(histEdge('Hist group higher', 'winb', best,
+        'Players like this hit top-12 <b>' + ddHistPct(best) + '%</b>. Anyone in that ADP round hit <b>'
+        + ddHistMkt(best) + '%</b>. Two groups, not a combined chance.'));
     }
     if (worst && worst !== best && worstPts != null && worstPts <= -10){
-      parts.push(histEdge('Historical miss vs market', 'bad', worst,
-        'The ADP bucket hits top-12 <b>' + ddHistMkt(worst) + '%</b>, but this profile is <b>'
-        + ddHistPct(worst) + '%</b> (' + ddHistSigned(worstPts) + '). Not a ranking input.'));
+      parts.push(histEdge('ADP round is a higher bar', '', worst,
+        'Anyone in that ADP round hit top-12 <b>' + ddHistMkt(worst) + '%</b>. Players like this hit <b>'
+        + ddHistPct(worst) + '%</b>. Early ADP is a high bar. Two groups, not a ranking.'));
     }
     if (parts.length) callouts = '<div class="dd-edges" style="margin-bottom:14px">' + parts.join('') + '</div>';
     var tableRows = ranked.map(function(p){
       var pct = ddHistPct(p);
       var mkt = ddHistMkt(p);
       var vs = ddHistVsCopy(p);
-      var pts = ddHistVsPts(p);
-      var vsCls = pts == null ? '' : pts >= 10 ? 'up' : pts <= -10 ? 'down' : '';
       return '<tr>'
         + '<td class="num" style="color:var(--text-muted)">' + roundPickStr(p.pn) + '</td>'
         + '<td class="dd-plname">' + esc(p.pl.name) + '</td>'
@@ -7033,15 +7027,15 @@
         + '<td class="r"><span class="dd-hist-pct' + (pct >= DD_HIST_STRONG ? ' is-strong' : '') + '">'
         + (pct != null ? pct + '%' : '-') + '</span></td>'
         + '<td class="r num">' + (mkt != null ? mkt + '%' : '-') + '</td>'
-        + '<td class="r"><span class="dd-hist-vs ' + vsCls + '">' + (vs || '-') + '</span></td>'
+        + '<td class="r"><span class="dd-hist-vs">' + (vs || '-') + '</span></td>'
         + '</tr>';
     }).join('');
     return '<div class="dd-card"><div class="dd-sec"><h4>Historical trends</h4>'
-      + '<p>Each skill pick\'s historical top-12 chance given career stage, NFL draft capital, age, and last year, versus the hit rate at its ADP bucket. Descriptive only. Not a ranking, Pick Score, or Draft Grade input.</p></div>'
+      + '<p>Two groups per pick: players like this, and anyone taken in that ADP round. They are not averaged into one chance. Descriptive only. Not a ranking, Pick Score, or Draft Grade input.</p></div>'
       + '<div class="dd-tiles">' + tiles + '</div>'
       + callouts
       + '<div class="dd-tablescroll" style="margin-top:14px"><table class="dd-ledger">'
-      + '<thead><tr><th>Pick</th><th>Player</th><th>Pos</th><th class="r">Hist</th><th class="r">ADP bucket</th><th class="r">vs market</th></tr></thead>'
+      + '<thead><tr><th>Pick</th><th>Player</th><th>Pos</th><th class="r">Hist</th><th class="r">ADP round</th><th class="r">groups</th></tr></thead>'
       + '<tbody>' + tableRows + '</tbody></table></div></div>';
   }
 
