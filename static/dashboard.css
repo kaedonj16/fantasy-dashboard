@@ -12289,13 +12289,17 @@ a.signed-home-league:hover {
 }
 
 /* Keeper banner in the Draft Room (only present when the keeper tool hands off
-   league keepers, or the league is a real keeper league). */
+   league keepers, or the league is a real keeper league). Match the setup
+   card's 740px column so the banner lines up with the board below. */
 .dr-keeper-banner {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 740px;
+    margin: 0 auto 14px;
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 11px 14px;
-    margin: 0 0 14px;
     box-shadow: var(--shadow-sm);
 }
 
@@ -12396,12 +12400,20 @@ a.signed-home-league:hover {
     margin-left: auto;
 }
 
-/* Keeper roster: a responsive grid so a full slate of keepers packs into a
-   couple of tidy columns instead of one long stack. */
+/* Keeper roster details: items paginate 5 per page; the page of rows is a
+   responsive grid so a short slate still packs into tidy columns.
+   Force [hidden] — author display rules elsewhere can beat the UA stylesheet. */
 .dr-keeper-list {
     margin-top: 11px;
     padding-top: 11px;
     border-top: 1px solid var(--border);
+}
+
+.dr-keeper-list[hidden] {
+    display: none !important;
+}
+
+.dr-keeper-items {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
     gap: 6px;
@@ -12425,6 +12437,12 @@ a.signed-home-league:hover {
 .dr-keeper-item:hover {
     border-color: var(--border);
     background: var(--row);
+}
+
+.dr-keeper-pager {
+    margin-top: 8px;
+    padding: 8px 0 2px;
+    border-top: none;
 }
 
 .dr-keeper-pos {
@@ -12459,10 +12477,9 @@ a.signed-home-league:hover {
 }
 
 .dr-keeper-note {
-    grid-column: 1 / -1;
     font-size: 11.5px;
     color: var(--text-muted);
-    margin-top: 3px;
+    margin-top: 8px;
 }
 
 .inj-list {
