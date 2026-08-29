@@ -237,26 +237,6 @@ def api_waiver_candidates():
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
-    # Season projected PPG — the *healthy* production of a role, used to value an
-    # injury vacancy (the injured player projects ~0 while hurt, so their own
-    # recent ppg understates the role).
-    _season_ppg_wv: dict = {}
-    try:
-        from utils.projection_resolver import resolve_projected_ppg_many
-        _nfl_pj = get_nfl_state() or {}
-        _pj_season = int(_nfl_pj.get("season") or season)
-        _ids_wv = list(_full_players_wv)
-        _pos_wv = {str(pid): str((row or {}).get("position") or (row or {}).get("pos") or "")
-                   for pid, row in _full_players_wv.items()}
-        _resolved_wv = resolve_projected_ppg_many(
-            _ids_wv, ctx.get("raw_scoring_settings") or {}, _pj_season,
-            positions=_pos_wv)
-        for _pid, _row in _resolved_wv.items():
-            if _row.get("ppg") is not None:
-                _season_ppg_wv[str(_pid)] = _row["ppg"]
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
-
     # Upcoming weekly projections — a player projected for ~0 points across the
     # next N weeks IS the projection provider's read on how long they're out, so
     # count the leading zero-run to get the injury timeline directly (#: weeks
@@ -280,6 +260,60 @@ def api_waiver_candidates():
                         if _t:
                             _teams.add(_t)
             _future_week_teams_wv.append(_teams)
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
+    # Depth analysis is needed both to score vacancies and to know which injured
+    # players need a healthy-role season PPG. Precompute once; resolving season
+    # PPG for the entire NFL player feed (thousands of ids) with custom ESPN
+    # scoring routinely timed the waiver request out while Start/Sit still worked.
+    _da_cache_wv: dict = {}
+    _injured_for_ppg: set[str] = set()
+    for _c_pre in candidates:
+        _pid_pre = str(_c_pre.get("player_id") or "")
+        if not _pid_pre:
+            continue
+        try:
+            _da_pre = _depth_analysis_for_player(
+                _pid_pre, _full_players_wv, _depth_idx_wv)
+        except Exception:
+            _da_pre = {}
+        _da_cache_wv[_pid_pre] = _da_pre or {}
+        for _v_pre in (_da_pre.get("vacated") or []):
+            if isinstance(_v_pre, dict):
+                _vid = str(_v_pre.get("pid") or "")
+                if _vid:
+                    _injured_for_ppg.add(_vid)
+
+    # Season projected PPG — the *healthy* production of a role, used to value an
+    # injury vacancy (the injured player projects ~0 while hurt, so their own
+    # recent ppg understates the role). Only the injured players ahead of
+    # candidates need this — not the full players feed.
+    _season_ppg_wv: dict = {}
+    if _injured_for_ppg:
+        try:
+            from utils.projection_resolver import resolve_projected_ppg_many
+            _nfl_pj = get_nfl_state() or {}
+            _pj_season = int(_nfl_pj.get("season") or season)
+            _ids_wv = list(_injured_for_ppg)
+            _pos_wv = {}
+            for pid in _ids_wv:
+                _meta = _full_players_wv.get(pid) or players_index.get(pid) or {}
+                _pos_wv[pid] = str(_meta.get("position") or _meta.get("pos") or "")
+            _resolved_wv = resolve_projected_ppg_many(
+                _ids_wv, ctx.get("raw_scoring_settings") or {}, _pj_season,
+                positions=_pos_wv)
+            for _pid, _row in _resolved_wv.items():
+                if _row.get("ppg") is not None:
+                    _season_ppg_wv[str(_pid)] = _row["ppg"]
+        except Exception:
+            logger.debug("suppressed exception", exc_info=True)
+
+    # Warm the ESPN return-date cache once per request so vacancy scoring doesn't
+    # re-enter the fetch path for every injured player ahead of a candidate.
+    try:
+        from dashboard_services.injury_return import refresh_espn_return_dates as _refresh_espn_ret
+        _refresh_espn_ret()
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
@@ -421,7 +455,7 @@ def api_waiver_candidates():
             c["usage_delta"] = ut.get("delta")
             c["usage_stat"] = ut.get("stat")
 
-            _da = _depth_analysis_for_player(c["player_id"], _full_players_wv, _depth_idx_wv)
+            _da = _da_cache_wv.get(c["player_id"]) or {}
             _inj_pids = _da.get("injured_pids_ahead") or []
             c["injured_ahead"] = _da.get("injured_ahead") or []
             c["healthy_ahead"] = _da.get("healthy_ahead") or 0

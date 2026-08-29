@@ -67,6 +67,11 @@ def test_waiver_blueprint_overlays_espn_weeks_out():
     assert "_v[\"weeks_out\"] = _espn_weeks" in WAIVER_BP
     assert '_v["return_source"] = "espn"' in WAIVER_BP
     assert "app.register_blueprint(waiver_api_bp)" in APP_PY
+    # Season PPG must be scoped to injured players ahead of candidates — resolving
+    # the full NFL feed under custom ESPN scoring timed waivers out.
+    assert "_injured_for_ppg" in WAIVER_BP
+    assert "list(_full_players_wv)" not in WAIVER_BP
+    assert "refresh_espn_return_dates" in WAIVER_BP
 
 
 def test_breakout_hyphen_url_aliases_canonical_envelope():
