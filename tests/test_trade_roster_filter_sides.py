@@ -53,6 +53,22 @@ def test_search_dropdown_ranks_by_scoring_type_value():
     assert "p.sf_value || p.value" not in search
 
 
+def test_scoring_type_falls_back_to_league_redraft():
+    source = APP_JS.read_text(encoding="utf-8")
+    getter = source[source.index("function getScoringType()") :]
+    getter = getter[: getter.index("\n  function getTePremium(")]
+    assert "getLeagueScoringType()" in getter
+
+    bind = source[source.index("function bindScoringTypeControls()") :]
+    bind = bind[: bind.index("\n  function bindTradeSettingsDropdown(")]
+    assert "getLeagueScoringType()" in bind
+    assert 'sel.value = leagueSt' in bind
+
+    meta = source[source.index("function buildMetaBits(p)") :]
+    meta = meta[: meta.index("\n  function getSidePlayers(")]
+    assert 'getScoringType() === "redraft"' in meta
+
+
 def test_roster_filter_forces_team_one_as_viewer_side():
     source = APP_JS.read_text(encoding="utf-8")
     analyzer = source[source.index("async function analyzeTrade()") :]

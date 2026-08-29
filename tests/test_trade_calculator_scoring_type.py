@@ -38,6 +38,13 @@ def test_trade_calculator_exposes_platform_for_roster_filter():
     assert 'value="espn"' in html
 
 
+def test_trade_calculator_exposes_league_scoring_type():
+    html = build_trade_calculator_body("L1", 2026, platform="espn", scoring_type="redraft")
+    assert 'id="leagueScoringTypeInput"' in html
+    assert 'value="redraft"' in html
+    assert "var _scoringType = 'redraft'" in html
+
+
 def test_trade_page_wires_league_redraft_into_calculator():
     src = (ROOT / "routes" / "trade_bp.py").read_text(encoding="utf-8")
     assert "_league_is_redraft" in src
