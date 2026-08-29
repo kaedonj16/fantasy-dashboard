@@ -209,69 +209,117 @@ def shortcut_javascript(origin: str, token: str) -> str:
 
 
 def _relay_script_body(origin: str, token: str, *, source: str, for_ios_shortcut: bool) -> str:
-    """Shared ESPN draft → BR Fantasy relay script body."""
+    """Shared ESPN draft → BR Fantasy relay script (bookmarklet + iOS Shortcut).
+
+    Prefer React fiber ``draftDetail`` (live room truth). Fall back to a
+    same-origin ESPN ``mDraftDetail`` fetch with cookies if fiber is empty —
+    mid-draft REST is often stale, but better than nothing. On iOS Shortcuts,
+    fiber discovery must use ``Object.getOwnPropertyNames`` (``for…in`` can miss
+    ``__reactFiber$`` keys).
+    """
     origin_js = json.dumps(str(origin).rstrip("/"))
     token_js = json.dumps(str(token))
     source_js = json.dumps(str(source))
-
-    # Build with explicit completion hooks for iOS Shortcuts.
     if for_ios_shortcut:
-        body = f"""
-(function(){{
-  var O={origin_js},T={token_js};
-  function toast(m){{try{{var d=document.createElement('div');d.textContent=m;
-  d.setAttribute('style','position:fixed;z-index:2147483647;left:12px;right:12px;bottom:16px;padding:12px 14px;border-radius:10px;background:#0f172a;color:#fff;font:600 13px/1.35 system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.35)');
-  document.documentElement.appendChild(d);setTimeout(function(){{d.remove();}},3200);}}catch(e){{try{{alert(m);}}catch(e2){{}}}}}}
-  function finish(m,ok){{try{{if(m)toast(m);}}catch(e){{}}try{{completion(ok?String(m||'ok'):null);}}catch(e){{}}}}
-  function isPick(o){{return o&&typeof o==='object'&&(o.overallPickNumber!=null||o.overallPick!=null||o.pick_no!=null)&&(o.playerId!=null||o.player_id!=null||o.teamId!=null);}}
-  function norm(r){{if(!isPick(r))return null;return{{overallPickNumber:Number(r.overallPickNumber||r.overallPick||r.pick_no),playerId:r.playerId!=null?r.playerId:r.player_id,teamId:r.teamId!=null?r.teamId:r.team_id,roundId:r.roundId!=null?Number(r.roundId):null,roundPickNumber:r.roundPickNumber!=null?Number(r.roundPickNumber):(r.roundPick!=null?Number(r.roundPick):null),keeper:!!(r.keeper||r.reservedForKeeper)}};}}
-  function fromDetail(d){{if(!d||!Array.isArray(d.picks))return null;return{{inProgress:d.inProgress===true,drafted:d.drafted===true,picks:d.picks.map(norm).filter(Boolean)}};}}
-  function walk(root){{var seen=new Set(),q=[root],n=0;while(q.length&&n<3500){{var c=q.shift();n++;if(!c||typeof c!=='object'||seen.has(c))continue;seen.add(c);
-  if(c.draftDetail){{var x=fromDetail(c.draftDetail);if(x)return x;}}
-  if(Array.isArray(c.picks)&&c.picks.length&&isPick(c.picks[0]))return{{inProgress:!!c.inProgress,drafted:!!c.drafted,picks:c.picks.map(norm).filter(Boolean)}};
-  ['memoizedProps','pendingProps','stateNode','state','props','child','sibling','return'].forEach(function(k){{if(c[k])q.push(c[k]);}});
-  try{{Object.keys(c).slice(0,30).forEach(function(k){{var v=c[k];if(v&&typeof v==='object'&&!seen.has(v))q.push(v);}});}}catch(e){{}}}}return null;}}
-  function scan(){{var els=[document.getElementById('espn-aria-root'),document.getElementById('root'),document.body].filter(Boolean);for(var i=0;i<els.length;i++){{var el=els[i];for(var k in el){{if(k.indexOf('__reactFiber$')===0||k.indexOf('__reactInternalInstance$')===0){{var hit=walk(el[k]);if(hit)return hit;}}}}}}return null;}}
-  var u;try{{u=new URL(location.href);}}catch(e){{finish('Open your ESPN draft first.',false);return;}}
-  if(location.hostname.indexOf('espn.com')<0){{finish('Open fantasy.espn.com draft, then run sync again.',false);return;}}
-  var leagueId=(u.searchParams.get('leagueId')||'').trim();
-  var season=(u.searchParams.get('seasonId')||u.searchParams.get('season')||'').trim();
-  var data=scan();
-  if(!data||!data.picks||!data.picks.length){{finish('No picks found yet — wait for a pick, then tap sync again.',false);return;}}
-  data.picks.sort(function(a,b){{return a.overallPickNumber-b.overallPickNumber;}});
-  fetch(O+'/api/draft/espn-relay',{{method:'POST',mode:'cors',credentials:'omit',headers:{{'Content-Type':'application/json','Authorization':'Bearer '+T}},body:JSON.stringify({{leagueId:leagueId,season:season,inProgress:data.inProgress!==false,drafted:!!data.drafted,picks:data.picks,source:{source_js}}})}})
-  .then(function(r){{return r.json().then(function(b){{return{{ok:r.ok,b:b}};}});}})
-  .then(function(res){{if(!res.ok){{finish((res.b&&res.b.error)||'Sync failed',false);return;}}finish('Synced '+(res.b.picks?res.b.picks.length:data.picks.length)+' picks to BR Fantasy',true);}})
-  .catch(function(){{finish('Network error syncing to BR Fantasy',false);}});
-}})();
-""".strip()
+        finish_fn = (
+            "function finish(m,ok){try{if(m)toast(m);}catch(e){}"
+            "try{completion(ok?String(m||'ok'):null);}catch(e){}}"
+        )
+        early_open = "finish('Open your ESPN draft first.',false);return;"
+        early_host = "finish('Open fantasy.espn.com draft, then run sync again.',false);return;"
+        no_picks = (
+            "finish('No picks found in page state. Open the Board or Pick History "
+            "tab, wait a second, sync again — or use a laptop + Chrome extension.',false);"
+        )
+        sync_fail = "finish((res.b&&res.b.error)||'Sync failed',false);"
+        sync_ok = (
+            "finish('Synced '+(res.b.picks?res.b.picks.length:data.picks.length)"
+            "+' picks to BR Fantasy',true);"
+        )
+        sync_net = "finish('Network error syncing to BR Fantasy',false);"
+        toast_catch = "try{alert(m);}catch(e2){}"
     else:
-        body = f"""
+        finish_fn = "function finish(m,ok){try{if(m)toast(m);}catch(e){}}"
+        early_open = "return finish('Open your ESPN draft first.',false);"
+        early_host = "return finish('Open fantasy.espn.com draft, then run sync again.',false);"
+        no_picks = (
+            "return finish('No picks found in page state. Open the Board or Pick History "
+            "tab, wait a second, sync again — or use a laptop + Chrome extension.',false);"
+        )
+        sync_fail = "finish((res.b&&res.b.error)||'Sync failed',false);"
+        sync_ok = (
+            "finish('Synced '+(res.b.picks?res.b.picks.length:data.picks.length)"
+            "+' picks to BR Fantasy',true);"
+        )
+        sync_net = "finish('Network error syncing to BR Fantasy',false);"
+        toast_catch = "alert(m);"
+
+    body = f"""
 (function(){{
   var O={origin_js},T={token_js};
   function toast(m){{try{{var d=document.createElement('div');d.textContent=m;
   d.setAttribute('style','position:fixed;z-index:2147483647;left:12px;right:12px;bottom:16px;padding:12px 14px;border-radius:10px;background:#0f172a;color:#fff;font:600 13px/1.35 system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.35)');
-  document.documentElement.appendChild(d);setTimeout(function(){{d.remove();}},3200);}}catch(e){{alert(m);}}}}
-  function isPick(o){{return o&&typeof o==='object'&&(o.overallPickNumber!=null||o.overallPick!=null||o.pick_no!=null)&&(o.playerId!=null||o.player_id!=null||o.teamId!=null);}}
-  function norm(r){{if(!isPick(r))return null;return{{overallPickNumber:Number(r.overallPickNumber||r.overallPick||r.pick_no),playerId:r.playerId!=null?r.playerId:r.player_id,teamId:r.teamId!=null?r.teamId:r.team_id,roundId:r.roundId!=null?Number(r.roundId):null,roundPickNumber:r.roundPickNumber!=null?Number(r.roundPickNumber):(r.roundPick!=null?Number(r.roundPick):null),keeper:!!(r.keeper||r.reservedForKeeper)}};}}
-  function fromDetail(d){{if(!d||!Array.isArray(d.picks))return null;return{{inProgress:d.inProgress===true,drafted:d.drafted===true,picks:d.picks.map(norm).filter(Boolean)}};}}
-  function walk(root){{var seen=new Set(),q=[root],n=0;while(q.length&&n<3500){{var c=q.shift();n++;if(!c||typeof c!=='object'||seen.has(c))continue;seen.add(c);
-  if(c.draftDetail){{var x=fromDetail(c.draftDetail);if(x)return x;}}
-  if(Array.isArray(c.picks)&&c.picks.length&&isPick(c.picks[0]))return{{inProgress:!!c.inProgress,drafted:!!c.drafted,picks:c.picks.map(norm).filter(Boolean)}};
-  ['memoizedProps','pendingProps','stateNode','state','props','child','sibling','return'].forEach(function(k){{if(c[k])q.push(c[k]);}});
-  try{{Object.keys(c).slice(0,30).forEach(function(k){{var v=c[k];if(v&&typeof v==='object'&&!seen.has(v))q.push(v);}});}}catch(e){{}}}}return null;}}
-  function scan(){{var els=[document.getElementById('espn-aria-root'),document.getElementById('root'),document.body].filter(Boolean);for(var i=0;i<els.length;i++){{var el=els[i];for(var k in el){{if(k.indexOf('__reactFiber$')===0||k.indexOf('__reactInternalInstance$')===0){{var hit=walk(el[k]);if(hit)return hit;}}}}}}return null;}}
-  var u;try{{u=new URL(location.href);}}catch(e){{return toast('Open your ESPN draft first.');}}
-  if(location.hostname.indexOf('espn.com')<0){{return toast('Open fantasy.espn.com draft, then run sync again.');}}
+  document.documentElement.appendChild(d);setTimeout(function(){{d.remove();}},4200);}}catch(e){{{toast_catch}}}}}
+  {finish_fn}
+  function selectedPid(pid){{if(pid==null)return false;var s=String(pid);if(s===''||s==='0'||s==='-1'||s==='null'||s==='None')return false;var n=+s;if(!isNaN(n)&&(n===0||n===-1))return false;return true;}}
+  function isPick(o){{return o&&typeof o==='object'&&(o.overallPickNumber!=null||o.overallPick!=null||o.pick_no!=null);}}
+  function norm(r){{if(!isPick(r))return null;var pid=r.playerId!=null?r.playerId:r.player_id;if(!selectedPid(pid))return null;return{{overallPickNumber:Number(r.overallPickNumber||r.overallPick||r.pick_no),playerId:pid,teamId:r.teamId!=null?r.teamId:r.team_id,roundId:r.roundId!=null?Number(r.roundId):null,roundPickNumber:r.roundPickNumber!=null?Number(r.roundPickNumber):(r.roundPick!=null?Number(r.roundPick):null),keeper:!!(r.keeper||r.reservedForKeeper)}};}}
+  function fromDetail(d){{if(!d||!Array.isArray(d.picks))return null;var picks=d.picks.map(norm).filter(Boolean);if(!picks.length)return null;return{{inProgress:d.inProgress===true,drafted:d.drafted===true,picks:picks}};}}
+  function score(hit){{return hit&&hit.picks?hit.picks.length:0;}}
+  function consider(best,hit){{if(!hit)return best;if(!best||score(hit)>score(best))return hit;return best;}}
+  function walk(root){{var best=null,seen=typeof WeakSet!=='undefined'?new WeakSet():null,q=[root],n=0;
+  while(q.length&&n<9000){{var c=q.shift();n++;if(!c||typeof c!=='object')continue;
+  try{{if(seen){{if(seen.has(c))continue;seen.add(c);}}else{{if(c.__brSeen)continue;c.__brSeen=1;}}}}catch(e){{continue;}}
+  try{{if(c.draftDetail)best=consider(best,fromDetail(c.draftDetail));}}catch(e){{}}
+  try{{if(Array.isArray(c.picks)&&c.picks.length&&isPick(c.picks[0])){{var mapped=c.picks.map(norm).filter(Boolean);if(mapped.length)best=consider(best,{{inProgress:!!c.inProgress,drafted:!!c.drafted,picks:mapped}});}}}}catch(e){{}}
+  var keys=['memoizedProps','pendingProps','stateNode','state','props','child','sibling','return','alternate','dependencies','memoizedState'];
+  for(var i=0;i<keys.length;i++){{try{{if(c[keys[i]])q.push(c[keys[i]]);}}catch(e){{}}}}
+  try{{var own=Object.getOwnPropertyNames(c);for(var j=0;j<Math.min(own.length,60);j++){{var k=own[j];if(k==='draftDetail'){{try{{best=consider(best,fromDetail(c[k]));}}catch(e){{}}}}try{{var v=c[k];if(v&&typeof v==='object')q.push(v);}}catch(e){{}}}}}}catch(e){{}}}}
+  return best;}}
+  function fiberKeys(el){{var out=[];try{{var names=Object.getOwnPropertyNames(el);for(var i=0;i<names.length;i++){{var k=names[i];if(k.indexOf('__reactFiber')===0||k.indexOf('__reactInternalInstance')===0||k.indexOf('__reactContainer')===0||k.indexOf('_reactRootContainer')===0)out.push(k);}}}}catch(e){{}}
+  try{{for(var k2 in el){{if(k2&&(k2.indexOf('__reactFiber')===0||k2.indexOf('__reactInternalInstance')===0||k2.indexOf('__reactContainer')===0||k2.indexOf('_reactRootContainer')===0)&&out.indexOf(k2)<0)out.push(k2);}}}}catch(e){{}}
+  return out;}}
+  function scanReact(){{var best=null;var els=[];
+  [document.getElementById('espn-aria-root'),document.getElementById('root'),document.getElementById('fitt-analytics'),document.querySelector('[data-reactroot]'),document.querySelector('#pane-main'),document.body].forEach(function(el){{if(el)els.push(el);}});
+  try{{var nodes=document.querySelectorAll('div,main,section');for(var i=0;i<Math.min(nodes.length,80);i++){{var el=nodes[i];if(fiberKeys(el).length)els.push(el);}}}}catch(e){{}}
+  for(var i=0;i<els.length;i++){{var el=els[i];var keys=fiberKeys(el);for(var j=0;j<keys.length;j++){{try{{var root=el[keys[j]];if(root&&root._internalRoot&&root._internalRoot.current)best=consider(best,walk(root._internalRoot.current));best=consider(best,walk(root));}}catch(e){{}}}}}}
+  return best;}}
+  function parseApiPayload(data){{if(!data)return null;if(Array.isArray(data)&&data[0])data=data[0];if(data.draftDetail)return fromDetail(data.draftDetail);if(data.league&&data.league.draftDetail)return fromDetail(data.league.draftDetail);return null;}}
+  function apiScan(leagueId,season,done){{
+    if(!leagueId||!season){{done(null);return;}}
+    var urls=[
+      'https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/'+encodeURIComponent(season)+'/segments/0/leagues/'+encodeURIComponent(leagueId)+'?view=mDraftDetail&view=mSettings&view=mTeam',
+      'https://fantasy.espn.com/apis/v3/games/ffl/seasons/'+encodeURIComponent(season)+'/segments/0/leagues/'+encodeURIComponent(leagueId)+'?view=mDraftDetail&view=mSettings&view=mTeam'
+    ];
+    var i=0;
+    function next(){{
+      if(i>=urls.length){{done(null);return;}}
+      var url=urls[i++];
+      fetch(url,{{method:'GET',credentials:'include',mode:'cors',headers:{{'Accept':'application/json'}}}})
+        .then(function(r){{return r.ok?r.json():null;}})
+        .then(function(data){{var hit=parseApiPayload(data);if(hit&&hit.picks&&hit.picks.length)done(hit);else next();}})
+        .catch(function(){{next();}});
+    }}
+    next();
+  }}
+  function postRelay(leagueId,season,data){{
+    fetch(O+'/api/draft/espn-relay',{{method:'POST',mode:'cors',credentials:'omit',headers:{{'Content-Type':'application/json','Authorization':'Bearer '+T}},body:JSON.stringify({{leagueId:leagueId,season:season,inProgress:data.inProgress!==false,drafted:!!data.drafted,picks:data.picks,source:{source_js}}})}})
+    .then(function(r){{return r.json().then(function(b){{return{{ok:r.ok,b:b}};}});}})
+    .then(function(res){{if(!res.ok){{{sync_fail}return;}}{sync_ok}}})
+    .catch(function(){{{sync_net}}});
+  }}
+  var u;try{{u=new URL(location.href);}}catch(e){{{early_open}}}
+  if(location.hostname.indexOf('espn.com')<0){{{early_host}}}
   var leagueId=(u.searchParams.get('leagueId')||'').trim();
   var season=(u.searchParams.get('seasonId')||u.searchParams.get('season')||'').trim();
-  var data=scan();
-  if(!data||!data.picks||!data.picks.length){{return toast('No picks found yet — wait for a pick, then tap sync again.');}}
-  data.picks.sort(function(a,b){{return a.overallPickNumber-b.overallPickNumber;}});
-  fetch(O+'/api/draft/espn-relay',{{method:'POST',mode:'cors',credentials:'omit',headers:{{'Content-Type':'application/json','Authorization':'Bearer '+T}},body:JSON.stringify({{leagueId:leagueId,season:season,inProgress:data.inProgress!==false,drafted:!!data.drafted,picks:data.picks,source:{source_js}}})}})
-  .then(function(r){{return r.json().then(function(b){{return{{ok:r.ok,b:b}};}});}})
-  .then(function(res){{if(!res.ok){{toast((res.b&&res.b.error)||'Sync failed');return;}}toast('Synced '+(res.b.picks?res.b.picks.length:data.picks.length)+' picks to BR Fantasy');}})
-  .catch(function(){{toast('Network error syncing to BR Fantasy');}});
+  var data=scanReact();
+  function go(hit){{
+    if(!hit||!hit.picks||!hit.picks.length){{{no_picks}return;}}
+    hit.picks.sort(function(a,b){{return a.overallPickNumber-b.overallPickNumber;}});
+    postRelay(leagueId,season,hit);
+  }}
+  if(data&&data.picks&&data.picks.length){{go(data);return;}}
+  apiScan(leagueId,season,go);
 }})();
 """.strip()
     return body

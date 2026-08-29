@@ -81,3 +81,14 @@ def test_shortcut_javascript_calls_completion_not_bookmarklet_prefix():
     assert "TOK.EN" in js
     assert "ios-shortcut" in js
     assert "/api/draft/espn-relay" in js
+    assert "getOwnPropertyNames" in js
+    assert "apiScan" in js
+    assert "scanReact" in js
+    assert "selectedPid" in js
+
+
+def test_bookmarklet_also_uses_hardened_scanner():
+    bm = build_bookmarklet("https://www.brfantasyfootball.com", "TOK.EN")
+    assert "getOwnPropertyNames" in bm
+    assert "apiScan" in bm
+    assert "No picks found in page state" in bm
