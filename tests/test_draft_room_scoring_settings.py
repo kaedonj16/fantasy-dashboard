@@ -345,10 +345,29 @@ def test_likely_next_pick_survivors_pay_current_pick_opportunity_cost():
     assert "var effectiveReturnProb = returnProb == null ? null : returnProb * (1 - demandRisk);" in source
     assert "waitPenalty: waitPenalty" in source
     # Wait target is the pick AFTER the rec pick, so waiting for #9 does not
-    # treat pick 9 itself as "can wait until then".
-    assert "var nextPick = recWaitPickNo();" in source
+    # treat pick 9 itself as "can wait until then". Manual fills for other
+    # seats skip own-next wait math so the on-the-clock pool stays selectable.
+    assert "var nextPick = fillingOtherSeat ? null : recWaitPickNo();" in source
     assert "function recWaitPickNo()" in source
     assert "function recommendationPickNo()" in source
+    assert "function isManualDraft()" in source
+    assert "if (isManualDraft()) return cur;" in source
+    assert "function recommendationCounts()" in source
+    assert "DraftBoardCore.futurePickDecisionScore(score, availProb(p, recPn))" in source
+
+
+def test_manual_draft_ranks_on_the_clock_pool_for_other_teams():
+    """Draft Manually fills every seat — recommendations must not demote the
+    on-the-clock BPA pool for YOUR later pick when selecting for others."""
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "function isManualDraft()" in source
+    assert "mode !== 'mock' && mode !== 'live'" in source
+    assert "if (isManualDraft()) return cur;" in source
+    assert "fillingOtherSeat = isManualDraft() && state && !isMyPick(state.current)" in source
+    assert "var counts = recommendationCounts();" in source
+    assert "sortBy === 'ps' ? recommendationCounts()" in source
+    # Mock/live while waiting still look ahead (survival demotion preserved).
     assert "DraftBoardCore.futurePickDecisionScore(score, availProb(p, recPn))" in source
 
 

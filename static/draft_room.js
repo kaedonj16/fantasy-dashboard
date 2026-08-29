@@ -178,14 +178,31 @@
     return null;
   }
   // The pick Rec / liveDecisionScore is advising. On the clock that's the
-  // current selection; while waiting it's your next owned pick so the board
-  // doesn't rank 1.01 talent as a pick-9 recommendation.
+  // current selection; while waiting (mock/live) it's your next owned pick so
+  // the board doesn't rank 1.01 talent as a pick-9 recommendation.
+  // Manual drafts fill every seat by hand — always rank for the pick on the
+  // clock so the full on-the-clock pool stays selectable when entering other
+  // teams' picks (future-pick survival demotion is only for mock/live waits).
+  function isManualDraft(){
+    var mode = state && state.mode;
+    return mode !== 'mock' && mode !== 'live';
+  }
   function recommendationPickNo(){
     var cur = (state && state.current) || 1;
+    if (isManualDraft()) return cur;
     if (isMyPick(cur)) return cur;
     var ups = upcomingOwnedPicks();
     if (ups && ups.length) return ups[0];
     return cur;
+  }
+  // Roster counts used when ranking the BA / Recommendation list. Manual
+  // multi-seat fills score for the team on the clock so other teams' picks
+  // aren't ranked against YOUR needs (and buried past the visible pool).
+  function recommendationCounts(){
+    if (isManualDraft() && state && !isMyPick(state.current)) {
+      return teamCounts(slotOnClock(state.current, state.teams, state.order));
+    }
+    return myPosCounts();
   }
   // Opportunity-cost / wait target: the owned pick AFTER the one we're ranking.
   // On the clock this equals nextOwnedAfterCurrent(); while waiting for #9 it
@@ -2998,7 +3015,7 @@
   // highest, which anchors the display scale.
   function refreshPsPool(){
     var pool = availablePool();
-    var counts = myPosCounts();
+    var counts = recommendationCounts();
     var maxV = 0; pool.forEach(function(p){ var v = valOf(p); if (v > maxV) maxV = v; });
     var mx = 0;
     pool.forEach(function(p){
@@ -3696,7 +3713,10 @@
     // Wait/opportunity-cost is vs the pick AFTER the one we're ranking.
     // On the clock that's nextOwnedAfterCurrent(); while waiting for pick 9
     // it is pick 16, not 9 itself (otherwise 1.01 talent is the #1 rec for #9).
-    var nextPick = recWaitPickNo();
+    // Manual fills for other teams skip own-next wait math so the full
+    // on-the-clock pool stays available (not demoted for YOUR later seat).
+    var fillingOtherSeat = isManualDraft() && state && !isMyPick(state.current);
+    var nextPick = fillingOtherSeat ? null : recWaitPickNo();
     var returnProb = nextPick ? availProb(p, nextPick) : null;
     // Do not spend this pick on a player who is likely to return unless his
     // quality/fit advantage is large enough to overcome a bounded opportunity
@@ -6210,7 +6230,10 @@
       return valOf(b) - valOf(a);
     });
     if (!pool.length){ listInto(emptyNote('No players match', 'Try another position filter or clear your search.', _DR_SEARCH_ICON)); return; }
-    var nextPick = hasOwned() ? nextOwnedAfterCurrent() : null;
+    // Survival % at YOUR next pick is for waiting on your seat (mock/live), not
+    // when manually filling someone else's pick on the clock.
+    var nextPick = (hasOwned() && !(isManualDraft() && !isMyPick(state.current)))
+      ? nextOwnedAfterCurrent() : null;
     var html = balanceAlert() + alertBanners();
     // K/DEF have no startup ADP so they sort to the very end and fall past the
     // 200-player cap. Separate them out so they always render after skill players.
@@ -6239,7 +6262,7 @@
     _promoted.forEach(function(p){
       html += playerRowHtml(p, { reason: 'Fill your ' + String(p.position || '').toUpperCase() + ' slot before the draft ends' });
     });
-    var _reasonCounts = sortBy === 'ps' ? myPosCounts() : null;
+    var _reasonCounts = sortBy === 'ps' ? recommendationCounts() : null;
     for (var i = 0; i < Math.min(mainPool.length, 200); i++){
       var p = mainPool[i];
       var _rank = recommendationRanks[String(p.id)];
