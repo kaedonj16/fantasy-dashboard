@@ -21,14 +21,21 @@ picks** into Draft Room while you draft on ESPN.
 
 ## Mobile live draft (bookmarklet / Shortcut)
 
-Extensions don't run on iOS/Android browsers. On your phone:
+Extensions don't run on iOS/Android browsers. ESPN usually **blocks mobile web
+drafts** and sends phones to the Fantasy app — bookmarklets cannot run there.
 
-1. In Draft Room tap **Mobile Sync** (shown while ESPN live is connected).
+If you somehow get the live draft board in Safari/Chrome (e.g. Request Desktop
+Website):
+
+1. In Draft Room tap **Mobile Sync** / **Try Mobile Sync**.
 2. Copy the bookmarklet.
-3. Open the ESPN draft → add/edit a bookmark whose URL is the bookmarklet
+3. On the ESPN draft page, add/edit a bookmark whose URL is the bookmarklet
    (or an iOS Shortcut that runs the provided JavaScript on `fantasy.espn.com`).
 4. After picks (or every few picks), run the bookmark/Shortcut. Draft Room
    picks them up on the next poll via the server relay store.
+
+**Phone-only draft night:** use the ESPN app + manual tracking in Draft Room,
+or draft with a laptop and the Chrome extension.
 
 ## Private league connect
 
