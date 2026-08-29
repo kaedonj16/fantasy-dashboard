@@ -30,13 +30,16 @@ draft board loads in Safari/Chrome, then:
 2. Bookmark the desktop-mode ESPN draft → edit URL to the bookmarklet.
 3. Run the bookmark after picks.
 
-### iPhone (Shortcuts — no “website” picker)
+### iPhone (Shortcuts — Safari only)
+Chrome cannot run this action (it shares a URL, not a Safari page).
+
 1. Draft Room → **Mobile Sync** → **Copy iOS Shortcut JS**.
-2. Shortcuts → new shortcut → **Show in Share Sheet** → receive **Safari web pages**.
-3. Add **Run JavaScript on Web Page** → tap **Web Page** → **Shortcut Input**.
-4. Paste **Copy iOS Shortcut JS** (not the bookmarklet — Shortcuts requires
-   `completion(…)` and must not start with `javascript:`).
-5. On the ESPN draft tab → Share → run the shortcut after picks.
+2. Shortcuts → new shortcut → **Show in Share Sheet**.
+3. Receive **only** Safari web pages (not “Apps and 18 more”).
+4. **Run JavaScript on Web Page** → **Shortcut Input** → paste Shortcut JS
+   (not the bookmarklet; must call `completion(…)`).
+5. Open ESPN draft in **Safari** → Request Desktop Website → Share → run the
+   shortcut. Do not press Play inside the Shortcuts app.
 
 The ESPN Fantasy **app** cannot run bookmarks — use manual tracking there, or
 draft with a laptop and the Chrome extension.
