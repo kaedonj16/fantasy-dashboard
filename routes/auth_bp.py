@@ -44,6 +44,18 @@ def api_identify():
     session["viewer_username"] = user.get("username") or username
     session["viewer_user_id"] = str(user.get("user_id") or "")
 
+    # If Google is already signed in, bridge this Sleeper identity onto the
+    # account so personal PRO follows the account path (safe: refuses steal).
+    if session.get("account_id") and session.get("viewer_user_id"):
+        try:
+            from dashboard_services.accounts import link_platform_identity
+            link_platform_identity(
+                int(session["account_id"]), "sleeper",
+                session["viewer_user_id"], session.get("viewer_username"),
+            )
+        except Exception:
+            logger.debug("[identify] sleeper bridge failed", exc_info=True)
+
     # Fetch this user's leagues so the UI can offer a league picker
     leagues = []
     try:

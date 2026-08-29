@@ -231,9 +231,20 @@ def google_auth_callback():
     viewer_user_id = session.get("viewer_user_id")
     if viewer_user_id:
         try:
-            link_platform_identity(
+            status = link_platform_identity(
                 account_id, "sleeper", str(viewer_user_id), session.get("viewer_username"),
             )
+            if status == "conflict":
+                # Sleeper id already belongs to another Google account — do not
+                # steal it. Clear the unverified viewer so this Google session
+                # doesn't keep browsing as that Sleeper identity.
+                logger.warning(
+                    "[google_auth] sleeper identity conflict for acct=%s uid=%s",
+                    account_id, viewer_user_id,
+                )
+                for k in ("viewer_user_id", "viewer_username", "viewer_roster_id",
+                          "viewer_display_name", "viewer_team_name"):
+                    session.pop(k, None)
         except Exception:
             logger.warning("[google_auth] sleeper bridge failed", exc_info=True)
 

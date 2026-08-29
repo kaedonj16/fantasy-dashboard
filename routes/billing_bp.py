@@ -651,6 +651,9 @@ def api_subscription_status():
         sub_info["has_premium"] = has_premium_for_viewer(
             username, stable_id, league_id, platform, request.args.get("season"),
         )
+        from dashboard_services.subscriptions import needs_google_link_for_pro, pro_require_google
+        sub_info["needs_google_link"] = needs_google_link_for_pro(username, stable_id, platform)
+        sub_info["pro_require_google"] = pro_require_google()
         # Strip internal/PII fields - the client only needs entitlement flags.
         for _k in ("stripe_customer_id", "subscriber_user_id"):
             sub_info.pop(_k, None)

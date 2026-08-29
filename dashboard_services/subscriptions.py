@@ -8,6 +8,7 @@ Premium Features:
 """
 from __future__ import annotations
 
+import os
 import time
 from datetime import datetime, timezone
 from functools import wraps
@@ -18,6 +19,56 @@ import logging
 from dashboard_services.db import get_conn
 
 logger = logging.getLogger(__name__)
+
+
+def pro_require_google() -> bool:
+    """Hard cutover: user-plan PRO requires a Google ``account_id`` session.
+
+    Soft dual-read (default): bare Sleeper viewer id/username can still unlock
+    a personal subscription so existing buyers aren't locked out mid-migration.
+    Set ``PRO_REQUIRE_GOOGLE=1`` after the link-Google notice period.
+    """
+    return os.environ.get("PRO_REQUIRE_GOOGLE", "").strip().lower() in ("1", "true", "yes")
+
+
+def _session_account_id() -> Optional[int]:
+    try:
+        from flask import session as _session, has_request_context as _hrc
+        if not _hrc():
+            return None
+        acct = _session.get("account_id")
+        return int(acct) if acct not in (None, "") else None
+    except Exception:
+        return None
+
+
+def viewer_has_legacy_user_subscription(
+    viewer_username: Optional[str],
+    viewer_user_id: Optional[str],
+    platform: str = "sleeper",
+) -> bool:
+    """True when the Sleeper viewer identity has an active personal subscription.
+
+    Used for the "Link Google to secure PRO" prompt — independent of whether
+    soft dual-read still grants access.
+    """
+    platform = platform or "sleeper"
+    if viewer_user_id and has_premium_access(viewer_user_id, None, platform):
+        return True
+    if viewer_username and has_premium_access(viewer_username, None, platform):
+        return True
+    return False
+
+
+def needs_google_link_for_pro(
+    viewer_username: Optional[str] = None,
+    viewer_user_id: Optional[str] = None,
+    platform: str = "sleeper",
+) -> bool:
+    """Username-only session holding a user-plan sub that should link Google."""
+    if _session_account_id():
+        return False
+    return viewer_has_legacy_user_subscription(viewer_username, viewer_user_id, platform)
 
 
 def premium_required(fn):
@@ -228,16 +279,21 @@ def has_premium_for_viewer(
 ) -> bool:
     """Premium gate that is safe against ``league_id`` tampering.
 
-    Grants access if the viewer has their own user subscription (valid
-    anywhere), or the league has a subscription AND the viewer is a verified
-    member of that league.
+    Grant order:
+      1. Google ``account_id`` (linked identities / ``acct:`` rows) — preferred
+      2. League plan for verified members
+      3. Legacy Sleeper user-plan via viewer id/username — soft dual-read only
+         (disabled when ``PRO_REQUIRE_GOOGLE=1``)
     """
     platform = platform or "sleeper"
     # Per-request memoization: render_page (every server-rendered page) plus some
     # handlers call this 1-2x per request, each hitting the DB. Cache the result
     # on flask.g so a page render costs at most one premium lookup.
     _cache = None
-    _key = (viewer_username, viewer_user_id, league_id, platform, str(season))
+    _require_google = pro_require_google()
+    _acct = _session_account_id()
+    _key = (viewer_username, viewer_user_id, league_id, platform, str(season),
+            _acct, _require_google)
     try:
         from flask import g, has_request_context
         if has_request_context():
@@ -251,28 +307,25 @@ def has_premium_for_viewer(
         _cache = None
 
     result = False
-    # Own subscription works everywhere.
-    # Stable provider id is canonical; the handle fallback keeps historical
-    # username-based subscription rows working during gradual normalization.
-    if viewer_user_id and has_premium_access(viewer_user_id, None, platform):
+
+    # Account-based (primary for personal plans after Google link).
+    if _acct and has_premium_access(None, None, platform, account_id=_acct):
         result = True
-    elif viewer_username and has_premium_access(viewer_username, None, platform):
-        result = True
-    # League subscription only for actual members.
-    elif league_id and has_premium_access(None, league_id, platform) \
+
+    # League subscription only for actual members (shared plan — membership is
+    # the guard; Google is not required).
+    if not result and league_id and has_premium_access(None, league_id, platform) \
             and viewer_is_league_member(viewer_user_id, league_id, platform, season):
         result = True
 
-    # Account-based (additive, cross-platform): if the viewer is signed into an
-    # account, a subscription on any of the account's linked identities grants
-    # access everywhere. Only ever grants, never removes.
-    if not result:
-        try:
-            from flask import session as _session, has_request_context as _hrc
-            _acct = _session.get("account_id") if _hrc() else None
-        except Exception:
-            _acct = None
-        if _acct and has_premium_access(None, None, platform, account_id=_acct):
+    # Legacy Sleeper username/id personal subscription.
+    # Soft dual-read: still honor so buyers aren't locked out before linking.
+    # Hard cutover (PRO_REQUIRE_GOOGLE): skip — thieves can't unlock PRO by
+    # typing a username, and real buyers restore access by linking Google.
+    if not result and not _require_google:
+        if viewer_user_id and has_premium_access(viewer_user_id, None, platform):
+            result = True
+        elif viewer_username and has_premium_access(viewer_username, None, platform):
             result = True
 
     if _cache is not None:

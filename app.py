@@ -94,6 +94,8 @@ from dashboard_services.players import get_players_map
 from dashboard_services.subscriptions import (
     has_premium_access,
     has_premium_for_viewer,
+    needs_google_link_for_pro,
+    pro_require_google,
 )
 import stripe
 
@@ -4295,6 +4297,95 @@ def _draft_imminent_banner(league_id: str, platform: str, season: int, active: s
     return _DRAFT_IMMINENT_BANNER_HTML.replace("__DR_BANNER_CFG__", cfg)
 
 
+def _google_link_pro_banner() -> str:
+    """Prompt username-only PRO holders to link Google (soft dual-read / hard cutover).
+
+    Soft mode: they still have PRO; banner is dismissible.
+    Hard mode (PRO_REQUIRE_GOOGLE): PRO is locked until they link — non-dismissible CTA.
+    """
+    from flask import session as _session
+    if not needs_google_link_for_pro(
+        _session.get("viewer_username"), _session.get("viewer_user_id"),
+        _session.get("viewer_platform") or _session.get("last_platform") or "sleeper",
+    ):
+        return ""
+    hard = pro_require_google()
+    next_url = "/"
+    try:
+        next_url = request.path or "/"
+    except Exception:
+        pass
+    from urllib.parse import quote as _urlquote
+    auth_href = f"/auth/google?intent=login&next={_urlquote(next_url, safe='')}"
+    if hard:
+        title = "Restore your PRO"
+        body = "Personal PRO now requires Google sign-in. Link your account to unlock it again — your Sleeper username alone is no longer enough."
+        dismiss = ""
+        display = "flex"
+    else:
+        title = "Secure your PRO"
+        body = "Link Google so only you can use your personal PRO. Sleeper username login is not proof of ownership."
+        dismiss = """
+    <button type="button" id="proGoogleBannerClose"
+            style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;
+                   cursor:pointer;padding:0;flex-shrink:0;"
+            aria-label="Dismiss">&times;</button>"""
+        display = "none"
+    return f"""
+<style>
+@keyframes proGoogleSlideUp {{
+  from {{ opacity:0; transform:translateY(16px); }}
+  to   {{ opacity:1; transform:translateY(0); }}
+}}
+#proGoogleBanner {{ animation: proGoogleSlideUp .3s ease forwards; }}
+@media (max-width: 768px) {{
+  #proGoogleBanner {{
+    left:12px !important; right:12px !important; width:auto !important;
+    bottom:calc(var(--dock-safe-bottom) + 14px) !important;
+  }}
+}}
+</style>
+<div id="proGoogleBanner" role="status" style="
+     display:{display};
+     position:fixed;bottom:24px;right:24px;z-index:10000;
+     background:var(--card);
+     border:1px solid var(--border);
+     border-top:3px solid var(--accent);
+     border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);
+     padding:18px 20px;width:320px;
+     flex-direction:column;gap:12px;">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+    <span style="font-size:14px;font-weight:700;color:var(--text);">{title}</span>
+    {dismiss}
+  </div>
+  <p style="margin:0;font-size:13px;color:var(--muted);line-height:1.45;">{body}</p>
+  <a href="{auth_href}" style="display:inline-flex;align-items:center;justify-content:center;gap:8px;
+     padding:10px 14px;border-radius:9px;background:var(--accent);color:var(--on-accent);
+     font-weight:700;font-size:13px;text-decoration:none;">
+    <img src="/static/google-logo.svg" alt="" width="16" height="16" aria-hidden="true">
+    Sign in with Google
+  </a>
+</div>
+<script>
+(function(){{
+  var el = document.getElementById('proGoogleBanner');
+  if (!el) return;
+  var hard = {str(hard).lower()};
+  var key = 'pro-google-link-dismissed';
+  if (!hard) {{
+    try {{ if (localStorage.getItem(key) === '1') return; }} catch (e) {{}}
+    el.style.display = 'flex';
+    var btn = document.getElementById('proGoogleBannerClose');
+    if (btn) btn.addEventListener('click', function() {{
+      el.style.display = 'none';
+      try {{ localStorage.setItem(key, '1'); }} catch (e) {{}}
+    }});
+  }}
+}})();
+</script>
+"""
+
+
 def _discord_banner() -> str:
     """Dismissible weekly Discord invite banner shown every Sunday."""
     import datetime as _dt
@@ -4577,6 +4668,7 @@ def render_page(
     json_ld = _site_json_ld()
 
     banner_html = _discord_banner()
+    banner_html += _google_link_pro_banner()
     if _session_signed_in():
         banner_html += _recap_ready_banner(league_id or "", platform or "", season or 0)
         banner_html += _draft_imminent_banner(

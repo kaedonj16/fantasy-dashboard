@@ -13,7 +13,7 @@ this PR** shipped with accompanying regression tests in
 |---|---------|--------|
 | 1 | **Open redirect** via Google/Yahoo OAuth `next` and Stripe `/pricing?return_to=` | **Fixed** — `utils/safe_url.py` + call sites |
 | 2 | **Public `/compare` noindex** when session remembers a league | **Fixed** — pass `league_id=None`, force `noindex=False` |
-| 3 | **Unauthenticated Sleeper identity = PRO entitlement** (`/api/identify`) | Open — larger redesign (tie PRO to Google/`account_id`) |
+| 3 | **Unauthenticated Sleeper identity = PRO entitlement** (`/api/identify`) | **Mitigated** — soft dual-read + Google-link prompt; hard cutover via `PRO_REQUIRE_GOOGLE=1` |
 | 4 | Stripe success page embedded raw `return_to` into JS redirect | **Fixed** |
 
 ---
@@ -80,9 +80,17 @@ this PR** shipped with accompanying regression tests in
 
 ---
 
+## Personal PRO / Google backfill
+
+1. **Soft (default, `PRO_REQUIRE_GOOGLE` unset/0):** bare Sleeper viewer id still unlocks a personal subscription so buyers aren't locked out. Username-only sessions that hold a user-plan sub see a dismissible **Secure your PRO** banner → `/auth/google`.
+2. **Natural link:** Google sign-in while a Sleeper session is present bridges via `link_platform_identity` (refuses steal if that Sleeper id already belongs to another account). `/api/identify` also bridges when Google is already signed in.
+3. **Hard cutover:** set `PRO_REQUIRE_GOOGLE=1` in Render. User-plan PRO then requires `session.account_id` (linked identity / `acct:` rows). League plans still work via membership alone.
+
+---
+
 ## Recommended next waves
 
-1. **Entitlement redesign** — stop granting PRO from unverified Sleeper username login.
+1. Flip `PRO_REQUIRE_GOOGLE=1` after the notice period (monitor `needs_google_link` traffic).
 2. **Asset split** — extend `lite_js` to all logged-out SEO pages; CSS packs per surface.
 3. **Default OG card** — ship a branded 1200×630 image + `summary_large_image`.
 4. **AI HTML sanitization** — DOMPurify or server allowlist before `innerHTML`.
