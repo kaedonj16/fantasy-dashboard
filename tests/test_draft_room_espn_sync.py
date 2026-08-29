@@ -12,13 +12,33 @@ def test_espn_sync_indicator_and_fallback_markup():
     body = build_draft_room_body("123", 2026, "espn", viewer_user_id="{AAA}", viewer_roster_id="3")
     assert 'id="drEspnSync"' in body
     assert 'id="drEspnFallback"' in body
+    assert 'id="drEspnTools"' in body
     assert "ESPN live sync unavailable" in ROOM_JS
     assert "Switch to Manual Tracking" in ROOM_JS
+    assert "BR Fantasy extension" in ROOM_JS
     assert "ESPN Draft · LIVE" in ROOM_JS
     assert "ESPN Draft · Sync Unavailable" in ROOM_JS
     assert "ESPN Draft · Not Started" in ROOM_JS
     assert ".dr-pill-espn" in body
     assert '"viewerRosterId": "3"' in body
+
+
+def test_extension_relay_wired_and_skips_manual_fallback():
+    assert "function applyEspnExtensionRelay(detail)" in ROOM_JS
+    assert "/api/draft/espn-relay" in ROOM_JS
+    assert "brfantasy:espn-draft-relay" in ROOM_JS
+    assert "if (_espnRelayActive) return false;" in ROOM_JS
+    assert "_espnRelayActive = true;" in ROOM_JS
+    assert "function openEspnMobileSync()" in ROOM_JS
+    assert "drEspnMobileSync" in ROOM_JS
+    assert "/api/draft/espn-relay/token" in ROOM_JS
+    assert "Mobile ESPN sync" in ROOM_JS
+    assert "Does not work in the ESPN app." in ROOM_JS
+    assert "Copy bookmarklet" in ROOM_JS
+    assert "Copy iOS Shortcut JS" in ROOM_JS
+    assert "Android (Chrome)" in ROOM_JS
+    assert "iPhone (Safari)" in ROOM_JS
+    assert "dr-msync-title" in PAGE
 
 
 def test_live_detect_requests_espn_sync_flag():

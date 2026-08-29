@@ -274,6 +274,7 @@ _DRAFT_ROOM_HTML = r"""
   <div class="dr-main" id="drMain" style="display:none;">
     <div class="dr-start-banner" id="drStartBanner" style="display:none;"></div>
     <div class="dr-start-banner dr-espn-fallback" id="drEspnFallback" style="display:none;" hidden></div>
+    <div class="dr-start-banner dr-espn-tools" id="drEspnTools" style="display:none;" hidden></div>
     <div class="dr-statusbar">
       <div class="dr-status-info">
         <div class="dr-onclock" id="drOnClockWrap">
@@ -694,6 +695,10 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pill-espn.is-muted { background: rgba(148,163,184,.16); color: var(--text-subtle); animation: none; }
   .dr-espn-fallback { background: linear-gradient(90deg, color-mix(in srgb, var(--warning) 16%, transparent), color-mix(in srgb, var(--warning) 5%, transparent)); border-color: var(--warning); }
   .dr-espn-fallback .dr-banner-join { background: var(--warning); color: #111; cursor: pointer; border: 0; font: inherit; }
+  .dr-espn-tools { background: linear-gradient(90deg, color-mix(in srgb, var(--accent,#38bdf8) 14%, transparent), color-mix(in srgb, var(--accent,#38bdf8) 4%, transparent)); border-color: color-mix(in srgb, var(--accent,#38bdf8) 45%, transparent); flex-wrap: wrap; }
+  .dr-espn-tools .dr-banner-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+  .dr-espn-tools .dr-banner-join { border: 0; cursor: pointer; font: inherit; }
+  .dr-espn-tools .dr-banner-join.is-ghost { background: transparent; color: var(--text); border: 1px solid color-mix(in srgb, var(--accent,#38bdf8) 40%, transparent); }
   .dr-pick-timer { font-size: 14px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums;
     min-width: 40px; padding: 2px 8px; border-radius: 7px; background: rgba(127,127,127,.1); text-align: center; }
   .dr-pick-timer.urgent { color: #fff; background: var(--loss); animation: drPulse 1s ease-in-out infinite; }
@@ -1249,8 +1254,20 @@ _DRAFT_ROOM_HTML = r"""
   /* Custom modal */
   .dr-modal-box { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:24px 28px;
     max-width:380px; width:100%; box-shadow:0 24px 60px rgba(0,0,0,.45); }
+  .dr-modal-box.is-wide { max-width:560px; max-height:min(86vh, 720px); overflow:auto; padding:22px 22px 18px; }
   .dr-modal-msg { font-size:15px; color:var(--text); line-height:1.55; margin-bottom:20px; }
-  .dr-modal-btns { display:flex; gap:10px; justify-content:flex-end; }
+  .dr-modal-box.is-wide .dr-modal-msg { margin-bottom:14px; }
+  .dr-modal-btns { display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; }
+  .dr-msync-title { font-size:18px; font-weight:800; letter-spacing:-0.02em; margin:0 0 6px; color:var(--text); }
+  .dr-msync-lead { font-size:13px; color:var(--text-muted); margin:0 0 14px; line-height:1.5; }
+  .dr-msync-warn { font-size:12px; line-height:1.45; padding:10px 12px; border-radius:10px; margin:0 0 14px;
+    background:color-mix(in srgb, var(--warning) 14%, transparent); border:1px solid color-mix(in srgb, var(--warning) 35%, transparent); color:var(--text); }
+  .dr-msync-sec { margin:0 0 14px; }
+  .dr-msync-sec h4 { font-size:13px; font-weight:800; margin:0 0 6px; color:var(--text); }
+  .dr-msync-sec ol { margin:0; padding-left:1.2em; font-size:13px; color:var(--text); line-height:1.55; }
+  .dr-msync-sec li { margin:0 0 4px; }
+  .dr-msync-sec p { margin:0; font-size:12px; color:var(--text-muted); line-height:1.45; }
+  .dr-msync-status { font-size:12px; color:var(--win); min-height:1.2em; margin:4px 0 0; }
   /* Complete-draft sidebar footer */
   #drCompleteBar { padding:10px; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:7px; flex-shrink:0; }
   .dr-btn-deepdive { background:color-mix(in srgb, var(--accent) 12%, transparent); border-color:color-mix(in srgb, var(--accent) 35%, var(--border)); color:var(--accent); font-weight:700; display:flex; align-items:center; justify-content:center; }

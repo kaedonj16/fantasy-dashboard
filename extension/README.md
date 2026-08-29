@@ -1,82 +1,83 @@
 # BR Fantasy — ESPN League Connector (browser extension)
 
-One-click connect for **private ESPN** fantasy leagues. It removes the last
-manual step of the streamlined paste flow: instead of copying `SWID` and
-`espn_s2` out of dev tools, the extension reads them for you and drops them
-into the BR Fantasy connect box.
+Connect private ESPN fantasy leagues to BR Fantasy, and **auto-relay live draft
+picks** into Draft Room while you draft on ESPN.
 
-## Why an extension (and not a bookmarklet)
+## Why an extension
 
-ESPN's `espn_s2` cookie is `HttpOnly`, so page JavaScript — and therefore any
-bookmarklet — **cannot** read it. A browser extension with the `cookies`
-permission is the only client-side way to read it. That's the whole reason this
-exists.
+1. **Cookies:** ESPN's `espn_s2` cookie is `HttpOnly` — only an extension can
+   read it for one-click private-league connect.
+2. **Live drafts:** ESPN's `mDraftDetail` REST view often does **not** update
+   mid-draft. The live draft room UI does. This extension reads that in-page
+   state and relays picks to BR Fantasy. Picks are never submitted to ESPN.
 
-## How it works
+## Desktop live draft (automatic)
 
-1. **`background.js`** (service worker) is the only place with the `cookies`
-   permission. On request it reads `SWID` + `espn_s2` from `*.espn.com`.
-2. **`content.js`** runs on `brfantasyfootball.com`. When the private-league
-   connect box (`#espnCookieBlob` / `#linkEspnBlob`) is on the page, it adds an
-   **Autofill from ESPN** button above it. Clicking asks the service worker for
-   the cookies, writes `SWID=…; espn_s2=…` into the box, and fires the same
-   `input` event a paste would — so the site's own parser fills and validates
-   the two values. The user clicks **Connect**.
-3. **`popup.js`** is a fallback for when you're not on a BR Fantasy tab: it
-   reports whether an ESPN session is detected and copies the two values to your
-   clipboard to paste in.
+1. Install the extension (Load unpacked for now, or the Chrome Web Store build).
+2. Open **Draft Room** for your ESPN league → **Connect Live Draft**.
+3. Open the ESPN draft in another tab (`fantasy.espn.com/football/draft?...`).
+4. A small **BR Fantasy** chip appears on the ESPN page. Picks flow into Draft
+   Room within ~1–2 seconds — keep both tabs open.
 
-The extension **sends the cookies nowhere itself**. They only leave the browser
-in the normal Connect request the user triggers on BR Fantasy, over HTTPS, where
-they're validated and stored encrypted — exactly like a manual paste.
+## Mobile live draft (bookmarklet / Shortcut)
 
-> Dependency: the content script targets the paste-box element IDs shipped by
-> the app (`espnCookieBlob`, `linkEspnBlob`). Keep those IDs stable, or update
-> `BLOB_IDS` in `content.js`.
+Extensions don't run on iOS/Android browsers. On your phone:
+
+1. In Draft Room tap **Mobile Sync** (shown while ESPN live is connected).
+2. Copy the bookmarklet.
+3. Open the ESPN draft → add/edit a bookmark whose URL is the bookmarklet
+   (or an iOS Shortcut that runs the provided JavaScript on `fantasy.espn.com`).
+4. After picks (or every few picks), run the bookmark/Shortcut. Draft Room
+   picks them up on the next poll via the server relay store.
+
+## Private league connect
+
+1. **`background.js`** reads `SWID` + `espn_s2`.
+2. **`content.js`** on BR Fantasy adds **Autofill from ESPN**.
+3. Values only leave the browser on the site's normal Connect request.
 
 ## Permissions
 
 | Permission | Why |
 |---|---|
-| `cookies` | Read `SWID` + `espn_s2` from ESPN. |
-| `host_permissions: *.espn.com` | Scope the cookie reads to ESPN only. |
-| `host_permissions: brfantasyfootball.com` | Run the autofill content script on the connect page. |
-| `localhost` / `127.0.0.1` | Local development only — drop before publishing if undesired. |
+| `cookies` | Read `SWID` + `espn_s2` (connect flow only). |
+| `*.espn.com` | Cookie reads + draft-room observers. |
+| `brfantasyfootball.com` | Autofill + receive live pick relay. |
 
-No `tabs`, no broad host access, no remote code.
+No broad `tabs` permission. No pick submission to ESPN.
 
 ## Install for development (Chrome / Edge)
 
-1. Regenerate icons if needed: `python3 extension/icons/make_icons.py`
-2. Visit `chrome://extensions`, enable **Developer mode**.
-3. **Load unpacked** → select this `extension/` folder.
-4. Sign into `espn.com`, open a private league on BR Fantasy → **Private League**,
-   and click **Autofill from ESPN**.
+1. `chrome://extensions` → Developer mode → **Load unpacked** → `extension/`
+2. Sign into espn.com; open Draft Room + ESPN draft for a live test.
+
+## Production zip (Chrome Web Store / AMO)
+
+```bash
+python3 extension/pack_extension.py
+# → artifacts/br-fantasy-espn-connector-vX.Y.Z.zip
+```
+
+That build strips `localhost` permissions. Upload the zip in the Chrome Web
+Store developer dashboard (one-time $5) with screenshots + a privacy policy
+URL. Justify `cookies` as local-only until the user clicks Connect.
 
 ## Firefox
 
-The manifest is MV3 with `browser_specific_settings.gecko` and works on Firefox
-121+ (`about:debugging` → **This Firefox** → **Load Temporary Add-on** → pick
-`manifest.json`). If you target older Firefox, swap the `background.service_worker`
-key for `background.scripts: ["background.js"]`.
-
-## Publishing (later)
-
-- **Chrome Web Store**: zip the folder contents, submit via the Developer
-  Dashboard (one-time \$5 fee). Provide the store icon (`icons/icon128.png`),
-  screenshots, and a privacy justification for the `cookies` permission — the
-  "sends nowhere itself" note above is the honest summary.
-- **Firefox AMO**: submit the same zip at addons.mozilla.org.
-- Bump `version` in `manifest.json` for each release.
+MV3 + `browser_specific_settings.gecko` — load via `about:debugging` or submit
+the same production zip to addons.mozilla.org.
 
 ## Files
 
 ```
 extension/
-  manifest.json       MV3 manifest
-  background.js       reads ESPN cookies (cookies permission)
-  content.js          injects "Autofill from ESPN" on BR Fantasy
-  content.css         button + status styling
-  popup.html/.js/.css toolbar popup (detect + copy fallback)
-  icons/              BR Fantasy logo icons + generator (from static/icon-512x512.png)
+  manifest.json
+  background.js          cookies + pick relay
+  content.js             BR Fantasy autofill + receive relay
+  content.css
+  espn_draft_main.js     ESPN draft room MAIN-world observer
+  espn_draft.js          ESPN isolated bridge + status chip
+  popup.html/.js/.css
+  pack_extension.py      production zip builder
+  icons/
 ```

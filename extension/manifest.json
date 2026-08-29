@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "BR Fantasy — ESPN League Connector",
-  "version": "1.0.0",
-  "description": "One-click connect your private ESPN fantasy league to BR Fantasy. Your ESPN session cookies are read locally and only handed to BR Fantasy when you connect.",
+  "version": "1.2.0",
+  "description": "Connect private ESPN leagues to BR Fantasy and auto-relay live draft picks into Draft Room.",
   "permissions": ["cookies"],
   "host_permissions": [
     "https://*.espn.com/*",
@@ -38,6 +38,23 @@
       ],
       "js": ["content.js"],
       "css": ["content.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://fantasy.espn.com/football/draft*",
+        "https://fantasy.espn.com/*/football/draft*"
+      ],
+      "js": ["espn_draft_main.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://fantasy.espn.com/football/draft*",
+        "https://fantasy.espn.com/*/football/draft*"
+      ],
+      "js": ["espn_draft.js"],
       "run_at": "document_idle"
     }
   ],
