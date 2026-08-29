@@ -255,7 +255,8 @@
       rec_order: cheatRecommendationOrder(),
       teams: state && state.teams ? state.teams : null,
       slot: state && state.slot ? state.slot : null,
-      myCounts: counts
+      myCounts: counts,
+      scoring: scoringCfg()
     };
   }
   var _cheatCtxSig = null;
@@ -265,8 +266,10 @@
     if (!overlay || overlay.style.display !== 'flex' || !frame || !frame.contentWindow) return;
     if (!state || (state.mode !== 'mock' && state.mode !== 'live')) return;
     var payload = cheatContextPayload();
+    var sc = payload.scoring || {};
     var sig = payload.drafted.join(',') + '#' + payload.rec_order.join(',')
-      + '#' + String(payload.slot || '') + '#' + String(payload.teams || '');
+      + '#' + String(payload.slot || '') + '#' + String(payload.teams || '')
+      + '#' + String(sc.ppr) + ':' + String(sc.tep) + ':' + String(sc.passTd);
     if (sig === _cheatCtxSig) return;
     _cheatCtxSig = sig;
     try { frame.contentWindow.postMessage(payload, window.location.origin); } catch (e) {}
@@ -289,6 +292,14 @@
     // room. The first paint is a snapshot in the URL; while the overlay stays
     // open, render() pushes pick updates via postMessage so cross-off and REC #
     // stay in sync. Live Sleeper polling remains an explicit choice on the sheet.
+    function cheatScoringQuery(){
+      var sc = scoringCfg();
+      return [
+        'ppr=' + encodeURIComponent(String(sc.ppr)),
+        'tep=' + encodeURIComponent(String(sc.tep)),
+        'passTd=' + encodeURIComponent(String(sc.passTd))
+      ].join('&');
+    }
     function cheatCtxQuery(){
       // A restored draft can still exist in memory while Edit Setup is open. Do
       // not leak that stale board into the setup-page Cheat Sheet link; context
@@ -304,6 +315,9 @@
         q.push('sf=' + (state.sf ? '1' : '0'));
         q.push('mode=' + (state.type === 'redraft' ? 'redraft' : 'dynasty'));
       }
+      // Always carry scoring so the sheet matches this room's Format settings
+      // (PPR / TE premium / pass TD), including live drafts that overrode league defaults.
+      q.push(cheatScoringQuery());
       if (ids.length) q.push('drafted=' + encodeURIComponent(ids.join(',')));
       var recOrder = cheatRecommendationOrder();
       if (recOrder.length) q.push('rec_order=' + encodeURIComponent(recOrder.join(',')));
@@ -337,6 +351,7 @@
           && main && main.style.display !== 'none'){
         var ids = cheatDraftedIds();
         var q = ['sf=' + (state.sf ? '1' : '0'), 'mode=' + (state.type === 'redraft' ? 'redraft' : 'dynasty')];
+        q.push(cheatScoringQuery());
         if (ids.length) q.push('drafted=' + encodeURIComponent(ids.join(',')));
         var recOrder = cheatRecommendationOrder();
         if (recOrder.length) q.push('rec_order=' + encodeURIComponent(recOrder.join(',')));

@@ -55,6 +55,56 @@
     var HIST_STRONG_PCT = 25;
     var HIST_TIER_SHORT = { top_5: 'top-5', top_12: 'top-12', top_24: 'top-24' };
 
+    // Same {ppr, tep, passTd} contract as Draft Room setup (readScoring / scoringCfg).
+    function normalizeScoring(s) {
+        s = s || {};
+        var ppr = s.ppr != null ? Number(s.ppr) : 1;
+        if (!isFinite(ppr)) ppr = 1;
+        // Snap to the three setup options so <select> values always match.
+        ppr = ppr >= 0.75 ? 1 : (ppr >= 0.25 ? 0.5 : 0);
+        var tep = s.tep != null ? Number(s.tep) : 0;
+        if (!isFinite(tep)) tep = 0;
+        tep = tep >= 0.75 ? 1 : (tep >= 0.25 ? 0.5 : 0);
+        var passTd = Number(s.passTd != null ? s.passTd : (s.pass_td != null ? s.pass_td : 4));
+        return { ppr: ppr, tep: tep, passTd: passTd >= 6 ? 6 : 4 };
+    }
+    function scoringCfg() {
+        return normalizeScoring(state && state.scoring);
+    }
+    function scoringLabel(sc) {
+        sc = sc || scoringCfg();
+        var ppr = sc.ppr === 1 ? 'Full PPR' : (sc.ppr === 0.5 ? 'Half PPR' : 'Standard');
+        var bits = [ppr];
+        if (sc.tep > 0) bits.push('TEP +' + sc.tep);
+        if (sc.passTd >= 6) bits.push('6-pt Pass TD');
+        return bits.join(' · ');
+    }
+    function readScoringFromUi() {
+        var pprEl = $('csPpr');
+        var tepEl = $('csTep');
+        var passTdEl = $('csPassTd');
+        return normalizeScoring({
+            ppr: pprEl ? parseFloat(pprEl.value) : scoringCfg().ppr,
+            tep: tepEl ? parseFloat(tepEl.value) : scoringCfg().tep,
+            passTd: passTdEl ? parseFloat(passTdEl.value) : scoringCfg().passTd
+        });
+    }
+    function syncScoringUi() {
+        var sc = scoringCfg();
+        [['csPpr', String(sc.ppr)], ['csTep', String(sc.tep)], ['csPassTd', String(sc.passTd)]].forEach(function (pair) {
+            var el = $(pair[0]);
+            if (!el || el.value === pair[1]) return;
+            el.value = pair[1];
+            // CSD listens for change to refresh the visible trigger label.
+            try { el.dispatchEvent(new Event('change', {bubbles: true})); } catch (e) {}
+        });
+    }
+    function scoringProjPpg(p) {
+        if (!p) return null;
+        if (C && C.scoringProjPpg) return C.scoringProjPpg(p, scoringCfg());
+        return (p.proj_ppg != null && isFinite(Number(p.proj_ppg))) ? Number(p.proj_ppg) : null;
+    }
+
     function histExampleHit(finish, fallback) {
         if (fallback && fallback.hit_label) {
             return { tier: fallback.hit_tier || '', label: fallback.hit_label };
@@ -85,6 +135,7 @@
     var state = {
         mode: cfg.mode === 'dynasty' ? 'dynasty' : 'redraft',
         sf: !!cfg.isSuperflex,
+        scoring: normalizeScoring(cfg.scoring),
         filter: false,
         needsFilter: false,
         hideDrafted: false,
@@ -794,7 +845,7 @@
         var repl = C.computeReplacement(pool, valFn, starters, teams);
         // Roster-need shading: targets from the league roster, "my" counts from live
         // draft picks that are mine. Only meaningful once a live draft is connected.
-        var targets = C.posTargets(C.rosterCounts(cfg.rosterPositions, sf), 0);
+        var targets = C.posTargets(C.rosterCounts(cfg.rosterPositions, sf), scoringCfg().tep);
         var needByPos = {};
         ['QB', 'RB', 'WR', 'TE'].forEach(function (pos) {
             var have = (myCounts && myCounts[pos]) || 0;
@@ -841,11 +892,7 @@
                 // Keep vor for compatibility with the rest of the file.
                 vor: vorRaw,
 
-                projectedPpg:
-                    p.proj_ppg != null &&
-                    isFinite(Number(p.proj_ppg))
-                        ? Number(p.proj_ppg)
-                        : null,
+                projectedPpg: scoringProjPpg(p),
 
                 marketVsAdp:
                     mode === 'redraft' &&
@@ -1394,13 +1441,18 @@
             ? '<span class="cs-lg"><b>Sorted by ' + (SORT_LABEL[state.sortKey] || state.sortKey) + '</b> '
             + (state.sortDir === 1 ? 'low → high' : 'high → low') + ' · click Rk or VOR to restore the board</span>'
             : '';
+        var fmtNote = '<span class="cs-lg" id="csFmtNote">'
+            + (dyn ? 'Dynasty ' : '')
+            + (state.sf ? 'Superflex' : '1QB')
+            + ' &middot; ' + scoringLabel()
+            + ' &middot; ' + teams + '-team</span>';
         $('csLegend').innerHTML = recommendationOrder
             ? '<span class="cs-lg"><b>VOR</b> controls the cheat-sheet order</span>'
             + '<span class="cs-lg"><b>REC #</b> current Draft Room rank, shown for context</span>'
             + sortNote
             + projNote
             + draftedNote
-            + '<span class="cs-lg" id="csFmtNote">' + (dyn ? 'Dynasty ' : '') + (state.sf ? 'Superflex' : '1QB') + ' &middot; ' + teams + '-team</span>'
+            + fmtNote
             : dyn
                 ? '<span class="cs-lg"><b>VOR</b> dynasty value over replacement, the ranking</span>'
                 + '<span class="cs-lg"><b>Age</b> drives the window</span>'
@@ -1408,7 +1460,7 @@
                 + sortNote
                 + projNote
                 + draftedNote
-                + '<span class="cs-lg" id="csFmtNote">Dynasty ' + (state.sf ? 'Superflex' : '1QB') + ' &middot; ' + teams + '-team</span>'
+                + fmtNote
                 : '<span class="cs-lg"><b>VOR</b> value over replacement, the ranking</span>'
                 + '<span class="cs-lg"><span class="cs-val g">+7</span> above ADP, target it</span>'
                 + '<span class="cs-lg"><span class="cs-val b">-4</span> going early, let it fall</span>'
@@ -1417,7 +1469,7 @@
                 + sortNote
                 + projNote
                 + draftedNote
-                + '<span class="cs-lg" id="csFmtNote">' + (state.sf ? 'Superflex' : '1QB') + ' &middot; ' + teams + '-team</span>';
+                + fmtNote;
 
         renderBoard(dyn);
         renderPos(dyn);
@@ -1739,6 +1791,12 @@
         loadError = '';
         var params = ['view=board'];
         params.push('league_type=' + (state.sf ? 'sf' : '1qb'));
+        // Projection context matches Draft Room so half-PPR / TE premium / 6-pt
+        // pass TD select the same Sleeper variant (and cache key) the room uses.
+        var sc = scoringCfg();
+        params.push('proj_rec=' + encodeURIComponent(String(sc.ppr)));
+        params.push('proj_te_bonus=' + encodeURIComponent(String(sc.tep)));
+        params.push('proj_pass_td=' + encodeURIComponent(String(sc.passTd)));
         // Always send league context so Yahoo viewers get the same rebuilt
         // consensus column Player Rankings shows. Do not pass adp_source: the
         // sheet reads p.adp_by_source so every dropdown choice matches the
@@ -1962,6 +2020,17 @@
         if (qSlot >= 1 && qSlot <= teams) {
             state.pickSlot = qSlot;
             changed = true;
+        }
+        if (payload.scoring && typeof payload.scoring === 'object') {
+            var nextSc = normalizeScoring(payload.scoring);
+            var curSc = scoringCfg();
+            if (nextSc.ppr !== curSc.ppr || nextSc.tep !== curSc.tep || nextSc.passTd !== curSc.passTd) {
+                state.scoring = nextSc;
+                syncScoringUi();
+                // Scoring changes the projection cache key — refetch the pool.
+                loadPlayers();
+                return;
+            }
         }
         if (changed) {
             compute();
@@ -3305,6 +3374,17 @@
             if (qMode === 'redraft' || qMode === 'dynasty') state.mode = qMode;
             var qSf = qp.get('sf');
             if (qSf === '1' || qSf === '0') state.sf = qSf === '1';
+            // Scoring from Draft Room URL snapshot (same keys as setup: ppr/tep/passTd).
+            var qPpr = qp.get('ppr');
+            var qTep = qp.get('tep');
+            var qPassTd = qp.get('passTd') || qp.get('pass_td');
+            if (qPpr != null || qTep != null || qPassTd != null) {
+                state.scoring = normalizeScoring({
+                    ppr: qPpr != null ? qPpr : scoringCfg().ppr,
+                    tep: qTep != null ? qTep : scoringCfg().tep,
+                    passTd: qPassTd != null ? qPassTd : scoringCfg().passTd
+                });
+            }
             var qDrafted = qp.get('drafted');
             if (qDrafted) {
                 var draftedList = qDrafted.split(',').map(function (s) {
@@ -3329,6 +3409,7 @@
             if (qSlot >= 1 && qSlot <= teams) state.pickSlot = qSlot;
         } catch (e) { /* no URL state */
         }
+        syncScoringUi();
         if (!state.pickSlot) {
             try {
                 var storedSlot = parseInt(localStorage.getItem(slotStoreKey()), 10);
@@ -3357,6 +3438,19 @@
             recommendationOrder = null;
             state.sf = b.getAttribute('data-qb') === 'SF';
             resetBoardSort();
+        });
+
+        // Scoring selects: same three Draft Room Format controls. Changing them
+        // refetches the projection-aware player pool and rebuilds TE targets.
+        function onScoringChange() {
+            recommendationOrder = null;
+            state.scoring = readScoringFromUi();
+            resetBoardSort();
+            loadPlayers();
+        }
+        ['csPpr', 'csTep', 'csPassTd'].forEach(function (id) {
+            var el = $(id);
+            if (el) el.addEventListener('change', onScoringChange);
         });
 
         $('csValBtn').addEventListener('click', function () {

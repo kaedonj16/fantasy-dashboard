@@ -177,6 +177,7 @@ def _cheat_sheet_kwargs(platform, season, league_id):
     num_teams = None
     is_sf = False
     roster_positions = None
+    scoring = None
     mode = "redraft"
     if league_id:
         try:
@@ -189,6 +190,13 @@ def _cheat_sheet_kwargs(platform, season, league_id):
             is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp)
             league_id = ctx.get("league_id") or league_id
             season = int(ctx.get("season") or season or datetime.now().year)
+            # Same scoring seed as Draft Room setup (ppr / TE premium / pass TD).
+            _sc = ctx.get("scoring_settings") or {}
+            scoring = {
+                "ppr": float(_sc.get("rec", 1) if _sc.get("rec") is not None else 1),
+                "tep": float(_sc.get("bonus_rec_te") or 0),
+                "passTd": 6 if float(_sc.get("pass_td") or 4) >= 5.5 else 4,
+            }
             # Dynasty leagues default to the dynasty board; redraft/keeper to the
             # redraft board. The user can still toggle either way. Only Sleeper
             # publishes a league type; ESPN/Yahoo fall through to redraft.
@@ -206,7 +214,7 @@ def _cheat_sheet_kwargs(platform, season, league_id):
         mode = _qmode
     return league_id, season, {
         "num_teams": num_teams, "is_superflex": is_sf,
-        "roster_positions": roster_positions, "mode": mode,
+        "roster_positions": roster_positions, "scoring": scoring, "mode": mode,
         "viewer_user_id": session.get("viewer_user_id"),
         "has_premium": _viewer_has_premium(league_id, platform, season),
     }

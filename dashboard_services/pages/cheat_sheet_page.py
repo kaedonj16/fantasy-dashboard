@@ -39,6 +39,7 @@ def build_cheat_sheet_body(
     num_teams: Optional[int] = None,
     is_superflex: bool = False,
     roster_positions: Optional[list] = None,
+    scoring: Optional[dict] = None,
     mode: str = "redraft",
     viewer_user_id: Optional[str] = None,
     has_premium: bool = False,
@@ -51,6 +52,8 @@ def build_cheat_sheet_body(
         "numTeams": int(num_teams) if num_teams else None,
         "isSuperflex": bool(is_superflex),
         "rosterPositions": list(roster_positions) if roster_positions else None,
+        # Same {ppr, tep, passTd} contract as Draft Room setup.
+        "scoring": scoring or None,
         "mode": "dynasty" if mode == "dynasty" else "redraft",
         "viewerUserId": str(viewer_user_id) if viewer_user_id else "",
         # Pro gate for live Sleeper sync and custom board edits
@@ -71,9 +74,16 @@ def build_cheat_sheet_body(
     )
     # Kick the player-pool fetch before the deferred board scripts download so
     # the redraft sheet's first paint overlaps JS parse instead of waiting on it.
+    # Projection query params match Draft Room / DraftBoardCore scoring so the
+    # prefetched pool is already scoring-aware (half PPR, TE premium, 6-pt TD).
     prefetch = (
         "<script>(function(){var c=window.__cheatCfg||{};"
-        "var p=['view=board','league_type='+(c.isSuperflex?'sf':'1qb')];"
+        "var s=c.scoring||{};"
+        "var ppr=s.ppr!=null?s.ppr:1,tep=s.tep!=null?s.tep:0,passTd=s.passTd>=6?6:4;"
+        "var p=['view=board','league_type='+(c.isSuperflex?'sf':'1qb'),"
+        "'proj_rec='+encodeURIComponent(String(ppr)),"
+        "'proj_te_bonus='+encodeURIComponent(String(tep)),"
+        "'proj_pass_td='+encodeURIComponent(String(passTd))];"
         "if(c.leagueId)p.push('league_id='+encodeURIComponent(c.leagueId));"
         "if(c.platform)p.push('platform='+encodeURIComponent(c.platform));"
         "var url='/api/league-players?'+p.join('&');"
@@ -165,7 +175,10 @@ _CHEAT_HTML = r"""
      over the action buttons and right-align. On mobile they drop full-width. */
   .cs-controls { display: flex; flex: 0 0 auto; flex-direction: column; gap: 8px; align-items: flex-end; }
   .cs-ctrl-row { display: flex; align-items: center; gap: 9px; flex-wrap: nowrap; justify-content: flex-end; }
+  .cs-scoring-row { flex-wrap: wrap; }
   .cs-cgroup { display: inline-flex; align-items: center; gap: 7px; }
+  .cs-cgroup.cs-score { gap: 5px; }
+  .cs-cgroup.cs-score .cs-src, .cs-cgroup.cs-score .csd-wrap { min-width: 0; }
   .cs-clabel { font-family: var(--cs-mono); font-size: 9.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--cs-ink-faint); }
   .cs-seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--cs-surface-2); border: 1px solid var(--cs-line); border-radius: 10px; }
   .cs-seg button { font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; border: 0; background: transparent; color: var(--cs-ink-soft); padding: 5px 11px; border-radius: 7px; }
@@ -640,11 +653,14 @@ _CHEAT_HTML = r"""
     .cs-ctrl-row:first-child .cs-cgroup { display: flex; }
     .cs-ctrl-row:first-child .cs-seg { flex: 1; }
     .cs-ctrl-row:first-child .cs-seg button { flex: 1; }
+    .cs-scoring-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: 100%; }
+    .cs-scoring-row .cs-cgroup { display: flex; flex-direction: column; align-items: stretch; gap: 4px; min-width: 0; }
+    .cs-scoring-row .cs-src, .cs-scoring-row .csd-wrap { width: 100%; min-width: 0; }
     /* Actions wrap inside the viewport. The ADP selector gets a full row while
        visible actions form balanced, thumb-friendly cells underneath. */
-    .cs-ctrl-row:last-child { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: 100%; }
-    .cs-ctrl-row:last-child .cs-src, .cs-ctrl-row:last-child .csd-wrap { grid-column: 1 / -1; width: 100%; min-width: 0; }
-    .cs-ctrl-row:last-child .cs-btn { min-width: 0; width: 100%; justify-content: center; white-space: normal; padding: 8px 6px; }
+    .cs-ctrl-row.cs-actions-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: 100%; }
+    .cs-ctrl-row.cs-actions-row .cs-src, .cs-ctrl-row.cs-actions-row .csd-wrap { grid-column: 1 / -1; width: 100%; min-width: 0; }
+    .cs-ctrl-row.cs-actions-row .cs-btn { min-width: 0; width: 100%; justify-content: center; white-space: normal; padding: 8px 6px; }
     /* Keep every primary signal on mobile. The table scrolls horizontally, as
        it did before Market vs ADP was added, rather than hiding VOR or Value. */
     .cs-wrap table { min-width: 910px; border-collapse: separate; border-spacing: 0; }
@@ -729,7 +745,29 @@ _CHEAT_HTML = r"""
           </div>
         </div>
       </div>
-      <div class="cs-ctrl-row">
+      <div class="cs-ctrl-row cs-scoring-row">
+        <div class="cs-cgroup cs-score"><span class="cs-clabel">PPR</span>
+          <select class="cs-src" id="csPpr" aria-label="Reception scoring" title="Projected PPG uses this reception scoring (full, half, or standard).">
+            <option value="1" selected>Full PPR</option>
+            <option value="0.5">Half PPR</option>
+            <option value="0">Standard</option>
+          </select>
+        </div>
+        <div class="cs-cgroup cs-score"><span class="cs-clabel">TE Premium</span>
+          <select class="cs-src" id="csTep" aria-label="Tight end premium" title="Projected PPG for tight ends includes this TE premium.">
+            <option value="0" selected>None</option>
+            <option value="0.5">+0.5 PPR</option>
+            <option value="1">+1.0 PPR</option>
+          </select>
+        </div>
+        <div class="cs-cgroup cs-score"><span class="cs-clabel">Passing TDs</span>
+          <select class="cs-src" id="csPassTd" aria-label="Points per passing touchdown" title="Adjusts quarterback projected PPG">
+            <option value="4" selected>4 points</option>
+            <option value="6">6 points</option>
+          </select>
+        </div>
+      </div>
+      <div class="cs-ctrl-row cs-actions-row">
         <select class="cs-src" id="csAdpSrc" aria-label="ADP source" style="display:none;"></select>
         <button class="cs-btn" id="csNeedsBtn" aria-pressed="false" style="display:none;">Needs only</button>
         <button class="cs-btn" id="csHideDrafted" aria-pressed="false" style="display:none;">Hide drafted</button>
@@ -790,7 +828,8 @@ _CHEAT_HTML = r"""
       <div class="cs-rule"><span class="cs-k">Tiers</span><div><h3>Tiers are value cliffs</h3><p>Players group where the drop-off is small inside the group and large to the next. Inside a tier, order barely matters, so take need or the falling price. Do not reach across a cliff.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Value</span><div><h3>Where "above ADP" comes from</h3><p>Our rank is this VOR board. ADP is the consensus average draft position from real drafts. Value is ADP minus our rank. A green plus means the room lets him fall later than he is worth, so wait a beat and take him. A red minus means he goes early.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Proj Pick</span><div><h3>Your snake slot on this board</h3><p>Choose a draft slot to draw labeled lines at each of that seat's snake-draft picks — Proj Pick 1.05, 2.08, and so on. The player under each line is who this ranking would take there. Lines follow the displayed order, including any custom-board moves, and they print with the sheet.</p></div></div>
-      <div class="cs-rule"><span class="cs-k">Proj PPG</span><div><h3>Expected weekly scoring</h3><p>Projected PPG is the player's upcoming-season fantasy points per game from Sleeper, the same projection pool used by the Draft Room. Players Sleeper does not project show a dash rather than last-season actuals.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">Scoring</span><div><h3>Same settings as Draft Room setup</h3><p>PPR (full / half / standard), TE premium, and passing-TD points match the Draft Room Format step. They rescale projected PPG and TE roster targets the same way the room does. Opened from a live or mock draft, the sheet inherits that room's scoring.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">Proj PPG</span><div><h3>Expected weekly scoring</h3><p>Projected PPG is the player's upcoming-season fantasy points per game from Sleeper, adjusted for your PPR, TE premium, and passing-TD settings — the same projection pool the Draft Room uses. Players Sleeper does not project show a dash rather than last-season actuals.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Schedule</span><div><h3>Full-season matchup context</h3><p>Schedule Rank compares each player's position-specific matchups across fantasy Weeks 1-17. Rank 1 is the easiest schedule. It is useful context for close calls inside a tier, but it does not change the stable VOR order.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Hist</span><div><h3>Historical top-12 chance</h3><p>On the redraft Big Board, Hist is this player's historical chance of a top-12 season given career and situation. Green marks a strong cell, or when history beats that ADP round. Early ADP is a high bar (round-1 hit rates are often 60-90%), so stars like Chase or Bijan are not painted as misses just because the market bucket is hotter. The info panel compares players-like-this vs that ADP round. Trends stays available in dynasty with a 1QB redraft caveat. Hist does not change VOR or Pick Score.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Live</span><div><h3>It knows your live draft</h3><p>Open the sheet from your league during a draft and players already taken are struck through automatically. REC badges show the current Draft Room view without changing the VOR board. Reopen the sheet after more picks to refresh those ranks, or use Connect live draft to keep drafted-player status synchronized.</p></div></div>
