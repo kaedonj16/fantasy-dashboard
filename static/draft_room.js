@@ -5513,21 +5513,50 @@
     el.style.display = 'none';
     el.hidden = true;
     el.innerHTML = '';
+    el.className = 'dr-start-banner dr-espn-tools';
+  }
+  function _espnToolsDismissKey(){
+    return 'dr_espn_tools_hide_' + String(cfg.leagueId || '') + '_' + String(cfg.season || '');
+  }
+  function _espnIsPhone(){
+    try {
+      if (window.matchMedia && window.matchMedia('(max-width: 720px)').matches) return true;
+    } catch (e){}
+    return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '');
   }
   function showEspnTools(){
     var el = document.getElementById('drEspnTools');
     if (!el) return;
     if (!(state && state.syncSource === 'espn') && String(cfg.platform || '').toLowerCase() !== 'espn') return;
+    try {
+      if (sessionStorage.getItem(_espnToolsDismissKey()) === '1') {
+        hideEspnTools();
+        return;
+      }
+    } catch (e){}
+    var espnUrl = espnDraftUrl() || 'https://fantasy.espn.com/football/draft';
+    var onPhone = _espnIsPhone();
+    var title = onPhone ? 'Sync picks from your phone' : 'Sync ESPN picks automatically';
+    var blurb = onPhone
+      ? 'Draft in Safari or Chrome (not the ESPN app), then use Mobile Sync. Desktop Chrome can install the extension for hands-free updates.'
+      : 'Install the Chrome extension and keep the ESPN draft tab open — picks land here automatically.';
+    var primary = onPhone
+      ? '<button type="button" class="dr-banner-join" id="drEspnMobileSync">Mobile Sync</button>'
+        + '<button type="button" class="dr-banner-join is-ghost" id="drEspnExtInstall">Get Chrome extension</button>'
+      : '<button type="button" class="dr-banner-join" id="drEspnExtInstall">Get Chrome extension</button>'
+        + '<button type="button" class="dr-banner-join is-ghost" id="drEspnMobileSync">Mobile Sync</button>';
+    el.className = 'dr-espn-tools';
     el.hidden = false;
     el.style.display = '';
-    var espnUrl = espnDraftUrl() || 'https://fantasy.espn.com/football/draft';
-    el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-puzzle-piece"></i></span>'
-      + '<div class="dr-banner-txt"><b>Get automatic ESPN pick sync</b>'
-      + '<span>Desktop Chrome: install the extension and keep the ESPN draft tab open. Phone: use Mobile Sync in Safari/Chrome (not the ESPN app).</span></div>'
-      + '<div class="dr-banner-actions">'
-      + '<button type="button" class="dr-banner-join" id="drEspnExtInstall">Get Chrome extension</button>'
-      + '<a class="dr-banner-join is-ghost" href="' + espnUrl + '" target="_blank" rel="noopener">Open ESPN draft</a>'
-      + '<button type="button" class="dr-banner-join is-ghost" id="drEspnMobileSync">Mobile Sync</button>'
+    el.innerHTML = ''
+      + '<div class="dr-espn-tools-top">'
+      + '<span class="dr-espn-tools-ic" aria-hidden="true"><i class="fa-solid fa-' + (onPhone ? 'mobile-screen-button' : 'puzzle-piece') + '"></i></span>'
+      + '<div class="dr-espn-tools-copy"><b>' + title + '</b><span>' + blurb + '</span></div>'
+      + '<button type="button" class="dr-espn-tools-x" id="drEspnToolsDismiss" aria-label="Dismiss">×</button>'
+      + '</div>'
+      + '<div class="dr-espn-tools-actions">'
+      + primary
+      + '<a class="dr-banner-join is-link" href="' + espnUrl + '" target="_blank" rel="noopener">Open ESPN draft <i class="fa-solid fa-arrow-up-right-from-square"></i></a>'
       + '</div>';
   }
   function openEspnExtensionInstall(){
@@ -8312,6 +8341,10 @@
     if (e.target && e.target.id === 'drEspnManual') switchEspnToManual();
     if (e.target && e.target.id === 'drEspnMobileSync') openEspnMobileSync();
     if (e.target && e.target.id === 'drEspnExtInstall') openEspnExtensionInstall();
+    if (e.target && e.target.id === 'drEspnToolsDismiss'){
+      try { sessionStorage.setItem(_espnToolsDismissKey(), '1'); } catch (err){}
+      hideEspnTools();
+    }
   });
   if (typeof document !== 'undefined' && document.addEventListener){
     document.addEventListener('visibilitychange', function(){
