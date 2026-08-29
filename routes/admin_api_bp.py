@@ -117,6 +117,14 @@ def api_refresh_league():
         invalidate_league_caches(platform, league_id, season)
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
+    # ESPN: drop process-cached League objects so post-draft rosters aren't
+    # stuck on empty pre-draft shells until the worker restarts.
+    if platform == "espn":
+        try:
+            from dashboard_services.providers.espn_api import clear_espn_league_caches
+            clear_espn_league_caches()
+        except Exception:
+            logger.debug("suppressed exception", exc_info=True)
     return jsonify({"ok": True})
 
 

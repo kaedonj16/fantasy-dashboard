@@ -5684,6 +5684,12 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
         clear_activity_cache_for_league(resolved_league_id)
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
+    if platform == "espn":
+        try:
+            from dashboard_services.providers.espn_api import clear_espn_league_caches
+            clear_espn_league_caches()
+        except Exception:
+            logger.debug("suppressed exception", exc_info=True)
 
     league = get_league(platform, resolved_league_id, viewed_season)
     users = get_users(platform, resolved_league_id, viewed_season)
