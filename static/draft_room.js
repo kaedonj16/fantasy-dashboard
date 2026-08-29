@@ -1283,9 +1283,9 @@
   // actually chose on the keeper page (handed off in sessionStorage).
   var keeperProjected = [];
   var keeperOverride = null;   // {rosterId, ids} for this league, if handed off
-  var keeperPage = 1;          // 1-based page for the Details list (5 per page)
+  var keeperPage = 1;          // 1-based page for the Details list (6 per page)
   var keeperDetailsOpen = false;
-  var KEEPER_PAGE_SIZE = 5;
+  var KEEPER_PAGE_SIZE = 6;
 
   function initKeepers(){
     var kp = cfg.keepers;

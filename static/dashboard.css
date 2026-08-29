@@ -12400,7 +12400,7 @@ a.signed-home-league:hover {
     margin-left: auto;
 }
 
-/* Keeper roster details: items paginate 5 per page; the page of rows is a
+/* Keeper roster details: items paginate 6 per page; the page of rows is a
    responsive grid so a short slate still packs into tidy columns.
    Force [hidden] — author display rules elsewhere can beat the UA stylesheet. */
 .dr-keeper-list {
