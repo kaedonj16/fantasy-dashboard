@@ -1,53 +1,27 @@
-"""ESPN draft relay tokens, store, and merge helpers."""
+"""ESPN draft relay store and merge helpers (desktop extension)."""
 from __future__ import annotations
 
-import time
-
 from dashboard_services.espn_draft_relay import (
-    build_bookmarklet,
     get_relay_snapshot,
     merge_live_with_relay,
-    mint_relay_token,
     put_relay_snapshot,
-    shortcut_javascript,
-    verify_relay_token,
 )
-
-
-def test_mint_and_verify_token_roundtrip():
-    minted = mint_relay_token(league_id="99", season=2026, account_id="7")
-    claims = verify_relay_token(minted["token"])
-    assert claims is not None
-    assert claims["league_id"] == "99"
-    assert claims["season"] == 2026
-    assert claims["account_id"] == "7"
-
-
-def test_verify_rejects_tampered_or_expired(monkeypatch):
-    minted = mint_relay_token(league_id="99", season=2026)
-    bad = minted["token"][:-4] + "dead"
-    assert verify_relay_token(bad) is None
-    # Force expiry by rewriting exp in the past.
-    parts = minted["token"].split(".")
-    parts[2] = str(int(time.time()) - 10)
-    # Signature no longer matches → invalid
-    assert verify_relay_token(".".join(parts)) is None
 
 
 def test_put_get_relay_snapshot():
     payload = {"picks": [{"pick_no": 1, "player_id": "5938"}], "source": "espn-relay"}
-    put_relay_snapshot("99", 2026, payload, source="bookmarklet")
+    put_relay_snapshot("99", 2026, payload, source="extension")
     entry = get_relay_snapshot("99", 2026)
     assert entry is not None
     assert entry["payload"]["picks"][0]["player_id"] == "5938"
-    assert entry["source"] == "bookmarklet"
+    assert entry["source"] == "extension"
 
 
 def test_merge_prefers_longer_relay():
     live = {"picks": [], "status": "drafting", "fingerprint": "a"}
     relay_entry = {
         "updated_at": 1,
-        "source": "bookmarklet",
+        "source": "extension",
         "payload": {
             "picks": [
                 {"pick_no": 1, "player_id": "5938", "external_player_id": "4039057"},
@@ -63,10 +37,10 @@ def test_merge_prefers_longer_relay():
     assert merged["picks_observed"] is True
 
 
-def test_bookmarklet_contains_origin_and_token():
-    bm = build_bookmarklet("https://www.brfantasyfootball.com", "TOK.EN")
-    assert bm.startswith("javascript:")
-    assert "brfantasyfootball.com" in bm
-    assert "TOK.EN" in bm
-    assert "/api/draft/espn-relay" in bm
-    assert shortcut_javascript("https://www.brfantasyfootball.com", "TOK.EN").startswith("(")
+def test_no_mobile_token_or_bookmarklet_helpers():
+    import dashboard_services.espn_draft_relay as mod
+
+    assert not hasattr(mod, "mint_relay_token")
+    assert not hasattr(mod, "build_bookmarklet")
+    assert not hasattr(mod, "shortcut_javascript")
+    assert not hasattr(mod, "verify_relay_token")

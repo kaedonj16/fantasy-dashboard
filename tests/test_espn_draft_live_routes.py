@@ -224,7 +224,16 @@ def test_espn_relay_requires_picks_list(client):
     assert resp.get_json()["error"] == "picks_required"
 
 
-def test_espn_relay_token_and_bearer_auth(client, monkeypatch):
+def test_espn_relay_token_endpoint_removed(client):
+    resp = client.post(
+        "/api/draft/espn-relay/token",
+        json={"league_id": "99", "season": 2026},
+    )
+    assert resp.status_code == 404
+
+
+def test_espn_relay_rejects_bearer_without_session(client, monkeypatch):
+    """Mobile bookmarklet bearer auth is gone — session/same-origin only."""
     import routes.draft_api_bp as bp
 
     monkeypatch.setattr(
@@ -240,19 +249,6 @@ def test_espn_relay_token_and_bearer_auth(client, monkeypatch):
         },
     )
     with client.session_transaction() as sess:
-        sess["account_id"] = 42
-    tok = client.post(
-        "/api/draft/espn-relay/token",
-        json={"league_id": "99", "season": 2026},
-    )
-    assert tok.status_code == 200
-    body = tok.get_json()
-    assert body["token"]
-    assert body["bookmarklet"].startswith("javascript:")
-    assert "fantasy.espn.com" in body["espn_draft_url"]
-
-    # Clear session — bearer token alone must authorize the mobile bookmarklet.
-    with client.session_transaction() as sess:
         sess.clear()
     resp = client.post(
         "/api/draft/espn-relay",
@@ -262,10 +258,9 @@ def test_espn_relay_token_and_bearer_auth(client, monkeypatch):
             "picks": [{"overallPickNumber": 1, "playerId": 1, "teamId": 1}],
             "source": "bookmarklet",
         },
-        headers={"Authorization": "Bearer " + body["token"]},
+        headers={"Authorization": "Bearer fake.token"},
     )
-    assert resp.status_code == 200
-    assert resp.get_json()["picks"][0]["player_id"] == "5938"
+    assert resp.status_code == 401
 
 
 def test_espn_relay_rejects_unauthenticated(client):
