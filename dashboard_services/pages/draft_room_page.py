@@ -1307,8 +1307,12 @@ _DRAFT_ROOM_HTML = r"""
   .dd-dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
   .dd-sq { width:11px; height:11px; border-radius:3px; display:inline-block; }
   .dd-chart-hint { display:none; }
-  .dd-chartscroll, .dd-tablescroll { overflow-x:auto; }
-  .dd-chartscroll { overscroll-behavior-x:contain; scrollbar-width:thin; }
+  .dd-chartscroll, .dd-tablescroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
   .dd-chartscroll svg { display:block; max-width:none; }
   .dd-tl-dot:hover { stroke:var(--text); stroke-width:1.6; }
   .dd-tip { position:fixed; z-index:12800; pointer-events:none; background:var(--tooltip-bg,var(--card)); color:var(--tooltip-fg,var(--text)); border:1px solid var(--tooltip-border,var(--border)); box-shadow:var(--tooltip-shadow,0 12px 40px rgba(0,0,0,.4)); border-radius:var(--tooltip-radius,10px); padding:var(--tooltip-pad,8px 12px); font-size:var(--tooltip-fs,12px); line-height:var(--tooltip-lh,1.45); opacity:0; transform:translateY(4px); transition:opacity .12s; max-width:230px; }
@@ -1453,8 +1457,16 @@ _DRAFT_ROOM_HTML = r"""
   .dd-hist-callout-say {
     margin:10px 0 0; font-size:12.5px; line-height:1.45; color:var(--text-muted);
   }
-  .dd-hist-tablewrap { margin-top:2px; border:1px solid var(--border); border-radius:12px; overflow:hidden; }
-  .dd-hist-table { margin:0; }
+  /* overflow-x must stay auto — overflow:hidden here used to clip the
+     dd-tablescroll horizontal swipe on narrow phones. */
+  .dd-hist-tablewrap {
+    margin-top:2px; border:1px solid var(--border); border-radius:12px;
+    overflow-x:auto; overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior-x:contain;
+    scrollbar-width:thin;
+  }
+  .dd-hist-table { margin:0; width:max-content; min-width:100%; }
   .dd-hist-table thead th {
     background:color-mix(in srgb, var(--card) 82%, var(--bg));
     position:sticky; top:0; z-index:1;
