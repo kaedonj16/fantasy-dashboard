@@ -688,6 +688,15 @@ _CHEAT_HTML = r"""
     /* Fill the sticky cell. Do not clip at an inner 108px while empty space
        sits unused (or the column bloats from table width distribution). */
     .cs-pname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; max-width: none; }
+    /* Keep the Proj Pick banner label in the visible viewport (the board is
+       wider than the screen). Avoid stacking a second "Proj …" mark on the name. */
+    .cs-projline {
+      position: sticky; left: 0; width: max(100%, 100vw - 16px); max-width: 100vw;
+      box-sizing: border-box; justify-content: flex-start; padding-left: 12px; padding-right: 12px;
+    }
+    .cs-projline::before { display: none; }
+    .cs-wrap tbody tr.cs-proj-row td.cs-rk,
+    .cs-wrap tbody tr.cs-proj-row td.cs-player { background: color-mix(in srgb, var(--cs-accent) 14%, var(--cs-surface)); }
     /* Tabs scroll sideways rather than wrapping onto a second line. */
     .cs-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .cs-tabs::-webkit-scrollbar { display: none; }
