@@ -1198,6 +1198,25 @@ _DRAFT_ROOM_HTML = r"""
   @media (max-width: 640px) {
     .dr-wrap { padding: 8px 8px 32px; }
     .dr-setup-card { padding: 16px; }
+    /* Start / ESPN-fallback banners: stack the CTA under the copy so the
+       long "Switch to Manual Tracking" label cannot crush the text into a
+       one-word-wide column beside it. */
+    .dr-start-banner {
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 10px 12px;
+      padding: 12px;
+    }
+    .dr-start-banner .dr-banner-txt { flex: 1 1 0; min-width: 0; }
+    .dr-start-banner .dr-banner-txt span { overflow-wrap: anywhere; }
+    .dr-start-banner .dr-banner-join {
+      flex: 1 1 100%;
+      margin-left: 0;
+      width: 100%;
+      justify-content: center;
+      white-space: normal;
+      text-align: center;
+    }
     /* Status bar: two compact rows */
     .dr-statusbar { padding: 6px 10px; gap: 5px; flex-direction: column; align-items: stretch; border-radius: 10px; }
     /* Row 1: on-clock inline + pills scroll */

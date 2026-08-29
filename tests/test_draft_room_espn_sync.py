@@ -24,6 +24,17 @@ def test_espn_sync_indicator_and_fallback_markup():
     assert '"chromeExtensionZipUrl"' in body
 
 
+def test_espn_fallback_banner_stacks_on_mobile():
+    """Manual CTA must not sit beside the copy on phones (crushes line length)."""
+    body = build_draft_room_body("123", 2026, "espn", viewer_user_id="{AAA}", viewer_roster_id="3")
+    mobile = body.split("@media (max-width: 640px)")[1].split("@media")[0]
+    assert ".dr-start-banner" in mobile
+    assert "flex-wrap: wrap" in mobile
+    assert "flex: 1 1 100%" in mobile
+    assert "margin-left: 0" in mobile
+    assert "white-space: normal" in mobile
+
+
 def test_sim_flag_still_declared():
     """Regression: ESPN relay vars must not drop the mock-draft `sim` flag."""
     assert "var sim = false;" in ROOM_JS
