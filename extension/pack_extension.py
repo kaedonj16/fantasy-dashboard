@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a Chrome Web Store / AMO zip of the BR Fantasy ESPN extension.
+"""Build a Chrome Web Store / AMO zip of the BR Fantasy league connector.
 
 Strips localhost host permissions for the production package. Usage:
 
@@ -11,7 +11,6 @@ Strips localhost host permissions for the production package. Usage:
 from __future__ import annotations
 
 import json
-import shutil
 import zipfile
 from pathlib import Path
 
@@ -27,6 +26,8 @@ INCLUDE = [
     "content.css",
     "espn_draft.js",
     "espn_draft_main.js",
+    "yahoo_draft.js",
+    "yahoo_draft_main.js",
     "popup.html",
     "popup.js",
     "popup.css",
@@ -84,9 +85,9 @@ def main() -> None:
     # Tiny readme so the download folder is self-explanatory in the repo.
     readme = STATIC_DIR / "README.md"
     readme.write_text(
-        "# BR Fantasy ESPN extension (download)\n\n"
+        "# BR Fantasy league connector (download)\n\n"
         "`br-fantasy-espn-connector.zip` is the production package users download "
-        "from Draft Room. Rebuild with:\n\n"
+        "from Draft Room (ESPN + Yahoo live draft relay). Rebuild with:\n\n"
         "```bash\npython3 extension/pack_extension.py\n```\n",
         encoding="utf-8",
     )

@@ -103,7 +103,7 @@ def _espn_live(draft_id: str, league_id: str, season: int):
         return jsonify({"error": "auth_denied", "retry": False}), 403
     except DraftSyncError as exc:
         logger.warning("[draft-live] espn error_type=%s code=%s", type(exc).__name__, exc.code)
-        status = 404 if exc.code == "not_found" else 502
+        status = 404 if getattr(exc, "code", "") == "not_found" else 502
         return jsonify({"error": exc.code, "retry": bool(exc.retry)}), status
     except Exception:
         logger.warning("[draft-live] espn error_type=Exception")
@@ -115,6 +115,72 @@ def _espn_live(draft_id: str, league_id: str, season: int):
         logger.info("[draft-live] relay merge skipped error_type=Exception")
     # Never echo provider secrets even if a future field is added upstream.
     for secret_key in ("espn_s2", "swid", "SWID", "cookie", "cookies"):
+        payload.pop(secret_key, None)
+    return jsonify(payload)
+
+
+def _yahoo_detect_sync(league_id: str, season: int):
+    from dashboard_services.draft_sync import (
+        DraftSyncAuthError,
+        DraftSyncError,
+        get_draft_sync_provider,
+        snapshot_to_detect_record,
+    )
+    try:
+        viewer_uid, viewer_rid = _viewer_ids()
+        snapshot = get_draft_sync_provider("yahoo").get_snapshot(
+            league_id, season,
+            viewer_user_id=viewer_uid, viewer_roster_id=viewer_rid,
+        )
+    except DraftSyncAuthError:
+        return jsonify({"drafts": [], "error": "auth_denied", "retry": False})
+    except DraftSyncError as exc:
+        logger.warning("[draft-detect] yahoo sync error_type=%s code=%s", type(exc).__name__, exc.code)
+        return jsonify({"drafts": [], "error": exc.code, "retry": bool(exc.retry)})
+    except Exception:
+        logger.warning("[draft-detect] yahoo sync error_type=Exception")
+        return jsonify({"drafts": [], "error": "fetch_failed"})
+    return jsonify({"drafts": [snapshot_to_detect_record(snapshot)], "source": "yahoo"})
+
+
+def _yahoo_live(draft_id: str, league_id: str, season: int):
+    from dashboard_services.draft_sync import (
+        DraftSyncAuthError,
+        DraftSyncError,
+        get_draft_sync_provider,
+        parse_yahoo_draft_id,
+        snapshot_to_live_payload,
+    )
+    from dashboard_services.yahoo_draft_relay import get_relay_snapshot, merge_live_with_relay
+
+    parsed = parse_yahoo_draft_id(draft_id) if draft_id else None
+    if parsed:
+        league_id, season = parsed[0], parsed[1]
+    if not league_id:
+        return jsonify({"error": "league_required", "retry": False}), 400
+    if not season:
+        season = datetime.now().year
+    try:
+        viewer_uid, viewer_rid = _viewer_ids()
+        snapshot = get_draft_sync_provider("yahoo").get_snapshot(
+            league_id, int(season),
+            viewer_user_id=viewer_uid, viewer_roster_id=viewer_rid,
+        )
+    except DraftSyncAuthError:
+        return jsonify({"error": "auth_denied", "retry": False}), 403
+    except DraftSyncError as exc:
+        logger.warning("[draft-live] yahoo error_type=%s code=%s", type(exc).__name__, exc.code)
+        status = 404 if getattr(exc, "code", "") == "not_found" else 502
+        return jsonify({"error": exc.code, "retry": bool(exc.retry)}), status
+    except Exception:
+        logger.warning("[draft-live] yahoo error_type=Exception")
+        return jsonify({"error": "fetch_failed", "retry": True}), 502
+    payload = snapshot_to_live_payload(snapshot)
+    try:
+        payload = merge_live_with_relay(payload, get_relay_snapshot(str(league_id), int(season)))
+    except Exception:
+        logger.info("[draft-live] yahoo relay merge skipped error_type=Exception")
+    for secret_key in ("access_token", "refresh_token", "cookie", "cookies", "token"):
         payload.pop(secret_key, None)
     return jsonify(payload)
 
@@ -134,6 +200,23 @@ def _espn_relay_normalize(body: dict):
         espn_to_canon=canon,
         player_lookup=_player_lookup,
         dst_mapper=_dst_from_espn_id,
+    )
+
+
+def _yahoo_relay_normalize(body: dict):
+    """Map extension-observed Yahoo draft picks onto the live board pick shape."""
+    from dashboard_services.draft_sync import normalize_yahoo_relay_payload
+    from dashboard_services.providers.yahoo_draft import _player_lookup
+    from dashboard_services.providers import yahoo_api
+
+    try:
+        canon = yahoo_api._yahoo_id_to_canonical()
+    except Exception:
+        canon = {}
+    return normalize_yahoo_relay_payload(
+        body,
+        yahoo_to_canon=canon,
+        player_lookup=_player_lookup,
     )
 
 
@@ -177,6 +260,23 @@ def api_draft_detect():
             "type": d.get("type"),
             "season": d.get("season"),
             "start_time": d.get("start_time"),
+        } for d in _drafts]})
+    if platform == "yahoo":
+        want_sync = (request.args.get("sync") or "").strip().lower() in ("1", "true", "yes")
+        if want_sync:
+            return _yahoo_detect_sync(league_id, season)
+        try:
+            _drafts = get_drafts("yahoo", league_id, season) or []
+        except Exception as exc:
+            logger.warning("[draft-detect] yahoo error_type=%s", type(exc).__name__)
+            _drafts = []
+        return jsonify({"drafts": [{
+            "draft_id": d.get("draft_id"),
+            "status": d.get("status"),
+            "type": d.get("type"),
+            "season": d.get("season"),
+            "start_time": d.get("start_time"),
+            "teams": d.get("teams"),
         } for d in _drafts]})
     if platform == "fleaflicker":
         try:
@@ -315,12 +415,86 @@ def api_draft_espn_relay():
     return jsonify(payload)
 
 
+@draft_api_bp.route("/api/draft/yahoo-relay", methods=["POST", "GET"])
+def api_draft_yahoo_relay():
+    """Normalize + store Yahoo draft picks from the desktop browser extension.
+
+    Observe-only: does not talk to Yahoo and never submits picks. Auth is
+    Draft Room session / same-origin only.
+    """
+    from dashboard_services.yahoo_draft_relay import (
+        get_relay_snapshot,
+        put_relay_snapshot,
+    )
+
+    if request.method == "GET":
+        league_id = (request.args.get("league_id") or request.args.get("leagueId") or "").strip()
+        try:
+            season = int(request.args.get("season") or request.args.get("seasonId") or 0)
+        except (TypeError, ValueError):
+            season = 0
+        if not league_id or not season:
+            return jsonify({"error": "league_required"}), 400
+        ok, err = _relay_auth_ok(league_id, season)
+        if not ok:
+            return jsonify({"error": err or "auth_required"}), 401
+        entry = get_relay_snapshot(league_id, season)
+        if not entry:
+            return jsonify({"picks": [], "empty": True, "league_id": league_id, "season": season})
+        payload = dict(entry.get("payload") or {})
+        payload["relay_updated_at"] = entry.get("updated_at")
+        payload["relay_source"] = entry.get("source")
+        for secret_key in ("access_token", "refresh_token", "cookie", "cookies", "token"):
+            payload.pop(secret_key, None)
+        return jsonify(payload)
+
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return jsonify({"error": "invalid_body"}), 400
+    picks = body.get("picks")
+    if not isinstance(picks, list):
+        return jsonify({"error": "picks_required"}), 400
+    if len(picks) > 500:
+        return jsonify({"error": "too_many_picks"}), 400
+
+    league_id = str(body.get("leagueId") or body.get("league_id") or "").strip()
+    try:
+        season = int(body.get("season") or body.get("seasonId") or 0)
+    except (TypeError, ValueError):
+        season = 0
+    if not league_id or not season:
+        return jsonify({"error": "league_required"}), 400
+
+    ok, err = _relay_auth_ok(league_id, season)
+    if not ok:
+        return jsonify({"error": err or "auth_required"}), 401
+
+    try:
+        payload = _yahoo_relay_normalize(body)
+    except Exception:
+        logger.warning("[draft-yahoo-relay] normalize failed error_type=Exception")
+        return jsonify({"error": "normalize_failed"}), 500
+
+    payload["league_id"] = league_id
+    payload["season"] = season
+    source = str(body.get("source") or "extension")
+    try:
+        put_relay_snapshot(league_id, season, payload, source=source)
+    except Exception:
+        logger.info("[draft-yahoo-relay] store skipped error_type=Exception")
+
+    for secret_key in ("access_token", "refresh_token", "cookie", "cookies", "token"):
+        payload.pop(secret_key, None)
+    return jsonify(payload)
+
+
 @draft_api_bp.route("/api/draft/live")
 def api_draft_live():
     """Current state + picks for a live draft (polled by the live board).
 
-    Sleeper is keyed by ``draft_id``. ESPN is keyed by ``espn_{league_id}_{season}``
-    (or ``league_id`` + ``season``) and is observe-only.
+    Sleeper is keyed by ``draft_id``. ESPN / Yahoo are keyed by
+    ``{platform}_{league_id}_{season}`` (or ``league_id`` + ``season``) and are
+    observe-only.
     """
     platform = (request.args.get("platform") or "sleeper").strip().lower()
     draft_id = (request.args.get("draft_id") or "").strip()
@@ -331,6 +505,13 @@ def api_draft_live():
         except (TypeError, ValueError):
             season = 0
         return _espn_live(draft_id, league_id, season)
+    if platform == "yahoo":
+        league_id = (request.args.get("league_id") or "").strip()
+        try:
+            season = int(request.args.get("season") or 0)
+        except (TypeError, ValueError):
+            season = 0
+        return _yahoo_live(draft_id, league_id, season)
     if not draft_id or platform != "sleeper":
         return jsonify({"error": "unsupported"}), 400
     try:

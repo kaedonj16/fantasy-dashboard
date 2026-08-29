@@ -13,14 +13,14 @@ def test_espn_sync_indicator_and_fallback_markup():
     assert 'id="drEspnSync"' in body
     assert 'id="drEspnFallback"' in body
     assert 'id="drEspnTools"' in body
-    assert "ESPN sync needs a hand" in ROOM_JS
+    assert "ESPN sync needs a hand" in ROOM_JS or "who + ' sync needs a hand'" in ROOM_JS
     assert "Track manually" in ROOM_JS
     assert "showEspnTools({ unavailable: true })" in ROOM_JS
     assert "is-unavailable" in ROOM_JS
     assert "Get Chrome extension" in ROOM_JS
-    assert "ESPN Draft · LIVE" in ROOM_JS
-    assert "ESPN Draft · Sync Unavailable" in ROOM_JS
-    assert "ESPN Draft · Not Started" in ROOM_JS
+    assert "ESPN Draft · LIVE" in ROOM_JS or "who + ' Draft · LIVE" in ROOM_JS
+    assert "ESPN Draft · Sync Unavailable" in ROOM_JS or "who + ' Draft · Sync Unavailable'" in ROOM_JS
+    assert "ESPN Draft · Not Started" in ROOM_JS or "who + ' Draft · Not Started'" in ROOM_JS
     assert ".dr-pill-espn" in body
     assert '"viewerRosterId": "3"' in body
     assert '"chromeExtensionZipUrl"' in body
@@ -70,16 +70,21 @@ def test_extension_relay_wired_and_skips_manual_fallback():
     assert "Load unpacked" in ROOM_JS
     assert "dr-espn-tools-top" in PAGE
     assert "drEspnToolsDismiss" in ROOM_JS
-    assert "Sync ESPN picks automatically" in ROOM_JS
+    assert "Sync ESPN picks automatically" in ROOM_JS or "Sync ' + who + ' picks automatically" in ROOM_JS
     assert "Auto-sync needs a computer" in ROOM_JS
     assert "drEspnManualFromTools" in ROOM_JS
     assert "_espnToolsEl" in ROOM_JS
     assert "credentials: 'same-origin'" in ROOM_JS
+    assert "function applyYahooExtensionRelay(detail)" in ROOM_JS
+    assert "/api/draft/yahoo-relay" in ROOM_JS
+    assert "brfantasy:yahoo-draft-relay" in ROOM_JS
+    assert "function isExtLiveSource()" in ROOM_JS
 
 
 def test_live_detect_requests_espn_sync_flag():
     assert "detectUrl += '&sync=1'" in ROOM_JS
-    assert "Live sync currently supports Sleeper and ESPN leagues." in ROOM_JS
+    assert "Live sync currently supports Sleeper, ESPN, and Yahoo leagues." in ROOM_JS
+    assert "plat === 'espn' || plat === 'yahoo'" in ROOM_JS or "detectUrl += '&sync=1'" in ROOM_JS
 
 
 def test_sequential_missing_picks_and_idempotent_apply():

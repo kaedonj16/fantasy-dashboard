@@ -136,6 +136,9 @@ def get_draft_sync_provider(platform: str) -> DraftSyncProvider:
     if key == "espn":
         from dashboard_services.providers.espn_draft import ESPNDraftSyncProvider
         return ESPNDraftSyncProvider()
+    if key == "yahoo":
+        from dashboard_services.providers.yahoo_draft import YahooDraftSyncProvider
+        return YahooDraftSyncProvider()
     raise DraftSyncUnsupportedError(f"Live draft sync is not implemented for {key or 'unknown'}.")
 
 
@@ -169,6 +172,27 @@ def espn_draft_sync_stall_polls() -> int:
     except (TypeError, ValueError):
         n = 8
     return max(3, min(20, n))
+
+
+def yahoo_draft_sync_poll_ms() -> int:
+    """Frontend poll cadence for Yahoo REST draftresults, clamped to 4–10 seconds."""
+    raw = (os.environ.get("YAHOO_DRAFT_SYNC_POLL_SECONDS") or "6").strip()
+    try:
+        seconds = float(raw)
+    except (TypeError, ValueError):
+        seconds = 6.0
+    seconds = max(4.0, min(10.0, seconds))
+    return int(round(seconds * 1000))
+
+
+def yahoo_draft_sync_stall_polls() -> int:
+    """Consecutive in-progress polls with no usable pick growth before extension nudge."""
+    raw = (os.environ.get("YAHOO_DRAFT_SYNC_STALL_POLLS") or "10").strip()
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        n = 10
+    return max(3, min(24, n))
 
 
 # ── ESPN payload parsing (no I/O) ─────────────────────────────────────────────
@@ -242,6 +266,144 @@ def parse_espn_draft_id(draft_id: str) -> Optional[Tuple[str, int]]:
 
 def make_espn_draft_id(league_id: str, season: int) -> str:
     return f"espn_{league_id}_{int(season)}"
+
+
+def parse_yahoo_draft_id(draft_id: str) -> Optional[Tuple[str, int]]:
+    """Parse ``yahoo_{league_id}_{season}`` produced by ``yahoo_api.get_drafts``."""
+    text = str(draft_id or "").strip()
+    if not text.lower().startswith("yahoo_"):
+        return None
+    rest = text[6:]
+    league_id, sep, season_s = rest.rpartition("_")
+    if not sep or not league_id or not season_s:
+        return None
+    season = _as_int(season_s)
+    if season is None:
+        return None
+    return str(league_id), int(season)
+
+
+def make_yahoo_draft_id(league_id: str, season: int) -> str:
+    return f"yahoo_{league_id}_{int(season)}"
+
+
+def yahoo_status_from_label(label: Any, *, pick_count: int = 0) -> str:
+    """Normalize Yahoo draft_status / relay flags to Sleeper vocabulary."""
+    text = str(label or "").strip().lower()
+    if text in ("complete", "postdraft", "post_draft", "finished"):
+        return "complete"
+    if text in ("drafting", "draft", "mid_draft", "middraft", "in_progress", "live"):
+        return "drafting"
+    if text in ("pre_draft", "predraft", "pre"):
+        return "pre_draft" if pick_count <= 0 else "drafting"
+    if pick_count > 0:
+        return "drafting"
+    return "unknown"
+
+
+def yahoo_player_id_is_selected(player_id: Optional[str]) -> bool:
+    if player_id is None:
+        return False
+    text = str(player_id).strip()
+    if not text or text in ("0", "-1", "None", "null"):
+        return False
+    return True
+
+
+def map_yahoo_player_id(
+    yahoo_player_id: Optional[str],
+    yahoo_to_canon: Mapping[str, str],
+) -> Tuple[Optional[str], bool]:
+    """Return (canonical_id, unresolved)."""
+    if not yahoo_player_id_is_selected(yahoo_player_id):
+        return None, True
+    key = str(yahoo_player_id).strip()
+    # Accept nfl.p.12345 or bare 12345.
+    if ".p." in key:
+        key = key.rsplit(".", 1)[-1]
+    hit = yahoo_to_canon.get(key)
+    if hit:
+        return str(hit), False
+    return None, True
+
+
+def normalize_yahoo_picks(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    yahoo_to_canon: Optional[Mapping[str, str]] = None,
+    player_lookup: Optional[PlayerLookup] = None,
+    team_owner_map: Optional[Mapping[str, str]] = None,
+    team_slot_map: Optional[Mapping[str, int]] = None,
+    n_teams: int = 0,
+    source: str = "yahoo",
+) -> List[NormalizedDraftPick]:
+    """Turn Yahoo draft_result / extension rows into normalized Draft Room picks."""
+    canon = yahoo_to_canon or {}
+    owners = team_owner_map or {}
+    slots = team_slot_map or {}
+    teams_n = int(n_teams or 0)
+    out: List[NormalizedDraftPick] = []
+    seen: set[int] = set()
+    for raw in rows:
+        if not isinstance(raw, Mapping):
+            continue
+        yid = raw.get("playerId")
+        if yid is None:
+            yid = raw.get("player_id")
+        if yid is None and raw.get("player_key"):
+            yid = str(raw.get("player_key")).rsplit(".", 1)[-1]
+        if not yahoo_player_id_is_selected(None if yid is None else str(yid)):
+            continue
+        overall = _as_int(raw.get("overallPickNumber"))
+        if overall is None:
+            overall = _as_int(raw.get("pick"))
+        if overall is None:
+            overall = _as_int(raw.get("pick_no"))
+        round_id = _as_int(raw.get("roundId") if raw.get("roundId") is not None else raw.get("round"))
+        round_pick = _as_int(
+            raw.get("roundPickNumber") if raw.get("roundPickNumber") is not None else raw.get("round_pick")
+        )
+        if overall is None and round_id and round_pick and teams_n:
+            overall = (int(round_id) - 1) * teams_n + int(round_pick)
+        if overall is None or overall <= 0 or overall in seen:
+            continue
+        seen.add(overall)
+        canonical, unresolved = map_yahoo_player_id(str(yid), canon)
+        name, position, team = _player_display(canonical, player_lookup)
+        if unresolved:
+            name = name if name != "Unknown" else "Unknown player"
+        team_id = raw.get("teamId")
+        if team_id is None:
+            team_id = raw.get("team_id")
+        if team_id is None and raw.get("team_key"):
+            team_id = str(raw.get("team_key")).rsplit(".", 1)[-1]
+        team_id_s = None if team_id is None else str(team_id).strip() or None
+        slot = slots.get(str(team_id_s)) if team_id_s is not None else None
+        picked_by = owners.get(str(team_id_s)) if team_id_s is not None else None
+        if picked_by is None and team_id_s is not None:
+            picked_by = team_id_s
+        if round_id is None and teams_n and overall:
+            round_id = ((overall - 1) // teams_n) + 1
+            round_pick = ((overall - 1) % teams_n) + 1
+        out.append(NormalizedDraftPick(
+            source=source,
+            overall_pick=int(overall),
+            external_player_id=str(yid),
+            canonical_player_id=canonical,
+            external_team_id=team_id_s,
+            round=round_id,
+            round_pick=round_pick,
+            draft_slot=slot,
+            picked_by=str(picked_by) if picked_by is not None else None,
+            roster_id=team_id_s,
+            name=name,
+            position=position,
+            team=team,
+            unresolved=bool(unresolved or not canonical),
+            keeper=bool(raw.get("keeper")),
+        ))
+    out.sort(key=lambda p: p.overall_pick)
+    return out
 
 
 @dataclass(frozen=True)
@@ -743,6 +905,71 @@ def normalize_espn_relay_payload(
     }
 
 
+def normalize_yahoo_relay_payload(
+    body: Mapping[str, Any],
+    *,
+    yahoo_to_canon: Optional[Mapping[str, str]] = None,
+    player_lookup: Optional[Callable[[str], Mapping[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Normalize a browser-extension Yahoo draft-room snapshot into live picks."""
+    raw_picks = body.get("picks") if isinstance(body.get("picks"), list) else []
+    in_progress = _as_bool(body.get("inProgress"))
+    if in_progress is None:
+        in_progress = _as_bool(body.get("in_progress"))
+    drafted = _as_bool(body.get("drafted"))
+    team_ids: List[str] = []
+    for raw in raw_picks:
+        if not isinstance(raw, Mapping):
+            continue
+        tid = raw.get("teamId")
+        if tid is None:
+            tid = raw.get("team_id")
+        if tid is None and raw.get("team_key"):
+            tid = str(raw.get("team_key")).rsplit(".", 1)[-1]
+        if tid is not None and str(tid) not in team_ids:
+            team_ids.append(str(tid))
+    n_teams = len(team_ids)
+    team_slot = {tid: i + 1 for i, tid in enumerate(team_ids)}
+    picks = normalize_yahoo_picks(
+        [p for p in raw_picks if isinstance(p, Mapping)],
+        yahoo_to_canon=yahoo_to_canon or {},
+        player_lookup=player_lookup,
+        team_slot_map=team_slot,
+        n_teams=n_teams,
+        source="yahoo-relay",
+    )
+    if drafted is True and in_progress is not True:
+        status = "complete"
+    elif in_progress is True:
+        status = "drafting"
+    elif drafted is False:
+        status = "pre_draft" if not picks else "drafting"
+    else:
+        status = yahoo_status_from_label("drafting" if picks else "unknown", pick_count=len(picks))
+    league_id = str(body.get("leagueId") or body.get("league_id") or "").strip()
+    try:
+        season = int(body.get("season") or body.get("seasonId") or 0)
+    except (TypeError, ValueError):
+        season = 0
+    return {
+        "source": "yahoo-relay",
+        "league_id": league_id,
+        "season": season or None,
+        "status": status,
+        "in_progress": True if in_progress is None else bool(in_progress),
+        "drafted": False if drafted is None else bool(drafted),
+        "picks_observed": True,
+        "picks": live_picks_payload(picks),
+        "unresolved_count": sum(1 for p in picks if p.unresolved),
+        "fingerprint": (
+            f"{status}|{int(bool(in_progress))}|{int(bool(drafted))}"
+            f"|{len(picks)}|"
+            f"{(picks[-1].overall_pick if picks else 0)}|"
+            f"{(picks[-1].external_player_id if picks else '')}"
+        ),
+    }
+
+
 def snapshot_to_live_payload(snapshot: DraftSyncSnapshot) -> Dict[str, Any]:
     """Full ``/api/draft/live`` body for an ESPN (or future) snapshot."""
     latest = snapshot.latest_pick
@@ -770,7 +997,11 @@ def snapshot_to_live_payload(snapshot: DraftSyncSnapshot) -> Dict[str, Any]:
         "picks_observed": snapshot.picks_observed,
         "live_detail_present": snapshot.live_detail_present,
         "poll_interval_ms": snapshot.poll_interval_ms,
-        "stall_polls": espn_draft_sync_stall_polls(),
+        "stall_polls": (
+            yahoo_draft_sync_stall_polls()
+            if str(snapshot.source or "").startswith("yahoo")
+            else espn_draft_sync_stall_polls()
+        ),
         "unresolved_count": len(snapshot.unresolved_external_ids),
         "latest_overall": latest.overall_pick if latest else None,
         "latest_external_player_id": latest.external_player_id if latest else None,

@@ -66,6 +66,28 @@
   var _espnRelayInFlight = false;
   var _espnRelayLastFp = '';
   var _espnExtLastSeen = 0;
+  function isExtLiveSource(){
+    var s = (state && state.syncSource) || '';
+    if (s === 'espn' || s === 'yahoo') return true;
+    var p = String(cfg.platform || '').toLowerCase();
+    return p === 'espn' || p === 'yahoo';
+  }
+  function extPlatformKey(){
+    if (state && (state.syncSource === 'yahoo' || state.syncSource === 'espn')) return state.syncSource;
+    var p = String(cfg.platform || '').toLowerCase();
+    if (p === 'yahoo' || p === 'espn') return p;
+    return 'espn';
+  }
+  function extPlatformLabel(){
+    return extPlatformKey() === 'yahoo' ? 'Yahoo' : 'ESPN';
+  }
+  function extRelayUrl(){
+    return extPlatformKey() === 'yahoo' ? '/api/draft/yahoo-relay' : '/api/draft/espn-relay';
+  }
+  function extDraftHostLabel(){
+    return extPlatformKey() === 'yahoo' ? 'Yahoo' : 'ESPN';
+  }
+
   var sim = false;         // mock-draft simulation active
   var simTimer = null;
   var simSpeed = 700;      // ms between CPU picks
@@ -5192,13 +5214,15 @@
     box.style.display = ''; box.innerHTML = '<div class="dr-live-head">Detecting drafts…</div>';
     var detectUrl = '/api/draft/detect?platform=' + encodeURIComponent(cfg.platform)
       + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || '');
-    if (String(cfg.platform || '').toLowerCase() === 'espn') detectUrl += '&sync=1';
+    var plat = String(cfg.platform || '').toLowerCase();
+    if (plat === 'espn' || plat === 'yahoo') detectUrl += '&sync=1';
     fetch(detectUrl)
       .then(function(r){ return r.json(); })
       .then(function(resp){
-        if (resp.unsupported){ box.innerHTML = '<div class="dr-live-head">Live sync currently supports Sleeper and ESPN leagues.</div>'; return; }
+        if (resp.unsupported){ box.innerHTML = '<div class="dr-live-head">Live sync currently supports Sleeper, ESPN, and Yahoo leagues.</div>'; return; }
         if (resp.error === 'auth_denied'){
-          box.innerHTML = '<div class="dr-live-head">ESPN denied access to this league. Reconnect the league, then try again.</div>';
+          var who = plat === 'yahoo' ? 'Yahoo' : 'ESPN';
+          box.innerHTML = '<div class="dr-live-head">' + who + ' denied access to this league. Reconnect the league, then try again.</div>';
           return;
         }
         var all = resp.drafts || [];
@@ -5382,7 +5406,11 @@
           slot: slot, order: order, picks: {}, current: 1,
           owned: buildOwnedFromResponse(d, teams, rounds, order, slot),
           mode: 'live', isComplete: isComplete, isDrafting: isDrafting, sourceDraftId: draftId,
-          syncSource: d.source || (String(cfg.platform || '').toLowerCase() === 'espn' ? 'espn' : 'sleeper'),
+          syncSource: d.source || (function(){
+            var p = String(cfg.platform || '').toLowerCase();
+            if (p === 'espn' || p === 'yahoo') return p;
+            return 'sleeper';
+          })(),
           pollIntervalMs: parseInt(d.poll_interval_ms, 10) || 0,
           stallPolls: parseInt(d.stall_polls, 10) || 8,
           viewerTeamId: d.viewer_team_id || cfg.viewerRosterId || '',
@@ -5398,7 +5426,7 @@
         _espnStallPolls = 0; _espnEverGrew = liveSelectionCount(d.picks) > 0; _espnLastPickCount = liveSelectionCount(d.picks);
         _espnAuthFailed = false; _espnFallbackShown = false; _espnRelayActive = false; _espnRelayLastFp = '';
         hideEspnFallback();
-        if (state.syncSource === 'espn') showEspnTools();
+        if (isExtLiveSource()) showEspnTools();
         applyLivePicks(d.picks || []);
         // Completed draft: reload the pool against that season's ADP so grades
         // reflect ADP at draft time, not today. No-op cost for the current season
@@ -5409,7 +5437,7 @@
         showMain();
         updateDraftBanner();
         document.getElementById('drUndo').style.display = 'none';
-        if (state.syncSource === 'espn'){
+        if (isExtLiveSource()){
           document.getElementById('drLiveBadge').style.display = 'none';
           document.getElementById('drUpcomingBadge').style.display = 'none';
           updateEspnSyncPill(isDrafting ? 'live' : (isComplete ? 'complete' : 'connecting'));
@@ -5420,14 +5448,14 @@
         }
         if (isComplete){
           showCompleteSidebar();
-          if (state.syncSource === 'espn') updateEspnSyncPill('complete');
+          if (isExtLiveSource()) updateEspnSyncPill('complete');
         } else {
           document.getElementById('drSide').style.display = '';
           _setUpcomingMode(!isDrafting);
           startPolling();
           _liveSig = liveSig(d);  // re-seed after startPolling resets it so first auto-poll skips a redundant rebuild
           if (isDrafting) startPickTimer();
-          if (state.syncSource === 'espn'){
+          if (isExtLiveSource()){
             updateEspnSyncPill(isDrafting ? 'live' : (String(d.status) === 'pre_draft' ? 'not_started' : 'synced'));
           }
         }
@@ -5459,25 +5487,22 @@
   function updateEspnSyncPill(kind){
     var el = document.getElementById('drEspnSync');
     if (!el) return;
-    if (!state && String(cfg.platform || '').toLowerCase() !== 'espn'){ hideEspnSyncPill(); return; }
-    if (state && state.syncSource && state.syncSource !== 'espn'){ hideEspnSyncPill(); return; }
-    if (String(cfg.platform || '').toLowerCase() !== 'espn' && !(state && state.syncSource === 'espn')){
-      hideEspnSyncPill(); return;
-    }
-    var label = 'ESPN Draft';
+    if (!isExtLiveSource()){ hideEspnSyncPill(); return; }
+    var who = extPlatformLabel();
+    var label = who + ' Draft';
     var cls = 'dr-pill dr-pill-espn';
-    if (kind === 'connecting'){ label = 'ESPN Draft · Connecting'; cls += ' is-warn'; }
-    else if (kind === 'not_started'){ label = 'ESPN Draft · Not Started'; cls += ' is-muted'; }
+    if (kind === 'connecting'){ label = who + ' Draft · Connecting'; cls += ' is-warn'; }
+    else if (kind === 'not_started'){ label = who + ' Draft · Not Started'; cls += ' is-muted'; }
     else if (kind === 'live'){
       var viaExt = _espnExtLastSeen && (Date.now() - _espnExtLastSeen < 20000);
       label = viaExt
-        ? ('ESPN Draft · LIVE (ext) · Pick ' + _espnPickLabel())
-        : ('ESPN Draft · LIVE · Pick ' + _espnPickLabel());
+        ? (who + ' Draft · LIVE (ext) · Pick ' + _espnPickLabel())
+        : (who + ' Draft · LIVE · Pick ' + _espnPickLabel());
       cls += ' is-live';
     }
-    else if (kind === 'synced'){ label = 'ESPN Draft · Synced'; cls += ' is-ok'; }
-    else if (kind === 'unavailable'){ label = 'ESPN Draft · Sync Unavailable'; cls += ' is-warn'; }
-    else if (kind === 'complete'){ label = 'ESPN Draft · Complete'; cls += ' is-ok'; }
+    else if (kind === 'synced'){ label = who + ' Draft · Synced'; cls += ' is-ok'; }
+    else if (kind === 'unavailable'){ label = who + ' Draft · Sync Unavailable'; cls += ' is-warn'; }
+    else if (kind === 'complete'){ label = who + ' Draft · Complete'; cls += ' is-ok'; }
     el.className = cls;
     el.textContent = label;
     el.hidden = false;
@@ -5518,7 +5543,7 @@
   function showEspnTools(opts){
     var el = document.getElementById('drEspnTools');
     if (!el) return;
-    if (!(state && state.syncSource === 'espn') && String(cfg.platform || '').toLowerCase() !== 'espn') return;
+    if (!isExtLiveSource()) return;
     var unavailable = !!(opts && opts.unavailable) || _espnFallbackShown;
     // Keep the helpers visible while sync is broken — dismissing would strand
     // the manager without Get Chrome extension / Track manually.
@@ -5530,24 +5555,27 @@
         }
       } catch (e){}
     }
-    var espnUrl = espnDraftUrl() || 'https://fantasy.espn.com/football/draft';
+    var who = extPlatformLabel();
+    var draftUrl = livePlatformDraftUrl() || (extPlatformKey() === 'yahoo'
+      ? ('https://football.fantasysports.yahoo.com/f1/' + encodeURIComponent(cfg.leagueId || '') + '/draft')
+      : 'https://fantasy.espn.com/football/draft');
     var onPhone = _espnIsPhone();
     var title, blurb, primary;
     if (unavailable) {
-      title = 'ESPN sync needs a hand';
+      title = who + ' sync needs a hand';
       blurb = onPhone
-        ? 'Auto-sync needs a <b>computer</b> with the Chrome extension. On your phone, track picks manually in Draft Room while you draft in the ESPN app.'
-        : 'Live API updates often stall mid-draft. Install the Chrome extension and keep the ESPN draft tab open, or enter picks yourself.';
+        ? ('Auto-sync needs a <b>computer</b> with the Chrome extension. On your phone, track picks manually in Draft Room while you draft in the ' + who + ' app.')
+        : ('Live updates can lag mid-draft. Install the Chrome extension and keep the ' + who + ' draft tab open, or enter picks yourself.');
       primary = onPhone
         ? '<button type="button" class="dr-banner-join" id="drEspnManualFromTools">Track manually</button>'
           + '<button type="button" class="dr-banner-join is-ghost" id="drEspnExtInstall">Get Chrome extension</button>'
         : '<button type="button" class="dr-banner-join" id="drEspnExtInstall">Get Chrome extension</button>'
           + '<button type="button" class="dr-banner-join is-ghost" id="drEspnManualFromTools">Track manually</button>';
     } else {
-      title = onPhone ? 'Auto-sync needs a computer' : 'Sync ESPN picks automatically';
+      title = onPhone ? 'Auto-sync needs a computer' : ('Sync ' + who + ' picks automatically');
       blurb = onPhone
-        ? 'Install the Chrome extension on a laptop, or track picks manually here while drafting in the ESPN app.'
-        : 'Install the Chrome extension and keep the ESPN draft tab open — picks land here automatically.';
+        ? ('Install the Chrome extension on a laptop, or track picks manually here while drafting in the ' + who + ' app.')
+        : ('Install the Chrome extension and keep the ' + who + ' draft tab open — picks land here automatically.');
       primary = onPhone
         ? '<button type="button" class="dr-banner-join" id="drEspnManualFromTools">Track manually</button>'
           + '<button type="button" class="dr-banner-join is-ghost" id="drEspnExtInstall">Get Chrome extension</button>'
@@ -5567,7 +5595,7 @@
       + '</div>'
       + '<div class="dr-espn-tools-actions' + (unavailable ? ' is-split' : '') + '">'
       + primary
-      + '<a class="dr-banner-join is-link" href="' + espnUrl + '" target="_blank" rel="noopener">Open ESPN draft <i class="fa-solid fa-arrow-up-right-from-square"></i></a>'
+      + '<a class="dr-banner-join is-link" href="' + draftUrl + '" target="_blank" rel="noopener">Open ' + who + ' draft <i class="fa-solid fa-arrow-up-right-from-square"></i></a>'
       + '</div>';
   }
   function openEspnExtensionInstall(){
@@ -5585,8 +5613,8 @@
     if (box) box.classList.add('is-wide');
     msg.innerHTML = ''
       + '<div class="dr-msync-title">Install the Chrome extension</div>'
-      + '<p class="dr-msync-lead">On desktop Chrome or Edge, the extension watches your open ESPN draft and updates Draft Room automatically — no tapping after every pick.</p>'
-      + '<div class="dr-msync-warn"><b>Chrome / Edge on a computer.</b> Phones can\'t install this extension. Draft on ESPN from your phone and <b>track picks manually</b> in Draft Room, or use a laptop for auto-sync.</div>'
+      + '<p class="dr-msync-lead">On desktop Chrome or Edge, the extension watches your open ESPN or Yahoo draft and updates Draft Room automatically — no tapping after every pick.</p>'
+      + '<div class="dr-msync-warn"><b>Chrome / Edge on a computer.</b> Phones can\'t install this extension. Draft from your phone and <b>track picks manually</b> in Draft Room, or use a laptop for auto-sync.</div>'
       + '<div class="dr-msync-sec"><h4>Install (about 30 seconds)</h4>'
       + '<ol>'
       + '<li>Download the extension zip (button below).</li>'
@@ -5594,11 +5622,11 @@
       + '<li>Open <code>chrome://extensions</code> (or Edge: <code>edge://extensions</code>).</li>'
       + '<li>Turn on <b>Developer mode</b> (top right).</li>'
       + '<li>Click <b>Load unpacked</b> → select the unzipped folder.</li>'
-      + '<li>Keep this Draft Room open, open your ESPN draft in another tab, and draft normally.</li>'
+      + '<li>Keep this Draft Room open, open your ESPN or Yahoo draft in another tab, and draft normally.</li>'
       + '</ol></div>'
       + '<div class="dr-msync-sec"><h4>You\'ll know it\'s working</h4>'
       + '<ol>'
-      + '<li>A small <b>BR Fantasy</b> chip appears on the ESPN draft page.</li>'
+      + '<li>A small <b>BR Fantasy</b> chip appears on the draft page.</li>'
       + '<li>Picks show up here within a couple of seconds.</li>'
       + '</ol></div>';
     btns.innerHTML = '';
@@ -5652,7 +5680,7 @@
     _espnLastPickCount = count;
   }
   function _espnShouldFallback(d){
-    if (!state || state.syncSource !== 'espn' || _espnFallbackShown || _espnAuthFailed) return false;
+    if (!state || !isExtLiveSource() || _espnFallbackShown || _espnAuthFailed) return false;
     // Extension relay is actively feeding picks — don't kick the user to manual.
     if (_espnRelayActive) return false;
     if (String(d && d.status) === 'complete') return false;
@@ -5664,11 +5692,17 @@
     if (!_espnEverGrew && _espnStallPolls >= stallLimit) return true;
     return false;
   }
-  // Browser extension observed ESPN's open draft room and relayed raw picks.
-  // Normalize via /api/draft/espn-relay, then reuse the same apply path as REST sync.
+  // Browser extension observed an open ESPN/Yahoo draft room and relayed raw picks.
+  // Normalize via /api/draft/{espn|yahoo}-relay, then reuse the same apply path as REST sync.
   function applyEspnExtensionRelay(detail){
+    applyExtensionRelay(detail, 'espn');
+  }
+  function applyYahooExtensionRelay(detail){
+    applyExtensionRelay(detail, 'yahoo');
+  }
+  function applyExtensionRelay(detail, expectedSource){
     if (!detail || !Array.isArray(detail.picks)) return;
-    if (!state || state.mode !== 'live' || state.syncSource !== 'espn') return;
+    if (!state || state.mode !== 'live' || state.syncSource !== expectedSource) return;
     if (_espnAuthFailed) return;
     var lid = String(detail.leagueId || detail.league_id || '');
     if (lid && cfg.leagueId && String(cfg.leagueId) !== lid) return;
@@ -5683,7 +5717,8 @@
     _espnRelayInFlight = true;
     _espnExtLastSeen = Date.now();
     var headers = { 'Content-Type': 'application/json' };
-    fetch('/api/draft/espn-relay', {
+    var url = expectedSource === 'yahoo' ? '/api/draft/yahoo-relay' : '/api/draft/espn-relay';
+    fetch(url, {
       method: 'POST',
       headers: headers,
       body: JSON.stringify({
@@ -5700,7 +5735,7 @@
       .then(function(r){ return r.json().then(function(body){ return { ok: r.ok, body: body }; }); })
       .then(function(res){
         _espnRelayInFlight = false;
-        if (!state || state.mode !== 'live' || state.syncSource !== 'espn') return;
+        if (!state || state.mode !== 'live' || state.syncSource !== expectedSource) return;
         var d = res.body || {};
         if (!res.ok || !d || !Array.isArray(d.picks)) return;
         _espnRelayLastFp = d.fingerprint || fp;
@@ -5743,6 +5778,10 @@
     window.addEventListener('brfantasy:espn-draft-relay', function(ev){
       try { applyEspnExtensionRelay(ev && ev.detail); }
       catch (err){ if (window.console) console.error('[draft] espn relay', err); }
+    });
+    window.addEventListener('brfantasy:yahoo-draft-relay', function(ev){
+      try { applyYahooExtensionRelay(ev && ev.detail); }
+      catch (err){ if (window.console) console.error('[draft] yahoo relay', err); }
     });
   }
   _wireEspnExtensionRelay();
@@ -5788,8 +5827,13 @@
         + (cfg.season ? ('&seasonId=' + encodeURIComponent(cfg.season)) : '');
     return null;
   }
+  function yahooDraftUrl(){
+    if ((cfg.platform === 'yahoo' || (state && state.syncSource === 'yahoo')) && cfg.leagueId)
+      return 'https://football.fantasysports.yahoo.com/f1/' + encodeURIComponent(cfg.leagueId) + '/draft';
+    return null;
+  }
   function livePlatformDraftUrl(){
-    return sleeperDraftUrl() || espnDraftUrl();
+    return sleeperDraftUrl() || espnDraftUrl() || yahooDraftUrl();
   }
   function updateDraftBanner(){
     var el = document.getElementById('drStartBanner');
@@ -5804,7 +5848,7 @@
     if (el.getAttribute('data-bk') !== mode){
       el.setAttribute('data-bk', mode);
       var url = livePlatformDraftUrl();
-      var joinLabel = (state && state.syncSource === 'espn') ? 'Open in ESPN' : 'Open in Sleeper';
+      var joinLabel = (state && state.syncSource === 'espn') ? 'Open in ESPN' : ((state && state.syncSource === 'yahoo') ? 'Open in Yahoo' : 'Open in Sleeper');
       var joinBtn = url ? '<a class="dr-banner-join" href="' + url + '" target="_blank" rel="noopener">' + joinLabel + ' <i class="fa-solid fa-arrow-right-long"></i></a>' : '';
       el.className = 'dr-start-banner';
       el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-calendar-days"></i></span>'
@@ -5832,13 +5876,13 @@
     if (state && state.mode === 'live' && !state.isComplete){
       if (typeof document !== 'undefined' && document.hidden){
         ms = 30000;
-      } else if (state.syncSource === 'espn'){
-        var espnMs = parseInt(state.pollIntervalMs, 10) || 8000;
+      } else if (isExtLiveSource()){
+        var espnMs = parseInt(state.pollIntervalMs, 10) || (extPlatformKey() === 'yahoo' ? 6000 : 8000);
         if (state.isDrafting){
           ms = espnMs;
         } else if (state.startTime){
           var espnToStart = state.startTime - Date.now();
-          if (espnToStart > _START_WINDOW_MS) ms = 60000;  // not started: don't hammer ESPN
+          if (espnToStart > _START_WINDOW_MS) ms = 60000;  // not started: don't hammer provider
           else if (espnToStart <= 60000 && espnToStart > -900000) ms = espnMs;
           else ms = Math.max(espnMs, 15000);
         } else {
@@ -5872,16 +5916,16 @@
     var url = '/api/draft/live?platform=' + encodeURIComponent(cfg.platform)
             + '&draft_id=' + encodeURIComponent(state.sourceDraftId)
             + (full ? '' : '&light=1');
-    if (state.syncSource === 'espn' && cfg.leagueId){
+    if (isExtLiveSource() && cfg.leagueId){
       url += '&league_id=' + encodeURIComponent(cfg.leagueId)
           + '&season=' + encodeURIComponent(cfg.season || state.season || '');
     }
     _pollInFlight = true; updatePollStatus();
-    if (state.syncSource === 'espn' && !state.isDrafting && !state.isComplete){
+    if (isExtLiveSource() && !state.isDrafting && !state.isComplete){
       updateEspnSyncPill(String(state.status) === 'pre_draft' ? 'not_started' : 'connecting');
     }
     var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    var abortMs = (state.syncSource === 'espn') ? 12000 : 8000;
+    var abortMs = isExtLiveSource() ? 12000 : 8000;
     var to = setTimeout(function(){ if (ctrl) ctrl.abort(); }, abortMs);
     fetch(url, ctrl ? { signal: ctrl.signal, cache: 'no-store' } : { cache: 'no-store' })
       .then(function(r){ return r.json().then(function(body){ return { ok: r.ok, status: r.status, body: body }; }); })
@@ -5894,12 +5938,12 @@
         if (d.error === 'auth_denied' || d.retry === false){
           _espnAuthFailed = true;
           stopPolling();
-          if (state.syncSource === 'espn') showEspnFallback();
+          if (isExtLiveSource()) showEspnFallback();
           return;
         }
         if (!res.ok || d.error){
-          if (state.syncSource === 'espn') _espnStallPolls++;
-          if (state.syncSource === 'espn' && _espnShouldFallback(d)){
+          if (isExtLiveSource()) _espnStallPolls++;
+          if (isExtLiveSource() && _espnShouldFallback(d)){
             stopPolling(); showEspnFallback();
           }
           return;
@@ -5909,7 +5953,7 @@
         if (d.stall_polls) state.stallPolls = parseInt(d.stall_polls, 10) || state.stallPolls;
         if (d.start_time != null) state.startTime = parseInt(d.start_time) || 0;
         if (d.pick_timer != null) state.pickTimer = parseInt(d.pick_timer) || 0;
-        var isEspn = state.syncSource === 'espn';
+        var isEspn = isExtLiveSource();
         if (isEspn){
           _noteEspnPollGrowth(d);
           if (d.relay_source || d.relay_updated_at){
@@ -5976,7 +6020,7 @@
       })
       .catch(function(){
         clearTimeout(to); _pollInFlight = false;
-        if (state && state.syncSource === 'espn' && state.isDrafting){
+        if (state && isExtLiveSource() && state.isDrafting){
           _espnStallPolls++;
           if (!_espnEverGrew && _espnStallPolls >= (parseInt(state.stallPolls, 10) || 8)){
             stopPolling(); showEspnFallback();
@@ -8570,7 +8614,7 @@
       if (state.mode === 'live'){
         document.getElementById('drUndo').style.display = 'none';
         lastLivePicks = null;  // force a full ESPN/Sleeper reconcile on the first poll
-        if (state.syncSource === 'espn'){
+        if (isExtLiveSource()){
           document.getElementById('drLiveBadge').style.display = 'none';
           document.getElementById('drUpcomingBadge').style.display = 'none';
           updateEspnSyncPill(state.isComplete ? 'complete' : 'connecting');
@@ -8579,10 +8623,10 @@
           showCompleteSidebar();
           document.getElementById('drLiveBadge').style.display = 'none';
           document.getElementById('drUpcomingBadge').style.display = 'none';
-          if (state.syncSource === 'espn') updateEspnSyncPill('complete');
+          if (isExtLiveSource()) updateEspnSyncPill('complete');
         } else {
           // Badges are refreshed on the first poll; hide both until confirmed
-          if (state.syncSource !== 'espn'){
+          if (!isExtLiveSource()){
             document.getElementById('drLiveBadge').style.display = 'none';
             document.getElementById('drUpcomingBadge').style.display = 'none';
           }
