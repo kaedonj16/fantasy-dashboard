@@ -8,7 +8,7 @@ EXT = REPO / "extension"
 
 def test_extension_manifest_includes_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.1.0"
+    assert manifest["version"] == "1.2.0"
     assert "cookies" in manifest["permissions"]
     assert "tabs" not in manifest.get("permissions", [])
     scripts = manifest["content_scripts"]
@@ -25,6 +25,7 @@ def test_extension_manifest_includes_draft_scripts():
     assert iso_js == ["espn_draft.js"]
     assert (EXT / "espn_draft_main.js").is_file()
     assert (EXT / "espn_draft.js").is_file()
+    assert (EXT / "pack_extension.py").is_file()
 
 
 def test_extension_relay_message_contract():
@@ -37,3 +38,19 @@ def test_extension_relay_message_contract():
     assert "brfantasy:espn-draft-raw" in iso
     assert "brfantasy:espn-draft-relay" in content
     assert "overallPickNumber" in main
+    assert "br-fantasy-espn-sync-chip" in iso
+
+
+def test_pack_extension_strips_localhost():
+    import subprocess
+    import sys
+    import zipfile
+
+    subprocess.check_call([sys.executable, str(EXT / "pack_extension.py")], cwd=str(EXT.parent))
+    zips = list((EXT.parent / "artifacts").glob("br-fantasy-espn-connector-v*.zip"))
+    assert zips
+    with zipfile.ZipFile(sorted(zips)[-1]) as zf:
+        manifest = json.loads(zf.read("manifest.json"))
+    blob = json.dumps(manifest)
+    assert "localhost" not in blob
+    assert "127.0.0.1" not in blob

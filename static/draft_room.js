@@ -62,10 +62,13 @@
   var _espnLastPickCount = 0;
   var _espnAuthFailed = false;
   var _espnFallbackShown = false;
-  var _espnRelayActive = false; // browser extension is feeding live picks
+  var _espnRelayActive = false; // browser extension / bookmarklet is feeding live picks
   var _espnRelayInFlight = false;
   var _espnRelayLastFp = '';
-  var sim = false;         // mock-draft simulation active
+  var _espnRelayToken = '';
+  var _espnRelayBookmarklet = '';
+  var _espnRelayShortcutJs = '';
+  var _espnExtLastSeen = 0;
   var simTimer = null;
   var simSpeed = 700;      // ms between CPU picks
   var simPaused = false;
@@ -5397,6 +5400,8 @@
         _espnStallPolls = 0; _espnEverGrew = liveSelectionCount(d.picks) > 0; _espnLastPickCount = liveSelectionCount(d.picks);
         _espnAuthFailed = false; _espnFallbackShown = false; _espnRelayActive = false; _espnRelayLastFp = '';
         hideEspnFallback();
+        if (state.syncSource === 'espn') ensureEspnRelayToken();
+        if (state.syncSource === 'espn') showEspnTools();
         applyLivePicks(d.picks || []);
         // Completed draft: reload the pool against that season's ADP so grades
         // reflect ADP at draft time, not today. No-op cost for the current season
@@ -5466,7 +5471,13 @@
     var cls = 'dr-pill dr-pill-espn';
     if (kind === 'connecting'){ label = 'ESPN Draft · Connecting'; cls += ' is-warn'; }
     else if (kind === 'not_started'){ label = 'ESPN Draft · Not Started'; cls += ' is-muted'; }
-    else if (kind === 'live'){ label = 'ESPN Draft · LIVE · Pick ' + _espnPickLabel(); cls += ' is-live'; }
+    else if (kind === 'live'){
+      var viaExt = _espnExtLastSeen && (Date.now() - _espnExtLastSeen < 20000);
+      label = viaExt
+        ? ('ESPN Draft · LIVE (ext) · Pick ' + _espnPickLabel())
+        : ('ESPN Draft · LIVE · Pick ' + _espnPickLabel());
+      cls += ' is-live';
+    }
     else if (kind === 'synced'){ label = 'ESPN Draft · Synced'; cls += ' is-ok'; }
     else if (kind === 'unavailable'){ label = 'ESPN Draft · Sync Unavailable'; cls += ' is-warn'; }
     else if (kind === 'complete'){ label = 'ESPN Draft · Complete'; cls += ' is-ok'; }
@@ -5490,13 +5501,101 @@
     el.style.display = '';
     el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-unlink"></i></span>'
       + '<div class="dr-banner-txt"><b>ESPN live sync unavailable</b>'
-      + '<span>ESPN\'s API often doesn\'t update mid-draft. Keep the ESPN draft open with the BR Fantasy extension installed for automatic pick relay, or switch to manual tracking.</span></div>'
+      + '<span>ESPN\'s API often doesn\'t update mid-draft. Install the BR Fantasy extension (desktop) or use Mobile Sync below — or switch to manual tracking.</span></div>'
       + '<button type="button" class="dr-banner-join" id="drEspnManual">Switch to Manual Tracking</button>';
     updateEspnSyncPill('unavailable');
+    showEspnTools();
+  }
+  function hideEspnTools(){
+    var el = document.getElementById('drEspnTools');
+    if (!el) return;
+    el.style.display = 'none';
+    el.hidden = true;
+    el.innerHTML = '';
+  }
+  function showEspnTools(){
+    var el = document.getElementById('drEspnTools');
+    if (!el) return;
+    if (!(state && state.syncSource === 'espn') && String(cfg.platform || '').toLowerCase() !== 'espn') return;
+    el.hidden = false;
+    el.style.display = '';
+    var espnUrl = espnDraftUrl() || 'https://fantasy.espn.com/football/draft';
+    el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-mobile-screen-button"></i></span>'
+      + '<div class="dr-banner-txt"><b>ESPN live helpers</b>'
+      + '<span>Desktop: install the extension and keep the ESPN draft tab open. Mobile: enable Mobile Sync, open ESPN draft, then run the bookmark / Shortcut after picks.</span></div>'
+      + '<div class="dr-banner-actions">'
+      + '<a class="dr-banner-join is-ghost" href="https://github.com/kaedonj16/fantasy-dashboard/tree/main/extension" target="_blank" rel="noopener">Extension setup</a>'
+      + '<a class="dr-banner-join is-ghost" href="' + espnUrl + '" target="_blank" rel="noopener">Open ESPN draft</a>'
+      + '<button type="button" class="dr-banner-join" id="drEspnMobileSync">Mobile Sync</button>'
+      + '</div>';
+  }
+  function ensureEspnRelayToken(){
+    if (!cfg.leagueId || !cfg.season) return;
+    if (_espnRelayToken) return;
+    fetch('/api/draft/espn-relay/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ league_id: cfg.leagueId, season: cfg.season }),
+      cache: 'no-store'
+    })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (!d || !d.token) return;
+        _espnRelayToken = d.token;
+        _espnRelayBookmarklet = d.bookmarklet || '';
+        _espnRelayShortcutJs = d.shortcut_js || '';
+      })
+      .catch(function(){});
+  }
+  function openEspnMobileSync(){
+    ensureEspnRelayToken();
+    function show(){
+      if (!_espnRelayBookmarklet){
+        drAlert('Still preparing mobile sync — try again in a second.');
+        ensureEspnRelayToken();
+        return;
+      }
+      var msg = 'Mobile ESPN sync\n\n'
+        + '1) Keep this Draft Room open (or reopen it on this phone).\n'
+        + '2) Open your ESPN draft.\n'
+        + '3) Run the BR Fantasy sync bookmark / iOS Shortcut.\n\n'
+        + 'Copy the bookmarklet to the clipboard now?';
+      if (window.confirm(msg)){
+        if (navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(_espnRelayBookmarklet).then(function(){
+            drAlert('Bookmarklet copied. On your phone browser: add a bookmark for the ESPN draft page, then edit its URL and paste.');
+          }).catch(function(){
+            window.prompt('Copy this bookmarklet:', _espnRelayBookmarklet);
+          });
+        } else {
+          window.prompt('Copy this bookmarklet:', _espnRelayBookmarklet);
+        }
+      }
+    }
+    if (_espnRelayBookmarklet) show();
+    else {
+      fetch('/api/draft/espn-relay/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ league_id: cfg.leagueId, season: cfg.season }),
+        cache: 'no-store'
+      })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if (d && d.token){
+            _espnRelayToken = d.token;
+            _espnRelayBookmarklet = d.bookmarklet || '';
+            _espnRelayShortcutJs = d.shortcut_js || '';
+          }
+          show();
+        })
+        .catch(function(){ drAlert('Could not create mobile sync token.'); });
+    }
   }
   function switchEspnToManual(){
     stopPolling(); stopPickTimer();
     hideEspnFallback();
+    hideEspnTools();
     if (!state) return;
     state.mode = undefined;
     state.syncSource = undefined;
@@ -5553,17 +5652,23 @@
     if (fp && fp === _espnRelayLastFp) return;
     if (_espnRelayInFlight) return;
     _espnRelayInFlight = true;
+    _espnExtLastSeen = Date.now();
+    ensureEspnRelayToken();
+    var headers = { 'Content-Type': 'application/json' };
+    if (_espnRelayToken) headers.Authorization = 'Bearer ' + _espnRelayToken;
     fetch('/api/draft/espn-relay', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: headers,
       body: JSON.stringify({
         leagueId: lid || cfg.leagueId,
         season: season || cfg.season || state.season,
         inProgress: detail.inProgress !== false,
         drafted: !!detail.drafted,
-        picks: detail.picks
+        picks: detail.picks,
+        source: detail.source || 'extension'
       }),
-      cache: 'no-store'
+      cache: 'no-store',
+      credentials: 'same-origin'
     })
       .then(function(r){ return r.json().then(function(body){ return { ok: r.ok, body: body }; }); })
       .then(function(res){
@@ -5780,6 +5885,11 @@
         var isEspn = state.syncSource === 'espn';
         if (isEspn){
           _noteEspnPollGrowth(d);
+          if (d.relay_source || d.relay_updated_at){
+            _espnRelayActive = true;
+            _espnFallbackShown = false;
+            hideEspnFallback();
+          }
           if (_espnShouldFallback(d)){
             stopPolling(); showEspnFallback();
             return;
@@ -8052,6 +8162,7 @@
   var _espnFb = document.getElementById('drEspnFallback');
   if (_espnFb) _espnFb.addEventListener('click', function(e){
     if (e.target && e.target.id === 'drEspnManual') switchEspnToManual();
+    if (e.target && e.target.id === 'drEspnMobileSync') openEspnMobileSync();
   });
   if (typeof document !== 'undefined' && document.addEventListener){
     document.addEventListener('visibilitychange', function(){

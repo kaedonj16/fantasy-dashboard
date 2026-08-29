@@ -63,7 +63,10 @@ ESPN leagues can open Draft Room as an observe-only companion while the actual
 picks happen on ESPN. See `docs/espn-live-draft-sync.md`. Credentials (`espn_s2`,
 `SWID`) stay server-side; this app never submits picks to ESPN.
 
-When ESPN's REST `mDraftDetail` view does not update mid-draft, install the
-browser extension (`extension/`) and keep the ESPN draft room open — it relays
-live picks into Draft Room via `POST /api/draft/espn-relay`.
+When ESPN's REST `mDraftDetail` view does not update mid-draft:
+
+- **Desktop:** browser extension (`extension/`) relays picks from the open ESPN
+  draft room. Build a store zip with `python3 extension/pack_extension.py`.
+- **Mobile:** Draft Room **Mobile Sync** mints a short-lived token + bookmarklet
+  / iOS Shortcut that POSTs picks to `POST /api/draft/espn-relay`.
 

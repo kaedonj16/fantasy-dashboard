@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from typing import Optional, Tuple
 
 from flask import Blueprint, jsonify, request, session
 
@@ -83,6 +84,8 @@ def _espn_live(draft_id: str, league_id: str, season: int):
         parse_espn_draft_id,
         snapshot_to_live_payload,
     )
+    from dashboard_services.espn_draft_relay import get_relay_snapshot, merge_live_with_relay
+
     parsed = parse_espn_draft_id(draft_id) if draft_id else None
     if parsed:
         league_id, season = parsed[0], parsed[1]
@@ -106,6 +109,10 @@ def _espn_live(draft_id: str, league_id: str, season: int):
         logger.warning("[draft-live] espn error_type=Exception")
         return jsonify({"error": "fetch_failed", "retry": True}), 502
     payload = snapshot_to_live_payload(snapshot)
+    try:
+        payload = merge_live_with_relay(payload, get_relay_snapshot(str(league_id), int(season)))
+    except Exception:
+        logger.info("[draft-live] relay merge skipped error_type=Exception")
     # Never echo provider secrets even if a future field is added upstream.
     for secret_key in ("espn_s2", "swid", "SWID", "cookie", "cookies"):
         payload.pop(secret_key, None)
@@ -128,6 +135,56 @@ def _espn_relay_normalize(body: dict):
         player_lookup=_player_lookup,
         dst_mapper=_dst_from_espn_id,
     )
+
+
+def _relay_cors(resp):
+    """Allow the ESPN draft origin to POST picks from the mobile bookmarklet."""
+    origin = (request.headers.get("Origin") or "").strip()
+    allowed = (
+        origin.endswith(".espn.com")
+        or origin == "https://fantasy.espn.com"
+        or origin == "https://www.espn.com"
+    )
+    if allowed:
+        resp.headers["Access-Control-Allow-Origin"] = origin
+        resp.headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        resp.headers["Access-Control-Max-Age"] = "86400"
+        resp.headers["Vary"] = "Origin"
+    return resp
+
+
+def _bearer_token() -> str:
+    auth = (request.headers.get("Authorization") or "").strip()
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return (request.args.get("token") or "").strip()
+
+
+def _relay_auth_ok(league_id: str, season: int) -> Tuple[bool, Optional[str]]:
+    """Session (Draft Room / extension) or signed mobile token."""
+    from dashboard_services.espn_draft_relay import verify_relay_token
+
+    token = _bearer_token()
+    if token:
+        claims = verify_relay_token(token)
+        if not claims:
+            return False, "invalid_token"
+        if str(claims["league_id"]) != str(league_id):
+            return False, "league_mismatch"
+        if int(claims["season"]) != int(season):
+            return False, "season_mismatch"
+        return True, None
+    try:
+        if session.get("account_id") or session.get("viewer_user_id") or session.get("viewer_roster_id"):
+            return True, None
+        # Same-origin Draft Room (guest boards) — browser sends Sec-Fetch-Site.
+        if (request.headers.get("Sec-Fetch-Site") or "").lower() == "same-origin":
+            return True, None
+    except RuntimeError:
+        pass
+    return False, "auth_required"
+
 
 
 @draft_api_bp.route("/api/draft/detect")
@@ -221,30 +278,137 @@ def api_draft_detect():
     return jsonify({"drafts": out})
 
 
-@draft_api_bp.route("/api/draft/espn-relay", methods=["POST"])
+@draft_api_bp.route("/api/draft/espn-relay", methods=["POST", "OPTIONS", "GET"])
 def api_draft_espn_relay():
-    """Normalize ESPN draft-room picks observed by the browser extension.
+    """Normalize + store ESPN draft picks from the extension or mobile bookmarklet.
 
-    Observe-only: does not talk to ESPN and never submits picks. The extension
-    reads the open ESPN draft UI and posts the raw pick list here so Draft Room
-    can map ESPN player ids onto the canonical board.
+    Observe-only: does not talk to ESPN and never submits picks.
     """
+    if request.method == "OPTIONS":
+        return _relay_cors(jsonify({"ok": True}))
+
+    from dashboard_services.espn_draft_relay import (
+        get_relay_snapshot,
+        put_relay_snapshot,
+    )
+
+    if request.method == "GET":
+        league_id = (request.args.get("league_id") or request.args.get("leagueId") or "").strip()
+        try:
+            season = int(request.args.get("season") or request.args.get("seasonId") or 0)
+        except (TypeError, ValueError):
+            season = 0
+        if not league_id or not season:
+            return _relay_cors(jsonify({"error": "league_required"})), 400
+        ok, err = _relay_auth_ok(league_id, season)
+        if not ok:
+            return _relay_cors(jsonify({"error": err or "auth_required"})), 401
+        entry = get_relay_snapshot(league_id, season)
+        if not entry:
+            return _relay_cors(jsonify({"picks": [], "empty": True, "league_id": league_id, "season": season}))
+        payload = dict(entry.get("payload") or {})
+        payload["relay_updated_at"] = entry.get("updated_at")
+        payload["relay_source"] = entry.get("source")
+        for secret_key in ("espn_s2", "swid", "SWID", "cookie", "cookies", "token"):
+            payload.pop(secret_key, None)
+        return _relay_cors(jsonify(payload))
+
     body = request.get_json(silent=True) or {}
     if not isinstance(body, dict):
-        return jsonify({"error": "invalid_body"}), 400
+        return _relay_cors(jsonify({"error": "invalid_body"})), 400
     picks = body.get("picks")
     if not isinstance(picks, list):
-        return jsonify({"error": "picks_required"}), 400
+        return _relay_cors(jsonify({"error": "picks_required"})), 400
     if len(picks) > 500:
-        return jsonify({"error": "too_many_picks"}), 400
+        return _relay_cors(jsonify({"error": "too_many_picks"})), 400
+
+    league_id = str(body.get("leagueId") or body.get("league_id") or "").strip()
+    try:
+        season = int(body.get("season") or body.get("seasonId") or 0)
+    except (TypeError, ValueError):
+        season = 0
+    # Token may carry league/season when the bookmarklet URL lacked query params.
+    token = _bearer_token()
+    if token and (not league_id or not season):
+        from dashboard_services.espn_draft_relay import verify_relay_token
+        claims = verify_relay_token(token)
+        if claims:
+            league_id = league_id or str(claims["league_id"])
+            season = season or int(claims["season"])
+    if not league_id or not season:
+        return _relay_cors(jsonify({"error": "league_required"})), 400
+
+    ok, err = _relay_auth_ok(league_id, season)
+    if not ok:
+        return _relay_cors(jsonify({"error": err or "auth_required"})), 401
+
     try:
         payload = _espn_relay_normalize(body)
     except Exception:
         logger.warning("[draft-espn-relay] normalize failed error_type=Exception")
-        return jsonify({"error": "normalize_failed"}), 500
-    for secret_key in ("espn_s2", "swid", "SWID", "cookie", "cookies"):
+        return _relay_cors(jsonify({"error": "normalize_failed"})), 500
+
+    payload["league_id"] = league_id
+    payload["season"] = season
+    source = str(body.get("source") or "relay")
+    try:
+        put_relay_snapshot(league_id, season, payload, source=source)
+    except Exception:
+        logger.info("[draft-espn-relay] store skipped error_type=Exception")
+
+    for secret_key in ("espn_s2", "swid", "SWID", "cookie", "cookies", "token"):
         payload.pop(secret_key, None)
-    return jsonify(payload)
+    return _relay_cors(jsonify(payload))
+
+
+@draft_api_bp.route("/api/draft/espn-relay/token", methods=["POST"])
+def api_draft_espn_relay_token():
+    """Mint a short-lived token + bookmarklet for mobile ESPN draft sync."""
+    from dashboard_services.espn_draft_relay import (
+        build_bookmarklet,
+        mint_relay_token,
+        shortcut_javascript,
+        site_origin,
+    )
+
+    body = request.get_json(silent=True) or {}
+    league_id = str(
+        body.get("league_id") or body.get("leagueId") or request.args.get("league_id") or ""
+    ).strip()
+    try:
+        season = int(body.get("season") or body.get("seasonId") or request.args.get("season") or 0)
+    except (TypeError, ValueError):
+        season = 0
+    if not league_id or not season:
+        return jsonify({"error": "league_required"}), 400
+    try:
+        account_id = session.get("account_id")
+    except RuntimeError:
+        account_id = None
+    try:
+        minted = mint_relay_token(
+            league_id=league_id,
+            season=season,
+            account_id=str(account_id) if account_id not in (None, "") else None,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    origin = site_origin(request.host_url)
+    bookmarklet = build_bookmarklet(origin, minted["token"])
+    return jsonify({
+        **minted,
+        "origin": origin,
+        "bookmarklet": bookmarklet,
+        "shortcut_js": shortcut_javascript(origin, minted["token"]),
+        "espn_draft_url": (
+            f"https://fantasy.espn.com/football/draft?leagueId={league_id}&seasonId={season}"
+        ),
+        "instructions": {
+            "android": "Open ESPN draft → browser menu → Bookmarks → Add → edit URL to the bookmarklet.",
+            "ios": "Add a Safari Shortcut that runs the shortcut_js on fantasy.espn.com, or edit a bookmark URL to the bookmarklet.",
+            "desktop": "Drag the bookmarklet to your bookmarks bar, open the ESPN draft, click it after each pick (or when picks look behind).",
+        },
+    })
 
 
 @draft_api_bp.route("/api/draft/live")

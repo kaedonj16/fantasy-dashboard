@@ -155,6 +155,9 @@ def test_espn_detect_without_sync_does_not_call_provider(client, monkeypatch):
 
 def test_espn_live_predraft_returns_empty_picks(client, monkeypatch):
     import dashboard_services.draft_sync as ds
+    from dashboard_services.espn_draft_relay import clear_relay_snapshot
+
+    clear_relay_snapshot("99", 2026)
     fake = _FakeProvider(snapshot=_snap("pre_draft", picks=[]))
     monkeypatch.setattr(ds, "get_draft_sync_provider", lambda platform: fake)
     resp = client.get("/api/draft/live?platform=espn&draft_id=espn_99_2026")
@@ -195,6 +198,8 @@ def test_espn_relay_normalizes_extension_picks(client, monkeypatch):
         }
 
     monkeypatch.setattr(bp, "_espn_relay_normalize", fake_normalize)
+    with client.session_transaction() as sess:
+        sess["account_id"] = 1
     resp = client.post(
         "/api/draft/espn-relay",
         json={
@@ -212,6 +217,66 @@ def test_espn_relay_normalizes_extension_picks(client, monkeypatch):
 
 
 def test_espn_relay_requires_picks_list(client):
-    resp = client.post("/api/draft/espn-relay", json={"leagueId": "99"})
+    with client.session_transaction() as sess:
+        sess["account_id"] = 1
+    resp = client.post("/api/draft/espn-relay", json={"leagueId": "99", "season": 2026})
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "picks_required"
+
+
+def test_espn_relay_token_and_bearer_auth(client, monkeypatch):
+    import routes.draft_api_bp as bp
+
+    monkeypatch.setattr(
+        bp,
+        "_espn_relay_normalize",
+        lambda body: {
+            "source": "espn-relay",
+            "league_id": "99",
+            "season": 2026,
+            "status": "drafting",
+            "picks": [{"pick_no": 1, "player_id": "5938", "external_player_id": "1"}],
+            "fingerprint": "x",
+        },
+    )
+    with client.session_transaction() as sess:
+        sess["account_id"] = 42
+    tok = client.post(
+        "/api/draft/espn-relay/token",
+        json={"league_id": "99", "season": 2026},
+    )
+    assert tok.status_code == 200
+    body = tok.get_json()
+    assert body["token"]
+    assert body["bookmarklet"].startswith("javascript:")
+    assert "fantasy.espn.com" in body["espn_draft_url"]
+
+    # Clear session — bearer token alone must authorize the mobile bookmarklet.
+    with client.session_transaction() as sess:
+        sess.clear()
+    resp = client.post(
+        "/api/draft/espn-relay",
+        json={
+            "leagueId": "99",
+            "season": 2026,
+            "picks": [{"overallPickNumber": 1, "playerId": 1, "teamId": 1}],
+            "source": "bookmarklet",
+        },
+        headers={"Authorization": "Bearer " + body["token"]},
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["picks"][0]["player_id"] == "5938"
+
+
+def test_espn_relay_rejects_unauthenticated(client):
+    with client.session_transaction() as sess:
+        sess.clear()
+    resp = client.post(
+        "/api/draft/espn-relay",
+        json={
+            "leagueId": "99",
+            "season": 2026,
+            "picks": [{"overallPickNumber": 1, "playerId": 1, "teamId": 1}],
+        },
+    )
+    assert resp.status_code == 401

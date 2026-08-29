@@ -83,7 +83,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       at: msg.at || Date.now(),
     })
       .then(sendResponse)
-      .catch(() => sendResponse({ ok: false }));
+      .catch(() => sendResponse({ ok: false, sent: 0 }));
     return true;
   }
 

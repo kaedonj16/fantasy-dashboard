@@ -77,3 +77,6 @@ static/app-features.min.js.src
 
 # Read-only output from scripts/value_model_experiment.py
 value_experiment_output/
+
+# Extension store zip from extension/pack_extension.py
+artifacts/br-fantasy-espn-connector-v*.zip

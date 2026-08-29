@@ -274,6 +274,7 @@ _DRAFT_ROOM_HTML = r"""
   <div class="dr-main" id="drMain" style="display:none;">
     <div class="dr-start-banner" id="drStartBanner" style="display:none;"></div>
     <div class="dr-start-banner dr-espn-fallback" id="drEspnFallback" style="display:none;" hidden></div>
+    <div class="dr-start-banner dr-espn-tools" id="drEspnTools" style="display:none;" hidden></div>
     <div class="dr-statusbar">
       <div class="dr-status-info">
         <div class="dr-onclock" id="drOnClockWrap">
@@ -694,6 +695,10 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pill-espn.is-muted { background: rgba(148,163,184,.16); color: var(--text-subtle); animation: none; }
   .dr-espn-fallback { background: linear-gradient(90deg, color-mix(in srgb, var(--warning) 16%, transparent), color-mix(in srgb, var(--warning) 5%, transparent)); border-color: var(--warning); }
   .dr-espn-fallback .dr-banner-join { background: var(--warning); color: #111; cursor: pointer; border: 0; font: inherit; }
+  .dr-espn-tools { background: linear-gradient(90deg, color-mix(in srgb, var(--accent,#38bdf8) 14%, transparent), color-mix(in srgb, var(--accent,#38bdf8) 4%, transparent)); border-color: color-mix(in srgb, var(--accent,#38bdf8) 45%, transparent); flex-wrap: wrap; }
+  .dr-espn-tools .dr-banner-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+  .dr-espn-tools .dr-banner-join { border: 0; cursor: pointer; font: inherit; }
+  .dr-espn-tools .dr-banner-join.is-ghost { background: transparent; color: var(--text); border: 1px solid color-mix(in srgb, var(--accent,#38bdf8) 40%, transparent); }
   .dr-pick-timer { font-size: 14px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums;
     min-width: 40px; padding: 2px 8px; border-radius: 7px; background: rgba(127,127,127,.1); text-align: center; }
   .dr-pick-timer.urgent { color: #fff; background: var(--loss); animation: drPulse 1s ease-in-out infinite; }
