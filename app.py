@@ -8293,8 +8293,23 @@ def _render_do_next_waiver_card(
     draft_prep_hrefs: list[tuple[str, str]] | None = None,
     preview_limit: int = 2,
 ) -> str:
-    """Merged dashboard waiver card: preview rows, optional show-all, draft prep links."""
-    full_rows = _build_waiver_targets_rows(ctx, model_value_table, limit=10)
+    """Merged dashboard next-steps card: waiver preview, optional show-all, draft prep.
+
+    Leagues that have not finished their startup/redraft draft skip waiver
+    suggestions entirely — pickups are meaningless before rosters exist.
+    """
+    from utils.league_payload import startup_draft_pending
+
+    undrafted = startup_draft_pending(
+        ctx.get("league"),
+        ctx.get("latest_draft"),
+        ctx.get("rosters"),
+    )
+    full_rows = (
+        ""
+        if undrafted
+        else _build_waiver_targets_rows(ctx, model_value_table, limit=10)
+    )
     if not full_rows and not draft_prep_hrefs:
         return ""
 
@@ -8315,7 +8330,9 @@ def _render_do_next_waiver_card(
             'aria-expanded="false" aria-controls="do-next-waiver-body">Show all</button>'
         )
 
-    if draft_prep_hrefs:
+    if undrafted:
+        subtitle = "Get ready for your draft"
+    elif draft_prep_hrefs:
         subtitle = "Top waiver pickups for your roster"
     else:
         subtitle = "Smart pickups based on value + trend + breakout potential"
@@ -8335,23 +8352,32 @@ def _render_do_next_waiver_card(
             <div class="os-do-next-draft-links">{links}</div>
           </div>"""
 
-    waiver_body = full_rows or '<p class="os-do-next-empty">No waiver values available yet.</p>'
+    waiver_list_html = ""
+    waivers_link = ""
+    if not undrafted:
+        waiver_body = full_rows or '<p class="os-do-next-empty">No waiver values available yet.</p>'
+        waiver_list_html = f"""
+          <div class="os-waiver-list" id="do-next-waiver-body">
+            {waiver_body}
+          </div>"""
+        waivers_link = (
+            f'<a class="os-section-link" href="{html.escape(_wv_url)}">'
+            f"View waivers &rarr;</a>"
+        )
 
     return f"""
         <section class="os-card os-action-card os-do-next-card{collapsed_cls}">
           <div class="os-section-head">
             <div class="os-section-head-content">
-              <h2 class="os-section-title">Do this next</h2>
+              <h2 class="os-section-title">Next steps</h2>
               <div class="os-section-subtitle">{subtitle}</div>
             </div>
             <div class="os-section-head-actions">
-              <a class="os-section-link" href="{html.escape(_wv_url)}">View waivers &rarr;</a>
+              {waivers_link}
               {expand_btn}
             </div>
           </div>
-          <div class="os-waiver-list" id="do-next-waiver-body">
-            {waiver_body}
-          </div>
+          {waiver_list_html}
           {draft_links_html}
         </section>"""
 
@@ -24367,10 +24393,9 @@ def build_portfolio_body(
     league_card = (
         "<style>"
         ".pf-lg-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px;}"
-        "@media(max-width:640px){.pf-lg-grid{grid-template-columns:1fr;}}"
         ".pf-lg-card{background:var(--card);border:1px solid var(--grid);border-radius:12px;"
-        "padding:13px 14px;display:flex;flex-direction:column;gap:11px;}"
-        ".pf-lg-top{display:flex;align-items:center;gap:10px;}"
+        "padding:13px 14px;display:flex;flex-direction:column;gap:11px;min-width:0;max-width:100%;}"
+        ".pf-lg-top{display:flex;align-items:center;gap:10px;min-width:0;}"
         ".pf-lg-crest{width:34px;height:34px;border-radius:9px;flex:0 0 auto;display:grid;place-items:center;"
         "color:#fff;font-weight:800;font-size:13px;}"
         ".pf-lg-id{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:2px;}"
@@ -24384,15 +24409,15 @@ def build_portfolio_body(
         ".pf-lg-plat-yahoo{color:#12A4A0;}"
         ".pf-lg-plat-mfl{color:#3B7DD8;}"
         ".pf-lg-plat-fleaflicker{color:#E08A1E;}"
-        ".pf-lg-mid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center;}"
+        ".pf-lg-mid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;text-align:center;min-width:0;}"
         ".pf-lg-mid.pf-lg-draft{grid-template-columns:1fr;}"
         ".pf-lg-v{font-size:16px;font-weight:800;}"
         ".pf-draft-cd{font-variant-numeric:tabular-nums;}"
         ".pf-draft-when{font-size:11px;color:var(--text-muted);margin-top:3px;}"
         ".pf-lg-l{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-subtle);margin-top:2px;}"
-        ".pf-lg-foot{display:flex;align-items:center;gap:12px;border-top:1px solid var(--grid);padding-top:10px;flex-wrap:wrap;}"
-        ".pf-lg-foot .pf-pos-chips{margin-top:0;}"
-        ".pf-lg-open{margin-left:auto;font-weight:800;font-size:12.5px;color:var(--accent);text-decoration:none;white-space:nowrap;}"
+        ".pf-lg-foot{display:flex;align-items:center;gap:12px;border-top:1px solid var(--grid);padding-top:10px;flex-wrap:wrap;min-width:0;}"
+        ".pf-lg-foot .pf-pos-chips{margin-top:0;flex:1 1 auto;min-width:0;}"
+        ".pf-lg-open{margin-left:auto;font-weight:800;font-size:12.5px;color:var(--accent);text-decoration:none;white-space:nowrap;flex-shrink:0;}"
         ".pf-lg-pending-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;"
         "border-top:1px solid var(--grid);padding-top:10px;margin-top:2px;}"
         ".pf-lg-err{font-size:12px;color:var(--text-subtle);}"
@@ -24400,11 +24425,21 @@ def build_portfolio_body(
         "color:var(--text-subtle);padding:2px;opacity:.5;transition:opacity .12s,color .12s;}"
         ".pf-lg-fav:hover{opacity:1;color:var(--gold,#ca8a04);}"
         ".pf-lg-fav.on{opacity:1;color:var(--gold,#ca8a04);}"
+        ".pf-lg-card .pf-arch{flex:0 1 auto;max-width:42%;overflow:hidden;text-overflow:ellipsis;}"
         ".pf-lg-pager{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:14px;}"
         ".pf-lg-pager button{border:1px solid var(--grid);background:var(--card);color:var(--text);"
         "border-radius:8px;padding:5px 12px;font-size:13px;font-weight:700;cursor:pointer;}"
         ".pf-lg-pager button:disabled{opacity:.4;cursor:default;}"
         ".pf-lg-pager-lbl{font-size:12.5px;color:var(--text-muted);font-weight:600;min-width:96px;text-align:center;}"
+        "@media(max-width:640px){"
+        ".pf-lg-grid{grid-template-columns:minmax(0,1fr);}"
+        ".pf-lg-card{padding:12px;}"
+        ".pf-lg-top{gap:8px;}"
+        ".pf-lg-mid{gap:6px;}"
+        ".pf-lg-foot{gap:8px;}"
+        ".pf-lg-foot .pf-pos-chips{gap:6px 10px;}"
+        ".pf-lg-card .pf-arch{font-size:.58em;padding:2px 6px;max-width:38%;}"
+        "}"
         "</style>"
         f"<div class='card'>"
         f"<div class='card-header'><h2>My Leagues</h2></div>"
