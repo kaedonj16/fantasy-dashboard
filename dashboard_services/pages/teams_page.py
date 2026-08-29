@@ -70,9 +70,13 @@ def build_teams_body(ctx: dict) -> str:
     """
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
         _playoff_sim_cached, _safe_int, _team_pick_value, _weighted_pos_strength,
-        apply_te_premium, avatar_from_users,
+        apply_te_premium, team_avatar,
         build_historical_pick_slot_map, count_roster_positions, get_roster_positions,
         has_draft_ended, load_pick_value_table, te_premium_from_settings, _TEAMS_JS_V,
+        _league_is_redraft,
+    )
+    from dashboard_services.ai.context_builders import (
+        build_model_value_lookup, ctx_scoring_type,
     )
     rosters = ctx["rosters"]  # Sleeper /rosters
     roster_map = ctx["roster_map"]  # mapping roster_id -> team name
@@ -81,6 +85,10 @@ def build_teams_body(ctx: dict) -> str:
     picks_by_roster = ctx.get("picks_by_roster") or {}
     league_id = str(ctx.get("league_id") or "")
     current_season = _safe_int((ctx.get("league") or {}).get("season"), datetime.now().year)
+    _is_redraft = bool(_league_is_redraft(ctx) or ctx_scoring_type(ctx) == "redraft")
+    # Redraft leagues (all ESPN) have no future draft capital — don't invent/show picks.
+    if _is_redraft:
+        picks_by_roster = {}
 
     # Projected draft slots for next year's picks, from projected final
     # standings this season (fewest average final wins picks first). Feeds the
@@ -149,7 +157,12 @@ def build_teams_body(ctx: dict) -> str:
     # map sleeper_id -> row. Apply the league's TE premium up front (on a shallow
     # copy, never the cached row) so every downstream value read — sort, age
     # weighting, positional strength — uses the TE-adjusted value automatically.
+    # Redraft leagues rewrite ``value`` from redraft_value_* (same as Front Office).
     _tep = te_premium_from_settings(ctx.get("scoring_settings"))
+    _rp_early = ctx.get("roster_positions") or []
+    _is_sf_early = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_early)
+    _scoring = "redraft" if _is_redraft else "dynasty"
+    _valued = build_model_value_lookup(model_vals, is_sf=_is_sf_early, scoring_type=_scoring)
 
     def _te_adj_row(p: dict) -> dict:
         if _tep and str(p.get("position") or p.get("pos") or "").upper() == "TE":
@@ -157,9 +170,8 @@ def build_teams_body(ctx: dict) -> str:
         return p
 
     by_id: Dict[str, Dict] = {
-        str(p["id"]): _te_adj_row(p)
-        for p in model_vals
-        if isinstance(p, dict) and p.get("id") is not None
+        pid: _te_adj_row(row)
+        for pid, row in _valued.items()
     }
 
     CORE_POS = {"QB", "RB", "WR", "TE"}
@@ -222,7 +234,7 @@ def build_teams_body(ctx: dict) -> str:
             continue
 
         display_name = roster_map.get(str(rid)) if isinstance(roster_map, dict) else str(rid)
-        avatar = avatar_from_users(platform, users, str(rid))
+        avatar = team_avatar(platform, r, users)
         team_meta[rid] = {
             "name": display_name,
             "avatar": avatar,
@@ -407,13 +419,15 @@ def build_teams_body(ctx: dict) -> str:
     # Pre-compute global chart Y-max so all team cards share the same Y-axis scale
     _chart_all_pos_vals = []
     for _rid in team_meta:
-        _chart_all_pos_vals.extend([
+        _vals = [
             sum(team_pos_values[_rid].get("QB", [])),
             sum(team_pos_values[_rid].get("RB", [])),
             sum(team_pos_values[_rid].get("WR", [])),
             sum(team_pos_values[_rid].get("TE", [])),
-            team_pick_value.get(_rid, 0.0),
-        ])
+        ]
+        if not _is_redraft:
+            _vals.append(team_pick_value.get(_rid, 0.0))
+        _chart_all_pos_vals.extend(_vals)
     _chart_y_max = round(max(_chart_all_pos_vals) * 1.15, 1) if _chart_all_pos_vals else 100.0
 
     # Pre-compute roster grades for all teams
@@ -588,105 +602,109 @@ def build_teams_body(ctx: dict) -> str:
             table_rows.append(main_row)
             table_rows.append(detail_row)
 
-        # Draft Capital row
-        pick_val = team_pick_value.get(rid, 0.0)
-        pick_z = team_pick_z.get(rid, 0.0)
-        if pick_z_max > pick_z_min:
-            pick_pct = 10 + 80 * (pick_z - pick_z_min) / (pick_z_max - pick_z_min)
-        else:
-            pick_pct = 50.0
-        pick_count = len(picks_by_roster.get(str(rid), []))
-        table_rows.append(
-            "<tr class='pos-row pos-picks-row'>"
-            "  <td class='pos-name'>"
-            "    <span class='pos-row-toggle'>▾</span> "
-            "    <i class='fa-solid fa-clipboard-list' style='font-size:11px;opacity:0.7;'></i> PICKS"
-            "  </td>"
-            f"  <td class='pos-count'>{pick_count}</td>"
-            "  <td class='pos-age'>–</td>"
-            f"  <td class='pos-total'>{pick_val:.1f}</td>"
-            "  <td class='pos-avg'>–</td>"
-            f"  <td class='pos-z'>{pick_z:+.2f}</td>"
-            "  <td class='pos-bar-cell'>"
-            "    <div class='pos-bar-outer'>"
-            f"      <div class='pos-bar-inner' style='width:{pick_pct:.0f}%;background:var(--color-pick,#8b5cf6);'></div>"
-            "    </div>"
-            "  </td>"
-            "  <td class='pos-rank'></td>"
-            "</tr>"
-        )
+        # Draft Capital row — dynasty only (redraft leagues have no future picks).
+        if not _is_redraft:
+            pick_val = team_pick_value.get(rid, 0.0)
+            pick_z = team_pick_z.get(rid, 0.0)
+            if pick_z_max > pick_z_min:
+                pick_pct = 10 + 80 * (pick_z - pick_z_min) / (pick_z_max - pick_z_min)
+            else:
+                pick_pct = 50.0
+            pick_count = len(picks_by_roster.get(str(rid), []))
+            table_rows.append(
+                "<tr class='pos-row pos-picks-row'>"
+                "  <td class='pos-name'>"
+                "    <span class='pos-row-toggle'>▾</span> "
+                "    <i class='fa-solid fa-clipboard-list' style='font-size:11px;opacity:0.7;'></i> PICKS"
+                "  </td>"
+                f"  <td class='pos-count'>{pick_count}</td>"
+                "  <td class='pos-age'>–</td>"
+                f"  <td class='pos-total'>{pick_val:.1f}</td>"
+                "  <td class='pos-avg'>–</td>"
+                f"  <td class='pos-z'>{pick_z:+.2f}</td>"
+                "  <td class='pos-bar-cell'>"
+                "    <div class='pos-bar-outer'>"
+                f"      <div class='pos-bar-inner' style='width:{pick_pct:.0f}%;background:var(--color-pick,#8b5cf6);'></div>"
+                "    </div>"
+                "  </td>"
+                "  <td class='pos-rank'></td>"
+                "</tr>"
+            )
 
-        # Expandable pick detail: each future pick with its projected slot
-        # ("2027 1.03" from the playoff-odds sim, tagged projected) and value.
-        _pk_rows = []
-        for _pk in picks_by_roster.get(str(rid), []):
-            try:
-                _pk_yr = int(_pk.get("season") or 0)
-                _pk_rnd = int(_pk.get("round") or 0)
-            except (TypeError, ValueError):
-                continue
-            if not _pk_yr or not _pk_rnd:
-                continue
-            _pk_orig = str(_pk.get("original_owner") or rid)
-            _pk_slot = None
-            _pk_is_proj = False
-            if _pk_yr == current_season:
-                # Upcoming draft: order is final (last season is in the books).
+            # Expandable pick detail: each future pick with its projected slot
+            # ("2027 1.03" from the playoff-odds sim, tagged projected) and value.
+            _pk_rows = []
+            for _pk in picks_by_roster.get(str(rid), []):
                 try:
-                    _pk_slot = _pk_final_slots.get(int(_pk_orig))
+                    _pk_yr = int(_pk.get("season") or 0)
+                    _pk_rnd = int(_pk.get("round") or 0)
                 except (TypeError, ValueError):
-                    _pk_slot = None
-            elif _pk_yr == _pk_proj_year:
-                _pk_slot = _pk_slot_by_original.get(_pk_orig)
-                _pk_is_proj = _pk_slot is not None
-            _pk_lbl = (
-                _pk_pick_label(_pk_yr, _pk_rnd, _pk_slot)
-                if _pk_slot is not None
-                else (f"{_pk_yr} {_pk_rnd} · projected slot unavailable"
-                      if _pk_yr and _pk_rnd else "Projected slot unavailable")
+                    continue
+                if not _pk_yr or not _pk_rnd:
+                    continue
+                _pk_orig = str(_pk.get("original_owner") or rid)
+                _pk_slot = None
+                _pk_is_proj = False
+                if _pk_yr == current_season:
+                    # Upcoming draft: order is final (last season is in the books).
+                    try:
+                        _pk_slot = _pk_final_slots.get(int(_pk_orig))
+                    except (TypeError, ValueError):
+                        _pk_slot = None
+                elif _pk_yr == _pk_proj_year:
+                    _pk_slot = _pk_slot_by_original.get(_pk_orig)
+                    _pk_is_proj = _pk_slot is not None
+                _pk_lbl = (
+                    _pk_pick_label(_pk_yr, _pk_rnd, _pk_slot)
+                    if _pk_slot is not None
+                    else (f"{_pk_yr} {_pk_rnd} · projected slot unavailable"
+                          if _pk_yr and _pk_rnd else "Projected slot unavailable")
+                )
+                _pk_val = _pk_pick_value_from_table(
+                    _pk_value_tbl, _pk_yr, _pk_rnd, _pk_slot, len(rosters) or 10
+                )
+                _pk_from = ""
+                if _pk_orig != str(rid):
+                    _pk_from_name = roster_map.get(_pk_orig) or f"Roster {_pk_orig}"
+                    _pk_from = f"<span class='dc-from'>from {html.escape(str(_pk_from_name))}</span>"
+                _pk_badge = "<span class='dc-proj'>projected</span>" if _pk_is_proj else ""
+                _pk_rows.append(
+                    f"<li class='dc-pick'>"
+                    f"<span class='dc-pick-label'>{html.escape(_pk_lbl)}</span>"
+                    f"{_pk_from}{_pk_badge}"
+                    f"<span class='dc-pick-val'>{_pk_val:,.0f}</span>"
+                    f"</li>"
+                )
+            _pk_note = (
+                f"<div class='dc-note'>{_pk_proj_year} slots are projected from current "
+                f"playoff odds; later years use round values.</div>"
+                if any("dc-proj" in r for r in _pk_rows) else ""
             )
-            _pk_val = _pk_pick_value_from_table(
-                _pk_value_tbl, _pk_yr, _pk_rnd, _pk_slot, len(rosters) or 10
+            _pk_detail = (
+                f"<ul class='dc-pick-list'>{''.join(_pk_rows)}</ul>{_pk_note}"
+                if _pk_rows else "<div class='dc-none'>No future picks</div>"
             )
-            _pk_from = ""
-            if _pk_orig != str(rid):
-                _pk_from_name = roster_map.get(_pk_orig) or f"Roster {_pk_orig}"
-                _pk_from = f"<span class='dc-from'>from {html.escape(str(_pk_from_name))}</span>"
-            _pk_badge = "<span class='dc-proj'>projected</span>" if _pk_is_proj else ""
-            _pk_rows.append(
-                f"<li class='dc-pick'>"
-                f"<span class='dc-pick-label'>{html.escape(_pk_lbl)}</span>"
-                f"{_pk_from}{_pk_badge}"
-                f"<span class='dc-pick-val'>{_pk_val:,.0f}</span>"
-                f"</li>"
+            table_rows.append(
+                "<tr class='pos-detail-row' data-pos='PICKS' style='display:none;'>"
+                "  <td colspan='8'>"
+                f"    <div class='pos-detail-inner'>{_pk_detail}</div>"
+                "  </td>"
+                "</tr>"
             )
-        _pk_note = (
-            f"<div class='dc-note'>{_pk_proj_year} slots are projected from current "
-            f"playoff odds; later years use round values.</div>"
-            if any("dc-proj" in r for r in _pk_rows) else ""
-        )
-        _pk_detail = (
-            f"<ul class='dc-pick-list'>{''.join(_pk_rows)}</ul>{_pk_note}"
-            if _pk_rows else "<div class='dc-none'>No future picks</div>"
-        )
-        table_rows.append(
-            "<tr class='pos-detail-row' data-pos='PICKS' style='display:none;'>"
-            "  <td colspan='8'>"
-            f"    <div class='pos-detail-inner'>{_pk_detail}</div>"
-            "  </td>"
-            "</tr>"
-        )
 
         # ── Position value bar chart ──────────────────────────────────────────
-        _chart_labels  = ["QB", "RB", "WR", "TE", "Picks"]
-        _chart_colors  = ["#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#c92c68"]
+        _chart_labels  = ["QB", "RB", "WR", "TE"]
+        _chart_colors  = ["#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6"]
         _chart_values  = [
             round(sum(team_pos_values[rid].get("QB", [])), 1),
             round(sum(team_pos_values[rid].get("RB", [])), 1),
             round(sum(team_pos_values[rid].get("WR", [])), 1),
             round(sum(team_pos_values[rid].get("TE", [])), 1),
-            round(team_pick_value.get(rid, 0.0), 1),
         ]
+        if not _is_redraft:
+            _chart_labels.append("Picks")
+            _chart_colors.append("#c92c68")
+            _chart_values.append(round(team_pick_value.get(rid, 0.0), 1))
         _chart_div_id  = f"teamValueChart_{rid}"
         _chart_data    = json.dumps([{
             "type":          "bar",
