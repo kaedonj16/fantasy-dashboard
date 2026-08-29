@@ -676,6 +676,73 @@ def live_picks_payload(picks: Sequence[NormalizedDraftPick]) -> List[Dict[str, A
     return out
 
 
+def normalize_espn_relay_payload(
+    body: Mapping[str, Any],
+    *,
+    espn_to_canon: Optional[Mapping[str, str]] = None,
+    player_lookup: Optional[Callable[[str], Mapping[str, Any]]] = None,
+    dst_mapper: Optional[DstMapper] = None,
+) -> Dict[str, Any]:
+    """Normalize a browser-extension ESPN draft-room snapshot into live picks.
+
+    The extension observes the open ESPN draft UI (React state / in-page network)
+    because ``mDraftDetail`` often does not grow mid-draft. Output matches the
+    pick list shape used by ``/api/draft/live``.
+    """
+    raw_picks = body.get("picks") if isinstance(body.get("picks"), list) else []
+    in_progress = _as_bool(body.get("inProgress"))
+    if in_progress is None:
+        in_progress = _as_bool(body.get("in_progress"))
+    drafted = _as_bool(body.get("drafted"))
+    wrapped = {
+        "draftDetail": {
+            "inProgress": True if in_progress is None else in_progress,
+            "drafted": False if drafted is None else drafted,
+            "picks": raw_picks,
+        }
+    }
+    detail = parse_espn_draft_detail(wrapped)
+    # Infer team count from max team id or pick count when settings are absent.
+    team_ids: List[str] = []
+    for p in detail.picks:
+        if p.team_id and p.team_id not in team_ids:
+            team_ids.append(p.team_id)
+    n_teams = len(team_ids)
+    team_slot = {tid: i + 1 for i, tid in enumerate(team_ids)}
+    picks = normalize_espn_picks(
+        detail,
+        espn_to_canon=espn_to_canon or {},
+        player_lookup=player_lookup,
+        dst_mapper=dst_mapper,
+        team_slot_map=team_slot,
+        n_teams=n_teams,
+        source="espn-relay",
+    )
+    status = espn_status_from_flags(detail.drafted, detail.in_progress, pick_count=len(picks))
+    league_id = str(body.get("leagueId") or body.get("league_id") or "").strip()
+    try:
+        season = int(body.get("season") or body.get("seasonId") or 0)
+    except (TypeError, ValueError):
+        season = 0
+    return {
+        "source": "espn-relay",
+        "league_id": league_id,
+        "season": season or None,
+        "status": status,
+        "in_progress": detail.in_progress,
+        "drafted": detail.drafted,
+        "picks_observed": detail.picks_observed,
+        "picks": live_picks_payload(picks),
+        "unresolved_count": sum(1 for p in picks if p.unresolved),
+        "fingerprint": (
+            f"{status}|{int(bool(detail.in_progress))}|{int(bool(detail.drafted))}"
+            f"|{len(picks)}|"
+            f"{(picks[-1].overall_pick if picks else 0)}|"
+            f"{(picks[-1].external_player_id if picks else '')}"
+        ),
+    }
+
+
 def snapshot_to_live_payload(snapshot: DraftSyncSnapshot) -> Dict[str, Any]:
     """Full ``/api/draft/live`` body for an ESPN (or future) snapshot."""
     latest = snapshot.latest_pick

@@ -1,15 +1,13 @@
-// Runs on brfantasyfootball.com. When the private-ESPN connect UI is present,
-// it adds an "Autofill from ESPN" button just above the paste box. Clicking it
-// asks the service worker for the ESPN cookies and drops them into the box,
-// then fires the same `input` event a human paste would — so the site's own
-// parser fills SWID + espn_s2 and validates. The extension writes nothing else
-// and sends the cookies nowhere; they ride the normal Connect request.
+// Runs on brfantasyfootball.com.
+// 1) Autofill ESPN cookies into the private-league connect box.
+// 2) Receive live-draft pick relays from the service worker (sourced from an
+//    open ESPN draft room tab) and hand them to Draft Room via CustomEvent.
 
 (function () {
   "use strict";
 
-  // The two paste boxes shipped by the site (main connect modal + link modal).
   const BLOB_IDS = ["espnCookieBlob", "linkEspnBlob"];
+  const RELAY_EVENT = "brfantasy:espn-draft-relay";
 
   function icon() {
     const NS = "http://www.w3.org/2000/svg";
@@ -60,13 +58,17 @@
       if (creds.swid) parts.push("SWID=" + creds.swid);
       if (creds.espn_s2) parts.push("espn_s2=" + creds.espn_s2);
       blob.value = parts.join("; ");
-      // Let the site's own listener parse + validate exactly as if pasted.
       blob.dispatchEvent(new Event("input", { bubbles: true }));
       if (creds.swid && creds.espn_s2) {
         setStatus(blob, "✓ Filled from your ESPN session — click Connect below.", "ok");
       } else {
-        setStatus(blob, "Only found " + (creds.swid ? "SWID" : "espn_s2") +
-          ". Open a league on espn.com so both cookies are set, then try again.", "err");
+        setStatus(
+          blob,
+          "Only found " +
+            (creds.swid ? "SWID" : "espn_s2") +
+            ". Open a league on espn.com so both cookies are set, then try again.",
+          "err"
+        );
       }
     });
   }
@@ -93,8 +95,25 @@
     });
   }
 
+  function dispatchRelay(payload) {
+    if (!payload || !Array.isArray(payload.picks)) return;
+    try {
+      window.dispatchEvent(new CustomEvent(RELAY_EVENT, { detail: payload }));
+    } catch (_e) {
+      /* ignore */
+    }
+  }
+
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg && msg.type === "espnDraftRelay" && msg.payload) {
+      dispatchRelay(msg.payload);
+      sendResponse({ ok: true });
+      return false;
+    }
+    return false;
+  });
+
   scan();
-  // The connect modals mount/unmount dynamically, so keep watching.
   const mo = new MutationObserver(scan);
   mo.observe(document.documentElement, { childList: true, subtree: true });
 })();

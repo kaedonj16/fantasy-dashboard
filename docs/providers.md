@@ -63,3 +63,7 @@ ESPN leagues can open Draft Room as an observe-only companion while the actual
 picks happen on ESPN. See `docs/espn-live-draft-sync.md`. Credentials (`espn_s2`,
 `SWID`) stay server-side; this app never submits picks to ESPN.
 
+When ESPN's REST `mDraftDetail` view does not update mid-draft, install the
+browser extension (`extension/`) and keep the ESPN draft room open — it relays
+live picks into Draft Room via `POST /api/draft/espn-relay`.
+

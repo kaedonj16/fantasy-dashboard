@@ -62,6 +62,9 @@
   var _espnLastPickCount = 0;
   var _espnAuthFailed = false;
   var _espnFallbackShown = false;
+  var _espnRelayActive = false; // browser extension is feeding live picks
+  var _espnRelayInFlight = false;
+  var _espnRelayLastFp = '';
   var sim = false;         // mock-draft simulation active
   var simTimer = null;
   var simSpeed = 700;      // ms between CPU picks
@@ -5392,7 +5395,7 @@
           scoring: cfg.scoring || readScoring()
         };
         _espnStallPolls = 0; _espnEverGrew = liveSelectionCount(d.picks) > 0; _espnLastPickCount = liveSelectionCount(d.picks);
-        _espnAuthFailed = false; _espnFallbackShown = false;
+        _espnAuthFailed = false; _espnFallbackShown = false; _espnRelayActive = false; _espnRelayLastFp = '';
         hideEspnFallback();
         applyLivePicks(d.picks || []);
         // Completed draft: reload the pool against that season's ADP so grades
@@ -5487,7 +5490,7 @@
     el.style.display = '';
     el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-unlink"></i></span>'
       + '<div class="dr-banner-txt"><b>ESPN live sync unavailable</b>'
-      + '<span>ESPN isn\'t exposing live draft updates for this draft. You can continue using manual draft tracking.</span></div>'
+      + '<span>ESPN\'s API often doesn\'t update mid-draft. Keep the ESPN draft open with the BR Fantasy extension installed for automatic pick relay, or switch to manual tracking.</span></div>'
       + '<button type="button" class="dr-banner-join" id="drEspnManual">Switch to Manual Tracking</button>';
     updateEspnSyncPill('unavailable');
   }
@@ -5522,6 +5525,8 @@
   }
   function _espnShouldFallback(d){
     if (!state || state.syncSource !== 'espn' || _espnFallbackShown || _espnAuthFailed) return false;
+    // Extension relay is actively feeding picks — don't kick the user to manual.
+    if (_espnRelayActive) return false;
     if (String(d && d.status) === 'complete') return false;
     var stallLimit = parseInt(state.stallPolls, 10) || 8;
     var drafting = String(d && d.status) === 'drafting' || d && d.in_progress === true;
@@ -5531,6 +5536,84 @@
     if (!_espnEverGrew && _espnStallPolls >= stallLimit) return true;
     return false;
   }
+  // Browser extension observed ESPN's open draft room and relayed raw picks.
+  // Normalize via /api/draft/espn-relay, then reuse the same apply path as REST sync.
+  function applyEspnExtensionRelay(detail){
+    if (!detail || !Array.isArray(detail.picks)) return;
+    if (!state || state.mode !== 'live' || state.syncSource !== 'espn') return;
+    if (_espnAuthFailed) return;
+    var lid = String(detail.leagueId || detail.league_id || '');
+    if (lid && cfg.leagueId && String(cfg.leagueId) !== lid) return;
+    var season = String(detail.season || '');
+    if (season && cfg.season && String(cfg.season) !== season && String(state.season || '') !== season) return;
+    var fp = String(detail.fingerprint || '') || (
+      lid + '|' + season + '|' + detail.picks.length + '|'
+      + (detail.picks.length ? (detail.picks[detail.picks.length - 1].overallPickNumber || detail.picks[detail.picks.length - 1].playerId || '') : '')
+    );
+    if (fp && fp === _espnRelayLastFp) return;
+    if (_espnRelayInFlight) return;
+    _espnRelayInFlight = true;
+    fetch('/api/draft/espn-relay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        leagueId: lid || cfg.leagueId,
+        season: season || cfg.season || state.season,
+        inProgress: detail.inProgress !== false,
+        drafted: !!detail.drafted,
+        picks: detail.picks
+      }),
+      cache: 'no-store'
+    })
+      .then(function(r){ return r.json().then(function(body){ return { ok: r.ok, body: body }; }); })
+      .then(function(res){
+        _espnRelayInFlight = false;
+        if (!state || state.mode !== 'live' || state.syncSource !== 'espn') return;
+        var d = res.body || {};
+        if (!res.ok || !d || !Array.isArray(d.picks)) return;
+        _espnRelayLastFp = d.fingerprint || fp;
+        _espnRelayActive = true;
+        hideEspnFallback();
+        _espnFallbackShown = false;
+        var count = liveSelectionCount(d.picks);
+        if (count > _espnLastPickCount){
+          _espnEverGrew = true;
+          _espnStallPolls = 0;
+        }
+        _espnLastPickCount = count;
+        if (detail.inProgress || d.in_progress || d.status === 'drafting'){
+          state.isDrafting = true;
+          state.status = 'drafting';
+        }
+        if (d.status === 'complete' || detail.drafted){
+          state.isComplete = true;
+          state.isDrafting = false;
+          state.status = 'complete';
+        }
+        var applied = applyMissingLivePicks(d.picks);
+        if (applied || count){
+          render();
+          updateEspnSyncPill(state.isComplete ? 'complete' : (state.isDrafting ? 'live' : 'synced'));
+          if (state.isDrafting) startPickTimer();
+          if (state.isComplete){
+            stopPolling(); stopPickTimer(); save();
+            showCompleteSidebar();
+          }
+        } else {
+          updateEspnSyncPill(state.isDrafting ? 'live' : 'synced');
+        }
+      })
+      .catch(function(){ _espnRelayInFlight = false; });
+  }
+  function _wireEspnExtensionRelay(){
+    if (window.__brEspnRelayWired) return;
+    window.__brEspnRelayWired = true;
+    window.addEventListener('brfantasy:espn-draft-relay', function(ev){
+      try { applyEspnExtensionRelay(ev && ev.detail); }
+      catch (err){ if (window.console) console.error('[draft] espn relay', err); }
+    });
+  }
+  _wireEspnExtensionRelay();
   function _fmtAgo(ms){
     if (!ms) return '';
     var s = Math.max(0, Math.round((Date.now() - ms) / 1000));

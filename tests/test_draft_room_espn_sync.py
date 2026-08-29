@@ -14,11 +14,20 @@ def test_espn_sync_indicator_and_fallback_markup():
     assert 'id="drEspnFallback"' in body
     assert "ESPN live sync unavailable" in ROOM_JS
     assert "Switch to Manual Tracking" in ROOM_JS
+    assert "BR Fantasy extension" in ROOM_JS
     assert "ESPN Draft · LIVE" in ROOM_JS
     assert "ESPN Draft · Sync Unavailable" in ROOM_JS
     assert "ESPN Draft · Not Started" in ROOM_JS
     assert ".dr-pill-espn" in body
     assert '"viewerRosterId": "3"' in body
+
+
+def test_extension_relay_wired_and_skips_manual_fallback():
+    assert "function applyEspnExtensionRelay(detail)" in ROOM_JS
+    assert "/api/draft/espn-relay" in ROOM_JS
+    assert "brfantasy:espn-draft-relay" in ROOM_JS
+    assert "if (_espnRelayActive) return false;" in ROOM_JS
+    assert "_espnRelayActive = true;" in ROOM_JS
 
 
 def test_live_detect_requests_espn_sync_flag():

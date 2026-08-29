@@ -168,3 +168,50 @@ def test_sleeper_live_still_rejects_empty_draft_id(client):
     resp = client.get("/api/draft/live?platform=sleeper&draft_id=")
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "unsupported"
+
+
+def test_espn_relay_normalizes_extension_picks(client, monkeypatch):
+    import routes.draft_api_bp as bp
+
+    def fake_normalize(body):
+        assert body["leagueId"] == "99"
+        assert len(body["picks"]) == 1
+        return {
+            "source": "espn-relay",
+            "league_id": "99",
+            "season": 2026,
+            "status": "drafting",
+            "picks": [{
+                "pick_no": 1,
+                "player_id": "5938",
+                "external_player_id": "4039057",
+                "name": "Justin Jefferson",
+                "position": "WR",
+                "team": "MIN",
+                "unresolved": False,
+                "source": "espn-relay",
+            }],
+            "fingerprint": "drafting|1|0|1|1|4039057",
+        }
+
+    monkeypatch.setattr(bp, "_espn_relay_normalize", fake_normalize)
+    resp = client.post(
+        "/api/draft/espn-relay",
+        json={
+            "leagueId": "99",
+            "season": "2026",
+            "inProgress": True,
+            "picks": [{"overallPickNumber": 1, "playerId": 4039057, "teamId": 1}],
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["source"] == "espn-relay"
+    assert data["picks"][0]["player_id"] == "5938"
+    assert "espn_s2" not in resp.get_data(as_text=True)
+
+
+def test_espn_relay_requires_picks_list(client):
+    resp = client.post("/api/draft/espn-relay", json={"leagueId": "99"})
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "picks_required"

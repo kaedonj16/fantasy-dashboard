@@ -112,6 +112,24 @@ def _espn_live(draft_id: str, league_id: str, season: int):
     return jsonify(payload)
 
 
+def _espn_relay_normalize(body: dict):
+    """Map extension-observed ESPN draft picks onto the live board pick shape."""
+    from dashboard_services.draft_sync import normalize_espn_relay_payload
+    from dashboard_services.providers import espn_api
+    from dashboard_services.providers.espn_draft import _dst_from_espn_id, _player_lookup
+
+    try:
+        canon = espn_api._espn_to_canon_cached()
+    except Exception:
+        canon = {}
+    return normalize_espn_relay_payload(
+        body,
+        espn_to_canon=canon,
+        player_lookup=_player_lookup,
+        dst_mapper=_dst_from_espn_id,
+    )
+
+
 @draft_api_bp.route("/api/draft/detect")
 def api_draft_detect():
     """List drafts for a league so the user can connect a live draft (Sleeper)."""
@@ -201,6 +219,32 @@ def api_draft_detect():
     except Exception as exc:
         logger.warning("[draft-detect] error: %s", exc)
     return jsonify({"drafts": out})
+
+
+@draft_api_bp.route("/api/draft/espn-relay", methods=["POST"])
+def api_draft_espn_relay():
+    """Normalize ESPN draft-room picks observed by the browser extension.
+
+    Observe-only: does not talk to ESPN and never submits picks. The extension
+    reads the open ESPN draft UI and posts the raw pick list here so Draft Room
+    can map ESPN player ids onto the canonical board.
+    """
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return jsonify({"error": "invalid_body"}), 400
+    picks = body.get("picks")
+    if not isinstance(picks, list):
+        return jsonify({"error": "picks_required"}), 400
+    if len(picks) > 500:
+        return jsonify({"error": "too_many_picks"}), 400
+    try:
+        payload = _espn_relay_normalize(body)
+    except Exception:
+        logger.warning("[draft-espn-relay] normalize failed error_type=Exception")
+        return jsonify({"error": "normalize_failed"}), 500
+    for secret_key in ("espn_s2", "swid", "SWID", "cookie", "cookies"):
+        payload.pop(secret_key, None)
+    return jsonify(payload)
 
 
 @draft_api_bp.route("/api/draft/live")

@@ -20,6 +20,7 @@ from dashboard_services.draft_sync import (
     merge_picks_idempotent,
     new_picks_since,
     normalize_espn_picks,
+    normalize_espn_relay_payload,
     parse_espn_draft_detail,
     parse_espn_draft_id,
     snapshot_fingerprint,
@@ -515,3 +516,32 @@ def test_http_200_without_usable_picks_is_not_success(monkeypatch):
     assert snap.picks_observed is False
     assert snap.picks == []
     assert snap.status == "unknown"
+
+
+def test_normalize_espn_relay_payload_maps_players():
+    body = {
+        "leagueId": "99",
+        "season": 2026,
+        "inProgress": True,
+        "drafted": False,
+        "picks": [
+            {"overallPickNumber": 1, "playerId": 4039057, "teamId": 1, "roundId": 1, "roundPickNumber": 1},
+            {"overallPickNumber": 2, "playerId": 0, "teamId": 2},  # placeholder — dropped
+            {"overallPickNumber": 3, "playerId": 4241479, "teamId": 3, "roundId": 1, "roundPickNumber": 3},
+        ],
+    }
+    out = normalize_espn_relay_payload(
+        body,
+        espn_to_canon={"4039057": "5938", "4241479": "6794"},
+        player_lookup=lambda cid: {
+            "5938": {"name": "Justin Jefferson", "position": "WR", "team": "MIN"},
+            "6794": {"name": "Ja'Marr Chase", "position": "WR", "team": "CIN"},
+        }.get(cid) or {},
+    )
+    assert out["source"] == "espn-relay"
+    assert out["status"] == "drafting"
+    assert len(out["picks"]) == 2
+    assert out["picks"][0]["player_id"] == "5938"
+    assert out["picks"][0]["pick_no"] == 1
+    assert out["picks"][1]["player_id"] == "6794"
+    assert out["picks"][1]["pick_no"] == 3
