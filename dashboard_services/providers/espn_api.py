@@ -251,9 +251,29 @@ def _streak_from_outcomes(outcomes: Any) -> str:
 # GLOBAL CACHES (CRITICAL)
 # ============================================================
 
-@lru_cache(maxsize=16)
+# Public League objects previously lived in @lru_cache for the whole process.
+# That froze empty pre-/mid-draft rosters until redeploy — Teams stayed blank
+# after ESPN finished the draft. Short TTL + explicit clear on refresh.
+_PUBLIC_LEAGUE_TTL = 120  # seconds
+_public_league_cache: Dict[Tuple[int, str], Tuple[float, Any]] = {}
+_public_league_lock = threading.Lock()
+
+
 def _public_league_cached(season: int, league_id: str) -> League:
-    return League(league_id=int(league_id), year=int(season))
+    key = (int(season), str(league_id))
+    now = time.time()
+    with _public_league_lock:
+        hit = _public_league_cache.get(key)
+        if hit and (now - hit[0]) < _PUBLIC_LEAGUE_TTL:
+            return hit[1]
+    league = League(league_id=int(league_id), year=int(season))
+    with _public_league_lock:
+        _public_league_cache[key] = (time.time(), league)
+        # Bound memory if many leagues are touched on one worker.
+        if len(_public_league_cache) > 32:
+            oldest = min(_public_league_cache.items(), key=lambda kv: kv[1][0])[0]
+            _public_league_cache.pop(oldest, None)
+    return league
 
 
 def _is_espn_access_denied(exc: Exception) -> bool:
@@ -349,7 +369,7 @@ def _league_cached(season: int, league_id: str) -> League:
         raise
 
 
-_league_cached.cache_clear = _public_league_cached.cache_clear  # type: ignore[attr-defined]
+_league_cached.cache_clear = lambda: clear_espn_league_caches()  # type: ignore[attr-defined]
 
 
 def _league(season: int, league_id: str) -> League:
@@ -900,6 +920,22 @@ def get_transactions(season: int, league_id: str, week: int) -> List[Dict[str, A
 _draft_meta_cache: Dict[Tuple[int, str], Tuple[float, Tuple[Optional[int], Optional[bool]]]] = {}
 _draft_meta_lock = threading.Lock()
 _DRAFT_META_TTL = 300  # 5 minutes — the scheduled draft date barely changes.
+
+
+def clear_espn_league_caches() -> None:
+    """Drop cached ESPN League / draft-meta objects so the next fetch is live.
+
+    Call from refresh-league / full page refresh after a draft completes so Teams
+    pick up ESPN roster assignments instead of empty pre-draft shells.
+    """
+    with _public_league_lock:
+        _public_league_cache.clear()
+    with _draft_meta_lock:
+        _draft_meta_cache.clear()
+    try:
+        _playoff_schedule_cached.cache_clear()
+    except Exception:
+        pass
 
 
 def _espn_draft_meta(season: int, league_id: str) -> Tuple[Optional[int], Optional[bool]]:
