@@ -13,8 +13,10 @@ def test_espn_sync_indicator_and_fallback_markup():
     assert 'id="drEspnSync"' in body
     assert 'id="drEspnFallback"' in body
     assert 'id="drEspnTools"' in body
-    assert "ESPN live sync unavailable" in ROOM_JS
-    assert "Switch to Manual Tracking" in ROOM_JS
+    assert "ESPN sync needs a hand" in ROOM_JS
+    assert "Track manually" in ROOM_JS
+    assert "showEspnTools({ unavailable: true })" in ROOM_JS
+    assert "is-unavailable" in ROOM_JS
     assert "Get Chrome extension" in ROOM_JS
     assert "ESPN Draft · LIVE" in ROOM_JS
     assert "ESPN Draft · Sync Unavailable" in ROOM_JS
@@ -24,15 +26,20 @@ def test_espn_sync_indicator_and_fallback_markup():
     assert '"chromeExtensionZipUrl"' in body
 
 
-def test_espn_fallback_banner_stacks_on_mobile():
-    """Manual CTA must not sit beside the copy on phones (crushes line length)."""
+def test_espn_unavailable_uses_single_tools_card():
+    """Broken sync folds into one tools card — no stacked warning + helpers."""
     body = build_draft_room_body("123", 2026, "espn", viewer_user_id="{AAA}", viewer_roster_id="3")
+    assert "ESPN live sync unavailable" not in ROOM_JS
+    assert "Switch to Manual Tracking" not in ROOM_JS
+    assert ".dr-espn-tools.is-unavailable" in body
+    assert ".dr-espn-tools-actions.is-split" in body
+    assert "_onEspnSyncUiClick" in ROOM_JS
+    assert "drEspnTools" in ROOM_JS
+    # Generic start banners still stack their CTA under copy on phones.
     mobile = body.split("@media (max-width: 640px)")[1].split("@media")[0]
     assert ".dr-start-banner" in mobile
     assert "flex-wrap: wrap" in mobile
     assert "flex: 1 1 100%" in mobile
-    assert "margin-left: 0" in mobile
-    assert "white-space: normal" in mobile
 
 
 def test_sim_flag_still_declared():

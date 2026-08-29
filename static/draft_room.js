@@ -5495,17 +5495,12 @@
     el.innerHTML = '';
   }
   function showEspnFallback(){
-    var el = document.getElementById('drEspnFallback');
-    if (!el) return;
+    // Fold the unavailable state into the tools card so phones don't stack a
+    // long warning banner on top of a second sync card.
+    hideEspnFallback();
     _espnFallbackShown = true;
-    el.hidden = false;
-    el.style.display = '';
-    el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-unlink"></i></span>'
-      + '<div class="dr-banner-txt"><b>ESPN live sync unavailable</b>'
-      + '<span>ESPN\'s API often doesn\'t update mid-draft. Install the <b>Chrome extension</b> for automatic pick sync on desktop, use <b>Mobile Sync</b> on your phone, or switch to manual tracking.</span></div>'
-      + '<button type="button" class="dr-banner-join" id="drEspnManual">Switch to Manual Tracking</button>';
     updateEspnSyncPill('unavailable');
-    showEspnTools();
+    showEspnTools({ unavailable: true });
   }
   function hideEspnTools(){
     var el = document.getElementById('drEspnTools');
@@ -5513,7 +5508,7 @@
     el.style.display = 'none';
     el.hidden = true;
     el.innerHTML = '';
-    el.className = 'dr-start-banner dr-espn-tools';
+    el.className = 'dr-espn-tools';
   }
   function _espnToolsDismissKey(){
     return 'dr_espn_tools_hide_' + String(cfg.leagueId || '') + '_' + String(cfg.season || '');
@@ -5524,37 +5519,61 @@
     } catch (e){}
     return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '');
   }
-  function showEspnTools(){
+  function showEspnTools(opts){
     var el = document.getElementById('drEspnTools');
     if (!el) return;
     if (!(state && state.syncSource === 'espn') && String(cfg.platform || '').toLowerCase() !== 'espn') return;
-    try {
-      if (sessionStorage.getItem(_espnToolsDismissKey()) === '1') {
-        hideEspnTools();
-        return;
-      }
-    } catch (e){}
+    var unavailable = !!(opts && opts.unavailable) || _espnFallbackShown;
+    // Keep the helpers visible while sync is broken — dismissing would strand
+    // the manager without Mobile Sync / Track manually.
+    if (!unavailable) {
+      try {
+        if (sessionStorage.getItem(_espnToolsDismissKey()) === '1') {
+          hideEspnTools();
+          return;
+        }
+      } catch (e){}
+    }
     var espnUrl = espnDraftUrl() || 'https://fantasy.espn.com/football/draft';
     var onPhone = _espnIsPhone();
-    var title = onPhone ? 'Sync picks from your phone' : 'Sync ESPN picks automatically';
-    var blurb = onPhone
-      ? 'Draft in Safari or Chrome (not the ESPN app), then use Mobile Sync. Desktop Chrome can install the extension for hands-free updates.'
-      : 'Install the Chrome extension and keep the ESPN draft tab open — picks land here automatically.';
-    var primary = onPhone
-      ? '<button type="button" class="dr-banner-join" id="drEspnMobileSync">Mobile Sync</button>'
-        + '<button type="button" class="dr-banner-join is-ghost" id="drEspnExtInstall">Get Chrome extension</button>'
-      : '<button type="button" class="dr-banner-join" id="drEspnExtInstall">Get Chrome extension</button>'
-        + '<button type="button" class="dr-banner-join is-ghost" id="drEspnMobileSync">Mobile Sync</button>';
-    el.className = 'dr-espn-tools';
+    var title, blurb, primary;
+    if (unavailable) {
+      title = 'ESPN sync needs a hand';
+      blurb = onPhone
+        ? 'Live API updates often stall mid-draft. Sync from your phone browser, or enter picks yourself.'
+        : 'Live API updates often stall mid-draft. Install the Chrome extension, or enter picks yourself.';
+      // Two primary actions side-by-side; Chrome install stays a quiet link so
+      // the card doesn't become a button stack on phones.
+      primary = onPhone
+        ? '<button type="button" class="dr-banner-join" id="drEspnMobileSync">Mobile Sync</button>'
+          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnManual">Track manually</button>'
+          + '<button type="button" class="dr-banner-join is-link" id="drEspnExtInstall">Get Chrome extension</button>'
+        : '<button type="button" class="dr-banner-join" id="drEspnExtInstall">Get Chrome extension</button>'
+          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnManual">Track manually</button>'
+          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnMobileSync">Mobile Sync</button>';
+    } else {
+      title = onPhone ? 'Sync picks from your phone' : 'Sync ESPN picks automatically';
+      blurb = onPhone
+        ? 'Draft in Safari or Chrome (not the ESPN app), then use Mobile Sync. Desktop Chrome can install the extension for hands-free updates.'
+        : 'Install the Chrome extension and keep the ESPN draft tab open — picks land here automatically.';
+      primary = onPhone
+        ? '<button type="button" class="dr-banner-join" id="drEspnMobileSync">Mobile Sync</button>'
+          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnExtInstall">Get Chrome extension</button>'
+        : '<button type="button" class="dr-banner-join" id="drEspnExtInstall">Get Chrome extension</button>'
+          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnMobileSync">Mobile Sync</button>';
+    }
+    el.className = 'dr-espn-tools' + (unavailable ? ' is-unavailable' : '');
     el.hidden = false;
     el.style.display = '';
     el.innerHTML = ''
       + '<div class="dr-espn-tools-top">'
-      + '<span class="dr-espn-tools-ic" aria-hidden="true"><i class="fa-solid fa-' + (onPhone ? 'mobile-screen-button' : 'puzzle-piece') + '"></i></span>'
+      + '<span class="dr-espn-tools-ic" aria-hidden="true"><i class="fa-solid fa-'
+      + (unavailable ? 'unlink' : (onPhone ? 'mobile-screen-button' : 'puzzle-piece'))
+      + '"></i></span>'
       + '<div class="dr-espn-tools-copy"><b>' + title + '</b><span>' + blurb + '</span></div>'
-      + '<button type="button" class="dr-espn-tools-x" id="drEspnToolsDismiss" aria-label="Dismiss">×</button>'
+      + (unavailable ? '' : '<button type="button" class="dr-espn-tools-x" id="drEspnToolsDismiss" aria-label="Dismiss">×</button>')
       + '</div>'
-      + '<div class="dr-espn-tools-actions">'
+      + '<div class="dr-espn-tools-actions' + (unavailable ? ' is-split' : '') + '">'
       + primary
       + '<a class="dr-banner-join is-link" href="' + espnUrl + '" target="_blank" rel="noopener">Open ESPN draft <i class="fa-solid fa-arrow-up-right-from-square"></i></a>'
       + '</div>';
@@ -6064,6 +6083,7 @@
             _espnRelayActive = true;
             _espnFallbackShown = false;
             hideEspnFallback();
+            showEspnTools();
           }
           if (_espnShouldFallback(d)){
             stopPolling(); showEspnFallback();
@@ -8337,15 +8357,20 @@
     var b = e.target.closest('.dr-live-item'); if (b) connectLive(b.getAttribute('data-id'));
   });
   var _espnFb = document.getElementById('drEspnFallback');
-  if (_espnFb) _espnFb.addEventListener('click', function(e){
-    if (e.target && e.target.id === 'drEspnManual') switchEspnToManual();
-    if (e.target && e.target.id === 'drEspnMobileSync') openEspnMobileSync();
-    if (e.target && e.target.id === 'drEspnExtInstall') openEspnExtensionInstall();
-    if (e.target && e.target.id === 'drEspnToolsDismiss'){
+  var _espnTools = document.getElementById('drEspnTools');
+  function _onEspnSyncUiClick(e){
+    var t = e.target && (e.target.closest ? e.target.closest('[id]') : e.target);
+    if (!t || !t.id) return;
+    if (t.id === 'drEspnManual') switchEspnToManual();
+    if (t.id === 'drEspnMobileSync') openEspnMobileSync();
+    if (t.id === 'drEspnExtInstall') openEspnExtensionInstall();
+    if (t.id === 'drEspnToolsDismiss'){
       try { sessionStorage.setItem(_espnToolsDismissKey(), '1'); } catch (err){}
       hideEspnTools();
     }
-  });
+  }
+  if (_espnFb) _espnFb.addEventListener('click', _onEspnSyncUiClick);
+  if (_espnTools) _espnTools.addEventListener('click', _onEspnSyncUiClick);
   if (typeof document !== 'undefined' && document.addEventListener){
     document.addEventListener('visibilitychange', function(){
       if (document.hidden) return;
