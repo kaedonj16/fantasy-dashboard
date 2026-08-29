@@ -473,28 +473,42 @@ def map_espn_player_id(
 
 
 def _player_display(canonical_id: Optional[str], lookup: Optional[PlayerLookup]) -> Tuple[str, str, str]:
-    if not canonical_id or lookup is None:
+    """Resolve name / position / team for a canonical id.
+
+    Kickers in ``players_index`` are stored as ``pos="PK"`` (Tank01); normalize
+    to ``K`` so Draft Room starter slots match. Team-abbr DEF ids (``BAL``,
+    ``SF``, …) are usually absent from the index — synthesize ``BAL D/ST`` like
+    ``from_players_map`` so ESPN D/ST picks never paint as ``Unknown``.
+    """
+    if not canonical_id:
         return "Unknown", "", ""
-    try:
-        info = lookup(str(canonical_id)) or {}
-    except Exception:
-        return "Unknown", "", ""
+    cid = str(canonical_id)
+    info: Mapping[str, Any] = {}
+    if lookup is not None:
+        try:
+            info = lookup(cid) or {}
+        except Exception:
+            info = {}
     name = (
         info.get("name")
         or info.get("full_name")
         or " ".join(
             part for part in (info.get("first_name"), info.get("last_name")) if part
         ).strip()
-        or "Unknown"
+        or ""
     )
     position = str(info.get("position") or info.get("pos") or "").upper()
     if position in ("D/ST", "DST", "DEF", "D-ST"):
         position = "DEF"
+    elif position == "PK":
+        position = "K"
     team = str(info.get("team") or info.get("team_abbr") or "")
-    if not name or name == "Unknown":
-        if position == "DEF" and (canonical_id or "").isalpha():
-            name = f"{canonical_id} D/ST"
-            team = team or str(canonical_id)
+    if (not name or name == "Unknown") and cid.isalpha() and 2 <= len(cid) <= 3:
+        name = f"{cid} D/ST"
+        position = position or "DEF"
+        team = team or cid
+    if not name:
+        name = "Unknown"
     return str(name), position, team
 
 

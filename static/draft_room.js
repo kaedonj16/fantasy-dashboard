@@ -4068,6 +4068,9 @@
   }
   function slotEligible(slot, pos){
     pos = (pos || '').toUpperCase();
+    // players_index stores kickers as PK (Tank01); ESPN D/ST aliases vary.
+    if (pos === 'PK') pos = 'K';
+    if (pos === 'D/ST' || pos === 'DST' || pos === 'D-ST') pos = 'DEF';
     if (slot === 'FLEX') return pos === 'RB' || pos === 'WR' || pos === 'TE';
     if (slot === 'SF')   return pos === 'QB' || pos === 'RB' || pos === 'WR' || pos === 'TE';
     return slot === pos;
@@ -5026,6 +5029,12 @@
     }
     return _realId(p.player_id) || _realId(p.external_player_id);
   }
+  function _normLivePos(pos){
+    pos = String(pos || '').toUpperCase();
+    if (pos === 'PK') return 'K';
+    if (pos === 'D/ST' || pos === 'DST' || pos === 'D-ST') return 'DEF';
+    return pos;
+  }
   function liveSelectionCount(picks){
     var n = 0;
     (picks || []).forEach(function(p){ if (livePickIsSelection(p)) n++; });
@@ -5038,11 +5047,12 @@
     (picks || []).forEach(function(p){
       if (!livePickIsSelection(p)) return;
       var pid = p.player_id ? String(p.player_id) : '';
+      var meta = pid ? playersById[pid] : null;
       state.picks[p.pick_no] = {
         id: pid,
-        name: p.name,
-        position: p.position,
-        team: p.team,
+        name: (meta && meta.name) || p.name,
+        position: _normLivePos((meta && meta.position) || p.position),
+        team: (meta && meta.team) || p.team,
         val: valLookup(pid),
         unresolved: !!p.unresolved
       };
@@ -5068,7 +5078,7 @@
     var pickObj = {
       id: pid,
       name: (row && row.name) || p.name || 'Unknown',
-      position: (row && row.position) || p.position || '',
+      position: _normLivePos((row && row.position) || p.position || ''),
       team: (row && row.team) || p.team || '',
       val: row ? Math.round(valOf(row)) : valLookup(pid),
       unresolved: !!p.unresolved

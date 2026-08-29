@@ -24054,7 +24054,8 @@ tr.team-clickable {
     left: 50%;
     bottom: 16px;
     transform: translate(-50%, 260%);
-    z-index: 4000;
+    /* Same tier as toasts — must clear the mobile dock (--z-chrome: 9999). */
+    z-index: var(--z-toast);
     display: flex;
     align-items: center;
     gap: 8px;
@@ -24073,8 +24074,7 @@ tr.team-clickable {
     transform: translate(-50%, 0);
 }
 
-/* On phones the bottom dock (below this bar's z-index) would hide the offline
-   pill, so lift it above the dock. */
+/* On phones lift the pill above the fixed bottom dock (56px + home indicator). */
 @media (max-width: 768px) {
     .offline-bar {
         bottom: calc(var(--dock-safe-bottom) + 14px);

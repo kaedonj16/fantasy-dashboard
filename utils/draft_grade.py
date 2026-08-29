@@ -60,6 +60,10 @@ def dr_rookie_team_score(pick_letters: "list[str]") -> Optional[float]:
 
 def dr_slot_eligible(slot: str, pos: str) -> bool:
     pos = (pos or "").upper()
+    if pos == "PK":
+        pos = "K"
+    if pos in ("D/ST", "DST", "D-ST"):
+        pos = "DEF"
     if slot == "FLEX": return pos in ("RB", "WR", "TE")
     if slot == "SF":   return pos in ("QB", "RB", "WR", "TE")
     return slot == pos

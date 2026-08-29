@@ -42,6 +42,20 @@ def test_predraft_placeholder_picks_are_not_applied():
     assert "var done = _draftComplete();" in ROOM_JS
 
 
+def test_live_picks_normalize_kicker_and_dst_positions():
+    assert "function _normLivePos(pos)" in ROOM_JS
+    assert "if (pos === 'PK') return 'K';" in ROOM_JS
+    assert "if (pos === 'PK') pos = 'K';" in ROOM_JS
+    assert "_normLivePos((meta && meta.position) || p.position)" in ROOM_JS
+
+
+def test_offline_bar_clears_mobile_dock():
+    css = (REPO / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert ".offline-bar {" in css
+    assert "z-index: var(--z-toast);" in css.split(".offline-bar {")[1].split("}")[0]
+    assert "bottom: calc(var(--dock-safe-bottom) + 14px);" in css
+
+
 def test_auth_errors_do_not_retry_and_fallback_stops_polling():
     assert "d.error === 'auth_denied'" in ROOM_JS
     assert "_espnAuthFailed = true" in ROOM_JS

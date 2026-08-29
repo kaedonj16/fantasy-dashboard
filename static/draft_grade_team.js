@@ -19,6 +19,8 @@
 
   function slotEligible(slot, pos) {
     pos = (pos || '').toUpperCase();
+    if (pos === 'PK') pos = 'K';
+    if (pos === 'D/ST' || pos === 'DST' || pos === 'D-ST') pos = 'DEF';
     if (slot === 'FLEX') return pos === 'RB' || pos === 'WR' || pos === 'TE';
     if (slot === 'SF') return pos === 'QB' || pos === 'RB' || pos === 'WR' || pos === 'TE';
     return slot === pos;
