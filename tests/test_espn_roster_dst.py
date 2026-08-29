@@ -10,6 +10,8 @@ from types import SimpleNamespace
 
 import pytest
 
+pytest.importorskip("espn_api")  # third-party ESPN client (pip: espn-api)
+
 from dashboard_services.providers import espn_api as E
 
 
