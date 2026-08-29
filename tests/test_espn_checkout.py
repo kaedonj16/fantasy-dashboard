@@ -39,6 +39,10 @@ def test_checkout_preserves_provider_at_every_plan_entry(
     fake_stripe = SimpleNamespace(checkout=SimpleNamespace(Session=_CheckoutSession))
     monkeypatch.setattr(billing, "_stripe", lambda: fake_stripe)
     monkeypatch.setattr(billing, "has_premium_access", lambda *args, **kwargs: False)
+    monkeypatch.setattr(
+        "dashboard_services.subscriptions.viewer_is_league_member",
+        lambda *args, **kwargs: True,
+    )
 
     with offline_client.session_transaction() as sess:
         sess["viewer_username"] = "Ryan"
@@ -73,6 +77,10 @@ def test_combo_checkout_rejects_double_billing_when_one_component_exists(
         billing, "has_premium_access",
         lambda user_id, league_id, platform="sleeper", account_id=None: bool(league_id),
     )
+    monkeypatch.setattr(
+        "dashboard_services.subscriptions.viewer_is_league_member",
+        lambda *args, **kwargs: True,
+    )
     with offline_client.session_transaction() as sess:
         sess["viewer_username"] = "ryan"
         sess["viewer_user_id"] = "sleeper-7"
@@ -83,6 +91,29 @@ def test_combo_checkout_rejects_double_billing_when_one_component_exists(
 
     assert response.status_code == 400
     assert "already" in response.get_json()["error"].lower()
+
+
+@pytest.mark.parametrize("plan", ["league", "combo"])
+def test_league_checkout_rejects_non_members(offline_client, monkeypatch, plan):
+    monkeypatch.setattr(
+        billing, "_stripe",
+        lambda: (_ for _ in ()).throw(AssertionError("Stripe must not be called")),
+    )
+    monkeypatch.setattr(billing, "has_premium_access", lambda *args, **kwargs: False)
+    monkeypatch.setattr(
+        "dashboard_services.subscriptions.viewer_is_league_member",
+        lambda *args, **kwargs: False,
+    )
+    with offline_client.session_transaction() as sess:
+        sess["viewer_username"] = "outsider"
+        sess["viewer_user_id"] = "outsider-1"
+
+    response = offline_client.post("/api/create-checkout-session", json={
+        "plan": plan, "league_id": "123", "platform": "sleeper", "season": 2026,
+    })
+
+    assert response.status_code == 403
+    assert "member" in response.get_json()["error"].lower()
 
 
 @pytest.mark.parametrize("plan", ["league", "combo"])
