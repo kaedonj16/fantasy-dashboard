@@ -400,11 +400,9 @@ function prTogglePos(pos) {
   // Sync button states
   document.querySelectorAll('.pos-pill').forEach(b => {
     const p = b.getAttribute('data-pos');
-    if (p === 'ALL') {
-      b.classList.toggle('active', prPosFilters.size === 0);
-    } else {
-      b.classList.toggle('active', prPosFilters.has(p));
-    }
+    const on = (p === 'ALL') ? (prPosFilters.size === 0) : prPosFilters.has(p);
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
   prPage = 1;
   prRender();
@@ -1044,6 +1042,17 @@ function prGoPage(p) {
   const inp   = document.getElementById('prSearch');
   const clear = document.getElementById('prSearchClear');
   if (!inp) return;
+
+  // Honor WebSite SearchAction /players?q= so Google sitelinks and shared
+  // search URLs actually filter the rankings table.
+  try {
+    const q = new URLSearchParams(window.location.search).get('q');
+    if (q) {
+      inp.value = q;
+      prSearchQuery = q.trim();
+      if (clear) clear.style.display = prSearchQuery.length > 0 ? 'block' : 'none';
+    }
+  } catch (e) {}
 
   inp.addEventListener('input', function() {
     prSearchQuery = inp.value.trim();

@@ -22,9 +22,10 @@ health_bp = Blueprint("health", __name__)
 
 def _forbidden_unless_admin():
     """Return a 403 response tuple when the admin secret is missing/wrong, else None."""
-    secret = request.headers.get("X-Admin-Secret", "")
-    admin_secret = os.environ.get("ADMIN_SECRET", "")
-    if not admin_secret or secret != admin_secret:
+    import hmac
+    secret = request.headers.get("X-Admin-Secret", "") or ""
+    admin_secret = os.environ.get("ADMIN_SECRET", "") or ""
+    if not admin_secret or not secret or not hmac.compare_digest(secret, admin_secret):
         return jsonify({"error": "Forbidden"}), 403
     return None
 

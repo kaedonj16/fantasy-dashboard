@@ -314,7 +314,7 @@
     --row: #f8fafc;
     --text: #122d4b;
     --text-muted: #6b7280;
-    --text-subtle: #94a3b8;
+    --text-subtle: #64748b;
     --border: #e8eef4;
     --grid: #eef2f6;
     --accent: #122d4b;
@@ -652,7 +652,7 @@ img {
 
 .home-card .hint {
     font-size: 12px;
-    color: #9ca3af;
+    color: var(--text-muted);
     margin-top: 8px;
 }
 

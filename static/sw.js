@@ -2,7 +2,7 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
-const CACHE_NAME = 'br-fantasy-v18';
+const CACHE_NAME = 'br-fantasy-v19';
 
 // How long to wait on the network for a page (when we already have a cached
 // copy) before painting the cached version. This is what kills the blank
@@ -11,9 +11,10 @@ const CACHE_NAME = 'br-fantasy-v18';
 // immediately and quietly update the cache once the network finishes.
 const NAV_TIMEOUT_MS = 3500;
 
+// Precache the offline shell + brand assets only. Versioned minified JS/CSS
+// are served with ?v= hashes from HTML and cached via stale-while-revalidate
+// on /static/* — precaching unversioned app.js/dashboard.css fought those URLs.
 const PRECACHE_URLS = [
-  '/static/dashboard.css',
-  '/static/app.js',
   '/static/BR_Logo.png',
   '/static/Website_Logo.png',
   '/static/offline.html',

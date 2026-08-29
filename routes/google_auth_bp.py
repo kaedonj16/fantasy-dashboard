@@ -70,7 +70,8 @@ def google_auth_start():
     session["google_oauth_nonce"] = nonce
     session["google_pkce_verifier"] = verifier
     session["google_auth_intent"] = "onboarding" if request.args.get("intent") == "onboarding" else "login"
-    session["google_oauth_next"] = (request.args.get("next") or "/").strip()
+    from utils.safe_url import safe_local_url
+    session["google_oauth_next"] = safe_local_url(request.args.get("next"), "/")
     params = {
         "client_id": os.environ["GOOGLE_CLIENT_ID"],
         "redirect_uri": os.environ["GOOGLE_REDIRECT_URI"],
@@ -100,6 +101,8 @@ def google_auth_callback():
     stored_nonce = session.pop("google_oauth_nonce", None)
     verifier = session.pop("google_pkce_verifier", None)
     next_url = session.pop("google_oauth_next", "/") or "/"
+    from utils.safe_url import safe_local_url
+    next_url = safe_local_url(next_url, "/")
     if not stored_state or stored_state != state:
         # Distinguish the two failure modes so prod logs are actionable:
         #  - stored_state is None with an otherwise empty session => the session
@@ -228,9 +231,20 @@ def google_auth_callback():
     viewer_user_id = session.get("viewer_user_id")
     if viewer_user_id:
         try:
-            link_platform_identity(
+            status = link_platform_identity(
                 account_id, "sleeper", str(viewer_user_id), session.get("viewer_username"),
             )
+            if status == "conflict":
+                # Sleeper id already belongs to another Google account — do not
+                # steal it. Clear the unverified viewer so this Google session
+                # doesn't keep browsing as that Sleeper identity.
+                logger.warning(
+                    "[google_auth] sleeper identity conflict for acct=%s uid=%s",
+                    account_id, viewer_user_id,
+                )
+                for k in ("viewer_user_id", "viewer_username", "viewer_roster_id",
+                          "viewer_display_name", "viewer_team_name"):
+                    session.pop(k, None)
         except Exception:
             logger.warning("[google_auth] sleeper bridge failed", exc_info=True)
 

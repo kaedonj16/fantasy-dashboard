@@ -561,26 +561,58 @@ def upsert_google_account(
 
 def link_platform_identity(
     account_id: int, platform: str, platform_user_id: str, handle: Optional[str] = None
-) -> None:
-    """Attach a platform identity (Sleeper user id / Yahoo guid) to an account."""
+) -> str:
+    """Attach a platform identity (Sleeper user id / Yahoo guid) to an account.
+
+    Returns:
+      ``linked``   — newly inserted
+      ``already``  — already owned by this account (handle refreshed)
+      ``conflict`` — identity belongs to a *different* account (not stolen)
+      ``noop``     — missing args
+
+    Never re-points an identity from another account: that would let a thief
+    who typed someone else's Sleeper username + their own Google claim PRO.
+    """
     if not (account_id and platform and platform_user_id):
-        return
+        return "noop"
     init_accounts_tables()
     from dashboard_services.db import get_conn
     with get_conn() as conn:
-        # A given platform identity belongs to one account; re-point it (and
-        # refresh the handle) if the same person signs in from a new account.
+        row = conn.execute(
+            """
+            SELECT account_id FROM account_identities
+            WHERE platform = %s AND platform_user_id = %s
+            LIMIT 1
+            """,
+            (platform, str(platform_user_id)),
+        ).fetchone()
+        if row:
+            existing = int(row["account_id"])
+            if existing != int(account_id):
+                logger.warning(
+                    "[accounts] refuse identity steal: %s:%s owned by acct %s, not %s",
+                    platform, platform_user_id, existing, account_id,
+                )
+                return "conflict"
+            if handle:
+                conn.execute(
+                    """
+                    UPDATE account_identities SET handle = COALESCE(%s, handle)
+                    WHERE platform = %s AND platform_user_id = %s
+                    """,
+                    (handle, platform, str(platform_user_id)),
+                )
+                conn.commit()
+            return "already"
         conn.execute(
             """
             INSERT INTO account_identities (account_id, platform, platform_user_id, handle)
             VALUES (%s, %s, %s, %s)
-            ON CONFLICT (platform, platform_user_id) DO UPDATE
-                SET account_id = EXCLUDED.account_id,
-                    handle     = COALESCE(EXCLUDED.handle, account_identities.handle)
             """,
             (account_id, platform, str(platform_user_id), handle),
         )
         conn.commit()
+        return "linked"
 
 
 def add_user_league(

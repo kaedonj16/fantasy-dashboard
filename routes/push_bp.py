@@ -284,9 +284,9 @@ def api_push_preferences():
 @limiter.limit("10 per minute")
 def api_push_broadcast():
     """Send a push to all subscribers. Requires X-Admin-Secret header."""
-    secret = request.headers.get("X-Admin-Secret", "")
-    admin_secret = os.environ.get("ADMIN_SECRET", "")
-    if not admin_secret or secret != admin_secret:
+    secret = request.headers.get("X-Admin-Secret", "") or ""
+    admin_secret = os.environ.get("ADMIN_SECRET", "") or ""
+    if not admin_secret or not secret or not hmac.compare_digest(secret, admin_secret):
         return jsonify({"error": "Forbidden"}), 403
     data  = request.get_json(force=True) or {}
     title = data.get("title", "BR Fantasy Update")

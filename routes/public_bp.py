@@ -89,7 +89,10 @@ def email_unsubscribe():
 
 @public_bp.route("/sw.js")
 def service_worker():
-    return send_file("static/sw.js", mimetype="application/javascript")
+    resp = send_file("static/sw.js", mimetype="application/javascript")
+    # SW must revalidate promptly so deploys aren't stuck behind CDN/browser cache.
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 # ── Ads.txt ───────────────────────────────────────────────────────────────────
@@ -163,6 +166,7 @@ def sitemap_xml():
         ("/trade-intel", "0.8", "daily"),
         ("/trade-database", "0.8", "weekly"),
         ("/players", "0.7", "weekly"),
+        ("/compare", "0.7", "weekly"),
         ("/breakouts", "0.7", "weekly"),
         ("/prospects", "0.7", "weekly"),
         ("/pricing", "0.6", "monthly"),
@@ -203,7 +207,10 @@ def sitemap_xml():
 
     xml_bytes = ET.tostring(urlset, encoding="unicode", xml_declaration=False)
     body = '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_bytes
-    return body, 200, {"Content-Type": "application/xml; charset=utf-8"}
+    return body, 200, {
+        "Content-Type": "application/xml; charset=utf-8",
+        "Cache-Control": "public, max-age=3600",
+    }
 
 
 # ── Privacy ───────────────────────────────────────────────────────────────────
@@ -339,7 +346,10 @@ def privacy_page(platform: Optional[str] = None, season: Optional[int] = None,
           </div>
         </div>
         """
-    return _render("BR Fantasy Privacy", league_id or None, "privacy", body, platform, season)
+    return _render(
+        "BR Fantasy Privacy", league_id or None, "privacy", body, platform, season,
+        description="How BR Fantasy collects, uses, and protects your account and league data.",
+    )
 
 
 # ── Support ───────────────────────────────────────────────────────────────────
@@ -409,7 +419,10 @@ def support_page(platform: Optional[str] = None, season: Optional[int] = None,
           </div>
         </div>
         """
-    return _render("BR Fantasy Support", league_id or None, "support", body, platform, season)
+    return _render(
+        "BR Fantasy Support", league_id or None, "support", body, platform, season,
+        description="Get help with BR Fantasy: account access, league linking, billing, and feature questions.",
+    )
 
 
 # ── FAQ ───────────────────────────────────────────────────────────────────────
@@ -605,7 +618,10 @@ def contact_page(platform: Optional[str] = None, season: Optional[int] = None,
           </div>
         </div>
         """
-    return _render("BR Fantasy Contact", league_id or None, "contact", body, platform, season)
+    return _render(
+        "BR Fantasy Contact", league_id or None, "contact", body, platform, season,
+        description="Contact the BR Fantasy team with feedback, bug reports, or partnership questions.",
+    )
 
 
 # ── About ─────────────────────────────────────────────────────────────────────
@@ -757,7 +773,10 @@ def about_page(platform: Optional[str] = None, season: Optional[int] = None,
           </div>
         </div>
         """
-    return _render("About BR Fantasy", league_id or None, "about", body, platform, season)
+    return _render(
+        "About BR Fantasy", league_id or None, "about", body, platform, season,
+        description="About BR Fantasy: dynasty trade values, advanced metrics, and multi-platform league tools.",
+    )
 
 
 # ── Terms ─────────────────────────────────────────────────────────────────────
@@ -855,7 +874,10 @@ def terms_page(platform: Optional[str] = None, season: Optional[int] = None,
           </div>
         </div>
         """
-    return _render("BR Fantasy Terms", league_id or None, "terms", body, platform, season)
+    return _render(
+        "BR Fantasy Terms", league_id or None, "terms", body, platform, season,
+        description="Terms of use for the BR Fantasy football analytics dashboard and tools.",
+    )
 
 
 # ── Guides ──────────────────────────────────────────────────────────────────────
@@ -1212,7 +1234,10 @@ def guides_index(platform: Optional[str] = None, season: Optional[int] = None,
           </div>
         </div>
     """
-    return _render("Dynasty Fantasy Football Guides", league_id or None, "guides", body, platform, season)
+    return _render(
+        "Dynasty Fantasy Football Guides", league_id or None, "guides", body, platform, season,
+        description="Free dynasty fantasy football guides covering trade value, Superflex, advanced metrics, and rookie drafts.",
+    )
 
 
 @public_bp.route("/guides/<slug>")
@@ -1257,7 +1282,10 @@ def guide_page(slug: str, platform: Optional[str] = None, season: Optional[int] 
           </div>
         </div>
     """
-    return _render(f"{g['title']} | BR Fantasy", league_id or None, "guides", body, platform, season)
+    return _render(
+        f"{g['title']} | BR Fantasy", league_id or None, "guides", body,
+        platform, season, description=g.get("summary") or "",
+    )
 
 
 # ── Glossary ─────────────────────────────────────────────────────────────────

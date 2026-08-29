@@ -54,7 +54,8 @@ def yahoo_auth_start():
     # on one host without any redirect of our own.
 
     league_id = (request.args.get("league_id") or "").strip()
-    next_url  = (request.args.get("next") or "/").strip()
+    from utils.safe_url import safe_local_url
+    next_url  = safe_local_url(request.args.get("next"), "/")
     team_name = (request.args.get("team_name") or "").strip()
     # reauth=1 means we're recovering from a 403 (wrong account) — force Yahoo's
     # account chooser so the user can pick a different account instead of being
@@ -102,7 +103,8 @@ def yahoo_auth_callback():
 
     ctx_data  = session.pop("yahoo_oauth_ctx", {}) or {}
     league_id = ctx_data.get("league_id") or ""
-    next_url  = ctx_data.get("next") or "/"
+    from utils.safe_url import safe_local_url
+    next_url  = safe_local_url(ctx_data.get("next"), "/")
     team_name = ctx_data.get("team_name") or ""
 
     try:

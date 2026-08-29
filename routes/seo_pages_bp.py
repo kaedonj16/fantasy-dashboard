@@ -310,13 +310,18 @@ def page_compare():
         desc = ("Put any two dynasty fantasy football players side by side: trade value, "
                 "advanced metrics, weekly usage, and game logs.")
     body = build_compare_page_body(_compare_popular_matchups())
-    nav_lid = session.get("last_league_id")
+    # Do not pass a remembered league_id into render_page — that would flip this
+    # public SEO page to noindex. Nav still inherits session last_* for signed-in
+    # chrome via render_page's own session fallback.
     nav_platform = session.get("last_platform")
     try:
         nav_season = int(session.get("last_season")) if session.get("last_season") else None
     except (TypeError, ValueError):
         nav_season = None
-    return render_page(title, nav_lid, "compare", body, nav_platform, nav_season, description=desc)
+    return render_page(
+        title, None, "compare", body, nav_platform, nav_season,
+        description=desc, noindex=False,
+    )
 
 
 # ── Rankings Hub ──────────────────────────────────────────────────────────────
