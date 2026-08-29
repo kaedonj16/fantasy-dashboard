@@ -70,7 +70,8 @@ def google_auth_start():
     session["google_oauth_nonce"] = nonce
     session["google_pkce_verifier"] = verifier
     session["google_auth_intent"] = "onboarding" if request.args.get("intent") == "onboarding" else "login"
-    session["google_oauth_next"] = (request.args.get("next") or "/").strip()
+    from utils.safe_url import safe_local_url
+    session["google_oauth_next"] = safe_local_url(request.args.get("next"), "/")
     params = {
         "client_id": os.environ["GOOGLE_CLIENT_ID"],
         "redirect_uri": os.environ["GOOGLE_REDIRECT_URI"],
@@ -100,6 +101,8 @@ def google_auth_callback():
     stored_nonce = session.pop("google_oauth_nonce", None)
     verifier = session.pop("google_pkce_verifier", None)
     next_url = session.pop("google_oauth_next", "/") or "/"
+    from utils.safe_url import safe_local_url
+    next_url = safe_local_url(next_url, "/")
     if not stored_state or stored_state != state:
         # Distinguish the two failure modes so prod logs are actionable:
         #  - stored_state is None with an otherwise empty session => the session

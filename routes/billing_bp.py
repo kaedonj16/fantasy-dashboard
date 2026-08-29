@@ -60,13 +60,8 @@ def _request_platform(payload=None) -> str:
 
 def _safe_local_url(value: str, fallback: str) -> str:
     """Allow same-site absolute/local redirects, rejecting protocol-relative URLs."""
-    value = str(value or "").strip()
-    base_url = request.host_url.rstrip("/")
-    if value.startswith("/") and not value.startswith("//"):
-        return value
-    if value.startswith(base_url + "/"):
-        return value
-    return fallback
+    from utils.safe_url import safe_local_url
+    return safe_local_url(value, fallback, host_url=request.host_url)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -176,8 +171,15 @@ def _pricing_body() -> str:
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
 
+        # Sanitize before embedding in HTML/JS — checkout already filters return_url,
+        # but a crafted /pricing?success=1&return_to=https://evil link must not redirect.
+        return_to = _safe_local_url(return_to, "/pricing")
         safe_return = html.escape(return_to) if return_to else ""
-        viewer_user_id = _session.get("viewer_user_id") or _session.get("viewer_username") or ""
+        viewer_user_id = (
+            _session.get("viewer_user_id")
+            or _session.get("viewer_username")
+            or (("acct:" + str(_session.get("account_id")).strip()) if _session.get("account_id") else "")
+        )
         return f"""
     <div class="card central" style="max-width:560px;text-align:center;">
       <div class="card-body" style="padding:48px 32px;">
@@ -452,6 +454,17 @@ def create_checkout_session():
     if plan in ("league", "combo") and not league_id:
         return jsonify({"error": "Choose a league before purchasing this plan."}), 400
 
+    # League/combo plans are shared with co-managers — only sell them to someone
+    # who actually belongs to the league (otherwise buyers pay for an entitlement
+    # that has_premium_for_viewer will refuse to honor).
+    if plan in ("league", "combo") and league_id:
+        from dashboard_services.subscriptions import viewer_is_league_member
+        member_id = session.get("viewer_user_id") or session.get("viewer_username")
+        if not viewer_is_league_member(member_id, league_id, platform, season):
+            return jsonify({
+                "error": "You must be a member of this league to purchase a league plan."
+            }), 403
+
     username = session.get("viewer_username")
     stable_id = session.get("viewer_user_id")
     account_id = session.get("account_id")
@@ -654,7 +667,13 @@ def api_create_portal_session():
     """Create a Stripe billing portal session so users can manage subscriptions."""
     from dashboard_services.subscriptions import get_subscription_info
 
-    user_id   = session.get("viewer_user_id") or session.get("viewer_username")
+    # Mirror checkout identity: Google-only managers have account_id without a
+    # Sleeper viewer id, and their Stripe rows are keyed as acct:<id>.
+    user_id = (
+        session.get("viewer_user_id")
+        or session.get("viewer_username")
+        or (("acct:" + str(session.get("account_id")).strip()) if session.get("account_id") else None)
+    )
     league_id = request.json.get("league_id") if request.is_json else request.form.get("league_id")
     payload = request.get_json(silent=True) if request.is_json else request.form
     payload = payload or {}
@@ -675,6 +694,14 @@ def api_create_portal_session():
         if not customer_id and session.get("viewer_username") and session.get("viewer_user_id"):
             legacy_sub = get_subscription_info(session.get("viewer_username"), None, platform)
             customer_id = legacy_sub.get("stripe_customer_id")
+        if not customer_id and session.get("account_id"):
+            acct_key = "acct:" + str(session.get("account_id")).strip()
+            if user_id != acct_key:
+                acct_sub = get_subscription_info(acct_key, None, platform)
+                customer_id = acct_sub.get("stripe_customer_id")
+            if not customer_id:
+                bare_sub = get_subscription_info(str(session.get("account_id")).strip(), None, platform)
+                customer_id = bare_sub.get("stripe_customer_id")
         if not customer_id:
             return jsonify({"error": "No Stripe customer found for your account. Contact support if you believe this is an error."}), 404
 

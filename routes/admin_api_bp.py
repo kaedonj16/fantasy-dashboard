@@ -1,11 +1,12 @@
 """Extracted from app.py — admin_api_bp (see route list below)."""
 from __future__ import annotations
+import hmac
 import logging
 import time
 import os
 import threading
 from datetime import datetime
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 from extensions import limiter
 from app import DASHBOARD_CACHE, CACHE_TTL
 logger = logging.getLogger(__name__)
@@ -67,13 +68,35 @@ def api_prewarm_league():
 @admin_api_bp.route("/api/refresh-league", methods=["POST"])
 @limiter.limit("4 per minute")
 def api_refresh_league():
-    """Force-expire a league context so the next request rebuilds it from source."""
+    """Force-expire a league context so the next request rebuilds it from source.
+
+    Allowed when:
+      - the caller is currently viewing this league (``last_league_id`` match), or
+      - the caller is a verified member of the league, or
+      - the request includes a valid ``CRON_SECRET`` (ops / automation).
+    """
     payload = request.get_json(silent=True) or {}
     platform = (payload.get("platform") or "sleeper").strip().lower()
     league_id = (payload.get("league_id") or "").strip()
-    season = int(payload.get("season") or datetime.now().year)
+    try:
+        season = int(payload.get("season") or datetime.now().year)
+    except (TypeError, ValueError):
+        season = datetime.now().year
     if not league_id:
         return jsonify({"error": "league_id required"}), 400
+
+    secret = os.environ.get("CRON_SECRET", "")
+    provided = str(payload.get("secret") or "")
+    ops_ok = bool(secret and provided and hmac.compare_digest(provided, secret))
+    if not ops_ok:
+        last = str(session.get("last_league_id") or "")
+        viewing = last == str(league_id)
+        if not viewing:
+            from dashboard_services.subscriptions import viewer_is_league_member
+            member_id = session.get("viewer_user_id") or session.get("viewer_username")
+            if not viewer_is_league_member(member_id, league_id, platform, season):
+                return jsonify({"error": "forbidden"}), 403
+
     key = _cache_key(platform, season, league_id)
     if key in DASHBOARD_CACHE:
         DASHBOARD_CACHE[key]["ts"] = 0       # expire context cache
@@ -107,10 +130,10 @@ def api_flush_value_cache():
     Caller must pass the correct CRON_SECRET (same env var used by the cron job).
     """
     secret = os.environ.get("CRON_SECRET", "")
-    provided = (request.get_json(force=True, silent=True) or {}).get("secret", "")
+    provided = str((request.get_json(force=True, silent=True) or {}).get("secret", "") or "")
     # Require the secret to be set AND match - when CRON_SECRET is unset the
     # old `if secret and …` guard would pass any request (short-circuit on falsy).
-    if not secret or provided != secret:
+    if not secret or not provided or not hmac.compare_digest(provided, secret):
         return jsonify({"error": "unauthorized"}), 403
 
     global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
@@ -155,8 +178,8 @@ def api_run_daily_cron():
     """
     secret   = os.environ.get("CRON_SECRET", "")
     body     = request.get_json(force=True, silent=True) or {}
-    provided = body.get("secret", "")
-    if not secret or provided != secret:
+    provided = str(body.get("secret", "") or "")
+    if not secret or not provided or not hmac.compare_digest(provided, secret):
         return jsonify({"error": "unauthorized"}), 403
 
     force = bool(body.get("force", False))

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import glob
 import hashlib
+import hmac
 import html
 import json
 import logging
@@ -656,6 +657,7 @@ _FEATURES_JS_FILE = _ensure_features_js()
 _FEATURES_JS_V = _static_hash(_FEATURES_JS_FILE) if _FEATURES_JS_FILE else ""
 _PLAYER_MODAL_JS_V = _static_hash("player_modal.js")
 _PAYWALL_JS_V = _static_hash("paywall.js")
+_PAYWALL_CSS_V = _static_hash("paywall.css")
 _REDZONE_JS_V = _static_hash("redzone.js")
 _RANKINGS_JS_V = _static_hash("rankings.js")
 _TEAMS_JS_V = _static_hash("teams.js")
@@ -1761,8 +1763,8 @@ BASE_HTML = """
     <link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}">
     <!-- Paywall CSS only styles the (hidden) upgrade modal — no above-the-fold
          layout impact — so it stays async and doesn't block first paint. -->
-    <link rel="stylesheet" href="/static/paywall.css" media="print" onload="this.media='all'">
-    <noscript><link rel="stylesheet" href="/static/paywall.css"></noscript>
+    <link rel="stylesheet" href="/static/paywall.css?v={paywall_css_v}" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="/static/paywall.css?v={paywall_css_v}"></noscript>
 
     <!-- Plotly is loaded on demand (window.ensurePlotly) only when a chart is
          actually rendered, instead of ~1 MB on every page. -->
@@ -4669,6 +4671,7 @@ def render_page(
             if not _use_lite else ""
         ),
         paywall_js_v=_PAYWALL_JS_V,
+        paywall_css_v=_PAYWALL_CSS_V,
         css_file=_CSS_FILE,
         css_v=_CSS_V,
         fa_v=_FA_V,
@@ -21212,8 +21215,8 @@ def api_trade_intel_run_crawl():
     """
     secret = os.environ.get("CRON_SECRET", "")
     body = request.get_json(force=True, silent=True) or {}
-    provided = body.get("secret", "")
-    if not secret or provided != secret:
+    provided = str(body.get("secret", "") or "")
+    if not secret or not provided or not hmac.compare_digest(provided, secret):
         return jsonify({"error": "unauthorized"}), 403
 
     try:

@@ -17,11 +17,11 @@ def build_players_shell() -> str:
             All players ranked by dynasty value.
           </div>
         </div>
-        <button onclick="prExportCSV()" title="Download current list as CSV"
+        <button type="button" onclick="prExportCSV()" title="Download current list as CSV"
           style="margin-top:4px;padding:7px 14px;border-radius:8px;border:1px solid var(--border);
                  background:var(--surface);color:var(--text);font-size:12px;font-weight:600;
                  cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;">
-          <img src="/static/images/download-solid.png" style="width:13px;height:13px;vertical-align:middle;opacity:0.8;" alt=""> Export CSV
+          <img src="/static/images/download-solid.png" style="width:13px;height:13px;vertical-align:middle;opacity:0.8;" alt="" aria-hidden="true"> Export CSV
         </button>
       </div>
       <div class="card-body" style="padding-top:0;">
@@ -33,25 +33,27 @@ def build_players_shell() -> str:
             <!-- Search -->
             <div class="filter-search">
               <input id="prSearch" type="text" placeholder="Search players…" autocomplete="off"
+                aria-label="Search players"
                 style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
                        border:1px solid var(--border);background:var(--card-bg);
                        color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
               <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);
                            color:var(--text-muted);font-size:13px;pointer-events:none;"><i class="fa-solid fa-magnifying-glass"></i></span>
-              <button id="prSearchClear" onclick="prClearSearch()"
+              <button id="prSearchClear" onclick="prClearSearch()" type="button"
+                aria-label="Clear search"
                 style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
                        background:none;border:none;cursor:pointer;color:var(--text-muted);
                        font-size:16px;line-height:1;padding:2px;">&#x2715;</button>
             </div>
 
             <!-- Position filters -->
-            <div class="otc-day-filters filter-positions br-chip-pop">
-              <button class="otc-day-filter pos-pill active" data-pos="ALL" onclick="prTogglePos('ALL')">All</button>
-              <button class="otc-day-filter pos-pill" data-pos="QB" onclick="prTogglePos('QB')">QB</button>
-              <button class="otc-day-filter pos-pill" data-pos="RB" onclick="prTogglePos('RB')">RB</button>
-              <button class="otc-day-filter pos-pill" data-pos="WR" onclick="prTogglePos('WR')">WR</button>
-              <button class="otc-day-filter pos-pill" data-pos="TE" onclick="prTogglePos('TE')">TE</button>
-              <button class="otc-day-filter pos-pill" data-pos="PICK" onclick="prTogglePos('PICK')">Picks</button>
+            <div class="otc-day-filters filter-positions br-chip-pop" role="group" aria-label="Filter by position">
+              <button type="button" class="otc-day-filter pos-pill active" data-pos="ALL" aria-pressed="true" onclick="prTogglePos('ALL')">All</button>
+              <button type="button" class="otc-day-filter pos-pill" data-pos="QB" aria-pressed="false" onclick="prTogglePos('QB')">QB</button>
+              <button type="button" class="otc-day-filter pos-pill" data-pos="RB" aria-pressed="false" onclick="prTogglePos('RB')">RB</button>
+              <button type="button" class="otc-day-filter pos-pill" data-pos="WR" aria-pressed="false" onclick="prTogglePos('WR')">WR</button>
+              <button type="button" class="otc-day-filter pos-pill" data-pos="TE" aria-pressed="false" onclick="prTogglePos('TE')">TE</button>
+              <button type="button" class="otc-day-filter pos-pill" data-pos="PICK" aria-pressed="false" onclick="prTogglePos('PICK')">Picks</button>
             </div>
 
             <!-- Settings button -->
