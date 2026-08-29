@@ -73,22 +73,37 @@ def test_bookmarklet_contains_origin_and_token():
 
 
 def test_shortcut_javascript_calls_completion_not_bookmarklet_prefix():
-    js = shortcut_javascript("https://www.brfantasyfootball.com", "TOK.EN")
+    js = shortcut_javascript(
+        "https://www.brfantasyfootball.com",
+        "99.2026.999.x.y.z",
+        league_id="99",
+        season=2026,
+    )
     assert not js.startswith("javascript:")
     assert "completion(" in js
     assert "function finish(" in js
     assert "brfantasyfootball.com" in js
-    assert "TOK.EN" in js
+    assert "99.2026.999.x.y.z" in js
     assert "ios-shortcut" in js
     assert "/api/draft/espn-relay" in js
     assert "getOwnPropertyNames" in js
     assert "apiScan" in js
     assert "scanReact" in js
+    assert "scanHtml" in js
     assert "selectedPid" in js
+    assert "Phone sync could not read live picks" in js
+    assert 'L="99"' in js
+    assert "S=2026" in js or 'S=2026' in js.replace(" ", "")
 
 
 def test_bookmarklet_also_uses_hardened_scanner():
-    bm = build_bookmarklet("https://www.brfantasyfootball.com", "TOK.EN")
+    bm = build_bookmarklet(
+        "https://www.brfantasyfootball.com",
+        "99.2026.999.x.y.z",
+        league_id="99",
+        season=2026,
+    )
     assert "getOwnPropertyNames" in bm
     assert "apiScan" in bm
-    assert "No picks found in page state" in bm
+    assert "scanHtml" in bm
+    assert "Could not read live picks" in bm

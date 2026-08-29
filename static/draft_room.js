@@ -5540,26 +5540,26 @@
     if (unavailable) {
       title = 'ESPN sync needs a hand';
       blurb = onPhone
-        ? 'Live API updates often stall mid-draft. Open ESPN with <b>Request Desktop Website</b>, then use Mobile Sync — or track picks yourself.'
+        ? 'Live ESPN picks usually need a <b>laptop + Chrome extension</b>. Phone Shortcuts often cannot read the draft mid-pick — track manually, or try Mobile Sync after Request Desktop Website.'
         : 'Live API updates often stall mid-draft. Install the Chrome extension, or enter picks yourself.';
       // Two primary actions side-by-side; Chrome install stays a quiet link so
       // the card doesn't become a button stack on phones.
       primary = onPhone
-        ? '<button type="button" class="dr-banner-join" id="drEspnMobileSync">Mobile Sync</button>'
-          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnManualFromTools">Track manually</button>'
-          + '<button type="button" class="dr-banner-join is-link" id="drEspnExtInstall">Get Chrome extension</button>'
+        ? '<button type="button" class="dr-banner-join" id="drEspnManualFromTools">Track manually</button>'
+          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnExtInstall">Get Chrome extension</button>'
+          + '<button type="button" class="dr-banner-join is-link" id="drEspnMobileSync">Mobile Sync</button>'
         : '<button type="button" class="dr-banner-join" id="drEspnExtInstall">Get Chrome extension</button>'
           + '<button type="button" class="dr-banner-join is-ghost" id="drEspnManualFromTools">Track manually</button>'
           + '<button type="button" class="dr-banner-join is-ghost" id="drEspnMobileSync">Mobile Sync</button>';
     } else {
-      title = onPhone ? 'Sync picks from your phone' : 'Sync ESPN picks automatically';
+      title = onPhone ? 'Phone: track manually or use a laptop' : 'Sync ESPN picks automatically';
       blurb = onPhone
-        ? 'Open ESPN in Safari/Chrome → <b>Request Desktop Website</b> to get the draft board, then use Mobile Sync. The ESPN app itself can\'t run bookmarks.'
+        ? 'Live ESPN picks usually need a <b>laptop + Chrome extension</b>. Phone Shortcuts often cannot read the draft mid-pick — use Track manually, or try Mobile Sync after Request Desktop Website.'
         : 'Install the Chrome extension and keep the ESPN draft tab open — picks land here automatically.';
       primary = onPhone
-        ? '<button type="button" class="dr-banner-join" id="drEspnMobileSync">Mobile Sync</button>'
-          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnManualFromTools">Track manually</button>'
+        ? '<button type="button" class="dr-banner-join" id="drEspnManualFromTools">Track manually</button>'
           + '<button type="button" class="dr-banner-join is-ghost" id="drEspnExtInstall">Get Chrome extension</button>'
+          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnMobileSync">Mobile Sync</button>'
         : '<button type="button" class="dr-banner-join" id="drEspnExtInstall">Get Chrome extension</button>'
           + '<button type="button" class="dr-banner-join is-ghost" id="drEspnMobileSync">Mobile Sync</button>';
     }
@@ -5690,6 +5690,7 @@
         + '</ol></div>'
         + '<div class="dr-msync-sec"><h4>iPhone Shortcut (Safari only)</h4>'
         + '<div class="dr-msync-warn"><b>Must be Safari.</b> Chrome/Firefox pass a URL, not a Safari page — you\'ll get “couldn\'t convert from URL to Safari Web Page.” Open the ESPN draft in <b>Safari</b> with Request Desktop Website.</div>'
+        + '<div class="dr-msync-warn"><b>Live draft limit:</b> ESPN keeps picks in page memory that iOS Shortcuts often cannot read, and their REST API stays empty mid-draft. If sync says it found no picks, switch to <b>Track manually</b> or a <b>laptop + Chrome extension</b>.</div>'
         + '<ol>'
         + '<li>Shortcuts → <b>+</b> → name it e.g. <b>BR Fantasy sync</b>.</li>'
         + '<li>Tap <b>ⓘ</b> at the bottom → <b>Show in Share Sheet</b> ON.</li>'

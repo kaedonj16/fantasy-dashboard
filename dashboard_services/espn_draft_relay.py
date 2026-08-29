@@ -193,33 +193,93 @@ def site_origin(request_host_url: Optional[str] = None) -> str:
     return "https://www.brfantasyfootball.com"
 
 
-def build_bookmarklet(origin: str, token: str) -> str:
+def build_bookmarklet(
+    origin: str,
+    token: str,
+    *,
+    league_id: Optional[str] = None,
+    season: Optional[int] = None,
+) -> str:
     """javascript: bookmark that syncs the open ESPN draft room to BR Fantasy."""
-    compact = " ".join(_relay_script_body(origin, token, source="bookmarklet", for_ios_shortcut=False).split())
+    compact = " ".join(
+        _relay_script_body(
+            origin,
+            token,
+            source="bookmarklet",
+            for_ios_shortcut=False,
+            league_id=league_id,
+            season=season,
+        ).split()
+    )
     return "javascript:" + compact
 
 
-def shortcut_javascript(origin: str, token: str) -> str:
+def shortcut_javascript(
+    origin: str,
+    token: str,
+    *,
+    league_id: Optional[str] = None,
+    season: Optional[int] = None,
+) -> str:
     """iOS Shortcuts 'Run JavaScript on Web Page' payload.
 
     Must call Apple's ``completion(result)`` on every exit path — pasting the
     bookmarklet (``javascript:…``) will fail with that exact error.
+
+    Note: on iPhone, Shortcuts often cannot see React fiber state (isolated from
+    the page JS heap). Live ESPN drafts also leave ``mDraftDetail`` empty, so
+    phone auto-sync is best-effort; desktop extension remains the reliable path.
     """
-    return " ".join(_relay_script_body(origin, token, source="ios-shortcut", for_ios_shortcut=True).split())
+    return " ".join(
+        _relay_script_body(
+            origin,
+            token,
+            source="ios-shortcut",
+            for_ios_shortcut=True,
+            league_id=league_id,
+            season=season,
+        ).split()
+    )
 
 
-def _relay_script_body(origin: str, token: str, *, source: str, for_ios_shortcut: bool) -> str:
+def _relay_script_body(
+    origin: str,
+    token: str,
+    *,
+    source: str,
+    for_ios_shortcut: bool,
+    league_id: Optional[str] = None,
+    season: Optional[int] = None,
+) -> str:
     """Shared ESPN draft → BR Fantasy relay script (bookmarklet + iOS Shortcut).
 
-    Prefer React fiber ``draftDetail`` (live room truth). Fall back to a
-    same-origin ESPN ``mDraftDetail`` fetch with cookies if fiber is empty —
-    mid-draft REST is often stale, but better than nothing. On iOS Shortcuts,
-    fiber discovery must use ``Object.getOwnPropertyNames`` (``for…in`` can miss
-    ``__reactFiber$`` keys).
+    Prefer React fiber ``draftDetail`` (live room truth). Fall back to HTML
+    embedded JSON / playerId links, then a credentialed ``mDraftDetail`` fetch
+    (often empty mid-draft). Bake league/season into the script when known so
+    URL query params are not required.
     """
     origin_js = json.dumps(str(origin).rstrip("/"))
     token_js = json.dumps(str(token))
     source_js = json.dumps(str(source))
+    lid = str(league_id or "").strip()
+    try:
+        season_i = int(season) if season not in (None, "") else 0
+    except (TypeError, ValueError):
+        season_i = 0
+    # Prefer parsing league/season from the token shape league.season.exp...
+    if (not lid or not season_i) and token:
+        parts = str(token).split(".")
+        if len(parts) >= 2:
+            if not lid:
+                lid = parts[0].strip()
+            if not season_i:
+                try:
+                    season_i = int(parts[1])
+                except (TypeError, ValueError):
+                    season_i = 0
+    league_js = json.dumps(lid)
+    season_js = json.dumps(season_i if season_i else "")
+
     if for_ios_shortcut:
         finish_fn = (
             "function finish(m,ok){try{if(m)toast(m);}catch(e){}"
@@ -228,8 +288,8 @@ def _relay_script_body(origin: str, token: str, *, source: str, for_ios_shortcut
         early_open = "finish('Open your ESPN draft first.',false);return;"
         early_host = "finish('Open fantasy.espn.com draft, then run sync again.',false);return;"
         no_picks = (
-            "finish('No picks found in page state. Open the Board or Pick History "
-            "tab, wait a second, sync again — or use a laptop + Chrome extension.',false);"
+            "finish('Phone sync could not read live picks (ESPN hides them from "
+            "Shortcuts mid-draft). Use a laptop + Chrome extension, or track manually.',false);"
         )
         sync_fail = "finish((res.b&&res.b.error)||'Sync failed',false);"
         sync_ok = (
@@ -243,8 +303,8 @@ def _relay_script_body(origin: str, token: str, *, source: str, for_ios_shortcut
         early_open = "return finish('Open your ESPN draft first.',false);"
         early_host = "return finish('Open fantasy.espn.com draft, then run sync again.',false);"
         no_picks = (
-            "return finish('No picks found in page state. Open the Board or Pick History "
-            "tab, wait a second, sync again — or use a laptop + Chrome extension.',false);"
+            "return finish('Could not read live picks from this page. Prefer the "
+            "Chrome extension on a laptop, or track manually.',false);"
         )
         sync_fail = "finish((res.b&&res.b.error)||'Sync failed',false);"
         sync_ok = (
@@ -256,10 +316,10 @@ def _relay_script_body(origin: str, token: str, *, source: str, for_ios_shortcut
 
     body = f"""
 (function(){{
-  var O={origin_js},T={token_js};
+  var O={origin_js},T={token_js},L={league_js},S={season_js};
   function toast(m){{try{{var d=document.createElement('div');d.textContent=m;
   d.setAttribute('style','position:fixed;z-index:2147483647;left:12px;right:12px;bottom:16px;padding:12px 14px;border-radius:10px;background:#0f172a;color:#fff;font:600 13px/1.35 system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.35)');
-  document.documentElement.appendChild(d);setTimeout(function(){{d.remove();}},4200);}}catch(e){{{toast_catch}}}}}
+  document.documentElement.appendChild(d);setTimeout(function(){{d.remove();}},5200);}}catch(e){{{toast_catch}}}}}
   {finish_fn}
   function selectedPid(pid){{if(pid==null)return false;var s=String(pid);if(s===''||s==='0'||s==='-1'||s==='null'||s==='None')return false;var n=+s;if(!isNaN(n)&&(n===0||n===-1))return false;return true;}}
   function isPick(o){{return o&&typeof o==='object'&&(o.overallPickNumber!=null||o.overallPick!=null||o.pick_no!=null);}}
@@ -281,9 +341,38 @@ def _relay_script_body(origin: str, token: str, *, source: str, for_ios_shortcut
   return out;}}
   function scanReact(){{var best=null;var els=[];
   [document.getElementById('espn-aria-root'),document.getElementById('root'),document.getElementById('fitt-analytics'),document.querySelector('[data-reactroot]'),document.querySelector('#pane-main'),document.body].forEach(function(el){{if(el)els.push(el);}});
-  try{{var nodes=document.querySelectorAll('div,main,section');for(var i=0;i<Math.min(nodes.length,80);i++){{var el=nodes[i];if(fiberKeys(el).length)els.push(el);}}}}catch(e){{}}
+  try{{var nodes=document.querySelectorAll('div,main,section');for(var i=0;i<Math.min(nodes.length,120);i++){{var el=nodes[i];if(fiberKeys(el).length)els.push(el);}}}}catch(e){{}}
   for(var i=0;i<els.length;i++){{var el=els[i];var keys=fiberKeys(el);for(var j=0;j<keys.length;j++){{try{{var root=el[keys[j]];if(root&&root._internalRoot&&root._internalRoot.current)best=consider(best,walk(root._internalRoot.current));best=consider(best,walk(root));}}catch(e){{}}}}}}
   return best;}}
+  function scanHtml(){{
+    var byOverall={{}};
+    function add(overall,pid){{overall=+overall;pid=+pid;if(!overall||!selectedPid(pid))return;byOverall[overall]={{overallPickNumber:overall,playerId:pid}};}}
+    try{{
+      var html=document.documentElement&&document.documentElement.innerHTML||'';
+      var re1=/"overallPickNumber"\\s*:\\s*(\\d+)\\s*,\\s*"playerId"\\s*:\\s*(-?\\d+)/g;
+      var re2=/"playerId"\\s*:\\s*(-?\\d+)\\s*,\\s*"overallPickNumber"\\s*:\\s*(\\d+)/g;
+      var m;while((m=re1.exec(html)))add(m[1],m[2]);while((m=re2.exec(html)))add(m[2],m[1]);
+      var re3=/"overallPickNumber"\\s*:\\s*(\\d+)[^\\]{{]{{0,120}}"playerId"\\s*:\\s*(-?\\d+)/g;
+      while((m=re3.exec(html)))add(m[1],m[2]);
+    }}catch(e){{}}
+    try{{
+      var links=document.querySelectorAll('a[href*="playerId="],a[href*="/id/"],a[href*="playerid="],[data-player-id],[data-playerid]');
+      for(var i=0;i<links.length;i++){{
+        var a=links[i];
+        var href=a.getAttribute('href')||'';
+        var pid=(a.getAttribute('data-player-id')||a.getAttribute('data-playerid')||'');
+        var pm=href.match(/playerId=(-?\\d+)/i)||href.match(/playerid=(-?\\d+)/i)||href.match(/\\/id\\/(-?\\d+)/);
+        if(pm)pid=pm[1];
+        if(!selectedPid(pid))continue;
+        var txt=((a.closest('li,tr,div,section,article')||a.parentElement||a).textContent||'');
+        var pickLabel=txt.match(/\\bPick\\s*#?\\s*(\\d{{1,3}})\\b/i);
+        if(pickLabel)add(pickLabel[1],pid);
+      }}
+    }}catch(e){{}}
+    var picks=[];for(var k in byOverall)picks.push(byOverall[k]);
+    if(!picks.length)return null;
+    return{{inProgress:true,drafted:false,picks:picks}};
+  }}
   function parseApiPayload(data){{if(!data)return null;if(Array.isArray(data)&&data[0])data=data[0];if(data.draftDetail)return fromDetail(data.draftDetail);if(data.league&&data.league.draftDetail)return fromDetail(data.league.draftDetail);return null;}}
   function apiScan(leagueId,season,done){{
     if(!leagueId||!season){{done(null);return;}}
@@ -310,9 +399,10 @@ def _relay_script_body(origin: str, token: str, *, source: str, for_ios_shortcut
   }}
   var u;try{{u=new URL(location.href);}}catch(e){{{early_open}}}
   if(location.hostname.indexOf('espn.com')<0){{{early_host}}}
-  var leagueId=(u.searchParams.get('leagueId')||'').trim();
-  var season=(u.searchParams.get('seasonId')||u.searchParams.get('season')||'').trim();
-  var data=scanReact();
+  var leagueId=(u.searchParams.get('leagueId')||L||'').toString().trim();
+  var season=(u.searchParams.get('seasonId')||u.searchParams.get('season')||S||'').toString().trim();
+  var data=consider(null,scanReact());
+  data=consider(data,scanHtml());
   function go(hit){{
     if(!hit||!hit.picks||!hit.picks.length){{{no_picks}return;}}
     hit.picks.sort(function(a,b){{return a.overallPickNumber-b.overallPickNumber;}});

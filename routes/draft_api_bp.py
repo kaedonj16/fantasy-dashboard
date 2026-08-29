@@ -394,22 +394,26 @@ def api_draft_espn_relay_token():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     origin = site_origin(request.host_url)
-    bookmarklet = build_bookmarklet(origin, minted["token"])
+    bookmarklet = build_bookmarklet(
+        origin, minted["token"], league_id=league_id, season=season
+    )
     return jsonify({
         **minted,
         "origin": origin,
         "bookmarklet": bookmarklet,
-        "shortcut_js": shortcut_javascript(origin, minted["token"]),
+        "shortcut_js": shortcut_javascript(
+            origin, minted["token"], league_id=league_id, season=season
+        ),
         "espn_draft_url": (
             f"https://fantasy.espn.com/football/draft?leagueId={league_id}&seasonId={season}"
         ),
         "instructions": {
             "android": "Open ESPN draft → browser menu → Bookmarks → Add → edit URL to the bookmarklet.",
             "ios": (
-                "Safari only (not Chrome). Shortcuts: Show in Share Sheet → "
-                "receive Safari web pages only → Run JavaScript on Web Page → "
-                "Shortcut Input → paste shortcut_js. From Safari ESPN draft "
-                "(desktop site), Share → run the shortcut — do not press Play."
+                "Safari only. Live ESPN drafts often cannot be read by iOS Shortcuts "
+                "(no React state / empty mDraftDetail). Prefer laptop + Chrome extension "
+                "or manual tracking. If trying Shortcuts: Share Sheet → Safari web pages → "
+                "Shortcut Input → paste shortcut_js."
             ),
             "desktop": "Drag the bookmarklet to your bookmarks bar, open the ESPN draft, click it after each pick (or when picks look behind).",
         },

@@ -83,7 +83,8 @@ def test_extension_relay_wired_and_skips_manual_fallback():
     assert "dr-espn-tools-top" in PAGE
     assert "drEspnToolsDismiss" in ROOM_JS
     assert "Sync ESPN picks automatically" in ROOM_JS
-    assert "Sync picks from your phone" in ROOM_JS
+    assert "Sync picks from your phone" in ROOM_JS or "Phone: track manually or use a laptop" in ROOM_JS
+    assert "Live draft limit:" in ROOM_JS
     assert "drEspnManualFromTools" in ROOM_JS
     assert "_espnToolsEl" in ROOM_JS
 
