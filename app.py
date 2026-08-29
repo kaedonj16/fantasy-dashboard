@@ -47,6 +47,7 @@ from dashboard_services.ai.renderer import (
 )
 from dashboard_services.api import (
     avatar_from_users,
+    team_avatar,
     build_league_history_map,
     build_team_game_lookup,
     get_effective_scoring_settings,
@@ -18636,7 +18637,21 @@ def api_team_details(roster_id: str):
         users = get_users(platform, league_id, season) or []
         _tep = te_premium_from_settings((league or {}).get("scoring_settings"))
 
-        # Find the specific roster
+        # Format: ESPN is always redraft; other platforms use settings.type.
+        # league_type query (1qb/sf) is what the UI already tracks for value columns.
+        _lt = str(request.args.get("league_type") or "1qb").strip().lower()
+        is_sf = _lt in ("sf", "superflex")
+        is_redraft = _league_is_redraft({
+            "platform": platform,
+            "league": league,
+            "league_settings": (league or {}).get("settings") or {},
+        })
+        _value_primary, _value_fallback = (
+            (("redraft_value_sf" if is_sf else "redraft_value_1qb"),
+             ("sf_value" if is_sf else "value"))
+            if is_redraft else
+            (("sf_value" if is_sf else "value"), "value")
+        )
         roster = next((r for r in rosters if str(r.get("roster_id")) == str(roster_id)), None)
         if not roster:
             return jsonify({"error": "Roster not found"}), 404
@@ -18646,8 +18661,12 @@ def api_team_details(roster_id: str):
         user = next((u for u in users if u.get("user_id") == owner_id), None)
 
         username = user.get("display_name") if user else None
-        team_name = user.get("metadata", {}).get("team_name") if user else username
-        avatar = avatar_from_users(platform, users, owner_id)
+        team_name = (
+            (roster.get("metadata") or {}).get("team_name")
+            or ((user.get("metadata") or {}).get("team_name") if user else None)
+            or username
+        )
+        avatar = team_avatar(platform, roster, users) or avatar_from_users(platform, users, owner_id)
         if team_name is None:
             team_name = username
 
@@ -18688,7 +18707,13 @@ def api_team_details(roster_id: str):
             player_meta = players_index.get(pid_str, {})
             value_row = values_by_id.get(pid_str, {})
 
-            value = value_row.get("value", 0) or 0
+            value = value_row.get(_value_primary)
+            if value is None:
+                value = value_row.get(_value_fallback, 0) or 0
+            try:
+                value = float(value or 0)
+            except (TypeError, ValueError):
+                value = 0.0
 
             position = player_meta.get("pos") or ""
             if position == "PK":
@@ -18745,122 +18770,125 @@ def api_team_details(roster_id: str):
         pos_order = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
         roster_players.sort(key=lambda p: (pos_order.get(p["position"], 99), -(p["value"] or 0)))
 
-        # Get draft picks
-        traded_picks = get_traded_picks(platform, league_id, season)
-        num_rounds = int((league.get("settings") or {}).get("draft_rounds", 4))
-        current_season = int(league.get("season") or season)
-        _modal_draft_ended = has_draft_ended(league_id, platform, season)
-        _modal_pick_start = 1 if _modal_draft_ended else 0
-
-        # Build picks
+        # Get draft picks — redraft leagues (including all ESPN) have no future
+        # dynasty draft capital; inventing default own-picks would fake a dynasty
+        # portfolio on the modal.
         all_picks = []
-        for offset in range(_modal_pick_start, _modal_pick_start + 3):  # Next 3 years
-            year = current_season + offset
-            for rnd in range(1, num_rounds + 1):
+        current_season = int(league.get("season") or season)
+        if not is_redraft:
+            traded_picks = get_traded_picks(platform, league_id, season)
+            num_rounds = int((league.get("settings") or {}).get("draft_rounds", 4))
+            _modal_draft_ended = has_draft_ended(league_id, platform, season)
+            _modal_pick_start = 1 if _modal_draft_ended else 0
 
-                # Collect all picks this team owns for this year/round
-                owned_picks = []
+            # Build picks
+            for offset in range(_modal_pick_start, _modal_pick_start + 3):  # Next 3 years
+                year = current_season + offset
+                for rnd in range(1, num_rounds + 1):
 
-                # First check: All picks this team acquired from other teams
-                for tp in traded_picks:
-                    try:
-                        if (int(tp.get("season")) == year and
-                                int(tp.get("round")) == rnd and
-                                int(tp.get("owner_id")) == int(roster_id)):
-                            # This team acquired this pick from another team
-                            owned_picks.append({
-                                "current_owner": int(tp.get("owner_id")),
-                                "original_owner": int(tp.get("roster_id")),
-                                "previous_owner": int(tp.get("previous_owner_id")),
-                                "trade_data": tp
-                            })
-                    except Exception:
-                        logger.debug("suppressed exception", exc_info=True)
+                    # Collect all picks this team owns for this year/round
+                    owned_picks = []
 
-                # Second check: This team's own draft position pick (only if not already found as acquired)
-                own_position_found = any(p["original_owner"] == int(roster_id) for p in owned_picks)
-                if not own_position_found:
+                    # First check: All picks this team acquired from other teams
                     for tp in traded_picks:
                         try:
                             if (int(tp.get("season")) == year and
                                     int(tp.get("round")) == rnd and
-                                    int(tp.get("roster_id")) == int(roster_id)):
-                                # This pick belongs to this roster's draft position
+                                    int(tp.get("owner_id")) == int(roster_id)):
+                                # This team acquired this pick from another team
                                 owned_picks.append({
                                     "current_owner": int(tp.get("owner_id")),
                                     "original_owner": int(tp.get("roster_id")),
                                     "previous_owner": int(tp.get("previous_owner_id")),
                                     "trade_data": tp
                                 })
-                                break
                         except Exception:
                             logger.debug("suppressed exception", exc_info=True)
 
-                # If no traded picks found, check if this team owns their own pick by default
-                # BUT also check if we should add the default pick in addition to acquired picks
-                own_position_as_acquired = any(p["original_owner"] == int(roster_id) for p in owned_picks)
+                    # Second check: This team's own draft position pick (only if not already found as acquired)
+                    own_position_found = any(p["original_owner"] == int(roster_id) for p in owned_picks)
+                    if not own_position_found:
+                        for tp in traded_picks:
+                            try:
+                                if (int(tp.get("season")) == year and
+                                        int(tp.get("round")) == rnd and
+                                        int(tp.get("roster_id")) == int(roster_id)):
+                                    # This pick belongs to this roster's draft position
+                                    owned_picks.append({
+                                        "current_owner": int(tp.get("owner_id")),
+                                        "original_owner": int(tp.get("roster_id")),
+                                        "previous_owner": int(tp.get("previous_owner_id")),
+                                        "trade_data": tp
+                                    })
+                                    break
+                            except Exception:
+                                logger.debug("suppressed exception", exc_info=True)
 
-                if not own_position_as_acquired:
-                    # This team owns their own pick unless it was traded away
-                    pick_traded_away = False
-                    for tp in traded_picks:
-                        try:
-                            if (int(tp.get("season")) == year and
-                                    int(tp.get("round")) == rnd and
-                                    int(tp.get("roster_id")) == int(roster_id) and
-                                    int(tp.get("owner_id")) != int(roster_id)):
-                                pick_traded_away = True
-                                break
-                        except Exception:
-                            logger.debug("suppressed exception", exc_info=True)
+                    # If no traded picks found, check if this team owns their own pick by default
+                    # BUT also check if we should add the default pick in addition to acquired picks
+                    own_position_as_acquired = any(p["original_owner"] == int(roster_id) for p in owned_picks)
 
-                    if not pick_traded_away:
-                        owned_picks.append({
-                            "current_owner": int(roster_id),
-                            "original_owner": int(roster_id),
-                            "previous_owner": None,
-                            "trade_data": None
-                        })
+                    if not own_position_as_acquired:
+                        # This team owns their own pick unless it was traded away
+                        pick_traded_away = False
+                        for tp in traded_picks:
+                            try:
+                                if (int(tp.get("season")) == year and
+                                        int(tp.get("round")) == rnd and
+                                        int(tp.get("roster_id")) == int(roster_id) and
+                                        int(tp.get("owner_id")) != int(roster_id)):
+                                    pick_traded_away = True
+                                    break
+                            except Exception:
+                                logger.debug("suppressed exception", exc_info=True)
 
-                # Add all owned picks to the list
-                for pick_info in owned_picks:
-                    if pick_info["current_owner"] == int(roster_id):
-                        via = None
-                        original_owner = pick_info["original_owner"]
+                        if not pick_traded_away:
+                            owned_picks.append({
+                                "current_owner": int(roster_id),
+                                "original_owner": int(roster_id),
+                                "previous_owner": None,
+                                "trade_data": None
+                            })
 
-                        if original_owner != int(roster_id):
-                            # Always show the team whose draft slot this pick originates from.
-                            # Using previous_owner (last trader) was wrong when a pick changes
-                            # hands more than once - multiple picks could share the same
-                            # previous_owner while having different original owners.
-                            via_roster = next((r for r in rosters if r.get("roster_id") == original_owner), None)
-                            if via_roster:
-                                via_owner_id = via_roster.get("owner_id")
-                                via_user = next((u for u in users if u.get("user_id") == via_owner_id), None)
-                                via = via_user.get("display_name") if via_user else f"Team {original_owner}"
+                    # Add all owned picks to the list
+                    for pick_info in owned_picks:
+                        if pick_info["current_owner"] == int(roster_id):
+                            via = None
+                            original_owner = pick_info["original_owner"]
 
-                        all_picks.append({
-                            "year": year,
-                            "round": rnd,
-                            "via": via,
-                            "original_owner": pick_info["original_owner"],
-                        })
+                            if original_owner != int(roster_id):
+                                # Always show the team whose draft slot this pick originates from.
+                                # Using previous_owner (last trader) was wrong when a pick changes
+                                # hands more than once - multiple picks could share the same
+                                # previous_owner while having different original owners.
+                                via_roster = next((r for r in rosters if r.get("roster_id") == original_owner), None)
+                                if via_roster:
+                                    via_owner_id = via_roster.get("owner_id")
+                                    via_user = next((u for u in users if u.get("user_id") == via_owner_id), None)
+                                    via = via_user.get("display_name") if via_user else f"Team {original_owner}"
 
-        # Sort picks by year then round
-        all_picks.sort(key=lambda p: (p["year"], p["round"]))
+                            all_picks.append({
+                                "year": year,
+                                "round": rnd,
+                                "via": via,
+                                "original_owner": pick_info["original_owner"],
+                            })
 
-        # Add pick values to total (match offseason snapshot calculation)
-        try:
-            from dashboard_services.picks import load_pick_value_table
-            pick_by_key = load_pick_value_table() or {}
-            picks_for_value = [
-                {"season": p["year"], "round": p["round"], "original_owner": p.get("original_owner")}
-                for p in all_picks
-            ]
-            total_value += _team_pick_value(picks_for_value, pick_by_key, platform=platform,
-                                            league_id=league_id, season=season)
-        except Exception:
-            logger.debug("suppressed exception", exc_info=True)
+            # Sort picks by year then round
+            all_picks.sort(key=lambda p: (p["year"], p["round"]))
+
+            # Add pick values to total (match offseason snapshot calculation)
+            try:
+                from dashboard_services.picks import load_pick_value_table
+                pick_by_key = load_pick_value_table() or {}
+                picks_for_value = [
+                    {"season": p["year"], "round": p["round"], "original_owner": p.get("original_owner")}
+                    for p in all_picks
+                ]
+                total_value += _team_pick_value(picks_for_value, pick_by_key, platform=platform,
+                                                league_id=league_id, season=season)
+            except Exception:
+                logger.debug("suppressed exception", exc_info=True)
 
         # Get graph data for team modal
         graphs_data = {}
@@ -19088,6 +19116,7 @@ def api_team_details(roster_id: str):
             "total_value": round(total_value, 1),
             "roster": roster_players,
             "picks": all_picks,
+            "is_redraft": bool(is_redraft),
             "graphs": graphs_data,
             "trends_html": trends_html,
         }

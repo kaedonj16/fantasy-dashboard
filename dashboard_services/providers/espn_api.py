@@ -514,7 +514,10 @@ def get_rosters(season: int, league_id: str) -> List[Dict[str, Any]]:
     for t in lg.teams or []:
         roster_id = _safe_int(getattr(t, "team_id", None))
         owners = getattr(t, "owners", None) or []
-        owner_id = str(owners[0].get("id")) if owners else None
+        owner_id = None
+        if owners and isinstance(owners[0], dict):
+            owner_id = str(owners[0].get("id") or "").strip() or None
+        team_name = getattr(t, "team_name", None) or getattr(t, "name", None)
 
         wins = _safe_int(getattr(t, "wins", None))
         losses = _safe_int(getattr(t, "losses", None))
@@ -532,7 +535,9 @@ def get_rosters(season: int, league_id: str) -> List[Dict[str, Any]]:
             pid = getattr(p, "playerId", None)
             if pid is None:
                 continue
-            cp = canon_pid(str(pid), espn_to_canon)
+            # Same D/ST + skill-player path as matchups — negative ESPN defense
+            # ids are never in the espnID crosswalk and must be team abbreviations.
+            cp = resolve_espn_player_id(pid, espn_to_canon, player=p)
             if not cp:
                 continue
 
@@ -553,11 +558,15 @@ def get_rosters(season: int, league_id: str) -> List[Dict[str, Any]]:
             else:
                 starters.append(cp)
 
+        meta: Dict[str, Any] = {"record": f"{wins}-{losses}", "streak": streak}
+        if team_name:
+            meta["team_name"] = team_name
+
         rosters.append({
             "co_owners": None,
             "keepers": None,
             "league_id": str(league_id),
-            "metadata": {"record": f"{wins}-{losses}", "streak": streak},
+            "metadata": meta,
             "owner_id": owner_id,
             "player_map": None,
             "players": players,
@@ -626,18 +635,30 @@ def _slot_rank(slot: Any) -> int:
 
 
 def _dst_canonical_id(bp: Any, pid_raw: int) -> Optional[str]:
-    # Prefer proTeamId if present
-    pro_id = (
+    """Map an ESPN D/ST player to a Sleeper-style team abbreviation (e.g. JAX).
+
+    ESPN defenses use negative playerIds (``-16000 - proTeamId``). Roster and
+    box-score objects may expose either a numeric ``proTeamId`` or a string
+    ``proTeam`` abbreviation; accept both, then fall back to the -160xx math.
+    """
+    pro_raw = None
+    if bp is not None:
+        pro_raw = (
             getattr(bp, "proTeamId", None)
             or getattr(bp, "pro_team_id", None)
             or getattr(bp, "proTeam", None)
-    )
-    if pro_id == "WSH":
-        pro_id = "WAS"
+        )
 
-    if isinstance(pro_id, str):
-        pro_id = None
+    # String abbreviations from espn-api (e.g. "JAX", "WSH") are usable as-is.
+    if isinstance(pro_raw, str):
+        abbr = pro_raw.strip().upper()
+        if abbr == "WSH":
+            abbr = "WAS"
+        if abbr and abbr != "FA" and abbr in ESPN_PROTEAMID_TO_ABBR.values():
+            return abbr
+        pro_raw = None
 
+    pro_id = pro_raw
     # Fallback: derive from ESPN -1600x convention
     if pro_id is None and isinstance(pid_raw, int) and pid_raw < 0:
         pro_id = abs(pid_raw) - 16000  # -16009 -> 9
@@ -651,6 +672,24 @@ def _dst_canonical_id(bp: Any, pid_raw: int) -> Optional[str]:
     if not abbr or abbr == "FA":
         return None
     return abbr
+
+
+def resolve_espn_player_id(
+        espn_pid: Any,
+        espn_to_canon: Dict[str, str],
+        player: Any = None,
+) -> Optional[str]:
+    """Canonical sleeper/team id for an ESPN playerId (skill players + D/ST)."""
+    if espn_pid is None:
+        return None
+    try:
+        pid_int = int(espn_pid)
+    except Exception:
+        pid_int = None
+
+    if pid_int is not None and pid_int < 0:
+        return _dst_canonical_id(player, pid_int)
+    return canon_pid(str(espn_pid), espn_to_canon)
 
 
 def get_matchups(season: int, league_id: str, week: int) -> List[Dict[str, Any]]:
@@ -680,18 +719,7 @@ def get_matchups(season: int, league_id: str, week: int) -> List[Dict[str, Any]]
                 if pid_raw is None:
                     continue
 
-                # Canonicalize player id (special-case D/ST)
-                cp: Optional[str] = None
-                try:
-                    pid_int = int(pid_raw)
-                except Exception:
-                    pid_int = None
-
-                if pid_int is not None and pid_int < 0 and str(pid_int).startswith("-160"):
-                    cp = _dst_canonical_id(bp, pid_int)
-                else:
-                    cp = canon_pid(str(pid_raw), espn_to_canon)
-
+                cp = resolve_espn_player_id(pid_raw, espn_to_canon, player=bp)
                 if not cp:
                     continue
 

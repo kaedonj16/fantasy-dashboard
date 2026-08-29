@@ -16570,28 +16570,31 @@ function renderTeamDetails(data) {
 
   rosterHTML += '</div>';
 
-  // Build picks section
-  let picksHTML = '<div class="team-modal-section"><h3>Draft Picks</h3>';
+  // Build picks section — redraft (all ESPN) has no future draft capital.
+  let picksHTML = '';
+  if (!data.is_redraft) {
+    picksHTML = '<div class="team-modal-section"><h3>Draft Picks</h3>';
 
-  if (data.picks && data.picks.length > 0) {
-    picksHTML += '<div class="team-picks-list">';
+    if (data.picks && data.picks.length > 0) {
+      picksHTML += '<div class="team-picks-list">';
 
-    data.picks.forEach(pick => {
-      const viaText = pick.via ? ` <span class="pick-via">via ${pick.via}</span>` : '';
-      picksHTML += `
-        <div class="team-pick-item">
-          <span class="pick-label">${pick.year} Round ${pick.round}</span>
-          ${viaText}
-        </div>
-      `;
-    });
+      data.picks.forEach(pick => {
+        const viaText = pick.via ? ` <span class="pick-via">via ${pick.via}</span>` : '';
+        picksHTML += `
+          <div class="team-pick-item">
+            <span class="pick-label">${pick.year} Round ${pick.round}</span>
+            ${viaText}
+          </div>
+        `;
+      });
+
+      picksHTML += '</div>';
+    } else {
+      picksHTML += '<div class="team-modal-empty">No future picks</div>';
+    }
 
     picksHTML += '</div>';
-  } else {
-    picksHTML += '<div class="team-modal-empty">No future picks</div>';
   }
-
-  picksHTML += '</div>';
 
   // Build graphs section - each chart in its own section for side-by-side layout
   let graphsHTML = '';
@@ -16617,15 +16620,21 @@ function renderTeamDetails(data) {
       '<div class="team-svg-chart">' + data.graphs.luck_svg + '</div></div>';
   }
   if (data.graphs && data.graphs.value_age_svg) {
-    graphsHTML += '<div class="team-modal-section tm-chart-svg"><h3>Dynasty Value vs Age</h3>' +
-      '<div class="tm-svg-note">Every team by total roster value and average age. Top-left is young and loaded; top-right is a closing win-now window.</div>' +
+    const _vaTitle = data.is_redraft ? 'Roster Value vs Age' : 'Dynasty Value vs Age';
+    const _vaNote = data.is_redraft
+      ? 'Every team by total roster value and average age. Top-left is young and loaded.'
+      : 'Every team by total roster value and average age. Top-left is young and loaded; top-right is a closing win-now window.';
+    graphsHTML += '<div class="team-modal-section tm-chart-svg"><h3>' + _vaTitle + '</h3>' +
+      '<div class="tm-svg-note">' + _vaNote + '</div>' +
       '<div class="team-svg-chart">' + data.graphs.value_age_svg + '</div></div>';
   }
 
   // Populate tab panels
   const rosterPanel = document.getElementById('tm-panel-roster');
   if (rosterPanel) {
-    rosterPanel.innerHTML = `<div class="team-modal-body-left">${rosterHTML}</div><div class="team-modal-body-right">${picksHTML}</div>`;
+    rosterPanel.innerHTML = picksHTML
+      ? `<div class="team-modal-body-left">${rosterHTML}</div><div class="team-modal-body-right">${picksHTML}</div>`
+      : `<div class="team-modal-body-left" style="flex:1;max-width:100%;">${rosterHTML}</div>`;
   }
   const chartsPanel = document.getElementById('tm-panel-charts');
   if (chartsPanel) {
