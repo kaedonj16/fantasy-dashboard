@@ -305,6 +305,13 @@ function openPlayerModal(playerId, playerName, opts) {
       // Dynasty vs Redraft values for the hero toggle. Default from the league
       // format (ESPN / settings.type 0|1 → redraft); on non-league pages, follow
       // the trade-calc / rankings scoring control when present.
+      // Position multipliers MUST match SCORING_MULTS in utils/trade_value.py /
+      // static/app.js trade calc.
+      const PM_SCORING_MULTS = {
+        ppr:  { QB: 1.00, RB: 1.00, WR: 1.00, TE: 1.00 },
+        half: { QB: 1.00, RB: 1.06, WR: 0.97, TE: 0.94 },
+        std:  { QB: 1.00, RB: 1.13, WR: 0.93, TE: 0.87 },
+      };
       const _heroDyn = {
         v1: Number(val1qb) || 0,
         vs: Number(valsf) || 0,
@@ -321,17 +328,50 @@ function openPlayerModal(playerId, playerName, opts) {
         ps: data.stats?.redraft_sf_pos_rank,
         os: data.stats?.redraft_sf_value_ovr_rank,
       };
+      const _fmtRanks = data.scoring_format_ranks || {};
       let pmScoringType = (data.default_scoring_type === 'redraft') ? 'redraft' : 'dynasty';
+      let pmScoringFormat = (['ppr', 'half', 'std'].includes(data.default_scoring_format)
+        ? data.default_scoring_format : 'ppr');
       if (!leagueId) {
-        const _pageScoring = document.querySelector('#scoringTypeSelect')?.value
+        const _pageType = document.querySelector('#scoringTypeSelect')?.value
           || (typeof prScoringType !== 'undefined' ? prScoringType : null);
-        if (_pageScoring === 'redraft' || _pageScoring === 'dynasty') {
-          pmScoringType = _pageScoring;
+        if (_pageType === 'redraft' || _pageType === 'dynasty') {
+          pmScoringType = _pageType;
+        }
+        const _pageFmt = document.querySelector('#scoringFormatSelect')?.value
+          || (typeof getScoringFormat === 'function' ? getScoringFormat() : null);
+        if (_pageFmt === 'ppr' || _pageFmt === 'half' || _pageFmt === 'std') {
+          pmScoringFormat = _pageFmt;
         }
       }
       const _heroFmt = (v) => (v > 0 ? v : '-');
       const _heroSub = (posR, ovrR) => (posR ? `POS : ${posR} · OVR : ${ovrR ?? '–'}` : '-');
-      const _heroActive = () => (pmScoringType === 'redraft' ? _heroRd : _heroDyn);
+      const _heroActive = () => {
+        const base = pmScoringType === 'redraft' ? _heroRd : _heroDyn;
+        const mults = PM_SCORING_MULTS[pmScoringFormat] || PM_SCORING_MULTS.ppr;
+        const mult = mults[(pos || '').toUpperCase()] ?? 1;
+        const scale = (v) => {
+          const n = Number(v) || 0;
+          if (n <= 0) return 0;
+          return Math.floor(n * mult * 10 + 0.5) / 10;
+        };
+        let p1 = base.p1, o1 = base.o1, ps = base.ps, os = base.os;
+        if (pmScoringFormat !== 'ppr') {
+          const fr = _fmtRanks[pmScoringFormat] || {};
+          if (pmScoringType === 'redraft') {
+            p1 = fr.redraft_pos_rank;
+            o1 = fr.redraft_value_ovr_rank;
+            ps = fr.redraft_sf_pos_rank;
+            os = fr.redraft_sf_value_ovr_rank;
+          } else {
+            p1 = fr.pos_rank;
+            o1 = fr.value_ovr_rank;
+            ps = fr.sf_pos_rank;
+            os = fr.sf_value_ovr_rank;
+          }
+        }
+        return { v1: scale(base.v1), vs: scale(base.vs), p1, o1, ps, os };
+      };
 
       const _draftYrVal = data.draft_year ? String(data.draft_year) : '';
       const thirdValueCard = data.stats?.pos_rank
@@ -655,13 +695,20 @@ function openPlayerModal(playerId, playerName, opts) {
       const _h0 = _heroActive();
       const _heroCardCount = 2 + (ppgCard ? 1 : 0) + (totalCard ? 1 : 0);
       const heroGridStyle = `style="grid-template-columns:repeat(${_heroCardCount},1fr);"`;
-      const scoringToggle = `
-        <div class="pm-trades-toggle pm-scoring-toggle" id="pmScoringToggle" role="tablist" aria-label="Value format">
-          <button type="button" class="pm-trades-toggle-btn${pmScoringType === 'dynasty' ? ' active' : ''}" data-scoring="dynasty" role="tab" aria-selected="${pmScoringType === 'dynasty'}">Dynasty</button>
-          <button type="button" class="pm-trades-toggle-btn${pmScoringType === 'redraft' ? ' active' : ''}" data-scoring="redraft" role="tab" aria-selected="${pmScoringType === 'redraft'}">Redraft</button>
+      const scoringToggles = `
+        <div class="pm-scoring-toggles">
+          <div class="pm-trades-toggle pm-scoring-toggle" id="pmScoringTypeToggle" role="tablist" aria-label="Value format">
+            <button type="button" class="pm-trades-toggle-btn${pmScoringType === 'dynasty' ? ' active' : ''}" data-scoring="dynasty" role="tab" aria-selected="${pmScoringType === 'dynasty'}">Dynasty</button>
+            <button type="button" class="pm-trades-toggle-btn${pmScoringType === 'redraft' ? ' active' : ''}" data-scoring="redraft" role="tab" aria-selected="${pmScoringType === 'redraft'}">Redraft</button>
+          </div>
+          <div class="pm-trades-toggle pm-scoring-toggle" id="pmScoringFormatToggle" role="tablist" aria-label="Scoring format">
+            <button type="button" class="pm-trades-toggle-btn${pmScoringFormat === 'ppr' ? ' active' : ''}" data-format="ppr" role="tab" aria-selected="${pmScoringFormat === 'ppr'}">PPR</button>
+            <button type="button" class="pm-trades-toggle-btn${pmScoringFormat === 'half' ? ' active' : ''}" data-format="half" role="tab" aria-selected="${pmScoringFormat === 'half'}">Half</button>
+            <button type="button" class="pm-trades-toggle-btn${pmScoringFormat === 'std' ? ' active' : ''}" data-format="std" role="tab" aria-selected="${pmScoringFormat === 'std'}">STD</button>
+          </div>
         </div>`;
       let overviewHTML = `
-        ${scoringToggle}
+        ${scoringToggles}
         <div class="pm-hero-row" ${heroGridStyle}>
           <div class="pm-hero-stat pm-hero-primary">
             <div class="pm-hero-label">1QB Value${tepPill}</div>
@@ -774,13 +821,13 @@ function openPlayerModal(playerId, playerName, opts) {
         <div class="pm-panel" id="pm-panel-live"></div>
       `;
 
-      // Dynasty / Redraft toggle: swap hero 1QB/SF values + ranks. Value history
-      // stays dynasty-only (DB), so the chart label clarifies when redraft is on.
+      // Dynasty/Redraft + PPR/Half/STD toggles: swap hero 1QB/SF values + ranks.
+      // Value history stays dynasty PPR (DB), so the chart label clarifies when
+      // redraft is selected.
       (function _wireScoringToggle() {
-        const toggle = document.getElementById('pmScoringToggle');
-        if (!toggle) return;
-        const apply = (type) => {
-          pmScoringType = type === 'redraft' ? 'redraft' : 'dynasty';
+        const typeToggle = document.getElementById('pmScoringTypeToggle');
+        const fmtToggle = document.getElementById('pmScoringFormatToggle');
+        const applyHero = () => {
           const b = _heroActive();
           const v1 = document.getElementById('pmHero1qbVal');
           const s1 = document.getElementById('pmHero1qbSub');
@@ -795,15 +842,38 @@ function openPlayerModal(playerId, playerName, opts) {
             histLbl.textContent = pmScoringType === 'redraft'
               ? 'Dynasty Value History' : 'Value History';
           }
-          toggle.querySelectorAll('.pm-trades-toggle-btn').forEach(btn => {
-            const on = btn.getAttribute('data-scoring') === pmScoringType;
-            btn.classList.toggle('active', on);
-            btn.setAttribute('aria-selected', on ? 'true' : 'false');
-          });
+          if (typeToggle) {
+            typeToggle.querySelectorAll('.pm-trades-toggle-btn').forEach(btn => {
+              const on = btn.getAttribute('data-scoring') === pmScoringType;
+              btn.classList.toggle('active', on);
+              btn.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+          }
+          if (fmtToggle) {
+            fmtToggle.querySelectorAll('.pm-trades-toggle-btn').forEach(btn => {
+              const on = btn.getAttribute('data-format') === pmScoringFormat;
+              btn.classList.toggle('active', on);
+              btn.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+          }
         };
-        toggle.querySelectorAll('.pm-trades-toggle-btn').forEach(btn => {
-          btn.addEventListener('click', () => apply(btn.getAttribute('data-scoring')));
-        });
+        if (typeToggle) {
+          typeToggle.querySelectorAll('.pm-trades-toggle-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              pmScoringType = btn.getAttribute('data-scoring') === 'redraft' ? 'redraft' : 'dynasty';
+              applyHero();
+            });
+          });
+        }
+        if (fmtToggle) {
+          fmtToggle.querySelectorAll('.pm-trades-toggle-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const f = btn.getAttribute('data-format');
+              pmScoringFormat = (f === 'half' || f === 'std') ? f : 'ppr';
+              applyHero();
+            });
+          });
+        }
       })();
 
       // ── Load market ADP (BR Fantasy + Consensus), then reveal all at once ──

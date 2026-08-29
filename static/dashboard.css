@@ -25626,6 +25626,14 @@ button:disabled {
 }
 
 .pm-scoring-toggle {
+    margin: 0;
+}
+
+.pm-scoring-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
     margin: 0 0 10px;
 }
 

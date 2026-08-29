@@ -18020,8 +18020,57 @@ def api_player_details(player_id: str):
         _rd_1qb_pos_lbl = f"{_modal_pos}{_rd_1qb_pos}" if _rd_1qb_pos and _modal_pos else None
         _rd_sf_pos_lbl = f"{_modal_pos}{_rd_sf_pos}" if _rd_sf_pos and _modal_pos else None
 
-        # Default scoring mode for the modal's Dynasty/Redraft toggle.
-        # ESPN is always redraft; other platforms use settings.type 0/1.
+        # PPR / Half / STD ranks for the modal scoring-format toggle. Displayed
+        # values are scaled client-side via SCORING_MULTS; ranks must be
+        # recomputed so Half/STD order matches trade-calc math.
+        from utils.trade_value import SCORING_MULTS as _SCORING_MULTS
+
+        def _fmt_score(row, key, fmt):
+            try:
+                v = float(row.get(key) or 0)
+            except (TypeError, ValueError):
+                v = 0.0
+            if v <= 0:
+                return 0.0
+            pos = str(row.get("position") or "").upper()
+            mult = (_SCORING_MULTS.get(fmt) or _SCORING_MULTS["ppr"]).get(pos, 1.0)
+            if _modal_tep and pos == "TE":
+                mult *= (1.0 + float(_modal_tep) * 0.20)
+            return v * mult
+
+        def _fmt_rank(key, fmt, *, pos_only=False):
+            pool = []
+            for x in (value_table or []):
+                if not isinstance(x, dict):
+                    continue
+                if str(x.get("position") or "").upper() in ("K", "DEF", "PICK"):
+                    continue
+                if pos_only and str(x.get("position") or "").upper() != _modal_pos:
+                    continue
+                score = _fmt_score(x, key, fmt)
+                if score <= 0:
+                    continue
+                pool.append((str(x.get("id")), score))
+            pool.sort(key=lambda t: t[1], reverse=True)
+            for i, (pid, _) in enumerate(pool):
+                if pid == str(player_id):
+                    return i + 1
+            return None
+
+        _scoring_format_ranks = {}
+        for _fmt in ("half", "std"):
+            _scoring_format_ranks[_fmt] = {
+                "pos_rank": _fmt_rank("value", _fmt, pos_only=True) if _modal_pos else None,
+                "value_ovr_rank": _fmt_rank("value", _fmt),
+                "sf_pos_rank": _fmt_rank("sf_value", _fmt, pos_only=True) if _modal_pos else None,
+                "sf_value_ovr_rank": _fmt_rank("sf_value", _fmt),
+                "redraft_pos_rank": _fmt_rank("redraft_value_1qb", _fmt, pos_only=True) if _modal_pos else None,
+                "redraft_value_ovr_rank": _fmt_rank("redraft_value_1qb", _fmt),
+                "redraft_sf_pos_rank": _fmt_rank("redraft_value_sf", _fmt, pos_only=True) if _modal_pos else None,
+                "redraft_sf_value_ovr_rank": _fmt_rank("redraft_value_sf", _fmt),
+            }
+
+        # Default Dynasty/Redraft + PPR/Half/STD from the league when known.
         _default_scoring = "dynasty"
         try:
             if str(platform or "").strip().lower() == "espn":
@@ -18037,6 +18086,21 @@ def api_player_details(player_id: str):
             if str(platform or "").strip().lower() == "espn":
                 _default_scoring = "redraft"
 
+        _default_format = "ppr"
+        try:
+            _rec = scoring_settings.get("rec")
+            if _rec is None:
+                _rec = scoring_settings.get("pointsPerReception")
+            _rec_f = float(_rec) if _rec is not None else 1.0
+            if _rec_f >= 1.0:
+                _default_format = "ppr"
+            elif _rec_f >= 0.5:
+                _default_format = "half"
+            else:
+                _default_format = "std"
+        except (TypeError, ValueError):
+            _default_format = "ppr"
+
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
@@ -18045,6 +18109,8 @@ def api_player_details(player_id: str):
             "age": _modal_age,
             "te_premium": _modal_tep,
             "default_scoring_type": _default_scoring,
+            "default_scoring_format": _default_format,
+            "scoring_format_ranks": _scoring_format_ranks,
             "pos_rank": player_value.get("pos_rank"),
             "pos_rank_label": player_value.get("pos_rank_label"),
             "espnHeadshot": player_meta.get("espnHeadshot"),
