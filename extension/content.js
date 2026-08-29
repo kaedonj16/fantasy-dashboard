@@ -1,13 +1,14 @@
 // Runs on brfantasyfootball.com.
 // 1) Autofill ESPN cookies into the private-league connect box.
 // 2) Receive live-draft pick relays from the service worker (sourced from an
-//    open ESPN draft room tab) and hand them to Draft Room via CustomEvent.
+//    open ESPN or Yahoo draft room tab) and hand them to Draft Room via CustomEvent.
 
 (function () {
   "use strict";
 
   const BLOB_IDS = ["espnCookieBlob", "linkEspnBlob"];
-  const RELAY_EVENT = "brfantasy:espn-draft-relay";
+  const ESPN_RELAY_EVENT = "brfantasy:espn-draft-relay";
+  const YAHOO_RELAY_EVENT = "brfantasy:yahoo-draft-relay";
 
   function icon() {
     const NS = "http://www.w3.org/2000/svg";
@@ -95,10 +96,10 @@
     });
   }
 
-  function dispatchRelay(payload) {
+  function dispatchRelay(eventName, payload) {
     if (!payload || !Array.isArray(payload.picks)) return;
     try {
-      window.dispatchEvent(new CustomEvent(RELAY_EVENT, { detail: payload }));
+      window.dispatchEvent(new CustomEvent(eventName, { detail: payload }));
     } catch (_e) {
       /* ignore */
     }
@@ -106,7 +107,12 @@
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg && msg.type === "espnDraftRelay" && msg.payload) {
-      dispatchRelay(msg.payload);
+      dispatchRelay(ESPN_RELAY_EVENT, msg.payload);
+      sendResponse({ ok: true });
+      return false;
+    }
+    if (msg && msg.type === "yahooDraftRelay" && msg.payload) {
+      dispatchRelay(YAHOO_RELAY_EVENT, msg.payload);
       sendResponse({ ok: true });
       return false;
     }

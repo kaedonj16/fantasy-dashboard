@@ -21,8 +21,9 @@ _STORE_LOCK = threading.Lock()
 _STORE: Dict[str, Dict[str, Any]] = {}
 
 
-def _store_key(league_id: str, season: int) -> str:
-    return f"espn_relay:{str(league_id).strip()}:{int(season)}"
+def _store_key(league_id: str, season: int, *, platform: str = "espn") -> str:
+    plat = (platform or "espn").strip().lower() or "espn"
+    return f"{plat}_relay:{str(league_id).strip()}:{int(season)}"
 
 
 def put_relay_snapshot(
@@ -31,9 +32,10 @@ def put_relay_snapshot(
     snapshot: Mapping[str, Any],
     *,
     source: str = "relay",
+    platform: str = "espn",
 ) -> Dict[str, Any]:
     """Store the latest normalized (or raw-ready) relay payload for a draft."""
-    key = _store_key(league_id, season)
+    key = _store_key(league_id, season, platform=platform)
     entry = {
         "league_id": str(league_id),
         "season": int(season),
@@ -47,8 +49,10 @@ def put_relay_snapshot(
     return entry
 
 
-def get_relay_snapshot(league_id: str, season: int) -> Optional[Dict[str, Any]]:
-    key = _store_key(league_id, season)
+def get_relay_snapshot(
+    league_id: str, season: int, *, platform: str = "espn"
+) -> Optional[Dict[str, Any]]:
+    key = _store_key(league_id, season, platform=platform)
     with _STORE_LOCK:
         local = _STORE.get(key)
     if local:
@@ -56,8 +60,8 @@ def get_relay_snapshot(league_id: str, season: int) -> Optional[Dict[str, Any]]:
     return _redis_get(key)
 
 
-def clear_relay_snapshot(league_id: str, season: int) -> None:
-    key = _store_key(league_id, season)
+def clear_relay_snapshot(league_id: str, season: int, *, platform: str = "espn") -> None:
+    key = _store_key(league_id, season, platform=platform)
     with _STORE_LOCK:
         _STORE.pop(key, None)
     _redis_delete(key)

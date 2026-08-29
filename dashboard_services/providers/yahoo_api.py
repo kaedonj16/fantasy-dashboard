@@ -1036,18 +1036,109 @@ def get_transactions(season: int, league_id: str, week: int, access_token: str) 
     return out
 
 
+def _yahoo_draft_status_label(raw: Any) -> str:
+    """Map Yahoo ``draft_status`` onto Sleeper-style pre_draft|drafting|complete."""
+    text = str(raw or "").strip().lower().replace("-", "").replace("_", "")
+    if text in ("postdraft", "complete", "finished"):
+        return "complete"
+    if text in ("draft", "drafting", "middraft", "livedraft", "inprogress"):
+        return "drafting"
+    if text in ("predraft", "pre", ""):
+        return "pre_draft"
+    return "pre_draft"
+
+
 def get_drafts(season: int, league_id: str, access_token: str) -> List[Dict[str, Any]]:
+    """Return the league's draft record with a live-aware status when possible.
+
+    Yahoo does not expose a Sleeper-like draft list; one synthetic draft per
+    league/season is enough for Draft Room Connect. Status prefers league
+    ``draft_status`` (predraft / draft / postdraft). Falls back to complete
+    only when meta is unavailable so keepers/history still see a draft.
+    """
     from datetime import datetime as _dt
     start_ts_ms = int(_dt(int(season), 8, 1).timestamp() * 1000)
+    status = "complete"
+    teams = 0
+    try:
+        key = _league_key_for_season(league_id, season, access_token)
+        raw = _yahoo_get(access_token, f"league/{key}")
+        meta = _extract_league_meta(raw) or {}
+        status = _yahoo_draft_status_label(meta.get("draft_status"))
+        teams = _safe_int(meta.get("num_teams")) or 0
+        # Settings sometimes carry the scheduled draft time (epoch seconds).
+        settings = meta.get("settings") if isinstance(meta.get("settings"), dict) else {}
+        draft_time = _safe_int((settings or {}).get("draft_time") or meta.get("draft_time"))
+        if draft_time and draft_time > 10_000_000_000:  # already ms
+            start_ts_ms = int(draft_time)
+        elif draft_time and draft_time > 1_000_000_000:
+            start_ts_ms = int(draft_time) * 1000
+    except Exception as exc:
+        logger.info("[yahoo] get_drafts meta skipped error_type=%s", type(exc).__name__)
     return [{
         "draft_id":   f"yahoo_{league_id}_{season}",
         "league_id":  str(league_id),
         "season":     int(season),
         "season_type": "regular",
         "start_time": start_ts_ms,
-        "status":     "complete",
+        "status":     status,
         "type":       "snake",
+        "teams":      teams or None,
     }]
+
+
+def _extract_draft_results_block(raw: Dict) -> Optional[Dict]:
+    lg = (raw.get("fantasy_content", {}) or {}).get("league") or []
+    for item in lg:
+        if isinstance(item, dict) and "draft_results" in item:
+            block = item["draft_results"]
+            return block if isinstance(block, dict) else None
+    return None
+
+
+def get_draft_pick_rows(
+    season: int, league_id: str, access_token: str
+) -> List[Dict[str, Any]]:
+    """Raw Yahoo draft_result rows for live sync (overall pick + yahoo player id).
+
+    Unlike ``get_draft_results`` (round-only map for keepers), this keeps every
+    pick with a player so Draft Room can paint the board mid-draft. Yahoo's
+    draftresults resource updates during the live draft.
+    """
+    out: List[Dict[str, Any]] = []
+    try:
+        key = _league_key_for_season(league_id, season, access_token)
+        raw = _yahoo_get(access_token, f"league/{key}/draftresults")
+        block = _extract_draft_results_block(raw) or {}
+        count = _safe_int(block.get("count")) or 0
+        for i in range(count):
+            entry = block.get(str(i)) or {}
+            dr = entry.get("draft_result") or {}
+            if not isinstance(dr, dict):
+                continue
+            overall = _safe_int(dr.get("pick"))
+            rnd = _safe_int(dr.get("round"))
+            pkey = str(dr.get("player_key") or "")
+            tkey = str(dr.get("team_key") or "")
+            if not overall or not pkey:
+                continue
+            yid = pkey.rsplit(".", 1)[-1]
+            tid = tkey.rsplit(".", 1)[-1] if tkey else ""
+            cost = dr.get("cost")
+            out.append({
+                "pick": overall,
+                "round": rnd,
+                "player_id": str(yid),
+                "team_id": str(tid) if tid else None,
+                "cost": cost,
+                "player_key": pkey,
+                "team_key": tkey or None,
+            })
+    except Exception as exc:
+        logger.warning("[yahoo] get_draft_pick_rows failed: %s", exc)
+        return out
+    out.sort(key=lambda r: int(r.get("pick") or 0))
+    return out
 
 
 def get_draft_results(season: int, league_id: str, access_token: str) -> Dict[str, int]:
@@ -1060,25 +1151,12 @@ def get_draft_results(season: int, league_id: str, access_token: str) -> Dict[st
     (no draft yet, network, mapping) so callers fall back gracefully."""
     out: Dict[str, int] = {}
     try:
-        raw = _yahoo_get(access_token, f"league/{_league_key(league_id)}/draftresults")
-        lg = (raw.get("fantasy_content", {}) or {}).get("league") or []
-        block = None
-        for item in lg:
-            if isinstance(item, dict) and "draft_results" in item:
-                block = item["draft_results"]
-                break
-        if not block:
-            return {}
-        count = _safe_int(block.get("count")) or 0
         xwalk = _yahoo_id_to_canonical()
-        for i in range(count):
-            entry = block.get(str(i)) or {}
-            dr = entry.get("draft_result") or {}
-            rnd = _safe_int(dr.get("round"))
-            pkey = str(dr.get("player_key") or "")
-            if not rnd or not pkey:
+        for row in get_draft_pick_rows(season, league_id, access_token):
+            rnd = _safe_int(row.get("round"))
+            yid = row.get("player_id")
+            if not rnd or not yid:
                 continue
-            yid = pkey.rsplit(".", 1)[-1]     # nfl.p.12345 -> 12345
             canon = xwalk.get(str(yid))
             if canon:
                 out[str(canon)] = int(rnd)

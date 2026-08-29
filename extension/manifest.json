@@ -1,11 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "BR Fantasy — ESPN League Connector",
-  "version": "1.2.0",
-  "description": "Connect private ESPN leagues to BR Fantasy and auto-relay live draft picks into Draft Room.",
+  "name": "BR Fantasy — League Connector",
+  "version": "1.3.0",
+  "description": "Connect private ESPN leagues to BR Fantasy and auto-relay live ESPN/Yahoo draft picks into Draft Room.",
   "permissions": ["cookies"],
   "host_permissions": [
     "https://*.espn.com/*",
+    "https://*.fantasysports.yahoo.com/*",
+    "https://sports.yahoo.com/*",
     "https://www.brfantasyfootball.com/*",
     "https://brfantasyfootball.com/*",
     "http://localhost/*",
@@ -14,7 +16,7 @@
   "background": { "service_worker": "background.js" },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Connect ESPN to BR Fantasy",
+    "default_title": "Connect ESPN / Yahoo to BR Fantasy",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -55,6 +57,29 @@
         "https://fantasy.espn.com/*/football/draft*"
       ],
       "js": ["espn_draft.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://football.fantasysports.yahoo.com/f1/*/draft*",
+        "https://football.fantasysports.yahoo.com/f1/*/livedraft*",
+        "https://football.fantasysports.yahoo.com/draftclient*",
+        "https://*.fantasysports.yahoo.com/*/draft*",
+        "https://sports.yahoo.com/fantasy/*/draft*"
+      ],
+      "js": ["yahoo_draft_main.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://football.fantasysports.yahoo.com/f1/*/draft*",
+        "https://football.fantasysports.yahoo.com/f1/*/livedraft*",
+        "https://football.fantasysports.yahoo.com/draftclient*",
+        "https://*.fantasysports.yahoo.com/*/draft*",
+        "https://sports.yahoo.com/fantasy/*/draft*"
+      ],
+      "js": ["yahoo_draft.js"],
       "run_at": "document_idle"
     }
   ],
