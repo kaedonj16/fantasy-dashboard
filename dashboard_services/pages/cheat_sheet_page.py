@@ -665,12 +665,16 @@ _CHEAT_HTML = r"""
        it did before Market vs ADP was added, rather than hiding VOR or Value. */
     .cs-wrap table { min-width: 910px; border-collapse: separate; border-spacing: 0; }
     .cs-wrap thead th.cs-rk, .cs-wrap tbody td.cs-rk {
-      position: sticky; left: 0; z-index: 4; width: 42px; min-width: 42px; max-width: 42px;
-      box-sizing: border-box; background: var(--cs-surface); padding-left: 8px; padding-right: 6px;
+      position: sticky; left: 0; z-index: 4; width: 36px; min-width: 36px; max-width: 36px;
+      box-sizing: border-box; background: var(--cs-surface); padding-left: 8px; padding-right: 4px;
     }
     .cs-wrap thead th.cs-player, .cs-wrap tbody td.cs-player {
-      position: sticky; left: 42px; z-index: 4; min-width: 132px; max-width: 148px;
-      box-sizing: border-box; background: var(--cs-surface); padding-right: 8px;
+      /* Fixed width so the sticky identity columns do not absorb the table's
+         leftover 910px and dominate the viewport. Wide enough for full names
+         like "Christian McCaffrey" / "Jaxon Smith-Njigba" at mobile type size. */
+      position: sticky; left: 36px; z-index: 4; width: 180px; min-width: 180px; max-width: 180px;
+      box-sizing: border-box; background: var(--cs-surface); padding-left: 4px; padding-right: 8px;
+      overflow: hidden;
       border-right: 1px solid var(--cs-line); box-shadow: 6px 0 7px -5px color-mix(in srgb, #000 18%, transparent);
     }
     .cs-wrap thead th.cs-rk, .cs-wrap thead th.cs-player { z-index: 6; top: 0; }
@@ -680,8 +684,10 @@ _CHEAT_HTML = r"""
     .cs-wrap tbody tr.done td.cs-rk, .cs-wrap tbody tr.done td.cs-player .cs-pname { opacity: .4; }
     .cs-tbl-scroll, .cs-pgrid-scroll { max-height: none; height: auto; }
     .cs-wrap thead th, .cs-wrap tbody td { padding-left: 6px; padding-right: 6px; }
-    .cs-pcell { gap: 5px; min-width: 0; }
-    .cs-pname { overflow: hidden; text-overflow: ellipsis; max-width: 108px; }
+    .cs-pcell { gap: 5px; min-width: 0; max-width: 100%; overflow: hidden; }
+    /* Fill the sticky cell. Do not clip at an inner 108px while empty space
+       sits unused (or the column bloats from table width distribution). */
+    .cs-pname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; max-width: none; }
     /* Tabs scroll sideways rather than wrapping onto a second line. */
     .cs-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .cs-tabs::-webkit-scrollbar { display: none; }

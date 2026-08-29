@@ -98,11 +98,16 @@ def test_mobile_big_board_pins_rank_and_player():
     assert "sortTh('name', 'Player', 'l cs-player'" in script
     assert '<td class="cs-player">' in script
     assert "left: 0" in mobile
-    assert "left: 42px" in mobile
+    assert "left: 36px" in mobile
     assert "position: sticky" in mobile
     assert ".cs-wrap thead th.cs-rk" in mobile
     assert ".cs-wrap thead th.cs-player" in mobile
     assert "border-collapse: separate" in mobile
+    # Sticky player column stays a fixed width (does not absorb the 910px table)
+    # and names use the full cell instead of an inner 108px ellipsis cap.
+    assert "width: 180px; min-width: 180px; max-width: 180px" in mobile
+    assert "max-width: 108px" not in mobile
+    assert "max-width: none" in mobile
 
 
 def test_market_column_is_conditionally_omitted_from_table_and_export():
