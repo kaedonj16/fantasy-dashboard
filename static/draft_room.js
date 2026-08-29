@@ -69,6 +69,7 @@
   var _espnRelayBookmarklet = '';
   var _espnRelayShortcutJs = '';
   var _espnExtLastSeen = 0;
+  var sim = false;         // mock-draft simulation active
   var simTimer = null;
   var simSpeed = 700;      // ms between CPU picks
   var simPaused = false;
@@ -5501,7 +5502,7 @@
     el.style.display = '';
     el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-unlink"></i></span>'
       + '<div class="dr-banner-txt"><b>ESPN live sync unavailable</b>'
-      + '<span>ESPN\'s API often doesn\'t update mid-draft. Install the BR Fantasy extension (desktop) or use Mobile Sync below — or switch to manual tracking.</span></div>'
+      + '<span>ESPN\'s API often doesn\'t update mid-draft. Install the <b>Chrome extension</b> for automatic pick sync on desktop, use <b>Mobile Sync</b> on your phone, or switch to manual tracking.</span></div>'
       + '<button type="button" class="dr-banner-join" id="drEspnManual">Switch to Manual Tracking</button>';
     updateEspnSyncPill('unavailable');
     showEspnTools();
@@ -5520,14 +5521,75 @@
     el.hidden = false;
     el.style.display = '';
     var espnUrl = espnDraftUrl() || 'https://fantasy.espn.com/football/draft';
-    el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-mobile-screen-button"></i></span>'
-      + '<div class="dr-banner-txt"><b>ESPN live helpers</b>'
-      + '<span>Desktop: install the extension and keep the ESPN draft tab open. Mobile: enable Mobile Sync, open ESPN draft, then run the bookmark / Shortcut after picks.</span></div>'
+    el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-puzzle-piece"></i></span>'
+      + '<div class="dr-banner-txt"><b>Get automatic ESPN pick sync</b>'
+      + '<span>Desktop Chrome: install the extension and keep the ESPN draft tab open. Phone: use Mobile Sync in Safari/Chrome (not the ESPN app).</span></div>'
       + '<div class="dr-banner-actions">'
-      + '<a class="dr-banner-join is-ghost" href="https://github.com/kaedonj16/fantasy-dashboard/tree/main/extension" target="_blank" rel="noopener">Extension setup</a>'
+      + '<button type="button" class="dr-banner-join" id="drEspnExtInstall">Get Chrome extension</button>'
       + '<a class="dr-banner-join is-ghost" href="' + espnUrl + '" target="_blank" rel="noopener">Open ESPN draft</a>'
-      + '<button type="button" class="dr-banner-join" id="drEspnMobileSync">Mobile Sync</button>'
+      + '<button type="button" class="dr-banner-join is-ghost" id="drEspnMobileSync">Mobile Sync</button>'
       + '</div>';
+  }
+  function openEspnExtensionInstall(){
+    var storeUrl = String(cfg.chromeExtensionStoreUrl || '').trim();
+    if (storeUrl){
+      window.open(storeUrl, '_blank', 'noopener');
+      return;
+    }
+    var zipUrl = String(cfg.chromeExtensionZipUrl || '/static/extension/br-fantasy-espn-connector.zip');
+    var m = document.getElementById('drModal');
+    var box = m && m.querySelector('.dr-modal-box');
+    var msg = document.getElementById('drModalMsg');
+    var btns = document.getElementById('drModalBtns');
+    if (!m || !msg || !btns) return;
+    if (box) box.classList.add('is-wide');
+    msg.innerHTML = ''
+      + '<div class="dr-msync-title">Install the Chrome extension</div>'
+      + '<p class="dr-msync-lead">On desktop Chrome or Edge, the extension watches your open ESPN draft and updates Draft Room automatically — no tapping after every pick.</p>'
+      + '<div class="dr-msync-warn"><b>Chrome / Edge on a computer.</b> Phone browsers can\'t install this extension — use <b>Mobile Sync</b> instead.</div>'
+      + '<div class="dr-msync-sec"><h4>Install (about 30 seconds)</h4>'
+      + '<ol>'
+      + '<li>Download the extension zip (button below).</li>'
+      + '<li>Unzip it somewhere permanent (e.g. Documents).</li>'
+      + '<li>Open <code>chrome://extensions</code> (or Edge: <code>edge://extensions</code>).</li>'
+      + '<li>Turn on <b>Developer mode</b> (top right).</li>'
+      + '<li>Click <b>Load unpacked</b> → select the unzipped folder.</li>'
+      + '<li>Keep this Draft Room open, open your ESPN draft in another tab, and draft normally.</li>'
+      + '</ol></div>'
+      + '<div class="dr-msync-sec"><h4>You\'ll know it\'s working</h4>'
+      + '<ol>'
+      + '<li>A small <b>BR Fantasy</b> chip appears on the ESPN draft page.</li>'
+      + '<li>Picks show up here within a couple of seconds.</li>'
+      + '</ol></div>';
+    btns.innerHTML = '';
+    var dl = document.createElement('a');
+    dl.className = 'dr-btn dr-btn-primary';
+    dl.href = zipUrl;
+    dl.setAttribute('download', 'br-fantasy-espn-connector.zip');
+    dl.textContent = 'Download extension';
+    btns.appendChild(dl);
+    var mobile = document.createElement('button');
+    mobile.type = 'button';
+    mobile.className = 'dr-btn dr-btn-ghost';
+    mobile.textContent = 'I\'m on my phone';
+    mobile.addEventListener('click', function(){
+      m.style.display = 'none';
+      if (box) box.classList.remove('is-wide');
+      openEspnMobileSync();
+    });
+    btns.appendChild(mobile);
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'dr-btn dr-btn-ghost';
+    close.textContent = 'Close';
+    close.addEventListener('click', function(){
+      m.style.display = 'none';
+      if (box) box.classList.remove('is-wide');
+      msg.textContent = '';
+      btns.innerHTML = '';
+    });
+    btns.appendChild(close);
+    m.style.display = 'flex';
   }
   function ensureEspnRelayToken(){
     if (!cfg.leagueId || !cfg.season) return;
@@ -5582,12 +5644,11 @@
         + '<li>Or add a bookmark to the ESPN draft, then on a Mac/PC edit that bookmark\'s URL to the bookmarklet (iCloud syncs it back).</li>'
         + '<li>Run the Shortcut/bookmark on the ESPN draft tab after picks.</li>'
         + '</ol></div>'
-        + '<div class="dr-msync-sec"><h4>Desktop browser (no extension)</h4>'
+        + '<div class="dr-msync-sec"><h4>Desktop browser</h4>'
         + '<ol>'
-        + '<li>Copy the bookmarklet and drag/paste it onto your bookmarks bar.</li>'
-        + '<li>Open the ESPN draft → click the bookmark after picks.</li>'
-        + '</ol>'
-        + '<p>Prefer automatic sync on desktop? Install the BR Fantasy extension and keep the ESPN draft tab open.</p></div>'
+        + '<li>Prefer automatic sync? Close this and tap <b>Get Chrome extension</b>.</li>'
+        + '<li>Or copy the bookmarklet onto your bookmarks bar and click it after picks.</li>'
+        + '</ol></div>'
         + '<div class="dr-msync-sec"><h4>After you sync</h4>'
         + '<ol>'
         + '<li>You should see “Synced N picks to BR Fantasy” on the ESPN page.</li>'
@@ -8250,6 +8311,7 @@
   if (_espnFb) _espnFb.addEventListener('click', function(e){
     if (e.target && e.target.id === 'drEspnManual') switchEspnToManual();
     if (e.target && e.target.id === 'drEspnMobileSync') openEspnMobileSync();
+    if (e.target && e.target.id === 'drEspnExtInstall') openEspnExtensionInstall();
   });
   if (typeof document !== 'undefined' && document.addEventListener){
     document.addEventListener('visibilitychange', function(){

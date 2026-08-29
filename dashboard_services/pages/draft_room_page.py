@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -99,6 +100,8 @@ def build_draft_room_body(
         # hasPremium still gates Draft Deep Dive and custom-board persistence.
         # Live cheat-sheet overlay / sync is free.
         "hasPremium": bool(has_premium),
+        "chromeExtensionStoreUrl": (os.environ.get("CHROME_EXTENSION_URL") or "").strip(),
+        "chromeExtensionZipUrl": "/static/extension/br-fantasy-espn-connector.zip",
     }
     cfg_json = json.dumps(cfg)
     # cfg is a plain inline script so it runs during parse, before the deferred
