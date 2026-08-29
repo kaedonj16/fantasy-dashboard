@@ -68,7 +68,10 @@ def test_extension_relay_wired_and_skips_manual_fallback():
     assert "Shortcut Input" in ROOM_JS
     assert "Show in Share Sheet" in ROOM_JS
     assert "Safari web pages" in ROOM_JS
+    assert "not</b> the bookmarklet" in ROOM_JS or "not the bookmarklet" in ROOM_JS
+    assert "completion" in ROOM_JS
     assert "iPhone alternate: bookmark via Mac" in ROOM_JS
+    assert "Wrong payload — wait for Shortcut JS" in ROOM_JS
     assert "dr-msync-title" in PAGE
     assert "github.com/kaedonj16/fantasy-dashboard/tree/main/extension" not in ROOM_JS
     assert "Extension setup" not in ROOM_JS

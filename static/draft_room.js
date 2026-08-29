@@ -5694,7 +5694,8 @@
         + '<li>Tap the shortcut <b>info (i)</b> / details → turn on <b>Show in Share Sheet</b> → under <b>Receive</b>, choose <b>Safari web pages</b> only (turn off other types if listed).</li>'
         + '<li>Add action <b>Run JavaScript on Web Page</b>.</li>'
         + '<li>Tap the blue <b>Web Page</b> chip → choose <b>Shortcut Input</b> (there is no separate “pick a website” field — Safari passes the open tab).</li>'
-        + '<li>Paste the Shortcut JS (button below) into the script box. Allow the shortcut when prompted.</li>'
+        + '<li>Paste the <b>iOS Shortcut JS</b> (button below) into the script box — <b>not</b> the bookmarklet. It must not start with <code>javascript:</code>, and Shortcuts requires a <code>completion(…)</code> call (our Shortcut JS includes that).</li>'
+        + '<li>Allow the shortcut when prompted. Narrow Share Sheet types to <b>Safari web pages</b> if you still see “Apps and 18 more.”</li>'
         + '<li>On the ESPN draft (desktop site), tap Share → <b>BR Fantasy sync</b> after picks. You should see “Synced N picks…”.</li>'
         + '</ol></div>'
         + '<div class="dr-msync-sec"><h4>iPhone alternate: bookmark via Mac</h4>'
@@ -5739,7 +5740,20 @@
       copySc.type = 'button';
       copySc.className = 'dr-btn dr-btn-ghost';
       copySc.textContent = 'Copy iOS Shortcut JS';
-      copySc.addEventListener('click', function(){ copyText('Shortcut JS', _espnRelayShortcutJs || _espnRelayBookmarklet.replace(/^javascript:/, '')); });
+      copySc.addEventListener('click', function(){
+        var js = _espnRelayShortcutJs;
+        if (!js){
+          status('Still preparing — try again in a second.', false);
+          ensureEspnRelayToken();
+          return;
+        }
+        if (/^javascript:/i.test(js)){
+          status('Wrong payload — wait for Shortcut JS (not bookmarklet).', false);
+          ensureEspnRelayToken();
+          return;
+        }
+        copyText('Shortcut JS', js);
+      });
       btns.appendChild(copySc);
 
       var openEspn = document.createElement('a');

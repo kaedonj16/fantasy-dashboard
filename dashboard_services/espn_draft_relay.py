@@ -195,10 +195,58 @@ def site_origin(request_host_url: Optional[str] = None) -> str:
 
 def build_bookmarklet(origin: str, token: str) -> str:
     """javascript: bookmark that syncs the open ESPN draft room to BR Fantasy."""
-    # Keep the payload compact — iOS bookmark length limits are real.
+    compact = " ".join(_relay_script_body(origin, token, source="bookmarklet", for_ios_shortcut=False).split())
+    return "javascript:" + compact
+
+
+def shortcut_javascript(origin: str, token: str) -> str:
+    """iOS Shortcuts 'Run JavaScript on Web Page' payload.
+
+    Must call Apple's ``completion(result)`` on every exit path — pasting the
+    bookmarklet (``javascript:…``) will fail with that exact error.
+    """
+    return " ".join(_relay_script_body(origin, token, source="ios-shortcut", for_ios_shortcut=True).split())
+
+
+def _relay_script_body(origin: str, token: str, *, source: str, for_ios_shortcut: bool) -> str:
+    """Shared ESPN draft → BR Fantasy relay script body."""
     origin_js = json.dumps(str(origin).rstrip("/"))
     token_js = json.dumps(str(token))
-    body = f"""
+    source_js = json.dumps(str(source))
+
+    # Build with explicit completion hooks for iOS Shortcuts.
+    if for_ios_shortcut:
+        body = f"""
+(function(){{
+  var O={origin_js},T={token_js};
+  function toast(m){{try{{var d=document.createElement('div');d.textContent=m;
+  d.setAttribute('style','position:fixed;z-index:2147483647;left:12px;right:12px;bottom:16px;padding:12px 14px;border-radius:10px;background:#0f172a;color:#fff;font:600 13px/1.35 system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.35)');
+  document.documentElement.appendChild(d);setTimeout(function(){{d.remove();}},3200);}}catch(e){{try{{alert(m);}}catch(e2){{}}}}}}
+  function finish(m,ok){{try{{if(m)toast(m);}}catch(e){{}}try{{completion(ok?String(m||'ok'):null);}}catch(e){{}}}}
+  function isPick(o){{return o&&typeof o==='object'&&(o.overallPickNumber!=null||o.overallPick!=null||o.pick_no!=null)&&(o.playerId!=null||o.player_id!=null||o.teamId!=null);}}
+  function norm(r){{if(!isPick(r))return null;return{{overallPickNumber:Number(r.overallPickNumber||r.overallPick||r.pick_no),playerId:r.playerId!=null?r.playerId:r.player_id,teamId:r.teamId!=null?r.teamId:r.team_id,roundId:r.roundId!=null?Number(r.roundId):null,roundPickNumber:r.roundPickNumber!=null?Number(r.roundPickNumber):(r.roundPick!=null?Number(r.roundPick):null),keeper:!!(r.keeper||r.reservedForKeeper)}};}}
+  function fromDetail(d){{if(!d||!Array.isArray(d.picks))return null;return{{inProgress:d.inProgress===true,drafted:d.drafted===true,picks:d.picks.map(norm).filter(Boolean)}};}}
+  function walk(root){{var seen=new Set(),q=[root],n=0;while(q.length&&n<3500){{var c=q.shift();n++;if(!c||typeof c!=='object'||seen.has(c))continue;seen.add(c);
+  if(c.draftDetail){{var x=fromDetail(c.draftDetail);if(x)return x;}}
+  if(Array.isArray(c.picks)&&c.picks.length&&isPick(c.picks[0]))return{{inProgress:!!c.inProgress,drafted:!!c.drafted,picks:c.picks.map(norm).filter(Boolean)}};
+  ['memoizedProps','pendingProps','stateNode','state','props','child','sibling','return'].forEach(function(k){{if(c[k])q.push(c[k]);}});
+  try{{Object.keys(c).slice(0,30).forEach(function(k){{var v=c[k];if(v&&typeof v==='object'&&!seen.has(v))q.push(v);}});}}catch(e){{}}}}return null;}}
+  function scan(){{var els=[document.getElementById('espn-aria-root'),document.getElementById('root'),document.body].filter(Boolean);for(var i=0;i<els.length;i++){{var el=els[i];for(var k in el){{if(k.indexOf('__reactFiber$')===0||k.indexOf('__reactInternalInstance$')===0){{var hit=walk(el[k]);if(hit)return hit;}}}}}}return null;}}
+  var u;try{{u=new URL(location.href);}}catch(e){{finish('Open your ESPN draft first.',false);return;}}
+  if(location.hostname.indexOf('espn.com')<0){{finish('Open fantasy.espn.com draft, then run sync again.',false);return;}}
+  var leagueId=(u.searchParams.get('leagueId')||'').trim();
+  var season=(u.searchParams.get('seasonId')||u.searchParams.get('season')||'').trim();
+  var data=scan();
+  if(!data||!data.picks||!data.picks.length){{finish('No picks found yet — wait for a pick, then tap sync again.',false);return;}}
+  data.picks.sort(function(a,b){{return a.overallPickNumber-b.overallPickNumber;}});
+  fetch(O+'/api/draft/espn-relay',{{method:'POST',mode:'cors',credentials:'omit',headers:{{'Content-Type':'application/json','Authorization':'Bearer '+T}},body:JSON.stringify({{leagueId:leagueId,season:season,inProgress:data.inProgress!==false,drafted:!!data.drafted,picks:data.picks,source:{source_js}}})}})
+  .then(function(r){{return r.json().then(function(b){{return{{ok:r.ok,b:b}};}});}})
+  .then(function(res){{if(!res.ok){{finish((res.b&&res.b.error)||'Sync failed',false);return;}}finish('Synced '+(res.b.picks?res.b.picks.length:data.picks.length)+' picks to BR Fantasy',true);}})
+  .catch(function(){{finish('Network error syncing to BR Fantasy',false);}});
+}})();
+""".strip()
+    else:
+        body = f"""
 (function(){{
   var O={origin_js},T={token_js};
   function toast(m){{try{{var d=document.createElement('div');d.textContent=m;
@@ -220,23 +268,13 @@ def build_bookmarklet(origin: str, token: str) -> str:
   var data=scan();
   if(!data||!data.picks||!data.picks.length){{return toast('No picks found yet — wait for a pick, then tap sync again.');}}
   data.picks.sort(function(a,b){{return a.overallPickNumber-b.overallPickNumber;}});
-  fetch(O+'/api/draft/espn-relay',{{method:'POST',mode:'cors',credentials:'omit',headers:{{'Content-Type':'application/json','Authorization':'Bearer '+T}},body:JSON.stringify({{leagueId:leagueId,season:season,inProgress:data.inProgress!==false,drafted:!!data.drafted,picks:data.picks,source:'bookmarklet'}})}})
+  fetch(O+'/api/draft/espn-relay',{{method:'POST',mode:'cors',credentials:'omit',headers:{{'Content-Type':'application/json','Authorization':'Bearer '+T}},body:JSON.stringify({{leagueId:leagueId,season:season,inProgress:data.inProgress!==false,drafted:!!data.drafted,picks:data.picks,source:{source_js}}})}})
   .then(function(r){{return r.json().then(function(b){{return{{ok:r.ok,b:b}};}});}})
   .then(function(res){{if(!res.ok){{toast((res.b&&res.b.error)||'Sync failed');return;}}toast('Synced '+(res.b.picks?res.b.picks.length:data.picks.length)+' picks to BR Fantasy');}})
   .catch(function(){{toast('Network error syncing to BR Fantasy');}});
 }})();
 """.strip()
-    # Collapse whitespace for bookmark length.
-    compact = " ".join(body.split())
-    return "javascript:" + compact
-
-
-def shortcut_javascript(origin: str, token: str) -> str:
-    """Same logic as the bookmarklet, without the javascript: prefix (iOS Shortcut)."""
-    bm = build_bookmarklet(origin, token)
-    if bm.startswith("javascript:"):
-        return bm[len("javascript:"):]
-    return bm
+    return body
 
 
 def merge_live_with_relay(

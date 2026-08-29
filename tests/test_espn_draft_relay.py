@@ -69,4 +69,15 @@ def test_bookmarklet_contains_origin_and_token():
     assert "brfantasyfootball.com" in bm
     assert "TOK.EN" in bm
     assert "/api/draft/espn-relay" in bm
-    assert shortcut_javascript("https://www.brfantasyfootball.com", "TOK.EN").startswith("(")
+    assert "source:\"bookmarklet\"" in bm.replace(" ", "") or "'bookmarklet'" in bm or '"bookmarklet"' in bm
+
+
+def test_shortcut_javascript_calls_completion_not_bookmarklet_prefix():
+    js = shortcut_javascript("https://www.brfantasyfootball.com", "TOK.EN")
+    assert not js.startswith("javascript:")
+    assert "completion(" in js
+    assert "function finish(" in js
+    assert "brfantasyfootball.com" in js
+    assert "TOK.EN" in js
+    assert "ios-shortcut" in js
+    assert "/api/draft/espn-relay" in js
