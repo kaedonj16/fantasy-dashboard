@@ -17,6 +17,7 @@ from dashboard_services.archetype_engine import (
     _depth_penalty,
     _estimate_acceptance,
     _select_packages,
+    _tradable_picks_by_roster,
 )
 
 
@@ -220,3 +221,36 @@ def test_acceptance_fit_shifts_score():
     base = _estimate_acceptance(700, 700, is_preferred=False, fit=0)
     assert _estimate_acceptance(700, 700, is_preferred=False, fit=10) > base
     assert _estimate_acceptance(700, 700, is_preferred=False, fit=-10) < base
+
+
+_PICKS = {"1": [{"season": 2026, "round": 1, "original_owner": "1"}]}
+
+
+def test_tradable_picks_dropped_for_redraft_and_espn():
+    assert _tradable_picks_by_roster(
+        {"picks_by_roster": _PICKS, "league_settings": {"type": 0}},
+        platform="sleeper",
+    ) == {}
+    assert _tradable_picks_by_roster(
+        {"picks_by_roster": _PICKS, "league_settings": {"type": 1}},
+        platform="sleeper",
+    ) == {}
+    assert _tradable_picks_by_roster(
+        {"picks_by_roster": _PICKS, "platform": "espn"},
+    ) == {}
+    # Platform arg fills in when ctx omitted it (the API passes platform separately).
+    assert _tradable_picks_by_roster(
+        {"picks_by_roster": _PICKS},
+        platform="espn",
+    ) == {}
+
+
+def test_tradable_picks_kept_for_dynasty():
+    assert _tradable_picks_by_roster(
+        {"picks_by_roster": _PICKS, "league_settings": {"type": 2}},
+        platform="sleeper",
+    ) == _PICKS
+    assert _tradable_picks_by_roster(
+        {"picks_by_roster": _PICKS},
+        platform="sleeper",
+    ) == _PICKS

@@ -15,6 +15,7 @@ import time as _time
 from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple
 
+from dashboard_services.ai.context_builders import ctx_scoring_type
 from utils.lineup_slots import canonicalize_slot
 from utils.roster_strength import STARTER_THRESHOLD, derive_league_thresholds
 from utils.tier_stack import asset_tier
@@ -47,6 +48,18 @@ def _sim_lock_for(cache_key: str) -> threading.Lock:
         if lk is None:
             lk = _SIM_LOCKS[cache_key] = threading.Lock()
         return lk
+
+
+def _tradable_picks_by_roster(
+    ctx: Optional[Dict[str, Any]],
+    platform: str = "",
+) -> Dict[str, List[Dict]]:
+    """Draft picks are dynasty-only. ESPN and Sleeper type 0/1 cannot trade them."""
+    ctx = ctx or {}
+    score_ctx = ctx if ctx.get("platform") else {**ctx, "platform": platform}
+    if ctx_scoring_type(score_ctx) == "redraft":
+        return {}
+    return ctx.get("picks_by_roster") or {}
 
 
 def _roster_fingerprint(ctx: Optional[Dict[str, Any]]) -> str:
@@ -1753,7 +1766,10 @@ def _get_archetype_suggestions_impl(
     roster_map      = ctx.get("roster_map") or {}
     standings_map   = ctx.get("standings_map") or {}
     model_tbl       = ctx.get("model_value_table") or []
-    picks_by_roster = ctx.get("picks_by_roster") or {}
+    # Redraft/keeper leagues cannot trade draft picks. Sleeper still synthesizes
+    # future-pick rows for every league, so drop them here the same way Teams
+    # and the trade-eval analyst already do.
+    picks_by_roster = _tradable_picks_by_roster(ctx, platform)
 
     num_teams     = max(len(rosters), league_size, 8)
 

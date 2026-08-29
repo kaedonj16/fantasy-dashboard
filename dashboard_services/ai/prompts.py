@@ -717,7 +717,55 @@ def generate_trade_suggestions_result(suggestions_ctx: dict) -> dict:
         "additionalProperties": False,
     }
 
-    system_prompt = """
+    scoring_type = normalize_trade_scoring_type(
+        (suggestions_ctx or {}).get("scoring_type")
+    )
+    is_redraft = scoring_type == "redraft"
+
+    if is_redraft:
+        system_prompt = """
+You are a REDRAFT fantasy football GM assistant generating proactive trade ideas.
+This is a single-season redraft league. Players are owned for this NFL season only.
+
+CRITICAL RULES - follow exactly:
+1. For player-for-player trades (from top_partners): use targets_they_have for you_get and
+   targets_viewer_sends for you_give. Never invent players. Skip any partner with an empty list.
+   - For package trades (is_package_trade=true): the viewer is packaging 2+ surplus players
+     to acquire 1 elite player at a position they want to upgrade. Format as e.g.
+     "Package Deal: [SurplusWR] + [SurplusTE] for [EliteRB]". List all package pieces in you_give.
+2. Draft picks cannot be traded in redraft. Never suggest a draft pick, future pick,
+   rookie pick, or pick of any kind. Ignore pick_trade_partners, projected_picks,
+   and any pick fields even if they appear in the JSON.
+3. Use viewer_needs/viewer_surplus and viewer_pos_ranks (1=best in league) as given - do NOT override them.
+   viewer_needs are roster HOLES (can't field a startable player) - fill these first.
+   viewer_ceiling_needs are filled spots with no elite - treat as upgrade targets, only for
+   a contender chasing a difference-maker, never at the expense of an unfilled need.
+4. trade_type must be:
+   - up_tier: viewer receives more value (acquiring a better player via surplus)
+   - down_tier: viewer gives more value than they receive
+   - swap: roughly even value exchange
+5. Keep reasoning concise (max 2 sentences). Lead with football logic, not raw numbers.
+6. Urgency: high = fills a critical need or converts surplus depth to elite talent,
+   medium = solid improvement, low = depth upgrade.
+7. Never write "TBD", "Unknown", or any placeholder. If you cannot fill both sides, skip that suggestion.
+8. Never mention draft picks, rookie picks, pick capital, or future drafts.
+""".strip()
+        user_prompt = f"""
+Generate up to 3 specific trade proposals for this redraft team.
+Draft picks cannot be traded. Only propose player-for-player deals.
+
+The viewer's needs and surplus positions are provided, along with the best matching trade partners.
+When the viewer has no explicit needs but has surplus, suggest package deals that convert
+excess depth at surplus positions into an upgrade at a position they're weak/neutral at.
+For each suggestion, specify exact players by name (from targets_they_have and targets_viewer_sends).
+
+Return JSON matching the schema exactly.
+
+Trade suggestions context:
+{json_dumps_safe(suggestions_ctx)}
+""".strip()
+    else:
+        system_prompt = """
 You are a dynasty fantasy football GM assistant generating proactive trade ideas.
 
 CRITICAL RULES - follow exactly:
@@ -744,7 +792,7 @@ CRITICAL RULES - follow exactly:
 7. Never write "TBD", "Unknown", or any placeholder. If you cannot fill both sides, skip that suggestion.
 """.strip()
 
-    user_prompt = f"""
+        user_prompt = f"""
 Generate up to 3 specific trade proposals for this dynasty team.
 
 The viewer's needs and surplus positions are provided, along with the best matching trade partners.

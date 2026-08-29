@@ -810,9 +810,17 @@ def build_trade_suggestions_context(
     if not roster:
         return None
 
-    model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [], is_sf=_ctx_is_sf(ctx))
+    scoring_type = ctx_scoring_type(ctx)
+    is_redraft = scoring_type == "redraft"
+    model_value_lookup = build_model_value_lookup(
+        ctx.get("model_value_table") or [],
+        is_sf=_ctx_is_sf(ctx),
+        scoring_type=scoring_type,
+    )
     roster_map = ctx.get("roster_map") or {}
-    picks_by_roster = ctx.get("picks_by_roster") or {}
+    # Draft picks are not tradable in redraft. Provider ctx often still carries
+    # synthesized future-pick rows (Sleeper builds them for every league).
+    picks_by_roster = {} if is_redraft else (ctx.get("picks_by_roster") or {})
 
     def _roster_pos_totals(r: dict) -> dict[str, float]:
         totals: dict[str, float] = {pos: 0.0 for pos in _SCARCITY_POSITIONS}
@@ -1231,11 +1239,13 @@ def build_trade_suggestions_context(
         "viewer_starter_counts": {p: viewer_counts.get(p, {}) for p in _SCARCITY_POSITIONS},
         "viewer_pos_ranks": {pos: viewer_ranks.get(pos, n_teams) for pos in _SCARCITY_POSITIONS},
         "league_size": n_teams,
+        "scoring_type": scoring_type,
+        "picks_tradable": not is_redraft,
         "viewer_pos_totals": {pos: round(v, 1) for pos, v in viewer_totals.items()},
         "league_avg_pos_totals": {pos: round(v, 1) for pos, v in league_avg.items()},
         "top_partners": partners[:5],
-        "projected_picks": _projected_picks,
-        "pick_trade_partners": pick_trade_partners,
+        "projected_picks": [] if is_redraft else _projected_picks,
+        "pick_trade_partners": [] if is_redraft else pick_trade_partners,
     }
 
 
