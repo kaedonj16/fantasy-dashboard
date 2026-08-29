@@ -25,7 +25,7 @@ def test_espn_sync_indicator_and_fallback_markup():
 
 def test_sim_flag_still_declared():
     """Regression: ESPN relay vars must not drop the mock-draft `sim` flag."""
-    assert "var sim = false;         // mock-draft simulation active" in ROOM_JS
+    assert "var sim = false;" in ROOM_JS
     assert "var simTimer = null;" in ROOM_JS
 
 

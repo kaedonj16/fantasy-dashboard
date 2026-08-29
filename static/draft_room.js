@@ -69,6 +69,7 @@
   var _espnRelayBookmarklet = '';
   var _espnRelayShortcutJs = '';
   var _espnExtLastSeen = 0;
+  var sim = false;         // mock-draft simulation active
   var simTimer = null;
   var simSpeed = 700;      // ms between CPU picks
   var simPaused = false;
