@@ -23,6 +23,12 @@ def test_espn_sync_indicator_and_fallback_markup():
     assert '"viewerRosterId": "3"' in body
 
 
+def test_sim_flag_still_declared():
+    """Regression: ESPN relay vars must not drop the mock-draft `sim` flag."""
+    assert "var sim = false;         // mock-draft simulation active" in ROOM_JS
+    assert "var simTimer = null;" in ROOM_JS
+
+
 def test_extension_relay_wired_and_skips_manual_fallback():
     assert "function applyEspnExtensionRelay(detail)" in ROOM_JS
     assert "/api/draft/espn-relay" in ROOM_JS
