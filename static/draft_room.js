@@ -474,7 +474,7 @@
   // Each preset carries the full format it implies - draft type, Superflex,
   // and PPR - so applying one lines the whole setup up, not just the slots.
   var ROSTER_PRESETS = {
-    espn:      { label:'ESPN',       type:'redraft', ppr:1,   QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:8 },
+    espn:      { label:'ESPN',       type:'redraft', ppr:1,   QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:7 },
     sleeper:   { label:'Sleeper',    type:'redraft', ppr:1,   QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:2,K:0,DEF:0,BN:7 },
     yahoo:     { label:'Yahoo',      type:'redraft', ppr:1,   QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:6 },
     standard:  { label:'Standard',   type:'redraft', ppr:0,   QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:6 },

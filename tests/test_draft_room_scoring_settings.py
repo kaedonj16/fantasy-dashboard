@@ -382,7 +382,7 @@ def test_roster_setup_has_editable_platform_and_dynasty_presets():
     # from cosmetic whitespace and the type/ppr fields presets also carry, so a
     # reformat doesn't break the test while the presets are intact.
     assert "label:'ESPN'" in source
-    assert "QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:8" in source  # ESPN slots
+    assert "QB:1,SF:0,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:7" in source  # ESPN slots
     assert "label:'Sleeper'" in source
     assert "label:'Yahoo'" in source
     assert "label:'Dynasty SF'" in source
