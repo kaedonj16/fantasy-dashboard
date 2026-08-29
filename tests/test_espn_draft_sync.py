@@ -204,6 +204,51 @@ def test_dst_fallback_mapping():
     assert cid == "BAL" and unresolved is False
 
 
+def test_dst_display_synthesizes_when_index_misses():
+    """players_index has no DEF rows; team-abbr ids must still become 'BAL D/ST'."""
+    detail = parse_espn_draft_detail(_detail(
+        picks=[_pick(12, -16033, 1, rnd=3, slot=4)],
+        in_progress=True, drafted=False,
+    ))
+    picks = normalize_espn_picks(
+        detail,
+        espn_to_canon={},
+        player_lookup=lambda _pid: {},
+        dst_mapper=lambda pid: "BAL" if str(pid) == "-16033" else None,
+        team_owner_map={"1": "{AAA}"},
+        team_slot_map={"1": 1},
+        n_teams=4,
+    )
+    assert len(picks) == 1
+    assert picks[0].canonical_player_id == "BAL"
+    assert picks[0].unresolved is False
+    assert picks[0].name == "BAL D/ST"
+    assert picks[0].position == "DEF"
+    assert picks[0].team == "BAL"
+
+
+def test_kicker_pos_pk_normalizes_to_k():
+    """Tank01 stores kickers as PK; starter slots are labeled K."""
+    detail = parse_espn_draft_detail(_detail(
+        picks=[_pick(8, 4241457, 2, rnd=2, slot=4)],
+        in_progress=True, drafted=False,
+    ))
+    picks = normalize_espn_picks(
+        detail,
+        espn_to_canon={"4241457": "421"},
+        player_lookup=lambda pid: (
+            {"name": "Justin Tucker", "pos": "PK", "team": "BAL"}
+            if str(pid) == "421" else {}
+        ),
+        team_owner_map={"2": "{BBB}"},
+        team_slot_map={"2": 2},
+        n_teams=4,
+    )
+    assert len(picks) == 1
+    assert picks[0].name == "Justin Tucker"
+    assert picks[0].position == "K"
+
+
 def test_normalize_unresolved_preserves_pick():
     picks = _norm(_detail(picks=[_pick(1, 999999, 1)], in_progress=True, drafted=False), canon={})
     assert len(picks) == 1
