@@ -62,12 +62,21 @@ def test_keeper_banner_pages_five_and_counts_yours_by_roster():
     assert "drKeeperPrev" in source and "drKeeperNext" in source
     assert "dr-keeper-pager" in source
     assert "dr-keeper-items" in css
+    # Align with the setup card column (max-width: 740px).
+    assert "max-width: 740px" in css
+    assert ".dr-keeper-list[hidden]" in css
+    assert "display: none !important" in css.split(".dr-keeper-list[hidden]")[1].split("}")[0]
+    # Details open state is tracked in JS so re-renders (and [hidden] vs display
+    # fights) cannot leave the toggle looking dead.
+    assert "var keeperDetailsOpen = false;" in source
+    assert "keeperDetailsOpen = !keeperDetailsOpen;" in source
     # Ownership must not rely solely on !k.projected (that counted every
     # assistant-projected own-roster keeper as projected).
     banner = re.search(r"function renderKeeperBanner\(\)\{(.*?)\n  \}", source, re.DOTALL)
     assert banner
     assert "filter(function(k){ return !k.projected; })" not in banner.group(1)
     assert "isMyKeeper" in banner.group(1)
+    assert "insertBefore(el, setup)" in banner.group(1)
 
 
 def test_player_load_failure_exposes_api_error_and_retry_control():
