@@ -27,12 +27,50 @@ Do not invent players, stats, injuries, or league settings.
 Write like a premium front office memo, not a generic chatbot.
 """
 
+GM_MEMO_SYSTEM_REDRAFT = """
+You are a sharp REDRAFT fantasy football GM analyst based on the current date.
+This is a single-season redraft league. Players are owned for this NFL season only.
+Be specific, concise, and grounded only in the provided JSON.
+Do not invent players, stats, injuries, or league settings.
+Never discuss dynasty rebuilds, future draft capital, rookie picks, or multi-year windows.
+Write like a premium front office memo, not a generic chatbot.
+"""
+
 
 def json_dumps_safe(obj: dict) -> str:
     return json.dumps(obj, ensure_ascii=False, sort_keys=True, default=str)
 
 
-def build_gm_memo_prompt(team_ctx: dict) -> str:
+def build_gm_memo_prompt(team_ctx, scoring_type: str = "dynasty") -> str:
+    ctx_scoring = ""
+    if isinstance(team_ctx, dict):
+        ctx_scoring = team_ctx.get("scoring_type") or ""
+        payload = json_dumps_safe(team_ctx)
+    else:
+        payload = str(team_ctx or "")
+    st = normalize_trade_scoring_type(scoring_type or ctx_scoring)
+    if st == "redraft":
+        return f"""
+Write a personalized REDRAFT GM memo for this team.
+
+scoring_type in the JSON is "redraft". This is NOT a dynasty league.
+Focus on this-season production, starting lineup strength, bye weeks, injuries,
+waiver adds, and playoff odds. Never recommend draft picks or multi-year rebuilds.
+
+Return a JSON object with these fields - each must be a single sentence or short phrase, NOT a list:
+- team_identity: one-line team identity
+- outlook: one paragraph on the team's current situation for THIS season
+- strength: the single biggest strength of this roster (one sentence only - do NOT include weakness or next move here)
+- weakness: the single biggest weakness of this roster (one sentence only - do NOT include strength or next move here)
+- next_move: the single best next move this team should make (one sentence only)
+- trade_posture: one short paragraph on trade posture for remaining-season production
+- verdict: one of BUY / HOLD / SELL DEPTH / PRIORITIZE WAIVERS
+
+Use only this JSON:
+
+{payload}
+""".strip()
+
     return f"""
 Write a personalized dynasty GM memo for this team.
 
@@ -47,7 +85,7 @@ Return a JSON object with these fields - each must be a single sentence or short
 
 Use only this JSON:
 
-{team_ctx}
+{payload}
 """.strip()
 
 
@@ -58,8 +96,45 @@ Use only the supplied JSON.
 Do not invent stats, players, trends, or injuries.
 """
 
+FRONT_OFFICE_BRIEF_SYSTEM_REDRAFT = """
+You are a premium REDRAFT fantasy football front-office assistant.
+This is a single-season league. Focus on remaining-season production only.
+Be crisp, grounded, and actionable.
+Use only the supplied JSON.
+Do not invent stats, players, trends, or injuries.
+Never discuss dynasty rebuilds, future draft capital, or multi-year windows.
+"""
 
-def build_front_office_brief_prompt(team_ctx: dict) -> str:
+
+def build_front_office_brief_prompt(team_ctx, scoring_type: str = "dynasty") -> str:
+    ctx_scoring = ""
+    if isinstance(team_ctx, dict):
+        ctx_scoring = team_ctx.get("scoring_type") or ""
+        payload = json_dumps_safe(team_ctx)
+    else:
+        payload = str(team_ctx or "")
+    st = normalize_trade_scoring_type(scoring_type or ctx_scoring)
+    if st == "redraft":
+        return f"""
+Write a "Front Office Briefing" for this REDRAFT team.
+
+scoring_type in the JSON is "redraft". This is NOT a dynasty league.
+Focus on this-season starters, weekly upside, injuries, and waiver/trade moves
+that help win now. Never mention draft picks or multi-year rebuilds.
+
+Output format:
+1. One-line headline
+2. One short paragraph on the team's current posture for THIS season
+3. Three bullets:
+   - strongest room
+   - weakest room
+   - most important next move
+4. One short final note called "GM Alert"
+
+Use only this JSON:
+{payload}
+""".strip()
+
     return f"""
 Write a "Front Office Briefing" for this dynasty team.
 
@@ -73,7 +148,7 @@ Output format:
 4. One short final note called "GM Alert"
 
 Use only this JSON:
-{team_ctx}
+{payload}
 """.strip()
 
 
@@ -713,8 +788,15 @@ def generate_team_ai_result(team_ctx: dict, mode: str = "gm_memo") -> dict:
     mode: 'gm_memo' or 'front_office_briefing'
     """
     client = get_ai_client()
+    scoring_type = normalize_trade_scoring_type((team_ctx or {}).get("scoring_type"))
+    is_redraft = scoring_type == "redraft"
 
     if mode == "gm_memo":
+        verdict_enum = (
+            ["BUY", "HOLD", "SELL DEPTH", "PRIORITIZE WAIVERS"]
+            if is_redraft
+            else ["BUY", "HOLD", "SELL VETERANS", "REBUILD AGGRESSIVELY"]
+        )
         schema = {
             "type": "object",
             "properties": {
@@ -726,14 +808,14 @@ def generate_team_ai_result(team_ctx: dict, mode: str = "gm_memo") -> dict:
                 "trade_posture": {"type": "string"},
                 "verdict": {
                     "type": "string",
-                    "enum": ["BUY", "HOLD", "SELL VETERANS", "REBUILD AGGRESSIVELY"],
+                    "enum": verdict_enum,
                 },
             },
             "required": ["team_identity", "outlook", "strength", "weakness", "next_move", "trade_posture", "verdict"],
             "additionalProperties": False,
         }
-        system_prompt = GM_MEMO_SYSTEM
-        user_prompt = build_gm_memo_prompt(json_dumps_safe(team_ctx))
+        system_prompt = GM_MEMO_SYSTEM_REDRAFT if is_redraft else GM_MEMO_SYSTEM
+        user_prompt = build_gm_memo_prompt(team_ctx, scoring_type)
     else:  # front_office_briefing
         schema = {
             "type": "object",
@@ -748,8 +830,10 @@ def generate_team_ai_result(team_ctx: dict, mode: str = "gm_memo") -> dict:
             "required": ["headline", "posture", "strongest_room", "weakest_room", "next_move", "gm_alert"],
             "additionalProperties": False,
         }
-        system_prompt = FRONT_OFFICE_BRIEF_SYSTEM
-        user_prompt = build_front_office_brief_prompt(json_dumps_safe(team_ctx))
+        system_prompt = (
+            FRONT_OFFICE_BRIEF_SYSTEM_REDRAFT if is_redraft else FRONT_OFFICE_BRIEF_SYSTEM
+        )
+        user_prompt = build_front_office_brief_prompt(team_ctx, scoring_type)
 
     resp = client.responses.create(
         model=OPENAI_MODEL,

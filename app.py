@@ -7990,10 +7990,11 @@ from utils.waiver_score import (  # noqa: E402
 
 
 def _league_is_redraft(ctx: dict) -> bool:
-    """True for a Sleeper redraft or keeper league (settings.type 0 or 1).
+    """True for a redraft or keeper league (settings.type 0 or 1).
 
-    Dynasty (type 2) and platforms with no dynasty flag (ESPN/Yahoo) are treated
-    as dynasty, matching how the draft-grade and keeper tools classify a league.
+    Sleeper publishes type explicitly. ESPN/Yahoo/Fleaflicker redraft leagues
+    normalize to type 0 in their provider adapters, so they classify as redraft
+    here. Dynasty is type 2 (or missing/unparseable type).
     """
     settings = (ctx.get("league_settings")
                 or (ctx.get("league") or {}).get("settings")
