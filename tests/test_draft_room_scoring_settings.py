@@ -50,13 +50,13 @@ def test_setup_source_and_draft_pick_pills_match_canonical_chip_styles():
     assert "rgba(168,85,247,.14)" not in body
 
 
-def test_keeper_banner_pages_five_and_counts_yours_by_roster():
-    """Keepers Details lists 5 per page; 'yours' is ownership (viewer roster),
+def test_keeper_banner_pages_six_and_counts_yours_by_roster():
+    """Keepers Details lists 6 per page; 'yours' is ownership (viewer roster),
     not the old !projected flag that left assistant-mode keepers at 0 yours."""
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
     css = (REPO / "static" / "dashboard.css").read_text(encoding="utf-8")
 
-    assert "var KEEPER_PAGE_SIZE = 5;" in source
+    assert "var KEEPER_PAGE_SIZE = 6;" in source
     assert "function isMyKeeper(k)" in source
     assert "keeperSet.filter(isMyKeeper)" in source
     assert "drKeeperPrev" in source and "drKeeperNext" in source
