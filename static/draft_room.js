@@ -5548,49 +5548,134 @@
       .catch(function(){});
   }
   function openEspnMobileSync(){
-    ensureEspnRelayToken();
-    function show(){
-      if (!_espnRelayBookmarklet){
-        drAlert('Still preparing mobile sync — try again in a second.');
-        ensureEspnRelayToken();
-        return;
+    function renderPanel(){
+      var m = document.getElementById('drModal');
+      var box = m && m.querySelector('.dr-modal-box');
+      var msg = document.getElementById('drModalMsg');
+      var btns = document.getElementById('drModalBtns');
+      if (!m || !msg || !btns) return;
+      if (box) box.classList.add('is-wide');
+      var espnUrl = espnDraftUrl() || 'https://fantasy.espn.com/football/draft';
+      var ready = !!_espnRelayBookmarklet;
+      msg.innerHTML = ''
+        + '<div class="dr-msync-title">Mobile ESPN sync</div>'
+        + '<p class="dr-msync-lead">Keep this Draft Room open. Sync picks from the ESPN draft in a <b>phone browser</b> (Safari or Chrome) — not the ESPN Fantasy app.</p>'
+        + '<div class="dr-msync-warn"><b>Does not work in the ESPN app.</b> Open the draft at fantasy.espn.com in Safari/Chrome, then run the bookmark or Shortcut.</div>'
+        + '<div class="dr-msync-sec"><h4>Before you start</h4>'
+        + '<ol>'
+        + '<li>Stay on <b>Connect Live Draft</b> in this Draft Room (phone or another device).</li>'
+        + '<li>Open your ESPN draft in the browser'
+        + (cfg.leagueId ? (' (league ' + esc(String(cfg.leagueId)) + ')') : '')
+        + '.</li>'
+        + '<li>Copy the bookmarklet below, install it once, then tap it after picks.</li>'
+        + '</ol></div>'
+        + '<div class="dr-msync-sec"><h4>Android (Chrome)</h4>'
+        + '<ol>'
+        + '<li>Open the ESPN draft page.</li>'
+        + '<li>Tap the star / Add bookmark.</li>'
+        + '<li>Edit the bookmark → replace the <b>URL</b> with the bookmarklet (starts with <code>javascript:</code>).</li>'
+        + '<li>Save. After picks, open Bookmarks and tap <b>BR Fantasy sync</b>.</li>'
+        + '</ol></div>'
+        + '<div class="dr-msync-sec"><h4>iPhone (Safari)</h4>'
+        + '<ol>'
+        + '<li>Easiest: create a Shortcut → <b>Run JavaScript on Webpage</b> for fantasy.espn.com → paste Shortcut JS (button below).</li>'
+        + '<li>Or add a bookmark to the ESPN draft, then on a Mac/PC edit that bookmark\'s URL to the bookmarklet (iCloud syncs it back).</li>'
+        + '<li>Run the Shortcut/bookmark on the ESPN draft tab after picks.</li>'
+        + '</ol></div>'
+        + '<div class="dr-msync-sec"><h4>Desktop browser (no extension)</h4>'
+        + '<ol>'
+        + '<li>Copy the bookmarklet and drag/paste it onto your bookmarks bar.</li>'
+        + '<li>Open the ESPN draft → click the bookmark after picks.</li>'
+        + '</ol>'
+        + '<p>Prefer automatic sync on desktop? Install the BR Fantasy extension and keep the ESPN draft tab open.</p></div>'
+        + '<div class="dr-msync-sec"><h4>After you sync</h4>'
+        + '<ol>'
+        + '<li>You should see “Synced N picks to BR Fantasy” on the ESPN page.</li>'
+        + '<li>Return to Draft Room — picks appear within about 5–10 seconds.</li>'
+        + '<li>Token lasts ~12 hours; tap Mobile Sync again if it expires.</li>'
+        + '</ol></div>'
+        + '<p class="dr-msync-status" id="drMsyncStatus">'
+        + (ready ? '' : 'Preparing sync link…')
+        + '</p>';
+      btns.innerHTML = '';
+      function status(text, ok){
+        var el = document.getElementById('drMsyncStatus');
+        if (!el) return;
+        el.textContent = text || '';
+        el.style.color = ok ? 'var(--win)' : 'var(--text-muted)';
       }
-      var msg = 'Mobile ESPN sync\n\n'
-        + '1) Keep this Draft Room open (or reopen it on this phone).\n'
-        + '2) Open your ESPN draft.\n'
-        + '3) Run the BR Fantasy sync bookmark / iOS Shortcut.\n\n'
-        + 'Copy the bookmarklet to the clipboard now?';
-      if (window.confirm(msg)){
-        if (navigator.clipboard && navigator.clipboard.writeText){
-          navigator.clipboard.writeText(_espnRelayBookmarklet).then(function(){
-            drAlert('Bookmarklet copied. On your phone browser: add a bookmark for the ESPN draft page, then edit its URL and paste.');
-          }).catch(function(){
-            window.prompt('Copy this bookmarklet:', _espnRelayBookmarklet);
-          });
-        } else {
-          window.prompt('Copy this bookmarklet:', _espnRelayBookmarklet);
+      function copyText(label, text){
+        if (!text){ status('Still preparing — try again in a second.', false); ensureEspnRelayToken(); return; }
+        function ok(){ status(label + ' copied.', true); }
+        function fallback(){
+          window.prompt('Copy this:', text);
+          status(label + ' ready to copy.', true);
         }
+        if (navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(text).then(ok).catch(fallback);
+        } else fallback();
       }
+      var copyBm = document.createElement('button');
+      copyBm.type = 'button';
+      copyBm.className = 'dr-btn dr-btn-primary';
+      copyBm.textContent = 'Copy bookmarklet';
+      copyBm.addEventListener('click', function(){ copyText('Bookmarklet', _espnRelayBookmarklet); });
+      btns.appendChild(copyBm);
+
+      var copySc = document.createElement('button');
+      copySc.type = 'button';
+      copySc.className = 'dr-btn dr-btn-ghost';
+      copySc.textContent = 'Copy iOS Shortcut JS';
+      copySc.addEventListener('click', function(){ copyText('Shortcut JS', _espnRelayShortcutJs || _espnRelayBookmarklet.replace(/^javascript:/, '')); });
+      btns.appendChild(copySc);
+
+      var openEspn = document.createElement('a');
+      openEspn.className = 'dr-btn dr-btn-ghost';
+      openEspn.href = espnUrl;
+      openEspn.target = '_blank';
+      openEspn.rel = 'noopener';
+      openEspn.textContent = 'Open ESPN draft';
+      btns.appendChild(openEspn);
+
+      var close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'dr-btn dr-btn-ghost';
+      close.textContent = 'Close';
+      close.addEventListener('click', function(){
+        m.style.display = 'none';
+        if (box) box.classList.remove('is-wide');
+        msg.textContent = '';
+        btns.innerHTML = '';
+      });
+      btns.appendChild(close);
+      m.style.display = 'flex';
     }
-    if (_espnRelayBookmarklet) show();
-    else {
-      fetch('/api/draft/espn-relay/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ league_id: cfg.leagueId, season: cfg.season }),
-        cache: 'no-store'
+
+    ensureEspnRelayToken();
+    if (_espnRelayBookmarklet){
+      renderPanel();
+      return;
+    }
+    fetch('/api/draft/espn-relay/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ league_id: cfg.leagueId, season: cfg.season }),
+      cache: 'no-store'
+    })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d && d.token){
+          _espnRelayToken = d.token;
+          _espnRelayBookmarklet = d.bookmarklet || '';
+          _espnRelayShortcutJs = d.shortcut_js || '';
+        }
+        if (!_espnRelayBookmarklet){
+          drAlert('Could not create mobile sync token. Reconnect Live Draft and try again.');
+          return;
+        }
+        renderPanel();
       })
-        .then(function(r){ return r.json(); })
-        .then(function(d){
-          if (d && d.token){
-            _espnRelayToken = d.token;
-            _espnRelayBookmarklet = d.bookmarklet || '';
-            _espnRelayShortcutJs = d.shortcut_js || '';
-          }
-          show();
-        })
-        .catch(function(){ drAlert('Could not create mobile sync token.'); });
-    }
+      .catch(function(){ drAlert('Could not create mobile sync token.'); });
   }
   function switchEspnToManual(){
     stopPolling(); stopPickTimer();
@@ -7602,6 +7687,8 @@
   // ── Custom modal (replaces native confirm/alert) ─────────────────────────────
   function drAlert(msg, cb){
     var m = document.getElementById('drModal');
+    var box = m && m.querySelector('.dr-modal-box');
+    if (box) box.classList.remove('is-wide');
     document.getElementById('drModalMsg').textContent = msg;
     var btns = document.getElementById('drModalBtns');
     btns.innerHTML = '';
