@@ -16852,7 +16852,9 @@ def api_league_rosters():
             })
 
         teams.sort(key=lambda x: x["team_name"])
-        viewer = get_viewer_session_for_league(users, rosters) or {}
+        viewer = get_viewer_session_for_league(
+            users, rosters, platform, league_id, season,
+        ) or {}
         payload = {
             "teams": teams,
             "viewer_roster_id": str(viewer.get("viewer_roster_id") or ""),

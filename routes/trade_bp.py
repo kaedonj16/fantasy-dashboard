@@ -259,7 +259,10 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
         # Auto-apply the league's TE-premium bonus (Sleeper bonus_rec_te) so TE values
         # reflect the actual scoring without the user having to set it manually.
         te_premium = float(_ss.get("bonus_rec_te") or 0)
-        viewer = get_viewer_session_for_league(ctx.get("users") or [], ctx.get("rosters") or [])
+        viewer = get_viewer_session_for_league(
+            ctx.get("users") or [], ctx.get("rosters") or [],
+            platform, league_id, season,
+        )
         viewer_roster_id = viewer.get("viewer_roster_id") or ""
         has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper", season)
         _rp = ctx.get("roster_positions") or []

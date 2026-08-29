@@ -32,8 +32,16 @@ def test_trade_calculator_preselects_redraft_when_league_is_redraft():
     assert 'value="dynasty" selected' not in html
 
 
+def test_trade_calculator_exposes_platform_for_roster_filter():
+    html = build_trade_calculator_body("L1", 2026, platform="espn", scoring_type="redraft")
+    assert 'id="platformInput"' in html
+    assert 'value="espn"' in html
+
+
 def test_trade_page_wires_league_redraft_into_calculator():
     src = (ROOT / "routes" / "trade_bp.py").read_text(encoding="utf-8")
     assert "_league_is_redraft" in src
     assert 'scoring_type = "redraft" if _league_is_redraft(ctx) else "dynasty"' in src
     assert "scoring_type=scoring_type" in src
+    assert "get_viewer_session_for_league(" in src
+    assert "platform, league_id, season" in src

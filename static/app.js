@@ -4785,6 +4785,18 @@ window.initTradePage = function initTradePage(root = document) {
     return Number(sel?.value || 0) || 0;
   }
 
+  function getTradePlatform() {
+    const fromInput = (root.querySelector("#platformInput")?.value || "").trim().toLowerCase();
+    if (fromInput) return fromInput;
+    const fromPath = window.location.pathname.split("/").filter(Boolean)[0] || "";
+    if (/^(sleeper|espn|yahoo|mfl|fleaflicker)$/i.test(fromPath)) return fromPath.toLowerCase();
+    return "sleeper";
+  }
+
+  function getTradeSeason() {
+    return root.querySelector("#seasonInput")?.value || new Date().getFullYear();
+  }
+
   // Position multipliers. MUST match SCORING_MULTS in utils/trade_value.py
   // (player_trade_value / build_side); tests/test_scoring_mult_parity.py fails if they drift.
   const SCORING_MULTS = {
@@ -8003,8 +8015,12 @@ window.initTradePage = function initTradePage(root = document) {
     if (!leagueId || !toggle) return;  // guest / no league → feature disabled
 
     try {
+      const platform = getTradePlatform();
+      const season = getTradeSeason();
       const res = await fetch(
-        `/api/league-rosters?league_id=${encodeURIComponent(leagueId)}&platform=sleeper`
+        `/api/league-rosters?league_id=${encodeURIComponent(leagueId)}` +
+        `&platform=${encodeURIComponent(platform)}` +
+        `&season=${encodeURIComponent(season)}`
       );
       const data = await res.json();
       const teams = data.teams || [];
@@ -8072,9 +8088,17 @@ window.initTradePage = function initTradePage(root = document) {
       bindOnce(toggle, "restrictToggleChange", "change", () => {
         rosterFilter.on = toggle.checked;
         try { localStorage.setItem("otc_roster_filter_on", toggle.checked ? "1" : "0"); } catch (_) {}
+        if (toggle.checked) {
+          const teamSel = root.querySelector("#teamSelect");
+          syncRosterFilterViewer(teamSel?.value || getCurrentRosterId() || rosterFilter.viewerRid);
+        }
         updateSideTitles();
       });
 
+      // Team selector and this fetch race. Re-bind the viewer now that rosters
+      // are loaded so a team already chosen in #teamSelect actually owns Side B.
+      const teamSel = root.querySelector("#teamSelect");
+      syncRosterFilterViewer(teamSel?.value || getCurrentRosterId() || rosterFilter.viewerRid);
       // Bind now in case a restored state already has Side B players, and set the
       // side titles to the resolved team names.
       syncSideBBinding();
@@ -8114,8 +8138,7 @@ window.initTradePage = function initTradePage(root = document) {
 
       const selected = getSidePlayers(side);
       const selectedPicks = getSidePicks(side);
-      const leagueType = getLeagueType();
-      const valueOf = p => (leagueType === "sf" ? (p.sf_value || p.value || 0) : (p.value || 0));
+      const valueOf = getPlayerValue;
 
       // Roster filter: players limited to the allowed team(s); picks matched first by
       // exact resolved slot id, then by round-level fallback for picks too far out.
@@ -8607,7 +8630,11 @@ window.initTradePage = function initTradePage(root = document) {
 
     const leagueId = root.querySelector("#leagueIdInput")?.value || "";
     if (leagueId) {
-      fetch(`/api/teams?league_id=${encodeURIComponent(leagueId)}&platform=sleeper`)
+      fetch(
+        `/api/teams?league_id=${encodeURIComponent(leagueId)}` +
+        `&platform=${encodeURIComponent(getTradePlatform())}` +
+        `&season=${encodeURIComponent(getTradeSeason())}`
+      )
         .then(res => res.json())
         .then(teams => {
           selector.innerHTML = '<option value="">Select your team...</option>';

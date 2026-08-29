@@ -252,6 +252,7 @@ def build_trade_calculator_body(
       <main class="otc-main">
         <input type="hidden" id="leagueIdInput" value="{_esc(str(league_val))}">
         <input type="hidden" id="seasonInput" value="{_esc(str(season_val))}">
+        <input type="hidden" id="platformInput" value="{_esc(str(platform_val))}">
         <input type="hidden" id="viewerRosterIdInput" value="{_esc(str(viewer_roster_val))}">
         <input type="hidden" id="viewerSideInput" value="a">
         <input type="hidden" id="isGuestMode" value="{is_guest_str}">
