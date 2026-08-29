@@ -427,8 +427,33 @@ class MFLProvider(ProviderAdapter):
 
     @staticmethod
     def _positions(lg):
-        raw = str(lg.get("starters") or lg.get("rosterSize") or "")
-        return [x.strip() for x in raw.split(",") if x.strip()]
+        """Parse MFL ``starters`` CSV into lineup slots.
+
+        Never fall back to ``rosterSize`` — that is often a bare number like
+        ``"20"``, which becomes a fake slot and zeros out Proj% the same way
+        empty ESPN ``roster_positions`` did.
+        """
+        from utils.lineup_slots import canonicalize_slot
+
+        raw = str(lg.get("starters") or "").strip()
+        if not raw:
+            logger.warning("[mfl-roster] empty starters platform=mfl league_id=%s",
+                           lg.get("id"))
+            return []
+        out = []
+        for token in raw.split(","):
+            token = token.strip()
+            if not token:
+                continue
+            # Reject pure numeric tokens (rosterSize leaked into starters).
+            if token.isdigit():
+                continue
+            mapped = canonicalize_slot(token) or token.upper()
+            out.append(mapped)
+        if not out:
+            logger.warning("[mfl-roster] no usable starter slots platform=mfl "
+                           "league_id=%s starters=%r", lg.get("id"), raw)
+        return out
 
     @staticmethod
     def _scoring(lg):

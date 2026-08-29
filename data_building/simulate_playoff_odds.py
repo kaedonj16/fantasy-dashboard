@@ -68,6 +68,10 @@ _POS_STD_DEFAULT = (0.42, 2.0)
 
 _FLEX_ELIGIBLE  = {"RB", "WR", "TE"}
 
+# Used when a provider leaves roster_positions empty (ESPN/Yahoo/MFL adapter
+# bugs). Prefer a standard redraft lineup over silent 0.0% Proj% / flat odds.
+_DEFAULT_STARTING_SLOTS = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF"]
+
 
 def _tally_starting_slots(roster_positions):
     """Count dedicated / FLEX / Superflex slots, collapsing provider aliases."""
@@ -84,6 +88,19 @@ def _tally_starting_slots(roster_positions):
         elif s:
             fixed_slots[s] = fixed_slots.get(s, 0) + 1
     return fixed_slots, flex_slots, sflex_slots
+
+
+def _tally_starting_slots_or_default(roster_positions):
+    """Like ``_tally_starting_slots``, but never returns an empty lineup."""
+    fixed_slots, flex_slots, sflex_slots = _tally_starting_slots(roster_positions)
+    if fixed_slots or flex_slots or sflex_slots:
+        return fixed_slots, flex_slots, sflex_slots, False
+    logger.warning(
+        "[playoff_odds] empty roster_positions; using default %s lineup",
+        "/".join(_DEFAULT_STARTING_SLOTS),
+    )
+    fixed_slots, flex_slots, sflex_slots = _tally_starting_slots(_DEFAULT_STARTING_SLOTS)
+    return fixed_slots, flex_slots, sflex_slots, True
 
 # Per-week injury hazard: the probability that a given starter misses that
 # week's game. When a starter is out, a bench player replaces them at a
@@ -742,8 +759,12 @@ def _position_aware_lineup(
     Returns (projected_avg, starters) where starters is a list of (pos, ppg)
     for each starting slot — used to estimate per-team std dev.
     """
-    # Tally starting slots by type
-    fixed_slots, flex_slots, sflex_slots = _tally_starting_slots(roster_positions)
+    # Tally starting slots by type. Empty provider slots used to return 0 PPG
+    # for every team (Value Rankings Proj% stuck at 0.0%); fall back to a
+    # standard lineup so projections still differentiate rosters.
+    fixed_slots, flex_slots, sflex_slots, _ = _tally_starting_slots_or_default(
+        roster_positions
+    )
 
     # Per-position averages from real projections — used as fallback for
     # players with no FP data (rookies, injured, newly signed).
@@ -832,8 +853,11 @@ def _lineup_with_replacements(
     (single-injury assumption), which slightly understates rare multi-injury
     weeks at one position — an acceptable approximation.
     """
-    # Tally starting slots by type (mirrors _position_aware_lineup)
-    fixed_slots, flex_slots, sflex_slots = _tally_starting_slots(roster_positions)
+    # Tally starting slots by type (mirrors _position_aware_lineup, including
+    # the empty-slots default so injury modeling stays aligned with Proj%).
+    fixed_slots, flex_slots, sflex_slots, _ = _tally_starting_slots_or_default(
+        roster_positions
+    )
 
     # Per-position fallback averages for players lacking a projection
     _pos_totals: dict[str, list] = {}

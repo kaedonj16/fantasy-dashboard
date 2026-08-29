@@ -7515,9 +7515,17 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
     proj_total = sum(rid_to_proj.values()) or 1.0
+    _proj_available = sum(rid_to_proj.values()) > 0
     for r in team_rows:
         r["value_pct"] = r["total"] / league_value_total * 100
-        r["prod_pct"] = rid_to_proj.get(r["rid"], 0.0) / proj_total * 100
+        # Prefer "—" over painting every team 0.0% when lineup/projection
+        # settings failed to load (the ESPN empty-slots failure mode).
+        if _proj_available:
+            r["prod_pct"] = rid_to_proj.get(r["rid"], 0.0) / proj_total * 100
+            r["prod_pct_label"] = f"{r['prod_pct']:.1f}%"
+        else:
+            r["prod_pct"] = 0.0
+            r["prod_pct_label"] = "—"
 
     # ── normalize to a PPG-like scale (100–160) matching Teams page formula ──
     raw_vals = [r["total"] for r in team_rows]
@@ -7668,6 +7676,9 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         rank_cls = f" rank-{i}" if i <= 3 else ""
         tr_cls = " class='is-top3'" if i <= 3 else ""
         bar_pct = max(4, min(100, round(row["total"] / _max_total * 100)))
+        prod_label = row.get("prod_pct_label")
+        if not prod_label:
+            prod_label = f"{row['prod_pct']:.1f}%"
         table_rows_html += (
             f"<tr{tr_cls}>"
             f"<td class='num'><span class='dyn-rank{rank_cls}'>{i}</span>{_rank_move_html(_valtbl_mv.get(str(row.get('rid'))))}</td>"
@@ -7677,7 +7688,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
             f"<td class='num'>{row['player_v']:.0f}</td>"
             f"{picks_td}"
             f"<td class='num dyn-pct'>{row['value_pct']:.1f}%</td>"
-            f"<td class='num dyn-pct'>{row['prod_pct']:.1f}%</td>"
+            f"<td class='num dyn-pct'>{prod_label}</td>"
             f"</tr>"
         )
 

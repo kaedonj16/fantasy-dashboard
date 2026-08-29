@@ -1039,7 +1039,7 @@ def iter_draft_picks(season: int, league_id: str) -> List[Any]:
 # ESPN slot name -> Sleeper roster position
 _ESPN_SLOT_TO_SLEEPER: Dict[str, str] = {
     "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
-    "FLEX": "FLEX", "RB/WR/TE": "FLEX", "RB/WR": "FLEX",
+    "FLEX": "FLEX", "RB/WR/TE": "FLEX", "RB/WR": "FLEX", "WR/TE": "FLEX",
     "OP": "SUPER_FLEX",
     "K": "K",
     "D/ST": "DEF", "DST": "DEF", "DEF": "DEF", "D-ST": "DEF",
@@ -1098,15 +1098,107 @@ def normalize_espn_scoring_items(scoring_items: List[dict]) -> Dict[str, float]:
     return normalized
 
 
-def _raw_espn_scoring_items(lg) -> List[dict]:
-    """Fetch mSettings scoringItems from the already credential-scoped league."""
+# ESPN lineupSlotId → display/name used before _ESPN_SLOT_TO_SLEEPER mapping.
+# Same ids as espn_draft._roster_positions_from_payload; kept here so league
+# globals (Standings Proj%, playoff odds) don't depend on the draft module.
+_ESPN_LINEUP_SLOT_IDS: Dict[int, str] = {
+    0: "QB", 2: "RB", 4: "WR", 6: "TE", 7: "OP",
+    16: "D/ST", 17: "K", 20: "BE", 21: "IR",
+    23: "RB/WR/TE", 3: "RB/WR", 5: "WR/TE",
+}
+
+
+def _map_espn_slot_name(slot: Any) -> Optional[str]:
+    """Map an ESPN slot label to the Sleeper-style name used by lineup math."""
+    if slot is None:
+        return None
+    raw = str(slot).upper().strip()
+    if not raw:
+        return None
+    return _ESPN_SLOT_TO_SLEEPER.get(raw, raw)
+
+
+def expand_espn_lineup_slot_counts(slot_counts: Any) -> List[str]:
+    """Expand ESPN ``lineupSlotCounts`` / name→count maps into a slot list.
+
+    Accepts either ESPN numeric lineupSlotIds (``{"0": 1, "2": 2, ...}``) or
+    already-labeled counts from ``settings.position_slot_counts`` (``{"QB": 1}``).
+    Bench/IR are included so consumers that care about roster depth see them;
+    starting-lineup helpers already skip BN/IR via ``_BENCH_SLOTS``.
+    """
+    if not isinstance(slot_counts, dict) or not slot_counts:
+        return []
+    out: List[str] = []
+    for key, count in slot_counts.items():
+        try:
+            n = int(count)
+        except (TypeError, ValueError):
+            continue
+        if n <= 0:
+            continue
+        name: Optional[str] = None
+        try:
+            slot_id = int(key)
+        except (TypeError, ValueError):
+            slot_id = None
+        if slot_id is not None and str(slot_id) == str(key).strip():
+            name = _ESPN_LINEUP_SLOT_IDS.get(slot_id)
+        if name is None:
+            name = str(key)
+        mapped = _map_espn_slot_name(name)
+        if not mapped:
+            continue
+        out.extend([mapped] * n)
+    return out
+
+
+def _espn_roster_positions_from_settings(settings: Any, msettings_payload: Optional[dict] = None) -> List[str]:
+    """Resolve ESPN roster slots for projections / standings / playoff odds.
+
+    ``espn_api.football.settings.Settings`` exposes ``position_slot_counts``, not
+    ``roster_slots``. Reading the missing attribute left ``roster_positions``
+    empty after draft, so Value Rankings Proj% and preseason playoff sims
+    treated every lineup as 0 projected points.
+    """
+    # 1) Authoritative: raw mSettings lineupSlotCounts (numeric ESPN slot ids).
+    if isinstance(msettings_payload, dict):
+        raw = (((msettings_payload.get("settings") or {}).get("rosterSettings") or {})
+               .get("lineupSlotCounts"))
+        expanded = expand_espn_lineup_slot_counts(raw)
+        if expanded:
+            return expanded
+
+    # 2) Do NOT trust espn_api's position_slot_counts. The library zips
+    # POSITION_MAP.values() (mixed int→name and name→int) against
+    # lineupSlotCounts.values(), which invents slots like TQB and drops FLEX.
+    # Prefer an explicit list shim (tests) or leave empty for the shared
+    # default-lineup guard in simulate_playoff_odds.
+
+    # 3) Legacy/test shim: a flat list on roster_slots.
+    raw_slots = getattr(settings, "roster_slots", None) or []
+    if isinstance(raw_slots, dict):
+        return expand_espn_lineup_slot_counts(raw_slots)
+    out: List[str] = []
+    for slot in raw_slots:
+        mapped = _map_espn_slot_name(slot)
+        if mapped:
+            out.append(mapped)
+    return out
+
+
+def _raw_espn_msettings(lg) -> dict:
+    """Fetch the mSettings view from the already credential-scoped league."""
     try:
         payload = lg.espn_request.league_get(params={"view": "mSettings"})
     except Exception as exc:
         logger.warning("[espn-scoring] mSettings unavailable: %s", type(exc).__name__)
-        return []
-    if not isinstance(payload, dict):
-        return []
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _raw_espn_scoring_items(lg) -> List[dict]:
+    """Fetch mSettings scoringItems from the already credential-scoped league."""
+    payload = _raw_espn_msettings(lg)
     items = (((payload.get("settings") or {}).get("scoringSettings") or {})
              .get("scoringItems") or [])
     return items if isinstance(items, list) else []
@@ -1147,7 +1239,12 @@ def get_league_globals(season: int, league_id: str) -> Dict[str, Any]:
         "fg_50p": 5.0,
         "xpt": 1.0,
     }
-    scoring_items = _raw_espn_scoring_items(lg)
+    # One mSettings fetch feeds scoring + lineup slots (avoids a second round-trip).
+    msettings_payload = _raw_espn_msettings(lg)
+    scoring_items = (((msettings_payload.get("settings") or {}).get("scoringSettings") or {})
+                     .get("scoringItems") or [])
+    if not isinstance(scoring_items, list):
+        scoring_items = []
     normalized_scoring = normalize_espn_scoring_items(scoring_items)
     scoring_settings.update(normalized_scoring)
     from utils.league_scoring import normalize_league_scoring
@@ -1177,20 +1274,28 @@ def get_league_globals(season: int, league_id: str) -> Dict[str, Any]:
                     league_id, season, scoring_settings["rec"],
                     scoring_settings.get("pass_td"), len(scoring_items))
 
-    # Roster positions
-    raw_slots = getattr(settings, "roster_slots", None) or []
-    roster_positions = [
-        _ESPN_SLOT_TO_SLEEPER.get(str(s).upper().strip(), str(s).upper())
-        for s in raw_slots
-    ]
+    roster_positions = _espn_roster_positions_from_settings(settings, msettings_payload)
+    if not roster_positions:
+        logger.warning("[espn-roster] empty roster_positions platform=espn "
+                       "league_id=%s season=%s", league_id, season)
+    else:
+        logger.info("[espn-roster] platform=espn league_id=%s season=%s "
+                    "slots=%s", league_id, season, len(roster_positions))
 
     # League settings
     total_rosters = len(getattr(lg, "teams", None) or [])
+    # Sleeper-compatible playoff_week_start: first playoff week = regular-
+    # season matchup periods + 1. Without this, sims default to week 14/15
+    # even when ESPN runs a 13- or 15-week regular season.
+    reg_season_count = _safe_int(getattr(settings, "reg_season_count", None))
+    playoff_week_start = (reg_season_count + 1) if reg_season_count and reg_season_count > 0 else None
     league_settings: Dict[str, Any] = {
         "playoff_teams": _safe_int(getattr(settings, "playoff_team_count", 4)),
         "num_teams": total_rosters,
         "type": 0,
     }
+    if playoff_week_start:
+        league_settings["playoff_week_start"] = playoff_week_start
 
     return {
         "scoring_settings": scoring_settings,
