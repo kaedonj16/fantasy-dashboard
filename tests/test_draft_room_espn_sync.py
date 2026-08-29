@@ -51,9 +51,16 @@ def test_live_picks_normalize_kicker_and_dst_positions():
 
 def test_offline_bar_clears_mobile_dock():
     css = (REPO / "static" / "dashboard.css").read_text(encoding="utf-8")
+    app_js = (REPO / "static" / "app.js").read_text(encoding="utf-8")
     assert ".offline-bar {" in css
     assert "z-index: var(--z-toast);" in css.split(".offline-bar {")[1].split("}")[0]
-    assert "bottom: calc(var(--dock-safe-bottom) + 14px);" in css
+    assert "bottom: calc(var(--dock-safe-bottom) + 20px);" in css
+    # Hidden while online: opacity/visibility (not translate-only peek) + [hidden].
+    assert "visibility: hidden;" in css.split(".offline-bar {")[1].split(".offline-bar.offline-bar-show")[0]
+    assert ".offline-bar[hidden]" in css
+    assert "navigator.onLine === false" in app_js
+    assert "bar.setAttribute('hidden', '');" in app_js
+    assert "bar.classList.add('offline-bar-show');" in app_js
 
 
 def test_auth_errors_do_not_retry_and_fallback_stops_polling():

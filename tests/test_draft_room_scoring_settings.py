@@ -617,6 +617,10 @@ def test_deep_dive_includes_descriptive_historical_trends():
     assert ".dd-hist-stats" in body
     assert ".dd-hist-callout.is-bar" in body
     assert ".dd-hist-vs.is-up" in body
+    assert "dd-tablescroll dd-hist-tablewrap" in source
+    assert ".dd-hist-tablewrap" in body
+    assert "overflow-x:auto" in body.split(".dd-hist-tablewrap")[1].split("}")[0]
+    assert "overflow:hidden" not in body.split(".dd-hist-tablewrap")[1].split("}")[0]
     assert "{ term: 'Hist'" in source
     from dashboard_services.changelog import CHANGELOG
     entry = next(
