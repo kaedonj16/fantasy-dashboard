@@ -15,12 +15,13 @@ def test_espn_sync_indicator_and_fallback_markup():
     assert 'id="drEspnTools"' in body
     assert "ESPN live sync unavailable" in ROOM_JS
     assert "Switch to Manual Tracking" in ROOM_JS
-    assert "BR Fantasy extension" in ROOM_JS
+    assert "Get Chrome extension" in ROOM_JS
     assert "ESPN Draft · LIVE" in ROOM_JS
     assert "ESPN Draft · Sync Unavailable" in ROOM_JS
     assert "ESPN Draft · Not Started" in ROOM_JS
     assert ".dr-pill-espn" in body
     assert '"viewerRosterId": "3"' in body
+    assert '"chromeExtensionZipUrl"' in body
 
 
 def test_sim_flag_still_declared():
@@ -47,6 +48,10 @@ def test_extension_relay_wired_and_skips_manual_fallback():
     assert "dr-msync-title" in PAGE
     assert "github.com/kaedonj16/fantasy-dashboard/tree/main/extension" not in ROOM_JS
     assert "Extension setup" not in ROOM_JS
+    assert "Get Chrome extension" in ROOM_JS
+    assert "function openEspnExtensionInstall()" in ROOM_JS
+    assert "chromeExtensionZipUrl" in PAGE
+    assert "Load unpacked" in ROOM_JS
 
 
 def test_live_detect_requests_espn_sync_flag():
