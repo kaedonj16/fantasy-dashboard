@@ -78,3 +78,13 @@ def test_undrafted_league_cards_show_draft_countdown():
     pending = fn.split("if lg.get(\"pending\")")[1].split("if lg.get(\"error\")")[0]
     assert "rank_chips" not in pending
     assert "pos_user_rank" not in pending
+
+
+def test_my_leagues_cards_do_not_overflow_on_mobile():
+    fn = _portfolio_fn()
+    assert "min-width:0" in fn
+    assert "max-width:100%" in fn
+    assert "grid-template-columns:minmax(0,1fr)" in fn
+    assert ".pf-lg-card .pf-arch" in fn
+    assert "flex-shrink:0" in fn
+    assert ".pf-lg-open" in fn
