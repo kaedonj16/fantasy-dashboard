@@ -681,7 +681,24 @@ _CHEAT_HTML = r"""
     .cs-tbl-scroll, .cs-pgrid-scroll { max-height: none; height: auto; }
     .cs-wrap thead th, .cs-wrap tbody td { padding-left: 6px; padding-right: 6px; }
     .cs-pcell { gap: 5px; min-width: 0; }
-    .cs-pname { overflow: hidden; text-overflow: ellipsis; max-width: 108px; }
+    /* Fill the sticky cell. Do not clip at an inner 108px while empty space
+       sits unused (or the column bloats from table width distribution). */
+    .cs-pname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; max-width: none; }
+    /* Keep the Proj Pick banner label in the visible viewport while the board
+       scrolls horizontally. A full-table-width centered label would slide under
+       the sticky Rk/Player columns and look like overlapping text. */
+    .cs-wrap tr.cs-proj td { background: var(--cs-accent-soft); }
+    .cs-projline {
+      position: sticky; left: 0; z-index: 1;
+      width: calc(100vw - 32px); max-width: 100%;
+      box-sizing: border-box; justify-content: flex-start;
+      padding-left: 12px; padding-right: 12px;
+    }
+    .cs-projline::before, .cs-projline::after { display: none; }
+    .cs-wrap tbody tr.cs-proj-row td.cs-rk,
+    .cs-wrap tbody tr.cs-proj-row td.cs-player {
+      background: color-mix(in srgb, var(--cs-accent) 14%, var(--cs-surface));
+    }
     /* Tabs scroll sideways rather than wrapping onto a second line. */
     .cs-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .cs-tabs::-webkit-scrollbar { display: none; }

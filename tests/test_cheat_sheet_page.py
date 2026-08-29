@@ -296,6 +296,17 @@ def test_cheat_sheet_projects_snake_picks_for_a_selected_slot():
     assert "q.push('slot='" in room
     assert "q.push('teams='" in room
     assert "pickSlot: 0" in sheet
+    # Divider + row highlight mark the pick on the Big Board. An inline
+    # "Proj …" ovchip in the sticky name cell overlapped the player on mobile
+    # when the board scrolled horizontally.
+    assert "cs-ovchip bump\" title=\"Projected pick" not in sheet
+    assert "cs-proj-row" in sheet
+    assert "Projected pick ' + pk.label" in sheet
+    mobile = body.split("@media (max-width: 640px)")[1].split("@media")[0]
+    assert ".cs-projline" in mobile
+    assert "position: sticky" in mobile
+    assert "left: 0" in mobile
+    assert "calc(100vw - 32px)" in mobile
 
 
 def test_cheat_sheet_proj_pick_uses_custom_select_dropdown():

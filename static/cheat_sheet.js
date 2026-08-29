@@ -1559,6 +1559,10 @@
             if (pk) html += projLineRow(pk, span, x.drafted);
             shown++;
             var cls = 'cs-p cs-c-' + x.pos + (state.done.has(x.id) ? ' done' : '') + (x.drafted ? ' drafted' : '') + (x.ov === 'mute' ? ' cs-muted' : '') + (x.ov ? ' cs-ov' : '') + (x.id === _flashId ? ' cs-flash' : '') + (pk ? ' cs-proj-row' : '');
+            // Proj pick is marked by the divider line above + cs-proj-row highlight.
+            // Do not also inject an inline "Proj …" chip into the sticky name cell —
+            // on mobile it crowds the name and paints over it when the board scrolls.
+            var projTitle = pk ? ' title="Projected pick ' + pk.label + ' (overall #' + pk.pn + ')"' : '';
             var c5 = dyn ? '<td class="cs-num">' + (x.age != null ? x.age : '') + '</td>' : '<td class="cs-num">' + fmtAdp(x.adp) + '</td>';
             var c6 = dyn ? '<td class="cs-value-col">' + winChip(x.age, x.pos) + '</td>' : '<td class="cs-value-col">' + valChip(x.value) + '</td>';
             var market = '';
@@ -1575,7 +1579,6 @@
             }
             var hist = histCell(x, dyn);
             var recChip = x.recRank != null ? '<span class="cs-ovchip bump">REC #' + x.recRank + '</span>' : '';
-            var projChip = pk ? '<span class="cs-ovchip bump" title="Projected pick ' + pk.label + ' (overall #' + pk.pn + ')">Proj ' + pk.label + '</span>' : '';
             var vorDisplay =
                 x.vorRaw != null &&
                 isFinite(Number(x.vorRaw))
@@ -1596,6 +1599,7 @@
                     : 0;
             html +=
                 '<tr class="' + cls + '"' +
+                projTitle +
                 ' data-good="' + x.good + '"' +
                 ' data-posfull="' + (x.posfull ? 1 : 0) + '"' +
                 ' data-name="' + esc(x.name) + '"' +
@@ -1609,7 +1613,6 @@
                 esc(x.name) +
                 '</span>' +
                 recChip +
-                projChip +
                 ovChip(x) +
                 '</span>' +
                 '</td>' +
