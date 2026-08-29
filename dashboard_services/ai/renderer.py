@@ -99,7 +99,8 @@ def get_team_gm_memo(ctx: dict, viewer_roster_id: str) -> str:
     if not team_ctx:
         return ""
 
-    # v4: redraft leagues use redraft values + redraft prompts (ESPN/Yahoo type 0).
+    # v4: redraft leagues (ESPN always; other platforms via settings.type) use
+    # redraft values + redraft prompts.
     cache_key = build_ai_cache_key("gm_memo", team_ctx, "v4")
     cached = load_cached_ai_text(cache_key)
     if cached:

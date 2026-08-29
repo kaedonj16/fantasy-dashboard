@@ -18,12 +18,14 @@ def _ctx_is_sf(ctx: dict) -> bool:
 
 
 def ctx_scoring_type(ctx: dict) -> str:
-    """``redraft`` for Sleeper type 0/1 and platforms that publish type 0
-    (ESPN/Yahoo/Fleaflicker redraft); otherwise ``dynasty``.
+    """``redraft`` for ESPN (always) and Sleeper type 0/1; otherwise ``dynasty``.
 
-    Mirrors app._league_is_redraft so Front Office, waivers, and the trade
-    calculator agree on format.
+    ESPN fantasy football is redraft-only, so platform alone is enough. Other
+    platforms that publish type 0/1 (Yahoo/Fleaflicker adapters, Sleeper
+    redraft/keeper) also classify as redraft. Mirrors app._league_is_redraft.
     """
+    if str(ctx.get("platform") or "").strip().lower() == "espn":
+        return "redraft"
     settings = (
         ctx.get("league_settings")
         or (ctx.get("league") or {}).get("settings")

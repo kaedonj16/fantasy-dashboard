@@ -1,7 +1,7 @@
 """Front Office Report / GM memo switches dynasty vs redraft by league type.
 
-ESPN/Yahoo adapters publish settings.type = 0 (redraft). The report used to
-hardcode dynasty prompts and dynasty values regardless.
+ESPN is always redraft (no dynasty product). Other platforms use settings.type.
+The report used to hardcode dynasty prompts and dynasty values regardless.
 """
 import pytest
 
@@ -21,10 +21,19 @@ from dashboard_services.ai.prompts import (  # noqa: E402
 )
 
 
-def test_ctx_scoring_type_espn_type_zero_is_redraft():
+def test_ctx_scoring_type_espn_is_always_redraft():
+    # Platform alone — ESPN has no dynasty leagues.
+    assert ctx_scoring_type({"platform": "espn"}) == "redraft"
+    assert ctx_scoring_type({"platform": "ESPN", "league_settings": {}}) == "redraft"
+    # Even a bogus type must not flip ESPN to dynasty.
+    assert ctx_scoring_type({"platform": "espn", "league_settings": {"type": 2}}) == "redraft"
+
+
+def test_ctx_scoring_type_uses_settings_type_for_other_platforms():
     assert ctx_scoring_type({"league_settings": {"type": 0}}) == "redraft"
     assert ctx_scoring_type({"league_settings": {"type": 1}}) == "redraft"
     assert ctx_scoring_type({"league_settings": {"type": 2}}) == "dynasty"
+    assert ctx_scoring_type({"platform": "sleeper", "league_settings": {"type": 2}}) == "dynasty"
     assert ctx_scoring_type({}) == "dynasty"
 
 
@@ -49,7 +58,8 @@ def test_build_model_value_lookup_uses_redraft_values():
 def test_build_team_gm_context_espn_uses_redraft_values_and_no_picks():
     ctx = {
         "league_id": "espn-1",
-        "league_settings": {"type": 0},
+        "platform": "espn",
+        "league_settings": {},  # type optional — ESPN is redraft by platform
         "current_season": 2026,
         "current_week": 1,
         "roster_positions": ["QB", "RB", "WR", "TE", "FLEX"],
