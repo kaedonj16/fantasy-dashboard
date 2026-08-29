@@ -17,6 +17,7 @@ def test_cheat_sheet_config_round_trips_league_context():
     body = build_cheat_sheet_body(
         "league-123", 2026, "sleeper", num_teams=10,
         is_superflex=True, roster_positions=["QB", "SUPER_FLEX", "RB"],
+        scoring={"ppr": 0.5, "tep": 1.0, "passTd": 6},
         mode="dynasty", viewer_user_id="viewer-7", has_premium=True,
     )
 
@@ -27,6 +28,7 @@ def test_cheat_sheet_config_round_trips_league_context():
         "numTeams": 10,
         "isSuperflex": True,
         "rosterPositions": ["QB", "SUPER_FLEX", "RB"],
+        "scoring": {"ppr": 0.5, "tep": 1.0, "passTd": 6},
         "mode": "dynasty",
         "viewerUserId": "viewer-7",
         "hasPremium": True,
@@ -84,7 +86,7 @@ def test_mobile_header_has_no_flex_basis_gap_and_controls_wrap():
 
     assert ".cs-top > :first-child { flex: 0 0 auto; min-width: 0; width: 100%; }" in body
     assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in body
-    assert ".cs-ctrl-row:last-child .cs-src, .cs-ctrl-row:last-child .csd-wrap { grid-column: 1 / -1;" in body
+    assert ".cs-ctrl-row.cs-actions-row .cs-src, .cs-ctrl-row.cs-actions-row .csd-wrap { grid-column: 1 / -1;" in body
 
 
 def test_mobile_big_board_pins_rank_and_player():
@@ -134,13 +136,52 @@ def test_cheat_sheet_adds_full_season_schedule_rank_context():
     assert "'Schedule Rank'" in script
 
 
+def test_cheat_sheet_offers_draft_room_scoring_settings():
+    """Cheat sheet exposes the same PPR / TE premium / pass-TD controls as
+    Draft Room setup, seeds them from league scoring, and applies them to
+    projections and TE roster targets."""
+    body = build_cheat_sheet_body(
+        "league-123", 2026, "sleeper",
+        scoring={"ppr": 0.5, "tep": 0.5, "passTd": 6},
+    )
+    script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+    room = (Path(__file__).parents[1] / "static" / "draft_room.js").read_text()
+
+    assert 'id="csPpr"' in body
+    assert 'id="csTep"' in body
+    assert 'id="csPassTd"' in body
+    assert '<option value="1" selected>Full PPR</option>' in body
+    assert '<option value="0.5">Half PPR</option>' in body
+    assert '<option value="0">Standard</option>' in body
+    assert '<option value="0" selected>None</option>' in body
+    assert '<option value="0.5">+0.5 PPR</option>' in body
+    assert '<option value="1">+1.0 PPR</option>' in body
+    assert '<option value="4" selected>4 points</option>' in body
+    assert '<option value="6">6 points</option>' in body
+    assert _embedded_config(body)["scoring"] == {"ppr": 0.5, "tep": 0.5, "passTd": 6}
+
+    assert "function scoringCfg()" in script
+    assert "function normalizeScoring(s)" in script
+    assert "proj_rec=" in script
+    assert "proj_te_bonus=" in script
+    assert "proj_pass_td=" in script
+    assert "projectedPpg: scoringProjPpg(p)" in script
+    assert "C.posTargets(C.rosterCounts(cfg.rosterPositions, sf), scoringCfg().tep)" in script
+    assert "state.scoring = readScoringFromUi()" in script
+    assert "Same settings as Draft Room setup" in body
+    assert "proj_rec='+encodeURIComponent(String(ppr))" in body
+    assert "function cheatScoringQuery()" in room
+    assert "scoring: scoringCfg()" in room
+    assert "q.push(cheatScoringQuery())" in room
+
+
 def test_cheat_sheet_adds_projected_ppg_to_board_and_export():
     body = build_cheat_sheet_body("league-123", 2026, "sleeper")
     script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
 
-    assert "Projected PPG is the player's upcoming-season fantasy points per game from Sleeper" in body
+    assert "adjusted for your PPR, TE premium, and passing-TD settings" in body
     assert "projectedPpg:" in script
-    assert "p.proj_ppg" in script
+    assert "scoringProjPpg(p)" in script
     assert "sortTh('projectedPpg', 'Proj PPG'" in script
     assert "'Proj PPG'" in script
     assert "x.projectedPpg.toFixed(1)" in script
@@ -197,12 +238,14 @@ def test_draft_room_overlay_stays_in_sync_with_picks():
     assert "function cheatDraftedIds()" in room
     assert "Object.keys(drafted).forEach" in room
     assert "type: 'drCheatContext'" in room
+    assert "scoring: scoringCfg()" in room
     assert "function pushCheatSheetContext()" in room
     assert "pushCheatSheetContext();" in room
     assert "type === 'drCheatReady'" in room
     assert "q.push('live=1')" not in room
     assert "function applyDraftRoomContext(payload)" in sheet
     assert "payload.type !== 'drCheatContext'" in sheet
+    assert "payload.scoring" in sheet
     assert "type: 'drCheatReady'" in sheet
     assert "e.origin !== window.location.origin" in sheet
 
