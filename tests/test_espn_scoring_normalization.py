@@ -100,14 +100,23 @@ def test_expand_espn_lineup_slot_counts_from_position_slot_counts():
     assert slots.count("BN") == 5
 
 
-def test_espn_roster_positions_fallback_to_position_slot_counts_without_msettings():
-    settings = SimpleNamespace(position_slot_counts={"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1})
+def test_espn_roster_positions_ignores_broken_position_slot_counts_without_msettings():
+    # Library-style counts that look populated but are not from mSettings should
+    # NOT be trusted when mSettings is missing — leave empty for the shared
+    # default-lineup guard rather than invent TQB/misaligned slots.
+    settings = SimpleNamespace(position_slot_counts={"QB": 1, "TQB": 0, "RB": 2})
+    slots = espn_api._espn_roster_positions_from_settings(settings, msettings_payload={})
+    assert slots == []
+
+
+def test_espn_roster_positions_list_shim_still_works():
+    settings = SimpleNamespace(roster_slots=["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"])
     slots = espn_api._espn_roster_positions_from_settings(settings, msettings_payload={})
     assert slots == ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"]
 
 
-def test_empty_espn_roster_positions_zero_out_projected_lineup():
-    """Regression: missing ESPN slots made Value Rankings Proj% all 0.0%."""
+def test_empty_espn_roster_positions_use_default_lineup_guard():
+    """Empty provider slots must not paint Proj% as 0.0% for every team."""
     from data_building.simulate_playoff_odds import _position_aware_lineup
 
     ppg = {
@@ -121,8 +130,10 @@ def test_empty_espn_roster_positions_zero_out_projected_lineup():
     pos_map = {k: v["pos"] for k, v in ppg.items()}
     pids = list(ppg)
 
-    empty_avg, _ = _position_aware_lineup(pids, ppg, pos_map, [])
-    assert empty_avg == 0.0
+    # Shared guard: empty slots fall back to a default starting lineup.
+    guarded_avg, guarded_starters = _position_aware_lineup(pids, ppg, pos_map, [])
+    assert guarded_avg > 0
+    assert len(guarded_starters) >= 6
 
     slots = espn_api.expand_espn_lineup_slot_counts({
         "0": 1, "2": 2, "4": 2, "6": 1, "23": 0,
@@ -130,6 +141,32 @@ def test_empty_espn_roster_positions_zero_out_projected_lineup():
     ok_avg, starters = _position_aware_lineup(pids, ppg, pos_map, slots)
     assert ok_avg > 0
     assert len(starters) == 6
+
+
+def test_get_league_globals_sets_playoff_week_start_from_reg_season_count(monkeypatch):
+    class Request:
+        def league_get(self, params):
+            return {
+                "settings": {
+                    "scoringSettings": {"scoringItems": _items(1)},
+                    "rosterSettings": {"lineupSlotCounts": {"0": 1, "2": 2, "4": 2, "6": 1}},
+                }
+            }
+
+    league = SimpleNamespace(
+        settings=SimpleNamespace(
+            scoring_type="standard",
+            position_slot_counts={},
+            playoff_team_count=6,
+            reg_season_count=14,
+        ),
+        teams=[object()] * 10,
+        espn_request=Request(),
+    )
+    monkeypatch.setattr(espn_api, "_league", lambda season, league_id: league)
+    out = espn_api.get_league_globals(2026, "123")
+    assert out["league_settings"]["playoff_week_start"] == 15
+    assert out["league_settings"]["playoff_teams"] == 6
 
 
 @pytest.mark.parametrize(("rec", "expected"), [(0, 16), (.5, 21), (1, 26), (.75, 23.5)])

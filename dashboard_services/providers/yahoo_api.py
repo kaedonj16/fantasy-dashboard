@@ -1260,57 +1260,38 @@ def get_league_globals(season: int, league_id: str, access_token: str) -> Dict[s
         raw  = _yahoo_get(access_token, f"league/{_league_key(league_id)}/settings")
         fc   = raw.get("fantasy_content", {})
         lg   = fc.get("league") or []
-        meta = lg[0] if lg else {}
-        settings = meta.get("settings") or {}
+        meta = lg[0] if isinstance(lg, list) and lg else {}
+        # Yahoo nests settings under league[1].settings[0] (same shape yahoo_fantasy_api
+        # and our teams/scoreboard extractors use). league[0].settings is usually absent.
+        settings = _yahoo_settings_dict(lg)
     except Exception as exc:
         logger.warning("[yahoo] get_league_globals failed: %s", exc)
         return {}
 
-    # PPR
-    scoring_type = (meta.get("scoring_type") or "head").lower()
-    ppr_map = {"head_one_win": 0.0, "head": 0.0, "headone": 0.0, "point": 1.0}
-    is_ppr  = any(k in scoring_type for k in ("ppr", "point"))
-    ppr     = 1.0 if is_ppr else 0.5 if "half" in scoring_type else 0.0
+    scoring_settings = _yahoo_scoring_settings(meta, settings)
 
-    scoring_settings: Dict[str, Any] = {
-        "rec":      ppr,
-        "pass_yd":  0.04,
-        "pass_td":  4.0,
-        "pass_int": -2.0,
-        "rush_yd":  0.1,
-        "rush_td":  6.0,
-        "rec_yd":   0.1,
-        "rec_td":   6.0,
-        "fum_lost": -2.0,
-        "2pt":      2.0,
-    }
-
-    # Roster positions
-    roster_positions_raw = settings.get("roster_positions") or {}
-    pos_count = roster_positions_raw.get("roster_position") or []
-    if isinstance(pos_count, dict):
-        pos_count = [pos_count]
-
-    _YAHOO_SLOT = {
-        "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
-        "W/R/T": "FLEX", "W/R": "FLEX", "RB/WR/TE": "FLEX",
-        "Q/W/R/T": "SUPER_FLEX", "OP": "SUPER_FLEX",
-        "K": "K", "DEF": "DEF", "D": "DEF",
-        "BN": "BN", "IR": "IR",
-    }
-    roster_positions: List[str] = []
-    for slot in pos_count:
-        abbr  = slot.get("position") or ""
-        count = _safe_int(slot.get("count")) or 0
-        norm  = _YAHOO_SLOT.get(abbr.upper(), abbr.upper())
-        roster_positions.extend([norm] * count)
+    roster_positions = _yahoo_roster_positions(settings)
+    if not roster_positions:
+        logger.warning("[yahoo-roster] empty roster_positions platform=yahoo "
+                       "league_id=%s season=%s", league_id, season)
 
     num_teams = _safe_int(meta.get("num_teams")) or 0
+    playoff_teams = (
+        _safe_int(settings.get("num_playoff_teams"))
+        or _safe_int(meta.get("num_playoff_teams"))
+        or 4
+    )
+    playoff_week_start = (
+        _safe_int(settings.get("playoff_start_week"))
+        or _safe_int(meta.get("playoff_start_week"))
+    )
     league_settings: Dict[str, Any] = {
-        "playoff_teams": _safe_int(settings.get("num_playoff_teams")) or 4,
+        "playoff_teams": playoff_teams,
         "num_teams":     num_teams,
         "type":          0,
     }
+    if playoff_week_start:
+        league_settings["playoff_week_start"] = playoff_week_start
 
     return {
         "scoring_settings": scoring_settings,
@@ -1318,3 +1299,162 @@ def get_league_globals(season: int, league_id: str, access_token: str) -> Dict[s
         "league_settings":  league_settings,
         "total_rosters":    num_teams,
     }
+
+
+def _yahoo_settings_dict(league_list: Any) -> Dict[str, Any]:
+    """Unwrap Yahoo ``fantasy_content.league[1].settings`` into a plain dict."""
+    if not isinstance(league_list, list) or len(league_list) < 2:
+        # Rare: some payloads put a settings blob on league[0].
+        meta0 = league_list[0] if isinstance(league_list, list) and league_list else {}
+        maybe = meta0.get("settings") if isinstance(meta0, dict) else None
+        return _unwrap_yahoo_list_or_dict(maybe)
+
+    block = league_list[1] if isinstance(league_list[1], dict) else {}
+    return _unwrap_yahoo_list_or_dict(block.get("settings"))
+
+
+def _unwrap_yahoo_list_or_dict(node: Any) -> Dict[str, Any]:
+    """Yahoo often wraps a single object as ``[obj]`` or ``{"0": obj, "count": 1}``."""
+    if isinstance(node, list):
+        first = node[0] if node else {}
+        return first if isinstance(first, dict) else {}
+    if isinstance(node, dict):
+        if any(k in node for k in ("roster_positions", "stat_modifiers", "num_playoff_teams")):
+            return node
+        zero = node.get("0")
+        if isinstance(zero, dict):
+            return zero
+        return node
+    return {}
+
+
+# Yahoo NFL points-league stat_id → Sleeper-style scoring keys.
+_YAHOO_STAT_KEYS: Dict[int, str] = {
+    4: "pass_yd", 5: "pass_td", 6: "pass_int",
+    9: "rush_yd", 10: "rush_td",
+    11: "rec", 12: "rec_yd", 13: "rec_td",
+    18: "fum_lost",
+    57: "pass_2pt", 58: "rush_2pt", 59: "rec_2pt",
+}
+
+
+def _yahoo_scoring_settings(meta: Dict[str, Any], settings: Dict[str, Any]) -> Dict[str, Any]:
+    """Build scoring from Yahoo ``stat_modifiers``, not competition ``scoring_type``.
+
+    ``scoring_type`` is head/point/roto (matchup format). Reception PPR lives in
+    ``stat_modifiers.stats``. Falling back to format labels previously forced H2H
+    PPR leagues to ``rec=0`` and points leagues to full PPR.
+    """
+    scoring: Dict[str, Any] = {
+        "rec": 0.0,
+        "pass_yd": 0.04,
+        "pass_td": 4.0,
+        "pass_int": -2.0,
+        "rush_yd": 0.1,
+        "rush_td": 6.0,
+        "rec_yd": 0.1,
+        "rec_td": 6.0,
+        "fum_lost": -2.0,
+        "2pt": 2.0,
+    }
+    modifiers = settings.get("stat_modifiers") or {}
+    stats_node = modifiers.get("stats") if isinstance(modifiers, dict) else None
+    rows = _yahoo_collection_rows(stats_node, "stat")
+    found_rec = False
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        # Rows are either {"stat": {...}} wrappers or flat stat dicts.
+        stat = row.get("stat") if isinstance(row.get("stat"), dict) else row
+        try:
+            stat_id = int(stat.get("stat_id"))
+        except (TypeError, ValueError):
+            continue
+        key = _YAHOO_STAT_KEYS.get(stat_id)
+        if not key:
+            continue
+        try:
+            value = float(stat.get("value"))
+        except (TypeError, ValueError):
+            continue
+        scoring[key] = value
+        if key == "rec":
+            found_rec = True
+    if not found_rec:
+        # Last-resort heuristic only when modifiers are missing entirely.
+        scoring_type = str(meta.get("scoring_type") or settings.get("scoring_type") or "").lower()
+        if "half" in scoring_type:
+            scoring["rec"] = 0.5
+        elif "ppr" in scoring_type:
+            scoring["rec"] = 1.0
+        logger.warning("[yahoo-scoring] reception modifier missing; "
+                       "rec=%s scoring_type=%s", scoring["rec"], scoring_type or "unknown")
+    return scoring
+
+
+def _yahoo_collection_rows(node: Any, item_key: str) -> List[Any]:
+    """Normalize Yahoo collection shapes into a list of row dicts."""
+    if node is None:
+        return []
+    if isinstance(node, list):
+        return node
+    if not isinstance(node, dict):
+        return []
+    if item_key in node:
+        inner = node.get(item_key)
+        if isinstance(inner, list):
+            return inner
+        if isinstance(inner, dict):
+            return [inner]
+    rows: List[Any] = []
+    count = _safe_int(node.get("count")) or 0
+    if count:
+        for i in range(count):
+            entry = node.get(str(i))
+            if entry is not None:
+                rows.append(entry)
+        if rows:
+            return rows
+    # Fall back to numeric-string keys.
+    for key, value in node.items():
+        if str(key).isdigit() and value is not None:
+            rows.append(value)
+    return rows
+
+
+_YAHOO_SLOT = {
+    "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
+    "W/R/T": "FLEX", "W/R": "FLEX", "RB/WR/TE": "FLEX",
+    "Q/W/R/T": "SUPER_FLEX", "OP": "SUPER_FLEX",
+    "K": "K", "DEF": "DEF", "D": "DEF",
+    "BN": "BN", "IR": "IR",
+}
+
+
+def _yahoo_roster_positions(settings: Dict[str, Any]) -> List[str]:
+    """Expand Yahoo roster_positions into a Sleeper-style slot list."""
+    roster_positions_raw = settings.get("roster_positions") or {}
+    pos_count = _yahoo_collection_rows(roster_positions_raw, "roster_position")
+    if isinstance(roster_positions_raw, list):
+        pos_count = roster_positions_raw
+    elif isinstance(roster_positions_raw, dict) and "roster_position" in roster_positions_raw:
+        inner = roster_positions_raw.get("roster_position")
+        if isinstance(inner, dict):
+            pos_count = [inner]
+        elif isinstance(inner, list):
+            pos_count = inner
+
+    roster_positions: List[str] = []
+    for slot in pos_count:
+        if not isinstance(slot, dict):
+            continue
+        # Sometimes wrapped as {"roster_position": {...}}
+        if "roster_position" in slot and isinstance(slot["roster_position"], dict):
+            slot = slot["roster_position"]
+        abbr = slot.get("position") or ""
+        count = _safe_int(slot.get("count")) or 0
+        if count <= 0 or not abbr:
+            continue
+        norm = _YAHOO_SLOT.get(str(abbr).upper(), str(abbr).upper())
+        roster_positions.extend([norm] * count)
+    return roster_positions

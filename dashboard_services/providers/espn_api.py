@@ -1168,11 +1168,11 @@ def _espn_roster_positions_from_settings(settings: Any, msettings_payload: Optio
         if expanded:
             return expanded
 
-    # 2) espn_api League.settings.position_slot_counts (name → count).
-    counts = getattr(settings, "position_slot_counts", None)
-    expanded = expand_espn_lineup_slot_counts(counts)
-    if expanded:
-        return expanded
+    # 2) Do NOT trust espn_api's position_slot_counts. The library zips
+    # POSITION_MAP.values() (mixed int→name and name→int) against
+    # lineupSlotCounts.values(), which invents slots like TQB and drops FLEX.
+    # Prefer an explicit list shim (tests) or leave empty for the shared
+    # default-lineup guard in simulate_playoff_odds.
 
     # 3) Legacy/test shim: a flat list on roster_slots.
     raw_slots = getattr(settings, "roster_slots", None) or []
@@ -1284,11 +1284,18 @@ def get_league_globals(season: int, league_id: str) -> Dict[str, Any]:
 
     # League settings
     total_rosters = len(getattr(lg, "teams", None) or [])
+    # Sleeper-compatible playoff_week_start: first playoff week = regular-
+    # season matchup periods + 1. Without this, sims default to week 14/15
+    # even when ESPN runs a 13- or 15-week regular season.
+    reg_season_count = _safe_int(getattr(settings, "reg_season_count", None))
+    playoff_week_start = (reg_season_count + 1) if reg_season_count and reg_season_count > 0 else None
     league_settings: Dict[str, Any] = {
         "playoff_teams": _safe_int(getattr(settings, "playoff_team_count", 4)),
         "num_teams": total_rosters,
         "type": 0,
     }
+    if playoff_week_start:
+        league_settings["playoff_week_start"] = playoff_week_start
 
     return {
         "scoring_settings": scoring_settings,
