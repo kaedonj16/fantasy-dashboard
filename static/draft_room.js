@@ -5502,7 +5502,7 @@
     el.style.display = '';
     el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-unlink"></i></span>'
       + '<div class="dr-banner-txt"><b>ESPN live sync unavailable</b>'
-      + '<span>ESPN\'s API often doesn\'t update mid-draft. Install the BR Fantasy extension (desktop) or use Mobile Sync below — or switch to manual tracking.</span></div>'
+      + '<span>ESPN\'s API often doesn\'t update mid-draft. Use <b>Mobile Sync</b> below to pull picks from the ESPN draft in Safari/Chrome, or switch to manual tracking.</span></div>'
       + '<button type="button" class="dr-banner-join" id="drEspnManual">Switch to Manual Tracking</button>';
     updateEspnSyncPill('unavailable');
     showEspnTools();
@@ -5523,9 +5523,8 @@
     var espnUrl = espnDraftUrl() || 'https://fantasy.espn.com/football/draft';
     el.innerHTML = '<span class="dr-banner-ic"><i class="fa-solid fa-mobile-screen-button"></i></span>'
       + '<div class="dr-banner-txt"><b>ESPN live helpers</b>'
-      + '<span>Desktop: install the extension and keep the ESPN draft tab open. Mobile: enable Mobile Sync, open ESPN draft, then run the bookmark / Shortcut after picks.</span></div>'
+      + '<span>If live picks aren\'t updating, use <b>Mobile Sync</b> (works in Safari/Chrome — not the ESPN app) or keep drafting on ESPN and sync from there.</span></div>'
       + '<div class="dr-banner-actions">'
-      + '<a class="dr-banner-join is-ghost" href="https://github.com/kaedonj16/fantasy-dashboard/tree/main/extension" target="_blank" rel="noopener">Extension setup</a>'
       + '<a class="dr-banner-join is-ghost" href="' + espnUrl + '" target="_blank" rel="noopener">Open ESPN draft</a>'
       + '<button type="button" class="dr-banner-join" id="drEspnMobileSync">Mobile Sync</button>'
       + '</div>';
