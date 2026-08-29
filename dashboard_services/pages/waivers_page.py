@@ -194,6 +194,17 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .wv-ss-name-block { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; cursor: pointer; }
 .wv-ss-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+@media (max-width: 700px) {
+  /* Name/badge and the action buttons cannot share one narrow row — START/FLEX
+     pills overlapped "Open player" and long names wrapped into the buttons. */
+  .wv-ss-top { flex-direction: column; align-items: stretch; gap: 8px; }
+  .wv-ss-name-block { flex-wrap: wrap; row-gap: 4px; }
+  .wv-ss-actions { flex-wrap: wrap; flex-shrink: 1; width: 100%; }
+  .wv-ss-player .wv-player-name {
+    min-width: 0; max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+}
 
 /* Stats row under the name */
 .wv-ss-stats { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; align-items: stretch; }
@@ -572,8 +583,12 @@ function wvStatsRow(p) {{
 function wvLoad() {{
   const _wvRid = window._viewerRid ? ('&rid=' + encodeURIComponent(window._viewerRid)) : '';
   fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}${{_wvRid}}`)
-    .then(r => r.json())
-    .then(d => {{
+    .then(r => r.json().then(d => ({{ ok: r.ok, d }})))
+    .then(({{ ok, d }}) => {{
+      if (!ok || d.error) {{
+        window.brErrorState('wvWaiverList', (d && d.error) || 'Unable to load waiver data.', wvLoad);
+        return;
+      }}
       wvWaiverData = d.candidates || [];
       window.wvFaabEnabled = d.faab_enabled === true;
       const toggle = document.getElementById('wvFaabToggle');

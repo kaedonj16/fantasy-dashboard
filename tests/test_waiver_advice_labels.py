@@ -41,3 +41,19 @@ def test_mobile_stacks_metrics_below_player():
     assert ".wv-player-row { flex-direction: column; align-items: stretch;" in body
     # The metric strip spans the row and separates from the player above it.
     assert "border-top: 1px solid var(--border);" in body
+
+
+def test_mobile_stacks_start_sit_actions_below_name():
+    """START/FLEX badges and Open player must not share one cramped mobile row."""
+    body = build_waivers_body("espn", 2026, "league", {})
+    assert ".wv-ss-top { flex-direction: column; align-items: stretch;" in body
+    assert ".wv-ss-actions { flex-wrap: wrap; flex-shrink: 1; width: 100%; }" in body
+    assert ".wv-ss-player .wv-player-name" in body
+
+
+def test_waiver_fetch_surfaces_api_errors():
+    """A 500/error payload must not render as an empty 'No waiver targets' list."""
+    body = build_waivers_body("espn", 2026, "league", {})
+    assert "r.json().then(d => ({ ok: r.ok, d }))" in body
+    assert "if (!ok || d.error)" in body
+    assert "Unable to load waiver data." in body
