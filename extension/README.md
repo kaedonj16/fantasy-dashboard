@@ -34,7 +34,8 @@ draft board loads in Safari/Chrome, then:
 1. Draft Room → **Mobile Sync** → **Copy iOS Shortcut JS**.
 2. Shortcuts → new shortcut → **Show in Share Sheet** → receive **Safari web pages**.
 3. Add **Run JavaScript on Web Page** → tap **Web Page** → **Shortcut Input**.
-4. Paste the Shortcut JS.
+4. Paste **Copy iOS Shortcut JS** (not the bookmarklet — Shortcuts requires
+   `completion(…)` and must not start with `javascript:`).
 5. On the ESPN draft tab → Share → run the shortcut after picks.
 
 The ESPN Fantasy **app** cannot run bookmarks — use manual tracking there, or
