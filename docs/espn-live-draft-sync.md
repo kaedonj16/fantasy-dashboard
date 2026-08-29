@@ -10,13 +10,16 @@ Pick Scores / recommendations. **Picks are never submitted to ESPN.**
 |------|------------------|---------|
 | **REST poll** | Server polls ESPN `mDraftDetail` | All (often stale mid-draft) |
 | **Extension relay** | Extension reads open ESPN draft room → Draft Room + server store | Desktop Chrome/Edge/Firefox |
-| **Mobile bookmarklet / Shortcut** | Token-authenticated POST from ESPN page → server store → Draft Room poll | iOS / Android |
+| **Mobile bookmarklet / Shortcut** | Token-authenticated POST from ESPN page → server store → Draft Room poll | Phone browsers with **Request Desktop Website** |
 
 Use them together. Connect Live Draft, then:
 
-- **Desktop:** install `extension/`, keep the ESPN draft tab open.
-- **Mobile:** tap **Mobile Sync** in Draft Room, install the bookmarklet /
-  Shortcut, run it on the ESPN draft page when picks move.
+- **Desktop:** install the Chrome extension (Draft Room → **Get Chrome
+  extension**, or load unpacked `extension/`), keep the ESPN draft tab open.
+- **Mobile:** ESPN's default mobile page shows “download the ESPN Fantasy App.”
+  Use **Request Desktop Website** (Safari) / **Desktop site** (Chrome) so the
+  live draft board loads, then **Mobile Sync** (bookmarklet / Shortcut). The
+  native ESPN app cannot run bookmarks — use manual tracking there instead.
 
 Backend: `dashboard_services/draft_sync.py`, `espn_draft.py`,
 `espn_draft_relay.py` (tokens + snapshot store). APIs:
@@ -32,9 +35,10 @@ Backend: `dashboard_services/draft_sync.py`, `espn_draft.py`,
 
 ### Mobile bookmarklet
 
-1. Connect Live Draft (phone or desktop) → **Mobile Sync** → copy bookmarklet.
-2. On phone, open ESPN draft → run bookmark → return to Draft Room; picks appear
-   within one poll cycle (~5–10s).
+1. Connect Live Draft → **Mobile Sync** → copy bookmarklet / Shortcut JS.
+2. Open ESPN draft → **Request Desktop Website** (confirm the draft board loads).
+3. Run the bookmark/Shortcut → return to Draft Room; picks appear within one
+   poll cycle (~5–10s).
 
 ## Diagnostics
 
@@ -46,3 +50,7 @@ optional Redis (`REDIS_URL`), TTL ~12h.
 
 `mDraftDetail` often does not grow mid-draft. Treat frozen REST as unavailable
 unless extension / bookmarklet relay is feeding picks.
+
+ESPN mobile web defaults to an app-download interstitial; Request Desktop
+Website restores the draft UI. There is no supported way to inject JS into the
+ESPN Fantasy native app.

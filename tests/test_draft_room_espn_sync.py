@@ -40,11 +40,12 @@ def test_extension_relay_wired_and_skips_manual_fallback():
     assert "drEspnMobileSync" in ROOM_JS
     assert "/api/draft/espn-relay/token" in ROOM_JS
     assert "Mobile ESPN sync" in ROOM_JS
-    assert "Does not work in the ESPN app." in ROOM_JS
+    assert "Required on phones:" in ROOM_JS
+    assert "Request Desktop Website" in ROOM_JS
     assert "Copy bookmarklet" in ROOM_JS
     assert "Copy iOS Shortcut JS" in ROOM_JS
-    assert "Android (Chrome)" in ROOM_JS
-    assert "iPhone (Safari)" in ROOM_JS
+    assert "Android (Chrome) bookmark" in ROOM_JS
+    assert "iPhone Shortcut" in ROOM_JS
     assert "dr-msync-title" in PAGE
     assert "github.com/kaedonj16/fantasy-dashboard/tree/main/extension" not in ROOM_JS
     assert "Extension setup" not in ROOM_JS
@@ -56,6 +57,8 @@ def test_extension_relay_wired_and_skips_manual_fallback():
     assert "drEspnToolsDismiss" in ROOM_JS
     assert "Sync ESPN picks automatically" in ROOM_JS
     assert "Sync picks from your phone" in ROOM_JS
+    assert "drEspnManualFromTools" in ROOM_JS
+    assert "_espnToolsEl" in ROOM_JS
 
 
 def test_live_detect_requests_espn_sync_flag():
