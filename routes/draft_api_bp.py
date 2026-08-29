@@ -405,7 +405,11 @@ def api_draft_espn_relay_token():
         ),
         "instructions": {
             "android": "Open ESPN draft → browser menu → Bookmarks → Add → edit URL to the bookmarklet.",
-            "ios": "Add a Safari Shortcut that runs the shortcut_js on fantasy.espn.com, or edit a bookmark URL to the bookmarklet.",
+            "ios": (
+                "Shortcuts: Show in Share Sheet → receive Safari web pages → "
+                "Run JavaScript on Web Page → set input to Shortcut Input → "
+                "paste shortcut_js. From ESPN draft (desktop site), Share → run the shortcut."
+            ),
             "desktop": "Drag the bookmarklet to your bookmarks bar, open the ESPN draft, click it after each pick (or when picks look behind).",
         },
     })

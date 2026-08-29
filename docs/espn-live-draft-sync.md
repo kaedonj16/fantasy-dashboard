@@ -37,8 +37,10 @@ Backend: `dashboard_services/draft_sync.py`, `espn_draft.py`,
 
 1. Connect Live Draft → **Mobile Sync** → copy bookmarklet / Shortcut JS.
 2. Open ESPN draft → **Request Desktop Website** (confirm the draft board loads).
-3. Run the bookmark/Shortcut → return to Draft Room; picks appear within one
-   poll cycle (~5–10s).
+3. **Android:** bookmark URL = bookmarklet. **iPhone:** Shortcuts Share Sheet
+   receives Safari web pages → Run JavaScript on Web Page → **Shortcut Input**
+   → paste Shortcut JS → Share from the ESPN tab to run it.
+4. Return to Draft Room; picks appear within one poll cycle (~5–10s).
 
 ## Diagnostics
 

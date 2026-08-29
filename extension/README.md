@@ -25,13 +25,17 @@ Extensions don't run on iOS/Android browsers. ESPN's default mobile page pushes
 the Fantasy app; use **Request Desktop Website** / **Desktop site** so the live
 draft board loads in Safari/Chrome, then:
 
-1. In Draft Room tap **Mobile Sync**.
-2. Copy the bookmarklet.
-3. On the desktop-mode ESPN draft page, add/edit a bookmark whose URL is the
-   bookmarklet (or an iOS Shortcut that runs the provided JavaScript on
-   `fantasy.espn.com`).
-4. After picks (or every few picks), run the bookmark/Shortcut. Draft Room
-   picks them up on the next poll via the server relay store.
+### Android
+1. Draft Room → **Mobile Sync** → copy bookmarklet.
+2. Bookmark the desktop-mode ESPN draft → edit URL to the bookmarklet.
+3. Run the bookmark after picks.
+
+### iPhone (Shortcuts — no “website” picker)
+1. Draft Room → **Mobile Sync** → **Copy iOS Shortcut JS**.
+2. Shortcuts → new shortcut → **Show in Share Sheet** → receive **Safari web pages**.
+3. Add **Run JavaScript on Web Page** → tap **Web Page** → **Shortcut Input**.
+4. Paste the Shortcut JS.
+5. On the ESPN draft tab → Share → run the shortcut after picks.
 
 The ESPN Fantasy **app** cannot run bookmarks — use manual tracking there, or
 draft with a laptop and the Chrome extension.
