@@ -422,6 +422,60 @@ def test_distribute_can_return_future_capital():
     ), "distribute should be able to return picks as future capital"
 
 
+def _suggestion_assets(s):
+    return list(s.get("suggested_send") or []) + list(s.get("suggested_receive") or [])
+
+
+def _assert_no_pick_assets(suggestions):
+    for s in suggestions:
+        for a in _suggestion_assets(s):
+            assert not a.get("is_pick"), a
+            assert a.get("position") != "PICK", a
+
+
+def test_redraft_suggestions_never_include_draft_picks():
+    """Sleeper still synthesizes future-pick rows for type-0 leagues. Those
+    must not appear on either side of a redraft suggestion."""
+    import time as _t
+    ctx = _distribute_ctx()
+    ctx["platform"] = "sleeper"
+    ctx["league_settings"] = {"type": 0}
+    # Viewer pick too, so send-side packages would have used it without the guard.
+    ctx["picks_by_roster"]["1"] = [
+        {"season": "2026", "round": 1, "original_roster_id": 1},
+    ]
+    cache_key = "sleeper:redraft-dist:2026"
+    ae._SIM_CACHE[cache_key] = {"sim_state": None, "base_odds": {}, "ts": _t.time()}
+    try:
+        for archetype in ("distribute", "rebuilding", "consolidate", "contending"):
+            out = ae.get_archetype_suggestions(
+                archetype=archetype, platform="sleeper", league_id="redraft-dist",
+                season=2026, viewer_roster_id="1", league_type="1qb", league_size=10,
+                ctx=ctx,
+            )
+            _assert_no_pick_assets(out.get("suggestions") or [])
+    finally:
+        ae._SIM_CACHE.pop(cache_key, None)
+
+
+def test_espn_suggestions_never_include_draft_picks():
+    """ESPN is redraft-only even when leftover pick rows are sitting on ctx."""
+    import time as _t
+    ctx = _distribute_ctx()
+    ctx["platform"] = "espn"
+    cache_key = "espn:redraft-dist:2026"
+    ae._SIM_CACHE[cache_key] = {"sim_state": None, "base_odds": {}, "ts": _t.time()}
+    try:
+        out = ae.get_archetype_suggestions(
+            archetype="distribute", platform="espn", league_id="redraft-dist",
+            season=2026, viewer_roster_id="1", league_type="1qb", league_size=10,
+            ctx=ctx,
+        )
+        _assert_no_pick_assets(out.get("suggestions") or [])
+    finally:
+        ae._SIM_CACHE.pop(cache_key, None)
+
+
 def test_analytical_impact_is_bounded_without_sim_state(monkeypatch):
     """The Impact table's per-target win % / playoff-odds come from the analytical
     model when a league has no sim state. That model used to mix the target's raw

@@ -32,6 +32,27 @@ def test_team_modal_js_hides_picks_for_redraft():
     assert "Roster Value vs Age" in src
 
 
+def test_trade_suggestions_ai_prompt_forbids_redraft_picks():
+    src = Path("dashboard_services/ai/prompts.py").read_text(encoding="utf-8")
+    start = src.find("def generate_trade_suggestions_result")
+    end = src.find("def generate_team_ai_result")
+    assert start > 0 and end > start
+    body = src[start:end].lower()
+    assert "never suggest a draft pick" in body
+    assert "draft picks cannot be traded" in body
+    assert "this redraft team" in body
+    assert 'scoring_type == "redraft"' in src[start:end]
+
+
+def test_league_context_skips_synthesized_picks_for_redraft():
+    src = Path("app.py").read_text(encoding="utf-8")
+    start = src.find("# Future draft capital is a dynasty asset.")
+    assert start > 0
+    chunk = src[start:start + 1200]
+    assert "not _league_is_redraft" in chunk
+    assert "build_picks_by_roster(" in chunk
+
+
 def test_teams_page_uses_team_avatar_and_redraft_values():
     src = Path("dashboard_services/pages/teams_page.py").read_text(encoding="utf-8")
     assert "team_avatar(platform, r, users)" in src

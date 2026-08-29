@@ -172,6 +172,42 @@ def _run_dir(monkeypatch, direction):
     return cb.build_trade_suggestions_context(_build_age_ctx(), "1")
 
 
+def test_redraft_omits_pick_trade_partners(monkeypatch):
+    """Leftover Sleeper pick rows must not become pick-for-player ideas."""
+    ctx = _build_ctx()
+    ctx["league_settings"] = {"type": 0}
+    ctx["picks_by_roster"] = {
+        "1": [{"season": 2026, "round": 1, "original_owner": "1"}],
+    }
+    monkeypatch.setattr(
+        cb, "build_team_gm_context",
+        lambda _ctx, _rid: {"team_name": "Viewer", "direction": "balanced"},
+    )
+    res = cb.build_trade_suggestions_context(ctx, "1")
+    assert res is not None
+    assert res["scoring_type"] == "redraft"
+    assert res["picks_tradable"] is False
+    assert res["pick_trade_partners"] == []
+    assert res["projected_picks"] == []
+
+
+def test_dynasty_can_include_pick_trade_partners(monkeypatch):
+    ctx = _build_ctx()
+    ctx["league_settings"] = {"type": 2}
+    ctx["picks_by_roster"] = {
+        "1": [{"season": 2026, "round": 1, "original_owner": "1"}],
+    }
+    monkeypatch.setattr(
+        cb, "build_team_gm_context",
+        lambda _ctx, _rid: {"team_name": "Viewer", "direction": "balanced"},
+    )
+    res = cb.build_trade_suggestions_context(ctx, "1")
+    assert res is not None
+    assert res["scoring_type"] == "dynasty"
+    assert res["picks_tradable"] is True
+    assert res["pick_trade_partners"], "dynasty should still offer pick-for-player ideas"
+
+
 def test_rebuilder_prefers_younger_acquisition(monkeypatch):
     res = _run_dir(monkeypatch, "rebuilding")
     young, old = _score_for(res, "Team 2"), _score_for(res, "Team 3")

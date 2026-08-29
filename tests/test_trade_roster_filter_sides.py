@@ -27,6 +27,46 @@ def test_initial_team_selection_also_syncs_async_roster_filter():
     team_loader = team_loader[: team_loader.index("function updateAnalyzeButtonState()")]
 
     assert "syncRosterFilterViewer(selector.value)" in team_loader
+    assert "getTradePlatform()" in team_loader
+    assert "getTradeSeason()" in team_loader
+    assert "&platform=sleeper" not in team_loader
+
+
+def test_roster_filter_fetch_uses_league_platform_and_season():
+    source = APP_JS.read_text(encoding="utf-8")
+    loader = source[source.index("async function initRosterFilter()") :]
+    loader = loader[: loader.index("\n  function setupSearch(")]
+
+    assert "getTradePlatform()" in loader
+    assert "getTradeSeason()" in loader
+    assert "/api/league-rosters?" in loader
+    assert "&platform=sleeper" not in loader
+    # Rosters can finish after #teamSelect is already chosen.
+    assert "syncRosterFilterViewer(teamSel?.value" in loader
+
+
+def test_search_dropdown_ranks_by_scoring_type_value():
+    source = APP_JS.read_text(encoding="utf-8")
+    search = source[source.index("function setupSearch(side)") :]
+    search = search[: search.index("\n  function bindPickButtons(")]
+    assert "const valueOf = getPlayerValue;" in search
+    assert "p.sf_value || p.value" not in search
+
+
+def test_scoring_type_falls_back_to_league_redraft():
+    source = APP_JS.read_text(encoding="utf-8")
+    getter = source[source.index("function getScoringType()") :]
+    getter = getter[: getter.index("\n  function getTePremium(")]
+    assert "getLeagueScoringType()" in getter
+
+    bind = source[source.index("function bindScoringTypeControls()") :]
+    bind = bind[: bind.index("\n  function bindTradeSettingsDropdown(")]
+    assert "getLeagueScoringType()" in bind
+    assert 'sel.value = leagueSt' in bind
+
+    meta = source[source.index("function buildMetaBits(p)") :]
+    meta = meta[: meta.index("\n  function getSidePlayers(")]
+    assert 'getScoringType() === "redraft"' in meta
 
 
 def test_roster_filter_forces_team_one_as_viewer_side():

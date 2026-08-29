@@ -5037,7 +5037,14 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         standings_map = {}
 
     picks_by_roster = {}
-    if platform == "sleeper":
+    # Future draft capital is a dynasty asset. Sleeper still exposes a pick
+    # grid for redraft/keeper leagues; synthesizing those rows makes trade
+    # suggestions offer picks that cannot actually be traded.
+    if platform == "sleeper" and not _league_is_redraft({
+        "platform": platform,
+        "league_settings": league_settings,
+        "league": league,
+    }):
         # Compute draft-ended locally to avoid circular cache dependency
         _draft_ts_ms = None
         if isinstance(latest_draft, dict):
@@ -5921,7 +5928,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
         # Rosters/traded already re-fetched from cleared cache in core section above.
         ctx["model_value_table"] = ctx.get("model_value_table") or list(get_model_value_table_cached() or [])
 
-        if platform == "sleeper":
+        if platform == "sleeper" and not _league_is_redraft(ctx):
             try:
                 _teams_draft_ts = None
                 if isinstance(latest_draft, dict):
@@ -5941,6 +5948,8 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                 )
             except Exception as e:
                 logger.info(f"[refresh] teams picks refresh skipped: {e}")
+        elif _league_is_redraft(ctx):
+            ctx["picks_by_roster"] = {}
 
     # ---------- Trade page ----------
     if full or page == "trade":
@@ -5956,7 +5965,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     if (full or page == "dashboard") and offseason_mode:
         ctx["model_value_table"] = ctx.get("model_value_table") or list(get_model_value_table_cached() or [])
 
-        if platform == "sleeper":
+        if platform == "sleeper" and not _league_is_redraft(ctx):
             try:
                 _ref_draft_ts = None
                 if isinstance(latest_draft, dict):
@@ -5976,6 +5985,8 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                 )
             except Exception as e:
                 logger.info(f"[refresh] picks refresh skipped: {e}")
+        elif _league_is_redraft(ctx):
+            ctx["picks_by_roster"] = {}
 
         # These aren't strictly required because build_offseason_dashboard_body can rebuild
         # from ctx, but keeping them fresh helps consistency if reused elsewhere.
@@ -16841,7 +16852,9 @@ def api_league_rosters():
             })
 
         teams.sort(key=lambda x: x["team_name"])
-        viewer = get_viewer_session_for_league(users, rosters) or {}
+        viewer = get_viewer_session_for_league(
+            users, rosters, platform, league_id, season,
+        ) or {}
         payload = {
             "teams": teams,
             "viewer_roster_id": str(viewer.get("viewer_roster_id") or ""),
@@ -21982,7 +21995,7 @@ def api_trade_targets():
     roster_map = ctx.get("roster_map") or {}
     model_value_table = ctx.get("model_value_table") or []
     players_index = ctx.get("players_index") or {}
-    picks_by_roster = ctx.get("picks_by_roster") or {}
+    picks_by_roster = {} if _league_is_redraft(ctx) else (ctx.get("picks_by_roster") or {})
 
     if league_type == "sf":
         val_key = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
@@ -22395,18 +22408,21 @@ def api_trade_intel_player_packages(player_id: str):
                         )
                     except Exception:
                         _fantasy_draft_done = False
-                    try:
-                        from dashboard_services.service import build_picks_by_roster as _bpbr
-                        _fresh_pbr = _bpbr(
-                            num_future_seasons=3,
-                            league=ctx.get("league") or {},
-                            rosters=rosters,
-                            traded=ctx.get("traded") or [],
-                            draft_ended=_fantasy_draft_done,
-                        )
-                    except Exception as _pbr_err:
-                        logger.warning("[trade-intel] build_picks_by_roster failed: %s", _pbr_err)
-                        _fresh_pbr = ctx.get("picks_by_roster") or {}
+                    if _league_is_redraft(ctx):
+                        _fresh_pbr = {}
+                    else:
+                        try:
+                            from dashboard_services.service import build_picks_by_roster as _bpbr
+                            _fresh_pbr = _bpbr(
+                                num_future_seasons=3,
+                                league=ctx.get("league") or {},
+                                rosters=rosters,
+                                traded=ctx.get("traded") or [],
+                                draft_ended=_fantasy_draft_done,
+                            )
+                        except Exception as _pbr_err:
+                            logger.warning("[trade-intel] build_picks_by_roster failed: %s", _pbr_err)
+                            _fresh_pbr = ctx.get("picks_by_roster") or {}
                     raw_picks = _fresh_pbr.get(viewer_roster_id) or []
                     # Use load_pick_value_table for accurate FC-calibrated slot values;
                     # DB values for picks can be stale and cause wrong grade/accept rate
@@ -23495,7 +23511,7 @@ def api_trade_intel_player_send_packages(player_id: str):
         except Exception:
             pick_tbl = {}
 
-        picks_by_roster = ctx.get("picks_by_roster") or {}
+        picks_by_roster = {} if _league_is_redraft(ctx) else (ctx.get("picks_by_roster") or {})
 
         from utils.format import ordinal as _ordinal
 
@@ -23784,7 +23800,7 @@ def api_trade_ideas_for_target():
 
         rosters = ctx.get("rosters") or []
         roster_map = ctx.get("roster_map") or {}
-        picks_by_roster = ctx.get("picks_by_roster") or {}
+        picks_by_roster = {} if _league_is_redraft(ctx) else (ctx.get("picks_by_roster") or {})
         _cur_yr = season
 
         # Find which roster owns the target

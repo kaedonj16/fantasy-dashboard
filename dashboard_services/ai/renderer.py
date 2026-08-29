@@ -757,7 +757,7 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
             "ceiling_needs": suggestions_ctx.get("viewer_ceiling_needs"),
             "direction": suggestions_ctx.get("viewer_direction"),
         },
-        "v10",
+        "v11",
     )
     cached = load_cached_ai_text(cache_key)
     if cached:

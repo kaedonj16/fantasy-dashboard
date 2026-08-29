@@ -3865,6 +3865,8 @@ window.initTradePage = function initTradePage(root = document) {
           team: p.team,
           value: p.value,
           sf_value: p.sf_value,
+          redraft_value_1qb: p.redraft_value_1qb,
+          redraft_value_sf: p.redraft_value_sf,
           pos_rank_label: p.pos_rank_label,
           sf_pos_rank_label: p.sf_pos_rank_label
         })),
@@ -3875,6 +3877,8 @@ window.initTradePage = function initTradePage(root = document) {
           team: p.team,
           value: p.value,
           sf_value: p.sf_value,
+          redraft_value_1qb: p.redraft_value_1qb,
+          redraft_value_sf: p.redraft_value_sf,
           pos_rank_label: p.pos_rank_label,
           sf_pos_rank_label: p.sf_pos_rank_label
         })),
@@ -3900,8 +3904,12 @@ window.initTradePage = function initTradePage(root = document) {
       if (!saved) return;
 
       const parsed = JSON.parse(saved);
-      if (parsed.sideAPlayers) state.sideAPlayers = parsed.sideAPlayers;
-      if (parsed.sideBPlayers) state.sideBPlayers = parsed.sideBPlayers;
+      const hydrate = list => (list || []).map(p => {
+        const live = allPlayers.find(x => String(x.id) === String(p && p.id));
+        return live || p;
+      });
+      if (parsed.sideAPlayers) state.sideAPlayers = hydrate(parsed.sideAPlayers);
+      if (parsed.sideBPlayers) state.sideBPlayers = hydrate(parsed.sideBPlayers);
       if (parsed.sideAPicks) state.sideAPicks = parsed.sideAPicks;
       if (parsed.sideBPicks) state.sideBPicks = parsed.sideBPicks;
 
@@ -4050,8 +4058,15 @@ window.initTradePage = function initTradePage(root = document) {
     if (pos === "PICK") {
       metaBits.push("PICK");
     } else if (pos) {
-      // Use SF position rank when Superflex is selected
-      if (leagueType === "sf" && p.sf_pos_rank_label) {
+      if (getScoringType() === "redraft") {
+        // Dynasty pos_rank_label is a dynasty ranking. In redraft, rank by the
+        // same redraft value the dropdown shows.
+        const peers = allPlayers.filter(x =>
+          String(x.position || "").toUpperCase() === pos && x.position !== "PICK");
+        peers.sort((a, b) => getPlayerValue(b) - getPlayerValue(a));
+        const idx = peers.findIndex(x => String(x.id) === String(p.id));
+        metaBits.push(idx >= 0 ? pos + (idx + 1) : pos);
+      } else if (leagueType === "sf" && p.sf_pos_rank_label) {
         metaBits.push(String(p.sf_pos_rank_label).toUpperCase());
       } else if (p.pos_rank_label) {
         metaBits.push(String(p.pos_rank_label).toUpperCase());
@@ -4775,14 +4790,38 @@ window.initTradePage = function initTradePage(root = document) {
     return sel?.value || "ppr";
   }
 
+  function getLeagueScoringType() {
+    const fromInput = (root.querySelector("#leagueScoringTypeInput")?.value || "").trim().toLowerCase();
+    if (fromInput === "redraft" || fromInput === "dynasty") return fromInput;
+    if (typeof _scoringType !== "undefined" && _scoringType) {
+      const fromPage = String(_scoringType).trim().toLowerCase();
+      if (fromPage === "redraft" || fromPage === "dynasty") return fromPage;
+    }
+    return "dynasty";
+  }
+
   function getScoringType() {
     const sel = root.querySelector("#scoringTypeSelect");
-    return sel?.value || "dynasty";
+    const fromSelect = (sel?.value || "").trim().toLowerCase();
+    if (fromSelect === "redraft" || fromSelect === "dynasty") return fromSelect;
+    return getLeagueScoringType();
   }
 
   function getTePremium() {
     const sel = root.querySelector("#tePremiumSelect");
     return Number(sel?.value || 0) || 0;
+  }
+
+  function getTradePlatform() {
+    const fromInput = (root.querySelector("#platformInput")?.value || "").trim().toLowerCase();
+    if (fromInput) return fromInput;
+    const fromPath = window.location.pathname.split("/").filter(Boolean)[0] || "";
+    if (/^(sleeper|espn|yahoo|mfl|fleaflicker)$/i.test(fromPath)) return fromPath.toLowerCase();
+    return "sleeper";
+  }
+
+  function getTradeSeason() {
+    return root.querySelector("#seasonInput")?.value || new Date().getFullYear();
   }
 
   // Position multipliers. MUST match SCORING_MULTS in utils/trade_value.py
@@ -8003,8 +8042,12 @@ window.initTradePage = function initTradePage(root = document) {
     if (!leagueId || !toggle) return;  // guest / no league → feature disabled
 
     try {
+      const platform = getTradePlatform();
+      const season = getTradeSeason();
       const res = await fetch(
-        `/api/league-rosters?league_id=${encodeURIComponent(leagueId)}&platform=sleeper`
+        `/api/league-rosters?league_id=${encodeURIComponent(leagueId)}` +
+        `&platform=${encodeURIComponent(platform)}` +
+        `&season=${encodeURIComponent(season)}`
       );
       const data = await res.json();
       const teams = data.teams || [];
@@ -8072,9 +8115,17 @@ window.initTradePage = function initTradePage(root = document) {
       bindOnce(toggle, "restrictToggleChange", "change", () => {
         rosterFilter.on = toggle.checked;
         try { localStorage.setItem("otc_roster_filter_on", toggle.checked ? "1" : "0"); } catch (_) {}
+        if (toggle.checked) {
+          const teamSel = root.querySelector("#teamSelect");
+          syncRosterFilterViewer(teamSel?.value || getCurrentRosterId() || rosterFilter.viewerRid);
+        }
         updateSideTitles();
       });
 
+      // Team selector and this fetch race. Re-bind the viewer now that rosters
+      // are loaded so a team already chosen in #teamSelect actually owns Side B.
+      const teamSel = root.querySelector("#teamSelect");
+      syncRosterFilterViewer(teamSel?.value || getCurrentRosterId() || rosterFilter.viewerRid);
       // Bind now in case a restored state already has Side B players, and set the
       // side titles to the resolved team names.
       syncSideBBinding();
@@ -8114,8 +8165,7 @@ window.initTradePage = function initTradePage(root = document) {
 
       const selected = getSidePlayers(side);
       const selectedPicks = getSidePicks(side);
-      const leagueType = getLeagueType();
-      const valueOf = p => (leagueType === "sf" ? (p.sf_value || p.value || 0) : (p.value || 0));
+      const valueOf = getPlayerValue;
 
       // Roster filter: players limited to the allowed team(s); picks matched first by
       // exact resolved slot id, then by round-level fallback for picks too far out.
@@ -8330,8 +8380,15 @@ window.initTradePage = function initTradePage(root = document) {
 
   // League size doesn't affect redraft values, so grey it out in redraft mode.
   function syncScoringTypeUi() {
+    const redraft = getScoringType() === "redraft";
     const sizeCtrl = root.querySelector("#leagueSizeSelect");
-    if (sizeCtrl) sizeCtrl.disabled = getScoringType() === "redraft";
+    if (sizeCtrl) sizeCtrl.disabled = redraft;
+    const tipBody = root.querySelector("#otcInfoTooltip .otc-info-tooltip-body");
+    if (tipBody) {
+      tipBody.innerHTML = redraft
+        ? "<p>Player values are this-season redraft values. Aging veterans and current production rank above youth and future draft capital.</p><p>Switch to Dynasty in the scoring control if you want multi-year trade values instead.</p>"
+        : "<p>Player values are built directly from real dynasty trades, capturing how the market prices players and picks in actual deals.</p><p>We translate those trade relationships into a unified value scale, then layer in production, age trajectory, and role stability to sharpen the signal.</p>";
+    }
   }
 
   // Picks have no redraft value: hide the Picks filter, drop the filter if
@@ -8349,6 +8406,7 @@ window.initTradePage = function initTradePage(root = document) {
 
   function bindScoringTypeControls() {
     const sel = root.querySelector("#scoringTypeSelect");
+    const leagueSt = getLeagueScoringType();
     if (sel) {
       bindOnce(sel, "tradeScoringTypeChange", "change", () => {
         syncScoringTypeUi();
@@ -8359,6 +8417,13 @@ window.initTradePage = function initTradePage(root = document) {
         renderAllPlayersList();
         if (isTargetsTabActive()) loadTradeTargets();
       });
+    }
+    // Pin the control to the league format on first paint so a redraft league
+    // cannot silently sit on the Dynasty option (which would rank the search
+    // dropdown by dynasty value).
+    if (sel && leagueSt && sel.value !== leagueSt) {
+      sel.value = leagueSt;
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
     }
     syncScoringTypeUi();
     syncPicksForScoringType();
@@ -8607,7 +8672,11 @@ window.initTradePage = function initTradePage(root = document) {
 
     const leagueId = root.querySelector("#leagueIdInput")?.value || "";
     if (leagueId) {
-      fetch(`/api/teams?league_id=${encodeURIComponent(leagueId)}&platform=sleeper`)
+      fetch(
+        `/api/teams?league_id=${encodeURIComponent(leagueId)}` +
+        `&platform=${encodeURIComponent(getTradePlatform())}` +
+        `&season=${encodeURIComponent(getTradeSeason())}`
+      )
         .then(res => res.json())
         .then(teams => {
           selector.innerHTML = '<option value="">Select your team...</option>';
