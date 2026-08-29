@@ -17974,6 +17974,133 @@ def api_player_details(player_id: str):
         except Exception:
             logger.debug("[api_player_details] playoff SoS skipped", exc_info=True)
 
+        # Redraft values (same TE premium as dynasty) + ranks for the modal's
+        # Dynasty/Redraft toggle. Ranks are computed from the shared value table
+        # so they match Rankings in redraft mode.
+        def _rd_val(row, key):
+            try:
+                v = float(row.get(key) or 0)
+            except (TypeError, ValueError):
+                return 0.0
+            return v * _te_mult if v > 0 else 0.0
+
+        _rd_1qb_raw = player_value.get("redraft_value_1qb")
+        _rd_sf_raw = player_value.get("redraft_value_sf")
+        _rd_1qb = round(_rd_val(player_value, "redraft_value_1qb"), 1) if _rd_1qb_raw not in (None, "") else None
+        _rd_sf = round(_rd_val(player_value, "redraft_value_sf"), 1) if _rd_sf_raw not in (None, "") else None
+        if _rd_sf is None and _rd_1qb is not None:
+            _rd_sf = _rd_1qb
+
+        def _rd_rank(key, *, pos_only=False):
+            pool = []
+            for x in (value_table or []):
+                if not isinstance(x, dict):
+                    continue
+                if str(x.get("position") or "").upper() in ("K", "DEF", "PICK"):
+                    continue
+                if pos_only and str(x.get("position") or "").upper() != _modal_pos:
+                    continue
+                try:
+                    v = float(x.get(key) or 0)
+                except (TypeError, ValueError):
+                    v = 0.0
+                if v <= 0:
+                    continue
+                pool.append((str(x.get("id")), v))
+            pool.sort(key=lambda t: t[1], reverse=True)
+            for i, (pid, _) in enumerate(pool):
+                if pid == str(player_id):
+                    return i + 1
+            return None
+
+        _rd_1qb_ovr = _rd_rank("redraft_value_1qb") if _rd_1qb else None
+        _rd_sf_ovr = _rd_rank("redraft_value_sf") if _rd_sf else None
+        _rd_1qb_pos = _rd_rank("redraft_value_1qb", pos_only=True) if _rd_1qb and _modal_pos else None
+        _rd_sf_pos = _rd_rank("redraft_value_sf", pos_only=True) if _rd_sf and _modal_pos else None
+        _rd_1qb_pos_lbl = f"{_modal_pos}{_rd_1qb_pos}" if _rd_1qb_pos and _modal_pos else None
+        _rd_sf_pos_lbl = f"{_modal_pos}{_rd_sf_pos}" if _rd_sf_pos and _modal_pos else None
+
+        # PPR / Half / STD ranks for the modal scoring-format toggle. Displayed
+        # values are scaled client-side via SCORING_MULTS; ranks must be
+        # recomputed so Half/STD order matches trade-calc math.
+        from utils.trade_value import SCORING_MULTS as _SCORING_MULTS
+
+        def _fmt_score(row, key, fmt):
+            try:
+                v = float(row.get(key) or 0)
+            except (TypeError, ValueError):
+                v = 0.0
+            if v <= 0:
+                return 0.0
+            pos = str(row.get("position") or "").upper()
+            mult = (_SCORING_MULTS.get(fmt) or _SCORING_MULTS["ppr"]).get(pos, 1.0)
+            if _modal_tep and pos == "TE":
+                mult *= (1.0 + float(_modal_tep) * 0.20)
+            return v * mult
+
+        def _fmt_rank(key, fmt, *, pos_only=False):
+            pool = []
+            for x in (value_table or []):
+                if not isinstance(x, dict):
+                    continue
+                if str(x.get("position") or "").upper() in ("K", "DEF", "PICK"):
+                    continue
+                if pos_only and str(x.get("position") or "").upper() != _modal_pos:
+                    continue
+                score = _fmt_score(x, key, fmt)
+                if score <= 0:
+                    continue
+                pool.append((str(x.get("id")), score))
+            pool.sort(key=lambda t: t[1], reverse=True)
+            for i, (pid, _) in enumerate(pool):
+                if pid == str(player_id):
+                    return i + 1
+            return None
+
+        _scoring_format_ranks = {}
+        for _fmt in ("half", "std"):
+            _scoring_format_ranks[_fmt] = {
+                "pos_rank": _fmt_rank("value", _fmt, pos_only=True) if _modal_pos else None,
+                "value_ovr_rank": _fmt_rank("value", _fmt),
+                "sf_pos_rank": _fmt_rank("sf_value", _fmt, pos_only=True) if _modal_pos else None,
+                "sf_value_ovr_rank": _fmt_rank("sf_value", _fmt),
+                "redraft_pos_rank": _fmt_rank("redraft_value_1qb", _fmt, pos_only=True) if _modal_pos else None,
+                "redraft_value_ovr_rank": _fmt_rank("redraft_value_1qb", _fmt),
+                "redraft_sf_pos_rank": _fmt_rank("redraft_value_sf", _fmt, pos_only=True) if _modal_pos else None,
+                "redraft_sf_value_ovr_rank": _fmt_rank("redraft_value_sf", _fmt),
+            }
+
+        # Default Dynasty/Redraft + PPR/Half/STD from the league when known.
+        _default_scoring = "dynasty"
+        try:
+            if str(platform or "").strip().lower() == "espn":
+                _default_scoring = "redraft"
+            elif league_id:
+                _lg = get_league(platform, league_id, season) or {}
+                if _league_is_redraft({
+                    "platform": platform,
+                    "league_settings": _lg.get("settings") or {},
+                }):
+                    _default_scoring = "redraft"
+        except Exception:
+            if str(platform or "").strip().lower() == "espn":
+                _default_scoring = "redraft"
+
+        _default_format = "ppr"
+        try:
+            _rec = scoring_settings.get("rec")
+            if _rec is None:
+                _rec = scoring_settings.get("pointsPerReception")
+            _rec_f = float(_rec) if _rec is not None else 1.0
+            if _rec_f >= 1.0:
+                _default_format = "ppr"
+            elif _rec_f >= 0.5:
+                _default_format = "half"
+            else:
+                _default_format = "std"
+        except (TypeError, ValueError):
+            _default_format = "ppr"
+
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
@@ -17981,6 +18108,9 @@ def api_player_details(player_id: str):
             "team": player_meta.get("team"),
             "age": _modal_age,
             "te_premium": _modal_tep,
+            "default_scoring_type": _default_scoring,
+            "default_scoring_format": _default_format,
+            "scoring_format_ranks": _scoring_format_ranks,
             "pos_rank": player_value.get("pos_rank"),
             "pos_rank_label": player_value.get("pos_rank_label"),
             "espnHeadshot": player_meta.get("espnHeadshot"),
@@ -18007,6 +18137,14 @@ def api_player_details(player_id: str):
                      x.get("position") not in ("K", "DEF", "PICK") and float(x.get("sf_value") or 0) > 0],
                     key=lambda x: float(x.get("sf_value") or 0), reverse=True
                 )) if str(p.get("id")) == str(player_id)), None),
+                "redraft_value_1qb": _rd_1qb,
+                "redraft_value_sf": _rd_sf,
+                "redraft_pos_rank": _rd_1qb_pos,
+                "redraft_pos_rank_label": _rd_1qb_pos_lbl,
+                "redraft_sf_pos_rank": _rd_sf_pos,
+                "redraft_sf_pos_rank_label": _rd_sf_pos_lbl,
+                "redraft_value_ovr_rank": _rd_1qb_ovr,
+                "redraft_sf_value_ovr_rank": _rd_sf_ovr,
                 "years_exp": player_meta.get("years_exp"),
                 "ppg": _ppg,
                 "ppg_rank": _ppg_rank,
