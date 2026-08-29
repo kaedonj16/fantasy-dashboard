@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -99,6 +100,8 @@ def build_draft_room_body(
         # hasPremium still gates Draft Deep Dive and custom-board persistence.
         # Live cheat-sheet overlay / sync is free.
         "hasPremium": bool(has_premium),
+        "chromeExtensionStoreUrl": (os.environ.get("CHROME_EXTENSION_URL") or "").strip(),
+        "chromeExtensionZipUrl": "/static/extension/br-fantasy-espn-connector.zip",
     }
     cfg_json = json.dumps(cfg)
     # cfg is a plain inline script so it runs during parse, before the deferred
@@ -274,7 +277,7 @@ _DRAFT_ROOM_HTML = r"""
   <div class="dr-main" id="drMain" style="display:none;">
     <div class="dr-start-banner" id="drStartBanner" style="display:none;"></div>
     <div class="dr-start-banner dr-espn-fallback" id="drEspnFallback" style="display:none;" hidden></div>
-    <div class="dr-start-banner dr-espn-tools" id="drEspnTools" style="display:none;" hidden></div>
+    <div class="dr-espn-tools" id="drEspnTools" style="display:none;" hidden></div>
     <div class="dr-statusbar">
       <div class="dr-status-info">
         <div class="dr-onclock" id="drOnClockWrap">
@@ -695,10 +698,61 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pill-espn.is-muted { background: rgba(148,163,184,.16); color: var(--text-subtle); animation: none; }
   .dr-espn-fallback { background: linear-gradient(90deg, color-mix(in srgb, var(--warning) 16%, transparent), color-mix(in srgb, var(--warning) 5%, transparent)); border-color: var(--warning); }
   .dr-espn-fallback .dr-banner-join { background: var(--warning); color: #111; cursor: pointer; border: 0; font: inherit; }
-  .dr-espn-tools { background: linear-gradient(90deg, color-mix(in srgb, var(--accent,#38bdf8) 14%, transparent), color-mix(in srgb, var(--accent,#38bdf8) 4%, transparent)); border-color: color-mix(in srgb, var(--accent,#38bdf8) 45%, transparent); flex-wrap: wrap; }
-  .dr-espn-tools .dr-banner-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
-  .dr-espn-tools .dr-banner-join { border: 0; cursor: pointer; font: inherit; }
-  .dr-espn-tools .dr-banner-join.is-ghost { background: transparent; color: var(--text); border: 1px solid color-mix(in srgb, var(--accent,#38bdf8) 40%, transparent); }
+  /* ESPN sync helpers — compact strip, not a text wall */
+  .dr-espn-tools {
+    display: flex; flex-direction: column; align-items: stretch; gap: 12px;
+    margin: 0 0 12px; padding: 14px 14px 12px;
+    border-radius: 14px;
+    border: 1px solid color-mix(in srgb, var(--accent,#38bdf8) 28%, var(--border));
+    background:
+      radial-gradient(120% 80% at 0% 0%, color-mix(in srgb, var(--accent,#38bdf8) 16%, transparent), transparent 55%),
+      var(--card, var(--bg));
+  }
+  .dr-espn-tools-top { display: flex; align-items: flex-start; gap: 12px; }
+  .dr-espn-tools-ic {
+    width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: color-mix(in srgb, var(--accent,#38bdf8) 16%, transparent);
+    color: var(--accent,#38bdf8); font-size: 15px;
+  }
+  .dr-espn-tools-copy { min-width: 0; flex: 1; }
+  .dr-espn-tools-copy b {
+    display: block; font-size: 15px; font-weight: 800; letter-spacing: -0.02em;
+    color: var(--text); line-height: 1.25; margin: 0 0 3px;
+  }
+  .dr-espn-tools-copy span {
+    display: block; font-size: 12.5px; color: var(--text-muted); line-height: 1.4;
+  }
+  .dr-espn-tools-x {
+    flex-shrink: 0; width: 28px; height: 28px; margin: -2px -4px 0 0;
+    border: 0; border-radius: 8px; background: transparent; color: var(--text-muted);
+    cursor: pointer; font-size: 16px; line-height: 1;
+  }
+  .dr-espn-tools-x:hover { background: rgba(127,127,127,.12); color: var(--text); }
+  .dr-espn-tools-actions {
+    display: grid; grid-template-columns: 1fr; gap: 8px;
+  }
+  .dr-espn-tools-actions .dr-banner-join {
+    margin: 0; width: 100%; justify-content: center;
+    border: 0; cursor: pointer; font: inherit; text-decoration: none;
+  }
+  .dr-espn-tools-actions .dr-banner-join.is-ghost {
+    background: transparent; color: var(--text);
+    border: 1px solid color-mix(in srgb, var(--accent,#38bdf8) 32%, var(--border));
+  }
+  .dr-espn-tools-actions .dr-banner-join.is-link {
+    background: transparent; color: var(--accent,#38bdf8);
+    border: 0; padding: 6px 8px; font-weight: 650; font-size: 12.5px;
+  }
+  @media (min-width: 640px) {
+    .dr-espn-tools { flex-direction: row; align-items: center; gap: 16px; padding: 12px 14px; }
+    .dr-espn-tools-top { flex: 1; min-width: 0; }
+    .dr-espn-tools-actions {
+      grid-template-columns: auto auto; width: auto; flex-shrink: 0; margin-left: auto;
+    }
+    .dr-espn-tools-actions .dr-banner-join { width: auto; }
+    .dr-espn-tools-actions .dr-banner-join.is-link { grid-column: 1 / -1; justify-self: end; }
+  }
   .dr-pick-timer { font-size: 14px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums;
     min-width: 40px; padding: 2px 8px; border-radius: 7px; background: rgba(127,127,127,.1); text-align: center; }
   .dr-pick-timer.urgent { color: #fff; background: var(--loss); animation: drPulse 1s ease-in-out infinite; }
