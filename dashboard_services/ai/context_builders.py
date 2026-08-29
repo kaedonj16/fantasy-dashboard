@@ -17,15 +17,53 @@ def _ctx_is_sf(ctx: dict) -> bool:
     return False
 
 
-def build_model_value_lookup(model_value_table: list[dict], is_sf: bool = False) -> dict[str, dict]:
-    """Return pid→row lookup. When is_sf=True, rewrites each row's 'value' to the
-    sf_value so all downstream callers automatically use the right format."""
+def ctx_scoring_type(ctx: dict) -> str:
+    """``redraft`` for ESPN (always) and Sleeper type 0/1; otherwise ``dynasty``.
+
+    ESPN fantasy football is redraft-only, so platform alone is enough. Other
+    platforms that publish type 0/1 (Yahoo/Fleaflicker adapters, Sleeper
+    redraft/keeper) also classify as redraft. Mirrors app._league_is_redraft.
+    """
+    if str(ctx.get("platform") or "").strip().lower() == "espn":
+        return "redraft"
+    settings = (
+        ctx.get("league_settings")
+        or (ctx.get("league") or {}).get("settings")
+        or ctx.get("settings")
+        or {}
+    )
+    try:
+        t = settings.get("type")
+        if t is not None and int(t) in (0, 1):
+            return "redraft"
+    except (TypeError, ValueError, AttributeError):
+        pass
+    return "dynasty"
+
+
+def build_model_value_lookup(
+    model_value_table: list[dict],
+    is_sf: bool = False,
+    scoring_type: str = "dynasty",
+) -> dict[str, dict]:
+    """Return pid→row lookup with ``value`` rewritten for format.
+
+    Redraft leagues use ``redraft_value_*``; dynasty SF uses ``sf_value``.
+    """
+    st = str(scoring_type or "dynasty").strip().lower()
     out: dict[str, dict] = {}
     for row in model_value_table or []:
         pid = str(row.get("id") or row.get("player_id") or "")
         if not pid:
             continue
-        if is_sf and row.get("sf_value") is not None:
+        if st == "redraft":
+            rd_key = "redraft_value_sf" if is_sf else "redraft_value_1qb"
+            rd_val = row.get(rd_key)
+            if rd_val is None and is_sf:
+                rd_val = row.get("redraft_value_1qb")
+            if rd_val is not None:
+                row = {**row, "value": rd_val}
+        elif is_sf and row.get("sf_value") is not None:
             row = {**row, "value": row["sf_value"]}
         out[pid] = row
     return out
@@ -80,7 +118,11 @@ def group_position_strength(players: list[dict]) -> dict[str, dict]:
     return out
 
 
-def detect_team_direction(players: list[dict], future_picks: list[dict]) -> str:
+def detect_team_direction(
+    players: list[dict],
+    future_picks: list[dict],
+    scoring_type: str = "dynasty",
+) -> str:
     ages = [
         _safe_float(p.get("age"))
         for p in players
@@ -90,8 +132,19 @@ def detect_team_direction(players: list[dict], future_picks: list[dict]) -> str:
 
     elite_assets = sum(1 for p in players if _safe_float(p.get("value")) >= 750)
     strong_assets = sum(1 for p in players if _safe_float(p.get("value")) >= 550)
-    firsts = sum(1 for p in future_picks if "1." in str(p.get("display") or ""))
+    is_redraft = str(scoring_type or "").strip().lower() == "redraft"
 
+    if is_redraft:
+        # No future-pick rebuild/retool signal in redraft.
+        if elite_assets >= 3 or (elite_assets >= 2 and strong_assets >= 5):
+            return "contender"
+        if elite_assets >= 1 and strong_assets >= 4:
+            return "contender"
+        if strong_assets <= 2:
+            return "retool"
+        return "balanced"
+
+    firsts = sum(1 for p in future_picks if "1." in str(p.get("display") or ""))
     if avg_age and avg_age <= 28.5:
         if elite_assets >= 3:
             return "contender"
@@ -151,8 +204,14 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Union[dict, None]
 
     roster_map = ctx.get("roster_map") or {}
     team_name = roster_map.get(str(viewer_roster_id)) or f"Roster {viewer_roster_id}"
+    scoring_type = ctx_scoring_type(ctx)
+    is_redraft = scoring_type == "redraft"
 
-    model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [], is_sf=_ctx_is_sf(ctx))
+    model_value_lookup = build_model_value_lookup(
+        ctx.get("model_value_table") or [],
+        is_sf=_ctx_is_sf(ctx),
+        scoring_type=scoring_type,
+    )
     roster_players = summarize_roster_players(
         roster=roster,
         players_index=ctx.get("players_index") or {},
@@ -161,15 +220,25 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Union[dict, None]
     )
 
     position_strength = group_position_strength(roster_players)
-    future_picks = ctx.get("picks_by_roster", {}).get(str(viewer_roster_id), [])
+    # Redraft has no tradeable future capital; omit so the model cannot invent
+    # rebuild/pick narratives from leftover dynasty pick payloads.
+    future_picks = [] if is_redraft else (
+        ctx.get("picks_by_roster", {}).get(str(viewer_roster_id), [])
+    )
 
     top_assets = roster_players[:8]
-    aging_assets = [
-        p for p in roster_players
-        if p.get("age") not in (None, "") and _safe_float(p.get("age")) >= 28 and _safe_float(p.get("value")) >= 300
-    ][:5]
+    aging_assets = []
+    if not is_redraft:
+        aging_assets = [
+            p for p in roster_players
+            if p.get("age") not in (None, "")
+            and _safe_float(p.get("age")) >= 28
+            and _safe_float(p.get("value")) >= 300
+        ][:5]
 
-    direction = detect_team_direction(roster_players, future_picks)
+    direction = detect_team_direction(
+        roster_players, future_picks, scoring_type=scoring_type,
+    )
 
     standing = (ctx.get("standings_map") or {}).get(str(viewer_roster_id), {})
     record = standing.get("record") or standing.get("display_record") or ""
@@ -182,6 +251,7 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Union[dict, None]
         "week": ctx.get("current_week"),
         "viewer_roster_id": str(viewer_roster_id),
         "team_name": team_name,
+        "scoring_type": scoring_type,
         "record": record,
         "points_for": round(pf, 1),
         "points_against": round(pa, 1),
