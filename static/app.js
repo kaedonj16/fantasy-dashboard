@@ -12939,6 +12939,10 @@ _deferInit(function () {
 // The service worker serves cached pages when the network drops, so PWA users
 // could otherwise stare at stale data with no signal. Show a small banner while
 // offline and clear it the moment connectivity returns.
+//
+// Important: do not leave a translated-off-screen node in the DOM while online —
+// on phones that peek still showed a clipped "You are offline" strip at the
+// bottom edge. Create the bar only when offline; hide it completely when online.
 (function () {
   function _ensureOfflineBar() {
     var bar = document.getElementById('offlineBar');
@@ -12955,12 +12959,30 @@ _deferInit(function () {
     return bar;
   }
   function _update() {
-    _ensureOfflineBar().classList.toggle('offline-bar-show', navigator.onLine === false);
+    var offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+    var bar = document.getElementById('offlineBar');
+    if (!offline) {
+      if (bar) {
+        bar.classList.remove('offline-bar-show');
+        bar.setAttribute('hidden', '');
+        bar.setAttribute('aria-hidden', 'true');
+      }
+      return;
+    }
+    bar = _ensureOfflineBar();
+    bar.removeAttribute('hidden');
+    bar.setAttribute('aria-hidden', 'false');
+    bar.classList.add('offline-bar-show');
   }
   window.addEventListener('online', _update);
   window.addEventListener('offline', _update);
-  if (document.readyState !== 'loading') _update();
-  else _deferInit(_update);
+  // Only evaluate once the document is ready — avoids a flash if onLine is
+  // briefly false during early script evaluation on some mobile WebViews.
+  if (document.readyState !== 'loading') {
+    setTimeout(_update, 0);
+  } else {
+    _deferInit(function () { setTimeout(_update, 0); });
+  }
 })();
 
 // Create rkModal structure and CSS if they don't exist (for pages other than rookies page)

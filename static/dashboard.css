@@ -24049,12 +24049,13 @@ tr.team-clickable {
 }
 
 /* ── Offline indicator (PWA) ─────────────────────────────────────────────── */
+/* Hidden state must fully leave the viewport: a translate-only hide left a
+   sliver peeking under the home indicator while online. */
 .offline-bar {
     position: fixed;
     left: 50%;
-    bottom: 16px;
-    transform: translate(-50%, 260%);
-    /* Same tier as toasts — must clear the mobile dock (--z-chrome: 9999). */
+    bottom: max(24px, env(safe-area-inset-bottom, 0px));
+    transform: translate(-50%, 8px);
     z-index: var(--z-toast);
     display: flex;
     align-items: center;
@@ -24067,18 +24068,28 @@ tr.team-clickable {
     font-size: 13px;
     font-weight: 500;
     box-shadow: 0 6px 20px rgba(0, 0, 0, .28);
-    transition: transform .3s ease;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity .25s ease, transform .25s ease, visibility .25s ease;
 }
 
-.offline-bar-show {
+.offline-bar.offline-bar-show {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
     transform: translate(-50%, 0);
 }
 
-/* On phones lift the pill above the fixed bottom dock (56px + home indicator). */
+/* Sit clearly above the fixed bottom dock (56px + home indicator). */
 @media (max-width: 768px) {
     .offline-bar {
-        bottom: calc(var(--dock-safe-bottom) + 14px);
+        bottom: calc(var(--dock-safe-bottom) + 20px);
     }
+}
+
+.offline-bar[hidden] {
+    display: none !important;
 }
 
 .offline-dot {
