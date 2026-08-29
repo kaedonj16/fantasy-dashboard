@@ -67,7 +67,6 @@ When ESPN's REST `mDraftDetail` view does not update mid-draft:
 
 - **Desktop:** browser extension (`extension/`) relays picks from the open ESPN
   draft room. Build a store zip with `python3 extension/pack_extension.py`.
-- **Mobile:** use **Request Desktop Website** so the draft board loads, then
-  Draft Room **Mobile Sync** (bookmarklet / Shortcut → `POST /api/draft/espn-relay`).
-  The ESPN Fantasy app cannot run bookmarks — track manually there.
+- **Phone:** track picks manually in Draft Room (auto-sync requires the desktop
+  extension).
 

@@ -62,12 +62,9 @@
   var _espnLastPickCount = 0;
   var _espnAuthFailed = false;
   var _espnFallbackShown = false;
-  var _espnRelayActive = false; // browser extension / bookmarklet is feeding live picks
+  var _espnRelayActive = false; // browser extension is feeding live picks
   var _espnRelayInFlight = false;
   var _espnRelayLastFp = '';
-  var _espnRelayToken = '';
-  var _espnRelayBookmarklet = '';
-  var _espnRelayShortcutJs = '';
   var _espnExtLastSeen = 0;
   var sim = false;         // mock-draft simulation active
   var simTimer = null;
@@ -5401,7 +5398,6 @@
         _espnStallPolls = 0; _espnEverGrew = liveSelectionCount(d.picks) > 0; _espnLastPickCount = liveSelectionCount(d.picks);
         _espnAuthFailed = false; _espnFallbackShown = false; _espnRelayActive = false; _espnRelayLastFp = '';
         hideEspnFallback();
-        if (state.syncSource === 'espn') ensureEspnRelayToken();
         if (state.syncSource === 'espn') showEspnTools();
         applyLivePicks(d.picks || []);
         // Completed draft: reload the pool against that season's ADP so grades
@@ -5525,7 +5521,7 @@
     if (!(state && state.syncSource === 'espn') && String(cfg.platform || '').toLowerCase() !== 'espn') return;
     var unavailable = !!(opts && opts.unavailable) || _espnFallbackShown;
     // Keep the helpers visible while sync is broken — dismissing would strand
-    // the manager without Mobile Sync / Track manually.
+    // the manager without Get Chrome extension / Track manually.
     if (!unavailable) {
       try {
         if (sessionStorage.getItem(_espnToolsDismissKey()) === '1') {
@@ -5540,28 +5536,23 @@
     if (unavailable) {
       title = 'ESPN sync needs a hand';
       blurb = onPhone
-        ? 'Live API updates often stall mid-draft. Open ESPN with <b>Request Desktop Website</b>, then use Mobile Sync — or track picks yourself.'
-        : 'Live API updates often stall mid-draft. Install the Chrome extension, or enter picks yourself.';
-      // Two primary actions side-by-side; Chrome install stays a quiet link so
-      // the card doesn't become a button stack on phones.
+        ? 'Auto-sync needs a <b>computer</b> with the Chrome extension. On your phone, track picks manually in Draft Room while you draft in the ESPN app.'
+        : 'Live API updates often stall mid-draft. Install the Chrome extension and keep the ESPN draft tab open, or enter picks yourself.';
       primary = onPhone
-        ? '<button type="button" class="dr-banner-join" id="drEspnMobileSync">Mobile Sync</button>'
-          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnManualFromTools">Track manually</button>'
-          + '<button type="button" class="dr-banner-join is-link" id="drEspnExtInstall">Get Chrome extension</button>'
-        : '<button type="button" class="dr-banner-join" id="drEspnExtInstall">Get Chrome extension</button>'
-          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnManualFromTools">Track manually</button>'
-          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnMobileSync">Mobile Sync</button>';
-    } else {
-      title = onPhone ? 'Sync picks from your phone' : 'Sync ESPN picks automatically';
-      blurb = onPhone
-        ? 'Open ESPN in Safari/Chrome → <b>Request Desktop Website</b> to get the draft board, then use Mobile Sync. The ESPN app itself can\'t run bookmarks.'
-        : 'Install the Chrome extension and keep the ESPN draft tab open — picks land here automatically.';
-      primary = onPhone
-        ? '<button type="button" class="dr-banner-join" id="drEspnMobileSync">Mobile Sync</button>'
-          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnManualFromTools">Track manually</button>'
+        ? '<button type="button" class="dr-banner-join" id="drEspnManualFromTools">Track manually</button>'
           + '<button type="button" class="dr-banner-join is-ghost" id="drEspnExtInstall">Get Chrome extension</button>'
         : '<button type="button" class="dr-banner-join" id="drEspnExtInstall">Get Chrome extension</button>'
-          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnMobileSync">Mobile Sync</button>';
+          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnManualFromTools">Track manually</button>';
+    } else {
+      title = onPhone ? 'Auto-sync needs a computer' : 'Sync ESPN picks automatically';
+      blurb = onPhone
+        ? 'Install the Chrome extension on a laptop, or track picks manually here while drafting in the ESPN app.'
+        : 'Install the Chrome extension and keep the ESPN draft tab open — picks land here automatically.';
+      primary = onPhone
+        ? '<button type="button" class="dr-banner-join" id="drEspnManualFromTools">Track manually</button>'
+          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnExtInstall">Get Chrome extension</button>'
+        : '<button type="button" class="dr-banner-join" id="drEspnExtInstall">Get Chrome extension</button>'
+          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnManualFromTools">Track manually</button>';
     }
     el.className = 'dr-espn-tools' + (unavailable ? ' is-unavailable' : '');
     el.hidden = false;
@@ -5595,7 +5586,7 @@
     msg.innerHTML = ''
       + '<div class="dr-msync-title">Install the Chrome extension</div>'
       + '<p class="dr-msync-lead">On desktop Chrome or Edge, the extension watches your open ESPN draft and updates Draft Room automatically — no tapping after every pick.</p>'
-      + '<div class="dr-msync-warn"><b>Chrome / Edge on a computer.</b> Phones can\'t install this extension. On a phone, use <b>Mobile Sync</b> with Request Desktop Website, or track picks manually.</div>'
+      + '<div class="dr-msync-warn"><b>Chrome / Edge on a computer.</b> Phones can\'t install this extension. Draft on ESPN from your phone and <b>track picks manually</b> in Draft Room, or use a laptop for auto-sync.</div>'
       + '<div class="dr-msync-sec"><h4>Install (about 30 seconds)</h4>'
       + '<ol>'
       + '<li>Download the extension zip (button below).</li>'
@@ -5617,16 +5608,6 @@
     dl.setAttribute('download', 'br-fantasy-espn-connector.zip');
     dl.textContent = 'Download extension';
     btns.appendChild(dl);
-    var mobile = document.createElement('button');
-    mobile.type = 'button';
-    mobile.className = 'dr-btn dr-btn-ghost';
-    mobile.textContent = 'I\'m on my phone';
-    mobile.addEventListener('click', function(){
-      m.style.display = 'none';
-      if (box) box.classList.remove('is-wide');
-      openEspnMobileSync();
-    });
-    btns.appendChild(mobile);
     var close = document.createElement('button');
     close.type = 'button';
     close.className = 'dr-btn dr-btn-ghost';
@@ -5639,147 +5620,6 @@
     });
     btns.appendChild(close);
     m.style.display = 'flex';
-  }
-  function ensureEspnRelayToken(){
-    if (!cfg.leagueId || !cfg.season) return;
-    if (_espnRelayToken) return;
-    fetch('/api/draft/espn-relay/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ league_id: cfg.leagueId, season: cfg.season }),
-      cache: 'no-store'
-    })
-      .then(function(r){ return r.json(); })
-      .then(function(d){
-        if (!d || !d.token) return;
-        _espnRelayToken = d.token;
-        _espnRelayBookmarklet = d.bookmarklet || '';
-        _espnRelayShortcutJs = d.shortcut_js || '';
-      })
-      .catch(function(){});
-  }
-  function openEspnMobileSync(){
-    function renderPanel(){
-      var m = document.getElementById('drModal');
-      var box = m && m.querySelector('.dr-modal-box');
-      var msg = document.getElementById('drModalMsg');
-      var btns = document.getElementById('drModalBtns');
-      if (!m || !msg || !btns) return;
-      if (box) box.classList.add('is-wide');
-      var espnUrl = espnDraftUrl() || 'https://fantasy.espn.com/football/draft';
-      var ready = !!_espnRelayBookmarklet;
-      msg.innerHTML = ''
-        + '<div class="dr-msync-title">Mobile ESPN sync</div>'
-        + '<p class="dr-msync-lead">Keep this Draft Room open. Sync picks from the ESPN draft in <b>Safari or Chrome</b> using <b>Request Desktop Website</b> — not the ESPN Fantasy app.</p>'
-        + '<div class="dr-msync-warn"><b>Required on phones:</b> ESPN\'s normal mobile page shows &ldquo;download the ESPN Fantasy App.&rdquo; Use <b>Request Desktop Website</b> (iPhone) or <b>Desktop site</b> (Android) so the real draft board loads. Bookmarks cannot run inside the ESPN app.</div>'
-        + '<div class="dr-msync-sec"><h4>Get the draft board</h4>'
-        + '<ol>'
-        + '<li>Stay on <b>Connect Live Draft</b> in this Draft Room.</li>'
-        + '<li>Open the ESPN draft URL'
-        + (cfg.leagueId ? (' (league ' + esc(String(cfg.leagueId)) + ')') : '')
-        + ' in Safari or Chrome.</li>'
-        + '<li><b>iPhone Safari:</b> Aa (left of the address bar) → <b>Request Desktop Website</b>.</li>'
-        + '<li><b>Android Chrome:</b> ⋮ → check <b>Desktop site</b>.</li>'
-        + '<li>You should see the live draft board (not the app download page).</li>'
-        + '</ol></div>'
-        + '<div class="dr-msync-sec"><h4>Android (Chrome) bookmark</h4>'
-        + '<ol>'
-        + '<li>With the desktop draft open, tap the star / Add bookmark.</li>'
-        + '<li>Edit the bookmark → replace the <b>URL</b> with the bookmarklet (starts with <code>javascript:</code>).</li>'
-        + '<li>After picks, open Bookmarks and tap it to sync.</li>'
-        + '</ol></div>'
-        + '<div class="dr-msync-sec"><h4>iPhone Shortcut</h4>'
-        + '<ol>'
-        + '<li>Shortcuts → <b>Run JavaScript on Webpage</b> for fantasy.espn.com → paste Shortcut JS.</li>'
-        + '<li>On the desktop-mode ESPN draft tab, run the Shortcut after picks.</li>'
-        + '</ol></div>'
-        + '<div class="dr-msync-sec"><h4>Other options</h4>'
-        + '<ol>'
-        + '<li><b>Laptop:</b> Chrome extension + ESPN draft tab (hands-free).</li>'
-        + '<li><b>ESPN app only:</b> track picks manually in Draft Room.</li>'
-        + '</ol></div>'
-        + '<p class="dr-msync-status" id="drMsyncStatus">'
-        + (ready ? '' : 'Preparing sync link…')
-        + '</p>';
-      btns.innerHTML = '';
-      function status(text, ok){
-        var el = document.getElementById('drMsyncStatus');
-        if (!el) return;
-        el.textContent = text || '';
-        el.style.color = ok ? 'var(--win)' : 'var(--text-muted)';
-      }
-      function copyText(label, text){
-        if (!text){ status('Still preparing — try again in a second.', false); ensureEspnRelayToken(); return; }
-        function ok(){ status(label + ' copied.', true); }
-        function fallback(){
-          window.prompt('Copy this:', text);
-          status(label + ' ready to copy.', true);
-        }
-        if (navigator.clipboard && navigator.clipboard.writeText){
-          navigator.clipboard.writeText(text).then(ok).catch(fallback);
-        } else fallback();
-      }
-      var copyBm = document.createElement('button');
-      copyBm.type = 'button';
-      copyBm.className = 'dr-btn dr-btn-primary';
-      copyBm.textContent = 'Copy bookmarklet';
-      copyBm.addEventListener('click', function(){ copyText('Bookmarklet', _espnRelayBookmarklet); });
-      btns.appendChild(copyBm);
-
-      var copySc = document.createElement('button');
-      copySc.type = 'button';
-      copySc.className = 'dr-btn dr-btn-ghost';
-      copySc.textContent = 'Copy iOS Shortcut JS';
-      copySc.addEventListener('click', function(){ copyText('Shortcut JS', _espnRelayShortcutJs || _espnRelayBookmarklet.replace(/^javascript:/, '')); });
-      btns.appendChild(copySc);
-
-      var openEspn = document.createElement('a');
-      openEspn.className = 'dr-btn dr-btn-ghost';
-      openEspn.href = espnUrl;
-      openEspn.target = '_blank';
-      openEspn.rel = 'noopener';
-      openEspn.textContent = 'Open ESPN draft';
-      btns.appendChild(openEspn);
-
-      var close = document.createElement('button');
-      close.type = 'button';
-      close.className = 'dr-btn dr-btn-ghost';
-      close.textContent = 'Close';
-      close.addEventListener('click', function(){
-        m.style.display = 'none';
-        if (box) box.classList.remove('is-wide');
-        msg.textContent = '';
-        btns.innerHTML = '';
-      });
-      btns.appendChild(close);
-      m.style.display = 'flex';
-    }
-
-    ensureEspnRelayToken();
-    if (_espnRelayBookmarklet){
-      renderPanel();
-      return;
-    }
-    fetch('/api/draft/espn-relay/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ league_id: cfg.leagueId, season: cfg.season }),
-      cache: 'no-store'
-    })
-      .then(function(r){ return r.json(); })
-      .then(function(d){
-        if (d && d.token){
-          _espnRelayToken = d.token;
-          _espnRelayBookmarklet = d.bookmarklet || '';
-          _espnRelayShortcutJs = d.shortcut_js || '';
-        }
-        if (!_espnRelayBookmarklet){
-          drAlert('Could not create mobile sync token. Reconnect Live Draft and try again.');
-          return;
-        }
-        renderPanel();
-      })
-      .catch(function(){ drAlert('Could not create mobile sync token.'); });
   }
   function switchEspnToManual(){
     stopPolling(); stopPickTimer();
@@ -5842,9 +5682,7 @@
     if (_espnRelayInFlight) return;
     _espnRelayInFlight = true;
     _espnExtLastSeen = Date.now();
-    ensureEspnRelayToken();
     var headers = { 'Content-Type': 'application/json' };
-    if (_espnRelayToken) headers.Authorization = 'Bearer ' + _espnRelayToken;
     fetch('/api/draft/espn-relay', {
       method: 'POST',
       headers: headers,
@@ -8357,7 +8195,6 @@
     var t = e.target && e.target.closest ? e.target.closest('[id]') : e.target;
     var id = t && t.id;
     if (id === 'drEspnManual' || id === 'drEspnManualFromTools') switchEspnToManual();
-    if (id === 'drEspnMobileSync') openEspnMobileSync();
     if (id === 'drEspnExtInstall') openEspnExtensionInstall();
     if (id === 'drEspnToolsDismiss'){
       try { sessionStorage.setItem(_espnToolsDismissKey(), '1'); } catch (err){}

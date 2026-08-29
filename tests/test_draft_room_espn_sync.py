@@ -35,7 +35,7 @@ def test_espn_unavailable_uses_single_tools_card():
     assert ".dr-espn-tools-actions.is-split" in body
     assert "_onEspnHelperClick" in ROOM_JS
     assert "_espnToolsEl" in ROOM_JS
-    assert "Request Desktop Website" in ROOM_JS
+    assert "Track manually" in ROOM_JS
     # Generic start banners still stack their CTA under copy on phones.
     mobile = body.split("@media (max-width: 640px)")[1].split("@media")[0]
     assert ".dr-start-banner" in mobile
@@ -55,16 +55,12 @@ def test_extension_relay_wired_and_skips_manual_fallback():
     assert "brfantasy:espn-draft-relay" in ROOM_JS
     assert "if (_espnRelayActive) return false;" in ROOM_JS
     assert "_espnRelayActive = true;" in ROOM_JS
-    assert "function openEspnMobileSync()" in ROOM_JS
-    assert "drEspnMobileSync" in ROOM_JS
-    assert "/api/draft/espn-relay/token" in ROOM_JS
-    assert "Mobile ESPN sync" in ROOM_JS
-    assert "Required on phones:" in ROOM_JS
-    assert "Request Desktop Website" in ROOM_JS
-    assert "Copy bookmarklet" in ROOM_JS
-    assert "Copy iOS Shortcut JS" in ROOM_JS
-    assert "Android (Chrome) bookmark" in ROOM_JS
-    assert "iPhone Shortcut" in ROOM_JS
+    assert "function openEspnMobileSync()" not in ROOM_JS
+    assert "drEspnMobileSync" not in ROOM_JS
+    assert "/api/draft/espn-relay/token" not in ROOM_JS
+    assert "Copy bookmarklet" not in ROOM_JS
+    assert "Copy iOS Shortcut JS" not in ROOM_JS
+    assert "Mobile Sync" not in ROOM_JS
     assert "dr-msync-title" in PAGE
     assert "github.com/kaedonj16/fantasy-dashboard/tree/main/extension" not in ROOM_JS
     assert "Extension setup" not in ROOM_JS
@@ -75,9 +71,10 @@ def test_extension_relay_wired_and_skips_manual_fallback():
     assert "dr-espn-tools-top" in PAGE
     assert "drEspnToolsDismiss" in ROOM_JS
     assert "Sync ESPN picks automatically" in ROOM_JS
-    assert "Sync picks from your phone" in ROOM_JS
+    assert "Auto-sync needs a computer" in ROOM_JS
     assert "drEspnManualFromTools" in ROOM_JS
     assert "_espnToolsEl" in ROOM_JS
+    assert "credentials: 'same-origin'" in ROOM_JS
 
 
 def test_live_detect_requests_espn_sync_flag():
