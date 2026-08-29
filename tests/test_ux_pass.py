@@ -102,10 +102,13 @@ def test_analytics_terminology_module():
 def test_do_next_waiver_card_helper():
     app_src = (ROOT / "app.py").read_text(encoding="utf-8")
     assert "def _render_do_next_waiver_card" in app_src
-    assert "Do this next" in app_src
+    assert "Next steps" in app_src
+    assert "Do this next" not in app_src
     assert "os-do-next-collapsed" in app_src
     assert "os-do-next-draft" in app_src
     assert "Draft prep" in app_src
+    assert "startup_draft_pending" in app_src
+    assert "Get ready for your draft" in app_src
 
 
 def test_hub_column_height_sync_helper():
