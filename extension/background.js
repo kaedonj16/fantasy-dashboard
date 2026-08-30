@@ -19,6 +19,7 @@ const BR_TAB_URLS = [
 const ESPN_DRAFT_TAB_URLS = [
   "https://fantasy.espn.com/football/draft*",
   "https://fantasy.espn.com/*/football/draft*",
+  "https://fantasy.espn.com/*draft*",
 ];
 
 const YAHOO_DRAFT_TAB_URLS = [

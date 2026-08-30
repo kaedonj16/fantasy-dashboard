@@ -1,5 +1,5 @@
 // Isolated-world content script on ESPN's football draft room. Receives the
-// MAIN-world pick snapshot (CustomEvent) and forwards it to the service worker,
+// MAIN-world pick snapshot (postMessage) and forwards it to the service worker,
 // which relays to open BR Fantasy Draft Room tabs. Also shows a small sync
 // status chip so the user knows BR Fantasy is watching.
 
@@ -7,6 +7,8 @@
   "use strict";
 
   const EVENT = "brfantasy:espn-draft-raw";
+  const RESCAN = "brfantasy:draft-rescan";
+  const BRIDGE = "brfantasy-bridge-v1";
   const RETRY_MS = 3000;
   const RECONNECT_COOLDOWN_MS = 5000;
   let lastDelivered = "";
@@ -19,12 +21,34 @@
   function leagueFromUrl() {
     try {
       const u = new URL(location.href);
-      return {
-        leagueId: (u.searchParams.get("leagueId") || "").trim(),
-        season: (u.searchParams.get("seasonId") || u.searchParams.get("season") || "").trim(),
-      };
+      let leagueId = (u.searchParams.get("leagueId") || u.searchParams.get("league") || "").trim();
+      let season = (u.searchParams.get("seasonId") || u.searchParams.get("season") || "").trim();
+      if (!leagueId) {
+        const hm = u.hash.match(/[?&]leagueId=(\d+)/i);
+        if (hm) leagueId = hm[1];
+      }
+      if (!leagueId) {
+        const pm = u.pathname.match(/\/(?:football\/)?draft\/(?:league\/)?(\d+)/i);
+        if (pm) leagueId = pm[1];
+      }
+      return { leagueId, season };
     } catch (_e) {
       return { leagueId: "", season: "" };
+    }
+  }
+
+  function listenFromMain(type, fn) {
+    window.addEventListener("message", (ev) => {
+      if (!ev.data || ev.data.__br !== BRIDGE || ev.data.type !== type) return;
+      fn(ev.data.detail);
+    });
+  }
+
+  function requestRescan() {
+    try {
+      window.postMessage({ __br: BRIDGE, type: RESCAN }, "*");
+    } catch (_e) {
+      /* ignore */
     }
   }
 
@@ -74,11 +98,7 @@
   function forceResend() {
     lastDelivered = "";
     clearRetry();
-    try {
-      window.dispatchEvent(new CustomEvent("brfantasy:draft-rescan"));
-    } catch (_e) {
-      /* ignore */
-    }
+    requestRescan();
     if (pendingPayload) deliverPending(true);
   }
 
@@ -187,16 +207,17 @@
       source: detail.source || "espn-draft-room",
       at: detail.at || Date.now(),
     };
-    if (!payload.leagueId) return;
+    if (!payload.leagueId) {
+      setChip("BR Fantasy · leagueId missing in URL", false);
+      return;
+    }
     const fp = payloadFingerprint(payload);
     if (fp === lastDelivered) return;
     pendingPayload = payload;
     deliverPending();
   }
 
-  window.addEventListener(EVENT, (ev) => {
-    forward(ev && ev.detail);
-  });
+  listenFromMain(EVENT, forward);
 
   try {
     chrome.runtime.onMessage.addListener((msg) => {

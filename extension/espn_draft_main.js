@@ -2,12 +2,14 @@
 // and page fetch/XHR traffic. ESPN's documented mDraftDetail REST view often
 // does not update mid-draft; the live draft room itself does. We observe that
 // in-page state and forward a compact pick snapshot to the isolated content
-// script via CustomEvent (no cookies leave this page).
+// script via postMessage (no cookies leave this page).
 
 (function () {
   "use strict";
 
   const EVENT = "brfantasy:espn-draft-raw";
+  const RESCAN = "brfantasy:draft-rescan";
+  const BRIDGE = "brfantasy-bridge-v1";
   const MAX_WALK = 4000;
   let lastFingerprint = "";
   let lastEmitAt = 0;
@@ -15,12 +17,28 @@
   function leagueFromUrl() {
     try {
       const u = new URL(location.href);
-      const leagueId = (u.searchParams.get("leagueId") || "").trim();
-      const season =
+      let leagueId = (u.searchParams.get("leagueId") || u.searchParams.get("league") || "").trim();
+      let season =
         (u.searchParams.get("seasonId") || u.searchParams.get("season") || "").trim();
+      if (!leagueId) {
+        const hm = u.hash.match(/[?&]leagueId=(\d+)/i);
+        if (hm) leagueId = hm[1];
+      }
+      if (!leagueId) {
+        const pm = u.pathname.match(/\/(?:football\/)?draft\/(?:league\/)?(\d+)/i);
+        if (pm) leagueId = pm[1];
+      }
       return { leagueId, season };
     } catch (_e) {
       return { leagueId: "", season: "" };
+    }
+  }
+
+  function bridgeToExtension(type, detail) {
+    try {
+      window.postMessage({ __br: BRIDGE, type: type, detail: detail || {} }, "*");
+    } catch (_e) {
+      /* ignore */
     }
   }
 
@@ -33,14 +51,14 @@
 
   function isPickRow(obj) {
     if (!obj || typeof obj !== "object") return false;
-    const pid = obj.playerId ?? obj.player_id;
+    const pid = obj.playerId ?? obj.player_id ?? obj.id;
     const overall = obj.overallPickNumber ?? obj.overallPick ?? obj.pick_no;
     return overall != null && playerIdSelected(pid);
   }
 
   function normalizePick(raw) {
     if (!isPickRow(raw)) return null;
-    const playerId = raw.playerId ?? raw.player_id;
+    const playerId = raw.playerId ?? raw.player_id ?? raw.id;
     const overall = raw.overallPickNumber ?? raw.overallPick ?? raw.pick_no;
     const teamId = raw.teamId ?? raw.team_id;
     const roundId = raw.roundId ?? raw.round ?? raw.round_id;
@@ -77,23 +95,15 @@
     if (fp === lastFingerprint && now - lastEmitAt < 1500) return;
     lastFingerprint = fp;
     lastEmitAt = now;
-    try {
-      window.dispatchEvent(
-        new CustomEvent(EVENT, {
-          detail: {
-            source: source || "unknown",
-            leagueId: ids.leagueId,
-            season: ids.season,
-            inProgress: !!(meta && meta.inProgress),
-            drafted: !!(meta && meta.drafted),
-            picks: clean,
-            at: now,
-          },
-        })
-      );
-    } catch (_e) {
-      /* ignore */
-    }
+    bridgeToExtension(EVENT, {
+      source: source || "unknown",
+      leagueId: ids.leagueId,
+      season: ids.season,
+      inProgress: !!(meta && meta.inProgress),
+      drafted: !!(meta && meta.drafted),
+      picks: clean,
+      at: now,
+    });
   }
 
   function maybeFromDraftDetail(detail, source) {
@@ -122,7 +132,7 @@
       if (seen.has(cur)) continue;
       seen.add(cur);
       if (cur.draftDetail && maybeFromDraftDetail(cur.draftDetail, "react")) return true;
-      if (Array.isArray(cur.picks) && cur.picks.length && isPickRow(cur.picks[0])) {
+      if (Array.isArray(cur.picks) && cur.picks.some(isPickRow)) {
         emit(
           cur.picks,
           { inProgress: cur.inProgress === true, drafted: cur.drafted === true },
@@ -252,10 +262,15 @@
   }
 
   hookNetwork();
-  window.addEventListener("brfantasy:draft-rescan", () => {
+  function onRescan() {
     lastFingerprint = "";
     scanReact();
+  }
+  window.addEventListener("message", (ev) => {
+    if (!ev.data || ev.data.__br !== BRIDGE || ev.data.type !== RESCAN) return;
+    onRescan();
   });
+  document.addEventListener(RESCAN, onRescan);
   // Poll React state a few times a second while the tab is visible. Cheap relative
   // to a missed pick during a live draft.
   setInterval(() => {
