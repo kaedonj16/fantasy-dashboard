@@ -61,6 +61,10 @@ def test_extension_relay_wired_and_skips_manual_fallback():
     assert "function _pullExtensionRelaySnapshot(forceReplay)" in ROOM_JS
     assert "function _listenBrFantasy(name, fn)" in ROOM_JS
     assert "function _dispatchBrFantasy(name, detail)" in ROOM_JS
+    assert "_pullExtensionRelaySnapshot()" in ROOM_JS
+    assert "function reconnectExtensionSync(" in ROOM_JS
+    assert 'id="drEspnReconnect"' in PAGE
+    assert "drEspnReconnectTools" in ROOM_JS
     assert "detail.forceReplay" in ROOM_JS
     assert "_reconnectLastAt" in ROOM_JS
     assert "function openEspnMobileSync()" not in ROOM_JS

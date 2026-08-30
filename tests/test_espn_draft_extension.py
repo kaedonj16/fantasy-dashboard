@@ -56,6 +56,7 @@ def test_extension_relay_message_contract():
     assert "injectPageEvent" in bg
     assert "composed: true" in bg
     assert "dispatchToPage" in content
+    assert "RECONNECT_COOLDOWN_MS" in bg
     assert "reconnectDraftRelay" in bg
     assert "forceDraftRelay" in bg
     assert "brfantasy:request-extension-reconnect" in content

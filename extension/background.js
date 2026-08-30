@@ -177,6 +177,7 @@ async function reconnectDraftRelay(detail) {
   }
   lastReconnectAt = now;
   const payload = detail && typeof detail === "object" ? detail : {};
+  // Draft tab first (resend full pick snapshot), then Draft Room (apply/cache).
   const draft = await pingDraftTabs();
   await new Promise((resolve) => setTimeout(resolve, 350));
   const br = await pingBrDraftRooms(payload);
