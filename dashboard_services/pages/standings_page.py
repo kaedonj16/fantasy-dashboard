@@ -32,15 +32,15 @@ def build_standings_body(ctx: dict) -> str:
             <div class="tab-strip">
               <button class="tab-btn active" data-tab="standings">Standings</button>
               <button class="tab-btn" data-tab="details">Detailed Stats</button>
-              <div class="tab-panels">
-                <div class="tab-panel active" data-tab="standings">
-                  <div id="stStandingsInner">{panels['standings']}</div>
-                </div>
-                <div class="tab-panel" data-tab="details">
-                  <div id="stDetailsInner">{panels['details']}</div>
-                  <div class="footer">
-                    Default sort: Win% ↓ then PF ↓. Click headers to sort.
-                  </div>
+            </div>
+            <div class="tab-panels">
+              <div class="tab-panel active" data-tab="standings">
+                <div id="stStandingsInner">{panels['standings']}</div>
+              </div>
+              <div class="tab-panel" data-tab="details">
+                <div id="stDetailsInner">{panels['details']}</div>
+                <div class="footer">
+                  Default sort: Win% ↓ then PF ↓. Click headers to sort.
                 </div>
               </div>
             </div>
