@@ -162,6 +162,7 @@
           picks: Array.isArray(detail.picks) ? detail.picks : [],
           source: detail.source || "espn-draft-room",
           at: detail.at || Date.now(),
+          forceReplay: true,
         },
         function (resp) {
           void chrome.runtime.lastError;
