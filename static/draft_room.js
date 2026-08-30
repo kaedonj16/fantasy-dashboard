@@ -4721,9 +4721,11 @@
     });
     var _tg = window.BRTeamGrade;
     if (!_tg || typeof _tg.teamGradeComposite !== 'function') return null;
+    var _leagueTeams = ownedPickGroups().lists.map(pickListToStrengthRows);
     var _comp = _tg.teamGradeComposite(
       picks, _slots, posTargets(), state.teams || 12, state.type,
-      _leaguePpg, _leagueVal, _leaguePlayers, { sf: !!state.sf, tep: scoringCfg().tep }
+      _leaguePpg, _leagueVal, _leaguePlayers,
+      { sf: !!state.sf, tep: scoringCfg().tep, leagueTeams: _leagueTeams }
     );
     // Missing composite is ungradeable — do not invent score 0 (letter F).
     if (!_comp) return null;
@@ -4762,41 +4764,65 @@
       });
     return map;
   }
-  // Grade every team in the draft, sorted best-first. Picks are attributed by
-  // OWNERSHIP, not by the board column they sit in: every pick the user owns (a
+  // Group picks by OWNERSHIP, not board column: every pick the user owns (a
   // 1.01 traded in, a pick in another seat, etc.) belongs to the single "You"
-  // team, and each seat shows only the picks it still owns. Otherwise a user who
-  // owns picks across two seats would show up as "You" twice.
-  function gradeAllTeams(){
-    if (!state) return [];
-    _gradeCliffByPn = _buildGradeCliffs();
-    var teams = state.teams || 12;
-    var mine = [];        // every pick the user owns, regardless of seat
-    var bySlot = {};      // remaining picks grouped by the seat that owns them
-    Object.keys(state.picks).forEach(function(k){
+  // team, and each seat shows only the picks it still owns. Otherwise a user
+  // who owns picks across two seats would show up as "You" twice.
+  function ownedPickGroups(){
+    var teams = (state && state.teams) || 12;
+    var mine = [];
+    var bySlot = {};
+    var lists = [];
+    if (!state) return { mine: mine, bySlot: bySlot, teams: teams, lists: lists };
+    Object.keys(state.picks || {}).forEach(function(k){
       var pn = parseInt(k, 10);
       if (!state.picks[k]) return;
       var entry = { pn: pn, p: state.picks[k] };
       if (isMyPick(pn)){ mine.push(entry); return; }
-      // Credit the pick to the team that actually owns it (traded picks map to
-      // their new owner), falling back to the board seat when no map is available.
       var slot = (state.pickOwners && state.pickOwners[pn] != null) ? state.pickOwners[pn] : slotOnClock(pn, teams, state.order);
       if (!bySlot[slot]) bySlot[slot] = [];
       bySlot[slot].push(entry);
     });
+    mine.sort(function(a, b){ return a.pn - b.pn; });
+    if (mine.length) lists.push(mine);
+    for (var s = 1; s <= teams; s++){
+      var slotPicks = bySlot[s];
+      if (!slotPicks || !slotPicks.length) continue;
+      slotPicks.sort(function(a, b){ return a.pn - b.pn; });
+      lists.push(slotPicks);
+    }
+    return { mine: mine, bySlot: bySlot, teams: teams, lists: lists };
+  }
+  function pickListToStrengthRows(list){
+    return (list || []).map(function(m){
+      var full = playersById[String(m.p.id)];
+      return {
+        id: m.p.id,
+        pos: (m.p.position || '').toUpperCase(),
+        val: full ? valOf(full) : (m.p.val || 0),
+        ppg: full ? ppgOf(full) : null,
+      };
+    });
+  }
+  // Grade every team in the draft, sorted best-first.
+  function gradeAllTeams(){
+    if (!state) return [];
+    _gradeCliffByPn = _buildGradeCliffs();
+    var groups = ownedPickGroups();
+    var teams = groups.teams;
+    var mine = groups.mine;
+    var bySlot = groups.bySlot;
     var out = [];
     // The user's team: all owned picks consolidated into one entry. Slot 0 is a
     // sentinel that never collides with the real seats (1..teams), so the League
     // tab's per-row detail lookup stays unambiguous.
     if (mine.length){
-      mine.sort(function(a, b){ return a.pn - b.pn; });
       var gm = gradePicks(mine);
       if (gm) out.push({ slot: 0, name: 'You', isMe: true, grade: gm, picks: mine });
     }
     for (var s = 1; s <= teams; s++){
       var picks = bySlot[s];
       if (!picks || !picks.length) continue;
-      picks.sort(function(a, b){ return a.pn - b.pn; });
       var g = gradePicks(picks);
       if (!g) continue;
       out.push({ slot: s, name: teamName(s), isMe: false, grade: g, picks: picks });
@@ -4900,8 +4926,8 @@
     if (state.type === 'rookie') return gradeBar('Avg Pick Score', g.value, 100, 'The bar shows average 0-100 pick score (same chips shown on each pick). The letter grade uses the BPA/ADP system: did you reach, and was a better player available?');
     // g.tier holds the starting-lineup strength component.
     var starterTip = state.type === 'redraft'
-      ? 'Projected starting-lineup PPG versus a league-average team — the same strength playoff odds use. This is the largest slice of a redraft grade.'
-      : 'How good your projected starting lineup is versus a league-average team.';
+      ? 'Projected starting-lineup PPG versus this league’s average starting lineup — the same strength playoff odds use. This is the largest slice of a redraft grade.'
+      : 'How good your projected starting lineup is versus this league’s average starting lineup.';
     var consTip = state.type === 'redraft'
       ? 'Mostly whether you’ve filled starting slots. Extra bench depth is not a penalty; empty starters are.'
       : 'How well you’ve filled your starting slots and balanced positions.';
@@ -6742,7 +6768,7 @@
     { term: 'PPG', def: 'Points per game - projected for the upcoming season, or last season’s actual when that’s shown. On the draft report card, Proj PPG is the projected weekly total of your optimal starting lineup, not the sum of every player you drafted.' },
     { term: 'Survival %', def: 'The chance a player is still on the board at your next pick. Starts from consensus ADP, then adapts to how your draft is actually going - if the room is reaching, letting players slide, drafting unpredictably, or running on a position, the odds shift to match (kicks in after the first several picks).' },
     { term: 'Grade · Value', def: 'How strong your picks are by pick score, weighted toward the earlier rounds where it matters most.' },
-    { term: 'Grade · Starters', def: 'How good your projected starting lineup is versus a league-average team. 100% is a league-average lineup; the rank is among teams in this draft. Snake drafts are close to zero-sum, so a lineup near 100% of average can still rank 1st or 2nd.' },
+    { term: 'Grade · Starters', def: 'How good your projected starting lineup is versus this league’s actual starting lineups. 100% is the average of those lineups; the rank is among teams in this draft. Snake drafts are close to zero-sum, so a lineup near 100% of average can still rank 1st or 2nd.' },
     { term: 'Grade · Construction', def: 'How well you’ve filled your starting slots and balanced your positions.' },
     { term: 'Grade · Early', def: 'Shown until your team has 8 picks (3 in a rookie draft). The letter is real — including at two picks / the start of round 3 — but construction is still ramping and the sample is small.' },
     { term: 'Hist', def: 'Historical top-12 chance for this career profile and situation. Compare it to the ADP-round rate in Deep Dive — early ADP is a high bar. Not a Pick Score, Recommendation, VOR, or Draft Grade input.' }

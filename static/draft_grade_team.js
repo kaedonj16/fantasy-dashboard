@@ -59,6 +59,8 @@
 
   // Build a roster-valid league-wide starting field. A global top-N baseline is
   // position-blind and, for PPG, becomes an imaginary lineup dominated by QBs.
+  // Live grades prefer peerStarterAvg (this draft's actual lineups). This
+  // remains the fallback when the caller has a player pool but no per-team lists.
   function leagueLineupAvg(players, slots, numTeams, metric) {
     var eligible = [];
     (players || []).forEach(function (p, i) {
@@ -72,6 +74,42 @@
     var vals = eligible.filter(function (p) { return selected[String(p.id)]; })
       .map(function (p) { return p.ppg; });
     return vals.length ? vals.reduce(function (a, b) { return a + b; }, 0) / vals.length : null;
+  }
+
+  function starterMetricAvg(picks, slots, metric) {
+    if (!picks || !picks.length || !slots || !slots.length) return null;
+    var ids = optimalLineupIds(picks, slots);
+    var vals = [];
+    picks.forEach(function (p) {
+      if (!ids[String(p.id)] || p[metric] == null) return;
+      vals.push(+p[metric]);
+    });
+    return vals.length ? vals.reduce(function (a, b) { return a + b; }, 0) / vals.length : null;
+  }
+
+  function peerStarterAvg(teams, slots, metric) {
+    var avgs = [];
+    (teams || []).forEach(function (picks) {
+      var avg = starterMetricAvg(picks, slots, metric);
+      if (avg != null) avgs.push(avg);
+    });
+    return avgs.length ? avgs.reduce(function (a, b) { return a + b; }, 0) / avgs.length : null;
+  }
+
+  // Prefer this draft's actual lineups, then a roster-valid pool field, then
+  // a position-blind top-N list.
+  function resolveStrengthBaseline(slots, numTeams, metric, options) {
+    options = options || {};
+    if (options.peerAvg != null && options.peerAvg > 0) return +options.peerAvg;
+    if (options.leagueTeams) {
+      var peer = peerStarterAvg(options.leagueTeams, slots, metric);
+      if (peer != null && peer > 0) return peer;
+    }
+    var field = leagueLineupAvg(options.leaguePlayers, slots, numTeams, metric);
+    if (field != null && field > 0) return field;
+    var nStart = Math.max(+numTeams || 1, 1) * (slots || []).length;
+    var top = avgTopN(options.leagueList || [], nStart);
+    return top > 0 ? top : null;
   }
 
   // Value / Starters / Construction caps. Must match utils/draft_grade.py
@@ -139,16 +177,17 @@
       ? rnd(clamp01((starterAvgPs || 0) / 100) * valueWeight)
       : Math.floor(valueWeight / 2);
 
-    // 2) Starting-lineup strength vs a league-average team.
+    // 2) Starting-lineup strength vs this league's average starting lineup.
     var starterArr = picks.filter(function (p) { return starterIds[String(p.id)]; });
-    var nStart = Math.max(numTeams, 1) * slots.length;
     var myPpgs = starterArr.filter(function (p) { return p.ppg != null; }).map(function (p) { return +p.ppg; });
     var ppgRatio = null;
     if (myPpgs.length >= Math.max(2, Math.floor(starterArr.length * 0.5))) {
       var myPpgAvg = myPpgs.reduce(function (a, b) { return a + b; }, 0) / myPpgs.length;
-      var leaguePpgAvg = leagueLineupAvg(leaguePlayers, slots, numTeams, 'ppg');
-      if (leaguePpgAvg == null) leaguePpgAvg = avgTopN(leaguePpg || [], nStart);
-      if (leaguePpgAvg > 0) {
+      var leaguePpgAvg = resolveStrengthBaseline(slots, numTeams, 'ppg', {
+        peerAvg: options.peerStarterPpg, leagueTeams: options.leagueTeams,
+        leaguePlayers: leaguePlayers, leagueList: leaguePpg
+      });
+      if (leaguePpgAvg != null && leaguePpgAvg > 0) {
         ppgRatio = myPpgAvg / leaguePpgAvg;
         // Redraft playoff odds sum every starting slot (empty = 0). Scale the
         // filled-starter average by coverage so a finished stars-and-scrubs
@@ -164,9 +203,11 @@
     }
     var myValAvg = starterArr.length
       ? starterArr.reduce(function (a, p) { return a + (+p.val || 0); }, 0) / starterArr.length : 0;
-    var leagueValAvg = leagueLineupAvg(leaguePlayers, slots, numTeams, 'val');
-    if (leagueValAvg == null) leagueValAvg = avgTopN(leagueVal || [], nStart);
-    var valueRatio = leagueValAvg > 0 ? myValAvg / leagueValAvg : null;
+    var leagueValAvg = resolveStrengthBaseline(slots, numTeams, 'val', {
+      peerAvg: options.peerStarterVal, leagueTeams: options.leagueTeams,
+      leaguePlayers: leaguePlayers, leagueList: leagueVal
+    });
+    var valueRatio = leagueValAvg != null && leagueValAvg > 0 ? myValAvg / leagueValAvg : null;
     var strengthRatio;
     if (redraft) {
       strengthRatio = ppgRatio != null ? ppgRatio : (valueRatio != null ? valueRatio : 0.80);
@@ -208,6 +249,8 @@
     teamGradeComposite: teamGradeComposite,
     optimalLineupIds: optimalLineupIds,
     leagueLineupAvg: leagueLineupAvg,
+    starterMetricAvg: starterMetricAvg,
+    peerStarterAvg: peerStarterAvg,
     SPLIT_STARTUP: SPLIT_STARTUP,
     SPLIT_REDRAFT: SPLIT_REDRAFT,
   };
