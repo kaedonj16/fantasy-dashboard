@@ -8,7 +8,7 @@ EXT = REPO / "extension"
 
 def test_extension_manifest_includes_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.4.4"
+    assert manifest["version"] == "1.4.5"
     assert "cookies" in manifest["permissions"]
     assert "scripting" in manifest["permissions"]
     assert "tabs" in manifest["permissions"]
@@ -24,6 +24,16 @@ def test_extension_manifest_includes_draft_scripts():
             iso_js = js
     assert main_js == ["espn_draft_main.js"]
     assert iso_js == ["espn_draft.js"]
+    main_block = next(
+        s for s in scripts
+        if s.get("world") == "MAIN" and s.get("js") == ["espn_draft_main.js"]
+    )
+    iso_block = next(
+        s for s in scripts
+        if s.get("world", "ISOLATED") != "MAIN" and s.get("js") == ["espn_draft.js"]
+    )
+    assert not main_block.get("all_frames")
+    assert not iso_block.get("all_frames")
     assert (EXT / "espn_draft_main.js").is_file()
     assert (EXT / "espn_draft.js").is_file()
     assert (EXT / "pack_extension.py").is_file()
@@ -54,12 +64,12 @@ def test_extension_relay_message_contract():
     assert "pickSources" in main
     assert "isTraversableObject" in main
     assert "safeProp" in main
+    assert "instanceof Window" in main
     assert "emitAccumulated" in main
     assert "watchDom" in main
     assert "deepFindDraftDetail" in main
     assert "playerPoolEntry" in main
     assert "ensureEspnDraftObserver" in bg
-    assert "all_frames" in json.dumps(manifest)
     assert "ensureEspnDraftObserver" in iso or "requestObserverInject" in iso
     assert "mainObserverReady" in iso
     assert "observer not loaded" in iso
