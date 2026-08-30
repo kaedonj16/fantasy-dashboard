@@ -2106,8 +2106,8 @@
     }
     var counts = teamCounts(slot), rs = (state && state.roster) || defaultRoster();
     var obligations = window.DraftBoardCore
-      ? DraftBoardCore.remainingObligations(counts, rs, remaining, !!state.sf)
-      : { required: 0, freePicks: remaining };
+      ? DraftBoardCore.remainingObligations(counts, rs, remaining, !!state.sf, { tep: scoringCfg().tep })
+      : { required: 0, freePicks: remaining, lineupHoles: 0 };
     return { qualByPos: qualByPos, picksList: picksList, rosterQualities: rosterQualities, nextOwned: nextOwned,
              lastPickByPos: lastPickByPos, remaining: remaining, obligations: obligations };
   }
@@ -2317,7 +2317,8 @@
         c.ds = DraftBoardCore.decisionScore({ base: pv, utility: _util,
           bench: _bench, deepBench: _role === 'bench2', quality: ppgNormOf(p) || 0,
           required: cpuCtx.obligations.required, freePicks: cpuCtx.obligations.freePicks,
-          recentPenalty: _recent, exceptional: _exceptional, waitLoss: _waitLoss });
+          recentPenalty: _recent, exceptional: _exceptional, waitLoss: _waitLoss,
+          draftType: state.type, lineupHoles: cpuCtx.obligations.lineupHoles || 0 });
         // Decision quality gates the ADP likelihood but does not replace it. A
         // persona may choose among close values; it cannot turn poor roster fit
         // into a favorite merely by stacking several heuristic multipliers.
@@ -3319,8 +3320,8 @@
     var rs = (state && state.roster) || defaultRoster();
     var remaining = hasOwned() ? upcomingOwnedPicks().length : 0;
     var obligations = window.DraftBoardCore
-      ? DraftBoardCore.remainingObligations(myPosCounts(), rs, remaining, !!state.sf)
-      : { missing: {}, required: 0, remaining: remaining, freePicks: remaining };
+      ? DraftBoardCore.remainingObligations(myPosCounts(), rs, remaining, !!state.sf, { tep: scoringCfg().tep })
+      : { missing: {}, required: 0, remaining: remaining, freePicks: remaining, lineupHoles: 0 };
     _psCtxCache = { targets: targets, qualByPos: qualByPos, rosterQualities: rosterQualities,
                     lastPickByPos: lastPickByPos, roster: rs,
                     remaining: remaining, obligations: obligations, nextByPos: {} };
@@ -3812,7 +3813,9 @@
   }
 
   // Live recommendations answer a different question from the historical Pick
-  // Score: how much does this player help THIS roster before the next owned pick?
+  // Score: how much does this player help THIS roster's starting lineup before
+  // the next owned pick? In redraft that means starter/flex fills beat luxury
+  // bench BPA while lineup holes remain. Pick Score weights stay untouched.
   // Keep these tunings together and outside the shared grade kernel so completed
   // draft grades remain stable and JS/Python parity is untouched.
   function rosterRoleFor(p, counts){
@@ -3960,7 +3963,8 @@
       quality: ppgNormOf(p) || 0, required: c.obligations.required,
       freePicks: c.obligations.freePicks,
       waitLoss: Math.max(0, base - expected) * (1 + demandRisk), waitLossScale: waitLossScale,
-      waitPenalty: waitPenalty, handcuffBonus: handcuffBonus, upsideBonus: upsideBonus });
+      waitPenalty: waitPenalty, handcuffBonus: handcuffBonus, upsideBonus: upsideBonus,
+      draftType: state.type, lineupHoles: c.obligations.lineupHoles || 0 });
     // While waiting, rank by expected value at YOUR pick so Gibbs at 0% at #9
     // cannot sit at #1 REC above players who will actually be there.
     if (advisingFuture && DraftBoardCore.futurePickDecisionScore){
@@ -3987,6 +3991,9 @@
     var tier = tierOf(p);
     var left = tierRemaining(p);
     var role = rosterRoleFor(p, counts), _pc = psCtx();
+    if ((role === 'bench1' || role === 'bench2') && state.type === 'redraft'
+        && (_pc.obligations.lineupHoles || 0) > 0)
+      return 'Backup-only · starter slots still open';
     if ((role === 'bench1' || role === 'bench2') && _pc.obligations.required > 0 && _pc.obligations.freePicks <= 2)
       return 'Backup-only · only ' + _pc.obligations.freePicks + ' discretionary picks';
     if (!state.sf && pos === 'QB' && (counts['QB'] || 0) >= 1)
@@ -6837,7 +6844,7 @@
   // ── Glossary / inline term explainers ───────────────────────────────────────
   // Single source of truth so the inline ⓘ tooltips and the help popover agree.
   var _GLOSSARY = [
-    { term: 'Recommendation', def: 'The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. A major value fall can still overcome imperfect roster fit. When it is not your turn, the order is for your next owned pick and players unlikely to last there are ranked down. Recommendation is shown as a rank rather than a grade because its internal utility naturally changes as the board is depleted.' },
+    { term: 'Recommendation', def: 'The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. In redraft it favors this-season lineup strength: filling an open starter or FLEX hole beats luxury bench BPA, while 1QB/1TE empties stay streamable and a major ADP fall can still win. It does not rank by simulated playoff odds. When it is not your turn, the order is for your next owned pick and players unlikely to last there are ranked down. Recommendation is shown as a rank rather than a grade because its internal utility naturally changes as the board is depleted.' },
     { term: 'Pick Score (PS)', def: 'How good is this player at this pick? The absolute 0-100 quality kernel combines model value, a scarcity residual (VOR as a share of the player\'s own value, so same-position stars are not double-counted), ADP, tier, roster need, and projected points. Live survival, handcuffs, and late-round upside live in Recommendation, not here. Kickers and defenses are not scored.' },
     { term: 'Board PS', def: 'How good was this selection relative to what was available at that moment? Made-pick chips replay the historical remaining pool and scale the absolute Pick Score against its best option. Deep Dive’s Avg pick score, use the same relative scale. Board PS can therefore differ from absolute Pick Score and Recommendation.' },
     { term: 'Draft Grade', def: 'How good is the resulting roster? It primarily evaluates the optimal starters, functional bench depth, efficient construction, and role- and round-weighted pick quality. It is not an average Recommendation rank, and K/DEF are grade-neutral.' },
@@ -7142,6 +7149,11 @@
     Object.keys(expectedByPos).forEach(function(pos){
       expectedByPos[pos].sort(function(a,b){ return b - a; });
     });
+    var remainingAtPn = 0, totAtPn = (state.teams || 12) * (state.rounds || 16);
+    for (var hn = pn; hn <= totAtPn; hn++){ if (isMyPick(hn)) remainingAtPn++; }
+    var histOb = Core.remainingObligations
+      ? Core.remainingObligations(counts, rs, remainingAtPn, !!state.sf, { tep: scoringCfg().tep })
+      : { required: 0, freePicks: remainingAtPn, lineupHoles: 0 };
     var rows = remaining.map(function(p){
       var pos = String(p.position || '').toUpperCase();
       var abs = pickScore(p,maxV,counts,{grading:true,pickNo:pn,qualByPos:qualByPos});
@@ -7171,7 +7183,8 @@
       var ds = Core.decisionScore({
         base: abs, utility: util, bench: role === 'bench1' || role === 'bench2',
         deepBench: role === 'bench2', quality: ppgNormOf(p) || 0,
-        waitLoss: waitLoss, upsideBonus: upside
+        waitLoss: waitLoss, upsideBonus: upside, required: histOb.required,
+        freePicks: histOb.freePicks, draftType: state.type, lineupHoles: histOb.lineupHoles || 0
       });
       return { id: p.id, player: p, absolutePickScore: abs, decisionScore: ds };
     }).filter(Boolean);

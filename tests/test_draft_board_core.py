@@ -242,6 +242,7 @@ def test_roster_economics_respect_format_and_flex():
     assert out["dynDepth"] == [0.55, 0.1, 0.55, 0.18, 0.44, 0.12]
     assert out["ob"]["missing"] == {"QB": 0, "RB": 0, "WR": 0, "TE": 0, "K": 1, "DEF": 1, "FLEX": 2}
     assert out["ob"]["freePicks"] == 1
+    assert out["ob"]["lineupHoles"] == 2
     assert out["sf"] == "starter"
     assert out["twoTe"] == "starter"
     assert out["flexUpgrade"] == "flex"
@@ -360,6 +361,67 @@ def test_streamable_qb_te_need_does_not_leap_skill_depth():
     assert out["recs"]["wrValue"] > out["recs"]["qbReach"]
     assert out["recs"]["wr"] > out["recs"]["te"]
     assert out["cliff"]["qb"] > out["cliff"]["wr"]
+
+
+def test_redraft_recs_prefer_starter_fills_over_luxury_bench():
+    """Redraft Decision Score taxes luxury bench while RB/WR/FLEX holes remain.
+
+    Pick Score weights stay untouched. Empty 1QB/1TE slots are not holes, so
+    the streamable-QB-vs-WR-depth ranking is unchanged. Startup is unaffected.
+    An extreme ADP fall can still buy the tax back.
+    """
+    out = _run_need_cases("""(() => {
+      const rc={QB:1,RB:2,WR:3,TE:1,FLEX:1,BN:7};
+      const holesOpen={QB:1,RB:2,WR:0,TE:1};   // 3 WR + FLEX still empty
+      const holesFilled={QB:1,RB:3,WR:3,TE:1}; // lineup done except streamable 1QB
+      const onlyQbTe={QB:0,RB:4,WR:3,TE:0};    // streamable empties only
+      const ob=(counts,o={})=>C.remainingObligations(counts,rc,10,!!o.sf,o);
+      const wrUtil=C.positionNeedUtility('WR',holesOpen,rc,{draftType:'redraft'});
+      const rbUtil=C.positionNeedUtility('RB',holesOpen,rc,{draftType:'redraft',role:'bench1'});
+      const starter=C.decisionScore({base:84,utility:wrUtil,bench:false,quality:.7,
+        draftType:'redraft',lineupHoles:ob(holesOpen).lineupHoles});
+      const luxury=C.decisionScore({base:94,utility:rbUtil,bench:true,quality:.75,
+        draftType:'redraft',lineupHoles:ob(holesOpen).lineupHoles,required:4,freePicks:6});
+      const luxuryNoHoles=C.decisionScore({base:94,utility:.82,bench:true,quality:.75,
+        draftType:'redraft',lineupHoles:0,required:2,freePicks:6});
+      const starterNoHoles=C.decisionScore({base:84,utility:1,bench:false,quality:.7,
+        draftType:'redraft',lineupHoles:0});
+      const startupLuxury=C.decisionScore({base:94,utility:rbUtil,bench:true,quality:.75,
+        draftType:'startup',lineupHoles:ob(holesOpen).lineupHoles,required:4,freePicks:6});
+      const startupStarter=C.decisionScore({base:84,utility:wrUtil,bench:false,quality:.7,
+        draftType:'startup',lineupHoles:ob(holesOpen).lineupHoles});
+      const fallen=C.decisionScore({base:99,utility:.82,bench:true,quality:1,exceptional:1,
+        draftType:'redraft',lineupHoles:ob(holesOpen).lineupHoles,required:4,freePicks:6});
+      const wrDepth=C.decisionScore({base:88,utility:C.positionNeedUtility('WR',onlyQbTe,rc,{draftType:'redraft'}),
+        bench:true,draftType:'redraft',lineupHoles:ob(onlyQbTe).lineupHoles});
+      const emptyQb=C.decisionScore({base:88,utility:C.positionNeedUtility('QB',onlyQbTe,rc,{draftType:'redraft'}),
+        bench:false,draftType:'redraft',lineupHoles:ob(onlyQbTe).lineupHoles});
+      const sfQbEmpty=ob({QB:0,RB:2,WR:3,TE:1},{sf:true,tep:0});
+      const tepEmpty=ob({QB:1,RB:2,WR:3,TE:0},{tep:1});
+      return {
+        holes:{open:ob(holesOpen).lineupHoles, filled:ob(holesFilled).lineupHoles,
+          onlyQbTe:ob(onlyQbTe).lineupHoles, sfQb:sfQbEmpty.lineupHoles, tep:tepEmpty.lineupHoles},
+        recs:{starter,luxury,luxuryNoHoles,starterNoHoles,startupLuxury,startupStarter,fallen,wrDepth,emptyQb}
+      };
+    })()""")
+
+    # 3 WR + 1 FLEX still empty. Extra RBs on a 2-RB roster do not fill those WR slots.
+    assert out["holes"]["open"] == 4
+    # Only K/DEF / streamable 1QB remain — not rec-steering holes.
+    assert out["holes"]["filled"] == 0
+    assert out["holes"]["onlyQbTe"] == 0
+    # Superflex QB and premium TE empties DO count.
+    assert out["holes"]["sfQb"] >= 1
+    assert out["holes"]["tep"] >= 1
+    # Mid-draft: an 84 starter beats a 94 luxury bench piece. Same scores without
+    # holes (or in startup) keep the old BPA-can-win relationship.
+    assert out["recs"]["starter"] > out["recs"]["luxury"]
+    assert out["recs"]["luxuryNoHoles"] > out["recs"]["starterNoHoles"]
+    assert out["recs"]["startupLuxury"] > out["recs"]["startupStarter"]
+    # A true ADP fall can still overcome the tax.
+    assert out["recs"]["fallen"] > out["recs"]["starter"]
+    # Streamable empty 1QB still must not leap WR depth on need alone.
+    assert out["recs"]["wrDepth"] > out["recs"]["emptyQb"]
 
 
 def test_wait_loss_scale_damps_single_slot_scarcity():
