@@ -1823,7 +1823,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueName:{league_name_js},leagueFormat:{league_format_js},currentWeek:{current_week_js},leagueType:{league_type_js},leagueSize:{league_size_js}}};</script>
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueName:{league_name_js},leagueFormat:{league_format_js},currentWeek:{current_week_js},leagueType:{league_type_js},leagueSize:{league_size_js},scoringType:{league_scoring_type_js}}};</script>
       <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -4717,6 +4717,7 @@ def render_page(
     import json as _json
     _league_type = "1qb"
     _league_size = 10
+    _scoring_type = "redraft" if str(platform or "").strip().lower() == "espn" else "dynasty"
     _chrome_meta = {"name": "", "format": "", "week": 0, "week_label": ""}
     if league_id and platform and season:
         try:
@@ -4728,6 +4729,11 @@ def render_page(
                 _league_type = "sf"
             if int(_chrome_meta.get("size") or 0) >= 2:
                 _league_size = int(_chrome_meta["size"])
+            _peek = _peek_league_ctx(platform, league_id, season) or {"platform": platform}
+            if _league_is_redraft(_peek):
+                _scoring_type = "redraft"
+            else:
+                _scoring_type = "dynasty"
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
 
@@ -4783,6 +4789,7 @@ def render_page(
         current_week_js=_json.dumps(_chrome_meta.get("week") or 0),
         league_type_js=_json.dumps(_league_type),
         league_size_js=_json.dumps(_league_size),
+        league_scoring_type_js=_json.dumps(_scoring_type),
     )
     resp = make_response(html)
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
@@ -11111,6 +11118,13 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         f"window.__adpSeason={json.dumps(int(season) if season else 0)};"
         "</script>"
     )
+    if platform and league_id and season:
+        try:
+            _pr_ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
+            _pr_st = "redraft" if _league_is_redraft(_pr_ctx) else "dynasty"
+        except Exception:
+            _pr_st = "redraft" if str(platform).strip().lower() == "espn" else "dynasty"
+        body_html += f"\n<script>window.__leagueScoringType={json.dumps(_pr_st)};</script>"
 
     # Rankings logic was moved to a cacheable, minified static file. `defer` runs
     # it after the page's app.js and after the inline __leagueTePremium injection
@@ -14877,7 +14891,11 @@ def api_trade_eval():
             rosters = ctx.get("rosters") or []
             viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
             if viewer_roster:
-                model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [], is_sf=_ctx_is_sf(ctx))
+                model_value_lookup = build_model_value_lookup(
+                    ctx.get("model_value_table") or [],
+                    is_sf=_ctx_is_sf(ctx),
+                    scoring_type=scoring_type,
+                )
                 viewer_gives = side_a if viewer_side == "b" else side_b
                 viewer_gets = side_b if viewer_side == "b" else side_a
                 sending = [a for a in (viewer_gives.get("assets") or []) if
@@ -21682,15 +21700,17 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
     roster_map = ctx.get("roster_map") or {}
     model_value_table = ctx.get("model_value_table") or []
 
-    # Sleeper league type: 0 = redraft, 1 = keeper, 2 = dynasty. Only pure redraft
-    # turns off the age-based (dynasty) rules and the dynasty-ADP market signals;
-    # keeper is treated like dynasty. Non-Sleeper leagues have no type here and
-    # default to dynasty behavior.
-    _lg_settings = (ctx.get("league") or {}).get("settings") or {}
-    is_redraft = _safe_int(_lg_settings.get("type"), -1) == 0
+    # Redraft/keeper (and all ESPN) use this-season values; dynasty uses
+    # long-term value. Matches _league_is_redraft everywhere else.
+    is_redraft = _league_is_redraft(ctx)
 
     # Build value lookup keyed by player_id
-    val_key = "sf_value" if league_type == "sf" else "value"
+    if is_redraft:
+        val_key = "redraft_value_sf" if league_type == "sf" else "redraft_value_1qb"
+        val_fallback = "redraft_value_1qb" if league_type == "sf" else "value"
+    else:
+        val_key = "sf_value" if league_type == "sf" else "value"
+        val_fallback = "value"
     values_by_id: dict = {}
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -21699,7 +21719,7 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
         if not pid:
             continue
         values_by_id[pid] = {
-            "value": float(row.get(val_key) or row.get("value") or 0),
+            "value": float(row.get(val_key) or row.get(val_fallback) or row.get("value") or 0),
             "age": row.get("age"),
             "position": str(row.get("position") or "").upper(),
             "pos_rank_label": row.get("pos_rank_label") or "",
@@ -22040,7 +22060,10 @@ def api_trade_targets():
     players_index = ctx.get("players_index") or {}
     picks_by_roster = {} if _league_is_redraft(ctx) else (ctx.get("picks_by_roster") or {})
 
-    if league_type == "sf":
+    if _league_is_redraft(ctx):
+        _vk_primary, _vk_fallback = _waiver_value_keys(ctx)
+        val_key, val_fallback = _vk_primary, _vk_fallback
+    elif league_type == "sf":
         val_key = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
         val_fallback = "sf_value"
     else:
@@ -22368,7 +22391,19 @@ def api_trade_intel_player_packages(player_id: str):
         return jsonify({"error": "Premium required"}), 403
 
     try:
-        val_key = "sf_value" if league_type == "sf" else "value"
+        ctx = {}
+        if league_id:
+            try:
+                ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
+            except Exception:
+                ctx = {}
+        is_redraft = bool(ctx) and _league_is_redraft(ctx)
+        if is_redraft:
+            val_key = "redraft_value_sf" if league_type == "sf" else "redraft_value_1qb"
+            val_fallback = "redraft_value_1qb" if league_type == "sf" else "value"
+        else:
+            val_key = "sf_value" if league_type == "sf" else "value"
+            val_fallback = "value"
         # Always prefer live DB values; fall back to cached JSON only if DB unavailable
         value_table = []
         try:
@@ -22378,7 +22413,7 @@ def api_trade_intel_player_packages(player_id: str):
         if not value_table:
             value_table = list(get_model_value_table_cached() or [])
 
-        _use_sf_ranks = (val_key == "sf_value")
+        _use_sf_ranks = (val_key in ("sf_value", "redraft_value_sf"))
         values_by_id: dict = {}
         for p in value_table:
             pid = str(p.get("id") or "")
@@ -22386,7 +22421,7 @@ def api_trade_intel_player_packages(player_id: str):
                 values_by_id[pid] = {
                     "name": p.get("name", ""),
                     "position": str(p.get("position") or "").upper(),
-                    "value": float(p.get(val_key) or p.get("value") or 0),
+                    "value": float(p.get(val_key) or p.get(val_fallback) or p.get("value") or 0),
                     "sf_value": float(p.get("sf_value") or p.get("value") or 0),
                     "pos_rank": int((p.get("sf_pos_rank") if _use_sf_ranks else p.get("pos_rank")) or 99),
                     "pos_rank_label": (p.get("sf_pos_rank_label") if _use_sf_ranks else p.get("pos_rank_label")) or "",
@@ -22410,10 +22445,10 @@ def api_trade_intel_player_packages(player_id: str):
         viewer_players: list[dict] = []
         viewer_picks: list[dict] = []
         rosters: list = []
-        ctx = {}
         if league_id and viewer_roster_id:
             try:
-                ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
+                if not ctx:
+                    ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
                 rosters = ctx.get("rosters") or []
                 viewer_roster_obj = next(
                     (r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None
@@ -22593,7 +22628,10 @@ def api_trade_intel_player_packages(player_id: str):
         # Resync val_key with the actual league format detected from roster_positions.
         # The initial val_key was set from the URL param; the real league may differ
         # (e.g. league has SUPER_FLEX but URL says league_type=1qb).
-        _correct_val_key = "sf_value" if _is_sf else "value"
+        if is_redraft:
+            _correct_val_key = "redraft_value_sf" if _is_sf else "redraft_value_1qb"
+        else:
+            _correct_val_key = "sf_value" if _is_sf else "value"
         if _correct_val_key != val_key and ctx:
             val_key = _correct_val_key
             _rsf = _is_sf
@@ -22820,7 +22858,10 @@ def api_trade_intel_player_packages(player_id: str):
                     })
             flat.sort(key=lambda x: x["value"], reverse=True)
             picks = (_fresh_pbr or {}).get(rid, [])
-            return _calc_grade(flat, picks)
+            return _calc_grade(
+                flat, picks,
+                scoring_type="redraft" if is_redraft else "dynasty",
+            )
 
         def _acceptance_prob(pkg: dict, total_trades: int) -> int:
             """
@@ -22885,43 +22926,45 @@ def api_trade_intel_player_packages(player_id: str):
 
                 need_adj = max(-10, min(need_adj, 18))
 
-                # 4. Win/rebuild window - use same grade as Teams page
-                grade_data = _roster_grade(owner_roster)
-                win_window = grade_data.get("win_window", "")
-                # Map Teams-page labels to rebuild / win_now / competitive
-                if win_window in ("Full Rebuild", "Retooling"):
-                    window = "rebuild"
-                elif win_window in ("Win-Now Window", "Aging Contender", "Contender Window"):
-                    window = "win_now"
-                else:
-                    window = "competitive"
+                # 4. Win/rebuild window — dynasty only. Redraft acceptance
+                # is this-season need + value, not youth or future picks.
+                if not is_redraft:
+                    grade_data = _roster_grade(owner_roster)
+                    win_window = grade_data.get("win_window", "")
+                    # Map Teams-page labels to rebuild / win_now / competitive
+                    if win_window in ("Full Rebuild", "Retooling"):
+                        window = "rebuild"
+                    elif win_window in ("Win-Now Window", "Aging Contender", "Contender Window"):
+                        window = "win_now"
+                    else:
+                        window = "competitive"
 
-                sent_picks = [a for a in pkg.get("send", []) if a.get("is_pick")]
-                sent_ages = []
-                sent_vals = []
-                for a in sent_players:
-                    info = values_by_id.get(a.get("player_id") or "")
-                    if info:
-                        sent_ages.append(float(info.get("age") or 25))
-                        sent_vals.append(float(info.get("value") or 0))
+                    sent_picks = [a for a in pkg.get("send", []) if a.get("is_pick")]
+                    sent_ages = []
+                    sent_vals = []
+                    for a in sent_players:
+                        info = values_by_id.get(a.get("player_id") or "")
+                        if info:
+                            sent_ages.append(float(info.get("age") or 25))
+                            sent_vals.append(float(info.get("value") or 0))
 
-                avg_sent_age = sum(sent_ages) / len(sent_ages) if sent_ages else 25
-                avg_sent_val = sum(sent_vals) / len(sent_vals) if sent_vals else 0
-                n_picks = len(sent_picks)
+                    avg_sent_age = sum(sent_ages) / len(sent_ages) if sent_ages else 25
+                    avg_sent_val = sum(sent_vals) / len(sent_vals) if sent_vals else 0
+                    n_picks = len(sent_picks)
 
-                if window == "rebuild":
-                    # Rebuilding teams want youth and picks
-                    youth_bonus = max(0, int((26 - avg_sent_age) * 2.5))  # young = good
-                    pick_bonus = n_picks * 6
-                    upside_bonus = min(int(avg_sent_val / 60), 8) if avg_sent_age < 24 else 0
-                    window_adj = min(youth_bonus + pick_bonus + upside_bonus, 20)
-                elif window == "win_now":
-                    # Win-now teams want proven contributors now
-                    vet_bonus = max(0, int((avg_sent_age - 23) * 2))
-                    tier_bonus = min(int(avg_sent_val / 100), 8)
-                    pick_penalty = n_picks * -4  # picks less useful when chasing now
-                    window_adj = max(-15, min(vet_bonus + tier_bonus + pick_penalty, 12))
-                # competitive: neutral (window_adj stays 0)
+                    if window == "rebuild":
+                        # Rebuilding teams want youth and picks
+                        youth_bonus = max(0, int((26 - avg_sent_age) * 2.5))  # young = good
+                        pick_bonus = n_picks * 6
+                        upside_bonus = min(int(avg_sent_val / 60), 8) if avg_sent_age < 24 else 0
+                        window_adj = min(youth_bonus + pick_bonus + upside_bonus, 20)
+                    elif window == "win_now":
+                        # Win-now teams want proven contributors now
+                        vet_bonus = max(0, int((avg_sent_age - 23) * 2))
+                        tier_bonus = min(int(avg_sent_val / 100), 8)
+                        pick_penalty = n_picks * -4  # picks less useful when chasing now
+                        window_adj = max(-15, min(vet_bonus + tier_bonus + pick_penalty, 12))
+                    # competitive: neutral (window_adj stays 0)
 
             prob = base + freq_boost + need_adj + window_adj
             return min(93, max(8, round(prob)))
@@ -23070,7 +23113,7 @@ def api_trade_intel_player_packages(player_id: str):
             for sig in (
                 f"{_pos}-T{_tier}",
                 f"{_pos}-T{min(_tier + 1, 9)}",
-                f"PICK:R{1 if _tier <= 3 else 2}",
+                *([] if is_redraft else (f"PICK:R{1 if _tier <= 3 else 2}",)),
             ):
                 if sig in existing_sigs:
                     continue
@@ -23093,6 +23136,20 @@ def api_trade_intel_player_packages(player_id: str):
                 return (arch_rank.get(sig, len(archetype_patterns)), -pkg.get("trades_like_this", 0))
 
             primary_pkgs.sort(key=_pkg_rank)
+
+        if is_redraft:
+            def _pkg_has_pick(pkg: dict) -> bool:
+                return any(
+                    a.get("is_pick") or a.get("type") == "pick"
+                    or str(a.get("position") or "").upper() == "PICK"
+                    for a in (pkg.get("send") or [])
+                )
+            primary_pkgs = [p for p in primary_pkgs if not _pkg_has_pick(p)]
+            archetype_patterns = [
+                ap for ap in archetype_patterns
+                if "PICK" not in str(ap.get("pattern_sig") or "")
+            ]
+            _receiver_win_window = ""
 
         return jsonify({
             "player_name": player_name,
@@ -23510,7 +23567,11 @@ def api_trade_intel_player_send_packages(player_id: str):
         roster_positions = ctx.get("roster_positions") or []
         _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
         is_sf = (league_type == "sf") or _is_superflex_lineup(roster_positions)
-        val_key = "sf_value" if is_sf else "value"
+        is_redraft = _league_is_redraft(ctx)
+        if is_redraft:
+            val_key = "redraft_value_sf" if is_sf else "redraft_value_1qb"
+        else:
+            val_key = "sf_value" if is_sf else "value"
         num_teams = len(rosters) or 12
 
         values_by_id: dict = {}
@@ -23773,7 +23834,10 @@ def api_trade_ideas_for_target():
         from utils.utils import load_model_value_table
         ctx = get_league_ctx_from_cache(platform, league_id, season)
 
-        val_key = "sf_value" if league_type == "sf" else "value"
+        if _league_is_redraft(ctx):
+            val_key = "redraft_value_sf" if league_type == "sf" else "redraft_value_1qb"
+        else:
+            val_key = "sf_value" if league_type == "sf" else "value"
         value_table = list(get_model_value_table_cached() or [])
         values_by_id = {}
         for p in value_table:
@@ -25334,6 +25398,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
                 dynasty_pct_val=dynasty_pct,
                 redraft_pct_val=redraft_pct,
                 dr_ratio=dr_ratio,
+                scoring_type="redraft" if is_redraft else "dynasty",
             )
             grade_label = grade_data.get("grade", "–")
             win_window = grade_data.get("win_window", "")

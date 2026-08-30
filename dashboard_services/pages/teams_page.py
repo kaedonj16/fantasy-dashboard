@@ -502,6 +502,7 @@ def build_teams_body(ctx: dict) -> str:
             dynasty_pct_val=_dynasty_pct(r_id),
             redraft_pct_val=_redraft_pct(r_id),
             dr_ratio=_team_dr_ratio.get(r_id, 1.0),
+            scoring_type=_scoring,
         )
 
     team_grades = {rid: _grade_for_roster(rid) for rid in team_meta}

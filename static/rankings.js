@@ -24,9 +24,11 @@
 var prAllPlayers = [];
 var prIndicators = {};
 var prSparklines = {};
-var prLeagueType   = '1qb';
-var prLeagueSize   = 10;
-var prScoringType  = 'dynasty';  // 'dynasty' | 'redraft'
+var prLeagueType   = (typeof brLeagueType === 'function' && brLeagueType()) || '1qb';
+var prLeagueSize   = (typeof brLeagueSize === 'function' && brLeagueSize()) || 10;
+var prScoringType  = (typeof window.__leagueScoringType === 'string' && window.__leagueScoringType)
+  ? window.__leagueScoringType
+  : ((typeof brScoringType === 'function' && brScoringType()) || 'dynasty');
 // Positional rank (1-based, per position) for the ACTIVE view, keyed by player
 // id. Recomputed each render from prGetValue() so it tracks the redraft/dynasty
 // x 1qb/sf x size toggles instead of the dynasty-only precomputed *_pos_rank
@@ -317,6 +319,12 @@ function updateSettingsIndicator() {
 
 function prSetScoringType(type) {
   prScoringType = type;
+  var sub = document.getElementById('prSubtitle');
+  if (sub) {
+    sub.textContent = type === 'redraft'
+      ? 'All players ranked by this-season redraft value.'
+      : 'All players ranked by dynasty value.';
+  }
   // Update panel toggles
   document.querySelectorAll('#prSettingsPanel .settings-toggle[data-value]').forEach(btn => {
     const section = btn.closest('.settings-section');
@@ -336,7 +344,7 @@ function prSetScoringType(type) {
   }
   updateSettingsIndicator();
   prPage = 1;
-  prRender();
+  if (prLoaded) prRender();
 }
 
 function prSetLeagueType(type) {
@@ -1292,5 +1300,8 @@ Promise.all([
     el.innerHTML = '<div class="empty-state empty-state-error">Failed to load players. Please refresh.</div>';
   }
 });
+}
+if (prScoringType === 'redraft') {
+  try { prSetScoringType('redraft'); } catch (e) {}
 }
 prLoadData();

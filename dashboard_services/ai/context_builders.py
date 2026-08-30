@@ -170,7 +170,9 @@ def team_value_age_rows(ctx: dict) -> list[dict]:
         return []
     roster_map = ctx.get("roster_map") or {}
     model_value_lookup = build_model_value_lookup(
-        ctx.get("model_value_table") or [], is_sf=_ctx_is_sf(ctx)
+        ctx.get("model_value_table") or [],
+        is_sf=_ctx_is_sf(ctx),
+        scoring_type=ctx_scoring_type(ctx),
     )
     players_index = ctx.get("players_index") or {}
     players_map = ctx.get("players_map") or {}
@@ -555,20 +557,26 @@ def calculate_roster_grade(
     win_rate: float | None = None,
     standings_rank: int = 0,
     offseason: bool = False,
+    scoring_type: str = "dynasty",
 ) -> dict:
     """
-    Score a dynasty roster and compute a competitive window label.
+    Score a roster and compute a competitive window label.
 
-    The window is based purely on roster construction:
+    Dynasty window is based on roster construction:
       dynasty_pct_val  - long-term value percentile vs league
       redraft_pct_val  - projected scoring percentile vs league (not actual PF)
       dr_ratio         - dynasty/redraft spread (future-heavy vs win-now)
       avg_age          - top-2-weighted age of top-8 players
       firsts           - future first-round picks
 
+    Redraft grades ignore age and draft capital. They are this-season
+    starter rooms plus value (redraft percentile, positional rank, elite).
+
     When called without league context (AI renderer, trade strategy), falls back
-    to age/depth/capital/elite scoring with positional rank proxy.
+    to age/depth/capital/elite scoring with positional rank proxy (dynasty)
+    or rank/elite/depth (redraft).
     """
+    is_redraft = str(scoring_type or "dynasty").strip().lower() == "redraft"
     top8 = players[:8]
 
     # Age - weight the top-2 players at 2× since they define the window
@@ -636,9 +644,38 @@ def calculate_roster_grade(
 
     # ── Grade score ──────────────────────────────────────────────────────────────
     has_league_ctx = dynasty_pct_val >= 0.0
-    if has_league_ctx:
-        dynasty_score = dynasty_pct_val * 100
-        redraft_score = redraft_pct_val * 100
+    dynasty_score = (dynasty_pct_val * 100) if has_league_ctx else 0.0
+    redraft_score = (redraft_pct_val * 100) if has_league_ctx else 0.0
+    if is_redraft:
+        # This-season construction only. Age and capital do not move the letter.
+        if has_league_ctx and position_ranks:
+            total = round(
+                redraft_score * 0.55
+                + rank_score * 0.25
+                + elite_score * 0.20,
+                1,
+            )
+        elif has_league_ctx:
+            total = round(
+                redraft_score * 0.65
+                + elite_score * 0.20
+                + depth_score * 0.15,
+                1,
+            )
+        elif position_ranks:
+            total = round(
+                rank_score * 0.55
+                + elite_score * 0.25
+                + depth_score * 0.20,
+                1,
+            )
+        else:
+            total = round(
+                elite_score * 0.45
+                + depth_score * 0.55,
+                1,
+            )
+    elif has_league_ctx:
         total = round(
             dynasty_score * 0.40   # long-term roster quality
             + redraft_score * 0.25  # projected scoring NOW
@@ -672,7 +709,12 @@ def calculate_roster_grade(
             break
 
     # ── Win window ───────────────────────────────────────────────────────────────
-    if has_league_ctx:
+    if is_redraft:
+        win_window = redraft_window_label(
+            playoff_pct=None,
+            redraft_pct=redraft_pct_val if has_league_ctx else (rank_score / 100.0),
+        )
+    elif has_league_ctx:
         win_window = _compute_win_window(
             avg_age=avg_age,
             firsts=firsts,
@@ -713,6 +755,7 @@ def calculate_roster_grade(
             "dynasty_pct": round(dynasty_pct_val, 3) if has_league_ctx else None,
             "redraft_pct": round(redraft_pct_val, 3) if has_league_ctx else None,
             "dr_ratio": round(dr_ratio, 3) if has_league_ctx else None,
+            "scoring_type": "redraft" if is_redraft else "dynasty",
         },
     }
 
@@ -1597,6 +1640,7 @@ def build_power_rankings_context(ctx: dict) -> dict:
                 redraft_pct_val=_redraft_pct_fn(rid_int),
                 dr_ratio=_team_dr_ratio.get(rid_int, 1.0),
                 num_teams=len(rosters),
+                scoring_type=scoring_type,
             )
             win_window = grade_data.get("win_window") or direction
         except Exception:

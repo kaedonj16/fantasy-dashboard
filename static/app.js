@@ -12250,6 +12250,15 @@ function brLeagueSize() {
   var ctx = window.__brctx || {};
   return ctx.leagueSize || 10;
 }
+function brScoringType() {
+  if (typeof _scoringType !== 'undefined' && _scoringType) {
+    var fromPage = String(_scoringType).trim().toLowerCase();
+    if (fromPage === 'redraft' || fromPage === 'dynasty') return fromPage;
+  }
+  var ctx = window.__brctx || {};
+  var fromCtx = String(ctx.scoringType || '').trim().toLowerCase();
+  return fromCtx === 'redraft' ? 'redraft' : 'dynasty';
+}
 
 // Player modal (openPlayerModal … toggleGameLogYear) lives in static/player_modal.js
 
@@ -12320,7 +12329,7 @@ const _WL_INJ_SHORT = { QUESTIONABLE: 'Q', DOUBTFUL: 'D', OUT: 'OUT', IR: 'IR', 
 function _wlChipsHtml(a) {
   if (!a) return '';
   let html = '';
-  if (a.value) html += '<span class="wl-chip wl-chip-val" title="Dynasty value">' + Math.round(a.value) + '</span>';
+  if (a.value) html += '<span class="wl-chip wl-chip-val" title="' + (typeof brScoringType === 'function' && brScoringType() === 'redraft' ? 'Value' : 'Dynasty value') + '">' + Math.round(a.value) + '</span>';
   if (a.delta7 != null && Math.abs(a.delta7) >= 1) {
     const up = a.delta7 > 0;
     html += '<span class="wl-chip ' + (up ? 'wl-chip-up' : 'wl-chip-down') + '" title="7-day value change">' +
@@ -12881,7 +12890,7 @@ function _wlStatsHtml(rows) {
     moverTile = tile('Top mover', '<span class="wl-muted">&ndash;</span>', 'last 7 days');
   }
   return tile('Players', String(rows.length), 'tracked') +
-    tile('Avg value', avgVal == null ? '<span class="wl-muted">&ndash;</span>' : avgVal.toLocaleString(), 'dynasty') +
+    tile('Avg value', avgVal == null ? '<span class="wl-muted">&ndash;</span>' : avgVal.toLocaleString(), (typeof brScoringType === 'function' && brScoringType() === 'redraft') ? 'redraft' : 'dynasty') +
     tile('Avg age', avgAge == null ? '<span class="wl-muted">&ndash;</span>' : avgAge.toFixed(1), 'years') +
     moverTile;
 }
@@ -14151,6 +14160,9 @@ function _buildComparePPGRow(p1, p2) {
 function _cmpIsSf() {
   return (typeof brLeagueType === 'function' ? brLeagueType() : '1qb') === 'sf';
 }
+function _cmpIsRedraft() {
+  return (typeof brScoringType === 'function' ? brScoringType() : 'dynasty') === 'redraft';
+}
 function _cmpHistValue(h) {
   if (!h) return null;
   const raw = _cmpIsSf()
@@ -14191,6 +14203,16 @@ function _cmpPlayersSearchUrl(q) {
 function _cmpDisplayValue(p) {
   if (!p) return null;
   const stats = p.stats || {};
+  if (_cmpIsRedraft()) {
+    if (_cmpIsSf()) {
+      const v = p.redraft_value_sf != null ? p.redraft_value_sf
+        : (stats.redraft_value_sf != null ? stats.redraft_value_sf
+          : (p.redraft_value_1qb != null ? p.redraft_value_1qb : stats.redraft_value_1qb));
+      if (v != null && v !== '') return v;
+    }
+    const rd = p.redraft_value_1qb != null ? p.redraft_value_1qb : stats.redraft_value_1qb;
+    if (rd != null && rd !== '') return rd;
+  }
   if (_cmpIsSf()) {
     const v = p.sf_value != null ? p.sf_value : stats.sf_value;
     if (v != null && v !== '') return v;
@@ -14201,12 +14223,13 @@ function _cmpDisplayValue(p) {
 
 function _buildCompareHeroHTML(p, other) {
   const isSf = _cmpIsSf();
-  const val1qb = p.stats?.value || 0;
-  const valsf  = p.stats?.sf_value || 0;
-  const valPosRank  = p.stats?.pos_rank;
-  const valOvrRank  = p.stats?.value_ovr_rank;
-  const sfPosRank   = p.stats?.sf_pos_rank;
-  const sfOvrRank   = p.stats?.sf_value_ovr_rank;
+  const isRedraft = _cmpIsRedraft();
+  const val1qb = isRedraft ? (p.stats?.redraft_value_1qb || 0) : (p.stats?.value || 0);
+  const valsf  = isRedraft ? (p.stats?.redraft_value_sf || 0) : (p.stats?.sf_value || 0);
+  const valPosRank  = isRedraft ? p.stats?.redraft_pos_rank : p.stats?.pos_rank;
+  const valOvrRank  = isRedraft ? p.stats?.redraft_value_ovr_rank : p.stats?.value_ovr_rank;
+  const sfPosRank   = isRedraft ? p.stats?.redraft_sf_pos_rank : p.stats?.sf_pos_rank;
+  const sfOvrRank   = isRedraft ? p.stats?.redraft_sf_value_ovr_rank : p.stats?.sf_value_ovr_rank;
   const pos    = p.position || '';
   const ppg    = p.stats?.ppg;
   const ppgRank = p.stats?.ppg_rank;
@@ -14228,8 +14251,8 @@ function _buildCompareHeroHTML(p, other) {
   // are position-relative so they are not compared across players.
   const _o = (other && other.stats) || {};
   const _win = (mine, theirs) => (mine != null && theirs != null && Number(mine) > Number(theirs));
-  const win1qb = _win(p.stats?.value, _o.value) ? ' compare-hero-win' : '';
-  const winsf  = _win(p.stats?.sf_value, _o.sf_value) ? ' compare-hero-win' : '';
+  const win1qb = _win(val1qb, isRedraft ? _o.redraft_value_1qb : _o.value) ? ' compare-hero-win' : '';
+  const winsf  = _win(valsf, isRedraft ? _o.redraft_value_sf : _o.sf_value) ? ' compare-hero-win' : '';
   const winppg = _win(ppg, _o.ppg) ? ' compare-hero-win' : '';
   const wintot = _win(total, _o.total_pts) ? ' compare-hero-win' : '';
   const ss = p.stats?.start_score;
@@ -14285,13 +14308,13 @@ function _buildCompareHeroHTML(p, other) {
 
   const card1qb = `
       <div class="pm-hero-stat${isSf ? '' : ' pm-hero-primary'}${win1qb}" style="padding:10px 10px;">
-        <div class="pm-hero-label">1QB Value</div>
+        <div class="pm-hero-label">${isRedraft ? '1QB Redraft' : '1QB Value'}</div>
         <div class="pm-hero-val" style="font-size:20px;${isSf ? '' : 'color:#3b82f6;'}">${val1qb > 0 ? val1qb : '-'}</div>
         <div class="pm-hero-sub">${isB ? valSub : (valPosRank ? `POS : ${valPosRank} · OVR : ${valOvrRank ?? '–'}` : '-')}</div>
       </div>`;
   const cardSf = `
       <div class="pm-hero-stat${isSf ? ' pm-hero-primary' : ''}${winsf}" style="padding:10px 10px;">
-        <div class="pm-hero-label">SF Value</div>
+        <div class="pm-hero-label">${isRedraft ? 'SF Redraft' : 'SF Value'}</div>
         <div class="pm-hero-val" style="font-size:20px;${isSf ? 'color:#3b82f6;' : ''}">${valsf > 0 ? valsf : '-'}</div>
         <div class="pm-hero-sub">${isB ? valSub : (sfPosRank ? `POS : ${sfPosRank} · OVR : ${sfOvrRank ?? '–'}` : '-')}</div>
       </div>`;
@@ -15504,9 +15527,14 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
   }
 
   const isSf = _cmpIsSf();
+  const isRedraft = _cmpIsRedraft();
   const rows = [
-    row(isSf ? 'Superflex Value' : 'Dynasty Value (1QB)',
-      players.map(p => isSf ? st(p).sf_value : st(p).value), 'max', v => v == null ? '&ndash;' : Math.round(v)),
+    row(isRedraft
+      ? (isSf ? 'Superflex Redraft Value' : 'Redraft Value (1QB)')
+      : (isSf ? 'Superflex Value' : 'Dynasty Value (1QB)'),
+      players.map(p => isRedraft
+        ? (isSf ? (st(p).redraft_value_sf ?? st(p).redraft_value_1qb) : st(p).redraft_value_1qb)
+        : (isSf ? st(p).sf_value : st(p).value)), 'max', v => v == null ? '&ndash;' : Math.round(v)),
     row(isSf ? '1QB Value' : 'Superflex Value',
       players.map(p => isSf ? st(p).value : st(p).sf_value), 'max', v => v == null ? '&ndash;' : Math.round(v)),
     row('Overall Rank', players.map(p => isSf ? st(p).sf_value_ovr_rank : st(p).value_ovr_rank), 'min', v => v == null ? '&ndash;' : ('#' + v)),

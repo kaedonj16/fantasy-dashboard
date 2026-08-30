@@ -14,6 +14,7 @@ from dashboard_services.ai.context_builders import (
     detect_team_direction,
     ctx_scoring_type,
     redraft_window_label,
+    _ctx_is_sf,
 )
 from dashboard_services.ai.prompts import (
     generate_trade_ai_result,
@@ -667,18 +668,25 @@ def get_roster_grade(ctx: dict, viewer_roster_id: str) -> dict:
     if not roster:
         return {"grade": "N/A", "score": 0, "win_window": "Unknown", "breakdown": {}}
 
-    model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [])
+    scoring_type = ctx_scoring_type(ctx)
+    model_value_lookup = build_model_value_lookup(
+        ctx.get("model_value_table") or [],
+        is_sf=_ctx_is_sf(ctx),
+        scoring_type=scoring_type,
+    )
     players_summary = summarize_roster_players(
         roster=roster,
         players_index=ctx.get("players_index") or {},
         players_map=ctx.get("players_map") or {},
         model_value_lookup=model_value_lookup,
     )
-    is_redraft = ctx_scoring_type(ctx) == "redraft"
+    is_redraft = scoring_type == "redraft"
     future_picks = [] if is_redraft else (
         ctx.get("picks_by_roster", {}).get(str(viewer_roster_id), [])
     )
-    grade = calculate_roster_grade(players_summary, future_picks)
+    grade = calculate_roster_grade(
+        players_summary, future_picks, scoring_type=scoring_type,
+    )
     if is_redraft:
         playoff_pct = None
         for row in (ctx.get("playoff_odds") or []):

@@ -92,13 +92,52 @@ def test_strategy_js_has_redraft_copy_and_hides_rebuild():
     assert 'getScoringType() === "redraft" && arch === "rebuilding"' in js
 
 
+def test_roster_grade_uses_scoring_type_on_teams_page():
+    src = (ROOT / "dashboard_services" / "pages" / "teams_page.py").read_text(encoding="utf-8")
+    assert "scoring_type=_scoring" in src
+
+
+def test_trade_intel_skips_rebuild_window_for_redraft():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    start = src.find("def api_trade_intel_player_packages")
+    end = src.find("def _real_trade_packages_for_target", start)
+    body = src[start:end]
+    assert "is_redraft = bool(ctx) and _league_is_redraft(ctx)" in body
+    assert "if not is_redraft:" in body
+    assert "redraft_value_sf" in body
+    assert '_pkg_has_pick' in body
+    assert "PICK" in body
+
+
+def test_roster_intel_uses_league_is_redraft():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    start = src.find("def _api_roster_intel_compute")
+    end = src.find("def api_trade_targets", start)
+    body = src[start:end]
+    assert "is_redraft = _league_is_redraft(ctx)" in body
+    assert "redraft_value_sf" in body
+
+
+def test_brctx_and_compare_flip_scoring_type():
+    app = (ROOT / "app.py").read_text(encoding="utf-8")
+    assert "scoringType:{league_scoring_type_js}" in app
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function brScoringType()" in js
+    assert "function _cmpIsRedraft()" in js
+    assert "Redraft Value (1QB)" in js
+    ranks = (ROOT / "static" / "rankings.js").read_text(encoding="utf-8")
+    assert "__leagueScoringType" in ranks
+    assert "this-season redraft value" in ranks
+
+
 def test_roster_grade_badge_skips_age_for_redraft():
     src = (ROOT / "dashboard_services" / "ai" / "renderer.py").read_text(encoding="utf-8")
     start = src.find("def get_roster_grade")
     end = src.find("def get_power_rankings_html", start)
     body = src[start:end]
-    assert 'ctx_scoring_type(ctx) == "redraft"' in body
+    assert "scoring_type = ctx_scoring_type(ctx)" in body
     assert "future_picks = [] if is_redraft" in body
+    assert "scoring_type=scoring_type" in body
     assert "redraft_window_label(" in body
     assert 'if scoring != "redraft":' in body
     assert "Age:" in body
