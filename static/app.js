@@ -11542,11 +11542,30 @@ document.addEventListener('DOMContentLoaded', function() {
     function navigateToLeague(leagueId, platform, season) {
       if (!leagueId || String(leagueId) === String(currentLeagueId)) return;
       showFullscreenLoading('Switching leagues...');
-      const leaguePages = new Set(['dashboard','standings','weekly','teams','activity','graphs','waivers','trade','players','prospects','breakouts','awards','history','schedule','commissioner','league_health','optimal','scout']);
-      const pathParts = window.location.pathname.split('/');
-      const lastSegment = pathParts[pathParts.length - 1] || '';
-      const currentPage = leaguePages.has(lastSegment) ? lastSegment : 'dashboard';
-      window.location.href = `/${platform || currentPlatform}/${season || currentSeason}/${leagueId}/${currentPage}`;
+      const destPlatform = platform || currentPlatform;
+      const destSeason = season || currentSeason;
+      // Keep the current per-league page, including nested draft routes
+      // (/draft, /draft/history). A last-segment allowlist dropped those and
+      // sent every Draft Room switch to dashboard with the previous league's
+      // cached snapshot.
+      const pathParts = window.location.pathname.split('/').filter(Boolean);
+      const pageParts = pathParts.slice(3);
+      const currentPage = pageParts.length ? pageParts.join('/') : 'dashboard';
+      const dest = '/' + destPlatform + '/' + destSeason + '/' + leagueId + '/' + currentPage;
+      const go = function () { window.location.href = dest; };
+      // Expire the destination league's cached context/HTML/grades so the
+      // landing page is that league's current data, not a prewarmed snapshot
+      // of the last time we idled on another room.
+      fetch('/api/refresh-league', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          platform: destPlatform,
+          season: parseInt(destSeason, 10) || destSeason,
+          league_id: leagueId,
+        }),
+      }).then(function () { go(); }, function () { go(); });
     }
 
     // Top-bar league chip: same league list as the settings switcher, so the

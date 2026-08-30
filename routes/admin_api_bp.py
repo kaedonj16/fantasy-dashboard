@@ -125,6 +125,18 @@ def api_refresh_league():
             clear_espn_league_caches()
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
+    # Draft grades are peer-relative to this league. Drop cached grade payloads
+    # so a switch into this room rebuilds Value/Starters against its teams.
+    try:
+        from app import _DRAFT_GRADES_CACHE
+        for _k in list(_DRAFT_GRADES_CACHE):
+            if (
+                isinstance(_k, tuple) and len(_k) >= 3
+                and str(_k[0]) == str(platform) and str(_k[1]) == str(league_id)
+            ):
+                _DRAFT_GRADES_CACHE.pop(_k, None)
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
     return jsonify({"ok": True})
 
 

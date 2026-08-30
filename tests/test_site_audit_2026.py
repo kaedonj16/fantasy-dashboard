@@ -79,6 +79,8 @@ def test_refresh_league_requires_viewing_member_or_secret():
     assert "viewer_is_league_member" in fn
     assert "hmac.compare_digest" in fn
     assert "forbidden" in fn
+    # Switching leagues expires peer-relative draft grades for that room.
+    assert "_DRAFT_GRADES_CACHE" in fn
 
 
 def test_cron_admin_secrets_use_compare_digest():

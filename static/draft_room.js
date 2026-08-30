@@ -4613,25 +4613,16 @@
     return {'A+':92,'A':87,'B':70,'C':55,'D':43,'F':20,'N/A':55}[letter] || 55;
   }
 
-  // Grade any team's picks. `mine` = sorted [{pn, p}] for one team.
-  function gradePicks(mine){
-    if (!mine || !mine.length) return null;
+  // Build grade rows for one team (pick score in that team's progressive need
+  // context). Used for the team being graded and for the league Value baseline.
+  function gradeRowsForPicks(mine){
     var counts = { QB:0, RB:0, WR:0, TE:0 };
-    // Pre-compute maxVal for pickScore (matches what pickScore callers do)
     var _gmaxVal = 0; players.forEach(function(q){ var v = valOf(q); if (v > _gmaxVal) _gmaxVal = v; });
-    // Progressive need context for THIS team only. Do not fall back to psCtx()
-    // (viewer roster) — that leaked the viewer's quality counts into every other
-    // team's grade and skewed the league board / Deep Dive ranks.
     var countsSoFar = { QB: 0, RB: 0, WR: 0, TE: 0 };
     var qualSoFar = { QB: 0, RB: 0, WR: 0, TE: 0 };
-    var picks = []; // { id, pos, ps, val, ppg }
-    mine.forEach(function(m){
+    var picks = [];
+    (mine || []).forEach(function(m){
       var pos = (m.p.position || '').toUpperCase();
-      // Grade score: recompute at the pick number so it measures pick quality
-      // and matches the server's compute_pick_score exactly. The kernel carries
-      // no timing terms, so this equals the board's Pick Score for the same
-      // inputs. Falls back to the stored score only when the player is no longer
-      // resolvable.
       var full = playersById[String(m.p.id)];
       var ps = null;
       if (players.length > 0 && _gmaxVal > 0 && full){
@@ -4649,6 +4640,15 @@
       picks.push({ id: m.p.id, pos: pos, ps: ps, pn: m.pn,
         val: full ? valOf(full) : (m.p.val || 0), ppg: full ? ppgOf(full) : null });
     });
+    return picks;
+  }
+  // Grade any team's picks. `mine` = sorted [{pn, p}] for one team.
+  function gradePicks(mine){
+    if (!mine || !mine.length) return null;
+    // Progressive need context for THIS team only. Do not fall back to psCtx()
+    // (viewer roster) — that leaked the viewer's quality counts into every other
+    // team's grade and skewed the league board / Deep Dive ranks.
+    var picks = gradeRowsForPicks(mine);
     // Absolute `ps` on each pick feeds the letter-grade Value component
     // (round-weighted kernel via BRTeamGrade). avgPs is the Deep Dive / share
     // "Avg pick score" chip — average the same pool-relative scores the board
@@ -4730,7 +4730,7 @@
     });
     var _tg = window.BRTeamGrade;
     if (!_tg || typeof _tg.teamGradeComposite !== 'function') return null;
-    var _leagueTeams = ownedPickGroups().lists.map(pickListToStrengthRows);
+    var _leagueTeams = ownedPickGroups().lists.map(gradeRowsForPicks);
     var _comp = _tg.teamGradeComposite(
       picks, _slots, posTargets(), state.teams || 12, state.type,
       _leaguePpg, _leagueVal, _leaguePlayers,
@@ -4801,17 +4801,6 @@
       lists.push(slotPicks);
     }
     return { mine: mine, bySlot: bySlot, teams: teams, lists: lists };
-  }
-  function pickListToStrengthRows(list){
-    return (list || []).map(function(m){
-      var full = playersById[String(m.p.id)];
-      return {
-        id: m.p.id,
-        pos: (m.p.position || '').toUpperCase(),
-        val: full ? valOf(full) : (m.p.val || 0),
-        ppg: full ? ppgOf(full) : null,
-      };
-    });
   }
   // Grade every team in the draft, sorted best-first.
   function gradeAllTeams(){
@@ -4940,7 +4929,7 @@
     var consTip = state.type === 'redraft'
       ? 'Mostly whether you’ve filled starting slots. Extra bench depth is not a penalty; empty starters are.'
       : 'How well you’ve filled your starting slots and balanced positions.';
-    return gradeBar('Value', g.value, m.value, 'How strong your picks are by pick score, weighted toward the earlier rounds.')
+    return gradeBar('Value', g.value, m.value, 'How strong your picks are by pick score versus this league’s average, weighted toward the earlier rounds.')
       + gradeBar('Starters', g.tier, m.tier, starterTip)
       + gradeBar('Construction', g.balance, m.balance, consTip);
   }
@@ -6808,7 +6797,7 @@
     { term: 'Tier', def: 'Players grouped by talent gaps (Tier 1 = elite). A tier “cliff” means only a couple of players remain before a real drop-off at that position.' },
     { term: 'PPG', def: 'Points per game - projected for the upcoming season, or last season’s actual when that’s shown. On the draft report card, Proj PPG is the projected weekly total of your optimal starting lineup, not the sum of every player you drafted.' },
     { term: 'Survival %', def: 'The chance a player is still on the board at your next pick. Starts from consensus ADP, then adapts to how your draft is actually going - if the room is reaching, letting players slide, drafting unpredictably, or running on a position, the odds shift to match (kicks in after the first several picks).' },
-    { term: 'Grade · Value', def: 'How strong your picks are by pick score, weighted toward the earlier rounds where it matters most.' },
+    { term: 'Grade · Value', def: 'How strong your picks are by pick score versus this league’s average, weighted toward the earlier rounds where it matters most.' },
     { term: 'Grade · Starters', def: 'How good your projected starting lineup is versus this league’s actual starting lineups. 100% is the average of those lineups; the rank is among teams in this draft. Snake drafts are close to zero-sum, so a lineup near 100% of average can still rank 1st or 2nd.' },
     { term: 'Grade · Construction', def: 'How well you’ve filled your starting slots and balanced your positions.' },
     { term: 'Grade · Early', def: 'Shown until your team has 8 picks (3 in a rookie draft). The letter is real — including at two picks / the start of round 3 — but construction is still ramping and the sample is small.' },

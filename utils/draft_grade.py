@@ -176,6 +176,91 @@ def dr_peer_starter_avg(
     return sum(avgs) / len(avgs)
 
 
+def dr_weighted_pick_score(
+    picks: "list[dict]", slots: "list[str]", num_teams: int, *,
+    sf: Optional[bool] = None, tep: float = 0.0,
+) -> Optional[float]:
+    """Role- and round-weighted pick-score average used by the Value bar."""
+    if not picks:
+        return None
+    starter_ids = dr_optimal_lineup(picks, slots)
+    is_sf = ("SF" in (slots or [])) if sf is None else bool(sf)
+    bench_by_pos = {p: [] for p in ("QB", "RB", "WR", "TE")}
+    for p in picks:
+        pos = str(p.get("pos") or "").upper()
+        if pos in bench_by_pos and str(p.get("id")) not in starter_ids:
+            bench_by_pos[pos].append(p)
+
+    def _lineup_score(p):
+        return float(p.get("ppg") if p.get("ppg") is not None else (p.get("val") or 0) / 1000)
+
+    for arr in bench_by_pos.values():
+        arr.sort(key=_lineup_score, reverse=True)
+
+    def _bench_utility(p):
+        pos = str(p.get("pos") or "").upper()
+        arr = bench_by_pos.get(pos, [])
+        idx = arr.index(p) if p in arr else -1
+        if pos == "QB":
+            return (0.78 if is_sf else 0.32) if idx == 0 else (0.55 if is_sf else 0.12)
+        if pos == "TE":
+            return (0.72 if tep > 0 else 0.32) if idx == 0 else (0.48 if tep > 0 else 0.16)
+        if pos == "RB":
+            return 0.82 if idx == 0 else 0.68
+        if pos == "WR":
+            return 0.78 if idx == 0 else 0.64
+        return 0.0
+
+    has_flex = any(str(s).upper() == "FLEX" for s in (slots or []))
+
+    def _role(p):
+        if str(p.get("id")) in starter_ids:
+            return "starter"
+        pos = str(p.get("pos") or "").upper()
+        arr = bench_by_pos.get(pos, [])
+        idx = arr.index(p) if p in arr else -1
+        if pos in ("RB", "WR"):
+            if idx == 0:
+                return "primary"
+            if idx == 1 and has_flex:
+                return "primary"
+            return "fringe"
+        return "primary" if idx == 0 else "fringe"
+
+    w_sum, w_tot = 0.0, 0.0
+    for x in picks:
+        if x.get("ps") is None or str(x.get("pos") or "").upper() in {"K", "DEF", "DST", "D/ST"}:
+            continue
+        rnd = max(1, math.ceil((x.get("pn") or 1) / max(int(num_teams or 1), 1)))
+        role = _role(x)
+        role_w = 1.0 if role == "starter" else 0.55 if role == "primary" else 0.18
+        utility = 1.0 if role == "starter" else _bench_utility(x)
+        wt = (1.0 / ((1 + (rnd - 1) / 5) ** 0.85)) * role_w * (0.55 + 0.45 * utility)
+        w_sum += float(x["ps"]) * wt
+        w_tot += wt
+    if w_tot > 0:
+        return w_sum / w_tot
+    avg_ps_vals = [float(p["ps"]) for p in picks if p.get("ps") is not None]
+    if not avg_ps_vals:
+        return None
+    return sum(avg_ps_vals) / len(avg_ps_vals)
+
+
+def dr_peer_value_ps(
+    teams: "list[list[dict]]", slots: "list[str]", num_teams: int, *,
+    sf: Optional[bool] = None, tep: float = 0.0,
+) -> Optional[float]:
+    """Mean of each team's weighted pick-score average. Skip teams with no PS."""
+    avgs = []
+    for picks in teams or []:
+        avg = dr_weighted_pick_score(picks, slots, num_teams, sf=sf, tep=tep)
+        if avg is not None:
+            avgs.append(avg)
+    if not avgs:
+        return None
+    return sum(avgs) / len(avgs)
+
+
 def dr_resolve_strength_baseline(
     slots: "list[str]", num_teams: int, metric: str, *,
     league_teams: Optional["list[list[dict]]"] = None,
@@ -233,6 +318,7 @@ def dr_team_grade_score(
     league_teams: Optional["list[list[dict]]"] = None,
     peer_starter_ppg: Optional[float] = None,
     peer_starter_val: Optional[float] = None,
+    peer_value_ps: Optional[float] = None,
     value_weight: Optional[float] = None, starter_weight: Optional[float] = None,
     balance_weight: Optional[float] = None,
     sf: Optional[bool] = None, tep: float = 0.0,
@@ -240,9 +326,9 @@ def dr_team_grade_score(
     """Mirror gradePicks() (startup/redraft branch) -> raw 0-100 composite.
     `picks` items: {id, pos, ps, pn, val, ppg}. Returns None if not gradeable.
 
-    Starters compare this team's optimal lineup to this draft's teams when
-    ``league_teams`` or ``peer_starter_*`` is provided. The player-pool field
-    is only a fallback.
+    Value and Starters compare this team to this draft's teams when
+    ``league_teams`` or ``peer_*`` is provided. The player-pool field and the
+    absolute 0-100 pick-score scale are only fallbacks.
 
     value/starter/balance_weight are the point caps for the three components.
     ``None`` (the default) picks the shipped split for ``draft_type``:
@@ -297,24 +383,23 @@ def dr_team_grade_score(
             return "fringe"
         return "primary" if idx == 0 else "fringe"
 
-    # 1) Starter quality: round-weighted (1/round^0.60) avg PS of starters.
-    w_sum, w_tot = 0.0, 0.0
-    avg_ps_vals = [p["ps"] for p in picks if p.get("ps") is not None]
-    avg_ps = (sum(avg_ps_vals) / len(avg_ps_vals)) if avg_ps_vals else None
-    for x in picks:
-        if x.get("ps") is None or str(x.get("pos") or "").upper() in {"K", "DEF", "DST", "D/ST"}:
-            continue
-        rnd = max(1, math.ceil((x.get("pn") or 1) / max(num_teams, 1)))
-        role = _role(x)
-        role_w = 1.0 if role == "starter" else 0.55 if role == "primary" else 0.18
-        utility = 1.0 if role == "starter" else _bench_utility(x)
-        wt = (1.0 / ((1 + (rnd - 1) / 5) ** 0.85)) * role_w * (0.55 + 0.45 * utility)
-        w_sum += x["ps"] * wt
-        w_tot += wt
-    starter_avg_ps = (w_sum / w_tot) if w_tot > 0 else avg_ps
-    # Half-up rounding (floor(x+0.5)) to match the JS shared composite exactly.
-    value_pts = (math.floor(clamp01((starter_avg_ps or 0) / 100) * value_weight + 0.5)
-                 if starter_avg_ps is not None else math.floor(value_weight / 2))
+    # 1) Pick-score value vs this league's average (same 80–120% band as Starters).
+    starter_avg_ps = dr_weighted_pick_score(
+        picks, slots, num_teams, sf=is_sf, tep=tep,
+    )
+    league_ps_avg = peer_value_ps
+    if (league_ps_avg is None or league_ps_avg <= 0) and league_teams:
+        league_ps_avg = dr_peer_value_ps(
+            league_teams, slots, num_teams, sf=is_sf, tep=tep,
+        )
+    if starter_avg_ps is None:
+        value_pts = math.floor(value_weight / 2)
+    elif league_ps_avg is not None and league_ps_avg > 0:
+        value_pts = math.floor(
+            clamp01((starter_avg_ps / league_ps_avg - 0.80) / 0.40) * value_weight + 0.5
+        )
+    else:
+        value_pts = math.floor(clamp01(starter_avg_ps / 100) * value_weight + 0.5)
 
     # 2) Starting-lineup strength vs this league's average starting lineup.
     starter_arr = [p for p in picks if str(p.get("id")) in starter_ids]
