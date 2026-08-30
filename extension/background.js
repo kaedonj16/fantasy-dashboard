@@ -58,54 +58,51 @@ async function getEspnCreds() {
   return { swid, espn_s2 };
 }
 
-async function deliverRelayToTab(tab, messageType, payload) {
-  if (!tab || !tab.id) return false;
-  const msg = { type: messageType, payload };
-  try {
-    await chrome.tabs.sendMessage(tab.id, msg);
-    return true;
-  } catch (_e) {
-    // Content script missing — common when Draft Room was opened before the
-    // extension loaded. Inject a one-shot MAIN-world dispatch instead.
-  }
-  const eventName = relayEventName(messageType);
+// Content scripts run in an isolated JS world; Draft Room listens in the page
+// (MAIN) world. Always inject a MAIN-world document event so the board hears it.
+async function injectPageEvent(tabId, eventName, detail) {
+  if (!tabId || !eventName) return false;
   try {
     await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
+      target: { tabId },
       world: "MAIN",
-      func: (evt, detail) => {
-        window.dispatchEvent(new CustomEvent(evt, { detail: detail }));
+      func: (evt, data) => {
+        document.dispatchEvent(
+          new CustomEvent(evt, { detail: data, bubbles: true, composed: true })
+        );
       },
-      args: [eventName, payload],
+      args: [eventName, detail || {}],
     });
     return true;
-  } catch (_e2) {
+  } catch (_e) {
+    return false;
+  }
+}
+
+async function deliverRelayToTab(tab, messageType, payload) {
+  if (!tab || !tab.id) return false;
+  const eventName = relayEventName(messageType);
+  if (await injectPageEvent(tab.id, eventName, payload)) return true;
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: messageType, payload });
+    return true;
+  } catch (_e) {
     return false;
   }
 }
 
 async function deliverReconnectToBrTab(tab, detail) {
   if (!tab || !tab.id) return false;
-  const msg = { type: "brDraftRoomReconnect", detail: detail || {} };
-  try {
-    await chrome.tabs.sendMessage(tab.id, msg);
+  if (await injectPageEvent(tab.id, "brfantasy:extension-reconnect", detail || {})) {
     return true;
-  } catch (_e) {
-    // Content script missing — inject MAIN-world reconnect event.
   }
   try {
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      world: "MAIN",
-      func: (payload) => {
-        window.dispatchEvent(
-          new CustomEvent("brfantasy:extension-reconnect", { detail: payload || {} })
-        );
-      },
-      args: [detail || {}],
+    await chrome.tabs.sendMessage(tab.id, {
+      type: "brDraftRoomReconnect",
+      detail: detail || {},
     });
     return true;
-  } catch (_e2) {
+  } catch (_e) {
     return false;
   }
 }
@@ -113,7 +110,6 @@ async function deliverReconnectToBrTab(tab, detail) {
 async function relayDraftToBrTabs(messageType, payload) {
   let tabs = [];
   try {
-    // host_permissions already cover these URLs — no broad `tabs` permission.
     tabs = await chrome.tabs.query({ url: BR_TAB_URLS });
   } catch (_e) {
     return { ok: false, reason: "tabs_query_failed", sent: 0, tabs: 0 };

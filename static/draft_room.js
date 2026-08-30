@@ -66,6 +66,18 @@
   var _espnRelayInFlight = false;
   var _espnRelayLastFp = '';
   var _reconnectLastAt = 0;
+  function _dispatchBrFantasy(name, detail){
+    try {
+      document.dispatchEvent(new CustomEvent(name, {
+        detail: detail || {},
+        bubbles: true,
+        composed: true
+      }));
+    } catch (_e){}
+  }
+  function _listenBrFantasy(name, fn){
+    document.addEventListener(name, fn);
+  }
   var _espnExtLastSeen = 0;
   function isExtLiveSource(){
     var s = (state && state.syncSource) || '';
@@ -193,16 +205,12 @@
     _pullExtensionRelaySnapshot(true);
     if (!_pollInFlight) pollOnce();
     if (fromExtension) return;
-    try {
-      window.dispatchEvent(new CustomEvent('brfantasy:request-extension-reconnect', {
-        detail: {
-          leagueId: cfg.leagueId,
-          season: String(state.season || cfg.season || ''),
-          platform: extPlatformKey(),
-          source: 'draft-room'
-        }
-      }));
-    } catch (_e){}
+    _dispatchBrFantasy('brfantasy:request-extension-reconnect', {
+      leagueId: cfg.leagueId,
+      season: String(state.season || cfg.season || ''),
+      platform: extPlatformKey(),
+      source: 'draft-room'
+    });
   }
   function _onExtensionReconnectResult(ev){
     _setEspnReconnectBusy(false);
@@ -5935,19 +5943,19 @@
   function _wireEspnExtensionRelay(){
     if (window.__brEspnRelayWired) return;
     window.__brEspnRelayWired = true;
-    window.addEventListener('brfantasy:espn-draft-relay', function(ev){
+    _listenBrFantasy('brfantasy:espn-draft-relay', function(ev){
       try { applyEspnExtensionRelay(ev && ev.detail); }
       catch (err){ if (window.console) console.error('[draft] espn relay', err); }
     });
-    window.addEventListener('brfantasy:yahoo-draft-relay', function(ev){
+    _listenBrFantasy('brfantasy:yahoo-draft-relay', function(ev){
       try { applyYahooExtensionRelay(ev && ev.detail); }
       catch (err){ if (window.console) console.error('[draft] yahoo relay', err); }
     });
-    window.addEventListener('brfantasy:extension-reconnect', function(){
+    _listenBrFantasy('brfantasy:extension-reconnect', function(){
       try { reconnectExtensionSync(true); }
       catch (err){ if (window.console) console.error('[draft] extension reconnect', err); }
     });
-    window.addEventListener('brfantasy:extension-reconnect-result', _onExtensionReconnectResult);
+    _listenBrFantasy('brfantasy:extension-reconnect-result', _onExtensionReconnectResult);
   }
   _wireEspnExtensionRelay();
   function _fmtAgo(ms){

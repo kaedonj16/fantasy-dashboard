@@ -100,21 +100,23 @@
     });
   }
 
-  function dispatchRelay(eventName, payload) {
-    if (!payload || !Array.isArray(payload.picks)) return;
+  function dispatchToPage(eventName, detail) {
     try {
-      window.dispatchEvent(new CustomEvent(eventName, { detail: payload }));
+      document.dispatchEvent(
+        new CustomEvent(eventName, { detail: detail || {}, bubbles: true, composed: true })
+      );
     } catch (_e) {
       /* ignore */
     }
   }
 
+  function dispatchRelay(eventName, payload) {
+    if (!payload || !Array.isArray(payload.picks)) return;
+    dispatchToPage(eventName, payload);
+  }
+
   function dispatchReconnect(detail) {
-    try {
-      window.dispatchEvent(new CustomEvent(RECONNECT_EVT, { detail: detail || {} }));
-    } catch (_e) {
-      /* ignore */
-    }
+    dispatchToPage(RECONNECT_EVT, detail || {});
   }
 
   function requestReconnect(detail) {
@@ -130,9 +132,7 @@
         (resp) => {
           void chrome.runtime.lastError;
           try {
-            window.dispatchEvent(
-              new CustomEvent(RECONNECT_RESULT, { detail: resp || {} })
-            );
+            dispatchToPage(RECONNECT_RESULT, resp || {});
           } catch (_e) {
             /* ignore */
           }
@@ -144,6 +144,9 @@
   }
 
   window.addEventListener(RECONNECT_REQ, (ev) => {
+    requestReconnect((ev && ev.detail) || {});
+  });
+  document.addEventListener(RECONNECT_REQ, (ev) => {
     requestReconnect((ev && ev.detail) || {});
   });
 
