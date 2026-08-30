@@ -77,6 +77,50 @@ def test_ctx_has_roster_players_requires_two_filled_teams():
     }) is True
 
 
+def test_synthetic_ctx_uses_mock_scoring_and_skips_you_row():
+    hp = _helpers()
+    ctx = hp._synthetic_draft_ctx(
+        {
+            "ppr": 0.5,
+            "tep": 1.0,
+            "pass_td": 6,
+            "season": 2026,
+            "playoff_teams": 4,
+            "roster": {"QB": 1, "SF": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1},
+        },
+        [
+            {"slot": 0, "roster_id": 2, "name": "You", "players": ["you1", "you2"]},
+            {"slot": 1, "roster_id": 1, "name": "Seat 1", "players": ["a", "b"]},
+            {"slot": 2, "roster_id": 2, "name": "Seat 2", "players": ["c", "d"]},
+            {"slot": 3, "roster_id": 3, "name": "Seat 3", "players": ["e"]},
+            {"slot": 4, "roster_id": 4, "name": "Seat 4", "players": ["f"]},
+            {"slot": 5, "roster_id": 5, "name": "Seat 5", "players": ["g"]},
+        ],
+    )
+    rids = [r["roster_id"] for r in ctx["rosters"]]
+    assert rids == [1, 2, 3, 4, 5]
+    assert ctx["league_id"] == ""
+    assert ctx["scoring_settings"] == {"rec": 0.5, "bonus_rec_te": 1.0, "pass_td": 6.0}
+    assert ctx["raw_scoring_settings"]["bonus_rec_te"] == 1.0
+    assert ctx["league_settings"]["playoff_teams"] == 4
+    assert ctx["roster_positions"].count("SUPER_FLEX") == 1
+    # You maps onto seat 2 after the sim (same roster_id), not a 3rd franchise.
+    mapped = hp._map_playoff_odds_to_slots(
+        [
+            {"roster_id": 1, "team_name": "Seat 1", "playoff_pct": 30},
+            {"roster_id": 2, "team_name": "Seat 2", "playoff_pct": 70},
+        ],
+        [
+            {"slot": 0, "roster_id": 2, "name": "You"},
+            {"slot": 1, "roster_id": 1, "name": "Seat 1"},
+            {"slot": 2, "roster_id": 2, "name": "Seat 2"},
+        ],
+    )
+    by_slot = {row["slot"]: row["playoff_pct"] for row in mapped}
+    assert by_slot[0] == 70.0
+    assert by_slot[2] == 70.0
+
+
 def test_overlay_league_settings_copies_playoff_format_and_scoring():
     hp = _helpers()
     ctx = hp._synthetic_draft_ctx(
@@ -116,6 +160,9 @@ def test_route_uses_standings_cache_for_live_league():
     assert "def _load_league_ctx" in ADMIN
     assert "get_league_ctx_from_cache" in ADMIN
     assert "_playoff_sim_cached" in ADMIN
+    # Mocks must not fetch the live league just because cfg has a league id.
+    assert "if use_league:" in fn
+    assert fn.index("if use_league:") < fn.index("_load_league_ctx")
 
 
 def test_draft_room_posts_league_identity_on_live_recap():
@@ -125,10 +172,80 @@ def test_draft_room_posts_league_identity_on_live_recap():
     assert "cfg.leagueId" in refresh
     assert "state.mode === 'live'" in refresh
     assert "roster_id:" in refresh
+    assert "tep:" in refresh
+    assert "pass_td:" in refresh
+    assert "liveLeague ? []" in refresh
     assert "_slotRosterId" in refresh
     assert "function _slotToRosterFromLive" in DRAFT_JS
     assert "slotToRosterId: _slotToRosterFromLive(d)" in DRAFT_JS
     assert "function _poFmt" in DRAFT_JS
+
+
+def test_mock_endpoint_does_not_touch_league_ctx(monkeypatch):
+    flask = pytest.importorskip("flask")
+    app = flask.Flask(__name__)
+    from routes.draft_api_bp import draft_api_bp
+    app.register_blueprint(draft_api_bp)
+
+    def _boom(*_a, **_k):
+        raise AssertionError("mocks must not load the live league")
+
+    monkeypatch.setattr("routes.draft_api_bp._load_league_ctx", _boom)
+    monkeypatch.setattr("routes.draft_api_bp._run_league_playoff_sim", _boom)
+
+    captured = {}
+
+    def _board_sim(ctx, platform="sleeper", **kwargs):
+        captured["ctx"] = ctx
+        captured["kwargs"] = kwargs
+        return [
+            {
+                "roster_id": r["roster_id"],
+                "team_name": ctx["roster_map"][str(r["roster_id"])],
+                "playoff_pct": 50.0 if r["roster_id"] == 1 else 25.0,
+                "bye_pct": 0,
+                "first_seed_pct": 0,
+                "avg_final_wins": 7,
+                "avg_final_losses": 7,
+            }
+            for r in ctx["rosters"]
+        ]
+
+    monkeypatch.setattr("routes.draft_api_bp._run_board_playoff_sim", _board_sim)
+
+    client = app.test_client()
+    resp = client.post("/api/draft-playoff-odds", json={
+        "use_league": False,
+        "platform": "sleeper",
+        "league_id": "should-be-ignored",
+        "season": 2026,
+        "ppr": 0.5,
+        "tep": 1,
+        "pass_td": 6,
+        "playoff_teams": 4,
+        "roster": {"QB": 1, "RB": 2, "WR": 2, "TE": 1},
+        "teams": [
+            {"slot": 0, "roster_id": 1, "name": "You", "players": ["x"]},
+            {"slot": 1, "roster_id": 1, "name": "A", "players": ["111", "222"]},
+            {"slot": 2, "roster_id": 2, "name": "B", "players": ["333", "444"]},
+            {"slot": 3, "roster_id": 3, "name": "C", "players": ["555"]},
+            {"slot": 4, "roster_id": 4, "name": "D", "players": ["666"]},
+            {"slot": 5, "roster_id": 5, "name": "E", "players": ["777"]},
+        ],
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["source"] == "board"
+    assert data["playoff_teams"] == 4
+    by_slot = {row["slot"]: row["playoff_pct"] for row in data["odds"]}
+    assert by_slot[1] == 50.0
+    assert by_slot[2] == 25.0
+    assert by_slot[0] == 50.0
+    assert captured["ctx"]["league_id"] == ""
+    assert captured["ctx"]["scoring_settings"]["bonus_rec_te"] == 1.0
+    assert captured["ctx"]["scoring_settings"]["pass_td"] == 6.0
+    assert [r["roster_id"] for r in captured["ctx"]["rosters"]] == [1, 2, 3, 4, 5]
+    assert captured["kwargs"].get("n_sims") == 5000
 
 
 def test_live_league_endpoint_returns_standings_rows(monkeypatch):

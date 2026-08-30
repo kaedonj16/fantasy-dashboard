@@ -4489,13 +4489,13 @@
     return !!state.isComplete || state.current > (state.teams || 12) * (state.rounds || 0);
   }
 
-  // Server-computed playoff odds. A live league draft posts use_league so the
-  // server runs the SAME cached sim Standings uses (real settings + rosters).
-  // Mocks fall back to a board-built room, overlaying league settings when we
-  // have them. Completed drafts wait for that response (or a loading
-  // placeholder) — never the JS Monte Carlo first — so the number does not
-  // jump. The JS estimate is mid-draft and a one-shot fallback if the fetch
-  // fails.
+  // Server-computed playoff odds.
+  // Live league drafts post use_league so the server runs the SAME cached sim
+  // Standings uses (real settings + current rosters).
+  // Mocks always simulate this board: the mock's roster/scoring/playoff size
+  // against the teams drafted in the mock — never the live league's rosters.
+  // Completed drafts wait for that response (or a loading placeholder) so the
+  // number does not jump. The JS estimate is mid-draft and a one-shot fallback.
   var _poServer = null, _poServerSig = null, _poFetching = false;
   var _poFailedSig = null;
   function _poSig(allTeams){ return allTeams.map(function(t){ return t.slot + ':' + (t.picks ? t.picks.length : 0); }).join('|') + '@' + state.current; }
@@ -4517,19 +4517,24 @@
     if (_poFailedSig === sig) return;
     _poFetching = true;
     var _sc = scoringCfg();
+    var liveLeague = !!(state.mode === 'live' && cfg.leagueId && cfg.platform);
     var payload = {
-      season: state.season || 0,
+      season: state.season || cfg.season || 0,
       ppr: (_sc && _sc.ppr != null) ? _sc.ppr : 1,
+      tep: (_sc && _sc.tep != null) ? _sc.tep : 0,
+      pass_td: (_sc && _sc.passTd != null) ? _sc.passTd : 4,
       roster: (state && state.roster) || defaultRoster(),
       playoff_teams: (state.teams && state.teams <= 8) ? 4 : 6,
       platform: cfg.platform || '',
-      league_id: cfg.leagueId || '',
-      use_league: !!(state.mode === 'live' && cfg.leagueId && cfg.platform),
+      league_id: liveLeague ? (cfg.leagueId || '') : '',
+      use_league: liveLeague,
       teams: allTeams.map(function(t){
-        var liveLeague = state.mode === 'live' && cfg.leagueId && cfg.platform;
-        var rid = t.slot === 0
-          ? (cfg.viewerRosterId || _slotRosterId(state.slot))
-          : _slotRosterId(t.slot);
+        var seat = t.slot === 0 ? (state.slot || t.slot) : t.slot;
+        var rid = liveLeague
+          ? (t.slot === 0
+              ? (cfg.viewerRosterId || _slotRosterId(state.slot))
+              : _slotRosterId(t.slot))
+          : seat;
         return {
           slot: t.slot,
           roster_id: rid,
@@ -7642,7 +7647,9 @@
       ? 'Live estimate — odds sharpen to the full simulation once the draft completes.'
       : (pending
         ? 'Running the standings simulation engine…'
-        : 'Playoff odds from this league’s standings simulation (real settings and rosters).');
+        : (state.mode === 'live'
+          ? 'Playoff odds from this league’s standings simulation (real settings and rosters).'
+          : 'Playoff odds for this mock — these drafted teams, this mock’s scoring and lineup.'));
     return '<div class="dd-card">'
       + '<div class="dd-sec"><h4>League board &amp; playoff odds</h4><p>' + note + '</p></div>'
       + '<div class="dd-tablescroll"><table class="dd-ledger dd-league">'
