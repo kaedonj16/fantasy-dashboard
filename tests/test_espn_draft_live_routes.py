@@ -129,6 +129,17 @@ def test_espn_detect_sync_lists_drafting(client, monkeypatch):
     assert drafts[0]["draft_id"] == "espn_99_2026"
 
 
+def test_espn_detect_history_includes_teams_and_rounds(client, monkeypatch):
+    import dashboard_services.draft_sync as ds
+    fake = _FakeProvider(snapshot=_snap("complete"))
+    monkeypatch.setattr(ds, "get_draft_sync_provider", lambda platform: fake)
+    resp = client.get("/api/draft/detect?platform=espn&league_id=99&season=2026&history=1")
+    assert resp.status_code == 200
+    draft = resp.get_json()["drafts"][0]
+    assert draft["teams"] == 4
+    assert draft["rounds"] == 15
+
+
 def test_espn_detect_without_sync_does_not_call_provider(client, monkeypatch):
     called = []
 
