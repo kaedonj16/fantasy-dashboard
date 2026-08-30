@@ -103,6 +103,8 @@ def test_live_detect_requests_espn_sync_flag():
 def test_sequential_missing_picks_and_idempotent_apply():
     assert "function applyOneLivePick(p)" in ROOM_JS
     assert "function applyMissingLivePicks(picks)" in ROOM_JS
+    assert "function _livePickAllowed(p)" in ROOM_JS
+    assert "state.current" in ROOM_JS.split("function _livePickAllowed(p)")[1].split("function applyLivePicks")[0]
     assert "if (state.picks[p.pick_no]) return false;" in ROOM_JS
     assert "if (pid && !p.unresolved) drafted[pid] = true;" in ROOM_JS
     assert "applyMissingLivePicks(d.picks)" in ROOM_JS
@@ -111,7 +113,8 @@ def test_sequential_missing_picks_and_idempotent_apply():
 def test_predraft_placeholder_picks_are_not_applied():
     assert "function livePickIsSelection(p)" in ROOM_JS
     assert "if (!livePickIsSelection(p)) return;" in ROOM_JS
-    assert "var remote = (picks || []).slice().filter(livePickIsSelection);" in ROOM_JS
+    assert "var remote = (picks || []).slice().filter(function(p){" in ROOM_JS
+    assert "livePickIsSelection(p) && _livePickAllowed(p)" in ROOM_JS
     assert "if (state.mode === 'live' && String(state.status) === 'pre_draft' && !state.isComplete) return false;" in ROOM_JS
     assert "var done = _draftComplete();" in ROOM_JS
 

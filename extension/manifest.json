@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "BR Fantasy — League Connector",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "Connect private ESPN leagues to BR Fantasy and auto-relay live ESPN/Yahoo draft picks into Draft Room.",
   "permissions": ["cookies", "scripting", "tabs"],
   "host_permissions": [
