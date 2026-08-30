@@ -37,6 +37,7 @@ def build_dashboard_body(ctx: dict) -> str:
         session,
         url_for,
     )
+    import pandas as pd
 
     league_id = ctx["league_id"]
     season = ctx["current_season"]
