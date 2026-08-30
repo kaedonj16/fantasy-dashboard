@@ -75,3 +75,80 @@ def test_sleeper_portfolio_normalizes_name_and_platform():
         "season": 2026, "team_id": "",
     }
     assert out[1]["name"] == "League 2"
+
+
+def test_resolve_portfolio_viewer_ignores_espn_session_owner_on_sleeper():
+    """Viewing Redzone from an ESPN league leaves an ESPN SWID in session.
+
+    That id must not be used to match Sleeper rosters (portfolio contract), or
+    My Leagues collapses to only the current ESPN league.
+    """
+    from utils.redzone_user import resolve_portfolio_viewer_roster
+
+    sleeper_rosters = [
+        {"roster_id": 1, "owner_id": "sleeper-alice"},
+        {"roster_id": 2, "owner_id": "sleeper-bob"},
+    ]
+    # ESPN SWID in session, no stored team — must miss, not invent a hit.
+    assert resolve_portfolio_viewer_roster(
+        sleeper_rosters,
+        platform="sleeper",
+        team_id="",
+        session_owner_id="{ESPN-SWID-AAAA}",
+    ) is None
+
+    # Stored team_id still wins.
+    hit = resolve_portfolio_viewer_roster(
+        sleeper_rosters,
+        platform="sleeper",
+        team_id="2",
+        session_owner_id="{ESPN-SWID-AAAA}",
+    )
+    assert hit["roster_id"] == 2
+
+    # Account-resolved roster id wins even without team_id.
+    hit = resolve_portfolio_viewer_roster(
+        sleeper_rosters,
+        platform="sleeper",
+        team_id="",
+        session_owner_id="{ESPN-SWID-AAAA}",
+        account_roster_id="1",
+    )
+    assert hit["roster_id"] == 1
+
+
+def test_resolve_portfolio_viewer_espn_uses_account_owner_ids_not_sleeper_session():
+    from utils.redzone_user import resolve_portfolio_viewer_roster
+
+    espn_rosters = [
+        {"roster_id": 3, "owner_id": "{ESPN-SWID-AAAA}"},
+        {"roster_id": 9, "owner_id": "{OTHER}"},
+    ]
+    # Sleeper session owner must not match ESPN rosters.
+    assert resolve_portfolio_viewer_roster(
+        espn_rosters,
+        platform="espn",
+        team_id="",
+        session_owner_id="sleeper-alice",
+    ) is None
+
+    hit = resolve_portfolio_viewer_roster(
+        espn_rosters,
+        platform="espn",
+        team_id="",
+        session_owner_id="sleeper-alice",
+        account_owner_ids=["ESPN-SWID-AAAA"],  # brace variants expand
+    )
+    assert hit["roster_id"] == 3
+
+
+def test_redzone_fetch_user_uses_portfolio_viewer_resolver():
+    """Source contract: My Leagues must not pass session owner into every platform."""
+    from pathlib import Path
+    src = Path("app.py").read_text(encoding="utf-8")
+    fn = src[src.index("def _redzone_fetch_user"): src.index("def page_redzone")]
+    assert "resolve_portfolio_viewer_roster" in fn
+    assert "resolve_account_viewer_for_league" in fn
+    # Old bug: match_viewer_roster(..., owner_id=viewer_uid) for every platform.
+    assert "match_viewer_roster(\n            d[\"rosters\"], team_id=lg.get(\"team_id\"), owner_id=viewer_uid" not in fn
+    assert "session_owner_id=viewer_uid" in fn

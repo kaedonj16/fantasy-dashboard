@@ -120,3 +120,36 @@ def portfolio_from_sleeper_leagues(
         if len(out) >= cap:
             break
     return out
+
+
+def resolve_portfolio_viewer_roster(
+    rosters: List[dict],
+    *,
+    platform: str,
+    team_id: Optional[str] = None,
+    session_owner_id: Optional[str] = None,
+    account_roster_id: Optional[str] = None,
+    account_owner_ids: Optional[List[str]] = None,
+) -> Optional[dict]:
+    """Pick the viewer's roster for one portfolio league (Redzone / My Leagues).
+
+    Prefer an account-resolved ``roster_id`` (from
+    ``resolve_account_viewer_for_league``). Fall back to stored ``team_id`` and
+    platform identities. The session's ``viewer_user_id`` is only applied for
+    Sleeper — an ESPN SWID left in session must not fail every other platform
+    (same contract as the portfolio page).
+    """
+    rows = rosters or []
+    rid = str(account_roster_id or "")
+    if rid:
+        hit = next((r for r in rows if str(r.get("roster_id") or "") == rid), None)
+        if hit:
+            return hit
+    plat = str(platform or "").lower()
+    session_oid = session_owner_id if plat == "sleeper" else None
+    return match_viewer_roster(
+        rows,
+        team_id=team_id,
+        owner_id=session_oid,
+        owner_ids=list(account_owner_ids or []),
+    )

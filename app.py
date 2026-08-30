@@ -10548,8 +10548,9 @@ def _redzone_fetch_user(platform, league_id, season, week):
     through to league scope.
     """
     from utils.redzone_user import (
-        match_viewer_roster, portfolio_from_account_leagues,
-        portfolio_from_sleeper_leagues, MAX_USER_LEAGUES,
+        portfolio_from_account_leagues,
+        portfolio_from_sleeper_leagues, resolve_portfolio_viewer_roster,
+        MAX_USER_LEAGUES, owner_id_variants,
     )
 
     account_id = session.get("account_id")
@@ -10579,6 +10580,23 @@ def _redzone_fetch_user(platform, league_id, season, week):
 
     portfolio = portfolio[:MAX_USER_LEAGUES]
 
+    # Platform identities on the account (Sleeper uid, ESPN SWID, …) so we can
+    # match rosters without relying on the current league's session owner id.
+    identities_by_platform: dict = {}
+    if account_id:
+        try:
+            from dashboard_services.accounts import list_account_platform_ids
+            for plat_key in {str(lg.get("platform") or "").lower() for lg in portfolio}:
+                if not plat_key:
+                    continue
+                ids = list_account_platform_ids(int(account_id), plat_key) or []
+                flat: list = []
+                for pid in ids:
+                    flat.extend(owner_id_variants(pid))
+                identities_by_platform[plat_key] = flat
+        except Exception:
+            logger.debug("[redzone] account identities load failed", exc_info=True)
+
     matchups, rosters, users, leagues = [], [], [], []
     player_info: dict = {}
     scoring: dict = {}
@@ -10597,12 +10615,59 @@ def _redzone_fetch_user(platform, league_id, season, week):
         try:
             d = _redzone_collect(lg_plat, lid, lg_season, week)
         except Exception:
+            logger.debug(
+                "[redzone] collect failed platform=%s league=%s season=%s",
+                lg_plat, lid, lg_season, exc_info=True,
+            )
             continue
         if not scoring:
             scoring = d.get("scoring") or {}
         scoring_by_league[lid] = d.get("scoring") or {}
-        vr = match_viewer_roster(
-            d["rosters"], team_id=lg.get("team_id"), owner_id=viewer_uid,
+
+        # Same viewer resolution as /portfolio: account team + platform identity
+        # first. Never feed an ESPN session owner id into Sleeper (or vice versa).
+        account_roster_id = None
+        account_owner_ids = list(identities_by_platform.get(lg_plat) or [])
+        if account_id:
+            try:
+                from dashboard_services.accounts import resolve_account_viewer_for_league
+                av = resolve_account_viewer_for_league(
+                    int(account_id), lg_plat, lid, lg_season,
+                    d.get("users") or [], d.get("rosters") or [],
+                ) or {}
+                account_roster_id = av.get("viewer_roster_id")
+                oid = av.get("viewer_user_id")
+                if oid:
+                    account_owner_ids = list(
+                        {*account_owner_ids, *owner_id_variants(str(oid))}
+                    )
+            except Exception:
+                logger.debug(
+                    "[redzone] account viewer resolve failed platform=%s league=%s",
+                    lg_plat, lid, exc_info=True,
+                )
+            # ESPN private leagues often store SWID on the connection even when
+            # account_identities is empty — reuse that for roster matching.
+            if lg_plat == "espn" and not account_roster_id:
+                try:
+                    from dashboard_services.accounts import get_espn_league_credentials
+                    swid = (get_espn_league_credentials(
+                        int(account_id), lid, lg_season,
+                    ) or {}).get("swid")
+                    if swid:
+                        account_owner_ids = list(
+                            {*account_owner_ids, *owner_id_variants(str(swid))}
+                        )
+                except Exception:
+                    pass
+
+        vr = resolve_portfolio_viewer_roster(
+            d["rosters"],
+            platform=lg_plat,
+            team_id=lg.get("team_id"),
+            session_owner_id=viewer_uid,
+            account_roster_id=account_roster_id,
+            account_owner_ids=account_owner_ids,
         )
         if not vr:
             continue
