@@ -49,6 +49,19 @@ def test_dashboard_calls_awards_with_enough_args():
         )
 
 
+def test_dashboard_empty_weekly_binds_finalized_df():
+    """Empty/columnless weekly frames must still bind finalized_df.
+
+    Guarding last_final_week without assigning finalized_df 500s the
+    dashboard at compute_awards_season (UnboundLocalError). The tour
+    smoke path can reach this builder with no finalized column.
+    """
+    source = open(_DASH, encoding="utf-8").read()
+    bind = source.index("finalized_df = pd.DataFrame()")
+    awards = source.index("compute_awards_season(finalized_df")
+    assert bind < awards
+
+
 def test_awards_empty_offseason_df_returns_no_data():
     """Offseason (no finalized games) -> empty df; must not raise on idxmax()."""
     cols = ["owner", "week", "points", "points_against"]

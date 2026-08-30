@@ -37,6 +37,7 @@ def build_dashboard_body(ctx: dict) -> str:
         session,
         url_for,
     )
+    import pandas as pd
 
     league_id = ctx["league_id"]
     season = ctx["current_season"]
@@ -81,17 +82,21 @@ def build_dashboard_body(ctx: dict) -> str:
     trade_window_html = _trade_window_card_html(ctx, viewer_roster_id)
     season_review_html = _render_season_review_card(ctx, viewer_roster_id, df_weekly, team_stats)
 
-    # Tour / empty leagues can hand over a columnless frame. Match app.py's
-    # other weekly surfaces: missing `finalized` means "no completed weeks".
+    # Tour / empty leagues can hand over a columnless or empty frame. Bind
+    # finalized_df on every path — awards still consume it below. Match
+    # weekly_hub_page / app.py: missing `finalized` means "no completed weeks".
     if (
-        df_weekly is None
-        or getattr(df_weekly, "empty", True)
-        or "finalized" not in getattr(df_weekly, "columns", [])
+        df_weekly is not None
+        and not getattr(df_weekly, "empty", True)
+        and "finalized" in getattr(df_weekly, "columns", [])
     ):
-        last_final_week = 0
-    else:
         finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
-        last_final_week = int(finalized_df["week"].max()) if not finalized_df.empty else 0
+    else:
+        finalized_df = pd.DataFrame()
+    if not finalized_df.empty and "week" in finalized_df.columns:
+        last_final_week = int(finalized_df["week"].max())
+    else:
+        last_final_week = 0
 
     bench_check_html = _render_bench_check(ctx, viewer_roster_id, last_final_week)
 
