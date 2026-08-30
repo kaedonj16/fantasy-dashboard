@@ -698,83 +698,142 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pill-espn.is-muted { background: rgba(148,163,184,.16); color: var(--text-subtle); animation: none; }
   .dr-espn-fallback { background: linear-gradient(90deg, color-mix(in srgb, var(--warning) 16%, transparent), color-mix(in srgb, var(--warning) 5%, transparent)); border-color: var(--warning); }
   .dr-espn-fallback .dr-banner-join { background: var(--warning); color: #111; cursor: pointer; border: 0; font: inherit; }
-  /* ESPN sync helpers — compact strip, not a text wall */
+  /* ESPN/Yahoo sync helpers — compact promo strip above the status bar */
   .dr-espn-tools {
-    display: flex; flex-direction: column; align-items: stretch; gap: 12px;
-    margin: 0 0 12px; padding: 14px 14px 12px;
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px 18px;
+    margin: 0 0 12px;
+    padding: 13px 44px 13px 14px;
     border-radius: 14px;
-    border: 1px solid color-mix(in srgb, var(--accent,#38bdf8) 28%, var(--border));
+    border: 1px solid color-mix(in srgb, var(--accent,#38bdf8) 24%, var(--border));
     background:
-      radial-gradient(120% 80% at 0% 0%, color-mix(in srgb, var(--accent,#38bdf8) 16%, transparent), transparent 55%),
-      var(--card, var(--bg));
+      linear-gradient(135deg,
+        color-mix(in srgb, var(--accent,#38bdf8) 10%, var(--card, var(--bg))),
+        color-mix(in srgb, var(--accent,#38bdf8) 3%, var(--card, var(--bg))));
+    box-shadow: var(--shadow-sm, 0 2px 8px rgba(15, 23, 42, 0.05));
   }
   .dr-espn-tools.is-unavailable {
-    border-color: color-mix(in srgb, var(--warning) 42%, var(--border));
+    border-color: color-mix(in srgb, var(--warning) 38%, var(--border));
     background:
-      radial-gradient(120% 80% at 0% 0%, color-mix(in srgb, var(--warning) 16%, transparent), transparent 55%),
-      var(--card, var(--bg));
+      linear-gradient(135deg,
+        color-mix(in srgb, var(--warning) 12%, var(--card, var(--bg))),
+        color-mix(in srgb, var(--warning) 4%, var(--card, var(--bg))));
   }
-  .dr-espn-tools-top { display: flex; align-items: flex-start; gap: 12px; }
+  .dr-espn-tools-body {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    flex: 1 1 240px;
+    min-width: 0;
+  }
   .dr-espn-tools-ic {
-    width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+    width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0;
     display: inline-flex; align-items: center; justify-content: center;
-    background: color-mix(in srgb, var(--accent,#38bdf8) 16%, transparent);
-    color: var(--accent,#38bdf8); font-size: 15px;
+    background: linear-gradient(145deg,
+      color-mix(in srgb, var(--accent,#38bdf8) 22%, transparent),
+      color-mix(in srgb, var(--accent,#38bdf8) 8%, transparent));
+    border: 1px solid color-mix(in srgb, var(--accent,#38bdf8) 28%, transparent);
+    color: var(--accent,#38bdf8); font-size: 16px;
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--accent,#38bdf8) 14%, transparent);
   }
   .dr-espn-tools.is-unavailable .dr-espn-tools-ic {
-    background: color-mix(in srgb, var(--warning) 18%, transparent);
+    background: linear-gradient(145deg,
+      color-mix(in srgb, var(--warning) 24%, transparent),
+      color-mix(in srgb, var(--warning) 10%, transparent));
+    border-color: color-mix(in srgb, var(--warning) 32%, transparent);
     color: var(--warning);
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--warning) 12%, transparent);
   }
-  .dr-espn-tools-copy { min-width: 0; flex: 1; }
+  .dr-espn-tools-copy { min-width: 0; flex: 1; padding-top: 1px; }
+  .dr-espn-tools-kicker {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--accent,#38bdf8); margin: 0 0 4px;
+  }
+  .dr-espn-tools.is-unavailable .dr-espn-tools-kicker { color: var(--warning); }
+  .dr-espn-tools-kicker-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: currentColor; opacity: .85;
+  }
   .dr-espn-tools-copy b {
     display: block; font-size: 15px; font-weight: 800; letter-spacing: -0.02em;
-    color: var(--text); line-height: 1.25; margin: 0 0 3px;
+    color: var(--text); line-height: 1.25; margin: 0 0 4px;
   }
   .dr-espn-tools-copy span {
-    display: block; font-size: 12.5px; color: var(--text-muted); line-height: 1.4;
+    display: block; font-size: 12.5px; color: var(--text-muted); line-height: 1.45;
+    max-width: 52ch;
   }
   .dr-espn-tools-x {
-    flex-shrink: 0; width: 28px; height: 28px; margin: -2px -4px 0 0;
+    position: absolute; top: 10px; right: 10px;
+    width: 28px; height: 28px; margin: 0;
     border: 0; border-radius: 8px; background: transparent; color: var(--text-muted);
-    cursor: pointer; font-size: 16px; line-height: 1;
+    cursor: pointer; font-size: 18px; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center;
   }
   .dr-espn-tools-x:hover { background: rgba(127,127,127,.12); color: var(--text); }
   .dr-espn-tools-actions {
-    display: grid; grid-template-columns: 1fr; gap: 8px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    flex: 1 1 100%; width: 100%;
   }
-  .dr-espn-tools-actions.is-split {
-    grid-template-columns: 1fr 1fr;
-  }
+  .dr-espn-tools-actions.is-split { /* unavailable: same row layout */ }
   .dr-espn-tools-actions .dr-banner-join {
-    margin: 0; width: 100%; justify-content: center;
+    margin: 0; width: auto; justify-content: center;
     border: 0; cursor: pointer; font: inherit; text-decoration: none;
+    padding: 9px 14px; border-radius: 10px; font-size: 13px; font-weight: 700;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  }
+  .dr-espn-tools-actions .dr-banner-join:not(.is-ghost):not(.is-link) {
+    background: var(--accent,#38bdf8);
+    color: var(--on-accent, #fff);
+  }
+  .dr-espn-tools-actions .dr-banner-join:not(.is-ghost):not(.is-link):hover {
+    filter: brightness(1.05);
   }
   .dr-espn-tools-actions .dr-banner-join.is-ghost {
-    background: transparent; color: var(--text);
-    border: 1px solid color-mix(in srgb, var(--accent,#38bdf8) 32%, var(--border));
+    background: var(--card, var(--bg)); color: var(--text);
+    border: 1px solid color-mix(in srgb, var(--accent,#38bdf8) 28%, var(--border));
+    box-shadow: none;
+  }
+  .dr-espn-tools-actions .dr-banner-join.is-ghost:hover {
+    border-color: color-mix(in srgb, var(--accent,#38bdf8) 45%, var(--border));
+    background: color-mix(in srgb, var(--accent,#38bdf8) 6%, var(--card, var(--bg)));
   }
   .dr-espn-tools.is-unavailable .dr-espn-tools-actions .dr-banner-join.is-ghost {
     border-color: color-mix(in srgb, var(--warning) 36%, var(--border));
   }
   .dr-espn-tools-actions .dr-banner-join.is-link {
     background: transparent; color: var(--accent,#38bdf8);
-    border: 0; padding: 6px 8px; font-weight: 650; font-size: 12.5px;
+    border: 0; padding: 9px 10px; font-weight: 650; font-size: 12.5px;
+    box-shadow: none; margin-left: auto;
   }
-  .dr-espn-tools-actions.is-split .dr-banner-join.is-link {
-    grid-column: 1 / -1;
+  .dr-espn-tools-actions .dr-banner-join.is-link:hover {
+    text-decoration: underline;
+    filter: brightness(1.08);
   }
-  @media (min-width: 640px) {
-    .dr-espn-tools { flex-direction: row; align-items: center; gap: 16px; padding: 12px 14px; }
-    .dr-espn-tools-top { flex: 1; min-width: 0; }
+  .dr-espn-tools-actions .dr-banner-join.is-link i { opacity: .75; font-size: 10px; }
+  @media (min-width: 720px) {
+    .dr-espn-tools { flex-wrap: nowrap; padding: 12px 44px 12px 14px; }
+    .dr-espn-tools-body { flex: 1 1 auto; }
     .dr-espn-tools-actions {
-      grid-template-columns: auto auto; width: auto; flex-shrink: 0; margin-left: auto;
+      flex: 0 0 auto; width: auto; justify-content: flex-end;
+      padding-left: 12px;
+      border-left: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
     }
-    .dr-espn-tools-actions.is-split {
-      grid-template-columns: auto auto;
+    .dr-espn-tools-actions .dr-banner-join.is-link {
+      margin-left: 0;
+      padding-left: 14px;
+      border-left: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
     }
-    .dr-espn-tools-actions .dr-banner-join { width: auto; }
-    .dr-espn-tools-actions .dr-banner-join.is-link,
-    .dr-espn-tools-actions.is-split .dr-banner-join.is-link { grid-column: 1 / -1; justify-self: end; }
+  }
+  @media (max-width: 719px) {
+    .dr-espn-tools-actions .dr-banner-join { flex: 1 1 calc(50% - 4px); min-width: 0; }
+    .dr-espn-tools-actions .dr-banner-join.is-link {
+      flex: 1 1 100%; justify-content: center; margin-left: 0;
+      padding-top: 4px;
+    }
   }
   .dr-pick-timer { font-size: 14px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums;
     min-width: 40px; padding: 2px 8px; border-radius: 7px; background: rgba(127,127,127,.1); text-align: center; }

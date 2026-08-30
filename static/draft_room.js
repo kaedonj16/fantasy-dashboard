@@ -5658,13 +5658,15 @@
     el.className = 'dr-espn-tools' + (unavailable ? ' is-unavailable' : '');
     el.hidden = false;
     el.style.display = '';
+    var kicker = unavailable ? (who + ' · needs help') : (who + ' · extension sync');
+    var ic = unavailable ? 'unlink' : (onPhone ? 'mobile-screen-button' : 'puzzle-piece');
     el.innerHTML = ''
-      + '<div class="dr-espn-tools-top">'
-      + '<span class="dr-espn-tools-ic" aria-hidden="true"><i class="fa-solid fa-'
-      + (unavailable ? 'unlink' : (onPhone ? 'mobile-screen-button' : 'puzzle-piece'))
-      + '"></i></span>'
-      + '<div class="dr-espn-tools-copy"><b>' + title + '</b><span>' + blurb + '</span></div>'
       + (unavailable ? '' : '<button type="button" class="dr-espn-tools-x" id="drEspnToolsDismiss" aria-label="Dismiss">×</button>')
+      + '<div class="dr-espn-tools-body">'
+      + '<span class="dr-espn-tools-ic" aria-hidden="true"><i class="fa-solid fa-' + ic + '"></i></span>'
+      + '<div class="dr-espn-tools-copy">'
+      + '<span class="dr-espn-tools-kicker"><span class="dr-espn-tools-kicker-dot" aria-hidden="true"></span>' + kicker + '</span>'
+      + '<b>' + title + '</b><span>' + blurb + '</span></div>'
       + '</div>'
       + '<div class="dr-espn-tools-actions' + (unavailable ? ' is-split' : '') + '">'
       + primary

@@ -73,7 +73,8 @@ def test_extension_relay_wired_and_skips_manual_fallback():
     assert "function openEspnExtensionInstall()" in ROOM_JS
     assert "chromeExtensionZipUrl" in PAGE
     assert "Load unpacked" in ROOM_JS
-    assert "dr-espn-tools-top" in PAGE
+    assert "dr-espn-tools-body" in PAGE
+    assert "dr-espn-tools-kicker" in PAGE
     assert "drEspnToolsDismiss" in ROOM_JS
     assert "Sync ESPN picks automatically" in ROOM_JS or "Sync ' + who + ' picks automatically" in ROOM_JS
     assert "Auto-sync needs a computer" in ROOM_JS
