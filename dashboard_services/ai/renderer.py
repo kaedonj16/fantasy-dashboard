@@ -221,8 +221,8 @@ def get_team_gm_memo(ctx: dict, viewer_roster_id: str, force_refresh: bool = Fal
     if not team_ctx:
         return ""
 
-    # v6: scrub leaked JSON field names (playoff_pct → playoff odds) in prose.
-    cache_key = build_ai_cache_key("gm_memo", team_ctx, "v6")
+    # v7: scrub bare "out," lead-ins and "odds not provided" gap narration.
+    cache_key = build_ai_cache_key("gm_memo", team_ctx, "v7")
     if not force_refresh:
         cached = load_cached_ai_text(cache_key)
         if cached:
@@ -253,7 +253,7 @@ def get_front_office_briefing(ctx: dict, viewer_roster_id: str) -> str:
     if not team_ctx:
         return ""
 
-    cache_key = build_ai_cache_key("front_office_briefing", team_ctx, "v5")
+    cache_key = build_ai_cache_key("front_office_briefing", team_ctx, "v6")
     cached = load_cached_ai_text(cache_key)
     if cached:
         return scrub_ai_prose_field_names(cached)

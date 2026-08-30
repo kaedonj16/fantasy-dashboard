@@ -25,19 +25,22 @@ POS_RANK_LABEL_NOTE = (
 REDRAFT_HONESTY_RULES = """
 REDRAFT HARD RULES:
 - Never use: retool, retooling, rebuild, rebuilding, window, dynasty, draft capital, future picks, multi-year.
-- Frame the team as contend, bubble, or out. If playoff_status is in the JSON, that is the team's standing. Do not override it.
+- Frame the team as contend, bubble, or out using a FULL SENTENCE (e.g. "This team is on the playoff bubble…"). Never start a sentence with the bare labels contend, bubble, or out.
+- If playoff_status is in the JSON, that is the team's standing. Do not override it.
 - If playoff_pct is present, cite it as natural language ("playoff odds", e.g. "78.5% playoff odds"). NEVER write the raw key name playoff_pct (or any other JSON key) in the prose.
+- If playoff_pct is absent, omit odds entirely. Never write that odds were "not provided", "not available", "missing", or "N/A".
 - draft_grade (if present) is how the draft was built, NOT a power ranking. If grade and playoff odds disagree, say that in one clause (e.g. clean draft, middle-of-the-pack odds).
-- Never narrate missing or empty fields ("record context is missing", "undefined", "N/A", "no data"). If season_phase is preseason or record is blank/0-0, write "preseason, no games yet" and lean on playoff odds and roster strength.
+- Never narrate missing or empty fields ("record context is missing", "undefined", "N/A", "no data", "not provided here"). If season_phase is preseason or record is blank/0-0, write "preseason, no games yet" and lean on roster strength (and playoff odds only when present).
 - Name specific players and the weakest starting slot from weakest_positions / position_strength. No "margin spots", "fringes", or "undefined."
 - Never echo JSON field names (snake_case keys like playoff_pct, playoff_status, season_phase, draft_grade) in user-facing text. Translate them into plain English.
 """.strip()
 
 DONT_NARRATE_GAPS = (
     "Never narrate missing or empty fields. If a value is blank, omit it; "
-    "do not write that context is missing. "
+    "do not write that context is missing or \"not provided\". "
     "Never echo JSON field names (e.g. playoff_pct) in prose — write "
-    "\"playoff odds\", \"playoff standing\", etc."
+    "\"playoff odds\", \"playoff standing\", etc. Never start a sentence with "
+    "the bare labels contend, bubble, or out."
 )
 
 GM_MEMO_SYSTEM = """
@@ -78,10 +81,12 @@ and playoff odds. Never recommend draft picks or multi-year rebuilds.
 
 {REDRAFT_HONESTY_RULES}
 
-Outlook must state contend / bubble / out (from playoff_status when present)
-and cite playoff odds when playoff_pct exists (e.g. "78.5% playoff odds") —
-never write the key name "playoff_pct". In preseason, do not apologize for a
-missing record — say no games have been played.
+Outlook must state contend / bubble / out in a full sentence (from
+playoff_status when present) — e.g. "This team is built to contend…" — never
+start with the bare word. Cite playoff odds when playoff_pct exists (e.g.
+"78.5% playoff odds"); never write the key name "playoff_pct", and if odds are
+absent omit them entirely (never say they were not provided). In preseason, do
+not apologize for a missing record — say no games have been played.
 
 Return a JSON object with these fields - each must be a single sentence or short phrase, NOT a list:
 - team_identity: one-line team identity (this-season shape, not a dynasty window)

@@ -20,8 +20,8 @@ def test_scrub_ai_result_strings_all_fields():
     })
     assert "playoff_pct" not in scrubbed["outlook"]
     assert "playoff_status" not in scrubbed["outlook"]
-    assert "playoff odds" in scrubbed["outlook"]
-    assert "playoff standing" in scrubbed["outlook"]
+    assert "playoff odds" in scrubbed["outlook"].lower()
+    assert "playoff standing" in scrubbed["outlook"].lower()
     assert scrubbed["verdict"] == "HOLD"
     assert scrubbed["rank"] == 2
 
@@ -41,6 +41,30 @@ def test_scrub_before_render_matches_screenshot_leak():
     assert "78.5% playoff odds" in result["trade_posture"]
 
 
+def test_scrub_bare_out_leadin_and_missing_odds_narration():
+    """Screenshot: outlook opened with 'out, with playoff odds not provided here…'."""
+    raw = (
+        "out, with playoff odds not provided here and a roster shape that leans "
+        "heavily on James Cook III, Chase Brown, and Breece Hall."
+    )
+    out = scrub_ai_prose_field_names(raw)
+    assert not out.lower().startswith("out,")
+    assert "not provided" not in out.lower()
+    assert "This team looks out of playoff contention" in out
+    assert "James Cook III" in out
+    # Leading clause removal should leave a grammatical continuation.
+    assert ", and a roster shape" in out or "and a roster shape" in out
+
+
+def test_scrub_bare_bubble_and_contend_leadins():
+    assert scrub_ai_prose_field_names("bubble, with thin TE.").startswith(
+        "This team is on the playoff bubble"
+    )
+    assert scrub_ai_prose_field_names("contend, with elite WRs.").startswith(
+        "This team is built to contend"
+    )
+
+
 def test_redraft_honesty_forbids_echoing_playoff_pct_key():
     # Import prompts lazily — it pulls OpenAI via client; skip if unavailable.
     import pytest
@@ -48,6 +72,9 @@ def test_redraft_honesty_forbids_echoing_playoff_pct_key():
     from dashboard_services.ai.prompts import REDRAFT_HONESTY_RULES, build_gm_memo_prompt
 
     assert "NEVER write the raw key name playoff_pct" in REDRAFT_HONESTY_RULES
+    assert "Never start a sentence with the bare labels" in REDRAFT_HONESTY_RULES
+    assert 'Never write that odds were "not provided"' in REDRAFT_HONESTY_RULES
     prompt = build_gm_memo_prompt({"scoring_type": "redraft", "team_name": "A"}, "redraft")
     assert 'never write the key name "playoff_pct"' in prompt
     assert "78.5% playoff odds" in prompt
+    assert "never say they were not provided" in prompt
