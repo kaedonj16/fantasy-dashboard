@@ -364,6 +364,204 @@
     return false;
   }
 
+  function playerIdFromImg(img) {
+    if (!img) return null;
+    const src = img.getAttribute("src") || img.getAttribute("data-src") || "";
+    const m =
+      src.match(/\/(?:full|scale)\/(-?\d+)\.(?:png|jpg|webp)/i) ||
+      src.match(/playerId[=:/](-?\d+)/i);
+    return m ? m[1] : null;
+  }
+
+  function parsePickLabel(text) {
+    const s = String(text || "").replace(/\s+/g, " ");
+    const rd = s.match(/\b(\d+)\.\s*(\d{1,2})\b/);
+    if (rd) {
+      const teams = guessTeamCount() || 12;
+      return (parseInt(rd[1], 10) - 1) * teams + parseInt(rd[2], 10);
+    }
+    const ov = s.match(/(?:overall|pick)\s*#?\s*(\d{1,3})\b/i);
+    if (ov) return parseInt(ov[1], 10);
+    return null;
+  }
+
+  function guessTeamCount() {
+    const headers = document.querySelectorAll(
+      '[class*="team-column"], [class*="teamColumn"], [class*="draft-team"], [class*="team-header"]'
+    );
+    if (headers.length >= 4 && headers.length <= 32) return headers.length;
+    return 0;
+  }
+
+  function reactPropsNear(el) {
+    if (!el || el.nodeType !== 1) return null;
+    for (const key of Object.keys(el)) {
+      if (!key.startsWith("__reactFiber$") && !key.startsWith("__reactInternalInstance$")) continue;
+      let node = el[key];
+      for (let depth = 0; depth < 10 && node; depth++) {
+        const props = node.memoizedProps || node.pendingProps || node.props;
+        if (props) {
+          if (isPickRow(props)) return props;
+          if (props.pick && isPickRow(props.pick)) return props.pick;
+          if (props.draftPick && isPickRow(props.draftPick)) return props.draftPick;
+          if (props.player && props.overallPickNumber != null) return props;
+        }
+        node = node.return;
+      }
+    }
+    return null;
+  }
+
+  function addDomPick(map, pickNo, playerId, teamId, sourceTag) {
+    if (!playerIdSelected(playerId) || pickNo == null || pickNo <= 0) return;
+    const n = Number(pickNo);
+    if (!map.has(n)) {
+      map.set(n, {
+        overallPickNumber: n,
+        playerId: playerId,
+        teamId: teamId == null ? null : teamId,
+        roundId: null,
+        roundPickNumber: null,
+        keeper: false,
+        bidAmount: null,
+        __source: sourceTag,
+      });
+    }
+  }
+
+  function scrapeDomPicks() {
+    const byOverall = new Map();
+    const scope =
+      document.querySelector('[class*="draftContainer"], [class*="draft-container"], main, #root') ||
+      document.body;
+
+    const cellSelector = [
+      '[class*="player-column"]',
+      '[class*="playerColumn"]',
+      '[class*="pick-cell"]',
+      '[class*="pickCell"]',
+      '[class*="draft-pick"]',
+      '[class*="draftPick"]',
+      '[class*="pick-history"] [class*="row"]',
+      '[class*="pickHistory"] [class*="row"]',
+      '[class*="recent-pick"]',
+      '[class*="recentPick"]',
+      ".fixedDataTableRowLayout_rowWrapper",
+    ].join(",");
+
+    scope.querySelectorAll(cellSelector).forEach(function (cell) {
+      const img = cell.querySelector('img[src*="headshot"], img[src*="players/full"]');
+      const pid =
+        (img && playerIdFromImg(img)) ||
+        cell.getAttribute("data-player-id") ||
+        cell.getAttribute("data-playerid");
+      const pickNo =
+        parsePickLabel(cell.textContent) ||
+        parsePickLabel(cell.getAttribute("aria-label") || "") ||
+        parseInt(cell.getAttribute("data-pick") || cell.getAttribute("data-overall-pick") || "", 10) ||
+        null;
+      addDomPick(byOverall, pickNo, pid, null, "dom-cell");
+      const props = reactPropsNear(cell);
+      if (props) {
+        const norm = normalizePick(props);
+        if (norm) addDomPick(byOverall, norm.overallPickNumber, norm.playerId, norm.teamId, "dom-react");
+      }
+    });
+
+    scope.querySelectorAll('[data-player-id], [data-playerid]').forEach(function (el) {
+      const pid = el.getAttribute("data-player-id") || el.getAttribute("data-playerid");
+      const pickNo =
+        parsePickLabel(el.textContent) ||
+        parseInt(el.getAttribute("data-pick") || el.getAttribute("data-overall-pick") || "", 10) ||
+        null;
+      addDomPick(byOverall, pickNo, pid, null, "dom-data");
+    });
+
+    const imgs = scope.querySelectorAll('img[src*="headshots/nfl/players"], img[src*="players/full"]');
+    imgs.forEach(function (img) {
+      const pid = playerIdFromImg(img);
+      if (!playerIdSelected(pid)) return;
+      let pickNo = null;
+      let node = img.parentElement;
+      for (let depth = 0; depth < 6 && node; depth++) {
+        pickNo =
+          parsePickLabel(node.textContent) ||
+          parsePickLabel(node.getAttribute("aria-label") || "") ||
+          parseInt(node.getAttribute("data-pick") || node.getAttribute("data-overall-pick") || "", 10) ||
+          null;
+        if (pickNo) break;
+        node = node.parentElement;
+      }
+      addDomPick(byOverall, pickNo, pid, null, "dom-img");
+    });
+
+    if (!byOverall.size) return false;
+
+    let picks = Array.from(byOverall.values());
+    picks.sort(function (a, b) {
+      return a.overallPickNumber - b.overallPickNumber;
+    });
+
+    // Headshots without an explicit pick label: assign sequential numbers only
+    // when we have a contiguous run starting at 1 (full pick log on screen).
+    const missingNo = picks.some(function (p) {
+      return !p.overallPickNumber;
+    });
+    if (missingNo) {
+      const withNo = picks.filter(function (p) {
+        return p.overallPickNumber > 0;
+      });
+      if (withNo.length === picks.length) {
+        /* all have numbers */
+      } else if (withNo.length === 0 && picks.length <= 60) {
+        picks = picks.map(function (p, idx) {
+          p.overallPickNumber = idx + 1;
+          return p;
+        });
+      } else {
+        return false;
+      }
+    }
+
+    picks = picks.map(function (p) {
+      const out = Object.assign({}, p);
+      delete out.__source;
+      return out;
+    });
+
+    emit(picks, { inProgress: true, drafted: false }, "dom-scrape");
+    return true;
+  }
+
+  function scanAll() {
+    if (scrapeDomPicks()) return true;
+    if (scanReact()) return true;
+    return false;
+  }
+
+  let domScrapeTimer = null;
+  function scheduleDomScrape() {
+    if (domScrapeTimer) return;
+    domScrapeTimer = setTimeout(function () {
+      domScrapeTimer = null;
+      scrapeDomPicks();
+    }, 350);
+  }
+
+  function watchDom() {
+    if (window.__brFantasyEspnDomWatch) return;
+    window.__brFantasyEspnDomWatch = true;
+    try {
+      const mo = new MutationObserver(function () {
+        if (document.hidden) return;
+        scheduleDomScrape();
+      });
+      mo.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    } catch (_e) {
+      /* ignore */
+    }
+  }
+
   function espnApiUrls(leagueId, season) {
     const s = String(season || new Date().getFullYear());
     const lid = String(leagueId);
@@ -503,11 +701,12 @@
   }
 
   hookNetwork();
+  watchDom();
   bridgeToExtension(OBSERVER_READY, { href: location.href, leagueId: leagueFromUrl().leagueId });
 
   function onRescan() {
     lastFingerprint = "";
-    scanReact();
+    scanAll();
     pollEspnApi();
   }
   window.addEventListener("message", function (ev) {
@@ -518,7 +717,7 @@
 
   setInterval(function () {
     if (document.hidden) return;
-    scanReact();
+    scanAll();
   }, 2000);
   setInterval(function () {
     if (document.hidden) return;

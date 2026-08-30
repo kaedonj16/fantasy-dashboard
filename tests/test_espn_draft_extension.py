@@ -8,7 +8,7 @@ EXT = REPO / "extension"
 
 def test_extension_manifest_includes_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.3.8"
+    assert manifest["version"] == "1.3.9"
     assert "cookies" in manifest["permissions"]
     assert "scripting" in manifest["permissions"]
     assert "tabs" not in manifest.get("permissions", [])
@@ -45,6 +45,10 @@ def test_extension_relay_message_contract():
     assert "brfantasy:espn-relay-status" in main
     assert "brfantasy:espn-observer-ready" in main
     assert "pollEspnApi" in main
+    assert "scrapeDomPicks" in main
+    assert "playerIdFromImg" in main
+    assert "dom-scrape" in main
+    assert "watchDom" in main
     assert "deepFindDraftDetail" in main
     assert "playerPoolEntry" in main
     assert "ensureEspnDraftObserver" in bg
