@@ -55,14 +55,24 @@
         return lg;
     }
 
-    function redraftVal(p, sf) {
+    function redraftVal(p, sf, teams) {
         if (!p) return null;
-
-        var raw = sf
-            ? (p.redraft_value_sf != null
-                ? p.redraft_value_sf
-                : p.redraft_value_1qb)
-            : p.redraft_value_1qb;
+        var size = Number(teams) || 10;
+        var raw;
+        if (sf) {
+            if (size === 10) {
+                raw = p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb;
+            } else {
+                var sfKey = 'redraft_sf_value_' + size;
+                raw = p[sfKey] != null ? p[sfKey]
+                    : (p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb);
+            }
+        } else if (size === 10) {
+            raw = p.redraft_value_1qb;
+        } else {
+            var key = 'redraft_value_' + size;
+            raw = p[key] != null ? p[key] : p.redraft_value_1qb;
+        }
 
         if (raw == null || !isFinite(Number(raw))) return null;
 
@@ -81,10 +91,10 @@
         return Number(raw);
     }
 
-    function valOf(p, mode, sf) {
+    function valOf(p, mode, sf, teams) {
         return mode === 'dynasty'
             ? dynVal(p, sf)
-            : redraftVal(p, sf);
+            : redraftVal(p, sf, teams);
     }
 
 
@@ -979,17 +989,17 @@
         var tt = tierThresholds || {};
         var tbl = (tt[lt] || {})[sz] || (tt[lt] || {})['12'] || (tt['1qb'] || {})['12'] || (tt['1qb'] || {})['10'] || [];
         if (!tbl.length) return null;
-        var v = valOf(p, mode, sf);
+        var v = valOf(p, mode, sf, teams);
         for (var i = 0; i < tbl.length; i++) {
             if (v >= tbl[i]) return i + 1;
         }
         return tbl.length + 1;
     }
 
-    function maxVal(pool, mode, sf) {
+    function maxVal(pool, mode, sf, teams) {
         var m = 0;
         pool.forEach(function (p) {
-            var v = valOf(p, mode, sf);
+            var v = valOf(p, mode, sf, teams);
             if (v > m) m = v;
         });
         return m;

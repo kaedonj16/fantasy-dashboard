@@ -227,9 +227,19 @@ function prFuzzyScore(name, query) {
 function prGetValue(p) {
   let base;
   if (prScoringType === 'redraft') {
-    base = Number(prLeagueType === 'sf'
-      ? (p.redraft_value_sf ?? p.redraft_value_1qb ?? 0)
-      : (p.redraft_value_1qb ?? 0));
+    if (prLeagueType === 'sf') {
+      if (prLeagueSize === 10) {
+        base = Number(p.redraft_value_sf ?? p.redraft_value_1qb ?? 0);
+      } else {
+        const key = 'redraft_sf_value_' + prLeagueSize;
+        base = Number(p[key] ?? p.redraft_value_sf ?? p.redraft_value_1qb ?? 0);
+      }
+    } else if (prLeagueSize === 10) {
+      base = Number(p.redraft_value_1qb ?? 0);
+    } else {
+      const key = 'redraft_value_' + prLeagueSize;
+      base = Number(p[key] ?? p.redraft_value_1qb ?? 0);
+    }
   } else if (prLeagueType === 'sf') {
     base = Number(p[prValueKey(true)] ?? p.sf_value ?? p.value ?? 0);
   } else {
@@ -713,10 +723,7 @@ function prRender() {
   if (prScoringType === 'redraft') {
     players = players.filter(p => {
       if (p.position === 'PICK') return false;
-      const v = prLeagueType === 'sf'
-        ? (p.redraft_value_sf ?? p.redraft_value_1qb)
-        : p.redraft_value_1qb;
-      return v != null && Number(v) > 0;
+      return prGetValue(p) > 0;
     });
   }
 
@@ -1240,6 +1247,12 @@ Promise.all([
         sf_value_14:      Number(p.sf_value_14 || p.sf_value || p.value || 0),
         redraft_value_1qb: p.redraft_value_1qb != null ? Number(p.redraft_value_1qb) : null,
         redraft_value_sf:  p.redraft_value_sf  != null ? Number(p.redraft_value_sf)  : null,
+        redraft_value_8:   p.redraft_value_8   != null ? Number(p.redraft_value_8)   : null,
+        redraft_value_12:  p.redraft_value_12  != null ? Number(p.redraft_value_12)  : null,
+        redraft_value_14:  p.redraft_value_14  != null ? Number(p.redraft_value_14)  : null,
+        redraft_sf_value_8:  p.redraft_sf_value_8  != null ? Number(p.redraft_sf_value_8)  : null,
+        redraft_sf_value_12: p.redraft_sf_value_12 != null ? Number(p.redraft_sf_value_12) : null,
+        redraft_sf_value_14: p.redraft_sf_value_14 != null ? Number(p.redraft_sf_value_14) : null,
         avg_pick:            p.avg_pick            != null ? Number(p.avg_pick)            : null,
         sf_avg_pick:         p.sf_avg_pick         != null ? Number(p.sf_avg_pick)         : null,
         redraft_avg_pick:    p.redraft_avg_pick    != null ? Number(p.redraft_avg_pick)    : null,

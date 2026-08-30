@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 
 DEBUG_ENV = "MARKET_DEBUG_PROVIDER_RESPONSES"
@@ -12,7 +13,7 @@ MAX_TEAM_ODDS = 10
 MAX_BOOK_ROWS = 3
 MAX_TEAM_FAILURES = 5
 MAX_UNKNOWN_TOKENS = 10
-SNAPSHOT_PATH = Path("/tmp/sportsgameodds_debug_sample.json")
+SNAPSHOT_PATH = Path(tempfile.gettempdir()) / "sportsgameodds_debug_sample.json"
 
 _SKIP_KEYS = {"odds", "players", "markets", "books", "bybookmaker"}
 _SENSITIVE_PARTS = ("apikey", "api_key", "authorization", "credential", "header", "secret",

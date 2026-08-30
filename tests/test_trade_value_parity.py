@@ -94,6 +94,34 @@ CASES = [
             "redraft_value_sf": 1900,
         },
     },
+    {
+        "league_type": "1qb",
+        "league_size": 12,
+        "scoring_format": "ppr",
+        "scoring_type": "redraft",
+        "te_premium": 0.0,
+        "player": {
+            "position": "WR",
+            "value": 3000,
+            "redraft_value_1qb": 2000,
+            "redraft_value_12": 2300,
+            "redraft_value_sf": 2100,
+        },
+    },
+    {
+        "league_type": "sf",
+        "league_size": 14,
+        "scoring_format": "ppr",
+        "scoring_type": "redraft",
+        "te_premium": 0.0,
+        "player": {
+            "position": "QB",
+            "value": 3000,
+            "redraft_value_1qb": 1800,
+            "redraft_value_sf": 2400,
+            "redraft_sf_value_14": 2700,
+        },
+    },
 ]
 
 

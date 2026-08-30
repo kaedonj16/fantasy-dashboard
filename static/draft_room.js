@@ -1281,9 +1281,20 @@
   }
   function redraftVal(p){
     if (!p) return 0;
-    var v = (state.sf ? (p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb)
-                      : p.redraft_value_1qb);
-    return finiteVal(v);
+    var teams = (state && state.teams) ? Number(state.teams) : 10;
+    if (state.sf) {
+      if (teams === 10) {
+        return finiteVal(p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb);
+      }
+      var sfKey = 'redraft_sf_value_' + teams;
+      return finiteVal(
+        p[sfKey] != null ? p[sfKey]
+          : (p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb)
+      );
+    }
+    if (teams === 10) return finiteVal(p.redraft_value_1qb);
+    var key = 'redraft_value_' + teams;
+    return finiteVal(p[key] != null ? p[key] : p.redraft_value_1qb);
   }
   function valOf(p){
     if (!p) return 0;
@@ -3454,11 +3465,14 @@
     // Keep trade-value VOR and projected VORP separate. Mixing them in one
     // field made a player without projections look like a +400 VORP outlier
     // next to someone whose number was actually projected points.
-    // VORP / market follow 1QB vs SF; pos rank is ranked by valOf() so it
-    // also follows redraft vs dynasty (and rookie pool) like rankings.
-    var vorpRaw = isSf
+    // VORP / market follow 1QB vs SF and league size; pos rank is ranked by
+    // valOf() so it also follows redraft vs dynasty (and rookie pool) like rankings.
+    var teams = (state && state.teams) ? Number(state.teams) : 12;
+    var vorpSizeKey = isSf ? ('sf_vorp_' + teams) : ('vorp_' + teams);
+    var vorpFallback = isSf
       ? (p.sf_vorp != null ? p.sf_vorp : p.vorp)
       : p.vorp;
+    var vorpRaw = (p[vorpSizeKey] != null) ? p[vorpSizeKey] : vorpFallback;
     var projectedVorp = (vorpRaw != null && isFinite(Number(vorpRaw))) ? Number(vorpRaw) : null;
     var tradeVor = vorOf(p);
     var marketRaw = isSf

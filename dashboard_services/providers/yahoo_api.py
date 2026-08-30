@@ -1288,10 +1288,17 @@ def get_league_globals(season: int, league_id: str, access_token: str) -> Dict[s
     league_settings: Dict[str, Any] = {
         "playoff_teams": playoff_teams,
         "num_teams":     num_teams,
-        "type":          0,
+        "type":          _yahoo_sleeper_league_type(meta, settings, num_teams),
     }
     if playoff_week_start:
         league_settings["playoff_week_start"] = playoff_week_start
+    _mk = (
+        _safe_int(settings.get("max_keepers"))
+        or _safe_int(meta.get("max_keepers"))
+        or 0
+    )
+    if _mk > 0:
+        league_settings["max_keepers"] = _mk
 
     return {
         "scoring_settings": scoring_settings,
@@ -1299,6 +1306,34 @@ def get_league_globals(season: int, league_id: str, access_token: str) -> Dict[s
         "league_settings":  league_settings,
         "total_rosters":    num_teams,
     }
+
+
+def _yahoo_sleeper_league_type(
+    meta: Dict[str, Any], settings: Dict[str, Any], num_teams: int
+) -> int:
+    """Map Yahoo keeper limits onto Sleeper settings.type (0/1/2).
+
+    Yahoo does not publish an explicit dynasty flag. Mirror Fleaflicker's
+    max_keepers × team_count heuristic (ffscrapr): 0 → redraft, small → keeper,
+    whole-roster retention → dynasty. Also treat a non-``none`` cant_cut_list as
+    at least keeper when max_keepers is absent.
+    """
+    max_keepers = (
+        _safe_int(settings.get("max_keepers"))
+        or _safe_int(meta.get("max_keepers"))
+        or 0
+    )
+    teams = max(1, int(num_teams or 1))
+    if max_keepers > 0:
+        if max_keepers * teams > 250:
+            return 2
+        return 1
+    cant = str(
+        settings.get("cant_cut_list") or meta.get("cant_cut_list") or "none"
+    ).strip().lower()
+    if cant not in ("", "none", "false", "0"):
+        return 1
+    return 0
 
 
 def _yahoo_settings_dict(league_list: Any) -> Dict[str, Any]:
@@ -1329,12 +1364,14 @@ def _unwrap_yahoo_list_or_dict(node: Any) -> Dict[str, Any]:
 
 
 # Yahoo NFL points-league stat_id → Sleeper-style scoring keys.
+# 78 = TE reception bonus (TE premium) when present in some Yahoo configs.
 _YAHOO_STAT_KEYS: Dict[int, str] = {
     4: "pass_yd", 5: "pass_td", 6: "pass_int",
     9: "rush_yd", 10: "rush_td",
     11: "rec", 12: "rec_yd", 13: "rec_td",
     18: "fum_lost",
     57: "pass_2pt", 58: "rush_2pt", 59: "rec_2pt",
+    78: "bonus_rec_te",
 }
 
 

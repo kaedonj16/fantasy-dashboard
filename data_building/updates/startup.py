@@ -24,14 +24,16 @@ def main():
     print("Production Startup - Fantasy Dashboard")
     print(f"Started: {datetime.now().isoformat()}")
 
-    first_run_flag = "/tmp/fantasy_dashboard_initialized"
+    first_run_flag = os.path.join(
+        __import__("tempfile").gettempdir(), "fantasy_dashboard_initialized"
+    )
 
     if not os.path.exists(first_run_flag):
         print("First deployment detected - running initialization...")
         try:
             from scripts.initialize_production import main as init_main
             init_main()
-            with open(first_run_flag, 'w') as f:
+            with open(first_run_flag, 'w', encoding='utf-8') as f:
                 f.write(f"Initialized: {datetime.now().isoformat()}")
             print("First-time initialization completed successfully")
         except Exception as e:
@@ -39,7 +41,7 @@ def main():
             print("Continuing with app startup (manual initialization may be needed)")
     else:
         print("Existing deployment detected - skipping initialization")
-        with open(first_run_flag, 'r') as f:
+        with open(first_run_flag, 'r', encoding='utf-8') as f:
             print(f"Previously initialized: {f.read().strip()}")
 
     # Spawn post-deploy in the background so it doesn't delay gunicorn startup.

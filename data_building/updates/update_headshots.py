@@ -27,7 +27,7 @@ def update_players_with_headshots():
     # Load current players data
     players_file = Path("/cache/players_index_relevant.json")
     
-    with open(players_file, 'r') as f:
+    with open(players_file, 'r', encoding='utf-8') as f:
         players_data = json.load(f)
     
     # Fetch new player data
@@ -56,7 +56,7 @@ def update_players_with_headshots():
     print(f"Updated {updated_count} players with headshots")
     
     # Save updated data
-    with open(players_file, 'w') as f:
+    with open(players_file, 'w', encoding='utf-8') as f:
         json.dump(players_data, f, indent=2)
     
     print("Updated players_index_relevant.json")

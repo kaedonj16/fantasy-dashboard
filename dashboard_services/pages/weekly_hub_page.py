@@ -21,6 +21,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
     from dashboard_services.pages.scout_page import build_scout_body, platform_sign_in_hint
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
         _compute_fpts_against,
+        _scoring_format_from_settings,
         _games_scheduled_today,
         _render_weekly_highlights,
         build_optimal_body,
@@ -105,7 +106,10 @@ def build_weekly_hub_body(ctx: dict) -> str:
             _aw, _bw = _h2h_record(_la, _ra)
             _m["h2h"] = {"left_wins": _aw, "right_wins": _bw}
 
-    _fpts_against_weekly = _compute_fpts_against(season)
+    _fpts_against_weekly = _compute_fpts_against(
+        season,
+        scoring=_scoring_format_from_settings(ctx.get("scoring_settings")),
+    )
     slides = [
         render_matchup_slide(
             season,

@@ -24,7 +24,8 @@ from utils.coerce import safe_float as _safe_float
 
 # Ensure DATABASE_URL is set
 if "DATABASE_URL" not in os.environ:
-    os.environ["DATABASE_URL"] = f"postgresql://{os.environ.get('USER')}@localhost:5432/brfantasy"
+    _db_user = os.environ.get("USER") or os.environ.get("USERNAME") or "postgres"
+    os.environ["DATABASE_URL"] = f"postgresql://{_db_user}@localhost:5432/brfantasy"
 
 
 def load_season_aware_usage_data(season: int, week: int = 0, season_type: str = 'off') -> List[Dict]:

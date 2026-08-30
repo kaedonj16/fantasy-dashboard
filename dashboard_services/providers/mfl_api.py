@@ -30,6 +30,21 @@ _CACHE: dict[tuple, tuple[float, dict]] = {}
 _MFL_COOKIE_RE = re.compile(r"MFL_USER_ID\s*=\s*([^\s;]+)", re.IGNORECASE)
 
 
+def _mfl_sleeper_league_type(raw_type: str) -> tuple[int, str]:
+    """Map MFL's string league type onto Sleeper ``settings.type`` + label.
+
+    MFL publishes values like ``Redraft``, ``Keeper``, ``Dynasty`` (casing
+    varies). Without a numeric ``type``, ``_league_is_redraft`` used to treat
+    missing type as dynasty — so typical MFL redraft leagues got dynasty values.
+    """
+    t = str(raw_type or "redraft").strip().lower()
+    if "dynasty" in t or t in ("d", "dyn"):
+        return 2, "dynasty"
+    if "keeper" in t or t in ("k",):
+        return 1, "keeper"
+    return 0, "redraft"
+
+
 def _request_get(url: str, **kwargs):
     """Import requests only when performing I/O.
 
@@ -256,12 +271,17 @@ class MFLProvider(ProviderAdapter):
         if not isinstance(lg, dict) or not lg:
             raise LeagueNotFoundError("No MFL league was found for that ID and season.")
         franchises = _items((lg.get("franchises") or {}).get("franchise", []), "franchise")
+        raw_type = str(lg.get("type") or "redraft").strip().lower()
+        sleeper_type, league_type_label = _mfl_sleeper_league_type(raw_type)
         return {
             "league_id": str(lg.get("id") or league_id), "season": int(season),
             "name": lg.get("name") or "MyFantasyLeague League",
             "total_rosters": _int(lg.get("size") or len(franchises)),
-            "settings": {"playoff_week_start": _int(lg.get("lastRegularSeasonWeek"), 14) + 1,
-                         "league_type": lg.get("type") or "redraft"},
+            "settings": {
+                "playoff_week_start": _int(lg.get("lastRegularSeasonWeek"), 14) + 1,
+                "type": sleeper_type,
+                "league_type": league_type_label,
+            },
             "scoring_settings": self._scoring(lg),
             "roster_positions": self._positions(lg),
             "metadata": {"divisions": lg.get("divisions"), "conferences": lg.get("conferences")},

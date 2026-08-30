@@ -126,6 +126,7 @@ def ctx_scoring_type(ctx: dict) -> str:
     ESPN fantasy football is redraft-only, so platform alone is enough. Other
     platforms that publish type 0/1 (Yahoo/Fleaflicker adapters, Sleeper
     redraft/keeper) also classify as redraft. Mirrors app._league_is_redraft.
+    Honors string ``league_type`` when numeric ``type`` is missing (MFL).
     """
     if str(ctx.get("platform") or "").strip().lower() == "espn":
         return "redraft"
@@ -139,8 +140,15 @@ def ctx_scoring_type(ctx: dict) -> str:
         t = settings.get("type")
         if t is not None and int(t) in (0, 1):
             return "redraft"
+        if t is not None and int(t) == 2:
+            return "dynasty"
     except (TypeError, ValueError, AttributeError):
         pass
+    lt = str(settings.get("league_type") or "").strip().lower()
+    if lt in ("redraft", "keeper", "re-draft", "redraft_keeper"):
+        return "redraft"
+    if "dynasty" in lt:
+        return "dynasty"
     return "dynasty"
 
 
