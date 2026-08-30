@@ -91,6 +91,12 @@
     }, RETRY_MS);
   }
 
+  function relayFailureText(resp) {
+    if (resp && resp.reason === "tabs_query_failed") return "BR Fantasy · reload extension";
+    if (resp && resp.tabs > 0) return "BR Fantasy · reload Draft Room tab";
+    return "BR Fantasy · open Draft Room on brfantasyfootball.com";
+  }
+
   function deliverPending() {
     if (!pendingPayload) return;
     const payload = pendingPayload;
@@ -116,7 +122,7 @@
             true
           );
         } else {
-          setChip("BR Fantasy · open Draft Room to receive picks", false);
+          setChip(relayFailureText(resp), false);
           scheduleRetry();
         }
       });

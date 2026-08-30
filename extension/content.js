@@ -122,4 +122,15 @@
   scan();
   const mo = new MutationObserver(scan);
   mo.observe(document.documentElement, { childList: true, subtree: true });
+
+  try {
+    chrome.runtime.sendMessage(
+      { type: "brDraftRoomReady", href: location.href },
+      () => {
+        void chrome.runtime.lastError;
+      }
+    );
+  } catch (_e) {
+    /* ignore */
+  }
 })();
