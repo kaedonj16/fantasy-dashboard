@@ -2989,11 +2989,15 @@ function initManagerPills(root = document) {
 
   const syncPillArrowVisibility = () => {
     if (!pillsRow || !leftArrow || !rightArrow) return;
+    // Always keep arrows when there are multiple teams. Measuring overflow alone
+    // fails if inactive pills were CSS-hidden (scrollWidth collapses to one).
+    const multi = pills.length > 1;
     const overflow = pillsRow.scrollWidth > pillsRow.clientWidth + 1;
-    const hide = overflow ? "" : "none";
+    const show = multi || overflow;
+    const hide = show ? "" : "none";
     leftArrow.style.display = hide;
     rightArrow.style.display = hide;
-    if (carousel) carousel.classList.toggle("manager-pills-carousel--compact", !overflow);
+    if (carousel) carousel.classList.toggle("manager-pills-carousel--compact", !show);
   };
 
   const stateHost = root.querySelector(".manager-pills") || root;
