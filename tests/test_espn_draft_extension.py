@@ -8,7 +8,7 @@ EXT = REPO / "extension"
 
 def test_extension_manifest_includes_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.3.3"
+    assert manifest["version"] == "1.3.4"
     assert "cookies" in manifest["permissions"]
     assert "scripting" in manifest["permissions"]
     assert "tabs" not in manifest.get("permissions", [])
@@ -51,7 +51,9 @@ def test_extension_relay_message_contract():
     assert "chrome.scripting.executeScript" in bg
     assert "brDraftRoomReady" in content
     assert "relayFailureText" in iso
-    assert "forceReconnect" in iso
+    assert "forceResend" in iso
+    assert "manualReconnect" in iso
+    assert "RECONNECT_COOLDOWN_MS" in bg
     assert "reconnectDraftRelay" in bg
     assert "forceDraftRelay" in bg
     assert "brfantasy:request-extension-reconnect" in content

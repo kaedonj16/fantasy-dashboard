@@ -65,6 +65,7 @@
   var _espnRelayActive = false; // browser extension is feeding live picks
   var _espnRelayInFlight = false;
   var _espnRelayLastFp = '';
+  var _reconnectLastAt = 0;
   var _espnExtLastSeen = 0;
   function isExtLiveSource(){
     var s = (state && state.syncSource) || '';
@@ -134,7 +135,7 @@
       };
     });
   }
-  function _pullExtensionRelaySnapshot(){
+  function _pullExtensionRelaySnapshot(forceReplay){
     if (!state || state.mode !== 'live' || !cfg.leagueId || state.isComplete) return;
     var season = parseInt(state.season || cfg.season, 10);
     if (!season) return;
@@ -152,7 +153,8 @@
           drafted: !!d.drafted || String(d.status) === 'complete',
           picks: _extensionPicksFromRelayRows(d.picks),
           source: 'relay-cache',
-          fingerprint: d.fingerprint
+          fingerprint: d.fingerprint,
+          forceReplay: !!forceReplay
         };
         if (extPlatformKey() === 'yahoo') applyYahooExtensionRelay(detail);
         else applyEspnExtensionRelay(detail);
@@ -176,11 +178,20 @@
   }
   function reconnectExtensionSync(fromExtension){
     if (!state || state.mode !== 'live' || !isExtLiveSource()) return;
+    var now = Date.now();
+    if (!fromExtension) {
+      if (now - _reconnectLastAt < 5000) {
+        _setEspnReconnectBusy(false);
+        return;
+      }
+      _reconnectLastAt = now;
+    }
     _espnRelayLastFp = '';
     _espnRelayInFlight = false;
     updateEspnSyncPill('connecting');
     _setEspnReconnectBusy(true);
-    _pullExtensionRelaySnapshot();
+    _pullExtensionRelaySnapshot(true);
+    if (!_pollInFlight) pollOnce();
     if (fromExtension) return;
     try {
       window.dispatchEvent(new CustomEvent('brfantasy:request-extension-reconnect', {
@@ -197,6 +208,7 @@
     _setEspnReconnectBusy(false);
     if (!state || state.mode !== 'live') return;
     var d = ev && ev.detail;
+    if (d && d.throttled) return;
     var ok = d && ((d.br && d.br.pinged > 0) || (d.draft && d.draft.pinged > 0));
     if (ok){
       updateEspnSyncPill(state.isDrafting ? 'live' : (state.isComplete ? 'complete' : 'synced'));
@@ -5841,7 +5853,7 @@
       lid + '|' + season + '|' + detail.picks.length + '|'
       + (detail.picks.length ? (detail.picks[detail.picks.length - 1].overallPickNumber || detail.picks[detail.picks.length - 1].playerId || '') : '')
     );
-    if (fp && fp === _espnRelayLastFp) return;
+    if (!detail.forceReplay && fp && fp === _espnRelayLastFp) return;
     if (_espnRelayInFlight) return;
     _espnRelayInFlight = true;
     _espnExtLastSeen = Date.now();
