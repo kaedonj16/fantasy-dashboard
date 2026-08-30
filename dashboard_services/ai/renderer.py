@@ -26,6 +26,7 @@ from dashboard_services.ai.prompts import (
 import logging
 
 from dashboard_services.ai.client import AIRateLimitError, AIUnavailableError
+from dashboard_services.ai.prose import scrub_ai_prose_field_names, scrub_ai_result_strings
 from dashboard_services.providers.espn_api import safe_float
 from dashboard_services.rank_medals import rank_mark
 
@@ -119,6 +120,7 @@ def render_team_ai_result(result: dict, mode: str = "gm_memo") -> str:
     Render the AI-generated team analysis result as HTML.
     mode: 'gm_memo' or 'front_office_briefing'
     """
+    result = scrub_ai_result_strings(result or {})
     if mode == "gm_memo":
         team_identity = html.escape(str(result.get("team_identity") or ""))
         outlook = html.escape(str(result.get("outlook") or ""))
@@ -219,13 +221,12 @@ def get_team_gm_memo(ctx: dict, viewer_roster_id: str, force_refresh: bool = Fal
     if not team_ctx:
         return ""
 
-    # v4: redraft leagues (ESPN always; other platforms via settings.type) use
-    # redraft values + redraft prompts.
-    cache_key = build_ai_cache_key("gm_memo", team_ctx, "v5")
+    # v6: scrub leaked JSON field names (playoff_pct → playoff odds) in prose.
+    cache_key = build_ai_cache_key("gm_memo", team_ctx, "v6")
     if not force_refresh:
         cached = load_cached_ai_text(cache_key)
         if cached:
-            return cached
+            return scrub_ai_prose_field_names(cached)
 
     if not ai_available():
         html_out = _gm_memo_fallback_html(team_ctx)
@@ -252,10 +253,10 @@ def get_front_office_briefing(ctx: dict, viewer_roster_id: str) -> str:
     if not team_ctx:
         return ""
 
-    cache_key = build_ai_cache_key("front_office_briefing", team_ctx, "v4")
+    cache_key = build_ai_cache_key("front_office_briefing", team_ctx, "v5")
     cached = load_cached_ai_text(cache_key)
     if cached:
-        return cached
+        return scrub_ai_prose_field_names(cached)
 
     if not ai_available():
         html_out = _fo_brief_fallback_html(team_ctx)
