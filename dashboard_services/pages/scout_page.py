@@ -129,11 +129,33 @@ def build_scout_body(ctx: dict) -> str:
         return "<div class='card'>Opponent roster not found.</div>"
 
     opp_name = html.escape(roster_map.get(opponent_roster_id, f"Roster {opponent_roster_id}"))
-    opp_standing = standings_map.get(opponent_roster_id) or {}
-    opp_wins = int(opp_standing.get("wins") or 0)
-    opp_losses = int(opp_standing.get("losses") or 0)
-    opp_pf = float(opp_standing.get("pf") or 0)
-    opp_pa = float(opp_standing.get("pa") or 0)
+    # Production standings_map is {roster_id: seed:int}; record/PF live on roster.settings.
+    opp_standing = standings_map.get(opponent_roster_id)
+    if not isinstance(opp_standing, dict):
+        opp_standing = standings_map.get(str(opponent_roster_id))
+    if not isinstance(opp_standing, dict):
+        opp_standing = {}
+    opp_settings = opponent_roster.get("settings") or {}
+    opp_wins = int(opp_standing.get("wins") or opp_settings.get("wins") or 0)
+    opp_losses = int(opp_standing.get("losses") or opp_settings.get("losses") or 0)
+    opp_pf = float(
+        opp_standing.get("pf")
+        or opp_standing.get("PF")
+        or (
+            float(opp_settings.get("fpts") or 0)
+            + float(opp_settings.get("fpts_decimal") or 0) / 100.0
+        )
+        or 0
+    )
+    opp_pa = float(
+        opp_standing.get("pa")
+        or opp_standing.get("PA")
+        or (
+            float(opp_settings.get("fpts_against") or 0)
+            + float(opp_settings.get("fpts_against_decimal") or 0) / 100.0
+        )
+        or 0
+    )
     opp_rec_cls = "color-win" if opp_wins > opp_losses else ("color-loss" if opp_losses > opp_wins else "")
 
     # Starters from matchup block (dicts with pid) or roster id strings.

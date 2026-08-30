@@ -17,6 +17,109 @@ def _ctx_is_sf(ctx: dict) -> bool:
     return False
 
 
+def _standings_map_lookup(standings_map: dict, roster_id) -> Any:
+    """Look up a standings_map entry tolerating int/str key mismatch."""
+    if not standings_map:
+        return None
+    rid_str = str(roster_id)
+    if rid_str in standings_map:
+        return standings_map[rid_str]
+    if rid_str.isdigit():
+        rid_int = int(rid_str)
+        if rid_int in standings_map:
+            return standings_map[rid_int]
+    return standings_map.get(roster_id)
+
+
+def _standing_dict(standings_map: dict, roster_id) -> dict:
+    """Production ``standings_map`` is ``{roster_id: seed:int}``.
+
+    Some fixtures still pass a dict of record fields; tolerate both so callers
+    can safely ``.get`` without crashing on seed ints.
+    """
+    val = _standings_map_lookup(standings_map, roster_id)
+    return val if isinstance(val, dict) else {}
+
+
+def _roster_map_owner(roster_map: dict, roster_id) -> Any:
+    if not roster_map:
+        return None
+    rid_str = str(roster_id)
+    if rid_str in roster_map:
+        return roster_map[rid_str]
+    if rid_str.isdigit():
+        rid_int = int(rid_str)
+        if rid_int in roster_map:
+            return roster_map[rid_int]
+    return roster_map.get(roster_id)
+
+
+def _record_pf_pa_for_roster(ctx: dict, roster_id: str, roster: dict | None = None) -> tuple[str, float, float]:
+    """Best-effort (record, PF, PA) for a roster.
+
+    Prefer ``team_stats`` (platform-agnostic). Fall back to a dict-shaped
+    standings_map fixture, then ``roster.settings``.
+    """
+    record = ""
+    pf = 0.0
+    pa = 0.0
+
+    standing = _standing_dict(ctx.get("standings_map") or {}, roster_id)
+    if standing:
+        record = (
+            standing.get("record")
+            or standing.get("display_record")
+            or standing.get("Record")
+            or ""
+        )
+        pf = _safe_float(standing.get("PF") if standing.get("PF") is not None else standing.get("pf"))
+        pa = _safe_float(standing.get("PA") if standing.get("PA") is not None else standing.get("pa"))
+
+    owner = _roster_map_owner(ctx.get("roster_map") or {}, roster_id)
+    ts = ctx.get("team_stats")
+    try:
+        if owner is not None and ts is not None and hasattr(ts, "empty") and not ts.empty and "owner" in ts.columns:
+            row = ts[ts["owner"] == owner]
+            if not row.empty:
+                r0 = row.iloc[0]
+                if not record:
+                    record = str(r0.get("Record") or "")
+                    if not record:
+                        w = int(r0.get("Wins", 0) or 0)
+                        l = int(r0.get("Losses", 0) or 0)
+                        t = int(r0.get("Ties", 0) or 0) if "Ties" in ts.columns else 0
+                        record = f"{w}-{l}" + (f"-{t}" if t else "")
+                if not pf:
+                    pf = _safe_float(r0.get("PF"))
+                if not pa:
+                    pa = _safe_float(r0.get("PA"))
+    except Exception:
+        pass
+
+    if roster is None:
+        roster = next(
+            (r for r in (ctx.get("rosters") or []) if str(r.get("roster_id")) == str(roster_id)),
+            None,
+        ) or {}
+    settings = roster.get("settings") or {}
+    if not record:
+        wins = _safe_int(settings.get("wins"))
+        losses = _safe_int(settings.get("losses"))
+        ties = _safe_int(settings.get("ties"))
+        record = f"{wins}-{losses}" + (f"-{ties}" if ties else "")
+    if not pf:
+        pf = (
+            _safe_float(settings.get("fpts"))
+            + _safe_float(settings.get("fpts_decimal")) / 100.0
+        )
+    if not pa:
+        pa = (
+            _safe_float(settings.get("fpts_against"))
+            + _safe_float(settings.get("fpts_against_decimal")) / 100.0
+        )
+    return str(record or ""), float(pf or 0.0), float(pa or 0.0)
+
+
 def ctx_scoring_type(ctx: dict) -> str:
     """``redraft`` for ESPN (always) and Sleeper type 0/1; otherwise ``dynasty``.
 
@@ -242,10 +345,9 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Union[dict, None]
         roster_players, future_picks, scoring_type=scoring_type,
     )
 
-    standing = (ctx.get("standings_map") or {}).get(str(viewer_roster_id), {})
-    record = standing.get("record") or standing.get("display_record") or ""
-    pf = _safe_float(standing.get("PF"))
-    pa = _safe_float(standing.get("PA"))
+    # standings_map is {roster_id: seed:int} in production — resolve record/PF/PA
+    # from team_stats / roster.settings (dict fixtures still work via helper).
+    record, pf, pa = _record_pf_pa_for_roster(ctx, str(viewer_roster_id), roster)
     week = ctx.get("current_week")
     season_phase = _season_phase(week, record)
     weakest_positions = _weakest_core_positions(position_strength)
@@ -1050,9 +1152,18 @@ def build_trade_suggestions_context(
     _standings_map = ctx.get("standings_map") or {}
 
     def _win_pct(rid: str) -> float:
-        s = _standings_map.get(str(rid)) or {}
+        s = _standing_dict(_standings_map, rid)
         w = _safe_float(s.get("wins") or s.get("W") or s.get("Wins") or 0)
         l = _safe_float(s.get("losses") or s.get("L") or s.get("Losses") or 0)
+        if (w + l) <= 0:
+            # Production standings_map is seed ints — fall back to roster settings.
+            rec, _, _ = _record_pf_pa_for_roster(ctx, str(rid))
+            parts = str(rec or "").replace("–", "-").split("-")
+            try:
+                w = float(parts[0]) if parts else 0.0
+                l = float(parts[1]) if len(parts) > 1 else 0.0
+            except (TypeError, ValueError):
+                w = l = 0.0
         return w / (w + l) if (w + l) > 0 else 0.5
 
     # Group all picks (across all rosters) by season+round to assign slots
@@ -1586,7 +1697,7 @@ def build_power_rankings_context(ctx: dict) -> dict:
         win_pct = wins / total_games if total_games > 0 else 0.0
 
         fpts = _safe_float(settings.get("fpts")) + _safe_float(settings.get("fpts_decimal")) / 100.0
-        standing = standings_map.get(rid) or {}
+        standing = _standing_dict(standings_map, rid)
         pf = _safe_float(standing.get("PF") or fpts)
 
         # Luck-adjusted win rate: mostly all-play (de-luffed strength), with a
