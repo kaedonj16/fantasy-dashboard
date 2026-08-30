@@ -15,6 +15,27 @@
       var _draftEnded      = _cfg.draftEnded;
       var _loaded          = {};
 
+      // Soft-nav / league switch can leave this module bound to the previous
+      // room. Re-read the inline cfg and drop lazy-load flags when the league
+      // identity changes so each panel fetches that league's data.
+      function _syncLeagueCfg() {
+        var next = window.__teamsCfg || {};
+        var same = String(next.leagueId || '') === String(_leagueId || '')
+          && String(next.platform || '') === String(_platform || '')
+          && String(next.season || '') === String(_season || '');
+        if (same) return;
+        _cfg = next;
+        _platform = next.platform;
+        _leagueId = next.leagueId;
+        _season = next.season;
+        _leagueType = next.leagueType;
+        _leagueSize = next.leagueSize;
+        _viewerRosterId = next.viewerRosterId;
+        _offseasonMode = next.offseasonMode;
+        _draftEnded = next.draftEnded;
+        _loaded = {};
+      }
+
       function _panelEmpty(panel, title, message, opts) {
         opts = opts || {};
         if (window.brEmptyState) {
@@ -49,6 +70,7 @@
 
 
       function loadBtm() {
+        _syncLeagueCfg();
         if (_loaded.btm) return;
         _loaded.btm = true;
         var panel = document.getElementById('btmPanel');
@@ -182,6 +204,7 @@
       }
 
       function loadSos() {
+        _syncLeagueCfg();
         if (_loaded.sos) return;
         _loaded.sos = true;
         var panel = document.getElementById('sosPanel');
@@ -285,6 +308,7 @@
       }
 
       function loadDraft() {
+        _syncLeagueCfg();
         if (_loaded.draft) return;
         _loaded.draft = true;
         var panel = document.getElementById('draftPanel');
@@ -516,6 +540,7 @@
       }
 
       function loadRosterIntel() {
+        _syncLeagueCfg();
         if (_loaded.rosterIntel) return;
         _loaded.rosterIntel = true;
         var panel = document.getElementById('rosterIntelPanel');
@@ -720,6 +745,7 @@
       }
 
       function loadPowerRankings() {
+        _syncLeagueCfg();
         if (_loaded.powerRankings) return;
         _loaded.powerRankings = true;
         var panel = document.getElementById('powerRankingsPanel');
