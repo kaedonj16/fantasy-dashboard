@@ -50,6 +50,57 @@ def test_map_odds_prefers_posted_roster_id():
     assert by_slot[0] == 61.4
 
 
+def test_map_odds_fills_you_from_sibling_seat_when_you_rid_wrong():
+    """Owned picks live only on slot 0; a bad You roster_id must still get odds."""
+    hp = _helpers()
+    odds = [_odds(10, 71.2, "A"), _odds(11, 28.8, "B")]
+    teams = [
+        {"slot": 0, "roster_id": 999, "name": "You"},  # stale / wrong id
+        {"slot": 1, "roster_id": 10, "name": "A"},
+        {"slot": 2, "roster_id": 11, "name": "B"},
+        {"slot": 3, "roster_id": 10, "name": "Seat 3"},  # viewer's real seat mirror
+    ]
+    # Repair the You row the way the client now does: same rid as the seat.
+    teams[0]["roster_id"] = 10
+    mapped = hp._map_playoff_odds_to_slots(odds, teams)
+    by_slot = {row["slot"]: row["playoff_pct"] for row in mapped}
+    assert by_slot[0] == 71.2
+    assert by_slot[3] == 71.2
+
+
+def test_map_odds_fills_you_from_sibling_when_you_row_unmapped():
+    """If You is omitted mid-pass, copy odds from a seat that shares roster_id."""
+    hp = _helpers()
+    odds = [_odds(10, 55.0, "A"), _odds(11, 45.0, "B")]
+    # Pretend You's roster_id failed the first pass by using a name-only miss
+    # and relying on the sibling fill: post You with the correct rid after a
+    # seat already mapped — exercise the trailing have_zero repair when You
+    # somehow lacks a by_rid hit on a first attempt with rid=None.
+    teams = [
+        {"slot": 1, "roster_id": 10, "name": "A"},
+        {"slot": 2, "roster_id": 11, "name": "B"},
+        {"slot": 0, "roster_id": 10, "name": "You"},
+    ]
+    mapped = hp._map_playoff_odds_to_slots(odds, teams)
+    by_slot = {row["slot"]: row["playoff_pct"] for row in mapped}
+    assert by_slot[0] == 55.0
+
+
+def test_map_odds_fills_you_via_viewer_slot_when_rid_wrong():
+    """Wrong You roster_id still maps when viewer_slot points at a mapped seat."""
+    hp = _helpers()
+    odds = [_odds(10, 80.0, "A"), _odds(11, 20.0, "B")]
+    teams = [
+        {"slot": 0, "roster_id": "nope", "name": "You"},
+        {"slot": 4, "roster_id": 10, "name": "Seat 4"},
+        {"slot": 5, "roster_id": 11, "name": "Seat 5"},
+    ]
+    mapped = hp._map_playoff_odds_to_slots(odds, teams, viewer_slot=4)
+    by_slot = {row["slot"]: row["playoff_pct"] for row in mapped}
+    assert by_slot[0] == 80.0
+    assert by_slot[4] == 80.0
+
+
 def test_map_odds_falls_back_to_slot_equals_roster_id():
     hp = _helpers()
     odds = [_odds(2, 40.0)]
@@ -176,6 +227,11 @@ def test_draft_room_posts_league_identity_on_live_recap():
     assert "pass_td:" in refresh
     assert "liveLeague ? []" in refresh
     assert "_slotRosterId" in refresh
+    # Prefer draft seat map over cfg.viewerRosterId so "You" (slot 0) maps.
+    assert "_slotRosterId(viewerSeat) || cfg.viewerRosterId" in refresh
+    assert "m[0] == null && viewerSeat" in refresh
+    assert "teamsPayload.push" in refresh
+    assert "viewer_slot:" in refresh
     assert "function _slotToRosterFromLive" in DRAFT_JS
     assert "slotToRosterId: _slotToRosterFromLive(d)" in DRAFT_JS
     assert "function _poFmt" in DRAFT_JS

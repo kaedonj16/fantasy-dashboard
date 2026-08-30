@@ -4525,6 +4525,40 @@
     _poFetching = true;
     var _sc = scoringCfg();
     var liveLeague = !!(state.mode === 'live' && cfg.leagueId && cfg.platform);
+    // Prefer the draft's slot→roster map over cfg.viewerRosterId: a stale or
+    // wrong viewer id was posting slot 0 ("You") with a roster_id the standings
+    // sim does not know, so every seat got odds except the user's row.
+    var viewerSeat = (state && state.slot) ? state.slot : 0;
+    var viewerRid = liveLeague
+      ? (_slotRosterId(viewerSeat) || cfg.viewerRosterId || viewerSeat)
+      : viewerSeat;
+    var youTeam = null;
+    var teamsPayload = allTeams.map(function(t){
+      var rid = liveLeague
+        ? (t.slot === 0 ? viewerRid : _slotRosterId(t.slot))
+        : (t.slot === 0 ? viewerSeat : t.slot);
+      var row = {
+        slot: t.slot,
+        roster_id: rid,
+        name: t.name,
+        players: liveLeague ? [] : (t.picks || []).map(function(x){
+          return (x.p && x.p.id != null) ? String(x.p.id) : null;
+        }).filter(Boolean)
+      };
+      if (t.slot === 0) youTeam = row;
+      return row;
+    });
+    // gradeAllTeams() puts owned picks only on slot 0, so the viewer's real
+    // seat is absent from the payload. Mirror it so the server can map "You"
+    // via a sibling seat that shares roster_id when needed.
+    if (youTeam && viewerSeat && !teamsPayload.some(function(t){ return Number(t.slot) === Number(viewerSeat); })){
+      teamsPayload.push({
+        slot: viewerSeat,
+        roster_id: viewerRid,
+        name: (typeof teamName === 'function' ? teamName(viewerSeat) : ('Team ' + viewerSeat)),
+        players: youTeam.players || []
+      });
+    }
     var payload = {
       season: state.season || cfg.season || 0,
       ppr: (_sc && _sc.ppr != null) ? _sc.ppr : 1,
@@ -4535,22 +4569,8 @@
       platform: cfg.platform || '',
       league_id: liveLeague ? (cfg.leagueId || '') : '',
       use_league: liveLeague,
-      teams: allTeams.map(function(t){
-        var seat = t.slot === 0 ? (state.slot || t.slot) : t.slot;
-        var rid = liveLeague
-          ? (t.slot === 0
-              ? (cfg.viewerRosterId || _slotRosterId(state.slot))
-              : _slotRosterId(t.slot))
-          : seat;
-        return {
-          slot: t.slot,
-          roster_id: rid,
-          name: t.name,
-          players: liveLeague ? [] : (t.picks || []).map(function(x){
-            return (x.p && x.p.id != null) ? String(x.p.id) : null;
-          }).filter(Boolean)
-        };
-      })
+      viewer_slot: viewerSeat || null,
+      teams: teamsPayload
     };
     fetch('/api/draft-playoff-odds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       .then(function(r){ return r.json(); })
@@ -4559,6 +4579,12 @@
         if (resp && resp.odds && resp.odds.length){
           var m = {};
           resp.odds.forEach(function(o){ if (o.slot != null) m[o.slot] = o.playoff_pct; });
+          // Slot 0 is the "You" sentinel — mirror the real seat when the server
+          // only keyed odds to draft seats 1..N.
+          if (m[0] == null && viewerSeat){
+            if (m[viewerSeat] != null) m[0] = m[viewerSeat];
+            else if (m[String(viewerSeat)] != null) m[0] = m[String(viewerSeat)];
+          }
           _poServer = m; _poServerSig = sig; _poFailedSig = null;
           _repaintPlayoffOdds();
         } else {
