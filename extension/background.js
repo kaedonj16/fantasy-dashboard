@@ -124,6 +124,20 @@ async function relayDraftToBrTabs(messageType, payload) {
   return { ok: true, sent, tabs: tabs.length };
 }
 
+async function ensureEspnDraftObserver(tabId) {
+  if (!tabId) return false;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world: "MAIN",
+      files: ["espn_draft_main.js"],
+    });
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
 async function nudgeDraftTabScan(tab) {
   if (!tab || !tab.id) return false;
   let ok = false;
@@ -295,11 +309,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  if (
-    msg.type === "espnDraftTabReady" ||
-    msg.type === "yahooDraftTabReady" ||
-    msg.type === "brDraftRoomReady"
-  ) {
+  if (msg.type === "ensureEspnDraftObserver") {
+    const tabId = sender && sender.tab && sender.tab.id;
+    ensureEspnDraftObserver(tabId)
+      .then((ok) => sendResponse({ ok }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+
+  if (msg.type === "espnDraftTabReady") {
+    const tabId = sender && sender.tab && sender.tab.id;
+    ensureEspnDraftObserver(tabId).finally(() => sendResponse({ ok: true }));
+    return true;
+  }
+
+  if (msg.type === "yahooDraftTabReady" || msg.type === "brDraftRoomReady") {
     sendResponse({ ok: true });
     return false;
   }
