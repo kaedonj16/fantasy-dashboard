@@ -5216,7 +5216,11 @@
         if (playoffOddsPending(allTeams)){
           poTag = '<span class="dr-sum-lpo dr-sum-lpo-pending" title="Calculating playoff odds">…</span>';
         } else if (_poOdds[t.slot] != null){
-          poTag = '<span class="dr-sum-lpo" style="color:' + _poColor(_poOdds[t.slot]) + '" title="Playoff odds — same engine and league as Standings">'
+          poTag = '<span class="dr-sum-lpo" style="color:' + _poColor(_poOdds[t.slot]) + '" title="'
+            + (state.mode === 'live'
+              ? 'Playoff odds — same engine and league as Standings'
+              : 'Playoff odds for this mock versus the other drafted teams')
+            + '">'
             + _poFmt(_poOdds[t.slot]) + '%</span>';
         }
       }
