@@ -71,6 +71,17 @@ class TestPartners:
     def test_viewer_excluded(self):
         assert "Me" not in trade_partners(self.TEAMS, "sell")
 
+    def test_viewer_excluded_even_when_is_viewer_flag_missing(self):
+        # Mis-keyed roster_id left is_viewer False on the viewer's own row —
+        # still drop any name that another row marked as the viewer.
+        teams = [
+            {"name": "Caleb's Casting Couch", "playoff_pct": 80, "is_viewer": True},
+            {"name": "Caleb's Casting Couch", "playoff_pct": 5},  # duplicate name, wrong id
+            {"name": "Tanker", "playoff_pct": 10},
+        ]
+        assert trade_partners(teams, "buy") == ["Tanker"]
+        assert "Caleb's Casting Couch" not in trade_partners(teams, "buy")
+
     def test_hold_gets_no_partners(self):
         assert trade_partners(self.TEAMS, "hold") == []
 

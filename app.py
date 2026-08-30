@@ -335,6 +335,9 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
             platform,
             str(ctx.get("league_id") or ""),
             int(ctx.get("season") or ctx.get("current_season") or 0),
+            # v2: Week-1 seeded standings must use roster projections, not
+            # RangeIndex-as-roster_id (mis-attributed FO / sellers-to-call).
+            "v2",
         )
         sig = _roster_sig(ctx)
         hit = _PLAYOFF_SIM_CACHE.get(key)
@@ -5726,7 +5729,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     if platform == "espn":
         try:
             from dashboard_services.providers.espn_api import clear_espn_league_caches
-            clear_espn_league_caches()
+            clear_espn_league_caches(resolved_league_id, viewed_season)
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
 
@@ -6808,7 +6811,15 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
                 {
                     "name": r.get("team_name"),
                     "playoff_pct": r.get("playoff_pct"),
-                    "is_viewer": str(r.get("roster_id")) == str(viewer_roster_id),
+                    "is_viewer": (
+                        str(r.get("roster_id")) == str(viewer_roster_id)
+                        or str(r.get("team_name") or "").strip().lower()
+                        == str(
+                            (ctx.get("roster_map") or {}).get(str(viewer_roster_id))
+                            or (ctx.get("viewer") or {}).get("viewer_team_name")
+                            or ""
+                        ).strip().lower()
+                    ),
                 }
                 for r in odds
             ],
@@ -7631,7 +7642,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     # Playoff Odds tab), sort by first_seed → bye → overall playoff probability
     try:
         from data_building.simulate_playoff_odds import simulate_playoff_odds
-        _sim_key = (platform, str(ctx.get("league_id") or ""), int(ctx.get("season") or 0))
+        _sim_key = (platform, str(ctx.get("league_id") or ""), int(ctx.get("season") or 0), "v2")
         _sim_sig = _roster_sig(ctx)
         _sim_cached = _PLAYOFF_SIM_CACHE.get(_sim_key)
         if (_sim_cached and time.time() - _sim_cached["ts"] < _PLAYOFF_SIM_CACHE_TTL
@@ -19795,7 +19806,7 @@ def api_playoff_odds():
             return jsonify({"error": "league not found"}), 404
 
         from data_building.simulate_playoff_odds import simulate_playoff_odds
-        _sim_key2 = (platform, str(league_id), season)
+        _sim_key2 = (platform, str(league_id), season, "v2")
         _sim_sig2 = _roster_sig(ctx)
         _sim_cached2 = _PLAYOFF_SIM_CACHE.get(_sim_key2)
         if (_sim_cached2 and time.time() - _sim_cached2["ts"] < _PLAYOFF_SIM_CACHE_TTL

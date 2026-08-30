@@ -930,18 +930,54 @@ _draft_meta_lock = threading.Lock()
 _DRAFT_META_TTL = 300  # 5 minutes — the scheduled draft date barely changes.
 
 
-def clear_espn_league_caches() -> None:
+def clear_espn_league_caches(league_id: Optional[str] = None, season: Optional[int] = None) -> None:
     """Drop cached ESPN League / draft-meta objects so the next fetch is live.
 
     Call from refresh-league / full page refresh after a draft completes so Teams
     pick up ESPN roster assignments instead of empty pre-draft shells.
+
+    When ``league_id`` (and optionally ``season``) is provided, only that
+    league's entries are evicted — switching leagues used to wipe every ESPN
+    cache on the worker and force a cold rebuild of unrelated leagues.
     """
     with _public_league_lock:
-        _public_league_cache.clear()
+        if league_id is None:
+            _public_league_cache.clear()
+        else:
+            lid = str(league_id)
+            drop = [
+                key for key in _public_league_cache
+                if str(key[1]) == lid and (season is None or int(key[0]) == int(season))
+            ]
+            for key in drop:
+                _public_league_cache.pop(key, None)
     with _draft_meta_lock:
-        _draft_meta_cache.clear()
+        if league_id is None:
+            _draft_meta_cache.clear()
+        else:
+            lid = str(league_id)
+            drop = [
+                key for key in _draft_meta_cache
+                if str(key[1]) == lid and (season is None or int(key[0]) == int(season))
+            ]
+            for key in drop:
+                _draft_meta_cache.pop(key, None)
+    # Box scores are week-scoped; drop matching league entries so live scores
+    # still refresh without nuking every other league on the worker.
+    with _box_score_lock:
+        if league_id is None:
+            _box_score_cache.clear()
+        else:
+            lid = str(league_id)
+            drop = [
+                key for key in _box_score_cache
+                if str(key[1]) == lid and (season is None or int(key[0]) == int(season))
+            ]
+            for key in drop:
+                _box_score_cache.pop(key, None)
     try:
-        _playoff_schedule_cached.cache_clear()
+        if league_id is None:
+            _playoff_schedule_cached.cache_clear()
     except Exception:
         pass
 

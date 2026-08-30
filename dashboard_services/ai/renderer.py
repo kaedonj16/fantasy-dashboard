@@ -164,14 +164,19 @@ def render_team_ai_result(result: dict, mode: str = "gm_memo") -> str:
         """
 
 
-def _ctx_with_playoff_odds(ctx: dict) -> dict:
-    """Attach a warm playoff-odds snapshot when the sim cache already has one."""
+def _ctx_with_playoff_odds(ctx: dict, *, block: bool = True) -> dict:
+    """Attach playoff odds before building GM / rankings context.
+
+    Defaults to ``block=True`` so Front Office reports never cite a cold-cache
+    miss (or worse, a mis-keyed Week-1 seed) as 0.1% playoff odds. Callers that
+    must stay non-blocking on first paint can pass ``block=False``.
+    """
     if not ctx or ctx.get("playoff_odds"):
         return ctx
     try:
         from app import _playoff_sim_cached
         rows = _playoff_sim_cached(
-            ctx, str(ctx.get("platform") or "sleeper"), block=False,
+            ctx, str(ctx.get("platform") or "sleeper"), block=block,
         ) or []
     except Exception:
         return ctx
@@ -217,12 +222,24 @@ def _trade_room_slice(team_ctx: dict, *, is_redraft: bool) -> dict:
 
 
 def get_team_gm_memo(ctx: dict, viewer_roster_id: str, force_refresh: bool = False) -> str:
-    team_ctx = build_team_gm_context(_ctx_with_playoff_odds(ctx), viewer_roster_id)
+    # Warm-cache first so a dashboard paint does not block on a cold Monte Carlo.
+    team_ctx = build_team_gm_context(_ctx_with_playoff_odds(ctx, block=False), viewer_roster_id)
     if not team_ctx:
         return ""
 
-    # v7: scrub bare "out," lead-ins and "odds not provided" gap narration.
-    cache_key = build_ai_cache_key("gm_memo", team_ctx, "v7")
+    # v8: Week-1 seeded standings must not attach mis-keyed playoff odds
+    # (RangeIndex roster_ids → FO report citing another team's 0.1%).
+    cache_key = build_ai_cache_key("gm_memo", team_ctx, "v8")
+    if not force_refresh:
+        cached = load_cached_ai_text(cache_key)
+        if cached:
+            return scrub_ai_prose_field_names(cached)
+
+    # Generating (or refreshing): block so the memo cites real odds for this roster.
+    team_ctx = build_team_gm_context(_ctx_with_playoff_odds(ctx, block=True), viewer_roster_id)
+    if not team_ctx:
+        return ""
+    cache_key = build_ai_cache_key("gm_memo", team_ctx, "v8")
     if not force_refresh:
         cached = load_cached_ai_text(cache_key)
         if cached:

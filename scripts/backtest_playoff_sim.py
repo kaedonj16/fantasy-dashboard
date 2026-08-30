@@ -72,7 +72,7 @@ def _made_playoffs(ctx: dict) -> Tuple[set, int]:
 
     settings = ctx.get("league_settings") or {}
     playoff_teams = int(settings.get("playoff_teams") or 6)
-    teams = _build_teams(ctx.get("team_stats"))
+    teams = _build_teams(ctx.get("team_stats"), ctx.get("roster_map") or {})
     ranked = sorted(teams, key=lambda t: (-t["wins"], -t["pf"]))
     return {t["roster_id"] for t in ranked[:playoff_teams]}, playoff_teams
 
