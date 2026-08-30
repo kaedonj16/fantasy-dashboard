@@ -214,7 +214,7 @@ def _trade_room_slice(team_ctx: dict, *, is_redraft: bool) -> dict:
     return out
 
 
-def get_team_gm_memo(ctx: dict, viewer_roster_id: str) -> str:
+def get_team_gm_memo(ctx: dict, viewer_roster_id: str, force_refresh: bool = False) -> str:
     team_ctx = build_team_gm_context(_ctx_with_playoff_odds(ctx), viewer_roster_id)
     if not team_ctx:
         return ""
@@ -222,9 +222,10 @@ def get_team_gm_memo(ctx: dict, viewer_roster_id: str) -> str:
     # v4: redraft leagues (ESPN always; other platforms via settings.type) use
     # redraft values + redraft prompts.
     cache_key = build_ai_cache_key("gm_memo", team_ctx, "v5")
-    cached = load_cached_ai_text(cache_key)
-    if cached:
-        return cached
+    if not force_refresh:
+        cached = load_cached_ai_text(cache_key)
+        if cached:
+            return cached
 
     if not ai_available():
         html_out = _gm_memo_fallback_html(team_ctx)

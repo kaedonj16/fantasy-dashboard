@@ -19,6 +19,7 @@ def test_generate_report_uses_delegated_click_handler():
     assert "document.addEventListener('click', async function(event)" in report_code
     assert "event.target.closest('#generateGmMemoBtn')" in report_code
     assert "fetch('/api/gm-memo'" in report_code
+    assert "force: true" in report_code
 
 
 def test_generate_report_restores_button_after_request():
@@ -28,6 +29,19 @@ def test_generate_report_restores_button_after_request():
     assert "generateGmMemoBtn.disabled = true" in report_code
     assert "} finally {" in report_code
     assert "generateGmMemoBtn.disabled = false" in report_code
+    assert "Refresh Report" in report_code
+
+
+def test_in_season_dashboard_keeps_refresh_when_cached():
+    """Cached Front Office HTML must still expose a regenerate control."""
+    from pathlib import Path
+
+    dash = (Path(__file__).parents[1] / "dashboard_services" / "pages" / "dashboard_page.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'Refresh Report" if gm_memo_html else "Generate Report' in dash
+    assert 'id="generateGmMemoBtn"' in dash
+    assert 'id="gm-memo-result"' in dash
 
 
 def test_offseason_hero_stats_use_four_or_two_columns():

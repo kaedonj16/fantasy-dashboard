@@ -117,6 +117,8 @@ def test_in_season_front_office_is_premium_gated():
     assert "if _fo_premium:" in dash
     assert "gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))" in dash
     assert 'id="generateGmMemoBtn"' in dash
+    # Cached report must still offer Refresh so users aren't stuck on stale copy.
+    assert 'Refresh Report" if gm_memo_html else "Generate Report' in dash
 
 
 def test_trade_suggestions_hides_build_around_without_pro():

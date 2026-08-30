@@ -1,7 +1,9 @@
 """Tests for utils.trade_window (buy/sell window advisor)."""
 from utils.trade_window import (
     BUY_THRESHOLD,
+    REDRAFT_DEADLINE_WINDOW,
     SELL_THRESHOLD,
+    redraft_deadline_card_visible,
     trade_partners,
     trade_window_verdict,
 )
@@ -79,3 +81,20 @@ class TestPartners:
     def test_empty(self):
         assert trade_partners([], "buy") == []
         assert trade_partners(None, "buy") == []
+
+
+class TestRedraftDeadlineCardVisible:
+    def test_hidden_without_deadline(self):
+        assert not redraft_deadline_card_visible(None)
+
+    def test_hidden_far_from_deadline(self):
+        assert not redraft_deadline_card_visible(REDRAFT_DEADLINE_WINDOW + 1)
+        assert not redraft_deadline_card_visible(12)
+
+    def test_visible_inside_window(self):
+        assert redraft_deadline_card_visible(0)
+        assert redraft_deadline_card_visible(REDRAFT_DEADLINE_WINDOW)
+        assert redraft_deadline_card_visible(3)
+
+    def test_hidden_after_deadline(self):
+        assert not redraft_deadline_card_visible(-1)

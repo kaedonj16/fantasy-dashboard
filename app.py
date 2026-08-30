@@ -6691,7 +6691,12 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
     if not viewer_roster_id:
         return ""
     try:
-        from utils.trade_window import trade_partners, trade_window_verdict
+        import time as _time
+        from utils.trade_window import (
+            redraft_deadline_card_visible,
+            trade_partners,
+            trade_window_verdict,
+        )
 
         platform = ctx.get("platform", "sleeper")
         # Warm-cache only: a cold sim must never block the dashboard paint.
@@ -6706,7 +6711,11 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
             return ""
         pct = float(me.get("playoff_pct") or 0)
 
-        settings = (ctx.get("league") or {}).get("settings") or {}
+        # Sleeper keeps trade_deadline on league.settings; ESPN maps
+        # tradeSettings.deadlineDate onto league_settings.trade_deadline_ts.
+        settings = {}
+        settings.update(ctx.get("league_settings") or {})
+        settings.update((ctx.get("league") or {}).get("settings") or {})
         current_week = int(ctx.get("current_week") or 0)
         try:
             deadline = int(settings.get("trade_deadline") or 0)
@@ -6717,8 +6726,24 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
             if current_week > deadline:
                 return ""  # deadline passed; the window is closed
             weeks_to = deadline - current_week
+        else:
+            try:
+                deadline_ts = int(settings.get("trade_deadline_ts") or 0)
+            except (TypeError, ValueError):
+                deadline_ts = 0
+            if deadline_ts > 0:
+                remaining = deadline_ts - _time.time()
+                if remaining < 0:
+                    return ""
+                weeks_to = int(remaining // (7 * 86400))
+                # Display label only — approximate week from now + remaining.
+                deadline = max(1, current_week + weeks_to)
 
         is_redraft = _league_is_redraft(ctx)
+        # Redraft copy is explicitly "Trade deadline: …". Hide it in Week 1 /
+        # early season when the deadline is unknown or still far away.
+        if is_redraft and not redraft_deadline_card_visible(weeks_to):
+            return ""
 
         # Roster-age standing is a dynasty window signal. Redraft ignores it.
         age_rank = None
@@ -14328,7 +14353,8 @@ def api_gm_memo():
 
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
-        gm_memo_html = get_team_gm_memo(ctx, viewer_roster_id)
+        force_refresh = bool(payload.get("force"))
+        gm_memo_html = get_team_gm_memo(ctx, viewer_roster_id, force_refresh=force_refresh)
 
         return jsonify({
             "success": True,

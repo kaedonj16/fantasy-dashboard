@@ -12041,7 +12041,10 @@ document.addEventListener('DOMContentLoaded', function() {
           league_id: leagueId,
           season: parseInt(season),
           platform: platform,
-          viewer_roster_id: viewerRosterId
+          viewer_roster_id: viewerRosterId,
+          // Button click always means "give me a fresh report" — page load
+          // still serves the warm AI cache without this flag.
+          force: true
         })
       });
 
@@ -12062,6 +12065,7 @@ document.addEventListener('DOMContentLoaded', function() {
           resultState.innerHTML = data.gm_memo_html;
           if (window.brRevealText) window.brRevealText(resultState);
         }
+        generateGmMemoBtn.textContent = 'Refresh Report';
       } else {
         // Show error
         if (loadingState) loadingState.style.display = 'none';
@@ -12087,7 +12091,9 @@ document.addEventListener('DOMContentLoaded', function() {
     } finally {
       generateGmMemoBtn.disabled = false;
       generateGmMemoBtn.removeAttribute('aria-busy');
-      generateGmMemoBtn.textContent = 'Generate Report';
+      const hasResult = resultState && resultState.style.display !== 'none'
+        && (resultState.innerHTML || '').trim();
+      generateGmMemoBtn.textContent = hasResult ? 'Refresh Report' : 'Generate Report';
     }
   });
 
