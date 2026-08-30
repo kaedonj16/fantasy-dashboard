@@ -33,25 +33,36 @@
   let bestOverallSeen = 0;
 
   function isTraversableObject(val) {
-    if (!val || typeof val !== "object") return false;
-    if (Array.isArray(val)) return true;
-    const tag = Object.prototype.toString.call(val);
-    if (
-      tag === "[object Window]" ||
-      tag === "[object HTMLDocument]" ||
-      tag === "[object Document]" ||
-      tag === "[object Location]"
-    ) {
+    try {
+      if (!val || typeof val !== "object") return false;
+      if (Array.isArray(val)) return true;
+      if (typeof Window !== "undefined" && val instanceof Window) return false;
+      if (typeof Location !== "undefined" && val instanceof Location) return false;
+      const tag = Object.prototype.toString.call(val);
+      if (
+        tag === "[object Window]" ||
+        tag === "[object HTMLDocument]" ||
+        tag === "[object Document]" ||
+        tag === "[object Location]"
+      ) {
+        return false;
+      }
+      if (typeof HTMLIFrameElement !== "undefined" && val instanceof HTMLIFrameElement) {
+        return false;
+      }
+      if (typeof Element !== "undefined" && val instanceof Element) return false;
+      if (typeof Node !== "undefined" && val instanceof Node) return false;
+      return true;
+    } catch (_e) {
       return false;
     }
-    if (typeof Element !== "undefined" && val instanceof Element) return false;
-    if (typeof Node !== "undefined" && val instanceof Node) return false;
-    return true;
   }
 
   function safeProp(obj, key) {
-    if (!isTraversableObject(obj)) return undefined;
     try {
+      if (obj == null || typeof obj !== "object") return undefined;
+      if (typeof Window !== "undefined" && obj instanceof Window) return undefined;
+      if (typeof Location !== "undefined" && obj instanceof Location) return undefined;
       return obj[key];
     } catch (_e) {
       return undefined;
@@ -59,8 +70,8 @@
   }
 
   function safeKeys(obj) {
-    if (!isTraversableObject(obj)) return [];
     try {
+      if (!isTraversableObject(obj)) return [];
       return Object.keys(obj);
     } catch (_e) {
       return [];
@@ -128,40 +139,43 @@
   }
 
   function pickPlayerId(obj) {
-    if (!obj || typeof obj !== "object") return null;
-    const pool = obj.playerPoolEntry || obj.player_pool_entry;
+    if (!isTraversableObject(obj)) return null;
+    const pool = safeProp(obj, "playerPoolEntry") || safeProp(obj, "player_pool_entry");
+    const poolPlayer = pool && safeProp(pool, "player");
     const fromPool =
       pool &&
-      (pool.playerId ??
-        pool.player_id ??
-        pool.id ??
-        (pool.player && (pool.player.id ?? pool.player.playerId)));
+      (safeProp(pool, "playerId") ??
+        safeProp(pool, "player_id") ??
+        safeProp(pool, "id") ??
+        (poolPlayer &&
+          (safeProp(poolPlayer, "id") ?? safeProp(poolPlayer, "playerId"))));
+    const player = safeProp(obj, "player");
     return (
-      obj.playerId ??
-      obj.player_id ??
-      obj.athleteId ??
-      obj.athlete_id ??
+      safeProp(obj, "playerId") ??
+      safeProp(obj, "player_id") ??
+      safeProp(obj, "athleteId") ??
+      safeProp(obj, "athlete_id") ??
       fromPool ??
-      (obj.player && (obj.player.id ?? obj.player.playerId)) ??
-      obj.id
+      (player && (safeProp(player, "id") ?? safeProp(player, "playerId"))) ??
+      safeProp(obj, "id")
     );
   }
 
   function pickOverall(obj) {
-    if (!obj || typeof obj !== "object") return null;
+    if (!isTraversableObject(obj)) return null;
     return (
-      obj.overallPickNumber ??
-      obj.overallPickNo ??
-      obj.overallPick ??
-      obj.overall_pick_number ??
-      obj.pickNumber ??
-      obj.pick_no ??
-      obj.pick
+      safeProp(obj, "overallPickNumber") ??
+      safeProp(obj, "overallPickNo") ??
+      safeProp(obj, "overallPick") ??
+      safeProp(obj, "overall_pick_number") ??
+      safeProp(obj, "pickNumber") ??
+      safeProp(obj, "pick_no") ??
+      safeProp(obj, "pick")
     );
   }
 
   function isPickRow(obj) {
-    if (!obj || typeof obj !== "object") return false;
+    if (!isTraversableObject(obj)) return false;
     const pid = pickPlayerId(obj);
     const overall = pickOverall(obj);
     return overall != null && playerIdSelected(pid);
@@ -171,17 +185,22 @@
     if (!isPickRow(raw)) return null;
     const playerId = pickPlayerId(raw);
     const overall = pickOverall(raw);
-    const teamId = raw.teamId ?? raw.team_id ?? raw.team?.id;
-    const roundId = raw.roundId ?? raw.round ?? raw.round_id;
-    const roundPick = raw.roundPickNumber ?? raw.roundPick ?? raw.round_pick ?? raw.slot;
+    const team = safeProp(raw, "team");
+    const teamId = safeProp(raw, "teamId") ?? safeProp(raw, "team_id") ?? (team && safeProp(team, "id"));
+    const roundId = safeProp(raw, "roundId") ?? safeProp(raw, "round") ?? safeProp(raw, "round_id");
+    const roundPick =
+      safeProp(raw, "roundPickNumber") ??
+      safeProp(raw, "roundPick") ??
+      safeProp(raw, "round_pick") ??
+      safeProp(raw, "slot");
     return {
       overallPickNumber: Number(overall),
       playerId: playerId == null ? null : playerId,
       teamId: teamId == null ? null : teamId,
       roundId: roundId == null ? null : Number(roundId),
       roundPickNumber: roundPick == null ? null : Number(roundPick),
-      keeper: !!(raw.keeper || raw.reservedForKeeper || raw.isKeeper),
-      bidAmount: raw.bidAmount != null ? raw.bidAmount : null,
+      keeper: !!(safeProp(raw, "keeper") || safeProp(raw, "reservedForKeeper") || safeProp(raw, "isKeeper")),
+      bidAmount: safeProp(raw, "bidAmount") != null ? safeProp(raw, "bidAmount") : null,
     };
   }
 
@@ -307,16 +326,17 @@
   }
 
   function maybeFromDraftDetail(detail, source) {
-    if (!detail || typeof detail !== "object") return false;
-    const picks = Array.isArray(detail.picks) ? detail.picks : null;
-    if (!picks || !picks.length) return false;
+    if (!isTraversableObject(detail)) return false;
+    const picks = safeProp(detail, "picks");
+    if (!Array.isArray(picks) || !picks.length) return false;
     const selected = picks.filter(isPickRow);
     if (!selected.length) return false;
     emit(
       selected,
       {
-        inProgress: detail.inProgress === true || detail.in_progress === true,
-        drafted: detail.drafted === true,
+        inProgress:
+          safeProp(detail, "inProgress") === true || safeProp(detail, "in_progress") === true,
+        drafted: safeProp(detail, "drafted") === true,
       },
       source
     );
