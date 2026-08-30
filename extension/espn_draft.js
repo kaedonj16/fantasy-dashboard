@@ -8,10 +8,12 @@
 
   const EVENT = "brfantasy:espn-draft-raw";
   const RETRY_MS = 3000;
+  const RECONNECT_COOLDOWN_MS = 5000;
   let lastDelivered = "";
   let lastPickCount = 0;
   let pendingPayload = null;
   let retryTimer = null;
+  let lastManualReconnectAt = 0;
   let chip = null;
 
   function leagueFromUrl() {
@@ -54,7 +56,7 @@
       btn.addEventListener("click", function (ev) {
         ev.preventDefault();
         ev.stopPropagation();
-        forceReconnect();
+        manualReconnect();
       });
     }
     document.documentElement.appendChild(chip);
@@ -69,22 +71,33 @@
     el.style.background = ok ? "#065f46" : "#0f172a";
   }
 
-  function forceReconnect() {
+  function forceResend() {
     lastDelivered = "";
     clearRetry();
-    setChip("BR Fantasy · reconnecting…", false);
-    if (pendingPayload) {
-      deliverPending(true);
-      return;
-    }
     try {
       window.dispatchEvent(new CustomEvent("brfantasy:draft-rescan"));
     } catch (_e) {
       /* ignore */
     }
+    if (pendingPayload) deliverPending(true);
+  }
+
+  function manualReconnect() {
+    const now = Date.now();
+    if (now - lastManualReconnectAt < RECONNECT_COOLDOWN_MS) {
+      setChip("BR Fantasy · wait a few seconds…", false);
+      return;
+    }
+    lastManualReconnectAt = now;
+    setChip("BR Fantasy · reconnecting…", false);
+    forceResend();
     try {
       chrome.runtime.sendMessage({ type: "reconnectDraftRelay", source: "espn-chip" }, function (resp) {
         void chrome.runtime.lastError;
+        if (resp && resp.throttled) {
+          setChip("BR Fantasy · wait a few seconds…", false);
+          return;
+        }
         if (resp && ((resp.br && resp.br.pinged > 0) || (resp.draft && resp.draft.pinged > 0))) {
           setChip("BR Fantasy · reconnect sent", false);
         }
@@ -187,7 +200,7 @@
 
   try {
     chrome.runtime.onMessage.addListener((msg) => {
-      if (msg && msg.type === "forceDraftRelay") forceReconnect();
+      if (msg && msg.type === "forceDraftRelay") forceResend();
     });
   } catch (_e) {
     /* ignore */
