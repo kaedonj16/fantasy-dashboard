@@ -1,6 +1,12 @@
 """ESPN mSettings trade deadline maps onto league_settings for Season Hub."""
 from types import SimpleNamespace
 
+import pytest
+
+# Lightweight CI has only pytest; espn_api pulls the third-party client + app stack.
+pytest.importorskip("espn_api")
+pytest.importorskip("flask")
+
 from dashboard_services.providers import espn_api
 
 

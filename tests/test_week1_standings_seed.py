@@ -1,5 +1,9 @@
 """Week 1 / pre-finalized standings should still list every team at 0-0."""
-import pandas as pd
+import pytest
+
+# Lightweight CI has only pytest; service.py pulls Flask/pandas.
+pytest.importorskip("flask")
+pd = pytest.importorskip("pandas")
 
 from dashboard_services.service import _seed_zero_standings, finalize_team_stats
 
