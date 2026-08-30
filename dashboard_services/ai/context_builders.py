@@ -135,14 +135,14 @@ def detect_team_direction(
     is_redraft = str(scoring_type or "").strip().lower() == "redraft"
 
     if is_redraft:
-        # No future-pick rebuild/retool signal in redraft.
+        # This-season lean only. Never rebuild/retool — those are dynasty words.
         if elite_assets >= 3 or (elite_assets >= 2 and strong_assets >= 5):
-            return "contender"
+            return "contend"
         if elite_assets >= 1 and strong_assets >= 4:
-            return "contender"
+            return "contend"
         if strong_assets <= 2:
-            return "retool"
-        return "balanced"
+            return "out"
+        return "bubble"
 
     firsts = sum(1 for p in future_picks if "1." in str(p.get("display") or ""))
     if avg_age and avg_age <= 28.5:
@@ -244,11 +244,19 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Union[dict, None]
     record = standing.get("record") or standing.get("display_record") or ""
     pf = _safe_float(standing.get("PF"))
     pa = _safe_float(standing.get("PA"))
+    week = ctx.get("current_week")
+    season_phase = _season_phase(week, record)
+    weakest_positions = _weakest_core_positions(position_strength)
 
-    return {
+    playoff = _playoff_snapshot(ctx, str(viewer_roster_id))
+    if is_redraft and playoff.get("playoff_status"):
+        direction = playoff["playoff_status"]
+
+    out = {
         "league_id": ctx.get("league_id"),
         "season": ctx.get("current_season"),
-        "week": ctx.get("current_week"),
+        "week": week,
+        "season_phase": season_phase,
         "viewer_roster_id": str(viewer_roster_id),
         "team_name": team_name,
         "scoring_type": scoring_type,
@@ -256,12 +264,104 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Union[dict, None]
         "points_for": round(pf, 1),
         "points_against": round(pa, 1),
         "direction": direction,
+        "weakest_positions": weakest_positions,
         "top_assets": top_assets,
         "aging_assets": aging_assets,
         "future_picks": future_picks,
         "position_strength": position_strength,
         "roster_size": len(roster_players),
     }
+    out.update(playoff)
+    grade = _viewer_draft_grade(ctx, str(viewer_roster_id))
+    if grade:
+        out["draft_grade"] = grade
+    return out
+
+
+def _season_phase(week, record) -> str:
+    rec = str(record or "").strip()
+    try:
+        wk = int(week or 0)
+    except (TypeError, ValueError):
+        wk = 0
+    if wk <= 0 or rec in ("", "0-0", "0-0-0"):
+        return "preseason"
+    return "in_season"
+
+
+def _weakest_core_positions(position_strength: dict) -> list[str]:
+    scored = []
+    for pos in ("QB", "RB", "WR", "TE"):
+        info = (position_strength or {}).get(pos) or {}
+        scored.append((
+            pos,
+            _safe_int(info.get("count")),
+            _safe_float(info.get("top_3_sum")),
+        ))
+    scored.sort(key=lambda x: (x[1] == 0, x[2], x[1]))
+    return [pos for pos, _count, _top in scored[:2]]
+
+
+def _playoff_status(pct, rank, playoff_teams: int) -> str:
+    if pct is not None:
+        if pct >= 70:
+            return "contend"
+        if pct >= 35:
+            return "bubble"
+        return "out"
+    if rank is not None and playoff_teams:
+        if rank <= max(1, playoff_teams // 2):
+            return "contend"
+        if rank <= playoff_teams:
+            return "bubble"
+        return "out"
+    return ""
+
+
+def _playoff_rows(ctx: dict) -> list:
+    """Use odds already on the league ctx. Callers that have the sim cache
+    should attach ``playoff_odds`` before building GM / rankings context so
+    this module never imports ``app``."""
+    rows = ctx.get("playoff_odds")
+    return rows if isinstance(rows, list) else []
+
+
+def _playoff_snapshot(ctx: dict, roster_id: str) -> dict:
+    rows = _playoff_rows(ctx)
+    if not rows:
+        return {}
+    ordered = sorted(rows, key=lambda r: float((r or {}).get("playoff_pct") or 0), reverse=True)
+    settings = ctx.get("league_settings") or {}
+    try:
+        spots = int(settings.get("playoff_teams") or 6)
+    except (TypeError, ValueError):
+        spots = 6
+    snap = {"playoff_teams": spots}
+    for i, row in enumerate(ordered, start=1):
+        if str((row or {}).get("roster_id")) != str(roster_id):
+            continue
+        try:
+            pct = float(row.get("playoff_pct"))
+        except (TypeError, ValueError):
+            pct = None
+        snap["playoff_pct"] = round(pct, 1) if pct is not None else None
+        snap["playoff_rank"] = i
+        snap["playoff_status"] = _playoff_status(pct, i, spots)
+        return snap
+    return snap
+
+
+def _viewer_draft_grade(ctx: dict, roster_id: str) -> str:
+    grades = ctx.get("team_grades") or {}
+    raw = grades.get(roster_id)
+    if raw is None:
+        try:
+            raw = grades.get(int(roster_id))
+        except (TypeError, ValueError):
+            raw = None
+    if isinstance(raw, dict):
+        return str(raw.get("grade") or "").strip()
+    return str(raw or "").strip()
 
 
 def _safe_str(v, default: str = "") -> str:
@@ -1274,8 +1374,22 @@ def build_power_rankings_context(ctx: dict) -> dict:
     rosters = ctx.get("rosters") or []
     standings_map = ctx.get("standings_map") or {}
     roster_map = ctx.get("roster_map") or {}
+    scoring_type = ctx_scoring_type(ctx)
+    is_redraft = scoring_type == "redraft"
     is_sf = _ctx_is_sf(ctx)
-    model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [], is_sf=is_sf)
+    model_value_lookup = build_model_value_lookup(
+        ctx.get("model_value_table") or [], is_sf=is_sf, scoring_type=scoring_type,
+    )
+    playoff_by_rid = {
+        str((row or {}).get("roster_id")): row
+        for row in _playoff_rows(ctx)
+        if (row or {}).get("roster_id") is not None
+    }
+    try:
+        playoff_teams = int((ctx.get("league_settings") or {}).get("playoff_teams") or 6)
+    except (TypeError, ValueError):
+        playoff_teams = 6
+    season_phase = _season_phase(ctx.get("current_week"), "")
     redraft_key = "redraft_value_sf" if is_sf else "redraft_value_1qb"
     _CORE_POS = {"QB", "RB", "WR", "TE"}
 
@@ -1432,8 +1546,10 @@ def build_power_rankings_context(ctx: dict) -> dict:
             players_map=ctx.get("players_map") or {},
             model_value_lookup=model_value_lookup,
         )
-        future_picks = ctx.get("picks_by_roster", {}).get(rid, [])
-        direction = detect_team_direction(players_summary, future_picks)
+        future_picks = [] if is_redraft else ctx.get("picks_by_roster", {}).get(rid, [])
+        direction = detect_team_direction(
+            players_summary, future_picks, scoring_type=scoring_type,
+        )
         pos_strength = group_position_strength(players_summary)
 
         ages = [_safe_float(p.get("age")) for p in players_summary if p.get("age") not in (None, "")]
@@ -1454,12 +1570,24 @@ def build_power_rankings_context(ctx: dict) -> dict:
         except Exception:
             win_window = direction
 
+        po_row = playoff_by_rid.get(rid) or {}
+        try:
+            playoff_pct = float(po_row.get("playoff_pct"))
+        except (TypeError, ValueError):
+            playoff_pct = None
+        playoff_status = _playoff_status(playoff_pct, None, playoff_teams)
+        if is_redraft and playoff_status:
+            direction = playoff_status
+
         team_data.append({
             "roster_id": rid,
             "team_name": roster_map.get(rid) or f"Team {rid}",
             "wins": wins,
             "losses": losses,
             "win_pct": win_pct,
+            "playoff_pct": round(playoff_pct, 1) if playoff_pct is not None else None,
+            "playoff_status": playoff_status,
+            "playoff_teams": playoff_teams,
             "luck_adj_win": round(luck_adj_win, 4),
             "all_play_pct": round(ap_pct, 4) if ap_pct is not None else None,
             "pf": pf,
@@ -1532,8 +1660,14 @@ def build_power_rankings_context(ctx: dict) -> dict:
     for rank, team in enumerate(team_data, start=1):
         team["rank"] = rank
 
+    if any((t["wins"] + t["losses"]) > 0 for t in team_data):
+        season_phase = "in_season"
+
     return {
         "season": ctx.get("current_season"),
         "week": ctx.get("current_week"),
+        "season_phase": season_phase,
+        "scoring_type": scoring_type,
+        "playoff_teams": playoff_teams,
         "teams": team_data,
     }

@@ -46,6 +46,71 @@ def _ai_error_notice(reason: str = "") -> str:
     )
 
 
+def _gm_memo_fallback_html(team_ctx: dict) -> str:
+    top_assets = ", ".join(
+        p["name"] for p in (team_ctx.get("top_assets") or [])[:4]
+    ) or "None"
+    name = html.escape(str(team_ctx.get("team_name") or "This team"))
+    direction = html.escape(str(team_ctx.get("direction") or "bubble"))
+    bits = []
+    pct = team_ctx.get("playoff_pct")
+    if pct is not None:
+        bits.append(f"Playoff odds {html.escape(str(pct))}%.")
+    if team_ctx.get("season_phase") == "preseason":
+        bits.append("Preseason — no games yet.")
+    else:
+        rec = str(team_ctx.get("record") or "").strip()
+        if rec:
+            bits.append(f"Record: {html.escape(rec)}.")
+        pf = team_ctx.get("points_for")
+        pa = team_ctx.get("points_against")
+        if pf not in (None, "", 0, 0.0) or pa not in (None, "", 0, 0.0):
+            bits.append(
+                f"PF: {safe_float(pf):.1f} | PA: {safe_float(pa):.1f}."
+            )
+    weak = team_ctx.get("weakest_positions") or []
+    if weak:
+        bits.append("Weakest rooms: " + html.escape(", ".join(str(w) for w in weak)) + ".")
+    extra = " ".join(bits)
+    extra_p = f"<p>{extra}</p>" if extra else ""
+    return f"""
+        <div class="ai-copy">
+          <p><strong>{name}</strong> profiles as a <strong>{direction}</strong> team.</p>
+          <p>Top assets: {html.escape(top_assets)}.</p>
+          {extra_p}
+        </div>
+        """
+
+
+def _fo_brief_fallback_html(team_ctx: dict) -> str:
+    pos = team_ctx.get("position_strength") or {}
+    ranked = sorted(
+        (
+            (p, safe_float((info or {}).get("top_3_sum")))
+            for p, info in pos.items()
+            if p in ("QB", "RB", "WR", "TE")
+        ),
+        key=lambda x: x[1],
+        reverse=True,
+    )
+    strong = ", ".join(p for p, _ in ranked[:2] if ranked) or "None"
+    weak = ", ".join(str(w) for w in (team_ctx.get("weakest_positions") or [])) or (
+        ", ".join(p for p, _ in ranked[-2:] if ranked) or "None"
+    )
+    direction = html.escape(str(team_ctx.get("direction") or "bubble"))
+    bits = [f"<p><strong>Direction:</strong> {direction}</p>"]
+    pct = team_ctx.get("playoff_pct")
+    if pct is not None:
+        bits.append(f"<p><strong>Playoff odds:</strong> {html.escape(str(pct))}%</p>")
+    return f"""
+        <div class="ai-copy">
+          <p><strong>Strongest rooms:</strong> {html.escape(strong)}</p>
+          <p><strong>Weakest rooms:</strong> {html.escape(weak)}</p>
+          {''.join(bits)}
+        </div>
+        """
+
+
 def render_team_ai_result(result: dict, mode: str = "gm_memo") -> str:
     """
     Render the AI-generated team analysis result as HTML.
@@ -94,27 +159,38 @@ def render_team_ai_result(result: dict, mode: str = "gm_memo") -> str:
         """
 
 
+def _ctx_with_playoff_odds(ctx: dict) -> dict:
+    """Attach a warm playoff-odds snapshot when the sim cache already has one."""
+    if not ctx or ctx.get("playoff_odds"):
+        return ctx
+    try:
+        from app import _playoff_sim_cached
+        rows = _playoff_sim_cached(
+            ctx, str(ctx.get("platform") or "sleeper"), block=False,
+        ) or []
+    except Exception:
+        return ctx
+    if not rows:
+        return ctx
+    out = dict(ctx)
+    out["playoff_odds"] = rows
+    return out
+
+
 def get_team_gm_memo(ctx: dict, viewer_roster_id: str) -> str:
-    team_ctx = build_team_gm_context(ctx, viewer_roster_id)
+    team_ctx = build_team_gm_context(_ctx_with_playoff_odds(ctx), viewer_roster_id)
     if not team_ctx:
         return ""
 
     # v4: redraft leagues (ESPN always; other platforms via settings.type) use
     # redraft values + redraft prompts.
-    cache_key = build_ai_cache_key("gm_memo", team_ctx, "v4")
+    cache_key = build_ai_cache_key("gm_memo", team_ctx, "v5")
     cached = load_cached_ai_text(cache_key)
     if cached:
         return cached
 
     if not ai_available():
-        top_assets = ", ".join(p["name"] for p in (team_ctx.get("top_assets") or [])[:4]) or "None"
-        html_out = f"""
-        <div class="ai-copy">
-          <p><strong>{html.escape(team_ctx['team_name'])}</strong> profiles as a <strong>{html.escape(team_ctx['direction'])}</strong> team.</p>
-          <p>Top assets: {html.escape(top_assets)}.</p>
-          <p>Record: {html.escape(str(team_ctx.get('record') or 'N/A'))} | PF: {safe_float(team_ctx.get('points_for')):.1f} | PA: {safe_float(team_ctx.get('points_against')):.1f}</p>
-        </div>
-        """
+        html_out = _gm_memo_fallback_html(team_ctx)
         save_cached_ai_text(cache_key, html_out)
         return html_out
 
@@ -124,49 +200,27 @@ def get_team_gm_memo(ctx: dict, viewer_roster_id: str) -> str:
     except (AIRateLimitError, AIUnavailableError) as e:
         reason = "rate limited" if isinstance(e, AIRateLimitError) else "service unavailable"
         logger.warning("[ai gm_memo] %s: %s", reason, e)
-        top_assets = ", ".join(p["name"] for p in (team_ctx.get("top_assets") or [])[:4]) or "None"
-        html_out = _ai_error_notice(reason) + f"""
-        <div class="ai-copy">
-          <p><strong>{html.escape(team_ctx['team_name'])}</strong> profiles as a <strong>{html.escape(team_ctx['direction'])}</strong> team.</p>
-          <p>Top assets: {html.escape(top_assets)}.</p>
-          <p>Record: {html.escape(str(team_ctx.get('record') or 'N/A'))} | PF: {safe_float(team_ctx.get('points_for')):.1f} | PA: {safe_float(team_ctx.get('points_against')):.1f}</p>
-        </div>
-        """
+        html_out = _ai_error_notice(reason) + _gm_memo_fallback_html(team_ctx)
     except Exception as e:
         logger.exception("[ai gm_memo] unexpected error: %s", e)
-        top_assets = ", ".join(p["name"] for p in (team_ctx.get("top_assets") or [])[:4]) or "None"
-        html_out = _ai_error_notice() + f"""
-        <div class="ai-copy">
-          <p><strong>{html.escape(team_ctx['team_name'])}</strong> profiles as a <strong>{html.escape(team_ctx['direction'])}</strong> team.</p>
-          <p>Top assets: {html.escape(top_assets)}.</p>
-          <p>Record: {html.escape(str(team_ctx.get('record') or 'N/A'))} | PF: {safe_float(team_ctx.get('points_for')):.1f} | PA: {safe_float(team_ctx.get('points_against')):.1f}</p>
-        </div>
-        """
+        html_out = _ai_error_notice() + _gm_memo_fallback_html(team_ctx)
 
     save_cached_ai_text(cache_key, html_out)
     return html_out
 
 
 def get_front_office_briefing(ctx: dict, viewer_roster_id: str) -> str:
-    team_ctx = build_team_gm_context(ctx, viewer_roster_id)
+    team_ctx = build_team_gm_context(_ctx_with_playoff_odds(ctx), viewer_roster_id)
     if not team_ctx:
         return ""
 
-    cache_key = build_ai_cache_key("front_office_briefing", team_ctx, "v3")
+    cache_key = build_ai_cache_key("front_office_briefing", team_ctx, "v4")
     cached = load_cached_ai_text(cache_key)
     if cached:
         return cached
 
     if not ai_available():
-        strong_positions = ", ".join(team_ctx.get("strong_positions") or []) or "None"
-        weak_positions = ", ".join(team_ctx.get("weak_positions") or []) or "None"
-        html_out = f"""
-        <div class="ai-copy">
-          <p><strong>Strongest rooms:</strong> {html.escape(strong_positions)}</p>
-          <p><strong>Weakest rooms:</strong> {html.escape(str(weak_positions))}</p>
-          <p><strong>Direction:</strong> {html.escape(str(team_ctx.get("direction") or "balanced"))}</p>
-        </div>
-        """
+        html_out = _fo_brief_fallback_html(team_ctx)
         save_cached_ai_text(cache_key, html_out)
         return html_out
 
@@ -176,26 +230,10 @@ def get_front_office_briefing(ctx: dict, viewer_roster_id: str) -> str:
     except (AIRateLimitError, AIUnavailableError) as e:
         reason = "rate limited" if isinstance(e, AIRateLimitError) else "service unavailable"
         logger.warning("[ai front_office] %s: %s", reason, e)
-        strong_positions = ", ".join(team_ctx.get("strong_positions") or []) or "None"
-        weak_positions = ", ".join(team_ctx.get("weak_positions") or []) or "None"
-        html_out = _ai_error_notice(reason) + f"""
-        <div class="ai-copy">
-          <p><strong>Strongest rooms:</strong> {html.escape(str(strong_positions))}</p>
-          <p><strong>Weakest rooms:</strong> {html.escape(str(weak_positions))}</p>
-          <p><strong>Direction:</strong> {html.escape(str(team_ctx.get("direction") or "balanced"))}</p>
-        </div>
-        """
+        html_out = _ai_error_notice(reason) + _fo_brief_fallback_html(team_ctx)
     except Exception as e:
         logger.exception("[ai front_office] unexpected error: %s", e)
-        strong_positions = ", ".join(team_ctx.get("strong_positions") or []) or "None"
-        weak_positions = ", ".join(team_ctx.get("weak_positions") or []) or "None"
-        html_out = _ai_error_notice() + f"""
-        <div class="ai-copy">
-          <p><strong>Strongest rooms:</strong> {html.escape(str(strong_positions))}</p>
-          <p><strong>Weakest rooms:</strong> {html.escape(str(weak_positions))}</p>
-          <p><strong>Direction:</strong> {html.escape(str(team_ctx.get("direction") or "balanced"))}</p>
-        </div>
-        """
+        html_out = _ai_error_notice() + _fo_brief_fallback_html(team_ctx)
 
     save_cached_ai_text(cache_key, html_out)
     return html_out
@@ -636,12 +674,12 @@ def render_roster_grade_badge(grade_data: dict) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def get_power_rankings_html(ctx: dict) -> str:
-    rankings_ctx = build_power_rankings_context(ctx)
+    rankings_ctx = build_power_rankings_context(_ctx_with_playoff_odds(ctx))
     teams = rankings_ctx.get("teams") or []
     if not teams:
         return "<p>Not enough data for power rankings.</p>"
 
-    cache_key = build_ai_cache_key("power_rankings", {"week": rankings_ctx.get("week"), "season": rankings_ctx.get("season"), "teams": [t["roster_id"] for t in teams]}, "v4")
+    cache_key = build_ai_cache_key("power_rankings", {"week": rankings_ctx.get("week"), "season": rankings_ctx.get("season"), "teams": [t["roster_id"] for t in teams]}, "v5")
     cached = load_cached_ai_text(cache_key)
     if cached:
         return cached
@@ -649,9 +687,13 @@ def get_power_rankings_html(ctx: dict) -> str:
     # Build fallback narrative map
     fallback_narratives: dict[str, str] = {}
     for t in teams:
-        direction = t.get("direction") or "balanced"
+        direction = t.get("playoff_status") or t.get("direction") or "balanced"
         top = (t.get("top_assets") or [{}])[0].get("name") or "their core"
-        fallback_narratives[t["roster_id"]] = f"Led by {top}, this {direction} team sits at #{t['rank']}."
+        pct = t.get("playoff_pct")
+        odds = f" at {pct}% playoff odds" if pct is not None else ""
+        fallback_narratives[t["roster_id"]] = (
+            f"Led by {top}, this {direction} team sits at #{t['rank']}{odds}."
+        )
 
     if not ai_available():
         html_out = _render_power_rankings_html_from_data(teams, fallback_narratives)
@@ -660,9 +702,14 @@ def get_power_rankings_html(ctx: dict) -> str:
 
     try:
         # Trim context for AI - only send what's needed
+        scoring_type = rankings_ctx.get("scoring_type") or "dynasty"
+        is_redraft = str(scoring_type).strip().lower() == "redraft"
         ai_input = {
             "season": rankings_ctx.get("season"),
             "week": rankings_ctx.get("week"),
+            "season_phase": rankings_ctx.get("season_phase"),
+            "scoring_type": scoring_type,
+            "playoff_teams": rankings_ctx.get("playoff_teams"),
             "teams": [
                 {
                     "roster_id": t["roster_id"],
@@ -671,9 +718,15 @@ def get_power_rankings_html(ctx: dict) -> str:
                     "wins": t["wins"],
                     "losses": t["losses"],
                     "pf": round(t["pf"], 1),
-                    "win_window": t.get("win_window") or t.get("direction") or "balanced",
-                    "avg_age": t.get("avg_age"),
-                    "first_round_picks": t.get("first_round_picks", 0),
+                    "playoff_pct": t.get("playoff_pct"),
+                    "playoff_status": t.get("playoff_status") or "",
+                    "win_window": (
+                        (t.get("playoff_status") or t.get("direction") or "bubble")
+                        if is_redraft
+                        else (t.get("win_window") or t.get("direction") or "balanced")
+                    ),
+                    "avg_age": None if is_redraft else t.get("avg_age"),
+                    "first_round_picks": 0 if is_redraft else t.get("first_round_picks", 0),
                     "position_strengths": t.get("position_strengths") or {},
                     "top_assets": [{"name": p["name"], "position": p["position"], "value": p["value"]} for p in (t.get("top_assets") or [])[:3]],
                 }

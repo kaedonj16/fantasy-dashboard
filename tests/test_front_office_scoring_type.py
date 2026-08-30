@@ -9,6 +9,7 @@ pytest.importorskip("openai")
 
 from dashboard_services.ai.context_builders import (  # noqa: E402
     build_model_value_lookup,
+    build_power_rankings_context,
     build_team_gm_context,
     ctx_scoring_type,
     detect_team_direction,
@@ -16,8 +17,10 @@ from dashboard_services.ai.context_builders import (  # noqa: E402
 from dashboard_services.ai.prompts import (  # noqa: E402
     GM_MEMO_SYSTEM,
     GM_MEMO_SYSTEM_REDRAFT,
+    REDRAFT_HONESTY_RULES,
     build_front_office_brief_prompt,
     build_gm_memo_prompt,
+    build_power_rankings_prompt,
 )
 
 
@@ -112,7 +115,8 @@ def test_build_team_gm_context_dynasty_keeps_picks_and_dynasty_values():
 def test_detect_team_direction_redraft_ignores_future_firsts():
     weak = [{"value": 100, "age": 24} for _ in range(5)]
     picks = [{"display": "2027 1.01"}, {"display": "2028 1.02"}, {"display": "2029 1.03"}]
-    assert detect_team_direction(weak, picks, scoring_type="redraft") != "rebuild"
+    assert detect_team_direction(weak, picks, scoring_type="redraft") == "out"
+    assert detect_team_direction(weak, picks, scoring_type="redraft") != "retool"
     assert detect_team_direction(weak, picks, scoring_type="dynasty") == "rebuild"
 
 
@@ -124,6 +128,10 @@ def test_redraft_gm_memo_prompt_forbids_dynasty_framing():
     assert "prioritize waivers" in prompt_l
     assert "rebuild aggressively" not in prompt_l
     assert "personalized dynasty gm memo" not in prompt_l
+    assert "record context is missing" in prompt_l
+    assert "playoff_status" in prompt_l
+    assert "retool" in prompt_l
+    assert REDRAFT_HONESTY_RULES.splitlines()[0] in GM_MEMO_SYSTEM_REDRAFT
 
     assert "redraft" in GM_MEMO_SYSTEM_REDRAFT.lower()
     assert "dynasty" in GM_MEMO_SYSTEM.lower()
@@ -141,3 +149,103 @@ def test_redraft_front_office_brief_prompt():
     assert "redraft team" in prompt
     assert "not a dynasty league" in prompt
     assert "never mention draft picks" in prompt
+    assert "playoff_status" in prompt
+    assert "weakest_positions" in prompt
+    assert "retool" in prompt
+
+
+def test_redraft_power_rankings_prompt_uses_odds_not_windows():
+    system, user = build_power_rankings_prompt({
+        "scoring_type": "redraft",
+        "season_phase": "preseason",
+        "teams": [{"roster_id": "1", "playoff_status": "bubble", "playoff_pct": 46.3}],
+    })
+    blob = (system + "\n" + user).lower()
+    assert "redraft" in blob
+    assert "playoff_status" in blob
+    assert "retool" in blob
+    assert "never mention draft capital" in blob
+    assert "win_window guide" not in blob
+
+
+def test_dynasty_power_rankings_prompt_keeps_windows():
+    system, user = build_power_rankings_prompt({"scoring_type": "dynasty"})
+    blob = (system + "\n" + user).lower()
+    assert "win_window" in blob
+    assert "full rebuild" in blob
+
+
+def test_build_team_gm_context_attaches_playoff_snapshot():
+    ctx = {
+        "league_id": "espn-1",
+        "platform": "espn",
+        "league_settings": {"playoff_teams": 6},
+        "current_season": 2026,
+        "current_week": 0,
+        "roster_positions": ["QB", "RB", "WR", "TE"],
+        "rosters": [{"roster_id": 1, "players": ["p1"]}],
+        "roster_map": {"1": "Team A"},
+        "standings_map": {"1": {"record": "0-0", "PF": 0, "PA": 0}},
+        "picks_by_roster": {},
+        "players_index": {"p1": {"full_name": "Star RB", "position": "RB", "age": 24}},
+        "players_map": {},
+        "model_value_table": [{
+            "id": "p1", "name": "Star RB", "position": "RB",
+            "value": 200, "redraft_value_1qb": 880, "redraft_value_sf": 880,
+        }],
+        "playoff_odds": [
+            {"roster_id": 1, "playoff_pct": 46.3},
+            {"roster_id": 2, "playoff_pct": 80.0},
+        ],
+        "team_grades": {"1": {"grade": "B-"}},
+    }
+    team_ctx = build_team_gm_context(ctx, "1")
+    assert team_ctx["season_phase"] == "preseason"
+    assert team_ctx["playoff_pct"] == 46.3
+    assert team_ctx["playoff_rank"] == 2
+    assert team_ctx["playoff_status"] == "bubble"
+    assert team_ctx["direction"] == "bubble"
+    assert team_ctx["draft_grade"] == "B-"
+    assert "RB" in team_ctx["weakest_positions"] or team_ctx["weakest_positions"]
+
+
+def test_build_power_rankings_context_redraft_uses_odds_not_picks():
+    ctx = {
+        "league_id": "espn-1",
+        "platform": "espn",
+        "league_settings": {"playoff_teams": 6},
+        "current_season": 2026,
+        "current_week": 0,
+        "rosters": [
+            {"roster_id": 1, "players": ["p1"], "settings": {"wins": 0, "losses": 0, "fpts": 0}},
+            {"roster_id": 2, "players": ["p2"], "settings": {"wins": 0, "losses": 0, "fpts": 0}},
+        ],
+        "roster_map": {"1": "Team A", "2": "Team B"},
+        "standings_map": {},
+        "picks_by_roster": {"1": [{"display": "2027 1.01"}]},
+        "players_index": {
+            "p1": {"full_name": "Star RB", "position": "RB", "age": 24},
+            "p2": {"full_name": "Other WR", "position": "WR", "age": 25},
+        },
+        "players_map": {},
+        "model_value_table": [
+            {"id": "p1", "name": "Star RB", "position": "RB",
+             "value": 200, "redraft_value_1qb": 880, "redraft_value_sf": 880},
+            {"id": "p2", "name": "Other WR", "position": "WR",
+             "value": 200, "redraft_value_1qb": 400, "redraft_value_sf": 400},
+        ],
+        "playoff_odds": [
+            {"roster_id": 1, "playoff_pct": 46.3},
+            {"roster_id": 2, "playoff_pct": 80.0},
+        ],
+    }
+    out = build_power_rankings_context(ctx)
+    assert out["scoring_type"] == "redraft"
+    assert out["season_phase"] == "preseason"
+    by_id = {t["roster_id"]: t for t in out["teams"]}
+    assert by_id["1"]["playoff_pct"] == 46.3
+    assert by_id["1"]["playoff_status"] == "bubble"
+    assert by_id["1"]["direction"] == "bubble"
+    assert by_id["1"]["future_picks"] == []
+    assert by_id["2"]["playoff_status"] == "contend"
+    assert by_id["2"]["direction"] == "contend"
