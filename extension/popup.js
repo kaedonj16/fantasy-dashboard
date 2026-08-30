@@ -53,6 +53,7 @@ function render(swid, espn_s2) {
 
 function reconnectMessage(resp) {
   if (!resp) return "Reconnect failed — reload the extension.";
+  if (resp.throttled) return "Reconnect already sent — wait a few seconds.";
   if ((resp.br && resp.br.pinged > 0) || (resp.draft && resp.draft.pinged > 0)) {
     const parts = [];
     if (resp.br && resp.br.pinged > 0) parts.push(resp.br.pinged + " Draft Room tab(s)");
@@ -74,12 +75,13 @@ copyBtn.addEventListener("click", async () => {
 });
 
 reconnectBtn.addEventListener("click", () => {
+  if (reconnectBtn.disabled) return;
   reconnectBtn.disabled = true;
   reconnectStatus.textContent = "Reconnecting…";
   chrome.runtime.sendMessage({ type: "reconnectDraftRelay", source: "popup" }, (resp) => {
-    reconnectBtn.disabled = false;
     void chrome.runtime.lastError;
     reconnectStatus.textContent = reconnectMessage(resp);
+    setTimeout(function () { reconnectBtn.disabled = false; }, 5000);
   });
 });
 

@@ -29,6 +29,9 @@ const YAHOO_DRAFT_TAB_URLS = [
   "https://sports.yahoo.com/fantasy/*/draft*",
 ];
 
+const RECONNECT_COOLDOWN_MS = 5000;
+let lastReconnectAt = 0;
+
 function relayEventName(messageType) {
   return messageType === "yahooDraftRelay"
     ? "brfantasy:yahoo-draft-relay"
@@ -166,11 +169,22 @@ async function pingBrDraftRooms(detail) {
 }
 
 async function reconnectDraftRelay(detail) {
+  const now = Date.now();
+  if (now - lastReconnectAt < RECONNECT_COOLDOWN_MS) {
+    return {
+      ok: true,
+      throttled: true,
+      draft: { pinged: 0 },
+      br: { pinged: 0 },
+      message: "Reconnect already sent — wait a few seconds",
+    };
+  }
+  lastReconnectAt = now;
   const payload = detail && typeof detail === "object" ? detail : {};
-  const [draft, br] = await Promise.all([
-    pingDraftTabs(),
-    pingBrDraftRooms(payload),
-  ]);
+  // Draft tab first (resend full pick snapshot), then Draft Room (apply/cache).
+  const draft = await pingDraftTabs();
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  const br = await pingBrDraftRooms(payload);
   return {
     ok: true,
     draft,
