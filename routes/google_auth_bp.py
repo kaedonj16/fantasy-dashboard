@@ -284,7 +284,7 @@ def google_auth_callback():
                             link_platform_identity(account_id, "sleeper", str(vuid), uname)
                 except Exception:
                     logger.warning("[google_auth] sleeper viewer resolve failed", exc_info=True)
-            elif pending.get("team_id") and not session.get("viewer_roster_id"):
+            elif (pending.get("team_id") or pending.get("username")) and not session.get("viewer_roster_id"):
                 try:
                     from app import (
                         get_league_ctx_from_cache, resolve_viewer_for_league, save_viewer_session,
@@ -292,9 +292,13 @@ def google_auth_callback():
                     lctx = get_league_ctx_from_cache(
                         pending["platform"], pending["league_id"], pending.get("season"),
                     )
+                    # ESPN pickers pass roster/team id (not owner SWID) plus the
+                    # team name as username — both feed resolve_viewer so Scout
+                    # and other personalized tabs unlock after Google sign-in.
                     viewer = resolve_viewer_for_league(
-                        lctx.get("users"), lctx.get("rosters"), "",
-                        user_id=str(pending["team_id"]),
+                        lctx.get("users"), lctx.get("rosters"),
+                        pending.get("username") or "",
+                        user_id=str(pending["team_id"]) if pending.get("team_id") else None,
                     )
                     if viewer:
                         save_viewer_session(viewer)

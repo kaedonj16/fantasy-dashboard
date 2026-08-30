@@ -9792,6 +9792,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const fleaTeamPickWrap = document.getElementById("fleaTeamPickWrap");
   const fleaTeamSelect = document.getElementById("fleaTeamSelect");
   const formTeamId = document.getElementById("formTeamId");
+  const espnTeamPickWrap = document.getElementById("espnTeamPickWrap");
+  const espnTeamSelect = document.getElementById("espnTeamSelect");
 
   function syncFleaTeamSelection() {
     if (!fleaTeamSelect || !formTeamId) return;
@@ -9815,6 +9817,40 @@ document.addEventListener("DOMContentLoaded", () => {
       fleaTeamSelect.addEventListener("change", syncFleaTeamSelection);
     }
     syncFleaTeamSelection();
+  }
+
+  function syncEspnTeamSelection() {
+    if (!espnTeamSelect || !formTeamId) return;
+    const opt = espnTeamSelect.options[espnTeamSelect.selectedIndex];
+    formTeamId.value = espnTeamSelect.value || "";
+    const formUsername = document.getElementById("formUsername");
+    // ESPN has no Sleeper-style username; the team name is what Scout and
+    // other personalized tabs resolve against.
+    if (formUsername && opt) formUsername.value = (opt.textContent || "").trim();
+  }
+
+  function showEspnTeamPick(teams, myTeamId) {
+    if (!espnTeamPickWrap || !espnTeamSelect || !teams?.length) return;
+    espnTeamSelect.innerHTML = teams.map((team) => {
+      const id = String(team.team_id || team.id || "");
+      const name = String(team.name || id).replace(/[<>&"]/g, "");
+      const selected = String(myTeamId || "") === id ? " selected" : "";
+      return `<option value="${id.replace(/[<>&"]/g, "")}"${selected}>${name}</option>`;
+    }).join("");
+    espnTeamPickWrap.style.display = "block";
+    if (!espnTeamSelect.dataset.bound) {
+      espnTeamSelect.dataset.bound = "1";
+      espnTeamSelect.addEventListener("change", syncEspnTeamSelection);
+    }
+    syncEspnTeamSelection();
+  }
+
+  function clearEspnTeamPick() {
+    if (espnTeamPickWrap) espnTeamPickWrap.style.display = "none";
+    if (espnTeamSelect) espnTeamSelect.innerHTML = "";
+    if (formTeamId && formPlatform && formPlatform.value === "espn") formTeamId.value = "";
+    const formUsername = document.getElementById("formUsername");
+    if (formUsername && formPlatform && formPlatform.value === "espn") formUsername.value = "";
   }
 
 if (!platformBtns.length) return;
@@ -9979,6 +10015,7 @@ if (!platformBtns.length) return;
     if (espnCookieBlob) espnCookieBlob.value = "";
     if (espnCookieStatus) espnCookieStatus.textContent = "";
     if (espnErrorBox) espnErrorBox.style.display = "none";
+    clearEspnTeamPick();
     // Account/guest choice and the "Connect League" button belong to the
     // public/private paths; the email path drives account/guest via the modal.
     if (espnPrivateChoice) espnPrivateChoice.style.display = (!isEmail && !window._hasAccount) ? "flex" : "none";
@@ -10413,13 +10450,33 @@ if (!platformBtns.length) return;
         }
 
         if (!window._hasAccount && espnRequestedAction === "guest") {
-          window.location.href = `/espn/${encodeURIComponent(data.league.season)}/${encodeURIComponent(leagueId)}/dashboard`;
+          const season = String(data.league?.season || "");
+          const seasonEl = document.querySelector('#leagueSelectForm input[name="season"]');
+          if (seasonEl && season) seasonEl.value = season;
+          if (leagueSelect) {
+            leagueSelect.innerHTML = `<option value="${leagueId}" selected>${(data.league?.name || "ESPN League").replace(/[<>&"]/g, "")}</option>`;
+          }
+          if (formPlatform) formPlatform.value = "espn";
+          showEspnTeamPick(data.teams || [], null);
+          syncEspnTeamSelection();
+          // Form POST resolves the ESPN team name / roster id into the viewer
+          // session so Scout and other personalized tabs unlock immediately.
+          document.getElementById("leagueSelectForm")?.submit();
           return;
         }
         if (!window._hasAccount && espnRequestedAction === "google") {
+          showEspnTeamPick(data.teams || [], null);
+          syncEspnTeamSelection();
           const pending = await fetch("/api/link/pending", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ platform: "espn", league_id: leagueId, season: data.league.season, name: data.league.name }),
+            body: JSON.stringify({
+              platform: "espn",
+              league_id: leagueId,
+              season: data.league.season,
+              name: data.league.name,
+              team_id: formTeamId?.value || null,
+              username: document.getElementById("formUsername")?.value || null,
+            }),
           });
           const pendingData = await readEspnApiJson(pending);
           if (!pending.ok || !pendingData.ok) throw new Error(pendingData.error || "Could not save this league.");
@@ -10429,12 +10486,16 @@ if (!platformBtns.length) return;
 
         // Populate the shared league select and submit the form
         if (leagueSelect) {
-          leagueSelect.innerHTML = `<option value="${leagueId}" selected>${data.league?.name || "ESPN League"}</option>`;
+          leagueSelect.innerHTML = `<option value="${leagueId}" selected>${(data.league?.name || "ESPN League").replace(/[<>&"]/g, "")}</option>`;
         }
         if (formPlatform) formPlatform.value = "espn";
+        const seasonEl = document.querySelector('#leagueSelectForm input[name="season"]');
+        if (seasonEl && data.league?.season) seasonEl.value = String(data.league.season);
 
-        const formUsername = document.getElementById("formUsername");
-        if (formUsername) formUsername.value = "";
+        // Require picking the ESPN team so username/team_id reach the viewer
+        // session (Scout, optimal lineup, etc.).
+        showEspnTeamPick(data.teams || [], null);
+        syncEspnTeamSelection();
 
         // Reveal the choice — Generate Dashboard (quick session) or Continue
         // with Google (save to an account) — instead of jumping straight in, so

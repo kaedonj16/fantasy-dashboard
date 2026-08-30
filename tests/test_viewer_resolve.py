@@ -29,6 +29,29 @@ def test_match_by_user_id_preferred():
     assert v["viewer_roster_id"] == "20"
 
 
+def test_match_espn_roster_id_passed_as_user_id():
+    """ESPN team pickers pass roster/team id, not the owner SWID."""
+    users = [
+        {"user_id": "{SW-1}", "display_name": "Kaedon",
+         "metadata": {"team_name": "Biters"}},
+    ]
+    rosters = [
+        {"roster_id": 4, "owner_id": "{SW-1}", "metadata": {"team_name": "Biters"}},
+    ]
+    v = resolve_viewer_for_league(users, rosters, "Biters", user_id="4")
+    assert v["viewer_user_id"] == "{SW-1}"
+    assert v["viewer_roster_id"] == "4"
+    assert v["viewer_team_name"] == "Biters"
+    assert v["viewer_username"] == "Biters"
+
+
+def test_match_espn_roster_id_without_owner_user():
+    rosters = [{"roster_id": 9, "owner_id": "{SW}", "metadata": {"team_name": "Solo"}}]
+    v = resolve_viewer_for_league([], rosters, "", user_id="9")
+    assert v["viewer_roster_id"] == "9"
+    assert v["viewer_team_name"] == "Solo"
+
+
 def test_match_by_username():
     v = resolve_viewer_for_league(USERS, ROSTERS, "kaedon")
     assert v["viewer_user_id"] == "1"
