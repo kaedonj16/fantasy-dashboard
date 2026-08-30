@@ -20,7 +20,7 @@ URGENT_WEEKS = 3
 # once the deadline is known and within this many weeks — otherwise Week 1
 # leagues (especially ESPN, which historically lacked trade_deadline) get a
 # misleading mid-season notif.
-REDRAFT_DEADLINE_WINDOW = 6
+REDRAFT_DEADLINE_WINDOW = 4
 
 
 def redraft_deadline_card_visible(weeks_to_deadline: Optional[int]) -> bool:
