@@ -12113,14 +12113,24 @@ document.addEventListener('DOMContentLoaded', function() {
         })
       });
 
-      const data = await response.json();
+      let data = {};
+      const raw = await response.text();
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch (_) {
+        throw new Error(
+          response.ok
+            ? 'Unexpected response from the server.'
+            : `Request failed (${response.status}). Please try again.`
+        );
+      }
       if (response.status === 403 && data.paywall) {
         if (loadingState) loadingState.style.display = 'none';
         if (emptyState) emptyState.style.display = 'block';
         if (typeof showPaywall === 'function') showPaywall('gm-memo');
         return;
       }
-      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      if (!response.ok) throw new Error(data.error || `Request failed (${response.status}). Please try again.`);
 
       if (data.success) {
         // Hide loading, show result
@@ -12150,7 +12160,12 @@ document.addEventListener('DOMContentLoaded', function() {
         emptyState.querySelectorAll('.gm-memo-error').forEach(el => el.remove());
         const errorDiv = document.createElement('div');
         errorDiv.className = 'gm-memo-error';
-        errorDiv.textContent = 'Network error. Please try again.';
+        const msg = (error && error.message) ? String(error.message).trim() : '';
+        // fetch() network failures have a generic TypeError message; keep the
+        // familiar copy for those, but surface real server/API errors.
+        errorDiv.textContent = (!msg || msg === 'Failed to fetch')
+          ? 'Network error. Please try again.'
+          : msg;
         emptyState.appendChild(errorDiv);
       }
     } finally {

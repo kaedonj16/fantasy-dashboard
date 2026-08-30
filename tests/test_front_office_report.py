@@ -44,7 +44,29 @@ def test_in_season_dashboard_keeps_refresh_when_cached():
     assert 'id="gm-memo-result"' in dash
 
 
-def test_offseason_hero_stats_use_four_or_two_columns():
+def test_generate_report_surfaces_server_errors():
+    """HTTP/API failures must not all collapse to a generic 'Network error'."""
+    source = APP_JS.read_text(encoding="utf-8")
+    report_code = source[source.index("// GM Memo generation functionality"):]
+    assert "Failed to fetch" in report_code
+    assert "Network error. Please try again." in report_code
+    assert "response.text()" in report_code
+    assert "JSON.parse(raw)" in report_code
+
+
+def test_gm_memo_does_not_block_http_on_cold_playoff_sim():
+    """Refresh Report used to stack a blocking Monte Carlo + OpenAI call and
+    trip the edge proxy (UI: Network error). Odds warm in the background."""
+    from pathlib import Path
+
+    renderer = (Path(__file__).parents[1] / "dashboard_services" / "ai" / "renderer.py").read_text(
+        encoding="utf-8"
+    )
+    fn = renderer[renderer.index("def get_team_gm_memo"):]
+    fn = fn[: fn.index("\ndef get_front_office_briefing")]
+    assert "block=False" in fn
+    assert "block=True" not in fn
+
     source = DASHBOARD_CSS.read_text(encoding="utf-8")
     hero_rule = source[source.index(".os-hero-stats {"):]
     hero_rule = hero_rule[:hero_rule.index("}")]
