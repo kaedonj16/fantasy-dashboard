@@ -6,6 +6,14 @@
   "use strict";
 
   if (window.__brFantasyEspnDraftObserver) return;
+  // Disney/registerdisney iframes also match the content-script URL pattern; skip
+  // them so React/JSON walks never touch cross-origin Window objects.
+  try {
+    if (window.top !== window) return;
+    if (!/fantasy\.espn\.com$/i.test(String(location.hostname || ""))) return;
+  } catch (_e) {
+    return;
+  }
   window.__brFantasyEspnDraftObserver = true;
 
   const EVENT = "brfantasy:espn-draft-raw";
@@ -23,6 +31,41 @@
   /** @type {Map<number, Set<string>>} */
   const pickSources = new Map();
   let bestOverallSeen = 0;
+
+  function isTraversableObject(val) {
+    if (!val || typeof val !== "object") return false;
+    if (Array.isArray(val)) return true;
+    const tag = Object.prototype.toString.call(val);
+    if (
+      tag === "[object Window]" ||
+      tag === "[object HTMLDocument]" ||
+      tag === "[object Document]" ||
+      tag === "[object Location]"
+    ) {
+      return false;
+    }
+    if (typeof Element !== "undefined" && val instanceof Element) return false;
+    if (typeof Node !== "undefined" && val instanceof Node) return false;
+    return true;
+  }
+
+  function safeProp(obj, key) {
+    if (!isTraversableObject(obj)) return undefined;
+    try {
+      return obj[key];
+    } catch (_e) {
+      return undefined;
+    }
+  }
+
+  function safeKeys(obj) {
+    if (!isTraversableObject(obj)) return [];
+    try {
+      return Object.keys(obj);
+    } catch (_e) {
+      return [];
+    }
+  }
 
   function bridgeToExtension(type, detail) {
     try {
@@ -281,7 +324,7 @@
   }
 
   function findBestDraftDetail(data, depth, best) {
-    if (!data || typeof data !== "object") return best;
+    if (!isTraversableObject(data)) return best;
     if (depth == null) depth = 0;
     if (!best) best = { detail: null, count: 0 };
     if (depth > 16) return best;
@@ -291,25 +334,27 @@
       }
       return best;
     }
-    if (data.draftDetail && typeof data.draftDetail === "object") {
-      const dd = data.draftDetail;
-      if (Array.isArray(dd.picks)) {
-        const sel = dd.picks.filter(isPickRow);
+    const draftDetail = safeProp(data, "draftDetail");
+    if (draftDetail && typeof draftDetail === "object") {
+      const picks = safeProp(draftDetail, "picks");
+      if (Array.isArray(picks)) {
+        const sel = picks.filter(isPickRow);
         if (sel.length > best.count) {
-          best = { detail: dd, count: sel.length };
+          best = { detail: draftDetail, count: sel.length };
         }
       }
     }
-    if (Array.isArray(data.picks) && data.picks.some(isPickRow)) {
-      const sel = data.picks.filter(isPickRow);
+    const topPicks = safeProp(data, "picks");
+    if (Array.isArray(topPicks) && topPicks.some(isPickRow)) {
+      const sel = topPicks.filter(isPickRow);
       if (sel.length > best.count) {
         best = { detail: data, count: sel.length };
       }
     }
-    for (const k of Object.keys(data)) {
+    for (const k of safeKeys(data)) {
       if (k === "draftDetail") continue;
-      const v = data[k];
-      if (v && typeof v === "object") {
+      const v = safeProp(data, k);
+      if (isTraversableObject(v)) {
         best = findBestDraftDetail(v, depth + 1, best);
       }
     }
@@ -322,18 +367,21 @@
   }
 
   function inspectJson(data, source) {
-    if (!data) return;
-    const detail = deepFindDraftDetail(data) || (data.draftDetail ? data.draftDetail : null);
+    if (!isTraversableObject(data)) return;
+    const detail = deepFindDraftDetail(data) || safeProp(data, "draftDetail") || null;
     if (detail && maybeFromDraftDetail(detail, source)) return;
     if (Array.isArray(data)) {
       for (const item of data) inspectJson(item, source);
       return;
     }
-    if (typeof data !== "object") return;
-    if (Array.isArray(data.picks) && data.picks.some(isPickRow)) {
+    const picks = safeProp(data, "picks");
+    if (Array.isArray(picks) && picks.some(isPickRow)) {
       emit(
-        data.picks.filter(isPickRow),
-        { inProgress: data.inProgress === true, drafted: data.drafted === true },
+        picks.filter(isPickRow),
+        {
+          inProgress: safeProp(data, "inProgress") === true,
+          drafted: safeProp(data, "drafted") === true,
+        },
         source + "-picks"
       );
     }
@@ -347,35 +395,47 @@
     while (q.length && n < MAX_WALK) {
       const cur = q.shift();
       n++;
-      if (!cur || typeof cur !== "object") continue;
+      if (!isTraversableObject(cur)) continue;
       if (seen.has(cur)) continue;
       seen.add(cur);
-      if (cur.draftDetail) {
-        if (maybeFromDraftDetail(cur.draftDetail, "react")) found = true;
-      }
-      if (Array.isArray(cur.picks) && cur.picks.some(isPickRow)) {
+      const draftDetail = safeProp(cur, "draftDetail");
+      if (draftDetail && maybeFromDraftDetail(draftDetail, "react")) found = true;
+      const picks = safeProp(cur, "picks");
+      if (Array.isArray(picks) && picks.some(isPickRow)) {
         emit(
-          cur.picks.filter(isPickRow),
-          { inProgress: cur.inProgress === true, drafted: cur.drafted === true },
+          picks.filter(isPickRow),
+          {
+            inProgress: safeProp(cur, "inProgress") === true,
+            drafted: safeProp(cur, "drafted") === true,
+          },
           "react-picks"
         );
         found = true;
       }
       const next = [];
-      if (cur.memoizedProps) next.push(cur.memoizedProps);
-      if (cur.pendingProps) next.push(cur.pendingProps);
-      if (cur.stateNode) next.push(cur.stateNode);
-      if (cur.state) next.push(cur.state);
-      if (cur.return) next.push(cur.return);
-      if (cur.child) next.push(cur.child);
-      if (cur.sibling) next.push(cur.sibling);
-      if (cur.props) next.push(cur.props);
-      for (const k of Object.keys(cur)) {
+      const memoizedProps = safeProp(cur, "memoizedProps");
+      const pendingProps = safeProp(cur, "pendingProps");
+      const stateNode = safeProp(cur, "stateNode");
+      const state = safeProp(cur, "state");
+      const ret = safeProp(cur, "return");
+      const child = safeProp(cur, "child");
+      const sibling = safeProp(cur, "sibling");
+      const props = safeProp(cur, "props");
+      if (memoizedProps) next.push(memoizedProps);
+      if (pendingProps) next.push(pendingProps);
+      if (stateNode && isTraversableObject(stateNode)) next.push(stateNode);
+      if (state) next.push(state);
+      if (ret) next.push(ret);
+      if (child) next.push(child);
+      if (sibling) next.push(sibling);
+      if (props) next.push(props);
+      for (const k of safeKeys(cur)) {
         if (k === "draftDetail") {
-          if (maybeFromDraftDetail(cur[k], "react-key")) found = true;
+          const dd = safeProp(cur, k);
+          if (dd && maybeFromDraftDetail(dd, "react-key")) found = true;
         }
-        const v = cur[k];
-        if (v && typeof v === "object" && !seen.has(v)) next.push(v);
+        const v = safeProp(cur, k);
+        if (isTraversableObject(v) && !seen.has(v)) next.push(v);
         if (next.length > 48) break;
       }
       for (let i = 0; i < Math.min(next.length, 28); i++) q.push(next[i]);
