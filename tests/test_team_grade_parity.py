@@ -41,7 +41,7 @@ def _js_totals(cases):
         "const cases = require(%s);\n"
         "const out = cases.map(c => {\n"
         "  const r = teamGradeComposite(c.picks, c.slots, c.targets, c.numTeams,"
-        " c.draftType, c.leaguePpg, c.leagueVal, c.leaguePlayers);\n"
+        " c.draftType, c.leaguePpg, c.leagueVal, c.leaguePlayers, c.options || {});\n"
         "  return r ? r.total : null;\n"
         "});\n"
         "process.stdout.write(JSON.stringify(out));\n"
@@ -79,12 +79,32 @@ def _build_cases():
             "ppg": rng.choice([None, round(rng.uniform(0, 24), 1)]),
             "val": round(rng.uniform(0, 9000), 1),
         } for _ in range(rng.randint(20, 160))]
+        options = {}
+        if rng.random() < 0.4:
+            league_teams = []
+            for t in range(rng.randint(2, 4)):
+                team = []
+                for j in range(rng.randint(3, 10)):
+                    team.append({
+                        "id": f"t{t}p{j}",
+                        "pos": rng.choice(POS),
+                        "ps": rng.randint(20, 100),
+                        "pn": rng.randint(1, 180),
+                        "val": round(rng.uniform(0, 9000), 1),
+                        "ppg": round(rng.uniform(4, 22), 1),
+                    })
+                league_teams.append(team)
+            options["leagueTeams"] = league_teams
+        if rng.random() < 0.15:
+            options["peerStarterPpg"] = round(rng.uniform(8, 20), 2)
+            options["peerStarterVal"] = round(rng.uniform(2000, 8000), 1)
         cases.append({
             "picks": picks, "slots": slots, "targets": TARGETS,
             "numTeams": rng.choice([10, 12, 14]),
             "draftType": rng.choice(["startup", "redraft"]),
             "leaguePpg": league_ppg, "leagueVal": league_val,
             "leaguePlayers": league_players,
+            "options": options,
         })
     return cases
 
@@ -94,11 +114,15 @@ def test_team_grade_composites_match():
     js_out = _js_totals(cases)
     mismatches = []
     for c, js in zip(cases, js_out):
+        opt = c.get("options") or {}
         py = dr_team_grade_score(
             c["picks"], slots=c["slots"], targets=c["targets"],
             num_teams=c["numTeams"], draft_type=c["draftType"],
             league_ppg_list=c["leaguePpg"], league_val_list=c["leagueVal"],
             league_players=c["leaguePlayers"],
+            league_teams=opt.get("leagueTeams"),
+            peer_starter_ppg=opt.get("peerStarterPpg"),
+            peer_starter_val=opt.get("peerStarterVal"),
         )
         if (js is None) != (py is None):
             mismatches.append((js, py))

@@ -15,8 +15,11 @@ from utils.draft_grade import (
     dr_letter_to_score,
     dr_lineup_score,
     dr_optimal_lineup,
+    dr_peer_starter_avg,
+    dr_resolve_strength_baseline,
     dr_rookie_team_score,
     dr_slot_eligible,
+    dr_starter_metric_avg,
     dr_team_grade_score,
     DR_SPLIT_REDRAFT,
     DR_SPLIT_STARTUP,
@@ -167,6 +170,38 @@ def test_team_grade_uses_position_aware_strength_baseline():
     # The valid QB/RB baseline recognizes this strong lineup; the old global
     # top-N comparison wrongly benchmarks its RB against extra quarterbacks.
     assert score > position_blind
+
+
+def test_starter_metric_avg_uses_optimal_lineup():
+    picks = [
+        {"id": "qb", "pos": "QB", "ppg": 20, "val": 5000},
+        {"id": "rb", "pos": "RB", "ppg": 14, "val": 4000},
+        {"id": "rb2", "pos": "RB", "ppg": 8, "val": 1000},
+    ]
+    assert dr_starter_metric_avg(picks, ["QB", "RB"], "ppg") == pytest.approx(17.0)
+    assert dr_starter_metric_avg([], ["QB"], "ppg") is None
+
+
+def test_peer_starter_avg_means_each_team_lineup():
+    a = [{"id": "aq", "pos": "QB", "ppg": 20}, {"id": "ar", "pos": "RB", "ppg": 14}]
+    b = [{"id": "bq", "pos": "QB", "ppg": 16}, {"id": "br", "pos": "RB", "ppg": 10}]
+    assert dr_peer_starter_avg([a, b], ["QB", "RB"], "ppg") == pytest.approx(15.0)
+
+
+def test_resolve_strength_baseline_prefers_peer_lineups():
+    universe = [{"pos": "QB", "ppg": 30}, {"pos": "RB", "ppg": 22}]
+    teams = [
+        [{"id": "q", "pos": "QB", "ppg": 18}, {"id": "r", "pos": "RB", "ppg": 12}],
+        [{"id": "q2", "pos": "QB", "ppg": 16}, {"id": "r2", "pos": "RB", "ppg": 10}],
+    ]
+    assert dr_resolve_strength_baseline(
+        ["QB", "RB"], 2, "ppg", league_teams=teams, league_players=universe,
+        league_list=[30, 22],
+    ) == pytest.approx(14.0)
+    assert dr_resolve_strength_baseline(
+        ["QB", "RB"], 2, "ppg", peer_avg=15.5, league_teams=teams,
+        league_players=universe,
+    ) == pytest.approx(15.5)
 
 
 # ---- dr_apply_field_curve -------------------------------------------------
@@ -417,6 +452,69 @@ def test_redraft_useful_rb_wr_bench_beats_redundant_qb_te_depth():
     kw = dict(slots=slots,targets=targets,num_teams=2,draft_type="redraft",
               league_ppg_list=[p["ppg"] for p in pool],league_val_list=[p["val"] for p in pool],league_players=pool)
     assert dr_team_grade_score(useful, **kw) > dr_team_grade_score(redundant, **kw)
+
+
+def test_redraft_starters_compare_to_this_league_not_universe():
+    """A typical league-average lineup must not be crushed by undrafted elites.
+
+    The old baseline filled every starter slot from the full player pool, so a
+    normal redraft team sat at ~60% of that imaginary field and the Starters
+    bar (50 pts) printed near zero. Comparing to this draft's actual lineups
+    puts an average team at 100% / 25 starter points.
+    """
+    slots = ["QB", "RB", "WR"]
+    targets = {"QB": 1, "RB": 1, "WR": 1}
+    def _team(prefix, qb, rb, wr):
+        return [
+            {"id": f"{prefix}q", "pos": "QB", "ps": 70, "pn": 1, "val": 5000, "ppg": qb},
+            {"id": f"{prefix}r", "pos": "RB", "ps": 70, "pn": 2, "val": 4000, "ppg": rb},
+            {"id": f"{prefix}w", "pos": "WR", "ps": 70, "pn": 3, "val": 3500, "ppg": wr},
+        ]
+    a = _team("a", 18, 14, 13)
+    b = _team("b", 18, 14, 13)
+    c = _team("c", 18, 14, 13)
+    universe = (
+        [{"pos": "QB", "ppg": 28, "val": 9000} for _ in range(12)]
+        + [{"pos": "RB", "ppg": 22, "val": 8000} for _ in range(24)]
+        + [{"pos": "WR", "ppg": 20, "val": 7000} for _ in range(24)]
+    )
+    kw = dict(
+        slots=slots, targets=targets, num_teams=3, draft_type="redraft",
+        league_ppg_list=[p["ppg"] for p in universe],
+        league_val_list=[p["val"] for p in universe],
+        league_players=universe,
+    )
+    peer = dr_team_grade_score(a, league_teams=[a, b, c], **kw)
+    universe_only = dr_team_grade_score(a, **kw)
+    assert peer > universe_only
+    assert peer >= 50
+    assert dr_grade_letter(peer) not in ("F", "D")
+    assert dr_grade_letter(universe_only) in ("F", "D")
+
+
+def test_above_league_starters_grade_higher_than_below():
+    slots = ["QB", "RB", "WR"]
+    targets = {"QB": 1, "RB": 1, "WR": 1}
+    def _team(prefix, qb, rb, wr):
+        return [
+            {"id": f"{prefix}q", "pos": "QB", "ps": 70, "pn": 1, "val": 5000, "ppg": qb},
+            {"id": f"{prefix}r", "pos": "RB", "ps": 70, "pn": 2, "val": 4000, "ppg": rb},
+            {"id": f"{prefix}w", "pos": "WR", "ps": 70, "pn": 3, "val": 3500, "ppg": wr},
+        ]
+    strong = _team("s", 22, 18, 16)
+    mid = _team("m", 18, 14, 13)
+    weak = _team("w", 14, 10, 9)
+    league_teams = [strong, mid, weak]
+    kw = dict(
+        slots=slots, targets=targets, num_teams=3, draft_type="redraft",
+        league_ppg_list=[22, 18, 16, 14, 13, 10, 9],
+        league_val_list=[5000, 4000, 3500],
+        league_players=[{"pos": p["pos"], "ppg": p["ppg"], "val": p["val"]}
+                        for t in league_teams for p in t],
+        league_teams=league_teams,
+    )
+    assert dr_team_grade_score(strong, **kw) > dr_team_grade_score(mid, **kw)
+    assert dr_team_grade_score(mid, **kw) > dr_team_grade_score(weak, **kw)
 
 
 def test_final_fringe_pick_has_less_grade_influence_than_early_starter():

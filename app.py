@@ -20564,6 +20564,33 @@ def api_draft_grades():
         _dr_targets = ps_targets or {"QB": 1.7, "RB": 5.45, "WR": 5.8, "TE": 2.05}
         _dr_vkey = "sf_value" if is_sf else "value"
 
+        def _picks_info_for(team_picks):
+            rows = []
+            for p in team_picks:
+                _pid = p["player_id"]
+                _d = val_by_id.get(_pid) or {}
+                if _draft_type == "redraft":
+                    _v = float(redraft_val_by_id.get(_pid, 0) or 0)
+                else:
+                    _v = float(_d.get(_dr_vkey) or 0)
+                rows.append({
+                    "id": _pid, "pos": p["position"], "ps": p.get("pick_score"),
+                    "pn": p["pick_no"], "val": _v, "ppg": ppg_by_id.get(_pid),
+                })
+            return rows
+
+        # This draft's actual lineups — Starters compares each team to these
+        # peers, not a theoretical best-available field from the full pool.
+        _league_teams = []
+        if ps_ready and _dr_slots:
+            for _r in rosters:
+                _rows = _picks_info_for(
+                    sorted(picks_by_roster.get(str(_r.get("roster_id", "")), []),
+                           key=lambda x: x["pick_no"])
+                )
+                if _rows:
+                    _league_teams.append(_rows)
+
         # ── Assemble results ─────────────────────────────────────────────────
         results = []
         for r in rosters:
@@ -20591,23 +20618,12 @@ def api_draft_grades():
                     [p["grade"] for p in team_picks if p["grade"] != "N/A"]
                 )
             elif ps_ready and _dr_slots:
-                _picks_info = []
-                for p in team_picks:
-                    _pid = p["player_id"]
-                    _d = val_by_id.get(_pid) or {}
-                    if _draft_type == "redraft":
-                        _v = float(redraft_val_by_id.get(_pid, 0) or 0)
-                    else:
-                        _v = float(_d.get(_dr_vkey) or 0)
-                    _picks_info.append({
-                        "id": _pid, "pos": p["position"], "ps": p.get("pick_score"),
-                        "pn": p["pick_no"], "val": _v, "ppg": ppg_by_id.get(_pid),
-                    })
                 _dr_raw = _dr_team_grade_score(
-                    _picks_info, slots=_dr_slots, targets=_dr_targets,
+                    _picks_info_for(team_picks), slots=_dr_slots, targets=_dr_targets,
                     num_teams=_num_teams, draft_type=_draft_type,
                     league_ppg_list=_dr_league_ppg, league_val_list=_dr_league_val,
                     league_players=_dr_league_players,
+                    league_teams=_league_teams,
                 )
 
             results.append({

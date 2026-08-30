@@ -47,6 +47,15 @@ def test_early_does_not_hide_the_letter():
     assert "(g.provisional ? '<div class=\"dr-grade-early\">Early</div>' : '')" in ROOM_JS
 
 
+def test_starters_bar_uses_this_leagues_lineups():
+    assert "leagueTeams: _leagueTeams" in ROOM_JS
+    assert "options.leagueTeams" in TEAM_JS
+    assert "peerStarterAvg" in TEAM_JS
+    assert "dr_peer_starter_avg" in (
+        REPO / "utils" / "draft_grade.py"
+    ).read_text(encoding="utf-8")
+
+
 def test_round3_coverage_gate_is_untouched():
     """Do not re-zero the starter term mid-draft (2/8 coverage used to print F)."""
     assert "if (redraft && slots.length && picks.length >= slots.length)" in TEAM_JS
