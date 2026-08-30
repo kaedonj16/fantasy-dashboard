@@ -9,9 +9,9 @@ ROOM_JS = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
 def test_extension_manifest_includes_yahoo_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.3.7"
+    assert manifest["version"] == "1.4.0"
     assert "cookies" in manifest["permissions"]
-    assert "tabs" not in manifest.get("permissions", [])
+    assert "tabs" in manifest["permissions"]
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "fantasysports.yahoo.com" in hosts
     scripts = manifest["content_scripts"]
