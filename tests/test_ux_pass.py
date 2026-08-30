@@ -23,6 +23,8 @@ def test_dashboard_action_first_hierarchy():
     assert "lineup_alert_html" in DASH
     assert DASH.index("sinceLastVisitCard") < DASH.index("os-jump-report")
     assert "matchup_html" in DASH
+    assert 'data-jump="os-jump-matchup"' in DASH
+    assert DASH.index("os-jump-matchup") < DASH.index("os-jump-report")
     assert DASH.index("matchup_html") > DASH.index("do_next_waiver_html")
     assert "Waiver Wire Targets" not in DASH
     assert "_render_do_next_waiver_card" in DASH

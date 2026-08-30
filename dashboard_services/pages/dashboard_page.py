@@ -361,6 +361,7 @@ def build_dashboard_body(ctx: dict) -> str:
 
         <nav class="os-jump-nav" aria-label="Jump to section">
           <button type="button" class="active" data-jump="os-jump-actions">Actions</button>
+          <button type="button" data-jump="os-jump-matchup">Matchups</button>
           <button type="button" data-jump="os-jump-report">Report</button>
           <button type="button" data-jump="os-jump-standings">Standings</button>
           <button type="button" data-jump="os-jump-teams">{teams_tab_label}</button>
@@ -368,11 +369,14 @@ def build_dashboard_body(ctx: dict) -> str:
 
         {_action_queue_html}
 
+        <div id="os-jump-matchup" class="os-tab-panel">
+          {matchup_html}
+          {bench_check_html}
+        </div>
+
         <div id="os-jump-report" class="os-tab-panel">
           {gm_card_html}
           {usage_movers_html}
-          {matchup_html}
-          {bench_check_html}
           {season_review_html}
           {_dash_bulletins_html}
         </div>

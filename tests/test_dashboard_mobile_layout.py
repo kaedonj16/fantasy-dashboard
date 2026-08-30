@@ -127,6 +127,7 @@ def test_inseason_jump_nav_targets_match_tab_panel_ids():
     jumps = re.findall(r'data-jump="(os-jump-[^"]+)"', src)
     assert jumps == [
         "os-jump-actions",
+        "os-jump-matchup",
         "os-jump-report",
         "os-jump-standings",
         "os-jump-teams",
@@ -135,6 +136,20 @@ def test_inseason_jump_nav_targets_match_tab_panel_ids():
         assert f'id="{panel_id}"' in src or f"id='{panel_id}'" in src, (
             f"missing tab panel id {panel_id}"
         )
+
+
+def test_inseason_matchup_preview_has_own_tab():
+    """Matchup Preview must not be buried under the Report tab on mobile."""
+    src = (_PAGES / "dashboard_page.py").read_text(encoding="utf-8")
+    assert 'data-jump="os-jump-matchup"' in src
+    assert 'id="os-jump-matchup"' in src
+    # Matchup carousel lives in the Matchups panel, not Report.
+    matchup_panel = src[src.index('id="os-jump-matchup"'): src.index('id="os-jump-report"')]
+    report_panel = src[src.index('id="os-jump-report"'): src.index('id="os-jump-teams"')]
+    assert "{matchup_html}" in matchup_panel
+    assert "{matchup_html}" not in report_panel
+    assert "{gm_card_html}" in report_panel
+    assert "{gm_card_html}" not in matchup_panel
 
 
 def test_no_platform_specific_spacer_before_os_layout():
