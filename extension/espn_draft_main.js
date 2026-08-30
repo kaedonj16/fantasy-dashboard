@@ -20,6 +20,8 @@
   let apiPollInFlight = false;
   /** @type {Map<number, object>} */
   const pickAccumulator = new Map();
+  /** @type {Map<number, Set<string>>} */
+  const pickSources = new Map();
   let bestOverallSeen = 0;
 
   function bridgeToExtension(type, detail) {
@@ -186,7 +188,26 @@
     }
   }
 
-  function mergeIntoAccumulator(rawPicks) {
+  function isDomSource(source) {
+    return String(source || "").indexOf("dom") >= 0;
+  }
+
+  function trustedMaxOverall() {
+    let max = 0;
+    for (const [n, sources] of pickSources.entries()) {
+      let trusted = false;
+      for (const src of sources) {
+        if (!isDomSource(src)) {
+          trusted = true;
+          break;
+        }
+      }
+      if (trusted && n > max) max = n;
+    }
+    return max;
+  }
+
+  function mergeIntoAccumulator(rawPicks, source) {
     let grew = false;
     for (const raw of rawPicks || []) {
       const norm = normalizePick(raw);
@@ -195,6 +216,8 @@
       if (!n || n <= 0) continue;
       if (!pickAccumulator.has(n)) grew = true;
       pickAccumulator.set(n, norm);
+      if (!pickSources.has(n)) pickSources.set(n, new Set());
+      pickSources.get(n).add(String(source || "unknown"));
       if (n > bestOverallSeen) bestOverallSeen = n;
     }
     return grew;
@@ -202,9 +225,15 @@
 
   function emitAccumulated(meta, source) {
     const ids = leagueFromUrl();
-    const clean = Array.from(pickAccumulator.values()).sort(
+    const trustedMax = trustedMaxOverall();
+    let clean = Array.from(pickAccumulator.values()).sort(
       (a, b) => a.overallPickNumber - b.overallPickNumber
     );
+    if (trustedMax > 0) {
+      clean = clean.filter(function (p) {
+        return p.overallPickNumber <= trustedMax;
+      });
+    }
     if (!clean.length) return;
     const fp = fingerprint(clean, meta || {});
     const now = Date.now();
@@ -225,7 +254,7 @@
   }
 
   function emit(picks, meta, source) {
-    if (!mergeIntoAccumulator(picks)) {
+    if (!mergeIntoAccumulator(picks, source)) {
       const incoming = (picks || []).map(normalizePick).filter(Boolean);
       if (!incoming.length) return;
       const maxIncoming = incoming[incoming.length - 1].overallPickNumber;
@@ -562,7 +591,7 @@
       return out;
     });
 
-    mergeIntoAccumulator(picks);
+    mergeIntoAccumulator(picks, "dom-scrape");
     emitAccumulated({ inProgress: true, drafted: false }, "dom-scrape");
     return true;
   }
@@ -740,6 +769,7 @@
   function onRescan() {
     lastFingerprint = "";
     pickAccumulator.clear();
+    pickSources.clear();
     bestOverallSeen = 0;
     scanAll();
     pollEspnApi();

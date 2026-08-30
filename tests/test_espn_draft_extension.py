@@ -8,7 +8,7 @@ EXT = REPO / "extension"
 
 def test_extension_manifest_includes_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.4.2"
+    assert manifest["version"] == "1.4.3"
     assert "cookies" in manifest["permissions"]
     assert "scripting" in manifest["permissions"]
     assert "tabs" in manifest["permissions"]
@@ -51,6 +51,8 @@ def test_extension_relay_message_contract():
     assert "pickAccumulator" in main
     assert "mergeIntoAccumulator" in main
     assert "findBestDraftDetail" in main
+    assert "pickSources" in main
+    assert "trustedMaxOverall" in main
     assert "emitAccumulated" in main
     assert "watchDom" in main
     assert "deepFindDraftDetail" in main

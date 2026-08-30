@@ -5274,12 +5274,21 @@
     (picks || []).forEach(function(p){ if (livePickIsSelection(p)) n++; });
     return n;
   }
+  // During a live draft, ignore picks beyond the on-the-clock slot. ESPN's full
+  // board JSON and DOM scrape can include mislabeled future cells that would
+  // otherwise paint empty seats as "Unknown".
+  function _livePickAllowed(p){
+    if (!p || p.pick_no == null) return false;
+    if (!state || state.mode !== 'live' || state.isComplete || !state.isDrafting) return true;
+    var cap = parseInt(state.current, 10) || 1;
+    return parseInt(p.pick_no, 10) <= cap;
+  }
   function applyLivePicks(picks){
     lastLivePicks = picks;
     state.picks = {}; drafted = {};
     var latestPickedAt = 0;
     (picks || []).forEach(function(p){
-      if (!livePickIsSelection(p)) return;
+      if (!livePickIsSelection(p) || !_livePickAllowed(p)) return;
       var pid = p.player_id ? String(p.player_id) : '';
       var meta = pid ? playersById[pid] : null;
       state.picks[p.pick_no] = {
@@ -5305,7 +5314,7 @@
   // cannot create a second copy. Unresolved ESPN ids never mark a canonical
   // player drafted.
   function applyOneLivePick(p){
-    if (!state || !livePickIsSelection(p)) return false;
+    if (!state || !livePickIsSelection(p) || !_livePickAllowed(p)) return false;
     if (state.picks[p.pick_no]) return false;
     var pid = p.player_id ? String(p.player_id) : '';
     var row = pid ? playersById[pid] : null;
@@ -5336,7 +5345,9 @@
   }
   function applyMissingLivePicks(picks){
     lastLivePicks = picks;
-    var remote = (picks || []).slice().filter(livePickIsSelection);
+    var remote = (picks || []).slice().filter(function(p){
+      return livePickIsSelection(p) && _livePickAllowed(p);
+    });
     remote.sort(function(a, b){ return (a.pick_no || 0) - (b.pick_no || 0); });
     var remoteCount = remote.length;
     var localCount = 0;
