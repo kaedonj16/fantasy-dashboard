@@ -4459,6 +4459,29 @@
     return odds;
   }
   function _poColor(po){ return po >= 60 ? '#22c55e' : po >= 35 ? '#f59e0b' : '#ef4444'; }
+  function _slotRosterId(slot){
+    var m = state && state.slotToRosterId;
+    if (m && m[slot] != null) return m[slot];
+    if (m && m[String(slot)] != null) return m[String(slot)];
+    return slot;
+  }
+  function _slotToRosterFromLive(d){
+    var map = {};
+    if (!d || !d.draft_order || !d.user_roster_map) return null;
+    Object.keys(d.draft_order).forEach(function(uid){
+      var sl = d.draft_order[uid], rid = d.user_roster_map[uid];
+      if (sl != null && rid != null) map[String(sl)] = rid;
+    });
+    return Object.keys(map).length ? map : null;
+  }
+  // Match Standings: 100 / 0 only when settled; otherwise one decimal.
+  function _poFmt(po){
+    var n = Number(po);
+    if (!isFinite(n)) return '';
+    if (n >= 100) return '100';
+    if (n <= 0) return '0';
+    return n.toFixed(1);
+  }
   function _draftComplete(){
     if (!state) return false;
     // Predraft placeholder slots must never look like a finished draft.
@@ -4466,11 +4489,13 @@
     return !!state.isComplete || state.current > (state.teams || 12) * (state.rounds || 0);
   }
 
-  // Server-computed playoff odds - the SAME engine the standings page uses
-  // (simulate_playoff_odds, preseason mode). For a completed draft we ONLY show
-  // these numbers (or a loading placeholder) — never the JS Monte Carlo first —
-  // so the user never sees a percentage jump a moment later. The JS estimate is
-  // used mid-draft and as a one-shot fallback if the server fetch fails.
+  // Server-computed playoff odds.
+  // Live league drafts post use_league so the server runs the SAME cached sim
+  // Standings uses (real settings + current rosters).
+  // Mocks always simulate this board: the mock's roster/scoring/playoff size
+  // against the teams drafted in the mock — never the live league's rosters.
+  // Completed drafts wait for that response (or a loading placeholder) so the
+  // number does not jump. The JS estimate is mid-draft and a one-shot fallback.
   var _poServer = null, _poServerSig = null, _poFetching = false;
   var _poFailedSig = null;
   function _poSig(allTeams){ return allTeams.map(function(t){ return t.slot + ':' + (t.picks ? t.picks.length : 0); }).join('|') + '@' + state.current; }
@@ -4492,14 +4517,32 @@
     if (_poFailedSig === sig) return;
     _poFetching = true;
     var _sc = scoringCfg();
+    var liveLeague = !!(state.mode === 'live' && cfg.leagueId && cfg.platform);
     var payload = {
-      season: state.season || 0,
+      season: state.season || cfg.season || 0,
       ppr: (_sc && _sc.ppr != null) ? _sc.ppr : 1,
+      tep: (_sc && _sc.tep != null) ? _sc.tep : 0,
+      pass_td: (_sc && _sc.passTd != null) ? _sc.passTd : 4,
       roster: (state && state.roster) || defaultRoster(),
       playoff_teams: (state.teams && state.teams <= 8) ? 4 : 6,
+      platform: cfg.platform || '',
+      league_id: liveLeague ? (cfg.leagueId || '') : '',
+      use_league: liveLeague,
       teams: allTeams.map(function(t){
-        return { slot: t.slot, name: t.name,
-          players: (t.picks || []).map(function(x){ return (x.p && x.p.id != null) ? String(x.p.id) : null; }).filter(Boolean) };
+        var seat = t.slot === 0 ? (state.slot || t.slot) : t.slot;
+        var rid = liveLeague
+          ? (t.slot === 0
+              ? (cfg.viewerRosterId || _slotRosterId(state.slot))
+              : _slotRosterId(t.slot))
+          : seat;
+        return {
+          slot: t.slot,
+          roster_id: rid,
+          name: t.name,
+          players: liveLeague ? [] : (t.picks || []).map(function(x){
+            return (x.p && x.p.id != null) ? String(x.p.id) : null;
+          }).filter(Boolean)
+        };
       })
     };
     fetch('/api/draft-playoff-odds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
@@ -4508,7 +4551,7 @@
         _poFetching = false;
         if (resp && resp.odds && resp.odds.length){
           var m = {};
-          resp.odds.forEach(function(o){ if (o.slot != null) m[o.slot] = Math.round(o.playoff_pct); });
+          resp.odds.forEach(function(o){ if (o.slot != null) m[o.slot] = o.playoff_pct; });
           _poServer = m; _poServerSig = sig; _poFailedSig = null;
           _repaintPlayoffOdds();
         } else {
@@ -5162,8 +5205,12 @@
         if (playoffOddsPending(allTeams)){
           poTag = '<span class="dr-sum-lpo dr-sum-lpo-pending" title="Calculating playoff odds">…</span>';
         } else if (_poOdds[t.slot] != null){
-          poTag = '<span class="dr-sum-lpo" style="color:' + _poColor(_poOdds[t.slot]) + '" title="Projected playoff odds">'
-            + _poOdds[t.slot] + '%</span>';
+          poTag = '<span class="dr-sum-lpo" style="color:' + _poColor(_poOdds[t.slot]) + '" title="'
+            + (state.mode === 'live'
+              ? 'Playoff odds — same engine and league as Standings'
+              : 'Playoff odds for this mock versus the other drafted teams')
+            + '">'
+            + _poFmt(_poOdds[t.slot]) + '%</span>';
         }
       }
       html += '<div class="dr-sum-lrow' + (t.isMe ? ' is-me' : '') + '" data-legslot="' + t.slot + '">'
@@ -5592,6 +5639,7 @@
           pickTimer: parseInt(d.pick_timer) || 0,
           startTime: parseInt(d.start_time) || 0,
           slotNames: d.slot_names || {}, queue: [],
+          slotToRosterId: _slotToRosterFromLive(d),
           pickOwners: buildPickOwnersFromResponse(d, teams, rounds, order),
           roster: _parseRosterPositions(d.roster_positions) || rosterFromLeague() || defaultRoster(),
           scoring: cfg.scoring || readScoring()
@@ -6216,6 +6264,8 @@
             state.owned = buildOwnedFromResponse(d, state.teams, state.rounds, state.order, state.slot);
             state.pickOwners = buildPickOwnersFromResponse(d, state.teams, state.rounds, state.order) || state.pickOwners;
             if (d.slot_names) state.slotNames = d.slot_names;
+            var _slotMap = _slotToRosterFromLive(d);
+            if (_slotMap) state.slotToRosterId = _slotMap;
           }
           if (isEspn && lastLivePicks){
             applyMissingLivePicks(d.picks);
@@ -6901,7 +6951,7 @@
             _sits.push({ v: '…', l: 'Playoff Odds' });
           } else {
             var _myOdds = playoffOddsSource(_allT)[_meT.slot];
-            if (_myOdds != null) _sits.push({ v: _myOdds + '%', l: 'Playoff Odds' });
+            if (_myOdds != null) _sits.push({ v: _poFmt(_myOdds) + '%', l: 'Playoff Odds' });
           }
         }
       }
@@ -7575,7 +7625,7 @@
       var odBar = pending
         ? '<span class="dd-odds-pending">Calculating…</span>'
         : (od != null
-          ? '<div class="dd-odds"><div class="dd-odds-track"><i style="width:' + Math.max(2, od) + '%;background:' + (od >= 60 ? '#22c55e' : od >= 35 ? '#38bdf8' : '#f59e0b') + '"></i></div><span class="num">' + od + '%</span></div>'
+          ? '<div class="dd-odds"><div class="dd-odds-track"><i style="width:' + Math.max(2, od) + '%;background:' + (od >= 60 ? '#22c55e' : od >= 35 ? '#38bdf8' : '#f59e0b') + '"></i></div><span class="num">' + _poFmt(od) + '%</span></div>'
           : '<span style="color:var(--text-subtle,var(--text-muted));font-size:12px">—</span>');
       return '<tr class="' + (t.isMe ? 'dd-me' : '') + '">'
         + '<td class="num" style="color:var(--text-muted)">' + (i + 1) + '</td>'
@@ -7590,7 +7640,9 @@
       ? 'Live estimate — odds sharpen to the full simulation once the draft completes.'
       : (pending
         ? 'Running the standings simulation engine…'
-        : 'Playoff odds from the standings simulation engine (preseason mode).');
+        : (state.mode === 'live'
+          ? 'Playoff odds from this league’s standings simulation (real settings and rosters).'
+          : 'Playoff odds for this mock — these drafted teams, this mock’s scoring and lineup.'));
     return '<div class="dd-card">'
       + '<div class="dd-sec"><h4>League board &amp; playoff odds</h4><p>' + note + '</p></div>'
       + '<div class="dd-tablescroll"><table class="dd-ledger dd-league">'

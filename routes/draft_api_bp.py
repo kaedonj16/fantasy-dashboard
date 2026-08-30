@@ -652,44 +652,168 @@ def _draft_roster_positions(roster: dict) -> list:
     return out
 
 
-@draft_api_bp.route("/api/draft-playoff-odds", methods=["POST"])
-def api_draft_playoff_odds():
-    """Projected playoff odds for a COMPLETED draft's teams.
+def _ctx_has_roster_players(ctx: dict) -> bool:
+    """True when at least two league rosters have player ids (post-draft / in-season)."""
+    filled = 0
+    for roster in ctx.get("rosters") or []:
+        if roster.get("players"):
+            filled += 1
+            if filled >= 2:
+                return True
+    return False
 
-    Runs the same Monte Carlo the standings page uses (``simulate_playoff_odds``
-    in its preseason mode: project each roster's strength from Sleeper/FP player
-    projections, simulate a full season with skew-normal weekly scoring over a
-    balanced round-robin schedule). The draft room posts the drafted rosters and
-    renders the returned ``playoff_pct`` per team; it falls back to a light
-    client-side estimate if this call fails.
+
+def _format_playoff_row(row: dict, slot) -> dict:
+    return {
+        "slot": slot,
+        "roster_id": row.get("roster_id"),
+        "playoff_pct": round(float(row.get("playoff_pct") or 0), 1),
+        "bye_pct": round(float(row.get("bye_pct") or 0), 1),
+        "first_seed_pct": round(float(row.get("first_seed_pct") or 0), 1),
+        "avg_final_wins": round(float(row.get("avg_final_wins") or 0), 1),
+        "avg_final_losses": round(float(row.get("avg_final_losses") or 0), 1),
+    }
+
+
+def _rid_key(value) -> Optional[str]:
+    if value in (None, ""):
+        return None
+    try:
+        return str(int(value))
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _map_playoff_odds_to_slots(odds: list, teams_in: list) -> list:
+    """Attach each standings odds row to a draft-board slot.
+
+    Live recap keys chips by board slot (and slot 0 = "You"). Standings keys by
+    ``roster_id``. Prefer the posted ``roster_id``, then slot==roster_id, then
+    team name.
     """
-    data = request.get_json(silent=True) or {}
-    teams_in = data.get("teams") or []
-    if not isinstance(teams_in, list) or len(teams_in) < 2:
-        return jsonify({"error": "need_two_teams"}), 400
-    if len(teams_in) > 32:
-        return jsonify({"error": "too_many_teams"}), 400
+    by_rid: dict[str, dict] = {}
+    by_name: dict[str, dict] = {}
+    for row in odds or []:
+        rid = _rid_key(row.get("roster_id"))
+        if rid is not None:
+            by_rid[rid] = row
+        name = str(row.get("team_name") or row.get("name") or "").strip().lower()
+        if name:
+            by_name[name] = row
 
-    roster = data.get("roster") or {}
-    season = int(data.get("season") or 0) or datetime.now().year
+    if not teams_in:
+        return [_format_playoff_row(row, row.get("roster_id")) for row in (odds or [])]
+
+    out = []
+    for team in teams_in:
+        slot = team.get("slot")
+        if slot is None:
+            continue
+        row = None
+        rid = _rid_key(team.get("roster_id"))
+        if rid is not None:
+            row = by_rid.get(rid)
+        if row is None:
+            row = by_rid.get(_rid_key(slot) or "")
+        if row is None:
+            name = str(team.get("name") or "").strip().lower()
+            if name and name not in ("you", "your team"):
+                row = by_name.get(name)
+        if row is None:
+            continue
+        out.append(_format_playoff_row(row, slot))
+    return out
+
+
+def _overlay_league_settings(ctx: dict, league_ctx: dict) -> dict:
+    """Copy real playoff format / scoring / lineup onto a board-built context."""
+    ls = dict(ctx.get("league_settings") or {})
+    real = league_ctx.get("league_settings") or {}
+    if real.get("playoff_teams") not in (None, ""):
+        try:
+            ls["playoff_teams"] = int(real.get("playoff_teams"))
+        except (TypeError, ValueError):
+            pass
+    if real.get("playoff_week_start") not in (None, ""):
+        try:
+            ls["playoff_week_start"] = int(real.get("playoff_week_start"))
+        except (TypeError, ValueError):
+            pass
+    if real.get("divisions") not in (None, ""):
+        try:
+            ls["divisions"] = int(real.get("divisions"))
+        except (TypeError, ValueError):
+            pass
+    ctx["league_settings"] = ls
+    lid = str(league_ctx.get("league_id") or "")
+    if lid:
+        ctx["league_id"] = lid
+    if league_ctx.get("scoring_settings"):
+        ctx["scoring_settings"] = league_ctx.get("scoring_settings")
+    if league_ctx.get("raw_scoring_settings"):
+        ctx["raw_scoring_settings"] = league_ctx.get("raw_scoring_settings")
+    if league_ctx.get("roster_positions"):
+        ctx["roster_positions"] = league_ctx.get("roster_positions")
+    return ctx
+
+
+def _draft_scoring_settings(data: dict) -> dict:
+    """PPR / TEP / pass-TD from the mock (or live-board) scoring controls."""
     try:
         rec_pts = float(data.get("ppr"))
     except (TypeError, ValueError):
         rec_pts = 1.0
+    try:
+        tep = float(0 if data.get("tep") is None else data.get("tep"))
+    except (TypeError, ValueError):
+        tep = 0.0
+    raw_td = data.get("pass_td")
+    if raw_td is None:
+        raw_td = data.get("passTd")
+    try:
+        pass_td = float(4 if raw_td is None else raw_td)
+    except (TypeError, ValueError):
+        pass_td = 4.0
+    pass_td = 6.0 if pass_td >= 6 else 4.0
+    return {"rec": rec_pts, "bonus_rec_te": tep, "pass_td": pass_td}
+
+
+def _synthetic_draft_ctx(data: dict, teams_in: list) -> Optional[dict]:
+    """Board-built preseason room: this draft's settings vs these drafted teams.
+
+    Slot 0 is the recap's "You" row, not an extra franchise — skip it here and
+    map it onto the viewer's seat after the sim.
+    """
+    roster = data.get("roster") or {}
+    season = int(data.get("season") or 0) or datetime.now().year
+    scoring = _draft_scoring_settings(data)
 
     roster_positions = _draft_roster_positions(roster)
     rosters = []
     roster_map = {}
-    for t in teams_in:
+    seen = set()
+    for team in teams_in:
+        slot = team.get("slot")
         try:
-            rid = int(t.get("slot"))
+            if int(slot) == 0:
+                continue
+        except (TypeError, ValueError):
+            pass
+        rid = _rid_key(team.get("roster_id"))
+        if rid is None:
+            rid = _rid_key(slot)
+        if rid is None or rid in seen:
+            continue
+        try:
+            sim_id = int(rid)
         except (TypeError, ValueError):
             continue
-        pids = [str(x) for x in (t.get("players") or []) if x not in (None, "")]
-        rosters.append({"roster_id": rid, "players": pids})
-        roster_map[str(rid)] = str(t.get("name") or ("Team " + str(rid)))
+        pids = [str(x) for x in (team.get("players") or []) if x not in (None, "")]
+        seen.add(rid)
+        rosters.append({"roster_id": sim_id, "players": pids})
+        roster_map[str(sim_id)] = str(team.get("name") or ("Team " + str(sim_id)))
     if len(rosters) < 2:
-        return jsonify({"error": "need_two_teams"}), 400
+        return None
 
     try:
         playoff_teams = int(data.get("playoff_teams") or 0)
@@ -699,12 +823,12 @@ def api_draft_playoff_odds():
         playoff_teams = 4 if len(rosters) <= 8 else 6
     playoff_teams = max(1, min(playoff_teams, len(rosters) - 1))
 
-    ctx = {
+    return {
         "season": season,
-        "current_week": 0,          # preseason path (no games yet)
-        "league_id": "",            # no real league -> round-robin fallback schedule
-        "scoring_settings": {"rec": rec_pts},
-        "raw_scoring_settings": {},
+        "current_week": 0,
+        "league_id": "",
+        "scoring_settings": dict(scoring),
+        "raw_scoring_settings": dict(scoring),
         "roster_positions": roster_positions,
         "rosters": rosters,
         "roster_map": roster_map,
@@ -715,24 +839,95 @@ def api_draft_playoff_odds():
             "divisions": 0,
         },
     }
+
+
+def _load_league_ctx(platform: str, league_id: str, season: int):
+    from app import get_league_ctx_from_cache
+    return get_league_ctx_from_cache(platform, league_id, season)
+
+
+def _run_league_playoff_sim(ctx: dict, platform: str):
+    from app import _playoff_sim_cached
+    return _playoff_sim_cached(ctx, platform)
+
+
+def _run_board_playoff_sim(ctx: dict, platform: str, **kwargs):
+    from data_building.simulate_playoff_odds import simulate_playoff_odds
+    return simulate_playoff_odds(ctx, platform=platform, **kwargs)
+
+
+@draft_api_bp.route("/api/draft-playoff-odds", methods=["POST"])
+def api_draft_playoff_odds():
+    """Playoff odds for a completed draft recap.
+
+    Live league drafts use the same ``get_league_ctx_from_cache`` +
+    ``_playoff_sim_cached`` path as Standings (real settings, current rosters,
+    real schedule / records). Mocks always simulate **this board**: the mock's
+    roster/scoring/playoff size against the teams drafted in the mock. League
+    settings are overlaid only when a live draft's platform rosters are still
+    empty (so we do not invent a 6-team PPR room for a 4-team TEP league).
+    """
+    data = request.get_json(silent=True) or {}
+    teams_in = data.get("teams") or []
+    if not isinstance(teams_in, list) or len(teams_in) < 2:
+        return jsonify({"error": "need_two_teams"}), 400
+    if len(teams_in) > 32:
+        return jsonify({"error": "too_many_teams"}), 400
+
+    platform = str(data.get("platform") or "").strip().lower()
+    league_id = str(data.get("league_id") or "").strip()
     try:
-        from data_building.simulate_playoff_odds import simulate_playoff_odds
-        # Deterministic per-board seed so odds don't drift on re-open for the same
-        # rosters. n_sims trimmed from the 10k default for snappier response.
-        res = simulate_playoff_odds(ctx, platform="sleeper", n_sims=5000, seed=1234)
+        season = int(data.get("season") or 0) or datetime.now().year
+    except (TypeError, ValueError):
+        season = datetime.now().year
+    use_league = bool(data.get("use_league")) and bool(platform) and bool(league_id)
+
+    league_ctx = None
+    if use_league:
+        try:
+            league_ctx = _load_league_ctx(platform, league_id, season)
+        except Exception:
+            logger.debug("[draft-playoff-odds] league ctx skipped", exc_info=True)
+            league_ctx = None
+
+    if use_league and league_ctx and _ctx_has_roster_players(league_ctx):
+        try:
+            res = _run_league_playoff_sim(league_ctx, platform) or []
+        except Exception as exc:
+            logger.warning("[draft-playoff-odds] league sim failed: %s", exc)
+            res = []
+        mapped = _map_playoff_odds_to_slots(res, teams_in)
+        if mapped:
+            settings = league_ctx.get("league_settings") or {}
+            playoff_teams = int(settings.get("playoff_teams") or 6)
+            return jsonify({
+                "odds": mapped,
+                "playoff_teams": playoff_teams,
+                "source": "league",
+            })
+
+    ctx = _synthetic_draft_ctx(data, teams_in)
+    if not ctx:
+        return jsonify({"error": "need_two_teams"}), 400
+    # Live-only fallback: platform rosters not populated yet. Never overlay a
+    # mock — its scoring, lineup, and field are whatever the user set up.
+    if use_league and league_ctx:
+        _overlay_league_settings(ctx, league_ctx)
+    settings = ctx.get("league_settings") or {}
+    playoff_teams = int(settings.get("playoff_teams") or 6)
+    sim_platform = platform or "sleeper"
+    try:
+        if use_league and ctx.get("league_id"):
+            # Live fallback with a real league id → published schedule + seed.
+            res = _run_board_playoff_sim(ctx, sim_platform)
+        else:
+            res = _run_board_playoff_sim(ctx, sim_platform, n_sims=5000, seed=1234)
     except Exception as exc:
         logger.warning("[draft-playoff-odds] sim failed: %s", exc)
         return jsonify({"error": "sim_failed"}), 502
 
-    odds = [
-        {
-            "slot": r.get("roster_id"),
-            "playoff_pct": round(float(r.get("playoff_pct") or 0), 1),
-            "bye_pct": round(float(r.get("bye_pct") or 0), 1),
-            "first_seed_pct": round(float(r.get("first_seed_pct") or 0), 1),
-            "avg_final_wins": round(float(r.get("avg_final_wins") or 0), 1),
-            "avg_final_losses": round(float(r.get("avg_final_losses") or 0), 1),
-        }
-        for r in (res or [])
-    ]
-    return jsonify({"odds": odds, "playoff_teams": playoff_teams})
+    return jsonify({
+        "odds": _map_playoff_odds_to_slots(res, teams_in),
+        "playoff_teams": playoff_teams,
+        "source": "board",
+    })
