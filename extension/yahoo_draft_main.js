@@ -315,6 +315,10 @@
   }
 
   hookNetwork();
+  window.addEventListener("brfantasy:draft-rescan", () => {
+    lastFingerprint = "";
+    scanReact();
+  });
   setInterval(() => {
     if (document.hidden) return;
     scanReact();

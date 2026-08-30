@@ -9,6 +9,32 @@ const ESPN_URLS = [
   "https://espn.com",
 ];
 
+const BR_TAB_URLS = [
+  "https://www.brfantasyfootball.com/*",
+  "https://brfantasyfootball.com/*",
+  "http://localhost/*",
+  "http://127.0.0.1/*",
+];
+
+const ESPN_DRAFT_TAB_URLS = [
+  "https://fantasy.espn.com/football/draft*",
+  "https://fantasy.espn.com/*/football/draft*",
+];
+
+const YAHOO_DRAFT_TAB_URLS = [
+  "https://football.fantasysports.yahoo.com/f1/*/draft*",
+  "https://football.fantasysports.yahoo.com/f1/*/livedraft*",
+  "https://football.fantasysports.yahoo.com/draftclient*",
+  "https://*.fantasysports.yahoo.com/*/draft*",
+  "https://sports.yahoo.com/fantasy/*/draft*",
+];
+
+function relayEventName(messageType) {
+  return messageType === "yahooDraftRelay"
+    ? "brfantasy:yahoo-draft-relay"
+    : "brfantasy:espn-draft-relay";
+}
+
 async function readCookie(name) {
   for (const url of ESPN_URLS) {
     try {
@@ -29,37 +55,131 @@ async function getEspnCreds() {
   return { swid, espn_s2 };
 }
 
+async function deliverRelayToTab(tab, messageType, payload) {
+  if (!tab || !tab.id) return false;
+  const msg = { type: messageType, payload };
+  try {
+    await chrome.tabs.sendMessage(tab.id, msg);
+    return true;
+  } catch (_e) {
+    // Content script missing — common when Draft Room was opened before the
+    // extension loaded. Inject a one-shot MAIN-world dispatch instead.
+  }
+  const eventName = relayEventName(messageType);
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: "MAIN",
+      func: (evt, detail) => {
+        window.dispatchEvent(new CustomEvent(evt, { detail: detail }));
+      },
+      args: [eventName, payload],
+    });
+    return true;
+  } catch (_e2) {
+    return false;
+  }
+}
+
+async function deliverReconnectToBrTab(tab, detail) {
+  if (!tab || !tab.id) return false;
+  const msg = { type: "brDraftRoomReconnect", detail: detail || {} };
+  try {
+    await chrome.tabs.sendMessage(tab.id, msg);
+    return true;
+  } catch (_e) {
+    // Content script missing — inject MAIN-world reconnect event.
+  }
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: "MAIN",
+      func: (payload) => {
+        window.dispatchEvent(
+          new CustomEvent("brfantasy:extension-reconnect", { detail: payload || {} })
+        );
+      },
+      args: [detail || {}],
+    });
+    return true;
+  } catch (_e2) {
+    return false;
+  }
+}
+
 async function relayDraftToBrTabs(messageType, payload) {
   let tabs = [];
   try {
     // host_permissions already cover these URLs — no broad `tabs` permission.
-    tabs = await chrome.tabs.query({
-      url: [
-        "https://www.brfantasyfootball.com/*",
-        "https://brfantasyfootball.com/*",
-        "http://localhost/*",
-        "http://127.0.0.1/*",
-      ],
-    });
+    tabs = await chrome.tabs.query({ url: BR_TAB_URLS });
   } catch (_e) {
-    return { ok: false, reason: "tabs_query_failed" };
+    return { ok: false, reason: "tabs_query_failed", sent: 0, tabs: 0 };
   }
   let sent = 0;
   await Promise.all(
     tabs.map(async (tab) => {
+      if (await deliverRelayToTab(tab, messageType, payload)) sent += 1;
+    })
+  );
+  return { ok: true, sent, tabs: tabs.length };
+}
+
+async function pingDraftTabs() {
+  let espnTabs = [];
+  let yahooTabs = [];
+  try {
+    espnTabs = await chrome.tabs.query({ url: ESPN_DRAFT_TAB_URLS });
+    yahooTabs = await chrome.tabs.query({ url: YAHOO_DRAFT_TAB_URLS });
+  } catch (_e) {
+    return { ok: false, espn: 0, yahoo: 0, pinged: 0 };
+  }
+  let pinged = 0;
+  const tabs = [...espnTabs, ...yahooTabs];
+  await Promise.all(
+    tabs.map(async (tab) => {
       if (!tab || !tab.id) return;
       try {
-        await chrome.tabs.sendMessage(tab.id, {
-          type: messageType,
-          payload,
-        });
-        sent += 1;
+        await chrome.tabs.sendMessage(tab.id, { type: "forceDraftRelay" });
+        pinged += 1;
       } catch (_e) {
-        // Tab has no content script (or is mid-load) — skip.
+        /* draft tab has no bridge yet */
       }
     })
   );
-  return { ok: true, sent };
+  return { ok: true, espn: espnTabs.length, yahoo: yahooTabs.length, pinged };
+}
+
+async function pingBrDraftRooms(detail) {
+  let tabs = [];
+  try {
+    tabs = await chrome.tabs.query({ url: BR_TAB_URLS });
+  } catch (_e) {
+    return { ok: false, tabs: 0, pinged: 0 };
+  }
+  let pinged = 0;
+  await Promise.all(
+    tabs.map(async (tab) => {
+      if (await deliverReconnectToBrTab(tab, detail)) pinged += 1;
+    })
+  );
+  return { ok: true, tabs: tabs.length, pinged };
+}
+
+async function reconnectDraftRelay(detail) {
+  const payload = detail && typeof detail === "object" ? detail : {};
+  const [draft, br] = await Promise.all([
+    pingDraftTabs(),
+    pingBrDraftRooms(payload),
+  ]);
+  return {
+    ok: true,
+    draft,
+    br,
+    message:
+      br.pinged > 0 || draft.pinged > 0
+        ? "Reconnect sent to open tabs"
+        : "No open Draft Room or draft tabs found",
+  };
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -69,6 +189,25 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     getEspnCreds()
       .then(sendResponse)
       .catch(() => sendResponse({ swid: "", espn_s2: "" }));
+    return true;
+  }
+
+  if (msg.type === "reconnectDraftRelay") {
+    reconnectDraftRelay({
+      leagueId: String(msg.leagueId || ""),
+      season: String(msg.season || ""),
+      platform: String(msg.platform || ""),
+      source: String(msg.source || "manual"),
+    })
+      .then(sendResponse)
+      .catch(() =>
+        sendResponse({
+          ok: false,
+          draft: { pinged: 0 },
+          br: { pinged: 0 },
+          message: "Reconnect failed",
+        })
+      );
     return true;
   }
 
@@ -83,7 +222,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       at: msg.at || Date.now(),
     })
       .then(sendResponse)
-      .catch(() => sendResponse({ ok: false, sent: 0 }));
+      .catch(() => sendResponse({ ok: false, sent: 0, tabs: 0 }));
     return true;
   }
 
@@ -98,11 +237,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       at: msg.at || Date.now(),
     })
       .then(sendResponse)
-      .catch(() => sendResponse({ ok: false, sent: 0 }));
+      .catch(() => sendResponse({ ok: false, sent: 0, tabs: 0 }));
     return true;
   }
 
-  if (msg.type === "espnDraftTabReady" || msg.type === "yahooDraftTabReady") {
+  if (
+    msg.type === "espnDraftTabReady" ||
+    msg.type === "yahooDraftTabReady" ||
+    msg.type === "brDraftRoomReady"
+  ) {
     sendResponse({ ok: true });
     return false;
   }

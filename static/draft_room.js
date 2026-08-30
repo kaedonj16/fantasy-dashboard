@@ -159,6 +159,52 @@
       })
       .catch(function(){ /* ignore */ });
   }
+  function _setEspnReconnectBusy(busy){
+    var btn = document.getElementById('drEspnReconnect');
+    if (!btn) return;
+    btn.classList.toggle('is-busy', !!busy);
+    btn.disabled = !!busy;
+    btn.textContent = busy ? '↻ Reconnecting…' : '↻ Reconnect';
+  }
+  function updateEspnReconnectBtn(){
+    var btn = document.getElementById('drEspnReconnect');
+    if (!btn) return;
+    var show = !!(state && state.mode === 'live' && !state.isComplete && isExtLiveSource());
+    btn.hidden = !show;
+    btn.style.display = show ? '' : 'none';
+    if (show) _setEspnReconnectBusy(false);
+  }
+  function reconnectExtensionSync(fromExtension){
+    if (!state || state.mode !== 'live' || !isExtLiveSource()) return;
+    _espnRelayLastFp = '';
+    _espnRelayInFlight = false;
+    updateEspnSyncPill('connecting');
+    _setEspnReconnectBusy(true);
+    _pullExtensionRelaySnapshot();
+    if (fromExtension) return;
+    try {
+      window.dispatchEvent(new CustomEvent('brfantasy:request-extension-reconnect', {
+        detail: {
+          leagueId: cfg.leagueId,
+          season: String(state.season || cfg.season || ''),
+          platform: extPlatformKey(),
+          source: 'draft-room'
+        }
+      }));
+    } catch (_e){}
+  }
+  function _onExtensionReconnectResult(ev){
+    _setEspnReconnectBusy(false);
+    if (!state || state.mode !== 'live') return;
+    var d = ev && ev.detail;
+    var ok = d && ((d.br && d.br.pinged > 0) || (d.draft && d.draft.pinged > 0));
+    if (ok){
+      updateEspnSyncPill(state.isDrafting ? 'live' : (state.isComplete ? 'complete' : 'synced'));
+      return;
+    }
+    if (d && d.message && window.console) console.warn('[draft] extension reconnect', d.message);
+    updateEspnSyncPill(state.isDrafting ? 'live' : 'synced');
+  }
 
   var sim = false;         // mock-draft simulation active
   var simTimer = null;
@@ -5556,6 +5602,8 @@
     if (!el) return;
     el.style.display = 'none';
     el.hidden = true;
+    var btn = document.getElementById('drEspnReconnect');
+    if (btn){ btn.style.display = 'none'; btn.hidden = true; }
   }
   function updateEspnSyncPill(kind){
     var el = document.getElementById('drEspnSync');
@@ -5580,6 +5628,7 @@
     el.textContent = label;
     el.hidden = false;
     el.style.display = '';
+    updateEspnReconnectBtn();
   }
   function hideEspnFallback(){
     var el = document.getElementById('drEspnFallback');
@@ -5642,17 +5691,21 @@
       primary = onPhone
         ? '<button type="button" class="dr-banner-join" id="drEspnManualFromTools">Track manually</button>'
           + '<button type="button" class="dr-banner-join is-ghost" id="drEspnExtInstall">Get Chrome extension</button>'
+          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnReconnectTools">↻ Reconnect sync</button>'
         : '<button type="button" class="dr-banner-join" id="drEspnExtInstall">Get Chrome extension</button>'
+          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnReconnectTools">↻ Reconnect sync</button>'
           + '<button type="button" class="dr-banner-join is-ghost" id="drEspnManualFromTools">Track manually</button>';
     } else {
       title = onPhone ? 'Auto-sync needs a computer' : ('Sync ' + who + ' picks automatically');
       blurb = onPhone
         ? ('Install the Chrome extension on a laptop, or track picks manually here while drafting in the ' + who + ' app.')
-        : ('Install the Chrome extension and keep the ' + who + ' draft tab open — picks land here automatically.');
+        : ('Install the Chrome extension and keep the ' + who + ' draft tab open — picks land here automatically. Use Reconnect if sync drops.');
       primary = onPhone
         ? '<button type="button" class="dr-banner-join" id="drEspnManualFromTools">Track manually</button>'
           + '<button type="button" class="dr-banner-join is-ghost" id="drEspnExtInstall">Get Chrome extension</button>'
+          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnReconnectTools">↻ Reconnect sync</button>'
         : '<button type="button" class="dr-banner-join" id="drEspnExtInstall">Get Chrome extension</button>'
+          + '<button type="button" class="dr-banner-join is-ghost" id="drEspnReconnectTools">↻ Reconnect sync</button>'
           + '<button type="button" class="dr-banner-join is-ghost" id="drEspnManualFromTools">Track manually</button>';
     }
     el.className = 'dr-espn-tools' + (unavailable ? ' is-unavailable' : '');
@@ -5878,6 +5931,11 @@
       try { applyYahooExtensionRelay(ev && ev.detail); }
       catch (err){ if (window.console) console.error('[draft] yahoo relay', err); }
     });
+    window.addEventListener('brfantasy:extension-reconnect', function(){
+      try { reconnectExtensionSync(true); }
+      catch (err){ if (window.console) console.error('[draft] extension reconnect', err); }
+    });
+    window.addEventListener('brfantasy:extension-reconnect-result', _onExtensionReconnectResult);
   }
   _wireEspnExtensionRelay();
   function _fmtAgo(ms){
@@ -8335,6 +8393,7 @@
     var id = t && t.id;
     if (id === 'drEspnManual' || id === 'drEspnManualFromTools') switchEspnToManual();
     if (id === 'drEspnExtInstall') openEspnExtensionInstall();
+    if (id === 'drEspnReconnectTools' || id === 'drEspnReconnect') reconnectExtensionSync(false);
     if (id === 'drEspnToolsDismiss'){
       try { sessionStorage.setItem(_espnToolsDismissKey(), '1'); } catch (err){}
       hideEspnTools();
@@ -8342,6 +8401,8 @@
   }
   if (_espnFb) _espnFb.addEventListener('click', _onEspnHelperClick);
   if (_espnToolsEl) _espnToolsEl.addEventListener('click', _onEspnHelperClick);
+  var _espnReconnectBtn = document.getElementById('drEspnReconnect');
+  if (_espnReconnectBtn) _espnReconnectBtn.addEventListener('click', function(){ reconnectExtensionSync(false); });
   if (typeof document !== 'undefined' && document.addEventListener){
     document.addEventListener('visibilitychange', function(){
       if (document.hidden) return;

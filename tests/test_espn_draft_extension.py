@@ -8,8 +8,9 @@ EXT = REPO / "extension"
 
 def test_extension_manifest_includes_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.3.1"
+    assert manifest["version"] == "1.3.3"
     assert "cookies" in manifest["permissions"]
+    assert "scripting" in manifest["permissions"]
     assert "tabs" not in manifest.get("permissions", [])
     scripts = manifest["content_scripts"]
     worlds = {(tuple(s["matches"]), s.get("world", "ISOLATED")): s["js"] for s in scripts}
@@ -47,6 +48,16 @@ def test_extension_relay_message_contract():
     assert "lastDelivered" in yahoo_iso
     assert "playerIdSelected" in main
     assert "teamId != null" not in main.split("function isPickRow")[1].split("function normalizePick")[0]
+    assert "chrome.scripting.executeScript" in bg
+    assert "brDraftRoomReady" in content
+    assert "relayFailureText" in iso
+    assert "forceReconnect" in iso
+    assert "reconnectDraftRelay" in bg
+    assert "forceDraftRelay" in bg
+    assert "brfantasy:request-extension-reconnect" in content
+    assert "brfantasy:extension-reconnect" in content
+    assert "brfantasy:draft-rescan" in main
+    assert "reconnectBtn" in (EXT / "popup.html").read_text(encoding="utf-8")
 
 
 def test_pack_extension_strips_localhost():

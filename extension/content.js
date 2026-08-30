@@ -2,6 +2,7 @@
 // 1) Autofill ESPN cookies into the private-league connect box.
 // 2) Receive live-draft pick relays from the service worker (sourced from an
 //    open ESPN or Yahoo draft room tab) and hand them to Draft Room via CustomEvent.
+// 3) Bridge page-initiated reconnect requests to the service worker.
 
 (function () {
   "use strict";
@@ -9,6 +10,9 @@
   const BLOB_IDS = ["espnCookieBlob", "linkEspnBlob"];
   const ESPN_RELAY_EVENT = "brfantasy:espn-draft-relay";
   const YAHOO_RELAY_EVENT = "brfantasy:yahoo-draft-relay";
+  const RECONNECT_REQ = "brfantasy:request-extension-reconnect";
+  const RECONNECT_EVT = "brfantasy:extension-reconnect";
+  const RECONNECT_RESULT = "brfantasy:extension-reconnect-result";
 
   function icon() {
     const NS = "http://www.w3.org/2000/svg";
@@ -105,6 +109,44 @@
     }
   }
 
+  function dispatchReconnect(detail) {
+    try {
+      window.dispatchEvent(new CustomEvent(RECONNECT_EVT, { detail: detail || {} }));
+    } catch (_e) {
+      /* ignore */
+    }
+  }
+
+  function requestReconnect(detail) {
+    try {
+      chrome.runtime.sendMessage(
+        {
+          type: "reconnectDraftRelay",
+          leagueId: detail && detail.leagueId,
+          season: detail && detail.season,
+          platform: detail && detail.platform,
+          source: (detail && detail.source) || "draft-room",
+        },
+        (resp) => {
+          void chrome.runtime.lastError;
+          try {
+            window.dispatchEvent(
+              new CustomEvent(RECONNECT_RESULT, { detail: resp || {} })
+            );
+          } catch (_e) {
+            /* ignore */
+          }
+        }
+      );
+    } catch (_e) {
+      /* ignore */
+    }
+  }
+
+  window.addEventListener(RECONNECT_REQ, (ev) => {
+    requestReconnect((ev && ev.detail) || {});
+  });
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg && msg.type === "espnDraftRelay" && msg.payload) {
       dispatchRelay(ESPN_RELAY_EVENT, msg.payload);
@@ -116,10 +158,26 @@
       sendResponse({ ok: true });
       return false;
     }
+    if (msg && msg.type === "brDraftRoomReconnect") {
+      dispatchReconnect(msg.detail || {});
+      sendResponse({ ok: true });
+      return false;
+    }
     return false;
   });
 
   scan();
   const mo = new MutationObserver(scan);
   mo.observe(document.documentElement, { childList: true, subtree: true });
+
+  try {
+    chrome.runtime.sendMessage(
+      { type: "brDraftRoomReady", href: location.href },
+      () => {
+        void chrome.runtime.lastError;
+      }
+    );
+  } catch (_e) {
+    /* ignore */
+  }
 })();

@@ -252,6 +252,10 @@
   }
 
   hookNetwork();
+  window.addEventListener("brfantasy:draft-rescan", () => {
+    lastFingerprint = "";
+    scanReact();
+  });
   // Poll React state a few times a second while the tab is visible. Cheap relative
   // to a missed pick during a live draft.
   setInterval(() => {

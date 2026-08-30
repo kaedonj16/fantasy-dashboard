@@ -51,18 +51,54 @@
         "color:#f8fafc",
         "font:600 12px/1.35 system-ui,-apple-system,sans-serif",
         "box-shadow:0 10px 28px rgba(0,0,0,.35)",
-        "pointer-events:none",
       ].join(";")
     );
-    chip.textContent = "BR Fantasy · watching Yahoo draft…";
+    chip.innerHTML =
+      '<span class="br-chip-text">BR Fantasy · watching Yahoo draft…</span>'
+      + '<button type="button" class="br-chip-reconnect" title="Reestablish sync" style="margin-top:6px;display:block;width:100%;padding:4px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#f8fafc;font:600 11px/1.2 system-ui,sans-serif;cursor:pointer;">↻ Reconnect</button>';
+    const btn = chip.querySelector(".br-chip-reconnect");
+    if (btn) {
+      btn.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        forceReconnect();
+      });
+    }
     document.documentElement.appendChild(chip);
     return chip;
   }
 
   function setChip(text, ok) {
     const el = ensureChip();
-    el.textContent = text;
+    const textEl = el.querySelector(".br-chip-text");
+    if (textEl) textEl.textContent = text;
+    else el.textContent = text;
     el.style.background = ok ? "#065f46" : "#0f172a";
+  }
+
+  function forceReconnect() {
+    lastDelivered = "";
+    clearRetry();
+    setChip("BR Fantasy · reconnecting…", false);
+    if (pendingPayload) {
+      deliverPending(true);
+      return;
+    }
+    try {
+      window.dispatchEvent(new CustomEvent("brfantasy:draft-rescan"));
+    } catch (_e) {
+      /* ignore */
+    }
+    try {
+      chrome.runtime.sendMessage({ type: "reconnectDraftRelay", source: "yahoo-chip" }, function (resp) {
+        void chrome.runtime.lastError;
+        if (resp && ((resp.br && resp.br.pinged > 0) || (resp.draft && resp.draft.pinged > 0))) {
+          setChip("BR Fantasy · reconnect sent", false);
+        }
+      });
+    } catch (_e) {
+      /* ignore */
+    }
   }
 
   function payloadFingerprint(payload) {
@@ -91,11 +127,17 @@
     }, RETRY_MS);
   }
 
-  function deliverPending() {
+  function relayFailureText(resp) {
+    if (resp && resp.reason === "tabs_query_failed") return "BR Fantasy · reload extension";
+    if (resp && resp.tabs > 0) return "BR Fantasy · reload Draft Room tab";
+    return "BR Fantasy · open Draft Room on brfantasyfootball.com";
+  }
+
+  function deliverPending(force) {
     if (!pendingPayload) return;
     const payload = pendingPayload;
     const fp = payloadFingerprint(payload);
-    if (fp === lastDelivered) {
+    if (!force && fp === lastDelivered) {
       pendingPayload = null;
       clearRetry();
       return;
@@ -116,7 +158,7 @@
             true
           );
         } else {
-          setChip("BR Fantasy · open Draft Room to receive picks", false);
+          setChip(relayFailureText(resp), false);
           scheduleRetry();
         }
       });
@@ -149,6 +191,14 @@
   window.addEventListener(EVENT, (ev) => {
     forward(ev && ev.detail);
   });
+
+  try {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg && msg.type === "forceDraftRelay") forceReconnect();
+    });
+  } catch (_e) {
+    /* ignore */
+  }
 
   ensureChip();
   try {

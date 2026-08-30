@@ -23,6 +23,8 @@ const card = document.getElementById("card");
 const titleEl = document.getElementById("title");
 const detailEl = document.getElementById("detail");
 const copyBtn = document.getElementById("copyBtn");
+const reconnectBtn = document.getElementById("reconnectBtn");
+const reconnectStatus = document.getElementById("reconnectStatus");
 
 let blob = "";
 
@@ -49,6 +51,17 @@ function render(swid, espn_s2) {
   }
 }
 
+function reconnectMessage(resp) {
+  if (!resp) return "Reconnect failed — reload the extension.";
+  if ((resp.br && resp.br.pinged > 0) || (resp.draft && resp.draft.pinged > 0)) {
+    const parts = [];
+    if (resp.br && resp.br.pinged > 0) parts.push(resp.br.pinged + " Draft Room tab(s)");
+    if (resp.draft && resp.draft.pinged > 0) parts.push(resp.draft.pinged + " draft tab(s)");
+    return "Reconnect sent to " + parts.join(" and ") + ".";
+  }
+  return resp.message || "No open Draft Room or draft tabs found.";
+}
+
 copyBtn.addEventListener("click", async () => {
   if (!blob) return;
   try {
@@ -58,6 +71,16 @@ copyBtn.addEventListener("click", async () => {
   } catch (_e) {
     copyBtn.textContent = "Copy failed — select manually";
   }
+});
+
+reconnectBtn.addEventListener("click", () => {
+  reconnectBtn.disabled = true;
+  reconnectStatus.textContent = "Reconnecting…";
+  chrome.runtime.sendMessage({ type: "reconnectDraftRelay", source: "popup" }, (resp) => {
+    reconnectBtn.disabled = false;
+    void chrome.runtime.lastError;
+    reconnectStatus.textContent = reconnectMessage(resp);
+  });
 });
 
 (async function init() {
