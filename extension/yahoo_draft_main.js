@@ -9,6 +9,7 @@
 
   const EVENT = "brfantasy:yahoo-draft-raw";
   const RESCAN = "brfantasy:draft-rescan";
+  const RELAY_STATUS = "brfantasy:yahoo-relay-status";
   const BRIDGE = "brfantasy-bridge-v1";
   const MAX_WALK = 4000;
   let lastFingerprint = "";
@@ -107,6 +108,39 @@
     ].join("|");
   }
 
+  function relayToBackground(detail) {
+    if (!detail || !detail.leagueId) return;
+    try {
+      chrome.runtime.sendMessage(
+        {
+          type: "yahooDraftRelay",
+          leagueId: detail.leagueId,
+          season: detail.season || "",
+          inProgress: !!detail.inProgress,
+          drafted: !!detail.drafted,
+          picks: Array.isArray(detail.picks) ? detail.picks : [],
+          source: detail.source || "yahoo-draft-room",
+          at: detail.at || Date.now(),
+        },
+        function (resp) {
+          void chrome.runtime.lastError;
+          bridgeToExtension(RELAY_STATUS, {
+            sent: resp && resp.sent,
+            tabs: resp && resp.tabs,
+            pickCount: (detail.picks || []).length,
+            reason: resp && resp.reason,
+          });
+        }
+      );
+    } catch (_e) {
+      bridgeToExtension(RELAY_STATUS, {
+        sent: 0,
+        pickCount: (detail.picks || []).length,
+        reason: "runtime_error",
+      });
+    }
+  }
+
   function emit(picks, meta, source) {
     const ids = leagueFromUrl();
     const clean = (picks || []).map(normalizePick).filter(Boolean);
@@ -116,7 +150,7 @@
     if (fp === lastFingerprint && now - lastEmitAt < 1500) return;
     lastFingerprint = fp;
     lastEmitAt = now;
-    bridgeToExtension(EVENT, {
+    const detail = {
       source: source || "unknown",
       leagueId: ids.leagueId,
       season: ids.season,
@@ -124,7 +158,9 @@
       drafted: !!(meta && meta.drafted),
       picks: clean,
       at: now,
-    });
+    };
+    bridgeToExtension(EVENT, detail);
+    relayToBackground(detail);
   }
 
   function picksFromDraftResults(block) {
@@ -332,4 +368,5 @@
   }, 2000);
   setTimeout(scanReact, 1500);
   setTimeout(scanReact, 4000);
+  window.__brFantasyYahooForceScan = onRescan;
 })();

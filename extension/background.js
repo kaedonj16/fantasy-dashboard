@@ -124,6 +124,47 @@ async function relayDraftToBrTabs(messageType, payload) {
   return { ok: true, sent, tabs: tabs.length };
 }
 
+async function nudgeDraftTabScan(tab) {
+  if (!tab || !tab.id) return false;
+  let ok = false;
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: "forceDraftRelay" });
+    ok = true;
+  } catch (_e) {
+    /* isolated bridge may not be ready yet */
+  }
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: "MAIN",
+      func: () => {
+        window.postMessage({ __br: "brfantasy-bridge-v1", type: "brfantasy:draft-rescan" }, "*");
+        if (typeof window.__brFantasyEspnForceScan === "function") window.__brFantasyEspnForceScan();
+        if (typeof window.__brFantasyYahooForceScan === "function") window.__brFantasyYahooForceScan();
+      },
+    });
+    ok = true;
+  } catch (_e) {
+    /* ignore */
+  }
+  return ok;
+}
+
+async function notifyDraftTabRelayResult(tabId, pickCount, result) {
+  if (!tabId) return;
+  try {
+    await chrome.tabs.sendMessage(tabId, {
+      type: "draftRelayResult",
+      sent: result && result.sent,
+      tabs: result && result.tabs,
+      pickCount: pickCount || 0,
+      reason: result && result.reason,
+    });
+  } catch (_e) {
+    /* chip script not ready */
+  }
+}
+
 async function pingDraftTabs() {
   let espnTabs = [];
   let yahooTabs = [];
@@ -137,13 +178,7 @@ async function pingDraftTabs() {
   const tabs = [...espnTabs, ...yahooTabs];
   await Promise.all(
     tabs.map(async (tab) => {
-      if (!tab || !tab.id) return;
-      try {
-        await chrome.tabs.sendMessage(tab.id, { type: "forceDraftRelay" });
-        pinged += 1;
-      } catch (_e) {
-        /* draft tab has no bridge yet */
-      }
+      if (await nudgeDraftTabScan(tab)) pinged += 1;
     })
   );
   return { ok: true, espn: espnTabs.length, yahoo: yahooTabs.length, pinged };
@@ -193,7 +228,7 @@ async function reconnectDraftRelay(detail) {
   };
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg !== "object") return false;
 
   if (msg.type === "getEspnCookies") {
@@ -223,6 +258,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === "espnDraftRelay") {
+    const pickCount = Array.isArray(msg.picks) ? msg.picks.length : 0;
     relayDraftToBrTabs("espnDraftRelay", {
       leagueId: String(msg.leagueId || ""),
       season: String(msg.season || ""),
@@ -232,12 +268,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       source: msg.source || "espn-draft-room",
       at: msg.at || Date.now(),
     })
-      .then(sendResponse)
+      .then((result) => {
+        notifyDraftTabRelayResult(sender && sender.tab && sender.tab.id, pickCount, result);
+        sendResponse(result);
+      })
       .catch(() => sendResponse({ ok: false, sent: 0, tabs: 0 }));
     return true;
   }
 
   if (msg.type === "yahooDraftRelay") {
+    const pickCount = Array.isArray(msg.picks) ? msg.picks.length : 0;
     relayDraftToBrTabs("yahooDraftRelay", {
       leagueId: String(msg.leagueId || ""),
       season: String(msg.season || ""),
@@ -247,7 +287,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       source: msg.source || "yahoo-draft-room",
       at: msg.at || Date.now(),
     })
-      .then(sendResponse)
+      .then((result) => {
+        notifyDraftTabRelayResult(sender && sender.tab && sender.tab.id, pickCount, result);
+        sendResponse(result);
+      })
       .catch(() => sendResponse({ ok: false, sent: 0, tabs: 0 }));
     return true;
   }
