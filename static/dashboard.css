@@ -15457,13 +15457,15 @@ img, svg, canvas {
         gap: 6px;
     }
 
-    /* Dashboard team pills: show only active pill on mobile, centered */
-    .manager-pills-row .manager-pill:not(.active) {
-        display: none;
+    /* Dashboard team pills: keep every manager visible in a horizontal scroll
+       row. Hiding inactive pills made scrollWidth collapse to one pill, which
+       also hid the carousel arrows — users were stuck on a single roster. */
+    .manager-pills-row {
+        justify-content: flex-start;
     }
 
-    .manager-pills-row {
-        justify-content: center;
+    .manager-pills-row .manager-pill {
+        display: inline-flex;
     }
 }
 
