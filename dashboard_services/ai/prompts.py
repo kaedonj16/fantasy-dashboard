@@ -3,6 +3,7 @@ import os
 from typing import Generator
 
 from dashboard_services.ai.client import clean_ai_text, get_ai_client
+from dashboard_services.ai.prose import scrub_ai_result_strings
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
 
@@ -24,16 +25,22 @@ POS_RANK_LABEL_NOTE = (
 REDRAFT_HONESTY_RULES = """
 REDRAFT HARD RULES:
 - Never use: retool, retooling, rebuild, rebuilding, window, dynasty, draft capital, future picks, multi-year.
-- Frame the team as contend, bubble, or out. If playoff_status is in the JSON, that is the team's standing. Do not override it.
-- If playoff_pct is present, cite it. Do not contradict it with "stay competitive" or "title contender."
-- draft_grade (if present) is how the draft was built, NOT a power ranking. If grade and playoff_pct disagree, say that in one clause (e.g. clean draft, middle-of-the-pack odds).
-- Never narrate missing or empty fields ("record context is missing", "undefined", "N/A", "no data"). If season_phase is preseason or record is blank/0-0, write "preseason, no games yet" and lean on playoff_pct and roster strength.
+- Frame the team as contend, bubble, or out using a FULL SENTENCE (e.g. "This team is on the playoff bubble…"). Never start a sentence with the bare labels contend, bubble, or out.
+- If playoff_status is in the JSON, that is the team's standing. Do not override it.
+- If playoff_pct is present, cite it as natural language ("playoff odds", e.g. "78.5% playoff odds"). NEVER write the raw key name playoff_pct (or any other JSON key) in the prose.
+- If playoff_pct is absent, omit odds entirely. Never write that odds were "not provided", "not available", "missing", or "N/A".
+- draft_grade (if present) is how the draft was built, NOT a power ranking. If grade and playoff odds disagree, say that in one clause (e.g. clean draft, middle-of-the-pack odds).
+- Never narrate missing or empty fields ("record context is missing", "undefined", "N/A", "no data", "not provided here"). If season_phase is preseason or record is blank/0-0, write "preseason, no games yet" and lean on roster strength (and playoff odds only when present).
 - Name specific players and the weakest starting slot from weakest_positions / position_strength. No "margin spots", "fringes", or "undefined."
+- Never echo JSON field names (snake_case keys like playoff_pct, playoff_status, season_phase, draft_grade) in user-facing text. Translate them into plain English.
 """.strip()
 
 DONT_NARRATE_GAPS = (
     "Never narrate missing or empty fields. If a value is blank, omit it; "
-    "do not write that context is missing."
+    "do not write that context is missing or \"not provided\". "
+    "Never echo JSON field names (e.g. playoff_pct) in prose — write "
+    "\"playoff odds\", \"playoff standing\", etc. Never start a sentence with "
+    "the bare labels contend, bubble, or out."
 )
 
 GM_MEMO_SYSTEM = """
@@ -74,9 +81,12 @@ and playoff odds. Never recommend draft picks or multi-year rebuilds.
 
 {REDRAFT_HONESTY_RULES}
 
-Outlook must state contend / bubble / out (from playoff_status when present)
-and cite playoff_pct when it exists. In preseason, do not apologize for a
-missing record — say no games have been played.
+Outlook must state contend / bubble / out in a full sentence (from
+playoff_status when present) — e.g. "This team is built to contend…" — never
+start with the bare word. Cite playoff odds when playoff_pct exists (e.g.
+"78.5% playoff odds"); never write the key name "playoff_pct", and if odds are
+absent omit them entirely (never say they were not provided). In preseason, do
+not apologize for a missing record — say no games have been played.
 
 Return a JSON object with these fields - each must be a single sentence or short phrase, NOT a list:
 - team_identity: one-line team identity (this-season shape, not a dynasty window)
@@ -145,7 +155,8 @@ that help win now. Never mention draft picks or multi-year rebuilds.
 {REDRAFT_HONESTY_RULES}
 
 Headline and posture must use contend / bubble / out (from playoff_status
-when present) and cite playoff_pct when it exists. Weakest room should name
+when present) and cite playoff odds when playoff_pct exists (never write the
+key name). Weakest room should name
 a real position from weakest_positions, not "balance" or "the fringes."
 
 Output format:
@@ -389,7 +400,8 @@ _TRADE_AI_SYSTEM_REDRAFT = """
     """ + REDRAFT_HONESTY_RULES + """
 
     Frame BOTH the viewer and opponent as contend / bubble / out from
-    playoff_status. Cite playoff_pct when present. If direction still says
+    playoff_status. Cite playoff odds when playoff_pct is present (never the key
+    name). If direction still says
     retool, rebuild, or balanced, ignore it and use playoff_status.
     If season_phase is preseason or record is blank/0-0, do not write that
     record context is missing. Say no games have been played.
@@ -652,7 +664,7 @@ Do not invent injuries, news, or player traits - use only the supplied JSON.
 """ + "\n" + REDRAFT_HONESTY_RULES + """
 
 Primary frame is playoff_status (contend / bubble / out) plus this week's rank.
-Cite playoff_pct when present. Do not use dynasty window labels even if win_window is in the JSON.
+Cite playoff odds when playoff_pct is present (never write "playoff_pct"). Do not use dynasty window labels even if win_window is in the JSON.
 Momentum: rising if playoff odds or scoring are ahead of the record; falling if the opposite; steady otherwise.
 If season_phase is preseason or every record is 0-0, skip the record and write from projected strength / playoff odds.
 """.strip()
@@ -841,7 +853,7 @@ CRITICAL RULES - follow exactly:
 7. Never write "TBD", "Unknown", or any placeholder. If you cannot fill both sides, skip that suggestion.
 8. Never mention draft picks, rookie picks, pick capital, or future drafts.
 """ + REDRAFT_HONESTY_RULES + """
-9. Frame the viewer as contend / bubble / out from playoff_status. Cite playoff_pct.
+9. Frame the viewer as contend / bubble / out from playoff_status. Cite playoff odds (never the key playoff_pct).
    Reason from remaining-season production, not rebuilds or draft capital.
 """).strip()
         user_prompt = f"""
@@ -999,4 +1011,4 @@ def generate_team_ai_result(team_ctx: dict, mode: str = "gm_memo") -> dict:
     if not isinstance(data, dict):
         raise ValueError(f"LLM {mode} did not return an object")
 
-    return data
+    return scrub_ai_result_strings(data)
