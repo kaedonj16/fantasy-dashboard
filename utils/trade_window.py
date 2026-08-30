@@ -16,6 +16,23 @@ SELL_THRESHOLD = 35.0
 # A deadline this close makes the verdict urgent.
 URGENT_WEEKS = 3
 
+# Redraft Season Hub cards are labeled "Trade deadline: …". Only show them
+# once the deadline is known and within this many weeks — otherwise Week 1
+# leagues (especially ESPN, which historically lacked trade_deadline) get a
+# misleading mid-season notif.
+REDRAFT_DEADLINE_WINDOW = 4
+
+
+def redraft_deadline_card_visible(weeks_to_deadline: Optional[int]) -> bool:
+    """True when a redraft league should paint the trade-deadline action card."""
+    if weeks_to_deadline is None:
+        return False
+    try:
+        weeks = int(weeks_to_deadline)
+    except (TypeError, ValueError):
+        return False
+    return 0 <= weeks <= REDRAFT_DEADLINE_WINDOW
+
 
 def trade_window_verdict(
     playoff_pct: float,

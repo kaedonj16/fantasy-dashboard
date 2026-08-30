@@ -1297,6 +1297,18 @@ def get_league_globals(season: int, league_id: str) -> Dict[str, Any]:
     if playoff_week_start:
         league_settings["playoff_week_start"] = playoff_week_start
 
+    # ESPN trade deadline is a calendar timestamp on tradeSettings.deadlineDate
+    # (epoch ms). Map it so Season Hub can gate the trade-deadline card instead
+    # of painting "Trade deadline: Playoff push" with no deadline context.
+    trade_settings = ((msettings_payload.get("settings") or {}).get("tradeSettings") or {})
+    deadline_raw = _safe_int(
+        trade_settings.get("deadlineDate") if isinstance(trade_settings, dict) else None
+    )
+    if deadline_raw and deadline_raw > 0:
+        # ESPN usually sends ms; accept seconds too.
+        deadline_ts = int(deadline_raw / 1000) if deadline_raw > 10**12 else int(deadline_raw)
+        league_settings["trade_deadline_ts"] = deadline_ts
+
     return {
         "scoring_settings": scoring_settings,
         "roster_positions": roster_positions,

@@ -161,21 +161,14 @@ def build_dashboard_body(ctx: dict) -> str:
     )
 
     gm_card_html = ""
-    if gm_memo_html:
-        gm_card_html = f"""
-        <div class="card gm-card">
-          <div class="card-header">
-            <h2>Front Office Report</h2>
-            <div class="subtle-label">{viewer.get("viewer_team_name") or "Your Team"}</div>
-          </div>
-          <div class="card-body">
-            {gm_memo_html}
-          </div>
-        </div>
-        """
-    elif viewer_roster_id:
-        # Free users (and premium when AI is down) get the same Generate control
-        # as the offseason hub. The button is PRO-gated in JS and /api/gm-memo.
+    if viewer_roster_id:
+        # Always expose Generate/Refresh. Premium page-load may prefill a cached
+        # report; without a button users cannot request a fresh one (common on
+        # ESPN week-1 leagues still holding a prior cache hit).
+        _btn_label = "Refresh Report" if gm_memo_html else "Generate Report"
+        _empty_display = "display:none;" if gm_memo_html else ""
+        _result_display = "" if gm_memo_html else "display:none;"
+        _result_body = gm_memo_html or ""
         gm_card_html = f"""
         <div class="card gm-card">
           <div class="card-header">
@@ -186,11 +179,11 @@ def build_dashboard_body(ctx: dict) -> str:
                     data-season="{html.escape(str(season))}"
                     data-platform="{html.escape(str(platform))}"
                     data-viewer-roster-id="{html.escape(str(viewer_roster_id))}">
-              Generate Report
+              {_btn_label}
             </button>
           </div>
           <div class="card-body">
-            <div class="otc-ai-empty" id="gm-memo-empty">
+            <div class="otc-ai-empty" id="gm-memo-empty" style="{_empty_display}">
               <div class="otc-ai-empty-sub">
                 Get personalized analysis on your roster, trade targets, and standings.
               </div>
@@ -201,7 +194,7 @@ def build_dashboard_body(ctx: dict) -> str:
                 <div class="loading-spinner" style="margin: 10px auto; width: 30px; height: 30px; border: 3px solid var(--border); border-radius: 50%; border-top-color: var(--accent); animation: spin 1s linear infinite; border-right-color: transparent;"></div>
               </div>
             </div>
-            <div id="gm-memo-result" style="display:none;"></div>
+            <div id="gm-memo-result" style="{_result_display}">{_result_body}</div>
           </div>
         </div>
         """

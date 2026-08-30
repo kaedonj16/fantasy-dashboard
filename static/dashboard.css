@@ -3028,14 +3028,6 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
     min-height: 0;
 }
 
-.gm-card {
-    border: 1px solid var(--border);
-    border-radius: 18px;
-    padding: 16px;
-    background: linear-gradient(180deg, rgba(18, 45, 75, .04), rgba(255, 255, 255, 1));
-    margin-bottom: 16px;
-}
-
 .gm-card .card-header {
     display: flex;
     align-items: center;
@@ -3044,12 +3036,15 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
     margin-bottom: 10px;
 }
 
+/* Front Office / AI memo cards — solid theme surface. The prior white-bottom
+   gradient (rgba(255,255,255,1)) read as a weird smear in dark mode. */
 .gm-card, .fo-brief-card, .ai-trade-card {
     border: 1px solid var(--border);
     border-radius: 18px;
     padding: 16px;
     margin-bottom: 16px;
-    background: linear-gradient(180deg, rgba(18, 45, 75, .04), rgba(255, 255, 255, 1));
+    background: var(--card);
+    box-shadow: var(--shadow-sm);
 }
 
 .main-two-col, .graphs-page, .standings-main.two-col-standings, .activity-page .activity-main, .card.recap-equal {

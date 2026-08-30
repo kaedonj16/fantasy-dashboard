@@ -65,6 +65,9 @@ def test_trade_window_card_skips_age_for_redraft():
     assert "if not is_redraft:" in body
     assert "stacking picks" in body  # dynasty copy still exists
     assert "if not is_redraft:" in body
+    # Week 1 ESPN was painting "Trade deadline: Playoff push" with no deadline.
+    assert "redraft_deadline_card_visible(weeks_to)" in body
+    assert "trade_deadline_ts" in body
 
 
 def test_trade_calc_hides_rebuilding_chip_for_redraft():

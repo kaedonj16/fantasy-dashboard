@@ -998,7 +998,10 @@ def render_matchup_slide(
             left_side: bool,
     ):
         if not p:
-            return "", 0.0, None, False, None
+            # Must match the 6-tuple success path: cell, actual, proj, bye,
+            # not_started, stats. Empty starter slots (zip_longest fill) hit
+            # this branch and used to 500 the dashboard on league switch.
+            return "", 0.0, None, False, False, None
 
         pid = p.get("pid")
         name = p.get("name", "")

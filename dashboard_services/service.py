@@ -240,6 +240,48 @@ def render_top_three(top_by_pos: dict, rosters, roster_map, positions: list = No
     return "<div class='sidebar-grid'>" + "".join(blocks) + "</div>"
 
 
+def _seed_zero_standings(owner_avatar: dict) -> pd.DataFrame:
+    """0-0 / 0 PF rows for every known team when no weeks are finalized yet.
+
+    Week 1 (and any stretch before the first finalized leg) used to leave
+    ``team_stats`` empty, which painted Standings as "No standings data
+    available" even though rosters and Season Hub were live. Seeding keeps the
+    table present; Value & Production Share already treats PF==0 as projected.
+    """
+    owners = [o for o in (owner_avatar or {}) if o]
+    if not owners:
+        return pd.DataFrame()
+    rows = []
+    for owner in owners:
+        rows.append({
+            "owner": owner,
+            "Wins": 0,
+            "Losses": 0,
+            "Ties": 0,
+            "G": 0,
+            "Win%": 0.0,
+            "PF": 0.0,
+            "PA": 0.0,
+            "AVG": 0.0,
+            "MAX": 0.0,
+            "MIN": 0.0,
+            "STD": 0.0,
+            "Record": "0-0",
+            "Last3": 0.0,
+            "Z_WinPercentage": 0.0,
+            "Z_Avg": 0.0,
+            "Z_Last3": 0.0,
+            "Z_Consistency": 0.0,
+            "Z_Ceiling": 0.0,
+            "PowerScore": 0.0,
+            "StreakType": "",
+            "StreakLen": 0,
+            "Streak": "",
+            "avatar": (owner_avatar or {}).get(owner),
+        })
+    return pd.DataFrame(rows)
+
+
 def finalize_team_stats(
         df_finalized: pd.DataFrame,
         owner_avatar: dict,
@@ -255,8 +297,18 @@ def finalize_team_stats(
     so a "through week N" view is produced by simply passing a week-capped
     ``df_finalized`` and ``last_week=N`` here — both paths agree by construction.
     """
+    if df_finalized is None or getattr(df_finalized, "empty", True):
+        seeded = _seed_zero_standings(owner_avatar)
+        if not seeded.empty:
+            return seeded
+
     records = _compute_team_records(df_finalized.copy())
     team_stats = _aggregate_team_stats(df_finalized.copy(), records)
+
+    if team_stats.empty:
+        seeded = _seed_zero_standings(owner_avatar)
+        if not seeded.empty:
+            return seeded
 
     team_stats = team_stats.merge(
         pd.Series(owner_avatar, name="avatar", dtype="object"),
@@ -404,7 +456,10 @@ def build_tables(
     df_weekly = pd.DataFrame(weekly_rows)
     if df_weekly.empty:
         print("Warning: No matchup data found.")
-        return pd.DataFrame(), pd.DataFrame(), {}
+        # Still seed 0-0 standings from rosters so Week 1 ESPN/Yahoo leagues
+        # with a delayed schedule feed aren't a blank Standings page.
+        seeded = _seed_zero_standings(owner_avatar)
+        return pd.DataFrame(), seeded, roster_map
         # raise SystemExit("No matchup data found. Check league ID and weeks.")
 
     df_weekly["points_against"] = np.nan

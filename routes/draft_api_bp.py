@@ -684,12 +684,16 @@ def _rid_key(value) -> Optional[str]:
         return str(value)
 
 
-def _map_playoff_odds_to_slots(odds: list, teams_in: list) -> list:
+def _map_playoff_odds_to_slots(
+    odds: list, teams_in: list, viewer_slot=None
+) -> list:
     """Attach each standings odds row to a draft-board slot.
 
     Live recap keys chips by board slot (and slot 0 = "You"). Standings keys by
     ``roster_id``. Prefer the posted ``roster_id``, then slot==roster_id, then
-    team name.
+    team name. Slot 0 is a sentinel for the viewer's consolidated "You" row —
+    when its roster_id misses, mirror odds from ``viewer_slot`` or any sibling
+    seat that shares the same roster_id.
     """
     by_rid: dict[str, dict] = {}
     by_name: dict[str, dict] = {}
@@ -722,6 +726,48 @@ def _map_playoff_odds_to_slots(odds: list, teams_in: list) -> list:
         if row is None:
             continue
         out.append(_format_playoff_row(row, slot))
+
+    # Fill missing "You" (slot 0) from the viewer's real seat or a sibling rid.
+    have_zero = any(
+        r.get("slot") == 0 or str(r.get("slot")) == "0" for r in out
+    )
+    if have_zero:
+        return out
+
+    sibling = None
+    try:
+        vs = int(viewer_slot) if viewer_slot not in (None, "") else None
+    except (TypeError, ValueError):
+        vs = None
+    if vs:
+        sibling = next(
+            (
+                r for r in out
+                if r.get("slot") == vs or str(r.get("slot")) == str(vs)
+            ),
+            None,
+        )
+    if sibling is None:
+        you = next(
+            (
+                t for t in teams_in
+                if t.get("slot") == 0 or str(t.get("slot")) == "0"
+            ),
+            None,
+        )
+        you_rid = _rid_key((you or {}).get("roster_id")) if you else None
+        if you_rid:
+            sibling = next(
+                (
+                    r for r in out
+                    if _rid_key(r.get("roster_id")) == you_rid
+                ),
+                None,
+            )
+            if sibling is None and you_rid in by_rid:
+                sibling = by_rid[you_rid]
+    if sibling is not None:
+        out.append(_format_playoff_row(sibling, 0))
     return out
 
 
@@ -896,7 +942,9 @@ def api_draft_playoff_odds():
         except Exception as exc:
             logger.warning("[draft-playoff-odds] league sim failed: %s", exc)
             res = []
-        mapped = _map_playoff_odds_to_slots(res, teams_in)
+        mapped = _map_playoff_odds_to_slots(
+            res, teams_in, viewer_slot=data.get("viewer_slot"),
+        )
         if mapped:
             settings = league_ctx.get("league_settings") or {}
             playoff_teams = int(settings.get("playoff_teams") or 6)
@@ -927,7 +975,9 @@ def api_draft_playoff_odds():
         return jsonify({"error": "sim_failed"}), 502
 
     return jsonify({
-        "odds": _map_playoff_odds_to_slots(res, teams_in),
+        "odds": _map_playoff_odds_to_slots(
+            res, teams_in, viewer_slot=data.get("viewer_slot"),
+        ),
         "playoff_teams": playoff_teams,
         "source": "board",
     })
