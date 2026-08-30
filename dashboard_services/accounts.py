@@ -248,6 +248,35 @@ def get_espn_league_credentials(account_id: int, league_id: str, season: int) ->
     return get_provider_league_credentials(account_id, "espn", league_id, season)
 
 
+def get_any_espn_account_credentials(account_id: int) -> Optional[dict]:
+    """Any connected ESPN SWID/espn_s2 on this Google account.
+
+    Private ESPN leagues need cookies. Users often paste them once when linking
+    the first league; later ESPN leagues on the same account should be able to
+    reuse that login for Redzone / live fetches.
+    """
+    if not account_id:
+        return None
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT c.encrypted_credentials FROM user_leagues l
+               JOIN fantasy_provider_connections c ON c.id = l.provider_connection_id
+               WHERE l.account_id = %s AND l.platform = 'espn'
+                 AND c.status = 'connected' AND c.encrypted_credentials IS NOT NULL
+               ORDER BY l.season DESC, c.updated_at DESC NULLS LAST
+               LIMIT 1""",
+            (int(account_id),),
+        ).fetchone()
+    if not row or not row["encrypted_credentials"]:
+        return None
+    credentials = _decrypt_provider_credentials(row["encrypted_credentials"])
+    if credentials is None:
+        logger.warning("Unable to decrypt stored espn credentials for account fallback")
+    return credentials
+
+
 def stage_private_provider_connection(
     provider: str, league_id: str, season: int, name: str, credentials: dict,
 ) -> str:

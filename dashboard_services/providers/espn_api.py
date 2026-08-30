@@ -327,12 +327,20 @@ def _league_cached(season: int, league_id: str) -> League:
     try:
         from flask import has_request_context, session
         if has_request_context() and session.get("account_id"):
-            from dashboard_services.accounts import get_espn_league_credentials
+            from dashboard_services.accounts import (
+                get_espn_league_credentials, get_any_espn_account_credentials,
+            )
             stored = get_espn_league_credentials(session["account_id"], league_id, season) or {}
-            # An authenticated account may use only credentials attached to its
-            # own saved league; never fall back to another account/server cookie.
+            # Prefer credentials attached to this saved league. If this league was
+            # linked without cookies (or season-bumped away from the row that has
+            # them), reuse any ESPN login on the same Google account — never env /
+            # another account's cookies.
             espn_s2 = stored.get("espn_s2")
             swid = stored.get("swid")
+            if not (espn_s2 and swid):
+                any_creds = get_any_espn_account_credentials(session["account_id"]) or {}
+                espn_s2 = any_creds.get("espn_s2")
+                swid = any_creds.get("swid")
         elif has_request_context() and session.get("pending_provider_connection_token"):
             from dashboard_services.accounts import peek_private_espn_connection
             staged = peek_private_espn_connection(
