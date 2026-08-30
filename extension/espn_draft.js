@@ -14,8 +14,10 @@
   const RECONNECT_SETTLE_MS = 1200;
   const RETRY_MS = 3000;
   const RECONNECT_COOLDOWN_MS = 5000;
+  const RELAY_SUCCESS_STICKY_MS = 120000;
   let lastDelivered = "";
   let lastPickCount = 0;
+  let lastRelaySuccessAt = 0;
   let pendingPayload = null;
   let retryTimer = null;
   let lastManualReconnectAt = 0;
@@ -99,17 +101,31 @@
     el.style.background = ok ? "#065f46" : "#0f172a";
   }
 
+  function relaySuccessSticky() {
+    return lastPickCount > 0 && Date.now() - lastRelaySuccessAt < RELAY_SUCCESS_STICKY_MS;
+  }
+
+  function showConnectedChip(count) {
+    setChip(
+      count > 0
+        ? "BR Fantasy · connected · " + count + " picks"
+        : "BR Fantasy · connected · watching for picks",
+      true
+    );
+  }
+
   function applyRelayStatus(detail, force) {
     if (!detail) return;
     const count = Number(detail.pickCount || 0);
     if (detail.sent > 0) {
-      lastPickCount = count;
-      setChip(
-        count > 0
-          ? "BR Fantasy · connected · " + count + " picks"
-          : "BR Fantasy · connected · watching for picks",
-        true
-      );
+      lastPickCount = Math.max(lastPickCount, count);
+      lastRelaySuccessAt = Date.now();
+      showConnectedChip(lastPickCount);
+      return;
+    }
+    if (relaySuccessSticky() && !force) {
+      showConnectedChip(lastPickCount);
+      if (pendingPayload) scheduleRetry();
       return;
     }
     if (count > 0 || force) {
@@ -247,12 +263,16 @@
           pendingPayload = null;
           clearRetry();
           lastPickCount = payload.picks.length;
+          lastRelaySuccessAt = Date.now();
           setChip(
             grew
               ? "BR Fantasy · synced " + payload.picks.length + " picks"
               : "BR Fantasy · connected · " + payload.picks.length + " picks",
             true
           );
+        } else if (relaySuccessSticky()) {
+          showConnectedChip(lastPickCount);
+          scheduleRetry();
         } else {
           setChip(relayFailureText(resp), false);
           scheduleRetry();
@@ -284,6 +304,7 @@
     pendingPayload = payload;
     const fp = payloadFingerprint(payload);
     if (fp !== lastDelivered) lastPickCount = Math.max(lastPickCount, payload.picks.length);
+    relayPending();
   }
 
   listenFromMain(EVENT, forward);

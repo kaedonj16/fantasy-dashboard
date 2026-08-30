@@ -31,9 +31,52 @@ const YAHOO_DRAFT_TAB_URLS = [
 ];
 
 const RECONNECT_COOLDOWN_MS = 5000;
+const SESSION_TABS_KEY = "brDraftRoomTabs";
 let lastReconnectAt = 0;
 /** @type {Map<number, {href:string, platform:string, season:string, leagueId:string, at:number}>} */
 const brDraftRoomTabs = new Map();
+let tabsLoaded = false;
+
+async function loadBrDraftRoomTabs() {
+  if (tabsLoaded) return;
+  tabsLoaded = true;
+  try {
+    const data = await chrome.storage.session.get(SESSION_TABS_KEY);
+    const entries = data[SESSION_TABS_KEY];
+    if (!Array.isArray(entries)) return;
+    for (const row of entries) {
+      if (!Array.isArray(row) || row.length < 2) continue;
+      const tabId = Number(row[0]);
+      const meta = row[1];
+      if (tabId && meta && typeof meta === "object") brDraftRoomTabs.set(tabId, meta);
+    }
+  } catch (_e) {
+    /* ignore */
+  }
+}
+
+async function persistBrDraftRoomTabs() {
+  try {
+    await chrome.storage.session.set({
+      [SESSION_TABS_KEY]: Array.from(brDraftRoomTabs.entries()),
+    });
+  } catch (_e) {
+    /* ignore */
+  }
+}
+
+async function pruneStaleDraftRoomTabs() {
+  let changed = false;
+  for (const tabId of brDraftRoomTabs.keys()) {
+    try {
+      await chrome.tabs.get(tabId);
+    } catch (_e) {
+      brDraftRoomTabs.delete(tabId);
+      changed = true;
+    }
+  }
+  if (changed) await persistBrDraftRoomTabs();
+}
 
 function parseDraftRoomHref(href) {
   try {
@@ -57,6 +100,7 @@ function registerBrDraftRoomTab(tabId, meta) {
     leagueId: String((meta && meta.leagueId) || ""),
     at: Date.now(),
   });
+  void persistBrDraftRoomTabs();
 }
 
 function leagueIdsMatch(a, b) {
@@ -70,10 +114,13 @@ function leagueIdsMatch(a, b) {
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  brDraftRoomTabs.delete(Number(tabId));
+  if (!brDraftRoomTabs.delete(Number(tabId))) return;
+  void persistBrDraftRoomTabs();
 });
 
 async function queryBrDraftRoomTabs() {
+  await loadBrDraftRoomTabs();
+  await pruneStaleDraftRoomTabs();
   const seen = new Set();
   const out = [];
 
@@ -154,6 +201,24 @@ async function injectPageEvent(tabId, eventName, detail) {
         document.dispatchEvent(
           new CustomEvent(evt, { detail: data, bubbles: true, composed: true })
         );
+        if (!data || !Array.isArray(data.picks) || !data.picks.length) return;
+        var path =
+          evt.indexOf("yahoo") >= 0 ? "/api/draft/yahoo-relay" : "/api/draft/espn-relay";
+        fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          cache: "no-store",
+          body: JSON.stringify({
+            leagueId: data.leagueId,
+            season: data.season,
+            inProgress: data.inProgress !== false,
+            drafted: !!data.drafted,
+            picks: data.picks,
+            source: data.source || "extension-inject",
+            forceReplay: true,
+          }),
+        }).catch(function () {});
       },
       args: [eventName, detail || {}],
     });
@@ -364,6 +429,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       picks: Array.isArray(msg.picks) ? msg.picks : [],
       source: msg.source || "espn-draft-room",
       at: msg.at || Date.now(),
+      forceReplay: true,
     })
       .then((result) => {
         notifyDraftTabRelayResult(sender && sender.tab && sender.tab.id, pickCount, result);
@@ -383,6 +449,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       picks: Array.isArray(msg.picks) ? msg.picks : [],
       source: msg.source || "yahoo-draft-room",
       at: msg.at || Date.now(),
+      forceReplay: true,
     })
       .then((result) => {
         notifyDraftTabRelayResult(sender && sender.tab && sender.tab.id, pickCount, result);

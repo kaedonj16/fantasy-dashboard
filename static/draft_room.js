@@ -5884,30 +5884,38 @@
   }
   function applyExtensionRelay(detail, expectedSource){
     if (!detail || !Array.isArray(detail.picks)) return;
-    if (!state || state.mode !== 'live') return;
-    if (_relayPlatform(state.syncSource || cfg.platform) !== expectedSource) return;
-    if (_espnAuthFailed) return;
     var lid = String(detail.leagueId || detail.league_id || '');
-    if (!_leagueIdsMatch(lid, cfg.leagueId)) return;
+    if (!cfg.leagueId || !_leagueIdsMatch(lid, cfg.leagueId)) return;
     var season = String(detail.season || '');
-    if (season && cfg.season && String(cfg.season) !== season && String(state.season || '') !== season) return;
+    if (season && cfg.season && String(cfg.season) !== season) return;
+    if (state && state.mode === 'live' && season && state.season
+        && String(state.season) !== season) return;
     _espnExtLastSeen = Date.now();
-    _espnRelayActive = true;
-    _espnFallbackShown = false;
-    hideEspnFallback();
-    showEspnTools();
+    var liveReady = !!(state && state.mode === 'live'
+      && _relayPlatform(state.syncSource || cfg.platform) === expectedSource
+      && !_espnAuthFailed);
+    if (liveReady){
+      _espnRelayActive = true;
+      _espnFallbackShown = false;
+      hideEspnFallback();
+      showEspnTools();
+    } else if (_relayPlatform(cfg.platform) === expectedSource) {
+      showEspnTools();
+    } else {
+      return;
+    }
     var fp = String(detail.fingerprint || '') || (
       lid + '|' + season + '|' + detail.picks.length + '|'
       + (detail.picks.length ? (detail.picks[detail.picks.length - 1].overallPickNumber || detail.picks[detail.picks.length - 1].playerId || '') : '')
     );
-    if (!detail.forceReplay && fp && fp === _espnRelayLastFp) return;
-    if (_espnRelayInFlight) return;
-    _espnRelayInFlight = true;
+    if (liveReady && !detail.forceReplay && fp && fp === _espnRelayLastFp) return;
+    if (liveReady && _espnRelayInFlight) return;
+    if (liveReady) _espnRelayInFlight = true;
     _espnExtLastSeen = Date.now();
     function _finishRelay(normalizedPicks, meta){
-      _espnRelayInFlight = false;
-      if (!state || state.mode !== 'live') return;
-      if (_relayPlatform(state.syncSource || cfg.platform) !== expectedSource) return;
+      if (liveReady) _espnRelayInFlight = false;
+      if (!state || state.mode !== 'live') return false;
+      if (_relayPlatform(state.syncSource || cfg.platform) !== expectedSource) return false;
       _espnRelayActive = true;
       _espnExtLastSeen = Date.now();
       _espnFallbackShown = false;
@@ -5953,18 +5961,19 @@
       headers: headers,
       body: JSON.stringify({
         leagueId: lid || cfg.leagueId,
-        season: season || cfg.season || state.season,
+        season: season || cfg.season || (state && state.season) || '',
         inProgress: detail.inProgress !== false,
         drafted: !!detail.drafted,
         picks: detail.picks,
-        source: detail.source || 'extension'
+        source: detail.source || 'extension',
+        forceReplay: !!detail.forceReplay
       }),
       cache: 'no-store',
       credentials: 'same-origin'
     })
       .then(function(r){ return r.json().then(function(body){ return { ok: r.ok, body: body }; }); })
       .then(function(res){
-        if (!state || state.mode !== 'live'){ _espnRelayInFlight = false; return; }
+        if (!liveReady){ return; }
         var d = res.body || {};
         var picks = Array.isArray(d.picks) ? d.picks : [];
         if (res.ok && liveSelectionCount(picks) > 0){
@@ -5976,6 +5985,7 @@
         if (window.console) console.warn('[draft] extension relay had no mappable picks', res.ok ? d : res);
       })
       .catch(function(err){
+        if (!liveReady) return;
         _espnRelayInFlight = false;
         var fallback = _mapExtensionPicksRaw(detail.picks);
         if (!_finishRelay(fallback, { fingerprint: fp, in_progress: true, status: 'drafting' }) && window.console){
