@@ -7799,10 +7799,10 @@ def _build_offseason_standings_body(ctx: dict) -> str:
           <div class="card-tabs">
             <div class="tab-strip dynasty-value-strip">
               <button class="tab-btn active" data-tab="standings">Value Rankings</button>
-              <div class="tab-panels" style="padding: 0;">
-                <div class="tab-panel active" data-tab="standings">
-                  {table_html}
-                </div>
+            </div>
+            <div class="tab-panels" style="padding: 0;">
+              <div class="tab-panel active" data-tab="standings">
+                {table_html}
               </div>
             </div>
           </div>
