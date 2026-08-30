@@ -88,3 +88,16 @@ def test_my_leagues_cards_do_not_overflow_on_mobile():
     assert ".pf-lg-card .pf-arch" in fn
     assert "flex-shrink:0" in fn
     assert ".pf-lg-open" in fn
+
+
+def test_my_leagues_fav_and_arch_share_a_tools_group():
+    """Favorite star + archetype pill must stay spaced on narrow cards."""
+    fn = _portfolio_fn()
+    assert "def _lg_tools(" in fn
+    assert "class='pf-lg-tools'" in fn
+    assert ".pf-lg-tools{display:flex;align-items:center;gap:8px;" in fn
+    assert "width:28px;height:28px;display:inline-flex" in fn
+    assert ".pf-lg-card .pf-arch{flex:1 1 auto;min-width:0;max-width:100%;" in fn
+    # Star and arch are no longer loose siblings of the title row.
+    assert fn.count("_lg_tools(") >= 3
+    assert "pf-lg-fav' aria-label='Favorite league'" not in fn.split("def _lg_tools")[0]

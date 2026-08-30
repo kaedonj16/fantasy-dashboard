@@ -24590,6 +24590,17 @@ def build_portfolio_body(
             f"data-league='{_lid}' title='Unlink this league' aria-label='Unlink league'>&times;</button>"
         )
 
+    def _lg_tools(*extra):
+        # Keep the favorite star and trailing chips in one flex group so the
+        # archetype pill can't slide over the star on narrow cards.
+        bits = "".join(x for x in extra if x)
+        return (
+            "<div class='pf-lg-tools'>"
+            "<button type='button' class='pf-lg-fav' aria-label='Favorite league' "
+            "aria-pressed='false' title='Favorite'>&#9733;</button>"
+            f"{bits}</div>"
+        )
+
     _PLAT_LABELS = {
         "sleeper": "Sleeper",
         "espn": "ESPN",
@@ -24695,8 +24706,7 @@ def build_portfolio_body(
                 f"<div class='pf-lg-top'>"
                 f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
                 f"{_lg_id(name_link, plat)}"
-                f"<button type='button' class='pf-lg-fav' aria-label='Favorite league' aria-pressed='false' title='Favorite'>&#9733;</button>"
-                f"{_unlink_btn(plat, lid)}"
+                f"{_lg_tools(_unlink_btn(plat, lid))}"
                 f"</div>"
                 f"{countdown}"
                 f"<div class='pf-lg-pending-row'>"
@@ -24713,8 +24723,7 @@ def build_portfolio_body(
                 f"<div class='pf-lg-top'>"
                 f"<span class='pf-lg-crest' style='background:var(--border);color:var(--text-muted);'>{_ini}</span>"
                 f"{_lg_id(name_muted, plat)}"
-                f"<button type='button' class='pf-lg-fav' aria-label='Favorite league' aria-pressed='false' title='Favorite'>&#9733;</button>"
-                f"{_unlink_btn(plat, lid)}"
+                f"{_lg_tools(_unlink_btn(plat, lid))}"
                 f"</div>"
                 f"<div class='pf-lg-err'>couldn’t load</div>"
                 f"</div>"
@@ -24745,8 +24754,7 @@ def build_portfolio_body(
         _arch_color = _ARCH_COLORS.get(arch, "#6b7280")
         arch_badge = f"<span class='pf-arch' style='background:{_arch_color};'>{arch}</span>"
 
-        off_note = f"<span style='font-size:11px;color:var(--text-subtle);margin-left:4px;'>(Off)</span>" if lg.get(
-            "offseason") else ""
+        off_note = "<span class='pf-lg-off'>(Off)</span>" if lg.get("offseason") else ""
 
         pos_ranks = lg.get("pos_user_rank") or {}
         rank_chips = ""
@@ -24771,9 +24779,7 @@ def build_portfolio_body(
             f"<div class='pf-lg-top'>"
             f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
             f"{_lg_id(name_link, plat, off_note)}"
-            f"<button type='button' class='pf-lg-fav' aria-label='Favorite league' aria-pressed='false' title='Favorite'>&#9733;</button>"
-            f"{arch_badge}"
-            f"{_unlink_btn(plat, lid)}"
+            f"{_lg_tools(arch_badge, _unlink_btn(plat, lid))}"
             f"</div>"
             f"<div class='pf-lg-mid'>"
             f"<div><div class='pf-lg-v {rec_cls2}'>{rec}</div><div class='pf-lg-l'>Record</div></div>"
@@ -24792,17 +24798,19 @@ def build_portfolio_body(
         ".pf-lg-top{display:flex;align-items:center;gap:10px;min-width:0;}"
         ".pf-lg-crest{width:34px;height:34px;border-radius:9px;flex:0 0 auto;display:grid;place-items:center;"
         "color:#fff;font-weight:800;font-size:13px;}"
-        ".pf-lg-id{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:2px;}"
-        ".pf-lg-title{min-width:0;max-width:100%;display:flex;align-items:baseline;gap:4px;}"
+        ".pf-lg-id{flex:1;min-width:0;overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;gap:2px;}"
+        ".pf-lg-title{min-width:0;max-width:100%;display:flex;align-items:baseline;gap:6px;}"
         ".pf-lg-name{font-weight:800;font-size:14.5px;text-decoration:none;color:var(--text);"
-        "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-block;max-width:100%;vertical-align:bottom;}"
+        "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;min-width:0;flex:1 1 auto;}"
         ".pf-lg-name:hover{color:var(--accent);}"
+        ".pf-lg-off{font-size:11px;color:var(--text-subtle);flex:0 0 auto;white-space:nowrap;}"
         ".pf-lg-plat{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;line-height:1.2;}"
         ".pf-lg-plat-sleeper{color:#6C4BF0;}"
         ".pf-lg-plat-espn{color:#D33A46;}"
         ".pf-lg-plat-yahoo{color:#12A4A0;}"
         ".pf-lg-plat-mfl{color:#3B7DD8;}"
         ".pf-lg-plat-fleaflicker{color:#E08A1E;}"
+        ".pf-lg-tools{display:flex;align-items:center;gap:8px;flex:0 1 auto;min-width:0;max-width:48%;}"
         ".pf-lg-mid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;text-align:center;min-width:0;}"
         ".pf-lg-mid.pf-lg-draft{grid-template-columns:1fr;}"
         ".pf-lg-v{font-size:16px;font-weight:800;}"
@@ -24815,11 +24823,13 @@ def build_portfolio_body(
         ".pf-lg-pending-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;"
         "border-top:1px solid var(--grid);padding-top:10px;margin-top:2px;}"
         ".pf-lg-err{font-size:12px;color:var(--text-subtle);}"
-        ".pf-lg-fav{flex:0 0 auto;background:none;border:0;cursor:pointer;font-size:16px;line-height:1;"
-        "color:var(--text-subtle);padding:2px;opacity:.5;transition:opacity .12s,color .12s;}"
+        ".pf-lg-fav{flex:0 0 auto;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;"
+        "background:none;border:0;cursor:pointer;font-size:18px;line-height:1;margin:0;padding:0;"
+        "color:var(--text-subtle);opacity:.5;transition:opacity .12s,color .12s;}"
         ".pf-lg-fav:hover{opacity:1;color:var(--gold,#ca8a04);}"
         ".pf-lg-fav.on{opacity:1;color:var(--gold,#ca8a04);}"
-        ".pf-lg-card .pf-arch{flex:0 1 auto;max-width:42%;overflow:hidden;text-overflow:ellipsis;}"
+        ".pf-lg-card .pf-arch{flex:1 1 auto;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;}"
+        ".pf-lg-tools .pf-unlink{margin-left:0;flex:0 0 auto;}"
         ".pf-lg-pager{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:14px;}"
         ".pf-lg-pager button{border:1px solid var(--grid);background:var(--card);color:var(--text);"
         "border-radius:8px;padding:5px 12px;font-size:13px;font-weight:700;cursor:pointer;}"
@@ -24829,10 +24839,11 @@ def build_portfolio_body(
         ".pf-lg-grid{grid-template-columns:minmax(0,1fr);}"
         ".pf-lg-card{padding:12px;}"
         ".pf-lg-top{gap:8px;}"
+        ".pf-lg-tools{gap:8px;max-width:46%;}"
         ".pf-lg-mid{gap:6px;}"
         ".pf-lg-foot{gap:8px;}"
         ".pf-lg-foot .pf-pos-chips{gap:6px 10px;}"
-        ".pf-lg-card .pf-arch{font-size:.58em;padding:2px 6px;max-width:38%;}"
+        ".pf-lg-card .pf-arch{font-size:.58em;padding:2px 6px;}"
         "}"
         "</style>"
         f"<div class='card'>"
