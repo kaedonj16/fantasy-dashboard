@@ -554,6 +554,24 @@ def simulate_swap_impact(
     }
 
 
+def shape_playoff_impact_for_league(result: dict, is_redraft: bool) -> dict:
+    """Redraft has no future draft capital or multi-year age window.
+
+    Drop top-3 pick odds and leave ``outlook`` unset so the Playoff Impact
+    card only shows this-season odds, wins, and PPG.
+    """
+    out = dict(result or {})
+    out["scoring_type"] = "redraft" if is_redraft else "dynasty"
+    if not is_redraft:
+        return out
+    for bucket in ("before", "after", "delta"):
+        row = dict(out.get(bucket) or {})
+        row.pop("top3_pick_pct", None)
+        out[bucket] = row
+    out["outlook"] = None
+    return out
+
+
 def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
     """
     Build (ppg_map, pos_map).

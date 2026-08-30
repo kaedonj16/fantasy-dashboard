@@ -5662,25 +5662,37 @@ window.initTradePage = function initTradePage(root = document) {
         </div>`;
       })() : "";
 
-      // ── Future Outlook: the counterweight to the win-now metrics ──────────
-      const outlook   = data.outlook || {};
+      // ── Future Outlook: dynasty-only counterweight to win-now metrics ─────
+      const isRedraft = (data.scoring_type || getScoringType()) === "redraft";
+      const outlook   = (!isRedraft && data.outlook) ? data.outlook : {};
       const ageDelta  = outlook.age_delta;          // < 0 means getting younger
       const valDelta  = outlook.value_delta || 0;   // > 0 means banking value
       const poD       = data.delta.playoff_pct;
-      const pickD     = data.delta.top3_pick_pct;
+      const pickD     = isRedraft ? null : data.delta.top3_pick_pct;
 
       // Roster-wide age shifts are small (one swap on a full roster), so use a
       // tighter threshold than the old traded-players-only comparison.
-      const younger     = ageDelta != null && ageDelta <= -0.2;
-      const older       = ageDelta != null && ageDelta >= 0.2;
-      const bankingVal  = valDelta >= 50;
-      const sheddingVal = valDelta <= -50;
-      const pickUp      = pickD >= 1;
-      const pickDown    = pickD <= -1;
+      const younger     = !isRedraft && ageDelta != null && ageDelta <= -0.2;
+      const older       = !isRedraft && ageDelta != null && ageDelta >= 0.2;
+      const bankingVal  = !isRedraft && valDelta >= 50;
+      const sheddingVal = !isRedraft && valDelta <= -50;
+      const pickUp      = pickD != null && pickD >= 1;
+      const pickDown    = pickD != null && pickD <= -1;
 
       // Classify the deal so the user reads the trade-off, not just the red.
       let vTitle, vSub, vColor, vIcon;
-      if (poD <= -1) {
+      if (isRedraft) {
+        if (poD <= -1) {
+          vColor = "#dc2626"; vIcon = "fa-arrow-trend-down"; vTitle = "Playoff Downgrade";
+          vSub = "Lowers your playoff odds this season.";
+        } else if (poD >= 1) {
+          vColor = "#059669"; vIcon = "fa-arrow-trend-up"; vTitle = "Playoff Upgrade";
+          vSub = "Raises your playoff odds this season.";
+        } else {
+          vColor = "#475569"; vIcon = "fa-scale-balanced"; vTitle = "Neutral";
+          vSub = "Little change to your playoff odds this season.";
+        }
+      } else if (poD <= -1) {
         const gains = [];
         if (pickUp)     gains.push("better draft positioning");
         if (younger)    gains.push("a younger core");
@@ -5753,11 +5765,11 @@ window.initTradePage = function initTradePage(root = document) {
           </div>
         </div>` : "";
 
-      const pickStat = data.before.top3_pick_pct != null
+      const pickStat = (!isRedraft && data.before.top3_pick_pct != null)
         ? stat("Top-3 Pick", data.before.top3_pick_pct.toFixed(1), data.after.top3_pick_pct.toFixed(0), data.delta.top3_pick_pct, "%")
         : "";
 
-      const outlookGrid = (pickStat || ageStat || valStat) ? `
+      const outlookGrid = (!isRedraft && (pickStat || ageStat || primeStat)) ? `
         <div class="pi-section-label">Future Outlook</div>
         <div class="pi-grid">
           ${pickStat}${ageStat}${primeStat}

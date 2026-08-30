@@ -449,9 +449,9 @@ def build_trade_calculator_body(
                     <div class="pi-tooltip-row"><strong>Playoff Odds</strong> Monte Carlo sim. % of seasons your roster makes the playoffs.</div>
                     <div class="pi-tooltip-row"><strong>Proj. Wins</strong> Expected regular-season win total based on your projected PPG.</div>
                     <div class="pi-tooltip-row"><strong>Proj. PPG</strong> Projected points per game using your starters after the swap.</div>
-                    <div class="pi-tooltip-row"><strong>Top-3 Pick</strong> Odds of finishing bottom-3 and landing a top-3 rookie pick.</div>
+                    {"" if scoring_type_val == "redraft" else '''<div class="pi-tooltip-row"><strong>Top-3 Pick</strong> Odds of finishing bottom-3 and landing a top-3 rookie pick.</div>
                     <div class="pi-tooltip-row"><strong>Roster Age</strong> Value-weighted avg age of your whole roster before vs after the swap.</div>
-                    <div class="pi-tooltip-row"><strong>Prime Yrs Left</strong> Value-weighted avg of seasons until age 30 for the traded players. Higher is more prime years ahead.</div>
+                    <div class="pi-tooltip-row"><strong>Prime Yrs Left</strong> Value-weighted avg of seasons until age 30 for the traded players. Higher is more prime years ahead.</div>'''}
                   </div>
                 </div>
               </div>

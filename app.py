@@ -14945,6 +14945,7 @@ def api_trade_eval_playoff_impact():
         from data_building.simulate_playoff_odds import (
             build_sim_state as _build_sim_state,
             simulate_swap_impact as _simulate_swap_impact,
+            shape_playoff_impact_for_league as _shape_pi,
         )
         ctx = build_league_context(platform, league_id, season)
         sim_state = _build_sim_state(ctx, platform)
@@ -14952,14 +14953,15 @@ def api_trade_eval_playoff_impact():
             return jsonify({"available": False, "reason": "season_complete"})
 
         result = _simulate_swap_impact(sim_state, roster_id, give_ids, get_ids)
+        is_redraft = _league_is_redraft(ctx)
+        result = _shape_pi(result, is_redraft)
 
-        # Future outlook: value-weighted age + total dynasty value of the
-        # players coming in vs going out. This is the counterweight to the
-        # win-now playoff metrics - getting younger / banking value is the
-        # upside when a deal dents this season's odds (and vice versa).
-        is_sf = _is_superflex_lineup(ctx.get("roster_positions") or [])
-        current_pids = sim_state.get("roster_pid_map", {}).get(roster_id, [])
-        result["outlook"] = _trade_future_outlook(give_ids, get_ids, is_sf, current_pids)
+        # Dynasty only: value-weighted age + pick capital as the counterweight
+        # to this season's odds. Redraft has no future window.
+        if not is_redraft:
+            is_sf = _is_superflex_lineup(ctx.get("roster_positions") or [])
+            current_pids = sim_state.get("roster_pid_map", {}).get(roster_id, [])
+            result["outlook"] = _trade_future_outlook(give_ids, get_ids, is_sf, current_pids)
 
         return jsonify(result)
 
@@ -25917,8 +25919,9 @@ def page_trade_card(share_id: str):
                     ("Playoff Odds", _pi_pct(dlt.get("playoff_pct"))),
                     ("Proj. Wins", _pi_sign(dlt.get("avg_final_wins"))),
                     ("PPG", _pi_sign(dlt.get("avg_ppg"))),
-                    ("Top-3 Pick", _pi_pct(dlt.get("top3_pick_pct"))),
                 ]
+                if str(pi.get("scoring_type") or "").lower() != "redraft" and dlt.get("top3_pick_pct") is not None:
+                    rows_pi.append(("Top-3 Pick", _pi_pct(dlt.get("top3_pick_pct"))))
                 cells = "".join(
                     f'<div class="pi-cell"><div class="pi-label">{lbl}</div>'
                     f'<div class="pi-val {("pi-pos" if "+" in val else "pi-neg") if val != "—" else ""}">{val}</div></div>'
