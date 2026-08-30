@@ -8,7 +8,7 @@ EXT = REPO / "extension"
 
 def test_extension_manifest_includes_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.3.7"
+    assert manifest["version"] == "1.3.9"
     assert "cookies" in manifest["permissions"]
     assert "scripting" in manifest["permissions"]
     assert "tabs" not in manifest.get("permissions", [])
@@ -30,6 +30,7 @@ def test_extension_manifest_includes_draft_scripts():
 
 
 def test_extension_relay_message_contract():
+    manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
     bg = (EXT / "background.js").read_text(encoding="utf-8")
     main = (EXT / "espn_draft_main.js").read_text(encoding="utf-8")
     iso = (EXT / "espn_draft.js").read_text(encoding="utf-8")
@@ -42,13 +43,24 @@ def test_extension_relay_message_contract():
     assert "relayToBackground" in main
     assert "chrome.runtime.sendMessage" in main
     assert "brfantasy:espn-relay-status" in main
-    assert "finishReconnect" in iso
-    assert "draftRelayResult" in iso
-    assert "relayPending" in iso
+    assert "brfantasy:espn-observer-ready" in main
+    assert "pollEspnApi" in main
+    assert "scrapeDomPicks" in main
+    assert "playerIdFromImg" in main
+    assert "dom-scrape" in main
+    assert "watchDom" in main
+    assert "deepFindDraftDetail" in main
+    assert "playerPoolEntry" in main
+    assert "ensureEspnDraftObserver" in bg
+    assert "all_frames" in json.dumps(manifest)
+    assert "ensureEspnDraftObserver" in iso or "requestObserverInject" in iso
+    assert "mainObserverReady" in iso
+    assert "observer not loaded" in iso
     assert "reconnect sent" not in iso
     assert "nudgeDraftTabScan" in bg
     assert "draftRelayResult" in bg
     assert "notifyDraftTabRelayResult" in bg
+    assert "relayPending" in iso
     assert "brfantasy:espn-draft-relay" in content
     assert "brfantasy:yahoo-draft-relay" in content
     assert "overallPickNumber" in main

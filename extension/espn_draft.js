@@ -8,6 +8,7 @@
 
   const EVENT = "brfantasy:espn-draft-raw";
   const RELAY_STATUS = "brfantasy:espn-relay-status";
+  const OBSERVER_READY = "brfantasy:espn-observer-ready";
   const RESCAN = "brfantasy:draft-rescan";
   const BRIDGE = "brfantasy-bridge-v1";
   const RECONNECT_SETTLE_MS = 1200;
@@ -18,6 +19,7 @@
   let pendingPayload = null;
   let retryTimer = null;
   let lastManualReconnectAt = 0;
+  let mainObserverReady = false;
   let chip = null;
 
   function leagueFromUrl() {
@@ -116,6 +118,16 @@
     }
   }
 
+  function requestObserverInject() {
+    try {
+      chrome.runtime.sendMessage({ type: "ensureEspnDraftObserver" }, function () {
+        void chrome.runtime.lastError;
+      });
+    } catch (_e) {
+      /* ignore */
+    }
+  }
+
   function finishReconnect(resp) {
     if (resp && resp.throttled) {
       setChip("BR Fantasy · wait a few seconds…", false);
@@ -136,9 +148,15 @@
         setChip("BR Fantasy · open Draft Room on brfantasyfootball.com", false);
       } else if (!hasDraftTab) {
         setChip("BR Fantasy · reload this ESPN draft tab", false);
+      } else if (!mainObserverReady) {
+        setChip("BR Fantasy · reload tab · observer not loaded", false);
+        requestObserverInject();
+      } else if (!leagueFromUrl().leagueId) {
+        setChip("BR Fantasy · leagueId missing in URL", false);
       } else {
-        setChip("BR Fantasy · watching draft · no picks detected yet", false);
+        setChip("BR Fantasy · scanning · waiting for picks", false);
         requestRescan();
+        requestObserverInject();
       }
     }, RECONNECT_SETTLE_MS);
   }
@@ -271,6 +289,9 @@
   listenFromMain(RELAY_STATUS, function (detail) {
     applyRelayStatus(detail, false);
   });
+  listenFromMain(OBSERVER_READY, function () {
+    mainObserverReady = true;
+  });
 
   try {
     chrome.runtime.onMessage.addListener((msg) => {
@@ -282,6 +303,10 @@
   }
 
   ensureChip();
+  requestObserverInject();
+  setTimeout(function () {
+    if (!mainObserverReady) requestObserverInject();
+  }, 2500);
   try {
     chrome.runtime.sendMessage(
       {
