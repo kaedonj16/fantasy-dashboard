@@ -60,3 +60,9 @@ def test_teams_page_uses_team_avatar_and_redraft_values():
     assert "build_model_value_lookup" in src
     assert "if not _is_redraft:" in src
     assert "picks_by_roster = {}" in src
+    assert "redraft_window_label" in src
+    assert "This season" in src
+    assert "Playoff favorite" in src
+    # Dynasty window copy stays for dynasty leagues only.
+    assert "Competitive Windows" in src
+    assert '_sort_archetype_label = "Odds"' in src

@@ -318,6 +318,34 @@ def _playoff_status(pct, rank, playoff_teams: int) -> str:
     return ""
 
 
+_REDRAFT_WINDOW_DISPLAY = {
+    "contend": "Contend",
+    "bubble": "Bubble",
+    "out": "Out",
+}
+
+
+def redraft_window_label(playoff_pct=None, redraft_pct=None) -> str:
+    """Teams-page / share-card label for a redraft league.
+
+    Prefer playoff odds (0–100). If those are missing, fall back to this
+    league's redraft-value percentile (0–1) with the same 70 / 35 bands.
+    Never returns dynasty window words (Retooling, Contender Window, …).
+    """
+    status = ""
+    if playoff_pct is not None:
+        try:
+            status = _playoff_status(float(playoff_pct), None, 6)
+        except (TypeError, ValueError):
+            status = ""
+    if not status and redraft_pct is not None:
+        try:
+            status = _playoff_status(float(redraft_pct) * 100.0, None, 6)
+        except (TypeError, ValueError):
+            status = ""
+    return _REDRAFT_WINDOW_DISPLAY.get(status, "")
+
+
 def _playoff_rows(ctx: dict) -> list:
     """Use odds already on the league ctx. Callers that have the sim cache
     should attach ``playoff_odds`` before building GM / rankings context so
@@ -1576,8 +1604,12 @@ def build_power_rankings_context(ctx: dict) -> dict:
         except (TypeError, ValueError):
             playoff_pct = None
         playoff_status = _playoff_status(playoff_pct, None, playoff_teams)
-        if is_redraft and playoff_status:
-            direction = playoff_status
+        if is_redraft:
+            rd_window = redraft_window_label(playoff_pct, _redraft_pct_fn(rid_int))
+            if rd_window:
+                win_window = rd_window
+            if playoff_status:
+                direction = playoff_status
 
         team_data.append({
             "roster_id": rid,

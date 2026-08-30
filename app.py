@@ -25312,6 +25312,17 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
             )
             grade_label = grade_data.get("grade", "–")
             win_window = grade_data.get("win_window", "")
+            if _league_is_redraft(ctx):
+                from dashboard_services.ai.context_builders import redraft_window_label as _rd_win
+                _po_pct = None
+                try:
+                    for _row in (_playoff_sim_cached(ctx, platform, block=False) or []):
+                        if str((_row or {}).get("roster_id")) == str(roster_id):
+                            _po_pct = (_row or {}).get("playoff_pct")
+                            break
+                except Exception:
+                    _po_pct = None
+                win_window = _rd_win(playoff_pct=_po_pct, redraft_pct=redraft_pct)
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
 
@@ -25325,6 +25336,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
 
         # ── Window badge colour ──────────────────────────────────────────────
         _window_color_map = {
+            "Contend": "#4ade80", "Bubble": "#fbbf24", "Out": "#94a3b8",
             "Contender": "#4ade80", "Win-Now": "#4ade80",
             "Contender Window": "#86efac", "Aging Contender": "#fbbf24",
             "2-3 Year Window": "#60a5fa", "Rising": "#60a5fa",

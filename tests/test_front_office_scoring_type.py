@@ -13,6 +13,7 @@ from dashboard_services.ai.context_builders import (  # noqa: E402
     build_team_gm_context,
     ctx_scoring_type,
     detect_team_direction,
+    redraft_window_label,
 )
 from dashboard_services.ai.prompts import (  # noqa: E402
     GM_MEMO_SYSTEM,
@@ -247,5 +248,22 @@ def test_build_power_rankings_context_redraft_uses_odds_not_picks():
     assert by_id["1"]["playoff_status"] == "bubble"
     assert by_id["1"]["direction"] == "bubble"
     assert by_id["1"]["future_picks"] == []
+    assert by_id["1"]["win_window"] == "Bubble"
     assert by_id["2"]["playoff_status"] == "contend"
     assert by_id["2"]["direction"] == "contend"
+    assert by_id["2"]["win_window"] == "Contend"
+
+
+def test_redraft_window_label_uses_odds_then_percentile():
+    assert redraft_window_label(playoff_pct=87) == "Contend"
+    assert redraft_window_label(playoff_pct=46.3) == "Bubble"
+    assert redraft_window_label(playoff_pct=12) == "Out"
+    # No odds: same bands on 0–1 redraft-value percentile.
+    assert redraft_window_label(redraft_pct=0.80) == "Contend"
+    assert redraft_window_label(redraft_pct=0.50) == "Bubble"
+    assert redraft_window_label(redraft_pct=0.10) == "Out"
+    # Odds win when both are present — a mid roster with 80% odds is Contend.
+    assert redraft_window_label(playoff_pct=80, redraft_pct=0.10) == "Contend"
+    assert redraft_window_label() == ""
+    assert "Retool" not in (redraft_window_label(playoff_pct=20) or "")
+    assert "Window" not in (redraft_window_label(playoff_pct=90) or "")

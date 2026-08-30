@@ -27590,6 +27590,18 @@ button:disabled {
     border-left: 3px solid transparent;
 }
 
+.wt-contend {
+    border-left-color: #22c55e;
+}
+
+.wt-bubble {
+    border-left-color: #f59e0b;
+}
+
+.wt-out {
+    border-left-color: #94a3b8;
+}
+
 .wt-contender {
     border-left-color: #22c55e;
 }
@@ -27679,6 +27691,18 @@ button:disabled {
     font-style: normal;
     letter-spacing: 0.04em;
     text-transform: uppercase;
+}
+
+.wt-contend .grade-window-label {
+    color: #16a34a;
+}
+
+.wt-bubble .grade-window-label {
+    color: #d97706;
+}
+
+.wt-out .grade-window-label {
+    color: #64748b;
 }
 
 .wt-contender .grade-window-label {
