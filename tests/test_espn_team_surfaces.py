@@ -30,6 +30,7 @@ def test_team_modal_js_hides_picks_for_redraft():
     src = Path("static/app.js").read_text(encoding="utf-8")
     assert "if (!data.is_redraft)" in src
     assert "Roster Value vs Age" in src
+    # Chart is only injected when the server sends value_age_svg (dynasty).
 
 
 def test_trade_suggestions_ai_prompt_forbids_redraft_picks():

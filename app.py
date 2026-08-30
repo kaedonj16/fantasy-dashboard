@@ -6711,36 +6711,39 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
                 return ""  # deadline passed; the window is closed
             weeks_to = deadline - current_week
 
-        # Roster-age standing: average age of each team's 8 most valuable players.
+        is_redraft = _league_is_redraft(ctx)
+
+        # Roster-age standing is a dynasty window signal. Redraft ignores it.
         age_rank = None
         n_teams = len(odds)
-        try:
-            values_by_id = {
-                str(row["id"]): row
-                for row in (get_model_value_table_cached() or [])
-                if isinstance(row, dict) and row.get("id") is not None
-            }
-            team_ages: dict = {}
-            for r in ctx.get("rosters") or []:
-                rid = str(r.get("roster_id"))
-                core = sorted(
-                    (
-                        (float(v.get("value") or 0), float(v.get("age") or 0))
-                        for p in (r.get("players") or [])
-                        if (v := values_by_id.get(str(p))) and float(v.get("age") or 0) > 0
-                    ),
-                    reverse=True,
-                )[:8]
-                if core:
-                    team_ages[rid] = sum(a for _, a in core) / len(core)
-            if str(viewer_roster_id) in team_ages and len(team_ages) >= 4:
-                _order = sorted(team_ages.items(), key=lambda kv: -kv[1])
-                age_rank = next(
-                    i + 1 for i, (rid, _) in enumerate(_order) if rid == str(viewer_roster_id)
-                )
-                n_teams = len(team_ages)
-        except Exception:
-            logger.debug("trade window age rank failed", exc_info=True)
+        if not is_redraft:
+            try:
+                values_by_id = {
+                    str(row["id"]): row
+                    for row in (get_model_value_table_cached() or [])
+                    if isinstance(row, dict) and row.get("id") is not None
+                }
+                team_ages: dict = {}
+                for r in ctx.get("rosters") or []:
+                    rid = str(r.get("roster_id"))
+                    core = sorted(
+                        (
+                            (float(v.get("value") or 0), float(v.get("age") or 0))
+                            for p in (r.get("players") or [])
+                            if (v := values_by_id.get(str(p))) and float(v.get("age") or 0) > 0
+                        ),
+                        reverse=True,
+                    )[:8]
+                    if core:
+                        team_ages[rid] = sum(a for _, a in core) / len(core)
+                if str(viewer_roster_id) in team_ages and len(team_ages) >= 4:
+                    _order = sorted(team_ages.items(), key=lambda kv: -kv[1])
+                    age_rank = next(
+                        i + 1 for i, (rid, _) in enumerate(_order) if rid == str(viewer_roster_id)
+                    )
+                    n_teams = len(team_ages)
+            except Exception:
+                logger.debug("trade window age rank failed", exc_info=True)
 
         vw = trade_window_verdict(pct, weeks_to, age_rank, n_teams)
         partners = trade_partners(
@@ -6756,24 +6759,30 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
         )
 
         verdict = vw["verdict"]
-        titles = {"buy": "Buy window", "sell": "Sell window", "hold": "Hold"}
+        if is_redraft:
+            titles = {"buy": "Playoff push", "sell": "Out of it", "hold": "On the bubble"}
+            section_label = "Trade deadline"
+        else:
+            titles = {"buy": "Buy window", "sell": "Sell window", "hold": "Hold"}
+            section_label = "Trade window"
         lines = []
         if weeks_to is not None:
             when = "this week" if weeks_to == 0 else (
                 "next week" if weeks_to == 1 else f"{weeks_to} weeks away")
             lines.append(f"Week {deadline} trade deadline, {when}.")
         _odds_line = f"You're at {pct:.0f}% playoff odds"
-        if age_rank and n_teams:
+        if (not is_redraft) and age_rank and n_teams:
             _sfx = "th" if 10 <= age_rank % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(age_rank % 10, "th")
             _odds_line += f" with the {age_rank}{_sfx}-oldest core of {n_teams}"
         lines.append(_odds_line + ".")
-        mod_lines = {
-            "all_in": "Your core is old and you're contending. The window is now.",
-            "youth": "Your core is young. Stay patient and keep stacking picks.",
-            "aging_bubble": "Aging core on the playoff bubble. Pick a direction before the deadline.",
-        }
-        if vw["modifier"] in mod_lines:
-            lines.append(mod_lines[vw["modifier"]])
+        if not is_redraft:
+            mod_lines = {
+                "all_in": "Your core is old and you're contending. The window is now.",
+                "youth": "Your core is young. Stay patient and keep stacking picks.",
+                "aging_bubble": "Aging core on the playoff bubble. Pick a direction before the deadline.",
+            }
+            if vw["modifier"] in mod_lines:
+                lines.append(mod_lines[vw["modifier"]])
         if partners:
             who = "Sellers to call" if verdict == "buy" else "Buyers to call"
             lines.append(f"{who}: {', '.join(html.escape(p) for p in partners)}.")
@@ -6789,7 +6798,7 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
         return f"""
         <section class="os-card trade-window-card tw-{verdict}{urgent_cls}">
           <div class="lineup-alert-head">
-            <span class="lineup-alert-title">Trade window: {titles[verdict]}</span>
+            <span class="lineup-alert-title">{section_label}: {titles[verdict]}</span>
             <a class="os-section-link" href="{html.escape(_trade_url)}">Find trade targets &rarr;</a>
           </div>
           <ul class="lineup-alert-list">{items}</ul>
@@ -7448,17 +7457,21 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     # Read the live cached model table directly (same source as the player modal)
     # so standings/team values don't lag behind after a value rebuild.
     model_value_table = list(get_model_value_table_cached() or []) or (ctx.get("model_value_table") or [])
-    picks_by_roster = ctx.get("picks_by_roster") or {}
+    is_redraft = _league_is_redraft(ctx)
+    picks_by_roster = {} if is_redraft else (ctx.get("picks_by_roster") or {})
     platform = ctx["platform"]
     season = ctx["season"]
     league_id_str = str(ctx.get("resolved_league_id") or ctx.get("league_id") or "")
 
-    # ── dynasty value lookup ──────────────────────────────────────────────────
+    # ── value lookup (redraft column in redraft leagues) ─────────────────────
+    _vk_primary, _vk_fallback = _waiver_value_keys(ctx)
     values_by_id: dict[str, float] = {}
     for row in model_value_table:
         if isinstance(row, dict) and row.get("id") is not None:
             try:
-                values_by_id[str(row["id"])] = float(row.get("value") or 0)
+                values_by_id[str(row["id"])] = float(
+                    row.get(_vk_primary) or row.get(_vk_fallback) or 0
+                )
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
 
@@ -7670,7 +7683,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
             if int(pk.get("round") or 0) == 1
         )
         picks_label = f"{first_rd} 1st" if first_rd else f"{row['n_picks']} picks" if row["n_picks"] else "–"
-        picks_td = "" if platform == "espn" else f"<td class='num'>{picks_label}</td>"
+        picks_td = "" if is_redraft else f"<td class='num dyn-capital'>{picks_label}</td>"
         # Medal rank for the top 3; a value bar scaled to the leader so magnitude
         # reads at a glance (scoped to .dynasty-table so other tables are unchanged).
         rank_cls = f" rank-{i}" if i <= 3 else ""
@@ -7692,10 +7705,10 @@ def _build_offseason_standings_body(ctx: dict) -> str:
             f"</tr>"
         )
 
-    draft_capital_th = "" if platform == "espn" else "<th>Draft Capital</th>"
+    draft_capital_th = "" if is_redraft else "<th class='dyn-capital'>Draft Capital</th>"
     standings_footer = (
-        "Roster value · players ranked by dynasty trade market value"
-        if platform == "espn"
+        "Roster value · players ranked by this-season redraft value"
+        if is_redraft
         else "Dynasty value · players + draft picks · no games played yet"
     )
     table_html = f"""
@@ -19155,19 +19168,20 @@ def api_team_details(roster_id: str):
                 pass
 
             try:
-                from utils.standings_viz import value_age_svg
-                from dashboard_services.ai.context_builders import team_value_age_rows
-                _val_ctx = {
-                    "rosters": rosters,
-                    "roster_map": _rmap,
-                    "model_value_table": get_model_value_table_cached() or ctx.get("model_value_table") or [],
-                    "players_index": ctx.get("players_index") or (get_players_index_global() or {}),
-                    "players_map": ctx.get("players_map") or {},
-                    "roster_positions": ctx.get("roster_positions") or (league or {}).get("roster_positions") or [],
-                }
-                _value_age_svg = value_age_svg(team_value_age_rows(_val_ctx), team_name or "", _oc)
-                if _value_age_svg:
-                    graphs_data["value_age_svg"] = _value_age_svg
+                if not is_redraft:
+                    from utils.standings_viz import value_age_svg
+                    from dashboard_services.ai.context_builders import team_value_age_rows
+                    _val_ctx = {
+                        "rosters": rosters,
+                        "roster_map": _rmap,
+                        "model_value_table": get_model_value_table_cached() or ctx.get("model_value_table") or [],
+                        "players_index": ctx.get("players_index") or (get_players_index_global() or {}),
+                        "players_map": ctx.get("players_map") or {},
+                        "roster_positions": ctx.get("roster_positions") or (league or {}).get("roster_positions") or [],
+                    }
+                    _value_age_svg = value_age_svg(team_value_age_rows(_val_ctx), team_name or "", _oc)
+                    if _value_age_svg:
+                        graphs_data["value_age_svg"] = _value_age_svg
             except Exception:
                 logger.warning("team-modal value/age scatter failed", exc_info=True)
 
@@ -25096,8 +25110,10 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
 
         league_info = ctx.get("league") or {}
         is_sf = _is_superflex_lineup(league_info.get("roster_positions") or [])
-        vfield = "sf_value" if is_sf else "value"
-        league_name = league_info.get("name", "Dynasty League")
+        is_redraft = _league_is_redraft(ctx)
+        _vk_primary, _vk_fallback = _waiver_value_keys(ctx)
+        vfield = _vk_primary
+        league_name = league_info.get("name") or "League"
         n_teams = len(rosters)
 
         from dashboard_services.api import avatar_from_users as _av_from_users
@@ -25131,7 +25147,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
                 pos = str(meta.get("pos") or vrow.get("position") or "").upper()
                 if pos not in CORE_POS:
                     continue
-                pvals[pos].append(float(vrow.get(vfield) or vrow.get("value") or 0))
+                pvals[pos].append(float(vrow.get(vfield) or vrow.get(_vk_fallback) or vrow.get("value") or 0))
             team_pos_vals[rid] = pvals
 
         team_pos_strength: dict = {}  # rid -> {pos: weighted strength}
@@ -25180,7 +25196,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
             for pid in (r.get("players") or []):
                 meta = players_index.get(str(pid)) or {}
                 vrow = values_by_id.get(str(pid)) or {}
-                val = float(vrow.get(vfield) or vrow.get("value") or 0)
+                val = float(vrow.get(vfield) or vrow.get(_vk_fallback) or vrow.get("value") or 0)
                 pos = str(meta.get("pos") or "").upper()
                 if pos and val > 0:
                     age = _age_from_bday(meta.get("bDay") or "")
@@ -25197,14 +25213,16 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         top5 = player_rows[:5]
         player_value = sum(p["value"] for p in player_rows)
 
-        # ── Add pick value to dynasty total ──────────────────────────────────
-        _picks = picks_by_roster.get(str(roster_id), [])
-        try:
-            _pick_tbl = load_pick_value_table() or {}
-            _pick_val = _team_pick_value(_picks, _pick_tbl, platform=platform,
-                                         league_id=league_id, season=season)
-        except Exception:
-            _pick_val = 0.0
+        # ── Add pick value to dynasty total (redraft has no tradeable picks) ─
+        _picks = [] if is_redraft else picks_by_roster.get(str(roster_id), [])
+        _pick_val = 0.0
+        if not is_redraft:
+            try:
+                _pick_tbl = load_pick_value_table() or {}
+                _pick_val = _team_pick_value(_picks, _pick_tbl, platform=platform,
+                                             league_id=league_id, season=season)
+            except Exception:
+                _pick_val = 0.0
         total_value = player_value + _pick_val
 
         # ── Dynasty rank across league (players + picks) ─────────────────────
@@ -25219,17 +25237,22 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
             if not _rid2:
                 continue
             _pv2 = sum(
-                float((values_by_id.get(str(_pid)) or {}).get(vfield) or 0)
+                float(
+                    (values_by_id.get(str(_pid)) or {}).get(vfield)
+                    or (values_by_id.get(str(_pid)) or {}).get(_vk_fallback)
+                    or 0
+                )
                 for _pid in (_r2.get("players") or [])
             )
             _pkv2 = 0.0
-            try:
-                _pkv2 = _team_pick_value(
-                    picks_by_roster.get(_rid2, []), _pick_tbl_rank,
-                    platform=platform, league_id=league_id, season=season,
-                )
-            except Exception:
-                logger.debug("suppressed exception", exc_info=True)
+            if not is_redraft:
+                try:
+                    _pkv2 = _team_pick_value(
+                        picks_by_roster.get(_rid2, []), _pick_tbl_rank,
+                        platform=platform, league_id=league_id, season=season,
+                    )
+                except Exception:
+                    logger.debug("suppressed exception", exc_info=True)
             _all_totals[_rid2] = _pv2 + _pkv2
         dynasty_rank = sum(1 for v in _all_totals.values() if v > total_value) + 1
 
@@ -25393,7 +25416,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         dynasty_rank_html = f'<span style="font-weight:700;font-size:15px;">#{dynasty_rank}</span><span style="font-size:11px;color:var(--text-muted);margin-left:1px;">/{n_teams}</span>'
 
         picks_html = ""
-        if _pick_labels and platform != "espn":
+        if _pick_labels and not is_redraft:
             picks_html = (
                     '<div class="sc-section-title">Draft Capital</div>'
                     '<div class="sc-picks-row">'
@@ -25470,8 +25493,8 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
       </div>
       <div class="sc-stats-row">
         <div class="sc-stat"><span class="sc-stat-val" style="color:{_grade_color}">{grade_label}</span><span class="sc-stat-lbl">Grade</span></div>
-        <div class="sc-stat"><span class="sc-stat-val">{dynasty_rank_html}</span><span class="sc-stat-lbl">{"Roster Rank" if platform == "espn" else "Dynasty Rank"}</span></div>
-        <div class="sc-stat"><span class="sc-stat-val">{_dv_fmt}</span><span class="sc-stat-lbl">{"Roster Value" if platform == "espn" else "Dynasty Value"}</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{dynasty_rank_html}</span><span class="sc-stat-lbl">{"Roster Rank" if is_redraft else "Dynasty Rank"}</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{_dv_fmt}</span><span class="sc-stat-lbl">{"Roster Value" if is_redraft else "Dynasty Value"}</span></div>
         <div class="sc-stat"><span class="sc-stat-val">{age_html}</span><span class="sc-stat-lbl">Avg Age</span></div>
       </div>
       <div class="sc-stats-row" style="border-top:1px solid rgba(255,255,255,.06);padding-top:10px;margin-top:0;">

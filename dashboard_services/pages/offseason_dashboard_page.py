@@ -12,6 +12,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         EASTERN,
         _render_do_next_waiver_card,
         _league_is_redraft,
+        _waiver_value_keys,
         _nfl_regular_season_kickoff_ms,
         _playoff_sim_cached,
         _playoff_tile_from_cache,
@@ -40,6 +41,8 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     users = ctx["users"]
     roster_map = ctx["roster_map"]
     picks_by_roster = ctx.get("picks_by_roster", {})
+    if _league_is_redraft(ctx):
+        picks_by_roster = {}
     players_index = ctx["players_index"]
     players_map = ctx["players_map"]
     # Read the live cached model table directly (the same source the player modal
@@ -159,11 +162,14 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         ctx, teams_ctx, filled_label="Roster",
     )
 
+    _vk_primary, _vk_fallback = _waiver_value_keys(ctx)
     values_by_id = {}
     for row in model_value_table:
         if isinstance(row, dict) and row.get("id") is not None:
             try:
-                values_by_id[str(row["id"])] = float(row.get("value") or 0.0)
+                values_by_id[str(row["id"])] = float(
+                    row.get(_vk_primary) or row.get(_vk_fallback) or 0.0
+                )
             except Exception:
                 values_by_id[str(row["id"])] = 0.0
 

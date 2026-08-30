@@ -12,6 +12,8 @@ from dashboard_services.ai.context_builders import (
     summarize_roster_players,
     build_model_value_lookup,
     detect_team_direction,
+    ctx_scoring_type,
+    redraft_window_label,
 )
 from dashboard_services.ai.prompts import (
     generate_trade_ai_result,
@@ -659,6 +661,7 @@ def render_trade_ai_html(result: dict) -> str:
 
 def get_roster_grade(ctx: dict, viewer_roster_id: str) -> dict:
     """Return grade data for a single roster."""
+    ctx = _ctx_with_playoff_odds(ctx)
     rosters = ctx.get("rosters") or []
     roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
     if not roster:
@@ -671,26 +674,46 @@ def get_roster_grade(ctx: dict, viewer_roster_id: str) -> dict:
         players_map=ctx.get("players_map") or {},
         model_value_lookup=model_value_lookup,
     )
-    future_picks = ctx.get("picks_by_roster", {}).get(str(viewer_roster_id), [])
-    return calculate_roster_grade(players_summary, future_picks)
+    is_redraft = ctx_scoring_type(ctx) == "redraft"
+    future_picks = [] if is_redraft else (
+        ctx.get("picks_by_roster", {}).get(str(viewer_roster_id), [])
+    )
+    grade = calculate_roster_grade(players_summary, future_picks)
+    if is_redraft:
+        playoff_pct = None
+        for row in (ctx.get("playoff_odds") or []):
+            if str((row or {}).get("roster_id")) == str(viewer_roster_id):
+                playoff_pct = (row or {}).get("playoff_pct")
+                break
+        bd = grade.get("breakdown") or {}
+        grade["win_window"] = redraft_window_label(
+            playoff_pct=playoff_pct, redraft_pct=bd.get("redraft_pct"),
+        )
+        grade["scoring_type"] = "redraft"
+    return grade
 
 
-def render_roster_grade_badge(grade_data: dict) -> str:
+def render_roster_grade_badge(grade_data: dict, scoring_type: str = "") -> str:
     grade = html.escape(str(grade_data.get("grade") or "?"))
     win_window = html.escape(str(grade_data.get("win_window") or ""))
     score = grade_data.get("score") or 0
     bd = grade_data.get("breakdown") or {}
     avg_age = bd.get("avg_age", 0)
     elite_count = bd.get("elite_count", 0)
+    scoring = (scoring_type or grade_data.get("scoring_type") or "dynasty").strip().lower()
 
     grade_class = "grade-a" if grade.startswith("A") else "grade-b" if grade.startswith("B") else "grade-c" if grade.startswith("C") else "grade-d"
+    extras = f"Score: {score:.0f}/100"
+    if scoring != "redraft":
+        extras += f" &bull; Age: {avg_age:.1f}"
+    extras += f" &bull; Elite: {elite_count}"
 
     return f"""
     <div class="roster-grade-wrap">
       <div class="roster-grade-badge {grade_class}">{grade}</div>
       <div class="roster-grade-meta">
         <div class="roster-grade-window">{win_window}</div>
-        <div class="roster-grade-score">Score: {score:.0f}/100 &bull; Age: {avg_age:.1f} &bull; Elite: {elite_count}</div>
+        <div class="roster-grade-score">{extras}</div>
       </div>
     </div>
     """

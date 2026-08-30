@@ -7347,7 +7347,8 @@ window.initTradePage = function initTradePage(root = document) {
       if (btnSubBuild)    btnSubBuild.classList.toggle("is-active", isBuild);
       if (btnSubStrategy) btnSubStrategy.classList.toggle("is-active", !isBuild);
       if (!isBuild) {
-        const arch = _activeArchetype || "contending";
+        let arch = _activeArchetype || "contending";
+        if (getScoringType() === "redraft" && arch === "rebuilding") arch = "contending";
         _setStrategyChip(arch);
         loadStrategyView(arch);
       } else {
@@ -7355,14 +7356,25 @@ window.initTradePage = function initTradePage(root = document) {
       }
     }
 
-    var _ARCH_DESC = {
-      contending:  "Win now. Convert youth and picks into proven, immediate production, even at some long-term cost.",
-      rebuilding:  "Build for later. Move aging veterans for younger players and future draft capital that should appreciate.",
-      consolidate: "Raise your ceiling. Package several good pieces into one elite difference-maker for your starting lineup.",
-      distribute:  "Add depth and flexibility. Break one over-concentrated elite into multiple starters plus future picks.",
-    };
+    function _archDesc() {
+      if (getScoringType() === "redraft") {
+        return {
+          contending:  "Win this season. Trade for proven weekly production even if it costs depth.",
+          rebuilding:  "",
+          consolidate: "Raise your ceiling. Package several good pieces into one elite difference-maker for your starting lineup.",
+          distribute:  "Add depth and flexibility. Break one over-concentrated elite into multiple starters.",
+        };
+      }
+      return {
+        contending:  "Win now. Convert youth and picks into proven, immediate production, even at some long-term cost.",
+        rebuilding:  "Build for later. Move aging veterans for younger players and future draft capital that should appreciate.",
+        consolidate: "Raise your ceiling. Package several good pieces into one elite difference-maker for your starting lineup.",
+        distribute:  "Add depth and flexibility. Break one over-concentrated elite into multiple starters plus future picks.",
+      };
+    }
 
     function _setStrategyChip(arch) {
+      if (getScoringType() === "redraft" && arch === "rebuilding") arch = "contending";
       _activeArchetype = arch;
       _strategyPage    = 0;
       localStorage.setItem("sugg-archetype", arch);
@@ -7376,7 +7388,7 @@ window.initTradePage = function initTradePage(root = document) {
       }
       const desc = root.querySelector("#otcStrategyDesc");
       if (desc) {
-        var txt = _ARCH_DESC[arch] || "";
+        var txt = _archDesc()[arch] || "";
         desc.textContent = txt;
         desc.style.display = txt ? "" : "none";
       }
@@ -8395,10 +8407,16 @@ window.initTradePage = function initTradePage(root = document) {
     const redraft = getScoringType() === "redraft";
     const sizeCtrl = root.querySelector("#leagueSizeSelect");
     if (sizeCtrl) sizeCtrl.disabled = redraft;
+    const rebuildChip = root.querySelector('.otc-arch-chip[data-arch="rebuilding"]');
+    if (rebuildChip) rebuildChip.style.display = redraft ? "none" : "";
+    if (redraft && rebuildChip && rebuildChip.classList.contains("is-active")) {
+      const contendChip = root.querySelector('.otc-arch-chip[data-arch="contending"]');
+      if (contendChip) contendChip.click();
+    }
     const tipBody = root.querySelector("#otcInfoTooltip .otc-info-tooltip-body");
     if (tipBody) {
       tipBody.innerHTML = redraft
-        ? "<p>Player values are this-season redraft values. Aging veterans and current production rank above youth and future draft capital.</p><p>Switch to Dynasty in the scoring control if you want multi-year trade values instead.</p>"
+        ? "<p>Player values are this-season redraft values. Weekly production this year is what counts, not youth or future draft capital.</p><p>Switch to Dynasty in the scoring control if you want multi-year trade values instead.</p>"
         : "<p>Player values are built directly from real dynasty trades, capturing how the market prices players and picks in actual deals.</p><p>We translate those trade relationships into a unified value scale, then layer in production, age trajectory, and role stability to sharpen the signal.</p>";
     }
   }

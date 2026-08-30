@@ -98,8 +98,6 @@ def build_trade_calculator_body(
     analyze_btn_disabled = 'disabled' if is_guest else ''
     analyze_btn_label = 'Sign In to Analyze' if is_guest else 'Analyze Trade'
 
-    ai_sub_text = 'AI-powered trade analysis for dynasty leagues' if is_guest else 'Personalized to your team direction and roster lens'
-
     team_select_block = '' if is_guest else """
                 <div class="otc-summary-team-select">
                   <select id="teamSelect" class="otc-team-select-dropdown" required>
@@ -178,6 +176,16 @@ def build_trade_calculator_body(
     scoring_type_val = (scoring_type or "dynasty").strip().lower()
     if scoring_type_val not in ("dynasty", "redraft"):
         scoring_type_val = "dynasty"
+    if is_guest:
+        ai_sub_text = (
+            "AI-powered trade analysis for this season"
+            if scoring_type_val == "redraft"
+            else "AI-powered trade analysis for dynasty leagues"
+        )
+    elif scoring_type_val == "redraft":
+        ai_sub_text = "Personalized to your playoff standing and roster"
+    else:
+        ai_sub_text = "Personalized to your team direction and roster lens"
     _st_dyn = " selected" if scoring_type_val == "dynasty" else ""
     _st_rd = " selected" if scoring_type_val == "redraft" else ""
     scoring_type_block = f"""
@@ -1010,7 +1018,7 @@ def build_trade_calculator_body(
               <!-- Archetype chips (single scrollable pill row) -->
               <div id="otcStrategyChips" class="otc-strategy-chips">
                 <button class="otc-arch-chip" data-arch="contending">Contending</button>
-                <button class="otc-arch-chip" data-arch="rebuilding">Rebuilding</button>
+                {"" if scoring_type_val == "redraft" else '<button class="otc-arch-chip" data-arch="rebuilding">Rebuilding</button>'}
                 <button class="otc-arch-chip" data-arch="consolidate">Consolidate</button>
                 <button class="otc-arch-chip" data-arch="distribute">Distribute</button>
               </div>
@@ -1030,7 +1038,7 @@ def build_trade_calculator_body(
                 <div class="empty-state is-compact">
                   <span class="empty-state-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"/><path d="M7 16V9"/><path d="M12 16V5"/><path d="M17 16v-6"/></svg></span>
                   <p class="empty-state-title">Pick a strategy</p>
-                  <p class="empty-state-msg">Choose Contending, Rebuilding, Consolidate, or Distribute above.</p>
+                  <p class="empty-state-msg">{"Choose Contending, Consolidate, or Distribute above." if scoring_type_val == "redraft" else "Choose Contending, Rebuilding, Consolidate, or Distribute above."}</p>
                 </div>
               </div>
 
