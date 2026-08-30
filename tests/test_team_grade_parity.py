@@ -98,6 +98,8 @@ def _build_cases():
         if rng.random() < 0.15:
             options["peerStarterPpg"] = round(rng.uniform(8, 20), 2)
             options["peerStarterVal"] = round(rng.uniform(2000, 8000), 1)
+        if rng.random() < 0.15:
+            options["peerValuePs"] = round(rng.uniform(40, 90), 1)
         cases.append({
             "picks": picks, "slots": slots, "targets": TARGETS,
             "numTeams": rng.choice([10, 12, 14]),
@@ -123,6 +125,7 @@ def test_team_grade_composites_match():
             league_teams=opt.get("leagueTeams"),
             peer_starter_ppg=opt.get("peerStarterPpg"),
             peer_starter_val=opt.get("peerStarterVal"),
+            peer_value_ps=opt.get("peerValuePs"),
         )
         if (js is None) != (py is None):
             mismatches.append((js, py))

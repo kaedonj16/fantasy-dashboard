@@ -56,6 +56,14 @@ def test_starters_bar_uses_this_leagues_lineups():
     ).read_text(encoding="utf-8")
 
 
+def test_value_bar_uses_this_leagues_pick_scores():
+    assert "ownedPickGroups().lists.map(gradeRowsForPicks)" in ROOM_JS
+    assert "peerValuePs" in TEAM_JS
+    assert "dr_peer_value_ps" in (
+        REPO / "utils" / "draft_grade.py"
+    ).read_text(encoding="utf-8")
+
+
 def test_round3_coverage_gate_is_untouched():
     """Do not re-zero the starter term mid-draft (2/8 coverage used to print F)."""
     assert "if (redraft && slots.length && picks.length >= slots.length)" in TEAM_JS

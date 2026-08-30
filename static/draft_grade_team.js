@@ -87,6 +87,63 @@
     return vals.length ? vals.reduce(function (a, b) { return a + b; }, 0) / vals.length : null;
   }
 
+  function weightedPickScore(picks, slots, numTeams, sf, tep) {
+    if (!picks || !picks.length) return null;
+    var starterIds = optimalLineupIds(picks, slots || []);
+    var isSf = (slots || []).indexOf('SF') >= 0 || !!sf;
+    var benchByPos = { QB: [], RB: [], WR: [], TE: [] };
+    picks.forEach(function (p) {
+      var pos = String(p.pos || '').toUpperCase();
+      if (benchByPos[pos] && !starterIds[String(p.id)]) benchByPos[pos].push(p);
+    });
+    Object.keys(benchByPos).forEach(function (pos) {
+      benchByPos[pos].sort(function (a, b) { return lineupScore(b) - lineupScore(a); });
+    });
+    function benchUtility(p) {
+      var pos = String(p.pos || '').toUpperCase();
+      var idx = benchByPos[pos] ? benchByPos[pos].indexOf(p) : -1;
+      if (pos === 'QB') return idx === 0 ? (isSf ? 0.78 : 0.32) : (isSf ? 0.55 : 0.12);
+      if (pos === 'TE') return idx === 0 ? (tep > 0 ? 0.72 : 0.32) : (tep > 0 ? 0.48 : 0.16);
+      if (pos === 'RB') return idx === 0 ? 0.82 : 0.68;
+      if (pos === 'WR') return idx === 0 ? 0.78 : 0.64;
+      return 0;
+    }
+    var hasFlex = (slots || []).indexOf('FLEX') >= 0;
+    function roleOf(p) {
+      if (starterIds[String(p.id)]) return 'starter';
+      var pos = String(p.pos || '').toUpperCase();
+      var arr = benchByPos[pos] || [];
+      var idx = arr.indexOf(p);
+      if (pos === 'RB' || pos === 'WR') {
+        if (idx === 0) return 'primary';
+        if (idx === 1 && hasFlex) return 'primary';
+        return 'fringe';
+      }
+      return idx === 0 ? 'primary' : 'fringe';
+    }
+    var wSum = 0, wTot = 0;
+    picks.forEach(function (x) {
+      if (x.ps == null || ['K', 'DEF', 'DST', 'D/ST'].indexOf(String(x.pos || '').toUpperCase()) >= 0) return;
+      var r = Math.max(1, Math.ceil((x.pn || 1) / Math.max(numTeams, 1)));
+      var role = roleOf(x), rw = role === 'starter' ? 1 : role === 'primary' ? 0.55 : 0.18;
+      var util = role === 'starter' ? 1 : benchUtility(x);
+      var wt = (1 / Math.pow(1 + (r - 1) / 5, 0.85)) * rw * (0.55 + 0.45 * util);
+      wSum += (+x.ps) * wt; wTot += wt;
+    });
+    if (wTot > 0) return wSum / wTot;
+    var avgPsVals = picks.filter(function (p) { return p.ps != null; }).map(function (p) { return +p.ps; });
+    return avgPsVals.length ? avgPsVals.reduce(function (a, b) { return a + b; }, 0) / avgPsVals.length : null;
+  }
+
+  function peerValuePs(teams, slots, numTeams, sf, tep) {
+    var avgs = [];
+    (teams || []).forEach(function (picks) {
+      var avg = weightedPickScore(picks, slots, numTeams, sf, tep);
+      if (avg != null) avgs.push(avg);
+    });
+    return avgs.length ? avgs.reduce(function (a, b) { return a + b; }, 0) / avgs.length : null;
+  }
+
   function peerStarterAvg(teams, slots, metric) {
     var avgs = [];
     (teams || []).forEach(function (picks) {
@@ -160,22 +217,21 @@
       return idx === 0 ? 'primary' : 'fringe';
     }
 
-    // 1) Starter quality: round-weighted (1/round^0.60) avg PS of starters.
-    var wSum = 0, wTot = 0;
+    // 1) Pick-score value vs this league's average (same 80–120% band as Starters).
+    var starterAvgPs = weightedPickScore(picks, slots, numTeams, sf, tep);
+    var leaguePsAvg = options.peerValuePs;
+    if ((leaguePsAvg == null || leaguePsAvg <= 0) && options.leagueTeams) {
+      leaguePsAvg = peerValuePs(options.leagueTeams, slots, numTeams, sf, tep);
+    }
+    var valuePts;
+    if (starterAvgPs == null) valuePts = Math.floor(valueWeight / 2);
+    else if (leaguePsAvg != null && leaguePsAvg > 0) {
+      valuePts = rnd(clamp01((starterAvgPs / leaguePsAvg - 0.80) / 0.40) * valueWeight);
+    } else {
+      valuePts = rnd(clamp01(starterAvgPs / 100) * valueWeight);
+    }
     var avgPsVals = picks.filter(function (p) { return p.ps != null; }).map(function (p) { return +p.ps; });
     var avgPs = avgPsVals.length ? avgPsVals.reduce(function (a, b) { return a + b; }, 0) / avgPsVals.length : null;
-    picks.forEach(function (x) {
-      if (x.ps == null || ['K','DEF','DST','D/ST'].indexOf(String(x.pos || '').toUpperCase()) >= 0) return;
-      var r = Math.max(1, Math.ceil((x.pn || 1) / Math.max(numTeams, 1)));
-      var role = roleOf(x), rw = role === 'starter' ? 1 : role === 'primary' ? 0.55 : 0.18;
-      var util = role === 'starter' ? 1 : benchUtility(x);
-      var wt = (1 / Math.pow(1 + (r - 1) / 5, 0.85)) * rw * (0.55 + 0.45 * util);
-      wSum += (+x.ps) * wt; wTot += wt;
-    });
-    var starterAvgPs = wTot > 0 ? wSum / wTot : avgPs;
-    var valuePts = starterAvgPs != null
-      ? rnd(clamp01((starterAvgPs || 0) / 100) * valueWeight)
-      : Math.floor(valueWeight / 2);
 
     // 2) Starting-lineup strength vs this league's average starting lineup.
     var starterArr = picks.filter(function (p) { return starterIds[String(p.id)]; });
@@ -251,6 +307,8 @@
     leagueLineupAvg: leagueLineupAvg,
     starterMetricAvg: starterMetricAvg,
     peerStarterAvg: peerStarterAvg,
+    weightedPickScore: weightedPickScore,
+    peerValuePs: peerValuePs,
     SPLIT_STARTUP: SPLIT_STARTUP,
     SPLIT_REDRAFT: SPLIT_REDRAFT,
   };

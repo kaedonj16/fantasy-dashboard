@@ -16,11 +16,13 @@ from utils.draft_grade import (
     dr_lineup_score,
     dr_optimal_lineup,
     dr_peer_starter_avg,
+    dr_peer_value_ps,
     dr_resolve_strength_baseline,
     dr_rookie_team_score,
     dr_slot_eligible,
     dr_starter_metric_avg,
     dr_team_grade_score,
+    dr_weighted_pick_score,
     DR_SPLIT_REDRAFT,
     DR_SPLIT_STARTUP,
 )
@@ -490,6 +492,57 @@ def test_redraft_starters_compare_to_this_league_not_universe():
     assert peer >= 50
     assert dr_grade_letter(peer) not in ("F", "D")
     assert dr_grade_letter(universe_only) in ("F", "D")
+
+
+def test_redraft_value_compares_to_this_league_not_absolute_scale():
+    """Identical teams at PS 70 are league-average, so Value is 10/20 — not
+    14/20 from the old absolute 70/100 scale. That leftover absolute term
+    kept average rooms looking weaker than they are.
+    """
+    slots = ["QB", "RB", "WR"]
+    targets = {"QB": 1, "RB": 1, "WR": 1}
+    def _team(prefix, ps):
+        return [
+            {"id": f"{prefix}q", "pos": "QB", "ps": ps, "pn": 1, "val": 5000, "ppg": 18},
+            {"id": f"{prefix}r", "pos": "RB", "ps": ps, "pn": 2, "val": 4000, "ppg": 14},
+            {"id": f"{prefix}w", "pos": "WR", "ps": ps, "pn": 3, "val": 3500, "ppg": 13},
+        ]
+    a, b, c = _team("a", 70), _team("b", 70), _team("c", 70)
+    kw = dict(
+        slots=slots, targets=targets, num_teams=3, draft_type="redraft",
+        league_ppg_list=[18, 14, 13], league_val_list=[5000, 4000, 3500],
+        league_players=[{"pos": p["pos"], "ppg": p["ppg"], "val": p["val"]}
+                        for t in (a, b, c) for p in t],
+    )
+    peer = dr_team_grade_score(a, league_teams=[a, b, c], **kw)
+    absolute = dr_team_grade_score(a, **kw)
+    # Peer Value is 10/20 vs absolute 14/20; Starters/Construction match.
+    assert peer == absolute - 4
+    assert dr_peer_value_ps([a, b, c], slots, 3) == pytest.approx(
+        dr_weighted_pick_score(a, slots, 3)
+    )
+
+
+def test_above_league_value_grades_higher_than_below():
+    slots = ["QB", "RB", "WR"]
+    targets = {"QB": 1, "RB": 1, "WR": 1}
+    def _team(prefix, ps):
+        return [
+            {"id": f"{prefix}q", "pos": "QB", "ps": ps, "pn": 1, "val": 5000, "ppg": 15},
+            {"id": f"{prefix}r", "pos": "RB", "ps": ps, "pn": 2, "val": 4000, "ppg": 15},
+            {"id": f"{prefix}w", "pos": "WR", "ps": ps, "pn": 3, "val": 3500, "ppg": 15},
+        ]
+    strong, mid, weak = _team("s", 88), _team("m", 70), _team("w", 52)
+    league_teams = [strong, mid, weak]
+    kw = dict(
+        slots=slots, targets=targets, num_teams=3, draft_type="redraft",
+        league_ppg_list=[15, 15, 15], league_val_list=[5000, 4000, 3500],
+        league_players=[{"pos": p["pos"], "ppg": p["ppg"], "val": p["val"]}
+                        for t in league_teams for p in t],
+        league_teams=league_teams,
+    )
+    assert dr_team_grade_score(strong, **kw) > dr_team_grade_score(mid, **kw)
+    assert dr_team_grade_score(mid, **kw) > dr_team_grade_score(weak, **kw)
 
 
 def test_above_league_starters_grade_higher_than_below():
