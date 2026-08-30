@@ -84,14 +84,26 @@ def trade_partners(teams: List[dict], verdict: str, limit: int = 3) -> List[str]
 
     teams: [{"name", "playoff_pct", "is_viewer"}]. Buyers should call the
     clearest sellers (lowest playoff odds) and vice versa; holders get no
-    partner list. The viewer is always excluded.
+    partner list. The viewer is always excluded (by flag and by name, so a
+    mis-tagged roster_id cannot list your own team as a seller to call).
     """
     if verdict not in ("buy", "sell"):
         return []
-    pool = [
-        t for t in teams or []
-        if not t.get("is_viewer") and t.get("name")
-    ]
+    viewer_names = {
+        str(t.get("name") or "").strip().lower()
+        for t in (teams or [])
+        if t.get("is_viewer") and t.get("name")
+    }
+    pool = []
+    for t in teams or []:
+        if t.get("is_viewer"):
+            continue
+        name = t.get("name")
+        if not name:
+            continue
+        if str(name).strip().lower() in viewer_names:
+            continue
+        pool.append(t)
     if verdict == "buy":
         pool = [t for t in pool if float(t.get("playoff_pct") or 0) <= SELL_THRESHOLD]
         pool.sort(key=lambda t: float(t.get("playoff_pct") or 0))

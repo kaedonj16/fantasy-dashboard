@@ -259,11 +259,12 @@ def _build_sim_state_impl(ctx: dict, platform: str = "sleeper") -> Optional[dict
     raw_ss           = ctx.get("raw_scoring_settings") or {}
 
     team_stats = ctx.get("team_stats")
-    has_games  = team_stats is not None and not team_stats.empty
+    has_games = team_stats_have_played_games(team_stats)
+    roster_map = ctx.get("roster_map") or {}
 
     if not has_games:
-        # Preseason / offseason: project from rosters. blend = 1.0 → per-week
-        # mean is the pure weekly Sleeper projection.
+        # Preseason / offseason / Week-1 seed: project from rosters. blend = 1.0
+        # → per-week mean is the pure weekly Sleeper projection.
         teams = _estimate_from_rosters(ctx, ppg_map=season_ppg_map, pos_map=pos_map)
         if not teams:
             return None
@@ -274,7 +275,7 @@ def _build_sim_state_impl(ctx: dict, platform: str = "sleeper") -> Optional[dict
     else:
         if current_week > regular_season_end:
             return None  # season complete — no simulation
-        teams = _build_teams(team_stats)
+        teams = _build_teams(team_stats, roster_map)
         if not teams:
             return None
         remaining_weeks = list(range(current_week + 1, playoff_week_start))
@@ -670,11 +671,12 @@ def simulate_playoff_odds(
                 division_map[int(rid)] = div
 
     team_stats = ctx.get("team_stats")
-    has_games  = team_stats is not None and not team_stats.empty
+    has_games = team_stats_have_played_games(team_stats)
+    roster_map = ctx.get("roster_map") or {}
 
     roster_positions = ctx.get("roster_positions") or []
 
-    # ── Case 1: no game data yet (preseason / offseason of new year) ─────────
+    # ── Case 1: no game data yet (preseason / offseason / Week-1 seed) ───────
     if not has_games:
         # Build the PPG map Sleeper-first (same source as in-season / swap sims)
         # so projections come from Sleeper at all points.
@@ -698,7 +700,7 @@ def simulate_playoff_odds(
         return result
 
     # ── Case 2: season complete ───────────────────────────────────────────────
-    teams = _build_teams(team_stats)
+    teams = _build_teams(team_stats, roster_map)
     if not teams:
         return []
 
@@ -1285,20 +1287,94 @@ def _blend_weekly_projections(
 # In-season team data from team_stats DataFrame
 # ---------------------------------------------------------------------------
 
-def _build_teams(team_stats) -> list[dict]:
+def team_stats_have_played_games(team_stats) -> bool:
+    """True only when at least one team has a real game on the board.
+
+    Week 1 seeds a 0-0 ``team_stats`` frame so Standings is not blank before
+    any leg finalizes. That frame must NOT flip the sim into the in-season
+    path — otherwise ``_build_teams`` would run on a RangeIndex and mint
+    fake roster_ids (0..N-1), which then mis-attribute playoff odds to the
+    Front Office Report / trade-window card while the odds *table* (keyed by
+    team name) still looks coherent.
+    """
+    if team_stats is None:
+        return False
+    try:
+        if getattr(team_stats, "empty", True):
+            return False
+    except Exception:
+        return False
+    for col in ("G", "Wins", "Losses", "Ties"):
+        if col not in getattr(team_stats, "columns", []):
+            continue
+        try:
+            if float(team_stats[col].fillna(0).sum()) > 0:
+                return True
+        except Exception:
+            continue
+    if "PF" in getattr(team_stats, "columns", []):
+        try:
+            if float(team_stats["PF"].fillna(0).sum()) > 0:
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def _roster_id_for_owner(owner: str, roster_map: Optional[dict], index_val) -> Optional[int]:
+    """Map a standings owner name (or index) onto a real league roster_id."""
+    name = str(owner or "").strip()
+    if roster_map and name:
+        for rid, mapped in roster_map.items():
+            if str(mapped or "").strip() == name:
+                try:
+                    return int(rid)
+                except (TypeError, ValueError):
+                    continue
+    try:
+        rid = int(index_val)
+    except (TypeError, ValueError):
+        return None
+    if not roster_map:
+        return rid
+    # Only accept the index when it is a real roster key — never a RangeIndex
+    # slot that merely collides with a team id (the Week-1 seed bug).
+    if str(rid) in roster_map:
+        return rid
+    try:
+        if rid in roster_map:
+            return rid
+    except Exception:
+        pass
+    return None
+
+
+def _build_teams(team_stats, roster_map: Optional[dict] = None) -> list[dict]:
+    """Build sim team rows from standings, keyed by real roster_id.
+
+    ``team_stats`` is owner-oriented with a default RangeIndex. Never treat
+    that index as roster_id when a roster_map is available — resolve through
+    the owner name instead.
+    """
     teams = []
-    for rid in team_stats.index:
-        row    = team_stats.loc[rid]
-        wins   = int(row.get("Wins",   0) or 0)
+    seen: set[int] = set()
+    for idx in team_stats.index:
+        row = team_stats.loc[idx]
+        owner = str(row.get("owner", "") or "")
+        rid = _roster_id_for_owner(owner, roster_map, idx)
+        if rid is None or rid in seen:
+            continue
+        seen.add(rid)
+        wins = int(row.get("Wins", 0) or 0)
         losses = int(row.get("Losses", 0) or 0)
-        ties   = int(row.get("Ties",   0) or 0)
-        pf     = float(row.get("PF",   0) or 0)
-        avg    = float(row.get("AVG",  80) or 80)
-        std    = max(float(row.get("STD", 15) or 15), _MIN_STD)
+        ties = int(row.get("Ties", 0) or 0)
+        pf = float(row.get("PF", 0) or 0)
+        avg = float(row.get("AVG", 80) or 80)
+        std = max(float(row.get("STD", 15) or 15), _MIN_STD)
         teams.append({
-            "roster_id": int(rid),
-            "name":      str(row.get("owner", f"Team {rid}")),
-            "wins":  wins, "losses": losses, "ties": ties,
+            "roster_id": rid,
+            "name": owner or f"Team {rid}",
+            "wins": wins, "losses": losses, "ties": ties,
             "pf": pf, "avg": avg, "std": std,
         })
     return teams

@@ -22,6 +22,11 @@ STATUS_IN_PROGRESS = "in_progress"
 STATUS_FINAL = "final"
 
 
+def _synthetic_week_matchups(rosters: List[dict], week: int) -> List[dict]:
+    from utils.matchup_schedule import synthetic_week_matchups
+    return synthetic_week_matchups(rosters, week)
+
+
 def build_matchup_preview(
         league_id: str,
         week: int,
@@ -31,12 +36,21 @@ def build_matchup_preview(
         platform: str
 ) -> List[dict]:
     mlist = get_matchups(platform, league_id, week, season) or []
-    if not mlist:
-        return []
 
     # Pre-fetch users/rosters once instead of per team
     users = get_users(platform, league_id, season) or []
     rosters = get_rosters(platform, league_id, season) or []
+
+    # Dynasty leagues often keep a pending rookie draft after the NFL season
+    # starts. Some platforms still return an empty matchup feed for Week 1+
+    # until that draft finishes. Synthesize a deterministic round-robin so the
+    # Season Hub Matchups tab is never blank once the league is in-season.
+    if not mlist and rosters:
+        mlist = _synthetic_week_matchups(rosters, week)
+        if not mlist:
+            return []
+    elif not mlist:
+        return []
 
     # Pull league settings to find playoff start week
     settings = get_league_settings() or {}
