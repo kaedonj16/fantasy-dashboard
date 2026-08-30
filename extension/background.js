@@ -78,6 +78,7 @@ async function pruneStaleDraftRoomTabs() {
   if (changed) await persistBrDraftRoomTabs();
 }
 
+
 function parseDraftRoomHref(href) {
   try {
     const u = new URL(String(href || ""));
