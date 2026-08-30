@@ -1,6 +1,12 @@
 """Redraft Playoff Impact drops dynasty signals (top-3 pick, roster age)."""
 from pathlib import Path
 
+import pytest
+
+# simulate_playoff_odds imports numpy at module load; the lint-only CI job
+# installs just pytest, so skip cleanly there like other heavy-dep suites.
+pytest.importorskip("numpy")
+
 from data_building.simulate_playoff_odds import shape_playoff_impact_for_league
 from dashboard_services.pages.trade_calculator_page import build_trade_calculator_body
 
