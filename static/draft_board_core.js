@@ -620,9 +620,10 @@
         return Math.max(1, starters + 2);
     }
 
-    function remainingObligations(counts, rc, remainingPicks, sf) {
+    function remainingObligations(counts, rc, remainingPicks, sf, opts) {
         counts = counts || {};
         rc = rc || {};
+        opts = opts || {};
         var req = starterRequirements(rc, sf);
         var missing = {
             QB: Math.max(0, req.QB - (+counts.QB || 0)), RB: Math.max(0, req.RB - (+counts.RB || 0)),
@@ -636,18 +637,43 @@
         Object.keys(missing).forEach(function (k) {
             required += missing[k];
         });
+        // Lineup holes that should steer redraft recs: dedicated RB/WR/FLEX, plus
+        // QB/TE only when they are not weekly-streamable (1QB / non-premium TE).
+        // K/DEF stay in `required` so late-round fill math is unchanged.
+        var tep = +opts.tep || 0;
+        var streamableQb = !sf && (+req.QB || 0) <= 1;
+        var streamableTe = tep <= 0 && (+req.TE || 0) <= 1;
+        var lineupHoles = missing.RB + missing.WR + missing.FLEX
+            + (streamableQb ? 0 : missing.QB)
+            + (streamableTe ? 0 : missing.TE);
         return {
             missing: missing, required: required, remaining: Math.max(0, +remainingPicks || 0),
-            freePicks: Math.max(0, (+remainingPicks || 0) - required)
+            freePicks: Math.max(0, (+remainingPicks || 0) - required),
+            lineupHoles: lineupHoles
         };
     }
 
     // Pure, testable final layer used only for live recommendations. A great fall
     // can overcome fit, but ordinary backup-only value pays a persistent cost.
+    //
+    // Redraft recs optimize this-season starting-lineup strength (the same
+    // inputs that become points-for / playoff odds), not Pick Score BPA and not
+    // a per-pick playoff Monte Carlo. `lineupHoles` is the count of still-open
+    // RB/WR/FLEX starters (plus SF QB / premium TE). Empty 1QB/1TE slots are
+    // excluded so streamable fills cannot leap skill depth. Pick Score weights
+    // stay in the grade kernel; this tax is recommendation-only.
+    function redraftBenchHoleTax(holes) {
+        var n = Math.max(0, +holes || 0);
+        if (n <= 0) return 0;
+        return Math.min(11, 3.5 + 2.5 * Math.min(n, 3));
+    }
+
     function decisionScore(o) {
         o = o || {};
         var base = +o.base || 0, util = o.utility == null ? 1 : +o.utility;
         var score = base + (util - 1) * 38;
+        var redraft = o.draftType === 'redraft';
+        var holes = Math.max(0, +o.lineupHoles || 0);
         if (o.bench) {
             score += (+o.quality || 0) * 5;
             if ((+o.required || 0) > 0 && (+o.freePicks || 0) <= 1) score -= 7;
@@ -660,6 +686,12 @@
             // Truly exceptional falls may buy back some fit cost, but ordinary ADP
             // values cannot use the generic late-round score inflation as an escape.
             score += Math.max(0, Math.min(12, (+o.exceptional || 0) * 12));
+            // Mid-draft luxury bench while a real starter/flex hole remains. Opt-in
+            // via draftType + lineupHoles so existing callers/tests stay unchanged.
+            if (redraft) score -= redraftBenchHoleTax(holes);
+        } else if (redraft) {
+            // Starter/flex: tilt toward this-year production among similar PS.
+            score += Math.max(0, Math.min(4, (+o.quality || 0) * 4));
         }
         if ((+o.waitLoss || 0) > 0) {
             // waitLossScale (default 1) lets the caller damp positional-scarcity urgency

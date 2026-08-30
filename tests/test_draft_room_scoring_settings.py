@@ -105,6 +105,7 @@ def test_pick_reason_uses_its_own_current_pick_variable():
     assert "Gone before #" in body
     assert "Best available at #" in body
     assert "1st-round talent" in body
+    assert "Backup-only · starter slots still open" in body
 
 
 def test_board_offers_pick_score_sort_instead_of_steals():
@@ -128,6 +129,8 @@ def test_glossary_explains_live_recommendation_logic():
     assert "expected availability at your next pick" in source
     assert "shown as a rank rather than a grade" in source
     assert "When it is not your turn, the order is for your next owned pick" in source
+    assert "luxury bench BPA" in source
+    assert "does not rank by simulated playoff odds" in source
 
 
 def test_recommendation_rows_use_compact_rank_and_reason_copy():

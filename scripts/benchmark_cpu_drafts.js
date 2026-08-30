@@ -113,7 +113,7 @@ function runOne(cfg, source, random, aggregate) {
     }
     const roster = rosters[slot], counts = { QB:0, RB:0, WR:0, TE:0, K:0, DEF:0 };
     roster.forEach(p => { counts[p.position] = (counts[p.position] || 0) + 1; });
-    const obligations = Core.remainingObligations(counts, rc, cfg.rounds - round + 1, cfg.sf);
+    const obligations = Core.remainingObligations(counts, rc, cfg.rounds - round + 1, cfg.sf, { tep: cfg.tep });
     const candidates = available.slice(0, Math.min(100, available.length)).filter(p => {
       const limit = Core.positionRosterLimit(p.position, rc, { draftType: cfg.type, tep: cfg.tep });
       return counts[p.position] < limit;
@@ -128,7 +128,8 @@ function runOne(cfg, source, random, aggregate) {
       const exceptional = Math.max(0, Math.min(1, (pick - p.adp) / Math.max(12, p.adp * 0.65)));
       const ds = Core.decisionScore({ base, utility, bench, deepBench: role === 'bench2',
         quality: Math.min(1, p.ppg / 25), required: obligations.required,
-        freePicks: obligations.freePicks, recentPenalty, exceptional, waitLoss: 0 });
+        freePicks: obligations.freePicks, recentPenalty, exceptional, waitLoss: 0,
+        draftType: cfg.type, lineupHoles: obligations.lineupHoles || 0 });
       const sigma = Math.max(1, Math.min(10, 0.35 + 0.055 * p.adp));
       const distance = pick - p.adp;
       const adpWeight = distance <= 0 ? Math.exp(-0.5 * Math.pow(distance / sigma, 2))
