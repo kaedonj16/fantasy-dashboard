@@ -244,10 +244,11 @@ def api_draft_detect():
         return jsonify({"drafts": [], "error": "league_required"})
     # ESPN: the dashboard countdown card only needs start_time + status and must
     # not hit mDraftDetail on every tick. Draft Room / cheat-sheet live connect
-    # pass sync=1 to fetch the companion snapshot (inProgress, rounds, teams).
+    # pass sync=1; Draft History passes history=1 for the same enriched snapshot.
     if platform == "espn":
         want_sync = (request.args.get("sync") or "").strip().lower() in ("1", "true", "yes")
-        if want_sync:
+        want_history = (request.args.get("history") or "").strip().lower() in ("1", "true", "yes")
+        if want_sync or want_history:
             return _espn_detect_sync(league_id, season)
         try:
             _drafts = get_drafts("espn", league_id, season) or []
@@ -263,7 +264,8 @@ def api_draft_detect():
         } for d in _drafts]})
     if platform == "yahoo":
         want_sync = (request.args.get("sync") or "").strip().lower() in ("1", "true", "yes")
-        if want_sync:
+        want_history = (request.args.get("history") or "").strip().lower() in ("1", "true", "yes")
+        if want_sync or want_history:
             return _yahoo_detect_sync(league_id, season)
         try:
             _drafts = get_drafts("yahoo", league_id, season) or []
