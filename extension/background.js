@@ -32,6 +32,89 @@ const YAHOO_DRAFT_TAB_URLS = [
 
 const RECONNECT_COOLDOWN_MS = 5000;
 let lastReconnectAt = 0;
+/** @type {Map<number, {href:string, platform:string, season:string, leagueId:string, at:number}>} */
+const brDraftRoomTabs = new Map();
+
+function parseDraftRoomHref(href) {
+  try {
+    const u = new URL(String(href || ""));
+    const m = u.pathname.match(/^\/(espn|yahoo|sleeper)\/(\d{4})\/([^/]+)\/draft\b/i);
+    if (m) {
+      return { platform: m[1].toLowerCase(), season: m[2], leagueId: m[3] };
+    }
+  } catch (_e) {
+    /* ignore */
+  }
+  return { platform: "", season: "", leagueId: "" };
+}
+
+function registerBrDraftRoomTab(tabId, meta) {
+  if (!tabId) return;
+  brDraftRoomTabs.set(Number(tabId), {
+    href: String((meta && meta.href) || ""),
+    platform: String((meta && meta.platform) || ""),
+    season: String((meta && meta.season) || ""),
+    leagueId: String((meta && meta.leagueId) || ""),
+    at: Date.now(),
+  });
+}
+
+function leagueIdsMatch(a, b) {
+  const x = String(a || "").trim();
+  const y = String(b || "").trim();
+  if (!x || !y) return true;
+  if (x === y) return true;
+  const xn = x.replace(/\D/g, "");
+  const yn = y.replace(/\D/g, "");
+  return !!(xn && yn && xn === yn);
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  brDraftRoomTabs.delete(Number(tabId));
+});
+
+async function queryBrDraftRoomTabs() {
+  const seen = new Set();
+  const out = [];
+
+  for (const [tabId, meta] of brDraftRoomTabs.entries()) {
+    if (seen.has(tabId)) continue;
+    seen.add(tabId);
+    out.push({ id: tabId, url: meta.href, ...meta });
+  }
+
+  try {
+    const queried = await chrome.tabs.query({ url: BR_TAB_URLS });
+    for (const tab of queried) {
+      if (!tab || !tab.id || seen.has(tab.id)) continue;
+      seen.add(tab.id);
+      const parsed = parseDraftRoomHref(tab.url || "");
+      out.push({ ...tab, ...parsed });
+      registerBrDraftRoomTab(tab.id, {
+        href: tab.url || "",
+        platform: parsed.platform,
+        season: parsed.season,
+        leagueId: parsed.leagueId,
+      });
+    }
+  } catch (_e) {
+    if (!out.length) return [];
+  }
+
+  return out;
+}
+
+function filterTabsForRelay(tabs, payload) {
+  const lid = String((payload && payload.leagueId) || "");
+  const draftTabs = tabs.filter((tab) => {
+    const href = tab.url || tab.href || "";
+    return /\/draft\b/i.test(href) || (tab.leagueId && tab.platform);
+  });
+  const pool = draftTabs.length ? draftTabs : tabs;
+  if (!lid) return pool;
+  const matched = pool.filter((tab) => leagueIdsMatch(tab.leagueId, lid));
+  return matched.length ? matched : pool;
+}
 
 function relayEventName(messageType) {
   return messageType === "yahooDraftRelay"
@@ -111,7 +194,7 @@ async function deliverReconnectToBrTab(tab, detail) {
 async function relayDraftToBrTabs(messageType, payload) {
   let tabs = [];
   try {
-    tabs = await chrome.tabs.query({ url: BR_TAB_URLS });
+    tabs = filterTabsForRelay(await queryBrDraftRoomTabs(), payload);
   } catch (_e) {
     return { ok: false, reason: "tabs_query_failed", sent: 0, tabs: 0 };
   }
@@ -121,7 +204,7 @@ async function relayDraftToBrTabs(messageType, payload) {
       if (await deliverRelayToTab(tab, messageType, payload)) sent += 1;
     })
   );
-  return { ok: true, sent, tabs: tabs.length };
+  return { ok: true, sent, tabs: tabs.length, registered: brDraftRoomTabs.size };
 }
 
 async function ensureEspnDraftObserver(tabId) {
@@ -201,7 +284,7 @@ async function pingDraftTabs() {
 async function pingBrDraftRooms(detail) {
   let tabs = [];
   try {
-    tabs = await chrome.tabs.query({ url: BR_TAB_URLS });
+    tabs = filterTabsForRelay(await queryBrDraftRoomTabs(), detail);
   } catch (_e) {
     return { ok: false, tabs: 0, pinged: 0 };
   }
@@ -211,7 +294,7 @@ async function pingBrDraftRooms(detail) {
       if (await deliverReconnectToBrTab(tab, detail)) pinged += 1;
     })
   );
-  return { ok: true, tabs: tabs.length, pinged };
+  return { ok: true, tabs: tabs.length, pinged, registered: brDraftRoomTabs.size };
 }
 
 async function reconnectDraftRelay(detail) {
@@ -323,8 +406,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  if (msg.type === "yahooDraftTabReady" || msg.type === "brDraftRoomReady") {
+  if (msg.type === "yahooDraftTabReady") {
     sendResponse({ ok: true });
+    return false;
+  }
+
+  if (msg.type === "brDraftRoomReady") {
+    const tabId = sender && sender.tab && sender.tab.id;
+    const href = String(msg.href || (sender.tab && sender.tab.url) || "");
+    const parsed = parseDraftRoomHref(href);
+    registerBrDraftRoomTab(tabId, {
+      href,
+      platform: String(msg.platform || parsed.platform || ""),
+      season: String(msg.season || parsed.season || ""),
+      leagueId: String(msg.leagueId || parsed.leagueId || ""),
+    });
+    sendResponse({ ok: true, registered: brDraftRoomTabs.size });
     return false;
   }
 

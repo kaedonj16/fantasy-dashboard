@@ -169,18 +169,37 @@
     return false;
   });
 
+  function draftRoomMeta() {
+    const m = location.pathname.match(/^\/(espn|yahoo|sleeper)\/(\d{4})\/([^/]+)\/draft\b/i);
+    return {
+      href: location.href,
+      platform: m ? m[1].toLowerCase() : "",
+      season: m ? m[2] : "",
+      leagueId: m ? m[3] : "",
+    };
+  }
+
+  function announceDraftRoom() {
+    try {
+      chrome.runtime.sendMessage(
+        { type: "brDraftRoomReady", ...draftRoomMeta() },
+        () => {
+          void chrome.runtime.lastError;
+        }
+      );
+    } catch (_e) {
+      /* ignore */
+    }
+  }
+
   scan();
   const mo = new MutationObserver(scan);
   mo.observe(document.documentElement, { childList: true, subtree: true });
 
-  try {
-    chrome.runtime.sendMessage(
-      { type: "brDraftRoomReady", href: location.href },
-      () => {
-        void chrome.runtime.lastError;
-      }
-    );
-  } catch (_e) {
-    /* ignore */
-  }
+  announceDraftRoom();
+  setInterval(announceDraftRoom, 12000);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) announceDraftRoom();
+  });
+  window.addEventListener("pageshow", announceDraftRoom);
 })();

@@ -145,7 +145,7 @@
       const hasDraftRoom = resp && resp.br && resp.br.pinged > 0;
       const hasDraftTab = resp && resp.draft && resp.draft.pinged > 0;
       if (!hasDraftRoom) {
-        setChip("BR Fantasy · open Draft Room on brfantasyfootball.com", false);
+        setChip("BR Fantasy · open Draft Room + Connect Live first", false);
       } else if (!hasDraftTab) {
         setChip("BR Fantasy · reload this ESPN draft tab", false);
       } else if (!mainObserverReady) {
@@ -225,7 +225,8 @@
   function relayFailureText(resp) {
     if (resp && resp.reason === "tabs_query_failed") return "BR Fantasy · reload extension";
     if (resp && resp.tabs > 0) return "BR Fantasy · reload Draft Room tab";
-    return "BR Fantasy · open Draft Room on brfantasyfootball.com";
+    if (resp && resp.registered > 0) return "BR Fantasy · refresh Draft Room tab";
+    return "BR Fantasy · open Draft Room + Connect Live first";
   }
 
   function relayPending(force) {
