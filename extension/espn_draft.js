@@ -7,8 +7,10 @@
   "use strict";
 
   const EVENT = "brfantasy:espn-draft-raw";
+  const RELAY_STATUS = "brfantasy:espn-relay-status";
   const RESCAN = "brfantasy:draft-rescan";
   const BRIDGE = "brfantasy-bridge-v1";
+  const RECONNECT_SETTLE_MS = 1200;
   const RETRY_MS = 3000;
   const RECONNECT_COOLDOWN_MS = 5000;
   let lastDelivered = "";
@@ -95,11 +97,57 @@
     el.style.background = ok ? "#065f46" : "#0f172a";
   }
 
+  function applyRelayStatus(detail, force) {
+    if (!detail) return;
+    const count = Number(detail.pickCount || 0);
+    if (detail.sent > 0) {
+      lastPickCount = count;
+      setChip(
+        count > 0
+          ? "BR Fantasy · connected · " + count + " picks"
+          : "BR Fantasy · connected · watching for picks",
+        true
+      );
+      return;
+    }
+    if (count > 0 || force) {
+      setChip(relayFailureText(detail), false);
+      if (pendingPayload) scheduleRetry();
+    }
+  }
+
+  function finishReconnect(resp) {
+    if (resp && resp.throttled) {
+      setChip("BR Fantasy · wait a few seconds…", false);
+      return;
+    }
+    setTimeout(function () {
+      if (pendingPayload) {
+        relayPending(true);
+        return;
+      }
+      if (lastPickCount > 0) {
+        setChip("BR Fantasy · connected · " + lastPickCount + " picks", true);
+        return;
+      }
+      const hasDraftRoom = resp && resp.br && resp.br.pinged > 0;
+      const hasDraftTab = resp && resp.draft && resp.draft.pinged > 0;
+      if (!hasDraftRoom) {
+        setChip("BR Fantasy · open Draft Room on brfantasyfootball.com", false);
+      } else if (!hasDraftTab) {
+        setChip("BR Fantasy · reload this ESPN draft tab", false);
+      } else {
+        setChip("BR Fantasy · watching draft · no picks detected yet", false);
+        requestRescan();
+      }
+    }, RECONNECT_SETTLE_MS);
+  }
+
   function forceResend() {
     lastDelivered = "";
     clearRetry();
     requestRescan();
-    if (pendingPayload) deliverPending(true);
+    if (pendingPayload) relayPending(true);
   }
 
   function manualReconnect() {
@@ -112,18 +160,21 @@
     setChip("BR Fantasy · reconnecting…", false);
     forceResend();
     try {
-      chrome.runtime.sendMessage({ type: "reconnectDraftRelay", source: "espn-chip" }, function (resp) {
-        void chrome.runtime.lastError;
-        if (resp && resp.throttled) {
-          setChip("BR Fantasy · wait a few seconds…", false);
-          return;
+      chrome.runtime.sendMessage(
+        {
+          type: "reconnectDraftRelay",
+          source: "espn-chip",
+          leagueId: leagueFromUrl().leagueId,
+          season: leagueFromUrl().season,
+          platform: "espn",
+        },
+        function (resp) {
+          void chrome.runtime.lastError;
+          finishReconnect(resp);
         }
-        if (resp && ((resp.br && resp.br.pinged > 0) || (resp.draft && resp.draft.pinged > 0))) {
-          setChip("BR Fantasy · reconnect sent", false);
-        }
-      });
+      );
     } catch (_e) {
-      /* ignore */
+      finishReconnect(null);
     }
   }
 
@@ -149,7 +200,7 @@
     if (retryTimer) return;
     retryTimer = setTimeout(function () {
       retryTimer = null;
-      deliverPending();
+      relayPending();
     }, RETRY_MS);
   }
 
@@ -159,7 +210,7 @@
     return "BR Fantasy · open Draft Room on brfantasyfootball.com";
   }
 
-  function deliverPending(force) {
+  function relayPending(force) {
     if (!pendingPayload) return;
     const payload = pendingPayload;
     const fp = payloadFingerprint(payload);
@@ -211,17 +262,20 @@
       setChip("BR Fantasy · leagueId missing in URL", false);
       return;
     }
-    const fp = payloadFingerprint(payload);
-    if (fp === lastDelivered) return;
     pendingPayload = payload;
-    deliverPending();
+    const fp = payloadFingerprint(payload);
+    if (fp !== lastDelivered) lastPickCount = Math.max(lastPickCount, payload.picks.length);
   }
 
   listenFromMain(EVENT, forward);
+  listenFromMain(RELAY_STATUS, function (detail) {
+    applyRelayStatus(detail, false);
+  });
 
   try {
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg && msg.type === "forceDraftRelay") forceResend();
+      if (msg && msg.type === "draftRelayResult") applyRelayStatus(msg, true);
     });
   } catch (_e) {
     /* ignore */

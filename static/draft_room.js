@@ -100,6 +100,9 @@
   function extDraftHostLabel(){
     return extPlatformKey() === 'yahoo' ? 'Yahoo' : 'ESPN';
   }
+  function _espnExtensionRecentlyActive(){
+    return !!(_espnRelayActive || (_espnExtLastSeen && (Date.now() - _espnExtLastSeen < 120000)));
+  }
   function _relayPlatform(src){
     var s = String(src || '').toLowerCase();
     if (s.indexOf('yahoo') >= 0) return 'yahoo';
@@ -200,6 +203,9 @@
     }
     _espnRelayLastFp = '';
     _espnRelayInFlight = false;
+    _espnFallbackShown = false;
+    _espnStallPolls = 0;
+    hideEspnFallback();
     updateEspnSyncPill('connecting');
     _setEspnReconnectBusy(true);
     _pullExtensionRelaySnapshot(true);
@@ -217,8 +223,11 @@
     if (!state || state.mode !== 'live') return;
     var d = ev && ev.detail;
     if (d && d.throttled) return;
+    _espnFallbackShown = false;
+    hideEspnFallback();
     var ok = d && ((d.br && d.br.pinged > 0) || (d.draft && d.draft.pinged > 0));
     if (ok){
+      _espnExtLastSeen = Date.now();
       updateEspnSyncPill(state.isDrafting ? 'live' : (state.isComplete ? 'complete' : 'synced'));
       return;
     }
@@ -5855,16 +5864,15 @@
   }
   function _espnShouldFallback(d){
     if (!state || !isExtLiveSource() || _espnFallbackShown || _espnAuthFailed) return false;
-    // Extension relay is actively feeding picks — don't kick the user to manual.
-    if (_espnRelayActive) return false;
+    // Extension relay or a recent extension heartbeat — REST may still look empty mid-draft.
+    if (_espnExtensionRecentlyActive()) return false;
     if (String(d && d.status) === 'complete') return false;
-    var stallLimit = parseInt(state.stallPolls, 10) || 8;
+    var stallLimit = Math.max(parseInt(state.stallPolls, 10) || 8, 24);
     var drafting = String(d && d.status) === 'drafting' || d && d.in_progress === true;
     if (!drafting) return false;
-    if (d && d.live_detail_present === false && _espnStallPolls >= 3) return true;
-    if (d && d.picks_observed === false && _espnStallPolls >= 3) return true;
-    if (!_espnEverGrew && _espnStallPolls >= stallLimit) return true;
-    return false;
+    // ESPN/Yahoo REST often lacks live pick detail while drafting; only bail after a
+    // long stall with no picks from any source and no extension activity.
+    return !_espnEverGrew && _espnStallPolls >= stallLimit;
   }
   // Browser extension observed an open ESPN/Yahoo draft room and relayed raw picks.
   // Normalize via /api/draft/{espn|yahoo}-relay, then reuse the same apply path as REST sync.
@@ -5883,6 +5891,11 @@
     if (!_leagueIdsMatch(lid, cfg.leagueId)) return;
     var season = String(detail.season || '');
     if (season && cfg.season && String(cfg.season) !== season && String(state.season || '') !== season) return;
+    _espnExtLastSeen = Date.now();
+    _espnRelayActive = true;
+    _espnFallbackShown = false;
+    hideEspnFallback();
+    showEspnTools();
     var fp = String(detail.fingerprint || '') || (
       lid + '|' + season + '|' + detail.picks.length + '|'
       + (detail.picks.length ? (detail.picks[detail.picks.length - 1].overallPickNumber || detail.picks[detail.picks.length - 1].playerId || '') : '')
@@ -5895,11 +5908,15 @@
       _espnRelayInFlight = false;
       if (!state || state.mode !== 'live') return;
       if (_relayPlatform(state.syncSource || cfg.platform) !== expectedSource) return;
-      if (!normalizedPicks || !normalizedPicks.length) return false;
-      _espnRelayLastFp = (meta && meta.fingerprint) || fp;
       _espnRelayActive = true;
-      hideEspnFallback();
+      _espnExtLastSeen = Date.now();
       _espnFallbackShown = false;
+      hideEspnFallback();
+      if (!normalizedPicks || !normalizedPicks.length){
+        updateEspnSyncPill(state.isDrafting ? 'live' : 'synced');
+        return false;
+      }
+      _espnRelayLastFp = (meta && meta.fingerprint) || fp;
       var count = liveSelectionCount(normalizedPicks);
       if (count > _espnLastPickCount){
         _espnEverGrew = true;
@@ -5970,10 +5987,12 @@
     if (window.__brEspnRelayWired) return;
     window.__brEspnRelayWired = true;
     _listenBrFantasy('brfantasy:espn-draft-relay', function(ev){
+      _espnExtLastSeen = Date.now();
       try { applyEspnExtensionRelay(ev && ev.detail); }
       catch (err){ if (window.console) console.error('[draft] espn relay', err); }
     });
     _listenBrFantasy('brfantasy:yahoo-draft-relay', function(ev){
+      _espnExtLastSeen = Date.now();
       try { applyYahooExtensionRelay(ev && ev.detail); }
       catch (err){ if (window.console) console.error('[draft] yahoo relay', err); }
     });
@@ -6221,7 +6240,8 @@
         clearTimeout(to); _pollInFlight = false;
         if (state && isExtLiveSource() && state.isDrafting){
           _espnStallPolls++;
-          if (!_espnEverGrew && _espnStallPolls >= (parseInt(state.stallPolls, 10) || 8)){
+          var stallLimit = Math.max(parseInt(state.stallPolls, 10) || 8, 24);
+          if (!_espnExtensionRecentlyActive() && !_espnEverGrew && _espnStallPolls >= stallLimit){
             stopPolling(); showEspnFallback();
           }
         }
