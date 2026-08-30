@@ -55,6 +55,11 @@ def test_extension_relay_wired_and_skips_manual_fallback():
     assert "brfantasy:espn-draft-relay" in ROOM_JS
     assert "if (_espnRelayActive) return false;" in ROOM_JS
     assert "_espnRelayActive = true;" in ROOM_JS
+    assert "function _relayPlatform(src)" in ROOM_JS
+    assert "function _leagueIdsMatch(relayId, cfgId)" in ROOM_JS
+    assert "function _mapExtensionPicksRaw(raw)" in ROOM_JS
+    assert "function _pullExtensionRelaySnapshot()" in ROOM_JS
+    assert "_pullExtensionRelaySnapshot()" in ROOM_JS
     assert "function openEspnMobileSync()" not in ROOM_JS
     assert "drEspnMobileSync" not in ROOM_JS
     assert "/api/draft/espn-relay/token" not in ROOM_JS

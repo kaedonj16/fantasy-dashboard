@@ -7,8 +7,11 @@
   "use strict";
 
   const EVENT = "brfantasy:espn-draft-raw";
-  let lastSent = "";
+  const RETRY_MS = 3000;
+  let lastDelivered = "";
   let lastPickCount = 0;
+  let pendingPayload = null;
+  let retryTimer = null;
   let chip = null;
 
   function leagueFromUrl() {
@@ -55,6 +58,67 @@
     el.style.background = ok ? "#065f46" : "#0f172a";
   }
 
+  function payloadFingerprint(payload) {
+    const picks = payload.picks || [];
+    const last = picks.length ? picks[picks.length - 1] : null;
+    return [
+      payload.leagueId,
+      payload.season,
+      picks.length,
+      last ? last.overallPickNumber : 0,
+      last ? last.playerId : "",
+    ].join("|");
+  }
+
+  function clearRetry() {
+    if (!retryTimer) return;
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+
+  function scheduleRetry() {
+    if (retryTimer) return;
+    retryTimer = setTimeout(function () {
+      retryTimer = null;
+      deliverPending();
+    }, RETRY_MS);
+  }
+
+  function deliverPending() {
+    if (!pendingPayload) return;
+    const payload = pendingPayload;
+    const fp = payloadFingerprint(payload);
+    if (fp === lastDelivered) {
+      pendingPayload = null;
+      clearRetry();
+      return;
+    }
+    const grew = payload.picks.length > lastPickCount;
+    try {
+      chrome.runtime.sendMessage(payload, function (resp) {
+        void chrome.runtime.lastError;
+        if (resp && resp.sent > 0) {
+          lastDelivered = fp;
+          pendingPayload = null;
+          clearRetry();
+          lastPickCount = payload.picks.length;
+          setChip(
+            grew
+              ? "BR Fantasy · synced " + payload.picks.length + " picks"
+              : "BR Fantasy · connected · " + payload.picks.length + " picks",
+            true
+          );
+        } else {
+          setChip("BR Fantasy · open Draft Room to receive picks", false);
+          scheduleRetry();
+        }
+      });
+    } catch (_e) {
+      setChip("BR Fantasy · reload extension", false);
+      scheduleRetry();
+    }
+  }
+
   function forward(detail) {
     if (!detail || !Array.isArray(detail.picks)) return;
     const ids = leagueFromUrl();
@@ -69,34 +133,10 @@
       at: detail.at || Date.now(),
     };
     if (!payload.leagueId) return;
-    const fp = [
-      payload.leagueId,
-      payload.season,
-      payload.picks.length,
-      payload.picks.length ? payload.picks[payload.picks.length - 1].overallPickNumber : 0,
-      payload.picks.length ? payload.picks[payload.picks.length - 1].playerId : "",
-    ].join("|");
-    if (fp === lastSent) return;
-    lastSent = fp;
-    const grew = payload.picks.length > lastPickCount;
-    lastPickCount = payload.picks.length;
-    try {
-      chrome.runtime.sendMessage(payload, (resp) => {
-        void chrome.runtime.lastError;
-        if (resp && resp.sent > 0) {
-          setChip(
-            grew
-              ? "BR Fantasy · synced " + payload.picks.length + " picks"
-              : "BR Fantasy · connected · " + payload.picks.length + " picks",
-            true
-          );
-        } else {
-          setChip("BR Fantasy · open Draft Room to receive picks", false);
-        }
-      });
-    } catch (_e) {
-      setChip("BR Fantasy · reload extension", false);
-    }
+    const fp = payloadFingerprint(payload);
+    if (fp === lastDelivered) return;
+    pendingPayload = payload;
+    deliverPending();
   }
 
   window.addEventListener(EVENT, (ev) => {

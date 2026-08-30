@@ -87,6 +87,78 @@
   function extDraftHostLabel(){
     return extPlatformKey() === 'yahoo' ? 'Yahoo' : 'ESPN';
   }
+  function _relayPlatform(src){
+    var s = String(src || '').toLowerCase();
+    if (s.indexOf('yahoo') >= 0) return 'yahoo';
+    if (s.indexOf('espn') >= 0) return 'espn';
+    return s;
+  }
+  function _leagueIdsMatch(relayId, cfgId){
+    var a = String(relayId || '').trim();
+    var b = String(cfgId || '').trim();
+    if (!a || !b) return true;
+    if (a === b) return true;
+    var an = a.replace(/\D/g, ''), bn = b.replace(/\D/g, '');
+    return !!(an && bn && an === bn);
+  }
+  function _mapExtensionPicksRaw(raw){
+    var out = [];
+    (raw || []).forEach(function(p){
+      if (!p) return;
+      var pickNo = p.overallPickNumber != null ? p.overallPickNumber : (p.pick != null ? p.pick : p.pick_no);
+      if (pickNo == null) return;
+      var extId = p.playerId != null ? p.playerId : p.player_id;
+      if (extId == null && p.player_key) extId = String(p.player_key).split('.').pop();
+      var row = {
+        pick_no: Number(pickNo),
+        player_id: extId != null && String(extId) !== '0' ? String(extId) : '',
+        external_player_id: extId != null ? String(extId) : '',
+        name: p.name || 'Unknown',
+        position: p.position || '',
+        team: p.team || '',
+        unresolved: true
+      };
+      if (livePickIsSelection(row)) out.push(row);
+    });
+    return out;
+  }
+  function _extensionPicksFromRelayRows(rows){
+    return (rows || []).map(function(p){
+      return {
+        overallPickNumber: p.pick_no,
+        playerId: p.external_player_id || p.player_id,
+        teamId: p.external_team_id || p.roster_id,
+        name: p.name,
+        position: p.position,
+        team: p.team
+      };
+    });
+  }
+  function _pullExtensionRelaySnapshot(){
+    if (!state || state.mode !== 'live' || !cfg.leagueId || state.isComplete) return;
+    var season = parseInt(state.season || cfg.season, 10);
+    if (!season) return;
+    var url = extRelayUrl()
+      + '?league_id=' + encodeURIComponent(String(cfg.leagueId))
+      + '&season=' + encodeURIComponent(String(season));
+    fetch(url, { credentials: 'same-origin', cache: 'no-store' })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){
+        if (!d || !Array.isArray(d.picks) || !d.picks.length) return;
+        var detail = {
+          leagueId: cfg.leagueId,
+          season: String(season),
+          inProgress: d.in_progress !== false && String(d.status) !== 'complete',
+          drafted: !!d.drafted || String(d.status) === 'complete',
+          picks: _extensionPicksFromRelayRows(d.picks),
+          source: 'relay-cache',
+          fingerprint: d.fingerprint
+        };
+        if (extPlatformKey() === 'yahoo') applyYahooExtensionRelay(detail);
+        else applyEspnExtensionRelay(detail);
+      })
+      .catch(function(){ /* ignore */ });
+  }
 
   var sim = false;         // mock-draft simulation active
   var simTimer = null;
@@ -5457,6 +5529,7 @@
           if (isDrafting) startPickTimer();
           if (isExtLiveSource()){
             updateEspnSyncPill(isDrafting ? 'live' : (String(d.status) === 'pre_draft' ? 'not_started' : 'synced'));
+            _pullExtensionRelaySnapshot();
           }
         }
         loadPlayers();
@@ -5702,10 +5775,11 @@
   }
   function applyExtensionRelay(detail, expectedSource){
     if (!detail || !Array.isArray(detail.picks)) return;
-    if (!state || state.mode !== 'live' || state.syncSource !== expectedSource) return;
+    if (!state || state.mode !== 'live') return;
+    if (_relayPlatform(state.syncSource || cfg.platform) !== expectedSource) return;
     if (_espnAuthFailed) return;
     var lid = String(detail.leagueId || detail.league_id || '');
-    if (lid && cfg.leagueId && String(cfg.leagueId) !== lid) return;
+    if (!_leagueIdsMatch(lid, cfg.leagueId)) return;
     var season = String(detail.season || '');
     if (season && cfg.season && String(cfg.season) !== season && String(state.season || '') !== season) return;
     var fp = String(detail.fingerprint || '') || (
@@ -5716,6 +5790,44 @@
     if (_espnRelayInFlight) return;
     _espnRelayInFlight = true;
     _espnExtLastSeen = Date.now();
+    function _finishRelay(normalizedPicks, meta){
+      _espnRelayInFlight = false;
+      if (!state || state.mode !== 'live') return;
+      if (_relayPlatform(state.syncSource || cfg.platform) !== expectedSource) return;
+      if (!normalizedPicks || !normalizedPicks.length) return false;
+      _espnRelayLastFp = (meta && meta.fingerprint) || fp;
+      _espnRelayActive = true;
+      hideEspnFallback();
+      _espnFallbackShown = false;
+      var count = liveSelectionCount(normalizedPicks);
+      if (count > _espnLastPickCount){
+        _espnEverGrew = true;
+        _espnStallPolls = 0;
+      }
+      _espnLastPickCount = count;
+      if (detail.inProgress || (meta && meta.in_progress) || (meta && meta.status === 'drafting')){
+        state.isDrafting = true;
+        state.status = 'drafting';
+      }
+      if ((meta && meta.status === 'complete') || detail.drafted){
+        state.isComplete = true;
+        state.isDrafting = false;
+        state.status = 'complete';
+      }
+      var applied = applyMissingLivePicks(normalizedPicks);
+      if (applied || count){
+        render();
+        updateEspnSyncPill(state.isComplete ? 'complete' : (state.isDrafting ? 'live' : 'synced'));
+        if (state.isDrafting) startPickTimer();
+        if (state.isComplete){
+          stopPolling(); stopPickTimer(); save();
+          showCompleteSidebar();
+        }
+      } else {
+        updateEspnSyncPill(state.isDrafting ? 'live' : 'synced');
+      }
+      return true;
+    }
     var headers = { 'Content-Type': 'application/json' };
     var url = expectedSource === 'yahoo' ? '/api/draft/yahoo-relay' : '/api/draft/espn-relay';
     fetch(url, {
@@ -5734,43 +5846,24 @@
     })
       .then(function(r){ return r.json().then(function(body){ return { ok: r.ok, body: body }; }); })
       .then(function(res){
-        _espnRelayInFlight = false;
-        if (!state || state.mode !== 'live' || state.syncSource !== expectedSource) return;
+        if (!state || state.mode !== 'live'){ _espnRelayInFlight = false; return; }
         var d = res.body || {};
-        if (!res.ok || !d || !Array.isArray(d.picks)) return;
-        _espnRelayLastFp = d.fingerprint || fp;
-        _espnRelayActive = true;
-        hideEspnFallback();
-        _espnFallbackShown = false;
-        var count = liveSelectionCount(d.picks);
-        if (count > _espnLastPickCount){
-          _espnEverGrew = true;
-          _espnStallPolls = 0;
+        var picks = Array.isArray(d.picks) ? d.picks : [];
+        if (res.ok && liveSelectionCount(picks) > 0){
+          if (_finishRelay(picks, d)) return;
         }
-        _espnLastPickCount = count;
-        if (detail.inProgress || d.in_progress || d.status === 'drafting'){
-          state.isDrafting = true;
-          state.status = 'drafting';
-        }
-        if (d.status === 'complete' || detail.drafted){
-          state.isComplete = true;
-          state.isDrafting = false;
-          state.status = 'complete';
-        }
-        var applied = applyMissingLivePicks(d.picks);
-        if (applied || count){
-          render();
-          updateEspnSyncPill(state.isComplete ? 'complete' : (state.isDrafting ? 'live' : 'synced'));
-          if (state.isDrafting) startPickTimer();
-          if (state.isComplete){
-            stopPolling(); stopPickTimer(); save();
-            showCompleteSidebar();
-          }
-        } else {
-          updateEspnSyncPill(state.isDrafting ? 'live' : 'synced');
-        }
+        var fallback = _mapExtensionPicksRaw(detail.picks);
+        if (_finishRelay(fallback, { fingerprint: fp, in_progress: true, status: 'drafting' })) return;
+        _espnRelayInFlight = false;
+        if (window.console) console.warn('[draft] extension relay had no mappable picks', res.ok ? d : res);
       })
-      .catch(function(){ _espnRelayInFlight = false; });
+      .catch(function(err){
+        _espnRelayInFlight = false;
+        var fallback = _mapExtensionPicksRaw(detail.picks);
+        if (!_finishRelay(fallback, { fingerprint: fp, in_progress: true, status: 'drafting' }) && window.console){
+          console.warn('[draft] extension relay failed', err);
+        }
+      });
   }
   function _wireEspnExtensionRelay(){
     if (window.__brEspnRelayWired) return;
