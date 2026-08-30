@@ -54,8 +54,10 @@ def _luck_and_value_age_cards(ctx: dict, df_weekly_finalized, owner_colors: dict
 
     value_age_svg_str = ""
     try:
-        from dashboard_services.ai.context_builders import team_value_age_rows
-        value_age_svg_str = value_age_svg(team_value_age_rows(ctx), viewer_owner, owner_colors)
+        from dashboard_services.ai.context_builders import ctx_scoring_type, team_value_age_rows
+        # Age-vs-value is a dynasty window chart. Redraft skips it.
+        if ctx_scoring_type(ctx) != "redraft":
+            value_age_svg_str = value_age_svg(team_value_age_rows(ctx), viewer_owner, owner_colors)
     except Exception:
         value_age_svg_str = ""
 

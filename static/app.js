@@ -5662,25 +5662,37 @@ window.initTradePage = function initTradePage(root = document) {
         </div>`;
       })() : "";
 
-      // ── Future Outlook: the counterweight to the win-now metrics ──────────
-      const outlook   = data.outlook || {};
+      // ── Future Outlook: dynasty-only counterweight to win-now metrics ─────
+      const isRedraft = (data.scoring_type || getScoringType()) === "redraft";
+      const outlook   = (!isRedraft && data.outlook) ? data.outlook : {};
       const ageDelta  = outlook.age_delta;          // < 0 means getting younger
       const valDelta  = outlook.value_delta || 0;   // > 0 means banking value
       const poD       = data.delta.playoff_pct;
-      const pickD     = data.delta.top3_pick_pct;
+      const pickD     = isRedraft ? null : data.delta.top3_pick_pct;
 
       // Roster-wide age shifts are small (one swap on a full roster), so use a
       // tighter threshold than the old traded-players-only comparison.
-      const younger     = ageDelta != null && ageDelta <= -0.2;
-      const older       = ageDelta != null && ageDelta >= 0.2;
-      const bankingVal  = valDelta >= 50;
-      const sheddingVal = valDelta <= -50;
-      const pickUp      = pickD >= 1;
-      const pickDown    = pickD <= -1;
+      const younger     = !isRedraft && ageDelta != null && ageDelta <= -0.2;
+      const older       = !isRedraft && ageDelta != null && ageDelta >= 0.2;
+      const bankingVal  = !isRedraft && valDelta >= 50;
+      const sheddingVal = !isRedraft && valDelta <= -50;
+      const pickUp      = pickD != null && pickD >= 1;
+      const pickDown    = pickD != null && pickD <= -1;
 
       // Classify the deal so the user reads the trade-off, not just the red.
       let vTitle, vSub, vColor, vIcon;
-      if (poD <= -1) {
+      if (isRedraft) {
+        if (poD <= -1) {
+          vColor = "#dc2626"; vIcon = "fa-arrow-trend-down"; vTitle = "Playoff Downgrade";
+          vSub = "Lowers your playoff odds this season.";
+        } else if (poD >= 1) {
+          vColor = "#059669"; vIcon = "fa-arrow-trend-up"; vTitle = "Playoff Upgrade";
+          vSub = "Raises your playoff odds this season.";
+        } else {
+          vColor = "#475569"; vIcon = "fa-scale-balanced"; vTitle = "Neutral";
+          vSub = "Little change to your playoff odds this season.";
+        }
+      } else if (poD <= -1) {
         const gains = [];
         if (pickUp)     gains.push("better draft positioning");
         if (younger)    gains.push("a younger core");
@@ -5753,11 +5765,11 @@ window.initTradePage = function initTradePage(root = document) {
           </div>
         </div>` : "";
 
-      const pickStat = data.before.top3_pick_pct != null
+      const pickStat = (!isRedraft && data.before.top3_pick_pct != null)
         ? stat("Top-3 Pick", data.before.top3_pick_pct.toFixed(1), data.after.top3_pick_pct.toFixed(0), data.delta.top3_pick_pct, "%")
         : "";
 
-      const outlookGrid = (pickStat || ageStat || valStat) ? `
+      const outlookGrid = (!isRedraft && (pickStat || ageStat || primeStat)) ? `
         <div class="pi-section-label">Future Outlook</div>
         <div class="pi-grid">
           ${pickStat}${ageStat}${primeStat}
@@ -7335,7 +7347,8 @@ window.initTradePage = function initTradePage(root = document) {
       if (btnSubBuild)    btnSubBuild.classList.toggle("is-active", isBuild);
       if (btnSubStrategy) btnSubStrategy.classList.toggle("is-active", !isBuild);
       if (!isBuild) {
-        const arch = _activeArchetype || "contending";
+        let arch = _activeArchetype || "contending";
+        if (getScoringType() === "redraft" && arch === "rebuilding") arch = "contending";
         _setStrategyChip(arch);
         loadStrategyView(arch);
       } else {
@@ -7343,14 +7356,25 @@ window.initTradePage = function initTradePage(root = document) {
       }
     }
 
-    var _ARCH_DESC = {
-      contending:  "Win now. Convert youth and picks into proven, immediate production, even at some long-term cost.",
-      rebuilding:  "Build for later. Move aging veterans for younger players and future draft capital that should appreciate.",
-      consolidate: "Raise your ceiling. Package several good pieces into one elite difference-maker for your starting lineup.",
-      distribute:  "Add depth and flexibility. Break one over-concentrated elite into multiple starters plus future picks.",
-    };
+    function _archDesc() {
+      if (getScoringType() === "redraft") {
+        return {
+          contending:  "Win this season. Trade for proven weekly production even if it costs depth.",
+          rebuilding:  "",
+          consolidate: "Raise your ceiling. Package several good pieces into one elite difference-maker for your starting lineup.",
+          distribute:  "Add depth and flexibility. Break one over-concentrated elite into multiple starters.",
+        };
+      }
+      return {
+        contending:  "Win now. Convert youth and picks into proven, immediate production, even at some long-term cost.",
+        rebuilding:  "Build for later. Move aging veterans for younger players and future draft capital that should appreciate.",
+        consolidate: "Raise your ceiling. Package several good pieces into one elite difference-maker for your starting lineup.",
+        distribute:  "Add depth and flexibility. Break one over-concentrated elite into multiple starters plus future picks.",
+      };
+    }
 
     function _setStrategyChip(arch) {
+      if (getScoringType() === "redraft" && arch === "rebuilding") arch = "contending";
       _activeArchetype = arch;
       _strategyPage    = 0;
       localStorage.setItem("sugg-archetype", arch);
@@ -7364,7 +7388,7 @@ window.initTradePage = function initTradePage(root = document) {
       }
       const desc = root.querySelector("#otcStrategyDesc");
       if (desc) {
-        var txt = _ARCH_DESC[arch] || "";
+        var txt = _archDesc()[arch] || "";
         desc.textContent = txt;
         desc.style.display = txt ? "" : "none";
       }
@@ -8383,10 +8407,16 @@ window.initTradePage = function initTradePage(root = document) {
     const redraft = getScoringType() === "redraft";
     const sizeCtrl = root.querySelector("#leagueSizeSelect");
     if (sizeCtrl) sizeCtrl.disabled = redraft;
+    const rebuildChip = root.querySelector('.otc-arch-chip[data-arch="rebuilding"]');
+    if (rebuildChip) rebuildChip.style.display = redraft ? "none" : "";
+    if (redraft && rebuildChip && rebuildChip.classList.contains("is-active")) {
+      const contendChip = root.querySelector('.otc-arch-chip[data-arch="contending"]');
+      if (contendChip) contendChip.click();
+    }
     const tipBody = root.querySelector("#otcInfoTooltip .otc-info-tooltip-body");
     if (tipBody) {
       tipBody.innerHTML = redraft
-        ? "<p>Player values are this-season redraft values. Aging veterans and current production rank above youth and future draft capital.</p><p>Switch to Dynasty in the scoring control if you want multi-year trade values instead.</p>"
+        ? "<p>Player values are this-season redraft values. Weekly production this year is what counts, not youth or future draft capital.</p><p>Switch to Dynasty in the scoring control if you want multi-year trade values instead.</p>"
         : "<p>Player values are built directly from real dynasty trades, capturing how the market prices players and picks in actual deals.</p><p>We translate those trade relationships into a unified value scale, then layer in production, age trajectory, and role stability to sharpen the signal.</p>";
     }
   }
@@ -12220,6 +12250,15 @@ function brLeagueSize() {
   var ctx = window.__brctx || {};
   return ctx.leagueSize || 10;
 }
+function brScoringType() {
+  if (typeof _scoringType !== 'undefined' && _scoringType) {
+    var fromPage = String(_scoringType).trim().toLowerCase();
+    if (fromPage === 'redraft' || fromPage === 'dynasty') return fromPage;
+  }
+  var ctx = window.__brctx || {};
+  var fromCtx = String(ctx.scoringType || '').trim().toLowerCase();
+  return fromCtx === 'redraft' ? 'redraft' : 'dynasty';
+}
 
 // Player modal (openPlayerModal … toggleGameLogYear) lives in static/player_modal.js
 
@@ -12290,7 +12329,7 @@ const _WL_INJ_SHORT = { QUESTIONABLE: 'Q', DOUBTFUL: 'D', OUT: 'OUT', IR: 'IR', 
 function _wlChipsHtml(a) {
   if (!a) return '';
   let html = '';
-  if (a.value) html += '<span class="wl-chip wl-chip-val" title="Dynasty value">' + Math.round(a.value) + '</span>';
+  if (a.value) html += '<span class="wl-chip wl-chip-val" title="' + (typeof brScoringType === 'function' && brScoringType() === 'redraft' ? 'Value' : 'Dynasty value') + '">' + Math.round(a.value) + '</span>';
   if (a.delta7 != null && Math.abs(a.delta7) >= 1) {
     const up = a.delta7 > 0;
     html += '<span class="wl-chip ' + (up ? 'wl-chip-up' : 'wl-chip-down') + '" title="7-day value change">' +
@@ -12851,7 +12890,7 @@ function _wlStatsHtml(rows) {
     moverTile = tile('Top mover', '<span class="wl-muted">&ndash;</span>', 'last 7 days');
   }
   return tile('Players', String(rows.length), 'tracked') +
-    tile('Avg value', avgVal == null ? '<span class="wl-muted">&ndash;</span>' : avgVal.toLocaleString(), 'dynasty') +
+    tile('Avg value', avgVal == null ? '<span class="wl-muted">&ndash;</span>' : avgVal.toLocaleString(), (typeof brScoringType === 'function' && brScoringType() === 'redraft') ? 'redraft' : 'dynasty') +
     tile('Avg age', avgAge == null ? '<span class="wl-muted">&ndash;</span>' : avgAge.toFixed(1), 'years') +
     moverTile;
 }
@@ -14121,6 +14160,9 @@ function _buildComparePPGRow(p1, p2) {
 function _cmpIsSf() {
   return (typeof brLeagueType === 'function' ? brLeagueType() : '1qb') === 'sf';
 }
+function _cmpIsRedraft() {
+  return (typeof brScoringType === 'function' ? brScoringType() : 'dynasty') === 'redraft';
+}
 function _cmpHistValue(h) {
   if (!h) return null;
   const raw = _cmpIsSf()
@@ -14161,6 +14203,16 @@ function _cmpPlayersSearchUrl(q) {
 function _cmpDisplayValue(p) {
   if (!p) return null;
   const stats = p.stats || {};
+  if (_cmpIsRedraft()) {
+    if (_cmpIsSf()) {
+      const v = p.redraft_value_sf != null ? p.redraft_value_sf
+        : (stats.redraft_value_sf != null ? stats.redraft_value_sf
+          : (p.redraft_value_1qb != null ? p.redraft_value_1qb : stats.redraft_value_1qb));
+      if (v != null && v !== '') return v;
+    }
+    const rd = p.redraft_value_1qb != null ? p.redraft_value_1qb : stats.redraft_value_1qb;
+    if (rd != null && rd !== '') return rd;
+  }
   if (_cmpIsSf()) {
     const v = p.sf_value != null ? p.sf_value : stats.sf_value;
     if (v != null && v !== '') return v;
@@ -14171,12 +14223,13 @@ function _cmpDisplayValue(p) {
 
 function _buildCompareHeroHTML(p, other) {
   const isSf = _cmpIsSf();
-  const val1qb = p.stats?.value || 0;
-  const valsf  = p.stats?.sf_value || 0;
-  const valPosRank  = p.stats?.pos_rank;
-  const valOvrRank  = p.stats?.value_ovr_rank;
-  const sfPosRank   = p.stats?.sf_pos_rank;
-  const sfOvrRank   = p.stats?.sf_value_ovr_rank;
+  const isRedraft = _cmpIsRedraft();
+  const val1qb = isRedraft ? (p.stats?.redraft_value_1qb || 0) : (p.stats?.value || 0);
+  const valsf  = isRedraft ? (p.stats?.redraft_value_sf || 0) : (p.stats?.sf_value || 0);
+  const valPosRank  = isRedraft ? p.stats?.redraft_pos_rank : p.stats?.pos_rank;
+  const valOvrRank  = isRedraft ? p.stats?.redraft_value_ovr_rank : p.stats?.value_ovr_rank;
+  const sfPosRank   = isRedraft ? p.stats?.redraft_sf_pos_rank : p.stats?.sf_pos_rank;
+  const sfOvrRank   = isRedraft ? p.stats?.redraft_sf_value_ovr_rank : p.stats?.sf_value_ovr_rank;
   const pos    = p.position || '';
   const ppg    = p.stats?.ppg;
   const ppgRank = p.stats?.ppg_rank;
@@ -14198,8 +14251,8 @@ function _buildCompareHeroHTML(p, other) {
   // are position-relative so they are not compared across players.
   const _o = (other && other.stats) || {};
   const _win = (mine, theirs) => (mine != null && theirs != null && Number(mine) > Number(theirs));
-  const win1qb = _win(p.stats?.value, _o.value) ? ' compare-hero-win' : '';
-  const winsf  = _win(p.stats?.sf_value, _o.sf_value) ? ' compare-hero-win' : '';
+  const win1qb = _win(val1qb, isRedraft ? _o.redraft_value_1qb : _o.value) ? ' compare-hero-win' : '';
+  const winsf  = _win(valsf, isRedraft ? _o.redraft_value_sf : _o.sf_value) ? ' compare-hero-win' : '';
   const winppg = _win(ppg, _o.ppg) ? ' compare-hero-win' : '';
   const wintot = _win(total, _o.total_pts) ? ' compare-hero-win' : '';
   const ss = p.stats?.start_score;
@@ -14255,13 +14308,13 @@ function _buildCompareHeroHTML(p, other) {
 
   const card1qb = `
       <div class="pm-hero-stat${isSf ? '' : ' pm-hero-primary'}${win1qb}" style="padding:10px 10px;">
-        <div class="pm-hero-label">1QB Value</div>
+        <div class="pm-hero-label">${isRedraft ? '1QB Redraft' : '1QB Value'}</div>
         <div class="pm-hero-val" style="font-size:20px;${isSf ? '' : 'color:#3b82f6;'}">${val1qb > 0 ? val1qb : '-'}</div>
         <div class="pm-hero-sub">${isB ? valSub : (valPosRank ? `POS : ${valPosRank} · OVR : ${valOvrRank ?? '–'}` : '-')}</div>
       </div>`;
   const cardSf = `
       <div class="pm-hero-stat${isSf ? ' pm-hero-primary' : ''}${winsf}" style="padding:10px 10px;">
-        <div class="pm-hero-label">SF Value</div>
+        <div class="pm-hero-label">${isRedraft ? 'SF Redraft' : 'SF Value'}</div>
         <div class="pm-hero-val" style="font-size:20px;${isSf ? 'color:#3b82f6;' : ''}">${valsf > 0 ? valsf : '-'}</div>
         <div class="pm-hero-sub">${isB ? valSub : (sfPosRank ? `POS : ${sfPosRank} · OVR : ${sfOvrRank ?? '–'}` : '-')}</div>
       </div>`;
@@ -15474,9 +15527,14 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
   }
 
   const isSf = _cmpIsSf();
+  const isRedraft = _cmpIsRedraft();
   const rows = [
-    row(isSf ? 'Superflex Value' : 'Dynasty Value (1QB)',
-      players.map(p => isSf ? st(p).sf_value : st(p).value), 'max', v => v == null ? '&ndash;' : Math.round(v)),
+    row(isRedraft
+      ? (isSf ? 'Superflex Redraft Value' : 'Redraft Value (1QB)')
+      : (isSf ? 'Superflex Value' : 'Dynasty Value (1QB)'),
+      players.map(p => isRedraft
+        ? (isSf ? (st(p).redraft_value_sf ?? st(p).redraft_value_1qb) : st(p).redraft_value_1qb)
+        : (isSf ? st(p).sf_value : st(p).value)), 'max', v => v == null ? '&ndash;' : Math.round(v)),
     row(isSf ? '1QB Value' : 'Superflex Value',
       players.map(p => isSf ? st(p).value : st(p).sf_value), 'max', v => v == null ? '&ndash;' : Math.round(v)),
     row('Overall Rank', players.map(p => isSf ? st(p).sf_value_ovr_rank : st(p).value_ovr_rank), 'min', v => v == null ? '&ndash;' : ('#' + v)),

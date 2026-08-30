@@ -20,21 +20,36 @@ POS_RANK_LABEL_NOTE = (
 )
 
 
+# Shared redraft honesty block — GM memo, front office, and power rankings.
+REDRAFT_HONESTY_RULES = """
+REDRAFT HARD RULES:
+- Never use: retool, retooling, rebuild, rebuilding, window, dynasty, draft capital, future picks, multi-year.
+- Frame the team as contend, bubble, or out. If playoff_status is in the JSON, that is the team's standing. Do not override it.
+- If playoff_pct is present, cite it. Do not contradict it with "stay competitive" or "title contender."
+- draft_grade (if present) is how the draft was built, NOT a power ranking. If grade and playoff_pct disagree, say that in one clause (e.g. clean draft, middle-of-the-pack odds).
+- Never narrate missing or empty fields ("record context is missing", "undefined", "N/A", "no data"). If season_phase is preseason or record is blank/0-0, write "preseason, no games yet" and lean on playoff_pct and roster strength.
+- Name specific players and the weakest starting slot from weakest_positions / position_strength. No "margin spots", "fringes", or "undefined."
+""".strip()
+
+DONT_NARRATE_GAPS = (
+    "Never narrate missing or empty fields. If a value is blank, omit it; "
+    "do not write that context is missing."
+)
+
 GM_MEMO_SYSTEM = """
 You are a sharp dynasty fantasy football GM analyst based on the current date.
 Be specific, concise, and grounded only in the provided JSON.
 Do not invent players, stats, injuries, or league settings.
 Write like a premium front office memo, not a generic chatbot.
-"""
+""" + "\n" + DONT_NARRATE_GAPS
 
 GM_MEMO_SYSTEM_REDRAFT = """
 You are a sharp REDRAFT fantasy football GM analyst based on the current date.
 This is a single-season redraft league. Players are owned for this NFL season only.
 Be specific, concise, and grounded only in the provided JSON.
 Do not invent players, stats, injuries, or league settings.
-Never discuss dynasty rebuilds, future draft capital, rookie picks, or multi-year windows.
 Write like a premium front office memo, not a generic chatbot.
-"""
+""" + "\n" + REDRAFT_HONESTY_RULES
 
 
 def json_dumps_safe(obj: dict) -> str:
@@ -54,11 +69,17 @@ def build_gm_memo_prompt(team_ctx, scoring_type: str = "dynasty") -> str:
 Write a personalized REDRAFT GM memo for this team.
 
 scoring_type in the JSON is "redraft". This is NOT a dynasty league.
-Focus on this-season production, starting lineup strength, bye weeks, injuries,
-waiver adds, and playoff odds. Never recommend draft picks or multi-year rebuilds.
+Focus on this-season starters, weekly scoring, bye weeks, injuries, waivers,
+and playoff odds. Never recommend draft picks or multi-year rebuilds.
+
+{REDRAFT_HONESTY_RULES}
+
+Outlook must state contend / bubble / out (from playoff_status when present)
+and cite playoff_pct when it exists. In preseason, do not apologize for a
+missing record — say no games have been played.
 
 Return a JSON object with these fields - each must be a single sentence or short phrase, NOT a list:
-- team_identity: one-line team identity
+- team_identity: one-line team identity (this-season shape, not a dynasty window)
 - outlook: one paragraph on the team's current situation for THIS season
 - strength: the single biggest strength of this roster (one sentence only - do NOT include weakness or next move here)
 - weakness: the single biggest weakness of this roster (one sentence only - do NOT include strength or next move here)
@@ -94,7 +115,7 @@ You are a premium dynasty fantasy football front-office assistant.
 Be crisp, grounded, and actionable.
 Use only the supplied JSON.
 Do not invent stats, players, trends, or injuries.
-"""
+""" + "\n" + DONT_NARRATE_GAPS
 
 FRONT_OFFICE_BRIEF_SYSTEM_REDRAFT = """
 You are a premium REDRAFT fantasy football front-office assistant.
@@ -102,8 +123,7 @@ This is a single-season league. Focus on remaining-season production only.
 Be crisp, grounded, and actionable.
 Use only the supplied JSON.
 Do not invent stats, players, trends, or injuries.
-Never discuss dynasty rebuilds, future draft capital, or multi-year windows.
-"""
+""" + "\n" + REDRAFT_HONESTY_RULES
 
 
 def build_front_office_brief_prompt(team_ctx, scoring_type: str = "dynasty") -> str:
@@ -121,6 +141,12 @@ Write a "Front Office Briefing" for this REDRAFT team.
 scoring_type in the JSON is "redraft". This is NOT a dynasty league.
 Focus on this-season starters, weekly upside, injuries, and waiver/trade moves
 that help win now. Never mention draft picks or multi-year rebuilds.
+
+{REDRAFT_HONESTY_RULES}
+
+Headline and posture must use contend / bubble / out (from playoff_status
+when present) and cite playoff_pct when it exists. Weakest room should name
+a real position from weakest_positions, not "balance" or "the fringes."
 
 Output format:
 1. One-line headline
@@ -357,10 +383,16 @@ _TRADE_AI_SYSTEM_REDRAFT = """
     - If a counter is needed, name a specific player currently on a roster.
     - Ignore pick_ids, pick_summary, pick_prospects, and any pick-slot discussion.
       Those fields do not apply here even if they appear in the JSON.
-    - Do not talk about rebuilds, tanking, future draft capital, multi-year
-      windows, or dynasty asset accumulation.
     - Market values in the JSON are redraft (this-season production) values.
     - Age matters only for this season's remaining games and durability.
+
+    """ + REDRAFT_HONESTY_RULES + """
+
+    Frame BOTH the viewer and opponent as contend / bubble / out from
+    playoff_status. Cite playoff_pct when present. If direction still says
+    retool, rebuild, or balanced, ignore it and use playoff_status.
+    If season_phase is preseason or record is blank/0-0, do not write that
+    record context is missing. Say no games have been played.
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     SECTION 1: DATA FIDELITY
@@ -371,7 +403,7 @@ _TRADE_AI_SYSTEM_REDRAFT = """
     - Do NOT fabricate values or roster composition - those must come from the JSON.
     - injury_status and injury_body_part are provided per asset when applicable. If injury_status is "IR", "OUT", or similar, work this into the player narrative explicitly.
     - league_format tells you the starter requirements: qb_format is "1QB" or "Superflex/2QB", plus the starting_lineup slots. In Superflex/2QB, quarterbacks carry premium value, so weight QB assets up and say so in football terms. The market values in the JSON already reflect the format, so reason about QB scarcity narratively without re-adjusting the numbers.
-    - opponent_team gives you the trade partner's team context (direction, record, top assets). Use it to explain WHY they'd make this trade and whether they'd likely accept.
+    - opponent_team gives you the trade partner's playoff_status, playoff_pct, weakest_positions, and top assets. Use those to explain WHY they'd make this trade and whether they'd likely accept.
     - opponent_team may be null when the partner cannot be identified. If it is null, still assess acceptance from the assets involved and general market logic. NEVER state or imply that partner context, a team need, or any data is missing, unavailable, unknown, or "not provided," and never apologize for it. Simply focus the acceptance read on the assets, as if by choice.
     - post_trade_roster shows the viewer's actual top players after the deal - reference these by name when explaining roster impact.
 
@@ -414,8 +446,9 @@ _TRADE_AI_SYSTEM_REDRAFT = """
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     - Roster fit and positional needs are SECONDARY to value.
     - Only decline a value-positive trade if it wrecks the remaining-season starting lineup with no replacement.
-    - Teams in a playoff race: weight proven weekly production and remaining schedule.
-    - Teams out of it: still evaluate remaining-season scoring. There is no future-pick consolation in redraft.
+    - playoff_status contend: weight proven weekly production and remaining schedule.
+    - playoff_status bubble: same, plus do not call them a title favorite.
+    - playoff_status out: still evaluate remaining-season scoring. There is no future-pick consolation in redraft.
     - Bye weeks, injuries, and remaining games matter more than long-term age curves.
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -467,8 +500,9 @@ _TRADE_AI_SYSTEM_REDRAFT = """
          Reference the post_trade_roster by name - who stays, what roles they fill, where weekly holes open.
          (e.g., "You'd still lead with CeeDee Lamb and Drake London at WR, giving you elite floor even while Nabers recovers")
       4. Will the opponent accept? Use opponent_team context to explain their motivation.
-         Reference their record, top players, and what filling their weak positions means for their playoff race.
-         (e.g., "They're 3-9 and out of it - Walker does not help them win this week, so they may want a higher-upside WR instead")
+         Cite their playoff_status and playoff_pct. Name a real weak room from
+         weakest_positions. In preseason, skip the record.
+         (e.g., "They're on the bubble at 46% playoff odds and thin at RB, so Walker is a fit")
       5. Only THEN introduce value delta as confirmation of the player-based read.
          (e.g., "The market reflects this: you're sending ~141 more in value, a reasonable premium for an elite weekly starter")
       6. Verdict and counter (if applicable) framed in player terms. Never mention draft picks.
@@ -499,7 +533,10 @@ def build_trade_ai_user_prompt(payload: dict, scoring_type: str = "dynasty") -> 
         lead = (
             "Analyze this REDRAFT trade from the viewer team's perspective.\n\n"
             "This is not dynasty. Draft picks cannot be traded. Never recommend a "
-            "pick as a counter, sweetener, or alternative."
+            "pick as a counter, sweetener, or alternative.\n\n"
+            f"{REDRAFT_HONESTY_RULES}\n\n"
+            "Use playoff_status / playoff_pct on team_context and opponent_team. "
+            "Name weakest_positions. Never narrate a missing record."
         )
     else:
         lead = "Analyze this dynasty trade from the viewer team's perspective."
@@ -584,6 +621,101 @@ def generate_trade_ai_result(payload: dict) -> dict:
     return data
 
 
+POWER_RANKINGS_SYSTEM_DYNASTY = """
+You are a sharp dynasty fantasy football analyst writing weekly power rankings.
+Write like a beat reporter - vivid, specific, punchy. One sentence per team, max 30 words.
+Each sentence must be DIFFERENT in structure and opening. Never start two sentences the same way.
+win_window is the team's pre-computed competitive window label - use it as the primary frame for every narrative.
+Do not invent injuries, news, or player traits - use only the supplied JSON.
+Never narrate missing or empty fields.
+Momentum: rising if value is high but record lags, or window is building; falling if aging/declining; steady otherwise.
+
+win_window guide (let this shape the TONE and ANGLE of each narrative):
+- Contender         → team is elite on both dynasty and scoring axes right now
+- Win-Now           → peak scoring window is open but the timeline is short; urgency
+- Aging Contender   → strong scoring projection but aging core, window narrowing
+- Contender Window  → elite dynasty value with a young/prime roster, ceiling still rising
+- 2-3 Year Window   → strong long-term assets, scoring still developing; patience required
+- Rising            → young future-heavy roster with upside not yet realized
+- Holding Pattern   → no clear direction; stable but not building or winning
+- Retooling         → have picks and aging/declining core; trading away the peak
+- Rebuilding        → weak on both axes, few picks; tough stretch ahead
+- Full Rebuild      → deliberate tank with pick capital; project mode
+""".strip()
+
+POWER_RANKINGS_SYSTEM_REDRAFT = """
+You are a sharp REDRAFT fantasy football analyst writing weekly power rankings.
+This is a single-season league. Write like a beat reporter - vivid, specific, punchy.
+One sentence per team, max 30 words.
+Each sentence must be DIFFERENT in structure and opening. Never start two sentences the same way.
+Do not invent injuries, news, or player traits - use only the supplied JSON.
+""" + "\n" + REDRAFT_HONESTY_RULES + """
+
+Primary frame is playoff_status (contend / bubble / out) plus this week's rank.
+Cite playoff_pct when present. Do not use dynasty window labels even if win_window is in the JSON.
+Momentum: rising if playoff odds or scoring are ahead of the record; falling if the opposite; steady otherwise.
+If season_phase is preseason or every record is 0-0, skip the record and write from projected strength / playoff odds.
+""".strip()
+
+
+def build_power_rankings_prompt(rankings_ctx: dict) -> tuple[str, str]:
+    """Return (system_prompt, user_prompt) for power-ranking narratives."""
+    scoring_type = normalize_trade_scoring_type(
+        (rankings_ctx or {}).get("scoring_type")
+    )
+    payload = json_dumps_safe(rankings_ctx if isinstance(rankings_ctx, dict) else {})
+    if scoring_type == "redraft":
+        system = POWER_RANKINGS_SYSTEM_REDRAFT
+        user = f"""
+Generate power rankings narratives for each team. Lead every sentence with a
+specific player or position-room detail that supports this team's this-season
+standing (contend / bubble / out).
+
+For each team in "teams", produce:
+- roster_id: exact string from the data
+- narrative: one sentence (max 30 words) grounded in playoff_status, playoff_pct, rank, and top_assets
+- momentum: rising | falling | steady
+
+Key signals:
+- playoff_status / playoff_pct: PRIMARY frame when present
+- rank: where they sit on this board
+- top_assets: name the best player(s)
+- position_strengths: mention a real weak or strong room when notable
+- wins/losses/pf: in-season only; skip entirely in preseason or if all teams are 0-0
+- Never mention draft capital, age windows, or retool/rebuild
+
+Return JSON matching the schema exactly.
+
+Rankings context:
+{payload}
+""".strip()
+        return system, user
+
+    system = POWER_RANKINGS_SYSTEM_DYNASTY
+    user = f"""
+Generate power rankings narratives for each team. Lead every sentence with a specific detail - a player name, a position strength, a roster age note, or pick capital - that SUPPORTS the win_window label.
+
+For each team in "teams", produce:
+- roster_id: exact string from the data
+- narrative: one sentence (max 30 words) grounded in the win_window and top_assets
+- momentum: rising | falling | steady
+
+Key signals:
+- win_window: PRIMARY frame - the narrative tone must match this label
+- top_assets: name the best player(s) to make each sentence specific
+- position_strengths: reference dominant or weak groups when notable
+- avg_age: reinforce young/aging angle when it drives the win_window
+- first_round_picks: mention pick capital for Rebuilding/Retooling/Full Rebuild teams
+- wins/losses/pf: use for in-season context; skip record entirely if all teams are 0-0
+
+Return JSON matching the schema exactly.
+
+Rankings context:
+{payload}
+""".strip()
+    return system, user
+
+
 def generate_power_rankings_result(rankings_ctx: dict) -> dict:
     """
     LLM-backed power rankings with narrative for each team.
@@ -612,48 +744,7 @@ def generate_power_rankings_result(rankings_ctx: dict) -> dict:
         "additionalProperties": False,
     }
 
-    system_prompt = """
-You are a sharp dynasty fantasy football analyst writing weekly power rankings.
-Write like a beat reporter - vivid, specific, punchy. One sentence per team, max 30 words.
-Each sentence must be DIFFERENT in structure and opening. Never start two sentences the same way.
-win_window is the team's pre-computed competitive window label - use it as the primary frame for every narrative.
-Do not invent injuries, news, or player traits - use only the supplied JSON.
-Momentum: rising if value is high but record lags, or window is building; falling if aging/declining; steady otherwise.
-
-win_window guide (let this shape the TONE and ANGLE of each narrative):
-- Contender         → team is elite on both dynasty and scoring axes right now
-- Win-Now           → peak scoring window is open but the timeline is short; urgency
-- Aging Contender   → strong scoring projection but aging core, window narrowing
-- Contender Window  → elite dynasty value with a young/prime roster, ceiling still rising
-- 2-3 Year Window   → strong long-term assets, scoring still developing; patience required
-- Rising            → young future-heavy roster with upside not yet realized
-- Holding Pattern   → no clear direction; stable but not building or winning
-- Retooling         → have picks and aging/declining core; trading away the peak
-- Rebuilding        → weak on both axes, few picks; tough stretch ahead
-- Full Rebuild      → deliberate tank with pick capital; project mode
-""".strip()
-
-    user_prompt = f"""
-Generate power rankings narratives for each team. Lead every sentence with a specific detail - a player name, a position strength, a roster age note, or pick capital - that SUPPORTS the win_window label.
-
-For each team in "teams", produce:
-- roster_id: exact string from the data
-- narrative: one sentence (max 30 words) grounded in the win_window and top_assets
-- momentum: rising | falling | steady
-
-Key signals:
-- win_window: PRIMARY frame - the narrative tone must match this label
-- top_assets: name the best player(s) to make each sentence specific
-- position_strengths: reference dominant or weak groups when notable
-- avg_age: reinforce young/aging angle when it drives the win_window
-- first_round_picks: mention pick capital for Rebuilding/Retooling/Full Rebuild teams
-- wins/losses/pf: use for in-season context; skip record entirely if all teams are 0-0
-
-Return JSON matching the schema exactly.
-
-Rankings context:
-{json_dumps_safe(rankings_ctx)}
-""".strip()
+    system_prompt, user_prompt = build_power_rankings_prompt(rankings_ctx)
 
     resp = client.responses.create(
         model=OPENAI_MODEL,
@@ -723,7 +814,7 @@ def generate_trade_suggestions_result(suggestions_ctx: dict) -> dict:
     is_redraft = scoring_type == "redraft"
 
     if is_redraft:
-        system_prompt = """
+        system_prompt = ("""
 You are a REDRAFT fantasy football GM assistant generating proactive trade ideas.
 This is a single-season redraft league. Players are owned for this NFL season only.
 
@@ -749,10 +840,14 @@ CRITICAL RULES - follow exactly:
    medium = solid improvement, low = depth upgrade.
 7. Never write "TBD", "Unknown", or any placeholder. If you cannot fill both sides, skip that suggestion.
 8. Never mention draft picks, rookie picks, pick capital, or future drafts.
-""".strip()
+""" + REDRAFT_HONESTY_RULES + """
+9. Frame the viewer as contend / bubble / out from playoff_status. Cite playoff_pct.
+   Reason from remaining-season production, not rebuilds or draft capital.
+""").strip()
         user_prompt = f"""
 Generate up to 3 specific trade proposals for this redraft team.
 Draft picks cannot be traded. Only propose player-for-player deals.
+Use playoff_status / playoff_pct when present. Never narrate missing fields.
 
 The viewer's needs and surplus positions are provided, along with the best matching trade partners.
 When the viewer has no explicit needs but has surplus, suggest package deals that convert

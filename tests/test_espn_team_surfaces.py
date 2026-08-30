@@ -30,6 +30,7 @@ def test_team_modal_js_hides_picks_for_redraft():
     src = Path("static/app.js").read_text(encoding="utf-8")
     assert "if (!data.is_redraft)" in src
     assert "Roster Value vs Age" in src
+    # Chart is only injected when the server sends value_age_svg (dynasty).
 
 
 def test_trade_suggestions_ai_prompt_forbids_redraft_picks():
@@ -41,6 +42,8 @@ def test_trade_suggestions_ai_prompt_forbids_redraft_picks():
     assert "never suggest a draft pick" in body
     assert "draft picks cannot be traded" in body
     assert "this redraft team" in body
+    assert "playoff_status" in body
+    assert "redraft_honesty_rules" in body
     assert 'scoring_type == "redraft"' in src[start:end]
 
 
@@ -60,3 +63,9 @@ def test_teams_page_uses_team_avatar_and_redraft_values():
     assert "build_model_value_lookup" in src
     assert "if not _is_redraft:" in src
     assert "picks_by_roster = {}" in src
+    assert "redraft_window_label" in src
+    assert "This season" in src
+    assert "Playoff favorite" in src
+    # Dynasty window copy stays for dynasty leagues only.
+    assert "Competitive Windows" in src
+    assert '_sort_archetype_label = "Odds"' in src

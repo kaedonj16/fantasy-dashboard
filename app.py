@@ -1823,7 +1823,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueName:{league_name_js},leagueFormat:{league_format_js},currentWeek:{current_week_js},leagueType:{league_type_js},leagueSize:{league_size_js}}};</script>
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueName:{league_name_js},leagueFormat:{league_format_js},currentWeek:{current_week_js},leagueType:{league_type_js},leagueSize:{league_size_js},scoringType:{league_scoring_type_js}}};</script>
       <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -4717,6 +4717,7 @@ def render_page(
     import json as _json
     _league_type = "1qb"
     _league_size = 10
+    _scoring_type = "redraft" if str(platform or "").strip().lower() == "espn" else "dynasty"
     _chrome_meta = {"name": "", "format": "", "week": 0, "week_label": ""}
     if league_id and platform and season:
         try:
@@ -4728,6 +4729,11 @@ def render_page(
                 _league_type = "sf"
             if int(_chrome_meta.get("size") or 0) >= 2:
                 _league_size = int(_chrome_meta["size"])
+            _peek = _peek_league_ctx(platform, league_id, season) or {"platform": platform}
+            if _league_is_redraft(_peek):
+                _scoring_type = "redraft"
+            else:
+                _scoring_type = "dynasty"
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
 
@@ -4783,6 +4789,7 @@ def render_page(
         current_week_js=_json.dumps(_chrome_meta.get("week") or 0),
         league_type_js=_json.dumps(_league_type),
         league_size_js=_json.dumps(_league_size),
+        league_scoring_type_js=_json.dumps(_scoring_type),
     )
     resp = make_response(html)
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
@@ -6711,36 +6718,39 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
                 return ""  # deadline passed; the window is closed
             weeks_to = deadline - current_week
 
-        # Roster-age standing: average age of each team's 8 most valuable players.
+        is_redraft = _league_is_redraft(ctx)
+
+        # Roster-age standing is a dynasty window signal. Redraft ignores it.
         age_rank = None
         n_teams = len(odds)
-        try:
-            values_by_id = {
-                str(row["id"]): row
-                for row in (get_model_value_table_cached() or [])
-                if isinstance(row, dict) and row.get("id") is not None
-            }
-            team_ages: dict = {}
-            for r in ctx.get("rosters") or []:
-                rid = str(r.get("roster_id"))
-                core = sorted(
-                    (
-                        (float(v.get("value") or 0), float(v.get("age") or 0))
-                        for p in (r.get("players") or [])
-                        if (v := values_by_id.get(str(p))) and float(v.get("age") or 0) > 0
-                    ),
-                    reverse=True,
-                )[:8]
-                if core:
-                    team_ages[rid] = sum(a for _, a in core) / len(core)
-            if str(viewer_roster_id) in team_ages and len(team_ages) >= 4:
-                _order = sorted(team_ages.items(), key=lambda kv: -kv[1])
-                age_rank = next(
-                    i + 1 for i, (rid, _) in enumerate(_order) if rid == str(viewer_roster_id)
-                )
-                n_teams = len(team_ages)
-        except Exception:
-            logger.debug("trade window age rank failed", exc_info=True)
+        if not is_redraft:
+            try:
+                values_by_id = {
+                    str(row["id"]): row
+                    for row in (get_model_value_table_cached() or [])
+                    if isinstance(row, dict) and row.get("id") is not None
+                }
+                team_ages: dict = {}
+                for r in ctx.get("rosters") or []:
+                    rid = str(r.get("roster_id"))
+                    core = sorted(
+                        (
+                            (float(v.get("value") or 0), float(v.get("age") or 0))
+                            for p in (r.get("players") or [])
+                            if (v := values_by_id.get(str(p))) and float(v.get("age") or 0) > 0
+                        ),
+                        reverse=True,
+                    )[:8]
+                    if core:
+                        team_ages[rid] = sum(a for _, a in core) / len(core)
+                if str(viewer_roster_id) in team_ages and len(team_ages) >= 4:
+                    _order = sorted(team_ages.items(), key=lambda kv: -kv[1])
+                    age_rank = next(
+                        i + 1 for i, (rid, _) in enumerate(_order) if rid == str(viewer_roster_id)
+                    )
+                    n_teams = len(team_ages)
+            except Exception:
+                logger.debug("trade window age rank failed", exc_info=True)
 
         vw = trade_window_verdict(pct, weeks_to, age_rank, n_teams)
         partners = trade_partners(
@@ -6756,24 +6766,30 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
         )
 
         verdict = vw["verdict"]
-        titles = {"buy": "Buy window", "sell": "Sell window", "hold": "Hold"}
+        if is_redraft:
+            titles = {"buy": "Playoff push", "sell": "Out of it", "hold": "On the bubble"}
+            section_label = "Trade deadline"
+        else:
+            titles = {"buy": "Buy window", "sell": "Sell window", "hold": "Hold"}
+            section_label = "Trade window"
         lines = []
         if weeks_to is not None:
             when = "this week" if weeks_to == 0 else (
                 "next week" if weeks_to == 1 else f"{weeks_to} weeks away")
             lines.append(f"Week {deadline} trade deadline, {when}.")
         _odds_line = f"You're at {pct:.0f}% playoff odds"
-        if age_rank and n_teams:
+        if (not is_redraft) and age_rank and n_teams:
             _sfx = "th" if 10 <= age_rank % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(age_rank % 10, "th")
             _odds_line += f" with the {age_rank}{_sfx}-oldest core of {n_teams}"
         lines.append(_odds_line + ".")
-        mod_lines = {
-            "all_in": "Your core is old and you're contending. The window is now.",
-            "youth": "Your core is young. Stay patient and keep stacking picks.",
-            "aging_bubble": "Aging core on the playoff bubble. Pick a direction before the deadline.",
-        }
-        if vw["modifier"] in mod_lines:
-            lines.append(mod_lines[vw["modifier"]])
+        if not is_redraft:
+            mod_lines = {
+                "all_in": "Your core is old and you're contending. The window is now.",
+                "youth": "Your core is young. Stay patient and keep stacking picks.",
+                "aging_bubble": "Aging core on the playoff bubble. Pick a direction before the deadline.",
+            }
+            if vw["modifier"] in mod_lines:
+                lines.append(mod_lines[vw["modifier"]])
         if partners:
             who = "Sellers to call" if verdict == "buy" else "Buyers to call"
             lines.append(f"{who}: {', '.join(html.escape(p) for p in partners)}.")
@@ -6789,7 +6805,7 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
         return f"""
         <section class="os-card trade-window-card tw-{verdict}{urgent_cls}">
           <div class="lineup-alert-head">
-            <span class="lineup-alert-title">Trade window: {titles[verdict]}</span>
+            <span class="lineup-alert-title">{section_label}: {titles[verdict]}</span>
             <a class="os-section-link" href="{html.escape(_trade_url)}">Find trade targets &rarr;</a>
           </div>
           <ul class="lineup-alert-list">{items}</ul>
@@ -7448,17 +7464,21 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     # Read the live cached model table directly (same source as the player modal)
     # so standings/team values don't lag behind after a value rebuild.
     model_value_table = list(get_model_value_table_cached() or []) or (ctx.get("model_value_table") or [])
-    picks_by_roster = ctx.get("picks_by_roster") or {}
+    is_redraft = _league_is_redraft(ctx)
+    picks_by_roster = {} if is_redraft else (ctx.get("picks_by_roster") or {})
     platform = ctx["platform"]
     season = ctx["season"]
     league_id_str = str(ctx.get("resolved_league_id") or ctx.get("league_id") or "")
 
-    # ── dynasty value lookup ──────────────────────────────────────────────────
+    # ── value lookup (redraft column in redraft leagues) ─────────────────────
+    _vk_primary, _vk_fallback = _waiver_value_keys(ctx)
     values_by_id: dict[str, float] = {}
     for row in model_value_table:
         if isinstance(row, dict) and row.get("id") is not None:
             try:
-                values_by_id[str(row["id"])] = float(row.get("value") or 0)
+                values_by_id[str(row["id"])] = float(
+                    row.get(_vk_primary) or row.get(_vk_fallback) or 0
+                )
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
 
@@ -7670,7 +7690,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
             if int(pk.get("round") or 0) == 1
         )
         picks_label = f"{first_rd} 1st" if first_rd else f"{row['n_picks']} picks" if row["n_picks"] else "–"
-        picks_td = "" if platform == "espn" else f"<td class='num'>{picks_label}</td>"
+        picks_td = "" if is_redraft else f"<td class='num dyn-capital'>{picks_label}</td>"
         # Medal rank for the top 3; a value bar scaled to the leader so magnitude
         # reads at a glance (scoped to .dynasty-table so other tables are unchanged).
         rank_cls = f" rank-{i}" if i <= 3 else ""
@@ -7692,10 +7712,10 @@ def _build_offseason_standings_body(ctx: dict) -> str:
             f"</tr>"
         )
 
-    draft_capital_th = "" if platform == "espn" else "<th>Draft Capital</th>"
+    draft_capital_th = "" if is_redraft else "<th class='dyn-capital'>Draft Capital</th>"
     standings_footer = (
-        "Roster value · players ranked by dynasty trade market value"
-        if platform == "espn"
+        "Roster value · players ranked by this-season redraft value"
+        if is_redraft
         else "Dynasty value · players + draft picks · no games played yet"
     )
     table_html = f"""
@@ -11098,6 +11118,13 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         f"window.__adpSeason={json.dumps(int(season) if season else 0)};"
         "</script>"
     )
+    if platform and league_id and season:
+        try:
+            _pr_ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
+            _pr_st = "redraft" if _league_is_redraft(_pr_ctx) else "dynasty"
+        except Exception:
+            _pr_st = "redraft" if str(platform).strip().lower() == "espn" else "dynasty"
+        body_html += f"\n<script>window.__leagueScoringType={json.dumps(_pr_st)};</script>"
 
     # Rankings logic was moved to a cacheable, minified static file. `defer` runs
     # it after the page's app.js and after the inline __leagueTePremium injection
@@ -14864,7 +14891,11 @@ def api_trade_eval():
             rosters = ctx.get("rosters") or []
             viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
             if viewer_roster:
-                model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [], is_sf=_ctx_is_sf(ctx))
+                model_value_lookup = build_model_value_lookup(
+                    ctx.get("model_value_table") or [],
+                    is_sf=_ctx_is_sf(ctx),
+                    scoring_type=scoring_type,
+                )
                 viewer_gives = side_a if viewer_side == "b" else side_b
                 viewer_gets = side_b if viewer_side == "b" else side_a
                 sending = [a for a in (viewer_gives.get("assets") or []) if
@@ -14945,6 +14976,7 @@ def api_trade_eval_playoff_impact():
         from data_building.simulate_playoff_odds import (
             build_sim_state as _build_sim_state,
             simulate_swap_impact as _simulate_swap_impact,
+            shape_playoff_impact_for_league as _shape_pi,
         )
         ctx = build_league_context(platform, league_id, season)
         sim_state = _build_sim_state(ctx, platform)
@@ -14952,14 +14984,15 @@ def api_trade_eval_playoff_impact():
             return jsonify({"available": False, "reason": "season_complete"})
 
         result = _simulate_swap_impact(sim_state, roster_id, give_ids, get_ids)
+        is_redraft = _league_is_redraft(ctx)
+        result = _shape_pi(result, is_redraft)
 
-        # Future outlook: value-weighted age + total dynasty value of the
-        # players coming in vs going out. This is the counterweight to the
-        # win-now playoff metrics - getting younger / banking value is the
-        # upside when a deal dents this season's odds (and vice versa).
-        is_sf = _is_superflex_lineup(ctx.get("roster_positions") or [])
-        current_pids = sim_state.get("roster_pid_map", {}).get(roster_id, [])
-        result["outlook"] = _trade_future_outlook(give_ids, get_ids, is_sf, current_pids)
+        # Dynasty only: value-weighted age + pick capital as the counterweight
+        # to this season's odds. Redraft has no future window.
+        if not is_redraft:
+            is_sf = _is_superflex_lineup(ctx.get("roster_positions") or [])
+            current_pids = sim_state.get("roster_pid_map", {}).get(roster_id, [])
+            result["outlook"] = _trade_future_outlook(give_ids, get_ids, is_sf, current_pids)
 
         return jsonify(result)
 
@@ -19153,19 +19186,20 @@ def api_team_details(roster_id: str):
                 pass
 
             try:
-                from utils.standings_viz import value_age_svg
-                from dashboard_services.ai.context_builders import team_value_age_rows
-                _val_ctx = {
-                    "rosters": rosters,
-                    "roster_map": _rmap,
-                    "model_value_table": get_model_value_table_cached() or ctx.get("model_value_table") or [],
-                    "players_index": ctx.get("players_index") or (get_players_index_global() or {}),
-                    "players_map": ctx.get("players_map") or {},
-                    "roster_positions": ctx.get("roster_positions") or (league or {}).get("roster_positions") or [],
-                }
-                _value_age_svg = value_age_svg(team_value_age_rows(_val_ctx), team_name or "", _oc)
-                if _value_age_svg:
-                    graphs_data["value_age_svg"] = _value_age_svg
+                if not is_redraft:
+                    from utils.standings_viz import value_age_svg
+                    from dashboard_services.ai.context_builders import team_value_age_rows
+                    _val_ctx = {
+                        "rosters": rosters,
+                        "roster_map": _rmap,
+                        "model_value_table": get_model_value_table_cached() or ctx.get("model_value_table") or [],
+                        "players_index": ctx.get("players_index") or (get_players_index_global() or {}),
+                        "players_map": ctx.get("players_map") or {},
+                        "roster_positions": ctx.get("roster_positions") or (league or {}).get("roster_positions") or [],
+                    }
+                    _value_age_svg = value_age_svg(team_value_age_rows(_val_ctx), team_name or "", _oc)
+                    if _value_age_svg:
+                        graphs_data["value_age_svg"] = _value_age_svg
             except Exception:
                 logger.warning("team-modal value/age scatter failed", exc_info=True)
 
@@ -21666,15 +21700,17 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
     roster_map = ctx.get("roster_map") or {}
     model_value_table = ctx.get("model_value_table") or []
 
-    # Sleeper league type: 0 = redraft, 1 = keeper, 2 = dynasty. Only pure redraft
-    # turns off the age-based (dynasty) rules and the dynasty-ADP market signals;
-    # keeper is treated like dynasty. Non-Sleeper leagues have no type here and
-    # default to dynasty behavior.
-    _lg_settings = (ctx.get("league") or {}).get("settings") or {}
-    is_redraft = _safe_int(_lg_settings.get("type"), -1) == 0
+    # Redraft/keeper (and all ESPN) use this-season values; dynasty uses
+    # long-term value. Matches _league_is_redraft everywhere else.
+    is_redraft = _league_is_redraft(ctx)
 
     # Build value lookup keyed by player_id
-    val_key = "sf_value" if league_type == "sf" else "value"
+    if is_redraft:
+        val_key = "redraft_value_sf" if league_type == "sf" else "redraft_value_1qb"
+        val_fallback = "redraft_value_1qb" if league_type == "sf" else "value"
+    else:
+        val_key = "sf_value" if league_type == "sf" else "value"
+        val_fallback = "value"
     values_by_id: dict = {}
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -21683,7 +21719,7 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
         if not pid:
             continue
         values_by_id[pid] = {
-            "value": float(row.get(val_key) or row.get("value") or 0),
+            "value": float(row.get(val_key) or row.get(val_fallback) or row.get("value") or 0),
             "age": row.get("age"),
             "position": str(row.get("position") or "").upper(),
             "pos_rank_label": row.get("pos_rank_label") or "",
@@ -22024,7 +22060,10 @@ def api_trade_targets():
     players_index = ctx.get("players_index") or {}
     picks_by_roster = {} if _league_is_redraft(ctx) else (ctx.get("picks_by_roster") or {})
 
-    if league_type == "sf":
+    if _league_is_redraft(ctx):
+        _vk_primary, _vk_fallback = _waiver_value_keys(ctx)
+        val_key, val_fallback = _vk_primary, _vk_fallback
+    elif league_type == "sf":
         val_key = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
         val_fallback = "sf_value"
     else:
@@ -22352,7 +22391,19 @@ def api_trade_intel_player_packages(player_id: str):
         return jsonify({"error": "Premium required"}), 403
 
     try:
-        val_key = "sf_value" if league_type == "sf" else "value"
+        ctx = {}
+        if league_id:
+            try:
+                ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
+            except Exception:
+                ctx = {}
+        is_redraft = bool(ctx) and _league_is_redraft(ctx)
+        if is_redraft:
+            val_key = "redraft_value_sf" if league_type == "sf" else "redraft_value_1qb"
+            val_fallback = "redraft_value_1qb" if league_type == "sf" else "value"
+        else:
+            val_key = "sf_value" if league_type == "sf" else "value"
+            val_fallback = "value"
         # Always prefer live DB values; fall back to cached JSON only if DB unavailable
         value_table = []
         try:
@@ -22362,7 +22413,7 @@ def api_trade_intel_player_packages(player_id: str):
         if not value_table:
             value_table = list(get_model_value_table_cached() or [])
 
-        _use_sf_ranks = (val_key == "sf_value")
+        _use_sf_ranks = (val_key in ("sf_value", "redraft_value_sf"))
         values_by_id: dict = {}
         for p in value_table:
             pid = str(p.get("id") or "")
@@ -22370,7 +22421,7 @@ def api_trade_intel_player_packages(player_id: str):
                 values_by_id[pid] = {
                     "name": p.get("name", ""),
                     "position": str(p.get("position") or "").upper(),
-                    "value": float(p.get(val_key) or p.get("value") or 0),
+                    "value": float(p.get(val_key) or p.get(val_fallback) or p.get("value") or 0),
                     "sf_value": float(p.get("sf_value") or p.get("value") or 0),
                     "pos_rank": int((p.get("sf_pos_rank") if _use_sf_ranks else p.get("pos_rank")) or 99),
                     "pos_rank_label": (p.get("sf_pos_rank_label") if _use_sf_ranks else p.get("pos_rank_label")) or "",
@@ -22394,10 +22445,10 @@ def api_trade_intel_player_packages(player_id: str):
         viewer_players: list[dict] = []
         viewer_picks: list[dict] = []
         rosters: list = []
-        ctx = {}
         if league_id and viewer_roster_id:
             try:
-                ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
+                if not ctx:
+                    ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
                 rosters = ctx.get("rosters") or []
                 viewer_roster_obj = next(
                     (r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None
@@ -22577,7 +22628,10 @@ def api_trade_intel_player_packages(player_id: str):
         # Resync val_key with the actual league format detected from roster_positions.
         # The initial val_key was set from the URL param; the real league may differ
         # (e.g. league has SUPER_FLEX but URL says league_type=1qb).
-        _correct_val_key = "sf_value" if _is_sf else "value"
+        if is_redraft:
+            _correct_val_key = "redraft_value_sf" if _is_sf else "redraft_value_1qb"
+        else:
+            _correct_val_key = "sf_value" if _is_sf else "value"
         if _correct_val_key != val_key and ctx:
             val_key = _correct_val_key
             _rsf = _is_sf
@@ -22804,7 +22858,10 @@ def api_trade_intel_player_packages(player_id: str):
                     })
             flat.sort(key=lambda x: x["value"], reverse=True)
             picks = (_fresh_pbr or {}).get(rid, [])
-            return _calc_grade(flat, picks)
+            return _calc_grade(
+                flat, picks,
+                scoring_type="redraft" if is_redraft else "dynasty",
+            )
 
         def _acceptance_prob(pkg: dict, total_trades: int) -> int:
             """
@@ -22869,43 +22926,45 @@ def api_trade_intel_player_packages(player_id: str):
 
                 need_adj = max(-10, min(need_adj, 18))
 
-                # 4. Win/rebuild window - use same grade as Teams page
-                grade_data = _roster_grade(owner_roster)
-                win_window = grade_data.get("win_window", "")
-                # Map Teams-page labels to rebuild / win_now / competitive
-                if win_window in ("Full Rebuild", "Retooling"):
-                    window = "rebuild"
-                elif win_window in ("Win-Now Window", "Aging Contender", "Contender Window"):
-                    window = "win_now"
-                else:
-                    window = "competitive"
+                # 4. Win/rebuild window — dynasty only. Redraft acceptance
+                # is this-season need + value, not youth or future picks.
+                if not is_redraft:
+                    grade_data = _roster_grade(owner_roster)
+                    win_window = grade_data.get("win_window", "")
+                    # Map Teams-page labels to rebuild / win_now / competitive
+                    if win_window in ("Full Rebuild", "Retooling"):
+                        window = "rebuild"
+                    elif win_window in ("Win-Now Window", "Aging Contender", "Contender Window"):
+                        window = "win_now"
+                    else:
+                        window = "competitive"
 
-                sent_picks = [a for a in pkg.get("send", []) if a.get("is_pick")]
-                sent_ages = []
-                sent_vals = []
-                for a in sent_players:
-                    info = values_by_id.get(a.get("player_id") or "")
-                    if info:
-                        sent_ages.append(float(info.get("age") or 25))
-                        sent_vals.append(float(info.get("value") or 0))
+                    sent_picks = [a for a in pkg.get("send", []) if a.get("is_pick")]
+                    sent_ages = []
+                    sent_vals = []
+                    for a in sent_players:
+                        info = values_by_id.get(a.get("player_id") or "")
+                        if info:
+                            sent_ages.append(float(info.get("age") or 25))
+                            sent_vals.append(float(info.get("value") or 0))
 
-                avg_sent_age = sum(sent_ages) / len(sent_ages) if sent_ages else 25
-                avg_sent_val = sum(sent_vals) / len(sent_vals) if sent_vals else 0
-                n_picks = len(sent_picks)
+                    avg_sent_age = sum(sent_ages) / len(sent_ages) if sent_ages else 25
+                    avg_sent_val = sum(sent_vals) / len(sent_vals) if sent_vals else 0
+                    n_picks = len(sent_picks)
 
-                if window == "rebuild":
-                    # Rebuilding teams want youth and picks
-                    youth_bonus = max(0, int((26 - avg_sent_age) * 2.5))  # young = good
-                    pick_bonus = n_picks * 6
-                    upside_bonus = min(int(avg_sent_val / 60), 8) if avg_sent_age < 24 else 0
-                    window_adj = min(youth_bonus + pick_bonus + upside_bonus, 20)
-                elif window == "win_now":
-                    # Win-now teams want proven contributors now
-                    vet_bonus = max(0, int((avg_sent_age - 23) * 2))
-                    tier_bonus = min(int(avg_sent_val / 100), 8)
-                    pick_penalty = n_picks * -4  # picks less useful when chasing now
-                    window_adj = max(-15, min(vet_bonus + tier_bonus + pick_penalty, 12))
-                # competitive: neutral (window_adj stays 0)
+                    if window == "rebuild":
+                        # Rebuilding teams want youth and picks
+                        youth_bonus = max(0, int((26 - avg_sent_age) * 2.5))  # young = good
+                        pick_bonus = n_picks * 6
+                        upside_bonus = min(int(avg_sent_val / 60), 8) if avg_sent_age < 24 else 0
+                        window_adj = min(youth_bonus + pick_bonus + upside_bonus, 20)
+                    elif window == "win_now":
+                        # Win-now teams want proven contributors now
+                        vet_bonus = max(0, int((avg_sent_age - 23) * 2))
+                        tier_bonus = min(int(avg_sent_val / 100), 8)
+                        pick_penalty = n_picks * -4  # picks less useful when chasing now
+                        window_adj = max(-15, min(vet_bonus + tier_bonus + pick_penalty, 12))
+                    # competitive: neutral (window_adj stays 0)
 
             prob = base + freq_boost + need_adj + window_adj
             return min(93, max(8, round(prob)))
@@ -23054,7 +23113,7 @@ def api_trade_intel_player_packages(player_id: str):
             for sig in (
                 f"{_pos}-T{_tier}",
                 f"{_pos}-T{min(_tier + 1, 9)}",
-                f"PICK:R{1 if _tier <= 3 else 2}",
+                *([] if is_redraft else (f"PICK:R{1 if _tier <= 3 else 2}",)),
             ):
                 if sig in existing_sigs:
                     continue
@@ -23077,6 +23136,20 @@ def api_trade_intel_player_packages(player_id: str):
                 return (arch_rank.get(sig, len(archetype_patterns)), -pkg.get("trades_like_this", 0))
 
             primary_pkgs.sort(key=_pkg_rank)
+
+        if is_redraft:
+            def _pkg_has_pick(pkg: dict) -> bool:
+                return any(
+                    a.get("is_pick") or a.get("type") == "pick"
+                    or str(a.get("position") or "").upper() == "PICK"
+                    for a in (pkg.get("send") or [])
+                )
+            primary_pkgs = [p for p in primary_pkgs if not _pkg_has_pick(p)]
+            archetype_patterns = [
+                ap for ap in archetype_patterns
+                if "PICK" not in str(ap.get("pattern_sig") or "")
+            ]
+            _receiver_win_window = ""
 
         return jsonify({
             "player_name": player_name,
@@ -23494,7 +23567,11 @@ def api_trade_intel_player_send_packages(player_id: str):
         roster_positions = ctx.get("roster_positions") or []
         _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
         is_sf = (league_type == "sf") or _is_superflex_lineup(roster_positions)
-        val_key = "sf_value" if is_sf else "value"
+        is_redraft = _league_is_redraft(ctx)
+        if is_redraft:
+            val_key = "redraft_value_sf" if is_sf else "redraft_value_1qb"
+        else:
+            val_key = "sf_value" if is_sf else "value"
         num_teams = len(rosters) or 12
 
         values_by_id: dict = {}
@@ -23757,7 +23834,10 @@ def api_trade_ideas_for_target():
         from utils.utils import load_model_value_table
         ctx = get_league_ctx_from_cache(platform, league_id, season)
 
-        val_key = "sf_value" if league_type == "sf" else "value"
+        if _league_is_redraft(ctx):
+            val_key = "redraft_value_sf" if league_type == "sf" else "redraft_value_1qb"
+        else:
+            val_key = "sf_value" if league_type == "sf" else "value"
         value_table = list(get_model_value_table_cached() or [])
         values_by_id = {}
         for p in value_table:
@@ -25094,8 +25174,10 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
 
         league_info = ctx.get("league") or {}
         is_sf = _is_superflex_lineup(league_info.get("roster_positions") or [])
-        vfield = "sf_value" if is_sf else "value"
-        league_name = league_info.get("name", "Dynasty League")
+        is_redraft = _league_is_redraft(ctx)
+        _vk_primary, _vk_fallback = _waiver_value_keys(ctx)
+        vfield = _vk_primary
+        league_name = league_info.get("name") or "League"
         n_teams = len(rosters)
 
         from dashboard_services.api import avatar_from_users as _av_from_users
@@ -25129,7 +25211,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
                 pos = str(meta.get("pos") or vrow.get("position") or "").upper()
                 if pos not in CORE_POS:
                     continue
-                pvals[pos].append(float(vrow.get(vfield) or vrow.get("value") or 0))
+                pvals[pos].append(float(vrow.get(vfield) or vrow.get(_vk_fallback) or vrow.get("value") or 0))
             team_pos_vals[rid] = pvals
 
         team_pos_strength: dict = {}  # rid -> {pos: weighted strength}
@@ -25178,7 +25260,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
             for pid in (r.get("players") or []):
                 meta = players_index.get(str(pid)) or {}
                 vrow = values_by_id.get(str(pid)) or {}
-                val = float(vrow.get(vfield) or vrow.get("value") or 0)
+                val = float(vrow.get(vfield) or vrow.get(_vk_fallback) or vrow.get("value") or 0)
                 pos = str(meta.get("pos") or "").upper()
                 if pos and val > 0:
                     age = _age_from_bday(meta.get("bDay") or "")
@@ -25195,14 +25277,16 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         top5 = player_rows[:5]
         player_value = sum(p["value"] for p in player_rows)
 
-        # ── Add pick value to dynasty total ──────────────────────────────────
-        _picks = picks_by_roster.get(str(roster_id), [])
-        try:
-            _pick_tbl = load_pick_value_table() or {}
-            _pick_val = _team_pick_value(_picks, _pick_tbl, platform=platform,
-                                         league_id=league_id, season=season)
-        except Exception:
-            _pick_val = 0.0
+        # ── Add pick value to dynasty total (redraft has no tradeable picks) ─
+        _picks = [] if is_redraft else picks_by_roster.get(str(roster_id), [])
+        _pick_val = 0.0
+        if not is_redraft:
+            try:
+                _pick_tbl = load_pick_value_table() or {}
+                _pick_val = _team_pick_value(_picks, _pick_tbl, platform=platform,
+                                             league_id=league_id, season=season)
+            except Exception:
+                _pick_val = 0.0
         total_value = player_value + _pick_val
 
         # ── Dynasty rank across league (players + picks) ─────────────────────
@@ -25217,17 +25301,22 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
             if not _rid2:
                 continue
             _pv2 = sum(
-                float((values_by_id.get(str(_pid)) or {}).get(vfield) or 0)
+                float(
+                    (values_by_id.get(str(_pid)) or {}).get(vfield)
+                    or (values_by_id.get(str(_pid)) or {}).get(_vk_fallback)
+                    or 0
+                )
                 for _pid in (_r2.get("players") or [])
             )
             _pkv2 = 0.0
-            try:
-                _pkv2 = _team_pick_value(
-                    picks_by_roster.get(_rid2, []), _pick_tbl_rank,
-                    platform=platform, league_id=league_id, season=season,
-                )
-            except Exception:
-                logger.debug("suppressed exception", exc_info=True)
+            if not is_redraft:
+                try:
+                    _pkv2 = _team_pick_value(
+                        picks_by_roster.get(_rid2, []), _pick_tbl_rank,
+                        platform=platform, league_id=league_id, season=season,
+                    )
+                except Exception:
+                    logger.debug("suppressed exception", exc_info=True)
             _all_totals[_rid2] = _pv2 + _pkv2
         dynasty_rank = sum(1 for v in _all_totals.values() if v > total_value) + 1
 
@@ -25309,9 +25398,21 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
                 dynasty_pct_val=dynasty_pct,
                 redraft_pct_val=redraft_pct,
                 dr_ratio=dr_ratio,
+                scoring_type="redraft" if is_redraft else "dynasty",
             )
             grade_label = grade_data.get("grade", "–")
             win_window = grade_data.get("win_window", "")
+            if _league_is_redraft(ctx):
+                from dashboard_services.ai.context_builders import redraft_window_label as _rd_win
+                _po_pct = None
+                try:
+                    for _row in (_playoff_sim_cached(ctx, platform, block=False) or []):
+                        if str((_row or {}).get("roster_id")) == str(roster_id):
+                            _po_pct = (_row or {}).get("playoff_pct")
+                            break
+                except Exception:
+                    _po_pct = None
+                win_window = _rd_win(playoff_pct=_po_pct, redraft_pct=redraft_pct)
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
 
@@ -25325,6 +25426,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
 
         # ── Window badge colour ──────────────────────────────────────────────
         _window_color_map = {
+            "Contend": "#4ade80", "Bubble": "#fbbf24", "Out": "#94a3b8",
             "Contender": "#4ade80", "Win-Now": "#4ade80",
             "Contender Window": "#86efac", "Aging Contender": "#fbbf24",
             "2-3 Year Window": "#60a5fa", "Rising": "#60a5fa",
@@ -25379,7 +25481,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         dynasty_rank_html = f'<span style="font-weight:700;font-size:15px;">#{dynasty_rank}</span><span style="font-size:11px;color:var(--text-muted);margin-left:1px;">/{n_teams}</span>'
 
         picks_html = ""
-        if _pick_labels and platform != "espn":
+        if _pick_labels and not is_redraft:
             picks_html = (
                     '<div class="sc-section-title">Draft Capital</div>'
                     '<div class="sc-picks-row">'
@@ -25456,8 +25558,8 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
       </div>
       <div class="sc-stats-row">
         <div class="sc-stat"><span class="sc-stat-val" style="color:{_grade_color}">{grade_label}</span><span class="sc-stat-lbl">Grade</span></div>
-        <div class="sc-stat"><span class="sc-stat-val">{dynasty_rank_html}</span><span class="sc-stat-lbl">{"Roster Rank" if platform == "espn" else "Dynasty Rank"}</span></div>
-        <div class="sc-stat"><span class="sc-stat-val">{_dv_fmt}</span><span class="sc-stat-lbl">{"Roster Value" if platform == "espn" else "Dynasty Value"}</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{dynasty_rank_html}</span><span class="sc-stat-lbl">{"Roster Rank" if is_redraft else "Dynasty Rank"}</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{_dv_fmt}</span><span class="sc-stat-lbl">{"Roster Value" if is_redraft else "Dynasty Value"}</span></div>
         <div class="sc-stat"><span class="sc-stat-val">{age_html}</span><span class="sc-stat-lbl">Avg Age</span></div>
       </div>
       <div class="sc-stats-row" style="border-top:1px solid rgba(255,255,255,.06);padding-top:10px;margin-top:0;">
@@ -25905,8 +26007,9 @@ def page_trade_card(share_id: str):
                     ("Playoff Odds", _pi_pct(dlt.get("playoff_pct"))),
                     ("Proj. Wins", _pi_sign(dlt.get("avg_final_wins"))),
                     ("PPG", _pi_sign(dlt.get("avg_ppg"))),
-                    ("Top-3 Pick", _pi_pct(dlt.get("top3_pick_pct"))),
                 ]
+                if str(pi.get("scoring_type") or "").lower() != "redraft" and dlt.get("top3_pick_pct") is not None:
+                    rows_pi.append(("Top-3 Pick", _pi_pct(dlt.get("top3_pick_pct"))))
                 cells = "".join(
                     f'<div class="pi-cell"><div class="pi-label">{lbl}</div>'
                     f'<div class="pi-val {("pi-pos" if "+" in val else "pi-neg") if val != "—" else ""}">{val}</div></div>'

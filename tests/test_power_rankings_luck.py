@@ -20,10 +20,14 @@ import dashboard_services.ai.context_builders as cb
 @pytest.fixture(autouse=True)
 def _stub_heavy_helpers(monkeypatch):
     monkeypatch.setattr(cb, "summarize_roster_players", lambda **k: [])
-    monkeypatch.setattr(cb, "detect_team_direction", lambda a, b: "balanced")
+    monkeypatch.setattr(cb, "detect_team_direction", lambda *a, **k: "balanced")
     monkeypatch.setattr(cb, "group_position_strength", lambda x: {})
     monkeypatch.setattr(cb, "calculate_roster_grade", lambda *a, **k: {"win_window": "balanced"})
-    monkeypatch.setattr(cb, "build_model_value_lookup", lambda tbl, is_sf=False: {r["player_id"]: r for r in tbl})
+    monkeypatch.setattr(
+        cb,
+        "build_model_value_lookup",
+        lambda tbl, is_sf=False, **k: {r["player_id"]: r for r in tbl},
+    )
 
 
 def _mv(pid, pos, val, redraft):

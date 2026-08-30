@@ -135,14 +135,14 @@ def detect_team_direction(
     is_redraft = str(scoring_type or "").strip().lower() == "redraft"
 
     if is_redraft:
-        # No future-pick rebuild/retool signal in redraft.
+        # This-season lean only. Never rebuild/retool — those are dynasty words.
         if elite_assets >= 3 or (elite_assets >= 2 and strong_assets >= 5):
-            return "contender"
+            return "contend"
         if elite_assets >= 1 and strong_assets >= 4:
-            return "contender"
+            return "contend"
         if strong_assets <= 2:
-            return "retool"
-        return "balanced"
+            return "out"
+        return "bubble"
 
     firsts = sum(1 for p in future_picks if "1." in str(p.get("display") or ""))
     if avg_age and avg_age <= 28.5:
@@ -170,7 +170,9 @@ def team_value_age_rows(ctx: dict) -> list[dict]:
         return []
     roster_map = ctx.get("roster_map") or {}
     model_value_lookup = build_model_value_lookup(
-        ctx.get("model_value_table") or [], is_sf=_ctx_is_sf(ctx)
+        ctx.get("model_value_table") or [],
+        is_sf=_ctx_is_sf(ctx),
+        scoring_type=ctx_scoring_type(ctx),
     )
     players_index = ctx.get("players_index") or {}
     players_map = ctx.get("players_map") or {}
@@ -244,11 +246,19 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Union[dict, None]
     record = standing.get("record") or standing.get("display_record") or ""
     pf = _safe_float(standing.get("PF"))
     pa = _safe_float(standing.get("PA"))
+    week = ctx.get("current_week")
+    season_phase = _season_phase(week, record)
+    weakest_positions = _weakest_core_positions(position_strength)
 
-    return {
+    playoff = _playoff_snapshot(ctx, str(viewer_roster_id))
+    if is_redraft and playoff.get("playoff_status"):
+        direction = playoff["playoff_status"]
+
+    out = {
         "league_id": ctx.get("league_id"),
         "season": ctx.get("current_season"),
-        "week": ctx.get("current_week"),
+        "week": week,
+        "season_phase": season_phase,
         "viewer_roster_id": str(viewer_roster_id),
         "team_name": team_name,
         "scoring_type": scoring_type,
@@ -256,12 +266,132 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Union[dict, None]
         "points_for": round(pf, 1),
         "points_against": round(pa, 1),
         "direction": direction,
+        "weakest_positions": weakest_positions,
         "top_assets": top_assets,
         "aging_assets": aging_assets,
         "future_picks": future_picks,
         "position_strength": position_strength,
         "roster_size": len(roster_players),
     }
+    out.update(playoff)
+    grade = _viewer_draft_grade(ctx, str(viewer_roster_id))
+    if grade:
+        out["draft_grade"] = grade
+    return out
+
+
+def _season_phase(week, record) -> str:
+    rec = str(record or "").strip()
+    try:
+        wk = int(week or 0)
+    except (TypeError, ValueError):
+        wk = 0
+    if wk <= 0 or rec in ("", "0-0", "0-0-0"):
+        return "preseason"
+    return "in_season"
+
+
+def _weakest_core_positions(position_strength: dict) -> list[str]:
+    scored = []
+    for pos in ("QB", "RB", "WR", "TE"):
+        info = (position_strength or {}).get(pos) or {}
+        scored.append((
+            pos,
+            _safe_int(info.get("count")),
+            _safe_float(info.get("top_3_sum")),
+        ))
+    scored.sort(key=lambda x: (x[1] == 0, x[2], x[1]))
+    return [pos for pos, _count, _top in scored[:2]]
+
+
+def _playoff_status(pct, rank, playoff_teams: int) -> str:
+    if pct is not None:
+        if pct >= 70:
+            return "contend"
+        if pct >= 35:
+            return "bubble"
+        return "out"
+    if rank is not None and playoff_teams:
+        if rank <= max(1, playoff_teams // 2):
+            return "contend"
+        if rank <= playoff_teams:
+            return "bubble"
+        return "out"
+    return ""
+
+
+_REDRAFT_WINDOW_DISPLAY = {
+    "contend": "Contend",
+    "bubble": "Bubble",
+    "out": "Out",
+}
+
+
+def redraft_window_label(playoff_pct=None, redraft_pct=None) -> str:
+    """Teams-page / share-card label for a redraft league.
+
+    Prefer playoff odds (0–100). If those are missing, fall back to this
+    league's redraft-value percentile (0–1) with the same 70 / 35 bands.
+    Never returns dynasty window words (Retooling, Contender Window, …).
+    """
+    status = ""
+    if playoff_pct is not None:
+        try:
+            status = _playoff_status(float(playoff_pct), None, 6)
+        except (TypeError, ValueError):
+            status = ""
+    if not status and redraft_pct is not None:
+        try:
+            status = _playoff_status(float(redraft_pct) * 100.0, None, 6)
+        except (TypeError, ValueError):
+            status = ""
+    return _REDRAFT_WINDOW_DISPLAY.get(status, "")
+
+
+def _playoff_rows(ctx: dict) -> list:
+    """Use odds already on the league ctx. Callers that have the sim cache
+    should attach ``playoff_odds`` before building GM / rankings context so
+    this module never imports ``app``."""
+    rows = ctx.get("playoff_odds")
+    return rows if isinstance(rows, list) else []
+
+
+def _playoff_snapshot(ctx: dict, roster_id: str) -> dict:
+    rows = _playoff_rows(ctx)
+    if not rows:
+        return {}
+    ordered = sorted(rows, key=lambda r: float((r or {}).get("playoff_pct") or 0), reverse=True)
+    settings = ctx.get("league_settings") or {}
+    try:
+        spots = int(settings.get("playoff_teams") or 6)
+    except (TypeError, ValueError):
+        spots = 6
+    snap = {"playoff_teams": spots}
+    for i, row in enumerate(ordered, start=1):
+        if str((row or {}).get("roster_id")) != str(roster_id):
+            continue
+        try:
+            pct = float(row.get("playoff_pct"))
+        except (TypeError, ValueError):
+            pct = None
+        snap["playoff_pct"] = round(pct, 1) if pct is not None else None
+        snap["playoff_rank"] = i
+        snap["playoff_status"] = _playoff_status(pct, i, spots)
+        return snap
+    return snap
+
+
+def _viewer_draft_grade(ctx: dict, roster_id: str) -> str:
+    grades = ctx.get("team_grades") or {}
+    raw = grades.get(roster_id)
+    if raw is None:
+        try:
+            raw = grades.get(int(roster_id))
+        except (TypeError, ValueError):
+            raw = None
+    if isinstance(raw, dict):
+        return str(raw.get("grade") or "").strip()
+    return str(raw or "").strip()
 
 
 def _safe_str(v, default: str = "") -> str:
@@ -427,20 +557,26 @@ def calculate_roster_grade(
     win_rate: float | None = None,
     standings_rank: int = 0,
     offseason: bool = False,
+    scoring_type: str = "dynasty",
 ) -> dict:
     """
-    Score a dynasty roster and compute a competitive window label.
+    Score a roster and compute a competitive window label.
 
-    The window is based purely on roster construction:
+    Dynasty window is based on roster construction:
       dynasty_pct_val  - long-term value percentile vs league
       redraft_pct_val  - projected scoring percentile vs league (not actual PF)
       dr_ratio         - dynasty/redraft spread (future-heavy vs win-now)
       avg_age          - top-2-weighted age of top-8 players
       firsts           - future first-round picks
 
+    Redraft grades ignore age and draft capital. They are this-season
+    starter rooms plus value (redraft percentile, positional rank, elite).
+
     When called without league context (AI renderer, trade strategy), falls back
-    to age/depth/capital/elite scoring with positional rank proxy.
+    to age/depth/capital/elite scoring with positional rank proxy (dynasty)
+    or rank/elite/depth (redraft).
     """
+    is_redraft = str(scoring_type or "dynasty").strip().lower() == "redraft"
     top8 = players[:8]
 
     # Age - weight the top-2 players at 2× since they define the window
@@ -508,9 +644,38 @@ def calculate_roster_grade(
 
     # ── Grade score ──────────────────────────────────────────────────────────────
     has_league_ctx = dynasty_pct_val >= 0.0
-    if has_league_ctx:
-        dynasty_score = dynasty_pct_val * 100
-        redraft_score = redraft_pct_val * 100
+    dynasty_score = (dynasty_pct_val * 100) if has_league_ctx else 0.0
+    redraft_score = (redraft_pct_val * 100) if has_league_ctx else 0.0
+    if is_redraft:
+        # This-season construction only. Age and capital do not move the letter.
+        if has_league_ctx and position_ranks:
+            total = round(
+                redraft_score * 0.55
+                + rank_score * 0.25
+                + elite_score * 0.20,
+                1,
+            )
+        elif has_league_ctx:
+            total = round(
+                redraft_score * 0.65
+                + elite_score * 0.20
+                + depth_score * 0.15,
+                1,
+            )
+        elif position_ranks:
+            total = round(
+                rank_score * 0.55
+                + elite_score * 0.25
+                + depth_score * 0.20,
+                1,
+            )
+        else:
+            total = round(
+                elite_score * 0.45
+                + depth_score * 0.55,
+                1,
+            )
+    elif has_league_ctx:
         total = round(
             dynasty_score * 0.40   # long-term roster quality
             + redraft_score * 0.25  # projected scoring NOW
@@ -544,7 +709,12 @@ def calculate_roster_grade(
             break
 
     # ── Win window ───────────────────────────────────────────────────────────────
-    if has_league_ctx:
+    if is_redraft:
+        win_window = redraft_window_label(
+            playoff_pct=None,
+            redraft_pct=redraft_pct_val if has_league_ctx else (rank_score / 100.0),
+        )
+    elif has_league_ctx:
         win_window = _compute_win_window(
             avg_age=avg_age,
             firsts=firsts,
@@ -585,6 +755,7 @@ def calculate_roster_grade(
             "dynasty_pct": round(dynasty_pct_val, 3) if has_league_ctx else None,
             "redraft_pct": round(redraft_pct_val, 3) if has_league_ctx else None,
             "dr_ratio": round(dr_ratio, 3) if has_league_ctx else None,
+            "scoring_type": "redraft" if is_redraft else "dynasty",
         },
     }
 
@@ -1240,6 +1411,10 @@ def build_trade_suggestions_context(
         "viewer_pos_ranks": {pos: viewer_ranks.get(pos, n_teams) for pos in _SCARCITY_POSITIONS},
         "league_size": n_teams,
         "scoring_type": scoring_type,
+        "season_phase": viewer_team_ctx.get("season_phase"),
+        "playoff_pct": viewer_team_ctx.get("playoff_pct"),
+        "playoff_status": viewer_team_ctx.get("playoff_status"),
+        "playoff_rank": viewer_team_ctx.get("playoff_rank"),
         "picks_tradable": not is_redraft,
         "viewer_pos_totals": {pos: round(v, 1) for pos, v in viewer_totals.items()},
         "league_avg_pos_totals": {pos: round(v, 1) for pos, v in league_avg.items()},
@@ -1274,8 +1449,22 @@ def build_power_rankings_context(ctx: dict) -> dict:
     rosters = ctx.get("rosters") or []
     standings_map = ctx.get("standings_map") or {}
     roster_map = ctx.get("roster_map") or {}
+    scoring_type = ctx_scoring_type(ctx)
+    is_redraft = scoring_type == "redraft"
     is_sf = _ctx_is_sf(ctx)
-    model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [], is_sf=is_sf)
+    model_value_lookup = build_model_value_lookup(
+        ctx.get("model_value_table") or [], is_sf=is_sf, scoring_type=scoring_type,
+    )
+    playoff_by_rid = {
+        str((row or {}).get("roster_id")): row
+        for row in _playoff_rows(ctx)
+        if (row or {}).get("roster_id") is not None
+    }
+    try:
+        playoff_teams = int((ctx.get("league_settings") or {}).get("playoff_teams") or 6)
+    except (TypeError, ValueError):
+        playoff_teams = 6
+    season_phase = _season_phase(ctx.get("current_week"), "")
     redraft_key = "redraft_value_sf" if is_sf else "redraft_value_1qb"
     _CORE_POS = {"QB", "RB", "WR", "TE"}
 
@@ -1432,8 +1621,10 @@ def build_power_rankings_context(ctx: dict) -> dict:
             players_map=ctx.get("players_map") or {},
             model_value_lookup=model_value_lookup,
         )
-        future_picks = ctx.get("picks_by_roster", {}).get(rid, [])
-        direction = detect_team_direction(players_summary, future_picks)
+        future_picks = [] if is_redraft else ctx.get("picks_by_roster", {}).get(rid, [])
+        direction = detect_team_direction(
+            players_summary, future_picks, scoring_type=scoring_type,
+        )
         pos_strength = group_position_strength(players_summary)
 
         ages = [_safe_float(p.get("age")) for p in players_summary if p.get("age") not in (None, "")]
@@ -1449,10 +1640,24 @@ def build_power_rankings_context(ctx: dict) -> dict:
                 redraft_pct_val=_redraft_pct_fn(rid_int),
                 dr_ratio=_team_dr_ratio.get(rid_int, 1.0),
                 num_teams=len(rosters),
+                scoring_type=scoring_type,
             )
             win_window = grade_data.get("win_window") or direction
         except Exception:
             win_window = direction
+
+        po_row = playoff_by_rid.get(rid) or {}
+        try:
+            playoff_pct = float(po_row.get("playoff_pct"))
+        except (TypeError, ValueError):
+            playoff_pct = None
+        playoff_status = _playoff_status(playoff_pct, None, playoff_teams)
+        if is_redraft:
+            rd_window = redraft_window_label(playoff_pct, _redraft_pct_fn(rid_int))
+            if rd_window:
+                win_window = rd_window
+            if playoff_status:
+                direction = playoff_status
 
         team_data.append({
             "roster_id": rid,
@@ -1460,6 +1665,9 @@ def build_power_rankings_context(ctx: dict) -> dict:
             "wins": wins,
             "losses": losses,
             "win_pct": win_pct,
+            "playoff_pct": round(playoff_pct, 1) if playoff_pct is not None else None,
+            "playoff_status": playoff_status,
+            "playoff_teams": playoff_teams,
             "luck_adj_win": round(luck_adj_win, 4),
             "all_play_pct": round(ap_pct, 4) if ap_pct is not None else None,
             "pf": pf,
@@ -1532,8 +1740,14 @@ def build_power_rankings_context(ctx: dict) -> dict:
     for rank, team in enumerate(team_data, start=1):
         team["rank"] = rank
 
+    if any((t["wins"] + t["losses"]) > 0 for t in team_data):
+        season_phase = "in_season"
+
     return {
         "season": ctx.get("current_season"),
         "week": ctx.get("current_week"),
+        "season_phase": season_phase,
+        "scoring_type": scoring_type,
+        "playoff_teams": playoff_teams,
         "teams": team_data,
     }

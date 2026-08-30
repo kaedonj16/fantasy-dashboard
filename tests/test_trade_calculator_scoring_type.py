@@ -43,6 +43,7 @@ def test_trade_calculator_exposes_league_scoring_type():
     assert 'id="leagueScoringTypeInput"' in html
     assert 'value="redraft"' in html
     assert "var _scoringType = 'redraft'" in html
+    assert "Top-3 Pick" not in html
 
 
 def test_trade_page_wires_league_redraft_into_calculator():

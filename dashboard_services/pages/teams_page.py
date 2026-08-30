@@ -76,7 +76,7 @@ def build_teams_body(ctx: dict) -> str:
         _league_is_redraft,
     )
     from dashboard_services.ai.context_builders import (
-        build_model_value_lookup, ctx_scoring_type,
+        build_model_value_lookup, ctx_scoring_type, redraft_window_label,
     )
     rosters = ctx["rosters"]  # Sleeper /rosters
     roster_map = ctx["roster_map"]  # mapping roster_id -> team name
@@ -108,8 +108,9 @@ def build_teams_body(ctx: dict) -> str:
         ) or {}
     except Exception:
         logger.debug("teams: final pick slots failed", exc_info=True)
+    _pk_odds = []
     try:
-        _pk_odds = _playoff_sim_cached(ctx, platform)
+        _pk_odds = _playoff_sim_cached(ctx, platform) or []
         if _pk_odds:
             _pk_order = sorted(
                 _pk_odds,
@@ -501,9 +502,20 @@ def build_teams_body(ctx: dict) -> str:
             dynasty_pct_val=_dynasty_pct(r_id),
             redraft_pct_val=_redraft_pct(r_id),
             dr_ratio=_team_dr_ratio.get(r_id, 1.0),
+            scoring_type=_scoring,
         )
 
     team_grades = {rid: _grade_for_roster(rid) for rid in team_meta}
+    if _is_redraft:
+        _po_by_rid = {
+            str((row or {}).get("roster_id")): (row or {}).get("playoff_pct")
+            for row in (_pk_odds or [])
+        }
+        for _rid, _g in team_grades.items():
+            _g["win_window"] = redraft_window_label(
+                playoff_pct=_po_by_rid.get(str(_rid)),
+                redraft_pct=_redraft_pct(_rid),
+            )
 
     # ----------------- Build HTML cards -----------------
     cards_html = []
@@ -749,6 +761,9 @@ def build_teams_body(ctx: dict) -> str:
         # Numeric sort keys for client-side sorting
         _grade_num = {"A+":12,"A":11,"A-":10,"B+":9,"B":8,"B-":7,"C+":6,"C":5,"C-":4,"D+":3,"D":2,"D-":1,"F":0}.get(_grade, 0)
         _archetype_num = {
+            "Contend":          1,
+            "Bubble":           2,
+            "Out":              3,
             "Contender":        1,
             "Win-Now":          2,
             "Aging Contender":  3,
@@ -761,6 +776,9 @@ def build_teams_body(ctx: dict) -> str:
             "Full Rebuild":     10,
         }.get(_win_window, 7)
         _window_cls = {
+            "Contend":          "wt-contend",
+            "Bubble":           "wt-bubble",
+            "Out":              "wt-out",
             "Contender":        "wt-contender",
             "Win-Now":          "wt-win-now",
             "Aging Contender":  "wt-aging-contender",
@@ -872,21 +890,20 @@ def build_teams_body(ctx: dict) -> str:
     """
 
     # ---------- Window legend ----------
-    _window_legend_html = """
-    <div class="window-legend-wrap">
-      <button class="window-legend-toggle" id="windowLegendToggle" aria-expanded="false">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M7 6.5v3M7 4.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-        Legend
-        <svg class="wl-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-      </button>
-      <div class="window-legend-panel" id="windowLegendPanel">
-        <div class="window-legend-grid">
-          <div class="wl-section-label">Grades</div>
-          <div class="wl-row"><span class="wl-grade grade-a">A</span><strong class="wl-label">A+ to A&minus;</strong><span class="wl-desc">Elite roster: top dynasty value, strong depth, elite core players</span></div>
-          <div class="wl-row"><span class="wl-grade grade-b">B</span><strong class="wl-label">B+ to B&minus;</strong><span class="wl-desc">Competitive roster with clear strengths and some positional gaps</span></div>
-          <div class="wl-row"><span class="wl-grade grade-c">C</span><strong class="wl-label">C+ to C&minus;</strong><span class="wl-desc">Below-average roster needing reinforcement in multiple areas</span></div>
-          <div class="wl-row"><span class="wl-grade grade-d">D</span><strong class="wl-label">D</strong><span class="wl-desc">Weak roster: low dynasty value and scoring projection league-wide</span></div>
-          <div class="wl-grade-note">Grade factors: dynasty value (40%) &middot; projected scoring (25%) &middot; age profile (15%) &middot; elite players (12%) &middot; draft capital (8%)</div>
+    if _is_redraft:
+        _window_section = """
+          <div class="wl-section-label" style="margin-top:10px;">This season</div>
+          <div class="wl-row"><span class="wl-dot" style="background:#22c55e;"></span><strong class="wl-label">Contend</strong><span class="wl-desc">Playoff favorite &mdash; 70%+ odds to make the playoffs</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#f59e0b;"></span><strong class="wl-label">Bubble</strong><span class="wl-desc">Live but not locked &mdash; 35&ndash;70% playoff odds</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#94a3b8;"></span><strong class="wl-label">Out</strong><span class="wl-desc">Long shot &mdash; under 35% playoff odds</span></div>
+          <div class="wl-grade-note">This label is playoff odds, not the letter grade. A clean draft can still sit mid-pack.</div>
+        """
+        _grade_note = "Grade is this-season roster construction (starters + value). It is not playoff odds."
+        _grade_a_desc = "Elite this-season roster: top starter rooms and projected scoring"
+        _grade_d_desc = "Weak this-season roster: thin starters and low projected scoring"
+        _sort_archetype_label = "Odds"
+    else:
+        _window_section = """
           <div class="wl-section-label" style="margin-top:10px;">Competitive Windows</div>
           <div class="wl-row"><span class="wl-dot" style="background:#22c55e;"></span><strong class="wl-label">Contender</strong><span class="wl-desc">Elite dynasty + strong scoring projection, premier roster right now</span></div>
           <div class="wl-row"><span class="wl-dot" style="background:#f59e0b;"></span><strong class="wl-label">Win-Now</strong><span class="wl-desc">Elite scoring with aging stars, peak years are here and window is open</span></div>
@@ -898,6 +915,27 @@ def build_teams_body(ctx: dict) -> str:
           <div class="wl-row"><span class="wl-dot" style="background:#f97316;"></span><strong class="wl-label">Retooling</strong><span class="wl-desc">Selling aging core, accumulating capital to reset for the future</span></div>
           <div class="wl-row"><span class="wl-dot" style="background:#ef4444;"></span><strong class="wl-label">Rebuilding</strong><span class="wl-desc">Below-average dynasty + redraft, active rebuild in progress</span></div>
           <div class="wl-row"><span class="wl-dot" style="background:#dc2626;"></span><strong class="wl-label">Full Rebuild</strong><span class="wl-desc">Stacked with picks, very low current value, all-in on the future</span></div>
+        """
+        _grade_note = "Grade factors: dynasty value (40%) &middot; projected scoring (25%) &middot; age profile (15%) &middot; elite players (12%) &middot; draft capital (8%)"
+        _grade_a_desc = "Elite roster: top dynasty value, strong depth, elite core players"
+        _grade_d_desc = "Weak roster: low dynasty value and scoring projection league-wide"
+        _sort_archetype_label = "Archetype"
+    _window_legend_html = f"""
+    <div class="window-legend-wrap">
+      <button class="window-legend-toggle" id="windowLegendToggle" aria-expanded="false">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M7 6.5v3M7 4.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Legend
+        <svg class="wl-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+      <div class="window-legend-panel" id="windowLegendPanel">
+        <div class="window-legend-grid">
+          <div class="wl-section-label">Grades</div>
+          <div class="wl-row"><span class="wl-grade grade-a">A</span><strong class="wl-label">A+ to A&minus;</strong><span class="wl-desc">{_grade_a_desc}</span></div>
+          <div class="wl-row"><span class="wl-grade grade-b">B</span><strong class="wl-label">B+ to B&minus;</strong><span class="wl-desc">Competitive roster with clear strengths and some positional gaps</span></div>
+          <div class="wl-row"><span class="wl-grade grade-c">C</span><strong class="wl-label">C+ to C&minus;</strong><span class="wl-desc">Below-average roster needing reinforcement in multiple areas</span></div>
+          <div class="wl-row"><span class="wl-grade grade-d">D</span><strong class="wl-label">D</strong><span class="wl-desc">{_grade_d_desc}</span></div>
+          <div class="wl-grade-note">{_grade_note}</div>
+          {_window_section}
           <div class="wl-section-label" style="margin-top:10px;">Roster Shapes</div>
           <div class="wl-grade-note" style="margin-top:0;">How a roster's value is built by position &mdash; descriptive, not part of the grade.</div>
           <div class="wl-row"><span class="wl-shape">WR Factory</span><span class="wl-desc">Value concentrated at WR &mdash; a deep, WR-dominant roster</span></div>
@@ -929,7 +967,7 @@ def build_teams_body(ctx: dict) -> str:
             <div class="otc-main-tabs br-slide-tabs teams-sort-tabs" data-br-slide-tabs>
               <button class="teams-sort-btn otc-main-tab" data-sort="posindex">Positional Index</button>
               <button class="teams-sort-btn otc-main-tab" data-sort="grade">Team Grade</button>
-              <button class="teams-sort-btn otc-main-tab" data-sort="archetype">Archetype</button>
+              <button class="teams-sort-btn otc-main-tab" data-sort="archetype">{_sort_archetype_label}</button>
             </div>
             <span id="teamsSortLabel" style="font-size:11px;color:var(--text-muted);margin-left:10px;opacity:0;transition:opacity .2s;"></span>
           </div>
@@ -1007,7 +1045,7 @@ def build_teams_body(ctx: dict) -> str:
         _sortKey = '';
         _setSortLabel('');
       }}
-      var _sortKeyLabels = {{ posindex: 'Positional Index', grade: 'Team Grade', archetype: 'Archetype' }};
+      var _sortKeyLabels = {{ posindex: 'Positional Index', grade: 'Team Grade', archetype: '{_sort_archetype_label}' }};
       function sortTeams(key) {{
         // clicking the active sort deselects it and restores default order
         if (_sortKey === key) {{ restoreDefault(); return; }}

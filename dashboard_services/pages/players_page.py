@@ -14,7 +14,7 @@ def build_players_shell() -> str:
         <div>
           <h2>Player Rankings</h2>
           <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
-            All players ranked by dynasty value.
+            <span id="prSubtitle">All players ranked by dynasty value.</span>
           </div>
         </div>
         <button type="button" onclick="prExportCSV()" title="Download current list as CSV"

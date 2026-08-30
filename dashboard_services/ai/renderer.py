@@ -12,6 +12,9 @@ from dashboard_services.ai.context_builders import (
     summarize_roster_players,
     build_model_value_lookup,
     detect_team_direction,
+    ctx_scoring_type,
+    redraft_window_label,
+    _ctx_is_sf,
 )
 from dashboard_services.ai.prompts import (
     generate_trade_ai_result,
@@ -44,6 +47,71 @@ def _ai_error_notice(reason: str = "") -> str:
         f"<span class='ai-error-icon'>&#x26A0;&#xFE0F;</span> {html.escape(msg)}. "
         f"Showing data-based summary below.</div>"
     )
+
+
+def _gm_memo_fallback_html(team_ctx: dict) -> str:
+    top_assets = ", ".join(
+        p["name"] for p in (team_ctx.get("top_assets") or [])[:4]
+    ) or "None"
+    name = html.escape(str(team_ctx.get("team_name") or "This team"))
+    direction = html.escape(str(team_ctx.get("direction") or "bubble"))
+    bits = []
+    pct = team_ctx.get("playoff_pct")
+    if pct is not None:
+        bits.append(f"Playoff odds {html.escape(str(pct))}%.")
+    if team_ctx.get("season_phase") == "preseason":
+        bits.append("Preseason — no games yet.")
+    else:
+        rec = str(team_ctx.get("record") or "").strip()
+        if rec:
+            bits.append(f"Record: {html.escape(rec)}.")
+        pf = team_ctx.get("points_for")
+        pa = team_ctx.get("points_against")
+        if pf not in (None, "", 0, 0.0) or pa not in (None, "", 0, 0.0):
+            bits.append(
+                f"PF: {safe_float(pf):.1f} | PA: {safe_float(pa):.1f}."
+            )
+    weak = team_ctx.get("weakest_positions") or []
+    if weak:
+        bits.append("Weakest rooms: " + html.escape(", ".join(str(w) for w in weak)) + ".")
+    extra = " ".join(bits)
+    extra_p = f"<p>{extra}</p>" if extra else ""
+    return f"""
+        <div class="ai-copy">
+          <p><strong>{name}</strong> profiles as a <strong>{direction}</strong> team.</p>
+          <p>Top assets: {html.escape(top_assets)}.</p>
+          {extra_p}
+        </div>
+        """
+
+
+def _fo_brief_fallback_html(team_ctx: dict) -> str:
+    pos = team_ctx.get("position_strength") or {}
+    ranked = sorted(
+        (
+            (p, safe_float((info or {}).get("top_3_sum")))
+            for p, info in pos.items()
+            if p in ("QB", "RB", "WR", "TE")
+        ),
+        key=lambda x: x[1],
+        reverse=True,
+    )
+    strong = ", ".join(p for p, _ in ranked[:2] if ranked) or "None"
+    weak = ", ".join(str(w) for w in (team_ctx.get("weakest_positions") or [])) or (
+        ", ".join(p for p, _ in ranked[-2:] if ranked) or "None"
+    )
+    direction = html.escape(str(team_ctx.get("direction") or "bubble"))
+    bits = [f"<p><strong>Direction:</strong> {direction}</p>"]
+    pct = team_ctx.get("playoff_pct")
+    if pct is not None:
+        bits.append(f"<p><strong>Playoff odds:</strong> {html.escape(str(pct))}%</p>")
+    return f"""
+        <div class="ai-copy">
+          <p><strong>Strongest rooms:</strong> {html.escape(strong)}</p>
+          <p><strong>Weakest rooms:</strong> {html.escape(weak)}</p>
+          {''.join(bits)}
+        </div>
+        """
 
 
 def render_team_ai_result(result: dict, mode: str = "gm_memo") -> str:
@@ -94,27 +162,72 @@ def render_team_ai_result(result: dict, mode: str = "gm_memo") -> str:
         """
 
 
+def _ctx_with_playoff_odds(ctx: dict) -> dict:
+    """Attach a warm playoff-odds snapshot when the sim cache already has one."""
+    if not ctx or ctx.get("playoff_odds"):
+        return ctx
+    try:
+        from app import _playoff_sim_cached
+        rows = _playoff_sim_cached(
+            ctx, str(ctx.get("platform") or "sleeper"), block=False,
+        ) or []
+    except Exception:
+        return ctx
+    if not rows:
+        return ctx
+    out = dict(ctx)
+    out["playoff_odds"] = rows
+    return out
+
+
+def _trade_room_slice(team_ctx: dict, *, is_redraft: bool) -> dict:
+    """Compact roster card for trade analysis (viewer or opponent)."""
+    pos = team_ctx.get("position_strength") or {}
+    ranked = sorted(
+        (
+            (p, safe_float((info or {}).get("top_3_sum")))
+            for p, info in pos.items()
+            if p in ("QB", "RB", "WR", "TE")
+        ),
+        key=lambda x: x[1],
+        reverse=True,
+    )
+    weak = list(team_ctx.get("weakest_positions") or [])
+    if not weak:
+        weak = [p for p, _ in ranked[-2:]]
+    strong = [p for p, _ in ranked[:2]]
+    out = {
+        "team_name": team_ctx.get("team_name"),
+        "direction": team_ctx.get("direction"),
+        "season_phase": team_ctx.get("season_phase"),
+        "record": team_ctx.get("record"),
+        "playoff_pct": team_ctx.get("playoff_pct"),
+        "playoff_status": team_ctx.get("playoff_status"),
+        "playoff_rank": team_ctx.get("playoff_rank"),
+        "weakest_positions": weak,
+        "strong_positions": strong,
+        "points_for": team_ctx.get("points_for"),
+        "points_against": team_ctx.get("points_against"),
+    }
+    if not is_redraft:
+        out["future_picks"] = team_ctx.get("future_picks") or []
+    return out
+
+
 def get_team_gm_memo(ctx: dict, viewer_roster_id: str) -> str:
-    team_ctx = build_team_gm_context(ctx, viewer_roster_id)
+    team_ctx = build_team_gm_context(_ctx_with_playoff_odds(ctx), viewer_roster_id)
     if not team_ctx:
         return ""
 
     # v4: redraft leagues (ESPN always; other platforms via settings.type) use
     # redraft values + redraft prompts.
-    cache_key = build_ai_cache_key("gm_memo", team_ctx, "v4")
+    cache_key = build_ai_cache_key("gm_memo", team_ctx, "v5")
     cached = load_cached_ai_text(cache_key)
     if cached:
         return cached
 
     if not ai_available():
-        top_assets = ", ".join(p["name"] for p in (team_ctx.get("top_assets") or [])[:4]) or "None"
-        html_out = f"""
-        <div class="ai-copy">
-          <p><strong>{html.escape(team_ctx['team_name'])}</strong> profiles as a <strong>{html.escape(team_ctx['direction'])}</strong> team.</p>
-          <p>Top assets: {html.escape(top_assets)}.</p>
-          <p>Record: {html.escape(str(team_ctx.get('record') or 'N/A'))} | PF: {safe_float(team_ctx.get('points_for')):.1f} | PA: {safe_float(team_ctx.get('points_against')):.1f}</p>
-        </div>
-        """
+        html_out = _gm_memo_fallback_html(team_ctx)
         save_cached_ai_text(cache_key, html_out)
         return html_out
 
@@ -124,49 +237,27 @@ def get_team_gm_memo(ctx: dict, viewer_roster_id: str) -> str:
     except (AIRateLimitError, AIUnavailableError) as e:
         reason = "rate limited" if isinstance(e, AIRateLimitError) else "service unavailable"
         logger.warning("[ai gm_memo] %s: %s", reason, e)
-        top_assets = ", ".join(p["name"] for p in (team_ctx.get("top_assets") or [])[:4]) or "None"
-        html_out = _ai_error_notice(reason) + f"""
-        <div class="ai-copy">
-          <p><strong>{html.escape(team_ctx['team_name'])}</strong> profiles as a <strong>{html.escape(team_ctx['direction'])}</strong> team.</p>
-          <p>Top assets: {html.escape(top_assets)}.</p>
-          <p>Record: {html.escape(str(team_ctx.get('record') or 'N/A'))} | PF: {safe_float(team_ctx.get('points_for')):.1f} | PA: {safe_float(team_ctx.get('points_against')):.1f}</p>
-        </div>
-        """
+        html_out = _ai_error_notice(reason) + _gm_memo_fallback_html(team_ctx)
     except Exception as e:
         logger.exception("[ai gm_memo] unexpected error: %s", e)
-        top_assets = ", ".join(p["name"] for p in (team_ctx.get("top_assets") or [])[:4]) or "None"
-        html_out = _ai_error_notice() + f"""
-        <div class="ai-copy">
-          <p><strong>{html.escape(team_ctx['team_name'])}</strong> profiles as a <strong>{html.escape(team_ctx['direction'])}</strong> team.</p>
-          <p>Top assets: {html.escape(top_assets)}.</p>
-          <p>Record: {html.escape(str(team_ctx.get('record') or 'N/A'))} | PF: {safe_float(team_ctx.get('points_for')):.1f} | PA: {safe_float(team_ctx.get('points_against')):.1f}</p>
-        </div>
-        """
+        html_out = _ai_error_notice() + _gm_memo_fallback_html(team_ctx)
 
     save_cached_ai_text(cache_key, html_out)
     return html_out
 
 
 def get_front_office_briefing(ctx: dict, viewer_roster_id: str) -> str:
-    team_ctx = build_team_gm_context(ctx, viewer_roster_id)
+    team_ctx = build_team_gm_context(_ctx_with_playoff_odds(ctx), viewer_roster_id)
     if not team_ctx:
         return ""
 
-    cache_key = build_ai_cache_key("front_office_briefing", team_ctx, "v3")
+    cache_key = build_ai_cache_key("front_office_briefing", team_ctx, "v4")
     cached = load_cached_ai_text(cache_key)
     if cached:
         return cached
 
     if not ai_available():
-        strong_positions = ", ".join(team_ctx.get("strong_positions") or []) or "None"
-        weak_positions = ", ".join(team_ctx.get("weak_positions") or []) or "None"
-        html_out = f"""
-        <div class="ai-copy">
-          <p><strong>Strongest rooms:</strong> {html.escape(strong_positions)}</p>
-          <p><strong>Weakest rooms:</strong> {html.escape(str(weak_positions))}</p>
-          <p><strong>Direction:</strong> {html.escape(str(team_ctx.get("direction") or "balanced"))}</p>
-        </div>
-        """
+        html_out = _fo_brief_fallback_html(team_ctx)
         save_cached_ai_text(cache_key, html_out)
         return html_out
 
@@ -176,26 +267,10 @@ def get_front_office_briefing(ctx: dict, viewer_roster_id: str) -> str:
     except (AIRateLimitError, AIUnavailableError) as e:
         reason = "rate limited" if isinstance(e, AIRateLimitError) else "service unavailable"
         logger.warning("[ai front_office] %s: %s", reason, e)
-        strong_positions = ", ".join(team_ctx.get("strong_positions") or []) or "None"
-        weak_positions = ", ".join(team_ctx.get("weak_positions") or []) or "None"
-        html_out = _ai_error_notice(reason) + f"""
-        <div class="ai-copy">
-          <p><strong>Strongest rooms:</strong> {html.escape(str(strong_positions))}</p>
-          <p><strong>Weakest rooms:</strong> {html.escape(str(weak_positions))}</p>
-          <p><strong>Direction:</strong> {html.escape(str(team_ctx.get("direction") or "balanced"))}</p>
-        </div>
-        """
+        html_out = _ai_error_notice(reason) + _fo_brief_fallback_html(team_ctx)
     except Exception as e:
         logger.exception("[ai front_office] unexpected error: %s", e)
-        strong_positions = ", ".join(team_ctx.get("strong_positions") or []) or "None"
-        weak_positions = ", ".join(team_ctx.get("weak_positions") or []) or "None"
-        html_out = _ai_error_notice() + f"""
-        <div class="ai-copy">
-          <p><strong>Strongest rooms:</strong> {html.escape(str(strong_positions))}</p>
-          <p><strong>Weakest rooms:</strong> {html.escape(str(weak_positions))}</p>
-          <p><strong>Direction:</strong> {html.escape(str(team_ctx.get("direction") or "balanced"))}</p>
-        </div>
-        """
+        html_out = _ai_error_notice() + _fo_brief_fallback_html(team_ctx)
 
     save_cached_ai_text(cache_key, html_out)
     return html_out
@@ -210,6 +285,7 @@ def get_trade_ai_analysis(
         opponent_roster_id: str = "",
         scoring_type: str = "dynasty",
 ) -> str:
+    ctx = _ctx_with_playoff_odds(ctx)
     team_ctx = build_team_gm_context(ctx, viewer_roster_id)
     if not team_ctx or not isinstance(team_ctx, dict):
         return ""
@@ -422,34 +498,26 @@ def get_trade_ai_analysis(
         if opp_roster_id:
             opp_team_ctx = build_team_gm_context(ctx, opp_roster_id)
             if opp_team_ctx:
-                opponent_ctx = {
-                    "team_name": opp_team_ctx.get("team_name"),
-                    "direction": opp_team_ctx.get("direction"),
-                    "record": opp_team_ctx.get("record"),
-                    "top_assets": [{"name": a.get("name"), "position": a.get("position"), "value": round(safe_float(a.get("value")), 1)} for a in (opp_team_ctx.get("top_assets") or [])[:5]],
-                    "strong_positions": opp_team_ctx.get("strong_positions") or [],
-                    "weak_positions": opp_team_ctx.get("weak_positions") or [],
-                }
+                opponent_ctx = _trade_room_slice(opp_team_ctx, is_redraft=is_redraft)
+                opponent_ctx["top_assets"] = [
+                    {
+                        "name": a.get("name"),
+                        "position": a.get("position"),
+                        "value": round(safe_float(a.get("value")), 1),
+                    }
+                    for a in (opp_team_ctx.get("top_assets") or [])[:5]
+                ]
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
+    team_slice = _trade_room_slice(team_ctx, is_redraft=is_redraft)
+    if not is_redraft:
+        team_slice["pick_summary"] = team_ctx.get("pick_summary") or {}
+        team_slice["market_profile"] = team_ctx.get("market_profile") or {}
+        team_slice["starter_profile"] = team_ctx.get("starter_profile") or {}
+        team_slice["bench_profile"] = team_ctx.get("bench_profile") or {}
     payload = {
-        "team_context": {
-            "team_name": team_ctx.get("team_name"),
-            "direction": team_ctx.get("direction"),
-            "roster_health": team_ctx.get("roster_health"),
-            "summary_flags": team_ctx.get("summary_flags") or [],
-            "record": team_ctx.get("record"),
-            "place": team_ctx.get("place"),
-            "points_for": team_ctx.get("points_for"),
-            "points_against": team_ctx.get("points_against"),
-            "strong_positions": team_ctx.get("strong_positions") or [],
-            "weak_positions": team_ctx.get("weak_positions") or [],
-            "pick_summary": team_ctx.get("pick_summary") or {},
-            "market_profile": team_ctx.get("market_profile") or {},
-            "starter_profile": team_ctx.get("starter_profile") or {},
-            "bench_profile": team_ctx.get("bench_profile") or {},
-        },
+        "team_context": team_slice,
         "trade": {
             "viewer_side": viewer_side,
             "viewer_gets": {
@@ -476,7 +544,7 @@ def get_trade_ai_analysis(
     }
 
     # Build cache key for trade analysis
-    cache_key = build_ai_cache_key("trade_analysis", payload, "v8")
+    cache_key = build_ai_cache_key("trade_analysis", payload, "v9")
 
     # Try to get from cache first
     cached = load_cached_ai_text(cache_key)
@@ -594,38 +662,66 @@ def render_trade_ai_html(result: dict) -> str:
 
 def get_roster_grade(ctx: dict, viewer_roster_id: str) -> dict:
     """Return grade data for a single roster."""
+    ctx = _ctx_with_playoff_odds(ctx)
     rosters = ctx.get("rosters") or []
     roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
     if not roster:
         return {"grade": "N/A", "score": 0, "win_window": "Unknown", "breakdown": {}}
 
-    model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [])
+    scoring_type = ctx_scoring_type(ctx)
+    model_value_lookup = build_model_value_lookup(
+        ctx.get("model_value_table") or [],
+        is_sf=_ctx_is_sf(ctx),
+        scoring_type=scoring_type,
+    )
     players_summary = summarize_roster_players(
         roster=roster,
         players_index=ctx.get("players_index") or {},
         players_map=ctx.get("players_map") or {},
         model_value_lookup=model_value_lookup,
     )
-    future_picks = ctx.get("picks_by_roster", {}).get(str(viewer_roster_id), [])
-    return calculate_roster_grade(players_summary, future_picks)
+    is_redraft = scoring_type == "redraft"
+    future_picks = [] if is_redraft else (
+        ctx.get("picks_by_roster", {}).get(str(viewer_roster_id), [])
+    )
+    grade = calculate_roster_grade(
+        players_summary, future_picks, scoring_type=scoring_type,
+    )
+    if is_redraft:
+        playoff_pct = None
+        for row in (ctx.get("playoff_odds") or []):
+            if str((row or {}).get("roster_id")) == str(viewer_roster_id):
+                playoff_pct = (row or {}).get("playoff_pct")
+                break
+        bd = grade.get("breakdown") or {}
+        grade["win_window"] = redraft_window_label(
+            playoff_pct=playoff_pct, redraft_pct=bd.get("redraft_pct"),
+        )
+        grade["scoring_type"] = "redraft"
+    return grade
 
 
-def render_roster_grade_badge(grade_data: dict) -> str:
+def render_roster_grade_badge(grade_data: dict, scoring_type: str = "") -> str:
     grade = html.escape(str(grade_data.get("grade") or "?"))
     win_window = html.escape(str(grade_data.get("win_window") or ""))
     score = grade_data.get("score") or 0
     bd = grade_data.get("breakdown") or {}
     avg_age = bd.get("avg_age", 0)
     elite_count = bd.get("elite_count", 0)
+    scoring = (scoring_type or grade_data.get("scoring_type") or "dynasty").strip().lower()
 
     grade_class = "grade-a" if grade.startswith("A") else "grade-b" if grade.startswith("B") else "grade-c" if grade.startswith("C") else "grade-d"
+    extras = f"Score: {score:.0f}/100"
+    if scoring != "redraft":
+        extras += f" &bull; Age: {avg_age:.1f}"
+    extras += f" &bull; Elite: {elite_count}"
 
     return f"""
     <div class="roster-grade-wrap">
       <div class="roster-grade-badge {grade_class}">{grade}</div>
       <div class="roster-grade-meta">
         <div class="roster-grade-window">{win_window}</div>
-        <div class="roster-grade-score">Score: {score:.0f}/100 &bull; Age: {avg_age:.1f} &bull; Elite: {elite_count}</div>
+        <div class="roster-grade-score">{extras}</div>
       </div>
     </div>
     """
@@ -636,12 +732,12 @@ def render_roster_grade_badge(grade_data: dict) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def get_power_rankings_html(ctx: dict) -> str:
-    rankings_ctx = build_power_rankings_context(ctx)
+    rankings_ctx = build_power_rankings_context(_ctx_with_playoff_odds(ctx))
     teams = rankings_ctx.get("teams") or []
     if not teams:
         return "<p>Not enough data for power rankings.</p>"
 
-    cache_key = build_ai_cache_key("power_rankings", {"week": rankings_ctx.get("week"), "season": rankings_ctx.get("season"), "teams": [t["roster_id"] for t in teams]}, "v4")
+    cache_key = build_ai_cache_key("power_rankings", {"week": rankings_ctx.get("week"), "season": rankings_ctx.get("season"), "teams": [t["roster_id"] for t in teams]}, "v5")
     cached = load_cached_ai_text(cache_key)
     if cached:
         return cached
@@ -649,9 +745,13 @@ def get_power_rankings_html(ctx: dict) -> str:
     # Build fallback narrative map
     fallback_narratives: dict[str, str] = {}
     for t in teams:
-        direction = t.get("direction") or "balanced"
+        direction = t.get("playoff_status") or t.get("direction") or "balanced"
         top = (t.get("top_assets") or [{}])[0].get("name") or "their core"
-        fallback_narratives[t["roster_id"]] = f"Led by {top}, this {direction} team sits at #{t['rank']}."
+        pct = t.get("playoff_pct")
+        odds = f" at {pct}% playoff odds" if pct is not None else ""
+        fallback_narratives[t["roster_id"]] = (
+            f"Led by {top}, this {direction} team sits at #{t['rank']}{odds}."
+        )
 
     if not ai_available():
         html_out = _render_power_rankings_html_from_data(teams, fallback_narratives)
@@ -660,9 +760,14 @@ def get_power_rankings_html(ctx: dict) -> str:
 
     try:
         # Trim context for AI - only send what's needed
+        scoring_type = rankings_ctx.get("scoring_type") or "dynasty"
+        is_redraft = str(scoring_type).strip().lower() == "redraft"
         ai_input = {
             "season": rankings_ctx.get("season"),
             "week": rankings_ctx.get("week"),
+            "season_phase": rankings_ctx.get("season_phase"),
+            "scoring_type": scoring_type,
+            "playoff_teams": rankings_ctx.get("playoff_teams"),
             "teams": [
                 {
                     "roster_id": t["roster_id"],
@@ -671,9 +776,15 @@ def get_power_rankings_html(ctx: dict) -> str:
                     "wins": t["wins"],
                     "losses": t["losses"],
                     "pf": round(t["pf"], 1),
-                    "win_window": t.get("win_window") or t.get("direction") or "balanced",
-                    "avg_age": t.get("avg_age"),
-                    "first_round_picks": t.get("first_round_picks", 0),
+                    "playoff_pct": t.get("playoff_pct"),
+                    "playoff_status": t.get("playoff_status") or "",
+                    "win_window": (
+                        (t.get("playoff_status") or t.get("direction") or "bubble")
+                        if is_redraft
+                        else (t.get("win_window") or t.get("direction") or "balanced")
+                    ),
+                    "avg_age": None if is_redraft else t.get("avg_age"),
+                    "first_round_picks": 0 if is_redraft else t.get("first_round_picks", 0),
                     "position_strengths": t.get("position_strengths") or {},
                     "top_assets": [{"name": p["name"], "position": p["position"], "value": p["value"]} for p in (t.get("top_assets") or [])[:3]],
                 }
@@ -744,7 +855,9 @@ def _render_power_rankings_html_from_data(
 # ──────────────────────────────────────────────────────────────────────────────
 
 def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
-    suggestions_ctx = build_trade_suggestions_context(ctx, viewer_roster_id)
+    suggestions_ctx = build_trade_suggestions_context(
+        _ctx_with_playoff_odds(ctx), viewer_roster_id,
+    )
     if not suggestions_ctx:
         return "<p>Could not build trade suggestions context.</p>"
 
@@ -757,7 +870,7 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
             "ceiling_needs": suggestions_ctx.get("viewer_ceiling_needs"),
             "direction": suggestions_ctx.get("viewer_direction"),
         },
-        "v11",
+        "v12",
     )
     cached = load_cached_ai_text(cache_key)
     if cached:

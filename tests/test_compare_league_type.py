@@ -23,11 +23,13 @@ def _slice(src: str, start: str, end: str) -> str:
 
 def test_compare_helpers_exist():
     assert "function _cmpIsSf()" in APP_JS
+    assert "function _cmpIsRedraft()" in APP_JS
     assert "function _cmpHistValue(h)" in APP_JS
     assert "function _cmpPlayerDetailsUrl(pid)" in APP_JS
     assert "function _cmpPlayersSearchUrl(q)" in APP_JS
     assert "function _cmpDisplayValue(p)" in APP_JS
     assert "function _cmpLeagueParams()" in APP_JS
+    assert "function brScoringType()" in APP_JS
 
 
 def test_compare_fetches_pass_league_type():
