@@ -291,6 +291,7 @@ _DRAFT_ROOM_HTML = r"""
           <span class="dr-pill dr-pill-live" id="drLiveBadge" style="display:none;">&#9679; LIVE</span>
           <span class="dr-pill dr-pill-upcoming" id="drUpcomingBadge" style="display:none;">Upcoming</span>
           <span class="dr-pill dr-pill-espn" id="drEspnSync" style="display:none;" hidden>ESPN Draft</span>
+          <button type="button" class="dr-pill-reconnect" id="drEspnReconnect" style="display:none;" hidden title="Reestablish extension sync">↻ Reconnect</button>
           <span class="dr-progress" id="drProgress"></span>
           <span class="dr-save" id="drSave"></span>
           <span class="dr-poll-status" id="drPollStatus" style="display:none;"></span>
@@ -696,6 +697,14 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pill-espn.is-ok { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
   .dr-pill-espn.is-warn { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
   .dr-pill-espn.is-muted { background: rgba(148,163,184,.16); color: var(--text-subtle); animation: none; }
+  .dr-pill-reconnect {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 10px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--accent,#38bdf8) 35%, transparent);
+    background: color-mix(in srgb, var(--accent,#38bdf8) 10%, transparent);
+    color: var(--accent,#38bdf8); font: 700 11px/1.2 inherit; cursor: pointer;
+  }
+  .dr-pill-reconnect:hover { background: color-mix(in srgb, var(--accent,#38bdf8) 18%, transparent); }
+  .dr-pill-reconnect.is-busy { opacity: .65; cursor: wait; }
   .dr-espn-fallback { background: linear-gradient(90deg, color-mix(in srgb, var(--warning) 16%, transparent), color-mix(in srgb, var(--warning) 5%, transparent)); border-color: var(--warning); }
   .dr-espn-fallback .dr-banner-join { background: var(--warning); color: #111; cursor: pointer; border: 0; font: inherit; }
   /* ESPN sync helpers — compact strip, not a text wall */
