@@ -41,6 +41,8 @@ def test_trade_suggestions_ai_prompt_forbids_redraft_picks():
     assert "never suggest a draft pick" in body
     assert "draft picks cannot be traded" in body
     assert "this redraft team" in body
+    assert "playoff_status" in body
+    assert "redraft_honesty_rules" in body
     assert 'scoring_type == "redraft"' in src[start:end]
 
 

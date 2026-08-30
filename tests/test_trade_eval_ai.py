@@ -153,6 +153,23 @@ def test_trade_ai_payload_forwards_redraft_and_hides_picks(offline_client, monke
 
     captured = {}
     _stub_trade_ai(monkeypatch, captured)
+    monkeypatch.setattr(
+        rnd,
+        "build_team_gm_context",
+        lambda _ctx, _rid: {
+            "team_name": "Viewer",
+            "direction": "bubble",
+            "playoff_pct": 46.3,
+            "playoff_status": "bubble",
+            "playoff_rank": 7,
+            "season_phase": "preseason",
+            "weakest_positions": ["RB"],
+            "position_strength": {
+                "WR": {"top_3_sum": 800},
+                "RB": {"top_3_sum": 40},
+            },
+        },
+    )
 
     side_a = {"assets": [], "pick_ids": ["2026_1_01"], "effective_total": 800.0}
     side_b = {"assets": [], "pick_ids": [], "effective_total": 1200.0}
@@ -170,3 +187,9 @@ def test_trade_ai_payload_forwards_redraft_and_hides_picks(offline_client, monke
     assert captured["league_format"]["picks_tradable"] is False
     assert "cannot be traded" in captured["league_format"]["note"].lower()
     assert captured["trade"]["pick_prospects"] == {}
+    team = captured["team_context"]
+    assert team["playoff_status"] == "bubble"
+    assert team["playoff_pct"] == 46.3
+    assert team["season_phase"] == "preseason"
+    assert team["weakest_positions"] == ["RB"]
+    assert "pick_summary" not in team

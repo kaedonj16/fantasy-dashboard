@@ -177,6 +177,40 @@ def _ctx_with_playoff_odds(ctx: dict) -> dict:
     return out
 
 
+def _trade_room_slice(team_ctx: dict, *, is_redraft: bool) -> dict:
+    """Compact roster card for trade analysis (viewer or opponent)."""
+    pos = team_ctx.get("position_strength") or {}
+    ranked = sorted(
+        (
+            (p, safe_float((info or {}).get("top_3_sum")))
+            for p, info in pos.items()
+            if p in ("QB", "RB", "WR", "TE")
+        ),
+        key=lambda x: x[1],
+        reverse=True,
+    )
+    weak = list(team_ctx.get("weakest_positions") or [])
+    if not weak:
+        weak = [p for p, _ in ranked[-2:]]
+    strong = [p for p, _ in ranked[:2]]
+    out = {
+        "team_name": team_ctx.get("team_name"),
+        "direction": team_ctx.get("direction"),
+        "season_phase": team_ctx.get("season_phase"),
+        "record": team_ctx.get("record"),
+        "playoff_pct": team_ctx.get("playoff_pct"),
+        "playoff_status": team_ctx.get("playoff_status"),
+        "playoff_rank": team_ctx.get("playoff_rank"),
+        "weakest_positions": weak,
+        "strong_positions": strong,
+        "points_for": team_ctx.get("points_for"),
+        "points_against": team_ctx.get("points_against"),
+    }
+    if not is_redraft:
+        out["future_picks"] = team_ctx.get("future_picks") or []
+    return out
+
+
 def get_team_gm_memo(ctx: dict, viewer_roster_id: str) -> str:
     team_ctx = build_team_gm_context(_ctx_with_playoff_odds(ctx), viewer_roster_id)
     if not team_ctx:
@@ -248,6 +282,7 @@ def get_trade_ai_analysis(
         opponent_roster_id: str = "",
         scoring_type: str = "dynasty",
 ) -> str:
+    ctx = _ctx_with_playoff_odds(ctx)
     team_ctx = build_team_gm_context(ctx, viewer_roster_id)
     if not team_ctx or not isinstance(team_ctx, dict):
         return ""
@@ -460,34 +495,26 @@ def get_trade_ai_analysis(
         if opp_roster_id:
             opp_team_ctx = build_team_gm_context(ctx, opp_roster_id)
             if opp_team_ctx:
-                opponent_ctx = {
-                    "team_name": opp_team_ctx.get("team_name"),
-                    "direction": opp_team_ctx.get("direction"),
-                    "record": opp_team_ctx.get("record"),
-                    "top_assets": [{"name": a.get("name"), "position": a.get("position"), "value": round(safe_float(a.get("value")), 1)} for a in (opp_team_ctx.get("top_assets") or [])[:5]],
-                    "strong_positions": opp_team_ctx.get("strong_positions") or [],
-                    "weak_positions": opp_team_ctx.get("weak_positions") or [],
-                }
+                opponent_ctx = _trade_room_slice(opp_team_ctx, is_redraft=is_redraft)
+                opponent_ctx["top_assets"] = [
+                    {
+                        "name": a.get("name"),
+                        "position": a.get("position"),
+                        "value": round(safe_float(a.get("value")), 1),
+                    }
+                    for a in (opp_team_ctx.get("top_assets") or [])[:5]
+                ]
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
+    team_slice = _trade_room_slice(team_ctx, is_redraft=is_redraft)
+    if not is_redraft:
+        team_slice["pick_summary"] = team_ctx.get("pick_summary") or {}
+        team_slice["market_profile"] = team_ctx.get("market_profile") or {}
+        team_slice["starter_profile"] = team_ctx.get("starter_profile") or {}
+        team_slice["bench_profile"] = team_ctx.get("bench_profile") or {}
     payload = {
-        "team_context": {
-            "team_name": team_ctx.get("team_name"),
-            "direction": team_ctx.get("direction"),
-            "roster_health": team_ctx.get("roster_health"),
-            "summary_flags": team_ctx.get("summary_flags") or [],
-            "record": team_ctx.get("record"),
-            "place": team_ctx.get("place"),
-            "points_for": team_ctx.get("points_for"),
-            "points_against": team_ctx.get("points_against"),
-            "strong_positions": team_ctx.get("strong_positions") or [],
-            "weak_positions": team_ctx.get("weak_positions") or [],
-            "pick_summary": team_ctx.get("pick_summary") or {},
-            "market_profile": team_ctx.get("market_profile") or {},
-            "starter_profile": team_ctx.get("starter_profile") or {},
-            "bench_profile": team_ctx.get("bench_profile") or {},
-        },
+        "team_context": team_slice,
         "trade": {
             "viewer_side": viewer_side,
             "viewer_gets": {
@@ -514,7 +541,7 @@ def get_trade_ai_analysis(
     }
 
     # Build cache key for trade analysis
-    cache_key = build_ai_cache_key("trade_analysis", payload, "v8")
+    cache_key = build_ai_cache_key("trade_analysis", payload, "v9")
 
     # Try to get from cache first
     cached = load_cached_ai_text(cache_key)
@@ -797,7 +824,9 @@ def _render_power_rankings_html_from_data(
 # ──────────────────────────────────────────────────────────────────────────────
 
 def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
-    suggestions_ctx = build_trade_suggestions_context(ctx, viewer_roster_id)
+    suggestions_ctx = build_trade_suggestions_context(
+        _ctx_with_playoff_odds(ctx), viewer_roster_id,
+    )
     if not suggestions_ctx:
         return "<p>Could not build trade suggestions context.</p>"
 
@@ -810,7 +839,7 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
             "ceiling_needs": suggestions_ctx.get("viewer_ceiling_needs"),
             "direction": suggestions_ctx.get("viewer_direction"),
         },
-        "v11",
+        "v12",
     )
     cached = load_cached_ai_text(cache_key)
     if cached:
