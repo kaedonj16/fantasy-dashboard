@@ -1324,6 +1324,10 @@ FORM_BODY = """
             <button type="button" id="espnSubmitBtn">Connect League</button>
           </div>
           <div id="espnError" class="error-message" style="display:none;"></div>
+          <div class="row" id="espnTeamPickWrap" style="display:none;">
+            <label for="espnTeamSelect">Your team</label>
+            <select id="espnTeamSelect"></select>
+          </div>
           <div id="espnPrivateChoice" class="provider-account-choice" style="display:none;">
             <button type="button" id="espnPrivateGoogle" class="google-continue-btn">
               <span class="google-button-title">Continue with Google</span>
@@ -3202,19 +3206,40 @@ def _link_modal_html() -> str:
               linkSetMsg('','');
               var pane=document.querySelector('.link-pane[data-lp="espn"]');
               var old=document.getElementById('linkEspnPublicChoice');if(old)old.remove();
+              var teams=d.teams||[];
+              var teamOpts=teams.map(function(t){
+                var tid=String(t.team_id||t.id||'');
+                var nm=String(t.name||('Team '+tid)).replace(/[<>&"]/g,'');
+                return '<option value="'+tid.replace(/[<>&"]/g,'')+'">'+nm+'</option>';
+              }).join('');
+              var teamPick=teams.length
+                ? '<label class="link-lb link-field" for="linkEspnTeam">Your team</label><select id="linkEspnTeam" class="link-inp link-full">'+teamOpts+'</select>'
+                : '';
               var choice=document.createElement('div');choice.id='linkEspnPublicChoice';choice.className='link-public-choice';
-              choice.innerHTML='<div class="link-item"><strong>'+esc(d.league.name||'ESPN League')+'</strong></div>'+
+              choice.innerHTML='<div class="link-item"><strong>'+esc(d.league.name||'ESPN League')+'</strong></div>'+teamPick+
                 '<button type="button" class="google-continue-btn" id="linkEspnGoogle"><span class="google-button-title">Continue with Google</span><span>Save your leagues &amp; settings, synced across devices</span><small>Free &middot; no password</small></button>'+
                 '<div class="link-choice-or">OR</div>'+
                 '<button type="button" class="continue-without-account-btn" id="linkEspnGuest"><strong>Continue without account</strong><span>Quick view on this device &middot; nothing saved</span></button>';
               pane.appendChild(choice);
+              function espnPickedTeam(){
+                var sel=document.getElementById('linkEspnTeam');
+                if(!sel) return {team_id:null,username:null};
+                var opt=sel.options[sel.selectedIndex];
+                return {team_id:sel.value||null, username:opt?(opt.textContent||'').trim():null};
+              }
               document.getElementById('linkEspnGoogle').addEventListener('click',function(){
                 this.disabled=true;this.textContent='Continuing…';
-                fetch('/api/link/pending',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({platform:'espn',league_id:id,season:d.league.season,name:d.league.name})})
+                var picked=espnPickedTeam();
+                fetch('/api/link/pending',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({platform:'espn',league_id:id,season:d.league.season,name:d.league.name,team_id:picked.team_id,username:picked.username})})
                   .then(function(r){return r.json();}).then(function(saved){if(saved.ok)location.href=saved.auth_url||'/auth/google';else linkSetMsg(saved.error||'Could not save league.','err');});
               });
               document.getElementById('linkEspnGuest').addEventListener('click',function(){
-                location.href='/espn/'+encodeURIComponent(d.league.season)+'/'+encodeURIComponent(id)+'/dashboard';
+                var picked=espnPickedTeam();
+                var go=function(){location.href='/espn/'+encodeURIComponent(d.league.season)+'/'+encodeURIComponent(id)+'/dashboard';};
+                if(!picked.team_id&&!picked.username){go();return;}
+                // Persist the ESPN team name so Scout / personalized tabs unlock.
+                fetch('/api/quick-set-viewer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:picked.username||picked.team_id,team_name:picked.username,roster_id:picked.team_id,platform:'espn',league_id:id,season:d.league.season})})
+                  .then(function(){go();}).catch(function(){go();});
               });
             })
             .catch(function(){linkSetMsg('Network error.','err');});return;

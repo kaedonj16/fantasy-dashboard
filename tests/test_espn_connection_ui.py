@@ -56,6 +56,34 @@ def test_home_public_validation_uses_anonymous_connection_client():
     handler = route[route.index("def api_espn_validate_league"):route.index("def api_espn_debug")]
     assert "connect_league(season, league_id)" in handler
     assert "espn_get_league" not in handler
+    # Teams are returned so the home/link pickers can pass ESPN username into
+    # the viewer session (Scout and other personalized tabs).
+    assert '"teams": teams' in handler
+
+
+def test_home_espn_public_flow_passes_team_username_into_viewer():
+    markup = Path("app.py").read_text()
+    script = Path("static/app.js").read_text()
+    assert 'id="espnTeamPickWrap"' in markup
+    assert 'id="espnTeamSelect"' in markup
+    assert "function showEspnTeamPick" in script
+    assert "function syncEspnTeamSelection" in script
+    flow = script[script.index('espnSubmitBtn.addEventListener("click"'):script.index("if (yahooConnectBtn)")]
+    assert "showEspnTeamPick(data.teams || [], null)" in flow
+    assert "syncEspnTeamSelection()" in flow
+    assert 'username: document.getElementById("formUsername")?.value || null' in flow
+    assert "leagueSelectForm\")?.submit()" in flow
+    # Must not clear the ESPN username after picking a team.
+    assert 'if (formUsername) formUsername.value = "";' not in flow
+
+
+def test_link_modal_public_espn_passes_picked_team_username():
+    source = Path("app.py").read_text()
+    modal = source[source.index("window.linkEspnConnect=function()"):source.index("window.linkYahooPreview=function()")]
+    assert 'id="linkEspnTeam"' in modal
+    assert "username:picked.username" in modal
+    assert "team_id:picked.team_id" in modal
+    assert "/api/quick-set-viewer" in modal
 
 
 def test_password_inputs_share_site_input_styles():

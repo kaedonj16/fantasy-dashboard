@@ -241,6 +241,13 @@ def api_espn_validate_league():
         # Public validation must never fall back to server/account cookies.
         from dashboard_services.providers.espn_api import connect_league
         info = connect_league(season, league_id)
+        # Teams unlock the home/link "your team" picker so ESPN username/team
+        # name is passed into the viewer session (needed for Scout and peers).
+        teams = [
+            {"team_id": str(t.get("id") or ""), "name": str(t.get("name") or "").strip() or f"Team {t.get('id')}"}
+            for t in (info.get("teams") or [])
+            if t.get("id") is not None
+        ]
         return jsonify({
             "ok": True,
             "league": {
@@ -248,6 +255,7 @@ def api_espn_validate_league():
                 "name": info.get("name") or f"ESPN League {league_id}",
                 "season": info.get("season"),
             },
+            "teams": teams,
         })
     except Exception as e:
         # Map the espn_api library's typed errors to clear, actionable messages.
