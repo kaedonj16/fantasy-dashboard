@@ -24,11 +24,18 @@
     }
   }
 
+  function playerIdSelected(pid) {
+    if (pid == null) return false;
+    const text = String(pid).trim();
+    if (!text || text === "0" || text === "-1" || text === "None" || text === "null") return false;
+    return true;
+  }
+
   function isPickRow(obj) {
     if (!obj || typeof obj !== "object") return false;
     const pid = obj.playerId ?? obj.player_id;
     const overall = obj.overallPickNumber ?? obj.overallPick ?? obj.pick_no;
-    return overall != null && (pid != null || obj.teamId != null || obj.team_id != null);
+    return overall != null && playerIdSelected(pid);
   }
 
   function normalizePick(raw) {

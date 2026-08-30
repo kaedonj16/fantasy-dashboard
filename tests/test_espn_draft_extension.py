@@ -8,7 +8,7 @@ EXT = REPO / "extension"
 
 def test_extension_manifest_includes_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.3.0"
+    assert manifest["version"] == "1.3.1"
     assert "cookies" in manifest["permissions"]
     assert "tabs" not in manifest.get("permissions", [])
     scripts = manifest["content_scripts"]
@@ -32,6 +32,7 @@ def test_extension_relay_message_contract():
     bg = (EXT / "background.js").read_text(encoding="utf-8")
     main = (EXT / "espn_draft_main.js").read_text(encoding="utf-8")
     iso = (EXT / "espn_draft.js").read_text(encoding="utf-8")
+    yahoo_iso = (EXT / "yahoo_draft.js").read_text(encoding="utf-8")
     content = (EXT / "content.js").read_text(encoding="utf-8")
     assert 'type: "espnDraftRelay"' in bg or "type: \"espnDraftRelay\"" in bg or "espnDraftRelay" in bg
     assert "yahooDraftRelay" in bg
@@ -41,6 +42,11 @@ def test_extension_relay_message_contract():
     assert "brfantasy:yahoo-draft-relay" in content
     assert "overallPickNumber" in main
     assert "br-fantasy-espn-sync-chip" in iso
+    assert "lastDelivered" in iso
+    assert "scheduleRetry" in iso
+    assert "lastDelivered" in yahoo_iso
+    assert "playerIdSelected" in main
+    assert "teamId != null" not in main.split("function isPickRow")[1].split("function normalizePick")[0]
 
 
 def test_pack_extension_strips_localhost():
