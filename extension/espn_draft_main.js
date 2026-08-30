@@ -13,11 +13,14 @@
   const RELAY_STATUS = "brfantasy:espn-relay-status";
   const OBSERVER_READY = "brfantasy:espn-observer-ready";
   const BRIDGE = "brfantasy-bridge-v1";
-  const MAX_WALK = 8000;
-  const MAX_ELEM_SCAN = 800;
+  const MAX_WALK = 12000;
+  const MAX_ELEM_SCAN = 1200;
   let lastFingerprint = "";
   let lastEmitAt = 0;
   let apiPollInFlight = false;
+  /** @type {Map<number, object>} */
+  const pickAccumulator = new Map();
+  let bestOverallSeen = 0;
 
   function bridgeToExtension(type, detail) {
     try {
@@ -183,10 +186,25 @@
     }
   }
 
-  function emit(picks, meta, source) {
+  function mergeIntoAccumulator(rawPicks) {
+    let grew = false;
+    for (const raw of rawPicks || []) {
+      const norm = normalizePick(raw);
+      if (!norm || !norm.overallPickNumber) continue;
+      const n = Number(norm.overallPickNumber);
+      if (!n || n <= 0) continue;
+      if (!pickAccumulator.has(n)) grew = true;
+      pickAccumulator.set(n, norm);
+      if (n > bestOverallSeen) bestOverallSeen = n;
+    }
+    return grew;
+  }
+
+  function emitAccumulated(meta, source) {
     const ids = leagueFromUrl();
-    const clean = (picks || []).map(normalizePick).filter(Boolean);
-    clean.sort((a, b) => a.overallPickNumber - b.overallPickNumber);
+    const clean = Array.from(pickAccumulator.values()).sort(
+      (a, b) => a.overallPickNumber - b.overallPickNumber
+    );
     if (!clean.length) return;
     const fp = fingerprint(clean, meta || {});
     const now = Date.now();
@@ -194,7 +212,7 @@
     lastFingerprint = fp;
     lastEmitAt = now;
     const detail = {
-      source: source || "unknown",
+      source: source || "accumulated",
       leagueId: ids.leagueId,
       season: ids.season,
       inProgress: !!(meta && meta.inProgress),
@@ -204,6 +222,16 @@
     };
     bridgeToExtension(EVENT, detail);
     relayToBackground(detail);
+  }
+
+  function emit(picks, meta, source) {
+    if (!mergeIntoAccumulator(picks)) {
+      const incoming = (picks || []).map(normalizePick).filter(Boolean);
+      if (!incoming.length) return;
+      const maxIncoming = incoming[incoming.length - 1].overallPickNumber;
+      if (maxIncoming <= bestOverallSeen && pickAccumulator.size >= incoming.length) return;
+    }
+    emitAccumulated(meta, source);
   }
 
   function maybeFromDraftDetail(detail, source) {
@@ -223,34 +251,45 @@
     return true;
   }
 
-  function deepFindDraftDetail(data, depth) {
-    if (!data || typeof data !== "object") return null;
+  function findBestDraftDetail(data, depth, best) {
+    if (!data || typeof data !== "object") return best;
     if (depth == null) depth = 0;
-    if (depth > 14) return null;
+    if (!best) best = { detail: null, count: 0 };
+    if (depth > 16) return best;
     if (Array.isArray(data)) {
-      if (data.length && data[0] && typeof data[0] === "object" && data[0].draftDetail) {
-        const inner = deepFindDraftDetail(data[0], depth + 1);
-        if (inner) return inner;
+      for (let i = 0; i < Math.min(data.length, 32); i++) {
+        best = findBestDraftDetail(data[i], depth + 1, best);
       }
-      for (let i = 0; i < Math.min(data.length, 8); i++) {
-        const inner = deepFindDraftDetail(data[i], depth + 1);
-        if (inner) return inner;
-      }
-      return null;
+      return best;
     }
     if (data.draftDetail && typeof data.draftDetail === "object") {
       const dd = data.draftDetail;
-      if (Array.isArray(dd.picks)) return dd;
+      if (Array.isArray(dd.picks)) {
+        const sel = dd.picks.filter(isPickRow);
+        if (sel.length > best.count) {
+          best = { detail: dd, count: sel.length };
+        }
+      }
+    }
+    if (Array.isArray(data.picks) && data.picks.some(isPickRow)) {
+      const sel = data.picks.filter(isPickRow);
+      if (sel.length > best.count) {
+        best = { detail: data, count: sel.length };
+      }
     }
     for (const k of Object.keys(data)) {
       if (k === "draftDetail") continue;
       const v = data[k];
       if (v && typeof v === "object") {
-        const inner = deepFindDraftDetail(v, depth + 1);
-        if (inner) return inner;
+        best = findBestDraftDetail(v, depth + 1, best);
       }
     }
-    return null;
+    return best;
+  }
+
+  function deepFindDraftDetail(data, depth) {
+    const best = findBestDraftDetail(data, depth, null);
+    return best && best.detail ? best.detail : null;
   }
 
   function inspectJson(data, source) {
@@ -275,20 +314,23 @@
     const seen = new Set();
     const q = [root];
     let n = 0;
+    let found = false;
     while (q.length && n < MAX_WALK) {
       const cur = q.shift();
       n++;
       if (!cur || typeof cur !== "object") continue;
       if (seen.has(cur)) continue;
       seen.add(cur);
-      if (cur.draftDetail && maybeFromDraftDetail(cur.draftDetail, "react")) return true;
+      if (cur.draftDetail) {
+        if (maybeFromDraftDetail(cur.draftDetail, "react")) found = true;
+      }
       if (Array.isArray(cur.picks) && cur.picks.some(isPickRow)) {
         emit(
           cur.picks.filter(isPickRow),
           { inProgress: cur.inProgress === true, drafted: cur.drafted === true },
           "react-picks"
         );
-        return true;
+        found = true;
       }
       const next = [];
       if (cur.memoizedProps) next.push(cur.memoizedProps);
@@ -301,7 +343,7 @@
       if (cur.props) next.push(cur.props);
       for (const k of Object.keys(cur)) {
         if (k === "draftDetail") {
-          if (maybeFromDraftDetail(cur[k], "react-key")) return true;
+          if (maybeFromDraftDetail(cur[k], "react-key")) found = true;
         }
         const v = cur[k];
         if (v && typeof v === "object" && !seen.has(v)) next.push(v);
@@ -309,7 +351,7 @@
       }
       for (let i = 0; i < Math.min(next.length, 28); i++) q.push(next[i]);
     }
-    return false;
+    return found;
   }
 
   function collectReactRoots() {
@@ -503,25 +545,15 @@
       return a.overallPickNumber - b.overallPickNumber;
     });
 
-    // Headshots without an explicit pick label: assign sequential numbers only
-    // when we have a contiguous run starting at 1 (full pick log on screen).
     const missingNo = picks.some(function (p) {
       return !p.overallPickNumber;
     });
+    // Never invent pick numbers 1..N for headshots without labels (recent-pick strip).
     if (missingNo) {
-      const withNo = picks.filter(function (p) {
+      picks = picks.filter(function (p) {
         return p.overallPickNumber > 0;
       });
-      if (withNo.length === picks.length) {
-        /* all have numbers */
-      } else if (withNo.length === 0 && picks.length <= 60) {
-        picks = picks.map(function (p, idx) {
-          p.overallPickNumber = idx + 1;
-          return p;
-        });
-      } else {
-        return false;
-      }
+      if (!picks.length) return false;
     }
 
     picks = picks.map(function (p) {
@@ -530,14 +562,14 @@
       return out;
     });
 
-    emit(picks, { inProgress: true, drafted: false }, "dom-scrape");
+    mergeIntoAccumulator(picks);
+    emitAccumulated({ inProgress: true, drafted: false }, "dom-scrape");
     return true;
   }
 
   function scanAll() {
-    if (scrapeDomPicks()) return true;
-    if (scanReact()) return true;
-    return false;
+    scrapeDomPicks();
+    scanReact();
   }
 
   let domScrapeTimer = null;
@@ -707,6 +739,8 @@
 
   function onRescan() {
     lastFingerprint = "";
+    pickAccumulator.clear();
+    bestOverallSeen = 0;
     scanAll();
     pollEspnApi();
   }
@@ -723,7 +757,7 @@
   setInterval(function () {
     if (document.hidden) return;
     pollEspnApi();
-  }, 5000);
+  }, 3000);
 
   setTimeout(onRescan, 800);
   setTimeout(onRescan, 2500);
