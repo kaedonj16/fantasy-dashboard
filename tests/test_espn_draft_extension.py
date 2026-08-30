@@ -8,10 +8,10 @@ EXT = REPO / "extension"
 
 def test_extension_manifest_includes_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.3.9"
+    assert manifest["version"] == "1.4.0"
     assert "cookies" in manifest["permissions"]
     assert "scripting" in manifest["permissions"]
-    assert "tabs" not in manifest.get("permissions", [])
+    assert "tabs" in manifest["permissions"]
     scripts = manifest["content_scripts"]
     worlds = {(tuple(s["matches"]), s.get("world", "ISOLATED")): s["js"] for s in scripts}
     main_js = None
@@ -71,7 +71,10 @@ def test_extension_relay_message_contract():
     assert "playerIdSelected" in main
     assert "teamId != null" not in main.split("function isPickRow")[1].split("function normalizePick")[0]
     assert "chrome.scripting.executeScript" in bg
-    assert "brDraftRoomReady" in content
+    assert "brDraftRoomTabs" in bg
+    assert "registerBrDraftRoomTab" in bg
+    assert "queryBrDraftRoomTabs" in bg
+    assert "announceDraftRoom" in content
     assert "relayFailureText" in iso
     assert "forceResend" in iso
     assert "manualReconnect" in iso
