@@ -2,12 +2,14 @@
 // and fetch/XHR traffic. Yahoo's draftresults API usually updates mid-draft;
 // the open draft room is still the fastest, most reliable source. We observe
 // in-page state and forward a compact pick snapshot to the isolated content
-// script via CustomEvent (no cookies leave this page).
+// script via postMessage (no cookies leave this page).
 
 (function () {
   "use strict";
 
   const EVENT = "brfantasy:yahoo-draft-raw";
+  const RESCAN = "brfantasy:draft-rescan";
+  const BRIDGE = "brfantasy-bridge-v1";
   const MAX_WALK = 4000;
   let lastFingerprint = "";
   let lastEmitAt = 0;
@@ -30,6 +32,14 @@
       return { leagueId, season };
     } catch (_e) {
       return { leagueId: "", season: "" };
+    }
+  }
+
+  function bridgeToExtension(type, detail) {
+    try {
+      window.postMessage({ __br: BRIDGE, type: type, detail: detail || {} }, "*");
+    } catch (_e) {
+      /* ignore */
     }
   }
 
@@ -106,23 +116,15 @@
     if (fp === lastFingerprint && now - lastEmitAt < 1500) return;
     lastFingerprint = fp;
     lastEmitAt = now;
-    try {
-      window.dispatchEvent(
-        new CustomEvent(EVENT, {
-          detail: {
-            source: source || "unknown",
-            leagueId: ids.leagueId,
-            season: ids.season,
-            inProgress: !!(meta && meta.inProgress),
-            drafted: !!(meta && meta.drafted),
-            picks: clean,
-            at: now,
-          },
-        })
-      );
-    } catch (_e) {
-      /* ignore */
-    }
+    bridgeToExtension(EVENT, {
+      source: source || "unknown",
+      leagueId: ids.leagueId,
+      season: ids.season,
+      inProgress: !!(meta && meta.inProgress),
+      drafted: !!(meta && meta.drafted),
+      picks: clean,
+      at: now,
+    });
   }
 
   function picksFromDraftResults(block) {
@@ -172,7 +174,7 @@
       seen.add(cur);
       if (cur.draft_results && maybeFromDraftResults(cur.draft_results, "react", null)) return true;
       if (cur.draftResults && maybeFromDraftResults(cur.draftResults, "react", null)) return true;
-      if (Array.isArray(cur.picks) && cur.picks.length && isPickRow(cur.picks[0])) {
+      if (Array.isArray(cur.picks) && cur.picks.some(isPickRow)) {
         emit(
           cur.picks,
           { inProgress: cur.inProgress !== false, drafted: cur.drafted === true },
@@ -315,10 +317,15 @@
   }
 
   hookNetwork();
-  window.addEventListener("brfantasy:draft-rescan", () => {
+  function onRescan() {
     lastFingerprint = "";
     scanReact();
+  }
+  window.addEventListener("message", (ev) => {
+    if (!ev.data || ev.data.__br !== BRIDGE || ev.data.type !== RESCAN) return;
+    onRescan();
   });
+  document.addEventListener(RESCAN, onRescan);
   setInterval(() => {
     if (document.hidden) return;
     scanReact();

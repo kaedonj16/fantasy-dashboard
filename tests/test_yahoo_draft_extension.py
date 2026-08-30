@@ -9,7 +9,7 @@ ROOM_JS = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
 def test_extension_manifest_includes_yahoo_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.3.5"
+    assert manifest["version"] == "1.3.6"
     assert "cookies" in manifest["permissions"]
     assert "tabs" not in manifest.get("permissions", [])
     hosts = " ".join(manifest.get("host_permissions") or [])
@@ -37,6 +37,10 @@ def test_yahoo_extension_relay_message_contract():
     assert "yahooDraftRelay" in bg
     assert "brfantasy:yahoo-draft-raw" in main
     assert "brfantasy:yahoo-draft-raw" in iso
+    assert "listenFromMain" in iso
+    assert "bridgeToExtension" in main
+    assert "brfantasy-bridge-v1" in main
+    assert "brfantasy-bridge-v1" in iso
     assert "brfantasy:yahoo-draft-relay" in content
     assert "overallPickNumber" in main
     assert "br-fantasy-yahoo-sync-chip" in iso

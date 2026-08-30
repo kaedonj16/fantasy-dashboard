@@ -8,7 +8,7 @@ EXT = REPO / "extension"
 
 def test_extension_manifest_includes_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.3.5"
+    assert manifest["version"] == "1.3.6"
     assert "cookies" in manifest["permissions"]
     assert "scripting" in manifest["permissions"]
     assert "tabs" not in manifest.get("permissions", [])
@@ -39,6 +39,12 @@ def test_extension_relay_message_contract():
     assert "yahooDraftRelay" in bg
     assert "brfantasy:espn-draft-raw" in main
     assert "brfantasy:espn-draft-raw" in iso
+    assert "listenFromMain" in iso
+    assert "bridgeToExtension" in main
+    assert "brfantasy-bridge-v1" in main
+    assert "brfantasy-bridge-v1" in iso
+    assert "postMessage" in main
+    assert "postMessage" in iso
     assert "brfantasy:espn-draft-relay" in content
     assert "brfantasy:yahoo-draft-relay" in content
     assert "overallPickNumber" in main

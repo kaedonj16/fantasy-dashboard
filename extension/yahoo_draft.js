@@ -1,5 +1,5 @@
 // Isolated-world content script on Yahoo's football draft room. Receives the
-// MAIN-world pick snapshot (CustomEvent) and forwards it to the service worker,
+// MAIN-world pick snapshot (postMessage) and forwards it to the service worker,
 // which relays to open BR Fantasy Draft Room tabs. Also shows a small sync
 // status chip so the user knows BR Fantasy is watching.
 
@@ -7,6 +7,8 @@
   "use strict";
 
   const EVENT = "brfantasy:yahoo-draft-raw";
+  const RESCAN = "brfantasy:draft-rescan";
+  const BRIDGE = "brfantasy-bridge-v1";
   const RETRY_MS = 3000;
   const RECONNECT_COOLDOWN_MS = 5000;
   let lastDelivered = "";
@@ -32,6 +34,21 @@
       return { leagueId, season };
     } catch (_e) {
       return { leagueId: "", season: "" };
+    }
+  }
+
+  function listenFromMain(type, fn) {
+    window.addEventListener("message", (ev) => {
+      if (!ev.data || ev.data.__br !== BRIDGE || ev.data.type !== type) return;
+      fn(ev.data.detail);
+    });
+  }
+
+  function requestRescan() {
+    try {
+      window.postMessage({ __br: BRIDGE, type: RESCAN }, "*");
+    } catch (_e) {
+      /* ignore */
     }
   }
 
@@ -81,11 +98,7 @@
   function forceResend() {
     lastDelivered = "";
     clearRetry();
-    try {
-      window.dispatchEvent(new CustomEvent("brfantasy:draft-rescan"));
-    } catch (_e) {
-      /* ignore */
-    }
+    requestRescan();
     if (pendingPayload) deliverPending(true);
   }
 
@@ -194,16 +207,17 @@
       source: detail.source || "yahoo-draft-room",
       at: detail.at || Date.now(),
     };
-    if (!payload.leagueId) return;
+    if (!payload.leagueId) {
+      setChip("BR Fantasy · leagueId missing in URL", false);
+      return;
+    }
     const fp = payloadFingerprint(payload);
     if (fp === lastDelivered) return;
     pendingPayload = payload;
     deliverPending();
   }
 
-  window.addEventListener(EVENT, (ev) => {
-    forward(ev && ev.detail);
-  });
+  listenFromMain(EVENT, forward);
 
   try {
     chrome.runtime.onMessage.addListener((msg) => {
