@@ -53,6 +53,7 @@ def test_extension_relay_message_contract():
     assert "findBestDraftDetail" in main
     assert "pickSources" in main
     assert "trustedMaxOverall" in main
+    assert "emitAccumulated" in main
     assert "watchDom" in main
     assert "deepFindDraftDetail" in main
     assert "playerPoolEntry" in main
