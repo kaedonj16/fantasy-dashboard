@@ -164,12 +164,13 @@ def render_team_ai_result(result: dict, mode: str = "gm_memo") -> str:
         """
 
 
-def _ctx_with_playoff_odds(ctx: dict, *, block: bool = True) -> dict:
-    """Attach playoff odds before building GM / rankings context.
+def _ctx_with_playoff_odds(ctx: dict, *, block: bool = False) -> dict:
+    """Attach a warm playoff-odds snapshot when the sim cache already has one.
 
-    Defaults to ``block=True`` so Front Office reports never cite a cold-cache
-    miss (or worse, a mis-keyed Week-1 seed) as 0.1% playoff odds. Callers that
-    must stay non-blocking on first paint can pass ``block=False``.
+    Defaults to ``block=False``: a cold Monte Carlo (projection fetches + 10k
+    sims) plus an OpenAI call regularly exceeds the edge proxy budget and the
+    browser reports a generic "Network error" on Refresh Report. Callers that
+    truly need odds before continuing can pass ``block=True``.
     """
     if not ctx or ctx.get("playoff_odds"):
         return ctx
@@ -222,7 +223,12 @@ def _trade_room_slice(team_ctx: dict, *, is_redraft: bool) -> dict:
 
 
 def get_team_gm_memo(ctx: dict, viewer_roster_id: str, force_refresh: bool = False) -> str:
-    # Warm-cache first so a dashboard paint does not block on a cold Monte Carlo.
+    # Never block this request on a cold playoff Monte Carlo. Refresh Report
+    # already pays for an OpenAI round-trip; stacking a full sim behind the
+    # same HTTP call trips gateway timeouts and the UI shows "Network error".
+    # Odds attribution is fixed at the sim layer (real roster_ids); warm cache
+    # is enough, and a miss just omits odds for this generation while a
+    # background sim fills the cache for the next one.
     team_ctx = build_team_gm_context(_ctx_with_playoff_odds(ctx, block=False), viewer_roster_id)
     if not team_ctx:
         return ""
@@ -235,15 +241,13 @@ def get_team_gm_memo(ctx: dict, viewer_roster_id: str, force_refresh: bool = Fal
         if cached:
             return scrub_ai_prose_field_names(cached)
 
-    # Generating (or refreshing): block so the memo cites real odds for this roster.
-    team_ctx = build_team_gm_context(_ctx_with_playoff_odds(ctx, block=True), viewer_roster_id)
-    if not team_ctx:
-        return ""
-    cache_key = build_ai_cache_key("gm_memo", team_ctx, "v8")
-    if not force_refresh:
-        cached = load_cached_ai_text(cache_key)
-        if cached:
-            return scrub_ai_prose_field_names(cached)
+    if not team_ctx.get("playoff_pct") and ctx is not None:
+        # Kick a background sim so the next refresh can cite odds.
+        try:
+            from app import _playoff_sim_cached
+            _playoff_sim_cached(ctx, str(ctx.get("platform") or "sleeper"), block=False)
+        except Exception:
+            logger.debug("[ai gm_memo] background odds warm failed", exc_info=True)
 
     if not ai_available():
         html_out = _gm_memo_fallback_html(team_ctx)
