@@ -103,7 +103,13 @@ def test_resolve_consensus_blends_sleeper_and_yahoo(monkeypatch):
 
 def test_resolve_empty_when_no_sources(monkeypatch):
     monkeypatch.setattr(A, "fetch_sleeper_adp", lambda season: {})
-    # sleeper empty and no yahoo token -> redraft has no source with data.
+    # Redraft consensus also consults Yahoo/ESPN/MFL snapshots; stub them empty
+    # so "no sources" really means empty (CI/local snapshot files would otherwise
+    # keep consensus non-empty even with Sleeper cleared).
+    monkeypatch.setattr(A, "_yahoo_adp_source", lambda *a, **k: {})
+    monkeypatch.setattr(A, "_espn_adp_source", lambda *a, **k: {})
+    monkeypatch.setattr(A, "_mfl_adp_source", lambda *a, **k: {})
+    monkeypatch.setattr(A, "_crawler_adp_source", lambda *a, **k: {})
     assert A.resolve_market_adp(2026, False, "redraft", "consensus") == {}
 
 
