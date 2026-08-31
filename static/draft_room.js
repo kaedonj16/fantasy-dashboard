@@ -3706,12 +3706,12 @@
       var ppgRowLbl = 'Proj PPG';
       var ppg = f.projPpg;
       var oppg = o.projPpg;
-      function statRow(lbl, val, oval, higherBetter, fmtFn){
+      function statRow(lbl, val, oval, higherBetter, fmtFn, tip){
         if (val == null && oval == null) return '';
         var vStr = fmtFn ? fmtFn(val) : (val != null ? String(val) : '-');
         var win = val != null && oval != null && (higherBetter ? val > oval : val < oval);
         return '<div class="dr-cmp-stat' + (win ? ' win' : '') + '">'
-          + '<span class="dr-cmp-stat-lbl">' + lbl + '</span>'
+          + '<span class="dr-cmp-stat-lbl"' + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + lbl + '</span>'
           + '<span class="dr-cmp-stat-val">' + vStr + '</span></div>';
       }
       var sc = ps != null ? psColor(ps) : 'var(--text-muted)';
@@ -3722,7 +3722,7 @@
         + '<div class="dr-cmp-meta">' + esc(metaBits.join(' · ')) + '</div>'
         + '</div></div>'
         + '<div class="dr-cmp-ps" style="color:' + sc + '">' + (ps != null ? ps : '&ndash;') + '</div>'
-        + '<div class="dr-cmp-ps-lbl">Pick Score' + infoIcon('A 0-100 composite of value, positional VOR, ADP, tier, roster need, and projected points — not a count of which compare rows you win. Missing projections are not treated as zeros.') + '</div>'
+        + '<div class="dr-cmp-ps-lbl">Pick Score' + infoIcon('How good is this player at this pick? Absolute 0-100 quality (value, VOR, ADP, tier, need, projected points), shown relative to the best player still available. Not Recommendation Rank, and not a count of which compare rows you win.') + '</div>'
         + '<div class="dr-cmp-stats">'
         + statRow('Value', f.value, o.value, true, function(x){ return x != null ? String(Math.round(x)) : '-'; })
         + statRow(ppgRowLbl, ppg, oppg, true, function(x){ return x != null ? x.toFixed(1) : 'N/A'; })
@@ -3740,7 +3740,7 @@
         + (state.type !== 'redraft' ? statRow('Tier', f.tier, o.tier, false, function(x){ return x != null ? 'T' + x : '-'; }) : '')
         + (state.type !== 'redraft' ? statRow('Age', f.age, o.age, false, function(x){ return x != null ? x.toFixed(0) : '-'; }) : '')
         + (f.bye != null || o.bye != null ? statRow('Bye', f.bye, o.bye, false, function(x){ return x != null ? String(x) : '-'; }) : '')
-        + (f.rec != null || o.rec != null ? statRow('REC', f.rec, o.rec, false, function(x){ return x != null ? '#' + x : '-'; }) : '')
+        + (f.rec != null || o.rec != null ? statRow('REC', f.rec, o.rec, false, function(x){ return x != null ? '#' + x : '-'; }, 'Recommendation Rank — who to draft now (roster-aware order, not a grade)') : '')
         + (f.survive != null || o.survive != null ? statRow('Survive', f.survive, o.survive, true, function(x){ return x != null ? x + '%' : '-'; }) : '')
         + (f.projPts != null || o.projPts != null ? statRow('Proj Pts', f.projPts, o.projPts, true, function(x){ return x != null ? String(Math.round(x)) : '-'; }) : '')
         + (f.market != null || o.market != null ? statRow('Mkt vs ADP', f.market, o.market, true, function(x){ return fmtSigned(Math.round(x), 0); }) : '')
@@ -4087,14 +4087,14 @@
     var waitLine = opts.wait
       ? '<div class="dr-ba-wait">Can wait: ' + opts.wait.prob + '% there at #' + opts.wait.pn + '</div>'
       : '';
-    // Recommendation is an ordering, not a historical grade. Showing its raw
+    // Recommendation Rank is an ordering, not a historical grade. Showing its raw
     // internal utility as 99 early and 18 late made the same sound decision look
     // wildly inconsistent. Surface the rank for Recommendation and reserve the
-    // numeric 0-100 chip for the actual Pick Score.
+    // numeric 0-100 chip for Pick Score (pool-relative on live surfaces).
     var _isRec = opts.rank && p._ds != null;
     var psChip = _isRec
-      ? '<div class="dr-ba-pschip dr-ba-recchip">#' + opts.rank + '<small>REC</small></div>'
-      : (ps != null ? '<div class="dr-ba-pschip" style="color:' + psColor(ps) + ';background:' + psColor(ps) + '1a;">' + ps + '<small>PS</small></div>' : '');
+      ? '<div class="dr-ba-pschip dr-ba-recchip" title="Recommendation Rank">#' + opts.rank + '<small>REC</small></div>'
+      : (ps != null ? '<div class="dr-ba-pschip" style="color:' + psColor(ps) + ';background:' + psColor(ps) + '1a;" title="Pick Score vs best available">'+ ps + '<small>PS</small></div>' : '');
     var availClass = '';
     var availLine = '';
     if (opts.availAt){
@@ -4741,7 +4741,7 @@
     var picks = gradeRowsForPicks(mine);
     // Absolute `ps` on each pick feeds the letter-grade Value component
     // (round-weighted kernel via BRTeamGrade). avgPs is the Deep Dive / share
-    // "Avg pick score" chip — average the same pool-relative scores the board
+    // "Avg Board PS" chip — average the same pool-relative scores the board
     // and Deep Dive ledger show (relPS), not the absolute kernel scale.
     var relVals = mine.map(function(m){ return relPS(m.p, m.pn); })
       .filter(function(v){ return v != null; });
@@ -6883,11 +6883,12 @@
 
   // ── Glossary / inline term explainers ───────────────────────────────────────
   // Single source of truth so the inline ⓘ tooltips and the help popover agree.
+  // Labels match docs/draft-room-evaluation-plan.md § Semantic contract.
   var _GLOSSARY = [
-    { term: 'Recommendation', def: 'The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. In redraft it favors this-season lineup strength: filling an open starter or FLEX hole beats luxury bench BPA, while 1QB/1TE empties stay streamable and a major ADP fall can still win. It does not rank by simulated playoff odds. When it is not your turn, the order is for your next owned pick and players unlikely to last there are ranked down. Recommendation is shown as a rank rather than a grade because its internal utility naturally changes as the board is depleted.' },
-    { term: 'Pick Score (PS)', def: 'How good is this player at this pick? The absolute 0-100 quality kernel combines model value, a scarcity residual (VOR as a share of the player\'s own value, so same-position stars are not double-counted), ADP, tier, roster need, and projected points. Live survival, handcuffs, and late-round upside live in Recommendation, not here. Kickers and defenses are not scored.' },
-    { term: 'Board PS', def: 'How good was this selection relative to what was available at that moment? Made-pick chips replay the historical remaining pool and scale the absolute Pick Score against its best option. Deep Dive’s Avg pick score, use the same relative scale. Board PS can therefore differ from absolute Pick Score and Recommendation.' },
-    { term: 'Draft Grade', def: 'How good is the resulting roster? It primarily evaluates the optimal starters, functional bench depth, efficient construction, and role- and round-weighted pick quality. It is not an average Recommendation rank, and K/DEF are grade-neutral.' },
+    { term: 'Recommendation Rank', def: 'Who should I draft right now? The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. In redraft it favors this-season lineup strength: filling an open starter or FLEX hole beats luxury bench BPA, while 1QB/1TE empties stay streamable and a major ADP fall can still win. It does not rank by simulated playoff odds. When it is not your turn, the order is for your next owned pick and players unlikely to last there are ranked down. Shown as a rank (REC #) rather than a grade because its internal Decision Score naturally changes as the board is depleted — not a historical grade.' },
+    { term: 'Pick Score (PS)', def: 'How good is this player at this pick? The absolute 0-100 quality kernel combines model value, a scarcity residual (VOR as a share of the player\'s own value, so same-position stars are not double-counted), ADP, tier, roster need, and projected points. Live surfaces may scale it vs the best player still available so late boards stay readable. Live survival, handcuffs, and late-round upside live in Recommendation Rank, not here. Kickers and defenses are not scored.' },
+    { term: 'Board PS', def: 'How good was this selection relative to what was available then? Made-pick chips and Deep Dive replay the historical remaining pool and scale absolute Pick Score against its best option at that slot. Avg Board PS on the report uses the same relative scale. Board PS is not live Recommendation Rank.' },
+    { term: 'Draft Grade', def: 'How good is the resulting roster? It primarily evaluates the optimal starters, functional bench depth, efficient construction, and role- and round-weighted pick quality. It is not an average Recommendation Rank, and K/DEF are grade-neutral.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses projected season fantasy points; VOR uses dynasty or redraft trade value. Last season\'s injury-shortened totals are not used.' },
     { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value. When a sample size (n=) is shown, a small n means the ADP is noisy.' },
@@ -6898,7 +6899,7 @@
     { term: 'Grade · Starters', def: 'How good your projected starting lineup is versus this league’s actual starting lineups. 100% is the average of those lineups; the rank is among teams in this draft. Snake drafts are close to zero-sum, so a lineup near 100% of average can still rank 1st or 2nd.' },
     { term: 'Grade · Construction', def: 'How well you’ve filled your starting slots and balanced your positions.' },
     { term: 'Grade · Early', def: 'Shown until your team has 8 picks (3 in a rookie draft). The letter is real — including at two picks / the start of round 3 — but construction is still ramping and the sample is small.' },
-    { term: 'Hist', def: 'Historical top-12 chance for this career profile and situation. Compare it to the ADP-round rate in Deep Dive — early ADP is a high bar. Not a Pick Score, Recommendation, VOR, or Draft Grade input.' }
+    { term: 'Hist', def: 'Historical top-12 chance for this career profile and situation. Compare it to the ADP-round rate in Deep Dive — early ADP is a high bar. Not a Pick Score, Recommendation Rank, VOR, or Draft Grade input.' }
   ];
   // Inline info icon: data-tip drives a CSS hover/focus bubble. tabindex makes it
   // tap- and keyboard-accessible.
@@ -7458,7 +7459,7 @@
       { v: fmtAdpDelta(netValue), l: 'Net ADP value (capped)', cls: netValue >= 0 ? 'good' : 'bad' },
       { v: nValues, l: 'Values (fell 3+ to you)', cls: 'good' },
       { v: nReaches, l: 'Reaches (early 5+, could wait)', cls: nReaches ? 'bad' : '' },
-      { v: g.avgPs != null ? g.avgPs : '—', l: 'Avg pick score' }
+      { v: g.avgPs != null ? g.avgPs : '—', l: 'Avg Board PS' }
     ];
     tileDefs.forEach(function(t){
       tiles += '<div class="dd-tile ' + (t.cls || '') + '"><div class="dd-tile-v">' + t.v + '</div><div class="dd-tile-l">' + t.l + '</div></div>';
@@ -7608,13 +7609,13 @@
   // ── Pick ledger (sortable) ───────────────────────────────────────────────────
   function ddLedgerHtml(picks){
     return '<div class="dd-card">'
-      + '<div class="dd-sec"><h4>Pick ledger</h4><p>Every selection with market delta, board pick score (vs best available then), tier, and verdict. Reach means you skipped a better remaining ADP and the player was likely to last to your next pick. Click a header to sort.</p></div>'
+      + '<div class="dd-sec"><h4>Pick ledger</h4><p>Every selection with market delta, <b>Board PS</b> (Pick Score vs best available at that slot), tier, and verdict. Reach means you skipped a better remaining ADP and the player was likely to last to your next pick. Click a header to sort. Board PS is not live Recommendation Rank.</p></div>'
       + '<div class="dd-tablescroll"><table class="dd-ledger" id="drDdLedger">'
       + '<thead><tr>'
       + '<th data-k="pn" data-t="n">Pick</th><th data-k="name" data-t="s">Player</th><th data-k="pos" data-t="s">Pos</th>'
       + '<th data-k="adp" data-t="n" class="r">ADP</th><th data-k="diff" data-t="n" class="r dd-sorted">± ADP</th>'
       + '<th data-k="hist" data-t="n" class="r" title="Historical top-12 chance for this career and situation. Compare to the ADP round.">Hist</th>'
-      + '<th data-k="ps" data-t="n" class="r" title="Board pick score vs best available at that slot">Board PS</th><th data-k="tier" data-t="n" class="r">Tier</th>'
+      + '<th data-k="ps" data-t="n" class="r" title="Board PS: Pick Score vs best available at that historical slot — not Recommendation Rank">Board PS</th><th data-k="tier" data-t="n" class="r">Tier</th>'
       + '<th data-k="vord" data-t="s">Verdict</th>'
       + '</tr></thead><tbody id="drDdLedgerBody"></tbody></table></div></div>';
   }
@@ -8330,7 +8331,7 @@
     var g = gradeTeam();
     if (g){
       var gl = gradeLetter(g.score);
-      var gp = (state.type === 'rookie' && g.avgPs != null) ? ('Avg pick score ' + g.avgPs) : null;
+      var gp = (state.type === 'rookie' && g.avgPs != null) ? ('Avg Board PS ' + g.avgPs) : null;
       if (!gp){ var _sa = teamArchetype(); if (_sa) gp = _sa.label; }
       ctx.fillStyle = clr.win; ctx.font = 'bold 15px system-ui,Arial,sans-serif';
       ctx.fillText('Grade ' + gl + (g.provisional ? ' \xb7 Early' : '') + (gp ? ('  \xb7  ' + gp) : ''), pad, pad + 76);
@@ -8461,7 +8462,7 @@
       // Pick Score hero
       + '<div class="dr-prev-score-hero" style="border-color:' + sc + ';background:' + sc + '1a;">'
       + '<div class="dr-prev-score-num" style="color:' + sc + '">' + (ps != null ? ps : '&ndash;') + '</div>'
-      + '<div class="dr-prev-score-lbl">Pick Score' + infoIcon('A 0-100 grade of this pick at this slot: value, fall vs ADP, tier, your needs, age, and projected points. Higher is better.') + '</div>'
+      + '<div class="dr-prev-score-lbl">Pick Score' + infoIcon('How good is this player at this pick? Absolute 0-100 quality (value, fall vs ADP, tier, need, age, projected points), shown relative to the best still available. Higher is better. Not Recommendation Rank.') + '</div>'
       + '<div class="dr-prev-score-reason">' + esc(ps != null ? pickReason(p, myPosCounts(), { rank: recRankOf(p) }) : 'Streamer / last-round pick') + '</div>'
       + '</div>'
       // Stats grid
@@ -8473,7 +8474,7 @@
       + (f.projPpg != null ? statBox('Proj PPG', f.projPpg.toFixed(1), 'projected', 'Points per game, projected for the upcoming season.') : '')
       + (f.lastPpg != null ? statBox((f.ppgSeason ? f.ppgSeason + ' PPG' : 'PPG'), f.lastPpg.toFixed(1), f.ppgRank != null ? (pos + f.ppgRank) : 'last season', 'Points per game last season.') : '')
       + (f.posRank ? statBox('Pos Rank', f.posRank, null, 'Rank at this position by current value.') : '')
-      + (f.rec != null ? statBox('REC', '#' + f.rec, null, 'Live recommendation rank for this pick — roster-aware order, not a grade. While you wait, it is ranked for your next owned pick.') : '')
+      + (f.rec != null ? statBox('REC', '#' + f.rec, null, 'Recommendation Rank — who to draft now. Roster-aware order, not a grade. While you wait, it is ranked for your next owned pick.') : '')
       + (f.bye != null ? statBox('Bye', f.bye, null, 'NFL bye week. Stacking several players on the same bye can leave a hole.') : '')
       + (f.projPts != null ? statBox('Proj Pts', Math.round(f.projPts), 'season', 'Projected fantasy points for the full upcoming season.') : '')
       + (f.market != null ? statBox('Mkt vs ADP', fmtSigned(Math.round(f.market), 0), null, 'How much earlier (positive) or later (negative) betting markets imply this player should go versus ADP.') : '')
@@ -8713,7 +8714,7 @@
     var menu = document.getElementById('drBaSortMenu');
     var lbl = document.getElementById('drBaSortLbl');
     if (!ui || !btn || !menu || !lbl) return;
-    var LABELS = { value: 'Value', adp: 'ADP', pickscore: 'Pick Score', ps: 'Recommendation', ppg: 'Proj PPG' };
+    var LABELS = { value: 'Value', adp: 'ADP', pickscore: 'Pick Score', ps: 'Recommendation Rank', ppg: 'Proj PPG' };
     var opts = menu.querySelectorAll('.dr-sortsel-opt');
     var cur = btn.getAttribute('data-val') || 'ps';
     function apply(v){

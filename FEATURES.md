@@ -88,7 +88,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **Player Modals** — Detailed player view: PPG and season total with positional ranks, advanced metrics (snap share, role score, efficiency), career/per-season game logs, value history, live ESPN headlines, and a **Trades** tab that toggles between **This League** (every season, real counterparties, picks resolved to drafted players) and the **Trade Database** (same free cross-league comps, also with pick→player resolution when drafts are complete).
 - **Player Comparison** — Compare any two players with position-specific stats and metrics.
 - **Prospect Rankings** — Full rookie evaluation: production, athleticism, draft capital, and dynasty value for the active class, plus historical player comps.
-- **Draft Room** — Live and mock draft board with best-available rankings, pick scoring, and post-draft grades. Run a mock for any format or connect to a live Sleeper draft. Supports rookie, startup, and redraft leagues.
+- **Draft Room** — Live and mock draft board with Recommendation Rank, Pick Score / Board PS, and post-draft grades. Run a mock for any format or connect to a live Sleeper draft. Supports rookie, startup, and redraft leagues.
   - **Mock Draft simulator** — Run a full mock draft against simulated opponents from the draft room.
   - **Cheat Sheet** — Sortable, printable draft cheat sheet with live Sleeper draft sync (free), free CSV download, and an embeddable in-draft overlay that stays crossed-off as picks land (without turning on Sleeper live polling). Custom board edits stay PRO.
   - **Draft History** — Review completed drafts.
