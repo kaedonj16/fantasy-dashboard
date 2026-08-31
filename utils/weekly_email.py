@@ -319,6 +319,22 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
             f'<table style="width:100%;border-collapse:collapse;">{_rows(lg_risers, True)}</table>'
         )
 
+    # Optional action sections (R12.2) — omit cleanly when offseason / no data.
+    try:
+        from utils.digest_actions import gather_digest_actions
+        for section in gather_digest_actions(
+            platform=platform,
+            season=int(season),
+            league_id=league_id,
+            roster=mine if isinstance(mine, dict) else {},
+            pidx=pidx or {},
+            base_url=base,
+        ):
+            if section:
+                blocks.append(section)
+    except Exception:
+        logger.debug("[weekly-email] action sections failed", exc_info=True)
+
     # The unsubscribe link needs the account id, which build_digest doesn't take,
     # so we emit a {UNSUB} marker the per-account send loop replaces.
     body = "".join(blocks)
