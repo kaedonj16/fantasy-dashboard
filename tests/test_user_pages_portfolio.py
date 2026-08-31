@@ -1,5 +1,6 @@
 """My Leagues pending-card viewer matching guards."""
 
+import pytest
 from pathlib import Path
 
 
@@ -68,3 +69,45 @@ def test_portfolio_body_includes_moves_card():
     assert "/api/portfolio-actions" in fn
     assert "moves_card" in fn
     assert "top_strip + moves_card + league_card" in fn
+
+
+def test_portfolio_record_and_rank_accepts_seed_int_standings_map():
+    from dashboard_services.ai.context_builders import portfolio_record_and_rank
+
+    lctx = {
+        "standings_map": {1: 3, 2: 1},
+        "roster_map": {"1": "Team A", "2": "Team B"},
+        "rosters": [
+            {
+                "roster_id": 1,
+                "settings": {
+                    "wins": 2, "losses": 1, "ties": 0,
+                    "fpts": 120, "fpts_decimal": 50,
+                },
+            },
+            {"roster_id": 2, "settings": {"wins": 3, "losses": 0, "fpts": 140}},
+        ],
+    }
+    wins, losses, ties, pf, rank = portfolio_record_and_rank(lctx, "1", lctx["rosters"][0])
+    assert wins == 2 and losses == 1 and ties == 0
+    assert pf == pytest.approx(120.5)
+    assert rank == 3
+
+
+def test_portfolio_record_and_rank_accepts_dict_standings_map():
+    from dashboard_services.ai.context_builders import portfolio_record_and_rank
+
+    lctx = {
+        "standings_map": {
+            "1": {"wins": 5, "losses": 2, "ties": 0, "pf": 800.0},
+            "2": {"wins": 4, "losses": 3, "ties": 0, "pf": 750.0},
+        },
+        "rosters": [
+            {"roster_id": 1, "settings": {}},
+            {"roster_id": 2, "settings": {}},
+        ],
+    }
+    wins, losses, ties, pf, rank = portfolio_record_and_rank(lctx, "1", lctx["rosters"][0])
+    assert wins == 5 and losses == 2
+    assert pf == pytest.approx(800.0)
+    assert rank == 1

@@ -160,13 +160,8 @@ def page_portfolio():
                 "reason": "Team not linked yet",
             }
         rid = str(viewer_roster.get("roster_id"))
-        std = standings_map.get(rid) or {}
-        wins = int(std.get("wins") or 0)
-        losses = int(std.get("losses") or 0)
-        ties = int(std.get("ties") or 0)
-        pf = float(std.get("pf") or 0)
-        all_std = sorted(standings_map.items(), key=lambda x: (-int(x[1].get("wins") or 0), -float(x[1].get("pf") or 0)))
-        rank = next((i + 1 for i, (k, _) in enumerate(all_std) if k == rid), "?")
+        from dashboard_services.ai.context_builders import portfolio_record_and_rank
+        wins, losses, ties, pf, rank = portfolio_record_and_rank(lctx, rid, viewer_roster)
         total_teams = int(lctx.get("total_rosters") or len(rosters) or 12)
         player_ids = [str(p) for p in (viewer_roster.get("players") or [])]
         all_players = {}

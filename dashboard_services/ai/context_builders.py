@@ -120,6 +120,66 @@ def _record_pf_pa_for_roster(ctx: dict, roster_id: str, roster: dict | None = No
     return str(record or ""), float(pf or 0.0), float(pa or 0.0)
 
 
+def portfolio_record_and_rank(lctx, rid, viewer_roster):
+    """Wins/losses/PF/rank for My Leagues, tolerating seed-int standings_map.
+
+    Production ``build_standings_map`` stores ``{roster_id: seed:int}``. Older
+    fixtures pass dicts with wins/pf — accept both without 500'ing ``.get``.
+    """
+    standings_map = lctx.get("standings_map") or {}
+    std_raw = _standings_map_lookup(standings_map, rid)
+    settings = (viewer_roster or {}).get("settings") or {}
+
+    if isinstance(std_raw, dict):
+        wins = int(std_raw.get("wins") or settings.get("wins") or 0)
+        losses = int(std_raw.get("losses") or settings.get("losses") or 0)
+        ties = int(std_raw.get("ties") or settings.get("ties") or 0)
+        pf = float(std_raw.get("pf") or std_raw.get("PF") or 0)
+        if not pf:
+            pf = (
+                float(settings.get("fpts") or 0)
+                + float(settings.get("fpts_decimal") or 0) / 100.0
+            )
+    else:
+        record, pf, _pa = _record_pf_pa_for_roster(lctx, str(rid), viewer_roster)
+        parts = str(record or "").replace("–", "-").split("-")
+        try:
+            wins = int(parts[0]) if parts and parts[0] else 0
+            losses = int(parts[1]) if len(parts) > 1 and parts[1] else 0
+            ties = int(parts[2]) if len(parts) > 2 and parts[2] else 0
+        except (TypeError, ValueError):
+            wins = losses = ties = 0
+
+    if isinstance(std_raw, int):
+        rank = std_raw
+    elif isinstance(std_raw, dict) and std_raw.get("rank") is not None:
+        rank = std_raw.get("rank")
+    else:
+
+        def _sort_key(item):
+            k, val = item
+            if isinstance(val, dict):
+                return (
+                    -int(val.get("wins") or 0),
+                    -float(val.get("pf") or val.get("PF") or 0),
+                )
+            if isinstance(val, int):
+                return (0, val)
+            r = next(
+                (x for x in (lctx.get("rosters") or []) if str(x.get("roster_id")) == str(k)),
+                None,
+            )
+            s = (r or {}).get("settings") or {}
+            w = int(s.get("wins") or 0)
+            p = float(s.get("fpts") or 0) + float(s.get("fpts_decimal") or 0) / 100.0
+            return (-w, -p)
+
+        all_std = sorted(standings_map.items(), key=_sort_key)
+        rank = next((i + 1 for i, (k, _) in enumerate(all_std) if str(k) == str(rid)), "?")
+
+    return wins, losses, ties, pf, rank
+
+
 def ctx_scoring_type(ctx: dict) -> str:
     """``redraft`` for ESPN (always) and Sleeper type 0/1; otherwise ``dynasty``.
 
