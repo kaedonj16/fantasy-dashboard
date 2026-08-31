@@ -81,3 +81,11 @@ def test_lite_css_swap_excludes_homepage():
     seo_css = (ROOT / "static" / "seo_lite.css").read_text(encoding="utf-8")
     assert ".home-hero" not in seo_css
     assert ".home-card" not in seo_css
+    # Guest SEO pages still emit dropdowns + the More sheet. Without these
+    # hides, every nav link spills in-flow on logged-out pages.
+    assert ".nav-pill-dropdown-menu" in seo_css
+    assert ".skip-link" in seo_css
+    assert (
+        ".br-tabbar,\n.br-sheet-scrim,\n.br-sheet,\n.br-search-screen {\n    display: none;\n}"
+        in seo_css
+    )
