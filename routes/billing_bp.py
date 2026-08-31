@@ -191,7 +191,22 @@ def _pricing_body() -> str:
           Activating your premium access&hellip;
         </p>
         <div id="sub-spinner" style="margin:0 auto 16px;width:32px;height:32px;border:3px solid #e5e7eb;border-top-color:#2563eb;border-radius:50%;animation:paywall-spin .8s linear infinite;"></div>
-        <a id="sub-return" href="{safe_return or '/pricing'}" style="display:none;margin-top:8px;padding:12px 28px;border-radius:9px;background:linear-gradient(135deg,#122d4b,#2563eb);color:white;font-weight:700;text-decoration:none;font-size:15px;">Continue</a>
+        <div id="sub-invite" style="display:none;text-align:left;margin:0 0 20px;padding:16px;border:1px solid var(--border);border-radius:12px;background:var(--bg-alt, #f8fafc);">
+          <div style="font-size:14px;font-weight:700;margin-bottom:6px;">PRO is on for your league</div>
+          <p style="margin:0 0 12px;font-size:13px;color:var(--text-muted);line-height:1.5;">
+            Share this link so every manager can sign in and unlock the same tools.
+          </p>
+          <div style="display:flex;gap:8px;align-items:stretch;">
+            <input id="sub-invite-url" type="text" readonly
+              style="flex:1;min-width:0;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card);font-size:12px;color:var(--text);"/>
+            <button type="button" id="sub-invite-copy"
+              style="flex-shrink:0;padding:10px 14px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-weight:700;font-size:13px;cursor:pointer;">
+              Copy invite
+            </button>
+          </div>
+          <p id="sub-invite-copied" style="display:none;margin:8px 0 0;font-size:12px;color:#16a34a;">Invite link copied.</p>
+        </div>
+        <a id="sub-return" href="{safe_return or '/pricing'}" style="display:none;margin-top:8px;padding:12px 28px;border-radius:9px;background:linear-gradient(135deg,#122d4b,#2563eb);color:white;font-weight:700;text-decoration:none;font-size:15px;">Continue to dashboard</a>
       </div>
     </div>
     <script>
@@ -202,11 +217,17 @@ def _pricing_body() -> str:
       var attempts = 0, maxAttempts = 8;
 
       var leagueId = '';
+      var season = '';
       try {{
         if (returnTo) {{
           var parts = new URL(returnTo, window.location.origin).pathname.split('/').filter(Boolean);
-          if (parts.length >= 3) leagueId = parts[2];
-          if (parts.length >= 1) platform = parts[0];
+          if (parts.length >= 3) {{
+            platform = parts[0];
+            season = parts[1];
+            leagueId = parts[2];
+          }} else if (parts.length >= 1) {{
+            platform = parts[0];
+          }}
         }}
       }} catch(e) {{}}
 
@@ -214,10 +235,54 @@ def _pricing_body() -> str:
       if (userId)   params.push('user_id='   + encodeURIComponent(userId));
       if (leagueId) params.push('league_id=' + encodeURIComponent(leagueId));
       if (platform) params.push('platform=' + encodeURIComponent(platform));
+      if (season)   params.push('season=' + encodeURIComponent(season));
       var statusUrl = '/api/subscription-status' + (params.length ? '?' + params.join('&') : '');
+
+      function inviteUrl() {{
+        if (!leagueId || !season || !platform) return '';
+        return window.location.origin + '/invite/' + encodeURIComponent(platform) + '/'
+          + encodeURIComponent(season) + '/' + encodeURIComponent(leagueId);
+      }}
+
+      function showInvitePanel() {{
+        var panel = document.getElementById('sub-invite');
+        var input = document.getElementById('sub-invite-url');
+        var copyBtn = document.getElementById('sub-invite-copy');
+        var url = inviteUrl();
+        if (!panel || !input || !url) return false;
+        input.value = url;
+        panel.style.display = 'block';
+        if (copyBtn && !copyBtn.dataset.bound) {{
+          copyBtn.dataset.bound = '1';
+          copyBtn.addEventListener('click', function() {{
+            var done = function() {{
+              var note = document.getElementById('sub-invite-copied');
+              if (note) note.style.display = 'block';
+              copyBtn.textContent = 'Copied';
+            }};
+            if (navigator.clipboard && navigator.clipboard.writeText) {{
+              navigator.clipboard.writeText(url).then(done).catch(function() {{
+                input.select(); document.execCommand('copy'); done();
+              }});
+            }} else {{
+              input.select(); document.execCommand('copy'); done();
+            }}
+          }});
+        }}
+        return true;
+      }}
 
       function redirect() {{
         window.location.href = returnTo || '/pricing';
+      }}
+
+      function finishActive(msg) {{
+        document.getElementById('sub-spinner').style.display = 'none';
+        document.getElementById('sub-msg').textContent = msg;
+        var btn = document.getElementById('sub-return');
+        var showedInvite = showInvitePanel();
+        if (btn) btn.style.display = 'inline-block';
+        if (!showedInvite) setTimeout(redirect, 800);
       }}
 
       function activate() {{
@@ -226,18 +291,17 @@ def _pricing_body() -> str:
           .then(function(r) {{ return r.json(); }})
           .then(function(d) {{
             if (d.has_premium) {{
-              document.getElementById('sub-spinner').style.display = 'none';
-              document.getElementById('sub-msg').textContent = 'Premium is active - taking you there now!';
-              setTimeout(redirect, 800);
+              var leaguePlan = !!(d.has_league_subscription);
+              finishActive(leaguePlan
+                ? 'PRO is active for your league.'
+                : 'Premium is active - taking you there now!');
+              if (!leaguePlan) setTimeout(redirect, 800);
             }} else if (attempts < maxAttempts) {{
               setTimeout(activate, 1000);
             }} else {{
-              // Grant may be on its way via webhook - redirect anyway
-              document.getElementById('sub-spinner').style.display = 'none';
-              document.getElementById('sub-msg').textContent = 'Access granted! If features take a moment to appear, try refreshing.';
-              var btn = document.getElementById('sub-return');
-              if (btn) btn.style.display = 'inline-block';
-              setTimeout(redirect, 2000);
+              // Grant may be on its way via webhook - show continue anyway
+              finishActive('Access granted! If features take a moment to appear, try refreshing.');
+              if (!leagueId) setTimeout(redirect, 2000);
             }}
           }})
           .catch(function() {{
@@ -395,6 +459,92 @@ def _pricing_body() -> str:
 
 
 # ── Pricing pages ─────────────────────────────────────────────────────────────
+
+# ── League PRO invite landing ─────────────────────────────────────────────────
+
+@billing_bp.route("/invite/<platform>/<int:season>/<league_id>")
+def page_league_pro_invite(platform: str, season: int, league_id: str):
+    """Shareable invite for a league-plan unlock.
+
+    Signed-in visitors go straight to the league dashboard. Guests get a short
+    landing that stores the target league and points them at Identify / Connect.
+    """
+    from flask import redirect
+    from utils.league_invite import (
+        dashboard_after_invite,
+        league_invite_path,
+        normalize_invite_platform,
+    )
+
+    platform = normalize_invite_platform(platform)
+    league_id = str(league_id or "").strip()
+    if not league_id or platform not in _SUPPORTED_PLATFORMS:
+        return redirect("/pricing")
+
+    dest = dashboard_after_invite(platform, season, league_id)
+    # Remember the target so Identify / Connect can land here after sign-in.
+    session["invite_platform"] = platform
+    session["invite_season"] = int(season)
+    session["invite_league_id"] = league_id
+    session["last_platform"] = platform
+    session["last_season"] = int(season)
+    session["last_league_id"] = league_id
+
+    signed_in = bool(
+        session.get("account_id")
+        or session.get("viewer_username")
+        or session.get("viewer_user_id")
+    )
+    if signed_in:
+        return redirect(dest)
+
+    from app import render_page
+
+    invite_path = league_invite_path(platform, season, league_id)
+    # Platform-specific connect CTAs; Sleeper can identify by username on home.
+    if platform == "sleeper":
+        primary_href = "/?invite=1"
+        primary_label = "Sign in with Sleeper"
+        secondary = (
+            '<a href="/auth/google?next='
+            + html.escape(invite_path, quote=True)
+            + '" style="display:inline-block;margin-top:10px;font-size:13px;color:var(--accent);">'
+            "Or continue with Google</a>"
+        )
+    elif platform == "espn":
+        primary_href = f"/espn/{season}/{league_id}/dashboard"
+        primary_label = "Connect ESPN league"
+        secondary = ""
+    else:
+        primary_href = f"/{platform}/{season}/{league_id}/dashboard"
+        primary_label = f"Open {platform.upper()} league"
+        secondary = ""
+
+    body = f"""
+    <div class="card central" style="max-width:520px;text-align:center;">
+      <div class="card-body" style="padding:40px 28px;">
+        <div style="font-size:40px;margin-bottom:14px;"><i class="fa-solid fa-unlock" style="color:#2563eb;"></i></div>
+        <h1 style="margin:0 0 10px;font-size:22px;">Your league unlocked PRO</h1>
+        <p style="margin:0 0 22px;color:var(--text-muted);font-size:14px;line-height:1.55;">
+          A league mate already paid for shared premium. Sign in as a manager in this
+          league to use Trade Intel, Breakouts, Front Office, and the rest of PRO.
+        </p>
+        <a href="{html.escape(primary_href, quote=True)}"
+           style="display:inline-block;padding:12px 22px;border-radius:9px;background:linear-gradient(135deg,#122d4b,#2563eb);color:#fff;font-weight:700;text-decoration:none;font-size:14px;">
+          {html.escape(primary_label)}
+        </a>
+        {secondary}
+      </div>
+    </div>
+    """
+    return render_page(
+        "League PRO Invite | BR Fantasy",
+        None, "pricing", body, platform, season,
+        description="Join your league's shared BR Fantasy PRO access.",
+        noindex=True,
+        lite_js=True,
+    )
+
 
 @billing_bp.route("/<platform>/<int:season>/<league_id>/pricing")
 def page_pricing(platform: str, season: int, league_id: str):
@@ -652,8 +802,25 @@ def api_subscription_status():
             username, stable_id, league_id, platform, request.args.get("season"),
         )
         from dashboard_services.subscriptions import needs_google_link_for_pro, pro_require_google
+        from utils.league_invite import is_league_plan_buyer, league_invite_path
         sub_info["needs_google_link"] = needs_google_link_for_pro(username, stable_id, platform)
         sub_info["pro_require_google"] = pro_require_google()
+        buyer_id = sub_info.get("subscriber_user_id")
+        viewer_ids = {
+            str(username or "").strip(),
+            str(stable_id or "").strip(),
+            (("acct:" + str(session.get("account_id")).strip()) if session.get("account_id") else ""),
+            str(session.get("account_id") or "").strip(),
+        }
+        sub_info["is_league_buyer"] = is_league_plan_buyer(viewer_ids, buyer_id)
+        try:
+            season_i = int(request.args.get("season") or session.get("last_season") or 0)
+        except (TypeError, ValueError):
+            season_i = 0
+        if sub_info.get("has_league_subscription") and league_id and season_i:
+            sub_info["invite_path"] = league_invite_path(platform, season_i, league_id)
+        else:
+            sub_info["invite_path"] = None
         # Strip internal/PII fields - the client only needs entitlement flags.
         for _k in ("stripe_customer_id", "subscriber_user_id"):
             sub_info.pop(_k, None)
