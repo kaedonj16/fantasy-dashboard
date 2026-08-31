@@ -1001,6 +1001,25 @@
   }
   html:not(.br-da-embed) .live-only { display: none !important; }
   html.br-da-embed .practice-only { display: none !important; }
+  html.br-da-embed.br-da-rail .tab-bar,
+  html.br-da-embed.br-da-rail .ov-body,
+  html.br-da-embed.br-da-rail .ov-titles,
+  html.br-da-embed.br-da-rail .sync-chip,
+  html.br-da-embed.br-da-rail .live-note,
+  html.br-da-embed.br-da-rail #reconnectBtn,
+  html.br-da-embed.br-da-rail .ov-head label { display: none !important; }
+  html.br-da-embed.br-da-rail .ov-head { justify-content: center; padding: 10px 4px; }
+  html.br-da-embed.br-da-rail .ov-foot {
+    flex: 1;
+    flex-direction: column;
+    justify-content: flex-start;
+    border-top: 0;
+    padding: 8px 4px;
+  }
+  html.br-da-embed.br-da-rail #collapseBtn {
+    width: 100%;
+    min-height: 40px;
+  }
   .live-note {
     font-size: 11px;
     color: var(--text-muted);

@@ -41,6 +41,12 @@
       "px;z-index:2147483645;box-shadow:-8px 0 28px rgba(0,0,0,.22);background:transparent;}" +
       "html.br-da-collapsed #" + ROOT_ID + "{width:" + COLLAPSED + "px;}" +
       "#" + ROOT_ID + " iframe{width:100%;height:100%;border:0;background:transparent;display:block;}" +
+      "#br-fantasy-assistant-expand{display:none;position:absolute;inset:0;z-index:2;margin:0;padding:12px 0;border:0;border-left:1px solid rgba(255,255,255,.14);background:#122d4b;color:#fff;cursor:pointer;flex-direction:column;align-items:center;justify-content:flex-start;gap:14px;font:800 11px/1 system-ui,-apple-system,sans-serif;letter-spacing:.04em;}" +
+      "html.br-da-collapsed #br-fantasy-assistant-expand{display:flex;}" +
+      "html.br-da-collapsed #" + ROOT_ID + " iframe{pointer-events:none;}" +
+      "#br-fantasy-assistant-expand:hover{background:#1a3d63;}" +
+      "#br-fantasy-assistant-expand .br-da-expand-mark{width:28px;height:28px;border-radius:7px;background:rgba(255,255,255,.12);display:grid;place-items:center;margin-top:4px;}" +
+      "#br-fantasy-assistant-expand svg{width:16px;height:16px;flex-shrink:0;}" +
       "#br-fantasy-espn-sync-chip,#br-fantasy-yahoo-sync-chip{display:none!important;}";
     (document.head || document.documentElement).appendChild(style);
   }
@@ -58,6 +64,16 @@
     iframe.title = "BR Fantasy Draft Assistant";
     iframe.src = chrome.runtime.getURL("overlay.html") + "?embed=1";
     wrap.appendChild(iframe);
+    const expand = document.createElement("button");
+    expand.id = "br-fantasy-assistant-expand";
+    expand.type = "button";
+    expand.title = "Open Draft Assistant";
+    expand.setAttribute("aria-label", "Open Draft Assistant");
+    expand.innerHTML =
+      '<span class="br-da-expand-mark">BR</span>' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
+    expand.addEventListener("click", function () { setCollapsed(false); });
+    wrap.appendChild(expand);
     document.documentElement.appendChild(wrap);
   }
 
@@ -65,7 +81,7 @@
     if (!msg) return;
     if (!iframe || !iframe.contentWindow || !ready) {
       if (msg.type === "pool") queuedPool = msg;
-      else queuedPicks = msg;
+      else if (msg.type === "picks" || msg.type === "sync") queuedPicks = msg;
       return;
     }
     try {
@@ -121,6 +137,7 @@
   function setCollapsed(on) {
     collapsed = !!on;
     document.documentElement.classList.toggle("br-da-collapsed", collapsed);
+    postToOverlay({ type: "collapsed", on: collapsed });
   }
 
   window.__brDaPushPicks = function (detail) {

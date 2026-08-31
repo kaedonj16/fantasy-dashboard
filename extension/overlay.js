@@ -1127,6 +1127,17 @@
     chip.style.color = ok ? "" : "var(--warn)";
   }
 
+  function setCollapsedUi(on) {
+    const btn = document.getElementById("collapseBtn");
+    if (!btn) return;
+    const collapsed = !!on;
+    document.documentElement.classList.toggle("br-da-rail", collapsed);
+    btn.title = collapsed ? "Open overlay" : "Collapse overlay";
+    btn.setAttribute("aria-label", collapsed ? "Open overlay" : "Collapse overlay");
+    const path = btn.querySelector("path");
+    if (path) path.setAttribute("d", collapsed ? "M15 6l-6 6 6 6" : "M9 6l6 6-6 6");
+  }
+
   const recBtn = document.getElementById("reconnectBtn");
   if (recBtn) recBtn.addEventListener("click", function () { postToHost("reconnect"); });
   const colBtn = document.getElementById("collapseBtn");
@@ -1146,6 +1157,7 @@
     if (msg.type === "pool") ingestPool(msg);
     if (msg.type === "picks") ingestLive(msg);
     if (msg.type === "sync") setSyncStatus(!!msg.ok, msg.text);
+    if (msg.type === "collapsed") setCollapsedUi(msg.on);
     if (msg.type === "theme" && msg.theme) applyTheme(msg.theme);
   });
 

@@ -85,3 +85,19 @@ def test_overlay_uses_live_br_player_pool_and_headshots():
     assert "slots_super_flex" in sleeper
     assert overlay.count("buildPool();") == 1
     assert "if (!EMBEDDED)" in overlay
+
+
+def test_collapsed_overlay_has_reopen_control():
+    inject = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
+    overlay = (EXT / "overlay.js").read_text(encoding="utf-8")
+    html = (EXT / "overlay.html").read_text(encoding="utf-8")
+    css = (EXT / "overlay.css").read_text(encoding="utf-8")
+    assert "br-fantasy-assistant-expand" in inject
+    assert "Open Draft Assistant" in inject
+    assert "setCollapsed(false)" in inject
+    assert "html.br-da-collapsed" in inject
+    assert "collapseBtn" in html
+    assert "setCollapsedUi" in overlay
+    assert 'msg.type === "collapsed"' in overlay
+    assert "br-da-rail" in css
+    assert "br-da-rail" in overlay
