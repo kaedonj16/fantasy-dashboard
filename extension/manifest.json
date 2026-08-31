@@ -1,13 +1,16 @@
 {
   "manifest_version": 3,
   "name": "BR Fantasy — League Connector",
-  "version": "1.4.5",
-  "description": "Connect private ESPN leagues to BR Fantasy and auto-relay live ESPN/Yahoo draft picks into Draft Room.",
+  "version": "1.5.0",
+  "description": "Connect private ESPN leagues to BR Fantasy, auto-relay live ESPN/Yahoo draft picks into Draft Room, and dock a read-only Draft Assistant overlay on Sleeper, Yahoo, and ESPN draft rooms.",
   "permissions": ["cookies", "scripting", "storage", "tabs"],
   "host_permissions": [
     "https://*.espn.com/*",
     "https://*.fantasysports.yahoo.com/*",
     "https://sports.yahoo.com/*",
+    "https://sleeper.app/*",
+    "https://sleeper.com/*",
+    "https://api.sleeper.app/*",
     "https://www.brfantasyfootball.com/*",
     "https://brfantasyfootball.com/*",
     "http://localhost/*",
@@ -16,7 +19,7 @@
   "background": { "service_worker": "background.js" },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Connect ESPN / Yahoo to BR Fantasy",
+    "default_title": "Connect ESPN / Yahoo / Sleeper to BR Fantasy",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -60,7 +63,7 @@
         "https://fantasy.espn.com/*draft*",
         "https://fantasy.espn.com/games/*"
       ],
-      "js": ["espn_draft.js"],
+      "js": ["assistant_inject.js", "espn_draft.js"],
       "run_at": "document_idle"
     },
     {
@@ -83,10 +86,38 @@
         "https://*.fantasysports.yahoo.com/*/draft*",
         "https://sports.yahoo.com/fantasy/*/draft*"
       ],
-      "js": ["yahoo_draft.js"],
+      "js": ["assistant_inject.js", "yahoo_draft.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://sleeper.com/draft/*",
+        "https://sleeper.app/draft/*",
+        "https://www.sleeper.com/draft/*",
+        "https://www.sleeper.app/draft/*"
+      ],
+      "js": ["assistant_inject.js", "sleeper_draft.js"],
       "run_at": "document_idle"
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["overlay.html", "overlay.css", "overlay.js"],
+      "matches": [
+        "https://fantasy.espn.com/*",
+        "https://*.espn.com/*",
+        "https://*.fantasysports.yahoo.com/*",
+        "https://sports.yahoo.com/*",
+        "https://sleeper.app/*",
+        "https://sleeper.com/*",
+        "https://www.sleeper.app/*",
+        "https://www.sleeper.com/*"
+      ]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'none'"
+  },
   "browser_specific_settings": {
     "gecko": { "id": "espn-connector@brfantasyfootball.com", "strict_min_version": "121.0" }
   }

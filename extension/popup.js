@@ -34,7 +34,7 @@ function render(swid, espn_s2) {
     card.classList.add("state-ok");
     titleEl.textContent = "ESPN session detected";
     detailEl.textContent =
-      "Both SWID and espn_s2 are ready. Live drafts: open ESPN or Yahoo draft + BR Draft Room — picks relay automatically.";
+      "Both SWID and espn_s2 are ready. Draft Assistant docks on Sleeper, Yahoo, and ESPN draft tabs. ESPN/Yahoo picks also relay into Draft Room.";
     blob = "SWID=" + swid + "; espn_s2=" + espn_s2;
     copyBtn.disabled = false;
   } else if (swid || espn_s2) {

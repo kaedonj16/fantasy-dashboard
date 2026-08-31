@@ -43,6 +43,41 @@
     }
   }
 
+  function overlayTeamMeta(picks) {
+    const ids = {};
+    let max = 0;
+    (picks || []).forEach(function (p) {
+      if (p && p.teamId != null && p.teamId !== "") ids[String(p.teamId)] = true;
+      const n = Number(p && p.overallPickNumber);
+      if (n > max) max = n;
+    });
+    const teams = Object.keys(ids).length;
+    const out = {};
+    if (teams >= 4) {
+      out.teams = teams;
+      if (max) out.rounds = Math.max(1, Math.ceil(max / teams));
+    }
+    return out;
+  }
+
+  function feedAssistant(picks, syncText, ok) {
+    if (typeof window.__brDaPushPicks === "function" && picks) {
+      window.__brDaPushPicks(
+        Object.assign(
+          {
+            platform: "espn",
+            picks: picks,
+            syncText: syncText || "",
+          },
+          overlayTeamMeta(picks)
+        )
+      );
+    }
+    if (typeof window.__brDaSetSync === "function" && syncText) {
+      window.__brDaSetSync(!!ok, syncText);
+    }
+  }
+
   function listenFromMain(type, fn) {
     window.addEventListener("message", (ev) => {
       if (!ev.data || ev.data.__br !== BRIDGE || ev.data.type !== type) return;
@@ -99,6 +134,7 @@
     if (textEl) textEl.textContent = text;
     else el.textContent = text;
     el.style.background = ok ? "#065f46" : "#0f172a";
+    if (typeof window.__brDaSetSync === "function") window.__brDaSetSync(!!ok, text);
   }
 
   function relaySuccessSticky() {
@@ -297,6 +333,13 @@
       source: detail.source || "espn-draft-room",
       at: detail.at || Date.now(),
     };
+    feedAssistant(
+      payload.picks,
+      payload.picks.length
+        ? "ESPN · SYNCED · " + payload.picks.length + " picks"
+        : "ESPN · watching",
+      true
+    );
     if (!payload.leagueId) {
       setChip("BR Fantasy · leagueId missing in URL", false);
       return;
@@ -313,6 +356,10 @@
   });
   listenFromMain(OBSERVER_READY, function () {
     mainObserverReady = true;
+  });
+
+  document.addEventListener("brfantasy:assistant-reconnect", function () {
+    manualReconnect();
   });
 
   try {

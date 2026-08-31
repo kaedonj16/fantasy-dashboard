@@ -31,6 +31,9 @@
   /** @type {Map<number, Set<string>>} */
   const pickSources = new Map();
   let bestOverallSeen = 0;
+  /** @type {Map<string, {playerName: string, pos: string, nflTeam: string}>} */
+  const playerMetaById = new Map();
+  const ESPN_POS = { 1: "QB", 2: "RB", 3: "WR", 4: "TE", 5: "K", 16: "DST" };
 
   function isTraversableObject(val) {
     try {
@@ -181,8 +184,104 @@
     return overall != null && playerIdSelected(pid);
   }
 
+  function playerNameFrom(obj, depth) {
+    if (!isTraversableObject(obj) || (depth || 0) > 4) return "";
+    const direct =
+      safeProp(obj, "playerName") ||
+      safeProp(obj, "player_name") ||
+      safeProp(obj, "fullName") ||
+      safeProp(obj, "full_name") ||
+      safeProp(obj, "displayName") ||
+      safeProp(obj, "display_name");
+    if (direct) return String(direct).trim();
+    const first = safeProp(obj, "firstName") || safeProp(obj, "first_name") || "";
+    const last = safeProp(obj, "lastName") || safeProp(obj, "last_name") || "";
+    const joined = (String(first || "") + " " + String(last || "")).trim();
+    if (joined) return joined;
+    const nameObj = safeProp(obj, "name");
+    if (isTraversableObject(nameObj)) {
+      const full = safeProp(nameObj, "full") || safeProp(nameObj, "fullName");
+      if (full) return String(full).trim();
+      const n = (
+        String(safeProp(nameObj, "first") || safeProp(nameObj, "firstName") || "") +
+        " " +
+        String(safeProp(nameObj, "last") || safeProp(nameObj, "lastName") || "")
+      ).trim();
+      if (n) return n;
+    }
+    const player = safeProp(obj, "player");
+    if (player && player !== obj) {
+      const nested = playerNameFrom(player, (depth || 0) + 1);
+      if (nested) return nested;
+    }
+    const pool = safeProp(obj, "playerPoolEntry") || safeProp(obj, "player_pool_entry");
+    if (pool && pool !== obj) {
+      const nested = playerNameFrom(pool, (depth || 0) + 1);
+      if (nested) return nested;
+    }
+    return "";
+  }
+
+  function playerPosFrom(obj, depth) {
+    if (!isTraversableObject(obj) || (depth || 0) > 4) return "";
+    const raw =
+      safeProp(obj, "pos") ||
+      safeProp(obj, "position") ||
+      safeProp(obj, "defaultPosition") ||
+      safeProp(obj, "eligiblePosition");
+    if (raw && typeof raw === "string") return String(raw).toUpperCase().replace("D/ST", "DST");
+    const id = safeProp(obj, "defaultPositionId") || safeProp(obj, "default_position_id");
+    if (id != null && ESPN_POS[Number(id)]) return ESPN_POS[Number(id)];
+    const player = safeProp(obj, "player");
+    if (player && player !== obj) {
+      const nested = playerPosFrom(player, (depth || 0) + 1);
+      if (nested) return nested;
+    }
+    const pool = safeProp(obj, "playerPoolEntry") || safeProp(obj, "player_pool_entry");
+    if (pool && pool !== obj) return playerPosFrom(pool, (depth || 0) + 1);
+    return "";
+  }
+
+  function playerNflTeamFrom(obj, depth) {
+    if (!isTraversableObject(obj) || (depth || 0) > 4) return "";
+    const raw =
+      safeProp(obj, "nflTeam") ||
+      safeProp(obj, "proTeam") ||
+      safeProp(obj, "proTeamAbbreviation") ||
+      safeProp(obj, "teamAbbr") ||
+      safeProp(obj, "proTeamAbbrev");
+    if (raw && typeof raw === "string" && /[A-Za-z]/.test(raw)) {
+      return String(raw).toUpperCase().slice(0, 3);
+    }
+    const player = safeProp(obj, "player");
+    if (player && player !== obj) {
+      const nested = playerNflTeamFrom(player, (depth || 0) + 1);
+      if (nested) return nested;
+    }
+    const pool = safeProp(obj, "playerPoolEntry") || safeProp(obj, "player_pool_entry");
+    if (pool && pool !== obj) return playerNflTeamFrom(pool, (depth || 0) + 1);
+    return "";
+  }
+
+  function rememberPlayerMeta(obj) {
+    if (!isTraversableObject(obj)) return;
+    const pid = pickPlayerId(obj);
+    if (!playerIdSelected(pid)) return;
+    const name = playerNameFrom(obj);
+    const pos = playerPosFrom(obj);
+    const nfl = playerNflTeamFrom(obj);
+    if (!name && !pos && !nfl) return;
+    const prev = playerMetaById.get(String(pid)) || {};
+    playerMetaById.set(String(pid), {
+      playerName: name || prev.playerName || "",
+      pos: pos || prev.pos || "",
+      nflTeam: nfl || prev.nflTeam || "",
+    });
+  }
+
   function normalizePick(raw) {
     if (!isPickRow(raw)) return null;
+    rememberPlayerMeta(raw);
     const playerId = pickPlayerId(raw);
     const overall = pickOverall(raw);
     const team = safeProp(raw, "team");
@@ -193,9 +292,16 @@
       safeProp(raw, "roundPick") ??
       safeProp(raw, "round_pick") ??
       safeProp(raw, "slot");
+    const cached = playerId != null ? playerMetaById.get(String(playerId)) : null;
+    const playerName = playerNameFrom(raw) || (cached && cached.playerName) || "";
+    const pos = playerPosFrom(raw) || (cached && cached.pos) || "";
+    const nflTeam = playerNflTeamFrom(raw) || (cached && cached.nflTeam) || "";
     return {
       overallPickNumber: Number(overall),
       playerId: playerId == null ? null : playerId,
+      playerName: playerName || undefined,
+      pos: pos || undefined,
+      nflTeam: nflTeam || undefined,
       teamId: teamId == null ? null : teamId,
       roundId: roundId == null ? null : Number(roundId),
       roundPickNumber: roundPick == null ? null : Number(roundPick),
@@ -277,6 +383,12 @@
       const n = Number(norm.overallPickNumber);
       if (!n || n <= 0) continue;
       if (!pickAccumulator.has(n)) grew = true;
+      const prev = pickAccumulator.get(n);
+      if (prev) {
+        if (prev.playerName && !norm.playerName) norm.playerName = prev.playerName;
+        if (prev.pos && !norm.pos) norm.pos = prev.pos;
+        if (prev.nflTeam && !norm.nflTeam) norm.nflTeam = prev.nflTeam;
+      }
       pickAccumulator.set(n, norm);
       if (!pickSources.has(n)) pickSources.set(n, new Set());
       pickSources.get(n).add(String(source || "unknown"));
@@ -388,6 +500,10 @@
 
   function inspectJson(data, source) {
     if (!isTraversableObject(data)) return;
+    const players = safeProp(data, "players");
+    if (Array.isArray(players)) {
+      for (let i = 0; i < Math.min(players.length, 1200); i++) rememberPlayerMeta(players[i]);
+    }
     const detail = deepFindDraftDetail(data) || safeProp(data, "draftDetail") || null;
     if (detail && maybeFromDraftDetail(detail, source)) return;
     if (Array.isArray(data)) {
@@ -564,11 +680,11 @@
     return null;
   }
 
-  function addDomPick(map, pickNo, playerId, teamId, sourceTag) {
+  function addDomPick(map, pickNo, playerId, teamId, sourceTag, extra) {
     if (!playerIdSelected(playerId) || pickNo == null || pickNo <= 0) return;
     const n = Number(pickNo);
     if (!map.has(n)) {
-      map.set(n, {
+      map.set(n, Object.assign({
         overallPickNumber: n,
         playerId: playerId,
         teamId: teamId == null ? null : teamId,
@@ -577,7 +693,12 @@
         keeper: false,
         bidAmount: null,
         __source: sourceTag,
-      });
+      }, extra || {}));
+    } else if (extra) {
+      const cur = map.get(n);
+      if (extra.playerName && !cur.playerName) cur.playerName = extra.playerName;
+      if (extra.pos && !cur.pos) cur.pos = extra.pos;
+      if (extra.nflTeam && !cur.nflTeam) cur.nflTeam = extra.nflTeam;
     }
   }
 
@@ -612,11 +733,18 @@
         parsePickLabel(cell.getAttribute("aria-label") || "") ||
         parseInt(cell.getAttribute("data-pick") || cell.getAttribute("data-overall-pick") || "", 10) ||
         null;
-      addDomPick(byOverall, pickNo, pid, null, "dom-cell");
+      const altName = (img && (img.getAttribute("alt") || img.getAttribute("title"))) || "";
+      addDomPick(byOverall, pickNo, pid, null, "dom-cell", altName ? { playerName: String(altName).trim() } : null);
       const props = reactPropsNear(cell);
       if (props) {
         const norm = normalizePick(props);
-        if (norm) addDomPick(byOverall, norm.overallPickNumber, norm.playerId, norm.teamId, "dom-react");
+        if (norm) {
+          addDomPick(byOverall, norm.overallPickNumber, norm.playerId, norm.teamId, "dom-react", {
+            playerName: norm.playerName,
+            pos: norm.pos,
+            nflTeam: norm.nflTeam,
+          });
+        }
       }
     });
 

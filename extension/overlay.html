@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en" class="br-da-embed" data-theme="system">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BR Fantasy · Draft Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="overlay.css">
+</head>
+<body>
+
+  <div class="page">
+    <p class="eyebrow">BR Fantasy · League Connector — concept</p>
+    <h1>Draft Assistant, docked in the host room.</h1>
+    <p class="intro">A read-only overlay that watches Sleeper, Yahoo, or ESPN picks and mirrors BR Fantasy Draft Room tools — Best Available, roster construction, and live grades — without ever submitting a pick.</p>
+
+    <div class="toolbar">
+      <div class="seg" role="radiogroup" aria-label="Theme">
+        <button type="button" data-theme-opt="system" aria-pressed="true">System</button>
+        <button type="button" data-theme-opt="light" aria-pressed="false">Light</button>
+        <button type="button" data-theme-opt="dark" aria-pressed="false">Dark</button>
+      </div>
+      <div class="legend" aria-label="Position colors">
+        <span><i class="swatch" style="background:#3b82f6"></i> QB</span>
+        <span><i class="swatch" style="background:#22c55e"></i> RB</span>
+        <span><i class="swatch" style="background:#f59e0b"></i> WR</span>
+        <span><i class="swatch" style="background:#8b5cf6"></i> TE</span>
+      </div>
+    </div>
+
+    <div class="platform-switch" role="tablist" aria-label="Host platform">
+      <button type="button" role="tab" data-platform="sleeper" aria-selected="true">Sleeper</button>
+      <button type="button" role="tab" data-platform="yahoo" aria-selected="false">Yahoo</button>
+      <button type="button" role="tab" data-platform="espn" aria-selected="false">ESPN</button>
+    </div>
+
+    <div class="browser">
+      <div class="chrome">
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="urlbar">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span id="urlText">sleeper.app/draft/nfl/midnight-society</span>
+        </div>
+        <span class="dock-chip">BR Draft Assistant · docked</span>
+      </div>
+      <div class="stage" id="stage" data-platform="sleeper">
+        <section class="host" aria-label="Host draft room">
+          <div class="host-bar">
+            <div class="host-logo" id="hostLogo">S</div>
+            <div class="host-meta">
+              <div class="host-league" id="hostLeague">Midnight Society</div>
+              <div class="host-sub" id="hostSub">12-team PPR · snake · round 1</div>
+            </div>
+          </div>
+          <div class="host-body">
+            <h2 class="host-h">Draft Board</h2>
+            <div class="otc" id="otc">
+              <div class="otc-count tabular" id="otcClock">1:15</div>
+              <div>
+                <div class="otc-who" id="otcWho">On the clock: Capital Thunder</div>
+                <div class="otc-next" id="otcNext">Next up: Bayou Bandits</div>
+              </div>
+              <div class="otc-pick" id="otcPick">1.01</div>
+            </div>
+            <div class="pick-log" id="pickLog"></div>
+          </div>
+        </section>
+
+        <aside class="overlay" aria-label="BR Draft Assistant">
+          <div class="ov-head">
+            <div class="br-mark" aria-hidden="true">BR</div>
+            <div class="ov-titles">
+              <div class="ov-kicker">BR Fantasy</div>
+              <div class="ov-title">Draft Assistant</div>
+            </div>
+            <span class="sync-chip" id="syncChip"><i></i> Sleeper · SYNCED</span>
+            <label class="live-only" style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--text-muted)">
+              Slot
+              <select class="slot-sel" id="slotSel" aria-label="Your draft slot"></select>
+            </label>
+          </div>
+          <div class="tab-bar" role="tablist">
+            <button type="button" class="tab-btn active" data-tab="board" role="tab">Board</button>
+            <button type="button" class="tab-btn" data-tab="roster" role="tab">Roster <span class="tab-chip" id="rosterChip">0</span></button>
+            <button type="button" class="tab-btn" data-tab="grades" role="tab">Grades <span class="tab-chip" id="gradesChip">—</span></button>
+          </div>
+          <div class="ov-body" id="ovBody"></div>
+          <div class="ov-foot">
+            <button type="button" class="btn btn-primary practice-only" id="simBtn">Simulate next pick</button>
+            <label class="auto-tog practice-only">
+              <button type="button" class="switch" id="autoBtn" aria-pressed="false" aria-label="Auto simulate"><i></i></button>
+              Auto
+            </label>
+            <button type="button" class="btn btn-ghost practice-only" id="resetBtn" title="Reset draft" aria-label="Reset draft">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 0 0 8.49 6 9 9 0 1 0-8.49-12.36L1 10"/></svg>
+            </button>
+            <button type="button" class="btn btn-primary live-only" id="reconnectBtn">Reconnect</button>
+            <span class="live-note live-only" id="liveNote">Reads host picks · never submits</span>
+            <button type="button" class="btn btn-ghost live-only" id="collapseBtn" title="Collapse overlay" aria-label="Collapse overlay">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <p class="footnote">Mockup of the League Connector overlay: illustrative data, not a live sync. Headshots are position-tinted silhouettes that fill with real photos when the assistant is wired to the app. The overlay reads host picks only — it never submits.</p>
+    <p class="footnote">Grade letters and playoff odds use a lightweight stand-in (value vs ADP, roster balance, and star power, curved against the field and damped early). Production Draft Room grades and odds come from the full Pick Score / team-grade / standings models.</p>
+  </div>
+
+<script src="overlay.js"></script>
+</body>
+</html>

@@ -39,6 +39,41 @@
     }
   }
 
+  function overlayTeamMeta(picks) {
+    const ids = {};
+    let max = 0;
+    (picks || []).forEach(function (p) {
+      if (p && p.teamId != null && p.teamId !== "") ids[String(p.teamId)] = true;
+      const n = Number(p && p.overallPickNumber);
+      if (n > max) max = n;
+    });
+    const teams = Object.keys(ids).length;
+    const out = {};
+    if (teams >= 4) {
+      out.teams = teams;
+      if (max) out.rounds = Math.max(1, Math.ceil(max / teams));
+    }
+    return out;
+  }
+
+  function feedAssistant(picks, syncText, ok) {
+    if (typeof window.__brDaPushPicks === "function" && picks) {
+      window.__brDaPushPicks(
+        Object.assign(
+          {
+            platform: "yahoo",
+            picks: picks,
+            syncText: syncText || "",
+          },
+          overlayTeamMeta(picks)
+        )
+      );
+    }
+    if (typeof window.__brDaSetSync === "function" && syncText) {
+      window.__brDaSetSync(!!ok, syncText);
+    }
+  }
+
   function listenFromMain(type, fn) {
     window.addEventListener("message", (ev) => {
       if (!ev.data || ev.data.__br !== BRIDGE || ev.data.type !== type) return;
@@ -95,6 +130,7 @@
     if (textEl) textEl.textContent = text;
     else el.textContent = text;
     el.style.background = ok ? "#065f46" : "#0f172a";
+    if (typeof window.__brDaSetSync === "function") window.__brDaSetSync(!!ok, text);
   }
 
   function applyRelayStatus(detail, force) {
@@ -258,6 +294,13 @@
       source: detail.source || "yahoo-draft-room",
       at: detail.at || Date.now(),
     };
+    feedAssistant(
+      payload.picks,
+      payload.picks.length
+        ? "Yahoo · SYNCED · " + payload.picks.length + " picks"
+        : "Yahoo · watching",
+      true
+    );
     if (!payload.leagueId) {
       setChip("BR Fantasy · leagueId missing in URL", false);
       return;
@@ -270,6 +313,10 @@
   listenFromMain(EVENT, forward);
   listenFromMain(RELAY_STATUS, function (detail) {
     applyRelayStatus(detail, false);
+  });
+
+  document.addEventListener("brfantasy:assistant-reconnect", function () {
+    manualReconnect();
   });
 
   try {

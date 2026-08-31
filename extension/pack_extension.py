@@ -24,6 +24,11 @@ INCLUDE = [
     "background.js",
     "content.js",
     "content.css",
+    "assistant_inject.js",
+    "overlay.html",
+    "overlay.css",
+    "overlay.js",
+    "sleeper_draft.js",
     "espn_draft.js",
     "espn_draft_main.js",
     "yahoo_draft.js",
@@ -87,7 +92,8 @@ def main() -> None:
     readme.write_text(
         "# BR Fantasy league connector (download)\n\n"
         "`br-fantasy-espn-connector.zip` is the production package users download "
-        "from Draft Room (ESPN + Yahoo live draft relay). Rebuild with:\n\n"
+        "from Draft Room (ESPN + Yahoo live draft relay, plus the docked Draft "
+        "Assistant overlay on Sleeper / Yahoo / ESPN). Rebuild with:\n\n"
         "```bash\npython3 extension/pack_extension.py\n```\n",
         encoding="utf-8",
     )
