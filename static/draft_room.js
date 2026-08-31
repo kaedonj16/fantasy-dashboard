@@ -5979,22 +5979,22 @@
     if (!m || !msg || !btns) return;
     if (box) box.classList.add('is-wide');
     msg.innerHTML = ''
-      + '<div class="dr-msync-title">Install the Chrome extension</div>'
-      + '<p class="dr-msync-lead">On desktop Chrome or Edge, the extension watches your open ESPN or Yahoo draft and updates Draft Room automatically — no tapping after every pick.</p>'
-      + '<div class="dr-msync-warn"><b>Chrome / Edge on a computer.</b> Phones can\'t install this extension. Draft from your phone and <b>track picks manually</b> in Draft Room, or use a laptop for auto-sync.</div>'
+      + '<div class="dr-msync-title">Use the BR Fantasy extension <span class="dr-msync-ver">1.0.0</span></div>'
+      + '<p class="dr-msync-lead">On desktop Chrome or Edge, the extension docks Draft Assistant on your Sleeper, Yahoo, or ESPN draft and relays ESPN or Yahoo picks into this Draft Room. It never submits a pick.</p>'
+      + '<div class="dr-msync-warn"><b>Chrome / Edge on a computer.</b> Phones cannot install this extension. Draft from your phone and <b>track picks manually</b> in Draft Room, or use a laptop for auto-sync.</div>'
       + '<div class="dr-msync-sec"><h4>Install (about 30 seconds)</h4>'
       + '<ol>'
       + '<li>Download the extension zip (button below).</li>'
       + '<li>Unzip it somewhere permanent (e.g. Documents).</li>'
       + '<li>Open <code>chrome://extensions</code> (or Edge: <code>edge://extensions</code>).</li>'
       + '<li>Turn on <b>Developer mode</b> (top right).</li>'
-      + '<li>Click <b>Load unpacked</b> → select the unzipped folder.</li>'
-      + '<li>Keep this Draft Room open, open your ESPN or Yahoo draft in another tab, and draft normally.</li>'
+      + '<li>Click <b>Load unpacked</b> and select the unzipped folder.</li>'
+      + '<li>Keep this Draft Room open, open your draft in another tab, and choose <b>Open Draft Assistant</b> when asked.</li>'
       + '</ol></div>'
-      + '<div class="dr-msync-sec"><h4>You\'ll know it\'s working</h4>'
+      + '<div class="dr-msync-sec"><h4>You will know it is working</h4>'
       + '<ol>'
-      + '<li>A small <b>BR Fantasy</b> chip appears on the draft page.</li>'
-      + '<li>Picks show up here within a couple of seconds.</li>'
+      + '<li>A prompt from the BR Fantasy extension appears on the draft page.</li>'
+      + '<li>Draft Assistant docks beside the board, and ESPN or Yahoo picks show up here within a couple of seconds.</li>'
       + '</ol></div>';
     btns.innerHTML = '';
     var dl = document.createElement('a');
