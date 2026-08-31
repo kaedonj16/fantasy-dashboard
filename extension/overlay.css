@@ -434,17 +434,21 @@
     white-space: nowrap;
     margin-left: auto;
   }
-  .br-mark {
-    width: 32px; height: 32px;
-    border-radius: 8px;
-    background: #122d4b;
-    color: #fff;
-    display: grid;
-    place-items: center;
-    font-weight: 800;
-    font-size: 11px;
-    letter-spacing: .02em;
+  .site-logo {
+    height: 28px;
+    width: auto;
+    max-width: 118px;
+    object-fit: contain;
+    object-position: left center;
     flex-shrink: 0;
+    display: block;
+  }
+  .site-logo-dark { display: none; }
+  html[data-theme="dark"] .site-logo-light { display: none; }
+  html[data-theme="dark"] .site-logo-dark { display: block; }
+  @media (prefers-color-scheme: dark) {
+    html[data-theme="system"] .site-logo-light { display: none; }
+    html[data-theme="system"] .site-logo-dark { display: block; }
   }
   .ov-titles { min-width: 0; flex: 1; }
   .ov-kicker { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
