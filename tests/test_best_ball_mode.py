@@ -45,6 +45,7 @@ def test_draft_room_best_ball_skips_bye_and_applies_preset():
 
 def test_draft_room_auction_grades_disabled():
     room = (ROOT / "static" / "draft_room.js").read_text(encoding="utf-8")
-    assert "if (cfg.isAuction) return null;" in room or "cfg.isAuction) return null" in room
+    assert "function isAuctionMode()" in room
+    assert "if (isAuctionMode()) return null;" in room or "isAuctionMode()) return null" in room
     assert "Auction draft grades" in room
     assert "suggestAuctionBid" in (ROOT / "static" / "draft_board_core.js").read_text(encoding="utf-8")

@@ -20,41 +20,58 @@ def _norm_type(v: Any) -> str:
     return str(v or "").strip().lower()
 
 
+_SNAKE_DRAFT_TYPES = ("snake", "linear", "standard", "order")
+_AUCTION_DRAFT_TYPES = ("auction", "salary", "salary_cap", "salarycap")
+
+
+def _draft_rounds(d: Optional[dict]) -> int:
+    try:
+        return int(((d or {}).get("settings") or {}).get("rounds") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _primary_draft(drafts: list) -> Optional[dict]:
+    """Completed draft with the most rounds (startup over rookie/mock), else first."""
+    if not drafts:
+        return None
+    pool = [d for d in drafts if str(d.get("status")) == "complete"] or list(drafts)
+    return max(pool, key=_draft_rounds)
+
+
 def is_auction_draft(draft: Optional[dict] = None, *, league: Optional[dict] = None) -> bool:
     """True when the draft (or league settings) clearly use auction / salary nomination."""
     d = draft or {}
     lg = league or {}
     dtype = _norm_type(d.get("type") or d.get("draft_type"))
-    if dtype in ("auction", "salary", "salary_cap", "salarycap"):
+    if dtype in _AUCTION_DRAFT_TYPES:
         return True
-    # ESPN: settings.draftSettings.type / auctionBudget
+    # Explicit snake on the draft record wins over league-level budget fields.
+    if dtype in _SNAKE_DRAFT_TYPES:
+        return False
+    # Sleeper draft.settings may carry budget for auction drafts when type is absent.
+    dsettings = d.get("settings") if isinstance(d.get("settings"), dict) else {}
+    if _truthy(dsettings.get("is_auction")):
+        return True
+    if (dsettings.get("budget") or dsettings.get("auction_budget")) and not dsettings.get("rounds"):
+        return True
+    # League draftSettings — only when the draft record itself is ambiguous.
     settings = lg.get("settings") or lg.get("league_settings") or {}
     if not isinstance(settings, dict):
         settings = {}
-    ds = settings.get("draftSettings") or d.get("settings") or {}
-    if isinstance(ds, dict):
-        et = _norm_type(ds.get("type") or ds.get("draftType") or ds.get("auctionType"))
-        if et in ("auction", "salary", "2", "auctiondraft"):
-            # ESPN sometimes uses numeric enums; treat known auction labels only.
-            if et == "2":
-                # Ambiguous — only accept when budget is also present.
-                if ds.get("auctionBudget") or ds.get("auctionBudgetPerTeam"):
-                    return True
-            else:
-                return True
-        if ds.get("auctionBudget") or ds.get("auctionBudgetPerTeam"):
-            return True
-        if _truthy(ds.get("isAuctionDraft") or ds.get("auction")):
-            return True
-    # Sleeper draft.settings may carry budget for auction drafts
-    dsettings = d.get("settings") if isinstance(d.get("settings"), dict) else {}
-    if dsettings.get("budget") or dsettings.get("auction_budget"):
-        if dtype in ("", "auction") or dsettings.get("budget"):
-            # Budget alone on a snake draft is rare; require auction-ish type or explicit flag.
-            if dtype == "auction" or _truthy(dsettings.get("is_auction")):
-                return True
-            if dtype == "" and dsettings.get("budget") and not dsettings.get("rounds"):
-                return True
+    ds = settings.get("draftSettings") or {}
+    if not isinstance(ds, dict):
+        ds = {}
+    et = _norm_type(ds.get("type") or ds.get("draftType") or ds.get("auctionType"))
+    if et in _SNAKE_DRAFT_TYPES or et in ("1", "snakedraft") or "snake" in et:
+        return False
+    if et in _AUCTION_DRAFT_TYPES or et == "auctiondraft" or "auction" in et:
+        return True
+    if et == "2":
+        # ESPN numeric enum — only accept when budget is also present.
+        return bool(ds.get("auctionBudget") or ds.get("auctionBudgetPerTeam"))
+    if _truthy(ds.get("isAuctionDraft") or ds.get("auction")):
+        return True
     return False
 
 
@@ -120,12 +137,8 @@ def detect_league_format(
     """
     lg = league or {}
     drafts = list(drafts or [])
-    # Prefer the most recent / primary draft if several exist.
-    primary = drafts[0] if drafts else None
-    for d in drafts:
-        if is_auction_draft(d, league=lg):
-            primary = d
-            break
+    # Prefer the full completed draft (startup/redraft), not a small mock auction.
+    primary = _primary_draft(drafts)
     auction = is_auction_draft(primary, league=lg)
     budget = auction_budget(primary, league=lg) if auction else None
     bb = is_best_ball(lg, settings=settings)
