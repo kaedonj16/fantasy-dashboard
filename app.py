@@ -1106,6 +1106,14 @@ except Exception as e:
     logger.warning("[watchlist-bp] skipped: %s", e)
 
 try:
+    from routes.ui_prefs_bp import ui_prefs_bp
+
+    app.register_blueprint(ui_prefs_bp)
+    logger.info("[ui-prefs-bp] registered")
+except Exception as e:
+    logger.warning("[ui-prefs-bp] skipped: %s", e)
+
+try:
     from routes.history_bp import history_bp
 
     app.register_blueprint(history_bp)
@@ -1290,7 +1298,7 @@ FORM_BODY = """
             <button type="button" class="espn-home-method active" data-espn-method="public" aria-pressed="true">Public League</button>
             <button type="button" class="espn-home-method" data-espn-method="private" aria-pressed="false">Private League</button>
           </div>
-          <p class="hint espn-home-description" id="espnHomeDescription">Connect a publicly accessible ESPN league using its League ID.</p>
+          <p class="hint espn-home-description" id="espnHomeDescription">Public leagues: enter the League ID from your ESPN URL. Success = your league dashboard loads with standings and rosters.</p>
           <div class="row">
             <label for="espnLeagueIdInput">League ID</label>
             <input type="text" id="espnLeagueIdInput" placeholder="e.g. 336414" autocomplete="off">
@@ -1519,9 +1527,10 @@ FORM_BODY = """
         </div>
         {% if not session.get('account_id') %}
         <div class="home-account-entry home-account-bottom" id="homeAcctBottom">
-          <div class="home-account-new-label">New to BR Fantasy?</div>
+          <div class="home-account-new-label" id="homeAcctBottomLabel">New to BR Fantasy?</div>
           <a class="google-continue-btn google-create-account-btn" href="/auth/google?intent=onboarding&amp;next=/"><span class="google-button-title">Create Account with Google</span></a>
-          <p class="hint home-create-acct-hint" id="createAcctHint" hidden>First connect your league above, then continue with Google to finish creating your account with it saved.</p>
+          <p class="hint home-create-acct-hint" id="createAcctHint">Connect a league above first — then create your free account so it stays saved across devices.</p>
+          <p class="hint home-league-ready-nudge" id="homeLeagueReadyNudge" hidden>League selected. Finish with <strong>Continue with Google</strong> above to save it to your account.</p>
         </div>
         {% endif %}
       </div>
@@ -3527,11 +3536,15 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "</button>"
     )
 
-    # Site tour trigger - league pages only (the tour spotlights the league nav)
+    # Site tour + premium welcome replay - league pages only
     tour_menu_item = (
             "<button type='button' class='settings-menu-item' id='settingsTourBtn'>"
             "  " + _nav_icon("sparkles", cls="settings-menu-icon") +
             "  <span class='settings-menu-label'>Site Tour</span>"
+            "</button>"
+            "<button type='button' class='settings-menu-item' id='settingsWelcomeBtn'>"
+            "  " + _nav_icon("sparkles", cls="settings-menu-icon") +
+            "  <span class='settings-menu-label'>Premium Welcome</span>"
             "</button>"
     ) if league_id else ""
 

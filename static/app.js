@@ -10028,9 +10028,9 @@ if (!platformBtns.length) return;
       espnPrivateFields.style.display = isPrivate && !window._hasAccount ? "block" : "none";
     }
     if (espnDescription) espnDescription.textContent =
-      isEmail ? "Enter your league ID and the email on your ESPN account, and we'll send a 6-digit code."
-      : isPrivate ? "Enter your league ID plus your SWID and espn_s2 cookies."
-      : "Connect a publicly accessible ESPN league using its League ID.";
+      isEmail ? "Email: enter League ID + the email on your ESPN account. We'll send a 6-digit code — success lands you on your league dashboard."
+      : isPrivate ? "Private: enter League ID plus SWID and espn_s2 (or paste the cookie string). Success = your private roster and standings load."
+      : "Public leagues: enter the League ID from your ESPN URL. Success = your league dashboard loads with standings and rosters.";
     if (espnSwidInput) espnSwidInput.value = "";
     if (espnS2Input) espnS2Input.value = "";
     if (espnCookieBlob) espnCookieBlob.value = "";
@@ -10073,6 +10073,26 @@ if (!platformBtns.length) return;
       btn.style.cursor = hasLeague ? "pointer" : "not-allowed";
       btn.title = hasLeague ? "" : "Select a league first";
     });
+    const createHint = document.getElementById("createAcctHint");
+    const readyNudge = document.getElementById("homeLeagueReadyNudge");
+    const bottomLabel = document.getElementById("homeAcctBottomLabel");
+    if (createHint) createHint.hidden = hasLeague;
+    if (readyNudge) {
+      readyNudge.hidden = !hasLeague;
+      if (hasLeague && readyNudge.dataset.tracked !== "1") {
+        readyNudge.dataset.tracked = "1";
+        window.brTrack?.("home_league_selected", { platform: currentPlatform || "" });
+        window.brTrack?.("home_create_account_nudge", {});
+      }
+    }
+    if (bottomLabel) {
+      bottomLabel.textContent = hasLeague ? "Save this league to your account" : "New to BR Fantasy?";
+    }
+    if (hasLeague && googleBtnEl) {
+      googleBtnEl.classList.add("home-google-ready");
+    } else if (googleBtnEl) {
+      googleBtnEl.classList.remove("home-google-ready");
+    }
   }
   if (leagueSelect) leagueSelect.addEventListener("change", syncHomeContinueState);
   syncHomeContinueState();
@@ -10611,12 +10631,16 @@ if (!platformBtns.length) return;
       const sel = document.getElementById("league");
       if (sel && sel.value) {
         event.preventDefault();
+        window.brTrack?.("home_create_account_nudge", { via: "bottom_cta_ready" });
         googleContinueBtn?.click();
         return;
       }
       event.preventDefault();
+      window.brTrack?.("home_create_account_nudge", { via: "bottom_cta_prompt" });
       const hint = document.getElementById("createAcctHint");
       if (hint) hint.hidden = false;
+      const readyNudge = document.getElementById("homeLeagueReadyNudge");
+      if (readyNudge) readyNudge.hidden = true;
       const flow = document.getElementById("connectLeagueFlow");
       if (flow) { flow.hidden = false; flow.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
       const firstField = document.getElementById("username");
@@ -17065,250 +17089,469 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// ── New Subscriber Welcome Tour ───────────────────────────────────────────────
-(function () {
-  'use strict';
-  if (new URLSearchParams(window.location.search).get('new_subscriber') !== '1') return;
-  if (localStorage.getItem('br_sub_tour_done')) return;
-  localStorage.setItem('br_sub_tour_done', '1');
-
-  // Clean the URL so a refresh doesn't re-trigger it
-  const cleanUrl = window.location.pathname + window.location.search.replace(/[?&]new_subscriber=1/, '').replace(/^\?$/, '');
-  history.replaceState(null, '', cleanUrl);
-
-  // Build league-aware links from path
-  const parts = window.location.pathname.split('/').filter(Boolean);
-  const hasLeague = parts.length >= 3;
-  const base = hasLeague ? '/' + parts.slice(0, 3).join('/') : '';
-
-  const features = [
-    { icon: '📊', label: 'Trade Intelligence', desc: 'Market values, momentum, and real trade frequency', href: base + '/trade-intel' },
-    { icon: '🔥', label: 'Breakout Engine', desc: 'Opportunity projections and breakout candidate rankings', href: base + '/breakouts' },
-    { icon: '🤖', label: 'AI Insights', desc: 'Front office briefings and trade analysis personalized to your roster', href: base + '/dashboard' },
-    { icon: '📈', label: 'Roster Grades', desc: 'Letter grades, archetypes, and portfolio value trends', href: base + '/teams' },
-  ];
-
-  const overlay = document.createElement('div');
-  overlay.id = 'subWelcomeTour';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:10002;display:flex;align-items:center;justify-content:center;padding:16px;';
-  overlay.innerHTML = `
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:20px;padding:36px 32px 28px;max-width:480px;width:100%;box-shadow:0 24px 64px rgba(0,0,0,0.35);position:relative;">
-      <div style="text-align:center;margin-bottom:24px;">
-        <div style="font-size:40px;margin-bottom:12px;">🎉</div>
-        <h2 style="margin:0 0 8px;font-size:22px;font-weight:800;color:var(--text);">Welcome to Premium!</h2>
-        <p style="margin:0;font-size:14px;color:var(--text-muted);line-height:1.5;">Here's what you've unlocked. Explore at your own pace or jump in now.</p>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">
-        ${features.map(f => `
-          <a href="${f.href}" style="display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-alt);text-decoration:none;transition:background 0.12s;" onmouseover="this.style.background='var(--accent-soft)'" onmouseout="this.style.background='var(--bg-alt)'">
-            <span style="font-size:22px;width:32px;text-align:center;flex-shrink:0;">${f.icon}</span>
-            <div>
-              <div style="font-size:13px;font-weight:700;color:var(--text);">${f.label}</div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${f.desc}</div>
-            </div>
-            <span style="margin-left:auto;color:var(--text-muted);font-size:14px;">→</span>
-          </a>`).join('')}
-      </div>
-      <button onclick="document.getElementById('subWelcomeTour').remove()" style="width:100%;padding:12px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:opacity .12s;" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'">
-        Let's go →
-      </button>
-    </div>`;
-  document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-})();
-
-// ── New User Tour ──────────────────────────────────────────────────────────
-(function () {
-  'use strict';
-
-  // Determine league context from URL
-  const pathParts = window.location.pathname.split('/').filter(Boolean);
-  const hasLeague = pathParts.length >= 3 && !isNaN(pathParts[1]);
-  if (!hasLeague) return;
-
-  const platform  = pathParts[0];
-  const season    = pathParts[1];
-  const leagueId  = pathParts[2];
-  const tourKey   = 'tour_done_' + leagueId;
-
-  // Current page from the page-shell data attribute
-  const pageShell = document.querySelector('.page-shell');
-  const currentPage = pageShell ? (pageShell.dataset.page || '') : '';
-
-  function buildLeagueUrl(page) {
-    // Extract league context from current URL
-    const pathParts = window.location.pathname.split('/').filter(Boolean);
-
-    if (pathParts.length >= 3 && !isNaN(pathParts[1])) {
-      const platform = pathParts[0];
-      const season = pathParts[1];
-      const leagueId = pathParts[2];
-      const url = '/' + platform + '/' + season + '/' + leagueId + '/' + page;
-      return url;
+// ── Product analytics helper ──────────────────────────────────────────────────
+window.brTrack = function (event, props) {
+  try {
+    var body = JSON.stringify({ event: String(event || ''), props: props || {} });
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/api/events', new Blob([body], { type: 'application/json' }));
+      return;
     }
-    // Fallback to just page name if no league context
-    const fallbackUrl = '/' + page;
-    return fallbackUrl;
+    fetch('/api/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body,
+      keepalive: true,
+    }).catch(function () {});
+  } catch (_) {}
+};
+
+// ── UI prefs (local-first; sync when signed in) ───────────────────────────────
+window.brUiPrefs = (function () {
+  'use strict';
+  var SUB_KEY = 'br_sub_tour_done';
+  var TOUR_PREFIX = 'tour_done_';
+  var LATER_PREFIX = 'tour_later_';
+  var LATER_MS = 3 * 24 * 60 * 60 * 1000;
+  var cache = null;
+  var syncing = false;
+
+  function lsGet(k) {
+    try { return localStorage.getItem(k); } catch (_) { return null; }
+  }
+  function lsSet(k, v) {
+    try { localStorage.setItem(k, v); } catch (_) {}
+  }
+  function lsDel(k) {
+    try { localStorage.removeItem(k); } catch (_) {}
   }
 
-  // ── Tour steps ──────────────────────────────────────────────────────────
-  // Opens/closes a nav dropdown around its step so users see what's inside.
+  function isTourDone(leagueId) {
+    if (lsGet(TOUR_PREFIX + leagueId) === '1') return true;
+    if (cache && cache.site_tour_done) return true;
+    return false;
+  }
+
+  function isTourDeferred(leagueId) {
+    var raw = lsGet(LATER_PREFIX + leagueId);
+    if (!raw) return false;
+    var ts = parseInt(raw, 10);
+    if (!ts || isNaN(ts)) return false;
+    return (Date.now() - ts) < LATER_MS;
+  }
+
+  function markTourDone(leagueId) {
+    lsSet(TOUR_PREFIX + leagueId, '1');
+    lsDel(LATER_PREFIX + leagueId);
+    persist({ site_tour_done: true });
+  }
+
+  function markTourLater(leagueId) {
+    lsSet(LATER_PREFIX + leagueId, String(Date.now()));
+  }
+
+  function clearTourDone(leagueId) {
+    lsDel(TOUR_PREFIX + leagueId);
+    lsDel(LATER_PREFIX + leagueId);
+    // Do not clear account-level flag on manual replay — only this league's local key.
+  }
+
+  function isSubWelcomeDone() {
+    if (lsGet(SUB_KEY) === '1') return true;
+    if (cache && cache.sub_welcome_done) return true;
+    return false;
+  }
+
+  function markSubWelcomeDone() {
+    lsSet(SUB_KEY, '1');
+    persist({ sub_welcome_done: true });
+  }
+
+  function clearSubWelcomeDone() {
+    lsDel(SUB_KEY);
+  }
+
+  function persist(partial) {
+    if (!window._hasAccount) return;
+    try {
+      fetch('/api/ui-prefs', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prefs: partial }),
+        keepalive: true,
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d && d.prefs) cache = d.prefs;
+      }).catch(function () {});
+    } catch (_) {}
+  }
+
+  function hydrate(done) {
+    if (!window._hasAccount || syncing) {
+      if (typeof done === 'function') done(cache || {});
+      return;
+    }
+    syncing = true;
+    fetch('/api/ui-prefs', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        cache = (d && d.prefs) || {};
+        if (cache.site_tour_done) {
+          // Mirror onto current league local key so auto-start stays quiet offline.
+          try {
+            var parts = window.location.pathname.split('/').filter(Boolean);
+            if (parts.length >= 3 && !isNaN(parts[1])) {
+              lsSet(TOUR_PREFIX + parts[2], '1');
+            }
+          } catch (_) {}
+        }
+        if (cache.sub_welcome_done) lsSet(SUB_KEY, '1');
+        if (typeof done === 'function') done(cache);
+      })
+      .catch(function () { if (typeof done === 'function') done({}); })
+      .finally(function () { syncing = false; });
+  }
+
+  return {
+    isTourDone: isTourDone,
+    isTourDeferred: isTourDeferred,
+    markTourDone: markTourDone,
+    markTourLater: markTourLater,
+    clearTourDone: clearTourDone,
+    isSubWelcomeDone: isSubWelcomeDone,
+    markSubWelcomeDone: markSubWelcomeDone,
+    clearSubWelcomeDone: clearSubWelcomeDone,
+    hydrate: hydrate,
+  };
+})();
+
+// ── New Subscriber Welcome ────────────────────────────────────────────────────
+window.showSubWelcome = function (opts) {
+  'use strict';
+  opts = opts || {};
+  if (document.getElementById('subWelcomeTour')) return;
+
+  window.__brWelcomeActive = true;
+  if (!opts.replay) {
+    window.brUiPrefs.markSubWelcomeDone();
+    window.brTrack('sub_welcome_show', {});
+  }
+
+  var parts = window.location.pathname.split('/').filter(Boolean);
+  var hasLeague = parts.length >= 3;
+  var base = hasLeague ? '/' + parts.slice(0, 3).join('/') : '';
+  var primaryHref = base + '/trade-intel';
+
+  var features = [
+    { label: 'Trade Intelligence', desc: 'Market values, momentum, and real trade frequency', href: base + '/trade-intel' },
+    { label: 'Breakout Engine', desc: 'Opportunity projections and breakout candidate rankings', href: base + '/breakouts' },
+    { label: 'AI Insights', desc: 'Front office briefings personalized to your roster', href: base + '/dashboard' },
+    { label: 'Roster Grades', desc: 'Letter grades, archetypes, and portfolio value trends', href: base + '/teams' },
+  ];
+
+  var overlay = document.createElement('div');
+  overlay.id = 'subWelcomeTour';
+  overlay.className = 'sub-welcome-overlay';
+  overlay.innerHTML =
+    '<div class="sub-welcome-card" role="dialog" aria-modal="true" aria-labelledby="subWelcomeTitle">' +
+      '<div class="sub-welcome-hero">' +
+        '<p class="sub-welcome-eyebrow">Premium</p>' +
+        '<h2 id="subWelcomeTitle" class="sub-welcome-title">Welcome to Premium</h2>' +
+        '<p class="sub-welcome-lead">Start with Trade Intel for your roster — or take a short tour of the hub.</p>' +
+      '</div>' +
+      '<a class="sub-welcome-primary" href="' + primaryHref + '" data-welcome-cta="trade-intel">See Trade Intel for your roster →</a>' +
+      '<div class="sub-welcome-features">' +
+        features.map(function (f) {
+          return '<a class="sub-welcome-feature" href="' + f.href + '" data-welcome-cta="' + f.label + '">' +
+            '<span class="sub-welcome-feature-label">' + f.label + '</span>' +
+            '<span class="sub-welcome-feature-desc">' + f.desc + '</span>' +
+            '<span class="sub-welcome-feature-arrow" aria-hidden="true">→</span>' +
+          '</a>';
+        }).join('') +
+      '</div>' +
+      '<div class="sub-welcome-actions">' +
+        (hasLeague
+          ? '<button type="button" class="sub-welcome-secondary" data-welcome-tour>Take a quick tour</button>'
+          : '') +
+        '<button type="button" class="sub-welcome-dismiss" data-welcome-dismiss>Let\'s go</button>' +
+      '</div>' +
+    '</div>';
+
+  function closeWelcome() {
+    window.__brWelcomeActive = false;
+    overlay.remove();
+  }
+
+  overlay.addEventListener('click', function (e) {
+    if (e.target === overlay) {
+      window.brTrack('sub_welcome_dismiss', { via: 'overlay' });
+      closeWelcome();
+    }
+  });
+  overlay.querySelector('[data-welcome-dismiss]').addEventListener('click', function () {
+    window.brTrack('sub_welcome_dismiss', { via: 'button' });
+    closeWelcome();
+  });
+  var tourBtn = overlay.querySelector('[data-welcome-tour]');
+  if (tourBtn) {
+    tourBtn.addEventListener('click', function () {
+      window.brTrack('sub_welcome_start_tour', {});
+      closeWelcome();
+      if (typeof window.startSiteTour === 'function') window.startSiteTour();
+    });
+  }
+  overlay.querySelectorAll('[data-welcome-cta]').forEach(function (a) {
+    a.addEventListener('click', function () {
+      window.brTrack('sub_welcome_cta', { target: a.getAttribute('data-welcome-cta') || '' });
+    });
+  });
+
+  document.body.appendChild(overlay);
+};
+
+(function () {
+  'use strict';
+  var params = new URLSearchParams(window.location.search);
+  if (params.get('new_subscriber') !== '1') return;
+
+  // Synchronous gate so the site tour cannot auto-start while welcome is pending.
+  window.__brWelcomePending = true;
+
+  // Clean URL so refresh does not re-trigger.
+  var cleaned = window.location.search.replace(/[?&]new_subscriber=1/, '').replace(/^\?$/, '');
+  history.replaceState(null, '', window.location.pathname + cleaned);
+
+  function maybeShow() {
+    if (window.brUiPrefs.isSubWelcomeDone()) {
+      window.__brWelcomePending = false;
+      return;
+    }
+    window.showSubWelcome({});
+  }
+
+  if (window._hasAccount) {
+    window.brUiPrefs.hydrate(function () { maybeShow(); });
+  } else {
+    maybeShow();
+  }
+})();
+
+// ── New User Site Tour ────────────────────────────────────────────────────────
+(function () {
+  'use strict';
+
+  var pathParts = window.location.pathname.split('/').filter(Boolean);
+  var hasLeague = pathParts.length >= 3 && !isNaN(pathParts[1]);
+  if (!hasLeague) return;
+
+  var platform = pathParts[0];
+  var season = pathParts[1];
+  var leagueId = pathParts[2];
+
+  var pageShell = document.querySelector('.page-shell');
+  var currentPage = pageShell ? (pageShell.dataset.page || '') : '';
+  var isMobile = function () { return window.innerWidth < 768; };
+
+  function buildLeagueUrl(page) {
+    return '/' + platform + '/' + season + '/' + leagueId + '/' + page;
+  }
+
   function _navDropStep(id) {
     return {
-      beforeShow: function () { var w = document.getElementById(id); if (w) w.classList.add('open'); },
-      afterLeave: function () { var w = document.getElementById(id); if (w) w.classList.remove('open'); },
+      beforeShow: function () {
+        var w = document.getElementById(id);
+        if (w) w.classList.add('open');
+        var nav = document.getElementById('navPills');
+        if (nav && isMobile()) nav.classList.add('nav-open');
+      },
+      afterLeave: function () {
+        var w = document.getElementById(id);
+        if (w) w.classList.remove('open');
+      },
     };
   }
 
-  const TOUR_STEPS = [
+  function _openMobileNav() {
+    var nav = document.getElementById('navPills');
+    var toggle = document.getElementById('navToggle');
+    if (nav) nav.classList.add('nav-open');
+    if (toggle) toggle.setAttribute('aria-expanded', 'true');
+  }
+  function _closeMobileNav() {
+    var nav = document.getElementById('navPills');
+    var toggle = document.getElementById('navToggle');
+    if (nav) nav.classList.remove('nav-open');
+    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+  }
+
+  var DESKTOP_STEPS = [
     {
       page: 'dashboard', selector: null,
-      title: 'Welcome to your dynasty hub!',
-      body: "Let's take a quick tour of the key features. Use the arrow keys to move around, or Esc to bail. You can replay this any time from the settings gear.",
+      title: 'Welcome to your dynasty hub',
+      body: 'A short tour of the highest-value moves. Use arrow keys to navigate, or Esc to exit. Replay anytime from Settings.',
     },
     Object.assign({
       page: 'dashboard', selector: '#tradesNavDropdown',
-      title: 'Trades',
-      body: 'Evaluate any deal in the Trade Calculator, get AI suggestions built around your roster, and browse a database of real dynasty trades.',
+      title: 'Trades & Trade Intel',
+      body: 'Grade any deal in the Trade Calculator, get AI suggestions, and open Trade Intel for live market values on your roster.',
+      interactive: true,
     }, _navDropStep('tradesNavDropdown')),
-    Object.assign({
-      page: 'dashboard', selector: '#teamsNavDropdown',
-      title: 'League',
-      body: 'Standings with weekly power rankings, every team’s roster breakdown, league activity, and league health checks.',
-    }, _navDropStep('teamsNavDropdown')),
-    Object.assign({
-      page: 'dashboard', selector: '#playersNavDropdown',
-      title: 'Players',
-      body: 'Player rankings, advanced metric leaderboards, the Breakout Engine, rookie prospects, waivers with start/sit advice, and the schedule assistant.',
-    }, _navDropStep('playersNavDropdown')),
-    Object.assign({
-      page: 'dashboard', selector: '#statsNavDropdown',
-      title: 'Stats',
-      body: 'All-time awards, trend graphs, and full league history - including head-to-head rivalry records between any two managers.',
-    }, _navDropStep('statsNavDropdown')),
     {
       page: 'dashboard', selector: '#navSearchWrapper',
       title: 'Player Search',
-      body: 'Search any player from the nav bar - click the magnifying glass or press Ctrl+K, then click a result to open their full profile.',
+      body: 'Try it — click the search box or press Ctrl+K, then open any player profile from the results.',
+      interactive: true,
     },
     {
-      page: 'dashboard', selector: '#settingsGearBtn',
-      title: 'Settings',
-      body: 'Switch between leagues, toggle dark mode, catch up on recent updates, and replay this tour whenever you want.',
-    },
-    {
-      page: 'dashboard', selector: '.player-row, .otc-player-row',
-      title: 'Player Cards',
-      body: 'Click any player to see their dynasty value history, advanced metrics, weekly usage trends, news, and breakout score.',
+      page: 'dashboard', selector: '.player-row, .otc-player-row, [data-player-id]',
+      title: 'Player cards',
+      body: 'Click a player (or use Next) to open dynasty value history, advanced metrics, and breakout score.',
       action: 'openPlayerModal',
+      interactive: true,
     },
     {
-      page: 'dashboard', selector: '.team-clickable, .team-row',
-      title: 'Team Cards',
-      body: 'Click any team to pull up their full roster, positional grades, and asset values.',
-      action: 'openTeamModal',
-    },
-    {
-      page: 'history', selector: '.card',
-      title: 'Season History',
-      body: 'Season awards, standings, scoring trends, AI recaps, and the Rivalry Tracker for every past year of your league.',
+      page: 'history', selector: '.card, .page-shell',
+      title: 'League history',
+      body: 'Season awards, standings trends, AI recaps, and rivalry records for every past year.',
       navigate: 'history',
     },
     {
-      page: 'awards', selector: '.card',
-      title: 'All-Time Awards',
-      body: 'Career records, championship history, and fun awards like "most bench points left on the table."',
-      navigate: 'awards',
-    },
-    {
-      page: 'graphs', selector: '.card',
-      title: 'League Analytics',
-      body: 'PF vs PA scatter plots, weekly scoring lines, and head-to-head radar charts for every team.',
-      navigate: 'graphs',
-    },
-    {
       page: 'dashboard', selector: null,
-      title: "You're all set!",
-      body: 'Explore from here - and remember you can replay this tour from the settings gear menu whenever you like.',
+      title: "You're all set",
+      body: 'Explore from here. Replay this tour or the Premium welcome anytime from the settings gear.',
     },
   ];
 
-  // ── State ────────────────────────────────────────────────────────────────
-  let currentStep  = 0;
-  let tourActive   = false;
-  const overlays   = [];
-  let tooltipEl    = null;
+  var MOBILE_STEPS = [
+    {
+      page: 'dashboard', selector: null,
+      title: 'Welcome to your dynasty hub',
+      body: 'Here are the essentials on mobile. Swipe through, or Esc to exit. Replay from Settings anytime.',
+    },
+    {
+      page: 'dashboard', selector: '#navToggle',
+      title: 'League menu',
+      body: 'Open the menu to reach Trades, Players, Stats, and more.',
+      beforeShow: function () { /* spotlight the closed toggle first */ },
+      interactive: true,
+    },
+    {
+      page: 'dashboard', selector: '#navPills, .nav-pills-container',
+      title: 'Navigate your league',
+      body: 'Trades, rankings, breakouts, history, and graphs live here.',
+      beforeShow: _openMobileNav,
+      afterLeave: _closeMobileNav,
+    },
+    {
+      page: 'dashboard', selector: '#navSearchWrapper, #settingsGearBtn',
+      title: 'Search & settings',
+      body: 'Search any player, toggle dark mode, and replay this tour from the gear menu.',
+      beforeShow: _openMobileNav,
+      afterLeave: _closeMobileNav,
+      interactive: true,
+    },
+    {
+      page: 'dashboard', selector: '.player-row, .otc-player-row, [data-player-id]',
+      title: 'Player cards',
+      body: 'Tap a player (or Next) to open their full profile and metrics.',
+      action: 'openPlayerModal',
+      interactive: true,
+    },
+    {
+      page: 'dashboard', selector: null,
+      title: "You're all set",
+      body: 'You can replay this tour from Settings whenever you like.',
+    },
+  ];
 
-  // ── Init ─────────────────────────────────────────────────────────────────
+  function tourSteps() {
+    return isMobile() ? MOBILE_STEPS : DESKTOP_STEPS;
+  }
+
+  var currentStep = 0;
+  var tourActive = false;
+  var overlays = [];
+  var tooltipEl = null;
+  var _tourDir = 1;
+  var holeShield = null;
+
   function initTour() {
-    const params     = new URLSearchParams(window.location.search);
-    const resumeAt   = params.get('tour');
+    var params = new URLSearchParams(window.location.search);
+    var resumeAt = params.get('tour_step');
 
     if (resumeAt !== null) {
-      // Came here via a tour navigation - clean the URL then resume
       history.replaceState(null, '', window.location.pathname);
-      const idx = parseInt(resumeAt, 10);
+      var idx = parseInt(resumeAt, 10);
       if (!isNaN(idx)) {
         startTour(idx);
         return;
       }
     }
 
-    // Only auto-start on the dashboard for new users with league context
     if (currentPage !== 'dashboard') return;
-    if (localStorage.getItem(tourKey)) return;
+    if (window.__brWelcomeActive || window.__brWelcomePending) return;
+    if (new URLSearchParams(window.location.search).get('new_subscriber') === '1') return;
+    if (window.brUiPrefs.isTourDone(leagueId)) return;
+    if (window.brUiPrefs.isTourDeferred(leagueId)) return;
 
-    // Don't auto-run on small screens - the nav pills the tour spotlights are
-    // collapsed behind the hamburger. (Manual start still works anywhere.)
-    if (window.innerWidth < 768) return;
+    function kickoff() {
+      if (window.__brWelcomeActive || window.__brWelcomePending) return;
+      if (window.brUiPrefs.isTourDone(leagueId)) return;
+      setTimeout(function () { startTour(0); }, 800);
+    }
 
-    // Check if we have league context (not on demo/home page)
-    const pathParts = window.location.pathname.split('/').filter(Boolean);
-    const hasLeague = pathParts.length >= 3 && !isNaN(pathParts[1]);
-    if (!hasLeague) return;
-
-    setTimeout(function () { startTour(0); }, 800);
+    if (window._hasAccount) {
+      window.brUiPrefs.hydrate(function () { kickoff(); });
+    } else {
+      kickoff();
+    }
   }
 
-  // ── DOM creation ─────────────────────────────────────────────────────────
   function startTour(fromStep) {
-    tourActive   = true;
-    currentStep  = fromStep;
-    _tourDir     = 1;
+    var steps = tourSteps();
+    tourActive = true;
+    currentStep = Math.max(0, Math.min(fromStep || 0, steps.length - 1));
+    _tourDir = 1;
     createOverlayDOM();
     document.addEventListener('keydown', _tourKeydown);
+    window.brTrack('site_tour_start', {
+      mobile: isMobile(),
+      step: currentStep,
+      league: String(leagueId),
+    });
     showStep(currentStep);
   }
 
   function createOverlayDOM() {
     ['top', 'bottom', 'left', 'right'].forEach(function (side) {
-      const el = document.createElement('div');
+      var el = document.createElement('div');
       el.className = 'tour-overlay-piece';
       el.dataset.side = side;
       document.body.appendChild(el);
       overlays.push(el);
     });
+    // Soft shield over the hole when the step is not interactive — still dims
+    // visually via overlays; this only blocks stray clicks when needed.
+    holeShield = document.createElement('div');
+    holeShield.className = 'tour-hole-shield';
+    document.body.appendChild(holeShield);
 
     tooltipEl = document.createElement('div');
     tooltipEl.className = 'tour-tooltip';
     document.body.appendChild(tooltipEl);
   }
 
-  // ── Step rendering ───────────────────────────────────────────────────────
   function showStep(idx) {
-    if (idx < 0 || idx >= TOUR_STEPS.length) { endTour(); return; }
-    const step = TOUR_STEPS[idx];
+    var steps = tourSteps();
+    if (idx < 0 || idx >= steps.length) { endTour('complete'); return; }
+    var step = steps[idx];
 
-    // Wrong page? Navigate there
     if (step.page && step.page !== currentPage) {
-      window.location.href = buildLeagueUrl(step.page) + '?tour=' + idx;
+      window.location.href = buildLeagueUrl(step.page) + '?tour_step=' + idx;
       return;
     }
 
-    // Skip steps whose target is missing or not rendered (e.g. collapsed
-    // mobile nav, empty dashboard) - in whichever direction we're moving.
     if (step.selector) {
-      const el = document.querySelector(step.selector);
+      var el = document.querySelector(step.selector);
       if (!el || el.getClientRects().length === 0) {
         if (_tourDir < 0 && idx > 0) { currentStep = idx - 1; showStep(currentStep); }
         else { advanceTour(); }
@@ -17316,24 +17559,21 @@ document.addEventListener('click', (e) => {
       }
     }
 
-    // Run beforeShow hook (e.g. open settings dropdown)
     if (typeof step.beforeShow === 'function') step.beforeShow();
 
-    const target = step.selector ? document.querySelector(step.selector) : null;
-    positionOverlays(target);
-    renderTooltip(step, idx, target);
+    var target = step.selector ? document.querySelector(step.selector) : null;
+    positionOverlays(target, !!step.interactive);
+    renderTooltip(step, idx, target, steps.length);
+    window.brTrack('site_tour_step', { step: idx, title: step.title || '', mobile: isMobile() });
 
-    // Auto-open modals as a demo, then reposition the spotlight onto the modal
     if (step.action === 'openPlayerModal') {
       var playerEl = document.querySelector('[data-player-id]');
       if (playerEl) {
         setTimeout(function () {
-          var pid   = playerEl.dataset.playerId;
+          var pid = playerEl.dataset.playerId;
           var pname = playerEl.dataset.playerName || playerEl.textContent.trim();
           if (typeof openPlayerModal === 'function') openPlayerModal(pid, pname);
-
           var attempts = 0;
-          var maxAttempts = 80;
           function checkAndPosition() {
             attempts++;
             var modal = document.getElementById('playerModal');
@@ -17341,19 +17581,12 @@ document.addEventListener('click', (e) => {
               var body = document.getElementById('playerModalBody');
               var isVisible = modal.style.display !== 'none' && modal.offsetParent !== null;
               var hasAdvancedMetrics = body && body.querySelector('#advancedMetricsSection');
-
-              if (isVisible && hasAdvancedMetrics) {
-                positionOverlays(modal);
+              if (isVisible && (hasAdvancedMetrics || attempts >= 80)) {
+                positionOverlays(modal, true);
                 placeTooltip(modal);
                 return;
               }
-
-              if (attempts < maxAttempts) {
-                setTimeout(checkAndPosition, 100);
-              } else {
-                positionOverlays(modal);
-                placeTooltip(modal);
-              }
+              if (attempts < 80) setTimeout(checkAndPosition, 100);
             }
           }
           setTimeout(checkAndPosition, 400);
@@ -17363,12 +17596,10 @@ document.addEventListener('click', (e) => {
       var teamEl = document.querySelector('.team-clickable[data-roster-id]');
       if (teamEl) {
         setTimeout(function () {
-          var rid   = teamEl.dataset.rosterId;
+          var rid = teamEl.dataset.rosterId;
           var tname = teamEl.dataset.teamName || '';
           if (typeof openTeamModal === 'function') openTeamModal(rid, tname);
-
           var attempts = 0;
-          var maxAttempts = 80;
           function checkAndPosition() {
             attempts++;
             var modal = document.getElementById('teamModal');
@@ -17376,20 +17607,12 @@ document.addEventListener('click', (e) => {
               var body = document.getElementById('teamModalBody');
               var isVisible = modal.style.display !== 'none' && modal.offsetParent !== null;
               var hasWeeklyChart = body && body.querySelector('#teamWeeklyChart');
-
-              if (isVisible && hasWeeklyChart) {
-                positionOverlays(modal);
+              if (isVisible && (hasWeeklyChart || attempts >= 80)) {
+                positionOverlays(modal, true);
                 placeTooltip(modal);
                 return;
               }
-
-              if (attempts < maxAttempts) {
-                setTimeout(checkAndPosition, 100);
-              } else {
-                // Fallback: position on modal even if weekly chart didn't load
-                positionOverlays(modal); 
-                placeTooltip(modal);
-              }
+              if (attempts < 80) setTimeout(checkAndPosition, 100);
             }
           }
           setTimeout(checkAndPosition, 400);
@@ -17398,13 +17621,12 @@ document.addEventListener('click', (e) => {
     }
   }
 
-  function positionOverlays(target) {
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const PAD = 8;
+  function positionOverlays(target, interactive) {
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var PAD = 8;
 
     if (!target) {
-      // Full-screen dim - all coverage via top piece, rest zeroed
       overlays.forEach(function (p) {
         if (p.dataset.side === 'top') {
           Object.assign(p.style, { top: '0', left: '0', width: vw + 'px', height: vh + 'px' });
@@ -17412,46 +17634,74 @@ document.addEventListener('click', (e) => {
           Object.assign(p.style, { top: '0', left: '0', width: '0', height: '0' });
         }
       });
+      if (holeShield) Object.assign(holeShield.style, { display: 'none' });
       return;
     }
 
     target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    const r  = target.getBoundingClientRect();
-    const x1 = Math.max(0, r.left   - PAD);
-    const y1 = Math.max(0, r.top    - PAD);
-    const x2 = Math.min(vw, r.right  + PAD);
-    const y2 = Math.min(vh, r.bottom + PAD);
+    var r = target.getBoundingClientRect();
+    var x1 = Math.max(0, r.left - PAD);
+    var y1 = Math.max(0, r.top - PAD);
+    var x2 = Math.min(vw, r.right + PAD);
+    var y2 = Math.min(vh, r.bottom + PAD);
 
     overlays.forEach(function (p) {
       switch (p.dataset.side) {
-        case 'top':    Object.assign(p.style, { top: '0',        left: '0',       width: vw + 'px',       height: y1 + 'px'       }); break;
-        case 'bottom': Object.assign(p.style, { top: y2 + 'px',  left: '0',       width: vw + 'px',       height: (vh - y2) + 'px' }); break;
-        case 'left':   Object.assign(p.style, { top: y1 + 'px',  left: '0',       width: x1 + 'px',       height: (y2 - y1) + 'px' }); break;
-        case 'right':  Object.assign(p.style, { top: y1 + 'px',  left: x2 + 'px', width: (vw - x2) + 'px', height: (y2 - y1) + 'px' }); break;
+        case 'top':
+          Object.assign(p.style, { top: '0', left: '0', width: vw + 'px', height: y1 + 'px' });
+          break;
+        case 'bottom':
+          Object.assign(p.style, { top: y2 + 'px', left: '0', width: vw + 'px', height: (vh - y2) + 'px' });
+          break;
+        case 'left':
+          Object.assign(p.style, { top: y1 + 'px', left: '0', width: x1 + 'px', height: (y2 - y1) + 'px' });
+          break;
+        case 'right':
+          Object.assign(p.style, { top: y1 + 'px', left: x2 + 'px', width: (vw - x2) + 'px', height: (y2 - y1) + 'px' });
+          break;
       }
     });
+
+    // Dim pieces block clicks on the shaded region. The hole (gap) lets
+    // clicks through to the highlighted UI when the step is interactive;
+    // otherwise a transparent shield covers the hole so only tour controls work.
+    if (holeShield) {
+      if (interactive) {
+        holeShield.style.display = 'none';
+      } else {
+        Object.assign(holeShield.style, {
+          display: 'block',
+          top: y1 + 'px',
+          left: x1 + 'px',
+          width: Math.max(0, x2 - x1) + 'px',
+          height: Math.max(0, y2 - y1) + 'px',
+        });
+      }
+    }
   }
 
-  function renderTooltip(step, idx, target) {
-    const isLast  = idx === TOUR_STEPS.length - 1;
-    const isFirst = idx === 0;
-    const count   = (idx + 1) + ' / ' + TOUR_STEPS.length;
-    const pct     = Math.round(((idx + 1) / TOUR_STEPS.length) * 100);
+  function renderTooltip(step, idx, target, total) {
+    var isLast = idx === total - 1;
+    var isFirst = idx === 0;
+    var count = (idx + 1) + ' / ' + total;
+    var pct = Math.round(((idx + 1) / total) * 100);
 
     tooltipEl.innerHTML =
       '<div class="tour-tooltip-header">' +
         '<span class="tour-step-count">' + count + '</span>' +
-        '<button class="tour-skip-btn" type="button">Skip tour</button>' +
+        '<div class="tour-header-actions">' +
+          '<button class="tour-later-btn" type="button">Remind me later</button>' +
+          '<button class="tour-skip-btn" type="button">Don\'t show again</button>' +
+        '</div>' +
       '</div>' +
       '<div class="tour-progress"><div class="tour-progress-fill" style="width:' + pct + '%"></div></div>' +
       '<div class="tour-tooltip-title">' + step.title + '</div>' +
-      '<div class="tour-tooltip-body">'  + step.body  + '</div>' +
+      '<div class="tour-tooltip-body">' + step.body + '</div>' +
       '<div class="tour-tooltip-footer">' +
         (isFirst ? '<span></span>' : '<button class="tour-btn tour-btn-secondary" data-action="prev">Back</button>') +
         '<button class="tour-btn tour-btn-primary" data-action="next">' + (isLast ? 'Finish' : 'Next →') + '</button>' +
       '</div>';
 
-    // Position
     if (!target) {
       Object.assign(tooltipEl.style, { top: '50%', left: '50%', transform: 'translate(-50%,-50%)', display: 'block' });
     } else {
@@ -17460,52 +17710,41 @@ document.addEventListener('click', (e) => {
     }
 
     tooltipEl.querySelector('[data-action="next"]').addEventListener('click', advanceTour);
-    const prevBtn = tooltipEl.querySelector('[data-action="prev"]');
+    var prevBtn = tooltipEl.querySelector('[data-action="prev"]');
     if (prevBtn) prevBtn.addEventListener('click', backTour);
-    tooltipEl.querySelector('.tour-skip-btn').addEventListener('click', endTour);
+    tooltipEl.querySelector('.tour-skip-btn').addEventListener('click', function () { endTour('skip'); });
+    tooltipEl.querySelector('.tour-later-btn').addEventListener('click', function () { endTour('later'); });
   }
 
   function placeTooltip(target) {
-    const TH   = 200;
-    const PAD  = 12;
-    const vw   = window.innerWidth;
-    const vh   = window.innerHeight;
-    const r    = target.getBoundingClientRect();
+    var TH = 220;
+    var PAD = 12;
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var r = target.getBoundingClientRect();
 
-    let top = r.bottom + PAD;
+    var top = r.bottom + PAD;
     if (top + TH > vh) top = Math.max(PAD, r.top - PAD - TH);
     if (top < PAD) top = PAD;
 
-    // On mobile stretch full-width; on desktop use fixed 300px centered on target
     if (vw <= 540) {
       Object.assign(tooltipEl.style, {
-        top: top + 'px',
-        left: PAD + 'px',
-        right: PAD + 'px',
-        width: 'auto',
-        transform: '',
+        top: top + 'px', left: PAD + 'px', right: PAD + 'px', width: 'auto', transform: '',
       });
     } else {
-      const TW = 300;
-      let left = r.left + r.width / 2 - TW / 2;
+      var TW = 300;
+      var left = r.left + r.width / 2 - TW / 2;
       left = Math.max(PAD, Math.min(left, vw - TW - PAD));
       Object.assign(tooltipEl.style, {
-        top: top + 'px',
-        left: left + 'px',
-        right: '',
-        width: '',
-        transform: '',
+        top: top + 'px', left: left + 'px', right: '', width: '', transform: '',
       });
     }
   }
 
-  // ── Navigation ───────────────────────────────────────────────────────────
   function leaveCurrentStep() {
-    // Call afterLeave hook (e.g. close settings dropdown)
-    const step = TOUR_STEPS[currentStep];
+    var steps = tourSteps();
+    var step = steps[currentStep];
     if (step && typeof step.afterLeave === 'function') step.afterLeave();
-
-    // Close any open player/team modals
     if (typeof closePlayerModal === 'function' && document.getElementById('playerModal')) {
       closePlayerModal();
     }
@@ -17514,17 +17753,15 @@ document.addEventListener('click', (e) => {
     }
   }
 
-  let _tourDir = 1;  // 1 = forward, -1 = back (used when skipping hidden steps)
-
   function advanceTour() {
     _tourDir = 1;
     leaveCurrentStep();
-    const nextIdx  = currentStep + 1;
-    if (nextIdx >= TOUR_STEPS.length) { endTour(); return; }
-    const nextStep = TOUR_STEPS[nextIdx];
-
+    var steps = tourSteps();
+    var nextIdx = currentStep + 1;
+    if (nextIdx >= steps.length) { endTour('complete'); return; }
+    var nextStep = steps[nextIdx];
     if (nextStep.navigate && nextStep.page !== currentPage) {
-      window.location.href = buildLeagueUrl(nextStep.page) + '?tour=' + nextIdx;
+      window.location.href = buildLeagueUrl(nextStep.page) + '?tour_step=' + nextIdx;
       return;
     }
     currentStep = nextIdx;
@@ -17534,22 +17771,31 @@ document.addEventListener('click', (e) => {
   function backTour() {
     if (currentStep <= 0) return;
     _tourDir = -1;
-    leaveCurrentStep();   // close any dropdown/modal the current step opened
+    leaveCurrentStep();
     currentStep--;
     showStep(currentStep);
   }
 
-  // Keyboard: arrows to move, Enter for next, Esc to exit.
   function _tourKeydown(e) {
     if (!tourActive) return;
-    if (e.key === 'Escape') { endTour(); }
+    if (e.key === 'Escape') { endTour('skip'); }
     else if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); advanceTour(); }
     else if (e.key === 'ArrowLeft') { e.preventDefault(); backTour(); }
   }
 
-  function endTour() {
+  function endTour(reason) {
     leaveCurrentStep();
-    localStorage.setItem(tourKey, '1');
+    reason = reason || 'complete';
+    if (reason === 'later') {
+      window.brUiPrefs.markTourLater(leagueId);
+      window.brTrack('site_tour_later', { step: currentStep, mobile: isMobile() });
+    } else if (reason === 'skip') {
+      window.brUiPrefs.markTourDone(leagueId);
+      window.brTrack('site_tour_skip', { step: currentStep, mobile: isMobile() });
+    } else {
+      window.brUiPrefs.markTourDone(leagueId);
+      window.brTrack('site_tour_complete', { step: currentStep, mobile: isMobile() });
+    }
     removeTourDOM();
     tourActive = false;
     document.removeEventListener('keydown', _tourKeydown);
@@ -17558,30 +17804,53 @@ document.addEventListener('click', (e) => {
   function removeTourDOM() {
     overlays.forEach(function (p) { p.remove(); });
     overlays.length = 0;
+    if (holeShield) { holeShield.remove(); holeShield = null; }
     if (tooltipEl) { tooltipEl.remove(); tooltipEl = null; }
   }
 
-  // Reposition on resize
   window.addEventListener('resize', function () {
     if (!tourActive) return;
-    const step   = TOUR_STEPS[currentStep];
-    const target = step && step.selector ? document.querySelector(step.selector) : null;
-    positionOverlays(target);
+    var steps = tourSteps();
+    var step = steps[currentStep];
+    var target = step && step.selector ? document.querySelector(step.selector) : null;
+    positionOverlays(target, !!(step && step.interactive));
     if (tooltipEl && target) placeTooltip(target);
   });
 
-  // Manual restart (settings menu "Site Tour" / console). Clears the seen flag
-  // so the tour can navigate across pages and resume without re-marking done.
   window.startSiteTour = function () {
-    try { localStorage.removeItem(tourKey); } catch (e) {}
+    window.brUiPrefs.clearTourDone(leagueId);
     var dd = document.getElementById('settingsDropdown');
     if (dd) dd.style.display = 'none';
+    if (tourActive) {
+      removeTourDOM();
+      tourActive = false;
+      document.removeEventListener('keydown', _tourKeydown);
+    }
+    // Always restart from dashboard for a clean shortened path.
+    if (currentPage !== 'dashboard') {
+      window.location.href = buildLeagueUrl('dashboard') + '?tour_step=0';
+      return;
+    }
     startTour(0);
+  };
+
+  window.startSubWelcome = function () {
+    window.brUiPrefs.clearSubWelcomeDone();
+    var dd = document.getElementById('settingsDropdown');
+    if (dd) dd.style.display = 'none';
+    window.showSubWelcome({ replay: true });
   };
 
   _deferInit(function () {
     var tourBtn = document.getElementById('settingsTourBtn');
     if (tourBtn) tourBtn.addEventListener('click', function () { window.startSiteTour(); });
+    var welcomeBtn = document.getElementById('settingsWelcomeBtn');
+    if (welcomeBtn) {
+      var isPremium = !!(window.__brctx && window.__brctx.isPremium) ||
+        document.getElementById('page-root')?.dataset?.premium === 'true';
+      if (!isPremium) welcomeBtn.style.display = 'none';
+      else welcomeBtn.addEventListener('click', function () { window.startSubWelcome(); });
+    }
     initTour();
   });
 }());
