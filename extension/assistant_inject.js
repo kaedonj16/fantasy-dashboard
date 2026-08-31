@@ -459,14 +459,15 @@
     const style = document.createElement("style");
     style.id = "br-da-invite-css";
     style.textContent =
-      "#" + INVITE_ID + "{position:fixed;z-index:2147483646;right:16px;bottom:16px;width:min(320px,calc(100vw - 24px));" +
-      "padding:14px 14px 12px;border-radius:12px;background:#122d4b;color:#fff;" +
-      "font:600 13px/1.4 system-ui,-apple-system,sans-serif;box-shadow:0 10px 28px rgba(0,0,0,.28);" +
+      "#" + INVITE_ID + "{position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;" +
+      "padding:20px;background:rgba(8,16,28,.52);}" +
+      "#" + INVITE_ID + " .br-da-invite-card{width:min(360px,100%);padding:18px 18px 16px;border-radius:14px;background:#122d4b;color:#fff;" +
+      "font:600 13px/1.4 system-ui,-apple-system,sans-serif;box-shadow:0 16px 40px rgba(0,0,0,.35);" +
       "border:1px solid rgba(255,255,255,.12);}" +
-      "#" + INVITE_ID + " .br-da-invite-title{font:800 14px/1.3 inherit;margin:0 0 6px;}" +
-      "#" + INVITE_ID + " .br-da-invite-copy{margin:0 0 12px;color:rgba(255,255,255,.82);font-weight:500;}" +
+      "#" + INVITE_ID + " .br-da-invite-title{font:800 16px/1.3 inherit;margin:0 0 8px;}" +
+      "#" + INVITE_ID + " .br-da-invite-copy{margin:0 0 14px;color:rgba(255,255,255,.82);font-weight:500;}" +
       "#" + INVITE_ID + " .br-da-invite-row{display:flex;gap:8px;}" +
-      "#" + INVITE_ID + " button{flex:1;margin:0;padding:8px 10px;border-radius:8px;font:700 12px/1.2 inherit;cursor:pointer;}" +
+      "#" + INVITE_ID + " button{flex:1;margin:0;padding:9px 10px;border-radius:8px;font:700 13px/1.2 inherit;cursor:pointer;}" +
       "#" + INVITE_ID + " .br-da-invite-skip{border:1px solid rgba(255,255,255,.22);background:transparent;color:#fff;}" +
       "#" + INVITE_ID + " .br-da-invite-open{border:0;background:#fff;color:#122d4b;}" +
       "#" + INVITE_ID + " .br-da-invite-open:hover{background:#e8eef5;}" +
@@ -489,37 +490,39 @@
   function showInvite() {
     if (document.getElementById(ROOT_ID) || document.getElementById(INVITE_ID)) return;
     ensureInviteCss();
-    const card = document.createElement("div");
-    card.id = INVITE_ID;
-    card.setAttribute("role", "dialog");
-    card.setAttribute("aria-label", "Open Draft Assistant");
-    card.innerHTML =
+    const wrap = document.createElement("div");
+    wrap.id = INVITE_ID;
+    wrap.setAttribute("role", "dialog");
+    wrap.setAttribute("aria-modal", "true");
+    wrap.setAttribute("aria-label", "Open Draft Assistant");
+    wrap.innerHTML =
+      '<div class="br-da-invite-card">' +
       '<p class="br-da-invite-title">Open Draft Assistant?</p>' +
-      '<p class="br-da-invite-copy">Docks beside this draft and reads picks. It never submits.</p>' +
+      '<p class="br-da-invite-copy">BR Fantasy can dock beside this Sleeper, Yahoo, or ESPN draft and read picks. It never submits.</p>' +
       '<div class="br-da-invite-row">' +
       '<button type="button" class="br-da-invite-skip">Not now</button>' +
       '<button type="button" class="br-da-invite-open">Open</button>' +
-      "</div>";
-    card.querySelector(".br-da-invite-open").addEventListener("click", function (ev) {
+      "</div></div>";
+    wrap.addEventListener("click", function (ev) {
+      if (ev.target === wrap) skipAssistant();
+    });
+    wrap.querySelector(".br-da-invite-open").addEventListener("click", function (ev) {
       ev.preventDefault();
+      ev.stopPropagation();
       openAssistant();
     });
-    card.querySelector(".br-da-invite-skip").addEventListener("click", function (ev) {
+    wrap.querySelector(".br-da-invite-skip").addEventListener("click", function (ev) {
       ev.preventDefault();
+      ev.stopPropagation();
       skipAssistant();
     });
-    (document.body || document.documentElement).appendChild(card);
+    (document.body || document.documentElement).appendChild(wrap);
   }
 
   function tryMount() {
     if (!isHostDraftRoom()) return false;
-    const choice = readLaunchChoice();
-    if (choice === "open") {
-      requestPool();
-      mount();
-      return true;
-    }
-    if (choice === "skip") return true;
+    if (document.getElementById(ROOT_ID)) return true;
+    if (readLaunchChoice() === "skip") return true;
     showInvite();
     const invite = document.getElementById(INVITE_ID);
     if (invite && document.body && invite.parentNode !== document.body) {

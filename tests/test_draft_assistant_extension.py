@@ -35,7 +35,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.27"
+    assert manifest["version"] == "1.5.28"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -139,6 +139,10 @@ def test_collapsed_overlay_has_reopen_control():
     assert "br-da-launch" in inject
     assert "openDraftAssistant" in inject
     assert "Not now" in inject
+    assert 'aria-modal' in inject
+    assert "br-da-invite-card" in inject
+    assert "choice === \"open\"" not in inject
+    assert "requestPool();\n    mount();" in inject.split("function openAssistant")[1].split("function skipAssistant")[0]
     assert "setCollapsed(false)" in inject
     assert "html.br-da-collapsed" in inject
     assert "--br-da-shift" in inject
