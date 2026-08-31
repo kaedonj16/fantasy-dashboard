@@ -12,13 +12,17 @@ Three modes:
                            final standings (no simulation needed).
 
 All simulation paths are vectorised across n_sims with NumPy so 10 000 runs
-finish in under a second.
+finish in under a second. Trade-suggestion ranking freezes one baseline
+season and re-scores only the teams a package actually moves, so a slate of
+packages costs one full sim plus cheap overlays instead of a full replay
+each time.
 """
 from __future__ import annotations
 
 import hashlib
 import logging
 import math
+import threading
 import time
 from collections import defaultdict
 from typing import Optional
@@ -336,12 +340,13 @@ def run_base_simulation(sim_state: dict, n_sims: int = 2000) -> dict[int, float]
     """
     Run the Monte Carlo simulation for the pre-built state.
     Returns {roster_id: playoff_pct (0–100)}.
+
+    Caches the weekly score tensor on ``sim_state`` so subsequent
+    ``simulate_with_swap`` calls reuse every unchanged team's season instead of
+    replaying the whole league.
     """
-    result = _run_mc(
-        sim_state["teams"], sim_state["matchups"], sim_state.get("week_profiles") or {},
-        sim_state["playoff_teams"], n_sims, sim_state.get("seed"),
-    )
-    return {r["roster_id"]: r["playoff_pct"] for r in result}
+    freeze = _ensure_freeze(sim_state, n_sims)
+    return {r["roster_id"]: r["playoff_pct"] for r in freeze["result"]}
 
 
 def simulate_with_swap(
@@ -353,13 +358,12 @@ def simulate_with_swap(
     """
     Re-run the simulation with viewer's roster replaced by viewer_pids_after.
 
-    Only the viewer's avg/std are recomputed; all other teams are unchanged,
-    keeping the simulation fast (numpy-vectorised). The simulation reuses the
-    same deterministic seed as the baseline (run_base_simulation) so that the
-    *only* difference between the two runs is the viewer's swapped lineup —
-    a common-random-numbers variance reduction. This makes the playoff-odds
-    delta a clean before/after comparison instead of two independent noisy
-    draws subtracted from each other.
+    Only the teams whose lineups actually change (the viewer, and the
+    counterparty when we can infer one) are re-scored. Every other team's
+    weekly scores are reused from a frozen baseline drawn with the same seed,
+    so the playoff-odds delta is a common-random-numbers before/after — and
+    ranking a slate of suggestion packages costs one full league sim plus a
+    cheap overlay per package, not a full 10k-season replay each time.
 
     Returns (playoff_pct 0–100, new_avg_ppg).
 
@@ -398,11 +402,7 @@ def simulate_with_swap(
 
     after_profiles = _override_profiles(sim_state, overrides)
     new_avg = _viewer_week_mean(after_profiles, viewer_roster_id)
-
-    result = _run_mc(
-        sim_state["teams"], sim_state["matchups"], after_profiles,
-        sim_state["playoff_teams"], n_sims, sim_state.get("seed"),
-    )
+    result = _standings_with_overrides(sim_state, after_profiles, overrides, n_sims)
     for r in result:
         if r["roster_id"] == viewer_roster_id:
             return r["playoff_pct"], new_avg
@@ -480,9 +480,6 @@ def simulate_swap_impact(
     if not sim_state:
         return {"available": False}
 
-    matchups         = sim_state["matchups"]
-    playoff_teams    = sim_state["playoff_teams"]
-    seed             = sim_state.get("seed")
     base_profiles    = sim_state.get("week_profiles") or {}
 
     viewer_team = next(
@@ -492,8 +489,8 @@ def simulate_swap_impact(
         return {"available": False}
 
     # Before simulation (base profiles already reflect the viewer's current roster)
-    before_results = _run_mc(sim_state["teams"], matchups, base_profiles,
-                             playoff_teams, n_sims, seed)
+    freeze = _ensure_freeze(sim_state, n_sims)
+    before_results = freeze["result"]
     before_row = next((r for r in before_results if r["roster_id"] == viewer_roster_id), {})
 
     # Compute after roster
@@ -517,8 +514,7 @@ def simulate_swap_impact(
         overrides[counterparty] = list((set(cp_pids) - set(get_pids)) | set(give_pids))
 
     after_profiles = _override_profiles(sim_state, overrides)
-    after_results = _run_mc(sim_state["teams"], matchups, after_profiles,
-                            playoff_teams, n_sims, seed)
+    after_results = _standings_with_overrides(sim_state, after_profiles, overrides, n_sims)
     after_row = next((r for r in after_results if r["roster_id"] == viewer_roster_id), {})
 
     import statistics
@@ -1682,91 +1678,137 @@ def _apply_injuries(
     return np.maximum(scores - lost_pts, 0).astype(np.float32), state
 
 
-def _run_mc(
+# Module-level lock so overlapping suggestion requests (rapid strategy-chip
+# clicks) share one freeze build instead of each replaying the full season.
+_FREEZE_LOCK = threading.Lock()
+
+
+def _rng_for_team(seed: Optional[int], roster_id: int) -> "np.random.Generator":
+    """Independent deterministic RNG stream per roster.
+
+    Splitting the seed by roster_id lets a trade swap re-simulate only the
+    teams whose lineups changed while every other team's weekly scores stay
+    bit-identical (common random numbers) — without replaying the whole league.
+    """
+    if seed is None:
+        return np.random.default_rng()
+    mix = (int(seed) ^ ((int(roster_id) + 1) * 0x9E3779B9)) & 0xFFFFFFFF
+    return np.random.default_rng(mix)
+
+
+def _playing_weeks_by_rid(
+    matchups_by_week: dict[int, list[tuple[int, int]]],
+) -> dict[int, list[int]]:
+    out: dict[int, list[int]] = defaultdict(list)
+    for week in sorted(matchups_by_week.keys()):
+        seen: set[int] = set()
+        for a, b in matchups_by_week[week]:
+            if a not in seen:
+                out[a].append(week)
+                seen.add(a)
+            if b not in seen:
+                out[b].append(week)
+                seen.add(b)
+    return out
+
+
+def _team_kmax(week_profiles: dict, roster_id: int) -> int:
+    k = 0
+    for wp in week_profiles.values():
+        p = wp.get(roster_id)
+        if p is not None:
+            k = max(k, int(p["lost"].shape[0]))
+    return k
+
+
+def _score_one_team(
+    roster_id: int,
+    playing_weeks: list[int],
+    week_profiles: dict,
+    fb_avg: float,
+    fb_std: float,
+    n_sims: int,
+    seed: Optional[int],
+    kmax: int,
+) -> dict[int, "np.ndarray"]:
+    """Draw this team's weekly scores from its own RNG stream.
+
+    Injury state carries across the weeks this team actually plays (bye weeks
+    are skipped, matching the historical matchup-loop behaviour).
+    """
+    rng = _rng_for_team(seed, roster_id)
+    state = np.zeros((n_sims, kmax), dtype=np.int16) if kmax else None
+    out: dict[int, np.ndarray] = {}
+    for week in playing_weeks:
+        p = (week_profiles.get(week) or {}).get(roster_id)
+        if p is not None:
+            mean, std = float(p["mean"]), float(p["std"])
+            lost = p["lost"]
+            haz = p["haz"]
+            onset = haz / np.float32(_INJURY_MEAN_DURATION) if haz.shape[0] else haz
+        else:
+            mean, std, lost, onset = fb_avg, fb_std, None, None
+        sa = _sample_scores(rng, mean, std, n_sims)
+        sa, state = _apply_injuries(rng, sa, lost, onset, state, n_sims)
+        out[week] = sa
+    return out
+
+
+def _simulate_week_scores(
     teams: list[dict],
     matchups_by_week: dict[int, list[tuple[int, int]]],
     week_profiles: dict[int, dict],
-    playoff_teams: int,
     n_sims: int,
     seed: Optional[int],
-) -> list[dict]:
-    """Vectorised Monte Carlo over the remaining schedule.
+    playing_weeks: Optional[dict[int, list[int]]] = None,
+) -> tuple[dict[int, dict[int, "np.ndarray"]], "np.ndarray", dict[int, list[int]]]:
+    """Draw weekly scores for every team.
 
-    Each week pulls that team's week-specific (mean, std, injury params) from
-    week_profiles[week][roster_id], so the sim uses Sleeper's projection for
-    that exact week (handling byes and matchup-specific strength) and the
-    per-week injury substitution loss. Falls back to a team's stored avg/std if
-    a week profile is missing.
+    Returns ``(score_map, games_per_team, playing_weeks)`` where
+    ``score_map[week][roster_id]`` is an ``(n_sims,)`` array.
     """
-    rng = np.random.default_rng(seed)
-    n   = len(teams)
+    n = len(teams)
     idx = {t["roster_id"]: i for i, t in enumerate(teams)}
-
-    # Fallback mean/std per team if a given week has no profile entry.
-    fb_avg = {t["roster_id"]: float(t.get("avg", 0.0)) for t in teams}
-    fb_std = {t["roster_id"]: max(float(t.get("std", _MIN_STD)), _MIN_STD) for t in teams}
-
-    def _profile(week: int, rid: int):
-        p = (week_profiles.get(week) or {}).get(rid)
-        if p is not None:
-            onset = p["haz"] / np.float32(_INJURY_MEAN_DURATION) if p["haz"].shape[0] else p["haz"]
-            return p["mean"], p["std"], p["lost"], onset
-        return fb_avg.get(rid, 0.0), fb_std.get(rid, _MIN_STD), None, None
-
-    # Per-team injury state (weeks remaining out per starter slot), carried across
-    # the schedule so a single injury spans multiple weeks. Sized to each team's
-    # largest weekly starter count.
-    kmax: dict = {}
-    for wp in week_profiles.values():
-        for rid, p in wp.items():
-            kmax[rid] = max(kmax.get(rid, 0), int(p["lost"].shape[0]))
-    inj_state = {
-        rid: np.zeros((n_sims, k), dtype=np.int16) for rid, k in kmax.items() if k
-    }
-
-    wins = np.tile([t["wins"] for t in teams], (n_sims, 1)).astype(np.float32)
-    pf   = np.tile([t["pf"]   for t in teams], (n_sims, 1)).astype(np.float32)
-    # Ties gained over the remaining schedule (separate from wins so projected
-    # losses aren't inflated by counting half of each tie as a loss).
-    ties_gained = np.zeros((n_sims, n), dtype=np.float32)
-
-    n_byes = _n_byes(playoff_teams)
-
-    # Count scheduled games per team — with odd-team leagues one team per round
-    # gets a bye, so they play fewer games than len(matchups_by_week).
+    if playing_weeks is None:
+        playing_weeks = _playing_weeks_by_rid(matchups_by_week)
     games_per_team = np.zeros(n, dtype=np.float32)
+    for rid, weeks in playing_weeks.items():
+        i = idx.get(rid)
+        if i is not None:
+            games_per_team[i] = float(len(weeks))
+    fb_avg = {t["roster_id"]: float(t.get("avg", 0.0)) for t in teams}
+    fb_std = {
+        t["roster_id"]: max(float(t.get("std", _MIN_STD)), _MIN_STD) for t in teams
+    }
+    score_map: dict[int, dict[int, np.ndarray]] = defaultdict(dict)
+    for t in teams:
+        rid = t["roster_id"]
+        sm = _score_one_team(
+            rid,
+            playing_weeks.get(rid, []),
+            week_profiles,
+            fb_avg[rid],
+            fb_std[rid],
+            n_sims,
+            seed,
+            _team_kmax(week_profiles, rid),
+        )
+        for week, arr in sm.items():
+            score_map[week][rid] = arr
+    return score_map, games_per_team, playing_weeks
 
-    # Chronological order so multi-week injuries carry forward correctly.
-    for week in sorted(matchups_by_week.keys()):
-        for (rid_a, rid_b) in matchups_by_week[week]:
-            ia = idx.get(rid_a)
-            ib = idx.get(rid_b)
-            if ia is None or ib is None:
-                continue
-            games_per_team[ia] += 1
-            games_per_team[ib] += 1
-            mean_a, std_a, lost_a, onset_a = _profile(week, rid_a)
-            mean_b, std_b, lost_b, onset_b = _profile(week, rid_b)
-            sa = _sample_scores(rng, mean_a, std_a, n_sims)
-            sa, st = _apply_injuries(rng, sa, lost_a, onset_a, inj_state.get(rid_a), n_sims)
-            if st is not None:
-                inj_state[rid_a] = st
-            sb = _sample_scores(rng, mean_b, std_b, n_sims)
-            sb, st = _apply_injuries(rng, sb, lost_b, onset_b, inj_state.get(rid_b), n_sims)
-            if st is not None:
-                inj_state[rid_b] = st
-            # Ties: near-identical scores split the win (half each).
-            tie    = np.abs(sa - sb) < _TIE_MARGIN
-            a_wins = (sa > sb) & ~tie
-            b_wins = (sb > sa) & ~tie
-            tie_f = tie.astype(np.float32)
-            wins[:, ia] += a_wins.astype(np.float32) + 0.5 * tie_f
-            wins[:, ib] += b_wins.astype(np.float32) + 0.5 * tie_f
-            ties_gained[:, ia] += tie_f
-            ties_gained[:, ib] += tie_f
-            pf[:, ia]   += sa
-            pf[:, ib]   += sb
 
+def _pack_mc_results(
+    teams: list[dict],
+    wins: "np.ndarray",
+    pf: "np.ndarray",
+    ties_gained: "np.ndarray",
+    games_per_team: "np.ndarray",
+    playoff_teams: int,
+    n_sims: int,
+) -> list[dict]:
+    n = len(teams)
+    n_byes = _n_byes(playoff_teams)
     # Rank by wins desc, pf desc (wins dominate). Compute in float64: wins*1e6
     # reaches ~1.3e7 in a full season, past float32's exact-integer range
     # (2^24 ≈ 1.68e7, ULP ≥ 1.0 above ~8.4e6), which silently collapses the PF
@@ -1846,3 +1888,155 @@ def _run_mc(
         "n_sims":           n_sims,
         "is_complete":      False,
     } for i, t in enumerate(teams)]
+
+
+def _standings_from_score_map(
+    teams: list[dict],
+    matchups_by_week: dict[int, list[tuple[int, int]]],
+    score_map: dict[int, dict[int, "np.ndarray"]],
+    playoff_teams: int,
+    n_sims: int,
+    games_per_team: "np.ndarray",
+    overlays: Optional[dict[int, dict[int, "np.ndarray"]]] = None,
+) -> list[dict]:
+    """Resolve the remaining schedule from frozen (optionally overlaid) scores."""
+    n = len(teams)
+    idx = {t["roster_id"]: i for i, t in enumerate(teams)}
+    wins = np.tile([t["wins"] for t in teams], (n_sims, 1)).astype(np.float32)
+    pf   = np.tile([t["pf"]   for t in teams], (n_sims, 1)).astype(np.float32)
+    ties_gained = np.zeros((n_sims, n), dtype=np.float32)
+
+    def _score(week: int, rid: int) -> "np.ndarray":
+        if overlays:
+            ov = overlays.get(rid)
+            if ov is not None and week in ov:
+                return ov[week]
+        return score_map[week][rid]
+
+    for week in sorted(matchups_by_week.keys()):
+        for rid_a, rid_b in matchups_by_week[week]:
+            ia = idx.get(rid_a)
+            ib = idx.get(rid_b)
+            if ia is None or ib is None:
+                continue
+            sa = _score(week, rid_a)
+            sb = _score(week, rid_b)
+            tie    = np.abs(sa - sb) < _TIE_MARGIN
+            a_wins = (sa > sb) & ~tie
+            b_wins = (sb > sa) & ~tie
+            tie_f = tie.astype(np.float32)
+            wins[:, ia] += a_wins.astype(np.float32) + 0.5 * tie_f
+            wins[:, ib] += b_wins.astype(np.float32) + 0.5 * tie_f
+            ties_gained[:, ia] += tie_f
+            ties_gained[:, ib] += tie_f
+            pf[:, ia] += sa
+            pf[:, ib] += sb
+
+    return _pack_mc_results(
+        teams, wins, pf, ties_gained, games_per_team, playoff_teams, n_sims,
+    )
+
+
+def _ensure_freeze(sim_state: dict, n_sims: int) -> dict:
+    """Draw one baseline season and cache weekly scores on ``sim_state``.
+
+    Trade-suggestion ranking calls this once, then overlays 1–2 re-scored
+    teams per package. The cache is keyed by ``n_sims`` so a 2k suggestion
+    freeze is never reused for a 10k standings-page run (or vice versa).
+    """
+    freeze = sim_state.get("_mc_freeze")
+    if freeze is not None and freeze.get("n_sims") == n_sims:
+        return freeze
+    with _FREEZE_LOCK:
+        freeze = sim_state.get("_mc_freeze")
+        if freeze is not None and freeze.get("n_sims") == n_sims:
+            return freeze
+        score_map, games, playing = _simulate_week_scores(
+            sim_state["teams"],
+            sim_state["matchups"],
+            sim_state.get("week_profiles") or {},
+            n_sims,
+            sim_state.get("seed"),
+        )
+        result = _standings_from_score_map(
+            sim_state["teams"],
+            sim_state["matchups"],
+            score_map,
+            sim_state["playoff_teams"],
+            n_sims,
+            games,
+        )
+        freeze = {
+            "n_sims": n_sims,
+            "score_map": score_map,
+            "result": result,
+            "games_per_team": games,
+            "playing_weeks": playing,
+        }
+        sim_state["_mc_freeze"] = freeze
+        return freeze
+
+
+def _standings_with_overrides(
+    sim_state: dict,
+    after_profiles: dict,
+    overrides: dict,
+    n_sims: int,
+) -> list[dict]:
+    """Replay standings after re-scoring only the teams in ``overrides``."""
+    freeze = _ensure_freeze(sim_state, n_sims)
+    if not overrides:
+        return freeze["result"]
+    teams = sim_state["teams"]
+    fb_avg = {t["roster_id"]: float(t.get("avg", 0.0)) for t in teams}
+    fb_std = {
+        t["roster_id"]: max(float(t.get("std", _MIN_STD)), _MIN_STD) for t in teams
+    }
+    playing = freeze["playing_weeks"]
+    seed = sim_state.get("seed")
+    overlays: dict[int, dict[int, np.ndarray]] = {}
+    for rid in overrides:
+        overlays[rid] = _score_one_team(
+            rid,
+            playing.get(rid, []),
+            after_profiles,
+            fb_avg.get(rid, 0.0),
+            fb_std.get(rid, _MIN_STD),
+            n_sims,
+            seed,
+            _team_kmax(after_profiles, rid),
+        )
+    return _standings_from_score_map(
+        teams,
+        sim_state["matchups"],
+        freeze["score_map"],
+        sim_state["playoff_teams"],
+        n_sims,
+        freeze["games_per_team"],
+        overlays=overlays,
+    )
+
+
+def _run_mc(
+    teams: list[dict],
+    matchups_by_week: dict[int, list[tuple[int, int]]],
+    week_profiles: dict[int, dict],
+    playoff_teams: int,
+    n_sims: int,
+    seed: Optional[int],
+) -> list[dict]:
+    """Monte Carlo over the remaining schedule.
+
+    Each team is scored from its own RNG stream (so a later swap can redo just
+    that team). Each week pulls that team's week-specific (mean, std, injury
+    params) from week_profiles[week][roster_id], so the sim uses Sleeper's
+    projection for that exact week (handling byes and matchup-specific
+    strength) and the per-week injury substitution loss. Falls back to a team's
+    stored avg/std if a week profile is missing.
+    """
+    score_map, games, _ = _simulate_week_scores(
+        teams, matchups_by_week, week_profiles, n_sims, seed,
+    )
+    return _standings_from_score_map(
+        teams, matchups_by_week, score_map, playoff_teams, n_sims, games,
+    )
