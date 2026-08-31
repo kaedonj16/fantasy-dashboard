@@ -199,7 +199,10 @@
       last ? (last.overallPickNumber || last.pick_no || 0) : 0,
       last ? (last.playerId || last.playerName || "") : "",
       payload.teams || "",
-      payload.mySlot || ""
+      payload.mySlot || "",
+      payload.rounds || "",
+      payload.inProgress ? 1 : 0,
+      payload.drafted ? 1 : 0
     ].join("|");
     const teams = Number(payload.teams || 0);
     const sf = !!payload.sf;

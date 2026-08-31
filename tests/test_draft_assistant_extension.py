@@ -30,7 +30,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.7"
+    assert manifest["version"] == "1.5.8"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -188,3 +188,23 @@ def test_overlay_autodetects_slot_and_keeps_header_on_one_line():
     assert "white-space: nowrap" in css
     assert "BR Fantasy · connected" not in overlay
     assert "160 PICKS" not in html.upper()
+
+
+def test_overlay_does_not_end_live_espn_draft_after_each_round():
+    overlay = (EXT / "overlay.js").read_text(encoding="utf-8")
+    espn_iso = (EXT / "espn_draft.js").read_text(encoding="utf-8")
+    yahoo_iso = (EXT / "yahoo_draft.js").read_text(encoding="utf-8")
+    espn_main = (EXT / "espn_draft_main.js").read_text(encoding="utf-8")
+    yahoo_main = (EXT / "yahoo_draft_main.js").read_text(encoding="utf-8")
+    assert "Math.ceil(max / teams)" not in espn_iso
+    assert "Math.ceil(max / teams)" not in yahoo_iso
+    assert "hostInProgress" in overlay
+    assert "hostDrafted" in overlay
+    assert "hostInProgress === true" in overlay
+    assert "r === inferred && r < 10" in overlay
+    assert "lineupSlotCounts" in espn_main
+    assert "rosterRoundsFromLineupSlots" in espn_main
+    assert "detectedRounds" in espn_main
+    assert "detectedRounds" in yahoo_main
+    assert "inProgress: detail.inProgress" in espn_iso
+    assert "inProgress: detail.inProgress" in yahoo_iso

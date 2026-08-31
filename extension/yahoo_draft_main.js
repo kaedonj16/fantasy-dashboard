@@ -16,6 +16,8 @@
   let lastEmitAt = 0;
   let detectedUserTeamId = null;
   let detectedSlot = 0;
+  let detectedTeams = 0;
+  let detectedRounds = 0;
   /** @type {Map<string, {playerName: string, pos: string, nflTeam: string}>} */
   const playerMetaById = new Map();
 
@@ -192,11 +194,33 @@
       last ? last.teamId : "",
       detectedUserTeamId || "",
       detectedSlot || "",
+      detectedTeams || "",
+      detectedRounds || "",
     ].join("|");
+  }
+
+  function rememberYahooSettings(obj) {
+    if (!obj || typeof obj !== "object") return;
+    const nTeams = obj.num_teams ?? obj.numTeams ?? obj.size;
+    if (nTeams >= 4 && nTeams <= 32) detectedTeams = Number(nTeams);
+    const nRounds = obj.num_rounds ?? obj.numRounds ?? obj.draft_rounds;
+    if (nRounds >= 6 && nRounds <= 40) detectedRounds = Number(nRounds);
+    const positions = obj.roster_positions || obj.rosterPositions;
+    if (Array.isArray(positions)) {
+      let n = 0;
+      for (let i = 0; i < positions.length; i++) {
+        const p = positions[i];
+        const pos = String((p && (p.position || p.display_position || p)) || "").toUpperCase();
+        const c = Number((p && (p.count || p.num || p.slots)) || 1) || 1;
+        if (pos && pos !== "IR" && pos !== "IR+" && pos !== "TAXI") n += c;
+      }
+      if (n >= 6 && n <= 40) detectedRounds = n;
+    }
   }
 
   function rememberYahooUser(obj) {
     if (!obj || typeof obj !== "object") return;
+    rememberYahooSettings(obj);
     const uid = obj.userTeamId ?? obj.myTeamId ?? obj.currentUserTeamId ?? obj.viewerTeamId;
     if (uid != null && uid !== "" && String(uid) !== "0") detectedUserTeamId = uid;
     const owned =
@@ -300,6 +324,8 @@
       picks: clean,
       mySlot: mySlot || undefined,
       userTeamId: detectedUserTeamId || undefined,
+      teams: detectedTeams || undefined,
+      rounds: detectedRounds || undefined,
       at: now,
     };
     bridgeToExtension(EVENT, detail);

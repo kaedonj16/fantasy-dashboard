@@ -33,6 +33,8 @@
   let bestOverallSeen = 0;
   let detectedUserTeamId = null;
   let detectedSlot = 0;
+  let detectedTeams = 0;
+  let detectedRounds = 0;
   /** @type {Map<string, {playerName: string, pos: string, nflTeam: string}>} */
   const playerMetaById = new Map();
   const ESPN_POS = { 1: "QB", 2: "RB", 3: "WR", 4: "TE", 5: "K", 16: "DST" };
@@ -348,6 +350,8 @@
       last ? last.teamId : "",
       detectedUserTeamId || "",
       detectedSlot || "",
+      detectedTeams || "",
+      detectedRounds || "",
     ].join("|");
   }
 
@@ -360,8 +364,37 @@
     }
   }
 
+  function rosterRoundsFromLineupSlots(counts) {
+    if (!counts || typeof counts !== "object") return 0;
+    let n = 0;
+    const keys = safeKeys(counts);
+    for (let i = 0; i < keys.length; i++) {
+      const id = Number(keys[i]);
+      if (id === 21 || id === 22) continue;
+      const c = Number(safeProp(counts, keys[i]) || counts[keys[i]]) || 0;
+      if (c > 0) n += c;
+    }
+    return n >= 6 && n <= 40 ? n : 0;
+  }
+
+  function rememberEspnSettings(obj) {
+    if (!isTraversableObject(obj)) return;
+    const size = safeProp(obj, "size");
+    if (size >= 4 && size <= 32) detectedTeams = Number(size);
+    const settings = safeProp(obj, "settings") || obj;
+    if (isTraversableObject(settings)) {
+      const sz = safeProp(settings, "size");
+      if (sz >= 4 && sz <= 32) detectedTeams = Number(sz);
+      const roster = safeProp(settings, "rosterSettings") || safeProp(obj, "rosterSettings");
+      const counts = roster && safeProp(roster, "lineupSlotCounts");
+      const r = rosterRoundsFromLineupSlots(counts);
+      if (r) detectedRounds = r;
+    }
+  }
+
   function rememberEspnUser(obj) {
     if (!isTraversableObject(obj)) return;
+    rememberEspnSettings(obj);
     const uid =
       safeProp(obj, "userTeamId") ??
       safeProp(obj, "myTeamId") ??
@@ -369,6 +402,9 @@
       safeProp(obj, "viewerTeamId");
     if (uid != null && uid !== "" && Number(uid) !== 0) detectedUserTeamId = uid;
     const teams = safeProp(obj, "teams");
+    if (Array.isArray(teams) && teams.length >= 4 && teams.length <= 32) {
+      detectedTeams = teams.length;
+    }
     if (!Array.isArray(teams)) return;
     const swid = espnSwid();
     for (let i = 0; i < teams.length; i++) {
@@ -531,6 +567,8 @@
       picks: clean,
       mySlot: mySlot || undefined,
       userTeamId: detectedUserTeamId || undefined,
+      teams: detectedTeams || undefined,
+      rounds: detectedRounds || undefined,
       at: now,
     };
     bridgeToExtension(EVENT, detail);

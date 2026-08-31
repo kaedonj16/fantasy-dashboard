@@ -222,6 +222,8 @@
     mySlot: 7,
     slotAuto: false,
     live: EMBEDDED,
+    hostInProgress: null,
+    hostDrafted: null,
     teamNames: {},
     current: 1,
     picks: [],
@@ -279,7 +281,14 @@
     const pk = pn - (rd - 1) * n;
     return rd + "." + String(pk).padStart(2, "0");
   }
-  function draftDone() { return state.current > state.teams * state.rounds; }
+  function draftDone() {
+    if (state.live) {
+      if (state.hostInProgress === true) return false;
+      if (state.hostDrafted === true) return state.current > state.teams * state.rounds;
+      return false;
+    }
+    return state.current > state.teams * state.rounds;
+  }
   function available() {
     if (availCache) return availCache;
     availCache = players.filter(function (p) { return !state.drafted[p.id]; });
@@ -294,6 +303,9 @@
       last ? (last.playerId || last.playerName || "") : "",
       detail && detail.mySlot || "",
       detail && detail.teams || "",
+      detail && detail.rounds || "",
+      detail && detail.inProgress ? 1 : 0,
+      detail && detail.drafted ? 1 : 0,
       detail && detail.platform || ""
     ].join("|");
   }
@@ -1251,8 +1263,20 @@
     stopAuto();
     if (detail.platform) state.platform = String(detail.platform).toLowerCase();
     if (detail.sf != null) state.sf = !!detail.sf;
+    if (detail.inProgress != null) state.hostInProgress = !!detail.inProgress;
+    if (detail.drafted != null) state.hostDrafted = !!detail.drafted;
     if (detail.teams) state.teams = Math.max(2, Number(detail.teams) || state.teams);
-    if (detail.rounds) state.rounds = Math.max(1, Number(detail.rounds) || state.rounds);
+    if (detail.rounds) {
+      const r = Math.max(1, Number(detail.rounds) || 0);
+      const maxPn = Array.isArray(detail.picks)
+        ? detail.picks.reduce(function (m, p) {
+            const n = Number(p && (p.overallPickNumber || p.pick_no)) || 0;
+            return n > m ? n : m;
+          }, 0)
+        : 0;
+      const inferred = state.teams ? Math.ceil(maxPn / state.teams) : 0;
+      if (r >= 6 && !(r === inferred && r < 10)) state.rounds = Math.max(state.rounds, r);
+    }
     if (detail.mySlot) {
       state.mySlot = Math.max(1, Math.min(state.teams, Number(detail.mySlot)));
       state.slotAuto = true;

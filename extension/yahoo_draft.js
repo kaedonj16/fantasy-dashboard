@@ -44,18 +44,12 @@
 
   function overlayTeamMeta(picks) {
     const ids = {};
-    let max = 0;
     (picks || []).forEach(function (p) {
       if (p && p.teamId != null && p.teamId !== "") ids[String(p.teamId)] = true;
-      const n = Number(p && p.overallPickNumber);
-      if (n > max) max = n;
     });
     const teams = Object.keys(ids).length;
     const out = {};
-    if (teams >= 4) {
-      out.teams = teams;
-      if (max) out.rounds = Math.max(1, Math.ceil(max / teams));
-    }
+    if (teams >= 4) out.teams = teams;
     return out;
   }
 
@@ -342,6 +336,10 @@
     feedAssistant(payload.picks, "", true, {
       mySlot: detail.mySlot,
       userTeamId: detail.userTeamId,
+      rounds: detail.rounds,
+      teams: detail.teams,
+      inProgress: detail.inProgress,
+      drafted: detail.drafted,
     });
     if (!payload.leagueId) {
       setChip("BR Fantasy · leagueId missing in URL", false);
