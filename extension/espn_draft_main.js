@@ -153,15 +153,25 @@
         (poolPlayer &&
           (safeProp(poolPlayer, "id") ?? safeProp(poolPlayer, "playerId"))));
     const player = safeProp(obj, "player");
-    return (
+    const fromPlayer = player && (safeProp(player, "id") ?? safeProp(player, "playerId"));
+    const explicit =
       safeProp(obj, "playerId") ??
       safeProp(obj, "player_id") ??
       safeProp(obj, "athleteId") ??
       safeProp(obj, "athlete_id") ??
       fromPool ??
-      (player && (safeProp(player, "id") ?? safeProp(player, "playerId"))) ??
-      safeProp(obj, "id")
-    );
+      fromPlayer;
+    if (explicit != null) return explicit;
+    // Empty ESPN seats have overallPickNumber + a row `id` that is not a player.
+    if (
+      safeProp(obj, "overallPickNumber") != null ||
+      safeProp(obj, "overallPickNo") != null ||
+      safeProp(obj, "overallPick") != null ||
+      safeProp(obj, "pickNumber") != null
+    ) {
+      return null;
+    }
+    return safeProp(obj, "id");
   }
 
   function pickOverall(obj) {
@@ -177,11 +187,26 @@
     );
   }
 
+  function isPlaceholderPlayerName(name) {
+    return /^pick\s*#?\s*\d+$/i.test(String(name || "").trim());
+  }
+
+  function pickLooksMade(p) {
+    if (!p) return false;
+    const name = String(p.playerName || "").trim();
+    if (isPlaceholderPlayerName(name)) return false;
+    if (playerIdSelected(p.playerId)) return true;
+    return !!name;
+  }
+
   function isPickRow(obj) {
     if (!isTraversableObject(obj)) return false;
     const pid = pickPlayerId(obj);
     const overall = pickOverall(obj);
-    return overall != null && playerIdSelected(pid);
+    if (overall == null || !playerIdSelected(pid)) return false;
+    const name = playerNameFrom(obj);
+    if (isPlaceholderPlayerName(name)) return false;
+    return true;
   }
 
   function playerNameFrom(obj, depth) {
@@ -381,7 +406,7 @@
       const norm = normalizePick(raw);
       if (!norm || !norm.overallPickNumber) continue;
       const n = Number(norm.overallPickNumber);
-      if (!n || n <= 0) continue;
+      if (!n || n <= 0 || !pickLooksMade(norm)) continue;
       if (!pickAccumulator.has(n)) grew = true;
       const prev = pickAccumulator.get(n);
       if (prev) {
@@ -403,12 +428,19 @@
     let clean = Array.from(pickAccumulator.values()).sort(
       (a, b) => a.overallPickNumber - b.overallPickNumber
     );
+    clean = clean.filter(pickLooksMade);
     if (trustedMax > 0) {
       clean = clean.filter(function (p) {
         return p.overallPickNumber <= trustedMax;
       });
     }
-    if (!clean.length) return;
+    for (const n of Array.from(pickAccumulator.keys())) {
+      if (!pickLooksMade(pickAccumulator.get(n))) {
+        pickAccumulator.delete(n);
+        pickSources.delete(n);
+      }
+    }
+    if (!clean.length && !lastFingerprint) return;
     const fp = fingerprint(clean, meta || {});
     const now = Date.now();
     if (fp === lastFingerprint && now - lastEmitAt < 1500) return;

@@ -1138,6 +1138,17 @@
     else render();
   }
 
+  function isCompletedHostPick(raw) {
+    if (!raw) return false;
+    const name = String(raw.playerName || raw.name || "").trim();
+    if (/^pick\s*#?\s*\d+$/i.test(name)) return false;
+    const pid = raw.playerId != null && String(raw.playerId) !== "" ? String(raw.playerId).trim() : "";
+    const pidOk = pid && pid !== "0" && pid !== "-1" && pid !== "null" && pid !== "None";
+    if (pidOk && byId[pid]) return true;
+    if (name) return true;
+    return false;
+  }
+
   function matchLivePlayer(raw) {
     const pid = raw && raw.playerId != null && String(raw.playerId) !== "" ? String(raw.playerId) : "";
     if (pid && byId[pid]) return byId[pid];
@@ -1192,8 +1203,9 @@
     state.drafted = {};
     raw.forEach(function (rp) {
       const pn = Number(rp.overallPickNumber || rp.pick_no || 0);
-      if (!pn) return;
+      if (!pn || !isCompletedHostPick(rp)) return;
       const p = matchLivePlayer(rp);
+      if (!p || /^pick\s*#?\s*\d+$/i.test(String(p.name || ""))) return;
       const slot = Number(rp.slot || rp.draftSlot || rp.draft_slot || rp.teamId || ownerOf(pn));
       const counts = posCounts(teamPicks(slot));
       const need = needOf(counts, p.pos) > 0;
@@ -1202,7 +1214,8 @@
       state.picks.push({ pn: pn, slot: slot, p: p, grade: grade, ps: ps });
       state.drafted[p.id] = true;
     });
-    state.current = raw.length ? (Number(raw[raw.length - 1].overallPickNumber || raw.length) + 1) : 1;
+    const lastMade = state.picks.length ? state.picks[state.picks.length - 1].pn : 0;
+    state.current = lastMade + 1;
     state.clock = CLOCK_START;
     if (detail.syncText) {
       const chip = document.getElementById("syncChip");
