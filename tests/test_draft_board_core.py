@@ -701,3 +701,109 @@ def test_historical_alternatives_rank_by_decision_score():
     assert out["selectedScore"] == 71
     assert out["bestAlternativeScore"] == 91
     assert out["bestAlternative"]["id"] == "b"
+
+
+def test_taken_before_pick_excludes_future_and_includes_keepers():
+    out = _run_need_cases("""(() => C.takenBeforePick({
+      pickNo: 5,
+      picks: {
+        1: {id:'a'}, 3: {id:'b'}, 5: {id:'c'}, 7: {id:'d'}
+      },
+      keepers: [{id:'k1'}, {id:'b'}]
+    }))()""")
+    assert out == {"a": True, "b": True, "k1": True}
+    assert "c" not in out and "d" not in out
+
+
+def test_historical_decision_context_no_future_leak():
+    out = _run_need_cases("""(() => {
+      const mine = (n) => n === 1 || n === 5 || n === 9;
+      const pool = [
+        {id:'a',position:'RB',team:'KC'},
+        {id:'b',position:'WR'},
+        {id:'c',position:'TE'},
+        {id:'k',position:'K'},
+        {id:'x',position:'RB'}
+      ];
+      const ctx = C.historicalDecisionContext({
+        pickNo: 5,
+        teams: 4,
+        rounds: 3,
+        isMyPick: mine,
+        picks: {
+          1: {id:'a',position:'RB',team:'KC'},
+          2: {id:'b',position:'WR'},
+          5: {id:'c',position:'TE'},
+          9: {id:'x',position:'RB'}
+        },
+        pool: pool,
+        selected: {id:'c',position:'TE'},
+        playersById: {
+          a: {id:'a',position:'RB',team:'KC'},
+          b: {id:'b',position:'WR'},
+          c: {id:'c',position:'TE'},
+          x: {id:'x',position:'RB'}
+        },
+        qualityOf: () => 0.8,
+        vorPositive: () => true
+      });
+      return {
+        counts: ctx.counts,
+        remainingIds: ctx.remaining.map(p => String(p.id)).sort(),
+        round: ctx.round,
+        remainingMyPicks: ctx.remainingMyPicks,
+        myRbTeams: ctx.myRbTeams
+      };
+    })()""")
+    # Only pick 1 (mine) before pick 5 — not pick 5 itself, not rivals, not future.
+    assert out["counts"] == {"QB": 0, "RB": 1, "WR": 0, "TE": 0}
+    assert out["myRbTeams"] == {"KC": True}
+    assert out["round"] == 2
+    # Remaining mine picks at/after 5: 5 and 9
+    assert out["remainingMyPicks"] == 2
+    # a,b taken; k excluded (special); c selected re-added; x still available
+    assert out["remainingIds"] == ["c", "x"]
+
+
+def test_historical_decision_context_viewer_keepers_only():
+    out = _run_need_cases("""(() => {
+      const ctx = C.historicalDecisionContext({
+        pickNo: 3,
+        teams: 4,
+        rounds: 2,
+        isMyPick: (n) => n === 3,
+        picks: {},
+        pool: [{id:'free',position:'WR'}],
+        keepers: [
+          {id:'mine',position:'RB',rosterId:'1',team:'BUF'},
+          {id:'rival',position:'WR',rosterId:'2'}
+        ],
+        viewerRosterId: '1',
+        playersById: {
+          mine: {id:'mine',position:'RB',team:'BUF'},
+          rival: {id:'rival',position:'WR'}
+        }
+      });
+      return {counts: ctx.counts, taken: ctx.taken, remaining: ctx.remaining.map(p => p.id)};
+    })()""")
+    assert out["counts"]["RB"] == 1
+    assert out["counts"]["WR"] == 0
+    assert out["taken"]["mine"] is True and out["taken"]["rival"] is True
+    assert out["remaining"] == ["free"]
+
+
+def test_rank_historical_alternatives_uses_score_row():
+    out = _run_need_cases("""(() => C.rankHistoricalAlternatives({
+      selectedId: 'a',
+      context: {remaining: [
+        {id:'a',position:'RB'}, {id:'b',position:'WR'}, {id:'c',position:'TE'}
+      ]},
+      scoreRow: (p) => ({
+        absolutePickScore: p.id === 'b' ? 90 : 70,
+        decisionScore: p.id === 'b' ? 95 : (p.id === 'a' ? 80 : 60)
+      })
+    }))()""")
+    assert out["selectedScore"] == 80
+    assert out["bestAlternativeScore"] == 95
+    assert out["bestAlternative"]["id"] == "b"
+    assert [r["id"] for r in out["topAlternatives"]] == ["b", "c"]
