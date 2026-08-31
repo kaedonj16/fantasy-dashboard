@@ -47,10 +47,10 @@
   }
 
   function recommendationPickNo(ctx) {
-    const cur = ctx.current || 1;
-    if (isMine(cur, ctx)) return cur;
-    const ups = upcomingOwned(ctx);
-    return ups.length ? ups[0] : cur;
+    // Live overlay: rank the pick on the clock. Looking ahead to a later
+    // owned pick (1.07 on the clock scored as #20) buried players who are
+    // available right now.
+    return ctx.current || 1;
   }
 
   function recWaitPickNo(ctx) {

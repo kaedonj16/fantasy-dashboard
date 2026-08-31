@@ -371,6 +371,9 @@
   function recommendationPickNo(){
     var cur = (state && state.current) || 1;
     if (isManualDraft()) return cur;
+    // Live drafts rank the pick on the clock. Looking ahead to a later
+    // owned pick buried available players while you were up.
+    if (state && state.mode === 'live' && state.isDrafting) return cur;
     if (isMyPick(cur)) return cur;
     var ups = upcomingOwnedPicks();
     if (ups && ups.length) return ups[0];

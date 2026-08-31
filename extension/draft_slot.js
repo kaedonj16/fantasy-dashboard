@@ -783,6 +783,15 @@
     const draft = opts.draft || {};
     const picks = opts.picks || [];
     const max = teams || 32;
+    const current = Number(opts.currentPick) || (picks.length ? picks[picks.length - 1].overallPickNumber + 1 : 1);
+    const auction = !!opts.auction || String((draft && draft.type) || "").toLowerCase() === "auction";
+    // Host clock wins. draft_order / roster maps can bind a league-mate id
+    // and park you on the wrong seat while Sleeper has you picking 1.07.
+    if (!auction) {
+      const clockText = opts.clockText != null ? opts.clockText : opts.skipDom ? "" : sleeperClockText();
+      const clockSlot = slotFromSleeperClock(clockText, current, teams || 12);
+      if (clockSlot) return clampSlot(clockSlot, max);
+    }
     let slot = slotFromSleeperDraftOrder(draft.draft_order, userIds);
     if (slot) return clampSlot(slot, max);
     slot = slotFromSleeperPickedBy(picks, userIds);
@@ -790,13 +799,6 @@
     const rosterMap = draft.slot_to_roster_id || (draft.metadata && draft.metadata.slot_to_roster_id);
     slot = slotFromSleeperRosterMap(rosterMap, opts.ownerToRoster, userIds);
     if (slot) return clampSlot(slot, max);
-    const current = Number(opts.currentPick) || (picks.length ? picks[picks.length - 1].overallPickNumber + 1 : 1);
-    const auction = !!opts.auction || String((draft && draft.type) || "").toLowerCase() === "auction";
-    if (!auction) {
-      const clockText = opts.clockText != null ? opts.clockText : opts.skipDom ? "" : sleeperClockText();
-      slot = slotFromSleeperClock(clockText, current, teams || 12);
-      if (slot) return clampSlot(slot, max);
-    }
     if (!opts.skipDom) {
       slot = detectSleeperDomSlot(identity, max);
       if (slot) return clampSlot(slot, max);

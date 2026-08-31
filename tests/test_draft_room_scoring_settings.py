@@ -359,6 +359,7 @@ def test_likely_next_pick_survivors_pay_current_pick_opportunity_cost():
     assert "var nextPick = fillingOtherSeat ? null : recWaitPickNo();" in source
     assert "function recWaitPickNo()" in source
     assert "function recommendationPickNo()" in source
+    assert "state.mode === 'live' && state.isDrafting" in source
     assert "function isManualDraft()" in source
     assert "if (isManualDraft()) return cur;" in source
     assert "function recommendationCounts()" in source

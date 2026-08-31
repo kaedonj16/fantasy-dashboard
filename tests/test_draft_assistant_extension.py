@@ -17,6 +17,7 @@ def test_overlay_is_mv3_safe_extension_page():
     assert "BRPickScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert "decisionScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert "futurePickDecisionScore" not in (EXT / "overlay_score.js").read_text(encoding="utf-8")
+    assert "return ctx.current || 1;" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert "Gone before #" not in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert 'href="overlay.css"' in html
     assert 'class="br-da-embed"' in html
@@ -32,7 +33,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.22"
+    assert manifest["version"] == "1.5.23"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -388,6 +389,15 @@ const slot = B.detectSleeperSlot({
   skipDom: true,
 });
 if (slot !== 2) process.exit(1);
+const clockWins = B.detectSleeperSlot({
+  draft: { draft_order: { "999999": 5 } },
+  identity: { userIds: ["999999"] },
+  teams: 12,
+  currentPick: 7,
+  clockText: "You're on the clock",
+  skipDom: true,
+});
+if (clockWins !== 7) process.exit(1);
 const viaPicks = B.detectSleeperSlot({
   draft: {},
   picks: [{ picked_by: "999999", draft_slot: 7, overallPickNumber: 7 }],
@@ -458,7 +468,7 @@ const S = ctx.BROverlayScore;
 const traded = { current: 7, teams: 12, rounds: 15, mySlot: 5, pickOwners: { 7: 5, 20: 5 } };
 if (S.recommendationPickNo(traded) !== 7) process.exit(1);
 const snakeWait = { current: 7, teams: 12, rounds: 15, mySlot: 5 };
-if (S.recommendationPickNo(snakeWait) !== 20) process.exit(1);
+if (S.recommendationPickNo(snakeWait) !== 7) process.exit(1);
 const onClock = { current: 7, teams: 12, rounds: 15, mySlot: 7 };
 if (S.recommendationPickNo(onClock) !== 7) process.exit(1);
 const stringKeys = { current: 7, teams: 12, rounds: 15, mySlot: 5, pickOwners: { "7": 5 } };
