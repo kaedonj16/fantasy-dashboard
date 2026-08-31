@@ -792,10 +792,6 @@
     margin-top: 6px;
     flex-shrink: 0;
   }
-  .draft-cta {
-    width: 100%;
-    margin-top: 12px;
-  }
   .final-grade {
     text-align: center;
     padding: 8px 4px 4px;

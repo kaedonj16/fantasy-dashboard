@@ -30,7 +30,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.19"
+    assert manifest["version"] == "1.5.20"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -96,7 +96,13 @@ def test_overlay_uses_live_br_player_pool_and_headshots():
     assert "adpSel" in html
     assert "ADP source" in html
     assert 'data-link="room"' not in html
+    assert "Open Draft Room" not in html
+    assert 'aria-label="Draft Room"' not in html
     assert 'data-link="sheet"' in html
+    assert "draft-cta" not in overlay
+    assert "draft-cta" not in css
+    assert "[data-draft]" not in overlay
+    assert "dr-ba-draft" not in overlay
     assert 'id="ovOtc"' in html
     assert "boardControls" in html
     assert "searchInp" in html
@@ -289,6 +295,8 @@ def test_overlay_reads_league_settings_and_compares_players():
     assert "last_ppg" in (EXT / "background.js").read_text(encoding="utf-8")
     assert "vorp" in (EXT / "background.js").read_text(encoding="utf-8")
     assert "data-cmp-draft" not in overlay
+    assert "[data-draft]" not in overlay
+    assert "Open Draft Room" not in html
     assert "\u2014" not in overlay
     assert "\u2014" not in helper
     assert "\u2014" not in html

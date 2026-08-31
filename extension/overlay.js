@@ -1146,11 +1146,10 @@
       toggleCompare(cmp.getAttribute("data-cmp"));
       return;
     }
-    const draftBtn = e.target.closest("[data-draft]");
     const row = e.target.closest(".ba-row");
-    if (draftBtn || row) {
-      if (state.live) return;
-      draftToMe((draftBtn || row).getAttribute(draftBtn ? "data-draft" : "data-id"));
+    if (row) {
+      if (EMBEDDED || state.live) return;
+      draftToMe(row.getAttribute("data-id"));
       render();
       return;
     }
@@ -1670,15 +1669,14 @@
   if (colBtn) colBtn.addEventListener("click", function () { postToHost("collapse"); });
   document.querySelector(".overlay").addEventListener("click", function (e) {
     const link = e.target.closest("[data-link]");
-    if (!link) return;
-    const dest = link.getAttribute("data-link") === "sheet" ? "sheet" : "room";
+    if (!link || link.getAttribute("data-link") !== "sheet") return;
     if (EMBEDDED) {
-      postToHost("open", { dest: dest });
+      postToHost("open", { dest: "sheet" });
       return;
     }
     try {
       window.open(
-        "https://www.brfantasyfootball.com" + (dest === "sheet" ? "/draft/cheat-sheet" : "/draft"),
+        "https://www.brfantasyfootball.com/draft/cheat-sheet",
         "_blank",
         "noopener"
       );
