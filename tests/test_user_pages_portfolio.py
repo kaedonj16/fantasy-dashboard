@@ -72,7 +72,7 @@ def test_portfolio_body_includes_moves_card():
 
 
 def test_portfolio_record_and_rank_accepts_seed_int_standings_map():
-    from routes.user_pages_bp import _portfolio_record_and_rank
+    from dashboard_services.ai.context_builders import portfolio_record_and_rank
 
     lctx = {
         "standings_map": {1: 3, 2: 1},
@@ -88,14 +88,14 @@ def test_portfolio_record_and_rank_accepts_seed_int_standings_map():
             {"roster_id": 2, "settings": {"wins": 3, "losses": 0, "fpts": 140}},
         ],
     }
-    wins, losses, ties, pf, rank = _portfolio_record_and_rank(lctx, "1", lctx["rosters"][0])
+    wins, losses, ties, pf, rank = portfolio_record_and_rank(lctx, "1", lctx["rosters"][0])
     assert wins == 2 and losses == 1 and ties == 0
     assert pf == pytest.approx(120.5)
     assert rank == 3
 
 
 def test_portfolio_record_and_rank_accepts_dict_standings_map():
-    from routes.user_pages_bp import _portfolio_record_and_rank
+    from dashboard_services.ai.context_builders import portfolio_record_and_rank
 
     lctx = {
         "standings_map": {
@@ -107,7 +107,7 @@ def test_portfolio_record_and_rank_accepts_dict_standings_map():
             {"roster_id": 2, "settings": {}},
         ],
     }
-    wins, losses, ties, pf, rank = _portfolio_record_and_rank(lctx, "1", lctx["rosters"][0])
+    wins, losses, ties, pf, rank = portfolio_record_and_rank(lctx, "1", lctx["rosters"][0])
     assert wins == 5 and losses == 2
     assert pf == pytest.approx(800.0)
     assert rank == 1
