@@ -18,6 +18,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from html import escape
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,23 @@ def _player_name(pid: str, pidx: dict) -> str:
     return (meta.get("full_name") or meta.get("name")
             or ((meta.get("first_name") or "") + " " + (meta.get("last_name") or "")).strip()
             or str(pid))
+
+
+def player_deep_link(base: str, platform: str, season: int, league_id: str,
+                     pid: str, name: str = "") -> str:
+    """Dashboard URL that opens the player modal via ``?player=``.
+
+    Works for signed-in recipients on any league page; the app.js boot hook
+    reads ``player`` / ``player_name`` and calls ``openPlayerModal``.
+    """
+    url = (
+        f"{base.rstrip('/')}/{platform}/{int(season)}/{league_id}/dashboard"
+        f"?player={quote(str(pid), safe='')}"
+    )
+    nm = (name or "").strip()
+    if nm:
+        url += f"&player_name={quote(nm)}"
+    return url
 
 
 def _canonical_standing(platform: str, league_id: str, season: int, roster_id: str):
@@ -286,9 +304,15 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
         arrow = "▲" if up else "▼"
         cells = ""
         for pid, d in pairs:
-            nm = escape(_player_name(pid, pidx))
+            raw_name = _player_name(pid, pidx)
+            nm = escape(raw_name)
+            href = escape(player_deep_link(
+                base, platform, season, league_id, pid, raw_name,
+            ), quote=True)
             cells += (
-                f'<tr><td style="padding:6px 0;font-size:14px;color:#0f172a;">{nm}</td>'
+                f'<tr><td style="padding:6px 0;font-size:14px;">'
+                f'<a href="{href}" style="color:#0f172a;text-decoration:none;font-weight:600;">'
+                f'{nm}</a></td>'
                 f'<td style="padding:6px 0;font-size:14px;font-weight:700;color:{color};'
                 f'text-align:right;">{arrow} {abs(d):.0f}</td></tr>'
             )
@@ -345,7 +369,16 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
   </div>
 </div>"""
 
-    subject = f"{league_name}: your weekly dynasty digest"
+    # Prefer a subject that names the top personal mover when we have one
+    # (better inbox preview than a generic league digest label).
+    top_pair = (my_risers or my_fallers or lg_risers or [None])[0]
+    if top_pair:
+        top_nm = _player_name(top_pair[0], pidx)
+        top_d = top_pair[1]
+        arrow = "▲" if top_d > 0 else "▼"
+        subject = f"{league_name}: {top_nm} {arrow}{abs(top_d):.0f}"
+    else:
+        subject = f"{league_name}: your weekly dynasty digest"
     return {"subject": subject, "html": html}
 
 
