@@ -259,7 +259,8 @@
     const fp = [
       picks.length,
       last ? (last.overallPickNumber || last.pick_no || 0) : 0,
-      last ? (last.playerId || last.playerName || "") : "",
+      last ? (last.playerId || "") : "",
+      last ? (last.playerName || last.name || "") : "",
       payload.teams || "",
       payload.mySlot || "",
       payload.rounds || "",

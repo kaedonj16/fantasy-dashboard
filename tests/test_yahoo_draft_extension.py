@@ -9,7 +9,7 @@ ROOM_JS = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
 def test_extension_manifest_includes_yahoo_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.15"
+    assert manifest["version"] == "1.5.16"
     assert "cookies" in manifest["permissions"]
     assert "tabs" in manifest["permissions"]
     hosts = " ".join(manifest.get("host_permissions") or [])
@@ -23,7 +23,7 @@ def test_extension_manifest_includes_yahoo_draft_scripts():
             main_js = block["js"]
         if "fantasysports.yahoo.com" in joined and block.get("world") != "MAIN":
             iso_js = block["js"]
-    assert main_js == ["yahoo_draft_main.js"]
+    assert main_js == ["draft_slot.js", "yahoo_draft_main.js"]
     assert iso_js == ["draft_slot.js", "assistant_inject.js", "yahoo_draft.js"]
     assert (EXT / "yahoo_draft_main.js").is_file()
     assert (EXT / "yahoo_draft.js").is_file()
@@ -54,7 +54,7 @@ def test_yahoo_extension_relay_message_contract():
     assert "resolveMySlot" in iso
     assert "BRDraftSlot" in iso
     assert "detectYahooSlot" in iso
-    assert "pollYahooSlot" in iso
+    assert "pollYahooLive" in iso
     assert "draftclient" in main
     helper = (EXT / "draft_slot.js").read_text(encoding="utf-8")
     assert "function detectYahooSlot" in helper
@@ -76,3 +76,87 @@ def test_draft_room_yahoo_live_wiring():
     assert "function isExtLiveSource()" in ROOM_JS
     assert "plat === 'espn' || plat === 'yahoo'" in ROOM_JS
     assert "Sync Yahoo picks automatically" in ROOM_JS or "Sync ' + who + ' picks automatically" in ROOM_JS
+
+
+def test_yahoo_live_picks_accumulate_and_scrape_board():
+    main = (EXT / "yahoo_draft_main.js").read_text(encoding="utf-8")
+    iso = (EXT / "yahoo_draft.js").read_text(encoding="utf-8")
+    helper = (EXT / "draft_slot.js").read_text(encoding="utf-8")
+    overlay = (EXT / "overlay.js").read_text(encoding="utf-8")
+    inject = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
+    assert "pickAccumulator" in main
+    assert "function mergeIntoAccumulator" in main
+    assert "function collectPickArrays" in main
+    assert "function inspectText" in main
+    assert "window.WebSocket" in main
+    assert "function scrapeYahooDomPicks" in main
+    assert "function scanAll" in main
+    assert "return true;" not in main.split("function walkForPicks")[1].split("function scanReact")[0]
+    assert "relayPending();" in iso
+    assert "scrapeYahooBoard" in iso
+    assert "pushMergedPicks" in iso
+    assert "completedFromYahooClock" in iso
+    assert "function scrapeYahooBoard" in helper
+    assert "function mergeYahooPicks" in helper
+    assert "function parseYahooNamePos" in helper
+    assert "function completedFromYahooClock" in helper
+    assert "last.playerName || last.name" in overlay
+    assert "last.playerName || last.name" in inject
+    assert "last.playerName || last.name" in iso
+    assert "\u2014" not in main
+    assert "\u2014" not in iso
+    assert "\u2014" not in helper
+
+
+def test_yahoo_pick_helpers_merge_and_parse():
+    import subprocess
+    script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const ctx = {
+  window: {},
+  document: {
+    cookie: "",
+    querySelectorAll() { return []; },
+    querySelector() { return null; },
+    createTreeWalker: null,
+    body: null,
+  },
+  location: { pathname: "/draftclient/f1/10288933/8", href: "" },
+};
+ctx.window = ctx;
+vm.runInNewContext(fs.readFileSync("extension/draft_slot.js", "utf8"), ctx);
+const B = ctx.BRDraftSlot;
+const merged = B.mergeYahooPicks(
+  [{ overallPickNumber: 1, playerName: "Ja'Marr Chase", playerId: "31002", pos: "WR" }],
+  [{ overallPickNumber: 2, playerName: "Bijan Robinson", pos: "RB", nflTeam: "ATL" }]
+);
+if (merged.length !== 2 || merged[1].playerName.indexOf("Bijan") < 0) {
+  console.error("merge", merged);
+  process.exit(1);
+}
+const np = B.parseYahooNamePos("Ja'Marr Chase WR CIN");
+if (!np || np.name.indexOf("Chase") < 0 || np.pos !== "WR") {
+  console.error(np);
+  process.exit(1);
+}
+const slot = B.slotFromYahooClock("You're up in 7 Picks Round 1, Pick 1", 12);
+if (slot !== 8) {
+  console.error("slot", slot);
+  process.exit(1);
+}
+const kept = B.mergeYahooPicks(merged, [{ overallPickNumber: 1, playerName: "Ja" }]);
+if (kept[0].playerName !== "Ja'Marr Chase" || kept.length !== 2) {
+  console.error("shrink", kept);
+  process.exit(1);
+}
+console.log("ok");
+"""
+    out = subprocess.run(
+        ["node", "-e", script],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert out.returncode == 0, out.stderr + out.stdout

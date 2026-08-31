@@ -342,6 +342,188 @@
     }).join("");
   }
 
+  function completedFromYahooClock(teams) {
+    const c = parseYahooClock(yahooClockText());
+    if (c.round >= 1 && c.roundPick >= 1) {
+      const nTeams = Number(teams) >= 2 ? Number(teams) : 12;
+      return Math.max(0, (c.round - 1) * nTeams + c.roundPick - 1);
+    }
+    return 0;
+  }
+
+  function yahooInAvailableList(el, doc) {
+    let n = el;
+    for (let i = 0; i < 10 && n && n !== (doc && doc.body); i++) {
+      const cls = String((n.className && n.className.baseVal != null ? n.className.baseVal : n.className) || "");
+      const id = String(n.id || "");
+      const aria = String((n.getAttribute && n.getAttribute("aria-label")) || "");
+      if (/available|playerlist|player-list|player_list|rankings|search-result|searchResult/i.test(cls + " " + id + " " + aria)) {
+        return true;
+      }
+      n = n.parentElement;
+    }
+    return false;
+  }
+
+  function parseYahooNamePos(text) {
+    const s = String(text || "").replace(/\s+/g, " ").trim();
+    const m = s.match(
+      /([A-Z][a-zA-Z.'\-]+(?:\s+(?:[A-Z][a-zA-Z.'\-]+|Jr\.?|Sr\.?|II|III|IV|V)){0,4})\s+(QB|RB|WR|TE|K|DEF|DST|D\/ST)\b(?:\s+([A-Z]{2,3}))?/
+    );
+    if (!m) return null;
+    const name = m[1].replace(/\s+/g, " ").trim();
+    if (name.length < 3 || name.length > 48) return null;
+    if (/^(round|pick|you|team|bench|available|search|draft|flex)$/i.test(name)) return null;
+    if (/you(?:'re| are) up|on the clock|time remaining/i.test(name)) return null;
+    return { name: name, pos: m[2].replace("D/ST", "DEF"), team: m[3] || "" };
+  }
+
+  function mergeYahooPicks(a, b) {
+    const map = {};
+    function add(p) {
+      if (!p) return;
+      const pn = Number(p.overallPickNumber || p.pick_no || 0);
+      if (pn < 1 || pn > 400) return;
+      const name = String(p.playerName || p.name || "").replace(/\s+/g, " ").trim();
+      const pid = p.playerId != null && String(p.playerId) !== "0" ? String(p.playerId) : "";
+      if (!name && !pid) return;
+      const prev = map[pn];
+      if (
+        !prev ||
+        (name && name.length > String(prev.playerName || "").length) ||
+        (pid && !prev.playerId)
+      ) {
+        map[pn] = {
+          overallPickNumber: pn,
+          playerId: pid || (prev && prev.playerId) || "",
+          playerName: name || (prev && prev.playerName) || "",
+          pos: p.pos || (prev && prev.pos) || "",
+          nflTeam: p.nflTeam || (prev && prev.nflTeam) || "",
+          teamId: p.teamId != null && p.teamId !== "" ? String(p.teamId) : (prev && prev.teamId) || null,
+          roundId: p.roundId || p.round || (prev && prev.roundId) || null,
+          roundPickNumber: p.roundPickNumber || (prev && prev.roundPickNumber) || null,
+        };
+      }
+    }
+    (a || []).forEach(add);
+    (b || []).forEach(add);
+    return Object.keys(map)
+      .map(Number)
+      .sort(function (x, y) {
+        return x - y;
+      })
+      .map(function (k) {
+        return map[k];
+      });
+  }
+
+  function addYahooDomPick(byPn, pn, info, pid) {
+    if (!info || !info.name) return;
+    const n = Number(pn);
+    if (!(n >= 1 && n <= 400)) return;
+    const prev = byPn.get(n);
+    if (prev && prev.playerName && prev.playerName.length >= info.name.length && prev.playerId) return;
+    byPn.set(n, {
+      overallPickNumber: n,
+      playerId: pid ? String(pid) : (prev && prev.playerId) || "",
+      playerName: info.name,
+      pos: info.pos || (prev && prev.pos) || "",
+      nflTeam: info.team || (prev && prev.nflTeam) || "",
+    });
+  }
+
+  function scrapeYahooLabeledPicks(doc, byPn) {
+    const nodes = doc.querySelectorAll(
+      "[data-pick],[data-overall-pick],[data-pick-number],[class*='Pick'],[class*='pick'],[class*='draft-cell'],[class*='draftCell'],[class*='PickCard'],[class*='player-name']"
+    );
+    const limit = Math.min(nodes.length, 900);
+    for (let i = 0; i < limit; i++) {
+      const el = nodes[i];
+      if (yahooInAvailableList(el, doc)) continue;
+      const text = String(el.textContent || "").replace(/\s+/g, " ").trim();
+      if (text.length < 5 || text.length > 180) continue;
+      const info = parseYahooNamePos(text);
+      if (!info) continue;
+      let pn = Number(
+        el.getAttribute("data-pick") ||
+          el.getAttribute("data-overall-pick") ||
+          el.getAttribute("data-pick-number") ||
+          0
+      );
+      if (!pn) {
+        const labeled = text.match(/pick\s*#?\s*(\d{1,3})\b/i);
+        if (labeled) pn = Number(labeled[1]);
+      }
+      if (!pn) continue;
+      addYahooDomPick(byPn, pn, info, el.getAttribute("data-player-id") || el.getAttribute("data-playerid"));
+    }
+  }
+
+  function scrapeYahooColumns(doc, byPn, teamsHint) {
+    const scope =
+      doc.querySelector(
+        "#draft, #draftapp, [class*='draft-board'], [class*='draftBoard'], [class*='DraftBoard'], [class*='pick-grid'], [class*='PickGrid']"
+      ) || doc.body;
+    if (!scope || !doc.createTreeWalker) return;
+    const walker = doc.createTreeWalker(scope, NodeFilter.SHOW_ELEMENT);
+    let el;
+    let scanned = 0;
+    let cols = [];
+    while ((el = walker.nextNode()) && scanned < 2500) {
+      scanned++;
+      const kids = el.children;
+      if (!kids || kids.length < 8 || kids.length > 18) continue;
+      const widths = [];
+      let ok = true;
+      for (let i = 0; i < kids.length; i++) {
+        const w = kids[i].offsetWidth || 0;
+        const h = kids[i].offsetHeight || 0;
+        if (w < 36 || h < 60) {
+          ok = false;
+          break;
+        }
+        widths.push(w);
+      }
+      if (!ok || widths.length < 8) continue;
+      const avg = widths.reduce(function (a, b) {
+        return a + b;
+      }, 0) / widths.length;
+      if (!widths.every(function (w) { return Math.abs(w - avg) < avg * 0.5; })) continue;
+      if (kids.length > cols.length) cols = Array.prototype.slice.call(kids);
+    }
+    if (cols.length < 8) return;
+    const teams = Number(teamsHint) >= 4 ? Number(teamsHint) : cols.length;
+    cols.forEach(function (col, idx) {
+      if (yahooInAvailableList(col, doc)) return;
+      const slot = idx + 1;
+      const text = String(col.innerText || col.textContent || "");
+      const re =
+        /([A-Z][a-zA-Z.'\-]+(?:\s+(?:[A-Z][a-zA-Z.'\-]+|Jr\.?|Sr\.?|II|III|IV|V)){0,4})\s+(QB|RB|WR|TE|K|DEF|DST|D\/ST)\b(?:\s+([A-Z]{2,3}))?/g;
+      const names = [];
+      let m;
+      while ((m = re.exec(text))) {
+        const parsed = parseYahooNamePos(m[0]);
+        if (parsed) names.push(parsed);
+      }
+      names.forEach(function (info, ridx) {
+        const rd = ridx + 1;
+        const pn = (rd - 1) * teams + (rd % 2 === 1 ? slot : teams - slot + 1);
+        addYahooDomPick(byPn, pn, info, "");
+      });
+    });
+  }
+
+  function scrapeYahooBoard(doc, teamsHint) {
+    doc = doc || (typeof document !== "undefined" ? document : null);
+    if (!doc || !doc.querySelectorAll) return [];
+    const byPn = new Map();
+    scrapeYahooLabeledPicks(doc, byPn);
+    scrapeYahooColumns(doc, byPn, teamsHint);
+    return Array.from(byPn.values()).sort(function (a, b) {
+      return a.overallPickNumber - b.overallPickNumber;
+    });
+  }
+
   root.BRDraftSlot = {
     snakeSlot: snakeSlot,
     teamCountFromPicks: teamCountFromPicks,
@@ -364,5 +546,9 @@
     settingsLabel: settingsLabel,
     scoringFromSleeperSettings: scoringFromSleeperSettings,
     rosterKey: rosterKey,
+    scrapeYahooBoard: scrapeYahooBoard,
+    mergeYahooPicks: mergeYahooPicks,
+    parseYahooNamePos: parseYahooNamePos,
+    completedFromYahooClock: completedFromYahooClock,
   };
 })(window);

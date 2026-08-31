@@ -11,9 +11,11 @@
   const RESCAN = "brfantasy:draft-rescan";
   const RELAY_STATUS = "brfantasy:yahoo-relay-status";
   const BRIDGE = "brfantasy-bridge-v1";
-  const MAX_WALK = 4000;
+  const MAX_WALK = 14000;
   let lastFingerprint = "";
   let lastEmitAt = 0;
+  const pickAccumulator = new Map();
+  let bestOverallSeen = 0;
   let detectedUserTeamId = null;
   let detectedSlot = 0;
   let detectedTeams = 0;
@@ -75,15 +77,55 @@
     return parts.length ? parts[parts.length - 1] : s;
   }
 
-  function isPickRow(obj) {
-    if (!obj || typeof obj !== "object") return false;
-    const pid =
+  function rawPlayerId(obj) {
+    if (!obj || typeof obj !== "object") return null;
+    const direct =
       obj.playerId ??
       obj.player_id ??
       yahooIdFromKey(obj.player_key || obj.playerKey);
-    const overall =
-      obj.overallPickNumber ?? obj.overallPick ?? obj.pick_no ?? obj.pick;
-    return overall != null && pid != null && String(pid) !== "" && String(pid) !== "0";
+    if (direct != null && String(direct) !== "" && String(direct) !== "0") return String(direct);
+    const player = yahooPlayerBlob(obj);
+    if (player && player !== obj) return rawPlayerId(player);
+    return null;
+  }
+
+  function rawOverall(obj) {
+    if (!obj || typeof obj !== "object") return 0;
+    const direct =
+      obj.overallPickNumber ??
+      obj.overallPick ??
+      obj.overall_pick ??
+      obj.pick_no ??
+      obj.pickNumber ??
+      obj.pick_number ??
+      obj.overall;
+    if (direct != null && Number(direct) >= 1) return Number(direct);
+    const pick = obj.pick ?? obj.selection;
+    const nPick = Number(pick);
+    if (!(nPick >= 1)) return 0;
+    const nRound = Number(obj.round ?? obj.roundId ?? obj.round_id);
+    const teams = detectedTeams || 0;
+    if (nRound >= 2 && nPick <= (teams || 16)) {
+      const n = teams >= 4 ? teams : 12;
+      return (nRound - 1) * n + (nRound % 2 === 1 ? nPick : n - nPick + 1);
+    }
+    return nPick;
+  }
+
+  function isPickRow(obj) {
+    if (!obj || typeof obj !== "object") return false;
+    const overall = rawOverall(obj);
+    if (!overall) return false;
+    if (rawPlayerId(obj)) return true;
+    const name = yahooPlayerName(obj);
+    return !!(name && name.length >= 3);
+  }
+
+  function pickLooksMade(norm) {
+    if (!norm || !norm.overallPickNumber) return false;
+    const pid = norm.playerId != null ? String(norm.playerId) : "";
+    if (pid && pid !== "0" && pid !== "-1") return true;
+    return !!(norm.playerName && String(norm.playerName).trim().length >= 3);
   }
 
   function yahooPlayerBlob(raw) {
@@ -139,10 +181,7 @@
 
   function rememberYahooPlayer(raw) {
     if (!raw || typeof raw !== "object") return;
-    const pid =
-      raw.playerId ??
-      raw.player_id ??
-      yahooIdFromKey(raw.player_key || raw.playerKey);
+    const pid = rawPlayerId(raw);
     if (pid == null || String(pid) === "" || String(pid) === "0") return;
     const name = yahooPlayerName(raw);
     const pos = yahooPlayerPos(raw);
@@ -162,12 +201,8 @@
       return null;
     }
     rememberYahooPlayer(raw);
-    const playerId =
-      raw.playerId ??
-      raw.player_id ??
-      yahooIdFromKey(raw.player_key || raw.playerKey);
-    const overall =
-      raw.overallPickNumber ?? raw.overallPick ?? raw.pick_no ?? raw.pick;
+    const playerId = rawPlayerId(raw);
+    const overall = rawOverall(raw);
     const teamId =
       raw.teamId ??
       raw.team_id ??
@@ -201,6 +236,7 @@
       picks.length,
       last ? last.overallPickNumber : 0,
       last ? last.playerId : "",
+      last ? last.playerName || "" : "",
       last ? last.teamId : "",
       detectedUserTeamId || "",
       detectedSlot || "",
@@ -386,21 +422,48 @@
     }
   }
 
-  function emit(picks, meta, source) {
+  function mergeIntoAccumulator(rawPicks, source) {
+    let grew = false;
+    for (const raw of rawPicks || []) {
+      const norm = normalizePick(raw) || (raw && raw.overallPickNumber ? raw : null);
+      if (!norm || !pickLooksMade(norm)) continue;
+      const n = Number(norm.overallPickNumber);
+      if (!n || n <= 0) continue;
+      if (!pickAccumulator.has(n)) grew = true;
+      const prev = pickAccumulator.get(n);
+      if (prev) {
+        if (prev.playerName && !norm.playerName) norm.playerName = prev.playerName;
+        if (prev.pos && !norm.pos) norm.pos = prev.pos;
+        if (prev.nflTeam && !norm.nflTeam) norm.nflTeam = prev.nflTeam;
+        if (prev.playerId && !norm.playerId) norm.playerId = prev.playerId;
+        if (prev.teamId && !norm.teamId) norm.teamId = prev.teamId;
+      } else {
+        grew = true;
+      }
+      pickAccumulator.set(n, norm);
+      if (n > bestOverallSeen) bestOverallSeen = n;
+    }
+    void source;
+    return grew;
+  }
+
+  function emitAccumulated(meta, source) {
     const ids = leagueFromUrl();
-    const clean = (picks || []).map(normalizePick).filter(Boolean);
-    clean.sort((a, b) => a.overallPickNumber - b.overallPickNumber);
+    const clean = Array.from(pickAccumulator.values())
+      .filter(pickLooksMade)
+      .sort((a, b) => a.overallPickNumber - b.overallPickNumber);
+    if (!clean.length && !lastFingerprint) return;
     const fp = fingerprint(clean, meta || {});
     const now = Date.now();
-    if (fp === lastFingerprint && now - lastEmitAt < 1500) return;
+    if (fp === lastFingerprint && now - lastEmitAt < 1200) return;
     lastFingerprint = fp;
     lastEmitAt = now;
     const mySlot = computeMySlot(clean);
     const detail = {
-      source: source || "unknown",
+      source: source || "accumulated",
       leagueId: ids.leagueId,
       season: ids.season,
-      inProgress: !!(meta && meta.inProgress),
+      inProgress: meta && meta.inProgress == null ? true : !!(meta && meta.inProgress),
       drafted: !!(meta && meta.drafted),
       picks: clean,
       mySlot: mySlot || undefined,
@@ -416,6 +479,20 @@
     };
     bridgeToExtension(EVENT, detail);
     relayToBackground(detail);
+  }
+
+  function emit(picks, meta, source) {
+    const incoming = picks || [];
+    const grew = mergeIntoAccumulator(incoming, source);
+    if (!grew && pickAccumulator.size) {
+      const mapped = incoming.map(normalizePick).filter(Boolean);
+      const maxIncoming = mapped.length ? mapped[mapped.length - 1].overallPickNumber : 0;
+      if (maxIncoming <= bestOverallSeen && pickAccumulator.size >= mapped.length) {
+        emitAccumulated(meta, source);
+        return;
+      }
+    }
+    emitAccumulated(meta, source);
   }
 
   function picksFromDraftResults(block) {
@@ -453,30 +530,40 @@
     return true;
   }
 
-  function walkForPicks(root) {
+  function collectPickArrays(root) {
     const seen = new Set();
+    const arrays = [];
     const q = [root];
     let n = 0;
+    function take(arr) {
+      if (!Array.isArray(arr) || !arr.length || arr.length > 500) return;
+      if (arr.some(isPickRow)) arrays.push(arr);
+    }
     while (q.length && n < MAX_WALK) {
       const cur = q.shift();
       n++;
       if (!cur || typeof cur !== "object") continue;
       if (seen.has(cur)) continue;
-      seen.add(cur);
+      try {
+        seen.add(cur);
+      } catch (_e) {
+        continue;
+      }
       rememberYahooUser(cur);
-      if (cur.draft_results && maybeFromDraftResults(cur.draft_results, "react", null)) return true;
-      if (cur.draftResults && maybeFromDraftResults(cur.draftResults, "react", null)) return true;
-      if (Array.isArray(cur.picks) && cur.picks.some(isPickRow)) {
-        emit(
-          cur.picks,
-          { inProgress: cur.inProgress !== false, drafted: cur.drafted === true },
-          "react-picks"
-        );
-        return true;
+      if (cur.draft_results) {
+        const fromBlock = picksFromDraftResults(cur.draft_results);
+        if (fromBlock) arrays.push(fromBlock);
       }
-      if (Array.isArray(cur.draft_results) && cur.draft_results.length) {
-        if (maybeFromDraftResults(cur.draft_results, "react-arr", null)) return true;
+      if (cur.draftResults) {
+        const fromBlock = picksFromDraftResults(cur.draftResults);
+        if (fromBlock) arrays.push(fromBlock);
       }
+      take(cur.picks);
+      take(cur.draftPicks);
+      take(cur.draft_picks);
+      take(cur.selections);
+      take(cur.results);
+      if (Array.isArray(cur) && cur.some(isPickRow)) arrays.push(cur);
       const next = [];
       if (cur.memoizedProps) next.push(cur.memoizedProps);
       if (cur.pendingProps) next.push(cur.pendingProps);
@@ -486,17 +573,32 @@
       if (cur.child) next.push(cur.child);
       if (cur.sibling) next.push(cur.sibling);
       if (cur.props) next.push(cur.props);
-      for (const k of Object.keys(cur)) {
-        if (k === "draft_results" || k === "draftResults") {
-          if (maybeFromDraftResults(cur[k], "react-key", null)) return true;
+      try {
+        for (const k of Object.keys(cur)) {
+          if (k === "draft_results" || k === "draftResults") {
+            const fromKey = picksFromDraftResults(cur[k]);
+            if (fromKey) arrays.push(fromKey);
+          }
+          const v = cur[k];
+          if (v && typeof v === "object" && !seen.has(v)) next.push(v);
+          if (next.length > 48) break;
         }
-        const v = cur[k];
-        if (v && typeof v === "object" && !seen.has(v)) next.push(v);
-        if (next.length > 40) break;
+      } catch (_e) {
+        /* ignore */
       }
-      for (let i = 0; i < Math.min(next.length, 24); i++) q.push(next[i]);
+      for (let i = 0; i < Math.min(next.length, 28); i++) q.push(next[i]);
     }
-    return false;
+    return arrays;
+  }
+
+  function walkForPicks(root) {
+    const arrays = collectPickArrays(root);
+    if (!arrays.length) return false;
+    arrays.forEach(function (arr) {
+      mergeIntoAccumulator(arr, "react");
+    });
+    emitAccumulated({ inProgress: true, drafted: false }, "react");
+    return pickAccumulator.size > 0;
   }
 
   function scanReact() {
@@ -523,15 +625,17 @@
         }
       }
     }
+    let hit = false;
     for (const r of roots) {
-      if (walkForPicks(r)) return true;
+      if (walkForPicks(r)) hit = true;
     }
-    return false;
+    return hit;
   }
 
   function inspectJson(data, source) {
     if (!data) return;
     if (Array.isArray(data)) {
+      if (data.some(isPickRow)) emit(data, { inProgress: true, drafted: false }, source);
       for (const item of data) inspectJson(item, source);
       return;
     }
@@ -540,18 +644,96 @@
     rememberYahooUser(data);
     if (data.draft_results || data.draftResults) {
       maybeFromDraftResults(data.draft_results || data.draftResults, source, null);
-      return;
     }
-    if (data.fantasy_content) {
-      inspectJson(data.fantasy_content, source);
-      return;
+    if (Array.isArray(data.picks) && data.picks.some(isPickRow)) {
+      emit(data.picks, { inProgress: data.inProgress !== false, drafted: data.drafted === true }, source);
     }
-    if (data.league) {
-      inspectJson(data.league, source);
-      return;
+    if (Array.isArray(data.draftPicks) && data.draftPicks.some(isPickRow)) {
+      emit(data.draftPicks, { inProgress: true, drafted: false }, source);
     }
-    for (const key of ["draft", "data", "payload", "result"]) {
-      if (data[key] && typeof data[key] === "object") inspectJson(data[key], source);
+    if (Array.isArray(data.selections) && data.selections.some(isPickRow)) {
+      emit(data.selections, { inProgress: true, drafted: false }, source);
+    }
+    if (isPickRow(data)) {
+      emit([data], { inProgress: true, drafted: false }, source);
+    }
+    if (data.fantasy_content) inspectJson(data.fantasy_content, source);
+    if (data.league && data.league !== data) inspectJson(data.league, source);
+    for (const key of ["draft", "data", "payload", "result", "message", "pick"]) {
+      if (data[key] && typeof data[key] === "object" && data[key] !== data) inspectJson(data[key], source);
+    }
+  }
+
+  function looksLikeDraftPayload(text) {
+    return (
+      text.indexOf("draft_result") >= 0 ||
+      text.indexOf("draftResults") >= 0 ||
+      text.indexOf("player_key") >= 0 ||
+      text.indexOf("playerKey") >= 0 ||
+      text.indexOf("overallPick") >= 0 ||
+      text.indexOf("player_id") >= 0 ||
+      text.indexOf("playerId") >= 0
+    );
+  }
+
+  function inspectText(text, source) {
+    if (!text || text.length < 8 || text.length > 2500000) return;
+    if (!looksLikeDraftPayload(text)) return;
+    try {
+      let payload = text;
+      if (payload.charAt(0) === "4" && payload.charAt(1) === "2") {
+        const idx = payload.indexOf("[");
+        if (idx >= 0) payload = payload.slice(idx);
+      }
+      inspectJson(JSON.parse(payload), source);
+    } catch (_e) {
+      /* ignore */
+    }
+  }
+
+  function looksLikeYahooDraftUrl(url) {
+    return /fantasysports\.yahoo|yahooapis\.com|sports\.yahoo\.com|draftclient|fantasy\.yahoo|yimg\.com/i.test(
+      String(url || "")
+    );
+  }
+
+  function scrapeYahooDomPicks() {
+    if (!document.body) return false;
+    const helper = window.BRDraftSlot;
+    const scraped = helper && helper.scrapeYahooBoard
+      ? helper.scrapeYahooBoard(document, detectedTeams)
+      : [];
+    if (!scraped || !scraped.length) return false;
+    emit(scraped, { inProgress: true, drafted: false }, "dom-scrape");
+    return true;
+  }
+
+  function scanAll() {
+    scrapeYahooDomPicks();
+    scanReact();
+    if (pickAccumulator.size) emitAccumulated({ inProgress: true, drafted: false }, "scan");
+  }
+
+  let domScrapeTimer = null;
+  function scheduleDomScrape() {
+    if (domScrapeTimer) return;
+    domScrapeTimer = setTimeout(function () {
+      domScrapeTimer = null;
+      scrapeYahooDomPicks();
+    }, 300);
+  }
+
+  function watchDom() {
+    if (window.__brFantasyYahooDomWatch || !document.documentElement) return;
+    window.__brFantasyYahooDomWatch = true;
+    try {
+      const mo = new MutationObserver(function () {
+        if (document.hidden) return;
+        scheduleDomScrape();
+      });
+      mo.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    } catch (_e) {
+      /* ignore */
     }
   }
 
@@ -566,11 +748,11 @@
         return origFetch.apply(this, args).then((res) => {
           try {
             const url = String((args[0] && args[0].url) || args[0] || "");
-            if (/fantasysports\.yahoo|yahooapis\.com|sports\.yahoo\.com/i.test(url)) {
+            if (looksLikeYahooDraftUrl(url)) {
               res
                 .clone()
-                .json()
-                .then((data) => inspectJson(data, "fetch"))
+                .text()
+                .then((text) => inspectText(text, "fetch"))
                 .catch(() => {});
             }
           } catch (_e) {
@@ -591,30 +773,40 @@
       this.addEventListener("load", function () {
         try {
           const url = String(this.__brUrl || "");
-          if (!/fantasysports\.yahoo|yahooapis\.com|sports\.yahoo\.com/i.test(url)) return;
+          if (!looksLikeYahooDraftUrl(url)) return;
           const text = typeof this.responseText === "string" ? this.responseText : "";
-          if (
-            text.indexOf("draft_result") < 0 &&
-            text.indexOf("player_key") < 0 &&
-            text.indexOf("overallPick") < 0
-          ) {
-            return;
-          }
-          const data = JSON.parse(text);
-          inspectJson(data, "xhr");
+          inspectText(text, "xhr");
         } catch (_e) {
           /* ignore */
         }
       });
       return XS.apply(this, arguments);
     };
+
+    const OrigWS = window.WebSocket;
+    if (typeof OrigWS === "function") {
+      window.WebSocket = function (url, protocols) {
+        const ws = protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
+        ws.addEventListener("message", function (ev) {
+          try {
+            const text = typeof ev.data === "string" ? ev.data : "";
+            inspectText(text, "ws");
+          } catch (_e) {
+            /* ignore */
+          }
+        });
+        return ws;
+      };
+      window.WebSocket.prototype = OrigWS.prototype;
+    }
   }
 
   leagueFromUrl();
   hookNetwork();
+  watchDom();
   function onRescan() {
     lastFingerprint = "";
-    scanReact();
+    scanAll();
   }
   window.addEventListener("message", (ev) => {
     if (!ev.data || ev.data.__br !== BRIDGE || ev.data.type !== RESCAN) return;
@@ -623,9 +815,10 @@
   document.addEventListener(RESCAN, onRescan);
   setInterval(() => {
     if (document.hidden) return;
-    scanReact();
-  }, 2000);
-  setTimeout(scanReact, 1500);
-  setTimeout(scanReact, 4000);
+    scanAll();
+  }, 1200);
+  setTimeout(scanAll, 400);
+  setTimeout(scanAll, 1500);
+  setTimeout(scanAll, 4000);
   window.__brFantasyYahooForceScan = onRescan;
 })();
