@@ -765,6 +765,35 @@ def test_historical_alternatives_rank_by_decision_score():
     assert out["bestAlternative"]["id"] == "b"
 
 
+def test_suggest_auction_bid_is_guidance_share_of_budget_per_slot():
+    """R02.3: BR value share × (remainingBudget / slotsLeft); label is guidance."""
+    script = (
+        "global.self=global; global.BRPickScore=require(%s); const C=require(%s);"
+        "const top=C.suggestAuctionBid({value:9000,maxValue:9000,remainingBudget:200,slotsLeft:15});"
+        "const mid=C.suggestAuctionBid({value:4500,maxValue:9000,remainingBudget:200,slotsLeft:15});"
+        "const zero=C.suggestAuctionBid({value:0,maxValue:9000,remainingBudget:200,slotsLeft:15});"
+        "const cap=C.suggestAuctionBid({value:9000,maxValue:9000,remainingBudget:5,slotsLeft:1});"
+        "process.stdout.write(JSON.stringify({top:top,mid:mid,zero:zero,cap:cap}));"
+        % (json.dumps(str(PICK_JS)), json.dumps(str(CORE_JS)))
+    )
+    res = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=20)
+    assert res.returncode == 0, res.stderr
+    out = json.loads(res.stdout)
+    assert out["top"]["label"] == "guidance"
+    assert out["top"]["dollars"] == 13  # round(1.0 * 200/15)
+    assert out["mid"]["label"] == "guidance"
+    assert out["mid"]["dollars"] == 7   # round(0.5 * 200/15)
+    assert out["zero"]["dollars"] == 0
+    assert out["cap"]["dollars"] == 5
+    # Draft Room surfaces the label as guidance (not clearing prices).
+    room = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    assert "suggestAuctionBid" in room or "auctionBidGuidance" in room
+    assert "guidance" in room
+    assert "not a clearing price" in room or "not clearing prices" in room
+    assert "Auction draft grades aren’t available yet" in room or \
+           "Auction draft grades aren't available yet" in room
+
+
 def test_taken_before_pick_excludes_future_and_includes_keepers():
     out = _run_need_cases("""(() => C.takenBeforePick({
       pickNo: 5,

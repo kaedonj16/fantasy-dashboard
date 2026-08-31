@@ -272,8 +272,8 @@ def build_dashboard_body(ctx: dict) -> str:
 
     # Playoff-odds tile — serve a warm cache on first paint; if the sim is
     # cold, kick it off in the background and let the client fill the tile.
+    _po_val, _po_sub, _po_loaded = "-", "Simulating&hellip;", ""
     if viewer_roster_id:
-        _po_val, _po_sub, _po_loaded = "-", "Simulating&hellip;", ""
         try:
             _warm = _playoff_sim_cached(ctx, platform, block=False) or []
             _filled = _playoff_tile_from_cache(_warm, viewer_roster_id)
@@ -320,6 +320,7 @@ def build_dashboard_body(ctx: dict) -> str:
         "What changed, what needs attention, and your next moves."
     )
     _bb_badge = ""
+    _bb_outlook_html = ""
     try:
         from utils.league_format import is_best_ball
         if is_best_ball(
@@ -345,8 +346,39 @@ def build_dashboard_body(ctx: dict) -> str:
                     "Best Ball mode: weekly Start/Sit and lineup locks are hidden — "
                     "focus on waivers and the draft."
                 )
+            # R10.3 thin season outlook — playoff odds when available; honest v1 copy.
+            _outlook_odds = ""
+            if viewer_roster_id:
+                if _po_val and _po_val != "-":
+                    _outlook_odds = (
+                        f'<div class="os-section-subtitle" style="margin-top:6px">'
+                        f'Playoff odds: <strong>{html.escape(str(_po_val))}</strong>'
+                        f'{(" — " + _po_sub) if _po_sub else ""}'
+                        f'</div>'
+                    )
+                else:
+                    _outlook_odds = (
+                        '<div class="os-section-subtitle" style="margin-top:6px">'
+                        "Playoff odds load when the sim is ready."
+                        "</div>"
+                    )
+            _bb_outlook_html = f"""
+        <section class="os-card" id="dashBestBallOutlook">
+          <div class="os-section-head">
+            <div class="os-section-head-content">
+              <h2 class="os-section-title">Season outlook (thin)</h2>
+              <div class="os-section-subtitle">Best Ball — no weekly lineup. Finish framing only for v1.</div>
+            </div>
+          </div>
+          <p style="margin:0;font-size:13px;line-height:1.45;color:var(--text-muted)">
+            Lineup locks and Start/Sit do not apply. Use playoff odds and standings for season-long outlook;
+            weekly optimal lineups are automatic.
+          </p>
+          {_outlook_odds}
+        </section>"""
     except Exception:
         _bb_badge = ""
+        _bb_outlook_html = ""
 
     _action_queue_html = f"""
         <div class="os-action-queue os-tab-panel os-tab-active" id="os-jump-actions">
@@ -388,6 +420,8 @@ def build_dashboard_body(ctx: dict) -> str:
             {_hero_stats_html}
           </div>
         </section>
+
+        {_bb_outlook_html}
 
         <div id="sinceLastVisitCard" class="slv-wrap" data-slv-init="1"></div>
 
