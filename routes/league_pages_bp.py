@@ -116,6 +116,7 @@ def api_standings_week():
             "details_html": panels["details"],
             "power_html": panels["power"],
             "sidebar_html": panels["sidebar"],
+            "shares_html": panels["shares"],
         })
     except Exception as e:
         logger.warning("[standings-week] render failed: %s", e, exc_info=True)

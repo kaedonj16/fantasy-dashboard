@@ -6501,8 +6501,8 @@ def render_standings(team_stats, length, all_play: dict = None,
               <th scope="col">Streak</th>
               <th scope="col" title="Actual wins minus expected wins (from all-play). + = luckier than your scoring earned.">Luck</th>
               <th scope="col" title="Where you'd be seeded by all-play record instead of actual wins.">Exp. Seed</th>
-              <th scope="col">SOS Past</th>
-              <th scope="col">SOS Future</th>
+              <th scope="col" title="Opponent strength faced so far. 100 is league average; higher means a tougher schedule.">SOS Past</th>
+              <th scope="col" title="Opponent strength remaining in the regular season. 100 is league average; higher means a tougher schedule.">SOS Future</th>
             </tr>
           </thead>
           <tbody>
@@ -8062,25 +8062,28 @@ def render_share_rankings(ctx: dict) -> str:
     def bar(pct: float) -> str:
         width = min(pct / (fair_share * 2) * 100, 100)
         color = "var(--accent)" if pct > fair_share else "var(--text-muted)"
-        return (f'<div style="height:6px;border-radius:3px;background:var(--border);flex:1;">'
-                f'<div style="height:100%;width:{width:.1f}%;border-radius:3px;background:{color};"></div></div>')
+        return (
+            f'<div class="standings-shares-track">'
+            f'<div class="standings-shares-fill" style="width:{width:.1f}%;background:{color};"></div>'
+            f'</div>'
+        )
 
     rows_html = ""
     for i, d in enumerate(rows_data):
         rows_html += f"""
         <tr>
-          <td style="width:24px;color:var(--text-muted);font-size:11px;text-align:center;">{i + 1}</td>
-          <td style="font-weight:600;font-size:13px;">{_clickable_team_name(d['owner'], owner_to_rid)}</td>
+          <td class="standings-shares-rk">{i + 1}</td>
+          <td class="standings-shares-team">{_clickable_team_name(d['owner'], owner_to_rid)}</td>
           <td>
-            <div style="display:flex;align-items:center;gap:8px;">
+            <div class="standings-shares-barline">
               {bar(d['value_pct'])}
-              <span style="font-size:12px;font-weight:700;min-width:38px;text-align:right;">{d['value_pct']:.1f}%</span>
+              <span class="standings-shares-pct">{d['value_pct']:.1f}%</span>
             </div>
           </td>
           <td>
-            <div style="display:flex;align-items:center;gap:8px;">
+            <div class="standings-shares-barline">
               {bar(d['prod_pct'])}
-              <span style="font-size:12px;font-weight:700;min-width:38px;text-align:right;">{d['prod_pct']:.1f}%</span>
+              <span class="standings-shares-pct">{d['prod_pct']:.1f}%</span>
             </div>
           </td>
         </tr>"""
@@ -8088,22 +8091,24 @@ def render_share_rankings(ctx: dict) -> str:
     proj_note = " · projected from roster" if is_offseason else ""
     fair_pct = f"{fair_share:.1f}%"
     return f"""
-    <div style="padding:4px 0 8px;font-size:11px;color:var(--text-muted);">
+    <div class="standings-shares">
+    <p class="standings-shares-note">
       Fair share per team: {fair_pct}{proj_note} &nbsp;·&nbsp; bar fills to 2× fair share
-    </div>
-    <table style="width:100%;border-collapse:collapse;">
+    </p>
+    <table class="standings-shares-table">
       <thead>
-        <tr style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">
-          <th style="width:24px;"></th>
-          <th style="text-align:left;padding:0 8px 6px 0;">Team</th>
-          <th style="text-align:left;padding:0 8px 6px 0;min-width:160px;">Value Share</th>
-          <th style="text-align:left;padding:0 0 6px 0;min-width:160px;">{prod_label}</th>
+        <tr>
+          <th class="standings-shares-rk"></th>
+          <th class="standings-shares-team">Team</th>
+          <th>Value Share</th>
+          <th>{prod_label}</th>
         </tr>
       </thead>
-      <tbody style="border-top:1px solid var(--border);">
+      <tbody>
         {rows_html}
       </tbody>
-    </table>"""
+    </table>
+    </div>"""
 
 
 def _standings_available_weeks(ctx: dict) -> list:
@@ -8140,7 +8145,7 @@ def _standings_playoff_params(ctx: dict, team_stats):
 
 
 def _standings_panels(ctx: dict, power_rankings=None) -> dict:
-    """Render the four swappable standings surfaces from ctx. Shared by the
+    """Render the swappable standings surfaces from ctx. Shared by the
     standings page and the week-selector endpoint, so a "through week N" view is
     just this called with a week-capped ctx (see build_standings_as_of_week).
 
@@ -8182,11 +8187,13 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
         power_rankings=power_rankings,
     )
     sidebar_html = render_standings_sidebar(team_stats, owner_to_rid=_o2r)
+    shares_html = render_share_rankings(ctx)
     return {
         "standings": standings_html,
         "details": details_html,
         "power": power_html,
         "sidebar": sidebar_html,
+        "shares": shares_html,
     }
 
 
@@ -8195,7 +8202,7 @@ def build_standings_as_of_week(ctx: dict, week: int) -> dict:
     the given finalized week, so the standings/power surfaces render as they
     stood then. Values come straight from the weekly scores, so the record,
     PF/PA, streaks and performance PowerScore are all exact for that point."""
-    from dashboard_services.service import finalize_team_stats
+    from dashboard_services.service import finalize_team_stats, regular_season_length
 
     df_weekly = ctx["df_weekly"]
     wk = pd.to_numeric(df_weekly["week"], errors="coerce")
@@ -8205,11 +8212,17 @@ def build_standings_as_of_week(ctx: dict, week: int) -> dict:
     if "owner" in df_weekly.columns and "avatar" in df_weekly.columns:
         owner_avatar = dict(zip(df_weekly["owner"].astype(str), df_weekly["avatar"]))
 
+    _settings = (
+        ctx.get("league_settings")
+        or (ctx.get("league") or {}).get("settings")
+        or {}
+    )
     team_stats = finalize_team_stats(
         fin, owner_avatar,
         ctx.get("matchups_by_week") or {},
         ctx.get("users") or [],
         int(week),
+        regular_season_weeks=regular_season_length(_settings),
     )
 
     new_ctx = dict(ctx)
@@ -8250,7 +8263,8 @@ def _standings_week_selector(ctx: dict, weeks: list) -> str:
           standings: document.getElementById('stStandingsInner'),
           details:   document.getElementById('stDetailsInner'),
           power:     document.getElementById('stPowerInner'),
-          sidebar:   document.getElementById('stSidebarInner')
+          sidebar:   document.getElementById('stSidebarInner'),
+          shares:    document.getElementById('stSharesInner')
         }};
       }}
       function setLoading(on) {{
@@ -8276,7 +8290,8 @@ def _standings_week_selector(ctx: dict, weeks: list) -> str:
             if (my !== seq || !data || !data.ok) return;
             var p = panels();
             var map = {{ standings: data.standings_html, details: data.details_html,
-                        power: data.power_html, sidebar: data.sidebar_html }};
+                        power: data.power_html, sidebar: data.sidebar_html,
+                        shares: data.shares_html }};
             Object.keys(map).forEach(function(k) {{
               if (p[k] && typeof map[k] === 'string') {{
                 if (window.brSwapRanks) {{ window.brSwapRanks(p[k], map[k]); }}

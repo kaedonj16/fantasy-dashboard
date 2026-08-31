@@ -282,12 +282,35 @@ def _seed_zero_standings(owner_avatar: dict) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def regular_season_length(settings: dict | None = None) -> int:
+    """Regular-season week count from league settings (playoff_week_start - 1).
+
+    Falls back to the request-scoped league settings, then to 14 (Sleeper's
+    default 15-week playoff start). Playoff weeks must not leak into SOS.
+    """
+    src = settings if isinstance(settings, dict) else None
+    if not src:
+        try:
+            from dashboard_services.api import get_league_settings
+            src = get_league_settings() or {}
+        except Exception:
+            src = {}
+    try:
+        pws = int((src or {}).get("playoff_week_start") or 15)
+    except (TypeError, ValueError):
+        pws = 15
+    if pws <= 1:
+        return 14
+    return pws - 1
+
+
 def finalize_team_stats(
         df_finalized: pd.DataFrame,
         owner_avatar: dict,
         matchups_by_week: dict,
         users: list[dict],
         last_week: int,
+        regular_season_weeks: int | None = None,
 ) -> pd.DataFrame:
     """Build the full standings/power team_stats table from finalized weekly
     rows (records, PF/PA/AVG, performance PowerScore, strength of schedule, and
@@ -368,13 +391,28 @@ def finalize_team_stats(
     )
 
     sos = build_team_strength(team_stats)
-    sos_dict = compute_sos_by_team(matchups_by_week, sos, last_week, users)
+    _reg_weeks = (
+        regular_season_length()
+        if regular_season_weeks is None
+        else int(regular_season_weeks)
+    )
+    sos_dict = compute_sos_by_team(
+        matchups_by_week,
+        sos,
+        last_week,
+        users,
+        regular_season_weeks=_reg_weeks,
+        past_pairs=owner_pairs_from_weekly(df_finalized),
+    )
     sos_df = (
         pd.DataFrame.from_dict(sos_dict, orient="index")
         .reset_index()
         .rename(columns={"index": "owner"})
     )
     team_stats = team_stats.merge(sos_df, on="owner", how="left")
+    for _col in ("past_sos", "ros_sos", "past_cnt", "ros_cnt"):
+        if _col in team_stats.columns:
+            team_stats[_col] = team_stats[_col].fillna(0.0)
 
     streaks_df = compute_streaks(df_finalized.copy())
     team_stats = team_stats.merge(streaks_df, on="owner", how="left")
@@ -490,7 +528,12 @@ def build_tables(
     finalized_mask = df_weekly["finalized"] == True
     df_finalized = df_weekly[finalized_mask].copy()
 
-    last_week = int(df_weekly["week"].max())
+    # SOS Past is "games already played": use the last *finalized* week, not
+    # the max week in df_weekly (which includes the in-progress current week).
+    if not df_finalized.empty and "week" in df_finalized.columns:
+        last_week = int(df_finalized["week"].max())
+    else:
+        last_week = 0
     team_stats = finalize_team_stats(
         df_finalized, owner_avatar, matchups_by_week, users, last_week
     )
@@ -859,8 +902,9 @@ def compute_week_opponents(matchups_week: Iterable[Dict[str, Any]]) -> List[Tupl
                 continue
             L = m["left"] or {}
             R = m["right"] or {}
-            a = L.get("roster_id") or L.get("username") or L.get("name")
-            b = R.get("roster_id") or R.get("username") or R.get("name")
+            # Prefer owner display name — team_strength / standings are keyed by it.
+            a = L.get("name") or L.get("username") or L.get("roster_id")
+            b = R.get("name") or R.get("username") or R.get("roster_id")
             if a is not None and b is not None:
                 pairs.append((a, b))
         return pairs
@@ -880,87 +924,261 @@ def compute_week_opponents(matchups_week: Iterable[Dict[str, Any]]) -> List[Tupl
     return pairs
 
 
-def build_team_strength(team_stats: pd.DataFrame) -> dict[str, float]:
-    if "PowerScore" in team_stats.columns:
-        base = team_stats["PowerScore"].astype(float)
-    elif "Win%" in team_stats.columns:
-        base = team_stats["Win%"].astype(float)
-    elif "AVG" in team_stats.columns:
-        base = team_stats["AVG"].astype(float)
-    else:
-        base = pd.Series(1.0, index=team_stats.index)
+def owner_pairs_from_weekly(df: pd.DataFrame) -> List[Tuple[int, str, str]]:
+    """(week, owner_a, owner_b) for each head-to-head in a weekly scores frame.
 
-    min_v = float(base.min())
-    max_v = float(base.max())
-    if max_v == min_v:
-        norm = pd.Series(0.5, index=base.index)
-    else:
-        norm = (base - min_v) / (max_v - min_v)
+    Uses the same owner keys as team_stats, so past SOS does not depend on
+    matchup preview identity fields matching.
+    """
+    if df is None or getattr(df, "empty", True):
+        return []
+    if "owner" not in df.columns or "week" not in df.columns:
+        return []
+
+    pairs: List[Tuple[int, str, str]] = []
+
+    def _unique_owners(values) -> List[str]:
+        seen: List[str] = []
+        for raw in values:
+            if raw is None or (isinstance(raw, float) and np.isnan(raw)):
+                continue
+            owner = str(raw)
+            if owner and owner not in seen:
+                seen.append(owner)
+        return seen
+
+    if "matchup_id" in df.columns:
+        for (week, _mid), grp in df.groupby(["week", "matchup_id"], sort=False):
+            owners = _unique_owners(grp["owner"].tolist())
+            if len(owners) != 2:
+                continue
+            try:
+                w = int(week)
+            except (TypeError, ValueError):
+                continue
+            pairs.append((w, owners[0], owners[1]))
+        return pairs
+
+    if "opponent" in df.columns:
+        seen_keys: set[tuple] = set()
+        for _, row in df.iterrows():
+            owners = _unique_owners([row.get("owner"), row.get("opponent")])
+            if len(owners) != 2:
+                continue
+            try:
+                w = int(row["week"])
+            except (TypeError, ValueError):
+                continue
+            key = (w, tuple(sorted(owners)))
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            pairs.append((w, owners[0], owners[1]))
+    return pairs
+
+
+def _norm_series(series) -> pd.Series:
+    s = pd.Series(series, dtype="float64")
+    min_v, max_v = float(s.min()), float(s.max())
+    if not np.isfinite(min_v) or not np.isfinite(max_v) or max_v == min_v:
+        return pd.Series(0.5, index=s.index)
+    return (s - min_v) / (max_v - min_v)
+
+
+def build_team_strength(team_stats: pd.DataFrame) -> dict[str, float]:
+    """0–1 opponent weights for SOS.
+
+    Uses season scoring (AVG) blended with win rate — more stable than
+    PowerScore, which already mixes Last3 recency and would make schedule
+    difficulty chase hot/cold streaks.
+    """
+    if team_stats is None or getattr(team_stats, "empty", True):
+        return {}
+
+    parts: List[pd.Series] = []
+    weights: List[float] = []
+    if "AVG" in team_stats.columns:
+        parts.append(_norm_series(team_stats["AVG"].fillna(0.0)))
+        weights.append(0.65)
+    if "Win%" in team_stats.columns:
+        parts.append(_norm_series(team_stats["Win%"].fillna(0.0)))
+        weights.append(0.35)
+    if not parts and "PowerScore" in team_stats.columns:
+        parts.append(_norm_series(team_stats["PowerScore"].astype(float)))
+        weights.append(1.0)
+    if not parts:
+        parts.append(pd.Series(0.5, index=team_stats.index))
+        weights.append(1.0)
+
+    wsum = sum(weights) or 1.0
+    blended = sum(w * p for w, p in zip(weights, parts)) / wsum
 
     strength_by_owner: dict[str, float] = {}
-    for idx, row in team_stats.reset_index(drop=True).iterrows():
-        owner = row.get("owner")
-        if owner is None:
+    if "owner" not in team_stats.columns:
+        return strength_by_owner
+    for idx in team_stats.index:
+        owner = team_stats.at[idx, "owner"]
+        if owner is None or (isinstance(owner, float) and np.isnan(owner)):
             continue
-        strength_by_owner[owner] = float(norm.iloc[idx])
-
+        strength_by_owner[str(owner)] = float(blended.loc[idx])
     return strength_by_owner
+
+
+def _sos_alias_map(
+        team_strength: Dict[str, float],
+        users: Any,
+        all_matchups: Optional[Dict[int, List[dict]]] = None,
+) -> Dict[str, str]:
+    """Map roster_id / username / display_name / team_name → owner key."""
+    aliases: Dict[str, str] = {}
+    owner_set = set(team_strength)
+    owner_lower = {str(o).lower(): o for o in owner_set}
+
+    def _bind(alias: Any, owner: str) -> None:
+        if alias is None or owner not in owner_set:
+            return
+        key = str(alias).strip()
+        if not key:
+            return
+        aliases[key] = owner
+        aliases[key.lower()] = owner
+
+    for owner in owner_set:
+        _bind(owner, owner)
+
+    for week_ms in (all_matchups or {}).values():
+        if isinstance(week_ms, dict):
+            week_ms = [week_ms]
+        for m in week_ms or []:
+            if not isinstance(m, dict):
+                continue
+            for side in ("left", "right"):
+                team = m.get(side) or {}
+                name = team.get("name")
+                owner = name if name in owner_set else owner_lower.get(str(name or "").lower())
+                if not owner:
+                    continue
+                _bind(team.get("roster_id"), owner)
+                _bind(team.get("username"), owner)
+                _bind(name, owner)
+
+    if isinstance(users, dict):
+        user_iter = users.values()
+    else:
+        user_iter = users or []
+    for u in user_iter:
+        if not isinstance(u, dict):
+            continue
+        team_name = (u.get("metadata") or {}).get("team_name") or u.get("display_name")
+        owner = None
+        for cand in (team_name, u.get("display_name"), u.get("username")):
+            if cand in owner_set:
+                owner = cand
+                break
+            if cand is not None:
+                owner = owner_lower.get(str(cand).lower())
+                if owner:
+                    break
+        if not owner:
+            continue
+        _bind(u.get("display_name"), owner)
+        _bind(u.get("username"), owner)
+        _bind(team_name, owner)
+
+    return aliases
+
+
+def _sos_accumulate(
+        out: dict,
+        team_strength: Dict[str, float],
+        a: Optional[str],
+        b: Optional[str],
+        bucket: str,
+) -> None:
+    if not a or not b or a == b or a not in out or b not in out:
+        return
+    out[a][f"{bucket}_sos"] += team_strength[b]
+    out[a][f"{bucket}_cnt"] += 1
+    out[b][f"{bucket}_sos"] += team_strength[a]
+    out[b][f"{bucket}_cnt"] += 1
+
+
+def _sos_indexify(values: List[float]) -> Tuple[float, float]:
+    if not values:
+        return 0.0, 0.0
+    mu = sum(values) / len(values)
+    var = sum((v - mu) ** 2 for v in values) / len(values)
+    return mu, var ** 0.5
 
 
 def compute_sos_by_team(
         all_matchups: Dict[int, List[dict]],
-        team_strength: Dict[int, float],
+        team_strength: Dict[str, float],
         weeks_past: int,
-        users: Dict[int, str],
+        users: Any = None,
         regular_season_weeks: int = 14,
-) -> Dict[int, dict]:
-    out: dict[Any, dict[str, Any]] = {
-        owner: {"past_sos": 0.0, "past_cnt": 0, "ros_sos": 0.0, "ros_cnt": 0}
+        past_pairs: Optional[Iterable[tuple]] = None,
+) -> Dict[str, dict]:
+    """Past / rest-of-season SOS indexed to 100 = league average, +10 per σ.
+
+    Higher = tougher opponents. Regular-season only: playoff weeks in
+    ``all_matchups`` are ignored. ``past_pairs`` (from weekly scores) is the
+    preferred source for games already played because those rows share owner
+    keys with ``team_strength``.
+    """
+    out: dict[str, dict[str, Any]] = {
+        str(owner): {"past_sos": 0.0, "past_cnt": 0, "ros_sos": 0.0, "ros_cnt": 0}
         for owner in team_strength
     }
+    strength = {str(k): float(v) for k, v in team_strength.items()}
+    aliases = _sos_alias_map(strength, users, all_matchups)
 
-    def _resolve_name(name: str) -> str:
-        match = next(
-            (
-                u.get("metadata", {}).get("team_name") or name
-                for u in users
-                if u.get("display_name") == name
-            ),
-            name,
-        )
-        return match
+    def _resolve(token: Any) -> Optional[str]:
+        if token is None:
+            return None
+        key = str(token)
+        if key in aliases:
+            return aliases[key]
+        return aliases.get(key.lower())
 
-    # weeks_past is the latest *played* week, so it belongs in past SOS (inclusive),
-    # and the rest-of-season window starts the week after it. The regular season is
-    # assumed to be `regular_season_weeks` long (default 14); the matchup dict also
-    # carries playoff weeks 15-17, which are intentionally excluded from ROS SOS.
-    for w in range(1, weeks_past + 1):
-        for a, b in compute_week_opponents(all_matchups.get(w, [])):
-            username = _resolve_name(a)
-            username2 = _resolve_name(b)
+    try:
+        past_end = min(max(0, int(weeks_past)), int(regular_season_weeks))
+        ros_end = int(regular_season_weeks)
+    except (TypeError, ValueError):
+        past_end, ros_end = 0, 14
 
-            if username not in out or username2 not in out:
+    used_past_pairs = False
+    if past_pairs is not None:
+        for item in past_pairs:
+            if item is None:
                 continue
-
-            out[username]["past_sos"] += team_strength[username2]
-            out[username]["past_cnt"] += 1
-
-            out[username2]["past_sos"] += team_strength[username]
-            out[username2]["past_cnt"] += 1
-
-    for w in range(weeks_past + 1, regular_season_weeks + 1):
-        for a, b in compute_week_opponents(all_matchups.get(w, [])):
-            username = _resolve_name(a)
-            username2 = _resolve_name(b)
-
-            if username not in out or username2 not in out:
+            week = None
+            if len(item) >= 3:
+                week, a_raw, b_raw = item[0], item[1], item[2]
+            elif len(item) == 2:
+                a_raw, b_raw = item
+            else:
                 continue
+            if week is not None:
+                try:
+                    w = int(week)
+                except (TypeError, ValueError):
+                    continue
+                if w < 1 or w > past_end:
+                    continue
+            a, b = _resolve(a_raw), _resolve(b_raw)
+            _sos_accumulate(out, strength, a, b, "past")
+            used_past_pairs = True
 
-            out[username]["ros_sos"] += team_strength[username2]
-            out[username]["ros_cnt"] += 1
+    if not used_past_pairs:
+        for w in range(1, past_end + 1):
+            for a_raw, b_raw in compute_week_opponents((all_matchups or {}).get(w, [])):
+                _sos_accumulate(out, strength, _resolve(a_raw), _resolve(b_raw), "past")
 
-            out[username2]["ros_sos"] += team_strength[username]
-            out[username2]["ros_cnt"] += 1
+    matchups = all_matchups or {}
+    for w in range(past_end + 1, ros_end + 1):
+        for a_raw, b_raw in compute_week_opponents(matchups.get(w, [])):
+            _sos_accumulate(out, strength, _resolve(a_raw), _resolve(b_raw), "ros")
 
     past_vals: list[float] = []
     ros_vals: list[float] = []
@@ -977,16 +1195,8 @@ def compute_sos_by_team(
         else:
             v["ros_sos"] = 0.0
 
-    def _indexify(values: List[float]) -> Tuple[float, float]:
-        if not values:
-            return 0.0, 0.0
-        mu = sum(values) / len(values)
-        var = sum((v - mu) ** 2 for v in values) / len(values)
-        sigma = var ** 0.5
-        return mu, sigma
-
-    mu_p, sigma_p = _indexify(past_vals)
-    mu_r, sigma_r = _indexify(ros_vals)
+    mu_p, sigma_p = _sos_indexify(past_vals)
+    mu_r, sigma_r = _sos_indexify(ros_vals)
 
     for v in out.values():
         if v["past_cnt"] and sigma_p > 0:
