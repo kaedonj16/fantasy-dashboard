@@ -329,7 +329,10 @@ def build_dashboard_body(ctx: dict) -> str:
                       or ctx.get("settings") or {}),
         ):
             _bb_badge = (
-                '<span class="os-hero-tag" title="Best Ball — no weekly lineup locks">'
+                '<span class="os-hero-tag" style="display:inline-flex;align-items:center;'
+                'margin-left:8px;padding:3px 9px;border-radius:8px;font-size:11px;font-weight:800;'
+                'letter-spacing:.03em;vertical-align:middle;color:var(--accent);'
+                'background:var(--accent-soft);" title="Best Ball — no weekly lineup locks">'
                 'Best Ball</span>'
             )
             if _viewer_team:
@@ -377,7 +380,7 @@ def build_dashboard_body(ctx: dict) -> str:
         <section class="os-hero-card">
           <div class="os-hero-top">
             <div>
-              <h1 class="os-hero-title">Season Hub {_bb_badge}</h1>
+              <h1 class="os-hero-title">Season Hub</h1>{_bb_badge}
               <p class="os-hero-copy">{_hero_copy}</p>
             </div>
           </div>
