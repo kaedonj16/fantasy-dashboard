@@ -234,7 +234,7 @@ def render_injury_accordion(df_inj: pd.DataFrame) -> str:
             upd_str  = ""
             if last_upd is not None and not isinstance(last_upd, float):
                 try:
-                    upd_str = last_upd.strftime("%-m/%-d")
+                    upd_str = f"{last_upd.month}/{last_upd.day}"
                 except Exception:
                     logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 

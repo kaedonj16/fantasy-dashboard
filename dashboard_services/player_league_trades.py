@@ -362,7 +362,7 @@ def get_player_league_trades(
                 date_str = ""
                 if ts:
                     try:
-                        date_str = ts.strftime("%-m/%-d/%y")
+                        date_str = f"{ts.month}/{ts.day}/{ts.strftime('%y')}"
                     except Exception:
                         date_str = ts.strftime("%m/%d/%y")
                 collected.append({

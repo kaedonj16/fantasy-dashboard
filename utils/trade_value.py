@@ -47,10 +47,24 @@ def player_trade_value(
             return 0.0
 
     if st == "redraft":
+        # Prefer size-bucketed redraft columns when present; fall back to the
+        # 10-team base columns (redraft_value_1qb / redraft_value_sf).
         if lt == "sf":
-            val = _n(player.get("redraft_value_sf") or player.get("redraft_value_1qb"))
+            if size == 10:
+                val = _n(player.get("redraft_value_sf") or player.get("redraft_value_1qb"))
+            else:
+                size_key = f"redraft_sf_value_{size}"
+                val = _n(
+                    player.get(size_key)
+                    or player.get("redraft_value_sf")
+                    or player.get("redraft_value_1qb")
+                )
         else:
-            val = _n(player.get("redraft_value_1qb"))
+            if size == 10:
+                val = _n(player.get("redraft_value_1qb"))
+            else:
+                size_key = f"redraft_value_{size}"
+                val = _n(player.get(size_key) or player.get("redraft_value_1qb"))
     elif lt == "sf":
         size_key = "sf_value" if size == 10 else f"sf_value_{size}"
         val = _n(player.get(size_key) or player.get("sf_value") or player.get("value"))

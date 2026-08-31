@@ -25,7 +25,8 @@ from data_building.breakout_engine.calculate_breakouts_with_real_data import mai
 
 # Ensure DATABASE_URL is set
 if "DATABASE_URL" not in os.environ:
-    os.environ["DATABASE_URL"] = f"postgresql://{os.environ.get('USER')}@localhost:5432/brfantasy"
+    _db_user = os.environ.get("USER") or os.environ.get("USERNAME") or "postgres"
+    os.environ["DATABASE_URL"] = f"postgresql://{_db_user}@localhost:5432/brfantasy"
 
 
 # =============================================================================

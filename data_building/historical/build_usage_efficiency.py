@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+import tempfile
 import urllib.request
 from pathlib import Path
 from typing import Any, Optional
@@ -84,7 +85,7 @@ def _load_id_crosswalk() -> tuple[dict[str, str], dict[str, str]]:
     """gsis→sleeper and pfr→sleeper from DynastyProcess ids (same file nfl_data_py uses)."""
     import pandas as pd
 
-    dest = Path("/tmp/db_playerids.csv")
+    dest = Path(tempfile.gettempdir()) / "db_playerids.csv"
     if not dest.exists():
         _download(IDS_URL, dest)
     df = pd.read_csv(dest)
@@ -230,7 +231,7 @@ def refresh_efficiency_cache(seasons: tuple[int, ...] = DEFAULT_SEASONS) -> dict
     import pandas as pd
 
     gsis_map, pfr_map = _load_id_crosswalk()
-    tmp = Path("/tmp/historical_nflverse")
+    tmp = Path(tempfile.gettempdir()) / "historical_nflverse"
     tmp.mkdir(parents=True, exist_ok=True)
     rec = pd.read_parquet(_download(NGS_RECEIVING_URL, tmp / "ngs_receiving.parquet"))
     pas = pd.read_parquet(_download(NGS_PASSING_URL, tmp / "ngs_passing.parquet"))

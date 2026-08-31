@@ -210,7 +210,12 @@ def test_commissioner_metrics_helpers():
 
 def test_server_roster_intel_adp_fallback():
     assert "def _server_roster_intel_adp" in APP_PY
-    assert "fc_adp = _server_roster_intel_adp(season, league_type)" in APP_PY
+    # Fallback must pass the league's dynasty/redraft axis so redraft leagues
+    # don't silently get dynasty ADP ranks when FantasyCalc is unavailable.
+    assert "scoring_type=_adp_scoring" in APP_PY
+    assert '_adp_scoring = "redraft" if _league_is_redraft(ctx) else "dynasty"' in APP_PY
+    assert "_server_roster_intel_adp(" in APP_PY
+    assert "season, league_type, scoring_type=_adp_scoring" in APP_PY
 
 
 def test_recap_preview_contains_record_and_players():

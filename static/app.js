@@ -4637,6 +4637,12 @@ window.initTradePage = function initTradePage(root = document) {
       sf_value_14: Number(p.sf_value_14 || p.sf_value || p.value || 0),
       redraft_value_1qb: p.redraft_value_1qb != null ? Number(p.redraft_value_1qb) : null,
       redraft_value_sf: p.redraft_value_sf != null ? Number(p.redraft_value_sf) : null,
+      redraft_value_8: p.redraft_value_8 != null ? Number(p.redraft_value_8) : null,
+      redraft_value_12: p.redraft_value_12 != null ? Number(p.redraft_value_12) : null,
+      redraft_value_14: p.redraft_value_14 != null ? Number(p.redraft_value_14) : null,
+      redraft_sf_value_8: p.redraft_sf_value_8 != null ? Number(p.redraft_sf_value_8) : null,
+      redraft_sf_value_12: p.redraft_sf_value_12 != null ? Number(p.redraft_sf_value_12) : null,
+      redraft_sf_value_14: p.redraft_sf_value_14 != null ? Number(p.redraft_sf_value_14) : null,
       pos_rank_label: p.pos_rank_label || "",
       sf_pos_rank_label: p.sf_pos_rank_label || "",
       is_rookie: p.is_rookie === true,
@@ -4853,10 +4859,21 @@ window.initTradePage = function initTradePage(root = document) {
     const _n = v => Number(v) || 0;  // falsy fallback, matching the server's `or`
     let base;
     if (scoringType === "redraft") {
-      // Redraft values are league-size agnostic (1QB vs SF only).
-      base = leagueType === "sf"
-        ? (_n(player.redraft_value_sf) || _n(player.redraft_value_1qb))
-        : _n(player.redraft_value_1qb);
+      // Prefer size-bucketed redraft columns when present (mirrors
+      // utils/trade_value.player_trade_value); fall back to 10-team base.
+      if (leagueType === "sf") {
+        if (size === 10) {
+          base = _n(player.redraft_value_sf) || _n(player.redraft_value_1qb);
+        } else {
+          const key = `redraft_sf_value_${size}`;
+          base = _n(player[key]) || _n(player.redraft_value_sf) || _n(player.redraft_value_1qb);
+        }
+      } else if (size === 10) {
+        base = _n(player.redraft_value_1qb);
+      } else {
+        const key = `redraft_value_${size}`;
+        base = _n(player[key]) || _n(player.redraft_value_1qb);
+      }
     } else if (leagueType === "sf") {
       const key = size === 10 ? "sf_value" : `sf_value_${size}`;
       base = _n(player[key]) || _n(player.sf_value) || _n(player.value);

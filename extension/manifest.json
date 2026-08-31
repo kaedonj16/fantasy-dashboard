@@ -3,7 +3,7 @@
   "name": "BR Fantasy — League Connector",
   "version": "1.4.5",
   "description": "Connect private ESPN leagues to BR Fantasy and auto-relay live ESPN/Yahoo draft picks into Draft Room.",
-  "permissions": ["cookies", "scripting", "tabs"],
+  "permissions": ["cookies", "scripting", "storage", "tabs"],
   "host_permissions": [
     "https://*.espn.com/*",
     "https://*.fantasysports.yahoo.com/*",

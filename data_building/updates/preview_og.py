@@ -113,7 +113,16 @@ season_str = f"Season {season}"
 bb = draw.textbbox((0, 0), season_str, font=f_label)
 draw.text((W - PAD - (bb[2]-bb[0]), H - 32), season_str, fill=C_MUTED, font=f_label)
 
-out = "/tmp/og_preview.png"
+out = os.path.join(__import__("tempfile").gettempdir(), "og_preview.png")
 img.save(out)
 print(f"Saved → {out}")
-subprocess.run(["open", out])
+# macOS `open`; Linux xdg-open; Windows startfile / start.
+if sys.platform == "darwin":
+    subprocess.run(["open", out], check=False)
+elif sys.platform.startswith("linux"):
+    subprocess.run(["xdg-open", out], check=False)
+elif sys.platform == "win32":
+    try:
+        os.startfile(out)  # type: ignore[attr-defined]
+    except Exception:
+        subprocess.run(["cmd", "/c", "start", "", out], check=False)

@@ -442,7 +442,10 @@ PAGE_HTML_TTL = 60 * 30  # 30 minutes
 
 daily_init_done = False
 os.environ["TZ"] = "America/New_York"
-time.tzset()
+# time.tzset is POSIX-only; Windows has no equivalent. ZoneInfo-based
+# helpers (utils/relative_time, push/billing) remain correct either way.
+if hasattr(time, "tzset"):
+    time.tzset()
 
 # directory to hold value-table files
 VALUE_TABLE_DIR = Path(__file__).resolve().parents[0] / "data"
@@ -2081,8 +2084,9 @@ def _render_league_chrome_chip(meta: dict, *, can_switch: bool) -> str:
 
 
 def _page_html_tmp_path(platform: str, season: int, league_id: str, page: str) -> str:
-    safe = f"{platform}_{season}_{league_id}_{page}".replace("/", "_")
-    return f"/tmp/br_page_{safe}.html"
+    import tempfile
+    safe = f"{platform}_{season}_{league_id}_{page}".replace("/", "_").replace("\\", "_")
+    return os.path.join(tempfile.gettempdir(), f"br_page_{safe}.html")
 
 
 def get_page_html_from_cache(platform: str, season: int, league_id: str, page: str) -> Optional[str]:
@@ -8200,6 +8204,9 @@ def _league_is_redraft(ctx: dict) -> bool:
     ESPN fantasy football has no dynasty product, so platform alone decides.
     Sleeper/Yahoo/Fleaflicker publish or normalize a type flag; dynasty is
     type 2 (or missing/unparseable type on non-ESPN platforms).
+
+    Also honors provider string ``league_type`` (MFL/Flea) when numeric ``type``
+    is absent, so MFL redraft leagues aren't misclassified as dynasty.
     """
     if str(ctx.get("platform") or "").strip().lower() == "espn":
         return True
@@ -8208,9 +8215,18 @@ def _league_is_redraft(ctx: dict) -> bool:
                 or ctx.get("settings") or {})
     try:
         t = settings.get("type")
-        return t is not None and int(t) in (0, 1)
+        if t is not None and int(t) in (0, 1):
+            return True
+        if t is not None and int(t) == 2:
+            return False
     except (TypeError, ValueError, AttributeError):
+        pass
+    lt = str(settings.get("league_type") or "").strip().lower()
+    if lt in ("redraft", "keeper", "re-draft", "redraft_keeper"):
+        return True
+    if "dynasty" in lt:
         return False
+    return False
 
 
 def _waiver_value_keys(ctx: dict) -> "tuple[str, str]":
@@ -9626,7 +9642,8 @@ def api_start_sit_options():
     # ── FPTS-against data (for "Def vs pos" pts/gm display) ──────────────────
     fpts_against: dict = {}
     try:
-        fpts_against = _compute_fpts_against(season)
+        _fa_fmt = _scoring_format_from_settings(ctx.get("scoring_settings"))
+        fpts_against = _compute_fpts_against(season, scoring=_fa_fmt)
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
@@ -12736,11 +12753,25 @@ _MATCHUP_RATINGS_TS: dict = {}
 _MATCHUP_RATINGS_TTL = 3600  # 1 hour
 
 
-def _compute_fpts_against(season: int) -> dict:
+def _scoring_format_from_settings(scoring_settings) -> str:
+    """Map league reception points onto ppr / half / std for fpts-against etc."""
+    try:
+        rec = float((scoring_settings or {}).get("rec") or 0)
+    except (TypeError, ValueError):
+        rec = 0.0
+    if rec >= 1.0:
+        return "ppr"
+    if rec >= 0.5:
+        return "half"
+    return "std"
+
+
+def _compute_fpts_against(season: int, scoring: str = "ppr") -> dict:
     """
     Compute fantasy points allowed per game by each NFL defense, broken down by position.
-    Uses cached weekly stats (pts_ppr per player) + schedule files to attribute
-    each player's output to the opposing defense.
+    Uses cached weekly stats + schedule files to attribute each player's output
+    to the opposing defense. ``scoring`` selects pts_ppr / pts_half_ppr / pts_std
+    so half-PPR and standard leagues don't inherit PPR opponent ranks.
 
     Returns: {
       "NE": {"QB": 22.1, "RB": 18.4, "WR": 28.6, "TE": 9.2, "games": 9},
@@ -12750,7 +12781,18 @@ def _compute_fpts_against(season: int) -> dict:
     import glob as _glob
     global _FPTS_AGAINST_CACHE, _FPTS_AGAINST_CACHE_TS
 
-    cache_key = str(season)
+    scoring = str(scoring or "ppr").strip().lower()
+    pts_key = {
+        "ppr": "pts_ppr",
+        "half": "pts_half_ppr",
+        "half_ppr": "pts_half_ppr",
+        "half-ppr": "pts_half_ppr",
+        "std": "pts_std",
+        "standard": "pts_std",
+        "non_ppr": "pts_std",
+    }.get(scoring, "pts_ppr")
+
+    cache_key = f"{season}:{pts_key}"
     now = time.time()
     if _FPTS_AGAINST_CACHE.get(cache_key) and now - _FPTS_AGAINST_CACHE_TS.get(cache_key, 0) < _FPTS_AGAINST_TTL:
         return _FPTS_AGAINST_CACHE[cache_key]
@@ -12789,7 +12831,7 @@ def _compute_fpts_against(season: int) -> dict:
             )
             if not sched_files:
                 continue
-            games = json.load(open(sched_files[0]))
+            games = json.load(open(sched_files[0], encoding="utf-8"))
             _alias = {"WSH": "WAS"}
 
             def _n(t):
@@ -12806,7 +12848,7 @@ def _compute_fpts_against(season: int) -> dict:
                     games_played[away].add((week, home))
 
             # Load stats
-            stats_data = json.load(open(stat_file))
+            stats_data = json.load(open(stat_file, encoding="utf-8"))
             if not isinstance(stats_data, dict):
                 continue
 
@@ -12818,7 +12860,7 @@ def _compute_fpts_against(season: int) -> dict:
                 opp = opp_map.get(player_team)
                 if not opp:
                     continue  # on bye or no schedule data
-                pts = float(stats.get("pts_ppr") or 0)
+                pts = float(stats.get(pts_key) or stats.get("pts_ppr") or 0)
                 if pts == 0:
                     continue
                 totals[opp][pos].append(pts)
@@ -13971,7 +14013,10 @@ def api_weekly_week():
                                                      str((m.get("right") or {}).get("roster_id", ""))) else 1,
     )
     status_by_pid = (statuses.get(week) or {}).get("statuses", {}) or {}
-    _fpts_against_api = _compute_fpts_against(season)
+    _fpts_against_api = _compute_fpts_against(
+        season,
+        scoring=_scoring_format_from_settings(ctx.get("scoring_settings")),
+    )
 
     # Attach H2H records for this week's matchups
     for _m in matchups:
@@ -14820,7 +14865,7 @@ def api_trade_eval():
         if isinstance(p, dict) and "id" in p
     }
 
-    pick_values = load_pick_value_table()
+    pick_values = load_pick_value_table(is_sf=(league_type == "sf"))
 
     def value_pick(pk: str) -> float:
         try:
@@ -15684,9 +15729,13 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
         raise ValueError("model_value_table must be a list of player objects")
 
     # DB values are preferred (more accurate); WLS fills in bucket picks or any gaps.
+    # Load BOTH 1QB and SF axes so injected picks carry value + sf_value and the
+    # draft/trade boards can switch without re-fetching.
     try:
         from dashboard_services.picks import load_pick_value_table as _lpvt
-        _pick_values = _lpvt()
+        _pick_values_1qb = _lpvt(is_sf=False) or {}
+        _pick_values_sf = _lpvt(is_sf=True) or {}
+        _pick_ids_union = set(_pick_values_1qb) | set(_pick_values_sf)
         _db_pick_ids: set = {
             str(p.get("id") or "") for p in model_value_table
             if str(p.get("position") or "").upper() == "PICK"
@@ -15710,8 +15759,10 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
 
         _injected_picks = []
         _seen_ids: set = set(_db_pick_ids)
-        for _pk_id, _pk_val in _pick_values.items():
-            if _pk_id in _seen_ids or float(_pk_val) <= 0:
+        for _pk_id in _pick_ids_union:
+            _pk_val = float(_pick_values_1qb.get(_pk_id) or 0)
+            _pk_sf = float(_pick_values_sf.get(_pk_id) or _pk_val or 0)
+            if _pk_id in _seen_ids or (_pk_val <= 0 and _pk_sf <= 0):
                 continue
             _parts = _pk_id.split("_")
             if len(_parts) >= 2:
@@ -15738,9 +15789,12 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
                     _name = _pk_id.replace("_", " ")
             else:
                 _name = _pk_id.replace("_", " ")
+            _base = _pk_val if _pk_val > 0 else _pk_sf
             _injected_picks.append({
                 "id": _pk_id, "name": _name, "position": "PICK",
-                "value": round(float(_pk_val), 1), "team": "",
+                "value": round(float(_base), 1),
+                "sf_value": round(float(_pk_sf if _pk_sf > 0 else _base), 1),
+                "team": "",
             })
         model_value_table.extend(_injected_picks)
         logger.info(f"[api/league-players] DB picks: {len(_db_pick_ids)}, WLS fallback picks: {len(_injected_picks)}")
@@ -15880,20 +15934,31 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
 
     # Attach redraft values from the DB so the rankings/trade tools can offer a
     # Dynasty↔Redraft toggle (model_values.json only carries dynasty values).
+    # Include size-bucketed columns when present so 8/12/14-team redraft boards
+    # don't silently fall back to the 10-team curve.
     try:
         from dashboard_services.db import get_conn as _gc
         with _gc() as _rc:
             _rd_rows = _rc.execute(
-                "SELECT player_id, redraft_value_1qb, redraft_value_sf "
+                "SELECT player_id, redraft_value_1qb, redraft_value_sf, "
+                "redraft_value_8, redraft_value_12, redraft_value_14, "
+                "redraft_sf_value_8, redraft_sf_value_12, redraft_sf_value_14 "
                 "FROM player_values "
                 "WHERE redraft_value_1qb IS NOT NULL OR redraft_value_sf IS NOT NULL"
             ).fetchall()
         _rd_map = {str(r["player_id"]): r for r in _rd_rows}
+        _rd_fields = (
+            "redraft_value_1qb", "redraft_value_sf",
+            "redraft_value_8", "redraft_value_12", "redraft_value_14",
+            "redraft_sf_value_8", "redraft_sf_value_12", "redraft_sf_value_14",
+        )
         for _p in model_value_table:
             _r = _rd_map.get(str(_p.get("id") or ""))
-            if _r:
-                _p["redraft_value_1qb"] = _r["redraft_value_1qb"]
-                _p["redraft_value_sf"] = _r["redraft_value_sf"]
+            if not _r:
+                continue
+            for _f in _rd_fields:
+                if _r.get(_f) is not None:
+                    _p[_f] = _r[_f]
     except Exception as _e_rd:
         logger.info(f"[api/league-players] redraft values skipped: {_e_rd}")
 
@@ -16201,18 +16266,29 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     # injured star (Tucker Kraft, 8 games in 2025) lands around −40 VORP while
     # ranking TE10 in projected PPG for the year being drafted. IR players
     # already zeroed above are omitted (no upcoming-season points).
+    # Compute for every common league size (like tier thresholds) so the draft
+    # room can switch 8/10/12/14 without a second fetch; default vorp/sf_vorp
+    # stay on 12-team for back-compat.
     try:
         from utils.vorp import projected_vorp_map as _proj_vorp
-        # 1QB replacement uses 1 QB starter; SF uses 2 (QB + Superflex). Both
-        # land on the player so the draft compare/preview can switch like pos rank.
-        _vorp_map = _proj_vorp(model_value_table, num_teams=12)
-        _sf_vorp_map = _proj_vorp(model_value_table, num_teams=12, starters={"QB": 2.0})
+        _vorp_by_size = {}
+        _sf_vorp_by_size = {}
+        for _sz in (8, 10, 12, 14):
+            _vorp_by_size[_sz] = _proj_vorp(model_value_table, num_teams=_sz)
+            _sf_vorp_by_size[_sz] = _proj_vorp(
+                model_value_table, num_teams=_sz, starters={"QB": 2.0}
+            )
         for _player in model_value_table:
             _pid = str(_player.get("id") or "")
-            if _pid in _vorp_map:
-                _player["vorp"] = round(_vorp_map[_pid], 1)
-            if _pid in _sf_vorp_map:
-                _player["sf_vorp"] = round(_sf_vorp_map[_pid], 1)
+            if _pid in _vorp_by_size[12]:
+                _player["vorp"] = round(_vorp_by_size[12][_pid], 1)
+            if _pid in _sf_vorp_by_size[12]:
+                _player["sf_vorp"] = round(_sf_vorp_by_size[12][_pid], 1)
+            for _sz in (8, 10, 12, 14):
+                if _pid in _vorp_by_size[_sz]:
+                    _player[f"vorp_{_sz}"] = round(_vorp_by_size[_sz][_pid], 1)
+                if _pid in _sf_vorp_by_size[_sz]:
+                    _player[f"sf_vorp_{_sz}"] = round(_sf_vorp_by_size[_sz][_pid], 1)
     except Exception as _e_vorp:
         logger.info(f"[api/league-players] VORP enrichment skipped: {_e_vorp}")
 
@@ -19574,7 +19650,7 @@ def api_team_trades(roster_id: str):
                 if ts_raw:
                     from datetime import timezone as _tz
                     _dt = datetime.fromtimestamp(ts_raw / 1000.0, tz=_tz.utc)
-                    date_str = _dt.strftime("%-m/%-d/%y")
+                    date_str = f"{_dt.month}/{_dt.day}/{_dt.strftime('%y')}"
 
                 my_gets = [_pinfo(pid) for pid, to_rid in adds.items() if str(to_rid) == str(roster_id)]
                 my_sends = [_pinfo(pid) for pid, from_rid in drops.items() if str(from_rid) == str(roster_id)]
@@ -21506,7 +21582,8 @@ def api_trade_intel_player_trades(player_id: str):
             trade_date = None
             if r["created_at"]:
                 try:
-                    trade_date = r["created_at"].strftime("%-m/%-d/%y")
+                    _ca = r["created_at"]
+                    trade_date = f"{_ca.month}/{_ca.day}/{_ca.strftime('%y')}"
                 except Exception:
                     trade_date = str(r["created_at"])[:10]
             result.append({
@@ -21752,14 +21829,19 @@ def api_trade_intel_run_crawl():
         return jsonify({"error": "Internal error"}), 500
 
 
-def _server_roster_intel_adp(season: int, league_type: str) -> dict:
+def _server_roster_intel_adp(
+    season: int, league_type: str, *, scoring_type: str = "dynasty"
+) -> dict:
     """FantasyCalc is blocked from server IPs. Fill ADP ranks from the crawled
     BR Fantasy market so ESPN/PWA clients still get market signals."""
     try:
         from dashboard_services.adp_service import resolve_market_adp
         is_sf = str(league_type or "").lower() in ("sf", "superflex")
+        st = str(scoring_type or "dynasty").strip().lower()
+        if st != "redraft":
+            st = "dynasty"
         raw = resolve_market_adp(
-            int(season), is_sf, scoring_type="dynasty",
+            int(season), is_sf, scoring_type=st,
             source="brfantasy", fallback=True,
         ) or {}
         out = {}
@@ -21802,10 +21884,8 @@ def api_roster_intel():
     # Fall back to session if the template didn't inject a viewer roster id
     if not viewer_rid_raw:
         viewer_rid_raw = str(session.get("viewer_roster_id") or "").strip()
-    # FC dynasty ADP - sent by browser because server IP is blocked by FC
+    # FC ADP - sent by browser because server IP is blocked by FC.
     fc_adp: dict = (body.get("fc_adp") or {}) if isinstance(body.get("fc_adp"), dict) else {}
-    if not fc_adp:
-        fc_adp = _server_roster_intel_adp(season, league_type)
 
     if not league_id:
         return jsonify({"error": "league_id required"}), 400
@@ -21814,6 +21894,12 @@ def api_roster_intel():
         ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
     except Exception as e:
         return _api_err("Request failed", e)
+
+    if not fc_adp:
+        _adp_scoring = "redraft" if _league_is_redraft(ctx) else "dynasty"
+        fc_adp = _server_roster_intel_adp(
+            season, league_type, scoring_type=_adp_scoring
+        )
 
     try:
         return _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season=season)
@@ -25943,7 +26029,9 @@ def page_trade_card(share_id: str):
         _dt = _created_at
         if hasattr(_dt, "astimezone"):
             _dt = _dt.astimezone(_tz.utc)
-        shared_date = _dt.strftime("%-m/%-d/%y") if _dt else ""
+        shared_date = (
+            f"{_dt.month}/{_dt.day}/{_dt.strftime('%y')}" if _dt else ""
+        )
     except Exception:
         shared_date = ""
 

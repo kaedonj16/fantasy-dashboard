@@ -9,6 +9,7 @@ def build_dashboard_body(ctx: dict) -> str:
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
         _render_do_next_waiver_card,
         _compute_fpts_against,
+        _scoring_format_from_settings,
         _owner_to_rid_map,
         _playoff_sim_cached,
         _playoff_tile_from_cache,
@@ -114,7 +115,10 @@ def build_dashboard_body(ctx: dict) -> str:
     except Exception:
         logger.debug("dashboard waiver card failed", exc_info=True)
 
-    _fpts_against_dash = _compute_fpts_against(season)
+    _fpts_against_dash = _compute_fpts_against(
+        season,
+        scoring=_scoring_format_from_settings(ctx.get("scoring_settings")),
+    )
     _dash_vid = str(viewer_roster_id or "")
     _dash_matchups = sorted(
         matchups_by_week.get(current_week, []),
