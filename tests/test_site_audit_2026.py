@@ -168,12 +168,21 @@ def test_single_sentry_sdk_pin():
     assert "2.29.1" in pins[0]
 
 
+def _png_dimensions(path):
+    """Read width/height from a PNG IHDR chunk (no Pillow dependency)."""
+    import struct
+    data = path.read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n", f"{path.name} is not a PNG"
+    # First chunk after signature: length (4) + type IHDR (4) + 13 bytes payload
+    assert data[12:16] == b"IHDR", f"{path.name} missing IHDR chunk"
+    return struct.unpack(">II", data[16:24])
+
+
 def test_default_og_card_is_large_branded_image():
     """Site-audit #13: default share previews use a 1200×630 card, not the square logo."""
-    assert (ROOT / "static" / "og-default.png").is_file()
-    from PIL import Image
-    with Image.open(ROOT / "static" / "og-default.png") as im:
-        assert im.size == (1200, 630)
+    og = ROOT / "static" / "og-default.png"
+    assert og.is_file()
+    assert _png_dimensions(og) == (1200, 630)
     assert "og-default.png" in APP_PY
     assert 'twitter:card" content="summary_large_image"' in APP_PY
     # Square logo must not be the default social image anymore.
