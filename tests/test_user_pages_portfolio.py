@@ -69,6 +69,8 @@ def test_portfolio_body_includes_moves_card():
     assert "/api/portfolio-actions" in fn
     assert "moves_card" in fn
     assert "top_strip + moves_card + league_card" in fn
+    assert "pf-move-row" in fn
+    assert "pf-moves-list" in fn
 
 
 def test_portfolio_record_and_rank_accepts_seed_int_standings_map():
