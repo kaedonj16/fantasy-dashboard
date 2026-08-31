@@ -8,7 +8,7 @@ EXT = REPO / "extension"
 
 def test_extension_manifest_includes_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.4.5"
+    assert manifest["version"] == "1.5.0"
     assert "cookies" in manifest["permissions"]
     assert "scripting" in manifest["permissions"]
     assert "tabs" in manifest["permissions"]
@@ -23,14 +23,14 @@ def test_extension_manifest_includes_draft_scripts():
         if "fantasy.espn.com/football/draft" in joined and world != "MAIN":
             iso_js = js
     assert main_js == ["espn_draft_main.js"]
-    assert iso_js == ["espn_draft.js"]
+    assert iso_js == ["assistant_inject.js", "espn_draft.js"]
     main_block = next(
         s for s in scripts
         if s.get("world") == "MAIN" and s.get("js") == ["espn_draft_main.js"]
     )
     iso_block = next(
         s for s in scripts
-        if s.get("world", "ISOLATED") != "MAIN" and s.get("js") == ["espn_draft.js"]
+        if s.get("world", "ISOLATED") != "MAIN" and "espn_draft.js" in s.get("js", [])
     )
     assert not main_block.get("all_frames")
     assert not iso_block.get("all_frames")
@@ -80,7 +80,8 @@ def test_extension_relay_message_contract():
     assert "relayPending" in iso
     assert "brfantasy:espn-draft-relay" in content
     assert "brfantasy:yahoo-draft-relay" in content
-    assert "overallPickNumber" in main
+    assert "playerName" in main
+    assert "rememberPlayerMeta" in main
     assert "br-fantasy-espn-sync-chip" in iso
     assert "lastDelivered" in iso
     assert "scheduleRetry" in iso
@@ -120,7 +121,13 @@ def test_pack_extension_strips_localhost():
     zips = list((EXT.parent / "artifacts").glob("br-fantasy-espn-connector-v*.zip"))
     assert zips
     with zipfile.ZipFile(sorted(zips)[-1]) as zf:
+        names = set(zf.namelist())
         manifest = json.loads(zf.read("manifest.json"))
     blob = json.dumps(manifest)
     assert "localhost" not in blob
     assert "127.0.0.1" not in blob
+    assert "overlay.html" in names
+    assert "overlay.css" in names
+    assert "overlay.js" in names
+    assert "assistant_inject.js" in names
+    assert "sleeper_draft.js" in names

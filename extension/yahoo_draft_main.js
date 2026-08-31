@@ -14,6 +14,8 @@
   const MAX_WALK = 4000;
   let lastFingerprint = "";
   let lastEmitAt = 0;
+  /** @type {Map<string, {playerName: string, pos: string, nflTeam: string}>} */
+  const playerMetaById = new Map();
 
   function leagueFromUrl() {
     try {
@@ -70,8 +72,82 @@
     return overall != null && pid != null && String(pid) !== "" && String(pid) !== "0";
   }
 
+  function yahooPlayerBlob(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    let player = raw.player;
+    if (Array.isArray(player)) player = player[0];
+    return player && typeof player === "object" ? player : null;
+  }
+
+  function yahooPlayerName(raw) {
+    if (!raw || typeof raw !== "object") return "";
+    const direct = raw.playerName || raw.player_name || raw.fullName || raw.display_name || raw.name_full;
+    if (direct && typeof direct === "string") return direct.trim();
+    const nameObj = raw.name;
+    if (nameObj && typeof nameObj === "object") {
+      const full = nameObj.full || nameObj.fullName;
+      if (full) return String(full).trim();
+      const joined = ((nameObj.first || nameObj.firstName || "") + " " + (nameObj.last || nameObj.lastName || "")).trim();
+      if (joined) return joined;
+    }
+    const first = raw.firstName || raw.first_name || "";
+    const last = raw.lastName || raw.last_name || "";
+    const joined = (String(first) + " " + String(last)).trim();
+    if (joined) return joined;
+    const player = yahooPlayerBlob(raw);
+    if (player && player !== raw) return yahooPlayerName(player);
+    return "";
+  }
+
+  function yahooPlayerPos(raw) {
+    if (!raw || typeof raw !== "object") return "";
+    const pos = raw.pos || raw.position || raw.display_position || raw.displayPosition || raw.eligible_positions;
+    if (typeof pos === "string" && pos) return pos.toUpperCase().split(",")[0].trim();
+    if (Array.isArray(pos) && pos[0]) return String(pos[0]).toUpperCase();
+    const player = yahooPlayerBlob(raw);
+    if (player && player !== raw) return yahooPlayerPos(player);
+    return "";
+  }
+
+  function yahooPlayerTeam(raw) {
+    if (!raw || typeof raw !== "object") return "";
+    const team =
+      raw.nflTeam ||
+      raw.editorial_team_abbr ||
+      raw.editorialTeamAbbr ||
+      raw.team_abbr ||
+      raw.display_team;
+    if (typeof team === "string" && /[A-Za-z]/.test(team)) return team.toUpperCase().slice(0, 3);
+    const player = yahooPlayerBlob(raw);
+    if (player && player !== raw) return yahooPlayerTeam(player);
+    return "";
+  }
+
+  function rememberYahooPlayer(raw) {
+    if (!raw || typeof raw !== "object") return;
+    const pid =
+      raw.playerId ??
+      raw.player_id ??
+      yahooIdFromKey(raw.player_key || raw.playerKey);
+    if (pid == null || String(pid) === "" || String(pid) === "0") return;
+    const name = yahooPlayerName(raw);
+    const pos = yahooPlayerPos(raw);
+    const nfl = yahooPlayerTeam(raw);
+    if (!name && !pos && !nfl) return;
+    const prev = playerMetaById.get(String(pid)) || {};
+    playerMetaById.set(String(pid), {
+      playerName: name || prev.playerName || "",
+      pos: pos || prev.pos || "",
+      nflTeam: nfl || prev.nflTeam || "",
+    });
+  }
+
   function normalizePick(raw) {
-    if (!isPickRow(raw)) return null;
+    if (!isPickRow(raw)) {
+      rememberYahooPlayer(raw);
+      return null;
+    }
+    rememberYahooPlayer(raw);
     const playerId =
       raw.playerId ??
       raw.player_id ??
@@ -85,9 +161,16 @@
     const roundId = raw.roundId ?? raw.round ?? raw.round_id;
     const roundPick = raw.roundPickNumber ?? raw.roundPick ?? raw.round_pick;
     const cost = raw.bidAmount ?? raw.cost ?? raw.auction_cost;
+    const cached = playerId != null ? playerMetaById.get(String(playerId)) : null;
+    const playerName = yahooPlayerName(raw) || (cached && cached.playerName) || "";
+    const pos = yahooPlayerPos(raw) || (cached && cached.pos) || "";
+    const nflTeam = yahooPlayerTeam(raw) || (cached && cached.nflTeam) || "";
     return {
       overallPickNumber: Number(overall),
       playerId: playerId == null ? null : String(playerId),
+      playerName: playerName || undefined,
+      pos: pos || undefined,
+      nflTeam: nflTeam || undefined,
       teamId: teamId == null ? null : String(teamId),
       roundId: roundId == null ? null : Number(roundId),
       roundPickNumber: roundPick == null ? null : Number(roundPick),
@@ -280,6 +363,7 @@
       return;
     }
     if (typeof data !== "object") return;
+    rememberYahooPlayer(data);
     if (data.draft_results || data.draftResults) {
       maybeFromDraftResults(data.draft_results || data.draftResults, source, null);
       return;
