@@ -11091,6 +11091,91 @@ select:focus {
     color: #e5e7eb;
 }
 
+/* Onboarding card is always navy — nested controls must not pull light-page tokens. */
+.home-card .home-steps-hint {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.home-card .home-step-num {
+    border-color: rgba(255, 255, 255, 0.22);
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.home-card .home-step-label {
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.home-card .home-step-item.active .home-step-num {
+    border-color: #38bdf8;
+    background: #38bdf8;
+    color: #0f172a;
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25);
+}
+
+.home-card .home-step-item.active .home-step-label {
+    color: #7dd3fc;
+}
+
+.home-card .home-step-item.done .home-step-label {
+    color: #86efac;
+}
+
+.home-card .home-step-connector {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.home-card .home-step-item.active + .home-step-connector {
+    background: linear-gradient(90deg, rgba(56, 189, 248, 0.55) 0%, rgba(255, 255, 255, 0.14) 100%);
+}
+
+.home-card .home-step-item.done + .home-step-connector {
+    background: var(--win);
+}
+
+.home-card .espn-home-methods {
+    border-color: rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.home-card .espn-home-method,
+.home-card .mfl-home-method,
+.home-card .flea-home-method {
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.home-card .espn-home-method.active,
+.home-card .mfl-home-method.active,
+.home-card .flea-home-method.active {
+    background: rgba(255, 255, 255, 0.14);
+    color: #f9fafb;
+    box-shadow: none;
+}
+
+.home-card .espn-home-description,
+.home-card .espn-home-help {
+    color: rgba(255, 255, 255, 0.62);
+}
+
+.home-card .espn-home-help summary {
+    color: #7dd3fc;
+}
+
+.home-card input[type="text"],
+.home-card input[type="password"],
+.home-card input[type="number"],
+.home-card input[type="email"],
+.home-card select,
+.home-card textarea {
+    background: rgba(255, 255, 255, 0.96);
+    border-color: rgba(255, 255, 255, 0.22);
+    color: #122d4b;
+}
+
+.home-card .hint {
+    color: rgba(255, 255, 255, 0.58);
+}
+
 /* "Continue as X" returning-user CTA banner */
 .saved-viewer-cta {
     display: flex;
@@ -15232,9 +15317,36 @@ img, svg, canvas {
     }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
     .home-page {
-        padding: 20px 16px 64px;
+        padding: 20px max(16px, env(safe-area-inset-left)) calc(48px + var(--dock-safe-bottom)) max(16px, env(safe-area-inset-right));
+        gap: 28px;
+    }
+
+    .home-hero {
+        grid-template-columns: 1fr;
+        gap: 24px;
+    }
+
+    .home-hero-right {
+        justify-content: stretch;
+    }
+
+    .home-title {
+        font-size: clamp(28px, 8vw, 34px);
+    }
+
+    .home-subtitle {
+        font-size: 16px;
+    }
+
+    .home-platform-row {
+        gap: 6px;
+    }
+
+    .home-platform-chip {
+        font-size: 10px;
+        padding: 4px 9px;
     }
 
     .home-proof {
@@ -15242,40 +15354,69 @@ img, svg, canvas {
         gap: 12px;
     }
 
-    .home-title {
-        font-size: 32px;
+    .home-card {
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+        padding: 18px 16px 16px;
+    }
+
+    .home-card .platform-btn {
+        min-height: 44px;
+        padding: 10px 8px;
+        font-size: 12px;
+    }
+
+    .home-steps-hint {
+        padding: 6px 8px;
+        margin-bottom: 12px;
+    }
+
+    .home-step-label {
+        font-size: 9px;
+    }
+
+    .home-step-num {
+        width: 18px;
+        height: 18px;
+        font-size: 9px;
+    }
+
+    .home-ticker-tag {
+        padding: 8px 10px;
+        font-size: 10px;
+    }
+
+    .home-ticker-track {
+        font-size: 12px;
+        gap: 20px;
+        padding: 8px 14px;
     }
 
     .home-feature-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 16px;
+        grid-template-columns: 1fr;
+        gap: 14px;
     }
 
     .home-feature-list {
         grid-template-columns: 1fr;
     }
 
-    .home-updates-grid {
-        grid-template-columns: repeat(2, 1fr);
+    .home-feature-list-card {
+        padding: 14px;
     }
 
-    .home-card {
-        width: 100%;
-        min-width: 0;
+    .home-feature-row {
+        padding: 10px;
+        gap: 10px;
     }
-}
 
-@media (max-width: 768px) {
-    .home-feature-grid {
-        grid-template-columns: 1fr;
-        gap: 14px;
+    .home-publisher {
+        padding: 18px 16px 16px;
+        margin: 4px 0 24px;
     }
 
     .home-updates-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .home-hero {
         grid-template-columns: 1fr;
     }
 

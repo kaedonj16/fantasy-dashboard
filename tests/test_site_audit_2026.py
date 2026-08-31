@@ -241,3 +241,12 @@ def test_paywall_inerts_background():
     assert "removeAttribute('inert')" in paywall
     assert "app-scale" in paywall
 
+
+def test_paywall_mobile_uses_bottom_sheet_layout():
+    """Paywall should read as a phone sheet with safe-area padding, not a cramped modal."""
+    paywall_css = (ROOT / "static" / "paywall.css").read_text(encoding="utf-8")
+    mobile = paywall_css[paywall_css.index("@media (max-width: 768px)"):paywall_css.index(".pricing-option", paywall_css.index("@media (max-width: 768px)"))]
+    assert "align-items: flex-end" in mobile
+    assert "100dvh" in mobile
+    assert "env(safe-area-inset-bottom)" in mobile
+
