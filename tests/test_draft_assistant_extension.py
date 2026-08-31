@@ -35,7 +35,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.28"
+    assert manifest["version"] == "1.5.29"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -354,7 +354,12 @@ def test_sleeper_detects_live_pick_slot_from_several_signals():
     assert "pickedBy" in sleeper
     assert "teamNamesFromSleeperDraft" in sleeper
     assert "visibilitychange" in sleeper
-    assert "POLL_DRAFTING_MS" in sleeper
+    assert "POLL_PICKS_MS" in sleeper
+    assert "POLL_META_MS" in sleeper
+    assert "function pollPicks" in sleeper
+    assert "function requestPicks" in sleeper
+    assert re.search(r"POLL_PICKS_MS\s*=\s*(3[0-9]{2}|400)\b", sleeper)
+    assert "if (document.hidden || lastMySlot || slotTick) return;" not in sleeper
     assert "function teamNamesFromSleeperDraft" in helper
     assert "function sleeperPickOwners" in helper
     assert "function scrapeHostClockSeconds" in helper

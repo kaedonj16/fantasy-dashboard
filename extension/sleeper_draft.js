@@ -4,19 +4,25 @@
 (function () {
   "use strict";
 
-  const POLL_DRAFTING_MS = 900;
+  const POLL_PICKS_MS = 350;
+  const POLL_META_MS = 2500;
   const POLL_IDLE_MS = 2000;
   let lastFp = "";
   let lastCount = 0;
   let lastMySlot = 0;
   let lastStatus = "";
-  let pollTimer = null;
+  let pickTimer = null;
+  let metaTimer = null;
+  let pickInFlight = false;
+  let pickQueued = false;
   let cachedLeagueId = "";
   let cachedScoring = { ppr: 1, tep: 0, passTd: 4 };
   let cachedUser = { username: "", userId: "" };
   let cachedOwnerMap = { leagueId: "", map: {} };
   let cachedUsers = { leagueId: "", rows: [] };
   let cachedTrades = { draftId: "", rows: [], at: 0 };
+  let cachedDraft = null;
+  let cachedPicks = [];
   let lastClockSent = "";
 
   async function leagueScoring(leagueId) {
@@ -223,7 +229,105 @@
     }
   }
 
-  async function poll() {
+  function emitPayload(draft, picks) {
+    const settings = (draft && draft.settings) || {};
+    const teams = Number(settings.teams || 12);
+    const ident = sleeperIdentity();
+    const uid = cachedUser.userId || ((ident && ident.userIds) || [])[0] || "";
+    const ownerToRoster = cachedOwnerMap.map || {};
+    const users = cachedUsers.rows || [];
+    const trades = cachedTrades.rows || [];
+    const mySlot = resolveMySlot(draft, picks, teams, ident, uid, ownerToRoster);
+    const teamNames = window.BRDraftSlot && BRDraftSlot.teamNamesFromSleeperDraft
+      ? BRDraftSlot.teamNamesFromSleeperDraft(draft, users)
+      : {};
+    const status = String((draft && draft.status) || "").toLowerCase();
+    lastStatus = status;
+    const inProgress = status === "drafting" || (status !== "complete" && picks.length > 0);
+    const drafted = status === "complete";
+    const pickOwners = window.BRDraftSlot && BRDraftSlot.sleeperPickOwners
+      ? BRDraftSlot.sleeperPickOwners({
+          teams: teams,
+          rounds: Number(settings.rounds || 15),
+          draft: draft || {},
+          ownerToRoster: ownerToRoster,
+          tradedPicks: trades,
+          picks: picks,
+        })
+      : {};
+    const timer = Number((settings && settings.pick_timer) || 0) || undefined;
+    const clockSeconds = window.BRDraftSlot && BRDraftSlot.sleeperClockRemaining
+      ? BRDraftSlot.sleeperClockRemaining(draft)
+      : null;
+    const roster = window.BRDraftSlot && BRDraftSlot.rosterFromSleeperSettings
+      ? BRDraftSlot.rosterFromSleeperSettings(settings)
+      : null;
+    const scoring = cachedScoring || { ppr: 1, tep: 0, passTd: 4 };
+    const payload = {
+      platform: "sleeper",
+      teams: Number(settings.teams || 12),
+      rounds: Number(settings.rounds || 15),
+      mySlot: mySlot || undefined,
+      sf: Number(settings.slots_super_flex || settings.slots_sf || 0) > 0,
+      roster: roster || undefined,
+      ppr: scoring.ppr,
+      tep: scoring.tep,
+      passTd: scoring.passTd,
+      picks: picks,
+      teamNames: teamNames,
+      pickOwners: pickOwners,
+      inProgress: inProgress,
+      drafted: drafted,
+      clockSeconds: clockSeconds,
+      pickTimer: timer,
+      syncText: window.BRDraftSlot
+        ? window.BRDraftSlot.compactSync("sleeper", picks.length, mySlot || undefined, true)
+        : (picks.length ? "SLEEPER · " + picks.length : "SLEEPER · LIVE"),
+    };
+    const settingsFp = [
+      fingerprint(picks),
+      mySlot || "",
+      status,
+      Object.keys(teamNames).length,
+      Object.keys(pickOwners).length,
+      window.BRDraftSlot && BRDraftSlot.rosterKey ? BRDraftSlot.rosterKey(roster) : "",
+      scoring.ppr,
+      scoring.tep,
+      scoring.passTd,
+    ].join("|");
+    if (settingsFp !== lastFp) {
+      lastFp = settingsFp;
+      push(payload);
+    }
+    const clockKey = String(clockSeconds) + "|" + String(timer || "");
+    if (clockKey !== lastClockSent && typeof window.__brDaPushClock === "function") {
+      lastClockSent = clockKey;
+      window.__brDaPushClock({ clockSeconds: clockSeconds, pickTimer: timer });
+    }
+  }
+
+  async function fetchDraftAndPicks(id) {
+    const [draftRes, pickRes] = await Promise.all([
+      fetch("https://api.sleeper.app/v1/draft/" + encodeURIComponent(id), { cache: "no-store" }),
+      fetch("https://api.sleeper.app/v1/draft/" + encodeURIComponent(id) + "/picks", { cache: "no-store" }),
+    ]);
+    const draft = draftRes.ok ? await draftRes.json() : cachedDraft;
+    let picks = cachedPicks;
+    if (pickRes.ok) {
+      const rows = await pickRes.json();
+      const next = (Array.isArray(rows) ? rows : []).map(normalizePick).filter(Boolean);
+      next.sort(function (a, b) { return a.overallPickNumber - b.overallPickNumber; });
+      const status = String((draft && draft.status) || lastStatus || "").toLowerCase();
+      if (next.length >= cachedPicks.length || status === "complete") {
+        picks = next;
+        cachedPicks = next;
+      }
+    }
+    if (draft) cachedDraft = draft;
+    return { draft: draft || cachedDraft, picks: picks };
+  }
+
+  async function pollPicks() {
     const id = draftIdFromUrl();
     if (!id) {
       if (typeof window.__brDaSetSync === "function") {
@@ -232,90 +336,8 @@
       return;
     }
     try {
-      const [draftRes, pickRes] = await Promise.all([
-        fetch("https://api.sleeper.app/v1/draft/" + encodeURIComponent(id), { cache: "no-store" }),
-        fetch("https://api.sleeper.app/v1/draft/" + encodeURIComponent(id) + "/picks", { cache: "no-store" }),
-      ]);
-      const draft = draftRes.ok ? await draftRes.json() : null;
-      const rows = pickRes.ok ? await pickRes.json() : [];
-      const picks = (Array.isArray(rows) ? rows : []).map(normalizePick).filter(Boolean);
-      picks.sort(function (a, b) { return a.overallPickNumber - b.overallPickNumber; });
-      const fp = fingerprint(picks);
-      const settings = (draft && draft.settings) || {};
-      const teams = Number(settings.teams || 12);
-      const ident = sleeperIdentity();
-      const uid = await resolveSleeperUserId(ident);
-      const leagueId = draft && draft.league_id;
-      const ownerToRoster = await ownerToRosterMap(leagueId);
-      const users = await leagueUsers(leagueId);
-      const trades = await tradedPicks(id);
-      const mySlot = resolveMySlot(draft, picks, teams, ident, uid, ownerToRoster);
-      const teamNames = window.BRDraftSlot && BRDraftSlot.teamNamesFromSleeperDraft
-        ? BRDraftSlot.teamNamesFromSleeperDraft(draft, users)
-        : {};
-      const status = String((draft && draft.status) || "").toLowerCase();
-      lastStatus = status;
-      const inProgress = status === "drafting" || (status !== "complete" && picks.length > 0);
-      const drafted = status === "complete";
-      const pickOwners = window.BRDraftSlot && BRDraftSlot.sleeperPickOwners
-        ? BRDraftSlot.sleeperPickOwners({
-            teams: teams,
-            rounds: Number(settings.rounds || 15),
-            draft: draft || {},
-            ownerToRoster: ownerToRoster,
-            tradedPicks: trades,
-            picks: picks,
-          })
-        : {};
-      const pickTimer = Number((settings && settings.pick_timer) || 0) || undefined;
-      const clockSeconds = window.BRDraftSlot && BRDraftSlot.sleeperClockRemaining
-        ? BRDraftSlot.sleeperClockRemaining(draft)
-        : null;
-      const roster = window.BRDraftSlot && BRDraftSlot.rosterFromSleeperSettings
-        ? BRDraftSlot.rosterFromSleeperSettings(settings)
-        : null;
-      const scoring = await leagueScoring(draft && draft.league_id);
-      const payload = {
-        platform: "sleeper",
-        teams: Number(settings.teams || 12),
-        rounds: Number(settings.rounds || 15),
-        mySlot: mySlot || undefined,
-        sf: Number(settings.slots_super_flex || settings.slots_sf || 0) > 0,
-        roster: roster || undefined,
-        ppr: scoring.ppr,
-        tep: scoring.tep,
-        passTd: scoring.passTd,
-        picks: picks,
-        teamNames: teamNames,
-        pickOwners: pickOwners,
-        inProgress: inProgress,
-        drafted: drafted,
-        clockSeconds: clockSeconds,
-        pickTimer: pickTimer,
-        syncText: window.BRDraftSlot
-          ? window.BRDraftSlot.compactSync("sleeper", picks.length, mySlot || undefined, true)
-          : (picks.length ? "SLEEPER · " + picks.length : "SLEEPER · LIVE"),
-      };
-      const settingsFp = [
-        fp,
-        mySlot || "",
-        status,
-        Object.keys(teamNames).length,
-        Object.keys(pickOwners).length,
-        window.BRDraftSlot && BRDraftSlot.rosterKey ? BRDraftSlot.rosterKey(roster) : "",
-        scoring.ppr,
-        scoring.tep,
-        scoring.passTd,
-      ].join("|");
-      if (settingsFp !== lastFp) {
-        lastFp = settingsFp;
-        push(payload);
-      }
-      const clockKey = String(clockSeconds) + "|" + String(pickTimer || "");
-      if (clockKey !== lastClockSent && typeof window.__brDaPushClock === "function") {
-        lastClockSent = clockKey;
-        window.__brDaPushClock({ clockSeconds: clockSeconds, pickTimer: pickTimer });
-      }
+      const snap = await fetchDraftAndPicks(id);
+      emitPayload(snap.draft, snap.picks);
     } catch (_e) {
       if (typeof window.__brDaSetSync === "function") {
         window.__brDaSetSync(false, "SLEEPER · …");
@@ -323,31 +345,86 @@
     }
   }
 
+  async function pollMeta() {
+    const id = draftIdFromUrl();
+    const draft = cachedDraft;
+    if (!id || !draft) return;
+    const ident = sleeperIdentity();
+    try {
+      await resolveSleeperUserId(ident);
+      const leagueId = draft.league_id;
+      await Promise.all([
+        ownerToRosterMap(leagueId),
+        leagueUsers(leagueId),
+        tradedPicks(id),
+        leagueScoring(leagueId),
+      ]);
+      emitPayload(draft, cachedPicks);
+    } catch (_e) {
+      /* keep last live payload */
+    }
+  }
+
+  function requestPicks() {
+    if (pickInFlight) {
+      pickQueued = true;
+      return Promise.resolve();
+    }
+    pickInFlight = true;
+    return pollPicks().then(function () {
+      pickInFlight = false;
+      if (pickQueued) {
+        pickQueued = false;
+        return requestPicks();
+      }
+    }, function () {
+      pickInFlight = false;
+    });
+  }
+
+  function pickInterval() {
+    if (lastStatus === "complete") return POLL_IDLE_MS;
+    if (lastStatus === "pre_draft" || lastStatus === "paused") return POLL_IDLE_MS;
+    return POLL_PICKS_MS;
+  }
+
+  function schedulePicks() {
+    if (pickTimer) clearTimeout(pickTimer);
+    pickTimer = setTimeout(function () {
+      requestPicks();
+      schedulePicks();
+    }, pickInterval());
+  }
+
+  function scheduleMeta() {
+    if (metaTimer) clearTimeout(metaTimer);
+    metaTimer = setTimeout(function () {
+      pollMeta().finally(scheduleMeta);
+    }, POLL_META_MS);
+  }
+
   document.addEventListener("brfantasy:assistant-reconnect", function () {
     lastFp = "";
-    poll();
+    requestPicks().then(pollMeta);
   });
 
-  function schedulePoll() {
-    if (pollTimer) clearTimeout(pollTimer);
-    const ms = lastStatus === "drafting" ? POLL_DRAFTING_MS : POLL_IDLE_MS;
-    pollTimer = setTimeout(function () {
-      poll().then(schedulePoll);
-    }, ms);
-  }
-  poll().then(schedulePoll);
-  setTimeout(poll, 500);
-  document.addEventListener("visibilitychange", function () {
-    if (!document.hidden) poll();
+  requestPicks().then(function () {
+    pollMeta();
+    schedulePicks();
+    scheduleMeta();
   });
-  let slotTick = null;
+  setTimeout(requestPicks, 200);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) requestPicks();
+  });
+  let boardTick = null;
   try {
     const mo = new MutationObserver(function () {
-      if (document.hidden || lastMySlot || slotTick) return;
-      slotTick = setTimeout(function () {
-        slotTick = null;
-        poll();
-      }, 400);
+      if (document.hidden || boardTick) return;
+      boardTick = setTimeout(function () {
+        boardTick = null;
+        requestPicks();
+      }, 120);
     });
     mo.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
   } catch (_e) {
