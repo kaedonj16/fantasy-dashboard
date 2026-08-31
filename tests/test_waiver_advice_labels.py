@@ -25,7 +25,7 @@ def test_faab_checkbox_controls_bid_visibility():
     body = build_waivers_body("sleeper", 2026, "league", {})
     assert 'id="wvShowFaab"' in body
     assert 'onchange="wvToggleFaab(this.checked)"' in body
-    assert "window.wvFaabEnabled && wvShowFaab && p.faab_high" in body
+    assert "window.wvFaabEnabled && wvShowFaab && (p.faab_high || p.faab_target)" in body
 
 
 def test_advice_pills_use_canonical_chip_styles():
