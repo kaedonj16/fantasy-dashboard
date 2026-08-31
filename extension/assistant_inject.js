@@ -36,17 +36,20 @@
     const style = document.createElement("style");
     style.id = "br-da-dock-css";
     style.textContent =
+      "html.br-da-docked,html.br-da-docked.br-da-collapsed,#" + ROOT_ID +
+      "{transition:none !important;}" +
       "html.br-da-docked{margin-right:" + WIDTH + "px !important;}" +
       "html.br-da-docked.br-da-collapsed{margin-right:" + COLLAPSED + "px !important;}" +
       "#" + ROOT_ID + "{position:fixed;top:0;right:0;bottom:0;width:" + WIDTH +
-      "px;z-index:2147483645;box-shadow:-8px 0 28px rgba(0,0,0,.22);background:transparent;}" +
+      "px;z-index:2147483645;box-shadow:-8px 0 28px rgba(0,0,0,.22);background:#122d4b;" +
+      "contain:layout paint;}" +
       "html.br-da-collapsed #" + ROOT_ID + "{width:" + COLLAPSED + "px;}" +
       "#" + ROOT_ID + " iframe{width:100%;height:100%;border:0;background:transparent;display:block;}" +
-      "#br-fantasy-assistant-expand{display:none;position:absolute;inset:0;z-index:2;margin:0;padding:12px 0;border:0;border-left:1px solid rgba(255,255,255,.14);background:#122d4b;color:#fff;cursor:pointer;flex-direction:column;align-items:center;justify-content:flex-start;gap:14px;font:800 11px/1 system-ui,-apple-system,sans-serif;letter-spacing:.04em;}" +
+      "html.br-da-collapsed #" + ROOT_ID + " iframe{visibility:hidden !important;pointer-events:none !important;}" +
+      "#br-fantasy-assistant-expand{display:none;position:absolute;inset:0;z-index:2;margin:0;padding:10px 0;border:0;border-left:1px solid rgba(255,255,255,.14);background:#122d4b;color:#fff;cursor:pointer;flex-direction:column;align-items:center;justify-content:flex-start;gap:12px;}" +
       "html.br-da-collapsed #br-fantasy-assistant-expand{display:flex;}" +
-      "html.br-da-collapsed #" + ROOT_ID + " iframe{pointer-events:none;}" +
       "#br-fantasy-assistant-expand:hover{background:#1a3d63;}" +
-      "#br-fantasy-assistant-expand .br-da-expand-mark{width:28px;height:28px;border-radius:7px;background:rgba(255,255,255,.12);display:grid;place-items:center;margin-top:4px;}" +
+      "#br-fantasy-assistant-expand .br-da-expand-logo{width:34px;height:auto;margin-top:4px;display:block;}" +
       "#br-fantasy-assistant-expand svg{width:16px;height:16px;flex-shrink:0;}" +
       "#br-fantasy-espn-sync-chip,#br-fantasy-yahoo-sync-chip{display:none!important;}";
     (document.head || document.documentElement).appendChild(style);
@@ -70,8 +73,9 @@
     expand.type = "button";
     expand.title = "Open Draft Assistant";
     expand.setAttribute("aria-label", "Open Draft Assistant");
+    const logoUrl = chrome.runtime.getURL("icons/br-logo-dark.png");
     expand.innerHTML =
-      '<span class="br-da-expand-mark">BR</span>' +
+      '<img class="br-da-expand-logo" alt="BR Fantasy" src="' + logoUrl + '">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
     expand.addEventListener("click", function () { setCollapsed(false); });
     wrap.appendChild(expand);
@@ -140,6 +144,7 @@
 
   function setCollapsed(on) {
     collapsed = !!on;
+    if (iframe) iframe.style.visibility = collapsed ? "hidden" : "";
     document.documentElement.classList.toggle("br-da-collapsed", collapsed);
     postToOverlay({ type: "collapsed", on: collapsed });
   }

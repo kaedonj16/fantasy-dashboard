@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "BR Fantasy — League Connector",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "Connect private ESPN leagues to BR Fantasy, auto-relay live ESPN/Yahoo draft picks into Draft Room, and dock a read-only Draft Assistant overlay on Sleeper, Yahoo, and ESPN draft rooms.",
   "permissions": ["cookies", "scripting", "storage", "tabs"],
   "host_permissions": [
@@ -102,7 +102,14 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["overlay.html", "overlay.css", "overlay.js"],
+      "resources": [
+        "overlay.html",
+        "overlay.css",
+        "overlay.js",
+        "icons/website-logo.png",
+        "icons/website-logo-dark.png",
+        "icons/br-logo-dark.png"
+      ],
       "matches": [
         "https://fantasy.espn.com/*",
         "https://*.espn.com/*",
