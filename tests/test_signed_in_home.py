@@ -68,3 +68,16 @@ def test_home_copy_touched_by_state_machine_has_no_em_dash():
     home_form = markup[markup.index('FORM_BODY = """'):markup.index('<div class="home-content-wrapper">')]
     assert "—" not in home_form
     assert "&mdash;" not in home_form
+
+
+def test_lite_css_swap_excludes_homepage():
+    """R14.3 seo_lite.css is for SEO shells; the landing page keeps dashboard.css.
+
+    Homepage layout (hero, onboarding card, feature grid, ticker) lives in
+    dashboard.css. Applying the slim pack to lite_js=home unstyles the page.
+    """
+    app_py = (ROOT / "app.py").read_text(encoding="utf-8")
+    assert '_use_lite_css = _use_lite and active != "home"' in app_py
+    seo_css = (ROOT / "static" / "seo_lite.css").read_text(encoding="utf-8")
+    assert ".home-hero" not in seo_css
+    assert ".home-card" not in seo_css

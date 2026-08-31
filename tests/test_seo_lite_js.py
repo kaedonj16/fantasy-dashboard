@@ -63,7 +63,7 @@ def test_guest_seo_page_serves_public_js(offline_client, path):
 
 
 def test_guest_seo_page_includes_seo_lite_css(offline_client):
-    """Logged-out lite_js pages link seo_lite.css instead of dashboard CSS."""
+    """Logged-out SEO shells (not the landing page) link seo_lite.css."""
     import app as app_mod
     if not getattr(app_mod, "_FEATURES_JS_FILE", None):
         pytest.skip("app-features.js bundle not built in this environment")
@@ -74,6 +74,28 @@ def test_guest_seo_page_includes_seo_lite_css(offline_client):
     assert "/static/seo_lite.css" in html
     assert "dashboard.min.css" not in html and "/static/dashboard.css" not in html
 
+
+def test_guest_homepage_keeps_dashboard_css(offline_client, monkeypatch):
+    """Landing page styles live in dashboard.css; seo_lite.css must not replace them.
+
+    R14.3 swapped every lite_js page onto seo_lite.css. The homepage opted into
+    lite_js for a faster JS paint, but its layout (hero, onboarding card,
+    feature grid, ticker) is not in the slim pack — serving that pack unstyles
+    the page.
+    """
+    import app as app_mod
+
+    # Force the lite JS path even if the features bundle failed to build here,
+    # so this assertion still covers the CSS-swap branch.
+    monkeypatch.setattr(app_mod, "_FEATURES_JS_FILE", app_mod._FEATURES_JS_FILE or "app-features.js")
+    monkeypatch.setattr(app_mod, "_FEATURES_JS_V", getattr(app_mod, "_FEATURES_JS_V", None) or "test")
+
+    r = offline_client.get("/")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "home-hero" in html
+    assert "/static/seo_lite.css" not in html
+    assert "dashboard.min.css" in html or "/static/dashboard.css" in html
 
 def test_signed_in_seo_page_keeps_full_app_js(offline_client):
     """lite_js is ignored when a session is signed in — full app.js stays."""

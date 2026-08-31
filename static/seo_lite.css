@@ -1,6 +1,9 @@
 /* BR Fantasy — minimal CSS pack for logged-out SEO / lite_js pages (R14.3).
    Covers page shell, typography, cards, tables, nav, and footer so public
-   surfaces render cleanly without the full dashboard bundle. */
+   surfaces render cleanly without the full dashboard bundle.
+
+   The landing page (`active == "home"`) does NOT use this file — its hero,
+   onboarding card, feature grid, and ticker live in dashboard.css. */
 
 :root {
     --bg: #ffffff;
