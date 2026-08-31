@@ -23,6 +23,15 @@ def test_site_tour_is_shortened_with_mobile_path():
     assert "Remind me later" in APP_JS
     assert "show again" in APP_JS
     assert "interactive: true" in APP_JS
+    # Mobile path targets the bottom dock, not the desktop hamburger.
+    assert "#brMoreTab" in APP_JS
+    assert ".br-tabbar" in APP_JS
+    assert "#navToggle" not in APP_JS.split("MOBILE_STEPS")[1].split("function tourSteps")[0]
+    # Player-card steps invite a tap; they must not auto-open the modal.
+    mobile_block = APP_JS.split("MOBILE_STEPS")[1].split("function tourSteps")[0]
+    assert "action: 'openPlayerModal'" not in mobile_block
+    assert "tour-dismiss-row" in APP_JS
+    assert "white-space: nowrap" in CSS or "tour-dismiss-row" in CSS
 
 
 def test_premium_welcome_restyle_and_replay():

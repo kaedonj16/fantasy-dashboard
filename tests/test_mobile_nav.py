@@ -13,9 +13,12 @@ contract the CSS/JS relies on:
   - the page you're on always earning a dock tab (here: Graphs).
 """
 import pytest
+from pathlib import Path
 
 pytest.importorskip("flask")
 pytest.importorskip("pandas")
+
+ROOT = Path(__file__).resolve().parents[1]
 
 # Tour pages render from seeded mock data with a real league context, so they
 # carry the full league chrome (dock + sheet) without needing live data. Graphs
@@ -43,6 +46,12 @@ def test_dock_and_sheet_present(offline_client):
     assert "id='brSheetAccount'" in html
     assert "id='brSheetRefresh'" in html
     assert "id='brSheetRefreshTime'" in html
+    # Refresh is a <button class="br-sheet-link">; UA button chrome must be
+    # stripped so it matches full-width anchor rows (not a half-width pill).
+    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert "button.br-sheet-link" in css
+    assert "appearance: none" in css
+    assert "Refresh data" in html
     # The widgets that get relocated must exist in the server HTML.
     assert "id='navSearchWrapper'" in html
     assert "id='settingsDropdown'" in html

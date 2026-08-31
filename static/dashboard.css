@@ -20278,15 +20278,19 @@ tr.team-clickable {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 10px;
+    gap: 8px 12px;
+    margin-bottom: 8px;
 }
 
 .tour-header-actions {
     display: flex;
     align-items: center;
-    gap: 10px;
-    flex-shrink: 0;
+    gap: 10px 12px;
+    flex-wrap: wrap;
+}
+
+.tour-dismiss-row {
+    margin: 0 0 12px;
 }
 
 .tour-step-count {
@@ -20294,6 +20298,7 @@ tr.team-clickable {
     color: var(--text-muted);
     font-weight: 500;
     letter-spacing: 0.04em;
+    white-space: nowrap;
 }
 
 .tour-progress {
@@ -34884,7 +34889,26 @@ a, button, [role="button"], [role="tab"], summary, label,
     /* Inherit the family (buttons default to the UA font) but NOT the weight/size:
      the bare `font: inherit` shorthand reset font-weight to normal, so button
      rows (Refresh data, Search) rendered lighter than the anchor rows next to
-     them. Re-assert the sheet-link size/weight after. */
+     them. Re-assert the sheet-link size/weight after. Also strip UA button
+     chrome so Refresh doesn't render as a half-width navy pill. */
+    button.br-sheet-link {
+        width: 100%;
+        box-sizing: border-box;
+        margin: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: var(--text);
+        font-family: inherit;
+        font-size: 15px;
+        font-weight: 600;
+        line-height: inherit;
+        text-align: left;
+        cursor: pointer;
+        appearance: none;
+        -webkit-appearance: none;
+    }
+
     button.br-sheet-link:disabled {
         opacity: .55;
         cursor: default;
