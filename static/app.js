@@ -17559,7 +17559,10 @@ window.showSubWelcome = function (opts) {
 
   var pageShell = document.querySelector('.page-shell');
   var currentPage = pageShell ? (pageShell.dataset.page || '') : '';
-  var isMobile = function () { return window.innerWidth < 768; };
+  // Match the mobile dock media query (max-width: 768px), not a looser cutoff.
+  var isMobile = function () {
+    return window.matchMedia('(max-width: 768px)').matches;
+  };
 
   function buildLeagueUrl(page) {
     return '/' + platform + '/' + season + '/' + leagueId + '/' + page;
@@ -17580,17 +17583,33 @@ window.showSubWelcome = function (opts) {
     };
   }
 
-  function _openMobileNav() {
-    var nav = document.getElementById('navPills');
-    var toggle = document.getElementById('navToggle');
-    if (nav) nav.classList.add('nav-open');
-    if (toggle) toggle.setAttribute('aria-expanded', 'true');
+  function _openMoreSheet() {
+    var sheet = document.getElementById('brMoreSheet');
+    var scrim = document.getElementById('brSheetScrim');
+    var tab = document.getElementById('brMoreTab');
+    if (sheet) {
+      sheet.classList.add('open');
+      sheet.setAttribute('aria-hidden', 'false');
+    }
+    if (scrim) scrim.classList.add('open');
+    if (tab) {
+      tab.setAttribute('aria-expanded', 'true');
+      tab.classList.add('active');
+    }
   }
-  function _closeMobileNav() {
-    var nav = document.getElementById('navPills');
-    var toggle = document.getElementById('navToggle');
-    if (nav) nav.classList.remove('nav-open');
-    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+  function _closeMoreSheet() {
+    var sheet = document.getElementById('brMoreSheet');
+    var scrim = document.getElementById('brSheetScrim');
+    var tab = document.getElementById('brMoreTab');
+    if (sheet) {
+      sheet.classList.remove('open');
+      sheet.setAttribute('aria-hidden', 'true');
+    }
+    if (scrim) scrim.classList.remove('open');
+    if (tab) {
+      tab.setAttribute('aria-expanded', 'false');
+      tab.classList.remove('active');
+    }
   }
 
   var DESKTOP_STEPS = [
@@ -17612,10 +17631,9 @@ window.showSubWelcome = function (opts) {
       interactive: true,
     },
     {
-      page: 'dashboard', selector: '.player-row, .otc-player-row, [data-player-id]',
+      page: 'dashboard', selector: '.os-waiver-row, .player-row, .otc-player-row, .wv-player-row, [data-player-id], .player-clickable',
       title: 'Player cards',
-      body: 'Click a player (or use Next) to open dynasty value history, advanced metrics, and breakout score.',
-      action: 'openPlayerModal',
+      body: 'Click any player to open dynasty value history, advanced metrics, and breakout score.',
       interactive: true,
     },
     {
@@ -17631,39 +17649,37 @@ window.showSubWelcome = function (opts) {
     },
   ];
 
+  // Mobile primary nav is the bottom dock (.br-tabbar), not the desktop hamburger.
   var MOBILE_STEPS = [
     {
       page: 'dashboard', selector: null,
       title: 'Welcome to your dynasty hub',
-      body: 'Here are the essentials on mobile. Swipe through, or Esc to exit. Replay from Settings anytime.',
+      body: 'Here are the essentials on mobile. Tap Next to continue, or exit anytime. Replay from Settings whenever you like.',
     },
     {
-      page: 'dashboard', selector: '#navToggle',
-      title: 'League menu',
-      body: 'Open the menu to reach Trades, Players, Stats, and more.',
-      beforeShow: function () { /* spotlight the closed toggle first */ },
+      page: 'dashboard', selector: '.br-tabbar',
+      title: 'Bottom navigation',
+      body: 'Jump between Home, Matchups, Trades, and Teams from the dock at the bottom of every league page.',
       interactive: true,
     },
     {
-      page: 'dashboard', selector: '#navPills, .nav-pills-container',
-      title: 'Navigate your league',
-      body: 'Trades, rankings, breakouts, history, and graphs live here.',
-      beforeShow: _openMobileNav,
-      afterLeave: _closeMobileNav,
-    },
-    {
-      page: 'dashboard', selector: '#navSearchWrapper, #settingsGearBtn',
-      title: 'Search & settings',
-      body: 'Search any player, toggle dark mode, and replay this tour from the gear menu.',
-      beforeShow: _openMobileNav,
-      afterLeave: _closeMobileNav,
+      page: 'dashboard', selector: '#brMoreTab',
+      title: 'More',
+      body: 'Open More for rankings, breakouts, history, graphs, search, and settings.',
       interactive: true,
     },
     {
-      page: 'dashboard', selector: '.player-row, .otc-player-row, [data-player-id]',
+      page: 'dashboard', selector: '#brSheetSearchRow',
+      title: 'Search players',
+      body: 'Find any player from More → Search. Tap a result to open their full profile.',
+      beforeShow: _openMoreSheet,
+      afterLeave: _closeMoreSheet,
+      interactive: true,
+    },
+    {
+      page: 'dashboard', selector: '.os-waiver-row, .player-row, .otc-player-row, .wv-player-row, [data-player-id], .player-clickable',
       title: 'Player cards',
-      body: 'Tap a player (or Next) to open their full profile and metrics.',
-      action: 'openPlayerModal',
+      body: 'Tap any player on the hub to open their profile and metrics. Try one, then continue.',
       interactive: true,
     },
     {
@@ -17760,22 +17776,27 @@ window.showSubWelcome = function (opts) {
       return;
     }
 
+    // Run beforeShow first so targets inside closed UI (More sheet, dropdowns)
+    // become measurable before the visibility check.
+    if (typeof step.beforeShow === 'function') step.beforeShow();
+
     if (step.selector) {
       var el = document.querySelector(step.selector);
       if (!el || el.getClientRects().length === 0) {
+        if (typeof step.afterLeave === 'function') step.afterLeave();
         if (_tourDir < 0 && idx > 0) { currentStep = idx - 1; showStep(currentStep); }
         else { advanceTour(); }
         return;
       }
     }
 
-    if (typeof step.beforeShow === 'function') step.beforeShow();
-
     var target = step.selector ? document.querySelector(step.selector) : null;
     positionOverlays(target, !!step.interactive);
     renderTooltip(step, idx, target, steps.length);
     window.brTrack('site_tour_step', { step: idx, title: step.title || '', mobile: isMobile() });
 
+    // Optional demo open — only when a step explicitly opts in. Interactive
+    // player-card steps leave opening to the user.
     if (step.action === 'openPlayerModal') {
       var playerEl = document.querySelector('[data-player-id]');
       if (playerEl) {
@@ -17899,12 +17920,12 @@ window.showSubWelcome = function (opts) {
     tooltipEl.innerHTML =
       '<div class="tour-tooltip-header">' +
         '<span class="tour-step-count">' + count + '</span>' +
-        '<div class="tour-header-actions">' +
-          '<button class="tour-later-btn" type="button">Remind me later</button>' +
-          '<button class="tour-skip-btn" type="button">Don\'t show again</button>' +
-        '</div>' +
       '</div>' +
       '<div class="tour-progress"><div class="tour-progress-fill" style="width:' + pct + '%"></div></div>' +
+      '<div class="tour-header-actions tour-dismiss-row">' +
+        '<button class="tour-later-btn" type="button">Remind me later</button>' +
+        '<button class="tour-skip-btn" type="button">Don\'t show again</button>' +
+      '</div>' +
       '<div class="tour-tooltip-title">' + step.title + '</div>' +
       '<div class="tour-tooltip-body">' + step.body + '</div>' +
       '<div class="tour-tooltip-footer">' +
@@ -17995,6 +18016,7 @@ window.showSubWelcome = function (opts) {
 
   function endTour(reason) {
     leaveCurrentStep();
+    _closeMoreSheet();
     reason = reason || 'complete';
     if (reason === 'later') {
       window.brUiPrefs.markTourLater(leagueId);
