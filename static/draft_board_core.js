@@ -998,6 +998,8 @@
         return players || [];
     }
 
+    // Gap bands (Decision Score points): none <4, modest <9, material <15, severe ≥15.
+    // significantReach also needs outside-market + not BPA + survivePct ≥ ADP_REACH_SURVIVE (20).
     function opportunityCostVerdict(o) {
         o = o || {};
         var gap = Math.max(0, (+o.bestAlternativeScore || 0) - (+o.selectedScore || 0));
@@ -1007,10 +1009,26 @@
         return {gap: gap, severity: severity, significantReach: significantReach};
     }
 
+    // significantSteal: marketFall ≥ max(8, 0.5×σ) and Board PS ≥ 80.
     function significantSteal(o) {
         o = o || {};
         var threshold = Math.max(8, 0.5 * Math.max(0, +o.adpUncertainty || 0));
         return (+o.marketFall || 0) >= threshold && (+o.boardPickScore || 0) >= 80;
+    }
+
+    // Deep Dive / edges copy. Softens when ADP or survivePct inputs are missing.
+    function formatOpportunityCostCopy(o) {
+        o = o || {};
+        var gap = Math.max(0, +o.gap || 0);
+        var altName = String(o.altName || '').trim();
+        if (!altName || gap < 4) return '';
+        var text = 'Preferred ' + altName + ' by ~' + Math.round(gap) + ' Decision Score';
+        var low = o.confidence === 'low';
+        if (!low && o.confidence !== 'high') {
+            if (o.adpMissing || o.survivePctMissing) low = true;
+            else if (('adp' in o && o.adp == null) || ('survivePct' in o && o.survivePct == null)) low = true;
+        }
+        return low ? (text + ' · lower confidence') : text;
     }
 
     // Impact-based bye concentration. Callers classify roles from the same
@@ -1332,6 +1350,29 @@
         return needK > 0 ? 'K' : 'DEF';
     }
 
+    // Auction nomination $ guidance (R02.3): normalize BR value onto a share of
+    // remaining budget per remaining roster slot. Explicitly labeled guidance —
+    // not a predicted clearing price.
+    function suggestAuctionBid(opts) {
+        opts = opts || {};
+        var value = Number(opts.value);
+        var maxValue = Number(opts.maxValue);
+        var remainingBudget = Number(opts.remainingBudget);
+        var slotsLeft = Number(opts.slotsLeft);
+        if (!isFinite(value) || value < 0) value = 0;
+        if (!isFinite(maxValue) || maxValue <= 0) maxValue = 1;
+        if (!isFinite(remainingBudget) || remainingBudget < 0) remainingBudget = 0;
+        if (!isFinite(slotsLeft) || slotsLeft < 1) slotsLeft = 1;
+        var share = value / maxValue;
+        if (share > 1) share = 1;
+        var perSlot = remainingBudget / slotsLeft;
+        var dollars = Math.round(share * perSlot);
+        if (value > 0 && remainingBudget >= 1 && dollars < 1) dollars = 1;
+        if (dollars < 0) dollars = 0;
+        if (dollars > remainingBudget) dollars = Math.floor(remainingBudget);
+        return { dollars: dollars, label: 'guidance' };
+    }
+
     return {
         rosterCounts: rosterCounts, startersFor: startersFor,
         redraftVal: redraftVal, dynVal: dynVal, valOf: valOf, adpOf: adpOf,
@@ -1356,12 +1397,14 @@
         rankHistoricalAlternatives: rankHistoricalAlternatives,
         assignByeCover: assignByeCover,
         opportunityCostVerdict: opportunityCostVerdict, significantSteal: significantSteal,
+        formatOpportunityCostCopy: formatOpportunityCostCopy,
         byeWeekSeverity: byeWeekSeverity, byeSeverityPenalty: byeSeverityPenalty,
         REC_FUTURE_SURVIVE_FLOOR: REC_FUTURE_SURVIVE_FLOOR,
         decisionBand: decisionBand, selectDecisionCandidate: selectDecisionCandidate,
         availabilityProbability: availabilityProbability, calibrateAvailability: calibrateAvailability,
         autoDraftNeedMultiplier: autoDraftNeedMultiplier,
         specialTeamsFillPos: specialTeamsFillPos,
+        suggestAuctionBid: suggestAuctionBid,
         ADP_REACH_CLUSTER: ADP_REACH_CLUSTER, ADP_REACH_SURVIVE: ADP_REACH_SURVIVE,
         adpUncertainty: adpUncertainty,
         isRemainingAdpBpa: isRemainingAdpBpa, bestRemainingAdp: bestRemainingAdp,

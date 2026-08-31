@@ -471,10 +471,13 @@
     var _an = document.getElementById('drAuctionNote');
     if (_an) {
       _an.hidden = !cfg.isAuction;
-      if (cfg.isAuction && cfg.auctionBudget != null) {
-        _an.innerHTML = '<strong>Auction league detected</strong> (budget ≈ $'
-          + Math.round(Number(cfg.auctionBudget))
-          + '). Recommendation Rank and Pick Score still help nominations, but snake-round draft grades and budget guidance are not auction-calibrated yet — treat grades as provisional.';
+      if (cfg.isAuction) {
+        var _ab = cfg.auctionBudget != null ? Math.round(Number(cfg.auctionBudget)) : null;
+        _an.innerHTML = '<strong>Auction league detected</strong>'
+          + (_ab != null ? ' (budget ≈ $' + _ab + ')' : '')
+          + '. Recommendation Rank and Pick Score still help nominations. '
+          + 'Suggested $ amounts are <em>guidance</em> from BR values and remaining budget/slots — not clearing prices. '
+          + 'Snake-round draft grades are disabled for auction.';
       }
     }
     if (cfg.isBestBall) {
@@ -485,9 +488,21 @@
             if (dtBb.options[bbi].value === 'redraft') { dtBb.selectedIndex = bbi; break; }
           }
         }
-        // Prefer the built-in Best Ball roster preset when the league did not
-        // already seed slot counts (guest / no roster_positions).
-        if (!cfg.rosterPositions && ROSTER_PRESETS.bestball) _rosterPreset = 'bestball';
+        // Harden Best Ball preset: apply slot counts when the league did not
+        // seed roster_positions (guest / no league). League-seeded slots win.
+        var bbPreset = ROSTER_PRESETS.bestball;
+        if (bbPreset) {
+          _rosterPreset = 'bestball';
+          if (!cfg.rosterPositions) {
+            _rosterMode = 'custom';
+            _setupRoster = {};
+            ['QB','SF','RB','WR','TE','FLEX','K','DEF','BN'].forEach(function(k){
+              _setupRoster[k] = bbPreset[k] || 0;
+            });
+            _setupRoster.IR = 0; _setupRoster.TAXI = 0; _setupRoster.IDP = 0;
+            _setupRoster._sf = !!bbPreset.SF; _setupRoster._rd = true;
+          }
+        }
       } catch (e) {}
     }
     var _cs = document.getElementById('drToCheatSheet');
@@ -2446,7 +2461,7 @@
         else if (pos === 'QB' && _myPassTeams[_tmU]) w *= 1.06;
         if (state.type === 'redraft' && pos === 'RB' && _myRbTeams[_tmU]) w *= 1.05;
       }
-      if (state.type === 'redraft' && p.bye_week && window.DraftBoardCore && DraftBoardCore.byeWeekSeverity){
+      if (!cfg.isBestBall && state.type === 'redraft' && p.bye_week && window.DraftBoardCore && DraftBoardCore.byeWeekSeverity){
         var _cpuBye = [];
         (cpuCtx.picksList || []).forEach(function(mp){
           var f = playersById[String(mp.id)] || mp;
@@ -3678,7 +3693,8 @@
     return rows;
   }
   function byeConflictLevel(p){
-    if (state.type !== 'redraft' || !p.bye_week || !window.DraftBoardCore || !DraftBoardCore.byeWeekSeverity) return '';
+    // Best Ball has no weekly lineup — bye-start advice does not apply.
+    if (cfg.isBestBall || state.type !== 'redraft' || !p.bye_week || !window.DraftBoardCore || !DraftBoardCore.byeWeekSeverity) return '';
     var opts = {sf: !!state.sf, tep: scoringCfg().tep};
     var without = DraftBoardCore.byeWeekSeverity(myByeSnapshot(), opts);
     var withP = DraftBoardCore.byeWeekSeverity(myByeSnapshot(p), opts);
@@ -3984,9 +4000,9 @@
         youngWithPath: path > 0 && age != null && (pos === 'RB' || pos === 'WR') && age <= (pos === 'RB' ? 24 : 25)
       });
     }
-    // Prospective bye crunch (redraft): use severity bands, not raw same-week counts.
+    // Prospective bye crunch (redraft weekly-lineup formats only — not Best Ball).
     var byePenalty = 0;
-    if (state.type === 'redraft' && DraftBoardCore.byeSeverityPenalty){
+    if (!cfg.isBestBall && state.type === 'redraft' && DraftBoardCore.byeSeverityPenalty){
       byePenalty = DraftBoardCore.byeSeverityPenalty(byeConflictLevel(p));
     }
     // Positional-scarcity urgency scales with how many dedicated STARTERS are
@@ -4132,7 +4148,7 @@
       availLine = '<div class="dr-ba-avail" style="color:' + ac + '">'
         + (ap >= 65 ? '&#10003; ' : '&#8226; ') + ap + '% at #' + opts.availAt.pn + '</div>';
     }
-    // Bye week conflict flag (redraft only)
+    // Bye week conflict flag (redraft weekly-lineup only; Best Ball skips)
     var byeFlag = '';
     var byeLvl = byeConflictLevel(p);
     if (byeLvl === 'severe' || byeLvl === 'meaningful')
@@ -4143,6 +4159,16 @@
     // actual is a separate stat, never a projection stand-in.
     var ppgNum = scoringProjPpg(p);
     var ppgPart = ppgNum != null ? ' · ' + ppgNum.toFixed(1) + ' proj' : '';
+    // Auction $ guidance (R02.3): show near REC / value — labeled guidance, not a clearing price.
+    var auctionGuide = '';
+    if (cfg.isAuction && window.DraftBoardCore && DraftBoardCore.suggestAuctionBid){
+      var _ag = auctionBidGuidance(p);
+      if (_ag && _ag.dollars != null){
+        auctionGuide = '<div class="dr-ba-auction-guide" title="Nomination guidance from BR value vs remaining budget/slots — not a clearing price">'
+          + '<span class="dr-ba-auction-dol">$' + _ag.dollars + '</span>'
+          + '<small>guidance</small></div>';
+      }
+    }
     // Compare button state
     var onCmp = compareIds.indexOf(String(p.id)) >= 0;
     var _isDef = String(p.position || '').toUpperCase() === 'DEF';
@@ -4157,6 +4183,7 @@
       + '<div class="dr-ba-metrics">'
       + '<div class="dr-ba-right"><div class="dr-ba-val">' + Math.round(valOf(p)) + '</div><div class="dr-ba-sub">' + sub + '</div></div>'
       + psChip
+      + auctionGuide
       + '</div>'
       + '<div class="dr-ba-actions">'
       + '<button class="dr-cmp-btn' + (onCmp ? ' on' : '') + '" data-cmp="' + esc(String(p.id)) + '" title="Compare">vs</button>'
@@ -4651,7 +4678,35 @@
     var sig = _poSig(allTeams);
     return !(_poServer && _poServerSig === sig) && _poFailedSig !== sig;
   }
+  // Auction nomination $ from BR value share of remaining budget / slots (R02.3).
+  // Thin v1: budget is the league auction budget (spend not tracked yet); slots
+  // left are remaining roster spots on the viewer's team.
+  function auctionSlotsLeft(){
+    var rs = (state && state.roster) || defaultRoster();
+    var total = (rs.QB||0) + (rs.SF||0) + (rs.RB||0) + (rs.WR||0) + (rs.TE||0)
+      + (rs.FLEX||0) + (rs.K||0) + (rs.DEF||0) + (rs.BN||0);
+    var mine = 0;
+    try { mine = myPicksList().length; } catch (e){ mine = 0; }
+    return Math.max(1, total - mine);
+  }
+  function auctionBidGuidance(p){
+    if (!cfg.isAuction || !window.DraftBoardCore || !DraftBoardCore.suggestAuctionBid) return null;
+    var budget = cfg.auctionBudget != null ? Number(cfg.auctionBudget) : null;
+    if (budget == null || !isFinite(budget) || budget <= 0) return null;
+    var maxV = 0;
+    (players || []).forEach(function(q){ var v = valOf(q); if (v > maxV) maxV = v; });
+    if (maxV <= 0) maxV = 1;
+    return DraftBoardCore.suggestAuctionBid({
+      value: valOf(p) || 0,
+      maxValue: maxV,
+      remainingBudget: budget,
+      slotsLeft: auctionSlotsLeft()
+    });
+  }
+
   function gradeTeam(){
+    // R02.4: snake team grades do not apply to auction drafts.
+    if (cfg.isAuction) return null;
     if (!hasOwned()) return null;
     // Pull "your" grade from the full field so the Team / League / Deep Dive
     // surfaces share one gradeAllTeams() pass (absolute composite — no field curve).
@@ -4923,6 +4978,8 @@
   // Grade every team in the draft, sorted best-first.
   function gradeAllTeams(){
     if (!state) return [];
+    // R02.4: auction drafts get an honest empty/disabled grade path.
+    if (cfg.isAuction) return [];
     _gradeCliffByPn = _buildGradeCliffs();
     var groups = ownedPickGroups();
     var teams = groups.teams;
@@ -5056,7 +5113,11 @@
     if (!hasOwned()){ listInto(emptyNote('Set your pick slot', 'Choose your draft slot to see your team build.')); return; }
     var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
     var html = '';
-    var g = gradeTeam();
+    if (cfg.isAuction){
+      html += emptyNote('Auction draft grades aren’t available yet',
+        'Snake-round team grades don’t apply to auction. Recommendation Rank and Pick Score still work for nominations.');
+    }
+    var g = cfg.isAuction ? null : gradeTeam();
     if (g){
       // The rookie card shows "Avg Pick Score" as a labeled bar below, so don't
       // repeat it as the subtitle - use the team archetype label instead.
@@ -5241,6 +5302,11 @@
   }
 
   function renderLeague(){
+    if (cfg.isAuction){
+      listInto(emptyNote('Auction draft grades aren’t available yet',
+        'Snake-round league grades don’t apply to auction drafts. Recommendation Rank and Pick Score still help nominations.'));
+      return;
+    }
     var allTeams = gradeAllTeams();
     if (!allTeams.length){
       listInto(emptyNote('No picks yet', 'Grades will appear as teams draft.'));
@@ -6950,7 +7016,7 @@
     var hasPicks = state && Object.keys(state.picks || {}).some(function(k){ return !!state.picks[k]; });
     if (!state || (!hasSlot && !hasPicks)) return;
 
-    var g = hasSlot ? gradeTeam() : null;
+    var g = (hasSlot && !cfg.isAuction) ? gradeTeam() : null;
     var gradeCol = g ? (g.score >= 75 ? '#22c55e' : g.score >= 60 ? '#38bdf8' : g.score >= 45 ? '#f59e0b' : '#ef4444') : null;
 
     // Build starters / bench for my team
@@ -6976,16 +7042,22 @@
       });
     }
 
-    // Grade ring + component bars
-    var gradeHtml = g
-      ? ('<div class="dr-sum-grade-wrap">'
+    // Grade ring + component bars (disabled for auction — honest empty state)
+    var gradeHtml = '';
+    if (cfg.isAuction){
+      gradeHtml = '<div class="dr-sum-grade-wrap">'
+        + emptyNote('Auction draft grades aren’t available yet',
+          'Snake-round grades don’t apply here. Use Recommendation Rank and Pick Score for nomination guidance.')
+        + '</div>';
+    } else if (g){
+      gradeHtml = '<div class="dr-sum-grade-wrap">'
          + '<div class="dr-sum-grade-ring" style="border-color:' + gradeCol + ';color:' + gradeCol + '">'
          + '<span class="dr-sum-grade">' + gradeLetter(g.score) + '</span></div>'
          + '<div class="dr-sum-grade-bars">'
          + (g.provisional ? '<div class="dr-grade-early">Early — still forming</div>' : '')
          + gradeBars(g) + '</div>'
-         + '</div>')
-      : '';
+         + '</div>';
+    }
 
     // Stats strip
     var statsHtml = '';
@@ -7322,12 +7394,15 @@
             survivePct: survivePct
           })
         : (consDiff != null ? consDiff : diff);
+      var marketAdp = consAdp != null ? consAdp : adp;
+      var oppConf = (marketAdp == null || survivePct == null) ? 'low' : 'high';
       rows.push({ pn: pn, pl: pl, full: full, pos: pos,
         adp: adp, diff: diff, consAdp: consAdp, consDiff: consDiff,
         isBpa: isBpa, consIsBpa: consIsBpa, survivePct: survivePct, adpTolerance: adpTolerance,
         boardDiff: boardDiff, consBoardDiff: consBoardDiff,
         ps: relPS(pl, pn), tier: tierOf(full), alternatives: alternatives,
         opportunityCost: opp ? opp.gap : null, opportunitySeverity: opp ? opp.severity : 'none',
+        opportunityConfidence: oppConf,
         significantReach: !!(opp && opp.significantReach) });
     });
     rows.sort(function(a, b){ return a.pn - b.pn; });
@@ -7492,6 +7567,13 @@
       tiles += '<div class="dd-tile ' + (t.cls || '') + '"><div class="dd-tile-v">' + t.v + '</div><div class="dd-tile-l">' + t.l + '</div></div>';
     });
 
+    var facetLines = ddGradeFacetLines(g);
+    var facetsHtml = facetLines.length
+      ? '<div class="dd-facets">' + facetLines.map(function(line){
+          return '<div class="dd-facet">' + esc(line) + '</div>';
+        }).join('') + '</div>'
+      : '';
+
     return '<div class="dd-card dd-overview">'
       + '<div class="dd-ov-top">'
       + '<div class="dd-ring" style="--pct:' + Math.max(0, Math.min(100, Math.round(g.score))) + ';--gc:' + col + '">'
@@ -7503,6 +7585,7 @@
       + '<div class="dd-say">' + verdict.say + '</div></div>'
       + '<div class="dd-meters">' + meters + '</div>'
       + '</div>'
+      + facetsHtml
       + '<div class="dd-tiles">' + tiles + '</div>'
       + '</div>';
   }
@@ -7606,6 +7689,43 @@
       rl.textContent = roundPickStr(p.pn); svg.appendChild(rl);
     });
   }
+  // Opportunity-cost explanation for tip / ledger / edges (Board PS unchanged).
+  function ddOppCopy(p){
+    var Core = window.DraftBoardCore;
+    if (!p || !Core || !Core.formatOpportunityCostCopy) return '';
+    if (!p.opportunitySeverity || p.opportunitySeverity === 'none') return '';
+    var alt = p.alternatives && p.alternatives.bestAlternative;
+    if (!alt || !alt.name || p.opportunityCost == null) return '';
+    return Core.formatOpportunityCostCopy({
+      altName: alt.name, gap: p.opportunityCost, confidence: p.opportunityConfidence,
+      adp: deepDiveAdp(p), survivePct: p.survivePct
+    });
+  }
+  function ddOppSeverityLabel(sev){
+    if (!sev || sev === 'none') return '';
+    return sev === 'modest' ? 'Modest gap' : sev === 'material' ? 'Material gap'
+      : sev === 'severe' ? 'Severe gap' : sev;
+  }
+  // 1–2 construction / bench-utility lines for Deep Dive (no score rewrite).
+  function ddGradeFacetLines(g){
+    if (!g) return [];
+    var lines = [], depth = g.functionalDepth, eff = g.benchEfficiency;
+    if (depth != null){
+      if (depth >= 0.68 && (eff == null || eff >= 0.60))
+        lines.push('Strong functional depth — first reserves provide useful injury and FLEX cover.');
+      else if (eff != null && eff < 0.45)
+        lines.push('Redundant single-slot depth — backup QB/TE paths carry limited weekly utility here.');
+      else
+        lines.push('Usable roster floor — reserves cover some weeks, with mixed paths into the lineup.');
+    }
+    var m = gradeMax();
+    if (g.balance != null && m.balance){
+      var balPct = g.balance / m.balance;
+      if (balPct >= 0.72) lines.push('Construction is a strength: slot coverage and balance hold up.');
+      else if (balPct <= 0.5) lines.push('Construction is soft: starter coverage or positional balance can improve.');
+    }
+    return lines.slice(0, 2);
+  }
   function ddTip(ev, p){
     var tip = document.getElementById('drDdTip');
     if (!tip){ tip = document.createElement('div'); tip.id = 'drDdTip'; tip.className = 'dd-tip'; document.body.appendChild(tip); }
@@ -7617,12 +7737,17 @@
       if (p.consIsBpa || p.isBpa) why = 'Best remaining ADP at the pick.';
       else if (p.survivePct != null && p.survivePct < 20) why = 'Under 20% to last to your next pick.';
     }
+    var oppCopy = ddOppCopy(p);
+    var sevLab = ddOppSeverityLabel(p.opportunitySeverity);
     tip.innerHTML = '<b>' + esc(p.pl.name) + '</b> <span style="color:var(--text-muted)">' + p.pos + (p.pl.team ? ' · ' + esc(p.pl.team) : '') + '</span>'
       + '<div class="dd-tip-r">Pick <b>' + roundPickStr(p.pn) + '</b></div>'
       + (adp != null ? '<div class="dd-tip-r">' + adpLbl + ' <b>' + Number(adp).toFixed(1) + '</b></div>' : '')
       + (dlt != null ? '<div class="dd-tip-r">± vs ADP <b style="color:' + (dlt >= 0 ? '#22c55e' : '#ef4444') + '">' + fmtAdpDelta(dlt) + '</b></div>' : '')
       + (p.ps != null ? '<div class="dd-tip-r">Board PS <b style="color:' + psColor(p.ps) + '">' + p.ps + '</b> <span style="color:var(--text-muted)">(vs best avail)</span></div>' : '')
       + '<div class="dd-tip-r">Verdict <b>' + vd.label + '</b></div>'
+      + (oppCopy ? '<div class="dd-tip-opp">' + esc(oppCopy)
+        + (sevLab ? ' <span class="dd-opp-sev dd-opp-' + p.opportunitySeverity + '">' + sevLab + '</span>' : '')
+        + '</div>' : '')
       + (why ? '<div class="dd-tip-r" style="color:var(--text-muted)">' + why + '</div>' : '');
     tip.classList.add('show');
     var tw = tip.offsetWidth, th = tip.offsetHeight;
@@ -7636,7 +7761,7 @@
   // ── Pick ledger (sortable) ───────────────────────────────────────────────────
   function ddLedgerHtml(picks){
     return '<div class="dd-card">'
-      + '<div class="dd-sec"><h4>Pick ledger</h4><p>Every selection with market delta, <b>Board PS</b> (Pick Score vs best available at that slot), tier, and verdict. Reach means you skipped a better remaining ADP and the player was likely to last to your next pick. Click a header to sort. Board PS is not live Recommendation Rank.</p></div>'
+      + '<div class="dd-sec"><h4>Pick ledger</h4><p>Every selection with market delta, <b>Board PS</b> (Pick Score vs best available at that slot), tier, and verdict. When a better historical Decision Score alternative was available, the player row shows that opportunity-cost gap. Reach means you skipped a better remaining ADP and the player was likely to last to your next pick. Click a header to sort. Board PS is not live Recommendation Rank.</p></div>'
       + '<div class="dd-tablescroll"><table class="dd-ledger" id="drDdLedger">'
       + '<thead><tr>'
       + '<th data-k="pn" data-t="n">Pick</th><th data-k="name" data-t="s">Player</th><th data-k="pos" data-t="s">Pos</th>'
@@ -7654,9 +7779,16 @@
       // Historically this was `var dtxt = fmtAdpDelta(p.diff);`; Deep Dive now
       // deliberately formats its consensus-first delta instead.
       var dtxt = fmtAdpDelta(dd);
+      var oppCopy = ddOppCopy(p);
+      var sevLab = ddOppSeverityLabel(p.opportunitySeverity);
+      var sub = oppCopy
+        ? '<div class="dd-pl-sub">' + esc(oppCopy)
+          + (sevLab ? ' <span class="dd-opp-sev dd-opp-' + p.opportunitySeverity + '">' + sevLab + '</span>' : '')
+          + '</div>'
+        : '';
       return '<tr>'
         + '<td class="num" style="color:var(--text-muted)">' + roundPickStr(p.pn) + '</td>'
-        + '<td class="dd-plname">' + esc(p.pl.name) + ' <span style="color:var(--text-subtle,var(--text-muted));font-size:11px">' + esc(p.pl.team || '') + '</span></td>'
+        + '<td class="dd-plcell"><div class="dd-plname">' + esc(p.pl.name) + ' <span style="color:var(--text-subtle,var(--text-muted));font-size:11px">' + esc(p.pl.team || '') + '</span></div>' + sub + '</td>'
         + '<td><span class="dd-posbadge" style="background:' + posColor(p.pos) + '">' + p.pos + '</span></td>'
         + '<td class="r num">' + (da != null ? Number(da).toFixed(1) : '—') + '</td>'
         + '<td class="r num"><span class="dd-diff ' + dcl + '">' + dtxt + '</span></td>'
@@ -7793,12 +7925,16 @@
         + '</div>';
     }).join('');
     var strength = (me.grade.strength != null) ? me.grade.strength : null;
-    var depth = me.grade.functionalDepth, eff = me.grade.benchEfficiency;
-    var benchSummary = depth == null ? '' : (depth >= 0.68 && eff >= 0.60
-      ? '<p><b>Strong functional depth.</b> Your first reserves provide useful injury and FLEX cover, with efficient emphasis on startable bench paths.</p>'
-      : eff < 0.45
-        ? '<p><b>Redundant single-slot depth.</b> Reserve usage is weighted down where backup QB/TE spots have limited weekly utility in this format.</p>'
-        : '<p><b>Usable roster floor.</b> Your reserves provide some coverage, though their paths to the weekly lineup are mixed.</p>');
+    var facetLines = ddGradeFacetLines(me.grade);
+    var benchSummary = facetLines.length
+      ? facetLines.map(function(line, i){
+          var bold = line.split(' — ')[0];
+          var rest = line.indexOf(' — ') >= 0 ? line.slice(bold.length + 3) : '';
+          return '<p class="dd-facet-line">' + (rest
+            ? '<b>' + esc(bold) + '.</b> ' + esc(rest)
+            : esc(line)) + '</p>';
+        }).join('')
+      : '';
 
     return '<div class="dd-card"><div class="dd-two">'
       + '<div><div class="dd-sec"><h4>Draft capital</h4><p>Share of your value spent per position vs the league average (tick).</p></div>' + capBars + '</div>'
@@ -7968,9 +8104,9 @@
         parts.push(edge('Best pick', 'winb', best, 'Your highest pick score at <b>' + best.ps + '</b>.'));
       }
       if (reach){
-        var alt = reach.alternatives && reach.alternatives.bestAlternative;
+        var oppCopy = ddOppCopy(reach);
         parts.push(edge('Biggest reach', 'bad', reach, '<b>' + Math.abs(deepDiveDiff(reach)).toFixed(1) + '</b> picks outside the expected market range'
-          + (alt ? '; ' + esc(alt.name) + ' carried a <b>' + Math.round(reach.opportunityCost) + '-point</b> historical Decision Score advantage.' : '.')));
+          + (oppCopy ? '; ' + esc(oppCopy) + '.' : '.')));
       } else {
         parts.push('<div class="dd-edge winb"><div class="dd-edge-k">No major reaches</div><div class="dd-edge-say">Your picks stayed within reasonable market ranges or close decision-quality bands; late swings used wider ADP uncertainty.</div></div>');
       }
@@ -7978,7 +8114,7 @@
     }
     // Risk flags
     var flags = [];
-    if (state.type === 'redraft'){
+    if (!cfg.isBestBall && state.type === 'redraft'){
       var benchSeen = {}, byePlayers = picks.map(function(p){
         var starter = me.grade.starterIds && me.grade.starterIds[String(p.pl.id)];
         var role = starter ? 'starter' : (!benchSeen[p.pos] ? 'primary' : 'fringe');

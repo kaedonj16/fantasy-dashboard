@@ -630,19 +630,81 @@ def test_late_round_upside_is_smooth_and_requires_a_role_path():
 
 
 def test_opportunity_cost_requires_market_survival_and_material_gap():
+    """Calibrated opportunity-cost bands and reach/steal gates (R09.4 / R08.4).
+
+    Gap severity (Decision Score points):
+      none < 4, modest < 9, material < 15, severe ≥ 15
+    significantReach also needs outside-market, not BPA, and survivePct ≥ 20
+      (ADP_REACH_SURVIVE). Missing survivePct does not auto-fail the gate.
+    significantSteal needs marketFall ≥ max(8, 0.5×σ) and Board PS ≥ 80.
+    Deep Dive reach/steal cards gate on these helpers (regression below).
+    """
     out = _run_need_cases("""(() => ({
+      surviveFloor:C.ADP_REACH_SURVIVE,
+      none:C.opportunityCostVerdict({selectedScore:84,bestAlternativeScore:87,outsideMarketRange:true,isBpa:false,survivePct:70}),
+      modest:C.opportunityCostVerdict({selectedScore:80,bestAlternativeScore:88,outsideMarketRange:true,isBpa:false,survivePct:70}),
+      material:C.opportunityCostVerdict({selectedScore:80,bestAlternativeScore:90,outsideMarketRange:true,isBpa:false,survivePct:70}),
+      severe:C.opportunityCostVerdict({selectedScore:71,bestAlternativeScore:91,outsideMarketRange:true,isBpa:false,survivePct:70}),
       tiny:C.opportunityCostVerdict({selectedScore:84,bestAlternativeScore:85,outsideMarketRange:true,isBpa:false,survivePct:70}),
       large:C.opportunityCostVerdict({selectedScore:71,bestAlternativeScore:91,outsideMarketRange:true,isBpa:false,survivePct:70}),
       adpOnly:C.opportunityCostVerdict({selectedScore:84,bestAlternativeScore:85,outsideMarketRange:true,isBpa:false,survivePct:70}),
-      wontLast:C.opportunityCostVerdict({selectedScore:71,bestAlternativeScore:91,outsideMarketRange:true,isBpa:false,survivePct:10})
+      wontLast:C.opportunityCostVerdict({selectedScore:71,bestAlternativeScore:91,outsideMarketRange:true,isBpa:false,survivePct:10}),
+      stealOk:C.significantSteal({marketFall:10,adpUncertainty:12,boardPickScore:82}),
+      stealLowPs:C.significantSteal({marketFall:20,adpUncertainty:12,boardPickScore:75}),
+      stealTinyFall:C.significantSteal({marketFall:6,adpUncertainty:12,boardPickScore:90}),
+      stealWideSigma:C.significantSteal({marketFall:9,adpUncertainty:20,boardPickScore:90}),
+      stealWideSigmaClear:C.significantSteal({marketFall:10,adpUncertainty:20,boardPickScore:90}),
+      copy:C.formatOpportunityCostCopy({altName:'Breece Hall',gap:14}),
+      copyLow:C.formatOpportunityCostCopy({altName:'Breece Hall',gap:14,survivePct:null,adp:null}),
+      copyTiny:C.formatOpportunityCostCopy({altName:'Breece Hall',gap:2})
     }))()""")
+    assert out["surviveFloor"] == 20
+    assert out["none"]["severity"] == "none" and out["none"]["gap"] == 3
+    assert out["modest"]["severity"] == "modest" and out["modest"]["gap"] == 8
+    assert out["modest"]["significantReach"] is False  # gap < 9
+    assert out["material"]["severity"] == "material" and out["material"]["gap"] == 10
+    assert out["material"]["significantReach"] is True
+    assert out["severe"]["severity"] == "severe" and out["severe"]["gap"] == 20
     assert out["tiny"]["severity"] == "none"
     assert out["tiny"]["significantReach"] is False
     assert out["large"]["severity"] == "severe"
     assert out["large"]["significantReach"] is True
     assert out["adpOnly"]["significantReach"] is False
     assert out["wontLast"]["significantReach"] is False
+    assert out["stealOk"] is True
+    assert out["stealLowPs"] is False
+    assert out["stealTinyFall"] is False
+    # threshold = max(8, 0.5×20) = 10; fall of 9 fails, 10 clears
+    assert out["stealWideSigma"] is False
+    assert out["stealWideSigmaClear"] is True
+    assert out["copy"] == "Preferred Breece Hall by ~14 Decision Score"
+    assert out["copyLow"] == "Preferred Breece Hall by ~14 Decision Score · lower confidence"
+    assert out["copyTiny"] == ""
 
+    room = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    # R08.4: Deep Dive cards/verdicts must keep opportunity-aware gates.
+    assert "significantSteal" in room
+    assert "significantReach" in room
+    assert "formatOpportunityCostCopy" in room or "ddOppCopy" in room
+    assert "opportunitySeverity" in room
+
+
+def test_opportunity_cost_gap_band_boundaries():
+    """Document exact band edges: none<4, modest<9, material<15, severe≥15."""
+    out = _run_need_cases("""(() => {
+      const g = (sel, best) => C.opportunityCostVerdict({
+        selectedScore:sel, bestAlternativeScore:best,
+        outsideMarketRange:false, isBpa:true, survivePct:50
+      }).severity;
+      return {at3:g(80,83), at4:g(80,84), at8:g(80,88), at9:g(80,89),
+              at14:g(80,94), at15:g(80,95)};
+    })()""")
+    assert out["at3"] == "none"
+    assert out["at4"] == "modest"
+    assert out["at8"] == "modest"
+    assert out["at9"] == "material"
+    assert out["at14"] == "material"
+    assert out["at15"] == "severe"
 
 def test_bye_severity_uses_starter_impact_not_raw_count():
     out = _run_need_cases("""(() => ({
