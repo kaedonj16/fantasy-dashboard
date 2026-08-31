@@ -1,5 +1,13 @@
 (function(){
   var cfg = window.__draftCfg || {};
+  // Server flag can false-positive when a league has mock auction drafts or ESPN
+  // budget fields on a snake league — the synced draft's type overrides it.
+  function isAuctionMode(){
+    var fmt = state && state.draftFormat;
+    if (fmt === 'snake' || fmt === 'linear' || fmt === 'standard') return false;
+    if (fmt === 'auction' || fmt === 'salary') return true;
+    return !!cfg.isAuction;
+  }
   // Match the site-wide position palette (see .nav-search-pos-* in dashboard.css).
   var POS_COLOR = { QB:'#3b82f6', RB:'#22c55e', WR:'#f59e0b', TE:'#8b5cf6', K:'#c92c68', DEF:'#475569', FLEX:'#14b8a6', SF:'#a78bfa', BN:'#64748b', IR:'#94a3b8', TAXI:'#64748b', IDP:'#0f766e' };
   var posColor = function(p){ return POS_COLOR[(p||'').toUpperCase()] || '#94a3b8'; };
@@ -470,8 +478,8 @@
     if (_hl && cfg.historyUrl) _hl.setAttribute('href', cfg.historyUrl);
     var _an = document.getElementById('drAuctionNote');
     if (_an) {
-      _an.hidden = !cfg.isAuction;
-      if (cfg.isAuction) {
+      _an.hidden = !isAuctionMode();
+      if (isAuctionMode()) {
         var _ab = cfg.auctionBudget != null ? Math.round(Number(cfg.auctionBudget)) : null;
         _an.innerHTML = '<strong>Auction league detected</strong>'
           + (_ab != null ? ' (budget ≈ $' + _ab + ')' : '')
@@ -4161,7 +4169,7 @@
     var ppgPart = ppgNum != null ? ' · ' + ppgNum.toFixed(1) + ' proj' : '';
     // Auction $ guidance (R02.3): show near REC / value — labeled guidance, not a clearing price.
     var auctionGuide = '';
-    if (cfg.isAuction && window.DraftBoardCore && DraftBoardCore.suggestAuctionBid){
+    if (isAuctionMode() && window.DraftBoardCore && DraftBoardCore.suggestAuctionBid){
       var _ag = auctionBidGuidance(p);
       if (_ag && _ag.dollars != null){
         auctionGuide = '<div class="dr-ba-auction-guide" title="Nomination guidance from BR value vs remaining budget/slots — not a clearing price">'
@@ -4690,7 +4698,7 @@
     return Math.max(1, total - mine);
   }
   function auctionBidGuidance(p){
-    if (!cfg.isAuction || !window.DraftBoardCore || !DraftBoardCore.suggestAuctionBid) return null;
+    if (!isAuctionMode() || !window.DraftBoardCore || !DraftBoardCore.suggestAuctionBid) return null;
     var budget = cfg.auctionBudget != null ? Number(cfg.auctionBudget) : null;
     if (budget == null || !isFinite(budget) || budget <= 0) return null;
     var maxV = 0;
@@ -4706,7 +4714,7 @@
 
   function gradeTeam(){
     // R02.4: snake team grades do not apply to auction drafts.
-    if (cfg.isAuction) return null;
+    if (isAuctionMode()) return null;
     if (!hasOwned()) return null;
     // Pull "your" grade from the full field so the Team / League / Deep Dive
     // surfaces share one gradeAllTeams() pass (absolute composite — no field curve).
@@ -4979,7 +4987,7 @@
   function gradeAllTeams(){
     if (!state) return [];
     // R02.4: auction drafts get an honest empty/disabled grade path.
-    if (cfg.isAuction) return [];
+    if (isAuctionMode()) return [];
     _gradeCliffByPn = _buildGradeCliffs();
     var groups = ownedPickGroups();
     var teams = groups.teams;
@@ -5113,11 +5121,11 @@
     if (!hasOwned()){ listInto(emptyNote('Set your pick slot', 'Choose your draft slot to see your team build.')); return; }
     var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
     var html = '';
-    if (cfg.isAuction){
+    if (isAuctionMode()){
       html += emptyNote('Auction draft grades aren’t available yet',
         'Snake-round team grades don’t apply to auction. Recommendation Rank and Pick Score still work for nominations.');
     }
-    var g = cfg.isAuction ? null : gradeTeam();
+    var g = isAuctionMode() ? null : gradeTeam();
     if (g){
       // The rookie card shows "Avg Pick Score" as a labeled bar below, so don't
       // repeat it as the subtitle - use the team archetype label instead.
@@ -5302,7 +5310,7 @@
   }
 
   function renderLeague(){
-    if (cfg.isAuction){
+    if (isAuctionMode()){
       listInto(emptyNote('Auction draft grades aren’t available yet',
         'Snake-round league grades don’t apply to auction drafts. Recommendation Rank and Pick Score still help nominations.'));
       return;
@@ -5767,6 +5775,7 @@
           slot: slot, order: order, picks: {}, current: 1,
           owned: buildOwnedFromResponse(d, teams, rounds, order, slot),
           mode: 'live', isComplete: isComplete, isDrafting: isDrafting, sourceDraftId: draftId,
+          draftFormat: String(d.type || '').toLowerCase() || null,
           syncSource: d.source || (function(){
             var p = String(cfg.platform || '').toLowerCase();
             if (p === 'espn' || p === 'yahoo') return p;
@@ -7016,7 +7025,7 @@
     var hasPicks = state && Object.keys(state.picks || {}).some(function(k){ return !!state.picks[k]; });
     if (!state || (!hasSlot && !hasPicks)) return;
 
-    var g = (hasSlot && !cfg.isAuction) ? gradeTeam() : null;
+    var g = (hasSlot && !isAuctionMode()) ? gradeTeam() : null;
     var gradeCol = g ? (g.score >= 75 ? '#22c55e' : g.score >= 60 ? '#38bdf8' : g.score >= 45 ? '#f59e0b' : '#ef4444') : null;
 
     // Build starters / bench for my team
@@ -7044,7 +7053,7 @@
 
     // Grade ring + component bars (disabled for auction — honest empty state)
     var gradeHtml = '';
-    if (cfg.isAuction){
+    if (isAuctionMode()){
       gradeHtml = '<div class="dr-sum-grade-wrap">'
         + emptyNote('Auction draft grades aren’t available yet',
           'Snake-round grades don’t apply here. Use Recommendation Rank and Pick Score for nomination guidance.')

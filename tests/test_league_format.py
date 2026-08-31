@@ -13,6 +13,13 @@ def test_sleeper_auction_draft_type():
     assert not is_auction_draft({"type": "snake", "settings": {"rounds": 15}})
 
 
+def test_snake_draft_ignores_league_auction_budget():
+    """ESPN may expose auctionBudget even on snake leagues — draft type wins."""
+    league = {"settings": {"draftSettings": {"type": "SNAKE", "auctionBudget": 200}}}
+    assert not is_auction_draft({"type": "snake"}, league=league)
+    assert not is_auction_draft(league=league)
+
+
 def test_espn_auction_budget_signal():
     league = {"settings": {"draftSettings": {"type": "AUCTION", "auctionBudget": 200}}}
     assert is_auction_draft(league=league)
@@ -41,3 +48,14 @@ def test_detect_league_format_combined():
     assert fmt["is_best_ball"] is True
     assert fmt["auction_budget"] == 150
     assert fmt["draft_type"] == "auction"
+
+
+def test_detect_league_format_prefers_full_snake_over_mock_auction():
+    fmt = detect_league_format(
+        drafts=[
+            {"type": "auction", "status": "complete", "settings": {"rounds": 3, "budget": 200}},
+            {"type": "snake", "status": "complete", "settings": {"rounds": 15}},
+        ],
+    )
+    assert fmt["is_auction"] is False
+    assert fmt["draft_type"] == "snake"
