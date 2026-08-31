@@ -6266,6 +6266,38 @@ strong + .player-badge,
     opacity: .7;
 }
 
+#otcStrategyImpact {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+}
+
+#otcStrategyImpact > .empty-state,
+#otcStrategyImpact > .error-state {
+    grid-column: 1 / -1;
+}
+
+#otcStrategyImpact > .otc-strategy-impact-row:nth-child(odd) {
+    border-right: 1px solid var(--border);
+}
+
+#otcStrategyCards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 10px 14px;
+}
+
+#otcStrategyCards > .otc-real-trade-card,
+#otcStrategyCards > .otc-strategy-card {
+    margin-bottom: 0;
+}
+
+#otcStrategyCards > .empty-state,
+#otcStrategyCards > .error-state,
+#otcStrategyCards > .pagination {
+    grid-column: 1 / -1;
+}
+
 @media (max-width: 600px) {
     /* Real-trade cards */
     .otc-real-trade-card {
@@ -6307,6 +6339,15 @@ strong + .player-badge,
     .otc-arch-chip {
         font-size: 11px;
         padding: 6px 6px;
+    }
+
+    #otcStrategyImpact,
+    #otcStrategyCards {
+        grid-template-columns: 1fr;
+    }
+
+    #otcStrategyImpact > .otc-strategy-impact-row:nth-child(odd) {
+        border-right: none;
     }
 
     /* Impact table: shrink badges so name has room */
