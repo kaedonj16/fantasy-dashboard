@@ -27,13 +27,15 @@ def test_overlay_is_mv3_safe_extension_page():
     js = (EXT / "overlay.js").read_text(encoding="utf-8")
     assert "ingestLive" in js
     assert "isCompletedHostPick" in js
+    assert "matchAbbrevName" in js
+    assert "clockPn" in js
     assert '__br: "br-da"' in js
     assert "never submits" in js.lower() or "never submit" in js.lower()
 
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.26"
+    assert manifest["version"] == "1.5.27"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts

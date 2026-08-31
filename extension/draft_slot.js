@@ -193,7 +193,7 @@
     const s = String(text || "").replace(/\s+/g, " ");
     const up = s.match(/you(?:'re| are) up in\s+(\d+)\s+picks?/i);
     const onClock = /your pick|you(?:'re| are) on the clock|it(?:'s| is) your (?:pick|turn)/i.test(s);
-    const rd = s.match(/round\s+(\d+)\s*[,•·]\s*pick\s+(\d+)/i);
+      const rd = s.match(/round\s+(\d+)\s*[,•·]?\s*pick\s+(\d+)/i);
     let round = 0;
     let roundPick = 0;
     let overall = 0;
@@ -237,18 +237,18 @@
   }
 
   function yahooClockText() {
-    if (!document || !document.querySelectorAll) return "";
+    const docs = sameOriginDocuments();
     const bits = [];
-    const nodes = document.querySelectorAll(
-      "h1,h2,h3,header,[class*='Clock'],[class*='clock'],[class*='Status'],[class*='status'],[class*='Banner'],[class*='banner'],[class*='Pick']"
-    );
-    const n = Math.min(nodes.length, 60);
-    for (let i = 0; i < n; i++) bits.push(String(nodes[i].textContent || "").slice(0, 220));
-    let blob = bits.join(" ");
-    if (!/you(?:'re| are) up in|your pick/i.test(blob) && document.body) {
-      blob = String(document.body.innerText || "").slice(0, 4000);
-    }
-    return blob;
+    docs.forEach(function (doc) {
+      if (!doc || !doc.querySelectorAll) return;
+      const nodes = doc.querySelectorAll(
+        "h1,h2,h3,header,[class*='Clock'],[class*='clock'],[class*='Status'],[class*='status'],[class*='Banner'],[class*='banner'],[class*='Pick'],[class*='round'],[class*='Round']"
+      );
+      const n = Math.min(nodes.length, 80);
+      for (let i = 0; i < n; i++) bits.push(String(nodes[i].textContent || "").slice(0, 240));
+      if (doc.body) bits.push(String(doc.body.innerText || "").slice(0, 6000));
+    });
+    return bits.join(" ");
   }
 
   function detectYahooSlot(teams) {
@@ -381,7 +381,7 @@
       const cls = String((n.className && n.className.baseVal != null ? n.className.baseVal : n.className) || "");
       const id = String(n.id || "");
       const aria = String((n.getAttribute && n.getAttribute("aria-label")) || "");
-      if (/available|playerlist|player-list|player_list|rankings|search-result|searchResult/i.test(cls + " " + id + " " + aria)) {
+      if (/available|playerlist|player-list|player_list|rankings|search-result|searchResult|draft.?kit|ultra.?draft|adp.?rank/i.test(cls + " " + id + " " + aria)) {
         return true;
       }
       n = n.parentElement;
@@ -390,7 +390,7 @@
   }
 
   function parseYahooNamePos(text) {
-    const s = String(text || "").replace(/\s+/g, " ").trim().replace(/\s*[·•]\s*/g, " ");
+    const s = String(text || "").replace(/\s+/g, " ").trim().replace(/\s*[·•()]\s*/g, " ");
     const m = s.match(
       /([A-Z](?:[a-zA-Z.'\-]+|\.)(?:\s+(?:[A-Z][a-zA-Z.'\-]+|Jr\.?|Sr\.?|II|III|IV|V)){0,4})\s+(QB|RB|WR|TE|K|DEF|DST|D\/ST)\b(?:\s*-?\s*([A-Z]{2,3}))?/
     );
@@ -433,6 +433,58 @@
       }
     } catch (_e) { /* ignore */ }
     return out;
+  }
+
+  function yahooDottedToOverall(rd, pk, teams) {
+    const r = Number(rd) || 0;
+    const p = Number(pk) || 0;
+    const n = Number(teams) || 0;
+    if (!(r >= 1 && p >= 1 && p <= 32)) return 0;
+    if (n >= 4) return (r - 1) * n + p;
+    if (r === 1) return p;
+    return 0;
+  }
+
+  function parseYahooCompactPick(text, teams) {
+    const s = String(text || "").replace(/\s+/g, " ").replace(/[•·()]/g, " ").trim();
+    const m = s.match(/^(\d{1,2})\.(\d{1,2})\s+(.+)$/);
+    if (!m) return null;
+    const rd = Number(m[1]);
+    const pk = Number(m[2]);
+    if (!(rd >= 1 && rd <= 30 && pk >= 1 && pk <= 20)) return null;
+    const rest = m[3];
+    const info = parseYahooNamePos(rest) || parseYahooLooseName(rest);
+    const abbr = !info
+      ? rest.match(/^([A-Z]\.?\s+[A-Z][A-Za-z.'\-]+)\s+(QB|RB|WR|TE|K|DEF|DST|D\/ST)\b(?:\s+([A-Z]{2,3}))?/)
+      : null;
+    const parsed = info || (abbr
+      ? { name: abbr[1].replace(/\s+/g, " ").trim(), pos: String(abbr[2]).replace("D/ST", "DEF").replace("DST", "DEF"), team: abbr[3] || "" }
+      : null);
+    if (!parsed || !parsed.name || parsed.name.length < 3) return null;
+    const pn = yahooDottedToOverall(rd, pk, teams);
+    if (!pn) return null;
+    return {
+      overallPickNumber: pn,
+      playerName: parsed.name,
+      pos: parsed.pos || "",
+      nflTeam: parsed.team || "",
+      roundId: rd,
+      roundPickNumber: pk,
+    };
+  }
+
+  function filterYahooPicksToClock(picks, teams) {
+    const list = picks || [];
+    const expected = completedFromYahooClock(teams);
+    if (!(expected >= 0) || !list.length) return list;
+    const maxPn = list.reduce(function (m, p) {
+      const n = Number(p && (p.overallPickNumber || p.pick_no)) || 0;
+      return n > m ? n : m;
+    }, 0);
+    if (expected <= 48 && (maxPn > expected + 6 || list.length > expected + 6)) {
+      return [];
+    }
+    return list;
   }
 
   function mergeYahooPicks(a, b) {
@@ -512,12 +564,14 @@
         if (labeled) pn = Number(labeled[1]);
       }
       if (!pn) {
-        const dotted = text.match(/\b(\d{1,2})\.(\d{2})\b/);
-        if (dotted) {
-          const teams = Number(doc.documentElement && doc.documentElement.getAttribute("data-br-da-teams")) || 0;
-          const rd = Number(dotted[1]);
-          const pk = Number(dotted[2]);
-          if (teams >= 4) pn = (rd - 1) * teams + pk;
+        const compact = parseYahooCompactPick(text, Number(doc.documentElement && doc.documentElement.getAttribute("data-br-da-teams")) || 0);
+        if (compact) pn = compact.overallPickNumber;
+        if (!pn) {
+          const dotted = text.match(/\b(\d{1,2})\.(\d{1,2})\b/);
+          if (dotted) {
+            const teams = Number(doc.documentElement && doc.documentElement.getAttribute("data-br-da-teams")) || 0;
+            pn = yahooDottedToOverall(dotted[1], dotted[2], teams);
+          }
         }
       }
       if (!pn) continue;
@@ -580,29 +634,33 @@
   }
 
   function scrapeYahooDottedPicks(doc, byPn, teamsHint) {
-    const text = String((doc.body && (doc.body.innerText || doc.body.textContent)) || "");
     const teams = Number(teamsHint) >= 4 ? Number(teamsHint) : 0;
-    const re =
-      /(\d{1,2})\.(\d{2})\s+([A-Z](?:[a-zA-Z.'\-]+|\.)(?:\s+(?:[A-Z][a-zA-Z.'\-]+|Jr\.?|Sr\.?|II|III|IV|V)){0,4})(?:\s+(QB|RB|WR|TE|K|DEF|DST|D\/ST))?/g;
-    let m;
-    let n = 0;
-    while ((m = re.exec(text)) && n < 400) {
-      n++;
-      const rd = Number(m[1]);
-      const pk = Number(m[2]);
-      if (!(rd >= 1 && pk >= 1)) continue;
-      const info = parseYahooNamePos(m[3] + (m[4] ? " " + m[4] : " WR")) || {
-        name: String(m[3] || "").replace(/\s+/g, " ").trim(),
-        pos: m[4] || "",
+    const nodes = doc.querySelectorAll("div,span,li,td,article,section");
+    const limit = Math.min(nodes.length, 1500);
+    for (let i = 0; i < limit; i++) {
+      const el = nodes[i];
+      if (yahooInAvailableList(el, doc)) continue;
+      const text = String(el.textContent || "").replace(/\s+/g, " ").trim();
+      if (text.length < 6 || text.length > 80) continue;
+      if (!/^\d{1,2}\.\d{1,2}\b/.test(text)) continue;
+      const compact = parseYahooCompactPick(text, teams);
+      if (!compact) continue;
+      addYahooDomPick(byPn, compact.overallPickNumber, {
+        name: compact.playerName,
+        pos: compact.pos,
+        team: compact.nflTeam,
+      }, "");
+    }
+    const lastBits = String((doc.body && doc.body.innerText) || "").slice(0, 2500);
+    const last = lastBits.match(/last[:\s]+([A-Z]\.?\s+[A-Z][A-Za-z.'\-]+|[A-Z][a-zA-Z.'\-]+(?:\s+[A-Z][a-zA-Z.'\-]+){0,3})\s*[\(]?\s*(QB|RB|WR|TE|K|DEF|DST)/i);
+    if (last) {
+      const expected = completedFromYahooClock(teams);
+      const info = parseYahooNamePos(last[1] + " " + last[2]) || {
+        name: last[1].replace(/\s+/g, " ").trim(),
+        pos: String(last[2]).replace("DST", "DEF"),
         team: "",
       };
-      if (!info.name || info.name.length < 3) continue;
-      let pn = 0;
-      if (teams >= 4) pn = (rd - 1) * teams + pk;
-      else if (pk <= 16) pn = 0;
-      if (!pn && rd === 1) pn = pk;
-      if (!pn) continue;
-      addYahooDomPick(byPn, pn, info, "");
+      if (expected >= 1 && info.name) addYahooDomPick(byPn, expected, info, "");
     }
   }
 
@@ -632,9 +690,10 @@
       scrapeYahooColumns(d, byPn, teamsHint);
       scrapeYahooDottedPicks(d, byPn, teamsHint);
     });
-    return Array.from(byPn.values()).sort(function (a, b) {
+    const rows = Array.from(byPn.values()).sort(function (a, b) {
       return a.overallPickNumber - b.overallPickNumber;
     });
+    return filterYahooPicksToClock(rows, teamsHint);
   }
 
   function addSleeperUserId(out, id, front) {
@@ -1070,6 +1129,9 @@
     rosterKey: rosterKey,
     scrapeYahooBoard: scrapeYahooBoard,
     parseYahooDraftResultsHtml: parseYahooDraftResultsHtml,
+    parseYahooCompactPick: parseYahooCompactPick,
+    filterYahooPicksToClock: filterYahooPicksToClock,
+    yahooDottedToOverall: yahooDottedToOverall,
     mergeYahooPicks: mergeYahooPicks,
     parseYahooNamePos: parseYahooNamePos,
     parseYahooLooseName: parseYahooLooseName,

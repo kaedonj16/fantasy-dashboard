@@ -526,9 +526,21 @@
 
   function emitAccumulated(meta, source) {
     const ids = leagueFromUrl();
-    const clean = Array.from(pickAccumulator.values())
+    let clean = Array.from(pickAccumulator.values())
       .filter(pickLooksMade)
       .sort((a, b) => a.overallPickNumber - b.overallPickNumber);
+    if (window.BRDraftSlot && BRDraftSlot.filterYahooPicksToClock) {
+      const capped = BRDraftSlot.filterYahooPicksToClock(clean, detectedTeams || 12);
+      if (capped.length !== clean.length) {
+        pickAccumulator.clear();
+        bestOverallSeen = 0;
+        capped.forEach(function (p) {
+          pickAccumulator.set(Number(p.overallPickNumber), p);
+          if (p.overallPickNumber > bestOverallSeen) bestOverallSeen = p.overallPickNumber;
+        });
+        clean = capped;
+      }
+    }
     if (!clean.length && !lastFingerprint) return;
     const fp = fingerprint(clean, meta || {});
     const now = Date.now();
@@ -563,6 +575,10 @@
       clockSeconds: lastClockSeconds,
       at: now,
     };
+    const clockDone = window.BRDraftSlot && BRDraftSlot.completedFromYahooClock
+      ? BRDraftSlot.completedFromYahooClock(detectedTeams || 12)
+      : -1;
+    if (clockDone >= 0) detail.current = clockDone + 1;
     bridgeToExtension(EVENT, detail);
     relayToBackground(detail);
   }
@@ -947,7 +963,15 @@
     refetchSeenDraftUrls();
     scrapeYahooDomPicks();
     scanReact();
-    if (pickAccumulator.size < 8) pollDraftResultPages();
+    const clockDone = window.BRDraftSlot && BRDraftSlot.completedFromYahooClock
+      ? BRDraftSlot.completedFromYahooClock(detectedTeams || 12)
+      : -1;
+    if (clockDone >= 0 && clockDone <= 40 && pickAccumulator.size > clockDone + 6) {
+      pickAccumulator.clear();
+      bestOverallSeen = 0;
+      lastFingerprint = "";
+    }
+    if (pickAccumulator.size < 8 && !(clockDone >= 0 && clockDone < 8)) pollDraftResultPages();
     if (pickAccumulator.size) emitAccumulated({ inProgress: true, drafted: false }, "scan");
   }
 

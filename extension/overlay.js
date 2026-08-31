@@ -1358,19 +1358,46 @@
     return false;
   }
 
+  function matchAbbrevName(name, pos, nfl) {
+    const m = String(name || "").trim().match(/^([A-Za-z])\.?\s+([A-Za-z][A-Za-z.'\-]+)$/);
+    if (!m || !players || !players.length) return null;
+    const initial = m[1].toLowerCase();
+    const last = normName(m[2]);
+    const wantPos = String(pos || "").toUpperCase();
+    const wantNfl = String(nfl || "").toUpperCase().slice(0, 3);
+    const hits = players.filter(function (p) {
+      const parts = String(p.name || "").trim().split(/\s+/);
+      if (parts.length < 2) return false;
+      if (normName(parts[parts.length - 1]) !== last) return false;
+      if (String(parts[0]).charAt(0).toLowerCase() !== initial) return false;
+      if (wantPos && wantPos !== "WR" && p.pos && p.pos !== wantPos) return false;
+      if (wantNfl && wantNfl.length === 3 && p.team && p.team !== "FA" && p.team !== wantNfl) return false;
+      return true;
+    });
+    if (hits.length === 1) return hits[0];
+    if (hits.length > 1 && wantNfl) {
+      const nflHits = hits.filter(function (p) { return p.team === wantNfl; });
+      if (nflHits.length === 1) return nflHits[0];
+    }
+    return hits[0] || null;
+  }
+
   function matchLivePlayer(raw) {
     const pid = raw && raw.playerId != null && String(raw.playerId) !== "" ? String(raw.playerId) : "";
     if (pid && byId[pid]) return byId[pid];
     const name = (raw && (raw.playerName || raw.name)) || "";
     const key = normName(name);
     if (key && byName[key]) return byName[key];
-    const pos = String((raw && (raw.pos || raw.position)) || "WR").toUpperCase();
+    const pos = String((raw && (raw.pos || raw.position)) || "").toUpperCase();
     const nfl = String((raw && (raw.nflTeam || raw.team || raw.proTeam)) || "").toUpperCase().slice(0, 3) || "FA";
+    const abbrev = matchAbbrevName(name, pos, nfl === "FA" ? "" : nfl);
+    if (abbrev) return abbrev;
+    const usePos = POS[pos] ? pos : "WR";
     const pn = Number((raw && (raw.overallPickNumber || raw.pick_no)) || 0) || state.current;
     const stub = {
       id: "live-" + (pid || key || pn),
       name: name || ("Pick " + pn),
-      pos: POS[pos] ? pos : "WR",
+      pos: usePos,
       team: nfl,
       bye: BYE[nfl] || 10,
       adp: 999,
@@ -1641,7 +1668,9 @@
       state.drafted[p.id] = true;
     });
     const lastMade = state.picks.length ? state.picks[state.picks.length - 1].pn : 0;
-    state.current = lastMade + 1;
+    const clockPn = Number(detail.current || detail.clockOverall || 0);
+    if (clockPn >= 1) state.current = clockPn;
+    else state.current = lastMade + 1;
     if (detail.clockSeconds == null) state.clock = CLOCK_START;
     fillSlotSel();
     paintSyncChip(true);

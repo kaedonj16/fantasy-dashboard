@@ -9,7 +9,7 @@ ROOM_JS = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
 def test_extension_manifest_includes_yahoo_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.26"
+    assert manifest["version"] == "1.5.27"
     assert "cookies" in manifest["permissions"]
     assert "tabs" in manifest["permissions"]
     hosts = " ".join(manifest.get("host_permissions") or [])
@@ -116,11 +116,18 @@ def test_yahoo_live_picks_accumulate_and_scrape_board():
     assert "function parseYahooDraftResultsHtml" in helper
     assert "function sameOriginDocuments" in helper
     assert "function parseYahooLooseName" in helper
+    assert "function parseYahooCompactPick" in helper
+    assert "function filterYahooPicksToClock" in helper
+    assert "matchAbbrevName" in overlay
     assert "harvestPageJson" in main
     assert "pollDraftResultPages" in main
     assert "window.top.postMessage" in main
     assert "sameOriginDocuments" in main
     assert "looksDraftedYahoo" in main
+    assert "filterYahooPicksToClock" in main
+    assert "filterYahooPicksToClock" in iso
+    assert "parseYahooCompactPick" in helper
+    assert "detail.current" in overlay or "clockPn" in overlay
     assert "draftedPlayers" in main
     assert "lastPicks && lastPicks.length" in iso
     assert "function mergeYahooPicks" in helper
@@ -194,6 +201,16 @@ if (!loose || loose.name.indexOf("Chase") < 0) {
 const docs = B.sameOriginDocuments(ctx.document);
 if (!docs || docs.length < 1) {
   console.error("docs", docs);
+  process.exit(1);
+}
+const compact = B.parseYahooCompactPick("1.1 J. GIBBS RB DET", 12);
+if (!compact || compact.overallPickNumber !== 1 || compact.playerName.indexOf("GIBBS") < 0) {
+  console.error("compact", compact);
+  process.exit(1);
+}
+const compact2 = B.parseYahooCompactPick("1.2 B. ROBINSON RB ATL", 12);
+if (!compact2 || compact2.overallPickNumber !== 2) {
+  console.error("compact2", compact2);
   process.exit(1);
 }
 const kept = B.mergeYahooPicks(merged, [{ overallPickNumber: 1, playerName: "Ja" }]);

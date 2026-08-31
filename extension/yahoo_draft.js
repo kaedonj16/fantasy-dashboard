@@ -118,7 +118,7 @@
     lastPicks = picks || lastPicks || [];
     const mySlot = resolveMySlot(lastPicks, extra || {});
     const text = overlaySyncText(lastPicks, ok, mySlot);
-    if (typeof window.__brDaPushPicks === "function" && lastPicks && lastPicks.length) {
+    if (typeof window.__brDaPushPicks === "function" && ((lastPicks && lastPicks.length) || (extra && extra.current))) {
       window.__brDaPushPicks(
         Object.assign(
           {
@@ -363,6 +363,9 @@
     if (window.BRDraftSlot && BRDraftSlot.mergeYahooPicks) {
       payload.picks = BRDraftSlot.mergeYahooPicks(lastPicks, payload.picks);
     }
+    if (window.BRDraftSlot && BRDraftSlot.filterYahooPicksToClock) {
+      payload.picks = BRDraftSlot.filterYahooPicksToClock(payload.picks, overlayTeamMeta(payload.picks).teams);
+    }
     feedAssistant(payload.picks, "", true, {
       mySlot: detail.mySlot,
       userTeamId: detail.userTeamId,
@@ -417,6 +420,12 @@
 
   function pushMergedPicks(incoming, extra) {
     const helper = window.BRDraftSlot;
+    const expected = helper && helper.completedFromYahooClock
+      ? helper.completedFromYahooClock((extra && extra.teams) || 12)
+      : -1;
+    if (expected >= 0 && expected <= 40 && lastPicks && lastPicks.length > expected + 6) {
+      lastPicks = [];
+    }
     const merged = helper && helper.mergeYahooPicks
       ? helper.mergeYahooPicks(lastPicks, incoming)
       : (incoming && incoming.length >= (lastPicks || []).length ? incoming : lastPicks);
@@ -446,14 +455,20 @@
     const prev = lastMySlot;
     const slot = resolveMySlot(lastPicks || [], {});
     const extra = { mySlot: slot || lastMySlot, teams: overlayTeamMeta(lastPicks).teams };
+    const expected = window.BRDraftSlot && BRDraftSlot.completedFromYahooClock
+      ? BRDraftSlot.completedFromYahooClock(extra.teams || 12)
+      : 0;
+    extra.current = expected >= 0 ? expected + 1 : undefined;
     if (window.BRDraftSlot && BRDraftSlot.scrapeYahooBoard) {
       const scraped = BRDraftSlot.scrapeYahooBoard(document, extra.teams);
       if (scraped && scraped.length) pushMergedPicks(scraped, extra);
     }
+    if (window.BRDraftSlot && BRDraftSlot.filterYahooPicksToClock && lastPicks && lastPicks.length) {
+      const capped = BRDraftSlot.filterYahooPicksToClock(lastPicks, extra.teams);
+      if (capped.length !== lastPicks.length) lastPicks = capped;
+    }
     if (slot && slot !== prev) feedAssistant(lastPicks || [], "", true, extra);
-    const expected = window.BRDraftSlot && BRDraftSlot.completedFromYahooClock
-      ? BRDraftSlot.completedFromYahooClock(extra.teams || 12)
-      : 0;
+    if (expected >= 1 && extra.current) feedAssistant(lastPicks || [], "", true, extra);
     if (expected > (lastPicks || []).length) requestRescan();
     pushHostClock(null, null);
   }
