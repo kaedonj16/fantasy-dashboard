@@ -20058,7 +20058,6 @@ tr.team-clickable {
         flex-shrink: 0;
     }
 
-    .player-modal-compare-btn,
     .pm-actions-trigger {
         font-size: 11px;
         padding: 5px 9px;
@@ -20639,24 +20638,6 @@ tr.team-clickable {
     color: #f59e0b;
 }
 
-/* Compare button in modal header */
-.player-modal-compare-btn {
-    background: rgba(59, 130, 246, 0.1);
-    border: 1px solid rgba(59, 130, 246, 0.3);
-    color: var(--brand-blue);
-    border-radius: 6px;
-    padding: 5px 10px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background 0.15s;
-}
-
-.player-modal-compare-btn:hover {
-    background: rgba(59, 130, 246, 0.2);
-}
-
 .player-modal-page-btn {
     background: transparent;
     border: 1px solid var(--border);
@@ -20947,10 +20928,6 @@ tr.team-clickable {
 /* Widened modal in compare mode */
 .player-modal.compare-mode {
     max-width: 1000px;
-}
-
-.player-modal.compare-mode .player-modal-compare-btn {
-    display: none;
 }
 
 /* ── Dual-player header ─────────────────────────────────────────── */

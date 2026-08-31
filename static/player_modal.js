@@ -78,7 +78,6 @@ function openPlayerModal(playerId, playerName, opts) {
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
         <button class="player-modal-watchlist-btn" id="playerModalWatchlistBtn" title="Add to watchlist" aria-pressed="false" style="display: none;"><span class="wl-star-glyph" aria-hidden="true">☆</span></button>
         ${_ppSlug ? `<a class="player-modal-page-btn" href="/player/${_ppSlug}/trade-value" title="View full player page">Player Page</a>` : ''}
-        <button class="player-modal-compare-btn" id="playerModalCompareBtn" title="Compare players">Compare Player</button>
         <button class="player-modal-close" onclick="closePlayerModal()" aria-label="Close">×</button>
       </div>
     </div>
@@ -1038,16 +1037,10 @@ function openPlayerModal(playerId, playerName, opts) {
           });
       }
 
-      // ── Wire up compare button ────────────────────────────────────────────
-      const cmpBtn = document.getElementById('playerModalCompareBtn');
-      if (cmpBtn) {
-        cmpBtn.addEventListener('click', () => openCompareSearch(data));
-      }
-
       pmInjectContextActions(playerId, playerName, data, leagueId, platform, season);
 
-      // The "vs Avg <pos><tier>" benchmark is reachable from the Compare Player
-      // search (it offers the positional-tier averages as pickable opponents),
+      // The "vs Avg <pos><tier>" benchmark is reachable from Actions → Compare
+      // (it offers the positional-tier averages as pickable opponents),
       // so it is no longer surfaced as a standalone header chip.
 
       // ── Render value history chart in Overview panel ───────────────────────
@@ -1321,21 +1314,21 @@ function pmToggleActionsMenu(wrap) {
 
 function pmInjectContextActions(playerId, playerName, data, leagueId, platform, season) {
   const modal = document.getElementById('playerModal');
-  if (!modal || !leagueId) return;
+  if (!modal) return;
 
-  const tradeUrl = pmLeaguePath('/trade') + '?add=' + encodeURIComponent(playerId);
   const slug = pmSlugify(playerName);
   const actions = [
     {
       label: 'Compare',
       run: function () {
-        const btn = document.getElementById('playerModalCompareBtn');
-        if (btn) btn.click();
+        if (typeof openCompareSearch === 'function') openCompareSearch(data);
       },
     },
-    { label: 'Trade For', href: tradeUrl },
-    { label: 'Recent Trades', run: function () { pmSwitchTab('trades'); } },
   ];
+  if (leagueId) {
+    actions.push({ label: 'Trade For', href: pmLeaguePath('/trade') + '?add=' + encodeURIComponent(playerId) });
+    actions.push({ label: 'Recent Trades', run: function () { pmSwitchTab('trades'); } });
+  }
   if (slug) {
     actions.push({ label: 'Full Analysis', href: '/player/' + slug + '/trade-value' });
   }

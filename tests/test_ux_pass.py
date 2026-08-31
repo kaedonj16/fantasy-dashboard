@@ -63,6 +63,8 @@ def test_cross_feature_links():
     assert "pm-actions-menu" in PLAYER_MODAL
     assert "pm-actions-dropdown" in PLAYER_MODAL
     assert "pm-context-actions" not in PLAYER_MODAL
+    assert "playerModalCompareBtn" not in PLAYER_MODAL
+    assert "player-modal-compare-btn" not in PLAYER_MODAL
     assert "wv-ctx-link" in WAIVERS
     assert "Compare to roster" in WAIVERS
     assert "View schedule" in WAIVERS
@@ -136,5 +138,6 @@ def test_dashboard_css_action_and_palette_styles():
     assert ".pm-actions-menu" in DASH_CSS
     assert ".pm-actions-dropdown" in DASH_CSS
     assert ".pm-context-actions" not in DASH_CSS
+    assert ".player-modal-compare-btn" not in DASH_CSS
     assert ".pr-advanced-col" not in DASH_CSS
     assert ".cs-advanced-col" not in DASH_CSS
