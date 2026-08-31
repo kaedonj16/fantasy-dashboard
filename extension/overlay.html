@@ -76,38 +76,54 @@
               <div class="ov-title">Draft Assistant</div>
             </div>
             <span class="sync-chip" id="syncChip"><i></i> Sleeper · SYNCED</span>
-            <div class="ov-tools live-only">
-              <label>
-                ADP
-                <select class="slot-sel" id="adpSel" aria-label="ADP source">
-                  <option value="consensus">Consensus</option>
-                  <option value="sleeper">Sleeper</option>
-                  <option value="espn">ESPN</option>
-                  <option value="yahoo">Yahoo</option>
-                  <option value="mfl">MFL</option>
-                  <option value="brfantasy">BR Fantasy</option>
-                </select>
-              </label>
-              <label>
-                Slot
-                <select class="slot-sel" id="slotSel" aria-label="Your draft slot"></select>
-              </label>
-              <div class="deeplinks ov-links">
-                <button type="button" data-link="room" title="Open Draft Room">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M8 4v16"/></svg>
-                  Room
-                </button>
-                <button type="button" data-link="sheet" title="Open Cheat Sheet">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/></svg>
-                  Sheet
-                </button>
-              </div>
-            </div>
+            <label class="live-only slot-lab">
+              Slot
+              <select class="slot-sel" id="slotSel" aria-label="Your draft slot"></select>
+            </label>
           </div>
           <div class="tab-bar" role="tablist">
-            <button type="button" class="tab-btn active" data-tab="board" role="tab">Board</button>
-            <button type="button" class="tab-btn" data-tab="roster" role="tab">Roster <span class="tab-chip" id="rosterChip">0</span></button>
-            <button type="button" class="tab-btn" data-tab="grades" role="tab">Grades <span class="tab-chip" id="gradesChip">—</span></button>
+            <button type="button" class="tab-btn active" data-tab="board" role="tab">Players</button>
+            <button type="button" class="tab-btn" data-tab="roster" role="tab">Team <span class="tab-chip" id="rosterChip">0</span></button>
+            <button type="button" class="tab-btn" data-tab="grades" role="tab">League <span class="tab-chip" id="gradesChip">—</span></button>
+            <div class="tab-opts">
+              <button type="button" class="opts-btn" data-link="sheet" title="Open Cheat Sheet" aria-label="Cheat Sheet">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/></svg>
+                <span>Cheat</span>
+              </button>
+              <button type="button" class="opts-btn" data-link="room" title="Open Draft Room" aria-label="Draft Room">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M8 4v16"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="side-head" id="boardControls">
+            <div class="side-controls">
+              <select class="sort-sel" id="sortSel" aria-label="Sort">
+                <option value="rec">Recommendation Rank</option>
+                <option value="ps">Pick Score</option>
+                <option value="val">Value</option>
+                <option value="proj">Proj PPG</option>
+                <option value="adp">ADP</option>
+              </select>
+              <input id="searchInp" type="search" placeholder="Search…" autocomplete="off">
+            </div>
+            <div class="pos-filters" id="posFilters">
+              <button type="button" class="chip" data-pos="ALL" aria-pressed="true">All</button>
+              <button type="button" class="chip" data-pos="QB" aria-pressed="false">QB</button>
+              <button type="button" class="chip" data-pos="RB" aria-pressed="false">RB</button>
+              <button type="button" class="chip" data-pos="WR" aria-pressed="false">WR</button>
+              <button type="button" class="chip" data-pos="TE" aria-pressed="false">TE</button>
+            </div>
+            <div class="adp-src live-only">
+              <label class="adp-src-label" for="adpSel">ADP source</label>
+              <select class="slot-sel" id="adpSel" aria-label="ADP source">
+                <option value="consensus">Consensus</option>
+                <option value="sleeper">Sleeper</option>
+                <option value="espn">ESPN</option>
+                <option value="yahoo">Yahoo</option>
+                <option value="mfl">MFL</option>
+                <option value="brfantasy">BR Fantasy</option>
+              </select>
+            </div>
           </div>
           <div class="ov-body" id="ovBody"></div>
           <div class="ov-foot">

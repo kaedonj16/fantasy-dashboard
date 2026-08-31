@@ -2,8 +2,8 @@
   const CLOCK_START = 75;
   const SLOTS = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"];
   const POS = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6", FLEX: "#14b8a6", BN: "#64748b" };
-  const SORTS = ["rec", "adp", "ps", "proj"];
-  const SORT_LBL = { rec: "Rec", adp: "ADP", ps: "Pick Score", proj: "Proj" };
+  const SORTS = ["rec", "ps", "val", "proj", "adp"];
+  const SORT_LBL = { rec: "Recommendation Rank", adp: "ADP", ps: "Pick Score", proj: "Proj PPG", val: "Value" };
   const TEAM_NAMES = [
     "", "Midnight Express", "Gridiron Ghosts", "Capital Thunder", "Bayou Bandits",
     "Pacific Storm", "Ironclad FC", "You", "Desert Foxes", "Harbor Hawks",
@@ -229,6 +229,7 @@
     tab: "board",
     pos: "ALL",
     sort: "rec",
+    query: "",
     platform: "sleeper",
     clock: CLOCK_START,
     expanded: null,
@@ -615,10 +616,13 @@
     let chip;
     if (state.sort === "rec") {
       chip = '<div class="pschip recchip" title="Recommendation rank">#' + (opts.rank || p._rank) + "<small>REC</small></div>";
-    } else {
+    } else if (state.sort === "ps") {
       const col = psColor(p._ps);
       chip = '<div class="pschip" style="color:' + col + ";background:" + col + '1a" title="Pick Score">'+ p._ps + "<small>PS</small></div>";
+    } else {
+      chip = "";
     }
+    const reason = opts.reason ? '<div class="ba-reason">' + esc(opts.reason) + "</div>" : "";
     return '<div class="ba-row" data-id="' + p.id + '">'
       + hsMark(p, "hs")
       + '<div class="ba-body"><div class="ba-name">' + esc(p.name) + "</div>"
@@ -627,7 +631,7 @@
       + '<span class="tier' + (cliff ? " cliff" : "") + '">T' + p.tier + "</span>"
       + '<span class="tabular">' + fmtPpg(p) + " proj</span>"
       + (byeLvl ? '<span class="bye-flag">Bye ' + p.bye + "</span>" : "")
-      + "</div></div>"
+      + "</div>" + reason + "</div>"
       + '<div class="ba-right"><div class="ba-val">' + p.val + '</div><div class="ba-sub">ADP ' + fmtAdp(p) + "</div></div>"
       + chip
       + "</div>";
@@ -683,31 +687,19 @@
         + '<div class="rank">League rank #' + rank + " of " + state.teams + "</div>"
         + '<div class="sub">Projected playoff odds <b class="tabular" style="color:' + (odds >= 50 ? "var(--win)" : "var(--warn)") + '">' + odds.toFixed(1) + "%</b></div></div>";
     } else if (pool[0]) {
-      const rec = pool[0];
-      const col = psColor(rec._ps);
-      html += '<div class="rec-card"><div class="rec-label">Recommended pick</div><div class="rec-top">'
-        + '<div class="gauge" style="--p:' + rec._ps + ";--g:" + col + '"><div><b>' + rec._ps + "</b><small>PS</small></div></div>"
-        + '<div class="rec-player">' + hsMark(rec, "hs") + '<div><div class="rec-name">' + esc(rec.name) + "</div>"
-        + '<div class="rec-meta"><span class="posb" style="background:' + POS[rec.pos] + '">' + rec.pos + "</span>"
-        + rec.team + " · T" + rec.tier + " · " + fmtPpg(rec) + " proj</div></div></div>"
-        + '<ul class="reasons">' + reasonsFor(rec, counts, recPn).map(function (r) { return "<li>" + esc(r) + "</li>"; }).join("") + "</ul>"
-        + '<button type="button" class="btn btn-primary draft-cta" data-draft="' + rec.id + '">'
-        + (state.live ? ("Recommend " + esc(rec.name) + " at " + pickLabel(recPn)) : ("Draft " + esc(rec.name) + " at " + pickLabel(recPn)))
-        + "</button></div>";
-      html += bannersHtml(counts, rec);
+      html += bannersHtml(counts, pool[0]);
     }
-    html += '<div class="filters">';
-    ["ALL", "QB", "RB", "WR", "TE"].forEach(function (pos) {
-      html += '<button type="button" class="chip" data-pos="' + pos + '" aria-pressed="' + (state.pos === pos) + '">' + (pos === "ALL" ? "All" : pos) + "</button>";
-    });
-    html += '<button type="button" class="chip sort-btn" id="sortBtn">Sort: ' + SORT_LBL[state.sort] + "</button></div>";
+    const q = (state.query || "").trim().toLowerCase();
     let rows = pool;
     if (state.pos !== "ALL") rows = rows.filter(function (p) { return p.pos === state.pos; });
+    if (q) rows = rows.filter(function (p) { return String(p.name).toLowerCase().indexOf(q) >= 0; });
     if (state.sort === "adp") rows = rows.slice().sort(function (a, b) { return a.adp - b.adp; });
     else if (state.sort === "ps") rows = rows.slice().sort(function (a, b) { return b._ps - a._ps; });
     else if (state.sort === "proj") rows = rows.slice().sort(function (a, b) { return b.ppg - a.ppg; });
-    rows.slice(0, 40).forEach(function (p, i) {
-      html += playerRow(p, { rank: state.sort === "rec" ? p._rank : i + 1 });
+    else if (state.sort === "val") rows = rows.slice().sort(function (a, b) { return b.val - a.val; });
+    rows.slice(0, 80).forEach(function (p, i) {
+      const reason = state.sort === "rec" ? (reasonsFor(p, counts, recPn)[0] || "") : "";
+      html += playerRow(p, { rank: state.sort === "rec" ? p._rank : i + 1, reason: reason });
     });
     if (!rows.length) html += '<div class="empty-log" style="color:var(--text-muted)">No players match this filter.</div>';
     return html;
@@ -885,6 +877,13 @@
     document.querySelectorAll(".tab-btn").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-tab") === state.tab);
     });
+    const controls = document.getElementById("boardControls");
+    if (controls) controls.hidden = state.tab !== "board";
+    document.querySelectorAll("#posFilters [data-pos]").forEach(function (b) {
+      b.setAttribute("aria-pressed", b.getAttribute("data-pos") === state.pos ? "true" : "false");
+    });
+    const sortSel = document.getElementById("sortSel");
+    if (sortSel && sortSel.value !== state.sort) sortSel.value = state.sort;
     const body = document.getElementById("ovBody");
     if (state.tab === "roster") body.innerHTML = renderRoster();
     else if (state.tab === "grades") body.innerHTML = renderGrades();
@@ -941,6 +940,23 @@
       state.toast = "";
       render();
     });
+  });
+  const posFilters = document.getElementById("posFilters");
+  if (posFilters) posFilters.addEventListener("click", function (e) {
+    const pos = e.target.closest("[data-pos]");
+    if (!pos) return;
+    state.pos = pos.getAttribute("data-pos");
+    render();
+  });
+  const sortSelEl = document.getElementById("sortSel");
+  if (sortSelEl) sortSelEl.addEventListener("change", function () {
+    state.sort = sortSelEl.value || "rec";
+    render();
+  });
+  const searchInp = document.getElementById("searchInp");
+  if (searchInp) searchInp.addEventListener("input", function () {
+    state.query = searchInp.value || "";
+    render();
   });
   document.getElementById("simBtn").addEventListener("click", function () {
     simulateOne();

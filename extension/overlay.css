@@ -420,23 +420,11 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 12px 12px 10px;
+    padding: 10px 12px 8px;
     border-bottom: 1px solid var(--border);
     flex-wrap: wrap;
   }
-  .ov-tools {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-left: auto;
-  }
-  html.br-da-embed .ov-tools {
-    flex-basis: 100%;
-    margin-left: 0;
-    padding-top: 2px;
-  }
-  .ov-tools label {
+  .slot-lab {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -444,15 +432,7 @@
     font-weight: 700;
     color: var(--text-muted);
     white-space: nowrap;
-  }
-  .ov-head .deeplinks {
-    padding: 0;
     margin-left: auto;
-    gap: 6px;
-  }
-  .ov-head .deeplinks button {
-    padding: 5px 8px;
-    font-size: 11px;
   }
   .br-mark {
     width: 32px; height: 32px;
@@ -497,31 +477,107 @@
 
   .tab-bar {
     display: flex;
+    align-items: stretch;
     gap: 4px;
-    padding: 8px;
-    border-bottom: 1px solid var(--border);
+    margin: 8px;
+    padding: 3px;
+    background: var(--row);
+    border-radius: 10px;
   }
   .tab-btn {
     flex: 1;
     position: relative;
     border: none;
     background: transparent;
-    color: var(--accent);
-    padding: 8px 8px;
+    color: var(--text-muted);
+    padding: 7px 4px;
     font-size: 12px;
     font-weight: 700;
-    border-radius: 12px;
+    border-radius: 8px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
   }
   .tab-btn.active {
-    background: var(--accent-soft);
+    background: var(--card);
     color: var(--accent);
+    box-shadow: var(--shadow-sm);
   }
   .tab-btn:hover:not(.active) {
-    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    color: var(--text);
+  }
+  .tab-opts {
+    display: flex;
+    align-items: stretch;
+    flex-shrink: 0;
+  }
+  .opts-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 0 8px;
+    border-radius: 8px;
+    white-space: nowrap;
+  }
+  .opts-btn:hover {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .side-head {
+    padding: 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .side-head[hidden] { display: none !important; }
+  .side-controls {
+    display: flex;
+    gap: 6px;
+  }
+  .sort-sel {
+    flex-shrink: 0;
+    max-width: 46%;
+    padding: 7px 9px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  #searchInp {
+    flex: 1;
+    min-width: 0;
+    padding: 7px 9px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 12px;
+  }
+  .pos-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+  .adp-src {
+    font-size: 10px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .adp-src-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 700;
   }
   .tab-chip {
     font-size: 10px;
@@ -743,8 +799,8 @@
   }
   .ba-row:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
   .hs {
-    width: 52px;
-    height: 58px;
+    width: 65px;
+    height: 65px;
     border-radius: 9px 9px 0 0;
     flex-shrink: 0;
     align-self: flex-end;
@@ -782,6 +838,7 @@
   .ba-body { min-width: 0; flex: 1; line-height: 1.3; }
   .ba-name { font-size: 13.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ba-meta { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: 2px; flex-wrap: wrap; }
+  .ba-reason { font-size: 10px; color: var(--text-muted); margin-top: 5px; font-weight: 600; }
   .tier {
     font-size: 9px;
     font-weight: 800;
@@ -1039,7 +1096,8 @@
   html.br-da-embed.br-da-rail .live-note,
   html.br-da-embed.br-da-rail #reconnectBtn,
   html.br-da-embed.br-da-rail .ov-head label,
-  html.br-da-embed.br-da-rail .ov-tools { display: none !important; }
+  html.br-da-embed.br-da-rail .side-head,
+  html.br-da-embed.br-da-rail .tab-opts { display: none !important; }
   html.br-da-embed.br-da-rail .ov-head { justify-content: center; padding: 10px 4px; }
   html.br-da-embed.br-da-rail .ov-foot {
     flex: 1;
