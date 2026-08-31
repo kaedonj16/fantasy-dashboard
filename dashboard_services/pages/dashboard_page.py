@@ -319,6 +319,34 @@ def build_dashboard_body(ctx: dict) -> str:
         if _viewer_team else
         "What changed, what needs attention, and your next moves."
     )
+    _bb_badge = ""
+    try:
+        from utils.league_format import is_best_ball
+        if is_best_ball(
+            ctx.get("league") or {},
+            settings=(ctx.get("league_settings")
+                      or (ctx.get("league") or {}).get("settings")
+                      or ctx.get("settings") or {}),
+        ):
+            _bb_badge = (
+                '<span class="os-hero-tag" style="display:inline-flex;align-items:center;'
+                'margin-left:8px;padding:3px 9px;border-radius:8px;font-size:11px;font-weight:800;'
+                'letter-spacing:.03em;vertical-align:middle;color:var(--accent);'
+                'background:var(--accent-soft);" title="Best Ball — no weekly lineup locks">'
+                'Best Ball</span>'
+            )
+            if _viewer_team:
+                _hero_copy = (
+                    f"Welcome back, {html.escape(str(_viewer_team))}. Best Ball mode: "
+                    "weekly Start/Sit and lineup locks are hidden — focus on waivers and the draft."
+                )
+            else:
+                _hero_copy = (
+                    "Best Ball mode: weekly Start/Sit and lineup locks are hidden — "
+                    "focus on waivers and the draft."
+                )
+    except Exception:
+        _bb_badge = ""
 
     _action_queue_html = f"""
         <div class="os-action-queue os-tab-panel os-tab-active" id="os-jump-actions">
@@ -352,7 +380,7 @@ def build_dashboard_body(ctx: dict) -> str:
         <section class="os-hero-card">
           <div class="os-hero-top">
             <div>
-              <h1 class="os-hero-title">Season Hub</h1>
+              <h1 class="os-hero-title">Season Hub</h1>{_bb_badge}
               <p class="os-hero-copy">{_hero_copy}</p>
             </div>
           </div>

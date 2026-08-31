@@ -2421,6 +2421,21 @@ def _nav_is_redraft(platform, league_id, season) -> bool:
         return False
 
 
+def _nav_is_best_ball(platform, league_id, season) -> bool:
+    """True when the league is Best Ball (no weekly lineup management)."""
+    try:
+        from utils.league_format import is_best_ball
+        ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
+        return is_best_ball(
+            ctx.get("league") or {},
+            settings=(ctx.get("league_settings")
+                      or (ctx.get("league") or {}).get("settings")
+                      or ctx.get("settings") or {}),
+        )
+    except Exception:
+        return False
+
+
 def _mobile_nav(active: str, league_id, platform, season) -> str:
     """Mobile navigation: a dynamic bottom dock plus a full "More" sheet.
 
@@ -2541,10 +2556,16 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
 
     weekly_html = ""
     if draft_ended or not offseason:
+        _bb_sheet = False
+        try:
+            _bb_sheet = _nav_is_best_ball(platform, league_id, season)
+        except Exception:
+            _bb_sheet = False
         rows = [
             _sl("weekly", "Matchups"), _sl("recap", "Weekly Recap"),
             _sl("scout", "Opponent Scout"), _sl("optimal", "Lineup Efficiency"),
-            _sl("waivers", "Waivers & Start/Sit"), _sl("schedule", "Schedule Assistant"),
+            _sl("waivers", "Waivers" if _bb_sheet else "Waivers & Start/Sit"),
+            _sl("schedule", "Schedule Assistant"),
         ]
         if not offseason:
             rows.append(_sl("redzone", "Redzone"))
@@ -3753,13 +3774,20 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Weekly dropdown is available as soon as the draft is done
     draft_ended = has_draft_ended(league_id, platform, season)
     if draft_ended or not offseason_mode:
+        _bb = False
+        try:
+            _bb = _nav_is_best_ball(platform, league_id, season)
+        except Exception:
+            _bb = False
+        _waiver_label = "Waivers" if _bb else "Waivers & Start/Sit"
         _weekly_items = [
             ("Matchups", "page_weekly", "weekly", False),
             ("Weekly Recap", "league_pages.page_recap", "recap", False),
             ("Opponent Scout", "page_weekly", "scout", False, "?tab=scout"),
             ("Lineup Efficiency", "page_weekly", "optimal", False, "?tab=optimal"),
             # Roster/lineup tools live with the other weekly tools, not Players.
-            ("Waivers & Start/Sit", "league_pages.page_waivers", "waivers", False),
+            # Best Ball has no weekly Start/Sit — keep Waivers only.
+            (_waiver_label, "league_pages.page_waivers", "waivers", False),
             ("Schedule Assistant", "page_schedule", "schedule", False),
         ]
         # Redzone lives inside the Weekly dropdown. When a game is actually

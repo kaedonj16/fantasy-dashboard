@@ -477,6 +477,19 @@
           + '). Recommendation Rank and Pick Score still help nominations, but snake-round draft grades and budget guidance are not auction-calibrated yet — treat grades as provisional.';
       }
     }
+    if (cfg.isBestBall) {
+      try {
+        var dtBb = document.getElementById('drType');
+        if (dtBb) {
+          for (var bbi = 0; bbi < dtBb.options.length; bbi++) {
+            if (dtBb.options[bbi].value === 'redraft') { dtBb.selectedIndex = bbi; break; }
+          }
+        }
+        // Prefer the built-in Best Ball roster preset when the league did not
+        // already seed slot counts (guest / no roster_positions).
+        if (!cfg.rosterPositions && ROSTER_PRESETS.bestball) _rosterPreset = 'bestball';
+      } catch (e) {}
+    }
     var _cs = document.getElementById('drToCheatSheet');
     // In-draft cheat sheet: the always-visible board control opens the sheet in
     // an overlay (iframe of the chrome-less embed) so you never leave the draft.
