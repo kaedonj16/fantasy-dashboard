@@ -7470,15 +7470,6 @@ def render_standings_sidebar(team_stats, owner_to_rid=None) -> str:
 
     ts = team_stats.copy()
 
-    # --------------------
-    # Best Offense / Defense
-    # --------------------
-    best_off = ts.loc[ts["PF"].idxmax()] if "PF" in ts.columns else None
-    best_def = ts.loc[ts["PA"].idxmin()] if "PA" in ts.columns else None
-
-    # --------------------
-    # Hottest / Coldest Streaks
-    # --------------------
     hottest = None
     coldest = None
     if "StreakLen" in ts.columns and "StreakType" in ts.columns:
@@ -7491,50 +7482,6 @@ def render_standings_sidebar(team_stats, owner_to_rid=None) -> str:
             coldest = cold_df.loc[cold_df["StreakLen"].idxmax()]
 
     cards = []
-
-    # --------------------
-    # Best Offense Card
-    # --------------------
-    if best_off is not None:
-        cards.append(f"""
-        <div class="card small">
-          <div class="card-header">
-            <h3>Best Offense</h3>
-            <h3>{best_off['PF']:.1f} PF</h3>
-          </div>
-          <div class="card-body">
-            <div class="highlight-game-card">
-              <div class="hg-row">
-                <div class="hg-team">
-                  {_clickable_team_name(best_off['owner'], owner_to_rid, cls='hg-name')}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        """)
-
-    # --------------------
-    # Best Defense Card
-    # --------------------
-    if best_def is not None:
-        cards.append(f"""
-        <div class="card small">
-          <div class="card-header">
-            <h3>Best Defense</h3>
-            <h3>{best_def['PA']:.1f} PA</h3>
-          </div>
-          <div class="card-body">
-            <div class="highlight-game-card">
-              <div class="hg-row">
-                <div class="hg-team">
-                  {_clickable_team_name(best_def['owner'], owner_to_rid, cls='hg-name')}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        """)
 
     # --------------------
     # Hottest Team Card
