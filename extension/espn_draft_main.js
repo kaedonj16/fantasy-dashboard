@@ -14,7 +14,18 @@
   } catch (_e) {
     return;
   }
-  window.__brFantasyEspnDraftObserver = true;
+
+  function isEspnDraftRoom() {
+    try {
+      const path = String(location.pathname || "").toLowerCase();
+      if (/mockdraftlobby|draftlobby/.test(path)) return false;
+      if (/(?:^|\/)(?:live)?draft(?:\/|$)/.test(path)) return true;
+      if (/(?:^|\/)mockdraft(?:\/|$)/.test(path)) return true;
+      return false;
+    } catch (_e) {
+      return false;
+    }
+  }
 
   const EVENT = "brfantasy:espn-draft-raw";
   const RESCAN = "brfantasy:draft-rescan";
@@ -33,6 +44,13 @@
   let bestOverallSeen = 0;
   let detectedUserTeamId = null;
   let detectedSlot = 0;
+  let detectedTeams = 0;
+  let detectedRounds = 0;
+  let detectedRoster = null;
+  let detectedSf = false;
+  let detectedPpr = 1;
+  let detectedTep = 0;
+  let detectedPassTd = 4;
   /** @type {Map<string, {playerName: string, pos: string, nflTeam: string}>} */
   const playerMetaById = new Map();
   const ESPN_POS = { 1: "QB", 2: "RB", 3: "WR", 4: "TE", 5: "K", 16: "DST" };
@@ -348,6 +366,13 @@
       last ? last.teamId : "",
       detectedUserTeamId || "",
       detectedSlot || "",
+      detectedTeams || "",
+      detectedRounds || "",
+      detectedSf ? 1 : 0,
+      detectedPpr,
+      detectedTep,
+      detectedPassTd,
+      rosterFingerprint(detectedRoster),
     ].join("|");
   }
 
@@ -360,8 +385,103 @@
     }
   }
 
+  function rosterRoundsFromLineupSlots(counts) {
+    if (!counts || typeof counts !== "object") return 0;
+    let n = 0;
+    const keys = safeKeys(counts);
+    for (let i = 0; i < keys.length; i++) {
+      const id = Number(keys[i]);
+      if (id === 21 || id === 22) continue;
+      const c = Number(safeProp(counts, keys[i]) || counts[keys[i]]) || 0;
+      if (c > 0) n += c;
+    }
+    return n >= 6 && n <= 40 ? n : 0;
+  }
+
+  function rosterFromEspnSlots(counts) {
+    const out = { QB: 0, SF: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, K: 0, DEF: 0, BN: 0 };
+    if (!counts || typeof counts !== "object") return out;
+    const map = { 0: "QB", 2: "RB", 4: "WR", 6: "TE", 7: "SF", 16: "DEF", 17: "K", 20: "BN", 23: "FLEX", 3: "FLEX", 5: "FLEX" };
+    const keys = safeKeys(counts);
+    for (let i = 0; i < keys.length; i++) {
+      const id = Number(keys[i]);
+      if (id === 21 || id === 22) continue;
+      const dest = map[id];
+      const n = Number(safeProp(counts, keys[i]) || counts[keys[i]]) || 0;
+      if (dest && n > 0) out[dest] += n;
+    }
+    return out;
+  }
+
+  function rosterFingerprint(rs) {
+    if (!rs) return "";
+    return ["QB", "SF", "RB", "WR", "TE", "FLEX", "K", "DEF", "BN"].map(function (k) {
+      return k + (Number(rs[k]) || 0);
+    }).join("");
+  }
+
+  function scoringFromEspnSettings(settings) {
+    const out = { ppr: 1, passTd: 4, tep: 0 };
+    if (!isTraversableObject(settings)) return out;
+    const scoring = safeProp(settings, "scoringSettings") || safeProp(settings, "scoring_settings") || settings;
+    const items = scoring && (safeProp(scoring, "scoringItems") || safeProp(scoring, "scoring_items"));
+    if (Array.isArray(items)) {
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        if (!isTraversableObject(it)) continue;
+        const id = Number(safeProp(it, "statId") != null ? safeProp(it, "statId") : safeProp(it, "stat_id"));
+        const pts = Number(safeProp(it, "points") != null ? safeProp(it, "points") : safeProp(it, "pts"));
+        if (!Number.isFinite(pts)) continue;
+        if (id === 53) out.ppr = pts;
+        if (id === 4) out.passTd = pts;
+      }
+    }
+    const bonus = scoring && (safeProp(scoring, "bonusScoringItems") || safeProp(scoring, "bonus_scoring_items"));
+    if (Array.isArray(bonus)) {
+      for (let i = 0; i < bonus.length; i++) {
+        const it = bonus[i];
+        if (!isTraversableObject(it)) continue;
+        const id = Number(safeProp(it, "statId") != null ? safeProp(it, "statId") : safeProp(it, "stat_id"));
+        const pts = Number(safeProp(it, "points") != null ? safeProp(it, "points") : safeProp(it, "pts"));
+        const elig = safeProp(it, "eligiblePositionIds") || safeProp(it, "eligible_position_ids") || [];
+        const te = Array.isArray(elig) && elig.some(function (p) { return Number(p) === 6; });
+        if (id === 53 && te && Number.isFinite(pts) && pts > 0) out.tep = pts;
+      }
+    }
+    return out;
+  }
+
+  function rememberEspnSettings(obj) {
+    if (!isTraversableObject(obj)) return;
+    const size = safeProp(obj, "size");
+    if (size >= 4 && size <= 32) detectedTeams = Number(size);
+    const settings = safeProp(obj, "settings") || obj;
+    if (isTraversableObject(settings)) {
+      const sz = safeProp(settings, "size");
+      if (sz >= 4 && sz <= 32) detectedTeams = Number(sz);
+      const roster = safeProp(settings, "rosterSettings") || safeProp(obj, "rosterSettings");
+      const counts = roster && (safeProp(roster, "lineupSlotCounts") || safeProp(roster, "lineup_slot_counts"));
+      const r = rosterRoundsFromLineupSlots(counts);
+      if (r) detectedRounds = r;
+      if (counts) {
+        const mapped = rosterFromEspnSlots(counts);
+        if ((mapped.QB || 0) + (mapped.RB || 0) + (mapped.WR || 0) + (mapped.TE || 0) + (mapped.FLEX || 0) + (mapped.SF || 0) >= 4) {
+          detectedRoster = mapped;
+          detectedSf = (mapped.SF || 0) > 0;
+        }
+      }
+      const scoring = scoringFromEspnSettings(settings);
+      if (scoring) {
+        detectedPpr = scoring.ppr;
+        detectedTep = scoring.tep;
+        detectedPassTd = scoring.passTd;
+      }
+    }
+  }
+
   function rememberEspnUser(obj) {
     if (!isTraversableObject(obj)) return;
+    rememberEspnSettings(obj);
     const uid =
       safeProp(obj, "userTeamId") ??
       safeProp(obj, "myTeamId") ??
@@ -369,6 +489,9 @@
       safeProp(obj, "viewerTeamId");
     if (uid != null && uid !== "" && Number(uid) !== 0) detectedUserTeamId = uid;
     const teams = safeProp(obj, "teams");
+    if (Array.isArray(teams) && teams.length >= 4 && teams.length <= 32) {
+      detectedTeams = teams.length;
+    }
     if (!Array.isArray(teams)) return;
     const swid = espnSwid();
     for (let i = 0; i < teams.length; i++) {
@@ -531,6 +654,13 @@
       picks: clean,
       mySlot: mySlot || undefined,
       userTeamId: detectedUserTeamId || undefined,
+      teams: detectedTeams || undefined,
+      rounds: detectedRounds || undefined,
+      roster: detectedRoster || undefined,
+      sf: detectedSf,
+      ppr: detectedPpr,
+      tep: detectedTep,
+      passTd: detectedPassTd,
       at: now,
     };
     bridgeToExtension(EVENT, detail);
@@ -694,6 +824,7 @@
   function collectReactRoots() {
     const roots = [];
     const seenRoot = new Set();
+    if (!document || !document.documentElement) return roots;
     const candidates = [
       document.getElementById("espn-aria-root"),
       document.getElementById("root"),
@@ -766,6 +897,7 @@
   }
 
   function guessTeamCount() {
+    if (!document || !document.querySelectorAll) return 0;
     const headers = document.querySelectorAll(
       '[class*="team-column"], [class*="teamColumn"], [class*="draft-team"], [class*="team-header"]'
     );
@@ -815,10 +947,12 @@
   }
 
   function scrapeDomPicks() {
+    if (!document.body) return false;
     const byOverall = new Map();
     const scope =
       document.querySelector('[class*="draftContainer"], [class*="draft-container"], main, #root') ||
       document.body;
+    if (!scope || typeof scope.querySelectorAll !== "function") return false;
 
     const cellSelector = [
       '[class*="player-column"]',
@@ -917,6 +1051,7 @@
   }
 
   function scanAll() {
+    if (!isEspnDraftRoom() || !document.body) return;
     scrapeDomPicks();
     scanReact();
   }
@@ -967,7 +1102,7 @@
   }
 
   function pollEspnApi() {
-    if (apiPollInFlight) return;
+    if (apiPollInFlight || !isEspnDraftRoom()) return;
     const ids = leagueFromUrl();
     if (!ids.leagueId) return;
     apiPollInFlight = true;
@@ -1082,36 +1217,49 @@
     }
   }
 
-  hookNetwork();
-  watchDom();
-  bridgeToExtension(OBSERVER_READY, { href: location.href, leagueId: leagueFromUrl().leagueId });
+  function startEspnDraftObserver() {
+    if (window.__brFantasyEspnDraftObserver) return;
+    window.__brFantasyEspnDraftObserver = true;
+    hookNetwork();
+    watchDom();
+    bridgeToExtension(OBSERVER_READY, { href: location.href, leagueId: leagueFromUrl().leagueId });
 
-  function onRescan() {
-    lastFingerprint = "";
-    pickAccumulator.clear();
-    pickSources.clear();
-    bestOverallSeen = 0;
-    scanAll();
-    pollEspnApi();
+    function onRescan() {
+      lastFingerprint = "";
+      pickAccumulator.clear();
+      pickSources.clear();
+      bestOverallSeen = 0;
+      scanAll();
+      pollEspnApi();
+    }
+    window.addEventListener("message", function (ev) {
+      if (!ev.data || ev.data.__br !== BRIDGE || ev.data.type !== RESCAN) return;
+      onRescan();
+    });
+    document.addEventListener(RESCAN, onRescan);
+
+    setInterval(function () {
+      if (document.hidden || !isEspnDraftRoom()) return;
+      scanAll();
+    }, 2000);
+    setInterval(function () {
+      if (document.hidden || !isEspnDraftRoom()) return;
+      pollEspnApi();
+    }, 3000);
+
+    setTimeout(onRescan, 800);
+    setTimeout(onRescan, 2500);
+    setTimeout(onRescan, 6000);
+
+    window.__brFantasyEspnForceScan = onRescan;
   }
-  window.addEventListener("message", function (ev) {
-    if (!ev.data || ev.data.__br !== BRIDGE || ev.data.type !== RESCAN) return;
-    onRescan();
-  });
-  document.addEventListener(RESCAN, onRescan);
 
-  setInterval(function () {
-    if (document.hidden) return;
-    scanAll();
-  }, 2000);
-  setInterval(function () {
-    if (document.hidden) return;
-    pollEspnApi();
-  }, 3000);
-
-  setTimeout(onRescan, 800);
-  setTimeout(onRescan, 2500);
-  setTimeout(onRescan, 6000);
-
-  window.__brFantasyEspnForceScan = onRescan;
+  if (isEspnDraftRoom()) {
+    startEspnDraftObserver();
+  } else if (!window.__brFantasyEspnLobbyWait) {
+    window.__brFantasyEspnLobbyWait = true;
+    setInterval(function () {
+      if (isEspnDraftRoom()) startEspnDraftObserver();
+    }, 1000);
+  }
 })();

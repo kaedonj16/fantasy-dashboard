@@ -1299,7 +1299,7 @@
     function adpDeltaVerdict(o) {
         o = o || {};
         var diff = o.diff;
-        if (diff == null || !isFinite(Number(diff))) return {label: '—', cls: 'na'};
+        if (diff == null || !isFinite(Number(diff))) return {label: '-', cls: 'na'};
         diff = Number(diff);
         if (diff >= 8) return {label: 'Steal', cls: 'steal'};
         if (diff >= 3) return {label: 'Value', cls: 'value'};

@@ -1,4 +1,4 @@
-# BR Fantasy — League Connector (browser extension)
+# BR Fantasy - League Connector (browser extension)
 
 Connect private ESPN fantasy leagues to BR Fantasy, **auto-relay live draft
 picks** from ESPN or Yahoo into Draft Room, and **dock a read-only Draft
@@ -18,7 +18,7 @@ Assistant overlay** on Sleeper, Yahoo, and ESPN draft rooms.
 
 ## Why an extension
 
-1. **Cookies:** ESPN's `espn_s2` cookie is `HttpOnly` — only an extension can
+1. **Cookies:** ESPN's `espn_s2` cookie is `HttpOnly` - only an extension can
    read it for one-click private-league connect.
 2. **Live drafts:** ESPN's `mDraftDetail` REST view often does **not** update
    mid-draft. Yahoo's `draftresults` usually does, but the open draft room UI is
@@ -27,13 +27,13 @@ Assistant overlay** on Sleeper, Yahoo, and ESPN draft rooms.
 3. **Draft Assistant overlay:** the same read-only pick stream drives a docked
    sidebar (Best Available, roster, grades) inside the host draft tab. Rankings
    use the site `/api/league-players` pool (consensus ADP, BR values,
-   projections) and real ESPN / Sleeper headshots — not the standalone mock board.
+   projections) and real ESPN / Sleeper headshots - not the standalone mock board.
 
 ## Desktop live draft
 
 1. Install the extension (Load unpacked for now, or the Chrome Web Store build).
 2. Open the host draft (Sleeper, ESPN, or Yahoo). A **BR Draft Assistant**
-   sidebar docks on the right and follows picks. It never submits a pick —
+   sidebar docks on the right and follows picks. It never submits a pick -
    draft in the host room.
 3. For ESPN or Yahoo, also open **Draft Room** → **Connect Live Draft** if you
    want picks mirrored into the web app. Use **Reconnect** in the overlay (or
@@ -78,7 +78,7 @@ URL. Justify `cookies` as local-only until the user clicks Connect.
 
 ## Firefox
 
-MV3 + `browser_specific_settings.gecko` — load via `about:debugging` or submit
+MV3 + `browser_specific_settings.gecko` - load via `about:debugging` or submit
 the same production zip to addons.mozilla.org.
 
 ## Files

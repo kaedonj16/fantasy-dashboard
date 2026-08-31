@@ -7,6 +7,32 @@
   const POLL_MS = 1500;
   let lastFp = "";
   let lastCount = 0;
+  let cachedLeagueId = "";
+  let cachedScoring = { ppr: 1, tep: 0, passTd: 4 };
+
+  async function leagueScoring(leagueId) {
+    if (!leagueId) return cachedScoring;
+    if (cachedLeagueId === String(leagueId) && cachedScoring) return cachedScoring;
+    try {
+      const res = await fetch(
+        "https://api.sleeper.app/v1/league/" + encodeURIComponent(leagueId),
+        { cache: "no-store" }
+      );
+      const league = res.ok ? await res.json() : null;
+      const src = (league && league.scoring_settings) || {};
+      cachedScoring = window.BRDraftSlot && BRDraftSlot.scoringFromSleeperSettings
+        ? BRDraftSlot.scoringFromSleeperSettings(src)
+        : {
+            ppr: Number(src.rec != null ? src.rec : 1),
+            tep: Number(src.bonus_rec_te || 0),
+            passTd: Number(src.pass_td != null ? src.pass_td : 4),
+          };
+      cachedLeagueId = String(leagueId);
+    } catch (_e) {
+      /* keep last scoring */
+    }
+    return cachedScoring;
+  }
 
   function draftIdFromUrl() {
     try {
@@ -92,19 +118,34 @@
       if (uid && draft && draft.draft_order && draft.draft_order[uid] != null) {
         mySlot = Number(draft.draft_order[uid]);
       }
+      const roster = window.BRDraftSlot && BRDraftSlot.rosterFromSleeperSettings
+        ? BRDraftSlot.rosterFromSleeperSettings(settings)
+        : null;
+      const scoring = await leagueScoring(draft && draft.league_id);
       const payload = {
         platform: "sleeper",
         teams: Number(settings.teams || 12),
         rounds: Number(settings.rounds || 15),
         mySlot: mySlot || undefined,
         sf: Number(settings.slots_super_flex || settings.slots_sf || 0) > 0,
+        roster: roster || undefined,
+        ppr: scoring.ppr,
+        tep: scoring.tep,
+        passTd: scoring.passTd,
         picks: picks,
         syncText: window.BRDraftSlot
           ? window.BRDraftSlot.compactSync("sleeper", picks.length, mySlot || undefined, true)
           : (picks.length ? "SLEEPER · " + picks.length : "SLEEPER · LIVE"),
       };
-      if (fp === lastFp) return;
-      lastFp = fp;
+      const settingsFp = [
+        fp,
+        window.BRDraftSlot && BRDraftSlot.rosterKey ? BRDraftSlot.rosterKey(roster) : "",
+        scoring.ppr,
+        scoring.tep,
+        scoring.passTd,
+      ].join("|");
+      if (settingsFp === lastFp) return;
+      lastFp = settingsFp;
       push(payload);
     } catch (_e) {
       if (typeof window.__brDaSetSync === "function") {

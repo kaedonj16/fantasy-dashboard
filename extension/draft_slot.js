@@ -142,6 +142,7 @@
       document.querySelector(
         '[class*="draft-board"], [class*="draftBoard"], [class*="draft-container"], [class*="draftContainer"], [id*="draft"]'
       ) || document.body;
+    if (!scope || typeof document.createTreeWalker !== "function") return 0;
     const walker = document.createTreeWalker(scope, NodeFilter.SHOW_ELEMENT);
     let el;
     let scanned = 0;
@@ -156,11 +157,120 @@
     return 0;
   }
 
+  function isEspnDraftRoom() {
+    try {
+      const path = String(location.pathname || "").toLowerCase();
+      if (/mockdraftlobby|draftlobby/.test(path)) return false;
+      if (/(?:^|\/)(?:live)?draft(?:\/|$)/.test(path)) return true;
+      if (/(?:^|\/)mockdraft(?:\/|$)/.test(path)) return true;
+      return false;
+    } catch (_e) {
+      return false;
+    }
+  }
+
   function clampSlot(slot, teams) {
     const n = Number(slot) || 0;
     const max = Number(teams) || 32;
     if (n < 1) return 0;
     return Math.max(1, Math.min(max, n));
+  }
+
+  function emptyRoster() {
+    return { QB: 0, SF: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, K: 0, DEF: 0, BN: 0 };
+  }
+
+  function rosterFromEspnSlots(counts) {
+    const out = emptyRoster();
+    if (!counts || typeof counts !== "object") return out;
+    const map = { 0: "QB", 2: "RB", 4: "WR", 6: "TE", 7: "SF", 16: "DEF", 17: "K", 20: "BN", 23: "FLEX", 3: "FLEX", 5: "FLEX" };
+    Object.keys(counts).forEach(function (k) {
+      const id = Number(k);
+      if (id === 21 || id === 22) return;
+      const dest = map[id];
+      const n = Number(counts[k]) || 0;
+      if (dest && n > 0) out[dest] += n;
+    });
+    return out;
+  }
+
+  function rosterFromSleeperSettings(s) {
+    const out = emptyRoster();
+    if (!s || typeof s !== "object") return out;
+    out.QB = Number(s.slots_qb || 0);
+    out.RB = Number(s.slots_rb || 0);
+    out.WR = Number(s.slots_wr || 0);
+    out.TE = Number(s.slots_te || 0);
+    out.FLEX = Number(s.slots_flex || s.slots_wr_rb_te || 0);
+    out.SF = Number(s.slots_super_flex || s.slots_sf || 0);
+    out.K = Number(s.slots_k || 0);
+    out.DEF = Number(s.slots_def || 0);
+    out.BN = Number(s.slots_bn || 0);
+    return out;
+  }
+
+  function rosterFromYahooPositions(positions) {
+    const out = emptyRoster();
+    (positions || []).forEach(function (p) {
+      const raw = String((p && (p.position || p.display_position || p)) || "").toUpperCase();
+      const n = Number((p && (p.count || p.num || p.slots)) || 1) || 1;
+      if (!raw || raw === "IR" || raw === "IR+" || raw === "TAXI") return;
+      if (raw === "QB") out.QB += n;
+      else if (raw === "RB") out.RB += n;
+      else if (raw === "WR") out.WR += n;
+      else if (raw === "TE") out.TE += n;
+      else if (raw === "K") out.K += n;
+      else if (raw === "DEF" || raw === "DST") out.DEF += n;
+      else if (raw === "BN" || raw === "BENCH") out.BN += n;
+      else if (raw === "Q/W/R/T" || raw === "QP" || raw === "SUPER_FLEX" || raw === "SF") out.SF += n;
+      else if (raw === "W/R/T" || raw === "W/R" || raw === "W/T" || raw === "R/T" || raw === "FLEX") out.FLEX += n;
+    });
+    return out;
+  }
+
+  function rosterHasStarters(rs) {
+    if (!rs) return false;
+    return (rs.QB || 0) + (rs.RB || 0) + (rs.WR || 0) + (rs.TE || 0) + (rs.FLEX || 0) + (rs.SF || 0) >= 4;
+  }
+
+  function slotListFromRoster(rs) {
+    const order = ["QB", "SF", "RB", "WR", "TE", "FLEX", "K", "DEF"];
+    const out = [];
+    order.forEach(function (k) {
+      const n = Number(rs && rs[k]) || 0;
+      for (let i = 0; i < n; i++) out.push(k === "SF" ? "SF" : k);
+    });
+    return out;
+  }
+
+  function settingsLabel(rs, scoring) {
+    if (!rosterHasStarters(rs)) return "";
+    const bits = [];
+    bits.push((rs.SF ? "SF" : "1QB"));
+    const ppr = scoring && scoring.ppr;
+    if (ppr === 0.5) bits.push("HALF");
+    else if (ppr === 0) bits.push("STD");
+    else bits.push("PPR");
+    if (scoring && Number(scoring.tep) > 0) bits.push("TEP");
+    bits.push((rs.QB || 0) + "/" + (rs.RB || 0) + "/" + (rs.WR || 0) + "/" + (rs.TE || 0));
+    if (rs.FLEX) bits.push("FLEX" + (rs.FLEX > 1 ? rs.FLEX : ""));
+    return bits.join(" · ");
+  }
+
+  function scoringFromSleeperSettings(s) {
+    const src = s && typeof s === "object" ? s : {};
+    return {
+      ppr: Number(src.rec != null ? src.rec : 1),
+      tep: Number(src.bonus_rec_te || 0),
+      passTd: Number(src.pass_td != null ? src.pass_td : 4),
+    };
+  }
+
+  function rosterKey(rs) {
+    if (!rs || typeof rs !== "object") return "";
+    return ["QB", "SF", "RB", "WR", "TE", "FLEX", "K", "DEF", "BN"].map(function (k) {
+      return k + (Number(rs[k]) || 0);
+    }).join("");
   }
 
   root.BRDraftSlot = {
@@ -171,6 +281,15 @@
     espnSwid: espnSwid,
     compactSync: compactSync,
     detectDomSlot: detectDomSlot,
+    isEspnDraftRoom: isEspnDraftRoom,
     clampSlot: clampSlot,
+    rosterFromEspnSlots: rosterFromEspnSlots,
+    rosterFromSleeperSettings: rosterFromSleeperSettings,
+    rosterFromYahooPositions: rosterFromYahooPositions,
+    rosterHasStarters: rosterHasStarters,
+    slotListFromRoster: slotListFromRoster,
+    settingsLabel: settingsLabel,
+    scoringFromSleeperSettings: scoringFromSleeperSettings,
+    rosterKey: rosterKey,
   };
 })(window);

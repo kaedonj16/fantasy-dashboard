@@ -34,6 +34,16 @@
     return "sleeper";
   }
 
+  function isHostDraftRoom() {
+    if (platformFromHost() !== "espn") return true;
+    if (window.BRDraftSlot && typeof window.BRDraftSlot.isEspnDraftRoom === "function") {
+      return window.BRDraftSlot.isEspnDraftRoom();
+    }
+    const path = String(location.pathname || "").toLowerCase();
+    if (/mockdraftlobby|draftlobby/.test(path)) return false;
+    return /(?:^|\/)(?:live)?draft(?:\/|$)/.test(path) || /(?:^|\/)mockdraft(?:\/|$)/.test(path);
+  }
+
   function ensureDockCss() {
     if (document.getElementById("br-da-dock-css")) return;
     const style = document.createElement("style");
@@ -199,7 +209,15 @@
       last ? (last.overallPickNumber || last.pick_no || 0) : 0,
       last ? (last.playerId || last.playerName || "") : "",
       payload.teams || "",
-      payload.mySlot || ""
+      payload.mySlot || "",
+      payload.rounds || "",
+      payload.inProgress ? 1 : 0,
+      payload.drafted ? 1 : 0,
+      payload.sf ? 1 : 0,
+      payload.ppr != null ? payload.ppr : "",
+      payload.tep != null ? payload.tep : "",
+      payload.passTd != null ? payload.passTd : "",
+      window.BRDraftSlot && BRDraftSlot.rosterKey ? BRDraftSlot.rosterKey(payload.roster) : ""
     ].join("|");
     const teams = Number(payload.teams || 0);
     const sf = !!payload.sf;
@@ -267,10 +285,18 @@
     }
   });
 
-  requestPool();
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", mount);
-  } else {
+  function tryMount() {
+    if (!isHostDraftRoom()) return false;
+    requestPool();
     mount();
+    return true;
+  }
+
+  if (!tryMount()) {
+    const wait = setInterval(function () {
+      if (tryMount()) clearInterval(wait);
+    }, 1000);
+  } else if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", tryMount);
   }
 })();

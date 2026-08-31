@@ -27,6 +27,15 @@
   let lastUserTeamId = null;
   let lastPicks = [];
 
+  function isEspnDraftRoom() {
+    if (window.BRDraftSlot && typeof window.BRDraftSlot.isEspnDraftRoom === "function") {
+      return window.BRDraftSlot.isEspnDraftRoom();
+    }
+    const path = String(location.pathname || "").toLowerCase();
+    if (/mockdraftlobby|draftlobby/.test(path)) return false;
+    return /(?:^|\/)(?:live)?draft(?:\/|$)/.test(path) || /(?:^|\/)mockdraft(?:\/|$)/.test(path);
+  }
+
   function leagueFromUrl() {
     try {
       const u = new URL(location.href);
@@ -48,18 +57,12 @@
 
   function overlayTeamMeta(picks) {
     const ids = {};
-    let max = 0;
     (picks || []).forEach(function (p) {
       if (p && p.teamId != null && p.teamId !== "") ids[String(p.teamId)] = true;
-      const n = Number(p && p.overallPickNumber);
-      if (n > max) max = n;
     });
     const teams = Object.keys(ids).length;
     const out = {};
-    if (teams >= 4) {
-      out.teams = teams;
-      if (max) out.rounds = Math.max(1, Math.ceil(max / teams));
-    }
+    if (teams >= 4) out.teams = teams;
     return out;
   }
 
@@ -381,6 +384,15 @@
     feedAssistant(payload.picks, "", true, {
       mySlot: detail.mySlot,
       userTeamId: detail.userTeamId,
+      rounds: detail.rounds,
+      teams: detail.teams,
+      inProgress: detail.inProgress,
+      drafted: detail.drafted,
+      roster: detail.roster,
+      sf: detail.sf,
+      ppr: detail.ppr,
+      tep: detail.tep,
+      passTd: detail.passTd,
     });
     if (!payload.leagueId) {
       setChip("BR Fantasy · leagueId missing in URL", false);
@@ -413,29 +425,42 @@
     /* ignore */
   }
 
-  ensureChip();
-  setInterval(function () {
-    const prev = lastMySlot;
-    const slot = resolveMySlot(lastPicks || [], {});
-    if (slot && slot !== prev) feedAssistant(lastPicks || [], "", true, { mySlot: slot });
-  }, 2500);
-  requestObserverInject();
-  setTimeout(function () {
-    if (!mainObserverReady) requestObserverInject();
-  }, 2500);
-  try {
-    chrome.runtime.sendMessage(
-      {
-        type: "espnDraftTabReady",
-        leagueId: leagueFromUrl().leagueId,
-        season: leagueFromUrl().season,
-        href: location.href,
-      },
-      () => {
-        void chrome.runtime.lastError;
-      }
-    );
-  } catch (_e) {
-    /* ignore */
+  function startEspnIsolated() {
+    if (window.__brFantasyEspnIsoReady) return;
+    window.__brFantasyEspnIsoReady = true;
+    ensureChip();
+    setInterval(function () {
+      if (!isEspnDraftRoom()) return;
+      const prev = lastMySlot;
+      const slot = resolveMySlot(lastPicks || [], {});
+      if (slot && slot !== prev) feedAssistant(lastPicks || [], "", true, { mySlot: slot });
+    }, 2500);
+    requestObserverInject();
+    setTimeout(function () {
+      if (!mainObserverReady) requestObserverInject();
+    }, 2500);
+    try {
+      chrome.runtime.sendMessage(
+        {
+          type: "espnDraftTabReady",
+          leagueId: leagueFromUrl().leagueId,
+          season: leagueFromUrl().season,
+          href: location.href,
+        },
+        () => {
+          void chrome.runtime.lastError;
+        }
+      );
+    } catch (_e) {
+      /* ignore */
+    }
+  }
+
+  if (isEspnDraftRoom()) {
+    startEspnIsolated();
+  } else {
+    setInterval(function () {
+      if (isEspnDraftRoom()) startEspnIsolated();
+    }, 1000);
   }
 })();
