@@ -25,9 +25,6 @@ def build_dashboard_body(ctx: dict) -> str:
         compute_awards_season,
         compute_win_prob,
         get_model_value_table_cached,
-        get_team_gm_memo,
-        has_premium_for_viewer,
-        has_request_context,
         html,
         logger,
         render_awards_section,
@@ -35,7 +32,6 @@ def build_dashboard_body(ctx: dict) -> str:
         render_matchup_slide,
         render_standings_compact,
         render_dashboard_teams_sidebar,
-        session,
         url_for,
     )
     import pandas as pd
@@ -59,19 +55,6 @@ def build_dashboard_body(ctx: dict) -> str:
 
     viewer = ctx.get("viewer") or {}
     viewer_roster_id = viewer.get("viewer_roster_id")
-
-    gm_memo_html = ""
-    _fo_premium = False
-    if viewer_roster_id and has_request_context():
-        _fo_premium = has_premium_for_viewer(
-            session.get("viewer_username"), session.get("viewer_user_id"),
-            league_id, platform, season,
-        )
-        if _fo_premium:
-            try:
-                gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))
-            except Exception:
-                logger.debug("dashboard: gm memo failed", exc_info=True)
 
     standings_html = render_standings_compact(
         team_stats, movement=_standings_movement(df_weekly),
@@ -166,13 +149,8 @@ def build_dashboard_body(ctx: dict) -> str:
 
     gm_card_html = ""
     if viewer_roster_id:
-        # Always expose Generate/Refresh. Premium page-load may prefill a cached
-        # report; without a button users cannot request a fresh one (common on
-        # ESPN week-1 leagues still holding a prior cache hit).
-        _btn_label = "Refresh Report" if gm_memo_html else "Generate Report"
-        _empty_display = "display:none;" if gm_memo_html else ""
-        _result_display = "" if gm_memo_html else "display:none;"
-        _result_body = gm_memo_html or ""
+        # Prompt-only until Generate Report. Serving a cached memo on first
+        # paint (or generating one) made the report appear without a click.
         gm_card_html = f"""
         <div class="card gm-card">
           <div class="card-header">
@@ -183,11 +161,11 @@ def build_dashboard_body(ctx: dict) -> str:
                     data-season="{html.escape(str(season))}"
                     data-platform="{html.escape(str(platform))}"
                     data-viewer-roster-id="{html.escape(str(viewer_roster_id))}">
-              {_btn_label}
+              Generate Report
             </button>
           </div>
           <div class="card-body">
-            <div class="otc-ai-empty" id="gm-memo-empty" style="{_empty_display}">
+            <div class="otc-ai-empty" id="gm-memo-empty">
               <div class="otc-ai-empty-sub">
                 Get personalized analysis on your roster, trade targets, and standings.
               </div>
@@ -198,7 +176,7 @@ def build_dashboard_body(ctx: dict) -> str:
                 <div class="loading-spinner" style="margin: 10px auto; width: 30px; height: 30px; border: 3px solid var(--border); border-radius: 50%; border-top-color: var(--accent); animation: spin 1s linear infinite; border-right-color: transparent;"></div>
               </div>
             </div>
-            <div id="gm-memo-result" style="{_result_display}">{_result_body}</div>
+            <div id="gm-memo-result" style="display:none;"></div>
           </div>
         </div>
         """

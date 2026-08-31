@@ -12148,8 +12148,9 @@ document.addEventListener('DOMContentLoaded', function() {
           season: parseInt(season),
           platform: platform,
           viewer_roster_id: viewerRosterId,
-          // Button click always means "give me a fresh report" — page load
-          // still serves the warm AI cache without this flag.
+          // Button click always means "give me a fresh report". The dashboard
+          // itself does not prefill cached copy — the result stays hidden
+          // until this click.
           force: true
         })
       });
