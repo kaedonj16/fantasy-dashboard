@@ -7510,7 +7510,7 @@ window.initTradePage = function initTradePage(root = document) {
     let _strategyFilter  = null;
     let _strategyPage    = 0;
     let _currentPlayoffPct = null;
-    const _STRATEGY_PAGE_SIZE = 5;
+    const _STRATEGY_PAGE_SIZE = 6;
     // Request sequencing: clicking off a strategy and back on fires overlapping
     // requests. Without this, a late/stale response (e.g. an empty archetype that
     // resolved after the one you re-selected) would clobber the current view with
