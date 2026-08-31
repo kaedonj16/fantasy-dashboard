@@ -655,4 +655,17 @@ def build_keeper_body(
             for c in ranked
         ],
     }
+    try:
+        from utils.league_format import detect_league_format
+        from dashboard_services.platform_api import get_drafts
+        _fmt = detect_league_format(
+            league=ctx.get("league") or {},
+            drafts=get_drafts(_plat, league_id, _season) or [],
+            settings=ctx.get("league_settings") or (ctx.get("league") or {}).get("settings"),
+        )
+        seed["isAuction"] = bool(_fmt.get("is_auction"))
+        seed["auctionBudget"] = _fmt.get("auction_budget")
+    except Exception:
+        seed["isAuction"] = False
+        seed["auctionBudget"] = None
     return render_keeper_html(seed)

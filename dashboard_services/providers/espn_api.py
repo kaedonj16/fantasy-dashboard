@@ -982,40 +982,57 @@ def clear_espn_league_caches(league_id: Optional[str] = None, season: Optional[i
         pass
 
 
-def _espn_draft_meta(season: int, league_id: str) -> Tuple[Optional[int], Optional[bool]]:
-    """Return (scheduled_draft_date_ms, drafted_bool) from ESPN, or (None, None).
+def _espn_draft_meta(season: int, league_id: str) -> Tuple[Optional[int], Optional[bool], Optional[str]]:
+    """Return (scheduled_draft_date_ms, drafted_bool, draft_type) from ESPN.
 
     ESPN carries the scheduled draft time at settings.draftSettings.date (epoch
     ms) and whether it has happened at draftDetail.drafted. Reading these lets the
     dashboard show a real pre-draft countdown instead of assuming the draft is
     already done. Cached briefly so the 30s countdown poll doesn't hammer ESPN.
+
+    ``draft_type`` is ``\"auction\"`` or ``\"snake\"`` when detectable, else None.
     """
     key = (int(season), str(league_id))
     now = time.time()
     with _draft_meta_lock:
         hit = _draft_meta_cache.get(key)
         if hit and (now - hit[0]) < _DRAFT_META_TTL:
-            return hit[1]
+            val = hit[1]
+            # Back-compat: older cache tuples were length 2.
+            if isinstance(val, tuple) and len(val) == 2:
+                return val[0], val[1], None
+            if isinstance(val, tuple) and len(val) >= 3:
+                return val[0], val[1], val[2]
     try:
         lg = _league(season, league_id)
         data = lg.espn_request.league_get(params={"view": "mSettings"})
     except Exception as e:
         print(f"[espn] draft meta fetch failed: {e}")
-        return None, None
+        return None, None, None
     date_ms: Optional[int] = None
     drafted: Optional[bool] = None
+    draft_type: Optional[str] = None
     if isinstance(data, dict):
         try:
-            _d = ((data.get("settings") or {}).get("draftSettings") or {}).get("date")
+            _ds = ((data.get("settings") or {}).get("draftSettings") or {})
+            _d = _ds.get("date") if isinstance(_ds, dict) else None
             date_ms = int(_d) if _d else None
+            if isinstance(_ds, dict):
+                from utils.league_format import is_auction_draft
+                if is_auction_draft(league={"settings": {"draftSettings": _ds}}):
+                    draft_type = "auction"
+                else:
+                    raw = str(_ds.get("type") or _ds.get("draftType") or "").strip().lower()
+                    if raw:
+                        draft_type = "auction" if "auction" in raw else "snake"
         except (TypeError, ValueError):
             date_ms = None
         _dd = data.get("draftDetail")
         if isinstance(_dd, dict) and "drafted" in _dd:
             drafted = bool(_dd.get("drafted"))
     with _draft_meta_lock:
-        _draft_meta_cache[key] = (now, (date_ms, drafted))
-    return date_ms, drafted
+        _draft_meta_cache[key] = (now, (date_ms, drafted, draft_type))
+    return date_ms, drafted, draft_type
 
 
 def get_drafts(season: int, league_id: str) -> List[Dict[str, Any]]:
@@ -1027,7 +1044,8 @@ def get_drafts(season: int, league_id: str) -> List[Dict[str, Any]]:
     a date, preserving has_draft_ended() behavior for historical seasons.
     """
     from datetime import datetime
-    date_ms, drafted = _espn_draft_meta(season, league_id)
+    date_ms, drafted, draft_type = _espn_draft_meta(season, league_id)
+    dtype = draft_type or "snake"
     if date_ms:
         if drafted is None:
             # No explicit flag — infer from whether the scheduled time has passed.
@@ -1039,7 +1057,7 @@ def get_drafts(season: int, league_id: str) -> List[Dict[str, Any]]:
             "season_type": "regular",
             "start_time": date_ms,
             "status": "complete" if drafted else "pre_draft",
-            "type": "snake",
+            "type": dtype,
         }]
     # Fallback: no date from ESPN — treat as a completed draft (Aug 1) so
     # has_draft_ended() and historical seasons behave as before.
@@ -1051,7 +1069,7 @@ def get_drafts(season: int, league_id: str) -> List[Dict[str, Any]]:
         "season_type": "regular",
         "start_time": start_ts_ms,
         "status": "complete",
-        "type": "snake",
+        "type": dtype,
     }]
 
 

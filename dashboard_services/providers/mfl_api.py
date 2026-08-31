@@ -423,15 +423,22 @@ class MFLProvider(ProviderAdapter):
     def get_drafts(self, league_id, season):
         raw = self._export("draftResults", league_id, season, ttl=3600)
         picks = _items((raw.get("draftResults") or {}).get("draftUnit", []), "draftUnit")
+        pick_rows = [{
+            "round": _int(p.get("round")), "pick_no": _int(p.get("pick")),
+            "roster_id": _int(p.get("franchise")),
+            "player_id": str(p.get("player") or ""), "picked_by": str(p.get("franchise") or ""),
+            "metadata": {"timestamp": p.get("timestamp"), "auction_amount": p.get("amount")},
+        } for p in picks]
+        is_auction = any(
+            (pr.get("metadata") or {}).get("auction_amount") not in (None, "", 0, "0")
+            for pr in pick_rows
+        )
         return [{"draft_id": f"mfl:{season}:{league_id}", "league_id": str(league_id),
-                 "season": str(season), "status": "complete", "type": "snake",
+                 "season": str(season), "status": "complete",
+                 "type": "auction" if is_auction else "snake",
                  "metadata": {"name": "MFL Draft"}, "settings": {},
                  "draft_order": {}, "slot_to_roster_id": {}, "last_picked": 0,
-                 "picks": [{"round": _int(p.get("round")), "pick_no": _int(p.get("pick")),
-                            "roster_id": _int(p.get("franchise")),
-                            "player_id": str(p.get("player") or ""), "picked_by": str(p.get("franchise") or ""),
-                            "metadata": {"timestamp": p.get("timestamp"), "auction_amount": p.get("amount")}}
-                           for p in picks]}]
+                 "picks": pick_rows}]
 
     def get_traded_picks(self, league_id, season):
         raw = self._export("futureDraftPicks", league_id, season, ttl=1800)

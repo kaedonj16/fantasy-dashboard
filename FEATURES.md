@@ -9,7 +9,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **Multi-platform support** — Connect dynasty leagues from **Sleeper** (username sign-in) and **ESPN** (league ID validation). **Yahoo** OAuth is built but shown as Soon until API access is granted. **MFL** supports public leagues only (league ID, no private-auth path).
 - **Username sign-in / Identify** — Log in with just a Sleeper username; the app finds all your leagues automatically.
 - **Google sign-in** — Sign in with a Google account for cross-device, account-scoped state (watchlist sync, one-time "since last visit" digests).
-- **Keeper & redraft leagues** — Automatic detection of keeper-eligible and redraft leagues; keeper-specific tools and nav appear only where relevant.
+- **Keeper & redraft leagues** — Automatic detection of keeper-eligible and redraft leagues; keeper-specific tools and nav appear only where relevant. **Auction** leagues are detected from provider draft settings (Sleeper/ESPN/MFL signals); Draft Room and Keeper show an honest provisional banner until auction grades / budget tools ship.
 - **My Leagues (Portfolio)** — Cross-league hub that lists every league you're in with at-a-glance value and standings.
 - **League switcher** — Jump between your leagues from anywhere via the nav dropdown.
 - **Multi-season support** — View any league across multiple seasons.

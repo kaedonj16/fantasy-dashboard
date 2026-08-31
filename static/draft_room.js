@@ -468,6 +468,15 @@
     // Point the hero's Draft History link at the league-scoped page when available.
     var _hl = document.getElementById('drToHistory');
     if (_hl && cfg.historyUrl) _hl.setAttribute('href', cfg.historyUrl);
+    var _an = document.getElementById('drAuctionNote');
+    if (_an) {
+      _an.hidden = !cfg.isAuction;
+      if (cfg.isAuction && cfg.auctionBudget != null) {
+        _an.innerHTML = '<strong>Auction league detected</strong> (budget ≈ $'
+          + Math.round(Number(cfg.auctionBudget))
+          + '). Recommendation Rank and Pick Score still help nominations, but snake-round draft grades and budget guidance are not auction-calibrated yet — treat grades as provisional.';
+      }
+    }
     var _cs = document.getElementById('drToCheatSheet');
     // In-draft cheat sheet: the always-visible board control opens the sheet in
     // an overlay (iframe of the chrome-less embed) so you never leave the draft.
