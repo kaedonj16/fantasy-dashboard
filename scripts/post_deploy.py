@@ -12,13 +12,19 @@ import sys
 import time
 from datetime import datetime
 
-# Allow 5 seconds for gunicorn to start before hammering the DB
-time.sleep(5)
+# `python scripts/post_deploy.py` (how startup.py spawns this) puts scripts/ on
+# sys.path, not the repo root, so `import dashboard_services` / `data_building`
+# / `from scripts.run_migrations` all raise ModuleNotFoundError. Add the repo
+# root explicitly, matching the other scripts in this directory.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dotenv import load_dotenv
-load_dotenv()
 
-print(f"[post-deploy] Starting at {datetime.now().isoformat()}")
+def _load_dotenv() -> None:
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    load_dotenv()
 
 
 def _get_season() -> int:
@@ -76,6 +82,11 @@ def _refresh_global_adp(season: int) -> None:
 
 
 def main():
+    _load_dotenv()
+    print(f"[post-deploy] Starting at {datetime.now().isoformat()}")
+    # Allow 5 seconds for gunicorn to start before hammering the DB.
+    time.sleep(5)
+
     target_season = _get_season()
     stats_season = target_season - 1
 
