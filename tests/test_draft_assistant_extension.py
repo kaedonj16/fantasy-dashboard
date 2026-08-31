@@ -30,7 +30,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.10"
+    assert manifest["version"] == "1.5.11"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -211,6 +211,9 @@ def test_overlay_does_not_end_live_espn_draft_after_each_round():
     assert "hostInProgress" in overlay
     assert "hostDrafted" in overlay
     assert "hostInProgress === true" in overlay
+    assert "Math.min(SPOTS, season.length)" in overlay
+    assert "isHostDraftRoom" in (EXT / "assistant_inject.js").read_text(encoding="utf-8")
+    assert "mockdraftlobby" in (EXT / "draft_slot.js").read_text(encoding="utf-8")
     assert "r === inferred && r < 10" in overlay
     assert "lineupSlotCounts" in espn_main
     assert "rosterRoundsFromLineupSlots" in espn_main

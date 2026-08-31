@@ -604,7 +604,9 @@
       const season = str.map(function (t) {
         return { slot: t.slot, pts: t.S * N + gauss() * sigma * Math.sqrt(N) };
       }).sort(function (a, b) { return b.pts - a.pts; });
-      for (let k = 0; k < SPOTS; k++) hits[season[k].slot]++;
+      for (let k = 0; k < Math.min(SPOTS, season.length); k++) {
+        if (season[k]) hits[season[k].slot]++;
+      }
     }
     const out = {};
     str.forEach(function (t) { out[t.slot] = Math.round(1000 * hits[t.slot] / SIMS) / 10; });
@@ -748,13 +750,15 @@
     let html = "";
     if (draftDone()) {
       const all = gradeAllTeams();
-      const me = all.filter(function (t) { return t.isMe; })[0];
-      const rank = all.findIndex(function (t) { return t.isMe; }) + 1;
-      const odds = playoffOdds(all)[state.mySlot];
-      html += '<div class="rec-card final-grade"><div class="rec-label">Draft complete</div>'
-        + '<div class="letter" style="color:' + gradeCol(me.grade.score) + '">' + gradeLetter(me.grade.score) + "</div>"
-        + '<div class="rank">League rank #' + rank + " of " + state.teams + "</div>"
-        + '<div class="sub">Projected playoff odds <b class="tabular" style="color:' + (odds >= 50 ? "var(--win)" : "var(--warn)") + '">' + odds.toFixed(1) + "%</b></div></div>";
+      const me = all.filter(function (t) { return t.isMe; })[0] || all[0];
+      if (me) {
+        const rank = all.findIndex(function (t) { return t.isMe; }) + 1;
+        const odds = playoffOdds(all)[state.mySlot];
+        html += '<div class="rec-card final-grade"><div class="rec-label">Draft complete</div>'
+          + '<div class="letter" style="color:' + gradeCol(me.grade.score) + '">' + gradeLetter(me.grade.score) + "</div>"
+          + '<div class="rank">League rank #' + rank + " of " + state.teams + "</div>"
+          + '<div class="sub">Projected playoff odds <b class="tabular" style="color:' + (odds >= 50 ? "var(--win)" : "var(--warn)") + '">' + (odds != null ? odds.toFixed(1) : "-") + "%</b></div></div>";
+      }
     } else if (pool[0]) {
       html += bannersHtml(counts, pool[0]);
     }
@@ -790,7 +794,8 @@
   function renderRoster() {
     const mine = myPicks();
     const all = gradeAllTeams();
-    const me = all.filter(function (t) { return t.isMe; })[0];
+    const me = all.filter(function (t) { return t.isMe; })[0] || all[0];
+    if (!me) return '<div class="empty-log">Waiting on your draft seat...</div>';
     const g = me.grade;
     let html = '<div class="grade-card"><div><div class="grade-letter" style="color:' + gradeCol(g.score) + '">' + gradeLetter(g.score) + "</div>"
       + (g.provisional ? '<div class="grade-early">Early</div>' : "") + "</div>"
@@ -942,12 +947,12 @@
 
   function renderOverlay() {
     const all = gradeAllTeams();
-    const me = all.filter(function (t) { return t.isMe; })[0];
+    const me = all.filter(function (t) { return t.isMe; })[0] || all[0];
     document.getElementById("rosterChip").textContent = String(myPicks().length);
-    const letter = gradeLetter(me.grade.score);
+    const letter = me ? gradeLetter(me.grade.score) : "-";
     const chip = document.getElementById("gradesChip");
     chip.textContent = myPicks().length ? letter : "-";
-    chip.style.color = myPicks().length ? gradeCol(me.grade.score) : "";
+    chip.style.color = myPicks().length && me ? gradeCol(me.grade.score) : "";
     document.querySelectorAll(".tab-btn").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-tab") === state.tab);
     });

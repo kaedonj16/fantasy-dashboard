@@ -14,7 +14,18 @@
   } catch (_e) {
     return;
   }
-  window.__brFantasyEspnDraftObserver = true;
+
+  function isEspnDraftRoom() {
+    try {
+      const path = String(location.pathname || "").toLowerCase();
+      if (/mockdraftlobby|draftlobby/.test(path)) return false;
+      if (/(?:^|\/)(?:live)?draft(?:\/|$)/.test(path)) return true;
+      if (/(?:^|\/)mockdraft(?:\/|$)/.test(path)) return true;
+      return false;
+    } catch (_e) {
+      return false;
+    }
+  }
 
   const EVENT = "brfantasy:espn-draft-raw";
   const RESCAN = "brfantasy:draft-rescan";
@@ -732,6 +743,7 @@
   function collectReactRoots() {
     const roots = [];
     const seenRoot = new Set();
+    if (!document || !document.documentElement) return roots;
     const candidates = [
       document.getElementById("espn-aria-root"),
       document.getElementById("root"),
@@ -804,6 +816,7 @@
   }
 
   function guessTeamCount() {
+    if (!document || !document.querySelectorAll) return 0;
     const headers = document.querySelectorAll(
       '[class*="team-column"], [class*="teamColumn"], [class*="draft-team"], [class*="team-header"]'
     );
@@ -853,10 +866,12 @@
   }
 
   function scrapeDomPicks() {
+    if (!document.body) return false;
     const byOverall = new Map();
     const scope =
       document.querySelector('[class*="draftContainer"], [class*="draft-container"], main, #root') ||
       document.body;
+    if (!scope || typeof scope.querySelectorAll !== "function") return false;
 
     const cellSelector = [
       '[class*="player-column"]',
@@ -955,6 +970,7 @@
   }
 
   function scanAll() {
+    if (!isEspnDraftRoom() || !document.body) return;
     scrapeDomPicks();
     scanReact();
   }
@@ -1005,7 +1021,7 @@
   }
 
   function pollEspnApi() {
-    if (apiPollInFlight) return;
+    if (apiPollInFlight || !isEspnDraftRoom()) return;
     const ids = leagueFromUrl();
     if (!ids.leagueId) return;
     apiPollInFlight = true;
@@ -1120,36 +1136,49 @@
     }
   }
 
-  hookNetwork();
-  watchDom();
-  bridgeToExtension(OBSERVER_READY, { href: location.href, leagueId: leagueFromUrl().leagueId });
+  function startEspnDraftObserver() {
+    if (window.__brFantasyEspnDraftObserver) return;
+    window.__brFantasyEspnDraftObserver = true;
+    hookNetwork();
+    watchDom();
+    bridgeToExtension(OBSERVER_READY, { href: location.href, leagueId: leagueFromUrl().leagueId });
 
-  function onRescan() {
-    lastFingerprint = "";
-    pickAccumulator.clear();
-    pickSources.clear();
-    bestOverallSeen = 0;
-    scanAll();
-    pollEspnApi();
+    function onRescan() {
+      lastFingerprint = "";
+      pickAccumulator.clear();
+      pickSources.clear();
+      bestOverallSeen = 0;
+      scanAll();
+      pollEspnApi();
+    }
+    window.addEventListener("message", function (ev) {
+      if (!ev.data || ev.data.__br !== BRIDGE || ev.data.type !== RESCAN) return;
+      onRescan();
+    });
+    document.addEventListener(RESCAN, onRescan);
+
+    setInterval(function () {
+      if (document.hidden || !isEspnDraftRoom()) return;
+      scanAll();
+    }, 2000);
+    setInterval(function () {
+      if (document.hidden || !isEspnDraftRoom()) return;
+      pollEspnApi();
+    }, 3000);
+
+    setTimeout(onRescan, 800);
+    setTimeout(onRescan, 2500);
+    setTimeout(onRescan, 6000);
+
+    window.__brFantasyEspnForceScan = onRescan;
   }
-  window.addEventListener("message", function (ev) {
-    if (!ev.data || ev.data.__br !== BRIDGE || ev.data.type !== RESCAN) return;
-    onRescan();
-  });
-  document.addEventListener(RESCAN, onRescan);
 
-  setInterval(function () {
-    if (document.hidden) return;
-    scanAll();
-  }, 2000);
-  setInterval(function () {
-    if (document.hidden) return;
-    pollEspnApi();
-  }, 3000);
-
-  setTimeout(onRescan, 800);
-  setTimeout(onRescan, 2500);
-  setTimeout(onRescan, 6000);
-
-  window.__brFantasyEspnForceScan = onRescan;
+  if (isEspnDraftRoom()) {
+    startEspnDraftObserver();
+  } else if (!window.__brFantasyEspnLobbyWait) {
+    window.__brFantasyEspnLobbyWait = true;
+    setInterval(function () {
+      if (isEspnDraftRoom()) startEspnDraftObserver();
+    }, 1000);
+  }
 })();

@@ -34,6 +34,16 @@
     return "sleeper";
   }
 
+  function isHostDraftRoom() {
+    if (platformFromHost() !== "espn") return true;
+    if (window.BRDraftSlot && typeof window.BRDraftSlot.isEspnDraftRoom === "function") {
+      return window.BRDraftSlot.isEspnDraftRoom();
+    }
+    const path = String(location.pathname || "").toLowerCase();
+    if (/mockdraftlobby|draftlobby/.test(path)) return false;
+    return /(?:^|\/)(?:live)?draft(?:\/|$)/.test(path) || /(?:^|\/)mockdraft(?:\/|$)/.test(path);
+  }
+
   function ensureDockCss() {
     if (document.getElementById("br-da-dock-css")) return;
     const style = document.createElement("style");
@@ -270,10 +280,18 @@
     }
   });
 
-  requestPool();
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", mount);
-  } else {
+  function tryMount() {
+    if (!isHostDraftRoom()) return false;
+    requestPool();
     mount();
+    return true;
+  }
+
+  if (!tryMount()) {
+    const wait = setInterval(function () {
+      if (tryMount()) clearInterval(wait);
+    }, 1000);
+  } else if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", tryMount);
   }
 })();

@@ -142,6 +142,7 @@
       document.querySelector(
         '[class*="draft-board"], [class*="draftBoard"], [class*="draft-container"], [class*="draftContainer"], [id*="draft"]'
       ) || document.body;
+    if (!scope || typeof document.createTreeWalker !== "function") return 0;
     const walker = document.createTreeWalker(scope, NodeFilter.SHOW_ELEMENT);
     let el;
     let scanned = 0;
@@ -154,6 +155,18 @@
       if (slot) return slot;
     }
     return 0;
+  }
+
+  function isEspnDraftRoom() {
+    try {
+      const path = String(location.pathname || "").toLowerCase();
+      if (/mockdraftlobby|draftlobby/.test(path)) return false;
+      if (/(?:^|\/)(?:live)?draft(?:\/|$)/.test(path)) return true;
+      if (/(?:^|\/)mockdraft(?:\/|$)/.test(path)) return true;
+      return false;
+    } catch (_e) {
+      return false;
+    }
   }
 
   function clampSlot(slot, teams) {
@@ -171,6 +184,7 @@
     espnSwid: espnSwid,
     compactSync: compactSync,
     detectDomSlot: detectDomSlot,
+    isEspnDraftRoom: isEspnDraftRoom,
     clampSlot: clampSlot,
   };
 })(window);

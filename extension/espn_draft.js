@@ -27,6 +27,15 @@
   let lastUserTeamId = null;
   let lastPicks = [];
 
+  function isEspnDraftRoom() {
+    if (window.BRDraftSlot && typeof window.BRDraftSlot.isEspnDraftRoom === "function") {
+      return window.BRDraftSlot.isEspnDraftRoom();
+    }
+    const path = String(location.pathname || "").toLowerCase();
+    if (/mockdraftlobby|draftlobby/.test(path)) return false;
+    return /(?:^|\/)(?:live)?draft(?:\/|$)/.test(path) || /(?:^|\/)mockdraft(?:\/|$)/.test(path);
+  }
+
   function leagueFromUrl() {
     try {
       const u = new URL(location.href);
@@ -411,29 +420,42 @@
     /* ignore */
   }
 
-  ensureChip();
-  setInterval(function () {
-    const prev = lastMySlot;
-    const slot = resolveMySlot(lastPicks || [], {});
-    if (slot && slot !== prev) feedAssistant(lastPicks || [], "", true, { mySlot: slot });
-  }, 2500);
-  requestObserverInject();
-  setTimeout(function () {
-    if (!mainObserverReady) requestObserverInject();
-  }, 2500);
-  try {
-    chrome.runtime.sendMessage(
-      {
-        type: "espnDraftTabReady",
-        leagueId: leagueFromUrl().leagueId,
-        season: leagueFromUrl().season,
-        href: location.href,
-      },
-      () => {
-        void chrome.runtime.lastError;
-      }
-    );
-  } catch (_e) {
-    /* ignore */
+  function startEspnIsolated() {
+    if (window.__brFantasyEspnIsoReady) return;
+    window.__brFantasyEspnIsoReady = true;
+    ensureChip();
+    setInterval(function () {
+      if (!isEspnDraftRoom()) return;
+      const prev = lastMySlot;
+      const slot = resolveMySlot(lastPicks || [], {});
+      if (slot && slot !== prev) feedAssistant(lastPicks || [], "", true, { mySlot: slot });
+    }, 2500);
+    requestObserverInject();
+    setTimeout(function () {
+      if (!mainObserverReady) requestObserverInject();
+    }, 2500);
+    try {
+      chrome.runtime.sendMessage(
+        {
+          type: "espnDraftTabReady",
+          leagueId: leagueFromUrl().leagueId,
+          season: leagueFromUrl().season,
+          href: location.href,
+        },
+        () => {
+          void chrome.runtime.lastError;
+        }
+      );
+    } catch (_e) {
+      /* ignore */
+    }
+  }
+
+  if (isEspnDraftRoom()) {
+    startEspnIsolated();
+  } else {
+    setInterval(function () {
+      if (isEspnDraftRoom()) startEspnIsolated();
+    }, 1000);
   }
 })();
