@@ -13203,6 +13203,83 @@ a.signed-home-league:hover {
     border-bottom: 1px solid var(--border);
 }
 
+.standings-shares-note {
+    padding: 0 0 10px;
+    margin: 0;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.standings-shares-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.standings-shares-table thead tr {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.standings-shares-table th {
+    text-align: left;
+    padding: 0 8px 6px 0;
+    font-weight: 700;
+}
+
+.standings-shares-table th:last-child {
+    padding-right: 0;
+}
+
+.standings-shares-table tbody {
+    border-top: 1px solid var(--border);
+}
+
+.standings-shares-table td {
+    padding: 7px 8px 7px 0;
+    vertical-align: middle;
+}
+
+.standings-shares-rk {
+    width: 24px;
+    color: var(--text-muted);
+    font-size: 11px;
+    text-align: center;
+}
+
+.standings-shares-team {
+    font-weight: 600;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.standings-shares-barline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.standings-shares-track {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border);
+    flex: 1;
+    min-width: 48px;
+}
+
+.standings-shares-fill {
+    height: 100%;
+    border-radius: 3px;
+}
+
+.standings-shares-pct {
+    font-size: 12px;
+    font-weight: 700;
+    min-width: 38px;
+    text-align: right;
+}
+
 .overview-sidebar, .overview-sidebar-left {
     display: flex;
     flex-direction: column;
