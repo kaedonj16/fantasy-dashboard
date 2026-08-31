@@ -1433,7 +1433,9 @@ _DRAFT_ROOM_HTML = r"""
   .dr-modal-msg { font-size:15px; color:var(--text); line-height:1.55; margin-bottom:20px; }
   .dr-modal-box.is-wide .dr-modal-msg { margin-bottom:14px; }
   .dr-modal-btns { display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; }
-  .dr-msync-title { font-size:18px; font-weight:800; letter-spacing:-0.02em; margin:0 0 6px; color:var(--text); }
+  .dr-msync-title { font-size:18px; font-weight:800; letter-spacing:-0.02em; margin:0 0 6px; color:var(--text); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .dr-msync-ver { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:800; letter-spacing:0.02em;
+    border:1px solid var(--border); color:var(--text-muted); background:color-mix(in srgb, var(--text) 6%, transparent); }
   .dr-msync-lead { font-size:13px; color:var(--text-muted); margin:0 0 14px; line-height:1.5; }
   .dr-msync-warn { font-size:12px; line-height:1.45; padding:10px 12px; border-radius:10px; margin:0 0 14px;
     background:color-mix(in srgb, var(--warning) 14%, transparent); border:1px solid color-mix(in srgb, var(--warning) 35%, transparent); color:var(--text); }

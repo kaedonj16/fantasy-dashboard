@@ -15,6 +15,7 @@
   const ROOT_ID = "br-fantasy-assistant-root";
   const INVITE_ID = "br-fantasy-assistant-invite";
   const LAUNCH_KEY = "br-da-launch";
+  const PRODUCT_VERSION = "1.0.0";
   const WIDTH = 400;
   const COLLAPSED = 48;
   const SLIDE_MS = 240;
@@ -35,6 +36,21 @@
     if (h.indexOf("espn") >= 0) return "espn";
     if (h.indexOf("yahoo") >= 0) return "yahoo";
     return "sleeper";
+  }
+
+  function hostLabel() {
+    const p = platformFromHost();
+    if (p === "espn") return "ESPN";
+    if (p === "yahoo") return "Yahoo";
+    return "Sleeper";
+  }
+
+  function extensionAsset(path) {
+    try {
+      return chrome.runtime.getURL(path);
+    } catch (_e) {
+      return "";
+    }
   }
 
   function isHostDraftRoom() {
@@ -184,7 +200,7 @@
     expand.type = "button";
     expand.title = "Open Draft Assistant";
     expand.setAttribute("aria-label", "Open Draft Assistant");
-    const logoUrl = chrome.runtime.getURL("icons/br-logo-dark.png");
+    const logoUrl = extensionAsset("icons/br-logo-dark.png");
     expand.innerHTML =
       '<img class="br-da-expand-logo" alt="BR Fantasy" src="' + logoUrl + '">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
@@ -460,14 +476,24 @@
     style.id = "br-da-invite-css";
     style.textContent =
       "#" + INVITE_ID + "{position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;" +
-      "padding:20px;background:rgba(8,16,28,.52);}" +
-      "#" + INVITE_ID + " .br-da-invite-card{width:min(360px,100%);padding:18px 18px 16px;border-radius:14px;background:#122d4b;color:#fff;" +
-      "font:600 13px/1.4 system-ui,-apple-system,sans-serif;box-shadow:0 16px 40px rgba(0,0,0,.35);" +
+      "padding:20px;background:rgba(8,16,28,.55);}" +
+      "#" + INVITE_ID + " .br-da-invite-card{width:min(400px,100%);padding:20px 20px 16px;border-radius:16px;background:#122d4b;color:#fff;" +
+      "font:600 13px/1.45 system-ui,-apple-system,sans-serif;box-shadow:0 18px 48px rgba(0,0,0,.4);" +
       "border:1px solid rgba(255,255,255,.12);}" +
-      "#" + INVITE_ID + " .br-da-invite-title{font:800 16px/1.3 inherit;margin:0 0 8px;}" +
-      "#" + INVITE_ID + " .br-da-invite-copy{margin:0 0 14px;color:rgba(255,255,255,.82);font-weight:500;}" +
+      "#" + INVITE_ID + " .br-da-invite-brand{display:flex;align-items:center;gap:10px;margin:0 0 14px;}" +
+      "#" + INVITE_ID + " .br-da-invite-logo{width:40px;height:auto;border-radius:8px;flex:0 0 auto;background:#000;}" +
+      "#" + INVITE_ID + " .br-da-invite-brand-txt{min-width:0;flex:1;}" +
+      "#" + INVITE_ID + " .br-da-invite-kicker{margin:0;font:800 11px/1.2 inherit;letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.62);}" +
+      "#" + INVITE_ID + " .br-da-invite-ver{flex:0 0 auto;margin:0;padding:3px 8px;border-radius:999px;border:1px solid rgba(255,255,255,.2);" +
+      "font:800 11px/1 inherit;letter-spacing:.02em;color:rgba(255,255,255,.88);}" +
+      "#" + INVITE_ID + " .br-da-invite-title{font:800 18px/1.25 inherit;margin:0 0 8px;}" +
+      "#" + INVITE_ID + " .br-da-invite-copy{margin:0 0 12px;color:rgba(255,255,255,.84);font-weight:500;}" +
+      "#" + INVITE_ID + " .br-da-invite-perks{margin:0 0 16px;padding:0;list-style:none;}" +
+      "#" + INVITE_ID + " .br-da-invite-perks li{position:relative;margin:0 0 6px;padding:0 0 0 16px;color:rgba(255,255,255,.88);font-weight:600;}" +
+      "#" + INVITE_ID + " .br-da-invite-perks li:last-child{margin-bottom:0;}" +
+      "#" + INVITE_ID + " .br-da-invite-perks li:before{content:'';position:absolute;left:0;top:7px;width:7px;height:7px;border-radius:50%;background:#7dd3fc;}" +
       "#" + INVITE_ID + " .br-da-invite-row{display:flex;gap:8px;}" +
-      "#" + INVITE_ID + " button{flex:1;margin:0;padding:9px 10px;border-radius:8px;font:700 13px/1.2 inherit;cursor:pointer;}" +
+      "#" + INVITE_ID + " button{flex:1;margin:0;padding:10px 12px;border-radius:10px;font:700 13px/1.2 inherit;cursor:pointer;}" +
       "#" + INVITE_ID + " .br-da-invite-skip{border:1px solid rgba(255,255,255,.22);background:transparent;color:#fff;}" +
       "#" + INVITE_ID + " .br-da-invite-open{border:0;background:#fff;color:#122d4b;}" +
       "#" + INVITE_ID + " .br-da-invite-open:hover{background:#e8eef5;}" +
@@ -494,14 +520,29 @@
     wrap.id = INVITE_ID;
     wrap.setAttribute("role", "dialog");
     wrap.setAttribute("aria-modal", "true");
-    wrap.setAttribute("aria-label", "Open Draft Assistant");
+    wrap.setAttribute("aria-label", "Use the BR Fantasy Draft Assistant");
+    const host = hostLabel();
+    const logoUrl = extensionAsset("icons/br-logo-dark.png");
     wrap.innerHTML =
       '<div class="br-da-invite-card">' +
-      '<p class="br-da-invite-title">Open Draft Assistant?</p>' +
-      '<p class="br-da-invite-copy">BR Fantasy can dock beside this Sleeper, Yahoo, or ESPN draft and read picks. It never submits.</p>' +
+      '<div class="br-da-invite-brand">' +
+      (logoUrl ? '<img class="br-da-invite-logo" alt="BR Fantasy" src="' + logoUrl + '">' : "") +
+      '<div class="br-da-invite-brand-txt">' +
+      '<p class="br-da-invite-kicker">BR Fantasy extension</p>' +
+      "</div>" +
+      '<p class="br-da-invite-ver">' + PRODUCT_VERSION + "</p>" +
+      "</div>" +
+      '<p class="br-da-invite-title">Use Draft Assistant on this ' + host + " draft</p>" +
+      '<p class="br-da-invite-copy">The extension docks beside the board, follows live ' +
+      host + " picks, and ranks who is left. It never submits a pick.</p>" +
+      '<ul class="br-da-invite-perks">' +
+      "<li>Live picks from this room</li>" +
+      "<li>Ranked recommendations for the pick on the clock</li>" +
+      "<li>Read-only. You still pick in " + host + "</li>" +
+      "</ul>" +
       '<div class="br-da-invite-row">' +
       '<button type="button" class="br-da-invite-skip">Not now</button>' +
-      '<button type="button" class="br-da-invite-open">Open</button>' +
+      '<button type="button" class="br-da-invite-open">Open Draft Assistant</button>' +
       "</div></div>";
     wrap.addEventListener("click", function (ev) {
       if (ev.target === wrap) skipAssistant();

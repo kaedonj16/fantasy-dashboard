@@ -74,12 +74,17 @@ def test_extension_relay_wired_and_skips_manual_fallback():
     assert "Copy iOS Shortcut JS" not in ROOM_JS
     assert "Mobile Sync" not in ROOM_JS
     assert "dr-msync-title" in PAGE
+    assert "dr-msync-ver" in PAGE
     assert "github.com/kaedonj16/fantasy-dashboard/tree/main/extension" not in ROOM_JS
     assert "Extension setup" not in ROOM_JS
     assert "Get Chrome extension" in ROOM_JS
     assert "function openEspnExtensionInstall()" in ROOM_JS
     assert "chromeExtensionZipUrl" in PAGE
     assert "Load unpacked" in ROOM_JS
+    assert "Use the BR Fantasy extension" in ROOM_JS
+    assert "dr-msync-ver" in ROOM_JS
+    assert "1.0.0" in ROOM_JS
+    assert "Open Draft Assistant" in ROOM_JS
     assert "dr-espn-tools-body" in PAGE
     assert "dr-espn-tools-kicker" in PAGE
     assert "drEspnToolsDismiss" in ROOM_JS
