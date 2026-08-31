@@ -42,3 +42,20 @@ def test_portfolio_positional_strength_uses_in_league_percentiles():
     assert "pos_user_pctile" in blend
     # Ratio-vs-median blend is what made stacked leagues read negative.
     assert "u / a" not in blend
+
+
+def test_portfolio_actions_api_wired():
+    source = (ROOT / "routes" / "user_pages_bp.py").read_text()
+    assert '@user_pages_bp.route("/api/portfolio-actions")' in source
+    assert "rank_cross_league_actions" in source
+    assert "lineup_actions_from_issues" in source
+    assert "injury_stash_action" in source
+
+
+def test_portfolio_body_includes_moves_card():
+    source = (ROOT / "app.py").read_text()
+    fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
+    assert "pfMovesCard" in fn
+    assert "/api/portfolio-actions" in fn
+    assert "moves_card" in fn
+    assert "top_strip + moves_card + league_card" in fn
