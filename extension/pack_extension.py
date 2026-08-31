@@ -28,6 +28,9 @@ INCLUDE = [
     "overlay.html",
     "overlay.css",
     "overlay.js",
+    "overlay_score.js",
+    "pick_score.js",
+    "draft_board_core.js",
     "sleeper_draft.js",
     "espn_draft.js",
     "espn_draft_main.js",
@@ -62,6 +65,20 @@ def build_manifest() -> dict:
     return manifest
 
 
+SHARED_JS = (
+    (REPO / "static" / "pick_score.js", ROOT / "pick_score.js"),
+    (REPO / "static" / "draft_board_core.js", ROOT / "draft_board_core.js"),
+)
+
+
+def sync_shared_js() -> None:
+    """Keep the overlay's scoring kernels identical to Draft Room."""
+    for src, dest in SHARED_JS:
+        if not src.is_file():
+            raise SystemExit(f"missing {src}")
+        dest.write_bytes(src.read_bytes())
+
+
 def write_zip(path: Path, manifest: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     # Some cloud/VM checkouts stamp files at unix epoch; ZIP requires >= 1980.
@@ -83,6 +100,7 @@ def write_zip(path: Path, manifest: dict) -> None:
 
 
 def main() -> None:
+    sync_shared_js()
     manifest = build_manifest()
     version = str(manifest.get("version") or "0.0.0")
     versioned = OUT_DIR / f"br-fantasy-espn-connector-v{version}.zip"

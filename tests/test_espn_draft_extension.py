@@ -8,7 +8,7 @@ EXT = REPO / "extension"
 
 def test_extension_manifest_includes_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.5"
+    assert manifest["version"] == "1.5.6"
     assert "cookies" in manifest["permissions"]
     assert "scripting" in manifest["permissions"]
     assert "tabs" in manifest["permissions"]
@@ -132,5 +132,8 @@ def test_pack_extension_strips_localhost():
     assert "overlay.html" in names
     assert "overlay.css" in names
     assert "overlay.js" in names
+    assert "overlay_score.js" in names
+    assert "pick_score.js" in names
+    assert "draft_board_core.js" in names
     assert "assistant_inject.js" in names
     assert "sleeper_draft.js" in names

@@ -10,6 +10,12 @@ EXT = REPO / "extension"
 def test_overlay_is_mv3_safe_extension_page():
     html = (EXT / "overlay.html").read_text(encoding="utf-8")
     assert 'src="overlay.js"' in html
+    assert 'src="overlay_score.js"' in html
+    assert 'src="pick_score.js"' in html
+    assert 'src="draft_board_core.js"' in html
+    assert "BROverlayScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
+    assert "BRPickScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
+    assert "decisionScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert 'href="overlay.css"' in html
     assert 'class="br-da-embed"' in html
     assert not re.search(r"<script>(?!\s*</script>)", html)
@@ -24,7 +30,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.5"
+    assert manifest["version"] == "1.5.6"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -83,6 +89,8 @@ def test_overlay_uses_live_br_player_pool_and_headshots():
     assert "redraft_value_1qb" in background
     assert "redraft_avg_pick" in background
     assert "compactDraftPlayer" in background
+    assert "rank_change_7d" in background
+    assert "BROverlayScore.rankPool" in overlay
     assert "sleepercdn.com/content/nfl/players/" in background
     assert "slots_super_flex" in sleeper
     assert "adpSel" in html
