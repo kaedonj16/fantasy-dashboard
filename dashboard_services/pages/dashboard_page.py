@@ -265,7 +265,10 @@ def build_dashboard_body(ctx: dict) -> str:
             elif _streak:
                 _tw_sub = f"{_streak} streak"
             else:
-                _tw_sub = f"{len(_dash_matchups)} matchups"
+                _tw_sub = (
+                    f"{len(_dash_matchups)} matchups"
+                    if _show_matchup_preview else "Waiting on the draft"
+                )
             _hero_cards.append(("This week", f"Week {current_week}", _tw_sub))
         else:
             _top = _hs.iloc[0]
@@ -273,7 +276,10 @@ def build_dashboard_body(ctx: dict) -> str:
                                 f"{int(_top['Wins'])}-{int(_top['Losses'])} record"))
             _hi = _hs.sort_values("PF", ascending=False).iloc[0]
             _hero_cards.append(("Most points", f"{float(_hi['PF']):.0f}", str(_hi["owner"])))
-            _hero_cards.append(("This week", f"Week {current_week}", f"{len(_dash_matchups)} matchups"))
+            _hero_cards.append((
+                "This week", f"Week {current_week}",
+                f"{len(_dash_matchups)} matchups" if _show_matchup_preview else "Waiting on the draft",
+            ))
     except Exception:
         logger.debug("dashboard hero stats failed", exc_info=True)
         _hero_cards = [("This week", f"Week {current_week}", "Live scoring & standings")]
