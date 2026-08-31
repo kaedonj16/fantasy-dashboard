@@ -178,3 +178,55 @@ def test_matchup_win_and_whistle_moment_attrs(inseason_ctx):
 
     live = mmod.render_matchup_slide("2025", m, w=11, proj_week=10, **common)
     assert "matchupwin" not in live and "whistle" not in live
+
+
+def test_compact_matchup_slide_is_head_and_win_bar_only(monkeypatch):
+    from dashboard_services import matchups as mmod
+
+    def boom(*_a, **_k):
+        raise AssertionError("compact slides should not load week stats or schedule")
+
+    monkeypatch.setattr(mmod, "load_week_stats", boom)
+    monkeypatch.setattr(mmod, "load_week_schedule", boom)
+    monkeypatch.setattr(mmod, "load_teams_index", boom)
+
+    def _side(rid, name, pts):
+        return {"roster_id": rid, "name": name, "avatar": "", "record": "5-5",
+                "pts_total": pts, "proj_total": pts,
+                "starters": [{"pid": "p1", "name": "Starter One", "pos": "QB", "pts": 12.4, "nfl": "KC"}],
+                "starters_points": [], "players_points": {}, "bench": [],
+                "pos_by_slot": [], "matchup_id": 1}
+
+    m = {"left": _side("1", "Team A", 141.2), "right": _side("2", "Team B", 120.4),
+         "h2h": {}}
+    common = dict(status_by_pid={}, projections={}, players={}, teams={},
+                  team_game_lookup={})
+    html = mmod.render_matchup_slide(
+        "2025", m, w=11, proj_week=10, compact=True, **common)
+    assert 'class="m-head"' in html
+    assert "m-win-bar" in html
+    assert "m-slide--compact" in html
+    assert "m-body" not in html
+    assert "Starter One" not in html
+    assert "Team A" in html and "Team B" in html
+
+
+def test_matchup_carousel_title_links_to_full_page():
+    from dashboard_services.matchups import render_matchup_carousel_weeks
+
+    html = render_matchup_carousel_weeks(
+        {1: '<div class="m-slide m-slide--compact"><div class="m-head"></div></div>'},
+        dashboard=True,
+        active_week=1,
+        title_href="/sleeper/2026/abc/weekly",
+    )
+    assert 'href="/sleeper/2026/abc/weekly"' in html
+    assert "os-section-title-link" in html
+    assert "matchup-carousel--compact" in html
+    hub = render_matchup_carousel_weeks(
+        {1: '<div class="m-slide"><div class="m-head"></div><div class="m-body"></div></div>'},
+        dashboard=False,
+        active_week=1,
+    )
+    assert "os-section-title-link" not in hub
+    assert "matchup-carousel--compact" not in hub

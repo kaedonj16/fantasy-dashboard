@@ -3036,15 +3036,10 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
     margin-bottom: 10px;
 }
 
-/* Narrow left rail: title + Generate on row 1, team name on row 2. */
+/* Narrow left rail: title + Generate on one row. */
 .os-left-col .gm-card {
     overflow-x: hidden;
     min-width: 0;
-}
-
-.os-left-col .gm-card .card-header {
-    flex-wrap: wrap;
-    row-gap: 6px;
 }
 
 .os-left-col .gm-card .card-header h2 {
@@ -3052,11 +3047,6 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
     min-width: 0;
     font-size: 16px;
     margin: 0;
-}
-
-.os-left-col .gm-card .card-header .subtle-label {
-    flex: 1 0 100%;
-    order: 3;
 }
 
 .os-left-col .gm-card .card-header .recap-generate-btn {
@@ -12939,6 +12929,18 @@ a.signed-home-league:hover {
     align-items: center;
     gap: 8px;
     padding: 0 12px 10px;
+}
+
+.m-slide--compact .m-head {
+    margin-bottom: 0;
+}
+
+.m-slide--compact .m-win-bar {
+    padding-top: 8px;
+}
+
+.matchup-carousel--compact .m-nav h2 {
+    margin: 0;
 }
 
 .m-wp-pct {
