@@ -328,3 +328,138 @@ def api_espn_debug():
                 "error": str(e)[:300],
             }
     return jsonify(out)
+
+
+@league_meta_bp.route("/api/lineup-lock-hint")
+def api_lineup_lock_hint():
+    """Thin hint for in-app lineup-lock toast (R06.3).
+
+  Returns whether we're in the pre-kickoff window and the viewer's lineup has
+  hard issues or a material bench upgrade. Best-effort; always safe to ignore.
+    """
+    from datetime import timezone
+
+    league_id = (request.args.get("league_id") or session.get("last_league_id") or "").strip()
+    platform = (request.args.get("platform") or session.get("last_platform") or "sleeper").strip().lower()
+    if not league_id:
+        return jsonify({"ok": False})
+
+    nfl_state = get_nfl_state() or {}
+    try:
+        season = int(request.args.get("season") or session.get("last_season") or nfl_state.get("season") or datetime.now().year)
+    except (TypeError, ValueError):
+        season = int(nfl_state.get("season") or datetime.now().year)
+    week = int(nfl_state.get("week") or 0)
+    if not week or nfl_state.get("season_type") not in ("reg", "post"):
+        return jsonify({"ok": False})
+
+    try:
+        from utils.utils import load_week_schedule
+        games = load_week_schedule(season, week) or []
+        epochs = [g["gameTime_epoch"] for g in games if g.get("gameTime_epoch")]
+        if not epochs:
+            return jsonify({"ok": False})
+        kickoff = datetime.fromtimestamp(min(epochs) / 1000, tz=timezone.utc)
+        now = datetime.now(tz=timezone.utc)
+        mins = (kickoff - now).total_seconds() / 60
+        in_window = 40 <= mins <= 100
+    except Exception:
+        return jsonify({"ok": False})
+
+    if not in_window:
+        return jsonify({"ok": True, "in_window": False, "has_issues": False, "season": season, "week": week})
+
+    viewer_roster_id = session.get("viewer_roster_id")
+    if not viewer_roster_id:
+        return jsonify({"ok": True, "in_window": True, "has_issues": False, "season": season, "week": week})
+
+    try:
+        from utils.lineup_issues import (
+            find_lineup_issues,
+            format_lineup_lock_swap,
+            projection_upgrades,
+            summarize_issues,
+        )
+        from dashboard_services.api import get_nfl_players
+        from dashboard_services.platform_api import get_league
+
+        ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
+        rosters = ctx.get("rosters") or []
+        roster = next(
+            (r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)),
+            None,
+        )
+        if not roster:
+            return jsonify({"ok": True, "in_window": True, "has_issues": False, "season": season, "week": week})
+
+        starters = [str(p) for p in (roster.get("starters") or [])]
+        nfl_players = get_nfl_players() or {}
+        teams_playing = set()
+        for g in games:
+            for side in ("home", "away"):
+                t = str(g.get(side) or "").upper()
+                if t:
+                    teams_playing.add(t)
+
+        player_info = {}
+        for pid in starters:
+            pl = nfl_players.get(pid) or {}
+            player_info[pid] = {
+                "name": pl.get("full_name") or pl.get("last_name") or "",
+                "team": pl.get("team") or "",
+                "injury_status": pl.get("injury_status") or "",
+            }
+        issues = find_lineup_issues(starters, player_info, teams_playing)
+        message = ""
+        if issues:
+            message = f"Week {week} kicks off soon. {summarize_issues(issues)}."
+        else:
+            league = get_league(platform, str(league_id), int(season)) or {}
+            roster_positions = [str(s) for s in (league.get("roster_positions") or [])]
+            proj_map_wk = {}
+            try:
+                from app import build_projections_by_week
+                _bpw = build_projections_by_week(season, int(week), None) or {}
+                proj_map_wk = {
+                    str(k): v
+                    for k, v in ((_bpw.get(int(week)) or {}).get("projections") or {}).items()
+                }
+            except Exception:
+                proj_map_wk = {}
+            if proj_map_wk and roster_positions:
+                reserve_set = {str(p) for p in (roster.get("reserve") or [])}
+                taxi_set = {str(p) for p in (roster.get("taxi") or [])}
+                eligible = [
+                    str(p) for p in (roster.get("players") or [])
+                    if str(p) not in reserve_set and str(p) not in taxi_set
+                ]
+                pos_map = {
+                    pid: str((nfl_players.get(pid) or {}).get("position") or "")
+                    for pid in eligible
+                }
+                swaps = projection_upgrades(
+                    starters, eligible, proj_map_wk, pos_map,
+                    roster_positions, min_gain=2.0, max_swaps=1,
+                )
+                if swaps:
+                    s0 = swaps[0]
+                    pin = (nfl_players.get(s0["in"]) or {})
+                    pout = (nfl_players.get(s0["out"]) or {})
+                    swap_line = format_lineup_lock_swap(
+                        s0,
+                        pin.get("full_name") or pin.get("last_name") or "a bench player",
+                        pout.get("full_name") or pout.get("last_name") or "a starter",
+                    )
+                    message = f"Week {week} kicks off soon — {swap_line}."
+
+        return jsonify({
+            "ok": True,
+            "in_window": True,
+            "has_issues": bool(message),
+            "message": message,
+            "season": season,
+            "week": week,
+        })
+    except Exception:
+        logger.debug("lineup-lock-hint failed", exc_info=True)
+        return jsonify({"ok": True, "in_window": True, "has_issues": False, "season": season, "week": week})

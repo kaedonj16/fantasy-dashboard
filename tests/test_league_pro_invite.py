@@ -63,3 +63,11 @@ def test_pricing_success_html_includes_invite_panel():
     assert "sub-invite" in text
     assert "Copy invite" in text
     assert "/invite/" in text
+
+
+def test_paywall_nudges_non_pro_teammates():
+    """R11.4 — league has PRO but viewer hasn't claimed access yet."""
+    from pathlib import Path
+    paywall = (Path(__file__).resolve().parents[1] / "static" / "paywall.js").read_text()
+    assert "league-pro-nudge-" in paywall
+    assert "Claim league PRO" in paywall

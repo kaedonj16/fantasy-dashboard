@@ -367,14 +367,17 @@ window.refreshLeagueProInviteCta = async function refreshLeagueProInviteCta() {
     const res = await fetch(`/api/subscription-status?${params}`, { cache: 'no-store' });
     if (!res.ok) return;
     const data = await res.json();
-    if (!data.has_league_subscription || !data.invite_path) return;
+    if (!data.has_league_subscription) return;
 
     const mount = document.getElementById('leagueProInviteMount')
       || document.querySelector('[data-league-pro-invite]');
-    // Floating dismissible banner when buyer or teammate.
+    // Floating dismissible banner when buyer, teammate with PRO, or nudge for
+    // league-mates who haven't claimed shared access yet.
     const key = data.is_league_buyer
       ? `league-pro-invite-${lid}`
-      : `league-pro-teammate-${lid}`;
+      : data.has_premium
+        ? `league-pro-teammate-${lid}`
+        : `league-pro-nudge-${lid}`;
     try { if (localStorage.getItem(key) === '1') return; } catch (e) {}
 
     let el = document.getElementById('leagueProShareBanner');
@@ -384,6 +387,7 @@ window.refreshLeagueProInviteCta = async function refreshLeagueProInviteCta() {
     el.setAttribute('role', 'status');
     el.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9998;max-width:320px;background:var(--card);border:1px solid var(--border);border-top:3px solid #2563eb;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);padding:16px 18px;display:flex;flex-direction:column;gap:10px;';
     if (data.is_league_buyer) {
+      if (!data.invite_path) return;
       el.innerHTML = `
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
           <strong style="font-size:14px;color:var(--text);">Invite your league</strong>
@@ -412,7 +416,22 @@ window.refreshLeagueProInviteCta = async function refreshLeagueProInviteCta() {
           Open Trade Intel
         </a>`;
     } else {
-      return;
+      const claimHref = data.invite_path
+        ? `${window.location.origin}${data.invite_path}`
+        : '/pricing';
+      el.innerHTML = `
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+          <strong style="font-size:14px;color:var(--text);">Your league has PRO</strong>
+          <button type="button" aria-label="Dismiss" data-dismiss
+            style="background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+        <p style="margin:0;font-size:13px;color:var(--text-muted);line-height:1.45;">
+          A league mate unlocked shared premium. Claim access to try Trade Intel and the Breakout Engine.
+        </p>
+        <a href="${claimHref}"
+           style="display:inline-block;text-align:center;padding:10px 12px;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;font-size:13px;text-decoration:none;">
+          Claim league PRO
+        </a>`;
     }
     document.body.appendChild(el);
     const dismiss = el.querySelector('[data-dismiss]');

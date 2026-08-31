@@ -50,6 +50,15 @@ def test_portfolio_actions_api_wired():
     assert "rank_cross_league_actions" in source
     assert "lineup_actions_from_issues" in source
     assert "injury_stash_action" in source
+    assert "_portfolio_viewer_has_pro" in source
+    assert '"paywall": True' in source
+
+
+def test_portfolio_body_moves_card_pro_gated():
+    source = (ROOT / "app.py").read_text()
+    fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
+    assert "showPaywall" in fn
+    assert "__brctx.isPremium" in fn or "isPremium" in fn
 
 
 def test_portfolio_body_includes_moves_card():

@@ -62,6 +62,19 @@ def test_guest_seo_page_serves_public_js(offline_client, path):
     assert not any("player_modal.js" in s for s in srcs)
 
 
+def test_guest_seo_page_includes_seo_lite_css(offline_client):
+    """Logged-out lite_js pages link seo_lite.css instead of dashboard CSS."""
+    import app as app_mod
+    if not getattr(app_mod, "_FEATURES_JS_FILE", None):
+        pytest.skip("app-features.js bundle not built in this environment")
+
+    r = offline_client.get("/compare")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "/static/seo_lite.css" in html
+    assert "dashboard.min.css" not in html and "/static/dashboard.css" not in html
+
+
 def test_signed_in_seo_page_keeps_full_app_js(offline_client):
     """lite_js is ignored when a session is signed in — full app.js stays."""
     import app as app_mod

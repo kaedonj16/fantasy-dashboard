@@ -450,10 +450,11 @@ def build_watchlist_page_body() -> str:
 def api_portfolio_actions():
     """Cross-league action digest for My Leagues (roadmap R04).
 
-    Best-effort: scans up to 8 linked leagues for lineup issues and a couple of
-    injury stash/drop hints. Failures on one league are skipped.
+    PRO-gated Front Office-style bullets across linked leagues. Best-effort:
+    scans up to 8 linked leagues for lineup issues and injury hints.
     """
     from flask import jsonify, session
+    from dashboard_services.subscriptions import has_premium_for_viewer
     from utils.cross_league_actions import (
         injury_stash_action,
         lineup_actions_from_issues,
@@ -476,6 +477,22 @@ def api_portfolio_actions():
         )
     except Exception:
         return jsonify({"actions": []})
+
+    def _portfolio_viewer_has_pro() -> bool:
+        if has_premium_for_viewer(viewer_username, viewer_user_id, None, "sleeper", season):
+            return True
+        for lg in (league_inputs or [])[:8]:
+            lid = str(lg.get("league_id") or "")
+            plat = str(lg.get("platform") or "sleeper").lower()
+            sea = int(lg.get("season") or season)
+            if lid and has_premium_for_viewer(
+                viewer_username, viewer_user_id, lid, plat, sea,
+            ):
+                return True
+        return False
+
+    if not _portfolio_viewer_has_pro():
+        return jsonify({"paywall": True, "error": "Premium required", "actions": []}), 403
 
     actions: list = []
     try:

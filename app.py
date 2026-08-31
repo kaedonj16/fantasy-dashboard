@@ -672,6 +672,7 @@ _RANKINGS_JS_V = _static_hash("rankings.js")
 _TEAMS_JS_V = _static_hash("teams.js")
 _CSS_FILE = _ensure_minified_css()
 _CSS_V = _static_hash(_CSS_FILE)
+_SEO_LITE_CSS_V = _static_hash("seo_lite.css")
 _FA_V = _static_hash("font-awesome.css")
 _ICONS_V = _static_hash("icons.css")
 
@@ -4724,6 +4725,10 @@ def render_page(
                  and bool(_FEATURES_JS_FILE))
     _page_js_file = _PUBLIC_JS_FILE if _use_lite else _APP_JS_FILE
     _page_js_v = _PUBLIC_JS_V if _use_lite else _APP_JS_V
+    # Logged-out lite_js SEO shells get a smaller CSS pack instead of the full
+    # dashboard bundle; signed-in visitors keep the full stylesheet.
+    _page_css_file = "seo_lite.css" if _use_lite else _CSS_FILE
+    _page_css_v = _SEO_LITE_CSS_V if _use_lite else _CSS_V
     # Tell the lazy-loader where the feature bundle lives (only on lite pages;
     # on full pages the features are already present so the loader no-ops).
     _features_js_js = (
@@ -4845,8 +4850,8 @@ def render_page(
         ),
         paywall_js_v=_PAYWALL_JS_V,
         paywall_css_v=_PAYWALL_CSS_V,
-        css_file=_CSS_FILE,
-        css_v=_CSS_V,
+        css_file=_page_css_file,
+        css_v=_page_css_v,
         fa_v=_FA_V,
         icons_v=_ICONS_V,
         viewer_roster_id_js=_json.dumps(str(viewer_roster_id)),
@@ -24753,7 +24758,7 @@ def build_portfolio_body(
         f"</div>"
     )
 
-    # Cross-league action digest (R04) — filled async from /api/portfolio-actions.
+    # Cross-league action digest (R04) — PRO-gated; filled async from /api/portfolio-actions.
     moves_card = (
         "<div class='card' id='pfMovesCard' style='margin-bottom:14px;' hidden>"
         "<div class='card-header'><h2>This week’s moves</h2>"
@@ -24765,12 +24770,31 @@ def build_portfolio_body(
         "<script>(function(){"
         "function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){"
         "return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c];});}"
-        "fetch('/api/portfolio-actions',{cache:'no-store'}).then(function(r){return r.json();})"
-        ".then(function(d){"
         "var card=document.getElementById('pfMovesCard');"
         "var body=document.getElementById('pfMovesBody');"
         "if(!card||!body)return;"
-        "var acts=(d&&d.actions)||[];"
+        "var prem=(window.__brctx&&window.__brctx.isPremium)||"
+        "(document.getElementById('page-root')&&document.getElementById('page-root').getAttribute('data-premium')==='true');"
+        "if(!prem){"
+        "card.hidden=false;"
+        "body.innerHTML='<div style=\"text-align:center;padding:28px 16px;\">"
+        "<div style=\"font-size:14px;font-weight:700;margin-bottom:6px;\">Cross-league Front Office</div>"
+        "<div style=\"font-size:13px;color:var(--text-muted);margin-bottom:14px;\">"
+        "PRO surfaces your top lineup and injury moves across every linked league.</div>"
+        "<button type=\"button\" onclick=\"if(typeof showPaywall===\\'function\\')showPaywall(\\'gm-memo\\')\" "
+        "style=\"padding:10px 16px;border:none;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;font-size:13px;cursor:pointer;\">"
+        "Unlock with PRO</button></div>';"
+        "return;}"
+        "fetch('/api/portfolio-actions',{cache:'no-store'}).then(function(r){return r.json().then(function(d){return {status:r.status,d:d||{}};});})"
+        ".then(function(res){"
+        "if(res.status===403&&res.d.paywall){"
+        "card.hidden=false;"
+        "body.innerHTML='<div style=\"text-align:center;padding:28px 16px;\">"
+        "<div style=\"font-size:13px;color:var(--text-muted);margin-bottom:12px;\">Cross-league moves are a PRO feature.</div>"
+        "<button type=\"button\" onclick=\"if(typeof showPaywall===\\'function\\')showPaywall(\\'gm-memo\\')\" "
+        "style=\"padding:10px 16px;border:none;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;font-size:13px;cursor:pointer;\">"
+        "Upgrade to PRO</button></div>';return;}"
+        "var acts=(res.d&&res.d.actions)||[];"
         "if(!acts.length){card.hidden=true;return;}"
         "card.hidden=false;"
         "body.innerHTML=acts.map(function(a){"
