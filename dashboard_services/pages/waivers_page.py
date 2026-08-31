@@ -355,6 +355,28 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
         for w in _skel_widths
     ) + '</div>'
 
+    is_bb = False
+    try:
+        from utils.league_format import is_best_ball
+        is_bb = is_best_ball(
+            ctx.get("league") or {},
+            settings=(ctx.get("league_settings")
+                      or (ctx.get("league") or {}).get("settings")
+                      or ctx.get("settings") or {}),
+        )
+    except Exception:
+        is_bb = False
+    startsit_tab_html = (
+        "" if is_bb else
+        '<button class="wv-tab-btn" id="wvTabStartSit" onclick="wvSetTab(\'startsit\')">Start/Sit</button>'
+    )
+    startsit_section_hidden = " hidden" if is_bb else ""
+    bb_note = (
+        '<div class="muted" style="font-size:13px;margin:0 0 12px;">'
+        'Best Ball league — weekly Start/Sit is hidden.</div>'
+        if is_bb else ""
+    )
+
     html_body = f"""
 <div class="wv-page">
   <!-- Position filter pills -->
@@ -372,10 +394,11 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
     </div>
   </div>
 
+  {bb_note}
   <!-- Mobile tab bar -->
   <div class="wv-tab-bar">
     <button class="wv-tab-btn active" id="wvTabWaivers" onclick="wvSetTab('waivers')">Waiver Wire</button>
-    <button class="wv-tab-btn" id="wvTabStartSit" onclick="wvSetTab('startsit')">Start/Sit</button>
+    {startsit_tab_html}
   </div>
 
   <!-- Two-column layout -->
@@ -406,7 +429,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
     </div>
 
     <!-- Right: Start/Sit -->
-    <div class="wv-section" id="wvSectionStartSit">
+    <div class="wv-section" id="wvSectionStartSit"{startsit_section_hidden}>
       <div class="wv-section-title">Start/Sit Advisor</div>
       <!-- Compare panel (hidden until 2 players selected) -->
       <div id="wvComparePanel" style="display:none;scroll-margin-top:16px;"></div>
@@ -439,10 +462,12 @@ function wvLeaguePath(suffix) {{
 
 function wvSetTab(tab) {{
   const isWaivers = tab === 'waivers';
+  const ss = document.getElementById('wvSectionStartSit');
+  const ssTab = document.getElementById('wvTabStartSit');
   document.getElementById('wvSectionWaivers').classList.toggle('wv-tab-active', isWaivers);
-  document.getElementById('wvSectionStartSit').classList.toggle('wv-tab-active', !isWaivers);
+  if (ss) ss.classList.toggle('wv-tab-active', !isWaivers);
   document.getElementById('wvTabWaivers').classList.toggle('active', isWaivers);
-  document.getElementById('wvTabStartSit').classList.toggle('active', !isWaivers);
+  if (ssTab) ssTab.classList.toggle('active', !isWaivers);
 }}
 
 function wvSetPos(pos) {{
@@ -1102,6 +1127,7 @@ document.addEventListener('DOMContentLoaded', function() {{
   try {{
     const params = new URLSearchParams(window.location.search);
     if ((params.get('tab') || '').toLowerCase() === 'startsit') {{
+      if (!document.getElementById('wvTabStartSit')) return;
       wvSetTab('startsit');
       const sec = document.getElementById('wvSectionStartSit');
       if (sec) sec.scrollIntoView({{ behavior: 'smooth', block: 'start' }});

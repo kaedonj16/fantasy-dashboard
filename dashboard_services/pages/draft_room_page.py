@@ -64,6 +64,7 @@ def build_draft_room_body(
         has_premium: bool = False,
         is_auction: bool = False,
         auction_budget: Optional[float] = None,
+        is_best_ball: bool = False,
 ) -> str:
     _dr_has_league = bool(league_id and platform and season)
     cfg = {
@@ -106,6 +107,7 @@ def build_draft_room_body(
         # an honest banner until auction grades/values ship.
         "isAuction": bool(is_auction),
         "auctionBudget": float(auction_budget) if auction_budget is not None else None,
+        "isBestBall": bool(is_best_ball),
         "chromeExtensionStoreUrl": (os.environ.get("CHROME_EXTENSION_URL") or "").strip(),
         "chromeExtensionZipUrl": "/static/extension/br-fantasy-espn-connector.zip",
     }

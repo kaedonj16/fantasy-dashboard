@@ -117,6 +117,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
     keepers_payload = None
     is_auction = False
     auction_budget = None
+    is_best_ball = False
     if league_id:
         try:
             from utils.league_format import detect_league_format
@@ -134,6 +135,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
             )
             is_auction = bool(_fmt.get("is_auction"))
             auction_budget = _fmt.get("auction_budget")
+            is_best_ball = bool(_fmt.get("is_best_ball"))
         except Exception:
             logger.debug("[draft-room] format detect skipped", exc_info=True)
     if league_id and show_keeper:
@@ -183,6 +185,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
         has_premium=_viewer_has_premium(league_id, platform, season),
         is_auction=is_auction,
         auction_budget=auction_budget,
+        is_best_ball=is_best_ball,
     )
     return render_page(
         "Draft Room | BR Fantasy", league_id, "draft", body, platform, season,
