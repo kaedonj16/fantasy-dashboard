@@ -305,7 +305,8 @@ def test_redis_url_is_wired_for_cross_worker_limits():
 
 def test_keeper_years_kept_helper_exists():
     assert "def years_kept_from_draft_season" in KEEPER
-    assert "Auction/FAAB keeper costs are not auto-detected" in KEEPER
+    assert "Auction/FAAB dollars are imported when providers expose them" in KEEPER
+    assert "parse_auction_amounts_from_drafts" in KEEPER or "parse_auction_amounts_from_picks" in KEEPER
 
 
 def test_playoff_tile_from_cache_math():
