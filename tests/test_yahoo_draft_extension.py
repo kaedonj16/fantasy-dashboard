@@ -9,7 +9,7 @@ ROOM_JS = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
 def test_extension_manifest_includes_yahoo_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.20"
+    assert manifest["version"] == "1.5.24"
     assert "cookies" in manifest["permissions"]
     assert "tabs" in manifest["permissions"]
     hosts = " ".join(manifest.get("host_permissions") or [])
@@ -97,6 +97,10 @@ def test_yahoo_live_picks_accumulate_and_scrape_board():
     assert "pushMergedPicks" in iso
     assert "completedFromYahooClock" in iso
     assert "function scrapeYahooBoard" in helper
+    assert "function parseYahooDraftResultsHtml" in helper
+    assert "harvestPageJson" in main
+    assert "pollDraftResultPages" in main
+    assert "lastPicks && lastPicks.length" in iso
     assert "function mergeYahooPicks" in helper
     assert "function parseYahooNamePos" in helper
     assert "function completedFromYahooClock" in helper
@@ -143,6 +147,21 @@ if (!np || np.name.indexOf("Chase") < 0 || np.pos !== "WR") {
 const slot = B.slotFromYahooClock("You're up in 7 Picks Round 1, Pick 1", 12);
 if (slot !== 8) {
   console.error("slot", slot);
+  process.exit(1);
+}
+const late = B.parseYahooClock("Jane's Pick • You're up in 4 Picks Round 14, Pick 185");
+if (late.overall !== 185) {
+  console.error("overall", late);
+  process.exit(1);
+}
+const htmlRows = B.parseYahooDraftResultsHtml("1 Ja'Marr Chase WR CIN 2 Bijan Robinson RB ATL");
+if (htmlRows.length < 2 || htmlRows[0].playerName.indexOf("Chase") < 0) {
+  console.error("html", htmlRows);
+  process.exit(1);
+}
+const kf = B.parseYahooNamePos("K. Fairbairn K HOU");
+if (!kf || kf.pos !== "K") {
+  console.error("kf", kf);
   process.exit(1);
 }
 const kept = B.mergeYahooPicks(merged, [{ overallPickNumber: 1, playerName: "Ja" }]);

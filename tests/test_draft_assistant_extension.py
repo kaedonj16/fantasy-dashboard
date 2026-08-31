@@ -16,6 +16,9 @@ def test_overlay_is_mv3_safe_extension_page():
     assert "BROverlayScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert "BRPickScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert "decisionScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
+    assert "futurePickDecisionScore" not in (EXT / "overlay_score.js").read_text(encoding="utf-8")
+    assert "return ctx.current || 1;" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
+    assert "Gone before #" not in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert 'href="overlay.css"' in html
     assert 'class="br-da-embed"' in html
     assert not re.search(r"<script>(?!\s*</script>)", html)
@@ -30,7 +33,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.20"
+    assert manifest["version"] == "1.5.24"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -268,6 +271,8 @@ def test_overlay_reads_league_settings_and_compares_players():
     assert "applyLeagueSettings" in overlay
     assert "leagueSettingsLabel" in overlay
     assert "scoreCtx" in overlay
+    assert "pickOwners: state.pickOwners" in overlay
+    assert "ctx.pickOwners" in score
     assert "roster: state.roster" in overlay
     assert "function rosterOf" in score
     assert "function slotList" in overlay
@@ -384,6 +389,15 @@ const slot = B.detectSleeperSlot({
   skipDom: true,
 });
 if (slot !== 2) process.exit(1);
+const clockWins = B.detectSleeperSlot({
+  draft: { draft_order: { "999999": 5 } },
+  identity: { userIds: ["999999"] },
+  teams: 12,
+  currentPick: 7,
+  clockText: "You're on the clock",
+  skipDom: true,
+});
+if (clockWins !== 7) process.exit(1);
 const viaPicks = B.detectSleeperSlot({
   draft: {},
   picks: [{ picked_by: "999999", draft_slot: 7, overallPickNumber: 7 }],
@@ -428,6 +442,37 @@ const owners = B.sleeperPickOwners({
 if (owners[1] !== 1) process.exit(1);
 if (owners[8] !== 3) process.exit(1);
 if (B.sleeperClockRemaining({ settings: { pick_timer: 90 }, last_picked: Date.now() - 10000 }, Date.now()) !== 80) process.exit(1);
+console.log("ok");
+"""
+    out = subprocess.run(
+        ["node", "-e", script],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert out.returncode == 0, out.stderr + out.stdout
+
+
+def test_overlay_ranks_the_on_the_clock_pick_when_owners_are_traded():
+    import subprocess
+
+    script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const ctx = { window: {}, self: null };
+ctx.window = ctx;
+ctx.self = ctx;
+vm.runInNewContext(fs.readFileSync("extension/overlay_score.js", "utf8"), ctx);
+const S = ctx.BROverlayScore;
+const traded = { current: 7, teams: 12, rounds: 15, mySlot: 5, pickOwners: { 7: 5, 20: 5 } };
+if (S.recommendationPickNo(traded) !== 7) process.exit(1);
+const snakeWait = { current: 7, teams: 12, rounds: 15, mySlot: 5 };
+if (S.recommendationPickNo(snakeWait) !== 7) process.exit(1);
+const onClock = { current: 7, teams: 12, rounds: 15, mySlot: 7 };
+if (S.recommendationPickNo(onClock) !== 7) process.exit(1);
+const stringKeys = { current: 7, teams: 12, rounds: 15, mySlot: 5, pickOwners: { "7": 5 } };
+if (S.recommendationPickNo(stringKeys) !== 7) process.exit(1);
 console.log("ok");
 """
     out = subprocess.run(

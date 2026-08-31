@@ -384,6 +384,7 @@
       teams: state.teams,
       rounds: state.rounds,
       mySlot: state.mySlot,
+      pickOwners: state.pickOwners,
       sf: !!state.sf,
       type: "redraft",
       tep: Number(state.tep) || 0,

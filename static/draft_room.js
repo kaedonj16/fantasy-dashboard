@@ -371,6 +371,9 @@
   function recommendationPickNo(){
     var cur = (state && state.current) || 1;
     if (isManualDraft()) return cur;
+    // Live drafts rank the pick on the clock. Looking ahead to a later
+    // owned pick buried available players while you were up.
+    if (state && state.mode === 'live' && state.isDrafting) return cur;
     if (isMyPick(cur)) return cur;
     var ups = upcomingOwnedPicks();
     if (ups && ups.length) return ups[0];
@@ -3944,8 +3947,6 @@
     }
     var adp = adpOf(p), exceptional = 0;
     if (adp != null) exceptional = clamp01(((state.current || 1) - adp) / Math.max(12, adp * 0.65));
-    var recPn = recommendationPickNo();
-    var advisingFuture = recPn > ((state && state.current) || 1);
     // Wait/opportunity-cost is vs the pick AFTER the one we're ranking.
     // On the clock that's nextOwnedAfterCurrent(); while waiting for pick 9
     // it is pick 16, not 9 itself (otherwise 1.01 talent is the #1 rec for #9).
@@ -4031,11 +4032,6 @@
       waitPenalty: waitPenalty, handcuffBonus: handcuffBonus, upsideBonus: upsideBonus,
       byePenalty: byePenalty,
       draftType: state.type, lineupHoles: c.obligations.lineupHoles || 0 });
-    // While waiting, rank by expected value at YOUR pick so Gibbs at 0% at #9
-    // cannot sit at #1 REC above players who will actually be there.
-    if (advisingFuture && DraftBoardCore.futurePickDecisionScore){
-      score = DraftBoardCore.futurePickDecisionScore(score, availProb(p, recPn));
-    }
     return score;
   }
   // How many players remain in this player's (position|tier) bucket.
@@ -4077,16 +4073,6 @@
     // does not label ADP-1.7 "Elite steal" before anyone has been drafted.
     if (relGap != null && relGap >= 1.0) return 'Elite steal: ' + fell + ' picks past ADP';
     if (relGap != null && relGap >= 0.5) return 'Steal: fell ' + fell + ' picks past ADP';
-    // Looking ahead to your next pick: don't stamp 1.01 talent "Best available"
-    // when they have no chance of being there.
-    if (advisingFuture){
-      var atRec = availProb(p, recPn);
-      if (atRec != null && atRec < 20){
-        return atRec <= 0
-          ? ('Gone before #' + recPn)
-          : ('Unlikely to last to #' + recPn);
-      }
-    }
     // "Best available" is the top rec for this pick, not a generic fallback.
     if (opts.rank === 1)
       return advisingFuture ? ('Best available at #' + recPn) : 'Best available';

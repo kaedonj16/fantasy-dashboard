@@ -101,7 +101,10 @@
       obj.pick_no ??
       obj.pickNumber ??
       obj.pick_number ??
-      obj.overall;
+      obj.overall ??
+      obj.pickOverall ??
+      obj.overallPickNo ??
+      obj.draftPickNumber;
     if (direct != null && Number(direct) >= 1) return Number(direct);
     const pick = obj.pick ?? obj.selection;
     const nPick = Number(pick);
@@ -142,6 +145,10 @@
     if (!raw || typeof raw !== "object") return "";
     const direct = raw.playerName || raw.player_name || raw.fullName || raw.display_name || raw.name_full;
     if (direct && typeof direct === "string") return direct.trim();
+    if (typeof raw.name === "string" && raw.name.trim().length >= 3) {
+      const n = raw.name.trim();
+      if (!/^(yahoo|draft|team|round|pick|available|queue|board)$/i.test(n)) return n;
+    }
     const nameObj = raw.name;
     if (nameObj && typeof nameObj === "object") {
       const full = nameObj.full || nameObj.fullName;
@@ -583,6 +590,9 @@
       take(cur.draft_picks);
       take(cur.selections);
       take(cur.results);
+      take(cur.pickHistory);
+      take(cur.pickedPlayers);
+      take(cur.draftBoard);
       if (Array.isArray(cur) && cur.some(isPickRow)) arrays.push(cur);
       const next = [];
       if (cur.memoizedProps) next.push(cur.memoizedProps);
@@ -629,12 +639,20 @@
       document.getElementById("root"),
       document.querySelector("[data-reactroot]"),
       document.body,
+      document.getElementById("app"),
+      document.getElementById("__next"),
+      document.querySelector("main"),
     ].filter(Boolean);
+    try {
+      const extra = document.querySelectorAll("div[id],section");
+      for (let i = 0; i < Math.min(extra.length, 40); i++) candidates.push(extra[i]);
+    } catch (_e) { /* ignore */ }
     for (const el of candidates) {
       for (const key of Object.keys(el)) {
         if (
           key.startsWith("__reactFiber$") ||
           key.startsWith("__reactInternalInstance$") ||
+          key.startsWith("__reactContainer$") ||
           key.startsWith("_reactRootContainer")
         ) {
           try {
@@ -674,6 +692,15 @@
     if (Array.isArray(data.selections) && data.selections.some(isPickRow)) {
       emit(data.selections, { inProgress: true, drafted: false }, source);
     }
+    if (Array.isArray(data.pickHistory) && data.pickHistory.some(isPickRow)) {
+      emit(data.pickHistory, { inProgress: true, drafted: false }, source);
+    }
+    if (Array.isArray(data.draftBoard) && data.draftBoard.some(isPickRow)) {
+      emit(data.draftBoard, { inProgress: true, drafted: false }, source);
+    }
+    if (Array.isArray(data.pickedPlayers) && data.pickedPlayers.some(isPickRow)) {
+      emit(data.pickedPlayers, { inProgress: true, drafted: false }, source);
+    }
     if (isPickRow(data)) {
       emit([data], { inProgress: true, drafted: false }, source);
     }
@@ -692,7 +719,11 @@
       text.indexOf("playerKey") >= 0 ||
       text.indexOf("overallPick") >= 0 ||
       text.indexOf("player_id") >= 0 ||
-      text.indexOf("playerId") >= 0
+      text.indexOf("playerId") >= 0 ||
+      text.indexOf("firstName") >= 0 ||
+      text.indexOf("nflPlayer") >= 0 ||
+      text.indexOf("pickedPlayer") >= 0 ||
+      text.indexOf("\"pick\":") >= 0
     );
   }
 
@@ -717,6 +748,85 @@
     );
   }
 
+  let pollInFlight = false;
+  let lastHtmlPollAt = 0;
+
+  function harvestPageJson() {
+    if (!document || !document.querySelectorAll) return;
+    const scripts = document.querySelectorAll("script");
+    const limit = Math.min(scripts.length, 48);
+    for (let i = 0; i < limit; i++) {
+      const t = scripts[i].textContent || "";
+      if (t.length < 40 || t.length > 2500000) continue;
+      if (!looksLikeDraftPayload(t)) continue;
+      const startO = t.indexOf("{");
+      const startA = t.indexOf("[");
+      const idx = startO >= 0 && (startA < 0 || startO < startA) ? startO : startA;
+      if (idx >= 0) inspectText(t.slice(idx), "script");
+    }
+    ["__PRELOADED_STATE__", "__NEXT_DATA__", "__INITIAL_STATE__"].forEach(function (k) {
+      try {
+        if (window[k]) inspectJson(window[k], "boot-" + k);
+      } catch (_e) { /* ignore */ }
+    });
+  }
+
+  function refetchSeenDraftUrls() {
+    let entries = [];
+    try {
+      entries = performance.getEntriesByType("resource") || [];
+    } catch (_e) {
+      return;
+    }
+    const seen = {};
+    for (let i = 0; i < entries.length; i++) {
+      const url = String(entries[i].name || "");
+      if (seen[url] || !looksLikeYahooDraftUrl(url)) continue;
+      if (!/draft|pick|result|player/i.test(url)) continue;
+      seen[url] = true;
+      fetch(url, { credentials: "include", cache: "no-store" })
+        .then(function (r) { return r.text(); })
+        .then(function (t) { inspectText(t, "perf"); })
+        .catch(function () {});
+    }
+  }
+
+  function pollDraftResultPages() {
+    const ids = leagueFromUrl();
+    if (!ids.leagueId || pollInFlight) return;
+    const now = Date.now();
+    if (now - lastHtmlPollAt < 8000 && pickAccumulator.size > 0) return;
+    lastHtmlPollAt = now;
+    pollInFlight = true;
+    const origin = location.origin;
+    const lid = ids.leagueId;
+    const urls = [
+      origin + "/f1/" + lid + "/draftresults",
+      origin + "/f1/" + lid + "/draftresults?format=json",
+    ];
+    let i = 0;
+    function next() {
+      if (i >= urls.length) {
+        pollInFlight = false;
+        return;
+      }
+      const url = urls[i++];
+      fetch(url, { credentials: "include", cache: "no-store" })
+        .then(function (r) { return r.text(); })
+        .then(function (t) {
+          inspectText(t, "draftresults");
+          if (window.BRDraftSlot && BRDraftSlot.parseYahooDraftResultsHtml) {
+            const rows = BRDraftSlot.parseYahooDraftResultsHtml(t);
+            if (rows && rows.length) emit(rows, { inProgress: true, drafted: false }, "draftresults-html");
+          }
+          if (pickAccumulator.size < 8) next();
+          else pollInFlight = false;
+        })
+        .catch(function () { next(); });
+    }
+    next();
+  }
+
   function scrapeYahooDomPicks() {
     if (!document.body) return false;
     const helper = window.BRDraftSlot;
@@ -729,8 +839,11 @@
   }
 
   function scanAll() {
+    harvestPageJson();
+    refetchSeenDraftUrls();
     scrapeYahooDomPicks();
     scanReact();
+    if (pickAccumulator.size < 8) pollDraftResultPages();
     if (pickAccumulator.size) emitAccumulated({ inProgress: true, drafted: false }, "scan");
   }
 

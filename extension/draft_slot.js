@@ -194,22 +194,39 @@
     const up = s.match(/you(?:'re| are) up in\s+(\d+)\s+picks?/i);
     const onClock = /your pick|you(?:'re| are) on the clock|it(?:'s| is) your (?:pick|turn)/i.test(s);
     const rd = s.match(/round\s+(\d+)\s*[,•·]\s*pick\s+(\d+)/i);
+    let round = 0;
+    let roundPick = 0;
+    let overall = 0;
+    if (rd) {
+      round = Number(rd[1]);
+      const n = Number(rd[2]);
+      // "Round 14, Pick 185" is overall 185. "Round 1, Pick 7" is seat 7.
+      if (n > 16) overall = n;
+      else roundPick = n;
+    }
+    if (!overall) {
+      const ov = s.match(/\bpick\s+(\d{2,3})\b/i);
+      if (ov && Number(ov[1]) > 16) overall = Number(ov[1]);
+    }
     return {
       upIn: up ? Number(up[1]) : null,
       onClock: onClock,
-      round: rd ? Number(rd[1]) : 0,
-      roundPick: rd ? Number(rd[2]) : 0,
+      round: round,
+      roundPick: roundPick,
+      overall: overall,
     };
   }
 
   function slotFromYahooClock(text, teams) {
     const c = parseYahooClock(text);
     const nTeams = Number(teams) || 0;
+    if (c.onClock && c.overall >= 1 && nTeams >= 2) return snakeSlot(c.overall, nTeams);
     if (c.onClock && c.round === 1 && c.roundPick >= 1) return c.roundPick;
     if (c.onClock && nTeams >= 2 && c.round >= 1 && c.roundPick >= 1) {
       return snakeSlot((c.round - 1) * nTeams + c.roundPick, nTeams);
     }
     if (c.upIn != null && c.upIn >= 0) {
+      if (c.overall >= 1 && nTeams >= 2) return snakeSlot(c.overall + c.upIn, nTeams);
       if (c.round === 1 && c.roundPick >= 1) return c.roundPick + c.upIn;
       if (c.round <= 1) return 1 + c.upIn;
       if (nTeams >= 2 && c.round >= 1 && c.roundPick >= 1) {
@@ -350,6 +367,7 @@
 
   function completedFromYahooClock(teams) {
     const c = parseYahooClock(yahooClockText());
+    if (c.overall >= 1) return Math.max(0, c.overall - 1);
     if (c.round >= 1 && c.roundPick >= 1) {
       const nTeams = Number(teams) >= 2 ? Number(teams) : 12;
       return Math.max(0, (c.round - 1) * nTeams + c.roundPick - 1);
@@ -372,9 +390,9 @@
   }
 
   function parseYahooNamePos(text) {
-    const s = String(text || "").replace(/\s+/g, " ").trim();
+    const s = String(text || "").replace(/\s+/g, " ").trim().replace(/\s*[·•]\s*/g, " ");
     const m = s.match(
-      /([A-Z][a-zA-Z.'\-]+(?:\s+(?:[A-Z][a-zA-Z.'\-]+|Jr\.?|Sr\.?|II|III|IV|V)){0,4})\s+(QB|RB|WR|TE|K|DEF|DST|D\/ST)\b(?:\s+([A-Z]{2,3}))?/
+      /([A-Z](?:[a-zA-Z.'\-]+|\.)(?:\s+(?:[A-Z][a-zA-Z.'\-]+|Jr\.?|Sr\.?|II|III|IV|V)){0,4})\s+(QB|RB|WR|TE|K|DEF|DST|D\/ST)\b(?:\s*-?\s*([A-Z]{2,3}))?/
     );
     if (!m) return null;
     const name = m[1].replace(/\s+/g, " ").trim();
@@ -460,6 +478,15 @@
         const labeled = text.match(/pick\s*#?\s*(\d{1,3})\b/i);
         if (labeled) pn = Number(labeled[1]);
       }
+      if (!pn) {
+        const dotted = text.match(/\b(\d{1,2})\.(\d{2})\b/);
+        if (dotted) {
+          const teams = Number(doc.documentElement && doc.documentElement.getAttribute("data-br-da-teams")) || 0;
+          const rd = Number(dotted[1]);
+          const pk = Number(dotted[2]);
+          if (teams >= 4) pn = (rd - 1) * teams + pk;
+        }
+      }
       if (!pn) continue;
       addYahooDomPick(byPn, pn, info, el.getAttribute("data-player-id") || el.getAttribute("data-playerid"));
     }
@@ -484,7 +511,7 @@
       for (let i = 0; i < kids.length; i++) {
         const w = kids[i].offsetWidth || 0;
         const h = kids[i].offsetHeight || 0;
-        if (w < 36 || h < 60) {
+        if (w < 28 || h < 28) {
           ok = false;
           break;
         }
@@ -519,12 +546,57 @@
     });
   }
 
+  function scrapeYahooDottedPicks(doc, byPn, teamsHint) {
+    const text = String((doc.body && (doc.body.innerText || doc.body.textContent)) || "");
+    const teams = Number(teamsHint) >= 4 ? Number(teamsHint) : 0;
+    const re =
+      /(\d{1,2})\.(\d{2})\s+([A-Z](?:[a-zA-Z.'\-]+|\.)(?:\s+(?:[A-Z][a-zA-Z.'\-]+|Jr\.?|Sr\.?|II|III|IV|V)){0,4})(?:\s+(QB|RB|WR|TE|K|DEF|DST|D\/ST))?/g;
+    let m;
+    let n = 0;
+    while ((m = re.exec(text)) && n < 400) {
+      n++;
+      const rd = Number(m[1]);
+      const pk = Number(m[2]);
+      if (!(rd >= 1 && pk >= 1)) continue;
+      const info = parseYahooNamePos(m[3] + (m[4] ? " " + m[4] : " WR")) || {
+        name: String(m[3] || "").replace(/\s+/g, " ").trim(),
+        pos: m[4] || "",
+        team: "",
+      };
+      if (!info.name || info.name.length < 3) continue;
+      let pn = 0;
+      if (teams >= 4) pn = (rd - 1) * teams + pk;
+      else if (pk <= 16) pn = 0;
+      if (!pn && rd === 1) pn = pk;
+      if (!pn) continue;
+      addYahooDomPick(byPn, pn, info, "");
+    }
+  }
+
+  function parseYahooDraftResultsHtml(html) {
+    const byPn = new Map();
+    const text = String(html || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ");
+    const re =
+      /(?:^|\s)(\d{1,3})[.)]?\s+([A-Z](?:[a-zA-Z.'\-]+|\.)(?:\s+(?:[A-Z][a-zA-Z.'\-]+|Jr\.?|Sr\.?|II|III|IV|V)){0,4})\s+(QB|RB|WR|TE|K|DEF|DST|D\/ST)\b/g;
+    let m;
+    let n = 0;
+    while ((m = re.exec(text)) && n < 400) {
+      n++;
+      const info = parseYahooNamePos(m[2] + " " + m[3]);
+      if (info) addYahooDomPick(byPn, Number(m[1]), info, "");
+    }
+    return Array.from(byPn.values()).sort(function (a, b) {
+      return a.overallPickNumber - b.overallPickNumber;
+    });
+  }
+
   function scrapeYahooBoard(doc, teamsHint) {
     doc = doc || (typeof document !== "undefined" ? document : null);
     if (!doc || !doc.querySelectorAll) return [];
     const byPn = new Map();
     scrapeYahooLabeledPicks(doc, byPn);
     scrapeYahooColumns(doc, byPn, teamsHint);
+    scrapeYahooDottedPicks(doc, byPn, teamsHint);
     return Array.from(byPn.values()).sort(function (a, b) {
       return a.overallPickNumber - b.overallPickNumber;
     });
@@ -783,6 +855,15 @@
     const draft = opts.draft || {};
     const picks = opts.picks || [];
     const max = teams || 32;
+    const current = Number(opts.currentPick) || (picks.length ? picks[picks.length - 1].overallPickNumber + 1 : 1);
+    const auction = !!opts.auction || String((draft && draft.type) || "").toLowerCase() === "auction";
+    // Host clock wins. draft_order / roster maps can bind a league-mate id
+    // and park you on the wrong seat while Sleeper has you picking 1.07.
+    if (!auction) {
+      const clockText = opts.clockText != null ? opts.clockText : opts.skipDom ? "" : sleeperClockText();
+      const clockSlot = slotFromSleeperClock(clockText, current, teams || 12);
+      if (clockSlot) return clampSlot(clockSlot, max);
+    }
     let slot = slotFromSleeperDraftOrder(draft.draft_order, userIds);
     if (slot) return clampSlot(slot, max);
     slot = slotFromSleeperPickedBy(picks, userIds);
@@ -790,13 +871,6 @@
     const rosterMap = draft.slot_to_roster_id || (draft.metadata && draft.metadata.slot_to_roster_id);
     slot = slotFromSleeperRosterMap(rosterMap, opts.ownerToRoster, userIds);
     if (slot) return clampSlot(slot, max);
-    const current = Number(opts.currentPick) || (picks.length ? picks[picks.length - 1].overallPickNumber + 1 : 1);
-    const auction = !!opts.auction || String((draft && draft.type) || "").toLowerCase() === "auction";
-    if (!auction) {
-      const clockText = opts.clockText != null ? opts.clockText : opts.skipDom ? "" : sleeperClockText();
-      slot = slotFromSleeperClock(clockText, current, teams || 12);
-      if (slot) return clampSlot(slot, max);
-    }
     if (!opts.skipDom) {
       slot = detectSleeperDomSlot(identity, max);
       if (slot) return clampSlot(slot, max);
@@ -960,6 +1034,7 @@
     scoringFromSleeperSettings: scoringFromSleeperSettings,
     rosterKey: rosterKey,
     scrapeYahooBoard: scrapeYahooBoard,
+    parseYahooDraftResultsHtml: parseYahooDraftResultsHtml,
     mergeYahooPicks: mergeYahooPicks,
     parseYahooNamePos: parseYahooNamePos,
     completedFromYahooClock: completedFromYahooClock,
