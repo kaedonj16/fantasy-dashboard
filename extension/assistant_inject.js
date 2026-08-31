@@ -15,6 +15,8 @@
   const ROOT_ID = "br-fantasy-assistant-root";
   const WIDTH = 400;
   const COLLAPSED = 48;
+  const SLIDE_MS = 240;
+  const SLIDE_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
   let iframe = null;
   let ready = false;
   let queuedPicks = null;
@@ -23,6 +25,7 @@
   let poolRetryTimer = null;
   let lastPoolKey = "";
   let adpSource = "consensus";
+  let slideTimer = null;
 
   function platformFromHost() {
     const h = String(location.hostname || "").toLowerCase();
@@ -36,21 +39,27 @@
     const style = document.createElement("style");
     style.id = "br-da-dock-css";
     style.textContent =
-      "html.br-da-docked,html.br-da-docked.br-da-collapsed,#" + ROOT_ID +
-      "{transition:none !important;}" +
       "html.br-da-docked{margin-right:" + WIDTH + "px !important;}" +
       "html.br-da-docked.br-da-collapsed{margin-right:" + COLLAPSED + "px !important;}" +
+      "html.br-da-docked.br-da-ready{transition:margin-right " + SLIDE_MS + "ms " + SLIDE_EASE + " !important;}" +
       "#" + ROOT_ID + "{position:fixed;top:0;right:0;bottom:0;width:" + WIDTH +
       "px;z-index:2147483645;box-shadow:-8px 0 28px rgba(0,0,0,.22);background:#122d4b;" +
-      "contain:layout paint;}" +
-      "html.br-da-collapsed #" + ROOT_ID + "{width:" + COLLAPSED + "px;}" +
+      "contain:layout paint;transform:translateX(0);will-change:transform;}" +
+      "html.br-da-ready #" + ROOT_ID + "{transition:transform " + SLIDE_MS + "ms " + SLIDE_EASE + ";}" +
+      "html.br-da-collapsed #" + ROOT_ID + "{transform:translateX(calc(100% - " + COLLAPSED + "px));}" +
       "#" + ROOT_ID + " iframe{width:100%;height:100%;border:0;background:transparent;display:block;}" +
-      "html.br-da-collapsed #" + ROOT_ID + " iframe{visibility:hidden !important;pointer-events:none !important;}" +
-      "#br-fantasy-assistant-expand{display:none;position:absolute;inset:0;z-index:2;margin:0;padding:10px 0;border:0;border-left:1px solid rgba(255,255,255,.14);background:#122d4b;color:#fff;cursor:pointer;flex-direction:column;align-items:center;justify-content:flex-start;gap:12px;}" +
-      "html.br-da-collapsed #br-fantasy-assistant-expand{display:flex;}" +
+      "html.br-da-collapsed #" + ROOT_ID + " iframe{pointer-events:none;}" +
+      "#br-fantasy-assistant-expand{display:flex;position:absolute;left:0;top:0;bottom:0;width:" +
+      COLLAPSED + "px;z-index:2;margin:0;padding:10px 0;border:0;border-left:1px solid rgba(255,255,255,.14);" +
+      "background:#122d4b;color:#fff;cursor:pointer;flex-direction:column;align-items:center;" +
+      "justify-content:flex-start;gap:12px;opacity:0;pointer-events:none;}" +
+      "html.br-da-ready #br-fantasy-assistant-expand{transition:opacity 120ms ease;}" +
+      "html.br-da-collapsed #br-fantasy-assistant-expand{opacity:1;pointer-events:auto;}" +
       "#br-fantasy-assistant-expand:hover{background:#1a3d63;}" +
       "#br-fantasy-assistant-expand .br-da-expand-logo{width:34px;height:auto;margin-top:4px;display:block;}" +
       "#br-fantasy-assistant-expand svg{width:16px;height:16px;flex-shrink:0;}" +
+      "@media (prefers-reduced-motion:reduce){html.br-da-docked.br-da-ready,html.br-da-ready #" +
+      ROOT_ID + ",html.br-da-ready #br-fantasy-assistant-expand{transition:none !important;}}" +
       "#br-fantasy-espn-sync-chip,#br-fantasy-yahoo-sync-chip{display:none!important;}";
     (document.head || document.documentElement).appendChild(style);
   }
@@ -80,6 +89,11 @@
     expand.addEventListener("click", function () { setCollapsed(false); });
     wrap.appendChild(expand);
     document.documentElement.appendChild(wrap);
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        document.documentElement.classList.add("br-da-ready");
+      });
+    });
   }
 
   function postToOverlay(msg) {
@@ -144,9 +158,20 @@
 
   function setCollapsed(on) {
     collapsed = !!on;
-    if (iframe) iframe.style.visibility = collapsed ? "hidden" : "";
+    if (iframe) iframe.style.visibility = "";
+    if (slideTimer) {
+      clearTimeout(slideTimer);
+      slideTimer = null;
+    }
     document.documentElement.classList.toggle("br-da-collapsed", collapsed);
-    postToOverlay({ type: "collapsed", on: collapsed });
+    if (collapsed) {
+      slideTimer = setTimeout(function () {
+        slideTimer = null;
+        postToOverlay({ type: "collapsed", on: true });
+      }, SLIDE_MS);
+    } else {
+      postToOverlay({ type: "collapsed", on: false });
+    }
   }
 
   window.__brDaPushPicks = function (detail) {

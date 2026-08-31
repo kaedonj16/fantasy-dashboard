@@ -23,7 +23,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.2"
+    assert manifest["version"] == "1.5.3"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -109,8 +109,10 @@ def test_collapsed_overlay_has_reopen_control():
     assert "Open Draft Assistant" in inject
     assert "setCollapsed(false)" in inject
     assert "html.br-da-collapsed" in inject
-    assert "visibility:hidden" in inject.replace(" ", "")
-    assert "transition:none" in inject.replace(" ", "")
+    assert "translateX" in inject
+    assert "transition:transform" in inject.replace(" ", "")
+    assert "br-da-ready" in inject
+    assert "prefers-reduced-motion" in inject
     assert "collapseBtn" in html
     assert "setCollapsedUi" in overlay
     assert 'msg.type === "collapsed"' in overlay
