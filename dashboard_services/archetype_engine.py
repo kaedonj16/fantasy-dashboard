@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 _SIM_CACHE: Dict[str, Any] = {}
 _SIM_CACHE_TTL = 300  # seconds
 # Per-league lock so two concurrent cold requests (e.g. clicking between strategy
-# chips) don't each run the 10k base simulation - the second waits and reuses it.
+# chips) don't each run the base simulation - the second waits and reuses it.
 _SIM_LOCKS: Dict[str, threading.Lock] = {}
 _SIM_LOCKS_GUARD = threading.Lock()
 
@@ -40,6 +40,12 @@ _SIM_LOCKS_GUARD = threading.Lock()
 _RESULT_CACHE: Dict[tuple, Any] = {}
 _RESULT_CACHE_TTL = 120  # seconds
 _RESULT_CACHE_MAX = 256
+
+# Suggestion ranking uses the same 2k count as the trade-calculator Playoff
+# Impact card. Antithetic variates + frozen-opponent common random numbers
+# keep deltas tight; bumping this to 10k made every strategy chip wait on
+# dozens of full-league replays.
+_SUGGESTION_N_SIMS = 2000
 
 
 def _sim_lock_for(cache_key: str) -> threading.Lock:
@@ -1366,7 +1372,7 @@ def _build_distribute(
                 try:
                     from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
                     new_po_pct, _ = _sim_swap(
-                        sim_state, int(viewer_roster_id), new_players, n_sims=10_000
+                        sim_state, int(viewer_roster_id), new_players, n_sims=_SUGGESTION_N_SIMS
                     )
                     net_pod = (new_po_pct - current_playoff_pct) / 100.0
                 except Exception:
@@ -1616,7 +1622,7 @@ def _build_rebuilding(
                 try:
                     from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
                     new_po_pct, _ = _sim_swap(
-                        sim_state, int(viewer_roster_id), net_players, n_sims=10_000
+                        sim_state, int(viewer_roster_id), net_players, n_sims=_SUGGESTION_N_SIMS
                     )
                     net_pod = (new_po_pct - current_playoff_pct) / 100.0
                 except Exception:
@@ -1898,7 +1904,7 @@ def _get_archetype_suggestions_impl(
             log.debug("[archetype] sim cache hit for %s", _cache_key)
         else:
             # Serialize the cold build so overlapping requests (rapid chip
-            # switching) don't each run the 10k base sim. Re-check the cache
+            # switching) don't each run the base sim. Re-check the cache
             # inside the lock - the request we waited on may have just filled it.
             with _sim_lock_for(_cache_key):
                 _cached = _SIM_CACHE.get(_cache_key)
@@ -1908,7 +1914,7 @@ def _get_archetype_suggestions_impl(
                     log.debug("[archetype] sim cache hit (post-lock) for %s", _cache_key)
                 else:
                     sim_state = _build_sim_state(ctx, platform=platform)
-                    base_odds = _run_base_sim(sim_state, n_sims=10_000) if sim_state else {}
+                    base_odds = _run_base_sim(sim_state, n_sims=_SUGGESTION_N_SIMS) if sim_state else {}
                     _SIM_CACHE[_cache_key] = {"sim_state": sim_state, "base_odds": base_odds, "ts": _time.time()}
                     log.debug("[archetype] sim cache miss, built fresh for %s", _cache_key)
         if sim_state:
@@ -2379,7 +2385,7 @@ def _get_archetype_suggestions_impl(
     # Per-request memo for the Monte Carlo swap. simulate_with_swap is
     # deterministic (common-random-numbers seed), so identical post-trade rosters
     # return identical odds - different packages that collapse to the same lineup
-    # (or the same target reached two ways) then reuse one 10k-sim instead of
+    # (or the same target reached two ways) then reuse one overlay instead of
     # re-running it. Keyed by the viewer's resulting player set.
     _swap_cache: Dict[frozenset, Tuple[float, float]] = {}
 
@@ -2389,17 +2395,14 @@ def _get_archetype_suggestions_impl(
         if hit is not None:
             return hit
         from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
-        res = _sim_swap(sim_state, _vid_int, pids_after, n_sims=10_000)
+        res = _sim_swap(sim_state, _vid_int, pids_after, n_sims=_SUGGESTION_N_SIMS)
         _swap_cache[key] = res
         return res
 
-    # ── Parallel warm of the Monte Carlo swap cache ───────────────────────────
-    # The dominant first-load cost is the per-target and per-package 10k sims.
-    # They're independent and simulate_with_swap uses a local RNG (thread-safe),
-    # and the vectorized numpy MC releases the GIL - so build every target's
-    # packages once, up front, collect the exact rosters the assembly loop will
-    # simulate, and run them concurrently instead of one after another. Repeat
-    # loads are already instant via the result cache; this speeds the first one.
+    # Packages are built once per target so the assembly loop doesn't re-select
+    # them. Overlay sims are cheap (frozen opponents + 1–2 re-scored teams), so
+    # they run on demand in `_cached_swap` rather than a parallel warm of the
+    # old full-league 10k replays.
     pkgs_by_target: Dict[str, List[List[Dict]]] = {}
     for t in top:
         _pm = owner_meta.get(str(t["owner_roster_id"]), {})
@@ -2409,24 +2412,6 @@ def _get_archetype_suggestions_impl(
             need_positions=_pm.get("need"), stacked_positions=_pm.get("stacked"),
             tier_thresholds=tier_thresholds, stretch=bool(t.get("is_stretch")),
         )
-
-    if sim_state is not None and _vid_int is not None:
-        _needed: Dict[frozenset, list] = {}
-        for t in top:
-            _r = _impact_roster(t["player_id"], t["position"])
-            _needed.setdefault(frozenset(str(p) for p in _r), _r)
-            for _pkg in (pkgs_by_target.get(t["player_id"]) or []):
-                _pp = {str(a.get("player_id", "")) for a in _pkg
-                       if a.get("player_id") and not a.get("is_pick")}
-                _nr = [p for p in viewer_players if str(p) not in _pp] + [t["player_id"]]
-                _needed.setdefault(frozenset(str(p) for p in _nr), _nr)
-        if len(_needed) > 1:
-            try:
-                from concurrent.futures import ThreadPoolExecutor
-                with ThreadPoolExecutor(max_workers=min(8, len(_needed))) as _pool:
-                    list(_pool.map(_cached_swap, list(_needed.values())))
-            except Exception:
-                log.debug("[archetype] parallel swap warm skipped", exc_info=True)
 
     for t in top:
         pid = t["player_id"]
@@ -2438,7 +2423,7 @@ def _get_archetype_suggestions_impl(
         # weakest same-position player) and simulate it. This is the accurate
         # number; the analytical value stored on the target is the fallback when
         # no sim state exists. Routed through _cached_swap so identical rosters
-        # reuse a single 10k run.
+        # reuse a single overlay run.
         new_pids = _impact_roster(pid, pos)
 
         # Analytical fallback, clamped to a plausible single-acquisition swing so
