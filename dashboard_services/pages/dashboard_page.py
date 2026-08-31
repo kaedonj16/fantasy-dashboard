@@ -21,6 +21,7 @@ def build_dashboard_body(ctx: dict) -> str:
         _standings_movement,
         _trade_window_card_html,
         _viewer_lineup_alert_html,
+        _league_is_redraft,
         build_teams_overview,
         compute_awards_season,
         compute_win_prob,
@@ -39,6 +40,7 @@ def build_dashboard_body(ctx: dict) -> str:
         url_for,
     )
     import pandas as pd
+    from utils.league_payload import show_matchup_preview as _show_matchup_preview_for
 
     league_id = ctx["league_id"]
     season = ctx["current_season"]
@@ -120,32 +122,47 @@ def build_dashboard_body(ctx: dict) -> str:
         scoring=_scoring_format_from_settings(ctx.get("scoring_settings")),
     )
     _dash_vid = str(viewer_roster_id or "")
+    _league_for_preview = dict(ctx.get("league") or {})
+    if ctx.get("league_settings"):
+        merged = dict(ctx["league_settings"])
+        merged.update(_league_for_preview.get("settings") or {})
+        _league_for_preview["settings"] = merged
+    _show_matchup_preview = _show_matchup_preview_for(
+        _league_for_preview,
+        ctx.get("latest_draft"),
+        rosters,
+        is_dynasty=not _league_is_redraft(ctx),
+    )
     _dash_matchups = sorted(
         matchups_by_week.get(current_week, []),
         key=lambda m: 0 if _dash_vid and _dash_vid in (str((m.get("left") or {}).get("roster_id", "")),
                                                        str((m.get("right") or {}).get("roster_id", ""))) else 1,
-    )
-    slides = [
-        render_matchup_slide(
-            season,
-            m,
-            current_week,
-            last_final_week,
-            status_by_pid=statuses[current_week].get("statuses", {}),
-            projections=proj_by_week,
-            players=players_index,
-            teams=teams_index,
-            team_game_lookup=team_game_lookup,
-            fpts_against=_fpts_against_dash,
+    ) if _show_matchup_preview else []
+    if _show_matchup_preview:
+        slides = [
+            render_matchup_slide(
+                season,
+                m,
+                current_week,
+                last_final_week,
+                status_by_pid=statuses[current_week].get("statuses", {}),
+                projections=proj_by_week,
+                players=players_index,
+                teams=teams_index,
+                team_game_lookup=team_game_lookup,
+                fpts_against=_fpts_against_dash,
+            )
+            for m in _dash_matchups
+        ]
+        slides_by_week = {current_week: "".join(slides)}
+        matchup_html = render_matchup_carousel_weeks(
+            slides_by_week,
+            dashboard=True,
+            active_week=current_week,
         )
-        for m in _dash_matchups
-    ]
-    slides_by_week = {current_week: "".join(slides)}
-    matchup_html = render_matchup_carousel_weeks(
-        slides_by_week,
-        dashboard=True,
-        active_week=current_week,
-    )
+    else:
+        matchup_html = ""
+        bench_check_html = ""
 
     awards = compute_awards_season(finalized_df, players_map, league_id, platform, season, users, rosters)
     awards_html = render_awards_section(awards)
@@ -365,7 +382,7 @@ def build_dashboard_body(ctx: dict) -> str:
 
         <nav class="os-jump-nav" aria-label="Jump to section">
           <button type="button" class="active" data-jump="os-jump-actions">Actions</button>
-          <button type="button" data-jump="os-jump-matchup">Matchups</button>
+          {('<button type="button" data-jump="os-jump-matchup">Matchups</button>' if _show_matchup_preview else '')}
           <button type="button" data-jump="os-jump-report">Report</button>
           <button type="button" data-jump="os-jump-standings">Standings</button>
           <button type="button" data-jump="os-jump-teams">{teams_tab_label}</button>
@@ -373,7 +390,7 @@ def build_dashboard_body(ctx: dict) -> str:
 
         {_action_queue_html}
 
-        <div id="os-jump-matchup" class="os-tab-panel">
+        <div id="os-jump-matchup" class="os-tab-panel"{'' if _show_matchup_preview else ' hidden'}>
           {matchup_html}
           {bench_check_html}
         </div>

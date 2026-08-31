@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-08-31",
+        "tag": "fix",
+        "text": "Dashboard: Matchup Preview stays hidden until the league drafts, except in dynasty. Keeper Fleaflicker leagues no longer show last year's matchups before the new draft.",
+        "link": "/"
+    },
+    {
+        "date": "2026-08-31",
         "tag": "update",
         "text": "Onboarding: shorter site tour with mobile steps, Remind me later, interactive spotlights, and a Premium welcome you can replay from Settings. Tour resume no longer swaps in demo data on History.",
         "link": "/"

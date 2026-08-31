@@ -152,6 +152,29 @@ def test_inseason_matchup_preview_has_own_tab():
     assert "{gm_card_html}" not in matchup_panel
 
 
+def test_inseason_hides_matchup_preview_until_undrafted_non_dynasty_drafts():
+    src = (_PAGES / "dashboard_page.py").read_text(encoding="utf-8")
+    assert "show_matchup_preview" in src
+    assert "_show_matchup_preview" in src
+    assert "is_dynasty=not _league_is_redraft(ctx)" in src
+    hub = (_PAGES / "weekly_hub_page.py").read_text(encoding="utf-8")
+    assert "show_matchup_preview" in hub
+    assert "is_dynasty=not _league_is_redraft(ctx)" in hub
+
+
+def test_changelog_announces_undrafted_matchup_preview_hide():
+    from dashboard_services.changelog import CHANGELOG
+
+    entry = next(
+        e for e in CHANGELOG
+        if "matchup preview" in e.get("text", "").lower() and "dynasty" in e.get("text", "").lower()
+    )
+    assert entry["date"] == "2026-08-31"
+    assert entry["tag"] == "fix"
+    assert "—" not in entry["text"]
+    assert "–" not in entry["text"]
+
+
 def test_no_platform_specific_spacer_before_os_layout():
     """Hub builders must start body with .os-layout — no provider wrapper."""
     for name in ("dashboard_page.py", "offseason_dashboard_page.py"):

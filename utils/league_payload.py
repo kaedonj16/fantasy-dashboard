@@ -88,10 +88,16 @@ def build_roster_map(users: list, rosters: list) -> dict:
 # A completed startup/redraft leaves every team with a full lineup (~9+). Empty
 # pre-draft shells are 0; keeper stubs are a handful. Dynasty rosters waiting on
 # a rookie draft still hold last year's 15–25 players, so they do not look
-# undrafted. Fewer than half the teams clearing this bar means the draft has
-# not filled the league.
+# undrafted. Keeper/redraft platforms (especially Fleaflicker) can also still
+# hold last year's full roster before the new draft — those are caught via an
+# explicit pre-draft status, not this count. Fewer than half the teams
+# clearing this bar means the draft has not filled the league.
 _FILLED_ROSTER_MIN_PLAYERS = 5
 _LIVE_DRAFT_STATUSES = {"drafting"}
+_INCOMPLETE_DRAFT_STATUSES = {"pre_draft", "drafting"}
+_RAW_INCOMPLETE_DRAFT_STATUSES = {"NOT_YET_DRAFTED", "DRAFT_IN_PROGRESS"}
+_REDRAFT_KEEPER_TYPES = {0, 1}
+_REDRAFT_KEEPER_LABELS = {"redraft", "keeper", "re-draft", "redraft_keeper"}
 
 
 def _norm_status(value) -> str:
@@ -106,6 +112,53 @@ def _as_epoch_ms(value) -> Optional[int]:
     if ts < 100_000_000_000:
         ts *= 1000
     return ts
+
+
+def _is_known_redraft_or_keeper(league: Optional[dict]) -> bool:
+    """True when settings explicitly mark redraft or keeper (not dynasty)."""
+    settings = (league or {}).get("settings") or {}
+    try:
+        t = settings.get("type")
+        if t is not None:
+            return int(t) in _REDRAFT_KEEPER_TYPES
+    except (TypeError, ValueError):
+        pass
+    lt = str(settings.get("league_type") or "").strip().lower()
+    return lt in _REDRAFT_KEEPER_LABELS
+
+
+def _looks_dynasty(league: Optional[dict]) -> bool:
+    """True when settings explicitly mark dynasty."""
+    settings = (league or {}).get("settings") or {}
+    try:
+        t = settings.get("type")
+        if t is not None:
+            return int(t) == 2
+    except (TypeError, ValueError):
+        pass
+    return "dynasty" in str(settings.get("league_type") or "").strip().lower()
+
+
+def _explicit_startup_incomplete(
+    league: Optional[dict],
+    latest_draft: Optional[dict],
+) -> bool:
+    """True when the provider says the startup/redraft draft has not finished.
+
+    Uses the draft record (and Fleaflicker's raw ``draft_status``), not
+    ``league.status``. Sleeper often leaves league status at ``pre_draft``
+    after a completed summer draft; roster fill already covers that case.
+    """
+    d_status = _norm_status(
+        (latest_draft or {}).get("status") if isinstance(latest_draft, dict) else ""
+    )
+    if d_status in _INCOMPLETE_DRAFT_STATUSES:
+        return True
+    settings = (league or {}).get("settings") or {}
+    raw = str(
+        settings.get("draft_status") or (league or {}).get("draft_status") or ""
+    ).strip().upper()
+    return raw in _RAW_INCOMPLETE_DRAFT_STATUSES
 
 
 def rosters_look_undrafted(rosters: list, min_players: int = _FILLED_ROSTER_MIN_PLAYERS) -> bool:
@@ -140,9 +193,26 @@ def startup_draft_phase(
     no-date fallback all report complete before anyone has been picked). Full
     rosters stay ``drafted`` even when league status is still ``pre_draft``, so
     dynasty teams waiting on a rookie draft keep their real positional ranks.
+
+    Exception: a known redraft/keeper league with an explicit pre-draft (or
+    live-draft) status is still pending. Fleaflicker keeper leagues often
+    retain last year's full roster until the new draft runs.
     """
     thin = rosters_look_undrafted(rosters)
     if not thin:
+        if (
+            _is_known_redraft_or_keeper(league)
+            and _explicit_startup_incomplete(league, latest_draft)
+        ):
+            d_status = _norm_status(
+                (latest_draft or {}).get("status") if isinstance(latest_draft, dict) else ""
+            )
+            raw = str(
+                ((league or {}).get("settings") or {}).get("draft_status") or ""
+            ).strip().upper()
+            if d_status in _LIVE_DRAFT_STATUSES or raw == "DRAFT_IN_PROGRESS":
+                return "drafting"
+            return "predraft"
         return "drafted"
     lg_status = _norm_status((league or {}).get("status"))
     d_status = _norm_status(
@@ -159,6 +229,25 @@ def startup_draft_pending(
     rosters: Optional[list],
 ) -> bool:
     return startup_draft_phase(league, latest_draft, rosters) != "drafted"
+
+
+def show_matchup_preview(
+    league: Optional[dict],
+    latest_draft: Optional[dict],
+    rosters: Optional[list],
+    *,
+    is_dynasty: Optional[bool] = None,
+) -> bool:
+    """Whether the dashboard / weekly hub should render Matchup Preview.
+
+    Dynasty leagues keep real rosters through a rookie draft, so they always
+    show. Redraft and keeper wait until the startup draft is done.
+    """
+    if is_dynasty is None:
+        is_dynasty = _looks_dynasty(league)
+    if is_dynasty:
+        return True
+    return not startup_draft_pending(league, latest_draft, rosters)
 
 
 def draft_countdown_copy(
