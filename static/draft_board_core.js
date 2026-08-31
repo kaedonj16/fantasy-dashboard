@@ -737,7 +737,19 @@
         // prefer a credible path to useful workload over tiny projection/ADP edges.
         // The caller supplies an evidence-based utility; age alone is never enough.
         score += Math.max(-3, Math.min(7, +o.upsideBonus || 0));
+        // Prospective bye concentration: mild scheduling risk, not a draft grade.
+        // Bounded so bye never outweighs real starter need or Pick Score gaps.
+        score -= Math.max(0, Math.min(4, +o.byePenalty || 0));
         return Math.max(1, Math.min(99, Math.round(score)));
+    }
+
+    // Map byeWeekSeverity level → Decision Score points (caller computes the
+    // prospective delta via byeWeekSeverity with/without the candidate).
+    function byeSeverityPenalty(level) {
+        if (level === 'severe') return 4;
+        if (level === 'meaningful') return 2.5;
+        if (level === 'mild') return 1;
+        return 0;
     }
 
     function draftPhase(round, totalRounds) {
@@ -1190,7 +1202,7 @@
         summarizeHistoricalAlternatives: summarizeHistoricalAlternatives,
         assignByeCover: assignByeCover,
         opportunityCostVerdict: opportunityCostVerdict, significantSteal: significantSteal,
-        byeWeekSeverity: byeWeekSeverity,
+        byeWeekSeverity: byeWeekSeverity, byeSeverityPenalty: byeSeverityPenalty,
         REC_FUTURE_SURVIVE_FLOOR: REC_FUTURE_SURVIVE_FLOOR,
         decisionBand: decisionBand, selectDecisionCandidate: selectDecisionCandidate,
         availabilityProbability: availabilityProbability, calibrateAvailability: calibrateAvailability,

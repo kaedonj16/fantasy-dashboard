@@ -659,6 +659,24 @@ def test_bye_severity_uses_starter_impact_not_raw_count():
     assert out["covered"][0]["players"][0]["coverQuality"] == pytest.approx(0.8)
 
 
+def test_bye_severity_penalty_is_bounded_in_decision_score():
+    out = _run_need_cases("""(() => ({
+      none:C.byeSeverityPenalty(''),
+      mild:C.byeSeverityPenalty('mild'),
+      severe:C.byeSeverityPenalty('severe'),
+      base:C.decisionScore({base:90,utility:1}),
+      penalized:C.decisionScore({base:90,utility:1,byePenalty:4}),
+      clamped:C.decisionScore({base:90,utility:1,byePenalty:99})
+    }))()""")
+    assert out["none"] == 0
+    assert out["mild"] == 1
+    assert out["severe"] == 4
+    assert out["penalized"] == out["base"] - 4
+    assert out["clamped"] == out["base"] - 4
+    assert "byePenalty: byePenalty" in (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    assert "byeSeverityPenalty(byeConflictLevel(p))" in (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+
 def test_late_round_path_ignores_ppg_and_requires_a_role():
     out = _run_need_cases("""(() => ({
       ppgOnly:C.lateRoundPathEvidence({}),

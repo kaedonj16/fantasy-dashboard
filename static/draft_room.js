@@ -3962,6 +3962,11 @@
         youngWithPath: path > 0 && age != null && (pos === 'RB' || pos === 'WR') && age <= (pos === 'RB' ? 24 : 25)
       });
     }
+    // Prospective bye crunch (redraft): use severity bands, not raw same-week counts.
+    var byePenalty = 0;
+    if (state.type === 'redraft' && DraftBoardCore.byeSeverityPenalty){
+      byePenalty = DraftBoardCore.byeSeverityPenalty(byeConflictLevel(p));
+    }
     // Positional-scarcity urgency scales with how many dedicated STARTERS are
     // still open at this position, not just whether the next one starts. A single
     // remaining slot (TE, or QB in 1QB) produces a real but muted cliff; a
@@ -3978,6 +3983,7 @@
       freePicks: c.obligations.freePicks,
       waitLoss: Math.max(0, base - expected) * (1 + demandRisk), waitLossScale: waitLossScale,
       waitPenalty: waitPenalty, handcuffBonus: handcuffBonus, upsideBonus: upsideBonus,
+      byePenalty: byePenalty,
       draftType: state.type, lineupHoles: c.obligations.lineupHoles || 0 });
     // While waiting, rank by expected value at YOUR pick so Gibbs at 0% at #9
     // cannot sit at #1 REC above players who will actually be there.
