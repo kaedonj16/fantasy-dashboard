@@ -225,6 +225,10 @@
     hostInProgress: null,
     hostDrafted: null,
     teamNames: {},
+    pickOwners: {},
+    hostClock: null,
+    hostClockAt: 0,
+    pickTimer: 0,
     current: 1,
     picks: [],
     drafted: {},
@@ -270,6 +274,8 @@
   }
   function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
   function ownerOf(pn) {
+    const mapped = Number(state.pickOwners && state.pickOwners[pn]);
+    if (mapped >= 1 && mapped <= state.teams) return mapped;
     const n = state.teams;
     const r = Math.ceil(pn / n);
     const i = (pn - 1) % n;
@@ -318,6 +324,7 @@
       detail && detail.tep != null ? detail.tep : "",
       detail && detail.passTd != null ? detail.passTd : "",
       detail && detail.teamNames ? Object.keys(detail.teamNames).length : "",
+      detail && detail.pickOwners ? Object.keys(detail.pickOwners).length : "",
       window.BRDraftSlot && BRDraftSlot.rosterKey ? BRDraftSlot.rosterKey(detail && detail.roster) : ""
     ].join("|");
   }
@@ -1024,7 +1031,10 @@
     }
     const simBtn = document.getElementById("simBtn");
     if (simBtn) simBtn.disabled = draftDone() || state.live;
-    if (EMBEDDED) paintSyncChip();
+    if (EMBEDDED) {
+      paintSyncChip();
+      paintLiveClock();
+    }
   }
 
   function paint() {
@@ -1139,14 +1149,7 @@
     const draftBtn = e.target.closest("[data-draft]");
     const row = e.target.closest(".ba-row");
     if (draftBtn || row) {
-      if (state.live) {
-        state.toast = "Draft in the host room - this overlay never submits a pick.";
-        if (state.tab !== "roster") { /* stay on board */ }
-        const recPn = nextMine(state.current);
-        state.toast = "Take this player in the host draft (your next pick is " + (recPn ? pickLabel(recPn) : "done") + "). The overlay never submits.";
-        render();
-        return;
-      }
+      if (state.live) return;
       draftToMe((draftBtn || row).getAttribute(draftBtn ? "data-draft" : "data-id"));
       render();
       return;
@@ -1201,6 +1204,55 @@
     }
     const lab = document.getElementById("slotLab");
     if (lab) lab.hidden = !EMBEDDED || !!state.slotAuto || !lastLiveDetail;
+  }
+
+  function liveClockSeconds() {
+    if (state.hostClock == null || !isFinite(Number(state.hostClock))) return null;
+    const elapsed = Math.floor((Date.now() - (state.hostClockAt || Date.now())) / 1000);
+    return Math.max(0, Number(state.hostClock) - elapsed);
+  }
+
+  function applyHostClock(detail) {
+    if (!detail || detail.clockSeconds == null || !isFinite(Number(detail.clockSeconds))) return;
+    state.hostClock = Number(detail.clockSeconds);
+    state.hostClockAt = Number(detail.clockAt || Date.now());
+    if (detail.pickTimer != null && isFinite(Number(detail.pickTimer))) {
+      state.pickTimer = Number(detail.pickTimer);
+    }
+    paintLiveClock();
+  }
+
+  function paintLiveClock() {
+    const el = document.getElementById("ovOtc");
+    if (!el) return;
+    if (!EMBEDDED || !state.live) {
+      el.hidden = true;
+      return;
+    }
+    el.hidden = false;
+    const done = draftDone();
+    const slot = done ? null : ownerOf(state.current);
+    const you = !done && slot === state.mySlot && state.slotAuto;
+    el.classList.toggle("is-you", you);
+    const pickEl = document.getElementById("ovOtcPick");
+    const whoEl = document.getElementById("ovOtcWho");
+    const clockEl = document.getElementById("ovOtcClock");
+    if (pickEl) pickEl.textContent = done ? "Final" : pickLabel(state.current);
+    if (whoEl) {
+      whoEl.textContent = done
+        ? "Draft complete"
+        : (you ? "You are on the clock" : ("On the clock: " + teamName(slot)));
+    }
+    if (clockEl) {
+      const secs = liveClockSeconds();
+      if (done || secs == null) {
+        clockEl.textContent = done ? "0:00" : "-:--";
+      } else {
+        const m = Math.floor(secs / 60);
+        const s = secs % 60;
+        clockEl.textContent = m + ":" + String(s).padStart(2, "0");
+      }
+    }
   }
 
   function formatSyncChip(ok) {
@@ -1561,6 +1613,10 @@
     if (detail.teamNames && typeof detail.teamNames === "object") {
       state.teamNames = Object.assign({}, state.teamNames, detail.teamNames);
     }
+    if (detail.pickOwners && typeof detail.pickOwners === "object") {
+      state.pickOwners = detail.pickOwners;
+    }
+    applyHostClock(detail);
     const raw = Array.isArray(detail.picks) ? detail.picks.slice() : [];
     raw.sort(function (a, b) {
       return (Number(a.overallPickNumber || a.pick_no || 0) - Number(b.overallPickNumber || b.pick_no || 0));
@@ -1573,7 +1629,10 @@
       const p = matchLivePlayer(rp);
       if (!p || /^pick\s*#?\s*\d+$/i.test(String(p.name || ""))) return;
       const explicit = Number(rp.slot || rp.draftSlot || rp.draft_slot || 0);
-      const slot = explicit >= 1 && explicit <= state.teams ? explicit : ownerOf(pn);
+      const mapped = Number(state.pickOwners && state.pickOwners[pn]);
+      const slot = mapped >= 1 && mapped <= state.teams
+        ? mapped
+        : (explicit >= 1 && explicit <= state.teams ? explicit : ownerOf(pn));
       const counts = posCounts(teamPicks(slot));
       const need = needOf(counts, p.pos) > 0;
       const grade = pickLetter(pn - p.adp, need);
@@ -1583,7 +1642,7 @@
     });
     const lastMade = state.picks.length ? state.picks[state.picks.length - 1].pn : 0;
     state.current = lastMade + 1;
-    state.clock = CLOCK_START;
+    if (detail.clockSeconds == null) state.clock = CLOCK_START;
     fillSlotSel();
     paintSyncChip(true);
     render();
@@ -1652,6 +1711,7 @@
     if (!msg || msg.__br !== "br-da") return;
     if (msg.type === "pool") ingestPool(msg);
     if (msg.type === "picks") ingestLive(msg);
+    if (msg.type === "clock") applyHostClock(msg);
     if (msg.type === "sync") setSyncStatus(!!msg.ok, msg.text);
     if (msg.type === "collapsed") setCollapsedUi(msg.on);
     if (msg.type === "theme" && msg.theme) applyTheme(msg.theme);
@@ -1671,6 +1731,12 @@
     t.remove();
   }, true);
 
+  if (EMBEDDED) {
+    setInterval(function () {
+      if (!state.live || draftDone()) return;
+      paintLiveClock();
+    }, 1000);
+  }
   if (!EMBEDDED) {
     buildPool();
     indexNames();

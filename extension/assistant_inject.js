@@ -271,6 +271,7 @@
       payload.tep != null ? payload.tep : "",
       payload.passTd != null ? payload.passTd : "",
       payload.teamNames ? Object.keys(payload.teamNames).length : "",
+      payload.pickOwners ? Object.keys(payload.pickOwners).length : "",
       window.BRDraftSlot && BRDraftSlot.rosterKey ? BRDraftSlot.rosterKey(payload.roster) : ""
     ].join("|");
     const teams = Number(payload.teams || 0);
@@ -304,6 +305,10 @@
 
   window.__brDaSetSync = function (ok, text) {
     postToOverlay({ type: "sync", ok: !!ok, text: text || "" });
+  };
+
+  window.__brDaPushClock = function (detail) {
+    postToOverlay(Object.assign({ type: "clock", clockAt: Date.now() }, detail || {}));
   };
 
   window.addEventListener("message", function (ev) {

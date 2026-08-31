@@ -16,6 +16,8 @@
   let cachedUser = { username: "", userId: "" };
   let cachedOwnerMap = { leagueId: "", map: {} };
   let cachedUsers = { leagueId: "", rows: [] };
+  let cachedTrades = { draftId: "", rows: [], at: 0 };
+  let lastClockSent = "";
 
   async function leagueScoring(leagueId) {
     if (!leagueId) return cachedScoring;
@@ -109,6 +111,24 @@
       return cachedUsers.rows;
     } catch (_e) {
       return cachedUsers.rows || [];
+    }
+  }
+
+  async function tradedPicks(draftId) {
+    if (!draftId) return [];
+    if (cachedTrades.draftId === String(draftId) && Date.now() - cachedTrades.at < 8000) {
+      return cachedTrades.rows;
+    }
+    try {
+      const res = await fetch(
+        "https://api.sleeper.app/v1/draft/" + encodeURIComponent(draftId) + "/traded_picks",
+        { cache: "no-store" }
+      );
+      const rows = res.ok ? await res.json() : [];
+      cachedTrades = { draftId: String(draftId), rows: Array.isArray(rows) ? rows : [], at: Date.now() };
+      return cachedTrades.rows;
+    } catch (_e) {
+      return cachedTrades.rows || [];
     }
   }
 
@@ -228,6 +248,7 @@
       const leagueId = draft && draft.league_id;
       const ownerToRoster = await ownerToRosterMap(leagueId);
       const users = await leagueUsers(leagueId);
+      const trades = await tradedPicks(id);
       const mySlot = resolveMySlot(draft, picks, teams, ident, uid, ownerToRoster);
       const teamNames = window.BRDraftSlot && BRDraftSlot.teamNamesFromSleeperDraft
         ? BRDraftSlot.teamNamesFromSleeperDraft(draft, users)
@@ -236,6 +257,20 @@
       lastStatus = status;
       const inProgress = status === "drafting" || (status !== "complete" && picks.length > 0);
       const drafted = status === "complete";
+      const pickOwners = window.BRDraftSlot && BRDraftSlot.sleeperPickOwners
+        ? BRDraftSlot.sleeperPickOwners({
+            teams: teams,
+            rounds: Number(settings.rounds || 15),
+            draft: draft || {},
+            ownerToRoster: ownerToRoster,
+            tradedPicks: trades,
+            picks: picks,
+          })
+        : {};
+      const pickTimer = Number((settings && settings.pick_timer) || 0) || undefined;
+      const clockSeconds = window.BRDraftSlot && BRDraftSlot.sleeperClockRemaining
+        ? BRDraftSlot.sleeperClockRemaining(draft)
+        : null;
       const roster = window.BRDraftSlot && BRDraftSlot.rosterFromSleeperSettings
         ? BRDraftSlot.rosterFromSleeperSettings(settings)
         : null;
@@ -252,8 +287,11 @@
         passTd: scoring.passTd,
         picks: picks,
         teamNames: teamNames,
+        pickOwners: pickOwners,
         inProgress: inProgress,
         drafted: drafted,
+        clockSeconds: clockSeconds,
+        pickTimer: pickTimer,
         syncText: window.BRDraftSlot
           ? window.BRDraftSlot.compactSync("sleeper", picks.length, mySlot || undefined, true)
           : (picks.length ? "SLEEPER · " + picks.length : "SLEEPER · LIVE"),
@@ -263,14 +301,21 @@
         mySlot || "",
         status,
         Object.keys(teamNames).length,
+        Object.keys(pickOwners).length,
         window.BRDraftSlot && BRDraftSlot.rosterKey ? BRDraftSlot.rosterKey(roster) : "",
         scoring.ppr,
         scoring.tep,
         scoring.passTd,
       ].join("|");
-      if (settingsFp === lastFp) return;
-      lastFp = settingsFp;
-      push(payload);
+      if (settingsFp !== lastFp) {
+        lastFp = settingsFp;
+        push(payload);
+      }
+      const clockKey = String(clockSeconds) + "|" + String(pickTimer || "");
+      if (clockKey !== lastClockSent && typeof window.__brDaPushClock === "function") {
+        lastClockSent = clockKey;
+        window.__brDaPushClock({ clockSeconds: clockSeconds, pickTimer: pickTimer });
+      }
     } catch (_e) {
       if (typeof window.__brDaSetSync === "function") {
         window.__brDaSetSync(false, "SLEEPER · …");

@@ -640,6 +640,37 @@
     color: var(--accent);
   }
 
+  .ov-otc {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--card-soft);
+    font-size: 11px;
+    font-weight: 700;
+    min-height: 32px;
+  }
+  .ov-otc[hidden] { display: none !important; }
+  .ov-otc.is-you { background: color-mix(in srgb, var(--accent) 10%, var(--card-soft)); }
+  .ov-otc-pick {
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+  }
+  .ov-otc-who {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+  }
+  .ov-otc-clock {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+  }
   .ov-body {
     flex: 1;
     min-height: 0;
@@ -1293,6 +1324,7 @@
   html:not(.br-da-embed) .live-only { display: none !important; }
   html.br-da-embed .practice-only { display: none !important; }
   html.br-da-embed.br-da-rail .tab-bar,
+  html.br-da-embed.br-da-rail .ov-otc,
   html.br-da-embed.br-da-rail .ov-body,
   html.br-da-embed.br-da-rail .ov-titles,
   html.br-da-embed.br-da-rail .sync-chip,

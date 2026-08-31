@@ -824,6 +824,119 @@
     return names;
   }
 
+  function teamNamesFromTeamIds(namesById, slotsById, picks, teams) {
+    const out = {};
+    const ids = namesById || {};
+    const slots = slotsById || {};
+    Object.keys(ids).forEach(function (tid) {
+      const name = String(ids[tid] || "").trim();
+      if (!name) return;
+      let slot = Number(slots[tid]) || 0;
+      if (!slot) slot = slotFromTeamId(picks, tid, teams);
+      if (slot >= 1 && slot <= 32) out[slot] = name;
+    });
+    return out;
+  }
+
+  function sleeperPickOwners(opts) {
+    opts = opts || {};
+    const teams = Number(opts.teams) || 0;
+    const rounds = Number(opts.rounds) || 0;
+    const out = {};
+    if (teams < 2 || rounds < 1) return out;
+    const draft = opts.draft || {};
+    const slotToRoster = {};
+    const rosterToSlot = {};
+    const rawMap = draft.slot_to_roster_id || (draft.metadata && draft.metadata.slot_to_roster_id) || {};
+    Object.keys(rawMap).forEach(function (sl) {
+      const slot = Number(sl);
+      const rid = rawMap[sl];
+      if (slot >= 1 && rid != null) {
+        slotToRoster[slot] = rid;
+        rosterToSlot[String(rid)] = slot;
+      }
+    });
+    const order = draft.draft_order || {};
+    const ownerToRoster = opts.ownerToRoster || {};
+    Object.keys(order).forEach(function (uid) {
+      const slot = Number(order[uid]);
+      const rid = ownerToRoster[uid];
+      if (slot >= 1 && rid != null) {
+        slotToRoster[slot] = rid;
+        rosterToSlot[String(rid)] = slot;
+      }
+    });
+    const traded = {};
+    (opts.tradedPicks || []).forEach(function (tp) {
+      if (!tp || tp.roster_id == null || tp.round == null || tp.owner_id == null) return;
+      traded[String(tp.roster_id) + ":" + String(tp.round)] = tp.owner_id;
+    });
+    (opts.picks || []).forEach(function (p) {
+      const pn = Number(p && (p.overallPickNumber || p.pick_no));
+      if (!pn) return;
+      const rid = p.teamId != null ? p.teamId : p.roster_id;
+      if (rid != null && rosterToSlot[String(rid)] != null) {
+        out[pn] = rosterToSlot[String(rid)];
+      } else if (Number(p.slot || p.draft_slot) >= 1) {
+        out[pn] = Number(p.slot || p.draft_slot);
+      }
+    });
+    const tot = teams * rounds;
+    for (let pn = 1; pn <= tot; pn++) {
+      if (out[pn]) continue;
+      const home = snakeSlot(pn, teams);
+      const origRid = slotToRoster[home];
+      const rnd = Math.ceil(pn / teams);
+      if (origRid != null) {
+        const key = String(origRid) + ":" + String(rnd);
+        const ownRid = Object.prototype.hasOwnProperty.call(traded, key) ? traded[key] : origRid;
+        out[pn] = rosterToSlot[String(ownRid)] != null ? rosterToSlot[String(ownRid)] : home;
+      } else {
+        out[pn] = home;
+      }
+    }
+    return out;
+  }
+
+  function parseClockSeconds(text) {
+    const s = String(text || "");
+    const mmss = s.match(/\b(\d{1,2}):([0-5]\d)\b/);
+    if (mmss) return Number(mmss[1]) * 60 + Number(mmss[2]);
+    const sec = s.match(/\b(\d{1,3})\s*(?:s|sec|secs|seconds)\b/i);
+    if (sec) return Number(sec[1]);
+    return null;
+  }
+
+  function sleeperClockRemaining(draft, now) {
+    draft = draft || {};
+    const settings = draft.settings || {};
+    const timer = Number(settings.pick_timer || settings.pickTimer || 0);
+    if (!(timer > 0)) return null;
+    const last = Number(draft.last_picked || draft.lastPicked || draft.start_time || 0);
+    if (!(last > 0)) return timer;
+    const elapsed = Math.floor(((now || Date.now()) - last) / 1000);
+    return Math.max(0, Math.round(timer - elapsed));
+  }
+
+  function scrapeHostClockSeconds(doc) {
+    doc = doc || (typeof document !== "undefined" ? document : null);
+    if (!doc || !doc.querySelectorAll) return null;
+    const nodes = doc.querySelectorAll(
+      "[class*='clock'],[class*='Clock'],[class*='timer'],[class*='Timer'],[class*='countdown'],[class*='Countdown']"
+    );
+    const n = Math.min(nodes.length, 40);
+    for (let i = 0; i < n; i++) {
+      const sec = parseClockSeconds(nodes[i].textContent);
+      if (sec != null && sec <= 600) return sec;
+    }
+    if (doc.body) {
+      const blob = String(doc.body.innerText || "").slice(0, 2500);
+      const near = blob.match(/(?:clock|timer|remaining)[^\d]{0,24}(\d{1,2}:[0-5]\d)/i);
+      if (near) return parseClockSeconds(near[1]);
+    }
+    return null;
+  }
+
   root.BRDraftSlot = {
     snakeSlot: snakeSlot,
     teamCountFromPicks: teamCountFromPicks,
@@ -860,5 +973,10 @@
     detectSleeperSlot: detectSleeperSlot,
     detectSleeperDomSlot: detectSleeperDomSlot,
     teamNamesFromSleeperDraft: teamNamesFromSleeperDraft,
+    teamNamesFromTeamIds: teamNamesFromTeamIds,
+    sleeperPickOwners: sleeperPickOwners,
+    parseClockSeconds: parseClockSeconds,
+    sleeperClockRemaining: sleeperClockRemaining,
+    scrapeHostClockSeconds: scrapeHostClockSeconds,
   };
 })(window);

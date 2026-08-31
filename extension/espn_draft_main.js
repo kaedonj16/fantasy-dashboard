@@ -51,6 +51,9 @@
   let detectedPpr = 1;
   let detectedTep = 0;
   let detectedPassTd = 4;
+  const detectedTeamNamesById = {};
+  const detectedTeamSlotsById = {};
+  let lastClockSeconds = null;
   /** @type {Map<string, {playerName: string, pos: string, nflTeam: string}>} */
   const playerMetaById = new Map();
   const ESPN_POS = { 1: "QB", 2: "RB", 3: "WR", 4: "TE", 5: "K", 16: "DST" };
@@ -400,6 +403,7 @@
       detectedTep,
       detectedPassTd,
       rosterFingerprint(detectedRoster),
+      Object.keys(detectedTeamNamesById).length,
     ].join("|");
   }
 
@@ -525,6 +529,17 @@
       const t = teams[i];
       if (!isTraversableObject(t)) continue;
       const id = safeProp(t, "id") ?? safeProp(t, "teamId");
+      const loc = String(safeProp(t, "location") || "").trim();
+      const nick = String(safeProp(t, "nickname") || "").trim();
+      const abbrev = String(safeProp(t, "abbrev") || "").trim();
+      const teamName = (loc + " " + nick).trim() || String(safeProp(t, "name") || abbrev || "").trim();
+      if (id != null && id !== "" && teamName) detectedTeamNamesById[String(id)] = teamName;
+      const pos =
+        safeProp(t, "draftPosition") ??
+        safeProp(t, "draftSlot") ??
+        safeProp(t, "pickNumber") ??
+        safeProp(t, "draftPickNumber");
+      if (id != null && pos != null && Number(pos) >= 1) detectedTeamSlotsById[String(id)] = Number(pos);
       const owner = String(safeProp(t, "primaryOwner") || "").replace(/[{}]/g, "").toLowerCase();
       const isUser =
         safeProp(t, "isCurrentUser") === true ||
@@ -533,11 +548,6 @@
         (swid && owner && owner === swid);
       if (!isUser || id == null || id === "") continue;
       detectedUserTeamId = id;
-      const pos =
-        safeProp(t, "draftPosition") ??
-        safeProp(t, "draftSlot") ??
-        safeProp(t, "pickNumber") ??
-        safeProp(t, "draftPickNumber");
       if (pos != null && Number(pos) >= 1) detectedSlot = Number(pos);
     }
   }
@@ -672,6 +682,10 @@
     lastFingerprint = fp;
     lastEmitAt = now;
     const mySlot = computeMySlot(clean);
+    const teamNames = window.BRDraftSlot && BRDraftSlot.teamNamesFromTeamIds
+      ? BRDraftSlot.teamNamesFromTeamIds(detectedTeamNamesById, detectedTeamSlotsById, clean, detectedTeams)
+      : {};
+    const clockSeconds = lastClockSeconds;
     const detail = {
       source: source || "accumulated",
       leagueId: ids.leagueId,
@@ -688,6 +702,8 @@
       ppr: detectedPpr,
       tep: detectedTep,
       passTd: detectedPassTd,
+      teamNames: teamNames,
+      clockSeconds: clockSeconds,
       at: now,
     };
     bridgeToExtension(EVENT, detail);
@@ -710,6 +726,14 @@
     if (!Array.isArray(picks) || !picks.length) return false;
     const selected = picks.filter(isPickRow);
     if (!selected.length) return false;
+    const remain =
+      safeProp(detail, "timeRemaining") ??
+      safeProp(detail, "pickTimeRemaining") ??
+      safeProp(detail, "secondsRemaining");
+    if (remain != null && Number(remain) >= 0) {
+      const n = Number(remain);
+      lastClockSeconds = n > 1000 ? Math.round(n / 1000) : Math.round(n);
+    }
     emit(
       selected,
       {

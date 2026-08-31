@@ -25,6 +25,9 @@
   let detectedPpr = 1;
   let detectedTep = 0;
   let detectedPassTd = 4;
+  const detectedTeamNamesById = {};
+  const detectedTeamSlotsById = {};
+  let lastClockSeconds = null;
   /** @type {Map<string, {playerName: string, pos: string, nflTeam: string}>} */
   const playerMetaById = new Map();
 
@@ -356,11 +359,19 @@
         managerOwned = true;
       }
     }
+    const teamId = obj.teamId ?? obj.team_id ?? teamIdFromKey(obj.team_key || obj.teamKey);
+    let teamName = obj.name || obj.team_name || obj.teamName || obj.nickname;
+    if (!teamName && list[0]) {
+      teamName = list[0].nickname || list[0].manager_nickname || list[0].nickname;
+    }
+    if (teamId != null && teamId !== "" && teamName) {
+      detectedTeamNamesById[String(teamId)] = String(teamName).trim();
+    }
+    const draftPos = obj.draftPosition ?? obj.draft_position ?? obj.draftSlot ?? obj.draft_slot;
+    if (teamId != null && Number(draftPos) >= 1) detectedTeamSlotsById[String(teamId)] = Number(draftPos);
     if (owned || managerOwned) {
-      const id = obj.teamId ?? obj.team_id ?? teamIdFromKey(obj.team_key || obj.teamKey);
-      if (id != null && id !== "") detectedUserTeamId = id;
-      const pos = obj.draftPosition ?? obj.draft_position ?? obj.draftSlot ?? obj.draft_slot;
-      if (pos != null && Number(pos) >= 1) detectedSlot = Number(pos);
+      if (teamId != null && teamId !== "") detectedUserTeamId = teamId;
+      if (draftPos != null && Number(draftPos) >= 1) detectedSlot = Number(draftPos);
     }
   }
 
@@ -459,6 +470,13 @@
     lastFingerprint = fp;
     lastEmitAt = now;
     const mySlot = computeMySlot(clean);
+    const teamNames = window.BRDraftSlot && BRDraftSlot.teamNamesFromTeamIds
+      ? BRDraftSlot.teamNamesFromTeamIds(detectedTeamNamesById, detectedTeamSlotsById, clean, detectedTeams)
+      : {};
+    if (window.BRDraftSlot && BRDraftSlot.scrapeHostClockSeconds) {
+      const scraped = BRDraftSlot.scrapeHostClockSeconds(document);
+      if (scraped != null) lastClockSeconds = scraped;
+    }
     const detail = {
       source: source || "accumulated",
       leagueId: ids.leagueId,
@@ -475,6 +493,8 @@
       ppr: detectedPpr,
       tep: detectedTep,
       passTd: detectedPassTd,
+      teamNames: teamNames,
+      clockSeconds: lastClockSeconds,
       at: now,
     };
     bridgeToExtension(EVENT, detail);

@@ -92,6 +92,21 @@
     return lastMySlot || 0;
   }
 
+  let lastClockKey = "";
+  function pushHostClock(seconds, pickTimer) {
+    let sec = seconds;
+    if (sec == null && window.BRDraftSlot && BRDraftSlot.scrapeHostClockSeconds) {
+      sec = BRDraftSlot.scrapeHostClockSeconds(document);
+    }
+    if (sec == null) return;
+    const key = String(sec) + "|" + String(pickTimer || "");
+    if (key === lastClockKey) return;
+    lastClockKey = key;
+    if (typeof window.__brDaPushClock === "function") {
+      window.__brDaPushClock({ clockSeconds: sec, pickTimer: pickTimer });
+    }
+  }
+
   function overlaySyncText(picks, ok, mySlot) {
     if (window.BRDraftSlot) {
       return window.BRDraftSlot.compactSync("yahoo", (picks || []).length, mySlot, ok);
@@ -360,7 +375,11 @@
       ppr: detail.ppr,
       tep: detail.tep,
       passTd: detail.passTd,
+      teamNames: detail.teamNames,
+      clockSeconds: detail.clockSeconds,
+      pickTimer: detail.pickTimer,
     });
+    pushHostClock(detail.clockSeconds, detail.pickTimer);
     if (!payload.leagueId) {
       setChip("BR Fantasy · leagueId missing in URL", false);
       return;
@@ -436,6 +455,7 @@
       ? BRDraftSlot.completedFromYahooClock(extra.teams || 12)
       : 0;
     if (expected > (lastPicks || []).length) requestRescan();
+    pushHostClock(null, null);
   }
   pollYahooLive();
   setTimeout(pollYahooLive, 500);
