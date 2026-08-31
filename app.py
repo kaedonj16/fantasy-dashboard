@@ -1154,6 +1154,17 @@ try:
 except Exception as e:
     logger.warning("[league-pages-bp] skipped: %s", e)
 
+try:
+    from utils.ui_audit_fixture import install_ui_audit_hooks
+
+    install_ui_audit_hooks()
+    from routes.ui_audit_bp import ui_audit_bp
+
+    app.register_blueprint(ui_audit_bp)
+    logger.info("[ui-audit] hub at /ui-audit (active when UI_AUDIT=1)")
+except Exception as e:
+    logger.warning("[ui-audit] skipped: %s", e)
+
 
 def generate_recent_updates_html(limit=5):
     """Generate HTML for recent changelog updates."""
@@ -9498,6 +9509,22 @@ def _maybe_check_roster_freshness(platform: str, league_id: str, season: int,
 
 
 def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dict:
+    try:
+        from utils.ui_audit_fixture import (
+            build_ui_audit_league_context,
+            is_ui_audit_league,
+            ui_audit_enabled,
+        )
+
+        if ui_audit_enabled() and is_ui_audit_league(league_id):
+            ctx = build_ui_audit_league_context(platform, league_id, season)
+            ctx["viewer"] = get_viewer_session_for_league(
+                ctx.get("users") or [], ctx.get("rosters") or [], platform, league_id, season
+            )
+            return ctx
+    except Exception:
+        logger.debug("[ui-audit] fixture lookup failed", exc_info=True)
+
     key = _cache_key(platform, season, league_id)
     entry = DASHBOARD_CACHE.get(key)
     if _league_ctx_cache_valid(entry, platform, season, league_id):
