@@ -10,7 +10,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **Username sign-in / Identify** — Log in with just a Sleeper username; the app finds all your leagues automatically.
 - **Google sign-in** — Sign in with a Google account for cross-device, account-scoped state (watchlist sync, one-time "since last visit" digests).
 - **Keeper & redraft leagues** — Automatic detection of keeper-eligible and redraft leagues; keeper-specific tools and nav appear only where relevant.
-- **My Leagues (Portfolio)** — Cross-league hub that lists every league you're in with at-a-glance value and standings.
+- **My Leagues (Portfolio)** — Cross-league hub that lists every league you're in with at-a-glance value and standings. Signed-in users also get a **This week’s moves** digest that ranks lineup fixes and injury stash/drop hints across linked leagues.
 - **League switcher** — Jump between your leagues from anywhere via the nav dropdown.
 - **Multi-season support** — View any league across multiple seasons.
 - **PRO / Premium tiers** — Subscription-gated features (Stripe checkout, billing portal, league-shared or user-based premium access) with a paywall on PRO-only tools. League/combo buyers get a post-checkout **invite link** (`/invite/<platform>/<season>/<league_id>`) so teammates can sign in and inherit shared PRO; buyers also see an in-app “Invite your league” banner.

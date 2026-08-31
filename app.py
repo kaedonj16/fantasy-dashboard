@@ -24725,6 +24725,40 @@ def build_portfolio_body(
         f"</div>"
     )
 
+    # Cross-league action digest (R04) — filled async from /api/portfolio-actions.
+    moves_card = (
+        "<div class='card' id='pfMovesCard' style='margin-bottom:14px;' hidden>"
+        "<div class='card-header'><h2>This week’s moves</h2>"
+        "<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>"
+        "prioritized across your leagues</span></div>"
+        "<div class='card-body' id='pfMovesBody'>"
+        "<div style='font-size:13px;color:var(--text-muted);'>Checking lineups…</div>"
+        "</div></div>"
+        "<script>(function(){"
+        "function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){"
+        "return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c];});}"
+        "fetch('/api/portfolio-actions',{cache:'no-store'}).then(function(r){return r.json();})"
+        ".then(function(d){"
+        "var card=document.getElementById('pfMovesCard');"
+        "var body=document.getElementById('pfMovesBody');"
+        "if(!card||!body)return;"
+        "var acts=(d&&d.actions)||[];"
+        "if(!acts.length){card.hidden=true;return;}"
+        "card.hidden=false;"
+        "body.innerHTML=acts.map(function(a){"
+        "return '<a href=\"'+esc(a.href)+'\" style=\"display:block;padding:10px 0;border-top:1px solid var(--grid);"
+        "text-decoration:none;color:inherit;\">'"
+        "+'<div style=\"font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;"
+        "letter-spacing:.04em;\">'+esc(a.league_name)+' · '+esc(a.kind)+'</div>'"
+        "+'<div style=\"font-size:14px;font-weight:700;margin-top:2px;\">'+esc(a.title)+'</div>'"
+        "+(a.detail?'<div style=\"font-size:12px;color:var(--text-muted);margin-top:2px;\">'+esc(a.detail)+'</div>':'')"
+        "+'</a>';"
+        "}).join('');"
+        "var first=body.querySelector('a'); if(first) first.style.borderTop='none';"
+        "}).catch(function(){var c=document.getElementById('pfMovesCard'); if(c) c.hidden=true;});"
+        "})();</script>"
+    )
+
     # ── League list - standings-table ─────────────────────────────────────
     league_rows = ""
     # Unlink control: only for account-linked ESPN/Yahoo leagues (Sleeper leagues
@@ -25247,7 +25281,7 @@ def build_portfolio_body(
     # Constrain to a centered column so the page doesn't stretch edge-to-edge on
     # wide monitors (matches the League Health treatment).
     return (css + '<div style="max-width:1040px;margin:0 auto;">'
-            + top_strip + league_card + insights_label + insight_top + bottom_row + '</div>')
+            + top_strip + moves_card + league_card + insights_label + insight_top + bottom_row + '</div>')
 
 
 # build_scout_body / _week_proj_points live in dashboard_services/pages/scout_page.py
