@@ -75,6 +75,31 @@ def test_guest_seo_page_includes_seo_lite_css(offline_client):
     assert "dashboard.min.css" not in html and "/static/dashboard.css" not in html
 
 
+def test_seo_lite_css_hides_guest_nav_chrome():
+    """Guest SEO pages still emit the full nav + More sheet. seo_lite.css must
+    hide those nodes on desktop or every dropdown/sheet link spills onto the page.
+    """
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[1] / "static" / "seo_lite.css").read_text(
+        encoding="utf-8"
+    )
+    assert ".nav-pill-dropdown-menu" in css
+    assert "display: none" in css
+    assert ".skip-link" in css
+    assert "left: -9999px" in css
+    assert ".br-sheet-scrim" in css
+    assert ".br-sheet" in css
+    assert ".br-tabbar" in css
+    assert ".nav-utility-bar" in css
+    assert ".nav-center" in css
+    assert ".nav-right" in css
+    # Desktop hide for the mobile-only sheet/dock — the exact failure mode
+    # that unstyled guest pages showed (every nav link in-flow).
+    desktop_hide = css.split("@media (max-width: 768px)")[0]
+    assert ".br-sheet" in desktop_hide
+    assert "display: none" in desktop_hide
+
+
 def test_guest_homepage_keeps_dashboard_css(offline_client, monkeypatch):
     """Landing page styles live in dashboard.css; seo_lite.css must not replace them.
 
