@@ -252,8 +252,9 @@ def page_graphs(platform: str, season: int, league_id: str):
     from dashboard_services.pages.graphs_page import (
         build_graphs_body, build_tour_mock_graphs_ctx, render_graphs_html)
 
-    # Tour preview: render with mock data, bypass real league fetch
-    if request.args.get("tour"):
+    # Demo/mock preview only (?tour=1). Live site-tour resume uses ?tour_step=N
+    # and must hit the real league path below — do not conflate the two.
+    if request.args.get("tour") and not request.args.get("tour_step"):
         try:
             mock_ctx = build_tour_mock_graphs_ctx(_build_tour_mock_df_weekly())
             body_html = build_graphs_body(mock_ctx)
@@ -312,8 +313,9 @@ def page_history(platform: str, season: int, league_id: str):
         build_history_body, build_tour_mock_history_ctx)
     from dashboard_services.api import resolve_league_id_for_season
     from utils.history_seasons import get_default_history_season
-    # Tour preview: render with mock data, bypass real league fetch
-    if request.args.get("tour"):
+    # Demo/mock preview only (?tour=1). Live site-tour resume uses ?tour_step=N
+    # and must hit the real league path below — do not conflate the two.
+    if request.args.get("tour") and not request.args.get("tour_step"):
         try:
             mock_ctx = build_tour_mock_history_ctx(_build_tour_mock_df_weekly())
             body_html = build_history_body(
