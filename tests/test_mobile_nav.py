@@ -13,9 +13,12 @@ contract the CSS/JS relies on:
   - the page you're on always earning a dock tab (here: Graphs).
 """
 import pytest
+from pathlib import Path
 
 pytest.importorskip("flask")
 pytest.importorskip("pandas")
+
+ROOT = Path(__file__).resolve().parents[1]
 
 # Tour pages render from seeded mock data with a real league context, so they
 # carry the full league chrome (dock + sheet) without needing live data. Graphs
