@@ -13,7 +13,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **My Leagues (Portfolio)** — Cross-league hub that lists every league you're in with at-a-glance value and standings.
 - **League switcher** — Jump between your leagues from anywhere via the nav dropdown.
 - **Multi-season support** — View any league across multiple seasons.
-- **PRO / Premium tiers** — Subscription-gated features (Stripe checkout, billing portal, league-shared or user-based premium access) with a paywall on PRO-only tools.
+- **PRO / Premium tiers** — Subscription-gated features (Stripe checkout, billing portal, league-shared or user-based premium access) with a paywall on PRO-only tools. League/combo buyers get a post-checkout **invite link** (`/invite/<platform>/<season>/<league_id>`) so teammates can sign in and inherit shared PRO; buyers also see an in-app “Invite your league” banner.
 - **Dark mode** — Light/dark theme toggle with your preference saved automatically.
 - **Changelog** — In-app feed of every new feature and update.
 
