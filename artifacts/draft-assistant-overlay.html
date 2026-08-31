@@ -910,6 +910,7 @@
   .lrank.gold { color: var(--gold); }
   .lrank.silver { color: var(--text-subtle); }
   .lrank.bronze { color: #cd7c2f; }
+  .lrank.has-medal { width: 22px; display: inline-flex; align-items: center; justify-content: center; }
   .lname { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .lrow.is-me .lname { color: var(--accent); }
   .lgrade { font-size: 16px; font-weight: 800; flex-shrink: 0; width: 32px; text-align: right; }
@@ -1616,6 +1617,20 @@
     }
     return '<div class="rslot open"><span class="rslot-pos" style="background:' + slotColor(slot) + '">' + slot + '</span><span class="rslot-empty">open</span></div>';
   }
+  function rankMedal(rank) {
+    if (rank > 3) return '<span class="lrank">' + rank + "</span>";
+    const metals = {
+      1: { face: "#f6d375", rim: "#c99a2e", num: "#8a6410" },
+      2: { face: "#dde3ea", rim: "#aab4bf", num: "#5c6670" },
+      3: { face: "#e0a56a", rim: "#b87a44", num: "#7a4620" }
+    };
+    const m = metals[rank];
+    const cls = ["gold", "silver", "bronze"][rank - 1];
+    return '<span class="lrank has-medal ' + cls + '"><svg viewBox="0 0 24 24" width="20" height="20" aria-label="Rank ' + rank + '">'
+      + '<circle cx="12" cy="12" r="10" fill="' + m.rim + '"/>'
+      + '<circle cx="12" cy="12" r="8" fill="' + m.face + '"/>'
+      + '<text x="12" y="16" text-anchor="middle" font-size="10" font-weight="800" fill="' + m.num + '" font-family="Archivo,sans-serif">' + rank + "</text></svg></span>";
+  }
   function letterToScore(letter) {
     return { "A+": 92, A: 87, "A-": 82, "B+": 77, B: 72, "B-": 67, "C+": 62, C: 57, "C-": 52, D: 43, F: 20 }[letter] || 55;
   }
@@ -1681,7 +1696,7 @@
       + (g.provisional ? '<div class="grade-early">Early</div>' : "") + "</div>"
       + '<div class="grade-meta">' + gbar("Value", g.value) + gbar("Starters", g.starters) + gbar("Construction", g.construction) + "</div></div>";
 
-    if (mine.length >= 2) {
+    if (mine.length >= 1) {
       const myAvg = mine.reduce(function (s, p) { return s + p.ppg; }, 0) / mine.length;
       const draftedP = state.picks.map(function (x) { return x.p.ppg; });
       const lgAvg = draftedP.length ? draftedP.reduce(function (a, b) { return a + b; }, 0) / draftedP.length : myAvg;
@@ -1753,7 +1768,6 @@
   function renderGrades() {
     const all = gradeAllTeams();
     const odds = draftDone() ? playoffOdds(all) : {};
-    const medals = ["gold", "silver", "bronze"];
     let html = recapHtml(all);
     html += '<p class="recap-h" style="padding:8px 12px 6px">' + IC.trophy + "Draft grades</p>";
     all.forEach(function (t, i) {
@@ -1761,7 +1775,7 @@
       const wcls = w.label === "Future" ? "win-future" : w.label === "Win-Now" ? "win-winnow" : "win-balanced";
       const open = state.expanded === t.slot;
       html += '<div class="lrow' + (t.isMe ? " is-me" : "") + (open ? " is-open" : "") + '" data-legslot="' + t.slot + '">'
-        + '<span class="lrank ' + (medals[i] || "") + '">' + (i + 1) + "</span>"
+        + rankMedal(i + 1)
         + '<span class="lname">' + esc(t.name) + "</span>"
         + '<span class="win-chip ' + wcls + '">' + w.label + "</span>"
         + (odds[t.slot] != null ? '<span class="lpo" style="color:' + (odds[t.slot] >= 50 ? "var(--win)" : "var(--text-muted)") + '">' + odds[t.slot].toFixed(0) + "%</span>" : "")
