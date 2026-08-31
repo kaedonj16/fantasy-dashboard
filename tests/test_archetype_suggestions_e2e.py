@@ -552,3 +552,60 @@ def test_monte_carlo_swaps_are_deduped(monkeypatch):
                 if a.get("player_id") and not a.get("is_pick")}
         roster = frozenset([p for p in viewer_pids if p not in sent] + [str(s["player_id"])])
         assert roster in simulated
+
+
+def test_sim_weekly_delta_uses_remaining_week_baseline(monkeypatch):
+    """Impact wk must compare remaining-week means, not remaining-week-after
+    minus season-lineup-PPG-before. That mix made every acquisition look like
+    a weekly-win *loss* even when playoff odds (true before/after MC) rose.
+
+    Setup: remaining-week mean is 110; swap returns a slightly *higher* 114
+    PPG and +10 playoff points. wk must be positive. The old baseline used
+    _ppg_lineup / dynasty value against a ~110 league_avg, saturating current
+    win-prob near 1.0 so the same 114 PPG looked like a -48 point weekly drop.
+    """
+    import time as _t
+    import data_building.simulate_playoff_odds as sim
+
+    def _fake_swap(sim_state, vid, pids_after, n_sims=10_000):
+        return (60.0, 114.0)  # playoff_pct, new_avg
+
+    monkeypatch.setattr(sim, "simulate_with_swap", _fake_swap)
+
+    ctx = _seed_ctx()
+    viewer_pids = [str(p) for p in ctx["rosters"][0]["players"]]
+    fake_state = {
+        "ppg_map": {}, "pos_map": {}, "roster_positions": [],
+        "teams": [
+            {"roster_id": 1, "avg": 110.0},
+            {"roster_id": 2, "avg": 108.0},
+            {"roster_id": 3, "avg": 112.0},
+            {"roster_id": 4, "avg": 109.0},
+        ],
+        "roster_pid_map": {1: viewer_pids},
+        "week_profiles": {
+            1: {1: {"mean": 110.0}},
+            2: {1: {"mean": 110.0}},
+        },
+    }
+    cache_key = "sleeper:testlg-wkpo:2026"
+    ae._SIM_CACHE[cache_key] = {
+        "sim_state": fake_state, "base_odds": {1: 50.0}, "ts": _t.time(),
+    }
+    try:
+        out = ae.get_archetype_suggestions(
+            archetype="contending", platform="sleeper", league_id="testlg-wkpo",
+            season=2026, viewer_roster_id="1", league_type="1qb", league_size=10,
+            ctx=ctx,
+        )
+    finally:
+        ae._SIM_CACHE.pop(cache_key, None)
+
+    sugg = out["suggestions"]
+    assert sugg, "expected contending suggestions with the injected sim state"
+    wpds = [s["win_prob_delta"] for s in sugg]
+    pods = [s["playoff_odds_delta"] for s in sugg]
+    # Same remaining-week units: 114 vs 110 PPG is a weekly-win *gain*.
+    assert all(w > 0 for w in wpds), wpds
+    # Fake swap raised playoff % 50 → 60.
+    assert all(p > 0 for p in pods), pods

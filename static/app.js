@@ -7566,6 +7566,7 @@ window.initTradePage = function initTradePage(root = document) {
         if (arch === "rebuilding") hint.textContent = "Production loss if you sell";
         else if (arch === "distribute") hint.textContent = "Win % cost of losing this stud";
         else hint.textContent = "Win % if acquired";
+        hint.title = "wk is typical remaining-week win chance. po is simulated playoff-make odds. They can move in opposite directions: playoffs depend on the rest of the season, schedule, and ceiling — not just average weekly scoring.";
       }
       const desc = root.querySelector("#otcStrategyDesc");
       if (desc) {
@@ -7733,6 +7734,7 @@ window.initTradePage = function initTradePage(root = document) {
         if (impactHint) {
           const isSell = archetype === "distribute" || archetype === "rebuilding";
           impactHint.textContent = isSell ? "Win % cost if traded away" : "Win % if acquired";
+          impactHint.title = "wk is typical remaining-week win chance. po is simulated playoff-make odds. They can move in opposite directions: playoffs depend on the rest of the season, schedule, and ceiling — not just average weekly scoring.";
         }
 
         if (!_strategyData.length) {
@@ -7789,6 +7791,10 @@ window.initTradePage = function initTradePage(root = document) {
         const wpdCol = wpd >= 0 ? "#10b981"    : "#ef4444";
         const podBg  = pod >= 0 ? "#6366f11f"  : "#ef44441f";
         const podCol = pod >= 0 ? "#6366f1"    : "#ef4444";
+        const wpdTitle = isSellArch
+          ? "Change in typical remaining-week win chance if you trade this player away."
+          : "Change in typical remaining-week win chance if you add this player (dropping your weakest at the position).";
+        const podTitle = "Change in simulated playoff-make odds. Playoffs can move differently from weekly win % because they depend on the rest of the season, schedule, and ceiling — not just average weekly scoring.";
 
         const displayAsset = isSellArch && t.suggested_send && t.suggested_send[0]
           ? t.suggested_send[0] : t;
@@ -7802,8 +7808,8 @@ window.initTradePage = function initTradePage(root = document) {
           <span style="font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;background:${col}20;color:${col};flex-shrink:0;">${displayAsset.position || t.position}</span>
           <span class="otc-strategy-impact-name">${esc(displayAsset.name || t.name)}</span>
           <div class="otc-strategy-impact-stats">
-            <span class="otc-strategy-impact-badge" style="background:${wpdBg};color:${wpdCol};">${wpdStr}</span>
-            <span class="otc-strategy-impact-badge" style="background:${podBg};color:${podCol};">${podStr}</span>
+            <span class="otc-strategy-impact-badge" title="${wpdTitle}" style="background:${wpdBg};color:${wpdCol};">${wpdStr}</span>
+            <span class="otc-strategy-impact-badge" title="${podTitle}" style="background:${podBg};color:${podCol};">${podStr}</span>
           </div>
         </div>`;
       }).join("");
@@ -7935,8 +7941,8 @@ window.initTradePage = function initTradePage(root = document) {
         const pod = (t.net_playoff_odds_delta ?? t.playoff_odds_delta) || 0;
         const wpdCol = wpd >= 0 ? "#10b981" : "#ef4444";
         const podCol = pod >= 0 ? "#6366f1" : "#ef4444";
-        const wpdHtml = `<span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;background:${wpdCol}15;border:1px solid ${wpdCol}30;color:${wpdCol};white-space:nowrap;">${(wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1)}% wk</span>`;
-        const podHtml = `<span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;background:${podCol}15;border:1px solid ${podCol}30;color:${podCol};white-space:nowrap;">${(pod >= 0 ? "+" : "") + (pod * 100).toFixed(1)}% po</span>`;
+        const wpdHtml = `<span title="Change in typical remaining-week win chance for this full trade (what you send and receive)." style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;background:${wpdCol}15;border:1px solid ${wpdCol}30;color:${wpdCol};white-space:nowrap;">${(wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1)}% wk</span>`;
+        const podHtml = `<span title="Change in simulated playoff-make odds for this full trade. Playoffs can rise even when weekly win % dips because they depend on the rest of the season, schedule, and ceiling." style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;background:${podCol}15;border:1px solid ${podCol}30;color:${podCol};white-space:nowrap;">${(pod >= 0 ? "+" : "") + (pod * 100).toFixed(1)}% po</span>`;
 
         // Partner
         const pAColor = archColor[t.partner_arch || ""] || "var(--text-muted)";
