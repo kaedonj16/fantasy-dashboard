@@ -48,7 +48,7 @@ def test_filter_prefs_accepts_predecoded_jsonb_prefs():
 def test_lineup_lock_sends_bench_points_push():
     """An owner with a legal lineup but a better bench option gets the
     'Points on your bench' push (start Strong RB over Weak RB); an already-
-    optimal owner gets only the generic reminder."""
+    optimal owner is skipped (R06.2 — no generic spam for clean lineups)."""
     import pytest
     # Unlike the pure _filter_prefs tests above, this one drives the full
     # lineup-lock broadcast, which patches (and therefore imports) utils.utils
@@ -108,16 +108,28 @@ def test_lineup_lock_sends_bench_points_push():
          mock.patch.object(pn, "_app_state_set", return_value=None), \
          mock.patch.object(pn, "_send_to_endpoints",
                            side_effect=lambda eps, title, body, url="/", tag="update":
-                           sent.append({"title": title, "body": body}) or 1), \
+                           sent.append({"title": title, "body": body, "url": url}) or 1), \
          mock.patch.object(pn, "_filter_prefs", side_effect=lambda rows, t: list(rows)), \
          mock.patch("dashboard_services.api.get_nfl_players", return_value=nfl), \
-         mock.patch("dashboard_services.api.get_rosters", return_value=rosters), \
-         mock.patch("dashboard_services.api.get_league", return_value={"roster_positions": ["QB", "RB"]}), \
+         mock.patch("dashboard_services.platform_api.get_rosters", return_value=rosters), \
+         mock.patch("dashboard_services.platform_api.get_league",
+                    return_value={"roster_positions": ["QB", "RB"]}), \
          mock.patch.dict(sys.modules, {"app": fake_app}):
         pn.notify_lineup_lock()
 
     titles = [c["title"] for c in sent]
     assert "Points on your bench" in titles
-    assert "Lineups lock soon" in titles  # the optimal owner still gets the generic one
+    assert "Lineups lock soon" not in titles  # R06.2: clean lineup gets no generic
     bench = next(c for c in sent if c["title"] == "Points on your bench")
-    assert "Strong RB" in bench["body"] and "Weak RB" in bench["body"]
+    assert "Sit Weak RB for Strong RB (+10.0 proj)" in bench["body"]
+    assert bench["url"].endswith("/waivers?tab=startsit")
+
+
+def test_format_lineup_lock_swap():
+    from utils.lineup_issues import format_lineup_lock_swap
+    assert format_lineup_lock_swap(
+        {"in": "a", "out": "b", "gain": 3.25}, "Bench WR", "Start WR",
+    ) == "Sit Start WR for Bench WR (+3.2 proj)"
+    assert format_lineup_lock_swap(
+        {"gain": None}, "", "",
+    ) == "Sit a starter for a bench player (+0.0 proj)"

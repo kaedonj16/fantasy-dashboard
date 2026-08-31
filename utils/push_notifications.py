@@ -253,7 +253,10 @@ def notify_lineup_lock():
         # weekly hub. Owners whose starting lineup has real problems (empty
         # slots, serious injury designations, byes) get a specific message
         # instead of the generic reminder.
-        from utils.lineup_issues import find_lineup_issues, summarize_issues, projection_upgrades
+        from utils.lineup_issues import (
+            find_lineup_issues, summarize_issues, projection_upgrades,
+            format_lineup_lock_swap,
+        )
 
         teams_playing = set()
         for g in games:
@@ -279,69 +282,67 @@ def notify_lineup_lock():
         nfl_players = None
         sent = 0
         for league_id, platform in _get_subscribed_leagues():
-            url = f"/{platform}/{season}/{league_id}/weekly"
             tag = f"lineup-lock-{season}-{week}"
-            generic = f"Week {week} kicks off in about an hour. Make sure your starters are set."
 
             issue_summary_by_owner: dict = {}
             bench_summary_by_owner: dict = {}
-            if platform == "sleeper":
+            try:
+                from dashboard_services.api import get_nfl_players
+                from dashboard_services.platform_api import get_rosters, get_league
+                if nfl_players is None:
+                    nfl_players = get_nfl_players() or {}
+                # League slot layout for the optimal-lineup swap check.
+                # Providers normalize to Sleeper-shaped dicts (canonical player ids).
                 try:
-                    from dashboard_services.api import get_nfl_players, get_rosters, get_league
-                    if nfl_players is None:
-                        nfl_players = get_nfl_players() or {}
-                    # League slot layout for the optimal-lineup swap check.
-                    try:
-                        roster_positions = (get_league(league_id) or {}).get("roster_positions") or []
-                        roster_positions = [str(s) for s in roster_positions]
-                    except Exception:
-                        roster_positions = []
-                    for roster in (get_rosters(league_id) or []):
-                        owner_id = roster.get("owner_id") or ""
-                        starters = [str(p) for p in (roster.get("starters") or [])]
-                        if not owner_id or not starters:
-                            continue
-                        player_info = {}
-                        for pid in starters:
-                            pl = nfl_players.get(pid) or {}
-                            player_info[pid] = {
-                                "name": pl.get("full_name") or pl.get("last_name") or "",
-                                "team": pl.get("team") or "",
-                                "injury_status": pl.get("injury_status") or "",
-                            }
-                        issues = find_lineup_issues(starters, player_info, teams_playing)
-                        if issues:
-                            issue_summary_by_owner[str(owner_id)] = summarize_issues(issues)
-                            continue
-                        # No hard problem — is a bench player out-projecting a
-                        # starter at the same slot? (Legal like-for-like swaps.)
-                        if proj_map_wk and roster_positions:
-                            try:
-                                _res = {str(p) for p in (roster.get("reserve") or [])}
-                                _tax = {str(p) for p in (roster.get("taxi") or [])}
-                                eligible = [str(p) for p in (roster.get("players") or [])
-                                            if str(p) not in _res and str(p) not in _tax]
-                                pos_map = {pid: str((nfl_players.get(pid) or {}).get("position") or "")
-                                           for pid in eligible}
-                                swaps = projection_upgrades(
-                                    starters, eligible, proj_map_wk, pos_map,
-                                    roster_positions, min_gain=3.0, max_swaps=2,
+                    season_i = int(season)
+                    league = get_league(platform, str(league_id), season_i) or {}
+                    roster_positions = [str(s) for s in (league.get("roster_positions") or [])]
+                except Exception:
+                    roster_positions = []
+                for roster in (get_rosters(platform, str(league_id), int(season)) or []):
+                    owner_id = roster.get("owner_id") or ""
+                    starters = [str(p) for p in (roster.get("starters") or [])]
+                    if not owner_id or not starters:
+                        continue
+                    player_info = {}
+                    for pid in starters:
+                        pl = nfl_players.get(pid) or {}
+                        player_info[pid] = {
+                            "name": pl.get("full_name") or pl.get("last_name") or "",
+                            "team": pl.get("team") or "",
+                            "injury_status": pl.get("injury_status") or "",
+                        }
+                    issues = find_lineup_issues(starters, player_info, teams_playing)
+                    if issues:
+                        issue_summary_by_owner[str(owner_id)] = summarize_issues(issues)
+                        continue
+                    # No hard problem — is a bench player out-projecting a
+                    # starter at the same slot? (Legal like-for-like swaps.)
+                    if proj_map_wk and roster_positions:
+                        try:
+                            _res = {str(p) for p in (roster.get("reserve") or [])}
+                            _tax = {str(p) for p in (roster.get("taxi") or [])}
+                            eligible = [str(p) for p in (roster.get("players") or [])
+                                        if str(p) not in _res and str(p) not in _tax]
+                            pos_map = {pid: str((nfl_players.get(pid) or {}).get("position") or "")
+                                       for pid in eligible}
+                            swaps = projection_upgrades(
+                                starters, eligible, proj_map_wk, pos_map,
+                                roster_positions, min_gain=2.0, max_swaps=1,
+                            )
+                            if swaps:
+                                _s0 = swaps[0]
+                                _in = (nfl_players.get(_s0["in"]) or {})
+                                _out = (nfl_players.get(_s0["out"]) or {})
+                                _in_nm = _in.get("full_name") or _in.get("last_name") or "a bench player"
+                                _out_nm = _out.get("full_name") or _out.get("last_name") or "a starter"
+                                bench_summary_by_owner[str(owner_id)] = format_lineup_lock_swap(
+                                    _s0, _in_nm, _out_nm,
                                 )
-                                if swaps:
-                                    _gain = sum(s["gain"] for s in swaps)
-                                    _s0 = swaps[0]
-                                    _in = (nfl_players.get(_s0["in"]) or {})
-                                    _out = (nfl_players.get(_s0["out"]) or {})
-                                    _in_nm = _in.get("full_name") or _in.get("last_name") or "a bench player"
-                                    _out_nm = _out.get("full_name") or _out.get("last_name") or "a starter"
-                                    bench_summary_by_owner[str(owner_id)] = (
-                                        f"~{_gain:.0f} projected pts on your bench — "
-                                        f"consider starting {_in_nm} over {_out_nm}"
-                                    )
-                            except Exception as se:
-                                logger.debug("[notify] lineup_lock bench scan %s: %s", league_id, se)
-                except Exception as le:
-                    logger.warning("[notify] lineup_lock issue scan %s: %s", league_id, le)
+                        except Exception as se:
+                            logger.debug("[notify] lineup_lock bench scan %s: %s", league_id, se)
+            except Exception as le:
+                logger.warning("[notify] lineup_lock issue scan %s: %s", league_id, le)
 
             with get_conn() as conn:
                 rows = conn.execute(
@@ -352,18 +353,10 @@ def notify_lineup_lock():
 
             fix_url = f"/{platform}/{season}/{league_id}/waivers?tab=startsit"
 
-            # Owners split three ways, most urgent first: a hard lineup problem,
-            # else points left on the bench, else the generic reminder.
-            normal = [
-                r for r in rows
-                if str(r["owner_id"] or "") not in issue_summary_by_owner
-                and str(r["owner_id"] or "") not in bench_summary_by_owner
-            ]
-            sent += _send_to_endpoints(
-                _filter_prefs(normal, "lineup_lock"),
-                "Lineups lock soon", generic, url, tag,
-            )
-
+            # Owners with hard lineup problems or a material bench upgrade get
+            # a specific push. R06.2: skip the generic/normal reminder when the
+            # lineup is clean (no issues and no material swap) so we don't spam
+            # already-optimal lineups. Prefs still gate the sends below.
             flagged_by_owner: dict = {}
             bench_by_owner: dict = {}
             for r in rows:

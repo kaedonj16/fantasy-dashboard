@@ -9,8 +9,8 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **Multi-platform support** — Connect dynasty leagues from **Sleeper** (username sign-in) and **ESPN** (league ID validation). **Yahoo** OAuth is built but shown as Soon until API access is granted. **MFL** supports public leagues only (league ID, no private-auth path).
 - **Username sign-in / Identify** — Log in with just a Sleeper username; the app finds all your leagues automatically.
 - **Google sign-in** — Sign in with a Google account for cross-device, account-scoped state (watchlist sync, one-time "since last visit" digests).
-- **Keeper & redraft leagues** — Automatic detection of keeper-eligible and redraft leagues; keeper-specific tools and nav appear only where relevant.
-- **My Leagues (Portfolio)** — Cross-league hub that lists every league you're in with at-a-glance value and standings.
+- **Keeper & redraft leagues** — Automatic detection of keeper-eligible and redraft leagues; keeper-specific tools and nav appear only where relevant. **Auction** leagues are detected from provider draft settings (Sleeper/ESPN/MFL signals); Draft Room and Keeper show an honest provisional banner until auction grades / budget tools ship. **Best Ball** leagues get a Season Hub badge, nav labeled Waivers (no Start/Sit), and Start/Sit hidden on the waivers page.
+- **My Leagues (Portfolio)** — Cross-league hub that lists every league you're in with at-a-glance value and standings. **PRO** unlocks the cross-league **This week's moves** digest (lineup and injury actions ranked across all linked leagues).
 - **League switcher** — Jump between your leagues from anywhere via the nav dropdown.
 - **Multi-season support** — View any league across multiple seasons.
 - **PRO / Premium tiers** — Subscription-gated features (Stripe checkout, billing portal, league-shared or user-based premium access) with a paywall on PRO-only tools.
@@ -124,7 +124,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **NFL state / news integration** — Live NFL week state, player news, and injury data.
 - **Responsive design** — Container-query-driven layouts that adapt cleanly from desktop to mobile, with a mobile tab-bar dock.
 - **PWA & offline** — Installable progressive web app (service worker, manifest, offline page) plus push notifications for trades, breakouts, waivers, and scores. Rate limits use Redis when `REDIS_URL` is set so they hold across web workers; otherwise they are per-process.
-- **Weekly email digest** — Once-a-week recap emailed to signed-in users: your record and league rank, your roster's value risers/fallers, and the biggest leaguewide movers, linking back to your dashboard. De-duped per account per week, with one-click signed unsubscribe. Render cron `weekly-email` fires Tuesday 9am ET via `/api/cron/notifications` (`type=weekly`). Hourly push checks (lineup lock, close games, drops, injuries) run from Render cron `hourly-notifications`.
-- **Browser extension** — Companion extension for reading league/player context on Sleeper.
+- **Weekly email digest** — Once-a-week recap emailed to signed-in users: your record and league rank, your roster's value risers/fallers, and the biggest leaguewide movers, linking back to your dashboard. Accounts with multiple linked leagues also get short **Your other leagues** blocks (primary + up to two more). De-duped per account per week, with one-click signed unsubscribe. Render cron `weekly-email` fires Tuesday 9am ET via `/api/cron/notifications` (`type=weekly`). Hourly push checks (lineup lock, close games, drops, injuries) run from Render cron `hourly-notifications`.
+- **Browser extension** — Companion extension for ESPN/Yahoo live-draft relay and one-click ESPN private-league connect. See `extension/README.md` for the parity checklist (Sleeper overlay not yet; phone drafts = manual track; production zip via `pack_extension.py`).
 - **Trending surfaces** — Trending adds, risers/fallers, and value-movers boards driven by the live value engine.
 - **Static / informational pages** — About, Pricing, FAQ, Contact, Support, Privacy, Terms.

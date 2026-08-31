@@ -545,6 +545,86 @@ def schedule_bonus(ease_rank, total_teams, w: WaiverWeights = WEIGHTS) -> float:
     return w.schedule_bonus_max * (pct - 0.5)
 
 
+def schedule_urgency(ease_rank, total_teams: int = 32) -> str | None:
+    """Short claim urgency when the upcoming slate is among the hardest.
+
+    Returns None when schedule data is missing or the matchup is average/easy —
+    we only surface urgency when claiming *before* a rough stretch matters.
+    """
+    try:
+        rank = float(ease_rank)
+        total = float(total_teams or 32)
+    except (TypeError, ValueError):
+        return None
+    if not rank or total < 4:
+        return None
+    pct = (rank - 1.0) / (total - 1.0)  # 0 easiest … 1 hardest
+    if pct >= 0.75:
+        return "Claim before tough stretch"
+    if pct >= 0.60:
+        return "Schedule turns harder soon"
+    return None
+
+
+def roster_needs_drop(active_count: int, roster_slots: int) -> bool:
+    """True when the active roster is at/over capacity (a drop is required to add)."""
+    try:
+        n = int(active_count)
+        slots = int(roster_slots)
+    except (TypeError, ValueError):
+        return False
+    return slots > 0 and n >= slots
+
+
+def faab_bid_bands(pickup_score: float, score_min: float, score_range: float,
+                   need_mult: float = 1.0, handcuff_upside: float = 0.0) -> dict:
+    """Low / target / stretch FAAB % of budget for a waiver target.
+
+    Modest by design (waiver fliers, not trade pieces). ``need_mult`` and
+    ``handcuff_upside`` nudge the center when the add fills a hole or is an
+    elite handcuff. Always returns ints suitable for UI chips.
+    """
+    try:
+        smin = float(score_min)
+        srng = float(score_range) or 1.0
+        score = float(pickup_score)
+    except (TypeError, ValueError):
+        return {"faab_low": 0, "faab_target": 1, "faab_high": 2,
+                "faab_rationale": "Baseline flier bid"}
+    t = max(0.0, min(1.0, (score - smin) / srng))
+    center = 1.0 + (t ** 1.7) * 16.0
+    try:
+        need = float(need_mult or 1.0)
+    except (TypeError, ValueError):
+        need = 1.0
+    center *= 1.0 + min(max(need - 1.0, 0.0), 0.25)
+    try:
+        cuff = float(handcuff_upside or 0.0)
+    except (TypeError, ValueError):
+        cuff = 0.0
+    center += max(0.0, cuff) * 13.0
+    low = max(0, int(round(center * 0.72)))
+    target = max(low, int(round(center)))
+    high = max(target + 1, min(50, int(round(center * 1.12)) + 1))
+    bits = []
+    if t >= 0.85:
+        bits.append("top target on your wire")
+    elif t >= 0.55:
+        bits.append("solid add vs this week's board")
+    else:
+        bits.append("speculative flier")
+    if need > 1.05:
+        bits.append("fills a roster need")
+    if cuff >= 0.35:
+        bits.append("handcuff upside")
+    return {
+        "faab_low": low,
+        "faab_target": target,
+        "faab_high": high,
+        "faab_rationale": "; ".join(bits),
+    }
+
+
 def replacement_levels(values_by_pos: dict, cutoffs: dict) -> dict:
     """Replacement-level value per position: the value at the position's roster
     cutoff rank (#4). ``values_by_pos``: {pos: [values...]}; ``cutoffs``: {pos:

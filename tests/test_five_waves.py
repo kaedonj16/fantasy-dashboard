@@ -28,7 +28,9 @@ def test_schedule_idp_and_wednesday_copy():
 
 def test_keeper_mfl_banner():
     html = (ROOT / "dashboard_services" / "pages" / "_keeper_render.py").read_text(encoding="utf-8")
-    assert "MFL draft history is not auto-imported" in html
+    assert "MFL draft rounds are not auto-imported" in html
+    # R02.2: auction $ can import when providers expose amounts.
+    assert "Auction $ paid was imported" in html or "enter auction $ paid" in html
 
 
 def test_compare_does_not_call_am_a_pro_feature():

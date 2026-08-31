@@ -672,6 +672,7 @@ _RANKINGS_JS_V = _static_hash("rankings.js")
 _TEAMS_JS_V = _static_hash("teams.js")
 _CSS_FILE = _ensure_minified_css()
 _CSS_V = _static_hash(_CSS_FILE)
+_SEO_LITE_CSS_V = _static_hash("seo_lite.css")
 _FA_V = _static_hash("font-awesome.css")
 _ICONS_V = _static_hash("icons.css")
 
@@ -2421,6 +2422,21 @@ def _nav_is_redraft(platform, league_id, season) -> bool:
         return False
 
 
+def _nav_is_best_ball(platform, league_id, season) -> bool:
+    """True when the league is Best Ball (no weekly lineup management)."""
+    try:
+        from utils.league_format import is_best_ball
+        ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
+        return is_best_ball(
+            ctx.get("league") or {},
+            settings=(ctx.get("league_settings")
+                      or (ctx.get("league") or {}).get("settings")
+                      or ctx.get("settings") or {}),
+        )
+    except Exception:
+        return False
+
+
 def _mobile_nav(active: str, league_id, platform, season) -> str:
     """Mobile navigation: a dynamic bottom dock plus a full "More" sheet.
 
@@ -2541,10 +2557,16 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
 
     weekly_html = ""
     if draft_ended or not offseason:
+        _bb_sheet = False
+        try:
+            _bb_sheet = _nav_is_best_ball(platform, league_id, season)
+        except Exception:
+            _bb_sheet = False
         rows = [
             _sl("weekly", "Matchups"), _sl("recap", "Weekly Recap"),
             _sl("scout", "Opponent Scout"), _sl("optimal", "Lineup Efficiency"),
-            _sl("waivers", "Waivers & Start/Sit"), _sl("schedule", "Schedule Assistant"),
+            _sl("waivers", "Waivers" if _bb_sheet else "Waivers & Start/Sit"),
+            _sl("schedule", "Schedule Assistant"),
         ]
         if not offseason:
             rows.append(_sl("redzone", "Redzone"))
@@ -3753,13 +3775,20 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Weekly dropdown is available as soon as the draft is done
     draft_ended = has_draft_ended(league_id, platform, season)
     if draft_ended or not offseason_mode:
+        _bb = False
+        try:
+            _bb = _nav_is_best_ball(platform, league_id, season)
+        except Exception:
+            _bb = False
+        _waiver_label = "Waivers" if _bb else "Waivers & Start/Sit"
         _weekly_items = [
             ("Matchups", "page_weekly", "weekly", False),
             ("Weekly Recap", "league_pages.page_recap", "recap", False),
             ("Opponent Scout", "page_weekly", "scout", False, "?tab=scout"),
             ("Lineup Efficiency", "page_weekly", "optimal", False, "?tab=optimal"),
             # Roster/lineup tools live with the other weekly tools, not Players.
-            ("Waivers & Start/Sit", "league_pages.page_waivers", "waivers", False),
+            # Best Ball has no weekly Start/Sit — keep Waivers only.
+            (_waiver_label, "league_pages.page_waivers", "waivers", False),
             ("Schedule Assistant", "page_schedule", "schedule", False),
         ]
         # Redzone lives inside the Weekly dropdown. When a game is actually
@@ -4683,18 +4712,23 @@ def render_page(
     # though the settings gear itself renders twice.
     nav_html = nav_html + _link_modal_html()
 
-    # Logged-out visitors on lite_js pages (the landing page) get the slim
-    # public.js for a fast first paint. public.js omits everything below the
-    # @public-js:core-end marker — the nav player-search and player modal included
-    # — so the feature half (app-features.js) is lazy-loaded on demand: prefetched
-    # on idle and force-loaded the moment a guest opens search or a player card
-    # (see the ensureFeatures loader in app.js). Only go lite when that features
-    # bundle actually built; otherwise serve the full app.js so nothing breaks.
+    # Logged-out visitors on lite_js pages (landing + public SEO surfaces) get
+    # the slim public.js for a fast first paint. public.js omits everything below
+    # the @public-js:core-end marker — the nav player-search and player modal
+    # included — so the feature half (app-features.js) is lazy-loaded on demand:
+    # prefetched on idle (eagerly for compare/prospects/breakouts) and
+    # force-loaded the moment a guest opens search or a player card (see the
+    # ensureFeatures loader in app.js). Only go lite when that features bundle
+    # actually built; otherwise serve the full app.js so nothing breaks.
     _use_lite = (bool(kwargs.get("lite_js"))
                  and not _session_signed_in()
                  and bool(_FEATURES_JS_FILE))
     _page_js_file = _PUBLIC_JS_FILE if _use_lite else _APP_JS_FILE
     _page_js_v = _PUBLIC_JS_V if _use_lite else _APP_JS_V
+    # Logged-out lite_js SEO shells get a smaller CSS pack instead of the full
+    # dashboard bundle; signed-in visitors keep the full stylesheet.
+    _page_css_file = "seo_lite.css" if _use_lite else _CSS_FILE
+    _page_css_v = _SEO_LITE_CSS_V if _use_lite else _CSS_V
     # Tell the lazy-loader where the feature bundle lives (only on lite pages;
     # on full pages the features are already present so the loader no-ops).
     _features_js_js = (
@@ -4816,8 +4850,8 @@ def render_page(
         ),
         paywall_js_v=_PAYWALL_JS_V,
         paywall_css_v=_PAYWALL_CSS_V,
-        css_file=_CSS_FILE,
-        css_v=_CSS_V,
+        css_file=_page_css_file,
+        css_v=_page_css_v,
         fa_v=_FA_V,
         icons_v=_ICONS_V,
         viewer_roster_id_js=_json.dumps(str(viewer_roster_id)),
@@ -9880,6 +9914,25 @@ def api_start_sit_options():
         _vg = _factors["vegas"]
         _fl = _factors["floor"]
 
+        _return_plan = None
+        if injury_status:
+            try:
+                from dashboard_services.injury_return import weeks_out_for_player as _ss_wo
+                from utils.injury_plan import injury_plan as _ss_plan
+                _pval = None
+                try:
+                    _pval = float(row.get("value") or 0) or None
+                except Exception:
+                    _pval = None
+                _return_plan = _ss_plan(
+                    status=injury_status,
+                    espn_weeks=_ss_wo(pid),
+                    player_value=_pval,
+                    has_open_ir_slot=False,
+                )
+            except Exception:
+                _return_plan = None
+
         positions_out[pos].append({
             "player_id": pid,
             "name": player_name,
@@ -9895,6 +9948,7 @@ def api_start_sit_options():
             "def_total": def_total,
             "pos_rank_label": row.get("pos_rank_label") or "",
             "injury_status": injury_status,
+            "return_plan": _return_plan,
             "usage_delta": usage_delta,
             "usage_stat": _ut_ss.get("stat"),
             "game_env": _ss_game_env(home_team_of.get(team), current_week) if not on_bye else None,
@@ -11296,10 +11350,12 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     _final_desc = _desc or _players_desc
     if platform:
         return render_page(_final_title, league_id, "players", body_html, platform, season,
-                           description=_final_desc, canonical=_canonical)
+                           description=_final_desc, canonical=_canonical,
+                           lite_js=True)
 
     return render_page(_final_title, None, "players", body_html,
-                       description=_final_desc, canonical=_canonical)
+                       description=_final_desc, canonical=_canonical,
+                       lite_js=True)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/prospects")
@@ -11313,7 +11369,10 @@ def page_prospects(platform: str, season: int, league_id: str):
     from dashboard_services.pages.rookies_page import build_prospects_body
     from dashboard_services.admin_auth import is_admin
     body_html = build_prospects_body(is_admin=is_admin())
-    return render_page("Prospect Rankings", league_id, "prospects", body_html, platform, season)
+    return render_page(
+        "Prospect Rankings", league_id, "prospects", body_html, platform, season,
+        lite_js=True,
+    )
 
 
 # /metrics is served by routes/league_pages_bp.py (its /metrics/og.png route stays below).
@@ -11638,7 +11697,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
       }}
     </script>
     """
-    return render_page("Breakout Engine", league_id, "breakouts", body_html, platform, season)
+    return render_page("Breakout Engine", league_id, "breakouts", body_html, platform, season,
+                       lite_js=True)
 
 
 # ── Per-player trade-value pages (SEO landing pages) ──────────────────────────
@@ -18193,6 +18253,29 @@ def api_player_details(player_id: str):
                     "body_part": (_fp.get("injury_body_part") or "").strip(),
                     "notes": (_fp.get("injury_notes") or "").strip(),
                 }
+                # Approximate return planner (ESPN date when available).
+                try:
+                    from dashboard_services.injury_return import weeks_out_for_player as _wofp
+                    from utils.injury_plan import injury_plan as _inj_plan
+                    _espn_w = _wofp(str(player_id))
+                    _pval = None
+                    try:
+                        _pval = float(player_value.get("value") or 0) or None
+                    except Exception:
+                        _pval = None
+                    _plan = _inj_plan(
+                        status=_raw_inj,
+                        espn_weeks=_espn_w,
+                        player_value=_pval,
+                        has_open_ir_slot=False,  # league IR slots resolved client-side when known
+                    )
+                    if _plan:
+                        injury["return_plan"] = _plan
+                        if _espn_w is not None:
+                            injury["return_weeks"] = _espn_w
+                            injury["return_source"] = "espn"
+                except Exception:
+                    logger.debug("[api_player_details] injury plan skipped", exc_info=True)
         except Exception:
             logger.debug("[api_player_details] injury lookup skipped", exc_info=True)
 
@@ -24675,6 +24758,59 @@ def build_portfolio_body(
         f"</div>"
     )
 
+    # Cross-league action digest (R04) — PRO-gated; filled async from /api/portfolio-actions.
+    moves_card = (
+        "<div class='card' id='pfMovesCard' style='margin-bottom:14px;' hidden>"
+        "<div class='card-header'><h2>This week’s moves</h2>"
+        "<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>"
+        "prioritized across your leagues</span></div>"
+        "<div class='card-body' id='pfMovesBody'>"
+        "<div style='font-size:13px;color:var(--text-muted);'>Checking lineups…</div>"
+        "</div></div>"
+        "<script>(function(){"
+        "function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){"
+        "return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c];});}"
+        "var card=document.getElementById('pfMovesCard');"
+        "var body=document.getElementById('pfMovesBody');"
+        "if(!card||!body)return;"
+        "var prem=(window.__brctx&&window.__brctx.isPremium)||"
+        "(document.getElementById('page-root')&&document.getElementById('page-root').getAttribute('data-premium')==='true');"
+        "if(!prem){"
+        "card.hidden=false;"
+        "body.innerHTML='<div style=\"text-align:center;padding:28px 16px;\">"
+        "<div style=\"font-size:14px;font-weight:700;margin-bottom:6px;\">Cross-league Front Office</div>"
+        "<div style=\"font-size:13px;color:var(--text-muted);margin-bottom:14px;\">"
+        "PRO surfaces your top lineup and injury moves across every linked league.</div>"
+        "<button type=\"button\" onclick=\"if(typeof showPaywall===\\'function\\')showPaywall(\\'gm-memo\\')\" "
+        "style=\"padding:10px 16px;border:none;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;font-size:13px;cursor:pointer;\">"
+        "Unlock with PRO</button></div>';"
+        "return;}"
+        "fetch('/api/portfolio-actions',{cache:'no-store'}).then(function(r){return r.json().then(function(d){return {status:r.status,d:d||{}};});})"
+        ".then(function(res){"
+        "if(res.status===403&&res.d.paywall){"
+        "card.hidden=false;"
+        "body.innerHTML='<div style=\"text-align:center;padding:28px 16px;\">"
+        "<div style=\"font-size:13px;color:var(--text-muted);margin-bottom:12px;\">Cross-league moves are a PRO feature.</div>"
+        "<button type=\"button\" onclick=\"if(typeof showPaywall===\\'function\\')showPaywall(\\'gm-memo\\')\" "
+        "style=\"padding:10px 16px;border:none;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;font-size:13px;cursor:pointer;\">"
+        "Upgrade to PRO</button></div>';return;}"
+        "var acts=(res.d&&res.d.actions)||[];"
+        "if(!acts.length){card.hidden=true;return;}"
+        "card.hidden=false;"
+        "body.innerHTML=acts.map(function(a){"
+        "return '<a href=\"'+esc(a.href)+'\" style=\"display:block;padding:10px 0;border-top:1px solid var(--grid);"
+        "text-decoration:none;color:inherit;\">'"
+        "+'<div style=\"font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;"
+        "letter-spacing:.04em;\">'+esc(a.league_name)+' · '+esc(a.kind)+'</div>'"
+        "+'<div style=\"font-size:14px;font-weight:700;margin-top:2px;\">'+esc(a.title)+'</div>'"
+        "+(a.detail?'<div style=\"font-size:12px;color:var(--text-muted);margin-top:2px;\">'+esc(a.detail)+'</div>':'')"
+        "+'</a>';"
+        "}).join('');"
+        "var first=body.querySelector('a'); if(first) first.style.borderTop='none';"
+        "}).catch(function(){var c=document.getElementById('pfMovesCard'); if(c) c.hidden=true;});"
+        "})();</script>"
+    )
+
     # ── League list - standings-table ─────────────────────────────────────
     league_rows = ""
     # Unlink control: only for account-linked ESPN/Yahoo leagues (Sleeper leagues
@@ -25197,7 +25333,7 @@ def build_portfolio_body(
     # Constrain to a centered column so the page doesn't stretch edge-to-edge on
     # wide monitors (matches the League Health treatment).
     return (css + '<div style="max-width:1040px;margin:0 auto;">'
-            + top_strip + league_card + insights_label + insight_top + bottom_row + '</div>')
+            + top_strip + moves_card + league_card + insights_label + insight_top + bottom_row + '</div>')
 
 
 # build_scout_body / _week_proj_points live in dashboard_services/pages/scout_page.py

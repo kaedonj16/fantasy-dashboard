@@ -10,7 +10,8 @@ as the manager tweaks the keeper limit and cost rules.
 Draft-round auto-detection uses Sleeper's season-chain draft results, Yahoo's
 draftresults feed, and ESPN's completed draft (League.draft / mDraftDetail).
 Waiver adds anywhere still start blank so the manager can set the cost.
-Auction/FAAB keeper costs are not auto-detected — set the drafted round by hand.
+Auction/FAAB dollars are imported when providers expose them (MFL pick amounts);
+otherwise the $ field stays editable.
 """
 from __future__ import annotations
 
@@ -276,6 +277,118 @@ def _drafted_round_map(platform: str, league_id: str, season: int = 0) -> Dict[s
     if plat != "sleeper":
         return {}
     return _sleeper_draft_history(league_id, season)[0]
+
+
+def _coerce_auction_amount(raw: Any) -> Optional[float]:
+    """Parse a provider auction/FAAB dollar field into a positive float."""
+    if raw in (None, "", 0, "0"):
+        return None
+    if isinstance(raw, str):
+        raw = raw.strip().lstrip("$").replace(",", "")
+        if not raw:
+            return None
+    try:
+        amt = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return amt if amt > 0 else None
+
+
+def parse_auction_amounts_from_picks(picks: Optional[List[Any]]) -> Dict[str, float]:
+    """player_id -> auction $ from a flat pick list (pure).
+
+    Reads MFL ``metadata.auction_amount``, Sleeper ``metadata.amount``, and
+    common top-level amount / bidAmount fields when present.
+    """
+    out: Dict[str, float] = {}
+    for p in picks or []:
+        if not isinstance(p, dict):
+            continue
+        pid = str(p.get("player_id") or p.get("playerId") or "").strip()
+        if not pid:
+            continue
+        meta = p.get("metadata") if isinstance(p.get("metadata"), dict) else {}
+        raw = None
+        for src in (
+            meta.get("auction_amount"),
+            meta.get("amount"),
+            p.get("auction_amount"),
+            p.get("amount"),
+            p.get("bidAmount"),
+            p.get("bid_amount"),
+        ):
+            if src is not None and src != "":
+                raw = src
+                break
+        amt = _coerce_auction_amount(raw)
+        if amt is None:
+            continue
+        # Prefer the most recent / last-seen amount if a player appears twice.
+        out[pid] = amt
+    return out
+
+
+def parse_auction_amounts_from_drafts(drafts: Optional[List[Dict[str, Any]]]) -> Dict[str, float]:
+    """player_id -> auction $ from provider draft pick metadata (pure)."""
+    out: Dict[str, float] = {}
+    for d in drafts or []:
+        out.update(parse_auction_amounts_from_picks(d.get("picks") or []))
+    return out
+
+
+def _hydrate_sleeper_draft_picks(drafts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Attach picks to Sleeper draft shells (list endpoint omits pick rows)."""
+    try:
+        from dashboard_services.api import get_draft_picks
+    except Exception:
+        return drafts
+    hydrated: List[Dict[str, Any]] = []
+    for d in drafts or []:
+        row = dict(d)
+        if row.get("picks"):
+            hydrated.append(row)
+            continue
+        did = row.get("draft_id")
+        if not did:
+            hydrated.append(row)
+            continue
+        try:
+            row["picks"] = get_draft_picks(str(did)) or []
+        except Exception:
+            logger.debug("[keeper] sleeper picks for auction costs failed", exc_info=True)
+            row["picks"] = []
+        hydrated.append(row)
+    return hydrated
+
+
+def _auction_cost_map(
+    platform: str,
+    league_id: str,
+    season: int,
+    drafts: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, float]:
+    """Best-effort auction $ paid map for a league.
+
+    MFL embeds amounts on draft picks. Sleeper returns draft shells without
+    picks — hydrate via get_draft_picks when needed. ESPN/Yahoo rarely expose
+    bid amounts on the normalized draft list; the UI stays editable.
+    """
+    plat = (platform or "").lower()
+    if not league_id and drafts is None:
+        return {}
+    if drafts is None:
+        try:
+            from dashboard_services.platform_api import get_drafts
+            drafts = get_drafts(plat, str(league_id), int(season)) or []
+        except Exception:
+            logger.debug("[keeper] drafts for auction costs failed", exc_info=True)
+            return {}
+    costs = parse_auction_amounts_from_drafts(drafts)
+    if costs:
+        return costs
+    if plat == "sleeper":
+        return parse_auction_amounts_from_drafts(_hydrate_sleeper_draft_picks(list(drafts or [])))
+    return {}
 
 
 def _num_rounds(platform: str, league_id: str, default: int = 15,
@@ -655,4 +768,32 @@ def build_keeper_body(
             for c in ranked
         ],
     }
+    try:
+        from utils.league_format import detect_league_format
+        from dashboard_services.platform_api import get_drafts
+        _drafts = get_drafts(_plat, league_id, _season) or []
+        _fmt = detect_league_format(
+            league=ctx.get("league") or {},
+            drafts=_drafts,
+            settings=ctx.get("league_settings") or (ctx.get("league") or {}).get("settings"),
+        )
+        seed["isAuction"] = bool(_fmt.get("is_auction"))
+        seed["auctionBudget"] = _fmt.get("auction_budget")
+        costs = (
+            _auction_cost_map(_plat, league_id, _season, drafts=_drafts)
+            if seed["isAuction"] else {}
+        )
+        imported = 0
+        for pl in seed["players"]:
+            amt = costs.get(str(pl["id"]))
+            if amt is not None:
+                pl["auctionCost"] = round(float(amt), 2)
+                imported += 1
+            else:
+                pl["auctionCost"] = None
+        seed["auctionCostsImported"] = imported > 0
+    except Exception:
+        seed["isAuction"] = False
+        seed["auctionBudget"] = None
+        seed["auctionCostsImported"] = False
     return render_keeper_html(seed)

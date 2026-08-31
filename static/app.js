@@ -87,9 +87,17 @@ if (typeof window.openPlayerModal === 'undefined') {
 }
 // Prefetch the feature bundle once the page is idle so the first real interaction
 // is instant (no-op when there's no lazy bundle, i.e. the full app.js is loaded).
+// Interactive SEO shells (compare / prospects / breakouts) need feature-half init
+// before first paint is useful — load eagerly instead of waiting for idle.
 if (window.__FEATURES_JS) {
   var _pf = function () { ensureFeatures(); };
-  if ('requestIdleCallback' in window) requestIdleCallback(_pf, { timeout: 4000 });
+  var _eagerLite = document.querySelector(
+    '.page-shell[data-page="compare"],' +
+    '.page-shell[data-page="prospects"],' +
+    '.page-shell[data-page="breakouts"]'
+  );
+  if (_eagerLite) _pf();
+  else if ('requestIdleCallback' in window) requestIdleCallback(_pf, { timeout: 4000 });
   else setTimeout(_pf, 2500);
 }
 
@@ -12363,6 +12371,47 @@ function pmSlugify(name) {
 }
 
 // @public-js:core-end  (everything below is app/feature code; excluded from public.js)
+
+// R06.3 — one in-app toast near lineup lock when starters need attention.
+// Safe no-op when league context or API data is missing.
+window.BRLineupLockToast = (function () {
+  function _storageKey(season, week) {
+    return 'br-lineup-lock-toast-' + season + '-' + week;
+  }
+  function tryShow() {
+    try {
+      var shell = document.querySelector(
+        '.page-shell[data-page="dashboard"], .page-shell[data-page="weekly"]'
+      );
+      if (!shell || !window._isSignedIn) return;
+      var ctx = window.__brctx || {};
+      if (!ctx.leagueId) return;
+      var params = new URLSearchParams({
+        league_id: ctx.leagueId,
+        platform: ctx.platform || 'sleeper',
+        season: String(ctx.season || ''),
+      });
+      fetch('/api/lineup-lock-hint?' + params.toString(), { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          if (!d || !d.ok || !d.in_window || !d.has_issues) return;
+          var key = _storageKey(d.season, d.week);
+          try { if (localStorage.getItem(key) === '1') return; } catch (e) {}
+          if (typeof showToast !== 'function') return;
+          showToast(d.message || 'Lineup lock is coming — check your starters.', 'warning', 8000);
+          try { localStorage.setItem(key, '1'); } catch (e2) {}
+        })
+        .catch(function () {});
+    } catch (e) {}
+  }
+  return { tryShow: tryShow };
+})();
+
+bindOnce(document, 'brLineupLockToastBoot', 'DOMContentLoaded', function () {
+  if (window.BRLineupLockToast && typeof window.BRLineupLockToast.tryShow === 'function') {
+    window.BRLineupLockToast.tryShow();
+  }
+});
 
 // League format for player-modal / ADP fetches. Page scripts (trade calc, teams)
 // may set `_leagueType` / `_leagueSize`; every other page reads `__brctx` which

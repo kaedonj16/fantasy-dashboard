@@ -630,19 +630,81 @@ def test_late_round_upside_is_smooth_and_requires_a_role_path():
 
 
 def test_opportunity_cost_requires_market_survival_and_material_gap():
+    """Calibrated opportunity-cost bands and reach/steal gates (R09.4 / R08.4).
+
+    Gap severity (Decision Score points):
+      none < 4, modest < 9, material < 15, severe ≥ 15
+    significantReach also needs outside-market, not BPA, and survivePct ≥ 20
+      (ADP_REACH_SURVIVE). Missing survivePct does not auto-fail the gate.
+    significantSteal needs marketFall ≥ max(8, 0.5×σ) and Board PS ≥ 80.
+    Deep Dive reach/steal cards gate on these helpers (regression below).
+    """
     out = _run_need_cases("""(() => ({
+      surviveFloor:C.ADP_REACH_SURVIVE,
+      none:C.opportunityCostVerdict({selectedScore:84,bestAlternativeScore:87,outsideMarketRange:true,isBpa:false,survivePct:70}),
+      modest:C.opportunityCostVerdict({selectedScore:80,bestAlternativeScore:88,outsideMarketRange:true,isBpa:false,survivePct:70}),
+      material:C.opportunityCostVerdict({selectedScore:80,bestAlternativeScore:90,outsideMarketRange:true,isBpa:false,survivePct:70}),
+      severe:C.opportunityCostVerdict({selectedScore:71,bestAlternativeScore:91,outsideMarketRange:true,isBpa:false,survivePct:70}),
       tiny:C.opportunityCostVerdict({selectedScore:84,bestAlternativeScore:85,outsideMarketRange:true,isBpa:false,survivePct:70}),
       large:C.opportunityCostVerdict({selectedScore:71,bestAlternativeScore:91,outsideMarketRange:true,isBpa:false,survivePct:70}),
       adpOnly:C.opportunityCostVerdict({selectedScore:84,bestAlternativeScore:85,outsideMarketRange:true,isBpa:false,survivePct:70}),
-      wontLast:C.opportunityCostVerdict({selectedScore:71,bestAlternativeScore:91,outsideMarketRange:true,isBpa:false,survivePct:10})
+      wontLast:C.opportunityCostVerdict({selectedScore:71,bestAlternativeScore:91,outsideMarketRange:true,isBpa:false,survivePct:10}),
+      stealOk:C.significantSteal({marketFall:10,adpUncertainty:12,boardPickScore:82}),
+      stealLowPs:C.significantSteal({marketFall:20,adpUncertainty:12,boardPickScore:75}),
+      stealTinyFall:C.significantSteal({marketFall:6,adpUncertainty:12,boardPickScore:90}),
+      stealWideSigma:C.significantSteal({marketFall:9,adpUncertainty:20,boardPickScore:90}),
+      stealWideSigmaClear:C.significantSteal({marketFall:10,adpUncertainty:20,boardPickScore:90}),
+      copy:C.formatOpportunityCostCopy({altName:'Breece Hall',gap:14}),
+      copyLow:C.formatOpportunityCostCopy({altName:'Breece Hall',gap:14,survivePct:null,adp:null}),
+      copyTiny:C.formatOpportunityCostCopy({altName:'Breece Hall',gap:2})
     }))()""")
+    assert out["surviveFloor"] == 20
+    assert out["none"]["severity"] == "none" and out["none"]["gap"] == 3
+    assert out["modest"]["severity"] == "modest" and out["modest"]["gap"] == 8
+    assert out["modest"]["significantReach"] is False  # gap < 9
+    assert out["material"]["severity"] == "material" and out["material"]["gap"] == 10
+    assert out["material"]["significantReach"] is True
+    assert out["severe"]["severity"] == "severe" and out["severe"]["gap"] == 20
     assert out["tiny"]["severity"] == "none"
     assert out["tiny"]["significantReach"] is False
     assert out["large"]["severity"] == "severe"
     assert out["large"]["significantReach"] is True
     assert out["adpOnly"]["significantReach"] is False
     assert out["wontLast"]["significantReach"] is False
+    assert out["stealOk"] is True
+    assert out["stealLowPs"] is False
+    assert out["stealTinyFall"] is False
+    # threshold = max(8, 0.5×20) = 10; fall of 9 fails, 10 clears
+    assert out["stealWideSigma"] is False
+    assert out["stealWideSigmaClear"] is True
+    assert out["copy"] == "Preferred Breece Hall by ~14 Decision Score"
+    assert out["copyLow"] == "Preferred Breece Hall by ~14 Decision Score · lower confidence"
+    assert out["copyTiny"] == ""
 
+    room = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    # R08.4: Deep Dive cards/verdicts must keep opportunity-aware gates.
+    assert "significantSteal" in room
+    assert "significantReach" in room
+    assert "formatOpportunityCostCopy" in room or "ddOppCopy" in room
+    assert "opportunitySeverity" in room
+
+
+def test_opportunity_cost_gap_band_boundaries():
+    """Document exact band edges: none<4, modest<9, material<15, severe≥15."""
+    out = _run_need_cases("""(() => {
+      const g = (sel, best) => C.opportunityCostVerdict({
+        selectedScore:sel, bestAlternativeScore:best,
+        outsideMarketRange:false, isBpa:true, survivePct:50
+      }).severity;
+      return {at3:g(80,83), at4:g(80,84), at8:g(80,88), at9:g(80,89),
+              at14:g(80,94), at15:g(80,95)};
+    })()""")
+    assert out["at3"] == "none"
+    assert out["at4"] == "modest"
+    assert out["at8"] == "modest"
+    assert out["at9"] == "material"
+    assert out["at14"] == "material"
+    assert out["at15"] == "severe"
 
 def test_bye_severity_uses_starter_impact_not_raw_count():
     out = _run_need_cases("""(() => ({
@@ -657,6 +719,24 @@ def test_bye_severity_uses_starter_impact_not_raw_count():
     assert out["bench"][0]["level"] == "none"
     assert out["starters"][0]["level"] in {"meaningful", "severe"}
     assert out["covered"][0]["players"][0]["coverQuality"] == pytest.approx(0.8)
+
+
+def test_bye_severity_penalty_is_bounded_in_decision_score():
+    out = _run_need_cases("""(() => ({
+      none:C.byeSeverityPenalty(''),
+      mild:C.byeSeverityPenalty('mild'),
+      severe:C.byeSeverityPenalty('severe'),
+      base:C.decisionScore({base:90,utility:1}),
+      penalized:C.decisionScore({base:90,utility:1,byePenalty:4}),
+      clamped:C.decisionScore({base:90,utility:1,byePenalty:99})
+    }))()""")
+    assert out["none"] == 0
+    assert out["mild"] == 1
+    assert out["severe"] == 4
+    assert out["penalized"] == out["base"] - 4
+    assert out["clamped"] == out["base"] - 4
+    assert "byePenalty: byePenalty" in (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    assert "byeSeverityPenalty(byeConflictLevel(p))" in (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
 
 def test_late_round_path_ignores_ppg_and_requires_a_role():
@@ -683,3 +763,138 @@ def test_historical_alternatives_rank_by_decision_score():
     assert out["selectedScore"] == 71
     assert out["bestAlternativeScore"] == 91
     assert out["bestAlternative"]["id"] == "b"
+
+
+def test_suggest_auction_bid_is_guidance_share_of_budget_per_slot():
+    """R02.3: BR value share × (remainingBudget / slotsLeft); label is guidance."""
+    script = (
+        "global.self=global; global.BRPickScore=require(%s); const C=require(%s);"
+        "const top=C.suggestAuctionBid({value:9000,maxValue:9000,remainingBudget:200,slotsLeft:15});"
+        "const mid=C.suggestAuctionBid({value:4500,maxValue:9000,remainingBudget:200,slotsLeft:15});"
+        "const zero=C.suggestAuctionBid({value:0,maxValue:9000,remainingBudget:200,slotsLeft:15});"
+        "const cap=C.suggestAuctionBid({value:9000,maxValue:9000,remainingBudget:5,slotsLeft:1});"
+        "process.stdout.write(JSON.stringify({top:top,mid:mid,zero:zero,cap:cap}));"
+        % (json.dumps(str(PICK_JS)), json.dumps(str(CORE_JS)))
+    )
+    res = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=20)
+    assert res.returncode == 0, res.stderr
+    out = json.loads(res.stdout)
+    assert out["top"]["label"] == "guidance"
+    assert out["top"]["dollars"] == 13  # round(1.0 * 200/15)
+    assert out["mid"]["label"] == "guidance"
+    assert out["mid"]["dollars"] == 7   # round(0.5 * 200/15)
+    assert out["zero"]["dollars"] == 0
+    assert out["cap"]["dollars"] == 5
+    # Draft Room surfaces the label as guidance (not clearing prices).
+    room = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    assert "suggestAuctionBid" in room or "auctionBidGuidance" in room
+    assert "guidance" in room
+    assert "not a clearing price" in room or "not clearing prices" in room
+    assert "Auction draft grades aren’t available yet" in room or \
+           "Auction draft grades aren't available yet" in room
+
+
+def test_taken_before_pick_excludes_future_and_includes_keepers():
+    out = _run_need_cases("""(() => C.takenBeforePick({
+      pickNo: 5,
+      picks: {
+        1: {id:'a'}, 3: {id:'b'}, 5: {id:'c'}, 7: {id:'d'}
+      },
+      keepers: [{id:'k1'}, {id:'b'}]
+    }))()""")
+    assert out == {"a": True, "b": True, "k1": True}
+    assert "c" not in out and "d" not in out
+
+
+def test_historical_decision_context_no_future_leak():
+    out = _run_need_cases("""(() => {
+      const mine = (n) => n === 1 || n === 5 || n === 9;
+      const pool = [
+        {id:'a',position:'RB',team:'KC'},
+        {id:'b',position:'WR'},
+        {id:'c',position:'TE'},
+        {id:'k',position:'K'},
+        {id:'x',position:'RB'}
+      ];
+      const ctx = C.historicalDecisionContext({
+        pickNo: 5,
+        teams: 4,
+        rounds: 3,
+        isMyPick: mine,
+        picks: {
+          1: {id:'a',position:'RB',team:'KC'},
+          2: {id:'b',position:'WR'},
+          5: {id:'c',position:'TE'},
+          9: {id:'x',position:'RB'}
+        },
+        pool: pool,
+        selected: {id:'c',position:'TE'},
+        playersById: {
+          a: {id:'a',position:'RB',team:'KC'},
+          b: {id:'b',position:'WR'},
+          c: {id:'c',position:'TE'},
+          x: {id:'x',position:'RB'}
+        },
+        qualityOf: () => 0.8,
+        vorPositive: () => true
+      });
+      return {
+        counts: ctx.counts,
+        remainingIds: ctx.remaining.map(p => String(p.id)).sort(),
+        round: ctx.round,
+        remainingMyPicks: ctx.remainingMyPicks,
+        myRbTeams: ctx.myRbTeams
+      };
+    })()""")
+    # Only pick 1 (mine) before pick 5 — not pick 5 itself, not rivals, not future.
+    assert out["counts"] == {"QB": 0, "RB": 1, "WR": 0, "TE": 0}
+    assert out["myRbTeams"] == {"KC": True}
+    assert out["round"] == 2
+    # Remaining mine picks at/after 5: 5 and 9
+    assert out["remainingMyPicks"] == 2
+    # a,b taken; k excluded (special); c selected re-added; x still available
+    assert out["remainingIds"] == ["c", "x"]
+
+
+def test_historical_decision_context_viewer_keepers_only():
+    out = _run_need_cases("""(() => {
+      const ctx = C.historicalDecisionContext({
+        pickNo: 3,
+        teams: 4,
+        rounds: 2,
+        isMyPick: (n) => n === 3,
+        picks: {},
+        pool: [{id:'free',position:'WR'}],
+        keepers: [
+          {id:'mine',position:'RB',rosterId:'1',team:'BUF'},
+          {id:'rival',position:'WR',rosterId:'2'}
+        ],
+        viewerRosterId: '1',
+        playersById: {
+          mine: {id:'mine',position:'RB',team:'BUF'},
+          rival: {id:'rival',position:'WR'}
+        }
+      });
+      return {counts: ctx.counts, taken: ctx.taken, remaining: ctx.remaining.map(p => p.id)};
+    })()""")
+    assert out["counts"]["RB"] == 1
+    assert out["counts"]["WR"] == 0
+    assert out["taken"]["mine"] is True and out["taken"]["rival"] is True
+    assert out["remaining"] == ["free"]
+
+
+def test_rank_historical_alternatives_uses_score_row():
+    out = _run_need_cases("""(() => C.rankHistoricalAlternatives({
+      selectedId: 'a',
+      context: {remaining: [
+        {id:'a',position:'RB'}, {id:'b',position:'WR'}, {id:'c',position:'TE'}
+      ]},
+      scoreRow: (p) => ({
+        absolutePickScore: p.id === 'b' ? 90 : 70,
+        decisionScore: p.id === 'b' ? 95 : (p.id === 'a' ? 80 : 60)
+      })
+    }))()""")
+    assert out["selectedScore"] == 80
+    assert out["bestAlternativeScore"] == 95
+    assert out["bestAlternative"]["id"] == "b"
+    assert [r["id"] for r in out["topAlternatives"]] == ["b", "c"]

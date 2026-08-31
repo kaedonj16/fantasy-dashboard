@@ -737,7 +737,19 @@
         // prefer a credible path to useful workload over tiny projection/ADP edges.
         // The caller supplies an evidence-based utility; age alone is never enough.
         score += Math.max(-3, Math.min(7, +o.upsideBonus || 0));
+        // Prospective bye concentration: mild scheduling risk, not a draft grade.
+        // Bounded so bye never outweighs real starter need or Pick Score gaps.
+        score -= Math.max(0, Math.min(4, +o.byePenalty || 0));
         return Math.max(1, Math.min(99, Math.round(score)));
+    }
+
+    // Map byeWeekSeverity level → Decision Score points (caller computes the
+    // prospective delta via byeWeekSeverity with/without the candidate).
+    function byeSeverityPenalty(level) {
+        if (level === 'severe') return 4;
+        if (level === 'meaningful') return 2.5;
+        if (level === 'mild') return 1;
+        return 0;
     }
 
     function draftPhase(round, totalRounds) {
@@ -803,6 +815,157 @@
         };
     }
 
+    // Players already off the board before pickNo: prior draft picks plus
+    // keepers that have not been written into the pick map yet. Never includes
+    // picks at or after pickNo (no future leak).
+    function takenBeforePick(o) {
+        o = o || {};
+        var pickNo = Math.max(1, parseInt(o.pickNo, 10) || 1);
+        var picks = o.picks || {};
+        var taken = {};
+        Object.keys(picks).forEach(function (k) {
+            var n = parseInt(k, 10);
+            if (!isFinite(n) || n >= pickNo) return;
+            var pk = picks[k];
+            if (pk && pk.id != null) taken[String(pk.id)] = true;
+        });
+        var onBoard = {};
+        Object.keys(picks).forEach(function (k) {
+            var pk = picks[k];
+            if (pk && pk.id != null) onBoard[String(pk.id)] = true;
+        });
+        (o.keepers || []).forEach(function (k) {
+            if (k && k.id != null && !onBoard[String(k.id)]) taken[String(k.id)] = true;
+        });
+        return taken;
+    }
+
+    // Reconstruct the manager's roster + remaining pool *immediately before*
+    // pickNo. Only prior own picks and keepers count toward counts/qualities;
+    // later picks must not leak into Decision Score.
+    function historicalDecisionContext(o) {
+        o = o || {};
+        var pickNo = Math.max(1, parseInt(o.pickNo, 10) || 1);
+        var picks = o.picks || {};
+        var isMyPick = typeof o.isMyPick === 'function' ? o.isMyPick : function () { return false; };
+        var playersById = o.playersById || {};
+        var qualityOf = typeof o.qualityOf === 'function' ? o.qualityOf : function () { return 0.35; };
+        var vorPositive = typeof o.vorPositive === 'function' ? o.vorPositive : function () { return true; };
+        var teams = Math.max(1, +o.teams || 12);
+        var rounds = Math.max(1, +o.rounds || 16);
+        var excludeSt = o.excludeSpecialTeams !== false;
+        var taken = o.taken || takenBeforePick({
+            pickNo: pickNo, picks: picks, keepers: o.keepers || []
+        });
+        var pool = o.pool || [];
+        var selected = o.selected || null;
+        var keepers = o.keepers || [];
+
+        var counts = { QB: 0, RB: 0, WR: 0, TE: 0 };
+        var qualities = [];
+        var qualByPos = {};
+        var myRbTeams = {};
+        var absorbedIds = {};
+
+        function absorb(pk) {
+            if (!pk || pk.id == null) return;
+            var id = String(pk.id);
+            if (absorbedIds[id]) return;
+            absorbedIds[id] = true;
+            var f = playersById[id] || pk;
+            var pos = String(f.position || f.pos || '').toUpperCase();
+            if (counts[pos] != null) {
+                counts[pos]++;
+                var q = qualityOf(f);
+                if (q == null || !isFinite(+q)) q = 0.35;
+                qualities.push({ pos: pos, quality: +q });
+                if (vorPositive(f)) qualByPos[pos] = (qualByPos[pos] || 0) + 1;
+            }
+            if (pos === 'RB' && f.team) myRbTeams[String(f.team)] = true;
+        }
+
+        // Keepers sit on the roster before the draft clock starts. Only the
+        // viewer's keepers count toward reconstruction — rivals are taken but
+        // not on my roster. Skip when viewer roster is unknown.
+        var myKeepers = [];
+        if (typeof o.myKeepers === 'function') {
+            myKeepers = keepers.filter(o.myKeepers);
+        } else if (o.viewerRosterId != null && o.viewerRosterId !== '') {
+            myKeepers = keepers.filter(function (k) {
+                return String(k.rosterId) === String(o.viewerRosterId);
+            });
+        }
+        myKeepers.forEach(absorb);
+
+        Object.keys(picks).forEach(function (k) {
+            var n = parseInt(k, 10);
+            if (!isFinite(n) || n >= pickNo) return;
+            if (!isMyPick(n)) return;
+            absorb(picks[k]);
+        });
+
+        function isSpecial(pos) {
+            return ['K', 'DEF', 'DST', 'D/ST'].indexOf(pos) >= 0;
+        }
+
+        var remaining = pool.filter(function (p) {
+            if (!p || p.id == null) return false;
+            if (taken[String(p.id)]) return false;
+            var pos = String(p.position || p.pos || '').toUpperCase();
+            if (excludeSt && isSpecial(pos)) return false;
+            return true;
+        });
+        if (selected && selected.id != null &&
+            !remaining.some(function (p) { return String(p.id) === String(selected.id); })) {
+            remaining = remaining.concat([selected]);
+        }
+
+        var remainingMyPicks = 0;
+        var tot = teams * rounds;
+        for (var hn = pickNo; hn <= tot; hn++) {
+            if (isMyPick(hn)) remainingMyPicks++;
+        }
+
+        return {
+            pickNo: pickNo,
+            counts: counts,
+            qualities: qualities,
+            qualByPos: qualByPos,
+            remaining: remaining,
+            myRbTeams: myRbTeams,
+            round: Math.floor((pickNo - 1) / teams) + 1,
+            remainingMyPicks: remainingMyPicks,
+            teams: teams,
+            rounds: rounds,
+            taken: taken
+        };
+    }
+
+    // Rank the historical remaining pool by Decision Score. Prefer a scoreRow
+    // callback (page supplies absolute Pick Score + decisionScore); or pass
+    // prebuilt rows. Returns summarizeHistoricalAlternatives output.
+    function rankHistoricalAlternatives(o) {
+        o = o || {};
+        var selectedId = o.selectedId;
+        var rows = o.rows;
+        if (!rows) {
+            var ctx = o.context || historicalDecisionContext(o);
+            var scoreRow = typeof o.scoreRow === 'function' ? o.scoreRow : null;
+            if (!scoreRow) return null;
+            rows = (ctx.remaining || []).map(function (p) {
+                var scored = scoreRow(p, ctx);
+                if (!scored) return null;
+                return {
+                    id: p.id,
+                    player: p,
+                    absolutePickScore: scored.absolutePickScore,
+                    decisionScore: scored.decisionScore
+                };
+            }).filter(Boolean);
+        }
+        return summarizeHistoricalAlternatives(rows, selectedId);
+    }
+
     // One unused bench cover per starter. Same-position first, then FLEX-eligible
     // (RB/WR/TE). A single reserve cannot cover two starters on the same bye.
     function assignByeCover(players) {
@@ -835,6 +998,8 @@
         return players || [];
     }
 
+    // Gap bands (Decision Score points): none <4, modest <9, material <15, severe ≥15.
+    // significantReach also needs outside-market + not BPA + survivePct ≥ ADP_REACH_SURVIVE (20).
     function opportunityCostVerdict(o) {
         o = o || {};
         var gap = Math.max(0, (+o.bestAlternativeScore || 0) - (+o.selectedScore || 0));
@@ -844,10 +1009,26 @@
         return {gap: gap, severity: severity, significantReach: significantReach};
     }
 
+    // significantSteal: marketFall ≥ max(8, 0.5×σ) and Board PS ≥ 80.
     function significantSteal(o) {
         o = o || {};
         var threshold = Math.max(8, 0.5 * Math.max(0, +o.adpUncertainty || 0));
         return (+o.marketFall || 0) >= threshold && (+o.boardPickScore || 0) >= 80;
+    }
+
+    // Deep Dive / edges copy. Softens when ADP or survivePct inputs are missing.
+    function formatOpportunityCostCopy(o) {
+        o = o || {};
+        var gap = Math.max(0, +o.gap || 0);
+        var altName = String(o.altName || '').trim();
+        if (!altName || gap < 4) return '';
+        var text = 'Preferred ' + altName + ' by ~' + Math.round(gap) + ' Decision Score';
+        var low = o.confidence === 'low';
+        if (!low && o.confidence !== 'high') {
+            if (o.adpMissing || o.survivePctMissing) low = true;
+            else if (('adp' in o && o.adp == null) || ('survivePct' in o && o.survivePct == null)) low = true;
+        }
+        return low ? (text + ' · lower confidence') : text;
     }
 
     // Impact-based bye concentration. Callers classify roles from the same
@@ -1169,6 +1350,29 @@
         return needK > 0 ? 'K' : 'DEF';
     }
 
+    // Auction nomination $ guidance (R02.3): normalize BR value onto a share of
+    // remaining budget per remaining roster slot. Explicitly labeled guidance —
+    // not a predicted clearing price.
+    function suggestAuctionBid(opts) {
+        opts = opts || {};
+        var value = Number(opts.value);
+        var maxValue = Number(opts.maxValue);
+        var remainingBudget = Number(opts.remainingBudget);
+        var slotsLeft = Number(opts.slotsLeft);
+        if (!isFinite(value) || value < 0) value = 0;
+        if (!isFinite(maxValue) || maxValue <= 0) maxValue = 1;
+        if (!isFinite(remainingBudget) || remainingBudget < 0) remainingBudget = 0;
+        if (!isFinite(slotsLeft) || slotsLeft < 1) slotsLeft = 1;
+        var share = value / maxValue;
+        if (share > 1) share = 1;
+        var perSlot = remainingBudget / slotsLeft;
+        var dollars = Math.round(share * perSlot);
+        if (value > 0 && remainingBudget >= 1 && dollars < 1) dollars = 1;
+        if (dollars < 0) dollars = 0;
+        if (dollars > remainingBudget) dollars = Math.floor(remainingBudget);
+        return { dollars: dollars, label: 'guidance' };
+    }
+
     return {
         rosterCounts: rosterCounts, startersFor: startersFor,
         redraftVal: redraftVal, dynVal: dynVal, valOf: valOf, adpOf: adpOf,
@@ -1188,14 +1392,19 @@
         lateRoundUpsideBonus: lateRoundUpsideBonus,
         lateRoundPathEvidence: lateRoundPathEvidence,
         summarizeHistoricalAlternatives: summarizeHistoricalAlternatives,
+        takenBeforePick: takenBeforePick,
+        historicalDecisionContext: historicalDecisionContext,
+        rankHistoricalAlternatives: rankHistoricalAlternatives,
         assignByeCover: assignByeCover,
         opportunityCostVerdict: opportunityCostVerdict, significantSteal: significantSteal,
-        byeWeekSeverity: byeWeekSeverity,
+        formatOpportunityCostCopy: formatOpportunityCostCopy,
+        byeWeekSeverity: byeWeekSeverity, byeSeverityPenalty: byeSeverityPenalty,
         REC_FUTURE_SURVIVE_FLOOR: REC_FUTURE_SURVIVE_FLOOR,
         decisionBand: decisionBand, selectDecisionCandidate: selectDecisionCandidate,
         availabilityProbability: availabilityProbability, calibrateAvailability: calibrateAvailability,
         autoDraftNeedMultiplier: autoDraftNeedMultiplier,
         specialTeamsFillPos: specialTeamsFillPos,
+        suggestAuctionBid: suggestAuctionBid,
         ADP_REACH_CLUSTER: ADP_REACH_CLUSTER, ADP_REACH_SURVIVE: ADP_REACH_SURVIVE,
         adpUncertainty: adpUncertainty,
         isRemainingAdpBpa: isRemainingAdpBpa, bestRemainingAdp: bestRemainingAdp,

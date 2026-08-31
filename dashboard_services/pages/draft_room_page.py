@@ -62,6 +62,9 @@ def build_draft_room_body(
         keepers: Optional[dict] = None,
         show_keeper: bool = True,
         has_premium: bool = False,
+        is_auction: bool = False,
+        auction_budget: Optional[float] = None,
+        is_best_ball: bool = False,
 ) -> str:
     _dr_has_league = bool(league_id and platform and season)
     cfg = {
@@ -100,6 +103,11 @@ def build_draft_room_body(
         # hasPremium still gates Draft Deep Dive and custom-board persistence.
         # Live cheat-sheet overlay / sync is free.
         "hasPremium": bool(has_premium),
+        # Auction detection (R02.1): snake UX stays default; auction leagues get
+        # an honest banner until auction grades/values ship.
+        "isAuction": bool(is_auction),
+        "auctionBudget": float(auction_budget) if auction_budget is not None else None,
+        "isBestBall": bool(is_best_ball),
         "chromeExtensionStoreUrl": (os.environ.get("CHROME_EXTENSION_URL") or "").strip(),
         "chromeExtensionZipUrl": "/static/extension/br-fantasy-espn-connector.zip",
     }
@@ -128,6 +136,9 @@ _DRAFT_ROOM_HTML = r"""
     <div class="dr-hero-actions">
       <a class="dr-hero-link" id="drToCheatSheet" href="/draft/cheat-sheet">Cheat Sheet</a>
       <a class="dr-hero-link" id="drToHistory" href="/draft/history">Draft History</a>
+    </div>
+    <div class="dr-auction-note" id="drAuctionNote" hidden style="margin-top:12px;padding:10px 12px;border-radius:10px;background:var(--accent-soft,rgba(37,99,235,.08));border:1px solid var(--border);font-size:13px;line-height:1.45;color:var(--text);">
+      <strong>Auction league detected.</strong> Recommendation Rank and Pick Score still help nominations. Suggested $ amounts are guidance from BR values — not clearing prices. Snake-round draft grades are disabled for auction.
     </div>
   </div>
 
@@ -377,11 +388,11 @@ _DRAFT_ROOM_HTML = r"""
                  the current sort; renderBA reads it. -->
             <div class="dr-sortsel" id="drBaSortUI">
               <button type="button" class="dr-sortsel-btn" id="drBaSortBtn" data-val="ps" aria-haspopup="listbox" aria-expanded="false">
-                <span id="drBaSortLbl">Recommendation</span>
+                <span id="drBaSortLbl">Recommendation Rank</span>
                 <svg class="dr-sortsel-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
               </button>
               <div class="dr-sortsel-menu" id="drBaSortMenu" role="listbox" hidden>
-                <button type="button" class="dr-sortsel-opt" role="option" data-val="ps">Recommendation</button>
+                <button type="button" class="dr-sortsel-opt" role="option" data-val="ps">Recommendation Rank</button>
                 <button type="button" class="dr-sortsel-opt" role="option" data-val="pickscore">Pick Score</button>
                 <button type="button" class="dr-sortsel-opt" role="option" data-val="value">Value</button>
                 <button type="button" class="dr-sortsel-opt" role="option" data-val="ppg">Proj PPG</button>
@@ -1496,11 +1507,12 @@ _DRAFT_ROOM_HTML = r"""
   }
   .dd-chartscroll svg { display:block; max-width:none; }
   .dd-tl-dot:hover { stroke:var(--text); stroke-width:1.6; }
-  .dd-tip { position:fixed; z-index:12800; pointer-events:none; background:var(--tooltip-bg,var(--card)); color:var(--tooltip-fg,var(--text)); border:1px solid var(--tooltip-border,var(--border)); box-shadow:var(--tooltip-shadow,0 12px 40px rgba(0,0,0,.4)); border-radius:var(--tooltip-radius,10px); padding:var(--tooltip-pad,8px 12px); font-size:var(--tooltip-fs,12px); line-height:var(--tooltip-lh,1.45); opacity:0; transform:translateY(4px); transition:opacity .12s; max-width:230px; }
+  .dd-tip { position:fixed; z-index:12800; pointer-events:none; background:var(--tooltip-bg,var(--card)); color:var(--tooltip-fg,var(--text)); border:1px solid var(--tooltip-border,var(--border)); box-shadow:var(--tooltip-shadow,0 12px 40px rgba(0,0,0,.4)); border-radius:var(--tooltip-radius,10px); padding:var(--tooltip-pad,8px 12px); font-size:var(--tooltip-fs,12px); line-height:var(--tooltip-lh,1.45); opacity:0; transform:translateY(4px); transition:opacity .12s; max-width:280px; }
   .dd-tip.show { opacity:1; transform:none; }
   .dd-tip b { font-family:"Archivo",sans-serif; }
   .dd-tip-r { display:flex; justify-content:space-between; gap:16px; color:var(--text-muted); margin-top:3px; }
   .dd-tip-r b { color:var(--text); font-family:inherit; }
+  .dd-tip-opp { margin-top:6px; font-size:11.5px; color:var(--text); line-height:1.4; }
   /* tables */
   .dd-ledger { width:100%; border-collapse:collapse; font-size:13px; }
   .dd-ledger th, .dd-ledger td { padding:9px 11px; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; }
@@ -1510,7 +1522,16 @@ _DRAFT_ROOM_HTML = r"""
   .dd-ledger thead th.r, .dd-ledger tbody td.r { text-align:center; font-variant-numeric:tabular-nums; }
   .dd-ledger .num { font-variant-numeric:tabular-nums; }
   .dd-ledger tbody tr:hover { background:color-mix(in srgb,var(--accent) 5%,transparent); }
+  .dd-ledger td.dd-plcell { white-space:normal; min-width:140px; }
   .dd-plname { font-weight:600; }
+  .dd-pl-sub { margin-top:3px; font-size:11px; font-weight:500; color:var(--text-muted); line-height:1.35; max-width:280px; }
+  .dd-opp-sev { display:inline-block; margin-left:4px; font-size:10px; font-weight:700; letter-spacing:.02em; text-transform:uppercase; }
+  .dd-opp-modest { color:#b45309; }
+  .dd-opp-material { color:#c2410c; }
+  .dd-opp-severe { color:#dc2626; }
+  .dd-facets { display:flex; flex-direction:column; gap:6px; margin-top:14px; }
+  .dd-facet { font-size:12.5px; color:var(--text); line-height:1.4; padding:8px 11px; border-left:3px solid color-mix(in srgb,var(--accent) 55%,var(--border)); background:color-mix(in srgb,var(--accent) 6%,transparent); }
+  .dd-facet-line { margin:8px 0 0; font-size:12.5px; line-height:1.4; }
   .dd-posbadge { display:inline-block; min-width:30px; text-align:center; font-size:10px; font-weight:800; color:#fff; padding:2px 6px; border-radius:5px; }
   .dd-diff { display:inline-block; min-width:6.2ch; text-align:right; font-weight:800;
     font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1; }

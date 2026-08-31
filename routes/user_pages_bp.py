@@ -446,6 +446,162 @@ def build_watchlist_page_body() -> str:
     """
 
 
+@user_pages_bp.route("/api/portfolio-actions")
+def api_portfolio_actions():
+    """Cross-league action digest for My Leagues (roadmap R04).
+
+    PRO-gated Front Office-style bullets across linked leagues. Best-effort:
+    scans up to 8 linked leagues for lineup issues and injury hints.
+    """
+    from flask import jsonify, session
+    from dashboard_services.subscriptions import has_premium_for_viewer
+    from utils.cross_league_actions import (
+        injury_stash_action,
+        lineup_actions_from_issues,
+        rank_cross_league_actions,
+    )
+    from utils.lineup_issues import find_lineup_issues
+    from utils.redzone_user import match_viewer_roster
+
+    viewer_username = session.get("viewer_username")
+    viewer_user_id = session.get("viewer_user_id")
+    if (not viewer_username or not viewer_user_id) and not session.get("account_id"):
+        return jsonify({"actions": []})
+
+    nfl_state = get_nfl_state() or {}
+    season = int(nfl_state.get("season") or datetime.now().year)
+    try:
+        from dashboard_services.accounts import resolve_my_leagues
+        league_inputs, season = resolve_my_leagues(
+            viewer_user_id, session.get("account_id"), season
+        )
+    except Exception:
+        return jsonify({"actions": []})
+
+    def _portfolio_viewer_has_pro() -> bool:
+        if has_premium_for_viewer(viewer_username, viewer_user_id, None, "sleeper", season):
+            return True
+        for lg in (league_inputs or [])[:8]:
+            lid = str(lg.get("league_id") or "")
+            plat = str(lg.get("platform") or "sleeper").lower()
+            sea = int(lg.get("season") or season)
+            if lid and has_premium_for_viewer(
+                viewer_username, viewer_user_id, lid, plat, sea,
+            ):
+                return True
+        return False
+
+    if not _portfolio_viewer_has_pro():
+        return jsonify({"paywall": True, "error": "Premium required", "actions": []}), 403
+
+    actions: list = []
+    try:
+        from dashboard_services.api import get_nfl_players
+        from utils.utils import load_week_schedule
+        nfl_players = get_nfl_players() or {}
+        week = int(nfl_state.get("week") or 0)
+        teams_playing = set()
+        if week and nfl_state.get("season_type") in ("reg", "post"):
+            for g in (load_week_schedule(season, week) or []):
+                for side in ("home", "away"):
+                    t = str(g.get(side) or "").upper()
+                    if t:
+                        teams_playing.add(t)
+    except Exception:
+        nfl_players = {}
+        teams_playing = set()
+
+    for lg in (league_inputs or [])[:8]:
+        lid = str(lg.get("league_id") or "")
+        plat = str(lg.get("platform") or "sleeper").lower()
+        lg_season = int(lg.get("season") or season)
+        if not lid:
+            continue
+        try:
+            lctx = get_league_ctx_from_cache(plat, lid, lg_season) or {}
+        except Exception:
+            continue
+        rosters = lctx.get("rosters") or []
+        league_obj = lctx.get("league") or {}
+        league_name = league_obj.get("name") or lg.get("name") or lid
+        viewer_roster = None
+        account_id = session.get("account_id")
+        if account_id:
+            try:
+                from dashboard_services.accounts import resolve_account_viewer_for_league
+                av = resolve_account_viewer_for_league(
+                    account_id, plat, lid, lg_season,
+                    lctx.get("users") or [], rosters,
+                )
+                rid = str((av or {}).get("viewer_roster_id") or "")
+                if rid:
+                    viewer_roster = next(
+                        (r for r in rosters if str(r.get("roster_id") or "") == rid), None
+                    )
+            except Exception:
+                viewer_roster = None
+        if viewer_roster is None:
+            viewer_roster = match_viewer_roster(
+                rosters,
+                team_id=lg.get("team_id"),
+                owner_id=viewer_user_id if plat == "sleeper" else None,
+            )
+        if not viewer_roster:
+            continue
+        starters = [str(p) for p in (viewer_roster.get("starters") or [])]
+        if starters and nfl_players:
+            info = {}
+            for pid in starters:
+                pl = nfl_players.get(pid) or {}
+                info[pid] = {
+                    "name": pl.get("full_name") or pl.get("last_name") or "",
+                    "team": pl.get("team") or "",
+                    "injury_status": pl.get("injury_status") or "",
+                }
+            issues = find_lineup_issues(starters, info, teams_playing or None)
+            actions.extend(lineup_actions_from_issues(
+                issues, platform=plat, season=lg_season,
+                league_id=lid, league_name=league_name,
+            ))
+        # One injury stash/drop hint per league (bench/IR candidates).
+        try:
+            from utils.injury_plan import injury_plan
+            from dashboard_services.injury_return import weeks_out_for_player
+            values_by_id = {
+                str(r.get("id") or ""): r
+                for r in (lctx.get("model_value_table") or [])
+                if r.get("id")
+            }
+            for pid in [str(p) for p in (viewer_roster.get("players") or [])][:40]:
+                pl = nfl_players.get(pid) or {}
+                st = str(pl.get("injury_status") or "").strip()
+                if not st or st.lower() in ("active", "act"):
+                    continue
+                plan = injury_plan(
+                    status=st,
+                    espn_weeks=weeks_out_for_player(pid),
+                    player_value=float((values_by_id.get(pid) or {}).get("value") or 0) or None,
+                )
+                if not plan or plan.get("verdict") not in ("IR", "Drop candidate", "Stash"):
+                    continue
+                if plan.get("verdict") == "Stash" and (plan.get("weeks_out") or 0) < 3:
+                    continue
+                act = injury_stash_action(
+                    platform=plat, season=lg_season, league_id=lid,
+                    league_name=league_name,
+                    player_name=pl.get("full_name") or pl.get("last_name") or "Player",
+                    verdict=plan["verdict"],
+                    weeks_label=plan.get("weeks_label") or "",
+                )
+                if act:
+                    actions.append(act)
+                    break
+        except Exception:
+            pass
+
+    return jsonify({"actions": rank_cross_league_actions(actions, limit=8)})
+
+
 @user_pages_bp.route("/watchlist")
 def page_watchlist():
     body = build_watchlist_page_body()

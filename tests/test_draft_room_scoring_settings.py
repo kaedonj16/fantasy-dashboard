@@ -116,18 +116,23 @@ def test_board_offers_pick_score_sort_instead_of_steals():
     assert 'data-val="steals"' not in body
     assert "if (sortBy === 'pickscore'){ return (b._ps || 0) - (a._ps || 0); }" in source
     assert "pickscore: 'Pick Score'" in source
-    assert body.index('data-val="ps">Recommendation</button>') < body.index('data-val="pickscore">Pick Score</button>')
+    assert body.index('data-val="ps">Recommendation Rank</button>') < body.index('data-val="pickscore">Pick Score</button>')
     assert body.index('data-val="pickscore">Pick Score</button>') < body.index('data-val="value">Value</button>')
 
 
 def test_glossary_explains_live_recommendation_logic():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
-    assert "{ term: 'Recommendation'" in source
+    assert "{ term: 'Recommendation Rank'" in source
+    assert "Who should I draft right now?" in source
+    assert "{ term: 'Pick Score (PS)'" in source
+    assert "How good is this player at this pick?" in source
+    assert "{ term: 'Board PS'" in source
+    assert "How good was this selection relative to what was available then?" in source
     assert "starter or FLEX spot" in source
     assert "required slots and picks remaining" in source
     assert "expected availability at your next pick" in source
-    assert "shown as a rank rather than a grade" in source
+    assert "shown as a rank" in source.lower() or "Shown as a rank" in source
     assert "When it is not your turn, the order is for your next owned pick" in source
     assert "luxury bench BPA" in source
     assert "does not rank by simulated playoff odds" in source
@@ -138,7 +143,7 @@ def test_recommendation_rows_use_compact_rank_and_reason_copy():
     body = build_draft_room_body(None, None, None, is_guest=True)
 
     assert "Decision ' + p._ds + ' · recommendation #" not in source
-    assert 'dr-ba-recchip">#' in source
+    assert 'dr-ba-recchip" title="Recommendation Rank">#' in source
     assert "ppgNum.toFixed(1) + ' proj'" in source
     assert ".dr-ba-recchip {" in body
 
@@ -179,7 +184,7 @@ def test_compare_modal_uses_relative_pick_score():
 
 
 def test_deep_dive_avg_pick_score_uses_relative():
-    """Deep Dive 'Avg pick score' must average relPS chips, not absolute kernel."""
+    """Deep Dive Avg Board PS must average relPS chips, not absolute kernel."""
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
     match = re.search(
         r"function gradePicks\(mine\)\{(.*?)\n  // At-pick tier-cliff map",
@@ -193,8 +198,8 @@ def test_deep_dive_avg_pick_score_uses_relative():
     # Absolute kernel scores still feed the letter-grade composite — don't
     # accidentally average those for the display chip again.
     assert "picks.map(function(x){ return x.ps; })" not in body
-    assert "{ v: g.avgPs != null ? g.avgPs : '—', l: 'Avg pick score' }" in source
-    assert "Deep Dive’s Avg pick score, use the same relative scale" in source
+    assert "{ v: g.avgPs != null ? g.avgPs : '—', l: 'Avg Board PS' }" in source
+    assert "Avg Board PS on the report uses the same relative scale" in source
 
 
 def test_preview_modal_uses_relative_pick_score():

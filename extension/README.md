@@ -3,6 +3,18 @@
 Connect private ESPN fantasy leagues to BR Fantasy, and **auto-relay live draft
 picks** from ESPN or Yahoo into Draft Room.
 
+## Extension parity checklist (R15)
+
+| Item | Status |
+|------|--------|
+| ESPN private-league connect (cookies → autofill) | Shipped |
+| ESPN live draft relay | Shipped |
+| Yahoo live draft relay | Shipped |
+| Sleeper in-page overlay | **Not yet** — use the web app on Sleeper |
+| Phone drafts | Manual pick entry in Draft Room (no mobile auto-sync) |
+| Production zip | `python3 extension/pack_extension.py` → `artifacts/br-fantasy-espn-connector-vX.Y.Z.zip` |
+| Chrome Web Store / AMO | Upload the production zip (see below) |
+
 ## Why an extension
 
 1. **Cookies:** ESPN's `espn_s2` cookie is `HttpOnly` — only an extension can

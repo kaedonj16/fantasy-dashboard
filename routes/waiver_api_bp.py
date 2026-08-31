@@ -24,10 +24,13 @@ from utils.waiver_score import (
     adaptive_trend_thresholds as _adaptive_trend_thresholds,
     build_depth_index as _build_depth_index,
     depth_analysis_for_player as _depth_analysis_for_player,
+    faab_bid_bands as _faab_bid_bands,
     need_multiplier as _need_multiplier,
     positional_need_scores as _positional_need_scores,
     replacement_levels as _replacement_levels,
+    roster_needs_drop as _roster_needs_drop,
     scarcity_multiplier as _scarcity_multiplier,
+    schedule_urgency as _schedule_urgency,
     strip_bye_weeks as _strip_bye_weeks,
     waiver_pickup_score as _waiver_pickup_score,
     waiver_signal as _waiver_signal,
@@ -574,18 +577,12 @@ def api_waiver_candidates():
     _wv_smin = min(_wv_scores) if _wv_scores else 0.0
     _wv_srng = ((max(_wv_scores) - _wv_smin) if _wv_scores else 1.0) or 1.0
 
-    def _faab_band(_c):
-        # Waiver-wire targets, not premium trade pieces — keep bids modest so the
-        # single best add tops out around the low-20s% and typical adds sit in the
-        # low single digits, matching how much of a budget these fliers are worth.
-        _t = (_safe_pickup_score(_c) - _wv_smin) / _wv_srng  # 0..1 within shown set
-        _center = 1.0 + (_t ** 1.7) * 16.0  # top target ~17%, tapers fast
-        _center *= 1.0 + min(max((_c.get("need_mult") or 1.0) - 1.0, 0.0), 0.25)  # fills your need → bid up
-        # Elite-handcuff premium: the direct backup to a healthy stud starter is
-        # worth a real speculative bid beyond his standalone score — a top bell-cow
-        # handcuff lands ~10-18% even with a low pickup score of his own.
-        _center += float(_c.get("handcuff_upside") or 0.0) * 13.0
-        return max(0, int(round(_center * 0.72))), min(50, int(round(_center * 1.12)) + 1)
+    def _faab_for(_c):
+        return _faab_bid_bands(
+            _safe_pickup_score(_c), _wv_smin, _wv_srng,
+            need_mult=_c.get("need_mult") or 1.0,
+            handcuff_upside=_c.get("handcuff_upside") or 0.0,
+        )
 
     # ── Add/drop pairing: for each target, the best player on the viewer's own
     # roster to cut to make room. Prefer thinning a position where the viewer is
@@ -593,6 +590,8 @@ def api_waiver_candidates():
     # downgrade from the add, so the pairing is always a genuine upgrade. Needs
     # the viewer's roster, passed as ?rid= (the shared page cache means the client
     # supplies it, matching the window._viewerRid personalization pattern).
+    # Only surface drops when the active roster is full — otherwise they can add
+    # without cutting anyone.
     _rid = (request.args.get("rid") or "").strip()
     _mvt_by_id = {str(r.get("id")): r for r in model_value_table
                   if isinstance(r, dict) and r.get("id")}
@@ -609,9 +608,17 @@ def api_waiver_candidates():
 
     _drop_pool: list = []
     _pos_counts: dict = {}
+    _roster_full = False
     _viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == _rid), None) if _rid else None
     if _viewer_roster:
-        for pid in (_viewer_roster.get("players") or []):
+        _res = {str(p) for p in (_viewer_roster.get("reserve") or [])}
+        _tax = {str(p) for p in (_viewer_roster.get("taxi") or [])}
+        _active = [str(p) for p in (_viewer_roster.get("players") or [])
+                   if str(p) not in _res and str(p) not in _tax]
+        _slot_n = len([s for s in (_rp_wv or [])
+                       if str(s).upper() not in ("IR", "TAXI", "RESERVE", "IR+")])
+        _roster_full = _roster_needs_drop(len(_active), _slot_n)
+        for pid in _active:
             pid = str(pid)
             row = _mvt_by_id.get(pid) or {}
             meta = players_index.get(pid, {})
@@ -629,7 +636,7 @@ def api_waiver_candidates():
         _drop_pool.sort(key=lambda d: d["value"])  # weakest first
 
     def _drop_for(_c):
-        if not _drop_pool:
+        if not _roster_full or not _drop_pool:
             return None
         add_val = _c.get("value") or 0.0
         add_pos = _c.get("position") or ""
@@ -659,7 +666,8 @@ def api_waiver_candidates():
             )
             bscore = waiver_breakout.get(c["player_id"], 0.0)
             ut = usage_trends.get(c["player_id"]) or {}
-            _flo, _fhi = _faab_band(c)
+            _faab = _faab_for(c)
+            _urgency = _schedule_urgency(c.get("schedule_ease_rank"), 32)
             _confidence_inputs = sum([
                 c.get("ros_ppg") is not None,
                 c.get("usage_delta") is not None,
@@ -695,8 +703,11 @@ def api_waiver_candidates():
                 "roster_need": round((c.get("need_mult") or 1.0) - 1.0, 3),
                 "scarcity": round((c.get("scarcity_mult") or 1.0) - 1.0, 3),
                 "schedule_ease_rank": c.get("schedule_ease_rank"),
-                "faab_low": _flo,
-                "faab_high": _fhi,
+                "schedule_urgency": _urgency,
+                "faab_low": _faab["faab_low"],
+                "faab_target": _faab["faab_target"],
+                "faab_high": _faab["faab_high"],
+                "faab_rationale": _faab["faab_rationale"],
                 "drop": _drop_for(c),
                 "confidence": _confidence,
                 "market_projection": c.get("market_projection"),
