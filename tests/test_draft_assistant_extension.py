@@ -30,7 +30,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.16"
+    assert manifest["version"] == "1.5.17"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -291,3 +291,89 @@ def test_overlay_reads_league_settings_and_compares_players():
     assert "\u2014" not in overlay
     assert "\u2014" not in helper
     assert "\u2014" not in html
+
+
+def test_sleeper_detects_live_pick_slot_from_several_signals():
+    sleeper = (EXT / "sleeper_draft.js").read_text(encoding="utf-8")
+    helper = (EXT / "draft_slot.js").read_text(encoding="utf-8")
+    assert "function detectSleeperSlot" in helper
+    assert "function collectSleeperIdentity" in helper
+    assert "function slotFromSleeperDraftOrder" in helper
+    assert "function slotFromSleeperPickedBy" in helper
+    assert "function slotFromSleeperRosterMap" in helper
+    assert "function slotFromSleeperClock" in helper
+    assert "function detectSleeperDomSlot" in helper
+    assert "is-me" in helper
+    assert "detectSleeperSlot" in sleeper
+    assert "resolveMySlot" in sleeper
+    assert "resolveSleeperUserId" in sleeper
+    assert "api.sleeper.app/v1/user/" in sleeper
+    assert "api.sleeper.app/v1/league/" in sleeper
+    assert "/rosters" in sleeper
+    assert "pickedBy" in sleeper
+    assert "mySlot || \"\"" in sleeper
+    assert "\u2014" not in sleeper
+
+
+def test_sleeper_slot_helpers_unit():
+    import subprocess
+
+    script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const store = {
+  _d: {},
+  getItem(k) { return Object.prototype.hasOwnProperty.call(this._d, k) ? this._d[k] : null; },
+  setItem(k, v) { this._d[k] = String(v); },
+  key(i) { return Object.keys(this._d)[i]; },
+  get length() { return Object.keys(this._d).length; },
+};
+const ctx = {
+  window: {},
+  localStorage: store,
+  sessionStorage: store,
+  document: {
+    cookie: "",
+    querySelectorAll() { return []; },
+    querySelector() { return null; },
+    createTreeWalker: null,
+    body: null,
+  },
+  location: { pathname: "/draft/nfl/abc", href: "" },
+};
+ctx.window = ctx;
+vm.runInNewContext(fs.readFileSync("extension/draft_slot.js", "utf8"), ctx);
+const B = ctx.BRDraftSlot;
+if (B.slotFromSleeperDraftOrder({ "111111": 3 }, ["111111"]) !== 3) process.exit(1);
+if (B.slotFromSleeperPickedBy(
+  [{ pickedBy: "111111", slot: 5, overallPickNumber: 5 }],
+  ["111111"]
+) !== 5) process.exit(1);
+if (B.slotFromSleeperRosterMap({ "4": 9 }, { "111111": 9 }, ["111111"]) !== 4) process.exit(1);
+if (B.slotFromSleeperClock("You're on the clock", 8, 12) !== 8) process.exit(1);
+if (B.slotFromSleeperClock("You're on the clock", 13, 12) !== 12) process.exit(1);
+const slot = B.detectSleeperSlot({
+  draft: { draft_order: { "999999": 2 } },
+  identity: { userIds: ["999999"] },
+  teams: 12,
+  skipDom: true,
+});
+if (slot !== 2) process.exit(1);
+const viaPicks = B.detectSleeperSlot({
+  draft: {},
+  picks: [{ picked_by: "999999", draft_slot: 7, overallPickNumber: 7 }],
+  identity: { userIds: ["999999"] },
+  teams: 12,
+  skipDom: true,
+});
+if (viaPicks !== 7) process.exit(1);
+console.log("ok");
+"""
+    out = subprocess.run(
+        ["node", "-e", script],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert out.returncode == 0, out.stderr + out.stdout

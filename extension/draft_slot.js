@@ -121,6 +121,12 @@
         '[class*="isSelf"]',
         '[class*="self-team"]',
         '[class*="selfTeam"]',
+        '[class*="is-me"]',
+        '[class*="isMe"]',
+        '[class*="my-team"]',
+        '[class*="myTeam"]',
+        '[class*="my-column"]',
+        '[class*="myColumn"]',
       ].join(",")
     );
     if (highlighted) {
@@ -524,6 +530,277 @@
     });
   }
 
+  function addSleeperUserId(out, id, front) {
+    const s = String(id || "").trim();
+    if (!/^\d{6,20}$/.test(s)) return;
+    if (out.seen[s]) {
+      if (front) {
+        out.userIds = [s].concat(out.userIds.filter(function (x) { return x !== s; }));
+      }
+      return;
+    }
+    out.seen[s] = true;
+    if (front) out.userIds.unshift(s);
+    else out.userIds.push(s);
+  }
+
+  function harvestSleeperUserObject(obj, key, out, depth) {
+    if (!obj || typeof obj !== "object" || depth > 5) return;
+    if (Array.isArray(obj)) {
+      if (obj.length > 2 && obj[0] && typeof obj[0] === "object" && (obj[0].user_id || obj[0].display_name)) {
+        return;
+      }
+      obj.slice(0, 6).forEach(function (item) {
+        harvestSleeperUserObject(item, key, out, depth + 1);
+      });
+      return;
+    }
+    const uid = obj.user_id || obj.userId;
+    const un = obj.username || obj.user_name;
+    const dn = obj.display_name || obj.displayName;
+    const team = obj.team_name || obj.teamName;
+    const loggedInHint =
+      obj.token ||
+      obj.email ||
+      obj.avatar ||
+      obj.phone ||
+      obj.verification ||
+      obj.real_name != null ||
+      obj.is_bot === false ||
+      /user|auth|session|token|login|\bme\b/i.test(String(key || ""));
+    if (uid && (un || dn) && loggedInHint) {
+      addSleeperUserId(out, uid, true);
+      if (un) out.username = String(un);
+      if (dn) out.displayName = String(dn);
+      if (team) out.teamName = String(team);
+      return;
+    }
+    ["user", "data", "session", "profile", "me", "account", "viewer"].forEach(function (k) {
+      if (obj[k] && typeof obj[k] === "object") harvestSleeperUserObject(obj[k], k, out, depth + 1);
+    });
+  }
+
+  function collectSleeperIdentity() {
+    const out = { userIds: [], username: "", displayName: "", teamName: "", seen: {} };
+    function inspect(text, key) {
+      if (!text || text.length > 800000) return;
+      const trimmed = String(text).trim();
+      if (trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[") {
+        try {
+          harvestSleeperUserObject(JSON.parse(trimmed), key, out, 0);
+        } catch (_e) {
+          /* fall through */
+        }
+      }
+      if (!out.userIds.length && /user|auth|session|token|login/i.test(String(key || ""))) {
+        const idRe = /"(?:user_id|userId)"\s*:\s*"?(\d{6,20})"?/g;
+        let m;
+        while ((m = idRe.exec(trimmed))) addSleeperUserId(out, m[1]);
+        if (!out.username) {
+          const un = trimmed.match(/"username"\s*:\s*"([A-Za-z0-9_]{2,32})"/);
+          if (un) out.username = un[1];
+        }
+        if (!out.displayName) {
+          const dn = trimmed.match(/"display_name"\s*:\s*"([^"]{2,40})"/);
+          if (dn) out.displayName = dn[1];
+        }
+      }
+    }
+    try {
+      [localStorage, sessionStorage].forEach(function (store) {
+        if (!store) return;
+        for (let i = 0; i < store.length; i++) {
+          const k = store.key(i);
+          inspect(store.getItem(k) || "", k);
+        }
+      });
+    } catch (_e) {
+      /* ignore */
+    }
+    try {
+      inspect(document.cookie || "", "cookie");
+    } catch (_e) {
+      /* ignore */
+    }
+    if (!out.username) {
+      const fromDom = sleeperUsernameFromDom();
+      if (fromDom) out.username = fromDom;
+    }
+    delete out.seen;
+    return out;
+  }
+
+  function sleeperUsernameFromDom(doc) {
+    doc = doc || (typeof document !== "undefined" ? document : null);
+    if (!doc || !doc.querySelectorAll) return "";
+    const links = doc.querySelectorAll('a[href*="/u/"]');
+    const n = Math.min(links.length, 20);
+    for (let i = 0; i < n; i++) {
+      const href = String(links[i].getAttribute("href") || "");
+      const m = href.match(/\/u\/([A-Za-z0-9_]+)/);
+      if (!m) continue;
+      const name = m[1];
+      if (/^(help|support|blog|about|settings|login|signup)$/i.test(name)) continue;
+      return name;
+    }
+    return "";
+  }
+
+  function slotFromSleeperDraftOrder(order, userIds) {
+    if (!order || typeof order !== "object") return 0;
+    const ids = userIds || [];
+    for (let i = 0; i < ids.length; i++) {
+      const uid = String(ids[i] || "");
+      if (!uid) continue;
+      if (order[uid] != null && Number(order[uid]) >= 1) return Number(order[uid]);
+    }
+    return 0;
+  }
+
+  function slotFromSleeperPickedBy(picks, userIds) {
+    const want = {};
+    (userIds || []).forEach(function (id) {
+      if (id) want[String(id)] = true;
+    });
+    if (!Object.keys(want).length) return 0;
+    let first = 0;
+    let slot = 0;
+    (picks || []).forEach(function (p) {
+      const who = p && (p.pickedBy != null ? p.pickedBy : p.picked_by);
+      if (who == null || !want[String(who)]) return;
+      const pn = Number(p.overallPickNumber || p.pick_no || 0);
+      const ds = Number(p.slot || p.draft_slot || p.draftSlot || 0);
+      if (ds >= 1 && (!first || (pn && pn < first) || !pn)) {
+        first = pn || first;
+        slot = ds;
+      }
+    });
+    return slot;
+  }
+
+  function slotFromSleeperRosterMap(slotToRoster, ownerToRoster, userIds) {
+    if (!slotToRoster || !ownerToRoster) return 0;
+    for (let i = 0; i < (userIds || []).length; i++) {
+      const uid = String(userIds[i] || "");
+      if (!uid) continue;
+      const rid = ownerToRoster[uid];
+      if (rid == null) continue;
+      const keys = Object.keys(slotToRoster);
+      for (let k = 0; k < keys.length; k++) {
+        if (String(slotToRoster[keys[k]]) === String(rid)) {
+          const slot = Number(keys[k]);
+          if (slot >= 1) return slot;
+        }
+      }
+    }
+    return 0;
+  }
+
+  function parseSleeperClock(text) {
+    const s = String(text || "").replace(/\s+/g, " ");
+    return {
+      onClock: /you(?:'re| are) on the clock|your (?:pick|turn)(?:\b| to pick)|waiting for you to pick/i.test(s),
+      upIn: (function () {
+        const m = s.match(/you(?:'re| are) up in\s+(\d+)\s+picks?/i);
+        return m ? Number(m[1]) : null;
+      })(),
+    };
+  }
+
+  function sleeperClockText(doc) {
+    doc = doc || (typeof document !== "undefined" ? document : null);
+    if (!doc || !doc.querySelectorAll) return "";
+    const bits = [];
+    const nodes = doc.querySelectorAll(
+      "h1,h2,h3,header,[class*='Clock'],[class*='clock'],[class*='Status'],[class*='status'],[class*='Banner'],[class*='banner'],[class*='Pick']"
+    );
+    const n = Math.min(nodes.length, 60);
+    for (let i = 0; i < n; i++) bits.push(String(nodes[i].textContent || "").slice(0, 220));
+    let blob = bits.join(" ");
+    if (!/you(?:'re| are) on the clock|your (?:pick|turn)|you(?:'re| are) up in/i.test(blob) && doc.body) {
+      blob = String(doc.body.innerText || "").slice(0, 4000);
+    }
+    return blob;
+  }
+
+  function slotFromSleeperClock(text, currentPick, teams) {
+    const c = parseSleeperClock(text);
+    const pn = Number(currentPick) || 0;
+    const nTeams = Number(teams) || 0;
+    if (nTeams < 2 || pn < 1) return 0;
+    if (c.onClock) return snakeSlot(pn, nTeams);
+    if (c.upIn != null && c.upIn >= 0) return snakeSlot(pn + c.upIn, nTeams);
+    return 0;
+  }
+
+  function detectSleeperDomSlot(identity, teams) {
+    const names = [];
+    const seen = {};
+    function addName(s) {
+      const n = String(s || "").replace(/\s+/g, " ").trim().toLowerCase();
+      if (n.length < 2 || n.length > 40) return;
+      if (seen[n]) return;
+      seen[n] = true;
+      names.push(n);
+    }
+    addName(identity && identity.displayName);
+    addName(identity && identity.username);
+    addName(identity && identity.teamName);
+    if (names.length && typeof document !== "undefined" && document.createTreeWalker) {
+      const scope =
+        document.querySelector(
+          '[class*="draft-board"], [class*="draftBoard"], [class*="draft-container"], [class*="draftContainer"], [id*="draft"]'
+        ) || document.body;
+      if (scope) {
+        const walker = document.createTreeWalker(scope, NodeFilter.SHOW_ELEMENT);
+        let el;
+        let scanned = 0;
+        while ((el = walker.nextNode()) && scanned < 3500) {
+          scanned++;
+          if (el.children && el.children.length > 3) continue;
+          const label = String(el.getAttribute("aria-label") || el.textContent || "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLowerCase();
+          if (!label || label.length > 48) continue;
+          const hit = names.some(function (n) {
+            return label === n || label.indexOf(n) === 0 || label.indexOf(n + " ") === 0;
+          });
+          if (!hit) continue;
+          const slot = slotFromColumnNode(el);
+          if (slot) return clampSlot(slot, teams || 32);
+        }
+      }
+    }
+    return detectDomSlot();
+  }
+
+  function detectSleeperSlot(opts) {
+    opts = opts || {};
+    const teams = Number(opts.teams) || 0;
+    const identity = opts.identity || (opts.skipCollect ? { userIds: [] } : collectSleeperIdentity());
+    const userIds = (identity && identity.userIds) || [];
+    const draft = opts.draft || {};
+    const picks = opts.picks || [];
+    const max = teams || 32;
+    let slot = slotFromSleeperDraftOrder(draft.draft_order, userIds);
+    if (slot) return clampSlot(slot, max);
+    slot = slotFromSleeperPickedBy(picks, userIds);
+    if (slot) return clampSlot(slot, max);
+    const rosterMap = draft.slot_to_roster_id || (draft.metadata && draft.metadata.slot_to_roster_id);
+    slot = slotFromSleeperRosterMap(rosterMap, opts.ownerToRoster, userIds);
+    if (slot) return clampSlot(slot, max);
+    const current = Number(opts.currentPick) || (picks.length ? picks[picks.length - 1].overallPickNumber + 1 : 1);
+    const clockText = opts.clockText != null ? opts.clockText : opts.skipDom ? "" : sleeperClockText();
+    slot = slotFromSleeperClock(clockText, current, teams || 12);
+    if (slot) return clampSlot(slot, max);
+    if (!opts.skipDom) {
+      slot = detectSleeperDomSlot(identity, max);
+      if (slot) return clampSlot(slot, max);
+    }
+    return 0;
+  }
+
   root.BRDraftSlot = {
     snakeSlot: snakeSlot,
     teamCountFromPicks: teamCountFromPicks,
@@ -550,5 +827,14 @@
     mergeYahooPicks: mergeYahooPicks,
     parseYahooNamePos: parseYahooNamePos,
     completedFromYahooClock: completedFromYahooClock,
+    collectSleeperIdentity: collectSleeperIdentity,
+    sleeperUsernameFromDom: sleeperUsernameFromDom,
+    slotFromSleeperDraftOrder: slotFromSleeperDraftOrder,
+    slotFromSleeperPickedBy: slotFromSleeperPickedBy,
+    slotFromSleeperRosterMap: slotFromSleeperRosterMap,
+    parseSleeperClock: parseSleeperClock,
+    slotFromSleeperClock: slotFromSleeperClock,
+    detectSleeperSlot: detectSleeperSlot,
+    detectSleeperDomSlot: detectSleeperDomSlot,
   };
 })(window);

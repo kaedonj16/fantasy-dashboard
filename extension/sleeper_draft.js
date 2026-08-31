@@ -7,8 +7,11 @@
   const POLL_MS = 1500;
   let lastFp = "";
   let lastCount = 0;
+  let lastMySlot = 0;
   let cachedLeagueId = "";
   let cachedScoring = { ppr: 1, tep: 0, passTd: 4 };
+  let cachedUser = { username: "", userId: "" };
+  let cachedOwnerMap = { leagueId: "", map: {} };
 
   async function leagueScoring(leagueId) {
     if (!leagueId) return cachedScoring;
@@ -43,18 +46,97 @@
     }
   }
 
-  function sleeperUserId() {
+  function sleeperIdentity() {
+    if (window.BRDraftSlot && BRDraftSlot.collectSleeperIdentity) {
+      return BRDraftSlot.collectSleeperIdentity();
+    }
     try {
       for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        const v = localStorage.getItem(k) || "";
-        const m = v.match(/"user_id"\s*:\s*"?(\d{3,})/);
-        if (m) return m[1];
+        const v = localStorage.getItem(localStorage.key(i)) || "";
+        const m = v.match(/"user_id"\s*:\s*"?(\d{6,20})/);
+        if (m) return { userIds: [m[1]], username: "", displayName: "", teamName: "" };
+      }
+    } catch (_e) {
+      /* ignore */
+    }
+    return { userIds: [], username: "", displayName: "", teamName: "" };
+  }
+
+  async function resolveSleeperUserId(ident) {
+    const ids = (ident && ident.userIds) || [];
+    if (ids.length) {
+      cachedUser.userId = ids[0];
+      return ids[0];
+    }
+    if (cachedUser.userId) return cachedUser.userId;
+    const un =
+      (ident && ident.username) ||
+      (window.BRDraftSlot && BRDraftSlot.sleeperUsernameFromDom
+        ? BRDraftSlot.sleeperUsernameFromDom()
+        : "");
+    if (!un) return "";
+    if (cachedUser.username === un && cachedUser.userId) return cachedUser.userId;
+    try {
+      const res = await fetch(
+        "https://api.sleeper.app/v1/user/" + encodeURIComponent(un),
+        { cache: "no-store" }
+      );
+      const user = res.ok ? await res.json() : null;
+      if (user && user.user_id) {
+        cachedUser = { username: un, userId: String(user.user_id) };
+        return cachedUser.userId;
       }
     } catch (_e) {
       /* ignore */
     }
     return "";
+  }
+
+  async function ownerToRosterMap(leagueId) {
+    if (!leagueId) return {};
+    if (cachedOwnerMap.leagueId === String(leagueId)) return cachedOwnerMap.map;
+    try {
+      const res = await fetch(
+        "https://api.sleeper.app/v1/league/" + encodeURIComponent(leagueId) + "/rosters",
+        { cache: "no-store" }
+      );
+      const rows = res.ok ? await res.json() : [];
+      const map = {};
+      (Array.isArray(rows) ? rows : []).forEach(function (r) {
+        if (!r) return;
+        if (r.owner_id) map[String(r.owner_id)] = r.roster_id;
+        (r.co_owners || []).forEach(function (c) {
+          if (c) map[String(c)] = r.roster_id;
+        });
+      });
+      cachedOwnerMap = { leagueId: String(leagueId), map: map };
+      return map;
+    } catch (_e) {
+      return cachedOwnerMap.map || {};
+    }
+  }
+
+  function resolveMySlot(draft, picks, teams, ident, userId, ownerToRoster) {
+    const ids = ((ident && ident.userIds) || []).slice();
+    if (userId && ids.indexOf(String(userId)) < 0) ids.unshift(String(userId));
+    let slot = 0;
+    if (window.BRDraftSlot && BRDraftSlot.detectSleeperSlot) {
+      slot = BRDraftSlot.detectSleeperSlot({
+        draft: draft || {},
+        picks: picks || [],
+        teams: teams,
+        identity: {
+          userIds: ids,
+          username: ident && ident.username,
+          displayName: ident && ident.displayName,
+          teamName: ident && ident.teamName,
+        },
+        ownerToRoster: ownerToRoster || {},
+        currentPick: (picks && picks.length ? picks[picks.length - 1].overallPickNumber : 0) + 1,
+      });
+    }
+    if (slot) lastMySlot = slot;
+    return lastMySlot || 0;
   }
 
   function normalizePick(row) {
@@ -72,6 +154,7 @@
       pos: String(md.position || row.position || "").toUpperCase(),
       nflTeam: String(md.team || "").toUpperCase(),
       slot: Number(row.draft_slot || row.slot || 0),
+      pickedBy: row.picked_by != null ? String(row.picked_by) : "",
       teamId: row.roster_id != null ? String(row.roster_id) : "",
     };
   }
@@ -113,11 +196,11 @@
       picks.sort(function (a, b) { return a.overallPickNumber - b.overallPickNumber; });
       const fp = fingerprint(picks);
       const settings = (draft && draft.settings) || {};
-      const uid = sleeperUserId();
-      let mySlot = 0;
-      if (uid && draft && draft.draft_order && draft.draft_order[uid] != null) {
-        mySlot = Number(draft.draft_order[uid]);
-      }
+      const teams = Number(settings.teams || 12);
+      const ident = sleeperIdentity();
+      const uid = await resolveSleeperUserId(ident);
+      const ownerToRoster = await ownerToRosterMap(draft && draft.league_id);
+      const mySlot = resolveMySlot(draft, picks, teams, ident, uid, ownerToRoster);
       const roster = window.BRDraftSlot && BRDraftSlot.rosterFromSleeperSettings
         ? BRDraftSlot.rosterFromSleeperSettings(settings)
         : null;
@@ -139,6 +222,7 @@
       };
       const settingsFp = [
         fp,
+        mySlot || "",
         window.BRDraftSlot && BRDraftSlot.rosterKey ? BRDraftSlot.rosterKey(roster) : "",
         scoring.ppr,
         scoring.tep,
@@ -160,5 +244,20 @@
   });
 
   poll();
+  setTimeout(poll, 500);
+  setTimeout(poll, 2000);
   setInterval(poll, POLL_MS);
+  let slotTick = null;
+  try {
+    const mo = new MutationObserver(function () {
+      if (document.hidden || lastMySlot || slotTick) return;
+      slotTick = setTimeout(function () {
+        slotTick = null;
+        poll();
+      }, 400);
+    });
+    mo.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+  } catch (_e) {
+    /* ignore */
+  }
 })();
