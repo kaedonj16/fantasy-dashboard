@@ -11947,6 +11947,81 @@ a.signed-home-league:hover {
     animation: homeCardIn var(--dur-slow) var(--ease-out) .08s both;
 }
 
+.home-hero-editorial {
+    margin: 0;
+    max-width: 34rem;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--text-muted);
+}
+
+.home-hero-editorial a {
+    color: var(--text);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.home-publisher {
+    position: relative;
+    z-index: 1;
+    margin: 8px 0 32px;
+    padding: 24px 26px 20px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+}
+
+.home-publisher-title {
+    margin: 0 0 12px;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.home-publisher p {
+    margin: 0 0 12px;
+    font-size: 15px;
+    line-height: 1.65;
+    color: var(--text);
+}
+
+.home-publisher p:last-of-type {
+    margin-bottom: 16px;
+}
+
+.home-publisher-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.home-publisher-links a {
+    display: inline-block;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--card-soft);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.home-publisher-links a:hover {
+    border-color: color-mix(in srgb, var(--text) 22%, var(--border));
+}
+
+.guide-byline {
+    margin: 0 0 14px;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
 @keyframes homeHeroIn {
     from {
         opacity: 0;

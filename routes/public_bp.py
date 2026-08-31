@@ -13,6 +13,13 @@ from typing import Optional
 
 from flask import Blueprint, Response, send_file, request
 
+from routes.guides_content import (
+    GUIDE_AUTHOR_NAME,
+    GUIDE_AUTHOR_URL,
+    GUIDE_ORDER as _GUIDE_ORDER,
+    GUIDES,
+)
+
 public_bp = Blueprint("public", __name__)
 
 # Public support inbox (also used as the VAPID contact identity elsewhere).
@@ -313,8 +320,8 @@ def privacy_page(platform: Optional[str] = None, season: Optional[int] = None,
               <div class="static-section-title">Children's Privacy</div>
               <p>
                 BR Fantasy is intended for adults who manage fantasy football leagues. It is not
-                directed at children under 13, and we do not knowingly collect personal information
-                from children under 13. If you believe a child has provided information to us,
+                directed at children, and we do not knowingly collect personal information from
+                anyone under 18. If you believe a minor has provided information to us,
                 contact us and we will delete it.
               </p>
             </div>
@@ -684,7 +691,8 @@ def about_page(platform: Optional[str] = None, season: Optional[int] = None,
                 I'm
                 <a href="https://youtube.com/@hoodiekj" target="_blank" rel="noopener">hoodiekj</a>,
                 a fantasy football player and developer who wanted better tools than the major
-                platforms provide, and I build and maintain BR Fantasy myself.
+                platforms provide. I write the
+                <a href="/guides">strategy guides</a> and build and maintain BR Fantasy myself.
               </p>
             </div>
 
@@ -881,316 +889,10 @@ def terms_page(platform: Optional[str] = None, season: Optional[int] = None,
 
 
 # ── Guides ──────────────────────────────────────────────────────────────────────
-# Original, long-form strategy content. This is the public, crawlable "value"
-# layer that lives outside the league-context login wall (the dashboards, trade
-# calculator, etc. require a league ID, so search engines never see them). Each
-# guide is unique editorial copy and links into the public tools/rankings pages
-# so crawlers can discover the rest of the site from here.
-
-GUIDES = {
-    "dynasty-trade-value": {
-        "title": "How Dynasty Trade Value Works",
-        "summary": "What a dynasty trade value actually measures, why it differs from "
-                   "redraft rankings, and how to read the numbers behind a deal.",
-        "body": """
-            <p>
-              Every player in a dynasty league carries a <strong>trade value</strong>: a
-              single number meant to capture how much that player is worth in the open market
-              of league-to-league trades. It is not the same thing as a redraft ranking. A
-              redraft ranking answers &ldquo;who scores the most points this season?&rdquo; A
-              dynasty value answers &ldquo;what would the rest of the league actually give up to
-              acquire this player, accounting for age, contract of expected production, and
-              long-term outlook?&rdquo;
-            </p>
-            <p>
-              That distinction is why a 23-year-old breakout receiver can out-value a 30-year-old
-              running back who scores more points <em>right now</em>. Dynasty rosters are held for
-              years, so the market prices in the runway a player has left, not just this week's
-              box score.
-            </p>
-            <div class="static-section-title">What goes into a value</div>
-            <p>
-              A good dynasty value blends several inputs rather than relying on any single source:
-            </p>
-            <ul style="margin-left:20px; line-height:1.8;">
-              <li><strong>Consensus market data</strong>: where the crowd of dynasty managers
-                  is actually pricing a player.</li>
-              <li><strong>Recent on-field production</strong>: usage, efficiency, and role,
-                  which move a player's stock week to week.</li>
-              <li><strong>Age and position curve</strong>: running backs decline early, wide
-                  receivers and quarterbacks hold value far longer.</li>
-              <li><strong>Situation</strong>: target share, depth-chart competition, and team
-                  context that affect future opportunity.</li>
-            </ul>
-            <p>
-              You can see calibrated values for every relevant player on the
-              <a href="/rankings/dynasty">dynasty rankings</a> page, or browse the full
-              <a href="/dynasty-trade-value-chart">dynasty trade value chart</a> to compare across
-              positions at a glance.
-            </p>
-            <div class="static-section-title">Why two values for the same player?</div>
-            <p>
-              Most dynasty leagues are either single-quarterback (1QB) or Superflex, and a player's
-              value can change dramatically between the two formats. Quarterbacks are far more
-              valuable in Superflex because you can start two of them. If your league is Superflex,
-              always look at Superflex values, using 1QB numbers will badly under-rate every
-              passer. We cover this in depth in
-              <a href="/guides/superflex-vs-1qb">Superflex vs 1QB</a>.
-            </p>
-            <div class="highlight-box">
-              Bottom line: a dynasty value is a market estimate, not a law. Use it as the starting
-              point for a negotiation, then adjust for your roster's timeline and needs.
-            </div>
-        """,
-    },
-    "superflex-vs-1qb": {
-        "title": "Superflex vs 1QB: Why the Same Player Has Two Values",
-        "summary": "Quarterbacks dominate Superflex leagues. Here's how values shift between "
-                   "formats and how to avoid badly mispricing a trade.",
-        "body": """
-            <p>
-              The single biggest factor in a player's dynasty value, bigger than age,
-              bigger than last week's stat line, is often just your league format. In a
-              <strong>single-quarterback (1QB)</strong> league you start one QB. In a
-              <strong>Superflex</strong> league you can start a second quarterback in a flex spot,
-              which makes the position enormously more valuable.
-            </p>
-            <div class="static-section-title">Why quarterbacks explode in Superflex</div>
-            <p>
-              There are only 32 starting NFL quarterbacks, and in a 12-team Superflex league up to
-              24 of them can be in starting lineups every week. That scarcity means even mid-tier
-              starters carry real weight, and the elite young passers become the most valuable
-              assets in the entire player pool, frequently worth more than any running back
-              or receiver.
-            </p>
-            <p>
-              In 1QB, the opposite is true: you only need one quarterback, streamable options are
-              everywhere, and so the position is heavily discounted. Top-tier wide receivers and
-              running backs sit at the top of 1QB value charts instead.
-            </p>
-            <div class="static-section-title">The practical trap</div>
-            <p>
-              The most common dynasty trade mistake is using the wrong format's values. If you play
-              Superflex but evaluate a quarterback trade with 1QB numbers, you will think you are
-              winning a deal while actually giving up a premium asset for pennies. Always confirm
-              which format a value reflects before you commit.
-            </p>
-            <p>
-              On the <a href="/rankings/dynasty">dynasty rankings</a> you can view values for the
-              format your league uses, and the
-              <a href="/trade">trade calculator</a> lets you toggle Superflex so both sides of a
-              deal are priced correctly.
-            </p>
-            <div class="highlight-box">
-              Rule of thumb: in Superflex, treat startable quarterbacks as premium assets. In 1QB,
-              let the other manager overpay for them.
-            </div>
-        """,
-    },
-    "reading-advanced-metrics": {
-        "title": "Reading Advanced Metrics: A Fantasy Manager's Guide",
-        "summary": "Target share, air yards, snap counts, red-zone usage and more, what "
-                   "each metric tells you and which ones actually predict fantasy points.",
-        "body": """
-            <p>
-              Box-score stats tell you what already happened. <strong>Advanced metrics</strong>
-              tell you whether it is likely to keep happening. They separate players who are
-              producing because of genuine, repeatable opportunity from those riding unsustainable
-              efficiency or touchdown luck. Here's how to read the ones that matter.
-            </p>
-            <div class="static-section-title">Opportunity metrics (the most predictive)</div>
-            <ul style="margin-left:20px; line-height:1.8;">
-              <li><strong>Target share</strong>: the percentage of his team's targets a
-                  receiver or tight end earns. A rising target share is one of the strongest
-                  leading indicators of future fantasy production.</li>
-              <li><strong>Snap share</strong>: how often a player is actually on the field.
-                  Low snap share caps a player's ceiling no matter how efficient he looks.</li>
-              <li><strong>Air yards</strong>: the total downfield distance of a player's
-                  targets. High air yards signal a player is being used in a high-value role even
-                  before the catches show up.</li>
-              <li><strong>Red-zone usage</strong>: touches and targets inside the 20.
-                  Red-zone volume drives touchdowns, which are the most volatile (and valuable)
-                  source of fantasy points.</li>
-            </ul>
-            <div class="static-section-title">Efficiency metrics (context, not gospel)</div>
-            <p>
-              Yards per route run, yards after catch, and yards per touch describe how well a
-              player converts opportunity into production. They are useful, but efficiency is far
-              noisier than volume, a great yards-per-touch number on five touches a game
-              won't survive a larger sample. Always weigh efficiency against the opportunity behind
-              it.
-            </p>
-            <div class="static-section-title">How to use them together</div>
-            <p>
-              The players worth buying are the ones whose opportunity is climbing before the
-              fantasy points catch up: rising snaps, rising target share, growing red-zone role.
-              That gap between opportunity and output is exactly what the
-              <a href="/breakouts">breakout engine</a> is built to surface, and you can dig into
-              the underlying numbers on the <a href="/players">player database</a>.
-            </p>
-            <div class="highlight-box">
-              Prioritize volume and role over efficiency. Opportunity is sticky; efficiency
-              regresses.
-            </div>
-        """,
-    },
-    "rookie-draft-strategy": {
-        "title": "Dynasty Rookie Draft Strategy",
-        "summary": "How to value rookie picks, read prospect profiles, and avoid the most common "
-                   "first-year-player mistakes in dynasty.",
-        "body": """
-            <p>
-              The rookie draft is where dynasty championships are quietly built. Cheap, ascending
-              young talent is the best value in the format, but rookie picks are also where
-              managers most often overpay for hype. Here's a framework for drafting well.
-            </p>
-            <div class="static-section-title">Value the picks, then the players</div>
-            <p>
-              Before you fall in love with a prospect, understand what the pick itself is worth.
-              Early first-round rookie picks carry significant trade value because of their upside,
-              but that value drops quickly as you move into the second and third rounds. Knowing the
-              market price of a pick keeps you from trading a proven player for a lottery ticket.
-            </p>
-            <div class="static-section-title">What actually predicts rookie success</div>
-            <ul style="margin-left:20px; line-height:1.8;">
-              <li><strong>Draft capital</strong>: where the NFL drafted a player is one of
-                  the best predictors of opportunity. Teams invest snaps and targets in the players
-                  they spent premium picks on.</li>
-              <li><strong>Landing spot</strong>: the same prospect can be a league-winner or
-                  a redraft afterthought depending on depth-chart competition and offensive
-                  quality.</li>
-              <li><strong>College production at a young age</strong>: players who dominated
-                  early in their college careers (a strong &ldquo;breakout age&rdquo;) hit at higher
-                  rates.</li>
-              <li><strong>Athletic profile</strong>: testing scores like RAS provide a floor
-                  check, especially at receiver and running back.</li>
-            </ul>
-            <div class="static-section-title">Position priorities</div>
-            <p>
-              In most formats, prioritize wide receivers early, they have the longest dynasty
-              shelf life and the highest hit rate near the top of rookie drafts. Running backs offer
-              immediate production but age out fast, so they are better targeted by contending teams.
-              In Superflex, a rookie quarterback with a clear path to starting can be worth a top
-              pick on its own.
-            </p>
-            <p>
-              You can study full prospect profiles, college metrics, draft capital, athletic
-              scores, and live ADP movement, on the <a href="/prospects">rookie prospects</a>
-              page.
-            </p>
-            <div class="highlight-box">
-              Draft talent and opportunity, not name recognition. The best rookie picks are the
-              ones your league mates aren't talking about yet.
-            </div>
-        """,
-    },
-    "buy-low-sell-high": {
-        "title": "Buy-Low and Sell-High: Timing the Dynasty Market",
-        "summary": "Dynasty value is always moving. Learn to recognize the windows where you can "
-                   "buy a player below his real worth or sell above it.",
-        "body": """
-            <p>
-              Dynasty trade value is not static, it moves constantly with injuries, depth
-              chart changes, hot streaks, and slumps. The managers who win their leagues over time
-              are the ones who trade <em>against</em> these short-term swings: buying players the
-              market has soured on and selling players it has temporarily overrated.
-            </p>
-            <div class="static-section-title">When to buy low</div>
-            <ul style="margin-left:20px; line-height:1.8;">
-              <li>A talented player in a brief slump whose underlying usage (snaps, target share)
-                  is still strong.</li>
-              <li>A young player stuck behind an aging or injury-prone starter who will eventually
-                  get the job.</li>
-              <li>A player coming off a minor injury, where the panic is bigger than the long-term
-                  risk.</li>
-            </ul>
-            <div class="static-section-title">When to sell high</div>
-            <ul style="margin-left:20px; line-height:1.8;">
-              <li>A player riding an unsustainable touchdown rate that his opportunity won't
-                  support.</li>
-              <li>An aging running back coming off a big stretch, sell the name before the
-                  cliff.</li>
-              <li>A backup who spiked in value during a short injury fill-in for a starter who is
-                  about to return.</li>
-            </ul>
-            <div class="static-section-title">Let the data find the windows</div>
-            <p>
-              The clearest buy-low and sell-high signals show up as movement in value over time.
-              The <a href="/top-movers">top movers</a> page tracks which players are rising and
-              falling fastest, and <a href="/trade-intel">trade intelligence</a> surfaces market
-              signals from real league activity. Pair those with the
-              <a href="/rankings/dynasty">current rankings</a> to spot gaps between a player's price
-              and his true outlook.
-            </p>
-            <div class="highlight-box">
-              The market overreacts to recent results. Your edge is patience: buy the dip on talent,
-              sell the spike on age and luck.
-            </div>
-        """,
-    },
-    "evaluating-a-trade": {
-        "title": "How to Evaluate a Dynasty Trade",
-        "summary": "A step-by-step process for judging any trade offer, beyond just adding "
-                   "up the values on each side.",
-        "body": """
-            <p>
-              Adding up trade values on each side of a deal is a useful first check, but it is only
-              the beginning. The best trades aren't always the ones that &ldquo;win&rdquo; on raw
-              value, they're the ones that make <em>your</em> roster better for <em>your</em>
-              timeline. Here's a repeatable process.
-            </p>
-            <div class="static-section-title">Step 1: Check the raw value</div>
-            <p>
-              Start by comparing the total value on each side using format-appropriate numbers
-              (1QB or Superflex). A quick way to do this is the
-              <a href="/trade">trade calculator</a>, which grades both sides and suggests counters.
-              If a deal is wildly lopsided on value, you usually have your answer.
-            </p>
-            <div class="static-section-title">Step 2: Account for consolidation</div>
-            <p>
-              Two good players are generally worth more than three mediocre ones, because starting
-              lineup spots are limited and the best players are the hardest to replace. When you
-              trade multiple pieces for one stud, expect, and accept, paying a small
-              value premium for that consolidation.
-            </p>
-            <div class="static-section-title">Step 3: Match the deal to your timeline</div>
-            <p>
-              Are you contending or rebuilding? Contenders should trade youth and picks for proven,
-              win-now production. Rebuilders should do the reverse: sell aging stars for young
-              players and draft capital. A trade that's &ldquo;fair&rdquo; on value can still be
-              wrong if it doesn't fit where your team is in its cycle.
-            </p>
-            <div class="static-section-title">Step 4: Value positional scarcity and need</div>
-            <p>
-              A player is worth more to a roster that needs his position. Don't trade from a
-              position of strength into another position of strength, address real lineup
-              holes. In Superflex, weigh quarterback depth especially heavily (see
-              <a href="/guides/superflex-vs-1qb">Superflex vs 1QB</a>).
-            </p>
-            <div class="static-section-title">Step 5: Look past this week</div>
-            <p>
-              Before you finalize, sanity-check the underlying trends from the
-              <a href="/guides/reading-advanced-metrics">advanced metrics</a> and the
-              <a href="/top-movers">top movers</a> page. You want to be buying ascending players and
-              selling declining ones, not the reverse.
-            </p>
-            <div class="highlight-box">
-              A good trade makes your starting lineup better for your timeline. Value is the
-              starting point; fit is the decision.
-            </div>
-        """,
-    },
-}
-
-_GUIDE_ORDER = [
-    "dynasty-trade-value",
-    "superflex-vs-1qb",
-    "reading-advanced-metrics",
-    "rookie-draft-strategy",
-    "buy-low-sell-high",
-    "evaluating-a-trade",
-]
-
+# Original, long-form strategy content lives in routes/guides_content.py so this
+# module stays routing, not a 14-article anthology. Each guide is unique
+# editorial copy that search engines and AdSense reviewers can crawl without a
+# league login.
 
 def _guides_base(platform, season, league_id):
     """Path prefix so guide links keep league context when present."""
@@ -1221,11 +923,17 @@ def guides_index(platform: Optional[str] = None, season: Optional[int] = None,
             <h1 class="static-hero-title">Dynasty &amp; Fantasy Football Guides</h1>
             <div class="static-section">
               <p>
-                Free, in-depth guides to dynasty strategy, how trade values work, how to read
-                advanced metrics, rookie-draft strategy, and how to win trades. Pair them with our
-                live <a href="{base}/rankings/dynasty">dynasty rankings</a> and
-                <a href="{base}/trade">trade calculator</a> to put the ideas into practice, and
-                keep the <a href="{base}/glossary">glossary</a> handy for any unfamiliar terms.
+                Original strategy writing from BR Fantasy: how dynasty trade values are built,
+                why Superflex prices quarterbacks so differently from 1QB, how to read
+                target share and snap counts, and how to rebuild, contend, and draft without
+                copying a generic cheat sheet. These are full articles, not tool captions.
+              </p>
+              <p style="margin-top:8px;">
+                Pair them with live <a href="{base}/rankings/dynasty">dynasty rankings</a>, the
+                <a href="{base}/dynasty-trade-value-chart">trade value chart</a>, and the
+                <a href="{base}/trade">trade calculator</a>. Keep the
+                <a href="{base}/glossary">glossary</a> handy for any unfamiliar terms. No
+                account is required to read the guides or use the public rankings.
               </p>
             </div>
             <div class="static-section">
@@ -1236,7 +944,8 @@ def guides_index(platform: Optional[str] = None, season: Optional[int] = None,
     """
     return _render(
         "Dynasty Fantasy Football Guides", league_id or None, "guides", body, platform, season,
-        description="Free dynasty fantasy football guides covering trade value, Superflex, advanced metrics, and rookie drafts.",
+        description="Free original dynasty fantasy football guides covering trade value, "
+                    "Superflex, advanced metrics, rebuilds, startups, and the waiver wire.",
     )
 
 
@@ -1268,6 +977,41 @@ def guide_page(slug: str, platform: Optional[str] = None, season: Optional[int] 
             + "".join(nav_links) + "</div>"
         )
 
+    published = g.get("published") or ""
+    updated = g.get("updated") or published
+    byline = (
+        f'<p class="guide-byline">By <a href="{GUIDE_AUTHOR_URL}" target="_blank" '
+        f'rel="author noopener">{GUIDE_AUTHOR_NAME}</a>'
+        f'{f" · Updated {updated}" if updated else ""}</p>'
+    )
+
+    import json
+    origin = _seo_origin()
+    article_ld = {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": g["title"],
+        "description": g.get("summary") or "",
+        "datePublished": published,
+        "dateModified": updated,
+        "author": {
+            "@type": "Person",
+            "name": GUIDE_AUTHOR_NAME,
+            "url": GUIDE_AUTHOR_URL,
+        },
+        "publisher": {
+            "@type": "Organization",
+            "name": "BR Fantasy",
+            "logo": {"@type": "ImageObject", "url": f"{origin}/static/BR_Logo.png"},
+        },
+        "mainEntityOfPage": f"{origin}{base}/guides/{slug}",
+    }
+    jsonld = (
+        '<script type="application/ld+json">'
+        + json.dumps(article_ld, separators=(",", ":")).replace("<", "\\u003c")
+        + "</script>"
+    )
+
     body = f"""
         <div class="static-page">
           <div class="static-card-page">
@@ -1275,10 +1019,12 @@ def guide_page(slug: str, platform: Optional[str] = None, season: Optional[int] 
               <a href="{base}/guides">&larr; All guides</a>
             </p>
             <h1 class="static-hero-title">{g['title']}</h1>
+            {byline}
             <div class="static-section">
               {g['body']}
             </div>
             {nav_html}
+            {jsonld}
           </div>
         </div>
     """

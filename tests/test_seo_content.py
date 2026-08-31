@@ -132,3 +132,52 @@ def test_robots_allows_adsense_crawlers(offline_client):
     assert "Mediapartners-Google" in body
     assert "AdsBot-Google" in body
     assert "Allow: /" in body
+
+
+def test_homepage_has_crawlable_publisher_content(offline_client):
+    """AdSense reviewers land on / first. The connect-league card is not enough
+    publisher content; the homepage must also ship original HTML articles/links."""
+    html = _html(offline_client, "/")
+    assert "home-publisher" in html
+    assert "home-hero-editorial" in html
+    assert 'href="/guides"' in html
+    assert 'href="/rankings/dynasty"' in html
+    assert 'href="/dynasty-trade-value-chart"' in html
+    assert "How Dynasty Trade Value Works" in html
+    # Full-screen splash must not hide the page from no-JS reviewers.
+    assert "#appSplash{display:none!important}" in html
+
+
+def test_guides_are_substantial_articles_with_schema(offline_client):
+    from routes.guides_content import GUIDE_ORDER, GUIDES
+
+    assert len(GUIDE_ORDER) >= 12
+    xml = _html(offline_client, "/sitemap.xml")
+    for slug in GUIDE_ORDER:
+        g = GUIDES[slug]
+        words = len(__import__("re").sub(r"<[^>]+>", " ", g["body"]).split())
+        assert words >= 400, f"{slug} is too thin ({words} words)"
+        assert f"/guides/{slug}" in xml
+        html = _html(offline_client, f"/guides/{slug}")
+        assert '"@type":"Article"' in html
+        assert g["title"] in html
+        assert "hoodiekj" in html
+        assert "adsbygoogle" in html
+
+
+def test_guest_nav_exposes_learn_pages():
+    import app
+    with app.app.test_request_context("/"):
+        nav = app.build_nav(None, "home", "sleeper", 2026)
+        more = app._mobile_nav_guest("home")
+    assert "href='/guides'" in nav
+    assert "Learn <span" in nav
+    assert "href='/guides'" in more
+    assert "href='/glossary'" in more
+    assert "Strategy Guides" in more
+
+
+def test_adsense_script_loads_immediately_for_google_crawlers():
+    import app
+    assert "mediapartners-google" in app._AD_INIT
+    assert "adsbot" in app._AD_INIT
