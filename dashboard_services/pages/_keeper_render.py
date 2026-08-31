@@ -87,6 +87,14 @@ def render_keeper_html(seed: dict) -> str:
         if plat == "mfl" or (not auto and plat not in ("sleeper", "espn", "yahoo"))
         else ""
     )
+    auction_banner = (
+        '<div class="kpr-warn">Auction/FAAB league detected'
+        + (f' (budget ≈ ${int(round(float(seed.get("auctionBudget"))))})'
+           if seed.get("auctionBudget") is not None else '')
+        + '. Keeper cost rounds still work; enter auction $ paid manually when '
+        'the provider does not expose amounts. Auction surplus scoring is guidance-only.</div>'
+        if seed.get("isAuction") else ""
+    )
     auto_badge = (
         '<span class="kpr-auto"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> '
         'Draft rounds auto-detected</span>'
@@ -305,7 +313,7 @@ def render_keeper_html(seed: dict) -> str:
   </div>
 
   <div class="card-body" style="padding-top:0;">
-    {mfl_banner}
+    {mfl_banner}{auction_banner}
     <div class="kpr-cfg">
       <div class="kpr-fields">
       {auto_badge}

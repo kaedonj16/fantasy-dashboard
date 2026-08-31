@@ -115,6 +115,27 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
     # (?keepers=1). Never for dynasty / plain redraft leagues, so the board is
     # unchanged there.
     keepers_payload = None
+    is_auction = False
+    auction_budget = None
+    if league_id:
+        try:
+            from utils.league_format import detect_league_format
+            _ctx_fmt = get_league_ctx_from_cache(platform, league_id, season) or {}
+            _drafts = []
+            try:
+                from dashboard_services.platform_api import get_drafts
+                _drafts = get_drafts(platform, league_id, season) or []
+            except Exception:
+                _drafts = _ctx_fmt.get("drafts") or []
+            _fmt = detect_league_format(
+                league=_ctx_fmt.get("league") or {},
+                drafts=_drafts,
+                settings=_ctx_fmt.get("league_settings") or (_ctx_fmt.get("league") or {}).get("settings"),
+            )
+            is_auction = bool(_fmt.get("is_auction"))
+            auction_budget = _fmt.get("auction_budget")
+        except Exception:
+            logger.debug("[draft-room] format detect skipped", exc_info=True)
     if league_id and show_keeper:
         try:
             from dashboard_services.pages.keeper_page import compute_league_keepers, league_keeper_limit
@@ -160,6 +181,8 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
         keepers=keepers_payload,
         show_keeper=show_keeper,
         has_premium=_viewer_has_premium(league_id, platform, season),
+        is_auction=is_auction,
+        auction_budget=auction_budget,
     )
     return render_page(
         "Draft Room | BR Fantasy", league_id, "draft", body, platform, season,

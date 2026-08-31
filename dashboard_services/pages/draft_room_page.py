@@ -62,6 +62,8 @@ def build_draft_room_body(
         keepers: Optional[dict] = None,
         show_keeper: bool = True,
         has_premium: bool = False,
+        is_auction: bool = False,
+        auction_budget: Optional[float] = None,
 ) -> str:
     _dr_has_league = bool(league_id and platform and season)
     cfg = {
@@ -100,6 +102,10 @@ def build_draft_room_body(
         # hasPremium still gates Draft Deep Dive and custom-board persistence.
         # Live cheat-sheet overlay / sync is free.
         "hasPremium": bool(has_premium),
+        # Auction detection (R02.1): snake UX stays default; auction leagues get
+        # an honest banner until auction grades/values ship.
+        "isAuction": bool(is_auction),
+        "auctionBudget": float(auction_budget) if auction_budget is not None else None,
         "chromeExtensionStoreUrl": (os.environ.get("CHROME_EXTENSION_URL") or "").strip(),
         "chromeExtensionZipUrl": "/static/extension/br-fantasy-espn-connector.zip",
     }
@@ -128,6 +134,9 @@ _DRAFT_ROOM_HTML = r"""
     <div class="dr-hero-actions">
       <a class="dr-hero-link" id="drToCheatSheet" href="/draft/cheat-sheet">Cheat Sheet</a>
       <a class="dr-hero-link" id="drToHistory" href="/draft/history">Draft History</a>
+    </div>
+    <div class="dr-auction-note" id="drAuctionNote" hidden style="margin-top:12px;padding:10px 12px;border-radius:10px;background:var(--accent-soft,rgba(37,99,235,.08));border:1px solid var(--border);font-size:13px;line-height:1.45;color:var(--text);">
+      <strong>Auction league detected.</strong> Recommendation Rank and Pick Score still help nominations, but snake-round draft grades and budget guidance are not auction-calibrated yet — treat grades as provisional.
     </div>
   </div>
 
