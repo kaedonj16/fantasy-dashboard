@@ -86,6 +86,11 @@ def test_overlay_uses_live_br_player_pool_and_headshots():
     assert "slots_super_flex" in sleeper
     assert "adpSel" in html
     assert "ADP source" in html
+    assert 'data-link="room"' in html
+    assert 'data-link="sheet"' in html
+    assert "ov-links" in html
+    assert 'data-link="room"' not in overlay
+    assert 'postToHost("open"' in overlay
     assert "fillAdpSel" in overlay
     assert 'postToHost("adp"' in overlay
     assert 'msg.type === "adp"' in inject

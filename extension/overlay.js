@@ -760,9 +760,6 @@
     else html += slotRow("BN", null);
     html += "</div>";
     if (state.toast) html += '<div class="toast">' + esc(state.toast) + "</div>";
-    html += '<div class="deeplinks">'
-      + '<button type="button" data-link="room">' + IC.room + " Draft Room</button>"
-      + '<button type="button" data-link="sheet">' + IC.sheet + " Cheat Sheet</button></div>";
     return html;
   }
 
@@ -979,15 +976,6 @@
       render();
       return;
     }
-    const link = e.target.closest("[data-link]");
-    if (link) {
-      const kind = link.getAttribute("data-link");
-      state.toast = kind === "room"
-        ? "Opens this live draft in BR Fantasy Draft Room — overlay stays synced, never submits."
-        : "Opens your Draft Room cheat sheet for this league.";
-      render();
-      return;
-    }
     const leg = e.target.closest("[data-legslot]");
     if (leg) {
       const slot = +leg.getAttribute("data-legslot");
@@ -1174,6 +1162,22 @@
   if (recBtn) recBtn.addEventListener("click", function () { postToHost("reconnect"); });
   const colBtn = document.getElementById("collapseBtn");
   if (colBtn) colBtn.addEventListener("click", function () { postToHost("collapse"); });
+  document.querySelector(".overlay").addEventListener("click", function (e) {
+    const link = e.target.closest("[data-link]");
+    if (!link) return;
+    const dest = link.getAttribute("data-link") === "sheet" ? "sheet" : "room";
+    if (EMBEDDED) {
+      postToHost("open", { dest: dest });
+      return;
+    }
+    try {
+      window.open(
+        "https://www.brfantasyfootball.com" + (dest === "sheet" ? "/draft/cheat-sheet" : "/draft"),
+        "_blank",
+        "noopener"
+      );
+    } catch (_e) { /* ignore */ }
+  });
   const slotSel = document.getElementById("slotSel");
   if (slotSel) slotSel.addEventListener("change", function () {
     state.mySlot = Number(slotSel.value) || state.mySlot;

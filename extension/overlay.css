@@ -445,6 +445,15 @@
     color: var(--text-muted);
     white-space: nowrap;
   }
+  .ov-head .deeplinks {
+    padding: 0;
+    margin-left: auto;
+    gap: 6px;
+  }
+  .ov-head .deeplinks button {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
   .br-mark {
     width: 32px; height: 32px;
     border-radius: 8px;
