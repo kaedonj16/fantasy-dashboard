@@ -404,11 +404,12 @@ function poolNum(v) {
   return isFinite(n) ? n : null;
 }
 
-function compactDraftPlayer(raw, scoringType, isSf, teams) {
+function compactDraftPlayer(raw, scoringType, isSf, teams, adpSource) {
   if (!raw || raw.id == null) return null;
   const pos = String(raw.position || raw.pos || "").toUpperCase();
   if (pos !== "QB" && pos !== "RB" && pos !== "WR" && pos !== "TE") return null;
   const by = raw.adp_by_source && typeof raw.adp_by_source === "object" ? raw.adp_by_source : {};
+  const src = (adpSource && by[adpSource]) || {};
   const cons = by.consensus || {};
   const sleeper = by.sleeper || {};
   const size = Number(teams) >= 8 ? Number(teams) : 12;
@@ -417,6 +418,7 @@ function compactDraftPlayer(raw, scoringType, isSf, teams) {
   let val;
   if (redraft) {
     adp =
+      poolNum(isSf ? src.sf_redraft_avg_pick : src.redraft_avg_pick) ||
       poolNum(isSf ? raw.sf_redraft_avg_pick : raw.redraft_avg_pick) ||
       poolNum(isSf ? cons.sf_redraft_avg_pick : cons.redraft_avg_pick) ||
       poolNum(isSf ? sleeper.sf_redraft_avg_pick : sleeper.redraft_avg_pick);
@@ -432,6 +434,7 @@ function compactDraftPlayer(raw, scoringType, isSf, teams) {
     }
   } else {
     adp =
+      poolNum(isSf ? src.sf_avg_pick : src.avg_pick) ||
       poolNum(isSf ? raw.sf_avg_pick : raw.avg_pick) ||
       poolNum(isSf ? cons.sf_avg_pick : cons.avg_pick);
     val = poolNum(isSf ? raw.sf_value : raw.value) || poolNum(raw.value);
@@ -464,6 +467,17 @@ function compactDraftPlayer(raw, scoringType, isSf, teams) {
   };
 }
 
+function adpOptionsFromBody(body, scoringType) {
+  if (!body || Array.isArray(body)) return [];
+  const opts = body.adp_source_options || {};
+  const key = scoringType === "dynasty" ? "startup" : scoringType;
+  const list = opts[key] || opts.redraft || [];
+  if (!Array.isArray(list)) return [];
+  return list.filter(function (o) { return o && o.value; }).map(function (o) {
+    return { value: String(o.value), label: String(o.label || o.value) };
+  });
+}
+
 async function fetchDraftPool(opts) {
   const scoringType = String((opts && opts.scoringType) || "redraft").toLowerCase();
   const sf = !!(opts && opts.sf);
@@ -472,7 +486,15 @@ async function fetchDraftPool(opts) {
   const key = [scoringType, sf ? "sf" : "1qb", adpSource, teams || ""].join("|");
   const now = Date.now();
   if (!opts.force && draftPoolCache && draftPoolCache.key === key && now - draftPoolCache.at < POOL_TTL_MS) {
-    return { ok: true, players: draftPoolCache.players, scoringType: scoringType, sf: sf, cached: true };
+    return {
+      ok: true,
+      players: draftPoolCache.players,
+      scoringType: scoringType,
+      sf: sf,
+      adpSource: adpSource,
+      adpOptions: draftPoolCache.adpOptions || [],
+      cached: true,
+    };
   }
   const params = [
     "adp_source=" + encodeURIComponent(adpSource),
@@ -494,21 +516,41 @@ async function fetchDraftPool(opts) {
       }
       const body = await res.json();
       const raw = Array.isArray(body) ? body : body.players || [];
-      const players = raw.map(function (p) { return compactDraftPlayer(p, scoringType, sf, teams); }).filter(Boolean);
+      const players = raw.map(function (p) {
+        return compactDraftPlayer(p, scoringType, sf, teams, adpSource);
+      }).filter(Boolean);
       if (!players.length) {
         lastErr = "empty pool";
         continue;
       }
-      draftPoolCache = { key: key, at: now, players: players };
-      return { ok: true, players: players, scoringType: scoringType, sf: sf, cached: false };
+      const adpOptions = adpOptionsFromBody(body, scoringType);
+      draftPoolCache = { key: key, at: now, players: players, adpOptions: adpOptions };
+      return {
+        ok: true,
+        players: players,
+        scoringType: scoringType,
+        sf: sf,
+        adpSource: adpSource,
+        adpOptions: adpOptions,
+        cached: false,
+      };
     } catch (err) {
       lastErr = String(err && err.message ? err.message : err);
     }
   }
   if (draftPoolCache && draftPoolCache.players && draftPoolCache.players.length) {
-    return { ok: true, players: draftPoolCache.players, scoringType: scoringType, sf: sf, cached: true, stale: true };
+    return {
+      ok: true,
+      players: draftPoolCache.players,
+      scoringType: scoringType,
+      sf: sf,
+      adpSource: adpSource,
+      adpOptions: draftPoolCache.adpOptions || [],
+      cached: true,
+      stale: true,
+    };
   }
-  return { ok: false, players: [], error: lastErr, scoringType: scoringType, sf: sf };
+  return { ok: false, players: [], error: lastErr, scoringType: scoringType, sf: sf, adpSource: adpSource, adpOptions: [] };
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

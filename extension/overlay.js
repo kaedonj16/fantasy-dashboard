@@ -235,7 +235,16 @@
     toast: "",
     syncOk: true,
     valCap: 180,
-    sitePool: false
+    sitePool: false,
+    adpSource: "consensus",
+    adpOptions: [
+      { value: "consensus", label: "Consensus" },
+      { value: "sleeper", label: "Sleeper" },
+      { value: "espn", label: "ESPN" },
+      { value: "yahoo", label: "Yahoo" },
+      { value: "mfl", label: "MFL" },
+      { value: "brfantasy", label: "BR Fantasy" }
+    ]
   };
   let autoTimer = null, clockTimer = null;
   let lastLiveDetail = null;
@@ -1020,9 +1029,32 @@
     }
   }
 
+  function fillAdpSel() {
+    const sel = document.getElementById("adpSel");
+    if (!sel) return;
+    const opts = (state.adpOptions && state.adpOptions.length) ? state.adpOptions : [];
+    if (!opts.length) return;
+    const want = state.adpSource || "consensus";
+    sel.innerHTML = opts.map(function (o) {
+      const v = String(o.value || o);
+      const l = String(o.label || o);
+      return '<option value="' + esc(v) + '"' + (v === want ? " selected" : "") + ">" + esc(l) + "</option>";
+    }).join("");
+    if (![].some.call(sel.options, function (o) { return o.value === want; }) && sel.options[0]) {
+      sel.value = sel.options[0].value;
+      state.adpSource = sel.value;
+    } else {
+      sel.value = want;
+    }
+  }
+
   function ingestPool(detail) {
     const rows = (detail && detail.players) || [];
     if (!rows.length) return;
+    if (detail.adpSource && state.adpSource && String(detail.adpSource) !== String(state.adpSource)) return;
+    if (Array.isArray(detail.adpOptions) && detail.adpOptions.length) state.adpOptions = detail.adpOptions;
+    if (detail.adpSource) state.adpSource = String(detail.adpSource);
+    fillAdpSel();
     players = rows.map(function (p) {
       return {
         id: String(p.id),
@@ -1150,6 +1182,18 @@
     fillSlotSel();
     render();
   });
+  const adpSel = document.getElementById("adpSel");
+  if (adpSel) adpSel.addEventListener("change", function () {
+    const next = String(adpSel.value || "consensus");
+    if (next === state.adpSource) return;
+    state.adpSource = next;
+    try { localStorage.setItem("br-da-adp", state.adpSource); } catch (_e) { /* ignore */ }
+    if (EMBEDDED) {
+      state.sitePool = false;
+      render();
+      postToHost("adp", { adpSource: state.adpSource });
+    }
+  });
 
   window.addEventListener("message", function (ev) {
     const msg = ev.data;
@@ -1182,8 +1226,13 @@
   const savedSlot = Number(localStorage.getItem("br-da-slot") || 0);
   if (savedSlot) state.mySlot = savedSlot;
   fillSlotSel();
+  try {
+    const savedAdp = localStorage.getItem("br-da-adp");
+    if (savedAdp) state.adpSource = savedAdp;
+  } catch (_e) { /* ignore */ }
+  fillAdpSel();
   const saved = localStorage.getItem("br-da-theme") || "system";
   applyTheme(saved);
   render();
-  postToHost("ready");
+  postToHost("ready", { adpSource: state.adpSource, mySlot: state.mySlot });
 })();

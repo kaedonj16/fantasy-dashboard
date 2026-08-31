@@ -76,10 +76,23 @@
               <div class="ov-title">Draft Assistant</div>
             </div>
             <span class="sync-chip" id="syncChip"><i></i> Sleeper · SYNCED</span>
-            <label class="live-only" style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--text-muted)">
-              Slot
-              <select class="slot-sel" id="slotSel" aria-label="Your draft slot"></select>
-            </label>
+            <div class="ov-tools live-only">
+              <label>
+                ADP
+                <select class="slot-sel" id="adpSel" aria-label="ADP source">
+                  <option value="consensus">Consensus</option>
+                  <option value="sleeper">Sleeper</option>
+                  <option value="espn">ESPN</option>
+                  <option value="yahoo">Yahoo</option>
+                  <option value="mfl">MFL</option>
+                  <option value="brfantasy">BR Fantasy</option>
+                </select>
+              </label>
+              <label>
+                Slot
+                <select class="slot-sel" id="slotSel" aria-label="Your draft slot"></select>
+              </label>
+            </div>
           </div>
           <div class="tab-bar" role="tablist">
             <button type="button" class="tab-btn active" data-tab="board" role="tab">Board</button>

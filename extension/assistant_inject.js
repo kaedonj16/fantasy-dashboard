@@ -22,6 +22,7 @@
   let collapsed = false;
   let poolRetryTimer = null;
   let lastPoolKey = "";
+  let adpSource = "consensus";
 
   function platformFromHost() {
     const h = String(location.hostname || "").toLowerCase();
@@ -96,13 +97,14 @@
       {
         type: "fetchDraftPool",
         scoringType: "redraft",
-        adpSource: "consensus",
+        adpSource: adpSource || "consensus",
         sf: false,
         teams: 12,
       },
       extra || {}
     );
     lastPoolKey = [opts.scoringType, opts.sf ? "sf" : "1qb", opts.adpSource, opts.teams || 12].join("|");
+    adpSource = String(opts.adpSource || "consensus");
     try {
       chrome.runtime.sendMessage(opts, function (resp) {
         void chrome.runtime.lastError;
@@ -127,6 +129,8 @@
           players: resp.players,
           scoringType: resp.scoringType || "redraft",
           sf: !!resp.sf,
+          adpSource: resp.adpSource || adpSource,
+          adpOptions: Array.isArray(resp.adpOptions) ? resp.adpOptions : [],
         });
       });
     } catch (_e) {
@@ -151,8 +155,8 @@
     );
     const teams = Number(payload.teams || 0);
     const sf = !!payload.sf;
-    const key = ["redraft", sf ? "sf" : "1qb", "consensus", teams >= 8 ? teams : 12].join("|");
-    if (key !== lastPoolKey) requestPool({ teams: teams >= 8 ? teams : 12, sf: sf });
+    const key = ["redraft", sf ? "sf" : "1qb", adpSource, teams >= 8 ? teams : 12].join("|");
+    if (key !== lastPoolKey) requestPool({ teams: teams >= 8 ? teams : 12, sf: sf, adpSource: adpSource });
     postToOverlay(payload);
   };
 
@@ -165,6 +169,7 @@
     if (!msg || msg.__br !== "br-da") return;
     if (msg.type === "ready") {
       ready = true;
+      if (msg.adpSource) adpSource = String(msg.adpSource).toLowerCase() || adpSource;
       if (queuedPool) {
         postToOverlay(queuedPool);
         queuedPool = null;
@@ -180,6 +185,12 @@
           syncText: platformFromHost().toUpperCase() + " · watching",
         });
       }
+      requestPool({ adpSource: adpSource });
+      return;
+    }
+    if (msg.type === "adp") {
+      adpSource = String(msg.adpSource || "consensus").toLowerCase() || "consensus";
+      requestPool({ adpSource: adpSource, force: true });
       return;
     }
     if (msg.type === "collapse") {

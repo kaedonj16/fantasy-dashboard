@@ -62,6 +62,7 @@ def test_manifest_docks_overlay_on_host_drafts():
 def test_overlay_uses_live_br_player_pool_and_headshots():
     overlay = (EXT / "overlay.js").read_text(encoding="utf-8")
     css = (EXT / "overlay.css").read_text(encoding="utf-8")
+    html = (EXT / "overlay.html").read_text(encoding="utf-8")
     inject = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     background = (EXT / "background.js").read_text(encoding="utf-8")
     sleeper = (EXT / "sleeper_draft.js").read_text(encoding="utf-8")
@@ -83,8 +84,13 @@ def test_overlay_uses_live_br_player_pool_and_headshots():
     assert "compactDraftPlayer" in background
     assert "sleepercdn.com/content/nfl/players/" in background
     assert "slots_super_flex" in sleeper
-    assert overlay.count("buildPool();") == 1
-    assert "if (!EMBEDDED)" in overlay
+    assert "adpSel" in html
+    assert "ADP source" in html
+    assert "fillAdpSel" in overlay
+    assert 'postToHost("adp"' in overlay
+    assert 'msg.type === "adp"' in inject
+    assert "adp_source_options" in background
+    assert "adpOptionsFromBody" in background
 
 
 def test_collapsed_overlay_has_reopen_control():
