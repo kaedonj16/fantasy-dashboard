@@ -219,12 +219,16 @@
   const state = {
     teams: 12,
     rounds: 15,
-    mySlot: 7,
+    mySlot: EMBEDDED ? 1 : 7,
     slotAuto: false,
     live: EMBEDDED,
     hostInProgress: null,
     hostDrafted: null,
     teamNames: {},
+    pickOwners: {},
+    hostClock: null,
+    hostClockAt: 0,
+    pickTimer: 0,
     current: 1,
     picks: [],
     drafted: {},
@@ -270,6 +274,8 @@
   }
   function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
   function ownerOf(pn) {
+    const mapped = Number(state.pickOwners && state.pickOwners[pn]);
+    if (mapped >= 1 && mapped <= state.teams) return mapped;
     const n = state.teams;
     const r = Math.ceil(pn / n);
     const i = (pn - 1) % n;
@@ -305,7 +311,8 @@
     return [
       raw.length,
       last ? (last.overallPickNumber || last.pick_no || 0) : 0,
-      last ? (last.playerId || last.playerName || "") : "",
+      last ? (last.playerId || "") : "",
+      last ? (last.playerName || last.name || "") : "",
       detail && detail.mySlot || "",
       detail && detail.teams || "",
       detail && detail.rounds || "",
@@ -316,6 +323,8 @@
       detail && detail.ppr != null ? detail.ppr : "",
       detail && detail.tep != null ? detail.tep : "",
       detail && detail.passTd != null ? detail.passTd : "",
+      detail && detail.teamNames ? Object.keys(detail.teamNames).length : "",
+      detail && detail.pickOwners ? Object.keys(detail.pickOwners).length : "",
       window.BRDraftSlot && BRDraftSlot.rosterKey ? BRDraftSlot.rosterKey(detail && detail.roster) : ""
     ].join("|");
   }
@@ -957,7 +966,12 @@
     document.getElementById("hostLeague").textContent = pf.league;
     document.getElementById("syncChip").innerHTML = "<i></i> " + pf.sync;
     const rd = Math.min(state.rounds, Math.ceil(Math.min(state.current, state.teams * state.rounds) / state.teams));
-    document.getElementById("hostSub").textContent = "12-team PPR · snake · round " + rd;
+    const settingsTxt = leagueSettingsLabel();
+    const hostBits = [state.teams + "-team"];
+    if (settingsTxt) hostBits.push(settingsTxt);
+    else hostBits.push(state.sf ? "SF" : "PPR");
+    hostBits.push("round " + rd);
+    document.getElementById("hostSub").textContent = hostBits.join(" · ");
     const otc = document.getElementById("otc");
     const done = draftDone();
     const slot = done ? null : ownerOf(state.current);
@@ -1017,7 +1031,10 @@
     }
     const simBtn = document.getElementById("simBtn");
     if (simBtn) simBtn.disabled = draftDone() || state.live;
-    if (EMBEDDED) paintSyncChip();
+    if (EMBEDDED) {
+      paintSyncChip();
+      paintLiveClock();
+    }
   }
 
   function paint() {
@@ -1116,9 +1133,8 @@
   const cmpModal = document.getElementById("cmpModal");
   if (cmpModal) {
     cmpModal.addEventListener("click", function (e) {
-      if (e.target === cmpModal || e.target.closest("[data-cmp-close]")) {
-        closeCompare(true);
-        render();
+      if (e.target === cmpModal || e.target.closest("#drCmpClose") || e.target.closest("[data-cmp-close]")) {
+        closeCompare();
       }
     });
   }
@@ -1130,18 +1146,10 @@
       toggleCompare(cmp.getAttribute("data-cmp"));
       return;
     }
-    const draftBtn = e.target.closest("[data-draft]");
     const row = e.target.closest(".ba-row");
-    if (draftBtn || row) {
-      if (state.live) {
-        state.toast = "Draft in the host room - this overlay never submits a pick.";
-        if (state.tab !== "roster") { /* stay on board */ }
-        const recPn = nextMine(state.current);
-        state.toast = "Take this player in the host draft (your next pick is " + (recPn ? pickLabel(recPn) : "done") + "). The overlay never submits.";
-        render();
-        return;
-      }
-      draftToMe((draftBtn || row).getAttribute(draftBtn ? "data-draft" : "data-id"));
+    if (row) {
+      if (EMBEDDED || state.live) return;
+      draftToMe(row.getAttribute("data-id"));
       render();
       return;
     }
@@ -1187,12 +1195,63 @@
     for (let i = 1; i <= state.teams; i++) {
       const o = document.createElement("option");
       o.value = String(i);
-      o.textContent = i === state.mySlot ? i + " (you)" : String(i);
+      const you = !!state.slotAuto && i === state.mySlot;
+      const nm = state.teamNames && state.teamNames[i];
+      o.textContent = (nm ? i + " · " + nm : String(i)) + (you ? " (you)" : "");
       if (i === state.mySlot) o.selected = true;
       sel.appendChild(o);
     }
     const lab = document.getElementById("slotLab");
     if (lab) lab.hidden = !EMBEDDED || !!state.slotAuto || !lastLiveDetail;
+  }
+
+  function liveClockSeconds() {
+    if (state.hostClock == null || !isFinite(Number(state.hostClock))) return null;
+    const elapsed = Math.floor((Date.now() - (state.hostClockAt || Date.now())) / 1000);
+    return Math.max(0, Number(state.hostClock) - elapsed);
+  }
+
+  function applyHostClock(detail) {
+    if (!detail || detail.clockSeconds == null || !isFinite(Number(detail.clockSeconds))) return;
+    state.hostClock = Number(detail.clockSeconds);
+    state.hostClockAt = Number(detail.clockAt || Date.now());
+    if (detail.pickTimer != null && isFinite(Number(detail.pickTimer))) {
+      state.pickTimer = Number(detail.pickTimer);
+    }
+    paintLiveClock();
+  }
+
+  function paintLiveClock() {
+    const el = document.getElementById("ovOtc");
+    if (!el) return;
+    if (!EMBEDDED || !state.live) {
+      el.hidden = true;
+      return;
+    }
+    el.hidden = false;
+    const done = draftDone();
+    const slot = done ? null : ownerOf(state.current);
+    const you = !done && slot === state.mySlot && state.slotAuto;
+    el.classList.toggle("is-you", you);
+    const pickEl = document.getElementById("ovOtcPick");
+    const whoEl = document.getElementById("ovOtcWho");
+    const clockEl = document.getElementById("ovOtcClock");
+    if (pickEl) pickEl.textContent = done ? "Final" : pickLabel(state.current);
+    if (whoEl) {
+      whoEl.textContent = done
+        ? "Draft complete"
+        : (you ? "You are on the clock" : ("On the clock: " + teamName(slot)));
+    }
+    if (clockEl) {
+      const secs = liveClockSeconds();
+      if (done || secs == null) {
+        clockEl.textContent = done ? "0:00" : "-:--";
+      } else {
+        const m = Math.floor(secs / 60);
+        const s = secs % 60;
+        clockEl.textContent = m + ":" + String(s).padStart(2, "0");
+      }
+    }
   }
 
   function formatSyncChip(ok) {
@@ -1256,6 +1315,15 @@
         age: p.age == null ? 0 : Number(p.age),
         bye: p.bye == null ? 0 : Number(p.bye),
         bye_week: p.bye_week != null ? Number(p.bye_week) : (p.bye == null ? 0 : Number(p.bye)),
+        proj_ppg: p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg == null ? null : Number(p.ppg)),
+        proj_pts: p.proj_pts == null ? null : Number(p.proj_pts),
+        last_ppg: p.last_ppg == null ? null : Number(p.last_ppg),
+        ppg_season: p.ppg_season || "",
+        vorp: p.vorp == null ? null : Number(p.vorp),
+        market: p.market == null ? null : Number(p.market),
+        years_exp: p.years_exp == null ? null : Number(p.years_exp),
+        is_rookie: !!p.is_rookie,
+        injury: p.injury || "",
         headshot: p.headshot || "",
         tier: p.tier || 6,
         rank_change_7d: p.rank_change_7d == null ? null : Number(p.rank_change_7d),
@@ -1358,21 +1426,95 @@
     const idx = compareIds.indexOf(id);
     if (idx >= 0) {
       compareIds.splice(idx, 1);
-      closeCompare(false);
-      render();
-      return;
+    } else if (compareIds.length >= 2) {
+      compareIds = [id];
+    } else {
+      compareIds.push(id);
     }
-    if (compareIds.length >= 2) compareIds = [id];
-    else compareIds.push(id);
-    if (compareIds.length === 2) openCompare();
-    else closeCompare(false);
     render();
   }
 
-  function closeCompare(clear) {
-    if (clear !== false) compareIds = [];
+  function closeCompare() {
+    compareIds = [];
     const modal = document.getElementById("cmpModal");
     if (modal) modal.hidden = true;
+    render();
+  }
+
+  function infoIcon(tip) {
+    return '<span class="dr-info" tabindex="0" role="button" aria-label="' + esc(tip) + '" data-tip="' + esc(tip) + '">i</span>';
+  }
+
+  function expLabel(p) {
+    if (!p) return "";
+    if (p.is_rookie) return "Rookie";
+    const ye = Number(p.years_exp);
+    if (!isFinite(ye) || ye < 0) return "";
+    if (ye === 0) return "Rookie";
+    return ye + " yr";
+  }
+
+  function posRankOf(p) {
+    const pos = String((p && (p.pos || p.position)) || "").toUpperCase();
+    if (!pos) return { label: "", n: null };
+    const ranked = players.filter(function (x) {
+      return String(x.pos || x.position || "").toUpperCase() === pos;
+    }).slice().sort(function (a, b) { return (Number(b.val) || 0) - (Number(a.val) || 0); });
+    const i = ranked.findIndex(function (x) { return String(x.id) === String(p.id); });
+    if (i < 0) return { label: "", n: null };
+    return { label: pos + (i + 1), n: i + 1 };
+  }
+
+  function fmtSigned(n, digits) {
+    if (n == null || !isFinite(Number(n))) return "-";
+    const x = Number(n);
+    const s = digits != null ? x.toFixed(digits) : String(Math.round(x));
+    if (Number(s) === 0) return digits != null ? Number(0).toFixed(digits) : "0";
+    return (Number(s) > 0 ? "+" : "") + s;
+  }
+
+  function draftPlayerFacts(p, pool) {
+    const hit = (pool || []).filter(function (x) { return String(x.id) === String(p.id); })[0] || p;
+    const adp = Number(p.adp);
+    const adpN = isFinite(adp) && adp < 900 ? adp : null;
+    const scoring = { ppr: state.ppr, tep: state.tep, passTd: state.passTd };
+    const C = window.DraftBoardCore;
+    let projPpg = C && C.scoringProjPpg ? C.scoringProjPpg(p, scoring) : null;
+    if (projPpg == null) projPpg = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
+    let projPts = C && C.scoringProjPts ? C.scoringProjPts(p, scoring) : null;
+    if (projPts == null) projPts = p.proj_pts != null ? Number(p.proj_pts) : null;
+    const lastPpg = p.last_ppg != null && isFinite(Number(p.last_ppg)) ? Number(p.last_ppg) : null;
+    const pr = posRankOf(p);
+    let survive = null;
+    const ctx = scoreCtx();
+    if (window.BROverlayScore && BROverlayScore.recWaitPickNo && BROverlayScore.availProb) {
+      const next = BROverlayScore.recWaitPickNo(ctx);
+      if (next) {
+        const pct = BROverlayScore.availProb(p, next, ctx, players);
+        if (pct != null && isFinite(Number(pct))) survive = Math.round(Number(pct));
+      }
+    }
+    return {
+      rec: hit._rank != null ? hit._rank : null,
+      ps: hit._psShow != null ? hit._psShow : (hit._ps != null ? hit._ps : null),
+      value: Number(p.val) || 0,
+      projPpg: projPpg != null && isFinite(Number(projPpg)) ? Number(projPpg) : null,
+      lastPpg: lastPpg,
+      ppgSeason: p.ppg_season || "",
+      vor: hit._vor != null && isFinite(Number(hit._vor)) ? Number(hit._vor) : null,
+      vorp: p.vorp != null && isFinite(Number(p.vorp)) ? Number(p.vorp) : null,
+      adp: adpN,
+      vsAdp: adpN != null ? (state.current - adpN) : null,
+      posRank: pr.label,
+      posRankN: pr.n,
+      bye: p.bye_week != null || p.bye != null ? Number(p.bye_week != null ? p.bye_week : p.bye) : null,
+      age: p.age != null ? Number(p.age) : null,
+      survive: survive,
+      projPts: projPts != null && isFinite(Number(projPts)) ? Number(projPts) : null,
+      market: p.market != null && isFinite(Number(p.market)) ? Number(p.market) : null,
+      exp: expLabel(p),
+      injury: p.injury || "",
+    };
   }
 
   function openCompare() {
@@ -1383,62 +1525,54 @@
     if (!p1 || !p2 || !modal || !card) return;
     const counts = posCounts(myPicks());
     const pool = rankedPool(counts, state.current);
-    function fmtSigned(n) {
-      if (n == null || !isFinite(Number(n))) return "-";
-      const x = Math.round(Number(n));
-      if (x === 0) return "0";
-      return (x > 0 ? "+" : "") + x;
-    }
-    function facts(p) {
-      const hit = pool.filter(function (x) { return String(x.id) === String(p.id); })[0] || p;
-      const adp = Number(p.adp);
-      const adpN = isFinite(adp) && adp < 900 ? adp : null;
-      return {
-        rec: hit._rank != null ? hit._rank : null,
-        ps: hit._psShow != null ? hit._psShow : (hit._ps != null ? hit._ps : pickScore(p, counts, state.current)),
-        value: Number(p.val) || 0,
-        projPpg: p.ppg != null && isFinite(Number(p.ppg)) ? Number(p.ppg) : null,
-        vor: hit._vor != null && isFinite(Number(hit._vor)) ? Number(hit._vor) : null,
-        adp: adpN,
-        vsAdp: adpN != null ? (state.current - adpN) : null,
-        bye: p.bye != null || p.bye_week != null ? Number(p.bye || p.bye_week) : null,
-        age: p.age != null ? Number(p.age) : null,
-      };
-    }
     function cmpCol(p, other) {
-      const f = facts(p);
-      const o = facts(other);
-      function statRow(lbl, val, oval, higherBetter, fmtFn) {
+      const f = draftPlayerFacts(p, pool);
+      const o = draftPlayerFacts(other, pool);
+      const ps = f.ps;
+      function statRow(lbl, val, oval, higherBetter, fmtFn, tip) {
         if (val == null && oval == null) return "";
         const vStr = fmtFn ? fmtFn(val) : (val != null ? String(val) : "-");
         const win = val != null && oval != null && (higherBetter ? val > oval : val < oval);
         return '<div class="dr-cmp-stat' + (win ? " win" : "") + '">'
-          + '<span class="dr-cmp-stat-lbl">' + esc(lbl) + "</span>"
+          + '<span class="dr-cmp-stat-lbl"' + (tip ? ' title="' + esc(tip) + '"' : "") + ">" + esc(lbl) + "</span>"
           + '<span class="dr-cmp-stat-val">' + esc(vStr) + "</span></div>";
       }
-      const sc = f.ps != null ? psColor(f.ps) : "var(--text-muted)";
+      const sc = ps != null ? psColor(ps) : "var(--text-muted)";
       const photo = hsUrl(p)
         ? '<img class="dr-cmp-hs" src="' + esc(hsUrl(p)) + '" alt="">'
         : hsMark(p, "hs-sm");
-      const metaBits = [p.team || "", (f.age ? "Age " + Math.round(f.age) : "")].filter(Boolean);
+      const metaBits = [p.team || "", f.exp, (f.age ? "Age " + f.age.toFixed(0) : ""), f.injury].filter(Boolean);
       return '<div class="dr-cmp-player">'
         + '<div class="dr-cmp-top">' + photo
-        + "<div><div class=\"dr-cmp-name\"><span class=\"posb\" style=\"background:" + (POS[p.pos] || POS.BN) + '">' + esc(p.pos) + "</span> " + esc(p.name) + "</div>"
+        + '<div><div class="dr-cmp-name"><span class="dr-posbadge" style="background:' + (POS[p.pos] || POS.BN) + '">' + esc(p.pos) + "</span> " + esc(p.name) + "</div>"
         + '<div class="dr-cmp-meta">' + esc(metaBits.join(" · ")) + "</div>"
         + "</div></div>"
-        + '<div class="dr-cmp-ps" style="color:' + sc + '">' + (f.ps != null ? Math.round(f.ps) : "-") + "</div>"
-        + '<div class="dr-cmp-ps-lbl">Pick Score</div>'
+        + '<div class="dr-cmp-ps" style="color:' + sc + '">' + (ps != null ? Math.round(ps) : "-") + "</div>"
+        + '<div class="dr-cmp-ps-lbl">Pick Score'
+        + infoIcon("How good is this player at this pick? Absolute 0-100 quality (value, VOR, ADP, tier, need, projected points), shown relative to the best player still available. Not Recommendation Rank, and not a count of which compare rows you win.")
+        + "</div>"
         + '<div class="dr-cmp-stats">'
         + statRow("Value", f.value, o.value, true, function (x) { return x != null ? String(Math.round(x)) : "-"; })
-        + statRow("Proj PPG", f.projPpg, o.projPpg, true, function (x) { return x != null ? Number(x).toFixed(1) : "N/A"; })
-        + statRow("VOR", f.vor, o.vor, true, function (x) { return x != null ? fmtSigned(x) : "-"; })
+        + statRow("Proj PPG", f.projPpg, o.projPpg, true, function (x) { return x != null ? x.toFixed(1) : "N/A"; })
+        + (f.lastPpg != null || o.lastPpg != null ? statRow((f.ppgSeason || "Last") + " PPG", f.lastPpg, o.lastPpg, true, function (x) { return x != null ? x.toFixed(1) : "-"; }) : "")
+        + statRow("VOR", f.vor, o.vor, true, function (x) { return x != null ? fmtSigned(x, Number.isInteger(x) ? 0 : 1) : "-"; })
+        + (f.vorp != null || o.vorp != null ? statRow("VORP", f.vorp, o.vorp, true, function (x) { return x != null ? fmtSigned(x, Number.isInteger(x) ? 0 : 1) : "N/A"; }) : "")
         + statRow("ADP", f.adp, o.adp, false, function (x) { return x != null ? Number(x).toFixed(1) : "N/A"; })
-        + statRow("vs ADP", f.vsAdp, o.vsAdp, true, function (x) { return fmtSigned(x); })
-        + statRow("Bye", f.bye, o.bye, false, function (x) { return x != null ? String(x) : "-"; })
-        + statRow("REC", f.rec, o.rec, false, function (x) { return x != null ? "#" + x : "-"; })
+        + statRow("vs ADP", f.vsAdp, o.vsAdp, true, function (x) { return fmtSigned(Math.round(x), 0); })
+        + (f.posRank || o.posRank ? statRow("Pos Rank", f.posRankN, o.posRankN, false, function (x) {
+          if (x == null) return "-";
+          if (f.posRankN === x && f.posRank) return f.posRank;
+          if (o.posRankN === x && o.posRank) return o.posRank;
+          return String(x);
+        }) : "")
+        + (f.bye != null || o.bye != null ? statRow("Bye", f.bye, o.bye, false, function (x) { return x != null ? String(x) : "-"; }) : "")
+        + (f.rec != null || o.rec != null ? statRow("REC", f.rec, o.rec, false, function (x) { return x != null ? "#" + x : "-"; }, "Recommendation Rank - who to draft now (roster-aware order, not a grade)") : "")
+        + (f.survive != null || o.survive != null ? statRow("Survive", f.survive, o.survive, true, function (x) { return x != null ? x + "%" : "-"; }) : "")
+        + (f.projPts != null || o.projPts != null ? statRow("Proj Pts", f.projPts, o.projPts, true, function (x) { return x != null ? String(Math.round(x)) : "-"; }) : "")
+        + (f.market != null || o.market != null ? statRow("Mkt vs ADP", f.market, o.market, true, function (x) { return fmtSigned(Math.round(x), 0); }) : "")
         + "</div></div>";
     }
-    card.innerHTML = '<button type="button" class="dr-cmp-close" data-cmp-close="1" aria-label="Close">&times;</button>'
+    card.innerHTML = '<button type="button" class="dr-cmp-close" id="drCmpClose" data-cmp-close="1" aria-label="Close">&times;</button>'
       + '<div class="dr-cmp-title" id="cmpTitle">Compare Players</div>'
       + '<div class="dr-cmp-cols">' + cmpCol(p1, p2) + cmpCol(p2, p1) + "</div>";
     modal.hidden = false;
@@ -1475,7 +1609,13 @@
       state.mySlot = Math.max(1, Math.min(state.teams, Number(detail.mySlot)));
       state.slotAuto = true;
     }
-    if (detail.teamNames && typeof detail.teamNames === "object") state.teamNames = detail.teamNames;
+    if (detail.teamNames && typeof detail.teamNames === "object") {
+      state.teamNames = Object.assign({}, state.teamNames, detail.teamNames);
+    }
+    if (detail.pickOwners && typeof detail.pickOwners === "object") {
+      state.pickOwners = detail.pickOwners;
+    }
+    applyHostClock(detail);
     const raw = Array.isArray(detail.picks) ? detail.picks.slice() : [];
     raw.sort(function (a, b) {
       return (Number(a.overallPickNumber || a.pick_no || 0) - Number(b.overallPickNumber || b.pick_no || 0));
@@ -1488,7 +1628,10 @@
       const p = matchLivePlayer(rp);
       if (!p || /^pick\s*#?\s*\d+$/i.test(String(p.name || ""))) return;
       const explicit = Number(rp.slot || rp.draftSlot || rp.draft_slot || 0);
-      const slot = explicit >= 1 && explicit <= state.teams ? explicit : ownerOf(pn);
+      const mapped = Number(state.pickOwners && state.pickOwners[pn]);
+      const slot = mapped >= 1 && mapped <= state.teams
+        ? mapped
+        : (explicit >= 1 && explicit <= state.teams ? explicit : ownerOf(pn));
       const counts = posCounts(teamPicks(slot));
       const need = needOf(counts, p.pos) > 0;
       const grade = pickLetter(pn - p.adp, need);
@@ -1498,7 +1641,7 @@
     });
     const lastMade = state.picks.length ? state.picks[state.picks.length - 1].pn : 0;
     state.current = lastMade + 1;
-    state.clock = CLOCK_START;
+    if (detail.clockSeconds == null) state.clock = CLOCK_START;
     fillSlotSel();
     paintSyncChip(true);
     render();
@@ -1526,15 +1669,14 @@
   if (colBtn) colBtn.addEventListener("click", function () { postToHost("collapse"); });
   document.querySelector(".overlay").addEventListener("click", function (e) {
     const link = e.target.closest("[data-link]");
-    if (!link) return;
-    const dest = link.getAttribute("data-link") === "sheet" ? "sheet" : "room";
+    if (!link || link.getAttribute("data-link") !== "sheet") return;
     if (EMBEDDED) {
-      postToHost("open", { dest: dest });
+      postToHost("open", { dest: "sheet" });
       return;
     }
     try {
       window.open(
-        "https://www.brfantasyfootball.com" + (dest === "sheet" ? "/draft/cheat-sheet" : "/draft"),
+        "https://www.brfantasyfootball.com/draft/cheat-sheet",
         "_blank",
         "noopener"
       );
@@ -1567,6 +1709,7 @@
     if (!msg || msg.__br !== "br-da") return;
     if (msg.type === "pool") ingestPool(msg);
     if (msg.type === "picks") ingestLive(msg);
+    if (msg.type === "clock") applyHostClock(msg);
     if (msg.type === "sync") setSyncStatus(!!msg.ok, msg.text);
     if (msg.type === "collapsed") setCollapsedUi(msg.on);
     if (msg.type === "theme" && msg.theme) applyTheme(msg.theme);
@@ -1586,12 +1729,20 @@
     t.remove();
   }, true);
 
+  if (EMBEDDED) {
+    setInterval(function () {
+      if (!state.live || draftDone()) return;
+      paintLiveClock();
+    }, 1000);
+  }
   if (!EMBEDDED) {
     buildPool();
     indexNames();
   }
-  const savedSlot = Number(localStorage.getItem("br-da-slot") || 0);
-  if (savedSlot) state.mySlot = savedSlot;
+  if (!EMBEDDED) {
+    const savedSlot = Number(localStorage.getItem("br-da-slot") || 0);
+    if (savedSlot) state.mySlot = savedSlot;
+  }
   fillSlotSel();
   try {
     const savedAdp = localStorage.getItem("br-da-adp");

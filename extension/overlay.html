@@ -89,9 +89,6 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/></svg>
                 <span>Cheat</span>
               </button>
-              <button type="button" class="opts-btn" data-link="room" title="Open Draft Room" aria-label="Draft Room">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M8 4v16"/></svg>
-              </button>
             </div>
           </div>
           <div class="side-head" id="boardControls">
@@ -123,6 +120,11 @@
                 <option value="brfantasy">BR Fantasy</option>
               </select>
             </div>
+          </div>
+          <div class="ov-otc live-only" id="ovOtc" hidden>
+            <span class="ov-otc-pick tabular" id="ovOtcPick">-</span>
+            <span class="ov-otc-who" id="ovOtcWho">Waiting for the host clock</span>
+            <span class="ov-otc-clock tabular" id="ovOtcClock">-:--</span>
           </div>
           <div class="ov-body" id="ovBody"></div>
           <div class="ov-foot">

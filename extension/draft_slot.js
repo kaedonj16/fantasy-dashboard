@@ -81,7 +81,8 @@
     const s = String(text || "").replace(/\s+/g, " ").trim();
     if (!s || s.length > 64) return false;
     if (/on the clock|your turn|waiting for you|draft assistant/i.test(s)) return false;
-    return /\(\s*you\s*\)/i.test(s) || /\byour\s+team\b/i.test(s) || /^you$/i.test(s);
+    if (/^you(?:'re| are)\b/i.test(s)) return false;
+    return /\(\s*you\s*\)/i.test(s) || /\byour\s+team\b/i.test(s) || /^you$/i.test(s) || /^you\s+\d/i.test(s);
   }
 
   function slotFromColumnNode(node) {
@@ -116,6 +117,16 @@
         '[data-user-team="true"]',
         '[aria-label*="your team" i]',
         '[aria-label*="(you)" i]',
+        '[aria-label="You"]',
+        '[class*="isSelf"]',
+        '[class*="self-team"]',
+        '[class*="selfTeam"]',
+        '[class*="is-me"]',
+        '[class*="isMe"]',
+        '[class*="my-team"]',
+        '[class*="myTeam"]',
+        '[class*="my-column"]',
+        '[class*="myColumn"]',
       ].join(",")
     );
     if (highlighted) {
@@ -167,6 +178,70 @@
     } catch (_e) {
       return false;
     }
+  }
+
+  function yahooClientTeamId() {
+    try {
+      const m = String(location.pathname || "").match(/\/draftclient\/(?:nfl\/|f1\/)?(\d+)\/(\d+)/i);
+      return m ? m[2] : "";
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function parseYahooClock(text) {
+    const s = String(text || "").replace(/\s+/g, " ");
+    const up = s.match(/you(?:'re| are) up in\s+(\d+)\s+picks?/i);
+    const onClock = /your pick|you(?:'re| are) on the clock|it(?:'s| is) your (?:pick|turn)/i.test(s);
+    const rd = s.match(/round\s+(\d+)\s*[,•·]\s*pick\s+(\d+)/i);
+    return {
+      upIn: up ? Number(up[1]) : null,
+      onClock: onClock,
+      round: rd ? Number(rd[1]) : 0,
+      roundPick: rd ? Number(rd[2]) : 0,
+    };
+  }
+
+  function slotFromYahooClock(text, teams) {
+    const c = parseYahooClock(text);
+    const nTeams = Number(teams) || 0;
+    if (c.onClock && c.round === 1 && c.roundPick >= 1) return c.roundPick;
+    if (c.onClock && nTeams >= 2 && c.round >= 1 && c.roundPick >= 1) {
+      return snakeSlot((c.round - 1) * nTeams + c.roundPick, nTeams);
+    }
+    if (c.upIn != null && c.upIn >= 0) {
+      if (c.round === 1 && c.roundPick >= 1) return c.roundPick + c.upIn;
+      if (c.round <= 1) return 1 + c.upIn;
+      if (nTeams >= 2 && c.round >= 1 && c.roundPick >= 1) {
+        return snakeSlot((c.round - 1) * nTeams + c.roundPick + c.upIn, nTeams);
+      }
+    }
+    return 0;
+  }
+
+  function yahooClockText() {
+    if (!document || !document.querySelectorAll) return "";
+    const bits = [];
+    const nodes = document.querySelectorAll(
+      "h1,h2,h3,header,[class*='Clock'],[class*='clock'],[class*='Status'],[class*='status'],[class*='Banner'],[class*='banner'],[class*='Pick']"
+    );
+    const n = Math.min(nodes.length, 60);
+    for (let i = 0; i < n; i++) bits.push(String(nodes[i].textContent || "").slice(0, 220));
+    let blob = bits.join(" ");
+    if (!/you(?:'re| are) up in|your pick/i.test(blob) && document.body) {
+      blob = String(document.body.innerText || "").slice(0, 4000);
+    }
+    return blob;
+  }
+
+  function detectYahooSlot(teams) {
+    const fromClock = slotFromYahooClock(yahooClockText(), teams);
+    if (fromClock) return clampSlot(fromClock, teams || 32);
+    const dom = detectDomSlot();
+    if (dom) return dom;
+    const tid = Number(yahooClientTeamId());
+    if (tid >= 1 && tid <= 32 && (!teams || tid <= Number(teams))) return tid;
+    return 0;
   }
 
   function clampSlot(slot, teams) {
@@ -273,6 +348,595 @@
     }).join("");
   }
 
+  function completedFromYahooClock(teams) {
+    const c = parseYahooClock(yahooClockText());
+    if (c.round >= 1 && c.roundPick >= 1) {
+      const nTeams = Number(teams) >= 2 ? Number(teams) : 12;
+      return Math.max(0, (c.round - 1) * nTeams + c.roundPick - 1);
+    }
+    return 0;
+  }
+
+  function yahooInAvailableList(el, doc) {
+    let n = el;
+    for (let i = 0; i < 10 && n && n !== (doc && doc.body); i++) {
+      const cls = String((n.className && n.className.baseVal != null ? n.className.baseVal : n.className) || "");
+      const id = String(n.id || "");
+      const aria = String((n.getAttribute && n.getAttribute("aria-label")) || "");
+      if (/available|playerlist|player-list|player_list|rankings|search-result|searchResult/i.test(cls + " " + id + " " + aria)) {
+        return true;
+      }
+      n = n.parentElement;
+    }
+    return false;
+  }
+
+  function parseYahooNamePos(text) {
+    const s = String(text || "").replace(/\s+/g, " ").trim();
+    const m = s.match(
+      /([A-Z][a-zA-Z.'\-]+(?:\s+(?:[A-Z][a-zA-Z.'\-]+|Jr\.?|Sr\.?|II|III|IV|V)){0,4})\s+(QB|RB|WR|TE|K|DEF|DST|D\/ST)\b(?:\s+([A-Z]{2,3}))?/
+    );
+    if (!m) return null;
+    const name = m[1].replace(/\s+/g, " ").trim();
+    if (name.length < 3 || name.length > 48) return null;
+    if (/^(round|pick|you|team|bench|available|search|draft|flex)$/i.test(name)) return null;
+    if (/you(?:'re| are) up|on the clock|time remaining/i.test(name)) return null;
+    return { name: name, pos: m[2].replace("D/ST", "DEF"), team: m[3] || "" };
+  }
+
+  function mergeYahooPicks(a, b) {
+    const map = {};
+    function add(p) {
+      if (!p) return;
+      const pn = Number(p.overallPickNumber || p.pick_no || 0);
+      if (pn < 1 || pn > 400) return;
+      const name = String(p.playerName || p.name || "").replace(/\s+/g, " ").trim();
+      const pid = p.playerId != null && String(p.playerId) !== "0" ? String(p.playerId) : "";
+      if (!name && !pid) return;
+      const prev = map[pn];
+      if (
+        !prev ||
+        (name && name.length > String(prev.playerName || "").length) ||
+        (pid && !prev.playerId)
+      ) {
+        map[pn] = {
+          overallPickNumber: pn,
+          playerId: pid || (prev && prev.playerId) || "",
+          playerName: name || (prev && prev.playerName) || "",
+          pos: p.pos || (prev && prev.pos) || "",
+          nflTeam: p.nflTeam || (prev && prev.nflTeam) || "",
+          teamId: p.teamId != null && p.teamId !== "" ? String(p.teamId) : (prev && prev.teamId) || null,
+          roundId: p.roundId || p.round || (prev && prev.roundId) || null,
+          roundPickNumber: p.roundPickNumber || (prev && prev.roundPickNumber) || null,
+        };
+      }
+    }
+    (a || []).forEach(add);
+    (b || []).forEach(add);
+    return Object.keys(map)
+      .map(Number)
+      .sort(function (x, y) {
+        return x - y;
+      })
+      .map(function (k) {
+        return map[k];
+      });
+  }
+
+  function addYahooDomPick(byPn, pn, info, pid) {
+    if (!info || !info.name) return;
+    const n = Number(pn);
+    if (!(n >= 1 && n <= 400)) return;
+    const prev = byPn.get(n);
+    if (prev && prev.playerName && prev.playerName.length >= info.name.length && prev.playerId) return;
+    byPn.set(n, {
+      overallPickNumber: n,
+      playerId: pid ? String(pid) : (prev && prev.playerId) || "",
+      playerName: info.name,
+      pos: info.pos || (prev && prev.pos) || "",
+      nflTeam: info.team || (prev && prev.nflTeam) || "",
+    });
+  }
+
+  function scrapeYahooLabeledPicks(doc, byPn) {
+    const nodes = doc.querySelectorAll(
+      "[data-pick],[data-overall-pick],[data-pick-number],[class*='Pick'],[class*='pick'],[class*='draft-cell'],[class*='draftCell'],[class*='PickCard'],[class*='player-name']"
+    );
+    const limit = Math.min(nodes.length, 900);
+    for (let i = 0; i < limit; i++) {
+      const el = nodes[i];
+      if (yahooInAvailableList(el, doc)) continue;
+      const text = String(el.textContent || "").replace(/\s+/g, " ").trim();
+      if (text.length < 5 || text.length > 180) continue;
+      const info = parseYahooNamePos(text);
+      if (!info) continue;
+      let pn = Number(
+        el.getAttribute("data-pick") ||
+          el.getAttribute("data-overall-pick") ||
+          el.getAttribute("data-pick-number") ||
+          0
+      );
+      if (!pn) {
+        const labeled = text.match(/pick\s*#?\s*(\d{1,3})\b/i);
+        if (labeled) pn = Number(labeled[1]);
+      }
+      if (!pn) continue;
+      addYahooDomPick(byPn, pn, info, el.getAttribute("data-player-id") || el.getAttribute("data-playerid"));
+    }
+  }
+
+  function scrapeYahooColumns(doc, byPn, teamsHint) {
+    const scope =
+      doc.querySelector(
+        "#draft, #draftapp, [class*='draft-board'], [class*='draftBoard'], [class*='DraftBoard'], [class*='pick-grid'], [class*='PickGrid']"
+      ) || doc.body;
+    if (!scope || !doc.createTreeWalker) return;
+    const walker = doc.createTreeWalker(scope, NodeFilter.SHOW_ELEMENT);
+    let el;
+    let scanned = 0;
+    let cols = [];
+    while ((el = walker.nextNode()) && scanned < 2500) {
+      scanned++;
+      const kids = el.children;
+      if (!kids || kids.length < 8 || kids.length > 18) continue;
+      const widths = [];
+      let ok = true;
+      for (let i = 0; i < kids.length; i++) {
+        const w = kids[i].offsetWidth || 0;
+        const h = kids[i].offsetHeight || 0;
+        if (w < 36 || h < 60) {
+          ok = false;
+          break;
+        }
+        widths.push(w);
+      }
+      if (!ok || widths.length < 8) continue;
+      const avg = widths.reduce(function (a, b) {
+        return a + b;
+      }, 0) / widths.length;
+      if (!widths.every(function (w) { return Math.abs(w - avg) < avg * 0.5; })) continue;
+      if (kids.length > cols.length) cols = Array.prototype.slice.call(kids);
+    }
+    if (cols.length < 8) return;
+    const teams = Number(teamsHint) >= 4 ? Number(teamsHint) : cols.length;
+    cols.forEach(function (col, idx) {
+      if (yahooInAvailableList(col, doc)) return;
+      const slot = idx + 1;
+      const text = String(col.innerText || col.textContent || "");
+      const re =
+        /([A-Z][a-zA-Z.'\-]+(?:\s+(?:[A-Z][a-zA-Z.'\-]+|Jr\.?|Sr\.?|II|III|IV|V)){0,4})\s+(QB|RB|WR|TE|K|DEF|DST|D\/ST)\b(?:\s+([A-Z]{2,3}))?/g;
+      const names = [];
+      let m;
+      while ((m = re.exec(text))) {
+        const parsed = parseYahooNamePos(m[0]);
+        if (parsed) names.push(parsed);
+      }
+      names.forEach(function (info, ridx) {
+        const rd = ridx + 1;
+        const pn = (rd - 1) * teams + (rd % 2 === 1 ? slot : teams - slot + 1);
+        addYahooDomPick(byPn, pn, info, "");
+      });
+    });
+  }
+
+  function scrapeYahooBoard(doc, teamsHint) {
+    doc = doc || (typeof document !== "undefined" ? document : null);
+    if (!doc || !doc.querySelectorAll) return [];
+    const byPn = new Map();
+    scrapeYahooLabeledPicks(doc, byPn);
+    scrapeYahooColumns(doc, byPn, teamsHint);
+    return Array.from(byPn.values()).sort(function (a, b) {
+      return a.overallPickNumber - b.overallPickNumber;
+    });
+  }
+
+  function addSleeperUserId(out, id, front) {
+    const s = String(id || "").trim();
+    if (!/^\d{6,20}$/.test(s)) return;
+    if (out.seen[s]) {
+      if (front) {
+        out.userIds = [s].concat(out.userIds.filter(function (x) { return x !== s; }));
+      }
+      return;
+    }
+    out.seen[s] = true;
+    if (front) out.userIds.unshift(s);
+    else out.userIds.push(s);
+  }
+
+  function harvestSleeperUserObject(obj, key, out, depth) {
+    if (!obj || typeof obj !== "object" || depth > 5) return;
+    if (Array.isArray(obj)) {
+      if (obj.length > 2 && obj[0] && typeof obj[0] === "object" && (obj[0].user_id || obj[0].display_name)) {
+        return;
+      }
+      obj.slice(0, 6).forEach(function (item) {
+        harvestSleeperUserObject(item, key, out, depth + 1);
+      });
+      return;
+    }
+    const uid = obj.user_id || obj.userId;
+    const un = obj.username || obj.user_name;
+    const dn = obj.display_name || obj.displayName;
+    const team = obj.team_name || obj.teamName;
+    const loggedInHint =
+      obj.token ||
+      obj.email ||
+      obj.avatar ||
+      obj.phone ||
+      obj.verification ||
+      obj.real_name != null ||
+      obj.is_bot === false ||
+      /user|auth|session|token|login|\bme\b/i.test(String(key || ""));
+    if (uid && (un || dn) && loggedInHint) {
+      addSleeperUserId(out, uid, true);
+      if (un) out.username = String(un);
+      if (dn) out.displayName = String(dn);
+      if (team) out.teamName = String(team);
+      return;
+    }
+    ["user", "data", "session", "profile", "me", "account", "viewer"].forEach(function (k) {
+      if (obj[k] && typeof obj[k] === "object") harvestSleeperUserObject(obj[k], k, out, depth + 1);
+    });
+  }
+
+  function collectSleeperIdentity() {
+    const out = { userIds: [], username: "", displayName: "", teamName: "", seen: {} };
+    function inspect(text, key) {
+      if (!text || text.length > 800000) return;
+      const trimmed = String(text).trim();
+      if (trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[") {
+        try {
+          harvestSleeperUserObject(JSON.parse(trimmed), key, out, 0);
+        } catch (_e) {
+          /* fall through */
+        }
+      }
+      if (!out.userIds.length && /user|auth|session|token|login/i.test(String(key || ""))) {
+        const idRe = /"(?:user_id|userId)"\s*:\s*"?(\d{6,20})"?/g;
+        let m;
+        while ((m = idRe.exec(trimmed))) addSleeperUserId(out, m[1]);
+        if (!out.username) {
+          const un = trimmed.match(/"username"\s*:\s*"([A-Za-z0-9_]{2,32})"/);
+          if (un) out.username = un[1];
+        }
+        if (!out.displayName) {
+          const dn = trimmed.match(/"display_name"\s*:\s*"([^"]{2,40})"/);
+          if (dn) out.displayName = dn[1];
+        }
+      }
+    }
+    try {
+      [localStorage, sessionStorage].forEach(function (store) {
+        if (!store) return;
+        for (let i = 0; i < store.length; i++) {
+          const k = store.key(i);
+          inspect(store.getItem(k) || "", k);
+        }
+      });
+    } catch (_e) {
+      /* ignore */
+    }
+    try {
+      inspect(document.cookie || "", "cookie");
+    } catch (_e) {
+      /* ignore */
+    }
+    if (!out.username) {
+      const fromDom = sleeperUsernameFromDom();
+      if (fromDom) out.username = fromDom;
+    }
+    delete out.seen;
+    return out;
+  }
+
+  function sleeperUsernameFromDom(doc) {
+    doc = doc || (typeof document !== "undefined" ? document : null);
+    if (!doc || !doc.querySelectorAll) return "";
+    const links = doc.querySelectorAll('a[href*="/u/"]');
+    const n = Math.min(links.length, 20);
+    for (let i = 0; i < n; i++) {
+      const href = String(links[i].getAttribute("href") || "");
+      const m = href.match(/\/u\/([A-Za-z0-9_]+)/);
+      if (!m) continue;
+      const name = m[1];
+      if (/^(help|support|blog|about|settings|login|signup)$/i.test(name)) continue;
+      return name;
+    }
+    return "";
+  }
+
+  function slotFromSleeperDraftOrder(order, userIds) {
+    if (!order || typeof order !== "object") return 0;
+    const ids = userIds || [];
+    for (let i = 0; i < ids.length; i++) {
+      const uid = String(ids[i] || "");
+      if (!uid) continue;
+      if (order[uid] != null && Number(order[uid]) >= 1) return Number(order[uid]);
+    }
+    return 0;
+  }
+
+  function slotFromSleeperPickedBy(picks, userIds) {
+    const want = {};
+    (userIds || []).forEach(function (id) {
+      if (id) want[String(id)] = true;
+    });
+    if (!Object.keys(want).length) return 0;
+    let first = 0;
+    let slot = 0;
+    (picks || []).forEach(function (p) {
+      const who = p && (p.pickedBy != null ? p.pickedBy : p.picked_by);
+      if (who == null || !want[String(who)]) return;
+      const pn = Number(p.overallPickNumber || p.pick_no || 0);
+      const ds = Number(p.slot || p.draft_slot || p.draftSlot || 0);
+      if (ds >= 1 && (!first || (pn && pn < first) || !pn)) {
+        first = pn || first;
+        slot = ds;
+      }
+    });
+    return slot;
+  }
+
+  function slotFromSleeperRosterMap(slotToRoster, ownerToRoster, userIds) {
+    if (!slotToRoster || !ownerToRoster) return 0;
+    for (let i = 0; i < (userIds || []).length; i++) {
+      const uid = String(userIds[i] || "");
+      if (!uid) continue;
+      const rid = ownerToRoster[uid];
+      if (rid == null) continue;
+      const keys = Object.keys(slotToRoster);
+      for (let k = 0; k < keys.length; k++) {
+        if (String(slotToRoster[keys[k]]) === String(rid)) {
+          const slot = Number(keys[k]);
+          if (slot >= 1) return slot;
+        }
+      }
+    }
+    return 0;
+  }
+
+  function parseSleeperClock(text) {
+    const s = String(text || "").replace(/\s+/g, " ");
+    return {
+      onClock: /you(?:'re| are) on the clock|your (?:pick|turn)(?:\b| to pick)|waiting for you to pick/i.test(s),
+      upIn: (function () {
+        const m = s.match(/you(?:'re| are) up in\s+(\d+)\s+picks?/i);
+        return m ? Number(m[1]) : null;
+      })(),
+    };
+  }
+
+  function sleeperClockText(doc) {
+    doc = doc || (typeof document !== "undefined" ? document : null);
+    if (!doc || !doc.querySelectorAll) return "";
+    const bits = [];
+    const nodes = doc.querySelectorAll(
+      "h1,h2,h3,header,[class*='Clock'],[class*='clock'],[class*='Status'],[class*='status'],[class*='Banner'],[class*='banner'],[class*='Pick']"
+    );
+    const n = Math.min(nodes.length, 60);
+    for (let i = 0; i < n; i++) bits.push(String(nodes[i].textContent || "").slice(0, 220));
+    let blob = bits.join(" ");
+    if (!/you(?:'re| are) on the clock|your (?:pick|turn)|you(?:'re| are) up in/i.test(blob) && doc.body) {
+      blob = String(doc.body.innerText || "").slice(0, 4000);
+    }
+    return blob;
+  }
+
+  function slotFromSleeperClock(text, currentPick, teams) {
+    const c = parseSleeperClock(text);
+    const pn = Number(currentPick) || 0;
+    const nTeams = Number(teams) || 0;
+    if (nTeams < 2 || pn < 1) return 0;
+    if (c.onClock) return snakeSlot(pn, nTeams);
+    if (c.upIn != null && c.upIn >= 0) return snakeSlot(pn + c.upIn, nTeams);
+    return 0;
+  }
+
+  function detectSleeperDomSlot(identity, teams) {
+    const names = [];
+    const seen = {};
+    function addName(s) {
+      const n = String(s || "").replace(/\s+/g, " ").trim().toLowerCase();
+      if (n.length < 2 || n.length > 40) return;
+      if (seen[n]) return;
+      seen[n] = true;
+      names.push(n);
+    }
+    addName(identity && identity.displayName);
+    addName(identity && identity.username);
+    addName(identity && identity.teamName);
+    if (names.length && typeof document !== "undefined" && document.createTreeWalker) {
+      const scope =
+        document.querySelector(
+          '[class*="draft-board"], [class*="draftBoard"], [class*="draft-container"], [class*="draftContainer"], [id*="draft"]'
+        ) || document.body;
+      if (scope) {
+        const walker = document.createTreeWalker(scope, NodeFilter.SHOW_ELEMENT);
+        let el;
+        let scanned = 0;
+        while ((el = walker.nextNode()) && scanned < 3500) {
+          scanned++;
+          if (el.children && el.children.length > 3) continue;
+          const label = String(el.getAttribute("aria-label") || el.textContent || "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLowerCase();
+          if (!label || label.length > 48) continue;
+          const hit = names.some(function (n) {
+            return label === n || label.indexOf(n) === 0 || label.indexOf(n + " ") === 0;
+          });
+          if (!hit) continue;
+          const slot = slotFromColumnNode(el);
+          if (slot) return clampSlot(slot, teams || 32);
+        }
+      }
+    }
+    return detectDomSlot();
+  }
+
+  function detectSleeperSlot(opts) {
+    opts = opts || {};
+    const teams = Number(opts.teams) || 0;
+    const identity = opts.identity || (opts.skipCollect ? { userIds: [] } : collectSleeperIdentity());
+    const userIds = (identity && identity.userIds) || [];
+    const draft = opts.draft || {};
+    const picks = opts.picks || [];
+    const max = teams || 32;
+    let slot = slotFromSleeperDraftOrder(draft.draft_order, userIds);
+    if (slot) return clampSlot(slot, max);
+    slot = slotFromSleeperPickedBy(picks, userIds);
+    if (slot) return clampSlot(slot, max);
+    const rosterMap = draft.slot_to_roster_id || (draft.metadata && draft.metadata.slot_to_roster_id);
+    slot = slotFromSleeperRosterMap(rosterMap, opts.ownerToRoster, userIds);
+    if (slot) return clampSlot(slot, max);
+    const current = Number(opts.currentPick) || (picks.length ? picks[picks.length - 1].overallPickNumber + 1 : 1);
+    const auction = !!opts.auction || String((draft && draft.type) || "").toLowerCase() === "auction";
+    if (!auction) {
+      const clockText = opts.clockText != null ? opts.clockText : opts.skipDom ? "" : sleeperClockText();
+      slot = slotFromSleeperClock(clockText, current, teams || 12);
+      if (slot) return clampSlot(slot, max);
+    }
+    if (!opts.skipDom) {
+      slot = detectSleeperDomSlot(identity, max);
+      if (slot) return clampSlot(slot, max);
+    }
+    return 0;
+  }
+
+  function teamNamesFromSleeperDraft(draft, users) {
+    const names = {};
+    const order = (draft && draft.draft_order) || {};
+    const byId = {};
+    (users || []).forEach(function (u) {
+      if (!u || u.user_id == null) return;
+      byId[String(u.user_id)] = u;
+    });
+    Object.keys(order).forEach(function (uid) {
+      const slot = Number(order[uid]);
+      if (!(slot >= 1 && slot <= 32)) return;
+      const u = byId[uid];
+      if (!u) return;
+      const meta = u.metadata || {};
+      const name = String(meta.team_name || u.display_name || u.username || "").trim();
+      if (name) names[slot] = name;
+    });
+    return names;
+  }
+
+  function teamNamesFromTeamIds(namesById, slotsById, picks, teams) {
+    const out = {};
+    const ids = namesById || {};
+    const slots = slotsById || {};
+    Object.keys(ids).forEach(function (tid) {
+      const name = String(ids[tid] || "").trim();
+      if (!name) return;
+      let slot = Number(slots[tid]) || 0;
+      if (!slot) slot = slotFromTeamId(picks, tid, teams);
+      if (slot >= 1 && slot <= 32) out[slot] = name;
+    });
+    return out;
+  }
+
+  function sleeperPickOwners(opts) {
+    opts = opts || {};
+    const teams = Number(opts.teams) || 0;
+    const rounds = Number(opts.rounds) || 0;
+    const out = {};
+    if (teams < 2 || rounds < 1) return out;
+    const draft = opts.draft || {};
+    const slotToRoster = {};
+    const rosterToSlot = {};
+    const rawMap = draft.slot_to_roster_id || (draft.metadata && draft.metadata.slot_to_roster_id) || {};
+    Object.keys(rawMap).forEach(function (sl) {
+      const slot = Number(sl);
+      const rid = rawMap[sl];
+      if (slot >= 1 && rid != null) {
+        slotToRoster[slot] = rid;
+        rosterToSlot[String(rid)] = slot;
+      }
+    });
+    const order = draft.draft_order || {};
+    const ownerToRoster = opts.ownerToRoster || {};
+    Object.keys(order).forEach(function (uid) {
+      const slot = Number(order[uid]);
+      const rid = ownerToRoster[uid];
+      if (slot >= 1 && rid != null) {
+        slotToRoster[slot] = rid;
+        rosterToSlot[String(rid)] = slot;
+      }
+    });
+    const traded = {};
+    (opts.tradedPicks || []).forEach(function (tp) {
+      if (!tp || tp.roster_id == null || tp.round == null || tp.owner_id == null) return;
+      traded[String(tp.roster_id) + ":" + String(tp.round)] = tp.owner_id;
+    });
+    (opts.picks || []).forEach(function (p) {
+      const pn = Number(p && (p.overallPickNumber || p.pick_no));
+      if (!pn) return;
+      const rid = p.teamId != null ? p.teamId : p.roster_id;
+      if (rid != null && rosterToSlot[String(rid)] != null) {
+        out[pn] = rosterToSlot[String(rid)];
+      } else if (Number(p.slot || p.draft_slot) >= 1) {
+        out[pn] = Number(p.slot || p.draft_slot);
+      }
+    });
+    const tot = teams * rounds;
+    for (let pn = 1; pn <= tot; pn++) {
+      if (out[pn]) continue;
+      const home = snakeSlot(pn, teams);
+      const origRid = slotToRoster[home];
+      const rnd = Math.ceil(pn / teams);
+      if (origRid != null) {
+        const key = String(origRid) + ":" + String(rnd);
+        const ownRid = Object.prototype.hasOwnProperty.call(traded, key) ? traded[key] : origRid;
+        out[pn] = rosterToSlot[String(ownRid)] != null ? rosterToSlot[String(ownRid)] : home;
+      } else {
+        out[pn] = home;
+      }
+    }
+    return out;
+  }
+
+  function parseClockSeconds(text) {
+    const s = String(text || "");
+    const mmss = s.match(/\b(\d{1,2}):([0-5]\d)\b/);
+    if (mmss) return Number(mmss[1]) * 60 + Number(mmss[2]);
+    const sec = s.match(/\b(\d{1,3})\s*(?:s|sec|secs|seconds)\b/i);
+    if (sec) return Number(sec[1]);
+    return null;
+  }
+
+  function sleeperClockRemaining(draft, now) {
+    draft = draft || {};
+    const settings = draft.settings || {};
+    const timer = Number(settings.pick_timer || settings.pickTimer || 0);
+    if (!(timer > 0)) return null;
+    const last = Number(draft.last_picked || draft.lastPicked || draft.start_time || 0);
+    if (!(last > 0)) return timer;
+    const elapsed = Math.floor(((now || Date.now()) - last) / 1000);
+    return Math.max(0, Math.round(timer - elapsed));
+  }
+
+  function scrapeHostClockSeconds(doc) {
+    doc = doc || (typeof document !== "undefined" ? document : null);
+    if (!doc || !doc.querySelectorAll) return null;
+    const nodes = doc.querySelectorAll(
+      "[class*='clock'],[class*='Clock'],[class*='timer'],[class*='Timer'],[class*='countdown'],[class*='Countdown']"
+    );
+    const n = Math.min(nodes.length, 40);
+    for (let i = 0; i < n; i++) {
+      const sec = parseClockSeconds(nodes[i].textContent);
+      if (sec != null && sec <= 600) return sec;
+    }
+    if (doc.body) {
+      const blob = String(doc.body.innerText || "").slice(0, 2500);
+      const near = blob.match(/(?:clock|timer|remaining)[^\d]{0,24}(\d{1,2}:[0-5]\d)/i);
+      if (near) return parseClockSeconds(near[1]);
+    }
+    return null;
+  }
+
   root.BRDraftSlot = {
     snakeSlot: snakeSlot,
     teamCountFromPicks: teamCountFromPicks,
@@ -281,6 +945,10 @@
     espnSwid: espnSwid,
     compactSync: compactSync,
     detectDomSlot: detectDomSlot,
+    detectYahooSlot: detectYahooSlot,
+    yahooClientTeamId: yahooClientTeamId,
+    slotFromYahooClock: slotFromYahooClock,
+    parseYahooClock: parseYahooClock,
     isEspnDraftRoom: isEspnDraftRoom,
     clampSlot: clampSlot,
     rosterFromEspnSlots: rosterFromEspnSlots,
@@ -291,5 +959,24 @@
     settingsLabel: settingsLabel,
     scoringFromSleeperSettings: scoringFromSleeperSettings,
     rosterKey: rosterKey,
+    scrapeYahooBoard: scrapeYahooBoard,
+    mergeYahooPicks: mergeYahooPicks,
+    parseYahooNamePos: parseYahooNamePos,
+    completedFromYahooClock: completedFromYahooClock,
+    collectSleeperIdentity: collectSleeperIdentity,
+    sleeperUsernameFromDom: sleeperUsernameFromDom,
+    slotFromSleeperDraftOrder: slotFromSleeperDraftOrder,
+    slotFromSleeperPickedBy: slotFromSleeperPickedBy,
+    slotFromSleeperRosterMap: slotFromSleeperRosterMap,
+    parseSleeperClock: parseSleeperClock,
+    slotFromSleeperClock: slotFromSleeperClock,
+    detectSleeperSlot: detectSleeperSlot,
+    detectSleeperDomSlot: detectSleeperDomSlot,
+    teamNamesFromSleeperDraft: teamNamesFromSleeperDraft,
+    teamNamesFromTeamIds: teamNamesFromTeamIds,
+    sleeperPickOwners: sleeperPickOwners,
+    parseClockSeconds: parseClockSeconds,
+    sleeperClockRemaining: sleeperClockRemaining,
+    scrapeHostClockSeconds: scrapeHostClockSeconds,
   };
 })(window);

@@ -51,25 +51,56 @@
   let detectedPpr = 1;
   let detectedTep = 0;
   let detectedPassTd = 4;
+  const detectedTeamNamesById = {};
+  const detectedTeamSlotsById = {};
+  let lastClockSeconds = null;
   /** @type {Map<string, {playerName: string, pos: string, nflTeam: string}>} */
   const playerMetaById = new Map();
   const ESPN_POS = { 1: "QB", 2: "RB", 3: "WR", 4: "TE", 5: "K", 16: "DST" };
+
+  function hostBrand(val) {
+    try {
+      return Object.prototype.toString.call(val);
+    } catch (_e) {
+      return "[object Restricted]";
+    }
+  }
+
+  function isWindowLike(val) {
+    if (val == null || typeof val !== "object") return false;
+    try {
+      if (val === window || val === window.top || val === window.self || val === window.parent) {
+        return true;
+      }
+    } catch (_e) {
+      return true;
+    }
+    try {
+      if (typeof Window === "function" && val instanceof Window) return true;
+    } catch (_e) {
+      return true;
+    }
+    try {
+      if (typeof Location === "function" && val instanceof Location) return true;
+    } catch (_e) {
+      return true;
+    }
+    const tag = hostBrand(val);
+    return (
+      tag === "[object Window]" ||
+      tag === "[object global]" ||
+      tag === "[object HTMLDocument]" ||
+      tag === "[object Document]" ||
+      tag === "[object Location]" ||
+      tag === "[object Restricted]"
+    );
+  }
 
   function isTraversableObject(val) {
     try {
       if (!val || typeof val !== "object") return false;
       if (Array.isArray(val)) return true;
-      if (typeof Window !== "undefined" && val instanceof Window) return false;
-      if (typeof Location !== "undefined" && val instanceof Location) return false;
-      const tag = Object.prototype.toString.call(val);
-      if (
-        tag === "[object Window]" ||
-        tag === "[object HTMLDocument]" ||
-        tag === "[object Document]" ||
-        tag === "[object Location]"
-      ) {
-        return false;
-      }
+      if (isWindowLike(val)) return false;
       if (typeof HTMLIFrameElement !== "undefined" && val instanceof HTMLIFrameElement) {
         return false;
       }
@@ -84,8 +115,7 @@
   function safeProp(obj, key) {
     try {
       if (obj == null || typeof obj !== "object") return undefined;
-      if (typeof Window !== "undefined" && obj instanceof Window) return undefined;
-      if (typeof Location !== "undefined" && obj instanceof Location) return undefined;
+      if (isWindowLike(obj)) return undefined;
       return obj[key];
     } catch (_e) {
       return undefined;
@@ -373,6 +403,7 @@
       detectedTep,
       detectedPassTd,
       rosterFingerprint(detectedRoster),
+      Object.keys(detectedTeamNamesById).length,
     ].join("|");
   }
 
@@ -498,6 +529,17 @@
       const t = teams[i];
       if (!isTraversableObject(t)) continue;
       const id = safeProp(t, "id") ?? safeProp(t, "teamId");
+      const loc = String(safeProp(t, "location") || "").trim();
+      const nick = String(safeProp(t, "nickname") || "").trim();
+      const abbrev = String(safeProp(t, "abbrev") || "").trim();
+      const teamName = (loc + " " + nick).trim() || String(safeProp(t, "name") || abbrev || "").trim();
+      if (id != null && id !== "" && teamName) detectedTeamNamesById[String(id)] = teamName;
+      const pos =
+        safeProp(t, "draftPosition") ??
+        safeProp(t, "draftSlot") ??
+        safeProp(t, "pickNumber") ??
+        safeProp(t, "draftPickNumber");
+      if (id != null && pos != null && Number(pos) >= 1) detectedTeamSlotsById[String(id)] = Number(pos);
       const owner = String(safeProp(t, "primaryOwner") || "").replace(/[{}]/g, "").toLowerCase();
       const isUser =
         safeProp(t, "isCurrentUser") === true ||
@@ -506,11 +548,6 @@
         (swid && owner && owner === swid);
       if (!isUser || id == null || id === "") continue;
       detectedUserTeamId = id;
-      const pos =
-        safeProp(t, "draftPosition") ??
-        safeProp(t, "draftSlot") ??
-        safeProp(t, "pickNumber") ??
-        safeProp(t, "draftPickNumber");
       if (pos != null && Number(pos) >= 1) detectedSlot = Number(pos);
     }
   }
@@ -645,6 +682,10 @@
     lastFingerprint = fp;
     lastEmitAt = now;
     const mySlot = computeMySlot(clean);
+    const teamNames = window.BRDraftSlot && BRDraftSlot.teamNamesFromTeamIds
+      ? BRDraftSlot.teamNamesFromTeamIds(detectedTeamNamesById, detectedTeamSlotsById, clean, detectedTeams)
+      : {};
+    const clockSeconds = lastClockSeconds;
     const detail = {
       source: source || "accumulated",
       leagueId: ids.leagueId,
@@ -661,6 +702,8 @@
       ppr: detectedPpr,
       tep: detectedTep,
       passTd: detectedPassTd,
+      teamNames: teamNames,
+      clockSeconds: clockSeconds,
       at: now,
     };
     bridgeToExtension(EVENT, detail);
@@ -683,6 +726,14 @@
     if (!Array.isArray(picks) || !picks.length) return false;
     const selected = picks.filter(isPickRow);
     if (!selected.length) return false;
+    const remain =
+      safeProp(detail, "timeRemaining") ??
+      safeProp(detail, "pickTimeRemaining") ??
+      safeProp(detail, "secondsRemaining");
+    if (remain != null && Number(remain) >= 0) {
+      const n = Number(remain);
+      lastClockSeconds = n > 1000 ? Math.round(n / 1000) : Math.round(n);
+    }
     emit(
       selected,
       {
@@ -772,6 +823,7 @@
     while (q.length && n < MAX_WALK) {
       const cur = q.shift();
       n++;
+      try {
       if (!isTraversableObject(cur)) continue;
       if (seen.has(cur)) continue;
       seen.add(cur);
@@ -817,6 +869,9 @@
         if (next.length > 48) break;
       }
       for (let i = 0; i < Math.min(next.length, 28); i++) q.push(next[i]);
+      } catch (_e) {
+        /* Cross-origin Window/Location from a Disney/login iframe. */
+      }
     }
     return found;
   }
@@ -911,14 +966,20 @@
       if (!key.startsWith("__reactFiber$") && !key.startsWith("__reactInternalInstance$")) continue;
       let node = el[key];
       for (let depth = 0; depth < 10 && node; depth++) {
-        const props = node.memoizedProps || node.pendingProps || node.props;
+        if (isWindowLike(node)) break;
+        const props =
+          safeProp(node, "memoizedProps") ||
+          safeProp(node, "pendingProps") ||
+          safeProp(node, "props");
         if (props) {
           if (isPickRow(props)) return props;
-          if (props.pick && isPickRow(props.pick)) return props.pick;
-          if (props.draftPick && isPickRow(props.draftPick)) return props.draftPick;
-          if (props.player && props.overallPickNumber != null) return props;
+          const pick = safeProp(props, "pick");
+          if (pick && isPickRow(pick)) return pick;
+          const draftPick = safeProp(props, "draftPick");
+          if (draftPick && isPickRow(draftPick)) return draftPick;
+          if (safeProp(props, "player") && safeProp(props, "overallPickNumber") != null) return props;
         }
-        node = node.return;
+        node = safeProp(node, "return");
       }
     }
     return null;

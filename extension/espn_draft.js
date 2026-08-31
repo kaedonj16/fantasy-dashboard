@@ -94,6 +94,21 @@
     return lastMySlot || 0;
   }
 
+  let lastClockKey = "";
+  function pushHostClock(seconds, pickTimer) {
+    let sec = seconds;
+    if (sec == null && window.BRDraftSlot && BRDraftSlot.scrapeHostClockSeconds) {
+      sec = BRDraftSlot.scrapeHostClockSeconds(document);
+    }
+    if (sec == null) return;
+    const key = String(sec) + "|" + String(pickTimer || "");
+    if (key === lastClockKey) return;
+    lastClockKey = key;
+    if (typeof window.__brDaPushClock === "function") {
+      window.__brDaPushClock({ clockSeconds: sec, pickTimer: pickTimer });
+    }
+  }
+
   function overlaySyncText(picks, ok, mySlot) {
     if (window.BRDraftSlot) {
       return window.BRDraftSlot.compactSync("espn", (picks || []).length, mySlot, ok);
@@ -393,7 +408,11 @@
       ppr: detail.ppr,
       tep: detail.tep,
       passTd: detail.passTd,
+      teamNames: detail.teamNames,
+      clockSeconds: detail.clockSeconds,
+      pickTimer: detail.pickTimer,
     });
+    pushHostClock(detail.clockSeconds, detail.pickTimer);
     if (!payload.leagueId) {
       setChip("BR Fantasy · leagueId missing in URL", false);
       return;
@@ -434,7 +453,12 @@
       const prev = lastMySlot;
       const slot = resolveMySlot(lastPicks || [], {});
       if (slot && slot !== prev) feedAssistant(lastPicks || [], "", true, { mySlot: slot });
+      pushHostClock(null, null);
     }, 2500);
+    setInterval(function () {
+      if (!isEspnDraftRoom() || document.hidden) return;
+      pushHostClock(null, null);
+    }, 750);
     requestObserverInject();
     setTimeout(function () {
       if (!mainObserverReady) requestObserverInject();

@@ -36,6 +36,11 @@
         const key = (u.searchParams.get("leagueKey") || u.searchParams.get("key") || "").trim();
         if (key && key.indexOf(".l.") >= 0) leagueId = key.split(".l.").pop() || "";
       }
+      const client = u.pathname.match(/\/draftclient\/(?:nfl\/|f1\/)?(\d+)\/(\d+)/i);
+      if (client) {
+        if (!leagueId) leagueId = client[1];
+        if (!lastUserTeamId) lastUserTeamId = client[2];
+      }
       return { leagueId, season };
     } catch (_e) {
       return { leagueId: "", season: "" };
@@ -72,13 +77,34 @@
       lastUserTeamId = teamId;
     }
     if (window.BRDraftSlot) {
-      const dom = window.BRDraftSlot.detectDomSlot();
-      if (dom) {
-        lastMySlot = dom;
-        return dom;
+      const yahoo = window.BRDraftSlot.detectYahooSlot
+        ? window.BRDraftSlot.detectYahooSlot(teams)
+        : window.BRDraftSlot.detectDomSlot();
+      if (yahoo) {
+        lastMySlot = yahoo;
+        return yahoo;
       }
     }
+    const urlTeam = window.BRDraftSlot && BRDraftSlot.yahooClientTeamId
+      ? BRDraftSlot.yahooClientTeamId()
+      : "";
+    if (urlTeam && !lastUserTeamId) lastUserTeamId = urlTeam;
     return lastMySlot || 0;
+  }
+
+  let lastClockKey = "";
+  function pushHostClock(seconds, pickTimer) {
+    let sec = seconds;
+    if (sec == null && window.BRDraftSlot && BRDraftSlot.scrapeHostClockSeconds) {
+      sec = BRDraftSlot.scrapeHostClockSeconds(document);
+    }
+    if (sec == null) return;
+    const key = String(sec) + "|" + String(pickTimer || "");
+    if (key === lastClockKey) return;
+    lastClockKey = key;
+    if (typeof window.__brDaPushClock === "function") {
+      window.__brDaPushClock({ clockSeconds: sec, pickTimer: pickTimer });
+    }
   }
 
   function overlaySyncText(picks, ok, mySlot) {
@@ -262,6 +288,7 @@
       picks.length,
       last ? last.overallPickNumber : 0,
       last ? last.playerId : "",
+      last ? last.playerName || last.name || "" : "",
     ].join("|");
   }
 
@@ -333,6 +360,9 @@
       source: detail.source || "yahoo-draft-room",
       at: detail.at || Date.now(),
     };
+    if (window.BRDraftSlot && BRDraftSlot.mergeYahooPicks) {
+      payload.picks = BRDraftSlot.mergeYahooPicks(lastPicks, payload.picks);
+    }
     feedAssistant(payload.picks, "", true, {
       mySlot: detail.mySlot,
       userTeamId: detail.userTeamId,
@@ -345,14 +375,18 @@
       ppr: detail.ppr,
       tep: detail.tep,
       passTd: detail.passTd,
+      teamNames: detail.teamNames,
+      clockSeconds: detail.clockSeconds,
+      pickTimer: detail.pickTimer,
     });
+    pushHostClock(detail.clockSeconds, detail.pickTimer);
     if (!payload.leagueId) {
       setChip("BR Fantasy · leagueId missing in URL", false);
       return;
     }
     pendingPayload = payload;
-    const fp = payloadFingerprint(payload);
-    if (fp !== lastDelivered) lastPickCount = Math.max(lastPickCount, payload.picks.length);
+    lastPickCount = Math.max(lastPickCount, payload.picks.length);
+    relayPending();
   }
 
   listenFromMain(EVENT, forward);
@@ -374,11 +408,71 @@
   }
 
   ensureChip();
-  setInterval(function () {
+
+  function lastPickLabel(picks) {
+    const last = picks && picks.length ? picks[picks.length - 1] : null;
+    if (!last) return "";
+    return [last.overallPickNumber, last.playerId || "", last.playerName || last.name || ""].join("|");
+  }
+
+  function pushMergedPicks(incoming, extra) {
+    const helper = window.BRDraftSlot;
+    const merged = helper && helper.mergeYahooPicks
+      ? helper.mergeYahooPicks(lastPicks, incoming)
+      : (incoming && incoming.length >= (lastPicks || []).length ? incoming : lastPicks);
+    if (!merged || !merged.length) return false;
+    const grew = merged.length > (lastPicks || []).length || lastPickLabel(merged) !== lastPickLabel(lastPicks);
+    if (!grew) return false;
+    lastPicks = merged;
+    feedAssistant(merged, "", true, extra || {});
+    const ids = leagueFromUrl();
+    if (ids.leagueId) {
+      pendingPayload = {
+        type: "yahooDraftRelay",
+        leagueId: ids.leagueId,
+        season: ids.season,
+        inProgress: true,
+        drafted: false,
+        picks: merged,
+        source: "yahoo-draft-room",
+        at: Date.now(),
+      };
+      relayPending();
+    }
+    return true;
+  }
+
+  function pollYahooLive() {
     const prev = lastMySlot;
     const slot = resolveMySlot(lastPicks || [], {});
-    if (slot && slot !== prev) feedAssistant(lastPicks || [], "", true, { mySlot: slot });
-  }, 2500);
+    const extra = { mySlot: slot || lastMySlot, teams: overlayTeamMeta(lastPicks).teams };
+    if (window.BRDraftSlot && BRDraftSlot.scrapeYahooBoard) {
+      const scraped = BRDraftSlot.scrapeYahooBoard(document, extra.teams);
+      if (scraped && scraped.length) pushMergedPicks(scraped, extra);
+    }
+    if (slot && slot !== prev) feedAssistant(lastPicks || [], "", true, extra);
+    const expected = window.BRDraftSlot && BRDraftSlot.completedFromYahooClock
+      ? BRDraftSlot.completedFromYahooClock(extra.teams || 12)
+      : 0;
+    if (expected > (lastPicks || []).length) requestRescan();
+    pushHostClock(null, null);
+  }
+  pollYahooLive();
+  setTimeout(pollYahooLive, 500);
+  setInterval(pollYahooLive, 1000);
+  let livePollTimer = null;
+  try {
+    const mo = new MutationObserver(function () {
+      if (document.hidden || livePollTimer) return;
+      livePollTimer = setTimeout(function () {
+        livePollTimer = null;
+        pollYahooLive();
+      }, 350);
+    });
+    mo.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+  } catch (_e) {
+    /* ignore */
+  }
   try {
     chrome.runtime.sendMessage(
       {

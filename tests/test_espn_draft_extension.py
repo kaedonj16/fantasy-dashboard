@@ -8,7 +8,7 @@ EXT = REPO / "extension"
 
 def test_extension_manifest_includes_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.12"
+    assert manifest["version"] == "1.5.20"
     assert "cookies" in manifest["permissions"]
     assert "scripting" in manifest["permissions"]
     assert "tabs" in manifest["permissions"]
@@ -22,11 +22,11 @@ def test_extension_manifest_includes_draft_scripts():
             main_js = js
         if "fantasy.espn.com/football/draft" in joined and world != "MAIN":
             iso_js = js
-    assert main_js == ["espn_draft_main.js"]
+    assert main_js == ["draft_slot.js", "espn_draft_main.js"]
     assert iso_js == ["draft_slot.js", "assistant_inject.js", "espn_draft.js"]
     main_block = next(
         s for s in scripts
-        if s.get("world") == "MAIN" and s.get("js") == ["espn_draft_main.js"]
+        if s.get("world") == "MAIN" and "espn_draft_main.js" in s.get("js", [])
     )
     iso_block = next(
         s for s in scripts
@@ -71,6 +71,11 @@ def test_extension_relay_message_contract():
     assert "isTraversableObject" in main
     assert "safeProp" in main
     assert "instanceof Window" in main
+    assert "function isWindowLike" in main
+    assert "function hostBrand" in main
+    assert "[object Window]" in main
+    assert "isWindowLike(obj)" in main
+    assert "isWindowLike(node)" in main
     assert "emitAccumulated" in main
     assert "watchDom" in main
     assert "deepFindDraftDetail" in main
