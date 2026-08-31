@@ -426,6 +426,75 @@ def test_body_renders_undrafted_dropdown_and_one_per_round_toggle(monkeypatch):
     assert "Auction/FAAB keeper costs are not auto-detected" in html
 
 
+# ── Auction / FAAB keeper costs (R02.2) ───────────────────────────────────────
+
+def test_parse_auction_amounts_from_mfl_style_picks():
+    drafts = [{
+        "type": "auction",
+        "picks": [
+            {"player_id": "111", "metadata": {"auction_amount": "45"}},
+            {"player_id": "222", "metadata": {"auction_amount": 12}},
+            {"player_id": "333", "metadata": {"auction_amount": 0}},  # skipped
+            {"playerId": "444", "amount": "$7.5"},
+        ],
+    }]
+    assert kp.parse_auction_amounts_from_drafts(drafts) == {
+        "111": 45.0, "222": 12.0, "444": 7.5,
+    }
+
+
+def test_parse_auction_amounts_from_sleeper_metadata_amount():
+    picks = [
+        {"player_id": "a", "metadata": {"amount": "33"}},
+        {"player_id": "b", "metadata": {"amount": ""}},
+        {"player_id": "c", "bidAmount": 9},
+    ]
+    assert kp.parse_auction_amounts_from_picks(picks) == {"a": 33.0, "c": 9.0}
+
+
+def test_auction_cost_map_hydrates_sleeper_picks(monkeypatch):
+    drafts = [{"draft_id": "d1", "type": "auction", "status": "complete"}]
+    picks = [{"player_id": "a", "metadata": {"amount": "21"}}]
+    api = types.ModuleType("dashboard_services.api")
+    api.get_draft_picks = lambda did: picks if did == "d1" else []
+    monkeypatch.setitem(sys.modules, "dashboard_services.api", api)
+    assert kp._auction_cost_map("sleeper", "L", 2026, drafts=drafts) == {"a": 21.0}
+
+
+def test_body_imports_auction_costs_and_updates_copy(monkeypatch):
+    _stub_body_deps(monkeypatch)
+    drafts = [{
+        "type": "auction",
+        "settings": {"budget": 200},
+        "picks": [{"player_id": "a", "metadata": {"auction_amount": 55}}],
+    }]
+    plat = types.ModuleType("dashboard_services.platform_api")
+    plat.get_drafts = lambda platform, league_id, season: drafts
+    monkeypatch.setitem(sys.modules, "dashboard_services.platform_api", plat)
+    html = kp.build_keeper_body(dict(_BODY_CTX), viewer_roster_id="1",
+                                platform="mfl", league_id="L123", season=2026)
+    assert "Auction/FAAB league detected" in html
+    assert "Auction $ paid was imported" in html
+    assert "Auction/FAAB keeper costs are not auto-detected" not in html
+    assert "Auction $" in html
+    assert '"isAuction":true' in html.replace(" ", "")
+    assert '"auctionCostsImported":true' in html.replace(" ", "")
+    assert '"auctionCost":55' in html.replace(" ", "")
+
+
+def test_body_auction_without_amounts_keeps_editable_fallback(monkeypatch):
+    _stub_body_deps(monkeypatch)
+    drafts = [{"type": "auction", "settings": {"budget": 100}, "picks": []}]
+    plat = types.ModuleType("dashboard_services.platform_api")
+    plat.get_drafts = lambda platform, league_id, season: drafts
+    monkeypatch.setitem(sys.modules, "dashboard_services.platform_api", plat)
+    html = kp.build_keeper_body(dict(_BODY_CTX), viewer_roster_id="1",
+                                platform="sleeper", league_id="L123", season=2026)
+    assert "Provider did not expose auction amounts" in html
+    assert "Auction $" in html
+    assert '"auctionCostsImported":false' in html.replace(" ", "")
+
+
 def test_one_per_round_resolves_collisions_in_projection(monkeypatch):
     """Two viewer keepers drafted in the same round collide; with one-per-round
     (default) the projection bumps the weaker to a neighbouring round so no two

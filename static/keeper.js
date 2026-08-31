@@ -14,6 +14,7 @@
   var players = (seed.players || []).map(function (p) { return Object.assign({}, p); });
   var leagueSize = seed.leagueSize || 12;
   var numRounds = seed.numRounds || 15;
+  var isAuction = !!seed.isAuction;
 
   var $ = function (id) { return document.getElementById(id); };
   var elLim = $("kpr-lim"), elLimN = $("kpr-limn"), elTot = $("kpr-tot"),
@@ -93,6 +94,11 @@
     });
   }
   function fmt(n) { return (n > 0 ? "+" : n < 0 ? "−" : "") + Math.abs(n) + " rd"; }
+  function fmtAuction(n) {
+    if (n == null || n === "" || isNaN(Number(n))) return "—";
+    var v = Number(n);
+    return "$" + (Math.round(v) === v ? String(Math.round(v)) : v.toFixed(2));
+  }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
 
   function optimizeUniqueRounds(rows, limit, r) {
@@ -208,10 +214,12 @@
       var cls = row.keep ? "keep" : "cut";
       var sval = row.surplus == null ? "-" : fmt(row.surplus);
       var mkt = row.mkt == null ? "off-board" : ("market R" + row.mkt);
+      var sub = esc(row.p.pos || "") + " · cost R" + row.cost + " · " + mkt;
+      if (isAuction) sub += " · " + fmtAuction(row.p.auctionCost);
       return '<div class="kpr-row ' + cls + '">' +
         '<div class="kpr-chk">' + (row.keep ? CHECK : "") + "</div>" +
         '<div><div class="kpr-nm">' + esc(row.p.name) + '</div>' +
-        '<div class="kpr-sub">' + esc(row.p.pos || "") + " · cost R" + row.cost + " · " + mkt + "</div></div>" +
+        '<div class="kpr-sub">' + sub + "</div></div>" +
         '<div class="kpr-mid">' + (row.keep ? "Keeping" : "Back in draft") + "</div>" +
         '<div class="kpr-val ' + (row.keep ? "keep" : "pass") + '">' + sval + "</div>" +
         "</div>";
@@ -253,10 +261,17 @@
         '" placeholder="R?" value="' + esc(did) + '" aria-label="Drafted round">';
       draftedTxt += '<span class="kpr-dot">·</span>kept <input class="kpr-yrs" type="number" min="0" max="15" data-id="' +
         esc(row.p.id) + '" value="' + (row.p.yearsKept || 0) + '" aria-label="Years kept"> yr';
+      var auctionTd = "";
+      if (isAuction) {
+        var ac = (row.p.auctionCost == null || row.p.auctionCost === "") ? "" : String(row.p.auctionCost);
+        auctionTd = '<td class="r kpr-c-auction"><input class="kpr-acost" type="number" min="0" step="1" data-id="' +
+          esc(row.p.id) + '" placeholder="$" value="' + esc(ac) + '" aria-label="Auction dollars paid"></td>';
+      }
       return '<tr data-pid="' + esc(row.p.id) + '">' +
         '<td><div class="kpr-nm-line"><span class="kpr-pos ' + esc(pos) + '">' + (esc(pos) || "-") + "</span>" +
         '<span class="kpr-nm">' + esc(row.p.name) + '</span></div><div class="kpr-sub">' + draftedTxt + "</div></td>" +
         '<td class="r kpr-c-cost">Round ' + row.cost + "</td>" +
+        auctionTd +
         '<td class="r kpr-c-mkt">' + mktCell(row) + "</td>" +
         '<td class="r kpr-c-surp">' + surpCell(row, mx) + "</td>" +
         '<td class="r kpr-c-verd">' + verdictCell(row) + "</td>" +
@@ -264,6 +279,12 @@
     }).join("");
     bindInlineInput(".kpr-drnd", function (pl, v) { var n = parseInt(v, 10); pl.draftedRound = (n > 0 ? n : null); });
     bindInlineInput(".kpr-yrs", function (pl, v) { var n = parseInt(v, 10); pl.yearsKept = (n > 0 ? n : 0); });
+    if (isAuction) {
+      bindInlineInput(".kpr-acost", function (pl, v) {
+        var n = parseFloat(v);
+        pl.auctionCost = (isFinite(n) && n > 0) ? n : null;
+      });
+    }
   }
 
   // Patch the derived columns of every row in place (matched by player id, so a
@@ -330,7 +351,11 @@
       // bumps) so the draft room spends the right pick — the server recomputes
       // rival projections but can't know the per-player years-kept you entered.
       var keptDetail = keptRows.map(function (r) {
-        return { id: String(r.p.id), costRound: r.cost, name: r.p.name, pos: r.p.pos };
+        var row = { id: String(r.p.id), costRound: r.cost, name: r.p.name, pos: r.p.pos };
+        if (isAuction && r.p.auctionCost != null && r.p.auctionCost !== "") {
+          row.auctionCost = Number(r.p.auctionCost);
+        }
+        return row;
       });
       var lim = parseInt(elLim && elLim.value, 10) || kept.length || 1;
       try {
