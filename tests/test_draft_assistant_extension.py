@@ -30,7 +30,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.8"
+    assert manifest["version"] == "1.5.9"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -125,6 +125,9 @@ def test_collapsed_overlay_has_reopen_control():
     assert "br-da-ready" in inject
     assert "prefers-reduced-motion" in inject
     assert "collapseBtn" in html
+    assert html.index('id="reconnectBtn"') < html.index('class="ov-foot"')
+    assert "sync-cluster" in html
+    assert "sync-reconnect" in css
     assert "setCollapsedUi" in overlay
     assert 'msg.type === "collapsed"' in overlay
     assert "br-da-rail" in css
