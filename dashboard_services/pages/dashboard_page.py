@@ -134,14 +134,23 @@ def build_dashboard_body(ctx: dict) -> str:
                 teams=teams_index,
                 team_game_lookup=team_game_lookup,
                 fpts_against=_fpts_against_dash,
+                compact=True,
             )
             for m in _dash_matchups
         ]
         slides_by_week = {current_week: "".join(slides)}
+        _matchup_href = ""
+        try:
+            _matchup_href = url_for(
+                "page_weekly", platform=platform, season=season, league_id=str(league_id)
+            )
+        except Exception:
+            _matchup_href = ""
         matchup_html = render_matchup_carousel_weeks(
             slides_by_week,
             dashboard=True,
             active_week=current_week,
+            title_href=_matchup_href or None,
         )
     else:
         matchup_html = ""
@@ -172,7 +181,6 @@ def build_dashboard_body(ctx: dict) -> str:
         <div class="card gm-card">
           <div class="card-header">
             <h2>Front Office Report</h2>
-            <div class="subtle-label">{viewer.get("viewer_team_name") or "Your Team"}</div>
             <button type="button" id="generateGmMemoBtn" class="recap-generate-btn"
                     data-league-id="{html.escape(str(league_id))}"
                     data-season="{html.escape(str(season))}"

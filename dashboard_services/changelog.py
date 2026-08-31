@@ -7,6 +7,18 @@ CHANGELOG = [
     {
         "date": "2026-08-31",
         "tag": "update",
+        "text": "Dashboard: Matchup Preview is the scoreboard and win bar only. Open the title to see the full matchup page.",
+        "link": "/"
+    },
+    {
+        "date": "2026-08-31",
+        "tag": "update",
+        "text": "Dashboard: Front Office Report no longer shows a team-name chip under the title.",
+        "link": "/"
+    },
+    {
+        "date": "2026-08-31",
+        "tag": "update",
         "text": "Dashboard: Front Office Report sits under Standings in the left column so the hub is less lopsided, and league bulletins are off on every platform.",
         "link": "/"
     },

@@ -307,13 +307,17 @@ def render_matchup_carousel_weeks(
         slides_by_week: dict[int, str],
         dashboard: bool,
         active_week: Optional[int] = None,
+        title_href: Optional[str] = None,
 ) -> str:
     """
     Render a single matchup carousel card.
 
     slides_by_week: {week: "<div class='m-slide'>...</div>..."}
     active_week: which week's slides to show inside the track.
+    title_href: when set, the "Matchup Preview" heading links to the full page.
     """
+    from html import escape as html_escape
+
     if not slides_by_week:
         slides_html = "<div class='m-empty'>No matchups</div>"
     else:
@@ -323,14 +327,25 @@ def render_matchup_carousel_weeks(
         slides_html = slides_by_week.get(active_week) or "<div class='m-empty'>No matchups</div>"
 
     central = "central" if dashboard else ""
+    compact_cls = " matchup-carousel--compact" if dashboard else ""
     # On the Weekly Hub (non-dashboard) let the carousel fill its grid column so
     # it stretches to the stats sidebar instead of leaving a gap beside it.
     style = ""
 
+    if title_href:
+        title_html = (
+            "<h2>"
+            f'<a class="os-section-title-link" href="{html_escape(title_href)}">'
+            "Matchup Preview"
+            ' <span class="os-section-title-arrow" aria-hidden="true">&rarr;</span></a></h2>'
+        )
+    else:
+        title_html = "<h2>Matchup Preview</h2>"
+
     return f"""
-      <div class="card matchup-carousel {central}" data-section="matchups" style="{style} margin-bottom:30px;">
+      <div class="card matchup-carousel {central}{compact_cls}" data-section="matchups" style="{style} margin-bottom:30px;">
         <div class="m-nav">
-          <h2>Matchup Preview</h2>
+          {title_html}
           <div class="m-controls">
             <button class="m-btn m-btn-prev" type="button">‹ Prev</button>
             <button class="m-btn m-btn-next" type="button">Next ›</button>
@@ -822,6 +837,7 @@ def render_matchup_slide(
         team_game_lookup: dict,
         fpts_against: Optional[dict] = None,
         viewer_roster_id: Optional[str] = None,
+        compact: bool = False,
 ) -> str:
     """One slide with rows like:
        [Left Name] [Left Pts/Proj] [Right Pts/Proj] [Right Name]
@@ -829,16 +845,25 @@ def render_matchup_slide(
     viewer_roster_id: when the viewer's own team wins this (current, finalized)
     week, the slide plays the bigger "final whistle" takeover instead of the
     small matchup-win pop.
+
+    compact: dashboard slides render only m-head + m-win-bar (no starter body).
     """
     proj = w > proj_week
+    compact = bool(compact)
 
-    # Heavy stuff: do once per call
-    teams_index = load_teams_index()
-    offense_ranks = build_offense_rankings(teams_index)
-
-    # FPTS-against position rankings (rank 1 = most pts allowed = easiest)
-    _fpts_data = fpts_against or {}
+    # Heavy stuff: do once per call. Compact slides skip week stats / schedule.
     _fpts_pos_cache: dict = {}
+    if compact:
+        offense_ranks = {}
+        _fpts_data: dict = {}
+        week_stats = {}
+        team_schedule_lookup = {}
+    else:
+        teams_index = load_teams_index()
+        offense_ranks = build_offense_rankings(teams_index)
+        _fpts_data = fpts_against or {}
+        week_stats = load_week_stats(season, w)
+        team_schedule_lookup = build_team_schedule_lookup(load_week_schedule(season, w))
 
     def _get_fpts_rank(team: str, pos: str):
         if not _fpts_data:
@@ -850,8 +875,6 @@ def render_matchup_slide(
         rank = _fpts_pos_cache.get(pos, {}).get(team)
         fpts_val = float(_fpts_data.get(team, {}).get(pos, 0))
         return rank, fpts_val
-    week_stats = load_week_stats(season, w)
-    team_schedule_lookup = build_team_schedule_lookup(load_week_schedule(season, w))
 
     # Projections for this week (dict {pid: proj_val})
     if isinstance(projections, dict):
@@ -1153,11 +1176,12 @@ def render_matchup_slide(
 
     rows_html: List[str] = []
 
-    for L, R in zip_longest(
+    _starter_pairs = () if compact else zip_longest(
             m["left"].get("starters", []),
             m["right"].get("starters", []),
             fillvalue=None,
-    ):
+    )
+    for L, R in _starter_pairs:
         left_cell, left_actual, left_proj, left_is_bye, left_not_started, left_stats = player_bits(
             L, "left", True
         )
@@ -1282,8 +1306,18 @@ def render_matchup_slide(
             f"<b>{h2h_l}</b>–<b>{h2h_r}</b></div>"
         )
 
+    slide_cls = "m-slide m-slide--compact" if compact else "m-slide"
+    body_html = ""
+    if not compact:
+        body_html = f"""
+      <div class="m-body">
+        <div class="m-combo">
+          {''.join(rows_html)}
+        </div>
+      </div>"""
+
     return f"""
-    <div class="m-slide"{win_attr}>
+    <div class="{slide_cls}"{win_attr}>
       <div class="m-head">
         <div class="m-head-row">
           {_team_col(m['left'], 'left')}
@@ -1297,10 +1331,6 @@ def render_matchup_slide(
         {h2h_html}
       </div>
       {win_bar_html}
-      <div class="m-body">
-        <div class="m-combo">
-          {''.join(rows_html)}
-        </div>
-      </div>
+      {body_html}
     </div>
     """

@@ -165,6 +165,44 @@ def test_inseason_matchup_preview_has_own_tab():
     assert 'id="os-jump-standings"' in left
 
 
+def test_dashboard_matchup_preview_is_compact_with_full_page_link():
+    src = (_PAGES / "dashboard_page.py").read_text(encoding="utf-8")
+    assert "compact=True" in src
+    assert "title_href" in src
+    assert '"page_weekly"' in src
+    hub = (_PAGES / "weekly_hub_page.py").read_text(encoding="utf-8")
+    assert "compact=True" not in hub
+    assert "subtle-label" not in src
+
+
+def test_changelog_announces_compact_dashboard_matchup_preview():
+    from dashboard_services.changelog import CHANGELOG
+
+    entry = next(
+        e for e in CHANGELOG
+        if "matchup preview" in e.get("text", "").lower()
+        and "win bar" in e.get("text", "").lower()
+    )
+    assert entry["date"] == "2026-08-31"
+    assert entry["tag"] == "update"
+    assert "—" not in entry["text"]
+    assert "–" not in entry["text"]
+
+
+def test_changelog_announces_front_office_label_removed():
+    from dashboard_services.changelog import CHANGELOG
+
+    entry = next(
+        e for e in CHANGELOG
+        if "front office report" in e.get("text", "").lower()
+        and "team-name" in e.get("text", "").lower()
+    )
+    assert entry["date"] == "2026-08-31"
+    assert entry["tag"] == "update"
+    assert "—" not in entry["text"]
+    assert "–" not in entry["text"]
+
+
 def test_inseason_hides_matchup_preview_until_undrafted_non_dynasty_drafts():
     src = (_PAGES / "dashboard_page.py").read_text(encoding="utf-8")
     assert "show_matchup_preview" in src
