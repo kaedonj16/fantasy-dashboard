@@ -509,7 +509,7 @@ async function fetchDraftPool(opts) {
   let lastErr = "fetch failed";
   for (const host of BR_API_HOSTS) {
     try {
-      const res = await fetch(host + path, { cache: "no-store" });
+      const res = await fetch(host + path);
       if (!res.ok) {
         lastErr = "HTTP " + res.status;
         continue;

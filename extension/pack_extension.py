@@ -40,8 +40,7 @@ INCLUDE = [
     "icons/icon32.png",
     "icons/icon48.png",
     "icons/icon128.png",
-    "icons/website-logo.png",
-    "icons/website-logo-dark.png",
+    "icons/br-logo.png",
     "icons/br-logo-dark.png",
 ]
 
