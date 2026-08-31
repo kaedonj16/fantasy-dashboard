@@ -23,6 +23,8 @@ const card = document.getElementById("card");
 const titleEl = document.getElementById("title");
 const detailEl = document.getElementById("detail");
 const copyBtn = document.getElementById("copyBtn");
+const openAssistantBtn = document.getElementById("openAssistantBtn");
+const openAssistantStatus = document.getElementById("openAssistantStatus");
 const reconnectBtn = document.getElementById("reconnectBtn");
 const reconnectStatus = document.getElementById("reconnectStatus");
 
@@ -34,7 +36,7 @@ function render(swid, espn_s2) {
     card.classList.add("state-ok");
     titleEl.textContent = "ESPN session detected";
     detailEl.textContent =
-      "Both SWID and espn_s2 are ready. Draft Assistant docks on Sleeper, Yahoo, and ESPN draft tabs. ESPN/Yahoo picks also relay into Draft Room.";
+      "Both SWID and espn_s2 are ready. Draft Assistant asks before opening on Sleeper, Yahoo, and ESPN draft tabs. ESPN/Yahoo picks also relay into Draft Room.";
     blob = "SWID=" + swid + "; espn_s2=" + espn_s2;
     copyBtn.disabled = false;
   } else if (swid || espn_s2) {
@@ -72,6 +74,24 @@ copyBtn.addEventListener("click", async () => {
   } catch (_e) {
     copyBtn.textContent = "Copy failed - select manually";
   }
+});
+
+openAssistantBtn.addEventListener("click", () => {
+  openAssistantStatus.textContent = "Looking for a draft tab…";
+  chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+    const tab = tabs && tabs[0];
+    if (!tab || !tab.id) {
+      openAssistantStatus.textContent = "No active tab.";
+      return;
+    }
+    chrome.tabs.sendMessage(tab.id, { type: "openDraftAssistant" }, function () {
+      if (chrome.runtime.lastError) {
+        openAssistantStatus.textContent = "Open a Sleeper, Yahoo, or ESPN draft tab first.";
+        return;
+      }
+      openAssistantStatus.textContent = "Opening Draft Assistant on this tab.";
+    });
+  });
 });
 
 reconnectBtn.addEventListener("click", () => {
