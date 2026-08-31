@@ -4683,13 +4683,14 @@ def render_page(
     # though the settings gear itself renders twice.
     nav_html = nav_html + _link_modal_html()
 
-    # Logged-out visitors on lite_js pages (the landing page) get the slim
-    # public.js for a fast first paint. public.js omits everything below the
-    # @public-js:core-end marker — the nav player-search and player modal included
-    # — so the feature half (app-features.js) is lazy-loaded on demand: prefetched
-    # on idle and force-loaded the moment a guest opens search or a player card
-    # (see the ensureFeatures loader in app.js). Only go lite when that features
-    # bundle actually built; otherwise serve the full app.js so nothing breaks.
+    # Logged-out visitors on lite_js pages (landing + public SEO surfaces) get
+    # the slim public.js for a fast first paint. public.js omits everything below
+    # the @public-js:core-end marker — the nav player-search and player modal
+    # included — so the feature half (app-features.js) is lazy-loaded on demand:
+    # prefetched on idle (eagerly for compare/prospects/breakouts) and
+    # force-loaded the moment a guest opens search or a player card (see the
+    # ensureFeatures loader in app.js). Only go lite when that features bundle
+    # actually built; otherwise serve the full app.js so nothing breaks.
     _use_lite = (bool(kwargs.get("lite_js"))
                  and not _session_signed_in()
                  and bool(_FEATURES_JS_FILE))
@@ -11296,10 +11297,12 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     _final_desc = _desc or _players_desc
     if platform:
         return render_page(_final_title, league_id, "players", body_html, platform, season,
-                           description=_final_desc, canonical=_canonical)
+                           description=_final_desc, canonical=_canonical,
+                           lite_js=True)
 
     return render_page(_final_title, None, "players", body_html,
-                       description=_final_desc, canonical=_canonical)
+                       description=_final_desc, canonical=_canonical,
+                       lite_js=True)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/prospects")
@@ -11313,7 +11316,10 @@ def page_prospects(platform: str, season: int, league_id: str):
     from dashboard_services.pages.rookies_page import build_prospects_body
     from dashboard_services.admin_auth import is_admin
     body_html = build_prospects_body(is_admin=is_admin())
-    return render_page("Prospect Rankings", league_id, "prospects", body_html, platform, season)
+    return render_page(
+        "Prospect Rankings", league_id, "prospects", body_html, platform, season,
+        lite_js=True,
+    )
 
 
 # /metrics is served by routes/league_pages_bp.py (its /metrics/og.png route stays below).
@@ -11638,7 +11644,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
       }}
     </script>
     """
-    return render_page("Breakout Engine", league_id, "breakouts", body_html, platform, season)
+    return render_page("Breakout Engine", league_id, "breakouts", body_html, platform, season,
+                       lite_js=True)
 
 
 # ── Per-player trade-value pages (SEO landing pages) ──────────────────────────

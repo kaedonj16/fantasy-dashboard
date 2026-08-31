@@ -87,9 +87,17 @@ if (typeof window.openPlayerModal === 'undefined') {
 }
 // Prefetch the feature bundle once the page is idle so the first real interaction
 // is instant (no-op when there's no lazy bundle, i.e. the full app.js is loaded).
+// Interactive SEO shells (compare / prospects / breakouts) need feature-half init
+// before first paint is useful — load eagerly instead of waiting for idle.
 if (window.__FEATURES_JS) {
   var _pf = function () { ensureFeatures(); };
-  if ('requestIdleCallback' in window) requestIdleCallback(_pf, { timeout: 4000 });
+  var _eagerLite = document.querySelector(
+    '.page-shell[data-page="compare"],' +
+    '.page-shell[data-page="prospects"],' +
+    '.page-shell[data-page="breakouts"]'
+  );
+  if (_eagerLite) _pf();
+  else if ('requestIdleCallback' in window) requestIdleCallback(_pf, { timeout: 4000 });
   else setTimeout(_pf, 2500);
 }
 

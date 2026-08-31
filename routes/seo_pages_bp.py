@@ -144,6 +144,7 @@ def top_movers_page():
             f"({date_label}). Biggest trade value movers, act fast with the BR Fantasy "
             f"Trade Calculator."
         ),
+        lite_js=True,
     )
 
 
@@ -320,7 +321,7 @@ def page_compare():
         nav_season = None
     return render_page(
         title, None, "compare", body, nav_platform, nav_season,
-        description=desc, noindex=False,
+        description=desc, noindex=False, lite_js=True,
     )
 
 
@@ -352,6 +353,7 @@ def _rankings_page(position: str | None = None):
             f"Dynasty fantasy football{pos_lbl.lower()} rankings updated {as_of}. "
             f"Real trade values for 1QB and Superflex leagues."
         ),
+        lite_js=True,
     )
 
 
@@ -483,7 +485,8 @@ def page_player_trade_value(slug: str):
         )
 
         return render_page(title, None, "players", body,
-                           description=description, og_tags=og_tags)
+                           description=description, og_tags=og_tags,
+                           lite_js=True)
     except Exception:
         logger.exception("[player-page] render failed for slug=%s pid=%s", slug, pid)
         # Never 5xx a public page for Googlebot/users: return a valid minimal
@@ -496,6 +499,7 @@ def page_player_trade_value(slug: str):
             f"<a href='/players'>Browse all player values</a> or "
             f"<a href='/trade'>open the trade calculator</a>.</p></div></div>",
             description=f"{_fb_name} dynasty and redraft trade value.",
+            lite_js=True,
         )
 
 
