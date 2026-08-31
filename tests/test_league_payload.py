@@ -9,6 +9,8 @@ from utils.league_payload import (
     format_sleeper_league_option,
     get_most_recent_valid_draft_for_season,
     rosters_look_undrafted,
+    show_matchup_preview,
+    startup_draft_pending,
     startup_draft_phase,
     top_board_preview,
 )
@@ -132,6 +134,82 @@ def test_dynasty_pre_draft_with_full_rosters_stays_drafted():
         {"status": "pre_draft", "start_time": 9_999_999_999_000},
         _filled_rosters(),
     ) == "drafted"
+
+
+def test_keeper_predraft_with_full_rosters_is_still_predraft():
+    # Fleaflicker keepers retain last year's roster until the new draft runs.
+    league = {
+        "settings": {
+            "type": 1,
+            "league_type": "keeper",
+            "draft_status": "NOT_YET_DRAFTED",
+        },
+    }
+    assert startup_draft_phase(
+        league, {"status": "pre_draft"}, _filled_rosters(),
+    ) == "predraft"
+    assert startup_draft_pending(league, {"status": "pre_draft"}, _filled_rosters()) is True
+
+
+def test_flea_keeper_raw_draft_status_without_draft_record():
+    league = {
+        "settings": {
+            "type": 1,
+            "league_type": "keeper",
+            "draft_status": "NOT_YET_DRAFTED",
+        },
+    }
+    assert startup_draft_phase(league, None, _filled_rosters()) == "predraft"
+
+
+def test_sleeper_redraft_complete_draft_stays_drafted_if_league_still_predraft():
+    # Sleeper often leaves league.status at pre_draft after a summer draft.
+    league = {"status": "pre_draft", "settings": {"type": 0, "league_type": "redraft"}}
+    assert startup_draft_phase(
+        league, {"status": "complete"}, _filled_rosters(),
+    ) == "drafted"
+
+
+def test_keeper_live_draft_with_full_rosters_is_drafting():
+    league = {"settings": {"type": 1, "league_type": "keeper"}}
+    assert startup_draft_phase(
+        league, {"status": "drafting"}, _filled_rosters(),
+    ) == "drafting"
+
+
+def test_show_matchup_preview_hides_undrafted_keeper_even_with_rosters():
+    league = {
+        "settings": {
+            "type": 1,
+            "league_type": "keeper",
+            "draft_status": "NOT_YET_DRAFTED",
+        },
+    }
+    assert show_matchup_preview(
+        league, {"status": "pre_draft"}, _filled_rosters(),
+    ) is False
+    assert show_matchup_preview(
+        league, {"status": "pre_draft"}, _filled_rosters(), is_dynasty=False,
+    ) is False
+
+
+def test_show_matchup_preview_always_on_for_dynasty():
+    empty = _empty_rosters()
+    dynasty = {"status": "pre_draft", "settings": {"type": 2, "league_type": "dynasty"}}
+    assert show_matchup_preview(dynasty, {"status": "pre_draft"}, empty) is True
+    assert show_matchup_preview(
+        {"settings": {"type": 1, "league_type": "keeper"}},
+        {"status": "pre_draft"},
+        empty,
+        is_dynasty=True,
+    ) is True
+
+
+def test_show_matchup_preview_after_keeper_draft():
+    league = {"settings": {"type": 1, "league_type": "keeper"}}
+    assert show_matchup_preview(
+        league, {"status": "complete"}, _filled_rosters(),
+    ) is True
 
 
 def test_draft_start_ms_converts_seconds_and_prefers_draft_record():

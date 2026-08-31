@@ -24,9 +24,11 @@ def build_weekly_hub_body(ctx: dict) -> str:
         _scoring_format_from_settings,
         _games_scheduled_today,
         _render_weekly_highlights,
+        _league_is_redraft,
         build_optimal_body,
         render_weekly_top_scorers_for_week,
     )
+    from utils.league_payload import show_matchup_preview as _show_matchup_preview_for
     league_id = ctx["league_id"]
     platform = ctx["platform"]
     season = ctx["season"]  # viewed season
@@ -45,6 +47,17 @@ def build_weekly_hub_body(ctx: dict) -> str:
     matchups_by_week = ctx["matchups_by_week"]
     season_complete = bool(ctx.get("season_complete", False))
     offseason_mode = bool(ctx.get("offseason_mode", False))
+    _league_for_preview = dict(ctx.get("league") or {})
+    if ctx.get("league_settings"):
+        merged = dict(ctx["league_settings"])
+        merged.update(_league_for_preview.get("settings") or {})
+        _league_for_preview["settings"] = merged
+    _show_matchup_preview = _show_matchup_preview_for(
+        _league_for_preview,
+        ctx.get("latest_draft"),
+        rosters,
+        is_dynasty=not _league_is_redraft(ctx),
+    )
 
     if (
             df_weekly is not None
@@ -76,7 +89,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         matchups_by_week.get(default_week, []) or [],
         key=lambda m: 0 if _hub_vid and _hub_vid in (str((m.get("left") or {}).get("roster_id", "")),
                                                      str((m.get("right") or {}).get("roster_id", ""))) else 1,
-    )
+    ) if _show_matchup_preview else []
 
     # Pre-compute head-to-head records for each current-week matchup
     def _h2h_record(rid_a: str, rid_b: str) -> tuple[int, int]:
@@ -129,10 +142,13 @@ def build_weekly_hub_body(ctx: dict) -> str:
     slides_html = "".join(slides) if slides else "<div class='m-empty'>No matchups</div>"
     slides_by_week = {default_week: slides_html}
 
-    matchup_html = render_matchup_carousel_weeks(
-        slides_by_week,
-        dashboard=False,
-        active_week=default_week,
+    matchup_html = (
+        render_matchup_carousel_weeks(
+            slides_by_week,
+            dashboard=False,
+            active_week=default_week,
+        )
+        if _show_matchup_preview else ""
     )
 
     options = []
@@ -216,6 +232,29 @@ def build_weekly_hub_body(ctx: dict) -> str:
         optimal_panel_content = ("<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
                                  "Optimal lineup data unavailable.</div>")
 
+    _wk_matchups_btn = (
+        '<button class="tab-btn active" data-tab="matchups">Matchups</button>'
+        if _show_matchup_preview else ""
+    )
+    _wk_scorers_cls = "tab-btn" if _show_matchup_preview else "tab-btn active"
+    _wk_matchups_panel = ""
+    if _show_matchup_preview:
+        _wk_matchups_panel = f"""
+            <div class="tab-panel active" data-tab="matchups">
+              <div class="matchups-shell">
+                <div id="weeklyMatchupsContainer">
+                  {matchup_html}
+                </div>
+                <div id="weeklyMatchupsLoading" class="matchups-loading hidden">
+                  <div class="matchups-loading-inner">
+                    <div class="matchups-spinner"></div>
+                  </div>
+                </div>
+              </div>
+            </div>"""
+    _wk_scorers_panel_cls = "tab-panel" if _show_matchup_preview else "tab-panel active"
+    show_matchups_js = json.dumps(bool(_show_matchup_preview))
+
     return f"""
     <div class="page-layout weekly-hub">
       <main class="page-main">
@@ -240,25 +279,14 @@ def build_weekly_hub_body(ctx: dict) -> str:
 
         <div class="card-tabs weekly-hub-tabs" id="weeklyLeftTabs">
           <div class="tab-bar">
-            <button class="tab-btn active" data-tab="matchups">Matchups</button>
-            <button class="tab-btn" data-tab="scorers">Scorers</button>
+            {_wk_matchups_btn}
+            <button class="{_wk_scorers_cls}" data-tab="scorers">Scorers</button>
             <button class="tab-btn" data-tab="scout">Scout</button>
             <button class="tab-btn" data-tab="optimal">Lineup</button>
           </div>
           <div class="tab-panels">
-            <div class="tab-panel active" data-tab="matchups">
-              <div class="matchups-shell">
-                <div id="weeklyMatchupsContainer">
-                  {matchup_html}
-                </div>
-                <div id="weeklyMatchupsLoading" class="matchups-loading hidden">
-                  <div class="matchups-loading-inner">
-                    <div class="matchups-spinner"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="tab-panel" data-tab="scorers">
+            {_wk_matchups_panel}
+            <div class="{_wk_scorers_panel_cls}" data-tab="scorers">
               <div class="week-leaders-band">
                 <div class="week-leaders-title">Week Leaders</div>
                 <div class="week-side-panels">
@@ -543,7 +571,7 @@ function wkActivateTab(tab) {{
       var mBtn = bar.querySelector('.tab-btn[data-tab="matchups"]');
       if (mBtn) mBtn.style.display = '';
     }}
-    wkActivateTab('matchups');
+    wkActivateTab({show_matchups_js} ? 'matchups' : 'scorers');
     tabs.classList.remove('wk-desktop');
     tabs.__mode = 'mobile';
   }}
