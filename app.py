@@ -1769,7 +1769,7 @@ BASE_HTML = """
          first paint (app.js is deferred, too late), or every page flashes white
          on load and the browser's inter-page gap is white too. Set data-theme
          and the <html> background up front so switching pages stays dark. -->
-    <style>html{{background:#f4f6f8}}html[data-theme="dark"]{{background:#020617}}</style>
+    <style>html{{background:#f8fafc}}html[data-theme="dark"]{{background:#020617}}</style>
     <script>(function(){{try{{if(localStorage.getItem('theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}}catch(e){{}}}})();</script>
     <meta name="google-adsense-account" content="ca-pub-9164153092633845">
     <meta name="google-site-verification" content="zuH_tCWKG_L4hm4eRDFit3xfMi-ZPFXwK2s9eap20FA">
@@ -1803,8 +1803,8 @@ BASE_HTML = """
 
     <link rel="icon" href="/static/BR_Logo.png" type="image/png">
     <link rel="shortcut icon" href="/static/BR_Logo.png" type="image/png">
-    <link rel="apple-touch-icon" href="/static/BR_Logo.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="/static/BR_Logo.png">
+    <link rel="apple-touch-icon" href="/static/icon-180x180.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180x180.png">
     <link rel="manifest" href="/static/manifest.json">
     <!-- Status-bar chrome matches the top nav's background so the app reads as
          one surface. The app theme is a manual toggle (not OS-driven), so this
@@ -1820,9 +1820,12 @@ BASE_HTML = """
 
     <!-- Instant branded splash (covers the PWA/first-paint white screen) -->
     <style>
-      #appSplash{{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#ffffff;transition:opacity .35s ease;}}
+      #appSplash{{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#f8fafc;transition:opacity .35s ease;}}
       html[data-theme="dark"] #appSplash{{background:#020617;}}
       #appSplash img{{width:170px;max-width:56%;height:auto;animation:appSplashPulse 1.5s ease-in-out infinite;}}
+      html[data-theme="dark"] #appSplash img.splash-logo-light{{display:none;}}
+      #appSplash img.splash-logo-dark{{display:none;}}
+      html[data-theme="dark"] #appSplash img.splash-logo-dark{{display:block;}}
       #appSplash.app-splash-hide{{opacity:0;pointer-events:none;}}
       @keyframes appSplashPulse{{0%,100%{{opacity:.5}}50%{{opacity:1}}}}
       @media (prefers-reduced-motion: reduce){{#appSplash img{{animation:none}}}}
@@ -1855,7 +1858,8 @@ BASE_HTML = """
   <body>
     <!-- Branded loading splash: shown instantly, removed once the page is ready -->
     <div id="appSplash" role="status" aria-label="Loading BR Fantasy">
-      <img src="/static/BR_Logo.png" alt="BR Fantasy" />
+      <img src="/static/BR_Logo.png" alt="" class="splash-logo-light" aria-hidden="true">
+      <img src="/static/BR_Logo_dark.png" alt="" class="splash-logo-dark" aria-hidden="true">
     </div>
     <script>
       (function(){{

@@ -116,11 +116,12 @@ def test_sw_no_cache_and_shell_precache():
     sw_route = PUBLIC[PUBLIC.index("def service_worker"):]
     sw_route = sw_route[: sw_route.index("def ads_txt")]
     assert "no-cache" in sw_route
-    assert "br-fantasy-v21" in SW
+    assert "br-fantasy-v22" in SW
     assert "'/static/app.js'" not in SW and '"/static/app.js"' not in SW
     assert "'/static/dashboard.css'" not in SW and '"/static/dashboard.css"' not in SW
     assert "/static/offline.html" in SW
     assert "/static/BR_Logo_dark.png" in SW
+    assert "/static/icon-180x180.png" in SW
     # Explicit Refresh must not paint the 3.5s cached shell (stale timestamp).
     assert "bypass-cache" in SW
     assert "forceNetworkNav" in SW
@@ -215,4 +216,28 @@ def test_bract_empty_aliases_share_empty_state_look():
     assert ".bract-empty-title {" in CSS
     assert ".bract-empty-copy {" in CSS
     assert "border-radius: 999px" not in CSS
+
+
+def test_apple_touch_icon_is_proper_180_asset():
+    """Site-audit low backlog: home-screen icon matches declared 180×180 size."""
+    assert (ROOT / "static" / "icon-180x180.png").is_file()
+    assert _png_dimensions(ROOT / "static" / "icon-180x180.png") == (180, 180)
+    assert "icon-180x180.png" in APP_PY
+    assert 'apple-touch-icon" sizes="180x180" href="/static/icon-180x180.png"' in APP_PY
+
+
+def test_app_splash_matches_theme_boot():
+    """Cold launch splash uses the same soft-slate ground as theme-color, not pure white."""
+    assert "#appSplash{{position:fixed" in APP_PY
+    assert "background:#f8fafc" in APP_PY
+    assert "splash-logo-dark" in APP_PY
+    assert "html{{background:#f8fafc}}" in APP_PY
+
+
+def test_paywall_inerts_background():
+    """Site-audit low backlog: page behind paywall is inert while modal is open."""
+    paywall = (ROOT / "static" / "paywall.js").read_text(encoding="utf-8")
+    assert "setAttribute('inert'" in paywall
+    assert "removeAttribute('inert')" in paywall
+    assert "app-scale" in paywall
 

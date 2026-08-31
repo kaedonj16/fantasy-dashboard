@@ -2,7 +2,7 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
-const CACHE_NAME = 'br-fantasy-v21';
+const CACHE_NAME = 'br-fantasy-v22';
 
 // How long to wait on the network for a page (when we already have a cached
 // copy) before painting the cached version. This is what kills the blank
@@ -18,6 +18,7 @@ const PRECACHE_URLS = [
   '/static/BR_Logo.png',
   '/static/BR_Logo_dark.png',
   '/static/Website_Logo.png',
+  '/static/icon-180x180.png',
   '/static/offline.html',
 ];
 

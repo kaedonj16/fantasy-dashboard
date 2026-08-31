@@ -176,9 +176,13 @@ window.showPaywall = function showPaywall(feature, opts) {
 
   document.body.appendChild(modal);
 
+  var inertRoot = document.getElementById('app-scale') || document.getElementById('page-root');
+  if (inertRoot) inertRoot.setAttribute('inert', '');
+
   const prevFocus = document.activeElement;
   function closePaywall() {
     modal.remove();
+    if (inertRoot) inertRoot.removeAttribute('inert');
     document.removeEventListener('keydown', onKey);
     if (prevFocus && typeof prevFocus.focus === 'function') {
       try { prevFocus.focus(); } catch (_) {}

@@ -59,9 +59,9 @@ this PR** shipped with accompanying regression tests in
 
 ## Low / backlog
 
-- Apple-touch icon claims 180×180 but serves logo
 - Soft-nav progress bar `aria-hidden` (title live region already announces)
-- Paywall modal background not `inert`
+- Paywall modal background not `inert` | **Fixed** — `#app-scale` inert while modal open
+- Apple-touch icon claims 180×180 but serves logo | **Fixed** — `icon-180x180.png`
 - CSS breakpoint consolidation unfinished
 - `app.py` monolith (~26k lines) — continue blueprint extraction
 - Provider gaps: live draft Yahoo/MFL; trending adds Sleeper-only
