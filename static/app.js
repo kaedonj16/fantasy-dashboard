@@ -146,9 +146,19 @@ if (window.__FEATURES_JS) {
       if (d.url && d.url !== location.href) return;
       if (document.visibilityState !== 'visible') return;
       if (Date.now() - loadedAt > 20000) return;
-      // Only auto-reload the stale shell on a cold launch. On a warm in-app
-      // navigation the extra reload just looks like the page loading twice.
-      if (window.__brWarmLaunch) return;
+      // An explicit Refresh asked the SW to wait for the network; if it still
+      // painted the cached shell (iOS often ignores location.reload's cache
+      // mode), swap it for the fresh copy even on a warm in-app launch.
+      var userRefresh = false;
+      try { userRefresh = sessionStorage.getItem('brUserRefresh') === '1'; } catch (e) {}
+      if (window.__brWarmLaunch && !userRefresh) return;
+      if (userRefresh) {
+        if (reloading) return;
+        reloading = true;
+        try { sessionStorage.removeItem('brUserRefresh'); } catch (e) {}
+        location.reload();
+        return;
+      }
       reloadOnce();
     });
   }
@@ -1076,24 +1086,10 @@ window.brHaptic = function (pattern) {
           if (!scriptReRunnable(ext[i].getAttribute('src') || '')) throw new Error('unhandled external script');
         }
 
-        // Evacuate the relocated widgets so the swap doesn't destroy them.
-        if (window.brEvacuateMobileNav) window.brEvacuateMobileNav();
-        curRoot.innerHTML = newRoot.innerHTML;
-        if (newRoot.dataset.premium != null) curRoot.dataset.premium = newRoot.dataset.premium;
-        reexecScripts(curRoot);
-        if (doc.title) document.title = doc.title;
+        applyNewRoot(doc, curRoot);
         if (!isPop) history.pushState({ brSoft: 1 }, '', url);
         // Back/forward returns to the remembered position; a forward nav starts at the top.
         setScroll(isPop ? (scrollByUrl[location.href] || 0) : 0);
-        // Restore/remove Home's ticker before page initializers run so a ticker
-        // restored by back/forward navigation is populated immediately.
-        syncHomeTicker(doc);
-        if (window.initPageRoot) window.initPageRoot(curRoot);
-        // The top nav (desktop) and the bottom dock (mobile) both live outside
-        // #page-root now, so the swap doesn't touch them - copy the new page's
-        // active state onto the persistent one and glide the indicator across.
-        if (!mq.matches) syncDesktopNav(doc);
-        else syncMobileDock(doc);
         // Tell assistive tech the route changed, and move focus into the new
         // content so keyboard / screen-reader users aren't left on the old nav.
         announce(doc.title);
@@ -1188,6 +1184,40 @@ window.brHaptic = function (pattern) {
       try { sessionStorage.removeItem('br_dock_from'); } catch (_) {}
     } catch (e) { /* leave the dock as-is; the next full load renders it fresh */ }
   }
+
+  // Shared page-root swap used by soft-nav and by Refresh data. Copies
+  // data-cache-ts so the mobile freshness label tracks the new document, not
+  // the tab's original load time.
+  function applyNewRoot(doc, curRoot) {
+    var newRoot = doc.getElementById('page-root');
+    if (!newRoot) throw new Error('no page-root');
+    var ext = newRoot.querySelectorAll('script[src]');
+    for (var i = 0; i < ext.length; i++) {
+      if (!scriptReRunnable(ext[i].getAttribute('src') || '')) throw new Error('unhandled external script');
+    }
+    if (window.brEvacuateMobileNav) window.brEvacuateMobileNav();
+    curRoot.innerHTML = newRoot.innerHTML;
+    if (newRoot.dataset.premium != null) curRoot.dataset.premium = newRoot.dataset.premium;
+    if (newRoot.dataset.cacheTs != null) curRoot.dataset.cacheTs = newRoot.dataset.cacheTs;
+    reexecScripts(curRoot);
+    if (doc.title) document.title = doc.title;
+    syncHomeTicker(doc);
+    if (window.initPageRoot) window.initPageRoot(curRoot);
+    if (!mq.matches) syncDesktopNav(doc);
+    else syncMobileDock(doc);
+    if (window.brUpdateFreshness) window.brUpdateFreshness();
+  }
+
+  window.brSwapPageRoot = function (html) {
+    try {
+      var curRoot = document.getElementById('page-root');
+      if (!curRoot || !html) return false;
+      applyNewRoot(new DOMParser().parseFromString(html, 'text/html'), curRoot);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
 
   // Pages that can be swapped in place (script-free, or their page script is on
   // the re-runnable allow-list). Everything else — Draft, Keeper, Redzone,
@@ -2686,15 +2716,144 @@ function showLoginGate(target, opts) {
     var main = document.getElementById('page-root');
     return main ? parseInt(main.dataset.cacheTs || '0', 10) : 0;
   }
-  function doRefresh() {
+  function updateSheetTime() {
+    var t = document.getElementById('brSheetRefreshTime');
+    if (!t) return;
+    var ts = cacheTs();
+    t.textContent = ts ? fmtAge(ts) : '';
+    t.classList.toggle('cf-stale', !!ts && (Date.now() - ts > STALE_MS));
+  }
+  function updateChip() {
+    var chip = document.getElementById('cache-freshness');
+    if (!chip) return;
+    var t = cacheTs();
+    var el = chip.querySelector('.fp-pill-time');
+    if (el) el.textContent = t ? fmtAge(t) : '…';
+    chip.classList.toggle('cf-stale', !!t && (Date.now() - t > STALE_MS));
+    chip.style.opacity = '';
+  }
+  function updateLabels() {
+    updateSheetTime();
+    updateChip();
+  }
+  window.brUpdateFreshness = updateLabels;
+
+  function setRefreshingLabel() {
+    var t = document.getElementById('brSheetRefreshTime');
+    if (t) t.textContent = '…';
+    var chip = document.getElementById('cache-freshness');
+    var el = chip && chip.querySelector('.fp-pill-time');
+    if (el) el.textContent = '…';
+    if (chip) chip.style.opacity = '0.6';
+  }
+
+  function showRefreshOverlay(on) {
+    var el = document.getElementById('brRefreshOverlay');
+    if (!on) {
+      if (el) el.style.display = 'none';
+      return;
+    }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'brRefreshOverlay';
+      el.className = 'fullscreen-loading-overlay';
+      el.setAttribute('role', 'status');
+      el.setAttribute('aria-live', 'polite');
+      el.innerHTML =
+        '<div class="loading-spinner"></div>' +
+        '<div class="fullscreen-loading-text">Refreshing data…</div>' +
+        '<div class="fullscreen-loading-subtext">Fetching the latest league data</div>';
+      document.body.appendChild(el);
+    }
+    el.style.display = 'flex';
+  }
+
+  function ackBypassCache(url) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function finish() { if (!done) { done = true; resolve(); } }
+      setTimeout(finish, 400);
+      try {
+        if (!navigator.serviceWorker || !navigator.serviceWorker.controller) { finish(); return; }
+        var ch = new MessageChannel();
+        ch.port1.onmessage = finish;
+        navigator.serviceWorker.controller.postMessage(
+          { type: 'bypass-cache', url: url },
+          [ch.port2]
+        );
+      } catch (e) { finish(); }
+    });
+  }
+
+  function expireLeague() {
     var parts = window.location.pathname.split('/').filter(Boolean);
-    if (parts.length < 3) { window.location.reload(); return; }
-    fetch('/api/refresh-league', {
+    if (parts.length < 3) return Promise.resolve();
+    return fetch('/api/refresh-league', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platform: parts[0], season: parseInt(parts[1], 10), league_id: parts[2] })
-    }).then(function () { window.location.reload(); })
-      .catch(function () { window.location.reload(); });
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        platform: parts[0],
+        season: parseInt(parts[1], 10),
+        league_id: parts[2]
+      })
+    }).then(function (res) {
+      if (!res.ok) throw new Error('refresh-league ' + res.status);
+    });
+  }
+
+  function canSwapInPlace() {
+    if (typeof window.brSwapPageRoot !== 'function') return false;
+    var root = document.getElementById('page-root');
+    if (!root) return false;
+    var ext = root.querySelectorAll('script[src]');
+    for (var i = 0; i < ext.length; i++) {
+      var src = ext[i].getAttribute('src') || '';
+      if (!src) continue;
+      if (src.indexOf('/teams.js') === -1 && src.indexOf('/rankings.js') === -1) return false;
+    }
+    return true;
+  }
+
+  function hardReload() {
+    try { sessionStorage.setItem('brUserRefresh', '1'); } catch (e) {}
+    ackBypassCache(location.href).then(function () { location.reload(); }, function () { location.reload(); });
+  }
+
+  function doRefresh() {
+    if (doRefresh._busy) return;
+    doRefresh._busy = true;
+    setRefreshingLabel();
+    var btn = document.getElementById('brSheetRefresh');
+    if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); }
+    showRefreshOverlay(true);
+
+    function finishOk() {
+      showRefreshOverlay(false);
+      if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
+      doRefresh._busy = false;
+      updateLabels();
+    }
+
+    expireLeague()
+      .then(function () {
+        if (!canSwapInPlace()) {
+          hardReload();
+          return;
+        }
+        return fetch(location.href, {
+          cache: 'reload',
+          credentials: 'same-origin',
+          headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+        }).then(function (res) {
+          if (!res.ok) throw new Error('page ' + res.status);
+          return res.text();
+        }).then(function (html) {
+          if (!window.brSwapPageRoot(html)) throw new Error('swap failed');
+          finishOk();
+        }).catch(function () { hardReload(); });
+      })
+      .catch(function () { finishOk(); });
   }
 
   // Mobile More-sheet Refresh row (persists across soft-navs, so wire once).
@@ -2703,18 +2862,9 @@ function showLoginGate(target, opts) {
     if (btn && !btn._brWired) {
       btn._brWired = true;
       btn.addEventListener('click', function () {
-        var t = document.getElementById('brSheetRefreshTime');
-        if (t) t.textContent = '…';
         doRefresh();
       });
     }
-  }
-  function updateSheetTime() {
-    var t = document.getElementById('brSheetRefreshTime');
-    if (!t) return;
-    var ts = cacheTs();
-    t.textContent = ts ? fmtAge(ts) : '';
-    t.classList.toggle('cf-stale', !!ts && (Date.now() - ts > STALE_MS));
   }
 
   // Desktop, and any mobile page without the dock: floating Discord + freshness.
@@ -2755,28 +2905,30 @@ function showLoginGate(target, opts) {
         '<span class="fp-pill-icon"><span class="fp-pill-time">…</span></span>' +
         '<span class="fp-pill-label">Refresh</span>';
       group.appendChild(chip);
-      chip.addEventListener('click', function () {
-        var el = chip.querySelector('.fp-pill-time'); if (el) el.textContent = '…';
-        chip.style.opacity = '0.6';
-        doRefresh();
-      });
+      chip.addEventListener('click', function () { doRefresh(); });
       chip.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); chip.click(); }
       });
-    }
-    function updateChip() {
-      var t = cacheTs();
-      var el = chip.querySelector('.fp-pill-time');
-      if (el) el.textContent = t ? fmtAge(t) : '…';
-      chip.classList.toggle('cf-stale', !!t && (Date.now() - t > STALE_MS));
     }
     updateChip();
     if (!chip._brTick) { chip._brTick = true; setInterval(updateChip, 60000); }
   }
 
-  function init() { wireSheetRefresh(); updateSheetTime(); initPills(); }
+  function init() {
+    wireSheetRefresh();
+    updateLabels();
+    initPills();
+    // A completed user refresh landed with a new cache timestamp — drop the
+    // flag so a later nav-fresh message doesn't bounce the page again.
+    try {
+      if (sessionStorage.getItem('brUserRefresh') === '1') {
+        var ts = cacheTs();
+        if (ts && Date.now() - ts < 15000) sessionStorage.removeItem('brUserRefresh');
+      }
+    } catch (e) {}
+  }
   document.addEventListener('DOMContentLoaded', init);
-  setInterval(updateSheetTime, 60000);
+  setInterval(updateLabels, 60000);
 })();
 
 window.addEventListener('beforeunload', function() {
@@ -9359,6 +9511,7 @@ window.initPageRoot = function initPageRoot(root = document) {
   // (Re)bind the mobile dock / More sheet / search. The dock lives inside
   // #page-root, so a soft-nav or refresh swap replaces it and it must re-init.
   if (typeof window.brInitMobileNav === 'function') window.brInitMobileNav();
+  if (typeof window.brUpdateFreshness === 'function') window.brUpdateFreshness();
 };
 
 function showDashboardLoadingOverlay(text, subtext) {
@@ -9446,6 +9599,7 @@ bindOnce(document, "domContentLoadedInit", "DOMContentLoaded", () => {
 
       if (root && data.body_html) {
         root.innerHTML = data.body_html;
+        root.dataset.cacheTs = String(Date.now());
         requestAnimationFrame(() => window.initPageRoot?.(root));
       } else {
         window.location.reload();

@@ -2,7 +2,7 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
-const CACHE_NAME = 'br-fantasy-v19';
+const CACHE_NAME = 'br-fantasy-v20';
 
 // How long to wait on the network for a page (when we already have a cached
 // copy) before painting the cached version. This is what kills the blank
@@ -93,6 +93,43 @@ self.addEventListener('fetch', event => {
   }
 });
 
+// Explicit Refresh (and location.reload) must not paint the 3.5s cached shell —
+// that shell still has the old data-cache-ts, so the mobile "Refresh data" time
+// looks unchanged even though the tap appeared to work. The page posts
+// bypass-cache immediately before reload; reload/no-cache navigations also skip
+// the timeout. Network failure still falls back to the last-good page.
+const bypassNavUrls = new Set();
+
+function navKey(u) {
+  try {
+    var x = new URL(u, self.location.href);
+    x.hash = '';
+    return x.href;
+  } catch (_) {
+    return String(u || '');
+  }
+}
+
+self.addEventListener('message', event => {
+  const d = event.data || {};
+  if (d.type === 'bypass-cache' && d.url) {
+    bypassNavUrls.add(navKey(d.url));
+    if (event.ports && event.ports[0]) event.ports[0].postMessage({ ok: true });
+  }
+});
+
+function forceNetworkNav(request) {
+  if (request.cache === 'reload' || request.cache === 'no-store' || request.cache === 'no-cache') {
+    return true;
+  }
+  const key = navKey(request.url);
+  if (bypassNavUrls.has(key)) {
+    bypassNavUrls.delete(key);
+    return true;
+  }
+  return false;
+}
+
 // A response that came back through an HTTP redirect (response.redirected)
 // CANNOT be used to satisfy a navigation request: the browser rejects it and
 // renders a blank screen. The PWA start_url is "/", which 302-redirects a
@@ -123,7 +160,9 @@ async function handleNavigate(request) {
     return clean;
   }).catch(() => null);
 
-  if (cached) {
+  const skipStaleShell = forceNetworkNav(request);
+
+  if (cached && !skipStaleShell) {
     // Race the network against a timeout. Whichever resolves first wins; on a
     // slow server the timeout fires and we serve the cached shell immediately
     // while networkFetch keeps running in the background to refresh the cache.
@@ -146,10 +185,11 @@ async function handleNavigate(request) {
     return winner;
   }
 
-  // No cached copy yet: wait for the network, then fall back to the home shell,
-  // and finally to the branded offline page rather than a browser error screen.
+  // No cached copy, or an explicit refresh: wait for the network. On failure,
+  // the last-good cached page is better than a blank screen.
   const net = await networkFetch;
   if (net) return net;
+  if (cached) return cached;
   const home = await cache.match('/');
   if (home) return home;
   const offline = await cache.match(OFFLINE_URL);

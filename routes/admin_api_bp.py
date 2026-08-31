@@ -27,6 +27,14 @@ def _touch_value_cache_bust(*a, **k):
     from app import _touch_value_cache_bust as _fn
     return _fn(*a, **k)
 
+def _touch_league_bust(*a, **k):
+    from app import _touch_league_bust as _fn
+    return _fn(*a, **k)
+
+def _league_ctx_cache_valid(*a, **k):
+    from app import _league_ctx_cache_valid as _fn
+    return _fn(*a, **k)
+
 def get_league_ctx_from_cache(*a, **k):
     from app import get_league_ctx_from_cache as _fn
     return _fn(*a, **k)
@@ -55,7 +63,7 @@ def api_prewarm_league():
 
     key = _cache_key(platform, season, league_id)
     entry = DASHBOARD_CACHE.get(key)
-    if entry and (time.time() - entry.get("ts", 0) <= CACHE_TTL):
+    if _league_ctx_cache_valid(entry, platform, season, league_id):
         return jsonify({"ok": True, "cached": True})
     try:
         get_league_ctx_from_cache(platform, league_id, season)
@@ -101,6 +109,13 @@ def api_refresh_league():
     if key in DASHBOARD_CACHE:
         DASHBOARD_CACHE[key]["ts"] = 0       # expire context cache
         DASHBOARD_CACHE[key]["page_html"] = {}  # clear rendered HTML so pages re-render fresh
+    # Sibling gunicorn workers keep their own DASHBOARD_CACHE; bump a shared
+    # marker so their next read rebuilds too (otherwise Refresh only expires
+    # the worker that handled the POST).
+    try:
+        _touch_league_bust(platform, season, league_id)
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
     # Also remove /tmp files so other gunicorn workers don't serve stale HTML
     for page in ("dashboard", "activity", "teams", "graphs", "standings", "weekly"):
         try:

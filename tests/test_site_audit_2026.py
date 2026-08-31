@@ -116,10 +116,14 @@ def test_sw_no_cache_and_shell_precache():
     sw_route = PUBLIC[PUBLIC.index("def service_worker"):]
     sw_route = sw_route[: sw_route.index("def ads_txt")]
     assert "no-cache" in sw_route
-    assert "br-fantasy-v19" in SW
+    assert "br-fantasy-v20" in SW
     assert "'/static/app.js'" not in SW and '"/static/app.js"' not in SW
     assert "'/static/dashboard.css'" not in SW and '"/static/dashboard.css"' not in SW
     assert "/static/offline.html" in SW
+    # Explicit Refresh must not paint the 3.5s cached shell (stale timestamp).
+    assert "bypass-cache" in SW
+    assert "forceNetworkNav" in SW
+    assert "request.cache === 'reload'" in SW
 
 
 def test_rankings_honors_q_and_aria():
