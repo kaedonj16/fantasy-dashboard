@@ -41,6 +41,8 @@ def test_dock_and_sheet_present(offline_client):
     assert "id='brSearchScreen'" in html
     assert "id='brSearchMount'" in html
     assert "id='brSheetAccount'" in html
+    assert "id='brSheetRefresh'" in html
+    assert "id='brSheetRefreshTime'" in html
     # The widgets that get relocated must exist in the server HTML.
     assert "id='navSearchWrapper'" in html
     assert "id='settingsDropdown'" in html

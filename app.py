@@ -1813,19 +1813,23 @@ BASE_HTML = """
         // The white splash is for the cold PWA launch only. On any in-app
         // navigation within the same session (e.g. tapping the mobile dock)
         // remove it immediately so pages don't flash a white loading screen.
-        // __brWarmLaunch also tells app.js not to auto-reload a warm navigation
-        // (that stale-shell reload is only wanted on the cold launch).
+        // Keep it up for an explicit Refresh so we don't paint the cached shell
+        // while the league rebuilds. __brWarmLaunch also tells app.js not to
+        // auto-reload a warm navigation (that stale-shell reload is only wanted
+        // on the cold launch, or when the user just tapped Refresh).
         var _warm = false;
+        var _userRefresh = false;
         try {{
+          _userRefresh = sessionStorage.getItem('brUserRefresh') === '1';
           _warm = !!sessionStorage.getItem('br_warm');
-          if (_warm) {{
+          if (_warm && !_userRefresh) {{
             if (s && s.parentNode) s.parentNode.removeChild(s);
             s = null;
-          }} else {{
+          }} else if (!_warm) {{
             sessionStorage.setItem('br_warm','1');
           }}
         }} catch(e){{}}
-        window.__brWarmLaunch = _warm;
+        window.__brWarmLaunch = _warm && !_userRefresh;
         if(!s) return;
         // Reveal the (already server-rendered) content as soon as the DOM is
         // parsed — waiting for window 'load' gated LCP behind every image and
@@ -2098,26 +2102,87 @@ def _page_html_tmp_path(platform: str, season: int, league_id: str, page: str) -
     return os.path.join(tempfile.gettempdir(), f"br_page_{safe}.html")
 
 
+def _league_bust_path(platform: str, season: int, league_id: str) -> str:
+    """Shared marker so a Refresh on one gunicorn worker expires sibling caches."""
+    import tempfile
+    safe = f"{platform}_{season}_{league_id}".replace("/", "_").replace("\\", "_")
+    return os.path.join(tempfile.gettempdir(), f"br_league_bust_{safe}")
+
+
+def _league_bust_mtime(platform: str, season: int, league_id: str) -> float:
+    try:
+        return os.stat(_league_bust_path(platform, season, league_id)).st_mtime
+    except OSError:
+        return 0.0
+
+
+def _touch_league_bust(platform: str, season: int, league_id: str) -> None:
+    """Bump the shared marker so sibling workers rebuild this league on next read."""
+    path = _league_bust_path(platform, season, league_id)
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(str(time.time()))
+        os.replace(tmp, path)
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
+
+def _league_ctx_cache_valid(entry, platform, season, league_id) -> bool:
+    """True when this worker's in-memory league ctx is still the current one.
+
+    ``ts == 0`` is a local expire. A bust-file mtime newer than ``ts`` means a
+    sibling worker handled Refresh and this copy must rebuild too.
+    """
+    if not entry:
+        return False
+    try:
+        ts = float(entry.get("ts") or 0)
+    except (TypeError, ValueError):
+        return False
+    if ts <= 0 or (time.time() - ts) > CACHE_TTL:
+        return False
+    return ts >= _league_bust_mtime(platform, season, league_id)
+
+
+def _league_cache_ts_ms(platform, season, league_id) -> int:
+    """data-cache-ts for the freshness chip: when league data was last built."""
+    now_ms = int(time.time() * 1000)
+    if not (platform and season and league_id):
+        return now_ms
+    try:
+        entry = DASHBOARD_CACHE.get(_cache_key(str(platform), int(season), str(league_id))) or {}
+        ts = float(entry.get("ts") or 0)
+        if ts > 0:
+            return int(ts * 1000)
+    except (TypeError, ValueError):
+        pass
+    return now_ms
+
+
 def get_page_html_from_cache(platform: str, season: int, league_id: str, page: str) -> Optional[str]:
+    bust = _league_bust_mtime(platform, season, league_id)
     # Fast path: check in-process memory first
     entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
     if entry:
         rec = entry.get("page_html", {}).get(page)
         if rec:
             ts, html = rec
-            if time.time() - ts <= PAGE_HTML_TTL:
+            if time.time() - ts <= PAGE_HTML_TTL and ts >= bust:
                 return html
 
     # Cross-worker fallback: /tmp file - all gunicorn workers share the container fs
     try:
         path = _page_html_tmp_path(platform, season, league_id, page)
-        if os.path.exists(path) and time.time() - os.path.getmtime(path) <= PAGE_HTML_TTL:
-            html = open(path, encoding="utf-8").read()
-            _ck = _cache_key(platform, season, league_id)
-            _prune_dashboard_cache(keep=_ck)
-            mem_entry = DASHBOARD_CACHE.setdefault(_ck, {})
-            mem_entry.setdefault("page_html", {})[page] = (time.time(), html)
-            return html
+        if os.path.exists(path):
+            mtime = os.path.getmtime(path)
+            if time.time() - mtime <= PAGE_HTML_TTL and mtime >= bust:
+                html = open(path, encoding="utf-8").read()
+                _ck = _cache_key(platform, season, league_id)
+                _prune_dashboard_cache(keep=_ck)
+                mem_entry = DASHBOARD_CACHE.setdefault(_ck, {})
+                mem_entry.setdefault("page_html", {})[page] = (time.time(), html)
+                return html
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
@@ -4792,7 +4857,7 @@ def render_page(
         recap_banner=banner_html,
         body=wrapped_body,
         bottom_nav=_bottom,
-        cache_ts=int(time.time() * 1000),
+        cache_ts=_league_cache_ts_ms(platform, season, league_id),
         user_premium="true" if is_premium else "false",
         adsense_script="" if not show_ads else _AD_SCRIPT,
         ad_top="" if not show_ads else _AD_TOP,
@@ -9306,6 +9371,10 @@ def _maybe_check_roster_freshness(platform: str, league_id: str, season: int,
             if entry:
                 entry["ts"] = 0  # expire context; next read rebuilds
                 entry["page_html"] = {}
+            try:
+                _touch_league_bust(platform, season, league_id)
+            except Exception:
+                pass
             for page in ("dashboard", "activity", "teams", "graphs", "standings", "weekly"):
                 try:
                     p = _page_html_tmp_path(platform, season, league_id, page)
@@ -9332,7 +9401,7 @@ def _maybe_check_roster_freshness(platform: str, league_id: str, season: int,
 def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dict:
     key = _cache_key(platform, season, league_id)
     entry = DASHBOARD_CACHE.get(key)
-    if entry and (time.time() - entry.get("ts", 0) <= CACHE_TTL):
+    if _league_ctx_cache_valid(entry, platform, season, league_id):
         ctx = entry["ctx"]
         ctx["viewer"] = get_viewer_session_for_league(
             ctx.get("users") or [], ctx.get("rosters") or [], platform, league_id, season
@@ -9348,7 +9417,7 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
     with key_lock:
         # Re-check after acquiring lock - another thread may have built it while we waited
         entry = DASHBOARD_CACHE.get(key)
-        if entry and (time.time() - entry.get("ts", 0) <= CACHE_TTL):
+        if _league_ctx_cache_valid(entry, platform, season, league_id):
             ctx = entry["ctx"]
             ctx["viewer"] = get_viewer_session_for_league(
                 ctx.get("users") or [], ctx.get("rosters") or [], platform, league_id, season
@@ -10960,7 +11029,7 @@ def page_activity(platform: str, season: int, league_id: str):
     # If the league context is already warm (user came from another page), build
     # synchronously - it's quick once the ctx is cached and avoids the poll round-trip.
     ctx_entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
-    if ctx_entry and (time.time() - ctx_entry.get("ts", 0) <= CACHE_TTL):
+    if _league_ctx_cache_valid(ctx_entry, platform, season, league_id):
         try:
             body = build_activity_body(ctx_entry["ctx"])
             store_page_html(platform, season, league_id, "activity", body)
@@ -11868,7 +11937,7 @@ def page_teams(platform: str, season: int, league_id: str):
     # If the league context is already warm (user visited any other page), build
     # synchronously right now - takes ~1-2s and skips the whole skeleton/polling dance.
     ctx_entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
-    if ctx_entry and (time.time() - ctx_entry.get("ts", 0) <= CACHE_TTL):
+    if _league_ctx_cache_valid(ctx_entry, platform, season, league_id):
         try:
             body_html = build_teams_body(ctx_entry["ctx"])
             store_page_html(platform, season, league_id, "teams", body_html)
