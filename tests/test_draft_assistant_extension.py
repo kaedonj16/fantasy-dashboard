@@ -16,6 +16,8 @@ def test_overlay_is_mv3_safe_extension_page():
     assert "BROverlayScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert "BRPickScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert "decisionScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
+    assert "futurePickDecisionScore" not in (EXT / "overlay_score.js").read_text(encoding="utf-8")
+    assert "Gone before #" not in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert 'href="overlay.css"' in html
     assert 'class="br-da-embed"' in html
     assert not re.search(r"<script>(?!\s*</script>)", html)
@@ -30,7 +32,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.20"
+    assert manifest["version"] == "1.5.21"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts

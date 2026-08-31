@@ -336,8 +336,6 @@
     const adp = adpOf(p);
     let exceptional = 0;
     if (adp != null) exceptional = clamp01(((ctx.current || 1) - adp) / Math.max(12, adp * 0.65));
-    const recPn = recommendationPickNo(ctx);
-    const advisingFuture = recPn > ((ctx.current || 1));
     const nextPick = recWaitPickNo(ctx);
     const returnProb = nextPick ? availProb(p, nextPick, ctx, byId) : null;
     const demand = (psc.demandByPos && psc.demandByPos[pos]) || 0;
@@ -400,9 +398,6 @@
       byePenalty: byePenalty,
       draftType: ctx.type || "redraft", lineupHoles: psc.obligations.lineupHoles || 0,
     });
-    if (advisingFuture && C.futurePickDecisionScore) {
-      score = C.futurePickDecisionScore(score, availProb(p, recPn, ctx, byId));
-    }
     return score;
   }
 
@@ -435,12 +430,6 @@
     }
     if (relGap != null && relGap >= 1.0) return "Elite steal: " + fell + " picks past ADP";
     if (relGap != null && relGap >= 0.5) return "Steal: fell " + fell + " picks past ADP";
-    if (advisingFuture) {
-      const atRec = availProb(p, recPn, ctx, byId);
-      if (atRec != null && atRec < 20) {
-        return atRec <= 0 ? ("Gone before #" + recPn) : ("Unlikely to last to #" + recPn);
-      }
-    }
     if (p._rank === 1) return advisingFuture ? ("Best available at #" + recPn) : "Best available";
     if (need > 0 && recPn > 4) {
       if (tier != null && tier <= 2) return "Tier " + tier + " " + pos + " fills a need";

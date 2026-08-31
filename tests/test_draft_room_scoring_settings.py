@@ -102,7 +102,8 @@ def test_pick_reason_uses_its_own_current_pick_variable():
     # "Best available" is the #1 rec, not the fallback for every row.
     assert "if (opts.rank === 1)" in body
     assert "return 'Strong remaining value';" in body
-    assert "Gone before #" in body
+    assert "Gone before #" not in body
+    assert "Unlikely to last to #" not in body
     assert "Best available at #" in body
     assert "1st-round talent" in body
     assert "Backup-only · starter slots still open" in body
@@ -361,7 +362,7 @@ def test_likely_next_pick_survivors_pay_current_pick_opportunity_cost():
     assert "function isManualDraft()" in source
     assert "if (isManualDraft()) return cur;" in source
     assert "function recommendationCounts()" in source
-    assert "DraftBoardCore.futurePickDecisionScore(score, availProb(p, recPn))" in source
+    assert "DraftBoardCore.futurePickDecisionScore(score, availProb(p, recPn))" not in source
 
 
 def test_manual_draft_ranks_on_the_clock_pool_for_other_teams():
@@ -375,8 +376,8 @@ def test_manual_draft_ranks_on_the_clock_pool_for_other_teams():
     assert "fillingOtherSeat = isManualDraft() && state && !isMyPick(state.current)" in source
     assert "var counts = recommendationCounts();" in source
     assert "sortBy === 'ps' ? recommendationCounts()" in source
-    # Mock/live while waiting still look ahead (survival demotion preserved).
-    assert "DraftBoardCore.futurePickDecisionScore(score, availProb(p, recPn))" in source
+    # Rec rank no longer demotes players who may be gone by your next pick.
+    assert "DraftBoardCore.futurePickDecisionScore(score, availProb(p, recPn))" not in source
 
 
 def test_autodraft_uses_shared_need_multiplier_instead_of_uncapped_starter_boost():
