@@ -2,8 +2,8 @@
   const CLOCK_START = 75;
   const SLOTS = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"];
   const POS = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6", FLEX: "#14b8a6", BN: "#64748b" };
-  const SORTS = ["rec", "adp", "ps", "proj"];
-  const SORT_LBL = { rec: "Rec", adp: "ADP", ps: "Pick Score", proj: "Proj" };
+  const SORTS = ["rec", "ps", "val", "proj", "adp"];
+  const SORT_LBL = { rec: "Recommendation Rank", adp: "ADP", ps: "Pick Score", proj: "Proj PPG", val: "Value" };
   const TEAM_NAMES = [
     "", "Midnight Express", "Gridiron Ghosts", "Capital Thunder", "Bayou Bandits",
     "Pacific Storm", "Ironclad FC", "You", "Desert Foxes", "Harbor Hawks",
@@ -229,13 +229,26 @@
     tab: "board",
     pos: "ALL",
     sort: "rec",
+    query: "",
     platform: "sleeper",
     clock: CLOCK_START,
     expanded: null,
     toast: "",
-    syncOk: true
+    syncOk: true,
+    valCap: 180,
+    sitePool: false,
+    adpSource: "consensus",
+    adpOptions: [
+      { value: "consensus", label: "Consensus" },
+      { value: "sleeper", label: "Sleeper" },
+      { value: "espn", label: "ESPN" },
+      { value: "yahoo", label: "Yahoo" },
+      { value: "mfl", label: "MFL" },
+      { value: "brfantasy", label: "BR Fantasy" }
+    ]
   };
   let autoTimer = null, clockTimer = null;
+  let lastLiveDetail = null;
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -308,7 +321,7 @@
     const needN = clamp(need / 2, 0, 1);
     const ppgN = clamp((p.ppg - 6) / 16, 0, 1);
     const tierN = clamp((7 - p.tier) / 6, 0, 1);
-    const valN = clamp(p.val / 160, 0, 1);
+    const valN = clamp(p.val / Math.max(state.valCap || 180, 1), 0, 1);
     let s = 100 * (0.28 * adpVal + 0.24 * valN + 0.18 * ppgN + 0.16 * tierN + 0.14 * needN);
     if (isTierCliff(p) && need > 0) s += 4;
     return Math.round(clamp(s, 8, 99));
@@ -341,7 +354,7 @@
     else if (p.pos !== "QB" && (counts.RB + counts.WR + counts.TE) < 5) out.push("FLEX-eligible depth for weekly lineup");
     if (diff >= 4) out.push("Value vs ADP: " + diff + " picks past market");
     else if (diff <= -4) out.push("Slight reach vs ADP (" + Math.abs(diff) + " early) — still a positional fit");
-    else out.push("In range of ADP " + p.adp.toFixed(1));
+    else out.push("In range of ADP " + fmtAdp(p));
     if (isTierCliff(p)) out.push("Tier cliff: last " + p.pos + "s in T" + p.tier);
     else if (p.tier <= 2) out.push("Elite tier (T" + p.tier + ") talent still on the board");
     return out.slice(0, 3);
@@ -566,6 +579,34 @@
     return html;
   }
 
+  function fmtAdp(p) {
+    const a = Number(p && p.adp);
+    if (!isFinite(a) || a >= 900) return "—";
+    return a.toFixed(1);
+  }
+  function fmtPpg(p) {
+    const n = Number(p && p.ppg);
+    if (!isFinite(n) || n <= 0) return "—";
+    return n.toFixed(1);
+  }
+  function hsUrl(p) {
+    if (!p) return "";
+    if (p.headshot) return String(p.headshot);
+    const id = String(p.id || "");
+    if (/^\d+$/.test(id)) return "https://sleepercdn.com/content/nfl/players/" + id + ".jpg";
+    return "";
+  }
+  function hsMark(p, cls) {
+    const pc = POS[p.pos] || POS.WR;
+    const url = hsUrl(p);
+    if (!url) return '<span class="' + cls + '" style="--pc:' + pc + '" aria-hidden="true"></span>';
+    const fallback = /^\d+$/.test(String(p.id || ""))
+      ? "https://sleepercdn.com/content/nfl/players/" + p.id + ".jpg"
+      : "";
+    const extra = fallback && fallback !== url ? ' data-fallback="' + esc(fallback) + '"' : "";
+    return '<span class="' + cls + ' has-photo" style="--pc:' + pc + '" aria-hidden="true"><img alt="" src="' + esc(url) + '"' + extra + "></span>";
+  }
+
   function playerRow(p, opts) {
     opts = opts || {};
     const cliff = isTierCliff(p);
@@ -575,20 +616,23 @@
     let chip;
     if (state.sort === "rec") {
       chip = '<div class="pschip recchip" title="Recommendation rank">#' + (opts.rank || p._rank) + "<small>REC</small></div>";
-    } else {
+    } else if (state.sort === "ps") {
       const col = psColor(p._ps);
       chip = '<div class="pschip" style="color:' + col + ";background:" + col + '1a" title="Pick Score">'+ p._ps + "<small>PS</small></div>";
+    } else {
+      chip = "";
     }
+    const reason = opts.reason ? '<div class="ba-reason">' + esc(opts.reason) + "</div>" : "";
     return '<div class="ba-row" data-id="' + p.id + '">'
-      + '<span class="hs" style="--pc:' + pc + '" aria-hidden="true"></span>'
+      + hsMark(p, "hs")
       + '<div class="ba-body"><div class="ba-name">' + esc(p.name) + "</div>"
       + '<div class="ba-meta"><span class="posb" style="background:' + pc + '">' + p.pos + "</span>"
       + esc(p.team)
       + '<span class="tier' + (cliff ? " cliff" : "") + '">T' + p.tier + "</span>"
-      + '<span class="tabular">' + p.ppg.toFixed(1) + " proj</span>"
+      + '<span class="tabular">' + fmtPpg(p) + " proj</span>"
       + (byeLvl ? '<span class="bye-flag">Bye ' + p.bye + "</span>" : "")
-      + "</div></div>"
-      + '<div class="ba-right"><div class="ba-val">' + p.val + '</div><div class="ba-sub">ADP ' + p.adp.toFixed(1) + "</div></div>"
+      + "</div>" + reason + "</div>"
+      + '<div class="ba-right"><div class="ba-val">' + p.val + '</div><div class="ba-sub">ADP ' + fmtAdp(p) + "</div></div>"
       + chip
       + "</div>";
   }
@@ -598,7 +642,7 @@
       const g = p.grade || pickLetter((p.pn || 0) - p.adp, true);
       return '<div class="rslot">'
         + '<span class="rslot-pos" style="background:' + slotColor(slot) + '">' + slot + "</span>"
-        + '<span class="hs-sm" style="--pc:' + (POS[p.pos] || POS.BN) + '"></span>'
+        + hsMark(p, "hs-sm")
         + '<div class="rslot-body"><div class="rslot-name">' + esc(p.name) + "</div>"
         + '<div class="rslot-meta">' + p.pos + " · " + p.team + (p.pn ? ' · <span class="tabular">' + pickLabel(p.pn) + "</span>" : "") + "</div></div>"
         + '<span class="rslot-g" style="color:' + gradeCol(letterToScore(g)) + '">' + g + "</span>"
@@ -625,6 +669,9 @@
   }
 
   function renderBoard() {
+    if (EMBEDDED && !state.sitePool) {
+      return '<div class="empty-log">Loading BR Fantasy ranks, ADP, and values…</div>';
+    }
     const mine = myPicks();
     const counts = posCounts(mine);
     const recPn = nextMine(state.current) || state.current;
@@ -640,31 +687,19 @@
         + '<div class="rank">League rank #' + rank + " of " + state.teams + "</div>"
         + '<div class="sub">Projected playoff odds <b class="tabular" style="color:' + (odds >= 50 ? "var(--win)" : "var(--warn)") + '">' + odds.toFixed(1) + "%</b></div></div>";
     } else if (pool[0]) {
-      const rec = pool[0];
-      const col = psColor(rec._ps);
-      html += '<div class="rec-card"><div class="rec-label">Recommended pick</div><div class="rec-top">'
-        + '<div class="gauge" style="--p:' + rec._ps + ";--g:" + col + '"><div><b>' + rec._ps + "</b><small>PS</small></div></div>"
-        + '<div class="rec-player"><div class="rec-name">' + esc(rec.name) + "</div>"
-        + '<div class="rec-meta"><span class="posb" style="background:' + POS[rec.pos] + '">' + rec.pos + "</span>"
-        + rec.team + " · T" + rec.tier + " · " + rec.ppg.toFixed(1) + " proj</div></div></div>"
-        + '<ul class="reasons">' + reasonsFor(rec, counts, recPn).map(function (r) { return "<li>" + esc(r) + "</li>"; }).join("") + "</ul>"
-        + '<button type="button" class="btn btn-primary draft-cta" data-draft="' + rec.id + '">'
-        + (state.live ? ("Recommend " + esc(rec.name) + " at " + pickLabel(recPn)) : ("Draft " + esc(rec.name) + " at " + pickLabel(recPn)))
-        + "</button></div>";
-      html += bannersHtml(counts, rec);
+      html += bannersHtml(counts, pool[0]);
     }
-    html += '<div class="filters">';
-    ["ALL", "QB", "RB", "WR", "TE"].forEach(function (pos) {
-      html += '<button type="button" class="chip" data-pos="' + pos + '" aria-pressed="' + (state.pos === pos) + '">' + (pos === "ALL" ? "All" : pos) + "</button>";
-    });
-    html += '<button type="button" class="chip sort-btn" id="sortBtn">Sort: ' + SORT_LBL[state.sort] + "</button></div>";
+    const q = (state.query || "").trim().toLowerCase();
     let rows = pool;
     if (state.pos !== "ALL") rows = rows.filter(function (p) { return p.pos === state.pos; });
+    if (q) rows = rows.filter(function (p) { return String(p.name).toLowerCase().indexOf(q) >= 0; });
     if (state.sort === "adp") rows = rows.slice().sort(function (a, b) { return a.adp - b.adp; });
     else if (state.sort === "ps") rows = rows.slice().sort(function (a, b) { return b._ps - a._ps; });
     else if (state.sort === "proj") rows = rows.slice().sort(function (a, b) { return b.ppg - a.ppg; });
-    rows.slice(0, 40).forEach(function (p, i) {
-      html += playerRow(p, { rank: state.sort === "rec" ? p._rank : i + 1 });
+    else if (state.sort === "val") rows = rows.slice().sort(function (a, b) { return b.val - a.val; });
+    rows.slice(0, 80).forEach(function (p, i) {
+      const reason = state.sort === "rec" ? (reasonsFor(p, counts, recPn)[0] || "") : "";
+      html += playerRow(p, { rank: state.sort === "rec" ? p._rank : i + 1, reason: reason });
     });
     if (!rows.length) html += '<div class="empty-log" style="color:var(--text-muted)">No players match this filter.</div>';
     return html;
@@ -717,9 +752,6 @@
     else html += slotRow("BN", null);
     html += "</div>";
     if (state.toast) html += '<div class="toast">' + esc(state.toast) + "</div>";
-    html += '<div class="deeplinks">'
-      + '<button type="button" data-link="room">' + IC.room + " Draft Room</button>"
-      + '<button type="button" data-link="sheet">' + IC.sheet + " Cheat Sheet</button></div>";
     return html;
   }
 
@@ -845,6 +877,13 @@
     document.querySelectorAll(".tab-btn").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-tab") === state.tab);
     });
+    const controls = document.getElementById("boardControls");
+    if (controls) controls.hidden = state.tab !== "board";
+    document.querySelectorAll("#posFilters [data-pos]").forEach(function (b) {
+      b.setAttribute("aria-pressed", b.getAttribute("data-pos") === state.pos ? "true" : "false");
+    });
+    const sortSel = document.getElementById("sortSel");
+    if (sortSel && sortSel.value !== state.sort) sortSel.value = state.sort;
     const body = document.getElementById("ovBody");
     if (state.tab === "roster") body.innerHTML = renderRoster();
     else if (state.tab === "grades") body.innerHTML = renderGrades();
@@ -902,6 +941,23 @@
       render();
     });
   });
+  const posFilters = document.getElementById("posFilters");
+  if (posFilters) posFilters.addEventListener("click", function (e) {
+    const pos = e.target.closest("[data-pos]");
+    if (!pos) return;
+    state.pos = pos.getAttribute("data-pos");
+    render();
+  });
+  const sortSelEl = document.getElementById("sortSel");
+  if (sortSelEl) sortSelEl.addEventListener("change", function () {
+    state.sort = sortSelEl.value || "rec";
+    render();
+  });
+  const searchInp = document.getElementById("searchInp");
+  if (searchInp) searchInp.addEventListener("input", function () {
+    state.query = searchInp.value || "";
+    render();
+  });
   document.getElementById("simBtn").addEventListener("click", function () {
     simulateOne();
     render();
@@ -933,15 +989,6 @@
     if (pos) { state.pos = pos.getAttribute("data-pos"); render(); return; }
     if (e.target.closest("#sortBtn")) {
       state.sort = SORTS[(SORTS.indexOf(state.sort) + 1) % SORTS.length];
-      render();
-      return;
-    }
-    const link = e.target.closest("[data-link]");
-    if (link) {
-      const kind = link.getAttribute("data-link");
-      state.toast = kind === "room"
-        ? "Opens this live draft in BR Fantasy Draft Room — overlay stays synced, never submits."
-        : "Opens your Draft Room cheat sheet for this league.";
       render();
       return;
     }
@@ -986,35 +1033,94 @@
     }
   }
 
+  function fillAdpSel() {
+    const sel = document.getElementById("adpSel");
+    if (!sel) return;
+    const opts = (state.adpOptions && state.adpOptions.length) ? state.adpOptions : [];
+    if (!opts.length) return;
+    const want = state.adpSource || "consensus";
+    sel.innerHTML = opts.map(function (o) {
+      const v = String(o.value || o);
+      const l = String(o.label || o);
+      return '<option value="' + esc(v) + '"' + (v === want ? " selected" : "") + ">" + esc(l) + "</option>";
+    }).join("");
+    if (![].some.call(sel.options, function (o) { return o.value === want; }) && sel.options[0]) {
+      sel.value = sel.options[0].value;
+      state.adpSource = sel.value;
+    } else {
+      sel.value = want;
+    }
+  }
+
+  function ingestPool(detail) {
+    const rows = (detail && detail.players) || [];
+    if (!rows.length) return;
+    if (detail.adpSource && state.adpSource && String(detail.adpSource) !== String(state.adpSource)) return;
+    if (Array.isArray(detail.adpOptions) && detail.adpOptions.length) state.adpOptions = detail.adpOptions;
+    if (detail.adpSource) state.adpSource = String(detail.adpSource);
+    fillAdpSel();
+    players = rows.map(function (p) {
+      return {
+        id: String(p.id),
+        name: p.name,
+        pos: p.pos || "RB",
+        team: p.team || "FA",
+        adp: Number(p.adp) || 999,
+        val: Number(p.val) || 0,
+        ppg: p.ppg == null ? 0 : Number(p.ppg),
+        age: p.age == null ? 0 : Number(p.age),
+        bye: p.bye == null ? 0 : Number(p.bye),
+        headshot: p.headshot || "",
+        tier: p.tier || 6
+      };
+    });
+    byId = {};
+    byName = {};
+    players.forEach(function (p) {
+      if (p.id) byId[String(p.id)] = p;
+      byName[normName(p.name)] = p;
+    });
+    state.sitePool = true;
+    let maxVal = 1;
+    players.forEach(function (p) { if (p.val > maxVal) maxVal = p.val; });
+    state.valCap = maxVal;
+    if (lastLiveDetail) ingestLive(lastLiveDetail);
+    else render();
+  }
+
   function matchLivePlayer(raw) {
-    const name = raw.playerName || raw.name || "";
+    const pid = raw && raw.playerId != null && String(raw.playerId) !== "" ? String(raw.playerId) : "";
+    if (pid && byId[pid]) return byId[pid];
+    const name = (raw && (raw.playerName || raw.name)) || "";
     const key = normName(name);
     if (key && byName[key]) return byName[key];
-    const pos = String(raw.pos || raw.position || "WR").toUpperCase();
-    const nfl = String(raw.nflTeam || raw.team || raw.proTeam || "").toUpperCase().slice(0, 3) || "FA";
-    const pn = Number(raw.overallPickNumber || raw.pick_no || 0) || state.current;
+    const pos = String((raw && (raw.pos || raw.position)) || "WR").toUpperCase();
+    const nfl = String((raw && (raw.nflTeam || raw.team || raw.proTeam)) || "").toUpperCase().slice(0, 3) || "FA";
+    const pn = Number((raw && (raw.overallPickNumber || raw.pick_no)) || 0) || state.current;
     const stub = {
-      id: "live-" + (raw.playerId || key || pn),
+      id: "live-" + (pid || key || pn),
       name: name || ("Pick " + pn),
       pos: POS[pos] ? pos : "WR",
       team: nfl,
       bye: BYE[nfl] || 10,
-      adp: pn,
-      tier: 5,
-      ppg: 8,
-      age: 26,
-      val: Math.round(Math.max(6, 168 * Math.exp(-pn / 42)))
+      adp: 999,
+      tier: 6,
+      ppg: 0,
+      age: 0,
+      val: 0,
+      headshot: ""
     };
-    if (!byId[stub.id]) {
+    if (!EMBEDDED && !state.sitePool && !byId[stub.id]) {
       players.push(stub);
       byId[stub.id] = stub;
       byName[normName(stub.name)] = stub;
     }
-    return byId[stub.id];
+    return stub;
   }
 
   function ingestLive(detail) {
     if (!detail) return;
+    lastLiveDetail = detail;
     state.live = true;
     stopAuto();
     if (detail.platform) state.platform = String(detail.platform).toLowerCase();
@@ -1057,10 +1163,37 @@
     chip.style.color = ok ? "" : "var(--warn)";
   }
 
+  function setCollapsedUi(on) {
+    const btn = document.getElementById("collapseBtn");
+    if (!btn) return;
+    const collapsed = !!on;
+    document.documentElement.classList.toggle("br-da-rail", collapsed);
+    btn.title = collapsed ? "Open overlay" : "Collapse overlay";
+    btn.setAttribute("aria-label", collapsed ? "Open overlay" : "Collapse overlay");
+    const path = btn.querySelector("path");
+    if (path) path.setAttribute("d", collapsed ? "M15 6l-6 6 6 6" : "M9 6l6 6-6 6");
+  }
+
   const recBtn = document.getElementById("reconnectBtn");
   if (recBtn) recBtn.addEventListener("click", function () { postToHost("reconnect"); });
   const colBtn = document.getElementById("collapseBtn");
   if (colBtn) colBtn.addEventListener("click", function () { postToHost("collapse"); });
+  document.querySelector(".overlay").addEventListener("click", function (e) {
+    const link = e.target.closest("[data-link]");
+    if (!link) return;
+    const dest = link.getAttribute("data-link") === "sheet" ? "sheet" : "room";
+    if (EMBEDDED) {
+      postToHost("open", { dest: dest });
+      return;
+    }
+    try {
+      window.open(
+        "https://www.brfantasyfootball.com" + (dest === "sheet" ? "/draft/cheat-sheet" : "/draft"),
+        "_blank",
+        "noopener"
+      );
+    } catch (_e) { /* ignore */ }
+  });
   const slotSel = document.getElementById("slotSel");
   if (slotSel) slotSel.addEventListener("change", function () {
     state.mySlot = Number(slotSel.value) || state.mySlot;
@@ -1069,22 +1202,57 @@
     fillSlotSel();
     render();
   });
+  const adpSel = document.getElementById("adpSel");
+  if (adpSel) adpSel.addEventListener("change", function () {
+    const next = String(adpSel.value || "consensus");
+    if (next === state.adpSource) return;
+    state.adpSource = next;
+    try { localStorage.setItem("br-da-adp", state.adpSource); } catch (_e) { /* ignore */ }
+    if (EMBEDDED) {
+      state.sitePool = false;
+      render();
+      postToHost("adp", { adpSource: state.adpSource });
+    }
+  });
 
   window.addEventListener("message", function (ev) {
     const msg = ev.data;
     if (!msg || msg.__br !== "br-da") return;
+    if (msg.type === "pool") ingestPool(msg);
     if (msg.type === "picks") ingestLive(msg);
     if (msg.type === "sync") setSyncStatus(!!msg.ok, msg.text);
+    if (msg.type === "collapsed") setCollapsedUi(msg.on);
     if (msg.type === "theme" && msg.theme) applyTheme(msg.theme);
   });
 
-  buildPool();
-  indexNames();
+  document.addEventListener("error", function (e) {
+    const t = e.target;
+    if (!t || t.tagName !== "IMG") return;
+    const fb = t.getAttribute("data-fallback");
+    if (fb) {
+      t.removeAttribute("data-fallback");
+      t.src = fb;
+      return;
+    }
+    const wrap = t.closest(".has-photo");
+    if (wrap) wrap.classList.remove("has-photo");
+    t.remove();
+  }, true);
+
+  if (!EMBEDDED) {
+    buildPool();
+    indexNames();
+  }
   const savedSlot = Number(localStorage.getItem("br-da-slot") || 0);
   if (savedSlot) state.mySlot = savedSlot;
   fillSlotSel();
+  try {
+    const savedAdp = localStorage.getItem("br-da-adp");
+    if (savedAdp) state.adpSource = savedAdp;
+  } catch (_e) { /* ignore */ }
+  fillAdpSel();
   const saved = localStorage.getItem("br-da-theme") || "system";
   applyTheme(saved);
   render();
-  postToHost("ready");
+  postToHost("ready", { adpSource: state.adpSource, mySlot: state.mySlot });
 })();

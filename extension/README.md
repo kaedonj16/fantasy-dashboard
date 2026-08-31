@@ -25,7 +25,9 @@ Assistant overlay** on Sleeper, Yahoo, and ESPN draft rooms.
    still faster. This extension reads in-page state and relays picks to BR
    Fantasy. Picks are never submitted to ESPN or Yahoo.
 3. **Draft Assistant overlay:** the same read-only pick stream drives a docked
-   sidebar (Best Available, roster, grades) inside the host draft tab.
+   sidebar (Best Available, roster, grades) inside the host draft tab. Rankings
+   use the site `/api/league-players` pool (consensus ADP, BR values,
+   projections) and real ESPN / Sleeper headshots — not the standalone mock board.
 
 ## Desktop live draft
 

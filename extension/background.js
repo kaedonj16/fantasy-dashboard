@@ -391,6 +391,168 @@ async function reconnectDraftRelay(detail) {
   };
 }
 
+const BR_API_HOSTS = [
+  "https://www.brfantasyfootball.com",
+  "https://brfantasyfootball.com",
+];
+const POOL_TTL_MS = 5 * 60 * 1000;
+/** @type {{key:string, at:number, players:object[]}|null} */
+let draftPoolCache = null;
+
+function poolNum(v) {
+  const n = Number(v);
+  return isFinite(n) ? n : null;
+}
+
+function compactDraftPlayer(raw, scoringType, isSf, teams, adpSource) {
+  if (!raw || raw.id == null) return null;
+  const pos = String(raw.position || raw.pos || "").toUpperCase();
+  if (pos !== "QB" && pos !== "RB" && pos !== "WR" && pos !== "TE") return null;
+  const by = raw.adp_by_source && typeof raw.adp_by_source === "object" ? raw.adp_by_source : {};
+  const src = (adpSource && by[adpSource]) || {};
+  const cons = by.consensus || {};
+  const sleeper = by.sleeper || {};
+  const size = Number(teams) >= 8 ? Number(teams) : 12;
+  const redraft = scoringType !== "dynasty" && scoringType !== "rookie";
+  let adp;
+  let val;
+  if (redraft) {
+    adp =
+      poolNum(isSf ? src.sf_redraft_avg_pick : src.redraft_avg_pick) ||
+      poolNum(isSf ? raw.sf_redraft_avg_pick : raw.redraft_avg_pick) ||
+      poolNum(isSf ? cons.sf_redraft_avg_pick : cons.redraft_avg_pick) ||
+      poolNum(isSf ? sleeper.sf_redraft_avg_pick : sleeper.redraft_avg_pick);
+    if (isSf) {
+      val =
+        (size !== 10 ? poolNum(raw["redraft_sf_value_" + size]) : null) ||
+        poolNum(raw.redraft_value_sf) ||
+        poolNum(raw.redraft_value_1qb);
+    } else {
+      val =
+        (size !== 10 ? poolNum(raw["redraft_value_" + size]) : null) ||
+        poolNum(raw.redraft_value_1qb);
+    }
+  } else {
+    adp =
+      poolNum(isSf ? src.sf_avg_pick : src.avg_pick) ||
+      poolNum(isSf ? raw.sf_avg_pick : raw.avg_pick) ||
+      poolNum(isSf ? cons.sf_avg_pick : cons.avg_pick);
+    val = poolNum(isSf ? raw.sf_value : raw.value) || poolNum(raw.value);
+  }
+  if (!(val > 0) && !(adp > 0)) return null;
+  const adpN = adp && adp > 0 ? adp : 999;
+  let tier = 6;
+  if (adpN <= 12) tier = 1;
+  else if (adpN <= 24) tier = 2;
+  else if (adpN <= 48) tier = 3;
+  else if (adpN <= 84) tier = 4;
+  else if (adpN <= 120) tier = 5;
+  const id = String(raw.id);
+  let headshot = String(raw.espnHeadshot || "").trim();
+  if (!headshot && /^\d+$/.test(id)) {
+    headshot = "https://sleepercdn.com/content/nfl/players/" + id + ".jpg";
+  }
+  return {
+    id: id,
+    name: String(raw.name || ""),
+    pos: pos,
+    team: String(raw.team || "").toUpperCase(),
+    age: poolNum(raw.age) || 0,
+    bye: poolNum(raw.bye_week) || poolNum(raw.bye) || 0,
+    adp: adpN,
+    val: Math.round(val > 0 ? val : 0),
+    ppg: poolNum(raw.proj_ppg) || 0,
+    headshot: headshot,
+    tier: tier,
+  };
+}
+
+function adpOptionsFromBody(body, scoringType) {
+  if (!body || Array.isArray(body)) return [];
+  const opts = body.adp_source_options || {};
+  const key = scoringType === "dynasty" ? "startup" : scoringType;
+  const list = opts[key] || opts.redraft || [];
+  if (!Array.isArray(list)) return [];
+  return list.filter(function (o) { return o && o.value; }).map(function (o) {
+    return { value: String(o.value), label: String(o.label || o.value) };
+  });
+}
+
+async function fetchDraftPool(opts) {
+  const scoringType = String((opts && opts.scoringType) || "redraft").toLowerCase();
+  const sf = !!(opts && opts.sf);
+  const adpSource = String((opts && opts.adpSource) || "consensus").toLowerCase();
+  const teams = Number((opts && opts.teams) || 12) || 12;
+  const key = [scoringType, sf ? "sf" : "1qb", adpSource, teams || ""].join("|");
+  const now = Date.now();
+  if (!opts.force && draftPoolCache && draftPoolCache.key === key && now - draftPoolCache.at < POOL_TTL_MS) {
+    return {
+      ok: true,
+      players: draftPoolCache.players,
+      scoringType: scoringType,
+      sf: sf,
+      adpSource: adpSource,
+      adpOptions: draftPoolCache.adpOptions || [],
+      cached: true,
+    };
+  }
+  const params = [
+    "adp_source=" + encodeURIComponent(adpSource),
+    "scoring_type=" + encodeURIComponent(scoringType === "startup" ? "dynasty" : scoringType),
+    "league_type=" + (sf ? "sf" : "1qb"),
+    "proj_rec=1",
+    "proj_te_bonus=0",
+    "proj_pass_td=4",
+  ];
+  if (teams >= 8) params.push("league_size=" + encodeURIComponent(String(teams)));
+  const path = "/api/league-players?" + params.join("&");
+  let lastErr = "fetch failed";
+  for (const host of BR_API_HOSTS) {
+    try {
+      const res = await fetch(host + path, { cache: "no-store" });
+      if (!res.ok) {
+        lastErr = "HTTP " + res.status;
+        continue;
+      }
+      const body = await res.json();
+      const raw = Array.isArray(body) ? body : body.players || [];
+      const players = raw.map(function (p) {
+        return compactDraftPlayer(p, scoringType, sf, teams, adpSource);
+      }).filter(Boolean);
+      if (!players.length) {
+        lastErr = "empty pool";
+        continue;
+      }
+      const adpOptions = adpOptionsFromBody(body, scoringType);
+      draftPoolCache = { key: key, at: now, players: players, adpOptions: adpOptions };
+      return {
+        ok: true,
+        players: players,
+        scoringType: scoringType,
+        sf: sf,
+        adpSource: adpSource,
+        adpOptions: adpOptions,
+        cached: false,
+      };
+    } catch (err) {
+      lastErr = String(err && err.message ? err.message : err);
+    }
+  }
+  if (draftPoolCache && draftPoolCache.players && draftPoolCache.players.length) {
+    return {
+      ok: true,
+      players: draftPoolCache.players,
+      scoringType: scoringType,
+      sf: sf,
+      adpSource: adpSource,
+      adpOptions: draftPoolCache.adpOptions || [],
+      cached: true,
+      stale: true,
+    };
+  }
+  return { ok: false, players: [], error: lastErr, scoringType: scoringType, sf: sf, adpSource: adpSource, adpOptions: [] };
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg !== "object") return false;
 
@@ -491,6 +653,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
     sendResponse({ ok: true, registered: brDraftRoomTabs.size });
     return false;
+  }
+
+  if (msg.type === "fetchDraftPool") {
+    fetchDraftPool({
+      scoringType: String(msg.scoringType || "redraft"),
+      sf: !!msg.sf,
+      adpSource: String(msg.adpSource || "consensus"),
+      teams: Number(msg.teams || 0),
+      force: !!msg.force,
+    })
+      .then(sendResponse)
+      .catch(() => sendResponse({ ok: false, players: [] }));
+    return true;
   }
 
   return false;
