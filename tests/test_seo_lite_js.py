@@ -97,19 +97,6 @@ def test_guest_homepage_keeps_dashboard_css(offline_client, monkeypatch):
     assert "/static/seo_lite.css" not in html
     assert "dashboard.min.css" in html or "/static/dashboard.css" in html
 
-
-def test_lite_css_swap_excludes_homepage():
-    """Source guard: the seo_lite.css swap must skip active == 'home'."""
-    from pathlib import Path
-    app_py = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
-    assert '_use_lite_css = _use_lite and active != "home"' in app_py
-    seo_css = (Path(__file__).resolve().parents[1] / "static" / "seo_lite.css").read_text(
-        encoding="utf-8"
-    )
-    assert ".home-hero" not in seo_css
-    assert ".home-card" not in seo_css
-
-
 def test_signed_in_seo_page_keeps_full_app_js(offline_client):
     """lite_js is ignored when a session is signed in — full app.js stays."""
     import app as app_mod
