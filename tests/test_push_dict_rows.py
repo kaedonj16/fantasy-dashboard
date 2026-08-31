@@ -48,7 +48,7 @@ def test_filter_prefs_accepts_predecoded_jsonb_prefs():
 def test_lineup_lock_sends_bench_points_push():
     """An owner with a legal lineup but a better bench option gets the
     'Points on your bench' push (start Strong RB over Weak RB); an already-
-    optimal owner gets only the generic reminder."""
+    optimal owner is skipped (R06.2 — no generic spam for clean lineups)."""
     import pytest
     # Unlike the pure _filter_prefs tests above, this one drives the full
     # lineup-lock broadcast, which patches (and therefore imports) utils.utils
@@ -119,7 +119,7 @@ def test_lineup_lock_sends_bench_points_push():
 
     titles = [c["title"] for c in sent]
     assert "Points on your bench" in titles
-    assert "Lineups lock soon" in titles  # the optimal owner still gets the generic one
+    assert "Lineups lock soon" not in titles  # R06.2: clean lineup gets no generic
     bench = next(c for c in sent if c["title"] == "Points on your bench")
     assert "Sit Weak RB for Strong RB (+10.0 proj)" in bench["body"]
     assert bench["url"].endswith("/waivers?tab=startsit")

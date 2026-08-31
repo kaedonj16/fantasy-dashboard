@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from utils.cross_league_actions import make_action
 from utils.weekly_email import (
     compact_league_blurb,
+    cross_league_digest_html,
     multi_league_sections_html,
     other_leagues_for_account,
 )
@@ -74,3 +76,42 @@ def test_multi_league_sections_header(monkeypatch):
     )
     assert "Your other leagues" in html
     assert "Alt" in html
+
+
+def test_cross_league_digest_html_ranks_and_formats():
+    actions = [
+        make_action(
+            kind="injury", platform="espn", season=2025, league_id="2",
+            league_name="Beta", title="Stash: X", detail="Approx return ~3 wk",
+        ),
+        make_action(
+            kind="lineup", platform="sleeper", season=2025, league_id="1",
+            league_name="Alpha", title="Empty starting slot", detail="QB open",
+            severity=1.0,
+        ),
+    ]
+    html = cross_league_digest_html(actions, base_url="https://brfantasy.com", limit=3)
+    assert "This week's moves" in html
+    assert "Empty starting slot" in html
+    assert "Alpha" in html
+    # Lineup ranks above injury — empty slot appears first.
+    assert html.index("Empty starting slot") < html.index("Stash: X")
+    assert "https://brfantasy.com/sleeper/2025/1/waivers" in html
+
+
+def test_multi_league_includes_cross_league_actions(monkeypatch):
+    monkeypatch.setattr("utils.weekly_email.other_leagues_for_account", lambda *a, **k: [])
+    actions = [
+        make_action(
+            kind="lineup", platform="espn", season=2025, league_id="9",
+            league_name="Alt League", title="Starter on bye", severity=0.7,
+        ),
+    ]
+    html = multi_league_sections_html(
+        1, primary_platform="sleeper", primary_league_id="x", primary_season=2025,
+        base_url="https://brfantasy.com",
+        actions=actions,
+    )
+    assert "This week's moves" in html
+    assert "Starter on bye" in html
+    assert "Alt League" in html

@@ -282,9 +282,7 @@ def notify_lineup_lock():
         nfl_players = None
         sent = 0
         for league_id, platform in _get_subscribed_leagues():
-            url = f"/{platform}/{season}/{league_id}/weekly"
             tag = f"lineup-lock-{season}-{week}"
-            generic = f"Week {week} kicks off in about an hour. Make sure your starters are set."
 
             issue_summary_by_owner: dict = {}
             bench_summary_by_owner: dict = {}
@@ -355,18 +353,10 @@ def notify_lineup_lock():
 
             fix_url = f"/{platform}/{season}/{league_id}/waivers?tab=startsit"
 
-            # Owners split three ways, most urgent first: a hard lineup problem,
-            # else points left on the bench, else the generic reminder.
-            normal = [
-                r for r in rows
-                if str(r["owner_id"] or "") not in issue_summary_by_owner
-                and str(r["owner_id"] or "") not in bench_summary_by_owner
-            ]
-            sent += _send_to_endpoints(
-                _filter_prefs(normal, "lineup_lock"),
-                "Lineups lock soon", generic, url, tag,
-            )
-
+            # Owners with hard lineup problems or a material bench upgrade get
+            # a specific push. R06.2: skip the generic/normal reminder when the
+            # lineup is clean (no issues and no material swap) so we don't spam
+            # already-optimal lineups. Prefs still gate the sends below.
             flagged_by_owner: dict = {}
             bench_by_owner: dict = {}
             for r in rows:

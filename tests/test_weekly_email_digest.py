@@ -31,7 +31,8 @@ def test_build_digest_links_mover_rows(monkeypatch):
          mock.patch("dashboard_services.platform_api.get_league",
                     return_value={"name": "Test League"}), \
          mock.patch("dashboard_services.platform_api.get_users", return_value=[]), \
-         mock.patch.object(we, "_canonical_standing", return_value=(2, 3, 1)):
+         mock.patch.object(we, "_canonical_standing", return_value=(2, 3, 1)), \
+         mock.patch("utils.digest_actions.gather_digest_actions", return_value=[]):
         out = we.build_digest(
             "sleeper", "L1", 2026, "7",
             first_name="Sam", movers=movers, pidx=pidx,
@@ -45,3 +46,47 @@ def test_build_digest_links_mover_rows(monkeypatch):
     assert "{UNSUB}" in html
     assert "Justin Jefferson" in out["subject"]
     assert "▲12" in out["subject"] or "▲ 12" in out["subject"] or "▲12" in out["subject"].replace(" ", "")
+    assert out["subject"] == "Test League: #2 · Justin Jefferson ▲12"
+
+
+def test_build_digest_subject_fallback_without_risers(monkeypatch):
+    monkeypatch.setenv("SITE_BASE_URL", "https://brfantasy.com")
+    movers = {
+        "risers": [],
+        "fallers": [{"player_id": "6794", "delta": -8.0}],
+    }
+    pidx = {"6794": {"full_name": "Ja'Marr Chase"}}
+    rosters = [{"roster_id": "7", "players": ["6794"], "settings": {"wins": 1, "losses": 2}}]
+
+    with mock.patch("dashboard_services.platform_api.get_rosters", return_value=rosters), \
+         mock.patch("dashboard_services.platform_api.get_league",
+                    return_value={"name": "Fall League"}), \
+         mock.patch("dashboard_services.platform_api.get_users", return_value=[]), \
+         mock.patch.object(we, "_canonical_standing", return_value=(5, 1, 2)), \
+         mock.patch("utils.digest_actions.gather_digest_actions", return_value=[]):
+        out = we.build_digest(
+            "sleeper", "L1", 2026, "7", movers=movers, pidx=pidx,
+        )
+
+    assert out is not None
+    assert out["subject"] == "Fall League: your weekly dynasty digest"
+
+
+def test_build_digest_appends_action_sections(monkeypatch):
+    monkeypatch.setenv("SITE_BASE_URL", "https://brfantasy.com")
+    movers = {"risers": [{"player_id": "1", "delta": 5.0}], "fallers": []}
+    pidx = {"1": {"full_name": "A"}}
+    rosters = [{"roster_id": "7", "players": ["1"]}]
+    section = '<div class="act">Waiver wire</div>'
+
+    with mock.patch("dashboard_services.platform_api.get_rosters", return_value=rosters), \
+         mock.patch("dashboard_services.platform_api.get_league",
+                    return_value={"name": "L"}), \
+         mock.patch("dashboard_services.platform_api.get_users", return_value=[]), \
+         mock.patch.object(we, "_canonical_standing", return_value=(None, 0, 0)), \
+         mock.patch("utils.digest_actions.gather_digest_actions", return_value=[section]):
+        out = we.build_digest("sleeper", "L1", 2026, "999", movers=movers, pidx=pidx)
+
+    assert out is not None
+    assert "Waiver wire" in out["html"]
+    assert out["subject"] == "L: A ▲5"
