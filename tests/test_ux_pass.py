@@ -21,11 +21,15 @@ def test_dashboard_action_first_hierarchy():
     assert "os-action-queue" in DASH
     assert 'data-jump="os-jump-actions"' in DASH
     assert "lineup_alert_html" in DASH
-    assert DASH.index("sinceLastVisitCard") < DASH.index("os-jump-report")
     assert "matchup_html" in DASH
     assert 'data-jump="os-jump-matchup"' in DASH
-    assert DASH.index("os-jump-matchup") < DASH.index("os-jump-report")
+    # Center column stays action-first: digest, then next steps, then matchup.
+    assert DASH.index("sinceLastVisitCard") < DASH.index("os-jump-matchup")
+    assert DASH.index("os-jump-matchup") > DASH.index("do_next_waiver_html")
     assert DASH.index("matchup_html") > DASH.index("do_next_waiver_html")
+    # Front Office Report fills the left rail instead of stacking under matchup.
+    assert DASH.index("{gm_card_html}") < DASH.index('class="os-main-col"')
+    assert DASH.index("{matchup_html}") > DASH.index('class="os-main-col"')
     assert "Waiver Wire Targets" not in DASH
     assert "_render_do_next_waiver_card" in DASH
 

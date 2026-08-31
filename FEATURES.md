@@ -26,7 +26,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **Offseason Hub** — Offseason team snapshot, draft countdown, and Draft Capital Index.
 - **Waiver Wire Targets** — Top available adds ranked for your roster.
 - **League leader callouts** — Quick stat highlights for the league.
-- **League Bulletins** — Surfaces your Sleeper league's bulletin-board messages in-app (hidden on ESPN, Yahoo, and MFL).
+- **League Bulletins** — Turned off on every platform (including Sleeper).
 
 ---
 

@@ -296,22 +296,6 @@ def build_dashboard_body(ctx: dict) -> str:
         # Slot right after the first (record) tile so it reads prominently.
         _hero_tiles.insert(1, _playoff_tile_html)
 
-    _dash_bulletins_html = ""
-    if str(platform or "sleeper").strip().lower() == "sleeper":
-        _dash_bulletins_html = f"""
-        <section class="os-card" id="leagueBulletinsContainer"
-                 data-league="{html.escape(str(league_id))}"
-                 data-platform="sleeper"
-                 data-season="{html.escape(str(season))}">
-          <div class="os-section-head">
-            <div class="os-section-head-content">
-              <h2 class="os-section-title">League Bulletins</h2>
-              <div class="os-section-subtitle">From your Sleeper league board</div>
-            </div>
-          </div>
-          <div class="bulletins-list">Loading&hellip;</div>
-        </section>"""
-
     _hero_stats_html = "".join(_hero_tiles)
 
     _viewer_team = viewer.get("viewer_team_name")
@@ -391,22 +375,29 @@ def build_dashboard_body(ctx: dict) -> str:
 
     body = f"""
     <div class="os-layout">
-      <aside class="os-left-col os-tab-panel" id="os-jump-standings">
-        <section class="os-card os-col-fill">
-          <div class="os-section-head">
-            <div class="os-section-head-content">
-              {_section_title_link("Standings", "league_pages.page_standings", platform, season, league_id)}
-              <div class="os-section-subtitle">Where every team sits right now</div>
+      <aside class="os-left-col">
+        <div class="os-tab-panel" id="os-jump-standings">
+          <section class="os-card os-col-fill">
+            <div class="os-section-head">
+              <div class="os-section-head-content">
+                {_section_title_link("Standings", "league_pages.page_standings", platform, season, league_id)}
+                <div class="os-section-subtitle">Where every team sits right now</div>
+              </div>
+              <div class="os-section-head-actions">
+                <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-standings-body">&#9660;</button>
+              </div>
             </div>
-            <div class="os-section-head-actions">
-              <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-standings-body">&#9660;</button>
+            <div class="card-collapsible-body" id="dash-standings-body">
+              {standings_html}
             </div>
-          </div>
-          <div class="card-collapsible-body" id="dash-standings-body">
-            {standings_html}
-          </div>
-        </section>
-        {awards_html}
+          </section>
+          {awards_html}
+        </div>
+        <div id="os-jump-report" class="os-tab-panel">
+          {gm_card_html}
+          {usage_movers_html}
+          {season_review_html}
+        </div>
       </aside>
 
       <main class="os-main-col">
@@ -439,13 +430,6 @@ def build_dashboard_body(ctx: dict) -> str:
         <div id="os-jump-matchup" class="os-tab-panel"{'' if _show_matchup_preview else ' hidden'}>
           {matchup_html}
           {bench_check_html}
-        </div>
-
-        <div id="os-jump-report" class="os-tab-panel">
-          {gm_card_html}
-          {usage_movers_html}
-          {season_review_html}
-          {_dash_bulletins_html}
         </div>
       </main>
 

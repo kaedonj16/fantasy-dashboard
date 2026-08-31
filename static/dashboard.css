@@ -3036,6 +3036,33 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
     margin-bottom: 10px;
 }
 
+/* Narrow left rail: title + Generate on row 1, team name on row 2. */
+.os-left-col .gm-card {
+    overflow-x: hidden;
+    min-width: 0;
+}
+
+.os-left-col .gm-card .card-header {
+    flex-wrap: wrap;
+    row-gap: 6px;
+}
+
+.os-left-col .gm-card .card-header h2 {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 16px;
+    margin: 0;
+}
+
+.os-left-col .gm-card .card-header .subtle-label {
+    flex: 1 0 100%;
+    order: 3;
+}
+
+.os-left-col .gm-card .card-header .recap-generate-btn {
+    flex-shrink: 0;
+}
+
 /* Front Office / AI memo cards — solid theme surface. The prior white-bottom
    gradient (rgba(255,255,255,1)) read as a weird smear in dark mode. */
 .gm-card, .fo-brief-card, .ai-trade-card {
@@ -8628,6 +8655,14 @@ select:focus {
     .os-tab-panel.os-tab-active.os-right-col {
         display: flex !important;
         flex-direction: column;
+    }
+
+    /* In-season hub: Standings + Report are sibling tab panels inside the left
+       rail (the rail itself is not a tab panel). Hide that rail when neither
+       child is active so an empty flex item does not leave a gap. Offseason
+       still uses .os-left-col.os-tab-panel, so this must not match it. */
+    .os-left-col:not(.os-tab-panel):not(:has(.os-tab-active)) {
+        display: none !important;
     }
 
     /* Mobile hub: flex column instead of grid so hidden tab panels cannot leave
