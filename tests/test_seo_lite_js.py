@@ -95,9 +95,10 @@ def test_seo_lite_css_hides_guest_nav_chrome():
     assert ".nav-right" in css
     # Desktop hide for the mobile-only sheet/dock — the exact failure mode
     # that unstyled guest pages showed (every nav link in-flow).
-    desktop_hide = css.split("@media (max-width: 768px)")[0]
-    assert ".br-sheet" in desktop_hide
-    assert "display: none" in desktop_hide
+    assert (
+        ".br-tabbar,\n.br-sheet-scrim,\n.br-sheet,\n.br-search-screen {\n    display: none;\n}"
+        in css
+    )
 
 
 def test_guest_homepage_keeps_dashboard_css(offline_client, monkeypatch):
