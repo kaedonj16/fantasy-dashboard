@@ -30,7 +30,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.9"
+    assert manifest["version"] == "1.5.10"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -191,6 +191,13 @@ def test_overlay_autodetects_slot_and_keeps_header_on_one_line():
     assert "white-space: nowrap" in css
     assert "BR Fantasy · connected" not in overlay
     assert "160 PICKS" not in html.upper()
+    assert "\u2014" not in overlay
+    assert "\u2014" not in html
+    assert "\u2014" not in (EXT / "popup.html").read_text(encoding="utf-8")
+    assert "\u2014" not in (EXT / "popup.js").read_text(encoding="utf-8")
+    assert "\u2014" not in (EXT / "content.js").read_text(encoding="utf-8")
+    assert "\u2014" not in (EXT / "background.js").read_text(encoding="utf-8")
+    assert "\u2014" not in json.dumps(json.loads((EXT / "manifest.json").read_text(encoding="utf-8")))
 
 
 def test_overlay_does_not_end_live_espn_draft_after_each_round():

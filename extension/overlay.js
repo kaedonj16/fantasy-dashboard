@@ -420,7 +420,7 @@
     if (need > 0) out.push("Fills a starting " + p.pos + " need (" + need + " still open)");
     else if (p.pos !== "QB" && (counts.RB + counts.WR + counts.TE) < 5) out.push("FLEX-eligible depth for weekly lineup");
     if (diff >= 4) out.push("Value vs ADP: " + diff + " picks past market");
-    else if (diff <= -4) out.push("Slight reach vs ADP (" + Math.abs(diff) + " early) — still a positional fit");
+    else if (diff <= -4) out.push("Slight reach vs ADP (" + Math.abs(diff) + " early) - still a positional fit");
     else out.push("In range of ADP " + fmtAdp(p));
     if (isTierCliff(p)) out.push("Tier cliff: last " + p.pos + "s in T" + p.tier);
     else if (p.tier <= 2) out.push("Elite tier (T" + p.tier + ") talent still on the board");
@@ -648,12 +648,12 @@
 
   function fmtAdp(p) {
     const a = Number(p && p.adp);
-    if (!isFinite(a) || a >= 900) return "—";
+    if (!isFinite(a) || a >= 900) return "-";
     return a.toFixed(1);
   }
   function fmtPpg(p) {
     const n = Number(p && p.ppg);
-    if (!isFinite(n) || n <= 0) return "—";
+    if (!isFinite(n) || n <= 0) return "-";
     return n.toFixed(1);
   }
   function hsUrl(p) {
@@ -851,7 +851,7 @@
     });
     const posCount = {};
     state.picks.forEach(function (x) { posCount[x.p.pos] = (posCount[x.p.pos] || 0) + 1; });
-    const topPos = Object.keys(posCount).sort(function (a, b) { return posCount[b] - posCount[a]; })[0] || "—";
+    const topPos = Object.keys(posCount).sort(function (a, b) { return posCount[b] - posCount[a]; })[0] || "-";
     return '<div class="recap"><div><p class="recap-h">' + IC.gem + "Biggest steals</p>" + steals.map(function (x) { return line(x, true); }).join("")
       + '</div><div><p class="recap-h">' + IC.down + "Biggest reaches</p>" + reaches.map(function (x) { return line(x, false); }).join("")
       + "</div></div>"
@@ -924,7 +924,7 @@
     const log = document.getElementById("pickLog");
     const recent = state.picks.slice().reverse().slice(0, 24);
     if (!recent.length) {
-      log.innerHTML = '<div class="empty-log">Waiting on pick 1.01. Simulate or hit Auto — the overlay never submits to the host.</div>';
+      log.innerHTML = '<div class="empty-log">Waiting on pick 1.01. Simulate or hit Auto - the overlay never submits to the host.</div>';
     } else {
       log.innerHTML = recent.map(function (x) {
         const mine = x.slot === state.mySlot;
@@ -946,7 +946,7 @@
     document.getElementById("rosterChip").textContent = String(myPicks().length);
     const letter = gradeLetter(me.grade.score);
     const chip = document.getElementById("gradesChip");
-    chip.textContent = myPicks().length ? letter : "—";
+    chip.textContent = myPicks().length ? letter : "-";
     chip.style.color = myPicks().length ? gradeCol(me.grade.score) : "";
     document.querySelectorAll(".tab-btn").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-tab") === state.tab);
@@ -1065,7 +1065,7 @@
     const row = e.target.closest(".ba-row");
     if (draftBtn || row) {
       if (state.live) {
-        state.toast = "Draft in the host room — this overlay never submits a pick.";
+        state.toast = "Draft in the host room - this overlay never submits a pick.";
         if (state.tab !== "roster") { /* stay on board */ }
         const recPn = nextMine(state.current);
         state.toast = "Take this player in the host draft (your next pick is " + (recPn ? pickLabel(recPn) : "done") + "). The overlay never submits.";

@@ -65,7 +65,7 @@
       blob.value = parts.join("; ");
       blob.dispatchEvent(new Event("input", { bubbles: true }));
       if (creds.swid && creds.espn_s2) {
-        setStatus(blob, "✓ Filled from your ESPN session — click Connect below.", "ok");
+        setStatus(blob, "✓ Filled from your ESPN session - click Connect below.", "ok");
       } else {
         setStatus(
           blob,

@@ -1,6 +1,6 @@
 // The popup runs in the extension context, so it can read the ESPN cookies
 // directly. It reports whether a session was found and lets the user copy the
-// two values for pasting — a fallback for when they aren't on a BR Fantasy tab
+// two values for pasting - a fallback for when they aren't on a BR Fantasy tab
 // (where the injected "Autofill from ESPN" button is the smoother path).
 
 const ESPN_URLS = [
@@ -52,8 +52,8 @@ function render(swid, espn_s2) {
 }
 
 function reconnectMessage(resp) {
-  if (!resp) return "Reconnect failed — reload the extension.";
-  if (resp.throttled) return "Reconnect already sent — wait a few seconds.";
+  if (!resp) return "Reconnect failed - reload the extension.";
+  if (resp.throttled) return "Reconnect already sent - wait a few seconds.";
   if ((resp.br && resp.br.pinged > 0) || (resp.draft && resp.draft.pinged > 0)) {
     const parts = [];
     if (resp.br && resp.br.pinged > 0) parts.push(resp.br.pinged + " Draft Room tab(s)");
@@ -70,7 +70,7 @@ copyBtn.addEventListener("click", async () => {
     copyBtn.textContent = "Copied ✓";
     setTimeout(() => { copyBtn.textContent = "Copy SWID & espn_s2"; }, 1600);
   } catch (_e) {
-    copyBtn.textContent = "Copy failed — select manually";
+    copyBtn.textContent = "Copy failed - select manually";
   }
 });
 

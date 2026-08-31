@@ -371,7 +371,7 @@ async function reconnectDraftRelay(detail) {
       throttled: true,
       draft: { pinged: 0 },
       br: { pinged: 0 },
-      message: "Reconnect already sent — wait a few seconds",
+      message: "Reconnect already sent - wait a few seconds",
     };
   }
   lastReconnectAt = now;
