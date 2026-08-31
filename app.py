@@ -1215,6 +1215,12 @@ FORM_BODY = """
       <p class="home-subtitle">
         Trade values, AI analysis, and league tools for Sleeper, ESPN, MFL, and Fleaflicker. Yahoo coming soon.
       </p>
+      <p class="home-hero-editorial">
+        Original dynasty strategy, daily player values, and league dashboards.
+        No account needed to read the <a href="/guides">guides</a>, browse
+        <a href="/rankings/dynasty">dynasty rankings</a>, or use the
+        <a href="/dynasty-trade-value-chart">trade value chart</a>.
+      </p>
       <div class="home-platform-row" aria-label="Supported platforms">
         <span class="home-platform-chip">Sleeper</span>
         <span class="home-platform-chip">ESPN</span>
@@ -1555,6 +1561,52 @@ FORM_BODY = """
       <span class="home-proof-label">League History</span>
       <span class="home-proof-desc">Season recaps, power rankings, and trend charts</span>
     </div>
+    </section>
+
+  <section class="home-publisher" aria-labelledby="homePublisherTitle">
+    <h2 class="home-publisher-title" id="homePublisherTitle">Dynasty tools with original strategy writing</h2>
+    <p>
+      BR Fantasy is a fantasy football site for dynasty and redraft managers. The
+      public pages are written as articles and reference tools, not as an empty
+      login wall: you can read how values are built, compare players, and study
+      prospect profiles before you connect a league.
+    </p>
+    <p>
+      Daily <a href="/rankings/dynasty">dynasty rankings</a> blend consensus market
+      prices with production, age curves, and opportunity metrics such as target
+      share and snap counts. The
+      <a href="/dynasty-trade-value-chart">dynasty trade value chart</a> is the
+      same model in a full positional view. Superflex and 1QB are separate
+      because quarterback scarcity changes every other price on the board. That
+      methodology is explained in
+      <a href="/guides/dynasty-trade-value">How Dynasty Trade Value Works</a>
+      and <a href="/guides/superflex-vs-1qb">Superflex vs 1QB</a>.
+    </p>
+    <p>
+      The <a href="/trade">trade calculator</a> grades both sides of a deal with
+      those values. <a href="/top-movers">Top movers</a> shows who is rising or
+      falling. <a href="/prospects">Rookie prospects</a> collect draft capital,
+      college production, and athleticism for the next rookie draft. The
+      <a href="/glossary">glossary</a> defines the vocabulary those pages use.
+    </p>
+    <p>
+      Strategy guides are long-form original writing, not captions under a widget.
+      Start with <a href="/guides">all guides</a> or jump to
+      <a href="/guides/evaluating-a-trade">evaluating a trade</a>,
+      <a href="/guides/dynasty-rebuild-strategy">rebuilding</a>,
+      <a href="/guides/contending-in-dynasty">contending</a>, or
+      <a href="/guides/startup-draft-guide">startup drafts</a>. About the author
+      and how we correct mistakes lives on the <a href="/about">About</a> page.
+      Questions go to <a href="/contact">Contact</a>.
+    </p>
+    <ul class="home-publisher-links">
+      <li><a href="/guides">Strategy guides</a></li>
+      <li><a href="/rankings/dynasty">Dynasty rankings</a></li>
+      <li><a href="/dynasty-trade-value-chart">Trade value chart</a></li>
+      <li><a href="/trade">Trade calculator</a></li>
+      <li><a href="/glossary">Glossary</a></li>
+      <li><a href="/about">About BR Fantasy</a></li>
+    </ul>
   </section>
 
   <div class="home-content-wrapper">
@@ -1775,6 +1827,8 @@ BASE_HTML = """
       @keyframes appSplashPulse{{0%,100%{{opacity:.5}}50%{{opacity:1}}}}
       @media (prefers-reduced-motion: reduce){{#appSplash img{{animation:none}}}}
     </style>
+    <!-- Crawlers and no-JS reviewers (AdSense) must see the page, not a full-screen splash. -->
+    <noscript><style>#appSplash{{display:none!important}}</style></noscript>
 
     <link rel="stylesheet" href="/static/{css_file}?v={css_v}">
     <link rel="stylesheet" href="/static/icons.css?v={icons_v}">
@@ -1811,6 +1865,12 @@ BASE_HTML = """
           s.classList.add('app-splash-hide');
           setTimeout(function(){{ if(s.parentNode) s.parentNode.removeChild(s); }},400);
         }}
+        try {{
+          if (/adsbot|mediapartners-google|googlebot|bingbot/i.test(navigator.userAgent||'')) {{
+            if (s && s.parentNode) s.parentNode.removeChild(s);
+            s = null;
+          }}
+        }} catch(e){{}}
         // The white splash is for the cold PWA launch only. On any in-app
         // navigation within the same session (e.g. tapping the mobile dock)
         // remove it immediately so pages don't flash a white loading screen.
@@ -1866,6 +1926,7 @@ BASE_HTML = """
         <div class="site-footer-links">
           <a href="{about_url}">About</a>
           <a href="{guides_url}">Guides</a>
+          <a href="{glossary_url}">Glossary</a>
           <a href="{privacy_url}">Privacy</a>
           <a href="{terms_url}">Terms</a>
           <a href="{faq_url}">FAQ</a>
@@ -2737,6 +2798,7 @@ _GUEST_ACTIVE_PARENT = {
     "players": "players", "compare": "players", "top-movers": "players",
     "advanced-metrics": "players", "breakouts": "players", "prospects": "players",
     "draft": "draft", "draft-history": "draft", "draft-cheat-sheet": "draft",
+    "guides": "home", "glossary": "home", "faq": "home", "about": "home",
 }
 
 
@@ -2820,6 +2882,13 @@ def _mobile_nav_guest(active: str) -> str:
         _gl("/draft/cheat-sheet", "Cheat Sheet", "draft-cheat-sheet"),
         _gl("/draft/history", "Draft History", "draft-history"),
     ])
+    learn_html = _sec("Learn", [
+        _gl("/guides", "Strategy Guides", "guides"),
+        _gl("/glossary", "Glossary", "glossary"),
+        _gl("/faq", "FAQ", "faq"),
+        _gl("/about", "About", "about"),
+        _gl("/contact", "Contact", "contact"),
+    ])
 
     portfolio_link = ""
     if _session_signed_in():
@@ -2846,7 +2915,7 @@ def _mobile_nav_guest(active: str) -> str:
         "<div class='br-sheet-scrim' id='brSheetScrim'></div>"
         "<nav class='br-sheet' id='brMoreSheet' aria-label='More' aria-hidden='true'>"
         "  <div class='br-sheet-grip' aria-hidden='true'></div>"
-        f"  {find_html}{trades_html}{players_html}{draft_html}{account_html}"
+        f"  {find_html}{trades_html}{players_html}{draft_html}{learn_html}{account_html}"
         "</nav>"
     )
     search_screen = (
@@ -3712,6 +3781,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Cheat Sheet", "/draft/cheat-sheet", "draft-cheat-sheet"),
                 ("Draft History", "/draft/history", "draft-history"),
             ], ["draft", "draft-cheat-sheet", "draft-history"], "draftNavDropdown"),
+            simple_dropdown("Learn", [
+                ("Strategy Guides", "/guides", "guides"),
+                ("Glossary", "/glossary", "glossary"),
+                ("FAQ", "/faq", "faq"),
+                ("About", "/about", "about"),
+            ], ["guides", "glossary", "faq", "about"], "learnNavDropdown"),
         ]
         # Portfolio was only reachable from inside a league's nav; signed-in
         # users should be able to get to their leagues from global pages too.
@@ -4207,6 +4282,12 @@ _AD_INIT = """(function(){
     };
     document.head.appendChild(s);
   }
+  try {
+    if (/adsbot|mediapartners-google|googlebot/i.test(navigator.userAgent||'')) {
+      loadAds();
+      return;
+    }
+  } catch(e) {}
   var evts = ['scroll','pointerdown','keydown','touchstart','mousemove'];
   function onFirstInteract(){
     evts.forEach(function(e){ window.removeEventListener(e, onFirstInteract); });
@@ -4699,6 +4780,15 @@ def _site_json_ld() -> str:
             "name": "BR Fantasy",
             "url": base or "/",
             "logo": f"{base}/static/BR_Logo.png",
+            "sameAs": [
+                "https://youtube.com/@hoodiekj",
+                "https://x.com/hoodiekj",
+            ],
+            "email": "admin@brfantasy.com",
+            "description": (
+                "Original dynasty fantasy football strategy, daily trade values, "
+                "and league tools for Sleeper, ESPN, MFL, and Fleaflicker."
+            ),
         },
         {
             "@context": "https://schema.org",
@@ -4903,6 +4993,7 @@ def render_page(
         adsense_init="" if not show_ads else _AD_INIT,
         about_url=f"/{platform}/{season}/{league_id}/about" if (league_id and platform and season) else "/about",
         guides_url=f"/{platform}/{season}/{league_id}/guides" if (league_id and platform and season) else "/guides",
+        glossary_url=f"/{platform}/{season}/{league_id}/glossary" if (league_id and platform and season) else "/glossary",
         privacy_url=f"/{platform}/{season}/{league_id}/privacy" if (league_id and platform and season) else "/privacy",
         terms_url=f"/{platform}/{season}/{league_id}/terms" if (league_id and platform and season) else "/terms",
         faq_url=f"/{platform}/{season}/{league_id}/faq" if (league_id and platform and season) else "/faq",
@@ -14031,9 +14122,9 @@ def index():
         "BR Fantasy - Free Fantasy Football Trade Calculator & Dynasty Tools",
         None, "home", body_html,
         description=(
-            "Free fantasy football tools for Sleeper and ESPN: a dynasty and "
-            "redraft trade calculator, daily player trade values, real-trade market data, "
-            "power rankings, breakout candidates, and advanced metrics. "
+            "Free fantasy football tools and original dynasty strategy guides "
+            "for Sleeper and ESPN: a trade calculator, daily player trade values, "
+            "rankings, breakout candidates, and advanced metrics. "
             "MFL and Fleaflicker leagues supported. Yahoo coming soon."
         ),
         lite_js=True,

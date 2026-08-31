@@ -20,6 +20,7 @@ pytest.importorskip("pandas")
 # Public pages (no league context) - policy, SEO/content, and the tool pages.
 PUBLIC_ROUTES = [
     "/", "/faq", "/glossary", "/guides", "/guides/dynasty-trade-value",
+    "/guides/dynasty-rebuild-strategy", "/guides/startup-draft-guide",
     "/privacy", "/terms", "/about", "/contact", "/support", "/pricing",
     "/trade", "/top-movers", "/dynasty-trade-value-chart", "/players",
     "/rankings/dynasty", "/rankings/dynasty-qb", "/rankings/dynasty-rb",

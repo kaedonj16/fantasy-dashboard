@@ -147,7 +147,18 @@ def test_guide_and_legal_pages_have_unique_descriptions():
     assert 'description=g.get("summary")' in PUBLIC or "description=g.get('summary')" in PUBLIC
     assert "How BR Fantasy collects" in PUBLIC
     assert "Terms of use for the BR Fantasy" in PUBLIC
-    assert "Free dynasty fantasy football guides" in PUBLIC
+    assert "Free original dynasty fantasy football guides" in PUBLIC
+
+
+def test_adsense_reviewers_can_see_publisher_content():
+    """Site-review crawlers must see HTML content, not a splash or delayed ads."""
+    assert "<noscript><style>#appSplash{{display:none!important}}</style></noscript>" in APP_PY
+    assert "mediapartners-google" in APP_PY
+    assert 'class="home-publisher"' in APP_PY
+    assert 'class="home-hero-editorial"' in APP_PY
+    guides = (ROOT / "routes" / "guides_content.py").read_text(encoding="utf-8")
+    assert 'GUIDE_ORDER = [' in guides
+    assert guides.count('"title":') >= 12
 
 
 def test_single_sentry_sdk_pin():
