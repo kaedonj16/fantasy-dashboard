@@ -18,7 +18,6 @@ import logging
 import os
 from datetime import datetime, timezone
 from html import escape
-from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -134,21 +133,158 @@ def _player_name(pid: str, pidx: dict) -> str:
             or str(pid))
 
 
-def player_deep_link(base: str, platform: str, season: int, league_id: str,
-                     pid: str, name: str = "") -> str:
-    """Dashboard URL that opens the player modal via ``?player=``.
+def compact_league_blurb(
+    *,
+    platform: str,
+    season: int,
+    league_id: str,
+    roster_id: str = "",
+    league_name: str = "",
+    base_url: str = "",
+) -> str:
+    """Short secondary-league block for multi-league digests (R12.3).
 
-    Works for signed-in recipients on any league page; the app.js boot hook
-    reads ``player`` / ``player_name`` and calls ``openPlayerModal``.
+    Best-effort: returns "" when standings/name cannot be resolved.
     """
-    url = (
-        f"{base.rstrip('/')}/{platform}/{int(season)}/{league_id}/dashboard"
-        f"?player={quote(str(pid), safe='')}"
+    plat = (platform or "sleeper").strip().lower()
+    lid = str(league_id or "").strip()
+    if not lid:
+        return ""
+    try:
+        season_i = int(season)
+    except (TypeError, ValueError):
+        return ""
+    name = (league_name or "").strip()
+    if not name:
+        try:
+            from dashboard_services.platform_api import get_league
+            name = str((get_league(plat, lid, season_i) or {}).get("name") or "")
+        except Exception:
+            name = ""
+    if not name:
+        name = lid
+    rank = wins = losses = None
+    if roster_id:
+        try:
+            r, w, l = _canonical_standing(plat, lid, season_i, str(roster_id))
+            rank, wins, losses = r, w, l
+        except Exception:
+            rank = None
+    base = (base_url or _base_url()).rstrip("/")
+    href = f"{base}/{plat}/{season_i}/{lid}/dashboard"
+    line = escape(name)
+    if rank is not None:
+        line += f" — <strong>#{int(rank)}</strong>"
+        if wins is not None:
+            line += f" ({int(wins or 0)}-{int(losses or 0)})"
+    return (
+        f'<div style="margin:8px 0 0;padding:10px 12px;border-radius:8px;'
+        f'background:#f8fafc;border:1px solid #e2e8f0;">'
+        f'<div style="font-size:14px;color:#0f172a;">{line}</div>'
+        f'<a href="{escape(href)}" style="font-size:12px;font-weight:700;'
+        f'color:#2563eb;text-decoration:none;">Open →</a></div>'
     )
-    nm = (name or "").strip()
-    if nm:
-        url += f"&player_name={quote(nm)}"
-    return url
+
+
+def other_leagues_for_account(
+    account_id: int,
+    *,
+    primary_platform: str,
+    primary_league_id: str,
+    primary_season: int,
+    limit: int = 2,
+) -> list[dict]:
+    """Up to ``limit`` non-primary leagues linked to the account (newest first)."""
+    if not account_id or limit <= 0:
+        return []
+    try:
+        from dashboard_services.accounts import list_user_leagues
+        from dashboard_services.db import get_conn
+        leagues = list_user_leagues(int(account_id)) or []
+    except Exception:
+        logger.debug("[weekly-email] list_user_leagues failed", exc_info=True)
+        return []
+    prim_plat = (primary_platform or "").strip().lower()
+    prim_lid = str(primary_league_id or "").strip()
+    try:
+        prim_season = int(primary_season)
+    except (TypeError, ValueError):
+        prim_season = 0
+    out: list[dict] = []
+    seen = set()
+    for lg in leagues:
+        plat = str(lg.get("platform") or "").strip().lower()
+        lid = str(lg.get("league_id") or "").strip()
+        try:
+            season = int(lg.get("season") or 0)
+        except (TypeError, ValueError):
+            season = 0
+        key = (plat, lid)
+        if not plat or not lid or key in seen:
+            continue
+        if plat == prim_plat and lid == prim_lid and (not season or season == prim_season):
+            continue
+        seen.add(key)
+        roster_id = str(lg.get("team_id") or "") or ""
+        # Prefer visit roster_id when present (more accurate than team_id).
+        try:
+            with get_conn() as conn:
+                row = conn.execute(
+                    """SELECT roster_id FROM account_league_visits
+                       WHERE account_id=%s AND platform=%s AND league_id=%s AND season=%s""",
+                    (int(account_id), plat, lid, season or prim_season),
+                ).fetchone()
+            if row and row.get("roster_id"):
+                roster_id = str(row["roster_id"])
+        except Exception:
+            pass
+        out.append({
+            "platform": plat,
+            "league_id": lid,
+            "season": season or prim_season,
+            "roster_id": roster_id,
+            "name": lg.get("name") or "",
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+def multi_league_sections_html(
+    account_id: int,
+    *,
+    primary_platform: str,
+    primary_league_id: str,
+    primary_season: int,
+    base_url: str = "",
+    limit: int = 2,
+) -> str:
+    """HTML for 'Your other leagues' or empty string when ≤1 league."""
+    others = other_leagues_for_account(
+        account_id,
+        primary_platform=primary_platform,
+        primary_league_id=primary_league_id,
+        primary_season=primary_season,
+        limit=limit,
+    )
+    if not others:
+        return ""
+    bits = [
+        compact_league_blurb(
+            platform=o["platform"], season=o["season"], league_id=o["league_id"],
+            roster_id=o.get("roster_id") or "", league_name=o.get("name") or "",
+            base_url=base_url,
+        )
+        for o in others
+    ]
+    bits = [b for b in bits if b]
+    if not bits:
+        return ""
+    return (
+        '<h3 style="margin:22px 0 6px;font-size:13px;text-transform:uppercase;'
+        'letter-spacing:.04em;color:#64748b;">Your other leagues</h3>'
+        + "".join(bits)
+    )
 
 
 def _canonical_standing(platform: str, league_id: str, season: int, roster_id: str):
@@ -208,7 +344,8 @@ def _load_movers_and_index() -> tuple[dict, dict]:
 
 def build_digest(platform: str, league_id: str, season: int, roster_id: str,
                  first_name: str | None = None,
-                 movers: dict | None = None, pidx: dict | None = None) -> dict | None:
+                 movers: dict | None = None, pidx: dict | None = None,
+                 extra_html: str = "") -> dict | None:
     """Assemble one recipient's digest. Returns {subject, html} or None if there
     isn't enough data to be worth sending. ``movers``/``pidx`` are the shared,
     recipient-independent lookups; when omitted they're loaded on demand (so the
@@ -304,15 +441,9 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
         arrow = "▲" if up else "▼"
         cells = ""
         for pid, d in pairs:
-            raw_name = _player_name(pid, pidx)
-            nm = escape(raw_name)
-            href = escape(player_deep_link(
-                base, platform, season, league_id, pid, raw_name,
-            ), quote=True)
+            nm = escape(_player_name(pid, pidx))
             cells += (
-                f'<tr><td style="padding:6px 0;font-size:14px;">'
-                f'<a href="{href}" style="color:#0f172a;text-decoration:none;font-weight:600;">'
-                f'{nm}</a></td>'
+                f'<tr><td style="padding:6px 0;font-size:14px;color:#0f172a;">{nm}</td>'
                 f'<td style="padding:6px 0;font-size:14px;font-weight:700;color:{color};'
                 f'text-align:right;">{arrow} {abs(d):.0f}</td></tr>'
             )
@@ -342,22 +473,8 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
             'letter-spacing:.04em;color:#64748b;">Biggest risers leaguewide</h3>'
             f'<table style="width:100%;border-collapse:collapse;">{_rows(lg_risers, True)}</table>'
         )
-
-    # Optional action sections (R12.2) — omit cleanly when offseason / no data.
-    try:
-        from utils.digest_actions import gather_digest_actions
-        for section in gather_digest_actions(
-            platform=platform,
-            season=int(season),
-            league_id=league_id,
-            roster=mine if isinstance(mine, dict) else {},
-            pidx=pidx or {},
-            base_url=base,
-        ):
-            if section:
-                blocks.append(section)
-    except Exception:
-        logger.debug("[weekly-email] action sections failed", exc_info=True)
+    if extra_html:
+        blocks.append(extra_html)
 
     # The unsubscribe link needs the account id, which build_digest doesn't take,
     # so we emit a {UNSUB} marker the per-account send loop replaces.
@@ -385,16 +502,7 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
   </div>
 </div>"""
 
-    # Prefer a subject that names the top personal mover when we have one
-    # (better inbox preview than a generic league digest label).
-    top_pair = (my_risers or my_fallers or lg_risers or [None])[0]
-    if top_pair:
-        top_nm = _player_name(top_pair[0], pidx)
-        top_d = top_pair[1]
-        arrow = "▲" if top_d > 0 else "▼"
-        subject = f"{league_name}: {top_nm} {arrow}{abs(top_d):.0f}"
-    else:
-        subject = f"{league_name}: your weekly dynasty digest"
+    subject = f"{league_name}: your weekly dynasty digest"
     return {"subject": subject, "html": html}
 
 
@@ -440,6 +548,19 @@ def send_weekly_digests(limit: int | None = None, dry_run: bool = False) -> dict
         except Exception:
             pass
 
+        extra = ""
+        try:
+            extra = multi_league_sections_html(
+                int(aid),
+                primary_platform=str(r.get("platform") or "sleeper"),
+                primary_league_id=str(r.get("league_id") or ""),
+                primary_season=int(r.get("season") or datetime.now().year),
+                base_url=_base_url(),
+                limit=2,
+            )
+        except Exception:
+            logger.debug("[weekly-email] multi-league sections failed", exc_info=True)
+
         digest = build_digest(
             str(r.get("platform") or "sleeper"),
             str(r.get("league_id") or ""),
@@ -447,6 +568,7 @@ def send_weekly_digests(limit: int | None = None, dry_run: bool = False) -> dict
             str(r.get("roster_id") or ""),
             first_name=r.get("first_name"),
             movers=movers, pidx=pidx,
+            extra_html=extra,
         )
         if not digest:
             skipped += 1
