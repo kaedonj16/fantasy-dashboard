@@ -148,6 +148,21 @@ def projection_upgrades(
     return swaps[:max_swaps]
 
 
+def format_lineup_lock_swap(swap: dict, name_in: str, name_out: str) -> str:
+    """One-line start/sit recommendation for the lineup-lock push body.
+
+    Example: ``Sit Weak RB for Strong RB (+10.0 proj)``.
+    """
+    gain = swap.get("gain")
+    try:
+        gain_f = float(gain)
+    except (TypeError, ValueError):
+        gain_f = 0.0
+    sit = (name_out or "a starter").strip() or "a starter"
+    start = (name_in or "a bench player").strip() or "a bench player"
+    return f"Sit {sit} for {start} (+{gain_f:.1f} proj)"
+
+
 def pair_start_sit_swaps(
     to_start,
     to_sit,
