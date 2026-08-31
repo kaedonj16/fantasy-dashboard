@@ -167,7 +167,15 @@ def test_draft_room_nav_does_not_claim_sleeper_live_only():
     assert "nav-capability-note'>Sleeper live" not in APP_PY
     assert '("Draft Room", "/draft", "draft")' in APP_PY
     assert '("Draft Room", "tool_pages.page_draft_room", "draft", False)' in APP_PY
+
+
+def test_league_bulletins_are_off_for_all_platforms():
     bulletins = APP_PY[APP_PY.index("def api_league_bulletins"):]
-    bulletins = bulletins[:bulletins.index("logger.warning(\"[api-league-bulletins]")]
-    assert '(platform or "sleeper").strip().lower() != "sleeper"' in bulletins
+    next_route = bulletins.find("@app.route", 1)
+    if next_route != -1:
+        bulletins = bulletins[:next_route]
     assert '{"bulletins": [], "unavailable": True}' in bulletins
+    assert "api.sleeper.app" not in bulletins
+    dash = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
+    assert 'id="leagueBulletinsContainer"' not in dash
+    assert "League Bulletins" not in dash

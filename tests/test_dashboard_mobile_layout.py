@@ -68,6 +68,13 @@ def test_mobile_inactive_tab_panels_removed_from_layout():
     )
 
 
+def test_mobile_hides_inseason_left_rail_when_neither_child_tab_is_active():
+    """Standings + Report share the left rail; empty rail must not leave a gap."""
+    mobile = _mobile_block(_css())
+    assert ".os-left-col:not(.os-tab-panel):not(:has(.os-tab-active))" in mobile
+    assert "display: none" in mobile
+
+
 def test_mobile_hub_uses_flex_column_not_grid_tracks():
     mobile = _mobile_block(_css())
     m = re.search(r"\.os-layout\s*\{([^}]+)\}", mobile)
@@ -93,13 +100,16 @@ def test_dashboard_hubs_share_os_layout_tab_structure():
     src = _page_sources()
     assert src.count('<div class="os-layout">') == 2
     for pattern in (
-        r'<aside class="os-left-col os-tab-panel"',
+        r'<aside class="os-left-col',
         r'<main class="os-main-col">',
         r'<aside class="os-right-col os-tab-panel"',
         r'os-tab-panel os-tab-active',
         r'class="os-jump-nav"',
     ):
         assert len(re.findall(pattern, src)) >= 2, f"missing shared pattern: {pattern}"
+    # Offseason left rail is still a single tab panel (team snapshot).
+    os_dash = (_PAGES / "offseason_dashboard_page.py").read_text(encoding="utf-8")
+    assert '<aside class="os-left-col os-tab-panel"' in os_dash
 
 
 def test_offseason_jump_nav_targets_match_tab_panel_ids():
@@ -143,13 +153,16 @@ def test_inseason_matchup_preview_has_own_tab():
     src = (_PAGES / "dashboard_page.py").read_text(encoding="utf-8")
     assert 'data-jump="os-jump-matchup"' in src
     assert 'id="os-jump-matchup"' in src
-    # Matchup carousel lives in the Matchups panel, not Report.
-    matchup_panel = src[src.index('id="os-jump-matchup"'): src.index('id="os-jump-report"')]
-    report_panel = src[src.index('id="os-jump-report"'): src.index('id="os-jump-teams"')]
-    assert "{matchup_html}" in matchup_panel
-    assert "{matchup_html}" not in report_panel
-    assert "{gm_card_html}" in report_panel
-    assert "{gm_card_html}" not in matchup_panel
+    assert 'id="os-jump-report"' in src
+    # Front Office lives in the left rail (Report tab); matchup stays in main.
+    left = src[src.index('class="os-left-col"'): src.index('class="os-main-col"')]
+    main = src[src.index('class="os-main-col"'): src.index('class="os-right-col')]
+    assert "{gm_card_html}" in left
+    assert "{gm_card_html}" not in main
+    assert "{matchup_html}" in main
+    assert "{matchup_html}" not in left
+    assert 'id="os-jump-report"' in left
+    assert 'id="os-jump-standings"' in left
 
 
 def test_inseason_hides_matchup_preview_until_undrafted_non_dynasty_drafts():
@@ -160,6 +173,21 @@ def test_inseason_hides_matchup_preview_until_undrafted_non_dynasty_drafts():
     hub = (_PAGES / "weekly_hub_page.py").read_text(encoding="utf-8")
     assert "show_matchup_preview" in hub
     assert "is_dynasty=not _league_is_redraft(ctx)" in hub
+
+
+def test_changelog_announces_front_office_left_rail_and_bulletins_off():
+    from dashboard_services.changelog import CHANGELOG
+
+    entry = next(
+        e for e in CHANGELOG
+        if "front office report" in e.get("text", "").lower()
+        and "standings" in e.get("text", "").lower()
+        and "bulletins" in e.get("text", "").lower()
+    )
+    assert entry["date"] == "2026-08-31"
+    assert entry["tag"] == "update"
+    assert "—" not in entry["text"]
+    assert "–" not in entry["text"]
 
 
 def test_changelog_announces_undrafted_matchup_preview_hide():

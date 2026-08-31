@@ -234,11 +234,11 @@ def test_playoff_tile_prefers_warm_cache_on_first_paint():
     assert 'id="dash-playoff-val">{_po_val}' in dash
 
 
-def test_sleeper_dashboard_renders_bulletins_card():
+def test_sleeper_dashboard_hides_bulletins_card():
     dash = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
-    assert 'id="leagueBulletinsContainer"' in dash
-    assert "League Bulletins" in dash
-    assert 'str(platform or "sleeper").strip().lower() == "sleeper"' in dash
+    assert 'id="leagueBulletinsContainer"' not in dash
+    assert "League Bulletins" not in dash
+    assert "_dash_bulletins_html" not in dash
 
 
 def test_pipeline_health_is_recorded_per_cron_step():
