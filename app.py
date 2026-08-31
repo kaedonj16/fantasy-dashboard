@@ -4790,10 +4790,14 @@ def render_page(
                  and bool(_FEATURES_JS_FILE))
     _page_js_file = _PUBLIC_JS_FILE if _use_lite else _APP_JS_FILE
     _page_js_v = _PUBLIC_JS_V if _use_lite else _APP_JS_V
-    # Logged-out lite_js SEO shells get a smaller CSS pack instead of the full
-    # dashboard bundle; signed-in visitors keep the full stylesheet.
-    _page_css_file = "seo_lite.css" if _use_lite else _CSS_FILE
-    _page_css_v = _SEO_LITE_CSS_V if _use_lite else _CSS_V
+    # Logged-out lite_js SEO shells (rankings, compare, player, etc.) get a
+    # smaller CSS pack instead of the full dashboard bundle. The landing page
+    # keeps dashboard.css: its hero, onboarding card, feature grid, and ticker
+    # all live there, and seo_lite.css does not cover them. Signed-in visitors
+    # always keep the full stylesheet.
+    _use_lite_css = _use_lite and active != "home"
+    _page_css_file = "seo_lite.css" if _use_lite_css else _CSS_FILE
+    _page_css_v = _SEO_LITE_CSS_V if _use_lite_css else _CSS_V
     # Tell the lazy-loader where the feature bundle lives (only on lite pages;
     # on full pages the features are already present so the loader no-ops).
     _features_js_js = (
