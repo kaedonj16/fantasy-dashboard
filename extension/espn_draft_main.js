@@ -31,6 +31,8 @@
   /** @type {Map<number, Set<string>>} */
   const pickSources = new Map();
   let bestOverallSeen = 0;
+  let detectedUserTeamId = null;
+  let detectedSlot = 0;
   /** @type {Map<string, {playerName: string, pos: string, nflTeam: string}>} */
   const playerMetaById = new Map();
   const ESPN_POS = { 1: "QB", 2: "RB", 3: "WR", 4: "TE", 5: "K", 16: "DST" };
@@ -344,7 +346,80 @@
       last ? last.overallPickNumber : 0,
       last ? last.playerId : "",
       last ? last.teamId : "",
+      detectedUserTeamId || "",
+      detectedSlot || "",
     ].join("|");
+  }
+
+  function espnSwid() {
+    try {
+      const m = document.cookie.match(/(?:^|; )SWID=([^;]*)/i);
+      return m ? decodeURIComponent(m[1]).replace(/[{}]/g, "").toLowerCase() : "";
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function rememberEspnUser(obj) {
+    if (!isTraversableObject(obj)) return;
+    const uid =
+      safeProp(obj, "userTeamId") ??
+      safeProp(obj, "myTeamId") ??
+      safeProp(obj, "currentUserTeamId") ??
+      safeProp(obj, "viewerTeamId");
+    if (uid != null && uid !== "" && Number(uid) !== 0) detectedUserTeamId = uid;
+    const teams = safeProp(obj, "teams");
+    if (!Array.isArray(teams)) return;
+    const swid = espnSwid();
+    for (let i = 0; i < teams.length; i++) {
+      const t = teams[i];
+      if (!isTraversableObject(t)) continue;
+      const id = safeProp(t, "id") ?? safeProp(t, "teamId");
+      const owner = String(safeProp(t, "primaryOwner") || "").replace(/[{}]/g, "").toLowerCase();
+      const isUser =
+        safeProp(t, "isCurrentUser") === true ||
+        safeProp(t, "isUser") === true ||
+        safeProp(t, "isUserTeam") === true ||
+        (swid && owner && owner === swid);
+      if (!isUser || id == null || id === "") continue;
+      detectedUserTeamId = id;
+      const pos =
+        safeProp(t, "draftPosition") ??
+        safeProp(t, "draftSlot") ??
+        safeProp(t, "pickNumber") ??
+        safeProp(t, "draftPickNumber");
+      if (pos != null && Number(pos) >= 1) detectedSlot = Number(pos);
+    }
+  }
+
+  function snakeSlotFromPick(overall, teams) {
+    const n = Number(teams) || 0;
+    const pn = Number(overall) || 0;
+    if (n < 2 || pn < 1) return 0;
+    const r = Math.ceil(pn / n);
+    const i = (pn - 1) % n;
+    return r % 2 === 1 ? i + 1 : n - i;
+  }
+
+  function computeMySlot(picks) {
+    if (detectedSlot >= 1) return detectedSlot;
+    if (detectedUserTeamId == null || detectedUserTeamId === "") return 0;
+    const want = String(detectedUserTeamId);
+    const ids = {};
+    let first = 0;
+    let roundPick = 0;
+    (picks || []).forEach(function (p) {
+      if (p && p.teamId != null && p.teamId !== "") ids[String(p.teamId)] = true;
+      if (!p || String(p.teamId) !== want) return;
+      const n = Number(p.overallPickNumber || 0);
+      if (n && (!first || n < first)) first = n;
+      if (Number(p.roundId || p.round) === 1 && Number(p.roundPickNumber) >= 1) {
+        roundPick = Number(p.roundPickNumber);
+      }
+    });
+    const teams = Object.keys(ids).length >= 4 ? Object.keys(ids).length : 12;
+    if (roundPick >= 1 && roundPick <= teams) return roundPick;
+    return first ? snakeSlotFromPick(first, teams) : 0;
   }
 
   function relayToBackground(detail) {
@@ -446,6 +521,7 @@
     if (fp === lastFingerprint && now - lastEmitAt < 1500) return;
     lastFingerprint = fp;
     lastEmitAt = now;
+    const mySlot = computeMySlot(clean);
     const detail = {
       source: source || "accumulated",
       leagueId: ids.leagueId,
@@ -453,6 +529,8 @@
       inProgress: !!(meta && meta.inProgress),
       drafted: !!(meta && meta.drafted),
       picks: clean,
+      mySlot: mySlot || undefined,
+      userTeamId: detectedUserTeamId || undefined,
       at: now,
     };
     bridgeToExtension(EVENT, detail);
@@ -532,6 +610,7 @@
 
   function inspectJson(data, source) {
     if (!isTraversableObject(data)) return;
+    rememberEspnUser(data);
     const players = safeProp(data, "players");
     if (Array.isArray(players)) {
       for (let i = 0; i < Math.min(players.length, 1200); i++) rememberPlayerMeta(players[i]);
@@ -566,6 +645,7 @@
       if (!isTraversableObject(cur)) continue;
       if (seen.has(cur)) continue;
       seen.add(cur);
+      rememberEspnUser(cur);
       const draftDetail = safeProp(cur, "draftDetail");
       if (draftDetail && maybeFromDraftDetail(draftDetail, "react")) found = true;
       const picks = safeProp(cur, "picks");
@@ -867,7 +947,7 @@
   function espnApiUrls(leagueId, season) {
     const s = String(season || new Date().getFullYear());
     const lid = String(leagueId);
-    const q = "?view=mDraftDetail&view=mSettings";
+    const q = "?view=mDraftDetail&view=mSettings&view=mTeam";
     return [
       "https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/" +
         encodeURIComponent(s) +
@@ -881,7 +961,7 @@
         q,
       "https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/leagueHistory/" +
         encodeURIComponent(lid) +
-        "?view=mDraftDetail&seasonId=" +
+        "?view=mDraftDetail&view=mTeam&seasonId=" +
         encodeURIComponent(s),
     ];
   }

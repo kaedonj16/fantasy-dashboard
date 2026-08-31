@@ -220,6 +220,7 @@
     teams: 12,
     rounds: 15,
     mySlot: 7,
+    slotAuto: false,
     live: EMBEDDED,
     teamNames: {},
     current: 1,
@@ -951,6 +952,7 @@
     else body.innerHTML = renderBoard();
     const simBtn = document.getElementById("simBtn");
     if (simBtn) simBtn.disabled = draftDone() || state.live;
+    if (EMBEDDED) paintSyncChip();
   }
 
   function paint() {
@@ -1108,6 +1110,28 @@
       if (i === state.mySlot) o.selected = true;
       sel.appendChild(o);
     }
+    const lab = document.getElementById("slotLab");
+    if (lab) lab.hidden = !EMBEDDED || !!state.slotAuto || !lastLiveDetail;
+  }
+
+  function formatSyncChip(ok) {
+    const plat = String(state.platform || "LIVE").replace(/[^a-z]/gi, "").toUpperCase() || "LIVE";
+    const n = (state.picks || []).length;
+    if (ok === false) return plat + " · …";
+    const parts = [plat];
+    if (n) parts.push(String(n));
+    if (state.slotAuto && state.mySlot) parts.push("YOU " + state.mySlot);
+    else if (!n) parts.push("LIVE");
+    return parts.join(" · ");
+  }
+
+  function paintSyncChip(ok) {
+    const chip = document.getElementById("syncChip");
+    if (!chip) return;
+    const synced = ok == null ? state.syncOk : !!ok;
+    state.syncOk = synced;
+    chip.innerHTML = "<i></i> " + esc(formatSyncChip(synced));
+    chip.style.color = synced ? "" : "var(--warn)";
   }
 
   function fillAdpSel() {
@@ -1229,7 +1253,10 @@
     if (detail.sf != null) state.sf = !!detail.sf;
     if (detail.teams) state.teams = Math.max(2, Number(detail.teams) || state.teams);
     if (detail.rounds) state.rounds = Math.max(1, Number(detail.rounds) || state.rounds);
-    if (detail.mySlot) state.mySlot = Math.max(1, Math.min(state.teams, Number(detail.mySlot)));
+    if (detail.mySlot) {
+      state.mySlot = Math.max(1, Math.min(state.teams, Number(detail.mySlot)));
+      state.slotAuto = true;
+    }
     if (detail.teamNames && typeof detail.teamNames === "object") state.teamNames = detail.teamNames;
     const raw = Array.isArray(detail.picks) ? detail.picks.slice() : [];
     raw.sort(function (a, b) {
@@ -1242,7 +1269,8 @@
       if (!pn || !isCompletedHostPick(rp)) return;
       const p = matchLivePlayer(rp);
       if (!p || /^pick\s*#?\s*\d+$/i.test(String(p.name || ""))) return;
-      const slot = Number(rp.slot || rp.draftSlot || rp.draft_slot || rp.teamId || ownerOf(pn));
+      const explicit = Number(rp.slot || rp.draftSlot || rp.draft_slot || 0);
+      const slot = explicit >= 1 && explicit <= state.teams ? explicit : ownerOf(pn);
       const counts = posCounts(teamPicks(slot));
       const need = needOf(counts, p.pos) > 0;
       const grade = pickLetter(pn - p.adp, need);
@@ -1253,19 +1281,14 @@
     const lastMade = state.picks.length ? state.picks[state.picks.length - 1].pn : 0;
     state.current = lastMade + 1;
     state.clock = CLOCK_START;
-    if (detail.syncText) {
-      const chip = document.getElementById("syncChip");
-      if (chip) chip.innerHTML = "<i></i> " + esc(detail.syncText);
-    }
     fillSlotSel();
+    paintSyncChip(true);
     render();
   }
 
   function setSyncStatus(ok, text) {
-    const chip = document.getElementById("syncChip");
-    if (!chip) return;
-    chip.innerHTML = "<i></i> " + esc(text || (ok ? "SYNCED" : "Waiting"));
-    chip.style.color = ok ? "" : "var(--warn)";
+    void text;
+    paintSyncChip(!!ok);
   }
 
   function setCollapsedUi(on) {
@@ -1302,6 +1325,7 @@
   const slotSel = document.getElementById("slotSel");
   if (slotSel) slotSel.addEventListener("change", function () {
     state.mySlot = Number(slotSel.value) || state.mySlot;
+    state.slotAuto = false;
     try { localStorage.setItem("br-da-slot", String(state.mySlot)); } catch (_e) { /* ignore */ }
     postToHost("slot", { mySlot: state.mySlot });
     fillSlotSel();

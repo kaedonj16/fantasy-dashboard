@@ -61,7 +61,9 @@
     if (typeof window.__brDaSetSync === "function") {
       window.__brDaSetSync(
         true,
-        lastCount ? "Sleeper · SYNCED · " + lastCount + " picks" : "Sleeper · watching"
+        window.BRDraftSlot
+          ? window.BRDraftSlot.compactSync("sleeper", lastCount, detail.mySlot, true)
+          : (lastCount ? "SLEEPER · " + lastCount : "SLEEPER · LIVE")
       );
     }
   }
@@ -70,7 +72,7 @@
     const id = draftIdFromUrl();
     if (!id) {
       if (typeof window.__brDaSetSync === "function") {
-        window.__brDaSetSync(false, "Sleeper · open a draft");
+        window.__brDaSetSync(false, "SLEEPER · …");
       }
       return;
     }
@@ -97,14 +99,16 @@
         mySlot: mySlot || undefined,
         sf: Number(settings.slots_super_flex || settings.slots_sf || 0) > 0,
         picks: picks,
-        syncText: picks.length ? "Sleeper · SYNCED · " + picks.length + " picks" : "Sleeper · watching",
+        syncText: window.BRDraftSlot
+          ? window.BRDraftSlot.compactSync("sleeper", picks.length, mySlot || undefined, true)
+          : (picks.length ? "SLEEPER · " + picks.length : "SLEEPER · LIVE"),
       };
       if (fp === lastFp) return;
       lastFp = fp;
       push(payload);
     } catch (_e) {
       if (typeof window.__brDaSetSync === "function") {
-        window.__brDaSetSync(false, "Sleeper · retrying…");
+        window.__brDaSetSync(false, "SLEEPER · …");
       }
     }
   }

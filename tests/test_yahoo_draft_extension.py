@@ -9,7 +9,7 @@ ROOM_JS = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
 def test_extension_manifest_includes_yahoo_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.6"
+    assert manifest["version"] == "1.5.7"
     assert "cookies" in manifest["permissions"]
     assert "tabs" in manifest["permissions"]
     hosts = " ".join(manifest.get("host_permissions") or [])
@@ -24,7 +24,7 @@ def test_extension_manifest_includes_yahoo_draft_scripts():
         if "fantasysports.yahoo.com" in joined and block.get("world") != "MAIN":
             iso_js = block["js"]
     assert main_js == ["yahoo_draft_main.js"]
-    assert iso_js == ["assistant_inject.js", "yahoo_draft.js"]
+    assert iso_js == ["draft_slot.js", "assistant_inject.js", "yahoo_draft.js"]
     assert (EXT / "yahoo_draft_main.js").is_file()
     assert (EXT / "yahoo_draft.js").is_file()
 
@@ -48,6 +48,11 @@ def test_yahoo_extension_relay_message_contract():
     assert "player_key" in main
     assert "playerName" in main
     assert "yahooPlayerName" in main
+    assert "rememberYahooUser" in main
+    assert "computeMySlot" in main
+    assert "userTeamId" in main
+    assert "resolveMySlot" in iso
+    assert "BRDraftSlot" in iso
 
 
 def test_draft_room_yahoo_live_wiring():

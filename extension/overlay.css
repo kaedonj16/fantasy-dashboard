@@ -419,25 +419,26 @@
   .ov-head {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 12px 8px;
+    gap: 8px;
+    padding: 8px 10px 7px;
     border-bottom: 1px solid var(--border);
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
   .slot-lab {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     font-size: 11px;
     font-weight: 700;
     color: var(--text-muted);
     white-space: nowrap;
-    margin-left: auto;
+    flex-shrink: 0;
   }
+  .slot-lab[hidden] { display: none !important; }
   .site-logo {
-    height: 34px;
+    height: 26px;
     width: auto;
-    max-width: 40px;
+    max-width: 30px;
     object-fit: contain;
     object-position: left center;
     flex-shrink: 0;
@@ -450,23 +451,37 @@
     html[data-theme="system"] .site-logo-light { display: none; }
     html[data-theme="system"] .site-logo-dark { display: block; }
   }
-  .ov-titles { min-width: 0; flex: 1; }
+  .ov-titles { min-width: 0; flex: 1 1 auto; }
   .ov-kicker { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
-  .ov-title { font-size: 15px; font-weight: 800; letter-spacing: -0.02em; }
+  .ov-title {
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+  }
   .sync-chip {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    font-size: 10px;
+    gap: 5px;
+    font-size: 9px;
     font-weight: 800;
-    letter-spacing: .06em;
+    letter-spacing: .04em;
     text-transform: uppercase;
-    padding: 5px 8px;
+    padding: 4px 7px;
     border-radius: var(--radius-chip);
     background: color-mix(in srgb, var(--win) 14%, transparent);
     color: var(--win);
     border: 1px solid color-mix(in srgb, var(--win) 28%, transparent);
-    flex-shrink: 0;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 56%;
+    margin-left: auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .sync-chip i {
     width: 7px; height: 7px; border-radius: 50%;

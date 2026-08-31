@@ -8,7 +8,7 @@ EXT = REPO / "extension"
 
 def test_extension_manifest_includes_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.6"
+    assert manifest["version"] == "1.5.7"
     assert "cookies" in manifest["permissions"]
     assert "scripting" in manifest["permissions"]
     assert "tabs" in manifest["permissions"]
@@ -23,7 +23,7 @@ def test_extension_manifest_includes_draft_scripts():
         if "fantasy.espn.com/football/draft" in joined and world != "MAIN":
             iso_js = js
     assert main_js == ["espn_draft_main.js"]
-    assert iso_js == ["assistant_inject.js", "espn_draft.js"]
+    assert iso_js == ["draft_slot.js", "assistant_inject.js", "espn_draft.js"]
     main_block = next(
         s for s in scripts
         if s.get("world") == "MAIN" and s.get("js") == ["espn_draft_main.js"]
@@ -113,6 +113,12 @@ def test_extension_relay_message_contract():
     assert "brfantasy:extension-reconnect" in content
     assert "brfantasy:draft-rescan" in main
     assert "reconnectBtn" in (EXT / "popup.html").read_text(encoding="utf-8")
+    assert "rememberEspnUser" in main
+    assert "computeMySlot" in main
+    assert "userTeamId" in main
+    assert "view=mTeam" in main
+    assert "resolveMySlot" in iso
+    assert "BRDraftSlot" in iso
 
 
 def test_pack_extension_strips_localhost():
@@ -129,6 +135,7 @@ def test_pack_extension_strips_localhost():
     blob = json.dumps(manifest)
     assert "localhost" not in blob
     assert "127.0.0.1" not in blob
+    assert "draft_slot.js" in names
     assert "overlay.html" in names
     assert "overlay.css" in names
     assert "overlay.js" in names

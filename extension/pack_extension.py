@@ -24,6 +24,7 @@ INCLUDE = [
     "background.js",
     "content.js",
     "content.css",
+    "draft_slot.js",
     "assistant_inject.js",
     "overlay.html",
     "overlay.css",
