@@ -19,6 +19,9 @@
   let retryTimer = null;
   let lastManualReconnectAt = 0;
   let chip = null;
+  let lastMySlot = 0;
+  let lastUserTeamId = null;
+  let lastPicks = [];
 
   function leagueFromUrl() {
     try {
@@ -56,21 +59,61 @@
     return out;
   }
 
-  function feedAssistant(picks, syncText, ok) {
-    if (typeof window.__brDaPushPicks === "function" && picks) {
+  function resolveMySlot(picks, detail) {
+    const meta = overlayTeamMeta(picks);
+    const teams = meta.teams || 12;
+    const hinted = Number(detail && detail.mySlot) || 0;
+    if (hinted >= 1) {
+      lastMySlot = hinted;
+      return hinted;
+    }
+    const teamId =
+      (detail && (detail.userTeamId || detail.myTeamId)) || lastUserTeamId;
+    if (teamId != null && window.BRDraftSlot) {
+      const fromTeam = window.BRDraftSlot.slotFromTeamId(picks, teamId, teams);
+      if (fromTeam) {
+        lastMySlot = fromTeam;
+        return fromTeam;
+      }
+      lastUserTeamId = teamId;
+    }
+    if (window.BRDraftSlot) {
+      const dom = window.BRDraftSlot.detectDomSlot();
+      if (dom) {
+        lastMySlot = dom;
+        return dom;
+      }
+    }
+    return lastMySlot || 0;
+  }
+
+  function overlaySyncText(picks, ok, mySlot) {
+    if (window.BRDraftSlot) {
+      return window.BRDraftSlot.compactSync("yahoo", (picks || []).length, mySlot, ok);
+    }
+    return (picks || []).length ? "YAHOO · " + picks.length : "YAHOO · LIVE";
+  }
+
+  function feedAssistant(picks, syncText, ok, extra) {
+    lastPicks = picks || lastPicks || [];
+    const mySlot = resolveMySlot(lastPicks, extra || {});
+    const text = overlaySyncText(lastPicks, ok, mySlot);
+    if (typeof window.__brDaPushPicks === "function" && lastPicks) {
       window.__brDaPushPicks(
         Object.assign(
           {
             platform: "yahoo",
-            picks: picks,
-            syncText: syncText || "",
+            picks: lastPicks,
+            syncText: text,
+            mySlot: mySlot || undefined,
           },
-          overlayTeamMeta(picks)
+          overlayTeamMeta(lastPicks),
+          extra || {}
         )
       );
     }
-    if (typeof window.__brDaSetSync === "function" && syncText) {
-      window.__brDaSetSync(!!ok, syncText);
+    if (typeof window.__brDaSetSync === "function") {
+      window.__brDaSetSync(!!ok, text);
     }
   }
 
@@ -130,7 +173,9 @@
     if (textEl) textEl.textContent = text;
     else el.textContent = text;
     el.style.background = ok ? "#065f46" : "#0f172a";
-    if (typeof window.__brDaSetSync === "function") window.__brDaSetSync(!!ok, text);
+    if (typeof window.__brDaSetSync === "function") {
+      window.__brDaSetSync(!!ok, overlaySyncText(lastPicks, !!ok, lastMySlot));
+    }
   }
 
   function applyRelayStatus(detail, force) {
@@ -294,13 +339,10 @@
       source: detail.source || "yahoo-draft-room",
       at: detail.at || Date.now(),
     };
-    feedAssistant(
-      payload.picks,
-      payload.picks.length
-        ? "Yahoo · SYNCED · " + payload.picks.length + " picks"
-        : "Yahoo · watching",
-      true
-    );
+    feedAssistant(payload.picks, "", true, {
+      mySlot: detail.mySlot,
+      userTeamId: detail.userTeamId,
+    });
     if (!payload.leagueId) {
       setChip("BR Fantasy · leagueId missing in URL", false);
       return;
@@ -329,6 +371,11 @@
   }
 
   ensureChip();
+  setInterval(function () {
+    const prev = lastMySlot;
+    const slot = resolveMySlot(lastPicks || [], {});
+    if (slot && slot !== prev) feedAssistant(lastPicks || [], "", true, { mySlot: slot });
+  }, 2500);
   try {
     chrome.runtime.sendMessage(
       {

@@ -14,6 +14,8 @@
   const MAX_WALK = 4000;
   let lastFingerprint = "";
   let lastEmitAt = 0;
+  let detectedUserTeamId = null;
+  let detectedSlot = 0;
   /** @type {Map<string, {playerName: string, pos: string, nflTeam: string}>} */
   const playerMetaById = new Map();
 
@@ -188,7 +190,62 @@
       last ? last.overallPickNumber : 0,
       last ? last.playerId : "",
       last ? last.teamId : "",
+      detectedUserTeamId || "",
+      detectedSlot || "",
     ].join("|");
+  }
+
+  function rememberYahooUser(obj) {
+    if (!obj || typeof obj !== "object") return;
+    const uid = obj.userTeamId ?? obj.myTeamId ?? obj.currentUserTeamId ?? obj.viewerTeamId;
+    if (uid != null && uid !== "" && String(uid) !== "0") detectedUserTeamId = uid;
+    const owned =
+      obj.is_owned_by_current_login === 1 ||
+      obj.is_owned_by_current_login === true ||
+      obj.isOwnedByCurrentLogin === true ||
+      obj.isCurrentUser === true ||
+      obj.isUser === true;
+    const managers = obj.managers || obj.manager;
+    let managerOwned = false;
+    const list = Array.isArray(managers) ? managers : managers ? [managers] : [];
+    for (let i = 0; i < list.length; i++) {
+      const m = list[i];
+      if (!m || typeof m !== "object") continue;
+      if (m.is_current_login === 1 || m.is_current_login === true || m.isCurrentLogin === true) {
+        managerOwned = true;
+      }
+    }
+    if (owned || managerOwned) {
+      const id = obj.teamId ?? obj.team_id ?? teamIdFromKey(obj.team_key || obj.teamKey);
+      if (id != null && id !== "") detectedUserTeamId = id;
+      const pos = obj.draftPosition ?? obj.draft_position ?? obj.draftSlot ?? obj.draft_slot;
+      if (pos != null && Number(pos) >= 1) detectedSlot = Number(pos);
+    }
+  }
+
+  function snakeSlotFromPick(overall, teams) {
+    const n = Number(teams) || 0;
+    const pn = Number(overall) || 0;
+    if (n < 2 || pn < 1) return 0;
+    const r = Math.ceil(pn / n);
+    const i = (pn - 1) % n;
+    return r % 2 === 1 ? i + 1 : n - i;
+  }
+
+  function computeMySlot(picks) {
+    if (detectedSlot >= 1) return detectedSlot;
+    if (detectedUserTeamId == null || detectedUserTeamId === "") return 0;
+    const want = String(detectedUserTeamId);
+    const ids = {};
+    let first = 0;
+    (picks || []).forEach(function (p) {
+      if (p && p.teamId != null && p.teamId !== "") ids[String(p.teamId)] = true;
+      if (!p || String(p.teamId) !== want) return;
+      const n = Number(p.overallPickNumber || 0);
+      if (n && (!first || n < first)) first = n;
+    });
+    const teams = Object.keys(ids).length >= 4 ? Object.keys(ids).length : 12;
+    return first ? snakeSlotFromPick(first, teams) : 0;
   }
 
   function relayToBackground(detail) {
@@ -233,6 +290,7 @@
     if (fp === lastFingerprint && now - lastEmitAt < 1500) return;
     lastFingerprint = fp;
     lastEmitAt = now;
+    const mySlot = computeMySlot(clean);
     const detail = {
       source: source || "unknown",
       leagueId: ids.leagueId,
@@ -240,6 +298,8 @@
       inProgress: !!(meta && meta.inProgress),
       drafted: !!(meta && meta.drafted),
       picks: clean,
+      mySlot: mySlot || undefined,
+      userTeamId: detectedUserTeamId || undefined,
       at: now,
     };
     bridgeToExtension(EVENT, detail);
@@ -291,6 +351,7 @@
       if (!cur || typeof cur !== "object") continue;
       if (seen.has(cur)) continue;
       seen.add(cur);
+      rememberYahooUser(cur);
       if (cur.draft_results && maybeFromDraftResults(cur.draft_results, "react", null)) return true;
       if (cur.draftResults && maybeFromDraftResults(cur.draftResults, "react", null)) return true;
       if (Array.isArray(cur.picks) && cur.picks.some(isPickRow)) {
@@ -364,6 +425,7 @@
     }
     if (typeof data !== "object") return;
     rememberYahooPlayer(data);
+    rememberYahooUser(data);
     if (data.draft_results || data.draftResults) {
       maybeFromDraftResults(data.draft_results || data.draftResults, source, null);
       return;

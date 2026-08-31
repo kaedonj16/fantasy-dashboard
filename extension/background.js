@@ -464,6 +464,10 @@ function compactDraftPlayer(raw, scoringType, isSf, teams, adpSource) {
     ppg: poolNum(raw.proj_ppg) || 0,
     headshot: headshot,
     tier: tier,
+    rank_change_7d: poolNum(raw.rank_change_7d),
+    breakout_score: poolNum(raw.breakout_score),
+    projected_role: raw.projected_role ? String(raw.projected_role) : "",
+    bye_week: poolNum(raw.bye_week) || poolNum(raw.bye) || 0,
   };
 }
 

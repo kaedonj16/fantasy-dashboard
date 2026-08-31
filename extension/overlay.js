@@ -220,6 +220,7 @@
     teams: 12,
     rounds: 15,
     mySlot: 7,
+    slotAuto: false,
     live: EMBEDDED,
     teamNames: {},
     current: 1,
@@ -237,6 +238,7 @@
     syncOk: true,
     valCap: 180,
     sitePool: false,
+    sf: false,
     adpSource: "consensus",
     adpOptions: [
       { value: "consensus", label: "Consensus" },
@@ -333,7 +335,22 @@
     return gradeLetter(clamp(s, 20, 98));
   }
 
+  function scoreCtx() {
+    return {
+      current: state.current,
+      teams: state.teams,
+      rounds: state.rounds,
+      mySlot: state.mySlot,
+      sf: !!state.sf,
+      type: "redraft",
+      tep: 0,
+      ppr: 1,
+      passTd: 4,
+      picks: state.picks,
+    };
+  }
   function pickScore(p, counts, pickNo) {
+    if (p && p._ps != null) return p._ps;
     const adp = p.adp;
     const rel = (pickNo - adp) / Math.max(adp, 1.5);
     let adpVal = rel >= 0.5 ? 1 : rel >= -0.3 ? 0.5 + rel : Math.max(0, 0.2 + rel * 0.25);
@@ -347,6 +364,7 @@
     return Math.round(clamp(s, 8, 99));
   }
   function decisionScore(p, counts, pickNo) {
+    if (p && p._ds != null) return p._ds;
     const ps = pickScore(p, counts, pickNo);
     const need = needOf(counts, p.pos);
     let ds = ps + need * 8 + (p.tier <= 2 ? 4 : 0);
@@ -355,6 +373,11 @@
     return ds;
   }
   function rankedPool(counts, pickNo) {
+    if (window.BROverlayScore && window.BRPickScore && window.DraftBoardCore && state.sitePool) {
+      try {
+        return BROverlayScore.rankPool(players, available(), scoreCtx());
+      } catch (_e) { /* fall through to local ranker */ }
+    }
     const pool = available();
     for (let i = 0; i < pool.length; i++) {
       const p = pool[i];
@@ -649,9 +672,10 @@
     let chip;
     if (state.sort === "rec") {
       chip = '<div class="pschip recchip" title="Recommendation rank">#' + (opts.rank || p._rank) + "<small>REC</small></div>";
-    } else if (state.sort === "ps") {
-      const col = psColor(p._ps);
-      chip = '<div class="pschip" style="color:' + col + ";background:" + col + '1a" title="Pick Score">'+ p._ps + "<small>PS</small></div>";
+    } else     if (state.sort === "ps") {
+      const shown = p._psShow != null ? p._psShow : p._ps;
+      const col = psColor(shown);
+      chip = '<div class="pschip" style="color:' + col + ";background:" + col + '1a" title="Pick Score">'+ shown + "<small>PS</small></div>";
     } else {
       chip = "";
     }
@@ -731,7 +755,12 @@
     else if (state.sort === "proj") rows = rows.slice().sort(function (a, b) { return b.ppg - a.ppg; });
     else if (state.sort === "val") rows = rows.slice().sort(function (a, b) { return b.val - a.val; });
     rows.slice(0, 40).forEach(function (p, i) {
-      const reason = state.sort === "rec" ? (reasonsFor(p, counts, recPn)[0] || "") : "";
+      let reason = "";
+      if (state.sort === "rec") {
+        reason = (window.BROverlayScore && pool && pool._reasonCtx)
+          ? (BROverlayScore.pickReason(p, pool) || "")
+          : (reasonsFor(p, counts, recPn)[0] || "");
+      }
       html += playerRow(p, { rank: state.sort === "rec" ? p._rank : i + 1, reason: reason });
     });
     if (!rows.length) html += '<div class="empty-log" style="color:var(--text-muted)">No players match this filter.</div>';
@@ -923,6 +952,7 @@
     else body.innerHTML = renderBoard();
     const simBtn = document.getElementById("simBtn");
     if (simBtn) simBtn.disabled = draftDone() || state.live;
+    if (EMBEDDED) paintSyncChip();
   }
 
   function paint() {
@@ -1080,6 +1110,28 @@
       if (i === state.mySlot) o.selected = true;
       sel.appendChild(o);
     }
+    const lab = document.getElementById("slotLab");
+    if (lab) lab.hidden = !EMBEDDED || !!state.slotAuto || !lastLiveDetail;
+  }
+
+  function formatSyncChip(ok) {
+    const plat = String(state.platform || "LIVE").replace(/[^a-z]/gi, "").toUpperCase() || "LIVE";
+    const n = (state.picks || []).length;
+    if (ok === false) return plat + " · …";
+    const parts = [plat];
+    if (n) parts.push(String(n));
+    if (state.slotAuto && state.mySlot) parts.push("YOU " + state.mySlot);
+    else if (!n) parts.push("LIVE");
+    return parts.join(" · ");
+  }
+
+  function paintSyncChip(ok) {
+    const chip = document.getElementById("syncChip");
+    if (!chip) return;
+    const synced = ok == null ? state.syncOk : !!ok;
+    state.syncOk = synced;
+    chip.innerHTML = "<i></i> " + esc(formatSyncChip(synced));
+    chip.style.color = synced ? "" : "var(--warn)";
   }
 
   function fillAdpSel() {
@@ -1107,20 +1159,27 @@
     if (detail.adpSource && state.adpSource && String(detail.adpSource) !== String(state.adpSource)) return;
     if (Array.isArray(detail.adpOptions) && detail.adpOptions.length) state.adpOptions = detail.adpOptions;
     if (detail.adpSource) state.adpSource = String(detail.adpSource);
+    if (detail.sf != null) state.sf = !!detail.sf;
     fillAdpSel();
     players = rows.map(function (p) {
+      const pos = p.pos || p.position || "RB";
       return {
         id: String(p.id),
         name: p.name,
-        pos: p.pos || "RB",
+        pos: pos,
+        position: pos,
         team: p.team || "FA",
         adp: Number(p.adp) || 999,
         val: Number(p.val) || 0,
         ppg: p.ppg == null ? 0 : Number(p.ppg),
         age: p.age == null ? 0 : Number(p.age),
         bye: p.bye == null ? 0 : Number(p.bye),
+        bye_week: p.bye_week != null ? Number(p.bye_week) : (p.bye == null ? 0 : Number(p.bye)),
         headshot: p.headshot || "",
-        tier: p.tier || 6
+        tier: p.tier || 6,
+        rank_change_7d: p.rank_change_7d == null ? null : Number(p.rank_change_7d),
+        breakout_score: p.breakout_score == null ? null : Number(p.breakout_score),
+        projected_role: p.projected_role || "",
       };
     });
     byId = {};
@@ -1136,6 +1195,17 @@
     lastLiveFp = "";
     if (lastLiveDetail) ingestLive(lastLiveDetail);
     else render();
+  }
+
+  function isCompletedHostPick(raw) {
+    if (!raw) return false;
+    const name = String(raw.playerName || raw.name || "").trim();
+    if (/^pick\s*#?\s*\d+$/i.test(name)) return false;
+    const pid = raw.playerId != null && String(raw.playerId) !== "" ? String(raw.playerId).trim() : "";
+    const pidOk = pid && pid !== "0" && pid !== "-1" && pid !== "null" && pid !== "None";
+    if (pidOk && byId[pid]) return true;
+    if (name) return true;
+    return false;
   }
 
   function matchLivePlayer(raw) {
@@ -1180,9 +1250,13 @@
     state.live = true;
     stopAuto();
     if (detail.platform) state.platform = String(detail.platform).toLowerCase();
+    if (detail.sf != null) state.sf = !!detail.sf;
     if (detail.teams) state.teams = Math.max(2, Number(detail.teams) || state.teams);
     if (detail.rounds) state.rounds = Math.max(1, Number(detail.rounds) || state.rounds);
-    if (detail.mySlot) state.mySlot = Math.max(1, Math.min(state.teams, Number(detail.mySlot)));
+    if (detail.mySlot) {
+      state.mySlot = Math.max(1, Math.min(state.teams, Number(detail.mySlot)));
+      state.slotAuto = true;
+    }
     if (detail.teamNames && typeof detail.teamNames === "object") state.teamNames = detail.teamNames;
     const raw = Array.isArray(detail.picks) ? detail.picks.slice() : [];
     raw.sort(function (a, b) {
@@ -1192,9 +1266,11 @@
     state.drafted = {};
     raw.forEach(function (rp) {
       const pn = Number(rp.overallPickNumber || rp.pick_no || 0);
-      if (!pn) return;
+      if (!pn || !isCompletedHostPick(rp)) return;
       const p = matchLivePlayer(rp);
-      const slot = Number(rp.slot || rp.draftSlot || rp.draft_slot || rp.teamId || ownerOf(pn));
+      if (!p || /^pick\s*#?\s*\d+$/i.test(String(p.name || ""))) return;
+      const explicit = Number(rp.slot || rp.draftSlot || rp.draft_slot || 0);
+      const slot = explicit >= 1 && explicit <= state.teams ? explicit : ownerOf(pn);
       const counts = posCounts(teamPicks(slot));
       const need = needOf(counts, p.pos) > 0;
       const grade = pickLetter(pn - p.adp, need);
@@ -1202,21 +1278,17 @@
       state.picks.push({ pn: pn, slot: slot, p: p, grade: grade, ps: ps });
       state.drafted[p.id] = true;
     });
-    state.current = raw.length ? (Number(raw[raw.length - 1].overallPickNumber || raw.length) + 1) : 1;
+    const lastMade = state.picks.length ? state.picks[state.picks.length - 1].pn : 0;
+    state.current = lastMade + 1;
     state.clock = CLOCK_START;
-    if (detail.syncText) {
-      const chip = document.getElementById("syncChip");
-      if (chip) chip.innerHTML = "<i></i> " + esc(detail.syncText);
-    }
     fillSlotSel();
+    paintSyncChip(true);
     render();
   }
 
   function setSyncStatus(ok, text) {
-    const chip = document.getElementById("syncChip");
-    if (!chip) return;
-    chip.innerHTML = "<i></i> " + esc(text || (ok ? "SYNCED" : "Waiting"));
-    chip.style.color = ok ? "" : "var(--warn)";
+    void text;
+    paintSyncChip(!!ok);
   }
 
   function setCollapsedUi(on) {
@@ -1253,6 +1325,7 @@
   const slotSel = document.getElementById("slotSel");
   if (slotSel) slotSel.addEventListener("change", function () {
     state.mySlot = Number(slotSel.value) || state.mySlot;
+    state.slotAuto = false;
     try { localStorage.setItem("br-da-slot", String(state.mySlot)); } catch (_e) { /* ignore */ }
     postToHost("slot", { mySlot: state.mySlot });
     fillSlotSel();

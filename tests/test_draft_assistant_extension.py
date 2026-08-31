@@ -10,6 +10,12 @@ EXT = REPO / "extension"
 def test_overlay_is_mv3_safe_extension_page():
     html = (EXT / "overlay.html").read_text(encoding="utf-8")
     assert 'src="overlay.js"' in html
+    assert 'src="overlay_score.js"' in html
+    assert 'src="pick_score.js"' in html
+    assert 'src="draft_board_core.js"' in html
+    assert "BROverlayScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
+    assert "BRPickScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
+    assert "decisionScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert 'href="overlay.css"' in html
     assert 'class="br-da-embed"' in html
     assert not re.search(r"<script>(?!\s*</script>)", html)
@@ -17,13 +23,14 @@ def test_overlay_is_mv3_safe_extension_page():
     assert (EXT / "overlay.css").is_file()
     js = (EXT / "overlay.js").read_text(encoding="utf-8")
     assert "ingestLive" in js
+    assert "isCompletedHostPick" in js
     assert '__br: "br-da"' in js
     assert "never submits" in js.lower() or "never submit" in js.lower()
 
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.4"
+    assert manifest["version"] == "1.5.7"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -35,7 +42,7 @@ def test_manifest_docks_overlay_on_host_drafts():
         joined = " ".join(block.get("matches") or [])
         if "sleeper.com/draft" in joined or "sleeper.app/draft" in joined:
             sleeper_js = block["js"]
-    assert sleeper_js == ["assistant_inject.js", "sleeper_draft.js"]
+    assert sleeper_js == ["draft_slot.js", "assistant_inject.js", "sleeper_draft.js"]
     inject = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     sleeper = (EXT / "sleeper_draft.js").read_text(encoding="utf-8")
     espn_iso = (EXT / "espn_draft.js").read_text(encoding="utf-8")
@@ -82,6 +89,8 @@ def test_overlay_uses_live_br_player_pool_and_headshots():
     assert "redraft_value_1qb" in background
     assert "redraft_avg_pick" in background
     assert "compactDraftPlayer" in background
+    assert "rank_change_7d" in background
+    assert "BROverlayScore.rankPool" in overlay
     assert "sleepercdn.com/content/nfl/players/" in background
     assert "slots_super_flex" in sleeper
     assert "adpSel" in html
@@ -143,3 +152,39 @@ def test_overlay_uses_site_logo():
     )
     assert "icons/br-logo-dark.png" in resources
     assert "icons/br-logo.png" in resources
+
+
+def test_overlay_autodetects_slot_and_keeps_header_on_one_line():
+    overlay = (EXT / "overlay.js").read_text(encoding="utf-8")
+    html = (EXT / "overlay.html").read_text(encoding="utf-8")
+    css = (EXT / "overlay.css").read_text(encoding="utf-8")
+    helper = (EXT / "draft_slot.js").read_text(encoding="utf-8")
+    espn_iso = (EXT / "espn_draft.js").read_text(encoding="utf-8")
+    yahoo_iso = (EXT / "yahoo_draft.js").read_text(encoding="utf-8")
+    espn_main = (EXT / "espn_draft_main.js").read_text(encoding="utf-8")
+    yahoo_main = (EXT / "yahoo_draft_main.js").read_text(encoding="utf-8")
+    sleeper = (EXT / "sleeper_draft.js").read_text(encoding="utf-8")
+    assert "function detectDomSlot" in helper
+    assert "function slotFromTeamId" in helper
+    assert "function compactSync" in helper
+    assert "YOU " in helper
+    assert "resolveMySlot" in espn_iso
+    assert "resolveMySlot" in yahoo_iso
+    assert "compactSync" in espn_iso
+    assert "compactSync" in yahoo_iso
+    assert "compactSync" in sleeper
+    assert "rememberEspnUser" in espn_main
+    assert "computeMySlot" in espn_main
+    assert "view=mTeam" in espn_main
+    assert "rememberYahooUser" in yahoo_main
+    assert "computeMySlot" in yahoo_main
+    assert "state.slotAuto" in overlay
+    assert "formatSyncChip" in overlay
+    assert "YOU " in overlay
+    assert "rp.teamId || ownerOf" not in overlay
+    assert "ownerOf(pn)" in overlay
+    assert 'id="slotLab"' in html
+    assert "flex-wrap: nowrap" in css
+    assert "white-space: nowrap" in css
+    assert "BR Fantasy · connected" not in overlay
+    assert "160 PICKS" not in html.upper()
