@@ -8,7 +8,6 @@ CHANGELOG = [
         "date": "2026-08-31",
         "tag": "update",
         "text": "Onboarding: shorter site tour with mobile steps, Remind me later, interactive spotlights, and a Premium welcome you can replay from Settings. Tour resume no longer swaps in demo data on History.",
-        "link": "/"
     },
     {
         "date": "2026-08-28",
