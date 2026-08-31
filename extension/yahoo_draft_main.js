@@ -18,6 +18,11 @@
   let detectedSlot = 0;
   let detectedTeams = 0;
   let detectedRounds = 0;
+  let detectedRoster = null;
+  let detectedSf = false;
+  let detectedPpr = 1;
+  let detectedTep = 0;
+  let detectedPassTd = 4;
   /** @type {Map<string, {playerName: string, pos: string, nflTeam: string}>} */
   const playerMetaById = new Map();
 
@@ -196,7 +201,71 @@
       detectedSlot || "",
       detectedTeams || "",
       detectedRounds || "",
+      detectedSf ? 1 : 0,
+      detectedPpr,
+      detectedTep,
+      detectedPassTd,
+      rosterFingerprint(detectedRoster),
     ].join("|");
+  }
+
+  function emptyRoster() {
+    return { QB: 0, SF: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, K: 0, DEF: 0, BN: 0 };
+  }
+
+  function rosterFromYahooPositions(positions) {
+    const out = emptyRoster();
+    (positions || []).forEach(function (p) {
+      const raw = String((p && (p.position || p.display_position || p)) || "").toUpperCase();
+      const n = Number((p && (p.count || p.num || p.slots)) || 1) || 1;
+      if (!raw || raw === "IR" || raw === "IR+" || raw === "TAXI") return;
+      if (raw === "QB") out.QB += n;
+      else if (raw === "RB") out.RB += n;
+      else if (raw === "WR") out.WR += n;
+      else if (raw === "TE") out.TE += n;
+      else if (raw === "K") out.K += n;
+      else if (raw === "DEF" || raw === "DST") out.DEF += n;
+      else if (raw === "BN" || raw === "BENCH") out.BN += n;
+      else if (raw === "Q/W/R/T" || raw === "QP" || raw === "SUPER_FLEX" || raw === "SF") out.SF += n;
+      else if (raw === "W/R/T" || raw === "W/R" || raw === "W/T" || raw === "R/T" || raw === "FLEX") out.FLEX += n;
+    });
+    return out;
+  }
+
+  function rosterFingerprint(rs) {
+    if (!rs) return "";
+    return ["QB", "SF", "RB", "WR", "TE", "FLEX", "K", "DEF", "BN"].map(function (k) {
+      return k + (Number(rs[k]) || 0);
+    }).join("");
+  }
+
+  function applyYahooScoring(obj) {
+    if (!obj || typeof obj !== "object") return;
+    const rec = obj.rec ?? obj.reception_points ?? obj.ppr;
+    if (rec != null && Number.isFinite(Number(rec))) detectedPpr = Number(rec);
+    const tep = obj.bonus_rec_te ?? obj.tep ?? obj.te_premium;
+    if (tep != null && Number.isFinite(Number(tep))) detectedTep = Number(tep);
+    const passTd = obj.pass_td ?? obj.passing_td ?? obj.passTd;
+    if (passTd != null && Number.isFinite(Number(passTd))) detectedPassTd = Number(passTd);
+    function walkStats(stats) {
+      const list = Array.isArray(stats)
+        ? stats
+        : (stats && (stats.stat || stats.stats || stats.modifiers));
+      const arr = Array.isArray(list)
+        ? list
+        : (list && typeof list === "object" ? Object.keys(list).map(function (k) { return list[k]; }) : []);
+      arr.forEach(function (st) {
+        if (!st || typeof st !== "object") return;
+        const id = Number(st.stat_id != null ? st.stat_id : (st.statId != null ? st.statId : st.id));
+        const val = Number(st.value != null ? st.value : (st.points != null ? st.points : st.modifier));
+        if (!Number.isFinite(val)) return;
+        if (id === 11) detectedPpr = val;
+        if (id === 4) detectedPassTd = val;
+      });
+    }
+    walkStats(obj.stat_modifiers);
+    if (obj.stat_modifiers && obj.stat_modifiers.stats) walkStats(obj.stat_modifiers.stats);
+    if (obj.stat_categories && obj.stat_categories.stats) walkStats(obj.stat_categories.stats);
   }
 
   function rememberYahooSettings(obj) {
@@ -215,7 +284,14 @@
         if (pos && pos !== "IR" && pos !== "IR+" && pos !== "TAXI") n += c;
       }
       if (n >= 6 && n <= 40) detectedRounds = n;
+      const mapped = rosterFromYahooPositions(positions);
+      if ((mapped.QB || 0) + (mapped.RB || 0) + (mapped.WR || 0) + (mapped.TE || 0) + (mapped.FLEX || 0) + (mapped.SF || 0) >= 4) {
+        detectedRoster = mapped;
+        detectedSf = (mapped.SF || 0) > 0;
+      }
     }
+    applyYahooScoring(obj);
+    if (obj.settings && obj.settings !== obj) applyYahooScoring(obj.settings);
   }
 
   function rememberYahooUser(obj) {
@@ -326,6 +402,11 @@
       userTeamId: detectedUserTeamId || undefined,
       teams: detectedTeams || undefined,
       rounds: detectedRounds || undefined,
+      roster: detectedRoster || undefined,
+      sf: detectedSf,
+      ppr: detectedPpr,
+      tep: detectedTep,
+      passTd: detectedPassTd,
       at: now,
     };
     bridgeToExtension(EVENT, detail);

@@ -30,7 +30,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.11"
+    assert manifest["version"] == "1.5.12"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -221,3 +221,60 @@ def test_overlay_does_not_end_live_espn_draft_after_each_round():
     assert "detectedRounds" in yahoo_main
     assert "inProgress: detail.inProgress" in espn_iso
     assert "inProgress: detail.inProgress" in yahoo_iso
+
+
+def test_overlay_reads_league_settings_and_compares_players():
+    helper = (EXT / "draft_slot.js").read_text(encoding="utf-8")
+    overlay = (EXT / "overlay.js").read_text(encoding="utf-8")
+    score = (EXT / "overlay_score.js").read_text(encoding="utf-8")
+    html = (EXT / "overlay.html").read_text(encoding="utf-8")
+    css = (EXT / "overlay.css").read_text(encoding="utf-8")
+    espn_main = (EXT / "espn_draft_main.js").read_text(encoding="utf-8")
+    yahoo_main = (EXT / "yahoo_draft_main.js").read_text(encoding="utf-8")
+    espn_iso = (EXT / "espn_draft.js").read_text(encoding="utf-8")
+    yahoo_iso = (EXT / "yahoo_draft.js").read_text(encoding="utf-8")
+    sleeper = (EXT / "sleeper_draft.js").read_text(encoding="utf-8")
+    inject = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
+    assert "function rosterFromEspnSlots" in helper
+    assert "function rosterFromSleeperSettings" in helper
+    assert "function rosterFromYahooPositions" in helper
+    assert "function settingsLabel" in helper
+    assert "function scoringFromSleeperSettings" in helper
+    assert "rosterFromEspnSlots" in espn_main
+    assert "scoringFromEspnSettings" in espn_main
+    assert "detectedRoster" in espn_main
+    assert "roster: detectedRoster" in espn_main
+    assert "ppr: detectedPpr" in espn_main
+    assert "rosterFromYahooPositions" in yahoo_main
+    assert "roster: detectedRoster" in yahoo_main
+    assert "ppr: detectedPpr" in yahoo_main
+    assert "roster: detail.roster" in espn_iso
+    assert "passTd: detail.passTd" in espn_iso
+    assert "roster: detail.roster" in yahoo_iso
+    assert "passTd: detail.passTd" in yahoo_iso
+    assert "rosterFromSleeperSettings" in sleeper
+    assert "api.sleeper.app/v1/league/" in sleeper
+    assert "applyLeagueSettings" in overlay
+    assert "leagueSettingsLabel" in overlay
+    assert "scoreCtx" in overlay
+    assert "roster: state.roster" in overlay
+    assert "function rosterOf" in score
+    assert "function slotList" in overlay
+    assert "function slotEligible" in overlay
+    assert "toggleCompare" in overlay
+    assert "openCompare" in overlay
+    assert "dr-cmp-player" in overlay
+    assert "Pick Score" in overlay
+    assert 'data-cmp' in overlay
+    assert "Compare Players" in overlay
+    assert 'id="cmpModal"' in html
+    assert "dr-cmp-overlay" in html
+    assert 'src="draft_slot.js"' in html
+    assert "dr-cmp-btn" in css
+    assert "dr-cmp-stat.win" in css
+    assert "settings-line" in css
+    assert "BRDraftSlot.rosterKey" in inject
+    assert "data-cmp-draft" not in overlay
+    assert "\u2014" not in overlay
+    assert "\u2014" not in helper
+    assert "\u2014" not in html

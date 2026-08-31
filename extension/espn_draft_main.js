@@ -46,6 +46,11 @@
   let detectedSlot = 0;
   let detectedTeams = 0;
   let detectedRounds = 0;
+  let detectedRoster = null;
+  let detectedSf = false;
+  let detectedPpr = 1;
+  let detectedTep = 0;
+  let detectedPassTd = 4;
   /** @type {Map<string, {playerName: string, pos: string, nflTeam: string}>} */
   const playerMetaById = new Map();
   const ESPN_POS = { 1: "QB", 2: "RB", 3: "WR", 4: "TE", 5: "K", 16: "DST" };
@@ -363,6 +368,11 @@
       detectedSlot || "",
       detectedTeams || "",
       detectedRounds || "",
+      detectedSf ? 1 : 0,
+      detectedPpr,
+      detectedTep,
+      detectedPassTd,
+      rosterFingerprint(detectedRoster),
     ].join("|");
   }
 
@@ -388,6 +398,59 @@
     return n >= 6 && n <= 40 ? n : 0;
   }
 
+  function rosterFromEspnSlots(counts) {
+    const out = { QB: 0, SF: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, K: 0, DEF: 0, BN: 0 };
+    if (!counts || typeof counts !== "object") return out;
+    const map = { 0: "QB", 2: "RB", 4: "WR", 6: "TE", 7: "SF", 16: "DEF", 17: "K", 20: "BN", 23: "FLEX", 3: "FLEX", 5: "FLEX" };
+    const keys = safeKeys(counts);
+    for (let i = 0; i < keys.length; i++) {
+      const id = Number(keys[i]);
+      if (id === 21 || id === 22) continue;
+      const dest = map[id];
+      const n = Number(safeProp(counts, keys[i]) || counts[keys[i]]) || 0;
+      if (dest && n > 0) out[dest] += n;
+    }
+    return out;
+  }
+
+  function rosterFingerprint(rs) {
+    if (!rs) return "";
+    return ["QB", "SF", "RB", "WR", "TE", "FLEX", "K", "DEF", "BN"].map(function (k) {
+      return k + (Number(rs[k]) || 0);
+    }).join("");
+  }
+
+  function scoringFromEspnSettings(settings) {
+    const out = { ppr: 1, passTd: 4, tep: 0 };
+    if (!isTraversableObject(settings)) return out;
+    const scoring = safeProp(settings, "scoringSettings") || safeProp(settings, "scoring_settings") || settings;
+    const items = scoring && (safeProp(scoring, "scoringItems") || safeProp(scoring, "scoring_items"));
+    if (Array.isArray(items)) {
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        if (!isTraversableObject(it)) continue;
+        const id = Number(safeProp(it, "statId") != null ? safeProp(it, "statId") : safeProp(it, "stat_id"));
+        const pts = Number(safeProp(it, "points") != null ? safeProp(it, "points") : safeProp(it, "pts"));
+        if (!Number.isFinite(pts)) continue;
+        if (id === 53) out.ppr = pts;
+        if (id === 4) out.passTd = pts;
+      }
+    }
+    const bonus = scoring && (safeProp(scoring, "bonusScoringItems") || safeProp(scoring, "bonus_scoring_items"));
+    if (Array.isArray(bonus)) {
+      for (let i = 0; i < bonus.length; i++) {
+        const it = bonus[i];
+        if (!isTraversableObject(it)) continue;
+        const id = Number(safeProp(it, "statId") != null ? safeProp(it, "statId") : safeProp(it, "stat_id"));
+        const pts = Number(safeProp(it, "points") != null ? safeProp(it, "points") : safeProp(it, "pts"));
+        const elig = safeProp(it, "eligiblePositionIds") || safeProp(it, "eligible_position_ids") || [];
+        const te = Array.isArray(elig) && elig.some(function (p) { return Number(p) === 6; });
+        if (id === 53 && te && Number.isFinite(pts) && pts > 0) out.tep = pts;
+      }
+    }
+    return out;
+  }
+
   function rememberEspnSettings(obj) {
     if (!isTraversableObject(obj)) return;
     const size = safeProp(obj, "size");
@@ -397,9 +460,22 @@
       const sz = safeProp(settings, "size");
       if (sz >= 4 && sz <= 32) detectedTeams = Number(sz);
       const roster = safeProp(settings, "rosterSettings") || safeProp(obj, "rosterSettings");
-      const counts = roster && safeProp(roster, "lineupSlotCounts");
+      const counts = roster && (safeProp(roster, "lineupSlotCounts") || safeProp(roster, "lineup_slot_counts"));
       const r = rosterRoundsFromLineupSlots(counts);
       if (r) detectedRounds = r;
+      if (counts) {
+        const mapped = rosterFromEspnSlots(counts);
+        if ((mapped.QB || 0) + (mapped.RB || 0) + (mapped.WR || 0) + (mapped.TE || 0) + (mapped.FLEX || 0) + (mapped.SF || 0) >= 4) {
+          detectedRoster = mapped;
+          detectedSf = (mapped.SF || 0) > 0;
+        }
+      }
+      const scoring = scoringFromEspnSettings(settings);
+      if (scoring) {
+        detectedPpr = scoring.ppr;
+        detectedTep = scoring.tep;
+        detectedPassTd = scoring.passTd;
+      }
     }
   }
 
@@ -580,6 +656,11 @@
       userTeamId: detectedUserTeamId || undefined,
       teams: detectedTeams || undefined,
       rounds: detectedRounds || undefined,
+      roster: detectedRoster || undefined,
+      sf: detectedSf,
+      ppr: detectedPpr,
+      tep: detectedTep,
+      passTd: detectedPassTd,
       at: now,
     };
     bridgeToExtension(EVENT, detail);

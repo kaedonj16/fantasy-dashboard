@@ -212,7 +212,12 @@
       payload.mySlot || "",
       payload.rounds || "",
       payload.inProgress ? 1 : 0,
-      payload.drafted ? 1 : 0
+      payload.drafted ? 1 : 0,
+      payload.sf ? 1 : 0,
+      payload.ppr != null ? payload.ppr : "",
+      payload.tep != null ? payload.tep : "",
+      payload.passTd != null ? payload.passTd : "",
+      window.BRDraftSlot && BRDraftSlot.rosterKey ? BRDraftSlot.rosterKey(payload.roster) : ""
     ].join("|");
     const teams = Number(payload.teams || 0);
     const sf = !!payload.sf;

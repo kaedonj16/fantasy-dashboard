@@ -11,6 +11,19 @@
     return { QB: 1, SF: sf ? 1 : 0, RB: 2, WR: 3, TE: 1, FLEX: 1, K: 1, DEF: 1, BN: 6 };
   }
 
+  function rosterHasStarters(rs) {
+    if (!rs) return false;
+    return (rs.QB || 0) + (rs.RB || 0) + (rs.WR || 0) + (rs.TE || 0) + (rs.FLEX || 0) + (rs.SF || 0) >= 4;
+  }
+
+  function rosterOf(ctx) {
+    const base = defaultRoster(!!(ctx && ctx.sf));
+    if (ctx && rosterHasStarters(ctx.roster)) {
+      return Object.assign({}, base, ctx.roster);
+    }
+    return base;
+  }
+
   function ownerOf(pn, teams) {
     const n = teams || 12;
     const r = Math.ceil(pn / n);
@@ -146,7 +159,7 @@
     const C = Core();
     const demand = { QB: 0, RB: 0, WR: 0, TE: 0 };
     if (!nextPick || !C) return demand;
-    const rs = defaultRoster(!!ctx.sf);
+    const rs = rosterOf(ctx);
     const seen = {};
     const countsBySlot = {};
     (ctx.picks || []).forEach(function (x) {
@@ -182,7 +195,7 @@
 
   function buildPsCtx(ctx, byId, repl, ppgScale) {
     const C = Core();
-    const rs = defaultRoster(!!ctx.sf);
+    const rs = rosterOf(ctx);
     const counts = myPosCounts(ctx);
     const remaining = upcomingOwned(ctx).length;
     const targets = C && C.posTargets ? C.posTargets(rs, ctx.tep || 0) : { QB: 1, RB: 3, WR: 3, TE: 1 };
@@ -459,7 +472,7 @@
     (available || []).forEach(function (p) {
       if (p && !p.position) p.position = p.pos;
     });
-    const rs = defaultRoster(!!ctx.sf);
+    const rs = rosterOf(ctx);
     const valFn = valOf;
     const starters = C.effectiveStarters(allPlayers, rs, ctx.teams || 12, valFn);
     const repl = C.computeReplacement(allPlayers, valFn, starters, ctx.teams || 12) || {};

@@ -139,6 +139,9 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
             </button>
           </div>
+          <div class="dr-cmp-overlay" id="cmpModal" hidden>
+            <div class="dr-cmp-card" id="cmpCard" role="dialog" aria-labelledby="cmpTitle"></div>
+          </div>
         </aside>
       </div>
     </div>
@@ -147,6 +150,7 @@
     <p class="footnote">Grade letters and playoff odds use a lightweight stand-in (value vs ADP, roster balance, and star power, curved against the field and damped early). Production Draft Room grades and odds come from the full Pick Score / team-grade / standings models.</p>
   </div>
 
+<script src="draft_slot.js"></script>
 <script src="pick_score.js"></script>
 <script src="draft_board_core.js"></script>
 <script src="overlay_score.js"></script>

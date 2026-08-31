@@ -1,7 +1,7 @@
 (function () {
   const CLOCK_START = 75;
   const SLOTS = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"];
-  const POS = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6", FLEX: "#14b8a6", BN: "#64748b" };
+  const POS = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6", FLEX: "#14b8a6", SF: "#0ea5e9", K: "#64748b", DEF: "#475569", BN: "#64748b" };
   const SORTS = ["rec", "ps", "val", "proj", "adp"];
   const SORT_LBL = { rec: "Recommendation Rank", adp: "ADP", ps: "Pick Score", proj: "Proj PPG", val: "Value" };
   const TEAM_NAMES = [
@@ -241,6 +241,10 @@
     valCap: 180,
     sitePool: false,
     sf: false,
+    roster: null,
+    ppr: 1,
+    tep: 0,
+    passTd: 4,
     adpSource: "consensus",
     adpOptions: [
       { value: "consensus", label: "Consensus" },
@@ -257,6 +261,7 @@
   let availCache = null;
   let cliffLeft = null;
   let renderQueued = false;
+  let compareIds = [];
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -306,7 +311,12 @@
       detail && detail.rounds || "",
       detail && detail.inProgress ? 1 : 0,
       detail && detail.drafted ? 1 : 0,
-      detail && detail.platform || ""
+      detail && detail.platform || "",
+      detail && detail.sf ? 1 : 0,
+      detail && detail.ppr != null ? detail.ppr : "",
+      detail && detail.tep != null ? detail.tep : "",
+      detail && detail.passTd != null ? detail.passTd : "",
+      window.BRDraftSlot && BRDraftSlot.rosterKey ? BRDraftSlot.rosterKey(detail && detail.roster) : ""
     ].join("|");
   }
   function teamPicks(slot) {
@@ -326,8 +336,20 @@
     list.forEach(function (p) { if (c[p.pos] != null) c[p.pos]++; });
     return c;
   }
+  function posTargets() {
+    const rs = state.roster;
+    if (rs) {
+      return {
+        QB: (rs.QB || 0) + (rs.SF || 0) || (state.sf ? 2 : 1),
+        RB: (rs.RB || 0) + Math.min(1, rs.FLEX || 0) || 3,
+        WR: (rs.WR || 0) + Math.min(1, rs.FLEX || 0) || 3,
+        TE: (rs.TE || 0) || 1,
+      };
+    }
+    return { QB: state.sf ? 2 : 1, RB: 3, WR: 3, TE: 1 };
+  }
   function needOf(counts, pos) {
-    const t = { QB: 1, RB: 3, WR: 3, TE: 1 };
+    const t = posTargets();
     return Math.max(0, (t[pos] || 0) - (counts[pos] || 0));
   }
   function slotColor(s) { return POS[s] || "#64748b"; }
@@ -355,9 +377,10 @@
       mySlot: state.mySlot,
       sf: !!state.sf,
       type: "redraft",
-      tep: 0,
-      ppr: 1,
-      passTd: 4,
+      tep: Number(state.tep) || 0,
+      ppr: state.ppr != null ? Number(state.ppr) : 1,
+      passTd: state.passTd >= 6 ? 6 : 4,
+      roster: state.roster || undefined,
       picks: state.picks,
     };
   }
@@ -491,6 +514,21 @@
     stopAuto();
   }
 
+  function slotList() {
+    if (window.BRDraftSlot && BRDraftSlot.slotListFromRoster && state.roster) {
+      const list = BRDraftSlot.slotListFromRoster(state.roster);
+      if (list && list.length >= 4) return list;
+    }
+    return SLOTS.slice();
+  }
+  function slotEligible(slot, pos) {
+    const p = String(pos || "").toUpperCase();
+    const s = String(slot || "").toUpperCase();
+    if (s === "FLEX") return p === "RB" || p === "WR" || p === "TE";
+    if (s === "SF" || s === "OP") return p === "QB" || p === "RB" || p === "WR" || p === "TE";
+    if (s === "DEF") return p === "DEF" || p === "DST";
+    return p === s;
+  }
   function optimalLineup(list) {
     const leftover = list.slice().sort(function (a, b) { return b.ppg - a.ppg; });
     const starters = [];
@@ -499,13 +537,9 @@
       if (i < 0) { starters.push({ slot: slot, p: null }); return; }
       starters.push({ slot: slot, p: leftover.splice(i, 1)[0] });
     }
-    take("QB", function (p) { return p.pos === "QB"; });
-    take("RB", function (p) { return p.pos === "RB"; });
-    take("RB", function (p) { return p.pos === "RB"; });
-    take("WR", function (p) { return p.pos === "WR"; });
-    take("WR", function (p) { return p.pos === "WR"; });
-    take("TE", function (p) { return p.pos === "TE"; });
-    take("FLEX", function (p) { return p.pos === "RB" || p.pos === "WR" || p.pos === "TE"; });
+    slotList().forEach(function (slot) {
+      take(slot, function (p) { return slotEligible(slot, p.pos); });
+    });
     return { starters: starters, bench: leftover };
   }
 
@@ -535,7 +569,7 @@
     const value = adpPts / n;
     const ol = optimalLineup(list);
     const filled = ol.starters.filter(function (x) { return x.p; }).length;
-    const coverage = filled / SLOTS.length;
+    const coverage = filled / Math.max(1, slotList().length);
     const counts = posCounts(list);
     const balance = 100 * coverage * 0.7 + 30 * (1 - Math.abs((counts.RB || 0) - (counts.WR || 0)) / 8);
     const stars = list.slice().sort(function (a, b) { return b.ppg - a.ppg; }).slice(0, 3)
@@ -694,7 +728,8 @@
       chip = "";
     }
     const reason = opts.reason ? '<div class="ba-reason">' + esc(opts.reason) + "</div>" : "";
-    return '<div class="ba-row" data-id="' + p.id + '">'
+    const onCmp = compareIds.indexOf(String(p.id)) >= 0;
+    return '<div class="ba-row' + (onCmp ? " is-cmp" : "") + '" data-id="' + p.id + '">'
       + hsMark(p, "hs", { eager: (opts.rank || 99) <= 6 })
       + '<div class="ba-body"><div class="ba-name">' + esc(p.name) + "</div>"
       + '<div class="ba-meta"><span class="posb" style="background:' + pc + '">' + p.pos + "</span>"
@@ -705,6 +740,7 @@
       + "</div>" + reason + "</div>"
       + '<div class="ba-right"><div class="ba-val">' + p.val + '</div><div class="ba-sub">ADP ' + fmtAdp(p) + "</div></div>"
       + chip
+      + '<button type="button" class="dr-cmp-btn' + (onCmp ? " on" : "") + '" data-cmp="' + esc(String(p.id)) + '" title="Compare" aria-label="Compare ' + esc(p.name) + '" aria-pressed="' + (onCmp ? "true" : "false") + '">vs</button>'
       + "</div>";
   }
 
@@ -762,6 +798,10 @@
     } else if (pool[0]) {
       html += bannersHtml(counts, pool[0]);
     }
+    if (compareIds.length === 1) {
+      const waiting = byId[compareIds[0]];
+      html += '<div class="cmp-hint">Comparing ' + esc(waiting ? waiting.name : "player") + " - tap vs on another</div>";
+    }
     const q = (state.query || "").trim().toLowerCase();
     let rows = pool;
     if (state.pos !== "ALL") rows = rows.filter(function (p) { return p.pos === state.pos; });
@@ -797,7 +837,10 @@
     const me = all.filter(function (t) { return t.isMe; })[0] || all[0];
     if (!me) return '<div class="empty-log">Waiting on your draft seat...</div>';
     const g = me.grade;
-    let html = '<div class="grade-card"><div><div class="grade-letter" style="color:' + gradeCol(g.score) + '">' + gradeLetter(g.score) + "</div>"
+    const settingsTxt = leagueSettingsLabel();
+    let html = "";
+    if (settingsTxt) html += '<div class="settings-line" id="leagueSettings">' + esc(settingsTxt) + "</div>";
+    html += '<div class="grade-card"><div><div class="grade-letter" style="color:' + gradeCol(g.score) + '">' + gradeLetter(g.score) + "</div>"
       + (g.provisional ? '<div class="grade-early">Early</div>' : "") + "</div>"
       + '<div class="grade-meta">' + gbar("Value", g.value) + gbar("Starters", g.starters) + gbar("Construction", g.construction) + "</div></div>";
 
@@ -967,6 +1010,11 @@
     if (state.tab === "roster") body.innerHTML = renderRoster();
     else if (state.tab === "grades") body.innerHTML = renderGrades();
     else body.innerHTML = renderBoard();
+    if (compareIds.length === 2) openCompare();
+    else {
+      const modal = document.getElementById("cmpModal");
+      if (modal) modal.hidden = true;
+    }
     const simBtn = document.getElementById("simBtn");
     if (simBtn) simBtn.disabled = draftDone() || state.live;
     if (EMBEDDED) paintSyncChip();
@@ -1065,7 +1113,23 @@
     resetDraft();
     render();
   });
+  const cmpModal = document.getElementById("cmpModal");
+  if (cmpModal) {
+    cmpModal.addEventListener("click", function (e) {
+      if (e.target === cmpModal || e.target.closest("[data-cmp-close]")) {
+        closeCompare(true);
+        render();
+      }
+    });
+  }
   document.getElementById("ovBody").addEventListener("click", function (e) {
+    const cmp = e.target.closest("[data-cmp]");
+    if (cmp) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleCompare(cmp.getAttribute("data-cmp"));
+      return;
+    }
     const draftBtn = e.target.closest("[data-draft]");
     const row = e.target.closest(".ba-row");
     if (draftBtn || row) {
@@ -1255,6 +1319,131 @@
     return stub;
   }
 
+  function applyLeagueSettings(detail) {
+    if (!detail) return;
+    if (detail.sf != null) state.sf = !!detail.sf;
+    if (detail.ppr != null && isFinite(Number(detail.ppr))) state.ppr = Number(detail.ppr);
+    if (detail.tep != null && isFinite(Number(detail.tep))) state.tep = Number(detail.tep);
+    if (detail.passTd != null && isFinite(Number(detail.passTd))) state.passTd = Number(detail.passTd);
+    if (detail.roster && typeof detail.roster === "object") {
+      const rs = detail.roster;
+      const starters = (rs.QB || 0) + (rs.RB || 0) + (rs.WR || 0) + (rs.TE || 0) + (rs.FLEX || 0) + (rs.SF || 0);
+      if (starters >= 4) {
+        state.roster = {
+          QB: Number(rs.QB) || 0,
+          SF: Number(rs.SF) || 0,
+          RB: Number(rs.RB) || 0,
+          WR: Number(rs.WR) || 0,
+          TE: Number(rs.TE) || 0,
+          FLEX: Number(rs.FLEX) || 0,
+          K: Number(rs.K) || 0,
+          DEF: Number(rs.DEF) || 0,
+          BN: Number(rs.BN) || 0,
+        };
+        if ((state.roster.SF || 0) > 0) state.sf = true;
+      }
+    }
+  }
+
+  function leagueSettingsLabel() {
+    if (window.BRDraftSlot && BRDraftSlot.settingsLabel && state.roster) {
+      return BRDraftSlot.settingsLabel(state.roster, { ppr: state.ppr, tep: state.tep, passTd: state.passTd });
+    }
+    return "";
+  }
+
+  function toggleCompare(id) {
+    id = String(id || "");
+    if (!id) return;
+    const idx = compareIds.indexOf(id);
+    if (idx >= 0) {
+      compareIds.splice(idx, 1);
+      closeCompare(false);
+      render();
+      return;
+    }
+    if (compareIds.length >= 2) compareIds = [id];
+    else compareIds.push(id);
+    if (compareIds.length === 2) openCompare();
+    else closeCompare(false);
+    render();
+  }
+
+  function closeCompare(clear) {
+    if (clear !== false) compareIds = [];
+    const modal = document.getElementById("cmpModal");
+    if (modal) modal.hidden = true;
+  }
+
+  function openCompare() {
+    const p1 = byId[String(compareIds[0])];
+    const p2 = byId[String(compareIds[1])];
+    const modal = document.getElementById("cmpModal");
+    const card = document.getElementById("cmpCard");
+    if (!p1 || !p2 || !modal || !card) return;
+    const counts = posCounts(myPicks());
+    const pool = rankedPool(counts, state.current);
+    function fmtSigned(n) {
+      if (n == null || !isFinite(Number(n))) return "-";
+      const x = Math.round(Number(n));
+      if (x === 0) return "0";
+      return (x > 0 ? "+" : "") + x;
+    }
+    function facts(p) {
+      const hit = pool.filter(function (x) { return String(x.id) === String(p.id); })[0] || p;
+      const adp = Number(p.adp);
+      const adpN = isFinite(adp) && adp < 900 ? adp : null;
+      return {
+        rec: hit._rank != null ? hit._rank : null,
+        ps: hit._psShow != null ? hit._psShow : (hit._ps != null ? hit._ps : pickScore(p, counts, state.current)),
+        value: Number(p.val) || 0,
+        projPpg: p.ppg != null && isFinite(Number(p.ppg)) ? Number(p.ppg) : null,
+        vor: hit._vor != null && isFinite(Number(hit._vor)) ? Number(hit._vor) : null,
+        adp: adpN,
+        vsAdp: adpN != null ? (state.current - adpN) : null,
+        bye: p.bye != null || p.bye_week != null ? Number(p.bye || p.bye_week) : null,
+        age: p.age != null ? Number(p.age) : null,
+      };
+    }
+    function cmpCol(p, other) {
+      const f = facts(p);
+      const o = facts(other);
+      function statRow(lbl, val, oval, higherBetter, fmtFn) {
+        if (val == null && oval == null) return "";
+        const vStr = fmtFn ? fmtFn(val) : (val != null ? String(val) : "-");
+        const win = val != null && oval != null && (higherBetter ? val > oval : val < oval);
+        return '<div class="dr-cmp-stat' + (win ? " win" : "") + '">'
+          + '<span class="dr-cmp-stat-lbl">' + esc(lbl) + "</span>"
+          + '<span class="dr-cmp-stat-val">' + esc(vStr) + "</span></div>";
+      }
+      const sc = f.ps != null ? psColor(f.ps) : "var(--text-muted)";
+      const photo = hsUrl(p)
+        ? '<img class="dr-cmp-hs" src="' + esc(hsUrl(p)) + '" alt="">'
+        : hsMark(p, "hs-sm");
+      const metaBits = [p.team || "", (f.age ? "Age " + Math.round(f.age) : "")].filter(Boolean);
+      return '<div class="dr-cmp-player">'
+        + '<div class="dr-cmp-top">' + photo
+        + "<div><div class=\"dr-cmp-name\"><span class=\"posb\" style=\"background:" + (POS[p.pos] || POS.BN) + '">' + esc(p.pos) + "</span> " + esc(p.name) + "</div>"
+        + '<div class="dr-cmp-meta">' + esc(metaBits.join(" · ")) + "</div>"
+        + "</div></div>"
+        + '<div class="dr-cmp-ps" style="color:' + sc + '">' + (f.ps != null ? Math.round(f.ps) : "-") + "</div>"
+        + '<div class="dr-cmp-ps-lbl">Pick Score</div>'
+        + '<div class="dr-cmp-stats">'
+        + statRow("Value", f.value, o.value, true, function (x) { return x != null ? String(Math.round(x)) : "-"; })
+        + statRow("Proj PPG", f.projPpg, o.projPpg, true, function (x) { return x != null ? Number(x).toFixed(1) : "N/A"; })
+        + statRow("VOR", f.vor, o.vor, true, function (x) { return x != null ? fmtSigned(x) : "-"; })
+        + statRow("ADP", f.adp, o.adp, false, function (x) { return x != null ? Number(x).toFixed(1) : "N/A"; })
+        + statRow("vs ADP", f.vsAdp, o.vsAdp, true, function (x) { return fmtSigned(x); })
+        + statRow("Bye", f.bye, o.bye, false, function (x) { return x != null ? String(x) : "-"; })
+        + statRow("REC", f.rec, o.rec, false, function (x) { return x != null ? "#" + x : "-"; })
+        + "</div></div>";
+    }
+    card.innerHTML = '<button type="button" class="dr-cmp-close" data-cmp-close="1" aria-label="Close">&times;</button>'
+      + '<div class="dr-cmp-title" id="cmpTitle">Compare Players</div>'
+      + '<div class="dr-cmp-cols">' + cmpCol(p1, p2) + cmpCol(p2, p1) + "</div>";
+    modal.hidden = false;
+  }
+
   function ingestLive(detail) {
     if (!detail) return;
     const fp = liveFingerprint(detail);
@@ -1267,7 +1456,7 @@
     state.live = true;
     stopAuto();
     if (detail.platform) state.platform = String(detail.platform).toLowerCase();
-    if (detail.sf != null) state.sf = !!detail.sf;
+    applyLeagueSettings(detail);
     if (detail.inProgress != null) state.hostInProgress = !!detail.inProgress;
     if (detail.drafted != null) state.hostDrafted = !!detail.drafted;
     if (detail.teams) state.teams = Math.max(2, Number(detail.teams) || state.teams);

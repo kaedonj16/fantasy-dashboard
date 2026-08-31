@@ -388,6 +388,11 @@
       teams: detail.teams,
       inProgress: detail.inProgress,
       drafted: detail.drafted,
+      roster: detail.roster,
+      sf: detail.sf,
+      ppr: detail.ppr,
+      tep: detail.tep,
+      passTd: detail.passTd,
     });
     if (!payload.leagueId) {
       setChip("BR Fantasy · leagueId missing in URL", false);

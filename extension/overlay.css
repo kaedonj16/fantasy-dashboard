@@ -415,6 +415,7 @@
     background: var(--card);
     color: var(--text);
     border-left: 1px solid var(--border);
+    position: relative;
   }
   .ov-head {
     display: flex;
@@ -903,6 +904,116 @@
     padding: 1px 5px;
     border-radius: 6px;
   }
+  .ba-row.is-cmp { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .dr-cmp-btn {
+    background: none;
+    border: 1px solid transparent;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--text-muted);
+    padding: 3px 5px;
+    border-radius: 5px;
+    flex-shrink: 0;
+    letter-spacing: .02em;
+  }
+  .dr-cmp-btn:hover, .dr-cmp-btn.on {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  .cmp-hint {
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-bottom: 1px solid var(--border);
+  }
+  .settings-line {
+    margin: 8px 12px 0;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: var(--card-soft);
+    border: 1px solid var(--border);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.01em;
+  }
+  .dr-cmp-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+    background: rgba(0,0,0,.45);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 12px;
+    overflow-y: auto;
+  }
+  .dr-cmp-overlay[hidden] { display: none; }
+  .dr-cmp-card {
+    position: relative;
+    width: 100%;
+    max-width: 580px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 12px 12px;
+    box-shadow: 0 16px 50px rgba(0,0,0,.3);
+    margin: auto;
+  }
+  .dr-cmp-close {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    background: none;
+    border: none;
+    font-size: 22px;
+    line-height: 1;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .dr-cmp-title {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--text-muted);
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .dr-cmp-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .dr-cmp-player { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 8px; min-width: 0; }
+  .dr-cmp-top { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 8px; }
+  .dr-cmp-hs {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px 8px 0 0;
+    object-fit: cover;
+    object-position: top center;
+    flex-shrink: 0;
+  }
+  .dr-cmp-name { font-size: 12px; font-weight: 800; color: var(--text); line-height: 1.2; }
+  .dr-cmp-meta { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+  .dr-cmp-ps { font-size: 28px; font-weight: 900; line-height: 1; text-align: center; margin: 6px 0 0; }
+  .dr-cmp-ps-lbl {
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--text-muted);
+    text-align: center;
+    margin-bottom: 8px;
+  }
+  .dr-cmp-stats { display: flex; flex-direction: column; gap: 3px; }
+  .dr-cmp-stat { display: flex; justify-content: space-between; align-items: center; padding: 3px 5px; border-radius: 5px; }
+  .dr-cmp-stat-lbl { font-size: 10px; color: var(--text-muted); font-weight: 600; }
+  .dr-cmp-stat-val { font-size: 12px; font-weight: 800; color: var(--text); }
+  .dr-cmp-stat.win { background: color-mix(in srgb, var(--win) 12%, transparent); }
+  .dr-cmp-stat.win .dr-cmp-stat-val { color: var(--win); }
   .ba-right { text-align: right; flex-shrink: 0; min-width: 48px; }
   .ba-val { font-size: 15px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
   .ba-sub { font-size: 10.5px; color: var(--text-muted); margin-top: 3px; font-variant-numeric: tabular-nums; }
@@ -1144,7 +1255,8 @@
   html.br-da-embed.br-da-rail #reconnectBtn,
   html.br-da-embed.br-da-rail .ov-head label,
   html.br-da-embed.br-da-rail .side-head,
-  html.br-da-embed.br-da-rail .tab-opts { display: none !important; }
+  html.br-da-embed.br-da-rail .tab-opts,
+  html.br-da-embed.br-da-rail .dr-cmp-overlay { display: none !important; }
   html.br-da-embed.br-da-rail .ov-head { justify-content: center; padding: 10px 4px; }
   html.br-da-embed.br-da-rail .ov-foot {
     flex: 1;
