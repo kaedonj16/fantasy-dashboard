@@ -9867,6 +9867,25 @@ def api_start_sit_options():
         _vg = _factors["vegas"]
         _fl = _factors["floor"]
 
+        _return_plan = None
+        if injury_status:
+            try:
+                from dashboard_services.injury_return import weeks_out_for_player as _ss_wo
+                from utils.injury_plan import injury_plan as _ss_plan
+                _pval = None
+                try:
+                    _pval = float(row.get("value") or 0) or None
+                except Exception:
+                    _pval = None
+                _return_plan = _ss_plan(
+                    status=injury_status,
+                    espn_weeks=_ss_wo(pid),
+                    player_value=_pval,
+                    has_open_ir_slot=False,
+                )
+            except Exception:
+                _return_plan = None
+
         positions_out[pos].append({
             "player_id": pid,
             "name": player_name,
@@ -9882,6 +9901,7 @@ def api_start_sit_options():
             "def_total": def_total,
             "pos_rank_label": row.get("pos_rank_label") or "",
             "injury_status": injury_status,
+            "return_plan": _return_plan,
             "usage_delta": usage_delta,
             "usage_stat": _ut_ss.get("stat"),
             "game_env": _ss_game_env(home_team_of.get(team), current_week) if not on_bye else None,
@@ -18180,6 +18200,29 @@ def api_player_details(player_id: str):
                     "body_part": (_fp.get("injury_body_part") or "").strip(),
                     "notes": (_fp.get("injury_notes") or "").strip(),
                 }
+                # Approximate return planner (ESPN date when available).
+                try:
+                    from dashboard_services.injury_return import weeks_out_for_player as _wofp
+                    from utils.injury_plan import injury_plan as _inj_plan
+                    _espn_w = _wofp(str(player_id))
+                    _pval = None
+                    try:
+                        _pval = float(player_value.get("value") or 0) or None
+                    except Exception:
+                        _pval = None
+                    _plan = _inj_plan(
+                        status=_raw_inj,
+                        espn_weeks=_espn_w,
+                        player_value=_pval,
+                        has_open_ir_slot=False,  # league IR slots resolved client-side when known
+                    )
+                    if _plan:
+                        injury["return_plan"] = _plan
+                        if _espn_w is not None:
+                            injury["return_weeks"] = _espn_w
+                            injury["return_source"] = "espn"
+                except Exception:
+                    logger.debug("[api_player_details] injury plan skipped", exc_info=True)
         except Exception:
             logger.debug("[api_player_details] injury lookup skipped", exc_info=True)
 

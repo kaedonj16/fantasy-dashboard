@@ -243,6 +243,14 @@ function openPlayerModal(playerId, playerName, opts) {
         const _tip = [data.injury.body_part, data.injury.notes].filter(Boolean).join(' · ') || _u;
         const _lbl = _u.length > 14 ? _u.slice(0, 14) : _u;
         badges += `<span class="player-badge ${_icls}" title="${String(_tip).replace(/"/g, '&quot;')}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${_lbl}</span>`;
+        const plan = data.injury.return_plan;
+        if (plan && plan.verdict) {
+          const wk = plan.weeks_label || '';
+          const src = plan.source === 'espn' ? 'ESPN approx' : 'approx';
+          const tip = String(plan.reason || 'Approximate return guidance — not medical advice.')
+            .replace(/"/g, '&quot;');
+          badges += `<span class="player-badge player-badge-inj-q" title="${tip}"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> ${escapeHtml(plan.verdict)}${wk ? ' · ' + escapeHtml(wk) : ''} <span style="opacity:.7;font-weight:500;">(${escapeHtml(src)})</span></span>`;
+        }
       }
 
       // Name with inline badges

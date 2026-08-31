@@ -1003,6 +1003,11 @@ function wvRenderStartSit() {{
               : '<span class="wv-ss-sit-badge">SIT</span>';
 
       const injBadge = wvInjBadge(p.injury_status);
+      const plan = p.return_plan;
+      const planNote = (plan && plan.verdict)
+        ? `<span class="wv-ss-demote" title="${{(plan.reason || 'Approximate — not medical advice').replace(/"/g, '&quot;')}}">`
+          + `${{plan.verdict}}${{plan.weeks_label ? ' · ' + plan.weeks_label : ''}} (approx)</span>`
+        : '';
       const cmpCls   = isSelected ? 'selected' : '';
       const statsRow = wvStatsRow(p);
       const demoteNote = (p.demotion === 'low_total')
@@ -1021,6 +1026,7 @@ function wvRenderStartSit() {{
               ${{injBadge}}
               ${{badge}}
               ${{demoteNote}}
+              ${{planNote}}
             </div>
             <div class="wv-ss-actions">
               <button class="wv-cmp-btn" type="button"
