@@ -7156,28 +7156,28 @@
   }
   function ddHistoricalAlternatives(pn, selected, taken){
     var Core = window.DraftBoardCore; if (!Core || !Core.decisionScore) return null;
-    var counts = { QB:0, RB:0, WR:0, TE:0 }, qualities = [], qualByPos = {};
-    Object.keys(state.picks).forEach(function(k){
-      var n = parseInt(k,10), pk = state.picks[k]; if (!pk || n >= pn || !isMyPick(n)) return;
-      var f = playersById[String(pk.id)] || pk, pos = String(f.position || '').toUpperCase();
-      if (counts[pos] == null) return; counts[pos]++;
-      var q = ppgNormOf(f); qualities.push({pos:pos, quality:q == null ? 0.35 : q});
-      if (vorOf(f) == null || vorOf(f) > 0) qualByPos[pos] = (qualByPos[pos] || 0) + 1;
+    if (!Core.historicalDecisionContext || !Core.rankHistoricalAlternatives) return null;
+    var ctx = Core.historicalDecisionContext({
+      pickNo: pn,
+      picks: state.picks,
+      isMyPick: isMyPick,
+      playersById: playersById,
+      pool: players,
+      selected: selected,
+      taken: taken,
+      teams: state.teams || 12,
+      rounds: state.rounds || 16,
+      keepers: (keepersOn && keeperSet) ? keeperSet : [],
+      viewerRosterId: (cfg.keepers && cfg.keepers.viewerRoster) || null,
+      qualityOf: function (f) { var q = ppgNormOf(f); return q == null ? 0.35 : q; },
+      vorPositive: function (f) { return vorOf(f) == null || vorOf(f) > 0; }
     });
-    var remaining = players.filter(function(p){
-      var pos = String(p.position || '').toUpperCase();
-      return !taken[String(p.id)] && ['K','DEF','DST','D/ST'].indexOf(pos) < 0;
-    });
-    if (selected && !remaining.some(function(p){return String(p.id)===String(selected.id);})) remaining.push(selected);
+    var remaining = ctx.remaining || [];
+    var counts = ctx.counts, qualities = ctx.qualities, qualByPos = ctx.qualByPos;
+    var myRbTeams = ctx.myRbTeams || {};
     var maxV = 0; remaining.forEach(function(p){maxV=Math.max(maxV,valOf(p));});
     var rs = (state && state.roster) || defaultRoster(), opts = {sf:!!state.sf,tep:scoringCfg().tep,draftType:state.type};
-    var myRbTeams = {};
-    Object.keys(state.picks).forEach(function(k){
-      var n = parseInt(k,10), pk = state.picks[k]; if (!pk || n >= pn || !isMyPick(n)) return;
-      var f = playersById[String(pk.id)] || pk;
-      if ((f.position || '').toUpperCase() === 'RB' && f.team) myRbTeams[f.team] = true;
-    });
-    var rd = Math.floor((pn - 1) / Math.max(1, state.teams || 12)) + 1;
+    var rd = ctx.round;
     var expectedByPos = {};
     remaining.forEach(function(p){
       var pos = String(p.position || '').toUpperCase();
@@ -7189,48 +7189,47 @@
     Object.keys(expectedByPos).forEach(function(pos){
       expectedByPos[pos].sort(function(a,b){ return b - a; });
     });
-    var remainingAtPn = 0, totAtPn = (state.teams || 12) * (state.rounds || 16);
-    for (var hn = pn; hn <= totAtPn; hn++){ if (isMyPick(hn)) remainingAtPn++; }
     var histOb = Core.remainingObligations
-      ? Core.remainingObligations(counts, rs, remainingAtPn, !!state.sf, { tep: scoringCfg().tep })
-      : { required: 0, freePicks: remainingAtPn, lineupHoles: 0 };
-    var rows = remaining.map(function(p){
-      var pos = String(p.position || '').toUpperCase();
-      var abs = pickScore(p,maxV,counts,{grading:true,pickNo:pn,qualByPos:qualByPos});
-      if (abs == null) return null;
-      var role = Core.candidateRosterRole(pos,ppgNormOf(p)||0,qualities,rs,!!state.sf);
-      var util = Core.positionNeedUtility(pos,counts,rs,Object.assign({},opts,{role:role}));
-      var path = Core.lateRoundPathEvidence
-        ? Core.lateRoundPathEvidence({
-            breakoutScore: p.breakout_score, projectedRole: p.projected_role,
-            handcuff: !!(state.type === 'redraft' && pos === 'RB' && p.team && myRbTeams[p.team])
-          })
-        : 0;
-      var age = p.age != null ? Number(p.age) : null;
-      var upside = (state.type === 'redraft' && Core.lateRoundUpsideBonus)
-        ? Core.lateRoundUpsideBonus({
-            round: rd, totalRounds: state.rounds || 16, path: path,
-            aboveReplacement: vorOf(p) > 0 ? clamp01(vorOf(p) / Math.max(1, valOf(p))) : 0,
-            tierQuality: tierOf(p) ? clamp01((10 - Math.min(9, tierOf(p))) / 9) : 0,
-            ppgQuality: ppgNormOf(p) || 0, functionalUtility: util,
-            rosterNeedPath: role === 'starter' || role === 'flex' || role === 'bench1' ? 1 : 0.35,
-            youngWithPath: path > 0 && age != null && (pos === 'RB' || pos === 'WR') && age <= (pos === 'RB' ? 24 : 25)
-          })
-        : 0;
-      var shelf = expectedByPos[pos] || [];
-      var expected = shelf.length > 1 ? shelf[1] : 0;
-      var waitLoss = Math.max(0, abs - expected);
-      var ds = Core.decisionScore({
-        base: abs, utility: util, bench: role === 'bench1' || role === 'bench2',
-        deepBench: role === 'bench2', quality: ppgNormOf(p) || 0,
-        waitLoss: waitLoss, upsideBonus: upside, required: histOb.required,
-        freePicks: histOb.freePicks, draftType: state.type, lineupHoles: histOb.lineupHoles || 0
-      });
-      return { id: p.id, player: p, absolutePickScore: abs, decisionScore: ds };
-    }).filter(Boolean);
-    var summary = Core.summarizeHistoricalAlternatives
-      ? Core.summarizeHistoricalAlternatives(rows, selected.id)
-      : null;
+      ? Core.remainingObligations(counts, rs, ctx.remainingMyPicks, !!state.sf, { tep: scoringCfg().tep })
+      : { required: 0, freePicks: ctx.remainingMyPicks, lineupHoles: 0 };
+    var summary = Core.rankHistoricalAlternatives({
+      selectedId: selected.id,
+      context: ctx,
+      scoreRow: function (p) {
+        var pos = String(p.position || '').toUpperCase();
+        var abs = pickScore(p,maxV,counts,{grading:true,pickNo:pn,qualByPos:qualByPos});
+        if (abs == null) return null;
+        var role = Core.candidateRosterRole(pos,ppgNormOf(p)||0,qualities,rs,!!state.sf);
+        var util = Core.positionNeedUtility(pos,counts,rs,Object.assign({},opts,{role:role}));
+        var path = Core.lateRoundPathEvidence
+          ? Core.lateRoundPathEvidence({
+              breakoutScore: p.breakout_score, projectedRole: p.projected_role,
+              handcuff: !!(state.type === 'redraft' && pos === 'RB' && p.team && myRbTeams[p.team])
+            })
+          : 0;
+        var age = p.age != null ? Number(p.age) : null;
+        var upside = (state.type === 'redraft' && Core.lateRoundUpsideBonus)
+          ? Core.lateRoundUpsideBonus({
+              round: rd, totalRounds: state.rounds || 16, path: path,
+              aboveReplacement: vorOf(p) > 0 ? clamp01(vorOf(p) / Math.max(1, valOf(p))) : 0,
+              tierQuality: tierOf(p) ? clamp01((10 - Math.min(9, tierOf(p))) / 9) : 0,
+              ppgQuality: ppgNormOf(p) || 0, functionalUtility: util,
+              rosterNeedPath: role === 'starter' || role === 'flex' || role === 'bench1' ? 1 : 0.35,
+              youngWithPath: path > 0 && age != null && (pos === 'RB' || pos === 'WR') && age <= (pos === 'RB' ? 24 : 25)
+            })
+          : 0;
+        var shelf = expectedByPos[pos] || [];
+        var expected = shelf.length > 1 ? shelf[1] : 0;
+        var waitLoss = Math.max(0, abs - expected);
+        var ds = Core.decisionScore({
+          base: abs, utility: util, bench: role === 'bench1' || role === 'bench2',
+          deepBench: role === 'bench2', quality: ppgNormOf(p) || 0,
+          waitLoss: waitLoss, upsideBonus: upside, required: histOb.required,
+          freePicks: histOb.freePicks, draftType: state.type, lineupHoles: histOb.lineupHoles || 0
+        });
+        return { absolutePickScore: abs, decisionScore: ds };
+      }
+    });
     if (!summary) return null;
     return {
       selectedScore: summary.selectedScore,
