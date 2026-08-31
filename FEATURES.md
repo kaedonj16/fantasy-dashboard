@@ -10,10 +10,10 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **Username sign-in / Identify** — Log in with just a Sleeper username; the app finds all your leagues automatically.
 - **Google sign-in** — Sign in with a Google account for cross-device, account-scoped state (watchlist sync, one-time "since last visit" digests).
 - **Keeper & redraft leagues** — Automatic detection of keeper-eligible and redraft leagues; keeper-specific tools and nav appear only where relevant.
-- **My Leagues (Portfolio)** — Cross-league hub that lists every league you're in with at-a-glance value and standings. Signed-in users also get a **This week’s moves** digest that ranks lineup fixes and injury stash/drop hints across linked leagues.
+- **My Leagues (Portfolio)** — Cross-league hub that lists every league you're in with at-a-glance value and standings.
 - **League switcher** — Jump between your leagues from anywhere via the nav dropdown.
 - **Multi-season support** — View any league across multiple seasons.
-- **PRO / Premium tiers** — Subscription-gated features (Stripe checkout, billing portal, league-shared or user-based premium access) with a paywall on PRO-only tools. League/combo buyers get a post-checkout **invite link** (`/invite/<platform>/<season>/<league_id>`) so teammates can sign in and inherit shared PRO; buyers also see an in-app “Invite your league” banner.
+- **PRO / Premium tiers** — Subscription-gated features (Stripe checkout, billing portal, league-shared or user-based premium access) with a paywall on PRO-only tools.
 - **Dark mode** — Light/dark theme toggle with your preference saved automatically.
 - **Changelog** — In-app feed of every new feature and update.
 
@@ -88,7 +88,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **Player Modals** — Detailed player view: PPG and season total with positional ranks, advanced metrics (snap share, role score, efficiency), career/per-season game logs, value history, live ESPN headlines, and a **Trades** tab that toggles between **This League** (every season, real counterparties, picks resolved to drafted players) and the **Trade Database** (same free cross-league comps, also with pick→player resolution when drafts are complete).
 - **Player Comparison** — Compare any two players with position-specific stats and metrics.
 - **Prospect Rankings** — Full rookie evaluation: production, athleticism, draft capital, and dynasty value for the active class, plus historical player comps.
-- **Draft Room** — Live and mock draft board with Recommendation Rank, Pick Score / Board PS, and post-draft grades. Run a mock for any format or connect to a live Sleeper draft. Supports rookie, startup, and redraft leagues.
+- **Draft Room** — Live and mock draft board with best-available rankings, pick scoring, and post-draft grades. Run a mock for any format or connect to a live Sleeper draft. Supports rookie, startup, and redraft leagues.
   - **Mock Draft simulator** — Run a full mock draft against simulated opponents from the draft room.
   - **Cheat Sheet** — Sortable, printable draft cheat sheet with live Sleeper draft sync (free), free CSV download, and an embeddable in-draft overlay that stays crossed-off as picks land (without turning on Sleeper live polling). Custom board edits stay PRO.
   - **Draft History** — Review completed drafts.
@@ -124,7 +124,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **NFL state / news integration** — Live NFL week state, player news, and injury data.
 - **Responsive design** — Container-query-driven layouts that adapt cleanly from desktop to mobile, with a mobile tab-bar dock.
 - **PWA & offline** — Installable progressive web app (service worker, manifest, offline page) plus push notifications for trades, breakouts, waivers, and scores. Rate limits use Redis when `REDIS_URL` is set so they hold across web workers; otherwise they are per-process.
-- **Weekly email digest** — Once-a-week recap emailed to signed-in users: your record and league rank, your roster's value risers/fallers, and the biggest leaguewide movers. Each mover row deep-links into your dashboard with the player modal open. De-duped per account per week, with one-click signed unsubscribe. Render cron `weekly-email` fires Tuesday 9am ET via `/api/cron/notifications` (`type=weekly`). Hourly push checks (lineup lock, close games, drops, injuries) run from Render cron `hourly-notifications`.
+- **Weekly email digest** — Once-a-week recap emailed to signed-in users: your record and league rank, your roster's value risers/fallers, the biggest leaguewide movers, plus optional action sections (Start/Sit issues in-season, a top waiver target, and approximate injury guidance when available). Links back to your dashboard / waivers. De-duped per account per week, with one-click signed unsubscribe. Render cron `weekly-email` fires Tuesday 9am ET via `/api/cron/notifications` (`type=weekly`). Hourly push checks (lineup lock, close games, drops, injuries) run from Render cron `hourly-notifications`.
 - **Browser extension** — Companion extension for reading league/player context on Sleeper.
 - **Trending surfaces** — Trending adds, risers/fallers, and value-movers boards driven by the live value engine.
 - **Static / informational pages** — About, Pricing, FAQ, Contact, Support, Privacy, Terms.
