@@ -14,7 +14,7 @@ def _portfolio_fn() -> str:
 def test_my_leagues_cards_show_a_platform_script():
     fn = _portfolio_fn()
     assert "def _plat_script(_plat):" in fn
-    assert "def _lg_id(name_inner, _plat, extra=\"\"):" in fn
+    assert "def _lg_id(name_inner, _plat, extra=\"\", arch=\"\"):" in fn
     assert "class='pf-lg-plat pf-lg-plat-" in fn
     assert ".pf-lg-plat-sleeper{color:#6C4BF0;}" in fn
     assert ".pf-lg-plat-espn{color:#D33A46;}" in fn
@@ -85,19 +85,34 @@ def test_my_leagues_cards_do_not_overflow_on_mobile():
     assert "min-width:0" in fn
     assert "max-width:100%" in fn
     assert "grid-template-columns:minmax(0,1fr)" in fn
-    assert ".pf-lg-card .pf-arch" in fn
+    assert ".pf-lg-meta .pf-arch" in fn
     assert "flex-shrink:0" in fn
     assert ".pf-lg-open" in fn
+    assert "overflow:hidden;box-sizing:border-box;" in fn
 
 
 def test_my_leagues_fav_and_arch_share_a_tools_group():
-    """Favorite star + archetype pill must stay spaced on narrow cards."""
+    """Favorite star stays in tools; archetype badge sits under the title."""
     fn = _portfolio_fn()
     assert "def _lg_tools(" in fn
     assert "class='pf-lg-tools'" in fn
-    assert ".pf-lg-tools{display:flex;align-items:center;gap:8px;" in fn
-    assert "width:28px;height:28px;display:inline-flex" in fn
-    assert ".pf-lg-card .pf-arch{flex:1 1 auto;min-width:0;max-width:100%;" in fn
-    # Star and arch are no longer loose siblings of the title row.
+    assert ".pf-lg-tools{display:flex;align-items:center;gap:4px;flex:0 0 auto;}" in fn
+    assert "width:24px;height:24px;display:inline-flex" in fn
+    assert "class='pf-lg-meta'" in fn
+    assert ".pf-lg-meta .pf-arch{" in fn
+    # Star and arch are no longer competing for the same top-right slot.
     assert fn.count("_lg_tools(") >= 3
+    assert "_lg_id(name_link, plat, off_note, arch_badge)" in fn
     assert "pf-lg-fav' aria-label='Favorite league'" not in fn.split("def _lg_tools")[0]
+
+
+def test_my_leagues_cards_are_compact():
+    """League cards should stay dense so several fit on a phone screen."""
+    fn = _portfolio_fn()
+    assert "padding:10px 12px" in fn
+    assert "gap:7px" in fn
+    assert "width:28px;height:28px;border-radius:8px" in fn
+    assert "class='pf-lg-stat'" in fn
+    assert ".pf-lg-mid{display:flex;align-items:center;flex-wrap:wrap;" in fn
+    assert "padding:9px 10px;gap:6px;" in fn
+    assert "overflow:hidden;box-sizing:border-box;" in fn
