@@ -593,6 +593,13 @@ function wvLoad() {{
       window.wvFaabEnabled = d.faab_enabled === true;
       const toggle = document.getElementById('wvFaabToggle');
       if (toggle) toggle.hidden = !window.wvFaabEnabled;
+      // FAAB leagues: show bid bands by default so managers don't have to hunt
+      // for the toggle. Non-FAAB leagues keep the control hidden.
+      if (window.wvFaabEnabled) {{
+        wvShowFaab = true;
+        const cb = document.getElementById('wvShowFaab');
+        if (cb) cb.checked = true;
+      }}
       wvRenderWaivers();
     }})
     .catch(() => {{ window.brErrorState('wvWaiverList', 'Unable to load waiver data.', wvLoad); }});
@@ -640,18 +647,31 @@ function wvRenderWaivers() {{
       usageChip = `<span class="wv-usage-chip" title="Last-3-week avg vs season avg">&#9650; +${{p.usage_delta}} ${{statLbl}}</span>`;
     }}
     let faabChip = '';
-    if (window.wvFaabEnabled && wvShowFaab && p.faab_high) {{
-      const bid = p.faab_low ? (p.faab_low + '&ndash;' + p.faab_high) : ('&le;' + p.faab_high);
-      faabChip = `<span class="wv-advice-metric"><span class="wv-advice-label">FAAB bid</span><span class="chip chip--sm chip--accent" title="Suggested percentage of your total FAAB budget">${{bid}}%</span></span>`;
+    if (window.wvFaabEnabled && wvShowFaab && (p.faab_high || p.faab_target)) {{
+      const low = p.faab_low != null ? p.faab_low : '';
+      const mid = p.faab_target != null ? p.faab_target : '';
+      const hi = p.faab_high != null ? p.faab_high : '';
+      const bid = (low !== '' && mid !== '' && hi !== '')
+        ? (low + ' · ' + mid + ' · ' + hi)
+        : (low !== '' && hi !== '' ? (low + '&ndash;' + hi) : ('&le;' + hi));
+      const tip = (p.faab_rationale
+        ? ('Suggested FAAB % of budget — low · target · stretch. ' + p.faab_rationale)
+        : 'Suggested FAAB % of budget — low · target · stretch');
+      faabChip = `<span class="wv-advice-metric"><span class="wv-advice-label">FAAB bid</span><span class="chip chip--sm chip--accent" title="${{tip}}">${{bid}}%</span></span>`;
     }}
     const marketChip = p.market_opportunity
       ? `<span class="wv-advice-metric"><span class="wv-advice-label">Market Opportunity</span><span class="chip chip--sm chip--neutral" title="Market Projection ${{p.market_projection}}, difference ${{p.market_opportunity.delta > 0 ? '+' : ''}}${{p.market_opportunity.delta}}">${{p.market_opportunity.label}}</span></span>`
       : '';
     let dropHint = '';
     if (p.drop && p.drop.name) {{
-      dropHint = `<div class="wv-drop-hint" title="Suggested drop to make room - your weakest spare player below this target's value">`
+      dropHint = `<div class="wv-drop-hint" title="Suggested drop to make room — your roster is full; weakest spare below this target's value">`
         + `<span class="wv-drop-lbl">Drop</span> `
         + `<span class="wv-drop-pos">${{p.drop.position}}</span> ${{p.drop.name}}</div>`;
+    }}
+    let urgencyHint = '';
+    if (p.schedule_urgency) {{
+      urgencyHint = `<div class="wv-drop-hint" title="Approximate schedule window from upcoming matchup ranks">`
+        + `<span class="wv-drop-lbl">Schedule</span> ${{p.schedule_urgency}}</div>`;
     }}
     let returnHint = '';
     const vac = (p.vacated || []).filter(v => v && (v.weeks_out != null || v.return_source));
@@ -672,6 +692,7 @@ function wvRenderWaivers() {{
         <div class="wv-player-name">${{p.name}}</div>
         <div class="wv-player-sub">${{[p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : '', p.rostered_pct != null ? Math.round(p.rostered_pct) + '% rostered' : '', p.adds_48h ? ('+' + p.adds_48h + ' adds') : ''].filter(Boolean).join(' · ')}}${{usageChip}}</div>
         ${{dropHint}}
+        ${{urgencyHint}}
         ${{returnHint}}
         <div class="wv-ctx-links" onclick="event.stopPropagation()">
           <a class="wv-ctx-link" href="${{wvLeaguePath('/compare')}}?a=${{encodeURIComponent(p.player_id)}}">Compare to roster</a>
