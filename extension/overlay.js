@@ -219,7 +219,7 @@
   const state = {
     teams: 12,
     rounds: 15,
-    mySlot: 7,
+    mySlot: EMBEDDED ? 1 : 7,
     slotAuto: false,
     live: EMBEDDED,
     hostInProgress: null,
@@ -317,6 +317,7 @@
       detail && detail.ppr != null ? detail.ppr : "",
       detail && detail.tep != null ? detail.tep : "",
       detail && detail.passTd != null ? detail.passTd : "",
+      detail && detail.teamNames ? Object.keys(detail.teamNames).length : "",
       window.BRDraftSlot && BRDraftSlot.rosterKey ? BRDraftSlot.rosterKey(detail && detail.roster) : ""
     ].join("|");
   }
@@ -958,7 +959,12 @@
     document.getElementById("hostLeague").textContent = pf.league;
     document.getElementById("syncChip").innerHTML = "<i></i> " + pf.sync;
     const rd = Math.min(state.rounds, Math.ceil(Math.min(state.current, state.teams * state.rounds) / state.teams));
-    document.getElementById("hostSub").textContent = "12-team PPR · snake · round " + rd;
+    const settingsTxt = leagueSettingsLabel();
+    const hostBits = [state.teams + "-team"];
+    if (settingsTxt) hostBits.push(settingsTxt);
+    else hostBits.push(state.sf ? "SF" : "PPR");
+    hostBits.push("round " + rd);
+    document.getElementById("hostSub").textContent = hostBits.join(" · ");
     const otc = document.getElementById("otc");
     const done = draftDone();
     const slot = done ? null : ownerOf(state.current);
@@ -1187,7 +1193,9 @@
     for (let i = 1; i <= state.teams; i++) {
       const o = document.createElement("option");
       o.value = String(i);
-      o.textContent = i === state.mySlot ? i + " (you)" : String(i);
+      const you = !!state.slotAuto && i === state.mySlot;
+      const nm = state.teamNames && state.teamNames[i];
+      o.textContent = (nm ? i + " · " + nm : String(i)) + (you ? " (you)" : "");
       if (i === state.mySlot) o.selected = true;
       sel.appendChild(o);
     }
@@ -1550,7 +1558,9 @@
       state.mySlot = Math.max(1, Math.min(state.teams, Number(detail.mySlot)));
       state.slotAuto = true;
     }
-    if (detail.teamNames && typeof detail.teamNames === "object") state.teamNames = detail.teamNames;
+    if (detail.teamNames && typeof detail.teamNames === "object") {
+      state.teamNames = Object.assign({}, state.teamNames, detail.teamNames);
+    }
     const raw = Array.isArray(detail.picks) ? detail.picks.slice() : [];
     raw.sort(function (a, b) {
       return (Number(a.overallPickNumber || a.pick_no || 0) - Number(b.overallPickNumber || b.pick_no || 0));
@@ -1665,8 +1675,10 @@
     buildPool();
     indexNames();
   }
-  const savedSlot = Number(localStorage.getItem("br-da-slot") || 0);
-  if (savedSlot) state.mySlot = savedSlot;
+  if (!EMBEDDED) {
+    const savedSlot = Number(localStorage.getItem("br-da-slot") || 0);
+    if (savedSlot) state.mySlot = savedSlot;
+  }
   fillSlotSel();
   try {
     const savedAdp = localStorage.getItem("br-da-adp");

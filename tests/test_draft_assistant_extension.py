@@ -30,7 +30,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.17"
+    assert manifest["version"] == "1.5.18"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -310,8 +310,15 @@ def test_sleeper_detects_live_pick_slot_from_several_signals():
     assert "api.sleeper.app/v1/user/" in sleeper
     assert "api.sleeper.app/v1/league/" in sleeper
     assert "/rosters" in sleeper
+    assert "/users" in sleeper
     assert "pickedBy" in sleeper
-    assert "mySlot || \"\"" in sleeper
+    assert "teamNamesFromSleeperDraft" in sleeper
+    assert "visibilitychange" in sleeper
+    assert "POLL_DRAFTING_MS" in sleeper
+    assert "function teamNamesFromSleeperDraft" in helper
+    assert 'mySlot: EMBEDDED ? 1 : 7' in (EXT / "overlay.js").read_text(encoding="utf-8")
+    assert "12-team PPR · snake · round " not in (EXT / "overlay.js").read_text(encoding="utf-8")
+    assert "if (!EMBEDDED)" in (EXT / "overlay.js").read_text(encoding="utf-8")
     assert "\u2014" not in sleeper
 
 
@@ -367,6 +374,23 @@ const viaPicks = B.detectSleeperSlot({
   skipDom: true,
 });
 if (viaPicks !== 7) process.exit(1);
+const auction = B.detectSleeperSlot({
+  draft: { type: "auction" },
+  identity: { userIds: [] },
+  teams: 12,
+  currentPick: 8,
+  clockText: "You're on the clock",
+  skipDom: true,
+});
+if (auction !== 0) process.exit(1);
+const names = B.teamNamesFromSleeperDraft(
+  { draft_order: { "111111": 3, "222222": 1 } },
+  [
+    { user_id: "111111", display_name: "Night Owls" },
+    { user_id: "222222", metadata: { team_name: "Gridiron" } },
+  ]
+);
+if (names[3] !== "Night Owls" || names[1] !== "Gridiron") process.exit(1);
 console.log("ok");
 """
     out = subprocess.run(

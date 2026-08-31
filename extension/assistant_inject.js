@@ -270,6 +270,7 @@
       payload.ppr != null ? payload.ppr : "",
       payload.tep != null ? payload.tep : "",
       payload.passTd != null ? payload.passTd : "",
+      payload.teamNames ? Object.keys(payload.teamNames).length : "",
       window.BRDraftSlot && BRDraftSlot.rosterKey ? BRDraftSlot.rosterKey(payload.roster) : ""
     ].join("|");
     const teams = Number(payload.teams || 0);

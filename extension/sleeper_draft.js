@@ -4,14 +4,18 @@
 (function () {
   "use strict";
 
-  const POLL_MS = 1500;
+  const POLL_DRAFTING_MS = 900;
+  const POLL_IDLE_MS = 2000;
   let lastFp = "";
   let lastCount = 0;
   let lastMySlot = 0;
+  let lastStatus = "";
+  let pollTimer = null;
   let cachedLeagueId = "";
   let cachedScoring = { ppr: 1, tep: 0, passTd: 4 };
   let cachedUser = { username: "", userId: "" };
   let cachedOwnerMap = { leagueId: "", map: {} };
+  let cachedUsers = { leagueId: "", rows: [] };
 
   async function leagueScoring(leagueId) {
     if (!leagueId) return cachedScoring;
@@ -92,6 +96,22 @@
     return "";
   }
 
+  async function leagueUsers(leagueId) {
+    if (!leagueId) return [];
+    if (cachedUsers.leagueId === String(leagueId)) return cachedUsers.rows;
+    try {
+      const res = await fetch(
+        "https://api.sleeper.app/v1/league/" + encodeURIComponent(leagueId) + "/users",
+        { cache: "no-store" }
+      );
+      const rows = res.ok ? await res.json() : [];
+      cachedUsers = { leagueId: String(leagueId), rows: Array.isArray(rows) ? rows : [] };
+      return cachedUsers.rows;
+    } catch (_e) {
+      return cachedUsers.rows || [];
+    }
+  }
+
   async function ownerToRosterMap(leagueId) {
     if (!leagueId) return {};
     if (cachedOwnerMap.leagueId === String(leagueId)) return cachedOwnerMap.map;
@@ -133,6 +153,7 @@
         },
         ownerToRoster: ownerToRoster || {},
         currentPick: (picks && picks.length ? picks[picks.length - 1].overallPickNumber : 0) + 1,
+        auction: String((draft && draft.type) || "").toLowerCase() === "auction",
       });
     }
     if (slot) lastMySlot = slot;
@@ -161,7 +182,12 @@
 
   function fingerprint(picks) {
     const last = picks.length ? picks[picks.length - 1] : null;
-    return [picks.length, last ? last.overallPickNumber : 0, last ? last.playerId : ""].join("|");
+    return [
+      picks.length,
+      last ? last.overallPickNumber : 0,
+      last ? last.playerId : "",
+      last ? last.playerName || "" : "",
+    ].join("|");
   }
 
   function push(detail) {
@@ -199,8 +225,17 @@
       const teams = Number(settings.teams || 12);
       const ident = sleeperIdentity();
       const uid = await resolveSleeperUserId(ident);
-      const ownerToRoster = await ownerToRosterMap(draft && draft.league_id);
+      const leagueId = draft && draft.league_id;
+      const ownerToRoster = await ownerToRosterMap(leagueId);
+      const users = await leagueUsers(leagueId);
       const mySlot = resolveMySlot(draft, picks, teams, ident, uid, ownerToRoster);
+      const teamNames = window.BRDraftSlot && BRDraftSlot.teamNamesFromSleeperDraft
+        ? BRDraftSlot.teamNamesFromSleeperDraft(draft, users)
+        : {};
+      const status = String((draft && draft.status) || "").toLowerCase();
+      lastStatus = status;
+      const inProgress = status === "drafting" || (status !== "complete" && picks.length > 0);
+      const drafted = status === "complete";
       const roster = window.BRDraftSlot && BRDraftSlot.rosterFromSleeperSettings
         ? BRDraftSlot.rosterFromSleeperSettings(settings)
         : null;
@@ -216,6 +251,9 @@
         tep: scoring.tep,
         passTd: scoring.passTd,
         picks: picks,
+        teamNames: teamNames,
+        inProgress: inProgress,
+        drafted: drafted,
         syncText: window.BRDraftSlot
           ? window.BRDraftSlot.compactSync("sleeper", picks.length, mySlot || undefined, true)
           : (picks.length ? "SLEEPER · " + picks.length : "SLEEPER · LIVE"),
@@ -223,6 +261,8 @@
       const settingsFp = [
         fp,
         mySlot || "",
+        status,
+        Object.keys(teamNames).length,
         window.BRDraftSlot && BRDraftSlot.rosterKey ? BRDraftSlot.rosterKey(roster) : "",
         scoring.ppr,
         scoring.tep,
@@ -243,10 +283,18 @@
     poll();
   });
 
-  poll();
+  function schedulePoll() {
+    if (pollTimer) clearTimeout(pollTimer);
+    const ms = lastStatus === "drafting" ? POLL_DRAFTING_MS : POLL_IDLE_MS;
+    pollTimer = setTimeout(function () {
+      poll().then(schedulePoll);
+    }, ms);
+  }
+  poll().then(schedulePoll);
   setTimeout(poll, 500);
-  setTimeout(poll, 2000);
-  setInterval(poll, POLL_MS);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) poll();
+  });
   let slotTick = null;
   try {
     const mo = new MutationObserver(function () {

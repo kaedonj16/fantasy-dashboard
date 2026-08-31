@@ -791,14 +791,37 @@
     slot = slotFromSleeperRosterMap(rosterMap, opts.ownerToRoster, userIds);
     if (slot) return clampSlot(slot, max);
     const current = Number(opts.currentPick) || (picks.length ? picks[picks.length - 1].overallPickNumber + 1 : 1);
-    const clockText = opts.clockText != null ? opts.clockText : opts.skipDom ? "" : sleeperClockText();
-    slot = slotFromSleeperClock(clockText, current, teams || 12);
-    if (slot) return clampSlot(slot, max);
+    const auction = !!opts.auction || String((draft && draft.type) || "").toLowerCase() === "auction";
+    if (!auction) {
+      const clockText = opts.clockText != null ? opts.clockText : opts.skipDom ? "" : sleeperClockText();
+      slot = slotFromSleeperClock(clockText, current, teams || 12);
+      if (slot) return clampSlot(slot, max);
+    }
     if (!opts.skipDom) {
       slot = detectSleeperDomSlot(identity, max);
       if (slot) return clampSlot(slot, max);
     }
     return 0;
+  }
+
+  function teamNamesFromSleeperDraft(draft, users) {
+    const names = {};
+    const order = (draft && draft.draft_order) || {};
+    const byId = {};
+    (users || []).forEach(function (u) {
+      if (!u || u.user_id == null) return;
+      byId[String(u.user_id)] = u;
+    });
+    Object.keys(order).forEach(function (uid) {
+      const slot = Number(order[uid]);
+      if (!(slot >= 1 && slot <= 32)) return;
+      const u = byId[uid];
+      if (!u) return;
+      const meta = u.metadata || {};
+      const name = String(meta.team_name || u.display_name || u.username || "").trim();
+      if (name) names[slot] = name;
+    });
+    return names;
   }
 
   root.BRDraftSlot = {
@@ -836,5 +859,6 @@
     slotFromSleeperClock: slotFromSleeperClock,
     detectSleeperSlot: detectSleeperSlot,
     detectSleeperDomSlot: detectSleeperDomSlot,
+    teamNamesFromSleeperDraft: teamNamesFromSleeperDraft,
   };
 })(window);
