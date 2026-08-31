@@ -30,7 +30,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.14"
+    assert manifest["version"] == "1.5.15"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -121,6 +121,8 @@ def test_collapsed_overlay_has_reopen_control():
     assert "setCollapsed(false)" in inject
     assert "html.br-da-collapsed" in inject
     assert "translateX" in inject
+    assert "applyDockShift" in inject
+    assert "data-br-da-shifted" in inject
     assert "transition:transform" in inject.replace(" ", "")
     assert "br-da-ready" in inject
     assert "prefers-reduced-motion" in inject
@@ -168,6 +170,8 @@ def test_overlay_autodetects_slot_and_keeps_header_on_one_line():
     yahoo_main = (EXT / "yahoo_draft_main.js").read_text(encoding="utf-8")
     sleeper = (EXT / "sleeper_draft.js").read_text(encoding="utf-8")
     assert "function detectDomSlot" in helper
+    assert "function detectYahooSlot" in helper
+    assert "function slotFromYahooClock" in helper
     assert "function slotFromTeamId" in helper
     assert "function compactSync" in helper
     assert "YOU " in helper

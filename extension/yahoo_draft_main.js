@@ -41,6 +41,11 @@
         const key = (u.searchParams.get("leagueKey") || u.searchParams.get("key") || "").trim();
         if (key && key.indexOf(".l.") >= 0) leagueId = key.split(".l.").pop() || "";
       }
+      const client = u.pathname.match(/\/draftclient\/(?:nfl\/|f1\/)?(\d+)\/(\d+)/i);
+      if (client) {
+        if (!leagueId) leagueId = client[1];
+        if (!detectedUserTeamId) detectedUserTeamId = client[2];
+      }
       return { leagueId, season };
     } catch (_e) {
       return { leagueId: "", season: "" };
@@ -605,6 +610,7 @@
     };
   }
 
+  leagueFromUrl();
   hookNetwork();
   function onRescan() {
     lastFingerprint = "";

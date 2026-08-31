@@ -81,7 +81,8 @@
     const s = String(text || "").replace(/\s+/g, " ").trim();
     if (!s || s.length > 64) return false;
     if (/on the clock|your turn|waiting for you|draft assistant/i.test(s)) return false;
-    return /\(\s*you\s*\)/i.test(s) || /\byour\s+team\b/i.test(s) || /^you$/i.test(s);
+    if (/^you(?:'re| are)\b/i.test(s)) return false;
+    return /\(\s*you\s*\)/i.test(s) || /\byour\s+team\b/i.test(s) || /^you$/i.test(s) || /^you\s+\d/i.test(s);
   }
 
   function slotFromColumnNode(node) {
@@ -116,6 +117,10 @@
         '[data-user-team="true"]',
         '[aria-label*="your team" i]',
         '[aria-label*="(you)" i]',
+        '[aria-label="You"]',
+        '[class*="isSelf"]',
+        '[class*="self-team"]',
+        '[class*="selfTeam"]',
       ].join(",")
     );
     if (highlighted) {
@@ -167,6 +172,70 @@
     } catch (_e) {
       return false;
     }
+  }
+
+  function yahooClientTeamId() {
+    try {
+      const m = String(location.pathname || "").match(/\/draftclient\/(?:nfl\/|f1\/)?(\d+)\/(\d+)/i);
+      return m ? m[2] : "";
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function parseYahooClock(text) {
+    const s = String(text || "").replace(/\s+/g, " ");
+    const up = s.match(/you(?:'re| are) up in\s+(\d+)\s+picks?/i);
+    const onClock = /your pick|you(?:'re| are) on the clock|it(?:'s| is) your (?:pick|turn)/i.test(s);
+    const rd = s.match(/round\s+(\d+)\s*[,•·]\s*pick\s+(\d+)/i);
+    return {
+      upIn: up ? Number(up[1]) : null,
+      onClock: onClock,
+      round: rd ? Number(rd[1]) : 0,
+      roundPick: rd ? Number(rd[2]) : 0,
+    };
+  }
+
+  function slotFromYahooClock(text, teams) {
+    const c = parseYahooClock(text);
+    const nTeams = Number(teams) || 0;
+    if (c.onClock && c.round === 1 && c.roundPick >= 1) return c.roundPick;
+    if (c.onClock && nTeams >= 2 && c.round >= 1 && c.roundPick >= 1) {
+      return snakeSlot((c.round - 1) * nTeams + c.roundPick, nTeams);
+    }
+    if (c.upIn != null && c.upIn >= 0) {
+      if (c.round === 1 && c.roundPick >= 1) return c.roundPick + c.upIn;
+      if (c.round <= 1) return 1 + c.upIn;
+      if (nTeams >= 2 && c.round >= 1 && c.roundPick >= 1) {
+        return snakeSlot((c.round - 1) * nTeams + c.roundPick + c.upIn, nTeams);
+      }
+    }
+    return 0;
+  }
+
+  function yahooClockText() {
+    if (!document || !document.querySelectorAll) return "";
+    const bits = [];
+    const nodes = document.querySelectorAll(
+      "h1,h2,h3,header,[class*='Clock'],[class*='clock'],[class*='Status'],[class*='status'],[class*='Banner'],[class*='banner'],[class*='Pick']"
+    );
+    const n = Math.min(nodes.length, 60);
+    for (let i = 0; i < n; i++) bits.push(String(nodes[i].textContent || "").slice(0, 220));
+    let blob = bits.join(" ");
+    if (!/you(?:'re| are) up in|your pick/i.test(blob) && document.body) {
+      blob = String(document.body.innerText || "").slice(0, 4000);
+    }
+    return blob;
+  }
+
+  function detectYahooSlot(teams) {
+    const fromClock = slotFromYahooClock(yahooClockText(), teams);
+    if (fromClock) return clampSlot(fromClock, teams || 32);
+    const dom = detectDomSlot();
+    if (dom) return dom;
+    const tid = Number(yahooClientTeamId());
+    if (tid >= 1 && tid <= 32 && (!teams || tid <= Number(teams))) return tid;
+    return 0;
   }
 
   function clampSlot(slot, teams) {
@@ -281,6 +350,10 @@
     espnSwid: espnSwid,
     compactSync: compactSync,
     detectDomSlot: detectDomSlot,
+    detectYahooSlot: detectYahooSlot,
+    yahooClientTeamId: yahooClientTeamId,
+    slotFromYahooClock: slotFromYahooClock,
+    parseYahooClock: parseYahooClock,
     isEspnDraftRoom: isEspnDraftRoom,
     clampSlot: clampSlot,
     rosterFromEspnSlots: rosterFromEspnSlots,

@@ -45,13 +45,46 @@
     return /(?:^|\/)(?:live)?draft(?:\/|$)/.test(path) || /(?:^|\/)mockdraft(?:\/|$)/.test(path);
   }
 
+  function dockShiftPx() {
+    return collapsed ? COLLAPSED : WIDTH;
+  }
+
+  function applyDockShift() {
+    const px = dockShiftPx();
+    const root = document.getElementById(ROOT_ID);
+    const cap = Math.max(320, window.innerWidth - px);
+    const html = document.documentElement;
+    html.classList.add("br-da-docked");
+    html.classList.add("br-da-" + platformFromHost());
+    html.style.setProperty("--br-da-shift", px + "px");
+    const shells = [];
+    if (document.body) {
+      shells.push(document.body);
+      Array.prototype.forEach.call(document.body.children, function (el) { shells.push(el); });
+      const nested = document.querySelectorAll("body > * > *");
+      for (let i = 0; i < Math.min(nested.length, 24); i++) shells.push(nested[i]);
+    }
+    shells.forEach(function (el) {
+      if (!el || el === root || (root && root.contains(el))) return;
+      if (/^(SCRIPT|STYLE|LINK|META|NOSCRIPT|IFRAME)$/.test(el.tagName)) return;
+      const w = el.getBoundingClientRect ? el.getBoundingClientRect().width : 0;
+      if (el === document.body || el.getAttribute("data-br-da-shifted") === "1" || w >= window.innerWidth - 24) {
+        el.setAttribute("data-br-da-shifted", "1");
+        el.style.setProperty("width", cap + "px", "important");
+        el.style.setProperty("max-width", cap + "px", "important");
+        el.style.setProperty("box-sizing", "border-box", "important");
+      }
+    });
+  }
+
   function ensureDockCss() {
     if (document.getElementById("br-da-dock-css")) return;
     const style = document.createElement("style");
     style.id = "br-da-dock-css";
     style.textContent =
-      "html.br-da-docked{margin-right:" + WIDTH + "px !important;}" +
-      "html.br-da-docked.br-da-collapsed{margin-right:" + COLLAPSED + "px !important;}" +
+      "html.br-da-docked{margin-right:" + WIDTH + "px !important;width:calc(100% - " + WIDTH + "px)!important;max-width:calc(100vw - " + WIDTH + "px)!important;box-sizing:border-box!important;overflow-x:hidden!important;}" +
+      "html.br-da-docked.br-da-collapsed{margin-right:" + COLLAPSED + "px !important;width:calc(100% - " + COLLAPSED + "px)!important;max-width:calc(100vw - " + COLLAPSED + "px)!important;}" +
+      "html.br-da-docked body{width:100%!important;max-width:100%!important;overflow-x:hidden!important;box-sizing:border-box!important;}" +
       "html.br-da-docked.br-da-ready{transition:margin-right " + SLIDE_MS + "ms " + SLIDE_EASE + " !important;}" +
       "#" + ROOT_ID + "{position:fixed;top:0;right:0;bottom:0;width:" + WIDTH +
       "px;z-index:2147483645;box-shadow:-8px 0 28px rgba(0,0,0,.22);background:#122d4b;" +
@@ -82,6 +115,7 @@
     }
     ensureDockCss();
     document.documentElement.classList.add("br-da-docked");
+    document.documentElement.classList.add("br-da-" + platformFromHost());
     const wrap = document.createElement("div");
     wrap.id = ROOT_ID;
     iframe = document.createElement("iframe");
@@ -100,11 +134,16 @@
     expand.addEventListener("click", function () { setCollapsed(false); });
     wrap.appendChild(expand);
     document.documentElement.appendChild(wrap);
+    applyDockShift();
     requestAnimationFrame(function () {
+      applyDockShift();
       requestAnimationFrame(function () {
         document.documentElement.classList.add("br-da-ready");
+        applyDockShift();
       });
     });
+    window.addEventListener("resize", applyDockShift);
+    setInterval(applyDockShift, 2500);
   }
 
   function postToOverlay(msg) {
@@ -188,6 +227,7 @@
     const root = document.getElementById(ROOT_ID);
     if (root) root.style.willChange = "transform";
     document.documentElement.classList.toggle("br-da-collapsed", collapsed);
+    applyDockShift();
     if (collapsed) {
       slideTimer = setTimeout(function () {
         slideTimer = null;

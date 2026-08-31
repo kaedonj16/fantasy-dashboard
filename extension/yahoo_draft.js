@@ -36,6 +36,11 @@
         const key = (u.searchParams.get("leagueKey") || u.searchParams.get("key") || "").trim();
         if (key && key.indexOf(".l.") >= 0) leagueId = key.split(".l.").pop() || "";
       }
+      const client = u.pathname.match(/\/draftclient\/(?:nfl\/|f1\/)?(\d+)\/(\d+)/i);
+      if (client) {
+        if (!leagueId) leagueId = client[1];
+        if (!lastUserTeamId) lastUserTeamId = client[2];
+      }
       return { leagueId, season };
     } catch (_e) {
       return { leagueId: "", season: "" };
@@ -72,12 +77,18 @@
       lastUserTeamId = teamId;
     }
     if (window.BRDraftSlot) {
-      const dom = window.BRDraftSlot.detectDomSlot();
-      if (dom) {
-        lastMySlot = dom;
-        return dom;
+      const yahoo = window.BRDraftSlot.detectYahooSlot
+        ? window.BRDraftSlot.detectYahooSlot(teams)
+        : window.BRDraftSlot.detectDomSlot();
+      if (yahoo) {
+        lastMySlot = yahoo;
+        return yahoo;
       }
     }
+    const urlTeam = window.BRDraftSlot && BRDraftSlot.yahooClientTeamId
+      ? BRDraftSlot.yahooClientTeamId()
+      : "";
+    if (urlTeam && !lastUserTeamId) lastUserTeamId = urlTeam;
     return lastMySlot || 0;
   }
 
@@ -374,11 +385,14 @@
   }
 
   ensureChip();
-  setInterval(function () {
+  function pollYahooSlot() {
     const prev = lastMySlot;
     const slot = resolveMySlot(lastPicks || [], {});
-    if (slot && slot !== prev) feedAssistant(lastPicks || [], "", true, { mySlot: slot });
-  }, 2500);
+    if (slot && slot !== prev) feedAssistant(lastPicks || [], "", true, { mySlot: slot, teams: overlayTeamMeta(lastPicks).teams });
+  }
+  pollYahooSlot();
+  setTimeout(pollYahooSlot, 600);
+  setInterval(pollYahooSlot, 1500);
   try {
     chrome.runtime.sendMessage(
       {
