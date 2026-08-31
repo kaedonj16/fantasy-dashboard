@@ -1014,6 +1014,52 @@
   .dr-cmp-stat-val { font-size: 12px; font-weight: 800; color: var(--text); }
   .dr-cmp-stat.win { background: color-mix(in srgb, var(--win) 12%, transparent); }
   .dr-cmp-stat.win .dr-cmp-stat-val { color: var(--win); }
+  .dr-posbadge { font-size: 9px; font-weight: 700; color: #fff; border-radius: 3px; padding: 1px 4px; }
+  .dr-info {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 9px;
+    font-weight: 800;
+    font-style: normal;
+    cursor: help;
+    margin-left: 4px;
+    position: relative;
+    vertical-align: middle;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .dr-info:hover, .dr-info:focus { border-color: var(--accent); color: var(--accent); outline: none; }
+  .dr-info::after {
+    content: attr(data-tip);
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    width: max-content;
+    max-width: 210px;
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    font-style: normal;
+    line-height: 1.45;
+    text-align: left;
+    box-shadow: 0 8px 24px rgba(0,0,0,.28);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .12s;
+    z-index: 20;
+    white-space: normal;
+  }
+  .dr-info:hover::after, .dr-info:focus::after { opacity: 1; }
   .ba-right { text-align: right; flex-shrink: 0; min-width: 48px; }
   .ba-val { font-size: 15px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
   .ba-sub { font-size: 10.5px; color: var(--text-muted); margin-top: 3px; font-variant-numeric: tabular-nums; }

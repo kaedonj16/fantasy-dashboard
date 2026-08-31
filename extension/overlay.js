@@ -1116,9 +1116,8 @@
   const cmpModal = document.getElementById("cmpModal");
   if (cmpModal) {
     cmpModal.addEventListener("click", function (e) {
-      if (e.target === cmpModal || e.target.closest("[data-cmp-close]")) {
-        closeCompare(true);
-        render();
+      if (e.target === cmpModal || e.target.closest("#drCmpClose") || e.target.closest("[data-cmp-close]")) {
+        closeCompare();
       }
     });
   }
@@ -1256,6 +1255,15 @@
         age: p.age == null ? 0 : Number(p.age),
         bye: p.bye == null ? 0 : Number(p.bye),
         bye_week: p.bye_week != null ? Number(p.bye_week) : (p.bye == null ? 0 : Number(p.bye)),
+        proj_ppg: p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg == null ? null : Number(p.ppg)),
+        proj_pts: p.proj_pts == null ? null : Number(p.proj_pts),
+        last_ppg: p.last_ppg == null ? null : Number(p.last_ppg),
+        ppg_season: p.ppg_season || "",
+        vorp: p.vorp == null ? null : Number(p.vorp),
+        market: p.market == null ? null : Number(p.market),
+        years_exp: p.years_exp == null ? null : Number(p.years_exp),
+        is_rookie: !!p.is_rookie,
+        injury: p.injury || "",
         headshot: p.headshot || "",
         tier: p.tier || 6,
         rank_change_7d: p.rank_change_7d == null ? null : Number(p.rank_change_7d),
@@ -1358,21 +1366,95 @@
     const idx = compareIds.indexOf(id);
     if (idx >= 0) {
       compareIds.splice(idx, 1);
-      closeCompare(false);
-      render();
-      return;
+    } else if (compareIds.length >= 2) {
+      compareIds = [id];
+    } else {
+      compareIds.push(id);
     }
-    if (compareIds.length >= 2) compareIds = [id];
-    else compareIds.push(id);
-    if (compareIds.length === 2) openCompare();
-    else closeCompare(false);
     render();
   }
 
-  function closeCompare(clear) {
-    if (clear !== false) compareIds = [];
+  function closeCompare() {
+    compareIds = [];
     const modal = document.getElementById("cmpModal");
     if (modal) modal.hidden = true;
+    render();
+  }
+
+  function infoIcon(tip) {
+    return '<span class="dr-info" tabindex="0" role="button" aria-label="' + esc(tip) + '" data-tip="' + esc(tip) + '">i</span>';
+  }
+
+  function expLabel(p) {
+    if (!p) return "";
+    if (p.is_rookie) return "Rookie";
+    const ye = Number(p.years_exp);
+    if (!isFinite(ye) || ye < 0) return "";
+    if (ye === 0) return "Rookie";
+    return ye + " yr";
+  }
+
+  function posRankOf(p) {
+    const pos = String((p && (p.pos || p.position)) || "").toUpperCase();
+    if (!pos) return { label: "", n: null };
+    const ranked = players.filter(function (x) {
+      return String(x.pos || x.position || "").toUpperCase() === pos;
+    }).slice().sort(function (a, b) { return (Number(b.val) || 0) - (Number(a.val) || 0); });
+    const i = ranked.findIndex(function (x) { return String(x.id) === String(p.id); });
+    if (i < 0) return { label: "", n: null };
+    return { label: pos + (i + 1), n: i + 1 };
+  }
+
+  function fmtSigned(n, digits) {
+    if (n == null || !isFinite(Number(n))) return "-";
+    const x = Number(n);
+    const s = digits != null ? x.toFixed(digits) : String(Math.round(x));
+    if (Number(s) === 0) return digits != null ? Number(0).toFixed(digits) : "0";
+    return (Number(s) > 0 ? "+" : "") + s;
+  }
+
+  function draftPlayerFacts(p, pool) {
+    const hit = (pool || []).filter(function (x) { return String(x.id) === String(p.id); })[0] || p;
+    const adp = Number(p.adp);
+    const adpN = isFinite(adp) && adp < 900 ? adp : null;
+    const scoring = { ppr: state.ppr, tep: state.tep, passTd: state.passTd };
+    const C = window.DraftBoardCore;
+    let projPpg = C && C.scoringProjPpg ? C.scoringProjPpg(p, scoring) : null;
+    if (projPpg == null) projPpg = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
+    let projPts = C && C.scoringProjPts ? C.scoringProjPts(p, scoring) : null;
+    if (projPts == null) projPts = p.proj_pts != null ? Number(p.proj_pts) : null;
+    const lastPpg = p.last_ppg != null && isFinite(Number(p.last_ppg)) ? Number(p.last_ppg) : null;
+    const pr = posRankOf(p);
+    let survive = null;
+    const ctx = scoreCtx();
+    if (window.BROverlayScore && BROverlayScore.recWaitPickNo && BROverlayScore.availProb) {
+      const next = BROverlayScore.recWaitPickNo(ctx);
+      if (next) {
+        const pct = BROverlayScore.availProb(p, next, ctx, players);
+        if (pct != null && isFinite(Number(pct))) survive = Math.round(Number(pct));
+      }
+    }
+    return {
+      rec: hit._rank != null ? hit._rank : null,
+      ps: hit._psShow != null ? hit._psShow : (hit._ps != null ? hit._ps : null),
+      value: Number(p.val) || 0,
+      projPpg: projPpg != null && isFinite(Number(projPpg)) ? Number(projPpg) : null,
+      lastPpg: lastPpg,
+      ppgSeason: p.ppg_season || "",
+      vor: hit._vor != null && isFinite(Number(hit._vor)) ? Number(hit._vor) : null,
+      vorp: p.vorp != null && isFinite(Number(p.vorp)) ? Number(p.vorp) : null,
+      adp: adpN,
+      vsAdp: adpN != null ? (state.current - adpN) : null,
+      posRank: pr.label,
+      posRankN: pr.n,
+      bye: p.bye_week != null || p.bye != null ? Number(p.bye_week != null ? p.bye_week : p.bye) : null,
+      age: p.age != null ? Number(p.age) : null,
+      survive: survive,
+      projPts: projPts != null && isFinite(Number(projPts)) ? Number(projPts) : null,
+      market: p.market != null && isFinite(Number(p.market)) ? Number(p.market) : null,
+      exp: expLabel(p),
+      injury: p.injury || "",
+    };
   }
 
   function openCompare() {
@@ -1383,62 +1465,54 @@
     if (!p1 || !p2 || !modal || !card) return;
     const counts = posCounts(myPicks());
     const pool = rankedPool(counts, state.current);
-    function fmtSigned(n) {
-      if (n == null || !isFinite(Number(n))) return "-";
-      const x = Math.round(Number(n));
-      if (x === 0) return "0";
-      return (x > 0 ? "+" : "") + x;
-    }
-    function facts(p) {
-      const hit = pool.filter(function (x) { return String(x.id) === String(p.id); })[0] || p;
-      const adp = Number(p.adp);
-      const adpN = isFinite(adp) && adp < 900 ? adp : null;
-      return {
-        rec: hit._rank != null ? hit._rank : null,
-        ps: hit._psShow != null ? hit._psShow : (hit._ps != null ? hit._ps : pickScore(p, counts, state.current)),
-        value: Number(p.val) || 0,
-        projPpg: p.ppg != null && isFinite(Number(p.ppg)) ? Number(p.ppg) : null,
-        vor: hit._vor != null && isFinite(Number(hit._vor)) ? Number(hit._vor) : null,
-        adp: adpN,
-        vsAdp: adpN != null ? (state.current - adpN) : null,
-        bye: p.bye != null || p.bye_week != null ? Number(p.bye || p.bye_week) : null,
-        age: p.age != null ? Number(p.age) : null,
-      };
-    }
     function cmpCol(p, other) {
-      const f = facts(p);
-      const o = facts(other);
-      function statRow(lbl, val, oval, higherBetter, fmtFn) {
+      const f = draftPlayerFacts(p, pool);
+      const o = draftPlayerFacts(other, pool);
+      const ps = f.ps;
+      function statRow(lbl, val, oval, higherBetter, fmtFn, tip) {
         if (val == null && oval == null) return "";
         const vStr = fmtFn ? fmtFn(val) : (val != null ? String(val) : "-");
         const win = val != null && oval != null && (higherBetter ? val > oval : val < oval);
         return '<div class="dr-cmp-stat' + (win ? " win" : "") + '">'
-          + '<span class="dr-cmp-stat-lbl">' + esc(lbl) + "</span>"
+          + '<span class="dr-cmp-stat-lbl"' + (tip ? ' title="' + esc(tip) + '"' : "") + ">" + esc(lbl) + "</span>"
           + '<span class="dr-cmp-stat-val">' + esc(vStr) + "</span></div>";
       }
-      const sc = f.ps != null ? psColor(f.ps) : "var(--text-muted)";
+      const sc = ps != null ? psColor(ps) : "var(--text-muted)";
       const photo = hsUrl(p)
         ? '<img class="dr-cmp-hs" src="' + esc(hsUrl(p)) + '" alt="">'
         : hsMark(p, "hs-sm");
-      const metaBits = [p.team || "", (f.age ? "Age " + Math.round(f.age) : "")].filter(Boolean);
+      const metaBits = [p.team || "", f.exp, (f.age ? "Age " + f.age.toFixed(0) : ""), f.injury].filter(Boolean);
       return '<div class="dr-cmp-player">'
         + '<div class="dr-cmp-top">' + photo
-        + "<div><div class=\"dr-cmp-name\"><span class=\"posb\" style=\"background:" + (POS[p.pos] || POS.BN) + '">' + esc(p.pos) + "</span> " + esc(p.name) + "</div>"
+        + '<div><div class="dr-cmp-name"><span class="dr-posbadge" style="background:' + (POS[p.pos] || POS.BN) + '">' + esc(p.pos) + "</span> " + esc(p.name) + "</div>"
         + '<div class="dr-cmp-meta">' + esc(metaBits.join(" · ")) + "</div>"
         + "</div></div>"
-        + '<div class="dr-cmp-ps" style="color:' + sc + '">' + (f.ps != null ? Math.round(f.ps) : "-") + "</div>"
-        + '<div class="dr-cmp-ps-lbl">Pick Score</div>'
+        + '<div class="dr-cmp-ps" style="color:' + sc + '">' + (ps != null ? Math.round(ps) : "-") + "</div>"
+        + '<div class="dr-cmp-ps-lbl">Pick Score'
+        + infoIcon("How good is this player at this pick? Absolute 0-100 quality (value, VOR, ADP, tier, need, projected points), shown relative to the best player still available. Not Recommendation Rank, and not a count of which compare rows you win.")
+        + "</div>"
         + '<div class="dr-cmp-stats">'
         + statRow("Value", f.value, o.value, true, function (x) { return x != null ? String(Math.round(x)) : "-"; })
-        + statRow("Proj PPG", f.projPpg, o.projPpg, true, function (x) { return x != null ? Number(x).toFixed(1) : "N/A"; })
-        + statRow("VOR", f.vor, o.vor, true, function (x) { return x != null ? fmtSigned(x) : "-"; })
+        + statRow("Proj PPG", f.projPpg, o.projPpg, true, function (x) { return x != null ? x.toFixed(1) : "N/A"; })
+        + (f.lastPpg != null || o.lastPpg != null ? statRow((f.ppgSeason || "Last") + " PPG", f.lastPpg, o.lastPpg, true, function (x) { return x != null ? x.toFixed(1) : "-"; }) : "")
+        + statRow("VOR", f.vor, o.vor, true, function (x) { return x != null ? fmtSigned(x, Number.isInteger(x) ? 0 : 1) : "-"; })
+        + (f.vorp != null || o.vorp != null ? statRow("VORP", f.vorp, o.vorp, true, function (x) { return x != null ? fmtSigned(x, Number.isInteger(x) ? 0 : 1) : "N/A"; }) : "")
         + statRow("ADP", f.adp, o.adp, false, function (x) { return x != null ? Number(x).toFixed(1) : "N/A"; })
-        + statRow("vs ADP", f.vsAdp, o.vsAdp, true, function (x) { return fmtSigned(x); })
-        + statRow("Bye", f.bye, o.bye, false, function (x) { return x != null ? String(x) : "-"; })
-        + statRow("REC", f.rec, o.rec, false, function (x) { return x != null ? "#" + x : "-"; })
+        + statRow("vs ADP", f.vsAdp, o.vsAdp, true, function (x) { return fmtSigned(Math.round(x), 0); })
+        + (f.posRank || o.posRank ? statRow("Pos Rank", f.posRankN, o.posRankN, false, function (x) {
+          if (x == null) return "-";
+          if (f.posRankN === x && f.posRank) return f.posRank;
+          if (o.posRankN === x && o.posRank) return o.posRank;
+          return String(x);
+        }) : "")
+        + (f.bye != null || o.bye != null ? statRow("Bye", f.bye, o.bye, false, function (x) { return x != null ? String(x) : "-"; }) : "")
+        + (f.rec != null || o.rec != null ? statRow("REC", f.rec, o.rec, false, function (x) { return x != null ? "#" + x : "-"; }, "Recommendation Rank - who to draft now (roster-aware order, not a grade)") : "")
+        + (f.survive != null || o.survive != null ? statRow("Survive", f.survive, o.survive, true, function (x) { return x != null ? x + "%" : "-"; }) : "")
+        + (f.projPts != null || o.projPts != null ? statRow("Proj Pts", f.projPts, o.projPts, true, function (x) { return x != null ? String(Math.round(x)) : "-"; }) : "")
+        + (f.market != null || o.market != null ? statRow("Mkt vs ADP", f.market, o.market, true, function (x) { return fmtSigned(Math.round(x), 0); }) : "")
         + "</div></div>";
     }
-    card.innerHTML = '<button type="button" class="dr-cmp-close" data-cmp-close="1" aria-label="Close">&times;</button>'
+    card.innerHTML = '<button type="button" class="dr-cmp-close" id="drCmpClose" data-cmp-close="1" aria-label="Close">&times;</button>'
       + '<div class="dr-cmp-title" id="cmpTitle">Compare Players</div>'
       + '<div class="dr-cmp-cols">' + cmpCol(p1, p2) + cmpCol(p2, p1) + "</div>";
     modal.hidden = false;

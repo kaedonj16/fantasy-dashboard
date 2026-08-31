@@ -513,6 +513,14 @@
       return pickReason(p, bag.counts, bag.ctx, bag.psc, bag.byId);
     },
     recommendationPickNo: recommendationPickNo,
+    recWaitPickNo: recWaitPickNo,
+    availProb: function (p, pn, ctx, allPlayers) {
+      const byId = {};
+      (allPlayers || []).forEach(function (pl) {
+        if (pl && pl.id) byId[String(pl.id)] = pl;
+      });
+      return availProb(p, pn, ctx, byId);
+    },
     psDisplay: psDisplay,
   };
 })(typeof self !== "undefined" ? self : this);

@@ -30,7 +30,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.12"
+    assert manifest["version"] == "1.5.13"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -263,8 +263,14 @@ def test_overlay_reads_league_settings_and_compares_players():
     assert "function slotEligible" in overlay
     assert "toggleCompare" in overlay
     assert "openCompare" in overlay
+    assert "function draftPlayerFacts" in overlay
     assert "dr-cmp-player" in overlay
     assert "Pick Score" in overlay
+    assert "Survive" in overlay
+    assert "Proj Pts" in overlay
+    assert "Mkt vs ADP" in overlay
+    assert "Pos Rank" in overlay
+    assert "infoIcon" in overlay
     assert 'data-cmp' in overlay
     assert "Compare Players" in overlay
     assert 'id="cmpModal"' in html
@@ -272,8 +278,11 @@ def test_overlay_reads_league_settings_and_compares_players():
     assert 'src="draft_slot.js"' in html
     assert "dr-cmp-btn" in css
     assert "dr-cmp-stat.win" in css
+    assert "dr-info" in css
     assert "settings-line" in css
     assert "BRDraftSlot.rosterKey" in inject
+    assert "last_ppg" in (EXT / "background.js").read_text(encoding="utf-8")
+    assert "vorp" in (EXT / "background.js").read_text(encoding="utf-8")
     assert "data-cmp-draft" not in overlay
     assert "\u2014" not in overlay
     assert "\u2014" not in helper

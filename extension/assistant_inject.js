@@ -25,6 +25,7 @@
   let poolRetryTimer = null;
   let lastPoolKey = "";
   let adpSource = "consensus";
+  let lastScoring = { ppr: 1, tep: 0, passTd: 4 };
   let slideTimer = null;
 
   function platformFromHost() {
@@ -128,10 +129,21 @@
         adpSource: adpSource || "consensus",
         sf: false,
         teams: 12,
+        ppr: lastScoring.ppr,
+        tep: lastScoring.tep,
+        passTd: lastScoring.passTd,
       },
       extra || {}
     );
-    lastPoolKey = [opts.scoringType, opts.sf ? "sf" : "1qb", opts.adpSource, opts.teams || 12].join("|");
+    lastPoolKey = [
+      opts.scoringType,
+      opts.sf ? "sf" : "1qb",
+      opts.adpSource,
+      opts.teams || 12,
+      opts.ppr,
+      opts.tep,
+      opts.passTd,
+    ].join("|");
     adpSource = String(opts.adpSource || "consensus");
     try {
       chrome.runtime.sendMessage(opts, function (resp) {
@@ -221,8 +233,28 @@
     ].join("|");
     const teams = Number(payload.teams || 0);
     const sf = !!payload.sf;
-    const key = ["redraft", sf ? "sf" : "1qb", adpSource, teams >= 8 ? teams : 12].join("|");
-    if (key !== lastPoolKey) requestPool({ teams: teams >= 8 ? teams : 12, sf: sf, adpSource: adpSource });
+    if (payload.ppr != null && isFinite(Number(payload.ppr))) lastScoring.ppr = Number(payload.ppr);
+    if (payload.tep != null && isFinite(Number(payload.tep))) lastScoring.tep = Number(payload.tep);
+    if (payload.passTd != null && isFinite(Number(payload.passTd))) lastScoring.passTd = Number(payload.passTd);
+    const key = [
+      "redraft",
+      sf ? "sf" : "1qb",
+      adpSource,
+      teams >= 8 ? teams : 12,
+      lastScoring.ppr,
+      lastScoring.tep,
+      lastScoring.passTd,
+    ].join("|");
+    if (key !== lastPoolKey) {
+      requestPool({
+        teams: teams >= 8 ? teams : 12,
+        sf: sf,
+        adpSource: adpSource,
+        ppr: lastScoring.ppr,
+        tep: lastScoring.tep,
+        passTd: lastScoring.passTd,
+      });
+    }
     if (fp === lastPickFp) return;
     lastPickFp = fp;
     postToOverlay(payload);

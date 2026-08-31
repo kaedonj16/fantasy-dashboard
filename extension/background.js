@@ -452,6 +452,14 @@ function compactDraftPlayer(raw, scoringType, isSf, teams, adpSource) {
   if (!headshot && /^\d+$/.test(id)) {
     headshot = "https://sleepercdn.com/content/nfl/players/" + id + ".jpg";
   }
+  const vorp = isSf
+    ? (poolNum(raw["sf_vorp_" + size]) || poolNum(raw.sf_vorp) || poolNum(raw.vorp))
+    : (poolNum(raw["vorp_" + size]) || poolNum(raw.vorp));
+  const market = isSf
+    ? (poolNum(raw.sf_market_vs_adp) || poolNum(raw.market_vs_adp))
+    : (poolNum(raw.market_vs_adp_1qb) || poolNum(raw.market_vs_adp));
+  const inj = String(raw.injury || raw.injury_status || "").trim();
+  const yearsExp = poolNum(raw.years_exp);
   return {
     id: id,
     name: String(raw.name || ""),
@@ -462,6 +470,15 @@ function compactDraftPlayer(raw, scoringType, isSf, teams, adpSource) {
     adp: adpN,
     val: Math.round(val > 0 ? val : 0),
     ppg: poolNum(raw.proj_ppg) || 0,
+    proj_ppg: poolNum(raw.proj_ppg),
+    proj_pts: poolNum(raw.proj_pts),
+    last_ppg: poolNum(raw.ppg),
+    ppg_season: raw.ppg_season != null ? String(raw.ppg_season) : "",
+    vorp: vorp,
+    market: market,
+    years_exp: yearsExp,
+    is_rookie: raw.is_rookie === true || yearsExp === 0,
+    injury: inj && !/^(active|act)$/i.test(inj) ? inj : "",
     headshot: headshot,
     tier: tier,
     rank_change_7d: poolNum(raw.rank_change_7d),
@@ -487,7 +504,10 @@ async function fetchDraftPool(opts) {
   const sf = !!(opts && opts.sf);
   const adpSource = String((opts && opts.adpSource) || "consensus").toLowerCase();
   const teams = Number((opts && opts.teams) || 12) || 12;
-  const key = [scoringType, sf ? "sf" : "1qb", adpSource, teams || ""].join("|");
+  const ppr = (opts && opts.ppr != null) ? Number(opts.ppr) : 1;
+  const tep = (opts && opts.tep != null) ? Number(opts.tep) : 0;
+  const passTd = (opts && opts.passTd != null) ? Number(opts.passTd) : 4;
+  const key = [scoringType, sf ? "sf" : "1qb", adpSource, teams || "", ppr, tep, passTd].join("|");
   const now = Date.now();
   if (!opts.force && draftPoolCache && draftPoolCache.key === key && now - draftPoolCache.at < POOL_TTL_MS) {
     return {
@@ -504,9 +524,9 @@ async function fetchDraftPool(opts) {
     "adp_source=" + encodeURIComponent(adpSource),
     "scoring_type=" + encodeURIComponent(scoringType === "startup" ? "dynasty" : scoringType),
     "league_type=" + (sf ? "sf" : "1qb"),
-    "proj_rec=1",
-    "proj_te_bonus=0",
-    "proj_pass_td=4",
+    "proj_rec=" + encodeURIComponent(String((opts && opts.ppr != null) ? opts.ppr : 1)),
+    "proj_te_bonus=" + encodeURIComponent(String((opts && opts.tep != null) ? opts.tep : 0)),
+    "proj_pass_td=" + encodeURIComponent(String((opts && opts.passTd != null) ? opts.passTd : 4)),
   ];
   if (teams >= 8) params.push("league_size=" + encodeURIComponent(String(teams)));
   const path = "/api/league-players?" + params.join("&");
