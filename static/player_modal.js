@@ -78,7 +78,6 @@ function openPlayerModal(playerId, playerName, opts) {
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
         <button class="player-modal-watchlist-btn" id="playerModalWatchlistBtn" title="Add to watchlist" aria-pressed="false" style="display: none;"><span class="wl-star-glyph" aria-hidden="true">☆</span></button>
         ${_ppSlug ? `<a class="player-modal-page-btn" href="/player/${_ppSlug}/trade-value" title="View full player page">Player Page</a>` : ''}
-        <button class="player-modal-compare-btn" id="playerModalCompareBtn" title="Compare players">Compare Player</button>
         <button class="player-modal-close" onclick="closePlayerModal()" aria-label="Close">×</button>
       </div>
     </div>
@@ -1038,16 +1037,10 @@ function openPlayerModal(playerId, playerName, opts) {
           });
       }
 
-      // ── Wire up compare button ────────────────────────────────────────────
-      const cmpBtn = document.getElementById('playerModalCompareBtn');
-      if (cmpBtn) {
-        cmpBtn.addEventListener('click', () => openCompareSearch(data));
-      }
-
       pmInjectContextActions(playerId, playerName, data, leagueId, platform, season);
 
-      // The "vs Avg <pos><tier>" benchmark is reachable from the Compare Player
-      // search (it offers the positional-tier averages as pickable opponents),
+      // The "vs Avg <pos><tier>" benchmark is reachable from Actions → Compare
+      // (it offers the positional-tier averages as pickable opponents),
       // so it is no longer surfaced as a standalone header chip.
 
       // ── Render value history chart in Overview panel ───────────────────────
@@ -1295,35 +1288,133 @@ function pmLeaguePath(suffix) {
   return suffix;
 }
 
+function pmCloseActionsMenu(wrap) {
+  wrap = wrap || document.getElementById('pmContextActions');
+  if (!wrap) return;
+  const menu = wrap.querySelector('.pm-actions-dropdown');
+  const trigger = wrap.querySelector('.pm-actions-trigger');
+  if (menu) menu.hidden = true;
+  if (trigger) trigger.setAttribute('aria-expanded', 'false');
+  wrap.classList.remove('open');
+}
+
+function pmToggleActionsMenu(wrap) {
+  if (!wrap) return;
+  const menu = wrap.querySelector('.pm-actions-dropdown');
+  const trigger = wrap.querySelector('.pm-actions-trigger');
+  if (!menu || !trigger) return;
+  if (menu.hidden) {
+    menu.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    wrap.classList.add('open');
+  } else {
+    pmCloseActionsMenu(wrap);
+  }
+}
+
 function pmInjectContextActions(playerId, playerName, data, leagueId, platform, season) {
   const modal = document.getElementById('playerModal');
-  if (!modal || !leagueId) return;
-  let bar = document.getElementById('pmContextActions');
-  if (!bar) {
-    bar = document.createElement('div');
-    bar.id = 'pmContextActions';
-    bar.className = 'pm-context-actions';
-    const tabBar = document.getElementById('pmTabBar');
-    if (tabBar) tabBar.parentNode.insertBefore(bar, tabBar);
-    else modal.querySelector('.player-modal-header').after(bar);
-  }
-  const tradeUrl = pmLeaguePath('/trade') + '?add=' + encodeURIComponent(playerId);
-  const tradesTab = "pmSwitchTab('trades')";
+  if (!modal) return;
+
   const slug = pmSlugify(playerName);
-  const links = [
-    { label: 'Compare', action: "document.getElementById('playerModalCompareBtn') && document.getElementById('playerModalCompareBtn').click()" },
-    { label: 'Trade For', href: tradeUrl },
-    { label: 'Recent Trades', action: tradesTab },
+  const actions = [
+    {
+      label: 'Compare',
+      run: function () {
+        if (typeof openCompareSearch === 'function') openCompareSearch(data);
+      },
+    },
   ];
-  if (slug) {
-    links.push({ label: 'Full Analysis', href: '/player/' + slug + '/trade-value' });
+  if (leagueId) {
+    actions.push({ label: 'Trade For', href: pmLeaguePath('/trade') + '?add=' + encodeURIComponent(playerId) });
+    actions.push({ label: 'Recent Trades', run: function () { pmSwitchTab('trades'); } });
   }
-  bar.innerHTML = links.map(function (l) {
-    if (l.href) {
-      return '<a class="pm-ctx-link" href="' + l.href + '">' + l.label + '</a>';
+  if (slug) {
+    actions.push({ label: 'Full Analysis', href: '/player/' + slug + '/trade-value' });
+  }
+
+  let wrap = document.getElementById('pmContextActions');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'pmContextActions';
+    wrap.className = 'pm-actions-menu';
+    const closeBtn = modal.querySelector('.player-modal-close');
+    if (closeBtn && closeBtn.parentNode) {
+      closeBtn.parentNode.insertBefore(wrap, closeBtn);
+    } else {
+      const tabBar = document.getElementById('pmTabBar');
+      if (tabBar) tabBar.parentNode.insertBefore(wrap, tabBar);
+      else modal.querySelector('.player-modal-header').after(wrap);
     }
-    return '<button type="button" class="pm-ctx-link" onclick="' + l.action + '">' + l.label + '</button>';
-  }).join('');
+  }
+
+  wrap.textContent = '';
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'player-modal-page-btn pm-actions-trigger';
+  trigger.id = 'pmActionsTrigger';
+  trigger.setAttribute('aria-haspopup', 'menu');
+  trigger.setAttribute('aria-expanded', 'false');
+  trigger.setAttribute('aria-controls', 'pmActionsMenu');
+  trigger.setAttribute('aria-label', 'Player actions');
+  trigger.title = 'Player actions';
+  trigger.appendChild(document.createTextNode('Actions'));
+  const chevron = document.createElement('span');
+  chevron.className = 'pm-actions-chevron';
+  chevron.setAttribute('aria-hidden', 'true');
+  trigger.appendChild(chevron);
+
+  const menu = document.createElement('div');
+  menu.id = 'pmActionsMenu';
+  menu.className = 'pm-actions-dropdown';
+  menu.setAttribute('role', 'menu');
+  menu.hidden = true;
+
+  actions.forEach(function (a) {
+    let el;
+    if (a.href) {
+      el = document.createElement('a');
+      el.href = a.href;
+    } else {
+      el = document.createElement('button');
+      el.type = 'button';
+    }
+    el.className = 'pm-actions-item';
+    el.setAttribute('role', 'menuitem');
+    el.textContent = a.label;
+    el.addEventListener('click', function () {
+      pmCloseActionsMenu(wrap);
+      if (typeof a.run === 'function') a.run();
+    });
+    menu.appendChild(el);
+  });
+
+  wrap.appendChild(trigger);
+  wrap.appendChild(menu);
+
+  if (!wrap._pmWired) {
+    wrap._pmWired = true;
+    wrap.addEventListener('click', function (e) {
+      if (!e.target.closest('.pm-actions-trigger')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      pmToggleActionsMenu(wrap);
+    });
+    const overlay = modal.closest('.player-modal-overlay') || modal;
+    overlay.addEventListener('click', function (e) {
+      if (!wrap.contains(e.target)) pmCloseActionsMenu(wrap);
+    });
+    overlay.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      const openMenu = wrap.querySelector('.pm-actions-dropdown');
+      if (!openMenu || openMenu.hidden) return;
+      e.preventDefault();
+      e.stopPropagation();
+      pmCloseActionsMenu(wrap);
+      const t = wrap.querySelector('.pm-actions-trigger');
+      if (t) t.focus();
+    });
+  }
 }
 
 // ── Player Modal Tab Switching (global) ──────────────────────────────────────
