@@ -118,7 +118,7 @@
     lastPicks = picks || lastPicks || [];
     const mySlot = resolveMySlot(lastPicks, extra || {});
     const text = overlaySyncText(lastPicks, ok, mySlot);
-    if (typeof window.__brDaPushPicks === "function" && lastPicks) {
+    if (typeof window.__brDaPushPicks === "function" && lastPicks && lastPicks.length) {
       window.__brDaPushPicks(
         Object.assign(
           {
