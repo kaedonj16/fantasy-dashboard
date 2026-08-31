@@ -249,6 +249,10 @@
   };
   let autoTimer = null, clockTimer = null;
   let lastLiveDetail = null;
+  let lastLiveFp = "";
+  let availCache = null;
+  let cliffLeft = null;
+  let renderQueued = false;
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -274,7 +278,23 @@
     return rd + "." + String(pk).padStart(2, "0");
   }
   function draftDone() { return state.current > state.teams * state.rounds; }
-  function available() { return players.filter(function (p) { return !state.drafted[p.id]; }); }
+  function available() {
+    if (availCache) return availCache;
+    availCache = players.filter(function (p) { return !state.drafted[p.id]; });
+    return availCache;
+  }
+  function liveFingerprint(detail) {
+    const raw = (detail && detail.picks) || [];
+    const last = raw.length ? raw[raw.length - 1] : null;
+    return [
+      raw.length,
+      last ? (last.overallPickNumber || last.pick_no || 0) : 0,
+      last ? (last.playerId || last.playerName || "") : "",
+      detail && detail.mySlot || "",
+      detail && detail.teams || "",
+      detail && detail.platform || ""
+    ].join("|");
+  }
   function teamPicks(slot) {
     return state.picks.filter(function (x) { return x.slot === slot; }).map(function (x) { return Object.assign({}, x.p, { pn: x.pn, grade: x.grade }); });
   }
@@ -335,15 +355,27 @@
     return ds;
   }
   function rankedPool(counts, pickNo) {
-    const pool = available().map(function (p) {
-      return Object.assign({}, p, { _ps: pickScore(p, counts, pickNo), _ds: decisionScore(p, counts, pickNo) });
-    });
+    const pool = available();
+    for (let i = 0; i < pool.length; i++) {
+      const p = pool[i];
+      p._ps = pickScore(p, counts, pickNo);
+      p._ds = decisionScore(p, counts, pickNo);
+    }
     pool.sort(function (a, b) { return (b._ds - a._ds) || (b._ps - a._ps) || (a.adp - b.adp); });
-    pool.forEach(function (p, i) { p._rank = i + 1; });
+    for (let i = 0; i < pool.length; i++) pool[i]._rank = i + 1;
     return pool;
   }
   function isTierCliff(p) {
-    const left = available().filter(function (q) { return q.pos === p.pos && q.tier === p.tier; }).length;
+    if (!cliffLeft) {
+      cliffLeft = {};
+      const pool = available();
+      for (let i = 0; i < pool.length; i++) {
+        const q = pool[i];
+        const k = q.pos + ":" + q.tier;
+        cliffLeft[k] = (cliffLeft[k] || 0) + 1;
+      }
+    }
+    const left = cliffLeft[p.pos + ":" + p.tier] || 0;
     return p.tier <= 2 && left <= 2 && state.current > state.teams;
   }
   function reasonsFor(p, counts, pickNo) {
@@ -596,7 +628,7 @@
     if (/^\d+$/.test(id)) return "https://sleepercdn.com/content/nfl/players/" + id + ".jpg";
     return "";
   }
-  function hsMark(p, cls) {
+  function hsMark(p, cls, opts) {
     const pc = POS[p.pos] || POS.WR;
     const url = hsUrl(p);
     if (!url) return '<span class="' + cls + '" style="--pc:' + pc + '" aria-hidden="true"></span>';
@@ -604,7 +636,8 @@
       ? "https://sleepercdn.com/content/nfl/players/" + p.id + ".jpg"
       : "";
     const extra = fallback && fallback !== url ? ' data-fallback="' + esc(fallback) + '"' : "";
-    return '<span class="' + cls + ' has-photo" style="--pc:' + pc + '" aria-hidden="true"><img alt="" src="' + esc(url) + '"' + extra + "></span>";
+    const eager = opts && opts.eager;
+    return '<span class="' + cls + ' has-photo" style="--pc:' + pc + '" aria-hidden="true"><img alt="" src="' + esc(url) + '"' + extra + (eager ? ' fetchpriority="high"' : ' loading="lazy"') + ' decoding="async"></span>';
   }
 
   function playerRow(p, opts) {
@@ -624,7 +657,7 @@
     }
     const reason = opts.reason ? '<div class="ba-reason">' + esc(opts.reason) + "</div>" : "";
     return '<div class="ba-row" data-id="' + p.id + '">'
-      + hsMark(p, "hs")
+      + hsMark(p, "hs", { eager: (opts.rank || 99) <= 6 })
       + '<div class="ba-body"><div class="ba-name">' + esc(p.name) + "</div>"
       + '<div class="ba-meta"><span class="posb" style="background:' + pc + '">' + p.pos + "</span>"
       + esc(p.team)
@@ -697,7 +730,7 @@
     else if (state.sort === "ps") rows = rows.slice().sort(function (a, b) { return b._ps - a._ps; });
     else if (state.sort === "proj") rows = rows.slice().sort(function (a, b) { return b.ppg - a.ppg; });
     else if (state.sort === "val") rows = rows.slice().sort(function (a, b) { return b.val - a.val; });
-    rows.slice(0, 80).forEach(function (p, i) {
+    rows.slice(0, 40).forEach(function (p, i) {
       const reason = state.sort === "rec" ? (reasonsFor(p, counts, recPn)[0] || "") : "";
       html += playerRow(p, { rank: state.sort === "rec" ? p._rank : i + 1, reason: reason });
     });
@@ -892,10 +925,26 @@
     if (simBtn) simBtn.disabled = draftDone() || state.live;
   }
 
-  function render() {
-    document.getElementById("stage").setAttribute("data-platform", state.platform);
-    renderHost();
+  function paint() {
+    availCache = null;
+    cliffLeft = null;
+    if (!EMBEDDED) {
+      document.getElementById("stage").setAttribute("data-platform", state.platform);
+      renderHost();
+    }
     renderOverlay();
+  }
+  function render() {
+    if (!EMBEDDED) {
+      paint();
+      return;
+    }
+    if (renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(function () {
+      renderQueued = false;
+      paint();
+    });
   }
 
   function startAuto() {
@@ -1000,7 +1049,7 @@
     }
   });
 
-  clockTimer = setInterval(function () {
+  if (!EMBEDDED) clockTimer = setInterval(function () {
     if (state.live || draftDone() || state.auto) return;
     state.clock -= 1;
     if (state.clock <= 0) {
@@ -1084,6 +1133,7 @@
     let maxVal = 1;
     players.forEach(function (p) { if (p.val > maxVal) maxVal = p.val; });
     state.valCap = maxVal;
+    lastLiveFp = "";
     if (lastLiveDetail) ingestLive(lastLiveDetail);
     else render();
   }
@@ -1120,6 +1170,12 @@
 
   function ingestLive(detail) {
     if (!detail) return;
+    const fp = liveFingerprint(detail);
+    if (fp === lastLiveFp && lastLiveDetail) {
+      if (detail.syncText) setSyncStatus(true, detail.syncText);
+      return;
+    }
+    lastLiveFp = fp;
     lastLiveDetail = detail;
     state.live = true;
     stopAuto();

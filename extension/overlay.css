@@ -28,7 +28,7 @@
     --radius-chip: 7px;
     --radius-btn: 10px;
     --radius-card: 14px;
-    --font: "Archivo", system-ui, -apple-system, sans-serif;
+    --font: system-ui, -apple-system, "Segoe UI", sans-serif;
     --page-pad: 28px;
   }
 
@@ -435,9 +435,9 @@
     margin-left: auto;
   }
   .site-logo {
-    height: 28px;
+    height: 34px;
     width: auto;
-    max-width: 118px;
+    max-width: 40px;
     object-fit: contain;
     object-position: left center;
     flex-shrink: 0;

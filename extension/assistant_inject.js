@@ -44,7 +44,7 @@
       "html.br-da-docked.br-da-ready{transition:margin-right " + SLIDE_MS + "ms " + SLIDE_EASE + " !important;}" +
       "#" + ROOT_ID + "{position:fixed;top:0;right:0;bottom:0;width:" + WIDTH +
       "px;z-index:2147483645;box-shadow:-8px 0 28px rgba(0,0,0,.22);background:#122d4b;" +
-      "contain:layout paint;transform:translateX(0);will-change:transform;}" +
+      "contain:layout paint;transform:translateX(0);}" +
       "html.br-da-ready #" + ROOT_ID + "{transition:transform " + SLIDE_MS + "ms " + SLIDE_EASE + ";}" +
       "html.br-da-collapsed #" + ROOT_ID + "{transform:translateX(calc(100% - " + COLLAPSED + "px));}" +
       "#" + ROOT_ID + " iframe{width:100%;height:100%;border:0;background:transparent;display:block;}" +
@@ -163,16 +163,25 @@
       clearTimeout(slideTimer);
       slideTimer = null;
     }
+    const root = document.getElementById(ROOT_ID);
+    if (root) root.style.willChange = "transform";
     document.documentElement.classList.toggle("br-da-collapsed", collapsed);
     if (collapsed) {
       slideTimer = setTimeout(function () {
         slideTimer = null;
+        if (root) root.style.willChange = "";
         postToOverlay({ type: "collapsed", on: true });
       }, SLIDE_MS);
     } else {
       postToOverlay({ type: "collapsed", on: false });
+      slideTimer = setTimeout(function () {
+        slideTimer = null;
+        if (root) root.style.willChange = "";
+      }, SLIDE_MS);
     }
   }
+
+  let lastPickFp = "";
 
   window.__brDaPushPicks = function (detail) {
     const payload = Object.assign(
@@ -183,10 +192,21 @@
       },
       detail || {}
     );
+    const picks = payload.picks || [];
+    const last = picks.length ? picks[picks.length - 1] : null;
+    const fp = [
+      picks.length,
+      last ? (last.overallPickNumber || last.pick_no || 0) : 0,
+      last ? (last.playerId || last.playerName || "") : "",
+      payload.teams || "",
+      payload.mySlot || ""
+    ].join("|");
     const teams = Number(payload.teams || 0);
     const sf = !!payload.sf;
     const key = ["redraft", sf ? "sf" : "1qb", adpSource, teams >= 8 ? teams : 12].join("|");
     if (key !== lastPoolKey) requestPool({ teams: teams >= 8 ? teams : 12, sf: sf, adpSource: adpSource });
+    if (fp === lastPickFp) return;
+    lastPickFp = fp;
     postToOverlay(payload);
   };
 
@@ -200,6 +220,7 @@
     if (msg.type === "ready") {
       ready = true;
       if (msg.adpSource) adpSource = String(msg.adpSource).toLowerCase() || adpSource;
+      const hadPool = !!queuedPool;
       if (queuedPool) {
         postToOverlay(queuedPool);
         queuedPool = null;
@@ -215,7 +236,7 @@
           syncText: platformFromHost().toUpperCase() + " · watching",
         });
       }
-      requestPool({ adpSource: adpSource });
+      if (!hadPool) requestPool({ adpSource: adpSource });
       return;
     }
     if (msg.type === "adp") {

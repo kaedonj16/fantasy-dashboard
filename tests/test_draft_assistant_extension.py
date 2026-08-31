@@ -23,7 +23,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.3"
+    assert manifest["version"] == "1.5.4"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -92,7 +92,9 @@ def test_overlay_uses_live_br_player_pool_and_headshots():
     assert "searchInp" in html
     assert "Players" in html
     assert "Recommendation Rank" in html
-    assert "fillAdpSel" in overlay
+    assert 'loading="lazy"' in overlay
+    assert "liveFingerprint" in overlay
+    assert "hadPool" in inject
     assert 'postToHost("open"' in overlay
     assert 'postToHost("adp"' in overlay
     assert 'msg.type === "adp"' in inject
@@ -126,19 +128,18 @@ def test_overlay_uses_site_logo():
     inject = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     pack = (EXT / "pack_extension.py").read_text(encoding="utf-8")
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert 'src="icons/website-logo.png"' in html
-    assert 'src="icons/website-logo-dark.png"' in html
+    assert 'src="icons/br-logo.png"' in html
+    assert 'src="icons/br-logo-dark.png"' in html
     assert "site-logo-light" in css
     assert "site-logo-dark" in css
     assert "icons/br-logo-dark.png" in inject
     assert "chrome.runtime.getURL" in inject
-    assert (EXT / "icons/website-logo.png").is_file()
-    assert (EXT / "icons/website-logo-dark.png").is_file()
+    assert (EXT / "icons/br-logo.png").is_file()
     assert (EXT / "icons/br-logo-dark.png").is_file()
-    assert "icons/website-logo.png" in pack
+    assert "icons/br-logo.png" in pack
     resources = " ".join(
         " ".join(block.get("resources") or [])
         for block in (manifest.get("web_accessible_resources") or [])
     )
     assert "icons/br-logo-dark.png" in resources
-    assert "icons/website-logo.png" in resources
+    assert "icons/br-logo.png" in resources
