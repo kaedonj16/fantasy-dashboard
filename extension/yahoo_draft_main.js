@@ -58,11 +58,13 @@
   }
 
   function bridgeToExtension(type, detail) {
+    const msg = { __br: BRIDGE, type: type, detail: detail || {} };
     try {
-      window.postMessage({ __br: BRIDGE, type: type, detail: detail || {} }, "*");
-    } catch (_e) {
-      /* ignore */
-    }
+      window.postMessage(msg, "*");
+    } catch (_e) { /* ignore */ }
+    try {
+      if (window.top && window.top !== window) window.top.postMessage(msg, "*");
+    } catch (_e) { /* ignore */ }
   }
 
   function yahooIdFromKey(key) {
@@ -106,7 +108,14 @@
       obj.overallPickNo ??
       obj.draftPickNumber;
     if (direct != null && Number(direct) >= 1) return Number(direct);
-    const pick = obj.pick ?? obj.selection;
+    const pick = obj.pick ?? obj.selection ?? obj.slot ?? obj.pickSlot;
+    if (typeof pick === "string" && /^\d{1,2}\.\d{1,2}$/.test(pick.trim())) {
+      const parts = pick.trim().split(".");
+      const rd = Number(parts[0]);
+      const pk = Number(parts[1]);
+      const n = detectedTeams >= 4 ? detectedTeams : 12;
+      if (rd >= 1 && pk >= 1) return (rd - 1) * n + pk;
+    }
     const nPick = Number(pick);
     if (!(nPick >= 1)) return 0;
     const nRound = Number(obj.round ?? obj.roundId ?? obj.round_id);
@@ -118,13 +127,37 @@
     return nPick;
   }
 
+  function fantasyTeamId(obj) {
+    if (!obj || typeof obj !== "object") return null;
+    const key = obj.team_key || obj.teamKey;
+    if (key && String(key).indexOf(".t.") >= 0) return teamIdFromKey(key);
+    const tid = obj.teamId ?? obj.team_id ?? obj.fantasyTeamId;
+    if (tid != null && String(tid) !== "" && String(tid) !== "0") return String(tid);
+    return null;
+  }
+
+  function looksDraftedYahoo(obj) {
+    if (!obj || typeof obj !== "object") return false;
+    if (obj.drafted === false || obj.isDrafted === false || obj.available === true) return false;
+    const name = yahooPlayerName(obj);
+    const pid = rawPlayerId(obj);
+    if (!name && !pid) return false;
+    if (obj.drafted === true || obj.isDrafted === true || obj.selected === true || obj.isPicked === true) return true;
+    if (obj.status && /drafted|taken|selected|picked/i.test(String(obj.status))) return true;
+    const key = obj.team_key || obj.teamKey;
+    if (key && String(key).indexOf(".l.") >= 0 && String(key).indexOf(".t.") >= 0) return true;
+    return !!rawOverall(obj);
+  }
+
   function isPickRow(obj) {
     if (!obj || typeof obj !== "object") return false;
     const overall = rawOverall(obj);
-    if (!overall) return false;
-    if (rawPlayerId(obj)) return true;
-    const name = yahooPlayerName(obj);
-    return !!(name && name.length >= 3);
+    if (overall) {
+      if (rawPlayerId(obj)) return true;
+      const name = yahooPlayerName(obj);
+      return !!(name && name.length >= 3);
+    }
+    return looksDraftedYahoo(obj);
   }
 
   function pickLooksMade(norm) {
@@ -216,6 +249,7 @@
     const teamId =
       raw.teamId ??
       raw.team_id ??
+      fantasyTeamId(raw) ??
       teamIdFromKey(raw.team_key || raw.teamKey);
     const roundId = raw.roundId ?? raw.round ?? raw.round_id;
     const roundPick = raw.roundPickNumber ?? raw.roundPick ?? raw.round_pick;
@@ -224,8 +258,9 @@
     const playerName = yahooPlayerName(raw) || (cached && cached.playerName) || "";
     const pos = yahooPlayerPos(raw) || (cached && cached.pos) || "";
     const nflTeam = yahooPlayerTeam(raw) || (cached && cached.nflTeam) || "";
+    if (!Number(overall) && !playerName && !playerId) return null;
     return {
-      overallPickNumber: Number(overall),
+      overallPickNumber: Number(overall) || 0,
       playerId: playerId == null ? null : String(playerId),
       playerName: playerName || undefined,
       pos: pos || undefined,
@@ -442,8 +477,32 @@
 
   function mergeIntoAccumulator(rawPicks, source) {
     let grew = false;
-    for (const raw of rawPicks || []) {
-      const norm = normalizePick(raw) || (raw && raw.overallPickNumber ? raw : null);
+    const list = rawPicks || [];
+    const hasOverall = list.some(function (raw) {
+      if (!raw || typeof raw !== "object") return false;
+      return rawOverall(raw) >= 1 || Number(raw.overallPickNumber) >= 1;
+    });
+    const draftedCount = list.filter(looksDraftedYahoo).length;
+    const allowSeq = !hasOverall && list.length <= 320 && draftedCount >= Math.max(1, list.length * 0.8);
+    let seq = 0;
+    for (const raw of list) {
+      let norm = normalizePick(raw) || (raw && Number(raw.overallPickNumber) >= 1 ? raw : null);
+      if (!norm && looksDraftedYahoo(raw)) {
+        rememberYahooPlayer(raw);
+        norm = {
+          overallPickNumber: 0,
+          playerId: rawPlayerId(raw),
+          playerName: yahooPlayerName(raw) || undefined,
+          pos: yahooPlayerPos(raw) || undefined,
+          nflTeam: yahooPlayerTeam(raw) || undefined,
+          teamId: fantasyTeamId(raw),
+        };
+      }
+      if (norm && !(Number(norm.overallPickNumber) >= 1)) {
+        if (!allowSeq) continue;
+        seq += 1;
+        norm.overallPickNumber = seq;
+      }
       if (!norm || !pickLooksMade(norm)) continue;
       const n = Number(norm.overallPickNumber);
       if (!n || n <= 0) continue;
@@ -593,6 +652,11 @@
       take(cur.pickHistory);
       take(cur.pickedPlayers);
       take(cur.draftBoard);
+      take(cur.draftedPlayers);
+      take(cur.drafted);
+      take(cur.takenPlayers);
+      take(cur.selectedPlayers);
+      take(cur.history);
       if (Array.isArray(cur) && cur.some(isPickRow)) arrays.push(cur);
       const next = [];
       if (cur.memoizedProps) next.push(cur.memoizedProps);
@@ -611,12 +675,12 @@
           }
           const v = cur[k];
           if (v && typeof v === "object" && !seen.has(v)) next.push(v);
-          if (next.length > 48) break;
+          if (next.length > 80) break;
         }
       } catch (_e) {
         /* ignore */
       }
-      for (let i = 0; i < Math.min(next.length, 28); i++) q.push(next[i]);
+      for (let i = 0; i < Math.min(next.length, 40); i++) q.push(next[i]);
     }
     return arrays;
   }
@@ -633,20 +697,27 @@
 
   function scanReact() {
     const roots = [];
-    const candidates = [
-      document.getElementById("draft"),
-      document.getElementById("draftapp"),
-      document.getElementById("root"),
-      document.querySelector("[data-reactroot]"),
-      document.body,
-      document.getElementById("app"),
-      document.getElementById("__next"),
-      document.querySelector("main"),
-    ].filter(Boolean);
-    try {
-      const extra = document.querySelectorAll("div[id],section");
-      for (let i = 0; i < Math.min(extra.length, 40); i++) candidates.push(extra[i]);
-    } catch (_e) { /* ignore */ }
+    const docs = window.BRDraftSlot && BRDraftSlot.sameOriginDocuments
+      ? BRDraftSlot.sameOriginDocuments(document)
+      : [document];
+    const candidates = [];
+    docs.forEach(function (doc) {
+      if (!doc) return;
+      [
+        doc.getElementById && doc.getElementById("draft"),
+        doc.getElementById && doc.getElementById("draftapp"),
+        doc.getElementById && doc.getElementById("root"),
+        doc.querySelector && doc.querySelector("[data-reactroot]"),
+        doc.body,
+        doc.getElementById && doc.getElementById("app"),
+        doc.getElementById && doc.getElementById("__next"),
+        doc.querySelector && doc.querySelector("main"),
+      ].forEach(function (el) { if (el) candidates.push(el); });
+      try {
+        const extra = doc.querySelectorAll("div[id],section");
+        for (let i = 0; i < Math.min(extra.length, 40); i++) candidates.push(extra[i]);
+      } catch (_e) { /* ignore */ }
+    });
     for (const el of candidates) {
       for (const key of Object.keys(el)) {
         if (
@@ -701,6 +772,15 @@
     if (Array.isArray(data.pickedPlayers) && data.pickedPlayers.some(isPickRow)) {
       emit(data.pickedPlayers, { inProgress: true, drafted: false }, source);
     }
+    if (Array.isArray(data.draftedPlayers) && data.draftedPlayers.some(isPickRow)) {
+      emit(data.draftedPlayers, { inProgress: true, drafted: false }, source);
+    }
+    if (Array.isArray(data.drafted) && data.drafted.some(isPickRow)) {
+      emit(data.drafted, { inProgress: true, drafted: false }, source);
+    }
+    if (Array.isArray(data.takenPlayers) && data.takenPlayers.some(isPickRow)) {
+      emit(data.takenPlayers, { inProgress: true, drafted: false }, source);
+    }
     if (isPickRow(data)) {
       emit([data], { inProgress: true, drafted: false }, source);
     }
@@ -723,6 +803,9 @@
       text.indexOf("firstName") >= 0 ||
       text.indexOf("nflPlayer") >= 0 ||
       text.indexOf("pickedPlayer") >= 0 ||
+      text.indexOf("draftedPlayer") >= 0 ||
+      text.indexOf("takenPlayer") >= 0 ||
+      text.indexOf("\"drafted\"") >= 0 ||
       text.indexOf("\"pick\":") >= 0
     );
   }
@@ -752,19 +835,24 @@
   let lastHtmlPollAt = 0;
 
   function harvestPageJson() {
-    if (!document || !document.querySelectorAll) return;
-    const scripts = document.querySelectorAll("script");
-    const limit = Math.min(scripts.length, 48);
-    for (let i = 0; i < limit; i++) {
-      const t = scripts[i].textContent || "";
-      if (t.length < 40 || t.length > 2500000) continue;
-      if (!looksLikeDraftPayload(t)) continue;
-      const startO = t.indexOf("{");
-      const startA = t.indexOf("[");
-      const idx = startO >= 0 && (startA < 0 || startO < startA) ? startO : startA;
-      if (idx >= 0) inspectText(t.slice(idx), "script");
-    }
-    ["__PRELOADED_STATE__", "__NEXT_DATA__", "__INITIAL_STATE__"].forEach(function (k) {
+    const docs = window.BRDraftSlot && BRDraftSlot.sameOriginDocuments
+      ? BRDraftSlot.sameOriginDocuments(document)
+      : [document];
+    docs.forEach(function (doc) {
+      if (!doc || !doc.querySelectorAll) return;
+      const scripts = doc.querySelectorAll("script");
+      const limit = Math.min(scripts.length, 48);
+      for (let i = 0; i < limit; i++) {
+        const t = scripts[i].textContent || "";
+        if (t.length < 40 || t.length > 2500000) continue;
+        if (!looksLikeDraftPayload(t)) continue;
+        const startO = t.indexOf("{");
+        const startA = t.indexOf("[");
+        const idx = startO >= 0 && (startA < 0 || startO < startA) ? startO : startA;
+        if (idx >= 0) inspectText(t.slice(idx), "script");
+      }
+    });
+    ["__PRELOADED_STATE__", "__NEXT_DATA__", "__INITIAL_STATE__", "__APP_STATE__"].forEach(function (k) {
       try {
         if (window[k]) inspectJson(window[k], "boot-" + k);
       } catch (_e) { /* ignore */ }
@@ -800,10 +888,26 @@
     pollInFlight = true;
     const origin = location.origin;
     const lid = ids.leagueId;
+    let leagueKey = "";
+    try {
+      const m = String(location.href || "").match(/(\d{3})\.l\.(\d+)/);
+      if (m) leagueKey = m[1] + ".l." + m[2];
+    } catch (_e) { /* ignore */ }
+    if (!leagueKey) {
+      try {
+        const blob = String((document.body && document.body.innerText) || "").slice(0, 8000);
+        const m = blob.match(/(\d{3})\.l\.(\d+)/);
+        if (m) leagueKey = m[1] + ".l." + m[2];
+      } catch (_e) { /* ignore */ }
+    }
     const urls = [
       origin + "/f1/" + lid + "/draftresults",
       origin + "/f1/" + lid + "/draftresults?format=json",
+      origin + "/f1/" + lid + "/draftresults?xhr=1",
     ];
+    if (leagueKey) {
+      urls.push(origin + "/sitedirectory/fantasy/resource/league/draftresults?league_key=" + encodeURIComponent(leagueKey));
+    }
     let i = 0;
     function next() {
       if (i >= urls.length) {

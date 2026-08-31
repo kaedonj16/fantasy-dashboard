@@ -402,6 +402,39 @@
     return { name: name, pos: m[2].replace("D/ST", "DEF"), team: m[3] || "" };
   }
 
+  function parseYahooLooseName(text) {
+    const typed = parseYahooNamePos(text);
+    if (typed) return typed;
+    const s = String(text || "").replace(/\s+/g, " ").trim().replace(/\s*[·•]\s*/g, " ");
+    const m = s.match(
+      /^([A-Z](?:[a-zA-Z.'\-]+|\.)(?:\s+(?:[A-Z][a-zA-Z.'\-]+|Jr\.?|Sr\.?|II|III|IV|V)){0,4})(?:\s+([A-Z]{2,3}))?$/
+    );
+    if (!m) return null;
+    const name = m[1].replace(/\s+/g, " ").trim();
+    if (name.length < 5 || name.length > 48) return null;
+    if (!/\s/.test(name)) return null;
+    if (/^(round|pick|you|team|bench|available|search|draft|flex|yahoo)$/i.test(name)) return null;
+    if (/you(?:'re| are) up|on the clock|time remaining/i.test(name)) return null;
+    return { name: name, pos: "", team: m[2] || "" };
+  }
+
+  function sameOriginDocuments(doc) {
+    const start = doc || (typeof document !== "undefined" ? document : null);
+    const out = [];
+    if (!start) return out;
+    out.push(start);
+    try {
+      const frames = start.querySelectorAll("iframe");
+      for (let i = 0; i < Math.min(frames.length, 12); i++) {
+        try {
+          const d = frames[i].contentDocument;
+          if (d && d.documentElement && out.indexOf(d) < 0) out.push(d);
+        } catch (_e) { /* cross-origin */ }
+      }
+    } catch (_e) { /* ignore */ }
+    return out;
+  }
+
   function mergeYahooPicks(a, b) {
     const map = {};
     function add(p) {
@@ -466,7 +499,7 @@
       if (yahooInAvailableList(el, doc)) continue;
       const text = String(el.textContent || "").replace(/\s+/g, " ").trim();
       if (text.length < 5 || text.length > 180) continue;
-      const info = parseYahooNamePos(text);
+      const info = parseYahooNamePos(text) || parseYahooLooseName(text);
       if (!info) continue;
       let pn = Number(
         el.getAttribute("data-pick") ||
@@ -591,12 +624,14 @@
   }
 
   function scrapeYahooBoard(doc, teamsHint) {
-    doc = doc || (typeof document !== "undefined" ? document : null);
-    if (!doc || !doc.querySelectorAll) return [];
+    const docs = sameOriginDocuments(doc || (typeof document !== "undefined" ? document : null));
     const byPn = new Map();
-    scrapeYahooLabeledPicks(doc, byPn);
-    scrapeYahooColumns(doc, byPn, teamsHint);
-    scrapeYahooDottedPicks(doc, byPn, teamsHint);
+    docs.forEach(function (d) {
+      if (!d || !d.querySelectorAll) return;
+      scrapeYahooLabeledPicks(d, byPn);
+      scrapeYahooColumns(d, byPn, teamsHint);
+      scrapeYahooDottedPicks(d, byPn, teamsHint);
+    });
     return Array.from(byPn.values()).sort(function (a, b) {
       return a.overallPickNumber - b.overallPickNumber;
     });
@@ -1037,6 +1072,8 @@
     parseYahooDraftResultsHtml: parseYahooDraftResultsHtml,
     mergeYahooPicks: mergeYahooPicks,
     parseYahooNamePos: parseYahooNamePos,
+    parseYahooLooseName: parseYahooLooseName,
+    sameOriginDocuments: sameOriginDocuments,
     completedFromYahooClock: completedFromYahooClock,
     collectSleeperIdentity: collectSleeperIdentity,
     sleeperUsernameFromDom: sleeperUsernameFromDom,

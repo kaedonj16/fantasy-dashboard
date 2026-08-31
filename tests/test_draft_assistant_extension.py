@@ -33,7 +33,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.24"
+    assert manifest["version"] == "1.5.25"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -51,6 +51,9 @@ def test_manifest_docks_overlay_on_host_drafts():
     espn_iso = (EXT / "espn_draft.js").read_text(encoding="utf-8")
     yahoo_iso = (EXT / "yahoo_draft.js").read_text(encoding="utf-8")
     assert "overlay.html" in inject
+    assert "--br-da-shift" in inject
+    assert "display:flex" in inject
+    assert "flex:0 0 var(--br-da-shift)" in inject
     assert "__brDaPushPicks" in inject
     assert "never submits" in inject.lower() or "Reads host picks" in inject
     assert "api.sleeper.app/v1/draft" in sleeper
@@ -130,10 +133,15 @@ def test_collapsed_overlay_has_reopen_control():
     assert "Open Draft Assistant" in inject
     assert "setCollapsed(false)" in inject
     assert "html.br-da-collapsed" in inject
-    assert "translateX" in inject
+    assert "--br-da-shift" in inject
+    assert "display:flex" in inject
+    assert "flex:0 0 var(--br-da-shift)" in inject
+    assert "position:relative" in inject
+    assert "looksFullBleed" in inject
+    assert "100vw" in inject
     assert "applyDockShift" in inject
     assert "data-br-da-shifted" in inject
-    assert "transition:transform" in inject.replace(" ", "")
+    assert "transition:flex-basis" in inject.replace(" ", "")
     assert "br-da-ready" in inject
     assert "prefers-reduced-motion" in inject
     assert "collapseBtn" in html
