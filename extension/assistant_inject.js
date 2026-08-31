@@ -13,6 +13,8 @@
   window.__brFantasyAssistantInject = true;
 
   const ROOT_ID = "br-fantasy-assistant-root";
+  const INVITE_ID = "br-fantasy-assistant-invite";
+  const LAUNCH_KEY = "br-da-launch";
   const WIDTH = 400;
   const COLLAPSED = 48;
   const SLIDE_MS = 240;
@@ -433,12 +435,105 @@
     }
   });
 
-  function tryMount() {
-    if (!isHostDraftRoom()) return false;
+  function readLaunchChoice() {
+    try {
+      return String(sessionStorage.getItem(LAUNCH_KEY) || "");
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function writeLaunchChoice(value) {
+    try {
+      sessionStorage.setItem(LAUNCH_KEY, value);
+    } catch (_e) { /* ignore */ }
+  }
+
+  function removeInvite() {
+    const el = document.getElementById(INVITE_ID);
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+
+  function ensureInviteCss() {
+    if (document.getElementById("br-da-invite-css")) return;
+    const style = document.createElement("style");
+    style.id = "br-da-invite-css";
+    style.textContent =
+      "#" + INVITE_ID + "{position:fixed;z-index:2147483646;right:16px;bottom:16px;width:min(320px,calc(100vw - 24px));" +
+      "padding:14px 14px 12px;border-radius:12px;background:#122d4b;color:#fff;" +
+      "font:600 13px/1.4 system-ui,-apple-system,sans-serif;box-shadow:0 10px 28px rgba(0,0,0,.28);" +
+      "border:1px solid rgba(255,255,255,.12);}" +
+      "#" + INVITE_ID + " .br-da-invite-title{font:800 14px/1.3 inherit;margin:0 0 6px;}" +
+      "#" + INVITE_ID + " .br-da-invite-copy{margin:0 0 12px;color:rgba(255,255,255,.82);font-weight:500;}" +
+      "#" + INVITE_ID + " .br-da-invite-row{display:flex;gap:8px;}" +
+      "#" + INVITE_ID + " button{flex:1;margin:0;padding:8px 10px;border-radius:8px;font:700 12px/1.2 inherit;cursor:pointer;}" +
+      "#" + INVITE_ID + " .br-da-invite-skip{border:1px solid rgba(255,255,255,.22);background:transparent;color:#fff;}" +
+      "#" + INVITE_ID + " .br-da-invite-open{border:0;background:#fff;color:#122d4b;}" +
+      "#" + INVITE_ID + " .br-da-invite-open:hover{background:#e8eef5;}" +
+      "#" + INVITE_ID + " .br-da-invite-skip:hover{background:rgba(255,255,255,.08);}";
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function openAssistant() {
+    writeLaunchChoice("open");
+    removeInvite();
     requestPool();
     mount();
+  }
+
+  function skipAssistant() {
+    writeLaunchChoice("skip");
+    removeInvite();
+  }
+
+  function showInvite() {
+    if (document.getElementById(ROOT_ID) || document.getElementById(INVITE_ID)) return;
+    ensureInviteCss();
+    const card = document.createElement("div");
+    card.id = INVITE_ID;
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-label", "Open Draft Assistant");
+    card.innerHTML =
+      '<p class="br-da-invite-title">Open Draft Assistant?</p>' +
+      '<p class="br-da-invite-copy">Docks beside this draft and reads picks. It never submits.</p>' +
+      '<div class="br-da-invite-row">' +
+      '<button type="button" class="br-da-invite-skip">Not now</button>' +
+      '<button type="button" class="br-da-invite-open">Open</button>' +
+      "</div>";
+    card.querySelector(".br-da-invite-open").addEventListener("click", function (ev) {
+      ev.preventDefault();
+      openAssistant();
+    });
+    card.querySelector(".br-da-invite-skip").addEventListener("click", function (ev) {
+      ev.preventDefault();
+      skipAssistant();
+    });
+    (document.body || document.documentElement).appendChild(card);
+  }
+
+  function tryMount() {
+    if (!isHostDraftRoom()) return false;
+    const choice = readLaunchChoice();
+    if (choice === "open") {
+      requestPool();
+      mount();
+      return true;
+    }
+    if (choice === "skip") return true;
+    showInvite();
+    const invite = document.getElementById(INVITE_ID);
+    if (invite && document.body && invite.parentNode !== document.body) {
+      document.body.appendChild(invite);
+    }
     return true;
   }
+
+  try {
+    chrome.runtime.onMessage.addListener(function (msg) {
+      if (!msg || msg.type !== "openDraftAssistant") return;
+      openAssistant();
+    });
+  } catch (_e) { /* ignore */ }
 
   if (!tryMount()) {
     const wait = setInterval(function () {

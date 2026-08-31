@@ -33,7 +33,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.25"
+    assert manifest["version"] == "1.5.26"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -131,6 +131,12 @@ def test_collapsed_overlay_has_reopen_control():
     css = (EXT / "overlay.css").read_text(encoding="utf-8")
     assert "br-fantasy-assistant-expand" in inject
     assert "Open Draft Assistant" in inject
+    assert "br-fantasy-assistant-invite" in inject
+    assert "function showInvite" in inject
+    assert "function openAssistant" in inject
+    assert "br-da-launch" in inject
+    assert "openDraftAssistant" in inject
+    assert "Not now" in inject
     assert "setCollapsed(false)" in inject
     assert "html.br-da-collapsed" in inject
     assert "--br-da-shift" in inject
@@ -215,8 +221,14 @@ def test_overlay_autodetects_slot_and_keeps_header_on_one_line():
     assert "160 PICKS" not in html.upper()
     assert "\u2014" not in overlay
     assert "\u2014" not in html
-    assert "\u2014" not in (EXT / "popup.html").read_text(encoding="utf-8")
-    assert "\u2014" not in (EXT / "popup.js").read_text(encoding="utf-8")
+    popup_html = (EXT / "popup.html").read_text(encoding="utf-8")
+    popup_js = (EXT / "popup.js").read_text(encoding="utf-8")
+    assert "\u2014" not in popup_html
+    assert "\u2014" not in popup_js
+    assert "openAssistantBtn" in popup_html
+    assert "Open Draft Assistant" in popup_html
+    assert "asked whether to open" in popup_html
+    assert "openDraftAssistant" in popup_js
     assert "\u2014" not in (EXT / "content.js").read_text(encoding="utf-8")
     assert "\u2014" not in (EXT / "background.js").read_text(encoding="utf-8")
     assert "\u2014" not in json.dumps(json.loads((EXT / "manifest.json").read_text(encoding="utf-8")))
