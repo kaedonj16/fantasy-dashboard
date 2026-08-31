@@ -60,6 +60,9 @@ def test_rankings_table_unchanged_from_main():
 def test_cross_feature_links():
     assert "pmInjectContextActions" in PLAYER_MODAL
     assert "Trade For" in PLAYER_MODAL
+    assert "pm-actions-menu" in PLAYER_MODAL
+    assert "pm-actions-dropdown" in PLAYER_MODAL
+    assert "pm-context-actions" not in PLAYER_MODAL
     assert "wv-ctx-link" in WAIVERS
     assert "Compare to roster" in WAIVERS
     assert "View schedule" in WAIVERS
@@ -130,5 +133,8 @@ def test_dashboard_css_action_and_palette_styles():
     assert ".os-do-next-draft" in DASH_CSS
     assert ".nav-search-group-label" in DASH_CSS
     assert ".br-pro-preview" in DASH_CSS
+    assert ".pm-actions-menu" in DASH_CSS
+    assert ".pm-actions-dropdown" in DASH_CSS
+    assert ".pm-context-actions" not in DASH_CSS
     assert ".pr-advanced-col" not in DASH_CSS
     assert ".cs-advanced-col" not in DASH_CSS
