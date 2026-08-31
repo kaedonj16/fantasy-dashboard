@@ -56,10 +56,18 @@ def main():
             "Spawning background post-deploy "
             "(global ADP refresh + breakout check)..."
         )
+        env = os.environ.copy()
+        existing_pp = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = (
+            _REPO_ROOT if not existing_pp
+            else _REPO_ROOT + os.pathsep + existing_pp
+        )
         subprocess.Popen(
             [sys.executable, post_deploy_script],
             stdout=sys.stdout,
             stderr=sys.stderr,
+            cwd=_REPO_ROOT,
+            env=env,
         )
     else:
         print(
