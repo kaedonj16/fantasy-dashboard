@@ -308,7 +308,7 @@ async function protectFeature(featureName, userId, leagueId, callbackIfPremium) 
 function _handleAlreadySubscribed(data, leagueId) {
   if (!data.error || !data.error.toLowerCase().includes('already have')) return false;
 
-  // They're already subscribed - mark premium and redirect to their league or refresh
+  // They're already subscribed - mark premium and offer invite copy for league plans.
   if (window.__brctx) window.__brctx.isPremium = true;
 
   const ctx = window.__brctx || {};
@@ -316,12 +316,130 @@ function _handleAlreadySubscribed(data, leagueId) {
   const season   = ctx.season   || new Date().getFullYear();
   const lid      = leagueId || ctx.leagueId || '';
 
+  if (lid && typeof window.copyLeagueProInvite === 'function') {
+    window.copyLeagueProInvite(platform, season, lid).then(function (ok) {
+      if (ok && window.showToast) {
+        showToast('PRO is already on — invite link copied for your league mates.', 'success', 5000);
+      }
+    });
+  }
+
   const dest = lid
     ? `/${platform}/${season}/${lid}/dashboard`
     : window.location.pathname;
 
   window.location.href = dest;
   return true;
+}
+
+/** Build + copy the shareable league-PRO invite URL. */
+window.copyLeagueProInvite = async function copyLeagueProInvite(platform, season, leagueId) {
+  const plat = platform || (window.__brctx || {}).platform || 'sleeper';
+  const sea = season || (window.__brctx || {}).season || new Date().getFullYear();
+  const lid = leagueId || (window.__brctx || {}).leagueId || '';
+  if (!lid) return false;
+  const url = `${window.location.origin}/invite/${encodeURIComponent(plat)}/${encodeURIComponent(sea)}/${encodeURIComponent(lid)}`;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(url);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = url; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); ta.remove();
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
+
+/** Show Invite league control when the viewer bought a league/combo plan. */
+window.refreshLeagueProInviteCta = async function refreshLeagueProInviteCta() {
+  const ctx = window.__brctx || {};
+  const lid = ctx.leagueId || '';
+  if (!lid || !ctx.is_logged_in) return;
+  try {
+    const params = new URLSearchParams({
+      league_id: lid,
+      platform: ctx.platform || 'sleeper',
+      season: String(ctx.season || ''),
+    });
+    const res = await fetch(`/api/subscription-status?${params}`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.has_league_subscription || !data.invite_path) return;
+
+    const mount = document.getElementById('leagueProInviteMount')
+      || document.querySelector('[data-league-pro-invite]');
+    // Floating dismissible banner when buyer or teammate.
+    const key = data.is_league_buyer
+      ? `league-pro-invite-${lid}`
+      : `league-pro-teammate-${lid}`;
+    try { if (localStorage.getItem(key) === '1') return; } catch (e) {}
+
+    let el = document.getElementById('leagueProShareBanner');
+    if (el) el.remove();
+    el = document.createElement('div');
+    el.id = 'leagueProShareBanner';
+    el.setAttribute('role', 'status');
+    el.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9998;max-width:320px;background:var(--card);border:1px solid var(--border);border-top:3px solid #2563eb;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);padding:16px 18px;display:flex;flex-direction:column;gap:10px;';
+    if (data.is_league_buyer) {
+      el.innerHTML = `
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+          <strong style="font-size:14px;color:var(--text);">Invite your league</strong>
+          <button type="button" aria-label="Dismiss" data-dismiss
+            style="background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+        <p style="margin:0;font-size:13px;color:var(--text-muted);line-height:1.45;">
+          PRO is on for every manager. Copy a link they can open to sign in.
+        </p>
+        <button type="button" data-copy
+          style="padding:10px 12px;border:none;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;font-size:13px;cursor:pointer;">
+          Copy invite link
+        </button>`;
+    } else if (data.has_premium) {
+      el.innerHTML = `
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+          <strong style="font-size:14px;color:var(--text);">League PRO is unlocked</strong>
+          <button type="button" aria-label="Dismiss" data-dismiss
+            style="background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+        <p style="margin:0;font-size:13px;color:var(--text-muted);line-height:1.45;">
+          A league mate unlocked shared premium. Try Trade Intel or the Breakout Engine.
+        </p>
+        <a href="/${encodeURIComponent(ctx.platform || 'sleeper')}/${encodeURIComponent(ctx.season || '')}/${encodeURIComponent(lid)}/trade-intel"
+           style="display:inline-block;text-align:center;padding:10px 12px;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;font-size:13px;text-decoration:none;">
+          Open Trade Intel
+        </a>`;
+    } else {
+      return;
+    }
+    document.body.appendChild(el);
+    const dismiss = el.querySelector('[data-dismiss]');
+    if (dismiss) dismiss.addEventListener('click', function () {
+      el.remove();
+      try { localStorage.setItem(key, '1'); } catch (e) {}
+    });
+    const copy = el.querySelector('[data-copy]');
+    if (copy) copy.addEventListener('click', function () {
+      window.copyLeagueProInvite(ctx.platform, ctx.season, lid).then(function (ok) {
+        if (ok) {
+          copy.textContent = 'Copied';
+          if (window.showToast) showToast('Invite link copied', 'success');
+        }
+      });
+    });
+  } catch (e) {
+    console.debug('[league-pro-invite]', e);
+  }
+};
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', function () {
+    if (typeof window.refreshLeagueProInviteCta === 'function') window.refreshLeagueProInviteCta();
+  });
+} else if (typeof window.refreshLeagueProInviteCta === 'function') {
+  window.refreshLeagueProInviteCta();
 }
 
 function _showIdentifyModal(planType, triggerBtn) {
