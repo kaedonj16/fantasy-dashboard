@@ -351,6 +351,40 @@ def _win_prob(team_val: float, league_avg: float) -> float:
     return 1.0 / (1.0 + math.exp(-2.0 * (ratio - 1.0)))
 
 
+def _viewer_remaining_week_avg(sim_state: Dict[str, Any], vid: int) -> Optional[float]:
+    """Viewer's current remaining-week PPG, in the same units as ``simulate_with_swap``.
+
+    ``simulate_with_swap`` returns the mean of the post-trade week profiles.
+    Impact ``wk`` must subtract the *same* remaining-week mean from before the
+    trade. Using ``_ppg_lineup`` (season-map optimal lineup) as the before-side
+    mixed scales: remaining-week PPG is typically a few points below the season
+    lineup, so every acquisition showed a ~4–5 point weekly-win *loss* even
+    when the Monte Carlo playoff-odds (apples-to-apples) went up.
+
+    Mirrors ``simulate_playoff_odds._viewer_week_mean`` (average of per-week
+    means, rounded to 1 decimal) so the before and after stay in lockstep
+    without importing the simulator at module load.
+    """
+    means: List[float] = []
+    for wp in (sim_state.get("week_profiles") or {}).values():
+        if not isinstance(wp, dict) or vid not in wp:
+            continue
+        try:
+            means.append(float(wp[vid]["mean"]))
+        except (TypeError, ValueError, KeyError):
+            continue
+    if means:
+        return round(sum(means) / len(means), 1)
+    for t in sim_state.get("teams") or []:
+        try:
+            if int(t.get("roster_id")) == int(vid):
+                val = float(t.get("avg") or 0)
+                return val if val else None
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
 def _wp_delta(
     viewer_val: float,
     target_val: float,
@@ -2333,6 +2367,15 @@ def _get_archetype_suggestions_impl(
     except (TypeError, ValueError):
         logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
+    # Weekly-win baseline in the same units as simulate_with_swap's new_avg
+    # (remaining-week mean). Fall back to the analytical current_wp when the
+    # sim has no week profiles / team avg for the viewer.
+    _sim_wp_base = current_wp
+    if sim_state is not None and _vid_int is not None:
+        _cur_week_avg = _viewer_remaining_week_avg(sim_state, _vid_int)
+        if _cur_week_avg:
+            _sim_wp_base = _win_prob(_cur_week_avg, league_avg)
+
     # Per-request memo for the Monte Carlo swap. simulate_with_swap is
     # deterministic (common-random-numbers seed), so identical post-trade rosters
     # return identical odds - different packages that collapse to the same lineup
@@ -2408,7 +2451,7 @@ def _get_archetype_suggestions_impl(
             try:
                 new_po_pct, new_avg = _cached_swap(new_pids)
                 pod = (new_po_pct - current_playoff_pct) / 100.0
-                wpd = _win_prob(new_avg, league_avg) - current_wp
+                wpd = _win_prob(new_avg, league_avg) - _sim_wp_base
             except Exception:
                 logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
@@ -2453,7 +2496,7 @@ def _get_archetype_suggestions_impl(
                 try:
                     _net_po_pct, _net_avg = _cached_swap(net_roster)
                     net_pod_pkg = (_net_po_pct - current_playoff_pct) / 100.0
-                    net_wpd_pkg = _win_prob(_net_avg, league_avg) - current_wp
+                    net_wpd_pkg = _win_prob(_net_avg, league_avg) - _sim_wp_base
                 except Exception:
                     net_pod_pkg = None
 

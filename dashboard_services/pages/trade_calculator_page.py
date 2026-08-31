@@ -1031,7 +1031,7 @@ def build_trade_calculator_body(
                 <span class="otc-sugg-section-title">Impact <span id="otcStrategySpinner" style="display:none;font-size:10px;font-weight:500;color:var(--text-muted);"><i class="fa-solid fa-circle-notch" style="animation:spin .9s linear infinite;margin-right:2px;"></i>Simulating…</span></span>
                 <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
                   <span id="otcCurrentPOBadge" style="display:none;font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;background:color-mix(in srgb, var(--accent) 13%, transparent);color:var(--accent);"></span>
-                  <span class="otc-strategy-section-hint" id="otcStrategyImpactHint">Win % if acquired</span>
+                  <span class="otc-strategy-section-hint" id="otcStrategyImpactHint" title="wk is typical remaining-week win chance. po is simulated playoff-make odds. They can move in opposite directions: playoffs depend on the rest of the season, schedule, and ceiling — not just average weekly scoring.">Win % if acquired</span>
                 </div>
               </div>
               <div id="otcStrategyImpact">
