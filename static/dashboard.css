@@ -34889,7 +34889,26 @@ a, button, [role="button"], [role="tab"], summary, label,
     /* Inherit the family (buttons default to the UA font) but NOT the weight/size:
      the bare `font: inherit` shorthand reset font-weight to normal, so button
      rows (Refresh data, Search) rendered lighter than the anchor rows next to
-     them. Re-assert the sheet-link size/weight after. */
+     them. Re-assert the sheet-link size/weight after. Also strip UA button
+     chrome so Refresh doesn't render as a half-width navy pill. */
+    button.br-sheet-link {
+        width: 100%;
+        box-sizing: border-box;
+        margin: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: var(--text);
+        font-family: inherit;
+        font-size: 15px;
+        font-weight: 600;
+        line-height: inherit;
+        text-align: left;
+        cursor: pointer;
+        appearance: none;
+        -webkit-appearance: none;
+    }
+
     button.br-sheet-link:disabled {
         opacity: .55;
         cursor: default;
