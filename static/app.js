@@ -3003,7 +3003,9 @@ function bindOnce(el, key, type, handler, options) {
     const m = document.getElementById('br-theme-color');
     if (!m) return;
     const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-    m.setAttribute('content', dark ? '#020617' : '#ffffff');
+    // Match the top chrome / PWA splash (navy in dark, soft slate in light)
+    // so the OS status bar doesn't flash pure white against the app surface.
+    m.setAttribute('content', dark ? '#020617' : '#f8fafc');
   }
   syncThemeColor();
 

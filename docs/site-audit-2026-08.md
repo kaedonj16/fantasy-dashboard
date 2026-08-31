@@ -30,7 +30,7 @@ this PR** shipped with accompanying regression tests in
 | 10 | Service worker precached unversioned `app.js`/`dashboard.css` | **Fixed** — shell-only precache + `CACHE_NAME` bump |
 | 11 | `/sw.js` had no cache policy | **Fixed** — `Cache-Control: no-cache` |
 | 12 | CRON/ADMIN secret compares used `!=` (timing leak) | **Fixed** — `hmac.compare_digest` |
-| 13 | Default OG image is square logo; twitter card=`summary` | Open — needs 1200×630 asset |
+| 13 | Default OG image is square logo; twitter card=`summary` | **Fixed** — `/static/og-default.png` 1200×630 + `summary_large_image` |
 | 14 | Monolithic `dashboard.css` (~724KB) + full `app.js` on SEO pages | Open — structural |
 | 15 | AI HTML → `innerHTML` under CSP `unsafe-inline` | Open — sanitize / allowlist |
 | 16 | Yahoo access token stored in session cookie | Open |
@@ -49,10 +49,10 @@ this PR** shipped with accompanying regression tests in
 | 22 | Duplicate `sentry-sdk` pin in `requirements.txt` | **Fixed** |
 | 23 | Exception strings leaked from some APIs | Open |
 | 24 | Unauthenticated `/api/proj-debug`, market-intel health | Open |
-| 25 | Manifest theme/background stuck white | Open |
-| 26 | Conflicting global `:focus-visible` rings | Open |
-| 27 | Offline page ignores app theme preference | Open |
-| 28 | Empty-state class drift (`bract-empty-*` vs `brEmptyState`) | Open |
+| 25 | Manifest theme/background stuck white | **Fixed** — navy `#0b2036` splash + theme-synced status bar |
+| 26 | Conflicting global `:focus-visible` rings | **Fixed** — single `--accent` ring |
+| 27 | Offline page ignores app theme preference | **Fixed** — reads `localStorage.theme` |
+| 28 | Empty-state class drift (`bract-empty-*` vs `brEmptyState`) | **Fixed** — `bract-empty-*` aliases map to shared empty-state look |
 | 29 | Guides lack Article/BreadcrumbList JSON-LD | Open |
 
 ---
@@ -92,6 +92,5 @@ this PR** shipped with accompanying regression tests in
 
 1. Flip `PRO_REQUIRE_GOOGLE=1` after the notice period (monitor `needs_google_link` traffic).
 2. **Asset split** — extend `lite_js` to all logged-out SEO pages; CSS packs per surface.
-3. **Default OG card** — ship a branded 1200×630 image + `summary_large_image`.
-4. **AI HTML sanitization** — DOMPurify or server allowlist before `innerHTML`.
-5. **Redis** — wire `REDIS_URL` in Render for global rate limits + shared caches.
+3. **AI HTML sanitization** — DOMPurify or server allowlist before `innerHTML`.
+4. **Redis** — wire `REDIS_URL` in Render for global rate limits + shared caches.

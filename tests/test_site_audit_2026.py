@@ -116,10 +116,11 @@ def test_sw_no_cache_and_shell_precache():
     sw_route = PUBLIC[PUBLIC.index("def service_worker"):]
     sw_route = sw_route[: sw_route.index("def ads_txt")]
     assert "no-cache" in sw_route
-    assert "br-fantasy-v20" in SW
+    assert "br-fantasy-v21" in SW
     assert "'/static/app.js'" not in SW and '"/static/app.js"' not in SW
     assert "'/static/dashboard.css'" not in SW and '"/static/dashboard.css"' not in SW
     assert "/static/offline.html" in SW
+    assert "/static/BR_Logo_dark.png" in SW
     # Explicit Refresh must not paint the 3.5s cached shell (stale timestamp).
     assert "bypass-cache" in SW
     assert "forceNetworkNav" in SW
@@ -165,3 +166,44 @@ def test_single_sentry_sdk_pin():
     pins = [ln for ln in REQS.splitlines() if ln.startswith("sentry-sdk")]
     assert len(pins) == 1
     assert "2.29.1" in pins[0]
+
+
+def test_default_og_card_is_large_branded_image():
+    """Site-audit #13: default share previews use a 1200×630 card, not the square logo."""
+    assert (ROOT / "static" / "og-default.png").is_file()
+    from PIL import Image
+    with Image.open(ROOT / "static" / "og-default.png") as im:
+        assert im.size == (1200, 630)
+    assert "og-default.png" in APP_PY
+    assert 'twitter:card" content="summary_large_image"' in APP_PY
+    # Square logo must not be the default social image anymore.
+    social = APP_PY[APP_PY.index("def _default_social_tags"): APP_PY.index("def _site_json_ld")]
+    assert "BR_Logo.png" not in social
+    assert "summary_large_image" in social
+
+
+def test_manifest_and_offline_theme_match_brand():
+    """Site-audit #25/#27: PWA splash isn't stuck white; offline honors saved theme."""
+    manifest = (ROOT / "static" / "manifest.json").read_text(encoding="utf-8")
+    assert '"theme_color": "#0b2036"' in manifest
+    assert '"background_color": "#0b2036"' in manifest
+    offline = (ROOT / "static" / "offline.html").read_text(encoding="utf-8")
+    assert "localStorage.getItem('theme')" in offline
+    assert "BR_Logo_dark.png" in offline
+    assert "is-dark" in offline
+
+
+def test_focus_visible_uses_single_accent_token():
+    """Site-audit #26: no competing --info vs --accent focus rings."""
+    assert ":focus-visible {\n    outline: 2px solid var(--info);" not in CSS
+    assert "outline: 2px solid var(--accent) !important;" in CSS
+    assert "outline: 2px solid var(--accent);" in CSS
+
+
+def test_bract_empty_aliases_share_empty_state_look():
+    """Site-audit #28: legacy bract-empty-* classes map onto the shared empty look."""
+    assert ".bract-empty-state {" in CSS
+    assert ".bract-empty-title {" in CSS
+    assert ".bract-empty-copy {" in CSS
+    assert "border-radius: 999px" not in CSS
+

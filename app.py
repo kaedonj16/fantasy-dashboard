@@ -1810,7 +1810,7 @@ BASE_HTML = """
          one surface. The app theme is a manual toggle (not OS-driven), so this
          is kept in sync by app.js rather than a prefers-color-scheme meta, which
          would mismatch a user on OS-dark who hasn't switched the app to dark. -->
-    <meta name="theme-color" id="br-theme-color" content="#ffffff">
+    <meta name="theme-color" id="br-theme-color" content="#f8fafc">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="BR Fantasy">
@@ -4744,7 +4744,9 @@ def _default_social_tags(title: str, description: str) -> str:
     their own. Gives every public page a proper link preview when shared."""
     origin = _site_origin()
     desc = (description or DEFAULT_META_DESCRIPTION).strip()
-    image = f"{origin}/static/BR_Logo.png" if origin else "/static/BR_Logo.png"
+    # Branded 1200×630 card (not the square logo) so Slack/X/iMessage previews
+    # render as summary_large_image instead of a tiny icon.
+    image = f"{origin}/static/og-default.png" if origin else "/static/og-default.png"
     t = html.escape(title, quote=True)
     d = html.escape(desc, quote=True)
     img = html.escape(image, quote=True)
@@ -4760,7 +4762,9 @@ def _default_social_tags(title: str, description: str) -> str:
         f"<meta property=\"og:description\" content=\"{d}\">"
         f"<meta property=\"og:url\" content=\"{url}\">"
         f"<meta property=\"og:image\" content=\"{img}\">"
-        f"<meta name=\"twitter:card\" content=\"summary\">"
+        f"<meta property=\"og:image:width\" content=\"1200\">"
+        f"<meta property=\"og:image:height\" content=\"630\">"
+        f"<meta name=\"twitter:card\" content=\"summary_large_image\">"
         f"<meta name=\"twitter:title\" content=\"{t}\">"
         f"<meta name=\"twitter:description\" content=\"{d}\">"
         f"<meta name=\"twitter:image\" content=\"{img}\">"

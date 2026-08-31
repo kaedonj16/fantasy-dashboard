@@ -558,9 +558,10 @@ table, .standings-table, .mini-value, .mini-stat, .sr-stat-value,
     font-variant-numeric: tabular-nums;
 }
 
-/* Consistent, accessible focus ring everywhere (mouse clicks stay clean). */
+/* Fallback focus ring for any other focusable node not covered above.
+   Same --accent token so keyboard focus never flips between navy and sky. */
 :focus-visible {
-    outline: 2px solid var(--info);
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
 }
 
@@ -12045,7 +12046,7 @@ a.signed-home-league:hover {
     display: inline-block;
     padding: 6px 12px;
     border: 1px solid var(--border);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--card-soft);
     color: var(--text);
     font-size: 13px;
@@ -12099,13 +12100,34 @@ a.signed-home-league:hover {
     display: flex;
     flex-direction: column;
     gap: 36px;
+    position: relative;
+}
+
+/* Soft brand atmosphere behind the hero — not a flat white slab, not a
+   competing illustration. Keeps the first viewport one composition. */
+.home-page::before {
+    content: "";
+    position: absolute;
+    inset: -24px -8% auto;
+    height: min(520px, 72vh);
+    pointer-events: none;
+    z-index: 0;
+    background:
+        radial-gradient(ellipse 70% 55% at 18% 20%, color-mix(in srgb, var(--brand-blue) 14%, transparent), transparent 70%),
+        radial-gradient(ellipse 55% 45% at 88% 8%, color-mix(in srgb, var(--spinner) 10%, transparent), transparent 65%);
+}
+
+[data-theme="dark"] .home-page::before {
+    background:
+        radial-gradient(ellipse 70% 55% at 18% 18%, color-mix(in srgb, var(--brand-blue) 18%, transparent), transparent 70%),
+        radial-gradient(ellipse 55% 45% at 90% 6%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 65%);
 }
 
 .home-brand {
     margin: 0;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 800;
-    letter-spacing: 0.16em;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--brand-blue);
 }
@@ -12655,7 +12677,7 @@ a.signed-home-league:hover {
     letter-spacing: .05em;
     text-transform: uppercase;
     padding: 2px 8px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     white-space: nowrap;
     flex: none;
 }
@@ -26886,10 +26908,53 @@ button:disabled {
     border-radius: 8px;
 }
 
-/* ── Empty state icon ─────────────────────────────────────────────────────── */
+/* ── Empty state icon (legacy bract-* alias → shared empty-state look) ─────
+   Activity / league-history still emit bract-empty-* markup in a few places.
+   Keep those classes readable by mapping them onto the shared empty-state
+   tokens instead of a one-off grey stack. */
+.bract-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 6px;
+    padding: 28px 20px;
+    color: var(--text-muted);
+}
+
 .bract-empty-icon {
-    margin-bottom: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    margin-bottom: 4px;
+    border-radius: 12px;
+    background: var(--card-soft);
+    color: var(--text-muted);
     line-height: 1;
+}
+
+.bract-empty-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text);
+}
+
+.bract-empty-copy {
+    margin: 0;
+    max-width: 36rem;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text-muted);
+}
+
+.bract-empty-mini {
+    color: var(--text-muted);
+    font-size: 13px;
 }
 
 /* ── Sparkline canvas in player rankings (lives in the arrow column) ─────── */
