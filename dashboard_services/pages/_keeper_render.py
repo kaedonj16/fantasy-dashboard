@@ -81,19 +81,43 @@ def render_keeper_html(seed: dict) -> str:
     )
     auto = seed.get("autoDraft")
     plat = str(seed.get("platform") or "").lower()
+    is_auction = bool(seed.get("isAuction"))
+    costs_imported = bool(seed.get("auctionCostsImported"))
     mfl_banner = (
-        '<div class="kpr-warn">MFL draft history is not auto-imported. '
-        'Set each player’s drafted round below — auction/FAAB costs stay manual.</div>'
+        '<div class="kpr-warn">MFL draft rounds are not auto-imported for snake keepers. '
+        + ('Auction $ paid was imported where MFL exposed amounts — edit any cell below.'
+           if is_auction and costs_imported else
+           'Set each player’s drafted round below'
+           + (' — enter auction $ paid manually when amounts are missing.' if is_auction else '.')
+           )
+        + '</div>'
         if plat == "mfl" or (not auto and plat not in ("sleeper", "espn", "yahoo"))
         else ""
     )
-    auction_banner = (
-        '<div class="kpr-warn">Auction/FAAB league detected'
-        + (f' (budget ≈ ${int(round(float(seed.get("auctionBudget"))))})'
-           if seed.get("auctionBudget") is not None else '')
-        + '. Keeper cost rounds still work; enter auction $ paid manually when '
-        'the provider does not expose amounts. Auction surplus scoring is guidance-only.</div>'
-        if seed.get("isAuction") else ""
+    if is_auction:
+        _bud = (
+            f' (budget ≈ ${int(round(float(seed.get("auctionBudget"))))})'
+            if seed.get("auctionBudget") is not None else ''
+        )
+        if costs_imported:
+            auction_banner = (
+                f'<div class="kpr-warn">Auction/FAAB league detected{_bud}. '
+                'Auction $ paid was imported from the provider where available — edit any '
+                'player’s $ below. Round-based surplus is still guidance-only for auction keepers.</div>'
+            )
+        else:
+            auction_banner = (
+                f'<div class="kpr-warn">Auction/FAAB league detected{_bud}. '
+                'Provider did not expose auction amounts — enter $ paid per player below. '
+                'Keeper cost rounds still work; auction surplus scoring is guidance-only.</div>'
+            )
+    else:
+        auction_banner = ""
+    _subtitle = (
+        "Who’s worth keeping? Surplus = where a player drafts today minus what he costs to keep. "
+        + ("Auction $ paid imports when the provider exposes it — otherwise edit the $ field."
+           if is_auction else
+           "Auction/FAAB keeper costs are not auto-detected — set the drafted round by hand.")
     )
     auto_badge = (
         '<span class="kpr-auto"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> '
@@ -132,6 +156,12 @@ def render_keeper_html(seed: dict) -> str:
     _nr = max(1, min(_nr, 30))
     undrafted_opts = '<option value="" selected>Last round</option>' + "".join(
         f'<option value="{r}">Round {r}</option>' for r in range(_nr, 0, -1)
+    )
+    auction_th = '<th class="r kpr-c-auction">Auction $</th>' if is_auction else ""
+    auction_note = (
+        " Auction $ paid imports when the provider exposes it — edit freely; "
+        "it does not yet reprice surplus."
+        if is_auction else ""
     )
     return f"""
 <style>
@@ -253,13 +283,15 @@ def render_keeper_html(seed: dict) -> str:
   .kpr-tbl td .kpr-bar + b{{display:inline-block;min-width:52px;text-align:right;}}
   .kpr-empty{{padding:34px 16px;text-align:center;color:var(--text-muted);}}
   .kpr-note{{padding:12px 16px;border-top:1px solid var(--border);font-size:12px;color:var(--text-muted);}}
-  .kpr-drnd,.kpr-yrs{{font:inherit;font-size:11.5px;font-weight:600;color:var(--text);
+  .kpr-drnd,.kpr-yrs,.kpr-acost{{font:inherit;font-size:11.5px;font-weight:600;color:var(--text);
     background:var(--card);border:1px solid var(--border);border-radius:7px;padding:3px 5px;
     text-align:center;vertical-align:middle;}}
   .kpr-drnd{{width:52px;}}
   .kpr-yrs{{width:44px;}}
-  .kpr-drnd:focus,.kpr-yrs:focus{{outline:none;border-color:var(--accent);
+  .kpr-acost{{width:64px;text-align:right;}}
+  .kpr-drnd:focus,.kpr-yrs:focus,.kpr-acost:focus{{outline:none;border-color:var(--accent);
     box-shadow:0 0 0 2px var(--accent-soft);}}
+  .kpr-c-auction{{min-width:72px;}}
   .kpr-dot{{opacity:.55;}}
   .kpr-drafted{{white-space:nowrap;}}
   .kpr-warn{{font-size:12.5px;color:var(--inj-q,#b45309);background:color-mix(in srgb,var(--inj-q,#b45309) 12%,transparent);
@@ -290,6 +322,7 @@ def render_keeper_html(seed: dict) -> str:
     .kpr-tbl .kpr-sub{{flex-wrap:nowrap;}}
     .kpr-drnd{{width:46px;}}
     .kpr-yrs{{width:40px;}}
+    .kpr-acost{{width:56px;}}
   }}
   @media (prefers-reduced-motion:reduce){{.kpr-row{{transition:none;}}}}
 </style>
@@ -299,8 +332,7 @@ def render_keeper_html(seed: dict) -> str:
     <div class="kpr-head-text">
       <h2>Keeper Assistant</h2>
       <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
-        Who’s worth keeping? Surplus = where a player drafts today minus what he costs to keep.
-        Auction/FAAB keeper costs are not auto-detected — set the drafted round by hand.
+        {_subtitle}
       </div>
     </div>
     <div class="kpr-head-actions">
@@ -365,7 +397,9 @@ def render_keeper_html(seed: dict) -> str:
     <div class="kpr-tbl-scroll" id="kpr-table" hidden>
       <table class="kpr-tbl">
         <thead><tr>
-          <th>Player</th><th class="r">Keeper cost</th><th class="r">Market (ADP)</th>
+          <th>Player</th><th class="r">Keeper cost</th>
+          {auction_th}
+          <th class="r">Market (ADP)</th>
           <th class="r">Surplus</th><th class="r">Verdict</th>
         </tr></thead>
         <tbody id="kpr-tbody"></tbody>
@@ -374,8 +408,9 @@ def render_keeper_html(seed: dict) -> str:
 
     <div class="kpr-note">
       Surplus is in draft rounds, from BR’s redraft value model + market ADP. Keeper cost auto-fills from last
-      season’s draft where available; edit any player’s round in the table. Two keepers that would cost the same
-      round is a league-specific rule the tool flags rather than resolves.
+      season’s draft where available; edit any player’s round in the table.
+      {auction_note}
+      Two keepers that would cost the same round is a league-specific rule the tool flags rather than resolves.
     </div>
   </div>
 </div>
