@@ -734,6 +734,20 @@
       radial-gradient(ellipse 70% 55% at 50% 88%, var(--pc) 0 10px, transparent 11px),
       color-mix(in srgb, var(--pc) 22%, transparent);
   }
+  .hs.has-photo,
+  .hs-sm.has-photo {
+    background: color-mix(in srgb, var(--pc) 18%, transparent);
+    overflow: hidden;
+  }
+  .hs.has-photo img,
+  .hs-sm.has-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top center;
+    display: block;
+    border-radius: inherit;
+  }
   .ba-body { min-width: 0; flex: 1; line-height: 1.3; }
   .ba-name { font-size: 13.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ba-meta { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: 2px; flex-wrap: wrap; }

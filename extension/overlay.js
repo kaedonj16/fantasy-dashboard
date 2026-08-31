@@ -233,9 +233,12 @@
     clock: CLOCK_START,
     expanded: null,
     toast: "",
-    syncOk: true
+    syncOk: true,
+    valCap: 180,
+    sitePool: false
   };
   let autoTimer = null, clockTimer = null;
+  let lastLiveDetail = null;
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -308,7 +311,7 @@
     const needN = clamp(need / 2, 0, 1);
     const ppgN = clamp((p.ppg - 6) / 16, 0, 1);
     const tierN = clamp((7 - p.tier) / 6, 0, 1);
-    const valN = clamp(p.val / 160, 0, 1);
+    const valN = clamp(p.val / Math.max(state.valCap || 180, 1), 0, 1);
     let s = 100 * (0.28 * adpVal + 0.24 * valN + 0.18 * ppgN + 0.16 * tierN + 0.14 * needN);
     if (isTierCliff(p) && need > 0) s += 4;
     return Math.round(clamp(s, 8, 99));
@@ -341,7 +344,7 @@
     else if (p.pos !== "QB" && (counts.RB + counts.WR + counts.TE) < 5) out.push("FLEX-eligible depth for weekly lineup");
     if (diff >= 4) out.push("Value vs ADP: " + diff + " picks past market");
     else if (diff <= -4) out.push("Slight reach vs ADP (" + Math.abs(diff) + " early) — still a positional fit");
-    else out.push("In range of ADP " + p.adp.toFixed(1));
+    else out.push("In range of ADP " + fmtAdp(p));
     if (isTierCliff(p)) out.push("Tier cliff: last " + p.pos + "s in T" + p.tier);
     else if (p.tier <= 2) out.push("Elite tier (T" + p.tier + ") talent still on the board");
     return out.slice(0, 3);
@@ -566,6 +569,34 @@
     return html;
   }
 
+  function fmtAdp(p) {
+    const a = Number(p && p.adp);
+    if (!isFinite(a) || a >= 900) return "—";
+    return a.toFixed(1);
+  }
+  function fmtPpg(p) {
+    const n = Number(p && p.ppg);
+    if (!isFinite(n) || n <= 0) return "—";
+    return n.toFixed(1);
+  }
+  function hsUrl(p) {
+    if (!p) return "";
+    if (p.headshot) return String(p.headshot);
+    const id = String(p.id || "");
+    if (/^\d+$/.test(id)) return "https://sleepercdn.com/content/nfl/players/" + id + ".jpg";
+    return "";
+  }
+  function hsMark(p, cls) {
+    const pc = POS[p.pos] || POS.WR;
+    const url = hsUrl(p);
+    if (!url) return '<span class="' + cls + '" style="--pc:' + pc + '" aria-hidden="true"></span>';
+    const fallback = /^\d+$/.test(String(p.id || ""))
+      ? "https://sleepercdn.com/content/nfl/players/" + p.id + ".jpg"
+      : "";
+    const extra = fallback && fallback !== url ? ' data-fallback="' + esc(fallback) + '"' : "";
+    return '<span class="' + cls + ' has-photo" style="--pc:' + pc + '" aria-hidden="true"><img alt="" src="' + esc(url) + '"' + extra + "></span>";
+  }
+
   function playerRow(p, opts) {
     opts = opts || {};
     const cliff = isTierCliff(p);
@@ -580,15 +611,15 @@
       chip = '<div class="pschip" style="color:' + col + ";background:" + col + '1a" title="Pick Score">'+ p._ps + "<small>PS</small></div>";
     }
     return '<div class="ba-row" data-id="' + p.id + '">'
-      + '<span class="hs" style="--pc:' + pc + '" aria-hidden="true"></span>'
+      + hsMark(p, "hs")
       + '<div class="ba-body"><div class="ba-name">' + esc(p.name) + "</div>"
       + '<div class="ba-meta"><span class="posb" style="background:' + pc + '">' + p.pos + "</span>"
       + esc(p.team)
       + '<span class="tier' + (cliff ? " cliff" : "") + '">T' + p.tier + "</span>"
-      + '<span class="tabular">' + p.ppg.toFixed(1) + " proj</span>"
+      + '<span class="tabular">' + fmtPpg(p) + " proj</span>"
       + (byeLvl ? '<span class="bye-flag">Bye ' + p.bye + "</span>" : "")
       + "</div></div>"
-      + '<div class="ba-right"><div class="ba-val">' + p.val + '</div><div class="ba-sub">ADP ' + p.adp.toFixed(1) + "</div></div>"
+      + '<div class="ba-right"><div class="ba-val">' + p.val + '</div><div class="ba-sub">ADP ' + fmtAdp(p) + "</div></div>"
       + chip
       + "</div>";
   }
@@ -598,7 +629,7 @@
       const g = p.grade || pickLetter((p.pn || 0) - p.adp, true);
       return '<div class="rslot">'
         + '<span class="rslot-pos" style="background:' + slotColor(slot) + '">' + slot + "</span>"
-        + '<span class="hs-sm" style="--pc:' + (POS[p.pos] || POS.BN) + '"></span>'
+        + hsMark(p, "hs-sm")
         + '<div class="rslot-body"><div class="rslot-name">' + esc(p.name) + "</div>"
         + '<div class="rslot-meta">' + p.pos + " · " + p.team + (p.pn ? ' · <span class="tabular">' + pickLabel(p.pn) + "</span>" : "") + "</div></div>"
         + '<span class="rslot-g" style="color:' + gradeCol(letterToScore(g)) + '">' + g + "</span>"
@@ -625,6 +656,9 @@
   }
 
   function renderBoard() {
+    if (EMBEDDED && !state.sitePool) {
+      return '<div class="empty-log">Loading BR Fantasy ranks, ADP, and values…</div>';
+    }
     const mine = myPicks();
     const counts = posCounts(mine);
     const recPn = nextMine(state.current) || state.current;
@@ -644,9 +678,9 @@
       const col = psColor(rec._ps);
       html += '<div class="rec-card"><div class="rec-label">Recommended pick</div><div class="rec-top">'
         + '<div class="gauge" style="--p:' + rec._ps + ";--g:" + col + '"><div><b>' + rec._ps + "</b><small>PS</small></div></div>"
-        + '<div class="rec-player"><div class="rec-name">' + esc(rec.name) + "</div>"
+        + '<div class="rec-player">' + hsMark(rec, "hs") + '<div><div class="rec-name">' + esc(rec.name) + "</div>"
         + '<div class="rec-meta"><span class="posb" style="background:' + POS[rec.pos] + '">' + rec.pos + "</span>"
-        + rec.team + " · T" + rec.tier + " · " + rec.ppg.toFixed(1) + " proj</div></div></div>"
+        + rec.team + " · T" + rec.tier + " · " + fmtPpg(rec) + " proj</div></div></div>"
         + '<ul class="reasons">' + reasonsFor(rec, counts, recPn).map(function (r) { return "<li>" + esc(r) + "</li>"; }).join("") + "</ul>"
         + '<button type="button" class="btn btn-primary draft-cta" data-draft="' + rec.id + '">'
         + (state.live ? ("Recommend " + esc(rec.name) + " at " + pickLabel(recPn)) : ("Draft " + esc(rec.name) + " at " + pickLabel(recPn)))
@@ -986,35 +1020,71 @@
     }
   }
 
+  function ingestPool(detail) {
+    const rows = (detail && detail.players) || [];
+    if (!rows.length) return;
+    players = rows.map(function (p) {
+      return {
+        id: String(p.id),
+        name: p.name,
+        pos: p.pos || "RB",
+        team: p.team || "FA",
+        adp: Number(p.adp) || 999,
+        val: Number(p.val) || 0,
+        ppg: p.ppg == null ? 0 : Number(p.ppg),
+        age: p.age == null ? 0 : Number(p.age),
+        bye: p.bye == null ? 0 : Number(p.bye),
+        headshot: p.headshot || "",
+        tier: p.tier || 6
+      };
+    });
+    byId = {};
+    byName = {};
+    players.forEach(function (p) {
+      if (p.id) byId[String(p.id)] = p;
+      byName[normName(p.name)] = p;
+    });
+    state.sitePool = true;
+    let maxVal = 1;
+    players.forEach(function (p) { if (p.val > maxVal) maxVal = p.val; });
+    state.valCap = maxVal;
+    if (lastLiveDetail) ingestLive(lastLiveDetail);
+    else render();
+  }
+
   function matchLivePlayer(raw) {
-    const name = raw.playerName || raw.name || "";
+    const pid = raw && raw.playerId != null && String(raw.playerId) !== "" ? String(raw.playerId) : "";
+    if (pid && byId[pid]) return byId[pid];
+    const name = (raw && (raw.playerName || raw.name)) || "";
     const key = normName(name);
     if (key && byName[key]) return byName[key];
-    const pos = String(raw.pos || raw.position || "WR").toUpperCase();
-    const nfl = String(raw.nflTeam || raw.team || raw.proTeam || "").toUpperCase().slice(0, 3) || "FA";
-    const pn = Number(raw.overallPickNumber || raw.pick_no || 0) || state.current;
+    const pos = String((raw && (raw.pos || raw.position)) || "WR").toUpperCase();
+    const nfl = String((raw && (raw.nflTeam || raw.team || raw.proTeam)) || "").toUpperCase().slice(0, 3) || "FA";
+    const pn = Number((raw && (raw.overallPickNumber || raw.pick_no)) || 0) || state.current;
     const stub = {
-      id: "live-" + (raw.playerId || key || pn),
+      id: "live-" + (pid || key || pn),
       name: name || ("Pick " + pn),
       pos: POS[pos] ? pos : "WR",
       team: nfl,
       bye: BYE[nfl] || 10,
-      adp: pn,
-      tier: 5,
-      ppg: 8,
-      age: 26,
-      val: Math.round(Math.max(6, 168 * Math.exp(-pn / 42)))
+      adp: 999,
+      tier: 6,
+      ppg: 0,
+      age: 0,
+      val: 0,
+      headshot: ""
     };
-    if (!byId[stub.id]) {
+    if (!EMBEDDED && !state.sitePool && !byId[stub.id]) {
       players.push(stub);
       byId[stub.id] = stub;
       byName[normName(stub.name)] = stub;
     }
-    return byId[stub.id];
+    return stub;
   }
 
   function ingestLive(detail) {
     if (!detail) return;
+    lastLiveDetail = detail;
     state.live = true;
     stopAuto();
     if (detail.platform) state.platform = String(detail.platform).toLowerCase();
@@ -1073,13 +1143,30 @@
   window.addEventListener("message", function (ev) {
     const msg = ev.data;
     if (!msg || msg.__br !== "br-da") return;
+    if (msg.type === "pool") ingestPool(msg);
     if (msg.type === "picks") ingestLive(msg);
     if (msg.type === "sync") setSyncStatus(!!msg.ok, msg.text);
     if (msg.type === "theme" && msg.theme) applyTheme(msg.theme);
   });
 
-  buildPool();
-  indexNames();
+  document.addEventListener("error", function (e) {
+    const t = e.target;
+    if (!t || t.tagName !== "IMG") return;
+    const fb = t.getAttribute("data-fallback");
+    if (fb) {
+      t.removeAttribute("data-fallback");
+      t.src = fb;
+      return;
+    }
+    const wrap = t.closest(".has-photo");
+    if (wrap) wrap.classList.remove("has-photo");
+    t.remove();
+  }, true);
+
+  if (!EMBEDDED) {
+    buildPool();
+    indexNames();
+  }
   const savedSlot = Number(localStorage.getItem("br-da-slot") || 0);
   if (savedSlot) state.mySlot = savedSlot;
   fillSlotSel();

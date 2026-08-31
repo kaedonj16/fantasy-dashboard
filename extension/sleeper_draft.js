@@ -95,6 +95,7 @@
         teams: Number(settings.teams || 12),
         rounds: Number(settings.rounds || 15),
         mySlot: mySlot || undefined,
+        sf: Number(settings.slots_super_flex || settings.slots_sf || 0) > 0,
         picks: picks,
         syncText: picks.length ? "Sleeper · SYNCED · " + picks.length + " picks" : "Sleeper · watching",
       };

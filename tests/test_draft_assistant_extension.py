@@ -23,7 +23,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.0"
+    assert manifest["version"] == "1.5.1"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -53,3 +53,35 @@ def test_manifest_docks_overlay_on_host_drafts():
     csp = (manifest.get("content_security_policy") or {}).get("extension_pages") or ""
     assert "script-src 'self'" in csp
     assert "unsafe-eval" not in csp
+    assert "img-src" in csp
+    assert "sleepercdn.com" in csp
+    assert "espncdn.com" in csp
+    assert "brfantasyfootball.com" in csp
+
+
+def test_overlay_uses_live_br_player_pool_and_headshots():
+    overlay = (EXT / "overlay.js").read_text(encoding="utf-8")
+    css = (EXT / "overlay.css").read_text(encoding="utf-8")
+    inject = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
+    background = (EXT / "background.js").read_text(encoding="utf-8")
+    sleeper = (EXT / "sleeper_draft.js").read_text(encoding="utf-8")
+    assert "ingestPool" in overlay
+    assert 'msg.type === "pool"' in overlay
+    assert "Loading BR Fantasy ranks" in overlay
+    assert "has-photo" in overlay
+    assert "sleepercdn.com/content/nfl/players/" in overlay
+    assert "has-photo" in css
+    assert "object-fit: cover" in css
+    assert "fetchDraftPool" in inject
+    assert "adpSource" in inject
+    assert "queuedPool" in inject
+    assert "/api/league-players" in background
+    assert "adp_source=" in background
+    assert "espnHeadshot" in background
+    assert "redraft_value_1qb" in background
+    assert "redraft_avg_pick" in background
+    assert "compactDraftPlayer" in background
+    assert "sleepercdn.com/content/nfl/players/" in background
+    assert "slots_super_flex" in sleeper
+    assert overlay.count("buildPool();") == 1
+    assert "if (!EMBEDDED)" in overlay

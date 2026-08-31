@@ -17,8 +17,11 @@
   const COLLAPSED = 48;
   let iframe = null;
   let ready = false;
-  let queued = null;
+  let queuedPicks = null;
+  let queuedPool = null;
   let collapsed = false;
+  let poolRetryTimer = null;
+  let lastPoolKey = "";
 
   function platformFromHost() {
     const h = String(location.hostname || "").toLowerCase();
@@ -59,16 +62,57 @@
   }
 
   function postToOverlay(msg) {
-    if (!iframe || !iframe.contentWindow) {
-      queued = msg;
-      return;
-    }
-    if (!ready) {
-      queued = msg;
+    if (!msg) return;
+    if (!iframe || !iframe.contentWindow || !ready) {
+      if (msg.type === "pool") queuedPool = msg;
+      else queuedPicks = msg;
       return;
     }
     try {
       iframe.contentWindow.postMessage(Object.assign({ __br: "br-da" }, msg), "*");
+    } catch (_e) {
+      /* ignore */
+    }
+  }
+
+  function requestPool(extra) {
+    const opts = Object.assign(
+      {
+        type: "fetchDraftPool",
+        scoringType: "redraft",
+        adpSource: "consensus",
+        sf: false,
+        teams: 12,
+      },
+      extra || {}
+    );
+    lastPoolKey = [opts.scoringType, opts.sf ? "sf" : "1qb", opts.adpSource, opts.teams || 12].join("|");
+    try {
+      chrome.runtime.sendMessage(opts, function (resp) {
+        void chrome.runtime.lastError;
+        if (!resp || !Array.isArray(resp.players) || !resp.players.length) {
+          if (typeof window.__brDaSetSync === "function") {
+            window.__brDaSetSync(false, "BR ranks · retrying…");
+          }
+          if (!poolRetryTimer) {
+            poolRetryTimer = setTimeout(function () {
+              poolRetryTimer = null;
+              requestPool(extra);
+            }, 6000);
+          }
+          return;
+        }
+        if (poolRetryTimer) {
+          clearTimeout(poolRetryTimer);
+          poolRetryTimer = null;
+        }
+        postToOverlay({
+          type: "pool",
+          players: resp.players,
+          scoringType: resp.scoringType || "redraft",
+          sf: !!resp.sf,
+        });
+      });
     } catch (_e) {
       /* ignore */
     }
@@ -88,6 +132,10 @@
       },
       detail || {}
     );
+    const teams = Number(payload.teams || 0);
+    const sf = !!payload.sf;
+    const key = ["redraft", sf ? "sf" : "1qb", "consensus", teams >= 8 ? teams : 12].join("|");
+    if (key !== lastPoolKey) requestPool({ teams: teams >= 8 ? teams : 12, sf: sf });
     postToOverlay(payload);
   };
 
@@ -100,9 +148,13 @@
     if (!msg || msg.__br !== "br-da") return;
     if (msg.type === "ready") {
       ready = true;
-      if (queued) {
-        postToOverlay(queued);
-        queued = null;
+      if (queuedPool) {
+        postToOverlay(queuedPool);
+        queuedPool = null;
+      }
+      if (queuedPicks) {
+        postToOverlay(queuedPicks);
+        queuedPicks = null;
       } else {
         postToOverlay({
           type: "picks",
@@ -118,6 +170,7 @@
       return;
     }
     if (msg.type === "reconnect") {
+      requestPool({ force: true });
       try {
         document.dispatchEvent(new CustomEvent("brfantasy:assistant-reconnect", { bubbles: true }));
       } catch (_e) {
@@ -135,6 +188,7 @@
     }
   });
 
+  requestPool();
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", mount);
   } else {
