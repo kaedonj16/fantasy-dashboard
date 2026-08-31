@@ -32,7 +32,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.21"
+    assert manifest["version"] == "1.5.22"
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -270,6 +270,8 @@ def test_overlay_reads_league_settings_and_compares_players():
     assert "applyLeagueSettings" in overlay
     assert "leagueSettingsLabel" in overlay
     assert "scoreCtx" in overlay
+    assert "pickOwners: state.pickOwners" in overlay
+    assert "ctx.pickOwners" in score
     assert "roster: state.roster" in overlay
     assert "function rosterOf" in score
     assert "function slotList" in overlay
@@ -430,6 +432,37 @@ const owners = B.sleeperPickOwners({
 if (owners[1] !== 1) process.exit(1);
 if (owners[8] !== 3) process.exit(1);
 if (B.sleeperClockRemaining({ settings: { pick_timer: 90 }, last_picked: Date.now() - 10000 }, Date.now()) !== 80) process.exit(1);
+console.log("ok");
+"""
+    out = subprocess.run(
+        ["node", "-e", script],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert out.returncode == 0, out.stderr + out.stdout
+
+
+def test_overlay_ranks_the_on_the_clock_pick_when_owners_are_traded():
+    import subprocess
+
+    script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const ctx = { window: {}, self: null };
+ctx.window = ctx;
+ctx.self = ctx;
+vm.runInNewContext(fs.readFileSync("extension/overlay_score.js", "utf8"), ctx);
+const S = ctx.BROverlayScore;
+const traded = { current: 7, teams: 12, rounds: 15, mySlot: 5, pickOwners: { 7: 5, 20: 5 } };
+if (S.recommendationPickNo(traded) !== 7) process.exit(1);
+const snakeWait = { current: 7, teams: 12, rounds: 15, mySlot: 5 };
+if (S.recommendationPickNo(snakeWait) !== 20) process.exit(1);
+const onClock = { current: 7, teams: 12, rounds: 15, mySlot: 7 };
+if (S.recommendationPickNo(onClock) !== 7) process.exit(1);
+const stringKeys = { current: 7, teams: 12, rounds: 15, mySlot: 5, pickOwners: { "7": 5 } };
+if (S.recommendationPickNo(stringKeys) !== 7) process.exit(1);
 console.log("ok");
 """
     out = subprocess.run(

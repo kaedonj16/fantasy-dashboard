@@ -24,15 +24,17 @@
     return base;
   }
 
-  function ownerOf(pn, teams) {
-    const n = teams || 12;
+  function ownerOf(pn, ctx) {
+    const n = (ctx && ctx.teams) || 12;
+    const mapped = Number(ctx && ctx.pickOwners && ctx.pickOwners[pn]);
+    if (mapped >= 1 && mapped <= n) return mapped;
     const r = Math.ceil(pn / n);
     const i = (pn - 1) % n;
     return (r % 2 === 1) ? (i + 1) : (n - i);
   }
 
   function isMine(pn, ctx) {
-    return ownerOf(pn, ctx.teams) === ctx.mySlot;
+    return ownerOf(pn, ctx) === ctx.mySlot;
   }
 
   function upcomingOwned(ctx) {
@@ -169,7 +171,7 @@
       if (countsBySlot[s][pos] != null) countsBySlot[s][pos]++;
     });
     for (let qn = (ctx.current || 1) + 1; qn < nextPick; qn++) {
-      const os = ownerOf(qn, ctx.teams);
+      const os = ownerOf(qn, ctx);
       if (seen[os]) continue;
       seen[os] = true;
       const oc = countsBySlot[os] || { QB: 0, RB: 0, WR: 0, TE: 0 };
