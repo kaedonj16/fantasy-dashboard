@@ -8,7 +8,7 @@ Flask/pandas). They lock the settled product rules:
 - Live cheat-sheet sync is free; custom board edits stay PRO.
 - Paywall copy matches shipped PRO features.
 - Playoff Impact and offseason breakouts are server-gated.
-- Front Office is not auto-generated for free in-season users.
+- Front Office is not auto-generated on page load; users click Generate Report.
 - Trade Suggestions hides Build Around / Strategy for non-PRO users.
 - Player Insights Targets tab is clickable and shows an in-panel upgrade state.
 """
@@ -114,11 +114,14 @@ def test_playoff_impact_and_offseason_breakouts_are_server_gated():
 
 def test_in_season_front_office_is_premium_gated():
     dash = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
-    assert "if _fo_premium:" in dash
-    assert "gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))" in dash
+    assert "get_team_gm_memo" not in dash
+    assert "gm_memo_html" not in dash
     assert 'id="generateGmMemoBtn"' in dash
-    # Cached report must still offer Refresh so users aren't stuck on stale copy.
-    assert 'Refresh Report" if gm_memo_html else "Generate Report' in dash
+    assert "Generate Report" in dash
+    # Result stays empty until the user clicks Generate Report.
+    assert 'id="gm-memo-result" style="display:none;"' in dash
+    gm_api = APP_PY[APP_PY.index("def api_gm_memo"):APP_PY.index("def api_power_rankings")]
+    assert 'return jsonify({"paywall": True, "error": "Premium required"}), 403' in gm_api
 
 
 def test_trade_suggestions_hides_build_around_without_pro():

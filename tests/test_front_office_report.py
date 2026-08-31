@@ -32,16 +32,18 @@ def test_generate_report_restores_button_after_request():
     assert "Refresh Report" in report_code
 
 
-def test_in_season_dashboard_keeps_refresh_when_cached():
-    """Cached Front Office HTML must still expose a regenerate control."""
+def test_in_season_dashboard_does_not_prefill_report():
+    """The report body must stay hidden until Generate Report is clicked."""
     from pathlib import Path
 
     dash = (Path(__file__).parents[1] / "dashboard_services" / "pages" / "dashboard_page.py").read_text(
         encoding="utf-8"
     )
-    assert 'Refresh Report" if gm_memo_html else "Generate Report' in dash
+    assert "get_team_gm_memo" not in dash
+    assert "Generate Report" in dash
+    assert 'Refresh Report" if gm_memo_html else "Generate Report' not in dash
     assert 'id="generateGmMemoBtn"' in dash
-    assert 'id="gm-memo-result"' in dash
+    assert 'id="gm-memo-result" style="display:none;"' in dash
 
 
 def test_generate_report_surfaces_server_errors():
