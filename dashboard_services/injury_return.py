@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
+from urllib.error import HTTPError
 
 from utils.paths import CACHE_DIR
 
@@ -25,10 +27,17 @@ _HEADERS = {
         "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     ),
     "Accept": "application/json,text/plain,*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.espn.com/",
 }
 _TTL = 6 * 3600
+_FETCH_BLOCK_SECONDS = 6 * 3600
+_WARN_COOLDOWN = 300  # seconds between identical fetch-failure logs
 _CACHE: Dict[str, Any] = {"ts": 0.0, "by_pid": {}}
 _CACHE_FILE = CACHE_DIR / "injury_return" / "espn_return_dates.json"
+_FETCH_LOCK = threading.Lock()
+_FETCH_BLOCKED_UNTIL = 0.0
+_LAST_FETCH_WARN = 0.0
 
 
 def _as_date(value) -> Optional[date]:
@@ -119,15 +128,34 @@ def parse_espn_injuries_payload(payload: dict, espn_to_canon: Optional[dict] = N
     return out
 
 
-def _load_disk() -> Dict[str, dict]:
+def _load_disk(*, allow_stale: bool = False) -> Dict[str, dict]:
     try:
-        if _CACHE_FILE.exists() and (time.time() - _CACHE_FILE.stat().st_mtime) < _TTL:
+        if not _CACHE_FILE.exists():
+            return {}
+        age = time.time() - _CACHE_FILE.stat().st_mtime
+        if age < _TTL or allow_stale:
             data = json.loads(_CACHE_FILE.read_text(encoding="utf-8"))
             if isinstance(data, dict):
                 return {str(k): v for k, v in data.items() if isinstance(v, dict)}
     except Exception:
         logger.debug("injury_return disk load failed", exc_info=True)
     return {}
+
+
+def _log_fetch_failure(exc: Exception) -> None:
+    """Rate-limit fetch failure noise; 403 from datacenter IPs is expected."""
+    global _LAST_FETCH_WARN
+    now = time.time()
+    if (now - _LAST_FETCH_WARN) < _WARN_COOLDOWN:
+        return
+    _LAST_FETCH_WARN = now
+    if isinstance(exc, HTTPError) and exc.code in (403, 429, 503):
+        logger.warning(
+            "espn injury fetch blocked (HTTP %s); using cached injury data when available",
+            exc.code,
+        )
+    else:
+        logger.warning("espn injury fetch failed: %s", exc)
 
 
 def _save_disk(by_pid: Dict[str, dict]) -> None:
@@ -149,33 +177,54 @@ def _fetch_espn_json() -> dict:
 
 def refresh_espn_return_dates(*, force: bool = False) -> Dict[str, dict]:
     """Fetch ESPN's league injury report and cache canonical-id rows."""
+    global _FETCH_BLOCKED_UNTIL
     now = time.time()
     if not force and _CACHE.get("by_pid") and (now - float(_CACHE.get("ts") or 0)) < _TTL:
         return _CACHE["by_pid"]
-    disk = _load_disk()
-    if not force and disk:
-        _CACHE["by_pid"] = disk
+
+    disk_fresh = _load_disk(allow_stale=False)
+    disk_any = disk_fresh or _load_disk(allow_stale=True)
+
+    if not force and disk_fresh:
+        _CACHE["by_pid"] = disk_fresh
         _CACHE["ts"] = now
-        return disk
-    try:
-        from dashboard_services.providers.global_adp import espn_id_to_canonical
-        xwalk = espn_id_to_canonical()
-    except Exception:
-        xwalk = {}
-    try:
-        payload = _fetch_espn_json()
-    except Exception:
-        logger.warning("espn injury fetch failed", exc_info=True)
-        if disk:
-            _CACHE["by_pid"] = disk
+        return disk_fresh
+
+    if not force and now < _FETCH_BLOCKED_UNTIL:
+        _CACHE["by_pid"] = disk_any
+        _CACHE["ts"] = now
+        return disk_any
+
+    with _FETCH_LOCK:
+        # Another thread may have refreshed while we waited.
+        now = time.time()
+        if not force and _CACHE.get("by_pid") and (now - float(_CACHE.get("ts") or 0)) < _TTL:
+            return _CACHE["by_pid"]
+        if not force and now < _FETCH_BLOCKED_UNTIL:
+            _CACHE["by_pid"] = disk_any
             _CACHE["ts"] = now
-            return disk
-        return {}
-    by_pid = parse_espn_injuries_payload(payload, xwalk)
-    _CACHE["by_pid"] = by_pid
-    _CACHE["ts"] = now
-    _save_disk(by_pid)
-    return by_pid
+            return disk_any
+
+        try:
+            from dashboard_services.providers.global_adp import espn_id_to_canonical
+            xwalk = espn_id_to_canonical()
+        except Exception:
+            xwalk = {}
+        try:
+            payload = _fetch_espn_json()
+        except Exception as exc:
+            if isinstance(exc, HTTPError) and exc.code in (403, 429, 503):
+                _FETCH_BLOCKED_UNTIL = now + _FETCH_BLOCK_SECONDS
+            _log_fetch_failure(exc)
+            _CACHE["by_pid"] = disk_any
+            _CACHE["ts"] = now
+            return disk_any
+        by_pid = parse_espn_injuries_payload(payload, xwalk)
+        _FETCH_BLOCKED_UNTIL = 0.0
+        _CACHE["by_pid"] = by_pid
+        _CACHE["ts"] = now
+        _save_disk(by_pid)
+        return by_pid
 
 
 def get_return_date(player_id: str) -> Optional[str]:
