@@ -62,7 +62,7 @@ def test_build_team_strength_ranks_by_scoring_not_powerscore():
     ts = pd.DataFrame({
         "owner": ["HighAvg", "LowAvg"],
         "AVG": [140.0, 90.0],
-        "Win%": [0.5, 0.5],
+        "Win%": [0.8, 0.2],
         "PowerScore": [-1.0, 2.0],
     })
     strength = build_team_strength(ts)
