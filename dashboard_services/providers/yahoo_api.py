@@ -737,11 +737,11 @@ def _extract_teams(raw: Dict) -> List[Dict]:
     lg   = fc.get("league") or []
     meta = lg[1] if len(lg) > 1 else {}
     teams_block = meta.get("teams") or {}
-    count = _safe_int(teams_block.get("count") or teams_block.get("0", {}).get("count")) or 0
     out = []
-    for i in range(1, count + 1):
-        entry = teams_block.get(str(i))
-        if entry and "team" in entry:
+    # Yahoo collections are 0-indexed ("0", "1", …, count-1). A 1-based loop
+    # skipped team 0 and read past the end, so leagues looked empty or short.
+    for entry in _yahoo_collection_rows(teams_block, "team"):
+        if isinstance(entry, dict) and "team" in entry:
             out.append(entry["team"])
     return out
 
@@ -765,11 +765,9 @@ def _extract_roster_players(team_data: List) -> List[Dict]:
         return []
 
     players_block = roster_block.get("players") or {}
-    count = _safe_int(players_block.get("count") or players_block.get("0", {}).get("count")) or 0
     out = []
-    for i in range(1, count + 1):
-        entry = players_block.get(str(i))
-        if entry and "player" in entry:
+    for entry in _yahoo_collection_rows(players_block, "player"):
+        if isinstance(entry, dict) and "player" in entry:
             out.append(entry["player"])
     return out
 
