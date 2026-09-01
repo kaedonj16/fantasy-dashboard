@@ -184,3 +184,42 @@ def test_yahoo_league_exists_for_season(monkeypatch):
     monkeypatch.setattr(yahoo_api, "_yahoo_get", fake_get)
     assert yahoo_api.yahoo_league_exists_for_season("tok", "123", 2025) is True
     assert yahoo_api.yahoo_league_exists_for_season("tok", "123", 2024) is False
+
+
+# ── teams / roster collection indexing (Yahoo is 0-based) ────────────────────
+
+def _teams_payload(team_entries):
+    """Yahoo league/teams shape: teams keyed 0..n-1 plus count."""
+    block = {str(i): {"team": t} for i, t in enumerate(team_entries)}
+    block["count"] = len(team_entries)
+    return {"fantasy_content": {"league": [{}, {"teams": block}]}}
+
+
+def test_extract_teams_uses_zero_based_keys():
+    teams = [
+        [{"team_id": "1", "name": "Alpha"}],
+        [{"team_id": "2", "name": "Beta"}],
+    ]
+    out = yahoo_api._extract_teams(_teams_payload(teams))
+    assert len(out) == 2
+    assert yahoo_api._team_attr(out[0], "name") == "Alpha"
+    assert yahoo_api._team_attr(out[1], "name") == "Beta"
+
+
+def test_extract_roster_players_uses_zero_based_keys():
+    roster = {
+        "roster": {
+            "players": {
+                "0": {"player": [[{"player_id": "5"}, {"name": {"full": "First"}}]]},
+                "1": {"player": [[{"player_id": "6"}, {"name": {"full": "Second"}}]]},
+                "count": 2,
+            }
+        }
+    }
+    team_data = [roster]
+    out = yahoo_api._extract_roster_players(team_data)
+    assert len(out) == 2
+    meta0, _ = yahoo_api._flatten_yahoo_player(out[0])
+    meta1, _ = yahoo_api._flatten_yahoo_player(out[1])
+    assert meta0["player_id"] == "5"
+    assert meta1["player_id"] == "6"
