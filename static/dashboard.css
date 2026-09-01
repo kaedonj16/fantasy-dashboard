@@ -2651,7 +2651,7 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
     min-width: 0;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 768px) {
     .pricing-features-grid {
         grid-template-columns: 1fr;
     }

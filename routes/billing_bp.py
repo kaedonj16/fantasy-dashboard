@@ -434,7 +434,7 @@ def _pricing_body() -> str:
     </div>
 
     <style>
-      @media (max-width: 760px) {{
+      @media (max-width: 768px) {{
         .pricing-plan-grid {{ grid-template-columns: 1fr !important; }}
       }}
     </style>
