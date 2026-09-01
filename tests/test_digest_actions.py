@@ -48,3 +48,48 @@ def test_player_deep_link_encodes_query():
     url = player_deep_link("https://brfantasy.com", "espn", 2025, "9", "4046", "J. Chase")
     assert url.startswith("https://brfantasy.com/espn/2025/9/dashboard?player=4046")
     assert "player_name=" in url
+
+
+def test_recommend_waivers_uses_pickup_score_and_skips_owned():
+    from utils.digest_actions import recommend_waivers
+
+    rows = [
+        {"id": "owned", "name": "Starter", "pos": "WR", "value": 800},
+        {"id": "fa1", "name": "Need RB", "pos": "RB", "value": 120, "age": 24},
+        {"id": "k", "name": "Kicker", "pos": "K", "value": 500},
+        {"id": "fa2", "name": "Deep WR", "pos": "WR", "value": 40, "age": 28},
+    ]
+    hits = recommend_waivers(
+        rows, {"owned"},
+        roster_players=["owned"],
+        roster_positions=["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"],
+        pidx={"owned": {"position": "WR"}, "fa1": {"position": "RB"}},
+        fmt={"is_dynasty": True, "is_superflex": False},
+        limit=3, min_score=1.0,
+    )
+    ids = [h["player_id"] for h in hits]
+    assert "owned" not in ids
+    assert "k" not in ids
+    assert "fa1" in ids
+    assert hits[0]["name"] == "Need RB"
+
+
+def test_start_sit_swap_note_reuses_projection_upgrades():
+    from unittest import mock
+    from utils.digest_actions import start_sit_swap_note
+
+    roster = {"players": ["a", "b"], "starters": ["a"], "reserve": [], "taxi": []}
+    pidx = {"a": {"full_name": "Austin Ekeler", "position": "RB"},
+            "b": {"full_name": "Kyren Williams", "position": "RB"}}
+    with mock.patch(
+        "utils.lineup_issues.projection_upgrades",
+        return_value=[{"in": "b", "out": "a", "gain": 6.0}],
+    ):
+        note = start_sit_swap_note(
+            starters=["a"], roster=roster, pidx=pidx, nfl_players={},
+            proj_map={"a": 8.0, "b": 14.0},
+            roster_positions=["RB", "FLEX"],
+            min_gain=2.0,
+        )
+    assert note is not None
+    assert "Consider Kyren Williams over Austin Ekeler" in note["body"]

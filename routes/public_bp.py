@@ -92,6 +92,39 @@ def email_unsubscribe():
     return _render("Email preferences", None, "", body)
 
 
+@public_bp.route("/webhooks/brevo/email", methods=["POST"])
+def brevo_email_webhook():
+    """Brevo transactional events (delivered/opened/clicked/bounce/spam).
+
+    Auth is a shared secret (query ``secret``, ``X-Brevo-Webhook-Secret``, or
+    ``Authorization: Bearer``). Configure ``BREVO_WEBHOOK_SECRET`` and the same
+    token on the Brevo webhook. The weekly send does not depend on this endpoint.
+    """
+    import hmac as _hmac
+    from flask import jsonify, request as _req
+    secret = (os.environ.get("BREVO_WEBHOOK_SECRET") or "").strip()
+    if not secret:
+        return jsonify({
+            "ok": False,
+            "error": "webhook_unconfigured",
+            "detail": "Set BREVO_WEBHOOK_SECRET and configure the same token on the Brevo webhook.",
+        }), 503
+    provided = (
+        (_req.args.get("secret") or "")
+        or (_req.headers.get("X-Brevo-Webhook-Secret") or "")
+    )
+    auth = _req.headers.get("Authorization") or ""
+    if auth.lower().startswith("bearer "):
+        provided = provided or auth.split(None, 1)[-1].strip()
+    if not provided or not _hmac.compare_digest(provided, secret):
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    payload = _req.get_json(silent=True)
+    events = payload if isinstance(payload, list) else [payload] if isinstance(payload, dict) else []
+    from utils.email_events import apply_webhook_payload
+    results = [apply_webhook_payload(ev) for ev in events if ev]
+    return jsonify({"ok": True, "processed": len(results)})
+
+
 # ── Service worker ────────────────────────────────────────────────────────────
 
 @public_bp.route("/sw.js")

@@ -160,6 +160,7 @@ fantasy-dashboard/
 - `DATABASE_URL` - PostgreSQL connection string
 - `OPENAI_API_KEY` - OpenAI API key for AI features
 - `RENDER_API_KEY` - Render deployment key (if applicable)
+- `BREVO_API_KEY` — the only required Brevo secret for weekly digest sends (paste in Render). Sender email/name/reply-to and `SITE_BASE_URL` are pinned in `render.yaml`. Optional: `BREVO_WEBHOOK_SECRET`. See `docs/weekly-email.md`.
 
 ### Database Setup
 The application uses PostgreSQL for data storage. Key tables:
