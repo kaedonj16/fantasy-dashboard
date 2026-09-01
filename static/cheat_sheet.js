@@ -2197,6 +2197,8 @@
         if (liveProj != null) qs.push('proj_ppg=' + encodeURIComponent(liveProj));
         if (liveProjRk != null && isFinite(liveProjRk)) qs.push('proj_rk=' + encodeURIComponent(liveProjRk));
         if (liveAdpRk != null && isFinite(liveAdpRk)) qs.push('adp_rk=' + encodeURIComponent(liveAdpRk));
+        var liveSpot = hist.trend_feats && hist.trend_feats.roster_spot;
+        if (liveSpot != null && isFinite(Number(liveSpot))) qs.push('roster_spot=' + encodeURIComponent(liveSpot));
         if (qs.length) url += '?' + qs.join('&');
         fetch(url, {cache: 'no-store'})
             .then(function (r) {
@@ -2235,6 +2237,65 @@
             'last year receptions': 1, 'last year targets': 1,
             'last year games played': 1, 'last year pass attempts': 1
         };
+        if (kind === 'draft_capital' && bucket) return 'Drafted NFL ' + bucket + ', any season';
+        if (kind === 'top12_as_rookie' && bucket) return 'Drafted NFL ' + bucket + ', year 1';
+        if (kind === 'top12_by_year_2' && bucket) return 'Drafted NFL ' + bucket + ', year 2';
+        if (kind === 'capital_miss' && bucket) return 'Drafted NFL ' + bucket + ', miss (any season)';
+        if (kind === 'career_stage' && bucket) {
+            return (String(bucket).toLowerCase() === 'rookie' ? 'Rookie' : bucket) + ' season, any capital';
+        }
+        if ((kind === 'age' || kind === 'age_exact') && bucket) {
+            return (String(bucket).toLowerCase().indexOf('age') === 0 ? bucket : 'Age ' + bucket) + ', any season';
+        }
+        if (kind === 'offense' && bucket) {
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' projected offense';
+        }
+        if (kind === 'offense_year_1' && bucket) {
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' projected offense, year 1';
+        }
+        if (kind === 'offense_year_2' && bucket) {
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' projected offense, year 2';
+        }
+        if (kind === 'offense_last_year' && bucket) {
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' offense last year';
+        }
+        if (kind === 'offense_last_year_1' && bucket) {
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' offense last year, year 1';
+        }
+        if (kind === 'offense_last_year_2' && bucket) {
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' offense last year, year 2';
+        }
+        if ((kind === 'offense_roster' || kind === 'offense_roster_1' || kind === 'offense_roster_2') && bucket) {
+            var bits = String(bucket).split(', ');
+            var band = bits[0] || bucket;
+            var spot = bits.length > 1 ? bits.slice(1).join(', ') : '';
+            var base = (String(band).toLowerCase() === 'top 10' ? 'Top-10' : band) + ' projected offense';
+            if (spot) base += ', ' + spot;
+            if (kind === 'offense_roster_1') return base + ', year 1';
+            if (kind === 'offense_roster_2') return base + ', year 2';
+            return base;
+        }
+        if ((kind === 'capital_roster' || kind === 'capital_roster_1' || kind === 'capital_roster_2') && bucket) {
+            var bits = String(bucket).split(', ');
+            var cap = bits[0] || bucket;
+            var spot = bits.length > 1 ? bits.slice(1).join(', ') : '';
+            var base = 'Drafted NFL ' + cap;
+            if (spot) base += ', ' + spot;
+            if (kind === 'capital_roster_1') return base + ', year 1';
+            if (kind === 'capital_roster_2') return base + ', year 2';
+            return base;
+        }
+        if (kind === 'offense_capital' && bucket) {
+            var bits = String(bucket).split(', ');
+            var band = bits[0] || bucket;
+            var cap = bits.length > 1 ? bits.slice(1).join(', ') : '';
+            var base = (String(band).toLowerCase() === 'top 10' ? 'Top-10' : band) + ' projected offense';
+            if (cap) base += ', ' + (String(cap).toLowerCase() === 'top 10' ? 'NFL Top 10' : cap);
+            return base;
+        }
+        if (kind === 'bounce_roster' && bucket) {
+            return 'Outside top 36 last year, ' + bucket;
+        }
         if (label && !generic[label.toLowerCase()]) return label;
         return qualified || label || row.sentence || '';
     }
@@ -2245,10 +2306,14 @@
         return Number(row.pct) - Number(row.vs_baseline);
     }
 
+    function histSampleLabel(n) {
+        return n == null ? '' : ('Sample: ' + n);
+    }
+
     function histTrendRow(row, barHtml) {
         row = row || {};
         var meta = [];
-        if (row.n != null) meta.push('n=' + row.n);
+        if (row.n != null) meta.push(histSampleLabel(row.n));
         if (row.secondary) meta.push(row.secondary);
         var shown = row.display != null && row.display !== ''
             ? row.display
@@ -2256,14 +2321,40 @@
         var vsShort = (typeof row.vs_baseline === 'number' && row.vs_baseline !== 0)
             ? ((row.vs_baseline > 0 ? '+' : '') + row.vs_baseline)
             : '';
-        return '<div class="cs-hist-hit' + (row.polarity === 'miss' ? ' is-miss' : '') + '"><div class="cs-hist-hit-top">'
+        var isThis = row.role === 'this';
+        var roleChip = isThis
+            ? '<span class="cs-hist-hit-role">This player</span>'
+            : '';
+        var names = Array.isArray(row.examples) ? row.examples.filter(Boolean) : [];
+        var namesHtml = '';
+        if (names.length) {
+            var peek = names.slice(0, 2).map(function (ex) {
+                return (ex.name || '') + (ex.season ? ' ' + ex.season : '');
+            }).filter(Boolean).join(', ');
+            namesHtml = '<details class="cs-hist-tile-ex"><summary>'
+                + esc(peek || 'Names') + '</summary><ul>';
+            names.forEach(function (ex) {
+                var hit = histExampleHit(ex.positional_finish, ex);
+                namesHtml += '<li' + (hit && hit.tier ? ' class="is-' + esc(hit.tier) + '"' : '') + '>'
+                    + '<span>' + esc(ex.name || '')
+                    + (ex.season ? ' · ' + esc(String(ex.season)) : '') + '</span>'
+                    + (hit ? '<b class="cs-hist-ex-hit">' + esc(hit.label) + '</b>' : '')
+                    + '</li>';
+            });
+            namesHtml += '</ul></details>';
+        }
+        return '<div class="cs-hist-hit' + (row.polarity === 'miss' ? ' is-miss' : '')
+            + (isThis ? ' is-this' : ' is-analog') + '"><div class="cs-hist-hit-top">'
             + trendsConfDot(row.confidence_label)
-            + '<div><div class="cs-hist-hit-label">' + esc(histTrendTitle(row)) + '</div>'
+            + '<div><div class="cs-hist-hit-label">' + esc(histTrendTitle(row))
+            + roleChip + '</div>'
             + (meta.length ? '<div class="cs-hist-hit-meta">' + esc(meta.join(' · ')) + '</div>' : '')
             + '</div><div class="cs-hist-hit-pct">' + esc(String(shown))
             + (vsShort ? ' <span>' + esc(String(vsShort)) + '</span>' : '')
             + '</div></div>'
-            + (barHtml || '') + '</div>';
+            + (barHtml || '')
+            + namesHtml
+            + '</div>';
     }
 
     function trendsHitRow(row, polarity, baselinePct, span) {
@@ -2341,11 +2432,18 @@
         touches: 'usage', carries: 'usage', receptions: 'usage',
         targets: 'usage', games: 'usage', pass_attempts: 'usage',
         target_share_change: 'usage', snap_pct_change: 'usage',
-        workload_change: 'usage'
+        workload_change: 'usage',
+        offense: 'team', offense_year_1: 'team', offense_year_2: 'team',
+        offense_last_year: 'team', offense_last_year_1: 'team', offense_last_year_2: 'team',
+        offense_roster: 'team', offense_roster_1: 'team', offense_roster_2: 'team',
+        capital_roster: 'capital', capital_roster_1: 'capital', capital_roster_2: 'capital',
+        offense_capital: 'team',
+        bounce_roster: 'career'
     };
     var TRENDS_LANES = [
         ['all', 'All'], ['career', 'Career'],
-        ['capital', 'Capital'], ['age', 'Age'], ['usage', 'Usage']
+        ['capital', 'Capital'], ['age', 'Age'], ['usage', 'Usage'],
+        ['team', 'Team']
     ];
     var TRENDS_LABEL_PREFIX = {
         draft_capital: 'NFL',
@@ -2366,7 +2464,18 @@
         age_exact: 'Age',
         target_share_change: 'Targets',
         snap_pct_change: 'Snaps',
-        workload_change: 'Workload'
+        workload_change: 'Workload',
+        offense: 'Offense',
+        offense_year_1: 'Offense',
+        offense_year_2: 'Offense',
+        offense_roster: 'Offense',
+        offense_roster_1: 'Offense',
+        offense_roster_2: 'Offense',
+        capital_roster: 'NFL',
+        capital_roster_1: 'NFL',
+        capital_roster_2: 'NFL',
+        offense_capital: 'Offense',
+        bounce_roster: 'Last year'
     };
 
     function trendsConfKey(label) {
@@ -2502,11 +2611,11 @@
                 field: spec.field,
                 label: rec.label || spec.eq || spec.field
             };
-            ['eq', 'in', 'gte', 'lte', 'between', 'null_as'].forEach(function (k) {
+            ['eq', 'in', 'gte', 'lte', 'between', 'null_as', 'all'].forEach(function (k) {
                 if (spec[k] !== undefined) out[k] = spec[k];
             });
             return out;
-        }).filter(function (f) { return f.field; });
+        }).filter(function (f) { return f.field || (f.all && f.all.length); });
     }
 
     function loadTrendsCohort(picks, done) {
@@ -2613,7 +2722,7 @@
             + esc(trendsPos) + (labels.length ? ' · ' + esc(labels.join(' · ')) : '')
             + '</p></div>';
         if (cohort && cohort.available !== false) {
-            html += '<div class="cs-trends-profile-n">n=' + esc(String(n == null ? 0 : n))
+            html += '<div class="cs-trends-profile-n">' + esc(histSampleLabel(n == null ? 0 : n))
                 + (players != null ? ' · ' + esc(String(players)) + ' players' : '')
                 + '</div>';
         }
@@ -2921,7 +3030,7 @@
         var selectable = !!(row.match && row.id);
         var on = selectable && opts.selected && opts.selected[row.id];
         var meta = [];
-        if (row.n != null) meta.push('n=' + row.n);
+        if (row.n != null) meta.push(histSampleLabel(row.n));
         if (vs) meta.push(vs);
         if (row.secondary && (opts.tier || 'top_12') === 'top_12') meta.push(row.secondary);
         if (on && row.ci_low != null && row.ci_high != null) {
@@ -3014,7 +3123,7 @@
         bits.push(esc(trendsPos) + 's finished ' + esc(finishName) + ' in '
             + (baselinePct != null ? esc(String(baselinePct)) + '%' : 'an unknown share')
             + ' of player-seasons'
-            + (baselineN != null ? ' (n=' + esc(String(baselineN)) + ')' : '') + '.');
+            + (baselineN != null ? ' (' + esc(histSampleLabel(baselineN)) + ')' : '') + '.');
         if (page.prime_window) bits.push('Prime window is ages ' + esc(page.prime_window) + '.');
         html += bits.join(' ') + '</div></div></div>';
         if (edges.length) {
@@ -3094,7 +3203,7 @@
                 html += '<button type="button" class="cs-trends-age' + cls + '" data-age-tip="1" aria-label="'
                     + esc(tip) + '"><span class="cs-trends-age-bar" style="height:' + h
                     + '%"></span><span class="cs-trends-age-tip">' + esc('Age ' + pt.age + ' · ' + pt.pct + '%'
-                    + (pt.n != null ? ' · n=' + pt.n : '')) + '</span></button>';
+                    + (pt.n != null ? ' · ' + histSampleLabel(pt.n) : '')) + '</span></button>';
             });
             html += '</div><div class="cs-trends-ages-axis">';
             curve.forEach(function (pt) {
@@ -3234,7 +3343,7 @@
         if (lead) {
             var confBits = [];
             if (lead.confidence_label) confBits.push(lead.confidence_label);
-            if (lead.n != null) confBits.push('n=' + lead.n);
+            if (lead.n != null) confBits.push(histSampleLabel(lead.n));
             if (lead.ci_low != null && lead.ci_high != null) {
                 confBits.push('95% CI ' + lead.ci_low + '% to ' + lead.ci_high + '%');
             }
@@ -3295,8 +3404,10 @@
             : ((resp.history && Array.isArray(resp.history.examples)) ? resp.history.examples : []);
         if (examples.length) {
             var sum = copy.examples_summary || (resp.history && resp.history.closest_summary) || {};
-            html += '<section class="cs-hist-sec cs-hist-closest"><h3>'
-                + esc(copy.examples_heading || 'Closest historical examples') + '</h3>';
+            html += '<details class="cs-hist-sec cs-hist-closest"><summary><h3>'
+                + esc(copy.examples_heading || 'Closest historical examples') + '</h3>'
+                + (sum.label ? '<span class="cs-hist-ex-peek">' + esc(sum.label) + '</span>' : '')
+                + '</summary><div class="cs-hist-closest-body">';
             if (copy.examples_note) html += '<p class="cs-hist-note">' + esc(copy.examples_note) + '</p>';
             if (copy.examples_vs_cohort_note) {
                 html += '<p class="cs-hist-note">' + esc(copy.examples_vs_cohort_note) + '</p>';
@@ -3321,7 +3432,7 @@
                     + (hit ? '<b class="cs-hist-ex-hit">' + esc(hit.label) + '</b>' : '')
                     + '</span></li>';
             });
-            html += '</ul></section>';
+            html += '</ul></div></details>';
         }
         var trends = (Array.isArray(copy.trends) ? copy.trends : []).filter(function (row) {
             var kind = row && row.kind;
@@ -3338,9 +3449,20 @@
             }));
             html += '<section class="cs-hist-sec"><h3>' + esc(copy.trends_heading || 'Trends for this player\'s buckets') + '</h3>';
             if (copy.trends_note) html += '<p class="cs-hist-note">' + esc(copy.trends_note) + '</p>';
-            html += '<div class="cs-hist-hits">';
-            trends.forEach(function (row) { html += trendsHitRow(row, row && row.polarity, histBaseline, histSpan); });
-            html += '</div></section>';
+            var groups = (Array.isArray(copy.trend_groups) && copy.trend_groups.length)
+                ? copy.trend_groups
+                : [{ id: 'all', heading: '', rows: trends }];
+            groups.forEach(function (sec) {
+                if (!sec || !sec.rows || !sec.rows.length) return;
+                html += '<div class="cs-hist-sec">';
+                if (sec.heading) html += '<h3>' + esc(sec.heading) + '</h3>';
+                html += '<div class="cs-hist-hits">';
+                sec.rows.forEach(function (row) {
+                    html += trendsHitRow(row, row && row.polarity, histBaseline, histSpan);
+                });
+                html += '</div></div>';
+            });
+            html += '</section>';
         }
 
         // Progressive disclosure: dropped filters and the full profile.

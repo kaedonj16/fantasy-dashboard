@@ -31,6 +31,9 @@ def api_historical_player(player_id: str):
     pos = request.args.get("position")
     if pos:
         extra["position"] = pos
+    roster = request.args.get("roster_spot")
+    if roster not in (None, ""):
+        extra["roster_spot"] = roster
     proj = request.args.get("proj_ppg")
     if proj not in (None, ""):
         extra["proj_ppg"] = proj
