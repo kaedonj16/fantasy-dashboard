@@ -5,7 +5,7 @@ Examples:
     python scripts/preview_weekly_digest.py --dry-run --account-id 123 --out /tmp/digest.html
     python scripts/preview_weekly_digest.py --preview-platform sleeper --preview-league L1 \\
         --preview-season 2026 --preview-roster 1 --out /tmp/digest.html
-    python scripts/preview_weekly_digest.py --account-id 123 --force
+    python scripts/preview_weekly_digest.py --email you@example.com --force
 """
 from __future__ import annotations
 

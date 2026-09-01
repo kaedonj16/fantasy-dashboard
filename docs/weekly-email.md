@@ -94,18 +94,33 @@ python -m utils.weekly_email \
 
 `scripts/preview_weekly_digest.py` is the same CLI.
 
-## 7. Send a test digest to one account
+## 7. Send a test digest to yourself
 
-Does **not** fan out to everyone. Respects weekly dedupe unless `--force`:
+Does **not** fan out to everyone. Uses the email on your signed-in Google account.
+`--force` bypasses this week's dedupe for that one account only.
+
+From a shell that has `DATABASE_URL` and `BREVO_API_KEY` (local or Render shell on `brfantasy`):
 
 ```bash
-python -m utils.weekly_email --account-id 123
-python -m utils.weekly_email --account-id 123 --force
+python -m utils.weekly_email --email you@example.com --force
 ```
 
-Production weekly cron already de-dupes per ISO week, so a one-account test
-with `--force` can re-send that user for the current week without mailing the
-rest of the list.
+Or from any machine, POST the existing cron hook with `CRON_SECRET` (do **not** omit `email` — a bare `type=weekly` emails everyone):
+
+```bash
+curl -sS -X POST "$APP_URL/api/cron/notifications" \
+  -H "Content-Type: application/json" \
+  -H "X-Cron-Secret: $CRON_SECRET" \
+  -d '{"type":"weekly","email":"you@example.com","force":true}'
+```
+
+Requirements:
+
+1. `BREVO_API_KEY` is set on the web service.
+2. The sender `noreply@brfantasyfootball.com` is verified in Brevo.
+3. You have signed into the site with that Google email and opened a league (so `last_active_*` is set).
+
+If `sent` is 0, check the JSON summary: `skipped_opted_out`, `skipped_already_sent` (add `force`), `skipped_no_useful_content`, or `configured: false`.
 
 ## 8. Weekly deduplication
 

@@ -835,20 +835,29 @@ def send_weekly_digests(
     dry_run: bool = False,
     *,
     account_id: int | None = None,
+    email: str | None = None,
     force: bool = False,
     preview_path: str | None = None,
 ) -> dict:
     """Send this week's digest to eligible recipients (once per ISO week).
 
-    ``dry_run`` builds content and never calls Brevo/SMTP. ``account_id``
-    restricts the run to one account. ``force`` bypasses weekly dedupe for
-    that scoped send (still never sends during dry_run).
+    ``dry_run`` builds content and never calls Brevo/SMTP. ``account_id`` or
+    ``email`` restricts the run to one account. ``force`` bypasses weekly
+    dedupe for that scoped send (still never sends during dry_run).
     """
     from utils.email_delivery import is_configured, send_email, sleep_briefly
     from utils.digest_context import DigestRunCache
 
+    email_s = (email or "").strip().lower()
+    if email_s and account_id is None:
+        found = _recipient_by_email(email_s)
+        if found:
+            account_id = int(found[0]["account_id"])
+        else:
+            logger.warning("[weekly-email] no account for email=%s", email_s)
+
     if force and account_id is None:
-        logger.warning("[weekly-email] force ignored without account_id (refusing list-wide re-send)")
+        logger.warning("[weekly-email] force ignored without account_id/email (refusing list-wide re-send)")
         force = False
 
     if not dry_run and not is_configured():
@@ -866,6 +875,8 @@ def send_weekly_digests(
             # Preview/test-send path: still resolve the account even if opted out,
             # so operators can inspect a digest. Sending still respects prefs.
             recips = _recipient_by_id(int(account_id))
+    elif email_s:
+        recips = []
     eligible = len(recips)
     if limit:
         recips = recips[:limit]
@@ -1053,28 +1064,48 @@ def send_weekly_digests(
     return summary
 
 
+_RECIPIENT_SELECT = """
+    SELECT a.id AS account_id, a.email AS email, a.first_name AS first_name,
+           a.last_active_platform AS platform, a.last_active_league_id AS league_id,
+           a.last_active_season AS season, a.email_opt_out AS email_opt_out,
+           v.roster_id AS roster_id
+    FROM accounts a
+    LEFT JOIN account_league_visits v
+           ON v.account_id = a.id AND v.platform = a.last_active_platform
+          AND v.league_id = a.last_active_league_id AND v.season = a.last_active_season
+"""
+
+
 def _recipient_by_id(account_id: int) -> list[dict]:
     from dashboard_services.db import get_conn
     try:
         with get_conn() as conn:
             _ensure_columns(conn)
             rows = conn.execute(
-                """
-                SELECT a.id AS account_id, a.email AS email, a.first_name AS first_name,
-                       a.last_active_platform AS platform, a.last_active_league_id AS league_id,
-                       a.last_active_season AS season, a.email_opt_out AS email_opt_out,
-                       v.roster_id AS roster_id
-                FROM accounts a
-                LEFT JOIN account_league_visits v
-                       ON v.account_id = a.id AND v.platform = a.last_active_platform
-                      AND v.league_id = a.last_active_league_id AND v.season = a.last_active_season
-                WHERE a.id = %s
-                """,
+                _RECIPIENT_SELECT + " WHERE a.id = %s",
                 (int(account_id),),
             ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         logger.debug("[weekly-email] recipient-by-id failed", exc_info=True)
+        return []
+
+
+def _recipient_by_email(email: str) -> list[dict]:
+    addr = (email or "").strip().lower()
+    if not addr or "@" not in addr:
+        return []
+    from dashboard_services.db import get_conn
+    try:
+        with get_conn() as conn:
+            _ensure_columns(conn)
+            rows = conn.execute(
+                _RECIPIENT_SELECT + " WHERE lower(a.email) = %s ORDER BY a.id ASC",
+                (addr,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        logger.debug("[weekly-email] recipient-by-email failed", exc_info=True)
         return []
 
 
@@ -1120,6 +1151,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="Build content; never send")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--account-id", type=int, default=None, help="Restrict to one account")
+    parser.add_argument("--email", default=None, help="Restrict to the account with this email")
     parser.add_argument("--force", action="store_true", help="Ignore weekly dedupe (one-account sends)")
     parser.add_argument("--out", dest="out_path", default=None, help="Write last HTML to this file")
     parser.add_argument("--preview-platform", default=None)
@@ -1144,7 +1176,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     summary = send_weekly_digests(
         limit=args.limit, dry_run=args.dry_run, account_id=args.account_id,
-        force=args.force, preview_path=args.out_path,
+        email=args.email, force=args.force, preview_path=args.out_path,
     )
     print(summary)
     return 0 if summary.get("failed", 0) == 0 else 1

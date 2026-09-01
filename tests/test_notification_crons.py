@@ -37,6 +37,8 @@ def test_web_service_has_cron_secret_for_notification_hook():
     # Render cron is UTC; 13:00 UTC is 9am EDT / 8am EST. Do not regress to 09:00 UTC.
     assert "schedule: 0 9 * * 2" not in weekly
     assert "UTC" in weekly
+    assert 'data.get("email")' in PUSH_BP
+    assert "force=force" in PUSH_BP
 
 
 def test_production_does_not_start_inprocess_notify_scheduler_by_default():

@@ -160,7 +160,41 @@ def test_dry_run_never_sends(monkeypatch):
     assert summary["sent"] == 1
 
 
-def test_force_without_account_id_still_dedupes(monkeypatch):
+def test_send_by_email_scopes_to_one_account(monkeypatch):
+    monkeypatch.setenv("BREVO_API_KEY", "xkeysib-test")
+    recip = _recip(account_id=9, email="me@example.com")
+    digest = {"subject": "Hello", "html": "<p>x {UNSUB}</p>", "tags": ["weekly-digest"]}
+    with mock.patch.object(we, "_recipient_by_email", return_value=[recip]), \
+         mock.patch.object(we, "_recipients", return_value=[]), \
+         mock.patch.object(we, "_recipient_by_id", return_value=[recip]), \
+         mock.patch.object(we, "build_digest", return_value=digest), \
+         mock.patch.object(we, "other_leagues_for_account", return_value=[]), \
+         mock.patch.object(we, "multi_league_sections_html", return_value=""), \
+         mock.patch("utils.email_preferences.is_enabled", return_value=True), \
+         mock.patch("utils.email_events.is_suppressed", return_value=False), \
+         mock.patch("utils.email_events.record_send"), \
+         mock.patch("utils.email_delivery.send_email",
+                    return_value=SendResult(ok=True, provider="brevo", message_id="mid-me")) as send, \
+         mock.patch("utils.digest_context.DigestRunCache.load_shared", lambda self: None), \
+         mock.patch("dashboard_services.db.get_conn", return_value=_Conn()):
+        summary = we.send_weekly_digests(email="me@example.com", force=True)
+    send.assert_called_once()
+    assert send.call_args[0][0] == "me@example.com"
+    assert summary["sent"] == 1
+    assert summary["eligible"] == 1
+
+
+def test_unknown_email_does_not_mail_everyone(monkeypatch):
+    monkeypatch.setenv("BREVO_API_KEY", "xkeysib-test")
+    with mock.patch.object(we, "_recipient_by_email", return_value=[]), \
+         mock.patch.object(we, "_recipients", return_value=[_recip(), _recip(account_id=2, email="b@x.com")]), \
+         mock.patch("utils.email_delivery.send_email") as send, \
+         mock.patch("utils.digest_context.DigestRunCache.load_shared", lambda self: None), \
+         mock.patch("dashboard_services.db.get_conn", return_value=_Conn()):
+        summary = we.send_weekly_digests(email="nobody@example.com")
+    send.assert_not_called()
+    assert summary["eligible"] == 0
+    assert summary["sent"] == 0
     monkeypatch.setenv("BREVO_API_KEY", "xkeysib-test")
     week = we._iso_week()
     with mock.patch.object(we, "_recipients", return_value=[_recip()]), \
