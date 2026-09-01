@@ -160,6 +160,7 @@ fantasy-dashboard/
 - `DATABASE_URL` - PostgreSQL connection string
 - `OPENAI_API_KEY` - OpenAI API key for AI features
 - `RENDER_API_KEY` - Render deployment key (if applicable)
+- `BREVO_API_KEY` / `BREVO_SENDER_EMAIL` / `BREVO_SENDER_NAME` / `BREVO_REPLY_TO_EMAIL` / `BREVO_WEBHOOK_SECRET` — transactional email (weekly digest). Setup, dry-run, and webhook notes: `docs/weekly-email.md`.
 
 ### Database Setup
 The application uses PostgreSQL for data storage. Key tables:
