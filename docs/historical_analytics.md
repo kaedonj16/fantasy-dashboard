@@ -466,7 +466,10 @@ RB ≈ 8%). Profile cells move that number.
 
 Tiny exact cells on the live Hist surface keep the profile and shrink
 toward a parent that keeps age and last-year finish when that group
-has n ≥ 8. Walk-forward still relaxes to n ≥ 15, then shrinks toward
+has n ≥ 8. The oldest open-ended age band is the reverse: a 2-season
+32+ / 31+ cell is often one veteran repeating (Kelce), so Hist displays
+the broader veteran last-year top-5 parent instead of 2/2 = 100%.
+Walk-forward still relaxes to n ≥ 15, then shrinks toward
 the position baseline. 0% raw with n>0 is a real zero and still
 smooths up slightly (the day-3 cell). Request-path lookup passes
 `sleeper_id` so a player is not listed as their own comp.

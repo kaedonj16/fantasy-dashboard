@@ -872,6 +872,16 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "8%" in age_prior["text"]
     assert "—" not in age_prior["text"]
     assert "–" not in age_prior["text"]
+    kelce_prior = next(
+        entry for entry in CHANGELOG
+        if "kelce" in entry.get("text", "").lower()
+        and "77%" in entry.get("text", "")
+    )
+    assert kelce_prior["tag"] == "fix"
+    assert kelce_prior["link"] == "/draft/cheat-sheet"
+    assert "own seasons" in kelce_prior["text"]
+    assert "—" not in kelce_prior["text"]
+    assert "–" not in kelce_prior["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():

@@ -590,6 +590,53 @@ def test_gibbs_hist_does_not_shrink_tiny_cell_toward_all_rbs():
     assert hist["p_top_12"] is not None and hist["p_top_12"] >= 0.50
 
 
+def test_kelce_hist_does_not_headline_self_repeat_as_77():
+    from dashboard_services.historical.aggregates_store import load_profile_aggregates
+    from dashboard_services.historical.signals import lookup_history_probability
+
+    aggs = load_profile_aggregates()
+    if not aggs:
+        pytest.skip("profile JSON missing")
+    extra = {"redraft_avg_pick": 100.0, "position": "TE"}
+    panel = build_deep_panel("1466", aggs, extra=extra)
+    top12 = next(row for row in panel["copy"]["hit_rates"] if row["tier"] == "top_12")
+    assert panel["history"].get("prior_source") == "parent_displayed"
+    assert (panel["history"].get("exact_n") or 0) == 2
+    assert (panel["history"].get("n") or 0) >= 15
+    assert top12["n"] >= 15
+    key_used = panel["history"].get("key_used") or {}
+    profile_key = panel["history"].get("profile_key") or {}
+    assert key_used.get("prior_finish") == "top_5"
+    assert key_used.get("career_stage") == "year_6_plus"
+    assert "age_bucket" not in key_used
+    assert profile_key.get("age_bucket") == "32+"
+    assert panel["copy"]["history_pct"] != 77
+    assert panel["copy"]["history_pct"] < 70
+    note = str(panel["copy"].get("sample_prior_note") or "")
+    assert "Only 2 exact matches" in note
+    assert "veteran repeating" in note
+    assert "not declining vets mixed in" not in note
+    assert "own seasons" in note
+    assert "—" not in note
+    assert "–" not in note
+    hist = lookup_history_probability(
+        {
+            "position": "TE",
+            "years_experience": 13,
+            "age": 36.9,
+            "draft_capital_bucket": "day_2",
+            "previous_season_finish": 3,
+            "previous_season_snap_pct": 0.70,
+            "previous_season_year": 2025,
+            "sleeper_id": "1466",
+        },
+        aggs,
+    )
+    assert hist["sample_size"] >= 15
+    assert hist["p_top_12"] is not None and hist["p_top_12"] < 0.70
+    assert hist["p_top_12"] != pytest.approx(0.77, abs=0.02)
+
+
 def test_hist_panel_keeps_draft_capital_when_the_cell_has_seasons():
     from dashboard_services.historical.aggregates_store import load_profile_aggregates
 

@@ -238,7 +238,8 @@ MIN_COMP_CELL_N = 15
 # Walk-forward / ranking still use MIN_COMP_CELL_N. Tiny exact cells shrink
 # toward a parent that prefers last-year finish and age (n >= PARENT_MIN_N),
 # not every player at the position and not declining vets mixed into a
-# 24-year-old RB1.
+# 24-year-old RB1. The oldest open-ended age band displays that parent
+# (n >= 15) instead of a 2/2 self-repeat.
 HIST_PANEL_MIN_N = 1
 NAMED_EXAMPLES_PER_CELL = 3
 
@@ -518,6 +519,23 @@ def age_bucket(position: Any, age: Any) -> Optional[str]:
             continue
         return label
     return None
+
+
+def oldest_age_bucket_label(position: Any) -> Optional[str]:
+    """Open-ended oldest UI age bucket for the position (``32+``, ``31+``)."""
+    pos = str(position or "").upper()
+    bounds = AGE_BUCKETS.get(pos) or ()
+    if not bounds:
+        return None
+    return bounds[-1][2]
+
+
+def is_oldest_age_bucket(position: Any, bucket: Any) -> bool:
+    """True when ``bucket`` is the position's oldest open-ended age band."""
+    label = oldest_age_bucket_label(position)
+    if not label or bucket is None or bucket == "":
+        return False
+    return str(bucket) == label
 
 
 def integer_age(age: Any) -> Optional[int]:

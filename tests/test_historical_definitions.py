@@ -240,6 +240,15 @@ def test_prior_finish_bucket_rookie_none_veteran_missing_omitted():
     assert COMP_BOARD_TIERS == ("top_5", "top_12", "top_24")
     assert COMP_RELAXATION_ORDER[0] == "target_share"
     assert "position" not in COMP_RELAXATION_ORDER
+    from dashboard_services.historical.definitions import (
+        is_oldest_age_bucket,
+        oldest_age_bucket_label,
+    )
+    assert oldest_age_bucket_label("TE") == "32+"
+    assert oldest_age_bucket_label("RB") == "31+"
+    assert is_oldest_age_bucket("TE", "32+")
+    assert not is_oldest_age_bucket("TE", "29-31")
+    assert is_oldest_age_bucket("RB", "31+")
     assert SLEEPER_UNDRAFTED_ADP == 999.0
     assert normalize_adp(999) is None
     assert is_adp_relative_bust(None, 1) is None

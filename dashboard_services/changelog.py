@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-09-01",
         "tag": "fix",
+        "text": "Draft Cheat Sheet Hist: a 32+ TE coming off a top-5 year no longer headlines 2/2 as a 77% hit. That cell is often the same veteran repeating (Kelce). The percent uses other veteran TEs who were top-5 last year instead of counting this player's own seasons as comps.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-09-01",
+        "tag": "fix",
         "text": "Draft Cheat Sheet Hist: a young RB1's tiny cell no longer borrows its chance from 30-year-old declining backs. The prior keeps the age band, so Gibbs sits in the mid-50s (in line with Round 1) instead of looking like a coin flip. Only 12 RBs finish top-12 each year; a typical RB is about 8%.",
         "link": "/draft/cheat-sheet"
     },

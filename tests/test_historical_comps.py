@@ -597,3 +597,68 @@ def test_young_star_prior_keeps_age_not_declining_vets():
     mixed = lookup_board_probabilities(query, payload, min_n=MIN_COMP_CELL_N)
     assert mixed["n"] >= MIN_COMP_CELL_N
     assert exact["rates"]["top_12"]["display_pct"] > mixed["rates"]["top_12"]["display_pct"]
+
+
+def test_oldest_age_tiny_cell_displays_veteran_parent_not_self_repeat():
+    """A 2/2 32+ TE cell is often one veteran repeating. Show the parent."""
+    rows = []
+    for season in (2024, 2025):
+        rows.append(_row(
+            sleeper_id="kelce-like",
+            position="TE",
+            season=season,
+            years_experience=12,
+            age=36.0,
+            draft_capital_bucket="day_2",
+            previous_season_finish=3,
+            previous_season_year=season - 1,
+            previous_season_snap_pct=0.70,
+            ppr_positional_finish=2,
+            ppr_points=250,
+        ))
+    for i in range(20):
+        rows.append(_row(
+            sleeper_id=f"vet-te-{i}",
+            position="TE",
+            years_experience=8,
+            age=27.0,
+            draft_capital_bucket="round_1",
+            previous_season_finish=3,
+            previous_season_year=2024,
+            ppr_positional_finish=4 if i < 10 else 40,
+            ppr_points=220 if i < 10 else 70,
+        ))
+    for i in range(80):
+        rows.append(_row(
+            sleeper_id=f"scrub-te-{i}",
+            position="TE",
+            years_experience=7,
+            age=28.0,
+            draft_capital_bucket="day_3",
+            previous_season_finish=40,
+            ppr_positional_finish=40,
+            ppr_points=40,
+        ))
+    payload = build_comp_aggregates(rows)
+    query = _row(
+        sleeper_id="kelce-like",
+        position="TE",
+        years_experience=13,
+        age=36.9,
+        draft_capital_bucket="day_2",
+        previous_season_finish=3,
+        previous_season_year=2025,
+        previous_season_snap_pct=0.70,
+    )
+    exact = lookup_board_probabilities(query, payload, min_n=1)
+    assert exact["exact_n"] == 2
+    assert exact["prior_source"] == "parent_displayed"
+    assert exact["n"] >= MIN_COMP_CELL_N
+    assert "age_bucket" not in (exact["key_used"] or {})
+    assert (exact["profile_key"] or {}).get("age_bucket") == "32+"
+    assert (exact["key_used"] or {}).get("prior_finish") == "top_5"
+    assert exact["rates"]["top_12"]["display_pct"] < 70
+    toward_self = empirical_bayes(
+        2, 2, 0.5 * DEFAULT_BAYES_PRIOR_N, DEFAULT_BAYES_PRIOR_N,
+    )
+    assert exact["rates"]["top_12"]["smoothed_rate"] < toward_self - 0.15

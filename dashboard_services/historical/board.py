@@ -44,6 +44,7 @@ from dashboard_services.historical.definitions import (
     TARGET_SHARE_BUCKETS,
     display_percent,
     draft_capital_bucket,
+    oldest_age_bucket_label,
     trends_round1_pick_range,
     trends_offense_range,
     normalize_team_abbr,
@@ -2141,12 +2142,31 @@ def build_hist_panel_copy(
             "This player's historical chance given this career and current "
             "situation. Not a Pick Score input."
         )
-    if relaxed_note:
-        cohort_note = f"{cohort_note} {relaxed_note}"
     sample_prior_note = None
     typical_note = None
-    pos_label = str(key_used.get("position") or "").upper()
-    if hist.get("prior_source") == "parent_cell":
+    pos_label = str(
+        (profile_key or {}).get("position") or key_used.get("position") or ""
+    ).upper()
+    if hist.get("prior_source") == "parent_displayed":
+        n_exact = hist.get("exact_n")
+        if n_exact in (None, 0):
+            n_exact = hist.get("n")
+        age_txt = format_comp_bucket_value(
+            "age_bucket", (profile_key or {}).get("age_bucket")
+        ) or oldest_age_bucket_label(pos_label) or "this age"
+        if pos_label in SKILL_POSITIONS and n_exact not in (None, 0):
+            sample_prior_note = (
+                f"Only {n_exact} exact matches at {age_txt}, often the same "
+                f"veteran repeating, so this percent uses {pos_label}s who "
+                f"were top-5 last year, not this player's own seasons counted "
+                f"as comps."
+            )
+        if relaxed:
+            relaxed_note = (
+                "Age and extra filters were left off the headline group so "
+                "the percent is not this player's own repeats."
+            )
+    elif hist.get("prior_source") == "parent_cell":
         n_exact = hist.get("n")
         if pos_label in SKILL_POSITIONS and n_exact not in (None, 0):
             sample_prior_note = (
@@ -2155,7 +2175,10 @@ def build_hist_panel_copy(
                 f"finish when that group is big enough), not every {pos_label} "
                 f"and not declining vets mixed in."
             )
-            cohort_note = f"{cohort_note} {sample_prior_note}"
+    if relaxed_note:
+        cohort_note = f"{cohort_note} {relaxed_note}"
+    if sample_prior_note:
+        cohort_note = f"{cohort_note} {sample_prior_note}"
     base_pct = hist.get("position_baseline_pct")
     if (
         isinstance(hist_p, (int, float))
@@ -2283,6 +2306,7 @@ def build_deep_panel(
         "prior_source": looked.get("prior_source"),
         "prior_key": looked.get("prior_key") or {},
         "prior_n": looked.get("prior_n"),
+        "exact_n": looked.get("exact_n"),
     }
     pos_key = str(query.get("position") or looked.get("position") or "").upper()
     base = (
