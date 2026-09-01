@@ -518,6 +518,82 @@ def test_rookie_round_1_cell_stays_above_all_rookie_rate():
     assert exact["n"] == 8
     assert "draft_capital" not in exact["dropped"]
     assert exact["rates"]["top_12"]["display_pct"] != 4
-    assert exact["rates"]["top_12"]["display_pct"] >= 20
+    assert exact["rates"]["top_12"]["display_pct"] >= 35
     assert relaxed["n"] >= MIN_COMP_CELL_N
     assert relaxed["rates"]["top_12"]["display_pct"] < 10
+
+
+def test_young_star_prior_keeps_age_not_declining_vets():
+    """Age 23-24 top-5 hits often; year-6+ top-5 does not. Prior must keep age."""
+    rows = []
+    rows.append(_row(
+        sleeper_id="kid-hit",
+        position="RB",
+        years_experience=3,
+        age=24.2,
+        draft_capital_bucket="round_1",
+        previous_season_finish=3,
+        previous_season_year=2025,
+        previous_season_target_share=0.17,
+        previous_season_snap_pct=0.61,
+        ppr_positional_finish=2,
+        ppr_points=300,
+    ))
+    rows.append(_row(
+        sleeper_id="kid-miss",
+        position="RB",
+        years_experience=3,
+        age=24.1,
+        draft_capital_bucket="round_1",
+        previous_season_finish=4,
+        previous_season_year=2025,
+        previous_season_target_share=0.17,
+        previous_season_snap_pct=0.61,
+        ppr_positional_finish=40,
+        ppr_points=80,
+    ))
+    for i in range(9):
+        rows.append(_row(
+            sleeper_id=f"young-{i}",
+            position="RB",
+            years_experience=2,
+            age=23.4,
+            draft_capital_bucket="day_2",
+            previous_season_finish=2,
+            previous_season_year=2024,
+            ppr_positional_finish=4 if i < 7 else 40,
+            ppr_points=240 if i < 7 else 70,
+        ))
+    for i in range(20):
+        rows.append(_row(
+            sleeper_id=f"vet-{i}",
+            position="RB",
+            years_experience=7,
+            age=30.2,
+            draft_capital_bucket="round_1",
+            previous_season_finish=3,
+            previous_season_year=2024,
+            ppr_positional_finish=4 if i < 4 else 40,
+            ppr_points=220 if i < 4 else 60,
+        ))
+    payload = build_comp_aggregates(rows)
+    query = _row(
+        sleeper_id="gibbs-like",
+        position="RB",
+        years_experience=3,
+        age=24.4,
+        draft_capital_bucket="round_1",
+        previous_season_finish=3,
+        previous_season_year=2025,
+        previous_season_target_share=0.17,
+        previous_season_snap_pct=0.61,
+    )
+    exact = lookup_board_probabilities(query, payload, min_n=1)
+    assert exact["n"] == 2
+    assert exact["prior_source"] == "parent_cell"
+    assert exact["prior_key"].get("age_bucket") == "23-24"
+    assert exact["prior_key"].get("prior_finish") == "top_5"
+    assert exact["rates"]["top_12"]["display_pct"] >= 50
+    mixed = lookup_board_probabilities(query, payload, min_n=MIN_COMP_CELL_N)
+    assert mixed["n"] >= MIN_COMP_CELL_N
+    assert exact["rates"]["top_12"]["display_pct"] > mixed["rates"]["top_12"]["display_pct"]

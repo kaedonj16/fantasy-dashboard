@@ -558,15 +558,21 @@ def test_gibbs_hist_does_not_shrink_tiny_cell_toward_all_rbs():
     assert top12["n"] == 2
     assert abs((panel["history"]["rates"]["top_12"]["raw_rate"] or 0) - 0.5) < 1e-9
     assert panel["history"].get("prior_source") == "parent_cell"
-    assert (panel["history"].get("prior_n") or 0) >= 15
-    assert top12["pct"] >= 35
-    assert panel["copy"]["history_pct"] >= 35
+    prior_key = panel["history"].get("prior_key") or {}
+    assert prior_key.get("age_bucket") == "23-24"
+    assert prior_key.get("prior_finish") == "top_5"
+    assert (panel["history"].get("prior_n") or 0) >= 8
+    assert top12["pct"] >= 50
+    assert panel["copy"]["history_pct"] >= 50
     assert panel["copy"]["history_pct"] != 15
     note = str(panel["copy"].get("sample_prior_note") or "")
     assert "Only 2 exact matches" in note
     assert "not every RB" in note
-    assert "—" not in note
-    assert "–" not in note
+    typical = str(panel["copy"].get("typical_note") or "")
+    assert "high historical hit rate" in typical
+    assert "typical RB" in typical
+    assert "—" not in note + typical
+    assert "–" not in note + typical
     hist = lookup_history_probability(
         {
             "position": "RB",
@@ -581,7 +587,7 @@ def test_gibbs_hist_does_not_shrink_tiny_cell_toward_all_rbs():
         aggs,
     )
     assert hist["sample_size"] == 2
-    assert hist["p_top_12"] is not None and hist["p_top_12"] >= 0.35
+    assert hist["p_top_12"] is not None and hist["p_top_12"] >= 0.50
 
 
 def test_hist_panel_keeps_draft_capital_when_the_cell_has_seasons():
@@ -610,7 +616,7 @@ def test_hist_panel_keeps_draft_capital_when_the_cell_has_seasons():
     assert "draft_capital" not in dropped
     assert "round 1" in panel["copy"]["headline"].lower()
     assert panel["copy"]["history_pct"] != 4
-    assert panel["copy"]["history_pct"] >= 20
+    assert panel["copy"]["history_pct"] >= 35
     titles = [row["title"] for row in panel["copy"]["trends"]]
     assert "Drafted NFL Top 10, year 1" not in titles
     assert "Drafted NFL Top 10, any season" not in titles

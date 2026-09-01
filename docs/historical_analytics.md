@@ -432,8 +432,9 @@ matching leaves and walks `COMP_RELAXATION_ORDER` (`target_share` →
 default). The live Hist column and modal use `HIST_PANEL_MIN_N = 1` so an
 exact R1 rookie cell is not mixed with every rookie. Those tiny exact
 cells still empirical-Bayes shrink (`DEFAULT_BAYES_PRIOR_N = 10`), but
-the prior is the nearest parent cell with n ≥ 15 (e.g. last-year top-5
-RBs), not the all-appeared position baseline. Empty cells keep
+the prior prefers last-year finish **and** age (`PARENT_MIN_N = 8`) so a
+24-year-old RB1 is not mixed with declining year-6+ backs (27% vs 55%
+for age 23-24 coming off a top-5). Empty cells keep
 `raw_rate=None`.
 2. **Named comps** — a few example player-seasons from the matched cell
    (hits first, then PPR points). The query player is excluded. A
@@ -464,11 +465,11 @@ RB ≈ 8%). Profile cells move that number.
 | Year-5 day-3 WR, prior outside 36 | dropped usage | 38 moderate | 0% | **1%** | Jauan Jennings 2024 WR24 |
 
 Tiny exact cells on the live Hist surface keep the profile and shrink
-toward a parent cell (last-year top-5 RBs), not every appeared RB.
-Walk-forward still relaxes to n ≥ 15, then shrinks toward the position
-baseline. 0% raw with n>0 is a real zero and still smooths up slightly
-(the day-3 cell). Request-path lookup passes `sleeper_id` so a player is
-not listed as their own comp.
+toward a parent that keeps age and last-year finish when that group
+has n ≥ 8. Walk-forward still relaxes to n ≥ 15, then shrinks toward
+the position baseline. 0% raw with n>0 is a real zero and still
+smooths up slightly (the day-3 cell). Request-path lookup passes
+`sleeper_id` so a player is not listed as their own comp.
 
 ## Phase 5–6 — frozen ADP + hit rates
 

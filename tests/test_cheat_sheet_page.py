@@ -456,6 +456,7 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "function histSampleLabel" in script
     assert "histSampleLabel(row.n)" in script
     assert "copy.sample_prior_note" in script
+    assert "copy.typical_note" in script
     assert "'n=' + row.n" not in script
     assert "'n=' + lead.n" not in script
     assert "cs-hist-ex-hit" in script
@@ -861,6 +862,16 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "15%" in parent_prior["text"]
     assert "—" not in parent_prior["text"]
     assert "–" not in parent_prior["text"]
+    age_prior = next(
+        entry for entry in CHANGELOG
+        if "declining" in entry.get("text", "").lower()
+        and "gibbs" in entry.get("text", "").lower()
+    )
+    assert age_prior["tag"] == "fix"
+    assert age_prior["link"] == "/draft/cheat-sheet"
+    assert "8%" in age_prior["text"]
+    assert "—" not in age_prior["text"]
+    assert "–" not in age_prior["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():

@@ -202,12 +202,43 @@ COMP_RELAXATION_ORDER: Tuple[str, ...] = (
     "career_stage",
     "prior_finish",
 )
+# Parent priors for tiny Hist cells. Walk-forward still uses COMP_RELAXATION_ORDER
+# until n >= 15. Live Hist may keep an exact n=2 cell; the Bayes prior should
+# keep age and last-year finish so a 24-year-old RB1 is not mixed with
+# declining year-6+ backs.
+PARENT_MIN_N = 8
+PARENT_KEEP_WEIGHT: dict[str, int] = {
+    "prior_finish": 8,
+    "age_bucket": 4,
+    "draft_capital": 2,
+    "career_stage": 1,
+}
+PARENT_RELAXATION_ORDERS: Tuple[Tuple[str, ...], ...] = (
+    COMP_RELAXATION_ORDER,
+    (
+        "target_share",
+        "snap_pct",
+        "career_stage",
+        "draft_capital",
+        "age_bucket",
+        "prior_finish",
+    ),
+    (
+        "target_share",
+        "snap_pct",
+        "career_stage",
+        "age_bucket",
+        "draft_capital",
+        "prior_finish",
+    ),
+)
 COMP_BOARD_TIERS: Tuple[str, ...] = ("top_5", "top_12", "top_24")
 MIN_COMP_CELL_N = 15
 # Hist modal keeps the exact profile whenever that cell has any seasons.
 # Walk-forward / ranking still use MIN_COMP_CELL_N. Tiny exact cells shrink
-# toward the nearest parent cell with n >= MIN_COMP_CELL_N, not every player
-# at the position (a year-4 RB1 is not a typical RB).
+# toward a parent that prefers last-year finish and age (n >= PARENT_MIN_N),
+# not every player at the position and not declining vets mixed into a
+# 24-year-old RB1.
 HIST_PANEL_MIN_N = 1
 NAMED_EXAMPLES_PER_CELL = 3
 
