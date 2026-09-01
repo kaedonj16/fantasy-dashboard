@@ -99,6 +99,12 @@ def test_seo_lite_css_hides_guest_nav_chrome():
         ".br-tabbar,\n.br-sheet-scrim,\n.br-sheet,\n.br-search-screen {\n    display: none;\n}"
         in css
     )
+    assert ".otc-day-filter" in css
+    assert ".pos-pill.active" in css
+    assert ".csd-wrap > select" in css
+    assert ".csd-list.is-visible" in css
+    assert ".compare-pick-results" in css
+    assert ".filter-settings-panel" in css
 
 
 def test_guest_homepage_keeps_dashboard_css(offline_client, monkeypatch):

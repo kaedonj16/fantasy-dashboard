@@ -89,3 +89,9 @@ def test_lite_css_swap_excludes_homepage():
         ".br-tabbar,\n.br-sheet-scrim,\n.br-sheet,\n.br-search-screen {\n    display: none;\n}"
         in seo_css
     )
+    assert ".otc-day-filter" in seo_css
+    assert ".csd-wrap" in seo_css
+    assert ".csd-list" in seo_css
+    assert ".compare-pick-results" in seo_css
+    assert "--card-bg:" in seo_css
+    assert "--radius-pill:" in seo_css
