@@ -646,7 +646,9 @@ def test_btj_hist_does_not_claim_never_previously_top12():
     panel = build_deep_panel("11631", aggs, extra={"position": "WR"})
     kinds = [row["kind"] for row in panel["copy"]["trends"]]
     titles = [row["title"] for row in panel["copy"]["trends"]]
-    assert "Top-10 projected offense, WR1" in titles
+    assert "11-20 projected offense, WR1" in titles
+    assert "11-20 projected offense" in titles
+    assert not any("Top-10 projected offense" in title for title in titles)
     assert "Top-10 projected offense, WR2" not in titles
     assert "Top-10 projected offense, WR3+" not in titles
     assert "Drafted NFL Round 1, WR1" in titles
