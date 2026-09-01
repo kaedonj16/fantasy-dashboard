@@ -68,8 +68,10 @@ def test_checkout_requires_league_membership_for_league_plans():
     checkout = BILLING[BILLING.index("def create_checkout_session"):]
     checkout = checkout[: checkout.index("price_spec = _STRIPE_PRICES")]
     assert "viewer_is_league_member" in checkout
-    assert 'plan in ("league", "combo")' in checkout
+    assert "_MEMBERSHIP_REQUIRED_PLANS" in BILLING
+    assert "single_league" in BILLING
     assert "403" in checkout
+    assert 'plan in _MEMBERSHIP_REQUIRED_PLANS' in checkout
 
 
 def test_refresh_league_requires_viewing_member_or_secret():

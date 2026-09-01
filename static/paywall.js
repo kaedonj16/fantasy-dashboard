@@ -140,6 +140,16 @@ window.showPaywall = function showPaywall(feature, opts) {
         <div class="paywall-pricing">
           <div class="pricing-option">
             <div class="pricing-header">
+              <h4>One League</h4>
+            </div>
+            <div class="pricing-price">$5<span>/year</span></div>
+            <p class="pricing-desc">PRO for you in one league you choose</p>
+            <button class="btn btn-secondary paywall-cta" onclick="initiatePurchase('single_league', this)">
+              Choose a League
+            </button>
+          </div>
+          <div class="pricing-option">
+            <div class="pricing-header">
               <h4>League Plan</h4>
             </div>
             <div class="pricing-price">$15<span>/year</span></div>
@@ -224,7 +234,14 @@ async function initiatePurchase(type, btn) {
   }
 
   const leagueId = new URLSearchParams(window.location.search).get('league_id') ||
-    window.location.pathname.split('/').filter(Boolean)[2] || '';
+    window.location.pathname.split('/').filter(Boolean)[2] ||
+    (ctx.leagueId || '');
+
+  const needsLeague = type === 'league' || type === 'combo' || type === 'single_league';
+  if (needsLeague && !leagueId) {
+    _showLeaguePickerModal(type, btn);
+    return;
+  }
 
   // Build a destination that lands in the league dashboard after payment
   const _platform = ctx.platform || 'sleeper';
@@ -465,11 +482,105 @@ if (document.readyState === 'loading') {
   window.refreshLeagueProInviteCta();
 }
 
+/** Signed-in league picker when a plan needs a league but URL has none. */
+function _showLeaguePickerModal(planType, triggerBtn) {
+  const existing = document.getElementById('_leaguePickerModal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = '_leaguePickerModal';
+  modal.className = 'signin-modal-overlay';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', '_leaguePickerTitle');
+  modal.style.display = 'flex';
+  modal.innerHTML = `
+    <div class="signin-modal-box">
+      <h3 class="signin-modal-title" id="_leaguePickerTitle">Choose a league</h3>
+      <p class="signin-modal-sub">Select which league this subscription applies to.</p>
+      <div id="_leaguePickerWrap" style="margin-bottom:16px;">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Your leagues</label>
+        <select class="signin-modal-input" id="_leaguePickerSelect" style="margin-bottom:0;cursor:pointer;">
+          <option value="">Loading…</option>
+        </select>
+      </div>
+      <div id="_leaguePickerError" style="display:none;font-size:12px;color:#ef4444;margin:-8px 0 12px;"></div>
+      <div class="signin-modal-actions">
+        <button type="button" class="signin-modal-submit" id="_leaguePickerSubmit" disabled>Continue to Checkout</button>
+        <button type="button" class="signin-modal-cancel" id="_leaguePickerCancel">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  const select = modal.querySelector('#_leaguePickerSelect');
+  const submitBtn = modal.querySelector('#_leaguePickerSubmit');
+  const errorEl = modal.querySelector('#_leaguePickerError');
+  const prevFocus = document.activeElement;
+
+  function closePicker() {
+    document.removeEventListener('keydown', onKey);
+    modal.remove();
+    if (prevFocus && typeof prevFocus.focus === 'function') {
+      try { prevFocus.focus(); } catch (_) {}
+    }
+  }
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); closePicker(); }
+  }
+  document.addEventListener('keydown', onKey);
+  modal.addEventListener('click', e => { if (e.target === modal) closePicker(); });
+  modal.querySelector('#_leaguePickerCancel').addEventListener('click', closePicker);
+
+  fetch('/api/my-leagues', { cache: 'no-store' })
+    .then(r => r.json())
+    .then(data => {
+      const leagues = (data && data.leagues) || [];
+      if (!leagues.length) {
+        select.innerHTML = '<option value="">No leagues found</option>';
+        errorEl.textContent = 'Connect a league first, then subscribe.';
+        errorEl.style.display = 'block';
+        return;
+      }
+      select.innerHTML = leagues.map(lg => {
+        const id = lg.league_id || lg.id || '';
+        const name = lg.name || lg.league_name || id;
+        const plat = lg.platform || 'sleeper';
+        const season = lg.season || '';
+        const label = season ? `${name} (${plat} · ${season})` : `${name} (${plat})`;
+        return `<option value="${id}" data-platform="${plat}" data-season="${season}">${label}</option>`;
+      }).join('');
+      submitBtn.disabled = false;
+      select.focus();
+    })
+    .catch(() => {
+      select.innerHTML = '<option value="">Unable to load leagues</option>';
+      errorEl.textContent = 'Could not load your leagues. Try again.';
+      errorEl.style.display = 'block';
+    });
+
+  submitBtn.addEventListener('click', () => {
+    const opt = select.options[select.selectedIndex];
+    const leagueId = (select.value || '').trim();
+    if (!leagueId) {
+      errorEl.textContent = 'Pick a league to continue.';
+      errorEl.style.display = 'block';
+      return;
+    }
+    if (window.__brctx) {
+      window.__brctx.leagueId = leagueId;
+      if (opt && opt.dataset.platform) window.__brctx.platform = opt.dataset.platform;
+      if (opt && opt.dataset.season) window.__brctx.season = Number(opt.dataset.season) || window.__brctx.season;
+    }
+    closePicker();
+    _initiatePurchaseWithLeague(planType, triggerBtn, leagueId);
+  });
+}
+
 function _showIdentifyModal(planType, triggerBtn) {
   const existing = document.getElementById('_identifyModal');
   if (existing) existing.remove();
 
-  const needsLeague = planType === 'league' || planType === 'combo';
+  const needsLeague = planType === 'league' || planType === 'combo' || planType === 'single_league';
   const next = encodeURIComponent(window.location.pathname + window.location.search);
 
   const modal = document.createElement('div');

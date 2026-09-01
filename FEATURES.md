@@ -13,7 +13,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **My Leagues (Portfolio)** — Cross-league hub that lists every league you're in with at-a-glance value and standings. **PRO** unlocks the cross-league **This week's moves** digest (lineup and injury actions ranked across all linked leagues).
 - **League switcher** — Jump between your leagues from anywhere via the nav dropdown.
 - **Multi-season support** — View any league across multiple seasons.
-- **PRO / Premium tiers** — Subscription-gated features (Stripe checkout, billing portal, league-shared or user-based premium access) with a paywall on PRO-only tools.
+- **PRO / Premium tiers** — Subscription-gated features (Stripe checkout, billing portal) with a paywall on PRO-only tools. Plans: **One League** ($5/year, buyer-only for one selected league), **Personal** ($10/year, all your leagues), **League** ($15/year, shared with every manager), and **League + Personal** ($20/year combo).
 - **Dark mode** — Light/dark theme toggle with your preference saved automatically.
 - **Changelog** — In-app feed of every new feature and update.
 
