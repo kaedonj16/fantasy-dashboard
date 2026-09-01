@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-09-01",
+        "tag": "fix",
+        "text": "Draft Cheat Sheet Hist: on phones the tiles stack in one column so titles, This player, and names are not squeezed into a two-column grid.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-09-01",
         "tag": "update",
         "text": "Draft Cheat Sheet Hist: tiles are grouped (Career, Capital, Roster, Offense, Usage), the matching cell is marked This player versus analog contrast, and each tile can open 2-3 names from that intersection. Bounce-back WRs and RBs who were outside the top 36 last year are split by roster spot.",
         "link": "/draft/cheat-sheet"

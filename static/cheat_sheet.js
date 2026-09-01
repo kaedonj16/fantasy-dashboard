@@ -2346,8 +2346,8 @@
         return '<div class="cs-hist-hit' + (row.polarity === 'miss' ? ' is-miss' : '')
             + (isThis ? ' is-this' : ' is-analog') + '"><div class="cs-hist-hit-top">'
             + trendsConfDot(row.confidence_label)
-            + '<div><div class="cs-hist-hit-label">' + esc(histTrendTitle(row))
-            + roleChip + '</div>'
+            + '<div><div class="cs-hist-hit-label">' + esc(histTrendTitle(row)) + '</div>'
+            + roleChip
             + (meta.length ? '<div class="cs-hist-hit-meta">' + esc(meta.join(' · ')) + '</div>' : '')
             + '</div><div class="cs-hist-hit-pct">' + esc(String(shown))
             + (vsShort ? ' <span>' + esc(String(vsShort)) + '</span>' : '')
