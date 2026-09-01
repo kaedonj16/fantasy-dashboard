@@ -18568,7 +18568,7 @@ img, svg, canvas {
     font-size: 12px;
     font-weight: 700;
     padding: 3px 9px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
 }
@@ -18582,7 +18582,7 @@ img, svg, canvas {
     font-size: 11px;
     font-weight: 700;
     padding: 4px 10px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     white-space: nowrap;
 }
 .pm-vh-range {
