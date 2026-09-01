@@ -153,7 +153,9 @@ def test_redraft_digest_leads_with_matchup_not_dynasty_movers(monkeypatch):
     assert out["format"]["is_redraft"] is True
     assert "This week's matchup" in out["html"]
     assert "The Other Team" in out["html"]
-    assert "118.4" in out["html"]
+    assert "118.4 to 109.1" in out["html"]
+    assert "—" not in out["html"]
+    assert "–" not in out["html"]
     assert "Your risers this week" not in out["html"]
     assert "favored" in out["subject"].lower()
     assert "dynasty digest" not in out["html"].lower()
@@ -236,6 +238,10 @@ def test_keeper_digest_includes_value_movers_not_zero_record(monkeypatch):
     assert "Luther Burden III" not in html
     assert "A Running Back" in html
     assert "Top waiver targets:" not in html
+    assert "at 0-0" not in html
+    assert "—" not in html
+    assert "–" not in html
+    assert "your weekly report" not in html.lower()
     assert out["subject"] != "BLITZ THE LEAGUE: #6 · 0-0"
 
 

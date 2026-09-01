@@ -97,6 +97,9 @@ def test_cross_league_digest_html_ranks_and_formats():
     # Lineup ranks above injury — empty slot appears first.
     assert html.index("Empty starting slot") < html.index("Stash: X")
     assert "https://brfantasy.com/sleeper/2025/1/waivers" in html
+    assert " — " not in html
+    assert "—" not in html
+    assert "–" not in html
 
 
 def test_multi_league_includes_cross_league_actions(monkeypatch):

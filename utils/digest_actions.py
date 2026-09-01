@@ -13,6 +13,56 @@ from urllib.parse import quote
 logger = logging.getLogger(__name__)
 
 
+# White cards on the cool-gray email canvas. Accent = left navy-blue bar for actions.
+EMAIL_CARD_STYLE = (
+    "margin:16px 0 0;padding:14px 16px;border-radius:12px;"
+    "background:#ffffff;border:1px solid #e6ebf2;"
+)
+EMAIL_CARD_ACCENT_STYLE = EMAIL_CARD_STYLE + "border-left:3px solid #2563eb;"
+_EMAIL_KICKER = (
+    "font-size:11px;font-weight:800;letter-spacing:.06em;"
+    "text-transform:uppercase;color:#334155;"
+)
+_EMAIL_CTA = (
+    "display:inline-block;margin-top:2px;font-size:13px;font-weight:700;"
+    "color:#2563eb;text-decoration:none;"
+)
+
+
+def _plain_punct(s: str) -> str:
+    """Email copy uses ASCII hyphen, not em/en dashes."""
+    return (s or "").replace("\u2014", " - ").replace("\u2013", "-")
+
+
+def section_card(
+    title: str,
+    inner_html: str,
+    *,
+    href: str = "",
+    cta: str = "",
+    accent: bool = True,
+) -> str:
+    """Email-safe titled card. ``inner_html`` is trusted markup (already escaped)."""
+    title_s = escape(_plain_punct(str(title or "")).strip(), quote=False)
+    inner = _plain_punct(inner_html or "").strip()
+    if not title_s or not inner:
+        return ""
+    link = ""
+    if href and cta:
+        link = (
+            f'<div style="margin-top:10px;">'
+            f'<a href="{escape(href, quote=True)}" style="{_EMAIL_CTA}">'
+            f"{escape(cta, quote=False)}</a></div>"
+        )
+    chrome = EMAIL_CARD_ACCENT_STYLE if accent else EMAIL_CARD_STYLE
+    return (
+        f'<div style="{chrome}">'
+        f'<div style="{_EMAIL_KICKER}">{title_s}</div>'
+        f'<div style="margin-top:8px;font-size:14px;color:#0f172a;line-height:1.5;">{inner}</div>'
+        f"{link}</div>"
+    )
+
+
 def action_section_html(
     title: str,
     body: str,
@@ -21,25 +71,8 @@ def action_section_html(
     cta: str = "Open →",
 ) -> str:
     """One titled action block for the digest email body."""
-    title_s = escape(str(title or "").strip(), quote=False)
-    body_s = escape(str(body or "").strip(), quote=False)
-    if not title_s or not body_s:
-        return ""
-    link = ""
-    if href:
-        link = (
-            f'<div style="margin-top:8px;">'
-            f'<a href="{escape(href, quote=True)}" style="font-size:13px;font-weight:700;'
-            f'color:#2563eb;text-decoration:none;">{escape(cta, quote=False)}</a></div>'
-        )
-    return (
-        f'<div style="margin:18px 0 0;padding:12px 14px;border-radius:10px;'
-        f'background:#f8fafc;border:1px solid #e2e8f0;">'
-        f'<div style="font-size:11px;font-weight:800;letter-spacing:.04em;'
-        f'text-transform:uppercase;color:#64748b;">{title_s}</div>'
-        f'<div style="margin-top:4px;font-size:14px;color:#0f172a;line-height:1.45;">{body_s}</div>'
-        f"{link}</div>"
-    )
+    body_s = escape(_plain_punct(str(body or "")).strip(), quote=False)
+    return section_card(title, body_s, href=href, cta=cta, accent=True)
 
 
 def player_deep_link(

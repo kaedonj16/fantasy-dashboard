@@ -11,11 +11,14 @@ from utils.digest_actions import (
 def test_action_section_html_requires_title_and_body():
     assert action_section_html("", "body") == ""
     assert action_section_html("T", "") == ""
-    html = action_section_html("Waiver wire", "Add Player X", href="https://ex/w", cta="Go →")
+    html = action_section_html("Waiver wire", "Add Player X - now", href="https://ex/w", cta="Go →")
     assert "Waiver wire" in html
-    assert "Add Player X" in html
+    assert "Add Player X - now" in html
     assert "https://ex/w" in html
     assert "Go →" in html
+    html_dash = action_section_html("Note", "Soon — check reports")
+    assert "—" not in html_dash
+    assert "Soon - check reports" in html_dash
 
 
 def test_lineup_digest_note_empty():

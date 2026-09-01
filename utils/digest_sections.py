@@ -8,7 +8,7 @@ from __future__ import annotations
 from html import escape
 from typing import Any, Optional
 
-from utils.digest_actions import action_section_html, player_deep_link
+from utils.digest_actions import action_section_html, player_deep_link, section_card
 
 MAX_WIDTH_PX = 600
 
@@ -24,24 +24,27 @@ def email_shell(
     sub = escape(subtitle or "Your weekly fantasy digest", quote=False)
     cta = ""
     if dash_url:
-        cta = (
-            f'<a href="{escape(dash_url, quote=True)}" style="display:inline-block;'
-            f'margin-top:22px;background:#2563eb;color:#ffffff;text-decoration:none;'
-            f'font-weight:700;font-size:14px;padding:11px 20px;border-radius:9px;">'
-            f"{escape(cta_label, quote=False)}</a>"
-        )
+        cta = f"""\
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">
+  <tr>
+    <td>
+      <a href="{escape(dash_url, quote=True)}" style="display:block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 20px;border-radius:10px;text-align:center;">{escape(cta_label, quote=False)}</a>
+    </td>
+  </tr>
+</table>"""
     return f"""\
-<div style="background:#f1f5f9;padding:24px 0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
-  <div style="max-width:{MAX_WIDTH_PX}px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e2e8f0;">
-    <div style="background:#0f172a;padding:20px 24px;">
-      <div style="color:#ffffff;font-size:18px;font-weight:800;">BR Fantasy</div>
-      <div style="color:#94a3b8;font-size:13px;margin-top:2px;">{sub}</div>
+<div style="background:#e8eef5;padding:28px 12px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:{MAX_WIDTH_PX}px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #dbe3ee;">
+    <div style="background:#0b1220;padding:22px 24px 18px;">
+      <div style="color:#93c5fd;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;">BR Fantasy</div>
+      <div style="color:#ffffff;font-size:20px;font-weight:800;margin-top:6px;line-height:1.25;">{sub}</div>
     </div>
-    <div style="padding:24px;">
+    <div style="height:4px;background:#2563eb;line-height:4px;font-size:0;">&nbsp;</div>
+    <div style="padding:22px 20px 24px;background:#f7f9fc;">
       {inner_html}
       {cta}
     </div>
-    <div style="padding:16px 24px;border-top:1px solid #e2e8f0;background:#f8fafc;">
+    <div style="padding:16px 22px;background:#ffffff;border-top:1px solid #e6ebf2;">
       <p style="margin:0;font-size:11px;color:#94a3b8;line-height:1.6;">
         You're getting this because you signed in to BR Fantasy.
         <a href="{escape(unsub_href, quote=True)}" style="color:#64748b;">Unsubscribe</a>
@@ -54,7 +57,10 @@ def email_shell(
 
 def greeting_html(first_name: Optional[str]) -> str:
     hi = escape(first_name.strip(), quote=False) if first_name and first_name.strip() else "there"
-    return f'<p style="margin:0 0 14px;font-size:15px;color:#0f172a;">Hey {hi},</p>'
+    return (
+        f'<p style="margin:0 0 12px;font-size:16px;color:#0f172a;font-weight:600;">'
+        f"Hey {hi},</p>"
+    )
 
 
 def heading(title: str) -> str:
@@ -62,8 +68,19 @@ def heading(title: str) -> str:
     if not t:
         return ""
     return (
-        f'<h3 style="margin:20px 0 6px;font-size:13px;text-transform:uppercase;'
-        f'letter-spacing:.04em;color:#64748b;">{t}</h3>'
+        f'<h3 style="margin:20px 0 0;font-size:11px;font-weight:800;text-transform:uppercase;'
+        f'letter-spacing:.06em;color:#334155;">{t}</h3>'
+    )
+
+
+def format_chip_html(label: str) -> str:
+    text = str(label or "").strip()
+    if not text:
+        return ""
+    return (
+        f'<span style="display:inline-block;margin-top:8px;padding:4px 10px;border-radius:999px;'
+        f'background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:700;letter-spacing:.02em;">'
+        f"{escape(text, quote=False)}</span>"
     )
 
 
@@ -77,22 +94,22 @@ def league_summary_html(
 ) -> str:
     lg = escape(league_name or "Your league", quote=False)
     games = int(wins or 0) + int(losses or 0)
-    bits = []
     if rank and games > 0:
         rec = f"{int(wins or 0)}-{int(losses or 0)}"
-        bits.append(
-            f'You\'re <strong>#{int(rank)}</strong> in {lg} at <strong>{escape(rec, quote=False)}</strong>.'
+        headline = (
+            f'You\'re <strong>#{int(rank)}</strong> in {lg} at '
+            f'<strong>{escape(rec, quote=False)}</strong>.'
         )
+        size = "16px"
     else:
-        bits.append(f'<strong>{lg}</strong> — your weekly report.')
-    if format_label:
-        bits.append(
-            f'<span style="color:#64748b;font-size:13px;">{escape(format_label, quote=False)}</span>'
+        headline = (
+            f'<strong style="font-size:20px;letter-spacing:-0.02em;">{lg}</strong>'
         )
+        size = "16px"
+    chip = format_chip_html(format_label)
     return (
-        f'<p style="margin:0 0 16px;font-size:16px;color:#0f172a;line-height:1.45;">'
-        + "<br>".join(bits)
-        + "</p>"
+        f'<div style="margin:0 0 8px;font-size:{size};color:#0f172a;line-height:1.4;">'
+        f"{headline}{chip}</div>"
     )
 
 
@@ -110,7 +127,7 @@ def matchup_html(matchup: Optional[dict], *, href: str = "") -> str:
     if you is not None and them is not None:
         try:
             yu, ot = float(you), float(them)
-            lines.append(f"Projected {yu:.1f} – {ot:.1f}")
+            lines.append(f"Projected {yu:.1f} to {ot:.1f}")
             if margin is not None:
                 m = float(margin)
                 if abs(m) >= 0.05:
@@ -176,21 +193,13 @@ def waiver_html(
         shown += 1
     if not shown:
         return ""
-    title_s = escape("Top waiver target" if shown == 1 else "Waiver wire", quote=False)
-    link = ""
-    if href:
-        link = (
-            f'<div style="margin-top:8px;">'
-            f'<a href="{escape(href, quote=True)}" style="font-size:13px;font-weight:700;'
-            f'color:#2563eb;text-decoration:none;">View waivers →</a></div>'
-        )
-    return (
-        f'<div style="margin:18px 0 0;padding:12px 14px;border-radius:10px;'
-        f'background:#f8fafc;border:1px solid #e2e8f0;">'
-        f'<div style="font-size:11px;font-weight:800;letter-spacing:.04em;'
-        f'text-transform:uppercase;color:#64748b;">{title_s}</div>'
-        f'<table style="width:100%;border-collapse:collapse;">{rows}</table>'
-        f"{link}</div>"
+    title = "Top waiver target" if shown == 1 else "Waiver wire"
+    return section_card(
+        title,
+        f'<table style="width:100%;border-collapse:collapse;">{rows}</table>',
+        href=href,
+        cta="View waivers →" if href else "",
+        accent=True,
     )
 
 
@@ -231,8 +240,10 @@ def roster_core_html(
         )
     if not rows:
         return ""
-    return heading("Your top assets") + (
-        f'<table style="width:100%;border-collapse:collapse;">{rows}</table>'
+    return section_card(
+        "Your top assets",
+        f'<table style="width:100%;border-collapse:collapse;">{rows}</table>',
+        accent=False,
     )
 
 
@@ -320,21 +331,21 @@ def player_movement_html(
             league_id=league_id, pidx=pidx, notes=notes,
         )
         if table:
-            parts.append(heading(title) + table)
+            parts.append(section_card(title, table, accent=False))
     if my_fallers:
         table = _mover_rows(
             my_fallers, up=False, base=base, platform=platform, season=season,
             league_id=league_id, pidx=pidx, notes=notes,
         )
         if table:
-            parts.append(heading("Your fallers this week") + table)
+            parts.append(section_card("Your fallers this week", table, accent=False))
     if show_leaguewide and lg_risers:
         table = _mover_rows(
             lg_risers, up=True, base=base, platform=platform, season=season,
             league_id=league_id, pidx=pidx, notes=notes,
         )
         if table:
-            parts.append(heading("Biggest risers leaguewide") + table)
+            parts.append(section_card("Biggest risers leaguewide", table, accent=False))
     return "".join(parts)
 
 
@@ -375,13 +386,18 @@ def trade_insight_html(insight: Optional[dict], *, href: str = "") -> str:
 
 
 def format_chip(fmt: dict) -> str:
-    """Short human label like ``12tm SF TEP dynasty`` without internal ids."""
+    """Short human label like ``SF · TEP · Dynasty`` without internal ids."""
     if not fmt:
         return ""
-    kind = str(fmt.get("type") or "fantasy")
-    qb = "SF" if fmt.get("is_superflex") else "1QB"
-    tep = " TEP" if fmt.get("is_tep") else ""
-    return f"{qb}{tep} {kind}".strip()
+    kind = str(fmt.get("type") or "").strip()
+    if kind:
+        kind = kind[0].upper() + kind[1:]
+    parts = ["SF" if fmt.get("is_superflex") else "1QB"]
+    if fmt.get("is_tep"):
+        parts.append("TEP")
+    if kind:
+        parts.append(kind)
+    return " · ".join(parts)
 
 
 def _player_name(pid: str, pidx: dict) -> str:

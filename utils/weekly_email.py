@@ -160,6 +160,7 @@ def cross_league_digest_html(
     try:
         from utils.cross_league_actions import rank_cross_league_actions
         from utils.digest_actions import action_section_html
+        from utils.digest_sections import heading
     except Exception:
         return ""
     ranked = rank_cross_league_actions(list(actions), limit=max(0, int(limit or 0)))
@@ -178,7 +179,7 @@ def cross_league_digest_html(
             body_parts.append(league)
         if detail:
             body_parts.append(detail)
-        body = " — ".join(body_parts) if body_parts else title
+        body = " · ".join(body_parts) if body_parts else title
         href = str(act.get("href") or "").strip()
         if href and href.startswith("/") and base:
             href = base + href
@@ -192,11 +193,7 @@ def cross_league_digest_html(
             bits.append(html)
     if not bits:
         return ""
-    return (
-        '<h3 style="margin:22px 0 6px;font-size:13px;text-transform:uppercase;'
-        'letter-spacing:.04em;color:#64748b;">This week\'s moves</h3>'
-        + "".join(bits)
-    )
+    return heading("This week's moves") + "".join(bits)
 
 
 def compact_league_blurb(
@@ -275,10 +272,10 @@ def compact_league_blurb(
             chip = ""
         detail = chip
     return (
-        f'<tr><td style="padding:8px 0;border-top:1px solid #e2e8f0;">'
+        f'<tr><td style="padding:10px 0;border-bottom:1px solid #eef2f7;">'
         f'<a href="{escape(href)}" style="font-size:14px;font-weight:600;color:#0f172a;'
         f'text-decoration:none;">{escape(name)}</a>'
-        + (f'<div style="font-size:12px;color:#64748b;">{escape(detail)}</div>' if detail else "")
+        + (f'<div style="font-size:12px;color:#64748b;margin-top:2px;">{escape(detail)}</div>' if detail else "")
         + "</td></tr>"
     )
 
@@ -382,11 +379,11 @@ def multi_league_sections_html(
         ]
         bits = [b for b in bits if b]
         if bits:
+            from utils.digest_sections import heading
             parts.append(
-                '<h3 style="margin:22px 0 6px;font-size:13px;text-transform:uppercase;'
-                'letter-spacing:.04em;color:#64748b;">Your other leagues</h3>'
-                '<div style="margin:8px 0 0;padding:4px 14px 10px;border-radius:10px;'
-                'background:#f8fafc;border:1px solid #e2e8f0;">'
+                heading("Your other leagues")
+                + '<div style="margin:8px 0 0;padding:4px 16px 8px;border-radius:12px;'
+                'background:#ffffff;border:1px solid #e6ebf2;">'
                 '<table style="width:100%;border-collapse:collapse;">'
                 + "".join(bits)
                 + "</table></div>"
