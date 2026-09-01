@@ -603,8 +603,10 @@ function openPlayerModal(playerId, playerName, opts) {
         c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
       const _adpNum = v => (Math.round(v * 10) / 10).toFixed(1);
       // One range track for a (format, axis): dots + spread band + consensus mark
-      // on an auto-scaled pick axis. A minimum span keeps a tight cluster looking
-      // tight instead of stretching two near-equal picks across the whole track.
+      // on an auto-scaled pick axis. Values must be raw overall ADP (not ordinal
+      // ranks) so consensus — the mean of those ADPs — sits among the source
+      // dots. A minimum span keeps a tight cluster looking tight instead of
+      // stretching two near-equal picks across the whole track.
       const _adpRangeTrack = (pts, cons) => {
         const all = pts.map(p => p.v).concat(cons != null ? [cons] : []);
         if (!all.length) {
@@ -641,7 +643,7 @@ function openPlayerModal(playerId, playerName, opts) {
           <div class="pm-adp-range${isCur ? ' pm-adp-range-cur' : ''}">
             <div class="pm-adp-range-hd">
               <span class="pm-adp-range-ax">${axisLabel}</span>
-              <span class="pm-adp-range-cons">${cons != null ? 'Cons <b>' + _adpNum(cons) + '</b>' : ''}</span>
+              <span class="pm-adp-range-cons"${cons != null ? ' title="Average of the source ADPs on this axis"' : ''}>${cons != null ? 'Cons <b>' + _adpNum(cons) + '</b>' : ''}</span>
             </div>
             ${_adpRangeTrack(pts, cons)}
           </div>`;

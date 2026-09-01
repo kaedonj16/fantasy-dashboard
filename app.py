@@ -18727,15 +18727,20 @@ def api_player_adp(player_id: str):
             _key = (_source, _scoring, _is_sf)
             if _key not in _mkt_cache:
                 try:
-                    # Match the rankings page: re-rank BR Fantasy (ordered by its
-                    # raw avg_pick) to a clean 1..N board so it tops out at 1
-                    # instead of the ~3 mean-pick floor. fallback=False so an
-                    # off-axis source shows nothing rather than borrowing Sleeper's
-                    # numbers — ESPN/Yahoo/MFL are redraft-only, so their dynasty
-                    # cells must stay empty (not silently become Sleeper's ADP).
+                    # Raw overall-pick ADP for every source, including BR Fantasy.
+                    # Consensus is the mean of those raw values, and the modal
+                    # range plots dots + Cons on one pick axis — ranking BR
+                    # Fantasy to a 1..N board (as rankings columns do, so that
+                    # board can top out at 1) would put its dot near pick 1
+                    # while consensus still sits at the mean-pick floor (~3–8),
+                    # pinning Cons to the right of every visible source.
+                    # fallback=False so an off-axis source shows nothing rather
+                    # than borrowing Sleeper's numbers — ESPN/Yahoo/MFL are
+                    # redraft-only, so their dynasty cells must stay empty (not
+                    # silently become Sleeper's ADP).
                     _mkt_cache[_key] = resolve_market_adp(
                         int(season), _is_sf, _scoring, source=_source,
-                        as_rank=(_source == "brfantasy"), fallback=False) or {}
+                        as_rank=False, fallback=False) or {}
                 except Exception:
                     _mkt_cache[_key] = {}
             _v = _mkt_cache[_key].get(str(player_id))
