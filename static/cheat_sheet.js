@@ -3295,8 +3295,10 @@
             : ((resp.history && Array.isArray(resp.history.examples)) ? resp.history.examples : []);
         if (examples.length) {
             var sum = copy.examples_summary || (resp.history && resp.history.closest_summary) || {};
-            html += '<section class="cs-hist-sec cs-hist-closest"><h3>'
-                + esc(copy.examples_heading || 'Closest historical examples') + '</h3>';
+            html += '<details class="cs-hist-sec cs-hist-closest"><summary><h3>'
+                + esc(copy.examples_heading || 'Closest historical examples') + '</h3>'
+                + (sum.label ? '<span class="cs-hist-ex-peek">' + esc(sum.label) + '</span>' : '')
+                + '</summary><div class="cs-hist-closest-body">';
             if (copy.examples_note) html += '<p class="cs-hist-note">' + esc(copy.examples_note) + '</p>';
             if (copy.examples_vs_cohort_note) {
                 html += '<p class="cs-hist-note">' + esc(copy.examples_vs_cohort_note) + '</p>';
@@ -3321,7 +3323,7 @@
                     + (hit ? '<b class="cs-hist-ex-hit">' + esc(hit.label) + '</b>' : '')
                     + '</span></li>';
             });
-            html += '</ul></section>';
+            html += '</ul></div></details>';
         }
         var trends = (Array.isArray(copy.trends) ? copy.trends : []).filter(function (row) {
             var kind = row && row.kind;

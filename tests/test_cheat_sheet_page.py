@@ -461,6 +461,13 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "–" not in script.split("function renderHistPanel")[1].split("function init()")[0]
     assert "copy.trends" in script or "Trends for this player's buckets" in script
     assert "trendsHitRow(row, row && row.polarity, histBaseline, histSpan)" in script
+    assert ".cs-hist-hits { display: grid; grid-template-columns: 1fr 1fr;" in body
+    assert ".cs-hist-hit:last-child:nth-child(odd) { grid-column: 1 / -1; }" in body
+    assert '<details class="cs-hist-sec cs-hist-closest">' in script
+    assert 'class="cs-hist-ex-peek"' in script
+    assert "cs-hist-closest-body" in script
+    assert ".cs-hist-closest > summary" in body
+    assert 'html += \'</ul></section>\'' not in script.split("function renderHistPanel")[1].split("function init()")[0]
     assert "copy.projection_trends" not in script
     assert "This board's projection" not in script
     assert "cs-hist-hit-top" in script

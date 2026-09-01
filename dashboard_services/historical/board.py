@@ -1301,7 +1301,8 @@ def build_hist_panel_copy(
         "trends_heading": "Trends for this player's buckets",
         "trends_note": (
             "Each row is one historical slice for a bucket this player is in, "
-            "including ADP rank, NFL capital, miss rates, and usage. "
+            "not the combined chance above. NFL capital rates count every season "
+            "of those draftees, including later career years. "
             "+N vs typical is versus a typical player-season at the position. "
             "They are not combined into a ranking score."
         ),

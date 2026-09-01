@@ -299,9 +299,9 @@ _CHEAT_HTML = r"""
   .cs-hist-sec { margin: 0 0 16px; }
   .cs-hist-sec:last-child { margin-bottom: 0; }
   .cs-hist-sec h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 8px; }
-  .cs-hist-hits { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; overflow: hidden; background: var(--cs-surface, var(--card)); }
-  .cs-hist-hit { display: flex; flex-direction: column; gap: 0; padding: 10px 12px 11px; border: 0; border-bottom: 1px solid var(--cs-line, var(--border)); border-radius: 0; background: var(--cs-surface, var(--card)); }
-  .cs-hist-hit:last-child { border-bottom: 0; }
+  .cs-hist-hits { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; overflow: hidden; background: var(--cs-line, var(--border)); }
+  .cs-hist-hit { display: flex; flex-direction: column; gap: 0; padding: 10px 12px 11px; border: 0; border-radius: 0; background: var(--cs-surface, var(--card)); min-width: 0; }
+  .cs-hist-hit:last-child:nth-child(odd) { grid-column: 1 / -1; }
   .cs-hist-hit-top { display: flex; align-items: baseline; gap: 8px; }
   .cs-hist-hit-top > div { flex: 1; min-width: 0; }
   .cs-hist-hit-label { font-size: 13px; font-weight: 700; color: var(--cs-ink, var(--text)); }
@@ -329,6 +329,14 @@ _CHEAT_HTML = r"""
   .cs-hist-ex small { display: block; font-size: 11.5px; font-weight: 500; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 2px; line-height: 1.4; overflow-wrap: anywhere; }
   .cs-hist-ex-sum { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 8px; }
   .cs-hist-closest { margin-top: 4px; }
+  .cs-hist-closest > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .cs-hist-closest > summary::-webkit-details-marker { display: none; }
+  .cs-hist-closest > summary::after { content: "+"; flex-shrink: 0; font-size: 15px; line-height: 1; color: var(--cs-pos); }
+  .cs-hist-closest[open] > summary::after { content: "\2013"; }
+  .cs-hist-closest > summary:focus-visible { outline: 2px solid var(--cs-pos); outline-offset: 3px; border-radius: 4px; }
+  .cs-hist-closest > summary h3 { margin: 0; }
+  .cs-hist-ex-peek { font-family: var(--cs-mono); font-size: 11px; font-weight: 700; color: var(--cs-ink-soft, var(--text-muted)); text-align: right; min-width: 0; overflow-wrap: anywhere; }
+  .cs-hist-closest-body { padding-top: 10px; }
   .cs-hist-market { display: grid; gap: 8px; margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; background: color-mix(in srgb, var(--cs-pos) 8%, transparent); }
   .cs-hist-compare-h { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); }
   .cs-hist-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -712,6 +720,12 @@ _CHEAT_HTML = r"""
     .cs-hist-modal { align-items: center; justify-content: center; padding: 16px 12px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
     .cs-hist-card { width: 100%; max-width: min(420px, 100%); max-height: min(78vh, 640px); border-radius: 14px; margin: 0; }
     .cs-hist-big { font-size: 50px; }
+    .cs-hist-hit { padding: 8px 9px 9px; }
+    .cs-hist-hit-label { font-size: 12px; }
+    .cs-hist-hit-pct { font-size: 14px; }
+    .cs-hist-hit .cs-trends-rail { display: none; }
+    .cs-hist-closest > summary { align-items: flex-start; }
+    .cs-hist-ex-peek { flex: 1 1 100%; text-align: left; order: 3; }
     .cs-hist-tbarline { padding-left: 0; }
   }
   @media print {

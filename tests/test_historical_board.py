@@ -325,6 +325,10 @@ def test_hist_panel_copy_uses_bucket_hit_rates_not_snake_case():
     assert "not a combined chance" in copy["gap_note"].lower()
     assert "—" not in copy["gap_note"]
     assert "–" not in copy["gap_note"]
+    assert "not the combined chance above" in copy["trends_note"]
+    assert "later career years" in copy["trends_note"]
+    assert "—" not in copy["trends_note"]
+    assert "–" not in copy["trends_note"]
     missing = build_hist_panel_copy(history, {})
     assert "no live ADP" in missing["market_sentence"]
     assert missing["gap_note"] == "Need live ADP to show the other group."
