@@ -1175,14 +1175,15 @@ def prefer_selective_hist_tiles(rows: Sequence[Mapping[str, Any]]) -> list[dict]
 
 
 def hist_trend_rank_key(row: Mapping[str, Any]) -> tuple:
-    """Lift vs typical, then hit rate, then sample. Missing lift sorts as 0."""
+    """Lift vs typical, then hit rate, then sample. Rows with no lift sink."""
     vs = row.get("vs_baseline")
-    vs_n = int(vs) if isinstance(vs, (int, float)) else 0
+    has_vs = 1 if isinstance(vs, (int, float)) else 0
+    vs_n = int(vs) if has_vs else 0
     pct = row.get("pct")
     pct_n = float(pct) if isinstance(pct, (int, float)) else -1.0
     n = row.get("n")
     n_n = int(n) if isinstance(n, (int, float)) else 0
-    return (-vs_n, -pct_n, -n_n)
+    return (-has_vs, -vs_n, -pct_n, -n_n)
 
 
 def rank_hist_trends(
@@ -1195,8 +1196,9 @@ def rank_hist_trends(
     Construction order dumped career repeats at the top, so the modal's first
     four rows had no ranking logic. Sort by lift vs typical, then hit rate,
     then sample size. The first `preview` slots prefer one row per group so
-    the list is not four career tiles; remaining rows stay in that strength
-    order.
+    the list is not four career tiles; leftover slots fill from the next
+    strongest rows. The visible preview is then re-sorted by that same key
+    so the bars read high-to-low.
     """
     items = [dict(row) for row in rows if isinstance(row, Mapping)]
     items.sort(key=hist_trend_rank_key)
@@ -1214,6 +1216,7 @@ def rank_hist_trends(
             rest.append(row)
     while len(lead) < preview and rest:
         lead.append(rest.pop(0))
+    lead.sort(key=hist_trend_rank_key)
     return lead + rest
 
 

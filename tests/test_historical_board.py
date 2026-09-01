@@ -462,11 +462,17 @@ def test_hist_trends_are_descriptive_bucket_slices():
     assert "career_stage" in kinds
     assert "draft_capital" in kinds or any(str(k).startswith("capital_roster") for k in kinds)
     assert "age" in kinds
-    preview_groups = [row.get("group") for row in copy["trends"][:4]]
-    assert len(preview_groups) == len(set(preview_groups))
+    preview = copy["trends"][:4]
+    preview_groups = [row.get("group") for row in preview]
+    all_groups = {row.get("group") for row in copy["trends"]}
+    assert len(set(preview_groups)) == min(4, len(all_groups), len(preview))
     preview_lifts = [
-        row.get("vs_baseline") if isinstance(row.get("vs_baseline"), (int, float)) else 0
-        for row in copy["trends"][:4]
+        (
+            1 if isinstance(row.get("vs_baseline"), (int, float)) else 0,
+            row.get("vs_baseline") if isinstance(row.get("vs_baseline"), (int, float)) else 0,
+            row.get("pct") if isinstance(row.get("pct"), (int, float)) else -1,
+        )
+        for row in preview
     ]
     assert preview_lifts == sorted(preview_lifts, reverse=True)
     sentences = [row["sentence"] for row in copy["trends"]]
@@ -763,6 +769,20 @@ def test_rank_hist_trends_uses_kind_when_group_missing():
     ], preview=4)]
     assert ranked[:4] == ["draft_capital", "repeat", "offense", "target_share"]
     assert ranked[4:] == ["repeat_top5"]
+
+
+def test_rank_hist_trends_missing_lift_does_not_steal_preview():
+    ranked = [row["title"] for row in rank_hist_trends([
+        {"kind": "capital_roster_1", "title": "Top 10 RB1", "pct": 100, "vs_baseline": 90, "n": 3, "group": "roster"},
+        {"kind": "offense_capital", "title": "Offense Top 10", "pct": 44, "vs_baseline": 34, "n": 16, "group": "offense"},
+        {"kind": "offense_roster_1", "title": "Offense RB1", "pct": 21, "vs_baseline": 11, "n": 14, "group": "roster"},
+        {"kind": "age", "title": "Age 21", "pct": 9, "vs_baseline": -1, "n": 168, "group": "career"},
+        {"kind": "league_winner_smash", "title": "League-winner smash", "pct": 2, "n": 1062, "group": "career"},
+        {"kind": "breakout", "title": "Breakout", "pct": 5, "vs_baseline": -5, "n": 1055, "group": "career"},
+    ], preview=4)]
+    assert ranked[:4] == ["Top 10 RB1", "Offense Top 10", "Offense RB1", "Age 21"]
+    assert ranked[4] == "Breakout"
+    assert "League-winner smash" in ranked[4:]
 
 
 def test_prefer_selective_hist_tiles_drops_same_band_without_roster():

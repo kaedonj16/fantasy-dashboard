@@ -2339,22 +2339,24 @@
 
     function histTrendRankKey(row) {
         row = row || {};
-        var vs = (typeof row.vs_baseline === 'number') ? row.vs_baseline : 0;
+        var has = (typeof row.vs_baseline === 'number') ? 1 : 0;
+        var vs = has ? row.vs_baseline : 0;
         var pct = (row.pct != null && isFinite(Number(row.pct))) ? Number(row.pct) : -1;
         var n = (row.n != null && isFinite(Number(row.n))) ? Number(row.n) : 0;
-        return [vs, pct, n];
+        return [has, vs, pct, n];
     }
 
     // Strongest evidence first (lift vs typical, then hit rate, then sample).
     // The compact preview prefers one row per group so it is not four career
-    // repeats from construction order.
+    // repeats from construction order, then re-sorts those slots high-to-low.
     function histRankTrends(rows, preview) {
         var items = (Array.isArray(rows) ? rows : []).filter(Boolean).slice();
-        items.sort(function (a, b) {
+        function byKey(a, b) {
             var ak = histTrendRankKey(a);
             var bk = histTrendRankKey(b);
-            return (bk[0] - ak[0]) || (bk[1] - ak[1]) || (bk[2] - ak[2]);
-        });
+            return (bk[0] - ak[0]) || (bk[1] - ak[1]) || (bk[2] - ak[2]) || (bk[3] - ak[3]);
+        }
+        items.sort(byKey);
         var shown = (preview != null && isFinite(Number(preview))) ? Number(preview) : 4;
         if (shown <= 0 || items.length <= shown) return items;
         var lead = [];
@@ -2370,6 +2372,7 @@
             }
         });
         while (lead.length < shown && rest.length) lead.push(rest.shift());
+        lead.sort(byKey);
         return lead.concat(rest);
     }
 
