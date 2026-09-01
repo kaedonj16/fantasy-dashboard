@@ -590,6 +590,28 @@ def query_for_board_player(
     return query
 
 
+def fill_projected_offense_rank(
+    query: dict[str, Any],
+    aggregates: Mapping[str, Any],
+) -> Optional[int]:
+    """Ensure the live board query has this season's projected offense rank.
+
+    Preseason profiles already carry the number when the overlay stamped them.
+    Missing ranks look up the same team table the Hist modal uses so the Big
+    Board column and the Hist tiles agree. Does not invent a rank.
+    """
+    proj = _optional_int(query.get("projected_offense_rank"))
+    if proj is not None and proj > 0:
+        return proj
+    from dashboard_services.historical.offense import lookup_team_projected_offense_rank
+
+    proj = lookup_team_projected_offense_rank(aggregates, query.get("team"))
+    if proj is not None and proj > 0:
+        query["projected_offense_rank"] = proj
+        return proj
+    return None
+
+
 def compact_signal(full: Mapping[str, Any]) -> dict:
     """Board-sized slice. No named comps, no blended score."""
     history = full.get("history") if isinstance(full.get("history"), Mapping) else {}
@@ -660,11 +682,14 @@ def attach_historical_signals(
         compact = compact_signal(compared[qi])
         # Stamp Scout features from the same merged preseason query used for
         # History P so JS never re-buckets career stage / capital / age.
+        proj = fill_projected_offense_rank(queries[qi], aggregates)
         feats = extract_trend_features(queries[qi])
         if feats:
             compact["trend_feats"] = feats
         if isinstance(row, dict):
             row["historical"] = compact
+            if proj is not None:
+                row["projected_offense_rank"] = proj
         compact_out.append(compact)
     return compact_out
 
