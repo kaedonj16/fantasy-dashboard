@@ -55,6 +55,20 @@ def test_consensus_matches_visible_source_value_average():
     assert A.consensus_adp(sources)["ceedee"] == pytest.approx(10.94)
 
 
+def test_displayed_source_consensus_averages_rank_and_sleeper():
+    # Rankings board: Sleeper raw 1.0 + BR Fantasy ordinal 2.0 → Cons 1.5,
+    # not the raw-ADP blend that showed 3.1 next to those two columns.
+    assert A.displayed_source_consensus({"sleeper": 1.0, "brfantasy": 2.0}) == 1.5
+    assert A.displayed_source_consensus({"sleeper": 2.1, "brfantasy": 1.0}) == 1.6
+    assert A.displayed_source_consensus({"sleeper": 4.1, "brfantasy": 4.0}) == 4.1
+    assert A.displayed_source_consensus({"sleeper": 3.7, "brfantasy": 3.0}) == 3.4
+    # (2.0 + 4.3) / 2 = 3.15 → 3.2, matching the modal range label.
+    assert A.displayed_source_consensus({"brfantasy": 2.0, "sleeper": 4.3}) == 3.2
+    assert A.displayed_source_consensus({"sleeper": 1.0, "brfantasy": 2.0, "consensus": 99.0}) == 1.5
+    assert A.displayed_source_consensus({"mfl": 57.8}) is None
+    assert A.displayed_source_consensus({}) is None
+
+
 # ── resolve_market_adp ───────────────────────────────────────────────────────
 
 def test_resolve_sleeper_field_by_format(monkeypatch):

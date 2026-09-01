@@ -974,6 +974,34 @@ def consensus_adp(source_maps, source_names=None) -> Dict[str, float]:
     return out
 
 
+def displayed_source_consensus(per_source_values) -> Optional[float]:
+    """Mean of the values a UI actually shows for one player on one axis.
+
+    Rankings and the player-modal range plot BR Fantasy as a 1..N ordinal rank
+    and other feeds as raw ADP. Consensus next to those numbers must average
+    the plotted values (Gibbs Sleeper 1.0 + BR rank 2.0 → 1.5), not the raw-ADP
+    blend from ``consensus_adp`` (which sits at the mean-pick floor and reads
+    as Cons 3.1). Round half-up to one decimal so 4.05 labels as 4.1, matching
+    the board's ``toFixed(1)`` / ``Math.round(v * 10) / 10``.
+    """
+    named: List[str] = []
+    vals: List[float] = []
+    for name, v in (per_source_values or {}).items():
+        if not name or name == "consensus":
+            continue
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if fv > 0:
+            named.append(str(name))
+            vals.append(fv)
+    if not vals or _all_selected_only(named):
+        return None
+    mean = sum(vals) / len(vals)
+    return float(int(mean * 10 + 0.5)) / 10.0
+
+
 def ordinal_rank_adp(adp_map) -> Dict[str, float]:
     """Replace ADP values with their 1-based draft order (1, 2, 3, ...).
 
