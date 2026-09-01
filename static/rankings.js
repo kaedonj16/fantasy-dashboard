@@ -1155,11 +1155,23 @@ function prGetTier(p) {
 // Load data
 function prLoadData() {
   var loading = document.getElementById('prLoading');
+  var list = document.getElementById('prList');
+  // The /players route SSR-fills #prList and hides #prLoading. Unhiding the
+  // skeleton here stacked it above the already-painted table until the API
+  // returned. Keep the SSR rows on screen and only show a skeleton on a cold
+  // load (empty list) or when retrying after an error.
+  var hasSsrRows = !!(list && list.firstElementChild);
+  var recovering = !!(loading && loading.querySelector('.empty-state'));
   if (loading) {
-    loading.style.display = '';
-    loading.setAttribute('aria-busy', 'true');
-    if (window.brLoadingState && loading.querySelector('.empty-state')) {
-      window.brLoadingState(loading, { spinner: true, message: 'Loading players…' });
+    if (hasSsrRows && !recovering) {
+      loading.style.display = 'none';
+      loading.setAttribute('aria-busy', 'false');
+    } else {
+      loading.style.display = '';
+      loading.setAttribute('aria-busy', 'true');
+      if (window.brLoadingState && recovering) {
+        window.brLoadingState(loading, { spinner: true, message: 'Loading players…' });
+      }
     }
   }
 Promise.all([
