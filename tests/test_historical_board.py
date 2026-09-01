@@ -14,6 +14,7 @@ from dashboard_services.historical.board import (
     live_redraft_adp,
     prefer_selective_hist_tiles,
     query_for_board_player,
+    rank_hist_trends,
 )
 from dashboard_services.historical.career_profiles import assemble_profile_aggregates
 from dashboard_services.historical.comps import extract_comp_query
@@ -461,6 +462,13 @@ def test_hist_trends_are_descriptive_bucket_slices():
     assert "career_stage" in kinds
     assert "draft_capital" in kinds or any(str(k).startswith("capital_roster") for k in kinds)
     assert "age" in kinds
+    preview_groups = [row.get("group") for row in copy["trends"][:4]]
+    assert len(preview_groups) == len(set(preview_groups))
+    preview_lifts = [
+        row.get("vs_baseline") if isinstance(row.get("vs_baseline"), (int, float)) else 0
+        for row in copy["trends"][:4]
+    ]
+    assert preview_lifts == sorted(preview_lifts, reverse=True)
     sentences = [row["sentence"] for row in copy["trends"]]
     assert not any("taken in fantasy Round 1 finished top-12" in s for s in sentences)
     assert any("target share last year" in s for s in sentences)
@@ -728,6 +736,33 @@ def test_hist_panel_keeps_draft_capital_when_the_cell_has_seasons():
     }]
     attach_historical_signals(board, aggs)
     assert board[0]["historical"]["p_hit_pct"] == panel["copy"]["history_pct"]
+
+
+def test_rank_hist_trends_puts_strongest_distinct_groups_first():
+    ranked = [row["title"] for row in rank_hist_trends([
+        {"kind": "repeat", "title": "Top-12 again", "pct": 50, "vs_baseline": 40, "n": 80, "group": "career"},
+        {"kind": "repeat_top5", "title": "Then top-5", "pct": 30, "vs_baseline": 20, "n": 80, "group": "career"},
+        {"kind": "two_plus", "title": "Repeat stars", "pct": 55, "vs_baseline": 45, "n": 40, "group": "career"},
+        {"kind": "age", "title": "Age 24", "pct": 22, "vs_baseline": 8, "n": 100, "group": "career"},
+        {"kind": "draft_capital", "title": "Round 1", "pct": 35, "vs_baseline": 25, "n": 60, "group": "capital"},
+        {"kind": "offense", "title": "Top-10 offense", "pct": 28, "vs_baseline": 12, "n": 50, "group": "offense"},
+        {"kind": "target_share", "title": "Target share", "pct": 18, "vs_baseline": 3, "n": 90, "group": "usage"},
+        {"kind": "capital_roster_1", "title": "Top 10 RB1", "pct": 64, "vs_baseline": 50, "n": 20, "group": "roster"},
+    ], preview=4)]
+    assert ranked[:4] == ["Top 10 RB1", "Repeat stars", "Round 1", "Top-10 offense"]
+    assert ranked[4:] == ["Top-12 again", "Then top-5", "Age 24", "Target share"]
+
+
+def test_rank_hist_trends_uses_kind_when_group_missing():
+    ranked = [row["kind"] for row in rank_hist_trends([
+        {"kind": "repeat", "pct": 40, "vs_baseline": 10, "n": 10},
+        {"kind": "draft_capital", "pct": 30, "vs_baseline": 20, "n": 10},
+        {"kind": "repeat_top5", "pct": 20, "vs_baseline": 5, "n": 10},
+        {"kind": "offense", "pct": 25, "vs_baseline": 8, "n": 10},
+        {"kind": "target_share", "pct": 15, "vs_baseline": 2, "n": 10},
+    ], preview=4)]
+    assert ranked[:4] == ["draft_capital", "repeat", "offense", "target_share"]
+    assert ranked[4:] == ["repeat_top5"]
 
 
 def test_prefer_selective_hist_tiles_drops_same_band_without_roster():

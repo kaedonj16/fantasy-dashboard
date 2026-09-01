@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-09-01",
         "tag": "update",
+        "text": "Draft Cheat Sheet Hist: Trends behind it now ranks by lift vs typical, then hit rate. The first four rows cover different slices (capital, roster, offense, career) instead of dumping career repeats in construction order.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-09-01",
+        "tag": "update",
         "text": "Draft Cheat Sheet Hist: the cohort count now says Samples: 6 instead of Sample: 6. That number is how many historical player-seasons are in the group.",
         "link": "/draft/cheat-sheet"
     },
