@@ -1,4 +1,4 @@
-"""Week-1 projected team offense ranks and last-year actual analog."""
+"""Season-long projected team offense ranks and last-year actual analog."""
 from dashboard_services.historical.definitions import (
     TRENDS_OFFENSE_RANGES,
     normalize_team_abbr,
@@ -8,16 +8,16 @@ from dashboard_services.historical.definitions import (
 from dashboard_services.historical.offense import (
     apply_team_offense_overlay,
     extra_observations_from_player_seasons,
+    implied_team_points,
     lookup_team_prior_offense_rank,
     lookup_team_projected_offense_rank,
     overlay_payload,
     prior_offense_rank_for,
-    projected_ranks_from_week1_games,
+    projected_ranks_from_games,
     rank_teams,
     season_offense_rank_for,
     team_offense_lookup_from_rows,
     usage_team_and_offense,
-    week1_implied_points,
 )
 from dashboard_services.historical.board import (
     _offense_window_title,
@@ -67,16 +67,16 @@ def test_rank_teams_best_is_one():
     assert ranks["NYJ"] == 3
 
 
-def test_week1_implied_points_home_favored():
+def test_implied_team_points_home_favored():
     # total 46.5, home -10.5 favorite in nflverse (spread_line +10.5)
-    assert week1_implied_points(46.5, 10.5, home=True) == 28.5
-    assert week1_implied_points(46.5, 10.5, home=False) == 18.0
-    assert week1_implied_points(None, 3) is None
-    assert week1_implied_points(44, None) is None
+    assert implied_team_points(46.5, 10.5, home=True) == 28.5
+    assert implied_team_points(46.5, 10.5, home=False) == 18.0
+    assert implied_team_points(None, 3) is None
+    assert implied_team_points(44, None) is None
 
 
-def test_projected_ranks_from_week1_games_alias_and_ties():
-    ranks = projected_ranks_from_week1_games(
+def test_projected_ranks_average_all_games_not_just_one_week():
+    ranks = projected_ranks_from_games(
         [
             {"home": "LAC", "away": "ARI", "total_line": 46.5, "spread_line": 10.5},
             {"home_team": "LA", "away_team": "SF", "total_line": 48.5, "spread_line": 3.5},
@@ -91,6 +91,19 @@ def test_projected_ranks_from_week1_games_alias_and_ties():
     assert ranks["ARI"] == 6
     assert season_offense_rank_for({2026: ranks}, "LA", 2026) == 3
     assert season_offense_rank_for({2026: ranks}, "ARI", 2026) == 6
+
+    # A second LAC game with a low implied total should pull LAC down.
+    # Summing would still leave LAC first; averaging should not.
+    averaged = projected_ranks_from_games(
+        [
+            {"home": "LAC", "away": "ARI", "total_line": 46.5, "spread_line": 10.5},
+            {"home": "LAC", "away": "DET", "total_line": 40.0, "spread_line": -6.0},
+        ]
+    )
+    # LAC: (28.5 + 17.0) / 2 = 22.75; DET: 23.0; ARI: 18.0
+    assert averaged["DET"] == 1
+    assert averaged["LAC"] == 2
+    assert averaged["ARI"] == 3
 
 
 def test_usage_rows_rank_and_prior_lookup():
@@ -230,7 +243,7 @@ def test_overlay_stamps_projected_prior_and_extra_years():
     assert feats["projected_offense_rank_bucket"] == "21_32"
     assert feats["prior_offense_rank"] == 2
     assert feats["team"] == "ARI"
-    assert data["team_offense"]["projected_source"] == "nflverse_week1_implied_total"
+    assert data["team_offense"]["projected_source"] == "nflverse_season_implied_total"
 
 
 def test_committed_overlay_has_projected_and_extra_years():
@@ -243,8 +256,8 @@ def test_committed_overlay_has_projected_and_extra_years():
     data = json.loads(path.read_text(encoding="utf-8"))
     projected = data.get("projected_ranks_by_season") or {}
     assert "2016" in projected and "2026" in projected
-    assert projected["2026"]["ARI"] >= 21
-    assert projected["2026"]["LAC"] == 1
+    assert len(projected["2024"]) == 32
+    assert projected["2026"]["ARI"] >= 1
     extras = data.get("extra_observations") or []
     seasons = {row["season"] for row in extras}
     assert 2016 in seasons and 2017 in seasons

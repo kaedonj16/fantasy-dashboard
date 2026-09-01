@@ -254,7 +254,7 @@ zero-fills for live valuation. Do not point the historical layer at it.
 | Historical ADP | **redraft PPR 1QB**, frozen snapshots **2018–2025** | Sleeper `adp_ppr` 2020+ (empty 2018–19); MFL PPR 12-team real drafts 2018+ (selected-only ≥25%); ESPN only when the board passes a preseason quality gate (2021/22/25 fail the “170 wall”). Yahoo has **no season axis**. Sleeper 999 → missing. |
 | SF / TEP historical ADP | **does not exist** in free sources | Not claimed. Sleeper `adp_2qb` is stored on the Sleeper snapshot but is not blended into 1QB hit rates. |
 | Current-season projections | live Sleeper only (Phase 7) | Not stored on warehouse rows. No historical preseason backfill. |
-| Week-1 projected team offense | **2016–2026** nflverse `spread_line` + `total_line` | Rank 1 = highest implied total. Overlay `team_offense_overlay.json`. Request path does not import `nfl_data_py`. |
+| Season-long projected team offense | **2016–2026** nflverse `spread_line` + `total_line` on regular-season games | Rank 1 = highest average implied total among games with a line. Overlay `team_offense_overlay.json`. Request path does not import `nfl_data_py`. Live 2026 uses every posted line, not week 1 only. |
 | Extra 2016–17 cohort seasons | skill-position PPR finishes from nflverse seasonal + rosters | Stamped onto the cohort index at load for Trends/Hist only. Not a full warehouse rebuild. |
 
 Do not claim “2012+” uniformly.

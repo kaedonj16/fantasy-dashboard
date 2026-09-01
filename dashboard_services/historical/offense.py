@@ -1,8 +1,10 @@
 """Team offense ranks for historical Trends (pure).
 
-Projected ranks are week-1 implied team totals from nflverse
-``spread_line`` + ``total_line`` (positive spread = home favored). That is
-a preseason Vegas number, not that season's actual offense finish.
+Projected ranks are season-long implied team scoring from nflverse
+``spread_line`` + ``total_line`` on regular-season games (positive spread =
+home favored). Rank 1 is the highest average implied total among games that
+have a line. That is a Vegas scoring projection, not that season's actual
+offense finish.
 
 Last year's actual team offense rank (yards + TDs) stays as a second analog.
 Same-season actual rank is an outcome-year leak and is not a feature.
@@ -102,7 +104,7 @@ def rank_teams(scores: Mapping[str, float]) -> dict[str, int]:
     return out
 
 
-def week1_implied_points(total: Any, spread: Any, *, home: bool = True) -> Optional[float]:
+def implied_team_points(total: Any, spread: Any, *, home: bool = True) -> Optional[float]:
     """Implied team points from a Vegas total and spread.
 
     nflverse ``spread_line`` is from the home team's side: a positive number
@@ -115,9 +117,16 @@ def week1_implied_points(total: Any, spread: Any, *, home: bool = True) -> Optio
     return (tot + spr) / 2.0 if home else (tot - spr) / 2.0
 
 
-def projected_ranks_from_week1_games(games: Sequence[Mapping[str, Any]]) -> dict[str, int]:
-    """1 = highest week-1 implied total. Missing lines skip that team."""
-    scores: dict[str, float] = {}
+week1_implied_points = implied_team_points
+
+
+def projected_ranks_from_games(games: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    """1 = highest average implied total across the games that have a line.
+
+    Summing would favor teams with more posted games (the live 2026 slate is
+    only partly lined). Missing lines skip that game, not the team.
+    """
+    buckets: dict[str, list[float]] = {}
     for game in games or []:
         if not isinstance(game, Mapping):
             continue
@@ -130,14 +139,22 @@ def projected_ranks_from_week1_games(games: Sequence[Mapping[str, Any]]) -> dict
         total = game.get("total_line")
         spread = game.get("spread_line")
         if home:
-            pts = week1_implied_points(total, spread, home=True)
+            pts = implied_team_points(total, spread, home=True)
             if pts is not None:
-                scores[home] = pts
+                buckets.setdefault(home, []).append(pts)
         if away:
-            pts = week1_implied_points(total, spread, home=False)
+            pts = implied_team_points(total, spread, home=False)
             if pts is not None:
-                scores[away] = pts
+                buckets.setdefault(away, []).append(pts)
+    scores = {
+        team: sum(vals) / len(vals)
+        for team, vals in buckets.items()
+        if vals
+    }
     return rank_teams(scores)
+
+
+projected_ranks_from_week1_games = projected_ranks_from_games
 
 
 def team_offense_lookup_from_rows(
@@ -382,7 +399,7 @@ def apply_team_offense_overlay(data: dict, overlay: Mapping[str, Any]) -> int:
             {"id": key, "label": label, "lo": lo, "hi": hi}
             for key, label, lo, hi in TRENDS_OFFENSE_RANGES
         ],
-        "projected_source": overlay.get("projected_source") or "nflverse_week1_implied_total",
+        "projected_source": overlay.get("projected_source") or "nflverse_season_implied_total",
         "prior_analog": overlay.get("prior_analog") or "prior_season_actual",
         "extra_seasons": overlay.get("extra_seasons") or [],
     }
@@ -459,7 +476,7 @@ def lookup_team_projected_offense_rank(
     *,
     season: Any = None,
 ) -> Optional[int]:
-    """Week-1 implied-total rank for a live player's current NFL team."""
+    """Season-long implied-total rank for a live player's current NFL team."""
     block = aggregates.get("team_offense") if isinstance(aggregates, Mapping) else None
     if not isinstance(block, Mapping):
         return None
@@ -523,7 +540,7 @@ def overlay_payload(
     projected_ranks_by_season: Optional[Mapping[Any, Mapping[str, int]]] = None,
     extra_observations: Optional[Sequence[Mapping[str, Any]]] = None,
     extra_seasons: Optional[Sequence[int]] = None,
-    projected_source: str = "nflverse_week1_implied_total",
+    projected_source: str = "nflverse_season_implied_total",
 ) -> dict[str, Any]:
     latest = latest_completed_season(ranks_by_season)
     payload: dict[str, Any] = {

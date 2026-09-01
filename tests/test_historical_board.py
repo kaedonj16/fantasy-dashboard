@@ -709,7 +709,8 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     assert "Top 10 projected" in off_labels
     assert "Top 10 projected, year 1" in off_labels
     assert "11-20 projected" in off_labels
-    assert "week-1" in (offense.get("note") or "")
+    assert "season-long" in (offense.get("note") or "")
+    assert "regular-season" in (offense.get("note") or "")
     assert "implied" in (offense.get("note") or "")
     last_year = next(sec for sec in rb["sections"] if sec["id"] == "offense_last_year")
     assert last_year["heading"] == "Offense last year"

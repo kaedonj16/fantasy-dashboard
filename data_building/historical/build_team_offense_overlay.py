@@ -1,9 +1,9 @@
 """Build cache/player_history/team_offense_overlay.json.
 
-Week-1 implied team totals (nflverse spread + total) for 2016-2026, extra
-2016-2017 player-seasons so Trends cover the documented 2016 floor, and
-actual team offense ranks for 2015-2017 so last-year lookups work on those
-extra seasons.
+Season-long implied team scoring (nflverse spread + total on regular-season
+games) for 2016-2026, extra 2016-2017 player-seasons so Trends cover the
+documented 2016 floor, and actual team offense ranks for 2015-2017 so
+last-year lookups work on those extra seasons.
 
 nfl_data_py + pandas live here only. Request paths must not import this.
 """
@@ -27,7 +27,7 @@ from dashboard_services.historical.finishes import assign_season_finishes
 from dashboard_services.historical.offense import (
     extra_observations_from_player_seasons,
     overlay_payload,
-    projected_ranks_from_week1_games,
+    projected_ranks_from_games,
     rank_teams,
 )
 from dashboard_services.historical.seasons import row_appeared
@@ -35,7 +35,7 @@ from dashboard_services.historical.seasons import row_appeared
 PROJECTED_SEASONS = tuple(range(RELIABLE_SEASON_FLOOR, 2027))
 EXTRA_SEASONS = (2016, 2017)
 PRIOR_RANK_SEASONS = (2015, 2016, 2017)
-PROJECTED_SOURCE = "nflverse_week1_implied_total"
+PROJECTED_SOURCE = "nflverse_season_implied_total"
 
 
 def _clean(value: Any) -> Any:
@@ -85,26 +85,32 @@ def _row_dict(frame_row: Any, columns: list[str]) -> dict[str, Any]:
     return out
 
 
-def week1_games_from_schedule(frame: Any) -> list[dict[str, Any]]:
-    """Regular-season week-1 games with spread/total from an nflverse schedule frame."""
+def regular_season_games_from_schedule(frame: Any) -> list[dict[str, Any]]:
+    """Regular-season games with spread/total from an nflverse schedule frame.
+
+    Games without a line are omitted. Week 1 is not special: every posted
+    regular-season game counts toward the season implied total.
+    """
     if frame is None or getattr(frame, "empty", True):
         return []
     games = []
     subset = frame
     if "game_type" in frame.columns:
         subset = subset[subset["game_type"] == "REG"]
-    if "week" in subset.columns:
-        subset = subset[subset["week"] == 1]
     for _, row in subset.iterrows():
         home = normalize_team_abbr(row.get("home_team") or row.get("home"))
         away = normalize_team_abbr(row.get("away_team") or row.get("away"))
         if not home or not away:
             continue
+        spread = _floatish(row.get("spread_line"))
+        total = _floatish(row.get("total_line"))
+        if spread is None or total is None:
+            continue
         games.append({
             "home": home,
             "away": away,
-            "spread_line": _floatish(row.get("spread_line")),
-            "total_line": _floatish(row.get("total_line")),
+            "spread_line": spread,
+            "total_line": total,
         })
     return games
 
@@ -238,8 +244,8 @@ def build_overlay_payload(
 
     projected: dict[int, dict[str, int]] = {}
     for year in PROJECTED_SEASONS:
-        games = week1_games_from_schedule((schedules or {}).get(year))
-        table = projected_ranks_from_week1_games(games)
+        games = regular_season_games_from_schedule((schedules or {}).get(year))
+        table = projected_ranks_from_games(games)
         if table:
             projected[year] = table
 

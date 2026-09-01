@@ -122,7 +122,7 @@ TRENDS_ROUND1_PICK_RANGES: Tuple[Tuple[str, str, int, int], ...] = (
     ("picks_26_32", "Rest of Round 1", 26, 32),
 )
 
-# Team offense rank bands (1 = best). Used for week-1 projected implied
+# Team offense rank bands (1 = best). Used for season-long projected implied
 # totals and for last year's actual yards+TDs. Same-season actual rank
 # is not a feature. Inclusive lo/hi like TRENDS_ROUND1_PICK_RANGES.
 TRENDS_OFFENSE_RANGES: Tuple[Tuple[str, str, int, int], ...] = (

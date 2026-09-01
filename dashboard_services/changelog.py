@@ -13,7 +13,7 @@ CHANGELOG = [
     {
         "date": "2026-09-01",
         "tag": "update",
-        "text": "Draft Cheat Sheet Hist: team-offense rows now use week-1 implied totals from nflverse (spread and total) as the projected offense, cover 2016-2025, and still show last year's actual rank as a second analog.",
+        "text": "Draft Cheat Sheet Hist: team-offense rows now use season-long implied totals from nflverse (spread and total on regular-season games) as the projected offense, cover 2016-2025, and still show last year's actual rank as a second analog.",
         "link": "/draft/cheat-sheet"
     },
     {

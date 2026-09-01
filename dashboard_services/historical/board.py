@@ -1098,10 +1098,10 @@ def _add_offense_hist_rows(
 ) -> None:
     if analog == "projected":
         any_sentence = (
-            "{pos}s on a team with a {band} week-1 implied total that season finished top-12"
+            "{pos}s on a team with a {band} season implied total finished top-12"
         )
         year_sentence = (
-            "{pos}s on a team with a {band} week-1 implied total that season "
+            "{pos}s on a team with a {band} season implied total "
             "finished top-12 in {when}"
         )
     else:
@@ -2129,10 +2129,10 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         sid="offense",
         heading="Projected offense",
         note=(
-            f"Hit rate for {pos}s whose NFL team opened that season with a week-1 "
-            "implied point total in that band (nflverse spread and total). Rank 1 "
-            "is the highest implied total. This is a preseason Vegas projection, "
-            "not that season's actual offense finish."
+            f"Hit rate for {pos}s whose NFL team had a season-long implied "
+            "scoring total in that band (nflverse spread and total on regular-season "
+            "games). Rank 1 is the highest average implied total. This is a Vegas "
+            "projection of that season's offense, not the actual finish."
         ),
         rows=offense_rows,
         finish_tied=True,
@@ -2178,7 +2178,7 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         note=(
             f"Hit rate for {pos}s whose NFL team ranked in that band in offense "
             "the year before (yards and touchdowns). Last year's actual rank, not "
-            "that season's finish and not the week-1 implied total."
+            "that season's finish and not the season implied total."
         ),
         rows=last_year_rows,
         finish_tied=True,
