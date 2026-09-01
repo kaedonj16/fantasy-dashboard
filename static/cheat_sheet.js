@@ -2325,10 +2325,46 @@
     function histVpRow(label, pct, cls) {
         var w = (pct != null && isFinite(Number(pct))) ? Math.max(0, Math.min(100, Number(pct))) : 0;
         return '<div class="cs-hist-vp-row"><div class="cs-hist-vp-top">'
-            + '<span class="cs-hist-vp-k">' + esc(label) + '</span>'
+            + '<span class="cs-hist-vp-k">' + esc(deDash(label)) + '</span>'
             + '<span class="cs-hist-vp-v">' + (pct != null ? pct + '%' : '-') + '</span></div>'
             + '<div class="cs-hist-vp-track"><div class="cs-hist-vp-fill ' + cls
             + '" style="width:' + w + '%"></div></div></div>';
+    }
+
+    // Backend copy uses em/en dashes (e.g. age buckets "23–27"); the modal wants
+    // plain hyphens. Applied to every backend-derived string the modal shows.
+    function deDash(s) {
+        return String(s == null ? '' : s).replace(/—/g, '-').replace(/–/g, '-');
+    }
+
+    // One compact trend row for the "Trends behind it" table: signal dot, label,
+    // sample size, a mini bar scaled to the section span, and the pct + signed lift.
+    function histCompactTrendRow(row, span) {
+        row = row || {};
+        var pct = (row.pct != null && isFinite(Number(row.pct))) ? Number(row.pct) : null;
+        var miss = row.polarity === 'miss';
+        var beats = typeof row.vs_baseline === 'number' && row.vs_baseline > 0;
+        var strong = pct != null && pct >= HIST_STRONG_PCT;
+        var good = !miss && (beats || strong);
+        var dotCls = miss ? 'is-miss' : (good ? 'is-up' : '');
+        var fillCls = good ? 'is-up' : 'is-neutral';
+        var w = (pct != null && span > 0) ? Math.max(2, Math.min(100, (pct / span) * 100)) : 0;
+        var shown = row.display != null && row.display !== ''
+            ? row.display
+            : (pct != null ? pct + '%' : '-');
+        var vs = '';
+        if (typeof row.vs_baseline === 'number' && row.vs_baseline !== 0) {
+            vs = '<span class="cs-hist-tp-vs ' + (row.vs_baseline > 0 ? 'is-up' : 'is-down') + '">'
+                + (row.vs_baseline > 0 ? '+' : '') + row.vs_baseline + '</span>';
+        }
+        return '<div class="cs-hist-tp-row">'
+            + '<span class="cs-hist-tp-dot ' + dotCls + '"></span>'
+            + '<div class="cs-hist-tp-main"><div class="cs-hist-tp-label">' + esc(deDash(histTrendTitle(row))) + '</div>'
+            + (row.n != null ? '<div class="cs-hist-tp-meta">' + esc(histSampleLabel(row.n)) + '</div>' : '')
+            + '</div>'
+            + '<div class="cs-hist-tp-bar"><div class="cs-hist-tp-fill ' + fillCls + '" style="width:' + w + '%"></div></div>'
+            + '<span class="cs-hist-tp-pct">' + esc(String(shown)) + ' ' + vs + '</span>'
+            + '</div>';
     }
 
     function histTrendRow(row, barHtml, markCells) {
@@ -3423,42 +3459,40 @@
                     + '<div class="cs-hist-tier-v">' + (row.pct != null ? row.pct + '%' : '-') + '</div></div>';
             });
             html += '</div>';
-            if (copy.headline) html += '<p class="cs-hist-cohort">' + esc(copy.headline) + '</p>';
-            if (copy.sample_prior_note) html += '<p class="cs-hist-note">' + esc(copy.sample_prior_note) + '</p>';
-            if (copy.typical_note) html += '<p class="cs-hist-note">' + esc(copy.typical_note) + '</p>';
+            if (copy.headline) html += '<p class="cs-hist-cohort">' + esc(deDash(copy.headline)) + '</p>';
+            if (copy.sample_prior_note) html += '<p class="cs-hist-note">' + esc(deDash(copy.sample_prior_note)) + '</p>';
+            if (copy.typical_note) html += '<p class="cs-hist-note">' + esc(deDash(copy.typical_note)) + '</p>';
             html += '</div>';
         }
-        // Trends next: the evidence behind the verdict, shown inline (not hidden)
-        // so the reasoning is visible without a click.
+        // Trends next: the evidence behind the verdict, as a compact inline table
+        // (signal dot, label, sample, mini bar, lift). The first few show; the
+        // rest tuck behind a "See all" toggle so the modal stays short.
         var trends = (Array.isArray(copy.trends) ? copy.trends : []).filter(function (row) {
             var kind = row && row.kind;
             return kind !== 'adp' && kind !== 'adp_positional';
         });
         if (trends.length) {
-            var histBaseline = null;
+            var trSpan = 1;
             trends.forEach(function (row) {
-                var inferred = trendsBaselineOf(row);
-                if (histBaseline == null && inferred != null) histBaseline = inferred;
+                if (row && row.pct != null && isFinite(Number(row.pct)) && Number(row.pct) > trSpan) {
+                    trSpan = Number(row.pct);
+                }
             });
-            var histSpan = trendsRailSpan(histBaseline, [], trends.map(function (row) {
-                return row && row.pct;
-            }));
-            html += '<section class="cs-hist-sec"><h3>' + esc(copy.trends_heading || 'Trends behind it') + '</h3>';
-            if (copy.trends_note) html += '<p class="cs-hist-note">' + esc(copy.trends_note) + '</p>';
-            var groups = (Array.isArray(copy.trend_groups) && copy.trend_groups.length)
-                ? copy.trend_groups
-                : [{ id: 'all', heading: '', rows: trends }];
-            groups.forEach(function (sec) {
-                if (!sec || !sec.rows || !sec.rows.length) return;
-                var markCells = sec.rows.some(function (r) { return r && r.role === 'analog'; });
-                html += '<div class="cs-hist-sec">';
-                if (sec.heading) html += '<h3>' + esc(sec.heading) + '</h3>';
-                html += '<div class="cs-hist-hits">';
-                sec.rows.forEach(function (row) {
-                    html += trendsHitRow(row, row && row.polarity, histBaseline, histSpan, markCells);
+            var TR_SHOWN = 4;
+            html += '<section class="cs-hist-sec"><h3>Trends behind it</h3>';
+            html += '<div class="cs-hist-tp">';
+            trends.slice(0, TR_SHOWN).forEach(function (row) {
+                html += histCompactTrendRow(row, trSpan);
+            });
+            html += '</div>';
+            if (trends.length > TR_SHOWN) {
+                html += '<details class="cs-hist-tmore"><summary>See all ' + trends.length + ' trends</summary>'
+                    + '<div class="cs-hist-tp">';
+                trends.slice(TR_SHOWN).forEach(function (row) {
+                    html += histCompactTrendRow(row, trSpan);
                 });
-                html += '</div></div>';
-            });
+                html += '</div></details>';
+            }
             html += '</section>';
         }
         // Closest comps last: a longer list, tucked behind a tap-to-open row.
@@ -3468,31 +3502,31 @@
         if (examples.length) {
             var sum = copy.examples_summary || (resp.history && resp.history.closest_summary) || {};
             html += '<details class="cs-hist-sec cs-hist-closest"><summary><h3>'
-                + esc(copy.examples_heading || 'Closest historical examples') + '</h3>'
-                + (sum.label ? '<span class="cs-hist-ex-peek">' + esc(sum.label) + '</span>' : '')
+                + esc(deDash(copy.examples_heading || 'Closest historical examples')) + '</h3>'
+                + (sum.label ? '<span class="cs-hist-ex-peek">' + esc(deDash(sum.label)) + '</span>' : '')
                 + '</summary><div class="cs-hist-closest-body">';
-            if (copy.examples_note) html += '<p class="cs-hist-note">' + esc(copy.examples_note) + '</p>';
+            if (copy.examples_note) html += '<p class="cs-hist-note">' + esc(deDash(copy.examples_note)) + '</p>';
             if (copy.examples_vs_cohort_note) {
-                html += '<p class="cs-hist-note">' + esc(copy.examples_vs_cohort_note) + '</p>';
+                html += '<p class="cs-hist-note">' + esc(deDash(copy.examples_vs_cohort_note)) + '</p>';
             }
-            if (sum.label) html += '<p class="cs-hist-ex-sum">' + esc(sum.label) + '</p>';
+            if (sum.label) html += '<p class="cs-hist-ex-sum">' + esc(deDash(sum.label)) + '</p>';
             html += '<ul class="cs-hist-ex">';
             examples.forEach(function (ex) {
                 if (!ex) return;
-                var left = esc(ex.name || ex.sleeper_id || '') + (ex.season ? ' · ' + esc(String(ex.season)) : '');
+                var left = esc(deDash(ex.name || ex.sleeper_id || '')) + (ex.season ? ' · ' + esc(String(ex.season)) : '');
                 var right = [];
                 if (ex.adp != null && isFinite(Number(ex.adp))) right.push('ADP ' + Number(ex.adp).toFixed(1));
                 if (ex.positional_finish != null) right.push('#' + ex.positional_finish);
                 if (ex.ppr_points != null) right.push(ex.ppr_points + ' pts');
                 var hit = histExampleHit(ex.positional_finish, ex);
                 var traits = Array.isArray(ex.traits)
-                    ? ex.traits.filter(Boolean).map(function (t) { return esc(String(t)); }).join(' · ')
+                    ? ex.traits.filter(Boolean).map(function (t) { return esc(deDash(String(t))); }).join(' · ')
                     : '';
                 html += '<li' + (hit && hit.tier ? ' class="is-' + esc(hit.tier) + '"' : '') + '><span>' + left
                     + (traits ? '<small>' + traits + '</small>' : '')
                     + '</span><span class="cs-hist-ex-right">'
                     + (right.length ? '<span class="cs-hist-ex-meta">' + esc(right.join(' · ')) + '</span>' : '')
-                    + (hit ? '<b class="cs-hist-ex-hit">' + esc(hit.label) + '</b>' : '')
+                    + (hit ? '<b class="cs-hist-ex-hit">' + esc(deDash(hit.label)) + '</b>' : '')
                     + '</span></li>';
             });
             html += '</ul></div></details>';
