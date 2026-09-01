@@ -557,6 +557,7 @@ def test_hist_panel_keeps_draft_capital_when_the_cell_has_seasons():
             "adp": 18,
             "redraft_avg_pick": 18,
             "team": "ARI",
+            "roster_spot": 1,
         },
     )
     dropped = list(panel["history"].get("dropped") or [])
@@ -572,6 +573,14 @@ def test_hist_panel_keeps_draft_capital_when_the_cell_has_seasons():
     offense_titles = [row["title"] for row in panel["copy"]["trends"] if "offense" in row["title"].lower()]
     assert "Top-10 projected offense" in offense_titles
     assert "Top-10 projected offense, year 1" in offense_titles
+    assert "Top-10 projected offense, RB1" in offense_titles
+    assert "Top-10 projected offense, RB2" in offense_titles
+    assert "Top-10 projected offense, RB3+" in offense_titles
+    assert "Top-10 projected offense, RB1, year 1" in offense_titles
+    assert any(
+        "21-32" in title and "RB1" in title and "projected offense" in title and "year 1" not in title
+        for title in offense_titles
+    )
     assert any("21-32" in title and "projected offense" in title and "year 1" not in title for title in offense_titles)
     assert any("21-32" in title and "projected offense" in title and "year 1" in title for title in offense_titles)
     assert any("21-32" in title and "offense last year" in title for title in offense_titles)
@@ -647,6 +656,7 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     assert "top12_as_rookie" in ids
     assert "capital_miss" in ids
     assert "offense" in ids
+    assert "offense_roster" in ids
     assert "age" in ids
     assert "ryoe" in ids
     wr = payload["by_position"]["WR"]
@@ -712,6 +722,21 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     assert "season-long" in (offense.get("note") or "")
     assert "regular-season" in (offense.get("note") or "")
     assert "implied" in (offense.get("note") or "")
+    roster = next(sec for sec in rb["sections"] if sec["id"] == "offense_roster")
+    assert roster["heading"] == "Projected offense by roster spot"
+    roster_labels = [row["label"] for row in roster["rows"]]
+    assert "Top 10 projected, RB1" in roster_labels
+    assert "Top 10 projected, RB2" in roster_labels
+    assert "Top 10 projected, RB3+" in roster_labels
+    assert "21-32 projected, RB3+" in roster_labels
+    assert all("_" not in label for label in roster_labels)
+    assert "preseason ADP" in (roster.get("note") or "")
+    assert "depth chart" in (roster.get("note") or "")
+    rb1 = next(row for row in roster["rows"] if row["label"] == "Top 10 projected, RB1")
+    rb3 = next(row for row in roster["rows"] if row["label"] == "Top 10 projected, RB3+")
+    assert rb1.get("n") and rb3.get("n")
+    assert rb1["match"]["group"] == "offense_roster"
+    assert rb1["match"]["all"]
     last_year = next(sec for sec in rb["sections"] if sec["id"] == "offense_last_year")
     assert last_year["heading"] == "Offense last year"
     last_labels = [row["label"] for row in last_year["rows"]]
@@ -862,6 +887,7 @@ def test_hist_trend_titles_keep_distinct_capital_and_age_rows():
     assert format_hist_trend_title(kind="offense", label="Team offense", bucket="Top 10") == "Top-10 projected offense"
     assert format_hist_trend_title(kind="offense_year_1", label="Team offense", bucket="Top 10") == "Top-10 projected offense, year 1"
     assert format_hist_trend_title(kind="offense_last_year", label="Team offense", bucket="Top 10") == "Top-10 offense last year"
+    assert format_hist_trend_title(kind="offense_roster", label="Team offense", bucket="Top 10, RB1") == "Top-10 projected offense, RB1"
     from dashboard_services.historical.board import matches_trend_filter
 
     feats = {

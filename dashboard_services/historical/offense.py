@@ -421,6 +421,9 @@ def apply_team_offense_overlay(data: dict, overlay: Mapping[str, Any]) -> int:
             feats, season_offense_rank_for(projected, team, season)
         ):
             stamped += 1
+    from dashboard_services.historical.roster import assign_observation_roster_spots
+
+    stamped += assign_observation_roster_spots(index.get("observations") or [])
     by_player = pre.get("by_player") if isinstance(pre.get("by_player"), dict) else {}
     prior_year = (upcoming - 1) if upcoming is not None else latest
     for pid, rec in by_player.items():

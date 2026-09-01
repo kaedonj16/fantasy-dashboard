@@ -196,7 +196,8 @@ def extract_trend_features(row: Mapping[str, Any]) -> dict[str, Any]:
     """Compact preseason buckets used by Scout and historical cohort matching.
 
     Same keys as ``build_player_feature_index``. Missing dims are omitted.
-    Same-season actuals / ADP / projections are not features.
+    Same-season actuals / ADP / projections are not features. Roster spot is
+    preseason ADP rank among teammates, not the ADP value itself.
     """
     if not isinstance(row, Mapping):
         return {}
@@ -253,6 +254,11 @@ def extract_trend_features(row: Mapping[str, Any]) -> dict[str, Any]:
         bucket = offense_rank_bucket(proj)
         if bucket:
             feats["projected_offense_rank_bucket"] = bucket
+    from dashboard_services.historical.roster import normalize_roster_spot
+
+    spot = normalize_roster_spot(row.get("roster_spot"))
+    if spot is not None:
+        feats["roster_spot"] = spot
     return feats
 
 
@@ -318,6 +324,11 @@ def live_board_trend_features(player: Mapping[str, Any]) -> dict[str, Any]:
     proj = _optional_int(player.get("projected_offense_rank"))
     if proj is not None and proj > 0:
         row["projected_offense_rank"] = proj
+    from dashboard_services.historical.roster import normalize_roster_spot
+
+    spot = normalize_roster_spot(player.get("roster_spot"))
+    if spot is not None:
+        row["roster_spot"] = spot
     return extract_trend_features(row)
 
 
@@ -476,6 +487,12 @@ def matched_filter_labels(
             continue
         if not matches_trend_filter(feats, spec):
             continue
+        if spec.get("all"):
+            label = str(spec.get("label") or "").strip()
+            if label and label not in seen:
+                seen.add(label)
+                labels.append(label)
+            continue
         label = str(spec.get("label") or spec.get("eq") or spec.get("field") or "").strip()
         if not label or label in seen:
             continue
@@ -537,6 +554,9 @@ def canonical_filter_key(filters: Iterable[Mapping[str, Any]]) -> tuple:
             for k in ("group", "field", "eq", "in", "gte", "lte", "between", "null_as")
             if k in spec and spec[k] is not None
         }
+        nested = spec.get("all")
+        if nested:
+            rec["all"] = canonical_filter_key(nested)
         if rec.get("in") is not None:
             rec["in"] = tuple(rec["in"])
         if rec.get("between") is not None:

@@ -457,6 +457,7 @@ _EXAMPLE_TRAIT_ORDER = (
     "prior_finish",
     "prior_offense_rank",
     "projected_offense_rank",
+    "roster_spot",
     "target_share",
     "snap_pct",
     "adot",
@@ -564,6 +565,12 @@ def _example_trait_phrase(
         if str(value) == "top_10":
             name = "Top 10"
         return f"Offense: {name} projected" if name else ""
+    if key == "roster_spot":
+        from dashboard_services.historical.roster import roster_spot_label
+
+        pos = str((feats or {}).get("position") or "").upper()
+        label = roster_spot_label(pos, value)
+        return f"Spot: {label}" if label else ""
     if key == "prior_elite":
         return raw
     if key == "adot":
@@ -596,6 +603,18 @@ def _example_traits(feats: Mapping[str, Any], filters: Sequence[Mapping[str, Any
 
     for spec in filters or ():
         if not isinstance(spec, Mapping):
+            continue
+        parts = list(spec.get("all") or [])
+        if parts:
+            if not matches_trend_filter(feats, spec):
+                continue
+            for part in parts:
+                if not isinstance(part, Mapping):
+                    continue
+                field = str(part.get("field") or part.get("group") or "")
+                value = feats.get(field) if field and feats.get(field) not in (None, "") else part.get("eq")
+                if field and value not in (None, ""):
+                    add(field, value)
             continue
         if not matches_trend_filter(feats, spec):
             continue
@@ -742,7 +761,7 @@ def _selected_filters_payload(filters: Sequence[Mapping[str, Any]], pos: str) ->
             "field": spec.get("field"),
             "label": spec.get("label") or spec.get("eq") or spec.get("field"),
         }
-        for key in ("eq", "in", "gte", "lte", "between", "null_as"):
+        for key in ("eq", "in", "gte", "lte", "between", "null_as", "all"):
             if key in spec:
                 rec[key] = spec[key]
         out.append(rec)

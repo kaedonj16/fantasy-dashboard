@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-09-01",
         "tag": "update",
+        "text": "Draft Cheat Sheet Hist: projected-offense rates now split by preseason roster spot (RB1 vs RB2 vs RB3+ by ADP among teammates), so a starting RB on a top-10 projected offense is not mixed with an RB3.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-09-01",
+        "tag": "update",
         "text": "Draft Cheat Sheet Hist: sample sizes now say Sample: 318 instead of n=318.",
         "link": "/draft/cheat-sheet"
     },

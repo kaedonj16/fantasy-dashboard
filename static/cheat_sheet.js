@@ -2197,6 +2197,8 @@
         if (liveProj != null) qs.push('proj_ppg=' + encodeURIComponent(liveProj));
         if (liveProjRk != null && isFinite(liveProjRk)) qs.push('proj_rk=' + encodeURIComponent(liveProjRk));
         if (liveAdpRk != null && isFinite(liveAdpRk)) qs.push('adp_rk=' + encodeURIComponent(liveAdpRk));
+        var liveSpot = hist.trend_feats && hist.trend_feats.roster_spot;
+        if (liveSpot != null && isFinite(Number(liveSpot))) qs.push('roster_spot=' + encodeURIComponent(liveSpot));
         if (qs.length) url += '?' + qs.join('&');
         fetch(url, {cache: 'no-store'})
             .then(function (r) {
@@ -2262,6 +2264,16 @@
         }
         if (kind === 'offense_last_year_2' && bucket) {
             return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' offense last year, year 2';
+        }
+        if ((kind === 'offense_roster' || kind === 'offense_roster_1' || kind === 'offense_roster_2') && bucket) {
+            var bits = String(bucket).split(', ');
+            var band = bits[0] || bucket;
+            var spot = bits.length > 1 ? bits.slice(1).join(', ') : '';
+            var base = (String(band).toLowerCase() === 'top 10' ? 'Top-10' : band) + ' projected offense';
+            if (spot) base += ', ' + spot;
+            if (kind === 'offense_roster_1') return base + ', year 1';
+            if (kind === 'offense_roster_2') return base + ', year 2';
+            return base;
         }
         if (label && !generic[label.toLowerCase()]) return label;
         return qualified || label || row.sentence || '';
@@ -2375,7 +2387,8 @@
         target_share_change: 'usage', snap_pct_change: 'usage',
         workload_change: 'usage',
         offense: 'team', offense_year_1: 'team', offense_year_2: 'team',
-        offense_last_year: 'team', offense_last_year_1: 'team', offense_last_year_2: 'team'
+        offense_last_year: 'team', offense_last_year_1: 'team', offense_last_year_2: 'team',
+        offense_roster: 'team', offense_roster_1: 'team', offense_roster_2: 'team'
     };
     var TRENDS_LANES = [
         ['all', 'All'], ['career', 'Career'],
@@ -2404,7 +2417,10 @@
         workload_change: 'Workload',
         offense: 'Offense',
         offense_year_1: 'Offense',
-        offense_year_2: 'Offense'
+        offense_year_2: 'Offense',
+        offense_roster: 'Offense',
+        offense_roster_1: 'Offense',
+        offense_roster_2: 'Offense'
     };
 
     function trendsConfKey(label) {
@@ -2540,11 +2556,11 @@
                 field: spec.field,
                 label: rec.label || spec.eq || spec.field
             };
-            ['eq', 'in', 'gte', 'lte', 'between', 'null_as'].forEach(function (k) {
+            ['eq', 'in', 'gte', 'lte', 'between', 'null_as', 'all'].forEach(function (k) {
                 if (spec[k] !== undefined) out[k] = spec[k];
             });
             return out;
-        }).filter(function (f) { return f.field; });
+        }).filter(function (f) { return f.field || (f.all && f.all.length); });
     }
 
     function loadTrendsCohort(picks, done) {

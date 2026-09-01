@@ -92,6 +92,7 @@ PRESEASON_FIELDS: tuple[str, ...] = (
     "team",
     "prior_offense_rank",
     "projected_offense_rank",
+    "roster_spot",
 )
 
 
@@ -238,6 +239,9 @@ HIST_TREND_PREFIX: dict[str, str] = {
     "offense_last_year": "Offense",
     "offense_last_year_1": "Offense",
     "offense_last_year_2": "Offense",
+    "offense_roster": "Offense",
+    "offense_roster_1": "Offense",
+    "offense_roster_2": "Offense",
 }
 HIST_TREND_GENERIC_LABELS: frozenset[str] = frozenset({
     "age",
@@ -568,6 +572,10 @@ def attach_historical_signals(
         index_map.append(len(queries))
         queries.append(query_for_board_player(row, by_player))
 
+    from dashboard_services.historical.roster import stamp_roster_spots_on_queries
+
+    stamp_roster_spots_on_queries(queries)
+
     compared = compare_board_signals(queries, aggregates) if queries else []
     compact_out: list[dict] = []
     for i, row in enumerate(players):
@@ -845,7 +853,7 @@ def _vs_parts(pct: Any, baseline_pct: Any) -> tuple[Optional[int], Optional[str]
     return 0, "in line with typical"
 
 
-def _match_eq(group: str, field: str, value: str) -> dict:
+def _match_eq(group: str, field: str, value: Any) -> dict:
     return {"group": group, "field": field, "eq": value}
 
 
@@ -942,6 +950,27 @@ def _offense_window_title(bucket: str, window: str, *, analog: str = "last_year"
     return base
 
 
+def _split_offense_roster_bucket(bucket: str) -> tuple[str, str]:
+    text = str(bucket or "").strip()
+    if ", " in text:
+        band, spot = text.rsplit(", ", 1)
+        return band, spot
+    return text, ""
+
+
+def _offense_roster_title(band: str, spot_label: str, window: str) -> str:
+    """Projected-offense band plus preseason roster spot, then the year window."""
+    base = _offense_window_title(band, "any", analog="projected")
+    spot = str(spot_label or "").strip()
+    if spot:
+        base = f"{base}, {spot}"
+    if window == "year_1":
+        return f"{base}, year 1"
+    if window == "year_2":
+        return f"{base}, year 2"
+    return base
+
+
 def format_hist_trend_title(*, kind: str, label: str, bucket: str) -> str:
     """One line for the Hist list. Capital and stage rows always name the year."""
     lab = str(label or "").strip()
@@ -971,6 +1000,14 @@ def format_hist_trend_title(*, kind: str, label: str, bucket: str) -> str:
         return _offense_window_title(buck, "year_1", analog="last_year")
     if kind_key == "offense_last_year_2":
         return _offense_window_title(buck, "year_2", analog="last_year")
+    if kind_key in ("offense_roster", "offense_roster_1", "offense_roster_2"):
+        window = "any"
+        if kind_key.endswith("_1"):
+            window = "year_1"
+        elif kind_key.endswith("_2"):
+            window = "year_2"
+        band, spot = _split_offense_roster_bucket(buck)
+        return _offense_roster_title(band, spot, window)
     prefix = HIST_TREND_PREFIX.get(kind_key)
     qualified = buck
     if prefix and buck and prefix.lower() not in buck.lower():
@@ -1140,6 +1177,95 @@ def _add_offense_hist_rows(
                 label=_offense_window_title(off_label, window, analog=analog),
                 bucket=off_label,
                 sentence=year_sentence.format(pos=pos, band=band_phrase, when=when),
+                rate=rate,
+                baseline_pct=baseline_pct,
+            ))
+
+
+def _roster_spot_filter(spot: int) -> dict:
+    return _match_eq("roster_spot", "roster_spot", int(spot))
+
+
+def _add_offense_roster_hist_rows(
+    add,
+    aggregates: Mapping[str, Any],
+    pos: str,
+    stage: Any,
+    baseline_pct: Any,
+    *,
+    proj: Any,
+    roster_spot: Any,
+) -> None:
+    """Projected-offense band x preseason roster spot. Counted, not multiplied."""
+    from dashboard_services.historical.roster import (
+        ROSTER_SPOTS,
+        normalize_roster_spot,
+        roster_spot_label,
+    )
+
+    top = TRENDS_OFFENSE_RANGES[0]
+    cells: list[tuple] = []
+    seen: set[tuple] = set()
+
+    def remember(band: tuple, spot: int) -> None:
+        key = (band[0], int(spot))
+        if key in seen:
+            return
+        seen.add(key)
+        cells.append((band, int(spot)))
+
+    for spot in ROSTER_SPOTS:
+        remember(top, spot)
+    player_spot = normalize_roster_spot(roster_spot)
+    matching = trends_offense_range(proj)
+    if player_spot is not None and matching and matching[0] != top[0]:
+        remember(matching, player_spot)
+    any_sentence = (
+        "{pos}s who were the {spot} on a team with a {band} season implied total "
+        "finished top-12"
+    )
+    year_sentence = (
+        "{pos}s who were the {spot} on a team with a {band} season implied total "
+        "finished top-12 in {when}"
+    )
+    for band, spot in cells:
+        _key, off_label, lo, hi = band
+        band_phrase = off_label.lower()
+        slabel = roster_spot_label(pos, spot)
+        off_filter = _match_between("projected_offense", "projected_offense_rank", lo, hi)
+        spot_filter = _roster_spot_filter(spot)
+        rec = _cohort_rate_for_filters(aggregates, pos, [off_filter, spot_filter])
+        add(_trend_row(
+            kind="offense_roster",
+            label=_offense_roster_title(off_label, slabel, "any"),
+            bucket=f"{off_label}, {slabel}",
+            sentence=any_sentence.format(pos=pos, spot=slabel, band=band_phrase),
+            rate=rec.get("top_12") if "top_12" in rec else rec,
+            baseline_pct=baseline_pct,
+        ))
+        for window_id, stage_key, window in (
+            ("offense_roster_1", CAREER_STAGE_ROOKIE, "year_1"),
+            ("offense_roster_2", CAREER_STAGE_YEAR_2, "year_2"),
+        ):
+            if stage and stage != stage_key:
+                continue
+            when = "year 1" if window == "year_1" else "year 2"
+            rate = _cohort_rate_for_filters(
+                aggregates,
+                pos,
+                [
+                    off_filter,
+                    spot_filter,
+                    _match_eq("career_stage", "career_stage", stage_key),
+                ],
+            )
+            add(_trend_row(
+                kind=window_id,
+                label=_offense_roster_title(off_label, slabel, window),
+                bucket=f"{off_label}, {slabel}",
+                sentence=year_sentence.format(
+                    pos=pos, spot=slabel, band=band_phrase, when=when
+                ),
                 rate=rate,
                 baseline_pct=baseline_pct,
             ))
@@ -1414,6 +1540,15 @@ def build_hist_trends(
         kind_any="offense",
         kind_y1="offense_year_1",
         kind_y2="offense_year_2",
+    )
+    from dashboard_services.historical.roster import normalize_roster_spot
+
+    _add_offense_roster_hist_rows(
+        add, aggregates, pos, stage, baseline_pct,
+        proj=proj,
+        roster_spot=normalize_roster_spot(
+            query.get("roster_spot") or feats.get("roster_spot")
+        ),
     )
     rank = _optional_int(query.get("prior_offense_rank") or feats.get("prior_offense_rank"))
     if rank is None:
@@ -2135,6 +2270,46 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
             "projection of that season's offense, not the actual finish."
         ),
         rows=offense_rows,
+        finish_tied=True,
+    )
+
+    from dashboard_services.historical.roster import ROSTER_SPOTS, roster_spot_label
+
+    roster_rows = []
+    for key, label, lo, hi in TRENDS_OFFENSE_RANGES:
+        off_match = _match_between("projected_offense", "projected_offense_rank", lo, hi)
+        for spot in ROSTER_SPOTS:
+            slabel = roster_spot_label(pos, spot)
+            spot_match = _roster_spot_filter(spot)
+            bundle = _cohort_rate_for_filters(aggregates, pos, [off_match, spot_match])
+            rec = bundle.get("top_12") or bundle
+            row_label = f"{label} projected, {slabel}"
+            row = _section_row(
+                row_label,
+                rec,
+                baseline_pct=baseline_pct,
+                baselines=finish_baselines,
+                row_id=f"offense_roster:{key}:{spot}",
+                match={
+                    "group": "offense_roster",
+                    "all": [off_match, spot_match],
+                    "label": row_label,
+                },
+                pcts=_collect_pcts(bundle),
+            )
+            if row:
+                roster_rows.append(row)
+    _append_section(
+        sections,
+        sid="offense_roster",
+        heading="Projected offense by roster spot",
+        note=(
+            f"Hit rate for {pos}s in that projected-offense band who were the "
+            f"{pos}1, {pos}2, or {pos}3+ by preseason ADP among teammates at the "
+            f"same position. {pos}1 is the lowest ADP, not a published depth chart. "
+            "Missing ADP stays unknown and is not counted."
+        ),
+        rows=roster_rows,
         finish_tied=True,
     )
 
