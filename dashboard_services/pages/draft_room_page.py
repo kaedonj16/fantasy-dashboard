@@ -922,9 +922,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-cell-mineflag { position: absolute; top: 2px; right: 5px; font-size: 8px; font-weight: 800;
     letter-spacing: .04em; color: var(--accent,#38bdf8); }
   .dr-cell-claimed .dr-cell-mineflag { color: var(--warning); }
-  /* Keeper: a pick spent before the draft, so it reads as settled rather than
-     as a live selection. */
-  .dr-cell-keeper { background: color-mix(in srgb, var(--win,#15803d) 10%, var(--card)); }
+  /* Keeper: same position tint as a live pick; the KEEP flag is the marker.
+     Do not wash the cell green — that hides WR/QB/TE color. */
   .dr-cell-keepflag { position: absolute; top: 2px; right: 5px; font-size: 8px; font-weight: 800;
     letter-spacing: .04em; color: var(--win,#15803d); }
   /* Traded pick: who the pick was dealt to (shown on another team's seat). */

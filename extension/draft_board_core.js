@@ -678,6 +678,28 @@
         return Math.min(11, 3.5 + 2.5 * Math.min(n, 3));
     }
 
+    // 1QB QB2 / 1TE TE2: leftover NFL starters keep 85-99 Pick Scores after the
+    // slot is filled because weekly PPG never went away. The 0.32 utility hit
+    // (~26 points) is not enough when remaining skill is late-round (PS ~55-70),
+    // so the rec list can lead with four "QB filled · backup-only value" rows.
+    // Tax that starter inflation. Fades in the last quarter of the draft so a
+    // backup QB/TE is still a normal closer. Opt-in via streamableBackup.
+    function streamableBackupTax(o) {
+        if (!o || !o.streamableBackup || !o.bench) return 0;
+        var base = +o.base || 0;
+        var inflation = Math.max(0, base - 62);
+        var tax = Math.min(22, 8 + inflation * 0.4);
+        var rd = +o.round || 0, total = +o.totalRounds || 0;
+        if (rd > 0 && total > 0) {
+            var fadeStart = total * 0.75;
+            if (rd >= fadeStart) {
+                var span = Math.max(1, total - fadeStart);
+                tax *= Math.max(0, Math.min(1, (total - rd) / span));
+            }
+        }
+        return tax;
+    }
+
     function decisionScore(o) {
         o = o || {};
         var base = +o.base || 0, util = o.utility == null ? 1 : +o.utility;
@@ -699,6 +721,7 @@
             // Mid-draft luxury bench while a real starter/flex hole remains. Opt-in
             // via draftType + lineupHoles so existing callers/tests stay unchanged.
             if (redraft) score -= redraftBenchHoleTax(holes);
+            score -= streamableBackupTax(o);
         } else if (redraft) {
             // Starter/flex: tilt toward this-year production among similar PS.
             score += Math.max(0, Math.min(4, (+o.quality || 0) * 4));
