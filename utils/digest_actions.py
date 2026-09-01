@@ -257,6 +257,8 @@ def recommend_waivers(
             reason_bits.append(f"{pos} need")
         if badge and badge.lower() not in ("target", ""):
             reason_bits.append(badge)
+        elif val >= 40:
+            reason_bits.append(f"value {int(round(val))}")
         scored.append((score, {
             "player_id": pid,
             "name": name,
@@ -266,7 +268,25 @@ def recommend_waivers(
             "reason": ", ".join(reason_bits),
         }))
     scored.sort(key=lambda t: t[0], reverse=True)
-    return [row for _s, row in scored[: max(0, int(limit or 0))]]
+    return unique_waiver_targets([row for _s, row in scored], limit=limit)
+
+
+def unique_waiver_targets(targets: list, *, limit: int = 3) -> list:
+    """Keep one row per position+primary-reason so the email isn't three identical WRs."""
+    picked: list = []
+    seen: set[tuple] = set()
+    cap = max(0, int(limit or 0))
+    for row in targets or []:
+        if not isinstance(row, dict):
+            continue
+        key = (str(row.get("pos") or ""), str(row.get("reason") or "").split(",")[0].strip().lower())
+        if picked and key in seen:
+            continue
+        picked.append(row)
+        seen.add(key)
+        if len(picked) >= cap:
+            break
+    return picked
 
 
 def start_sit_swap_note(

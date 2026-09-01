@@ -76,20 +76,21 @@ def league_summary_html(
     format_label: str = "",
 ) -> str:
     lg = escape(league_name or "Your league", quote=False)
+    games = int(wins or 0) + int(losses or 0)
     bits = []
-    if rank:
+    if rank and games > 0:
         rec = f"{int(wins or 0)}-{int(losses or 0)}"
         bits.append(
             f'You\'re <strong>#{int(rank)}</strong> in {lg} at <strong>{escape(rec, quote=False)}</strong>.'
         )
     else:
-        bits.append(f'Here\'s your weekly report for {lg}.')
+        bits.append(f'<strong>{lg}</strong> — your weekly report.')
     if format_label:
         bits.append(
             f'<span style="color:#64748b;font-size:13px;">{escape(format_label, quote=False)}</span>'
         )
     return (
-        f'<p style="margin:0 0 4px;font-size:15px;color:#0f172a;">'
+        f'<p style="margin:0 0 16px;font-size:16px;color:#0f172a;line-height:1.45;">'
         + "<br>".join(bits)
         + "</p>"
     )
@@ -138,28 +139,101 @@ def start_sit_html(note: Optional[dict], *, href: str = "") -> str:
     return action_section_html(title, body, href=href, cta="Fix lineup →")
 
 
-def waiver_html(targets: list, *, href: str = "") -> str:
+def waiver_html(
+    targets: list,
+    *,
+    href: str = "",
+    base: str = "",
+    platform: str = "",
+    season: int = 0,
+    league_id: str = "",
+) -> str:
     if not targets:
         return ""
-    lines = []
+    rows = ""
+    shown = 0
     for t in targets[:3]:
         name = str(t.get("name") or "").strip()
         if not name:
             continue
         pos = str(t.get("pos") or "").upper()
         reason = str(t.get("reason") or "").strip()
-        label = f"{pos} {name}".strip() if pos else name
-        if reason:
-            lines.append(f"{label} — {reason}")
-        else:
-            lines.append(label)
-    if not lines:
+        pid = str(t.get("player_id") or "")
+        label = escape(name, quote=False)
+        if base and platform and season and league_id and pid:
+            link = player_deep_link(base, platform, season, league_id, pid, name)
+            label = (
+                f'<a href="{escape(link, quote=True)}" style="color:#0f172a;'
+                f'text-decoration:none;font-weight:700;">{label}</a>'
+            )
+        meta = " · ".join(p for p in (pos, reason) if p)
+        border = "border-top:1px solid #e2e8f0;" if shown else ""
+        rows += (
+            f'<tr><td style="padding:8px 0;{border}font-size:15px;color:#0f172a;">{label}'
+            f'<div style="font-size:12px;color:#64748b;margin-top:2px;">{escape(meta, quote=False)}</div>'
+            f"</td></tr>"
+        )
+        shown += 1
+    if not shown:
         return ""
-    if len(lines) == 1:
-        body = f"Top waiver target: {lines[0]}"
-    else:
-        body = "Top waiver targets: " + "; ".join(lines)
-    return action_section_html("Waiver wire", body, href=href, cta="View waivers →")
+    title_s = escape("Top waiver target" if shown == 1 else "Waiver wire", quote=False)
+    link = ""
+    if href:
+        link = (
+            f'<div style="margin-top:8px;">'
+            f'<a href="{escape(href, quote=True)}" style="font-size:13px;font-weight:700;'
+            f'color:#2563eb;text-decoration:none;">View waivers →</a></div>'
+        )
+    return (
+        f'<div style="margin:18px 0 0;padding:12px 14px;border-radius:10px;'
+        f'background:#f8fafc;border:1px solid #e2e8f0;">'
+        f'<div style="font-size:11px;font-weight:800;letter-spacing:.04em;'
+        f'text-transform:uppercase;color:#64748b;">{title_s}</div>'
+        f'<table style="width:100%;border-collapse:collapse;">{rows}</table>'
+        f"{link}</div>"
+    )
+
+
+def roster_core_html(
+    players: list,
+    *,
+    base: str = "",
+    platform: str = "",
+    season: int = 0,
+    league_id: str = "",
+) -> str:
+    if not players or len(players) < 2:
+        return ""
+    rows = ""
+    for p in players[:3]:
+        name = str(p.get("name") or "").strip()
+        if not name:
+            continue
+        pos = str(p.get("pos") or "").upper()
+        try:
+            val = float(p.get("value") or 0)
+        except (TypeError, ValueError):
+            val = 0.0
+        pid = str(p.get("player_id") or "")
+        label = escape(name, quote=False)
+        if base and platform and season and league_id and pid:
+            link = player_deep_link(base, platform, season, league_id, pid, name)
+            label = (
+                f'<a href="{escape(link, quote=True)}" style="color:#0f172a;'
+                f'text-decoration:none;font-weight:600;">{label}</a>'
+            )
+        pos_s = escape(pos, quote=False)
+        rows += (
+            f'<tr><td style="padding:6px 0;font-size:14px;">{label}'
+            f'<div style="font-size:12px;color:#64748b;">{pos_s}</div></td>'
+            f'<td style="padding:6px 0;font-size:14px;font-weight:700;color:#0f172a;'
+            f'text-align:right;white-space:nowrap;">{val:.0f}</td></tr>'
+        )
+    if not rows:
+        return ""
+    return heading("Your top assets") + (
+        f'<table style="width:100%;border-collapse:collapse;">{rows}</table>'
+    )
 
 
 def injury_html(note: Optional[dict], *, href: str = "") -> str:

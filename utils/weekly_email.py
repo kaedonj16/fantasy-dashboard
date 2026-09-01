@@ -207,11 +207,9 @@ def compact_league_blurb(
     roster_id: str = "",
     league_name: str = "",
     base_url: str = "",
+    run_cache=None,
 ) -> str:
-    """Short secondary-league block for multi-league digests (R12.3).
-
-    Best-effort: returns "" when standings/name cannot be resolved.
-    """
+    """One row for a secondary league. Returns "" when the name is unknown."""
     plat = (platform or "sleeper").strip().lower()
     lid = str(league_id or "").strip()
     if not lid:
@@ -221,6 +219,14 @@ def compact_league_blurb(
     except (TypeError, ValueError):
         return ""
     name = (league_name or "").strip()
+    bundle = None
+    if run_cache is not None:
+        try:
+            bundle = run_cache.league_bundle(plat, season_i, lid)
+        except Exception:
+            bundle = None
+    if not name:
+        name = str(((bundle or {}).get("league") or {}).get("name") or "")
     if not name:
         try:
             from dashboard_services.platform_api import get_league
@@ -230,7 +236,25 @@ def compact_league_blurb(
     if not name:
         return ""
     rank = wins = losses = None
-    if roster_id:
+    roster = {}
+    if bundle and roster_id:
+        roster = (bundle.get("roster_by_id") or {}).get(str(roster_id)) or {}
+        s = roster.get("settings") or {}
+        try:
+            wins = int(s.get("wins") or 0)
+            losses = int(s.get("losses") or 0)
+        except (TypeError, ValueError):
+            wins = losses = 0
+        rosters = bundle.get("rosters") or []
+        if rosters:
+            def _key(r):
+                st = r.get("settings") or {}
+                pts = float(st.get("fpts") or 0)
+                return (int(st.get("wins") or 0), pts)
+            ranked = sorted(rosters, key=_key, reverse=True)
+            rank = next((i + 1 for i, r in enumerate(ranked)
+                         if str(r.get("roster_id")) == str(roster_id)), None)
+    elif roster_id:
         try:
             r, w, l = _canonical_standing(plat, lid, season_i, str(roster_id))
             rank, wins, losses = r, w, l
@@ -238,17 +262,24 @@ def compact_league_blurb(
             rank = None
     base = (base_url or _base_url()).rstrip("/")
     href = f"{base}/{plat}/{season_i}/{lid}/dashboard"
-    line = escape(name)
-    if rank is not None:
-        line += f" — <strong>#{int(rank)}</strong>"
-        if wins is not None:
-            line += f" ({int(wins or 0)}-{int(losses or 0)})"
+    detail = ""
+    games = int(wins or 0) + int(losses or 0)
+    if rank is not None and games > 0:
+        detail = f"#{int(rank)} · {int(wins or 0)}-{int(losses or 0)}"
+    elif bundle:
+        chip = ""
+        try:
+            from utils.digest_sections import format_chip
+            chip = format_chip(bundle.get("format") or {})
+        except Exception:
+            chip = ""
+        detail = chip
     return (
-        f'<div style="margin:8px 0 0;padding:10px 12px;border-radius:8px;'
-        f'background:#f8fafc;border:1px solid #e2e8f0;">'
-        f'<div style="font-size:14px;color:#0f172a;">{line}</div>'
-        f'<a href="{escape(href)}" style="font-size:12px;font-weight:700;'
-        f'color:#2563eb;text-decoration:none;">Open →</a></div>'
+        f'<tr><td style="padding:8px 0;border-top:1px solid #e2e8f0;">'
+        f'<a href="{escape(href)}" style="font-size:14px;font-weight:600;color:#0f172a;'
+        f'text-decoration:none;">{escape(name)}</a>'
+        + (f'<div style="font-size:12px;color:#64748b;">{escape(detail)}</div>' if detail else "")
+        + "</td></tr>"
     )
 
 
@@ -325,6 +356,7 @@ def multi_league_sections_html(
     base_url: str = "",
     limit: int = 2,
     actions: list | None = None,
+    run_cache=None,
 ) -> str:
     """HTML for 'Your other leagues' (+ optional cross-league action bullets).
 
@@ -344,7 +376,7 @@ def multi_league_sections_html(
             compact_league_blurb(
                 platform=o["platform"], season=o["season"], league_id=o["league_id"],
                 roster_id=o.get("roster_id") or "", league_name=o.get("name") or "",
-                base_url=base_url,
+                base_url=base_url, run_cache=run_cache,
             )
             for o in others
         ]
@@ -353,7 +385,11 @@ def multi_league_sections_html(
             parts.append(
                 '<h3 style="margin:22px 0 6px;font-size:13px;text-transform:uppercase;'
                 'letter-spacing:.04em;color:#64748b;">Your other leagues</h3>'
+                '<div style="margin:8px 0 0;padding:4px 14px 10px;border-radius:10px;'
+                'background:#f8fafc;border:1px solid #e2e8f0;">'
+                '<table style="width:100%;border-collapse:collapse;">'
                 + "".join(bits)
+                + "</table></div>"
             )
     try:
         cl = cross_league_digest_html(actions or [], base_url=base_url, limit=3)
@@ -445,6 +481,8 @@ def choose_subject(
     """Most important actionable thing first; never spammy."""
     lg = (league_name or "Your league").strip() or "Your league"
     is_dynasty = bool((fmt or {}).get("is_dynasty"))
+    is_keeper = bool((fmt or {}).get("is_keeper"))
+    long_term = is_dynasty or is_keeper
     note = lineup_note or {}
     title = str(note.get("title") or "").lower()
     body = str(note.get("body") or "").strip()
@@ -479,7 +517,7 @@ def choose_subject(
             return f"{lg}: Top waiver target is {name}"
 
     risers = list(my_risers or [])
-    if is_dynasty and risers:
+    if long_term and risers:
         pid, delta = risers[0][0], risers[0][1]
         nm = _player_name(str(pid), pidx or {})
         n = len(risers)
@@ -490,7 +528,7 @@ def choose_subject(
                 return f"{lg}: #{int(rank)} · {nm} ▲{abs(float(delta)):.0f}"
             return f"{lg}: {nm} ▲{abs(float(delta)):.0f}"
 
-    if rank:
+    if rank and (int(wins or 0) + int(losses or 0) > 0):
         return f"{lg}: #{int(rank)} · {int(wins or 0)}-{int(losses or 0)}"
     return f"{lg}: your weekly fantasy digest"
 
@@ -523,14 +561,14 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
     from utils.digest_context import (
         DigestRunCache, DYNASTY_MOVE_MIN, LEAGUEWIDE_MOVE_MIN,
         breakout_for_roster, filter_movers, in_season, matchup_for_roster,
-        mover_notes, team_display_name, trade_insight_for_roster,
+        mover_notes, roster_core, trade_insight_for_roster, uses_long_term_value,
     )
     from utils.digest_sections import (
         breakout_html, email_shell, format_chip, greeting_html, injury_html,
-        league_summary_html, matchup_html, player_movement_html, start_sit_html,
-        trade_insight_html, waiver_html,
+        league_summary_html, matchup_html, player_movement_html, roster_core_html,
+        start_sit_html, trade_insight_html, waiver_html,
     )
-    from utils.digest_actions import gather_digest_action_items, player_deep_link as _pdl
+    from utils.digest_actions import gather_digest_action_items, player_deep_link as _pdl, unique_waiver_targets
     from utils.league_format import classify_league_roster_format
 
     cache = run_cache if run_cache is not None else DigestRunCache()
@@ -598,14 +636,15 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
         movers = cache.movers_for(is_superflex=bool(fmt.get("is_superflex")))
 
     is_dynasty = bool(fmt.get("is_dynasty"))
+    show_assets = uses_long_term_value(fmt)
     risers = movers.get("risers", []) or []
     fallers = movers.get("fallers", []) or []
     my_risers = filter_movers(risers, want_positive=True, mine=my_pids,
-                              min_abs=DYNASTY_MOVE_MIN, limit=3) if is_dynasty else []
+                              min_abs=DYNASTY_MOVE_MIN, limit=3) if show_assets else []
     my_fallers = filter_movers(fallers, want_positive=False, mine=my_pids,
-                               min_abs=DYNASTY_MOVE_MIN, limit=3) if is_dynasty else []
+                               min_abs=DYNASTY_MOVE_MIN, limit=3) if show_assets else []
     lg_risers = filter_movers(risers, want_positive=True, mine=None,
-                              min_abs=LEAGUEWIDE_MOVE_MIN, limit=3) if is_dynasty else []
+                              min_abs=LEAGUEWIDE_MOVE_MIN, limit=3) if show_assets else []
 
     notes = {}
     try:
@@ -649,16 +688,16 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
     lineup_note = next((i for i in action_items if i.get("kind") == "lineup"), None)
     waiver_item = next((i for i in action_items if i.get("kind") == "waiver"), None)
     injury_item = next((i for i in action_items if i.get("kind") == "injury"), None)
-    waivers = list((waiver_item or {}).get("targets") or [])
+    waivers = unique_waiver_targets(list((waiver_item or {}).get("targets") or []), limit=3)
 
     watch = None
-    if is_dynasty:
+    if show_assets:
         try:
             watch = breakout_for_roster(my_pids, cache, pidx)
         except Exception:
             watch = None
     trade = None
-    if is_dynasty:
+    if show_assets:
         try:
             trade = trade_insight_for_roster(
                 my_pids=my_pids, model_by_id=cache.model_by_id, fmt=fmt,
@@ -667,6 +706,13 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
             )
         except Exception:
             trade = None
+    core = []
+    try:
+        core = roster_core(
+            my_pids, model_by_id=cache.model_by_id, fmt=fmt, pidx=pidx or {},
+        )
+    except Exception:
+        core = []
 
     chip = format_chip(fmt)
     summary = league_summary_html(
@@ -675,12 +721,18 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
     )
     matchup_block = matchup_html(matchup, href=matchups_url) if matchup else ""
     lineup_block = start_sit_html(lineup_note, href=startsit_url) if lineup_note else ""
-    waiver_block = waiver_html(waivers, href=waivers_url) if waivers else (waiver_item or {}).get("html") or ""
+    waiver_block = waiver_html(
+        waivers, href=waivers_url, base=base, platform=platform,
+        season=int(season), league_id=str(league_id),
+    ) if waivers else (waiver_item or {}).get("html") or ""
     injury_block = injury_html(injury_item, href=startsit_url) if injury_item else ""
     movement_block = player_movement_html(
         my_risers=my_risers, my_fallers=my_fallers, lg_risers=lg_risers,
         base=base, platform=platform, season=int(season), league_id=str(league_id),
-        pidx=pidx or {}, notes=notes, show_leaguewide=is_dynasty, dynasty=is_dynasty,
+        pidx=pidx or {}, notes=notes, show_leaguewide=show_assets, dynasty=show_assets,
+    )
+    core_block = roster_core_html(
+        core, base=base, platform=platform, season=int(season), league_id=str(league_id),
     )
     breakout_href = ""
     if watch:
@@ -688,16 +740,18 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
     breakout_block = breakout_html(watch, href=breakout_href)
     trade_block = trade_insight_html(trade, href=trades_url)
 
-    # Format-aware order, shared components.
-    if is_dynasty:
+    # Format-aware order, shared components. Keepers keep players, so they get
+    # value sections; in-season they still lead with matchup/lineup.
+    season_on = in_season(cache)
+    if is_dynasty or (show_assets and not season_on):
         ordered = [
-            summary, movement_block, trade_block, breakout_block,
+            summary, movement_block, core_block, trade_block, breakout_block,
             waiver_block, injury_block, lineup_block, matchup_block,
         ]
     else:
         ordered = [
             summary, matchup_block, lineup_block, waiver_block, injury_block,
-            movement_block, trade_block, breakout_block,
+            movement_block, core_block, trade_block, breakout_block,
         ]
     blocks = [b for b in ordered if b]
     if extra_html:
@@ -706,14 +760,13 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
     has_record = rank is not None and (int(wins or 0) + int(losses or 0) > 0)
     useful = any([
         has_record, matchup_block, lineup_block, waiver_block, injury_block,
-        movement_block, breakout_block, trade_block, extra_html,
+        movement_block, core_block, breakout_block, trade_block, extra_html,
     ])
     if not useful:
         return None
 
     inner = greeting_html(first_name) + "".join(blocks)
-    kind = str(fmt.get("type") or "fantasy")
-    subtitle = f"Your weekly {kind} digest" if kind in ("dynasty", "redraft", "keeper") else "Your weekly fantasy digest"
+    subtitle = league_name if league_name else "Your weekly fantasy digest"
     html = email_shell(inner, subtitle=subtitle, dash_url=dash_url)
 
     subject = choose_subject(
@@ -960,6 +1013,7 @@ def send_weekly_digests(
                 base_url=_base_url(),
                 limit=2,
                 actions=cl_actions,
+                run_cache=cache,
             )
         except Exception:
             logger.debug("[weekly-email] multi-league sections failed", exc_info=True)

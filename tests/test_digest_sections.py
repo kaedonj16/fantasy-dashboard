@@ -72,7 +72,8 @@ def test_waiver_and_start_sit_sections_omit_when_empty():
     assert start_sit_html(None) == ""
     html = waiver_html([{"name": "Add Me", "pos": "RB", "reason": "RB need"}], href="/w")
     assert "Add Me" in html
-    assert "Waiver wire" in html
+    assert "View waivers" in html
+    assert "Top waiver targets:" not in html
     sit = start_sit_html({"title": "Start/Sit", "body": "Consider B over A"})
     assert "Consider B over A" in sit
 

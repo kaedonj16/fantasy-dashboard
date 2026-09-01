@@ -55,7 +55,7 @@ def test_build_digest_links_mover_rows(monkeypatch):
     assert "Justin Jefferson" in html
     assert 'href="https://brfantasy.com/sleeper/2026/L1/dashboard?player=6794' in html
     assert "{UNSUB}" in html
-    assert "weekly dynasty digest" in html.lower() or "dynasty digest" in html.lower()
+    assert "Test League" in html
     assert "Justin Jefferson" in out["subject"]
     assert out["subject"] == "Test League: #2 · Justin Jefferson ▲120"
 
@@ -200,6 +200,43 @@ def test_no_data_omits_digest(monkeypatch):
          mock.patch("utils.digest_context.in_season", return_value=False):
         out = we.build_digest("sleeper", "L1", 2026, "7", movers={"risers": [], "fallers": []}, pidx={})
     assert out is None
+
+
+def test_keeper_digest_includes_value_movers_not_zero_record(monkeypatch):
+    monkeypatch.setenv("SITE_BASE_URL", "https://brfantasy.com")
+    movers = {"risers": [{"player_id": "4046", "delta": 180.0}], "fallers": []}
+    pidx = {"4046": {"full_name": "Justin Jefferson", "position": "WR"}}
+    rosters = [{"roster_id": "7", "players": ["4046"], "settings": {"wins": 0, "losses": 0}}]
+    league = {"name": "BLITZ THE LEAGUE", "settings": {"type": 1},
+              "roster_positions": ["QB", "RB", "WR", "WR", "TE", "FLEX"]}
+    waivers = {"kind": "waiver", "targets": [
+        {"player_id": "w1", "name": "Parker Washington", "pos": "WR", "reason": "Breakout"},
+        {"player_id": "w2", "name": "Luther Burden III", "pos": "WR", "reason": "Breakout"},
+        {"player_id": "w3", "name": "A Running Back", "pos": "RB", "reason": "RB need"},
+    ]}
+
+    with mock.patch("dashboard_services.platform_api.get_rosters", return_value=rosters), \
+         mock.patch("dashboard_services.platform_api.get_league", return_value=league), \
+         mock.patch("dashboard_services.platform_api.get_users", return_value=[]), \
+         mock.patch.object(we, "_canonical_standing", return_value=(6, 0, 0)), \
+         mock.patch("utils.digest_actions.gather_digest_action_items", return_value=[waivers]), \
+         mock.patch("utils.digest_context.DigestRunCache.load_shared", lambda self: None), \
+         mock.patch("utils.digest_context.DigestRunCache.league_bundle", return_value=None), \
+         mock.patch("utils.digest_context.in_season", return_value=False):
+        out = we.build_digest("sleeper", "L1", 2026, "7", first_name="Kaedon", movers=movers, pidx=pidx)
+
+    assert out is not None
+    assert out["format"]["is_keeper"] is True
+    html = out["html"]
+    assert "BLITZ THE LEAGUE" in html
+    assert "at 0-0" not in html
+    assert "Your risers this week" in html
+    assert "Justin Jefferson" in html
+    assert "Parker Washington" in html
+    assert "Luther Burden III" not in html
+    assert "A Running Back" in html
+    assert "Top waiver targets:" not in html
+    assert out["subject"] != "BLITZ THE LEAGUE: #6 · 0-0"
 
 
 def test_unsubscribe_token_roundtrip(monkeypatch):
