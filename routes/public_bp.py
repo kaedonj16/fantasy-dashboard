@@ -763,8 +763,8 @@ def about_page(platform: Optional[str] = None, season: Optional[int] = None,
             <div class="static-section">
               <div class="static-section-title">Supported Platforms</div>
               <p>
-                BR Fantasy works with <strong>Sleeper</strong> and <strong>ESPN</strong> leagues
-                today, with Yahoo support on the roadmap. It supports dynasty, keeper, and redraft
+                BR Fantasy works with <strong>Sleeper</strong>, <strong>ESPN</strong>, and
+                <strong>Yahoo</strong> leagues today, plus MFL and Fleaflicker. It supports dynasty, keeper, and redraft
                 formats, in both single-quarterback and Superflex configurations, values and
                 tools adjust automatically to your league's settings.
               </p>

@@ -1224,7 +1224,7 @@ FORM_BODY = """
       <p class="home-brand">BR Fantasy</p>
       <h1 class="home-title">Your dynasty league,<br><span class="home-rot" aria-label="upgraded"><span class="home-rot-track"><span>upgraded.</span><span>decoded.</span><span>dominated.</span><span>upgraded.</span></span></span></h1>
       <p class="home-subtitle">
-        Trade values, AI analysis, and league tools for Sleeper, ESPN, MFL, and Fleaflicker. Yahoo coming soon.
+        Trade values, AI analysis, and league tools for Sleeper, ESPN, Yahoo, MFL, and Fleaflicker.
       </p>
       <p class="home-hero-editorial">
         Original dynasty strategy, daily player values, and league dashboards.
@@ -1235,7 +1235,7 @@ FORM_BODY = """
       <div class="home-platform-row" aria-label="Supported platforms">
         <span class="home-platform-chip">Sleeper</span>
         <span class="home-platform-chip">ESPN</span>
-        <span class="home-platform-chip">Yahoo <span class="home-chip-note">Soon</span></span>
+        <span class="home-platform-chip">Yahoo</span>
         <span class="home-platform-chip">MFL</span>
         <span class="home-platform-chip">Fleaflicker</span>
       </div>
@@ -4719,8 +4719,8 @@ def _discord_banner() -> str:
 DEFAULT_META_DESCRIPTION = (
     "BR Fantasy is a free fantasy football toolkit: a dynasty and redraft trade "
     "calculator, daily-updated player trade values, real-trade market data, breakout "
-    "candidate rankings, and advanced metrics for Sleeper and ESPN leagues. "
-    "MFL and Fleaflicker leagues supported. Yahoo coming soon."
+    "candidate rankings, and advanced metrics for Sleeper, ESPN, and Yahoo leagues. "
+    "MFL and Fleaflicker leagues also supported."
 )
 
 
@@ -11522,7 +11522,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     _players_desc = (
         "Daily-updated fantasy football player rankings and trade values for dynasty and "
         "redraft leagues. Compare players with consensus rankings, trend charts, and advanced "
-        "metrics for Sleeper and ESPN. Yahoo coming soon."
+        "metrics for Sleeper, ESPN, and Yahoo."
     )
     _final_title = _title or "Fantasy Football Player Rankings & Trade Values | BR Fantasy"
     _final_desc = _desc or _players_desc
@@ -14177,7 +14177,7 @@ def index():
             "Free fantasy football tools and original dynasty strategy guides "
             "for Sleeper and ESPN: a trade calculator, daily player trade values, "
             "rankings, breakout candidates, and advanced metrics. "
-            "MFL and Fleaflicker leagues supported. Yahoo coming soon."
+            "MFL and Fleaflicker leagues also supported."
         ),
         lite_js=True,
     )

@@ -25,15 +25,17 @@ TRADE_BP = (ROOT / "routes" / "trade_bp.py").read_text(encoding="utf-8")
 
 
 def test_home_platform_chips_label_yahoo_and_mfl():
-    assert 'Yahoo <span class="home-chip-note">Soon</span>' in APP_PY
+    assert '<span class="home-platform-chip">Yahoo</span>' in APP_PY
+    assert 'Yahoo <span class="home-chip-note">Soon</span>' not in APP_PY
     assert '<span class="home-platform-chip">MFL</span>' in APP_PY
     assert '<span class="home-platform-chip">Fleaflicker</span>' in APP_PY
+    assert 'data-platform="yahoo">Yahoo</button>' in APP_PY
     assert 'data-platform="mfl">MFL</button>' in APP_PY
     assert 'data-platform="fleaflicker">Fleaflicker</button>' in APP_PY
     assert 'MFL <span class="home-chip-note">Public leagues</span>' not in APP_PY
     assert 'MFL <span class="platform-limit">Public</span>' not in APP_PY
-    assert "Sleeper, ESPN, Yahoo, and MFL. Built for serious managers." not in APP_PY
-    assert "Yahoo coming soon" in APP_PY
+    assert "Sleeper, ESPN, Yahoo, MFL, and Fleaflicker." in APP_PY
+    assert "Yahoo coming soon" not in APP_PY
 
 
 def test_paywall_and_pricing_list_the_same_pro_set():
