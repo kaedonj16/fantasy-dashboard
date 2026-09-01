@@ -25,7 +25,7 @@ def test_rendered_page_exposes_espn_checkout_context(offline_client):
 
 
 @pytest.mark.parametrize("platform", ["sleeper", "espn", "mfl"])
-@pytest.mark.parametrize("plan", ["league", "user", "combo"])
+@pytest.mark.parametrize("plan", ["league", "user", "combo", "single_league"])
 def test_checkout_preserves_provider_at_every_plan_entry(
         offline_client, monkeypatch, platform, plan):
     captured = {}
@@ -39,6 +39,7 @@ def test_checkout_preserves_provider_at_every_plan_entry(
     fake_stripe = SimpleNamespace(checkout=SimpleNamespace(Session=_CheckoutSession))
     monkeypatch.setattr(billing, "_stripe", lambda: fake_stripe)
     monkeypatch.setattr(billing, "has_premium_access", lambda *args, **kwargs: False)
+    monkeypatch.setattr(billing, "has_user_league_subscription", lambda *args, **kwargs: False)
     monkeypatch.setattr(
         "dashboard_services.subscriptions.viewer_is_league_member",
         lambda *args, **kwargs: True,
@@ -63,43 +64,23 @@ def test_checkout_preserves_provider_at_every_plan_entry(
     assert captured["metadata"]["platform"] == platform
     assert captured["metadata"]["season"] == "2026"
     assert captured["metadata"]["user_id"] == f"{platform}-owner-7"
+    assert captured["metadata"]["plan"] == plan
     assert f"/{platform}/2026/123/dashboard" in urllib.parse.unquote(captured["success_url"])
     assert captured["cancel_url"].endswith(f"/{platform}/2026/123/pricing?canceled=1")
+    if plan == "single_league":
+        price_data = captured["line_items"][0]["price_data"]
+        assert price_data["unit_amount"] == 500
+        assert "product_data" in price_data or "product" in price_data
 
 
-def test_combo_checkout_rejects_double_billing_when_one_component_exists(
-        offline_client, monkeypatch):
-    fake_stripe = SimpleNamespace(checkout=SimpleNamespace(Session=SimpleNamespace(
-        create=lambda **kwargs: (_ for _ in ()).throw(AssertionError("Stripe must not be called"))
-    )))
-    monkeypatch.setattr(billing, "_stripe", lambda: fake_stripe)
-    monkeypatch.setattr(
-        billing, "has_premium_access",
-        lambda user_id, league_id, platform="sleeper", account_id=None: bool(league_id),
-    )
-    monkeypatch.setattr(
-        "dashboard_services.subscriptions.viewer_is_league_member",
-        lambda *args, **kwargs: True,
-    )
-    with offline_client.session_transaction() as sess:
-        sess["viewer_username"] = "ryan"
-        sess["viewer_user_id"] = "sleeper-7"
-
-    response = offline_client.post("/api/create-checkout-session", json={
-        "plan": "combo", "league_id": "123", "platform": "sleeper", "season": 2026,
-    })
-
-    assert response.status_code == 400
-    assert "already" in response.get_json()["error"].lower()
-
-
-@pytest.mark.parametrize("plan", ["league", "combo"])
+@pytest.mark.parametrize("plan", ["league", "combo", "single_league"])
 def test_league_checkout_rejects_non_members(offline_client, monkeypatch, plan):
     monkeypatch.setattr(
         billing, "_stripe",
         lambda: (_ for _ in ()).throw(AssertionError("Stripe must not be called")),
     )
     monkeypatch.setattr(billing, "has_premium_access", lambda *args, **kwargs: False)
+    monkeypatch.setattr(billing, "has_user_league_subscription", lambda *args, **kwargs: False)
     monkeypatch.setattr(
         "dashboard_services.subscriptions.viewer_is_league_member",
         lambda *args, **kwargs: False,
@@ -116,7 +97,7 @@ def test_league_checkout_rejects_non_members(offline_client, monkeypatch, plan):
     assert "member" in response.get_json()["error"].lower()
 
 
-@pytest.mark.parametrize("plan", ["league", "combo"])
+@pytest.mark.parametrize("plan", ["league", "combo", "single_league"])
 def test_league_plans_cannot_charge_without_a_league(offline_client, monkeypatch, plan):
     monkeypatch.setattr(
         billing, "_stripe",
@@ -131,6 +112,56 @@ def test_league_plans_cannot_charge_without_a_league(offline_client, monkeypatch
 
     assert response.status_code == 400
     assert "choose a league" in response.get_json()["error"].lower()
+
+
+def test_single_league_checkout_rejects_when_already_owned(offline_client, monkeypatch):
+    monkeypatch.setattr(
+        billing, "_stripe",
+        lambda: (_ for _ in ()).throw(AssertionError("Stripe must not be called")),
+    )
+    monkeypatch.setattr(billing, "has_premium_access", lambda *args, **kwargs: False)
+    monkeypatch.setattr(billing, "has_user_league_subscription", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        "dashboard_services.subscriptions.viewer_is_league_member",
+        lambda *args, **kwargs: True,
+    )
+    with offline_client.session_transaction() as sess:
+        sess["viewer_username"] = "ryan"
+        sess["viewer_user_id"] = "sleeper-7"
+
+    response = offline_client.post("/api/create-checkout-session", json={
+        "plan": "single_league", "league_id": "123", "platform": "sleeper", "season": 2026,
+    })
+
+    assert response.status_code == 400
+    assert "already" in response.get_json()["error"].lower()
+
+
+def test_combo_checkout_rejects_double_billing_when_one_component_exists(
+        offline_client, monkeypatch):
+    fake_stripe = SimpleNamespace(checkout=SimpleNamespace(Session=SimpleNamespace(
+        create=lambda **kwargs: (_ for _ in ()).throw(AssertionError("Stripe must not be called"))
+    )))
+    monkeypatch.setattr(billing, "_stripe", lambda: fake_stripe)
+    monkeypatch.setattr(
+        billing, "has_premium_access",
+        lambda user_id, league_id, platform="sleeper", account_id=None: bool(league_id),
+    )
+    monkeypatch.setattr(billing, "has_user_league_subscription", lambda *args, **kwargs: False)
+    monkeypatch.setattr(
+        "dashboard_services.subscriptions.viewer_is_league_member",
+        lambda *args, **kwargs: True,
+    )
+    with offline_client.session_transaction() as sess:
+        sess["viewer_username"] = "ryan"
+        sess["viewer_user_id"] = "sleeper-7"
+
+    response = offline_client.post("/api/create-checkout-session", json={
+        "plan": "combo", "league_id": "123", "platform": "sleeper", "season": 2026,
+    })
+
+    assert response.status_code == 400
+    assert "already" in response.get_json()["error"].lower()
 
 
 def test_subscription_status_uses_stable_id_and_espn_provider(offline_client, monkeypatch):
