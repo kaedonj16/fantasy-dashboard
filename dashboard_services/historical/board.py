@@ -1616,6 +1616,7 @@ def _add_capital_roster_hist_rows(
             and _round1_cap_matches(cap_label, player_label)
         )
         year = _hist_year_window(stage) if is_this else None
+        top5 = _as_rate(rec.get("top_5") if "top_5" in rec else None).get("display_pct")
         if not year:
             add(_trend_row(
                 kind="capital_roster",
@@ -1624,6 +1625,7 @@ def _add_capital_roster_hist_rows(
                 sentence=any_sentence.format(pos=pos, cap=cap_label, spot=slabel),
                 rate=rec.get("top_12") if "top_12" in rec else rec,
                 baseline_pct=baseline_pct,
+                secondary=f"{top5}% top-5" if top5 is not None else None,
                 role=_hist_role(is_this),
             ))
         if year:

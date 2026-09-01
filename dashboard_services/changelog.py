@@ -3,6 +3,7 @@ Changelog entries for the fantasy dashboard.
 Each entry represents a user-facing change.
 """
 
+CHANGELOG = [
     {
         "date": "2026-09-01",
         "tag": "fix",
