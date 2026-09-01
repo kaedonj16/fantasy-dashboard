@@ -4318,17 +4318,24 @@ _AD_INIT = """(function(){
 def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
     """Dismissible weekly 'Recap is ready' banner.
 
-    Shown on Tuesdays during the NFL season (Sep–Jan) only.
-    Dismissal resets each week via an ISO-week-scoped localStorage key,
-    so the banner reappears the following Tuesday.
+    Shown on Tuesdays during the regular season or playoffs only (mirrors
+    notify_recap_ready). Dismissal resets each week via an ISO-week-scoped
+    localStorage key, so the banner reappears the following Tuesday.
     """
     import datetime as _dt
     now = _dt.datetime.now()
     if now.weekday() != 1:  # Tuesday only (0=Mon … 6=Sun)
         return ""
-    if now.month not in {9, 10, 11, 12, 1}:  # NFL season only
-        return ""
     if not (league_id and platform and season):
+        return ""
+
+    nfl_state = get_nfl_state() or {}
+    nfl_season = int(nfl_state.get("season") or 0)
+    season_type = (nfl_state.get("season_type") or "").lower()
+    week = int(nfl_state.get("week") or 0)
+    if not nfl_season or not week or season_type not in ("reg", "post"):
+        return ""
+    if int(season) != nfl_season:
         return ""
 
     recap_url = f"/{platform}/{season}/{league_id}/recap"
@@ -4343,6 +4350,16 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
   to   {{ opacity:1; transform:translateY(0); }}
 }}
 #recapReadyBanner {{ animation: recapSlideUp .3s ease forwards; }}
+/* On phones the fixed bottom dock (.br-mnav, 56px + safe-area) owns the bottom
+   edge, so lift the banner above it instead of letting the dock cover it. Also
+   pin it to both side gutters so the 300px card never runs off a narrow screen.
+   These override inline styles on the element, so they must be !important. */
+@media (max-width: 768px) {{
+  #recapReadyBanner {{
+    left:12px !important; right:12px !important; width:auto !important;
+    bottom:calc(var(--dock-safe-bottom) + 14px) !important;
+  }}
+}}
 </style>
 <div id="recapReadyBanner" style="
      display:none;

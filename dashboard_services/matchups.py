@@ -22,6 +22,22 @@ STATUS_IN_PROGRESS = "in_progress"
 STATUS_FINAL = "final"
 
 
+def _allow_live_game_indicators(viewed_season) -> bool:
+    """Live pulse/dot only during regular season or playoffs for the current NFL year."""
+    from dashboard_services.api import get_nfl_state
+
+    state = get_nfl_state() or {}
+    nfl_season = int(state.get("season") or 0)
+    season_type = (state.get("season_type") or "").lower()
+    try:
+        viewed = int(viewed_season or 0)
+    except (TypeError, ValueError):
+        return False
+    if not nfl_season or viewed != nfl_season:
+        return False
+    return season_type in ("reg", "post")
+
+
 def _synthetic_week_matchups(rosters: List[dict], week: int) -> List[dict]:
     from utils.matchup_schedule import synthetic_week_matchups
     return synthetic_week_matchups(rosters, week)
@@ -850,6 +866,7 @@ def render_matchup_slide(
     """
     proj = w > proj_week
     compact = bool(compact)
+    allow_live = _allow_live_game_indicators(season)
 
     # Heavy stuff: do once per call. Compact slides skip week stats / schedule.
     _fpts_pos_cache: dict = {}
@@ -1016,10 +1033,14 @@ def render_matchup_slide(
             clock = game.get("gameClock", "")
             prefix = "@ " + opp if not is_home else "vs " + opp
             extra = " ".join(x for x in [period, clock, prefix] if x).strip()
+            body = f"{score_str} {extra}".strip()
+
+            if not allow_live:
+                return body
 
             if side == "right":
-                return f"{score_str} {extra} <span class='live-dot'></span>".strip()
-            return f"<span class='live-dot'></span>{score_str} {extra}".strip()
+                return f"{body} <span class='live-dot'></span>".strip()
+            return f"<span class='live-dot'></span>{body}".strip()
 
         if status_code == "2":
             prefix = "@ " + opp if not is_home else "vs " + opp
