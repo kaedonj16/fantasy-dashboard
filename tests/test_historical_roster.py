@@ -21,7 +21,13 @@ def test_roster_spot_labels_have_no_underscore():
     assert roster_spot_label("RB", 2) == "RB2"
     assert roster_spot_label("RB", 3) == "RB3+"
     assert roster_spot_label("RB", 5) == "RB3+"
+    assert roster_spot_label("WR", 1) == "WR1"
     assert roster_spot_label("WR", "3+") == "WR3+"
+    assert roster_spot_label("TE", 1) == "TE1"
+    assert roster_spot_label("TE", 2) == "TE2"
+    assert roster_spot_label("QB", 1) == "QB1"
+    assert roster_spot_label("QB", 2) == "QB2"
+    assert roster_spot_label("QB", 3) == "QB3+"
     assert "_" not in roster_spot_label("TE", 3)
     assert normalize_roster_spot(None) is None
     assert normalize_roster_spot(0) is None
@@ -203,3 +209,32 @@ def test_rb1_on_top10_is_counted_intersection_not_a_product():
     product = any_rb["raw_rate"] * depth["raw_rate"]
     assert abs(any_rb["raw_rate"] - 0.45) < 1e-9
     assert abs(depth["raw_rate"] - product) > 0.05
+
+
+def test_cohort_cache_does_not_reuse_empty_synthetic_for_loaded_wr():
+    """A tiny warehouse must not hide WR1-on-top-10 rates from the live index."""
+    import pytest
+    from dashboard_services.historical.aggregates_store import load_profile_aggregates
+
+    reset_cohort_cache()
+    top10 = {"group": "projected_offense", "field": "projected_offense_rank", "between": [1, 10]}
+    wr1 = {"group": "roster_spot", "field": "roster_spot", "eq": 1}
+    empty = {
+        "cohort_index": {
+            "observations": [{
+                "pid": "x",
+                "pos": "WR",
+                "season": 2024,
+                "finish": 40,
+                "feats": {"position": "WR", "projected_offense_rank": 15, "roster_spot": 1},
+            }]
+        }
+    }
+    miss = evaluate_cohort(empty, position="WR", filters=[top10, wr1])
+    assert (miss.get("sample_size") or 0) == 0
+    aggs = load_profile_aggregates()
+    if not aggs:
+        pytest.skip("profile JSON missing")
+    hit = evaluate_cohort(aggs, position="WR", filters=[top10, wr1])
+    assert (hit.get("sample_size") or 0) > 0
+    assert hit.get("display_pct") is not None

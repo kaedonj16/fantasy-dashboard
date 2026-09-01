@@ -778,9 +778,15 @@ def _cohort_rate_for_filters(
     filters: Sequence[Mapping[str, Any]],
 ) -> dict:
     """Season-level hit rates for one Trends match spec, from the cohort index."""
+    from dashboard_services.historical.aggregates_store import aggregates_version
     from dashboard_services.historical.cohorts import evaluate_cohort
 
-    out = evaluate_cohort(aggregates, position=pos, filters=list(filters))
+    out = evaluate_cohort(
+        aggregates,
+        position=pos,
+        filters=list(filters),
+        data_version=aggregates.get("data_version", aggregates_version()),
+    )
     if not isinstance(out, Mapping) or not out.get("sample_size"):
         return {}
     rates = out.get("rates") if isinstance(out.get("rates"), Mapping) else {}

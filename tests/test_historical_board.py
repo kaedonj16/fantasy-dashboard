@@ -602,6 +602,10 @@ def test_btj_hist_does_not_claim_never_previously_top12():
     assert profiles["11631"].get("prior_top12_count") == 1
     panel = build_deep_panel("11631", aggs, extra={"position": "WR"})
     kinds = [row["kind"] for row in panel["copy"]["trends"]]
+    titles = [row["title"] for row in panel["copy"]["trends"]]
+    assert "Top-10 projected offense, WR1" in titles
+    assert "Top-10 projected offense, WR2" in titles
+    assert "Top-10 projected offense, WR3+" in titles
     assert "first_time_elite" not in kinds
     assert "breakout" in kinds
     assert "league_winner_smash" in kinds
@@ -737,6 +741,21 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     assert rb1.get("n") and rb3.get("n")
     assert rb1["match"]["group"] == "offense_roster"
     assert rb1["match"]["all"]
+    for pos, starter, depth in (
+        ("WR", "WR1", "WR3+"),
+        ("TE", "TE1", "TE2"),
+        ("QB", "QB1", "QB2"),
+    ):
+        pos_roster = next(
+            sec for sec in payload["by_position"][pos]["sections"] if sec["id"] == "offense_roster"
+        )
+        pos_labels = [row["label"] for row in pos_roster["rows"]]
+        assert f"Top 10 projected, {starter}" in pos_labels
+        assert f"Top 10 projected, {depth}" in pos_labels
+        assert all("_" not in lab for lab in pos_labels)
+        assert f"{pos}1 is the lowest ADP" in (pos_roster.get("note") or "")
+        starter_row = next(row for row in pos_roster["rows"] if row["label"] == f"Top 10 projected, {starter}")
+        assert starter_row.get("n") and starter_row.get("pct") is not None
     last_year = next(sec for sec in rb["sections"] if sec["id"] == "offense_last_year")
     assert last_year["heading"] == "Offense last year"
     last_labels = [row["label"] for row in last_year["rows"]]

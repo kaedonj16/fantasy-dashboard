@@ -785,7 +785,13 @@ def evaluate_cohort(
     if wanted_tier not in COMP_BOARD_TIERS:
         wanted_tier = SIGNAL_BOARD_TIER
     selected = [dict(f) for f in (filters or []) if isinstance(f, Mapping)]
-    cache_key = (data_version, pos, wanted_tier, canonical_filter_key(selected))
+    cache_key = (
+        data_version,
+        id(aggregates),
+        pos,
+        wanted_tier,
+        canonical_filter_key(selected),
+    )
     global _CACHE_VERSION
     if data_version != _CACHE_VERSION:
         _COHORT_CACHE.clear()

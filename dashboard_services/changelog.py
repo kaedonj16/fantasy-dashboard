@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-09-01",
         "tag": "update",
-        "text": "Draft Cheat Sheet Hist: projected-offense rates now split by preseason roster spot (RB1 vs RB2 vs RB3+ by ADP among teammates), so a starting RB on a top-10 projected offense is not mixed with an RB3.",
+        "text": "Draft Cheat Sheet Hist: projected-offense rates now split by preseason roster spot (RB1, WR1, TE1, QB1 vs 2 vs 3+ by ADP among teammates), so a starter on a top-10 projected offense is not mixed with an RB3, WR3, or backup QB.",
         "link": "/draft/cheat-sheet"
     },
     {
