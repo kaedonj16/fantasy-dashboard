@@ -37,6 +37,7 @@ def test_matchup_section_shows_projections_and_wp():
     assert "Rival FC" in html
     assert "110.2" in html
     assert "110.2 to 101.0" in html
+    assert "Favored by 9.2" in html
     assert "64%" in html
     assert "https://ex/m" in html
     assert "—" not in html
