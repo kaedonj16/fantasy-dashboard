@@ -6,6 +6,7 @@ or when league/player data is unavailable — never fail the whole digest.
 from __future__ import annotations
 
 import logging
+import re
 from html import escape
 from typing import Any, Optional
 from urllib.parse import quote
@@ -29,9 +30,12 @@ _EMAIL_CTA = (
 )
 
 
+_EM_DASH = re.compile(r"\s*\u2014\s*")
+
+
 def _plain_punct(s: str) -> str:
     """Email copy uses ASCII hyphen, not em/en dashes."""
-    return (s or "").replace("\u2014", " - ").replace("\u2013", "-")
+    return _EM_DASH.sub(" - ", s or "").replace("\u2013", "-")
 
 
 def section_card(
