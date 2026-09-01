@@ -311,6 +311,16 @@ _CHEAT_HTML = r"""
   .cs-hist-hit.is-miss .cs-hist-hit-pct span { color: var(--cs-ink-faint, var(--text-muted)); }
   .cs-hist-hit .cs-trends-rail { margin-top: 6px; }
   .cs-hist-hit-top .cs-trends-conf { align-self: center; }
+  .cs-hist-hit.is-this { box-shadow: inset 3px 0 0 var(--cs-pos, #22c55e); }
+  .cs-hist-hit-role { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-pos); vertical-align: middle; }
+  .cs-hist-tile-ex { margin-top: 6px; }
+  .cs-hist-tile-ex > summary { cursor: pointer; list-style: none; font-size: 11px; font-weight: 700; color: var(--cs-ink-soft, var(--text-muted)); }
+  .cs-hist-tile-ex > summary::-webkit-details-marker { display: none; }
+  .cs-hist-tile-ex > summary::after { content: " +"; color: var(--cs-pos); }
+  .cs-hist-tile-ex[open] > summary::after { content: " \\2013"; }
+  .cs-hist-tile-ex ul { list-style: none; margin: 6px 0 0; padding: 0; }
+  .cs-hist-tile-ex li { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; padding: 3px 0; color: var(--cs-ink, var(--text)); }
+  .cs-hist-tile-ex li .cs-hist-ex-hit { font-size: 10px; }
   .cs-hist-profile { display: flex; flex-wrap: wrap; gap: 6px; }
   .cs-hist-chip { display: inline-flex; flex-direction: column; gap: 2px; border: 1px solid var(--cs-line, var(--border)); border-radius: 8px; padding: 6px 8px; min-width: 0; background: var(--cs-surface, var(--card)); }
   .cs-hist-chip-k { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-ink-faint, var(--text-muted)); }

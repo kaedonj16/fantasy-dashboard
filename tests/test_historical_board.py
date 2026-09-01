@@ -327,8 +327,8 @@ def test_hist_panel_copy_uses_bucket_hit_rates_not_snake_case():
     assert "not a combined chance" in copy["gap_note"].lower()
     assert "—" not in copy["gap_note"]
     assert "–" not in copy["gap_note"]
-    assert "year 1 is that draft band in a rookie season" in copy["trends_note"]
-    assert "Any season includes later career years" in copy["trends_note"]
+    assert "Grouped by Career, Capital, Roster, Offense, and Usage" in copy["trends_note"]
+    assert "This player marks the cell" in copy["trends_note"]
     assert "—" not in copy["trends_note"]
     assert "–" not in copy["trends_note"]
     missing = build_hist_panel_copy(history, {})
@@ -446,6 +446,11 @@ def test_hist_trends_are_descriptive_bucket_slices():
     panel = build_deep_panel("9221", aggs, extra={"redraft_avg_pick": 2.0, "position": "RB"})
     copy = panel["copy"]
     assert copy["headline"].startswith("Among RBs")
+    groups = copy.get("trend_groups") or []
+    group_ids = [sec["id"] for sec in groups]
+    assert group_ids[:4] == ["career", "capital", "roster", "offense"]
+    grouped_n = sum(len(sec["rows"]) for sec in groups)
+    assert grouped_n == len(copy["trends"])
     assert "this player's historical chance" in copy["cohort_note"].lower()
     kinds = [row["kind"] for row in copy["trends"]]
     assert "adp" not in kinds
@@ -595,6 +600,19 @@ def test_hist_panel_keeps_draft_capital_when_the_cell_has_seasons():
         "projected offense" in title and "Round 1" in title and "year 1" in title
         for title in titles
     )
+    by_title = {row["title"]: row for row in panel["copy"]["trends"]}
+    assert by_title["Drafted NFL Top 10, RB1"]["role"] == "this"
+    assert by_title["Drafted NFL Round 1, RB1"]["role"] == "this"
+    assert by_title["Drafted NFL Round 1, RB3+"]["role"] == "analog"
+    assert by_title["21-32 projected offense, Round 1"]["role"] == "this"
+    assert by_title["21-32 projected offense, NFL Top 10"]["role"] == "this"
+    assert by_title["Top-10 projected offense, Round 1"]["role"] == "analog"
+    assert by_title["Top-10 projected offense"]["role"] == "analog"
+    named = by_title["Drafted NFL Round 1, RB1"].get("examples") or []
+    assert 1 <= len(named) <= 3
+    assert named[0].get("name")
+    group_ids = [sec["id"] for sec in (panel["copy"].get("trend_groups") or [])]
+    assert group_ids[:4] == ["career", "capital", "roster", "offense"]
     note = str(panel["copy"].get("examples_vs_cohort_note") or "")
     if note:
         assert "Sample:" in note
@@ -619,6 +637,15 @@ def test_btj_hist_does_not_claim_never_previously_top12():
     assert "Top-10 projected offense, WR3+" in titles
     assert "Drafted NFL Round 1, WR1" in titles
     assert "Drafted NFL Round 1, WR3+" in titles
+    assert "Drafted NFL Picks 11-25, WR1" in titles
+    assert "Outside top 36 last year, WR1" in titles
+    assert "Outside top 36 last year, WR3+" in titles
+    by_title = {row["title"]: row for row in panel["copy"]["trends"]}
+    assert by_title["Outside top 36 last year, WR1"]["role"] == "this"
+    assert by_title["Outside top 36 last year, WR3+"]["role"] == "analog"
+    assert by_title["Drafted NFL Round 1, WR1"]["role"] == "this"
+    bounce_names = by_title["Outside top 36 last year, WR1"].get("examples") or []
+    assert 1 <= len(bounce_names) <= 3
     assert "first_time_elite" not in kinds
     assert "breakout" in kinds
     assert "league_winner_smash" in kinds
@@ -676,6 +703,7 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     assert "offense_roster" in ids
     assert "capital_roster" in ids
     assert "offense_capital" in ids
+    assert "bounce_roster" in ids
     assert "age" in ids
     assert "ryoe" in ids
     wr = payload["by_position"]["WR"]
@@ -796,6 +824,13 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     assert all("_" not in lab for lab in off_cap_labels)
     assert "offense_capital" not in wr_ids
     assert "offense_capital" not in te_ids
+    wr_bounce = next(sec for sec in wr["sections"] if sec["id"] == "bounce_roster")
+    bounce_labels = [row["label"] for row in wr_bounce["rows"]]
+    assert "Outside top 36, WR1" in bounce_labels
+    assert "Outside top 36, WR3+" in bounce_labels
+    assert all("_" not in lab for lab in bounce_labels)
+    assert "bounce_roster" in ids
+    assert "bounce_roster" not in te_ids
     last_year = next(sec for sec in rb["sections"] if sec["id"] == "offense_last_year")
     assert last_year["heading"] == "Offense last year"
     last_labels = [row["label"] for row in last_year["rows"]]
@@ -959,6 +994,9 @@ def test_hist_trend_titles_keep_distinct_capital_and_age_rows():
     assert format_hist_trend_title(
         kind="offense_capital", label="Offense", bucket="Top 10, Top 10"
     ) == "Top-10 projected offense, NFL Top 10"
+    assert format_hist_trend_title(
+        kind="bounce_roster", label="Last year", bucket="WR1"
+    ) == "Outside top 36 last year, WR1"
     assert "_" not in format_hist_trend_title(
         kind="capital_roster", label="NFL", bucket="Day 2, WR1"
     )

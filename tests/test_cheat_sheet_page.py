@@ -612,6 +612,12 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "offense_roster" in script
     assert "capital_roster" in script
     assert "offense_capital" in script
+    assert "bounce_roster" in script
+    assert "trend_groups" in script
+    assert "This player" in script
+    assert "cs-hist-tile-ex" in script
+    assert "cs-hist-hit.is-this" in body
+    assert "Outside top 36 last year, " in script
     assert "Drafted NFL ' + cap" in script
     assert "NFL Top 10" in script
     assert "roster_spot=" in script
