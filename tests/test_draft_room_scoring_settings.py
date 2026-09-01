@@ -50,6 +50,19 @@ def test_setup_source_and_draft_pick_pills_match_canonical_chip_styles():
     assert "rgba(168,85,247,.14)" not in body
 
 
+def test_keeper_cells_keep_position_color():
+    """Keeper cards use the same position tint as live picks, not a green wash."""
+    body = build_draft_room_body(None, None, None, is_guest=True)
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert ".dr-cell-filled { background: color-mix(in srgb, var(--pos, var(--accent)) 14%, var(--bg));" in body
+    assert "pl && pl.keeper ? ' dr-cell-keeper'" in source
+    assert 'class="dr-cell-keepflag">KEEP' in source
+    assert ".dr-cell-keepflag" in body
+    assert "var(--win,#15803d) 10%, var(--card)" not in body
+    assert ".dr-cell-keeper { background:" not in body
+
+
 def test_keeper_banner_pages_six_and_counts_yours_by_roster():
     """Keepers Details lists 6 per page; 'yours' is ownership (viewer roster),
     not the old !projected flag that left assistant-mode keepers at 0 yours."""
@@ -353,6 +366,7 @@ def test_likely_next_pick_survivors_pay_current_pick_opportunity_cost():
     assert "c.demandByPos = _demandBeforeNext(next);" in source
     assert "var effectiveReturnProb = returnProb == null ? null : returnProb * (1 - demandRisk);" in source
     assert "waitPenalty: waitPenalty" in source
+    assert "streamableBackup: streamableBackup" in source
     # Wait target is the pick AFTER the rec pick, so waiting for #9 does not
     # treat pick 9 itself as "can wait until then". Manual fills for other
     # seats skip own-next wait math so the on-the-clock pool stays selectable.

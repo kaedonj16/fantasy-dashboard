@@ -922,9 +922,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-cell-mineflag { position: absolute; top: 2px; right: 5px; font-size: 8px; font-weight: 800;
     letter-spacing: .04em; color: var(--accent,#38bdf8); }
   .dr-cell-claimed .dr-cell-mineflag { color: var(--warning); }
-  /* Keeper: a pick spent before the draft, so it reads as settled rather than
-     as a live selection. */
-  .dr-cell-keeper { background: color-mix(in srgb, var(--win,#15803d) 10%, var(--card)); }
+  /* Keeper: same position tint as a live pick; the KEEP flag is the marker.
+     Do not wash the cell green — that hides WR/QB/TE color. */
   .dr-cell-keepflag { position: absolute; top: 2px; right: 5px; font-size: 8px; font-weight: 800;
     letter-spacing: .04em; color: var(--win,#15803d); }
   /* Traded pick: who the pick was dealt to (shown on another team's seat). */
@@ -1433,7 +1432,9 @@ _DRAFT_ROOM_HTML = r"""
   .dr-modal-msg { font-size:15px; color:var(--text); line-height:1.55; margin-bottom:20px; }
   .dr-modal-box.is-wide .dr-modal-msg { margin-bottom:14px; }
   .dr-modal-btns { display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; }
-  .dr-msync-title { font-size:18px; font-weight:800; letter-spacing:-0.02em; margin:0 0 6px; color:var(--text); }
+  .dr-msync-title { font-size:18px; font-weight:800; letter-spacing:-0.02em; margin:0 0 6px; color:var(--text); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .dr-msync-ver { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:800; letter-spacing:0.02em;
+    border:1px solid var(--border); color:var(--text-muted); background:color-mix(in srgb, var(--text) 6%, transparent); }
   .dr-msync-lead { font-size:13px; color:var(--text-muted); margin:0 0 14px; line-height:1.5; }
   .dr-msync-warn { font-size:12px; line-height:1.45; padding:10px 12px; border-radius:10px; margin:0 0 14px;
     background:color-mix(in srgb, var(--warning) 14%, transparent); border:1px solid color-mix(in srgb, var(--warning) 35%, transparent); color:var(--text); }

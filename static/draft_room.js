@@ -2373,11 +2373,15 @@
         // Visible needy teams between turns make a real shelf loss more urgent;
         // cap it so scarcity does not double-count VOR/tier effects excessively.
         _waitLoss *= 1 + Math.min(0.35, (_demand[pos] || 0) / Math.max(1, state.teams) * 0.7);
+        var _streamableBackup = _bench && state.type === 'redraft'
+          && DraftBoardCore.isStreamableSingleSlot
+          && DraftBoardCore.isStreamableSingleSlot(pos, _rs, { sf: !!state.sf, tep: scoringCfg().tep });
         c.ds = DraftBoardCore.decisionScore({ base: pv, utility: _util,
           bench: _bench, deepBench: _role === 'bench2', quality: ppgNormOf(p) || 0,
           required: cpuCtx.obligations.required, freePicks: cpuCtx.obligations.freePicks,
           recentPenalty: _recent, exceptional: _exceptional, waitLoss: _waitLoss,
-          draftType: state.type, lineupHoles: cpuCtx.obligations.lineupHoles || 0 });
+          draftType: state.type, lineupHoles: cpuCtx.obligations.lineupHoles || 0,
+          streamableBackup: _streamableBackup, round: _curRound, totalRounds: state.rounds || 16 });
         // Decision quality gates the ADP likelihood but does not replace it. A
         // persona may choose among close values; it cannot turn poor roster fit
         // into a favorite merely by stacking several heuristic multipliers.
@@ -4024,6 +4028,10 @@
     var waitLossScale = DraftBoardCore.waitLossScaleFor
       ? DraftBoardCore.waitLossScaleFor(pos, missDed, { sf: !!state.sf, tep: scoringCfg().tep })
       : (missDed >= 2 ? 1 : (missDed >= 1 ? 0.6 : 0.4));
+    var recRound = Math.floor(((state.current || 1) - 1) / Math.max(1, state.teams || 12)) + 1;
+    var streamableBackup = bench && state.type === 'redraft'
+      && DraftBoardCore.isStreamableSingleSlot
+      && DraftBoardCore.isStreamableSingleSlot(pos, c.roster, { sf: !!state.sf, tep: scoringCfg().tep });
     var score = DraftBoardCore.decisionScore({ base: base, utility: util,
       bench: bench, deepBench: role === 'bench2', recentPenalty: recentPenalty, exceptional: exceptional,
       quality: ppgNormOf(p) || 0, required: c.obligations.required,
@@ -4031,7 +4039,8 @@
       waitLoss: Math.max(0, base - expected) * (1 + demandRisk), waitLossScale: waitLossScale,
       waitPenalty: waitPenalty, handcuffBonus: handcuffBonus, upsideBonus: upsideBonus,
       byePenalty: byePenalty,
-      draftType: state.type, lineupHoles: c.obligations.lineupHoles || 0 });
+      draftType: state.type, lineupHoles: c.obligations.lineupHoles || 0,
+      streamableBackup: streamableBackup, round: recRound, totalRounds: state.rounds || 16 });
     return score;
   }
   // How many players remain in this player's (position|tier) bucket.
@@ -5979,22 +5988,22 @@
     if (!m || !msg || !btns) return;
     if (box) box.classList.add('is-wide');
     msg.innerHTML = ''
-      + '<div class="dr-msync-title">Install the Chrome extension</div>'
-      + '<p class="dr-msync-lead">On desktop Chrome or Edge, the extension watches your open ESPN or Yahoo draft and updates Draft Room automatically — no tapping after every pick.</p>'
-      + '<div class="dr-msync-warn"><b>Chrome / Edge on a computer.</b> Phones can\'t install this extension. Draft from your phone and <b>track picks manually</b> in Draft Room, or use a laptop for auto-sync.</div>'
+      + '<div class="dr-msync-title">Use the BR Fantasy extension <span class="dr-msync-ver">1.0.0</span></div>'
+      + '<p class="dr-msync-lead">On desktop Chrome or Edge, the extension docks Draft Assistant on your Sleeper, Yahoo, or ESPN draft and relays ESPN or Yahoo picks into this Draft Room. It never submits a pick.</p>'
+      + '<div class="dr-msync-warn"><b>Chrome / Edge on a computer.</b> Phones cannot install this extension. Draft from your phone and <b>track picks manually</b> in Draft Room, or use a laptop for auto-sync.</div>'
       + '<div class="dr-msync-sec"><h4>Install (about 30 seconds)</h4>'
       + '<ol>'
       + '<li>Download the extension zip (button below).</li>'
       + '<li>Unzip it somewhere permanent (e.g. Documents).</li>'
       + '<li>Open <code>chrome://extensions</code> (or Edge: <code>edge://extensions</code>).</li>'
       + '<li>Turn on <b>Developer mode</b> (top right).</li>'
-      + '<li>Click <b>Load unpacked</b> → select the unzipped folder.</li>'
-      + '<li>Keep this Draft Room open, open your ESPN or Yahoo draft in another tab, and draft normally.</li>'
+      + '<li>Click <b>Load unpacked</b> and select the unzipped folder.</li>'
+      + '<li>Keep this Draft Room open, open your draft in another tab, and choose <b>Open Draft Assistant</b> when asked.</li>'
       + '</ol></div>'
-      + '<div class="dr-msync-sec"><h4>You\'ll know it\'s working</h4>'
+      + '<div class="dr-msync-sec"><h4>You will know it is working</h4>'
       + '<ol>'
-      + '<li>A small <b>BR Fantasy</b> chip appears on the draft page.</li>'
-      + '<li>Picks show up here within a couple of seconds.</li>'
+      + '<li>A prompt from the BR Fantasy extension appears on the draft page.</li>'
+      + '<li>Draft Assistant docks beside the board, and ESPN or Yahoo picks show up here within a couple of seconds.</li>'
       + '</ol></div>';
     btns.innerHTML = '';
     var dl = document.createElement('a');
@@ -7317,11 +7326,16 @@
         var shelf = expectedByPos[pos] || [];
         var expected = shelf.length > 1 ? shelf[1] : 0;
         var waitLoss = Math.max(0, abs - expected);
+        var histBench = role === 'bench1' || role === 'bench2';
+        var histStreamable = histBench && state.type === 'redraft'
+          && Core.isStreamableSingleSlot
+          && Core.isStreamableSingleSlot(pos, rs, { sf: !!state.sf, tep: scoringCfg().tep });
         var ds = Core.decisionScore({
-          base: abs, utility: util, bench: role === 'bench1' || role === 'bench2',
+          base: abs, utility: util, bench: histBench,
           deepBench: role === 'bench2', quality: ppgNormOf(p) || 0,
           waitLoss: waitLoss, upsideBonus: upside, required: histOb.required,
-          freePicks: histOb.freePicks, draftType: state.type, lineupHoles: histOb.lineupHoles || 0
+          freePicks: histOb.freePicks, draftType: state.type, lineupHoles: histOb.lineupHoles || 0,
+          streamableBackup: histStreamable, round: rd, totalRounds: state.rounds || 16
         });
         return { absolutePickScore: abs, decisionScore: ds };
       }

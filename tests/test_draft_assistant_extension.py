@@ -15,7 +15,9 @@ def test_overlay_is_mv3_safe_extension_page():
     assert 'src="draft_board_core.js"' in html
     assert "BROverlayScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert "BRPickScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
-    assert "decisionScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
+    overlay_score = (EXT / "overlay_score.js").read_text(encoding="utf-8")
+    assert "decisionScore" in overlay_score
+    assert "streamableBackup: streamableBackup" in overlay_score
     assert "futurePickDecisionScore" not in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert "return ctx.current || 1;" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert "Gone before #" not in (EXT / "overlay_score.js").read_text(encoding="utf-8")
@@ -36,6 +38,8 @@ def test_overlay_is_mv3_safe_extension_page():
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["version"] == "1.5.29"
+    inject_ver = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
+    assert 'PRODUCT_VERSION = "1.0.0"' in inject_ver
     hosts = " ".join(manifest.get("host_permissions") or [])
     assert "sleeper.app" in hosts
     assert "api.sleeper.app" in hosts
@@ -141,6 +145,12 @@ def test_collapsed_overlay_has_reopen_control():
     assert "Not now" in inject
     assert 'aria-modal' in inject
     assert "br-da-invite-card" in inject
+    assert 'PRODUCT_VERSION = "1.0.0"' in inject
+    assert "BR Fantasy extension" in inject
+    assert "Use Draft Assistant on this" in inject
+    assert "br-da-invite-ver" in inject
+    assert "br-da-invite-perks" in inject
+    assert "function hostLabel" in inject
     assert "choice === \"open\"" not in inject
     assert "requestPool();\n    mount();" in inject.split("function openAssistant")[1].split("function skipAssistant")[0]
     assert "setCollapsed(false)" in inject
@@ -234,6 +244,7 @@ def test_overlay_autodetects_slot_and_keeps_header_on_one_line():
     assert "openAssistantBtn" in popup_html
     assert "Open Draft Assistant" in popup_html
     assert "asked whether to open" in popup_html
+    assert "Draft Assistant 1.0.0" in popup_html
     assert "openDraftAssistant" in popup_js
     assert "\u2014" not in (EXT / "content.js").read_text(encoding="utf-8")
     assert "\u2014" not in (EXT / "background.js").read_text(encoding="utf-8")
