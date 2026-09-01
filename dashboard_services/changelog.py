@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-09-01",
         "tag": "update",
+        "text": "Draft Cheat Sheet Hist: sample sizes now say Sample: 318 instead of n=318.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-09-01",
+        "tag": "update",
         "text": "Draft Cheat Sheet Hist: team-offense rows now show how often a position finished top-12 on a team that ranked top-10 / 11-20 / 21-32 in offense last year (the preseason analog of a projected top-10 offense), including year 1 and year 2.",
         "link": "/draft/cheat-sheet"
     },

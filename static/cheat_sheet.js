@@ -2264,10 +2264,14 @@
         return Number(row.pct) - Number(row.vs_baseline);
     }
 
+    function histSampleLabel(n) {
+        return n == null ? '' : ('Sample: ' + n);
+    }
+
     function histTrendRow(row, barHtml) {
         row = row || {};
         var meta = [];
-        if (row.n != null) meta.push('n=' + row.n);
+        if (row.n != null) meta.push(histSampleLabel(row.n));
         if (row.secondary) meta.push(row.secondary);
         var shown = row.display != null && row.display !== ''
             ? row.display
@@ -2637,7 +2641,7 @@
             + esc(trendsPos) + (labels.length ? ' · ' + esc(labels.join(' · ')) : '')
             + '</p></div>';
         if (cohort && cohort.available !== false) {
-            html += '<div class="cs-trends-profile-n">n=' + esc(String(n == null ? 0 : n))
+            html += '<div class="cs-trends-profile-n">' + esc(histSampleLabel(n == null ? 0 : n))
                 + (players != null ? ' · ' + esc(String(players)) + ' players' : '')
                 + '</div>';
         }
@@ -2945,7 +2949,7 @@
         var selectable = !!(row.match && row.id);
         var on = selectable && opts.selected && opts.selected[row.id];
         var meta = [];
-        if (row.n != null) meta.push('n=' + row.n);
+        if (row.n != null) meta.push(histSampleLabel(row.n));
         if (vs) meta.push(vs);
         if (row.secondary && (opts.tier || 'top_12') === 'top_12') meta.push(row.secondary);
         if (on && row.ci_low != null && row.ci_high != null) {
@@ -3038,7 +3042,7 @@
         bits.push(esc(trendsPos) + 's finished ' + esc(finishName) + ' in '
             + (baselinePct != null ? esc(String(baselinePct)) + '%' : 'an unknown share')
             + ' of player-seasons'
-            + (baselineN != null ? ' (n=' + esc(String(baselineN)) + ')' : '') + '.');
+            + (baselineN != null ? ' (' + esc(histSampleLabel(baselineN)) + ')' : '') + '.');
         if (page.prime_window) bits.push('Prime window is ages ' + esc(page.prime_window) + '.');
         html += bits.join(' ') + '</div></div></div>';
         if (edges.length) {
@@ -3118,7 +3122,7 @@
                 html += '<button type="button" class="cs-trends-age' + cls + '" data-age-tip="1" aria-label="'
                     + esc(tip) + '"><span class="cs-trends-age-bar" style="height:' + h
                     + '%"></span><span class="cs-trends-age-tip">' + esc('Age ' + pt.age + ' · ' + pt.pct + '%'
-                    + (pt.n != null ? ' · n=' + pt.n : '')) + '</span></button>';
+                    + (pt.n != null ? ' · ' + histSampleLabel(pt.n) : '')) + '</span></button>';
             });
             html += '</div><div class="cs-trends-ages-axis">';
             curve.forEach(function (pt) {
@@ -3258,7 +3262,7 @@
         if (lead) {
             var confBits = [];
             if (lead.confidence_label) confBits.push(lead.confidence_label);
-            if (lead.n != null) confBits.push('n=' + lead.n);
+            if (lead.n != null) confBits.push(histSampleLabel(lead.n));
             if (lead.ci_low != null && lead.ci_high != null) {
                 confBits.push('95% CI ' + lead.ci_low + '% to ' + lead.ci_high + '%');
             }

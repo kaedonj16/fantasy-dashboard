@@ -453,6 +453,10 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "historical chance for this career and situation" in body.lower()
     assert "var HIST_TIER_SHORT = { top_5: 'top-5', top_12: 'top-12', top_24: 'top-24' }" in script
     assert "function histExampleHit" in script
+    assert "function histSampleLabel" in script
+    assert "histSampleLabel(row.n)" in script
+    assert "'n=' + row.n" not in script
+    assert "'n=' + lead.n" not in script
     assert "cs-hist-ex-hit" in script
     assert ".cs-hist-ex-hit" in body
     assert "(lead.pct != null ? lead.pct : '-')" in script

@@ -648,7 +648,7 @@ def _sample_clause(n: Any, confidence: Any) -> str:
     bits: list[str] = []
     sample = _optional_int(n)
     if sample is not None:
-        bits.append(f"n={sample}")
+        bits.append(f"Sample: {sample}")
     conf = _confidence_label(confidence)
     if conf:
         bits.append(conf)
@@ -1543,12 +1543,12 @@ def build_deep_panel(
         n_full = history.get("n")
         copy["examples_vs_cohort_note"] = (
             f"These are the closest examples, not the full historical cohort"
-            + (f" (n={n_full})." if n_full not in (None, 0) else ".")
+            + (f" (Sample: {n_full})." if n_full not in (None, 0) else ".")
         )
         copy["examples_summary"] = history["closest_summary"]
     elif history.get("n") not in (None, 0):
         copy["examples_vs_cohort_note"] = (
-            f"Full historical cohort n={history.get('n')}. Named examples "
+            f"Full historical cohort Sample: {history.get('n')}. Named examples "
             "are a subset, not the rate's denominator."
         )
     return {
