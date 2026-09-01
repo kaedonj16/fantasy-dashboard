@@ -587,11 +587,11 @@ def test_hist_panel_keeps_draft_capital_when_the_cell_has_seasons():
     assert any("21-32" in title and "RB1" in title and "projected offense" in title and "year 1" in title for title in offense_titles)
     assert any("21-32" in title and "projected offense" in title and "year 1" in title for title in offense_titles)
     assert not any("offense last year" in title for title in offense_titles)
-    assert "Drafted NFL Round 1, RB1, year 1" in titles
+    assert "Drafted NFL Round 1, RB1, year 1" not in titles
     assert "Drafted NFL Round 1, RB3+" not in titles
     assert "Drafted NFL Round 1, RB2" not in titles
     assert "Drafted NFL Top 10, RB1, year 1" in titles
-    assert "21-32 projected offense, Round 1" in titles
+    assert "21-32 projected offense, Round 1" not in titles
     assert "21-32 projected offense, NFL Top 10" in titles
     assert "Top-10 projected offense, Round 1" not in titles
     assert "Top-10 projected offense, NFL Top 10" not in titles
@@ -604,10 +604,8 @@ def test_hist_panel_keeps_draft_capital_when_the_cell_has_seasons():
     assert not any("RB3+" in title for title in titles)
     by_title = {row["title"]: row for row in panel["copy"]["trends"]}
     assert by_title["Drafted NFL Top 10, RB1, year 1"]["role"] == "this"
-    assert by_title["Drafted NFL Round 1, RB1, year 1"]["role"] == "this"
-    assert by_title["21-32 projected offense, Round 1"]["role"] == "this"
     assert by_title["21-32 projected offense, NFL Top 10"]["role"] == "this"
-    named = by_title["Drafted NFL Round 1, RB1, year 1"].get("examples") or []
+    named = by_title["Drafted NFL Top 10, RB1, year 1"].get("examples") or []
     assert 1 <= len(named) <= 3
     assert named[0].get("name")
     group_ids = [sec["id"] for sec in (panel["copy"].get("trend_groups") or [])]
@@ -651,7 +649,7 @@ def test_btj_hist_does_not_claim_never_previously_top12():
     assert not any("Top-10 projected offense" in title for title in titles)
     assert "Top-10 projected offense, WR2" not in titles
     assert "Top-10 projected offense, WR3+" not in titles
-    assert "Drafted NFL Round 1, WR1" in titles
+    assert "Drafted NFL Round 1, WR1" not in titles
     assert "Drafted NFL Round 1, WR2" not in titles
     assert "Drafted NFL Round 1, WR3+" not in titles
     assert "Drafted NFL Picks 11-25, WR1" in titles
@@ -662,7 +660,7 @@ def test_btj_hist_does_not_claim_never_previously_top12():
     assert not any("WR3+" in title for title in titles)
     by_title = {row["title"]: row for row in panel["copy"]["trends"]}
     assert by_title["Outside top 36 last year, WR1"]["role"] == "this"
-    assert by_title["Drafted NFL Round 1, WR1"]["role"] == "this"
+    assert by_title["Drafted NFL Picks 11-25, WR1"]["role"] == "this"
     bounce_names = by_title["Outside top 36 last year, WR1"].get("examples") or []
     assert 1 <= len(bounce_names) <= 3
     assert "first_time_elite" not in kinds

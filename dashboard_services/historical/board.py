@@ -1547,7 +1547,6 @@ def _add_capital_roster_hist_rows(
         roster_spot_label,
     )
 
-    round_1 = ("Round 1", _draft_capital_eq(DRAFT_CAPITAL_ROUND_1))
     cells: list[tuple] = []
     seen: set[tuple] = set()
 
@@ -1566,9 +1565,6 @@ def _add_capital_roster_hist_rows(
     if matching:
         for spot in spots:
             remember(matching[0], matching[1], spot)
-        if matching[0] != round_1[0] and matching[0] in ROUND_1_CAP_LABELS:
-            for spot in spots:
-                remember(round_1[0], round_1[1], spot)
     any_sentence = (
         "{pos}s drafted NFL {cap} who were the {spot} finished top-12"
     )
@@ -1654,10 +1650,9 @@ def _add_offense_capital_hist_rows(
     player_cap = _player_capital_band(query, feats)
     player_label = player_cap[0] if player_cap else ""
     proj_band = trends_offense_range(proj)
-    if proj_band:
-        for cap in _offense_capital_trend_bands():
-            if player_label and _round1_cap_matches(cap[0], player_label):
-                remember(proj_band, cap)
+    # One capital band only. Top 10 is already Round 1, so do not also emit Round 1.
+    if proj_band and player_cap and player_label in ROUND_1_CAP_LABELS:
+        remember(proj_band, player_cap)
     sentence = (
         "{pos}s drafted NFL {cap} on a team with a {band} season implied total "
         "finished top-12"
