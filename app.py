@@ -1193,10 +1193,9 @@ from utils.nfl_teams import get_team_full_name  # noqa: E402
 
 
 def _yahoo_ui_enabled() -> bool:
-    """Whether to offer Yahoo connect in the UI. Off by default while the Yahoo
-    Fantasy API access request is pending (every call 403s until approved). Set
-    YAHOO_ENABLED=1 on the host to re-enable once granted."""
-    return (os.environ.get("YAHOO_ENABLED") or "").strip().lower() in ("1", "true", "yes", "on")
+    """Whether to offer Yahoo connect in the UI."""
+    from dashboard_services.providers.yahoo_api import yahoo_enabled
+    return yahoo_enabled()
 
 
 def _espn_otp_ui_enabled() -> bool:
@@ -1284,12 +1283,7 @@ FORM_BODY = """
           <div class="platform-selector">
             <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
             <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
-            {% if yahoo_enabled %}
             <button type="button" class="platform-btn" data-platform="yahoo">Yahoo</button>
-            {% else %}
-            <button type="button" class="platform-btn platform-btn-disabled" disabled
-                    title="Yahoo is temporarily unavailable while we finish Yahoo API setup.">Yahoo <span class="platform-soon">Soon</span></button>
-            {% endif %}
             <button type="button" class="platform-btn" data-platform="mfl">MFL</button>
             <button type="button" class="platform-btn" data-platform="fleaflicker">Fleaflicker</button>
           </div>
@@ -1375,7 +1369,6 @@ FORM_BODY = """
         </div>
 
         <!-- Yahoo Flow -->
-        {% if yahoo_enabled %}
         <div id="yahooFlow" style="display:none;">
           <div class="row">
             <label for="yahooLeagueIdInput">Yahoo League ID</label>
@@ -1393,7 +1386,6 @@ FORM_BODY = """
             You'll be redirected to Yahoo to authorize access, then returned here.
           </p>
         </div>
-        {% endif %}
 
         <!-- MFL Flow -->
         <div id="mflFlow" style="display:none;">
@@ -1572,52 +1564,6 @@ FORM_BODY = """
       <span class="home-proof-label">League History</span>
       <span class="home-proof-desc">Season recaps, power rankings, and trend charts</span>
     </div>
-    </section>
-
-  <section class="home-publisher" aria-labelledby="homePublisherTitle">
-    <h2 class="home-publisher-title" id="homePublisherTitle">Dynasty tools with original strategy writing</h2>
-    <p>
-      BR Fantasy is a fantasy football site for dynasty and redraft managers. The
-      public pages are written as articles and reference tools, not as an empty
-      login wall: you can read how values are built, compare players, and study
-      prospect profiles before you connect a league.
-    </p>
-    <p>
-      Daily <a href="/rankings/dynasty">dynasty rankings</a> blend consensus market
-      prices with production, age curves, and opportunity metrics such as target
-      share and snap counts. The
-      <a href="/dynasty-trade-value-chart">dynasty trade value chart</a> is the
-      same model in a full positional view. Superflex and 1QB are separate
-      because quarterback scarcity changes every other price on the board. That
-      methodology is explained in
-      <a href="/guides/dynasty-trade-value">How Dynasty Trade Value Works</a>
-      and <a href="/guides/superflex-vs-1qb">Superflex vs 1QB</a>.
-    </p>
-    <p>
-      The <a href="/trade">trade calculator</a> grades both sides of a deal with
-      those values. <a href="/top-movers">Top movers</a> shows who is rising or
-      falling. <a href="/prospects">Rookie prospects</a> collect draft capital,
-      college production, and athleticism for the next rookie draft. The
-      <a href="/glossary">glossary</a> defines the vocabulary those pages use.
-    </p>
-    <p>
-      Strategy guides are long-form original writing, not captions under a widget.
-      Start with <a href="/guides">all guides</a> or jump to
-      <a href="/guides/evaluating-a-trade">evaluating a trade</a>,
-      <a href="/guides/dynasty-rebuild-strategy">rebuilding</a>,
-      <a href="/guides/contending-in-dynasty">contending</a>, or
-      <a href="/guides/startup-draft-guide">startup drafts</a>. About the author
-      and how we correct mistakes lives on the <a href="/about">About</a> page.
-      Questions go to <a href="/contact">Contact</a>.
-    </p>
-    <ul class="home-publisher-links">
-      <li><a href="/guides">Strategy guides</a></li>
-      <li><a href="/rankings/dynasty">Dynasty rankings</a></li>
-      <li><a href="/dynasty-trade-value-chart">Trade value chart</a></li>
-      <li><a href="/trade">Trade calculator</a></li>
-      <li><a href="/glossary">Glossary</a></li>
-      <li><a href="/about">About BR Fantasy</a></li>
-    </ul>
   </section>
 
   <div class="home-content-wrapper">
@@ -1758,6 +1704,62 @@ FORM_BODY = """
       </div>
     </aside>
   </div>
+
+  <section class="home-publisher" aria-labelledby="homePublisherTitle">
+    <div class="home-publisher-inner">
+      <header class="home-publisher-head">
+        <span class="home-publisher-eyebrow">Strategy &amp; resources</span>
+        <h2 class="home-publisher-title" id="homePublisherTitle">Dynasty tools with original strategy writing</h2>
+        <p class="home-publisher-lead">
+          BR Fantasy is a fantasy football site for dynasty and redraft managers. Read how values are built,
+          compare players, and study prospect profiles before you connect a league.
+        </p>
+      </header>
+      <div class="home-publisher-grid">
+        <div class="home-publisher-copy">
+          <p>
+            Daily <a href="/rankings/dynasty">dynasty rankings</a> blend consensus market
+            prices with production, age curves, and opportunity metrics such as target
+            share and snap counts. The
+            <a href="/dynasty-trade-value-chart">dynasty trade value chart</a> is the
+            same model in a full positional view. Superflex and 1QB are separate
+            because quarterback scarcity changes every other price on the board. That
+            methodology is explained in
+            <a href="/guides/dynasty-trade-value">How Dynasty Trade Value Works</a>
+            and <a href="/guides/superflex-vs-1qb">Superflex vs 1QB</a>.
+          </p>
+          <p>
+            The <a href="/trade">trade calculator</a> grades both sides of a deal with
+            those values. <a href="/top-movers">Top movers</a> shows who is rising or
+            falling. <a href="/prospects">Rookie prospects</a> collect draft capital,
+            college production, and athleticism for the next rookie draft. The
+            <a href="/glossary">glossary</a> defines the vocabulary those pages use.
+          </p>
+          <p>
+            Strategy guides are long-form original writing, not captions under a widget.
+            Start with <a href="/guides">all guides</a> or jump to
+            <a href="/guides/evaluating-a-trade">evaluating a trade</a>,
+            <a href="/guides/dynasty-rebuild-strategy">rebuilding</a>,
+            <a href="/guides/contending-in-dynasty">contending</a>, or
+            <a href="/guides/startup-draft-guide">startup drafts</a>. About the author
+            and how we correct mistakes lives on the <a href="/about">About</a> page.
+            Questions go to <a href="/contact">Contact</a>.
+          </p>
+        </div>
+        <nav class="home-publisher-aside" aria-label="Featured guides and tools">
+          <span class="home-publisher-aside-label">Start here</span>
+          <ul class="home-publisher-links">
+            <li><a href="/guides">Strategy guides</a></li>
+            <li><a href="/rankings/dynasty">Dynasty rankings</a></li>
+            <li><a href="/dynasty-trade-value-chart">Trade value chart</a></li>
+            <li><a href="/trade">Trade calculator</a></li>
+            <li><a href="/glossary">Glossary</a></li>
+            <li><a href="/about">About BR Fantasy</a></li>
+          </ul>
+        </nav>
+      </div>
+    </div>
+  </section>
 </div>
 
 <div class="fullscreen-loading-overlay" id="dashboardLoadingOverlay" style="display:none;">

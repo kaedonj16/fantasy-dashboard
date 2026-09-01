@@ -12176,55 +12176,114 @@ a.signed-home-league:hover {
 .home-publisher {
     position: relative;
     z-index: 1;
-    margin: 8px 0 32px;
-    padding: 24px 26px 20px;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-sm);
+    margin-top: 12px;
+    padding-top: 40px;
+    border-top: 1px solid var(--border);
+}
+
+.home-publisher-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+}
+
+.home-publisher-head {
+    max-width: 720px;
+}
+
+.home-publisher-eyebrow {
+    display: block;
+    margin-bottom: 10px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--brand-blue);
 }
 
 .home-publisher-title {
     margin: 0 0 12px;
-    font-size: 20px;
-    font-weight: 700;
+    font-size: clamp(22px, 2.4vw, 28px);
+    font-weight: 800;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
     color: var(--text);
 }
 
-.home-publisher p {
-    margin: 0 0 12px;
-    font-size: 15px;
+.home-publisher-lead {
+    margin: 0;
+    font-size: 16px;
     line-height: 1.65;
+    color: var(--text-muted);
+}
+
+.home-publisher-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.8fr);
+    gap: 28px 36px;
+    align-items: start;
+}
+
+.home-publisher-copy p {
+    margin: 0 0 14px;
+    font-size: 15px;
+    line-height: 1.7;
     color: var(--text);
 }
 
-.home-publisher p:last-of-type {
-    margin-bottom: 16px;
+.home-publisher-copy p:last-child {
+    margin-bottom: 0;
+}
+
+.home-publisher-copy a {
+    color: var(--text);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.home-publisher-aside {
+    padding: 20px 22px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--card) 88%, var(--brand-blue) 12%);
+}
+
+.home-publisher-aside-label {
+    display: block;
+    margin-bottom: 14px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
 }
 
 .home-publisher-links {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px 10px;
+    flex-direction: column;
+    gap: 8px;
     margin: 0;
     padding: 0;
     list-style: none;
 }
 
 .home-publisher-links a {
-    display: inline-block;
-    padding: 6px 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-pill);
-    background: var(--card-soft);
+    display: block;
+    padding: 10px 12px;
+    border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+    border-radius: 10px;
+    background: var(--card);
     color: var(--text);
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     text-decoration: none;
+    transition: border-color 0.15s ease, transform 0.15s ease;
 }
 
 .home-publisher-links a:hover {
-    border-color: color-mix(in srgb, var(--text) 22%, var(--border));
+    border-color: color-mix(in srgb, var(--brand-blue) 35%, var(--border));
+    transform: translateY(-1px);
 }
 
 .guide-byline {
@@ -12269,27 +12328,6 @@ a.signed-home-league:hover {
     display: flex;
     flex-direction: column;
     gap: 36px;
-    position: relative;
-}
-
-/* Soft brand atmosphere behind the hero — not a flat white slab, not a
-   competing illustration. Keeps the first viewport one composition. */
-.home-page::before {
-    content: "";
-    position: absolute;
-    inset: -24px -8% auto;
-    height: min(520px, 72vh);
-    pointer-events: none;
-    z-index: 0;
-    background:
-        radial-gradient(ellipse 70% 55% at 18% 20%, color-mix(in srgb, var(--brand-blue) 14%, transparent), transparent 70%),
-        radial-gradient(ellipse 55% 45% at 88% 8%, color-mix(in srgb, var(--spinner) 10%, transparent), transparent 65%);
-}
-
-[data-theme="dark"] .home-page::before {
-    background:
-        radial-gradient(ellipse 70% 55% at 18% 18%, color-mix(in srgb, var(--brand-blue) 18%, transparent), transparent 70%),
-        radial-gradient(ellipse 55% 45% at 90% 6%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 65%);
 }
 
 .home-brand {
@@ -15496,8 +15534,16 @@ img, svg, canvas {
     }
 
     .home-publisher {
-        padding: 18px 16px 16px;
-        margin: 4px 0 24px;
+        padding-top: 28px;
+    }
+
+    .home-publisher-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+
+    .home-publisher-aside {
+        padding: 16px 18px;
     }
 
     .home-updates-grid {
