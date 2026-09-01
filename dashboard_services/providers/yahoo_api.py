@@ -746,12 +746,33 @@ def _extract_teams(raw: Dict) -> List[Dict]:
     return out
 
 
+_TEAM_SUBRESOURCES = frozenset({
+    "roster", "team_standings", "team_points", "team_projected_points",
+    "team_stats", "matchups", "draft_results",
+})
+
+
 def _team_attr(team_list: List, key: str, default=None):
-    """Yahoo returns team attributes as a list of dicts; find the one with `key`."""
-    for item in team_list or []:
-        if isinstance(item, dict) and key in item:
-            return item[key]
-    return default
+    """Find a team field in Yahoo's positional team array.
+
+    With sub-resources (``;out=roster,stats,standings``) metadata lives in
+    ``team[0]`` as a nested list of single-key dicts. Without sub-resources
+    it's often a flat list of dicts. Walk both shapes."""
+    def _walk(nodes):
+        for node in nodes:
+            if isinstance(node, dict):
+                if key in node:
+                    return node[key]
+                if any(k in node for k in _TEAM_SUBRESOURCES):
+                    continue
+            elif isinstance(node, list):
+                hit = _walk(node)
+                if hit is not None:
+                    return hit
+        return None
+
+    hit = _walk(team_list or [])
+    return default if hit is None else hit
 
 
 def _extract_roster_players(team_data: List) -> List[Dict]:
@@ -908,7 +929,10 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
 
 
 def get_matchups(season: int, league_id: str, week: int, access_token: str) -> List[Dict[str, Any]]:
-    raw        = _yahoo_get(access_token, f"league/{_league_key(league_id)}/scoreboard;week={week}")
+    raw        = _yahoo_get(
+        access_token,
+        f"league/{_league_key_for_season(league_id, season, access_token)}/scoreboard;week={week}",
+    )
     fc         = raw.get("fantasy_content", {})
     lg         = fc.get("league") or []
     scoreboard = (lg[1] if len(lg) > 1 else {}).get("scoreboard") or {}
@@ -925,16 +949,13 @@ def get_matchups(season: int, league_id: str, week: int, access_token: str) -> L
         for j in range(2):
             tm_entry = teams.get(str(j)) or {}
             tm       = tm_entry.get("team") or []
-            tm_meta  = tm[0] if tm else {}
-            if isinstance(tm_meta, list):
-                tm_meta = tm_meta[0] if tm_meta else {}
 
             roster_id = _safe_int(
-                tm_meta.get("team_id")
-                or (tm_meta.get("team_key") or "").split(".")[-1]
+                _team_attr(tm, "team_id")
+                or (_team_attr(tm, "team_key") or "").split(".")[-1]
             )
-            pts_block = (tm[1] if len(tm) > 1 else {}) if isinstance(tm, list) else {}
-            points    = _safe_float(pts_block.get("team_points", {}).get("total") if isinstance(pts_block, dict) else 0)
+            pts_block = _team_attr(tm, "team_points") or {}
+            points    = _safe_float(pts_block.get("total") if isinstance(pts_block, dict) else 0)
 
             out.append({
                 "points":          points,

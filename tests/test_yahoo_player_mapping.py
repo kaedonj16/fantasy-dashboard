@@ -223,3 +223,72 @@ def test_extract_roster_players_uses_zero_based_keys():
     meta1, _ = yahoo_api._flatten_yahoo_player(out[1])
     assert meta0["player_id"] == "5"
     assert meta1["player_id"] == "6"
+
+
+def _realistic_yahoo_team(team_id, name, *, with_roster=False):
+    """Yahoo team shape when ``;out=roster,stats,standings`` is requested."""
+    meta = [
+        {"team_key": f"449.l.99.t.{team_id}"},
+        {"team_id": str(team_id)},
+        {"name": name},
+        {"managers": [{"manager": {"guid": f"g{team_id}", "nickname": f"Owner {team_id}"}}]},
+    ]
+    parts = [meta]
+    if with_roster:
+        parts.append({
+            "team_standings": {
+                "outcome_totals": {"wins": "1", "losses": "0", "ties": "0"},
+                "points_for": "120.5",
+                "points_against": "99.1",
+            }
+        })
+        parts.append({
+            "roster": {
+                "players": {
+                    "0": {"player": [[
+                        {"player_id": "5"},
+                        {"name": {"full": "Patrick Mahomes"}},
+                        {"display_position": "QB"},
+                        {"editorial_team_abbr": "KC"},
+                    ]]},
+                    "count": 1,
+                }
+            }
+        })
+    return parts
+
+
+def test_team_attr_reads_nested_metadata_with_subresources():
+    team = _realistic_yahoo_team(3, "Champions", with_roster=True)
+    assert yahoo_api._team_attr(team, "team_id") == "3"
+    assert yahoo_api._team_attr(team, "name") == "Champions"
+    standings = yahoo_api._team_attr(team, "team_standings") or {}
+    assert standings.get("points_for") == "120.5"
+
+
+def test_get_users_returns_distinct_roster_ids(monkeypatch):
+    teams = [_realistic_yahoo_team(i, f"Team {i}") for i in range(1, 4)]
+    payload = _teams_payload(teams)
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda *a, **k: payload)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    users = yahoo_api.get_users(2026, "99", "tok")
+    assert len(users) == 3
+    assert {u["roster_id"] for u in users} == {1, 2, 3}
+    assert users[0]["metadata"]["team_name"] == "Team 1"
+
+
+def test_get_rosters_maps_nested_team_players(monkeypatch):
+    import dashboard_services.api as api
+    monkeypatch.setattr(api, "get_nfl_players", lambda: {"11111": {"yahoo_id": "5"}})
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    team = _realistic_yahoo_team(7, "Nested Roster Team", with_roster=True)
+    payload = _teams_payload([team])
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda *a, **k: payload)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    rosters = yahoo_api.get_rosters(2026, "99", "tok")
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    assert len(rosters) == 1
+    assert rosters[0]["roster_id"] == 7
+    assert rosters[0]["players"] == ["11111"]
+    assert rosters[0]["settings"]["wins"] == 1
+    assert rosters[0]["settings"]["fpts"] == 120
