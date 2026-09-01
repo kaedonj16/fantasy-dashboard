@@ -2310,7 +2310,7 @@
         return n == null ? '' : ('Sample: ' + n);
     }
 
-    function histTrendRow(row, barHtml) {
+    function histTrendRow(row, barHtml, markCells) {
         row = row || {};
         var meta = [];
         if (row.n != null) meta.push(histSampleLabel(row.n));
@@ -2322,9 +2322,10 @@
             ? ((row.vs_baseline > 0 ? '+' : '') + row.vs_baseline)
             : '';
         var isThis = row.role === 'this';
-        var roleChip = isThis
+        var roleChip = (markCells && isThis)
             ? '<span class="cs-hist-hit-role">This player</span>'
             : '';
+        var roleClass = markCells ? (isThis ? ' is-this' : ' is-analog') : '';
         var names = Array.isArray(row.examples) ? row.examples.filter(Boolean) : [];
         var namesHtml = '';
         if (names.length) {
@@ -2344,7 +2345,7 @@
             namesHtml += '</ul></details>';
         }
         return '<div class="cs-hist-hit' + (row.polarity === 'miss' ? ' is-miss' : '')
-            + (isThis ? ' is-this' : ' is-analog') + '"><div class="cs-hist-hit-top">'
+            + roleClass + '"><div class="cs-hist-hit-top">'
             + trendsConfDot(row.confidence_label)
             + '<div><div class="cs-hist-hit-label">' + esc(histTrendTitle(row)) + '</div>'
             + roleChip
@@ -2357,11 +2358,11 @@
             + '</div>';
     }
 
-    function trendsHitRow(row, polarity, baselinePct, span) {
+    function trendsHitRow(row, polarity, baselinePct, span, markCells) {
         row = row || {};
         var pol = polarity || row.polarity;
         var base = pol === 'miss' ? null : (baselinePct != null ? baselinePct : trendsBaselineOf(row));
-        return histTrendRow(row, trendsRailHtml(row.pct, base, pol, span));
+        return histTrendRow(row, trendsRailHtml(row.pct, base, pol, span), markCells);
     }
 
     function defaultTrendsPos() {
@@ -3454,11 +3455,12 @@
                 : [{ id: 'all', heading: '', rows: trends }];
             groups.forEach(function (sec) {
                 if (!sec || !sec.rows || !sec.rows.length) return;
+                var markCells = sec.rows.some(function (r) { return r && r.role === 'analog'; });
                 html += '<div class="cs-hist-sec">';
                 if (sec.heading) html += '<h3>' + esc(sec.heading) + '</h3>';
                 html += '<div class="cs-hist-hits">';
                 sec.rows.forEach(function (row) {
-                    html += trendsHitRow(row, row && row.polarity, histBaseline, histSpan);
+                    html += trendsHitRow(row, row && row.polarity, histBaseline, histSpan, markCells);
                 });
                 html += '</div></div>';
             });

@@ -1130,17 +1130,11 @@ def _hist_year_window(stage: Any) -> Optional[tuple[str, str]]:
 
 
 def _hist_roster_spots(player_spot: Any) -> list[int]:
-    """Starter vs depth analog, plus this player's own spot when it is the middle."""
-    from dashboard_services.historical.roster import (
-        ROSTER_SPOTS,
-        normalize_roster_spot,
-    )
+    """Only this player's preseason roster spot. No analog RB2/RB3+ tiles."""
+    from dashboard_services.historical.roster import normalize_roster_spot
 
-    spots = {int(ROSTER_SPOTS[0]), int(ROSTER_SPOTS[-1])}
     own = normalize_roster_spot(player_spot)
-    if own is not None:
-        spots.add(int(own))
-    return sorted(spots)
+    return [int(own)] if own is not None else []
 
 
 def _round1_cap_matches(cap_label: str, player_label: str) -> bool:
@@ -1430,7 +1424,6 @@ def _add_offense_roster_hist_rows(
         roster_spot_label,
     )
 
-    top = TRENDS_OFFENSE_RANGES[0]
     cells: list[tuple] = []
     seen: set[tuple] = set()
 
@@ -1443,9 +1436,7 @@ def _add_offense_roster_hist_rows(
 
     player_spot = normalize_roster_spot(roster_spot)
     matching = trends_offense_range(proj)
-    for spot in _hist_roster_spots(player_spot):
-        remember(top, spot)
-    if player_spot is not None and matching and matching[0] != top[0]:
+    if player_spot is not None and matching:
         remember(matching, player_spot)
     any_sentence = (
         "{pos}s who were the {spot} on a team with a {band} season implied total "
@@ -1571,10 +1562,13 @@ def _add_capital_roster_hist_rows(
         query.get("roster_spot") or feats.get("roster_spot")
     )
     matching = _player_capital_band(query, feats)
-    for spot in _hist_roster_spots(player_spot):
-        remember(round_1[0], round_1[1], spot)
-    if player_spot is not None and matching:
-        remember(matching[0], matching[1], player_spot)
+    spots = _hist_roster_spots(player_spot)
+    if matching:
+        for spot in spots:
+            remember(matching[0], matching[1], spot)
+        if matching[0] != round_1[0] and matching[0] in ROUND_1_CAP_LABELS:
+            for spot in spots:
+                remember(round_1[0], round_1[1], spot)
     any_sentence = (
         "{pos}s drafted NFL {cap} who were the {spot} finished top-12"
     )
@@ -1647,7 +1641,6 @@ def _add_offense_capital_hist_rows(
     """Projected-offense band x Round 1 / NFL Top 10. RB only. No year splits."""
     if pos != "RB":
         return
-    top = TRENDS_OFFENSE_RANGES[0]
     cells: list[tuple] = []
     seen: set[tuple] = set()
 
@@ -1658,14 +1651,13 @@ def _add_offense_capital_hist_rows(
         seen.add(key)
         cells.append((band, cap))
 
-    for cap in _offense_capital_trend_bands():
-        remember(top, cap)
-    proj_band = trends_offense_range(proj)
-    if proj_band and proj_band[0] != top[0]:
-        for cap in _offense_capital_trend_bands():
-            remember(proj_band, cap)
     player_cap = _player_capital_band(query, feats)
     player_label = player_cap[0] if player_cap else ""
+    proj_band = trends_offense_range(proj)
+    if proj_band:
+        for cap in _offense_capital_trend_bands():
+            if player_label and _round1_cap_matches(cap[0], player_label):
+                remember(proj_band, cap)
     sentence = (
         "{pos}s drafted NFL {cap} on a team with a {band} season implied total "
         "finished top-12"
@@ -1706,21 +1698,20 @@ def _add_bounce_roster_hist_rows(
     prior = feats.get("prior_finish")
     if prior != "outside_36":
         return
-    from dashboard_services.historical.roster import (
-        ROSTER_SPOTS,
-        normalize_roster_spot,
-        roster_spot_label,
-    )
+    from dashboard_services.historical.roster import roster_spot_label
 
-    player_spot = normalize_roster_spot(
+    spots = _hist_roster_spots(
         query.get("roster_spot") or feats.get("roster_spot")
     )
+    if not spots:
+        return
+    player_spot = spots[0]
     prior_filter = _match_eq("prior_finish", "prior_finish", "outside_36")
     sentence = (
         "{pos}s who finished outside the top 36 last year and were the {spot} "
         "finished top-12"
     )
-    for spot in ROSTER_SPOTS:
+    for spot in spots:
         slabel = roster_spot_label(pos, spot)
         rec = _cohort_rate_for_filters(
             aggregates, pos, [prior_filter, _roster_spot_filter(spot)]
@@ -1752,8 +1743,13 @@ def build_hist_trends(
     rows: list[dict] = []
 
     def add(row: Optional[dict]) -> None:
-        if row:
-            rows.append(row)
+        if not row:
+            return
+        if row.get("polarity") == "miss":
+            return
+        if row.get("role") == "analog":
+            return
+        rows.append(row)
 
     repeat = (aggregates.get("repeat_and_breakout") or {}).get(pos) or {}
     prior = feats.get("prior_finish")
@@ -1998,7 +1994,7 @@ def build_hist_trends(
     proj_band = trends_offense_range(proj)
     _add_offense_hist_rows(
         add, aggregates, pos, stage, baseline_pct,
-        bands=_offense_bands_for(proj, always_top=True),
+        bands=_offense_bands_for(proj, always_top=False),
         field="projected_offense_rank",
         group="projected_offense",
         analog="projected",
@@ -2018,26 +2014,6 @@ def build_hist_trends(
     )
     _add_offense_capital_hist_rows(
         add, aggregates, pos, baseline_pct, proj=proj, query=query, feats=feats,
-    )
-    rank = _optional_int(query.get("prior_offense_rank") or feats.get("prior_offense_rank"))
-    if rank is None:
-        from dashboard_services.historical.offense import lookup_team_prior_offense_rank
-
-        rank = lookup_team_prior_offense_rank(
-            aggregates,
-            query.get("team") or feats.get("team"),
-        )
-    last_band = trends_offense_range(rank)
-    _add_offense_hist_rows(
-        add, aggregates, pos, stage, baseline_pct,
-        bands=_offense_bands_for(rank, always_top=False),
-        field="prior_offense_rank",
-        group="offense",
-        analog="last_year",
-        kind_any="offense_last_year",
-        kind_y1="offense_last_year_1",
-        kind_y2="offense_last_year_2",
-        matching_key=last_band[0] if last_band else None,
     )
     return rows
 
@@ -2149,8 +2125,7 @@ def build_hist_panel_copy(
         "trends_heading": "Trends for this player's buckets",
         "trends_note": (
             "Grouped by Career, Capital, Roster, Offense, and Usage. "
-            "This player marks the cell that matches this preseason profile. "
-            "Analog rows are the contrast (Top-10 offense, Round 1 RB3+). "
+            "Each tile is a bucket this player matches this year. "
             "Open a tile for 2-3 names from that intersection, not the headline cohort. "
             "They are not combined into a ranking score."
         ),

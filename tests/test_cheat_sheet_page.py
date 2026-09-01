@@ -623,6 +623,8 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "bounce_roster" in script
     assert "trend_groups" in script
     assert "This player" in script
+    assert "r.role === 'analog'" in script
+    assert "var markCells" in script
     assert "+ '<div><div class=\"cs-hist-hit-label\">' + esc(histTrendTitle(row)) + '</div>'" in script
     assert "+ roleChip" in script.split("function histTrendRow")[1].split("function trendsHitRow")[0]
     assert "cs-hist-tile-ex" in script
