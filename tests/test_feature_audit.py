@@ -111,6 +111,14 @@ def test_update_banner_clears_mobile_dock():
     assert ".toast-container .toast {" in DASH_CSS
 
 
+def test_recap_ready_banner_clears_mobile_dock_and_skips_offseason():
+    recap = APP_PY[APP_PY.index("def _recap_ready_banner"): APP_PY.index("def _draft_imminent_banner")]
+    assert "#recapReadyBanner" in recap
+    assert "bottom:calc(var(--dock-safe-bottom) + 14px) !important;" in recap
+    assert 'season_type not in ("reg", "post")' in recap
+    assert "now.month not in" not in recap
+
+
 def test_scout_hint_helper_covers_every_platform():
     assert "def platform_sign_in_hint(platform: str)" in SCOUT
     assert '"yahoo": "your Yahoo team name"' in SCOUT
