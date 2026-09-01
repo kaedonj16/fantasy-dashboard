@@ -366,6 +366,27 @@ _CHEAT_HTML = r"""
   .cs-hist-edge.is-down { color: var(--cs-bad, var(--loss)); }
   .cs-hist-edge.is-even { color: var(--cs-ink-soft, var(--text-muted)); }
   .cs-hist-gap { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.45; margin: 11px 0 0; }
+  .cs-hist-tp { border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; overflow: hidden; }
+  .cs-hist-tp-row { display: flex; align-items: center; gap: 11px; padding: 9px 13px; border-bottom: 1px solid var(--cs-line, var(--border)); }
+  .cs-hist-tp-row:last-child { border-bottom: 0; }
+  .cs-hist-tp-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--cs-line-strong, var(--border)); }
+  .cs-hist-tp-dot.is-up { background: var(--cs-pos); }
+  .cs-hist-tp-dot.is-miss { background: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-hist-tp-main { flex: 1; min-width: 0; }
+  .cs-hist-tp-label { font-size: 12.5px; font-weight: 700; color: var(--cs-ink, var(--text)); line-height: 1.3; overflow-wrap: anywhere; }
+  .cs-hist-tp-meta { font-family: var(--cs-mono); font-size: 10px; color: var(--cs-ink-faint, var(--text-muted)); margin-top: 1px; }
+  .cs-hist-tp-bar { width: 84px; height: 6px; border-radius: 999px; background: var(--cs-surface-2, var(--card)); overflow: hidden; flex-shrink: 0; }
+  .cs-hist-tp-fill { height: 100%; border-radius: 999px; }
+  .cs-hist-tp-fill.is-up { background: var(--cs-pos); }
+  .cs-hist-tp-fill.is-neutral { background: var(--cs-line-strong, var(--border)); }
+  .cs-hist-tp-pct { font-family: var(--cs-mono); font-size: 12.5px; font-weight: 800; font-variant-numeric: tabular-nums; width: 58px; text-align: right; white-space: nowrap; color: var(--cs-ink, var(--text)); }
+  .cs-hist-tp-vs { font-size: 10px; font-weight: 700; }
+  .cs-hist-tp-vs.is-up { color: var(--cs-good, var(--win)); }
+  .cs-hist-tp-vs.is-down { color: var(--cs-bad, var(--loss)); }
+  .cs-hist-tmore { margin-top: 8px; }
+  .cs-hist-tmore > summary { cursor: pointer; list-style: none; font-size: 11.5px; font-weight: 700; color: var(--cs-pos); padding: 2px 0; }
+  .cs-hist-tmore > summary::-webkit-details-marker { display: none; }
+  .cs-hist-tmore[open] > summary { margin-bottom: 8px; }
   .cs-trends-qb, .cs-hist-modal.cs-hist-qb { --cs-pos: var(--cs-qb); --cs-pos-bg: var(--cs-qb-bg); }
   .cs-trends-rb, .cs-hist-modal.cs-hist-rb { --cs-pos: var(--cs-rb); --cs-pos-bg: var(--cs-rb-bg); }
   .cs-trends-wr, .cs-hist-modal.cs-hist-wr { --cs-pos: var(--cs-wr); --cs-pos-bg: var(--cs-wr-bg); }

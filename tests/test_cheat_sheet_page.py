@@ -467,8 +467,14 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "(row.pct != null ? row.pct + '%' : '-')" in script
     assert "—" not in script.split("function renderHistPanel")[1].split("function init()")[0]
     assert "–" not in script.split("function renderHistPanel")[1].split("function init()")[0]
-    assert "copy.trends" in script or "Trends for this player's buckets" in script
-    assert "trendsHitRow(row, row && row.polarity, histBaseline, histSpan, markCells)" in script
+    assert "copy.trends" in script
+    assert "Trends behind it" in script
+    assert "function histCompactTrendRow" in script
+    assert "histCompactTrendRow(row, trSpan)" in script
+    assert "See all ' + trends.length + ' trends" in script
+    assert "function deDash" in script
+    assert ".cs-hist-tp-row" in body
+    assert ".cs-hist-tp-fill.is-up { background: var(--cs-pos); }" in body
     assert ".cs-hist-hits { display: grid; grid-template-columns: 1fr 1fr;" in body
     assert ".cs-hist-hit:last-child:nth-child(odd) { grid-column: 1 / -1; }" in body
     assert ".cs-hist-hit-role { display: block;" in body
@@ -629,10 +635,6 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "capital_roster" in script
     assert "offense_capital" in script
     assert "bounce_roster" in script
-    assert "trend_groups" in script
-    assert "This player" in script
-    assert "r.role === 'analog'" in script
-    assert "var markCells" in script
     assert "+ '<div><div class=\"cs-hist-hit-label\">' + esc(histTrendTitle(row)) + '</div>'" in script
     assert "+ roleChip" in script.split("function histTrendRow")[1].split("function trendsHitRow")[0]
     assert "cs-hist-tile-ex" in script
