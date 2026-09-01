@@ -840,6 +840,14 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "Hist" in hist_phone["text"]
     assert "—" not in hist_phone["text"]
     assert "–" not in hist_phone["text"]
+    hist_match = next(
+        entry for entry in CHANGELOG
+        if "same top-12 chance as the player modal" in entry.get("text", "").lower()
+    )
+    assert hist_match["tag"] == "fix"
+    assert hist_match["link"] == "/draft/cheat-sheet"
+    assert "—" not in hist_match["text"]
+    assert "–" not in hist_match["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():

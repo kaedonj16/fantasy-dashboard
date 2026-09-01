@@ -1120,6 +1120,29 @@ def _hist_role(is_this: bool) -> str:
     return "this" if is_this else "analog"
 
 
+def _hist_year_window(stage: Any) -> Optional[tuple[str, str]]:
+    """Year-1 / year-2 split only for rookies and second-year players."""
+    if stage == CAREER_STAGE_ROOKIE:
+        return (CAREER_STAGE_ROOKIE, "year_1")
+    if stage == CAREER_STAGE_YEAR_2:
+        return (CAREER_STAGE_YEAR_2, "year_2")
+    return None
+
+
+def _hist_roster_spots(player_spot: Any) -> list[int]:
+    """Starter vs depth analog, plus this player's own spot when it is the middle."""
+    from dashboard_services.historical.roster import (
+        ROSTER_SPOTS,
+        normalize_roster_spot,
+    )
+
+    spots = {int(ROSTER_SPOTS[0]), int(ROSTER_SPOTS[-1])}
+    own = normalize_roster_spot(player_spot)
+    if own is not None:
+        spots.add(int(own))
+    return sorted(spots)
+
+
 def _round1_cap_matches(cap_label: str, player_label: str) -> bool:
     if cap_label == player_label:
         return True
@@ -1357,21 +1380,19 @@ def _add_offense_hist_rows(
         off_filter = _match_between(group, field, lo, hi)
         off_rec = _cohort_rate_for_filters(aggregates, pos, [off_filter])
         is_this = bool(matching_key) and _key == matching_key
-        add(_trend_row(
-            kind=kind_any,
-            label=_offense_window_title(off_label, "any", analog=analog),
-            bucket=off_label,
-            sentence=any_sentence.format(pos=pos, band=band_phrase),
-            rate=off_rec.get("top_12") if "top_12" in off_rec else off_rec,
-            baseline_pct=baseline_pct,
-            role=_hist_role(is_this),
-        ))
-        for window_id, stage_key, window in (
-            (kind_y1, CAREER_STAGE_ROOKIE, "year_1"),
-            (kind_y2, CAREER_STAGE_YEAR_2, "year_2"),
-        ):
-            if stage and stage != stage_key:
-                continue
+        year = _hist_year_window(stage) if is_this else None
+        if not year:
+            add(_trend_row(
+                kind=kind_any,
+                label=_offense_window_title(off_label, "any", analog=analog),
+                bucket=off_label,
+                sentence=any_sentence.format(pos=pos, band=band_phrase),
+                rate=off_rec.get("top_12") if "top_12" in off_rec else off_rec,
+                baseline_pct=baseline_pct,
+                role=_hist_role(is_this),
+            ))
+        if year:
+            stage_key, window = year
             when = "year 1" if window == "year_1" else "year 2"
             rate = _cohort_rate_for_filters(
                 aggregates,
@@ -1379,13 +1400,13 @@ def _add_offense_hist_rows(
                 [off_filter, _match_eq("career_stage", "career_stage", stage_key)],
             )
             add(_trend_row(
-                kind=window_id,
+                kind=kind_y1 if window == "year_1" else kind_y2,
                 label=_offense_window_title(off_label, window, analog=analog),
                 bucket=off_label,
                 sentence=year_sentence.format(pos=pos, band=band_phrase, when=when),
                 rate=rate,
                 baseline_pct=baseline_pct,
-                role=_hist_role(is_this),
+                role=_hist_role(True),
             ))
 
 
@@ -1405,7 +1426,6 @@ def _add_offense_roster_hist_rows(
 ) -> None:
     """Projected-offense band x preseason roster spot. Counted, not multiplied."""
     from dashboard_services.historical.roster import (
-        ROSTER_SPOTS,
         normalize_roster_spot,
         roster_spot_label,
     )
@@ -1421,10 +1441,10 @@ def _add_offense_roster_hist_rows(
         seen.add(key)
         cells.append((band, int(spot)))
 
-    for spot in ROSTER_SPOTS:
-        remember(top, spot)
     player_spot = normalize_roster_spot(roster_spot)
     matching = trends_offense_range(proj)
+    for spot in _hist_roster_spots(player_spot):
+        remember(top, spot)
     if player_spot is not None and matching and matching[0] != top[0]:
         remember(matching, player_spot)
     any_sentence = (
@@ -1448,21 +1468,19 @@ def _add_offense_roster_hist_rows(
             and matching is not None
             and _key == matching[0]
         )
-        add(_trend_row(
-            kind="offense_roster",
-            label=_offense_roster_title(off_label, slabel, "any"),
-            bucket=f"{off_label}, {slabel}",
-            sentence=any_sentence.format(pos=pos, spot=slabel, band=band_phrase),
-            rate=rec.get("top_12") if "top_12" in rec else rec,
-            baseline_pct=baseline_pct,
-            role=_hist_role(is_this),
-        ))
-        for window_id, stage_key, window in (
-            ("offense_roster_1", CAREER_STAGE_ROOKIE, "year_1"),
-            ("offense_roster_2", CAREER_STAGE_YEAR_2, "year_2"),
-        ):
-            if stage and stage != stage_key:
-                continue
+        year = _hist_year_window(stage) if is_this else None
+        if not year:
+            add(_trend_row(
+                kind="offense_roster",
+                label=_offense_roster_title(off_label, slabel, "any"),
+                bucket=f"{off_label}, {slabel}",
+                sentence=any_sentence.format(pos=pos, spot=slabel, band=band_phrase),
+                rate=rec.get("top_12") if "top_12" in rec else rec,
+                baseline_pct=baseline_pct,
+                role=_hist_role(is_this),
+            ))
+        if year:
+            stage_key, window = year
             when = "year 1" if window == "year_1" else "year 2"
             rate = _cohort_rate_for_filters(
                 aggregates,
@@ -1474,7 +1492,7 @@ def _add_offense_roster_hist_rows(
                 ],
             )
             add(_trend_row(
-                kind=window_id,
+                kind="offense_roster_1" if window == "year_1" else "offense_roster_2",
                 label=_offense_roster_title(off_label, slabel, window),
                 bucket=f"{off_label}, {slabel}",
                 sentence=year_sentence.format(
@@ -1482,7 +1500,7 @@ def _add_offense_roster_hist_rows(
                 ),
                 rate=rate,
                 baseline_pct=baseline_pct,
-                role=_hist_role(is_this),
+                role=_hist_role(True),
             ))
 
 
@@ -1534,7 +1552,6 @@ def _add_capital_roster_hist_rows(
     if pos not in CAPITAL_ROSTER_POSITIONS:
         return
     from dashboard_services.historical.roster import (
-        ROSTER_SPOTS,
         normalize_roster_spot,
         roster_spot_label,
     )
@@ -1550,12 +1567,12 @@ def _add_capital_roster_hist_rows(
         seen.add(key)
         cells.append((cap_label, cap_filter, int(spot)))
 
-    for spot in ROSTER_SPOTS:
-        remember(round_1[0], round_1[1], spot)
     player_spot = normalize_roster_spot(
         query.get("roster_spot") or feats.get("roster_spot")
     )
     matching = _player_capital_band(query, feats)
+    for spot in _hist_roster_spots(player_spot):
+        remember(round_1[0], round_1[1], spot)
     if player_spot is not None and matching:
         remember(matching[0], matching[1], player_spot)
     any_sentence = (
@@ -1574,21 +1591,19 @@ def _add_capital_roster_hist_rows(
             and int(spot) == int(player_spot)
             and _round1_cap_matches(cap_label, player_label)
         )
-        add(_trend_row(
-            kind="capital_roster",
-            label=_capital_roster_title(cap_label, slabel, "any"),
-            bucket=f"{cap_label}, {slabel}",
-            sentence=any_sentence.format(pos=pos, cap=cap_label, spot=slabel),
-            rate=rec.get("top_12") if "top_12" in rec else rec,
-            baseline_pct=baseline_pct,
-            role=_hist_role(is_this),
-        ))
-        for window_id, stage_key, window in (
-            ("capital_roster_1", CAREER_STAGE_ROOKIE, "year_1"),
-            ("capital_roster_2", CAREER_STAGE_YEAR_2, "year_2"),
-        ):
-            if stage and stage != stage_key:
-                continue
+        year = _hist_year_window(stage) if is_this else None
+        if not year:
+            add(_trend_row(
+                kind="capital_roster",
+                label=_capital_roster_title(cap_label, slabel, "any"),
+                bucket=f"{cap_label}, {slabel}",
+                sentence=any_sentence.format(pos=pos, cap=cap_label, spot=slabel),
+                rate=rec.get("top_12") if "top_12" in rec else rec,
+                baseline_pct=baseline_pct,
+                role=_hist_role(is_this),
+            ))
+        if year:
+            stage_key, window = year
             when = "year 1" if window == "year_1" else "year 2"
             rate = _cohort_rate_for_filters(
                 aggregates,
@@ -1600,7 +1615,7 @@ def _add_capital_roster_hist_rows(
                 ],
             )
             add(_trend_row(
-                kind=window_id,
+                kind="capital_roster_1" if window == "year_1" else "capital_roster_2",
                 label=_capital_roster_title(cap_label, slabel, window),
                 bucket=f"{cap_label}, {slabel}",
                 sentence=year_sentence.format(
@@ -1608,7 +1623,7 @@ def _add_capital_roster_hist_rows(
                 ),
                 rate=rate,
                 baseline_pct=baseline_pct,
-                role=_hist_role(is_this),
+                role=_hist_role(True),
             ))
 
 
@@ -1823,34 +1838,24 @@ def build_hist_trends(
         cap_rec = ((capital.get("season_level_by_capital") or {}).get(cap) or {}) if cap else {}
     if cap_label:
         top5 = _as_rate(cap_rec.get("top_5") if isinstance(cap_rec, Mapping) else None).get("display_pct")
-        add(_trend_row(
-            kind="draft_capital",
-            label=_drafted_window_title(cap_label, "any"),
-            bucket=cap_label,
-            sentence=f"{pos}s drafted NFL {cap_label} finished top-12 in any season",
-            rate=cap_rec.get("top_12") if isinstance(cap_rec, Mapping) and "top_12" in cap_rec else cap_rec,
-            baseline_pct=baseline_pct,
-            secondary=f"{top5}% top-5" if top5 is not None else None,
-        ))
-        bust_cut = ABSOLUTE_BUST_OUTSIDE.get(pos)
-        if bust_cut is not None:
-            coarse_label = format_comp_bucket_value("draft_capital", cap) if cap else cap_label
+        year = _hist_year_window(stage)
+        if not year:
             add(_trend_row(
-                kind="capital_miss",
-                label=_drafted_window_title(coarse_label, "miss"),
-                bucket=coarse_label,
-                sentence=f"{pos}s drafted NFL {coarse_label} finished outside the top-{bust_cut} in any season",
-                rate=((capital.get("season_level_by_capital") or {}).get(cap) or {}).get("absolute_bust") if cap else None,
-                polarity="miss",
+                kind="draft_capital",
+                label=_drafted_window_title(cap_label, "any"),
+                bucket=cap_label,
+                sentence=f"{pos}s drafted NFL {cap_label} finished top-12 in any season",
+                rate=cap_rec.get("top_12") if isinstance(cap_rec, Mapping) and "top_12" in cap_rec else cap_rec,
+                baseline_pct=baseline_pct,
+                secondary=f"{top5}% top-5" if top5 is not None else None,
             ))
         band_filter = pick_filter or (
             _match_eq("draft_capital", "draft_capital", cap) if cap else None
         )
-        for window_id, stage_key, window in (
-            ("top12_as_rookie", CAREER_STAGE_ROOKIE, "year_1"),
-            ("top12_by_year_2", CAREER_STAGE_YEAR_2, "year_2"),
-        ):
+        if year:
+            stage_key, window = year
             when = "year 1" if window == "year_1" else "year 2"
+            window_id = "top12_as_rookie" if window == "year_1" else "top12_by_year_2"
             rate = None
             if band_filter:
                 rate = _cohort_rate_for_filters(
@@ -1868,7 +1873,7 @@ def build_hist_trends(
                 sentence=f"{pos}s drafted NFL {cap_label} finished top-12 in {when}",
                 rate=rate,
                 baseline_pct=baseline_pct,
-                role=_hist_role(bool(stage) and stage == stage_key),
+                role=_hist_role(True),
             ))
 
     _add_capital_roster_hist_rows(
