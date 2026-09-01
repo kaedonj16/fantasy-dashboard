@@ -166,6 +166,8 @@ def test_trends_offense_ranges_are_disjoint():
     assert trends_offense_range(None) is None
     assert offense_rank_bucket(4) == "top_10"
     assert normalize_team_abbr("WAS") == "WSH"
+    assert normalize_team_abbr("ARZ") == "ARI"
+    assert normalize_team_abbr("LA") == "LAR"
     covered = []
     for _key, _label, lo, hi in TRENDS_OFFENSE_RANGES:
         covered.extend(range(lo, hi + 1))

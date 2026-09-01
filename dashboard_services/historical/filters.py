@@ -247,6 +247,12 @@ def extract_trend_features(row: Mapping[str, Any]) -> dict[str, Any]:
         bucket = offense_rank_bucket(rank)
         if bucket:
             feats["prior_offense_rank_bucket"] = bucket
+    proj = _optional_int(row.get("projected_offense_rank"))
+    if proj is not None and proj > 0:
+        feats["projected_offense_rank"] = proj
+        bucket = offense_rank_bucket(proj)
+        if bucket:
+            feats["projected_offense_rank_bucket"] = bucket
     return feats
 
 
@@ -309,6 +315,9 @@ def live_board_trend_features(player: Mapping[str, Any]) -> dict[str, Any]:
     rank = _optional_int(player.get("prior_offense_rank"))
     if rank is not None and rank > 0:
         row["prior_offense_rank"] = rank
+    proj = _optional_int(player.get("projected_offense_rank"))
+    if proj is not None and proj > 0:
+        row["projected_offense_rank"] = proj
     return extract_trend_features(row)
 
 

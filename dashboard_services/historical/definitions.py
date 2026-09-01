@@ -122,9 +122,9 @@ TRENDS_ROUND1_PICK_RANGES: Tuple[Tuple[str, str, int, int], ...] = (
     ("picks_26_32", "Rest of Round 1", 26, 32),
 )
 
-# Last-year team offense rank. Preseason analog of a projected top-10
-# offense: rank 1 is best. Same-season actual rank is not a feature.
-# Inclusive lo/hi like TRENDS_ROUND1_PICK_RANGES.
+# Team offense rank bands (1 = best). Used for week-1 projected implied
+# totals and for last year's actual yards+TDs. Same-season actual rank
+# is not a feature. Inclusive lo/hi like TRENDS_ROUND1_PICK_RANGES.
 TRENDS_OFFENSE_RANGES: Tuple[Tuple[str, str, int, int], ...] = (
     ("top_10", "Top 10", 1, 10),
     ("11_20", "11-20", 11, 20),
@@ -139,6 +139,11 @@ TEAM_ABBR_ALIASES: Mapping[str, str] = {
     "OAK": "LV",
     "SD": "LAC",
     "STL": "LAR",
+    "SL": "LAR",
+    "ARZ": "ARI",
+    "BLT": "BAL",
+    "CLV": "CLE",
+    "HST": "HOU",
 }
 
 # Career stage from completed seasons before this year (0 = rookie year).

@@ -91,7 +91,7 @@ def _stamp_nfl_draft_picks(data: dict) -> None:
 
 
 def _stamp_team_offense(data: dict) -> None:
-    """Attach last-year team offense ranks (projected-offense analog)."""
+    """Attach week-1 projected and last-year team offense ranks."""
     raw = _read_json(TEAM_OFFENSE_OVERLAY_PATH)
     if not isinstance(raw, dict) or not raw:
         return

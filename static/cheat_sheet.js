@@ -2246,12 +2246,21 @@
             return (String(bucket).toLowerCase().indexOf('age') === 0 ? bucket : 'Age ' + bucket) + ', any season';
         }
         if (kind === 'offense' && bucket) {
-            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' offense last year';
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' projected offense';
         }
         if (kind === 'offense_year_1' && bucket) {
-            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' offense last year, year 1';
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' projected offense, year 1';
         }
         if (kind === 'offense_year_2' && bucket) {
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' projected offense, year 2';
+        }
+        if (kind === 'offense_last_year' && bucket) {
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' offense last year';
+        }
+        if (kind === 'offense_last_year_1' && bucket) {
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' offense last year, year 1';
+        }
+        if (kind === 'offense_last_year_2' && bucket) {
             return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' offense last year, year 2';
         }
         if (label && !generic[label.toLowerCase()]) return label;
@@ -2365,7 +2374,8 @@
         targets: 'usage', games: 'usage', pass_attempts: 'usage',
         target_share_change: 'usage', snap_pct_change: 'usage',
         workload_change: 'usage',
-        offense: 'team', offense_year_1: 'team', offense_year_2: 'team'
+        offense: 'team', offense_year_1: 'team', offense_year_2: 'team',
+        offense_last_year: 'team', offense_last_year_1: 'team', offense_last_year_2: 'team'
     };
     var TRENDS_LANES = [
         ['all', 'All'], ['career', 'Career'],

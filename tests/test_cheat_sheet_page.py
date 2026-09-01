@@ -607,6 +607,8 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "function histTrendTitle" in script
     assert "Drafted NFL ' + bucket + ', year 1" in script
     assert "Drafted NFL ' + bucket + ', any season" in script
+    assert "projected offense" in script
+    assert "offense_last_year" in script
     assert "function trendsBaselineOf" in script
     assert "trendsRailHtml(row.pct, base, pol, span)" in script
     assert 'id="csHistPos"' in body

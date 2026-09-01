@@ -13,7 +13,7 @@ CHANGELOG = [
     {
         "date": "2026-09-01",
         "tag": "update",
-        "text": "Draft Cheat Sheet Hist: team-offense rows now show how often a position finished top-12 on a team that ranked top-10 / 11-20 / 21-32 in offense last year (the preseason analog of a projected top-10 offense), including year 1 and year 2.",
+        "text": "Draft Cheat Sheet Hist: team-offense rows now use week-1 implied totals from nflverse (spread and total) as the projected offense, cover 2016-2025, and still show last year's actual rank as a second analog.",
         "link": "/draft/cheat-sheet"
     },
     {

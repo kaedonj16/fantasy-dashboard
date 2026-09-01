@@ -91,6 +91,7 @@ PRESEASON_FIELDS: tuple[str, ...] = (
     "workload_change",
     "team",
     "prior_offense_rank",
+    "projected_offense_rank",
 )
 
 
@@ -234,6 +235,9 @@ HIST_TREND_PREFIX: dict[str, str] = {
     "offense": "Offense",
     "offense_year_1": "Offense",
     "offense_year_2": "Offense",
+    "offense_last_year": "Offense",
+    "offense_last_year_1": "Offense",
+    "offense_last_year_2": "Offense",
 }
 HIST_TREND_GENERIC_LABELS: frozenset[str] = frozenset({
     "age",
@@ -481,6 +485,10 @@ def query_for_board_player(
         rank = _optional_int(player.get("prior_offense_rank"))
         if rank is not None and rank > 0:
             query["prior_offense_rank"] = rank
+    if query.get("projected_offense_rank") is None:
+        proj = _optional_int(player.get("projected_offense_rank"))
+        if proj is not None and proj > 0:
+            query["projected_offense_rank"] = proj
     adp = live_redraft_adp(player)
     if adp is not None:
         query["adp_overall"] = adp
@@ -613,7 +621,14 @@ def format_comp_bucket_value(dim: str, value: Any) -> str:
         return PRIOR_ELITE_DISPLAY.get(text, _title_from_key(text))
     if dim == "age_bucket":
         return format_age_bucket_label(text)
-    if dim in ("prior_offense_rank", "prior_offense_rank_bucket", "offense"):
+    if dim in (
+        "prior_offense_rank",
+        "prior_offense_rank_bucket",
+        "offense",
+        "projected_offense_rank",
+        "projected_offense_rank_bucket",
+        "projected_offense",
+    ):
         rec = trends_offense_range(value)
         if rec:
             return rec[1]
@@ -913,14 +928,18 @@ def _offense_band_phrase(bucket: str) -> str:
     return lab or "that"
 
 
-def _offense_window_title(bucket: str, window: str) -> str:
-    """Always name the offense band and the career year being counted."""
+def _offense_window_title(bucket: str, window: str, *, analog: str = "last_year") -> str:
+    """Always name the offense band, the analog, and the career year being counted."""
     band = _offense_band_phrase(bucket)
+    if analog == "projected":
+        base = f"{band} projected offense"
+    else:
+        base = f"{band} offense last year"
     if window == "year_1":
-        return f"{band} offense last year, year 1"
+        return f"{base}, year 1"
     if window == "year_2":
-        return f"{band} offense last year, year 2"
-    return f"{band} offense last year"
+        return f"{base}, year 2"
+    return base
 
 
 def format_hist_trend_title(*, kind: str, label: str, bucket: str) -> str:
@@ -941,11 +960,17 @@ def format_hist_trend_title(*, kind: str, label: str, bucket: str) -> str:
     if kind_key in ("age", "age_exact"):
         return _age_season_title(buck or lab)
     if kind_key == "offense":
-        return _offense_window_title(buck, "last_year")
+        return _offense_window_title(buck, "any", analog="projected")
     if kind_key == "offense_year_1":
-        return _offense_window_title(buck, "year_1")
+        return _offense_window_title(buck, "year_1", analog="projected")
     if kind_key == "offense_year_2":
-        return _offense_window_title(buck, "year_2")
+        return _offense_window_title(buck, "year_2", analog="projected")
+    if kind_key == "offense_last_year":
+        return _offense_window_title(buck, "any", analog="last_year")
+    if kind_key == "offense_last_year_1":
+        return _offense_window_title(buck, "year_1", analog="last_year")
+    if kind_key == "offense_last_year_2":
+        return _offense_window_title(buck, "year_2", analog="last_year")
     prefix = HIST_TREND_PREFIX.get(kind_key)
     qualified = buck
     if prefix and buck and prefix.lower() not in buck.lower():
@@ -1043,6 +1068,81 @@ def _position_baseline_pct(aggregates: Mapping[str, Any], pos: str) -> Any:
     if not baseline:
         baseline = ((aggregates.get("career_stages") or {}).get(pos) or {}).get("baseline") or {}
     return baseline.get("display_pct") if isinstance(baseline, Mapping) else None
+
+
+def _offense_bands_for(rank: Any, *, always_top: bool) -> list[tuple]:
+    bands: list[tuple] = []
+    band = trends_offense_range(rank)
+    if band:
+        bands.append(band)
+    top = TRENDS_OFFENSE_RANGES[0]
+    if always_top and (not band or band[0] != top[0]):
+        bands.append(top)
+    return bands
+
+
+def _add_offense_hist_rows(
+    add,
+    aggregates: Mapping[str, Any],
+    pos: str,
+    stage: Any,
+    baseline_pct: Any,
+    *,
+    bands: Sequence[tuple],
+    field: str,
+    group: str,
+    analog: str,
+    kind_any: str,
+    kind_y1: str,
+    kind_y2: str,
+) -> None:
+    if analog == "projected":
+        any_sentence = (
+            "{pos}s on a team with a {band} week-1 implied total that season finished top-12"
+        )
+        year_sentence = (
+            "{pos}s on a team with a {band} week-1 implied total that season "
+            "finished top-12 in {when}"
+        )
+    else:
+        any_sentence = (
+            "{pos}s on a team that ranked {band} in offense last year finished top-12"
+        )
+        year_sentence = (
+            "{pos}s on a team that ranked {band} in offense last year finished top-12 in {when}"
+        )
+    for _key, off_label, lo, hi in bands:
+        band_phrase = off_label.lower()
+        off_filter = _match_between(group, field, lo, hi)
+        off_rec = _cohort_rate_for_filters(aggregates, pos, [off_filter])
+        add(_trend_row(
+            kind=kind_any,
+            label=_offense_window_title(off_label, "any", analog=analog),
+            bucket=off_label,
+            sentence=any_sentence.format(pos=pos, band=band_phrase),
+            rate=off_rec.get("top_12") if "top_12" in off_rec else off_rec,
+            baseline_pct=baseline_pct,
+        ))
+        for window_id, stage_key, window in (
+            (kind_y1, CAREER_STAGE_ROOKIE, "year_1"),
+            (kind_y2, CAREER_STAGE_YEAR_2, "year_2"),
+        ):
+            if stage and stage != stage_key:
+                continue
+            when = "year 1" if window == "year_1" else "year 2"
+            rate = _cohort_rate_for_filters(
+                aggregates,
+                pos,
+                [off_filter, _match_eq("career_stage", "career_stage", stage_key)],
+            )
+            add(_trend_row(
+                kind=window_id,
+                label=_offense_window_title(off_label, window, analog=analog),
+                bucket=off_label,
+                sentence=year_sentence.format(pos=pos, band=band_phrase, when=when),
+                rate=rate,
+                baseline_pct=baseline_pct,
+            ))
 
 
 def build_hist_trends(
@@ -1297,6 +1397,24 @@ def build_hist_trends(
             baseline_pct=baseline_pct,
         ))
 
+    proj = _optional_int(query.get("projected_offense_rank") or feats.get("projected_offense_rank"))
+    if proj is None:
+        from dashboard_services.historical.offense import lookup_team_projected_offense_rank
+
+        proj = lookup_team_projected_offense_rank(
+            aggregates,
+            query.get("team") or feats.get("team"),
+        )
+    _add_offense_hist_rows(
+        add, aggregates, pos, stage, baseline_pct,
+        bands=_offense_bands_for(proj, always_top=True),
+        field="projected_offense_rank",
+        group="projected_offense",
+        analog="projected",
+        kind_any="offense",
+        kind_y1="offense_year_1",
+        kind_y2="offense_year_2",
+    )
     rank = _optional_int(query.get("prior_offense_rank") or feats.get("prior_offense_rank"))
     if rank is None:
         from dashboard_services.historical.offense import lookup_team_prior_offense_rank
@@ -1305,50 +1423,16 @@ def build_hist_trends(
             aggregates,
             query.get("team") or feats.get("team"),
         )
-    band = trends_offense_range(rank)
-    offense_bands = []
-    if band:
-        offense_bands.append(band)
-    top_band = TRENDS_OFFENSE_RANGES[0]
-    if not band or band[0] != top_band[0]:
-        offense_bands.append(top_band)
-    for _key, off_label, lo, hi in offense_bands:
-        off_filter = _match_between("offense", "prior_offense_rank", lo, hi)
-        off_rec = _cohort_rate_for_filters(aggregates, pos, [off_filter])
-        add(_trend_row(
-            kind="offense",
-            label=_offense_window_title(off_label, "last_year"),
-            bucket=off_label,
-            sentence=(
-                f"{pos}s on a team that ranked {off_label.lower()} in offense "
-                "last year finished top-12"
-            ),
-            rate=off_rec.get("top_12") if "top_12" in off_rec else off_rec,
-            baseline_pct=baseline_pct,
-        ))
-        for window_id, stage_key, window in (
-            ("offense_year_1", CAREER_STAGE_ROOKIE, "year_1"),
-            ("offense_year_2", CAREER_STAGE_YEAR_2, "year_2"),
-        ):
-            if stage and stage != stage_key:
-                continue
-            when = "year 1" if window == "year_1" else "year 2"
-            rate = _cohort_rate_for_filters(
-                aggregates,
-                pos,
-                [off_filter, _match_eq("career_stage", "career_stage", stage_key)],
-            )
-            add(_trend_row(
-                kind=window_id,
-                label=_offense_window_title(off_label, window),
-                bucket=off_label,
-                sentence=(
-                    f"{pos}s on a team that ranked {off_label.lower()} in offense "
-                    f"last year finished top-12 in {when}"
-                ),
-                rate=rate,
-                baseline_pct=baseline_pct,
-            ))
+    _add_offense_hist_rows(
+        add, aggregates, pos, stage, baseline_pct,
+        bands=_offense_bands_for(rank, always_top=False),
+        field="prior_offense_rank",
+        group="offense",
+        analog="last_year",
+        kind_any="offense_last_year",
+        kind_y1="offense_last_year_1",
+        kind_y2="offense_last_year_2",
+    )
     return rows
 
 
@@ -2009,11 +2093,11 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
 
     offense_rows = []
     for key, label, lo, hi in TRENDS_OFFENSE_RANGES:
-        match = _match_between("offense", "prior_offense_rank", lo, hi)
+        match = _match_between("projected_offense", "projected_offense_rank", lo, hi)
         bundle = _cohort_rate_for_filters(aggregates, pos, [match])
         rec = bundle.get("top_12") or bundle
         row = _section_row(
-            f"{label} last year",
+            f"{label} projected",
             rec,
             baseline_pct=baseline_pct,
             baselines=finish_baselines,
@@ -2031,7 +2115,7 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
             year_bundle = _cohort_rate_for_filters(aggregates, pos, [match, stage_match])
             year_rec = year_bundle.get("top_12") or year_bundle
             year_row = _section_row(
-                f"{label} last year, {year_label}",
+                f"{label} projected, {year_label}",
                 year_rec,
                 baselines=finish_baselines,
                 row_id=f"{row_kind}:{key}",
@@ -2043,14 +2127,60 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
     _append_section(
         sections,
         sid="offense",
-        heading="Team offense",
+        heading="Projected offense",
         note=(
-            f"Hit rate for {pos}s whose NFL team ranked in that band in offense "
-            "the year before (yards and touchdowns). Last year's rank is the "
-            "preseason analog of a projected top-10 offense. Not that season's "
-            "actual finish, and not a Vegas projection archive."
+            f"Hit rate for {pos}s whose NFL team opened that season with a week-1 "
+            "implied point total in that band (nflverse spread and total). Rank 1 "
+            "is the highest implied total. This is a preseason Vegas projection, "
+            "not that season's actual offense finish."
         ),
         rows=offense_rows,
+        finish_tied=True,
+    )
+
+    last_year_rows = []
+    for key, label, lo, hi in TRENDS_OFFENSE_RANGES:
+        match = _match_between("offense", "prior_offense_rank", lo, hi)
+        bundle = _cohort_rate_for_filters(aggregates, pos, [match])
+        rec = bundle.get("top_12") or bundle
+        row = _section_row(
+            f"{label} last year",
+            rec,
+            baseline_pct=baseline_pct,
+            baselines=finish_baselines,
+            row_id=f"offense_last_year:{key}",
+            match=match,
+            pcts=_collect_pcts(bundle),
+        )
+        if row:
+            last_year_rows.append(row)
+        for stage_key, year_label, row_kind in (
+            (CAREER_STAGE_ROOKIE, "year 1", "offense_last_year_1"),
+            (CAREER_STAGE_YEAR_2, "year 2", "offense_last_year_2"),
+        ):
+            stage_match = _match_eq("career_stage", "career_stage", stage_key)
+            year_bundle = _cohort_rate_for_filters(aggregates, pos, [match, stage_match])
+            year_rec = year_bundle.get("top_12") or year_bundle
+            year_row = _section_row(
+                f"{label} last year, {year_label}",
+                year_rec,
+                baselines=finish_baselines,
+                row_id=f"{row_kind}:{key}",
+                match={"all": [match, stage_match]},
+                pcts=_collect_pcts(year_bundle),
+            )
+            if year_row:
+                last_year_rows.append(year_row)
+    _append_section(
+        sections,
+        sid="offense_last_year",
+        heading="Offense last year",
+        note=(
+            f"Hit rate for {pos}s whose NFL team ranked in that band in offense "
+            "the year before (yards and touchdowns). Last year's actual rank, not "
+            "that season's finish and not the week-1 implied total."
+        ),
+        rows=last_year_rows,
         finish_tied=True,
     )
 

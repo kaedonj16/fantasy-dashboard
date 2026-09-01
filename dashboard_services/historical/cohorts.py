@@ -456,6 +456,7 @@ _EXAMPLE_TRAIT_ORDER = (
     "age_bucket",
     "prior_finish",
     "prior_offense_rank",
+    "projected_offense_rank",
     "target_share",
     "snap_pct",
     "adot",
@@ -555,6 +556,14 @@ def _example_trait_phrase(
         if str(value) == "top_10":
             name = "Top 10"
         return f"Offense: {name} last year" if name else ""
+    if key in ("projected_offense_rank", "projected_offense_rank_bucket", "projected_offense"):
+        from dashboard_services.historical.definitions import trends_offense_range
+
+        band = trends_offense_range(value)
+        name = band[1] if band else _bare_trait_value(raw, "Offense")
+        if str(value) == "top_10":
+            name = "Top 10"
+        return f"Offense: {name} projected" if name else ""
     if key == "prior_elite":
         return raw
     if key == "adot":
