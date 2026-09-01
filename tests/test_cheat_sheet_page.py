@@ -455,6 +455,8 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "function histExampleHit" in script
     assert "function histSampleLabel" in script
     assert "histSampleLabel(row.n)" in script
+    assert "'Samples: ' + n" in script
+    assert "'Sample: ' + n" not in script
     assert "copy.sample_prior_note" in script
     assert "copy.typical_note" in script
     assert "'n=' + row.n" not in script
@@ -876,6 +878,35 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "8%" in age_prior["text"]
     assert "—" not in age_prior["text"]
     assert "–" not in age_prior["text"]
+    kelce_prior = next(
+        entry for entry in CHANGELOG
+        if "kelce" in entry.get("text", "").lower()
+        and "77%" in entry.get("text", "")
+    )
+    assert kelce_prior["tag"] == "fix"
+    assert kelce_prior["link"] == "/draft/cheat-sheet"
+    assert "own seasons" in kelce_prior["text"]
+    assert "—" not in kelce_prior["text"]
+    assert "–" not in kelce_prior["text"]
+    nested = next(
+        entry for entry in CHANGELOG
+        if "nested sibling" in entry.get("text", "").lower()
+        and "at least 4" in entry.get("text", "").lower()
+    )
+    assert nested["tag"] == "fix"
+    assert nested["link"] == "/draft/cheat-sheet"
+    assert "n=6" in nested["text"]
+    assert "—" not in nested["text"]
+    assert "–" not in nested["text"]
+    samples_label = next(
+        entry for entry in CHANGELOG
+        if "samples: 6" in entry.get("text", "").lower()
+        and "sample: 6" in entry.get("text", "").lower()
+    )
+    assert samples_label["tag"] == "update"
+    assert samples_label["link"] == "/draft/cheat-sheet"
+    assert "—" not in samples_label["text"]
+    assert "–" not in samples_label["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():

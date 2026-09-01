@@ -2307,7 +2307,7 @@
     }
 
     function histSampleLabel(n) {
-        return n == null ? '' : ('Sample: ' + n);
+        return n == null ? '' : ('Samples: ' + n);
     }
 
     // Plural noun for the verdict sub-line ("Running backs with this profile…").

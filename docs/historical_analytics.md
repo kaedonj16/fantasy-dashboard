@@ -429,12 +429,13 @@ Two products stay distinct:
 matching leaves and walks `COMP_RELAXATION_ORDER` (`target_share` →
 `snap_pct` → `age_bucket` → `draft_capital` → `career_stage` →
 `prior_finish`; position is never dropped) until `n >= 15` (walk-forward /
-default). The live Hist column and modal use `HIST_PANEL_MIN_N = 1` so an
-exact R1 rookie cell is not mixed with every rookie. Those tiny exact
-cells still empirical-Bayes shrink (`DEFAULT_BAYES_PRIOR_N = 10`), but
-the prior prefers last-year finish **and** age (`PARENT_MIN_N = 8`) so a
-24-year-old RB1 is not mixed with declining year-6+ backs (27% vs 55%
-for age 23-24 coming off a top-5). Empty cells keep
+default). The live Hist column and modal start from the exact cell
+(`HIST_PANEL_MIN_N = 1`) then compile nested sibling buckets (one
+dropped dimension at a time, no overlap) until `HIST_DISPLAY_MIN_N = 4`,
+falling back to the parent. Young players keep last-year finish **and**
+age so a 24-year-old RB1 is not mixed with declining year-6+ backs.
+The oldest open-ended age band waits for `n >= 15` so a 32+ cell is not
+one veteran repeating. Empty cells keep
 `raw_rate=None`.
 2. **Named comps** — a few example player-seasons from the matched cell
    (hits first, then PPR points). The query player is excluded. A
@@ -464,9 +465,11 @@ RB ≈ 8%). Profile cells move that number.
 | Year-6+ WR who was top-5 last year | dropped usage/age/capital | 17 moderate | 59% | **39%** | Tyreek Hill 2023 WR2; D.Adams 2021 WR2 |
 | Year-5 day-3 WR, prior outside 36 | dropped usage | 38 moderate | 0% | **1%** | Jauan Jennings 2024 WR24 |
 
-Tiny exact cells on the live Hist surface keep the profile and shrink
-toward a parent that keeps age and last-year finish when that group
-has n ≥ 8. Walk-forward still relaxes to n ≥ 15, then shrinks toward
+Live Hist compiles nested sibling buckets until n ≥ 4, then falls back
+to the parent. Young players keep age and last-year finish. The oldest
+open-ended age band waits for n ≥ 15 so a 2-season 32+ / 31+ cell is
+not one veteran repeating (Kelce). Walk-forward still relaxes to n ≥ 15,
+then shrinks toward
 the position baseline. 0% raw with n>0 is a real zero and still
 smooths up slightly (the day-3 cell). Request-path lookup passes
 `sleeper_id` so a player is not listed as their own comp.

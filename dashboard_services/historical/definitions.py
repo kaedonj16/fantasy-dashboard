@@ -234,12 +234,34 @@ PARENT_RELAXATION_ORDERS: Tuple[Tuple[str, ...], ...] = (
 )
 COMP_BOARD_TIERS: Tuple[str, ...] = ("top_5", "top_12", "top_24")
 MIN_COMP_CELL_N = 15
-# Hist modal keeps the exact profile whenever that cell has any seasons.
-# Walk-forward / ranking still use MIN_COMP_CELL_N. Tiny exact cells shrink
-# toward a parent that prefers last-year finish and age (n >= PARENT_MIN_N),
-# not every player at the position and not declining vets mixed into a
-# 24-year-old RB1.
+# Live Hist compiles nested sibling buckets (one dropped dimension at a
+# time, no overlap) until n >= HIST_DISPLAY_MIN_N, then falls back to the
+# parent. Walk-forward still uses MIN_COMP_CELL_N. Young players keep age
+# and last-year finish; the oldest open-ended age band waits for n >= 15
+# so a 32+ cell is not one veteran repeating.
 HIST_PANEL_MIN_N = 1
+HIST_DISPLAY_MIN_N = 4
+HIST_NESTED_DROP_ORDER: Tuple[str, ...] = (
+    "target_share",
+    "snap_pct",
+    "career_stage",
+    "draft_capital",
+    "age_bucket",
+    "prior_finish",
+)
+HIST_NESTED_DROP_ORDER_OLDEST: Tuple[str, ...] = (
+    "target_share",
+    "snap_pct",
+    "age_bucket",
+    "draft_capital",
+    "career_stage",
+    "prior_finish",
+)
+HIST_NESTED_KEEP_DIMS: Tuple[str, ...] = (
+    "prior_finish",
+    "age_bucket",
+    "draft_capital",
+)
 NAMED_EXAMPLES_PER_CELL = 3
 
 # Phase 9 league-winner proxy. Reuses the existing top_5 cutoff; do not invent
@@ -518,6 +540,23 @@ def age_bucket(position: Any, age: Any) -> Optional[str]:
             continue
         return label
     return None
+
+
+def oldest_age_bucket_label(position: Any) -> Optional[str]:
+    """Open-ended oldest UI age bucket for the position (``32+``, ``31+``)."""
+    pos = str(position or "").upper()
+    bounds = AGE_BUCKETS.get(pos) or ()
+    if not bounds:
+        return None
+    return bounds[-1][2]
+
+
+def is_oldest_age_bucket(position: Any, bucket: Any) -> bool:
+    """True when ``bucket`` is the position's oldest open-ended age band."""
+    label = oldest_age_bucket_label(position)
+    if not label or bucket is None or bucket == "":
+        return False
+    return str(bucket) == label
 
 
 def integer_age(age: Any) -> Optional[int]:

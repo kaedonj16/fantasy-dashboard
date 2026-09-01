@@ -313,7 +313,7 @@ def test_hist_panel_copy_uses_bucket_hit_rates_not_snake_case():
     assert "career_stage" not in shown
     assert "draft_capital" not in shown
     assert "Players drafted in Round 1 historically finished top-12 82%" in copy["market_sentence"]
-    assert "Sample: 140" in copy["market_sentence"]
+    assert "Samples: 140" in copy["market_sentence"]
     assert "n=140" not in copy["market_sentence"]
     assert copy["market_compare_heading"] == "Two groups, not one chance"
     assert copy["history_group_label"] == "Players like this"
@@ -555,19 +555,20 @@ def test_gibbs_hist_does_not_shrink_tiny_cell_toward_all_rbs():
     extra = {"redraft_avg_pick": 2.0, "position": "RB"}
     panel = build_deep_panel("9221", aggs, extra=extra)
     top12 = next(row for row in panel["copy"]["hit_rates"] if row["tier"] == "top_12")
-    assert top12["n"] == 2
-    assert abs((panel["history"]["rates"]["top_12"]["raw_rate"] or 0) - 0.5) < 1e-9
-    assert panel["history"].get("prior_source") == "parent_cell"
-    prior_key = panel["history"].get("prior_key") or {}
-    assert prior_key.get("age_bucket") == "23-24"
-    assert prior_key.get("prior_finish") == "top_5"
-    assert (panel["history"].get("prior_n") or 0) >= 8
+    assert (panel["history"].get("exact_n") or 0) == 2
+    assert top12["n"] >= 4
+    assert panel["history"].get("prior_source") == "parent_displayed"
+    key_used = panel["history"].get("key_used") or {}
+    assert key_used.get("age_bucket") == "23-24"
+    assert key_used.get("prior_finish") == "top_5"
+    assert "draft_capital" in key_used
     assert top12["pct"] >= 50
     assert panel["copy"]["history_pct"] >= 50
     assert panel["copy"]["history_pct"] != 15
     note = str(panel["copy"].get("sample_prior_note") or "")
     assert "Only 2 exact matches" in note
     assert "not every RB" in note
+    assert "veteran repeating" not in note
     typical = str(panel["copy"].get("typical_note") or "")
     assert "high historical hit rate" in typical
     assert "typical RB" in typical
@@ -586,8 +587,55 @@ def test_gibbs_hist_does_not_shrink_tiny_cell_toward_all_rbs():
         },
         aggs,
     )
-    assert hist["sample_size"] == 2
+    assert hist["sample_size"] >= 4
     assert hist["p_top_12"] is not None and hist["p_top_12"] >= 0.50
+
+
+def test_kelce_hist_does_not_headline_self_repeat_as_77():
+    from dashboard_services.historical.aggregates_store import load_profile_aggregates
+    from dashboard_services.historical.signals import lookup_history_probability
+
+    aggs = load_profile_aggregates()
+    if not aggs:
+        pytest.skip("profile JSON missing")
+    extra = {"redraft_avg_pick": 100.0, "position": "TE"}
+    panel = build_deep_panel("1466", aggs, extra=extra)
+    top12 = next(row for row in panel["copy"]["hit_rates"] if row["tier"] == "top_12")
+    assert panel["history"].get("prior_source") == "parent_displayed"
+    assert (panel["history"].get("exact_n") or 0) == 2
+    assert (panel["history"].get("n") or 0) >= 15
+    assert top12["n"] >= 15
+    key_used = panel["history"].get("key_used") or {}
+    profile_key = panel["history"].get("profile_key") or {}
+    assert key_used.get("prior_finish") == "top_5"
+    assert key_used.get("career_stage") == "year_6_plus"
+    assert "age_bucket" not in key_used
+    assert profile_key.get("age_bucket") == "32+"
+    assert panel["copy"]["history_pct"] != 77
+    assert panel["copy"]["history_pct"] < 70
+    note = str(panel["copy"].get("sample_prior_note") or "")
+    assert "Only 2 exact matches" in note
+    assert "veteran repeating" in note
+    assert "not declining vets mixed in" not in note
+    assert "own seasons" in note
+    assert "—" not in note
+    assert "–" not in note
+    hist = lookup_history_probability(
+        {
+            "position": "TE",
+            "years_experience": 13,
+            "age": 36.9,
+            "draft_capital_bucket": "day_2",
+            "previous_season_finish": 3,
+            "previous_season_snap_pct": 0.70,
+            "previous_season_year": 2025,
+            "sleeper_id": "1466",
+        },
+        aggs,
+    )
+    assert hist["sample_size"] >= 15
+    assert hist["p_top_12"] is not None and hist["p_top_12"] < 0.70
+    assert hist["p_top_12"] != pytest.approx(0.77, abs=0.02)
 
 
 def test_hist_panel_keeps_draft_capital_when_the_cell_has_seasons():
@@ -663,7 +711,7 @@ def test_hist_panel_keeps_draft_capital_when_the_cell_has_seasons():
     assert "offense" in group_ids
     note = str(panel["copy"].get("examples_vs_cohort_note") or "")
     if note:
-        assert "Sample:" in note
+        assert "Samples:" in note
         assert "n=" not in note
     board = [{
         "id": "preview-love",
