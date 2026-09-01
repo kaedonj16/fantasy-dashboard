@@ -5,8 +5,11 @@ capital, prior-finish bucket, age bucket, previous-season usage. Same-season
 actuals, ADP, and projections are not features.
 
 Missing dimensions are omitted (not 0 / UDFA / last-place). Tiny cells
-relax in ``COMP_RELAXATION_ORDER`` and shrink toward the position baseline
-via empirical Bayes. Named comps exclude the query player.
+relax in ``COMP_RELAXATION_ORDER``. When the Hist path keeps an exact cell
+below ``MIN_COMP_CELL_N``, rates shrink toward the nearest parent cell
+with n >= 15, not the all-position baseline (a year-4 RB1 is not a
+typical RB). Walk-forward still uses ``MIN_COMP_CELL_N`` then the
+position prior. Named comps exclude the query player.
 
 Cell rates are **pooled historical** (all warehouse seasons), not
 walk-forward. They are descriptive and do not enter ranking or Pick Score.
@@ -415,6 +418,9 @@ def lookup_board_probabilities(
 
     Walks ``COMP_RELAXATION_ORDER`` until the pooled cell reaches ``min_n``
     (or only position remains). Empty / unknown position → rates stay None.
+
+    Exact cells below ``MIN_COMP_CELL_N`` shrink toward the nearest parent
+    cell that already has n >= 15, not the all-appeared position baseline.
     """
     feats = extract_comp_query(query)
     pos = feats.get("position")
@@ -424,32 +430,53 @@ def lookup_board_probabilities(
     }
     for rate in empty_rates.values():
         rate["kind"] = "conditional"
+    empty = {
+        "position": pos,
+        "key_used": {},
+        "dropped": [],
+        "fallback": False,
+        "n": 0,
+        "rates": empty_rates,
+        "examples": [],
+        "kind": "conditional",
+        "prior_source": "position_baseline",
+        "prior_key": {},
+        "prior_n": None,
+    }
     if not pos:
-        return {
-            "position": None,
-            "key_used": {},
-            "dropped": [],
-            "fallback": False,
-            "n": 0,
-            "rates": empty_rates,
-            "examples": [],
-            "kind": "conditional",
-        }
+        empty["position"] = None
+        return empty
     by_pos = (comps_payload.get("by_position") or {}).get(pos) or {}
     leaves = by_pos.get("leaves") or comps_payload.get("leaves") or []
     baselines = by_pos.get("baseline") or {}
     skip = exclude_sleeper_id if exclude_sleeper_id is not None else query.get("sleeper_id")
 
-    last: Optional[tuple] = None
+    steps: list[tuple[dict[str, str], list[str], list, int]] = []
     for active, dropped in iter_relaxed_keys(feats):
         matching = [leaf for leaf in leaves if key_matches(leaf.get("key") or {}, active)]
         n = sum(int(leaf.get("n") or 0) for leaf in matching)
-        last = (active, dropped, matching, n)
-        if n >= min_n:
+        steps.append((dict(active), list(dropped), matching, n))
+    chosen = None
+    for step in steps:
+        if step[3] >= min_n:
+            chosen = step
             break
-    assert last is not None
-    active, dropped, matching, n = last
-    rates = pool_leaves(matching, baselines=baselines)
+    if chosen is None:
+        chosen = steps[-1]
+    active, dropped, matching, n = chosen
+    prior_baselines = baselines
+    prior_source = "position_baseline"
+    prior_key: dict[str, str] = {}
+    prior_n: Optional[int] = None
+    if 0 < n < MIN_COMP_CELL_N:
+        for p_active, _p_dropped, p_matching, p_n in steps:
+            if p_n >= MIN_COMP_CELL_N and p_active != active:
+                prior_baselines = pool_leaves(p_matching, baselines=baselines)
+                prior_source = "parent_cell"
+                prior_key = dict(p_active)
+                prior_n = p_n
+                break
+    rates = pool_leaves(matching, baselines=prior_baselines)
     return {
         "position": pos,
         "key_used": dict(active),
@@ -461,6 +488,9 @@ def lookup_board_probabilities(
         "kind": "conditional",
         "min_n": min_n,
         "bayes_prior_n": DEFAULT_BAYES_PRIOR_N,
+        "prior_source": prior_source,
+        "prior_key": prior_key,
+        "prior_n": prior_n,
     }
 
 

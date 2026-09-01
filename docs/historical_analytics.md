@@ -426,11 +426,15 @@ Two products stay distinct:
 1. **Conditional board probabilities** — P(this-season hit | profile).
    Stored as finest-grain *leaves* (one per unique present-dimension
    signature) plus position baselines. `lookup_board_probabilities` pools
-   matching leaves and walks `COMP_RELAXATION_ORDER` (`target_share` →
-   `snap_pct` → `age_bucket` → `draft_capital` → `career_stage` →
-   `prior_finish`; position is never dropped) until `n >= 15`, then
-   empirical-Bayes shrinks toward the position baseline
-   (`DEFAULT_BAYES_PRIOR_N = 10`). Empty cells keep `raw_rate=None`.
+matching leaves and walks `COMP_RELAXATION_ORDER` (`target_share` →
+`snap_pct` → `age_bucket` → `draft_capital` → `career_stage` →
+`prior_finish`; position is never dropped) until `n >= 15` (walk-forward /
+default). The live Hist column and modal use `HIST_PANEL_MIN_N = 1` so an
+exact R1 rookie cell is not mixed with every rookie. Those tiny exact
+cells still empirical-Bayes shrink (`DEFAULT_BAYES_PRIOR_N = 10`), but
+the prior is the nearest parent cell with n ≥ 15 (e.g. last-year top-5
+RBs), not the all-appeared position baseline. Empty cells keep
+`raw_rate=None`.
 2. **Named comps** — a few example player-seasons from the matched cell
    (hits first, then PPR points). The query player is excluded. A
    historical query with `as_of_season` cannot use later seasons.
@@ -459,10 +463,12 @@ RB ≈ 8%). Profile cells move that number.
 | Year-6+ WR who was top-5 last year | dropped usage/age/capital | 17 moderate | 59% | **39%** | Tyreek Hill 2023 WR2; D.Adams 2021 WR2 |
 | Year-5 day-3 WR, prior outside 36 | dropped usage | 38 moderate | 0% | **1%** | Jauan Jennings 2024 WR24 |
 
-Tiny exact cells do not print a fake precise rate: they relax, then shrink
-toward the position baseline. 0% raw with n>0 is a real zero and still
-smooths up slightly (the day-3 cell). Request-path lookup passes
-`sleeper_id` so a player is not listed as their own comp.
+Tiny exact cells on the live Hist surface keep the profile and shrink
+toward a parent cell (last-year top-5 RBs), not every appeared RB.
+Walk-forward still relaxes to n ≥ 15, then shrinks toward the position
+baseline. 0% raw with n>0 is a real zero and still smooths up slightly
+(the day-3 cell). Request-path lookup passes `sleeper_id` so a player is
+not listed as their own comp.
 
 ## Phase 5–6 — frozen ADP + hit rates
 

@@ -3398,6 +3398,7 @@
                 html += '</div>';
             }
             if (copy.headline) html += '<p class="cs-hist-cohort">' + esc(copy.headline) + '</p>';
+            if (copy.sample_prior_note) html += '<p class="cs-hist-note">' + esc(copy.sample_prior_note) + '</p>';
             html += '</div>';
         }
         var examples = (resp.history && Array.isArray(resp.history.closest_examples) && resp.history.closest_examples.length)

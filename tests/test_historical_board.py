@@ -545,6 +545,45 @@ def test_hist_trends_are_descriptive_bucket_slices():
     assert "first_time_elite" not in prior_kinds
 
 
+def test_gibbs_hist_does_not_shrink_tiny_cell_toward_all_rbs():
+    from dashboard_services.historical.aggregates_store import load_profile_aggregates
+    from dashboard_services.historical.signals import lookup_history_probability
+
+    aggs = load_profile_aggregates()
+    if not aggs:
+        pytest.skip("profile JSON missing")
+    extra = {"redraft_avg_pick": 2.0, "position": "RB"}
+    panel = build_deep_panel("9221", aggs, extra=extra)
+    top12 = next(row for row in panel["copy"]["hit_rates"] if row["tier"] == "top_12")
+    assert top12["n"] == 2
+    assert abs((panel["history"]["rates"]["top_12"]["raw_rate"] or 0) - 0.5) < 1e-9
+    assert panel["history"].get("prior_source") == "parent_cell"
+    assert (panel["history"].get("prior_n") or 0) >= 15
+    assert top12["pct"] >= 35
+    assert panel["copy"]["history_pct"] >= 35
+    assert panel["copy"]["history_pct"] != 15
+    note = str(panel["copy"].get("sample_prior_note") or "")
+    assert "Only 2 exact matches" in note
+    assert "not every RB" in note
+    assert "—" not in note
+    assert "–" not in note
+    hist = lookup_history_probability(
+        {
+            "position": "RB",
+            "years_experience": 3,
+            "age": 24.4,
+            "draft_capital_bucket": "round_1",
+            "previous_season_finish": 3,
+            "previous_season_target_share": 0.17,
+            "previous_season_snap_pct": 0.61,
+            "previous_season_year": 2025,
+        },
+        aggs,
+    )
+    assert hist["sample_size"] == 2
+    assert hist["p_top_12"] is not None and hist["p_top_12"] >= 0.35
+
+
 def test_hist_panel_keeps_draft_capital_when_the_cell_has_seasons():
     from dashboard_services.historical.aggregates_store import load_profile_aggregates
 
@@ -571,6 +610,7 @@ def test_hist_panel_keeps_draft_capital_when_the_cell_has_seasons():
     assert "draft_capital" not in dropped
     assert "round 1" in panel["copy"]["headline"].lower()
     assert panel["copy"]["history_pct"] != 4
+    assert panel["copy"]["history_pct"] >= 20
     titles = [row["title"] for row in panel["copy"]["trends"]]
     assert "Drafted NFL Top 10, year 1" not in titles
     assert "Drafted NFL Top 10, any season" not in titles

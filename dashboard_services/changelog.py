@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-09-01",
         "tag": "fix",
+        "text": "Draft Cheat Sheet Hist: a tiny exact cell (Sample: 2) no longer shrinks a star toward every player at the position. The top-12 chance is pulled toward similar players (RBs coming off a top-5 year), so Gibbs stays in the 40s instead of dropping to 15%.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-09-01",
+        "tag": "fix",
         "text": "Draft Cheat Sheet Hist: when a roster-split cell exists, the modal keeps that tile and leaves off the coarser same-band copy (21-32 projected offense, RB1, year 1 instead of also 21-32 projected offense, year 1).",
         "link": "/draft/cheat-sheet"
     },

@@ -380,3 +380,144 @@ def test_comps_modules_stay_pure_and_skip_adp_projections():
     assert "breakout_engine" not in text
     assert "build_player_history_features" not in text
     assert "031_" not in text
+
+
+def test_tiny_exact_cell_smooths_toward_parent_not_position_baseline():
+    """Gibbs-like: 1/2 exact cell must not shrink toward every WR."""
+    rows = []
+    rows.append(_row(
+        sleeper_id="exact-hit",
+        years_experience=3,
+        age=24.2,
+        draft_capital_bucket="round_1",
+        previous_season_finish=3,
+        previous_season_year=2025,
+        previous_season_target_share=0.17,
+        previous_season_snap_pct=0.61,
+        ppr_positional_finish=2,
+        ppr_points=300,
+    ))
+    rows.append(_row(
+        sleeper_id="exact-miss",
+        years_experience=3,
+        age=24.1,
+        draft_capital_bucket="round_1",
+        previous_season_finish=4,
+        previous_season_year=2025,
+        previous_season_target_share=0.17,
+        previous_season_snap_pct=0.61,
+        ppr_positional_finish=40,
+        ppr_points=80,
+    ))
+    for i in range(16):
+        rows.append(_row(
+            sleeper_id=f"parent-hit-{i}",
+            years_experience=6,
+            age=28.0,
+            draft_capital_bucket="day_2",
+            previous_season_finish=2,
+            previous_season_year=2024,
+            ppr_positional_finish=5,
+            ppr_points=250,
+        ))
+    for i in range(16):
+        rows.append(_row(
+            sleeper_id=f"parent-miss-{i}",
+            years_experience=6,
+            age=28.0,
+            draft_capital_bucket="day_2",
+            previous_season_finish=4,
+            previous_season_year=2024,
+            ppr_positional_finish=40,
+            ppr_points=70,
+        ))
+    for i in range(80):
+        rows.append(_row(
+            sleeper_id=f"scrub-{i}",
+            years_experience=6,
+            age=31.0,
+            draft_capital_bucket="day_3",
+            previous_season_finish=50,
+            ppr_positional_finish=40,
+            ppr_points=40,
+        ))
+    payload = build_comp_aggregates(rows)
+    query = _row(
+        sleeper_id="gibbs-like",
+        years_experience=3,
+        age=24.4,
+        draft_capital_bucket="round_1",
+        previous_season_finish=3,
+        previous_season_year=2025,
+        previous_season_target_share=0.17,
+        previous_season_snap_pct=0.61,
+    )
+    exact = lookup_board_probabilities(query, payload, min_n=1)
+    assert exact["n"] == 2
+    assert abs(exact["rates"]["top_12"]["raw_rate"] - 0.5) < 1e-9
+    assert exact["prior_source"] == "parent_cell"
+    assert exact["prior_n"] and exact["prior_n"] >= MIN_COMP_CELL_N
+    baseline = payload["by_position"]["WR"]["baseline"]["top_12"]["raw_rate"]
+    toward_position = empirical_bayes(
+        1, 2, baseline * DEFAULT_BAYES_PRIOR_N, DEFAULT_BAYES_PRIOR_N,
+    )
+    smoothed = exact["rates"]["top_12"]["smoothed_rate"]
+    assert smoothed > 0.35
+    assert smoothed > toward_position + 0.15
+    assert exact["rates"]["top_12"]["display_pct"] >= 35
+
+
+def test_rookie_round_1_cell_stays_above_all_rookie_rate():
+    """Love/Jeanty-like: keep R1 rookies; do not collapse to every rookie."""
+    rows = []
+    for i in range(4):
+        rows.append(_row(
+            sleeper_id=f"r1-hit-{i}",
+            years_experience=0,
+            age=21.0,
+            draft_capital_bucket="round_1",
+            ppr_positional_finish=4,
+            ppr_points=250,
+        ))
+    for i in range(4):
+        rows.append(_row(
+            sleeper_id=f"r1-miss-{i}",
+            years_experience=0,
+            age=21.0,
+            draft_capital_bucket="round_1",
+            ppr_positional_finish=40,
+            ppr_points=60,
+        ))
+    for i in range(6):
+        rows.append(_row(
+            sleeper_id=f"udfa-hit-{i}",
+            years_experience=0,
+            age=22.0,
+            draft_capital_bucket="undrafted",
+            ppr_positional_finish=8,
+            ppr_points=200,
+        ))
+    for i in range(150):
+        rows.append(_row(
+            sleeper_id=f"udfa-miss-{i}",
+            years_experience=0,
+            age=23.0,
+            draft_capital_bucket="undrafted",
+            ppr_positional_finish=50,
+            ppr_points=30,
+        ))
+    payload = build_comp_aggregates(rows)
+    query = _row(
+        sleeper_id="prospect",
+        years_experience=0,
+        age=21.0,
+        draft_capital_bucket="round_1",
+    )
+    exact = lookup_board_probabilities(query, payload, min_n=1)
+    relaxed = lookup_board_probabilities(query, payload, min_n=MIN_COMP_CELL_N)
+    assert exact["n"] == 8
+    assert "draft_capital" not in exact["dropped"]
+    assert exact["rates"]["top_12"]["display_pct"] != 4
+    assert exact["rates"]["top_12"]["display_pct"] >= 20
+    assert relaxed["n"] >= MIN_COMP_CELL_N
+    assert relaxed["rates"]["top_12"]["display_pct"] < 10

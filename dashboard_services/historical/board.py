@@ -2143,10 +2143,22 @@ def build_hist_panel_copy(
         )
     if relaxed_note:
         cohort_note = f"{cohort_note} {relaxed_note}"
+    sample_prior_note = None
+    if hist.get("prior_source") == "parent_cell":
+        n_exact = hist.get("n")
+        pos_label = str(key_used.get("position") or "").upper()
+        if pos_label in SKILL_POSITIONS and n_exact not in (None, 0):
+            sample_prior_note = (
+                f"Only {n_exact} exact matches, so this percent is pulled "
+                f"toward a broader group of similar {pos_label}s, not every "
+                f"{pos_label}."
+            )
+            cohort_note = f"{cohort_note} {sample_prior_note}"
 
     return {
         "headline": cohort,
         "cohort_note": cohort_note,
+        "sample_prior_note": sample_prior_note,
         "hit_rates": hit_rates,
         "profile_heading": "This pre-season profile",
         "profile": profile,
@@ -2252,6 +2264,9 @@ def build_deep_panel(
         "kind": "conditional",
         "career_path": looked.get("career_path"),
         "career_path_rate": looked.get("career_path_rate"),
+        "prior_source": looked.get("prior_source"),
+        "prior_key": looked.get("prior_key") or {},
+        "prior_n": looked.get("prior_n"),
     }
     copy = build_hist_panel_copy(history, market)
     copy["trends"] = build_hist_trends(query, aggregates, market)

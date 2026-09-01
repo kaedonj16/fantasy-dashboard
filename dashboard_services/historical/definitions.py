@@ -205,7 +205,9 @@ COMP_RELAXATION_ORDER: Tuple[str, ...] = (
 COMP_BOARD_TIERS: Tuple[str, ...] = ("top_5", "top_12", "top_24")
 MIN_COMP_CELL_N = 15
 # Hist modal keeps the exact profile whenever that cell has any seasons.
-# Walk-forward / ranking still use MIN_COMP_CELL_N.
+# Walk-forward / ranking still use MIN_COMP_CELL_N. Tiny exact cells shrink
+# toward the nearest parent cell with n >= MIN_COMP_CELL_N, not every player
+# at the position (a year-4 RB1 is not a typical RB).
 HIST_PANEL_MIN_N = 1
 NAMED_EXAMPLES_PER_CELL = 3
 
