@@ -64,6 +64,15 @@ def test_bootstrap_seeds_session(ui_audit_client):
         assert sess.get("last_league_id") == UI_AUDIT_LEAGUE_ID
 
 
+def test_weekly_hub_renders_in_season(ui_audit_client):
+    with ui_audit_client.session_transaction() as sess:
+        bootstrap_viewer_session(sess)
+    r = ui_audit_client.get(league_page_href("weekly"), follow_redirects=True)
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "Weekly Hub Unavailable" not in html
+
+
 @pytest.mark.parametrize("href,label", all_audit_hrefs())
 def test_audit_route_renders(ui_audit_client, href, label):
     with ui_audit_client.session_transaction() as sess:

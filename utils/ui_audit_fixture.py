@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 import random
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -179,6 +179,13 @@ def build_ui_audit_league_context(
         "waiver_type": 0,
         "trade_deadline": 12,
     }
+    _draft_start_ms = int((datetime.now() - timedelta(days=120)).timestamp() * 1000)
+    latest_draft = {
+        "draft_id": "audit_draft_2026",
+        "season": str(season),
+        "status": "complete",
+        "start_time": _draft_start_ms,
+    }
     roster_positions = [
         "QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "SUPER_FLEX",
         "BN", "BN", "BN", "BN", "BN", "BN",
@@ -201,6 +208,7 @@ def build_ui_audit_league_context(
         },
         "roster_positions": roster_positions,
         "settings": league_settings,
+        "draft_day": _draft_start_ms,
     }
 
     ctx = {
@@ -238,8 +246,8 @@ def build_ui_audit_league_context(
         "total_rosters": 10,
         "mode": "in_season",
         "offseason_mode": False,
-        "drafts": [],
-        "latest_draft": None,
+        "drafts": [latest_draft],
+        "latest_draft": latest_draft,
         "rookie_rankings": appmod._load_rookie_rankings_for_ctx(),
         "viewer": {},
     }

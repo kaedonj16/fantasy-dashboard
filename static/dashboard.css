@@ -20667,9 +20667,10 @@ tr.team-clickable {
     background: none;
     border: none;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: 12px;
     cursor: pointer;
-    padding: 0;
+    padding: 10px 4px;
+    min-height: 44px;
     text-decoration: underline;
 }
 
