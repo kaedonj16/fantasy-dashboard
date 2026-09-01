@@ -558,9 +558,10 @@ table, .standings-table, .mini-value, .mini-stat, .sr-stat-value,
     font-variant-numeric: tabular-nums;
 }
 
-/* Consistent, accessible focus ring everywhere (mouse clicks stay clean). */
+/* Fallback focus ring for any other focusable node not covered above.
+   Same --accent token so keyboard focus never flips between navy and sky. */
 :focus-visible {
-    outline: 2px solid var(--info);
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
 }
 
@@ -779,16 +780,36 @@ ul {
     overflow-x: hidden;
 }
 
-/* Desktop hub: left/right columns scroll internally, capped to centre height. */
+/* Desktop hub: side rails scroll internally with a visible card boundary. */
 @media (min-width: 1181px) {
-    .os-layout.os-hub-cols-synced > .os-left-col,
-    .os-layout.os-hub-cols-synced > .os-right-col {
+    .os-layout.os-hub-cols-synced > .os-side-rail {
+        height: var(--os-hub-main-h);
         max-height: var(--os-hub-main-h);
-        overflow-y: auto;
+        min-height: var(--os-hub-main-h);
         overflow-x: hidden;
+        overflow-y: auto;
         overscroll-behavior: contain;
-        min-height: 0;
         scrollbar-width: thin;
+        box-sizing: border-box;
+        border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+        border-radius: 18px;
+        background: var(--card);
+        box-shadow: var(--shadow-sm);
+        padding: 12px;
+    }
+
+    /* Nested cards inside a scroll rail: drop duplicate chrome so the rail reads as one card. */
+    .os-hub-cols-synced .os-side-rail > .os-card,
+    .os-hub-cols-synced .os-side-rail > .os-card-soft,
+    .os-hub-cols-synced .os-side-rail .os-sidebar-shell > .card {
+        max-height: none;
+        box-shadow: none;
+    }
+
+    .os-hub-cols-synced .os-side-rail > .os-card:last-child,
+    .os-hub-cols-synced .os-side-rail > .os-card-soft:last-child,
+    .os-hub-cols-synced .os-side-rail .os-sidebar-shell:last-child > .card:last-child {
+        margin-bottom: 0;
     }
 }
 
@@ -2570,6 +2591,70 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
     font-size: 13px;
     font-weight: 700;
     cursor: pointer;
+}
+
+/* Pricing page feature grids (/pricing) */
+.pricing-features-block {
+    margin-bottom: 28px;
+}
+
+.pricing-features-heading {
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin: 0 0 12px;
+}
+
+.pricing-features-heading-secondary {
+    margin-top: 22px;
+}
+
+.pricing-features-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.pricing-feature-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 11px 12px;
+    border-radius: 12px;
+    border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+    background: var(--surface2);
+    font-size: 14px;
+    line-height: 1.35;
+    color: var(--text);
+}
+
+.pricing-feature-icon {
+    flex: 0 0 18px;
+    width: 18px;
+    text-align: center;
+    margin-top: 1px;
+    color: var(--accent);
+}
+
+.pricing-feature-free .pricing-feature-icon {
+    color: #16a34a;
+}
+
+[data-theme="dark"] .pricing-feature-free .pricing-feature-icon {
+    color: #4ade80;
+}
+
+.pricing-feature-label {
+    flex: 1;
+    min-width: 0;
+}
+
+@media (max-width: 768px) {
+    .pricing-features-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* Player modal actions dropdown (header overflow for Compare / Trade For / etc.) */
@@ -11090,6 +11175,91 @@ select:focus {
     color: #e5e7eb;
 }
 
+/* Onboarding card is always navy — nested controls must not pull light-page tokens. */
+.home-card .home-steps-hint {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.home-card .home-step-num {
+    border-color: rgba(255, 255, 255, 0.22);
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.home-card .home-step-label {
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.home-card .home-step-item.active .home-step-num {
+    border-color: #38bdf8;
+    background: #38bdf8;
+    color: #0f172a;
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25);
+}
+
+.home-card .home-step-item.active .home-step-label {
+    color: #7dd3fc;
+}
+
+.home-card .home-step-item.done .home-step-label {
+    color: #86efac;
+}
+
+.home-card .home-step-connector {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.home-card .home-step-item.active + .home-step-connector {
+    background: linear-gradient(90deg, rgba(56, 189, 248, 0.55) 0%, rgba(255, 255, 255, 0.14) 100%);
+}
+
+.home-card .home-step-item.done + .home-step-connector {
+    background: var(--win);
+}
+
+.home-card .espn-home-methods {
+    border-color: rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.home-card .espn-home-method,
+.home-card .mfl-home-method,
+.home-card .flea-home-method {
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.home-card .espn-home-method.active,
+.home-card .mfl-home-method.active,
+.home-card .flea-home-method.active {
+    background: rgba(255, 255, 255, 0.14);
+    color: #f9fafb;
+    box-shadow: none;
+}
+
+.home-card .espn-home-description,
+.home-card .espn-home-help {
+    color: rgba(255, 255, 255, 0.62);
+}
+
+.home-card .espn-home-help summary {
+    color: #7dd3fc;
+}
+
+.home-card input[type="text"],
+.home-card input[type="password"],
+.home-card input[type="number"],
+.home-card input[type="email"],
+.home-card select,
+.home-card textarea {
+    background: rgba(255, 255, 255, 0.96);
+    border-color: rgba(255, 255, 255, 0.22);
+    color: #122d4b;
+}
+
+.home-card .hint {
+    color: rgba(255, 255, 255, 0.58);
+}
+
 /* "Continue as X" returning-user CTA banner */
 .saved-viewer-cta {
     display: flex;
@@ -12045,7 +12215,7 @@ a.signed-home-league:hover {
     display: inline-block;
     padding: 6px 12px;
     border: 1px solid var(--border);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--card-soft);
     color: var(--text);
     font-size: 13px;
@@ -12099,13 +12269,34 @@ a.signed-home-league:hover {
     display: flex;
     flex-direction: column;
     gap: 36px;
+    position: relative;
+}
+
+/* Soft brand atmosphere behind the hero — not a flat white slab, not a
+   competing illustration. Keeps the first viewport one composition. */
+.home-page::before {
+    content: "";
+    position: absolute;
+    inset: -24px -8% auto;
+    height: min(520px, 72vh);
+    pointer-events: none;
+    z-index: 0;
+    background:
+        radial-gradient(ellipse 70% 55% at 18% 20%, color-mix(in srgb, var(--brand-blue) 14%, transparent), transparent 70%),
+        radial-gradient(ellipse 55% 45% at 88% 8%, color-mix(in srgb, var(--spinner) 10%, transparent), transparent 65%);
+}
+
+[data-theme="dark"] .home-page::before {
+    background:
+        radial-gradient(ellipse 70% 55% at 18% 18%, color-mix(in srgb, var(--brand-blue) 18%, transparent), transparent 70%),
+        radial-gradient(ellipse 55% 45% at 90% 6%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 65%);
 }
 
 .home-brand {
     margin: 0;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 800;
-    letter-spacing: 0.16em;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--brand-blue);
 }
@@ -12655,7 +12846,7 @@ a.signed-home-league:hover {
     letter-spacing: .05em;
     text-transform: uppercase;
     padding: 2px 8px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     white-space: nowrap;
     flex: none;
 }
@@ -13996,11 +14187,16 @@ html[data-theme="dark"] .podium .bar {
 
 .site-footer {
     margin-top: 24px;
-    padding: 16px 24px 24px;
+    padding: 16px 24px calc(24px + env(safe-area-inset-bottom));
     border-top: 1px solid rgba(15, 23, 42, 0.6);
     background: #122d4b;
     color: #ffffff;
     font-size: 12px;
+}
+
+[data-theme="dark"] .site-footer {
+    border-top-color: rgba(148, 163, 184, 0.14);
+    background: #0b2036;
 }
 
 .site-footer-inner {
@@ -15205,9 +15401,36 @@ img, svg, canvas {
     }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
     .home-page {
-        padding: 20px 16px 64px;
+        padding: 20px max(16px, env(safe-area-inset-left)) calc(48px + var(--dock-safe-bottom)) max(16px, env(safe-area-inset-right));
+        gap: 28px;
+    }
+
+    .home-hero {
+        grid-template-columns: 1fr;
+        gap: 24px;
+    }
+
+    .home-hero-right {
+        justify-content: stretch;
+    }
+
+    .home-title {
+        font-size: clamp(28px, 8vw, 34px);
+    }
+
+    .home-subtitle {
+        font-size: 16px;
+    }
+
+    .home-platform-row {
+        gap: 6px;
+    }
+
+    .home-platform-chip {
+        font-size: 10px;
+        padding: 4px 9px;
     }
 
     .home-proof {
@@ -15215,40 +15438,69 @@ img, svg, canvas {
         gap: 12px;
     }
 
-    .home-title {
-        font-size: 32px;
+    .home-card {
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+        padding: 18px 16px 16px;
+    }
+
+    .home-card .platform-btn {
+        min-height: 44px;
+        padding: 10px 8px;
+        font-size: 12px;
+    }
+
+    .home-steps-hint {
+        padding: 6px 8px;
+        margin-bottom: 12px;
+    }
+
+    .home-step-label {
+        font-size: 9px;
+    }
+
+    .home-step-num {
+        width: 18px;
+        height: 18px;
+        font-size: 9px;
+    }
+
+    .home-ticker-tag {
+        padding: 8px 10px;
+        font-size: 10px;
+    }
+
+    .home-ticker-track {
+        font-size: 12px;
+        gap: 20px;
+        padding: 8px 14px;
     }
 
     .home-feature-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 16px;
+        grid-template-columns: 1fr;
+        gap: 14px;
     }
 
     .home-feature-list {
         grid-template-columns: 1fr;
     }
 
-    .home-updates-grid {
-        grid-template-columns: repeat(2, 1fr);
+    .home-feature-list-card {
+        padding: 14px;
     }
 
-    .home-card {
-        width: 100%;
-        min-width: 0;
+    .home-feature-row {
+        padding: 10px;
+        gap: 10px;
     }
-}
 
-@media (max-width: 768px) {
-    .home-feature-grid {
-        grid-template-columns: 1fr;
-        gap: 14px;
+    .home-publisher {
+        padding: 18px 16px 16px;
+        margin: 4px 0 24px;
     }
 
     .home-updates-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .home-hero {
         grid-template-columns: 1fr;
     }
 
@@ -20499,9 +20751,10 @@ tr.team-clickable {
     background: none;
     border: none;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: 12px;
     cursor: pointer;
-    padding: 0;
+    padding: 10px 4px;
+    min-height: 44px;
     text-decoration: underline;
 }
 
@@ -26886,10 +27139,53 @@ button:disabled {
     border-radius: 8px;
 }
 
-/* ── Empty state icon ─────────────────────────────────────────────────────── */
+/* ── Empty state icon (legacy bract-* alias → shared empty-state look) ─────
+   Activity / league-history still emit bract-empty-* markup in a few places.
+   Keep those classes readable by mapping them onto the shared empty-state
+   tokens instead of a one-off grey stack. */
+.bract-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 6px;
+    padding: 28px 20px;
+    color: var(--text-muted);
+}
+
 .bract-empty-icon {
-    margin-bottom: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    margin-bottom: 4px;
+    border-radius: 12px;
+    background: var(--card-soft);
+    color: var(--text-muted);
     line-height: 1;
+}
+
+.bract-empty-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text);
+}
+
+.bract-empty-copy {
+    margin: 0;
+    max-width: 36rem;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text-muted);
+}
+
+.bract-empty-mini {
+    color: var(--text-muted);
+    font-size: 13px;
 }
 
 /* ── Sparkline canvas in player rankings (lives in the arrow column) ─────── */

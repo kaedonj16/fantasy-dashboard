@@ -102,14 +102,15 @@ def test_dashboard_hubs_share_os_layout_tab_structure():
     for pattern in (
         r'<aside class="os-left-col',
         r'<main class="os-main-col">',
-        r'<aside class="os-right-col os-tab-panel"',
+        r'<aside class="os-right-col os-tab-panel',
+        r'os-side-rail',
         r'os-tab-panel os-tab-active',
         r'class="os-jump-nav"',
     ):
         assert len(re.findall(pattern, src)) >= 2, f"missing shared pattern: {pattern}"
     # Offseason left rail is still a single tab panel (team snapshot).
     os_dash = (_PAGES / "offseason_dashboard_page.py").read_text(encoding="utf-8")
-    assert '<aside class="os-left-col os-tab-panel"' in os_dash
+    assert '<aside class="os-left-col os-tab-panel os-side-rail"' in os_dash
 
 
 def test_offseason_jump_nav_targets_match_tab_panel_ids():
@@ -154,10 +155,11 @@ def test_inseason_matchup_preview_has_own_tab():
     assert 'data-jump="os-jump-matchup"' in src
     assert 'id="os-jump-matchup"' in src
     assert 'id="os-jump-report"' in src
-    # Front Office lives in the left rail (Report tab); matchup stays in main.
-    left = src[src.index('class="os-left-col"'): src.index('class="os-main-col"')]
+    # Front Office sits above Standings in the left rail; matchup stays in main.
+    left = src[src.index("os-left-col"): src.index('class="os-main-col"')]
     main = src[src.index('class="os-main-col"'): src.index('class="os-right-col')]
     assert "{gm_card_html}" in left
+    assert left.index("{gm_card_html}") < left.index('id="os-jump-standings"')
     assert "{gm_card_html}" not in main
     assert "{matchup_html}" in main
     assert "{matchup_html}" not in left

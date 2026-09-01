@@ -148,6 +148,40 @@ def _try_grant_from_stripe_success() -> None:
         logger.exception("[stripe] success-page session verification failed")
 
 
+def _pricing_feature_item(icon: str, label: str, *, free: bool = False) -> str:
+    tier = "pricing-feature-free" if free else "pricing-feature-pro"
+    return (
+        f'<div class="pricing-feature-item {tier}">'
+        f'<span class="pricing-feature-icon" aria-hidden="true"><i class="fa-solid {html.escape(icon)}"></i></span>'
+        f'<span class="pricing-feature-label">{label}</span>'
+        f"</div>"
+    )
+
+
+def _pricing_features_grid(items: list[tuple[str, str]], *, free: bool = False) -> str:
+    cells = "".join(_pricing_feature_item(icon, label, free=free) for icon, label in items)
+    return f'<div class="pricing-features-grid">{cells}</div>'
+
+
+_PRO_FEATURES = [
+    ("fa-handshake", "Roster-Based Trade Suggestions"),
+    ("fa-chart-line", "Full Trade Intelligence feed &amp; history"),
+    ("fa-fire", "Breakout Engine candidate predictions"),
+    ("fa-trophy", "Playoff Impact simulations"),
+    ("fa-briefcase", "Front Office Report"),
+    ("fa-newspaper", "Weekly Recap"),
+    ("fa-clipboard-list", "Custom Draft Board"),
+    ("fa-magnifying-glass-chart", "Draft Deep Dive Analyzer"),
+]
+
+_FREE_FEATURES = [
+    ("fa-calculator", "Trade calculator &amp; Sleeper comps"),
+    ("fa-table", "Advanced Metrics"),
+    ("fa-gavel", "Auction Values"),
+    ("fa-file-csv", "Live cheat-sheet overlay &amp; CSV"),
+]
+
+
 def _pricing_body() -> str:
     from flask import session as _session
     plan      = request.args.get("plan", "")
@@ -335,65 +369,15 @@ def _pricing_body() -> str:
       <div class="card-body" style="padding-top:28px;">
 
         <!-- Feature list — must match static/paywall.js .paywall-features -->
-        <div style="margin-bottom:28px;">
-          <div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:12px;">What PRO includes</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-handshake" style="color:#2563eb;width:16px;text-align:center;"></i>
-              Roster-Based Trade Suggestions
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-chart-line" style="color:#2563eb;width:16px;text-align:center;"></i>
-              Full Trade Intelligence feed &amp; history
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-fire" style="color:#2563eb;width:16px;text-align:center;"></i>
-              Breakout Engine candidate predictions
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-trophy" style="color:#2563eb;width:16px;text-align:center;"></i>
-              Playoff Impact simulations
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-briefcase" style="color:#2563eb;width:16px;text-align:center;"></i>
-              Front Office Report
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-newspaper" style="color:#2563eb;width:16px;text-align:center;"></i>
-              Weekly Recap
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-clipboard-list" style="color:#2563eb;width:16px;text-align:center;"></i>
-              Custom Draft Board
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-magnifying-glass-chart" style="color:#2563eb;width:16px;text-align:center;"></i>
-              Draft Deep Dive Analyzer
-            </div>
-          </div>
-          <div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin:20px 0 12px;">Free includes</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-calculator" style="color:#16a34a;width:16px;text-align:center;"></i>
-              Trade calculator &amp; Sleeper comps
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-table" style="color:#16a34a;width:16px;text-align:center;"></i>
-              Advanced Metrics
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-gavel" style="color:#16a34a;width:16px;text-align:center;"></i>
-              Auction Values
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-file-csv" style="color:#16a34a;width:16px;text-align:center;"></i>
-              Live cheat-sheet overlay &amp; CSV
-            </div>
-          </div>
+        <div class="pricing-features-block">
+          <div class="pricing-features-heading">What PRO includes</div>
+          {_pricing_features_grid(_PRO_FEATURES)}
+          <div class="pricing-features-heading pricing-features-heading-secondary">Free includes</div>
+          {_pricing_features_grid(_FREE_FEATURES, free=True)}
         </div>
 
         <!-- Pricing cards -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:28px;">
+        <div class="pricing-plan-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:28px;">
 
           <!-- League plan -->
           <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);">
@@ -450,9 +434,8 @@ def _pricing_body() -> str:
     </div>
 
     <style>
-      @media (max-width: 760px) {{
-        .card-body > div:nth-child(2) {{ grid-template-columns: 1fr !important; }}
-        .card-body > div:nth-child(3) {{ grid-template-columns: 1fr !important; }}
+      @media (max-width: 768px) {{
+        .pricing-plan-grid {{ grid-template-columns: 1fr !important; }}
       }}
     </style>
     """

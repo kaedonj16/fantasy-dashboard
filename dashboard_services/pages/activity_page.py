@@ -1211,28 +1211,6 @@ def build_activity_body(ctx: dict) -> str:
         color: #334155;
       }}
 
-      .bract-empty-state {{
-        padding: 10px 4px;
-      }}
-
-      .bract-empty-title {{
-        font-size: 18px;
-        font-weight: 800;
-        color: var(--text);
-        margin-bottom: 6px;
-      }}
-
-      .bract-empty-copy {{
-        font-size: 14px;
-        line-height: 1.5;
-        color: var(--text-muted);
-      }}
-
-      .bract-empty-mini {{
-        color: var(--text-muted);
-        font-size: 13px;
-      }}
-
       @media (max-width: 900px) {{
         /* 2x2 instead of four tall stacked cards — far less vertical space. */
         .bract-summary-grid {{

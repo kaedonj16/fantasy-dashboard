@@ -1154,6 +1154,17 @@ try:
 except Exception as e:
     logger.warning("[league-pages-bp] skipped: %s", e)
 
+try:
+    from utils.ui_audit_fixture import install_ui_audit_hooks
+
+    install_ui_audit_hooks()
+    from routes.ui_audit_bp import ui_audit_bp
+
+    app.register_blueprint(ui_audit_bp)
+    logger.info("[ui-audit] hub at /ui-audit (active when UI_AUDIT=1)")
+except Exception as e:
+    logger.warning("[ui-audit] skipped: %s", e)
+
 
 def generate_recent_updates_html(limit=5):
     """Generate HTML for recent changelog updates."""
@@ -1769,7 +1780,7 @@ BASE_HTML = """
          first paint (app.js is deferred, too late), or every page flashes white
          on load and the browser's inter-page gap is white too. Set data-theme
          and the <html> background up front so switching pages stays dark. -->
-    <style>html{{background:#f4f6f8}}html[data-theme="dark"]{{background:#020617}}</style>
+    <style>html{{background:#f8fafc}}html[data-theme="dark"]{{background:#020617}}</style>
     <script>(function(){{try{{if(localStorage.getItem('theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}}catch(e){{}}}})();</script>
     <meta name="google-adsense-account" content="ca-pub-9164153092633845">
     <meta name="google-site-verification" content="zuH_tCWKG_L4hm4eRDFit3xfMi-ZPFXwK2s9eap20FA">
@@ -1803,14 +1814,14 @@ BASE_HTML = """
 
     <link rel="icon" href="/static/BR_Logo.png" type="image/png">
     <link rel="shortcut icon" href="/static/BR_Logo.png" type="image/png">
-    <link rel="apple-touch-icon" href="/static/BR_Logo.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="/static/BR_Logo.png">
+    <link rel="apple-touch-icon" href="/static/icon-180x180.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180x180.png">
     <link rel="manifest" href="/static/manifest.json">
     <!-- Status-bar chrome matches the top nav's background so the app reads as
          one surface. The app theme is a manual toggle (not OS-driven), so this
          is kept in sync by app.js rather than a prefers-color-scheme meta, which
          would mismatch a user on OS-dark who hasn't switched the app to dark. -->
-    <meta name="theme-color" id="br-theme-color" content="#ffffff">
+    <meta name="theme-color" id="br-theme-color" content="#f8fafc">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="BR Fantasy">
@@ -1820,9 +1831,12 @@ BASE_HTML = """
 
     <!-- Instant branded splash (covers the PWA/first-paint white screen) -->
     <style>
-      #appSplash{{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#ffffff;transition:opacity .35s ease;}}
+      #appSplash{{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#f8fafc;transition:opacity .35s ease;}}
       html[data-theme="dark"] #appSplash{{background:#020617;}}
       #appSplash img{{width:170px;max-width:56%;height:auto;animation:appSplashPulse 1.5s ease-in-out infinite;}}
+      html[data-theme="dark"] #appSplash img.splash-logo-light{{display:none;}}
+      #appSplash img.splash-logo-dark{{display:none;}}
+      html[data-theme="dark"] #appSplash img.splash-logo-dark{{display:block;}}
       #appSplash.app-splash-hide{{opacity:0;pointer-events:none;}}
       @keyframes appSplashPulse{{0%,100%{{opacity:.5}}50%{{opacity:1}}}}
       @media (prefers-reduced-motion: reduce){{#appSplash img{{animation:none}}}}
@@ -1855,7 +1869,8 @@ BASE_HTML = """
   <body>
     <!-- Branded loading splash: shown instantly, removed once the page is ready -->
     <div id="appSplash" role="status" aria-label="Loading BR Fantasy">
-      <img src="/static/BR_Logo.png" alt="BR Fantasy" />
+      <img src="/static/BR_Logo.png" alt="" class="splash-logo-light" aria-hidden="true">
+      <img src="/static/BR_Logo_dark.png" alt="" class="splash-logo-dark" aria-hidden="true">
     </div>
     <script>
       (function(){{
@@ -4744,7 +4759,9 @@ def _default_social_tags(title: str, description: str) -> str:
     their own. Gives every public page a proper link preview when shared."""
     origin = _site_origin()
     desc = (description or DEFAULT_META_DESCRIPTION).strip()
-    image = f"{origin}/static/BR_Logo.png" if origin else "/static/BR_Logo.png"
+    # Branded 1200×630 card (not the square logo) so Slack/X/iMessage previews
+    # render as summary_large_image instead of a tiny icon.
+    image = f"{origin}/static/og-default.png" if origin else "/static/og-default.png"
     t = html.escape(title, quote=True)
     d = html.escape(desc, quote=True)
     img = html.escape(image, quote=True)
@@ -4760,7 +4777,9 @@ def _default_social_tags(title: str, description: str) -> str:
         f"<meta property=\"og:description\" content=\"{d}\">"
         f"<meta property=\"og:url\" content=\"{url}\">"
         f"<meta property=\"og:image\" content=\"{img}\">"
-        f"<meta name=\"twitter:card\" content=\"summary\">"
+        f"<meta property=\"og:image:width\" content=\"1200\">"
+        f"<meta property=\"og:image:height\" content=\"630\">"
+        f"<meta name=\"twitter:card\" content=\"summary_large_image\">"
         f"<meta name=\"twitter:title\" content=\"{t}\">"
         f"<meta name=\"twitter:description\" content=\"{d}\">"
         f"<meta name=\"twitter:image\" content=\"{img}\">"
@@ -9490,6 +9509,22 @@ def _maybe_check_roster_freshness(platform: str, league_id: str, season: int,
 
 
 def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dict:
+    try:
+        from utils.ui_audit_fixture import (
+            build_ui_audit_league_context,
+            is_ui_audit_league,
+            ui_audit_enabled,
+        )
+
+        if ui_audit_enabled() and is_ui_audit_league(league_id):
+            ctx = build_ui_audit_league_context(platform, league_id, season)
+            ctx["viewer"] = get_viewer_session_for_league(
+                ctx.get("users") or [], ctx.get("rosters") or [], platform, league_id, season
+            )
+            return ctx
+    except Exception:
+        logger.debug("[ui-audit] fixture lookup failed", exc_info=True)
+
     key = _cache_key(platform, season, league_id)
     entry = DASHBOARD_CACHE.get(key)
     if _league_ctx_cache_valid(entry, platform, season, league_id):

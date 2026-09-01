@@ -27,9 +27,11 @@ def test_dashboard_action_first_hierarchy():
     assert DASH.index("sinceLastVisitCard") < DASH.index("os-jump-matchup")
     assert DASH.index("os-jump-matchup") > DASH.index("do_next_waiver_html")
     assert DASH.index("matchup_html") > DASH.index("do_next_waiver_html")
-    # Front Office Report fills the left rail instead of stacking under matchup.
-    assert DASH.index("{gm_card_html}") < DASH.index('class="os-main-col"')
-    assert DASH.index("{matchup_html}") > DASH.index('class="os-main-col"')
+    # Front Office Report sits above Standings in the left rail.
+    left = DASH[DASH.index("os-left-col"): DASH.index('class="os-main-col"')]
+    assert "{gm_card_html}" in left
+    assert left.index("{gm_card_html}") < left.index('id="os-jump-standings"')
+    assert "{matchup_html}" not in left
     assert "Waiver Wire Targets" not in DASH
     assert "_render_do_next_waiver_card" in DASH
 
@@ -126,6 +128,8 @@ def test_hub_column_height_sync_helper():
     app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
     assert "initHubColumnHeightSync" in app_js
     assert "os-hub-cols-synced" in app_js
+    assert "os-side-rail" in DASH
+    assert "viewportFillHeight" in app_js
     assert "ResizeObserver" in app_js
 
 
