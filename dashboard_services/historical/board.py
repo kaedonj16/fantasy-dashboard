@@ -270,6 +270,7 @@ HIST_PLAIN_REPLACED_BY: dict[str, str] = {
     "offense_year_2": "offense_roster_2",
 }
 HIST_TILE_EXAMPLE_LIMIT = 3
+HIST_TREND_PREVIEW = 4
 HIST_TREND_GROUP_ORDER: tuple[tuple[str, str], ...] = (
     ("career", "Career"),
     ("capital", "Capital"),
@@ -1173,6 +1174,52 @@ def prefer_selective_hist_tiles(rows: Sequence[Mapping[str, Any]]) -> list[dict]
     return out
 
 
+def hist_trend_rank_key(row: Mapping[str, Any]) -> tuple:
+    """Lift vs typical, then hit rate, then sample. Rows with no lift sink."""
+    vs = row.get("vs_baseline")
+    has_vs = 1 if isinstance(vs, (int, float)) else 0
+    vs_n = int(vs) if has_vs else 0
+    pct = row.get("pct")
+    pct_n = float(pct) if isinstance(pct, (int, float)) else -1.0
+    n = row.get("n")
+    n_n = int(n) if isinstance(n, (int, float)) else 0
+    return (-has_vs, -vs_n, -pct_n, -n_n)
+
+
+def rank_hist_trends(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    preview: int = HIST_TREND_PREVIEW,
+) -> list[dict]:
+    """Strongest evidence first; the compact preview covers different groups.
+
+    Construction order dumped career repeats at the top, so the modal's first
+    four rows had no ranking logic. Sort by lift vs typical, then hit rate,
+    then sample size. The first `preview` slots prefer one row per group so
+    the list is not four career tiles; leftover slots fill from the next
+    strongest rows. The visible preview is then re-sorted by that same key
+    so the bars read high-to-low.
+    """
+    items = [dict(row) for row in rows if isinstance(row, Mapping)]
+    items.sort(key=hist_trend_rank_key)
+    if preview <= 0 or len(items) <= preview:
+        return items
+    lead: list[dict] = []
+    rest: list[dict] = []
+    seen: set[str] = set()
+    for row in items:
+        gid = str(row.get("group") or hist_trend_group_id(row.get("kind")))
+        if len(lead) < preview and gid not in seen:
+            lead.append(row)
+            seen.add(gid)
+        else:
+            rest.append(row)
+    while len(lead) < preview and rest:
+        lead.append(rest.pop(0))
+    lead.sort(key=hist_trend_rank_key)
+    return lead + rest
+
+
 def _round1_cap_matches(cap_label: str, player_label: str) -> bool:
     if cap_label == player_label:
         return True
@@ -2048,7 +2095,7 @@ def build_hist_trends(
     _add_offense_capital_hist_rows(
         add, aggregates, pos, baseline_pct, proj=proj, query=query, feats=feats,
     )
-    return prefer_selective_hist_tiles(rows)
+    return rank_hist_trends(prefer_selective_hist_tiles(rows))
 
 
 def build_hist_panel_copy(

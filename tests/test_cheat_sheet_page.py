@@ -469,6 +469,9 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "–" not in script.split("function renderHistPanel")[1].split("function init()")[0]
     assert "copy.trends" in script
     assert "Trends behind it" in script
+    assert "function histRankTrends" in script
+    assert "function histTrendRankKey" in script
+    assert "histRankTrends(" in script
     assert "function histCompactTrendRow" in script
     assert "histCompactTrendRow(row, trSpan)" in script
     assert "See all ' + trends.length + ' trends" in script
@@ -909,6 +912,15 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert samples_label["link"] == "/draft/cheat-sheet"
     assert "—" not in samples_label["text"]
     assert "–" not in samples_label["text"]
+    trends_rank = next(
+        entry for entry in CHANGELOG
+        if "trends behind it" in entry.get("text", "").lower()
+        and "lift" in entry.get("text", "").lower()
+    )
+    assert trends_rank["tag"] == "update"
+    assert trends_rank["link"] == "/draft/cheat-sheet"
+    assert "—" not in trends_rank["text"]
+    assert "–" not in trends_rank["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():
