@@ -69,13 +69,12 @@ _season_key_lock = threading.Lock()
 def yahoo_enabled() -> bool:
     """Whether the Yahoo connect flow is offered to users.
 
-    Gated OFF by default while the Yahoo Fantasy API access request is pending:
-    without approval every Fantasy call 403s "application not authorized", so
-    presenting Yahoo just walks users into a dead end. Set YAHOO_ENABLED=1 (or
-    true/yes/on) on the host once access is granted to turn it back on — no code
-    change needed.
+    Enabled by default now that Yahoo Fantasy API access is granted. Set
+    YAHOO_ENABLED=0 (or false/no/off) on the host to turn it off without a
+    deploy-time code change.
     """
-    return (os.environ.get("YAHOO_ENABLED") or "").strip().lower() in ("1", "true", "yes", "on")
+    raw = (os.environ.get("YAHOO_ENABLED") or "").strip().lower()
+    return raw not in ("0", "false", "no", "off")
 
 
 # ---------------------------------------------------------------------------
