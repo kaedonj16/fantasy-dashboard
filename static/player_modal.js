@@ -603,7 +603,9 @@ function openPlayerModal(playerId, playerName, opts) {
         c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
       const _adpNum = v => (Math.round(v * 10) / 10).toFixed(1);
       // One range track for a (format, axis): dots + spread band + consensus mark
-      // on an auto-scaled pick axis. A minimum span keeps a tight cluster looking
+      // on an auto-scaled pick axis. Cons is the mean of the plotted dots
+      // (BR Fantasy's 1..N rank included), so it sits among them — e.g.
+      // (2.0 + 4.3) / 2 → 3.2. A minimum span keeps a tight cluster looking
       // tight instead of stretching two near-equal picks across the whole track.
       const _adpRangeTrack = (pts, cons) => {
         const all = pts.map(p => p.v).concat(cons != null ? [cons] : []);
@@ -631,24 +633,25 @@ function openPlayerModal(playerId, playerName, opts) {
           </div>
           <div class="pm-adp-ends"><span>${_adpNum(lo)}</span><span>${_adpNum(hi)}</span></div>`;
       };
-      const _adpRangeBlock = (fmtKey, axisKey, axisLabel, isCur, sources, consSrc) => {
+      const _adpRangeBlock = (fmtKey, axisKey, axisLabel, isCur, sources) => {
         const k = fmtKey + '_' + axisKey;
         const pts = sources
           .filter(s => s.vals[k] != null)
           .map(s => ({ label: s.label, color: _adpColors[s.label] || 'var(--text-muted)', v: Number(s.vals[k]) }));
-        const cons = (consSrc && consSrc.vals[k] != null) ? Number(consSrc.vals[k]) : null;
+        // Mean of the dots on this axis (including BR Fantasy's ordinal rank).
+        const cons = pts.length ? pts.reduce((sum, p) => sum + p.v, 0) / pts.length : null;
         return `
           <div class="pm-adp-range${isCur ? ' pm-adp-range-cur' : ''}">
             <div class="pm-adp-range-hd">
               <span class="pm-adp-range-ax">${axisLabel}</span>
-              <span class="pm-adp-range-cons">${cons != null ? 'Cons <b>' + _adpNum(cons) + '</b>' : ''}</span>
+              <span class="pm-adp-range-cons"${cons != null ? ' title="Average of the source values shown on this axis"' : ''}>${cons != null ? 'Cons <b>' + _adpNum(cons) + '</b>' : ''}</span>
             </div>
             ${_adpRangeTrack(pts, cons)}
           </div>`;
       };
       // One card per format, its 1QB + SF ranges side by side, and a legend of
       // just the sources that actually have data for that format.
-      const _adpFmtCard = (sources, consSrc, fmtKey, fmtLabel) => {
+      const _adpFmtCard = (sources, fmtKey, fmtLabel) => {
         const present = sources.filter(s =>
           s.vals[fmtKey + '_1qb'] != null || s.vals[fmtKey + '_sf'] != null);
         if (!present.length) return '';
@@ -658,19 +661,19 @@ function openPlayerModal(playerId, playerName, opts) {
           <div class="pm-adp-card">
             <div class="pm-adp-card-h">${fmtLabel}</div>
             <div class="pm-adp-ranges">
-              ${_adpRangeBlock(fmtKey, '1qb', '1QB', !_adpIsSf, present, consSrc)}
-              ${_adpRangeBlock(fmtKey, 'sf', 'SF', _adpIsSf, present, consSrc)}
+              ${_adpRangeBlock(fmtKey, '1qb', '1QB', !_adpIsSf, present)}
+              ${_adpRangeBlock(fmtKey, 'sf', 'SF', _adpIsSf, present)}
             </div>
             <div class="pm-adp-legend">${legend}</div>
           </div>`;
       };
-      // Inner grid for the ADP block, rebuilt once all sources are in. Consensus
-      // becomes the range marker; the rest become dots.
+      // Inner grid for the ADP block. Backend Consensus is a raw-ADP mean and
+      // is dropped — Cons on the range is the mean of the remaining dots
+      // (BR Fantasy already ranked 1..N), so the marker sits among them.
       const _adpGridHTML = (sources) => {
-        const consSrc = sources.find(s => s.label === 'Consensus') || null;
         const srcs = sources.filter(s => s.label !== 'Consensus');
-        const dyn = _adpFmtCard(srcs, consSrc, 'dynasty', 'Dynasty');
-        const rdr = _adpFmtCard(srcs, consSrc, 'redraft', 'Redraft');
+        const dyn = _adpFmtCard(srcs, 'dynasty', 'Dynasty');
+        const rdr = _adpFmtCard(srcs, 'redraft', 'Redraft');
         return (dyn || rdr) ? (dyn + rdr) : '';
       };
       // Skeleton shown while the market sources load, so all sources appear

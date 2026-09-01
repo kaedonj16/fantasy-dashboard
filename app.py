@@ -15748,6 +15748,36 @@ _ADP_COLUMN_AXES = (
 )
 
 
+def _fill_displayed_consensus(players) -> bool:
+    """Set ``adp_by_source['consensus']`` to the mean of the other source columns.
+
+    BR Fantasy is stored as a 1..N rank; Sleeper/ESPN/Yahoo/MFL stay on raw ADP.
+    Averaging those plotted numbers is what the Consensus column must show
+    (Gibbs 1.0 + 2.0 → 1.5), not the raw-ADP blend from resolve_market_adp."""
+    from dashboard_services.adp_service import displayed_source_consensus
+    fields = [field for _st, _sf, field in _ADP_COLUMN_AXES]
+    any_cons = False
+    for _p in players:
+        dest = _p.setdefault("adp_by_source", {})
+        cons = {}
+        has = False
+        for field in fields:
+            per_src = {
+                src: (row or {}).get(field)
+                for src, row in dest.items() if src != "consensus"
+            }
+            v = displayed_source_consensus(per_src)
+            cons[field] = v
+            if v is not None:
+                has = True
+        if has:
+            dest["consensus"] = cons
+            any_cons = True
+        else:
+            dest.pop("consensus", None)
+    return any_cons
+
+
 def _attach_all_adp_sources(players, adp_season, sources, league_id=None, token=None):
     """Attach EACH source's ADP separately so the rankings ADP view can show one
     sortable column per source.
@@ -15755,13 +15785,20 @@ def _attach_all_adp_sources(players, adp_season, sources, league_id=None, token=
     Writes ``p['adp_by_source'][src] = {avg_pick, sf_avg_pick, redraft_avg_pick,
     sf_redraft_avg_pick}`` and returns the ordered list of sources that actually
     have data: ``[{'value','label'}]``. Uses fallback=False so each column shows
-    only that source's own numbers (BR Fantasy never borrows Sleeper's)."""
+    only that source's own numbers (BR Fantasy never borrows Sleeper's).
+
+    Consensus is not resolved as a raw-ADP blend. After the other columns are
+    attached (BR Fantasy already re-ranked 1..N), it is the mean of those
+    displayed values so Cons sits between Sleeper and BR Fantasy on the board."""
     from dashboard_services.adp_service import (
         resolve_market_adp, ADP_SOURCE_LABELS, ordinal_rank_adp,
     )
     _pool_ids = {str(_p.get("id") or "") for _p in players}
+    want_consensus = any(s == "consensus" for s in sources)
     columns = []
     for source in sources:
+        if source == "consensus":
+            continue
         _brf = (source == "brfantasy")
         by_field = {}
         has_any = False
@@ -15786,6 +15823,8 @@ def _attach_all_adp_sources(players, adp_season, sources, league_id=None, token=
             dest = _p.setdefault("adp_by_source", {})
             dest[source] = {f: by_field[f].get(_pid) for f in by_field}
         columns.append({"value": source, "label": ADP_SOURCE_LABELS.get(source, source.title())})
+    if want_consensus and _fill_displayed_consensus(players):
+        columns.append({"value": "consensus", "label": ADP_SOURCE_LABELS.get("consensus", "Consensus")})
     return columns
 
 
@@ -18729,10 +18768,13 @@ def api_player_adp(player_id: str):
                 try:
                     # Match the rankings page: re-rank BR Fantasy (ordered by its
                     # raw avg_pick) to a clean 1..N board so it tops out at 1
-                    # instead of the ~3 mean-pick floor. fallback=False so an
-                    # off-axis source shows nothing rather than borrowing Sleeper's
-                    # numbers — ESPN/Yahoo/MFL are redraft-only, so their dynasty
-                    # cells must stay empty (not silently become Sleeper's ADP).
+                    # instead of the ~3 mean-pick floor. The modal range then
+                    # averages those plotted values (rank + other source ADPs)
+                    # for Cons, so (BR 2.0 + Sleeper 4.3) → Cons 3.2.
+                    # fallback=False so an off-axis source shows nothing rather
+                    # than borrowing Sleeper's numbers — ESPN/Yahoo/MFL are
+                    # redraft-only, so their dynasty cells must stay empty (not
+                    # silently become Sleeper's ADP).
                     _mkt_cache[_key] = resolve_market_adp(
                         int(season), _is_sf, _scoring, source=_source,
                         as_rank=(_source == "brfantasy"), fallback=False) or {}
