@@ -258,6 +258,15 @@ ROUND_1_CAP_LABELS: frozenset[str] = frozenset({
     "Picks 11-25",
     "Rest of Round 1",
 })
+# Coarser Hist tile -> roster-split of the same band and year window.
+HIST_PLAIN_REPLACED_BY: dict[str, str] = {
+    "draft_capital": "capital_roster",
+    "top12_as_rookie": "capital_roster_1",
+    "top12_by_year_2": "capital_roster_2",
+    "offense": "offense_roster",
+    "offense_year_1": "offense_roster_1",
+    "offense_year_2": "offense_roster_2",
+}
 HIST_TILE_EXAMPLE_LIMIT = 3
 HIST_TREND_GROUP_ORDER: tuple[tuple[str, str], ...] = (
     ("career", "Career"),
@@ -1137,6 +1146,31 @@ def _hist_roster_spots(player_spot: Any) -> list[int]:
     return [int(own)] if own is not None else []
 
 
+def _hist_band_key(bucket: Any) -> str:
+    text = str(bucket or "").strip()
+    if ", " in text:
+        return text.split(", ", 1)[0]
+    return text
+
+
+def prefer_selective_hist_tiles(rows: Sequence[Mapping[str, Any]]) -> list[dict]:
+    """Keep the roster-split cell and drop the same band without roster when both exist."""
+    items = [dict(row) for row in rows if isinstance(row, Mapping)]
+    selective: set[tuple[str, str]] = set()
+    for row in items:
+        kind = str(row.get("kind") or "")
+        if kind in HIST_PLAIN_REPLACED_BY.values():
+            selective.add((kind, _hist_band_key(row.get("bucket"))))
+    out: list[dict] = []
+    for row in items:
+        kind = str(row.get("kind") or "")
+        finer = HIST_PLAIN_REPLACED_BY.get(kind)
+        if finer and (finer, _hist_band_key(row.get("bucket"))) in selective:
+            continue
+        out.append(row)
+    return out
+
+
 def _round1_cap_matches(cap_label: str, player_label: str) -> bool:
     if cap_label == player_label:
         return True
@@ -2010,7 +2044,7 @@ def build_hist_trends(
     _add_offense_capital_hist_rows(
         add, aggregates, pos, baseline_pct, proj=proj, query=query, feats=feats,
     )
-    return rows
+    return prefer_selective_hist_tiles(rows)
 
 
 def build_hist_panel_copy(

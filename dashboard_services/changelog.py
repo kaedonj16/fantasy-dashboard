@@ -3,7 +3,12 @@ Changelog entries for the fantasy dashboard.
 Each entry represents a user-facing change.
 """
 
-CHANGELOG = [
+    {
+        "date": "2026-09-01",
+        "tag": "fix",
+        "text": "Draft Cheat Sheet Hist: when a roster-split cell exists, the modal keeps that tile and leaves off the coarser same-band copy (21-32 projected offense, RB1, year 1 instead of also 21-32 projected offense, year 1).",
+        "link": "/draft/cheat-sheet"
+    },
     {
         "date": "2026-09-01",
         "tag": "fix",
