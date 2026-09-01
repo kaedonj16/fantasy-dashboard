@@ -21,9 +21,6 @@ from utils.ui_audit_fixture import (
 @pytest.fixture
 def ui_audit_client(monkeypatch, offline_client):
     monkeypatch.setenv("UI_AUDIT", "1")
-    import dashboard_services.api as api
-    from utils.ui_audit_fixture import install_ui_audit_hooks
-
     install_ui_audit_hooks()
     import app as appmod
 
