@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-09-01",
         "tag": "update",
-        "text": "Draft Cheat Sheet Hist: Trends behind it now ranks by lift vs typical, then hit rate. The first four rows cover different slices (capital, roster, offense, career) instead of dumping career repeats in construction order.",
+        "text": "Draft Cheat Sheet: the Big Board now has Off Rk, the player's NFL team's projected offense rank (1 = best) from season-long implied totals. Same number Hist uses for projected-offense buckets. Sortable, in the CSV, and it does not change VOR order.",
         "link": "/draft/cheat-sheet"
     },
     {

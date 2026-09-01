@@ -148,6 +148,38 @@ def test_attach_historical_signals_stamps_live_roster_spot():
     assert board[2]["historical"]["trend_feats"]["roster_spot"] == 3
 
 
+def test_attach_historical_signals_stamps_projected_offense_rank():
+    aggs = {
+        "preseason_profiles": {
+            "upcoming_season": 2026,
+            "by_player": {
+                "love": {
+                    "position": "RB",
+                    "team": "ARI",
+                    "years_experience": 0,
+                    "projected_offense_rank": 31,
+                },
+            },
+        },
+        "team_offense": {
+            "upcoming_season": 2026,
+            "projected_ranks_by_season": {2026: {"ARI": 31, "DET": 4}},
+        },
+    }
+    board = [
+        {"id": "love", "position": "RB", "team": "ARI", "redraft_avg_pick": 18.0},
+        {"id": "gibbs", "position": "RB", "team": "DET", "redraft_avg_pick": 4.0},
+        {"id": "k", "position": "K", "team": "DET"},
+    ]
+    attach_historical_signals(board, aggs)
+    assert board[0]["projected_offense_rank"] == 31
+    assert board[0]["historical"]["trend_feats"]["projected_offense_rank"] == 31
+    assert board[1]["projected_offense_rank"] == 4
+    assert board[1]["historical"]["trend_feats"]["projected_offense_rank"] == 4
+    assert "projected_offense_rank" not in board[2]
+    assert "historical" not in board[2]
+
+
 def test_query_for_board_player_keeps_extra_roster_spot():
     query = query_for_board_player(
         {"id": "love", "position": "RB", "team": "ARI", "roster_spot": 1, "redraft_avg_pick": 18},
