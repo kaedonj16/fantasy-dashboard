@@ -2373,11 +2373,15 @@
         // Visible needy teams between turns make a real shelf loss more urgent;
         // cap it so scarcity does not double-count VOR/tier effects excessively.
         _waitLoss *= 1 + Math.min(0.35, (_demand[pos] || 0) / Math.max(1, state.teams) * 0.7);
+        var _streamableBackup = _bench && state.type === 'redraft'
+          && DraftBoardCore.isStreamableSingleSlot
+          && DraftBoardCore.isStreamableSingleSlot(pos, _rs, { sf: !!state.sf, tep: scoringCfg().tep });
         c.ds = DraftBoardCore.decisionScore({ base: pv, utility: _util,
           bench: _bench, deepBench: _role === 'bench2', quality: ppgNormOf(p) || 0,
           required: cpuCtx.obligations.required, freePicks: cpuCtx.obligations.freePicks,
           recentPenalty: _recent, exceptional: _exceptional, waitLoss: _waitLoss,
-          draftType: state.type, lineupHoles: cpuCtx.obligations.lineupHoles || 0 });
+          draftType: state.type, lineupHoles: cpuCtx.obligations.lineupHoles || 0,
+          streamableBackup: _streamableBackup, round: _curRound, totalRounds: state.rounds || 16 });
         // Decision quality gates the ADP likelihood but does not replace it. A
         // persona may choose among close values; it cannot turn poor roster fit
         // into a favorite merely by stacking several heuristic multipliers.
@@ -4024,6 +4028,10 @@
     var waitLossScale = DraftBoardCore.waitLossScaleFor
       ? DraftBoardCore.waitLossScaleFor(pos, missDed, { sf: !!state.sf, tep: scoringCfg().tep })
       : (missDed >= 2 ? 1 : (missDed >= 1 ? 0.6 : 0.4));
+    var recRound = Math.floor(((state.current || 1) - 1) / Math.max(1, state.teams || 12)) + 1;
+    var streamableBackup = bench && state.type === 'redraft'
+      && DraftBoardCore.isStreamableSingleSlot
+      && DraftBoardCore.isStreamableSingleSlot(pos, c.roster, { sf: !!state.sf, tep: scoringCfg().tep });
     var score = DraftBoardCore.decisionScore({ base: base, utility: util,
       bench: bench, deepBench: role === 'bench2', recentPenalty: recentPenalty, exceptional: exceptional,
       quality: ppgNormOf(p) || 0, required: c.obligations.required,
@@ -4031,7 +4039,8 @@
       waitLoss: Math.max(0, base - expected) * (1 + demandRisk), waitLossScale: waitLossScale,
       waitPenalty: waitPenalty, handcuffBonus: handcuffBonus, upsideBonus: upsideBonus,
       byePenalty: byePenalty,
-      draftType: state.type, lineupHoles: c.obligations.lineupHoles || 0 });
+      draftType: state.type, lineupHoles: c.obligations.lineupHoles || 0,
+      streamableBackup: streamableBackup, round: recRound, totalRounds: state.rounds || 16 });
     return score;
   }
   // How many players remain in this player's (position|tier) bucket.
@@ -7317,11 +7326,16 @@
         var shelf = expectedByPos[pos] || [];
         var expected = shelf.length > 1 ? shelf[1] : 0;
         var waitLoss = Math.max(0, abs - expected);
+        var histBench = role === 'bench1' || role === 'bench2';
+        var histStreamable = histBench && state.type === 'redraft'
+          && Core.isStreamableSingleSlot
+          && Core.isStreamableSingleSlot(pos, rs, { sf: !!state.sf, tep: scoringCfg().tep });
         var ds = Core.decisionScore({
-          base: abs, utility: util, bench: role === 'bench1' || role === 'bench2',
+          base: abs, utility: util, bench: histBench,
           deepBench: role === 'bench2', quality: ppgNormOf(p) || 0,
           waitLoss: waitLoss, upsideBonus: upside, required: histOb.required,
-          freePicks: histOb.freePicks, draftType: state.type, lineupHoles: histOb.lineupHoles || 0
+          freePicks: histOb.freePicks, draftType: state.type, lineupHoles: histOb.lineupHoles || 0,
+          streamableBackup: histStreamable, round: rd, totalRounds: state.rounds || 16
         });
         return { absolutePickScore: abs, decisionScore: ds };
       }

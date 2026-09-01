@@ -15,7 +15,9 @@ def test_overlay_is_mv3_safe_extension_page():
     assert 'src="draft_board_core.js"' in html
     assert "BROverlayScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert "BRPickScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
-    assert "decisionScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
+    overlay_score = (EXT / "overlay_score.js").read_text(encoding="utf-8")
+    assert "decisionScore" in overlay_score
+    assert "streamableBackup: streamableBackup" in overlay_score
     assert "futurePickDecisionScore" not in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert "return ctx.current || 1;" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert "Gone before #" not in (EXT / "overlay_score.js").read_text(encoding="utf-8")

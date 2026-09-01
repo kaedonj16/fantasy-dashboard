@@ -389,6 +389,10 @@
     const waitLossScale = C.waitLossScaleFor
       ? C.waitLossScaleFor(pos, missDed, { sf: !!ctx.sf, tep: ctx.tep || 0 })
       : (missDed >= 2 ? 1 : (missDed >= 1 ? 0.6 : 0.4));
+    const recRound = Math.floor(((ctx.current || 1) - 1) / Math.max(1, ctx.teams || 12)) + 1;
+    const streamableBackup = bench && (ctx.type || "redraft") === "redraft"
+      && C.isStreamableSingleSlot
+      && C.isStreamableSingleSlot(pos, psc.roster, { sf: !!ctx.sf, tep: ctx.tep || 0 });
     let score = C.decisionScore({
       base: base, utility: util,
       bench: bench, deepBench: role === "bench2", recentPenalty: recentPenalty, exceptional: exceptional,
@@ -399,6 +403,7 @@
       waitPenalty: waitPenalty, handcuffBonus: handcuffBonus, upsideBonus: upsideBonus,
       byePenalty: byePenalty,
       draftType: ctx.type || "redraft", lineupHoles: psc.obligations.lineupHoles || 0,
+      streamableBackup: streamableBackup, round: recRound, totalRounds: ctx.rounds || 16,
     });
     return score;
   }

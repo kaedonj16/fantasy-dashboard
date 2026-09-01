@@ -424,6 +424,62 @@ def test_redraft_recs_prefer_starter_fills_over_luxury_bench():
     assert out["recs"]["wrDepth"] > out["recs"]["emptyQb"]
 
 
+def test_filled_1qb_backup_does_not_lead_late_round_recs():
+    """After a 1QB starter is in, leftover starting QBs must not lead the recs.
+
+    Reported shape: pick 10.09, Lawrence just drafted, and Dart/Mahomes/Nix/
+    Stafford still ranked #1-#4 with 'QB filled · backup-only value'. Their
+    Pick Scores stay in the high 80s/90s because weekly PPG never left, while
+    remaining skill is late-round (PS ~58-68). Utility 0.32 is not enough;
+    streamableBackup taxes that starter inflation. Pick Score weights and
+    callers that omit the flag stay unchanged.
+    """
+    out = _run_need_cases("""(() => {
+      const rc={QB:1,RB:2,WR:2,TE:1,FLEX:1,BN:6};
+      const counts={QB:1,RB:3,WR:3,TE:1};
+      const qbUtil=C.positionNeedUtility('QB',counts,rc,{draftType:'redraft',role:'bench1'});
+      const wrUtil=C.positionNeedUtility('WR',counts,rc,{draftType:'redraft'});
+      const rbUtil=C.positionNeedUtility('RB',counts,rc,{draftType:'redraft'});
+      const teUtil=C.positionNeedUtility('TE',counts,rc,{draftType:'redraft',role:'bench1'});
+      const dart=C.decisionScore({base:97,utility:qbUtil,bench:true,quality:.9,
+        draftType:'redraft',streamableBackup:true,recentPenalty:7,waitLoss:8,waitLossScale:0.4,
+        round:10,totalRounds:17});
+      const mahomes=C.decisionScore({base:96,utility:qbUtil,bench:true,quality:.88,
+        draftType:'redraft',streamableBackup:true,recentPenalty:7,waitLoss:6,waitLossScale:0.4,
+        round:10,totalRounds:17});
+      const wr=C.decisionScore({base:62,utility:wrUtil,bench:true,quality:.35,
+        draftType:'redraft',waitLoss:4});
+      const rb=C.decisionScore({base:60,utility:rbUtil,bench:true,quality:.32,
+        draftType:'redraft',waitLoss:3});
+      const te=C.decisionScore({base:58,utility:teUtil,bench:true,quality:.4,
+        draftType:'redraft',streamableBackup:true,round:10,totalRounds:17});
+      const legacy=C.decisionScore({base:97,utility:qbUtil,bench:true,quality:.9,
+        draftType:'redraft',recentPenalty:7,waitLoss:8,waitLossScale:0.4});
+      const fallen=C.decisionScore({base:99,utility:qbUtil,bench:true,quality:1,exceptional:1,
+        draftType:'redraft',streamableBackup:true,waitLoss:18,waitLossScale:0.4,
+        round:10,totalRounds:17});
+      const late=C.decisionScore({base:97,utility:qbUtil,bench:true,quality:.9,
+        draftType:'redraft',streamableBackup:true,round:17,totalRounds:17});
+      const sfBackup=C.decisionScore({base:97,utility:0.78,bench:true,quality:.9,
+        draftType:'redraft',streamableBackup:false,round:10,totalRounds:17});
+      return {dart,mahomes,wr,rb,te,legacy,fallen,late,sfBackup,qbUtil};
+    })()""")
+
+    assert out["qbUtil"] < 0.4
+    # Mid-draft leftover starters lose to ordinary remaining skill.
+    assert out["wr"] > out["dart"]
+    assert out["rb"] > out["dart"]
+    assert out["wr"] > out["mahomes"]
+    assert out["te"] < out["wr"]
+    # Omitting the flag keeps the old BPA-can-win relationship (back-compat).
+    assert out["legacy"] > out["wr"]
+    # A true ADP fall can still compete; the last-round fade restores backup value.
+    assert out["fallen"] > out["dart"]
+    assert out["late"] > out["dart"]
+    # Superflex / callers that do not opt in are unaffected.
+    assert out["sfBackup"] > out["dart"]
+
+
 def test_wait_loss_scale_damps_single_slot_scarcity():
     out = _run_need_cases("""(() => {
       const rc={QB:1,RB:2,WR:2,TE:1,FLEX:1};
