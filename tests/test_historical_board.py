@@ -313,7 +313,7 @@ def test_hist_panel_copy_uses_bucket_hit_rates_not_snake_case():
     assert "career_stage" not in shown
     assert "draft_capital" not in shown
     assert "Players drafted in Round 1 historically finished top-12 82%" in copy["market_sentence"]
-    assert "Sample: 140" in copy["market_sentence"]
+    assert "Samples: 140" in copy["market_sentence"]
     assert "n=140" not in copy["market_sentence"]
     assert copy["market_compare_heading"] == "Two groups, not one chance"
     assert copy["history_group_label"] == "Players like this"
@@ -711,7 +711,7 @@ def test_hist_panel_keeps_draft_capital_when_the_cell_has_seasons():
     assert "offense" in group_ids
     note = str(panel["copy"].get("examples_vs_cohort_note") or "")
     if note:
-        assert "Sample:" in note
+        assert "Samples:" in note
         assert "n=" not in note
     board = [{
         "id": "preview-love",
