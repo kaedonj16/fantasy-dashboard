@@ -402,7 +402,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
     body = f"""
     <div class="os-layout">
-      <aside class="os-left-col os-tab-panel" id="os-jump-roster">
+      <aside class="os-left-col os-tab-panel os-side-rail" id="os-jump-roster">
         <section class="os-card os-card-soft os-col-fill">
           <div class="os-section-head">
             <div class="os-section-head-content">
@@ -574,7 +574,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
       </main>
 
-      <aside class="os-right-col os-tab-panel" id="os-jump-teams">
+      <aside class="os-right-col os-tab-panel os-side-rail" id="os-jump-teams">
         <div class="os-sidebar-shell">
           {teams_sidebar_html}
         </div>

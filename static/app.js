@@ -9423,6 +9423,14 @@ function initRecapPage(root = document) {
     observedLayout = null;
   }
 
+  function viewportFillHeight(layout) {
+    var top = layout.getBoundingClientRect().top;
+    var footer = document.querySelector('.site-footer, footer.app-footer, .app-footer');
+    var footerH = footer ? footer.getBoundingClientRect().height : 0;
+    var pad = 24;
+    return Math.max(320, Math.floor(window.innerHeight - top - footerH - pad));
+  }
+
   function apply(layout, main) {
     if (!layout || !main || !mq.matches) {
       teardown();
@@ -9430,7 +9438,8 @@ function initRecapPage(root = document) {
     }
     layout.classList.add('os-hub-cols-synced');
     observedLayout = layout;
-    var h = Math.ceil(main.getBoundingClientRect().height);
+    var mainH = Math.ceil(main.getBoundingClientRect().height);
+    var h = Math.max(mainH, viewportFillHeight(layout));
     if (h > 0) layout.style.setProperty('--os-hub-main-h', h + 'px');
   }
 
@@ -9469,6 +9478,7 @@ function initRecapPage(root = document) {
     var onMq = function() { window.initHubColumnHeightSync(document); };
     if (mq.addEventListener) mq.addEventListener('change', onMq);
     else if (mq.addListener) mq.addListener(onMq);
+    window.addEventListener('resize', onMq, { passive: true });
     window._hubColMqBound = true;
   }
 })();

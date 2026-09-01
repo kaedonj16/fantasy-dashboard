@@ -53,6 +53,10 @@ def test_paywall_and_pricing_list_the_same_pro_set():
         assert name in billing
     assert "What PRO includes" in billing
     assert "Free includes" in billing
+    assert "pricing-features-grid" in billing
+    assert "pricing-feature-item" in billing
+    dash_css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert ".pricing-features-grid" in dash_css
     assert "Advanced Metrics" in billing
     assert "Auction Values" in billing
     assert "All future premium features" not in billing
