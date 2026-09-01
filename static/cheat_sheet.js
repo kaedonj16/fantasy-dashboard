@@ -2235,6 +2235,16 @@
             'last year receptions': 1, 'last year targets': 1,
             'last year games played': 1, 'last year pass attempts': 1
         };
+        if (kind === 'draft_capital' && bucket) return 'Drafted NFL ' + bucket + ', any season';
+        if (kind === 'top12_as_rookie' && bucket) return 'Drafted NFL ' + bucket + ', year 1';
+        if (kind === 'top12_by_year_2' && bucket) return 'Drafted NFL ' + bucket + ', year 2';
+        if (kind === 'capital_miss' && bucket) return 'Drafted NFL ' + bucket + ', miss (any season)';
+        if (kind === 'career_stage' && bucket) {
+            return (String(bucket).toLowerCase() === 'rookie' ? 'Rookie' : bucket) + ' season, any capital';
+        }
+        if ((kind === 'age' || kind === 'age_exact') && bucket) {
+            return (String(bucket).toLowerCase().indexOf('age') === 0 ? bucket : 'Age ' + bucket) + ', any season';
+        }
         if (label && !generic[label.toLowerCase()]) return label;
         return qualified || label || row.sentence || '';
     }

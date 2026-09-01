@@ -28,7 +28,10 @@ from dashboard_services.historical.definitions import (
     CAREER_STAGE_ORDER,
     COMP_BOARD_TIERS,
     COMP_DIMENSION_ORDER,
+    CAREER_STAGE_ROOKIE,
+    CAREER_STAGE_YEAR_2,
     DRAFT_CAPITAL_ORDER,
+    HIST_PANEL_MIN_N,
     DRAFT_CAPITAL_ROUND_1,
     TRENDS_ROUND1_PICK_RANGES,
     PRIOR_FINISH_BUCKETS,
@@ -852,11 +855,50 @@ def _finish_baselines(
     return out
 
 
+def _drafted_window_title(bucket: str, window: str) -> str:
+    """Always name the NFL draft band and the career year being counted."""
+    band = str(bucket or "").strip() or "that capital"
+    if window == "year_1":
+        return f"Drafted NFL {band}, year 1"
+    if window == "year_2":
+        return f"Drafted NFL {band}, year 2"
+    if window == "miss":
+        return f"Drafted NFL {band}, miss (any season)"
+    return f"Drafted NFL {band}, any season"
+
+
+def _stage_season_title(stage_label: str) -> str:
+    lab = str(stage_label or "").strip()
+    if lab.lower() == "rookie":
+        return "Rookie season, any capital"
+    return f"{lab} season, any capital"
+
+
+def _age_season_title(age_label: str) -> str:
+    lab = str(age_label or "").strip()
+    if lab.lower().startswith("age "):
+        return f"{lab}, any season"
+    return f"Age {lab}, any season"
+
+
 def format_hist_trend_title(*, kind: str, label: str, bucket: str) -> str:
-    """One line for the Hist list. Distinctive labels win; generic ones yield to the bucket."""
+    """One line for the Hist list. Capital and stage rows always name the year."""
     lab = str(label or "").strip()
     buck = str(bucket or "").strip()
-    prefix = HIST_TREND_PREFIX.get(str(kind or ""))
+    kind_key = str(kind or "")
+    if kind_key == "draft_capital":
+        return _drafted_window_title(buck, "any")
+    if kind_key == "top12_as_rookie":
+        return _drafted_window_title(buck, "year_1")
+    if kind_key == "top12_by_year_2":
+        return _drafted_window_title(buck, "year_2")
+    if kind_key == "capital_miss":
+        return _drafted_window_title(buck, "miss")
+    if kind_key == "career_stage":
+        return _stage_season_title(buck or lab)
+    if kind_key in ("age", "age_exact"):
+        return _age_season_title(buck or lab)
+    prefix = HIST_TREND_PREFIX.get(kind_key)
     qualified = buck
     if prefix and buck and prefix.lower() not in buck.lower():
         qualified = f"{prefix} {buck}"
@@ -918,7 +960,7 @@ def cohort_sentence(key_used: Optional[Mapping[str, Any]]) -> str:
     stage = format_comp_bucket_value("career_stage", key.get("career_stage")) if key.get("career_stage") else ""
     cap = format_comp_bucket_value("draft_capital", key.get("draft_capital")) if key.get("draft_capital") else ""
     if stage and cap:
-        extras.append(f"{stage.lower()} {cap.lower()} capital")
+        extras.append(f"{stage.lower()}, {cap.lower()} capital")
     elif stage:
         extras.append(stage.lower())
     elif cap:
@@ -1033,9 +1075,9 @@ def build_hist_trends(
         stage_label = format_comp_bucket_value("career_stage", stage)
         add(_trend_row(
             kind="career_stage",
-            label="Career stage",
+            label=_stage_season_title(stage_label),
             bucket=stage_label,
-            sentence=f"{stage_label} {pos}s finished top-12",
+            sentence=f"{stage_label} {pos}s (any draft capital) finished top-12 that season",
             rate=stage_rate,
             baseline_pct=baseline_pct,
         ))
@@ -1045,12 +1087,12 @@ def build_hist_trends(
     pick = _optional_int(query.get("nfl_draft_pick") or feats.get("nfl_draft_pick"))
     pick_band = trends_round1_pick_range(pick)
     cap_label = ""
+    pick_filter: Optional[dict] = None
     cap_rec: Mapping[str, Any] = {}
     if pick_band:
         _key, cap_label, lo, hi = pick_band
-        cap_rec = _cohort_rate_for_filters(
-            aggregates, pos, [_round1_pick_match(lo, hi)]
-        )
+        pick_filter = _round1_pick_match(lo, hi)
+        cap_rec = _cohort_rate_for_filters(aggregates, pos, [pick_filter])
     if not cap_rec and cap:
         cap_label = format_comp_bucket_value("draft_capital", cap) if cap else ""
         cap_rec = ((capital.get("season_level_by_capital") or {}).get(cap) or {}) if cap else {}
@@ -1058,9 +1100,9 @@ def build_hist_trends(
         top5 = _as_rate(cap_rec.get("top_5") if isinstance(cap_rec, Mapping) else None).get("display_pct")
         add(_trend_row(
             kind="draft_capital",
-            label="Draft capital",
+            label=_drafted_window_title(cap_label, "any"),
             bucket=cap_label,
-            sentence=f"NFL {cap_label} {pos}s finished top-12",
+            sentence=f"{pos}s drafted NFL {cap_label} finished top-12 in any season",
             rate=cap_rec.get("top_12") if isinstance(cap_rec, Mapping) and "top_12" in cap_rec else cap_rec,
             baseline_pct=baseline_pct,
             secondary=f"{top5}% top-5" if top5 is not None else None,
@@ -1070,22 +1112,37 @@ def build_hist_trends(
             coarse_label = format_comp_bucket_value("draft_capital", cap) if cap else cap_label
             add(_trend_row(
                 kind="capital_miss",
-                label="Miss rate",
+                label=_drafted_window_title(coarse_label, "miss"),
                 bucket=coarse_label,
-                sentence=f"NFL {coarse_label} {pos}s finished outside the top-{bust_cut}",
+                sentence=f"{pos}s drafted NFL {coarse_label} finished outside the top-{bust_cut} in any season",
                 rate=((capital.get("season_level_by_capital") or {}).get(cap) or {}).get("absolute_bust") if cap else None,
                 polarity="miss",
             ))
-        for window_id, heading, _note in CUMULATIVE_TREND_WINDOWS:
-            window = (capital.get("cumulative") or {}).get(window_id) or {}
-            when = "as a rookie" if window_id == "top12_as_rookie" else "by year 2"
-            coarse_label = format_comp_bucket_value("draft_capital", cap) if cap else cap_label
+        band_filter = pick_filter or (
+            _match_eq("draft_capital", "draft_capital", cap) if cap else None
+        )
+        for window_id, stage_key, window in (
+            ("top12_as_rookie", CAREER_STAGE_ROOKIE, "year_1"),
+            ("top12_by_year_2", CAREER_STAGE_YEAR_2, "year_2"),
+        ):
+            when = "year 1" if window == "year_1" else "year 2"
+            rate = None
+            if band_filter:
+                rate = _cohort_rate_for_filters(
+                    aggregates,
+                    pos,
+                    [band_filter, _match_eq("career_stage", "career_stage", stage_key)],
+                )
+            if not rate:
+                fallback = ((capital.get("cumulative") or {}).get(window_id) or {}).get("by_capital") or {}
+                rate = fallback.get(cap) if cap else None
             add(_trend_row(
                 kind=window_id,
-                label=heading,
-                bucket=coarse_label,
-                sentence=f"NFL {cap_label} {pos}s posted a top-12 {when}",
-                rate=(window.get("by_capital") or {}).get(cap),
+                label=_drafted_window_title(cap_label, window),
+                bucket=cap_label,
+                sentence=f"{pos}s drafted NFL {cap_label} finished top-12 in {when}",
+                rate=rate,
+                baseline_pct=baseline_pct,
             ))
 
     age_block = (aggregates.get("age_curves") or {}).get(pos) or {}
@@ -1094,9 +1151,9 @@ def build_hist_trends(
         age_label = format_comp_bucket_value("age_bucket", age_b)
         add(_trend_row(
             kind="age",
-            label="Age",
+            label=_age_season_title(age_label),
             bucket=age_label,
-            sentence=f"{pos}s age {age_label} finished top-12",
+            sentence=f"{pos}s age {age_label} finished top-12 that season",
             rate=(age_block.get("by_bucket") or {}).get(age_b),
             baseline_pct=baseline_pct,
         ))
@@ -1105,9 +1162,9 @@ def build_hist_trends(
         if age_int is not None:
             add(_trend_row(
                 kind="age_exact",
-                label="Age",
+                label=_age_season_title(str(age_int)),
                 bucket=str(age_int),
-                sentence=f"Age-{age_int} {pos}s finished top-12",
+                sentence=f"Age-{age_int} {pos}s finished top-12 that season",
                 rate=(age_block.get("by_integer_age") or {}).get(str(age_int)),
                 baseline_pct=baseline_pct,
             ))
@@ -1251,8 +1308,8 @@ def build_hist_panel_copy(
     relaxed_note = None
     if relaxed:
         relaxed_note = (
-            "These filters were dropped so the comparison pool could reach "
-            "at least 15 similar seasons."
+            "These filters had no matching seasons, so they were left off "
+            "the headline group."
         )
 
     market_sentence = format_market_sentence(mkt, missing="no_adp")
@@ -1300,9 +1357,9 @@ def build_hist_panel_copy(
         "relaxed_note": relaxed_note,
         "trends_heading": "Trends for this player's buckets",
         "trends_note": (
-            "Each row is one historical slice for a bucket this player is in, "
-            "not the combined chance above. NFL capital rates count every season "
-            "of those draftees, including later career years. "
+            "Each row is one historical slice. Drafted NFL Top 10, year 1 is "
+            "that draft band in a rookie season. Any season includes later "
+            "career years. Small samples stay on the card. "
             "+N vs typical is versus a typical player-season at the position. "
             "They are not combined into a ranking score."
         ),
@@ -1348,7 +1405,11 @@ def build_deep_panel(
             seed["adp_overall"] = live_redraft_adp(seed)
     query = query_for_board_player(seed, by_player)
     comps = aggregates.get("comps") if isinstance(aggregates.get("comps"), Mapping) else aggregates
-    looked = lookup_board_probabilities(query, comps if isinstance(comps, Mapping) else {})
+    looked = lookup_board_probabilities(
+        query,
+        comps if isinstance(comps, Mapping) else {},
+        min_n=HIST_PANEL_MIN_N,
+    )
     looked = apply_career_path_history(query, looked, aggregates)
     market = lookup_market_probability(query, aggregates)
     history = {
@@ -1752,7 +1813,7 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         rec = bundle.get("top_12") or bundle
         top5 = _as_rate(bundle.get("top_5")).get("display_pct")
         row = _section_row(
-            label,
+            f"{label}, any season",
             rec,
             baseline_pct=baseline_pct,
             baselines=finish_baselines,
@@ -1771,7 +1832,7 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         top5 = _as_rate(bundle.get("top_5")).get("display_pct")
         secondary = f"{top5}% top-5" if top5 is not None else None
         row = _section_row(
-            DRAFT_CAPITAL_DISPLAY.get(key, _title_from_key(key)),
+            f"{DRAFT_CAPITAL_DISPLAY.get(key, _title_from_key(key))}, any season",
             rec,
             baseline_pct=baseline_pct,
             baselines=finish_baselines,
@@ -1788,31 +1849,60 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         sid="draft_capital",
         heading="NFL draft capital",
         note=(
-            f"Season-level hit rate for {pos}s by NFL draft capital, not fantasy ADP. "
-            "Round 1 is split by overall pick (Top 10, 11-25, rest of Round 1)."
+            f"Any-season hit rate for {pos}s by NFL draft capital, not fantasy ADP. "
+            "Round 1 is split by overall pick (Top 10, 11-25, rest of Round 1). "
+            "This is every career year, not year 1."
         ),
         rows=cap_rows,
         finish_tied=True,
     )
 
-    for window_id, heading, note in CUMULATIVE_TREND_WINDOWS:
+    for window_id, stage_key, year_label in (
+        ("top12_as_rookie", CAREER_STAGE_ROOKIE, "year 1"),
+        ("top12_by_year_2", CAREER_STAGE_YEAR_2, "year 2"),
+    ):
+        rows = []
+        for key, label, lo, hi in TRENDS_ROUND1_PICK_RANGES:
+            pick_match = _round1_pick_match(lo, hi)
+            stage_match = _match_eq("career_stage", "career_stage", stage_key)
+            bundle = _cohort_rate_for_filters(aggregates, pos, [pick_match, stage_match])
+            rec = bundle.get("top_12") or bundle
+            row = _section_row(
+                f"{label}, {year_label}",
+                rec,
+                baselines=finish_baselines,
+                row_id=f"{window_id}:{key}",
+                match={"all": [pick_match, stage_match]},
+                pcts=_collect_pcts(bundle),
+            )
+            if row:
+                rows.append(row)
         window = (capital.get("cumulative") or {}).get(window_id) or {}
         by_cap = window.get("by_capital") or {}
-        rows = []
         for key in DRAFT_CAPITAL_ORDER:
+            if key == DRAFT_CAPITAL_ROUND_1 and rows:
+                continue
+            stage_match = _match_eq("career_stage", "career_stage", stage_key)
+            cap_match = _match_eq("draft_capital", "draft_capital", key)
+            bundle = _cohort_rate_for_filters(aggregates, pos, [cap_match, stage_match])
+            rec = bundle.get("top_12") or bundle or by_cap.get(key)
             row = _section_row(
-                DRAFT_CAPITAL_DISPLAY.get(key, _title_from_key(key)),
-                by_cap.get(key),
+                f"{DRAFT_CAPITAL_DISPLAY.get(key, _title_from_key(key))}, {year_label}",
+                rec,
                 row_id=f"{window_id}:{key}",
-                match=_match_eq("draft_capital", "draft_capital", key),
+                match={"all": [cap_match, stage_match]},
+                pcts=_collect_pcts(bundle),
             )
             if row:
                 rows.append(row)
         _append_section(
             sections,
             sid=window_id,
-            heading=heading,
-            note=f"{note} NFL draft capital, not fantasy ADP.",
+            heading=f"Drafted, {year_label}",
+            note=(
+                f"{pos}s drafted in that NFL band who finished top-12 in {year_label}. "
+                "Season-level, not a career-long rate. NFL draft capital, not fantasy ADP."
+            ),
             rows=rows,
         )
 

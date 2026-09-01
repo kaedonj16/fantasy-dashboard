@@ -180,6 +180,9 @@ COMP_RELAXATION_ORDER: Tuple[str, ...] = (
 )
 COMP_BOARD_TIERS: Tuple[str, ...] = ("top_5", "top_12", "top_24")
 MIN_COMP_CELL_N = 15
+# Hist modal keeps the exact profile whenever that cell has any seasons.
+# Walk-forward / ranking still use MIN_COMP_CELL_N.
+HIST_PANEL_MIN_N = 1
 NAMED_EXAMPLES_PER_CELL = 3
 
 # Phase 9 league-winner proxy. Reuses the existing top_5 cutoff; do not invent

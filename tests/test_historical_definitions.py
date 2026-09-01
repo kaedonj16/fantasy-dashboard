@@ -9,6 +9,7 @@ from dashboard_services.historical.definitions import (
     COMP_RELAXATION_ORDER,
     DEFAULT_BAYES_PRIOR_N,
     MIN_COMP_CELL_N,
+    HIST_PANEL_MIN_N,
     POSITION_TIER_WIDTH,
     PRIOR_FINISH_NONE,
     RELIABLE_SEASON_FLOOR,
@@ -210,6 +211,7 @@ def test_prior_finish_bucket_rookie_none_veteran_missing_omitted():
     assert prior_finish_bucket(36) == "top_36"
     assert prior_finish_bucket(37) == "outside_36"
     assert MIN_COMP_CELL_N == 15
+    assert HIST_PANEL_MIN_N == 1
     assert COMP_BOARD_TIERS == ("top_5", "top_12", "top_24")
     assert COMP_RELAXATION_ORDER[0] == "target_share"
     assert "position" not in COMP_RELAXATION_ORDER
