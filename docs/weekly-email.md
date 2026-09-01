@@ -23,19 +23,26 @@ permission. Store it only in Render (or your secrets manager). Never commit it.
 
 ## 4. Render environment variables
 
-Set these on the **web service** (`brfantasy`). The weekly Render cron only POSTs
+Set secrets on the **web service** (`brfantasy`). The weekly Render cron only POSTs
 `/api/cron/notifications`; the web process performs the send.
 
-| Variable | Required | Notes |
+Pinned in `render.yaml` (you do not need to create these in the dashboard):
+
+| Variable | Value |
+|---|---|
+| `BREVO_SENDER_EMAIL` | `noreply@brfantasyfootball.com` |
+| `BREVO_SENDER_NAME` | `BR Fantasy` |
+| `BREVO_REPLY_TO_EMAIL` | `admin@brfantasy.com` |
+| `SITE_BASE_URL` | `https://brfantasyfootball.com` |
+
+You still paste these in the Render dashboard (Environment → `brfantasy`):
+
+| Variable | Required | Where to get it |
 |---|---|---|
-| `BREVO_API_KEY` | yes (production) | Transactional API key |
-| `BREVO_SENDER_EMAIL` | recommended | Verified sender. Falls back to `EMAIL_USER` then `noreply@PRIMARY_DOMAIN` |
-| `BREVO_SENDER_NAME` | optional | Default `BR Fantasy` |
-| `BREVO_REPLY_TO_EMAIL` | optional | Falls back to `CONTACT_EMAIL` / `EMAIL_USER` |
-| `BREVO_WEBHOOK_SECRET` | yes if using webhooks | Shared secret; see below |
-| `SITE_BASE_URL` | recommended | Used for dashboard and unsubscribe links |
-| `FLASK_SECRET_KEY` | yes | Signs unsubscribe tokens |
-| `SMTP_SERVER` / `EMAIL_USER` / `EMAIL_PASSWORD` | fallback only | Used only when `BREVO_API_KEY` is unset |
+| `BREVO_API_KEY` | yes (production) | Brevo → SMTP & API → API keys. Create a key with transactional email permission. |
+| `BREVO_WEBHOOK_SECRET` | only if you want bounce/open tracking | Any long random token you invent; paste the same value in Render and in the Brevo webhook URL. Skip this to ship without webhooks. |
+
+`FLASK_SECRET_KEY` is already a Render secret (used for unsubscribe HMAC). SMTP vars stay as fallback only and are unused once `BREVO_API_KEY` is set.
 
 SMTP remains a temporary fallback. With `BREVO_API_KEY` set, SMTP is not used
 for the weekly digest.

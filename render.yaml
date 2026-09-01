@@ -29,16 +29,20 @@ services:
       - key: SMTP_PORT
         value: 587
       # Transactional email (weekly digest). Brevo is primary; SMTP above is fallback.
+      # Only BREVO_API_KEY (and optional BREVO_WEBHOOK_SECRET) are secrets you paste
+      # in the Render dashboard. Sender identity is pinned here.
       - key: BREVO_API_KEY
         sync: false
       - key: BREVO_SENDER_EMAIL
-        sync: false
+        value: noreply@brfantasyfootball.com
       - key: BREVO_SENDER_NAME
         value: BR Fantasy
       - key: BREVO_REPLY_TO_EMAIL
-        sync: false
+        value: admin@brfantasy.com
       - key: BREVO_WEBHOOK_SECRET
         sync: false
+      - key: SITE_BASE_URL
+        value: https://brfantasyfootball.com
       - key: TANK01_API_KEY
         sync: false
       - key: FLASK_SECRET_KEY
