@@ -108,6 +108,8 @@ services:
         # on the primary domain (the onrender.com host 301-redirects here, which
         # would break the OAuth round-trip). See PRIMARY_DOMAIN above.
         value: https://brfantasyfootball.com/auth/yahoo/callback
+      - key: YAHOO_ENABLED
+        value: "1"
       # Stripe payments
       - key: STRIPE_SECRET_KEY
         sync: false

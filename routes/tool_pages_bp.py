@@ -191,8 +191,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
         "Draft Room | BR Fantasy", league_id, "draft", body, platform, season,
         description=(
             "Fantasy football draft assistant and draft board with best-available, "
-            "ADP, and snake / linear / third-round-reversal support for Sleeper and ESPN. "
-            "Yahoo coming soon."
+            "ADP, and snake / linear / third-round-reversal support for Sleeper, ESPN, and Yahoo."
         ),
     )
 

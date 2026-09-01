@@ -4,15 +4,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_seo_does_not_list_yahoo_as_a_live_platform():
+def test_seo_lists_yahoo_as_a_supported_platform():
     app = (ROOT / "app.py").read_text(encoding="utf-8")
     trade = (ROOT / "routes" / "trade_bp.py").read_text(encoding="utf-8")
     tools = (ROOT / "routes" / "tool_pages_bp.py").read_text(encoding="utf-8")
-    live = "Sleeper, ESPN, and Yahoo"
-    assert live not in app
-    assert live not in trade
-    assert live not in tools
-    assert "Yahoo coming soon" in app
+    assert "Sleeper, ESPN, and Yahoo" in app
+    assert "Sleeper, ESPN, and Yahoo" in tools
+    assert "Yahoo coming soon" not in app
+    assert "Yahoo coming soon" not in tools
     assert "real Sleeper dynasty trades" in trade
 
 
