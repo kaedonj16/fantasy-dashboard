@@ -78,8 +78,8 @@ def format_chip_html(label: str) -> str:
     if not text:
         return ""
     return (
-        f'<span style="display:inline-block;margin-top:8px;padding:4px 10px;border-radius:999px;'
-        f'background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:700;letter-spacing:.02em;">'
+        f'<span style="display:inline-block;margin-top:8px;padding:5px 12px;border-radius:999px;'
+        f'background:#dbeafe;color:#1d4ed8;font-size:11px;font-weight:700;letter-spacing:.02em;">'
         f"{escape(text, quote=False)}</span>"
     )
 
@@ -131,7 +131,7 @@ def matchup_html(matchup: Optional[dict], *, href: str = "") -> str:
             if margin is not None:
                 m = float(margin)
                 if abs(m) >= 0.05:
-                    verb = "favored by" if m > 0 else "projected behind by"
+                    verb = "Favored by" if m > 0 else "Projected behind by"
                     lines.append(f"{verb} {abs(m):.1f}")
         except (TypeError, ValueError):
             pass
