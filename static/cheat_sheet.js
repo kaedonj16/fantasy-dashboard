@@ -2275,6 +2275,24 @@
             if (kind === 'offense_roster_2') return base + ', year 2';
             return base;
         }
+        if ((kind === 'capital_roster' || kind === 'capital_roster_1' || kind === 'capital_roster_2') && bucket) {
+            var bits = String(bucket).split(', ');
+            var cap = bits[0] || bucket;
+            var spot = bits.length > 1 ? bits.slice(1).join(', ') : '';
+            var base = 'Drafted NFL ' + cap;
+            if (spot) base += ', ' + spot;
+            if (kind === 'capital_roster_1') return base + ', year 1';
+            if (kind === 'capital_roster_2') return base + ', year 2';
+            return base;
+        }
+        if (kind === 'offense_capital' && bucket) {
+            var bits = String(bucket).split(', ');
+            var band = bits[0] || bucket;
+            var cap = bits.length > 1 ? bits.slice(1).join(', ') : '';
+            var base = (String(band).toLowerCase() === 'top 10' ? 'Top-10' : band) + ' projected offense';
+            if (cap) base += ', ' + (String(cap).toLowerCase() === 'top 10' ? 'NFL Top 10' : cap);
+            return base;
+        }
         if (label && !generic[label.toLowerCase()]) return label;
         return qualified || label || row.sentence || '';
     }
@@ -2388,7 +2406,9 @@
         workload_change: 'usage',
         offense: 'team', offense_year_1: 'team', offense_year_2: 'team',
         offense_last_year: 'team', offense_last_year_1: 'team', offense_last_year_2: 'team',
-        offense_roster: 'team', offense_roster_1: 'team', offense_roster_2: 'team'
+        offense_roster: 'team', offense_roster_1: 'team', offense_roster_2: 'team',
+        capital_roster: 'capital', capital_roster_1: 'capital', capital_roster_2: 'capital',
+        offense_capital: 'team'
     };
     var TRENDS_LANES = [
         ['all', 'All'], ['career', 'Career'],
@@ -2420,7 +2440,11 @@
         offense_year_2: 'Offense',
         offense_roster: 'Offense',
         offense_roster_1: 'Offense',
-        offense_roster_2: 'Offense'
+        offense_roster_2: 'Offense',
+        capital_roster: 'NFL',
+        capital_roster_1: 'NFL',
+        capital_roster_2: 'NFL',
+        offense_capital: 'Offense'
     };
 
     function trendsConfKey(label) {

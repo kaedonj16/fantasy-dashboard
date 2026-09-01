@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-09-01",
         "tag": "update",
+        "text": "Draft Cheat Sheet Hist: NFL Round 1 rates now split by preseason roster spot for RB, WR, and QB (a Round 1 WR1 is not mixed with a Round 1 WR3+), and RB Round 1 / Top 10 pick rates are shown inside each projected-offense band so a first-round back on a 21-32 offense is not mixed with the whole room. Intersections are counted, not multiplied.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-09-01",
+        "tag": "update",
         "text": "Draft Cheat Sheet Hist: projected-offense rates now split by preseason roster spot (RB1, WR1, TE1, QB1 vs 2 vs 3+ by ADP among teammates), so a starter on a top-10 projected offense is not mixed with an RB3, WR3, or backup QB.",
         "link": "/draft/cheat-sheet"
     },

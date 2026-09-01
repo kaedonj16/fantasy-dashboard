@@ -610,6 +610,10 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "projected offense" in script
     assert "offense_last_year" in script
     assert "offense_roster" in script
+    assert "capital_roster" in script
+    assert "offense_capital" in script
+    assert "Drafted NFL ' + cap" in script
+    assert "NFL Top 10" in script
     assert "roster_spot=" in script
     assert "f.all && f.all.length" in script
     assert "function trendsBaselineOf" in script

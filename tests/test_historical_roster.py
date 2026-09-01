@@ -238,3 +238,106 @@ def test_cohort_cache_does_not_reuse_empty_synthetic_for_loaded_wr():
     hit = evaluate_cohort(aggs, position="WR", filters=[top10, wr1])
     assert (hit.get("sample_size") or 0) > 0
     assert hit.get("display_pct") is not None
+
+
+def test_capital_roster_titles_name_spot_and_year():
+    assert format_hist_trend_title(
+        kind="capital_roster", label="NFL", bucket="Round 1, WR3+"
+    ) == "Drafted NFL Round 1, WR3+"
+    assert format_hist_trend_title(
+        kind="capital_roster_1", label="NFL", bucket="Top 10, RB1"
+    ) == "Drafted NFL Top 10, RB1, year 1"
+    assert format_hist_trend_title(
+        kind="capital_roster_2", label="NFL", bucket="Day 2, WR1"
+    ) == "Drafted NFL Day 2, WR1, year 2"
+    assert "_" not in format_hist_trend_title(
+        kind="capital_roster", label="NFL", bucket="Round 1, WR3+"
+    )
+
+
+def test_round1_wr1_is_counted_intersection_not_a_product():
+    reset_cohort_cache()
+    obs = []
+    for i in range(10):
+        obs.append({
+            "pid": f"s{i}",
+            "pos": "WR",
+            "season": 2020 + (i % 5),
+            "finish": 5 if i < 3 else 40,
+            "feats": {"position": "WR", "draft_capital": "round_1", "roster_spot": 1},
+        })
+    for i in range(10):
+        obs.append({
+            "pid": f"d{i}",
+            "pos": "WR",
+            "season": 2020 + (i % 5),
+            "finish": 40,
+            "feats": {"position": "WR", "draft_capital": "round_1", "roster_spot": 3},
+        })
+    aggs = {
+        "cohort_index": {"observations": obs},
+        "age_curves": {"WR": {"baseline": {"display_pct": 8, "sample_size": 100}}},
+    }
+    r1 = {"group": "draft_capital", "field": "draft_capital", "eq": "round_1"}
+    wr1 = {"group": "roster_spot", "field": "roster_spot", "eq": 1}
+    wr3 = {"group": "roster_spot", "field": "roster_spot", "eq": 3}
+    starter = evaluate_cohort(aggs, position="WR", filters=[r1, wr1], data_version="cr")
+    depth = evaluate_cohort(aggs, position="WR", filters=[r1, wr3], data_version="cr")
+    any_wr = evaluate_cohort(aggs, position="WR", filters=[r1], data_version="cr")
+    assert starter["sample_size"] == 10
+    assert depth["sample_size"] == 10
+    assert starter["successes"] == 3
+    assert depth["successes"] == 0
+    assert abs(starter["raw_rate"] - 0.3) < 1e-9
+    assert abs(depth["raw_rate"] - 0.0) < 1e-9
+    assert abs(any_wr["raw_rate"] - 0.15) < 1e-9
+    assert starter["raw_rate"] != any_wr["raw_rate"]
+
+
+def test_round1_rb_on_bad_projected_offense_is_counted_intersection():
+    reset_cohort_cache()
+    obs = []
+    for i in range(10):
+        obs.append({
+            "pid": f"r{i}",
+            "pos": "RB",
+            "season": 2018 + (i % 5),
+            "finish": 8 if i < 3 else 40,
+            "feats": {
+                "position": "RB",
+                "draft_capital": "round_1",
+                "nfl_draft_pick": 8,
+                "projected_offense_rank": 28,
+            },
+        })
+    for i in range(10):
+        obs.append({
+            "pid": f"u{i}",
+            "pos": "RB",
+            "season": 2018 + (i % 5),
+            "finish": 40,
+            "feats": {
+                "position": "RB",
+                "draft_capital": "day_3",
+                "nfl_draft_pick": 140,
+                "projected_offense_rank": 28,
+            },
+        })
+    aggs = {
+        "cohort_index": {"observations": obs},
+        "age_curves": {"RB": {"baseline": {"display_pct": 8, "sample_size": 100}}},
+    }
+    band = {"group": "projected_offense", "field": "projected_offense_rank", "between": [21, 32]}
+    r1 = {"group": "draft_capital", "field": "draft_capital", "eq": "round_1"}
+    top10 = {"group": "draft_capital", "field": "nfl_draft_pick", "between": [1, 10]}
+    mixed = evaluate_cohort(aggs, position="RB", filters=[band], data_version="oc")
+    round1 = evaluate_cohort(aggs, position="RB", filters=[band, r1], data_version="oc")
+    pick = evaluate_cohort(aggs, position="RB", filters=[band, top10], data_version="oc")
+    assert mixed["sample_size"] == 20
+    assert round1["sample_size"] == 10
+    assert pick["sample_size"] == 10
+    assert round1["successes"] == 3
+    assert mixed["successes"] == 3
+    assert abs(round1["raw_rate"] - 0.3) < 1e-9
+    assert abs(mixed["raw_rate"] - 0.15) < 1e-9
+    assert abs(pick["raw_rate"] - round1["raw_rate"]) < 1e-9

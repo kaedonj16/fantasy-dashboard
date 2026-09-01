@@ -33,6 +33,8 @@ from dashboard_services.historical.definitions import (
     DRAFT_CAPITAL_ORDER,
     HIST_PANEL_MIN_N,
     DRAFT_CAPITAL_ROUND_1,
+    DRAFT_CAPITAL_DAY_2,
+    DRAFT_CAPITAL_DAY_3,
     TRENDS_ROUND1_PICK_RANGES,
     TRENDS_OFFENSE_RANGES,
     PRIOR_FINISH_BUCKETS,
@@ -242,7 +244,12 @@ HIST_TREND_PREFIX: dict[str, str] = {
     "offense_roster": "Offense",
     "offense_roster_1": "Offense",
     "offense_roster_2": "Offense",
+    "capital_roster": "NFL",
+    "capital_roster_1": "NFL",
+    "capital_roster_2": "NFL",
+    "offense_capital": "Offense",
 }
+CAPITAL_ROSTER_POSITIONS: frozenset[str] = frozenset({"RB", "WR", "QB"})
 HIST_TREND_GENERIC_LABELS: frozenset[str] = frozenset({
     "age",
     "draft capital",
@@ -977,6 +984,37 @@ def _offense_roster_title(band: str, spot_label: str, window: str) -> str:
     return base
 
 
+def _capital_roster_title(cap_label: str, spot_label: str, window: str) -> str:
+    """NFL draft band plus preseason roster spot, then the year window."""
+    band = str(cap_label or "").strip() or "that capital"
+    base = f"Drafted NFL {band}"
+    spot = str(spot_label or "").strip()
+    if spot:
+        base = f"{base}, {spot}"
+    if window == "year_1":
+        return f"{base}, year 1"
+    if window == "year_2":
+        return f"{base}, year 2"
+    return base
+
+
+def _offense_capital_clause(cap_label: str) -> str:
+    """Second half of an offense x capital title. Top 10 needs NFL so it is not the offense band."""
+    lab = str(cap_label or "").strip()
+    if lab.lower() == "top 10":
+        return "NFL Top 10"
+    return lab
+
+
+def _offense_capital_title(band: str, cap_label: str) -> str:
+    """Projected-offense band plus NFL draft band. No year window (cells are tiny)."""
+    base = _offense_window_title(band, "any", analog="projected")
+    cap = _offense_capital_clause(cap_label)
+    if cap:
+        return f"{base}, {cap}"
+    return base
+
+
 def format_hist_trend_title(*, kind: str, label: str, bucket: str) -> str:
     """One line for the Hist list. Capital and stage rows always name the year."""
     lab = str(label or "").strip()
@@ -1014,6 +1052,17 @@ def format_hist_trend_title(*, kind: str, label: str, bucket: str) -> str:
             window = "year_2"
         band, spot = _split_offense_roster_bucket(buck)
         return _offense_roster_title(band, spot, window)
+    if kind_key in ("capital_roster", "capital_roster_1", "capital_roster_2"):
+        window = "any"
+        if kind_key.endswith("_1"):
+            window = "year_1"
+        elif kind_key.endswith("_2"):
+            window = "year_2"
+        cap, spot = _split_offense_roster_bucket(buck)
+        return _capital_roster_title(cap, spot, window)
+    if kind_key == "offense_capital":
+        band, cap = _split_offense_roster_bucket(buck)
+        return _offense_capital_title(band, cap)
     prefix = HIST_TREND_PREFIX.get(kind_key)
     qualified = buck
     if prefix and buck and prefix.lower() not in buck.lower():
@@ -1277,6 +1326,178 @@ def _add_offense_roster_hist_rows(
             ))
 
 
+def _draft_capital_eq(cap: str) -> dict:
+    return _match_eq("draft_capital", "draft_capital", cap)
+
+
+def _player_capital_band(
+    query: Mapping[str, Any],
+    feats: Mapping[str, Any],
+) -> Optional[tuple[str, dict]]:
+    """This player's NFL draft band for capital x roster matching. Skip undrafted."""
+    pick = _optional_int(query.get("nfl_draft_pick") or feats.get("nfl_draft_pick"))
+    pick_band = trends_round1_pick_range(pick)
+    if pick_band:
+        _key, label, lo, hi = pick_band
+        return (label, _round1_pick_match(lo, hi))
+    cap = feats.get("draft_capital") or query.get("draft_capital_bucket")
+    if cap == DRAFT_CAPITAL_ROUND_1:
+        return ("Round 1", _draft_capital_eq(DRAFT_CAPITAL_ROUND_1))
+    if cap == DRAFT_CAPITAL_DAY_2:
+        return ("Day 2", _draft_capital_eq(DRAFT_CAPITAL_DAY_2))
+    if cap == DRAFT_CAPITAL_DAY_3:
+        return ("Day 3", _draft_capital_eq(DRAFT_CAPITAL_DAY_3))
+    return None
+
+
+def _capital_roster_trend_bands() -> tuple[tuple[str, str, dict], ...]:
+    """Trends rows: mixed Round 1, NFL Top 10, Day 2, Day 3. No undrafted."""
+    return (
+        ("round_1", "Round 1", _draft_capital_eq(DRAFT_CAPITAL_ROUND_1)),
+        ("picks_1_10", "Top 10", _round1_pick_match(1, 10)),
+        ("day_2", "Day 2", _draft_capital_eq(DRAFT_CAPITAL_DAY_2)),
+        ("day_3", "Day 3", _draft_capital_eq(DRAFT_CAPITAL_DAY_3)),
+    )
+
+
+def _add_capital_roster_hist_rows(
+    add,
+    aggregates: Mapping[str, Any],
+    pos: str,
+    stage: Any,
+    baseline_pct: Any,
+    *,
+    query: Mapping[str, Any],
+    feats: Mapping[str, Any],
+) -> None:
+    """NFL draft band x preseason roster spot. RB/WR/QB. Counted, not multiplied."""
+    if pos not in CAPITAL_ROSTER_POSITIONS:
+        return
+    from dashboard_services.historical.roster import (
+        ROSTER_SPOTS,
+        normalize_roster_spot,
+        roster_spot_label,
+    )
+
+    round_1 = ("Round 1", _draft_capital_eq(DRAFT_CAPITAL_ROUND_1))
+    cells: list[tuple] = []
+    seen: set[tuple] = set()
+
+    def remember(cap_label: str, cap_filter: dict, spot: int) -> None:
+        key = (cap_label, int(spot))
+        if key in seen:
+            return
+        seen.add(key)
+        cells.append((cap_label, cap_filter, int(spot)))
+
+    for spot in ROSTER_SPOTS:
+        remember(round_1[0], round_1[1], spot)
+    player_spot = normalize_roster_spot(
+        query.get("roster_spot") or feats.get("roster_spot")
+    )
+    matching = _player_capital_band(query, feats)
+    if player_spot is not None and matching:
+        remember(matching[0], matching[1], player_spot)
+    any_sentence = (
+        "{pos}s drafted NFL {cap} who were the {spot} finished top-12"
+    )
+    year_sentence = (
+        "{pos}s drafted NFL {cap} who were the {spot} finished top-12 in {when}"
+    )
+    for cap_label, cap_filter, spot in cells:
+        slabel = roster_spot_label(pos, spot)
+        spot_filter = _roster_spot_filter(spot)
+        rec = _cohort_rate_for_filters(aggregates, pos, [cap_filter, spot_filter])
+        add(_trend_row(
+            kind="capital_roster",
+            label=_capital_roster_title(cap_label, slabel, "any"),
+            bucket=f"{cap_label}, {slabel}",
+            sentence=any_sentence.format(pos=pos, cap=cap_label, spot=slabel),
+            rate=rec.get("top_12") if "top_12" in rec else rec,
+            baseline_pct=baseline_pct,
+        ))
+        for window_id, stage_key, window in (
+            ("capital_roster_1", CAREER_STAGE_ROOKIE, "year_1"),
+            ("capital_roster_2", CAREER_STAGE_YEAR_2, "year_2"),
+        ):
+            if stage and stage != stage_key:
+                continue
+            when = "year 1" if window == "year_1" else "year 2"
+            rate = _cohort_rate_for_filters(
+                aggregates,
+                pos,
+                [
+                    cap_filter,
+                    spot_filter,
+                    _match_eq("career_stage", "career_stage", stage_key),
+                ],
+            )
+            add(_trend_row(
+                kind=window_id,
+                label=_capital_roster_title(cap_label, slabel, window),
+                bucket=f"{cap_label}, {slabel}",
+                sentence=year_sentence.format(
+                    pos=pos, cap=cap_label, spot=slabel, when=when
+                ),
+                rate=rate,
+                baseline_pct=baseline_pct,
+            ))
+
+
+def _offense_capital_trend_bands() -> tuple[tuple[str, dict], ...]:
+    return (
+        ("Round 1", _draft_capital_eq(DRAFT_CAPITAL_ROUND_1)),
+        ("Top 10", _round1_pick_match(1, 10)),
+    )
+
+
+def _add_offense_capital_hist_rows(
+    add,
+    aggregates: Mapping[str, Any],
+    pos: str,
+    baseline_pct: Any,
+    *,
+    proj: Any,
+) -> None:
+    """Projected-offense band x Round 1 / NFL Top 10. RB only. No year splits."""
+    if pos != "RB":
+        return
+    top = TRENDS_OFFENSE_RANGES[0]
+    cells: list[tuple] = []
+    seen: set[tuple] = set()
+
+    def remember(band: tuple, cap: tuple) -> None:
+        key = (band[0], cap[0])
+        if key in seen:
+            return
+        seen.add(key)
+        cells.append((band, cap))
+
+    for cap in _offense_capital_trend_bands():
+        remember(top, cap)
+    matching = trends_offense_range(proj)
+    if matching and matching[0] != top[0]:
+        for cap in _offense_capital_trend_bands():
+            remember(matching, cap)
+    sentence = (
+        "{pos}s drafted NFL {cap} on a team with a {band} season implied total "
+        "finished top-12"
+    )
+    for band, cap in cells:
+        _key, off_label, lo, hi = band
+        cap_label, cap_filter = cap
+        off_filter = _match_between("projected_offense", "projected_offense_rank", lo, hi)
+        rec = _cohort_rate_for_filters(aggregates, pos, [off_filter, cap_filter])
+        add(_trend_row(
+            kind="offense_capital",
+            label=_offense_capital_title(off_label, cap_label),
+            bucket=f"{off_label}, {cap_label}",
+            sentence=sentence.format(pos=pos, cap=cap_label, band=off_label.lower()),
+            rate=rec.get("top_12") if "top_12" in rec else rec,
+            baseline_pct=baseline_pct,
+        ))
+
+
 def build_hist_trends(
     query: Mapping[str, Any],
     aggregates: Mapping[str, Any],
@@ -1425,6 +1646,10 @@ def build_hist_trends(
                 baseline_pct=baseline_pct,
             ))
 
+    _add_capital_roster_hist_rows(
+        add, aggregates, pos, stage, baseline_pct, query=query, feats=feats,
+    )
+
     age_block = (aggregates.get("age_curves") or {}).get(pos) or {}
     age_b = feats.get("age_bucket")
     if age_b:
@@ -1555,6 +1780,9 @@ def build_hist_trends(
         roster_spot=normalize_roster_spot(
             query.get("roster_spot") or feats.get("roster_spot")
         ),
+    )
+    _add_offense_capital_hist_rows(
+        add, aggregates, pos, baseline_pct, proj=proj,
     )
     rank = _optional_int(query.get("prior_offense_rank") or feats.get("prior_offense_rank"))
     if rank is None:
@@ -2232,6 +2460,47 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
             rows=rows,
         )
 
+    if pos in CAPITAL_ROSTER_POSITIONS:
+        from dashboard_services.historical.roster import ROSTER_SPOTS, roster_spot_label
+
+        cap_roster_rows = []
+        for cap_key, cap_label, cap_match in _capital_roster_trend_bands():
+            for spot in ROSTER_SPOTS:
+                slabel = roster_spot_label(pos, spot)
+                spot_match = _roster_spot_filter(spot)
+                bundle = _cohort_rate_for_filters(aggregates, pos, [cap_match, spot_match])
+                rec = bundle.get("top_12") or bundle
+                row_label = f"{cap_label}, {slabel}"
+                row = _section_row(
+                    row_label,
+                    rec,
+                    baseline_pct=baseline_pct,
+                    baselines=finish_baselines,
+                    row_id=f"capital_roster:{cap_key}:{spot}",
+                    match={
+                        "group": "capital_roster",
+                        "all": [cap_match, spot_match],
+                        "label": row_label,
+                    },
+                    pcts=_collect_pcts(bundle),
+                )
+                if row:
+                    cap_roster_rows.append(row)
+        _append_section(
+            sections,
+            sid="capital_roster",
+            heading="Draft capital by roster spot",
+            note=(
+                f"Hit rate for {pos}s drafted in that NFL band who were the "
+                f"{pos}1, {pos}2, or {pos}3+ by preseason ADP among teammates. "
+                f"{pos}1 is the lowest ADP, not a published depth chart. "
+                "Round 1 mixes Top 10 with the rest of the first round. "
+                "Undrafted is omitted."
+            ),
+            rows=cap_roster_rows,
+            finish_tied=True,
+        )
+
     offense_rows = []
     for key, label, lo, hi in TRENDS_OFFENSE_RANGES:
         match = _match_between("projected_offense", "projected_offense_rank", lo, hi)
@@ -2318,6 +2587,44 @@ def build_position_trend_page(aggregates: Mapping[str, Any], position: str) -> d
         rows=roster_rows,
         finish_tied=True,
     )
+
+    if pos == "RB":
+        cap_off_rows = []
+        for key, label, lo, hi in TRENDS_OFFENSE_RANGES:
+            off_match = _match_between("projected_offense", "projected_offense_rank", lo, hi)
+            for cap_label, cap_match in _offense_capital_trend_bands():
+                bundle = _cohort_rate_for_filters(aggregates, pos, [off_match, cap_match])
+                rec = bundle.get("top_12") or bundle
+                clause = _offense_capital_clause(cap_label)
+                row_label = f"{label} projected, {clause}"
+                row = _section_row(
+                    row_label,
+                    rec,
+                    baseline_pct=baseline_pct,
+                    baselines=finish_baselines,
+                    row_id=f"offense_capital:{key}:{cap_label}",
+                    match={
+                        "group": "offense_capital",
+                        "all": [off_match, cap_match],
+                        "label": row_label,
+                    },
+                    pcts=_collect_pcts(bundle),
+                )
+                if row:
+                    cap_off_rows.append(row)
+        _append_section(
+            sections,
+            sid="offense_capital",
+            heading="Projected offense by draft capital",
+            note=(
+                f"Hit rate for {pos}s drafted NFL Round 1 or NFL Top 10 on a team "
+                "with that season-long implied scoring total. Early capital on a "
+                "21-32 projected offense is not mixed with the whole depth chart. "
+                "Counted as the intersection, not multiplied."
+            ),
+            rows=cap_off_rows,
+            finish_tied=True,
+        )
 
     last_year_rows = []
     for key, label, lo, hi in TRENDS_OFFENSE_RANGES:

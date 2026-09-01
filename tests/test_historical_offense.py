@@ -286,3 +286,9 @@ def test_offense_titles_name_the_year_and_analog():
     assert format_hist_trend_title(
         kind="offense_roster", label="Team offense", bucket="Top 10, RB3+"
     ) == "Top-10 projected offense, RB3+"
+    assert format_hist_trend_title(
+        kind="capital_roster", label="NFL", bucket="Round 1, WR1"
+    ) == "Drafted NFL Round 1, WR1"
+    assert format_hist_trend_title(
+        kind="offense_capital", label="Offense", bucket="21-32, Top 10"
+    ) == "21-32 projected offense, NFL Top 10"
