@@ -468,6 +468,7 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert ".cs-hist-hits { display: grid; grid-template-columns: 1fr 1fr;" in body
     assert ".cs-hist-hit:last-child:nth-child(odd) { grid-column: 1 / -1; }" in body
     assert ".cs-hist-hit-role { display: block;" in body
+    assert '.cs-hist-tile-ex[open] > summary::after { content: "\\2013"; }' in body
     hist_mobile = body.split("@media (max-width: 640px)")[1].split("@media")[0]
     assert ".cs-hist-hits { grid-template-columns: 1fr; }" in hist_mobile
     assert ".cs-hist-hit:last-child:nth-child(odd) { grid-column: auto; }" in hist_mobile
