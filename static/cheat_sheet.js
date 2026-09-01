@@ -729,13 +729,14 @@
     // without rewriting that model board. Default is VOR descending.
     var SORT_DEFAULT_DIR = {
         rk: 1, name: 1, pos: 1, vor: -1, projectedPpg: -1,
-        adp: 1, age: 1, value: -1, window: 1, scheduleRank: 1, market: -1, hist: -1
+        adp: 1, age: 1, value: -1, window: 1, scheduleRank: 1, offenseRank: 1,
+        market: -1, hist: -1
     };
     var POS_SORT = {QB: 0, RB: 1, WR: 2, TE: 3};
     var SORT_LABEL = {
         rk: 'Rk', name: 'Player', pos: 'Pos', vor: 'VOR', projectedPpg: 'Proj PPG',
         adp: 'ADP', age: 'Age', value: 'Value', window: 'Window',
-        scheduleRank: 'Sched Rk', market: 'Market vs ADP', hist: 'Hist'
+        scheduleRank: 'Sched Rk', offenseRank: 'Off Rk', market: 'Market vs ADP', hist: 'Hist'
     };
 
     function isDefaultSort() {
@@ -760,6 +761,7 @@
         if (key === 'age' || key === 'window') return x.age;
         if (key === 'value') return x.value;
         if (key === 'scheduleRank') return x.scheduleRank;
+        if (key === 'offenseRank') return x.offenseRank;
         if (key === 'market') return x.marketVsAdp;
         if (key === 'hist') return x.histP;
         return null;
@@ -924,6 +926,17 @@
 
                 scheduleRank:
                     scheduleRanks[String(p.id)] || null,
+
+                offenseRank: (function () {
+                    if (p.projected_offense_rank != null && isFinite(Number(p.projected_offense_rank))) {
+                        return Number(p.projected_offense_rank);
+                    }
+                    var feats = p.historical && p.historical.trend_feats;
+                    if (feats && feats.projected_offense_rank != null && isFinite(Number(feats.projected_offense_rank))) {
+                        return Number(feats.projected_offense_rank);
+                    }
+                    return null;
+                })(),
 
                 historical: p.historical || null,
                 histP:
@@ -1465,6 +1478,7 @@
                 + '<span class="cs-lg"><span class="cs-val g">+7</span> above ADP, target it</span>'
                 + '<span class="cs-lg"><span class="cs-val b">-4</span> going early, let it fall</span>'
                 + '<span class="cs-lg"><b>Sched Rk</b> full-season schedule (1 = easiest)</span>'
+                + '<span class="cs-lg"><b>Off Rk</b> projected team offense (1 = best)</span>'
                 + (showHist(dyn) ? '<span class="cs-lg"><b>Hist</b> top-12 chance for this profile</span>' : '')
                 + sortNote
                 + projNote
@@ -1543,10 +1557,11 @@
             + sortTh(col5Key, col5, '', dyn ? 'Sort by age' : 'MARKET: Sort by ADP')
             + sortTh(col6Key, col6, 'cs-value-col', dyn ? 'Sort by career window (age)' : 'VALUE: Sort by value vs ADP')
             + sortTh('scheduleRank', 'Sched Rk', '', 'PROJECTION: Full fantasy-season strength of schedule rank (1 = easiest)')
+            + sortTh('offenseRank', 'Off Rk', '', 'PROJECTION: Projected team offense rank from season-long implied totals (1 = best)')
             + (showHist(dyn) ? sortTh('hist', 'Hist', 'cs-hist-col', 'HISTORY: Historical top-12 chance for this career and situation. Green when the cell is strong or history beats that ADP round. Early ADP is a high bar, not a miss.') : '')
             + (showMarket(dyn) ? sortTh('market', 'Market vs ADP', 'cs-market-col', 'MARKET: Where market signals imply this player should be drafted vs ADP') : '')
             + editTh + '</tr>';
-        var span = (editable ? 9 : 8) + (showMarket(dyn) ? 1 : 0) + (showHist(dyn) ? 1 : 0);
+        var span = (editable ? 10 : 9) + (showMarket(dyn) ? 1 : 0) + (showHist(dyn) ? 1 : 0);
         var lastT = null, html = '', shown = 0;
         var pickAt = boardSort ? projPickMap() : {};
         displayPlayers().forEach(function (x) {
@@ -1643,6 +1658,14 @@
                 (
                     x.scheduleRank
                         ? '#' + x.scheduleRank
+                        : '&ndash;'
+                ) +
+                '</td>' +
+                '<td class="cs-num"' +
+                ' title="Projected team offense rank from season-long implied totals; 1 is best">' +
+                (
+                    x.offenseRank
+                        ? '#' + x.offenseRank
                         : '&ndash;'
                 ) +
                 '</td>' +
@@ -2045,12 +2068,12 @@
     function exportCsv() {
         if (!players.length) return;
         var dyn = state.mode === 'dynasty';
-        var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', 'Proj PPG', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Schedule Rank'].concat(showHist(dyn) ? ['Hist P(top-12)'] : []).concat(showMarket(dyn) ? ['Market vs ADP'] : []).concat(['Tier']);
+        var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', 'Proj PPG', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Schedule Rank', 'Projected Offense Rank'].concat(showHist(dyn) ? ['Hist P(top-12)'] : []).concat(showMarket(dyn) ? ['Market vs ADP'] : []).concat(['Tier']);
         var rows = displayPlayers().map(function (x) {
             var c5 = dyn ? (x.age != null ? x.age : '') : fmtAdp(x.adp);
             var c6 = dyn ? youthWindow(x.age, x.pos)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
             var ppgCsv = x.projectedPpg != null ? x.projectedPpg.toFixed(1) : '';
-            return [x.rk, x.name, x.pos, x.prk, x.vor, ppgCsv, c5, c6, x.scheduleRank || ''].concat(showHist(dyn) ? [x.histP == null ? '' : x.histP] : []).concat(showMarket(dyn) ? [x.marketVsAdp == null ? '' : x.marketVsAdp] : []).concat([x.dtier]);
+            return [x.rk, x.name, x.pos, x.prk, x.vor, ppgCsv, c5, c6, x.scheduleRank || '', x.offenseRank || ''].concat(showHist(dyn) ? [x.histP == null ? '' : x.histP] : []).concat(showMarket(dyn) ? [x.marketVsAdp == null ? '' : x.marketVsAdp] : []).concat([x.dtier]);
         });
         var csv = [head].concat(rows).map(function (r) {
             return r.map(function (v) {

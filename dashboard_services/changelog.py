@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-09-01",
         "tag": "update",
+        "text": "Draft Cheat Sheet: the Big Board now has Off Rk, the player's NFL team's projected offense rank (1 = best) from season-long implied totals. Same number Hist uses for projected-offense buckets. Sortable, in the CSV, and it does not change VOR order.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-09-01",
+        "tag": "update",
         "text": "Draft Cheat Sheet Hist: the cohort count now says Samples: 6 instead of Sample: 6. That number is how many historical player-seasons are in the group.",
         "link": "/draft/cheat-sheet"
     },

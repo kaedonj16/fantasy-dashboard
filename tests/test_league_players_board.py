@@ -24,6 +24,7 @@ def test_slim_board_payload_keeps_skill_values_and_drops_the_rest():
                 "redraft_value_sf": 80,
                 "redraft_avg_pick": 12.4,
                 "proj_ppg": 16.2,
+                "projected_offense_rank": 7,
                 "espnHeadshot": "https://example/x.png",
                 "bDay": "2001-01-01",
                 "ppg": 18.0,
@@ -72,6 +73,7 @@ def test_slim_board_payload_keeps_skill_values_and_drops_the_rest():
     row = slim["players"][0]
     assert row["name"] == "Starter WR"
     assert row["proj_ppg"] == 16.2
+    assert row["projected_offense_rank"] == 7
     assert row["redraft_avg_pick"] == 12.4
     assert row["market_vs_adp"] == -3
     assert row["historical"]["p_hit_pct"] == 37

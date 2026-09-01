@@ -109,7 +109,7 @@ def test_market_column_is_conditionally_omitted_from_table_and_export():
     body = build_cheat_sheet_body("league-123", 2026, "sleeper")
     script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
 
-    assert "min-width: 910px" in body
+    assert "min-width: 980px" in body
     assert ".cs-vor-col, .cs-value-col { display: none; }" not in body
     assert ".cs-market-col { display: none; }" not in body
     assert "sortTh('market', 'Market vs ADP', 'cs-market-col'" in script
@@ -134,6 +134,20 @@ def test_cheat_sheet_adds_full_season_schedule_rank_context():
     assert "p.sos_rank" in script
     assert "sortTh('scheduleRank', 'Sched Rk'" in script
     assert "'Schedule Rank'" in script
+
+
+def test_cheat_sheet_adds_projected_offense_rank():
+    body = build_cheat_sheet_body("league-123", 2026, "sleeper")
+    script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+
+    assert "Off Rk is the player's current NFL team's season-long projected offense" in body
+    assert "sortTh('offenseRank', 'Off Rk'" in script
+    assert "'Projected Offense Rank'" in script
+    assert "x.offenseRank" in script
+    assert "p.projected_offense_rank" in script
+    assert "feats.projected_offense_rank" in script
+    assert "projected team offense (1 = best)" in script
+    assert "Click a column header (ADP, Value, Proj PPG, Sched Rk, Off Rk" in body
 
 
 def test_cheat_sheet_offers_draft_room_scoring_settings():
@@ -395,7 +409,7 @@ def test_cheat_sheet_big_board_columns_are_sortable():
     body = build_cheat_sheet_body("league-123", 2026, "sleeper")
     script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
 
-    for key in ("rk", "name", "pos", "vor", "projectedPpg", "scheduleRank", "market", "hist"):
+    for key in ("rk", "name", "pos", "vor", "projectedPpg", "scheduleRank", "offenseRank", "market", "hist"):
         assert "sortTh('%s'" % key in script
     assert "col5Key = dyn ? 'age' : 'adp'" in script
     assert "col6Key = dyn ? 'window' : 'value'" in script
@@ -411,7 +425,7 @@ def test_cheat_sheet_big_board_columns_are_sortable():
     assert "var pickAt = boardSort ? projPickMap() : {}" in script
     assert "th.cs-sort" in body
     assert ".cs-sortbtn" in body
-    assert "Click a column header (ADP, Value, Proj PPG, Sched Rk" in body
+    assert "Click a column header (ADP, Value, Proj PPG, Sched Rk, Off Rk" in body
     # Custom edits snap back to the VOR board so drag-reorder isn't fighting ADP.
     assert "if (editBoard) resetBoardSort()" in script
 
@@ -909,6 +923,16 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert samples_label["link"] == "/draft/cheat-sheet"
     assert "—" not in samples_label["text"]
     assert "–" not in samples_label["text"]
+    offense_col = next(
+        entry for entry in CHANGELOG
+        if "off rk" in entry.get("text", "").lower()
+        and "projected offense" in entry.get("text", "").lower()
+    )
+    assert offense_col["tag"] == "update"
+    assert offense_col["link"] == "/draft/cheat-sheet"
+    assert "does not change VOR" in offense_col["text"]
+    assert "—" not in offense_col["text"]
+    assert "–" not in offense_col["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():

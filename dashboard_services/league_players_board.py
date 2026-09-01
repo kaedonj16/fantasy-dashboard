@@ -28,6 +28,7 @@ PLAYER_KEYS = (
     "redraft_avg_pick",
     "sf_redraft_avg_pick",
     "proj_ppg",
+    "projected_offense_rank",
     "market_vs_adp",
     "market_expected_adp",
     "market_confidence",
