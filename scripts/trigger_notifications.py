@@ -18,7 +18,7 @@ import urllib.error
 import urllib.request
 
 ALLOWED = {"hourly", "daily", "weekly"}
-DEFAULT_TIMEOUT = {"hourly": 120, "daily": 180, "weekly": 300}
+DEFAULT_TIMEOUT = {"hourly": 120, "daily": 180, "weekly": 900}
 
 
 def trigger(kind: str, app_url: str | None = None, secret: str | None = None,

@@ -28,6 +28,17 @@ services:
         value: smtp.gmail.com
       - key: SMTP_PORT
         value: 587
+      # Transactional email (weekly digest). Brevo is primary; SMTP above is fallback.
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        sync: false
+      - key: BREVO_SENDER_NAME
+        value: BR Fantasy
+      - key: BREVO_REPLY_TO_EMAIL
+        sync: false
+      - key: BREVO_WEBHOOK_SECRET
+        sync: false
       - key: TANK01_API_KEY
         sync: false
       - key: FLASK_SECRET_KEY
@@ -195,9 +206,12 @@ services:
   - type: cron
     name: weekly-email
     runtime: python
-    # Tuesday 9am Eastern. send_weekly_digests de-dupes per account per ISO week,
-    # so a retry the same week is a no-op.
-    schedule: 0 9 * * 2
+    # Tuesday ~9am Eastern. Render cron expressions are UTC (TZ env does not
+    # shift the schedule). 13:00 UTC is 9am EDT / 8am EST. DST cannot be
+    # expressed in a single UTC cron, so this is the year-round compromise that
+    # keeps the job on Tuesday morning Eastern. send_weekly_digests de-dupes
+    # per account per ISO week, so a retry the same week is a no-op.
+    schedule: "0 13 * * 2"
     plan: starter
     buildCommand: python -c "print('weekly-email: no Python deps')"
     startCommand: python scripts/trigger_notifications.py weekly

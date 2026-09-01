@@ -1,14 +1,14 @@
 """Weekly email digest — a once-a-week recap emailed to signed-in users.
 
-Reuses the same value/roster data the in-app dashboard shows, so the email
-never drifts from the site. Recipient selection and sending are deliberately
-self-contained (only DATABASE_URL + SMTP creds required) so a cron can call
-``send_weekly_digests()`` directly.
+Reuses the same value/roster/start-sit/waiver data the in-app dashboard shows.
+The app decides recipients, content, unsubscribe, and dedupe; Brevo (or SMTP
+fallback) only delivers. Call ``send_weekly_digests()`` from the weekly cron.
 
 A recipient is any account that (a) has an email, (b) has a known most-recent
-league (accounts.last_active_*), and (c) has not opted out. We de-dupe per
-account per ISO week via app_state so a re-run in the same week is a no-op.
-Unsubscribe is a signed, no-login link (HMAC over the account id).
+league (accounts.last_active_*), (c) has weekly_digest enabled, and (d) is not
+suppressed for hard bounces. We de-dupe per account per ISO week via app_state
+so a re-run in the same week is a no-op. Unsubscribe is a signed, no-login
+HMAC link that opts the account out of weekly_digest only.
 """
 from __future__ import annotations
 
@@ -62,18 +62,23 @@ def _ensure_columns(conn) -> None:
     conn.execute(
         "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS email_opt_out BOOLEAN DEFAULT FALSE"
     )
+    try:
+        from utils.email_preferences import ensure_schema as _pref_schema
+        _pref_schema(conn)
+    except Exception:
+        logger.debug("[weekly-email] preference schema skipped", exc_info=True)
+    try:
+        from utils.email_events import ensure_schema as _evt_schema
+        _evt_schema(conn)
+    except Exception:
+        logger.debug("[weekly-email] delivery-event schema skipped", exc_info=True)
 
 
 def unsubscribe(account_id: int) -> bool:
-    from dashboard_services.db import get_conn
+    """Opt out of the weekly digest. Does not disable future email categories."""
     try:
-        with get_conn() as conn:
-            _ensure_columns(conn)
-            conn.execute(
-                "UPDATE accounts SET email_opt_out = TRUE WHERE id = %s", (account_id,)
-            )
-            conn.commit()
-        return True
+        from utils.email_preferences import unsubscribe_weekly_digest
+        return unsubscribe_weekly_digest(int(account_id))
     except Exception as exc:
         logger.warning("[weekly-email] unsubscribe failed: %s", exc)
         return False
@@ -103,6 +108,7 @@ def _recipients() -> list[dict]:
                        a.last_active_platform  AS platform,
                        a.last_active_league_id AS league_id,
                        a.last_active_season    AS season,
+                       a.email_opt_out         AS email_opt_out,
                        v.roster_id             AS roster_id
                 FROM accounts a
                 LEFT JOIN account_league_visits v
@@ -111,7 +117,6 @@ def _recipients() -> list[dict]:
                       AND v.league_id  = a.last_active_league_id
                       AND v.season     = a.last_active_season
                 WHERE a.email IS NOT NULL AND a.email <> ''
-                  AND COALESCE(a.email_opt_out, FALSE) = FALSE
                   AND a.last_active_league_id IS NOT NULL
                   AND a.last_active_league_id <> ''
                   AND a.last_active_platform IS NOT NULL
@@ -125,13 +130,6 @@ def _recipients() -> list[dict]:
 
 
 # ── Digest content ────────────────────────────────────────────────────────────
-
-def _player_name(pid: str, pidx: dict) -> str:
-    meta = pidx.get(str(pid)) or {}
-    return (meta.get("full_name") or meta.get("name")
-            or ((meta.get("first_name") or "") + " " + (meta.get("last_name") or "")).strip()
-            or str(pid))
-
 
 def player_deep_link(
     base: str,
@@ -230,7 +228,7 @@ def compact_league_blurb(
         except Exception:
             name = ""
     if not name:
-        name = lid
+        return ""
     rank = wins = losses = None
     if roster_id:
         try:
@@ -366,17 +364,21 @@ def multi_league_sections_html(
     return "".join(parts)
 
 
-def _canonical_standing(platform: str, league_id: str, season: int, roster_id: str):
-    """(rank, wins, losses) from the site's cached, platform-agnostic standings,
-    or (None, 0, 0) if unavailable.
 
-    Uses get_league_ctx_from_cache (the same context every page renders from), so
-    the digest's rank matches the standings page on every platform. The rank
-    comes from standings_map (a plain {roster_id: seed} dict, robust); the record
-    is a best-effort read from the team_stats frame."""
+def _canonical_standing(platform: str, league_id: str, season: int, roster_id: str):
+    """(rank, wins, losses) from a *warm* dashboard cache, else (None, 0, 0).
+
+    Does not build a full league context on a cache miss — that would dominate
+    weekly-cron runtime. ``build_digest`` falls back to roster.settings wins.
+    """
     try:
-        from app import get_league_ctx_from_cache
-        ctx = get_league_ctx_from_cache(platform, league_id, int(season)) or {}
+        import time as _time
+        from app import DASHBOARD_CACHE, CACHE_TTL, _cache_key
+        key = _cache_key(platform, int(season), league_id)
+        entry = DASHBOARD_CACHE.get(key) or {}
+        if not entry or (_time.time() - float(entry.get("ts") or 0) > float(CACHE_TTL or 0)):
+            return None, 0, 0
+        ctx = entry.get("ctx") or {}
     except Exception:
         return None, 0, 0
 
@@ -411,8 +413,7 @@ def _canonical_standing(platform: str, league_id: str, season: int, roster_id: s
 
 
 def _load_movers_and_index() -> tuple[dict, dict]:
-    """The 7-day movers board and the players index are recipient-independent, so
-    the send loop loads them once and passes them into every build_digest."""
+    """The 7-day movers board and the players index are recipient-independent."""
     try:
         from dashboard_services.player_value_history import get_top_movers
         from utils.utils import load_players_index
@@ -421,55 +422,165 @@ def _load_movers_and_index() -> tuple[dict, dict]:
         return {}, {}
 
 
+def _player_name(pid: str, pidx: dict) -> str:
+    meta = pidx.get(str(pid)) or {}
+    return (meta.get("full_name") or meta.get("name")
+            or ((meta.get("first_name") or "") + " " + (meta.get("last_name") or "")).strip()
+            or "")
+
+
+def choose_subject(
+    league_name: str,
+    fmt: dict,
+    *,
+    rank=None,
+    wins: int = 0,
+    losses: int = 0,
+    lineup_note=None,
+    matchup=None,
+    waivers=None,
+    my_risers=None,
+    pidx=None,
+) -> str:
+    """Most important actionable thing first; never spammy."""
+    lg = (league_name or "Your league").strip() or "Your league"
+    is_dynasty = bool((fmt or {}).get("is_dynasty"))
+    note = lineup_note or {}
+    title = str(note.get("title") or "").lower()
+    body = str(note.get("body") or "").strip()
+    if "empty" in title:
+        return f"{lg}: Fix your lineup before Sunday"
+    if "injured" in title:
+        return f"{lg}: Injured starter needs a swap"
+    if "bye" in title:
+        return f"{lg}: Starter on bye"
+    if body.startswith("Consider ") and " over " in body:
+        return f"{lg}: {body.split('.')[0]}"
+
+    if not is_dynasty and matchup:
+        wp = matchup.get("win_prob")
+        margin = matchup.get("margin")
+        try:
+            if wp is not None and float(wp) >= 0.55:
+                return f"{lg}: You're favored this week"
+            if wp is not None and float(wp) <= 0.45:
+                return f"{lg}: Close underdog this week"
+        except (TypeError, ValueError):
+            pass
+        try:
+            if margin is not None and float(margin) > 5:
+                return f"{lg}: You're favored this week"
+        except (TypeError, ValueError):
+            pass
+
+    if waivers:
+        name = str((waivers[0] or {}).get("name") or "").strip()
+        if name:
+            return f"{lg}: Top waiver target is {name}"
+
+    risers = list(my_risers or [])
+    if is_dynasty and risers:
+        pid, delta = risers[0][0], risers[0][1]
+        nm = _player_name(str(pid), pidx or {})
+        n = len(risers)
+        if n > 1 and rank:
+            return f"{lg}: #{int(rank)} · {n} players rising"
+        if nm:
+            if rank:
+                return f"{lg}: #{int(rank)} · {nm} ▲{abs(float(delta)):.0f}"
+            return f"{lg}: {nm} ▲{abs(float(delta)):.0f}"
+
+    if rank:
+        return f"{lg}: #{int(rank)} · {int(wins or 0)}-{int(losses or 0)}"
+    return f"{lg}: your weekly fantasy digest"
+
+
+def _digest_tags(fmt: dict, platform: str, season: int) -> list[str]:
+    tags = ["weekly-digest"]
+    kind = str((fmt or {}).get("type") or "")
+    if kind in ("dynasty", "redraft", "keeper"):
+        tags.append(kind)
+    tags.append("sf" if (fmt or {}).get("is_superflex") else "1qb")
+    if (fmt or {}).get("is_tep"):
+        tags.append("tep")
+    plat = (platform or "").strip().lower()
+    if plat in ("sleeper", "espn", "yahoo", "mfl", "fleaflicker"):
+        tags.append(plat)
+    try:
+        tags.append(f"season-{int(season)}")
+    except (TypeError, ValueError):
+        pass
+    return tags
+
+
 def build_digest(platform: str, league_id: str, season: int, roster_id: str,
                  first_name: str | None = None,
                  movers: dict | None = None, pidx: dict | None = None,
-                 extra_html: str = "") -> dict | None:
-    """Assemble one recipient's digest. Returns {subject, html} or None if there
-    isn't enough data to be worth sending. ``movers``/``pidx`` are the shared,
-    recipient-independent lookups; when omitted they're loaded on demand (so the
-    function stays usable standalone), but the send loop passes them in once.
+                 extra_html: str = "",
+                 *,
+                 run_cache=None) -> dict | None:
+    """Assemble one recipient's digest. Returns {subject, html, ...} or None."""
+    from utils.digest_context import (
+        DigestRunCache, DYNASTY_MOVE_MIN, LEAGUEWIDE_MOVE_MIN,
+        breakout_for_roster, filter_movers, in_season, matchup_for_roster,
+        mover_notes, team_display_name, trade_insight_for_roster,
+    )
+    from utils.digest_sections import (
+        breakout_html, email_shell, format_chip, greeting_html, injury_html,
+        league_summary_html, matchup_html, player_movement_html, start_sit_html,
+        trade_insight_html, waiver_html,
+    )
+    from utils.digest_actions import gather_digest_action_items, player_deep_link as _pdl
+    from utils.league_format import classify_league_roster_format
 
-    Optional/best-effort action sections (waiver of the week, start/sit, injury)
-    are gathered via ``gather_digest_actions`` and omitted cleanly when data is
-    unavailable — they never fail the digest.
-    """
+    cache = run_cache if run_cache is not None else DigestRunCache()
     try:
-        from dashboard_services.platform_api import get_league, get_rosters, get_users
+        cache.load_shared()
     except Exception:
-        return None
+        logger.debug("[weekly-email] shared cache load failed", exc_info=True)
 
+    bundle = None
     try:
-        rosters = get_rosters(platform, league_id, season) or []
+        bundle = cache.league_bundle(platform, int(season), str(league_id))
     except Exception:
-        rosters = []
-    if not rosters:
-        return None
+        logger.debug("[weekly-email] league bundle failed", exc_info=True)
 
-    try:
-        league = get_league(platform, league_id, season) or {}
-    except Exception:
-        league = {}
-    league_name = str(league.get("name") or "Your Dynasty League")
+    if bundle is None:
+        # Standalone path (unit tests): fetch via platform_api like before.
+        try:
+            from dashboard_services.platform_api import get_league, get_rosters, get_users
+            rosters = get_rosters(platform, league_id, season) or []
+            league = get_league(platform, league_id, season) or {}
+            users = get_users(platform, league_id, season) or []
+        except Exception:
+            return None
+        if not rosters:
+            return None
+        fmt = classify_league_roster_format(league=league, platform=platform)
+        uid_name = {
+            str(u.get("user_id")): (u.get("display_name") or u.get("username") or "Team")
+            for u in users
+        }
+        owned_ids = {str(p) for r in rosters for p in (r.get("players") or [])}
+        bundle = {
+            "league": league, "rosters": rosters, "format": fmt,
+            "uid_name": uid_name, "owned_ids": owned_ids,
+            "roster_by_id": {str(r.get("roster_id")): r for r in rosters},
+            "matchups": [], "week": 0,
+        }
+    else:
+        rosters = bundle.get("rosters") or []
+        league = bundle.get("league") or {}
+        fmt = bundle.get("format") or classify_league_roster_format(league=league, platform=platform)
+        if not rosters:
+            return None
 
-    try:
-        users = get_users(platform, league_id, season) or []
-    except Exception:
-        users = []
-    uid_name = {str(u.get("user_id")): (u.get("display_name") or u.get("username") or "Team")
-                for u in users}
-
-    mine = next((r for r in rosters if str(r.get("roster_id")) == str(roster_id)), None)
-    if mine is None:
-        # No known roster for this viewer — still worth a league-movers email,
-        # but skip the personalized block.
-        mine = {}
+    league_name = str(league.get("name") or "Your league")
+    mine = (bundle.get("roster_by_id") or {}).get(str(roster_id)) or {}
+    if not mine:
+        mine = next((r for r in rosters if str(r.get("roster_id")) == str(roster_id)), {}) or {}
     my_pids = {str(p) for p in (mine.get("players") or [])}
 
-    # Rank + record from the site's canonical, platform-agnostic standings
-    # (roster.settings.fpts is Sleeper-only, so ranking off it breaks ESPN/Yahoo/
-    # MFL). Fall back to a wins-then-Sleeper-points sort only if the cached
-    # context isn't available.
     rank, wins, losses = _canonical_standing(platform, league_id, season, roster_id)
     if rank is None:
         def _rec(r):
@@ -481,184 +592,161 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
                      if str(r.get("roster_id")) == str(roster_id)), None)
         wins, losses, _pts = _rec(mine) if mine else (0, 0, 0.0)
 
-    # 7-day value movers + players index (shared across recipients; loaded here
-    # only when a standalone caller didn't pass them in).
-    if movers is None or pidx is None:
-        movers, pidx = _load_movers_and_index()
+    if pidx is None:
+        pidx = cache.pidx or {}
+    if movers is None:
+        movers = cache.movers_for(is_superflex=bool(fmt.get("is_superflex")))
 
-    def _fmt(items, want_positive: bool, mine_only: bool, n: int = 3):
-        out = []
-        for m in items:
-            pid = str(m.get("player_id") or "")
-            d = m.get("delta")
-            if not pid or d is None:
-                continue
-            if mine_only and pid not in my_pids:
-                continue
-            d = float(d)
-            if want_positive and d <= 0:
-                continue
-            if not want_positive and d >= 0:
-                continue
-            out.append((pid, d))
-            if len(out) >= n:
-                break
-        return out
-
+    is_dynasty = bool(fmt.get("is_dynasty"))
     risers = movers.get("risers", []) or []
     fallers = movers.get("fallers", []) or []
-    my_risers = _fmt(risers, True, True)
-    my_fallers = _fmt(fallers, False, True)
-    lg_risers = _fmt(risers, True, False, n=3)
+    my_risers = filter_movers(risers, want_positive=True, mine=my_pids,
+                              min_abs=DYNASTY_MOVE_MIN, limit=3) if is_dynasty else []
+    my_fallers = filter_movers(fallers, want_positive=False, mine=my_pids,
+                               min_abs=DYNASTY_MOVE_MIN, limit=3) if is_dynasty else []
+    lg_risers = filter_movers(risers, want_positive=True, mine=None,
+                              min_abs=LEAGUEWIDE_MOVE_MIN, limit=3) if is_dynasty else []
 
-    # Nothing personal and nothing league-wide → not worth an email.
-    if not (my_risers or my_fallers or lg_risers):
-        return None
+    notes = {}
+    try:
+        notes = mover_notes(
+            my_risers + my_fallers, my_pids=my_pids,
+            model_by_id=cache.model_by_id, fmt=fmt, pidx=pidx,
+        )
+    except Exception:
+        notes = {}
 
-    hi = escape(first_name.strip()) if first_name and first_name.strip() else "there"
-    lg = escape(league_name)
     base = _base_url()
     dash_url = f"{base}/{platform}/{season}/{league_id}/dashboard"
+    matchups_url = f"{base}/{platform}/{season}/{league_id}/matchups"
+    waivers_url = f"{base}/{platform}/{season}/{league_id}/waivers"
+    startsit_url = f"{waivers_url}?tab=startsit"
+    trades_url = f"{base}/{platform}/{season}/{league_id}/trade"
 
-    def _rows(pairs, up: bool) -> str:
-        color = "#16a34a" if up else "#dc2626"
-        arrow = "▲" if up else "▼"
-        cells = ""
-        for pid, d in pairs:
-            raw_name = _player_name(pid, pidx)
-            nm = escape(raw_name)
-            href = escape(player_deep_link(
-                base, platform, season, league_id, pid, raw_name,
-            ), quote=True)
-            cells += (
-                f'<tr><td style="padding:6px 0;font-size:14px;">'
-                f'<a href="{href}" style="color:#0f172a;text-decoration:none;font-weight:600;">'
-                f'{nm}</a></td>'
-                f'<td style="padding:6px 0;font-size:14px;font-weight:700;color:{color};'
-                f'text-align:right;">{arrow} {abs(d):.0f}</td></tr>'
-            )
-        return cells
+    matchup = None
+    if in_season(cache) and not fmt.get("is_best_ball"):
+        try:
+            matchup = matchup_for_roster(bundle, str(roster_id), cache)
+        except Exception:
+            logger.debug("[weekly-email] matchup failed", exc_info=True)
 
-    blocks = []
-    if rank:
-        blocks.append(
-            f'<p style="margin:0 0 4px;font-size:15px;color:#0f172a;">'
-            f'You\'re <strong>#{rank}</strong> in {lg} at <strong>{wins}-{losses}</strong>.</p>'
-        )
-    if my_risers:
-        blocks.append(
-            '<h3 style="margin:20px 0 6px;font-size:13px;text-transform:uppercase;'
-            'letter-spacing:.04em;color:#64748b;">Your risers this week</h3>'
-            f'<table style="width:100%;border-collapse:collapse;">{_rows(my_risers, True)}</table>'
-        )
-    if my_fallers:
-        blocks.append(
-            '<h3 style="margin:20px 0 6px;font-size:13px;text-transform:uppercase;'
-            'letter-spacing:.04em;color:#64748b;">Your fallers this week</h3>'
-            f'<table style="width:100%;border-collapse:collapse;">{_rows(my_fallers, False)}</table>'
-        )
-    if lg_risers:
-        blocks.append(
-            '<h3 style="margin:20px 0 6px;font-size:13px;text-transform:uppercase;'
-            'letter-spacing:.04em;color:#64748b;">Biggest risers leaguewide</h3>'
-            f'<table style="width:100%;border-collapse:collapse;">{_rows(lg_risers, True)}</table>'
-        )
-
-    # Optional/best-effort action sections (R05.4 / R12.2) — waiver of the week,
-    # start/sit, injury. Omit cleanly when offseason or data unavailable.
+    action_items = []
     try:
-        from utils.digest_actions import gather_digest_actions
-        for section in gather_digest_actions(
-            platform=platform,
-            season=int(season),
-            league_id=league_id,
+        action_items = gather_digest_action_items(
+            platform=platform, season=int(season), league_id=league_id,
             roster=mine if isinstance(mine, dict) else {},
-            pidx=pidx or {},
-            base_url=base,
-        ):
-            if section:
-                blocks.append(section)
+            pidx=pidx or {}, base_url=base, fmt=fmt,
+            owned_ids=bundle.get("owned_ids") or my_pids,
+            model_rows=cache.model_rows, movers=movers,
+            nfl_state=cache.nfl_state, nfl_players=cache.nfl_players,
+            teams_playing=cache.teams_playing, proj_map=cache.week_proj,
+            roster_positions=list(league.get("roster_positions") or []),
+            breakout_by_pid=cache.breakouts,
+        )
     except Exception:
         logger.debug("[weekly-email] action sections failed", exc_info=True)
 
+    lineup_note = next((i for i in action_items if i.get("kind") == "lineup"), None)
+    waiver_item = next((i for i in action_items if i.get("kind") == "waiver"), None)
+    injury_item = next((i for i in action_items if i.get("kind") == "injury"), None)
+    waivers = list((waiver_item or {}).get("targets") or [])
+
+    watch = None
+    if is_dynasty:
+        try:
+            watch = breakout_for_roster(my_pids, cache, pidx)
+        except Exception:
+            watch = None
+    trade = None
+    if is_dynasty:
+        try:
+            trade = trade_insight_for_roster(
+                my_pids=my_pids, model_by_id=cache.model_by_id, fmt=fmt,
+                roster_positions=list(league.get("roster_positions") or []),
+                pidx=pidx,
+            )
+        except Exception:
+            trade = None
+
+    chip = format_chip(fmt)
+    summary = league_summary_html(
+        league_name=league_name, rank=rank, wins=wins, losses=losses,
+        format_label=chip,
+    )
+    matchup_block = matchup_html(matchup, href=matchups_url) if matchup else ""
+    lineup_block = start_sit_html(lineup_note, href=startsit_url) if lineup_note else ""
+    waiver_block = waiver_html(waivers, href=waivers_url) if waivers else (waiver_item or {}).get("html") or ""
+    injury_block = injury_html(injury_item, href=startsit_url) if injury_item else ""
+    movement_block = player_movement_html(
+        my_risers=my_risers, my_fallers=my_fallers, lg_risers=lg_risers,
+        base=base, platform=platform, season=int(season), league_id=str(league_id),
+        pidx=pidx or {}, notes=notes, show_leaguewide=is_dynasty, dynasty=is_dynasty,
+    )
+    breakout_href = ""
+    if watch:
+        breakout_href = _pdl(base, platform, season, league_id, watch["player_id"], watch.get("name") or "")
+    breakout_block = breakout_html(watch, href=breakout_href)
+    trade_block = trade_insight_html(trade, href=trades_url)
+
+    # Format-aware order, shared components.
+    if is_dynasty:
+        ordered = [
+            summary, movement_block, trade_block, breakout_block,
+            waiver_block, injury_block, lineup_block, matchup_block,
+        ]
+    else:
+        ordered = [
+            summary, matchup_block, lineup_block, waiver_block, injury_block,
+            movement_block, trade_block, breakout_block,
+        ]
+    blocks = [b for b in ordered if b]
     if extra_html:
         blocks.append(extra_html)
 
-    # The unsubscribe link needs the account id, which build_digest doesn't take,
-    # so we emit a {UNSUB} marker the per-account send loop replaces.
-    body = "".join(blocks)
-    html = f"""\
-<div style="background:#f1f5f9;padding:24px 0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
-  <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e2e8f0;">
-    <div style="background:#0f172a;padding:20px 24px;">
-      <div style="color:#ffffff;font-size:18px;font-weight:800;">BR Fantasy</div>
-      <div style="color:#94a3b8;font-size:13px;margin-top:2px;">Your weekly dynasty digest</div>
-    </div>
-    <div style="padding:24px;">
-      <p style="margin:0 0 14px;font-size:15px;color:#0f172a;">Hey {hi},</p>
-      {body}
-      <a href="{dash_url}" style="display:inline-block;margin-top:22px;background:#2563eb;color:#ffffff;
-         text-decoration:none;font-weight:700;font-size:14px;padding:11px 20px;border-radius:9px;">
-        Open your dashboard →</a>
-    </div>
-    <div style="padding:16px 24px;border-top:1px solid #e2e8f0;background:#f8fafc;">
-      <p style="margin:0;font-size:11px;color:#94a3b8;line-height:1.6;">
-        You're getting this because you signed in to BR Fantasy.
-        <a href="{{UNSUB}}" style="color:#64748b;">Unsubscribe</a> from weekly emails.
-      </p>
-    </div>
-  </div>
-</div>"""
+    has_record = rank is not None and (int(wins or 0) + int(losses or 0) > 0)
+    useful = any([
+        has_record, matchup_block, lineup_block, waiver_block, injury_block,
+        movement_block, breakout_block, trade_block, extra_html,
+    ])
+    if not useful:
+        return None
 
-    # R12.4: subject / preview with top riser when available.
-    top = my_risers[0] if my_risers else (lg_risers[0] if lg_risers else None)
-    if top:
-        pid, delta = top
-        nm = _player_name(pid, pidx)
-        if rank:
-            subject = f"{league_name}: #{int(rank)} · {nm} ▲{abs(delta):.0f}"
-        else:
-            subject = f"{league_name}: {nm} ▲{abs(delta):.0f}"
-    else:
-        subject = f"{league_name}: your weekly dynasty digest"
-    return {"subject": subject, "html": html}
+    inner = greeting_html(first_name) + "".join(blocks)
+    kind = str(fmt.get("type") or "fantasy")
+    subtitle = f"Your weekly {kind} digest" if kind in ("dynasty", "redraft", "keeper") else "Your weekly fantasy digest"
+    html = email_shell(inner, subtitle=subtitle, dash_url=dash_url)
+
+    subject = choose_subject(
+        league_name, fmt, rank=rank, wins=wins, losses=losses,
+        lineup_note=lineup_note, matchup=matchup, waivers=waivers,
+        my_risers=my_risers, pidx=pidx,
+    )
+    return {
+        "subject": subject,
+        "html": html,
+        "tags": _digest_tags(fmt, platform, int(season)),
+        "format": fmt,
+        "matchup": matchup,
+        "waivers": waivers,
+        "lineup": lineup_note,
+    }
 
 
-# ── Send loop ─────────────────────────────────────────────────────────────────
-
-def _best_effort_lineup_actions(leagues: list[dict]) -> list:
-    """Thin lineup-issue scan for multi-league digest bullets (R04.4).
-
-    Best-effort only — never raises. Uses ``lineup_actions_from_issues`` so
-    ranking stays in ``rank_cross_league_actions``.
-    """
+def _best_effort_lineup_actions(leagues: list[dict], run_cache=None) -> list:
+    """Thin multi-league scan for digest bullets. Best-effort; never raises."""
     out: list = []
     if not leagues:
         return out
     try:
-        from dashboard_services.api import get_nfl_state, get_nfl_players
-        from dashboard_services.platform_api import get_rosters
-        from utils.cross_league_actions import lineup_actions_from_issues
+        from utils.cross_league_actions import lineup_actions_from_issues, make_action
+        from utils.digest_context import LEAGUEWIDE_MOVE_MIN, filter_movers, matchup_for_roster
         from utils.lineup_issues import find_lineup_issues
-        from utils.utils import load_week_schedule
     except Exception:
         return out
-    try:
-        nfl = get_nfl_state() or {}
-        week = int(nfl.get("week") or 0)
-        if nfl.get("season_type") not in ("reg", "post") or week <= 0:
-            return out
-        nfl_players = get_nfl_players() or {}
-        teams_playing: set[str] = set()
-        try:
-            for g in load_week_schedule(int(nfl.get("season") or 0), week) or []:
-                for side in ("home", "away"):
-                    t = str(g.get(side) or "").upper()
-                    if t:
-                        teams_playing.add(t)
-        except Exception:
-            teams_playing = set()
-    except Exception:
+    cache = run_cache
+    nfl_players = (cache.nfl_players if cache is not None else None) or {}
+    teams_playing = (cache.teams_playing if cache is not None else None) or set()
+    if cache is None or not in_season_safe(cache):
         return out
 
     for lg in leagues[:4]:
@@ -669,57 +757,134 @@ def _best_effort_lineup_actions(leagues: list[dict]) -> list:
             rid = str(lg.get("roster_id") or "").strip()
             if not plat or not lid or not rid or not season:
                 continue
-            roster = next(
-                (r for r in (get_rosters(plat, lid, season) or [])
-                 if str(r.get("roster_id")) == rid),
-                None,
-            )
+            bundle = cache.league_bundle(plat, season, lid) if cache is not None else None
+            roster = None
+            if bundle:
+                roster = (bundle.get("roster_by_id") or {}).get(rid)
             if not roster:
                 continue
+            fmt = (bundle or {}).get("format") or {}
+            league_name = str(lg.get("name") or (bundle.get("league") or {}).get("name") or lid)
+            if league_name == lid:
+                league_name = str((bundle.get("league") or {}).get("name") or "another league")
             starters = [str(p) for p in (roster.get("starters") or [])]
-            if not starters:
-                continue
-            info = {}
-            for pid in starters:
-                pl = nfl_players.get(pid) or {}
-                info[pid] = {
-                    "name": pl.get("full_name") or pl.get("last_name") or "",
-                    "team": pl.get("team") or "",
-                    "injury_status": pl.get("injury_status") or "",
-                }
-            issues = find_lineup_issues(starters, info, teams_playing or None)
-            out.extend(lineup_actions_from_issues(
-                issues,
-                platform=plat,
-                season=season,
-                league_id=lid,
-                league_name=str(lg.get("name") or lid),
-            ))
+            if starters and not fmt.get("is_best_ball"):
+                info = {}
+                for pid in starters:
+                    pl = nfl_players.get(pid) or {}
+                    info[pid] = {
+                        "name": pl.get("full_name") or pl.get("last_name") or "",
+                        "team": pl.get("team") or "",
+                        "injury_status": pl.get("injury_status") or "",
+                    }
+                issues = find_lineup_issues(starters, info, teams_playing or None)
+                out.extend(lineup_actions_from_issues(
+                    issues, platform=plat, season=season, league_id=lid,
+                    league_name=league_name,
+                ))
+            matchup = matchup_for_roster(bundle, rid, cache) if bundle else None
+            if matchup and matchup.get("win_prob") is not None:
+                try:
+                    wp = float(matchup["win_prob"])
+                    if wp <= 0.45:
+                        out.append(make_action(
+                            kind="lineup", platform=plat, season=season, league_id=lid,
+                            league_name=league_name,
+                            title="Projected as a close underdog",
+                            detail=f"vs {matchup.get('opponent_name') or 'opponent'}",
+                            href=f"/{plat}/{season}/{lid}/matchups",
+                            severity=0.6,
+                        ))
+                except (TypeError, ValueError):
+                    pass
+            fallers = []
+            if fmt.get("is_dynasty") and cache is not None:
+                mine = {str(p) for p in (roster.get("players") or [])}
+                movers = cache.movers_for(is_superflex=bool(fmt.get("is_superflex")))
+                fallers = filter_movers(
+                    movers.get("fallers") or [], want_positive=False, mine=mine,
+                    min_abs=LEAGUEWIDE_MOVE_MIN, limit=1,
+                )
+            if fallers:
+                pid, delta = fallers[0]
+                nm = _player_name(pid, cache.pidx if cache is not None else {})
+                if nm:
+                    out.append(make_action(
+                        kind="trade", platform=plat, season=season, league_id=lid,
+                        league_name=league_name,
+                        title=f"{nm} dropped significantly",
+                        detail=f"{delta:.0f} value this week",
+                        href=f"/{plat}/{season}/{lid}/dashboard",
+                        severity=0.5,
+                    ))
         except Exception:
             continue
     return out
 
 
-def send_weekly_digests(limit: int | None = None, dry_run: bool = False) -> dict:
-    """Send this week's digest to every eligible recipient (once per ISO week).
+def in_season_safe(cache) -> bool:
+    try:
+        from utils.digest_context import in_season
+        return in_season(cache)
+    except Exception:
+        return False
 
-    Returns a small summary dict. ``dry_run`` builds digests but sends nothing.
+
+def send_weekly_digests(
+    limit: int | None = None,
+    dry_run: bool = False,
+    *,
+    account_id: int | None = None,
+    force: bool = False,
+    preview_path: str | None = None,
+) -> dict:
+    """Send this week's digest to eligible recipients (once per ISO week).
+
+    ``dry_run`` builds content and never calls Brevo/SMTP. ``account_id``
+    restricts the run to one account. ``force`` bypasses weekly dedupe for
+    that scoped send (still never sends during dry_run).
     """
-    from utils.email_notifications import send_html_email, is_sender_configured
-    if not dry_run and not is_sender_configured():
+    from utils.email_delivery import is_configured, send_email, sleep_briefly
+    from utils.digest_context import DigestRunCache
+
+    if force and account_id is None:
+        logger.warning("[weekly-email] force ignored without account_id (refusing list-wide re-send)")
+        force = False
+
+    if not dry_run and not is_configured():
         logger.info("[weekly-email] sender not configured; skipping run")
-        return {"sent": 0, "skipped": 0, "configured": False}
+        return {"sent": 0, "skipped": 0, "configured": False, "eligible": 0,
+                "attempted": 0, "failed": 0, "skipped_already_sent": 0,
+                "skipped_opted_out": 0, "skipped_suppressed": 0,
+                "skipped_no_useful_content": 0, "provider_rate_limited": 0}
 
     week = _iso_week()
     recips = _recipients()
+    if account_id is not None:
+        recips = [r for r in recips if int(r.get("account_id") or 0) == int(account_id)]
+        if not recips:
+            # Preview/test-send path: still resolve the account even if opted out,
+            # so operators can inspect a digest. Sending still respects prefs.
+            recips = _recipient_by_id(int(account_id))
+    eligible = len(recips)
     if limit:
         recips = recips[:limit]
 
-    # Load the recipient-independent lookups once for the whole run.
-    movers, pidx = _load_movers_and_index()
+    cache = DigestRunCache()
+    cache.load_shared()
 
     sent = skipped = failed = 0
+    skipped_already_sent = skipped_opted_out = skipped_suppressed = 0
+    skipped_no_useful_content = provider_rate_limited = attempted = 0
+    consecutive_429 = 0
+
     from dashboard_services.db import get_conn
+    from utils.email_preferences import is_enabled, WEEKLY_DIGEST
+    from utils.email_events import is_suppressed, record_send
+
+    last_preview_html = None
+    last_preview_subject = None
+
     for r in recips:
         aid = r.get("account_id")
         email = (r.get("email") or "").strip()
@@ -727,23 +892,41 @@ def send_weekly_digests(limit: int | None = None, dry_run: bool = False) -> dict
             skipped += 1
             continue
 
-        state_key = f"{_STATE_PREFIX}{aid}"
-        # Already emailed this ISO week? Skip (idempotent re-runs).
         try:
-            with get_conn() as conn:
-                row = conn.execute(
-                    "SELECT value FROM app_state WHERE key = %s", (state_key,)
-                ).fetchone()
-            if row and row.get("value") == week:
+            opted_in = is_enabled(
+                int(aid), WEEKLY_DIGEST, email_opt_out=bool(r.get("email_opt_out")),
+            )
+        except Exception:
+            opted_in = not bool(r.get("email_opt_out"))
+        if not opted_in:
+            skipped_opted_out += 1
+            skipped += 1
+            continue
+
+        try:
+            if is_suppressed(email):
+                skipped_suppressed += 1
                 skipped += 1
                 continue
         except Exception:
             pass
 
+        state_key = f"{_STATE_PREFIX}{aid}"
+        if not force:
+            try:
+                with get_conn() as conn:
+                    row = conn.execute(
+                        "SELECT value FROM app_state WHERE key = %s", (state_key,)
+                    ).fetchone()
+                if row and row.get("value") == week:
+                    skipped_already_sent += 1
+                    skipped += 1
+                    continue
+            except Exception:
+                pass
+
         extra = ""
         try:
-            # Optional/best-effort cross-league action bullets (R04.4) — same
-            # ranking engine as My Leagues; omit when nothing is available.
             cl_actions: list = []
             try:
                 others = other_leagues_for_account(
@@ -753,7 +936,7 @@ def send_weekly_digests(limit: int | None = None, dry_run: bool = False) -> dict
                     primary_season=int(r.get("season") or datetime.now().year),
                     limit=4,
                 )
-                cl_actions = _best_effort_lineup_actions(others)
+                cl_actions = _best_effort_lineup_actions(others, run_cache=cache)
             except Exception:
                 logger.debug("[weekly-email] cross-league action gather failed", exc_info=True)
             extra = multi_league_sections_html(
@@ -768,30 +951,43 @@ def send_weekly_digests(limit: int | None = None, dry_run: bool = False) -> dict
         except Exception:
             logger.debug("[weekly-email] multi-league sections failed", exc_info=True)
 
-        digest = build_digest(
-            str(r.get("platform") or "sleeper"),
-            str(r.get("league_id") or ""),
-            int(r.get("season") or datetime.now().year),
-            str(r.get("roster_id") or ""),
-            first_name=r.get("first_name"),
-            movers=movers, pidx=pidx,
-            extra_html=extra,
-        )
+        try:
+            digest = build_digest(
+                str(r.get("platform") or "sleeper"),
+                str(r.get("league_id") or ""),
+                int(r.get("season") or datetime.now().year),
+                str(r.get("roster_id") or ""),
+                first_name=r.get("first_name"),
+                extra_html=extra,
+                run_cache=cache,
+            )
+        except Exception:
+            logger.warning("[weekly-email] digest generation failed account=%s", aid, extra={"account_id": aid})
+            failed += 1
+            continue
+
         if not digest:
+            skipped_no_useful_content += 1
             skipped += 1
             continue
 
-        # Inject this account's real unsubscribe link.
         unsub = f"{_base_url()}/email/unsubscribe?token={make_unsub_token(int(aid))}"
         html = digest["html"].replace("{UNSUB}", unsub)
+        last_preview_html = html
+        last_preview_subject = digest.get("subject")
 
         if dry_run:
             sent += 1
             continue
 
-        ok = send_html_email(email, digest["subject"], html, unsubscribe_url=unsub)
-        if ok:
+        attempted += 1
+        result = send_email(
+            email, digest["subject"], html,
+            unsubscribe_url=unsub, tags=digest.get("tags") or ["weekly-digest"],
+        )
+        if result.ok:
             sent += 1
+            consecutive_429 = 0
             try:
                 with get_conn() as conn:
                     conn.execute(
@@ -802,10 +998,157 @@ def send_weekly_digests(limit: int | None = None, dry_run: bool = False) -> dict
                     conn.commit()
             except Exception:
                 logger.debug("[weekly-email] state write failed", exc_info=True)
+            record_send(
+                account_id=int(aid), email=email, email_type="weekly_digest",
+                provider=result.provider, provider_message_id=result.message_id,
+                platform=str(r.get("platform") or ""),
+                league_id=str(r.get("league_id") or ""),
+                season=int(r.get("season") or 0) or None,
+                iso_week=week, status="sent",
+            )
         else:
             failed += 1
+            if result.error_category == "rate_limited":
+                provider_rate_limited += 1
+                consecutive_429 += 1
+                sleep_briefly(2.0)
+                if consecutive_429 >= 5:
+                    leftover = max(0, len(recips) - (sent + skipped + failed))
+                    logger.warning(
+                        "[weekly-email] stopping remaining sends after repeated rate limits leftover=%s",
+                        leftover,
+                    )
+                    # Unattempted leftovers are not marked sent and are not counted as failed.
+                    provider_rate_limited += leftover
+                    break
+            record_send(
+                account_id=int(aid), email=email, email_type="weekly_digest",
+                provider=result.provider or "brevo", provider_message_id=result.message_id,
+                platform=str(r.get("platform") or ""),
+                league_id=str(r.get("league_id") or ""),
+                season=int(r.get("season") or 0) or None,
+                iso_week=week, status="failed",
+                error_category=result.error_category, error_detail=result.error,
+            )
 
-    summary = {"sent": sent, "skipped": skipped, "failed": failed,
-               "recipients": len(recips), "week": week, "dry_run": dry_run}
-    logger.info("[weekly-email] run complete: %s", summary)
+    if preview_path and last_preview_html:
+        try:
+            from pathlib import Path as _P
+            _P(preview_path).write_text(last_preview_html, encoding="utf-8")
+        except Exception:
+            logger.warning("[weekly-email] failed to write preview file")
+
+    summary = {
+        "sent": sent, "skipped": skipped, "failed": failed,
+        "eligible": eligible, "attempted": attempted,
+        "skipped_already_sent": skipped_already_sent,
+        "skipped_opted_out": skipped_opted_out,
+        "skipped_suppressed": skipped_suppressed,
+        "skipped_no_useful_content": skipped_no_useful_content,
+        "provider_rate_limited": provider_rate_limited,
+        "recipients": len(recips), "week": week, "dry_run": dry_run,
+        "configured": True, "subject": last_preview_subject,
+    }
+    logger.info("[weekly-email] run complete: %s", {k: v for k, v in summary.items() if k != "subject"})
     return summary
+
+
+def _recipient_by_id(account_id: int) -> list[dict]:
+    from dashboard_services.db import get_conn
+    try:
+        with get_conn() as conn:
+            _ensure_columns(conn)
+            rows = conn.execute(
+                """
+                SELECT a.id AS account_id, a.email AS email, a.first_name AS first_name,
+                       a.last_active_platform AS platform, a.last_active_league_id AS league_id,
+                       a.last_active_season AS season, a.email_opt_out AS email_opt_out,
+                       v.roster_id AS roster_id
+                FROM accounts a
+                LEFT JOIN account_league_visits v
+                       ON v.account_id = a.id AND v.platform = a.last_active_platform
+                      AND v.league_id = a.last_active_league_id AND v.season = a.last_active_season
+                WHERE a.id = %s
+                """,
+                (int(account_id),),
+            ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        logger.debug("[weekly-email] recipient-by-id failed", exc_info=True)
+        return []
+
+
+def preview_digest(
+    *,
+    account_id: int | None = None,
+    platform: str | None = None,
+    league_id: str | None = None,
+    season: int | None = None,
+    roster_id: str | None = None,
+    first_name: str | None = None,
+    out_path: str | None = None,
+) -> dict | None:
+    """Generate one digest without sending. Writes HTML when ``out_path`` is set."""
+    from utils.digest_context import DigestRunCache
+    cache = DigestRunCache()
+    cache.load_shared()
+    plat = platform or "sleeper"
+    lid = league_id or ""
+    seas = int(season or datetime.now().year)
+    rid = roster_id or ""
+    extra = ""
+    if account_id:
+        extra = multi_league_sections_html(
+            int(account_id), primary_platform=plat, primary_league_id=str(lid),
+            primary_season=seas, base_url=_base_url(), limit=2,
+        )
+    digest = build_digest(
+        plat, str(lid), seas, str(rid), first_name=first_name,
+        extra_html=extra, run_cache=cache,
+    )
+    if digest and out_path:
+        html = digest["html"].replace("{UNSUB}", "#unsubscribe")
+        from pathlib import Path as _P
+        _P(out_path).write_text(html, encoding="utf-8")
+        digest = {**digest, "html": html, "preview_path": out_path}
+    return digest
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+    parser = argparse.ArgumentParser(description="Weekly digest send / preview")
+    parser.add_argument("--dry-run", action="store_true", help="Build content; never send")
+    parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--account-id", type=int, default=None, help="Restrict to one account")
+    parser.add_argument("--force", action="store_true", help="Ignore weekly dedupe (one-account sends)")
+    parser.add_argument("--out", dest="out_path", default=None, help="Write last HTML to this file")
+    parser.add_argument("--preview-platform", default=None)
+    parser.add_argument("--preview-league", default=None)
+    parser.add_argument("--preview-season", type=int, default=None)
+    parser.add_argument("--preview-roster", default=None)
+    parser.add_argument("--preview-name", default=None)
+    args = parser.parse_args(argv)
+    if args.preview_league:
+        out = preview_digest(
+            account_id=args.account_id, platform=args.preview_platform,
+            league_id=args.preview_league, season=args.preview_season,
+            roster_id=args.preview_roster, first_name=args.preview_name,
+            out_path=args.out_path,
+        )
+        if not out:
+            print("No digest content for that league/roster.")
+            return 1
+        print(out.get("subject") or "")
+        if args.out_path:
+            print(f"Wrote {args.out_path}")
+        return 0
+    summary = send_weekly_digests(
+        limit=args.limit, dry_run=args.dry_run, account_id=args.account_id,
+        force=args.force, preview_path=args.out_path,
+    )
+    print(summary)
+    return 0 if summary.get("failed", 0) == 0 else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

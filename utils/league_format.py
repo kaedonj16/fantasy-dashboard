@@ -119,21 +119,116 @@ def is_best_ball(league: Optional[dict] = None, *, settings: Optional[dict] = No
     return False
 
 
+# Sleeper settings.type: 0 redraft, 1 keeper, 2 dynasty. Other providers
+# normalize onto the same integers or a string ``league_type``.
+_REDRAFT_TYPE_INTS = {0}
+_KEEPER_TYPE_INTS = {1}
+_DYNASTY_TYPE_INTS = {2}
+_REDRAFT_LABELS = {"redraft", "re-draft"}
+_KEEPER_LABELS = {"keeper", "redraft_keeper"}
+
+
+def classify_league_roster_format(
+    *,
+    league: Optional[dict] = None,
+    settings: Optional[dict] = None,
+    roster_positions: Optional[list] = None,
+    scoring_settings: Optional[dict] = None,
+    platform: str = "",
+) -> dict[str, Any]:
+    """Canonical dynasty/redraft/keeper + 1QB/SF + TEP flags.
+
+    Matches the rest of the app: ESPN football is treated as redraft; Sleeper
+    ``settings.type`` 0/1/2 is redraft/keeper/dynasty; string ``league_type``
+    (MFL/Flea) is honored when the numeric type is absent. Unknown non-ESPN
+    leagues default to dynasty, which is the historical product default.
+    """
+    lg = league or {}
+    st = settings if settings is not None else (lg.get("settings") or lg.get("league_settings") or {})
+    if not isinstance(st, dict):
+        st = {}
+    scoring = scoring_settings if scoring_settings is not None else (lg.get("scoring_settings") or {})
+    if not isinstance(scoring, dict):
+        scoring = {}
+    positions = list(
+        roster_positions if roster_positions is not None else (lg.get("roster_positions") or [])
+    )
+    plat = _norm_type(platform or lg.get("platform") or "")
+
+    kind: Optional[str] = None
+    if plat == "espn":
+        kind = "redraft"
+    else:
+        try:
+            t = st.get("type")
+            if t is not None:
+                ti = int(t)
+                if ti in _REDRAFT_TYPE_INTS:
+                    kind = "redraft"
+                elif ti in _KEEPER_TYPE_INTS:
+                    kind = "keeper"
+                elif ti in _DYNASTY_TYPE_INTS:
+                    kind = "dynasty"
+        except (TypeError, ValueError):
+            kind = None
+        if kind is None:
+            lt = _norm_type(st.get("league_type") or lg.get("league_type") or "")
+            if lt in _KEEPER_LABELS or "keeper" in lt:
+                kind = "keeper"
+            elif lt in _REDRAFT_LABELS:
+                kind = "redraft"
+            elif "dynasty" in lt:
+                kind = "dynasty"
+            else:
+                kind = "dynasty"
+
+    is_sf = False
+    try:
+        from utils.lineup_slots import is_superflex_lineup
+        is_sf = bool(is_superflex_lineup(positions))
+    except Exception:
+        is_sf = False
+    if not is_sf:
+        try:
+            nqb = int(st.get("num_qb") or st.get("nqb") or 0)
+            if nqb >= 2:
+                is_sf = True
+        except (TypeError, ValueError):
+            pass
+
+    tep = 0.0
+    try:
+        from utils.value_helpers import te_premium_from_settings
+        tep = float(te_premium_from_settings(scoring) or 0.0)
+    except Exception:
+        tep = 0.0
+
+    return {
+        "type": kind,
+        "is_dynasty": kind == "dynasty",
+        "is_redraft": kind == "redraft",
+        "is_keeper": kind == "keeper",
+        "is_superflex": bool(is_sf),
+        "qb_format": "sf" if is_sf else "1qb",
+        "te_premium": tep,
+        "is_tep": tep > 0,
+        "is_best_ball": is_best_ball(lg, settings=st),
+    }
+
+
 def detect_league_format(
     *,
     league: Optional[dict] = None,
     drafts: Optional[list] = None,
     settings: Optional[dict] = None,
+    roster_positions: Optional[list] = None,
+    scoring_settings: Optional[dict] = None,
+    platform: str = "",
 ) -> dict[str, Any]:
     """Normalized format flags for UI / gating.
 
-    Returns::
-        {
-          "is_auction": bool,
-          "auction_budget": float|None,
-          "is_best_ball": bool,
-          "draft_type": "auction"|"snake"|str|None,
-        }
+    Returns auction/best-ball flags plus roster-format classification
+    (dynasty/redraft/keeper, superflex, TEP).
     """
     lg = league or {}
     drafts = list(drafts or [])
@@ -149,9 +244,18 @@ def detect_league_format(
         dtype = "auction"
     elif dtype in (None, ""):
         dtype = "snake"
-    return {
+    roster = classify_league_roster_format(
+        league=lg,
+        settings=settings,
+        roster_positions=roster_positions,
+        scoring_settings=scoring_settings,
+        platform=platform,
+    )
+    out = {
         "is_auction": bool(auction),
         "auction_budget": budget,
         "is_best_ball": bool(bb),
         "draft_type": dtype,
     }
+    out.update(roster)
+    return out
