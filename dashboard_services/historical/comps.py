@@ -5,8 +5,12 @@ capital, prior-finish bucket, age bucket, previous-season usage. Same-season
 actuals, ADP, and projections are not features.
 
 Missing dimensions are omitted (not 0 / UDFA / last-place). Tiny cells
-relax in ``COMP_RELAXATION_ORDER`` and shrink toward the position baseline
-via empirical Bayes. Named comps exclude the query player.
+relax in ``COMP_RELAXATION_ORDER``. When the Hist path keeps an exact cell
+below ``MIN_COMP_CELL_N``, rates shrink toward a parent cell that prefers
+last-year finish and age (``PARENT_MIN_N``), not every appeared player and
+not declining vets mixed into a young RB1. Walk-forward still uses
+``MIN_COMP_CELL_N`` then the position prior. Named comps exclude the query
+player.
 
 Cell rates are **pooled historical** (all warehouse seasons), not
 walk-forward. They are descriptive and do not enter ranking or Pick Score.
@@ -27,6 +31,9 @@ from dashboard_services.historical.definitions import (
     DRAFT_CAPITAL_ORDER,
     MIN_COMP_CELL_N,
     NAMED_EXAMPLES_PER_CELL,
+    PARENT_KEEP_WEIGHT,
+    PARENT_MIN_N,
+    PARENT_RELAXATION_ORDERS,
     PRIOR_FINISH_ORDER,
     SKILL_POSITIONS,
     SNAP_PCT_BUCKETS,
@@ -156,6 +163,7 @@ def key_matches(leaf_key: Mapping[str, Any], required: Mapping[str, Any]) -> boo
 
 def iter_relaxed_keys(
     feats: Mapping[str, Any],
+    order: Sequence[str] = COMP_RELAXATION_ORDER,
 ) -> Iterator[tuple[dict[str, str], list[str]]]:
     """Yield (active_key, dropped_dims) from most specific to position-only."""
     active = {
@@ -165,11 +173,57 @@ def iter_relaxed_keys(
     }
     dropped: list[str] = []
     yield dict(active), list(dropped)
-    for dim in COMP_RELAXATION_ORDER:
+    for dim in order:
         if dim in active and dim != "position":
             del active[dim]
             dropped.append(dim)
             yield dict(active), list(dropped)
+
+
+def _leaf_match_n(
+    leaves: Sequence[Mapping[str, Any]],
+    active: Mapping[str, str],
+) -> tuple[list[Mapping[str, Any]], int]:
+    matching = [leaf for leaf in leaves if key_matches(leaf.get("key") or {}, active)]
+    n = sum(int(leaf.get("n") or 0) for leaf in matching)
+    return matching, n
+
+
+def _parent_keep_score(active: Mapping[str, str]) -> int:
+    return sum(int(PARENT_KEEP_WEIGHT.get(dim) or 0) for dim in active if dim != "position")
+
+
+def _parent_prior_cell(
+    feats: Mapping[str, Any],
+    leaves: Sequence[Mapping[str, Any]],
+    chosen_active: Mapping[str, str],
+    baselines: Mapping[str, Mapping[str, Any]],
+) -> tuple[Optional[dict[str, str]], Optional[int], Mapping[str, Mapping[str, Any]]]:
+    """Pick a Bayes prior cell that keeps last-year finish and age when it can.
+
+    The displayed Hist cell stays exact. The prior should not jump to every
+    last-year top-5, which mixes 24-year-old RB1s with declining year-6+ backs.
+    """
+    chosen_id = tuple(sorted((chosen_active or {}).items()))
+    best: Optional[tuple[int, int, dict[str, str], list]] = None
+    seen: set[tuple] = set()
+    for order in PARENT_RELAXATION_ORDERS:
+        for active, _dropped in iter_relaxed_keys(feats, order=order):
+            matching, n = _leaf_match_n(leaves, active)
+            if n < PARENT_MIN_N:
+                continue
+            key_id = tuple(sorted(active.items()))
+            if key_id == chosen_id or key_id in seen:
+                continue
+            seen.add(key_id)
+            score = _parent_keep_score(active)
+            cand = (score, n, dict(active), matching)
+            if best is None or cand[0] > best[0] or (cand[0] == best[0] and cand[1] > best[1]):
+                best = cand
+    if best is None:
+        return None, None, baselines
+    _score, prior_n, prior_key, matching = best
+    return prior_key, prior_n, pool_leaves(matching, baselines=baselines)
 
 
 def _example_record(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -415,6 +469,10 @@ def lookup_board_probabilities(
 
     Walks ``COMP_RELAXATION_ORDER`` until the pooled cell reaches ``min_n``
     (or only position remains). Empty / unknown position → rates stay None.
+
+    Exact cells below ``MIN_COMP_CELL_N`` shrink toward a parent that
+    prefers last-year finish and age (``PARENT_MIN_N``), not every
+    last-year top-5 including declining vets.
     """
     feats = extract_comp_query(query)
     pos = feats.get("position")
@@ -424,32 +482,53 @@ def lookup_board_probabilities(
     }
     for rate in empty_rates.values():
         rate["kind"] = "conditional"
+    empty = {
+        "position": pos,
+        "key_used": {},
+        "dropped": [],
+        "fallback": False,
+        "n": 0,
+        "rates": empty_rates,
+        "examples": [],
+        "kind": "conditional",
+        "prior_source": "position_baseline",
+        "prior_key": {},
+        "prior_n": None,
+    }
     if not pos:
-        return {
-            "position": None,
-            "key_used": {},
-            "dropped": [],
-            "fallback": False,
-            "n": 0,
-            "rates": empty_rates,
-            "examples": [],
-            "kind": "conditional",
-        }
+        empty["position"] = None
+        return empty
     by_pos = (comps_payload.get("by_position") or {}).get(pos) or {}
     leaves = by_pos.get("leaves") or comps_payload.get("leaves") or []
     baselines = by_pos.get("baseline") or {}
     skip = exclude_sleeper_id if exclude_sleeper_id is not None else query.get("sleeper_id")
 
-    last: Optional[tuple] = None
+    steps: list[tuple[dict[str, str], list[str], list, int]] = []
     for active, dropped in iter_relaxed_keys(feats):
-        matching = [leaf for leaf in leaves if key_matches(leaf.get("key") or {}, active)]
-        n = sum(int(leaf.get("n") or 0) for leaf in matching)
-        last = (active, dropped, matching, n)
-        if n >= min_n:
+        matching, n = _leaf_match_n(leaves, active)
+        steps.append((dict(active), list(dropped), matching, n))
+    chosen = None
+    for step in steps:
+        if step[3] >= min_n:
+            chosen = step
             break
-    assert last is not None
-    active, dropped, matching, n = last
-    rates = pool_leaves(matching, baselines=baselines)
+    if chosen is None:
+        chosen = steps[-1]
+    active, dropped, matching, n = chosen
+    prior_baselines = baselines
+    prior_source = "position_baseline"
+    prior_key: dict[str, str] = {}
+    prior_n: Optional[int] = None
+    if 0 < n < MIN_COMP_CELL_N:
+        found_key, found_n, found_rates = _parent_prior_cell(
+            feats, leaves, active, baselines,
+        )
+        if found_key:
+            prior_baselines = found_rates
+            prior_source = "parent_cell"
+            prior_key = dict(found_key)
+            prior_n = found_n
+    rates = pool_leaves(matching, baselines=prior_baselines)
     return {
         "position": pos,
         "key_used": dict(active),
@@ -461,6 +540,9 @@ def lookup_board_probabilities(
         "kind": "conditional",
         "min_n": min_n,
         "bayes_prior_n": DEFAULT_BAYES_PRIOR_N,
+        "prior_source": prior_source,
+        "prior_key": prior_key,
+        "prior_n": prior_n,
     }
 
 

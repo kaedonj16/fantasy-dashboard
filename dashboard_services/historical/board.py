@@ -2143,10 +2143,38 @@ def build_hist_panel_copy(
         )
     if relaxed_note:
         cohort_note = f"{cohort_note} {relaxed_note}"
+    sample_prior_note = None
+    typical_note = None
+    pos_label = str(key_used.get("position") or "").upper()
+    if hist.get("prior_source") == "parent_cell":
+        n_exact = hist.get("n")
+        if pos_label in SKILL_POSITIONS and n_exact not in (None, 0):
+            sample_prior_note = (
+                f"Only {n_exact} exact matches, so this percent is pulled "
+                f"toward similar {pos_label}s (same age band and last-year "
+                f"finish when that group is big enough), not every {pos_label} "
+                f"and not declining vets mixed in."
+            )
+            cohort_note = f"{cohort_note} {sample_prior_note}"
+    base_pct = hist.get("position_baseline_pct")
+    if (
+        isinstance(hist_p, (int, float))
+        and isinstance(base_pct, (int, float))
+        and pos_label in SKILL_POSITIONS
+        and int(hist_p) >= 30
+        and int(hist_p) >= int(base_pct) + 15
+    ):
+        typical_note = (
+            f"Only 12 {pos_label}s finish top-12 each year. {int(hist_p)}% "
+            f"is a high historical hit rate (typical {pos_label}: {int(base_pct)}%)."
+        )
+        cohort_note = f"{cohort_note} {typical_note}"
 
     return {
         "headline": cohort,
         "cohort_note": cohort_note,
+        "sample_prior_note": sample_prior_note,
+        "typical_note": typical_note,
         "hit_rates": hit_rates,
         "profile_heading": "This pre-season profile",
         "profile": profile,
@@ -2252,7 +2280,17 @@ def build_deep_panel(
         "kind": "conditional",
         "career_path": looked.get("career_path"),
         "career_path_rate": looked.get("career_path_rate"),
+        "prior_source": looked.get("prior_source"),
+        "prior_key": looked.get("prior_key") or {},
+        "prior_n": looked.get("prior_n"),
     }
+    pos_key = str(query.get("position") or looked.get("position") or "").upper()
+    base = (
+        ((aggregates.get("comps") or {}).get("by_position") or {}).get(pos_key) or {}
+    )
+    bl = (base.get("baseline") or {}).get("top_12") if isinstance(base, Mapping) else None
+    if isinstance(bl, Mapping) and bl.get("display_pct") is not None:
+        history["position_baseline_pct"] = bl.get("display_pct")
     copy = build_hist_panel_copy(history, market)
     copy["trends"] = build_hist_trends(query, aggregates, market)
     copy["trend_groups"] = group_hist_trends(copy["trends"])
