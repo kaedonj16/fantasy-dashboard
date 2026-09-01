@@ -284,10 +284,12 @@ services:
     runtime: python
     # Daily at 6am — BFS-expands the league pool via Sleeper API (no Playwright needed).
     # Runs before the 8am daily-job so freshly discovered leagues are available sooner.
+    # starter 512Mi: run_discovery caps seeds/in-flight and stream-scans Sleeper
+    # bodies; --target only caps inserts, not RSS. Keep this at 1000.
     schedule: 0 6 * * *
     plan: starter
     buildCommand: pip install --no-cache-dir -r requirements.txt
-    startCommand: python scripts/discover_leagues.py --target 2000
+    startCommand: python scripts/discover_leagues.py --target 1000
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9

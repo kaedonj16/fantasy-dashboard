@@ -20,6 +20,8 @@ def test_discovery_no_longer_expands_two_thousand_seeds_up_front():
     assert "max_workers=10" not in source
     assert "_expand_seeds_into_frontier" in source
     assert "_MAX_SEEDS_PER_RUN" in source
+    assert "_ids_from_stream" in source
+    assert "read=False" in source
 
 
 def test_crawler_does_not_use_process_wide_transaction_cache():
@@ -42,6 +44,14 @@ def test_trade_recrawl_cron_stays_on_starter_without_playwright():
     assert "plan: starter" in recrawl
     assert "playwright" not in recrawl
     assert "--batch-size 1000" in recrawl
+
+
+def test_league_discovery_cron_caps_target_on_starter():
+    source = (ROOT / "render.yaml").read_text()
+    disc = source.split("name: league-discovery", 1)[1]
+    assert "plan: starter" in disc
+    assert "--target 1000" in disc
+    assert "--target 2000" not in disc.split("databases:", 1)[0]
 
 
 def test_orchestrator_spawns_each_stage_as_a_subprocess(monkeypatch):
@@ -89,6 +99,7 @@ def test_seed_and_frontier_caps_are_well_under_the_old_limits():
     )
     assert _MAX_SEEDS_PER_RUN <= 80
     assert _seed_limit_for_target(500) <= _MAX_SEEDS_PER_RUN
+    assert _seed_limit_for_target(1000) <= _MAX_SEEDS_PER_RUN
     assert _seed_limit_for_target(500) < 2000
     assert _frontier_cap_for_target(500) <= _FRONTIER_CAP
     assert _frontier_cap_for_target(500) < 5000
@@ -114,6 +125,40 @@ def test_league_ids_extracted_without_keeping_payload_fields():
     ids = _league_ids_from_payload(huge)
     assert len(ids) == _MAX_LEAGUES_PER_USER
     assert ids[0] == "0"
+
+
+@pytest.mark.integration
+def test_ids_from_chunks_does_not_parse_json_and_handles_split_ids():
+    """Regression for league-discovery OOM: never build the full object tree."""
+    pytest.importorskip("requests")
+    from data_building.trade_intel.league_discovery import (
+        _LEAGUE_ID_RE,
+        _MAX_LEAGUES_PER_USER,
+        _OWNER_ID_RE,
+        _ids_from_chunks,
+    )
+    raw = (
+        b'[{"league_id": "111111111111111111", "scoring_settings": {"rec": 1}},'
+        b'{"league_id": "222222222222222222"}]'
+    )
+    assert _ids_from_chunks([raw], _LEAGUE_ID_RE, 10) == [
+        "111111111111111111", "222222222222222222",
+    ]
+    # id split across chunk boundary
+    split_at = raw.index(b"222222") + 3
+    assert _ids_from_chunks(
+        [raw[:split_at], raw[split_at:]], _LEAGUE_ID_RE, 10,
+    ) == ["111111111111111111", "222222222222222222"]
+    owners = b'[{"owner_id": "999999999999999999", "players": ["a"] * 1}]'
+    assert _ids_from_chunks([owners], _OWNER_ID_RE, 8) == ["999999999999999999"]
+    # cap
+    many = b",".join(b'{"league_id": "%d"}' % i for i in range(100000, 100000 + 200))
+    assert len(_ids_from_chunks([many], _LEAGUE_ID_RE, _MAX_LEAGUES_PER_USER)) == _MAX_LEAGUES_PER_USER
+    first = b'{"league_id": "123456789012345678"}'
+    second = b'{"league_id": "999999999999999999"}'
+    assert _ids_from_chunks(
+        [first, second], _LEAGUE_ID_RE, 10, max_bytes=len(first),
+    ) == ["123456789012345678"]
 
 
 @pytest.mark.integration

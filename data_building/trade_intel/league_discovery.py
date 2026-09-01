@@ -12,9 +12,10 @@ Strategy (no Sleeper search API exists):
 from __future__ import annotations
 
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
-from typing import Callable, Set, Optional, List, Dict, Tuple
+from typing import Callable, Iterable, Set, Optional, List, Dict, Tuple
 
 import requests
 
@@ -32,16 +33,22 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 SESSION = requests.Session()
+# Do not retry read timeouts: urllib3 keeps the partial body, and the
+# league-discovery cron OOM'd while Retry(total=2) was re-downloading
+# /user/.../leagues payloads that had already timed out at 10s.
 retry_strategy = Retry(
-    total=2,
-    connect=2,
-    read=1,
-    backoff_factor=0.4,
-    status_forcelist=[429, 500, 502, 503, 504],
+    total=1,
+    connect=1,
+    read=False,
+    redirect=0,
+    status=1,
+    backoff_factor=0.3,
+    status_forcelist=[502, 503, 504],
+    raise_on_status=False,
 )
 adapter = HTTPAdapter(
-    pool_connections=8,
-    pool_maxsize=8,
+    pool_connections=4,
+    pool_maxsize=4,
     max_retries=retry_strategy,
 )
 SESSION.mount("http://", adapter)
@@ -56,11 +63,19 @@ _MAX_LEAGUES = 5_000   # target ceiling per crawl run
 # full /user/.../leagues payload (not just ids) — that peak blew the 512Mi cap
 # before crawl even started. Bound workers, in-flight futures, and seed count
 # so we only expand enough to fill a frontier for `target`.
-_DISCOVERY_WORKERS = 4
-_DISCOVERY_IN_FLIGHT = 8
+_DISCOVERY_WORKERS = 2
+_DISCOVERY_IN_FLIGHT = 4
 _MAX_SEEDS_PER_RUN = 80
 _FRONTIER_CAP = 1500
 _MAX_LEAGUES_PER_USER = 60
+_MAX_OWNERS_PER_LEAGUE = 32
+# Abort scanning a user-leagues / rosters body after this many raw bytes so a
+# single oversized Sleeper payload cannot materialize as a multi-MB Python tree.
+_MAX_SCAN_BYTES = 1_048_576
+_STREAM_CHUNK = 32 * 1024
+_ID_OVERLAP = 64
+_LEAGUE_ID_RE = re.compile(rb'"league_id"\s*:\s*"?(\d{6,20})"?')
+_OWNER_ID_RE = re.compile(rb'"owner_id"\s*:\s*"?(\d{6,20})"?')
 
 
 def _log_rss(label: str) -> None:
@@ -96,7 +111,8 @@ def _league_ids_from_payload(data) -> List[str]:
     """Pull league_id strings out of a Sleeper user-leagues list and drop the rest.
 
     The payload is full league objects (scoring_settings, roster_positions, …).
-    Callers must not keep `data` after this returns.
+    Callers must not keep `data` after this returns. Prefer `_ids_from_chunks`
+    on the raw HTTP body so the object tree is never built.
     """
     if not data or not isinstance(data, list):
         return []
@@ -116,6 +132,68 @@ def _league_ids_from_payload(data) -> List[str]:
         if len(ids) >= _MAX_LEAGUES_PER_USER:
             break
     return ids
+
+
+def _ids_from_chunks(
+    chunks: Iterable[bytes],
+    pattern: re.Pattern[bytes],
+    limit: int,
+    max_bytes: int = _MAX_SCAN_BYTES,
+) -> List[str]:
+    """Scan raw JSON chunks for id fields. Peak memory is one chunk + overlap.
+
+    Used for /user/.../leagues and /rosters so we never `resp.json()` a
+    multi-league payload (that parse tree is what OOM'd league-discovery).
+    """
+    if limit <= 0:
+        return []
+    ids: List[str] = []
+    seen: Set[str] = set()
+    leftover = b""
+    scanned = 0
+    for chunk in chunks:
+        if not chunk:
+            continue
+        scanned += len(chunk)
+        buf = leftover + chunk
+        for m in pattern.finditer(buf):
+            lid = m.group(1).decode("ascii")
+            if lid in seen:
+                continue
+            seen.add(lid)
+            ids.append(lid)
+            if len(ids) >= limit:
+                return ids
+        leftover = buf[-_ID_OVERLAP:] if len(buf) > _ID_OVERLAP else buf
+        if scanned >= max_bytes:
+            break
+    return ids
+
+
+def _ids_from_stream(path: str, pattern: re.Pattern[bytes], limit: int) -> List[str]:
+    """GET `path` with stream=True and extract ids without parsing JSON."""
+    if limit <= 0:
+        return []
+    url = f"{SLEEPER_BASE}{path}"
+    try:
+        resp = SESSION.get(url, timeout=10, stream=True)
+        try:
+            if resp.status_code == 429:
+                logger.warning("[discovery] Rate limited - sleeping 60s")
+                time.sleep(60)
+                resp.close()
+                resp = SESSION.get(url, timeout=10, stream=True)
+            resp.raise_for_status()
+            return _ids_from_chunks(
+                resp.iter_content(chunk_size=_STREAM_CHUNK),
+                pattern,
+                limit,
+            )
+        finally:
+            resp.close()
+    except Exception as exc:
+        logger.debug("[discovery] %s failed: %s", path, exc)
+        return []
 
 
 def _get(path: str, params: dict | None = None) -> list | dict | None:
@@ -179,16 +257,20 @@ def _seed_league_ids(season: int, limit: int = _MAX_SEEDS_PER_RUN) -> List[str]:
 def _user_leagues(user_id: str, season: int) -> List[str]:
     ids: List[str] = []
     seen: Set[str] = set()
-    # Tuple not set: stable order, and we drop each year's payload before the next.
+    # Tuple not set: stable order. Stream-scan ids so the full league objects
+    # (scoring_settings, roster_positions, …) are never parsed into a tree.
     for yr in (season, season + 1):
-        data = _get(f"/user/{user_id}/leagues/nfl/{yr}")
-        for lid in _league_ids_from_payload(data):
+        remaining = _MAX_LEAGUES_PER_USER - len(ids)
+        for lid in _ids_from_stream(
+            f"/user/{user_id}/leagues/nfl/{yr}",
+            _LEAGUE_ID_RE,
+            remaining,
+        ):
             if lid not in seen:
                 seen.add(lid)
                 ids.append(lid)
                 if len(ids) >= _MAX_LEAGUES_PER_USER:
                     return ids
-        data = None
     return ids
 
 
@@ -197,10 +279,11 @@ def _league_meta(league_id: str) -> Optional[Dict]:
 
 
 def _roster_owner_ids(league_id: str) -> List[str]:
-    rosters = _get(f"/league/{league_id}/rosters")
-    if not rosters:
-        return []
-    return [str(r["owner_id"]) for r in rosters if r.get("owner_id")]
+    return _ids_from_stream(
+        f"/league/{league_id}/rosters",
+        _OWNER_ID_RE,
+        _MAX_OWNERS_PER_LEAGUE,
+    )
 
 
 def _already_known(season: int) -> Set[str]:
