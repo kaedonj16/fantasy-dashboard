@@ -652,6 +652,37 @@ def test_scoring_proj_ppg_reflects_half_ppr_and_six_point_tds():
     assert out["bareHalf"] == 16
 
 
+def test_scoring_proj_ppg_retargets_when_canonical_variant_differs():
+    """A scoring toggle must not keep the previous overlay's canonical PPG.
+
+    The cheat-sheet board payload stamps projection.ppg for the request's
+    scoring. Changing PPR / pass-TD in the UI has to read proj_ppg_by for the
+    new variant instead of silently keeping (or double-scaling) that stamp.
+    """
+    out = _run_need_cases("""(() => {
+      const wr = {
+        proj_ppg: 15.0,
+        projection: {
+          ppg: 15.0, unit: 'points_per_game', projection_type: 'season_average',
+          scoring_variant: 'half_ppr'
+        },
+        proj_ppg_by: { ppr: 18, half_ppr: 15, std: 12, '6pt_ppr': 18 }
+      };
+      const ppr = { ppr: 1, tep: 0, passTd: 4 };
+      const half = { ppr: 0.5, tep: 0, passTd: 4 };
+      const std = { ppr: 0, tep: 0, passTd: 4 };
+      return {
+        keepHalf: C.scoringProjPpg(wr, half),
+        toPpr: C.scoringProjPpg(wr, ppr),
+        toStd: C.scoringProjPpg(wr, std)
+      };
+    })()""")
+
+    assert out["keepHalf"] == 15
+    assert out["toPpr"] == 18
+    assert out["toStd"] == 12
+
+
 def test_future_pick_decision_score_drops_zero_survival_elites():
     """Pick-9 recs: 1.01 talent at 0% must not outrank a likely survivor."""
     driver = (

@@ -244,23 +244,36 @@
             return v;
         }
 
-        // New payloads carry the already-scored canonical result. Never silently
-        // rescale that displayed/model input in the browser.
-        if (p.projection && p.projection.projection_type === 'season_average'
-            && p.projection.unit === 'points_per_game'
-            && p.projection.ppg != null && isFinite(Number(p.projection.ppg))) {
-            return unitSafe(p.projection.ppg);
+        var key = pickProjVariant(scoring);
+        var canonical = p.projection;
+        var canonVar = canonical && canonical.scoring_variant;
+        var canonPpg = canonical
+            && canonical.projection_type === 'season_average'
+            && canonical.unit === 'points_per_game'
+            ? unitSafe(canonical.ppg)
+            : null;
+        // Trust the stamped canonical PPG only when it was scored for this
+        // variant (or the stamp predates scoring_variant). A PPR / TEP /
+        // pass-TD toggle must not keep showing the previous overlay's number.
+        if (canonPpg != null && (!canonVar || canonVar === key)) {
+            return canonPpg;
         }
+
         var base = unitSafe(p.proj_ppg);
         var by = p.proj_ppg_by;
-        var key = pickProjVariant(scoring);
         var variant = unitSafe(by && by[key]);
         var pprVar = unitSafe(by && by.ppr);
         if (variant != null && variant > 0) {
-            if (base != null && pprVar != null && pprVar > 0 && key !== 'ppr') {
+            // Overlay overwrites proj_ppg with the previous scoring's canonical
+            // value. Scaling that by variant/PPR would double-adjust, so when
+            // the stamp is for a different format just use Sleeper's variant.
+            var pprBaseline = !canonVar || canonVar === 'ppr';
+            if (pprBaseline && base != null && pprVar != null && pprVar > 0 && key !== 'ppr') {
                 return Math.round(base * (variant / pprVar) * 10) / 10;
             }
-            if (key !== 'ppr' || base == null) return Math.round(variant * 10) / 10;
+            if (!pprBaseline || key !== 'ppr' || base == null) {
+                return Math.round(variant * 10) / 10;
+            }
         }
         return base;
     }

@@ -24,12 +24,20 @@ def test_slim_board_payload_keeps_skill_values_and_drops_the_rest():
                 "redraft_value_sf": 80,
                 "redraft_avg_pick": 12.4,
                 "proj_ppg": 16.2,
+                "proj_ppg_by": {"ppr": 16.2, "half_ppr": 13.8, "std": 11.4},
                 "projected_offense_rank": 7,
                 "espnHeadshot": "https://example/x.png",
                 "bDay": "2001-01-01",
                 "ppg": 18.0,
                 "vorp": 40,
-                "projection": {"ppg": 16.2, "source": "sleeper", "cache_version": "x"},
+                "projection": {
+                    "ppg": 16.2,
+                    "unit": "points_per_game",
+                    "projection_type": "season_average",
+                    "scoring_variant": "ppr",
+                    "source": "sleeper",
+                    "cache_version": "x",
+                },
                 "market_vs_adp_1qb": -3,
                 "sf_market_vs_adp": -5,
                 "market_expected_adp": 9.0,
@@ -73,6 +81,13 @@ def test_slim_board_payload_keeps_skill_values_and_drops_the_rest():
     row = slim["players"][0]
     assert row["name"] == "Starter WR"
     assert row["proj_ppg"] == 16.2
+    assert row["proj_ppg_by"]["half_ppr"] == 13.8
+    assert row["projection"] == {
+        "ppg": 16.2,
+        "unit": "points_per_game",
+        "projection_type": "season_average",
+        "scoring_variant": "ppr",
+    }
     assert row["projected_offense_rank"] == 7
     assert row["redraft_avg_pick"] == 12.4
     assert row["market_vs_adp"] == -3
@@ -80,7 +95,8 @@ def test_slim_board_payload_keeps_skill_values_and_drops_the_rest():
     assert row["adp_by_source"]["consensus"]["redraft_avg_pick"] == 12.4
     assert "avg_pick" not in row["adp_by_source"]["consensus"]
     assert "espnHeadshot" not in row
-    assert "projection" not in row
+    assert "source" not in row["projection"]
+    assert "cache_version" not in row["projection"]
     assert "vorp" not in row
     assert "tier_thresholds" not in slim
     assert "adp_columns" not in slim
