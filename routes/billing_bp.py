@@ -32,9 +32,9 @@ logger = logging.getLogger(__name__)
 _STRIPE_LEAGUE_PRODUCT = "prod_USjDJYPhNGnmvM"
 _STRIPE_USER_PRODUCT   = "prod_USjDRuVDcwH1xb"
 _STRIPE_COMBO_PRODUCT  = "prod_UT5DaCA4u6hWgb"
-# Prefer a Dashboard product id when set; otherwise Checkout uses product_data.
 _STRIPE_SINGLE_LEAGUE_PRODUCT = (
-    os.environ.get("STRIPE_SINGLE_LEAGUE_PRODUCT", "").strip() or None
+    os.environ.get("STRIPE_SINGLE_LEAGUE_PRODUCT", "").strip()
+    or "prod_VB4fRiQaKCTcu9"
 )
 
 
