@@ -10,7 +10,7 @@ from data_building.trade_intel.league_types import LeagueType, calibration_mode
 def _import_crawler():
     """Import the crawler only when its optional HTTP/web stack is installed."""
     pytest.importorskip("requests")
-    pytest.importorskip("flask")  # trade_crawler imports dashboard_services.api
+    pytest.importorskip("flask")  # keeps this module in the full-stack CI job
     from data_building.trade_intel.trade_crawler import _leagues_to_crawl
     return _leagues_to_crawl
 
