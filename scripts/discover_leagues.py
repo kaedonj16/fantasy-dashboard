@@ -5,10 +5,15 @@ Expands the trade-intel league pool by BFS-crawling the Sleeper API from
 known starting points (trending players → league IDs → owner user IDs →
 their leagues). No trade crawling — discovery only.
 
+Memory: run_discovery caps seeds, in-flight HTTP, and the BFS frontier
+independently of --target, and stream-scans user-leagues/rosters instead of
+parsing full JSON. Safe for the 512Mi starter cron; do not raise --target
+thinking it controls RSS — it only caps how many leagues we insert.
+
 Usage
 -----
-    python scripts/discover_leagues.py                  # discover up to 2000 new leagues
-    python scripts/discover_leagues.py --target 5000
+    python scripts/discover_leagues.py                  # discover up to 1000 new leagues
+    python scripts/discover_leagues.py --target 500
 """
 from __future__ import annotations
 
@@ -28,8 +33,8 @@ logger = logging.getLogger(__name__)
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Sleeper league discovery — expands the trade-intel pool.")
-    parser.add_argument("--target", type=int, default=2000,
-                        help="Max new leagues to discover this run. Default 2000.")
+    parser.add_argument("--target", type=int, default=1000,
+                        help="Max new leagues to discover this run. Default 1000.")
     args = parser.parse_args()
 
     from dotenv import load_dotenv

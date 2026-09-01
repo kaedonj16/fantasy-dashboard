@@ -12,9 +12,10 @@ Strategy (no Sleeper search API exists):
 from __future__ import annotations
 
 import logging
+import re
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Set, Optional, List, Dict, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
+from typing import Callable, Iterable, Set, Optional, List, Dict, Tuple
 
 import requests
 
@@ -26,20 +27,29 @@ logger.setLevel(logging.INFO)
 
 SLEEPER_BASE = "https://api.sleeper.app/v1"
 
-# Configure session with larger connection pool to match trade crawler
+# Keep the pool sized to the worker cap. A 20-conn pool plus 10 workers each
+# holding a parsed Sleeper user-leagues payload is what OOM'd the 512Mi cron.
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 SESSION = requests.Session()
+# Do not retry read timeouts: urllib3 keeps the partial body, and the
+# league-discovery cron OOM'd while Retry(total=2) was re-downloading
+# /user/.../leagues payloads that had already timed out at 10s.
 retry_strategy = Retry(
-    total=3,
-    backoff_factor=1,
-    status_forcelist=[429, 500, 502, 503, 504],
+    total=1,
+    connect=1,
+    read=False,
+    redirect=0,
+    status=1,
+    backoff_factor=0.3,
+    status_forcelist=[502, 503, 504],
+    raise_on_status=False,
 )
 adapter = HTTPAdapter(
-    pool_connections=20,  # Increase from default 10
-    pool_maxsize=20,      # Increase from default 10  
-    max_retries=retry_strategy
+    pool_connections=4,
+    pool_maxsize=4,
+    max_retries=retry_strategy,
 )
 SESSION.mount("http://", adapter)
 SESSION.mount("https://", adapter)
@@ -48,17 +58,158 @@ SESSION.headers.update({"User-Agent": "fantasy-trade-intel/1.0"})
 _REQUEST_DELAY = 0.1   # seconds between Sleeper calls - stay well under rate limits
 _MAX_LEAGUES = 5_000   # target ceiling per crawl run
 
+# Discovery used to BFS-expand 2000 seed leagues with 10 workers, submitting
+# every future up front. Each seed fetches full roster JSON plus every owner's
+# full /user/.../leagues payload (not just ids) — that peak blew the 512Mi cap
+# before crawl even started. Bound workers, in-flight futures, and seed count
+# so we only expand enough to fill a frontier for `target`.
+_DISCOVERY_WORKERS = 2
+_DISCOVERY_IN_FLIGHT = 4
+_MAX_SEEDS_PER_RUN = 80
+_FRONTIER_CAP = 1500
+_MAX_LEAGUES_PER_USER = 60
+_MAX_OWNERS_PER_LEAGUE = 32
+# Abort scanning a user-leagues / rosters body after this many raw bytes so a
+# single oversized Sleeper payload cannot materialize as a multi-MB Python tree.
+_MAX_SCAN_BYTES = 1_048_576
+_STREAM_CHUNK = 32 * 1024
+_ID_OVERLAP = 64
+_LEAGUE_ID_RE = re.compile(rb'"league_id"\s*:\s*"?(\d{6,20})"?')
+_OWNER_ID_RE = re.compile(rb'"owner_id"\s*:\s*"?(\d{6,20})"?')
+
+
+def _log_rss(label: str) -> None:
+    """Linux ru_maxrss is KB. Best-effort; never fail the run for a log line."""
+    try:
+        import resource
+        rss_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
+        logger.info("[discovery] %s rss=%.0fMi", label, rss_mb)
+    except Exception:
+        pass
+
+
+def _seed_limit_for_target(target: int) -> int:
+    """How many DB seeds to BFS-expand this run.
+
+    Finding `target` new leagues does not require walking the whole pool.
+    Expanding 2000 seeds was the OOM; a few dozen well-chosen seeds fill a
+    frontier of thousands of candidate league ids.
+    """
+    return min(_MAX_SEEDS_PER_RUN, max(32, int(target) // 3))
+
+
+def _frontier_cap_for_target(target: int) -> int:
+    """Max unseen league ids to hold while filtering keepers / fetching meta.
+
+    3x target covers attrition (keeper leagues, fetch failures) without
+    retaining an unbounded BFS frontier in the 512Mi process.
+    """
+    return min(_FRONTIER_CAP, max(int(target) * 3, 64))
+
+
+def _league_ids_from_payload(data) -> List[str]:
+    """Pull league_id strings out of a Sleeper user-leagues list and drop the rest.
+
+    The payload is full league objects (scoring_settings, roster_positions, …).
+    Callers must not keep `data` after this returns. Prefer `_ids_from_chunks`
+    on the raw HTTP body so the object tree is never built.
+    """
+    if not data or not isinstance(data, list):
+        return []
+    ids: List[str] = []
+    seen: Set[str] = set()
+    for lg in data:
+        if not isinstance(lg, dict):
+            continue
+        lid = lg.get("league_id")
+        if not lid:
+            continue
+        lid = str(lid)
+        if lid in seen:
+            continue
+        seen.add(lid)
+        ids.append(lid)
+        if len(ids) >= _MAX_LEAGUES_PER_USER:
+            break
+    return ids
+
+
+def _ids_from_chunks(
+    chunks: Iterable[bytes],
+    pattern: re.Pattern[bytes],
+    limit: int,
+    max_bytes: int = _MAX_SCAN_BYTES,
+) -> List[str]:
+    """Scan raw JSON chunks for id fields. Peak memory is one chunk + overlap.
+
+    Used for /user/.../leagues and /rosters so we never `resp.json()` a
+    multi-league payload (that parse tree is what OOM'd league-discovery).
+    """
+    if limit <= 0:
+        return []
+    ids: List[str] = []
+    seen: Set[str] = set()
+    leftover = b""
+    scanned = 0
+    for chunk in chunks:
+        if not chunk:
+            continue
+        scanned += len(chunk)
+        buf = leftover + chunk
+        for m in pattern.finditer(buf):
+            lid = m.group(1).decode("ascii")
+            if lid in seen:
+                continue
+            seen.add(lid)
+            ids.append(lid)
+            if len(ids) >= limit:
+                return ids
+        leftover = buf[-_ID_OVERLAP:] if len(buf) > _ID_OVERLAP else buf
+        if scanned >= max_bytes:
+            break
+    return ids
+
+
+def _ids_from_stream(path: str, pattern: re.Pattern[bytes], limit: int) -> List[str]:
+    """GET `path` with stream=True and extract ids without parsing JSON."""
+    if limit <= 0:
+        return []
+    url = f"{SLEEPER_BASE}{path}"
+    try:
+        resp = SESSION.get(url, timeout=10, stream=True)
+        try:
+            if resp.status_code == 429:
+                logger.warning("[discovery] Rate limited - sleeping 60s")
+                time.sleep(60)
+                resp.close()
+                resp = SESSION.get(url, timeout=10, stream=True)
+            resp.raise_for_status()
+            return _ids_from_chunks(
+                resp.iter_content(chunk_size=_STREAM_CHUNK),
+                pattern,
+                limit,
+            )
+        finally:
+            resp.close()
+    except Exception as exc:
+        logger.debug("[discovery] %s failed: %s", path, exc)
+        return []
+
 
 def _get(path: str, params: dict | None = None) -> list | dict | None:
     url = f"{SLEEPER_BASE}{path}"
     try:
         resp = SESSION.get(url, params=params, timeout=10)
-        if resp.status_code == 429:
-            logger.warning("[discovery] Rate limited - sleeping 60s")
-            time.sleep(60)
-            resp = SESSION.get(url, params=params, timeout=10)
-        resp.raise_for_status()
-        return resp.json()
+        try:
+            if resp.status_code == 429:
+                logger.warning("[discovery] Rate limited - sleeping 60s")
+                time.sleep(60)
+                resp.close()
+                resp = SESSION.get(url, params=params, timeout=10)
+            resp.raise_for_status()
+            return resp.json()
+        finally:
+            resp.close()
     except Exception as exc:
         logger.debug("[discovery] %s failed: %s", path, exc)
         return None
@@ -71,7 +222,7 @@ def _current_season() -> int:
     return 2024
 
 
-def _seed_league_ids(season: int) -> Set[str]:
+def _seed_league_ids(season: int, limit: int = _MAX_SEEDS_PER_RUN) -> List[str]:
     """
     Seed the discovery frontier from leagues already in the DB.
 
@@ -81,6 +232,10 @@ def _seed_league_ids(season: int) -> Set[str]:
     previous discovery runs).  On a completely fresh DB the frontier will be
     empty; the user must insert at least one league_id manually to bootstrap.
     Includes both dynasty (2) and true-redraft (0) leagues as BFS seeds.
+
+    Returns a list (SQL order: least-recently crawled first) capped at `limit`.
+    Expanding the whole pool is neither necessary to hit `target` nor safe on
+    the 512Mi cron.
     """
     with get_conn() as conn:
         rows = conn.execute(
@@ -89,22 +244,33 @@ def _seed_league_ids(season: int) -> Set[str]:
             WHERE season IN (%s, %s)
               AND league_type IN (0, 2)
             ORDER BY last_crawled_at ASC NULLS FIRST
-            LIMIT 2000
+            LIMIT %s
             """,
-            (season, season - 1)
+            (season, season - 1, int(limit))
         ).fetchall()
-    seeds = {r["league_id"] for r in rows}
-    logger.info("[discovery] DB seeds: %d leagues to BFS-expand from",
-                len(seeds))
+    seeds = [r["league_id"] for r in rows]
+    logger.info("[discovery] DB seeds: %d leagues to BFS-expand from (limit=%d)",
+                len(seeds), limit)
     return seeds
 
 
 def _user_leagues(user_id: str, season: int) -> List[str]:
     ids: List[str] = []
-    for yr in {season, season + 1}:  # also check next year - offseason leagues created early
-        data = _get(f"/user/{user_id}/leagues/nfl/{yr}")
-        if data:
-            ids.extend(str(lg["league_id"]) for lg in data if lg.get("league_id"))
+    seen: Set[str] = set()
+    # Tuple not set: stable order. Stream-scan ids so the full league objects
+    # (scoring_settings, roster_positions, …) are never parsed into a tree.
+    for yr in (season, season + 1):
+        remaining = _MAX_LEAGUES_PER_USER - len(ids)
+        for lid in _ids_from_stream(
+            f"/user/{user_id}/leagues/nfl/{yr}",
+            _LEAGUE_ID_RE,
+            remaining,
+        ):
+            if lid not in seen:
+                seen.add(lid)
+                ids.append(lid)
+                if len(ids) >= _MAX_LEAGUES_PER_USER:
+                    return ids
     return ids
 
 
@@ -113,10 +279,11 @@ def _league_meta(league_id: str) -> Optional[Dict]:
 
 
 def _roster_owner_ids(league_id: str) -> List[str]:
-    rosters = _get(f"/league/{league_id}/rosters")
-    if not rosters:
-        return []
-    return [str(r["owner_id"]) for r in rosters if r.get("owner_id")]
+    return _ids_from_stream(
+        f"/league/{league_id}/rosters",
+        _OWNER_ID_RE,
+        _MAX_OWNERS_PER_LEAGUE,
+    )
 
 
 def _already_known(season: int) -> Set[str]:
@@ -449,6 +616,83 @@ def seed_from_stored_users(batch_size: int = 200, season: Optional[int] = None) 
     return n
 
 
+def _expand_one_seed(
+    league_id: str, season: int, known: Set[str]
+) -> Tuple[List[str], List[str]]:
+    """Fetch owners of one seed league and return (owner_ids, unseen league ids)."""
+    time.sleep(_REQUEST_DELAY)
+    owner_ids = _roster_owner_ids(league_id)
+    new_leagues: List[str] = []
+    seen_local: Set[str] = set()
+    for owner_id in owner_ids:
+        time.sleep(_REQUEST_DELAY)
+        for lid in _user_leagues(owner_id, season):
+            if lid in known or lid in seen_local:
+                continue
+            seen_local.add(lid)
+            new_leagues.append(lid)
+    return owner_ids, new_leagues
+
+
+def _expand_seeds_into_frontier(
+    seeds: List[str],
+    known: Set[str],
+    frontier_cap: int,
+    expand_league: Callable[[str], Tuple[List[str], List[str]]],
+    workers: int = _DISCOVERY_WORKERS,
+    in_flight_cap: int = _DISCOVERY_IN_FLIGHT,
+) -> Tuple[Set[str], List[str], int]:
+    """BFS-expand seeds until the frontier hits `frontier_cap`.
+
+    Only `in_flight_cap` futures are alive at once (the old all-at-once submit
+    of every seed is what grew peak memory with the seed LIMIT). Stops submitting
+    once the frontier is full so leftover seeds are never expanded.
+
+    Returns (frontier, owner_ids, seeds_expanded).
+    """
+    frontier: Set[str] = set()
+    owner_ids_out: List[str] = []
+    seeds_expanded = 0
+    seed_iter = iter(seeds)
+    workers = max(1, int(workers))
+    in_flight_cap = max(workers, int(in_flight_cap))
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures: dict = {}
+
+        def fill() -> None:
+            while len(futures) < in_flight_cap and len(frontier) < frontier_cap:
+                try:
+                    lid = next(seed_iter)
+                except StopIteration:
+                    return
+                futures[executor.submit(expand_league, lid)] = lid
+
+        fill()
+        while futures:
+            done, _ = wait(futures, return_when=FIRST_COMPLETED)
+            for fut in done:
+                futures.pop(fut, None)
+                seeds_expanded += 1
+                try:
+                    owner_ids, new_ids = fut.result()
+                except Exception as exc:
+                    logger.debug("[discovery] seed expand failed: %s", exc)
+                    continue
+                owner_ids_out.extend(owner_ids)
+                if len(frontier) >= frontier_cap:
+                    continue
+                for nid in new_ids:
+                    if nid not in known:
+                        frontier.add(nid)
+                        if len(frontier) >= frontier_cap:
+                            break
+            if len(frontier) < frontier_cap:
+                fill()
+
+    return frontier, owner_ids_out, seeds_expanded
+
+
 def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> int:
     """
     Discover up to `target` dynasty Sleeper leagues and store them.
@@ -457,62 +701,55 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
     if season is None:
         season = _current_season()
 
+    seed_limit = _seed_limit_for_target(target)
+    frontier_cap = _frontier_cap_for_target(target)
+
     known = _already_known(season)
-    seeds: Set[str] = _seed_league_ids(season)
-    to_expand: Set[str] = set(seeds)
-    frontier: Set[str] = set()
+    seeds: List[str] = _seed_league_ids(season, limit=seed_limit)
     visited_users: Set[str] = set()
     to_save: List[Dict] = []
     total_new = 0
     dynasty_count = 0
     redraft_count = 0
 
-    print(f"[discovery] Starting. Known={len(known)}, Seeds={len(seeds)}, Target={target}")
+    print(
+        f"[discovery] Starting. Known={len(known)}, Seeds={len(seeds)}, "
+        f"Target={target}, frontier_cap={frontier_cap}"
+    )
+    _log_rss("start")
 
-    # First pass: expand all seed leagues to populate the frontier (parallelized)
-    seed_user_ids: List[str] = []
+    def expand_league(league_id: str) -> Tuple[List[str], List[str]]:
+        return _expand_one_seed(league_id, season, known)
 
-    def expand_seed_league(league_id: str) -> Tuple[str, List[str], List[str]]:
-        """Expand a single seed league and return (league_id, new_leagues, owner_ids)"""
-        time.sleep(_REQUEST_DELAY)
-        owner_ids = _roster_owner_ids(league_id)
-        new_leagues = []
+    frontier, seed_user_ids, seeds_expanded = _expand_seeds_into_frontier(
+        seeds, known, frontier_cap, expand_league,
+    )
+    _log_rss("after seed expand")
 
-        for owner_id in owner_ids:
-            time.sleep(_REQUEST_DELAY)
-            user_leagues = _user_leagues(owner_id, season)
-            for lid in user_leagues:
-                if lid not in known:
-                    new_leagues.append(lid)
-
-        return league_id, new_leagues, owner_ids
-
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = {executor.submit(expand_seed_league, lid): lid for lid in to_expand}
-        for future in as_completed(futures):
-            league_id, new_leagues, owner_ids = future.result()
-            seed_user_ids.extend(owner_ids)
-            for new_lid in new_leagues:
-                frontier.add(new_lid)
-
-    # Flush all seed-phase users in one batch
     if seed_user_ids:
-        _save_users(seed_user_ids, source="bfs")
+        _save_users(list(dict.fromkeys(seed_user_ids)), source="bfs")
 
-    print(f"[discovery] Seed expansion complete. {len(frontier)} leagues in frontier")
+    print(
+        f"[discovery] Seed expansion complete. {seeds_expanded}/{len(seeds)} seeds "
+        f"expanded, {len(frontier)} leagues in frontier"
+    )
 
-    def process_frontier_batch(batch_leagues: List[str]) -> Tuple[List[Dict], List[str]]:
-        """Process a batch of frontier leagues and return (to_save, new_frontier_leagues)"""
+    def process_frontier_batch(
+        batch_leagues: List[str], expand_owners: bool
+    ) -> Tuple[List[Dict], List[str]]:
+        """Process a batch of frontier leagues and return (to_save, new_frontier_leagues)."""
         batch_to_save = []
         batch_new_frontier = []
-        
-        def process_single_frontier_league(league_id: str) -> Tuple[Optional[Dict], List[str], List[str]]:
-            """Process a single frontier league and return (league_data, new_frontier_leagues, dynasty_owner_ids)"""
+        visited_snapshot = set(visited_users)
+
+        def process_single_frontier_league(
+            league_id: str,
+        ) -> Tuple[Optional[Dict], List[str], List[str]]:
             time.sleep(_REQUEST_DELAY)
             meta = _league_meta(league_id)
             if not meta:
                 return None, [], []
-            
+
             league_type = meta.get("settings", {}).get("type")
             if league_type not in (0, 2):
                 return None, [], []
@@ -530,42 +767,48 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
                 "league_type": league_type,
                 "is_superflex": is_sf,
             }
-            
-            new_frontier_leagues = []
-            dynasty_owner_ids: List[str] = []
-            if len(frontier) < 2000:
+
+            new_frontier_leagues: List[str] = []
+            walked_owners: List[str] = []
+            # Only walk owners when the frontier still needs filling. Fetching
+            # every owner's full league list after we already have enough
+            # candidates was unbounded extra JSON in the 512Mi process.
+            if expand_owners:
                 owner_ids = _roster_owner_ids(league_id)
-                if league_type == 2:
-                    dynasty_owner_ids = owner_ids
                 for owner_id in owner_ids:
-                    if owner_id in visited_users:
+                    if owner_id in visited_snapshot:
                         continue
-                    visited_users.add(owner_id)
+                    walked_owners.append(owner_id)
                     time.sleep(_REQUEST_DELAY)
                     user_leagues = _user_leagues(owner_id, season)
-                    new_leagues = [lid for lid in user_leagues if lid not in known]
-                    new_frontier_leagues.extend(new_leagues)
+                    new_frontier_leagues.extend(
+                        lid for lid in user_leagues if lid not in known
+                    )
 
-            return league_data, new_frontier_leagues, dynasty_owner_ids
+            return league_data, new_frontier_leagues, walked_owners
 
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = {executor.submit(process_single_frontier_league, lid): lid for lid in batch_leagues}
-            batch_dynasty_users: List[str] = []
+        with ThreadPoolExecutor(max_workers=_DISCOVERY_WORKERS) as executor:
+            futures = {
+                executor.submit(process_single_frontier_league, lid): lid
+                for lid in batch_leagues
+            }
+            batch_users: List[str] = []
             for future in as_completed(futures):
-                league_data, new_frontier, dynasty_users = future.result()
+                league_data, new_frontier, walked_owners = future.result()
                 if league_data:
                     batch_to_save.append(league_data)
                     known.add(league_data["league_id"])
                 batch_new_frontier.extend(new_frontier)
-                batch_dynasty_users.extend(dynasty_users)
-        if batch_dynasty_users:
-            _save_users(batch_dynasty_users, source="bfs")
-        
+                batch_users.extend(walked_owners)
+                visited_users.update(walked_owners)
+        if batch_users:
+            _save_users(list(dict.fromkeys(batch_users)), source="bfs")
+
         return batch_to_save, batch_new_frontier
 
     processed_count = 0
     batch_size = 50
-    
+
     while frontier and total_new < target:
         batch_leagues = []
         for _ in range(min(batch_size, len(frontier))):
@@ -574,25 +817,28 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
             league_id = frontier.pop()
             if league_id not in known:
                 batch_leagues.append(league_id)
-        
+
         if not batch_leagues:
             continue
-            
-        batch_to_save, batch_new_frontier = process_frontier_batch(batch_leagues)
+
+        remaining = target - total_new
+        expand_owners = len(frontier) < min(frontier_cap, max(remaining * 2, 32))
+        batch_to_save, batch_new_frontier = process_frontier_batch(
+            batch_leagues, expand_owners,
+        )
         processed_count += len(batch_leagues)
-        
-        # Count league types in this batch
+
         batch_dynasty = sum(1 for lg in batch_to_save if lg["league_type"] == LeagueType.DYNASTY)
         batch_redraft = sum(1 for lg in batch_to_save if lg["league_type"] == LeagueType.REDRAFT)
         dynasty_count += batch_dynasty
         redraft_count += batch_redraft
-        
-        to_save.extend(batch_to_save)
-        for new_lid in batch_new_frontier:
-            if new_lid not in known:
-                frontier.add(new_lid)
 
-        # Flush every 100
+        to_save.extend(batch_to_save)
+        if expand_owners:
+            for new_lid in batch_new_frontier:
+                if new_lid not in known and len(frontier) < frontier_cap:
+                    frontier.add(new_lid)
+
         if len(to_save) >= 100:
             n = _save_leagues(to_save)
             total_new += n
@@ -601,6 +847,7 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
     if to_save:
         total_new += _save_leagues(to_save)
 
+    _log_rss("done")
     print(f"[discovery] Done. {total_new} new leagues: {dynasty_count} dynasty, {redraft_count} redraft")
     return total_new
 

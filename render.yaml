@@ -260,8 +260,13 @@ services:
     # instead of only crawling new leagues once at discovery time.
     schedule: 0 */4 * * *
     plan: starter
-    buildCommand: pip install --no-cache-dir -r requirements.txt && python -m playwright install chromium
-    startCommand: python scripts/refresh_trade_intel.py --discover-target 500 --batch-size 2000 --workers 4 --crawl-mode both --recrawl-days 2 --analytics
+    # Playwright is unused here (HTTP-only discovery + crawl). Installing
+    # Chromium bloated the image and is not needed for this job.
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    # batch-size 1000 (not 2000): crawler peak is per-league JSON × in-flight
+    # workers. Discovery/crawl/analytics each run in their own subprocess so
+    # the 512Mi starter cap is one stage at a time.
+    startCommand: python scripts/refresh_trade_intel.py --discover-target 500 --batch-size 1000 --workers 4 --crawl-mode both --recrawl-days 2 --analytics
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
@@ -279,10 +284,12 @@ services:
     runtime: python
     # Daily at 6am — BFS-expands the league pool via Sleeper API (no Playwright needed).
     # Runs before the 8am daily-job so freshly discovered leagues are available sooner.
+    # starter 512Mi: run_discovery caps seeds/in-flight and stream-scans Sleeper
+    # bodies; --target only caps inserts, not RSS. Keep this at 1000.
     schedule: 0 6 * * *
     plan: starter
     buildCommand: pip install --no-cache-dir -r requirements.txt
-    startCommand: python scripts/discover_leagues.py --target 2000
+    startCommand: python scripts/discover_leagues.py --target 1000
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
