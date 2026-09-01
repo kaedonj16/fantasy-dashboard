@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-09-01",
         "tag": "fix",
+        "text": "Draft Cheat Sheet Hist: tiny cells compile nested sibling buckets (no overlap) until the sample is at least 4, then fall back to the parent. Gibbs uses Round 1, age 23-24, last-year top-5 (n=6) instead of Sample 2. 32+ cells still wait for 15 so Kelce is not 4/4 of himself.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-09-01",
+        "tag": "fix",
         "text": "Draft Cheat Sheet Hist: a 32+ TE coming off a top-5 year no longer headlines 2/2 as a 77% hit. That cell is often the same veteran repeating (Kelce). The percent uses other veteran TEs who were top-5 last year instead of counting this player's own seasons as comps.",
         "link": "/draft/cheat-sheet"
     },

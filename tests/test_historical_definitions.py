@@ -10,6 +10,7 @@ from dashboard_services.historical.definitions import (
     DEFAULT_BAYES_PRIOR_N,
     MIN_COMP_CELL_N,
     HIST_PANEL_MIN_N,
+    HIST_DISPLAY_MIN_N,
     PARENT_MIN_N,
     POSITION_TIER_WIDTH,
     PRIOR_FINISH_NONE,
@@ -236,6 +237,7 @@ def test_prior_finish_bucket_rookie_none_veteran_missing_omitted():
     assert prior_finish_bucket(37) == "outside_36"
     assert MIN_COMP_CELL_N == 15
     assert HIST_PANEL_MIN_N == 1
+    assert HIST_DISPLAY_MIN_N == 4
     assert PARENT_MIN_N == 8
     assert COMP_BOARD_TIERS == ("top_5", "top_12", "top_24")
     assert COMP_RELAXATION_ORDER[0] == "target_share"

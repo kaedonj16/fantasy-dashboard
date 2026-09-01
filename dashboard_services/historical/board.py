@@ -45,6 +45,7 @@ from dashboard_services.historical.definitions import (
     display_percent,
     draft_capital_bucket,
     oldest_age_bucket_label,
+    is_oldest_age_bucket,
     trends_round1_pick_range,
     trends_offense_range,
     normalize_team_abbr,
@@ -2154,18 +2155,34 @@ def build_hist_panel_copy(
         age_txt = format_comp_bucket_value(
             "age_bucket", (profile_key or {}).get("age_bucket")
         ) or oldest_age_bucket_label(pos_label) or "this age"
+        oldest = is_oldest_age_bucket(
+            pos_label, (profile_key or {}).get("age_bucket")
+        )
         if pos_label in SKILL_POSITIONS and n_exact not in (None, 0):
-            sample_prior_note = (
-                f"Only {n_exact} exact matches at {age_txt}, often the same "
-                f"veteran repeating, so this percent uses {pos_label}s who "
-                f"were top-5 last year, not this player's own seasons counted "
-                f"as comps."
-            )
+            if oldest:
+                sample_prior_note = (
+                    f"Only {n_exact} exact matches at {age_txt}, often the same "
+                    f"veteran repeating, so this percent uses {pos_label}s who "
+                    f"were top-5 last year, not this player's own seasons counted "
+                    f"as comps."
+                )
+            else:
+                sample_prior_note = (
+                    f"Only {n_exact} exact matches, so this percent compiles "
+                    f"similar {pos_label}s until the sample is large enough "
+                    f"(same age band and last-year finish), not every {pos_label}."
+                )
         if relaxed:
-            relaxed_note = (
-                "Age and extra filters were left off the headline group so "
-                "the percent is not this player's own repeats."
-            )
+            if oldest:
+                relaxed_note = (
+                    "Age and extra filters were left off the headline group so "
+                    "the percent is not this player's own repeats."
+                )
+            else:
+                relaxed_note = (
+                    "These filters were left off the headline group to grow "
+                    "the sample without mixing overlapping buckets."
+                )
     elif hist.get("prior_source") == "parent_cell":
         n_exact = hist.get("n")
         if pos_label in SKILL_POSITIONS and n_exact not in (None, 0):

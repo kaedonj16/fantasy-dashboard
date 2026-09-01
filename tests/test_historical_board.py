@@ -555,19 +555,20 @@ def test_gibbs_hist_does_not_shrink_tiny_cell_toward_all_rbs():
     extra = {"redraft_avg_pick": 2.0, "position": "RB"}
     panel = build_deep_panel("9221", aggs, extra=extra)
     top12 = next(row for row in panel["copy"]["hit_rates"] if row["tier"] == "top_12")
-    assert top12["n"] == 2
-    assert abs((panel["history"]["rates"]["top_12"]["raw_rate"] or 0) - 0.5) < 1e-9
-    assert panel["history"].get("prior_source") == "parent_cell"
-    prior_key = panel["history"].get("prior_key") or {}
-    assert prior_key.get("age_bucket") == "23-24"
-    assert prior_key.get("prior_finish") == "top_5"
-    assert (panel["history"].get("prior_n") or 0) >= 8
+    assert (panel["history"].get("exact_n") or 0) == 2
+    assert top12["n"] >= 4
+    assert panel["history"].get("prior_source") == "parent_displayed"
+    key_used = panel["history"].get("key_used") or {}
+    assert key_used.get("age_bucket") == "23-24"
+    assert key_used.get("prior_finish") == "top_5"
+    assert "draft_capital" in key_used
     assert top12["pct"] >= 50
     assert panel["copy"]["history_pct"] >= 50
     assert panel["copy"]["history_pct"] != 15
     note = str(panel["copy"].get("sample_prior_note") or "")
     assert "Only 2 exact matches" in note
     assert "not every RB" in note
+    assert "veteran repeating" not in note
     typical = str(panel["copy"].get("typical_note") or "")
     assert "high historical hit rate" in typical
     assert "typical RB" in typical
@@ -586,7 +587,7 @@ def test_gibbs_hist_does_not_shrink_tiny_cell_toward_all_rbs():
         },
         aggs,
     )
-    assert hist["sample_size"] == 2
+    assert hist["sample_size"] >= 4
     assert hist["p_top_12"] is not None and hist["p_top_12"] >= 0.50
 
 

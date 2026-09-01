@@ -5,14 +5,12 @@ capital, prior-finish bucket, age bucket, previous-season usage. Same-season
 actuals, ADP, and projections are not features.
 
 Missing dimensions are omitted (not 0 / UDFA / last-place). Tiny cells
-relax in ``COMP_RELAXATION_ORDER``. When the Hist path keeps an exact cell
-below ``MIN_COMP_CELL_N``, rates shrink toward a parent cell that prefers
-last-year finish and age (``PARENT_MIN_N``), not every appeared player and
-not declining vets mixed into a young RB1. The oldest open-ended age band
-is the reverse: a 2-season 32+ cell is often one veteran repeating, so Hist
-displays the broader veteran top-5 parent instead of 2/2 = 100%. Walk-forward
-still uses ``MIN_COMP_CELL_N`` then the position prior. Named comps exclude
-the query player.
+relax in ``COMP_RELAXATION_ORDER``. Live Hist compiles nested sibling
+buckets (no overlap) until ``HIST_DISPLAY_MIN_N``, then falls back to the
+parent, keeping last-year finish and age for young players. The oldest
+open-ended age band waits for ``MIN_COMP_CELL_N`` so a 32+ cell is not
+one veteran repeating. Walk-forward still uses ``MIN_COMP_CELL_N`` then
+the position prior. Named comps exclude the query player.
 
 Cell rates are **pooled historical** (all warehouse seasons), not
 walk-forward. They are descriptive and do not enter ranking or Pick Score.
@@ -31,6 +29,10 @@ from dashboard_services.historical.definitions import (
     COMP_RELAXATION_ORDER,
     DEFAULT_BAYES_PRIOR_N,
     DRAFT_CAPITAL_ORDER,
+    HIST_DISPLAY_MIN_N,
+    HIST_NESTED_DROP_ORDER,
+    HIST_NESTED_DROP_ORDER_OLDEST,
+    HIST_NESTED_KEEP_DIMS,
     MIN_COMP_CELL_N,
     NAMED_EXAMPLES_PER_CELL,
     PARENT_KEEP_WEIGHT,
@@ -238,6 +240,74 @@ def _parent_prior_cell(
         return None, None, baselines, []
     _score, prior_n, prior_key, matching = best
     return prior_key, prior_n, pool_leaves(matching, baselines=baselines), matching
+
+
+def _nested_hist_steps(
+    feats: Mapping[str, Any],
+    leaves: Sequence[Mapping[str, Any]],
+    *,
+    oldest: bool,
+) -> list[tuple[dict[str, str], list[str], list, int]]:
+    """Finest → coarsest nested parents. Each step pools disjoint siblings."""
+    order = HIST_NESTED_DROP_ORDER_OLDEST if oldest else HIST_NESTED_DROP_ORDER
+    steps: list[tuple[dict[str, str], list[str], list, int]] = []
+    for active, dropped in iter_relaxed_keys(feats, order=order):
+        matching, n = _leaf_match_n(leaves, active)
+        steps.append((dict(active), list(dropped), matching, n))
+    return steps
+
+
+def _kept_display_dims(active: Mapping[str, str]) -> tuple[str, ...]:
+    return tuple(dim for dim in HIST_NESTED_KEEP_DIMS if dim in active)
+
+
+def _compile_hist_cell(
+    feats: Mapping[str, Any],
+    leaves: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, str], list[str], list, int, int, str, dict[str, str], Optional[int], Mapping[str, Mapping[str, Any]]]:
+    """Display the finest nested bucket with enough sample.
+
+    Sibling values of a dropped dimension are disjoint, so pooling them
+    compiles buckets without overlap. If that is still short of
+    ``HIST_DISPLAY_MIN_N``, fall back to the parent (the bucket before it).
+    Oldest age bands wait for ``MIN_COMP_CELL_N``. Bayes, when used, shrinks
+    toward the next parent that still keeps last-year finish, age, and
+    capital, not every player at the position.
+    """
+    pos = str(feats.get("position") or "")
+    oldest = is_oldest_age_bucket(pos, feats.get("age_bucket"))
+    display_min = MIN_COMP_CELL_N if oldest else HIST_DISPLAY_MIN_N
+    steps = _nested_hist_steps(feats, leaves, oldest=oldest)
+    exact_step = next((step for step in steps if step[3] > 0), steps[0])
+    exact_n = exact_step[3]
+    display = next((step for step in steps if step[3] >= display_min), None)
+    if display is None:
+        display = next((step for step in steps if step[3] > 0), steps[-1])
+    active, dropped, matching, n = display
+    profile_dropped = [
+        dim for dim in COMP_RELAXATION_ORDER
+        if dim in feats and dim not in active
+    ]
+    dropped = profile_dropped
+    prior_source = "exact" if n == exact_n else "parent_displayed"
+    prior_key: dict[str, str] = {}
+    prior_n: Optional[int] = None
+    prior_rates: dict[str, dict] = {}
+    keep = _kept_display_dims(active)
+    after = False
+    for step in steps:
+        if step[0] == active and step[3] == n:
+            after = True
+            continue
+        if not after or step[3] <= n:
+            continue
+        if any(step[0].get(dim) != active.get(dim) for dim in keep):
+            break
+        prior_key = dict(step[0])
+        prior_n = step[3]
+        prior_rates = pool_leaves(step[2], baselines={})
+        break
+    return active, dropped, matching, n, exact_n, prior_source, prior_key, prior_n, prior_rates
 
 
 def _example_record(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -484,11 +554,11 @@ def lookup_board_probabilities(
     Walks ``COMP_RELAXATION_ORDER`` until the pooled cell reaches ``min_n``
     (or only position remains). Empty / unknown position → rates stay None.
 
-    Exact cells below ``MIN_COMP_CELL_N`` shrink toward a parent that
-    prefers last-year finish and age (``PARENT_MIN_N``), not every
-    last-year top-5 including declining vets. The oldest age band is the
-    reverse: a 2-season 32+ cell is often one veteran repeating, so Hist
-    displays the broader veteran top-5 parent instead of 2/2 = 100%.
+    Exact cells below ``MIN_COMP_CELL_N`` on the live Hist path compile
+    nested sibling buckets until ``HIST_DISPLAY_MIN_N`` (4), then fall
+    back to the parent. Young players keep last-year finish and age. The
+    oldest age band waits for ``MIN_COMP_CELL_N`` so a 2-season 32+ cell
+    is not one veteran repeating.
     """
     feats = extract_comp_query(query)
     pos = feats.get("position")
@@ -533,13 +603,19 @@ def lookup_board_probabilities(
     if chosen is None:
         chosen = steps[-1]
     active, dropped, matching, n = chosen
-    profile_key = dict(active)
+    profile_key = dict(feats)
     exact_n = n
     prior_baselines = baselines
     prior_source = "position_baseline"
     prior_key: dict[str, str] = {}
     prior_n: Optional[int] = None
-    if 0 < n < MIN_COMP_CELL_N:
+    if min_n < MIN_COMP_CELL_N:
+        (
+            active, dropped, matching, n, exact_n, prior_source,
+            prior_key, prior_n, compiled_prior,
+        ) = _compile_hist_cell(feats, leaves)
+        rates = pool_leaves(matching, baselines=compiled_prior)
+    elif 0 < n < MIN_COMP_CELL_N:
         found_key, found_n, found_rates, found_matching = _parent_prior_cell(
             feats, leaves, active, baselines,
         )
@@ -548,26 +624,7 @@ def lookup_board_probabilities(
             prior_source = "parent_cell"
             prior_key = dict(found_key)
             prior_n = found_n
-            if (
-                is_oldest_age_bucket(pos, feats.get("age_bucket"))
-                and n < PARENT_MIN_N
-                and found_n
-            ):
-                # Do not headline a 2/2 self-repeat at 32+/31+. Show the
-                # broader veteran top-5 parent; keep the exact profile.
-                active = dict(found_key)
-                matching = found_matching
-                n = int(found_n)
-                dropped = [
-                    dim for dim in COMP_RELAXATION_ORDER
-                    if dim in feats and dim not in active
-                ]
-                rates = found_rates
-                prior_source = "parent_displayed"
-            else:
-                rates = pool_leaves(matching, baselines=prior_baselines)
-        else:
-            rates = pool_leaves(matching, baselines=prior_baselines)
+        rates = pool_leaves(matching, baselines=prior_baselines)
     else:
         rates = pool_leaves(matching, baselines=prior_baselines)
     return {

@@ -882,6 +882,16 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "own seasons" in kelce_prior["text"]
     assert "—" not in kelce_prior["text"]
     assert "–" not in kelce_prior["text"]
+    nested = next(
+        entry for entry in CHANGELOG
+        if "nested sibling" in entry.get("text", "").lower()
+        and "at least 4" in entry.get("text", "").lower()
+    )
+    assert nested["tag"] == "fix"
+    assert nested["link"] == "/draft/cheat-sheet"
+    assert "n=6" in nested["text"]
+    assert "—" not in nested["text"]
+    assert "–" not in nested["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():

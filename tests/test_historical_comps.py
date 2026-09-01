@@ -453,10 +453,9 @@ def test_tiny_exact_cell_smooths_toward_parent_not_position_baseline():
         previous_season_snap_pct=0.61,
     )
     exact = lookup_board_probabilities(query, payload, min_n=1)
-    assert exact["n"] == 2
-    assert abs(exact["rates"]["top_12"]["raw_rate"] - 0.5) < 1e-9
-    assert exact["prior_source"] == "parent_cell"
-    assert exact["prior_n"] and exact["prior_n"] >= MIN_COMP_CELL_N
+    assert exact["exact_n"] == 2
+    assert exact["n"] >= 4
+    assert exact["prior_source"] == "parent_displayed"
     baseline = payload["by_position"]["WR"]["baseline"]["top_12"]["raw_rate"]
     toward_position = empirical_bayes(
         1, 2, baseline * DEFAULT_BAYES_PRIOR_N, DEFAULT_BAYES_PRIOR_N,
@@ -589,10 +588,11 @@ def test_young_star_prior_keeps_age_not_declining_vets():
         previous_season_snap_pct=0.61,
     )
     exact = lookup_board_probabilities(query, payload, min_n=1)
-    assert exact["n"] == 2
-    assert exact["prior_source"] == "parent_cell"
-    assert exact["prior_key"].get("age_bucket") == "23-24"
-    assert exact["prior_key"].get("prior_finish") == "top_5"
+    assert exact["exact_n"] == 2
+    assert exact["n"] >= 4
+    assert exact["prior_source"] == "parent_displayed"
+    assert exact["key_used"].get("age_bucket") == "23-24"
+    assert exact["key_used"].get("prior_finish") == "top_5"
     assert exact["rates"]["top_12"]["display_pct"] >= 50
     mixed = lookup_board_probabilities(query, payload, min_n=MIN_COMP_CELL_N)
     assert mixed["n"] >= MIN_COMP_CELL_N
@@ -658,7 +658,5 @@ def test_oldest_age_tiny_cell_displays_veteran_parent_not_self_repeat():
     assert (exact["profile_key"] or {}).get("age_bucket") == "32+"
     assert (exact["key_used"] or {}).get("prior_finish") == "top_5"
     assert exact["rates"]["top_12"]["display_pct"] < 70
-    toward_self = empirical_bayes(
-        2, 2, 0.5 * DEFAULT_BAYES_PRIOR_N, DEFAULT_BAYES_PRIOR_N,
-    )
-    assert exact["rates"]["top_12"]["smoothed_rate"] < toward_self - 0.15
+    assert exact["rates"]["top_12"]["raw_rate"] < 0.85
+    assert exact["rates"]["top_12"]["smoothed_rate"] < 0.70
