@@ -339,22 +339,33 @@ _CHEAT_HTML = r"""
   .cs-hist-ex small { display: block; font-size: 11.5px; font-weight: 500; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 2px; line-height: 1.4; overflow-wrap: anywhere; }
   .cs-hist-ex-sum { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 8px; }
   .cs-hist-closest { margin-top: 4px; }
-  .cs-hist-closest > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .cs-hist-closest > summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; background: var(--cs-surface-2, var(--card)); }
+  .cs-hist-closest[open] > summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  .cs-hist-closest > summary:hover { border-color: var(--cs-pos); }
   .cs-hist-closest > summary::-webkit-details-marker { display: none; }
   .cs-hist-closest > summary::after { content: "+"; flex-shrink: 0; font-size: 15px; line-height: 1; color: var(--cs-pos); }
   .cs-hist-closest[open] > summary::after { content: "\2013"; }
   .cs-hist-closest > summary:focus-visible { outline: 2px solid var(--cs-pos); outline-offset: 3px; border-radius: 4px; }
   .cs-hist-closest > summary h3 { margin: 0; }
   .cs-hist-ex-peek { font-family: var(--cs-mono); font-size: 11px; font-weight: 700; color: var(--cs-ink-soft, var(--text-muted)); text-align: right; min-width: 0; overflow-wrap: anywhere; }
-  .cs-hist-closest-body { padding-top: 10px; }
-  .cs-hist-market { display: grid; gap: 8px; margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; background: color-mix(in srgb, var(--cs-pos) 8%, transparent); }
-  .cs-hist-compare-h { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); }
-  .cs-hist-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .cs-hist-compare-col { min-width: 0; }
-  .cs-hist-compare-k { font-size: 12.5px; font-weight: 700; color: var(--cs-ink, var(--text)); }
-  .cs-hist-compare-v { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; margin: 2px 0; color: var(--cs-ink, var(--text)); }
-  .cs-hist-compare-s { font-size: 11.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.35; }
-  .cs-hist-gap { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.45; margin: 2px 0 0; }
+  .cs-hist-closest-body { padding: 12px 14px 4px; border: 1px solid var(--cs-line, var(--border)); border-top: 0; border-radius: 0 0 12px 12px; }
+  .cs-hist-vp { margin: 14px 0 0; }
+  .cs-hist-vp-h { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 10px; }
+  .cs-hist-vp-row { margin: 0 0 10px; }
+  .cs-hist-vp-row:last-child { margin-bottom: 0; }
+  .cs-hist-vp-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 0 0 5px; }
+  .cs-hist-vp-k { font-size: 12.5px; font-weight: 700; color: var(--cs-ink, var(--text)); min-width: 0; overflow-wrap: anywhere; }
+  .cs-hist-vp-v { font-family: var(--cs-mono); font-size: 12.5px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cs-hist-vp-track { height: 9px; border-radius: 999px; background: var(--cs-surface-2, var(--card)); overflow: hidden; }
+  .cs-hist-vp-fill { height: 100%; border-radius: 999px; }
+  .cs-hist-vp-fill.is-hist { background: var(--cs-pos); }
+  .cs-hist-vp-fill.is-mkt { background: var(--cs-line-strong, var(--border)); }
+  .cs-hist-edge { display: flex; align-items: center; gap: 7px; margin: 11px 0 0; font-size: 12.5px; line-height: 1.4; color: var(--cs-ink-soft, var(--text-muted)); }
+  .cs-hist-edge svg { flex-shrink: 0; }
+  .cs-hist-edge.is-up { color: var(--cs-good, var(--win)); }
+  .cs-hist-edge.is-down { color: var(--cs-bad, var(--loss)); }
+  .cs-hist-edge.is-even { color: var(--cs-ink-soft, var(--text-muted)); }
+  .cs-hist-gap { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.45; margin: 11px 0 0; }
   .cs-trends-qb, .cs-hist-modal.cs-hist-qb { --cs-pos: var(--cs-qb); --cs-pos-bg: var(--cs-qb-bg); }
   .cs-trends-rb, .cs-hist-modal.cs-hist-rb { --cs-pos: var(--cs-rb); --cs-pos-bg: var(--cs-rb-bg); }
   .cs-trends-wr, .cs-hist-modal.cs-hist-wr { --cs-pos: var(--cs-wr); --cs-pos-bg: var(--cs-wr-bg); }
@@ -528,12 +539,12 @@ _CHEAT_HTML = r"""
      tier stats, cohort line, and bucket trends supply the supporting story,
      and comps/profile tuck into a disclosure so the card reads in a glance. */
   .cs-hist-verdict { margin: 0 0 16px; }
-  .cs-hist-hero { display: flex; align-items: flex-end; gap: 16px; margin: 0 0 14px; padding: 12px 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--cs-pos) 28%, var(--cs-line, var(--border))); background: var(--cs-pos-bg); }
-  .cs-hist-big { font-weight: 800; font-size: 58px; line-height: .82; letter-spacing: -.03em; color: var(--cs-pos); font-variant-numeric: tabular-nums; }
-  .cs-hist-big sup { font-size: 22px; font-weight: 800; color: var(--cs-ink-soft, var(--text-muted)); vertical-align: super; }
-  .cs-hist-hero-cap { padding-bottom: 5px; min-width: 0; }
-  .cs-hist-hero-lead { font-size: 13.5px; font-weight: 700; color: var(--cs-ink, var(--text)); }
-  .cs-hist-hero-sub { font-size: 12px; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 2px; }
+  .cs-hist-banner { display: flex; align-items: center; gap: 16px; margin: 0 0 14px; padding: 15px 16px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--cs-pos) 32%, var(--cs-line, var(--border))); background: linear-gradient(180deg, var(--cs-pos-bg), color-mix(in srgb, var(--cs-pos) 4%, transparent)); }
+  .cs-hist-banner-num { font-weight: 800; font-size: 52px; line-height: .82; letter-spacing: -.03em; color: var(--cs-pos); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .cs-hist-banner-num sup { font-size: 20px; font-weight: 800; color: var(--cs-ink-soft, var(--text-muted)); vertical-align: super; }
+  .cs-hist-banner-cap { min-width: 0; }
+  .cs-hist-banner-lead { font-size: 15px; font-weight: 800; line-height: 1.25; color: var(--cs-ink, var(--text)); }
+  .cs-hist-banner-sub { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.4; margin-top: 3px; }
   .cs-hist-conf { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-family: var(--cs-mono); font-size: 10.5px; font-weight: 700; letter-spacing: .03em; color: var(--cs-pos); background: var(--cs-pos-bg); border-radius: 999px; padding: 3px 9px; }
   .cs-hist-conf i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: inline-block; flex-shrink: 0; }
   .cs-hist-tiers { display: flex; gap: 8px; }
@@ -729,7 +740,7 @@ _CHEAT_HTML = r"""
     .cs-filterbar .cs-src, .cs-filterbar .csd-wrap { width: 100%; min-width: 0; }
     .cs-hist-modal { align-items: center; justify-content: center; padding: max(12px, env(safe-area-inset-top)) 10px max(12px, env(safe-area-inset-bottom)); }
     .cs-hist-card { width: 100%; max-width: 100%; max-height: min(88dvh, calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 12px)); border-radius: 14px; margin: 0; padding: 14px 14px 16px; }
-    .cs-hist-big { font-size: 50px; }
+    .cs-hist-banner-num { font-size: 46px; }
     .cs-hist-hits { grid-template-columns: 1fr; }
     .cs-hist-hit:last-child:nth-child(odd) { grid-column: auto; }
     .cs-hist-hit { padding: 12px 14px 13px; }
