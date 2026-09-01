@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-09-01",
+        "tag": "fix",
+        "text": "Draft Cheat Sheet: changing PPR, TE premium, or passing-TD settings now updates Proj PPG and TE roster targets immediately. The compact board payload had dropped the scoring-variant map, so those dropdowns kept the previous scoring.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-09-01",
         "tag": "update",
         "text": "Draft Cheat Sheet: the Big Board now has Off Rk, the player's NFL team's projected offense rank (1 = best) from season-long implied totals. Same number Hist uses for projected-offense buckets. Sortable, in the CSV, and it does not change VOR order.",
         "link": "/draft/cheat-sheet"

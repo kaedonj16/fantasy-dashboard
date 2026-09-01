@@ -93,10 +93,14 @@
         var sc = scoringCfg();
         [['csPpr', String(sc.ppr)], ['csTep', String(sc.tep)], ['csPassTd', String(sc.passTd)]].forEach(function (pair) {
             var el = $(pair[0]);
-            if (!el || el.value === pair[1]) return;
-            el.value = pair[1];
-            // CSD listens for change to refresh the visible trigger label.
-            try { el.dispatchEvent(new Event('change', {bubbles: true})); } catch (e) {}
+            if (!el) return;
+            if (el.value !== pair[1]) el.value = pair[1];
+            // Update the CSD trigger directly. Dispatching `change` would re-enter
+            // onScoringChange and refetch the pool a second time.
+            var valEl = el.parentNode && el.parentNode.querySelector('.csd-value');
+            if (valEl && el.selectedIndex >= 0) {
+                valEl.textContent = el.options[el.selectedIndex].textContent.trim();
+            }
         });
     }
     function scoringProjPpg(p) {
@@ -3697,11 +3701,16 @@
         });
 
         // Scoring selects: same three Draft Room Format controls. Changing them
-        // refetches the projection-aware player pool and rebuilds TE targets.
+        // immediately rescales Proj PPG / TE targets from the variant map, then
+        // refetches the canonical overlay for this scoring.
         function onScoringChange() {
             recommendationOrder = null;
             state.scoring = readScoringFromUi();
             resetBoardSort();
+            // Rescale Proj PPG / TE targets from the in-memory variant map now.
+            // loadPlayers then refreshes the canonical overlay for this scoring.
+            compute();
+            render();
             loadPlayers();
         }
         ['csPpr', 'csTep', 'csPassTd'].forEach(function (id) {

@@ -182,6 +182,11 @@ def test_cheat_sheet_offers_draft_room_scoring_settings():
     assert "projectedPpg: scoringProjPpg(p)" in script
     assert "C.posTargets(C.rosterCounts(cfg.rosterPositions, sf), scoringCfg().tep)" in script
     assert "state.scoring = readScoringFromUi()" in script
+    handler = script.split("function onScoringChange()")[1].split("['csPpr'")[0]
+    assert "compute();" in handler
+    assert "render();" in handler
+    assert "loadPlayers();" in handler
+    assert handler.find("compute();") < handler.find("loadPlayers();")
     assert "Same settings as Draft Room setup" in body
     assert "proj_rec='+encodeURIComponent(String(ppr))" in body
     assert "function cheatScoringQuery()" in room
@@ -936,6 +941,15 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "does not change VOR" in offense_col["text"]
     assert "—" not in offense_col["text"]
     assert "–" not in offense_col["text"]
+    scoring_fix = next(
+        entry for entry in CHANGELOG
+        if "scoring-variant map" in entry.get("text", "").lower()
+    )
+    assert scoring_fix["tag"] == "fix"
+    assert scoring_fix["link"] == "/draft/cheat-sheet"
+    assert "Proj PPG" in scoring_fix["text"]
+    assert "—" not in scoring_fix["text"]
+    assert "–" not in scoring_fix["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():
