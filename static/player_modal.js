@@ -737,6 +737,7 @@ function openPlayerModal(playerId, playerName, opts) {
         overviewHTML += `
           <hr class="pm-section-divider">
           <div class="pm-section-header"><span class="pm-section-label" id="pmValueHistoryLabel">${pmScoringType === 'redraft' ? 'Dynasty Value History' : 'Value History'}</span></div>
+          <div class="pm-vh-summary" id="pmVhSummary" aria-live="polite"></div>
           <div class="player-modal-chart-container" id="playerValueChart" style="min-height:200px;"></div>
         `;
       }
@@ -1064,7 +1065,77 @@ function openPlayerModal(playerId, playerName, opts) {
           const earliestD = parseHistDate(fullHistory[0].as_of_date);
           const spanDays  = (latestD && earliestD) ? (latestD - earliestD) / 86400000 : 0;
 
+          // ── Direction 1 "momentum": range-aware summary above the chart ──────
+          // Trend is derived from the visible window, so it works even when the
+          // backend value_trend field is absent (it currently is). Delta / peak /
+          // floor track the selected range, so switching 1 Mo / 3 Mo / All
+          // re-answers "where is this value going" rather than just redrawing.
+          const _fmtVal = (v) => (typeof fmtInt === 'function')
+            ? fmtInt(Math.round(v)) : Math.round(v).toLocaleString('en-US');
+          const TREND_META = {
+            rising:     { icon: '↑', label: 'Rising',      color: 'var(--win)' },
+            recovering: { icon: '↗', label: 'Recovering',  color: '#3b82f6' },
+            peaked:     { icon: '↘', label: 'Cooling off', color: '#f59e0b' },
+            declining:  { icon: '↓', label: 'Declining',   color: 'var(--loss)' },
+            stable:     { icon: '→', label: 'Stable',      color: 'var(--text-muted)' },
+          };
+          function classifyTrend(vals) {
+            const n = vals.length;
+            if (n < 2) return null;
+            const first = vals[0], last = vals[n - 1];
+            const lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+            const pct = first ? (last - first) / first : 0;
+            if (Math.abs(pct) < 0.03) return TREND_META.stable;
+            if (pct > 0) {
+              // Climbed back up from a meaningful dip → recovering, else rising.
+              return (lo < last * 0.92 && last < hi * 0.995)
+                ? TREND_META.recovering : TREND_META.rising;
+            }
+            // Net down: off a recent high but holding above the low → cooling off.
+            return (hi > last * 1.08 && last > lo * 1.02)
+              ? TREND_META.peaked : TREND_META.declining;
+          }
+          function updateSummary(history) {
+            const el = document.getElementById('pmVhSummary');
+            if (!el) return;
+            const vals = history.map(d => Number(d.value_1qb ?? d.value)).filter(v => !isNaN(v));
+            if (vals.length < 2) { el.style.display = 'none'; el.innerHTML = ''; return; }
+            el.style.display = '';
+            const ysf2 = history.map(d => Number(d.value_sf ?? d.value));
+            const dual = vals.some((v, i) => Math.abs(v - ysf2[i]) > 1);
+            const first = vals[0], last = vals[vals.length - 1];
+            const peak = Math.max.apply(null, vals), floor = Math.min.apply(null, vals);
+            const diff = last - first;
+            const pct = first ? diff / first * 100 : 0;
+            const dir = pct > 0.5 ? 'up' : pct < -0.5 ? 'down' : 'flat';
+            const arrow = dir === 'up' ? '▲' : dir === 'down' ? '▼' : '→';
+            const sign = diff > 0 ? '+' : diff < 0 ? '−' : '';
+            const activeBtn = document.querySelector('.pvc-range-bar .pvc-range-btn.is-active');
+            const rangeLbl = activeBtn ? activeBtn.textContent.trim() : '';
+            const t = classifyTrend(vals);
+            const trendPill = t
+              ? `<span class="pm-vh-trend" style="color:${t.color};background:color-mix(in srgb, ${t.color} 14%, transparent);">${t.icon} ${t.label}</span>`
+              : '';
+            el.innerHTML = `
+              <div class="pm-vh-now">
+                <span class="pm-vh-now-lbl">${dual ? '1QB value' : 'Value'}</span>
+                <span class="pm-vh-now-val">${_fmtVal(last)}</span>
+              </div>
+              <div class="pm-vh-move">
+                <div class="pm-vh-move-row">
+                  <span class="pm-vh-delta ${dir}">${arrow} ${sign}${_fmtVal(Math.abs(diff))} · ${sign}${Math.abs(pct).toFixed(1)}%</span>
+                  ${trendPill}
+                </div>
+                ${rangeLbl ? `<span class="pm-vh-range">over ${rangeLbl}</span>` : ''}
+              </div>
+              <div class="pm-vh-extremes">
+                <div class="pm-vh-ext"><span class="pm-vh-ext-k">Peak</span><span class="pm-vh-ext-v">${_fmtVal(peak)}</span></div>
+                <div class="pm-vh-ext"><span class="pm-vh-ext-k">Floor</span><span class="pm-vh-ext-v">${_fmtVal(floor)}</span></div>
+              </div>`;
+          }
+
           function renderChart(history) {
+            updateSummary(history);
             const n = history.length;
             const xIdx  = history.map((_, i) => i);            // numeric x for clean tick control
             const dates = history.map(d => formatDateLabel(d.as_of_date));
@@ -1138,11 +1209,30 @@ function openPlayerModal(playerId, playerName, opts) {
               type: 'scatter', mode: 'markers', showlegend: false, hoverinfo: 'skip',
               marker: { color, size: 8, line: { color: rowColor, width: 2 } },
             });
+            // Peak & floor markers on the primary (1QB) series — Direction 1
+            // "momentum": make the high-water mark and the trough self-evident.
+            // Skipped when they land on the current point (the end dot already
+            // marks it) or when the series is flat / too short.
+            const winC  = rootStyle.getPropertyValue('--win').trim()  || '#16a34a';
+            const lossC = rootStyle.getPropertyValue('--loss').trim() || '#ef4444';
+            const peakIdx  = y1qb.indexOf(Math.max.apply(null, y1qb));
+            const floorIdx = y1qb.indexOf(Math.min.apply(null, y1qb));
+            const extremeDot = (idx, color) => ({
+              x: [xIdx[idx]], y: [y1qb[idx]],
+              type: 'scatter', mode: 'markers', showlegend: false, hoverinfo: 'skip',
+              marker: { color, size: 7, line: { color: rowColor, width: 2 } },
+            });
+            const extremeMarkers = [];
+            if (n > 2 && peakIdx !== floorIdx) {
+              if (peakIdx  !== n - 1) extremeMarkers.push(extremeDot(peakIdx, winC));
+              if (floorIdx !== n - 1) extremeMarkers.push(extremeDot(floorIdx, lossC));
+            }
+
             const traces = lineTraces.concat(
               hasDualSeries
                 ? [endDot('#3b82f6', y1qb), endDot('#f59e0b', ysf)]
                 : [endDot('#3b82f6', y1qb)]
-            );
+            ).concat(extremeMarkers);
 
             const isMobile = window.innerWidth <= 768;
             const chartHeight = isMobile ? 200 : 250;

@@ -18519,6 +18519,112 @@ img, svg, canvas {
     margin: 0 0 8px;
 }
 
+/* Value-history "momentum" summary — sits between the section header and the
+   chart. Answers the direction/magnitude of the move (range-aware) before the
+   eye reaches the curve. Built in player_modal.js updateSummary(). */
+.pm-vh-summary {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin: 0 0 12px;
+}
+.pm-vh-now {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.pm-vh-now-lbl {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.pm-vh-now-val {
+    font-size: 23px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+.pm-vh-move {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    align-items: flex-start;
+}
+.pm-vh-move-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.pm-vh-delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.pm-vh-delta.up   { color: var(--win);  background: color-mix(in srgb, var(--win) 13%, transparent); }
+.pm-vh-delta.down { color: var(--loss); background: color-mix(in srgb, var(--loss) 13%, transparent); }
+.pm-vh-delta.flat { color: var(--text-muted); background: color-mix(in srgb, var(--text-muted) 13%, transparent); }
+.pm-vh-trend {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+.pm-vh-range {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+.pm-vh-extremes {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+.pm-vh-ext {
+    text-align: center;
+    padding: 5px 11px;
+    border-radius: 10px;
+    background: var(--bg-alt);
+}
+[data-theme="dark"] .pm-vh-ext {
+    background: #111e2e;
+}
+.pm-vh-ext-k {
+    display: block;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.pm-vh-ext-v {
+    display: block;
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--text);
+    margin-top: 3px;
+    font-variant-numeric: tabular-nums;
+}
+@media (max-width: 768px) {
+    .pm-vh-extremes { margin-left: 0; }
+    .pm-vh-now-val { font-size: 20px; }
+}
+
 .player-modal-loading {
     display: flex;
     flex-direction: column;
