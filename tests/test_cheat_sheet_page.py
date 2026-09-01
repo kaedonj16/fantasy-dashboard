@@ -464,9 +464,17 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "—" not in script.split("function renderHistPanel")[1].split("function init()")[0]
     assert "–" not in script.split("function renderHistPanel")[1].split("function init()")[0]
     assert "copy.trends" in script or "Trends for this player's buckets" in script
-    assert "trendsHitRow(row, row && row.polarity, histBaseline, histSpan)" in script
+    assert "trendsHitRow(row, row && row.polarity, histBaseline, histSpan, markCells)" in script
     assert ".cs-hist-hits { display: grid; grid-template-columns: 1fr 1fr;" in body
     assert ".cs-hist-hit:last-child:nth-child(odd) { grid-column: 1 / -1; }" in body
+    assert ".cs-hist-hit-role { display: block;" in body
+    assert '.cs-hist-tile-ex[open] > summary::after { content: "\\2013"; }' in body
+    hist_mobile = body.split("@media (max-width: 640px)")[1].split("@media")[0]
+    assert ".cs-hist-hits { grid-template-columns: 1fr; }" in hist_mobile
+    assert ".cs-hist-hit:last-child:nth-child(odd) { grid-column: auto; }" in hist_mobile
+    assert ".cs-hist-hit-top .cs-trends-conf { display: none; }" in hist_mobile
+    assert "env(safe-area-inset-top)" in hist_mobile
+    assert ".cs-hist-card { width: 100%; max-width: 100%;" in hist_mobile
     assert '<details class="cs-hist-sec cs-hist-closest">' in script
     assert 'class="cs-hist-ex-peek"' in script
     assert "cs-hist-closest-body" in script
@@ -615,6 +623,10 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "bounce_roster" in script
     assert "trend_groups" in script
     assert "This player" in script
+    assert "r.role === 'analog'" in script
+    assert "var markCells" in script
+    assert "+ '<div><div class=\"cs-hist-hit-label\">' + esc(histTrendTitle(row)) + '</div>'" in script
+    assert "+ roleChip" in script.split("function histTrendRow")[1].split("function trendsHitRow")[0]
     assert "cs-hist-tile-ex" in script
     assert "cs-hist-hit.is-this" in body
     assert "Outside top 36 last year, " in script
@@ -821,6 +833,23 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "combined chance" in two_groups["text"].lower()
     assert "—" not in two_groups["text"]
     assert "–" not in two_groups["text"]
+    hist_phone = next(
+        entry for entry in CHANGELOG
+        if "stack in one column" in entry.get("text", "").lower()
+    )
+    assert hist_phone["tag"] == "fix"
+    assert hist_phone["link"] == "/draft/cheat-sheet"
+    assert "Hist" in hist_phone["text"]
+    assert "—" not in hist_phone["text"]
+    assert "–" not in hist_phone["text"]
+    hist_match = next(
+        entry for entry in CHANGELOG
+        if "same top-12 chance as the player modal" in entry.get("text", "").lower()
+    )
+    assert hist_match["tag"] == "fix"
+    assert hist_match["link"] == "/draft/cheat-sheet"
+    assert "—" not in hist_match["text"]
+    assert "–" not in hist_match["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():

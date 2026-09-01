@@ -6,6 +6,36 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-09-01",
+        "tag": "fix",
+        "text": "Draft Cheat Sheet Hist: when a roster-split cell exists, the modal keeps that tile and leaves off the coarser same-band copy (21-32 projected offense, RB1, year 1 instead of also 21-32 projected offense, year 1).",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-09-01",
+        "tag": "fix",
+        "text": "Draft Cheat Sheet Hist: when a player is NFL Top 10 or Picks 11-25, the modal keeps that band and leaves off the parent Round 1 copy of the same roster or offense cell.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-09-01",
+        "tag": "fix",
+        "text": "Draft Cheat Sheet Hist: the player modal only shows buckets this player matches this year. Analog contrast (Top-10 offense when the team is 21-32, Round 1 RB3+), miss tiles, and last-year offense ranks are left off.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-09-01",
+        "tag": "fix",
+        "text": "Draft Cheat Sheet Hist: the board Hist column uses the same top-12 chance as the player modal. Duplicate year-1 copies, the middle roster analog (RB2/WR2), and the miss tile are left off so the matching cell is easier to read.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-09-01",
+        "tag": "fix",
+        "text": "Draft Cheat Sheet Hist: on phones the tiles stack in one column so titles, This player, and names are not squeezed into a two-column grid.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-09-01",
         "tag": "update",
         "text": "Draft Cheat Sheet Hist: tiles are grouped (Career, Capital, Roster, Offense, Usage), the matching cell is marked This player versus analog contrast, and each tile can open 2-3 names from that intersection. Bounce-back WRs and RBs who were outside the top 36 last year are split by roster spot.",
         "link": "/draft/cheat-sheet"
