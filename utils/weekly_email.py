@@ -895,6 +895,8 @@ def send_weekly_digests(
 
     last_preview_html = None
     last_preview_subject = None
+    last_error = last_error_category = last_status = None
+    last_provider = None
 
     for r in recips:
         aid = r.get("account_id")
@@ -1019,6 +1021,15 @@ def send_weekly_digests(
             )
         else:
             failed += 1
+            last_error = result.error
+            last_error_category = result.error_category
+            last_status = result.status_code
+            last_provider = result.provider
+            logger.warning(
+                "[weekly-email] send failed account=%s provider=%s status=%s category=%s err=%s",
+                aid, result.provider, result.status_code, result.error_category,
+                (result.error or "")[:300],
+            )
             if result.error_category == "rate_limited":
                 provider_rate_limited += 1
                 consecutive_429 += 1
@@ -1059,6 +1070,10 @@ def send_weekly_digests(
         "provider_rate_limited": provider_rate_limited,
         "recipients": len(recips), "week": week, "dry_run": dry_run,
         "configured": True, "subject": last_preview_subject,
+        "provider": last_provider,
+        "last_error": last_error,
+        "last_error_category": last_error_category,
+        "last_status": last_status,
     }
     logger.info("[weekly-email] run complete: %s", {k: v for k, v in summary.items() if k != "subject"})
     return summary
@@ -1147,6 +1162,11 @@ def preview_digest(
 
 def main(argv: list[str] | None = None) -> int:
     import argparse
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     parser = argparse.ArgumentParser(description="Weekly digest send / preview")
     parser.add_argument("--dry-run", action="store_true", help="Build content; never send")
     parser.add_argument("--limit", type=int, default=None)

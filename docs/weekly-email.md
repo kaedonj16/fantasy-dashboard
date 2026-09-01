@@ -120,7 +120,18 @@ Requirements:
 2. The sender `noreply@brfantasyfootball.com` is verified in Brevo.
 3. You have signed into the site with that Google email and opened a league (so `last_active_*` is set).
 
-If `sent` is 0, check the JSON summary: `skipped_opted_out`, `skipped_already_sent` (add `force`), `skipped_no_useful_content`, or `configured: false`.
+If `sent` is 0, check the JSON summary:
+
+- `configured: false` — `BREVO_API_KEY` missing on this process
+- `skipped_opted_out` — that account unsubscribed
+- `skipped_already_sent` — add `force`
+- `skipped_no_useful_content` — that league had nothing to report
+- `eligible: 0` — no account matched that email
+- `failed: 1` with a `subject` — **content was built; Brevo/SMTP rejected delivery**.
+  Look at `last_error` / `last_status` in the same JSON, or the log line
+  `[weekly-email] send failed` / `[email] brevo rejected`.
+  Typical first-send causes: sender `noreply@brfantasyfootball.com` not verified
+  in Brevo, API key missing transactional permission, or HTTP 401 (wrong key).
 
 ## 8. Weekly deduplication
 
