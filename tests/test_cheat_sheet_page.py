@@ -574,19 +574,23 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "/api/historical-cohort" in script
     assert "Historical red flags" in script
     assert "Closest historical examples" in script
-    assert "Two groups, not one chance" in script
+    assert "His profile vs. his draft price" in script
     assert "Players like this" in script
-    assert "anyone taken in that fantasy round" in script
+    assert "History likes him here" in script
+    assert "pts of edge. History beats the market at this pick." in script
     assert "Need live ADP to show the other group." in script
     assert "Expected at current ADP" not in script
     assert "Historical edge vs market" not in script
-    assert ".cs-hist-compare" in body
+    assert ".cs-hist-vp" in body
+    assert ".cs-hist-vp-fill.is-hist { background: var(--cs-pos); }" in body
     assert ".cs-hist-gap" in body
     assert "function trendsRedFlags" in script
     assert "ranking_edge" in script
     assert "'lte'" in script
     assert ".cs-trends-profile" in body
-    assert ".cs-hist-market" in body
+    assert ".cs-hist-banner" in body
+    assert ".cs-hist-edge" in body
+    assert ".cs-hist-edge.is-up { color: var(--cs-good, var(--win)); }" in body
     assert ".cs-hist-ex-sum" in body
     assert "shrinkage-adjusted lift" in script
     assert "Top 24 is the flex line" not in script

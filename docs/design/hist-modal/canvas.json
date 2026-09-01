@@ -1,0 +1,17 @@
+{
+  "artboards": [
+    { "file": "Hybrid.dc.html", "x": 0, "y": 0, "w": 600, "h": 836, "title": "★ Hybrid A+B (final direction)" },
+    { "file": "Main.dc.html", "x": 720, "y": 0, "w": 600, "h": 772, "title": "A · Verdict-first" },
+    { "file": "Scannable.dc.html", "x": 1440, "y": 0, "w": 600, "h": 664, "title": "B · Scannable" },
+    { "file": "Guided.dc.html", "x": 0, "y": 1016, "w": 520, "h": 892, "title": "C · Guided cards" },
+    { "file": "Current.dc.html", "x": 720, "y": 1016, "w": 600, "h": 912, "title": "Current (baseline)" }
+  ],
+  "annotations": [
+    { "id": "brief-hybrid", "x": 0, "y": -196, "w": 600, "text": "★ HYBRID A+B — the final direction\nA's verdict-first top (plain verdict + hero %, one \"profile vs. price\" bar with the +17 edge callout, tier strip) with B's trends shown INLINE instead of behind a tap. Comps stay one tap away. Built to be responsive: this compact stack on a phone; on a wide draft board the trends widen and comps can sit beside them.", "bold": true },
+    { "id": "note-a2", "x": 720, "y": -140, "w": 600, "text": "A · VERDICT-FIRST — the compact parent. Everything below the tier strip (comps + trends) collapses behind tap rows." },
+    { "id": "note-b2", "x": 1440, "y": -140, "w": 600, "text": "B · SCANNABLE — the dense parent. The inline trends table in the hybrid comes from here." },
+    { "id": "note-c2", "x": 0, "y": 950, "w": 520, "text": "C · GUIDED CARDS — kept for reference. Friendliest / most mobile, but the most taps to reach detail." },
+    { "id": "note-current2", "x": 720, "y": 950, "w": 600, "text": "CURRENT — what ships today, for contrast: six competing numbers, the jargon \"Two groups\" heading, no plain-language verdict." }
+  ],
+  "launch": { "view": "focused", "file": "Hybrid.dc.html" }
+}
