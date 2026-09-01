@@ -483,6 +483,9 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "–" not in script.split("function renderHistPanel")[1].split("function init()")[0]
     assert "copy.trends" in script
     assert "Trends behind it" in script
+    assert "function histRankTrends" in script
+    assert "function histTrendRankKey" in script
+    assert "histRankTrends(" in script
     assert "function histCompactTrendRow" in script
     assert "histCompactTrendRow(row, trSpan)" in script
     assert "See all ' + trends.length + ' trends" in script

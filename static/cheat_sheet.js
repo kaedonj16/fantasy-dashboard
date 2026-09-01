@@ -2360,6 +2360,45 @@
         return String(s == null ? '' : s).replace(/—/g, '-').replace(/–/g, '-');
     }
 
+    function histTrendRankKey(row) {
+        row = row || {};
+        var has = (typeof row.vs_baseline === 'number') ? 1 : 0;
+        var vs = has ? row.vs_baseline : 0;
+        var pct = (row.pct != null && isFinite(Number(row.pct))) ? Number(row.pct) : -1;
+        var n = (row.n != null && isFinite(Number(row.n))) ? Number(row.n) : 0;
+        return [has, vs, pct, n];
+    }
+
+    // Strongest evidence first (lift vs typical, then hit rate, then sample).
+    // The compact preview prefers one row per group so it is not four career
+    // repeats from construction order, then re-sorts those slots high-to-low.
+    function histRankTrends(rows, preview) {
+        var items = (Array.isArray(rows) ? rows : []).filter(Boolean).slice();
+        function byKey(a, b) {
+            var ak = histTrendRankKey(a);
+            var bk = histTrendRankKey(b);
+            return (bk[0] - ak[0]) || (bk[1] - ak[1]) || (bk[2] - ak[2]) || (bk[3] - ak[3]);
+        }
+        items.sort(byKey);
+        var shown = (preview != null && isFinite(Number(preview))) ? Number(preview) : 4;
+        if (shown <= 0 || items.length <= shown) return items;
+        var lead = [];
+        var rest = [];
+        var seen = {};
+        items.forEach(function (row) {
+            var gid = String(row.group || 'career');
+            if (lead.length < shown && !seen[gid]) {
+                lead.push(row);
+                seen[gid] = true;
+            } else {
+                rest.push(row);
+            }
+        });
+        while (lead.length < shown && rest.length) lead.push(rest.shift());
+        lead.sort(byKey);
+        return lead.concat(rest);
+    }
+
     // One compact trend row for the "Trends behind it" table: signal dot, label,
     // sample size, a mini bar scaled to the section span, and the pct + signed lift.
     function histCompactTrendRow(row, span) {
@@ -3488,12 +3527,15 @@
             html += '</div>';
         }
         // Trends next: the evidence behind the verdict, as a compact inline table
-        // (signal dot, label, sample, mini bar, lift). The first few show; the
-        // rest tuck behind a "See all" toggle so the modal stays short.
-        var trends = (Array.isArray(copy.trends) ? copy.trends : []).filter(function (row) {
+        // (signal dot, label, sample, mini bar, lift). Rank by lift vs typical
+        // (then hit rate, then sample), and keep the first few on different
+        // groups so career repeats do not crowd the preview. The rest tuck
+        // behind a "See all" toggle so the modal stays short.
+        var TR_SHOWN = 4;
+        var trends = histRankTrends((Array.isArray(copy.trends) ? copy.trends : []).filter(function (row) {
             var kind = row && row.kind;
             return kind !== 'adp' && kind !== 'adp_positional';
-        });
+        }), TR_SHOWN);
         if (trends.length) {
             var trSpan = 1;
             trends.forEach(function (row) {
@@ -3501,7 +3543,6 @@
                     trSpan = Number(row.pct);
                 }
             });
-            var TR_SHOWN = 4;
             html += '<section class="cs-hist-sec"><h3>Trends behind it</h3>';
             html += '<div class="cs-hist-tp">';
             trends.slice(0, TR_SHOWN).forEach(function (row) {

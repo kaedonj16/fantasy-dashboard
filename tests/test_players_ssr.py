@@ -44,6 +44,30 @@ def test_ssr_path_hides_the_players_skeleton():
     assert hidden, "the SSR path never sets display:none on #prLoading — skeleton stays visible"
 
 
+def test_rankings_js_keeps_skeleton_hidden_when_ssr_rows_exist():
+    """Hydration must not unhide #prLoading on top of server-rendered rows.
+
+    The /players shell SSR-hides the skeleton and fills #prList. prLoadData()
+    used to set loading.style.display = '' immediately, stacking the skeleton
+    above the table until /api/league-players returned.
+    """
+    rankings = open(os.path.join(_ROOT, "static", "rankings.js"), encoding="utf-8").read()
+    fn = rankings.split("function prLoadData()")[1].split("prLoadData();")[0]
+    assert "getElementById('prList')" in fn
+    assert "firstElementChild" in fn or "childElementCount" in fn
+    # Cold load / retry still unhides; success still hides.
+    assert "style.display = ''" in fn
+    assert "style.display = 'none'" in fn
+    # The unhide must be gated on the list being empty (or an error retry).
+    unhide_idx = fn.index("style.display = ''")
+    guard_window = fn[:unhide_idx]
+    assert "firstElementChild" in guard_window or "childElementCount" in guard_window
+    assert "empty-state" in guard_window
+    # Reloads abort the in-flight hydrate; don't cover SSR rows with an error.
+    assert "AbortError" in fn
+    assert "_prLoadGen" in rankings
+
+
 def test_rankings_flip_and_sparkline_cannot_leave_motion_stuck():
     """Player Rankings reorder/sparkline animations must finish or cancel.
 

@@ -34,11 +34,11 @@ def build_trade_calculator_body(
         from dashboard_services.db import get_conn
         with get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM trade_intel_trades")
+            cursor.execute("SELECT COUNT(*) AS n FROM trade_intel_trades")
             result = cursor.fetchone()
             # Handle both tuple and dictionary return formats
             if isinstance(result, dict):
-                count = result.get('count', 0)
+                count = result.get("n", result.get("count", 0))
             else:
                 count = result[0] if result else 0
             trade_count = f"{count:,}"
@@ -291,7 +291,7 @@ def build_trade_calculator_body(
                     <div class="otc-info-tooltip-header">BR Value Model</div>
                     <div class="otc-info-tooltip-body">
                       <p>Player values are built directly from real dynasty trades, capturing how the market prices players and picks in actual deals.</p>
-                      <p>We translate over <strong>{trade_count}</strong> trade relationships into a unified value scale, then layer in production, age trajectory, and role stability to sharpen the signal.</p>
+                      <p>We translate over <strong id="tradeCount">{trade_count}</strong> trade relationships into a unified value scale, then layer in production, age trajectory, and role stability to sharpen the signal.</p>
                     </div>
                   </div>
                 </div>

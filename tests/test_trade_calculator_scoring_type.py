@@ -67,3 +67,20 @@ def test_trade_page_wires_league_redraft_into_calculator():
     assert "scoring_type=scoring_type" in src
     assert "get_viewer_session_for_league(" in src
     assert "platform, league_id, season" in src
+
+
+def test_otc_info_tooltip_shows_trade_count():
+    html = build_trade_calculator_body(None, 2026)
+    assert 'id="otcInfoTooltip"' in html
+    assert 'id="tradeCount"' in html
+    assert "We translate over" in html
+    assert "trade relationships" in html
+
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'id=\\"tradeCount\\"' in js or 'id="tradeCount"' in js
+    assert "We translate over" in js
+    # syncScoringTypeUi used to rewrite dynasty copy as "those trade
+    # relationships" and drop the live count. Guard against that regression.
+    assert "those trade relationships" not in js
+    assert "cachedTradeCountLabel" in js
+    assert "setTradeCountLabel" in js

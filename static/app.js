@@ -8592,6 +8592,23 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   // League size doesn't affect redraft values, so grey it out in redraft mode.
+  // Keep the live trade-count label across redraft/dynasty tooltip rewrites —
+  // innerHTML replacement used to drop #tradeCount and the "over N trades" copy.
+  let cachedTradeCountLabel = (root.querySelector("#tradeCount")?.textContent || "").trim();
+
+  function tradeCountLabel() {
+    const el = root.querySelector("#tradeCount");
+    const fromEl = el && el.textContent.trim();
+    if (fromEl) cachedTradeCountLabel = fromEl;
+    return cachedTradeCountLabel || "150,000+";
+  }
+
+  function setTradeCountLabel(label) {
+    if (label) cachedTradeCountLabel = label;
+    const el = root.querySelector("#tradeCount");
+    if (el) el.textContent = cachedTradeCountLabel;
+  }
+
   function syncScoringTypeUi() {
     const redraft = getScoringType() === "redraft";
     const sizeCtrl = root.querySelector("#leagueSizeSelect");
@@ -8604,9 +8621,10 @@ window.initTradePage = function initTradePage(root = document) {
     }
     const tipBody = root.querySelector("#otcInfoTooltip .otc-info-tooltip-body");
     if (tipBody) {
+      const count = tradeCountLabel();
       tipBody.innerHTML = redraft
         ? "<p>Player values are this-season redraft values. Weekly production this year is what counts, not youth or future draft capital.</p><p>Switch to Dynasty in the scoring control if you want multi-year trade values instead.</p>"
-        : "<p>Player values are built directly from real dynasty trades, capturing how the market prices players and picks in actual deals.</p><p>We translate those trade relationships into a unified value scale, then layer in production, age trajectory, and role stability to sharpen the signal.</p>";
+        : "<p>Player values are built directly from real dynasty trades, capturing how the market prices players and picks in actual deals.</p><p>We translate over <strong id=\"tradeCount\">" + count + "</strong> trade relationships into a unified value scale, then layer in production, age trajectory, and role stability to sharpen the signal.</p>";
     }
   }
 
@@ -9109,16 +9127,12 @@ window.initTradePage = function initTradePage(root = document) {
         return response.json();
       })
       .then(data => {
-        const tradeCountElement = document.getElementById('tradeCount');
-        if (tradeCountElement && data.count !== undefined) {
-          tradeCountElement.textContent = data.count.toLocaleString();
+        if (data.count !== undefined) {
+          setTradeCountLabel(data.count.toLocaleString());
         }
       })
-      .catch(error => {
-        const tradeCountElement = document.getElementById('tradeCount');
-        if (tradeCountElement) {
-          tradeCountElement.textContent = '150,000+';
-        }
+      .catch(() => {
+        setTradeCountLabel(cachedTradeCountLabel || "150,000+");
       });
   }
 
