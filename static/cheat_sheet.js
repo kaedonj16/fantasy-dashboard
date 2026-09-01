@@ -2245,6 +2245,15 @@
         if ((kind === 'age' || kind === 'age_exact') && bucket) {
             return (String(bucket).toLowerCase().indexOf('age') === 0 ? bucket : 'Age ' + bucket) + ', any season';
         }
+        if (kind === 'offense' && bucket) {
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' offense last year';
+        }
+        if (kind === 'offense_year_1' && bucket) {
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' offense last year, year 1';
+        }
+        if (kind === 'offense_year_2' && bucket) {
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' offense last year, year 2';
+        }
         if (label && !generic[label.toLowerCase()]) return label;
         return qualified || label || row.sentence || '';
     }
@@ -2351,11 +2360,13 @@
         touches: 'usage', carries: 'usage', receptions: 'usage',
         targets: 'usage', games: 'usage', pass_attempts: 'usage',
         target_share_change: 'usage', snap_pct_change: 'usage',
-        workload_change: 'usage'
+        workload_change: 'usage',
+        offense: 'team', offense_year_1: 'team', offense_year_2: 'team'
     };
     var TRENDS_LANES = [
         ['all', 'All'], ['career', 'Career'],
-        ['capital', 'Capital'], ['age', 'Age'], ['usage', 'Usage']
+        ['capital', 'Capital'], ['age', 'Age'], ['usage', 'Usage'],
+        ['team', 'Team']
     ];
     var TRENDS_LABEL_PREFIX = {
         draft_capital: 'NFL',
@@ -2376,7 +2387,10 @@
         age_exact: 'Age',
         target_share_change: 'Targets',
         snap_pct_change: 'Snaps',
-        workload_change: 'Workload'
+        workload_change: 'Workload',
+        offense: 'Offense',
+        offense_year_1: 'Offense',
+        offense_year_2: 'Offense'
     };
 
     function trendsConfKey(label) {

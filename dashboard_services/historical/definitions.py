@@ -122,6 +122,25 @@ TRENDS_ROUND1_PICK_RANGES: Tuple[Tuple[str, str, int, int], ...] = (
     ("picks_26_32", "Rest of Round 1", 26, 32),
 )
 
+# Last-year team offense rank. Preseason analog of a projected top-10
+# offense: rank 1 is best. Same-season actual rank is not a feature.
+# Inclusive lo/hi like TRENDS_ROUND1_PICK_RANGES.
+TRENDS_OFFENSE_RANGES: Tuple[Tuple[str, str, int, int], ...] = (
+    ("top_10", "Top 10", 1, 10),
+    ("11_20", "11-20", 11, 20),
+    ("21_32", "21-32", 21, 32),
+)
+# 1 TD ≈ 40 yards, matching matchups.build_offense_rankings.
+OFFENSE_TD_YARD_WEIGHT = 40.0
+TEAM_ABBR_ALIASES: Mapping[str, str] = {
+    "WAS": "WSH",
+    "JAC": "JAX",
+    "LA": "LAR",
+    "OAK": "LV",
+    "SD": "LAC",
+    "STL": "LAR",
+}
+
 # Career stage from completed seasons before this year (0 = rookie year).
 # Missing years_experience is None — never mapped to rookie.
 CAREER_STAGE_ROOKIE = "rookie"
@@ -608,6 +627,32 @@ def trends_round1_pick_range(pick: Any) -> Optional[Tuple[str, str, int, int]]:
         if lo <= value <= hi:
             return rec
     return None
+
+
+def normalize_team_abbr(value: Any) -> Optional[str]:
+    """Canonical NFL team abbreviation. Unknown / empty stays None."""
+    text = str(value or "").strip().upper()
+    if not text or text in ("NAN", "NONE", "NULL", "FA", "UNK"):
+        return None
+    return TEAM_ABBR_ALIASES.get(text, text)
+
+
+def trends_offense_range(rank: Any) -> Optional[Tuple[str, str, int, int]]:
+    """Trends last-year offense band for a 1-best team rank, or None."""
+    value = _optional_int(rank)
+    if value is None or value <= 0:
+        return None
+    for rec in TRENDS_OFFENSE_RANGES:
+        _key, _label, lo, hi = rec
+        if lo <= value <= hi:
+            return rec
+    return None
+
+
+def offense_rank_bucket(rank: Any) -> Optional[str]:
+    """``top_10`` / ``11_20`` / ``21_32``. Missing or unranked → None."""
+    rec = trends_offense_range(rank)
+    return rec[0] if rec else None
 
 
 def positional_tier_label(position: Any, positional_finish: Any) -> Optional[str]:

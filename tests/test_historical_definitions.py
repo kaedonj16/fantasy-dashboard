@@ -151,6 +151,27 @@ def test_trends_round1_pick_ranges_are_disjoint():
     assert covered == list(range(1, 33))
 
 
+def test_trends_offense_ranges_are_disjoint():
+    from dashboard_services.historical.definitions import (
+        TRENDS_OFFENSE_RANGES,
+        normalize_team_abbr,
+        offense_rank_bucket,
+        trends_offense_range,
+    )
+
+    assert trends_offense_range(1)[0] == "top_10"
+    assert trends_offense_range(10)[1] == "Top 10"
+    assert trends_offense_range(11)[0] == "11_20"
+    assert trends_offense_range(32)[1] == "21-32"
+    assert trends_offense_range(None) is None
+    assert offense_rank_bucket(4) == "top_10"
+    assert normalize_team_abbr("WAS") == "WSH"
+    covered = []
+    for _key, _label, lo, hi in TRENDS_OFFENSE_RANGES:
+        covered.extend(range(lo, hi + 1))
+    assert covered == list(range(1, 33))
+
+
 def test_positional_tier_label_and_flags():
     assert positional_tier_label("RB", 1) == "RB1"
     assert positional_tier_label("RB", 12) == "RB1"

@@ -32,6 +32,8 @@ from dashboard_services.historical.definitions import (
     age_as_of_season_start,
     draft_capital_bucket,
     integer_age,
+    normalize_team_abbr,
+    offense_rank_bucket,
     value_bucket,
     _optional_float,
     _optional_int,
@@ -236,6 +238,15 @@ def extract_trend_features(row: Mapping[str, Any]) -> dict[str, Any]:
         val = row.get(key)
         if isinstance(val, str) and val:
             feats[key] = val
+    team = normalize_team_abbr(row.get("team") or row.get("nfl_team"))
+    if team:
+        feats["team"] = team
+    rank = _optional_int(row.get("prior_offense_rank"))
+    if rank is not None and rank > 0:
+        feats["prior_offense_rank"] = rank
+        bucket = offense_rank_bucket(rank)
+        if bucket:
+            feats["prior_offense_rank_bucket"] = bucket
     return feats
 
 
@@ -290,6 +301,14 @@ def live_board_trend_features(player: Mapping[str, Any]) -> dict[str, Any]:
     count = _optional_int(player.get("prior_top12_count"))
     if count is not None:
         row["prior_top12_count"] = count
+    team = normalize_team_abbr(
+        player.get("team") or player.get("nfl_team") or player.get("actual_nfl_team")
+    )
+    if team:
+        row["team"] = team
+    rank = _optional_int(player.get("prior_offense_rank"))
+    if rank is not None and rank > 0:
+        row["prior_offense_rank"] = rank
     return extract_trend_features(row)
 
 
@@ -325,6 +344,11 @@ def live_class_preseason_profile(
         age = age_f
     if age is not None:
         rec["age"] = age
+    team = normalize_team_abbr(
+        pick.get("nfl_team") or pick.get("team") or identity.get("team")
+    )
+    if team:
+        rec["team"] = team
     return rec
 
 

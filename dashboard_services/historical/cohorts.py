@@ -234,6 +234,12 @@ def build_cohort_index(rows: Sequence[Mapping[str, Any]]) -> dict:
     outcome year. This is not a parquet scan at request time — cron rebuilds
     the index into the aggregates JSON.
     """
+    from dashboard_services.historical.offense import (
+        prior_offense_rank_for,
+        team_offense_lookup_from_rows,
+    )
+
+    offense_ranks, offense_teams = team_offense_lookup_from_rows(rows)
     by_player: dict[str, list[dict]] = {}
     for row in rows:
         pid = _obs_pid(row)
@@ -249,14 +255,27 @@ def build_cohort_index(rows: Sequence[Mapping[str, Any]]) -> dict:
                 r for r in ordered[:i]
                 if (_optional_int(r.get("season")) or 0) < (_optional_int(row.get("season")) or 0)
             ]
-            extra: dict[str, str] = {}
+            extra: dict[str, Any] = {}
             if len(prior) >= 2:
-                extra = trajectory_buckets(
-                    prior[-2],
-                    prior[-1],
-                    position=row.get("position"),
-                    current_season=row.get("season"),
+                extra.update(
+                    trajectory_buckets(
+                        prior[-2],
+                        prior[-1],
+                        position=row.get("position"),
+                        current_season=row.get("season"),
+                    )
                 )
+            season = _optional_int(row.get("season"))
+            team = None
+            if season is not None:
+                team = (offense_teams.get(pid) or {}).get(str(season))
+            if not team:
+                from dashboard_services.historical.definitions import normalize_team_abbr
+
+                team = normalize_team_abbr(row.get("team"))
+            rank = prior_offense_rank_for(offense_ranks, team, season)
+            if rank is not None:
+                extra["prior_offense_rank"] = rank
             rec = _compact_observation(row, extra_feats=extra or None)
             if rec is None:
                 continue
@@ -436,6 +455,7 @@ _EXAMPLE_TRAIT_ORDER = (
     "draft_capital",
     "age_bucket",
     "prior_finish",
+    "prior_offense_rank",
     "target_share",
     "snap_pct",
     "adot",
@@ -527,6 +547,14 @@ def _example_trait_phrase(
     if key == "prior_finish":
         val = _bare_trait_value(raw, "Last Year")
         return f"Last Year: {val}" if val else ""
+    if key in ("prior_offense_rank", "prior_offense_rank_bucket", "offense"):
+        from dashboard_services.historical.definitions import trends_offense_range
+
+        band = trends_offense_range(value)
+        name = band[1] if band else _bare_trait_value(raw, "Offense")
+        if str(value) == "top_10":
+            name = "Top 10"
+        return f"Offense: {name} last year" if name else ""
     if key == "prior_elite":
         return raw
     if key == "adot":

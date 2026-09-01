@@ -554,6 +554,7 @@ def test_hist_panel_keeps_draft_capital_when_the_cell_has_seasons():
             "age": 21,
             "adp": 18,
             "redraft_avg_pick": 18,
+            "team": "ARI",
         },
     )
     dropped = list(panel["history"].get("dropped") or [])
@@ -566,6 +567,11 @@ def test_hist_panel_keeps_draft_capital_when_the_cell_has_seasons():
     year1 = next(row for row in panel["copy"]["trends"] if row["title"] == "Drafted NFL Top 10, year 1")
     assert year1.get("n")
     assert year1.get("pct") is not None
+    offense_titles = [row["title"] for row in panel["copy"]["trends"] if "offense last year" in row["title"]]
+    assert "Top-10 offense last year" in offense_titles
+    assert "Top-10 offense last year, year 1" in offense_titles
+    assert any(title.endswith("offense last year") and "21-32" in title for title in offense_titles)
+    assert any("21-32" in title and "year 1" in title for title in offense_titles)
 
 
 def test_btj_hist_does_not_claim_never_previously_top12():
@@ -633,6 +639,7 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     assert "draft_capital" in ids
     assert "top12_as_rookie" in ids
     assert "capital_miss" in ids
+    assert "offense" in ids
     assert "age" in ids
     assert "ryoe" in ids
     wr = payload["by_position"]["WR"]
@@ -689,6 +696,13 @@ def test_historical_trends_tab_is_position_wide_and_descriptive():
     year1 = next(sec for sec in rb["sections"] if sec["id"] == "top12_as_rookie")
     assert year1["heading"] == "Drafted, year 1"
     assert any(row["label"] == "Top 10, year 1" for row in year1["rows"])
+    offense = next(sec for sec in rb["sections"] if sec["id"] == "offense")
+    assert offense["heading"] == "Team offense"
+    off_labels = [row["label"] for row in offense["rows"]]
+    assert "Top 10 last year" in off_labels
+    assert "Top 10 last year, year 1" in off_labels
+    assert "11-20 last year" in off_labels
+    assert "projected top-10" in (offense.get("note") or "")
     assert cap_row["match"]["between"] == [1, 10]
     assert cap_row.get("ranking_edge") is not None or cap_row.get("adjusted_edge") is not None
     assert cap_row.get("pcts", {}).get("top_12") is not None
@@ -831,6 +845,8 @@ def test_hist_trend_titles_keep_distinct_capital_and_age_rows():
     ) == "Drafted NFL Round 1, year 1"
     assert format_hist_trend_title(kind="age", label="Age", bucket="23-24") == "Age 23-24, any season"
     assert format_hist_trend_title(kind="age_exact", label="Age", bucket="24") == "Age 24, any season"
+    assert format_hist_trend_title(kind="offense", label="Team offense", bucket="Top 10") == "Top-10 offense last year"
+    assert format_hist_trend_title(kind="offense_year_1", label="Team offense", bucket="Top 10") == "Top-10 offense last year, year 1"
     from dashboard_services.historical.board import matches_trend_filter
 
     feats = {

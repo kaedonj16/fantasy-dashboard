@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-09-01",
         "tag": "update",
+        "text": "Draft Cheat Sheet Hist: team-offense rows now show how often a position finished top-12 on a team that ranked top-10 / 11-20 / 21-32 in offense last year (the preseason analog of a projected top-10 offense), including year 1 and year 2.",
+        "link": "/draft/cheat-sheet"
+    },
+    {
+        "date": "2026-09-01",
+        "tag": "update",
         "text": "Draft Cheat Sheet Hist: capital rows now say the year (Drafted NFL Top 10, year 1 vs any season), keep small exact cells instead of dropping draft capital, and show the drafted-band x career-year hit rate.",
         "link": "/draft/cheat-sheet"
     },
