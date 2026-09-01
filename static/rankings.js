@@ -54,6 +54,7 @@ function prTeBoost(pos) {
 var prPosFilters = new Set();   // empty = All
 var prSearchQuery = '';
 var prLoaded = false;
+var _prLoadGen = 0;  // ignore stale fetch results if prLoadData re-enters
 var prPage = 1;
 var prPageSize = 50;
 var prAdpSourceOptions = {};    // {startup|rookie|redraft: [{value,label}]} from payload
@@ -1154,6 +1155,7 @@ function prGetTier(p) {
 
 // Load data
 function prLoadData() {
+  var gen = ++_prLoadGen;
   var loading = document.getElementById('prLoading');
   var list = document.getElementById('prList');
   // The /players route SSR-fills #prList and hides #prLoading. Unhiding the
@@ -1194,6 +1196,7 @@ Promise.all([
   fetch('/api/player-indicators?league_type=1qb&league_size=10', { cache: 'no-store' })
     .then(r => r.json()).catch(() => ({}))
 ]).then(([resp, indicators]) => {
+  if (gen !== _prLoadGen) return;
   prIndicators = indicators || {};
   // Support both old (array) and new (object with players + tier_thresholds) format
   const rawPlayers = Array.isArray(resp) ? resp : (resp.players || []);
@@ -1313,14 +1316,20 @@ Promise.all([
     _prSparkAnimate = false;
   }).catch(function() {});
 }).catch(err => {
+  if (gen !== _prLoadGen) return;
+  // A reload/navigation aborts the in-flight hydrate. Don't replace the SSR
+  // table with a full-page error for a request that is no longer current.
+  if (err && err.name === 'AbortError') return;
   console.error('Error loading player rankings:', err);
+  var listEl = document.getElementById('prList');
+  if (listEl && listEl.firstElementChild) return;
   var el = document.getElementById('prLoading');
   if (!el) return;
   el.style.display = '';
   el.removeAttribute('aria-hidden');
   el.setAttribute('aria-busy', 'false');
   if (window.brErrorState) {
-    window.brErrorState(el, 'Failed to load players. Check your connection and try again.', prLoadData);
+    window.brErrorState(el, 'Failed to load players. Check your connection and try again.', prLoadData, { compact: true });
   } else {
     el.innerHTML = '<div class="empty-state empty-state-error">Failed to load players. Please refresh.</div>';
   }

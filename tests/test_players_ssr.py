@@ -63,6 +63,9 @@ def test_rankings_js_keeps_skeleton_hidden_when_ssr_rows_exist():
     guard_window = fn[:unhide_idx]
     assert "firstElementChild" in guard_window or "childElementCount" in guard_window
     assert "empty-state" in guard_window
+    # Reloads abort the in-flight hydrate; don't cover SSR rows with an error.
+    assert "AbortError" in fn
+    assert "_prLoadGen" in rankings
 
 
 def test_rankings_flip_and_sparkline_cannot_leave_motion_stuck():
