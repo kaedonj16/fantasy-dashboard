@@ -37,7 +37,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.29"
+    assert manifest["version"] == "1.5.30"
     inject_ver = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     assert 'PRODUCT_VERSION = "1.0.0"' in inject_ver
     hosts = " ".join(manifest.get("host_permissions") or [])
@@ -47,11 +47,16 @@ def test_manifest_docks_overlay_on_host_drafts():
     resources = " ".join(" ".join(block.get("resources") or []) for block in war)
     assert "overlay.html" in resources
     sleeper_js = None
+    sleeper_matches = ""
     for block in manifest["content_scripts"]:
         joined = " ".join(block.get("matches") or [])
-        if "sleeper.com/draft" in joined or "sleeper.app/draft" in joined:
-            sleeper_js = block["js"]
+        if "sleeper.com" in joined or "sleeper.app" in joined:
+            if "assistant_inject.js" in (block.get("js") or []):
+                sleeper_js = block["js"]
+                sleeper_matches = joined
     assert sleeper_js == ["draft_slot.js", "assistant_inject.js", "sleeper_draft.js"]
+    assert "sleeper.com/*" in sleeper_matches
+    assert "sleeper.app/*" in sleeper_matches
     inject = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     sleeper = (EXT / "sleeper_draft.js").read_text(encoding="utf-8")
     espn_iso = (EXT / "espn_draft.js").read_text(encoding="utf-8")
@@ -96,6 +101,9 @@ def test_overlay_uses_live_br_player_pool_and_headshots():
     assert "adpSource" in inject
     assert "queuedPool" in inject
     assert "/api/league-players" in background
+    assert "ensureSleeperDraftAssistant" in background
+    assert "isSleeperDraftTabUrl" in background
+    assert "openDraftAssistantOnTab" in background
     assert "adp_source=" in background
     assert "espnHeadshot" in background
     assert "redraft_value_1qb" in background
@@ -140,6 +148,10 @@ def test_collapsed_overlay_has_reopen_control():
     assert "br-fantasy-assistant-invite" in inject
     assert "function showInvite" in inject
     assert "function openAssistant" in inject
+    assert "function watchHost" in inject
+    assert "function hookHistory" in inject
+    assert "isSleeperDraftRoom" in inject
+    assert "__brDaInviteMo" in inject
     assert "br-da-launch" in inject
     assert "openDraftAssistant" in inject
     assert "Not now" in inject
@@ -245,7 +257,9 @@ def test_overlay_autodetects_slot_and_keeps_header_on_one_line():
     assert "Open Draft Assistant" in popup_html
     assert "asked whether to open" in popup_html
     assert "Draft Assistant 1.0.0" in popup_html
-    assert "openDraftAssistant" in popup_js
+    assert "openDraftAssistantOnTab" in popup_js
+    assert "openDraftAssistant" in (EXT / "background.js").read_text(encoding="utf-8")
+    assert "openDraftAssistant" in (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     assert "\u2014" not in (EXT / "content.js").read_text(encoding="utf-8")
     assert "\u2014" not in (EXT / "background.js").read_text(encoding="utf-8")
     assert "\u2014" not in json.dumps(json.loads((EXT / "manifest.json").read_text(encoding="utf-8")))
@@ -348,6 +362,9 @@ def test_sleeper_detects_live_pick_slot_from_several_signals():
     sleeper = (EXT / "sleeper_draft.js").read_text(encoding="utf-8")
     helper = (EXT / "draft_slot.js").read_text(encoding="utf-8")
     assert "function detectSleeperSlot" in helper
+    assert "function isSleeperDraftRoom" in helper
+    assert "function sleeperDraftIdFromUrl" in helper
+    assert "function sleeperLeagueIdFromUrl" in helper
     assert "function collectSleeperIdentity" in helper
     assert "function slotFromSleeperDraftOrder" in helper
     assert "function slotFromSleeperPickedBy" in helper
@@ -356,6 +373,9 @@ def test_sleeper_detects_live_pick_slot_from_several_signals():
     assert "function detectSleeperDomSlot" in helper
     assert "is-me" in helper
     assert "detectSleeperSlot" in sleeper
+    assert "__brFantasySleeperDraft" in sleeper
+    assert "resolveDraftId" in sleeper
+    assert "waitForDraftRoom" in sleeper
     assert "resolveMySlot" in sleeper
     assert "resolveSleeperUserId" in sleeper
     assert "api.sleeper.app/v1/user/" in sleeper
@@ -484,6 +504,15 @@ const owners = B.sleeperPickOwners({
 if (owners[1] !== 1) process.exit(1);
 if (owners[8] !== 3) process.exit(1);
 if (B.sleeperClockRemaining({ settings: { pick_timer: 90 }, last_picked: Date.now() - 10000 }, Date.now()) !== 80) process.exit(1);
+if (!B.isSleeperDraftRoom("https://sleeper.com/draft/nfl/abc123")) process.exit(1);
+if (!B.isSleeperDraftRoom("https://sleeper.app/draft/nfl/abc123")) process.exit(1);
+if (!B.isSleeperDraftRoom("https://sleeper.com/leagues/123456789012345678/draft")) process.exit(1);
+if (B.isSleeperDraftRoom("https://sleeper.com/leagues/123456789012345678")) process.exit(1);
+if (B.isSleeperDraftRoom("https://sleeper.com/")) process.exit(1);
+if (!B.isSleeperDraftRoom("https://sleeper.com/#/draft/nfl/abc123")) process.exit(1);
+if (B.sleeperDraftIdFromUrl("https://sleeper.com/draft/nfl/abc123") !== "abc123") process.exit(1);
+if (B.sleeperDraftIdFromUrl("https://sleeper.com/draft/abc123") !== "abc123") process.exit(1);
+if (B.sleeperLeagueIdFromUrl("https://sleeper.com/leagues/123456789012345678/draft") !== "123456789012345678") process.exit(1);
 console.log("ok");
 """
     out = subprocess.run(

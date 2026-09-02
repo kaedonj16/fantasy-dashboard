@@ -180,6 +180,47 @@
     }
   }
 
+  function sleeperHrefString(href) {
+    const raw = String(href || (typeof location !== "undefined" ? location.href : "") || "");
+    if (raw) return raw;
+    if (typeof location === "undefined") return "";
+    return String(location.pathname || "") + String(location.search || "") + String(location.hash || "");
+  }
+
+  function sleeperNavText(href) {
+    return sleeperHrefString(href).toLowerCase();
+  }
+
+  function sleeperDraftIdFromUrl(href) {
+    try {
+      const text = sleeperNavText(href);
+      const q = text.match(/[?&#]draft_id=([a-z0-9]+)/i) || text.match(/[?&#]draftid=([a-z0-9]+)/i);
+      if (q && q[1]) return q[1];
+      const m = text.match(/\/draft\/(?:nfl\/|nba\/|ncaaf\/|cbb\/|epl\/)?([a-z0-9]+)/i);
+      return m ? m[1] : "";
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function sleeperLeagueIdFromUrl(href) {
+    try {
+      const m = sleeperNavText(href).match(/\/leagues\/(\d{6,20})/);
+      return m ? m[1] : "";
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function isSleeperDraftRoom(href) {
+    const text = sleeperNavText(href);
+    if (!text) return false;
+    if (sleeperDraftIdFromUrl(href)) return true;
+    if (/\/leagues\/\d{6,20}\/draft(?:\/|$|\?|#)/.test(text)) return true;
+    if (/\/draft\/[a-z0-9]+/.test(text)) return true;
+    return false;
+  }
+
   function yahooClientTeamId() {
     try {
       const m = String(location.pathname || "").match(/\/draftclient\/(?:nfl\/|f1\/)?(\d+)\/(\d+)/i);
@@ -1126,6 +1167,9 @@
     slotFromYahooClock: slotFromYahooClock,
     parseYahooClock: parseYahooClock,
     isEspnDraftRoom: isEspnDraftRoom,
+    isSleeperDraftRoom: isSleeperDraftRoom,
+    sleeperDraftIdFromUrl: sleeperDraftIdFromUrl,
+    sleeperLeagueIdFromUrl: sleeperLeagueIdFromUrl,
     clampSlot: clampSlot,
     rosterFromEspnSlots: rosterFromEspnSlots,
     rosterFromSleeperSettings: rosterFromSleeperSettings,
