@@ -1924,7 +1924,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueName:{league_name_js},leagueFormat:{league_format_js},currentWeek:{current_week_js},leagueType:{league_type_js},leagueSize:{league_size_js},scoringType:{league_scoring_type_js}}};</script>
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__DASHBOARD_CSS = {dashboard_css_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueName:{league_name_js},leagueFormat:{league_format_js},currentWeek:{current_week_js},leagueType:{league_type_js},leagueSize:{league_size_js},scoringType:{league_scoring_type_js}}};</script>
       <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -4932,6 +4932,10 @@ def render_page(
         json.dumps(f"/static/{_FEATURES_JS_FILE}?v={_FEATURES_JS_V}")
         if _use_lite else "null"
     )
+    _dashboard_css_js = (
+        json.dumps(f"/static/{_CSS_FILE}?v={_CSS_V}")
+        if _use_lite else "null"
+    )
 
     meta_tags = _build_seo_meta_tags(
         description, canonical, noindex,
@@ -5058,6 +5062,7 @@ def render_page(
         has_account_js="true" if session.get("account_id") else "false",
         account_email_js=_json.dumps(session.get("account_email") or ""),
         features_js_js=_features_js_js,
+        dashboard_css_js=_dashboard_css_js,
         platform_js=_json.dumps(platform or "sleeper"),
         season_js=_json.dumps(season),
         league_id_js=_json.dumps(str(league_id or "")),
@@ -19202,6 +19207,404 @@ def api_player_game_logs(player_id: str):
         return jsonify({"game_logs_by_year": game_logs_by_year})
     except Exception as e:
         logger.exception("[api_player_game_logs] error")
+        return _api_err("Request failed", e)
+
+
+# ── Player modal Team tab ─────────────────────────────────────────────────────
+_TEAM_OFFENSE_RANKS_CACHE: dict = {}
+_TEAM_OFFENSE_RANKS_TTL = 3600  # 1 hour
+_PFR_SNAP_CACHE: dict = {}
+_PFR_SNAP_CACHE_TTL = 3600
+
+
+def _canon_team_abbr(team: str) -> str:
+    """Normalize team codes (WSH→WAS, etc.) for ranking and lookups."""
+    from utils.utils import canon_team
+    t = canon_team(team) or ""
+    return str(t).upper()
+
+
+def _canonical_teams_index(teams_index: dict) -> dict:
+    """Merge alias keys (e.g. WSH into WAS) so each franchise appears once."""
+    out: dict = {}
+    for abv, meta in (teams_index or {}).items():
+        if not isinstance(meta, dict):
+            continue
+        canon = _canon_team_abbr(abv)
+        if not canon:
+            continue
+        cur = out.get(canon)
+        if cur is None:
+            out[canon] = dict(meta)
+            continue
+        for k, v in meta.items():
+            if cur.get(k) is None and v is not None:
+                cur[k] = v
+    return out
+
+
+def _resolve_stats_reg_season(season: int) -> int:
+    """Pick the stats_player_reg CSV year to use (requested season or latest)."""
+    csv_path = os.path.join(CACHE_DIR, f"stats_player_reg_{season}.csv")
+    if os.path.exists(csv_path):
+        return int(season)
+    files = sorted(glob.glob(os.path.join(CACHE_DIR, "stats_player_reg_*.csv")), reverse=True)
+    for fp in files:
+        m = re.match(r"stats_player_reg_(\d+)\.csv$", os.path.basename(fp))
+        if m:
+            return int(m.group(1))
+    return int(season)
+
+
+def _rank_desc(values: dict) -> dict:
+    """Rank teams descending (rank 1 = best). Values: {team: number}."""
+    items = [(t, float(v)) for t, v in (values or {}).items() if v is not None]
+    items.sort(key=lambda x: (-x[1], x[0]))
+    total = len(items)
+    out: dict = {}
+    for i, (team, val) in enumerate(items, 1):
+        out[team] = {"rank": i, "value": round(val, 2) if val == round(val, 2) else round(val, 3),
+                     "total": total}
+    return out
+
+
+def _compute_team_offense_ranks(season: int) -> dict:
+    """Aggregate team offensive stats and league ranks (cached ~1h)."""
+    stats_season = _resolve_stats_reg_season(season)
+    cache_key = stats_season
+    cached = _TEAM_OFFENSE_RANKS_CACHE.get(cache_key)
+    if cached and time.time() - cached[0] < _TEAM_OFFENSE_RANKS_TTL:
+        return cached[1]
+
+    from utils.utils import load_teams_index
+
+    agg: dict = defaultdict(lambda: {
+        "pass_yds": 0.0, "pass_att": 0.0, "rush_yds": 0.0, "rush_att": 0.0,
+        "pass_tds": 0.0, "rush_tds": 0.0,
+    })
+    csv_path = os.path.join(CACHE_DIR, f"stats_player_reg_{stats_season}.csv")
+    if os.path.exists(csv_path):
+        try:
+            import csv as _csv
+            with open(csv_path, newline="", encoding="utf-8") as f:
+                for row in _csv.DictReader(f):
+                    team = _canon_team_abbr(row.get("recent_team") or "")
+                    if not team:
+                        continue
+                    bucket = agg[team]
+                    bucket["pass_yds"] += float(row.get("passing_yards") or 0)
+                    bucket["pass_att"] += float(row.get("attempts") or 0)
+                    bucket["rush_yds"] += float(row.get("rushing_yards") or 0)
+                    bucket["rush_att"] += float(row.get("carries") or 0)
+                    bucket["pass_tds"] += float(row.get("passing_tds") or 0)
+                    bucket["rush_tds"] += float(row.get("rushing_tds") or 0)
+        except Exception:
+            logger.debug("team offense CSV aggregation failed", exc_info=True)
+
+    teams_index = _canonical_teams_index(load_teams_index() or {})
+    all_teams = set(teams_index.keys()) | set(agg.keys())
+
+    points_pg: dict = {}
+    plays_pg: dict = {}
+    total_yds: dict = {}
+    pass_rate: dict = {}
+    for team in all_teams:
+        ti = teams_index.get(team) or {}
+        ppg = ti.get("points_pg")
+        if ppg is not None:
+            try:
+                points_pg[team] = float(ppg)
+            except (TypeError, ValueError):
+                pass
+        osp = ti.get("off_snaps_pg")
+        if osp is not None:
+            try:
+                plays_pg[team] = float(osp)
+            except (TypeError, ValueError):
+                pass
+        b = agg.get(team) or {}
+        ty = float(b.get("pass_yds") or 0) + float(b.get("rush_yds") or 0)
+        if ty > 0:
+            total_yds[team] = ty
+        pa = float(b.get("pass_att") or 0)
+        ra = float(b.get("rush_att") or 0)
+        if pa + ra > 0:
+            pass_rate[team] = pa / (pa + ra)
+
+    ranks = {
+        "points": _rank_desc(points_pg),
+        "pass_yds": _rank_desc({t: agg[t]["pass_yds"] for t in agg if agg[t]["pass_yds"] > 0}),
+        "pass_att": _rank_desc({t: agg[t]["pass_att"] for t in agg if agg[t]["pass_att"] > 0}),
+        "rush_yds": _rank_desc({t: agg[t]["rush_yds"] for t in agg if agg[t]["rush_yds"] > 0}),
+        "rush_att": _rank_desc({t: agg[t]["rush_att"] for t in agg if agg[t]["rush_att"] > 0}),
+        "total_yds": _rank_desc(total_yds),
+        "pass_tds": _rank_desc({t: agg[t]["pass_tds"] for t in agg if agg[t]["pass_tds"] > 0}),
+        "rush_tds": _rank_desc({t: agg[t]["rush_tds"] for t in agg if agg[t]["rush_tds"] > 0}),
+        "plays_pg": _rank_desc(plays_pg),
+        "pass_rate": _rank_desc(pass_rate),
+    }
+
+    payload = {
+        "stats_season": stats_season,
+        "teams_index": teams_index,
+        "ranks": ranks,
+    }
+    _TEAM_OFFENSE_RANKS_CACHE[cache_key] = (time.time(), payload)
+    return payload
+
+
+def _get_pfr_snap_counts_cached(season: int) -> dict:
+    """PFR snap counts via nfl_data_py, cached in-memory and on disk."""
+    now = time.time()
+    hit = _PFR_SNAP_CACHE.get(season)
+    if hit and now - hit[0] < _PFR_SNAP_CACHE_TTL:
+        return hit[1]
+
+    cache_dir = os.path.join(CACHE_DIR, "snap_counts")
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_file = os.path.join(cache_dir, f"pfr_snaps_{season}.json")
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, encoding="utf-8") as f:
+                data = json.load(f) or {}
+            if isinstance(data, dict):
+                _PFR_SNAP_CACHE[season] = (now, data)
+                return data
+        except Exception:
+            logger.debug("PFR snap cache read failed", exc_info=True)
+
+    data: dict = {}
+    if not app.testing:
+        try:
+            from data_building.external_data.pfr_snap_counts import fetch_season_snap_counts
+            data = fetch_season_snap_counts(season) or {}
+            if data:
+                try:
+                    with open(cache_file, "w", encoding="utf-8") as f:
+                        json.dump(data, f)
+                except Exception:
+                    logger.debug("PFR snap cache write failed", exc_info=True)
+        except Exception:
+            logger.debug("PFR snap fetch failed", exc_info=True)
+
+    _PFR_SNAP_CACHE[season] = (now, data)
+    return data
+
+
+def _usage_for_player(player_id: str, players_index: dict, usage_table: dict) -> dict:
+    """Resolve usage block for a player from index or usage table."""
+    meta = (players_index or {}).get(str(player_id)) or {}
+    usage = meta.get("usage")
+    if isinstance(usage, dict) and usage:
+        return usage
+    if isinstance(usage_table, dict):
+        u = usage_table.get(str(player_id))
+        if isinstance(u, dict):
+            return u
+    if isinstance(usage_table, list):
+        for row in usage_table:
+            if not isinstance(row, dict):
+                continue
+            rid = str(row.get("id") or row.get("sleeper_id") or "")
+            if rid == str(player_id):
+                return row
+    return {}
+
+
+def _snap_pct_for_depth_player(
+        pid: str,
+        name: str,
+        team: str,
+        usage: dict,
+        pfr_by_norm: dict,
+        off_snaps_pg,
+) -> tuple:
+    """Return (snap_pct, snap_pct_source) preferring PFR, then derived estimate."""
+    from utils.utils import normalize_name
+
+    norm = normalize_name(name or "")
+    pfr = (pfr_by_norm.get(norm) or {}) if norm else {}
+    if pfr.get("avg_off_snap_pct") is not None:
+        try:
+            pct = float(pfr["avg_off_snap_pct"])
+            if pct > 0:
+                return round(pct * 100), "pfr"
+        except (TypeError, ValueError):
+            pass
+
+    avg_snaps = usage.get("avg_off_snaps")
+    if avg_snaps is not None and off_snaps_pg:
+        try:
+            denom = float(off_snaps_pg)
+            if denom > 0:
+                derived = round(100 * float(avg_snaps) / denom)
+                return min(max(derived, 0), 99), "derived"
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+    return None, None
+
+
+def _build_player_team_depth_chart(
+        focus_id: str,
+        focus_team: str,
+        full_players: dict,
+        players_index: dict,
+        usage_table,
+        teams_index: dict,
+        pfr_snaps: dict,
+) -> dict:
+    """Build QB/RB/WR/TE depth columns from Sleeper with usage overlays."""
+    from utils.utils import normalize_name
+
+    focus_team = _canon_team_abbr(focus_team)
+    positions = ("QB", "RB", "WR", "TE")
+    pfr_by_norm = {normalize_name(k): v for k, v in (pfr_snaps or {}).items()}
+    ti = (teams_index or {}).get(focus_team) or {}
+    off_snaps_pg = ti.get("off_snaps_pg")
+
+    by_pos: dict = {p: [] for p in positions}
+    for pid, p in (full_players or {}).items():
+        if not isinstance(p, dict):
+            continue
+        team = _canon_team_abbr(p.get("team") or "")
+        pos = str(p.get("position") or "").upper()
+        if team != focus_team or pos not in positions:
+            continue
+        is_focus = str(pid) == str(focus_id)
+        dco = p.get("depth_chart_order")
+        if dco is None and not is_focus:
+            continue
+        try:
+            order = int(dco) if dco is not None else 99
+        except (TypeError, ValueError):
+            order = 99
+        slot = str(p.get("depth_chart_position") or pos).upper() if pos == "WR" else pos
+        usage = _usage_for_player(str(pid), players_index, usage_table)
+        snap_pct, snap_src = _snap_pct_for_depth_player(
+            str(pid), p.get("full_name") or p.get("name") or "", focus_team,
+            usage, pfr_by_norm, off_snaps_pg,
+        )
+        tgt_share = usage.get("target_share")
+        tgt_pct = round(float(tgt_share) * 100) if tgt_share is not None else None
+        ppg = usage.get("ppr_ppg")
+        ppg_val = round(float(ppg), 1) if ppg is not None else None
+        inj = str(p.get("injury_status") or "").strip()
+        if inj.lower() in ("", "active", "act"):
+            inj = ""
+        by_pos[pos].append({
+            "id": str(pid),
+            "name": p.get("full_name") or p.get("name") or "",
+            "is_focus": is_focus,
+            "slot": slot,
+            "order": order,
+            "injury": inj,
+            "snap_pct": snap_pct,
+            "snap_pct_source": snap_src,
+            "tgt_share": tgt_pct,
+            "ppg": ppg_val,
+        })
+
+    out: dict = {}
+    for pos in positions:
+        rows = sorted(by_pos[pos], key=lambda r: (r.get("order") or 99, r.get("name") or ""))
+        out[pos] = rows[:6]
+    return out
+
+
+def _team_rank_entry(ranks: dict, team: str) -> Optional[dict]:
+    """Lookup one team's rank payload; None if team not ranked."""
+    entry = (ranks or {}).get(team)
+    if not entry:
+        return None
+    return {"rank": entry["rank"], "value": entry["value"], "total": entry["total"]}
+
+
+@app.route("/api/player-team/<player_id>")
+def api_player_team(player_id: str):
+    """Team context for the player modal Team tab (ranks, depth chart, usage)."""
+    try:
+        from utils.utils import load_relevant_index, load_teams_index, load_usage_table
+        from utils.nfl_teams import get_team_full_name
+
+        season = int(request.args.get("season", datetime.now().year))
+        skill_positions = {"QB", "RB", "WR", "TE"}
+
+        players_index = get_players_index_global() or load_relevant_index() or {}
+        player_meta = players_index.get(str(player_id)) or {}
+        if not player_meta:
+            players_index_full = load_players_index() or {}
+            player_meta = players_index_full.get(str(player_id)) or {}
+        if not player_meta:
+            relevant_only = load_relevant_index() or {}
+            player_meta = relevant_only.get(str(player_id)) or {}
+
+        if not player_meta:
+            return jsonify({"available": False, "error": "Player not found"}), 404
+
+        usage_index = load_relevant_index() or players_index
+
+        team = _canon_team_abbr(player_meta.get("team") or "")
+        position = str(player_meta.get("pos") or player_meta.get("position") or "").upper()
+        player_name = player_meta.get("name") or ""
+
+        if not team or position not in skill_positions:
+            return jsonify({"available": False})
+
+        offense = _compute_team_offense_ranks(season)
+        stats_season = offense.get("stats_season", season)
+        teams_index = offense.get("teams_index") or _canonical_teams_index(load_teams_index() or {})
+        ranks_all = offense.get("ranks") or {}
+        ti = teams_index.get(team) or {}
+
+        logo = ti.get("Logo")
+        bye_week = ti.get("byeWeek")
+        if bye_week is None:
+            bye_week = player_meta.get("byeWeek")
+
+        ranks = {
+            "points": _team_rank_entry(ranks_all.get("points"), team),
+            "pass_yds": _team_rank_entry(ranks_all.get("pass_yds"), team),
+            "pass_att": _team_rank_entry(ranks_all.get("pass_att"), team),
+            "rush_yds": _team_rank_entry(ranks_all.get("rush_yds"), team),
+            "rush_att": _team_rank_entry(ranks_all.get("rush_att"), team),
+        }
+        ranks_more = {
+            "total_yds": _team_rank_entry(ranks_all.get("total_yds"), team),
+            "pass_tds": _team_rank_entry(ranks_all.get("pass_tds"), team),
+            "rush_tds": _team_rank_entry(ranks_all.get("rush_tds"), team),
+            "plays_pg": _team_rank_entry(ranks_all.get("plays_pg"), team),
+            "pass_rate": _team_rank_entry(ranks_all.get("pass_rate"), team),
+        }
+
+        full_players: dict = {}
+        try:
+            full_players = get_players_global() or {}
+        except Exception:
+            logger.debug("get_players_global failed for team tab", exc_info=True)
+
+        usage_table = load_usage_table()
+        pfr_snaps = _get_pfr_snap_counts_cached(stats_season)
+        depth_chart = _build_player_team_depth_chart(
+            str(player_id), team, full_players, usage_index, usage_table,
+            teams_index, pfr_snaps,
+        )
+
+        return jsonify({
+            "available": True,
+            "team": team,
+            "team_name": get_team_full_name(team),
+            "logo": logo,
+            "bye_week": bye_week,
+            "position": position,
+            "player_id": str(player_id),
+            "player_name": player_name,
+            "stats_season": stats_season,
+            "ranks": ranks,
+            "ranks_more": ranks_more,
+            "depth_chart": depth_chart,
+        })
+    except Exception as e:
+        logger.exception("[api_player_team] error")
         return _api_err("Request failed", e)
 
 
