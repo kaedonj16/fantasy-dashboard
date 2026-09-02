@@ -17993,69 +17993,98 @@ img, svg, canvas {
     transition: opacity .2s ease;
 }
 
-/* Lineup alert strip on the season hub */
-.lineup-alert-card {
-    border-left: 3px solid #f59e0b;
-    padding: 12px 16px;
+/* Season-hub alert cards (lineup issues, roster moves, trade window) share
+   this structure; each variant sets --alert-accent for its own semantic color. */
+.lineup-alert-card,
+.trade-window-card {
+    --alert-accent: #f59e0b; /* amber warning: lineup issues */
+    position: relative;
+    border: 1px solid color-mix(in srgb, var(--alert-accent) 32%, var(--border));
+    border-left: 4px solid var(--alert-accent);
+    background: color-mix(in srgb, var(--alert-accent) 7%, var(--card));
+    padding: 13px 16px;
 }
 
 .lineup-alert-head {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 12px;
 }
 
 .lineup-alert-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
     font-weight: 700;
-    font-size: 14px;
-    color: #f59e0b;
+    font-size: 13px;
+    color: var(--alert-accent);
+}
+
+.lineup-alert-ico {
+    flex-shrink: 0;
+}
+
+/* Turn the section link into a pill CTA inside these cards */
+.lineup-alert-head .os-section-link {
+    padding: 5px 11px;
+    border-radius: var(--radius-pill);
+    background: color-mix(in srgb, var(--alert-accent) 14%, transparent);
+    color: var(--alert-accent);
+    font-size: 12px;
+    font-weight: 700;
+    transition: background .15s ease;
+}
+
+.lineup-alert-head .os-section-link:hover {
+    background: color-mix(in srgb, var(--alert-accent) 24%, transparent);
+    text-decoration: none;
+    opacity: 1;
 }
 
 .lineup-alert-list {
     list-style: none;
-    margin: 6px 0 0;
-    padding: 0;
+    margin: 10px 0 0;
+    padding: 9px 0 0;
     font-size: 13px;
+    border-top: 1px solid color-mix(in srgb, var(--alert-accent) 16%, var(--border));
 }
 
 .lineup-alert-list li {
-    padding: 2px 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 4px 0;
+    color: var(--text);
+    line-height: 1.42;
+}
+
+.lineup-alert-list li::before {
+    content: "";
+    flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    margin-top: 7px;
+    border-radius: 50%;
+    background: var(--alert-accent);
 }
 
 /* Roster-moves variant: informational (blue) rather than warning (amber) */
 .roster-moves-card {
-    border-left-color: var(--brand-blue);
+    --alert-accent: var(--brand-blue);
 }
 
-.roster-moves-card .lineup-alert-title {
-    color: var(--brand-blue);
-}
-
-/* Trade window advisor card */
+/* Trade window advisor card: neutral by default, semantic when buy/sell */
 .trade-window-card {
-    border-left: 3px solid #6b7280;
-    padding: 12px 16px;
-}
-
-.trade-window-card .lineup-alert-title {
-    color: inherit;
+    --alert-accent: #6b7280;
 }
 
 .trade-window-card.tw-buy {
-    border-left-color: var(--win);
-}
-
-.trade-window-card.tw-buy .lineup-alert-title {
-    color: var(--win);
+    --alert-accent: var(--win);
 }
 
 .trade-window-card.tw-sell {
-    border-left-color: var(--loss);
-}
-
-.trade-window-card.tw-sell .lineup-alert-title {
-    color: var(--loss);
+    --alert-accent: var(--loss);
 }
 
 .trade-window-card.tw-urgent {
