@@ -19198,6 +19198,10 @@ _TEAM_OFFENSE_RANKS_CACHE: dict = {}
 _TEAM_OFFENSE_RANKS_TTL = 3600  # 1 hour
 _PFR_SNAP_CACHE: dict = {}
 _PFR_SNAP_CACHE_TTL = 3600
+# Assembled Team-tab payloads, keyed by (player_id, season). Short TTL so a
+# prefetch + click and quick re-opens skip the depth-chart rebuild.
+_TEAM_PAYLOAD_CACHE: dict = {}
+_TEAM_PAYLOAD_TTL = 300  # 5 minutes
 
 
 def _canon_team_abbr(team: str) -> str:
@@ -19533,6 +19537,11 @@ def api_player_team(player_id: str):
         if not team or position not in skill_positions:
             return jsonify({"available": False})
 
+        _payload_key = (str(player_id), season)
+        _payload_hit = _TEAM_PAYLOAD_CACHE.get(_payload_key)
+        if _payload_hit and time.time() - _payload_hit[0] < _TEAM_PAYLOAD_TTL:
+            return jsonify(_payload_hit[1])
+
         offense = _compute_team_offense_ranks(season)
         stats_season = offense.get("stats_season", season)
         teams_index = offense.get("teams_index") or _canonical_teams_index(load_teams_index() or {})
@@ -19572,7 +19581,7 @@ def api_player_team(player_id: str):
             teams_index, pfr_snaps,
         )
 
-        return jsonify({
+        _payload = {
             "available": True,
             "team": team,
             "team_name": get_team_full_name(team),
@@ -19585,7 +19594,9 @@ def api_player_team(player_id: str):
             "ranks": ranks,
             "ranks_more": ranks_more,
             "depth_chart": depth_chart,
-        })
+        }
+        _TEAM_PAYLOAD_CACHE[_payload_key] = (time.time(), _payload)
+        return jsonify(_payload)
     except Exception as e:
         logger.exception("[api_player_team] error")
         return _api_err("Request failed", e)
