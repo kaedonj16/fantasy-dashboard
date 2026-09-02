@@ -508,29 +508,43 @@
     const style = document.createElement("style");
     style.id = "br-da-invite-css";
     style.textContent =
+      "@keyframes br-da-invite-in{from{opacity:0;transform:translateY(12px) scale(.98);}to{opacity:1;transform:none;}}" +
       "#" + INVITE_ID + "{position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;" +
-      "padding:20px;background:rgba(8,16,28,.55);}" +
-      "#" + INVITE_ID + " .br-da-invite-card{width:min(400px,100%);padding:20px 20px 16px;border-radius:16px;background:#122d4b;color:#fff;" +
-      "font:600 13px/1.45 system-ui,-apple-system,sans-serif;box-shadow:0 18px 48px rgba(0,0,0,.4);" +
-      "border:1px solid rgba(255,255,255,.12);}" +
-      "#" + INVITE_ID + " .br-da-invite-brand{display:flex;align-items:center;gap:10px;margin:0 0 14px;}" +
-      "#" + INVITE_ID + " .br-da-invite-logo{width:40px;height:auto;border-radius:8px;flex:0 0 auto;background:#000;}" +
+      "padding:20px;background:rgba(6,12,22,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);}" +
+      "#" + INVITE_ID + " .br-da-invite-card{position:relative;width:min(400px,100%);padding:24px 24px 18px;border-radius:20px;" +
+      "background:linear-gradient(165deg,#183a5e 0%,#102842 55%,#0d2038 100%);color:#fff;overflow:hidden;" +
+      "font:600 13px/1.45 system-ui,-apple-system,sans-serif;" +
+      "box-shadow:0 24px 60px -12px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.06);" +
+      "border:1px solid rgba(255,255,255,.1);animation:br-da-invite-in .28s cubic-bezier(.22,1,.36,1) both;}" +
+      "#" + INVITE_ID + " .br-da-invite-card:before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;" +
+      "background:radial-gradient(120% 80% at 85% -10%,rgba(125,211,252,.18),transparent 60%);}" +
+      "#" + INVITE_ID + " .br-da-invite-card>*{position:relative;}" +
+      "#" + INVITE_ID + " .br-da-invite-brand{display:flex;align-items:center;gap:11px;margin:0 0 16px;}" +
+      "#" + INVITE_ID + " .br-da-invite-logo{width:44px;height:44px;object-fit:contain;flex:0 0 auto;}" +
       "#" + INVITE_ID + " .br-da-invite-brand-txt{min-width:0;flex:1;}" +
-      "#" + INVITE_ID + " .br-da-invite-kicker{margin:0;font:800 11px/1.2 inherit;letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.62);}" +
-      "#" + INVITE_ID + " .br-da-invite-ver{flex:0 0 auto;margin:0;padding:3px 8px;border-radius:999px;border:1px solid rgba(255,255,255,.2);" +
-      "font:800 11px/1 inherit;letter-spacing:.02em;color:rgba(255,255,255,.88);}" +
-      "#" + INVITE_ID + " .br-da-invite-title{font:800 18px/1.25 inherit;margin:0 0 8px;}" +
-      "#" + INVITE_ID + " .br-da-invite-copy{margin:0 0 12px;color:rgba(255,255,255,.84);font-weight:500;}" +
-      "#" + INVITE_ID + " .br-da-invite-perks{margin:0 0 16px;padding:0;list-style:none;}" +
-      "#" + INVITE_ID + " .br-da-invite-perks li{position:relative;margin:0 0 6px;padding:0 0 0 16px;color:rgba(255,255,255,.88);font-weight:600;}" +
+      "#" + INVITE_ID + " .br-da-invite-kicker{margin:0;font:800 11px/1.2 inherit;letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.66);}" +
+      "#" + INVITE_ID + " .br-da-invite-ver{flex:0 0 auto;margin:0;padding:4px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.18);" +
+      "background:rgba(255,255,255,.05);font:800 11px/1 inherit;letter-spacing:.02em;color:rgba(255,255,255,.9);}" +
+      "#" + INVITE_ID + " .br-da-invite-title{font:800 19px/1.3 inherit;margin:0 0 8px;letter-spacing:-.01em;}" +
+      "#" + INVITE_ID + " .br-da-invite-copy{margin:0 0 16px;color:rgba(255,255,255,.82);font-weight:500;}" +
+      "#" + INVITE_ID + " .br-da-invite-perks{margin:0 0 20px;padding:0;list-style:none;}" +
+      "#" + INVITE_ID + " .br-da-invite-perks li{position:relative;margin:0 0 9px;padding:0 0 0 27px;color:rgba(255,255,255,.9);font-weight:600;}" +
       "#" + INVITE_ID + " .br-da-invite-perks li:last-child{margin-bottom:0;}" +
-      "#" + INVITE_ID + " .br-da-invite-perks li:before{content:'';position:absolute;left:0;top:7px;width:7px;height:7px;border-radius:50%;background:#7dd3fc;}" +
-      "#" + INVITE_ID + " .br-da-invite-row{display:flex;gap:8px;}" +
-      "#" + INVITE_ID + " button{flex:1;margin:0;padding:10px 12px;border-radius:10px;font:700 13px/1.2 inherit;cursor:pointer;}" +
-      "#" + INVITE_ID + " .br-da-invite-skip{border:1px solid rgba(255,255,255,.22);background:transparent;color:#fff;}" +
-      "#" + INVITE_ID + " .br-da-invite-open{border:0;background:#fff;color:#122d4b;}" +
-      "#" + INVITE_ID + " .br-da-invite-open:hover{background:#e8eef5;}" +
-      "#" + INVITE_ID + " .br-da-invite-skip:hover{background:rgba(255,255,255,.08);}";
+      "#" + INVITE_ID + " .br-da-invite-perks li:before{content:'';position:absolute;left:0;top:1px;width:17px;height:17px;border-radius:50%;" +
+      "background:rgba(125,211,252,.16);border:1px solid rgba(125,211,252,.4);}" +
+      "#" + INVITE_ID + " .br-da-invite-perks li:after{content:'';position:absolute;left:6px;top:5px;width:4px;height:7px;" +
+      "border:solid #7dd3fc;border-width:0 2px 2px 0;transform:rotate(45deg);}" +
+      "#" + INVITE_ID + " .br-da-invite-row{display:flex;gap:10px;}" +
+      "#" + INVITE_ID + " button{flex:1;margin:0;padding:12px 12px;border-radius:12px;font:700 13px/1.2 inherit;cursor:pointer;" +
+      "transition:transform .12s ease,background .15s ease,box-shadow .15s ease,border-color .15s ease;}" +
+      "#" + INVITE_ID + " button:focus-visible{outline:2px solid #7dd3fc;outline-offset:2px;}" +
+      "#" + INVITE_ID + " button:active{transform:translateY(1px);}" +
+      "#" + INVITE_ID + " .br-da-invite-skip{border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.02);color:rgba(255,255,255,.9);}" +
+      "#" + INVITE_ID + " .br-da-invite-skip:hover{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.32);}" +
+      "#" + INVITE_ID + " .br-da-invite-open{flex:1.4;border:0;background:#fff;color:#0d2038;box-shadow:0 6px 16px -4px rgba(0,0,0,.45);}" +
+      "#" + INVITE_ID + " .br-da-invite-open:hover{background:#eaf4fd;box-shadow:0 10px 24px -6px rgba(125,211,252,.5);transform:translateY(-1px);}" +
+      "@media (prefers-reduced-motion:reduce){#" + INVITE_ID + " .br-da-invite-card{animation:none;}" +
+      "#" + INVITE_ID + " button:hover,#" + INVITE_ID + " button:active{transform:none;}}";
     (document.head || document.documentElement).appendChild(style);
   }
 
@@ -561,7 +575,7 @@
       '<div class="br-da-invite-brand">' +
       (logoUrl ? '<img class="br-da-invite-logo" alt="BR Fantasy" src="' + logoUrl + '">' : "") +
       '<div class="br-da-invite-brand-txt">' +
-      '<p class="br-da-invite-kicker">BR Fantasy extension</p>' +
+      '<p class="br-da-invite-kicker">BR Fantasy Draft Assistant</p>' +
       "</div>" +
       '<p class="br-da-invite-ver">' + PRODUCT_VERSION + "</p>" +
       "</div>" +

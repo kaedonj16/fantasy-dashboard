@@ -1,4 +1,4 @@
-# BR Fantasy - League Connector (browser extension)
+# BR Fantasy Draft Assistant (browser extension)
 
 Connect private ESPN fantasy leagues to BR Fantasy, **auto-relay live draft
 picks** from ESPN or Yahoo into Draft Room, and **dock a read-only Draft
