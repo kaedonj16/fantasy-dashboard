@@ -10192,7 +10192,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const yahooLeagueIdInput = document.getElementById("yahooLeagueIdInput");
   const yahooTeamName = document.getElementById("yahooTeamName");
   const yahooConnectBtn = document.getElementById("yahooConnectBtn");
+  const yahooSubmitRow = document.getElementById("yahooSubmitRow");
   const yahooErrorBox = document.getElementById("yahooError");
+  const yahooAccountChoice = document.getElementById("yahooAccountChoice");
+  const yahooPrivateGoogle = document.getElementById("yahooPrivateGoogle");
+  const yahooPrivateGuest = document.getElementById("yahooPrivateGuest");
 
   const mflLeagueIdInput = document.getElementById("mflLeagueIdInput");
   const mflSeasonInput = document.getElementById("mflSeasonInput");
@@ -10400,6 +10404,7 @@ if (!platformBtns.length) return;
   let espnRequestedAction = "";
   let mflRequestedAction = "";
   let fleaRequestedAction = "";
+  let yahooRequestedAction = "";
   let sleeperLookupUser = null;
 
   async function saveLeagueToSignedInAccount(details) {
@@ -10530,12 +10535,18 @@ if (!platformBtns.length) return;
     if (fleaflickerFlow) fleaflickerFlow.style.display = platform === "fleaflicker" ? "block" : "none";
     if (sleeperHint) sleeperHint.style.display = platform === "sleeper" ? ""      : "none";
     if (platform === "espn") setHomeEspnMethod(homeEspnMethod);
+    if (platform === "yahoo") setHomeYahooChoice();
     if (platform === "mfl") setHomeMflMethod(homeMflMethod);
     if (platform === "fleaflicker") setHomeFleaMethod(homeFleaMethod);
     if (platform !== "espn") {
       if (espnSwidInput) espnSwidInput.value = "";
       if (espnS2Input) espnS2Input.value = "";
     }
+  }
+
+  function setHomeYahooChoice() {
+    if (yahooAccountChoice) yahooAccountChoice.style.display = !window._hasAccount ? "flex" : "none";
+    if (yahooSubmitRow) yahooSubmitRow.style.display = window._hasAccount ? "flex" : "none";
   }
 
   function setHomeMflMethod(method) {
@@ -11068,13 +11079,44 @@ if (!platformBtns.length) return;
       }
 
       if (yahooErrorBox) yahooErrorBox.style.display = "none";
+      const teamName = yahooTeamName?.value.trim() || "";
+
+      // Unsigned Google path: stash the league, then sign in with Google.
+      // Yahoo still has to authorize after that if this session has no Yahoo
+      // token — the Google callback sends them to /auth/yahoo. Do not bounce
+      // to Yahoo first; that would skip the Google account.
+      if (!window._hasAccount && yahooRequestedAction === "google") {
+        yahooConnectBtn.disabled = true;
+        yahooConnectBtn.textContent = "Continuing...";
+        try {
+          const pending = await fetch("/api/link/pending", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              platform: "yahoo",
+              league_id: leagueId,
+              username: teamName || null,
+            }),
+          });
+          const pendingData = await pending.json();
+          if (!pending.ok || !pendingData.ok) throw new Error(pendingData.error || "Could not save this league.");
+          showDashboardLoadingOverlay("Signing you in…", "Saving this Yahoo league to your account");
+          window.location.href = pendingData.auth_url || "/auth/google";
+        } catch (err) {
+          if (yahooErrorBox) {
+            yahooErrorBox.textContent = err.message || "Unable to connect to Yahoo.";
+            yahooErrorBox.style.display = "block";
+          }
+          yahooConnectBtn.disabled = false;
+          yahooConnectBtn.textContent = "Connect Yahoo Account";
+        }
+        return;
+      }
 
       try {
         const res = await fetch(`/api/yahoo-validate-league?league_id=${encodeURIComponent(leagueId)}`);
         const data = await res.json();
 
         if (res.status === 401 && data.needs_oauth) {
-          const teamName = yahooTeamName?.value.trim() || "";
           // Start from the server's auth_url when it sends one — a 403 recovery
           // returns /auth/yahoo?reauth=1 so Yahoo shows its account chooser
           // instead of silently re-authorizing the same wrong account. Then
@@ -11096,7 +11138,6 @@ if (!platformBtns.length) return;
         }
         if (formPlatform) formPlatform.value = "yahoo";
 
-        const teamName = yahooTeamName?.value.trim() || "";
         const formUsername = document.getElementById("formUsername");
         if (formUsername) formUsername.value = teamName;
 
@@ -11109,6 +11150,14 @@ if (!platformBtns.length) return;
       }
     });
   }
+  yahooPrivateGoogle?.addEventListener("click", () => {
+    yahooRequestedAction = "google";
+    yahooConnectBtn?.click();
+  });
+  yahooPrivateGuest?.addEventListener("click", () => {
+    yahooRequestedAction = "guest";
+    yahooConnectBtn?.click();
+  });
 
   // MFL: public preview, or private connect with cookie/APIKEY (password only
   // used server-side to obtain a cookie; never persisted). Guest Google/Guest

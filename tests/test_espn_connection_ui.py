@@ -142,10 +142,10 @@ def test_google_actions_share_google_continue_style():
 
 def test_both_espn_methods_use_full_account_choice_copy():
     markup = Path("app.py").read_text()
-    assert markup.count("Save your leagues &amp; settings, synced across devices") >= 3
-    assert markup.count("Free &middot; no password") >= 3
-    assert markup.count("Continue without account") >= 3
-    assert markup.count("Quick view on this device &middot; nothing saved") >= 3
+    assert markup.count("Save your leagues &amp; settings, synced across devices") >= 4
+    assert markup.count("Free &middot; no password") >= 4
+    assert markup.count("Continue without account") >= 4
+    assert markup.count("Quick view on this device &middot; nothing saved") >= 4
     assert "/api/link/espn/private/guest" in markup
 
 

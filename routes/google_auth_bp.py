@@ -253,6 +253,17 @@ def google_auth_callback():
     pending = session.pop("pending_link", None)
     if isinstance(pending, dict) and pending.get("platform") and pending.get("league_id"):
         try:
+            # Home Yahoo "Continue with Google" signs in first. Yahoo still has
+            # to authorize before membership is verified and the league attached.
+            if (
+                str(pending.get("platform") or "").strip().lower() == "yahoo"
+                and not session.get("yahoo_access_token")
+            ):
+                params = {"league_id": str(pending["league_id"])}
+                team_name = str(pending.get("username") or "").strip()
+                if team_name:
+                    params["team_name"] = team_name
+                return redirect("/auth/yahoo?" + urlencode(params))
             add_user_league(
                 account_id, pending["platform"], pending["league_id"],
                 season=pending.get("season"), team_id=pending.get("team_id"),
