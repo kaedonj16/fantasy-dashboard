@@ -103,18 +103,18 @@ def build_matchup_preview(
     username_by_owner: Dict[str, Optional[str]] = {
         u["user_id"]: u.get("display_name") for u in users if "user_id" in u
     }
+    users_by_rid: Dict[str, dict] = {
+        str(u.get("roster_id")): u for u in users if u.get("roster_id") is not None
+    }
 
-    avatar_cache: Dict[Optional[str], Any] = {}
+    avatar_cache: Dict[str, Any] = {}
     roster_by_owner: Dict[Optional[str], dict] = {r.get("owner_id"): r for r in rosters}
     roster_by_rid: Dict[str, dict] = {str(r.get("roster_id")): r for r in rosters}
 
-    def get_avatar(owner_id: Optional[str]) -> Any:
-        if owner_id not in avatar_cache:
-            avatar_cache[owner_id] = (
-                team_avatar(platform, roster_by_owner.get(owner_id), users)
-                if owner_id is not None else None
-            )
-        return avatar_cache[owner_id]
+    def get_avatar_for_rid(rid: str) -> Any:
+        if rid not in avatar_cache:
+            avatar_cache[rid] = team_avatar(platform, roster_by_rid.get(rid), users)
+        return avatar_cache[rid]
 
     def _to_int(x) -> Optional[int]:
         try:
@@ -156,7 +156,10 @@ def build_matchup_preview(
 
         wins, losses = record_by_rid.get(rid, (0, 0))
         owner_id = owner_id_by_rid.get(rid)
-        username = username_by_owner.get(owner_id)
+        user = users_by_rid.get(rid) or (
+            next((u for u in users if u.get("user_id") == owner_id), None) if owner_id else None
+        )
+        username = (user or {}).get("display_name")
 
         return {
             "name": roster_map.get(rid, f"Roster {rid}"),
@@ -164,7 +167,7 @@ def build_matchup_preview(
             "starters": s_infos,
             "bench": b_infos,
             "pts_total": pts_total,
-            "avatar": get_avatar(owner_id),
+            "avatar": get_avatar_for_rid(rid),
             "record": f"{wins}-{losses}",
             "username": username,
         }
@@ -181,14 +184,17 @@ def build_matchup_preview(
             record = f"{w}-{l}"
 
         owner_id = owner_id_by_rid.get(rid_str)
+        user = users_by_rid.get(rid_str) if rid_str else None
         return {
             "name": name,
             "roster_id": rid_str,
             "starters": [],
             "pts_total": None,
-            "avatar": get_avatar(owner_id) if owner_id else None,
+            "avatar": get_avatar_for_rid(rid_str) if rid_str else None,
             "record": record,
-            "username": username_by_owner.get(owner_id) if owner_id else None,
+            "username": (user or {}).get("display_name") if user else (
+                username_by_owner.get(owner_id) if owner_id else None
+            ),
         }
 
     # ------------------------------------------------------------------

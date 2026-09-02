@@ -236,6 +236,9 @@ def team_avatar(platform, roster: dict, users: list[dict]) -> Union[str, None]:
 
     owner_id = roster.get("owner_id")
     u = next((x for x in users if x.get("user_id") == owner_id), None) if owner_id else None
+    if not u and roster.get("roster_id") is not None:
+        rid = str(roster.get("roster_id"))
+        u = next((x for x in users if str(x.get("roster_id")) == rid), None)
     umeta = (u.get("metadata") if u else None) or {}
     if umeta.get("avatar"):
         return umeta["avatar"]

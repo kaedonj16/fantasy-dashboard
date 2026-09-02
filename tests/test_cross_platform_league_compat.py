@@ -120,3 +120,11 @@ def test_league_is_redraft_source_honors_league_type_string():
     src = Path("app.py").read_text(encoding="utf-8")
     assert 'settings.get("league_type")' in src
     assert '"redraft", "keeper"' in src
+
+
+def test_league_is_redraft_yahoo_defaults_to_redraft():
+    src = Path("app.py").read_text(encoding="utf-8")
+    assert 'platform") or "").strip().lower() == "yahoo"' in src
+    assert "Yahoo has no dynasty product" in src
+    yahoo_block = src.split("Yahoo has no dynasty product", 1)[1][:500]
+    assert "return True" in yahoo_block

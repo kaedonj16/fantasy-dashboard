@@ -1301,6 +1301,7 @@ def build_teams_overview(
 ) -> List[dict]:
     teams_ctx: List[dict] = []
     users_by_id = {str(u["user_id"]): u for u in users_list}
+    users_by_rid = {str(u.get("roster_id")): u for u in users_list if u.get("roster_id") is not None}
 
     def normalize_pos(pos: str) -> str:
         p = (pos or "").strip().upper()
@@ -1396,7 +1397,7 @@ def build_teams_overview(
     for r in rosters:
         rid = str(r["roster_id"])
         owner_id = str(r.get("owner_id") or "")
-        user = users_by_id.get(owner_id, {})
+        user = users_by_rid.get(rid) or users_by_id.get(owner_id, {})
 
         settings = r.get("settings", {}) or {}
         wins = int(settings.get("wins", 0))
