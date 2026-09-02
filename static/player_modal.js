@@ -1854,12 +1854,14 @@ function _pmFetchTradesInto(panel, playerId, season, ctx) {
 // ── Team tab (player modal) ───────────────────────────────────────────────────
 let _pmTeamAdvOpen = false;
 
-function _pmRankTier(rank, total) {
-  if (rank == null || !total) return 'tier-neutral';
+// Tier color for a plain "higher rank = better" stat (Scoring, Pace), as a
+// theme token so hero rank labels track light/dark like the profile bars.
+function _pmTeamTierColor(rank, total) {
+  if (rank == null || !total) return 'var(--text)';
   const third = Math.ceil(total / 3);
-  if (rank <= third) return 'tier-good';
-  if (rank <= third * 2) return 'tier-mid';
-  return 'tier-bad';
+  if (rank <= third) return 'var(--win)';
+  if (rank <= third * 2) return 'var(--warning)';
+  return 'var(--loss)';
 }
 
 function _pmFmtTeamVal(key, val) {
@@ -1873,21 +1875,6 @@ function _pmFmtTeamVal(key, val) {
   }
   if (key === 'pass_tds' || key === 'rush_tds') return String(Math.round(n));
   return String(n);
-}
-
-function _pmTeamRankCard(label, key, entry, opts) {
-  opts = opts || {};
-  const rank = entry && entry.rank;
-  const total = entry && entry.total;
-  const tierCls = opts.accent ? 'tier-accent' : _pmRankTier(rank, total);
-  const primaryCls = opts.lead ? ' pm-hero-primary' : '';
-  const rankLbl = (rank != null && total) ? `#${rank} of ${total}` : '—';
-  const valLbl = _pmFmtTeamVal(key, entry && entry.value);
-  return `<div class="pm-hero-stat${primaryCls}">
-    <div class="pm-hero-label">${label}</div>
-    <div class="pm-hero-val">${valLbl}</div>
-    <div class="pm-hero-sub pm-rank-tier ${tierCls}">${rankLbl}</div>
-  </div>`;
 }
 
 function _pmTeamInjBadge(injury) {
@@ -1935,7 +1922,8 @@ function _pmTeamMetricColor(pos, key, rank, total) {
   const third = Math.ceil(total / 3);
   let t = rank <= third ? 'good' : (rank <= third * 2 ? 'mid' : 'bad');
   if (stance === 'neg') t = t === 'good' ? 'bad' : (t === 'bad' ? 'good' : 'mid');
-  return t === 'good' ? '#10b981' : (t === 'mid' ? '#f59e0b' : '#ef4444');
+  // Theme tokens so the bars track light/dark instead of a fixed mid green/red.
+  return t === 'good' ? 'var(--win)' : (t === 'mid' ? 'var(--warning)' : 'var(--loss)');
 }
 
 function _pmTeamProfileAxis() {
@@ -1949,8 +1937,11 @@ function _pmTeamProfileRow(pos, label, key, entry) {
   const val = _pmFmtTeamVal(key, entry.value);
   const tip = `${label}: ${_pmTeamOrd(rank)} of ${total} · ${val}`.replace(/"/g, '&quot;');
   // Whole row is hoverable/focusable (not just the 13px dot) so the detail is
-  // reachable by pointer and keyboard.
-  return `<div class="pm-tp-row" title="${tip}" tabindex="0" aria-label="${tip}">
+  // reachable by pointer and keyboard. Uses the shared themed tooltip engine
+  // (advEnterMetricDef/advShowMetricDef) rather than a native `title`: the
+  // modal body clips overflow, so this fixed-position bubble actually shows
+  // (and matches the app theme) where a native tooltip did not.
+  return `<div class="pm-tp-row" data-def="${tip}" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)" onclick="advShowMetricDef(event)" tabindex="0" aria-label="${tip}">
     <span class="pm-tp-label">${label}</span>
     <span class="pm-tp-track"><span class="pm-tp-base"></span><span class="pm-tp-mid"></span>
       <span class="pm-tp-fill" style="width:${x}%;background:${c}"></span>
@@ -1969,7 +1960,15 @@ function _pmTeamShareBar(data) {
   if (!segs.length) return '';
   const rest = Math.max(0, 100 - segs.reduce((a, s) => a + s.pct, 0));
   const me = segs.find(s => s.me);
-  const grays = ['#334155', '#475569', '#64748b', '#94a3b8', '#b8c2cf'];
+  // Theme-adaptive neutral ramp (subtle text blended toward the card) so the
+  // teammate segments read correctly in both light and dark themes.
+  const grays = [
+    'color-mix(in srgb, var(--text-subtle) 85%, var(--card))',
+    'color-mix(in srgb, var(--text-subtle) 66%, var(--card))',
+    'color-mix(in srgb, var(--text-subtle) 50%, var(--card))',
+    'color-mix(in srgb, var(--text-subtle) 37%, var(--card))',
+    'color-mix(in srgb, var(--text-subtle) 27%, var(--card))',
+  ];
   let gi = 0;
   const bars = segs.map(s => {
     const col = s.me ? 'var(--accent)' : grays[Math.min(gi++, grays.length - 1)];
@@ -2026,8 +2025,8 @@ function _pmBuildTeamHTML(data) {
   const rm = data.ranks_more || {};
   const pr = (rm.pass_rate && rm.pass_rate.value != null) ? Math.round(Number(rm.pass_rate.value) * 100) : null;
   const heroStats = [
-    ranks.points ? `<div class="pm-hero-stat"><div class="pm-hero-label">Scoring</div><div class="pm-hero-val">${_pmTeamOrdSup(ranks.points.rank)}</div></div>` : '',
-    rm.plays_pg ? `<div class="pm-hero-stat"><div class="pm-hero-label">Pace</div><div class="pm-hero-val">${_pmTeamOrdSup(rm.plays_pg.rank)}</div></div>` : '',
+    ranks.points ? `<div class="pm-hero-stat"><div class="pm-hero-label">Scoring</div><div class="pm-hero-val" style="color:${_pmTeamTierColor(ranks.points.rank, ranks.points.total)}">${_pmTeamOrdSup(ranks.points.rank)}</div></div>` : '',
+    rm.plays_pg ? `<div class="pm-hero-stat"><div class="pm-hero-label">Pace</div><div class="pm-hero-val" style="color:${_pmTeamTierColor(rm.plays_pg.rank, rm.plays_pg.total)}">${_pmTeamOrdSup(rm.plays_pg.rank)}</div></div>` : '',
     pr != null ? `<div class="pm-hero-stat pm-hero-split"><div class="pm-hero-label">Pass / Run</div>
       <div class="pm-hero-splitbar"><i style="width:${pr}%;background:var(--accent)"></i><i style="width:${100 - pr}%;background:var(--border)"></i></div>
       <div class="pm-hero-splitlbl"><span>${pr}% Pass</span><span>${100 - pr}% Run</span></div></div>` : '',
@@ -2070,7 +2069,7 @@ function _pmBuildTeamHTML(data) {
     <div class="pm-team-sec">
       <div class="pm-section-header"><span class="pm-section-label">Offense Profile</span><span class="pm-team-secnote">${data.stats_season} · rank of 32</span></div>
       ${_pmTeamProfileAxis()}${profile}
-      <div class="pm-team-note">Dot = team rank (right = 1st). Color = whether that tendency helps a ${pos}: <b style="color:#10b981">green helps</b>, <b style="color:#ef4444">red hurts</b>.</div>
+      <div class="pm-team-note">Dot = team rank (right = 1st). Color = whether that tendency helps a ${pos}: <b style="color:var(--win)">green helps</b>, <b style="color:var(--loss)">red hurts</b>.</div>
       <div class="pm-section-header pm-section-collapsible pm-team-adv-toggle" role="button" tabindex="0" aria-expanded="${advOpen ? 'true' : 'false'}" aria-controls="pmTeamAdvBody">
         <span class="pm-collapse-chevron" aria-hidden="true">${advChev}</span>
         <span class="pm-section-label">More team ranks</span>

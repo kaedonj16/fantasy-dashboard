@@ -36012,7 +36012,7 @@ a, button, [role="button"], [role="tab"], summary, label,
     font-weight: 800;
     font-size: 15px;
     letter-spacing: 0.03em;
-    color: #fff;
+    color: var(--on-accent);
     background: var(--accent);
 }
 .pm-team-header-text { min-width: 0; }
