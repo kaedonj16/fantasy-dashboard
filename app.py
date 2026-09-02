@@ -101,7 +101,17 @@ from dashboard_services.subscriptions import (
 import stripe
 
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
-from dashboard_services.providers.espn_api import safe_float
+from dashboard_services.providers.base import (
+    LeagueNotFoundError,
+    ProviderAuthenticationError,
+    ProviderUnavailableError,
+)
+from dashboard_services.providers.espn_api import (
+    ESPNAccessDenied,
+    ESPNInvalidLeague,
+    ESPNUnavailable,
+    safe_float,
+)
 from dashboard_services.service import (
     age_from_bday,
     build_matchups_by_week,
@@ -5226,12 +5236,22 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     }
     _defaults = {"league": {}, "users": [], "rosters": [], "traded": [], "drafts": [], "state": {}}
     _results: dict = dict(_defaults)
+    _core_provider_errors = (
+        ProviderUnavailableError, ProviderAuthenticationError, LeagueNotFoundError,
+        ESPNUnavailable, ESPNAccessDenied, ESPNInvalidLeague,
+    )
     with _TPE(max_workers=len(_tasks)) as _pool:
         _fmap = {_pool.submit(fn): name for name, fn in _tasks.items()}
         for _fut in _ac(_fmap):
             _name = _fmap[_fut]
             try:
                 _results[_name] = _fut.result()
+            except _core_provider_errors as _e:
+                # League/users/rosters are required to render a league page.
+                # Surface platform outages as 503/403/404 instead of an empty 500.
+                if _name in ("league", "users", "rosters"):
+                    raise
+                logger.warning("[build_league_context] task %s failed: %s", _name, _e)
             except Exception as _e:
                 logger.warning("[build_league_context] task %s failed: %s", _name, _e)
 
@@ -5338,7 +5358,14 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
             f"resolved_league_id={resolved_league_id}, season={season}"
         )
 
-    activity_df = build_week_activity(resolved_league_id, platform, season, players_map)
+    try:
+        activity_df = build_week_activity(
+            resolved_league_id, platform, season, players_map,
+            users=users, rosters=rosters,
+        )
+    except Exception as e:
+        logger.warning("[build_league_context] week activity failed: %s", e)
+        activity_df = pd.DataFrame(columns=["kind", "week", "ts", "data"])
     injury_df = build_injury_report(
         resolved_league_id,
         players,
@@ -5809,6 +5836,80 @@ _BRAND_FACES = _BRAND_FACES_MINI + (
 )
 
 
+def _branded_status_page(title: str, heading: str, message: str, status: int):
+    """JSON for /api/*; branded HTML everywhere else."""
+    if request.path.startswith("/api/"):
+        return jsonify({"ok": False, "error": message}), status
+    safe_title = html.escape(title)
+    safe_heading = html.escape(heading)
+    safe_message = html.escape(message)
+    return (
+            "<!doctype html><html lang='en'><head><title>" + safe_title + " - BR Fantasy</title>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<style>" + _BRAND_FACES_MINI + "body{font-family:'Archivo',sans-serif;background:#0f1623;color:#e2e8f0;"
+                                            "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
+                                            ".box{text-align:center;padding:40px 24px;max-width:400px;}"
+                                            ".logo{font-size:13px;font-weight:700;color:#38bdf8;letter-spacing:.04em;margin-bottom:24px;}"
+                                            "h2{margin:0 0 8px;font-size:22px;}p{color:#94a3b8;margin:0 0 24px;font-size:14px;}"
+                                            "a{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
+                                            "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;}</style>"
+                                            "</head><body><div class='box'>"
+                                            "<div class='logo'>BR Fantasy</div>"
+                                            "<h2>" + safe_heading + "</h2>"
+                                            "<p>" + safe_message + "</p>"
+                                            "<a href='/'>&#8592; Back to home</a>"
+                                            "</div></body></html>"
+    ), status
+
+
+def _provider_error_message(exc: Exception, fallback: str) -> str:
+    text = str(exc or "").strip()
+    if text and len(text) < 200 and "Traceback" not in text:
+        return text
+    return fallback
+
+
+@app.errorhandler(ProviderUnavailableError)
+@app.errorhandler(ESPNUnavailable)
+def handle_provider_unavailable(e):
+    message = _provider_error_message(e, "The fantasy platform is temporarily unavailable.")
+    logger.warning("[503] provider unavailable: %s", message)
+    return _branded_status_page(
+        "Temporarily unavailable",
+        "League data is temporarily unavailable",
+        message + " Please try again in a moment.",
+        503,
+    )
+
+
+@app.errorhandler(ProviderAuthenticationError)
+@app.errorhandler(ESPNAccessDenied)
+def handle_provider_auth(e):
+    message = _provider_error_message(
+        e, "This league is private or requires authentication.",
+    )
+    logger.warning("[403] provider access denied: %s", message)
+    return _branded_status_page(
+        "League access required",
+        "This league could not be accessed",
+        message,
+        403,
+    )
+
+
+@app.errorhandler(LeagueNotFoundError)
+@app.errorhandler(ESPNInvalidLeague)
+def handle_provider_not_found(e):
+    message = _provider_error_message(e, "No league was found for that ID and season.")
+    logger.warning("[404] provider league not found: %s", message)
+    return _branded_status_page(
+        "League not found",
+        "League not found",
+        message,
+        404,
+    )
+
+
 @app.errorhandler(500)
 def handle_500(e):
     logger.exception("[500] Internal server error")
@@ -6115,12 +6216,18 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     if full or page in ("activity", "dashboard"):
         clear_activity_cache_for_league(resolved_league_id)
 
-        ctx["activity_df"] = build_week_activity(
-            resolved_league_id,
-            platform,
-            viewed_season,
-            players_map,
-        )
+        try:
+            ctx["activity_df"] = build_week_activity(
+                resolved_league_id,
+                platform,
+                viewed_season,
+                players_map,
+                users=ctx.get("users"),
+                rosters=ctx.get("rosters"),
+            )
+        except Exception as e:
+            logger.warning("[refresh_league_ctx_section] week activity failed: %s", e)
+            ctx["activity_df"] = pd.DataFrame(columns=["kind", "week", "ts", "data"])
 
         if has_idp:
             statuses = build_status_by_week(

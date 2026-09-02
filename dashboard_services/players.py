@@ -103,14 +103,22 @@ def get_league_rostered_player_ids(league_id: str, rosters) -> Dict[str, List[st
     return by_roster
 
 
-def build_roster_display_maps(league_id: str, platform, season):
+def build_roster_display_maps(
+        league_id: str,
+        platform,
+        season,
+        users: Optional[list[dict]] = None,
+        rosters: Optional[list[dict]] = None,
+):
     """
     Returns:
       roster_name:   roster_id -> display name
       roster_avatar: roster_id -> avatar url or None
     """
-    users = get_users(platform, league_id, season)
-    rosters = get_rosters(platform, league_id, season)
+    if users is None:
+        users = get_users(platform, league_id, season)
+    if rosters is None:
+        rosters = get_rosters(platform, league_id, season)
 
     user_fallback: Dict[str, str] = {}
     for u in users:
