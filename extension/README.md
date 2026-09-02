@@ -65,6 +65,16 @@ No pick submission to Sleeper, ESPN, or Yahoo.
 1. `chrome://extensions` → Developer mode → **Load unpacked** → `extension/`
 2. Sign into espn.com / Yahoo / Sleeper; open a draft tab to see the overlay.
 
+### Sleeper overlay not showing
+
+The assistant asks before docking (invite modal). It only appears on a **draft room**
+URL, not the league home.
+
+1. Confirm the tab is `sleeper.com/draft/nfl/<id>` or `…/leagues/<id>/draft` (not the Sleeper app).
+2. After loading an unpacked build, click **Reload** on `chrome://extensions`, then hard-refresh the draft tab.
+3. If you clicked **Not now**, use the extension popup → **Open Draft Assistant**, or close the tab and reopen it.
+4. SPA clicks from the league page should still trigger the invite; if they do not, hard-refresh once on the draft URL.
+
 ## Production zip (Chrome Web Store / AMO)
 
 ```bash

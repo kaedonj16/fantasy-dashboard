@@ -84,9 +84,11 @@ openAssistantBtn.addEventListener("click", () => {
       openAssistantStatus.textContent = "No active tab.";
       return;
     }
-    chrome.tabs.sendMessage(tab.id, { type: "openDraftAssistant" }, function () {
-      if (chrome.runtime.lastError) {
-        openAssistantStatus.textContent = "Open a Sleeper, Yahoo, or ESPN draft tab first.";
+    chrome.runtime.sendMessage({ type: "openDraftAssistantOnTab", tabId: tab.id }, function (resp) {
+      void chrome.runtime.lastError;
+      if (!resp || !resp.ok) {
+        openAssistantStatus.textContent =
+          (resp && resp.message) || "Open a Sleeper, Yahoo, or ESPN draft tab first.";
         return;
       }
       openAssistantStatus.textContent = "Opening Draft Assistant on this tab.";

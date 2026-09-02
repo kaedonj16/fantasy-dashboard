@@ -180,6 +180,52 @@
     }
   }
 
+  function sleeperHref(href) {
+    try {
+      return new URL(String(href || (typeof location !== "undefined" ? location.href : "") || ""), "https://sleeper.com");
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  function sleeperNavText(href) {
+    const u = sleeperHref(href);
+    if (!u) return "";
+    return (String(u.pathname || "") + "\n" + String(u.hash || "") + "\n" + String(u.search || "")).toLowerCase();
+  }
+
+  function sleeperDraftIdFromUrl(href) {
+    try {
+      const u = sleeperHref(href);
+      if (!u) return "";
+      const q = u.searchParams.get("draft_id") || u.searchParams.get("draftId") || "";
+      if (q && /^[a-zA-Z0-9]+$/.test(q)) return q;
+      const text = sleeperNavText(u.href);
+      const m = text.match(/\/draft\/(?:nfl\/|nba\/|ncaaf\/|cbb\/|epl\/)?([a-z0-9]+)/i);
+      return m ? m[1] : "";
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function sleeperLeagueIdFromUrl(href) {
+    try {
+      const m = sleeperNavText(href).match(/\/leagues\/(\d{6,20})/);
+      return m ? m[1] : "";
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function isSleeperDraftRoom(href) {
+    const text = sleeperNavText(href);
+    if (!text) return false;
+    if (sleeperDraftIdFromUrl(href)) return true;
+    if (/\/leagues\/\d{6,20}\/draft(?:\/|$|\?|#)/.test(text.replace(/\n/g, ""))) return true;
+    if (/\/draft\/[a-z0-9]+/.test(text)) return true;
+    return false;
+  }
+
   function yahooClientTeamId() {
     try {
       const m = String(location.pathname || "").match(/\/draftclient\/(?:nfl\/|f1\/)?(\d+)\/(\d+)/i);
@@ -1126,6 +1172,9 @@
     slotFromYahooClock: slotFromYahooClock,
     parseYahooClock: parseYahooClock,
     isEspnDraftRoom: isEspnDraftRoom,
+    isSleeperDraftRoom: isSleeperDraftRoom,
+    sleeperDraftIdFromUrl: sleeperDraftIdFromUrl,
+    sleeperLeagueIdFromUrl: sleeperLeagueIdFromUrl,
     clampSlot: clampSlot,
     rosterFromEspnSlots: rosterFromEspnSlots,
     rosterFromSleeperSettings: rosterFromSleeperSettings,

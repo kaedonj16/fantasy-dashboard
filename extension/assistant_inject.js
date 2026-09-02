@@ -54,7 +54,15 @@
   }
 
   function isHostDraftRoom() {
-    if (platformFromHost() !== "espn") return true;
+    const platform = platformFromHost();
+    if (platform === "sleeper") {
+      if (window.BRDraftSlot && typeof window.BRDraftSlot.isSleeperDraftRoom === "function") {
+        return window.BRDraftSlot.isSleeperDraftRoom();
+      }
+      const path = String(location.pathname || "") + String(location.hash || "");
+      return /\/draft\//i.test(path) || /\/leagues\/\d+\/draft/i.test(path);
+    }
+    if (platform !== "espn") return true;
     if (window.BRDraftSlot && typeof window.BRDraftSlot.isEspnDraftRoom === "function") {
       return window.BRDraftSlot.isEspnDraftRoom();
     }
@@ -561,15 +569,63 @@
   }
 
   function tryMount() {
-    if (!isHostDraftRoom()) return false;
+    if (!isHostDraftRoom()) {
+      removeInvite();
+      return false;
+    }
     if (document.getElementById(ROOT_ID)) return true;
     if (readLaunchChoice() === "skip") return true;
+    if (readLaunchChoice() === "open") {
+      ready = false;
+      iframe = null;
+      mount();
+      requestPool();
+      return true;
+    }
     showInvite();
     const invite = document.getElementById(INVITE_ID);
     if (invite && document.body && invite.parentNode !== document.body) {
       document.body.appendChild(invite);
     }
     return true;
+  }
+
+  function hookHistory(cb) {
+    try {
+      const wrap = function (fn) {
+        return function () {
+          const ret = fn.apply(this, arguments);
+          try { cb(); } catch (_err) { /* ignore */ }
+          return ret;
+        };
+      };
+      history.pushState = wrap(history.pushState.bind(history));
+      history.replaceState = wrap(history.replaceState.bind(history));
+    } catch (_e) { /* ignore */ }
+    window.addEventListener("popstate", cb);
+  }
+
+  function watchHost() {
+    let lastHref = location.href;
+    const check = function () {
+      if (location.href !== lastHref) lastHref = location.href;
+      tryMount();
+    };
+    hookHistory(check);
+    window.addEventListener("hashchange", check);
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", check);
+    }
+    setInterval(check, 800);
+    try {
+      if (!window.__brDaInviteMo && document.documentElement) {
+        window.__brDaInviteMo = new MutationObserver(function () { tryMount(); });
+        window.__brDaInviteMo.observe(document.documentElement, { childList: true, subtree: false });
+        if (document.body) {
+          window.__brDaInviteMo.observe(document.body, { childList: true, subtree: false });
+        }
+      }
+    } catch (_e) { /* ignore */ }
   }
 
   try {
@@ -579,11 +635,6 @@
     });
   } catch (_e) { /* ignore */ }
 
-  if (!tryMount()) {
-    const wait = setInterval(function () {
-      if (tryMount()) clearInterval(wait);
-    }, 1000);
-  } else if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", tryMount);
-  }
+  tryMount();
+  watchHost();
 })();

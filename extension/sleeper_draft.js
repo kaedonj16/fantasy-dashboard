@@ -4,6 +4,9 @@
 (function () {
   "use strict";
 
+  if (window.__brFantasySleeperDraft) return;
+  window.__brFantasySleeperDraft = true;
+
   const POLL_PICKS_MS = 350;
   const POLL_META_MS = 2500;
   const POLL_IDLE_MS = 2000;
@@ -49,13 +52,68 @@
     return cachedScoring;
   }
 
+  let cachedLeagueDraftId = "";
+
   function draftIdFromUrl() {
+    if (window.BRDraftSlot && typeof window.BRDraftSlot.sleeperDraftIdFromUrl === "function") {
+      const id = window.BRDraftSlot.sleeperDraftIdFromUrl();
+      if (id) return id;
+    }
     try {
-      const m = location.pathname.match(/\/draft\/(?:nfl\/)?([a-zA-Z0-9]+)/i);
+      const blob = String(location.pathname || "") + String(location.hash || "") + String(location.search || "");
+      const m = blob.match(/\/draft\/(?:nfl\/|nba\/|ncaaf\/|cbb\/|epl\/)?([a-zA-Z0-9]+)/i);
+      if (m) return m[1];
+      const q = new URLSearchParams(location.search || "").get("draft_id")
+        || new URLSearchParams(String(location.hash || "").replace(/^#/, "").split("?")[1] || "").get("draft_id");
+      return q && /^[a-zA-Z0-9]+$/.test(q) ? q : "";
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function leagueIdFromUrl() {
+    if (window.BRDraftSlot && typeof window.BRDraftSlot.sleeperLeagueIdFromUrl === "function") {
+      return window.BRDraftSlot.sleeperLeagueIdFromUrl() || "";
+    }
+    try {
+      const m = (String(location.pathname || "") + String(location.hash || "")).match(/\/leagues\/(\d{6,20})/i);
       return m ? m[1] : "";
     } catch (_e) {
       return "";
     }
+  }
+
+  function isSleeperDraftRoom() {
+    if (window.BRDraftSlot && typeof window.BRDraftSlot.isSleeperDraftRoom === "function") {
+      return window.BRDraftSlot.isSleeperDraftRoom();
+    }
+    return !!(draftIdFromUrl() || /\/leagues\/\d{6,20}\/draft/i.test(location.pathname + location.hash));
+  }
+
+  async function resolveDraftId() {
+    const fromUrl = draftIdFromUrl();
+    if (fromUrl) return fromUrl;
+    if (cachedLeagueDraftId) return cachedLeagueDraftId;
+    const leagueId = leagueIdFromUrl();
+    if (!leagueId) return "";
+    try {
+      const res = await fetch(
+        "https://api.sleeper.app/v1/league/" + encodeURIComponent(leagueId) + "/drafts",
+        { cache: "no-store" }
+      );
+      const rows = res.ok ? await res.json() : [];
+      const list = Array.isArray(rows) ? rows : [];
+      const live = list.filter(function (d) {
+        return d && /^(drafting|paused)$/i.test(String(d.status || ""));
+      })[0] || list[0];
+      if (live && live.draft_id) {
+        cachedLeagueDraftId = String(live.draft_id);
+        return cachedLeagueDraftId;
+      }
+    } catch (_e) {
+      /* keep empty */
+    }
+    return "";
   }
 
   function sleeperIdentity() {
@@ -328,7 +386,7 @@
   }
 
   async function pollPicks() {
-    const id = draftIdFromUrl();
+    const id = await resolveDraftId();
     if (!id) {
       if (typeof window.__brDaSetSync === "function") {
         window.__brDaSetSync(false, "SLEEPER · …");
@@ -346,7 +404,7 @@
   }
 
   async function pollMeta() {
-    const id = draftIdFromUrl();
+    const id = await resolveDraftId();
     const draft = cachedDraft;
     if (!id || !draft) return;
     const ident = sleeperIdentity();
@@ -408,26 +466,45 @@
     requestPicks().then(pollMeta);
   });
 
-  requestPicks().then(function () {
-    pollMeta();
-    schedulePicks();
-    scheduleMeta();
-  });
-  setTimeout(requestPicks, 200);
-  document.addEventListener("visibilitychange", function () {
-    if (!document.hidden) requestPicks();
-  });
-  let boardTick = null;
-  try {
-    const mo = new MutationObserver(function () {
-      if (document.hidden || boardTick) return;
-      boardTick = setTimeout(function () {
-        boardTick = null;
-        requestPicks();
-      }, 120);
+  let started = false;
+  function startPolling() {
+    if (started) return;
+    started = true;
+    requestPicks().then(function () {
+      pollMeta();
+      schedulePicks();
+      scheduleMeta();
     });
-    mo.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
-  } catch (_e) {
-    /* ignore */
+    setTimeout(requestPicks, 200);
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) requestPicks();
+    });
+    let boardTick = null;
+    try {
+      const mo = new MutationObserver(function () {
+        if (document.hidden || boardTick) return;
+        boardTick = setTimeout(function () {
+          boardTick = null;
+          requestPicks();
+        }, 120);
+      });
+      mo.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    } catch (_e) {
+      /* ignore */
+    }
   }
+
+  function waitForDraftRoom() {
+    if (isSleeperDraftRoom()) {
+      startPolling();
+      return;
+    }
+    const wait = setInterval(function () {
+      if (!isSleeperDraftRoom()) return;
+      clearInterval(wait);
+      startPolling();
+    }, 800);
+  }
+
+  waitForDraftRoom();
 })();

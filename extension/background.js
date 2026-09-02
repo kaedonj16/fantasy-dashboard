@@ -30,6 +30,66 @@ const YAHOO_DRAFT_TAB_URLS = [
   "https://sports.yahoo.com/fantasy/*/draft*",
 ];
 
+const SLEEPER_HOST_RE = /(^|\.)sleeper\.(com|app)$/i;
+
+function isSleeperDraftTabUrl(url) {
+  try {
+    const u = new URL(String(url || ""));
+    if (!SLEEPER_HOST_RE.test(u.hostname)) return false;
+    const blob = (u.pathname + "\n" + u.hash + "\n" + u.search).toLowerCase();
+    if (/[?&]draft_id=/.test(blob)) return true;
+    if (/\/draft\/[a-z0-9]+/.test(blob)) return true;
+    if (/\/leagues\/\d{6,20}\/draft(?:\/|$|\?|#)/.test(blob.replace(/\n/g, ""))) return true;
+    return false;
+  } catch (_e) {
+    return false;
+  }
+}
+
+async function ensureSleeperDraftAssistant(tabId) {
+  if (!tabId) return false;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["draft_slot.js", "assistant_inject.js", "sleeper_draft.js"],
+    });
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
+async function openDraftAssistantOnTab(tabId) {
+  if (!tabId) return { ok: false, message: "No active tab." };
+  let tab = null;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch (_e) {
+    return { ok: false, message: "No active tab." };
+  }
+  const url = String((tab && tab.url) || "");
+  if (isSleeperDraftTabUrl(url)) {
+    const injected = await ensureSleeperDraftAssistant(tabId);
+    if (!injected) {
+      return { ok: false, message: "Could not attach to this Sleeper tab. Reload the draft page." };
+    }
+  }
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: "openDraftAssistant" });
+    return { ok: true };
+  } catch (_e) {
+    return { ok: false, message: "Open a Sleeper, Yahoo, or ESPN draft tab first." };
+  }
+}
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  const url = changeInfo.url || (tab && tab.url) || "";
+  if (!url || !isSleeperDraftTabUrl(url)) return;
+  if (changeInfo.url || changeInfo.status === "complete") {
+    void ensureSleeperDraftAssistant(tabId);
+  }
+});
+
 const RECONNECT_COOLDOWN_MS = 5000;
 const SESSION_TABS_KEY = "brDraftRoomTabs";
 let lastReconnectAt = 0;
@@ -677,6 +737,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
     sendResponse({ ok: true, registered: brDraftRoomTabs.size });
     return false;
+  }
+
+  if (msg.type === "openDraftAssistantOnTab") {
+    const tabId = Number(msg.tabId || (sender && sender.tab && sender.tab.id) || 0);
+    openDraftAssistantOnTab(tabId)
+      .then(sendResponse)
+      .catch(() => sendResponse({ ok: false, message: "Open a Sleeper, Yahoo, or ESPN draft tab first." }));
+    return true;
   }
 
   if (msg.type === "fetchDraftPool") {
