@@ -1,6 +1,11 @@
 """Matchup preview must backfill starters from rosters when platform rows are empty."""
 from unittest import mock
 
+import pytest
+
+pytest.importorskip("flask")
+pytest.importorskip("requests")
+
 from dashboard_services.matchups import build_matchup_preview
 
 
