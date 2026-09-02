@@ -161,7 +161,8 @@ def build_teams_body(ctx: dict) -> str:
     # Redraft leagues rewrite ``value`` from redraft_value_* (same as Front Office).
     _tep = te_premium_from_settings(ctx.get("scoring_settings"))
     _rp_early = ctx.get("roster_positions") or []
-    _is_sf_early = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_early)
+    from utils.lineup_slots import is_superflex_lineup
+    _is_sf_early = is_superflex_lineup(_rp_early)
     _scoring = "redraft" if _is_redraft else "dynasty"
     _valued = build_model_value_lookup(model_vals, is_sf=_is_sf_early, scoring_type=_scoring)
 
@@ -437,7 +438,8 @@ def build_teams_body(ctx: dict) -> str:
     _n_teams = len(team_meta)
     _offseason = ctx.get("offseason_mode", False)
     _rp_list = ctx.get("roster_positions") or []
-    _is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
+    from utils.lineup_slots import is_superflex_lineup
+    _is_sf = is_superflex_lineup(_rp_list)
     _redraft_key = "redraft_value_sf" if _is_sf else "redraft_value_1qb"
 
     # ── Compute dynasty totals, redraft totals, and dynasty/redraft ratios per team ──
@@ -858,7 +860,8 @@ def build_teams_body(ctx: dict) -> str:
     # Detect league type (sf vs 1qb) from roster positions
     _rp = get_roster_positions()
     _rp_list = list(_rp) if _rp else []
-    _is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
+    from utils.lineup_slots import is_superflex_lineup
+    _is_sf = is_superflex_lineup(_rp_list)
     _league_type_js = "sf" if _is_sf else "1qb"
     _league_size_js = int(len(rosters)) if rosters else 10
 

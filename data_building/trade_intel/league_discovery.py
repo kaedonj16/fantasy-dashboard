@@ -444,8 +444,8 @@ def _classify_scoring(settings: dict) -> str:
 
 def _is_superflex(meta: dict) -> bool:
     """True if the league has a SUPER_FLEX roster slot."""
-    rp = meta.get("roster_positions") or []
-    return any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in rp)
+    from utils.lineup_slots import is_superflex_lineup
+    return is_superflex_lineup(meta.get("roster_positions") or [])
 
 
 def bootstrap_from_usernames(usernames: List[str], season: Optional[int] = None) -> int:

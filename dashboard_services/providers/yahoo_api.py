@@ -1558,12 +1558,14 @@ def get_drafts(season: int, league_id: str, access_token: str) -> List[Dict[str,
 
     Yahoo does not expose a Sleeper-like draft list; one synthetic draft per
     league/season is enough for Draft Room Connect. Status prefers league
-    ``draft_status`` (predraft / draft / postdraft). Falls back to complete
-    only when meta is unavailable so keepers/history still see a draft.
+    ``draft_status`` (predraft / draft / postdraft). Missing meta stays
+    pre-draft so an undrafted keeper league is not marked complete.
     """
     from datetime import datetime as _dt
     start_ts_ms = int(_dt(int(season), 8, 1).timestamp() * 1000)
-    status = "complete"
+    # Missing meta is not a finished draft (same class as Fleaflicker omitting
+    # NOT_YET_DRAFTED). Keepers/history still see a record; status stays pending.
+    status = "pre_draft"
     teams = 0
     try:
         key = _league_key_for_season(league_id, season, access_token)
@@ -1968,7 +1970,8 @@ def _yahoo_collection_rows(node: Any, item_key: str) -> List[Any]:
 
 _YAHOO_SLOT = {
     "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
-    "W/R/T": "FLEX", "W/R": "FLEX", "RB/WR/TE": "FLEX",
+    "W/R/T": "FLEX", "W/R": "RB_WR", "W/T": "WR_TE", "R/T": "RB_TE",
+    "RB/WR/TE": "FLEX", "WR/TE": "WR_TE", "RB/WR": "RB_WR", "RB/TE": "RB_TE",
     "Q/W/R/T": "SUPER_FLEX", "OP": "SUPER_FLEX",
     "K": "K", "DEF": "DEF", "D": "DEF",
     "BN": "BN", "IR": "IR",
@@ -1999,6 +2002,8 @@ def _yahoo_roster_positions(settings: Dict[str, Any]) -> List[str]:
         count = _safe_int(slot.get("count")) or 0
         if count <= 0 or not abbr:
             continue
-        norm = _YAHOO_SLOT.get(str(abbr).upper(), str(abbr).upper())
+        raw_abbr = str(abbr).upper()
+        from utils.lineup_slots import canonicalize_slot
+        norm = _YAHOO_SLOT.get(raw_abbr) or canonicalize_slot(raw_abbr) or raw_abbr
         roster_positions.extend([norm] * count)
     return roster_positions

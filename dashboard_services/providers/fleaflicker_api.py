@@ -241,6 +241,18 @@ def _fleaflicker_sleeper_league_type(max_keepers: int, team_count: int) -> tuple
     return 1, "keeper"
 
 
+def _fleaflicker_draft_status(league: Optional[dict]) -> str:
+    """Read FetchLeagueStandings ``draft_status``.
+
+    The protobuf default is ``NOT_YET_DRAFTED`` and is omitted from JSON, so a
+    league that has not drafted yet arrives with no field. Treat that as
+    pre-draft — never as an empty string that later looks like ``complete``.
+    """
+    raw = _get(league or {}, "draft_status", "draftStatus")
+    status = str(raw or "").strip().upper()
+    return status or "NOT_YET_DRAFTED"
+
+
 def _normalize_fleaflicker_draft_status(
     flea_status: Optional[str],
     *,
@@ -248,13 +260,15 @@ def _normalize_fleaflicker_draft_status(
     pick_count: int = 0,
 ) -> str:
     """Map Fleaflicker draft state to Sleeper-compatible status strings."""
-    status = str(flea_status or "").upper()
+    status = str(flea_status or "").strip().upper() or "NOT_YET_DRAFTED"
     if is_in_progress or status == "DRAFT_IN_PROGRESS":
         return "drafting"
     if status == "POST_DRAFT":
         return "complete"
     if status == "NOT_YET_DRAFTED":
         return "pre_draft"
+    # Unknown leftover labels only. Omitted / pre-draft status used to fall
+    # through to this and treat last year's draft-board rows as complete.
     if pick_count > 0:
         return "complete"
     return "pre_draft"
@@ -434,7 +448,7 @@ class FleaflickerProvider(ProviderAdapter):
         settings: dict[str, Any] = {
             "type": sleeper_type,
             "league_type": league_type,
-            "draft_status": str(_get(league, "draft_status", "draftStatus") or ""),
+            "draft_status": _fleaflicker_draft_status(league),
         }
         if max_keepers > 0:
             settings["max_keepers"] = max_keepers
@@ -446,7 +460,7 @@ class FleaflickerProvider(ProviderAdapter):
             "draft_day": _draft_time_ms(league),
             "settings": settings,
             "scoring_settings": self._scoring(rules),
-            "roster_positions": self._positions(rules),
+            "roster_positions": self._positions(rules, league=league),
             "metadata": {"provider": "fleaflicker"},
         }
 
@@ -690,7 +704,7 @@ class FleaflickerProvider(ProviderAdapter):
         )
         league = (standings or {}).get("league") or {}
         draft_ts_ms = _draft_time_ms(league)
-        flea_status = _get(league, "draft_status", "draftStatus")
+        flea_status = _fleaflicker_draft_status(league)
         raw = self._call("FetchLeagueDraftBoard", league_id, season, ttl=3600, token=token)
         picks = []
         overall = 0
@@ -718,6 +732,10 @@ class FleaflickerProvider(ProviderAdapter):
             is_in_progress=bool(raw.get("is_in_progress") or raw.get("isInProgress")),
             pick_count=len(picks),
         )
+        # Last year's board can still have cells after the season rolls. An
+        # official pre-draft status means this year's draft has no picks yet.
+        if status == "pre_draft":
+            picks = []
         return [{
             "draft_id": f"fleaflicker:{season}:{league_id}",
             "league_id": str(league_id), "season": str(season),
@@ -774,15 +792,106 @@ class FleaflickerProvider(ProviderAdapter):
         return teams
 
     @staticmethod
-    def _positions(rules: dict) -> list[str]:
-        positions = rules.get("rosterPositions") or rules.get("roster_positions") or []
-        out = []
+    def _roster_position_rows(rules: dict, league: Optional[dict] = None) -> list:
+        """Rules first; standings ``rosterRequirements.positions`` as fallback."""
+        blobs = [rules or {}]
+        if isinstance(league, dict):
+            blobs.append(league)
+        for blob in blobs:
+            for key in ("rosterPositions", "roster_positions"):
+                rows = blob.get(key)
+                if isinstance(rows, list) and rows:
+                    return rows
+            req = blob.get("rosterRequirements") or blob.get("roster_requirements") or {}
+            if isinstance(req, dict):
+                rows = req.get("positions") or []
+                if isinstance(rows, list) and rows:
+                    return rows
+        return []
+
+    @staticmethod
+    def _fleaflicker_slot_name(pos: dict) -> str:
+        """Map a Fleaflicker roster-position row onto a Sleeper-style slot.
+
+        Fleaflicker labels flex ``RB/WR/TE``, superflex ``QB/RB/WR/TE``,
+        restricted flex ``RB/WR`` / ``WR/TE`` / ``RB/TE``, and defense ``D/ST``.
+        Downstream draft-room / lineup math only counts canonical names, so
+        those must be mapped here (same idea as MFL). A generic ``FLEX`` label
+        uses ``eligibility`` so WR/RB-only spots stay distinct from RB/WR/TE.
+        """
+        from utils.lineup_slots import canonicalize_slot, normalize_slot_name
+
+        label = str(_get(pos, "label") or "").strip()
+        mapped = canonicalize_slot(label)
+        elig = {
+            normalize_slot_name(e)
+            for e in (pos.get("eligibility") or [])
+            if e is not None and str(e).strip()
+        }
+        refined = FleaflickerProvider._slot_from_eligibility(elig)
+        if mapped == "FLEX":
+            if refined:
+                return refined
+            return "FLEX"
+        if mapped:
+            return mapped
+        return refined
+
+    @staticmethod
+    def _slot_from_eligibility(elig: set) -> str:
+        """Map a Fleaflicker eligibility set onto a canonical flex slot."""
+        skill = {"QB", "RB", "WR", "TE"}
+        if not elig:
+            return ""
+        if "QB" in elig and (elig & {"RB", "WR", "TE"}):
+            return "SUPER_FLEX"
+        if elig >= skill:
+            return "SUPER_FLEX"
+        if elig == {"RB", "WR"}:
+            return "RB_WR"
+        if elig == {"WR", "TE"}:
+            return "WR_TE"
+        if elig == {"RB", "TE"}:
+            return "RB_TE"
+        if elig == {"RB", "WR", "TE"}:
+            return "FLEX"
+        if elig <= {"RB", "WR", "TE"} and len(elig) >= 2:
+            return "FLEX"
+        return ""
+
+    @staticmethod
+    def _positions(rules: dict, league: Optional[dict] = None) -> list[str]:
+        """Expand Fleaflicker roster rules into Sleeper-style starting slots.
+
+        Only START-group rows (or rows with a positive ``start`` count) become
+        lineup slots. Bench / IR / taxi are dropped. Protobuf omits zero-valued
+        ``start``; a START-group row with no start is one slot.
+        """
+        from utils.lineup_slots import BENCH_SLOT_NAMES
+
+        positions = FleaflickerProvider._roster_position_rows(rules, league)
+        out: list[str] = []
         for pos in positions:
-            label = str(pos.get("label") or "").strip()
-            starts = _int(pos.get("start"))
-            if not label or starts <= 0:
+            if not isinstance(pos, dict):
                 continue
-            out.extend([label] * starts)
+            group = str(_get(pos, "group") or "").upper()
+            if group in {"BENCH", "INJURED", "IR", "INJURED_RESERVE", "TAXI"}:
+                continue
+            mapped = FleaflickerProvider._fleaflicker_slot_name(pos)
+            if not mapped or mapped in BENCH_SLOT_NAMES:
+                continue
+            raw_start = _get(pos, "start")
+            if raw_start is None:
+                starts = 1 if group == "START" else 0
+            else:
+                starts = _int(raw_start)
+            if starts <= 0:
+                continue
+            out.extend([mapped] * starts)
+        if not out:
+            logger.warning(
+                "[fleaflicker-roster] empty roster_positions platform=fleaflicker"
+            )
         return out
 
     @staticmethod

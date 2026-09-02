@@ -189,9 +189,9 @@
     var n = function (k) { return +c[k] || 0; };
     return {
       QB: n('QB') + n('SF') * 0.5,
-      RB: n('RB') + n('FLEX') * 0.5,
-      WR: n('WR') + n('FLEX') * 0.5,
-      TE: n('TE'),
+      RB: n('RB') + n('FLEX') * 0.5 + n('RB_WR') * 0.5 + n('RB_TE') * 0.5,
+      WR: n('WR') + n('FLEX') * 0.5 + n('RB_WR') * 0.5 + n('WR_TE') * 0.5,
+      TE: n('TE') + n('WR_TE') * 0.5 + n('RB_TE') * 0.5,
     };
   }
 

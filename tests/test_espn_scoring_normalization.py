@@ -88,6 +88,17 @@ def test_get_league_globals_reads_raw_msettings_not_coarse_scoring_type(monkeypa
     assert out["roster_positions"].count("BN") == 6
 
 
+def test_expand_espn_restricted_flex_slot_ids():
+    slots = espn_api.expand_espn_lineup_slot_counts({
+        "0": 1, "2": 2, "4": 2, "6": 1, "3": 1, "5": 1, "23": 1,
+    })
+    assert slots.count("RB_WR") == 1
+    assert slots.count("WR_TE") == 1
+    assert slots.count("FLEX") == 1
+    assert "RB/WR" not in slots
+    assert "WR/TE" not in slots
+
+
 def test_expand_espn_lineup_slot_counts_from_position_slot_counts():
     slots = espn_api.expand_espn_lineup_slot_counts({
         "QB": 1, "RB": 2, "WR": 2, "TE": 1, "RB/WR/TE": 1, "OP": 1, "D/ST": 1, "K": 1, "BE": 5,

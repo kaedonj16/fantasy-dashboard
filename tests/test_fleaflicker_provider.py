@@ -6,7 +6,8 @@ from dashboard_services.providers.base import (
     ProviderAuthenticationError, ProviderUnavailableError, UnsupportedCapabilityError,
 )
 from dashboard_services.providers.fleaflicker_api import (
-    FleaflickerProvider, _CACHE, _fleaflicker_sleeper_league_type, login,
+    FleaflickerProvider, _CACHE, _fleaflicker_draft_status,
+    _fleaflicker_sleeper_league_type, _normalize_fleaflicker_draft_status, login,
 )
 
 
@@ -303,6 +304,50 @@ def test_get_league_detects_keeper_league(monkeypatch):
     assert league["settings"]["type"] == 1
     assert league["settings"]["league_type"] == "keeper"
     assert league["settings"]["max_keepers"] == 3
+    # Protobuf omits the default NOT_YET_DRAFTED enum; persist it so keeper
+    # rosters from last year are not treated as an already-run draft.
+    assert league["settings"]["draft_status"] == "NOT_YET_DRAFTED"
+
+
+def test_omitted_draft_status_is_not_yet_drafted():
+    assert _fleaflicker_draft_status({}) == "NOT_YET_DRAFTED"
+    assert _fleaflicker_draft_status({"name": "X"}) == "NOT_YET_DRAFTED"
+    assert _normalize_fleaflicker_draft_status(None, pick_count=12) == "pre_draft"
+    assert _normalize_fleaflicker_draft_status("", pick_count=12) == "pre_draft"
+
+
+def test_get_drafts_omitted_status_ignores_last_year_board(monkeypatch):
+    """Keeper leagues roll last year's board; omitted status must stay pre-draft."""
+    provider = FleaflickerProvider()
+    draft_ms = 1_735_689_600_000
+
+    def fake_call(method, *a, **k):
+        if method == "FetchLeagueStandings":
+            return {
+                "league": {
+                    "id": 92916,
+                    # draft_status omitted — protobuf default NOT_YET_DRAFTED
+                    "maxKeepers": 3,
+                    "draft_live_time_epoch_milli": str(draft_ms),
+                },
+            }
+        if method == "FetchLeagueDraftBoard":
+            return {
+                "rows": [{
+                    "round": 1,
+                    "cells": [{
+                        "team": {"id": 1},
+                        "player": {"proPlayer": {"id": 99, "nameFull": "Player", "position": "QB"}},
+                    }],
+                }],
+                "is_in_progress": False,
+            }
+        raise AssertionError(method)
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    drafts = provider.get_drafts("92916", 2026)
+    assert drafts[0]["status"] == "pre_draft"
+    assert drafts[0]["picks"] == []
 
 
 def test_get_drafts_marks_post_draft_complete(monkeypatch):
@@ -335,6 +380,128 @@ def test_get_drafts_marks_post_draft_complete(monkeypatch):
     drafts = provider.get_drafts("92916", 2026)
     assert drafts[0]["status"] == "complete"
     assert len(drafts[0]["picks"]) == 1
+
+
+def test_positions_canonicalizes_fleaflicker_flex_sf_and_dst():
+    """Fleaflicker labels must become Sleeper slots or draft-room drops them."""
+    slots = FleaflickerProvider._positions({
+        "rosterPositions": [
+            {"label": "QB", "group": "START", "start": 1},
+            {"label": "RB", "group": "START", "start": 2},
+            {"label": "WR", "group": "START", "start": 2},
+            {"label": "TE", "group": "START", "start": 1},
+            {"label": "RB/WR/TE", "group": "START", "start": 1,
+             "eligibility": ["RB", "WR", "TE"]},
+            {"label": "QB/RB/WR/TE", "group": "START", "start": 1,
+             "eligibility": ["QB", "RB", "WR", "TE"]},
+            {"label": "K", "group": "START", "start": 1},
+            {"label": "D/ST", "group": "START", "start": 1},
+            {"label": "BN", "group": "BENCH", "max": 6},
+            {"label": "IR", "group": "INJURED", "max": 2},
+        ],
+    })
+    assert slots == [
+        "QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "SUPER_FLEX", "K", "DEF",
+    ]
+
+
+def test_positions_skips_bench_even_when_start_is_set():
+    slots = FleaflickerProvider._positions({
+        "roster_positions": [
+            {"label": "QB", "group": "START", "start": 1},
+            {"label": "BN", "group": "BENCH", "start": 6},
+        ],
+    })
+    assert slots == ["QB"]
+
+
+def test_positions_treats_start_group_with_omitted_start_as_one_slot():
+    # Protobuf omits zero-valued ints; START rows with no ``start`` are one slot.
+    slots = FleaflickerProvider._positions({
+        "rosterPositions": [
+            {"label": "QB", "group": "START"},
+            {"label": "RB/WR/TE", "group": "START"},
+            {"label": "BN", "group": "BENCH"},
+        ],
+    })
+    assert slots == ["QB", "FLEX"]
+
+
+def test_positions_restricted_flex_labels_stay_distinct():
+    slots = FleaflickerProvider._positions({
+        "rosterPositions": [
+            {"label": "RB/WR", "group": "START", "start": 1,
+             "eligibility": ["RB", "WR"]},
+            {"label": "WR/TE", "group": "START", "start": 1,
+             "eligibility": ["WR", "TE"]},
+            {"label": "RB/TE", "group": "START", "start": 1,
+             "eligibility": ["RB", "TE"]},
+        ],
+    })
+    assert slots == ["RB_WR", "WR_TE", "RB_TE"]
+
+
+def test_positions_generic_flex_uses_eligibility_for_wr_rb_only():
+    slots = FleaflickerProvider._positions({
+        "rosterPositions": [
+            {"label": "FLEX", "group": "START", "start": 1,
+             "eligibility": ["RB", "WR"]},
+            {"label": "", "group": "START", "start": 1,
+             "eligibility": ["WR", "TE"]},
+        ],
+    })
+    assert slots == ["RB_WR", "WR_TE"]
+
+
+def test_positions_flex_with_qb_eligibility_is_superflex():
+    slots = FleaflickerProvider._positions({
+        "rosterPositions": [
+            {"label": "FLEX", "group": "START", "start": 1,
+             "eligibility": ["QB", "RB", "WR", "TE"]},
+        ],
+    })
+    assert slots == ["SUPER_FLEX"]
+
+
+def test_positions_falls_back_to_standings_roster_requirements():
+    slots = FleaflickerProvider._positions(
+        {},
+        league={
+            "rosterRequirements": {
+                "positions": [
+                    {"label": "QB", "group": "START", "start": 1},
+                    {"label": "QB/RB/WR/TE", "group": "START", "start": 1},
+                    {"label": "D/ST", "group": "START", "start": 1},
+                ],
+            },
+        },
+    )
+    assert slots == ["QB", "SUPER_FLEX", "DEF"]
+
+
+def test_get_league_uses_standings_slots_when_rules_fail(monkeypatch):
+    provider = FleaflickerProvider()
+
+    def fake_call(method, *a, **k):
+        if method == "FetchLeagueRules":
+            raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
+        return {
+            "league": {
+                "id": 14153, "name": "Dynasty", "size": 2,
+                "rosterRequirements": {
+                    "positions": [
+                        {"label": "QB", "group": "START", "start": 1},
+                        {"label": "RB/WR/TE", "group": "START", "start": 1},
+                    ],
+                },
+            },
+            "divisions": [{"teams": [{"id": 1, "name": "Owls", "owners": [{"id": 9}]}]}],
+            "season": 2026,
+        }
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    league = provider.get_league("14153", 2026)
+    assert league["roster_positions"] == ["QB", "FLEX"]
 
 
 def test_get_rosters_uses_fetch_roster_starters_when_bulk_list_exists(monkeypatch):

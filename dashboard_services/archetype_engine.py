@@ -16,7 +16,7 @@ from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple
 
 from dashboard_services.ai.context_builders import ctx_scoring_type
-from utils.lineup_slots import canonicalize_slot
+from utils.lineup_slots import RESTRICTED_FLEX_SLOTS, canonicalize_slot, slot_eligible_positions
 from utils.roster_strength import STARTER_THRESHOLD, derive_league_thresholds
 from utils.tier_stack import asset_tier
 from utils.tier_thresholds import FALLBACK_THRESHOLDS, compute_tier_thresholds
@@ -277,6 +277,7 @@ def _ppg_lineup(
 
     fixed_slots: Dict[str, int] = {}
     flex_slots = sflex_slots = 0
+    restricted = {name: 0 for name in RESTRICTED_FLEX_SLOTS}
     for slot in roster_positions:
         s = canonicalize_slot(slot)
         if s in _BENCH_SLOTS:
@@ -285,6 +286,8 @@ def _ppg_lineup(
             sflex_slots += 1
         elif s == "FLEX":
             flex_slots += 1
+        elif s in restricted:
+            restricted[s] += 1
         elif s in SKILL_POS:
             fixed_slots[s] = fixed_slots.get(s, 0) + 1
 
@@ -323,17 +326,26 @@ def _ppg_lineup(
             total += pool[i] if i < len(pool) else 0.0
             used[slot_pos] = i + 1
 
-    flex_pool = sorted(
+    leftover = sorted(
         [(pos, ppg) for pos in _FLEX_ELIGIBLE for ppg in by_pos.get(pos, [])[used.get(pos, 0):]],
         key=lambda x: x[1], reverse=True,
     )
-    for i in range(flex_slots):
-        if i < len(flex_pool):
-            total += flex_pool[i][1]
-    remaining = flex_pool[flex_slots:]
+    for name in RESTRICTED_FLEX_SLOTS:
+        n = restricted.get(name, 0)
+        eligible = slot_eligible_positions(name)
+        taken, rest = [], []
+        for pos, ppg in leftover:
+            if len(taken) < n and pos in eligible:
+                taken.append((pos, ppg))
+            else:
+                rest.append((pos, ppg))
+        leftover = rest
+        total += sum(ppg for _, ppg in taken)
+    flex_taken, leftover = leftover[:flex_slots], leftover[flex_slots:]
+    total += sum(ppg for _, ppg in flex_taken)
 
     sflex_pool = sorted(
-        [("QB", ppg) for ppg in by_pos.get("QB", [])[used.get("QB", 0):]] + remaining,
+        [("QB", ppg) for ppg in by_pos.get("QB", [])[used.get("QB", 0):]] + leftover,
         key=lambda x: x[1], reverse=True,
     )
     for i in range(sflex_slots):

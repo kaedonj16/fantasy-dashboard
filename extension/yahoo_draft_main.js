@@ -296,7 +296,7 @@
   }
 
   function emptyRoster() {
-    return { QB: 0, SF: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, K: 0, DEF: 0, BN: 0 };
+    return { QB: 0, SF: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, RB_WR: 0, WR_TE: 0, RB_TE: 0, K: 0, DEF: 0, BN: 0 };
   }
 
   function rosterFromYahooPositions(positions) {
@@ -313,14 +313,17 @@
       else if (raw === "DEF" || raw === "DST") out.DEF += n;
       else if (raw === "BN" || raw === "BENCH") out.BN += n;
       else if (raw === "Q/W/R/T" || raw === "QP" || raw === "SUPER_FLEX" || raw === "SF") out.SF += n;
-      else if (raw === "W/R/T" || raw === "W/R" || raw === "W/T" || raw === "R/T" || raw === "FLEX") out.FLEX += n;
+      else if (raw === "W/R" || raw === "RB/WR" || raw === "WRRB_FLEX" || raw === "RB_WR") out.RB_WR += n;
+      else if (raw === "W/T" || raw === "WR/TE" || raw === "REC_FLEX" || raw === "WR_TE") out.WR_TE += n;
+      else if (raw === "R/T" || raw === "RB/TE" || raw === "RB_TE") out.RB_TE += n;
+      else if (raw === "W/R/T" || raw === "FLEX") out.FLEX += n;
     });
     return out;
   }
 
   function rosterFingerprint(rs) {
     if (!rs) return "";
-    return ["QB", "SF", "RB", "WR", "TE", "FLEX", "K", "DEF", "BN"].map(function (k) {
+    return ["QB", "SF", "RB", "WR", "TE", "FLEX", "RB_WR", "WR_TE", "RB_TE", "K", "DEF", "BN"].map(function (k) {
       return k + (Number(rs[k]) || 0);
     }).join("");
   }

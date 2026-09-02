@@ -68,9 +68,9 @@ def starter_counts(counts: dict) -> dict:
 
     return {
         "QB": n("QB") + n("SF") * 0.5,
-        "RB": n("RB") + n("FLEX") * 0.5,
-        "WR": n("WR") + n("FLEX") * 0.5,
-        "TE": n("TE"),
+        "RB": n("RB") + n("FLEX") * 0.5 + n("RB_WR") * 0.5 + n("RB_TE") * 0.5,
+        "WR": n("WR") + n("FLEX") * 0.5 + n("RB_WR") * 0.5 + n("WR_TE") * 0.5,
+        "TE": n("TE") + n("WR_TE") * 0.5 + n("RB_TE") * 0.5,
     }
 
 
@@ -85,14 +85,21 @@ def empirical_slot_allocation(players: list, slots: list, num_teams: int = 12,
     aliases = {
         "SUPER_FLEX": "SF", "SUPERFLEX": "SF", "SFLEX": "SF", "OP": "SF",
         "QB_RB_WR_TE": "SF", "Q_RB_WR_TE": "SF",
-        "WRRB_FLEX": "FLEX", "REC_FLEX": "FLEX", "WRRBTE_FLEX": "FLEX",
-        "RB_WR_FLEX": "FLEX", "RB_WR_TE": "FLEX",
+        "QB/RB/WR/TE": "SF", "QB/WR/RB/TE": "SF",
+        "WRRBTE_FLEX": "FLEX", "RB_WR_TE": "FLEX",
+        "RB/WR/TE": "FLEX", "WR/RB/TE": "FLEX", "W/R/T": "FLEX",
+        "WRRB_FLEX": "RB_WR", "RB_WR_FLEX": "RB_WR", "RBWR_FLEX": "RB_WR",
+        "RB/WR": "RB_WR", "WR/RB": "RB_WR", "W/R": "RB_WR",
+        "REC_FLEX": "WR_TE", "WRTE_FLEX": "WR_TE",
+        "WR/TE": "WR_TE", "W/T": "WR_TE",
+        "RB/TE": "RB_TE", "R/T": "RB_TE",
     }
     normalized = [aliases.get(str(slot).upper(), str(slot).upper()) for slot in (slots or [])]
     if not normalized:
         normalized = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"]
     eligibility = {
         "QB": {"QB"}, "RB": {"RB"}, "WR": {"WR"}, "TE": {"TE"},
+        "RB_WR": {"RB", "WR"}, "WR_TE": {"WR", "TE"}, "RB_TE": {"RB", "TE"},
         "FLEX": {"RB", "WR", "TE"}, "SF": {"QB", "RB", "WR", "TE"},
     }
     pool = []

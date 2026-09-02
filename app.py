@@ -21174,23 +21174,24 @@ def api_draft_grades():
             # (same source and math as the Draft Room's computeReplacement), so
             # VOR/PPG replacement levels match the front end instead of a
             # hardcoded guess. Falls back to a standard roster if slots are absent.
-            _rp_norm = {
-                "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
-                "FLEX": "FLEX", "WRRB_FLEX": "FLEX", "REC_FLEX": "FLEX", "WRRBTE_FLEX": "FLEX",
-                "SUPER_FLEX": "SF", "SFLEX": "SF",
-            }
-            _rp_counts = {"QB": 0, "SF": 0, "RB": 0, "WR": 0, "TE": 0, "FLEX": 0}
+            from utils.lineup_slots import canonicalize_slot
+            _rp_counts = {"QB": 0, "SF": 0, "RB": 0, "WR": 0, "TE": 0, "FLEX": 0,
+                          "RB_WR": 0, "WR_TE": 0, "RB_TE": 0}
             _rp_slots = []
             try:
                 _rp_slots = ((get_league(platform, league_id, season) or {}).get("roster_positions") or [])
                 for _s in _rp_slots:
-                    _k = _rp_norm.get(str(_s).upper())
+                    _canon = canonicalize_slot(_s)
+                    _k = "SF" if _canon == "SUPER_FLEX" else (
+                        _canon if _canon in _rp_counts else None
+                    )
                     if _k:
                         _rp_counts[_k] += 1
             except Exception:
                 logger.debug("[draft-grades] roster slots for starters failed", exc_info=True)
             if not any(_rp_counts.values()):
-                _rp_counts = {"QB": 1, "SF": 1 if is_sf else 0, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1}
+                _rp_counts = {"QB": 1, "SF": 1 if is_sf else 0, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1,
+                              "RB_WR": 0, "WR_TE": 0, "RB_TE": 0}
             _starters = _ps_starter_counts(_rp_counts)
             _by_pos: dict[str, list] = {"QB": [], "RB": [], "WR": [], "TE": []}
             # Eligible scoring pool: rookies for rookie drafts, else all skill players.
@@ -21531,25 +21532,26 @@ def api_draft_grades():
         # ── Draft-Room-aligned team grade inputs ─────────────────────────────
         # League starting-lineup slots (skill positions only; K/DEF excluded from
         # grading, matching the Draft Room) + league value/PPG pools.
-        _dr_norm = {
-            "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
-            "FLEX": "FLEX", "WRRB_FLEX": "FLEX", "REC_FLEX": "FLEX", "WRRBTE_FLEX": "FLEX",
-            "SUPER_FLEX": "SF", "SFLEX": "SF",
-        }
-        _dr_counts = {"QB": 0, "SF": 0, "RB": 0, "WR": 0, "TE": 0, "FLEX": 0}
+        from utils.lineup_slots import canonicalize_slot
+        _dr_counts = {"QB": 0, "SF": 0, "RB": 0, "WR": 0, "TE": 0, "FLEX": 0,
+                      "RB_WR": 0, "WR_TE": 0, "RB_TE": 0}
         try:
             _dr_rp = (get_league(platform, league_id, season) or {}).get("roster_positions") or []
         except Exception:
             _dr_rp = []
         for _s in _dr_rp:
-            _k = _dr_norm.get(str(_s).upper())
+            _canon = canonicalize_slot(_s)
+            _k = "SF" if _canon == "SUPER_FLEX" else (
+                _canon if _canon in _dr_counts else None
+            )
             if _k:
                 _dr_counts[_k] += 1
         if not any(_dr_counts.values()):
             # Fallback mirrors the Draft Room's defaultRoster() skill slots.
-            _dr_counts = {"QB": 1, "SF": 1 if is_sf else 0, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1}
+            _dr_counts = {"QB": 1, "SF": 1 if is_sf else 0, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1,
+                          "RB_WR": 0, "WR_TE": 0, "RB_TE": 0}
         _dr_slots: list[str] = []
-        for _s in ("QB", "SF", "RB", "WR", "TE", "FLEX"):
+        for _s in ("QB", "SF", "RB", "WR", "TE", "RB_WR", "WR_TE", "RB_TE", "FLEX"):
             _dr_slots.extend([_s] * _dr_counts[_s])
         _dr_league_ppg = [v for v in ppg_by_id.values() if v is not None]
         _dr_league_val = [v for (v, _pid) in ps_pool_sorted]

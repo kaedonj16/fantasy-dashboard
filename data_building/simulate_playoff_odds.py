@@ -29,7 +29,7 @@ from typing import Optional
 
 import numpy as np
 
-from utils.lineup_slots import canonicalize_slot
+from utils.lineup_slots import RESTRICTED_FLEX_SLOTS, canonicalize_slot, slot_eligible_positions
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +78,10 @@ _DEFAULT_STARTING_SLOTS = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF
 
 
 def _tally_starting_slots(roster_positions):
-    """Count dedicated / FLEX / Superflex slots, collapsing provider aliases."""
+    """Count dedicated / restricted-flex / FLEX / Superflex slots."""
     fixed_slots: dict[str, int] = {}
     flex_slots = sflex_slots = 0
+    restricted = {name: 0 for name in RESTRICTED_FLEX_SLOTS}
     for slot in roster_positions or []:
         s = canonicalize_slot(slot)
         if s in _BENCH_SLOTS:
@@ -89,22 +90,39 @@ def _tally_starting_slots(roster_positions):
             sflex_slots += 1
         elif s == "FLEX":
             flex_slots += 1
+        elif s in restricted:
+            restricted[s] += 1
         elif s:
             fixed_slots[s] = fixed_slots.get(s, 0) + 1
-    return fixed_slots, flex_slots, sflex_slots
+    return fixed_slots, flex_slots, sflex_slots, restricted
 
 
 def _tally_starting_slots_or_default(roster_positions):
     """Like ``_tally_starting_slots``, but never returns an empty lineup."""
-    fixed_slots, flex_slots, sflex_slots = _tally_starting_slots(roster_positions)
-    if fixed_slots or flex_slots or sflex_slots:
-        return fixed_slots, flex_slots, sflex_slots, False
+    fixed_slots, flex_slots, sflex_slots, restricted = _tally_starting_slots(
+        roster_positions
+    )
+    if fixed_slots or flex_slots or sflex_slots or any(restricted.values()):
+        return fixed_slots, flex_slots, sflex_slots, restricted, False
     logger.warning(
         "[playoff_odds] empty roster_positions; using default %s lineup",
         "/".join(_DEFAULT_STARTING_SLOTS),
     )
-    fixed_slots, flex_slots, sflex_slots = _tally_starting_slots(_DEFAULT_STARTING_SLOTS)
-    return fixed_slots, flex_slots, sflex_slots, True
+    fixed_slots, flex_slots, sflex_slots, restricted = _tally_starting_slots(
+        _DEFAULT_STARTING_SLOTS
+    )
+    return fixed_slots, flex_slots, sflex_slots, restricted, True
+
+
+def _consume_eligible(pool, n, eligible):
+    """Take up to ``n`` (pos, ppg) rows whose pos is in ``eligible``."""
+    taken, rest = [], []
+    for pos, ppg in pool:
+        if len(taken) < n and pos in eligible:
+            taken.append((pos, ppg))
+        else:
+            rest.append((pos, ppg))
+    return taken, rest
 
 # Per-week injury hazard: the probability that a given starter misses that
 # week's game. When a starter is out, a bench player replaces them at a
@@ -778,7 +796,7 @@ def _position_aware_lineup(
     # Tally starting slots by type. Empty provider slots used to return 0 PPG
     # for every team (Value Rankings Proj% stuck at 0.0%); fall back to a
     # standard lineup so projections still differentiate rosters.
-    fixed_slots, flex_slots, sflex_slots, _ = _tally_starting_slots_or_default(
+    fixed_slots, flex_slots, sflex_slots, restricted, _ = _tally_starting_slots_or_default(
         roster_positions
     )
 
@@ -824,21 +842,22 @@ def _position_aware_lineup(
             starters.append((slot_pos, ppg))
             used[slot_pos] = i + 1
 
-    # Fill FLEX (RB/WR/TE eligible)
-    flex_pool = sorted(
+    leftover = sorted(
         [(pos, ppg) for pos in _FLEX_ELIGIBLE
          for ppg in by_pos.get(pos, [])[used.get(pos, 0):]],
         key=lambda x: x[1], reverse=True,
     )
-    for i in range(flex_slots):
-        if i < len(flex_pool):
-            starters.append(flex_pool[i])
-    remaining_after_flex = flex_pool[flex_slots:]
+    for name in RESTRICTED_FLEX_SLOTS:
+        taken, leftover = _consume_eligible(
+            leftover, restricted.get(name, 0), slot_eligible_positions(name),
+        )
+        starters.extend(taken)
+    taken, leftover = _consume_eligible(leftover, flex_slots, _FLEX_ELIGIBLE)
+    starters.extend(taken)
 
-    # Fill SuperFlex (QB/RB/WR/TE eligible)
     sflex_pool = sorted(
-        [(("QB", ppg)) for ppg in by_pos.get("QB", [])[used.get("QB", 0):]]
-        + remaining_after_flex,
+        [("QB", ppg) for ppg in by_pos.get("QB", [])[used.get("QB", 0):]]
+        + leftover,
         key=lambda x: x[1], reverse=True,
     )
     for i in range(sflex_slots):
@@ -871,7 +890,7 @@ def _lineup_with_replacements(
     """
     # Tally starting slots by type (mirrors _position_aware_lineup, including
     # the empty-slots default so injury modeling stays aligned with Proj%).
-    fixed_slots, flex_slots, sflex_slots, _ = _tally_starting_slots_or_default(
+    fixed_slots, flex_slots, sflex_slots, restricted, _ = _tally_starting_slots_or_default(
         roster_positions
     )
 
@@ -915,21 +934,26 @@ def _lineup_with_replacements(
             starters_full.append((slot_pos, ppg, slot_pos))
             used[slot_pos] = i + 1
 
-    flex_pool = sorted(
+    leftover = sorted(
         [(pos, ppg) for pos in _FLEX_ELIGIBLE
          for ppg in by_pos.get(pos, [])[used.get(pos, 0):]],
         key=lambda x: x[1], reverse=True,
     )
-    for i in range(flex_slots):
-        if i < len(flex_pool):
-            pos, ppg = flex_pool[i]
-            starters_full.append((pos, ppg, "FLEX"))
+    for name in RESTRICTED_FLEX_SLOTS:
+        taken, leftover = _consume_eligible(
+            leftover, restricted.get(name, 0), slot_eligible_positions(name),
+        )
+        for pos, ppg in taken:
+            starters_full.append((pos, ppg, name))
             used[pos] = used.get(pos, 0) + 1
-    remaining_after_flex = flex_pool[flex_slots:]
+    taken, leftover = _consume_eligible(leftover, flex_slots, _FLEX_ELIGIBLE)
+    for pos, ppg in taken:
+        starters_full.append((pos, ppg, "FLEX"))
+        used[pos] = used.get(pos, 0) + 1
 
     sflex_pool = sorted(
         [("QB", ppg) for ppg in by_pos.get("QB", [])[used.get("QB", 0):]]
-        + remaining_after_flex,
+        + leftover,
         key=lambda x: x[1], reverse=True,
     )
     for i in range(sflex_slots):
@@ -955,6 +979,8 @@ def _lineup_with_replacements(
             repl = _best_bench(_FLEX_ELIGIBLE)
         elif slot_type == "SFLEX":
             repl = _best_bench({"QB"} | _FLEX_ELIGIBLE)
+        elif slot_type in RESTRICTED_FLEX_SLOTS:
+            repl = _best_bench(set(slot_eligible_positions(slot_type)))
         else:
             repl = _best_bench({slot_type})
         starters.append((pos, ppg))

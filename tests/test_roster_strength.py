@@ -87,6 +87,17 @@ def test_wrrb_flex_alias_adds_the_same_depth_credit():
     assert weighted_pos_strength(vals, "RB", {"WRRB_FLEX": 1}) == pytest.approx(canonical)
 
 
+def test_wrrb_flex_does_not_give_te_flex_depth():
+    vals = [100, 80, 60]
+    no_flex = weighted_pos_strength(vals, "TE", {})
+    wrrb = weighted_pos_strength(vals, "TE", {"WRRB_FLEX": 1})
+    rec = weighted_pos_strength(vals, "TE", {"REC_FLEX": 1})
+    full = weighted_pos_strength(vals, "TE", {"FLEX": 1})
+    assert wrrb == pytest.approx(no_flex)
+    assert rec == pytest.approx(full)
+    assert rec != no_flex
+
+
 def test_unknown_position_uses_top_player_only():
     # Fallback weights [1.0]: only the best value counts.
     assert weighted_pos_strength([80, 200, 50], "K", {}) == pytest.approx(200.0)

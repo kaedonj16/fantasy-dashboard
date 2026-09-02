@@ -1048,8 +1048,9 @@ def get_drafts(season: int, league_id: str) -> List[Dict[str, Any]]:
     dtype = draft_type or "snake"
     if date_ms:
         if drafted is None:
-            # No explicit flag — infer from whether the scheduled time has passed.
-            drafted = date_ms <= int(datetime.now().timestamp() * 1000)
+            # A missing drafted flag is not "done". Inferring complete from a
+            # past date marked postponed / stale-date leagues as already drafted.
+            drafted = False
         return [{
             "draft_id": f"espn_{league_id}_{season}",
             "league_id": str(league_id),
@@ -1101,7 +1102,7 @@ def iter_draft_picks(season: int, league_id: str) -> List[Any]:
 # ESPN slot name -> Sleeper roster position
 _ESPN_SLOT_TO_SLEEPER: Dict[str, str] = {
     "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
-    "FLEX": "FLEX", "RB/WR/TE": "FLEX", "RB/WR": "FLEX", "WR/TE": "FLEX",
+    "FLEX": "FLEX", "RB/WR/TE": "FLEX", "RB/WR": "RB_WR", "WR/TE": "WR_TE",
     "OP": "SUPER_FLEX",
     "K": "K",
     "D/ST": "DEF", "DST": "DEF", "DEF": "DEF", "D-ST": "DEF",
