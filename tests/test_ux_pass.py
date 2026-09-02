@@ -34,6 +34,8 @@ def test_dashboard_action_first_hierarchy():
     assert "{matchup_html}" not in left
     assert "Waiver Wire Targets" not in DASH
     assert "_render_do_next_waiver_card" in DASH
+    assert "bench-ok" in APP_PY
+    assert "bench-miss" in APP_PY
 
 
 def test_offseason_dashboard_action_queue():
@@ -137,6 +139,8 @@ def test_dashboard_css_action_and_palette_styles():
     assert ".os-action-queue" in DASH_CSS
     assert ".os-do-next-card" in DASH_CSS
     assert ".os-do-next-draft" in DASH_CSS
+    assert ".lineup-alert-card" in DASH_CSS
+    assert "--alert-tone" in DASH_CSS
     assert ".nav-search-group-label" in DASH_CSS
     assert ".br-pro-preview" in DASH_CSS
     assert ".pm-actions-menu" in DASH_CSS
