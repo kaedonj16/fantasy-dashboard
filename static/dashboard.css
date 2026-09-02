@@ -35782,3 +35782,404 @@ a, button, [role="button"], [role="tab"], summary, label,
 .rz-lg-pill {
     border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
 }
+
+/* ── Player modal Team tab ─────────────────────────────────────────────────── */
+.pm-team-wrap {
+    padding: 14px 18px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.pm-team-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.pm-team-logo {
+    width: 44px;
+    height: 44px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+
+.pm-crest {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    color: var(--text);
+    background: var(--accent-soft-2);
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.pm-team-header-text {
+    min-width: 0;
+}
+
+.pm-team-name {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.25;
+}
+
+.pm-team-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.pm-team-section-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.55px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.pm-team-ranks {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pm-team-rank-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+@media (min-width: 520px) {
+    .pm-team-rank-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .pm-adv-ranks {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+}
+
+.pm-team-rank {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.pm-team-rank-lead {
+    width: 100%;
+    padding: 12px 14px;
+}
+
+.pm-team-rank-lbl {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.45px;
+    color: var(--text-muted);
+}
+
+.pm-team-rank-val {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--text);
+    line-height: 1.15;
+}
+
+.pm-team-rank-lead .pm-team-rank-val {
+    font-size: 22px;
+}
+
+.pm-team-rank-sub {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.pm-team-rank.tier-good {
+    border-color: color-mix(in srgb, #10b981 35%, var(--border));
+    background: color-mix(in srgb, #10b981 8%, var(--card));
+}
+
+.pm-team-rank.tier-good .pm-team-rank-sub {
+    color: #10b981;
+}
+
+.pm-team-rank.tier-mid {
+    border-color: color-mix(in srgb, #f59e0b 35%, var(--border));
+    background: color-mix(in srgb, #f59e0b 8%, var(--card));
+}
+
+.pm-team-rank.tier-mid .pm-team-rank-sub {
+    color: #f59e0b;
+}
+
+.pm-team-rank.tier-bad {
+    border-color: color-mix(in srgb, #ef4444 35%, var(--border));
+    background: color-mix(in srgb, #ef4444 8%, var(--card));
+}
+
+.pm-team-rank.tier-bad .pm-team-rank-sub {
+    color: #ef4444;
+}
+
+.pm-team-rank.tier-accent {
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+    background: var(--accent-soft);
+}
+
+.pm-team-rank.tier-accent .pm-team-rank-sub {
+    color: var(--accent);
+}
+
+.pm-depth-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+@media (min-width: 560px) {
+    .pm-depth-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+.pm-depth-col {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    min-width: 0;
+}
+
+.pm-depth-col-h {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--accent-soft-2);
+}
+
+.pm-depth-row {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+}
+
+.pm-depth-row:last-child {
+    border-bottom: none;
+}
+
+.pm-depth-click {
+    cursor: pointer;
+}
+
+.pm-depth-click:hover {
+    background: var(--accent-soft-2);
+}
+
+.pm-depth-focus {
+    background: var(--accent-soft);
+    box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.pm-depth-name {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.3;
+}
+
+.pm-depth-player {
+    min-width: 0;
+}
+
+.pm-depth-slot {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.35px;
+    color: var(--text-muted);
+    padding: 1px 4px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--accent-soft-2);
+}
+
+.pm-depth-starter {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.35px;
+    color: var(--accent);
+    padding: 1px 5px;
+    border-radius: 4px;
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+    background: var(--accent-soft);
+}
+
+.pm-depth-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+    font-size: 10px;
+    color: var(--text-muted);
+}
+
+.pm-depth-empty {
+    padding: 12px 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.dinj {
+    font-size: 9px;
+    font-weight: 800;
+    padding: 1px 4px;
+    border-radius: 4px;
+    line-height: 1.2;
+}
+
+.dinj-q {
+    color: #92400e;
+    background: color-mix(in srgb, #f59e0b 18%, var(--card));
+    border: 1px solid color-mix(in srgb, #f59e0b 40%, var(--border));
+}
+
+.dinj-d {
+    color: #c2410c;
+    background: color-mix(in srgb, #f97316 15%, var(--card));
+    border: 1px solid color-mix(in srgb, #f97316 35%, var(--border));
+}
+
+.dinj-out {
+    color: #b91c1c;
+    background: color-mix(in srgb, #ef4444 14%, var(--card));
+    border: 1px solid color-mix(in srgb, #ef4444 35%, var(--border));
+}
+
+.pm-snap-est {
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-left: 2px;
+}
+
+.pm-adv-wrap {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--card);
+}
+
+.pm-adv-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 11px 14px;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    text-align: left;
+}
+
+.pm-adv-toggle:hover {
+    background: var(--accent-soft-2);
+}
+
+.pm-adv-chevron {
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid var(--text-muted);
+    border-bottom: 2px solid var(--text-muted);
+    transform: rotate(45deg);
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+    margin-top: -3px;
+}
+
+.pm-adv-toggle[aria-expanded="true"] .pm-adv-chevron {
+    transform: rotate(-135deg);
+    margin-top: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pm-adv-chevron {
+        transition: none;
+    }
+}
+
+.pm-adv-body {
+    padding: 0 14px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.pm-adv-body[hidden] {
+    display: none !important;
+}
+
+.pm-usage-wrap {
+    overflow-x: auto;
+}
+
+.pm-usage-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.45px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.pm-usage-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.pm-usage-table th,
+.pm-usage-table td {
+    padding: 7px 8px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.pm-usage-table th {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-muted);
+}
+
+.pm-usage-table tr.pm-usage-focus td {
+    font-weight: 700;
+    color: var(--text);
+    background: var(--accent-soft);
+}
