@@ -4469,22 +4469,41 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
 _DRAFT_IMMINENT_BANNER_HTML = r"""
 <div id="drImminentBanner" class="drgb" style="display:none;"></div>
 <style>
-.drgb { margin: 10px 14px 0; border-radius: 12px; border: 1px solid var(--accent,#38bdf8); overflow: hidden;
-  background: linear-gradient(90deg, rgba(56,189,248,.18), rgba(56,189,248,.05)); }
-.drgb.is-live { border-color: #22c55e; background: linear-gradient(90deg, rgba(34,197,94,.18), rgba(34,197,94,.05)); }
-.drgb-inner { display: flex; align-items: center; gap: 12px; padding: 11px 16px; }
-.drgb-ic { font-size: 20px; flex-shrink: 0; display: inline-flex; align-items: center; }
-.drgb-ic-live { animation: drgbPulse 1.4s ease-in-out infinite; }
-@keyframes drgbPulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
-.drgb-txt { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; flex: 1; }
-.drgb-txt b { font-size: 14px; font-weight: 800; color: var(--text); }
-.drgb-txt span { font-size: 12px; color: var(--text-muted); }
+.drgb { position: relative; margin: 12px 14px 0; border-radius: 16px; overflow: hidden;
+  border: 1px solid rgba(56,189,248,.32);
+  background: linear-gradient(135deg, rgba(56,189,248,.14), rgba(56,189,248,.03));
+  box-shadow: 0 10px 26px -14px rgba(15,23,42,.4); }
+.drgb::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--accent,#38bdf8); }
+.drgb.is-live { border-color: rgba(34,197,94,.38);
+  background: linear-gradient(135deg, rgba(34,197,94,.15), rgba(34,197,94,.03)); }
+.drgb.is-live::before { background: linear-gradient(#4ade80, #16a34a); }
+.drgb-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 16px 44px 16px 18px; }
+.drgb-ic { flex-shrink: 0; width: 42px; height: 42px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 19px; color: var(--accent,#38bdf8); background: rgba(56,189,248,.16); box-shadow: inset 0 0 0 1px rgba(56,189,248,.28); }
+.drgb-ic-live { color: #16a34a; background: rgba(34,197,94,.16); box-shadow: inset 0 0 0 1px rgba(34,197,94,.32);
+  animation: drgbPulse 1.9s ease-out infinite; }
+@keyframes drgbPulse { 0% { box-shadow: inset 0 0 0 1px rgba(34,197,94,.32), 0 0 0 0 rgba(34,197,94,.5); }
+  70% { box-shadow: inset 0 0 0 1px rgba(34,197,94,.32), 0 0 0 9px rgba(34,197,94,0); }
+  100% { box-shadow: inset 0 0 0 1px rgba(34,197,94,.32), 0 0 0 0 rgba(34,197,94,0); } }
+@media (prefers-reduced-motion: reduce) { .drgb-ic-live { animation: none; } }
+.drgb-txt { display: flex; flex-direction: column; gap: 2px; line-height: 1.3; min-width: 0; flex: 1 1 140px; }
+.drgb-txt b { font-size: 15px; font-weight: 800; color: var(--text); letter-spacing: -.01em; }
+.drgb-txt span { font-size: 12.5px; color: var(--text-muted); }
 .drgb-cd { font-variant-numeric: tabular-nums; }
-.drgb-join { flex-shrink: 0; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
-  background: var(--accent,#38bdf8); color: #fff; font-weight: 700; font-size: 13px; text-decoration: none; padding: 8px 14px; border-radius: 8px; }
-.drgb.is-live .drgb-join { background: #22c55e; }
+.drgb-join { flex: 1 1 100%; justify-content: center; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+  background: linear-gradient(180deg, #38bdf8, #0ea5e9); color: #fff; font-weight: 700; font-size: 13px; text-decoration: none;
+  padding: 11px 16px; border-radius: 11px; box-shadow: 0 5px 14px -4px rgba(14,165,233,.55);
+  transition: transform .12s ease, box-shadow .15s ease, filter .15s ease; }
+.drgb-join:hover { transform: translateY(-1px); box-shadow: 0 9px 20px -5px rgba(14,165,233,.65); }
+.drgb-join:active { transform: translateY(0); filter: brightness(.97); }
+.drgb.is-live .drgb-join { background: linear-gradient(180deg, #22c55e, #16a34a); box-shadow: 0 5px 14px -4px rgba(22,163,74,.55); }
+.drgb.is-live .drgb-join:hover { box-shadow: 0 9px 20px -5px rgba(22,163,74,.65); }
 .drgb-join i { font-size: 11px; }
-.drgb-x { flex-shrink: 0; background: none; border: none; color: var(--text-muted); font-size: 19px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.drgb-x { position: absolute; top: 9px; right: 10px; z-index: 1; background: none; border: none; color: var(--text-muted);
+  font-size: 18px; line-height: 1; cursor: pointer; padding: 3px 6px; border-radius: 7px; opacity: .55;
+  transition: opacity .15s ease, background .15s ease; }
+.drgb-x:hover { opacity: 1; background: rgba(127,127,127,.16); }
+@media (min-width: 560px) { .drgb-join { flex: 0 0 auto; } }
 </style>
 <script>
 (function(){
