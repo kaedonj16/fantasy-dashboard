@@ -48,7 +48,7 @@ def _jsonable_metrics(metrics: dict) -> dict:
         if value is None:
             out[key] = None
             continue
-        if isinstance(value, bool) or isinstance(value, (datetime, date)):
+        if isinstance(value, (bool, datetime, date)):
             continue
         try:
             number = float(value)
