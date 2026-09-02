@@ -170,7 +170,7 @@ def build_dashboard_body(ctx: dict) -> str:
     )
     ctx["model_value_table"] = list(get_model_value_table_cached() or []) or (ctx.get("model_value_table") or [])
     teams_sidebar_html, teams_tab_label = render_dashboard_teams_sidebar(
-        ctx, teams_ctx, filled_label="Team Values",
+        ctx, teams_ctx, filled_label="Rosters",
     )
 
     gm_card_html = ""
