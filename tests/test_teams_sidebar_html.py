@@ -26,6 +26,13 @@ def test_picks_section_closing_tags_only_emitted_when_picks_exist():
     assert picks_block.index('picks_out.append("</div></div>")') > picks_block.index("if picks:")
 
 
+def test_render_teams_sidebar_includes_ir_section():
+    block = _render_teams_sidebar_source()
+    assert 'render_player_list("IR"' in block
+    assert 'render_player_list("Bench"' in block
+    assert 'render_player_list("Starters"' in block
+
+
 def test_render_teams_sidebar_wraps_all_panels_in_team_panels():
     block = _render_teams_sidebar_source()
     assert "panels_html = \"<div class='team-panels'>\" + \"\".join(panel_html_parts) + \"</div>\"" in block
