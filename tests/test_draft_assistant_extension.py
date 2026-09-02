@@ -1,4 +1,4 @@
-"""Guards for the docked Draft Assistant overlay in the League Connector."""
+"""Guards for the docked BR Fantasy Draft Assistant overlay."""
 from pathlib import Path
 import json
 import re
@@ -158,7 +158,7 @@ def test_collapsed_overlay_has_reopen_control():
     assert 'aria-modal' in inject
     assert "br-da-invite-card" in inject
     assert 'PRODUCT_VERSION = "1.0.0"' in inject
-    assert "BR Fantasy extension" in inject
+    assert "BR Fantasy Draft Assistant" in inject
     assert "Use Draft Assistant on this" in inject
     assert "br-da-invite-ver" in inject
     assert "br-da-invite-perks" in inject
