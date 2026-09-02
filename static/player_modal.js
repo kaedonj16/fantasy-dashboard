@@ -2824,17 +2824,17 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
   const realSeason = (season != null && season !== 'career' && season !== 'auto');
   const hasWeekRange = realSeason && weekStart != null && weekEnd != null;
 
-  const leagueParam = leagueId ? `&league_id=${leagueId}` : '';
+  const leagueParam = leagueId ? `&league_id=${encodeURIComponent(leagueId)}` : '';
   const seasonParam = realSeason ? `&season=${season}` : '';
   const weekParam = hasWeekRange ? `&week_start=${weekStart}&week_end=${weekEnd}` : '';
-  const url = `/api/player-advanced-metrics/${playerId}?_=1${leagueParam}${seasonParam}${weekParam}`;
+  const url = `/api/player-advanced-metrics/${encodeURIComponent(playerId)}?_=1${leagueParam}${seasonParam}${weekParam}`;
 
   // When season is explicitly known and no week range, pre-fetch ranks in parallel
   // with the metrics request so we can render once with both instead of two renders.
   let _earlyRanksPromise = null;
   if (realSeason && !hasWeekRange) {
     let _rUrl = `/api/player-metric-ranks/${encodeURIComponent(playerId)}?season=${season}`;
-    if (leagueId) _rUrl += `&league_id=${leagueId}`;
+    if (leagueId) _rUrl += `&league_id=${encodeURIComponent(leagueId)}`;
     const _rCached = _advRanksCache.get(_rUrl);
     _earlyRanksPromise = _rCached
       ? Promise.resolve(_rCached)
@@ -2858,7 +2858,18 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
   }
 
   (_cached ? Promise.resolve(_cached) : _advFetch(url, 12000)
-    .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+    .then(res => {
+      // 404 = no stored metrics for this player. Surface that as an empty
+      // payload instead of throwing — the old `!res.ok` throw made a missing
+      // row look like a network failure ("Retry").
+      if (res.status === 404) {
+        return res.json().catch(function() {
+          return { error: 'No metrics available for this player' };
+        });
+      }
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    })
     .then(data => {
       if (!data.error && !data.premium_required) {
         _advMetricsCache.set(url, data);
@@ -2869,8 +2880,8 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
     .then(metricsData => {
       if (token !== _advMetricsToken) return; // superseded by a newer call
       if (metricsData.error || metricsData.premium_required) {
-        const section = document.getElementById('advancedMetricsSection');
-        if (section) section.style.display = 'none';
+        contentEl.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;">'
+          + '<div style="color:var(--text-muted);font-size:13px;">Advanced metrics not available for this player.</div></div>';
         return;
       }
 
@@ -2951,7 +2962,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
           } else {
             // Week-range or auto-season: fetch ranks now (season resolved from response).
             let rankUrl = `/api/player-metric-ranks/${encodeURIComponent(playerId)}?season=${activeSeason}`;
-            if (leagueId) rankUrl += `&league_id=${leagueId}`;
+            if (leagueId) rankUrl += `&league_id=${encodeURIComponent(leagueId)}`;
             if (weekActive) rankUrl += `&week_start=${activeWS}&week_end=${activeWE}`;
             const _rCached2 = _advRanksCache.get(rankUrl);
             _ranksPromise = _rCached2

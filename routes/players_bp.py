@@ -13,6 +13,7 @@ Dependencies: dashboard_services.*, data_building.*, utils.* only - no app.py in
 from __future__ import annotations
 
 import logging
+import math
 from datetime import date, datetime
 
 from flask import Blueprint, jsonify, request, session
@@ -24,6 +25,39 @@ from data_building.player_value_history import get_player_value_history
 logger = logging.getLogger(__name__)
 
 players_bp = Blueprint("players", __name__)
+
+# Meta / non-numeric columns that ride along on a season snapshot. Blind
+# float() on these 500s /api/player-advanced-metrics and the modal Adv
+# Metrics tab shows "network hiccup".
+_METRICS_NON_NUMERIC = frozenset({
+    "player_id", "position", "id", "season", "as_of_date", "nfl_team",
+})
+
+
+def _jsonable_metrics(metrics: dict) -> dict:
+    """Coerce a metrics row into JSON-safe numeric values for the modal.
+
+    Season snapshots include VARCHAR (nfl_team) and boolean rookie flags.
+    Those are omitted; dates are handled by the caller; non-finite numbers
+    are dropped so Flask does not emit invalid JSON.
+    """
+    out: dict = {}
+    for key, value in metrics.items():
+        if key in _METRICS_NON_NUMERIC:
+            continue
+        if value is None:
+            out[key] = None
+            continue
+        if isinstance(value, bool) or isinstance(value, (datetime, date)):
+            continue
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(number):
+            continue
+        out[key] = number
+    return out
 
 
 # ── /api/player-weekly-metrics/<player_id> ────────────────────────────────────
@@ -228,11 +262,7 @@ def api_player_advanced_metrics(player_id: str):
         season_val = metrics.pop("season", target_season)
         metrics.pop("id", None)
 
-        metrics_payload = {
-            k: (float(v) if v is not None and not isinstance(v, (datetime, date)) else (str(v) if isinstance(v, (datetime, date)) else None))
-            for k, v in metrics.items()
-            if k not in ("player_id", "position")
-        }
+        metrics_payload = _jsonable_metrics(metrics)
 
         # Blend usage-based role score with PFF quality grades for a single
         # evaluation signal used by the modal. Role score itself is an internal
