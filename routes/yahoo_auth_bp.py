@@ -273,3 +273,57 @@ def api_yahoo_validate_league():
             "ok": False,
             "error": "Couldn't load that Yahoo league. Double-check the league ID.",
         }), 400
+
+
+@yahoo_auth_bp.route("/api/yahoo-debug")
+def api_yahoo_debug():
+    """Return Yahoo parse diagnostics for the current league (copy/paste for support).
+
+    Requires Yahoo OAuth in this session. Enable server log lines with
+    YAHOO_API_DEBUG=1 on the host. No access tokens are included in the response.
+    """
+    from dashboard_services.providers.yahoo_api import (
+        diagnose_league, get_valid_access_token, yahoo_enabled,
+    )
+    if not yahoo_enabled():
+        return jsonify({"ok": False, "error": "Yahoo connections are unavailable."}), 503
+
+    league_id = (request.args.get("league_id") or "").strip()
+    # /yahoo/<season>/<league_id>/... pages — infer from the Referer when omitted.
+    if not league_id:
+        ref = request.referrer or ""
+        for marker in ("/yahoo/", "/api/yahoo/"):
+            if marker in ref:
+                tail = ref.split(marker, 1)[-1].strip("/").split("/")
+                if len(tail) >= 2 and tail[1].isdigit():
+                    league_id = tail[1]
+                    break
+
+    access_token = session.get("yahoo_access_token") or ""
+    guid = session.get("yahoo_guid") or ""
+    if not access_token and guid:
+        access_token = get_valid_access_token(guid) or ""
+
+    if not access_token:
+        return jsonify({"ok": False, "error": "Yahoo OAuth required.", "needs_oauth": True}), 401
+    if not league_id:
+        return jsonify({"ok": False, "error": "league_id required (query param or Yahoo league URL)."}), 400
+
+    from datetime import datetime
+    from dashboard_services.api import get_nfl_state
+    nfl_state = get_nfl_state() or {}
+    season = int(request.args.get("season") or nfl_state.get("season") or datetime.now().year)
+
+    try:
+        from dashboard_services.providers.yahoo_api import resolve_league_key
+        resolved = resolve_league_key(access_token, league_id)
+        if resolved.get("season"):
+            season = int(resolved["season"])
+    except Exception:
+        logger.debug("[yahoo-debug] resolve_league_key failed", exc_info=True)
+
+    report = diagnose_league(season, league_id, access_token)
+    report["yahoo_api_debug_logging"] = (
+        (os.environ.get("YAHOO_API_DEBUG") or "").strip().lower() in ("1", "true", "yes", "on")
+    )
+    return jsonify(report)

@@ -77,6 +77,20 @@ def yahoo_enabled() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
+def yahoo_api_debug_enabled() -> bool:
+    """Verbose Yahoo parse/API diagnostics for production troubleshooting.
+
+  Set YAHOO_API_DEBUG=1 on the host (or hit /api/yahoo-debug while signed in)
+  to capture response shapes and parsed team/roster counts in logs.
+    """
+    return (os.environ.get("YAHOO_API_DEBUG") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _yahoo_debug(msg: str, *args, **kwargs) -> None:
+    if yahoo_api_debug_enabled():
+        logger.info("[yahoo-debug] " + msg, *args, **kwargs)
+
+
 # ---------------------------------------------------------------------------
 # OAuth helpers
 # ---------------------------------------------------------------------------
@@ -444,6 +458,12 @@ def _yahoo_get(access_token: str, path: str, params: Optional[Dict] = None) -> A
     resp.raise_for_status()
     data = resp.json()
 
+    if yahoo_api_debug_enabled():
+        _yahoo_debug(
+            "GET %s -> %s shape=%s",
+            path, resp.status_code, _summarize_fantasy_response(data),
+        )
+
     with _api_cache_lock:
         _api_cache[cache_key] = (time.time(), data)
 
@@ -731,12 +751,129 @@ def _extract_league_meta(raw: Dict) -> Dict:
     return league_list[0] if league_list else {}
 
 
+def _league_child_block(raw: Dict, child_key: str) -> Any:
+    """Find a child collection (``teams``, ``settings``, …) anywhere in league[].
+
+    Yahoo usually nests these under ``league[1]``, but some sub-resource
+    responses attach them to ``league[0]`` instead — scanning avoids empty
+    extracts when the index shifts.
+    """
+    fc = raw.get("fantasy_content", {}) or {}
+    lg = fc.get("league") or []
+    if not isinstance(lg, list):
+        return {}
+    for item in lg:
+        if isinstance(item, dict) and child_key in item:
+            block = item.get(child_key)
+            if block is not None:
+                return block
+    return {}
+
+
+def _summarize_fantasy_response(raw: Dict) -> Dict[str, Any]:
+    """Non-sensitive structural summary for debug logs / the debug endpoint."""
+    fc = raw.get("fantasy_content", {}) or {}
+    lg = fc.get("league") or []
+    summary: Dict[str, Any] = {
+        "league_nodes": len(lg) if isinstance(lg, list) else 0,
+        "league_indices": [],
+    }
+    if not isinstance(lg, list):
+        return summary
+    for i, item in enumerate(lg):
+        if not isinstance(item, dict):
+            summary["league_indices"].append({"index": i, "type": type(item).__name__})
+            continue
+        entry: Dict[str, Any] = {"index": i, "keys": sorted(item.keys())}
+        if "teams" in item and isinstance(item.get("teams"), dict):
+            tb = item["teams"]
+            entry["teams_count_field"] = _safe_int(tb.get("count"))
+            entry["teams_numeric_keys"] = sorted(
+                (k for k in tb if str(k).isdigit()), key=lambda x: int(x)
+            )
+        for meta_key in ("name", "league_key", "num_teams", "draft_status", "season"):
+            if meta_key in item:
+                entry[meta_key] = item.get(meta_key)
+        summary["league_indices"].append(entry)
+    return summary
+
+
+def _summarize_team_entry(team_data: List) -> Dict[str, Any]:
+    """Parsed team snapshot for debug output (no tokens / no full rosters)."""
+    team_key = _team_attr(team_data, "team_key") or ""
+    team_id = _team_attr(team_data, "team_id") or team_key.split(".")[-1]
+    raw_players = _extract_roster_players(team_data)
+    resolved = 0
+    unmapped_samples: List[str] = []
+    for rp in raw_players:
+        p_meta, _ = _flatten_yahoo_player(rp)
+        yid = str(p_meta.get("player_id") or "")
+        name = (p_meta.get("name") or {}).get("full") if isinstance(p_meta.get("name"), dict) else p_meta.get("name")
+        pos_list = p_meta.get("display_position") or ""
+        if isinstance(pos_list, dict):
+            pos_list = pos_list.get("position") or ""
+        pos = (pos_list.split(",")[0] if isinstance(pos_list, str) else "") or ""
+        team = (p_meta.get("editorial_team_abbr") or "").upper()
+        if _resolve_player(name or "", pos, team, yahoo_id=yid):
+            resolved += 1
+        elif len(unmapped_samples) < 5:
+            unmapped_samples.append(f"yid={yid} name={name!r} pos={pos}")
+    standings = _team_attr(team_data, "team_standings") or {}
+    return {
+        "team_id":        team_id,
+        "team_key":       team_key,
+        "name":           _team_attr(team_data, "name"),
+        "raw_players":    len(raw_players),
+        "resolved_players": resolved,
+        "unmapped_samples": unmapped_samples,
+        "has_roster":     bool(_team_attr(team_data, "roster") or any(
+            isinstance(x, dict) and "roster" in x for x in (team_data or [])
+        )),
+        "wins":           (standings.get("outcome_totals") or {}).get("wins"),
+        "points_for":     standings.get("points_for"),
+    }
+
+
+def diagnose_league(season: int, league_id: str, access_token: str) -> Dict[str, Any]:
+    """Structured Yahoo parse diagnostics for support / ``/api/yahoo-debug``."""
+    lk = _league_key_for_season(league_id, season, access_token)
+    teams_path = f"league/{lk}/teams;out=roster,stats,standings"
+    users_path = f"league/{lk}/teams"
+    out: Dict[str, Any] = {
+        "ok": True,
+        "season": int(season),
+        "league_id": str(league_id),
+        "league_key": lk,
+        "crosswalk_size": len(_yahoo_id_to_canonical()),
+    }
+    try:
+        raw_rosters = _yahoo_get(access_token, teams_path)
+        out["rosters_path"] = teams_path
+        out["rosters_response_shape"] = _summarize_fantasy_response(raw_rosters)
+        teams = _extract_teams(raw_rosters)
+        out["extracted_team_count"] = len(teams)
+        out["teams"] = [_summarize_team_entry(t) for t in teams]
+        out["parsed_users_count"] = len(get_users(season, league_id, access_token))
+        out["parsed_rosters_count"] = len(get_rosters(season, league_id, access_token))
+        meta_raw = _yahoo_get(access_token, f"league/{lk}")
+        meta = _extract_league_meta(meta_raw) or {}
+        out["league_meta"] = {
+            "name": meta.get("name"),
+            "num_teams": meta.get("num_teams"),
+            "draft_status": meta.get("draft_status"),
+            "scoring_type": meta.get("scoring_type"),
+            "current_week": meta.get("current_week"),
+        }
+    except Exception as exc:
+        out["ok"] = False
+        out["error"] = f"{type(exc).__name__}: {exc}"
+    out["users_path"] = users_path
+    return out
+
+
 def _extract_teams(raw: Dict) -> List[Dict]:
     """Extract the teams dict from a league+teams response."""
-    fc   = raw.get("fantasy_content", {})
-    lg   = fc.get("league") or []
-    meta = lg[1] if len(lg) > 1 else {}
-    teams_block = meta.get("teams") or {}
+    teams_block = _league_child_block(raw, "teams") or {}
     out = []
     # Yahoo collections are 0-indexed ("0", "1", …, count-1). A 1-based loop
     # skipped team 0 and read past the end, so leagues looked empty or short.
@@ -838,6 +975,11 @@ def get_users(season: int, league_id: str, access_token: str) -> List[Dict[str, 
             "user_id":      guid,
             "roster_id":    _safe_int(team_id),
         })
+    _yahoo_debug(
+        "get_users league=%s season=%s -> %s users (ids=%s)",
+        league_id, season, len(out),
+        [u.get("roster_id") for u in out[:20]],
+    )
     return out
 
 
@@ -850,7 +992,8 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
     out: List[Dict[str, Any]] = []
 
     for t in teams:
-        team_id   = _safe_int(_team_attr(t, "team_id"))
+        team_key  = _team_attr(t, "team_key") or ""
+        team_id   = _safe_int(_team_attr(t, "team_id") or team_key.split(".")[-1])
         managers  = _team_attr(t, "managers") or []
         if isinstance(managers, dict):
             managers = [managers]
@@ -925,6 +1068,11 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
             "starters": starters,
             "taxi":     None,
         })
+    _yahoo_debug(
+        "get_rosters league=%s season=%s -> %s rosters players_per_roster=%s",
+        league_id, season, len(out),
+        {r.get("roster_id"): len(r.get("players") or []) for r in out[:20]},
+    )
     return out
 
 
