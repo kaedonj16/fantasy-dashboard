@@ -206,6 +206,59 @@ def test_extract_teams_uses_zero_based_keys():
     assert yahoo_api._team_attr(out[1], "name") == "Beta"
 
 
+def test_extract_teams_finds_teams_on_league_index_zero():
+    """Some Yahoo sub-resource payloads attach teams to league[0], not league[1]."""
+    teams = [[{"team_id": "1", "name": "Only"}]]
+    block = {str(i): {"team": t} for i, t in enumerate(teams)}
+    block["count"] = 1
+    payload = {
+        "fantasy_content": {
+            "league": [
+                {"league_key": "449.l.99", "name": "Test", "teams": block},
+            ]
+        }
+    }
+    out = yahoo_api._extract_teams(payload)
+    assert len(out) == 1
+    assert yahoo_api._team_attr(out[0], "name") == "Only"
+
+
+def test_get_rosters_uses_team_key_when_team_id_missing(monkeypatch):
+    team = [[
+        {"team_key": "449.l.99.t.7"},
+        {"name": "Key Only"},
+        {"managers": [{"manager": {"guid": "g7"}}]},
+    ]]
+    payload = _teams_payload([team])
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda *a, **k: payload)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    rosters = yahoo_api.get_rosters(2026, "99", "tok")
+    assert len(rosters) == 1
+    assert rosters[0]["roster_id"] == 7
+
+
+def test_diagnose_league_reports_parse_counts(monkeypatch):
+    teams = [_realistic_yahoo_team(i, f"T{i}", with_roster=True) for i in range(1, 3)]
+    payload = _teams_payload(teams)
+    meta_payload = {"fantasy_content": {"league": [{"name": "L", "num_teams": "2", "draft_status": "postdraft"}]}}
+    paths = {
+        "league/449.l.99/teams;out=roster,stats,standings": payload,
+        "league/449.l.99/teams": payload,
+        "league/449.l.99": meta_payload,
+    }
+    import dashboard_services.api as api
+    monkeypatch.setattr(api, "get_nfl_players", lambda: {"11111": {"yahoo_id": "5"}})
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda tok, path, params=None: paths[path])
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    report = yahoo_api.diagnose_league(2026, "99", "tok")
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    assert report["ok"] is True
+    assert report["extracted_team_count"] == 2
+    assert report["parsed_rosters_count"] == 2
+    assert report["teams"][0]["resolved_players"] == 1
+
+
 def test_extract_roster_players_uses_zero_based_keys():
     roster = {
         "roster": {

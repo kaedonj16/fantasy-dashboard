@@ -110,6 +110,9 @@ services:
         value: https://brfantasyfootball.com/auth/yahoo/callback
       - key: YAHOO_ENABLED
         value: "1"
+      # Set to "1" temporarily to emit [yahoo-debug] lines in Render logs.
+      - key: YAHOO_API_DEBUG
+        sync: false
       # Stripe payments
       - key: STRIPE_SECRET_KEY
         sync: false
