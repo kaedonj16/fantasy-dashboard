@@ -55,3 +55,17 @@ def test_prewarm_league_requires_league_id(offline_client):
     r = offline_client.get("/api/prewarm-league")
     assert r.status_code == 400, r.status_code
     assert r.get_json().get("ok") is False
+
+
+def test_prewarm_league_skips_espn(offline_client):
+    # ESPN idle prewarm is a no-op: it contended with private-league ESPN traffic
+    # and switch already refreshes the destination context.
+    r = offline_client.get(
+        "/api/prewarm-league",
+        query_string={"platform": "espn", "league_id": "887776065", "season": "2026"},
+    )
+    assert r.status_code == 200, r.status_code
+    body = r.get_json()
+    assert body.get("ok") is True
+    assert body.get("skipped") is True
+    assert body.get("reason") == "espn"

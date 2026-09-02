@@ -1256,6 +1256,55 @@ def _yahoo_players_need_hydration(raw_players: List[Dict]) -> bool:
     return any(not _flatten_yahoo_player(rp)[1] for rp in raw_players)
 
 
+# Bench stays on ``players`` only (dashboard bench list). IR-only goes to
+# ``reserve``, matching ESPN/Sleeper. NA is Yahoo's inactive/bye slot.
+_YAHOO_BENCH_SLOTS = frozenset({"BN", "NA"})
+_YAHOO_IR_SLOTS = frozenset({"IR", "IR+"})
+
+
+def _yahoo_player_canonical(rp: Any) -> tuple[Optional[str], Optional[str]]:
+    """Return (canonical_id, selected_position) for one Yahoo roster row."""
+    p_meta, sel_pos = _flatten_yahoo_player(rp)
+    name = (p_meta.get("name") or {}).get("full") or ""
+    pos_list = p_meta.get("display_position") or p_meta.get("eligible_positions") or ""
+    if isinstance(pos_list, dict):
+        pos_list = pos_list.get("position") or ""
+    pos = (pos_list.split(",")[0] if isinstance(pos_list, str) else "") or ""
+    team = (p_meta.get("editorial_team_abbr") or "").upper()
+    yid = str(p_meta.get("player_id") or "")
+    return _resolve_player(name, pos, team, yahoo_id=yid), sel_pos
+
+
+def _split_yahoo_lineup(raw_players: List[Any]) -> tuple[List[str], List[str], List[str]]:
+    """Map Yahoo roster rows to (players, starters, reserve/IR).
+
+    BN/NA are not starters and not IR — ``build_teams_overview`` puts those
+    leftover ``players`` on the dashboard Bench list. Putting BN in
+    ``reserve`` hid the rest of the roster because the teams-card does not
+    render IR.
+    """
+    players: List[str] = []
+    starters: List[str] = []
+    reserve: List[str] = []
+    for rp in raw_players:
+        canon, sel_pos = _yahoo_player_canonical(rp)
+        if not canon:
+            continue
+        players.append(canon)
+        slot = (sel_pos or "").upper()
+        if slot in _YAHOO_IR_SLOTS:
+            reserve.append(canon)
+        elif slot in _YAHOO_BENCH_SLOTS:
+            continue
+        else:
+            starters.append(canon)
+    if not starters and players:
+        # Yahoo tags every player BN before a lineup is submitted.
+        ir_set = set(reserve)
+        starters = [p for p in players if p not in ir_set][:9]
+    return players, starters, reserve
+
+
 def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str, Any]]:
     lk = _league_key_for_season(league_id, season, access_token)
     raw = _yahoo_get(
@@ -1307,35 +1356,7 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
         raw_players = roster_by_key.get(team_key) or _extract_roster_players(t)
         if _yahoo_players_need_hydration(raw_players) and team_key:
             raw_players = _fetch_team_roster_players(access_token, team_key, week)
-        players:  List[str] = []
-        starters: List[str] = []
-        reserve:  List[str] = []
-
-        for rp in raw_players:
-            p_meta, sel_pos = _flatten_yahoo_player(rp)
-
-            name     = (p_meta.get("name") or {}).get("full") or ""
-            pos_list = p_meta.get("display_position") or p_meta.get("eligible_positions") or ""
-            if isinstance(pos_list, dict):
-                pos_list = pos_list.get("position") or ""
-            pos  = (pos_list.split(",")[0] if isinstance(pos_list, str) else "") or ""
-            team = (p_meta.get("editorial_team_abbr") or "").upper()
-            yid  = str(p_meta.get("player_id") or "")
-
-            canon = _resolve_player(name, pos, team, yahoo_id=yid)
-            if not canon:
-                continue
-
-            players.append(canon)
-            if sel_pos in ("BN", "IR", "IR+"):
-                reserve.append(canon)
-            else:
-                starters.append(canon)
-
-        if not starters and players and len(reserve) == len(players):
-            # Yahoo sometimes tags every player BN before/without a submitted lineup.
-            starters = players[:9]
-            reserve = players[9:]
+        players, starters, reserve = _split_yahoo_lineup(raw_players)
 
         # If every mapped player landed in starters, lineup slots are still missing.
         if (
@@ -1346,24 +1367,7 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
         ):
             retry_players = _fetch_team_roster_players(access_token, team_key, week)
             if retry_players:
-                players, starters, reserve = [], [], []
-                for rp in retry_players:
-                    p_meta, sel_pos = _flatten_yahoo_player(rp)
-                    name     = (p_meta.get("name") or {}).get("full") or ""
-                    pos_list = p_meta.get("display_position") or p_meta.get("eligible_positions") or ""
-                    if isinstance(pos_list, dict):
-                        pos_list = pos_list.get("position") or ""
-                    pos  = (pos_list.split(",")[0] if isinstance(pos_list, str) else "") or ""
-                    team = (p_meta.get("editorial_team_abbr") or "").upper()
-                    yid  = str(p_meta.get("player_id") or "")
-                    canon = _resolve_player(name, pos, team, yahoo_id=yid)
-                    if not canon:
-                        continue
-                    players.append(canon)
-                    if sel_pos in ("BN", "IR", "IR+"):
-                        reserve.append(canon)
-                    else:
-                        starters.append(canon)
+                players, starters, reserve = _split_yahoo_lineup(retry_players)
 
         fpts_whole = int(pts_for)
         fpts_dec   = int(round((pts_for - fpts_whole) * 100))

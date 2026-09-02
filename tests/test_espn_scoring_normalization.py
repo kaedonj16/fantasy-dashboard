@@ -18,6 +18,13 @@ from utils.projection_resolver import resolve_projected_ppg
 from utils.league_scoring import normalize_league_scoring
 
 
+@pytest.fixture(autouse=True)
+def clear_espn_caches():
+    espn_api.clear_espn_league_caches()
+    yield
+    espn_api.clear_espn_league_caches()
+
+
 def _items(rec):
     return [
         {"statId": 53, "points": rec},
