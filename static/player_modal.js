@@ -1538,6 +1538,10 @@ function pmSwitchTab(tab) {
     btn.classList.add('active');
     btn.setAttribute('aria-selected', 'true');
   }
+  // The Team tab manages its own edge-to-edge section padding, so drop the
+  // modal body's inset while it's active.
+  const _pmBodyEl = document.getElementById('playerModalBody');
+  if (_pmBodyEl) _pmBodyEl.classList.toggle('pm-body-flush', tab === 'team');
   if (window._pmSlideTabs) window._pmSlideTabs.sync(true);
 
   const pmTabBar = document.getElementById('pmTabBar');
@@ -1605,25 +1609,41 @@ function pmSwitchTab(tab) {
     if (window._rzSyncTabLive) window._rzSyncTabLive(panel);
   }
 
-  // ── Lazy-load Team tab ───────────────────────────────────────────────────
+  // ── Lazy-load Team tab (10-min localStorage cache for instant re-opens) ───
   if (tab === 'team' && panel && !panel.dataset.loaded && pmTabBar && pmTabBar.dataset.pmHasTeam) {
     panel.dataset.loaded = '1';
-    fetch(`/api/player-team/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}`)
-      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then(data => {
-        if (!panel.isConnected) return;
-        if (!data || data.available === false) {
-          window.brEmptyState(panel, { icon: 'search', title: 'No team data', message: 'Team context is not available for this player.', compact: true });
-          return;
-        }
-        panel.innerHTML = _pmBuildTeamHTML(data);
-        _pmWireTeamPanel(panel);
-      })
-      .catch(() => {
-        if (panel.isConnected) {
-          window.brErrorState(panel, 'Could not load team.', () => { panel.dataset.loaded = ''; pmSwitchTab(tab); }, { compact: true });
-        }
-      });
+    const _teamUrl = `/api/player-team/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}`;
+    const _teamKey = 'pm_team_v1_' + _teamUrl;
+    const _teamTTL = 10 * 60 * 1000;
+    const _renderTeam = (data) => {
+      if (!panel.isConnected) return;
+      if (!data || data.available === false) {
+        window.brEmptyState(panel, { icon: 'search', title: 'No team data', message: 'Team context is not available for this player.', compact: true });
+        return;
+      }
+      panel.innerHTML = _pmBuildTeamHTML(data);
+      _pmWireTeamPanel(panel);
+    };
+    let _teamCached = null;
+    try {
+      const _e = JSON.parse(localStorage.getItem(_teamKey) || 'null');
+      if (_e && Date.now() - _e.ts < _teamTTL) _teamCached = _e.data;
+    } catch (_) {}
+    if (_teamCached) {
+      _renderTeam(_teamCached);
+    } else {
+      fetch(_teamUrl)
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(data => {
+          try { localStorage.setItem(_teamKey, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
+          _renderTeam(data);
+        })
+        .catch(() => {
+          if (panel.isConnected) {
+            window.brErrorState(panel, 'Could not load team.', () => { panel.dataset.loaded = ''; pmSwitchTab(tab); }, { compact: true });
+          }
+        });
+    }
   }
 
   // ── Lazy-load Stats tab ──────────────────────────────────────────────────
@@ -1927,12 +1947,14 @@ function _pmTeamProfileRow(pos, label, key, entry) {
   const x = Math.max(3, Math.min(97, ((total - rank) / Math.max(1, total - 1)) * 100));
   const c = _pmTeamMetricColor(pos, key, rank, total);
   const val = _pmFmtTeamVal(key, entry.value);
-  const tip = `${label}: ${_pmTeamOrd(rank)} of ${total} · ${val}`;
-  return `<div class="pm-tp-row">
+  const tip = `${label}: ${_pmTeamOrd(rank)} of ${total} · ${val}`.replace(/"/g, '&quot;');
+  // Whole row is hoverable/focusable (not just the 13px dot) so the detail is
+  // reachable by pointer and keyboard.
+  return `<div class="pm-tp-row" title="${tip}" tabindex="0" aria-label="${tip}">
     <span class="pm-tp-label">${label}</span>
     <span class="pm-tp-track"><span class="pm-tp-base"></span><span class="pm-tp-mid"></span>
       <span class="pm-tp-fill" style="width:${x}%;background:${c}"></span>
-      <span class="pm-tp-dot" style="left:${x}%;background:${c}" title="${tip.replace(/"/g, '&quot;')}"></span></span>
+      <span class="pm-tp-dot" style="left:${x}%;background:${c}"></span></span>
     <span class="pm-tp-end"><span class="pm-tp-ord" style="color:${c}">${_pmTeamOrdSup(rank)}</span><span class="pm-tp-val">${val}</span></span>
   </div>`;
 }
@@ -2049,6 +2071,14 @@ function _pmBuildTeamHTML(data) {
       <div class="pm-section-header"><span class="pm-section-label">Offense Profile</span><span class="pm-team-secnote">${data.stats_season} · rank of 32</span></div>
       ${_pmTeamProfileAxis()}${profile}
       <div class="pm-team-note">Dot = team rank (right = 1st). Color = whether that tendency helps a ${pos}: <b style="color:#10b981">green helps</b>, <b style="color:#ef4444">red hurts</b>.</div>
+      <div class="pm-section-header pm-section-collapsible pm-team-adv-toggle" role="button" tabindex="0" aria-expanded="${advOpen ? 'true' : 'false'}" aria-controls="pmTeamAdvBody">
+        <span class="pm-collapse-chevron" aria-hidden="true">${advChev}</span>
+        <span class="pm-section-label">More team ranks</span>
+        <span class="pm-collapse-hint">${advHint}</span>
+      </div>
+      <div class="pm-team-adv-body" id="pmTeamAdvBody"${advOpen ? '' : ' hidden'}>
+        ${_pmTeamProfileAxis()}${moreProfile}
+      </div>
     </div>
     <div class="pm-team-sec">
       <div class="pm-section-header"><span class="pm-section-label">${roleName}&#39;s Role</span><span class="pm-team-secnote">${pos} room</span></div>
@@ -2062,14 +2092,6 @@ function _pmBuildTeamHTML(data) {
     <div class="pm-team-sec">
       <div class="pm-section-header"><span class="pm-section-label">Rest of Depth Chart</span><span class="pm-team-secnote">Sleeper order</span></div>
       <div class="pm-team-depth"><div class="pm-mini-grid">${miniCols}</div></div>
-    </div>
-    <div class="pm-section-header pm-section-collapsible pm-team-adv-toggle" role="button" tabindex="0" aria-expanded="${advOpen ? 'true' : 'false'}" aria-controls="pmTeamAdvBody">
-      <span class="pm-collapse-chevron" aria-hidden="true">${advChev}</span>
-      <span class="pm-section-label">More team ranks</span>
-      <span class="pm-collapse-hint">${advHint}</span>
-    </div>
-    <div class="pm-team-adv-body" id="pmTeamAdvBody"${advOpen ? '' : ' hidden'}>
-      ${_pmTeamProfileAxis()}${moreProfile}
     </div>
   </div>`;
 }

@@ -36085,10 +36085,19 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pm-team-depth-empty { padding: 8px 9px; color: var(--text-muted); font-size: 12px; }
 .pm-snap-est { font-size: 8.5px; color: var(--text-muted); margin-left: 3px; font-weight: 600; }
 
-/* advanced collapse */
+/* advanced collapse — nested under the Offense Profile section */
 .pm-team-adv-toggle { cursor: pointer; }
-.pm-team-adv-body { padding: 0 18px 16px; }
+.pm-team-sec .pm-team-adv-toggle { margin: 12px 0 0; padding: 12px 0 4px; border-top: 1px solid var(--border); border-radius: 0; }
+.pm-team-sec .pm-team-adv-toggle:hover { background: transparent; }
+.pm-team-adv-body { padding: 6px 0 0; }
 .pm-team-adv-body[hidden] { display: none; }
+
+/* profile rows are hoverable/focusable data points (native title tooltip) */
+.pm-tp-row { cursor: help; border-radius: 6px; }
+.pm-tp-row:hover, .pm-tp-row:focus-visible { background: var(--row); outline: none; }
+
+/* Team tab manages its own section padding — drop the modal body inset. */
+.player-modal-body.pm-body-flush { padding: 0; }
 
 /* mobile — reclaim horizontal space so names don't clip */
 @media (max-width: 600px) {
