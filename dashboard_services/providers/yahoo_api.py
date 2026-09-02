@@ -180,6 +180,34 @@ def exchange_code_for_tokens(code: str) -> Dict[str, Any]:
     return tok
 
 
+def yahoo_oauth_start_url(
+    *,
+    league_id: str = "",
+    next_url: str = "/portfolio",
+    reauth: bool = False,
+) -> str:
+    """Build a local /auth/yahoo URL for the link modal or home connect flow."""
+    from urllib.parse import urlencode
+
+    params: Dict[str, str] = {"next": next_url or "/"}
+    if league_id:
+        params["league_id"] = str(league_id)
+    if reauth:
+        params["reauth"] = "1"
+    return "/auth/yahoo?" + urlencode(params)
+
+
+def resolve_session_yahoo_token(session) -> tuple[str, str]:
+    """Return (guid, access_token) from the Flask session, refreshing from DB if needed."""
+    guid = str(session.get("yahoo_guid") or "")
+    token = str(session.get("yahoo_access_token") or "")
+    if not token and guid:
+        token = get_valid_access_token(guid) or ""
+        if token:
+            session["yahoo_access_token"] = token
+    return guid, token
+
+
 def get_login_guid(access_token: str, league_id: str = "") -> str:
     """Return the logged-in user's Yahoo GUID via the Fantasy API.
 

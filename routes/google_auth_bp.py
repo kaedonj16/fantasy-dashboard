@@ -269,6 +269,19 @@ def google_auth_callback():
                 season=pending.get("season"), team_id=pending.get("team_id"),
                 name=pending.get("name"),
             )
+            if pending["platform"] == "yahoo":
+                yahoo_guid = session.get("yahoo_guid")
+                if yahoo_guid:
+                    try:
+                        link_platform_identity(account_id, "yahoo", str(yahoo_guid))
+                        from dashboard_services.providers.yahoo_api import save_league_owner
+                        lookup_season = pending.get("season")
+                        if lookup_season is not None:
+                            save_league_owner(
+                                pending["league_id"], int(lookup_season), str(yahoo_guid),
+                            )
+                    except Exception:
+                        logger.warning("[google_auth] yahoo pending link attach failed", exc_info=True)
             # Sleeper: resolve the typed username to a team and set the viewer
             # identity, so the dashboard is personalized (and their other Sleeper
             # leagues get bridged too) — the home flow never set a viewer session.
