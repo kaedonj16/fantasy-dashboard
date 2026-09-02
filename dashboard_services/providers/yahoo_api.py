@@ -92,20 +92,6 @@ def _yahoo_debug(msg: str, *args, **kwargs) -> None:
         logger.info("[yahoo-debug] " + msg, *args, **kwargs)
 
 
-def yahoo_api_debug_enabled() -> bool:
-    """Verbose Yahoo parse/API diagnostics for production troubleshooting.
-
-  Set YAHOO_API_DEBUG=1 on the host (or hit /api/yahoo-debug while signed in)
-  to capture response shapes and parsed team/roster counts in logs.
-    """
-    return (os.environ.get("YAHOO_API_DEBUG") or "").strip().lower() in ("1", "true", "yes", "on")
-
-
-def _yahoo_debug(msg: str, *args, **kwargs) -> None:
-    if yahoo_api_debug_enabled():
-        logger.info("[yahoo-debug] " + msg, *args, **kwargs)
-
-
 # ---------------------------------------------------------------------------
 # OAuth helpers
 # ---------------------------------------------------------------------------
