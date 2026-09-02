@@ -241,6 +241,18 @@ def _fleaflicker_sleeper_league_type(max_keepers: int, team_count: int) -> tuple
     return 1, "keeper"
 
 
+def _fleaflicker_draft_status(league: Optional[dict]) -> str:
+    """Read FetchLeagueStandings ``draft_status``.
+
+    The protobuf default is ``NOT_YET_DRAFTED`` and is omitted from JSON, so a
+    league that has not drafted yet arrives with no field. Treat that as
+    pre-draft — never as an empty string that later looks like ``complete``.
+    """
+    raw = _get(league or {}, "draft_status", "draftStatus")
+    status = str(raw or "").strip().upper()
+    return status or "NOT_YET_DRAFTED"
+
+
 def _normalize_fleaflicker_draft_status(
     flea_status: Optional[str],
     *,
@@ -248,13 +260,15 @@ def _normalize_fleaflicker_draft_status(
     pick_count: int = 0,
 ) -> str:
     """Map Fleaflicker draft state to Sleeper-compatible status strings."""
-    status = str(flea_status or "").upper()
+    status = str(flea_status or "").strip().upper() or "NOT_YET_DRAFTED"
     if is_in_progress or status == "DRAFT_IN_PROGRESS":
         return "drafting"
     if status == "POST_DRAFT":
         return "complete"
     if status == "NOT_YET_DRAFTED":
         return "pre_draft"
+    # Unknown leftover labels only. Omitted / pre-draft status used to fall
+    # through to this and treat last year's draft-board rows as complete.
     if pick_count > 0:
         return "complete"
     return "pre_draft"
@@ -434,7 +448,7 @@ class FleaflickerProvider(ProviderAdapter):
         settings: dict[str, Any] = {
             "type": sleeper_type,
             "league_type": league_type,
-            "draft_status": str(_get(league, "draft_status", "draftStatus") or ""),
+            "draft_status": _fleaflicker_draft_status(league),
         }
         if max_keepers > 0:
             settings["max_keepers"] = max_keepers
@@ -690,7 +704,7 @@ class FleaflickerProvider(ProviderAdapter):
         )
         league = (standings or {}).get("league") or {}
         draft_ts_ms = _draft_time_ms(league)
-        flea_status = _get(league, "draft_status", "draftStatus")
+        flea_status = _fleaflicker_draft_status(league)
         raw = self._call("FetchLeagueDraftBoard", league_id, season, ttl=3600, token=token)
         picks = []
         overall = 0
@@ -718,6 +732,10 @@ class FleaflickerProvider(ProviderAdapter):
             is_in_progress=bool(raw.get("is_in_progress") or raw.get("isInProgress")),
             pick_count=len(picks),
         )
+        # Last year's board can still have cells after the season rolls. An
+        # official pre-draft status means this year's draft has no picks yet.
+        if status == "pre_draft":
+            picks = []
         return [{
             "draft_id": f"fleaflicker:{season}:{league_id}",
             "league_id": str(league_id), "season": str(season),

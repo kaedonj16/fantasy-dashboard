@@ -6,7 +6,8 @@ from dashboard_services.providers.base import (
     ProviderAuthenticationError, ProviderUnavailableError, UnsupportedCapabilityError,
 )
 from dashboard_services.providers.fleaflicker_api import (
-    FleaflickerProvider, _CACHE, _fleaflicker_sleeper_league_type, login,
+    FleaflickerProvider, _CACHE, _fleaflicker_draft_status,
+    _fleaflicker_sleeper_league_type, _normalize_fleaflicker_draft_status, login,
 )
 
 
@@ -303,6 +304,50 @@ def test_get_league_detects_keeper_league(monkeypatch):
     assert league["settings"]["type"] == 1
     assert league["settings"]["league_type"] == "keeper"
     assert league["settings"]["max_keepers"] == 3
+    # Protobuf omits the default NOT_YET_DRAFTED enum; persist it so keeper
+    # rosters from last year are not treated as an already-run draft.
+    assert league["settings"]["draft_status"] == "NOT_YET_DRAFTED"
+
+
+def test_omitted_draft_status_is_not_yet_drafted():
+    assert _fleaflicker_draft_status({}) == "NOT_YET_DRAFTED"
+    assert _fleaflicker_draft_status({"name": "X"}) == "NOT_YET_DRAFTED"
+    assert _normalize_fleaflicker_draft_status(None, pick_count=12) == "pre_draft"
+    assert _normalize_fleaflicker_draft_status("", pick_count=12) == "pre_draft"
+
+
+def test_get_drafts_omitted_status_ignores_last_year_board(monkeypatch):
+    """Keeper leagues roll last year's board; omitted status must stay pre-draft."""
+    provider = FleaflickerProvider()
+    draft_ms = 1_735_689_600_000
+
+    def fake_call(method, *a, **k):
+        if method == "FetchLeagueStandings":
+            return {
+                "league": {
+                    "id": 92916,
+                    # draft_status omitted — protobuf default NOT_YET_DRAFTED
+                    "maxKeepers": 3,
+                    "draft_live_time_epoch_milli": str(draft_ms),
+                },
+            }
+        if method == "FetchLeagueDraftBoard":
+            return {
+                "rows": [{
+                    "round": 1,
+                    "cells": [{
+                        "team": {"id": 1},
+                        "player": {"proPlayer": {"id": 99, "nameFull": "Player", "position": "QB"}},
+                    }],
+                }],
+                "is_in_progress": False,
+            }
+        raise AssertionError(method)
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    drafts = provider.get_drafts("92916", 2026)
+    assert drafts[0]["status"] == "pre_draft"
+    assert drafts[0]["picks"] == []
 
 
 def test_get_drafts_marks_post_draft_complete(monkeypatch):

@@ -151,6 +151,22 @@ def test_keeper_predraft_with_full_rosters_is_still_predraft():
     assert startup_draft_pending(league, {"status": "pre_draft"}, _filled_rosters()) is True
 
 
+def test_keeper_full_rosters_with_omitted_flea_status_stay_predraft():
+    """Provider now persists NOT_YET_DRAFTED when Fleaflicker omits the enum."""
+    league = {
+        "settings": {
+            "type": 1,
+            "league_type": "keeper",
+            "draft_status": "NOT_YET_DRAFTED",
+        },
+    }
+    # Even a leftover "complete" draft record (last year's board) must not
+    # override the official pre-draft status on a keeper league.
+    assert startup_draft_phase(
+        league, {"status": "complete"}, _filled_rosters(),
+    ) == "predraft"
+
+
 def test_flea_keeper_raw_draft_status_without_draft_record():
     league = {
         "settings": {
