@@ -8,15 +8,31 @@ def _starters_look_like_full_roster(starters: List[str], players: List[str]) -> 
     return bool(players) and len(starters) >= len(players) and len(players) > 9
 
 
-def lineup_from_roster(roster: dict) -> tuple[List[str], List[str]]:
+def lineup_from_roster(roster: dict, *, starter_slots: int = 9) -> tuple[List[str], List[str]]:
     """Return (starters, bench) canonical ids from a normalized roster dict."""
     players = [str(p) for p in (roster.get("players") or []) if p]
-    starters = [str(s) for s in (roster.get("starters") or []) if s]
+    if not players:
+        return [], []
+
+    stored_starters = [str(s) for s in (roster.get("starters") or []) if s]
     reserve = {str(r) for r in (roster.get("reserve") or []) if r}
+
     if reserve:
         starters = [p for p in players if p not in reserve]
+    else:
+        starters = list(stored_starters)
+
+    if not starters:
+        # All-BN / unset lineup, or empty starter field — never leave matchups blank.
+        if stored_starters and not _starters_look_like_full_roster(stored_starters, players):
+            starters = stored_starters
+        elif stored_starters:
+            starters = stored_starters[:starter_slots]
+        else:
+            starters = players[:starter_slots]
     elif _starters_look_like_full_roster(starters, players):
-        starters = []
+        starters = starters[:starter_slots]
+
     bench = [p for p in players if p not in set(starters)]
     return starters, bench
 

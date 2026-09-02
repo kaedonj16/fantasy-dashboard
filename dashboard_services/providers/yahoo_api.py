@@ -1274,6 +1274,11 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
             else:
                 starters.append(canon)
 
+        if not starters and players and len(reserve) == len(players):
+            # Yahoo sometimes tags every player BN before/without a submitted lineup.
+            starters = players[:9]
+            reserve = players[9:]
+
         # If every mapped player landed in starters, lineup slots are still missing.
         if (
             players

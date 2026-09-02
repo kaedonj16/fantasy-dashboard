@@ -17,5 +17,13 @@ def test_lineup_from_roster_rejects_full_starter_list():
     players = [str(i) for i in range(15)]
     roster = {"players": players, "starters": players, "reserve": []}
     starters, bench = lineup_from_roster(roster)
-    assert starters == []
-    assert bench == players
+    assert len(starters) == 9
+    assert len(bench) == 6
+
+
+def test_lineup_from_roster_all_bench_does_not_blank():
+    players = [str(i) for i in range(15)]
+    roster = {"players": players, "starters": [], "reserve": players}
+    starters, bench = lineup_from_roster(roster)
+    assert len(starters) == 9
+    assert len(bench) == 6
