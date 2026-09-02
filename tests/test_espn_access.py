@@ -83,6 +83,60 @@ def test_private_league_retries_after_espn_api_none_cookies_bug(monkeypatch, cap
     assert "anonymous None-cookies AttributeError as access denied" in caplog.text
 
 
+def test_private_league_skips_anonymous_retry_and_reuses_auth_cache(monkeypatch, caplog):
+    """Player-modal / dashboard traffic must not re-pay a failed anonymous ESPN hit."""
+    caplog.set_level(logging.INFO, logger=espn_api.__name__)
+    calls = []
+
+    def fake_league(**kwargs):
+        calls.append(kwargs)
+        if "espn_s2" not in kwargs:
+            raise AttributeError("'NoneType' object has no attribute 'get'")
+        return SimpleNamespace(name=f"Private-{len(calls)}")
+
+    monkeypatch.setattr(espn_api, "League", fake_league)
+    monkeypatch.setattr(espn_api, "_espn_creds", lambda: ("secret", "{owner}"))
+
+    first = espn_api._league_cached(2026, "887776065")
+    second = espn_api._league_cached(2026, "887776065")
+    third = espn_api._league_cached(2026, "887776065")
+
+    assert first is second is third
+    # One doomed anonymous attempt + one authenticated load; later calls reuse cache.
+    assert calls == [
+        {"league_id": 887776065, "year": 2026},
+        {"league_id": 887776065, "year": 2026, "espn_s2": "secret", "swid": "{owner}"},
+    ]
+    # AttributeError compatibility log once per denial window, not per request.
+    assert caplog.text.count("anonymous None-cookies AttributeError as access denied") == 1
+
+
+def test_auth_league_cache_is_scoped_to_credential_fingerprint(monkeypatch):
+    calls = []
+
+    def fake_league(**kwargs):
+        calls.append(kwargs)
+        if "espn_s2" not in kwargs:
+            raise ESPNAccessDenied()
+        return SimpleNamespace(name=kwargs["espn_s2"])
+
+    monkeypatch.setattr(espn_api, "League", fake_league)
+    monkeypatch.setattr(espn_api, "_espn_creds", lambda: ("secret-a", "{owner-a}"))
+    a = espn_api._league_cached(2026, "456")
+    assert a.name == "secret-a"
+
+    monkeypatch.setattr(espn_api, "_espn_creds", lambda: ("secret-b", "{owner-b}"))
+    b = espn_api._league_cached(2026, "456")
+    assert b.name == "secret-b"
+    assert a is not b
+    # Anonymous denial is remembered, so only authenticated loads after the first.
+    assert calls == [
+        {"league_id": 456, "year": 2026},
+        {"league_id": 456, "year": 2026, "espn_s2": "secret-a", "swid": "{owner-a}"},
+        {"league_id": 456, "year": 2026, "espn_s2": "secret-b", "swid": "{owner-b}"},
+    ]
+
+
 def test_private_guest_dashboard_uses_staged_credentials_after_anonymous_bug(monkeypatch):
     flask = pytest.importorskip("flask")
     app = flask.Flask(__name__)
