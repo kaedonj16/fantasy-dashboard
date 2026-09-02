@@ -1618,6 +1618,8 @@ def render_teams_sidebar(teams: List[dict]) -> str:
             sections.append(render_player_list("Starters", t["starters"]))
         if t["bench"]:
             sections.append(render_player_list("Bench", t["bench"]))
+        if t.get("ir"):
+            sections.append(render_player_list("IR", t["ir"], extra_class="ir"))
         if t["taxi"]:
             sections.append(render_player_list("Taxi", t["taxi"], extra_class="taxi"))
 

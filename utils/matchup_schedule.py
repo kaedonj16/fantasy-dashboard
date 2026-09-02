@@ -17,7 +17,12 @@ def lineup_from_roster(roster: dict, *, starter_slots: int = 9) -> tuple[List[st
     stored_starters = [str(s) for s in (roster.get("starters") or []) if s]
     reserve = {str(r) for r in (roster.get("reserve") or []) if r}
 
-    if reserve:
+    # Prefer the platform lineup when it looks real. ``reserve`` is IR-only
+    # (Sleeper/ESPN/Yahoo); subtracting it from the full roster would pull
+    # the bench into the matchup starters.
+    if stored_starters and not _starters_look_like_full_roster(stored_starters, players):
+        starters = [p for p in stored_starters if p not in reserve]
+    elif reserve:
         starters = [p for p in players if p not in reserve]
     else:
         starters = list(stored_starters)

@@ -11,6 +11,61 @@ pytest.importorskip("bs4")
 yahoo_api = pytest.importorskip("dashboard_services.providers.yahoo_api")
 
 
+def test_split_yahoo_lineup_keeps_bench_out_of_reserve(monkeypatch):
+    """BN is bench, not IR — the dashboard teams-card only renders reserve as IR."""
+    import dashboard_services.api as api
+    monkeypatch.setattr(api, "get_nfl_players", lambda: {
+        "11111": {"yahoo_id": "5"},
+        "22222": {"yahoo_id": "6"},
+        "33333": {"yahoo_id": "7"},
+        "44444": {"yahoo_id": "8"},
+    })
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    starter = [[
+        {"player_id": "5"}, {"name": {"full": "Patrick Mahomes"}},
+        {"display_position": "QB"}, {"editorial_team_abbr": "KC"},
+    ], {"selected_position": {"position": "QB"}}]
+    bench = [[
+        {"player_id": "6"}, {"name": {"full": "Travis Kelce"}},
+        {"display_position": "TE"}, {"editorial_team_abbr": "KC"},
+    ], {"selected_position": {"position": "BN"}}]
+    inactive = [[
+        {"player_id": "7"}, {"name": {"full": "Xavier Worthy"}},
+        {"display_position": "WR"}, {"editorial_team_abbr": "KC"},
+    ], {"selected_position": {"position": "NA"}}]
+    ir = [[
+        {"player_id": "8"}, {"name": {"full": "Isiah Pacheco"}},
+        {"display_position": "RB"}, {"editorial_team_abbr": "KC"},
+    ], {"selected_position": {"position": "IR+"}}]
+    players, starters, reserve = yahoo_api._split_yahoo_lineup(
+        [starter, bench, inactive, ir]
+    )
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    assert players == ["11111", "22222", "33333", "44444"]
+    assert starters == ["11111"]
+    assert reserve == ["44444"]
+    bench_ids = [p for p in players if p not in set(starters) and p not in set(reserve)]
+    assert bench_ids == ["22222", "33333"]
+
+
+def test_split_yahoo_lineup_all_bn_still_fills_starters(monkeypatch):
+    import dashboard_services.api as api
+    ids = {str(10000 + i): {"yahoo_id": str(i)} for i in range(12)}
+    monkeypatch.setattr(api, "get_nfl_players", lambda: ids)
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    rows = []
+    for i in range(12):
+        rows.append([[
+            {"player_id": str(i)}, {"name": {"full": f"Player {i}"}},
+            {"display_position": "RB"}, {"editorial_team_abbr": "KC"},
+        ], {"selected_position": {"position": "BN"}}])
+    players, starters, reserve = yahoo_api._split_yahoo_lineup(rows)
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    assert len(players) == 12
+    assert starters == players[:9]
+    assert reserve == []
+
+
 def test_flatten_dict_form():
     meta, sel = yahoo_api._flatten_yahoo_player({"player_id": "5", "name": {"full": "X"}})
     assert meta["player_id"] == "5"
@@ -478,6 +533,7 @@ def test_get_rosters_prefetches_when_bulk_players_lack_lineup_slots(monkeypatch)
     monkeypatch.setattr(api, "get_nfl_players", lambda: {
         "11111": {"yahoo_id": "5"},
         "22222": {"yahoo_id": "6"},
+        "33333": {"yahoo_id": "7"},
     })
     yahoo_api._yahoo_id_to_canonical.cache_clear()
     bulk_team = _realistic_yahoo_team(1, "Slot Hydrate", with_roster=True)
@@ -493,6 +549,10 @@ def test_get_rosters_prefetches_when_bulk_players_lack_lineup_slots(monkeypatch)
         {"player_id": "6"}, {"name": {"full": "Travis Kelce"}},
         {"display_position": "TE"}, {"editorial_team_abbr": "KC"},
     ], [{"selected_position": [{"position": "BN"}]}]]
+    ir_entry = [[
+        {"player_id": "7"}, {"name": {"full": "Isiah Pacheco"}},
+        {"display_position": "RB"}, {"editorial_team_abbr": "KC"},
+    ], [{"selected_position": [{"position": "IR"}]}]]
     team_roster_response = {
         "fantasy_content": {
             "team": [
@@ -500,7 +560,8 @@ def test_get_rosters_prefetches_when_bulk_players_lack_lineup_slots(monkeypatch)
                 {"roster": {"players": {
                     "0": {"player": starter_entry},
                     "1": {"player": bench_entry},
-                    "count": 2,
+                    "2": {"player": ir_entry},
+                    "count": 3,
                 }}},
             ]
         }
@@ -522,8 +583,9 @@ def test_get_rosters_prefetches_when_bulk_players_lack_lineup_slots(monkeypatch)
     rosters = yahoo_api.get_rosters(2026, "99", "tok")
     yahoo_api._yahoo_id_to_canonical.cache_clear()
     assert any(p.startswith("team/") for p in paths_called)
+    assert rosters[0]["players"] == ["11111", "22222", "33333"]
     assert rosters[0]["starters"] == ["11111"]
-    assert rosters[0]["reserve"] == ["22222"]
+    assert rosters[0]["reserve"] == ["33333"]  # IR only; BN stays on players for bench
 
 
 def _yahoo_team_with_list_standings(team_id, name, *, with_roster=False):

@@ -27,3 +27,16 @@ def test_lineup_from_roster_all_bench_does_not_blank():
     starters, bench = lineup_from_roster(roster)
     assert len(starters) == 9
     assert len(bench) == 6
+
+
+def test_lineup_from_roster_prefers_stored_starters_when_reserve_is_ir():
+    """Yahoo/ESPN reserve is IR-only; bench must not become matchup starters."""
+    players = [str(i) for i in range(12)]
+    roster = {
+        "players": players,
+        "starters": players[:8],
+        "reserve": [players[-1]],
+    }
+    starters, bench = lineup_from_roster(roster)
+    assert starters == players[:8]
+    assert bench == players[8:]
