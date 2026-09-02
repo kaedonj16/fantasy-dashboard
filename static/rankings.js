@@ -1188,8 +1188,10 @@ Promise.all([
     if (window.__leagueId) _q.push('league_id=' + encodeURIComponent(window.__leagueId));
     if (window.__platform) _q.push('platform=' + encodeURIComponent(window.__platform));
     if (_q.length) _u += '?' + _q.join('&');
-    return fetch(_u, { cache: 'no-store' });
-  })().then(r => {
+    return (typeof window.brFetchWithTimeout === 'function'
+      ? window.brFetchWithTimeout(_u, { cache: 'no-store' }, 30000)
+      : fetch(_u, { cache: 'no-store' })
+    ).then(r => {
     if (!r.ok) throw new Error('league-players HTTP ' + r.status);
     return r.json();
   }),

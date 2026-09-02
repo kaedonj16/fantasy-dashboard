@@ -5622,6 +5622,59 @@ strong + .player-badge,
     font-size: 13px;
     color: var(--text-muted);
     margin-top: 5px;
+    text-align: center;
+    max-width: min(92vw, 320px);
+    line-height: 1.45;
+}
+
+.fullscreen-loading-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.fullscreen-loading-cancel,
+.fullscreen-loading-retry {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.fullscreen-loading-cancel:hover,
+.fullscreen-loading-retry:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.fullscreen-loading-retry {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.fullscreen-loading-retry:hover {
+    filter: brightness(1.05);
+    color: #fff;
+}
+
+.fullscreen-loading-fallback {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.fullscreen-loading-fallback:hover {
+    text-decoration: underline;
 }
 
 .flo-progress-track {
