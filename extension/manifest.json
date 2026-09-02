@@ -19,7 +19,7 @@
   "background": { "service_worker": "background.js" },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Connect ESPN / Yahoo / Sleeper to BR Fantasy",
+    "default_title": "BR Fantasy Draft Assistant",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
