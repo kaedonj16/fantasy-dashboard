@@ -103,6 +103,7 @@ def yahoo_auth_callback():
 
     ctx_data  = session.pop("yahoo_oauth_ctx", {}) or {}
     league_id = ctx_data.get("league_id") or ""
+    pending_link_league = session.pop("yahoo_link_league_id", None)
     from utils.safe_url import safe_local_url
     next_url  = safe_local_url(ctx_data.get("next"), "/")
     team_name = ctx_data.get("team_name") or ""
@@ -206,6 +207,42 @@ def yahoo_auth_callback():
                 logger.warning("[yahoo_auth] account league attach failed", exc_info=True)
         return redirect(f"/yahoo/{season}/{league_id}/dashboard")
 
+    # Link-modal resume when OAuth started without league_id in the URL.
+    if pending_link_league and session.get("account_id"):
+        from datetime import datetime
+        from dashboard_services.api import get_nfl_state
+        from dashboard_services.providers.yahoo_api import resolve_league_key, get_users
+        resume_id = str(pending_link_league)
+        nfl_state = get_nfl_state() or {}
+        season = int(nfl_state.get("season") or datetime.now().year)
+        resolved = resolve_league_key(access_token, resume_id)
+        if resolved.get("season"):
+            season = int(resolved["season"])
+        try:
+            save_league_owner(resume_id, season, guid)
+        except Exception:
+            logger.warning("[yahoo_auth] save_league_owner failed", exc_info=True)
+        try:
+            users = get_users(season, resume_id, access_token) or []
+            team_id = next((
+                str(user.get("roster_id")) for user in users
+                if str(user.get("user_id") or "") == str(guid)
+                and user.get("roster_id") is not None
+            ), None)
+            from dashboard_services.accounts import add_user_league, link_platform_identity
+            link_platform_identity(session["account_id"], "yahoo", guid, team_name or None)
+            add_user_league(
+                session["account_id"], "yahoo", resume_id, season=season,
+                team_id=team_id, name=resolved.get("name"),
+            )
+        except Exception:
+            logger.warning("[yahoo_auth] account league attach failed", exc_info=True)
+        return redirect(f"/yahoo/{season}/{resume_id}/dashboard")
+
+    if pending_link_league:
+        from urllib.parse import quote
+        return redirect(f"/portfolio?link_yahoo={quote(str(pending_link_league))}")
+
     return redirect(next_url)
 
 
@@ -219,14 +256,20 @@ def api_yahoo_validate_league():
         return jsonify({"ok": False, "error": "Yahoo connections are temporarily unavailable."}), 503
 
     league_id    = (request.args.get("league_id") or "").strip()
-    access_token = session.get("yahoo_access_token") or ""
+    from dashboard_services.providers.yahoo_api import resolve_session_yahoo_token
+    _, access_token = resolve_session_yahoo_token(session)
 
     if not league_id:
         return jsonify({"ok": False, "error": "League ID required"}), 400
 
     if not access_token:
         # Return a special flag so the frontend knows it needs to start OAuth
-        return jsonify({"ok": False, "needs_oauth": True}), 401
+        from dashboard_services.providers.yahoo_api import yahoo_oauth_start_url
+        return jsonify({
+            "ok": False,
+            "needs_oauth": True,
+            "auth_url": yahoo_oauth_start_url(league_id=league_id, next_url="/"),
+        }), 401
 
     try:
         from dashboard_services.providers.yahoo_api import get_league, resolve_league_key
@@ -240,9 +283,10 @@ def api_yahoo_validate_league():
         # "unknown" => couldn't list, so fall through to a direct fetch.
         resolved = resolve_league_key(access_token, league_id)
         if resolved.get("status") == "absent":
+            from dashboard_services.providers.yahoo_api import yahoo_oauth_start_url
             return jsonify({
                 "ok": False, "needs_oauth": True,
-                "auth_url": "/auth/yahoo?reauth=1",
+                "auth_url": yahoo_oauth_start_url(league_id=league_id, reauth=True, next_url="/"),
                 "error": ("That Yahoo account isn't in any league with ID " + league_id +
                           ". Check the league ID, or reconnect with the account that's in it."),
             }), 401
@@ -263,9 +307,10 @@ def api_yahoo_validate_league():
         if "403" in msg or "Forbidden" in msg:
             session.pop("yahoo_access_token", None)
             session.pop("yahoo_guid", None)
+            from dashboard_services.providers.yahoo_api import yahoo_oauth_start_url
             return jsonify({
                 "ok": False, "needs_oauth": True,
-                "auth_url": "/auth/yahoo?reauth=1",
+                "auth_url": yahoo_oauth_start_url(league_id=league_id, reauth=True, next_url="/"),
                 "error": ("That Yahoo account can't access league " + league_id +
                           ". Reconnect with the Yahoo account that's in this league."),
             }), 401

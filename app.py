@@ -3452,7 +3452,12 @@ def _link_modal_html() -> str:
           var d=res.d;
           if(res.status===401&&d.needs_oauth){
             var hint=d.error||'Connect Yahoo, then come back and try again.';
-            box.innerHTML='<a class="link-go" href="'+esc(d.auth_url||'/auth/yahoo')+'">Connect Yahoo</a>'+
+            var authBase=d.auth_url||'/auth/yahoo?next=/portfolio';
+            var url=new URL(authBase, window.location.origin);
+            if(!url.searchParams.get('next')) url.searchParams.set('next','/portfolio');
+            if(window._hasAccount && !url.searchParams.get('league_id')) url.searchParams.set('league_id', id);
+            var href=url.pathname+url.search;
+            box.innerHTML='<a class="link-go" href="'+esc(href)+'">Connect Yahoo</a>'+
               '<div style="font-size:11.5px;color:var(--text-muted);margin-top:8px;">'+esc(hint)+'</div>';
             linkSetMsg('',''); return;
           }
@@ -3647,6 +3652,17 @@ def _link_modal_html() -> str:
             linkSetMsg('League connected. Opening dashboard…','ok'); location.href=d.redirect_url;
           }).catch(function(){linkSetMsg('Network error.','err');});
       };
+    })();
+    (function(){
+      var m=/[?&]link_yahoo=([^&]+)/.exec(location.search);
+      if(!m||!window.openLinkModal||!window.linkTab) return;
+      var lid=decodeURIComponent(m[1]);
+      window.openLinkModal();
+      window.linkTab('yahoo');
+      var inp=document.getElementById('linkYahooId');
+      if(inp) inp.value=lid;
+      if(window.linkYahooPreview) window.linkYahooPreview();
+      if(history.replaceState) history.replaceState(null,'',location.pathname+location.hash);
     })();
     </script>
     """

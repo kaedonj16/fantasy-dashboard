@@ -480,6 +480,21 @@ def link_espn_preview():
     })
 
 
+def _yahoo_needs_oauth_response(league_id: str, *, reauth: bool = False, error: str = "") -> tuple:
+    """401 payload for Yahoo preview/validate when OAuth is required."""
+    from dashboard_services.providers.yahoo_api import yahoo_oauth_start_url
+
+    session["yahoo_link_league_id"] = league_id
+    if session.get("account_id"):
+        auth_url = yahoo_oauth_start_url(league_id=league_id, next_url="/portfolio", reauth=reauth)
+    else:
+        auth_url = yahoo_oauth_start_url(next_url="/portfolio", reauth=reauth)
+    payload: dict = {"ok": False, "needs_oauth": True, "auth_url": auth_url}
+    if error:
+        payload["error"] = error
+    return jsonify(payload), 401
+
+
 @link_bp.route("/api/link/yahoo/preview")
 def link_yahoo_preview():
     from dashboard_services.providers.yahoo_api import yahoo_enabled
@@ -488,24 +503,25 @@ def link_yahoo_preview():
     league_id = (request.args.get("league_id") or "").strip()
     if not league_id:
         return jsonify({"ok": False, "error": "Yahoo league ID required."}), 400
-    access_token = session.get("yahoo_access_token") or ""
+    from dashboard_services.providers.yahoo_api import resolve_session_yahoo_token
+    guid, access_token = resolve_session_yahoo_token(session)
     if not access_token:
-        # The modal sends the user through /auth/yahoo and returns here.
-        return jsonify({"ok": False, "needs_oauth": True, "auth_url": "/auth/yahoo?next=/portfolio"}), 401
+        return _yahoo_needs_oauth_response(league_id)
     season = int(request.args.get("season") or _default_season())
     try:
-        from dashboard_services.providers.yahoo_api import get_league, get_users, resolve_league_key
+        from dashboard_services.providers.yahoo_api import get_league, get_users, get_login_guid, resolve_league_key
         # Resolve the real, season-specific league key first. Yahoo's "nfl" game
         # code only reaches the current season, so a prior-season league 403s even
         # for a member without this. "absent" => account isn't in that league;
         # "unknown" => couldn't list, so fall through to a direct fetch.
         resolved = resolve_league_key(access_token, league_id)
         if resolved.get("status") == "absent":
-            return jsonify({
-                "ok": False, "needs_oauth": True, "auth_url": "/auth/yahoo?reauth=1&next=/portfolio",
-                "error": ("That Yahoo account isn't in any league with ID " + league_id +
-                          ". Check the ID, or reconnect with the account that's in it."),
-            }), 401
+            return _yahoo_needs_oauth_response(
+                league_id,
+                reauth=True,
+                error=("That Yahoo account isn't in any league with ID " + league_id +
+                       ". Check the ID, or reconnect with the account that's in it."),
+            )
         if resolved.get("season"):
             season = int(resolved["season"])
         league = get_league(season, league_id, access_token)
@@ -519,13 +535,19 @@ def link_yahoo_preview():
         if "403" in msg or "Forbidden" in msg:
             session.pop("yahoo_access_token", None)
             session.pop("yahoo_guid", None)
-            return jsonify({
-                "ok": False, "needs_oauth": True, "auth_url": "/auth/yahoo?reauth=1&next=/portfolio",
-                "error": ("That Yahoo account can't access league " + league_id +
-                          ". Reconnect with the account that's in this league."),
-            }), 401
+            return _yahoo_needs_oauth_response(
+                league_id,
+                reauth=True,
+                error=("That Yahoo account can't access league " + league_id +
+                       ". Reconnect with the account that's in this league."),
+            )
         return jsonify({"ok": False, "error": "Could not load that Yahoo league (check the ID)."}), 400
-    my_guid = session.get("yahoo_guid") or ""
+    my_guid = guid or ""
+    if not my_guid or my_guid.startswith("ytok_"):
+        resolved_guid = get_login_guid(access_token, league_id)
+        if resolved_guid:
+            my_guid = resolved_guid
+            session["yahoo_guid"] = resolved_guid
     teams, my_team_id = [], None
     for u in users:
         tid = str(u.get("roster_id") or "")
@@ -657,6 +679,24 @@ def link_add():
                     ) or team_id
             except Exception:
                 logger.warning("[link/add/fleaflicker] team resolution failed", exc_info=True)
+        if platform == "yahoo":
+            from dashboard_services.providers.yahoo_api import (
+                resolve_league_key, resolve_session_yahoo_token, save_league_owner,
+            )
+            yahoo_guid, access_token = resolve_session_yahoo_token(session)
+            lookup_season = season if season is not None else _default_season()
+            if yahoo_guid:
+                link_platform_identity(account_id, "yahoo", str(yahoo_guid))
+            if access_token and league_id and yahoo_guid:
+                try:
+                    resolved = resolve_league_key(access_token, league_id)
+                    if resolved.get("season"):
+                        lookup_season = int(resolved["season"])
+                        if season is None:
+                            season = lookup_season
+                    save_league_owner(league_id, lookup_season, str(yahoo_guid))
+                except Exception:
+                    logger.warning("[link/add/yahoo] save_league_owner failed", exc_info=True)
         add_user_league(account_id, platform, league_id, season=season, team_id=team_id, name=name)
         if platform == "fleaflicker":
             lookup_season = season if season is not None else _default_season()
