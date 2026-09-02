@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, date
@@ -21,6 +22,8 @@ from dashboard_services.platform_api import get_matchups, get_transactions as pl
 from dashboard_services.players import build_roster_display_maps
 from dashboard_services.team_crest import team_crest_data_uri
 from utils.utils import safe_owner_name
+
+logger = logging.getLogger(__name__)
 
 _NFL_CITY: dict[str, str] = {
     "ARI": "Arizona", "ATL": "Atlanta", "BAL": "Baltimore", "BUF": "Buffalo",
@@ -723,6 +726,8 @@ def build_week_activity(
         platform,
         season,
         players_map: Optional[Dict[str, Dict[str, str]]] = None,
+        users: Optional[list[dict]] = None,
+        rosters: Optional[list[dict]] = None,
 ) -> pd.DataFrame:
     """
     Builds a season-long activity table with:
@@ -736,7 +741,13 @@ def build_week_activity(
     # You can still change this to a dynamic list if needed
     season_weeks = list(range(1, 19))
 
-    roster_name, roster_avatar = build_roster_display_maps(league_id, platform, season)
+    try:
+        roster_name, roster_avatar = build_roster_display_maps(
+            league_id, platform, season, users=users, rosters=rosters,
+        )
+    except Exception as e:
+        logger.warning("[build_week_activity] roster display maps failed: %s", e)
+        return pd.DataFrame(columns=["kind", "week", "ts", "data"])
     tx_by_week = get_transactions_by_week(league_id, season_weeks, platform=platform, season=int(season)) or {}
     rows: list[dict] = []
 
