@@ -2457,10 +2457,11 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
 .os-action-queue {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
     margin-bottom: 4px;
 }
 
+.os-action-queue > .os-card,
 .os-action-queue .os-action-card {
     margin: 0;
 }
@@ -18038,102 +18039,118 @@ img, svg, canvas {
     transition: opacity .2s ease;
 }
 
-/* Season-hub alert cards (lineup issues, roster moves, trade window) share
-   this structure; each variant sets --alert-accent for its own semantic color. */
+/* Hub status strips — lineup issues, roster moves, trade window, bench check.
+   Same card surface as the rest of the hub; tone lives on a slim rail + title. */
 .lineup-alert-card,
-.trade-window-card {
-    --alert-accent: #f59e0b; /* amber warning: lineup issues */
+.trade-window-card,
+.bench-check-card {
+    --alert-tone: var(--warning);
     position: relative;
-    border: 1px solid color-mix(in srgb, var(--alert-accent) 32%, var(--border));
-    border-left: 4px solid var(--alert-accent);
-    background: color-mix(in srgb, var(--alert-accent) 7%, var(--card));
-    padding: 13px 16px;
+    overflow: hidden;
+    padding: 14px 18px 14px 22px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+}
+
+.lineup-alert-card::before,
+.trade-window-card::before,
+.bench-check-card::before {
+    content: "";
+    position: absolute;
+    top: 10px;
+    bottom: 10px;
+    left: 8px;
+    width: 3px;
+    border-radius: 99px;
+    background: var(--alert-tone);
 }
 
 .lineup-alert-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: 16px;
 }
 
 .lineup-alert-title {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
+    min-width: 0;
     font-weight: 700;
-    font-size: 13px;
-    color: var(--alert-accent);
-}
-
-.lineup-alert-ico {
-    flex-shrink: 0;
-}
-
-/* Turn the section link into a pill CTA inside these cards */
-.lineup-alert-head .os-section-link {
-    padding: 5px 11px;
-    border-radius: var(--radius-pill);
-    background: color-mix(in srgb, var(--alert-accent) 14%, transparent);
-    color: var(--alert-accent);
-    font-size: 12px;
-    font-weight: 700;
-    transition: background .15s ease;
-}
-
-.lineup-alert-head .os-section-link:hover {
-    background: color-mix(in srgb, var(--alert-accent) 24%, transparent);
-    text-decoration: none;
-    opacity: 1;
+    font-size: 14px;
+    line-height: 1.35;
+    color: var(--alert-tone);
 }
 
 .lineup-alert-list {
     list-style: none;
-    margin: 10px 0 0;
-    padding: 9px 0 0;
+    margin: 4px 0 0;
+    padding: 0;
     font-size: 13px;
-    border-top: 1px solid color-mix(in srgb, var(--alert-accent) 16%, var(--border));
+    line-height: 1.45;
+    color: var(--text);
 }
 
 .lineup-alert-list li {
-    display: flex;
-    align-items: flex-start;
-    gap: 9px;
-    padding: 4px 0;
-    color: var(--text);
-    line-height: 1.42;
+    padding: 1px 0;
 }
 
-.lineup-alert-list li::before {
-    content: "";
-    flex-shrink: 0;
-    width: 6px;
-    height: 6px;
-    margin-top: 7px;
-    border-radius: 50%;
-    background: var(--alert-accent);
+.lineup-alert-card .os-section-link,
+.trade-window-card .os-section-link,
+.bench-check-card .os-section-link {
+    flex: 0 0 auto;
+    color: var(--accent);
+}
+
+.lineup-alert-card .os-section-link:focus-visible,
+.trade-window-card .os-section-link:focus-visible,
+.bench-check-card .os-section-link:focus-visible {
+    outline: 2px solid var(--alert-tone);
+    outline-offset: 3px;
+    border-radius: 4px;
 }
 
 /* Roster-moves variant: informational (blue) rather than warning (amber) */
 .roster-moves-card {
-    --alert-accent: var(--brand-blue);
+    --alert-tone: var(--brand-blue);
 }
 
 /* Trade window advisor card: neutral by default, semantic when buy/sell */
 .trade-window-card {
-    --alert-accent: #6b7280;
+    --alert-tone: var(--text-subtle);
 }
 
 .trade-window-card.tw-buy {
-    --alert-accent: var(--win);
+    --alert-tone: var(--win);
 }
 
 .trade-window-card.tw-sell {
-    --alert-accent: var(--loss);
+    --alert-tone: var(--loss);
 }
 
-.trade-window-card.tw-urgent {
-    border-left-width: 5px;
+.trade-window-card.tw-urgent::before {
+    width: 4px;
+}
+
+.bench-check-card.bench-ok {
+    --alert-tone: var(--win);
+}
+
+.bench-check-card.bench-miss {
+    --alert-tone: var(--warning);
+}
+
+@media (max-width: 600px) {
+    .lineup-alert-head,
+    .bench-check-row {
+        flex-wrap: wrap;
+        gap: 6px 12px;
+    }
+
+    .lineup-alert-card .os-section-link,
+    .trade-window-card .os-section-link,
+    .bench-check-card .os-section-link {
+        margin-left: auto;
+    }
 }
 
 /* Draft capital pick rows (expandable PICKS detail on team cards) */
@@ -18204,19 +18221,20 @@ img, svg, canvas {
 
 /* Post-week bench check strip */
 .bench-check-card {
-    padding: 10px 16px;
+    --alert-tone: var(--brand-blue);
 }
 
 .bench-check-row {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
-    gap: 10px;
-    flex-wrap: wrap;
+    gap: 12px;
 }
 
 .bench-check-msg {
     font-size: 13px;
+    line-height: 1.45;
+    color: var(--text);
 }
 
 .gm-memo-error {
@@ -25003,11 +25021,25 @@ tr.team-clickable {
 }
 
 .wl-alerts {
-    background: color-mix(in srgb, #f59e0b 8%, var(--card));
-    border: 1px solid color-mix(in srgb, #f59e0b 35%, var(--border));
+    --alert-tone: var(--warning);
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    padding: 12px 14px;
+    padding: 12px 14px 12px 20px;
     margin-bottom: 18px;
+    box-shadow: var(--shadow-sm);
+}
+
+.wl-alerts::before {
+    content: "";
+    position: absolute;
+    top: 10px;
+    bottom: 10px;
+    left: 8px;
+    width: 3px;
+    border-radius: 99px;
+    background: var(--alert-tone);
 }
 
 .wl-alerts-head {

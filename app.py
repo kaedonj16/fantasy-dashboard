@@ -7419,8 +7419,9 @@ def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> st
                 f"{opt_pts:.1f}. You scored {actual:.1f} and left "
                 f"{left_on_bench:.1f} points on the bench."
             )
+        tone_cls = " bench-ok" if left_on_bench < 1.0 else " bench-miss"
         return f"""
-        <section class="os-card bench-check-card">
+        <section class="os-card bench-check-card{tone_cls}">
           <div class="bench-check-row">
             <span class="bench-check-msg">{html.escape(msg)}</span>
             <a class="os-section-link" href="{eff_url}">Lineup efficiency &rarr;</a>

@@ -85,3 +85,32 @@ def test_discord_logo_inverts_white_in_dark_mode():
     )
     assert sheet, "missing dark-mode rule for .br-sheet-icon-img"
     assert "invert(100%)" in sheet.group(1)
+
+
+def test_hub_alert_strips_share_tone_token():
+    """Season-hub status strips (lineup / roster / trade / bench) share one
+    --alert-tone so variants recolor instead of forking layout."""
+    css = _css()
+    assert "border-left: 3px solid #f59e0b" not in css
+    shared = re.search(
+        r"\.lineup-alert-card\s*,\s*\.trade-window-card\s*,\s*\.bench-check-card\s*\{([^}]+)\}",
+        css,
+    )
+    assert shared, "hub alert strips must share one rule"
+    body = shared.group(1)
+    assert "--alert-tone:" in body
+    assert "var(--warning)" in body
+    assert "var(--card)" in body
+    assert "linear-gradient" not in body
+    rail = re.search(
+        r"\.lineup-alert-card::before\s*,\s*\.trade-window-card::before\s*,\s*\.bench-check-card::before\s*\{([^}]+)\}",
+        css,
+    )
+    assert rail, "hub alert strips must share a left rail"
+    assert "var(--alert-tone)" in rail.group(1)
+    assert ".roster-moves-card" in css
+    assert ".trade-window-card.tw-buy" in css
+    assert ".bench-check-card.bench-ok" in css
+    assert ".bench-check-card.bench-miss" in css
+    wl = re.search(r"\.wl-alerts\s*\{([^}]+)\}", css)
+    assert wl and "--alert-tone:" in wl.group(1)
