@@ -958,8 +958,10 @@ function openPlayerModal(playerId, playerName, opts) {
       const _isCurrentYearProspect = hasProspectData && !hasGameLogs
         && String(pd.draft_class_year) === String(_currentNFLYear);
       if (tabProspect) tabProspect.style.display = _isCurrentYearProspect ? '' : 'none';
+      // Breakout tab: only for players flagged as breakout candidates on the board
+      // (same set as the BREAKOUT badge via /api/player-indicators).
       const tabBreakout = document.getElementById('pmTabBreakout');
-      if (tabBreakout) tabBreakout.style.display = '';
+      if (tabBreakout) tabBreakout.style.display = isBreakout(pid) ? '' : 'none';
 
       // Must be set before pmSwitchTab is called so the metrics lazy-load check works
       if (pmTabBar) pmTabBar.dataset.pmHasMetrics = hasMetrics ? '1' : '';
