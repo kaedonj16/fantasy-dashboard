@@ -8417,6 +8417,23 @@ def _league_is_redraft(ctx: dict) -> bool:
     """
     if str(ctx.get("platform") or "").strip().lower() == "espn":
         return True
+    if str(ctx.get("platform") or "").strip().lower() == "yahoo":
+        # Yahoo has no dynasty product; treat unknown/missing type as redraft.
+        settings = (ctx.get("league_settings")
+                    or (ctx.get("league") or {}).get("settings")
+                    or ctx.get("settings") or {})
+        try:
+            t = settings.get("type")
+            if t is not None and int(t) == 2:
+                return False
+            if t is not None and int(t) in (0, 1):
+                return True
+        except (TypeError, ValueError, AttributeError):
+            pass
+        lt = str(settings.get("league_type") or "").strip().lower()
+        if "dynasty" in lt:
+            return False
+        return True
     settings = (ctx.get("league_settings")
                 or (ctx.get("league") or {}).get("settings")
                 or ctx.get("settings") or {})

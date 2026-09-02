@@ -217,10 +217,9 @@ def get_login_guid(access_token: str, league_id: str = "") -> str:
         try:
             raw   = _yahoo_get(access_token, f"league/{_league_key(league_id)}/teams")
             for t in _extract_teams(raw):
-                for m in _team_managers(t):
-                    mgr = (m or {}).get("manager") or {}
-                    if str(mgr.get("is_current_login")) == "1" and mgr.get("guid"):
-                        return str(mgr["guid"])
+                mgr = _yahoo_primary_manager(t)
+                if str(mgr.get("is_current_login")) == "1" and mgr.get("guid"):
+                    return str(mgr["guid"])
         except Exception as exc:
             logger.warning("[yahoo] get_login_guid (league teams) failed: %s", exc)
 
@@ -951,21 +950,42 @@ def _team_field_dict(team_list: List, key: str) -> Dict[str, Any]:
     return _unwrap_yahoo_list_or_dict(_team_attr(team_list, key))
 
 
-def _team_managers(team_list: List) -> List[Dict[str, Any]]:
-    """Normalize Yahoo ``managers`` nodes to ``[{"manager": ...}, ...]``."""
+def _yahoo_manager_entries(team_list: List) -> List[Dict[str, Any]]:
+    """Normalize Yahoo ``managers`` nodes to flat manager dicts."""
     raw = _team_attr(team_list, "managers")
     if raw is None:
         return []
-    nodes = raw if isinstance(raw, list) else [raw]
+    rows = _yahoo_collection_rows(raw, "manager")
+    if not rows and isinstance(raw, list):
+        rows = raw
     out: List[Dict[str, Any]] = []
-    for node in nodes:
-        if isinstance(node, dict):
-            out.append(node)
-        elif isinstance(node, list):
-            for sub in node:
-                if isinstance(sub, dict):
-                    out.append(sub)
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        mgr_node = row.get("manager") if "manager" in row else row
+        flat: Dict[str, Any] = {}
+        _merge_yahoo_dict_parts(mgr_node, flat)
+        if flat:
+            out.append(flat)
     return out
+
+
+def _yahoo_primary_manager(team_list: List) -> Dict[str, Any]:
+    entries = _yahoo_manager_entries(team_list)
+    return entries[0] if entries else {}
+
+
+def _yahoo_owner_id(team_list: List, team_id: Any) -> str:
+    mgr = _yahoo_primary_manager(team_list)
+    guid = mgr.get("guid") or mgr.get("manager_id")
+    if guid:
+        return str(guid)
+    return str(team_id)
+
+
+def _team_managers(team_list: List) -> List[Dict[str, Any]]:
+    """Normalize Yahoo ``managers`` nodes to ``[{"manager": ...}, ...]``."""
+    return [{"manager": m} for m in _yahoo_manager_entries(team_list)]
 
 
 def _roster_players_block(roster_block: Any) -> Dict[str, Any]:
@@ -1106,9 +1126,8 @@ def get_users(season: int, league_id: str, access_token: str) -> List[Dict[str, 
         if isinstance(logo, list) and logo:
             logo_url = (logo[0].get("team_logo") or {}).get("url")
 
-        managers = _team_managers(t)
-        mgr   = _unwrap_yahoo_list_or_dict((managers[0].get("manager") if managers else None))
-        guid  = mgr.get("guid") or str(team_id)
+        mgr   = _yahoo_primary_manager(t)
+        guid  = _yahoo_owner_id(t, team_id)
         nick  = mgr.get("nickname") or team_name
 
         out.append({
@@ -1117,7 +1136,7 @@ def get_users(season: int, league_id: str, access_token: str) -> List[Dict[str, 
             "is_bot":       False,
             "is_owner":     None,
             "league_id":    str(league_id),
-            "metadata":     {"team_name": team_name},
+            "metadata":     {"team_name": team_name, "avatar": logo_url},
             "settings":     None,
             "user_id":      guid,
             "roster_id":    _safe_int(team_id),
@@ -1172,9 +1191,14 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
         team_key  = _team_attr(t, "team_key") or ""
         team_id   = _safe_int(_team_attr(t, "team_id") or team_key.split(".")[-1])
         team_name = _team_attr(t, "name") or f"Team {team_id}"
-        managers = _team_managers(t)
-        mgr      = _unwrap_yahoo_list_or_dict((managers[0].get("manager") if managers else None))
-        owner_id = mgr.get("guid") or str(team_id)
+        owner_id = _yahoo_owner_id(t, team_id)
+        logo      = _team_attr(t, "team_logos", {})
+        logo_url  = None
+        if isinstance(logo, list) and logo:
+            logo_url = (logo[0].get("team_logo") or {}).get("url")
+        elif isinstance(logo, dict):
+            inner = _unwrap_yahoo_list_or_dict(logo.get("team_logo"))
+            logo_url = inner.get("url")
 
         # Standings / record
         standings = _team_field_dict(t, "team_standings")
@@ -1216,6 +1240,34 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
             else:
                 starters.append(canon)
 
+        # If every mapped player landed in starters, lineup slots are still missing.
+        if (
+            players
+            and len(starters) == len(players)
+            and len(players) > 9
+            and team_key
+        ):
+            retry_players = _fetch_team_roster_players(access_token, team_key, week)
+            if retry_players:
+                players, starters, reserve = [], [], []
+                for rp in retry_players:
+                    p_meta, sel_pos = _flatten_yahoo_player(rp)
+                    name     = (p_meta.get("name") or {}).get("full") or ""
+                    pos_list = p_meta.get("display_position") or p_meta.get("eligible_positions") or ""
+                    if isinstance(pos_list, dict):
+                        pos_list = pos_list.get("position") or ""
+                    pos  = (pos_list.split(",")[0] if isinstance(pos_list, str) else "") or ""
+                    team = (p_meta.get("editorial_team_abbr") or "").upper()
+                    yid  = str(p_meta.get("player_id") or "")
+                    canon = _resolve_player(name, pos, team, yahoo_id=yid)
+                    if not canon:
+                        continue
+                    players.append(canon)
+                    if sel_pos in ("BN", "IR", "IR+"):
+                        reserve.append(canon)
+                    else:
+                        starters.append(canon)
+
         fpts_whole = int(pts_for)
         fpts_dec   = int(round((pts_for - fpts_whole) * 100))
         fpa_whole  = int(pts_ag)
@@ -1225,7 +1277,7 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
             "co_owners":  None,
             "keepers":    None,
             "league_id":  str(league_id),
-            "metadata":   {"team_name": team_name},
+            "metadata":   {"team_name": team_name, "avatar": logo_url},
             "owner_id":   owner_id,
             "player_map": None,
             "players":    players,
@@ -1641,10 +1693,12 @@ def get_league_globals(season: int, league_id: str, access_token: str) -> Dict[s
         _safe_int(settings.get("playoff_start_week"))
         or _safe_int(meta.get("playoff_start_week"))
     )
+    _lt = _yahoo_sleeper_league_type(meta, settings, num_teams)
     league_settings: Dict[str, Any] = {
         "playoff_teams": playoff_teams,
         "num_teams":     num_teams,
-        "type":          _yahoo_sleeper_league_type(meta, settings, num_teams),
+        "type":          _lt,
+        "league_type":   "dynasty" if _lt == 2 else ("keeper" if _lt == 1 else "redraft"),
     }
     if playoff_week_start:
         league_settings["playoff_week_start"] = playoff_week_start

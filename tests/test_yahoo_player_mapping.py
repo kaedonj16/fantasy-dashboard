@@ -340,6 +340,40 @@ def test_team_attr_reads_nested_metadata_with_subresources():
     assert standings.get("points_for") == "120.5"
 
 
+def test_yahoo_manager_entries_from_numeric_collection():
+    """Yahoo often returns managers as ``{"0": {"manager": ...}, "count": 1}``."""
+    team = [[
+        {"team_key": "449.l.99.t.2"},
+        {"team_id": "2"},
+        {"managers": {
+            "0": {"manager": {"guid": "GUID-2", "nickname": "Owner Two"}},
+            "count": 1,
+        }},
+    ]]
+    mgr = yahoo_api._yahoo_primary_manager(team)
+    assert mgr.get("guid") == "GUID-2"
+    assert yahoo_api._yahoo_owner_id(team, "2") == "GUID-2"
+
+
+def test_get_users_returns_distinct_owner_guids(monkeypatch):
+    teams = []
+    for i in range(1, 4):
+        teams.append([[
+            {"team_key": f"449.l.99.t.{i}"},
+            {"team_id": str(i)},
+            {"name": f"Team {i}"},
+            {"managers": {
+                "0": {"manager": {"guid": f"GUID-{i}", "nickname": f"Owner {i}"}},
+                "count": 1,
+            }},
+        ]])
+    payload = _teams_payload(teams)
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda *a, **k: payload)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    users = yahoo_api.get_users(2026, "99", "tok")
+    assert {u["user_id"] for u in users} == {"GUID-1", "GUID-2", "GUID-3"}
+
+
 def test_get_users_returns_distinct_roster_ids(monkeypatch):
     teams = [_realistic_yahoo_team(i, f"Team {i}") for i in range(1, 4)]
     payload = _teams_payload(teams)
