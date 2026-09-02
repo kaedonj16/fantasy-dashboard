@@ -1886,124 +1886,192 @@ function _pmTeamInjBadge(injury) {
   return `<span class="player-badge ${icls}" title="${injRaw.replace(/"/g, '&quot;')}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${code}</span>`;
 }
 
-function _pmTeamDepthRow(row) {
-  const inj = _pmTeamInjBadge(row.injury);
-  const starter = (row.order === 1) ? '<span class="pm-team-starter">Starter</span>' : '';
-  const slot = String(row.slot || '').toUpperCase();
-  const showSlot = slot && !['QB', 'RB', 'WR', 'TE'].includes(slot);
-  const slotTag = showSlot ? `<span class="pm-team-slot">${slot}</span>` : '';
-  const snap = row.snap_pct != null
-    ? `${row.snap_pct}%${row.snap_pct_source === 'derived' ? '<span class="pm-snap-est">est.</span>' : ''}`
-    : '—';
-  // Clickable only when the player can actually open a modal (has an id) and
-  // isn't the current player.
+function _pmTeamOrd(n) {
+  const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+function _pmTeamOrdSup(n) {
+  return _pmTeamOrd(n).replace(/(st|nd|rd|th)$/, '<sup>$1</sup>');
+}
+
+// Tier color RELATIVE TO POSITION: does a high team rank in this metric help a
+// player at `pos`? Pass-catchers want passing volume, runners want rushing; the
+// opposite category is graded inversely, unrelated metrics stay neutral (accent).
+function _pmTeamMetricColor(pos, key, rank, total) {
+  const PASS = ['pass_yds', 'pass_att', 'pass_tds', 'pass_rate'];
+  const RUN = ['rush_yds', 'rush_att', 'rush_tds'];
+  const VOL = ['total_yds', 'plays_pg'];
+  let stance;
+  if (VOL.indexOf(key) >= 0) stance = 'pos';
+  else {
+    const isP = PASS.indexOf(key) >= 0, isR = RUN.indexOf(key) >= 0;
+    if (pos === 'RB') stance = isR ? 'pos' : (isP ? 'neg' : 'neu');
+    else if (pos === 'QB') stance = isP ? 'pos' : 'neu';
+    else stance = isP ? 'pos' : (isR ? 'neg' : 'neu');
+  }
+  if (stance === 'neu' || rank == null || !total) return 'var(--accent)';
+  const third = Math.ceil(total / 3);
+  let t = rank <= third ? 'good' : (rank <= third * 2 ? 'mid' : 'bad');
+  if (stance === 'neg') t = t === 'good' ? 'bad' : (t === 'bad' ? 'good' : 'mid');
+  return t === 'good' ? '#10b981' : (t === 'mid' ? '#f59e0b' : '#ef4444');
+}
+
+function _pmTeamProfileAxis() {
+  return '<div class="pm-tp-axis"><span></span><span class="pm-tp-ends"><span class="l">32ND</span><span class="m">AVG</span><span class="r">1ST</span></span><span></span></div>';
+}
+function _pmTeamProfileRow(pos, label, key, entry) {
+  if (!entry || entry.rank == null) return '';
+  const total = entry.total || 32, rank = entry.rank;
+  const x = Math.max(3, Math.min(97, ((total - rank) / Math.max(1, total - 1)) * 100));
+  const c = _pmTeamMetricColor(pos, key, rank, total);
+  const val = _pmFmtTeamVal(key, entry.value);
+  const tip = `${label}: ${_pmTeamOrd(rank)} of ${total} · ${val}`;
+  return `<div class="pm-tp-row">
+    <span class="pm-tp-label">${label}</span>
+    <span class="pm-tp-track"><span class="pm-tp-base"></span><span class="pm-tp-mid"></span>
+      <span class="pm-tp-fill" style="width:${x}%;background:${c}"></span>
+      <span class="pm-tp-dot" style="left:${x}%;background:${c}" title="${tip.replace(/"/g, '&quot;')}"></span></span>
+    <span class="pm-tp-end"><span class="pm-tp-ord" style="color:${c}">${_pmTeamOrdSup(rank)}</span><span class="pm-tp-val">${val}</span></span>
+  </div>`;
+}
+
+// Target-share bar (WR/TE only — the endpoint carries target share, not carries).
+function _pmTeamShareBar(data) {
+  const pos = String(data.position || '').toUpperCase();
+  if (pos !== 'WR' && pos !== 'TE') return '';
+  const room = (data.depth_chart && data.depth_chart[pos]) || [];
+  const segs = room.filter(p => p.tgt_share != null && p.tgt_share > 0)
+    .map(p => ({ name: p.name, pct: p.tgt_share, me: p.is_focus }));
+  if (!segs.length) return '';
+  const rest = Math.max(0, 100 - segs.reduce((a, s) => a + s.pct, 0));
+  const me = segs.find(s => s.me);
+  const grays = ['#334155', '#475569', '#64748b', '#94a3b8', '#b8c2cf'];
+  let gi = 0;
+  const bars = segs.map(s => {
+    const col = s.me ? 'var(--accent)' : grays[Math.min(gi++, grays.length - 1)];
+    const tip = `${s.name}: ${s.pct}% of team targets`;
+    return `<i class="${s.me ? 'me' : ''}" style="width:${s.pct}%;background:${col}" title="${tip.replace(/"/g, '&quot;')}">${s.pct >= 9 ? '<span>' + s.pct + '%</span>' : ''}</i>`;
+  }).join('');
+  const restBar = rest > 3 ? `<i style="width:${rest}%;background:var(--border)" title="Rest of offense: ${rest}%"></i>` : '';
+  const last = String(data.player_name || '').split(' ').slice(-1)[0];
+  return `<div class="pm-tshare-cap"><span>Team target share</span><span><b>${me ? me.pct + '%' : '—'}</b>${me ? ' to ' + last : ''}</span></div>
+    <div class="pm-tshare-bar">${bars}${restBar}</div>`;
+}
+
+function _pmTeamRoomRow(row, i) {
   const clickable = !row.is_focus && !!row.id;
-  const cls = 'pm-team-depth-row' + (row.is_focus ? ' pm-team-depth-focus' : (clickable ? ' pm-team-depth-click' : ''));
+  const cls = 'pm-troom-row' + (row.is_focus ? ' pm-troom-focus' : (clickable ? ' pm-troom-click' : '')) + (row.order === 1 ? ' pm-troom-starter' : '');
   const attrs = clickable
     ? ` data-pid="${row.id}" data-pname="${String(row.name || '').replace(/"/g, '&quot;')}" role="button" tabindex="0"`
     : '';
+  const inj = _pmTeamInjBadge(row.injury);
+  const snap = row.snap_pct != null
+    ? `<span class="pm-troom-snap"><span class="pm-troom-bar"><span style="width:${Math.min(100, row.snap_pct)}%"></span></span><b>${row.snap_pct}%${row.snap_pct_source === 'derived' ? '<span class="pm-snap-est">est.</span>' : ''}</b></span>`
+    : '<span class="pm-troom-num mut">—</span>';
   return `<div class="${cls}"${attrs}>
-    ${slotTag}
-    <div class="pm-team-depth-info">
-      <div class="pm-team-depth-name">${row.name || '—'}${inj}${starter}</div>
-      <div class="pm-team-depth-meta"><span>${snap}</span><span>${row.tgt_share != null ? row.tgt_share + '% tgt' : '—'}</span><span>${row.ppg != null ? row.ppg + ' PPG' : '—'}</span></div>
-    </div>
+    <span class="pm-troom-slot">${i + 1}</span>
+    <span class="pm-troom-name">${row.name || '—'}${inj}</span>
+    ${snap}
+    <span class="pm-troom-num${row.tgt_share == null ? ' mut' : ''}">${row.tgt_share != null ? row.tgt_share + '%' : '—'}</span>
+    <span class="pm-troom-num${row.ppg == null ? ' mut' : ''}">${row.ppg != null ? row.ppg : '—'}</span>
   </div>`;
+}
+
+function _pmTeamMiniItem(row, i) {
+  const clickable = !row.is_focus && !!row.id;
+  const cls = 'pm-team-depth-row pm-mini-item' + (row.is_focus ? ' pm-mini-focus' : (clickable ? ' pm-mini-click' : ''));
+  const attrs = clickable
+    ? ` data-pid="${row.id}" data-pname="${String(row.name || '').replace(/"/g, '&quot;')}" role="button" tabindex="0"`
+    : '';
+  const inj = _pmTeamInjBadge(row.injury);
+  return `<div class="${cls}"${attrs}><span class="pm-mini-ord">${i + 1}</span><span class="pm-mini-name">${row.name || '—'}</span>${inj}</div>`;
 }
 
 function _pmBuildTeamHTML(data) {
   const team = data.team || '';
+  const pos = String(data.position || '').toUpperCase();
   const crestAbbr = team.slice(0, 2);
-  const logo = data.logo
+  const logoImg = data.logo
     ? `<img class="pm-team-logo" src="${data.logo}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><div class="pm-crest" style="display:none" aria-hidden="true">${crestAbbr}</div>`
     : `<div class="pm-crest" aria-hidden="true">${crestAbbr}</div>`;
+  const wm = data.logo ? `<img class="pm-team-wm" src="${data.logo}" alt="" aria-hidden="true">` : '';
   const bye = data.bye_week != null ? `Bye ${data.bye_week}` : '';
-  const posLine = [data.position, bye].filter(Boolean).join(' · ');
+  const posLine = [data.position, team, bye].filter(Boolean).join(' · ');
 
   const ranks = data.ranks || {};
-  const rankLead = _pmTeamRankCard('Scoring', 'points', ranks.points, { lead: true });
-  const rankGrid = [
-    _pmTeamRankCard('Pass Yds', 'pass_yds', ranks.pass_yds),
-    _pmTeamRankCard('Pass Att', 'pass_att', ranks.pass_att),
-    _pmTeamRankCard('Rush Yds', 'rush_yds', ranks.rush_yds),
-    _pmTeamRankCard('Rush Att', 'rush_att', ranks.rush_att),
-  ].join('');
-
-  const positions = ['QB', 'RB', 'WR', 'TE'];
-  const depthBlocks = positions.map(pos => {
-    const rows = (data.depth_chart && data.depth_chart[pos]) || [];
-    const body = rows.length
-      ? rows.map(_pmTeamDepthRow).join('')
-      : '<div class="pm-team-depth-empty">—</div>';
-    return `<div class="pm-team-depth-block"><div class="sc-section-title">${pos}</div><div class="sc-players">${body}</div></div>`;
-  }).join('');
-
   const rm = data.ranks_more || {};
-  const advRanks = [
-    _pmTeamRankCard('Total Yds', 'total_yds', rm.total_yds),
-    _pmTeamRankCard('Pass TDs', 'pass_tds', rm.pass_tds),
-    _pmTeamRankCard('Rush TDs', 'rush_tds', rm.rush_tds),
-    _pmTeamRankCard('Plays/Game', 'plays_pg', rm.plays_pg, { accent: true }),
-    _pmTeamRankCard('Pass Rate', 'pass_rate', rm.pass_rate, { accent: true }),
+  const pr = (rm.pass_rate && rm.pass_rate.value != null) ? Math.round(Number(rm.pass_rate.value) * 100) : null;
+  const heroStats = [
+    ranks.points ? `<div class="pm-hero-stat"><div class="pm-hero-label">Scoring</div><div class="pm-hero-val">${_pmTeamOrdSup(ranks.points.rank)}</div></div>` : '',
+    rm.plays_pg ? `<div class="pm-hero-stat"><div class="pm-hero-label">Pace</div><div class="pm-hero-val">${_pmTeamOrdSup(rm.plays_pg.rank)}</div></div>` : '',
+    pr != null ? `<div class="pm-hero-stat pm-hero-split"><div class="pm-hero-label">Pass / Run</div>
+      <div class="pm-hero-splitbar"><i style="width:${pr}%;background:var(--accent)"></i><i style="width:${100 - pr}%;background:var(--border)"></i></div>
+      <div class="pm-hero-splitlbl"><span>${pr}% Pass</span><span>${100 - pr}% Run</span></div></div>` : '',
   ].join('');
 
-  const focusPos = String(data.position || '').toUpperCase();
-  const usageRows = ((data.depth_chart && data.depth_chart[focusPos]) || []).map(row => {
-    const snap = row.snap_pct != null
-      ? `${row.snap_pct}%${row.snap_pct_source === 'derived' ? ' <span class="pm-snap-est">est.</span>' : ''}`
-      : '—';
-    const clickable = !row.is_focus && !!row.id;
-    const rowCls = (row.is_focus ? ' pm-team-usage-focus' : '') + (clickable ? ' pm-team-usage-click' : '');
-    const attrs = clickable
-      ? ` data-pid="${row.id}" data-pname="${String(row.name || '').replace(/"/g, '&quot;')}" role="button" tabindex="0"`
-      : '';
-    return `<div class="pm-team-usage-row sc-player-row${rowCls}"${attrs}>
-      <span class="sc-player-name">${row.name || '—'}</span>
-      <span class="sc-player-val">${snap}</span>
-      <span class="sc-player-val">${row.tgt_share != null ? row.tgt_share + '%' : '—'}</span>
-      <span class="sc-player-val">${row.ppg != null ? row.ppg : '—'}</span>
-    </div>`;
+  const profile = [['Pass Yards', 'pass_yds'], ['Pass Attempts', 'pass_att'], ['Rush Yards', 'rush_yds'], ['Rush Attempts', 'rush_att']]
+    .map(function (m) { return _pmTeamProfileRow(pos, m[0], m[1], ranks[m[1]]); }).join('');
+  const moreProfile = [['Total Yards', 'total_yds'], ['Pass TDs', 'pass_tds'], ['Rush TDs', 'rush_tds'], ['Pass Rate', 'pass_rate'], ['Plays / Game', 'plays_pg']]
+    .map(function (m) { return _pmTeamProfileRow(pos, m[0], m[1], rm[m[1]]); }).join('');
+
+  const room = (data.depth_chart && data.depth_chart[pos]) || [];
+  const roomRows = room.length ? room.map(_pmTeamRoomRow).join('') : '<div class="pm-team-depth-empty">—</div>';
+  const shareBar = _pmTeamShareBar(data);
+
+  const otherPos = ['QB', 'RB', 'WR', 'TE'].filter(function (p) { return p !== pos; });
+  const miniCols = otherPos.map(function (p) {
+    const rows = (data.depth_chart && data.depth_chart[p]) || [];
+    const body = rows.length ? rows.slice(0, 5).map(_pmTeamMiniItem).join('') : '<div class="pm-team-depth-empty">—</div>';
+    return `<div class="pm-mini-col"><h5>${p}</h5>${body}</div>`;
   }).join('');
 
+  const roleName = String(data.player_name || '').split(' ').slice(-1)[0] || pos;
   const advOpen = _pmTeamAdvOpen;
   const advChev = advOpen ? '&#9662;' : '&#9656;';
   const advHint = advOpen ? 'click to collapse' : 'click to expand';
+
   return `<div class="pm-team-wrap">
     <div class="pm-team-header">
-      ${logo}
-      <div class="pm-team-header-text">
-        <div class="pm-team-name">${data.team_name || team}</div>
-        <div class="pm-team-meta">${posLine}</div>
+      ${wm}
+      <span class="pm-team-season">${data.stats_season} stats</span>
+      <div class="pm-team-headtop">
+        ${logoImg}
+        <div class="pm-team-header-text">
+          <div class="pm-team-name">${data.team_name || team}</div>
+          <div class="pm-team-meta">${posLine}</div>
+        </div>
       </div>
+      ${heroStats ? '<div class="pm-team-herostats">' + heroStats + '</div>' : ''}
     </div>
-    <hr class="pm-section-divider">
-    <div class="pm-section-header"><span class="pm-section-label">Offense League Ranks</span></div>
-    <div class="pm-team-ranks-lead">${rankLead}</div>
-    <div class="pm-team-rank-row">${rankGrid}</div>
-    <hr class="pm-section-divider">
-    <div class="pm-section-header"><span class="pm-section-label">Depth Chart</span></div>
-    <div class="pm-team-depth">${depthBlocks}</div>
-    <hr class="pm-section-divider">
+    <div class="pm-team-sec">
+      <div class="pm-section-header"><span class="pm-section-label">Offense Profile</span><span class="pm-team-secnote">${data.stats_season} · rank of 32</span></div>
+      ${_pmTeamProfileAxis()}${profile}
+      <div class="pm-team-note">Dot = team rank (right = 1st). Color = whether that tendency helps a ${pos}: <b style="color:#10b981">green helps</b>, <b style="color:#ef4444">red hurts</b>.</div>
+    </div>
+    <div class="pm-team-sec">
+      <div class="pm-section-header"><span class="pm-section-label">${roleName}&#39;s Role</span><span class="pm-team-secnote">${pos} room</span></div>
+      ${shareBar}
+      <div class="pm-team-usage">
+        <div class="pm-troom-row pm-troom-head"><span></span><span>${pos} Room</span><span>Snap %</span><span>Tgt %</span><span>PPG</span></div>
+        ${roomRows}
+      </div>
+      <div class="pm-team-note">Depth order + injuries from Sleeper. Tap any teammate to open their card.</div>
+    </div>
+    <div class="pm-team-sec">
+      <div class="pm-section-header"><span class="pm-section-label">Rest of Depth Chart</span><span class="pm-team-secnote">Sleeper order</span></div>
+      <div class="pm-team-depth"><div class="pm-mini-grid">${miniCols}</div></div>
+    </div>
     <div class="pm-section-header pm-section-collapsible pm-team-adv-toggle" role="button" tabindex="0" aria-expanded="${advOpen ? 'true' : 'false'}" aria-controls="pmTeamAdvBody">
       <span class="pm-collapse-chevron" aria-hidden="true">${advChev}</span>
-      <span class="pm-section-label">Advanced stats</span>
+      <span class="pm-section-label">More team ranks</span>
       <span class="pm-collapse-hint">${advHint}</span>
     </div>
     <div class="pm-team-adv-body" id="pmTeamAdvBody"${advOpen ? '' : ' hidden'}>
-      <div class="pm-team-rank-row pm-team-adv-ranks">${advRanks}</div>
-      <div class="pm-team-usage">
-        <div class="sc-section-title">${focusPos} usage</div>
-        <div class="pm-team-usage-head sc-player-row">
-          <span class="sc-player-name">Player</span>
-          <span class="sc-player-val">Snap %</span>
-          <span class="sc-player-val">Target %</span>
-          <span class="sc-player-val">PPG</span>
-        </div>
-        <div class="sc-players">${usageRows || '<div class="pm-team-depth-empty">—</div>'}</div>
-      </div>
+      ${_pmTeamProfileAxis()}${moreProfile}
     </div>
   </div>`;
 }
+
 
 function _pmWireTeamPanel(panel) {
   if (!panel) return;
