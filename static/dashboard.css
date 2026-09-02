@@ -36152,6 +36152,19 @@ a, button, [role="button"], [role="tab"], summary, label,
     padding-right: 6px;
 }
 
+/* Clickable usage-table teammate rows (open their modal). */
+.pm-team-usage-click {
+    cursor: pointer;
+    border-radius: 6px;
+    margin: 0 -6px;
+    padding-left: 6px;
+    padding-right: 6px;
+}
+
+.pm-team-usage-click:hover {
+    background: var(--row);
+}
+
 .pm-team-usage-focus .sc-player-name {
     font-weight: 700;
 }

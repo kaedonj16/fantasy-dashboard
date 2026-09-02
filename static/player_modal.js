@@ -1895,10 +1895,13 @@ function _pmTeamDepthRow(row) {
   const snap = row.snap_pct != null
     ? `${row.snap_pct}%${row.snap_pct_source === 'derived' ? '<span class="pm-snap-est">est.</span>' : ''}`
     : '—';
-  const cls = row.is_focus ? 'pm-team-depth-row pm-team-depth-focus' : 'pm-team-depth-row pm-team-depth-click';
-  const attrs = row.is_focus
-    ? ''
-    : ` data-pid="${row.id}" data-pname="${String(row.name || '').replace(/"/g, '&quot;')}"`;
+  // Clickable only when the player can actually open a modal (has an id) and
+  // isn't the current player.
+  const clickable = !row.is_focus && !!row.id;
+  const cls = 'pm-team-depth-row' + (row.is_focus ? ' pm-team-depth-focus' : (clickable ? ' pm-team-depth-click' : ''));
+  const attrs = clickable
+    ? ` data-pid="${row.id}" data-pname="${String(row.name || '').replace(/"/g, '&quot;')}" role="button" tabindex="0"`
+    : '';
   return `<div class="${cls}"${attrs}>
     ${slotTag}
     <div class="pm-team-depth-info">
@@ -1949,8 +1952,12 @@ function _pmBuildTeamHTML(data) {
     const snap = row.snap_pct != null
       ? `${row.snap_pct}%${row.snap_pct_source === 'derived' ? ' <span class="pm-snap-est">est.</span>' : ''}`
       : '—';
-    const rowCls = row.is_focus ? ' pm-team-usage-focus' : '';
-    return `<div class="pm-team-usage-row sc-player-row${rowCls}">
+    const clickable = !row.is_focus && !!row.id;
+    const rowCls = (row.is_focus ? ' pm-team-usage-focus' : '') + (clickable ? ' pm-team-usage-click' : '');
+    const attrs = clickable
+      ? ` data-pid="${row.id}" data-pname="${String(row.name || '').replace(/"/g, '&quot;')}" role="button" tabindex="0"`
+      : '';
+    return `<div class="pm-team-usage-row sc-player-row${rowCls}"${attrs}>
       <span class="sc-player-name">${row.name || '—'}</span>
       <span class="sc-player-val">${snap}</span>
       <span class="sc-player-val">${row.tgt_share != null ? row.tgt_share + '%' : '—'}</span>
@@ -2000,12 +2007,22 @@ function _pmBuildTeamHTML(data) {
 
 function _pmWireTeamPanel(panel) {
   if (!panel) return;
-  panel.querySelectorAll('.pm-team-depth-click').forEach(row => {
-    row.addEventListener('click', () => {
-      const pid = row.dataset.pid;
-      const pname = row.dataset.pname;
-      if (pid && typeof openPlayerModal === 'function') {
-        openPlayerModal(pid, pname, { force: true });
+  // Any clickable teammate (depth chart or usage table) carries data-pid.
+  const _pmOpenTeammate = (row) => {
+    const pid = row.dataset.pid;
+    const pname = row.dataset.pname;
+    if (!pid || typeof openPlayerModal !== 'function') return;
+    // Replace the current modal rather than stacking a second overlay on top.
+    const ov = document.querySelector('.player-modal-overlay');
+    if (ov) { document.body.style.overflow = ''; ov.remove(); }
+    openPlayerModal(pid, pname, { force: true });
+  };
+  panel.querySelectorAll('[data-pid]').forEach(row => {
+    row.addEventListener('click', () => _pmOpenTeammate(row));
+    row.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        _pmOpenTeammate(row);
       }
     });
   });
