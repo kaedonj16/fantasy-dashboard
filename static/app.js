@@ -37,6 +37,25 @@ function escapeHtml(s) {
   });
 }
 
+/**
+ * fetch() with a hard timeout. Rejects with AbortError when the timer fires so
+ * hung requests cannot leave spinners/overlays up forever.
+ */
+window.brFetchWithTimeout = function (url, opts, ms) {
+  ms = ms || 25000;
+  opts = opts || {};
+  if (typeof AbortController === 'undefined') return fetch(url, opts);
+  var ctl = new AbortController();
+  var outer = opts.signal;
+  if (outer) {
+    if (outer.aborted) ctl.abort();
+    else outer.addEventListener('abort', function () { ctl.abort(); }, { once: true });
+  }
+  var timer = setTimeout(function () { ctl.abort(); }, ms);
+  var merged = Object.assign({}, opts, { signal: ctl.signal });
+  return fetch(url, merged).finally(function () { clearTimeout(timer); });
+};
+
 // ── Canonical position palette ────────────────────────────────────────────────
 // Single source of truth for position → color across the app (rankings, trade
 // calculator, playoff table, etc.). Previously this map was copy-pasted a dozen
@@ -973,7 +992,7 @@ window.brHaptic = function (pattern) {
   // page is fetched (a same-document swap otherwise looks like nothing happened
   // on a slow page). It only appears if the fetch runs past ~180ms, so quick
   // navigations never flash it.
-  var progressEl, progressTimer, progressOn = false;
+  var progressEl, progressTimer, progressOn = false, progressFailsafe = 0;
   function progressBar() {
     if (!progressEl) {
       progressEl = document.createElement('div');
@@ -998,6 +1017,7 @@ window.brHaptic = function (pattern) {
   }
   function endProgress() {
     clearTimeout(progressTimer);
+    clearTimeout(progressFailsafe);
     if (!progressOn) return;
     progressOn = false;
     var el = progressBar();
@@ -1050,7 +1070,7 @@ window.brHaptic = function (pattern) {
     scrollTimer = setTimeout(function () { scrollTimer = null; scrollByUrl[location.href] = getScroll(); }, 150);
   }, { passive: true, capture: true });   // capture so a body-scroller's event is seen
 
-  var token = 0;
+  var token = 0, navAbort = null;
   function softNav(url, isPop) {
     var mine = ++token;
     var curRoot = document.getElementById('page-root');
@@ -1059,8 +1079,22 @@ window.brHaptic = function (pattern) {
     // preventDefaults the navigation, so no pageshow/DOMContentLoaded will ever
     // fire to finish it. Retire it now and let .br-nav-progress own the feedback.
     if (window.__brTopBarHide) window.__brTopBarHide();
+    if (navAbort) { try { navAbort.abort(); } catch (_) {} }
+    navAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     startProgress();
-    fetch(url, { headers: { 'X-Soft-Nav': '1' }, credentials: 'same-origin' })
+    clearTimeout(progressFailsafe);
+    progressFailsafe = setTimeout(function () {
+      if (mine !== token) return;
+      if (navAbort) { try { navAbort.abort(); } catch (_) {} }
+      endProgress();
+      location.href = url;
+    }, 25000);
+    var fetchOpts = { headers: { 'X-Soft-Nav': '1' }, credentials: 'same-origin' };
+    if (navAbort) fetchOpts.signal = navAbort.signal;
+    var fetchP = (typeof window.brFetchWithTimeout === 'function')
+      ? window.brFetchWithTimeout(url, fetchOpts, 25000)
+      : fetch(url, fetchOpts);
+    fetchP
       .then(function (resp) {
         var ct = resp.headers.get('content-type') || '';
         if (!resp.ok || ct.indexOf('text/html') === -1) throw new Error('bad response');
@@ -1098,6 +1132,9 @@ window.brHaptic = function (pattern) {
       })
       .catch(function () {
         if (mine === token) { endProgress(); location.href = url; }   // safe fallback: full navigation
+      })
+      .finally(function () {
+        if (mine === token) clearTimeout(progressFailsafe);
       });
   }
 
@@ -1393,6 +1430,114 @@ window.brLoadingState = function (container, opts) {
   el.innerHTML = html;
   return el;
 };
+
+/**
+ * Escape hatch for full-screen loading overlays that might never dismiss on a
+ * slow/hung navigation. After slowMs updates the subtext; after hardMs injects
+ * Cancel / Try again / Reload actions (Escape dismisses once actions show).
+ */
+(function () {
+  var armed = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+  var fallback = {};
+
+  function subtextEl(overlay) {
+    return overlay.querySelector('.fullscreen-loading-subtext')
+      || overlay.querySelector('.fullscreen-loading-text');
+  }
+
+  function actionsEl(overlay) {
+    var act = overlay.querySelector('.fullscreen-loading-actions');
+    if (act) return act;
+    act = document.createElement('div');
+    act.className = 'fullscreen-loading-actions';
+    act.setAttribute('role', 'group');
+    act.setAttribute('aria-label', 'Loading options');
+    overlay.appendChild(act);
+    return act;
+  }
+
+  function disarmOne(overlay) {
+    if (!overlay) return;
+    var state = armed ? armed.get(overlay) : fallback[overlay.id];
+    if (!state) return;
+    clearTimeout(state.slowTimer);
+    clearTimeout(state.hardTimer);
+    if (state.escHandler) document.removeEventListener('keydown', state.escHandler);
+    if (armed) armed.delete(overlay);
+    else if (overlay.id) delete fallback[overlay.id];
+    var act = overlay.querySelector('.fullscreen-loading-actions');
+    if (act) act.innerHTML = '';
+  }
+
+  window.brLoadingEscape = {
+    disarm: disarmOne,
+    arm: function (overlay, opts) {
+      if (!overlay) return function () {};
+      opts = opts || {};
+      disarmOne(overlay);
+      var slowMs = opts.slowMs || 8000;
+      var hardMs = opts.hardMs || 22000;
+      var state = { overlay: overlay };
+
+      state.slowTimer = setTimeout(function () {
+        var sub = subtextEl(overlay);
+        if (!sub) return;
+        sub.textContent = opts.slowMessage
+          || 'Still working… this can take a moment on a cold load.';
+      }, slowMs);
+
+      state.hardTimer = setTimeout(function () {
+        var sub = subtextEl(overlay);
+        if (sub) {
+          sub.textContent = opts.hardMessage || 'This is taking longer than usual.';
+        }
+        var act = actionsEl(overlay);
+        act.innerHTML = '';
+        var cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'fullscreen-loading-cancel';
+        cancelBtn.textContent = opts.cancelLabel || 'Cancel';
+        cancelBtn.addEventListener('click', function () {
+          disarmOne(overlay);
+          if (opts.onCancel) opts.onCancel();
+          else overlay.style.display = 'none';
+        });
+        act.appendChild(cancelBtn);
+        if (typeof opts.onRetry === 'function') {
+          var retryBtn = document.createElement('button');
+          retryBtn.type = 'button';
+          retryBtn.className = 'fullscreen-loading-retry';
+          retryBtn.textContent = opts.retryLabel || 'Try again';
+          retryBtn.addEventListener('click', function () {
+            disarmOne(overlay);
+            opts.onRetry();
+          });
+          act.appendChild(retryBtn);
+        }
+        if (opts.fallbackHref) {
+          var link = document.createElement('a');
+          link.className = 'fullscreen-loading-fallback';
+          link.href = opts.fallbackHref;
+          link.textContent = opts.fallbackLabel || 'Reload page';
+          act.appendChild(link);
+        }
+        state.cancelBtn = cancelBtn;
+      }, hardMs);
+
+      state.escHandler = function (e) {
+        if (e.key !== 'Escape') return;
+        if (!state.cancelBtn) return;
+        e.preventDefault();
+        state.cancelBtn.click();
+      };
+      document.addEventListener('keydown', state.escHandler);
+
+      if (armed) armed.set(overlay, state);
+      else if (overlay.id) fallback[overlay.id] = state;
+      return function () { disarmOne(overlay); };
+    }
+  };
+})();
 
 /**
  * Legacy signature kept for existing callers.
@@ -2750,7 +2895,10 @@ function showLoginGate(target, opts) {
   function showRefreshOverlay(on) {
     var el = document.getElementById('brRefreshOverlay');
     if (!on) {
-      if (el) el.style.display = 'none';
+      if (el) {
+        if (window.brLoadingEscape) window.brLoadingEscape.disarm(el);
+        el.style.display = 'none';
+      }
       return;
     }
     if (!el) {
@@ -2766,6 +2914,23 @@ function showLoginGate(target, opts) {
       document.body.appendChild(el);
     }
     el.style.display = 'flex';
+    if (window.brLoadingEscape) {
+      window.brLoadingEscape.disarm(el);
+      window.brLoadingEscape.arm(el, {
+        slowMessage: 'Still refreshing… rebuilding league data can take a moment.',
+        hardMessage: 'Refresh is taking longer than usual.',
+        onCancel: function () {
+          el.style.display = 'none';
+          doRefresh._busy = false;
+          var btn = document.getElementById('brSheetRefresh');
+          if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
+          updateLabels();
+        },
+        onRetry: function () { doRefresh(); },
+        fallbackHref: location.href,
+        fallbackLabel: 'Reload page',
+      });
+    }
   }
 
   function ackBypassCache(url) {
@@ -2788,16 +2953,21 @@ function showLoginGate(target, opts) {
   function expireLeague() {
     var parts = window.location.pathname.split('/').filter(Boolean);
     if (parts.length < 3) return Promise.resolve();
-    return fetch('/api/refresh-league', {
+    var body = JSON.stringify({
+      platform: parts[0],
+      season: parseInt(parts[1], 10),
+      league_id: parts[2]
+    });
+    var req = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({
-        platform: parts[0],
-        season: parseInt(parts[1], 10),
-        league_id: parts[2]
-      })
-    }).then(function (res) {
+      body: body
+    };
+    var p = (typeof window.brFetchWithTimeout === 'function')
+      ? window.brFetchWithTimeout('/api/refresh-league', req, 20000)
+      : fetch('/api/refresh-league', req);
+    return p.then(function (res) {
       if (!res.ok) throw new Error('refresh-league ' + res.status);
     });
   }
@@ -2841,11 +3011,18 @@ function showLoginGate(target, opts) {
           hardReload();
           return;
         }
-        return fetch(location.href, {
-          cache: 'reload',
-          credentials: 'same-origin',
-          headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
-        }).then(function (res) {
+        return (typeof window.brFetchWithTimeout === 'function'
+          ? window.brFetchWithTimeout(location.href, {
+              cache: 'reload',
+              credentials: 'same-origin',
+              headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+            }, 30000)
+          : fetch(location.href, {
+              cache: 'reload',
+              credentials: 'same-origin',
+              headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+            })
+        ).then(function (res) {
           if (!res.ok) throw new Error('page ' + res.status);
           return res.text();
         }).then(function (html) {
@@ -9557,6 +9734,26 @@ function showDashboardLoadingOverlay(text, subtext) {
   // Restart progress animation
   if (bar) { bar.style.animation = "none"; bar.offsetWidth; bar.style.animation = ""; }
   overlay.style.display = "flex";
+  if (window.brLoadingEscape) {
+    window.brLoadingEscape.disarm(overlay);
+    window.brLoadingEscape.arm(overlay, {
+      slowMessage: 'Still building… large leagues can take up to a minute.',
+      hardMessage: 'This is taking longer than usual. You can cancel and try again.',
+      onCancel: function () {
+        overlay.style.display = 'none';
+        const submitBtn = document.querySelector('#leagueSelectForm button[type="submit"]');
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Continue';
+        }
+        document.querySelectorAll('.saved-viewer-btn, #continueAsBtn').forEach(function (btn) {
+          btn.disabled = false;
+        });
+      },
+      fallbackHref: location.href,
+      fallbackLabel: 'Reload page',
+    });
+  }
 }
 
 bindOnce(document, "domContentLoadedInit", "DOMContentLoaded", () => {
@@ -11668,6 +11865,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Remove any existing overlay
     const existingOverlay = document.getElementById('fullscreenLoadingOverlay');
     if (existingOverlay) {
+      if (window.brLoadingEscape) window.brLoadingEscape.disarm(existingOverlay);
       existingOverlay.remove();
     }
 
@@ -11678,8 +11876,18 @@ document.addEventListener('DOMContentLoaded', function() {
     overlay.innerHTML = `
       <div class="loading-spinner"></div>
       <div class="fullscreen-loading-text">${message}</div>
+      <div class="fullscreen-loading-subtext">Hang tight…</div>
     `;
     document.body.appendChild(overlay);
+    if (window.brLoadingEscape) {
+      window.brLoadingEscape.arm(overlay, {
+        slowMessage: 'Still switching… rebuilding league context can take a moment.',
+        hardMessage: 'League switch is taking longer than usual.',
+        onCancel: function () { overlay.remove(); },
+        fallbackHref: location.href,
+        fallbackLabel: 'Stay on this page',
+      });
+    }
   }
 
   // Handle league switcher
@@ -11896,6 +12104,8 @@ document.addEventListener('DOMContentLoaded', function() {
           league_id: leagueId,
         }),
       }).then(function () { go(); }, function () { go(); });
+      // Never block the switch forever if refresh-league hangs.
+      setTimeout(go, 12000);
     }
 
     // Top-bar league chip: same league list as the settings switcher, so the
