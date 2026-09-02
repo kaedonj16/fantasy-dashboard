@@ -17,6 +17,7 @@ import logging
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
@@ -819,6 +820,9 @@ def _summarize_team_entry(team_data: List) -> Dict[str, Any]:
         elif len(unmapped_samples) < 5:
             unmapped_samples.append(f"yid={yid} name={name!r} pos={pos}")
     standings = _team_attr(team_data, "team_standings") or {}
+    roster_block = _team_attr(team_data, "roster")
+    roster_keys = sorted(roster_block.keys()) if isinstance(roster_block, dict) else []
+    players_block = _roster_players_block(roster_block) if isinstance(roster_block, dict) else {}
     return {
         "team_id":        team_id,
         "team_key":       team_key,
@@ -826,9 +830,12 @@ def _summarize_team_entry(team_data: List) -> Dict[str, Any]:
         "raw_players":    len(raw_players),
         "resolved_players": resolved,
         "unmapped_samples": unmapped_samples,
-        "has_roster":     bool(_team_attr(team_data, "roster") or any(
-            isinstance(x, dict) and "roster" in x for x in (team_data or [])
-        )),
+        "has_roster":     isinstance(roster_block, dict) and bool(roster_block),
+        "roster_block_keys": roster_keys[:12],
+        "players_block_keys": sorted(
+            (k for k in (players_block or {}) if str(k).isdigit() or k == "count"),
+            key=lambda x: (0, int(x)) if str(x).isdigit() else (1, str(x)),
+        )[:6],
         "wins":           (standings.get("outcome_totals") or {}).get("wins"),
         "points_for":     standings.get("points_for"),
     }
@@ -912,21 +919,110 @@ def _team_attr(team_list: List, key: str, default=None):
     return default if hit is None else hit
 
 
+def _roster_players_block(roster_block: Any) -> Dict[str, Any]:
+    """Locate the ``players`` collection inside a Yahoo roster blob.
+
+    Bulk ``league/.../teams;out=roster`` often returns a roster shell without
+    players; the team roster resource nests them under ``roster.players`` or an
+    extra wrapper layer (see yahoo_fantasy_api's team.roster parser).
+    """
+    if not isinstance(roster_block, dict):
+        return {}
+    players = roster_block.get("players")
+    if isinstance(players, dict):
+        return players
+    for value in roster_block.values():
+        if not isinstance(value, dict):
+            continue
+        if isinstance(value.get("players"), dict):
+            return value["players"]
+        inner = value.get("roster")
+        if isinstance(inner, dict) and isinstance(inner.get("players"), dict):
+            return inner["players"]
+    return {}
+
+
 def _extract_roster_players(team_data: List) -> List[Dict]:
     """Extract player list from the roster portion of a team entry."""
-    roster_block = None
-    for item in team_data or []:
-        if isinstance(item, dict) and "roster" in item:
-            roster_block = item["roster"]
-            break
-    if not roster_block:
+    roster_block = _team_attr(team_data, "roster")
+    if not isinstance(roster_block, dict):
+        for item in team_data or []:
+            if isinstance(item, dict) and "roster" in item:
+                roster_block = item["roster"]
+                break
+    if not isinstance(roster_block, dict):
         return []
 
-    players_block = roster_block.get("players") or {}
+    players_block = _roster_players_block(roster_block) or {}
     out = []
     for entry in _yahoo_collection_rows(players_block, "player"):
         if isinstance(entry, dict) and "player" in entry:
             out.append(entry["player"])
+    return out
+
+
+def _league_current_week(access_token: str, league_key: str) -> Optional[int]:
+    try:
+        meta = _extract_league_meta(_yahoo_get(access_token, f"league/{league_key}"))
+        week = _safe_int(meta.get("current_week"))
+        return week if week > 0 else None
+    except Exception:
+        return None
+
+
+def _fetch_team_roster_players(
+    access_token: str, team_key: str, week: Optional[int] = None,
+) -> List[Dict]:
+    """Fetch one team's roster via the team resource (includes players).
+
+    Yahoo's bulk ``teams;out=roster`` attaches roster metadata but omits the
+    players collection — this endpoint is the reliable source.
+    """
+    if not team_key:
+        return []
+    path = f"team/{team_key}/roster"
+    if week and week > 0:
+        path += f";week={int(week)}"
+    try:
+        raw = _yahoo_get(access_token, path)
+    except Exception as exc:
+        logger.warning("[yahoo] team roster %s failed: %s", team_key, exc)
+        return []
+    fc = raw.get("fantasy_content", {}) or {}
+    team = fc.get("team")
+    if isinstance(team, list):
+        return _extract_roster_players(team)
+    return []
+
+
+def _prefetch_team_rosters(
+    access_token: str,
+    teams: List[List],
+    week: Optional[int] = None,
+) -> Dict[str, List[Dict]]:
+    """Parallel per-team roster fetch keyed by team_key."""
+    keys = []
+    for t in teams:
+        tk = _team_attr(t, "team_key") or ""
+        if tk:
+            keys.append(tk)
+    if not keys:
+        return {}
+
+    out: Dict[str, List[Dict]] = {}
+    workers = min(len(keys), 8)
+
+    def _load(team_key: str) -> tuple[str, List[Dict]]:
+        return team_key, _fetch_team_roster_players(access_token, team_key, week)
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_load, tk): tk for tk in keys}
+        for fut in as_completed(futures):
+            try:
+                tk, players = fut.result()
+                out[tk] = players
+            except Exception as exc:
+                logger.warning("[yahoo] prefetch roster failed: %s", exc)
     return out
 
 
@@ -984,12 +1080,25 @@ def get_users(season: int, league_id: str, access_token: str) -> List[Dict[str, 
 
 
 def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str, Any]]:
+    lk = _league_key_for_season(league_id, season, access_token)
     raw = _yahoo_get(
         access_token,
-        f"league/{_league_key_for_season(league_id, season, access_token)}/teams;out=roster,stats,standings",
+        f"league/{lk}/teams;out=roster,stats,standings",
     )
     teams = _extract_teams(raw)
     out: List[Dict[str, Any]] = []
+
+    # Bulk teams;out=roster returns roster shells without player lists. When
+    # every team is empty, hydrate from team/{team_key}/roster (parallel).
+    roster_by_key: Dict[str, List[Dict]] = {}
+    if teams and all(not _extract_roster_players(t) for t in teams):
+        week = _league_current_week(access_token, lk)
+        roster_by_key = _prefetch_team_rosters(access_token, teams, week)
+        _yahoo_debug(
+            "get_rosters bulk rosters empty; prefetched %s team rosters week=%s counts=%s",
+            len(roster_by_key), week,
+            {k: len(v) for k, v in list(roster_by_key.items())[:5]},
+        )
 
     for t in teams:
         team_key  = _team_attr(t, "team_key") or ""
@@ -1009,8 +1118,13 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
         pts_for   = _safe_float(standings.get("points_for"))
         pts_ag    = _safe_float(standings.get("points_against"))
 
-        # Roster
+        # Roster — bulk shell first, then per-team resource fallback.
         raw_players = _extract_roster_players(t)
+        if not raw_players and team_key:
+            raw_players = roster_by_key.get(team_key) or []
+        if not raw_players and team_key and team_key not in roster_by_key:
+            week = _league_current_week(access_token, lk)
+            raw_players = _fetch_team_roster_players(access_token, team_key, week)
         players:  List[str] = []
         starters: List[str] = []
         reserve:  List[str] = []
