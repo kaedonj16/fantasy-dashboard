@@ -52,6 +52,19 @@ var POS_COLORS = {
 function posColorOf(pos) { return POS_COLORS[pos] || "var(--accent)"; }
 var __featuresState = 0;   // 0=not loaded, 1=loading, 2=loaded
 var __featuresCbs = [];
+function ensureDashboardCss(cb) {
+  // Lite SEO pages ship seo_lite.css for fast paint; the player modal (and Team
+  // tab) styles live in dashboard.css. Pull that sheet in once when the feature
+  // bundle is first requested so modal HTML isn't a raw unstyled dump.
+  if (document.querySelector('link[href*="dashboard"]')) { if (cb) cb(); return; }
+  var href = window.__DASHBOARD_CSS;
+  if (!href) { if (cb) cb(); return; }
+  var link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = href;
+  link.onload = link.onerror = function () { if (cb) cb(); };
+  document.head.appendChild(link);
+}
 function ensureFeatures(cb) {
   // Already present (full app.js bundle, or features finished loading).
   if (typeof openPlayerModal === 'function' && !openPlayerModal.__stub) { if (cb) cb(); return; }
@@ -59,18 +72,20 @@ function ensureFeatures(cb) {
   if (cb) __featuresCbs.push(cb);
   if (__featuresState) return;   // already loading
   __featuresState = 1;
-  var s = document.createElement('script');
-  s.src = window.__FEATURES_JS;
-  s.onload = function () {
-    __featuresState = 2;
-    var cbs = __featuresCbs; __featuresCbs = [];
-    cbs.forEach(function (f) { try { f(); } catch (e) { console.error(e); } });
-  };
-  s.onerror = function () {
-    __featuresState = 0;   // allow a retry on the next interaction
-    console.error('[features] failed to load', window.__FEATURES_JS);
-  };
-  document.head.appendChild(s);
+  ensureDashboardCss(function () {
+    var s = document.createElement('script');
+    s.src = window.__FEATURES_JS;
+    s.onload = function () {
+      __featuresState = 2;
+      var cbs = __featuresCbs; __featuresCbs = [];
+      cbs.forEach(function (f) { try { f(); } catch (e) { console.error(e); } });
+    };
+    s.onerror = function () {
+      __featuresState = 0;   // allow a retry on the next interaction
+      console.error('[features] failed to load', window.__FEATURES_JS);
+    };
+    document.head.appendChild(s);
+  });
 }
 // Stub so the many guarded `if (typeof openPlayerModal === 'function')` call sites
 // in the core fire the lazy load. The real openPlayerModal (a hoisted function in
