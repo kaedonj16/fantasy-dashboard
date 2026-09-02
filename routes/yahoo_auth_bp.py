@@ -300,19 +300,23 @@ def api_yahoo_validate_league():
     except Exception as exc:
         msg = str(exc)
         logger.warning("[yahoo] validate league %s failed: %s", league_id, msg)
-        # 403 = the token is valid but the authorized Yahoo account can't see this
-        # league (wrong account / not a member / wrong id or season). A stale
-        # token would otherwise dead-end here forever, so drop it and send the
-        # user back through OAuth to reconnect with the right account.
-        if "403" in msg or "Forbidden" in msg:
+        from dashboard_services.providers.yahoo_api import yahoo_auth_error_kind, yahoo_oauth_start_url
+        kind = yahoo_auth_error_kind(exc)
+        # 401 token_expired / 403 wrong account — drop stale session creds and
+        # send the user back through OAuth.
+        if kind in ("expired", "forbidden"):
             session.pop("yahoo_access_token", None)
-            session.pop("yahoo_guid", None)
-            from dashboard_services.providers.yahoo_api import yahoo_oauth_start_url
+            if kind == "forbidden":
+                session.pop("yahoo_guid", None)
             return jsonify({
                 "ok": False, "needs_oauth": True,
                 "auth_url": yahoo_oauth_start_url(league_id=league_id, reauth=True, next_url="/"),
-                "error": ("That Yahoo account can't access league " + league_id +
-                          ". Reconnect with the Yahoo account that's in this league."),
+                "error": (
+                    "Your Yahoo login expired. Reconnect Yahoo and try again."
+                    if kind == "expired" else
+                    ("That Yahoo account can't access league " + league_id +
+                     ". Reconnect with the Yahoo account that's in this league.")
+                ),
             }), 401
         return jsonify({
             "ok": False,
