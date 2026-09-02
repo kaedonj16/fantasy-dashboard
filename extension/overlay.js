@@ -219,7 +219,7 @@
   const state = {
     teams: 12,
     rounds: 15,
-    mySlot: EMBEDDED ? 1 : 7,
+    mySlot: EMBEDDED ? 0 : 7,
     slotAuto: false,
     live: EMBEDDED,
     hostInProgress: null,

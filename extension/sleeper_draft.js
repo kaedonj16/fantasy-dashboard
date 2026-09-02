@@ -21,6 +21,7 @@
   let cachedLeagueId = "";
   let cachedScoring = { ppr: 1, tep: 0, passTd: 4 };
   let cachedUser = { username: "", userId: "" };
+  let mainIdentity = { userIds: [], username: "", displayName: "", teamName: "" };
   let cachedOwnerMap = { leagueId: "", map: {} };
   let cachedUsers = { leagueId: "", rows: [] };
   let cachedTrades = { draftId: "", rows: [], at: 0 };
@@ -116,20 +117,62 @@
     return "";
   }
 
+  function mergeIdentity(base, extra) {
+    const out = {
+      userIds: ((base && base.userIds) || []).slice(),
+      username: (base && base.username) || "",
+      displayName: (base && base.displayName) || "",
+      teamName: (base && base.teamName) || "",
+    };
+    ((extra && extra.userIds) || []).forEach(function (id) {
+      const s = String(id || "");
+      if (s && out.userIds.indexOf(s) < 0) out.userIds.unshift(s);
+    });
+    if (extra && extra.username && !out.username) out.username = extra.username;
+    if (extra && extra.displayName && !out.displayName) out.displayName = extra.displayName;
+    if (extra && extra.teamName && !out.teamName) out.teamName = extra.teamName;
+    return out;
+  }
+
+  function applyMainIdentity(detail) {
+    if (!detail) return;
+    const uid = detail.userId ? String(detail.userId) : "";
+    if (uid && /^\d{6,20}$/.test(uid)) {
+      cachedUser.userId = uid;
+      mainIdentity.userIds = [uid].concat(mainIdentity.userIds.filter(function (x) { return x !== uid; }));
+    }
+    if (detail.username) {
+      mainIdentity.username = String(detail.username);
+      cachedUser.username = mainIdentity.username;
+    }
+    if (detail.displayName) mainIdentity.displayName = String(detail.displayName);
+    if (detail.teamName) mainIdentity.teamName = String(detail.teamName);
+  }
+
   function sleeperIdentity() {
+    let ident = { userIds: [], username: "", displayName: "", teamName: "" };
     if (window.BRDraftSlot && BRDraftSlot.collectSleeperIdentity) {
-      return BRDraftSlot.collectSleeperIdentity();
-    }
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const v = localStorage.getItem(localStorage.key(i)) || "";
-        const m = v.match(/"user_id"\s*:\s*"?(\d{6,20})/);
-        if (m) return { userIds: [m[1]], username: "", displayName: "", teamName: "" };
+      ident = window.BRDraftSlot.collectSleeperIdentity() || ident;
+    } else {
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const v = localStorage.getItem(localStorage.key(i)) || "";
+          const m = v.match(/"user_id"\s*:\s*"?(\d{6,20})/);
+          if (m) {
+            ident = { userIds: [m[1]], username: "", displayName: "", teamName: "" };
+            break;
+          }
+        }
+      } catch (_e) {
+        /* ignore */
       }
-    } catch (_e) {
-      /* ignore */
     }
-    return { userIds: [], username: "", displayName: "", teamName: "" };
+    ident = mergeIdentity(ident, mainIdentity);
+    if (cachedUser.userId && ident.userIds.indexOf(cachedUser.userId) < 0) {
+      ident.userIds.unshift(cachedUser.userId);
+    }
+    if (cachedUser.username && !ident.username) ident.username = cachedUser.username;
+    return ident;
   }
 
   async function resolveSleeperUserId(ident) {
@@ -223,6 +266,18 @@
   function resolveMySlot(draft, picks, teams, ident, userId, ownerToRoster) {
     const ids = ((ident && ident.userIds) || []).slice();
     if (userId && ids.indexOf(String(userId)) < 0) ids.unshift(String(userId));
+    if (window.BRDraftSlot && BRDraftSlot.sleeperUserIdFromUsers) {
+      const fromName = BRDraftSlot.sleeperUserIdFromUsers(cachedUsers.rows || [], ident || {});
+      if (fromName && ids.indexOf(fromName) < 0) ids.unshift(fromName);
+      if (fromName) cachedUser.userId = fromName;
+    }
+    if (window.BRDraftSlot && BRDraftSlot.userIdsInDraftOrder) {
+      const filtered = BRDraftSlot.userIdsInDraftOrder((draft && draft.draft_order) || {}, ids);
+      if (filtered.length) {
+        ids.length = 0;
+        filtered.forEach(function (id) { ids.push(id); });
+      }
+    }
     let slot = 0;
     if (window.BRDraftSlot && BRDraftSlot.detectSleeperSlot) {
       slot = BRDraftSlot.detectSleeperSlot({
@@ -462,6 +517,14 @@
   }
 
   document.addEventListener("brfantasy:assistant-reconnect", function () {
+    lastFp = "";
+    requestPicks().then(pollMeta);
+  });
+
+  window.addEventListener("message", function (ev) {
+    const msg = ev && ev.data;
+    if (!msg || msg.__br !== "brfantasy-sleeper-v1" || msg.type !== "identity") return;
+    applyMainIdentity(msg.detail);
     lastFp = "";
     requestPicks().then(pollMeta);
   });

@@ -37,7 +37,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.30"
+    assert manifest["version"] == "1.5.31"
     inject_ver = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     assert 'PRODUCT_VERSION = "1.0.0"' in inject_ver
     hosts = " ".join(manifest.get("host_permissions") or [])
@@ -57,6 +57,12 @@ def test_manifest_docks_overlay_on_host_drafts():
     assert sleeper_js == ["draft_slot.js", "assistant_inject.js", "sleeper_draft.js"]
     assert "sleeper.com/*" in sleeper_matches
     assert "sleeper.app/*" in sleeper_matches
+    sleeper_main = None
+    for block in manifest["content_scripts"]:
+        joined = " ".join(block.get("matches") or [])
+        if "sleeper.com" in joined and block.get("world") == "MAIN":
+            sleeper_main = block["js"]
+    assert sleeper_main == ["sleeper_draft_main.js"]
     inject = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     sleeper = (EXT / "sleeper_draft.js").read_text(encoding="utf-8")
     espn_iso = (EXT / "espn_draft.js").read_text(encoding="utf-8")
@@ -366,6 +372,8 @@ def test_sleeper_detects_live_pick_slot_from_several_signals():
     assert "function sleeperDraftIdFromUrl" in helper
     assert "function sleeperLeagueIdFromUrl" in helper
     assert "function collectSleeperIdentity" in helper
+    assert "function sleeperUserIdFromUsers" in helper
+    assert "function userIdsInDraftOrder" in helper
     assert "function slotFromSleeperDraftOrder" in helper
     assert "function slotFromSleeperPickedBy" in helper
     assert "function slotFromSleeperRosterMap" in helper
@@ -373,7 +381,11 @@ def test_sleeper_detects_live_pick_slot_from_several_signals():
     assert "function detectSleeperDomSlot" in helper
     assert "is-me" in helper
     assert "detectSleeperSlot" in sleeper
+    assert "brfantasy-sleeper-v1" in sleeper
+    assert "applyMainIdentity" in sleeper
     assert "__brFantasySleeperDraft" in sleeper
+    assert "__brFantasySleeperMain" in (EXT / "sleeper_draft_main.js").read_text(encoding="utf-8")
+    assert "sleeper_draft_main.js" in (EXT / "pack_extension.py").read_text(encoding="utf-8")
     assert "resolveDraftId" in sleeper
     assert "waitForDraftRoom" in sleeper
     assert "resolveMySlot" in sleeper
@@ -401,7 +413,7 @@ def test_sleeper_detects_live_pick_slot_from_several_signals():
     assert "__brDaPushClock" in (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     assert "teamNames: detail.teamNames" in (EXT / "espn_draft.js").read_text(encoding="utf-8")
     assert "teamNames: detail.teamNames" in (EXT / "yahoo_draft.js").read_text(encoding="utf-8")
-    assert 'mySlot: EMBEDDED ? 1 : 7' in (EXT / "overlay.js").read_text(encoding="utf-8")
+    assert 'mySlot: EMBEDDED ? 0 : 7' in (EXT / "overlay.js").read_text(encoding="utf-8")
     assert "12-team PPR · snake · round " not in (EXT / "overlay.js").read_text(encoding="utf-8")
     assert "if (!EMBEDDED)" in (EXT / "overlay.js").read_text(encoding="utf-8")
     assert "\u2014" not in sleeper
@@ -513,6 +525,23 @@ if (!B.isSleeperDraftRoom("https://sleeper.com/#/draft/nfl/abc123")) process.exi
 if (B.sleeperDraftIdFromUrl("https://sleeper.com/draft/nfl/abc123") !== "abc123") process.exit(1);
 if (B.sleeperDraftIdFromUrl("https://sleeper.com/draft/abc123") !== "abc123") process.exit(1);
 if (B.sleeperLeagueIdFromUrl("https://sleeper.com/leagues/123456789012345678/draft") !== "123456789012345678") process.exit(1);
+if (B.slotFromSleeperClock("Your pick queue and history", 8, 12) !== 0) process.exit(1);
+if (B.parseSleeperClock("Make your pick later").onClock) process.exit(1);
+if (!B.parseSleeperClock("You're on the clock").onClock) process.exit(1);
+if (B.sleeperUserIdFromUsers(
+  [{ user_id: "42", username: "kaedon", display_name: "Kae" }],
+  { username: "kaedon" }
+) !== "42") process.exit(1);
+if (JSON.stringify(B.userIdsInDraftOrder({ "42": 7, "99": 1 }, ["99", "7"])) !== JSON.stringify(["99"])) process.exit(1);
+store.setItem("currentUser", JSON.stringify({ user_id: "555555", username: "kaedon", token: "abc" }));
+store.setItem("league_users", JSON.stringify([
+  { user_id: "111111", display_name: "A" },
+  { user_id: "222222", display_name: "B" },
+  { user_id: "333333", display_name: "C" },
+]));
+const ident = B.collectSleeperIdentity();
+if (ident.userIds[0] !== "555555") process.exit(1);
+if (ident.userIds.indexOf("111111") >= 0) process.exit(1);
 console.log("ok");
 """
     out = subprocess.run(

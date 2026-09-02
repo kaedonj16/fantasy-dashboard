@@ -51,6 +51,11 @@ async function ensureSleeperDraftAssistant(tabId) {
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
+      world: "MAIN",
+      files: ["sleeper_draft_main.js"],
+    });
+    await chrome.scripting.executeScript({
+      target: { tabId },
       files: ["draft_slot.js", "assistant_inject.js", "sleeper_draft.js"],
     });
     return true;
