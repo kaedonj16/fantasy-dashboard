@@ -6887,7 +6887,7 @@ def _viewer_lineup_alert_html(ctx: dict, viewer_roster_id) -> str:
         return f"""
         <section class="os-card lineup-alert-card">
           <div class="lineup-alert-head">
-            <span class="lineup-alert-title">{title} for Week {current_week}</span>
+            <span class="lineup-alert-title"><svg class="lineup-alert-ico" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 3 22 20H2L12 3Zm-1 6h2v5h-2V9Zm0 7h2v2h-2v-2Z"/></svg>{title} for Week {current_week}</span>
             <a class="os-section-link" href="{fix_url}">Fix your lineup &rarr;</a>
           </div>
           <ul class="lineup-alert-list">{items}</ul>
