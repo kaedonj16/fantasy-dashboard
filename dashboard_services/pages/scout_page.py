@@ -83,10 +83,9 @@ def build_scout_body(ctx: dict) -> str:
     proj_by_roster = ctx.get("proj_by_roster") or {}
     week_proj_map: dict = {}
     try:
+        from dashboard_services.matchups import _week_proj_map_from_bundles
         pw = ctx.get("proj_by_week") or {}
-        week_proj_map = pw.get(current_week) or pw.get(str(current_week)) or {}
-        if not isinstance(week_proj_map, dict):
-            week_proj_map = {}
+        week_proj_map = _week_proj_map_from_bundles(pw, current_week)
         if not week_proj_map:
             from utils.utils import load_week_projection
             week_proj_map = load_week_projection(int(season), int(current_week)) or {}

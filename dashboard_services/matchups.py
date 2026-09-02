@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import html
 import json
 from datetime import datetime, date
 from itertools import zip_longest
@@ -21,6 +22,70 @@ from utils.matchup_schedule import lineup_from_roster, _starters_look_like_full_
 STATUS_NOT_STARTED = "not_started"
 STATUS_IN_PROGRESS = "in_progress"
 STATUS_FINAL = "final"
+
+
+def _week_proj_map_from_bundles(projections: Any, week: Any) -> Dict[str, Any]:
+    """Unwrap ``proj_by_week[week]`` into a pid → value map.
+
+    ``build_projections_by_week`` stores ``{week: {"projections": {pid: float}}}``.
+    Some callers historically passed a flat map or used string week keys; Scout
+    also falls back to the raw multi-variant file. Accept all of those shapes so
+    Matchup Preview never silently shows wall-to-wall ``0.0``.
+    """
+    if not isinstance(projections, dict):
+        return {}
+    container = projections.get(week)
+    if container is None:
+        try:
+            container = projections.get(int(week))
+        except (TypeError, ValueError):
+            container = None
+    if container is None:
+        container = projections.get(str(week))
+    if not isinstance(container, dict):
+        return {}
+    nested = container.get("projections")
+    if isinstance(nested, dict):
+        return nested
+    # Flat pid → float (or raw multi-variant entries). Drop meta keys.
+    return {k: v for k, v in container.items() if k not in ("projections", "_available")}
+
+
+def _proj_value_for_pid(
+    week_proj_map: Dict[str, Any],
+    pid: Any,
+    *,
+    raw_week_map: Optional[Dict[str, Any]] = None,
+    scoring_settings: Optional[Dict[str, Any]] = None,
+    pos: str = "",
+) -> float:
+    """Resolve one player's weekly projection, with Scout-style raw fallback."""
+    if pid is None:
+        return 0.0
+    key = str(pid)
+    if key in week_proj_map:
+        try:
+            return float(week_proj_map.get(key) or 0.0)
+        except (TypeError, ValueError):
+            pass
+    if pid in week_proj_map and pid != key:
+        try:
+            return float(week_proj_map.get(pid) or 0.0)
+        except (TypeError, ValueError):
+            pass
+    if raw_week_map:
+        try:
+            from utils.fantasy_scoring import weekly_projection_points
+            pts = weekly_projection_points(
+                raw_week_map, key, scoring_settings or {}, pos or "",
+            )
+            if pts is not None:
+                return float(pts)
+        except Exception:
+            logging.getLogger(__name__).debug(
+                "suppressed projection fallback", exc_info=True,
+            )
+    return 0.0
 
 
 def _allow_live_game_indicators(viewed_season) -> bool:
@@ -512,8 +577,7 @@ def compute_team_projections_for_weeks(
 
         # per-week projections
         if isinstance(projections_by_week, dict):
-            week_proj_container = projections_by_week.get(week) or {}
-            week_proj_map = week_proj_container.get("projections") or {}
+            week_proj_map = _week_proj_map_from_bundles(projections_by_week, week)
         else:
             # fallback – treat as already a flat {pid: proj_val}
             week_proj_map = projections_by_week or {}
@@ -879,6 +943,7 @@ def render_matchup_slide(
         fpts_against: Optional[dict] = None,
         viewer_roster_id: Optional[str] = None,
         compact: bool = False,
+        scoring_settings: Optional[dict] = None,
 ) -> str:
     """One slide with rows like:
        [Left Name] [Left Pts/Proj] [Right Pts/Proj] [Right Name]
@@ -919,11 +984,36 @@ def render_matchup_slide(
         return rank, fpts_val
 
     # Projections for this week (dict {pid: proj_val})
-    if isinstance(projections, dict):
-        week_proj_container = projections.get(w) or {}
-        week_proj_map = week_proj_container.get("projections") or {}
-    else:
-        week_proj_map = projections or {}
+    week_proj_map = _week_proj_map_from_bundles(projections, w)
+    # Lazy raw-file fallback (same source Scout uses) when the bundle is empty
+    # or a starter pid is missing — common for Yahoo where scoreboard rows omit
+    # lineups and the first paint races projection hydration.
+    _raw_week_proj: Optional[Dict[str, Any]] = None
+
+    def _raw_week_map() -> Dict[str, Any]:
+        nonlocal _raw_week_proj
+        if _raw_week_proj is None:
+            try:
+                from utils.utils import load_week_projection
+                _raw_week_proj = load_week_projection(int(season), int(w)) or {}
+            except Exception:
+                _raw_week_proj = {}
+        return _raw_week_proj
+
+    def _pid_proj(pid: Any, pos: str = "") -> float:
+        mapped = _proj_value_for_pid(
+            week_proj_map, pid,
+            raw_week_map=None, scoring_settings=scoring_settings, pos=pos,
+        )
+        if mapped != 0.0 or (pid is not None and str(pid) in week_proj_map):
+            return mapped
+        # Bundle miss (or explicit absence): try the raw weekly file once.
+        return _proj_value_for_pid(
+            week_proj_map, pid,
+            raw_week_map=_raw_week_map(),
+            scoring_settings=scoring_settings,
+            pos=pos,
+        )
 
     # Cache NFL score lookups per date
     score_cache: dict[str, dict] = {}
@@ -1101,7 +1191,7 @@ def render_matchup_slide(
         else:
             actual = p.get("pts") or 0.0
 
-        proj_val = week_proj_map.get(pid, 0.0)
+        proj_val = _pid_proj(pid, pos)
         is_bye = False
 
         player_index = players.get(pid) or teams.get(pid)
@@ -1165,32 +1255,39 @@ def render_matchup_slide(
         if is_not_started or is_bye:
             stats = None
 
-        meta_content = f"&nbsp;{nfl}"
+        meta_content = html.escape(str(nfl or "").strip())
 
         # Add clickable attributes
-        clickable_attrs = f" class='pname player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{name}'" if pid else " class='pname'"
+        _safe_name = html.escape(name or "")
+        _safe_pid = html.escape(str(pid or ""))
+        clickable_attrs = (
+            f" class='pname player-clickable' style='cursor:pointer;'"
+            f" data-player-id='{_safe_pid}' data-player-name='{_safe_name}'"
+            if pid else " class='pname'"
+        )
 
         stats_inline_l = f"<span class='meta m-cell-stats'>{stats}</span>" if stats else ""
         stats_inline_r = f"<span class='meta m-cell-stats' style='text-align:right;'>{stats}</span>" if stats else ""
+        team_span = f"<span class='meta p-team'>{meta_content}</span>" if meta_content else ""
 
         if left_side:
             if is_bye:
                 cell = (
                     f"<div class='p {side}' style='opacity:0.4;'>"
                     f"<span class='pos-badge {pos}'>{pos}</span>"
-                    f"<span{clickable_attrs}>{name}</span>"
-                    f"<span class='meta'>{meta_content}</span>"
+                    f"<span{clickable_attrs}>{_safe_name}</span>"
+                    f"{team_span}"
                     f"</div>"
                 )
             else:
                 cell = (
                     f"<div class='p {side}'>"
                     f"<span class='pos-badge {pos}'>{pos}</span>"
-                    f"<div style='display:flex;flex-direction:column;min-width:0;overflow:hidden;flex:1;'>"
-                    f"<div style='min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;'>"
-                    f"<span{clickable_attrs}>{name}</span>"
-                    f"<span class='meta'>{meta_content}</span></div>"
-                    f"<span class='meta' style='white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;'>{game_line}</span>"
+                    f"<div class='p-text'>"
+                    f"<div class='p-name-line'>"
+                    f"<span{clickable_attrs}>{_safe_name}</span>"
+                    f"{team_span}</div>"
+                    f"<span class='meta p-game-line'>{game_line}</span>"
                     f"{stats_inline_l}"
                     f"</div>"
                     f"</div>"
@@ -1199,19 +1296,19 @@ def render_matchup_slide(
             if is_bye:
                 cell = (
                     f"<div class='p {side}' style='justify-content:flex-end; opacity:0.4;'>"
-                    f"<span class='meta'>{meta_content}</span>"
-                    f"<span{clickable_attrs}>{name}</span>"
+                    f"{team_span}"
+                    f"<span{clickable_attrs}>{_safe_name}</span>"
                     f"<span class='pos-badge {pos}'>{pos}</span>"
                     f"</div>"
                 )
             else:
                 cell = (
                     f"<div class='p {side}' style='justify-content:flex-end;'>"
-                    f"<div style='display:flex;flex-direction:column;min-width:0;overflow:hidden;text-align:right;flex:1;'>"
-                    f"<div style='min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;'>"
-                    f"<span class='meta'>{meta_content}</span>"
-                    f"<span{clickable_attrs}> {name}</span></div>"
-                    f"<span class='meta' style='white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;'>{game_line}</span>"
+                    f"<div class='p-text p-text--right'>"
+                    f"<div class='p-name-line p-name-line--right'>"
+                    f"{team_span}"
+                    f"<span{clickable_attrs}>{_safe_name}</span></div>"
+                    f"<span class='meta p-game-line'>{game_line}</span>"
                     f"{stats_inline_r}"
                     f"</div>"
                     f"<span class='pos-badge {pos}'>{pos}</span>"
