@@ -51,6 +51,38 @@ def test_flatten_triple_nested_player_from_team_roster():
     assert sel == "TE"
 
 
+def test_yahoo_selected_position_index_one_pattern():
+    """yahoo_fantasy_api reads selected_position[1]['position'] for roster slots."""
+    rp = [
+        [{"player_id": "5"}, {"name": {"full": "Bench Guy"}}],
+        {"selected_position": [{}, {"position": "BN"}]},
+    ]
+    meta, sel = yahoo_api._flatten_yahoo_player(rp)
+    assert meta["player_id"] == "5"
+    assert sel == "BN"
+
+
+def test_extract_roster_players_merges_entry_level_selected_position():
+    team_data = [{
+        "roster": {
+            "players": {
+                "0": {
+                    "player": [[
+                        {"player_id": "5"},
+                        {"name": {"full": "Starter"}},
+                    ]],
+                    "selected_position": {"position": "QB"},
+                },
+                "count": 1,
+            }
+        }
+    }]
+    out = yahoo_api._extract_roster_players(team_data)
+    assert len(out) == 1
+    _, sel = yahoo_api._flatten_yahoo_player(out[0])
+    assert sel == "QB"
+
+
 def test_crosswalk_built_from_feed(monkeypatch):
     import dashboard_services.api as api
     monkeypatch.setattr(api, "get_nfl_players",

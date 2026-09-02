@@ -4,6 +4,23 @@ from __future__ import annotations
 from typing import List
 
 
+def _starters_look_like_full_roster(starters: List[str], players: List[str]) -> bool:
+    return bool(players) and len(starters) >= len(players) and len(players) > 9
+
+
+def lineup_from_roster(roster: dict) -> tuple[List[str], List[str]]:
+    """Return (starters, bench) canonical ids from a normalized roster dict."""
+    players = [str(p) for p in (roster.get("players") or []) if p]
+    starters = [str(s) for s in (roster.get("starters") or []) if s]
+    reserve = {str(r) for r in (roster.get("reserve") or []) if r}
+    if reserve:
+        starters = [p for p in players if p not in reserve]
+    elif _starters_look_like_full_roster(starters, players):
+        starters = []
+    bench = [p for p in players if p not in set(starters)]
+    return starters, bench
+
+
 def synthetic_week_matchups(rosters: List[dict], week: int) -> List[dict]:
     """Round-robin pairs shaped like a Sleeper matchup payload.
 
@@ -40,12 +57,13 @@ def synthetic_week_matchups(rosters: List[dict], week: int) -> List[dict]:
     for mid, (left_id, right_id) in enumerate(pairs, start=1):
         for rid in (left_id, right_id):
             roster = by_rid.get(int(rid)) or {}
+            starters, _bench = lineup_from_roster(roster)
             out.append({
                 "matchup_id": mid,
                 "roster_id": rid,
                 "points": None,
                 "players": list(roster.get("players") or []),
-                "starters": list(roster.get("starters") or []),
+                "starters": starters,
                 "players_points": {},
             })
     return out

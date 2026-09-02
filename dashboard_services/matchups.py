@@ -16,6 +16,7 @@ from dashboard_services.platform_api import (
     get_bracket
 )
 from utils.utils import write_json, load_week_schedule, load_teams_index, load_week_stats, normalize_name, from_players_map
+from utils.matchup_schedule import lineup_from_roster, _starters_look_like_full_roster
 
 STATUS_NOT_STARTED = "not_started"
 STATUS_IN_PROGRESS = "in_progress"
@@ -142,13 +143,17 @@ def build_matchup_preview(
         bench_raw = [p for p in all_players if p not in starter_set]
         pts_map = {str(k): v for k, v in (row.get("players_points") or {}).items()}
 
-        # Yahoo (and some other platforms) return scoreboard totals without lineups.
-        if not starters_raw:
-            roster = roster_by_rid.get(rid) or {}
-            starters_raw = [str(s) for s in (roster.get("starters") or []) if s]
-            starter_set = {str(s) for s in starters_raw}
-            all_players = [str(p) for p in (roster.get("players") or []) if p]
-            bench_raw = [p for p in all_players if p not in starter_set]
+        roster = roster_by_rid.get(rid) or {}
+        need_roster_lineup = (
+            not starters_raw
+            or _starters_look_like_full_roster(starters_raw, all_players)
+        )
+        if need_roster_lineup and roster:
+            starters_raw, bench_raw = lineup_from_roster(roster)
+            all_players = [str(p) for p in (roster.get("players") or []) if p] or all_players
+        elif not starters_raw and roster:
+            starters_raw, bench_raw = lineup_from_roster(roster)
+            all_players = [str(p) for p in (roster.get("players") or []) if p] or all_players
 
         s_infos: List[dict] = [_pinfo(str(pid), pts_map) for pid in starters_raw]
         b_infos: List[dict] = [_pinfo(str(pid), pts_map) for pid in bench_raw]

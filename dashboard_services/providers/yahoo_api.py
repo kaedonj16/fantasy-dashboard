@@ -705,16 +705,51 @@ def _merge_yahoo_dict_parts(node: Any, into: Dict[str, Any]) -> None:
             _merge_yahoo_dict_parts(item, into)
 
 
+def _yahoo_position_from_selected(raw: Any) -> Optional[str]:
+    """Parse Yahoo ``selected_position`` which is often ``[meta, {position: BN}]``."""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, dict):
+        pos = raw.get("position")
+        if isinstance(pos, str):
+            return pos
+        if isinstance(pos, (list, dict)):
+            inner = _unwrap_yahoo_list_or_dict(pos).get("position")
+            return str(inner) if inner else None
+        return None
+    if isinstance(raw, list):
+        # Yahoo roster slots commonly use index 1 for the position string.
+        for item in reversed(raw):
+            if not isinstance(item, dict):
+                continue
+            if item.get("position"):
+                pos = item.get("position")
+                if isinstance(pos, str):
+                    return pos
+                if isinstance(pos, (list, dict)):
+                    inner = _unwrap_yahoo_list_or_dict(pos).get("position")
+                    if inner:
+                        return str(inner)
+            nested = _yahoo_position_from_selected(item.get("selected_position"))
+            if nested:
+                return nested
+        flat: Dict[str, Any] = {}
+        _merge_yahoo_dict_parts(raw, flat)
+        pos = flat.get("position")
+        return str(pos) if pos else None
+    return None
+
+
 def _yahoo_selected_position(slot_node: Any) -> Optional[str]:
     """Extract roster slot (QB/BN/IR) from a Yahoo player slot fragment."""
     slot = _unwrap_yahoo_list_or_dict(slot_node)
     if not slot:
         return None
-    sel = _unwrap_yahoo_list_or_dict(slot.get("selected_position"))
-    pos = sel.get("position")
-    if isinstance(pos, (list, dict)):
-        pos = _unwrap_yahoo_list_or_dict(pos).get("position")
-    return str(pos) if pos else None
+    if "selected_position" in slot:
+        return _yahoo_position_from_selected(slot.get("selected_position"))
+    return _yahoo_position_from_selected(slot)
 
 
 def _flatten_yahoo_player(rp: Any) -> tuple:
@@ -1025,8 +1060,15 @@ def _extract_roster_players(team_data: List) -> List[Dict]:
     players_block = _roster_players_block(roster_block) or {}
     out = []
     for entry in _yahoo_collection_rows(players_block, "player"):
-        if isinstance(entry, dict) and "player" in entry:
-            out.append(entry["player"])
+        if not isinstance(entry, dict) or "player" not in entry:
+            continue
+        rp = entry["player"]
+        entry_slot = entry.get("selected_position")
+        if entry_slot is not None and isinstance(rp, list):
+            slot_node = rp[1] if len(rp) > 1 else None
+            if not _yahoo_selected_position(slot_node):
+                rp = list(rp) + [{"selected_position": entry_slot}]
+        out.append(rp)
     return out
 
 
@@ -1165,25 +1207,19 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
     teams = _extract_teams(raw)
     out: List[Dict[str, Any]] = []
 
-    # Bulk teams;out=roster returns roster shells without player lists, and even
-    # when players appear they often omit selected_position. Hydrate any team
-    # that needs slot info from team/{team_key}/roster (parallel).
+    # Bulk teams;out=roster omits or misplaces lineup slots. During an active
+    # week, always hydrate from team/{team_key}/roster;week=N (reliable source).
     roster_by_key: Dict[str, List[Dict]] = {}
-    week = _league_current_week(access_token, lk)
-    keys_needing_hydration: List[str] = []
-    for t in teams:
-        team_key = _team_attr(t, "team_key") or ""
-        if not team_key:
-            continue
-        if _yahoo_players_need_hydration(_extract_roster_players(t)):
-            keys_needing_hydration.append(team_key)
-    if keys_needing_hydration:
+    week = _league_current_week(access_token, lk) or 1
+    team_keys = [_team_attr(t, "team_key") or "" for t in teams]
+    team_keys = [k for k in team_keys if k]
+    if week > 0 and team_keys:
         roster_by_key = _prefetch_team_rosters(
-            access_token, teams, week, team_keys=keys_needing_hydration,
+            access_token, teams, week, team_keys=team_keys,
         )
         _yahoo_debug(
-            "get_rosters hydrated %s/%s team rosters week=%s counts=%s",
-            len(roster_by_key), len(keys_needing_hydration), week,
+            "get_rosters prefetched %s team rosters week=%s counts=%s",
+            len(roster_by_key), week,
             {k: len(v) for k, v in list(roster_by_key.items())[:5]},
         )
 
@@ -1209,11 +1245,9 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
         pts_for   = _safe_float(standings.get("points_for"))
         pts_ag    = _safe_float(standings.get("points_against"))
 
-        # Roster — bulk shell first, then per-team resource fallback.
-        raw_players = _extract_roster_players(t)
+        # Roster — prefer week-specific team resource (has lineup slots).
+        raw_players = roster_by_key.get(team_key) or _extract_roster_players(t)
         if _yahoo_players_need_hydration(raw_players) and team_key:
-            raw_players = roster_by_key.get(team_key) or []
-        if _yahoo_players_need_hydration(raw_players) and team_key and team_key not in roster_by_key:
             raw_players = _fetch_team_roster_players(access_token, team_key, week)
         players:  List[str] = []
         starters: List[str] = []
