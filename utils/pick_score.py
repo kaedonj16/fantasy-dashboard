@@ -85,8 +85,10 @@ def empirical_slot_allocation(players: list, slots: list, num_teams: int = 12,
     aliases = {
         "SUPER_FLEX": "SF", "SUPERFLEX": "SF", "SFLEX": "SF", "OP": "SF",
         "QB_RB_WR_TE": "SF", "Q_RB_WR_TE": "SF",
+        "QB/RB/WR/TE": "SF", "QB/WR/RB/TE": "SF",
         "WRRB_FLEX": "FLEX", "REC_FLEX": "FLEX", "WRRBTE_FLEX": "FLEX",
         "RB_WR_FLEX": "FLEX", "RB_WR_TE": "FLEX",
+        "RB/WR/TE": "FLEX", "WR/RB/TE": "FLEX",
     }
     normalized = [aliases.get(str(slot).upper(), str(slot).upper()) for slot in (slots or [])]
     if not normalized:

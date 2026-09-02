@@ -1,4 +1,4 @@
-"""Canonical lineup-slot names across Sleeper, ESPN, Yahoo, and MFL.
+"""Canonical lineup-slot names across Sleeper, ESPN, Yahoo, MFL, and Fleaflicker.
 
 Providers do not share one name for FLEX, Superflex, or D/ST. Scoring,
 start/sit, waiver-need, optimal-lineup, and playoff sims must treat those
@@ -22,6 +22,8 @@ FLEX_SLOT_NAMES = {
 SUPERFLEX_SLOT_NAMES = {
     "SUPER_FLEX", "SUPERFLEX", "SFLEX", "OP",
     "QB_RB_WR_TE", "Q_RB_WR_TE", "Q_W_R_T", "QB_WR_RB_TE",
+    # Fleaflicker sometimes lists eligible positions in other orders.
+    "RB_WR_TE_QB", "WR_RB_TE_QB",
 }
 
 DEF_SLOT_NAMES = {"DEF", "DST", "D_ST", "D_S_T"}

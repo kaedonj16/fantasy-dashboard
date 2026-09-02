@@ -667,8 +667,10 @@
   var ROSTER_SLOT_MAP = {
     QB:'QB', RB:'RB', WR:'WR', TE:'TE',
     FLEX:'FLEX', WRRB_FLEX:'FLEX', REC_FLEX:'FLEX', WRRBTE_FLEX:'FLEX',
+    'RB/WR/TE':'FLEX', 'WR/RB/TE':'FLEX', 'RB/WR':'FLEX', 'WR/TE':'FLEX',
     SUPER_FLEX:'SF', SFLEX:'SF',
-    K:'K', DEF:'DEF', DST:'DEF',
+    'QB/RB/WR/TE':'SF', 'QB/WR/RB/TE':'SF',
+    K:'K', DEF:'DEF', DST:'DEF', 'D/ST':'DEF',
     BN:'BN', BE:'BN', BENCH:'BN',
     IR:'IR', RESERVE:'IR',
     TAXI:'TAXI',

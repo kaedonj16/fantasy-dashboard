@@ -446,7 +446,7 @@ class FleaflickerProvider(ProviderAdapter):
             "draft_day": _draft_time_ms(league),
             "settings": settings,
             "scoring_settings": self._scoring(rules),
-            "roster_positions": self._positions(rules),
+            "roster_positions": self._positions(rules, league=league),
             "metadata": {"provider": "fleaflicker"},
         }
 
@@ -774,15 +774,85 @@ class FleaflickerProvider(ProviderAdapter):
         return teams
 
     @staticmethod
-    def _positions(rules: dict) -> list[str]:
-        positions = rules.get("rosterPositions") or rules.get("roster_positions") or []
-        out = []
+    def _roster_position_rows(rules: dict, league: Optional[dict] = None) -> list:
+        """Rules first; standings ``rosterRequirements.positions`` as fallback."""
+        blobs = [rules or {}]
+        if isinstance(league, dict):
+            blobs.append(league)
+        for blob in blobs:
+            for key in ("rosterPositions", "roster_positions"):
+                rows = blob.get(key)
+                if isinstance(rows, list) and rows:
+                    return rows
+            req = blob.get("rosterRequirements") or blob.get("roster_requirements") or {}
+            if isinstance(req, dict):
+                rows = req.get("positions") or []
+                if isinstance(rows, list) and rows:
+                    return rows
+        return []
+
+    @staticmethod
+    def _fleaflicker_slot_name(pos: dict) -> str:
+        """Map a Fleaflicker roster-position row onto a Sleeper-style slot.
+
+        Fleaflicker labels flex ``RB/WR/TE``, superflex ``QB/RB/WR/TE``, and
+        defense ``D/ST``. Downstream draft-room / lineup math only counts
+        Sleeper names, so those must be canonicalized here (same idea as MFL).
+        A generic ``FLEX`` label with QB eligibility is Superflex.
+        """
+        from utils.lineup_slots import canonicalize_slot, normalize_slot_name
+
+        label = str(_get(pos, "label") or "").strip()
+        mapped = canonicalize_slot(label)
+        elig = {
+            normalize_slot_name(e)
+            for e in (pos.get("eligibility") or [])
+            if e is not None and str(e).strip()
+        }
+        skill = {"QB", "RB", "WR", "TE"}
+        if mapped == "FLEX" and "QB" in elig:
+            return "SUPER_FLEX"
+        if mapped:
+            return mapped
+        if elig >= skill:
+            return "SUPER_FLEX"
+        if elig and elig <= {"RB", "WR", "TE"}:
+            return "FLEX"
+        return ""
+
+    @staticmethod
+    def _positions(rules: dict, league: Optional[dict] = None) -> list[str]:
+        """Expand Fleaflicker roster rules into Sleeper-style starting slots.
+
+        Only START-group rows (or rows with a positive ``start`` count) become
+        lineup slots. Bench / IR / taxi are dropped. Protobuf omits zero-valued
+        ``start``; a START-group row with no start is one slot.
+        """
+        from utils.lineup_slots import BENCH_SLOT_NAMES
+
+        positions = FleaflickerProvider._roster_position_rows(rules, league)
+        out: list[str] = []
         for pos in positions:
-            label = str(pos.get("label") or "").strip()
-            starts = _int(pos.get("start"))
-            if not label or starts <= 0:
+            if not isinstance(pos, dict):
                 continue
-            out.extend([label] * starts)
+            group = str(_get(pos, "group") or "").upper()
+            if group in {"BENCH", "INJURED", "IR", "INJURED_RESERVE", "TAXI"}:
+                continue
+            mapped = FleaflickerProvider._fleaflicker_slot_name(pos)
+            if not mapped or mapped in BENCH_SLOT_NAMES:
+                continue
+            raw_start = _get(pos, "start")
+            if raw_start is None:
+                starts = 1 if group == "START" else 0
+            else:
+                starts = _int(raw_start)
+            if starts <= 0:
+                continue
+            out.extend([mapped] * starts)
+        if not out:
+            logger.warning(
+                "[fleaflicker-roster] empty roster_positions platform=fleaflicker"
+            )
         return out
 
     @staticmethod

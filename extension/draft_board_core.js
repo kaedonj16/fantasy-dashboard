@@ -29,7 +29,9 @@
     var SLOT_MAP = {
         QB: 'QB', RB: 'RB', WR: 'WR', TE: 'TE',
         FLEX: 'FLEX', WRRB_FLEX: 'FLEX', REC_FLEX: 'FLEX', WRRBTE_FLEX: 'FLEX',
+        'RB/WR/TE': 'FLEX', 'WR/RB/TE': 'FLEX',
         SUPER_FLEX: 'SF', SFLEX: 'SF',
+        'QB/RB/WR/TE': 'SF', 'QB/WR/RB/TE': 'SF',
     };
 
     // Raw starter counts {QB,SF,RB,WR,TE,FLEX} from a roster_positions array,
@@ -348,8 +350,10 @@
         var aliases = {
             SUPER_FLEX: 'SF', SUPERFLEX: 'SF', SFLEX: 'SF', OP: 'SF',
             QB_RB_WR_TE: 'SF', Q_RB_WR_TE: 'SF',
+            'QB/RB/WR/TE': 'SF', 'QB/WR/RB/TE': 'SF',
             WRRB_FLEX: 'FLEX', REC_FLEX: 'FLEX', WRRBTE_FLEX: 'FLEX',
             RB_WR_FLEX: 'FLEX', RB_WR_TE: 'FLEX',
+            'RB/WR/TE': 'FLEX', 'WR/RB/TE': 'FLEX',
         };
         var normalized = (slots || []).map(function (s) {
             var u = String(s).toUpperCase();

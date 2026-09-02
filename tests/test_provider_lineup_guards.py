@@ -111,3 +111,21 @@ def test_mfl_positions_ignore_numeric_roster_size():
     ]
     # rosterSize must not contaminate a missing starters field into ["20"].
     assert "20" not in provider._positions({"id": "1", "rosterSize": 20, "starters": ""})
+
+
+def test_fleaflicker_positions_do_not_leave_slash_labels():
+    """Sibling of the ESPN/Yahoo/MFL slot bugs: raw Fleaflicker flex/DST labels
+    are invisible to draft-room and count_roster_positions."""
+    from dashboard_services.providers.fleaflicker_api import FleaflickerProvider
+
+    slots = FleaflickerProvider._positions({
+        "rosterPositions": [
+            {"label": "QB", "group": "START", "start": 1},
+            {"label": "RB/WR/TE", "group": "START", "start": 1},
+            {"label": "QB/RB/WR/TE", "group": "START", "start": 1},
+            {"label": "D/ST", "group": "START", "start": 1},
+        ],
+    })
+    assert slots == ["QB", "FLEX", "SUPER_FLEX", "DEF"]
+    assert "RB/WR/TE" not in slots
+    assert "D/ST" not in slots

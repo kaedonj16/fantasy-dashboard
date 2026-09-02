@@ -27,6 +27,9 @@ from utils.roster_strength import derive_league_thresholds
     ("DST", "DEF"),
     ("D/ST", "DEF"),
     ("D-ST", "DEF"),
+    ("RB/WR/TE", "FLEX"),
+    ("QB/RB/WR/TE", "SUPER_FLEX"),
+    ("RB/WR/TE/QB", "SUPER_FLEX"),
     ("BE", "BN"),
     ("QB", "QB"),
 ])
