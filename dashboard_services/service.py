@@ -1550,7 +1550,7 @@ def render_teams_sidebar(teams: List[dict]) -> str:
     pill_buttons = []
     for idx, t in enumerate(teams):
         active_class = " active" if idx == 0 else ""
-        label = t.get("name") or t.get("username") or f"Team {t['roster_id']}"
+        label = html.escape(t.get("name") or t.get("username") or f"Team {t['roster_id']}")
         pill_buttons.append(
             f"<button class='manager-pill{active_class}' "
             f"data-team-id='{t['roster_id']}'>{label}</button>"
