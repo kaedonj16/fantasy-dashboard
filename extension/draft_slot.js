@@ -180,27 +180,22 @@
     }
   }
 
-  function sleeperHref(href) {
-    try {
-      return new URL(String(href || (typeof location !== "undefined" ? location.href : "") || ""), "https://sleeper.com");
-    } catch (_e) {
-      return null;
-    }
+  function sleeperHrefString(href) {
+    const raw = String(href || (typeof location !== "undefined" ? location.href : "") || "");
+    if (raw) return raw;
+    if (typeof location === "undefined") return "";
+    return String(location.pathname || "") + String(location.search || "") + String(location.hash || "");
   }
 
   function sleeperNavText(href) {
-    const u = sleeperHref(href);
-    if (!u) return "";
-    return (String(u.pathname || "") + "\n" + String(u.hash || "") + "\n" + String(u.search || "")).toLowerCase();
+    return sleeperHrefString(href).toLowerCase();
   }
 
   function sleeperDraftIdFromUrl(href) {
     try {
-      const u = sleeperHref(href);
-      if (!u) return "";
-      const q = u.searchParams.get("draft_id") || u.searchParams.get("draftId") || "";
-      if (q && /^[a-zA-Z0-9]+$/.test(q)) return q;
-      const text = sleeperNavText(u.href);
+      const text = sleeperNavText(href);
+      const q = text.match(/[?&#]draft_id=([a-z0-9]+)/i) || text.match(/[?&#]draftid=([a-z0-9]+)/i);
+      if (q && q[1]) return q[1];
       const m = text.match(/\/draft\/(?:nfl\/|nba\/|ncaaf\/|cbb\/|epl\/)?([a-z0-9]+)/i);
       return m ? m[1] : "";
     } catch (_e) {
@@ -221,7 +216,7 @@
     const text = sleeperNavText(href);
     if (!text) return false;
     if (sleeperDraftIdFromUrl(href)) return true;
-    if (/\/leagues\/\d{6,20}\/draft(?:\/|$|\?|#)/.test(text.replace(/\n/g, ""))) return true;
+    if (/\/leagues\/\d{6,20}\/draft(?:\/|$|\?|#)/.test(text)) return true;
     if (/\/draft\/[a-z0-9]+/.test(text)) return true;
     return false;
   }
