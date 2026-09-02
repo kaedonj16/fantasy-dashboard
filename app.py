@@ -21174,17 +21174,16 @@ def api_draft_grades():
             # (same source and math as the Draft Room's computeReplacement), so
             # VOR/PPG replacement levels match the front end instead of a
             # hardcoded guess. Falls back to a standard roster if slots are absent.
-            _rp_norm = {
-                "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
-                "FLEX": "FLEX", "WRRB_FLEX": "FLEX", "REC_FLEX": "FLEX", "WRRBTE_FLEX": "FLEX",
-                "SUPER_FLEX": "SF", "SFLEX": "SF",
-            }
+            from utils.lineup_slots import canonicalize_slot
             _rp_counts = {"QB": 0, "SF": 0, "RB": 0, "WR": 0, "TE": 0, "FLEX": 0}
             _rp_slots = []
             try:
                 _rp_slots = ((get_league(platform, league_id, season) or {}).get("roster_positions") or [])
                 for _s in _rp_slots:
-                    _k = _rp_norm.get(str(_s).upper())
+                    _canon = canonicalize_slot(_s)
+                    _k = "SF" if _canon == "SUPER_FLEX" else (
+                        _canon if _canon in _rp_counts else None
+                    )
                     if _k:
                         _rp_counts[_k] += 1
             except Exception:
@@ -21531,18 +21530,17 @@ def api_draft_grades():
         # ── Draft-Room-aligned team grade inputs ─────────────────────────────
         # League starting-lineup slots (skill positions only; K/DEF excluded from
         # grading, matching the Draft Room) + league value/PPG pools.
-        _dr_norm = {
-            "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
-            "FLEX": "FLEX", "WRRB_FLEX": "FLEX", "REC_FLEX": "FLEX", "WRRBTE_FLEX": "FLEX",
-            "SUPER_FLEX": "SF", "SFLEX": "SF",
-        }
+        from utils.lineup_slots import canonicalize_slot
         _dr_counts = {"QB": 0, "SF": 0, "RB": 0, "WR": 0, "TE": 0, "FLEX": 0}
         try:
             _dr_rp = (get_league(platform, league_id, season) or {}).get("roster_positions") or []
         except Exception:
             _dr_rp = []
         for _s in _dr_rp:
-            _k = _dr_norm.get(str(_s).upper())
+            _canon = canonicalize_slot(_s)
+            _k = "SF" if _canon == "SUPER_FLEX" else (
+                _canon if _canon in _dr_counts else None
+            )
             if _k:
                 _dr_counts[_k] += 1
         if not any(_dr_counts.values()):

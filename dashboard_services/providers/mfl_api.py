@@ -429,16 +429,27 @@ class MFLProvider(ProviderAdapter):
             "player_id": str(p.get("player") or ""), "picked_by": str(p.get("franchise") or ""),
             "metadata": {"timestamp": p.get("timestamp"), "auction_amount": p.get("amount")},
         } for p in picks]
+        filled = [pr for pr in pick_rows if str(pr.get("player_id") or "").strip()]
+        pending = len(pick_rows) - len(filled)
+        # MFL has no draft_status field. Empty / unpicked rows are the board
+        # before the draft; always-complete used to mark keeper leagues drafted
+        # while last year's roster was still sitting there.
+        if not filled:
+            status = "pre_draft"
+        elif pending > 0:
+            status = "drafting"
+        else:
+            status = "complete"
         is_auction = any(
             (pr.get("metadata") or {}).get("auction_amount") not in (None, "", 0, "0")
-            for pr in pick_rows
+            for pr in filled
         )
         return [{"draft_id": f"mfl:{season}:{league_id}", "league_id": str(league_id),
-                 "season": str(season), "status": "complete",
+                 "season": str(season), "status": status,
                  "type": "auction" if is_auction else "snake",
                  "metadata": {"name": "MFL Draft"}, "settings": {},
                  "draft_order": {}, "slot_to_roster_id": {}, "last_picked": 0,
-                 "picks": pick_rows}]
+                 "picks": filled}]
 
     def get_traded_picks(self, league_id, season):
         raw = self._export("futureDraftPicks", league_id, season, ttl=1800)

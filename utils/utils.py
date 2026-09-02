@@ -9,7 +9,7 @@ import requests
 import time
 import traceback
 from bs4 import BeautifulSoup
-from collections import defaultdict, Counter
+from collections import defaultdict
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional, Any, Callable, List, Iterable, TYPE_CHECKING
@@ -2198,5 +2198,9 @@ def count_roster_positions(positions: list[str]) -> dict[str, int]:
     Takes a Sleeper roster_positions array and returns a count of each slot type.
     Example:
       ['QB','RB','RB','WR','WR','TE','FLEX',...] → {'QB':1,'RB':2,'WR':2,...}
+
+    Provider aliases (OP, RB/WR/TE, D/ST, …) collapse to the canonical name
+    so Fleaflicker/Yahoo/ESPN slot lists count the same as Sleeper.
     """
-    return dict(Counter(positions))
+    from utils.lineup_slots import count_lineup_slots
+    return count_lineup_slots(positions)

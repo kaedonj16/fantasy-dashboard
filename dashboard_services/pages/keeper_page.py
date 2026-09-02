@@ -46,8 +46,9 @@ def years_kept_from_draft_season(draft_season, current_season) -> int:
 
 
 def _is_superflex(ctx: Dict[str, Any]) -> bool:
+    from utils.lineup_slots import is_superflex_lineup
     positions = ctx.get("roster_positions") or ctx.get("roster_positions_list") or []
-    return any(str(p).upper() in {"SUPER_FLEX", "SFLEX", "SUPERFLEX"} for p in positions)
+    return is_superflex_lineup(positions)
 
 
 def _redraft_value_map(is_sf: bool) -> Dict[str, float]:

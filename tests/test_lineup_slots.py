@@ -28,6 +28,8 @@ from utils.roster_strength import derive_league_thresholds
     ("D/ST", "DEF"),
     ("D-ST", "DEF"),
     ("RB/WR/TE", "FLEX"),
+    ("W/T", "FLEX"),
+    ("R/T", "FLEX"),
     ("QB/RB/WR/TE", "SUPER_FLEX"),
     ("RB/WR/TE/QB", "SUPER_FLEX"),
     ("BE", "BN"),
@@ -35,6 +37,12 @@ from utils.roster_strength import derive_league_thresholds
 ])
 def test_canonicalize_provider_aliases(raw, canon):
     assert canonicalize_slot(raw) == canon
+
+
+def test_count_roster_positions_delegates_to_canonical_counts():
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[1] / "utils" / "utils.py").read_text(encoding="utf-8")
+    assert "count_lineup_slots(positions)" in src
 
 
 def test_count_lineup_slots_collapses_aliases():

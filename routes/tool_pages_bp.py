@@ -75,7 +75,8 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
             if hasattr(_rp, "tolist"):
                 _rp = _rp.tolist()
             roster_positions = [str(s) for s in _rp] if _rp else None
-            is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp)
+            from utils.lineup_slots import is_superflex_lineup
+            is_sf = is_superflex_lineup(_rp)
             league_id = ctx.get("league_id") or league_id
             season = int(ctx.get("season") or season or datetime.now().year)
             _sc = ctx.get("scoring_settings") or {}
@@ -212,7 +213,8 @@ def _cheat_sheet_kwargs(platform, season, league_id):
             if hasattr(_rp, "tolist"):
                 _rp = _rp.tolist()
             roster_positions = [str(s) for s in _rp] if _rp else None
-            is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp)
+            from utils.lineup_slots import is_superflex_lineup
+            is_sf = is_superflex_lineup(_rp)
             league_id = ctx.get("league_id") or league_id
             season = int(ctx.get("season") or season or datetime.now().year)
             # Same scoring seed as Draft Room setup (ppr / TE premium / pass TD).

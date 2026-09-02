@@ -211,7 +211,8 @@ def dr_weighted_pick_score(
             return 0.78 if idx == 0 else 0.64
         return 0.0
 
-    has_flex = any(str(s).upper() == "FLEX" for s in (slots or []))
+    from utils.lineup_slots import canonicalize_slot
+    has_flex = any(canonicalize_slot(s) == "FLEX" for s in (slots or []))
 
     def _role(p):
         if str(p.get("id")) in starter_ids:
@@ -366,7 +367,8 @@ def dr_team_grade_score(
         if pos == "RB": return 0.82 if idx == 0 else 0.68
         if pos == "WR": return 0.78 if idx == 0 else 0.64
         return 0.0
-    has_flex = any(str(s).upper() == "FLEX" for s in (slots or []))
+    from utils.lineup_slots import canonicalize_slot
+    has_flex = any(canonicalize_slot(s) == "FLEX" for s in (slots or []))
     def _role(p):
         if str(p.get("id")) in starter_ids:
             return "starter"

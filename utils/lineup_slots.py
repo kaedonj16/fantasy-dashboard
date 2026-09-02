@@ -16,6 +16,7 @@ FLEX_SLOT_NAMES = {
     "WRRB_FLEX", "WRTE_FLEX", "RBWR_FLEX", "RBWRTE", "RBWR",
     "REC_FLEX",
     "W_R_T", "W_R", "WR_RB_TE", "RB_WR_TE_FLEX",
+    "W_T", "R_T",
 }
 
 # QB-eligible FLEX. "OP" is ESPN's offensive-player slot.

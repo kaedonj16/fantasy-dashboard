@@ -1048,8 +1048,9 @@ def get_drafts(season: int, league_id: str) -> List[Dict[str, Any]]:
     dtype = draft_type or "snake"
     if date_ms:
         if drafted is None:
-            # No explicit flag — infer from whether the scheduled time has passed.
-            drafted = date_ms <= int(datetime.now().timestamp() * 1000)
+            # A missing drafted flag is not "done". Inferring complete from a
+            # past date marked postponed / stale-date leagues as already drafted.
+            drafted = False
         return [{
             "draft_id": f"espn_{league_id}_{season}",
             "league_id": str(league_id),

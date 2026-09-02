@@ -60,6 +60,18 @@ def test_yahoo_settings_come_from_league_index_one_not_meta():
     assert scoring["pass_td"] == 6.0
 
 
+def test_yahoo_wt_and_rt_slots_are_flex():
+    slots = yahoo_api._yahoo_roster_positions({
+        "roster_positions": [
+            {"position": "QB", "count": 1},
+            {"position": "W/T", "count": 1},
+            {"position": "R/T", "count": 1},
+        ],
+    })
+    assert slots.count("FLEX") == 2
+    assert "W/T" not in slots
+
+
 def test_yahoo_get_league_globals_reads_nested_settings(monkeypatch):
     payload = {
         "fantasy_content": {
