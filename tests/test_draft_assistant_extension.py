@@ -37,7 +37,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.31"
+    assert manifest["version"] == "1.5.32"
     inject_ver = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     assert 'PRODUCT_VERSION = "1.0.0"' in inject_ver
     hosts = " ".join(manifest.get("host_permissions") or [])
@@ -103,6 +103,11 @@ def test_overlay_uses_live_br_player_pool_and_headshots():
     assert "sleepercdn.com/content/nfl/players/" in overlay
     assert "has-photo" in css
     assert "object-fit: cover" in css
+    assert "sync-chip-txt" in css
+    assert "display: block" in css
+    assert "0 0 0 8px transparent" not in css
+    assert "sync-chip-txt" in overlay
+    assert "sync-chip-txt" in html
     assert "fetchDraftPool" in inject
     assert "adpSource" in inject
     assert "queuedPool" in inject
@@ -178,8 +183,11 @@ def test_collapsed_overlay_has_reopen_control():
     assert "flex:0 0 var(--br-da-shift)" in inject
     assert "position:relative" in inject
     assert "looksFullBleed" in inject
+    assert "function isHostPortal" in inject
     assert "100vw" in inject
     assert "applyDockShift" in inject
+    assert "br-da-sleeper body>#root" in inject
+    assert "flex:0 0 auto" in inject
     assert "data-br-da-shifted" in inject
     assert "transition:flex-basis" in inject.replace(" ", "")
     assert "br-da-ready" in inject
