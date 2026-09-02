@@ -1637,6 +1637,13 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
     filter: brightness(0) saturate(100%) invert(82%) sepia(23%) saturate(1585%) hue-rotate(178deg) brightness(103%) contrast(88%) !important;
 }
 
+/* Discord brand glyph is a black PNG. Invert it to white in dark mode so the
+   floating pill, More-sheet row, contact link, and weekly banner all match
+   the rest of the chrome (other sheet icons use currentColor / --text). */
+html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
+    filter: brightness(0) saturate(100%) invert(100%) !important;
+}
+
 .settings-menu-label {
     flex: 1;
 }
@@ -26340,7 +26347,7 @@ tr.team-clickable {
 }
 
 html[data-theme="dark"] .fp-discord-icon {
-    filter: brightness(0) saturate(100%) invert(90%);
+    filter: brightness(0) saturate(100%) invert(100%);
 }
 
 .fp-robot-icon {
@@ -35586,12 +35593,18 @@ a, button, [role="button"], [role="tab"], summary, label,
     }
 
     /* The Discord PNG (matches the 20px nav-svg icons) and the freshness time on
-     the Refresh row (right-aligned, quiet). */
+     the Refresh row (right-aligned, quiet). Black glyph in light mode, white
+     in dark mode — same invert the floating Discord pill uses. */
     .br-sheet-icon-img {
         width: 20px;
         height: 20px;
         flex: 0 0 auto;
         opacity: .85;
+        filter: brightness(0) saturate(100%) invert(15%);
+    }
+
+    html[data-theme="dark"] .br-sheet-icon-img {
+        filter: brightness(0) saturate(100%) invert(100%);
     }
 
     .br-sheet-time {

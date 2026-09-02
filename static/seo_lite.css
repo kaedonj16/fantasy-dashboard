@@ -190,6 +190,12 @@ h3 { font-size: 16px; }
     content: url('/static/Website_Logo_dark.png');
 }
 
+/* Discord brand glyph is a black PNG; invert to white with the rest of chrome. */
+html[data-theme="dark"] img[src*="discord-brands-solid.png"],
+html[data-theme="dark"] .fp-discord-icon {
+    filter: brightness(0) saturate(100%) invert(100%);
+}
+
 .top-nav {
     display: grid;
     grid-template-columns: auto 1fr auto;
@@ -1100,6 +1106,11 @@ table, .standings-table {
         height: 20px;
         flex: 0 0 auto;
         opacity: .85;
+        filter: brightness(0) saturate(100%) invert(15%);
+    }
+
+    html[data-theme="dark"] .br-sheet-icon-img {
+        filter: brightness(0) saturate(100%) invert(100%);
     }
 
     .br-sheet-pro {
