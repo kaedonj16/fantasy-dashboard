@@ -1903,27 +1903,11 @@ function _pmTeamOrdSup(n) {
   return _pmTeamOrd(n).replace(/(st|nd|rd|th)$/, '<sup>$1</sup>');
 }
 
-// Tier color RELATIVE TO POSITION: does a high team rank in this metric help a
-// player at `pos`? Pass-catchers want passing volume, runners want rushing; the
-// opposite category is graded inversely, unrelated metrics stay neutral (accent).
+// Plain rank tiers for offense-profile dots: top third green (good), middle
+// yellow (mid), bottom red (bad). Same scale as Scoring/Pace hero ranks —
+// not inverted by whether the tendency "helps" the player's position.
 function _pmTeamMetricColor(pos, key, rank, total) {
-  const PASS = ['pass_yds', 'pass_att', 'pass_tds', 'pass_rate'];
-  const RUN = ['rush_yds', 'rush_att', 'rush_tds'];
-  const VOL = ['total_yds', 'plays_pg'];
-  let stance;
-  if (VOL.indexOf(key) >= 0) stance = 'pos';
-  else {
-    const isP = PASS.indexOf(key) >= 0, isR = RUN.indexOf(key) >= 0;
-    if (pos === 'RB') stance = isR ? 'pos' : (isP ? 'neg' : 'neu');
-    else if (pos === 'QB') stance = isP ? 'pos' : 'neu';
-    else stance = isP ? 'pos' : (isR ? 'neg' : 'neu');
-  }
-  if (stance === 'neu' || rank == null || !total) return 'var(--accent)';
-  const third = Math.ceil(total / 3);
-  let t = rank <= third ? 'good' : (rank <= third * 2 ? 'mid' : 'bad');
-  if (stance === 'neg') t = t === 'good' ? 'bad' : (t === 'bad' ? 'good' : 'mid');
-  // Theme tokens so the bars track light/dark instead of a fixed mid green/red.
-  return t === 'good' ? 'var(--win)' : (t === 'mid' ? 'var(--warning)' : 'var(--loss)');
+  return _pmTeamTierColor(rank, total);
 }
 
 function _pmTeamProfileAxis() {
@@ -2069,7 +2053,7 @@ function _pmBuildTeamHTML(data) {
     <div class="pm-team-sec">
       <div class="pm-section-header"><span class="pm-section-label">Offense Profile</span><span class="pm-team-secnote">${data.stats_season} · rank of 32</span></div>
       ${_pmTeamProfileAxis()}${profile}
-      <div class="pm-team-note">Dot = team rank (right = 1st). Color = whether that tendency helps a ${pos}: <b style="color:var(--win)">green helps</b>, <b style="color:var(--loss)">red hurts</b>.</div>
+      <div class="pm-team-note">Dot = team rank (right = 1st). Color = rank tier: <b style="color:var(--win)">green good</b>, <b style="color:var(--warning)">yellow mid</b>, <b style="color:var(--loss)">red bad</b>.</div>
       <div class="pm-section-header pm-section-collapsible pm-team-adv-toggle" role="button" tabindex="0" aria-expanded="${advOpen ? 'true' : 'false'}" aria-controls="pmTeamAdvBody">
         <span class="pm-collapse-chevron" aria-hidden="true">${advChev}</span>
         <span class="pm-section-label">More team ranks</span>
