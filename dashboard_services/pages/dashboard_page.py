@@ -135,6 +135,7 @@ def build_dashboard_body(ctx: dict) -> str:
                 team_game_lookup=team_game_lookup,
                 fpts_against=_fpts_against_dash,
                 compact=True,
+                scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
             )
             for m in _dash_matchups
         ]

@@ -13772,6 +13772,51 @@ a.signed-home-league:hover {
     overflow: hidden;
 }
 
+.p-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+    flex: 1;
+}
+
+.p-text--right {
+    text-align: right;
+}
+
+/* Ellipsis only the player name — keep the team abbr fully visible beside it.
+   Previously name+team shared one nowrap ellipsis line ("Jonathan Taylor I..."). */
+.p-name-line {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.p-name-line--right {
+    justify-content: flex-end;
+}
+
+.p-name-line .pname {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.p-name-line .p-team {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.p-game-line {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+}
+
 .p .pname {
     font-weight: 600;
     color: var(--accent);
