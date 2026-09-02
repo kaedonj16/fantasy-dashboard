@@ -1378,10 +1378,22 @@ FORM_BODY = """
             <label for="yahooTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
             <input type="text" id="yahooTeamName" placeholder="e.g. Dynasty Monsters">
           </div>
-          <div class="row">
+          <div class="row" id="yahooSubmitRow">
             <button type="button" id="yahooConnectBtn">Connect Yahoo Account</button>
           </div>
           <div id="yahooError" class="error-message" style="display:none;"></div>
+          <div id="yahooAccountChoice" class="provider-account-choice" style="display:none;">
+            <button type="button" id="yahooPrivateGoogle" class="google-continue-btn">
+              <span class="google-button-title">Continue with Google</span>
+              <span>Save your leagues &amp; settings, synced across devices</span>
+              <small>Free &middot; no password</small>
+            </button>
+            <div class="provider-choice-or">OR</div>
+            <button type="button" id="yahooPrivateGuest" class="continue-without-account-btn">
+              <strong>Continue without account</strong>
+              <span>Quick view on this device &middot; nothing saved</span>
+            </button>
+          </div>
           <p class="hint" style="margin-top:6px;">
             You'll be redirected to Yahoo to authorize access, then returned here.
           </p>
