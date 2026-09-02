@@ -37,7 +37,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.32"
+    assert manifest["version"] == "1.5.33"
     inject_ver = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     assert 'PRODUCT_VERSION = "1.0.0"' in inject_ver
     hosts = " ".join(manifest.get("host_permissions") or [])
@@ -188,6 +188,15 @@ def test_collapsed_overlay_has_reopen_control():
     assert "applyDockShift" in inject
     assert "br-da-sleeper body>#root" in inject
     assert "flex:0 0 auto" in inject
+    assert "function constrainSleeperDraft" in inject
+    assert "draft-layout-container" in inject
+    assert "draftboard-page" in inject
+    assert "clearInlineShift" in inject
+    assert "padding-right:var(--br-da-shift)" in inject.replace(" ", "")
+    assert "position:fixed!important" in inject.replace(" ", "")
+    assert "calc(100vw - var(--br-da-shift))" in inject
+    assert "function constrainSleeperNode" in inject
+    assert "watchSleeperRoot" in inject
     assert "data-br-da-shifted" in inject
     assert "transition:flex-basis" in inject.replace(" ", "")
     assert "br-da-ready" in inject
