@@ -144,6 +144,10 @@ def build_matchup_preview(
         pts_map = {str(k): v for k, v in (row.get("players_points") or {}).items()}
 
         roster = roster_by_rid.get(rid) or {}
+        if not roster:
+            oid = owner_id_by_rid.get(rid)
+            if oid:
+                roster = next((r for r in rosters if str(r.get("owner_id")) == str(oid)), {})
         need_roster_lineup = (
             not starters_raw
             or _starters_look_like_full_roster(starters_raw, all_players)
