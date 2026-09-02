@@ -656,3 +656,48 @@ def test_diagnose_league_ok_with_list_wrapped_standings(monkeypatch):
     assert report["extracted_team_count"] == 2
     assert report["teams"][0]["wins"] == "2"
     assert report["teams"][0]["points_for"] == "250.3"
+
+
+def test_build_teams_overview_shows_yahoo_bench_and_ir():
+    """Yahoo BN must land on the dashboard Bench list, not disappear into IR."""
+    from utils.utils import build_teams_overview
+
+    rosters = [{
+        "roster_id": 1,
+        "owner_id": "g1",
+        "players": ["11111", "22222", "33333"],
+        "starters": ["11111"],
+        "reserve": ["33333"],
+        "taxi": [],
+        "settings": {"wins": 1, "losses": 0, "ties": 0},
+    }]
+    users = [{
+        "user_id": "g1",
+        "roster_id": 1,
+        "display_name": "Yahoo Owner",
+        "metadata": {"team_name": "The Squad"},
+    }]
+    players_index = {
+        "11111": {"name": "Patrick Mahomes", "team": "KC"},
+        "22222": {"name": "Travis Kelce", "team": "KC"},
+        "33333": {"name": "Isiah Pacheco", "team": "KC"},
+    }
+    players = {
+        "11111": {"pos": "QB"},
+        "22222": {"pos": "TE"},
+        "33333": {"pos": "RB"},
+    }
+    teams = build_teams_overview(
+        rosters, users, {}, players, players_index, {}, "yahoo",
+    )
+    assert len(teams) == 1
+    assert [p["name"] for p in teams[0]["starters"]] == ["Patrick Mahomes"]
+    assert [p["name"] for p in teams[0]["bench"]] == ["Travis Kelce"]
+    assert [p["name"] for p in teams[0]["ir"]] == ["Isiah Pacheco"]
+
+    from dashboard_services.service import render_teams_sidebar
+    card = render_teams_sidebar(teams)
+    assert "teams-card" in card
+    assert "Starters" in card and "Patrick Mahomes" in card
+    assert "Bench" in card and "Travis Kelce" in card
+    assert "IR" in card and "Isiah Pacheco" in card
