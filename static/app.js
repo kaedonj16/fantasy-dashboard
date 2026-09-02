@@ -17006,23 +17006,11 @@ function renderTeamDetails(data) {
   `;
   document.getElementById('teamModalMeta').innerHTML = metaHTML;
 
-  // Build roster table
+  // Build roster list
   let rosterHTML = '<div class="team-modal-section"><h3>Roster</h3>';
 
   if (data.roster && data.roster.length > 0) {
-    rosterHTML += '<table class="team-roster-table">';
-    rosterHTML += `
-      <thead>
-        <tr>
-          <th>Player</th>
-          <th>Pos</th>
-          <th>Team</th>
-          <th>Age</th>
-          <th>Value</th>
-        </tr>
-      </thead>
-      <tbody>
-    `;
+    rosterHTML += '<div class="tm-roster-list">';
 
     data.roster.forEach(player => {
       const isUnknown = !player.name || player.name === 'Unknown' || /^\d+$/.test(player.name);
@@ -17072,22 +17060,33 @@ function renderTeamDetails(data) {
         badges += `<span class="player-badge ${_icls}" title="${_tip.replace(/"/g, '&quot;')}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${_code}</span>`;
       }
 
+      const ageStr = player.age != null && !isNaN(parseFloat(player.age)) ? parseFloat(player.age).toFixed(1) : '—';
+      const valStr = player.value != null && !isNaN(parseFloat(player.value)) ? parseFloat(player.value).toFixed(1) : '—';
+      const rowAttrs = isUnknown
+        ? ''
+        : ` data-player-id="${player.player_id}" data-player-name="${player.name}" tabindex="0"`;
+      const rowCls = isUnknown ? 'tm-roster-row' : 'tm-roster-row tm-roster-click';
+
       rosterHTML += `
-        <tr ${isUnknown ? '' : `style="cursor:pointer;" data-player-id="${player.player_id}" data-player-name="${player.name}"`}>
-          <td>
-            ${isUnknown
-              ? `<span style="color:var(--text-muted);">${/^\d+$/.test(player.name) ? `Unknown ${player.position || ''}`.trim() : (player.name || 'Unknown')}</span>`
-              : `<strong class="player-clickable">${player.name}</strong>${badges}`}
-          </td>
-          <td><span class="pos-badge ${player.position}">${player.position}</span></td>
-          <td>${player.team || '-'}</td>
-          <td>${player.age != null && !isNaN(parseFloat(player.age)) ? parseFloat(player.age).toFixed(1) : '-'}</td>
-          <td>${player.value != null && !isNaN(parseFloat(player.value)) ? parseFloat(player.value).toFixed(1) : '-'}</td>
-        </tr>
+        <div class="${rowCls}"${rowAttrs}>
+          <div class="tm-roster-main">
+            <div class="tm-roster-name-row">
+              ${isUnknown
+                ? `<span class="tm-roster-name muted">${/^\d+$/.test(player.name) ? `Unknown ${player.position || ''}`.trim() : (player.name || 'Unknown')}</span>`
+                : `<span class="tm-roster-name player-clickable">${player.name}</span>`}
+              ${badges ? `<span class="tm-roster-badges">${badges}</span>` : ''}
+            </div>
+            <div class="tm-roster-meta">${player.team || '—'} · Age ${ageStr}</div>
+          </div>
+          <div class="tm-roster-side">
+            <span class="pos-badge ${player.position}">${player.position}</span>
+            <span class="tm-roster-value">${valStr}</span>
+          </div>
+        </div>
       `;
     });
 
-    rosterHTML += '</tbody></table>';
+    rosterHTML += '</div>';
   } else {
     rosterHTML += '<div class="team-modal-empty">No players on roster</div>';
   }

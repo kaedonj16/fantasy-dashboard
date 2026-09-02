@@ -50,8 +50,8 @@ def test_player_modal_team_tab_ui_wiring():
 def test_player_modal_team_tab_css():
     css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
     for cls in (
-        ".pm-team-header", ".pm-crest", ".pm-team-rank", ".pm-depth-grid",
-        ".dinj", ".pm-adv-toggle", ".pm-usage-table",
+        ".pm-team-header", ".pm-crest", ".pm-hero-stat", ".pm-team-depth",
+        ".player-badge-inj-q", ".pm-team-adv-toggle", ".pm-team-usage",
     ):
         assert cls in css, cls
 

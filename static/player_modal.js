@@ -1858,47 +1858,53 @@ function _pmTeamRankCard(label, key, entry, opts) {
   const rank = entry && entry.rank;
   const total = entry && entry.total;
   const tierCls = opts.accent ? 'tier-accent' : _pmRankTier(rank, total);
-  const leadCls = opts.lead ? ' pm-team-rank-lead' : '';
+  const primaryCls = opts.lead ? ' pm-hero-primary' : '';
   const rankLbl = (rank != null && total) ? `#${rank} of ${total}` : '—';
   const valLbl = _pmFmtTeamVal(key, entry && entry.value);
-  return `<div class="pm-team-rank${leadCls} ${tierCls}">
-    <div class="pm-team-rank-lbl">${label}</div>
-    <div class="pm-team-rank-val">${valLbl}</div>
-    <div class="pm-team-rank-sub">${rankLbl}</div>
+  return `<div class="pm-hero-stat${primaryCls}">
+    <div class="pm-hero-label">${label}</div>
+    <div class="pm-hero-val">${valLbl}</div>
+    <div class="pm-hero-sub pm-rank-tier ${tierCls}">${rankLbl}</div>
   </div>`;
 }
 
 function _pmTeamInjBadge(injury) {
-  const u = String(injury || '').toUpperCase();
-  if (!u) return '';
-  if (['IR', 'OUT', 'PUP', 'SUSP', 'NFI', 'O'].includes(u)) {
-    return `<span class="dinj dinj-out" title="${injury}">${u === 'O' ? 'OUT' : u}</span>`;
+  const injRaw = String(injury || '').trim();
+  if (!injRaw) return '';
+  const u = injRaw.toUpperCase();
+  let icls = 'player-badge-inj-q';
+  if (['IR', 'OUT', 'O', 'PUP', 'SUSP', 'SUS', 'SUSPENDED', 'NFI', 'DNR', 'COV'].includes(u)) {
+    icls = 'player-badge-inj-out';
+  } else if (['DOUBTFUL', 'D'].includes(u)) {
+    icls = 'player-badge-inj-d';
   }
-  if (u === 'Q' || u === 'QUESTIONABLE') {
-    return `<span class="dinj dinj-q" title="Questionable">Q</span>`;
-  }
-  if (['DOUBTFUL', 'D'].includes(u)) {
-    return `<span class="dinj dinj-d" title="Doubtful">D</span>`;
-  }
-  return `<span class="dinj dinj-q" title="${injury}">${u.slice(0, 3)}</span>`;
+  const code = u === 'QUESTIONABLE' ? 'Q'
+    : u === 'DOUBTFUL' ? 'D'
+    : (u === 'OUT' || u === 'O') ? 'OUT'
+    : (u === 'SUSP' || u === 'SUS' || u === 'SUSPENDED') ? 'SUS'
+    : (u.length > 4 ? u.slice(0, 4) : u);
+  return `<span class="player-badge ${icls}" title="${injRaw.replace(/"/g, '&quot;')}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${code}</span>`;
 }
 
 function _pmTeamDepthRow(row) {
   const inj = _pmTeamInjBadge(row.injury);
-  const starter = (row.order === 1) ? '<span class="pm-depth-starter">Starter</span>' : '';
+  const starter = (row.order === 1) ? '<span class="pm-team-starter">Starter</span>' : '';
   const slot = String(row.slot || '').toUpperCase();
   const showSlot = slot && !['QB', 'RB', 'WR', 'TE'].includes(slot);
-  const slotTag = showSlot ? `<span class="pm-depth-slot">${slot}</span>` : '';
+  const slotTag = showSlot ? `<span class="pm-team-slot">${slot}</span>` : '';
   const snap = row.snap_pct != null
     ? `${row.snap_pct}%${row.snap_pct_source === 'derived' ? '<span class="pm-snap-est">est.</span>' : ''}`
     : '—';
-  const cls = row.is_focus ? 'pm-depth-row pm-depth-focus' : 'pm-depth-row pm-depth-click';
+  const cls = row.is_focus ? 'pm-team-depth-row pm-team-depth-focus' : 'pm-team-depth-row pm-team-depth-click';
   const attrs = row.is_focus
     ? ''
     : ` data-pid="${row.id}" data-pname="${String(row.name || '').replace(/"/g, '&quot;')}"`;
   return `<div class="${cls}"${attrs}>
-    <div class="pm-depth-name">${slotTag}<span class="pm-depth-player">${row.name || '—'}</span>${inj}${starter}</div>
-    <div class="pm-depth-meta"><span>${snap}</span><span>${row.tgt_share != null ? row.tgt_share + '% tgt' : '—'}</span><span>${row.ppg != null ? row.ppg + ' PPG' : '—'}</span></div>
+    ${slotTag}
+    <div class="pm-team-depth-info">
+      <div class="pm-team-depth-name">${row.name || '—'}${inj}${starter}</div>
+      <div class="pm-team-depth-meta"><span>${snap}</span><span>${row.tgt_share != null ? row.tgt_share + '% tgt' : '—'}</span><span>${row.ppg != null ? row.ppg + ' PPG' : '—'}</span></div>
+    </div>
   </div>`;
 }
 
@@ -1921,12 +1927,12 @@ function _pmBuildTeamHTML(data) {
   ].join('');
 
   const positions = ['QB', 'RB', 'WR', 'TE'];
-  const depthCols = positions.map(pos => {
+  const depthBlocks = positions.map(pos => {
     const rows = (data.depth_chart && data.depth_chart[pos]) || [];
     const body = rows.length
       ? rows.map(_pmTeamDepthRow).join('')
-      : '<div class="pm-depth-empty">—</div>';
-    return `<div class="pm-depth-col"><div class="pm-depth-col-h">${pos}</div>${body}</div>`;
+      : '<div class="pm-team-depth-empty">—</div>';
+    return `<div class="pm-team-depth-block"><div class="sc-section-title">${pos}</div><div class="sc-players">${body}</div></div>`;
   }).join('');
 
   const rm = data.ranks_more || {};
@@ -1943,11 +1949,18 @@ function _pmBuildTeamHTML(data) {
     const snap = row.snap_pct != null
       ? `${row.snap_pct}%${row.snap_pct_source === 'derived' ? ' <span class="pm-snap-est">est.</span>' : ''}`
       : '—';
-    const trCls = row.is_focus ? ' class="pm-usage-focus"' : '';
-    return `<tr${trCls}><td>${row.name || '—'}</td><td>${snap}</td><td>${row.tgt_share != null ? row.tgt_share + '%' : '—'}</td><td>${row.ppg != null ? row.ppg : '—'}</td></tr>`;
+    const rowCls = row.is_focus ? ' pm-team-usage-focus' : '';
+    return `<div class="pm-team-usage-row sc-player-row${rowCls}">
+      <span class="sc-player-name">${row.name || '—'}</span>
+      <span class="sc-player-val">${snap}</span>
+      <span class="sc-player-val">${row.tgt_share != null ? row.tgt_share + '%' : '—'}</span>
+      <span class="sc-player-val">${row.ppg != null ? row.ppg : '—'}</span>
+    </div>`;
   }).join('');
 
   const advOpen = _pmTeamAdvOpen;
+  const advChev = advOpen ? '&#9662;' : '&#9656;';
+  const advHint = advOpen ? 'click to collapse' : 'click to expand';
   return `<div class="pm-team-wrap">
     <div class="pm-team-header">
       ${logo}
@@ -1956,24 +1969,30 @@ function _pmBuildTeamHTML(data) {
         <div class="pm-team-meta">${posLine}</div>
       </div>
     </div>
-    <div class="pm-team-section-title">Offense League Ranks</div>
-    <div class="pm-team-ranks">${rankLead}<div class="pm-team-rank-grid">${rankGrid}</div></div>
-    <div class="pm-team-section-title">Depth Chart</div>
-    <div class="pm-depth-grid">${depthCols}</div>
-    <div class="pm-adv-wrap">
-      <button type="button" class="pm-adv-toggle" aria-expanded="${advOpen ? 'true' : 'false'}" aria-controls="pmTeamAdvBody">
-        <span>Advanced stats</span>
-        <span class="pm-adv-chevron" aria-hidden="true"></span>
-      </button>
-      <div class="pm-adv-body" id="pmTeamAdvBody"${advOpen ? '' : ' hidden'}>
-        <div class="pm-team-rank-grid pm-adv-ranks">${advRanks}</div>
-        <div class="pm-usage-wrap">
-          <div class="pm-usage-title">${focusPos} usage</div>
-          <table class="pm-usage-table">
-            <thead><tr><th>Player</th><th>Snap %</th><th>Target %</th><th>PPG</th></tr></thead>
-            <tbody>${usageRows || '<tr><td colspan="4">—</td></tr>'}</tbody>
-          </table>
+    <hr class="pm-section-divider">
+    <div class="pm-section-header"><span class="pm-section-label">Offense League Ranks</span></div>
+    <div class="pm-team-ranks-lead">${rankLead}</div>
+    <div class="pm-team-rank-row">${rankGrid}</div>
+    <hr class="pm-section-divider">
+    <div class="pm-section-header"><span class="pm-section-label">Depth Chart</span></div>
+    <div class="pm-team-depth">${depthBlocks}</div>
+    <hr class="pm-section-divider">
+    <div class="pm-section-header pm-section-collapsible pm-team-adv-toggle" role="button" tabindex="0" aria-expanded="${advOpen ? 'true' : 'false'}" aria-controls="pmTeamAdvBody">
+      <span class="pm-collapse-chevron" aria-hidden="true">${advChev}</span>
+      <span class="pm-section-label">Advanced stats</span>
+      <span class="pm-collapse-hint">${advHint}</span>
+    </div>
+    <div class="pm-team-adv-body" id="pmTeamAdvBody"${advOpen ? '' : ' hidden'}>
+      <div class="pm-team-rank-row pm-team-adv-ranks">${advRanks}</div>
+      <div class="pm-team-usage">
+        <div class="sc-section-title">${focusPos} usage</div>
+        <div class="pm-team-usage-head sc-player-row">
+          <span class="sc-player-name">Player</span>
+          <span class="sc-player-val">Snap %</span>
+          <span class="sc-player-val">Target %</span>
+          <span class="sc-player-val">PPG</span>
         </div>
+        <div class="sc-players">${usageRows || '<div class="pm-team-depth-empty">—</div>'}</div>
       </div>
     </div>
   </div>`;
@@ -1981,7 +2000,7 @@ function _pmBuildTeamHTML(data) {
 
 function _pmWireTeamPanel(panel) {
   if (!panel) return;
-  panel.querySelectorAll('.pm-depth-click').forEach(row => {
+  panel.querySelectorAll('.pm-team-depth-click').forEach(row => {
     row.addEventListener('click', () => {
       const pid = row.dataset.pid;
       const pname = row.dataset.pname;
@@ -1990,13 +2009,25 @@ function _pmWireTeamPanel(panel) {
       }
     });
   });
-  const toggle = panel.querySelector('.pm-adv-toggle');
-  const body = panel.querySelector('.pm-adv-body');
+  const toggle = panel.querySelector('.pm-team-adv-toggle');
+  const body = panel.querySelector('.pm-team-adv-body');
   if (toggle && body) {
-    toggle.addEventListener('click', () => {
+    const flipAdv = () => {
       _pmTeamAdvOpen = !_pmTeamAdvOpen;
       toggle.setAttribute('aria-expanded', _pmTeamAdvOpen ? 'true' : 'false');
       body.hidden = !_pmTeamAdvOpen;
+      const chev = toggle.querySelector('.pm-collapse-chevron');
+      const hint = toggle.querySelector('.pm-collapse-hint');
+      if (chev) chev.innerHTML = _pmTeamAdvOpen ? '&#9662;' : '&#9656;';
+      if (hint) hint.textContent = _pmTeamAdvOpen ? 'click to collapse' : 'click to expand';
+      if (hint) hint.style.opacity = _pmTeamAdvOpen ? '0.8' : '';
+    };
+    toggle.addEventListener('click', flipAdv);
+    toggle.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        flipAdv();
+      }
     });
   }
 }
