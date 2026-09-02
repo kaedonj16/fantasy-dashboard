@@ -495,8 +495,7 @@
       "background:radial-gradient(120% 80% at 85% -10%,rgba(125,211,252,.18),transparent 60%);}" +
       "#" + INVITE_ID + " .br-da-invite-card>*{position:relative;}" +
       "#" + INVITE_ID + " .br-da-invite-brand{display:flex;align-items:center;gap:11px;margin:0 0 16px;}" +
-      "#" + INVITE_ID + " .br-da-invite-logo{width:42px;height:42px;object-fit:contain;border-radius:11px;flex:0 0 auto;background:#000;" +
-      "box-shadow:0 2px 8px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.08);}" +
+      "#" + INVITE_ID + " .br-da-invite-logo{width:44px;height:44px;object-fit:contain;flex:0 0 auto;}" +
       "#" + INVITE_ID + " .br-da-invite-brand-txt{min-width:0;flex:1;}" +
       "#" + INVITE_ID + " .br-da-invite-kicker{margin:0;font:800 11px/1.2 inherit;letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.66);}" +
       "#" + INVITE_ID + " .br-da-invite-ver{flex:0 0 auto;margin:0;padding:4px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.18);" +
