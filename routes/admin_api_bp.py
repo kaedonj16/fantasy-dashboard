@@ -51,6 +51,10 @@ def api_prewarm_league():
     render for that league would build anyway — no per-viewer data is returned
     (just ok/cached), so it's safe to call speculatively. Returns immediately
     when the context is already warm.
+
+    ESPN is intentionally skipped: private ESPN prewarms contend with the live
+    page and player modal, and ``navigateToLeague`` already refreshes the
+    destination before switch so a warm DASHBOARD_CACHE entry is discarded.
     """
     platform = (request.args.get("platform") or "sleeper").strip().lower()
     league_id = (request.args.get("league_id") or "").strip()
@@ -60,6 +64,8 @@ def api_prewarm_league():
         season = datetime.now().year
     if not league_id:
         return jsonify({"ok": False, "error": "league_id required"}), 400
+    if platform == "espn":
+        return jsonify({"ok": True, "skipped": True, "reason": "espn"})
 
     key = _cache_key(platform, season, league_id)
     entry = DASHBOARD_CACHE.get(key)
@@ -132,12 +138,13 @@ def api_refresh_league():
         invalidate_league_caches(platform, league_id, season)
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
-    # ESPN: drop process-cached League objects so post-draft rosters aren't
-    # stuck on empty pre-draft shells until the worker restarts.
+    # ESPN: drop process-cached League / globals for THIS league only so
+    # post-draft rosters aren't stuck on empty pre-draft shells — without
+    # wiping every other ESPN room on the worker (player modal / live page).
     if platform == "espn":
         try:
             from dashboard_services.providers.espn_api import clear_espn_league_caches
-            clear_espn_league_caches()
+            clear_espn_league_caches(league_id, season)
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
     # Draft grades are peer-relative to this league. Drop cached grade payloads

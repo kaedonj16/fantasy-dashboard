@@ -12093,9 +12093,15 @@ document.addEventListener('DOMContentLoaded', function() {
           // is the dominant switch latency). Sequential + throttled so we never
           // hammer the API; same-season leagues first (most likely to switch to),
           // current league skipped, and capped.
+          // Skip ESPN: private leagues pay a failed anonymous + credentialed
+          // ESPN round-trip per prewarm, contend with the live page / player
+          // modal, and switch already POSTs /api/refresh-league which expires
+          // the destination context anyway.
           try {
             const others = leagues.filter(
-              l => l.league_id && String(l.league_id) !== String(currentLeagueId)
+              l => l.league_id
+                && String(l.league_id) !== String(currentLeagueId)
+                && String(l.platform || currentPlatform).toLowerCase() !== 'espn'
             );
             others.sort((a, b) =>
               (String(b.season) === String(currentSeason)) -
