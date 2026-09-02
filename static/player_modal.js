@@ -2033,13 +2033,13 @@ function _pmBuildTeamHTML(data) {
   return `<div class="pm-team-wrap">
     <div class="pm-team-header">
       ${wm}
-      <span class="pm-team-season">${data.stats_season} stats</span>
       <div class="pm-team-headtop">
         ${logoImg}
         <div class="pm-team-header-text">
           <div class="pm-team-name">${data.team_name || team}</div>
           <div class="pm-team-meta">${posLine}</div>
         </div>
+        <span class="pm-team-season">${data.stats_season} stats</span>
       </div>
       ${heroStats ? '<div class="pm-team-herostats">' + heroStats + '</div>' : ''}
     </div>

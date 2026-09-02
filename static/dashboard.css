@@ -35890,10 +35890,9 @@ a, button, [role="button"], [role="tab"], summary, label,
     z-index: 0;
 }
 .pm-team-season {
-    position: absolute;
-    top: 14px;
-    right: 16px;
-    z-index: 1;
+    flex: 0 0 auto;
+    align-self: flex-start;
+    white-space: nowrap;
     font-size: 9px;
     font-weight: 800;
     letter-spacing: 0.05em;
@@ -35905,6 +35904,8 @@ a, button, [role="button"], [role="tab"], summary, label,
     padding: 3px 9px;
 }
 .pm-team-headtop { display: flex; align-items: center; gap: 13px; }
+.pm-team-headtop .pm-team-header-text { flex: 1 1 auto; min-width: 0; }
+.pm-team-name { overflow-wrap: anywhere; }
 .pm-team-logo { width: 46px; height: 46px; object-fit: contain; flex: 0 0 auto; }
 .pm-crest {
     width: 46px;
@@ -36022,3 +36023,21 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pm-team-adv-toggle { cursor: pointer; }
 .pm-team-adv-body { padding: 0 18px 16px; }
 .pm-team-adv-body[hidden] { display: none; }
+
+/* mobile — reclaim horizontal space so names don't clip */
+@media (max-width: 600px) {
+    .pm-team-header { padding: 14px 14px; }
+    .pm-team-name { font-size: 17px; }
+    .pm-team-sec { padding: 14px 14px; }
+    .pm-team-adv-body { padding: 0 14px 14px; }
+    .pm-tp-axis, .pm-tp-row { grid-template-columns: 74px 1fr 62px; }
+    /* room table: hide the snap bar and tighten columns/gaps for name room */
+    .pm-troom-row { grid-template-columns: 18px 1fr 44px 38px 34px; gap: 6px; padding: 8px 9px; }
+    .pm-troom-bar { display: none; }
+    .pm-troom-snap { justify-content: flex-end; gap: 0; }
+    .pm-troom-snap b { min-width: 0; }
+    .pm-troom-head span:nth-child(3) { text-align: right; }
+    /* mini columns: drop the injury icon glyph so short names keep their text */
+    .pm-mini-item .player-badge i { display: none; }
+    .pm-mini-item .player-badge { padding-left: 4px; padding-right: 4px; }
+}
