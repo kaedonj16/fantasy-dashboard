@@ -1192,9 +1192,10 @@ Promise.all([
       ? window.brFetchWithTimeout(_u, { cache: 'no-store' }, 30000)
       : fetch(_u, { cache: 'no-store' })
     ).then(r => {
-    if (!r.ok) throw new Error('league-players HTTP ' + r.status);
-    return r.json();
-  }),
+      if (!r.ok) throw new Error('league-players HTTP ' + r.status);
+      return r.json();
+    });
+  })(),
   fetch('/api/player-indicators?league_type=1qb&league_size=10', { cache: 'no-store' })
     .then(r => r.json()).catch(() => ({}))
 ]).then(([resp, indicators]) => {
