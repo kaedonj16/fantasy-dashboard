@@ -495,53 +495,23 @@ def _yahoo_needs_oauth_response(league_id: str, *, reauth: bool = False, error: 
     return jsonify(payload), 401
 
 
-@link_bp.route("/api/link/yahoo/preview")
-def link_yahoo_preview():
-    from dashboard_services.providers.yahoo_api import yahoo_enabled
-    if not yahoo_enabled():
-        return jsonify({"ok": False, "error": "Yahoo connections are temporarily unavailable."}), 503
-    league_id = (request.args.get("league_id") or "").strip()
-    if not league_id:
-        return jsonify({"ok": False, "error": "Yahoo league ID required."}), 400
-    from dashboard_services.providers.yahoo_api import resolve_session_yahoo_token
-    guid, access_token = resolve_session_yahoo_token(session)
-    if not access_token:
-        return _yahoo_needs_oauth_response(league_id)
-    season = int(request.args.get("season") or _default_season())
-    try:
-        from dashboard_services.providers.yahoo_api import get_league, get_users, get_login_guid, resolve_league_key
-        # Resolve the real, season-specific league key first. Yahoo's "nfl" game
-        # code only reaches the current season, so a prior-season league 403s even
-        # for a member without this. "absent" => account isn't in that league;
-        # "unknown" => couldn't list, so fall through to a direct fetch.
-        resolved = resolve_league_key(access_token, league_id)
-        if resolved.get("status") == "absent":
-            return _yahoo_needs_oauth_response(
-                league_id,
-                reauth=True,
-                error=("That Yahoo account isn't in any league with ID " + league_id +
-                       ". Check the ID, or reconnect with the account that's in it."),
-            )
-        if resolved.get("season"):
-            season = int(resolved["season"])
-        league = get_league(season, league_id, access_token)
-        users = get_users(season, league_id, access_token)
-    except Exception as exc:
-        msg = str(exc)
-        logger.warning("[link/yahoo] preview failed: %s", msg)
-        # 403 = valid token but the authorized account can't see this league.
-        # Drop the stale token and re-offer OAuth so they can reconnect with the
-        # right Yahoo account instead of dead-ending on the error.
-        if "403" in msg or "Forbidden" in msg:
-            session.pop("yahoo_access_token", None)
-            session.pop("yahoo_guid", None)
-            return _yahoo_needs_oauth_response(
-                league_id,
-                reauth=True,
-                error=("That Yahoo account can't access league " + league_id +
-                       ". Reconnect with the account that's in this league."),
-            )
-        return jsonify({"ok": False, "error": "Could not load that Yahoo league (check the ID)."}), 400
+def _yahoo_preview_payload(league_id: str, season: int, access_token: str, guid: str):
+    """Load Yahoo league + teams for the link modal, or return an error response."""
+    from dashboard_services.providers.yahoo_api import (
+        get_league, get_login_guid, get_users, resolve_league_key,
+    )
+    resolved = resolve_league_key(access_token, league_id)
+    if resolved.get("status") == "absent":
+        return _yahoo_needs_oauth_response(
+            league_id,
+            reauth=True,
+            error=("That Yahoo account isn't in any league with ID " + league_id +
+                   ". Check the ID, or reconnect with the account that's in it."),
+        )
+    if resolved.get("season"):
+        season = int(resolved["season"])
+    league = get_league(season, league_id, access_token)
+    users = get_users(season, league_id, access_token)
     my_guid = guid or ""
     if not my_guid or my_guid.startswith("ytok_"):
         resolved_guid = get_login_guid(access_token, league_id)
@@ -564,6 +534,54 @@ def link_yahoo_preview():
         "teams": teams,
         "my_team_id": my_team_id,
     })
+
+
+@link_bp.route("/api/link/yahoo/preview")
+def link_yahoo_preview():
+    from dashboard_services.providers.yahoo_api import yahoo_enabled
+    if not yahoo_enabled():
+        return jsonify({"ok": False, "error": "Yahoo connections are temporarily unavailable."}), 503
+    league_id = (request.args.get("league_id") or "").strip()
+    if not league_id:
+        return jsonify({"ok": False, "error": "Yahoo league ID required."}), 400
+    from dashboard_services.providers.yahoo_api import (
+        get_valid_access_token, resolve_session_yahoo_token, yahoo_auth_error_kind,
+    )
+    guid, access_token = resolve_session_yahoo_token(session)
+    if not access_token:
+        return _yahoo_needs_oauth_response(league_id)
+    season = int(request.args.get("season") or _default_season())
+    try:
+        return _yahoo_preview_payload(league_id, season, access_token, guid)
+    except Exception as exc:
+        logger.warning("[link/yahoo] preview failed: %s", exc)
+        kind = yahoo_auth_error_kind(exc)
+        # Yahoo said token_expired even though our stored expires_at looked fine —
+        # force a refresh once before bouncing the user through OAuth again.
+        if kind == "expired" and guid:
+            refreshed = get_valid_access_token(guid, force_refresh=True) or ""
+            if refreshed:
+                session["yahoo_access_token"] = refreshed
+                try:
+                    return _yahoo_preview_payload(league_id, season, refreshed, guid)
+                except Exception as retry_exc:
+                    logger.warning("[link/yahoo] preview retry after refresh failed: %s", retry_exc)
+                    kind = yahoo_auth_error_kind(retry_exc) or "expired"
+        if kind in ("expired", "forbidden"):
+            session.pop("yahoo_access_token", None)
+            if kind == "forbidden":
+                session.pop("yahoo_guid", None)
+            return _yahoo_needs_oauth_response(
+                league_id,
+                reauth=True,
+                error=(
+                    "Your Yahoo login expired. Reconnect Yahoo and try again."
+                    if kind == "expired" else
+                    ("That Yahoo account can't access league " + league_id +
+                     ". Reconnect with the account that's in this league.")
+                ),
+            )
+        return jsonify({"ok": False, "error": "Could not load that Yahoo league (check the ID)."}), 400
 
 
 @link_bp.route("/api/link/pending", methods=["POST"])

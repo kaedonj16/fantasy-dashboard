@@ -46,6 +46,8 @@ def test_yahoo_preview_uses_db_token_when_session_access_token_missing(link_app,
     with link_app.test_client() as client:
         with client.session_transaction() as session:
             session["yahoo_guid"] = "yahoo-guid"
+            # Stale session bearer must not win over DB refresh.
+            session["yahoo_access_token"] = "expired-session-token"
         res = client.get("/api/link/yahoo/preview?league_id=1307110")
         with client.session_transaction() as session:
             assert session.get("yahoo_access_token") == "db-token"
@@ -54,6 +56,82 @@ def test_yahoo_preview_uses_db_token_when_session_access_token_missing(link_app,
     body = res.get_json()
     assert body["ok"] is True
     assert body["my_team_id"] == "3"
+
+
+def test_yahoo_preview_reauths_on_token_expired(link_app, monkeypatch):
+    monkeypatch.setattr("dashboard_services.providers.yahoo_api.yahoo_enabled", lambda: True)
+    monkeypatch.setattr(
+        "dashboard_services.providers.yahoo_api.get_valid_access_token",
+        lambda guid, force_refresh=False: ("stale-but-db-says-ok" if not force_refresh else None),
+    )
+
+    def boom(*args, **kwargs):
+        raise Exception(
+            '401 Client Error: Please provide valid credentials. '
+            'OAuth oauth_problem="token_expired", realm="yahooapis.com"'
+        )
+
+    monkeypatch.setattr("dashboard_services.providers.yahoo_api.resolve_league_key", boom)
+    monkeypatch.setattr("dashboard_services.api.get_nfl_state", lambda: {"season": 2026})
+
+    with link_app.test_client() as client:
+        with client.session_transaction() as session:
+            session["yahoo_guid"] = "yahoo-guid"
+            session["yahoo_access_token"] = "expired"
+            session["account_id"] = 7
+        res = client.get("/api/link/yahoo/preview?league_id=1307110")
+        with client.session_transaction() as session:
+            assert "yahoo_access_token" not in session
+
+    assert res.status_code == 401
+    body = res.get_json()
+    assert body["needs_oauth"] is True
+    assert "expired" in (body.get("error") or "").lower()
+    assert "reauth=1" in body["auth_url"]
+
+
+def test_yahoo_preview_retries_after_forced_token_refresh(link_app, monkeypatch):
+    monkeypatch.setattr("dashboard_services.providers.yahoo_api.yahoo_enabled", lambda: True)
+
+    def fake_valid(guid, force_refresh=False):
+        return "fresh-token" if force_refresh else "expired-token"
+
+    monkeypatch.setattr(
+        "dashboard_services.providers.yahoo_api.get_valid_access_token", fake_valid,
+    )
+    calls = {"n": 0}
+
+    def fake_resolve(token, league_id):
+        calls["n"] += 1
+        if token == "expired-token":
+            raise Exception('401 oauth_problem="token_expired"')
+        return {"status": "found", "season": 2026, "name": "Yahoo League"}
+
+    monkeypatch.setattr("dashboard_services.providers.yahoo_api.resolve_league_key", fake_resolve)
+    monkeypatch.setattr(
+        "dashboard_services.providers.yahoo_api.get_league",
+        lambda *args: {"name": "Yahoo League"},
+    )
+    monkeypatch.setattr(
+        "dashboard_services.providers.yahoo_api.get_users",
+        lambda *args: [{"user_id": "yahoo-guid", "roster_id": 3}],
+    )
+    monkeypatch.setattr(
+        "dashboard_services.providers.yahoo_api.get_login_guid",
+        lambda *args: "yahoo-guid",
+    )
+    monkeypatch.setattr("dashboard_services.api.get_nfl_state", lambda: {"season": 2026})
+
+    with link_app.test_client() as client:
+        with client.session_transaction() as session:
+            session["yahoo_guid"] = "yahoo-guid"
+        res = client.get("/api/link/yahoo/preview?league_id=1307110")
+        with client.session_transaction() as session:
+            assert session.get("yahoo_access_token") == "fresh-token"
+
+    assert res.status_code == 200
+    assert res.get_json()["ok"] is True
+    assert calls["n"] == 2
 
 
 def test_yahoo_preview_oauth_url_includes_league_for_signed_in_account(link_app, monkeypatch):

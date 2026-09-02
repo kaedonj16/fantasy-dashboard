@@ -198,14 +198,37 @@ def yahoo_oauth_start_url(
 
 
 def resolve_session_yahoo_token(session) -> tuple[str, str]:
-    """Return (guid, access_token) from the Flask session, refreshing from DB if needed."""
+    """Return (guid, access_token) from the Flask session, refreshing from DB if needed.
+
+    Prefer the DB-backed, expiry-aware accessor whenever we have a Yahoo GUID.
+    A stale ``session["yahoo_access_token"]`` is common after ~1 hour and must
+    not short-circuit refresh — Yahoo then answers ``token_expired`` 401s.
+    """
     guid = str(session.get("yahoo_guid") or "")
-    token = str(session.get("yahoo_access_token") or "")
-    if not token and guid:
+    if guid:
         token = get_valid_access_token(guid) or ""
         if token:
             session["yahoo_access_token"] = token
-    return guid, token
+            return guid, token
+        # Refresh failed or no DB row — drop the stale session bearer so callers
+        # re-offer OAuth instead of retrying an expired token.
+        session.pop("yahoo_access_token", None)
+        return guid, ""
+    return "", str(session.get("yahoo_access_token") or "")
+
+
+def yahoo_auth_error_kind(exc: BaseException | str) -> str:
+    """Classify Yahoo HTTP failures for link/validate recovery.
+
+    Returns ``expired`` (needs refresh/reauth), ``forbidden`` (wrong account /
+    no league access), or ``""`` (other).
+    """
+    msg = str(exc or "").lower()
+    if "token_expired" in msg or "oauth_problem" in msg or "401" in msg:
+        return "expired"
+    if "403" in msg or "forbidden" in msg:
+        return "forbidden"
+    return ""
 
 
 def get_login_guid(access_token: str, league_id: str = "") -> str:
@@ -341,8 +364,13 @@ def load_tokens(guid: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def get_valid_access_token(guid: str) -> Optional[str]:
-    """Return a valid access token for the given Yahoo GUID, refreshing if needed."""
+def get_valid_access_token(guid: str, *, force_refresh: bool = False) -> Optional[str]:
+    """Return a valid access token for the given Yahoo GUID, refreshing if needed.
+
+    ``force_refresh=True`` always hits Yahoo's token endpoint (used after a
+    ``token_expired`` API response when our stored ``expires_at`` was still in
+    the future — clock skew / Yahoo revoked early).
+    """
     tokens = load_tokens(guid)
     if not tokens:
         return None
@@ -351,8 +379,10 @@ def get_valid_access_token(guid: str) -> Optional[str]:
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
 
-    # Refresh if expiring within 5 minutes
-    if datetime.now(timezone.utc) >= expires_at - timedelta(minutes=5):
+    needs_refresh = force_refresh or (
+        datetime.now(timezone.utc) >= expires_at - timedelta(minutes=5)
+    )
+    if needs_refresh:
         try:
             new_tok = refresh_access_token(tokens["refresh_token"])
             save_tokens(
