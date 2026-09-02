@@ -345,3 +345,40 @@ def test_get_rosters_maps_nested_team_players(monkeypatch):
     assert rosters[0]["players"] == ["11111"]
     assert rosters[0]["settings"]["wins"] == 1
     assert rosters[0]["settings"]["fpts"] == 120
+
+
+def test_get_rosters_prefetches_team_resource_when_bulk_roster_is_empty(monkeypatch):
+    """Bulk teams;out=roster often omits players — hydrate from team/{key}/roster."""
+    import dashboard_services.api as api
+    monkeypatch.setattr(api, "get_nfl_players", lambda: {"11111": {"yahoo_id": "5"}})
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    bulk_team = _realistic_yahoo_team(1, "Shell Only", with_roster=True)
+    bulk_team[2]["roster"] = {"coverage_type": "week", "week": "1"}
+    player_entry = [[
+        {"player_id": "5"}, {"name": {"full": "Patrick Mahomes"}},
+        {"display_position": "QB"}, {"editorial_team_abbr": "KC"},
+    ], {"selected_position": {"position": "QB"}}]
+    team_roster_response = {
+        "fantasy_content": {
+            "team": [
+                [{"team_key": "449.l.99.t.1"}],
+                {"roster": {"players": {"0": {"player": player_entry}, "count": 1}}},
+            ]
+        }
+    }
+
+    def fake_get(tok, path, params=None):
+        if path.startswith("team/"):
+            return team_roster_response
+        if "teams" in path:
+            return _teams_payload([bulk_team])
+        if path == "league/449.l.99":
+            return {"fantasy_content": {"league": [{"current_week": "1"}]}}
+        raise KeyError(path)
+
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", fake_get)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    rosters = yahoo_api.get_rosters(2026, "99", "tok")
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    assert len(rosters) == 1
+    assert rosters[0]["players"] == ["11111"]
