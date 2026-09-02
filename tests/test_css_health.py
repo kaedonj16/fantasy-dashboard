@@ -67,3 +67,21 @@ def test_tooltip_chrome_uses_shared_tokens():
     assert wk, "missing .wk-tip rule"
     assert "var(--tooltip-bg)" in wk.group(1)
     assert "background: var(--text)" not in wk.group(1)
+
+
+def test_discord_logo_inverts_white_in_dark_mode():
+    """The Discord PNG is a black glyph. Dark mode must invert it to white.
+
+    The More-sheet row (.br-sheet-icon-img) had size/opacity only, so the logo
+    stayed black on the dark sheet. Cover the src selector (pill, sheet,
+    contact, banner) and the sheet class itself.
+    """
+    css = _css()
+    assert 'html[data-theme="dark"] img[src*="discord-brands-solid.png"]' in css
+    assert "invert(100%)" in css
+    sheet = re.search(
+        r'html\[data-theme="dark"\]\s+\.br-sheet-icon-img\s*\{([^}]+)\}',
+        css,
+    )
+    assert sheet, "missing dark-mode rule for .br-sheet-icon-img"
+    assert "invert(100%)" in sheet.group(1)
