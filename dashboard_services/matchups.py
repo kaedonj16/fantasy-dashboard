@@ -18,37 +18,11 @@ from dashboard_services.platform_api import (
 )
 from utils.utils import write_json, load_week_schedule, load_teams_index, load_week_stats, normalize_name, from_players_map
 from utils.matchup_schedule import lineup_from_roster, _starters_look_like_full_roster
+from utils.week_proj import week_proj_map_from_bundles as _week_proj_map_from_bundles
 
 STATUS_NOT_STARTED = "not_started"
 STATUS_IN_PROGRESS = "in_progress"
 STATUS_FINAL = "final"
-
-
-def _week_proj_map_from_bundles(projections: Any, week: Any) -> Dict[str, Any]:
-    """Unwrap ``proj_by_week[week]`` into a pid → value map.
-
-    ``build_projections_by_week`` stores ``{week: {"projections": {pid: float}}}``.
-    Some callers historically passed a flat map or used string week keys; Scout
-    also falls back to the raw multi-variant file. Accept all of those shapes so
-    Matchup Preview never silently shows wall-to-wall ``0.0``.
-    """
-    if not isinstance(projections, dict):
-        return {}
-    container = projections.get(week)
-    if container is None:
-        try:
-            container = projections.get(int(week))
-        except (TypeError, ValueError):
-            container = None
-    if container is None:
-        container = projections.get(str(week))
-    if not isinstance(container, dict):
-        return {}
-    nested = container.get("projections")
-    if isinstance(nested, dict):
-        return nested
-    # Flat pid → float (or raw multi-variant entries). Drop meta keys.
-    return {k: v for k, v in container.items() if k not in ("projections", "_available")}
 
 
 def _proj_value_for_pid(

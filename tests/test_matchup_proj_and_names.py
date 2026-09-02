@@ -1,29 +1,39 @@
 """Matchup Preview projections + player-name clipping contracts."""
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest import mock
 
 import pytest
 
-pytest.importorskip("flask")
-pytest.importorskip("requests")
-
-from dashboard_services import matchups as mmod
+from utils.week_proj import week_proj_map_from_bundles
 
 
 def test_week_proj_map_accepts_string_week_keys_and_flat_maps():
     nested = {1: {"projections": {"4984": 20.1}}}
-    assert mmod._week_proj_map_from_bundles(nested, 1)["4984"] == 20.1
-    assert mmod._week_proj_map_from_bundles(nested, "1")["4984"] == 20.1
+    assert week_proj_map_from_bundles(nested, 1)["4984"] == 20.1
+    assert week_proj_map_from_bundles(nested, "1")["4984"] == 20.1
 
     flat = {"1": {"4984": 18.5, "_available": True}}
-    out = mmod._week_proj_map_from_bundles(flat, 1)
+    out = week_proj_map_from_bundles(flat, 1)
     assert out["4984"] == 18.5
     assert "_available" not in out
 
 
+def _matchups():
+    pytest.importorskip("flask")
+    pytest.importorskip("requests")
+    from dashboard_services import matchups as mmod
+    return mmod
+
+
+def test_matchups_reexports_week_proj_unwrap():
+    mmod = _matchups()
+    nested = {1: {"projections": {"4984": 20.1}}}
+    assert mmod._week_proj_map_from_bundles(nested, 1)["4984"] == 20.1
+
+
 def test_proj_value_falls_back_to_raw_week_map():
+    mmod = _matchups()
     raw = {
         "4984": {
             "raw_stats": {"pts_ppr": 22.0, "pts_std": 22.0, "pts_half_ppr": 22.0},
@@ -43,6 +53,7 @@ def test_proj_value_falls_back_to_raw_week_map():
 
 
 def test_render_matchup_slide_uses_raw_fallback_when_bundle_empty(monkeypatch):
+    mmod = _matchups()
     monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
     monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_a, **_k: {})
     monkeypatch.setattr(mmod, "load_week_stats", lambda *_a, **_k: {})
@@ -89,6 +100,7 @@ def test_render_matchup_slide_uses_raw_fallback_when_bundle_empty(monkeypatch):
 
 
 def test_render_matchup_keeps_team_abbr_outside_name_ellipsis():
+    mmod = _matchups()
     matchup = {
         "left": {
             "name": "Team A", "roster_id": "1", "record": "0-0", "username": "a",
