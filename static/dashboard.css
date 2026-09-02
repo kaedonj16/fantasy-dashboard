@@ -36037,7 +36037,8 @@ a, button, [role="button"], [role="tab"], summary, label,
     .pm-troom-snap { justify-content: flex-end; gap: 0; }
     .pm-troom-snap b { min-width: 0; }
     .pm-troom-head span:nth-child(3) { text-align: right; }
-    /* mini columns: drop the injury icon glyph so short names keep their text */
+    /* mini depth: stack the position columns full-width so names stop clipping */
+    .pm-mini-grid { grid-template-columns: 1fr; }
     .pm-mini-item .player-badge i { display: none; }
     .pm-mini-item .player-badge { padding-left: 4px; padding-right: 4px; }
 }
