@@ -15,6 +15,25 @@ from dashboard_services.providers import mfl_api, yahoo_api
 from data_building.simulate_playoff_odds import _position_aware_lineup
 
 
+def test_position_aware_lineup_wrrb_flex_excludes_te():
+    ppg = {
+        "rb1": {"ppg": 16.0, "pos": "RB"},
+        "wr1": {"ppg": 14.0, "pos": "WR"},
+        "te1": {"ppg": 20.0, "pos": "TE"},
+        "rb2": {"ppg": 8.0, "pos": "RB"},
+    }
+    pos = {k: v["pos"] for k, v in ppg.items()}
+    flex_avg, flex_starters = _position_aware_lineup(
+        list(ppg), ppg, pos, ["RB", "WR", "FLEX"],
+    )
+    wrrb_avg, wrrb_starters = _position_aware_lineup(
+        list(ppg), ppg, pos, ["RB", "WR", "WRRB_FLEX"],
+    )
+    assert ("TE", 20.0) in flex_starters
+    assert ("TE", 20.0) not in wrrb_starters
+    assert wrrb_avg < flex_avg
+
+
 def test_empty_roster_positions_use_default_lineup_instead_of_zero_ppg():
     ppg = {
         "qb": {"ppg": 22.0, "pos": "QB"},
@@ -60,16 +79,21 @@ def test_yahoo_settings_come_from_league_index_one_not_meta():
     assert scoring["pass_td"] == 6.0
 
 
-def test_yahoo_wt_and_rt_slots_are_flex():
+def test_yahoo_restricted_flex_slots_stay_distinct():
     slots = yahoo_api._yahoo_roster_positions({
         "roster_positions": [
             {"position": "QB", "count": 1},
+            {"position": "W/R", "count": 1},
             {"position": "W/T", "count": 1},
             {"position": "R/T", "count": 1},
         ],
     })
-    assert slots.count("FLEX") == 2
+    assert slots.count("RB_WR") == 1
+    assert slots.count("WR_TE") == 1
+    assert slots.count("RB_TE") == 1
+    assert slots.count("FLEX") == 0
     assert "W/T" not in slots
+    assert "W/R" not in slots
 
 
 def test_yahoo_get_league_globals_reads_nested_settings(monkeypatch):
@@ -123,6 +147,9 @@ def test_mfl_positions_ignore_numeric_roster_size():
     ]
     # rosterSize must not contaminate a missing starters field into ["20"].
     assert "20" not in provider._positions({"id": "1", "rosterSize": 20, "starters": ""})
+    assert provider._positions({"id": "1", "starters": "QB,RB,WR,TE,RB+WR,WR+TE"}) == [
+        "QB", "RB", "WR", "TE", "RB_WR", "WR_TE",
+    ]
 
 
 def test_fleaflicker_positions_do_not_leave_slash_labels():

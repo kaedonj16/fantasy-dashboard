@@ -28,8 +28,11 @@
 
     var SLOT_MAP = {
         QB: 'QB', RB: 'RB', WR: 'WR', TE: 'TE',
-        FLEX: 'FLEX', WRRB_FLEX: 'FLEX', REC_FLEX: 'FLEX', WRRBTE_FLEX: 'FLEX',
-        'RB/WR/TE': 'FLEX', 'WR/RB/TE': 'FLEX',
+        FLEX: 'FLEX', WRRBTE_FLEX: 'FLEX',
+        'RB/WR/TE': 'FLEX', 'WR/RB/TE': 'FLEX', 'W/R/T': 'FLEX',
+        WRRB_FLEX: 'RB_WR', RB_WR: 'RB_WR', 'RB/WR': 'RB_WR', 'WR/RB': 'RB_WR', 'W/R': 'RB_WR',
+        REC_FLEX: 'WR_TE', WR_TE: 'WR_TE', 'WR/TE': 'WR_TE', 'W/T': 'WR_TE',
+        RB_TE: 'RB_TE', 'RB/TE': 'RB_TE', 'R/T': 'RB_TE',
         SUPER_FLEX: 'SF', SFLEX: 'SF',
         'QB/RB/WR/TE': 'SF', 'QB/WR/RB/TE': 'SF',
     };
@@ -40,14 +43,14 @@
     function rosterCounts(rosterPositions, sf) {
         var lg = null;
         if (rosterPositions && rosterPositions.length) {
-            lg = {QB: 0, SF: 0, RB: 0, WR: 0, TE: 0, FLEX: 0};
+            lg = {QB: 0, SF: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, RB_WR: 0, WR_TE: 0, RB_TE: 0};
             rosterPositions.forEach(function (s) {
                 var k = SLOT_MAP[String(s).toUpperCase()];
                 if (k) lg[k]++;
             });
-            if (!(lg.QB + lg.RB + lg.WR + lg.TE + lg.FLEX + lg.SF)) lg = null;
+            if (!(lg.QB + lg.RB + lg.WR + lg.TE + lg.FLEX + lg.SF + lg.RB_WR + lg.WR_TE + lg.RB_TE)) lg = null;
         }
-        if (!lg) lg = {QB: 1, SF: 0, RB: 2, WR: 3, TE: 1, FLEX: 1};
+        if (!lg) lg = {QB: 1, SF: 0, RB: 2, WR: 3, TE: 1, FLEX: 1, RB_WR: 0, WR_TE: 0, RB_TE: 0};
         if (sf) {
             if (!lg.SF) lg.SF = 1;
             if (!lg.FLEX) lg.FLEX = 1;
@@ -351,9 +354,13 @@
             SUPER_FLEX: 'SF', SUPERFLEX: 'SF', SFLEX: 'SF', OP: 'SF',
             QB_RB_WR_TE: 'SF', Q_RB_WR_TE: 'SF',
             'QB/RB/WR/TE': 'SF', 'QB/WR/RB/TE': 'SF',
-            WRRB_FLEX: 'FLEX', REC_FLEX: 'FLEX', WRRBTE_FLEX: 'FLEX',
-            RB_WR_FLEX: 'FLEX', RB_WR_TE: 'FLEX',
-            'RB/WR/TE': 'FLEX', 'WR/RB/TE': 'FLEX',
+            WRRBTE_FLEX: 'FLEX', RB_WR_TE: 'FLEX',
+            'RB/WR/TE': 'FLEX', 'WR/RB/TE': 'FLEX', 'W/R/T': 'FLEX',
+            WRRB_FLEX: 'RB_WR', RB_WR_FLEX: 'RB_WR', RBWR_FLEX: 'RB_WR',
+            'RB/WR': 'RB_WR', 'WR/RB': 'RB_WR', 'W/R': 'RB_WR',
+            REC_FLEX: 'WR_TE', WRTE_FLEX: 'WR_TE',
+            'WR/TE': 'WR_TE', 'W/T': 'WR_TE',
+            'RB/TE': 'RB_TE', 'R/T': 'RB_TE',
         };
         var normalized = (slots || []).map(function (s) {
             var u = String(s).toUpperCase();
@@ -362,6 +369,7 @@
         if (!normalized.length) normalized = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'FLEX'];
         var eligibility = {
             QB: ['QB'], RB: ['RB'], WR: ['WR'], TE: ['TE'],
+            RB_WR: ['RB', 'WR'], WR_TE: ['WR', 'TE'], RB_TE: ['RB', 'TE'],
             FLEX: ['RB', 'WR', 'TE'], SF: ['QB', 'RB', 'WR', 'TE']
         };
         var elig = function (s) {
@@ -419,7 +427,9 @@
     function effectiveStarters(pool, counts, teams, valFn) {
         if (!pool || !pool.length) return PS().starterCounts(counts);
         var slots = [];
-        [['QB', 'QB'], ['RB', 'RB'], ['WR', 'WR'], ['TE', 'TE'], ['FLEX', 'FLEX'], ['SF', 'SF']].forEach(function (pair) {
+        [['QB', 'QB'], ['RB', 'RB'], ['WR', 'WR'], ['TE', 'TE'],
+         ['RB_WR', 'RB_WR'], ['WR_TE', 'WR_TE'], ['RB_TE', 'RB_TE'],
+         ['FLEX', 'FLEX'], ['SF', 'SF']].forEach(function (pair) {
             var n = Math.max(0, Math.round(+(counts || {})[pair[0]] || 0));
             for (var i = 0; i < n; i++) slots.push(pair[1]);
         });

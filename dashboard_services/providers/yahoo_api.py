@@ -1970,8 +1970,8 @@ def _yahoo_collection_rows(node: Any, item_key: str) -> List[Any]:
 
 _YAHOO_SLOT = {
     "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
-    "W/R/T": "FLEX", "W/R": "FLEX", "W/T": "FLEX", "R/T": "FLEX",
-    "RB/WR/TE": "FLEX", "WR/TE": "FLEX",
+    "W/R/T": "FLEX", "W/R": "RB_WR", "W/T": "WR_TE", "R/T": "RB_TE",
+    "RB/WR/TE": "FLEX", "WR/TE": "WR_TE", "RB/WR": "RB_WR", "RB/TE": "RB_TE",
     "Q/W/R/T": "SUPER_FLEX", "OP": "SUPER_FLEX",
     "K": "K", "DEF": "DEF", "D": "DEF",
     "BN": "BN", "IR": "IR",

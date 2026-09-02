@@ -666,8 +666,11 @@
   // starters, so they don't inflate RB/WR need — they add stash/round capacity.
   var ROSTER_SLOT_MAP = {
     QB:'QB', RB:'RB', WR:'WR', TE:'TE',
-    FLEX:'FLEX', WRRB_FLEX:'FLEX', REC_FLEX:'FLEX', WRRBTE_FLEX:'FLEX',
-    'RB/WR/TE':'FLEX', 'WR/RB/TE':'FLEX', 'RB/WR':'FLEX', 'WR/TE':'FLEX',
+    FLEX:'FLEX', WRRBTE_FLEX:'FLEX',
+    'RB/WR/TE':'FLEX', 'WR/RB/TE':'FLEX', 'W/R/T':'FLEX',
+    WRRB_FLEX:'RB_WR', RB_WR:'RB_WR', 'RB/WR':'RB_WR', 'WR/RB':'RB_WR', 'W/R':'RB_WR',
+    REC_FLEX:'WR_TE', WR_TE:'WR_TE', 'WR/TE':'WR_TE', 'W/T':'WR_TE',
+    RB_TE:'RB_TE', 'RB/TE':'RB_TE', 'R/T':'RB_TE',
     SUPER_FLEX:'SF', SFLEX:'SF',
     'QB/RB/WR/TE':'SF', 'QB/WR/RB/TE':'SF',
     K:'K', DEF:'DEF', DST:'DEF', 'D/ST':'DEF',
@@ -683,12 +686,12 @@
   function rosterFromLeague(){
     var rp = cfg.rosterPositions;
     if (!rp || !rp.length) return null;
-    var r = { QB:0, SF:0, RB:0, WR:0, TE:0, FLEX:0, K:0, DEF:0, BN:0, IR:0, TAXI:0, IDP:0 };
+    var r = { QB:0, SF:0, RB:0, WR:0, TE:0, FLEX:0, RB_WR:0, WR_TE:0, RB_TE:0, K:0, DEF:0, BN:0, IR:0, TAXI:0, IDP:0 };
     rp.forEach(function(s){
       var key = rosterSlotKey(s);
       if (key) r[key]++;
     });
-    if (!(r.QB+r.RB+r.WR+r.TE+r.FLEX+r.SF)) return null;  // no usable starters
+    if (!(r.QB+r.RB+r.WR+r.TE+r.FLEX+r.SF+r.RB_WR+r.WR_TE+r.RB_TE)) return null;
     return r;
   }
   function defaultRoster(sf, rd){
@@ -716,7 +719,7 @@
   // fresh copy (does not mutate the input).
   function _reconcileRoster(r, sf, rd){
     var out = {};
-    ['QB','SF','RB','WR','TE','FLEX','K','DEF','BN','IR','TAXI','IDP'].forEach(function(k){ out[k] = r[k] || 0; });
+    ['QB','SF','RB','WR','TE','FLEX','RB_WR','WR_TE','RB_TE','K','DEF','BN','IR','TAXI','IDP'].forEach(function(k){ out[k] = r[k] || 0; });
     if (sf){ if (!out.SF) out.SF = 1; if (!out.FLEX) out.FLEX = 1; }
     else   { out.SF = 0; }
     // K/DEF are kept as-is across formats: if the league (or the user) rosters
@@ -4349,7 +4352,7 @@
   function lineupSlots(){
     var rs = (state && state.roster) || defaultRoster();
     var slots = [];
-    ['QB','SF','RB','WR','TE','FLEX','K','DEF'].forEach(function(s){
+    ['QB','SF','RB','WR','TE','RB_WR','WR_TE','RB_TE','FLEX','K','DEF'].forEach(function(s){
       var n = rs[s] || 0;
       for (var i = 0; i < n; i++) slots.push(s);
     });
@@ -4361,6 +4364,9 @@
     if (pos === 'PK') pos = 'K';
     if (pos === 'D/ST' || pos === 'DST' || pos === 'D-ST') pos = 'DEF';
     if (slot === 'FLEX') return pos === 'RB' || pos === 'WR' || pos === 'TE';
+    if (slot === 'RB_WR') return pos === 'RB' || pos === 'WR';
+    if (slot === 'WR_TE') return pos === 'WR' || pos === 'TE';
+    if (slot === 'RB_TE') return pos === 'RB' || pos === 'TE';
     if (slot === 'SF')   return pos === 'QB' || pos === 'RB' || pos === 'WR' || pos === 'TE';
     return slot === pos;
   }
@@ -4386,7 +4392,7 @@
   function optimalLineup(playerList, slots){
     slots = slots || lineupSlots();
     function posOf(p){ return String((p && (p.position || p.pos)) || '').toUpperCase(); }
-    var flex = { SF: 3, FLEX: 2 };  // higher = more flexible, filled later
+    var flex = { SF: 3, FLEX: 2, RB_WR: 1.5, WR_TE: 1.5, RB_TE: 1.5 };  // higher = more flexible, filled later
     var order = slots.map(function(s, i){ return { slot: s, i: i }; });
     order.sort(function(a, b){ return (flex[a.slot] || 1) - (flex[b.slot] || 1) || a.i - b.i; });
     var used = {}, assign = {};
@@ -4408,7 +4414,7 @@
     return { starters: starters, bench: bench, starterIds: starterIds };
   }
   function slotColor(slot){
-    if (slot === 'FLEX') return '#14b8a6';
+    if (slot === 'FLEX' || slot === 'RB_WR' || slot === 'WR_TE' || slot === 'RB_TE') return '#14b8a6';
     if (slot === 'SF')   return '#a78bfa';
     if (slot === 'BN')   return '#64748b';
     return posColor(slot);

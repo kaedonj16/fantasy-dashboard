@@ -22,6 +22,9 @@
     if (pos === 'PK') pos = 'K';
     if (pos === 'D/ST' || pos === 'DST' || pos === 'D-ST') pos = 'DEF';
     if (slot === 'FLEX') return pos === 'RB' || pos === 'WR' || pos === 'TE';
+    if (slot === 'RB_WR') return pos === 'RB' || pos === 'WR';
+    if (slot === 'WR_TE') return pos === 'WR' || pos === 'TE';
+    if (slot === 'RB_TE') return pos === 'RB' || pos === 'TE';
     if (slot === 'SF') return pos === 'QB' || pos === 'RB' || pos === 'WR' || pos === 'TE';
     return slot === pos;
   }
@@ -35,7 +38,7 @@
   // Fill the most restrictive slots first with the highest-lineupScore eligible
   // player. Returns a set (object) of starter player-id strings.
   function optimalLineupIds(picks, slots) {
-    var flex = { SF: 3, FLEX: 2 };
+    var flex = { SF: 3, FLEX: 2, RB_WR: 1.5, WR_TE: 1.5, RB_TE: 1.5 };
     var order = slots.map(function (s, i) { return { slot: s, i: i }; });
     order.sort(function (a, b) { return (flex[a.slot] || 1) - (flex[b.slot] || 1) || a.i - b.i; });
     var used = {}, ids = {};
@@ -108,7 +111,11 @@
       if (pos === 'WR') return idx === 0 ? 0.78 : 0.64;
       return 0;
     }
-    var hasFlex = (slots || []).indexOf('FLEX') >= 0;
+    var flexCovers = { RB: {FLEX:1, RB_WR:1, RB_TE:1}, WR: {FLEX:1, RB_WR:1, WR_TE:1} };
+    function hasFlexFor(pos) {
+      var wanted = flexCovers[pos] || {FLEX:1};
+      return (slots || []).some(function (s) { return wanted[s]; });
+    }
     function roleOf(p) {
       if (starterIds[String(p.id)]) return 'starter';
       var pos = String(p.pos || '').toUpperCase();
@@ -116,7 +123,7 @@
       var idx = arr.indexOf(p);
       if (pos === 'RB' || pos === 'WR') {
         if (idx === 0) return 'primary';
-        if (idx === 1 && hasFlex) return 'primary';
+        if (idx === 1 && hasFlexFor(pos)) return 'primary';
         return 'fringe';
       }
       return idx === 0 ? 'primary' : 'fringe';
@@ -201,17 +208,21 @@
       if (pos === 'WR') return idx === 0 ? 0.78 : 0.64;
       return 0;
     }
-    var hasFlex = slots.indexOf('FLEX') >= 0;
+    var flexCovers = { RB: {FLEX:1, RB_WR:1, RB_TE:1}, WR: {FLEX:1, RB_WR:1, WR_TE:1} };
+    function hasFlexFor(pos) {
+      var wanted = flexCovers[pos] || {FLEX:1};
+      return (slots || []).some(function (s) { return wanted[s]; });
+    }
     function roleOf(p) {
       if (starterIds[String(p.id)]) return 'starter';
       var pos = String(p.pos || '').toUpperCase();
       var arr = benchByPos[pos] || [];
       var idx = arr.indexOf(p);
       // RB3/WR4 (first bench) are primary cover. A second RB/WR is still
-      // primary when FLEX exists — that is the injury/bye path, not QB2/TE2.
+      // primary when a flex that can start them exists — injury/bye path.
       if (pos === 'RB' || pos === 'WR') {
         if (idx === 0) return 'primary';
-        if (idx === 1 && hasFlex) return 'primary';
+        if (idx === 1 && hasFlexFor(pos)) return 'primary';
         return 'fringe';
       }
       return idx === 0 ? 'primary' : 'fringe';

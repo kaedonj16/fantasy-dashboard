@@ -427,6 +427,32 @@ def test_positions_treats_start_group_with_omitted_start_as_one_slot():
     assert slots == ["QB", "FLEX"]
 
 
+def test_positions_restricted_flex_labels_stay_distinct():
+    slots = FleaflickerProvider._positions({
+        "rosterPositions": [
+            {"label": "RB/WR", "group": "START", "start": 1,
+             "eligibility": ["RB", "WR"]},
+            {"label": "WR/TE", "group": "START", "start": 1,
+             "eligibility": ["WR", "TE"]},
+            {"label": "RB/TE", "group": "START", "start": 1,
+             "eligibility": ["RB", "TE"]},
+        ],
+    })
+    assert slots == ["RB_WR", "WR_TE", "RB_TE"]
+
+
+def test_positions_generic_flex_uses_eligibility_for_wr_rb_only():
+    slots = FleaflickerProvider._positions({
+        "rosterPositions": [
+            {"label": "FLEX", "group": "START", "start": 1,
+             "eligibility": ["RB", "WR"]},
+            {"label": "", "group": "START", "start": 1,
+             "eligibility": ["WR", "TE"]},
+        ],
+    })
+    assert slots == ["RB_WR", "WR_TE"]
+
+
 def test_positions_flex_with_qb_eligibility_is_superflex():
     slots = FleaflickerProvider._positions({
         "rosterPositions": [

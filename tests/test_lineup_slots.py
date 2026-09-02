@@ -5,7 +5,9 @@ from utils.lineup_slots import (
     canonicalize_slot,
     canonicalize_slots,
     count_lineup_slots,
+    flex_count,
     is_superflex_lineup,
+    slot_eligible_positions,
     starter_need_counts,
     start_sit_groups,
     start_sit_pos,
@@ -16,10 +18,11 @@ from utils.roster_strength import derive_league_thresholds
 
 @pytest.mark.parametrize("raw, canon", [
     ("FLEX", "FLEX"),
-    ("WRRB_FLEX", "FLEX"),
+    ("WRRB_FLEX", "RB_WR"),
     ("WR/RB/TE", "FLEX"),
     ("W/R/T", "FLEX"),
-    ("REC_FLEX", "FLEX"),
+    ("W/R", "RB_WR"),
+    ("REC_FLEX", "WR_TE"),
     ("SUPER_FLEX", "SUPER_FLEX"),
     ("SFLEX", "SUPER_FLEX"),
     ("OP", "SUPER_FLEX"),
@@ -28,8 +31,11 @@ from utils.roster_strength import derive_league_thresholds
     ("D/ST", "DEF"),
     ("D-ST", "DEF"),
     ("RB/WR/TE", "FLEX"),
-    ("W/T", "FLEX"),
-    ("R/T", "FLEX"),
+    ("W/T", "WR_TE"),
+    ("R/T", "RB_TE"),
+    ("RB/WR", "RB_WR"),
+    ("WR/TE", "WR_TE"),
+    ("RB+WR", "RB_WR"),
     ("QB/RB/WR/TE", "SUPER_FLEX"),
     ("RB/WR/TE/QB", "SUPER_FLEX"),
     ("BE", "BN"),
@@ -50,11 +56,13 @@ def test_count_lineup_slots_collapses_aliases():
     counts = count_lineup_slots(slots)
     assert counts["QB"] == 1
     assert counts["RB"] == 2
-    assert counts["FLEX"] == 1
+    assert counts.get("FLEX", 0) == 0
+    assert counts["RB_WR"] == 1
     assert counts["SUPER_FLEX"] == 1
     assert counts["DEF"] == 1
     assert counts["BN"] == 1
     assert is_superflex_lineup(slots) is True
+    assert flex_count(slots) == 0
 
 
 def test_standard_league_is_not_superflex():
@@ -91,13 +99,41 @@ def test_optimal_lineup_op_alias_matches_super_flex():
     assert a[0] == {"qb1", "qb2"}
 
 
-def test_optimal_lineup_wrrb_flex_alias():
-    pts = {"rb1": 30, "rb2": 25, "wr1": 20, "te1": 10}
-    pos = {"rb1": "RB", "rb2": "RB", "wr1": "WR", "te1": "TE"}
-    a = compute_optimal_lineup(pts, pos, ["RB", "WR", "FLEX"], list(pts))
-    b = compute_optimal_lineup(pts, pos, ["RB", "WR", "WRRB_FLEX"], list(pts))
-    assert a == b
-    assert a[0] == {"rb1", "wr1", "rb2"}
+def test_optimal_lineup_wrrb_flex_excludes_te():
+    pts = {"rb1": 30, "wr1": 20, "te1": 28, "rb2": 15}
+    pos = {"rb1": "RB", "wr1": "WR", "te1": "TE", "rb2": "RB"}
+    flex = compute_optimal_lineup(pts, pos, ["RB", "WR", "FLEX"], list(pts))
+    wrrb = compute_optimal_lineup(pts, pos, ["RB", "WR", "WRRB_FLEX"], list(pts))
+    assert flex[0] == {"rb1", "wr1", "te1"}
+    assert wrrb[0] == {"rb1", "wr1", "rb2"}
+    assert "te1" not in wrrb[0]
+
+
+def test_optimal_lineup_rec_flex_excludes_rb():
+    pts = {"wr1": 22, "te1": 18, "rb1": 30}
+    pos = {"wr1": "WR", "te1": "TE", "rb1": "RB"}
+    rec = compute_optimal_lineup(pts, pos, ["WR", "REC_FLEX"], list(pts))
+    assert rec[0] == {"wr1", "te1"}
+    assert "rb1" not in rec[0]
+
+
+def test_slot_eligible_positions_restricted_flex():
+    assert slot_eligible_positions("WRRB_FLEX") == frozenset({"RB", "WR"})
+    assert slot_eligible_positions("W/R") == frozenset({"RB", "WR"})
+    assert slot_eligible_positions("REC_FLEX") == frozenset({"WR", "TE"})
+    assert slot_eligible_positions("W/T") == frozenset({"WR", "TE"})
+    assert slot_eligible_positions("R/T") == frozenset({"RB", "TE"})
+    assert slot_eligible_positions("FLEX") == frozenset({"RB", "WR", "TE"})
+
+
+def test_starter_need_restricted_flex_splits_eligible_positions():
+    wrrb = starter_need_counts(["QB", "RB", "RB", "WR", "WR", "TE", "WRRB_FLEX"])
+    flex = starter_need_counts(["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"])
+    assert wrrb["RB"] == flex["RB"]
+    assert wrrb["WR"] == flex["WR"]
+    assert wrrb["TE"] == flex["TE"]
+    rec = starter_need_counts(["QB", "RB", "RB", "WR", "WR", "TE", "REC_FLEX"])
+    assert rec["TE"] == flex["TE"] + 1
 
 
 def test_optimal_lineup_dst_alias_fills_def_slot():

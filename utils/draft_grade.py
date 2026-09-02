@@ -65,8 +65,25 @@ def dr_slot_eligible(slot: str, pos: str) -> bool:
     if pos in ("D/ST", "DST", "D-ST"):
         pos = "DEF"
     if slot == "FLEX": return pos in ("RB", "WR", "TE")
+    if slot == "RB_WR": return pos in ("RB", "WR")
+    if slot == "WR_TE": return pos in ("WR", "TE")
+    if slot == "RB_TE": return pos in ("RB", "TE")
     if slot == "SF":   return pos in ("QB", "RB", "WR", "TE")
     return slot == pos
+
+
+_FLEX_COVERS = {
+    "RB": {"FLEX", "RB_WR", "RB_TE"},
+    "WR": {"FLEX", "RB_WR", "WR_TE"},
+    "TE": {"FLEX", "WR_TE", "RB_TE"},
+}
+
+
+def _has_flex_for(slots, pos: str) -> bool:
+    """True when this lineup has a flex slot that can start ``pos``."""
+    from utils.lineup_slots import canonicalize_slot
+    wanted = _FLEX_COVERS.get((pos or "").upper(), {"FLEX"})
+    return any(canonicalize_slot(s) in wanted for s in (slots or []))
 
 
 def dr_lineup_score(p: dict) -> float:
@@ -81,7 +98,7 @@ def dr_lineup_score(p: dict) -> float:
 def dr_optimal_lineup(players: "list[dict]", slots: "list[str]") -> "set[str]":
     """Mirror optimalLineup(): fill the most restrictive slots first with the
     highest-lineupScore eligible player. Returns the set of starter player ids."""
-    flex = {"SF": 3, "FLEX": 2}
+    flex = {"SF": 3, "FLEX": 2, "RB_WR": 1.5, "WR_TE": 1.5, "RB_TE": 1.5}
     order = sorted(
         [{"slot": s, "i": i} for i, s in enumerate(slots)],
         key=lambda o: (flex.get(o["slot"], 1), o["i"]),
@@ -211,9 +228,6 @@ def dr_weighted_pick_score(
             return 0.78 if idx == 0 else 0.64
         return 0.0
 
-    from utils.lineup_slots import canonicalize_slot
-    has_flex = any(canonicalize_slot(s) == "FLEX" for s in (slots or []))
-
     def _role(p):
         if str(p.get("id")) in starter_ids:
             return "starter"
@@ -223,7 +237,7 @@ def dr_weighted_pick_score(
         if pos in ("RB", "WR"):
             if idx == 0:
                 return "primary"
-            if idx == 1 and has_flex:
+            if idx == 1 and _has_flex_for(slots, pos):
                 return "primary"
             return "fringe"
         return "primary" if idx == 0 else "fringe"
@@ -367,8 +381,6 @@ def dr_team_grade_score(
         if pos == "RB": return 0.82 if idx == 0 else 0.68
         if pos == "WR": return 0.78 if idx == 0 else 0.64
         return 0.0
-    from utils.lineup_slots import canonicalize_slot
-    has_flex = any(canonicalize_slot(s) == "FLEX" for s in (slots or []))
     def _role(p):
         if str(p.get("id")) in starter_ids:
             return "starter"
@@ -376,11 +388,11 @@ def dr_team_grade_score(
         arr = bench_by_pos.get(pos, [])
         idx = arr.index(p) if p in arr else -1
         # RB3/WR4 (first bench) are primary cover. A second RB/WR is still
-        # primary when FLEX exists — that is the injury/bye path, not QB2/TE2.
+        # primary when a flex that can start them exists — injury/bye path.
         if pos in ("RB", "WR"):
             if idx == 0:
                 return "primary"
-            if idx == 1 and has_flex:
+            if idx == 1 and _has_flex_for(slots, pos):
                 return "primary"
             return "fringe"
         return "primary" if idx == 0 else "fringe"

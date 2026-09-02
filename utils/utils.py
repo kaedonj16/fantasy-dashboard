@@ -2199,7 +2199,8 @@ def count_roster_positions(positions: list[str]) -> dict[str, int]:
     Example:
       ['QB','RB','RB','WR','WR','TE','FLEX',...] → {'QB':1,'RB':2,'WR':2,...}
 
-    Provider aliases (OP, RB/WR/TE, D/ST, …) collapse to the canonical name
+    Provider aliases (OP, RB/WR/TE, WRRB_FLEX, D/ST, …) collapse to the canonical name.
+    Restricted flex (WR/RB only, WR/TE, RB/TE) stays distinct from standard FLEX.
     so Fleaflicker/Yahoo/ESPN slot lists count the same as Sleeper.
     """
     from utils.lineup_slots import count_lineup_slots

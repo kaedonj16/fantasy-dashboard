@@ -813,10 +813,11 @@ class FleaflickerProvider(ProviderAdapter):
     def _fleaflicker_slot_name(pos: dict) -> str:
         """Map a Fleaflicker roster-position row onto a Sleeper-style slot.
 
-        Fleaflicker labels flex ``RB/WR/TE``, superflex ``QB/RB/WR/TE``, and
-        defense ``D/ST``. Downstream draft-room / lineup math only counts
-        Sleeper names, so those must be canonicalized here (same idea as MFL).
-        A generic ``FLEX`` label with QB eligibility is Superflex.
+        Fleaflicker labels flex ``RB/WR/TE``, superflex ``QB/RB/WR/TE``,
+        restricted flex ``RB/WR`` / ``WR/TE`` / ``RB/TE``, and defense ``D/ST``.
+        Downstream draft-room / lineup math only counts canonical names, so
+        those must be mapped here (same idea as MFL). A generic ``FLEX`` label
+        uses ``eligibility`` so WR/RB-only spots stay distinct from RB/WR/TE.
         """
         from utils.lineup_slots import canonicalize_slot, normalize_slot_name
 
@@ -827,14 +828,34 @@ class FleaflickerProvider(ProviderAdapter):
             for e in (pos.get("eligibility") or [])
             if e is not None and str(e).strip()
         }
-        skill = {"QB", "RB", "WR", "TE"}
-        if mapped == "FLEX" and "QB" in elig:
-            return "SUPER_FLEX"
+        refined = FleaflickerProvider._slot_from_eligibility(elig)
+        if mapped == "FLEX":
+            if refined:
+                return refined
+            return "FLEX"
         if mapped:
             return mapped
+        return refined
+
+    @staticmethod
+    def _slot_from_eligibility(elig: set) -> str:
+        """Map a Fleaflicker eligibility set onto a canonical flex slot."""
+        skill = {"QB", "RB", "WR", "TE"}
+        if not elig:
+            return ""
+        if "QB" in elig and (elig & {"RB", "WR", "TE"}):
+            return "SUPER_FLEX"
         if elig >= skill:
             return "SUPER_FLEX"
-        if elig and elig <= {"RB", "WR", "TE"}:
+        if elig == {"RB", "WR"}:
+            return "RB_WR"
+        if elig == {"WR", "TE"}:
+            return "WR_TE"
+        if elig == {"RB", "TE"}:
+            return "RB_TE"
+        if elig == {"RB", "WR", "TE"}:
+            return "FLEX"
+        if elig <= {"RB", "WR", "TE"} and len(elig) >= 2:
             return "FLEX"
         return ""
 

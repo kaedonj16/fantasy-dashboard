@@ -1102,7 +1102,7 @@ def iter_draft_picks(season: int, league_id: str) -> List[Any]:
 # ESPN slot name -> Sleeper roster position
 _ESPN_SLOT_TO_SLEEPER: Dict[str, str] = {
     "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
-    "FLEX": "FLEX", "RB/WR/TE": "FLEX", "RB/WR": "FLEX", "WR/TE": "FLEX",
+    "FLEX": "FLEX", "RB/WR/TE": "FLEX", "RB/WR": "RB_WR", "WR/TE": "WR_TE",
     "OP": "SUPER_FLEX",
     "K": "K",
     "D/ST": "DEF", "DST": "DEF", "DEF": "DEF", "D-ST": "DEF",
