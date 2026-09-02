@@ -71,6 +71,19 @@ var POS_COLORS = {
 function posColorOf(pos) { return POS_COLORS[pos] || "var(--accent)"; }
 var __featuresState = 0;   // 0=not loaded, 1=loading, 2=loaded
 var __featuresCbs = [];
+function ensureDashboardCss(cb) {
+  // Lite SEO pages ship seo_lite.css for fast paint; the player modal (and Team
+  // tab) styles live in dashboard.css. Pull that sheet in once when the feature
+  // bundle is first requested so modal HTML isn't a raw unstyled dump.
+  if (document.querySelector('link[href*="dashboard"]')) { if (cb) cb(); return; }
+  var href = window.__DASHBOARD_CSS;
+  if (!href) { if (cb) cb(); return; }
+  var link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = href;
+  link.onload = link.onerror = function () { if (cb) cb(); };
+  document.head.appendChild(link);
+}
 function ensureFeatures(cb) {
   // Already present (full app.js bundle, or features finished loading).
   if (typeof openPlayerModal === 'function' && !openPlayerModal.__stub) { if (cb) cb(); return; }
@@ -78,18 +91,20 @@ function ensureFeatures(cb) {
   if (cb) __featuresCbs.push(cb);
   if (__featuresState) return;   // already loading
   __featuresState = 1;
-  var s = document.createElement('script');
-  s.src = window.__FEATURES_JS;
-  s.onload = function () {
-    __featuresState = 2;
-    var cbs = __featuresCbs; __featuresCbs = [];
-    cbs.forEach(function (f) { try { f(); } catch (e) { console.error(e); } });
-  };
-  s.onerror = function () {
-    __featuresState = 0;   // allow a retry on the next interaction
-    console.error('[features] failed to load', window.__FEATURES_JS);
-  };
-  document.head.appendChild(s);
+  ensureDashboardCss(function () {
+    var s = document.createElement('script');
+    s.src = window.__FEATURES_JS;
+    s.onload = function () {
+      __featuresState = 2;
+      var cbs = __featuresCbs; __featuresCbs = [];
+      cbs.forEach(function (f) { try { f(); } catch (e) { console.error(e); } });
+    };
+    s.onerror = function () {
+      __featuresState = 0;   // allow a retry on the next interaction
+      console.error('[features] failed to load', window.__FEATURES_JS);
+    };
+    document.head.appendChild(s);
+  });
 }
 // Stub so the many guarded `if (typeof openPlayerModal === 'function')` call sites
 // in the core fire the lazy load. The real openPlayerModal (a hoisted function in
@@ -17201,23 +17216,11 @@ function renderTeamDetails(data) {
   `;
   document.getElementById('teamModalMeta').innerHTML = metaHTML;
 
-  // Build roster table
+  // Build roster list
   let rosterHTML = '<div class="team-modal-section"><h3>Roster</h3>';
 
   if (data.roster && data.roster.length > 0) {
-    rosterHTML += '<table class="team-roster-table">';
-    rosterHTML += `
-      <thead>
-        <tr>
-          <th>Player</th>
-          <th>Pos</th>
-          <th>Team</th>
-          <th>Age</th>
-          <th>Value</th>
-        </tr>
-      </thead>
-      <tbody>
-    `;
+    rosterHTML += '<div class="tm-roster-list">';
 
     data.roster.forEach(player => {
       const isUnknown = !player.name || player.name === 'Unknown' || /^\d+$/.test(player.name);
@@ -17267,22 +17270,33 @@ function renderTeamDetails(data) {
         badges += `<span class="player-badge ${_icls}" title="${_tip.replace(/"/g, '&quot;')}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${_code}</span>`;
       }
 
+      const ageStr = player.age != null && !isNaN(parseFloat(player.age)) ? parseFloat(player.age).toFixed(1) : '—';
+      const valStr = player.value != null && !isNaN(parseFloat(player.value)) ? parseFloat(player.value).toFixed(1) : '—';
+      const rowAttrs = isUnknown
+        ? ''
+        : ` data-player-id="${player.player_id}" data-player-name="${player.name}" tabindex="0"`;
+      const rowCls = isUnknown ? 'tm-roster-row' : 'tm-roster-row tm-roster-click';
+
       rosterHTML += `
-        <tr ${isUnknown ? '' : `style="cursor:pointer;" data-player-id="${player.player_id}" data-player-name="${player.name}"`}>
-          <td>
-            ${isUnknown
-              ? `<span style="color:var(--text-muted);">${/^\d+$/.test(player.name) ? `Unknown ${player.position || ''}`.trim() : (player.name || 'Unknown')}</span>`
-              : `<strong class="player-clickable">${player.name}</strong>${badges}`}
-          </td>
-          <td><span class="pos-badge ${player.position}">${player.position}</span></td>
-          <td>${player.team || '-'}</td>
-          <td>${player.age != null && !isNaN(parseFloat(player.age)) ? parseFloat(player.age).toFixed(1) : '-'}</td>
-          <td>${player.value != null && !isNaN(parseFloat(player.value)) ? parseFloat(player.value).toFixed(1) : '-'}</td>
-        </tr>
+        <div class="${rowCls}"${rowAttrs}>
+          <div class="tm-roster-main">
+            <div class="tm-roster-name-row">
+              ${isUnknown
+                ? `<span class="tm-roster-name muted">${/^\d+$/.test(player.name) ? `Unknown ${player.position || ''}`.trim() : (player.name || 'Unknown')}</span>`
+                : `<span class="tm-roster-name player-clickable">${player.name}</span>`}
+              ${badges ? `<span class="tm-roster-badges">${badges}</span>` : ''}
+            </div>
+            <div class="tm-roster-meta">${player.team || '—'} · Age ${ageStr}</div>
+          </div>
+          <div class="tm-roster-side">
+            <span class="pos-badge ${player.position}">${player.position}</span>
+            <span class="tm-roster-value">${valStr}</span>
+          </div>
+        </div>
       `;
     });
 
-    rosterHTML += '</tbody></table>';
+    rosterHTML += '</div>';
   } else {
     rosterHTML += '<div class="team-modal-empty">No players on roster</div>';
   }

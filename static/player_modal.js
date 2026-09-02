@@ -84,6 +84,7 @@ function openPlayerModal(playerId, playerName, opts) {
     <div class="pm-tab-bar" id="pmTabBar" role="tablist" aria-label="Player details" style="display:none">
       <button class="pm-tab active" role="tab" aria-selected="true" data-tab="overview" onclick="pmSwitchTab('overview')">Overview</button>
       <button class="pm-tab" role="tab" aria-selected="false" data-tab="stats" onclick="pmSwitchTab('stats')">Stats</button>
+      <button class="pm-tab" role="tab" aria-selected="false" id="pmTabTeam" data-tab="team" onclick="pmSwitchTab('team')" style="display:none">Team</button>
       <button class="pm-tab" role="tab" aria-selected="false" id="pmTabMetrics" data-tab="metrics" onclick="pmSwitchTab('metrics')" style="display:none">Adv Metrics</button>
       <button class="pm-tab" role="tab" aria-selected="false" id="pmTabProspect" data-tab="prospect" onclick="pmSwitchTab('prospect')" style="display:none">Prospect</button>
       <button class="pm-tab" role="tab" aria-selected="false" id="pmTabBreakout" data-tab="breakout" onclick="pmSwitchTab('breakout')" style="display:none">Breakout</button>
@@ -825,6 +826,12 @@ function openPlayerModal(playerId, playerName, opts) {
             <div style="font-size:13px;margin-top:8px;color:var(--text-muted);">Loading stats…</div>
           </div>
         </div>
+        <div class="pm-panel" id="pm-panel-team">
+          <div class="player-modal-loading" style="padding:40px 0;">
+            <div class="loading-spinner"></div>
+            <div style="font-size:13px;margin-top:8px;color:var(--text-muted);">Loading team…</div>
+          </div>
+        </div>
         <div class="pm-panel" id="pm-panel-metrics">${metricsHTML}</div>
         <div class="pm-panel" id="pm-panel-prospect">${prospectPanelHTML}</div>
         <div class="pm-panel" id="pm-panel-breakout">${breakoutHTML}</div>
@@ -940,6 +947,11 @@ function openPlayerModal(playerId, playerName, opts) {
       // Show/hide conditional tabs
       const tabMetrics = document.getElementById('pmTabMetrics');
       if (tabMetrics) tabMetrics.style.display = hasMetrics ? '' : 'none';
+      const tabTeam = document.getElementById('pmTabTeam');
+      const _teamPos = String(data.position || '').toUpperCase();
+      const _showTeamTab = !!(data.team && ['QB', 'RB', 'WR', 'TE'].includes(_teamPos));
+      if (tabTeam) tabTeam.style.display = _showTeamTab ? '' : 'none';
+      if (pmTabBar) pmTabBar.dataset.pmHasTeam = _showTeamTab ? '1' : '';
       const tabProspect = document.getElementById('pmTabProspect');
       // Prospect tab: only for players with no NFL game logs drafted in the current season
       const _currentNFLYear = new Date().getFullYear();
@@ -1591,6 +1603,27 @@ function pmSwitchTab(tab) {
     if (window._rzSyncTabLive) window._rzSyncTabLive(panel);
   }
 
+  // ── Lazy-load Team tab ───────────────────────────────────────────────────
+  if (tab === 'team' && panel && !panel.dataset.loaded && pmTabBar && pmTabBar.dataset.pmHasTeam) {
+    panel.dataset.loaded = '1';
+    fetch(`/api/player-team/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}`)
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(data => {
+        if (!panel.isConnected) return;
+        if (!data || data.available === false) {
+          window.brEmptyState(panel, { icon: 'search', title: 'No team data', message: 'Team context is not available for this player.', compact: true });
+          return;
+        }
+        panel.innerHTML = _pmBuildTeamHTML(data);
+        _pmWireTeamPanel(panel);
+      })
+      .catch(() => {
+        if (panel.isConnected) {
+          window.brErrorState(panel, 'Could not load team.', () => { panel.dataset.loaded = ''; pmSwitchTab(tab); }, { compact: true });
+        }
+      });
+  }
+
   // ── Lazy-load Stats tab ──────────────────────────────────────────────────
   if (tab === 'stats' && panel && !panel.dataset.loaded) {
     panel.dataset.loaded = '1';
@@ -1796,6 +1829,209 @@ function _pmFetchTradesInto(panel, playerId, season, ctx) {
 // of a spinner. We reuse pmSwitchTab's exact load path by briefly activating
 // each un-loaded tab and restoring the current one — all synchronously in one
 // idle callback, so no intermediate tab state is ever painted.
+// ── Team tab (player modal) ───────────────────────────────────────────────────
+let _pmTeamAdvOpen = false;
+
+function _pmRankTier(rank, total) {
+  if (rank == null || !total) return 'tier-neutral';
+  const third = Math.ceil(total / 3);
+  if (rank <= third) return 'tier-good';
+  if (rank <= third * 2) return 'tier-mid';
+  return 'tier-bad';
+}
+
+function _pmFmtTeamVal(key, val) {
+  if (val == null || val === '') return '—';
+  const n = Number(val);
+  if (Number.isNaN(n)) return String(val);
+  if (key === 'pass_rate') return (n * 100).toFixed(1) + '%';
+  if (key === 'points' || key === 'plays_pg') return n.toFixed(1);
+  if (key === 'pass_yds' || key === 'rush_yds' || key === 'total_yds' || key === 'pass_att' || key === 'rush_att') {
+    return Math.round(n).toLocaleString();
+  }
+  if (key === 'pass_tds' || key === 'rush_tds') return String(Math.round(n));
+  return String(n);
+}
+
+function _pmTeamRankCard(label, key, entry, opts) {
+  opts = opts || {};
+  const rank = entry && entry.rank;
+  const total = entry && entry.total;
+  const tierCls = opts.accent ? 'tier-accent' : _pmRankTier(rank, total);
+  const primaryCls = opts.lead ? ' pm-hero-primary' : '';
+  const rankLbl = (rank != null && total) ? `#${rank} of ${total}` : '—';
+  const valLbl = _pmFmtTeamVal(key, entry && entry.value);
+  return `<div class="pm-hero-stat${primaryCls}">
+    <div class="pm-hero-label">${label}</div>
+    <div class="pm-hero-val">${valLbl}</div>
+    <div class="pm-hero-sub pm-rank-tier ${tierCls}">${rankLbl}</div>
+  </div>`;
+}
+
+function _pmTeamInjBadge(injury) {
+  const injRaw = String(injury || '').trim();
+  if (!injRaw) return '';
+  const u = injRaw.toUpperCase();
+  let icls = 'player-badge-inj-q';
+  if (['IR', 'OUT', 'O', 'PUP', 'SUSP', 'SUS', 'SUSPENDED', 'NFI', 'DNR', 'COV'].includes(u)) {
+    icls = 'player-badge-inj-out';
+  } else if (['DOUBTFUL', 'D'].includes(u)) {
+    icls = 'player-badge-inj-d';
+  }
+  const code = u === 'QUESTIONABLE' ? 'Q'
+    : u === 'DOUBTFUL' ? 'D'
+    : (u === 'OUT' || u === 'O') ? 'OUT'
+    : (u === 'SUSP' || u === 'SUS' || u === 'SUSPENDED') ? 'SUS'
+    : (u.length > 4 ? u.slice(0, 4) : u);
+  return `<span class="player-badge ${icls}" title="${injRaw.replace(/"/g, '&quot;')}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${code}</span>`;
+}
+
+function _pmTeamDepthRow(row) {
+  const inj = _pmTeamInjBadge(row.injury);
+  const starter = (row.order === 1) ? '<span class="pm-team-starter">Starter</span>' : '';
+  const slot = String(row.slot || '').toUpperCase();
+  const showSlot = slot && !['QB', 'RB', 'WR', 'TE'].includes(slot);
+  const slotTag = showSlot ? `<span class="pm-team-slot">${slot}</span>` : '';
+  const snap = row.snap_pct != null
+    ? `${row.snap_pct}%${row.snap_pct_source === 'derived' ? '<span class="pm-snap-est">est.</span>' : ''}`
+    : '—';
+  const cls = row.is_focus ? 'pm-team-depth-row pm-team-depth-focus' : 'pm-team-depth-row pm-team-depth-click';
+  const attrs = row.is_focus
+    ? ''
+    : ` data-pid="${row.id}" data-pname="${String(row.name || '').replace(/"/g, '&quot;')}"`;
+  return `<div class="${cls}"${attrs}>
+    ${slotTag}
+    <div class="pm-team-depth-info">
+      <div class="pm-team-depth-name">${row.name || '—'}${inj}${starter}</div>
+      <div class="pm-team-depth-meta"><span>${snap}</span><span>${row.tgt_share != null ? row.tgt_share + '% tgt' : '—'}</span><span>${row.ppg != null ? row.ppg + ' PPG' : '—'}</span></div>
+    </div>
+  </div>`;
+}
+
+function _pmBuildTeamHTML(data) {
+  const team = data.team || '';
+  const crestAbbr = team.slice(0, 2);
+  const logo = data.logo
+    ? `<img class="pm-team-logo" src="${data.logo}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><div class="pm-crest" style="display:none" aria-hidden="true">${crestAbbr}</div>`
+    : `<div class="pm-crest" aria-hidden="true">${crestAbbr}</div>`;
+  const bye = data.bye_week != null ? `Bye ${data.bye_week}` : '';
+  const posLine = [data.position, bye].filter(Boolean).join(' · ');
+
+  const ranks = data.ranks || {};
+  const rankLead = _pmTeamRankCard('Scoring', 'points', ranks.points, { lead: true });
+  const rankGrid = [
+    _pmTeamRankCard('Pass Yds', 'pass_yds', ranks.pass_yds),
+    _pmTeamRankCard('Pass Att', 'pass_att', ranks.pass_att),
+    _pmTeamRankCard('Rush Yds', 'rush_yds', ranks.rush_yds),
+    _pmTeamRankCard('Rush Att', 'rush_att', ranks.rush_att),
+  ].join('');
+
+  const positions = ['QB', 'RB', 'WR', 'TE'];
+  const depthBlocks = positions.map(pos => {
+    const rows = (data.depth_chart && data.depth_chart[pos]) || [];
+    const body = rows.length
+      ? rows.map(_pmTeamDepthRow).join('')
+      : '<div class="pm-team-depth-empty">—</div>';
+    return `<div class="pm-team-depth-block"><div class="sc-section-title">${pos}</div><div class="sc-players">${body}</div></div>`;
+  }).join('');
+
+  const rm = data.ranks_more || {};
+  const advRanks = [
+    _pmTeamRankCard('Total Yds', 'total_yds', rm.total_yds),
+    _pmTeamRankCard('Pass TDs', 'pass_tds', rm.pass_tds),
+    _pmTeamRankCard('Rush TDs', 'rush_tds', rm.rush_tds),
+    _pmTeamRankCard('Plays/Game', 'plays_pg', rm.plays_pg, { accent: true }),
+    _pmTeamRankCard('Pass Rate', 'pass_rate', rm.pass_rate, { accent: true }),
+  ].join('');
+
+  const focusPos = String(data.position || '').toUpperCase();
+  const usageRows = ((data.depth_chart && data.depth_chart[focusPos]) || []).map(row => {
+    const snap = row.snap_pct != null
+      ? `${row.snap_pct}%${row.snap_pct_source === 'derived' ? ' <span class="pm-snap-est">est.</span>' : ''}`
+      : '—';
+    const rowCls = row.is_focus ? ' pm-team-usage-focus' : '';
+    return `<div class="pm-team-usage-row sc-player-row${rowCls}">
+      <span class="sc-player-name">${row.name || '—'}</span>
+      <span class="sc-player-val">${snap}</span>
+      <span class="sc-player-val">${row.tgt_share != null ? row.tgt_share + '%' : '—'}</span>
+      <span class="sc-player-val">${row.ppg != null ? row.ppg : '—'}</span>
+    </div>`;
+  }).join('');
+
+  const advOpen = _pmTeamAdvOpen;
+  const advChev = advOpen ? '&#9662;' : '&#9656;';
+  const advHint = advOpen ? 'click to collapse' : 'click to expand';
+  return `<div class="pm-team-wrap">
+    <div class="pm-team-header">
+      ${logo}
+      <div class="pm-team-header-text">
+        <div class="pm-team-name">${data.team_name || team}</div>
+        <div class="pm-team-meta">${posLine}</div>
+      </div>
+    </div>
+    <hr class="pm-section-divider">
+    <div class="pm-section-header"><span class="pm-section-label">Offense League Ranks</span></div>
+    <div class="pm-team-ranks-lead">${rankLead}</div>
+    <div class="pm-team-rank-row">${rankGrid}</div>
+    <hr class="pm-section-divider">
+    <div class="pm-section-header"><span class="pm-section-label">Depth Chart</span></div>
+    <div class="pm-team-depth">${depthBlocks}</div>
+    <hr class="pm-section-divider">
+    <div class="pm-section-header pm-section-collapsible pm-team-adv-toggle" role="button" tabindex="0" aria-expanded="${advOpen ? 'true' : 'false'}" aria-controls="pmTeamAdvBody">
+      <span class="pm-collapse-chevron" aria-hidden="true">${advChev}</span>
+      <span class="pm-section-label">Advanced stats</span>
+      <span class="pm-collapse-hint">${advHint}</span>
+    </div>
+    <div class="pm-team-adv-body" id="pmTeamAdvBody"${advOpen ? '' : ' hidden'}>
+      <div class="pm-team-rank-row pm-team-adv-ranks">${advRanks}</div>
+      <div class="pm-team-usage">
+        <div class="sc-section-title">${focusPos} usage</div>
+        <div class="pm-team-usage-head sc-player-row">
+          <span class="sc-player-name">Player</span>
+          <span class="sc-player-val">Snap %</span>
+          <span class="sc-player-val">Target %</span>
+          <span class="sc-player-val">PPG</span>
+        </div>
+        <div class="sc-players">${usageRows || '<div class="pm-team-depth-empty">—</div>'}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function _pmWireTeamPanel(panel) {
+  if (!panel) return;
+  panel.querySelectorAll('.pm-team-depth-click').forEach(row => {
+    row.addEventListener('click', () => {
+      const pid = row.dataset.pid;
+      const pname = row.dataset.pname;
+      if (pid && typeof openPlayerModal === 'function') {
+        openPlayerModal(pid, pname, { force: true });
+      }
+    });
+  });
+  const toggle = panel.querySelector('.pm-team-adv-toggle');
+  const body = panel.querySelector('.pm-team-adv-body');
+  if (toggle && body) {
+    const flipAdv = () => {
+      _pmTeamAdvOpen = !_pmTeamAdvOpen;
+      toggle.setAttribute('aria-expanded', _pmTeamAdvOpen ? 'true' : 'false');
+      body.hidden = !_pmTeamAdvOpen;
+      const chev = toggle.querySelector('.pm-collapse-chevron');
+      const hint = toggle.querySelector('.pm-collapse-hint');
+      if (chev) chev.innerHTML = _pmTeamAdvOpen ? '&#9662;' : '&#9656;';
+      if (hint) hint.textContent = _pmTeamAdvOpen ? 'click to collapse' : 'click to expand';
+      if (hint) hint.style.opacity = _pmTeamAdvOpen ? '0.8' : '';
+    };
+    toggle.addEventListener('click', flipAdv);
+    toggle.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        flipAdv();
+      }
+    });
+  }
+}
+
 function pmPrefetchTabs() {
   const bar = document.getElementById('pmTabBar');
   if (!bar || bar.dataset.pmPrefetched) return;
@@ -1805,6 +2041,7 @@ function pmPrefetchTabs() {
     const activeBtn = document.querySelector('.pm-tab.active');
     const activeTab = (activeBtn && activeBtn.dataset.tab) || 'overview';
     const tabs = ['stats', 'trades'];
+    if (bar.dataset.pmHasTeam) tabs.push('team');
     if (bar.dataset.pmHasMetrics) tabs.push('metrics');
     tabs.forEach(function (t) {
       const panel = document.getElementById('pm-panel-' + t);
