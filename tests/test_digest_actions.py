@@ -11,11 +11,14 @@ from utils.digest_actions import (
 def test_action_section_html_requires_title_and_body():
     assert action_section_html("", "body") == ""
     assert action_section_html("T", "") == ""
-    html = action_section_html("Waiver wire", "Add Player X", href="https://ex/w", cta="Go →")
+    html = action_section_html("Waiver wire", "Add Player X - now", href="https://ex/w", cta="Go →")
     assert "Waiver wire" in html
-    assert "Add Player X" in html
+    assert "Add Player X - now" in html
     assert "https://ex/w" in html
     assert "Go →" in html
+    html_dash = action_section_html("Note", "Soon — check reports")
+    assert "—" not in html_dash
+    assert "Soon - check reports" in html_dash
 
 
 def test_lineup_digest_note_empty():
@@ -72,6 +75,26 @@ def test_recommend_waivers_uses_pickup_score_and_skips_owned():
     assert "k" not in ids
     assert "fa1" in ids
     assert hits[0]["name"] == "Need RB"
+
+
+def test_recommend_waivers_skips_duplicate_pos_reason():
+    from utils.digest_actions import recommend_waivers
+
+    rows = [
+        {"id": "w1", "name": "Parker Washington", "pos": "WR", "value": 90, "age": 23},
+        {"id": "w2", "name": "Luther Burden III", "pos": "WR", "value": 88, "age": 22},
+        {"id": "w3", "name": "Need RB", "pos": "RB", "value": 70, "age": 24},
+    ]
+    hits = recommend_waivers(
+        rows, set(),
+        roster_players=[],
+        roster_positions=["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"],
+        pidx={r["id"]: {"position": r["pos"]} for r in rows},
+        fmt={"is_keeper": True, "is_dynasty": False, "is_superflex": False},
+        limit=3, min_score=1.0,
+    )
+    names = [h["name"] for h in hits]
+    assert not ("Parker Washington" in names and "Luther Burden III" in names)
 
 
 def test_start_sit_swap_note_reuses_projection_upgrades():

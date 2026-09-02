@@ -118,6 +118,7 @@ def test_failed_brevo_does_not_mark_week_complete(monkeypatch):
         summary = we.send_weekly_digests()
     assert summary["failed"] == 1
     assert summary["sent"] == 0
+    assert summary.get("last_error_category") == "provider"
     assert not any("weekly_email_sent" in str(s[0]) and "INSERT" in str(s[0]) for s in conn.writes)
 
 

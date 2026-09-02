@@ -101,6 +101,18 @@ def test_save_league_owner_noops_on_missing_args(monkeypatch):
     yahoo_api.save_league_owner("L1", 2026, "")
 
 
+# ── yahoo_enabled gate ──────────────────────────────────────────────────────
+
+def test_yahoo_enabled_by_default(monkeypatch):
+    monkeypatch.delenv("YAHOO_ENABLED", raising=False)
+    assert yahoo_api.yahoo_enabled()
+
+
+def test_yahoo_enabled_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("YAHOO_ENABLED", "0")
+    assert not yahoo_api.yahoo_enabled()
+
+
 # ── _yahoo_token priority ───────────────────────────────────────────────────
 
 def test_yahoo_token_prefers_session_guid(monkeypatch):

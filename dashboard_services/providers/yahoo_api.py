@@ -70,13 +70,26 @@ _season_key_lock = threading.Lock()
 def yahoo_enabled() -> bool:
     """Whether the Yahoo connect flow is offered to users.
 
-    Gated OFF by default while the Yahoo Fantasy API access request is pending:
-    without approval every Fantasy call 403s "application not authorized", so
-    presenting Yahoo just walks users into a dead end. Set YAHOO_ENABLED=1 (or
-    true/yes/on) on the host once access is granted to turn it back on — no code
-    change needed.
+    Enabled by default now that Yahoo Fantasy API access is granted. Set
+    YAHOO_ENABLED=0 (or false/no/off) on the host to turn it off without a
+    deploy-time code change.
     """
-    return (os.environ.get("YAHOO_ENABLED") or "").strip().lower() in ("1", "true", "yes", "on")
+    raw = (os.environ.get("YAHOO_ENABLED") or "").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def yahoo_api_debug_enabled() -> bool:
+    """Verbose Yahoo parse/API diagnostics for production troubleshooting.
+
+  Set YAHOO_API_DEBUG=1 on the host (or hit /api/yahoo-debug while signed in)
+  to capture response shapes and parsed team/roster counts in logs.
+    """
+    return (os.environ.get("YAHOO_API_DEBUG") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _yahoo_debug(msg: str, *args, **kwargs) -> None:
+    if yahoo_api_debug_enabled():
+        logger.info("[yahoo-debug] " + msg, *args, **kwargs)
 
 
 def yahoo_api_debug_enabled() -> bool:
@@ -925,7 +938,7 @@ def _roster_players_block(roster_block: Any) -> Dict[str, Any]:
 
     Bulk ``league/.../teams;out=roster`` often returns a roster shell without
     players; the team roster resource nests them under ``roster.players`` or an
-  extra wrapper layer (see yahoo_fantasy_api's team.roster parser).
+    extra wrapper layer (see yahoo_fantasy_api's team.roster parser).
     """
     if not isinstance(roster_block, dict):
         return {}

@@ -17,6 +17,12 @@ DYNASTY_MOVE_MIN = 40.0
 # Skip leaguewide risers weaker than this.
 LEAGUEWIDE_MOVE_MIN = 80.0
 
+
+def uses_long_term_value(fmt: Optional[dict]) -> bool:
+    """Dynasty and keeper both keep players; surface market-value movement."""
+    fmt = fmt or {}
+    return bool(fmt.get("is_dynasty") or fmt.get("is_keeper"))
+
 _FAILED = object()
 
 
@@ -441,7 +447,7 @@ def trade_insight_for_roster(
     pidx: dict,
 ) -> Optional[dict]:
     """Compact roster-construction note from positional strength. No fake offers."""
-    if not fmt.get("is_dynasty") or not my_pids or not model_by_id:
+    if not uses_long_term_value(fmt) or not my_pids or not model_by_id:
         return None
     try:
         from utils.lineup_slots import count_lineup_slots
@@ -494,6 +500,34 @@ def breakout_for_roster(my_pids: set[str], cache: DigestRunCache, pidx: dict) ->
             best_score = score
             best = {**hit, "name": name, "player_id": pid}
     return best
+
+
+def roster_core(
+    my_pids: set[str],
+    *,
+    model_by_id: dict,
+    fmt: dict,
+    pidx: dict,
+    limit: int = 3,
+) -> list[dict]:
+    """Top roster players by the same value axis the rest of the site uses."""
+    rows: list[tuple[float, dict]] = []
+    for pid in my_pids or []:
+        meta = (pidx or {}).get(pid) or {}
+        name = str(
+            meta.get("full_name") or meta.get("name")
+            or ((meta.get("first_name") or "") + " " + (meta.get("last_name") or "")).strip()
+        ).strip()
+        if not name or name == pid or name.lower().startswith("player "):
+            continue
+        row = (model_by_id or {}).get(pid) or {}
+        val = player_value(row, fmt) if row else 0.0
+        if val < 40:
+            continue
+        pos = str(row.get("pos") or row.get("position") or meta.get("position") or "").upper()
+        rows.append((val, {"player_id": pid, "name": name, "pos": pos, "value": val}))
+    rows.sort(key=lambda t: t[0], reverse=True)
+    return [item for _v, item in rows[: max(0, int(limit or 0))]]
 
 
 def _name(pid: str, pidx: dict) -> str:

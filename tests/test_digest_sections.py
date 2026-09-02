@@ -5,7 +5,8 @@ from utils.digest_context import (
     _win_prob_from_starters, filter_movers, matchup_for_roster, DYNASTY_MOVE_MIN,
 )
 from utils.digest_sections import (
-    breakout_html, matchup_html, player_movement_html, start_sit_html, waiver_html,
+    breakout_html, format_chip, league_summary_html, matchup_html,
+    player_movement_html, start_sit_html, waiver_html,
 )
 
 
@@ -35,8 +36,12 @@ def test_matchup_section_shows_projections_and_wp():
     }, href="https://ex/m")
     assert "Rival FC" in html
     assert "110.2" in html
+    assert "110.2 to 101.0" in html
+    assert "Favored by 9.2" in html
     assert "64%" in html
     assert "https://ex/m" in html
+    assert "—" not in html
+    assert "–" not in html
 
 
 def test_win_prob_none_without_enough_projections():
@@ -72,7 +77,8 @@ def test_waiver_and_start_sit_sections_omit_when_empty():
     assert start_sit_html(None) == ""
     html = waiver_html([{"name": "Add Me", "pos": "RB", "reason": "RB need"}], href="/w")
     assert "Add Me" in html
-    assert "Waiver wire" in html
+    assert "View waivers" in html
+    assert "Top waiver targets:" not in html
     sit = start_sit_html({"title": "Start/Sit", "body": "Consider B over A"})
     assert "Consider B over A" in sit
 
@@ -92,3 +98,33 @@ def test_movement_omitted_when_empty():
         pidx={},
     )
     assert html == ""
+
+
+def test_league_summary_preseason_has_no_em_dash():
+    html = league_summary_html(
+        league_name="BLITZ THE LEAGUE", rank=6, wins=0, losses=0,
+        format_label="1QB · Keeper",
+    )
+    assert "BLITZ THE LEAGUE" in html
+    assert "your weekly report" not in html
+    assert "at 0-0" not in html
+    assert "1QB · Keeper" in html
+    assert "—" not in html
+    assert "–" not in html
+
+
+def test_league_summary_in_season_record():
+    html = league_summary_html(
+        league_name="Home League", rank=2, wins=4, losses=1,
+        format_label="SF · Dynasty",
+    )
+    assert "#2" in html
+    assert "4-1" in html
+    assert "SF · Dynasty" in html
+    assert "—" not in html
+
+
+def test_format_chip_uses_middle_dots():
+    assert format_chip({"type": "keeper", "is_superflex": False}) == "1QB · Keeper"
+    assert format_chip({"type": "dynasty", "is_superflex": True, "is_tep": True}) == "SF · TEP · Dynasty"
+    assert "—" not in format_chip({"type": "redraft"})
