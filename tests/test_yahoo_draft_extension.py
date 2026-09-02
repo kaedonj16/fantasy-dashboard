@@ -9,7 +9,7 @@ ROOM_JS = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
 def test_extension_manifest_includes_yahoo_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.30"
+    assert manifest["version"] == "1.5.32"
     assert "cookies" in manifest["permissions"]
     assert "tabs" in manifest["permissions"]
     hosts = " ".join(manifest.get("host_permissions") or [])
@@ -78,9 +78,11 @@ def test_yahoo_extension_relay_message_contract():
     assert "--br-da-shift" in inject
     assert "display:flex" in inject
     assert "looksFullBleed" in inject
+    assert "function isHostPortal" in inject
     assert "100vw" in inject
     assert "br-da-yahoo #root" in inject
     assert "br-da-sleeper #root" in inject
+    assert "br-da-sleeper body>#root" in inject
 
 
 def test_draft_room_yahoo_live_wiring():

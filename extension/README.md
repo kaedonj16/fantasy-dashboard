@@ -75,6 +75,9 @@ URL, not the league home.
 3. If you clicked **Not now**, use the extension popup → **Open Draft Assistant**, or close the tab and reopen it.
 4. SPA clicks from the league page should still trigger the invite; if they do not, hard-refresh once on the draft URL.
 
+Your seat (YOU N) comes from the Sleeper sign-in, the draft order, and the on-the-clock banner.
+If the slot dropdown stays blank, pick it once — the overlay then treats that column as you.
+
 ## Production zip (Chrome Web Store / AMO)
 
 ```bash

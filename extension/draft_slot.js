@@ -783,7 +783,7 @@
       obj.real_name != null ||
       obj.is_bot === false ||
       /user|auth|session|token|login|\bme\b/i.test(String(key || ""));
-    if (uid && (un || dn) && loggedInHint) {
+    if (uid && loggedInHint && (un || dn || obj.token || obj.email || obj.access_token || obj.accessToken)) {
       addSleeperUserId(out, uid, true);
       if (un) out.username = String(un);
       if (dn) out.displayName = String(dn);
@@ -807,10 +807,20 @@
           /* fall through */
         }
       }
-      if (!out.userIds.length && /user|auth|session|token|login/i.test(String(key || ""))) {
+      const bare = trimmed.match(/^\d{6,20}$/);
+      if (bare && /user_id|userid|sleeper_user/i.test(String(key || ""))) {
+        addSleeperUserId(out, bare[0], true);
+      }
+      if (!out.userIds.length && /^(?:user|currentuser|current_user|me|session|auth|token|login|sleeper.?user)(?:[_-].*)?$/i.test(String(key || ""))) {
         const idRe = /"(?:user_id|userId)"\s*:\s*"?(\d{6,20})"?/g;
+        const found = [];
         let m;
-        while ((m = idRe.exec(trimmed))) addSleeperUserId(out, m[1]);
+        while ((m = idRe.exec(trimmed))) {
+          if (found.indexOf(m[1]) < 0) found.push(m[1]);
+        }
+        if (found.length && found.length <= 2) {
+          found.forEach(function (id) { addSleeperUserId(out, id); });
+        }
         if (!out.username) {
           const un = trimmed.match(/"username"\s*:\s*"([A-Za-z0-9_]{2,32})"/);
           if (un) out.username = un[1];
@@ -845,20 +855,72 @@
     return out;
   }
 
+  function sleeperUsernameFromHref(href) {
+    const m = String(href || "").match(/\/u\/([A-Za-z0-9_]+)/);
+    if (!m) return "";
+    const name = m[1];
+    if (/^(help|support|blog|about|settings|login|signup)$/i.test(name)) return "";
+    return name;
+  }
+
   function sleeperUsernameFromDom(doc) {
     doc = doc || (typeof document !== "undefined" ? document : null);
     if (!doc || !doc.querySelectorAll) return "";
+    const header = doc.querySelector("header, nav, [class*='Header'], [class*='header'], [class*='NavBar']");
+    if (header && header.querySelectorAll) {
+      const pinned = header.querySelectorAll('a[href*="/u/"]');
+      for (let i = 0; i < Math.min(pinned.length, 8); i++) {
+        const name = sleeperUsernameFromHref(pinned[i].getAttribute("href"));
+        if (name) return name;
+      }
+    }
     const links = doc.querySelectorAll('a[href*="/u/"]');
-    const n = Math.min(links.length, 20);
+    const counts = {};
+    const n = Math.min(links.length, 40);
     for (let i = 0; i < n; i++) {
-      const href = String(links[i].getAttribute("href") || "");
-      const m = href.match(/\/u\/([A-Za-z0-9_]+)/);
-      if (!m) continue;
-      const name = m[1];
-      if (/^(help|support|blog|about|settings|login|signup)$/i.test(name)) continue;
-      return name;
+      const name = sleeperUsernameFromHref(links[i].getAttribute("href"));
+      if (!name) continue;
+      counts[name] = (counts[name] || 0) + 1;
+    }
+    const uniq = Object.keys(counts);
+    if (uniq.length === 1) return uniq[0];
+    return "";
+  }
+
+  function sleeperUserIdFromUsers(users, ident) {
+    const names = [];
+    const seen = {};
+    function add(s) {
+      const n = String(s || "").replace(/\s+/g, " ").trim().toLowerCase();
+      if (n.length < 2 || n.length > 40 || seen[n]) return;
+      seen[n] = true;
+      names.push(n);
+    }
+    add(ident && ident.username);
+    add(ident && ident.displayName);
+    add(ident && ident.teamName);
+    if (!names.length) return "";
+    for (let i = 0; i < (users || []).length; i++) {
+      const u = users[i];
+      if (!u || u.user_id == null) continue;
+      const meta = u.metadata || {};
+      const cands = [u.username, u.display_name, u.displayName, meta.team_name, u.team_name];
+      const hit = cands.some(function (c) {
+        const n = String(c || "").replace(/\s+/g, " ").trim().toLowerCase();
+        return !!n && names.indexOf(n) >= 0;
+      });
+      if (hit) return String(u.user_id);
     }
     return "";
+  }
+
+  function userIdsInDraftOrder(order, userIds) {
+    const ids = userIds || [];
+    if (!order || typeof order !== "object") return ids;
+    const hit = ids.filter(function (id) {
+      return id && order[String(id)] != null;
+    });
+    return hit.length ? hit : ids;
   }
 
   function slotFromSleeperDraftOrder(order, userIds) {
@@ -914,7 +976,7 @@
   function parseSleeperClock(text) {
     const s = String(text || "").replace(/\s+/g, " ");
     return {
-      onClock: /you(?:'re| are) on the clock|your (?:pick|turn)(?:\b| to pick)|waiting for you to pick/i.test(s),
+      onClock: /you(?:'re| are) on the clock|waiting for you to pick|you(?:'re| are) up(?:\s+now)?(?:\s*[!.])?(?:\s|$)|your turn to pick|it(?:'s| is) your (?:pick|turn)/i.test(s),
       upIn: (function () {
         const m = s.match(/you(?:'re| are) up in\s+(\d+)\s+picks?/i);
         return m ? Number(m[1]) : null;
@@ -994,7 +1056,7 @@
     opts = opts || {};
     const teams = Number(opts.teams) || 0;
     const identity = opts.identity || (opts.skipCollect ? { userIds: [] } : collectSleeperIdentity());
-    const userIds = (identity && identity.userIds) || [];
+    const userIds = userIdsInDraftOrder(opts.draft && opts.draft.draft_order, (identity && identity.userIds) || []);
     const draft = opts.draft || {};
     const picks = opts.picks || [];
     const max = teams || 32;
@@ -1191,6 +1253,8 @@
     completedFromYahooClock: completedFromYahooClock,
     collectSleeperIdentity: collectSleeperIdentity,
     sleeperUsernameFromDom: sleeperUsernameFromDom,
+    sleeperUserIdFromUsers: sleeperUserIdFromUsers,
+    userIdsInDraftOrder: userIdsInDraftOrder,
     slotFromSleeperDraftOrder: slotFromSleeperDraftOrder,
     slotFromSleeperPickedBy: slotFromSleeperPickedBy,
     slotFromSleeperRosterMap: slotFromSleeperRosterMap,

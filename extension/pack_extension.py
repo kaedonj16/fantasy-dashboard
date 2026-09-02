@@ -33,6 +33,7 @@ INCLUDE = [
     "pick_score.js",
     "draft_board_core.js",
     "sleeper_draft.js",
+    "sleeper_draft_main.js",
     "espn_draft.js",
     "espn_draft_main.js",
     "yahoo_draft.js",

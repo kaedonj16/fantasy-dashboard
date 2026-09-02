@@ -489,6 +489,10 @@
     max-width: 100%;
     white-space: nowrap;
     overflow: hidden;
+  }
+  .sync-chip-txt {
+    min-width: 0;
+    overflow: hidden;
     text-overflow: ellipsis;
   }
   .sync-reconnect {
@@ -512,14 +516,19 @@
     border-color: var(--accent);
   }
   .sync-chip i {
-    width: 7px; height: 7px; border-radius: 50%;
+    display: block;
+    flex: 0 0 7px;
+    width: 7px;
+    height: 7px;
+    min-width: 7px;
+    border-radius: 50%;
     background: currentColor;
-    box-shadow: 0 0 0 0 currentColor;
-    animation: pulse 1.8s ease-out infinite;
+    box-shadow: none;
+    animation: pulse 1.6s ease-in-out infinite;
   }
   @keyframes pulse {
-    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--win) 55%, transparent); }
-    100% { box-shadow: 0 0 0 8px transparent; }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
   }
 
   .tab-bar {

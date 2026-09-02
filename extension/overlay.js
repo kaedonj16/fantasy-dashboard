@@ -219,7 +219,7 @@
   const state = {
     teams: 12,
     rounds: 15,
-    mySlot: EMBEDDED ? 1 : 7,
+    mySlot: EMBEDDED ? 0 : 7,
     slotAuto: false,
     live: EMBEDDED,
     hostInProgress: null,
@@ -965,7 +965,7 @@
     document.getElementById("urlText").textContent = pf.url;
     document.getElementById("hostLogo").textContent = pf.logo;
     document.getElementById("hostLeague").textContent = pf.league;
-    document.getElementById("syncChip").innerHTML = "<i></i> " + pf.sync;
+    document.getElementById("syncChip").innerHTML = "<i aria-hidden=\"true\"></i><span class=\"sync-chip-txt\">" + esc(pf.sync) + "</span>";
     const rd = Math.min(state.rounds, Math.ceil(Math.min(state.current, state.teams * state.rounds) / state.teams));
     const settingsTxt = leagueSettingsLabel();
     const hostBits = [state.teams + "-team"];
@@ -1271,7 +1271,7 @@
     if (!chip) return;
     const synced = ok == null ? state.syncOk : !!ok;
     state.syncOk = synced;
-    chip.innerHTML = "<i></i> " + esc(formatSyncChip(synced));
+    chip.innerHTML = "<i aria-hidden=\"true\"></i><span class=\"sync-chip-txt\">" + esc(formatSyncChip(synced)) + "</span>";
     chip.style.color = synced ? "" : "var(--warn)";
   }
 
