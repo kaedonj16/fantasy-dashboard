@@ -550,7 +550,7 @@
       '<div class="br-da-invite-brand">' +
       (logoUrl ? '<img class="br-da-invite-logo" alt="BR Fantasy" src="' + logoUrl + '">' : "") +
       '<div class="br-da-invite-brand-txt">' +
-      '<p class="br-da-invite-kicker">BR Fantasy extension</p>' +
+      '<p class="br-da-invite-kicker">BR Fantasy Draft Assistant</p>' +
       "</div>" +
       '<p class="br-da-invite-ver">' + PRODUCT_VERSION + "</p>" +
       "</div>" +
