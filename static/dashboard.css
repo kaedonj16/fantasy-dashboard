@@ -35901,7 +35901,7 @@ a, button, [role="button"], [role="tab"], summary, label,
     color: var(--accent);
     background: var(--accent-soft);
     border: 1px solid var(--border);
-    border-radius: 999px;
+    border-radius: 9999px;
     padding: 3px 9px;
 }
 .pm-team-headtop { display: flex; align-items: center; gap: 13px; }
