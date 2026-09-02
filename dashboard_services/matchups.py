@@ -106,6 +106,7 @@ def build_matchup_preview(
 
     avatar_cache: Dict[Optional[str], Any] = {}
     roster_by_owner: Dict[Optional[str], dict] = {r.get("owner_id"): r for r in rosters}
+    roster_by_rid: Dict[str, dict] = {str(r.get("roster_id")): r for r in rosters}
 
     def get_avatar(owner_id: Optional[str]) -> Any:
         if owner_id not in avatar_cache:
@@ -140,6 +141,15 @@ def build_matchup_preview(
         all_players = [str(p) for p in (row.get("players") or []) if p]
         bench_raw = [p for p in all_players if p not in starter_set]
         pts_map = {str(k): v for k, v in (row.get("players_points") or {}).items()}
+
+        # Yahoo (and some other platforms) return scoreboard totals without lineups.
+        if not starters_raw:
+            roster = roster_by_rid.get(rid) or {}
+            starters_raw = [str(s) for s in (roster.get("starters") or []) if s]
+            starter_set = {str(s) for s in starters_raw}
+            all_players = [str(p) for p in (roster.get("players") or []) if p]
+            bench_raw = [p for p in all_players if p not in starter_set]
+
         s_infos: List[dict] = [_pinfo(str(pid), pts_map) for pid in starters_raw]
         b_infos: List[dict] = [_pinfo(str(pid), pts_map) for pid in bench_raw]
         pts_total = float(row["points"]) if isinstance(row.get("points"), (int, float)) else None

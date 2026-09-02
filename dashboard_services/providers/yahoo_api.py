@@ -1048,13 +1048,17 @@ def _prefetch_team_rosters(
     access_token: str,
     teams: List[List],
     week: Optional[int] = None,
+    team_keys: Optional[List[str]] = None,
 ) -> Dict[str, List[Dict]]:
     """Parallel per-team roster fetch keyed by team_key."""
-    keys = []
-    for t in teams:
-        tk = _team_attr(t, "team_key") or ""
-        if tk:
-            keys.append(tk)
+    if team_keys is not None:
+        keys = [k for k in team_keys if k]
+    else:
+        keys = []
+        for t in teams:
+            tk = _team_attr(t, "team_key") or ""
+            if tk:
+                keys.append(tk)
     if not keys:
         return {}
 
@@ -1126,6 +1130,13 @@ def get_users(season: int, league_id: str, access_token: str) -> List[Dict[str, 
     return out
 
 
+def _yahoo_players_need_hydration(raw_players: List[Dict]) -> bool:
+    """True when roster players are missing or lack lineup slot info."""
+    if not raw_players:
+        return True
+    return any(not _flatten_yahoo_player(rp)[1] for rp in raw_players)
+
+
 def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str, Any]]:
     lk = _league_key_for_season(league_id, season, access_token)
     raw = _yahoo_get(
@@ -1135,21 +1146,32 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
     teams = _extract_teams(raw)
     out: List[Dict[str, Any]] = []
 
-    # Bulk teams;out=roster returns roster shells without player lists. When
-    # every team is empty, hydrate from team/{team_key}/roster (parallel).
+    # Bulk teams;out=roster returns roster shells without player lists, and even
+    # when players appear they often omit selected_position. Hydrate any team
+    # that needs slot info from team/{team_key}/roster (parallel).
     roster_by_key: Dict[str, List[Dict]] = {}
-    if teams and all(not _extract_roster_players(t) for t in teams):
-        week = _league_current_week(access_token, lk)
-        roster_by_key = _prefetch_team_rosters(access_token, teams, week)
+    week = _league_current_week(access_token, lk)
+    keys_needing_hydration: List[str] = []
+    for t in teams:
+        team_key = _team_attr(t, "team_key") or ""
+        if not team_key:
+            continue
+        if _yahoo_players_need_hydration(_extract_roster_players(t)):
+            keys_needing_hydration.append(team_key)
+    if keys_needing_hydration:
+        roster_by_key = _prefetch_team_rosters(
+            access_token, teams, week, team_keys=keys_needing_hydration,
+        )
         _yahoo_debug(
-            "get_rosters bulk rosters empty; prefetched %s team rosters week=%s counts=%s",
-            len(roster_by_key), week,
+            "get_rosters hydrated %s/%s team rosters week=%s counts=%s",
+            len(roster_by_key), len(keys_needing_hydration), week,
             {k: len(v) for k, v in list(roster_by_key.items())[:5]},
         )
 
     for t in teams:
         team_key  = _team_attr(t, "team_key") or ""
         team_id   = _safe_int(_team_attr(t, "team_id") or team_key.split(".")[-1])
+        team_name = _team_attr(t, "name") or f"Team {team_id}"
         managers = _team_managers(t)
         mgr      = _unwrap_yahoo_list_or_dict((managers[0].get("manager") if managers else None))
         owner_id = mgr.get("guid") or str(team_id)
@@ -1165,10 +1187,9 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
 
         # Roster — bulk shell first, then per-team resource fallback.
         raw_players = _extract_roster_players(t)
-        if not raw_players and team_key:
+        if _yahoo_players_need_hydration(raw_players) and team_key:
             raw_players = roster_by_key.get(team_key) or []
-        if not raw_players and team_key and team_key not in roster_by_key:
-            week = _league_current_week(access_token, lk)
+        if _yahoo_players_need_hydration(raw_players) and team_key and team_key not in roster_by_key:
             raw_players = _fetch_team_roster_players(access_token, team_key, week)
         players:  List[str] = []
         starters: List[str] = []
@@ -1204,7 +1225,7 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
             "co_owners":  None,
             "keepers":    None,
             "league_id":  str(league_id),
-            "metadata":   {},
+            "metadata":   {"team_name": team_name},
             "owner_id":   owner_id,
             "player_map": None,
             "players":    players,
@@ -1244,18 +1265,28 @@ def get_matchups(season: int, league_id: str, week: int, access_token: str) -> L
     lg         = fc.get("league") or []
     scoreboard = (lg[1] if len(lg) > 1 else {}).get("scoreboard") or {}
     matchups   = scoreboard.get("matchups") or {}
-    count      = _safe_int(matchups.get("count") or matchups.get("0", {}).get("count")) or 0
 
     out: List[Dict[str, Any]] = []
-    for i in range(count):
-        entry   = matchups.get(str(i)) or {}
-        matchup = entry.get("matchup") or {}
-        teams   = matchup.get("teams") or {}
-        m_id    = i + 1
+    for i, entry in enumerate(_yahoo_collection_rows(matchups, "matchup")):
+        matchup = entry.get("matchup") if isinstance(entry, dict) else {}
+        if not isinstance(matchup, dict):
+            continue
+        m_id = i + 1
+        teams_block = matchup.get("teams") or {}
+        team_rows = _yahoo_collection_rows(teams_block, "team")
+        if not team_rows and isinstance(teams_block, dict):
+            for j in range(_safe_int(teams_block.get("count")) or 2):
+                row = teams_block.get(str(j))
+                if row:
+                    team_rows.append(row)
 
-        for j in range(2):
-            tm_entry = teams.get(str(j)) or {}
-            tm       = tm_entry.get("team") or []
+        for idx, tm_entry in enumerate(team_rows):
+            if isinstance(tm_entry, dict) and "team" in tm_entry:
+                tm = tm_entry["team"]
+            elif isinstance(tm_entry, dict):
+                tm = tm_entry.get("team") or []
+            else:
+                tm = []
 
             roster_id = _safe_int(
                 _team_attr(tm, "team_id")

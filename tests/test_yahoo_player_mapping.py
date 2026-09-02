@@ -324,7 +324,7 @@ def _realistic_yahoo_team(team_id, name, *, with_roster=False):
                         {"name": {"full": "Patrick Mahomes"}},
                         {"display_position": "QB"},
                         {"editorial_team_abbr": "KC"},
-                    ]]},
+                    ], {"selected_position": {"position": "QB"}}]},
                     "count": 1,
                 }
             }
@@ -403,6 +403,61 @@ def test_get_rosters_prefetches_team_resource_when_bulk_roster_is_empty(monkeypa
     yahoo_api._yahoo_id_to_canonical.cache_clear()
     assert len(rosters) == 1
     assert rosters[0]["players"] == ["11111"]
+    assert rosters[0]["metadata"]["team_name"] == "Shell Only"
+
+
+def test_get_rosters_prefetches_when_bulk_players_lack_lineup_slots(monkeypatch):
+    """Bulk roster may list players without selected_position — hydrate per team."""
+    import dashboard_services.api as api
+    monkeypatch.setattr(api, "get_nfl_players", lambda: {
+        "11111": {"yahoo_id": "5"},
+        "22222": {"yahoo_id": "6"},
+    })
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    bulk_team = _realistic_yahoo_team(1, "Slot Hydrate", with_roster=True)
+    bulk_team[2]["roster"]["players"]["0"]["player"] = [[
+        {"player_id": "5"}, {"name": {"full": "Patrick Mahomes"}},
+        {"display_position": "QB"}, {"editorial_team_abbr": "KC"},
+    ]]
+    starter_entry = [[
+        {"player_id": "5"}, {"name": {"full": "Patrick Mahomes"}},
+        {"display_position": "QB"}, {"editorial_team_abbr": "KC"},
+    ], [{"selected_position": [{"position": "QB"}]}]]
+    bench_entry = [[
+        {"player_id": "6"}, {"name": {"full": "Travis Kelce"}},
+        {"display_position": "TE"}, {"editorial_team_abbr": "KC"},
+    ], [{"selected_position": [{"position": "BN"}]}]]
+    team_roster_response = {
+        "fantasy_content": {
+            "team": [
+                [{"team_key": "449.l.99.t.1"}],
+                {"roster": {"players": {
+                    "0": {"player": starter_entry},
+                    "1": {"player": bench_entry},
+                    "count": 2,
+                }}},
+            ]
+        }
+    }
+    paths_called = []
+
+    def fake_get(tok, path, params=None):
+        paths_called.append(path)
+        if path.startswith("team/"):
+            return team_roster_response
+        if "teams" in path:
+            return _teams_payload([bulk_team])
+        if path == "league/449.l.99":
+            return {"fantasy_content": {"league": [{"current_week": "1"}]}}
+        raise KeyError(path)
+
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", fake_get)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    rosters = yahoo_api.get_rosters(2026, "99", "tok")
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    assert any(p.startswith("team/") for p in paths_called)
+    assert rosters[0]["starters"] == ["11111"]
+    assert rosters[0]["reserve"] == ["22222"]
 
 
 def _yahoo_team_with_list_standings(team_id, name, *, with_roster=False):
