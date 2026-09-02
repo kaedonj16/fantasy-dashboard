@@ -697,6 +697,27 @@ def _yahoo_pos(raw_pos: str) -> str:
     return _MAP.get((raw_pos or "").upper(), (raw_pos or "").upper())
 
 
+def _merge_yahoo_dict_parts(node: Any, into: Dict[str, Any]) -> None:
+    """Recursively merge Yahoo's positional single-key dict fragments into ``into``."""
+    if isinstance(node, dict):
+        into.update(node)
+    elif isinstance(node, list):
+        for item in node:
+            _merge_yahoo_dict_parts(item, into)
+
+
+def _yahoo_selected_position(slot_node: Any) -> Optional[str]:
+    """Extract roster slot (QB/BN/IR) from a Yahoo player slot fragment."""
+    slot = _unwrap_yahoo_list_or_dict(slot_node)
+    if not slot:
+        return None
+    sel = _unwrap_yahoo_list_or_dict(slot.get("selected_position"))
+    pos = sel.get("position")
+    if isinstance(pos, (list, dict)):
+        pos = _unwrap_yahoo_list_or_dict(pos).get("position")
+    return str(pos) if pos else None
+
+
 def _flatten_yahoo_player(rp: Any) -> tuple:
     """Normalize a Yahoo ``player`` entry to (meta_dict, selected_position).
 
@@ -704,17 +725,25 @@ def _flatten_yahoo_player(rp: Any) -> tuple:
     the metadata is a positional list of single-key dicts. Merge it into one
     flat dict (also tolerating an already-flat dict), so callers can read
     ``name``/``player_id``/``editorial_team_abbr`` uniformly."""
-    meta_part = rp[0] if isinstance(rp, list) and rp else rp
+    if isinstance(rp, dict):
+        return rp, _yahoo_selected_position(rp)
+
+    node = rp
+    while isinstance(node, list) and len(node) == 1:
+        node = node[0]
+
     flat: Dict[str, Any] = {}
-    if isinstance(meta_part, list):
-        for part in meta_part:
-            if isinstance(part, dict):
-                flat.update(part)
-    elif isinstance(meta_part, dict):
-        flat = meta_part
     sel_pos = None
-    if isinstance(rp, list) and len(rp) > 1 and isinstance(rp[1], dict):
-        sel_pos = (rp[1].get("selected_position") or {}).get("position")
+    if isinstance(node, list) and node:
+        _merge_yahoo_dict_parts(node[0], flat)
+        if len(node) > 1:
+            sel_pos = _yahoo_selected_position(node[1])
+    elif isinstance(node, dict):
+        flat = node
+        sel_pos = _yahoo_selected_position(node)
+
+    if not sel_pos:
+        sel_pos = _yahoo_selected_position(flat)
     return flat, sel_pos
 
 

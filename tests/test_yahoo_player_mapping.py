@@ -30,6 +30,27 @@ def test_flatten_positional_list_form():
     assert sel == "BN"
 
 
+def test_flatten_list_wrapped_selected_position():
+    """Per-team roster resource wraps selected_position in single-element lists."""
+    rp = [
+        [{"player_id": "5"}, {"name": {"full": "Patrick Mahomes"}}, {"editorial_team_abbr": "KC"}],
+        [{"selected_position": [{"position": "QB"}]}],
+    ]
+    meta, sel = yahoo_api._flatten_yahoo_player(rp)
+    assert meta["player_id"] == "5"
+    assert sel == "QB"
+
+
+def test_flatten_triple_nested_player_from_team_roster():
+    rp = [[
+        [{"player_id": "9"}, {"name": {"full": "Travis Kelce"}}, {"editorial_team_abbr": "KC"}],
+        [{"selected_position": [{"position": "TE"}]}],
+    ]]
+    meta, sel = yahoo_api._flatten_yahoo_player(rp)
+    assert meta["player_id"] == "9"
+    assert sel == "TE"
+
+
 def test_crosswalk_built_from_feed(monkeypatch):
     import dashboard_services.api as api
     monkeypatch.setattr(api, "get_nfl_players",
@@ -357,7 +378,7 @@ def test_get_rosters_prefetches_team_resource_when_bulk_roster_is_empty(monkeypa
     player_entry = [[
         {"player_id": "5"}, {"name": {"full": "Patrick Mahomes"}},
         {"display_position": "QB"}, {"editorial_team_abbr": "KC"},
-    ], {"selected_position": {"position": "QB"}}]
+    ], [{"selected_position": [{"position": "QB"}]}]]
     team_roster_response = {
         "fantasy_content": {
             "team": [
