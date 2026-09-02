@@ -382,3 +382,73 @@ def test_get_rosters_prefetches_team_resource_when_bulk_roster_is_empty(monkeypa
     yahoo_api._yahoo_id_to_canonical.cache_clear()
     assert len(rosters) == 1
     assert rosters[0]["players"] == ["11111"]
+
+
+def _yahoo_team_with_list_standings(team_id, name, *, with_roster=False):
+    """Yahoo sometimes wraps ``team_standings`` (and managers) in single-element lists."""
+    meta = [
+        {"team_key": f"449.l.99.t.{team_id}"},
+        {"team_id": str(team_id)},
+        {"name": name},
+        {"managers": [[{"manager": [{"guid": f"g{team_id}", "nickname": f"Owner {team_id}"}]}]]},
+    ]
+    parts = [meta]
+    if with_roster:
+        parts.append({
+            "team_standings": [{
+                "outcome_totals": [{"wins": "2", "losses": "1", "ties": "0"}],
+                "points_for": "250.3",
+                "points_against": "210.0",
+            }]
+        })
+        parts.append({
+            "roster": {
+                "players": {
+                    "0": {"player": [[
+                        {"player_id": "5"},
+                        {"name": {"full": "Patrick Mahomes"}},
+                        {"display_position": "QB"},
+                        {"editorial_team_abbr": "KC"},
+                    ]]},
+                    "count": 1,
+                }
+            }
+        })
+    return parts
+
+
+def test_get_rosters_handles_list_wrapped_standings(monkeypatch):
+    import dashboard_services.api as api
+    monkeypatch.setattr(api, "get_nfl_players", lambda: {"11111": {"yahoo_id": "5"}})
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    team = _yahoo_team_with_list_standings(4, "List Standings", with_roster=True)
+    payload = _teams_payload([team])
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda *a, **k: payload)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    rosters = yahoo_api.get_rosters(2026, "99", "tok")
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    assert rosters[0]["settings"]["wins"] == 2
+    assert rosters[0]["settings"]["losses"] == 1
+    assert rosters[0]["settings"]["fpts"] == 250
+
+
+def test_diagnose_league_ok_with_list_wrapped_standings(monkeypatch):
+    teams = [_yahoo_team_with_list_standings(i, f"T{i}", with_roster=True) for i in range(1, 3)]
+    payload = _teams_payload(teams)
+    meta_payload = {"fantasy_content": {"league": [{"name": "L", "num_teams": "2", "draft_status": "postdraft"}]}}
+    paths = {
+        "league/449.l.99/teams;out=roster,stats,standings": payload,
+        "league/449.l.99/teams": payload,
+        "league/449.l.99": meta_payload,
+    }
+    import dashboard_services.api as api
+    monkeypatch.setattr(api, "get_nfl_players", lambda: {"11111": {"yahoo_id": "5"}})
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda tok, path, params=None: paths[path])
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    report = yahoo_api.diagnose_league(2026, "99", "tok")
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    assert report["ok"] is True
+    assert report["extracted_team_count"] == 2
+    assert report["teams"][0]["wins"] == "2"
+    assert report["teams"][0]["points_for"] == "250.3"

@@ -217,10 +217,7 @@ def get_login_guid(access_token: str, league_id: str = "") -> str:
         try:
             raw   = _yahoo_get(access_token, f"league/{_league_key(league_id)}/teams")
             for t in _extract_teams(raw):
-                managers = _team_attr(t, "managers") or []
-                if isinstance(managers, dict):
-                    managers = [managers]
-                for m in managers:
+                for m in _team_managers(t):
                     mgr = (m or {}).get("manager") or {}
                     if str(mgr.get("is_current_login")) == "1" and mgr.get("guid"):
                         return str(mgr["guid"])
@@ -819,7 +816,8 @@ def _summarize_team_entry(team_data: List) -> Dict[str, Any]:
             resolved += 1
         elif len(unmapped_samples) < 5:
             unmapped_samples.append(f"yid={yid} name={name!r} pos={pos}")
-    standings = _team_attr(team_data, "team_standings") or {}
+    standings = _team_field_dict(team_data, "team_standings")
+    outcome = _unwrap_yahoo_list_or_dict(standings.get("outcome_totals"))
     roster_block = _team_attr(team_data, "roster")
     roster_keys = sorted(roster_block.keys()) if isinstance(roster_block, dict) else []
     players_block = _roster_players_block(roster_block) if isinstance(roster_block, dict) else {}
@@ -836,7 +834,7 @@ def _summarize_team_entry(team_data: List) -> Dict[str, Any]:
             (k for k in (players_block or {}) if str(k).isdigit() or k == "count"),
             key=lambda x: (0, int(x)) if str(x).isdigit() else (1, str(x)),
         )[:6],
-        "wins":           (standings.get("outcome_totals") or {}).get("wins"),
+        "wins":           outcome.get("wins"),
         "points_for":     standings.get("points_for"),
     }
 
@@ -917,6 +915,28 @@ def _team_attr(team_list: List, key: str, default=None):
 
     hit = _walk(team_list or [])
     return default if hit is None else hit
+
+
+def _team_field_dict(team_list: List, key: str) -> Dict[str, Any]:
+    """Read a team sub-resource and normalize Yahoo list wrappers to a dict."""
+    return _unwrap_yahoo_list_or_dict(_team_attr(team_list, key))
+
+
+def _team_managers(team_list: List) -> List[Dict[str, Any]]:
+    """Normalize Yahoo ``managers`` nodes to ``[{"manager": ...}, ...]``."""
+    raw = _team_attr(team_list, "managers")
+    if raw is None:
+        return []
+    nodes = raw if isinstance(raw, list) else [raw]
+    out: List[Dict[str, Any]] = []
+    for node in nodes:
+        if isinstance(node, dict):
+            out.append(node)
+        elif isinstance(node, list):
+            for sub in node:
+                if isinstance(sub, dict):
+                    out.append(sub)
+    return out
 
 
 def _roster_players_block(roster_block: Any) -> Dict[str, Any]:
@@ -1053,10 +1073,8 @@ def get_users(season: int, league_id: str, access_token: str) -> List[Dict[str, 
         if isinstance(logo, list) and logo:
             logo_url = (logo[0].get("team_logo") or {}).get("url")
 
-        managers = _team_attr(t, "managers") or []
-        if isinstance(managers, dict):
-            managers = [managers]
-        mgr   = (managers[0].get("manager") or {}) if managers else {}
+        managers = _team_managers(t)
+        mgr   = _unwrap_yahoo_list_or_dict((managers[0].get("manager") if managers else None))
         guid  = mgr.get("guid") or str(team_id)
         nick  = mgr.get("nickname") or team_name
 
@@ -1103,15 +1121,13 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
     for t in teams:
         team_key  = _team_attr(t, "team_key") or ""
         team_id   = _safe_int(_team_attr(t, "team_id") or team_key.split(".")[-1])
-        managers  = _team_attr(t, "managers") or []
-        if isinstance(managers, dict):
-            managers = [managers]
-        mgr      = (managers[0].get("manager") or {}) if managers else {}
+        managers = _team_managers(t)
+        mgr      = _unwrap_yahoo_list_or_dict((managers[0].get("manager") if managers else None))
         owner_id = mgr.get("guid") or str(team_id)
 
         # Standings / record
-        standings = _team_attr(t, "team_standings") or {}
-        outcome   = standings.get("outcome_totals") or {}
+        standings = _team_field_dict(t, "team_standings")
+        outcome   = _unwrap_yahoo_list_or_dict(standings.get("outcome_totals"))
         wins      = _safe_int(outcome.get("wins"))
         losses    = _safe_int(outcome.get("losses"))
         ties      = _safe_int(outcome.get("ties"))
@@ -1216,8 +1232,8 @@ def get_matchups(season: int, league_id: str, week: int, access_token: str) -> L
                 _team_attr(tm, "team_id")
                 or (_team_attr(tm, "team_key") or "").split(".")[-1]
             )
-            pts_block = _team_attr(tm, "team_points") or {}
-            points    = _safe_float(pts_block.get("total") if isinstance(pts_block, dict) else 0)
+            pts_block = _team_field_dict(tm, "team_points")
+            points    = _safe_float(pts_block.get("total"))
 
             out.append({
                 "points":          points,
