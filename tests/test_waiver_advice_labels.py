@@ -9,6 +9,14 @@ def test_waiver_advice_metrics_have_visible_labels():
         assert label in body
 
 
+def test_start_sit_shows_format_value():
+    """Start/sit rows and compare use the API value field (format-aware on the server)."""
+    body = build_waivers_body("espn", 2026, "league", {})
+    assert "if (p.value > 0)" in body
+    assert "chip('Value', Math.round(p.value))" in body
+    assert "row('Value', dash(da.value), dash(db.value)" in body
+
+
 def test_data_quality_metric_removed():
     body = build_waivers_body("sleeper", 2026, "league", {})
     assert "Data quality" not in body

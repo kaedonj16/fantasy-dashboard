@@ -8645,14 +8645,25 @@ def _waiver_value_keys(ctx: dict) -> "tuple[str, str]":
 
     The fallback is always the dynasty column, so a redraft league missing a
     redraft value for some player still ranks them off dynasty value rather than
-    dropping them below the value floor.
+    dropping them below the value floor. ``apply_redraft_display_fields`` fills
+    unpriced redraft values first so that fallback rarely fires on waivers.
     """
+    from utils.value_helpers import format_value_keys
     rp = ctx.get("roster_positions") or []
-    is_sf = _is_superflex_lineup(rp)
-    if _league_is_redraft(ctx):
-        return (("redraft_value_sf" if is_sf else "redraft_value_1qb"),
-                ("sf_value" if is_sf else "value"))
-    return (("sf_value" if is_sf else "value"), "value")
+    return format_value_keys(
+        is_redraft=_league_is_redraft(ctx),
+        is_sf=_is_superflex_lineup(rp),
+    )
+
+
+def _waiver_rank_label_key(ctx: dict) -> str:
+    """Position-rank label field matching ``_waiver_value_keys`` for this league."""
+    from utils.value_helpers import format_rank_label_key
+    rp = ctx.get("roster_positions") or []
+    return format_rank_label_key(
+        is_redraft=_league_is_redraft(ctx),
+        is_sf=_is_superflex_lineup(rp),
+    )
 
 
 def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 10) -> str:
@@ -8697,6 +8708,7 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
     # Rank/display off the value column that matches this league's format
     # (redraft vs dynasty, 1QB vs Superflex) — same selector as the API surface.
     _vkey_dash, _vfb_dash = _waiver_value_keys(ctx)
+    _rk_dash = _waiver_rank_label_key(ctx)
 
     waiver_candidates = []
     for row in model_value_table:
@@ -8745,7 +8757,7 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
             "team": row.get("team") or players_index.get(pid, {}).get("team") or "",
             "value": val,
             "age": age,
-            "pos_rank_label": row.get("pos_rank_label") or "",
+            "pos_rank_label": row.get(_rk_dash) or row.get("pos_rank_label") or "",
             "rank_change_7d": rank_change,
         })
 
@@ -10048,6 +10060,8 @@ def api_start_sit_options():
     players_index = ctx.get("players_index") or {}
     players_full = ctx.get("players") or {}
     model_value_table = list(get_model_value_table_cached() or [])
+    _ss_vkey, _ss_vfb = _waiver_value_keys(ctx)
+    _ss_rkey = _waiver_rank_label_key(ctx)
 
     roster_positions = ctx.get("roster_positions") or []
     lineup_requirements = _count_lineup_slots(roster_positions)
@@ -10299,7 +10313,7 @@ def api_start_sit_options():
                 from utils.injury_plan import injury_plan as _ss_plan
                 _pval = None
                 try:
-                    _pval = float(row.get("value") or 0) or None
+                    _pval = float(row.get(_ss_vkey) or row.get(_ss_vfb) or row.get("value") or 0) or None
                 except Exception:
                     _pval = None
                 _return_plan = _ss_plan(
@@ -10324,7 +10338,8 @@ def api_start_sit_options():
             "fpts_against": fpts_vs,
             "def_rank": def_rank,
             "def_total": def_total,
-            "pos_rank_label": row.get("pos_rank_label") or "",
+            "pos_rank_label": row.get(_ss_rkey) or row.get("pos_rank_label") or "",
+            "value": round(float(row.get(_ss_vkey) or row.get(_ss_vfb) or 0)),
             "injury_status": injury_status,
             "return_plan": _return_plan,
             "usage_delta": usage_delta,
@@ -14926,6 +14941,10 @@ def get_model_value_table_cached():
 
         _rerank(tbl, "value", "pos_rank", "pos_rank_label")
         _rerank(tbl, "sf_value", "sf_pos_rank", "sf_pos_rank_label")
+        # Redraft columns + ranks so waiver/start-sit don't fall back to dynasty
+        # numbers (or dynasty WR12 labels) in a redraft league.
+        from utils.value_helpers import apply_redraft_display_fields as _ardf
+        _ardf(tbl)
 
     _MODEL_VALUE_CACHE = tbl
     _MODEL_VALUE_CACHE_TS = now
@@ -16453,47 +16472,12 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     except Exception as _e_rd:
         logger.info(f"[api/league-players] redraft values skipped: {_e_rd}")
 
-    # Redraft depth fallback: the market source (FantasyCalc) only prices roughly
-    # the top ~64 RB / ~150 WR, so a deep redraft mock (e.g. 12-team x 17 rounds =
-    # 204 picks) drains the priced pool and the Draft Room's position filter goes
-    # empty ("no players match" for RB even though hundreds exist). Derive a redraft
-    # value for every unpriced skill player from its dynasty value, scaled strictly
-    # below the priced floor so real redraft values always rank first, relative
-    # order is preserved, and the pool never runs dry.
+    # Redraft depth fallback: shared with the value-table cache so Draft Room,
+    # waivers, and start/sit all read the same filled redraft numbers. Idempotent
+    # when the cache already ran apply_redraft_display_fields.
     try:
-        _skill = {"QB", "RB", "WR", "TE"}
-
-        def _num(_x):
-            try:
-                return float(_x)
-            except (TypeError, ValueError):
-                return 0.0
-
-        for _rd_field, _dyn_field in (("redraft_value_1qb", "value"),
-                                      ("redraft_value_sf", "sf_value")):
-            _priced = [
-                _num(_p.get(_rd_field)) for _p in model_value_table
-                if str(_p.get("position") or "").upper() in _skill
-                and _num(_p.get(_rd_field)) > 0
-            ]
-            _floor = min(_priced) if _priced else 1.0
-            _unpriced_dyn = [
-                _num(_p.get(_dyn_field)) for _p in model_value_table
-                if str(_p.get("position") or "").upper() in _skill
-                and _num(_p.get(_rd_field)) <= 0
-            ]
-            _dyn_max = max(_unpriced_dyn) if _unpriced_dyn else 0.0
-            if _dyn_max <= 0:
-                continue
-            _cap = _floor * 0.9   # best unpriced player still ranks below every priced one
-            for _p in model_value_table:
-                if str(_p.get("position") or "").upper() not in _skill:
-                    continue
-                if _num(_p.get(_rd_field)) > 0:
-                    continue
-                _dyn = _num(_p.get(_dyn_field))
-                if _dyn > 0:
-                    _p[_rd_field] = round(_cap * (_dyn / _dyn_max), 2)
+        from utils.value_helpers import fill_unpriced_redraft_values as _furd
+        _furd(model_value_table)
     except Exception as _e_rdfill:
         logger.info(f"[api/league-players] redraft depth fill skipped: {_e_rdfill}")
 

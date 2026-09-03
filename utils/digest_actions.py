@@ -164,11 +164,11 @@ def top_waiver_from_values(
 
 def value_keys_for_format(fmt: dict) -> tuple[str, str]:
     """Same primary/fallback value columns the in-app waiver surfaces use."""
-    is_sf = bool((fmt or {}).get("is_superflex"))
-    if (fmt or {}).get("is_redraft") or (fmt or {}).get("is_keeper"):
-        return (("redraft_value_sf" if is_sf else "redraft_value_1qb"),
-                ("sf_value" if is_sf else "value"))
-    return (("sf_value" if is_sf else "value"), "value")
+    from utils.value_helpers import format_value_keys
+    return format_value_keys(
+        is_redraft=bool((fmt or {}).get("is_redraft") or (fmt or {}).get("is_keeper")),
+        is_sf=bool((fmt or {}).get("is_superflex")),
+    )
 
 
 def recommend_waivers(
