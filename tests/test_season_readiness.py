@@ -80,6 +80,41 @@ def inseason_ctx(monkeypatch):
     return appmod, ctx
 
 
+def test_standings_body_survives_fleaflicker_without_bracket(inseason_ctx):
+    """Fleaflicker has no public playoff-bracket API; standings must still render."""
+    appmod, ctx = inseason_ctx
+    ctx = dict(ctx)
+    ctx["platform"] = "fleaflicker"
+    body = appmod.build_standings_body(ctx)
+    assert "stPowerInner" in body
+    assert "Power Rankings" in body
+    assert "Playoff Picture" not in body
+
+
+def test_render_power_and_playoffs_when_bracket_raises(inseason_ctx, monkeypatch):
+    """A raising get_bracket must not 500 the Power Rankings card."""
+    from dashboard_services.providers.base import UnsupportedCapabilityError
+
+    appmod, ctx = inseason_ctx
+
+    def _boom(*_a, **_k):
+        raise UnsupportedCapabilityError(
+            "Fleaflicker playoff brackets are not exposed through the public API."
+        )
+
+    monkeypatch.setattr(appmod, "get_bracket", _boom)
+    html = appmod.render_power_and_playoffs(
+        ctx["team_stats"],
+        ctx["roster_map"],
+        ctx["league_id"],
+        "fleaflicker",
+        ctx["season"],
+    )
+    assert html
+    assert "Power Rankings" in html
+    assert "Playoff Picture" not in html
+
+
 def test_week_selector_renders_with_finalized_weeks(inseason_ctx):
     appmod, ctx = inseason_ctx
     assert appmod._standings_available_weeks(ctx) == list(range(1, 11))

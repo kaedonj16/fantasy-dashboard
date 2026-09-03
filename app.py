@@ -7715,8 +7715,18 @@ def render_power_and_playoffs(
 
     rankings_html = "<div class='rank-grid'>" + "".join(rank_cards) + "</div>"
 
-    # ---- Playoff bracket ----
-    wb = bracket_override if bracket_override is not None else get_bracket(platform, league_id, "winners", season)
+    # ---- Playoff bracket (optional; Fleaflicker/MFL do not expose one) ----
+    if bracket_override is not None:
+        wb = bracket_override
+    else:
+        try:
+            wb = get_bracket(platform, league_id, "winners", season) or []
+        except Exception:
+            logger.debug(
+                "playoff bracket unavailable platform=%s league=%s season=%s",
+                platform, league_id, season, exc_info=True,
+            )
+            wb = []
     roster_avatar_map = {
         str(owner): av
         for owner, av in zip(team_stats["owner"], team_stats["avatar"])
