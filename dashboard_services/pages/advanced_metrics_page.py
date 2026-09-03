@@ -297,13 +297,13 @@ def build_advanced_metrics_body(
           </div>
           <button id="amAddFilterBtnM" type="button" class="am-add-stat-btn am-add-filter-m">&#43; Filter</button>
           <div class="am-filter-chips" id="amFilterChips"></div>
-          <div class="am-age-wrap" id="amAgeWrap" style="display:none;">
+          <div class="am-age-wrap am-mobile-filter" id="amAgeWrap" style="display:none;">
             <span class="am-filter-label">Age</span>
             <input type="number" id="amAgeMin" class="am-age-input" placeholder="Min" min="18" max="45">
             <span class="am-filter-sep">&#8211;</span>
             <input type="number" id="amAgeMax" class="am-age-input" placeholder="Max" min="18" max="45">
           </div>
-          <div class="am-vol-ctrl" id="amGamesCtrl" style="display:none;">
+          <div class="am-vol-ctrl am-mobile-filter" id="amGamesCtrl" style="display:none;">
             <span class="am-filter-label" id="amVolLabel">Min</span>
             <select id="amMinGames" class="am-select am-season-select" style="font-size:12px;padding:4px 8px;"></select>
           </div>
@@ -3829,7 +3829,7 @@ _AM_JS = r"""
       // Desktop: team + sort live here, so the bar stays open. Mobile: only
       // when Filters is open (or a chip/form is active).
       if (isMobile) {
-        bar.style.display = (state.comboFilters.length > 0 || ageVis || volVis || formVis || mOpen) ? 'flex' : 'none';
+        bar.style.display = (state.comboFilters.length > 0 || formVis || mOpen) ? 'flex' : 'none';
       } else {
         bar.style.display = 'flex';
       }
