@@ -223,6 +223,13 @@ def test_metrics_page_renders_combine_toggle(offline_client):
     assert 'id="amCombineToggle"' in html
     assert "Each year" in html
     assert 'data-combine="1"' in html
+    assert 'id="amToolbar"' in html
+    assert 'class="am-season-row"' in html
+    # Season mode sits with the season picker, not the position chips.
+    season_idx = html.find('id="amSeasonCtrl"')
+    combine_idx = html.find('id="amCombineToggle"')
+    pos_idx = html.find('id="amPositions"')
+    assert 0 <= season_idx < combine_idx < pos_idx
 
 
 def test_page_has_multi_season_picker():
@@ -233,6 +240,8 @@ def test_page_has_multi_season_picker():
     assert "function amIsEachYear" in _AM_PAGE
     assert 'id="amSeasonColHdr"' in _AM_PAGE
     assert 'id="amCombineToggle"' in _AM_PAGE
+    assert 'id="amToolbar"' in _AM_PAGE
+    assert "am-season-row" in _AM_PAGE
     assert "Each year" in _AM_PAGE
     assert "Pick any years that have data" in _AM_PAGE
     assert "one row per season" in _AM_PAGE

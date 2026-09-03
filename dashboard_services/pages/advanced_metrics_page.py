@@ -196,6 +196,7 @@ def build_advanced_metrics_body(
       </div>
       <div class="card-body" style="padding-top:0;">
 
+        <div class="am-toolbar" id="amToolbar">
         <div class="am-controls" id="amControls">
           <div class="am-ctrl">
             <label class="am-ctrl-label">
@@ -215,36 +216,21 @@ def build_advanced_metrics_body(
           </div>
           <div class="am-ctrl am-ctrl-season" id="amSeasonCtrl">
             <label class="am-ctrl-label">Seasons</label>
-            <div class="am-season-multi" id="amSeasonMulti">
-              <button type="button" class="am-select am-season-select am-season-btn" id="amSeasonBtn"
-                aria-haspopup="listbox" aria-expanded="false" aria-label="Select seasons">
-                <span id="amSeasonBtnLabel"></span>
-                <i class="fa-solid fa-chevron-down am-metric-chevron"></i>
-              </button>
-              <div class="am-season-menu" id="amSeasonMenu" role="listbox" aria-multiselectable="true" style="display:none;"></div>
-            </div>
-            <select id="amSeason" class="am-select am-season-select" style="display:none" aria-hidden="true">__SEASON_OPTIONS__</select>
-          </div>
-          <div class="am-ctrl am-mobile-filter am-ctrl-weekbar" id="amWeekCtrl">
-            <div class="am-weekbar-head">
-              <label class="am-ctrl-label">Week Range</label>
-              <div class="otc-day-filters am-quick-ranges" id="amQuickRanges">
-                <button type="button" class="otc-day-filter am-qr active" data-range="">Season</button>
-                <button type="button" class="otc-day-filter am-qr" data-range="last2">Last 2</button>
-                <button type="button" class="otc-day-filter am-qr" data-range="last4">Last 4</button>
+            <div class="am-season-row">
+              <div class="am-season-multi" id="amSeasonMulti">
+                <button type="button" class="am-select am-season-select am-season-btn" id="amSeasonBtn"
+                  aria-haspopup="listbox" aria-expanded="false" aria-label="Select seasons">
+                  <span id="amSeasonBtnLabel"></span>
+                  <i class="fa-solid fa-chevron-down am-metric-chevron"></i>
+                </button>
+                <div class="am-season-menu" id="amSeasonMenu" role="listbox" aria-multiselectable="true" style="display:none;"></div>
+              </div>
+              <div id="amCombineToggle" class="otc-day-filters am-combine-toggle" style="display:none;" title="Each year keeps one row per player-season. Combine merges selected years into one row per player.">
+                <button type="button" class="otc-day-filter am-combine-btn active" data-combine="0">Each year</button>
+                <button type="button" class="otc-day-filter am-combine-btn" data-combine="1">Combine</button>
               </div>
             </div>
-            <div id="amWkBarHost"></div>
-          </div>
-          <div class="am-ctrl am-mobile-filter" id="amTeamCtrl">
-            <label class="am-ctrl-label">Team</label>
-            <select id="amTeamFilter" class="am-select am-season-select">
-              <option value="">All Teams</option>
-            </select>
-          </div>
-          <div class="am-ctrl am-mobile-filter" id="amSortCtrl">
-            <label class="am-ctrl-label">Sort</label>
-            <button id="amSortBtn" type="button" class="am-sort-btn">High &rarr; Low</button>
+            <select id="amSeason" class="am-select am-season-select" style="display:none" aria-hidden="true">__SEASON_OPTIONS__</select>
           </div>
           <div class="am-ctrl am-ctrl-search">
             <label class="am-ctrl-label">Search</label>
@@ -268,10 +254,6 @@ def build_advanced_metrics_body(
           </div>
           <button id="amAddFilterBtn" type="button" class="am-add-stat-btn">&#43; Filter</button>
           <button id="amFiltersBtn" type="button" class="am-sort-btn am-filters-btn">Filters &#9662;</button>
-          <div id="amCombineToggle" class="otc-day-filters am-combine-toggle" style="display:none;" title="Each year keeps one row per player-season. Combine merges selected years into one row per player.">
-            <button type="button" class="otc-day-filter am-combine-btn active" data-combine="0">Each year</button>
-            <button type="button" class="otc-day-filter am-combine-btn" data-combine="1">Combine</button>
-          </div>
           <label class="am-roster-toggle" id="amTrendToggleWrap" title="Show each player's recent usage trend (last 6 weeks) next to the metric">
             <input type="checkbox" id="amTrendToggle">
             <span>Usage trends</span>
@@ -282,6 +264,18 @@ def build_advanced_metrics_body(
           </label>
         </div>
 
+        <div class="am-ctrl am-mobile-filter am-ctrl-weekbar" id="amWeekCtrl">
+          <div class="am-weekbar-head">
+            <label class="am-ctrl-label">Week Range</label>
+            <div class="otc-day-filters am-quick-ranges" id="amQuickRanges">
+              <button type="button" class="otc-day-filter am-qr active" data-range="">Season</button>
+              <button type="button" class="otc-day-filter am-qr" data-range="last2">Last 2</button>
+              <button type="button" class="otc-day-filter am-qr" data-range="last4">Last 4</button>
+            </div>
+          </div>
+          <div id="amWkBarHost"></div>
+        </div>
+
         <!-- Compare bar: only visible when extra metrics or pinned-compare is active. -->
         <div id="amCompareBar" class="am-compare-bar" style="display:none;">
           <div id="amCompareChips" class="am-compare-chips"></div>
@@ -289,12 +283,22 @@ def build_advanced_metrics_body(
           <button id="amClearExtrasBtn" type="button" class="am-add-stat-btn am-clear-btn" style="display:none;" onclick="amClearExtras()">&#10005; Clear</button>
         </div>
 
-        <!-- Filter bar: only visible when combo filters, age, or vol control is active. -->
+        <!-- Filter bar: team/sort always; age, vol, and combo chips when active. -->
         <div id="amFilterBar" class="am-filter-bar" style="display:none;">
+          <div class="am-filter-ctrl am-mobile-filter" id="amTeamCtrl">
+            <span class="am-filter-label">Team</span>
+            <select id="amTeamFilter" class="am-select am-season-select">
+              <option value="">All Teams</option>
+            </select>
+          </div>
+          <div class="am-filter-ctrl am-mobile-filter" id="amSortCtrl">
+            <span class="am-filter-label">Sort</span>
+            <button id="amSortBtn" type="button" class="am-sort-btn">High &rarr; Low</button>
+          </div>
           <button id="amAddFilterBtnM" type="button" class="am-add-stat-btn am-add-filter-m">&#43; Filter</button>
           <div class="am-filter-chips" id="amFilterChips"></div>
           <div class="am-age-wrap" id="amAgeWrap" style="display:none;">
-            <span class="am-filter-label">Age:</span>
+            <span class="am-filter-label">Age</span>
             <input type="number" id="amAgeMin" class="am-age-input" placeholder="Min" min="18" max="45">
             <span class="am-filter-sep">&#8211;</span>
             <input type="number" id="amAgeMax" class="am-age-input" placeholder="Max" min="18" max="45">
@@ -313,6 +317,7 @@ def build_advanced_metrics_body(
             <button id="amFilterApply" type="button" class="am-filter-apply-btn">Add</button>
             <button id="amFilterCancel" type="button" class="am-filter-cancel-btn">Cancel</button>
           </div>
+        </div>
         </div>
 
         <div id="amCompareModal" class="am-legend-modal" style="display:none;"
@@ -480,9 +485,14 @@ def build_advanced_metrics_body(
       @media (max-width:600px) {
         .am-legend-btn { padding:6px 10px; font-size:11px; }
       }
-      .am-controls { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin:12px 0 8px; }
+      .am-toolbar { margin:12px 0 4px; }
+      .am-controls { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin:0 0 8px; }
       .am-ctrl { display:flex; flex-direction:column; gap:4px; }
       .am-ctrl-search { flex:1; min-width:160px; }
+      .am-ctrl-season { min-width:min(280px,100%); }
+      .am-season-row { display:flex; align-items:center; gap:8px; min-width:0; }
+      .am-season-row .am-season-multi { flex:1 1 140px; min-width:0; }
+      .am-ctrl-weekbar { width:100%; margin:0 0 8px; }
       .am-ctrl-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); }
       .am-select, .am-search, .am-sort-btn {
         padding:8px 12px; border:1px solid var(--border); border-radius:8px;
@@ -573,18 +583,18 @@ def build_advanced_metrics_body(
          specificity so it beats .am-add-stat-btn's display (defined later), which
          was leaking a second "+ Filter" onto desktop. */
       .am-add-stat-btn.am-add-filter-m { display:none; }
-      /* Mobile: metric 2/3 + season 1/3 on the first row, search full width,
-         Team/Min/Sort collapsed behind a Filters button beside the position
-         pills, toggles wrap underneath. Desktop keeps one aligned row. */
+      /* Mobile: metric full width, seasons + search below. Week/team/sort/age
+         sit behind the Filters button on the position row. */
       @media (max-width:600px) {
         .am-controls { gap:8px; }
         .am-ctrl { flex:1 1 calc(50% - 4px); min-width:0; }
-        .am-controls .am-ctrl:first-child { flex:2 1 0; }
-        #amSeasonCtrl { flex:1 1 0; }
-        .am-ctrl-search { flex:1 1 100%; order:1; }
-        .am-mobile-filter { order:2; }
-        .am-ctrl .am-select, .am-ctrl .am-sort-btn { width:100%; min-width:0; box-sizing:border-box; }
-        .am-controls:not(.am-open) .am-mobile-filter { display:none !important; }
+        .am-controls .am-ctrl:first-child { flex:1 1 100%; }
+        #amSeasonCtrl { flex:1 1 100%; min-width:0; }
+        .am-season-row { flex-wrap:wrap; }
+        .am-ctrl-search { flex:1 1 100%; }
+        .am-ctrl .am-select, .am-filter-ctrl .am-select, .am-filter-ctrl .am-sort-btn { width:100%; min-width:0; box-sizing:border-box; }
+        #amToolbar:not(.am-open) .am-mobile-filter { display:none !important; }
+        #amToolbar:not(.am-open) #amWeekCtrl { display:none !important; }
         .am-filters-btn { display:inline-block; flex-shrink:0; padding:6px 12px; font-size:12px; border-radius:8px; }
         /* One filter entry point on mobile: the Filters dropdown. The standalone
            + Filter chip hides; its action moves inside the opened panel. */
@@ -669,11 +679,9 @@ def build_advanced_metrics_body(
         .am-metric-cell { gap:0; }
         .am-val { min-width:38px; font-size:12px; text-align:center; }
         .am-controls { gap:10px; }
-        /* Metric takes full width; Search fills the row below it */
         .am-ctrl:first-child { flex:1 0 100%; }
         .am-ctrl-search { flex:1 0 100%; }
-        /* Season and Sort share a row */
-        .am-ctrl-season { flex:1; }
+        .am-ctrl-season { flex:1 0 100%; }
         .am-select { min-width:0; width:100%; }
         .am-roster-toggle { padding:5px 10px; font-size:11px; }
         .am-barcell { min-width:52px; }
@@ -882,8 +890,12 @@ def build_advanced_metrics_body(
       }
       /* ── Filter bar ──────────────────────────────────────────────────────── */
       .am-filter-bar {
-        display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+        display:flex; align-items:center; gap:8px; flex-wrap:wrap;
         margin-bottom:8px; padding-right:4px;
+      }
+      .am-filter-ctrl { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+      .am-filter-ctrl .am-select, .am-filter-ctrl .am-sort-btn {
+        padding:5px 10px; font-size:12px;
       }
       .am-filter-chips { display:flex; flex-wrap:wrap; gap:5px; flex:1; min-width:0; }
       @media (max-width:600px) {
@@ -3811,8 +3823,17 @@ _AM_JS = r"""
     const formVis = (document.getElementById('amFilterForm') || {}).style.display !== 'none';
     // On mobile the opened Filters panel must show even when empty, so its
     // in-panel + Filter button has somewhere to live.
-    const mOpen = bar && bar.classList.contains('am-mobile-open') && window.innerWidth <= 600;
-    if (bar) bar.style.display = (state.comboFilters.length > 0 || ageVis || volVis || formVis || mOpen) ? 'flex' : 'none';
+    const isMobile = window.innerWidth <= 600;
+    const mOpen = bar && bar.classList.contains('am-mobile-open') && isMobile;
+    if (bar) {
+      // Desktop: team + sort live here, so the bar stays open. Mobile: only
+      // when Filters is open (or a chip/form is active).
+      if (isMobile) {
+        bar.style.display = (state.comboFilters.length > 0 || ageVis || volVis || formVis || mOpen) ? 'flex' : 'none';
+      } else {
+        bar.style.display = 'flex';
+      }
+    }
   }
   window.amRemoveFilter = function(idx) {
     const removed = state.comboFilters[idx];
@@ -4092,15 +4113,18 @@ _AM_JS = r"""
     rosterChk.addEventListener('change', () => { state.rosterOnly = rosterChk.checked; state.page = 0; render(); });
   }
   const filtersBtn = document.getElementById('amFiltersBtn');
-  const controlsRow = document.getElementById('amControls');
-  if (filtersBtn && controlsRow) {
+  const toolbar = document.getElementById('amToolbar') || document.getElementById('amControls');
+  if (filtersBtn && toolbar) {
     filtersBtn.addEventListener('click', () => {
-      const open = controlsRow.classList.toggle('am-open');
+      const open = toolbar.classList.toggle('am-open');
+      const controlsRow = document.getElementById('amControls');
+      if (controlsRow) controlsRow.classList.toggle('am-open', open);
       filtersBtn.innerHTML = open ? 'Filters &#9652;' : 'Filters &#9662;';
       // On mobile, also toggle the filter bar so age + filter controls become accessible.
       const filterBar = document.getElementById('amFilterBar');
       if (filterBar) filterBar.classList.toggle('am-mobile-open', open);
       showAgeCtrl();
+      updateFilterBar();
       // Close the filter form if the dropdown is closing.
       if (!open && window.innerWidth <= 600) {
         const ff = document.getElementById('amFilterForm');
