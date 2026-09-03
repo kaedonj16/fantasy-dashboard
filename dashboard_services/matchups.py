@@ -26,6 +26,8 @@ from utils.utils import (
     game_has_started,
     lookup_team_map,
     team_abbr_keys,
+    canon_team,
+    canonical_teams_index,
 )
 from utils.matchup_schedule import lineup_from_roster, _starters_look_like_full_roster
 from utils.week_proj import week_proj_map_from_bundles as _week_proj_map_from_bundles
@@ -870,6 +872,8 @@ def build_offense_rankings(teams_index: dict) -> dict:
     pass_list = []
     total_list = []
 
+    teams_index = canonical_teams_index(teams_index)
+
     for abbr, info in teams_index.items():
         rush_yds = info.get("rush_yds_pg")
         pass_yds = info.get("pass_yds_pg")
@@ -1052,9 +1056,9 @@ def render_matchup_slide(
         if not team_abv or not game:
             return ""
 
-        home = str(game.get("home") or "").upper()
-        away = str(game.get("away") or "").upper()
-        t_up = team_abv.upper()
+        home = canon_team(game.get("home")) or str(game.get("home") or "").upper()
+        away = canon_team(game.get("away")) or str(game.get("away") or "").upper()
+        t_up = (canon_team(team_abv) or team_abv).upper()
         home_keys = set(team_abbr_keys(home))
         away_keys = set(team_abbr_keys(away))
         if t_up not in home_keys and t_up not in away_keys:

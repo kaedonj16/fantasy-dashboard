@@ -36,13 +36,13 @@ logger = logging.getLogger(__name__)
 
 _HISTORY_DIR = Path("cache") / "player_history"
 
-# The app is inconsistent about a few team codes: the NFL schedule and nflverse
-# use LA / WAS / JAX, while the players index uses LAR / WSH. Team resolution
+# The app is inconsistent about a few team codes: some feeds use LA / JAC /
+# WSH, while the site and players index use LAR / JAX / WAS. Team resolution
 # feeds two consumers that must agree - game-log opponent matching (compares
 # against the schedule) and the adv-metrics team filter/pool - so we canonicalise
-# every resolved team to the schedule/nflverse form. Only maps these fixed,
-# time-invariant display variants; historical relocations (OAK/SD/STL) are left
-# alone because both nflverse and the period's schedule already agree on them.
+# every resolved team to the site form. Only maps these fixed, time-invariant
+# display variants; historical relocations (OAK/SD/STL) are left alone because
+# both nflverse and the period's schedule already agree on them.
 _TEAM_ALIASES = {"LAR": "LA", "WSH": "WAS", "JAC": "JAX"}
 
 

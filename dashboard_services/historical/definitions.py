@@ -133,7 +133,7 @@ TRENDS_OFFENSE_RANGES: Tuple[Tuple[str, str, int, int], ...] = (
 # 1 TD ≈ 40 yards, matching matchups.build_offense_rankings.
 OFFENSE_TD_YARD_WEIGHT = 40.0
 TEAM_ABBR_ALIASES: Mapping[str, str] = {
-    "WAS": "WSH",
+    "WSH": "WAS",
     "JAC": "JAX",
     "LA": "LAR",
     "OAK": "LV",
