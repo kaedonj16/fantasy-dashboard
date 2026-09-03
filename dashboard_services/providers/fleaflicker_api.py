@@ -40,6 +40,229 @@ _HEADERS = {
 _NO_SEASON = frozenset({"FetchLeagueRules"})
 _CACHE: dict[tuple, tuple[float, dict]] = {}
 
+# players_index uses ``pos``; a few overlays still use ``position``.
+_SKILL_POS = frozenset({"QB", "RB", "WR", "TE", "K", "DEF", "DST", "PK"})
+_IDP_POS = frozenset({
+    "CB", "DB", "S", "FS", "SS", "LB", "ILB", "OLB",
+    "DL", "DE", "DT", "EDGE", "IDP",
+})
+_START_GROUPS = frozenset({"START", "STARTERS", "STARTING"})
+# Keep local so this module still collects in the slim CI job (no utils.utils).
+_TEAM_ABBR_ALIASES = {
+    "WAS": "WSH", "WSH": "WAS",
+    "JAC": "JAX", "JAX": "JAC",
+    "LA": "LAR", "LAR": "LA",
+}
+# (group label, category abbreviation) -> Sleeper scoring key.
+# Bare TD/Yd without a group is ambiguous (pass/rush/rec) and must not map.
+_FLEA_STAT_BY_GROUP_ABBREV = {
+    ("passing", "yd"): "pass_yd",
+    ("passing", "py"): "pass_yd",
+    ("passing", "td"): "pass_td",
+    ("passing", "int"): "pass_int",
+    ("passing", "2pc"): "pass_2pt",
+    ("passing", "fd"): "pass_fd",
+    ("rushing", "yd"): "rush_yd",
+    ("rushing", "ry"): "rush_yd",
+    ("rushing", "td"): "rush_td",
+    ("rushing", "2pc"): "rush_2pt",
+    ("rushing", "fd"): "rush_fd",
+    ("receiving", "yd"): "rec_yd",
+    ("receiving", "rey"): "rec_yd",
+    ("receiving", "td"): "rec_td",
+    ("receiving", "rec"): "rec",
+    ("receiving", "catch"): "rec",
+    ("receiving", "2pc"): "rec_2pt",
+    ("receiving", "fd"): "rec_fd",
+    ("misc", "fum"): "fum_lost",
+    ("kicking", "fg"): "fgm",
+    ("kicking", "xpt"): "xpm",
+    ("kicking", "xp"): "xpm",
+    ("kicking", "pat"): "xpm",
+}
+_FLEA_STAT_BY_NAME = {
+    "passing yard": "pass_yd",
+    "passing td": "pass_td",
+    "2 pt conversion passing": "pass_2pt",
+    "passing first down": "pass_fd",
+    "rushing yard": "rush_yd",
+    "rushing td": "rush_td",
+    "2 pt conversion rushing": "rush_2pt",
+    "rushing first down": "rush_fd",
+    "receiving yard": "rec_yd",
+    "receiving td": "rec_td",
+    "catch": "rec",
+    "reception": "rec",
+    "2 pt conversion receiving": "rec_2pt",
+    "receiving first down": "rec_fd",
+    "fumble": "fum_lost",
+}
+
+
+def _index_pos(info: dict) -> str:
+    return str((info or {}).get("pos") or (info or {}).get("position") or "").upper()
+
+
+def _index_team(info: dict) -> str:
+    return str((info or {}).get("team") or "").upper()
+
+
+def _team_keys(team: str) -> set[str]:
+    t = (team or "").strip().upper()
+    if not t:
+        return set()
+    alt = _TEAM_ABBR_ALIASES.get(t)
+    return {t, alt} if alt else {t}
+
+
+def _flea_pro_team(pro: dict) -> str:
+    """NFL team from a Fleaflicker ``proPlayer`` (abbrev or nested proTeam)."""
+    if not isinstance(pro, dict):
+        return ""
+    direct = _get(pro, "proTeamAbbreviation", "pro_team_abbreviation")
+    if direct:
+        return str(direct).upper()
+    team = _get(pro, "proTeam", "pro_team")
+    if isinstance(team, dict):
+        return str(_get(team, "abbreviation") or "").upper()
+    if isinstance(team, str):
+        return team.upper()
+    return ""
+
+
+def _flea_stat_key(group_label: str, category: dict) -> Optional[str]:
+    """Sleeper key for one Fleaflicker scoring category, or None if ambiguous."""
+    cat = category if isinstance(category, dict) else {}
+    group = str(group_label or "").strip().lower()
+    abbrev = str(_get(cat, "abbreviation") or "").strip().lower()
+    name = str(
+        _get(cat, "nameSingular", "name_singular") or ""
+    ).strip().lower()
+    if group and abbrev:
+        mapped = _FLEA_STAT_BY_GROUP_ABBREV.get((group, abbrev))
+        if mapped:
+            return mapped
+        if group == "passing" and abbrev == "int":
+            return "pass_int"
+    if name:
+        mapped = _FLEA_STAT_BY_NAME.get(name)
+        if mapped:
+            return mapped
+        if "interception" in name and (not group or "pass" in group):
+            return "pass_int"
+    return None
+
+
+def _flea_points_per(rule: dict) -> Optional[float]:
+    """Per-stat rate. Prefer ``pointsPer`` (already 0.04 / yard) over raw points."""
+    if not isinstance(rule, dict):
+        return None
+    pper = _get(rule, "pointsPer", "points_per")
+    if pper is not None:
+        return _num(pper)
+    pts_raw = _get(rule, "points")
+    if pts_raw is None:
+        return None
+    pts = _num(pts_raw)
+    every = _get(rule, "forEvery", "for_every")
+    if every is not None:
+        ev = _num(every)
+        if ev and ev != 1.0:
+            return pts / ev
+    return pts
+
+
+def _name_index_from_players(index: dict, normalize_name) -> dict:
+    """name -> [(pos, team, canonical_id), ...] so namesakes stay distinct."""
+    by_name: dict[str, list[tuple[str, str, str]]] = {}
+    for canonical, info in (index or {}).items():
+        if not isinstance(info, dict):
+            continue
+        name = normalize_name(info.get("full_name") or info.get("name") or "")
+        if not name:
+            continue
+        entry = (_index_pos(info), _index_team(info), str(canonical))
+        bucket = by_name.setdefault(name, [])
+        if entry not in bucket:
+            bucket.append(entry)
+    return by_name
+
+
+def _norm_name_candidate(cand) -> tuple[str, str, Any]:
+    """Accept (pos, id), (pos, team, id), or a bare id."""
+    if isinstance(cand, (list, tuple)):
+        if len(cand) >= 3:
+            return str(cand[0] or "").upper(), str(cand[1] or "").upper(), cand[2]
+        if len(cand) == 2:
+            return str(cand[0] or "").upper(), "", cand[1]
+        if len(cand) == 1:
+            return "", "", cand[0]
+    return "", "", cand
+
+
+def _pick_canonical(
+    by_name: dict, name: str, flea_pos: str = "", flea_team: str = "",
+) -> Optional[str]:
+    """Resolve a Fleaflicker name/pos/team onto a Sleeper id.
+
+    ``players_index`` has duplicate names (Lamar Jackson QB BAL vs CB ATL,
+    DeVonta Smith WR PHI vs CB CAR, Josh Allen QB BUF vs DE JAX). Prefer
+    exact position + NFL team, then position, then the matching team —
+    never the IDP namesake that used to paint Lamar as IDP / FA.
+    """
+    if not name:
+        return None
+    # Legacy {(name, pos): id} map from older tests / callers.
+    if by_name and isinstance(next(iter(by_name.keys()), None), tuple):
+        pos = (flea_pos or "").upper()
+        hit = by_name.get((name, pos))
+        if hit:
+            return hit
+        return next((v for (n, _), v in by_name.items() if n == name), None)
+
+    candidates = [_norm_name_candidate(c) for c in (by_name.get(name) or [])]
+    candidates = [c for c in candidates if c[2] is not None]
+    if not candidates:
+        return None
+    pos = (flea_pos or "").upper()
+    team_keys = _team_keys(flea_team)
+
+    def team_ok(cand_team: str) -> bool:
+        return bool(team_keys and (_team_keys(cand_team) & team_keys))
+
+    def first(rows: list[tuple[str, str, Any]]) -> Optional[str]:
+        if not rows:
+            return None
+        if team_keys:
+            matched = [c for c in rows if team_ok(c[1])]
+            if matched:
+                return matched[0][2]
+        return rows[0][2]
+
+    if pos:
+        exact = [c for c in candidates if c[0] == pos]
+        hit = first(exact)
+        if hit:
+            return hit
+    if team_keys:
+        skill_team = [c for c in candidates if c[0] in _SKILL_POS and team_ok(c[1])]
+        if skill_team:
+            return skill_team[0][2]
+        any_team = [c for c in candidates if team_ok(c[1])]
+        if any_team:
+            return any_team[0][2]
+    if pos in _SKILL_POS or not pos:
+        skill = [c for c in candidates if c[0] in _SKILL_POS]
+        hit = first(skill)
+        if hit:
+            return hit
+    if pos in _SKILL_POS:
+        non_idp = [c for c in candidates if c[0] not in _IDP_POS]
+        hit = first(non_idp)
+        if hit:
+            return hit
+    return candidates[0][2]
+
 
 def _request_get(url: str, **kwargs):
     import requests
@@ -501,14 +724,7 @@ class FleaflickerProvider(ProviderAdapter):
         # not install that stack, so fail soft and let xwalk handle IDs.
         try:
             from utils.utils import load_players_index, normalize_name
-            index = load_players_index() or {}
-            by_name = {}
-            for canonical, info in index.items():
-                name = normalize_name(info.get("full_name") or info.get("name") or "")
-                pos = str(info.get("position") or "").upper()
-                if name:
-                    by_name[(name, pos)] = str(canonical)
-            return by_name
+            return _name_index_from_players(load_players_index() or {}, normalize_name)
         except Exception as exc:
             logger.debug("Fleaflicker name index unavailable error=%s", type(exc).__name__)
             return {}
@@ -528,9 +744,7 @@ class FleaflickerProvider(ProviderAdapter):
         pos = str(_get(pro, "position") or "").upper()
         if not name:
             return None
-        return by_name.get((name, pos)) or next(
-            (v for (n, _), v in by_name.items() if n == name), None
-        )
+        return _pick_canonical(by_name, name, pos, _flea_pro_team(pro))
 
     @staticmethod
     def _slot_group_label(group_label: str, slot: dict) -> str:
@@ -555,7 +769,7 @@ class FleaflickerProvider(ProviderAdapter):
                 seen.add(cid)
                 players.append(cid)
                 bucket = self._slot_group_label(group_label, slot)
-                if bucket == "START":
+                if bucket in _START_GROUPS:
                     starters.append(cid)
                 elif bucket in {"INJURED", "IR", "INJURED_RESERVE", "TAXI"}:
                     reserve.append(cid)
@@ -564,13 +778,7 @@ class FleaflickerProvider(ProviderAdapter):
     def _canonical_map(self, league_id, season, *, token: Optional[str] = None):
         try:
             from utils.utils import load_players_index, normalize_name
-            index = load_players_index() or {}
-            by_name = {}
-            for canonical, info in index.items():
-                name = normalize_name(info.get("full_name") or info.get("name") or "")
-                pos = str(info.get("position") or "").upper()
-                if name:
-                    by_name[(name, pos)] = str(canonical)
+            by_name = _name_index_from_players(load_players_index() or {}, normalize_name)
             out = {}
             raw = self._call("FetchLeagueRosters", league_id, season, ttl=300, token=token)
             for roster in raw.get("rosters") or []:
@@ -581,9 +789,7 @@ class FleaflickerProvider(ProviderAdapter):
                     pid = _get(pro, "id")
                     if pid is None or not name:
                         continue
-                    canonical = by_name.get((name, pos)) or next(
-                        (v for (n, _), v in by_name.items() if n == name), None
-                    )
+                    canonical = _pick_canonical(by_name, name, pos, _flea_pro_team(pro))
                     if canonical:
                         out[str(pid)] = canonical
             return out
@@ -656,13 +862,67 @@ class FleaflickerProvider(ProviderAdapter):
             })
         return out
 
+    def _starters_from_boxscore(
+        self, lineups: list, side: str, xwalk: dict, by_name: dict,
+    ) -> tuple[list[str], dict[str, float]]:
+        """Slot-ordered START players for home/away from FetchLeagueBoxscore."""
+        starters: list[str] = []
+        points: dict[str, float] = {}
+        seen: set[str] = set()
+        for group in lineups or []:
+            group_label = str(group.get("group") or "").upper()
+            for slot in group.get("slots") or []:
+                bucket = self._slot_group_label(group_label, slot)
+                if bucket not in _START_GROUPS:
+                    continue
+                player = slot.get(side) or {}
+                if not isinstance(player, dict):
+                    continue
+                pro = player.get("proPlayer") or player.get("pro_player") or {}
+                if _get(pro, "id") is None:
+                    continue
+                cid = self._canonical_lookup(pro, xwalk, by_name)
+                if not cid or cid in seen:
+                    continue
+                seen.add(cid)
+                starters.append(cid)
+                raw_pts = (
+                    player.get("viewingActualPoints")
+                    or player.get("viewing_actual_points")
+                    or {}
+                )
+                points[cid] = _num(raw_pts)
+        return starters, points
+
     def get_matchups(self, league_id, season, week, *, token: Optional[str] = None):
         raw = self._call(
             "FetchLeagueScoreboard", league_id, season, ttl=600, token=token,
             scoring_period=int(week),
         )
+        by_name = self._build_name_index()
+        xwalk = {}
+        try:
+            xwalk = self._canonical_map(league_id, season, token=token)
+        except Exception:
+            logger.debug("Fleaflicker matchup crosswalk unavailable", exc_info=True)
         out = []
         for mid, game in enumerate(raw.get("games") or [], 1):
+            game_id = _get(game, "id")
+            lineups: list = []
+            if game_id is not None:
+                try:
+                    box = self._call(
+                        "FetchLeagueBoxscore", league_id, season, ttl=300,
+                        token=token,
+                        scoring_period=int(week),
+                        fantasy_game_id=int(game_id),
+                    )
+                    lineups = box.get("lineups") or []
+                except Exception:
+                    logger.debug(
+                        "Fleaflicker FetchLeagueBoxscore failed game=%s",
+                        game_id, exc_info=True,
+                    )
             for side, score_key in (("home", "homeScore"), ("away", "awayScore")):
                 team = game.get(side) or {}
                 team_id = _get(team, "id")
@@ -672,10 +932,15 @@ class FleaflickerProvider(ProviderAdapter):
                     "home_score" if side == "home" else "away_score"
                 ) or {}
                 points = _num(score_block.get("score") if isinstance(score_block, dict) else score_block)
+                starters, players_points = self._starters_from_boxscore(
+                    lineups, side, xwalk, by_name,
+                )
                 out.append({
                     "matchup_id": mid, "roster_id": _int(team_id),
-                    "points": points, "players": [], "starters": [],
-                    "starters_points": [], "players_points": {},
+                    "points": points, "players": list(starters),
+                    "starters": starters,
+                    "starters_points": [players_points.get(pid, 0.0) for pid in starters],
+                    "players_points": players_points,
                     "week": int(week), "custom_points": None,
                     "metadata": {"provider_game_id": str(_get(game, "id") or "")},
                 })
@@ -896,13 +1161,26 @@ class FleaflickerProvider(ProviderAdapter):
 
     @staticmethod
     def _scoring(rules: dict) -> dict:
+        """Map Fleaflicker group+abbrev rules onto Sleeper scoring keys.
+
+        Passing/Rushing/Receiving all use ``TD`` / ``Yd``. Storing those
+        abbreviations last-write-wins, so ``projection_points`` never saw
+        ``pass_yd`` / ``rec`` and every starter painted 0.0.
+        """
         out = {}
         for group in rules.get("groups") or []:
+            group_label = str(group.get("label") or group.get("name") or "").strip()
             for rule in group.get("scoringRules") or group.get("scoring_rules") or []:
+                if not isinstance(rule, dict):
+                    continue
                 cat = rule.get("category") or {}
-                key = str(_get(cat, "abbreviation", "nameSingular", "name_singular") or "").strip()
-                if key:
-                    out[key] = _num(_get(rule, "points", "pointsPer", "points_per"))
+                key = _flea_stat_key(group_label, cat)
+                if not key:
+                    continue
+                rate = _flea_points_per(rule)
+                if rate is None:
+                    continue
+                out[key] = rate
         return out
 
     def get_league_globals(self, league_id, season, *, token: Optional[str] = None):

@@ -6,8 +6,9 @@ from dashboard_services.providers.base import (
     ProviderAuthenticationError, ProviderUnavailableError, UnsupportedCapabilityError,
 )
 from dashboard_services.providers.fleaflicker_api import (
-    FleaflickerProvider, _CACHE, _fleaflicker_draft_status,
-    _fleaflicker_sleeper_league_type, _normalize_fleaflicker_draft_status, login,
+    FleaflickerProvider, _CACHE, _flea_pro_team, _fleaflicker_draft_status,
+    _fleaflicker_sleeper_league_type, _name_index_from_players,
+    _normalize_fleaflicker_draft_status, _pick_canonical, login,
 )
 
 
@@ -554,3 +555,200 @@ def test_get_rosters_uses_fetch_roster_starters_when_bulk_list_exists(monkeypatc
     assert roster["players"] == ["canon-qb", "canon-rb"]
     assert roster["starters"] == ["canon-qb"]
     assert "canon-rb" not in roster["starters"]
+
+
+def test_name_index_reads_pos_and_keeps_both_lamars():
+    def norm(name):
+        return (name or "").strip().lower()
+
+    index = {
+        "4881": {"name": "Lamar Jackson", "pos": "QB", "team": "BAL"},
+        "6994": {"name": "Lamar Jackson", "pos": "CB", "team": "ATL"},
+        "7525": {"name": "DeVonta Smith", "pos": "WR", "team": "PHI"},
+        "13977": {"name": "DeVonta Smith", "position": "CB", "team": "CAR"},
+    }
+    by_name = _name_index_from_players(index, norm)
+    assert _pick_canonical(by_name, "lamar jackson", "QB") == "4881"
+    assert _pick_canonical(by_name, "lamar jackson", "CB") == "6994"
+    assert _pick_canonical(by_name, "devonta smith", "WR") == "7525"
+    # Fleaflicker QB/WR must not fall through to the IDP namesake.
+    assert _pick_canonical(by_name, "lamar jackson", "") == "4881"
+    assert _pick_canonical(by_name, "devonta smith", "") == "7525"
+
+
+def test_pick_canonical_legacy_tuple_map_still_works():
+    by_name = {("lamar jackson", "QB"): "4881", ("lamar jackson", "CB"): "6994"}
+    assert _pick_canonical(by_name, "lamar jackson", "QB") == "4881"
+    assert _pick_canonical(by_name, "lamar jackson", "CB") == "6994"
+
+
+def test_pick_canonical_uses_nfl_team_for_namesakes():
+    def norm(name):
+        return (name or "").strip().lower()
+
+    index = {
+        "4881": {"name": "Lamar Jackson", "pos": "QB", "team": "BAL"},
+        "6994": {"name": "Lamar Jackson", "pos": "CB", "team": "ATL"},
+        "7525": {"name": "DeVonta Smith", "pos": "WR", "team": "PHI"},
+        "13977": {"name": "DeVonta Smith", "position": "CB", "team": "CAR"},
+        "4984": {"name": "Josh Allen", "pos": "QB", "team": "BUF"},
+        "5846": {"name": "Josh Allen", "pos": "DE", "team": "JAX"},
+        "1": {"name": "Terry McLaurin", "pos": "WR", "team": "WAS"},
+    }
+    by_name = _name_index_from_players(index, norm)
+    # Team alone (Fleaflicker sometimes omits position on boxscore rows).
+    assert _pick_canonical(by_name, "lamar jackson", "", "BAL") == "4881"
+    assert _pick_canonical(by_name, "lamar jackson", "", "ATL") == "6994"
+    assert _pick_canonical(by_name, "devonta smith", "", "PHI") == "7525"
+    assert _pick_canonical(by_name, "devonta smith", "", "CAR") == "13977"
+    assert _pick_canonical(by_name, "josh allen", "QB", "BUF") == "4984"
+    assert _pick_canonical(by_name, "josh allen", "DE", "JAX") == "5846"
+    # WAS/WSH schedule alias.
+    assert _pick_canonical(by_name, "terry mclaurin", "WR", "WSH") == "1"
+
+
+def test_flea_pro_team_reads_abbrev_and_nested():
+    assert _flea_pro_team({"proTeamAbbreviation": "BAL"}) == "BAL"
+    assert _flea_pro_team({"proTeam": {"abbreviation": "PHI"}}) == "PHI"
+    assert _flea_pro_team({"pro_team": {"abbreviation": "car"}}) == "CAR"
+    assert _flea_pro_team({}) == ""
+
+
+def test_fleaflicker_scoring_maps_group_abbreviations():
+    rules = {
+        "groups": [
+            {"label": "Passing", "scoringRules": [
+                {
+                    "category": {"abbreviation": "Yd", "nameSingular": "Passing Yard"},
+                    "points": {"value": 1}, "pointsPer": {"value": 0.04}, "forEvery": 25,
+                },
+                {
+                    "category": {"abbreviation": "TD", "nameSingular": "Passing TD"},
+                    "points": {"value": 4}, "forEvery": 1,
+                },
+                {
+                    "category": {"abbreviation": "INT", "nameSingular": "Interception"},
+                    "points": {"value": -2}, "forEvery": 1,
+                },
+            ]},
+            {"label": "Rushing", "scoringRules": [
+                {
+                    "category": {"abbreviation": "Yd", "nameSingular": "Rushing Yard"},
+                    "points": {"value": 1}, "pointsPer": {"value": 0.1}, "forEvery": 10,
+                },
+                {
+                    "category": {"abbreviation": "TD", "nameSingular": "Rushing TD"},
+                    "points": {"value": 6}, "forEvery": 1,
+                },
+            ]},
+            {"label": "Receiving", "scoringRules": [
+                {
+                    "category": {"abbreviation": "Rec", "nameSingular": "Catch"},
+                    "points": {"value": 1}, "pointsPer": {"value": 1.0}, "forEvery": 1,
+                },
+                {
+                    "category": {"abbreviation": "Yd", "nameSingular": "Receiving Yard"},
+                    "points": {"value": 1}, "pointsPer": {"value": 0.1}, "forEvery": 10,
+                },
+                {
+                    "category": {"abbreviation": "TD", "nameSingular": "Receiving TD"},
+                    "points": {"value": 6}, "forEvery": 1,
+                },
+            ]},
+            {"label": "Misc", "scoringRules": [
+                {
+                    "category": {"abbreviation": "Fum", "nameSingular": "Fumble"},
+                    "points": {"value": -2}, "forEvery": 1,
+                },
+            ]},
+        ]
+    }
+    out = FleaflickerProvider._scoring(rules)
+    assert out["pass_yd"] == 0.04
+    assert out["pass_td"] == 4.0
+    assert out["pass_int"] == -2.0
+    assert out["rush_yd"] == 0.1
+    assert out["rush_td"] == 6.0
+    assert out["rec"] == 1.0
+    assert out["rec_yd"] == 0.1
+    assert out["rec_td"] == 6.0
+    assert out["fum_lost"] == -2.0
+    assert "TD" not in out
+    assert "Yd" not in out
+
+    from utils.fantasy_scoring import projection_points
+    pts = projection_points(
+        {"raw_stats": {
+            "pass_yd": 250, "pass_td": 2, "rush_yd": 20,
+            "pts_ppr": 20.0, "pts_std": 18.0,
+        }},
+        out, "QB",
+    )
+    assert pts == 20.0
+
+
+def test_fleaflicker_scoring_divides_points_by_for_every():
+    rules = {"groups": [{"label": "Passing", "scoring_rules": [
+        {"category": {"abbreviation": "Yd"}, "points": {"value": 1}, "for_every": 25},
+    ]}]}
+    assert FleaflickerProvider._scoring(rules)["pass_yd"] == 0.04
+
+
+def test_get_matchups_uses_boxscore_slot_order(monkeypatch):
+    provider = FleaflickerProvider()
+    payloads = {
+        "FetchLeagueScoreboard": {
+            "games": [{
+                "id": 77,
+                "home": {"id": 1},
+                "away": {"id": 2},
+                "homeScore": {"score": {"value": 0}},
+                "awayScore": {"score": {"value": 0}},
+            }],
+        },
+        "FetchLeagueBoxscore": {
+            "lineups": [{
+                "group": "START",
+                "slots": [
+                    {
+                        "position": {"label": "QB", "group": "START"},
+                        "home": {
+                            "proPlayer": {"id": 9, "nameFull": "Bo Nix", "position": "QB"},
+                            "viewingActualPoints": {"value": 0},
+                        },
+                        "away": {
+                            "proPlayer": {
+                                "id": 8, "nameFull": "Lamar Jackson", "position": "QB",
+                            },
+                            "viewingActualPoints": {"value": 0},
+                        },
+                    },
+                    {
+                        "position": {"label": "RB", "group": "START"},
+                        "home": {
+                            "proPlayer": {
+                                "id": 10, "nameFull": "Bijan Robinson", "position": "RB",
+                            },
+                        },
+                        "away": {
+                            "proPlayer": {
+                                "id": 11, "nameFull": "Breece Hall", "position": "RB",
+                            },
+                        },
+                    },
+                ],
+            }],
+        },
+    }
+    monkeypatch.setattr(provider, "_call", lambda method, *a, **k: payloads[method])
+    monkeypatch.setattr(
+        provider, "_canonical_map",
+        lambda *a, **k: {"9": "nix", "8": "lamar", "10": "bijan", "11": "breece"},
+    )
+    monkeypatch.setattr(provider, "_build_name_index", lambda: {})
+    rows = provider.get_matchups("14153", 2026, 1)
+    home = next(r for r in rows if r["roster_id"] == 1)
+    away = next(r for r in rows if r["roster_id"] == 2)
+    assert home["starters"] == ["nix", "bijan"]
+    assert away["starters"] == ["lamar", "breece"]
+    assert home["matchup_id"] == away["matchup_id"]

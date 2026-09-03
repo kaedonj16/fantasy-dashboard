@@ -541,16 +541,34 @@ def save_week_schedule(season: int, week: int, data: List[Dict]) -> None:
 # ------------------------------------------------
 
 _WEEK_PROJ_TTL_HOURS = 1   # re-fetch the live week's projections at most hourly
+_WEEK_PROJ_EMPTY_TTL_SEC = 15 * 60
+_WEEK_PROJ_EMPTY_MAX_BYTES = 16
+
+
+def _week_proj_file_is_empty(cache_path: str) -> bool:
+    """True for a missing file or a failed-fetch ``{}`` placeholder."""
+    try:
+        return os.path.getsize(cache_path) < _WEEK_PROJ_EMPTY_MAX_BYTES
+    except OSError:
+        return True
 
 
 def _week_proj_is_stale(season: int, week: int, cache_path: str) -> bool:
-    """True only for the current/upcoming week of the live season.
+    """True when the cache should be re-fetched.
 
-    Completed weeks (and past seasons) never change, so their cached files are
-    treated as permanent — re-fetching them would just burn API calls. The
-    current and future weeks of the in-progress season DO change (injuries,
-    inactives, role and projection updates), so those honor a short TTL.
+    Completed weeks (and past seasons) never change, so a *populated* cache
+    is permanent. An empty ``{}`` file is not a real projection set — a
+    failed Sleeper fetch used to write one and then look fresh for an hour
+    (or forever once the week was treated as completed), which painted
+    every matchup as 0.0. Empty files retry after a short TTL.
     """
+    empty = _week_proj_file_is_empty(cache_path)
+    try:
+        age = time.time() - os.path.getmtime(cache_path)
+    except OSError:
+        return True
+    if empty:
+        return age > _WEEK_PROJ_EMPTY_TTL_SEC
     try:
         state = get_nfl_state() or {}
         cur_season = int(state.get("season") or 0)
@@ -561,10 +579,6 @@ def _week_proj_is_stale(season: int, week: int, cache_path: str) -> bool:
         return False                      # past season → immutable
     if season == cur_season and week < cur_week:
         return False                      # already-completed week → immutable
-    try:
-        age = time.time() - os.path.getmtime(cache_path)
-    except OSError:
-        return True
     return age > _WEEK_PROJ_TTL_HOURS * 3600
 
 
