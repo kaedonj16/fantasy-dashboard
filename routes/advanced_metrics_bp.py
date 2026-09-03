@@ -69,6 +69,8 @@ def api_advanced_metrics_leaderboard():
         season = None
     min_vol_str = (request.args.get("min_vol") or "").strip()
     min_vol = int(min_vol_str) if min_vol_str.isdigit() else None
+    combine_raw = (request.args.get("combine") or "").strip().lower()
+    combine = combine_raw in ("1", "true", "yes")
     week_start_str = (request.args.get("week_start") or "").strip()
     week_end_str   = (request.args.get("week_end") or "").strip()
     week_start = int(week_start_str) if week_start_str.isdigit() else None
@@ -111,7 +113,9 @@ def api_advanced_metrics_leaderboard():
                 week_start=week_start, week_end=week_end, min_vol=min_vol,
             )
         else:
-            players = get_metric_leaderboard(metric, position=position, season=season, min_vol=min_vol)
+            players = get_metric_leaderboard(
+                metric, position=position, season=season, min_vol=min_vol, combine=combine,
+            )
     except Exception as e:
         logger.exception(f"[api/advanced-metrics/leaderboard] error for metric={metric}: {e}")
         players = []
@@ -140,18 +144,34 @@ def api_advanced_metrics_leaderboard():
         try:
             from data_building.external_data.player_team_history import teams_in_season
             for _p in players or []:
-                row_season = _p.get("season") or (selected_seasons[0] if len(selected_seasons) == 1 else None)
-                if not row_season:
+                years = _p.get("seasons") or (
+                    [_p["season"]] if _p.get("season") is not None else selected_seasons
+                )
+                all_stints = []
+                team_weeks: dict = {}
+                for year in years:
+                    try:
+                        year_i = int(year)
+                    except (TypeError, ValueError):
+                        continue
+                    for stint in teams_in_season(str(_p.get("player_id")), year_i) or []:
+                        all_stints.append(stint)
+                        team = stint.get("team")
+                        if not team:
+                            continue
+                        team_weeks.setdefault(team, [])
+                        for wk in stint.get("weeks") or []:
+                            if wk not in team_weeks[team]:
+                                team_weeks[team].append(wk)
+                if not all_stints:
                     continue
-                stints = teams_in_season(str(_p.get("player_id")), int(row_season))
-                if not stints:
-                    continue
-                _p["teams"] = [s["team"] for s in stints]
-                _p["team_weeks"] = {s["team"]: s["weeks"] for s in stints}
-                # Display team = the one with the most weeks (ties -> first stint).
-                _primary = max(stints, key=lambda s: len(s.get("weeks") or []))
+                _p["teams"] = list(dict.fromkeys(
+                    s["team"] for s in all_stints if s.get("team")
+                ))
+                _p["team_weeks"] = team_weeks
+                _primary = max(all_stints, key=lambda s: len(s.get("weeks") or []))
                 _p["team"] = _primary["team"]
-                _p["multi_team"] = len(stints) > 1
+                _p["multi_team"] = len(_p["teams"]) > 1
         except Exception:
             logger.debug("leaderboard season-team enrich failed", exc_info=True)
 
@@ -166,6 +186,7 @@ def api_advanced_metrics_leaderboard():
         "weekly_capable": weekly_capable,
         "is_week_filtered": is_week_filtered,
         "selected_seasons": selected_seasons,
+        "combine": bool(combine) and is_multi_season,
         "players": players,
     })
     # Leaderboard data is rebuilt at most daily, so let the browser reuse the
