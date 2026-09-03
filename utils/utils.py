@@ -93,6 +93,36 @@ TEAM_ALIASES = {
     "sea": "SEA", "den": "DEN", "ari": "ARI", "hou": "HOU", "ten": "TEN", "ind": "IND",
 }
 
+# Bidirectional abbreviation pairs. Sleeper/players_index use WAS; Tank01
+# schedules use WSH. Same split exists for JAC/JAX and LA/LAR.
+TEAM_ABBR_ALIASES = {
+    "WAS": "WSH",
+    "WSH": "WAS",
+    "JAC": "JAX",
+    "JAX": "JAC",
+    "LA": "LAR",
+    "LAR": "LA",
+}
+
+
+def team_abbr_keys(team: str) -> tuple[str, ...]:
+    """Return the team code plus its schedule/index alias, if any."""
+    t = (team or "").strip().upper()
+    if not t:
+        return ()
+    alt = TEAM_ABBR_ALIASES.get(t)
+    return (t, alt) if alt else (t,)
+
+
+def lookup_team_map(mapping: Optional[dict], team: str):
+    """Lookup ``mapping[team]``, trying WAS/WSH (and other abbr aliases)."""
+    if not mapping or not team:
+        return None
+    for key in team_abbr_keys(team):
+        if key in mapping:
+            return mapping[key]
+    return None
+
 DST_CANON = {
     "49ers": "SF",
     "Patriots": "NE",
@@ -1091,6 +1121,23 @@ def normalize_game_status_from_tank01(game: dict, now: datetime | None = None) -
     return "pre"
 
 
+def game_has_started(game: Optional[dict], now: datetime | None = None) -> bool:
+    """True when a Tank01/schedule game is live or final.
+
+    Explicit ``gameStatusCode`` 0 (scheduled) wins even if a stale
+    ``gameTime_epoch`` would otherwise look like the game already ended —
+    that is what painted last year's box scores on the Week 1 preview.
+    """
+    if not game or not isinstance(game, dict):
+        return False
+    code = str(game.get("gameStatusCode") or "").strip()
+    if code == "0":
+        return False
+    if code in ("1", "2"):
+        return True
+    return normalize_game_status_from_tank01(game, now=now) in ("in", "post")
+
+
 def build_games_by_team(games: list[dict]) -> dict[str, dict]:
     """
     games -> { team_abbr: { 'status': 'pre' | 'in' | 'post', 'game': game_obj } }
@@ -1100,11 +1147,13 @@ def build_games_by_team(games: list[dict]) -> dict[str, dict]:
         home = g.get("home")  # e.g. "NE"
         away = g.get("away")  # e.g. "NYJ"
         norm_status = normalize_game_status_from_tank01(g)  # 'pre' | 'in' | 'post'
+        entry = {"status": norm_status, "game": g}
 
-        if home:
-            games_by_team[home] = {"status": norm_status, "game": g}
-        if away:
-            games_by_team[away] = {"status": norm_status, "game": g}
+        for raw in (home, away):
+            if not raw:
+                continue
+            for key in team_abbr_keys(raw):
+                games_by_team[key] = entry
 
     return games_by_team
 
@@ -1138,7 +1187,7 @@ def build_status_by_pid(
             status_by_pid[pid] = STATUS_FINAL
             continue
 
-        game = games_by_team.get(team)
+        game = lookup_team_map(games_by_team, team)
         if not game:
             # bye or missing schedule
             status_by_pid[pid] = STATUS_FINAL
@@ -1163,7 +1212,7 @@ def build_status_by_pid(
         if pid in status_by_pid:
             continue
 
-        game = games_by_team.get(team_code)
+        game = lookup_team_map(games_by_team, team_code)
 
         if not game:
             bye_week = team_info.get("byeWeek")
@@ -1971,6 +2020,33 @@ def build_and_save_week_stats_for_league(
     3) Overlay IDP stats from Sleeper using idp_players_index + sleeper_stats file.
     """
     league_week_stats: Dict[str, Dict[str, Dict[str, Dict[str, float]]]] = {}
+
+    # Footballguys "Wk N" still holds last season's box scores until this
+    # week's games are actually played. Scraping that into week_stats_s{year}
+    # makes the Weekly Hub look like players already suited up after a draft.
+    schedule: List[Dict[str, Any]] = []
+    try:
+        raw_sched = load_week_schedule(season, week)
+        if isinstance(raw_sched, list):
+            schedule = raw_sched
+        elif isinstance(raw_sched, dict):
+            maybe = raw_sched.get("body") or raw_sched.get("games") or []
+            if isinstance(maybe, list):
+                schedule = maybe
+    except Exception:
+        schedule = []
+
+    week_started = any(
+        game_has_started(g) for g in schedule if isinstance(g, dict)
+    ) or bool(live_game_ids)
+    if not week_started:
+        out_path = path_week_stats(season, week)
+        if schedule:
+            write_json(out_path, {})
+            print(f"[week_stats] no games started yet (season={season}, week={week}); wrote empty")
+        else:
+            print(f"[week_stats] skip scrape; no schedule and no live games (season={season}, week={week})")
+        return out_path
 
     print(f"[week_stats] building stats for the week (season={season}, week={week})")
     for team_abv in teams_index.keys():
