@@ -23,6 +23,7 @@ def build_standings_body(ctx: dict) -> str:
     week_bar = _standings_week_selector(ctx, _standings_available_weeks(ctx))
 
     body = f"""
+    <div class="std-rework">
     {week_bar}
     <div id="stTilesInner">{panels.get('tiles', '')}</div>
     <div class="standings-main two-col-standings">
@@ -56,6 +57,7 @@ def build_standings_body(ctx: dict) -> str:
       </div>
     </div>
     <div id="stSidebarInner" class="standings-insights-wrap">{panels['sidebar']}</div>
+    </div>
     """
 
     return body

@@ -36707,3 +36707,74 @@ a, button, [role="button"], [role="tab"], summary, label,
     .team-strength-card .tc-index { min-width: 0; }
     .team-strength-card .tc-mix-bar { max-width: 100%; }
 }
+
+/* ============================================================
+   STANDINGS ROOK — table restyle to match the reworked UI.
+   Scoped to .std-rework (the standings page body) so the shared
+   .standings-table styling on other pages is untouched. Brings the
+   standings + detailed-stats tables in line with the summary tiles,
+   power leaderboard and insight strip: uppercase muted headers,
+   rounded-square avatars, divider rows with hover, team-left /
+   numbers-right alignment.
+   ============================================================ */
+.std-rework .standings-table th {
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 11px 9px;
+    text-align: right;
+}
+.std-rework .standings-table[data-page="standings"] th:nth-child(1),
+.std-rework .standings-table[data-page="standings"] th:nth-child(2),
+.std-rework #stats.standings-table th:nth-child(1) {
+    text-align: left;
+}
+.std-rework .standings-table td {
+    padding: 11px 9px;
+    border-top: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    text-align: right;
+    font-weight: 600;
+}
+.std-rework .standings-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+.std-rework .standings-table tbody tr:hover td {
+    background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+.std-rework .standings-table td.team,
+.std-rework .standings-table td.rank-cell {
+    text-align: left;
+}
+.std-rework .standings-table td.st-trend-cell {
+    text-align: center;
+}
+/* Rounded-square avatars (matches the tiles/power cards), a touch larger */
+.std-rework .standings-table td.team img,
+.std-rework .standings-table td.team .avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    box-shadow: 0 0 0 1px var(--border);
+    margin-right: 9px;
+}
+.std-rework .standings-table td.team {
+    font-weight: 600;
+    color: var(--text);
+}
+/* Keep the playoff-line divider and clinch-scenario rows full-bleed:
+   the divider rule above must not paint a border under them. */
+.std-rework .standings-table tbody tr.pp-cutrow td,
+.std-rework .standings-table tbody tr.pp-scnrow td {
+    border-bottom: 0;
+    padding: 0;
+    text-align: center;
+}
+.std-rework .standings-table tbody tr.pp-cutrow:hover td,
+.std-rework .standings-table tbody tr.pp-scnrow:hover td {
+    background: transparent;
+}
