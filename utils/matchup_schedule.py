@@ -88,3 +88,38 @@ def synthetic_week_matchups(rosters: List[dict], week: int) -> List[dict]:
                 "players_points": {},
             })
     return out
+
+
+def resolve_matchup_week(current_week, matchups_by_week=None) -> int:
+    """Week to paint on the dashboard / scout.
+
+    Sleeper's NFL state can still be ``week=0`` in the days before kickoff
+    while Yahoo / ESPN already publish a Week 1 scoreboard. The weekly hub
+    already uses ``current_week or 1``; the dashboard was looking up week 0
+    and rendering an empty "No matchups" carousel.
+    """
+    by_week = matchups_by_week if isinstance(matchups_by_week, dict) else {}
+    try:
+        week = int(current_week or 0)
+    except (TypeError, ValueError):
+        week = 0
+
+    def _rows(w):
+        return by_week.get(w) or by_week.get(str(w)) or []
+
+    if week > 0:
+        if _rows(week) or not by_week:
+            return week
+    if _rows(1):
+        return 1
+    populated = []
+    for key in by_week:
+        try:
+            w = int(key)
+        except (TypeError, ValueError):
+            continue
+        if w > 0 and _rows(w):
+            populated.append(w)
+    if populated:
+        return min(populated)
+    return max(1, week)

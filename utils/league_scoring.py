@@ -23,6 +23,54 @@ _DEFAULTS = {
     "pass_int": -2.0, "rush_yd": 0.1, "rush_td": 6.0,
     "rec_yd": 0.1, "rec_td": 6.0, "fum_lost": -2.0,
 }
+_PER_UNIT_YARD_KEYS = frozenset({"pass_yd", "rush_yd", "rec_yd"})
+_TRANSITIONAL_ALIASES = {
+    "pointsPerReception": "rec",
+    "passYards": "pass_yd",
+    "passTD": "pass_td",
+    "passInterceptions": "pass_int",
+    "rushYards": "rush_yd",
+    "rushTD": "rush_td",
+    "receivingYards": "rec_yd",
+    "receivingTD": "rec_td",
+    "fumbles": "fum_lost",
+}
+
+
+def assign_scoring_rate(out: dict, key: str, value: float) -> None:
+    """Store a per-stat rate without letting milestone extras overwrite it.
+
+    Fleaflicker/ESPN/Yahoo all publish both ``0.04`` per passing yard and a
+    ``3``-point 300-yard bonus under overlapping ids. Last-write-wins scored
+    Josh Allen's 235 yards as 268 fantasy points.
+    """
+    try:
+        rate = float(value)
+    except (TypeError, ValueError):
+        return
+    if key not in out:
+        out[key] = rate
+        return
+    if key not in _PER_UNIT_YARD_KEYS:
+        return
+    try:
+        prev = float(out[key])
+    except (TypeError, ValueError):
+        out[key] = rate
+        return
+    if abs(prev) < 1.0 <= abs(rate):
+        return
+    if abs(rate) < 1.0 <= abs(prev):
+        out[key] = rate
+
+
+def stamp_scoring_aliases(settings: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Keep ESPN-style alias keys in lockstep with canonical rec / pass_yd."""
+    out = dict(settings or {})
+    for alias, canonical in _TRANSITIONAL_ALIASES.items():
+        if canonical in out and out[canonical] is not None:
+            out[alias] = out[canonical]
+    return out
 
 
 def normalize_league_scoring(platform: str, raw_provider_settings: Mapping[str, Any] | None,
@@ -54,4 +102,4 @@ def normalize_league_scoring(platform: str, raw_provider_settings: Mapping[str, 
                                canonical, platform, league_id)
                 if canonical in _DEFAULTS:
                     out[canonical] = _DEFAULTS[canonical]
-    return out
+    return stamp_scoring_aliases(out)

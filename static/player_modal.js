@@ -598,6 +598,7 @@ function openPlayerModal(playerId, playerName, opts) {
       // hidden entirely — no dot, no legend entry.
       const _adpColors = {
         'Sleeper': 'var(--adp-c-sleeper)', 'BR Fantasy': 'var(--adp-c-brf)',
+        'BR Fantasy Live (7d)': 'var(--adp-c-brf-live)',
         'ESPN': 'var(--adp-c-espn)', 'Yahoo': 'var(--adp-c-yahoo)', 'MFL': 'var(--adp-c-mfl)',
       };
       const _adpEsc = s => String(s).replace(/[&<>"]/g,
@@ -2798,17 +2799,55 @@ function _wkBarInit(id, onChange) {
   });
 }
 
+function _advParseSeasons(raw) {
+  return String(raw || '').split(',').map(function(s) { return s.trim(); })
+    .filter(function(s) { return /^\d{4}$/.test(s); })
+    .map(Number);
+}
+
+window.advPickSeason = function(playerId, leagueId, yr) {
+  const careerBtn = document.querySelector('.adv-season-pill[data-year="career"]');
+  const yearPills = document.querySelectorAll('.adv-season-pill[data-year]:not([data-year="career"])');
+  const careerOn = !!(careerBtn && careerBtn.classList.contains('active'));
+  const selected = [];
+  yearPills.forEach(function(p) {
+    if (p.classList.contains('active')) selected.push(Number(p.dataset.year));
+  });
+  if (yr === 'career') {
+    loadAdvancedMetrics(playerId, leagueId, 'career');
+    return;
+  }
+  const year = Number(yr);
+  if (careerOn || !selected.length) {
+    loadAdvancedMetrics(playerId, leagueId, year);
+    return;
+  }
+  if (selected.indexOf(year) >= 0) {
+    const next = selected.filter(function(s) { return s !== year; });
+    if (!next.length) return;
+    next.sort(function(a, b) { return b - a; });
+    loadAdvancedMetrics(playerId, leagueId, next.length === 1 ? next[0] : next.join(','));
+    return;
+  }
+  const next = selected.concat([year]);
+  next.sort(function(a, b) { return b - a; });
+  loadAdvancedMetrics(playerId, leagueId, next.join(','));
+};
+
 function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
   const token = ++_advMetricsToken;
   const contentEl = document.getElementById('advancedMetricsContent');
   if (!contentEl) return;
 
   const isAuto = season === 'auto';
-  const realSeason = (season != null && season !== 'career' && season !== 'auto');
+  const selectedYears = _advParseSeasons(season);
+  const isMultiSeason = selectedYears.length > 1;
+  const hasExplicitSeason = season != null && season !== 'career' && season !== 'auto';
+  const realSeason = hasExplicitSeason && !isMultiSeason;
   const hasWeekRange = realSeason && weekStart != null && weekEnd != null;
 
   const leagueParam = leagueId ? `&league_id=${encodeURIComponent(leagueId)}` : '';
-  const seasonParam = realSeason ? `&season=${season}` : '';
+  const seasonParam = hasExplicitSeason ? `&season=${encodeURIComponent(season)}` : '';
   const weekParam = hasWeekRange ? `&week_start=${weekStart}&week_end=${weekEnd}` : '';
   const url = `/api/player-advanced-metrics/${encodeURIComponent(playerId)}?_=1${leagueParam}${seasonParam}${weekParam}`;
 
@@ -2877,7 +2916,11 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
       }
 
       const activeSeason = metricsData.season;
-      const isCareer = season === 'career' || activeSeason == null;
+      const selectedFromResp = (metricsData.selected_seasons || []).map(Number).filter(Boolean);
+      const combinedYears = isMultiSeason
+        ? (selectedFromResp.length ? selectedFromResp : selectedYears)
+        : [];
+      const isCareer = season === 'career' || (activeSeason == null && !isMultiSeason);
 
       // Update year label in section header
       const seasonLabelEl = document.getElementById('advMetricsSeasonLabel');
@@ -2888,7 +2931,11 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
             ? ` · W${metricsData.week_start}`
             : ` · W${metricsData.week_start}–W${metricsData.week_end}`;
         }
-        seasonLabelEl.textContent = isCareer ? 'Career' : ((activeSeason || '') + _wk);
+        if (isMultiSeason) {
+          seasonLabelEl.textContent = combinedYears.join(' + ');
+        } else {
+          seasonLabelEl.textContent = isCareer ? 'Career' : ((activeSeason || '') + _wk);
+        }
       }
 
       const activeWS = metricsData.week_start != null ? Number(metricsData.week_start) : null;
@@ -2900,15 +2947,22 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
       const pillsEl = document.getElementById('advMetricsPills');
       if (pillsEl && availableSeasons.length >= 1) {
         const lidExpr = leagueId ? `'${leagueId}'` : 'null';
+        const activeYears = isMultiSeason
+          ? combinedYears
+          : ((!isCareer && activeSeason) ? [Number(activeSeason)] : []);
+        const lidPick = leagueId ? `'${leagueId}'` : 'null';
         let pillsHTML = '<div class="adv-metrics-season-pills">';
-        pillsHTML += `<button class="adv-season-pill${isCareer ? ' active' : ''}" onclick="loadAdvancedMetrics('${playerId}', ${lidExpr}, 'career')">Career</button>`;
+        pillsHTML += `<button type="button" class="adv-season-pill${isCareer ? ' active' : ''}" data-year="career" onclick="advPickSeason('${playerId}', ${lidPick}, 'career')">Career</button>`;
         availableSeasons.forEach(yr => {
-          const activeClass = (!isCareer && yr === activeSeason) ? ' active' : '';
-          pillsHTML += `<button class="adv-season-pill${activeClass}" onclick="loadAdvancedMetrics('${playerId}', ${lidExpr}, ${yr})">${yr}</button>`;
+          const activeClass = (!isCareer && activeYears.indexOf(Number(yr)) >= 0) ? ' active' : '';
+          pillsHTML += `<button type="button" class="adv-season-pill${activeClass}" data-year="${yr}" onclick="advPickSeason('${playerId}', ${lidPick}, ${yr})">${yr}</button>`;
         });
         pillsHTML += '</div>';
+        if (availableSeasons.length >= 2) {
+          pillsHTML += '<div class="adv-season-hint">Tap more years to combine · only seasons with data are listed</div>';
+        }
         // Week-bar: only show when the player has per-week data for this season.
-        if (!isCareer && activeSeason && availableWeeks.length > 0) {
+        if (!isCareer && !isMultiSeason && activeSeason && availableWeeks.length > 0) {
           const wkMin = Math.min(...availableWeeks);
           const wkMax = Math.max(...availableWeeks);
           const barWS = activeWS != null ? activeWS : (weekStart != null ? weekStart : null);

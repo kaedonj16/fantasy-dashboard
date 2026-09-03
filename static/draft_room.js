@@ -1062,13 +1062,14 @@
   // season-gated list (which also hides globals with no snapshot). Keeper runs
   // as a redraft. Consensus is always offered and is the default.
   var CPU_ADP_SOURCE_FALLBACK = {
-    startup: ['consensus', 'sleeper', 'brfantasy'],
-    rookie:  ['consensus', 'sleeper', 'brfantasy'],
-    redraft: ['consensus', 'sleeper', 'espn', 'yahoo', 'mfl', 'brfantasy']
+    startup: ['consensus', 'sleeper', 'brfantasy', 'brfantasy_live'],
+    rookie:  ['consensus', 'sleeper', 'brfantasy', 'brfantasy_live'],
+    redraft: ['consensus', 'sleeper', 'espn', 'yahoo', 'mfl', 'brfantasy', 'brfantasy_live']
   };
   var CPU_ADP_SOURCE_LABELS = {
     consensus: 'Consensus (all platforms)', sleeper: 'Sleeper', espn: 'ESPN',
-    yahoo: 'Yahoo', mfl: 'MFL', brfantasy: 'BR Fantasy'
+    yahoo: 'Yahoo', mfl: 'MFL', brfantasy: 'BR Fantasy',
+    brfantasy_live: 'BR Fantasy Live (7d)'
   };
   // Rebuild the "CPU drafts from" options for the currently selected draft type,
   // preferring the payload's season-gated source list once a pool has loaded and
@@ -5464,19 +5465,32 @@
   }
   // During a live draft, ignore picks beyond the on-the-clock slot. ESPN's full
   // board JSON and DOM scrape can include mislabeled future cells that would
-  // otherwise paint empty seats as "Unknown".
-  function _livePickAllowed(p){
+  // otherwise paint empty seats as "Unknown". Mid-draft Connect seeds
+  // state.current at 1, so batch applies must raise the cap to the highest
+  // real selection in the snapshot (catch-up) or only pick 1 lands and the
+  // rest drip in one poll at a time.
+  function _liveCatchUpCap(picks){
+    var cap = parseInt(state && state.current, 10) || 1;
+    (picks || []).forEach(function(p){
+      if (!livePickIsSelection(p) || p.pick_no == null) return;
+      var n = parseInt(p.pick_no, 10) || 0;
+      if (n > cap) cap = n;
+    });
+    return cap;
+  }
+  function _livePickAllowed(p, cap){
     if (!p || p.pick_no == null) return false;
     if (!state || state.mode !== 'live' || state.isComplete || !state.isDrafting) return true;
-    var cap = parseInt(state.current, 10) || 1;
-    return parseInt(p.pick_no, 10) <= cap;
+    var limit = (cap != null && cap !== '') ? (parseInt(cap, 10) || 1) : (parseInt(state.current, 10) || 1);
+    return parseInt(p.pick_no, 10) <= limit;
   }
   function applyLivePicks(picks){
     lastLivePicks = picks;
+    var cap = _liveCatchUpCap(picks);
     state.picks = {}; drafted = {};
     var latestPickedAt = 0;
     (picks || []).forEach(function(p){
-      if (!livePickIsSelection(p) || !_livePickAllowed(p)) return;
+      if (!livePickIsSelection(p) || !_livePickAllowed(p, cap)) return;
       var pid = p.player_id ? String(p.player_id) : '';
       var meta = pid ? playersById[pid] : null;
       state.picks[p.pick_no] = {
@@ -5501,8 +5515,8 @@
   // that is already on the board is left alone so duplicate ESPN responses
   // cannot create a second copy. Unresolved ESPN ids never mark a canonical
   // player drafted.
-  function applyOneLivePick(p){
-    if (!state || !livePickIsSelection(p) || !_livePickAllowed(p)) return false;
+  function applyOneLivePick(p, cap){
+    if (!state || !livePickIsSelection(p) || !_livePickAllowed(p, cap)) return false;
     if (state.picks[p.pick_no]) return false;
     var pid = p.player_id ? String(p.player_id) : '';
     var row = pid ? playersById[pid] : null;
@@ -5533,8 +5547,9 @@
   }
   function applyMissingLivePicks(picks){
     lastLivePicks = picks;
+    var cap = _liveCatchUpCap(picks);
     var remote = (picks || []).slice().filter(function(p){
-      return livePickIsSelection(p) && _livePickAllowed(p);
+      return livePickIsSelection(p) && _livePickAllowed(p, cap);
     });
     remote.sort(function(a, b){ return (a.pick_no || 0) - (b.pick_no || 0); });
     var remoteCount = remote.length;
@@ -5550,7 +5565,7 @@
     }
     var applied = 0;
     remote.forEach(function(p){
-      if (applyOneLivePick(p)){
+      if (applyOneLivePick(p, cap)){
         applied++;
         try { psCtxInvalidate(); refreshPsPool(); } catch (e){}
       }

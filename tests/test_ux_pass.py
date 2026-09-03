@@ -72,6 +72,12 @@ def test_cross_feature_links():
     assert "wv-ctx-link" in WAIVERS
     assert "Compare to roster" in WAIVERS
     assert "View schedule" in WAIVERS
+    assert "wvLeaguePath('/compare')}}?p1=" in WAIVERS
+    assert "wvLeaguePath('/schedule')}}?add=" in WAIVERS
+    assert "wvLeaguePath('/compare')}}?a=" not in WAIVERS
+    # Compare page accepts the waiver deep-link (?p1= or legacy ?a=) and
+    # prefills player 1 so the user can pick a roster player as p2.
+    assert "params.get('p1') || params.get('a')" in APP_JS
 
 
 def test_command_palette_feature_navigation():

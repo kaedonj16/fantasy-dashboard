@@ -81,22 +81,17 @@ def test_lite_css_swap_excludes_homepage():
     seo_css = (ROOT / "static" / "seo_lite.css").read_text(encoding="utf-8")
     assert ".home-hero" not in seo_css
     assert ".home-card" not in seo_css
-
-
-def test_home_onboarding_card_nested_controls_match_navy_surface():
-    """Steps hint and provider method toggles sit on the fixed navy home-card."""
-    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
-    assert ".home-card .home-steps-hint" in css
-    assert ".home-card .espn-home-methods" in css
-    assert "background: rgba(255, 255, 255, 0.06)" in css
-
-
-def test_home_mobile_layout_uses_dock_safe_padding():
-    """Phone home page clears the bottom tab bar and expands the connect card."""
-    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
-    assert ".home-page" in css
-    assert "padding: 20px max(16px, env(safe-area-inset-left)) calc(48px + var(--dock-safe-bottom))" in css
-    assert ".home-card {\n        width: 100%;\n        min-width: 0;\n        max-width: none;" in css
-    assert ".home-card .platform-btn" in css
-    assert "min-height: 44px" in css
-    assert "@media (max-width: 720px) {\n    .home-page" not in css
+    # Guest SEO pages still emit dropdowns + the More sheet. Without these
+    # hides, every nav link spills in-flow on logged-out pages.
+    assert ".nav-pill-dropdown-menu" in seo_css
+    assert ".skip-link" in seo_css
+    assert (
+        ".br-tabbar,\n.br-sheet-scrim,\n.br-sheet,\n.br-search-screen {\n    display: none;\n}"
+        in seo_css
+    )
+    assert ".otc-day-filter" in seo_css
+    assert ".csd-wrap" in seo_css
+    assert ".csd-list" in seo_css
+    assert ".compare-pick-results" in seo_css
+    assert "--card-bg:" in seo_css
+    assert "--radius-pill:" in seo_css

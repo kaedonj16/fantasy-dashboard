@@ -63,6 +63,8 @@ def test_source_capabilities_axes():
     caps = F.SOURCE_CAPABILITIES
     assert caps["sleeper"].serves_axis("dynasty")
     assert caps["brfantasy"].serves_axis("rookie")
+    assert caps["brfantasy_live"].serves_axis("redraft")
+    assert caps["brfantasy_live"].serves_axis("dynasty")
     # Global redraft feeds must not claim dynasty/rookie.
     for s in ("yahoo", "espn", "mfl"):
         assert caps[s].serves_axis("redraft")
@@ -72,6 +74,7 @@ def test_source_capabilities_axes():
 
 def test_only_brfantasy_declares_native_tep():
     assert F.SOURCE_CAPABILITIES["brfantasy"].provides_tep is True
+    assert F.SOURCE_CAPABILITIES["brfantasy_live"].provides_tep is True
     for s in ("sleeper", "yahoo", "espn", "mfl"):
         assert F.SOURCE_CAPABILITIES[s].provides_tep is False
 

@@ -40,8 +40,10 @@ def test_sw_skips_stale_shell_on_explicit_refresh():
     assert "forceNetworkNav" in SW
     assert "request.cache === 'reload'" in SW
     assert "skipStaleShell" in SW
-    # Timeout race is only used when we are NOT forcing the network.
-    assert "if (cached && !skipStaleShell)" in SW
+    # Explicit refresh waits longer for the network, but still races a timeout
+    # so a hung fetch cannot blank the PWA forever.
+    assert "NAV_REFRESH_TIMEOUT_MS" in SW
+    assert "skipStaleShell ? NAV_REFRESH_TIMEOUT_MS : NAV_TIMEOUT_MS" in SW
     # Message handler acks so the page can reload after the SW is armed.
     assert "event.ports[0].postMessage" in SW
 

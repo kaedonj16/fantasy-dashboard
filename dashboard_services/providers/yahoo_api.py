@@ -25,6 +25,7 @@ from urllib.parse import urlencode
 
 import requests
 
+from dashboard_services.display_names import public_owner_label
 from utils.utils import load_players_index
 from utils.coerce import safe_float as _safe_float, safe_int as _safe_int
 
@@ -864,24 +865,44 @@ def _resolve_player(
 # Data extraction helpers
 # ---------------------------------------------------------------------------
 
+def _yahoo_league_nodes(raw: Dict) -> List[Any]:
+    """Normalize ``fantasy_content.league`` to a list of nodes.
+
+    Official ``format=json`` uses an array. Some payloads use a count-keyed
+    object (``{"0": meta, "1": {scoreboard}}``) instead.
+    """
+    fc = (raw or {}).get("fantasy_content", {}) or {}
+    lg = fc.get("league")
+    if isinstance(lg, list):
+        return lg
+    if isinstance(lg, dict):
+        rows = []
+        count = _safe_int(lg.get("count")) or 0
+        if count:
+            for i in range(count):
+                entry = lg.get(str(i))
+                if entry is not None:
+                    rows.append(entry)
+        if not rows:
+            rows = [v for k, v in lg.items() if str(k).isdigit() and v is not None]
+        return rows
+    return []
+
+
 def _extract_league_meta(raw: Dict) -> Dict:
-    fc = raw.get("fantasy_content", {})
-    league_list = fc.get("league") or []
-    return league_list[0] if league_list else {}
+    league_list = _yahoo_league_nodes(raw)
+    first = league_list[0] if league_list else {}
+    return first if isinstance(first, dict) else {}
 
 
 def _league_child_block(raw: Dict, child_key: str) -> Any:
-    """Find a child collection (``teams``, ``settings``, …) anywhere in league[].
+    """Find a child collection (``teams``, ``settings``, ``scoreboard``, …).
 
     Yahoo usually nests these under ``league[1]``, but some sub-resource
     responses attach them to ``league[0]`` instead — scanning avoids empty
     extracts when the index shifts.
     """
-    fc = raw.get("fantasy_content", {}) or {}
-    lg = fc.get("league") or []
-    if not isinstance(lg, list):
-        return {}
-    for item in lg:
+    for item in _yahoo_league_nodes(raw):
         if isinstance(item, dict) and child_key in item:
             block = item.get(child_key)
             if block is not None:
@@ -1228,11 +1249,15 @@ def get_users(season: int, league_id: str, access_token: str) -> List[Dict[str, 
 
         mgr   = _yahoo_primary_manager(t)
         guid  = _yahoo_owner_id(t, team_id)
-        nick  = mgr.get("nickname") or team_name
+        # Yahoo privacy mode returns nickname "--hidden--". Never treat that as
+        # a display name — fall back to the public team name.
+        nick  = public_owner_label(mgr.get("nickname"), team_name, fallback=team_name)
 
         out.append({
             "avatar":       logo_url,
             "display_name": nick,
+            "username":     nick,
+            "team_name":    team_name,
             "is_bot":       False,
             "is_owner":     None,
             "league_id":    str(league_id),
@@ -1409,22 +1434,114 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
     return out
 
 
-def get_matchups(season: int, league_id: str, week: int, access_token: str) -> List[Dict[str, Any]]:
-    raw        = _yahoo_get(
-        access_token,
-        f"league/{_league_key_for_season(league_id, season, access_token)}/scoreboard;week={week}",
-    )
-    fc         = raw.get("fantasy_content", {})
-    lg         = fc.get("league") or []
-    scoreboard = (lg[1] if len(lg) > 1 else {}).get("scoreboard") or {}
-    matchups   = scoreboard.get("matchups") or {}
+def _yahoo_scoreboard_dict(raw: Dict) -> Dict[str, Any]:
+    """Unwrap Yahoo ``scoreboard`` which is often a list of fragments."""
+    block = _league_child_block(raw, "scoreboard")
+    if isinstance(block, list):
+        flat: Dict[str, Any] = {}
+        _merge_yahoo_dict_parts(block, flat)
+        return flat
+    if isinstance(block, dict):
+        if "matchups" in block:
+            return block
+        inner = block.get("0")
+        if isinstance(inner, dict) and ("matchups" in inner or "week" in inner):
+            merged = dict(block)
+            merged.update(inner)
+            return merged
+        return block
+    return {}
 
+
+def _flatten_yahoo_matchup(entry: Any) -> Dict[str, Any]:
+    """Normalize a scoreboard matchup row to a dict with ``teams``.
+
+    Yahoo commonly returns ``{"matchup": [{week/status…}, {teams: …}]}`` —
+    a list of single-key fragments — not a flat dict. Treating a list as
+    invalid dropped every pairing and painted "No matchups".
+    """
+    node = entry
+    if isinstance(entry, dict) and "matchup" in entry:
+        node = entry.get("matchup")
+    if isinstance(node, dict):
+        return node
+    if isinstance(node, list):
+        flat: Dict[str, Any] = {}
+        _merge_yahoo_dict_parts(node, flat)
+        return flat
+    return {}
+
+
+def _matchups_from_scoreboard_node(node: Any) -> Any:
+    """Yahoo wraps scoreboard as ``{week, "0": {matchups}}`` more often than a
+    flat ``{matchups}`` object. Look in both places."""
+    if isinstance(node, list):
+        for item in node:
+            found = _matchups_from_scoreboard_node(item)
+            if found:
+                return found
+        return {}
+    if not isinstance(node, dict):
+        return {}
+    if "matchups" in node:
+        return node.get("matchups") or {}
+    inner = node.get("0")
+    if isinstance(inner, dict) and "matchups" in inner:
+        return inner.get("matchups") or {}
+    return {}
+
+
+def _as_yahoo_matchup(entry: Any) -> Dict[str, Any]:
+    """Normalize a scoreboard row to a matchup dict with a ``teams`` block."""
+    return _flatten_yahoo_matchup(entry)
+
+
+def _yahoo_team_list_from_entry(tm_entry: Any) -> List:
+    """Scoreboard teams are ``{"team": [...]}`` or the positional team array."""
+    if isinstance(tm_entry, list):
+        return tm_entry
+    if not isinstance(tm_entry, dict):
+        return []
+    tm = tm_entry.get("team") if "team" in tm_entry else tm_entry
+    if isinstance(tm, dict) and "team" in tm:
+        tm = tm.get("team")
+    if isinstance(tm, list):
+        return tm
+    return [tm] if tm else []
+
+
+def _yahoo_roster_id_from_team(tm: List) -> int:
+    return _safe_int(
+        _team_attr(tm, "team_id")
+        or (_team_attr(tm, "team_key") or "").split(".")[-1]
+    )
+
+
+def get_matchups(season: int, league_id: str, week: int, access_token: str) -> List[Dict[str, Any]]:
+    """Return Sleeper-shaped matchup rows for Yahoo's published week pairings.
+
+    Yahoo's JSON scoreboard nests matchups under ``scoreboard["0"]["matchups"]``.
+    Reading only ``scoreboard["matchups"]`` yields an empty list, and the
+    Season Hub then invents round-robin opponents that do not match Yahoo.
+    """
+    try:
+        raw = _yahoo_get(
+            access_token,
+            f"league/{_league_key_for_season(league_id, season, access_token)}/scoreboard;week={week}",
+        )
+    except Exception as exc:
+        logger.warning("[yahoo] get_matchups failed: %s", exc)
+        return []
+
+    matchups = _matchups_from_scoreboard_node(_league_child_block(raw, "scoreboard"))
+    if not matchups:
+        matchups = _yahoo_scoreboard_dict(raw if isinstance(raw, dict) else {}).get("matchups") or {}
     out: List[Dict[str, Any]] = []
-    for i, entry in enumerate(_yahoo_collection_rows(matchups, "matchup")):
-        matchup = entry.get("matchup") if isinstance(entry, dict) else {}
-        if not isinstance(matchup, dict):
+    m_id = 0
+    for entry in _yahoo_collection_rows(matchups, "matchup"):
+        matchup = _as_yahoo_matchup(entry)
+        if not matchup:
             continue
-        m_id = i + 1
         teams_block = matchup.get("teams") or {}
         team_rows = _yahoo_collection_rows(teams_block, "team")
         if not team_rows and isinstance(teams_block, dict):
@@ -1433,31 +1550,34 @@ def get_matchups(season: int, league_id: str, week: int, access_token: str) -> L
                 if row:
                     team_rows.append(row)
 
-        for idx, tm_entry in enumerate(team_rows):
-            if isinstance(tm_entry, dict) and "team" in tm_entry:
-                tm = tm_entry["team"]
-            elif isinstance(tm_entry, dict):
-                tm = tm_entry.get("team") or []
-            else:
-                tm = []
-
-            roster_id = _safe_int(
-                _team_attr(tm, "team_id")
-                or (_team_attr(tm, "team_key") or "").split(".")[-1]
-            )
+        sides: List[Dict[str, Any]] = []
+        for tm_entry in team_rows:
+            tm = _yahoo_team_list_from_entry(tm_entry)
+            roster_id = _yahoo_roster_id_from_team(tm)
+            if not roster_id:
+                continue
             pts_block = _team_field_dict(tm, "team_points")
-            points    = _safe_float(pts_block.get("total"))
-
-            out.append({
-                "points":          points,
+            sides.append({
+                "points":          _safe_float(pts_block.get("total")),
                 "players":         [],
                 "roster_id":       roster_id,
                 "custom_points":   None,
-                "matchup_id":      m_id,
                 "starters":        [],
                 "starters_points": [],
                 "players_points":  {},
             })
+        if len(sides) < 2:
+            continue
+        m_id += 1
+        for side in sides[:2]:
+            side["matchup_id"] = m_id
+            out.append(side)
+
+    _yahoo_debug(
+        "get_matchups league=%s season=%s week=%s -> %s rows pairings=%s",
+        league_id, season, week, len(out),
+        [(r.get("matchup_id"), r.get("roster_id")) for r in out],
+    )
     return out
 
 
@@ -1780,6 +1900,9 @@ def get_league_globals(season: int, league_id: str, access_token: str) -> Dict[s
         return {}
 
     scoring_settings = _yahoo_scoring_settings(meta, settings)
+    from utils.league_scoring import normalize_league_scoring
+    scoring_settings = normalize_league_scoring(
+        "yahoo", scoring_settings, league_id=league_id, season=season)
 
     roster_positions = _yahoo_roster_positions(settings)
     if not roster_positions:
@@ -1888,6 +2011,18 @@ _YAHOO_STAT_KEYS: Dict[int, str] = {
 }
 
 
+def _yahoo_is_threshold_bonus(stat: dict) -> bool:
+    """Skip a duplicate yardage row that is a 300-yard extra, not 0.04 / yard."""
+    if not isinstance(stat, dict):
+        return False
+    if not (stat.get("bonuses") or stat.get("bonus")):
+        return False
+    try:
+        return abs(float(stat.get("value"))) >= 1.0
+    except (TypeError, ValueError):
+        return False
+
+
 def _yahoo_scoring_settings(meta: Dict[str, Any], settings: Dict[str, Any]) -> Dict[str, Any]:
     """Build scoring from Yahoo ``stat_modifiers``, not competition ``scoring_type``.
 
@@ -1895,18 +2030,9 @@ def _yahoo_scoring_settings(meta: Dict[str, Any], settings: Dict[str, Any]) -> D
     ``stat_modifiers.stats``. Falling back to format labels previously forced H2H
     PPR leagues to ``rec=0`` and points leagues to full PPR.
     """
-    scoring: Dict[str, Any] = {
-        "rec": 0.0,
-        "pass_yd": 0.04,
-        "pass_td": 4.0,
-        "pass_int": -2.0,
-        "rush_yd": 0.1,
-        "rush_td": 6.0,
-        "rec_yd": 0.1,
-        "rec_td": 6.0,
-        "fum_lost": -2.0,
-        "2pt": 2.0,
-    }
+    from utils.league_scoring import assign_scoring_rate
+
+    scoring: Dict[str, Any] = {}
     modifiers = settings.get("stat_modifiers") or {}
     stats_node = modifiers.get("stats") if isinstance(modifiers, dict) else None
     rows = _yahoo_collection_rows(stats_node, "stat")
@@ -1916,6 +2042,8 @@ def _yahoo_scoring_settings(meta: Dict[str, Any], settings: Dict[str, Any]) -> D
             continue
         # Rows are either {"stat": {...}} wrappers or flat stat dicts.
         stat = row.get("stat") if isinstance(row.get("stat"), dict) else row
+        if _yahoo_is_threshold_bonus(stat):
+            continue
         try:
             stat_id = int(stat.get("stat_id"))
         except (TypeError, ValueError):
@@ -1927,9 +2055,16 @@ def _yahoo_scoring_settings(meta: Dict[str, Any], settings: Dict[str, Any]) -> D
             value = float(stat.get("value"))
         except (TypeError, ValueError):
             continue
-        scoring[key] = value
+        assign_scoring_rate(scoring, key, value)
         if key == "rec":
             found_rec = True
+    for key, default in (
+        ("rec", 0.0), ("pass_yd", 0.04), ("pass_td", 4.0), ("pass_int", -2.0),
+        ("rush_yd", 0.1), ("rush_td", 6.0), ("rec_yd", 0.1), ("rec_td", 6.0),
+        ("fum_lost", -2.0), ("2pt", 2.0),
+    ):
+        if key not in scoring:
+            scoring[key] = default
     if not found_rec:
         # Last-resort heuristic only when modifiers are missing entirely.
         scoring_type = str(meta.get("scoring_type") or settings.get("scoring_type") or "").lower()

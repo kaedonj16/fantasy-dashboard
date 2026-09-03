@@ -248,10 +248,11 @@ _DRAFT_ROOM_HTML = r"""
                display selector. A source with no data for the chosen format falls
                back to consensus, so no pick is ever left without an ADP. -->
           <div class="dr-field"><span>CPU drafts from</span>
-            <select id="drCpuAdpSource" title="Which ADP source the CPU opponents draft against. Consensus blends every platform.">
+            <select id="drCpuAdpSource" title="Which ADP source the CPU opponents draft against. Consensus blends every platform. Live (7d) is recent BR Fantasy drafts only.">
               <option value="consensus" selected>Consensus (all platforms)</option>
               <option value="sleeper">Sleeper</option>
               <option value="brfantasy">BR Fantasy</option>
+              <option value="brfantasy_live">BR Fantasy Live (7d)</option>
               <option value="espn">ESPN</option>
               <option value="mfl">MFL</option>
               <option value="yahoo">Yahoo</option>

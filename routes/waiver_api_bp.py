@@ -64,6 +64,11 @@ def _waiver_value_keys(*args, **kwargs):
     return _fn(*args, **kwargs)
 
 
+def _waiver_rank_label_key(*args, **kwargs):
+    from app import _waiver_rank_label_key as _fn
+    return _fn(*args, **kwargs)
+
+
 def get_players_global(*args, **kwargs):
     from app import get_players_global as _fn
     return _fn(*args, **kwargs)
@@ -135,6 +140,7 @@ def api_waiver_candidates():
     # dynasty, 1QB vs Superflex) — shared with the offseason/Season-Hub card so
     # both waiver surfaces rank and display off identical values.
     _vf_wv, _vfb_wv = _waiver_value_keys(ctx)
+    _rk_wv = _waiver_rank_label_key(ctx)
     # Auto-apply the league's TE premium, exactly like the value column: a no-op
     # for non-TE-premium leagues / non-TEs.
     _tep_wv = te_premium_from_settings(ctx.get("scoring_settings"))
@@ -181,7 +187,7 @@ def api_waiver_candidates():
             "team": row.get("team") or players_index.get(pid, {}).get("team") or "",
             "value": val,
             "age": age,
-            "pos_rank_label": row.get("pos_rank_label") or "",
+            "pos_rank_label": row.get(_rk_wv) or row.get("pos_rank_label") or "",
             "rank_change_7d": row.get("rank_change_7d"),
         })
 
@@ -779,6 +785,8 @@ def api_trending_adds():
     players_index = ctx.get("players_index") or get_players_index_global() or {}
     _mvt = {str(r.get("id")): r for r in (get_model_value_table_cached() or [])
             if isinstance(r, dict) and r.get("id")}
+    _tr_vf, _tr_vfb = _waiver_value_keys(ctx) if ctx else ("value", "value")
+    _tr_rk = _waiver_rank_label_key(ctx) if ctx else "pos_rank_label"
 
     out = []
     for row in trend:
@@ -802,8 +810,8 @@ def api_trending_adds():
             "name": name,
             "position": pos,
             "team": (val_row.get("team") or meta.get("team") or "").upper(),
-            "value": round(float(val_row.get("value") or 0)),
-            "pos_rank_label": val_row.get("pos_rank_label") or "",
+            "value": round(float(val_row.get(_tr_vf) or val_row.get(_tr_vfb) or val_row.get("value") or 0)),
+            "pos_rank_label": val_row.get(_tr_rk) or val_row.get("pos_rank_label") or "",
             "adds": int(row.get("count") or 0),
         })
         if len(out) >= 12:

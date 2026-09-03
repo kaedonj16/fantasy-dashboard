@@ -50,7 +50,7 @@ from dashboard_services.api import (
     team_avatar,
     build_league_history_map,
     build_team_game_lookup,
-    get_effective_scoring_settings,
+    get_normalized_scoring_settings,
     get_league_settings,
     get_nfl_players,
     get_nfl_scores_for_date,
@@ -61,6 +61,7 @@ from dashboard_services.api import (
     avatar_url
 )
 from dashboard_services.awards import compute_awards_season, render_awards_section
+from dashboard_services.display_names import team_label_from_user, username_from_user
 from dashboard_services.changelog import CHANGELOG
 from dashboard_services.injuries import build_injury_report, render_injury_watch
 from dashboard_services.matchups import (
@@ -148,6 +149,9 @@ from utils.utils import (
     load_week_projection,
     load_week_schedule,
     streak_class,
+    canon_team,
+    canonicalize_schedule,
+    team_abbr_keys,
 )
 from utils.lineup_slots import (
     count_lineup_slots as _count_lineup_slots,
@@ -2136,28 +2140,51 @@ def _peek_league_ctx(platform, league_id, season) -> dict:
         return {}
 
 
+def _saved_league_chrome_name(platform, league_id) -> str:
+    """Display name from the signed-in account's saved leagues, if any."""
+    try:
+        account_id = session.get("account_id")
+        if not account_id:
+            return ""
+        from dashboard_services.accounts import get_saved_league_name
+        return get_saved_league_name(account_id, platform, league_id)
+    except Exception:
+        return ""
+
+
+def _provider_league_for_chrome(platform, league_id) -> dict:
+    """Live Sleeper league JSON when dashboard cache has no name/slots yet."""
+    if str(platform or "").lower() != "sleeper" or not league_id:
+        return {}
+    try:
+        from dashboard_services.api import get_league
+        live = get_league(str(league_id))
+        return live if isinstance(live, dict) else {}
+    except Exception:
+        return {}
+
+
 def _league_chrome_meta(platform, league_id, season, offseason_mode: bool = False) -> dict:
     """League name, format, and week for the persistent nav chip."""
-    from utils.league_chrome import build_league_chrome
+    from utils.league_chrome import merge_chrome_sources
     ctx = _peek_league_ctx(platform, league_id, season)
     nfl = get_nfl_state() or {}
     try:
         week = int(ctx.get("current_week") or nfl.get("week") or 0)
     except (TypeError, ValueError):
         week = 0
-    try:
-        size = int(
-            ctx.get("total_rosters")
-            or (ctx.get("league") or {}).get("total_rosters")
-            or len(ctx.get("rosters") or [])
-            or 0
-        )
-    except (TypeError, ValueError):
-        size = 0
-    return build_league_chrome(
-        name=((ctx.get("league") or {}).get("name") or ""),
-        size=size,
-        roster_positions=ctx.get("roster_positions") or [],
+    ctx_league = ctx.get("league") if isinstance(ctx.get("league"), dict) else {}
+    cache_name = str(ctx_league.get("name") or "").strip()
+    cache_slots = ctx.get("roster_positions") or ctx_league.get("roster_positions") or []
+    need_live = not (cache_name and cache_slots)
+    live = _provider_league_for_chrome(platform, league_id) if need_live else {}
+    saved = ""
+    if not (cache_name or (live or {}).get("name")):
+        saved = _saved_league_chrome_name(platform, league_id)
+    return merge_chrome_sources(
+        ctx=ctx,
+        saved_name=saved,
+        provider_league=live,
         week=week,
         season_type=str(nfl.get("season_type") or ""),
         offseason=bool(offseason_mode),
@@ -5336,10 +5363,11 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         league_settings = (league or {}).get("settings") or {}
         total_rosters = int((league or {}).get("total_rosters") or 0)
     else:
-        scoring_settings = get_effective_scoring_settings()
-        # Provider adapters normalize into the same Sleeper-style keys. Preserve
-        # that object as the raw scoring contract used by projections and weekly
-        # features instead of silently falling back to Standard scoring.
+        from dashboard_services.api import get_provider_scoring_settings
+        # Do not merge ESPN-style SCORING_DEFAULTS (PPR, 1 pt/completion) into
+        # Fleaflicker/Yahoo/MFL. Those defaults made standard leagues look like
+        # PPR and inflated weekly projections into the 80s.
+        scoring_settings = get_provider_scoring_settings()
         raw_scoring_settings = dict(scoring_settings)
         roster_positions = get_roster_positions()
         league_settings = get_league_settings()
@@ -6169,7 +6197,9 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     # ---------- League settings / refs that can matter to multiple pages ----------
     sync_league_globals(platform, resolved_league_id, viewed_season)
     try:
-        ctx["scoring_settings"] = get_effective_scoring_settings()
+        scoring_settings = get_normalized_scoring_settings(platform)
+        ctx["scoring_settings"] = scoring_settings
+        ctx["raw_scoring_settings"] = scoring_settings
     except Exception as e:
         logger.info(f"[ctx] scoring_settings failed: {e}")
 
@@ -6606,9 +6636,64 @@ def _all_play_from_df_weekly(df_weekly) -> dict:
         return {}
 
 
+def _standings_weekly_points(df_weekly) -> dict:
+    """{owner: [points, ...]} across finalized weeks in ascending week order.
+
+    Feeds the standings PF-trend sparklines and the "top single week" insight, so
+    a week-capped df (from build_standings_as_of_week) yields the trend as it stood
+    then. Any failure returns {} so the sparkline column just renders blank."""
+    try:
+        if df_weekly is None or df_weekly.empty or "points" not in df_weekly.columns:
+            return {}
+        d = df_weekly
+        if "finalized" in d.columns:
+            d = d[d["finalized"] == True]
+        if d.empty:
+            return {}
+        out: dict = {}
+        for owner, g in d.sort_values("week").groupby("owner"):
+            out[str(owner)] = [float(p or 0) for p in g["points"].tolist()]
+        return out
+    except Exception:
+        logger.debug("weekly points failed", exc_info=True)
+        return {}
+
+
+def _standings_sparkline(points, width: int = 76, height: int = 22) -> str:
+    """A tiny PF-trend sparkline (area + line + last-point dot) for a standings row.
+
+    Colors come from CSS tokens (.st-spark-* in the stylesheet) so it reads in both
+    themes. Returns a muted dash when there aren't at least two weeks to plot."""
+    pts = [float(p) for p in (points or []) if p is not None]
+    if len(pts) < 2:
+        return "<span class='st-spark-empty muted'>&ndash;</span>"
+    mn, mx = min(pts), max(pts)
+    rng = (mx - mn) or 1.0
+    pad = 2.0
+    step = (width - pad * 2) / (len(pts) - 1)
+    coords = [
+        (pad + i * step, height - pad - ((v - mn) / rng) * (height - pad * 2))
+        for i, v in enumerate(pts)
+    ]
+    line = " ".join(("M" if i == 0 else "L") + f"{x:.1f} {y:.1f}"
+                    for i, (x, y) in enumerate(coords))
+    area = (f"M{coords[0][0]:.1f} {height} "
+            + " ".join(f"L{x:.1f} {y:.1f}" for x, y in coords)
+            + f" L{coords[-1][0]:.1f} {height} Z")
+    lx, ly = coords[-1]
+    return (
+        f"<svg class='st-spark' width='{width}' height='{height}' "
+        f"viewBox='0 0 {width} {height}' aria-hidden='true' preserveAspectRatio='none'>"
+        f"<path d='{area}' class='st-spark-area'/>"
+        f"<path d='{line}' class='st-spark-line' fill='none'/>"
+        f"<circle cx='{lx:.1f}' cy='{ly:.1f}' r='2.4' class='st-spark-dot'/></svg>"
+    )
+
+
 def render_standings(team_stats, length, all_play: dict = None,
                      playoff_spots: int = None, total_regular_weeks: int = None,
-                     movement: dict = None, owner_to_rid: dict = None) -> str:
+                     movement: dict = None, owner_to_rid: dict = None,
+                     sparklines: dict = None) -> str:
     if team_stats is None or team_stats.empty:
         return """
         <div class="card-body">
@@ -6745,6 +6830,7 @@ def render_standings(team_stats, length, all_play: dict = None,
               <td>{record}</td>
               <td>{row['PF']:.1f}</td>
               <td>{row['PA']:.1f}</td>
+              <td class="st-trend-cell">{(sparklines or {}).get(owner) or ''}</td>
               <td>{streak}</td>
               <td>{_luck_cell}</td>
               <td>{_seed_cell}</td>
@@ -6758,14 +6844,14 @@ def render_standings(team_stats, length, all_play: dict = None,
         if (_p and _p.get("scenario") and _p["status"] == "bubble"
                 and _p["seed"] in (_spots, (_spots or 0) + 1)):
             rows.append(
-                "<tr class='pp-scnrow'><td colspan='10'>"
+                "<tr class='pp-scnrow'><td colspan='11'>"
                 f"<div class='pp-scn'>{html.escape(_p['scenario'])}</div></td></tr>"
             )
 
         # Draw the playoff cutoff line right below the last team that advances.
         if _spots and int(row['Rank']) == _spots and _spots < len(df):
             rows.append(
-                "<tr class='pp-cutrow'><td colspan='10'>"
+                "<tr class='pp-cutrow'><td colspan='11'>"
                 "<div class='pp-cut'>Playoff line</div></td></tr>"
             )
 
@@ -6776,6 +6862,7 @@ def render_standings(team_stats, length, all_play: dict = None,
 
     return f"""
         {ctx_line}
+        <div class="st-tblscroll">
         <table class="standings-table" data-page="standings">
           <thead>
             <tr>
@@ -6784,6 +6871,7 @@ def render_standings(team_stats, length, all_play: dict = None,
               <th scope="col">Record</th>
               <th scope="col">PF</th>
               <th scope="col">PA</th>
+              <th scope="col" class="st-trend-th" title="Points-for by week (most recent at the dot)">Trend</th>
               <th scope="col">Streak</th>
               <th scope="col" title="Actual wins minus expected wins (from all-play). + = luckier than your scoring earned.">Luck</th>
               <th scope="col" title="Where you'd be seeded by all-play record instead of actual wins.">Exp. Seed</th>
@@ -6795,6 +6883,7 @@ def render_standings(team_stats, length, all_play: dict = None,
             {''.join(total_rows)}
           </tbody>
         </table>
+        </div>
     """
 
 
@@ -7561,139 +7650,97 @@ def render_power_and_playoffs(
         except (TypeError, ValueError):
             return default
 
-    def podium_slot(rank: int, row) -> str:
-        name = row.get("owner", "Unknown")
+    # Whether any team has actually played — offseason (synthetic team_stats) has
+    # G == 0, so the record and PF/PA net columns are meaningless there and hide.
+    try:
+        _has_games = int(pd.to_numeric(pr_sorted.get("G"), errors="coerce").fillna(0).sum()) > 0
+    except Exception:
+        _has_games = False
 
-        # record
+    def _pwr_record(row):
         wins = safe_int(row.get("Wins"), 0)
         games = safe_int(row.get("G"), 0)
         losses = max(games - wins, 0)
         ties_val = safe_int(row.get("Ties"), 0)
-        rec = f"{wins}-{losses}" + (f"-{ties_val}" if ties_val else "")
+        return f"{wins}-{losses}" + (f"-{ties_val}" if ties_val else "")
 
-        base_cls = {1: "first", 2: "second", 3: "third"}[rank]
+    def _pwr_net(row):
+        """(diff_value, css_class) for PF/G − PA/G, or (None, '') offseason."""
+        if not _has_games:
+            return None, ""
+        games = safe_int(row.get("G"), 0) or 1
+        diff = safe_float(row.get("PF"), 0.0) / games - safe_float(row.get("PA"), 0.0) / games
+        return diff, ("pwr-pos" if diff > 0 else "pwr-neg" if diff < 0 else "")
 
-        power_val = safe_float(row.get("PowerScore"), 0.0)
-        w = pct_width(power_val)
-
-        # streak bits
-        streak_chip = row.get("Streak", "")  # e.g., "W3", "L2"
-        streak_frame_cls = streak_class(row)  # assumes you already have this helper
-        avatar_url = row.get("avatar")
-        avatar_html = (
-            f"<img class='avatar' src='{avatar_url}' alt='' loading='lazy' decoding='async' "
-            "onerror=\"this.style.display='none'\">"
-            if avatar_url else ""
-        )
-
-        # PF/G, PA/G, diff
-        pf = safe_float(row.get("PF"), 0.0)
-        pa = safe_float(row.get("PA"), 0.0)
-        g = games if games > 0 else 1
-        pfpg_v = pf / g
-        papg_v = pa / g
-        diff_v = pfpg_v - papg_v
-        diff_class = "diff-pos" if diff_v > 0 else "diff-neg" if diff_v < 0 else ""
-
-        chips_html = "<div class='chips'>"
-        chips_html += f"<span class='chip'>PF/G {pfpg_v:.1f}</span>"
-        chips_html += f"<span class='chip'>PA/G {papg_v:.1f}</span>"
-        chips_html += f"<span class='chip {diff_class}'>{diff_v:+.1f}</span>"
-        if streak_chip and streak_frame_cls == "streak-hot":
-            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-fire'></i>{streak_chip}</span>"
-        elif streak_chip and streak_frame_cls == "streak-cold":
-            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-snowflake'></i>{streak_chip}</span>"
-        chips_html += "</div>"
-
-        return f"""
-          <div class="slot {base_cls} {streak_frame_cls}" data-rk-key="{html.escape(str(name), quote=True)}">
-            <div class="wrap">
-              <div class='podium-header'>
-                <h3>#{rank}</h3>
-                {avatar_html}
-                {move_arrow(name)}
-              </div>
-              <div class="name">{_clickable_team_name(name, _o2r)}</div>
-              <div class="rec">{rec}</div>
-              <div class="bar"><div style="width:{w:.1f}%"></div></div>
-              {chips_html}
-            </div>
-          </div>
-        """
-
-    # ---- Top 3 podium ----
-    podium_html = """
-      <div class="podium">
-        {slot1}
-        {slot2}
-        {slot3}
-      </div>
-    """.format(
-        slot1=podium_slot(1, top3.iloc[0]) if len(top3) > 0 else "",
-        slot2=podium_slot(2, top3.iloc[1]) if len(top3) > 1 else "",
-        slot3=podium_slot(3, top3.iloc[2]) if len(top3) > 2 else "",
+    # ---- #1 hero card ----
+    lead = pr_sorted.iloc[0]
+    lead_name = lead.get("owner", "Unknown")
+    lead_av = lead.get("avatar")
+    lead_av_html = (
+        f"<img class='avatar' src='{lead_av}' alt='' loading='lazy' decoding='async' "
+        "onerror=\"this.style.visibility='hidden'\">" if lead_av
+        else "<span class='avatar pwr-noav'></span>"
+    )
+    lead_rec = _pwr_record(lead) if _has_games else ""
+    lead_diff, lead_diff_cls = _pwr_net(lead)
+    lead_sub = " &middot; ".join(
+        p for p in [lead_rec, (f"{lead_diff:+.1f} net" if lead_diff is not None else "")] if p
+    )
+    podium_html = (
+        f"<div class='pwr-lead {streak_class(lead)}' "
+        f"data-rk-key='{html.escape(str(lead_name), quote=True)}'>"
+        f"<div class='pwr-lead-top'>{lead_av_html}"
+        f"<div class='pwr-lead-id'>"
+        f"<div class='pwr-lead-badge'><i class='fa-solid fa-crown'></i> #1 Power</div>"
+        f"<div class='pwr-lead-name'>{_clickable_team_name(lead_name, _o2r)} {move_arrow(lead_name)}</div>"
+        f"<div class='pwr-lead-sub'>{lead_sub}</div></div>"
+        f"<div class='pwr-lead-score'><b>{safe_float(lead.get('PowerScore'), 0.0):.1f}</b>"
+        f"<span>Power</span></div></div>"
+        f"<div class='pwr-lead-bar'><div style='width:{pct_width(safe_float(lead.get('PowerScore'), 0.0)):.1f}%'></div></div>"
+        f"</div>"
     )
 
-    # ---- Remaining ranks list ----
-    others = pr_sorted.iloc[3:].reset_index(drop=True)
-    rank_cards = []
-    for i, row in others.iterrows():
-        pos = i + 4
+    # ---- Ranked list (2..N) ----
+    rows_html = []
+    for i, row in pr_sorted.iloc[1:].reset_index(drop=True).iterrows():
+        pos = i + 2
         team = row.get("owner", "Unknown")
-
-        wins = safe_int(row.get("Wins"), 0)
-        games = safe_int(row.get("G"), 0)
-        losses = max(games - wins, 0)
-        ties_val = safe_int(row.get("Ties"), 0)
-        record = f"{wins}-{losses}" + (f"-{ties_val}" if ties_val else "")
-
         power_val = safe_float(row.get("PowerScore"), 0.0)
-        bar_w = pct_width(power_val)
-
-        # per-row PF/G, PA/G, diff
-        pf = safe_float(row.get("PF"), 0.0)
-        pa = safe_float(row.get("PA"), 0.0)
-        g = games if games > 0 else 1
-        pfpg_v = pf / g
-        papg_v = pa / g
-        diff_v = pfpg_v - papg_v
-        diff_class = "diff-pos" if diff_v > 0 else "diff-neg" if diff_v < 0 else ""
-
-        streak_chip = row.get("Streak", "")
-        chips_html = (
-            f"<span class='chip'>PF/G {pfpg_v:.1f}</span>"
-            f"<span class='chip'>PA/G {papg_v:.1f}</span>"
-        )
-        css_cls = streak_class(row)
-        if streak_chip and css_cls == "streak-hot":
-            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-fire'></i>{streak_chip}</span>"
-        elif streak_chip and css_cls == "streak-cold":
-            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-snowflake'></i>{streak_chip}</span>"
-        chips_html += f"<span class='chip {diff_class}'>{diff_v:+.1f}</span>"
-
-        avatar_url = row.get("avatar")
+        av = row.get("avatar")
         img = (
-            f"<img class='avatar sm' src='{avatar_url}' alt='' loading='lazy' decoding='async' "
-            "onerror=\"this.style.display='none'\">"
-            if avatar_url else ""
+            f"<img class='avatar sm' src='{av}' alt='' loading='lazy' decoding='async' "
+            "onerror=\"this.style.visibility='hidden'\">" if av
+            else "<span class='avatar sm pwr-noav'></span>"
         )
-
-        rank_cards.append(
-            f"<div class='rank-item {css_cls}' data-rk-key='{html.escape(str(team), quote=True)}'>"
-            f"<span class='pr-move-cell'>{move_arrow(team)}</span>"
-            f"<span class='pos'>#{pos}</span>"
-            f"{img}"
-            f"{_clickable_team_name(team, _o2r, cls='name')}"
-            f"<div class='bar'><div style='width:{bar_w:.1f}%'></div></div>"
-            f"<div class='chips'>{chips_html}</div>"
-            f"<span class='rec'>{record}</span>"
+        diff, diff_cls = _pwr_net(row)
+        right = (
+            f"<div class='pwr-diff {diff_cls}'>{diff:+.1f} net</div>"
+            if diff is not None else ""
+        )
+        rows_html.append(
+            f"<div class='pwr-row {streak_class(row)}' data-rk-key='{html.escape(str(team), quote=True)}'>"
+            f"<span class='pwr-pos'>{pos}</span>{img}"
+            f"<div class='pwr-mid'>"
+            f"<div class='pwr-name'>{_clickable_team_name(team, _o2r, cls='name')} {move_arrow(team)}</div>"
+            f"<div class='pwr-bar'><div style='width:{pct_width(power_val):.1f}%'></div></div></div>"
+            f"<div class='pwr-right'><div class='pwr-score'>{power_val:.1f}</div>{right}</div>"
             f"</div>"
         )
 
-    rankings_html = "<div class='rank-grid'>" + "".join(rank_cards) + "</div>"
+    rankings_html = "<div class='pwr-list'>" + "".join(rows_html) + "</div>"
 
-    # ---- Playoff bracket ----
-    wb = bracket_override if bracket_override is not None else get_bracket(platform, league_id, "winners", season)
+    # ---- Playoff bracket (optional; Fleaflicker/MFL do not expose one) ----
+    if bracket_override is not None:
+        wb = bracket_override
+    else:
+        try:
+            wb = get_bracket(platform, league_id, "winners", season) or []
+        except Exception:
+            logger.debug(
+                "playoff bracket unavailable platform=%s league=%s season=%s",
+                platform, league_id, season, exc_info=True,
+            )
+            wb = []
     roster_avatar_map = {
         str(owner): av
         for owner, av in zip(team_stats["owner"], team_stats["avatar"])
@@ -7751,70 +7798,158 @@ def render_power_and_playoffs(
     return podium_card
 
 
-def render_standings_sidebar(team_stats, owner_to_rid=None) -> str:
+def _st_tile(icon: str, label: str, value_html: str, sub_html: str,
+             *, lead: bool = False, accent: str = "") -> str:
+    """One summary tile for the standings hero strip. `value_html`/`sub_html` are
+    pre-escaped (they may contain a clickable team name). `accent` optionally tints
+    the icon chip (e.g. 'st-ic-good' / 'st-ic-bad')."""
+    lead_cls = " st-tile-lead" if lead else ""
+    return (
+        f"<div class='st-tile{lead_cls}'>"
+        f"<div class='st-tile-top'><span class='st-tile-ic {accent}'>"
+        f"<i class='fa-solid {icon}'></i></span>"
+        f"<span class='st-tile-label'>{label}</span></div>"
+        f"<div class='st-tile-val'>{value_html}</div>"
+        f"<div class='st-tile-sub'>{sub_html}</div></div>"
+    )
+
+
+def _top_single_week(weekly_points: dict):
+    """(owner, week_number, points) of the single highest weekly score, or None."""
+    best = None
+    for owner, pts in (weekly_points or {}).items():
+        for i, v in enumerate(pts):
+            if best is None or v > best[2]:
+                best = (owner, i + 1, float(v))
+    return best
+
+
+def render_standings_tiles(team_stats, *, all_play=None, weekly_points=None,
+                           movement=None, owner_to_rid=None) -> str:
+    """The at-a-glance hero strip above the standings: top seed, highest week,
+    hottest team, luckiest team, and biggest riser. Every figure is derived from
+    the same team_stats / weekly scores the tables use, so it stays in step with a
+    week-capped view. Renders nothing until there's a finalized week to describe."""
     if team_stats is None or team_stats.empty:
         return ""
+    df = team_stats.copy()
+    all_play = all_play or {}
+    movement = movement or {}
+    tiles = []
 
-    ts = team_stats.copy()
+    # 1) Top seed (accent lead tile)
+    leader = df.sort_values(by=["Wins", "PF", "PA"],
+                            ascending=[False, False, True]).iloc[0]
+    rec = f"{int(leader['Wins'])}-{int(leader['Losses'])}"
+    if int(leader.get("Ties", 0) or 0):
+        rec += f"-{int(leader['Ties'])}"
+    tiles.append(_st_tile(
+        "fa-crown", "Top seed",
+        _clickable_team_name(leader["owner"], owner_to_rid, cls="st-tile-team"),
+        f"{rec} &middot; {float(leader['PF']):.0f} PF", lead=True))
 
-    hottest = None
-    coldest = None
-    if "StreakLen" in ts.columns and "StreakType" in ts.columns:
-        hot_df = ts[ts["StreakType"] == "W"]
-        cold_df = ts[ts["StreakType"] == "L"]
+    # 2) Highest single week
+    top = _top_single_week(weekly_points)
+    if top:
+        tiles.append(_st_tile(
+            "fa-arrow-trend-up", "Highest week", f"{top[2]:.1f}",
+            f"{_clickable_team_name(top[0], owner_to_rid)} &middot; Wk {top[1]}"))
 
-        if not hot_df.empty:
-            hottest = hot_df.loc[hot_df["StreakLen"].idxmax()]
-        if not cold_df.empty:
-            coldest = cold_df.loc[cold_df["StreakLen"].idxmax()]
+    # 3) Hottest team (longest active win streak)
+    if "StreakType" in df.columns and (df["StreakType"] == "W").any():
+        hot = df[df["StreakType"] == "W"].sort_values("StreakLen", ascending=False).iloc[0]
+        tiles.append(_st_tile(
+            "fa-fire", "Hottest",
+            _clickable_team_name(hot["owner"], owner_to_rid, cls="st-tile-team"),
+            f"Won last {int(hot['StreakLen'])}", accent="st-ic-hot"))
 
+    # 4) Luckiest team (most actual wins over all-play expectation)
+    lucky = None
+    for owner, ap in all_play.items():
+        ld = ap.get("luck_delta")
+        if ld is None:
+            continue
+        if lucky is None or ld > lucky[1]:
+            lucky = (owner, float(ld))
+    if lucky and lucky[1] >= 0.5:
+        tiles.append(_st_tile(
+            "fa-clover", "Luckiest", f"+{lucky[1]:.1f}",
+            f"{_clickable_team_name(lucky[0], owner_to_rid)} over expected",
+            accent="st-ic-good"))
+
+    # 5) Biggest riser (largest week-over-week climb)
+    riser = None
+    for owner, mv in movement.items():
+        if mv and mv > 0 and (riser is None or mv > riser[1]):
+            riser = (owner, int(mv))
+    if riser:
+        tiles.append(_st_tile(
+            "fa-arrow-up", "Biggest riser", f"+{riser[1]}",
+            f"{_clickable_team_name(riser[0], owner_to_rid)} this week",
+            accent="st-ic-good"))
+
+    if len(tiles) < 2:
+        return ""
+    return f"<div class='st-tiles'>{''.join(tiles)}</div>"
+
+
+def _st_insight(cls: str, icon: str, label: str, value_html: str, sub_html: str) -> str:
+    return (
+        f"<div class='st-insight {cls}'><span class='st-insight-ic'>"
+        f"<i class='fa-solid {icon}'></i></span>"
+        f"<div class='st-insight-body'><div class='st-insight-label'>{label}</div>"
+        f"<div class='st-insight-val'>{value_html}</div>"
+        f"<div class='st-insight-sub'>{sub_html}</div></div></div>"
+    )
+
+
+def render_standings_insights(team_stats, *, all_play=None, weekly_points=None,
+                              owner_to_rid=None) -> str:
+    """Full-width insight strip under the standings grid: hottest, coldest, top
+    single week, and most-unlucky team. Replaces the old narrow hottest/coldest
+    sidebar. Cards drop out individually when their stat isn't available yet."""
+    if team_stats is None or team_stats.empty:
+        return ""
+    df = team_stats.copy()
+    all_play = all_play or {}
     cards = []
 
-    # --------------------
-    # Hottest Team Card
-    # --------------------
-    if hottest is not None:
-        cards.append(f"""
-        <div class="card small hottest-card">
-          <div class="card-header">
-            <h3>Hottest Team</h3>
-            <h3><i class="fa-solid fa-fire"></i> {hottest['Streak']}</h3>
-          </div>
-          <div class="card-body">
-            <div class="highlight-game-card">
-              <div class="hg-row">
-                <div class="hg-team">
-                  {_clickable_team_name(hottest['owner'], owner_to_rid, cls='hg-name')}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        """)
+    if "StreakType" in df.columns and (df["StreakType"] == "W").any():
+        hot = df[df["StreakType"] == "W"].sort_values("StreakLen", ascending=False).iloc[0]
+        cards.append(_st_insight(
+            "st-in-hot", "fa-fire", "Hottest team",
+            _clickable_team_name(hot["owner"], owner_to_rid, cls="st-insight-name"),
+            f"Won {int(hot['StreakLen'])} straight"))
 
-    # --------------------
-    # Coldest Team Card
-    # --------------------
-    if coldest is not None:
-        cards.append(f"""
-        <div class="card small coldest-card">
-          <div class="card-header">
-            <h3>Coldest Team</h3>
-            <h3><i class="fa-solid fa-snowflake"></i> {coldest['Streak']}</h3>
-          </div>
-          <div class="card-body">
-            <div class="highlight-game-card">
-              <div class="hg-row">
-                <div class="hg-team">
-                  {_clickable_team_name(coldest['owner'], owner_to_rid, cls='hg-name')}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        """)
+    if "StreakType" in df.columns and (df["StreakType"] == "L").any():
+        cold = df[df["StreakType"] == "L"].sort_values("StreakLen", ascending=False).iloc[0]
+        cards.append(_st_insight(
+            "st-in-cold", "fa-snowflake", "Coldest team",
+            _clickable_team_name(cold["owner"], owner_to_rid, cls="st-insight-name"),
+            f"Lost {int(cold['StreakLen'])} straight"))
 
-    return "".join(cards)
+    top = _top_single_week(weekly_points)
+    if top:
+        cards.append(_st_insight(
+            "st-in-bolt", "fa-bolt", "Top single week", f"{top[2]:.1f}",
+            f"{_clickable_team_name(top[0], owner_to_rid)} &middot; Week {top[1]}"))
+
+    unlucky = None
+    for owner, ap in all_play.items():
+        ld = ap.get("luck_delta")
+        if ld is None:
+            continue
+        if unlucky is None or ld < unlucky[1]:
+            unlucky = (owner, float(ld))
+    if unlucky and unlucky[1] <= -0.5:
+        cards.append(_st_insight(
+            "st-in-unlucky", "fa-bullseye", "Most unlucky",
+            _clickable_team_name(unlucky[0], owner_to_rid, cls="st-insight-name"),
+            f"{unlucky[1]:.1f} wins below expected"))
+
+    if not cards:
+        return ""
+    return f"<div class='st-insights'>{''.join(cards)}</div>"
 
 
 def render_team_stats(team_stats, df_weekly, owner_to_rid=None) -> str:
@@ -8153,11 +8288,54 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         <div class="footer">{standings_footer}</div>
     """
 
+    # ── Offseason hero tiles: value leader, draft capital, projected favorite,
+    #    league value. Mirrors the in-season strip but framed around roster value.
+    def _name_o2r(row):
+        return {str(row["name"]): str(row["rid"])}
+
+    _os_tiles = []
+    if team_rows:
+        _lead = team_rows[0]
+        _os_tiles.append(_st_tile(
+            "fa-gem", "Top dynasty value",
+            _clickable_team_name(_lead["name"], _name_o2r(_lead), cls="st-tile-team"),
+            f"{_lead['total']:.0f} pts &middot; {_lead['value_pct']:.1f}% of league", lead=True))
+
+    if team_rows and not is_redraft:
+        def _firsts(rid):
+            pk_list = picks_by_roster.get(rid, []) if isinstance(picks_by_roster, dict) else []
+            return sum(1 for pk in pk_list if int(pk.get("round") or 0) == 1)
+        _cap = max(team_rows, key=lambda r: _firsts(r["rid"]))
+        _ncap = _firsts(_cap["rid"])
+        if _ncap:
+            _os_tiles.append(_st_tile(
+                "fa-folder-open", "Most draft capital",
+                f"{_ncap} 1st{'s' if _ncap != 1 else ''}",
+                _clickable_team_name(_cap["name"], _name_o2r(_cap)), accent="st-ic-good"))
+
+    if _proj_available and rid_to_proj:
+        _top_rid = max(rid_to_proj, key=rid_to_proj.get)
+        _top_row = next((r for r in team_rows if r["rid"] == _top_rid), None)
+        if _top_row:
+            _os_tiles.append(_st_tile(
+                "fa-medal", "Projected favorite",
+                _clickable_team_name(_top_row["name"], _name_o2r(_top_row), cls="st-tile-team"),
+                f"{rid_to_proj[_top_rid]:.1f} proj PPG", accent="st-ic-hot"))
+
+    _os_tiles.append(_st_tile(
+        "fa-calculator", "League value", f"{league_value_total:,.0f}",
+        f"across {len(team_rows)} rosters"))
+
+    _os_tiles_html = (
+        f"<div class='st-tiles'>{''.join(_os_tiles)}</div>" if len(_os_tiles) >= 2 else ""
+    )
+
     return f"""
     <nav class="os-jump-nav std-jump-nav" aria-label="Jump to section">
       <button type="button" class="active" data-jump="os-std-value">Value Rankings</button>
       <button type="button" data-jump="os-std-power">Power &amp; Playoffs</button>
     </nav>
+    {_os_tiles_html}
     <div class="standings-main two-col-standings">
       <div class="standings-col os-tab-panel os-tab-active" id="os-std-value">
         <div class="card">
@@ -8395,11 +8573,14 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
     _all_play = _all_play_from_df_weekly(df_weekly)
     _pp_spots, _pp_weeks = _standings_playoff_params(ctx, team_stats)
     _o2r = _owner_to_rid_map(roster_map=roster_map, df_weekly=df_weekly)
+    _weekly_pts = _standings_weekly_points(df_weekly)
+    _sparks = {o: _standings_sparkline(pts) for o, pts in _weekly_pts.items()}
+    _movement = _standings_movement(df_weekly)
 
     standings_html = render_standings(
         team_stats, num_teams, all_play=_all_play,
         playoff_spots=_pp_spots, total_regular_weeks=_pp_weeks,
-        movement=_standings_movement(df_weekly), owner_to_rid=_o2r,
+        movement=_movement, owner_to_rid=_o2r, sparklines=_sparks,
     )
 
     if (
@@ -8420,13 +8601,18 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
         ctx["season"],
         power_rankings=power_rankings,
     )
-    sidebar_html = render_standings_sidebar(team_stats, owner_to_rid=_o2r)
+    sidebar_html = render_standings_insights(
+        team_stats, all_play=_all_play, weekly_points=_weekly_pts, owner_to_rid=_o2r)
+    tiles_html = render_standings_tiles(
+        team_stats, all_play=_all_play, weekly_points=_weekly_pts,
+        movement=_movement, owner_to_rid=_o2r)
     shares_html = render_share_rankings(ctx)
     return {
         "standings": standings_html,
         "details": details_html,
         "power": power_html,
         "sidebar": sidebar_html,
+        "tiles": tiles_html,
         "shares": shares_html,
     }
 
@@ -8494,6 +8680,7 @@ def _standings_week_selector(ctx: dict, weeks: list) -> str:
       var seq = 0, ctrl = null;
       function panels() {{
         return {{
+          tiles:     document.getElementById('stTilesInner'),
           standings: document.getElementById('stStandingsInner'),
           details:   document.getElementById('stDetailsInner'),
           power:     document.getElementById('stPowerInner'),
@@ -8523,9 +8710,9 @@ def _standings_week_selector(ctx: dict, weeks: list) -> str:
           .then(function(data) {{
             if (my !== seq || !data || !data.ok) return;
             var p = panels();
-            var map = {{ standings: data.standings_html, details: data.details_html,
-                        power: data.power_html, sidebar: data.sidebar_html,
-                        shares: data.shares_html }};
+            var map = {{ tiles: data.tiles_html, standings: data.standings_html,
+                        details: data.details_html, power: data.power_html,
+                        sidebar: data.sidebar_html, shares: data.shares_html }};
             Object.keys(map).forEach(function(k) {{
               if (p[k] && typeof map[k] === 'string') {{
                 if (window.brSwapRanks) {{ window.brSwapRanks(p[k], map[k]); }}
@@ -8622,14 +8809,25 @@ def _waiver_value_keys(ctx: dict) -> "tuple[str, str]":
 
     The fallback is always the dynasty column, so a redraft league missing a
     redraft value for some player still ranks them off dynasty value rather than
-    dropping them below the value floor.
+    dropping them below the value floor. ``apply_redraft_display_fields`` fills
+    unpriced redraft values first so that fallback rarely fires on waivers.
     """
+    from utils.value_helpers import format_value_keys
     rp = ctx.get("roster_positions") or []
-    is_sf = _is_superflex_lineup(rp)
-    if _league_is_redraft(ctx):
-        return (("redraft_value_sf" if is_sf else "redraft_value_1qb"),
-                ("sf_value" if is_sf else "value"))
-    return (("sf_value" if is_sf else "value"), "value")
+    return format_value_keys(
+        is_redraft=_league_is_redraft(ctx),
+        is_sf=_is_superflex_lineup(rp),
+    )
+
+
+def _waiver_rank_label_key(ctx: dict) -> str:
+    """Position-rank label field matching ``_waiver_value_keys`` for this league."""
+    from utils.value_helpers import format_rank_label_key
+    rp = ctx.get("roster_positions") or []
+    return format_rank_label_key(
+        is_redraft=_league_is_redraft(ctx),
+        is_sf=_is_superflex_lineup(rp),
+    )
 
 
 def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 10) -> str:
@@ -8674,6 +8872,7 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
     # Rank/display off the value column that matches this league's format
     # (redraft vs dynasty, 1QB vs Superflex) — same selector as the API surface.
     _vkey_dash, _vfb_dash = _waiver_value_keys(ctx)
+    _rk_dash = _waiver_rank_label_key(ctx)
 
     waiver_candidates = []
     for row in model_value_table:
@@ -8722,7 +8921,7 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
             "team": row.get("team") or players_index.get(pid, {}).get("team") or "",
             "value": val,
             "age": age,
-            "pos_rank_label": row.get("pos_rank_label") or "",
+            "pos_rank_label": row.get(_rk_dash) or row.get("pos_rank_label") or "",
             "rank_change_7d": rank_change,
         })
 
@@ -10025,6 +10224,8 @@ def api_start_sit_options():
     players_index = ctx.get("players_index") or {}
     players_full = ctx.get("players") or {}
     model_value_table = list(get_model_value_table_cached() or [])
+    _ss_vkey, _ss_vfb = _waiver_value_keys(ctx)
+    _ss_rkey = _waiver_rank_label_key(ctx)
 
     roster_positions = ctx.get("roster_positions") or []
     lineup_requirements = _count_lineup_slots(roster_positions)
@@ -10118,9 +10319,10 @@ def api_start_sit_options():
     prior_pts_map: dict = {}
     prior_season: Optional[int] = None
     try:
-        from dashboard_services.api import SCORING_DEFAULTS as _SD_SS
         from utils.consistency import BLEND_FULL_SEASON as _BLEND_FULL
-        _eff_ss = {**_SD_SS, **(ctx.get("raw_scoring_settings") or {})}
+        from utils.league_scoring import stamp_scoring_aliases
+        _raw_ss = ctx.get("raw_scoring_settings") or ctx.get("scoring_settings") or {}
+        _eff_ss = stamp_scoring_aliases(_raw_ss) if _raw_ss else {}
         weekly_pts_map = _load_season_weekly_points(season, _eff_ss)
         # Per-player gate: load last season while ANY rostered player is still
         # inside the crossfade window (fewer than a full crossfade's worth of
@@ -10276,7 +10478,7 @@ def api_start_sit_options():
                 from utils.injury_plan import injury_plan as _ss_plan
                 _pval = None
                 try:
-                    _pval = float(row.get("value") or 0) or None
+                    _pval = float(row.get(_ss_vkey) or row.get(_ss_vfb) or row.get("value") or 0) or None
                 except Exception:
                     _pval = None
                 _return_plan = _ss_plan(
@@ -10301,7 +10503,8 @@ def api_start_sit_options():
             "fpts_against": fpts_vs,
             "def_rank": def_rank,
             "def_total": def_total,
-            "pos_rank_label": row.get("pos_rank_label") or "",
+            "pos_rank_label": row.get(_ss_rkey) or row.get("pos_rank_label") or "",
+            "value": round(float(row.get(_ss_vkey) or row.get(_ss_vfb) or 0)),
             "injury_status": injury_status,
             "return_plan": _return_plan,
             "usage_delta": usage_delta,
@@ -10826,7 +11029,7 @@ def _redzone_collect(platform, league_id, season, week):
     """Build the raw per-league Redzone pieces (no top-level wrapper)."""
     from dashboard_services.api import (
         get_nfl_scores_for_date, build_team_game_lookup,
-        get_nfl_players, get_effective_scoring_settings, get_league,
+        get_nfl_players, get_normalized_scoring_settings, get_league,
     )
     from dashboard_services.platform_api import (
         get_matchups as _pm, get_rosters as _pr, get_users as _pu,
@@ -10849,7 +11052,7 @@ def _redzone_collect(platform, league_id, season, week):
         # settings rather than generic defaults. sync_league_globals routes
         # through the right provider for every platform (Sleeper included).
         sync_league_globals(platform, league_id, season)
-        scoring = get_effective_scoring_settings() or {}
+        scoring = get_normalized_scoring_settings(platform) or {}
     except Exception:
         scoring = {}
 
@@ -11224,7 +11427,7 @@ def api_redzone_data(platform: str, season: int, league_id: str):
 def api_redzone_player(platform: str, season: int, league_id: str):
     """Return Tank01 boxscore stats for a single player, tagged with fantasy pts."""
     from dashboard_services.api import (
-        get_nfl_players, fetch_tank_boxscore, get_effective_scoring_settings,
+        get_nfl_players, fetch_tank_boxscore, get_normalized_scoring_settings,
     )
     pid = request.args.get("pid", "")
     game_id = request.args.get("game_id", "")
@@ -11248,7 +11451,8 @@ def api_redzone_player(platform: str, season: int, league_id: str):
                         stats = ps
                         break
 
-        scoring = get_effective_scoring_settings() or {}
+        sync_league_globals(platform, league_id, season)
+        scoring = get_normalized_scoring_settings(platform) or {}
 
         def _pts(stat_key, score_key, multiplier=1):
             val = float(stats.get(stat_key) or 0) * multiplier
@@ -14892,6 +15096,10 @@ def get_model_value_table_cached():
 
         _rerank(tbl, "value", "pos_rank", "pos_rank_label")
         _rerank(tbl, "sf_value", "sf_pos_rank", "sf_pos_rank_label")
+        # Redraft columns + ranks so waiver/start-sit don't fall back to dynasty
+        # numbers (or dynasty WR12 labels) in a redraft league.
+        from utils.value_helpers import apply_redraft_display_fields as _ardf
+        _ardf(tbl)
 
     _MODEL_VALUE_CACHE = tbl
     _MODEL_VALUE_CACHE_TS = now
@@ -15869,8 +16077,8 @@ def _attach_adp_from_source(players, adp_season, source, league_id=None, token=N
     # some drafts, so the mean floats to ~3), so we show it as a clean 1..N draft
     # board. Rank it over the players WE actually list (this pool), not the whole
     # crawl population — otherwise a crawl-only player nobody sees holds slot #1
-    # and the top player we show reads as #2.
-    _brf = (source == "brfantasy")
+    # and the top player we show reads as #2. Same treatment for Live (7d).
+    _brf = (source in ("brfantasy", "brfantasy_live"))
     _pool_ids = {str(_p.get("id") or "") for _p in players}
     # Rookie-draft pool: rank the rookie axis among these alone so any source
     # becomes a clean 1..N rookie board (Sleeper has no rookie-specific ADP and
@@ -15966,7 +16174,7 @@ def _attach_all_adp_sources(players, adp_season, sources, league_id=None, token=
     for source in sources:
         if source == "consensus":
             continue
-        _brf = (source == "brfantasy")
+        _brf = (source in ("brfantasy", "brfantasy_live"))
         by_field = {}
         has_any = False
         for scoring_type, is_sf, field in _ADP_COLUMN_AXES:
@@ -16419,47 +16627,12 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     except Exception as _e_rd:
         logger.info(f"[api/league-players] redraft values skipped: {_e_rd}")
 
-    # Redraft depth fallback: the market source (FantasyCalc) only prices roughly
-    # the top ~64 RB / ~150 WR, so a deep redraft mock (e.g. 12-team x 17 rounds =
-    # 204 picks) drains the priced pool and the Draft Room's position filter goes
-    # empty ("no players match" for RB even though hundreds exist). Derive a redraft
-    # value for every unpriced skill player from its dynasty value, scaled strictly
-    # below the priced floor so real redraft values always rank first, relative
-    # order is preserved, and the pool never runs dry.
+    # Redraft depth fallback: shared with the value-table cache so Draft Room,
+    # waivers, and start/sit all read the same filled redraft numbers. Idempotent
+    # when the cache already ran apply_redraft_display_fields.
     try:
-        _skill = {"QB", "RB", "WR", "TE"}
-
-        def _num(_x):
-            try:
-                return float(_x)
-            except (TypeError, ValueError):
-                return 0.0
-
-        for _rd_field, _dyn_field in (("redraft_value_1qb", "value"),
-                                      ("redraft_value_sf", "sf_value")):
-            _priced = [
-                _num(_p.get(_rd_field)) for _p in model_value_table
-                if str(_p.get("position") or "").upper() in _skill
-                and _num(_p.get(_rd_field)) > 0
-            ]
-            _floor = min(_priced) if _priced else 1.0
-            _unpriced_dyn = [
-                _num(_p.get(_dyn_field)) for _p in model_value_table
-                if str(_p.get("position") or "").upper() in _skill
-                and _num(_p.get(_rd_field)) <= 0
-            ]
-            _dyn_max = max(_unpriced_dyn) if _unpriced_dyn else 0.0
-            if _dyn_max <= 0:
-                continue
-            _cap = _floor * 0.9   # best unpriced player still ranks below every priced one
-            for _p in model_value_table:
-                if str(_p.get("position") or "").upper() not in _skill:
-                    continue
-                if _num(_p.get(_rd_field)) > 0:
-                    continue
-                _dyn = _num(_p.get(_dyn_field))
-                if _dyn > 0:
-                    _p[_rd_field] = round(_cap * (_dyn / _dyn_max), 2)
+        from utils.value_helpers import fill_unpriced_redraft_values as _furd
+        _furd(model_value_table)
     except Exception as _e_rdfill:
         logger.info(f"[api/league-players] redraft depth fill skipped: {_e_rdfill}")
 
@@ -17446,12 +17619,8 @@ def api_teams():
 
             # Find the user for this roster
             user = next((u for u in users if u.get("user_id") == user_id), None)
-            if user:
-                team_name = user.get("team_name") or user.get("display_name") or f"Team {roster_id}"
-                username = user.get("username") or user.get("display_name") or ""
-            else:
-                team_name = f"Team {roster_id}"
-                username = ""
+            team_name = team_label_from_user(user, roster, fallback=f"Team {roster_id}")
+            username = username_from_user(user)
 
             teams.append({
                 "roster_id": roster_id,
@@ -17502,12 +17671,8 @@ def api_league_rosters():
             roster_id = str(roster.get("roster_id", ""))
             user_id = roster.get("owner_id")
             user = next((u for u in users if u.get("user_id") == user_id), None)
-            if user:
-                team_name = user.get("team_name") or user.get("display_name") or f"Team {roster_id}"
-                username = user.get("username") or user.get("display_name") or ""
-            else:
-                team_name = f"Team {roster_id}"
-                username = ""
+            team_name = team_label_from_user(user, roster, fallback=f"Team {roster_id}")
+            username = username_from_user(user)
             player_ids = [str(pid) for pid in (roster.get("players") or [])]
             # Resolve each owned pick to the exact draft slot its original owner
             # holds. A pick's slot is fixed by the standings of the season BEFORE
@@ -18233,7 +18398,6 @@ def api_player_details(player_id: str):
     """Get comprehensive player details for modal display."""
     try:
         from utils.utils import load_relevant_index, load_model_value_table
-        from dashboard_services.api import get_effective_scoring_settings
         from dashboard_services.platform_api import sync_league_globals
         import json
         import os
@@ -18263,7 +18427,7 @@ def api_player_details(player_id: str):
                 _get_league(league_id)
             else:
                 sync_league_globals(platform, league_id, season)
-            scoring_settings = get_effective_scoring_settings()
+            scoring_settings = get_normalized_scoring_settings(platform)
         else:
             # Default scoring settings if no league context
             scoring_settings = {
@@ -18289,7 +18453,7 @@ def api_player_details(player_id: str):
         if not player_meta:
             return jsonify({"error": "Player not found"}), 404
 
-        player_team = player_meta.get("team", "")
+        player_team = canon_team(player_meta.get("team", "")) or player_meta.get("team", "")
 
         # Get value data (use cache so FC/DP corrections are applied)
         value_table = get_model_value_table_cached() or []
@@ -18944,7 +19108,8 @@ def api_player_adp(player_id: str):
                     # silently become Sleeper's ADP).
                     _mkt_cache[_key] = resolve_market_adp(
                         int(season), _is_sf, _scoring, source=_source,
-                        as_rank=(_source == "brfantasy"), fallback=False) or {}
+                        as_rank=(_source in ("brfantasy", "brfantasy_live")),
+                        fallback=False) or {}
                 except Exception:
                     _mkt_cache[_key] = {}
             _v = _mkt_cache[_key].get(str(player_id))
@@ -18961,6 +19126,7 @@ def api_player_adp(player_id: str):
         # snapshot never produces a bare row. Consensus stays last.
         _source_specs = [
             ("brfantasy", "BR Fantasy"),
+            ("brfantasy_live", "BR Fantasy Live (7d)"),
             ("espn", "ESPN"),
             ("yahoo", "Yahoo"),
             ("mfl", "MFL"),
@@ -19012,7 +19178,6 @@ def api_player_game_logs(player_id: str):
     try:
         import glob
         from utils.utils import load_relevant_index
-        from dashboard_services.api import get_effective_scoring_settings
         from dashboard_services.platform_api import sync_league_globals
 
         league_id = request.args.get("league_id")
@@ -19021,15 +19186,12 @@ def api_player_game_logs(player_id: str):
 
         if league_id:
             # sync_league_globals is a no-op for Sleeper - must call get_league explicitly
-            from dashboard_services.api import SCORING_DEFAULTS as _SD
             if platform == "sleeper":
                 from dashboard_services.api import get_league as _get_league
-                _league_data = _get_league(league_id) or {}
-                _raw_ss = _league_data.get("scoring_settings") or {}
-                scoring_settings = {**_SD, **_raw_ss}
+                _get_league(league_id)
             else:
                 sync_league_globals(platform, league_id, season)
-                scoring_settings = get_effective_scoring_settings()
+            scoring_settings = get_normalized_scoring_settings(platform)
         else:
             scoring_settings = {
                 "pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0,
@@ -19049,7 +19211,7 @@ def api_player_game_logs(player_id: str):
         if not player_meta:
             players_index_full = load_players_index() or {}
             player_meta = players_index_full.get(player_id) or {}
-        player_team = player_meta.get("team", "")
+        player_team = canon_team(player_meta.get("team", "")) or player_meta.get("team", "")
 
         # Reuse the years cache
         global _PLAYER_DETAIL_YEARS_CACHE, _PLAYER_DETAIL_YEARS_CACHE_TS
@@ -19261,7 +19423,7 @@ def api_player_game_logs(player_id: str):
                             with open(_sf) as _sff:
                                 _sg = json.load(_sff)
                             if isinstance(_sg, list) and _wn not in _sched:
-                                _sched[_wn] = _sg
+                                _sched[_wn] = canonicalize_schedule(_sg)
                         except Exception:
                             logger.debug("suppressed exception", exc_info=True)
 
@@ -19278,15 +19440,18 @@ def api_player_game_logs(player_id: str):
                         # Resolve opponent from schedule
                         _opp = "–"
                         _game_date = ""
+                        _player_keys = set(team_abbr_keys(player_team)) if player_team else set()
                         for _g in (_sched.get(_w) or []):
                             if not isinstance(_g, dict):
                                 continue
-                            if player_team and player_team == _g.get("home"):
-                                _opp = _g.get("away", "–")
+                            _home = _g.get("home")
+                            _away = _g.get("away")
+                            if _player_keys and _home in _player_keys:
+                                _opp = canon_team(_away) or _away or "–"
                                 _game_date = _g.get("gameDate", "")
                                 break
-                            elif player_team and player_team == _g.get("away"):
-                                _opp = f"@{_g.get('home', '–')}"
+                            if _player_keys and _away in _player_keys:
+                                _opp = f"@{canon_team(_home) or _home or '–'}"
                                 _game_date = _g.get("gameDate", "")
                                 break
 
@@ -19373,21 +19538,8 @@ def _canon_team_abbr(team: str) -> str:
 
 def _canonical_teams_index(teams_index: dict) -> dict:
     """Merge alias keys (e.g. WSH into WAS) so each franchise appears once."""
-    out: dict = {}
-    for abv, meta in (teams_index or {}).items():
-        if not isinstance(meta, dict):
-            continue
-        canon = _canon_team_abbr(abv)
-        if not canon:
-            continue
-        cur = out.get(canon)
-        if cur is None:
-            out[canon] = dict(meta)
-            continue
-        for k, v in meta.items():
-            if cur.get(k) is None and v is not None:
-                cur[k] = v
-    return out
+    from utils.utils import canonical_teams_index
+    return canonical_teams_index(teams_index)
 
 
 def _resolve_stats_reg_season(season: int) -> int:
@@ -19982,12 +20134,8 @@ def api_team_details(roster_id: str):
         owner_id = roster.get("owner_id")
         user = next((u for u in users if u.get("user_id") == owner_id), None)
 
-        username = user.get("display_name") if user else None
-        team_name = (
-            (roster.get("metadata") or {}).get("team_name")
-            or ((user.get("metadata") or {}).get("team_name") if user else None)
-            or username
-        )
+        username = username_from_user(user) or None
+        team_name = team_label_from_user(user, roster, fallback=username or "")
         avatar = team_avatar(platform, roster, users) or avatar_from_users(platform, users, owner_id)
         if team_name is None:
             team_name = username
@@ -20045,7 +20193,7 @@ def api_team_details(roster_id: str):
 
             # Special handling for defense players (team abbreviations as IDs)
             player_name = player_meta.get("name", "Unknown")
-            player_team = player_meta.get("team")
+            player_team = canon_team(player_meta.get("team")) or player_meta.get("team")
 
             # If player_id is a team abbreviation and no metadata found, treat as defense
             if len(pid_str) == 3 and pid_str.isupper() and player_name == "Unknown":
@@ -20053,7 +20201,7 @@ def api_team_details(roster_id: str):
                 full_team_name = get_team_full_name(pid_str)
                 player_name = f"{full_team_name} Defense"
                 position = "DEF"
-                player_team = pid_str
+                player_team = canon_team(pid_str) or pid_str
 
             # Apply the league's TE premium now that position is finalized.
             value = apply_te_premium(value, position, _tep)
@@ -22165,12 +22313,9 @@ def api_trade_database():
             sf_param = False
         sf_clause = "AND l.is_superflex = %s " if sf_param is not None else ""
 
-        # Build dynasty/redraft filter (league_type column: 2=dynasty, 1=redraft)
-        lf_param = None
-        if league_format == "dynasty":
-            lf_param = 2
-        elif league_format == "redraft":
-            lf_param = 1
+        # Build dynasty/redraft filter (league_type column: 0=redraft, 2=dynasty)
+        from data_building.trade_intel.league_types import league_format_sql_param
+        lf_param = league_format_sql_param(league_format)
         lf_clause = "AND l.league_type = %s " if lf_param is not None else ""
 
         # Build player filter clauses.
@@ -22367,11 +22512,8 @@ def api_trade_intel_player_trades(player_id: str):
             sf_param = False
         sf_clause = "AND l.is_superflex = %s " if sf_param is not None else ""
 
-        lf_param = None
-        if league_format == "dynasty":
-            lf_param = 2
-        elif league_format == "redraft":
-            lf_param = 1
+        from data_building.trade_intel.league_types import league_format_sql_param
+        lf_param = league_format_sql_param(league_format)
         lf_clause = "AND l.league_type = %s " if lf_param is not None else ""
 
         from dashboard_services.db import get_conn
@@ -22537,6 +22679,18 @@ def api_trade_intel_similar_trades():
         if not side_a_ids and not side_b_ids:
             return jsonify({"trades": []})
 
+        # Match the calculator's dynasty/redraft setting so a redraft deal
+        # is not compared to dynasty comps (and vice versa).
+        league_format = (
+            request.args.get("league_format")
+            or request.args.get("scoring_type")
+            or "all"
+        ).strip().lower()
+        from data_building.trade_intel.league_types import league_format_sql_param
+        lf_param = league_format_sql_param(league_format)
+        lf_clause = "AND l.league_type = %s " if lf_param is not None else ""
+        lf_args = (lf_param,) if lf_param is not None else ()
+
         from dashboard_services.db import get_conn
         from utils.utils import load_players_index
 
@@ -22544,10 +22698,10 @@ def api_trade_intel_similar_trades():
             if side_a_ids and side_b_ids:
                 # Require players from each side to appear on OPPOSITE sides of the real trade
                 trade_rows = conn.execute(
-                    """
+                    f"""
                     SELECT DISTINCT
                         t.id, t.transaction_id, t.season, t.week, t.created_at,
-                        l.scoring_type, l.is_superflex, l.num_teams
+                        l.scoring_type, l.is_superflex, l.num_teams, l.league_type
                     FROM trade_intel_trades t
                     JOIN trade_intel_assets a1 ON a1.trade_id = t.id
                         AND a1.player_id = ANY(%s) AND a1.asset_type = 'player'
@@ -22555,29 +22709,29 @@ def api_trade_intel_similar_trades():
                         AND a2.player_id = ANY(%s) AND a2.asset_type = 'player'
                         AND a2.side != a1.side
                     LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                    WHERE t.season = %s
+                    WHERE t.season = %s {lf_clause}
                     ORDER BY t.created_at DESC NULLS LAST
                     LIMIT %s
                     """,
-                    (side_a_ids, side_b_ids, season, fetch_limit),
+                    (side_a_ids, side_b_ids, season) + lf_args + (fetch_limit,),
                 ).fetchall()
             else:
                 # Only one side populated - match any trade with those players
                 all_ids = side_a_ids or side_b_ids
                 trade_rows = conn.execute(
-                    """
+                    f"""
                     SELECT DISTINCT
                         t.id, t.transaction_id, t.season, t.week, t.created_at,
-                        l.scoring_type, l.is_superflex, l.num_teams
+                        l.scoring_type, l.is_superflex, l.num_teams, l.league_type
                     FROM trade_intel_trades t
                     JOIN trade_intel_assets a ON a.trade_id = t.id
                         AND a.player_id = ANY(%s) AND a.asset_type = 'player'
                     LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                    WHERE t.season = %s
+                    WHERE t.season = %s {lf_clause}
                     ORDER BY t.created_at DESC NULLS LAST
                     LIMIT %s
                     """,
-                    (all_ids, season, fetch_limit),
+                    (all_ids, season) + lf_args + (fetch_limit,),
                 ).fetchall()
 
             if not trade_rows:
@@ -22651,11 +22805,18 @@ def api_trade_intel_similar_trades():
                     trade_date = r["created_at"].strftime("%m/%d/%y")
                 except Exception:
                     trade_date = str(r["created_at"])[:10]
+            _lt = r.get("league_type")
+            try:
+                _lt_i = int(_lt) if _lt is not None else None
+            except (TypeError, ValueError):
+                _lt_i = None
+            _fmt = "dynasty" if _lt_i == 2 else ("redraft" if _lt_i == 0 else None)
             result.append({
                 "trade_id": r["transaction_id"],
                 "date": trade_date,
                 "season": r["season"],
                 "scoring_type": r["scoring_type"],
+                "league_format": _fmt,
                 "is_superflex": r["is_superflex"],
                 "num_teams": r["num_teams"],
                 "side_a": side_a,
@@ -22810,14 +22971,20 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
     # Redraft/keeper (and all ESPN) use this-season values; dynasty uses
     # long-term value. Matches _league_is_redraft everywhere else.
     is_redraft = _league_is_redraft(ctx)
+    is_sf = (league_type or "").lower() == "sf"
 
-    # Build value lookup keyed by player_id
-    if is_redraft:
-        val_key = "redraft_value_sf" if league_type == "sf" else "redraft_value_1qb"
-        val_fallback = "redraft_value_1qb" if league_type == "sf" else "value"
-    else:
-        val_key = "sf_value" if league_type == "sf" else "value"
-        val_fallback = "value"
+    # Build value lookup keyed by player_id. Values AND position ranks must use
+    # the same format columns — otherwise a redraft league shows dynasty RB23.
+    from utils.value_helpers import (
+        format_rank_key as _fmt_rank_key,
+        format_rank_label_key as _fmt_rank_lbl_key,
+        format_value_keys as _fmt_val_keys,
+        row_format_rank_label as _row_rank_lbl,
+        row_format_value as _row_fmt_val,
+    )
+    val_key, val_fallback = _fmt_val_keys(is_redraft=is_redraft, is_sf=is_sf)
+    rank_key = _fmt_rank_key(is_redraft=is_redraft, is_sf=is_sf)
+    rank_label_key = _fmt_rank_lbl_key(is_redraft=is_redraft, is_sf=is_sf)
     values_by_id: dict = {}
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -22825,12 +22992,15 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
         pid = str(row.get("id") or "")
         if not pid:
             continue
+        _pos_rank = row.get(rank_key)
+        if _pos_rank is None and rank_key != "pos_rank":
+            _pos_rank = row.get("pos_rank")
         values_by_id[pid] = {
-            "value": float(row.get(val_key) or row.get(val_fallback) or row.get("value") or 0),
+            "value": _row_fmt_val(row, val_key, val_fallback),
             "age": row.get("age"),
             "position": str(row.get("position") or "").upper(),
-            "pos_rank_label": row.get("pos_rank_label") or "",
-            "pos_rank": row.get("pos_rank"),
+            "pos_rank_label": _row_rank_lbl(row, rank_label_key),
+            "pos_rank": _pos_rank,
             "rank_change_7d": row.get("rank_change_7d"),
             "pos_rank_change_7d": row.get("pos_rank_change_7d"),
             "name": row.get("name") or "",
@@ -26602,7 +26772,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
 
         # ── Window badge colour ──────────────────────────────────────────────
         _window_color_map = {
-            "Contend": "#4ade80", "Bubble": "#fbbf24", "Out": "#94a3b8",
+            "Contend": "#4ade80", "Bubble": "#fbbf24", "Long Shot": "#94a3b8",
             "Contender": "#4ade80", "Win-Now": "#4ade80",
             "Contender Window": "#86efac", "Aging Contender": "#fbbf24",
             "2-3 Year Window": "#60a5fa", "Rising": "#60a5fa",

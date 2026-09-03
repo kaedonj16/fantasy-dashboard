@@ -97,7 +97,9 @@ def build_scout_body(ctx: dict) -> str:
     values_by_id = {str(r.get("id") or ""): r for r in model_value_table if r.get("id")}
 
     # Find viewer's matchup for current week
-    current_matchups = matchups_by_week.get(current_week) or []
+    from utils.matchup_schedule import resolve_matchup_week
+    matchup_week = resolve_matchup_week(current_week, matchups_by_week)
+    current_matchups = matchups_by_week.get(matchup_week) or matchups_by_week.get(str(matchup_week)) or []
     viewer_matchup = None
     opponent_roster_id = None
     opponent_team_block = None

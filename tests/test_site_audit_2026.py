@@ -106,6 +106,9 @@ def test_compare_page_not_noindexed_by_remembered_league():
            'render_page(\n        title, None, "compare"' in compare
     # Must not pass session last_league_id as the league_id positional.
     assert "nav_lid" not in compare
+    # League-scoped URL (waivers "Compare to roster") must exist so the PWA
+    # does not 404 → "You're offline". The decorator sits above def page_compare.
+    assert '@seo_pages_bp.route("/<platform>/<int:season>/<league_id>/compare")' in SEO
 
 
 def test_sitemap_includes_compare_and_cache_control():
@@ -118,7 +121,7 @@ def test_sw_no_cache_and_shell_precache():
     sw_route = PUBLIC[PUBLIC.index("def service_worker"):]
     sw_route = sw_route[: sw_route.index("def ads_txt")]
     assert "no-cache" in sw_route
-    assert "br-fantasy-v23" in SW
+    assert "br-fantasy-v25" in SW
     assert "'/static/app.js'" not in SW and '"/static/app.js"' not in SW
     assert "'/static/dashboard.css'" not in SW and '"/static/dashboard.css"' not in SW
     assert "/static/offline.html" in SW
@@ -128,6 +131,8 @@ def test_sw_no_cache_and_shell_precache():
     assert "bypass-cache" in SW
     assert "forceNetworkNav" in SW
     assert "request.cache === 'reload'" in SW
+    # A 404/500 from the origin must not be painted as "You're offline".
+    assert "networkError" in SW
 
 
 def test_rankings_honors_q_and_aria():

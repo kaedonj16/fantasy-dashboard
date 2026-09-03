@@ -79,10 +79,11 @@ def build_weekly_hub_body(ctx: dict) -> str:
     def clamp_week(w: int) -> int:
         return max(1, min(max_week, int(w)))
 
+    from utils.matchup_schedule import resolve_matchup_week
     if season_complete or offseason_mode:
         default_week = clamp_week(last_final_week)
     else:
-        default_week = clamp_week(current_week or 1)
+        default_week = clamp_week(resolve_matchup_week(current_week, matchups_by_week))
 
     _hub_vid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
     default_matchups = sorted(

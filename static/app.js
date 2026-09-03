@@ -5822,6 +5822,16 @@ window.initTradePage = function initTradePage(root = document) {
       const params = new URLSearchParams({ season, limit: 8 });
       if (sideAIds.length) params.set("side_a", sideAIds.join(","));
       if (sideBIds.length) params.set("side_b", sideBIds.join(","));
+      const scoringType = getScoringType();
+      if (scoringType === "redraft" || scoringType === "dynasty") {
+        params.set("league_format", scoringType);
+      }
+      const sub = root.querySelector(".stl-sub");
+      if (sub) {
+        sub.textContent = scoringType === "redraft"
+          ? "Sleeper redraft comps — real trades where these players moved to opposite sides."
+          : "Sleeper dynasty comps — real trades where these players moved to opposite sides. A teaser of the full Trade Intel feed.";
+      }
 
       const res = await fetch("/api/trade-intel/similar-trades?" + params);
       if (!res.ok) throw new Error("fetch failed");
@@ -5844,6 +5854,7 @@ window.initTradePage = function initTradePage(root = document) {
         const sfBadge    = t.is_superflex === true  ? '<span class="stl-badge stl-badge-sf">SF</span>'
                          : t.is_superflex === false ? '<span class="stl-badge">1QB</span>' : '';
         const teamsBadge = t.num_teams    ? `<span class="stl-badge">${t.num_teams} Teams</span>` : '';
+        const fmtBadge   = t.league_format ? `<span class="stl-badge">${esc(t.league_format).toUpperCase()}</span>` : '';
         const scoreBadge = t.scoring_type ? `<span class="stl-badge">${esc(t.scoring_type).toUpperCase()}</span>` : '';
 
         function renderAsset(a) {
@@ -5859,7 +5870,7 @@ window.initTradePage = function initTradePage(root = document) {
         return `<div class="stl-card">
           <div class="stl-card-head">
             <span class="stl-date">${esc(t.date || "-")}</span>
-            <div class="stl-badges">${sfBadge}${teamsBadge}${scoreBadge}</div>
+            <div class="stl-badges">${fmtBadge}${sfBadge}${teamsBadge}${scoreBadge}</div>
           </div>
           <div class="stl-card-body">
             <div class="stl-col">${sideA}</div>
@@ -12180,11 +12191,45 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Top-bar league chip: same league list as the settings switcher, so the
     // persistent chrome is the place you switch (and page titles stay clean).
+    function paintLeagueChromeChip(lg) {
+      if (!lg) return;
+      var nameEl = document.querySelector('#brLeagueChrome .br-ctx-name');
+      var fmtEl = document.querySelector('#brLeagueChrome .br-ctx-format');
+      var name = String(lg.name || '').trim();
+      if (nameEl && name && name !== 'This league') {
+        nameEl.textContent = name;
+      }
+      if (lg.format) {
+        if (fmtEl) {
+          fmtEl.textContent = lg.format;
+        } else if (nameEl && nameEl.parentNode) {
+          var span = document.createElement('span');
+          span.className = 'br-ctx-format';
+          span.textContent = lg.format;
+          nameEl.insertAdjacentElement('afterend', span);
+        }
+      }
+      if (window.__brctx) {
+        if (name) window.__brctx.leagueName = name;
+        if (lg.format) window.__brctx.leagueFormat = lg.format;
+        if (lg.sf != null) window.__brctx.leagueType = lg.sf ? 'sf' : '1qb';
+        if (lg.size) window.__brctx.leagueSize = lg.size;
+      }
+    }
+
     function fillLeagueChromeMenu(leagues) {
       var btn = document.getElementById('brCtxLeagueBtn');
       var menu = document.getElementById('brCtxLeagueMenu');
       if (!btn) return;
       var list = Array.isArray(leagues) ? leagues : [];
+      var cur = null;
+      for (var i = 0; i < list.length; i++) {
+        if (String(list[i].league_id || '') === String(currentLeagueId || '')) {
+          cur = list[i];
+          break;
+        }
+      }
+      paintLeagueChromeChip(cur);
       var can = list.length > 1;
       btn.classList.toggle('is-static', !can);
       btn.setAttribute('aria-disabled', can ? 'false' : 'true');
@@ -14566,16 +14611,21 @@ function initComparePage() {
   // when a ?p1=&p2= deep link is already populating both sides).
   (function _autofocus() {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('p1') && params.get('p2')) return;
-    const first = document.getElementById('cmpPick1');
+    const q1 = params.get('p1') || params.get('a');
+    const q2 = params.get('p2') || params.get('b');
+    if (q1 && q2) return;
+    const first = document.getElementById(q1 ? 'cmpPick2' : 'cmpPick1');
     if (first) { try { first.focus(); } catch (_) {} }
   })();
 
   // Deep link: ?p1=&p2= prefills both pickers (and optional ?p3=) and opens the
-  // comparison.
+  // comparison. A lone ?p1= (or waiver-wire ?a=) prefills player 1 so the user
+  // can pick a roster player to compare against.
   try {
     const params = new URLSearchParams(window.location.search);
-    const q1 = params.get('p1'), q2 = params.get('p2'), q3 = params.get('p3');
+    const q1 = params.get('p1') || params.get('a');
+    const q2 = params.get('p2') || params.get('b');
+    const q3 = params.get('p3');
     if (q1 && q2) {
       const qs = q3 ? [q1, q2, q3] : [q1, q2];
       Promise.all(qs.map(q => _fetchDetails(q))).then(ds => {
@@ -14587,6 +14637,14 @@ function initComparePage() {
         _syncClears();
         if (q3) { _revealThird(false); _openForTriple(ds[0], ds[1], ds[2]); } else _openFor(ds[0], ds[1]);
       }).catch(() => { if (resultEl) window.brErrorState(resultEl, 'Could not load that comparison.', null, { compact: true }); });
+    } else if (q1) {
+      _fetchDetails(q1).then(d => {
+        chosen[1] = { player_id: String(d.player_id || q1), name: d.name || d.full_name || '', position: d.position || '', team: d.team || '' };
+        const inp = document.getElementById('cmpPick1'); if (inp) inp.value = chosen[1].name;
+        _syncClears();
+        const second = document.getElementById('cmpPick2');
+        if (second) { try { second.focus(); } catch (_) {} }
+      }).catch(() => {});
     }
   } catch (_) {}
 }

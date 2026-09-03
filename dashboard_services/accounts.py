@@ -709,6 +709,22 @@ def list_account_platform_ids(account_id: int, platform: str) -> list[str]:
     return [str(r["platform_user_id"]) for r in rows if r.get("platform_user_id")]
 
 
+def get_saved_league_name(account_id, platform, league_id) -> str:
+    """The stored display name for one saved league, newest season first."""
+    if not (account_id and platform and league_id):
+        return ""
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT name FROM user_leagues
+               WHERE account_id=%s AND platform=%s AND league_id=%s
+               ORDER BY season DESC LIMIT 1""",
+            (int(account_id), str(platform).lower(), str(league_id)),
+        ).fetchone()
+    return str((row or {}).get("name") or "").strip()
+
+
 def list_user_leagues(account_id: int) -> list[dict]:
     """Every league linked to an account, across platforms. Newest first."""
     if not account_id:

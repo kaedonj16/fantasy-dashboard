@@ -61,7 +61,7 @@ def test_billing_accepts_mfl_and_account_id():
 
 def test_redzone_player_uses_nfl_index_on_every_platform():
     api = APP_PY[APP_PY.index("def api_redzone_player"):]
-    api = api[: api.index("scoring = get_effective_scoring_settings")]
+    api = api[: api.index("scoring = get_normalized_scoring_settings")]
     assert "nfl_players = get_nfl_players() or {}" in api
     assert 'get_nfl_players() if platform == "sleeper"' not in api
 

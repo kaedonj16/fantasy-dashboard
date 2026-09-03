@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
+from dashboard_services.providers.base import BRACKET, UnsupportedCapabilityError
 from dashboard_services.providers.registry import (
     get_provider, get_provider_capabilities, normalize_platform,
 )
@@ -59,7 +60,24 @@ def get_traded_picks(platform: str, league_id: str, season: int) -> List[Dict[st
 
 
 def get_bracket(platform: str, league_id: str, kind: str, season: int):
-    return get_provider(platform).get_bracket(league_id, season, kind)
+    """Return a playoff bracket, or [] when the provider cannot supply one.
+
+    Fleaflicker and MFL do not expose brackets through their public APIs.
+    Callers already treat an empty list as "no Playoff Picture"; raising
+    would 500 pages (standings, matchups) that only need the bracket when
+    it exists.
+    """
+    provider = get_provider(platform)
+    if not provider.supports(BRACKET):
+        return []
+    try:
+        return provider.get_bracket(league_id, season, kind) or []
+    except UnsupportedCapabilityError:
+        logger.debug(
+            "get_bracket unsupported platform=%s league=%s kind=%s",
+            provider.metadata.key, league_id, kind,
+        )
+        return []
 
 
 def get_drafts(platform: str, league_id: str, season: int) -> List[Dict[str, Any]]:

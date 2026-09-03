@@ -137,6 +137,21 @@ def build_teams_body(ctx: dict) -> str:
     # Expected rows like {id, name, position, team, value, search_name}
     model_vals = ctx.get("model_value_table") or []
 
+    # map sleeper_id -> row. Apply the league's TE premium up front (on a shallow
+    # copy, never the cached row) so every downstream value read — sort, age
+    # weighting, positional strength — uses the TE-adjusted value automatically.
+    # Redraft leagues rewrite ``value`` from redraft_value_* (same as Front Office).
+    _tep = te_premium_from_settings(ctx.get("scoring_settings"))
+    _rp_early = ctx.get("roster_positions") or []
+    from utils.lineup_slots import is_superflex_lineup
+    from utils.value_helpers import format_rank_label_key, row_format_rank_label
+    _is_sf_early = is_superflex_lineup(_rp_early)
+    _scoring = "redraft" if _is_redraft else "dynasty"
+    # Pos ranks like RB23 must match the league format (redraft vs dynasty, SF vs
+    # 1QB). Hardcoding dynasty pos_rank_label leaked dynasty ranks into redraft.
+    _rank_label_key = format_rank_label_key(is_redraft=_is_redraft, is_sf=_is_sf_early)
+    _valued = build_model_value_lookup(model_vals, is_sf=_is_sf_early, scoring_type=_scoring)
+
     name_to_rank_label: Dict[str, str] = {}
     name_to_age: Dict[str, Union[float, None]] = {}
 
@@ -146,7 +161,12 @@ def build_teams_body(ctx: dict) -> str:
         safe_name = str(obj.get("search_name") or "").strip().lower()
         if not safe_name:
             continue
-        pos_lbl = obj.get("pos_rank_label") or obj.get("position") or obj.get("pos") or ""
+        pos_lbl = (
+            row_format_rank_label(obj, _rank_label_key)
+            or obj.get("position")
+            or obj.get("pos")
+            or ""
+        )
         name_to_rank_label[safe_name] = str(pos_lbl)
         age_val = obj.get("age")
         if age_val is not None:
@@ -154,17 +174,6 @@ def build_teams_body(ctx: dict) -> str:
                 name_to_age[safe_name] = float(age_val)
             except Exception:
                 name_to_age[safe_name] = None
-
-    # map sleeper_id -> row. Apply the league's TE premium up front (on a shallow
-    # copy, never the cached row) so every downstream value read — sort, age
-    # weighting, positional strength — uses the TE-adjusted value automatically.
-    # Redraft leagues rewrite ``value`` from redraft_value_* (same as Front Office).
-    _tep = te_premium_from_settings(ctx.get("scoring_settings"))
-    _rp_early = ctx.get("roster_positions") or []
-    from utils.lineup_slots import is_superflex_lineup
-    _is_sf_early = is_superflex_lineup(_rp_early)
-    _scoring = "redraft" if _is_redraft else "dynasty"
-    _valued = build_model_value_lookup(model_vals, is_sf=_is_sf_early, scoring_type=_scoring)
 
     def _te_adj_row(p: dict) -> dict:
         if _tep and str(p.get("position") or p.get("pos") or "").upper() == "TE":
@@ -750,8 +759,9 @@ def build_teams_body(ctx: dict) -> str:
             f"<div class='tc-mix-seg' style='flex:{v:.2f};background:{c};'></div>"
             for v, c in zip(_mix_values, _mix_colors) if v and v > 0
         )
-        _mix_legend = "".join(
-            f"<span class='tc-mix-leg'><i style='background:{c};'></i>{lbl} {v:,.0f}</span>"
+        _mix_legend = " ".join(
+            f"<span class='tc-mix-leg'><span class='tc-mix-dot' style='background:{c};'></span>"
+            f"<span class='tc-mix-k'>{lbl}</span> {v:,.0f}</span>"
             for lbl, v, c in zip(_mix_labels, _mix_values, _mix_colors)
         )
         _mix_html = (
@@ -776,7 +786,7 @@ def build_teams_body(ctx: dict) -> str:
         _archetype_num = {
             "Contend":          1,
             "Bubble":           2,
-            "Out":              3,
+            "Long Shot":        3,
             "Contender":        1,
             "Win-Now":          2,
             "Aging Contender":  3,
@@ -791,7 +801,7 @@ def build_teams_body(ctx: dict) -> str:
         _window_cls = {
             "Contend":          "wt-contend",
             "Bubble":           "wt-bubble",
-            "Out":              "wt-out",
+            "Long Shot":        "wt-long-shot",
             "Contender":        "wt-contender",
             "Win-Now":          "wt-win-now",
             "Aging Contender":  "wt-aging-contender",
@@ -812,15 +822,19 @@ def build_teams_body(ctx: dict) -> str:
         _initials = ("".join(w[0] for w in str(name).split()[:2]).upper() or "?")[:2]
         if img_html:
             _avatar_html = (
+                "<span class='tc-avatar-wrap'>"
                 f"<img class='tc-avatar' src='{avatar}' alt='' loading='lazy' decoding='async' "
                 "onerror=\"this.style.visibility='hidden'\">"
+                "</span>"
             )
         else:
-            _avatar_html = f"<span class='tc-avatar tc-avatar-mono'>{html.escape(_initials)}</span>"
+            _avatar_html = (
+                f"<span class='tc-avatar-wrap tc-avatar-mono'>{html.escape(_initials)}</span>"
+            )
         _you_pill = "<span class='tc-you'>YOU</span>" if _is_viewer else ""
         _shape_txt = f" &middot; {html.escape(_shape)}" if _shape else ""
         _window_pill = (
-            f"<span class='tc-window'><i style='background:{_win_color};'></i>"
+            f"<span class='tc-window'><span class='tc-window-dot' style='background:{_win_color};'></span>"
             f"<b>{html.escape(_win_window) if _win_window else 'Unranked'}</b>{_shape_txt}</span>"
         )
 
@@ -851,7 +865,7 @@ def build_teams_body(ctx: dict) -> str:
             "    <div class='tc-id'>"
             f"      {_avatar_html}"
             "      <div class='tc-idtext'>"
-            f"        <h2 class='team-clickable tc-name' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}{_you_pill}</h2>"
+            f"        <h2 class='team-clickable tc-name' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'><span class='tc-name-text'>{name}</span>{_you_pill}</h2>"
             f"        {_window_pill}"
             "      </div>"
             "    </div>"
@@ -930,7 +944,7 @@ def build_teams_body(ctx: dict) -> str:
           <div class="wl-section-label" style="margin-top:10px;">This season</div>
           <div class="wl-row"><span class="wl-dot" style="background:#22c55e;"></span><strong class="wl-label">Contend</strong><span class="wl-desc">Playoff favorite &mdash; 70%+ odds to make the playoffs</span></div>
           <div class="wl-row"><span class="wl-dot" style="background:#f59e0b;"></span><strong class="wl-label">Bubble</strong><span class="wl-desc">Live but not locked &mdash; 35&ndash;70% playoff odds</span></div>
-          <div class="wl-row"><span class="wl-dot" style="background:#94a3b8;"></span><strong class="wl-label">Out</strong><span class="wl-desc">Long shot &mdash; under 35% playoff odds</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#94a3b8;"></span><strong class="wl-label">Long Shot</strong><span class="wl-desc">Under 35% playoff odds &mdash; still alive, not mathematically eliminated</span></div>
           <div class="wl-grade-note">This label is playoff odds, not the letter grade. A clean draft can still sit mid-pack.</div>
         """
         _grade_note = "Grade is this-season roster construction (starters + value). It is not playoff odds."

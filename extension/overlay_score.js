@@ -63,11 +63,152 @@
   }
 
   function posOf(p) {
-    return String((p && (p.position || p.pos)) || "").toUpperCase();
+    const raw = String((p && (p.position || p.pos)) || "").toUpperCase();
+    if (raw === "PK") return "K";
+    if (raw === "DST" || raw === "D/ST" || raw === "D-ST" || raw === "D ST") return "DEF";
+    return raw;
+  }
+
+  function isKDef(p) {
+    const pos = typeof p === "string" ? posOf({ pos: p }) : posOf(p);
+    return pos === "K" || pos === "DEF";
   }
 
   function valOf(p) {
     return Number(p && p.val) || 0;
+  }
+
+  function scoringOf(ctx) {
+    return {
+      ppr: ctx && ctx.ppr != null ? Number(ctx.ppr) : 1,
+      tep: ctx && ctx.tep != null ? Number(ctx.tep) : 0,
+      passTd: ctx && ctx.passTd >= 6 ? 6 : 4,
+    };
+  }
+
+  // Same projection the Draft Room grades with: scoring-adjusted Sleeper PPG,
+  // never last-season actuals. Compact overlay rows store that as proj_ppg/ppg.
+  function ppgOf(p, ctx) {
+    const C = Core();
+    if (!p) return null;
+    if (C && C.ppgOf) {
+      const v = C.ppgOf(p, scoringOf(ctx));
+      if (v != null && isFinite(Number(v))) return Number(v);
+    }
+    const n = Number(p.proj_ppg != null ? p.proj_ppg : p.ppg);
+    return isFinite(n) && n > 0 ? n : null;
+  }
+
+  function ppgFn(ctx) {
+    return function (pl) { return ppgOf(pl, ctx); };
+  }
+
+  function lineupScore(p, ctx) {
+    if (!p) return -Infinity;
+    const ppg = ppgOf(p, ctx);
+    if (ppg != null) return ppg;
+    return (Number(p.val) || 0) / 1000;
+  }
+
+  function slotEligible(slot, pos) {
+    const p = String(pos || "").toUpperCase();
+    const s = String(slot || "").toUpperCase();
+    if (s === "FLEX") return p === "RB" || p === "WR" || p === "TE";
+    if (s === "SF" || s === "OP") return p === "QB" || p === "RB" || p === "WR" || p === "TE";
+    if (s === "RB_WR") return p === "RB" || p === "WR";
+    if (s === "WR_TE") return p === "WR" || p === "TE";
+    if (s === "RB_TE") return p === "RB" || p === "TE";
+    if (s === "DEF") return posOf({ pos: p }) === "DEF";
+    return posOf({ pos: p }) === s;
+  }
+
+  function slotListOf(ctx) {
+    const rs = rosterOf(ctx);
+    const C = Core();
+    const slotFn = (root.BRDraftSlot && root.BRDraftSlot.slotListFromRoster)
+      || (C && C.slotListFromRoster);
+    if (slotFn) {
+      const list = slotFn(rs);
+      if (list && list.length >= 4) return list;
+    }
+    const slots = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"];
+    if (ctx && ctx.sf && slots.indexOf("SF") < 0) slots.splice(1, 0, "SF");
+    return slots;
+  }
+
+  // Restrictive-first fill, same order as Draft Room optimalLineup.
+  function optimalLineup(list, ctx) {
+    const playerList = (list || []).slice();
+    const slots = slotListOf(ctx);
+    const flex = { SF: 3, FLEX: 2, RB_WR: 1.5, WR_TE: 1.5, RB_TE: 1.5 };
+    const order = slots.map(function (s, i) { return { slot: s, i: i }; });
+    order.sort(function (a, b) { return (flex[a.slot] || 1) - (flex[b.slot] || 1) || a.i - b.i; });
+    const used = {};
+    const assign = {};
+    order.forEach(function (o) {
+      let best = -1;
+      let bestScore = -Infinity;
+      for (let j = 0; j < playerList.length; j++) {
+        if (used[j] || !slotEligible(o.slot, posOf(playerList[j]))) continue;
+        const sc = lineupScore(playerList[j], ctx);
+        if (sc > bestScore) {
+          bestScore = sc;
+          best = j;
+        }
+      }
+      if (best >= 0) {
+        used[best] = true;
+        assign[o.i] = playerList[best];
+      }
+    });
+    const starters = slots.map(function (s, i) { return { slot: s, p: assign[i] || null }; });
+    const bench = [];
+    for (let k = 0; k < playerList.length; k++) {
+      if (!used[k]) bench.push(playerList[k]);
+    }
+    bench.sort(function (a, b) { return lineupScore(b, ctx) - lineupScore(a, ctx); });
+    return { starters: starters, bench: bench };
+  }
+
+  function gradeMax(draftType) {
+    if (draftType === "rookie") return { value: 100, starters: 0, construction: 0 };
+    const TG = root.BRTeamGrade;
+    const split = draftType === "redraft"
+      ? ((TG && TG.SPLIT_REDRAFT) || [20, 50, 30])
+      : ((TG && TG.SPLIT_STARTUP) || [35, 25, 40]);
+    return { value: split[0], starters: split[1], construction: split[2] };
+  }
+
+  // Same early-pick identity labels as Draft Room teamArchetype().
+  function teamArchetype(mine, ctx) {
+    if (!mine || mine.length < 3) return null;
+    if ((ctx && ctx.type) === "rookie") return null;
+    const sorted = mine.slice().sort(function (a, b) { return a.pn - b.pn; });
+    const counts = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    const firstIdx = { QB: -1, RB: -1, WR: -1, TE: -1 };
+    sorted.forEach(function (m, i) {
+      const pos = posOf(m.p || m);
+      if (counts[pos] != null) {
+        counts[pos]++;
+        if (firstIdx[pos] < 0) firstIdx[pos] = i;
+      }
+    });
+    const earlyN = Math.min(5, sorted.length);
+    const early = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    for (let i = 0; i < earlyN; i++) {
+      const pos = posOf(sorted[i].p || sorted[i]);
+      if (early[pos] != null) early[pos]++;
+    }
+    let label;
+    if (ctx && ctx.sf && early.QB >= 2) label = "Konami Code";
+    else if (firstIdx.TE >= 0 && firstIdx.TE <= 1) label = "TE Premium";
+    else if (early.RB === 0 && early.WR >= 3) label = "Zero RB";
+    else if (early.RB === 1 && firstIdx.RB <= 1 && early.WR >= 2) label = "Hero RB";
+    else if (early.RB >= 3) label = "Robust RB";
+    else if (early.WR >= 4 || (counts.WR - counts.RB >= 3)) label = "WR Factory";
+    else if (early.RB - early.WR >= 2) label = "Ground & Pound";
+    else label = "Balanced Build";
+    return { label: label };
   }
 
   function adpOf(p) {
@@ -81,12 +222,35 @@
   }
 
   function myPosCounts(ctx) {
-    const c = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    const c = { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DEF: 0 };
     myPicks(ctx).forEach(function (x) {
       const pos = posOf(x.p);
       if (c[pos] != null) c[pos]++;
     });
     return c;
+  }
+
+  function sortKdef(a, b) {
+    const aa = adpOf(a);
+    const ba = adpOf(b);
+    if (aa != null || ba != null) {
+      return (aa != null ? aa : 99999) - (ba != null ? ba : 99999);
+    }
+    return (Number(b && b.ppg) || 0) - (Number(a && a.ppg) || 0);
+  }
+
+  function kdefNeed(ctx, counts) {
+    counts = counts || myPosCounts(ctx);
+    const rs = rosterOf(ctx);
+    const needK = Math.max(0, (rs.K || 0) - (counts.K || 0));
+    const needDef = Math.max(0, (rs.DEF || 0) - (counts.DEF || 0));
+    if (needK + needDef <= 0) return null;
+    const remaining = upcomingOwned(ctx).length;
+    const remainRds = (ctx.rounds || 15) - Math.floor(((ctx.current || 1) - 1) / (ctx.teams || 12));
+    if (remaining <= (needK + needDef) + 2 || remainRds <= 3) {
+      return { needK: needK, needDef: needDef };
+    }
+    return null;
   }
 
   function simSigma(a) {
@@ -185,10 +349,12 @@
   }
 
   function byeConflictLevel(p, ctx) {
+    if (isKDef(p)) return 0;
     const bye = Number(p && (p.bye_week || p.bye)) || 0;
     if (!bye) return 0;
     let n = 0;
     myPicks(ctx).forEach(function (x) {
+      if (isKDef(x.p)) return;
       const b = Number(x.p && (x.p.bye_week || x.p.bye)) || 0;
       if (b === bye) n++;
     });
@@ -209,7 +375,7 @@
       const full = byId[String(x.p && x.p.id)] || x.p;
       const v = full && full._vor != null ? full._vor : (valOf(full) - (repl[pos] || 0));
       if (v == null || v > 0) qualByPos[pos] = (qualByPos[pos] || 0) + 1;
-      const q = C && C.ppgNorm ? C.ppgNorm(full, ppgScale, function (pl) { return Number(pl.ppg) || 0; }) : 0;
+      const q = C && C.ppgNorm ? C.ppgNorm(full, ppgScale, ppgFn(ctx)) : 0;
       rosterQualities.push({ pos: pos, quality: q != null ? q : 0.35 });
       if (!lastPickByPos[pos] || x.pn > lastPickByPos[pos]) lastPickByPos[pos] = x.pn;
     });
@@ -229,7 +395,7 @@
     };
   }
 
-  function computePickScore(p, maxVal, counts, ctx, psc, repl, ppgScale, pickNo) {
+  function computePickScore(p, maxVal, counts, ctx, psc, repl, ppgScale, pickNo, cliffOverride) {
     const C = Core();
     const Kernel = PS();
     if (!Kernel) return null;
@@ -242,9 +408,9 @@
     let needRaw = t ? clamp01(Math.max(0, t - (counts[pos] || 0)) / t) : 0;
     const qualNeed = t ? clamp01(Math.max(0, t - (psc.qualByPos[pos] || 0)) / t) : 0;
     needRaw = Math.max(needRaw, qualNeed);
-    const ppgN = C && C.ppgNorm ? C.ppgNorm(p, ppgScale, function (pl) { return Number(pl.ppg) || 0; }) : null;
+    const ppgN = C && C.ppgNorm ? C.ppgNorm(p, ppgScale, ppgFn(ctx)) : null;
     const vor = p._vor != null ? p._vor : (valOf(p) - (repl[pos] || 0));
-    const cliff = isTierCliff(p, pickNo, ctx);
+    const cliff = cliffOverride != null ? !!cliffOverride : isTierCliff(p, pickNo, ctx);
     const starterSlots = pos === "QB"
       ? ((psc.roster.QB || 0) + (psc.roster.SF || 0))
       : (psc.roster[pos] || 0);
@@ -323,7 +489,7 @@
     if (pos === "K" || pos === "DEF") return null;
     if (!C || !C.decisionScore) return base;
     const role = C.candidateRosterRole
-      ? C.candidateRosterRole(pos, C.ppgNorm ? (C.ppgNorm(p, psc._ppgScale, function (pl) { return Number(pl.ppg) || 0; }) || 0) : 0, psc.rosterQualities, psc.roster, !!ctx.sf)
+      ? C.candidateRosterRole(pos, C.ppgNorm ? (C.ppgNorm(p, psc._ppgScale, ppgFn(ctx)) || 0) : 0, psc.rosterQualities, psc.roster, !!ctx.sf)
       : C.rosterRole(pos, counts, psc.roster, !!ctx.sf);
     const util = C.positionNeedUtility
       ? C.positionNeedUtility(pos, counts, psc.roster, { sf: !!ctx.sf, tep: ctx.tep || 0, draftType: ctx.type || "redraft", role: role })
@@ -369,7 +535,7 @@
             handcuff: handcuffBonus > 0,
           })
         : 0;
-      const ppgn = C.ppgNorm ? C.ppgNorm(p, psc._ppgScale, function (pl) { return Number(pl.ppg) || 0; }) : 0;
+      const ppgn = C.ppgNorm ? C.ppgNorm(p, psc._ppgScale, ppgFn(ctx)) : 0;
       const age = p.age != null ? Number(p.age) : null;
       upsideBonus = C.lateRoundUpsideBonus({
         round: rd, totalRounds: ctx.rounds || 15, path: path,
@@ -396,7 +562,7 @@
     let score = C.decisionScore({
       base: base, utility: util,
       bench: bench, deepBench: role === "bench2", recentPenalty: recentPenalty, exceptional: exceptional,
-      quality: C.ppgNorm ? (C.ppgNorm(p, psc._ppgScale, function (pl) { return Number(pl.ppg) || 0; }) || 0) : 0,
+      quality: C.ppgNorm ? (C.ppgNorm(p, psc._ppgScale, ppgFn(ctx)) || 0) : 0,
       required: psc.obligations.required,
       freePicks: psc.obligations.freePicks,
       waitLoss: Math.max(0, base - expected) * (1 + demandRisk), waitLossScale: waitLossScale,
@@ -472,8 +638,7 @@
     const valFn = valOf;
     const starters = C.effectiveStarters(allPlayers, rs, ctx.teams || 12, valFn);
     const repl = C.computeReplacement(allPlayers, valFn, starters, ctx.teams || 12) || {};
-    const ppgFn = function (pl) { return Number(pl.ppg) || 0; };
-    const ppgScale = C.computePpgScale(allPlayers, ppgFn, starters, ctx.teams || 12);
+    const ppgScale = C.computePpgScale(allPlayers, ppgFn(ctx), starters, ctx.teams || 12);
     (allPlayers || []).forEach(function (p) {
       p._vor = valOf(p) - (repl[posOf(p)] || 0);
     });
@@ -501,6 +666,249 @@
     return ranked;
   }
 
+  function gradeRowsForPicks(mine, allPlayers, ctx, cliffByPn) {
+    const C = Core();
+    const Kernel = PS();
+    if (!C || !Kernel || !mine || !mine.length) return [];
+    const byId = {};
+    (allPlayers || []).forEach(function (p) {
+      if (p && p.id) byId[String(p.id)] = p;
+    });
+    const rs = rosterOf(ctx);
+    const valFn = valOf;
+    const starters = C.effectiveStarters(allPlayers, rs, ctx.teams || 12, valFn);
+    const repl = C.computeReplacement(allPlayers, valFn, starters, ctx.teams || 12) || {};
+    const ppgScale = C.computePpgScale(allPlayers, ppgFn(ctx), starters, ctx.teams || 12);
+    (allPlayers || []).forEach(function (p) {
+      p._vor = valOf(p) - (repl[posOf(p)] || 0);
+    });
+    refreshTiers(allPlayers);
+    const psc = buildPsCtx(Object.assign({}, ctx, { picks: mine }), byId, repl, ppgScale);
+    psc.qualByPos = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    let maxVal = 1;
+    (allPlayers || []).forEach(function (p) { if (valOf(p) > maxVal) maxVal = valOf(p); });
+    const counts = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    const rows = [];
+    mine.forEach(function (m) {
+      const full = byId[String(m.p && m.p.id)] || m.p;
+      const pos = posOf(full);
+      const cliff = cliffByPn && m.pn != null ? cliffByPn[m.pn] : null;
+      const ps = computePickScore(full, maxVal, counts, ctx, psc, repl, ppgScale, m.pn, cliff);
+      if (counts[pos] != null) counts[pos]++;
+      if (psc.qualByPos[pos] != null) {
+        const vor = full && full._vor != null ? full._vor : (valOf(full) - (repl[pos] || 0));
+        if (vor == null || vor > 0) psc.qualByPos[pos]++;
+      }
+      rows.push({
+        id: full && full.id,
+        pos: pos,
+        ps: ps,
+        pn: m.pn,
+        val: valOf(full),
+        ppg: ppgOf(full, ctx),
+        age: full && full.age != null ? Number(full.age) : null,
+      });
+    });
+    return rows;
+  }
+
+  // Walk the draft in pick order so each historical grade sees remaining-at-slot
+  // tier counts, matching Draft Room _buildGradeCliffs.
+  function buildGradeCliffs(allPlayers, picksBySlot, ctx) {
+    const counts = {};
+    (allPlayers || []).forEach(function (p) {
+      const t = p && p.tier;
+      if (t == null) return;
+      const k = posOf(p) + "|" + t;
+      counts[k] = (counts[k] || 0) + 1;
+    });
+    const made = [];
+    Object.keys(picksBySlot || {}).forEach(function (s) {
+      (picksBySlot[s] || []).forEach(function (x) { made.push(x); });
+    });
+    made.sort(function (a, b) { return a.pn - b.pn; });
+    const map = {};
+    const teams = (ctx && ctx.teams) || 12;
+    const byId = {};
+    (allPlayers || []).forEach(function (p) {
+      if (p && p.id) byId[String(p.id)] = p;
+    });
+    made.forEach(function (x) {
+      const full = byId[String(x.p && x.p.id)] || x.p;
+      const t = full && full.tier;
+      const k = posOf(full) + "|" + t;
+      const left = t != null ? (counts[k] || 0) : 0;
+      map[x.pn] = (x.pn > teams) && t != null && left <= 2;
+      if (t != null && counts[k]) counts[k]--;
+    });
+    return map;
+  }
+
+  function competitiveWindow(rows, draftType) {
+    if (draftType === "redraft") return null;
+    let wSum = 0, aSum = 0;
+    (rows || []).forEach(function (x) {
+      if (x.age == null || !isFinite(x.age) || x.age <= 0) return;
+      const w = Math.max(1, x.val || 1);
+      aSum += x.age * w;
+      wSum += w;
+    });
+    if (wSum <= 0) return null;
+    const avgAge = aSum / wSum;
+    const label = avgAge <= 24.5 ? "Future" : avgAge >= 26.5 ? "Win-Now" : "Balanced";
+    return { label: label, avgAge: avgAge };
+  }
+
+  function gradeField(allPlayers, picksBySlot, ctx) {
+    const TG = root.BRTeamGrade;
+    if (!TG || typeof TG.teamGradeComposite !== "function") return null;
+    const C = Core();
+    const rs = rosterOf(ctx);
+    const slotFn = (root.BRDraftSlot && root.BRDraftSlot.slotListFromRoster)
+      || (C && C.slotListFromRoster);
+    const slots = slotFn
+      ? slotFn(rs).filter(function (s) { return s !== "K" && s !== "DEF"; })
+      : ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"];
+    if (ctx.sf && slots.indexOf("SF") < 0) slots.splice(1, 0, "SF");
+    const targets = C && C.posTargets ? C.posTargets(rs, ctx.tep || 0) : { QB: 1, RB: 3, WR: 3, TE: 1 };
+    const draftType = ctx.type === "rookie"
+      ? "rookie"
+      : (ctx.type === "startup" || ctx.type === "dynasty" ? "startup" : "redraft");
+    const leaguePpg = [];
+    const leagueVal = [];
+    const leaguePlayers = [];
+    (allPlayers || []).forEach(function (p) {
+      const ppg = ppgOf(p, ctx);
+      if (ppg != null) leaguePpg.push(ppg);
+      leagueVal.push(valOf(p));
+      leaguePlayers.push({ pos: posOf(p), ppg: ppg, val: valOf(p) });
+    });
+    const teams = Number(ctx.teams) || 12;
+    const lists = [];
+    const order = [];
+    const mineSlot = Number(ctx.mySlot) || 0;
+    if (mineSlot && picksBySlot[mineSlot] && picksBySlot[mineSlot].length) {
+      lists.push(picksBySlot[mineSlot]);
+      order.push({ slot: mineSlot, isMe: true });
+    }
+    for (let s = 1; s <= teams; s++) {
+      if (s === mineSlot) continue;
+      if (!picksBySlot[s] || !picksBySlot[s].length) continue;
+      lists.push(picksBySlot[s]);
+      order.push({ slot: s, isMe: false });
+    }
+    const cliffs = buildGradeCliffs(allPlayers, picksBySlot, ctx);
+    const leagueTeams = lists.map(function (mine) {
+      return gradeRowsForPicks(mine, allPlayers, ctx, cliffs);
+    });
+    const out = [];
+    order.forEach(function (info, i) {
+      const rows = leagueTeams[i];
+      const comp = TG.teamGradeComposite(
+        rows, slots, targets, teams, draftType,
+        leaguePpg, leagueVal, leaguePlayers,
+        { sf: !!ctx.sf, tep: Number(ctx.tep) || 0, leagueTeams: leagueTeams }
+      );
+      if (!comp) return;
+      const starterRows = rows.filter(function (x) { return comp.starterIds[String(x.id)]; });
+      const psVals = rows.map(function (x) { return x.ps; }).filter(function (v) { return v != null; });
+      const avgPs = psVals.length
+        ? psVals.reduce(function (a, b) { return a + b; }, 0) / psVals.length
+        : null;
+      out.push({
+        slot: info.slot,
+        isMe: info.isMe,
+        grade: {
+          score: comp.total,
+          value: comp.value,
+          starters: comp.starter,
+          construction: comp.balance,
+          provisional: (picksBySlot[info.slot] || []).length < 8,
+          window: competitiveWindow(starterRows, draftType),
+          avgPs: avgPs != null ? Math.round(avgPs) : null,
+        },
+        gradeRows: rows,
+        archetype: info.isMe ? teamArchetype(picksBySlot[info.slot], ctx) : null,
+        picks: picksBySlot[info.slot],
+      });
+    });
+    out.sort(function (a, b) { return b.grade.score - a.grade.score; });
+    return out;
+  }
+
+  function rosterProjection(mine, allPlayers, ctx) {
+    const minePpg = [];
+    (mine || []).forEach(function (p) {
+      const v = ppgOf(p, ctx);
+      if (v != null) minePpg.push(v);
+    });
+    if (minePpg.length < 2) return null;
+    const myAvg = minePpg.reduce(function (a, b) { return a + b; }, 0) / minePpg.length;
+    const allProj = [];
+    (allPlayers || []).forEach(function (p) {
+      const v = ppgOf(p, ctx);
+      if (v != null) allProj.push(v);
+    });
+    allProj.sort(function (a, b) { return b - a; });
+    const topSlice = allProj.slice(0, (ctx.teams || 12) * (ctx.rounds || 15));
+    const lgAvg = topSlice.length
+      ? topSlice.reduce(function (a, b) { return a + b; }, 0) / topSlice.length
+      : 0;
+    const pct = lgAvg > 0 ? Math.round(myAvg / lgAvg * 100) : 0;
+    return { myAvg: myAvg, lgAvg: lgAvg, pct: pct, withProj: minePpg.length, total: mine.length };
+  }
+
+  function recapStats(field) {
+    const picks = [];
+    (field || []).forEach(function (t) {
+      const rows = t.gradeRows || [];
+      (t.picks || []).forEach(function (pk, i) {
+        const row = rows[i];
+        const ps = row && row.ps != null ? row.ps : (pk.ps != null ? pk.ps : null);
+        if (ps == null) return;
+        const pl = pk.p || pk;
+        const adp = adpOf(pl);
+        const gap = adp != null ? Math.round(pk.pn - adp) : null;
+        picks.push({
+          name: pl.name,
+          pos: posOf(pl),
+          team: t.name || ("Team " + t.slot),
+          teamSlot: t.slot,
+          pn: pk.pn,
+          ps: ps,
+          gap: gap,
+        });
+      });
+    });
+    if (picks.length < 4) return null;
+    const withGap = picks.filter(function (p) { return p.gap != null; });
+    const useGap = withGap.length >= 4;
+    const pool = useGap ? withGap : picks;
+    const steals = pool.slice().sort(function (a, b) { return useGap ? (b.gap - a.gap) : (b.ps - a.ps); }).slice(0, 4);
+    const reaches = pool.slice().sort(function (a, b) { return useGap ? (a.gap - b.gap) : (a.ps - b.ps); }).slice(0, 4);
+    const teamScores = {};
+    picks.forEach(function (p) { (teamScores[p.team] = teamScores[p.team] || []).push(p.ps); });
+    let valueTeam = "-";
+    let valueAvg = -1e9;
+    Object.keys(teamScores).forEach(function (tm) {
+      const arr = teamScores[tm];
+      const avg = arr.reduce(function (a, b) { return a + b; }, 0) / arr.length;
+      if (avg > valueAvg) { valueAvg = avg; valueTeam = tm; }
+    });
+    const posCount = {};
+    picks.forEach(function (p) { if (p.pos) posCount[p.pos] = (posCount[p.pos] || 0) + 1; });
+    const topPos = Object.keys(posCount).sort(function (a, b) { return posCount[b] - posCount[a]; })[0] || "-";
+    return {
+      steals: steals,
+      reaches: reaches,
+      valueTeam: valueTeam,
+      topPos: topPos,
+      posCount: posCount,
+      pickCount: picks.length,
+      useGap: useGap,
+    };
+  }
+
   root.BROverlayScore = {
     rankPool: rankPool,
     pickReason: function (p, ranked) {
@@ -510,6 +918,10 @@
     },
     recommendationPickNo: recommendationPickNo,
     recWaitPickNo: recWaitPickNo,
+    isKDef: isKDef,
+    sortKdef: sortKdef,
+    kdefNeed: kdefNeed,
+    myPosCounts: myPosCounts,
     availProb: function (p, pn, ctx, allPlayers) {
       const byId = {};
       (allPlayers || []).forEach(function (pl) {
@@ -518,5 +930,13 @@
       return availProb(p, pn, ctx, byId);
     },
     psDisplay: psDisplay,
+    gradeField: gradeField,
+    gradeMax: gradeMax,
+    teamArchetype: teamArchetype,
+    optimalLineup: optimalLineup,
+    lineupScore: lineupScore,
+    ppgOf: ppgOf,
+    rosterProjection: rosterProjection,
+    recapStats: recapStats,
   };
 })(typeof self !== "undefined" ? self : this);

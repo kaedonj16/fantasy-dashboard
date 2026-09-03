@@ -47,6 +47,7 @@ def api_advanced_metrics_leaderboard():
         get_value_leaderboard, VALUE_METRICS,
         LEADERBOARD_METRICS, _WEEKLY_METRICS,
         PREMIUM_METRICS, premium_metrics_exposed,
+        parse_season_list,
     )
 
     metric = (request.args.get("metric") or "opportunity_share").strip()
@@ -57,7 +58,15 @@ def api_advanced_metrics_leaderboard():
         return jsonify({"error": "metric not available"}), 403
     position = (request.args.get("position") or "").strip().upper() or None
     season_str = (request.args.get("season") or "").strip()
-    season = int(season_str) if season_str.isdigit() else None
+    selected_seasons = parse_season_list(season_str)
+    # One year stays an int (existing cache/SQL path). Several years are a list
+    # so the leaderboard returns one row per player-season.
+    if len(selected_seasons) > 1:
+        season = selected_seasons
+    elif selected_seasons:
+        season = selected_seasons[0]
+    else:
+        season = None
     min_vol_str = (request.args.get("min_vol") or "").strip()
     min_vol = int(min_vol_str) if min_vol_str.isdigit() else None
     week_start_str = (request.args.get("week_start") or "").strip()
@@ -66,15 +75,19 @@ def api_advanced_metrics_leaderboard():
     week_end   = int(week_end_str)   if week_end_str.isdigit()   else None
 
     # A metric is week-filterable if it has a usage-table aggregation
-    # (_WEEKLY_METRICS) or an NGS/FTN/EPA weekly aggregation.
+    # (_WEEKLY_METRICS) or an NGS/FTN/EPA weekly aggregation. Week ranges are
+    # season-specific, so they are ignored when more than one year is selected.
     adv_weekly       = adv_weekly_metric_supported(metric)
     weekly_capable   = (metric in _WEEKLY_METRICS) or adv_weekly
-    is_week_filtered = bool(week_start or week_end) and weekly_capable
+    is_multi_season  = isinstance(season, list)
+    is_week_filtered = bool(week_start or week_end) and weekly_capable and not is_multi_season
 
     try:
-        if metric in VALUE_METRICS:
+        if metric in VALUE_METRICS and not is_multi_season:
             # Value metrics (VORP/WAR) are league-size aware; derive num_teams
             # from the league context when available, else standard 12-team.
+            # Multi-season value rows go through get_metric_leaderboard so each
+            # year is computed separately and stamped.
             _num_teams = 12
             try:
                 _league_id = (request.args.get("league_id") or "").strip()
@@ -123,11 +136,14 @@ def api_advanced_metrics_leaderboard():
     # weeks on each, so the team filter can match any of them and the UI can flag
     # a mid-season move. Only runs when a season is specified (always, from the
     # page); skipped otherwise so behavior is unchanged.
-    if season:
+    if selected_seasons:
         try:
             from data_building.external_data.player_team_history import teams_in_season
             for _p in players or []:
-                stints = teams_in_season(str(_p.get("player_id")), season)
+                row_season = _p.get("season") or (selected_seasons[0] if len(selected_seasons) == 1 else None)
+                if not row_season:
+                    continue
+                stints = teams_in_season(str(_p.get("player_id")), int(row_season))
                 if not stints:
                     continue
                 _p["teams"] = [s["team"] for s in stints]
@@ -149,6 +165,7 @@ def api_advanced_metrics_leaderboard():
         "vol_col": vol_col,
         "weekly_capable": weekly_capable,
         "is_week_filtered": is_week_filtered,
+        "selected_seasons": selected_seasons,
         "players": players,
     })
     # Leaderboard data is rebuilt at most daily, so let the browser reuse the

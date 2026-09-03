@@ -4,7 +4,11 @@ from unittest.mock import patch
 
 import pytest
 
-from data_building.trade_intel.league_types import LeagueType, calibration_mode
+from data_building.trade_intel.league_types import (
+    LeagueType,
+    calibration_mode,
+    league_format_sql_param,
+)
 
 
 def _import_crawler():
@@ -54,6 +58,15 @@ class _FakeConn:
 )
 def test_calibration_mode_uses_sleeper_contract(league_type, expected):
     assert calibration_mode(league_type) == expected
+
+
+def test_league_format_sql_param_uses_sleeper_type_ids():
+    """Redraft is 0 (not keeper=1). A wrong mapping silently returned no trades."""
+    assert league_format_sql_param("redraft") == 0
+    assert league_format_sql_param("dynasty") == 2
+    assert league_format_sql_param("all") is None
+    assert league_format_sql_param("") is None
+    assert league_format_sql_param("REDRAFT") == 0
 
 
 def test_keeper_cannot_be_calibrated_as_redraft():

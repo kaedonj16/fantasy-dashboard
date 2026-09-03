@@ -465,7 +465,7 @@ def test_cpu_drafts_from_source_selector():
     # Setup control renders with consensus as the default option.
     assert 'id="drCpuAdpSource"' in body
     assert '<option value="consensus" selected>Consensus (all platforms)</option>' in body
-    for src in ("sleeper", "brfantasy", "espn", "mfl", "yahoo"):
+    for src in ("sleeper", "brfantasy", "brfantasy_live", "espn", "mfl", "yahoo"):
         assert '<option value="%s">' % src in body
 
     # Setup reads the field into state and hydrates it back for the Edit modal.
@@ -483,11 +483,13 @@ def test_cpu_drafts_from_options_filtered_by_draft_type():
     global platforms, dynasty/rookie only Sleeper + BR Fantasy, consensus always."""
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
-    # Static fallback mirrors the server's ADP_SOURCES (redraft gets the globals;
-    # dynasty/rookie do not); keeper maps to redraft; consensus leads every list.
-    assert "startup: ['consensus', 'sleeper', 'brfantasy']" in source
-    assert "rookie:  ['consensus', 'sleeper', 'brfantasy']" in source
-    assert "redraft: ['consensus', 'sleeper', 'espn', 'yahoo', 'mfl', 'brfantasy']" in source
+    # Static fallback mirrors the server's ADP_SOURCES + Live selector-extra
+    # (redraft gets the globals; dynasty/rookie do not); keeper maps to redraft;
+    # consensus leads every list.
+    assert "startup: ['consensus', 'sleeper', 'brfantasy', 'brfantasy_live']" in source
+    assert "rookie:  ['consensus', 'sleeper', 'brfantasy', 'brfantasy_live']" in source
+    assert "redraft: ['consensus', 'sleeper', 'espn', 'yahoo', 'mfl', 'brfantasy', 'brfantasy_live']" in source
+    assert "brfantasy_live: 'BR Fantasy Live (7d)'" in source
     assert "if (t === 'keeper') t = 'redraft';" in source
     # Prefers the payload's season-gated list when a pool has loaded.
     assert "adpSourceOptions && adpSourceOptions[t] && adpSourceOptions[t].length" in source

@@ -1312,11 +1312,37 @@ def _espn_scoring_item_points(item: dict):
     return item.get("points")
 
 
+# Passing / rushing / receiving yards (and receptions) publish both a per-unit
+# rate and a 300-yard / 9-catch extra under the same statId. DST points-allowed
+# and FG distance buckets also use rangeStart/rangeEnd — those *are* the rates.
+_ESPN_MILESTONE_RATE_STAT_IDS = frozenset({3, 24, 42, 53})
+
+
+def _espn_is_threshold_bonus(item: dict) -> bool:
+    """True for 300-yard / catch extras that must not replace per-stat rates."""
+    if not isinstance(item, dict):
+        return False
+    try:
+        stat_id = int(item.get("statId"))
+    except (TypeError, ValueError):
+        stat_id = None
+    ranged = item.get("rangeStart") is not None or item.get("rangeEnd") is not None
+    if stat_id in _ESPN_MILESTONE_RATE_STAT_IDS and (
+        item.get("isBonus") is True or ranged
+    ):
+        return True
+    if item.get("isBonus") is True and not ranged:
+        return True
+    return False
+
+
 def normalize_espn_scoring_items(scoring_items: List[dict]) -> Dict[str, float]:
     """Normalize raw ESPN mSettings scoringItems into the shared scoring shape."""
+    from utils.league_scoring import assign_scoring_rate
+
     normalized: Dict[str, float] = {}
     for item in scoring_items or []:
-        if not isinstance(item, dict):
+        if not isinstance(item, dict) or _espn_is_threshold_bonus(item):
             continue
         try:
             stat_id = int(item.get("statId"))
@@ -1327,7 +1353,7 @@ def normalize_espn_scoring_items(scoring_items: List[dict]) -> Dict[str, float]:
         if key is None or value is None:
             continue
         try:
-            normalized[key] = float(value)
+            assign_scoring_rate(normalized, key, float(value))
         except (TypeError, ValueError):
             continue
     return normalized

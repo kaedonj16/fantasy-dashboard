@@ -3830,9 +3830,12 @@ button:hover {
         width: 45%;
     }
 
-    /* Hide SOS columns on main standings */
-    .standings-table[data-page="standings"] th:nth-child(n+7),
-    .standings-table[data-page="standings"] td:nth-child(n+7) {
+    /* Mobile main standings: drop the Trend sparkline (col 6) and everything from
+       Luck onward (col 8+), keeping Seed/Team/Record/PF/PA/Streak. */
+    .standings-table[data-page="standings"] th:nth-child(6),
+    .standings-table[data-page="standings"] td:nth-child(6),
+    .standings-table[data-page="standings"] th:nth-child(n+8),
+    .standings-table[data-page="standings"] td:nth-child(n+8) {
         display: none;
     }
 
@@ -14813,7 +14816,7 @@ html[data-theme="dark"] .contact-social-pill img {
 
 .teams-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
     gap: 16px;
 }
 
@@ -19212,6 +19215,12 @@ img, svg, canvas {
     color: #fff;
 }
 
+.adv-season-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin: -6px 0 10px;
+}
+
 /* ── Shared week-bar range selector (Custom Slider 3 style) ─────────────── */
 .adv-week-bar-row {
     display: flex;
@@ -19513,11 +19522,11 @@ img, svg, canvas {
    source is a dot on a shared draft-pick scale, with a spread band and a
    consensus marker. Source dot colors are theme-aware. */
 .pm-adp-block {
-    --adp-c-sleeper: #6C4BF0; --adp-c-brf: #E08A1E; --adp-c-espn: #D33A46;
+    --adp-c-sleeper: #6C4BF0; --adp-c-brf: #E08A1E; --adp-c-brf-live: #C45C12; --adp-c-espn: #D33A46;
     --adp-c-yahoo: #12A4A0;   --adp-c-mfl: #3B7DD8;
 }
 :root[data-theme="dark"] .pm-adp-block {
-    --adp-c-sleeper: #9A82FF; --adp-c-brf: #F0A94A; --adp-c-espn: #F0687C;
+    --adp-c-sleeper: #9A82FF; --adp-c-brf: #F0A94A; --adp-c-brf-live: #F08A3A; --adp-c-espn: #F0687C;
     --adp-c-yahoo: #38C7C1;   --adp-c-mfl: #6BA2F0;
 }
 
@@ -28753,7 +28762,7 @@ button:disabled {
     border-left-color: #f59e0b;
 }
 
-.wt-out {
+.wt-long-shot {
     border-left-color: #94a3b8;
 }
 
@@ -28856,7 +28865,7 @@ button:disabled {
     color: #d97706;
 }
 
-.wt-out .grade-window-label {
+.wt-long-shot .grade-window-label {
     color: #64748b;
 }
 
@@ -36224,34 +36233,364 @@ a, button, [role="button"], [role="tab"], summary, label,
     .pm-mini-item .player-badge { padding-left: 4px; padding-right: 4px; }
 }
 
+/* ============================================================
+   STANDINGS ROOK — reworked standings surfaces
+   (summary tiles, PF-trend sparklines, power leaderboard,
+    insight strip). All colors come from theme tokens so both
+    light and dark resolve automatically.
+   ============================================================ */
+
+/* ---- Summary tile strip ---------------------------------- */
+.st-tiles {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+    margin: 4px 0 18px;
+}
+.st-tile {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 15px;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    min-width: 0;
+}
+.st-tile-top { display: flex; align-items: center; gap: 8px; }
+.st-tile-ic {
+    width: 26px; height: 26px; border-radius: 8px;
+    display: grid; place-items: center; font-size: 12px;
+    background: var(--accent-soft); color: var(--accent);
+    flex: 0 0 auto;
+}
+.st-tile-ic.st-ic-hot { background: color-mix(in srgb, var(--loss) 14%, transparent); color: var(--loss); }
+.st-tile-ic.st-ic-good { background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); }
+.st-tile-ic.st-ic-bad { background: color-mix(in srgb, var(--loss) 14%, transparent); color: var(--loss); }
+.st-tile-label {
+    font-family: "Archivo", system-ui, sans-serif;
+    text-transform: uppercase; letter-spacing: .07em;
+    font-size: 10.5px; font-weight: 700; color: var(--text-muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.st-tile-val {
+    font-family: "Archivo", system-ui, sans-serif;
+    font-weight: 800; font-size: 21px; line-height: 1.05;
+    color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+}
+.st-tile-val .st-tile-team { cursor: pointer; }
+.st-tile-sub {
+    font-size: 11.5px; color: var(--text-muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.st-tile-lead {
+    background: linear-gradient(155deg, var(--accent), var(--accent-strong, var(--accent)));
+    border-color: transparent;
+}
+.st-tile-lead .st-tile-label,
+.st-tile-lead .st-tile-sub { color: rgba(255, 255, 255, .74); }
+.st-tile-lead .st-tile-val,
+.st-tile-lead .st-tile-val .team-clickable { color: #fff; }
+.st-tile-lead .st-tile-ic { background: rgba(255, 255, 255, .16); color: #fff; }
+
+@media (max-width: 1180px) {
+    .st-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .st-tiles .st-tile-lead { grid-column: 1 / -1; }
+}
+@media (max-width: 600px) {
+    .st-tiles { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .st-tile { padding: 11px 12px; }
+    .st-tile-val { font-size: 17px; }
+}
+
+/* ---- PF-trend sparkline in the standings table ----------- */
+.st-trend-cell { padding-top: 4px !important; padding-bottom: 4px !important; }
+.st-spark { display: block; }
+.st-spark-area { fill: var(--accent); opacity: .12; }
+.st-spark-line { stroke: var(--text-subtle); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.st-spark-dot { fill: var(--accent); }
+.st-spark-empty { font-variant-numeric: tabular-nums; }
+
+/* ---- Power leaderboard (#1 hero + ranked list) ----------- */
+.pwr-lead {
+    margin: 8px;
+    padding: 14px 16px;
+    border-radius: var(--radius);
+    background: linear-gradient(155deg, color-mix(in srgb, var(--gold) 13%, var(--card)), var(--card));
+    border: 1px solid color-mix(in srgb, var(--gold) 32%, var(--border));
+}
+.pwr-lead-top { display: flex; align-items: center; gap: 12px; }
+.pwr-lead-top .avatar {
+    width: 40px; height: 40px; border-radius: 11px; object-fit: cover; flex: 0 0 auto;
+}
+.pwr-lead-id { min-width: 0; }
+.pwr-lead-badge {
+    font-family: "Archivo", system-ui, sans-serif;
+    font-weight: 700; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--gold); display: flex; align-items: center; gap: 5px;
+}
+.pwr-lead-name {
+    font-family: "Archivo", system-ui, sans-serif;
+    font-weight: 800; font-size: 18px; line-height: 1.1; color: var(--text);
+    margin-top: 2px;
+}
+.pwr-lead-name .team-clickable { cursor: pointer; }
+.pwr-lead-sub { font-size: 12px; color: var(--text-muted); margin-top: 1px; font-variant-numeric: tabular-nums; }
+.pwr-lead-score { margin-left: auto; text-align: right; flex: 0 0 auto; }
+.pwr-lead-score b {
+    font-family: "Archivo", system-ui, sans-serif;
+    font-weight: 800; font-size: 25px; line-height: 1; color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+.pwr-lead-score span {
+    display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--text-muted); margin-top: 2px;
+}
+.pwr-lead-bar { height: 6px; border-radius: 4px; background: var(--accent-soft); overflow: hidden; margin-top: 12px; }
+.pwr-lead-bar > div { height: 100%; border-radius: 4px; background: var(--gold); }
+
+.pwr-list { padding: 2px 8px 10px; display: flex; flex-direction: column; }
+.pwr-row {
+    display: grid;
+    grid-template-columns: 22px 28px 1fr auto;
+    align-items: center; gap: 10px;
+    padding: 8px; border-radius: 10px;
+}
+.pwr-row:hover { background: var(--accent-soft-2); }
+.pwr-row .avatar.sm { width: 28px; height: 28px; border-radius: 8px; object-fit: cover; }
+.pwr-pos { font-family: "Archivo", system-ui, sans-serif; font-weight: 800; font-size: 13px; color: var(--text-muted); text-align: center; }
+.pwr-mid { min-width: 0; }
+.pwr-name { font-weight: 600; font-size: 13px; color: var(--text); display: flex; align-items: center; gap: 6px; }
+.pwr-name .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.pwr-bar { height: 5px; border-radius: 4px; background: var(--accent-soft); overflow: hidden; margin-top: 5px; }
+.pwr-bar > div { height: 100%; border-radius: 4px; background: var(--accent); }
+.pwr-right { text-align: right; }
+.pwr-score { font-family: "Archivo", system-ui, sans-serif; font-weight: 800; font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; }
+.pwr-diff { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.pwr-diff.pwr-pos { color: var(--win); }
+.pwr-diff.pwr-neg { color: var(--loss); }
+.pwr-row.streak-hot .pwr-pos { color: var(--loss); }
+.pwr-row.streak-cold .pwr-pos { color: var(--accent); }
+
+/* ---- Insight strip --------------------------------------- */
+.standings-insights-wrap { margin-top: 16px; }
+.st-insights {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+.st-insight {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 15px;
+    box-shadow: var(--shadow-sm);
+    display: flex; align-items: center; gap: 12px; min-width: 0;
+}
+.st-insight-ic {
+    width: 40px; height: 40px; border-radius: 11px;
+    display: grid; place-items: center; font-size: 17px; flex: 0 0 auto;
+    background: var(--accent-soft); color: var(--accent);
+}
+.st-in-hot .st-insight-ic { background: color-mix(in srgb, var(--loss) 13%, transparent); color: var(--loss); }
+.st-in-cold .st-insight-ic { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+.st-in-bolt .st-insight-ic { background: color-mix(in srgb, var(--gold) 16%, transparent); color: var(--gold); }
+.st-in-unlucky .st-insight-ic { background: color-mix(in srgb, var(--loss) 12%, transparent); color: var(--loss); }
+.st-insight-body { min-width: 0; }
+.st-insight-label {
+    font-family: "Archivo", system-ui, sans-serif;
+    text-transform: uppercase; letter-spacing: .06em; font-size: 10px; font-weight: 700;
+    color: var(--text-muted);
+}
+.st-insight-val {
+    font-family: "Archivo", system-ui, sans-serif;
+    font-weight: 800; font-size: 16px; line-height: 1.1; color: var(--text); margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
+}
+.st-insight-val .team-clickable { cursor: pointer; }
+.st-insight-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+@media (max-width: 900px) {
+    .st-insights { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 480px) {
+    .st-insights { grid-template-columns: 1fr; }
+}
+
+/* Keep the (now wider, with Trend) standings table inside its column: scroll it
+   horizontally instead of letting it spill over the Power Rankings card. */
+.two-col-standings > .standings-col { min-width: 0; }
+.st-tblscroll { overflow-x: auto; scrollbar-width: thin; }
+.st-tblscroll > .standings-table { margin: 0; }
+
+/* Avatar placeholder so a team without an image still occupies its grid cell
+   (otherwise the empty slot collapses the power-leaderboard row layout). */
+.pwr-noav { display: inline-block; background: var(--accent-soft); border: 1px solid var(--border); }
+.pwr-lead-top .pwr-noav { width: 40px; height: 40px; border-radius: 11px; }
+.pwr-row .pwr-noav.sm { width: 28px; height: 28px; border-radius: 8px; }
+
 /* ============================================================================
    TEAM STRENGTH CARD — reworked layout (teams-grid)
    Appended so these rules win by source order; scoped to .team-strength-card
    so nothing else is affected. Window accent (border-left) and grade colors
    are inherited from the .wt-* / .grade-* rules above.
+
+   Large Sleeper/ESPN avatars are replaced elements: in a flex row their
+   default min-width/min-height:auto is the intrinsic image size, so width:42px
+   alone cannot shrink them. Clamp via a non-replaced wrapper.
    ============================================================================ */
-.team-strength-card { border-radius: 16px; padding: 16px 16px 10px; border-left-width: 4px; }
+.teams-grid .team-strength-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    margin-bottom: 0;
+    border-radius: 16px;
+    padding: 16px 16px 10px;
+    border-left-width: 4px;
+}
 
 /* Header: avatar · name (+YOU) / window pill · grade chip + actions */
-.team-strength-card .card-header-row.tc-head { display: flex; align-items: center; gap: 11px; }
-.team-strength-card .tc-id { display: flex; align-items: center; gap: 11px; min-width: 0; flex: 1; }
-.team-strength-card .tc-avatar { flex: 0 0 auto; width: 42px; height: 42px; border-radius: 12px; object-fit: cover; background: var(--bg-alt); }
-.team-strength-card .tc-avatar-mono { display: grid; place-items: center; font-weight: 700; font-size: 16px; color: #fff; letter-spacing: .02em; background: linear-gradient(150deg, var(--brand-blue), #6366f1); box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); }
+.team-strength-card .card-header-row.tc-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 11px;
+}
+.team-strength-card .tc-id {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 11px;
+    min-width: 0;
+    flex: 1;
+}
+.team-strength-card .tc-avatar-wrap {
+    flex: 0 0 42px;
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    min-height: 42px;
+    max-width: 42px;
+    max-height: 42px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--bg-alt);
+}
+.team-strength-card .tc-avatar {
+    display: block;
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: cover;
+}
+.team-strength-card img.tc-avatar {
+    flex: 0 0 42px;
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    min-height: 42px;
+    max-width: 42px;
+    max-height: 42px;
+    border-radius: 12px;
+}
+.team-strength-card .tc-avatar-mono {
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+    font-size: 16px;
+    color: #fff;
+    letter-spacing: .02em;
+    background: linear-gradient(150deg, var(--brand-blue), #6366f1);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.14);
+}
 .team-strength-card .tc-idtext { min-width: 0; flex: 1; }
-.team-strength-card .tc-head h2.tc-name { font-size: 19px; font-weight: 700; line-height: 1.15; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.team-strength-card .tc-you { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: .09em; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent); border-radius: 5px; padding: 1px 5px; margin-left: 8px; vertical-align: middle; }
-:root .team-strength-card .tc-you { color: var(--brand-blue); background: color-mix(in srgb, var(--brand-blue) 14%, transparent); border-color: color-mix(in srgb, var(--brand-blue) 34%, transparent); }
-.team-strength-card .tc-window { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 12px; font-weight: 500; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.team-strength-card .tc-window i { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.team-strength-card .tc-head h2.tc-name {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    font-size: 19px;
+    font-weight: 700;
+    line-height: 1.15;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+}
+.team-strength-card .tc-name-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.team-strength-card .tc-you {
+    display: inline-block;
+    flex-shrink: 0;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: .09em;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+    border-radius: 5px;
+    padding: 1px 5px;
+    margin-left: 0;
+    vertical-align: middle;
+}
+:root .team-strength-card .tc-you {
+    color: var(--brand-blue);
+    background: color-mix(in srgb, var(--brand-blue) 14%, transparent);
+    border-color: color-mix(in srgb, var(--brand-blue) 34%, transparent);
+}
+.team-strength-card .tc-window {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 3px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.team-strength-card .tc-window-dot,
+.team-strength-card .tc-window i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+}
 .team-strength-card .tc-window b { color: var(--text); font-weight: 600; }
 .team-strength-card .tc-head-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.team-strength-card .share-report-btn {
+    padding: 6px;
+    width: 32px;
+    height: 32px;
+    justify-content: center;
+}
 
 /* Grade chip: keep the .grade-* colors, restyle to a square tile */
-.team-strength-card .roster-grade-inline { display: grid; place-items: center; width: 44px; height: 44px; min-width: 0; padding: 0; border-radius: 12px; font-size: 21px; border: 1px solid currentColor; }
+.team-strength-card .roster-grade-inline {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    padding: 0;
+    border-radius: 12px;
+    font-size: 21px;
+    border: 1px solid currentColor;
+}
 .team-strength-card .roster-grade-inline.grade-a,
 .team-strength-card .roster-grade-inline.grade-b,
 .team-strength-card .roster-grade-inline.grade-c,
-.team-strength-card .roster-grade-inline.grade-d { border-color: color-mix(in srgb, currentColor 38%, transparent); }
+.team-strength-card .roster-grade-inline.grade-d {
+    border-color: color-mix(in srgb, currentColor 38%, transparent);
+}
 /* The draft-grade reveal animation sets display:inline-block (specificity 0,3,0),
    which knocks the letter off-center on cards that have scrolled into view. Keep
    the grid centering (this selector matches theirs and is later in source, so it
@@ -36259,6 +36598,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 .br-mo-play[data-br-moment="draftgrade"] .roster-grade-inline { display: grid; place-items: center; }
 
 /* Positional Index — understated diverging meter */
+.team-strength-card .card-body { flex: 1; min-width: 0; }
 .team-strength-card .tc-index { margin: 14px 2px 2px; }
 .team-strength-card .tc-index-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .team-strength-card .tc-index-lbl { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-muted); }
@@ -36280,12 +36620,36 @@ a, button, [role="button"], [role="tab"], summary, label,
 .team-strength-card .tc-mix-total { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .team-strength-card .tc-mix-bar { display: flex; height: 9px; border-radius: 5px; overflow: hidden; gap: 2px; }
 .team-strength-card .tc-mix-seg { height: 100%; border-radius: 2px; min-width: 3px; }
-.team-strength-card .tc-mix-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; }
-.team-strength-card .tc-mix-leg { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.team-strength-card .tc-mix-leg i { width: 8px; height: 8px; border-radius: 2.5px; }
+.team-strength-card .tc-mix-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 16px;
+    row-gap: 6px;
+    margin-top: 8px;
+}
+.team-strength-card .tc-mix-leg {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+.team-strength-card .tc-mix-dot,
+.team-strength-card .tc-mix-leg i {
+    flex: 0 0 8px;
+    width: 8px;
+    height: 8px;
+    display: block;
+    border-radius: 2.5px;
+}
+.team-strength-card .tc-mix-k { font-weight: 700; }
 
 /* Position strength rows (4-col: chip · strength bar · value · rank) */
-.team-strength-card .pos-table-wrap { margin-top: 12px; border-top: 1px solid var(--border); overflow-x: visible; }
+.team-strength-card .pos-table-wrap { margin-top: 12px; border-top: 1px solid var(--border); overflow-x: auto; }
 .team-strength-card .pos-strength-table { width: 100%; border-collapse: collapse; }
 .team-strength-card .pos-row { cursor: pointer; }
 .team-strength-card .pos-row > td { padding: 9px 2px; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); vertical-align: middle; background: transparent; }
@@ -36334,3 +36698,12 @@ a, button, [role="button"], [role="tab"], summary, label,
 .team-strength-card .pos-detail-inner .dc-pick { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: var(--card); border: 1px solid var(--border); border-radius: 9px; font-size: 12.5px; }
 .team-strength-card .pos-detail-inner .dc-pick-val { margin-left: auto; font-weight: 800; font-variant-numeric: tabular-nums; }
 .team-strength-card .pos-detail-inner .dc-none, .team-strength-card .pos-detail-inner .dc-note { font-size: 11px; color: var(--text-subtle); }
+
+@media (max-width: 768px) {
+    /* Old header rules wrap .tc-id so a large image can take its own row.
+       Avatars are clamped; keep the identity row on one line. */
+    .team-strength-card .tc-id { flex-wrap: nowrap; }
+    .team-strength-card .tc-mix,
+    .team-strength-card .tc-index { min-width: 0; }
+    .team-strength-card .tc-mix-bar { max-width: 100%; }
+}

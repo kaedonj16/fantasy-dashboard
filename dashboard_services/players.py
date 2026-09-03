@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 
 from .api import avatar_from_users, team_avatar
+from .display_names import public_owner_label
 from .platform_api import get_users, get_rosters
 
 
@@ -68,11 +69,11 @@ def build_roster_map(
         if not uid:
             continue
         meta = u.get("metadata") or {}
-        name = (
-                meta.get("team_name")
-                or u.get("display_name")
-                or u.get("username")
-                or uid
+        name = public_owner_label(
+            meta.get("team_name"),
+            u.get("display_name"),
+            u.get("username"),
+            fallback=uid,
         )
         user_fallback[uid] = name
 
@@ -81,7 +82,11 @@ def build_roster_map(
         rid = str(r["roster_id"])
         meta = r.get("metadata") or {}
         owner_id = str(r.get("owner_id") or "")
-        display = meta.get("team_name") or user_fallback.get(owner_id, f"Roster {rid}")
+        display = public_owner_label(
+            meta.get("team_name"),
+            user_fallback.get(owner_id),
+            fallback=f"Roster {rid}",
+        )
         roster_map[rid] = display
 
     return roster_map
@@ -124,11 +129,11 @@ def build_roster_display_maps(
     for u in users:
         uid = u["user_id"]
         meta = u.get("metadata") or {}
-        name = (
-                meta.get("team_name")
-                or u.get("display_name")
-                or u.get("username")
-                or str(uid)
+        name = public_owner_label(
+            meta.get("team_name"),
+            u.get("display_name"),
+            u.get("username"),
+            fallback=str(uid),
         )
         user_fallback[uid] = name
 
@@ -140,7 +145,11 @@ def build_roster_display_maps(
         owner_id = r.get("owner_id")
         meta = r.get("metadata") or {}
 
-        name = meta.get("team_name") or user_fallback.get(owner_id, f"Roster {rid}")
+        name = public_owner_label(
+            meta.get("team_name"),
+            user_fallback.get(owner_id),
+            fallback=f"Roster {rid}",
+        )
         roster_name[rid] = name
         roster_avatar[rid] = team_avatar(platform, r, users)
 

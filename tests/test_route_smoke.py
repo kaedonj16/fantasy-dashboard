@@ -33,6 +33,7 @@ PUBLIC_ROUTES = [
 LEAGUE_PAGES = [
     "dashboard", "standings", "teams", "weekly", "activity",
     "awards", "history", "graphs", "recap",
+    "waivers", "schedule", "compare",
 ]
 LEAGUE_ROUTES = [f"/sleeper/2026/tourdemo/{p}?tour=1" for p in LEAGUE_PAGES]
 

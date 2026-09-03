@@ -458,6 +458,71 @@ def test_redraft_suggestions_never_include_draft_picks():
         ae._SIM_CACHE.pop(cache_key, None)
 
 
+def test_redraft_does_not_offer_dynasty_rookie_for_win_now_rb():
+    """Makai Lemon (high dynasty, low redraft) for Javonte Williams (high
+    redraft, modest dynasty) looks like a fair dynasty 'win now' deal. In a
+    redraft league the calculator prices Javonte ~6× Lemon, so that 1-for-1
+    must not be suggested as fair value."""
+    import time as _t
+
+    def P(pid, name, pos, dyn, rd, age, team="FA"):
+        return {
+            "id": pid, "name": name, "position": pos, "team": team, "age": age,
+            "value": dyn, "sf_value": dyn,
+            "redraft_value_1qb": rd, "redraft_value_sf": rd,
+            "pos_rank_label": f"{pos}1", "rank_change_7d": 0,
+        }
+
+    ctx = {
+        "platform": "yahoo",
+        "league_settings": {"type": 0, "league_type": "redraft"},
+        "rosters": [
+            {"roster_id": 1, "players": ["lemon", "v_rb", "v_wr2", "v_te", "v_qb"]},
+            {"roster_id": 2, "players": ["javonte", "r_wr", "r_te"]},
+            {"roster_id": 3, "players": ["r3_wr", "r3_rb"]},
+            {"roster_id": 4, "players": ["r4_qb", "r4_wr"]},
+        ],
+        "roster_map": {1: "You", 2: "Red Zone Zach", 3: "T3", 4: "T4"},
+        "standings_map": {1: 3, 2: 8, 3: 2, 4: 9},
+        "model_value_table": [
+            P("lemon", "Makai Lemon", "WR", 620, 86.1, 22, "PHI"),
+            P("javonte", "Javonte Williams", "RB", 410, 518.0, 26, "DAL"),
+            P("v_rb", "Viewer RB", "RB", 280, 240, 27),
+            P("v_wr2", "Viewer WR2", "WR", 260, 200, 28),
+            P("v_te", "Viewer TE", "TE", 180, 150, 29),
+            P("v_qb", "Viewer QB", "QB", 200, 160, 30),
+            P("r_wr", "Rival WR", "WR", 300, 220, 27),
+            P("r_te", "Rival TE", "TE", 200, 160, 28),
+            P("r3_wr", "T3 WR", "WR", 500, 400, 24),
+            P("r3_rb", "T3 RB", "RB", 280, 250, 27),
+            P("r4_qb", "T4 QB", "QB", 350, 300, 25),
+            P("r4_wr", "T4 WR", "WR", 260, 200, 26),
+        ],
+        "picks_by_roster": {},
+        "settings": {"playoff_week_start": 15},
+    }
+    cache_key = "yahoo:lemon-jav:2026"
+    ae._SIM_CACHE[cache_key] = {"sim_state": None, "base_odds": {}, "ts": _t.time()}
+    try:
+        out = ae.get_archetype_suggestions(
+            archetype="contending", platform="yahoo", league_id="lemon-jav",
+            season=2026, viewer_roster_id="1", league_type="1qb", league_size=10,
+            ctx=ctx,
+        )
+    finally:
+        ae._SIM_CACHE.pop(cache_key, None)
+
+    for s in out.get("suggestions") or []:
+        if str(s.get("name") or "").lower() != "javonte williams":
+            continue
+        send_names = {str(a.get("name") or "").lower() for a in (s.get("suggested_send") or [])}
+        # A Lemon-only (or Lemon-led) package for Javonte is the dynasty-shaped
+        # miss. Redraft matching should refuse it as far outside the fair band.
+        assert send_names != {"makai lemon"}, s
+        if "makai lemon" in send_names and len(send_names) == 1:
+            raise AssertionError(f"redraft offered Lemon for Javonte: {s}")
+
+
 def test_espn_suggestions_never_include_draft_picks():
     """ESPN is redraft-only even when leftover pick rows are sitting on ctx."""
     import time as _t
