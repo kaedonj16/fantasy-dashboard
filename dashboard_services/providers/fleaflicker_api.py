@@ -40,6 +40,70 @@ _HEADERS = {
 _NO_SEASON = frozenset({"FetchLeagueRules"})
 _CACHE: dict[tuple, tuple[float, dict]] = {}
 
+# players_index uses ``pos``; a few overlays still use ``position``.
+_SKILL_POS = frozenset({"QB", "RB", "WR", "TE", "K", "DEF", "DST", "PK"})
+_IDP_POS = frozenset({
+    "CB", "DB", "S", "FS", "SS", "LB", "ILB", "OLB",
+    "DL", "DE", "DT", "EDGE", "IDP",
+})
+_START_GROUPS = frozenset({"START", "STARTERS", "STARTING"})
+
+
+def _index_pos(info: dict) -> str:
+    return str((info or {}).get("pos") or (info or {}).get("position") or "").upper()
+
+
+def _name_index_from_players(index: dict, normalize_name) -> dict:
+    """name -> [(pos, canonical_id), ...] so QB Lamar is not overwritten by CB Lamar."""
+    by_name: dict[str, list[tuple[str, str]]] = {}
+    for canonical, info in (index or {}).items():
+        if not isinstance(info, dict):
+            continue
+        name = normalize_name(info.get("full_name") or info.get("name") or "")
+        if not name:
+            continue
+        entry = (_index_pos(info), str(canonical))
+        bucket = by_name.setdefault(name, [])
+        if entry not in bucket:
+            bucket.append(entry)
+    return by_name
+
+
+def _pick_canonical(by_name: dict, name: str, flea_pos: str = "") -> Optional[str]:
+    """Resolve a Fleaflicker name/pos onto a Sleeper id.
+
+    ``players_index`` has duplicate names (Lamar Jackson QB vs CB, DeVonta
+    Smith WR vs CB). Prefer an exact position match, then a skill-position
+    row when Fleaflicker says the player is offensive — never the IDP
+    namesake that used to paint Lamar as IDP / FA on the matchup preview.
+    """
+    if not name:
+        return None
+    # Legacy {(name, pos): id} map from older tests / callers.
+    if by_name and isinstance(next(iter(by_name.keys()), None), tuple):
+        pos = (flea_pos or "").upper()
+        hit = by_name.get((name, pos))
+        if hit:
+            return hit
+        return next((v for (n, _), v in by_name.items() if n == name), None)
+
+    candidates = by_name.get(name) or []
+    if not candidates:
+        return None
+    pos = (flea_pos or "").upper()
+    for cand_pos, cid in candidates:
+        if pos and cand_pos == pos:
+            return cid
+    if pos in _SKILL_POS or not pos:
+        for cand_pos, cid in candidates:
+            if cand_pos in _SKILL_POS:
+                return cid
+    if pos in _SKILL_POS:
+        for cand_pos, cid in candidates:
+            if cand_pos not in _IDP_POS:
+                return cid
+    return candidates[0][1]
+
 
 def _request_get(url: str, **kwargs):
     import requests
@@ -501,14 +565,7 @@ class FleaflickerProvider(ProviderAdapter):
         # not install that stack, so fail soft and let xwalk handle IDs.
         try:
             from utils.utils import load_players_index, normalize_name
-            index = load_players_index() or {}
-            by_name = {}
-            for canonical, info in index.items():
-                name = normalize_name(info.get("full_name") or info.get("name") or "")
-                pos = str(info.get("position") or "").upper()
-                if name:
-                    by_name[(name, pos)] = str(canonical)
-            return by_name
+            return _name_index_from_players(load_players_index() or {}, normalize_name)
         except Exception as exc:
             logger.debug("Fleaflicker name index unavailable error=%s", type(exc).__name__)
             return {}
@@ -528,9 +585,7 @@ class FleaflickerProvider(ProviderAdapter):
         pos = str(_get(pro, "position") or "").upper()
         if not name:
             return None
-        return by_name.get((name, pos)) or next(
-            (v for (n, _), v in by_name.items() if n == name), None
-        )
+        return _pick_canonical(by_name, name, pos)
 
     @staticmethod
     def _slot_group_label(group_label: str, slot: dict) -> str:
@@ -555,7 +610,7 @@ class FleaflickerProvider(ProviderAdapter):
                 seen.add(cid)
                 players.append(cid)
                 bucket = self._slot_group_label(group_label, slot)
-                if bucket == "START":
+                if bucket in _START_GROUPS:
                     starters.append(cid)
                 elif bucket in {"INJURED", "IR", "INJURED_RESERVE", "TAXI"}:
                     reserve.append(cid)
@@ -564,13 +619,7 @@ class FleaflickerProvider(ProviderAdapter):
     def _canonical_map(self, league_id, season, *, token: Optional[str] = None):
         try:
             from utils.utils import load_players_index, normalize_name
-            index = load_players_index() or {}
-            by_name = {}
-            for canonical, info in index.items():
-                name = normalize_name(info.get("full_name") or info.get("name") or "")
-                pos = str(info.get("position") or "").upper()
-                if name:
-                    by_name[(name, pos)] = str(canonical)
+            by_name = _name_index_from_players(load_players_index() or {}, normalize_name)
             out = {}
             raw = self._call("FetchLeagueRosters", league_id, season, ttl=300, token=token)
             for roster in raw.get("rosters") or []:
@@ -581,9 +630,7 @@ class FleaflickerProvider(ProviderAdapter):
                     pid = _get(pro, "id")
                     if pid is None or not name:
                         continue
-                    canonical = by_name.get((name, pos)) or next(
-                        (v for (n, _), v in by_name.items() if n == name), None
-                    )
+                    canonical = _pick_canonical(by_name, name, pos)
                     if canonical:
                         out[str(pid)] = canonical
             return out
@@ -656,13 +703,67 @@ class FleaflickerProvider(ProviderAdapter):
             })
         return out
 
+    def _starters_from_boxscore(
+        self, lineups: list, side: str, xwalk: dict, by_name: dict,
+    ) -> tuple[list[str], dict[str, float]]:
+        """Slot-ordered START players for home/away from FetchLeagueBoxscore."""
+        starters: list[str] = []
+        points: dict[str, float] = {}
+        seen: set[str] = set()
+        for group in lineups or []:
+            group_label = str(group.get("group") or "").upper()
+            for slot in group.get("slots") or []:
+                bucket = self._slot_group_label(group_label, slot)
+                if bucket not in _START_GROUPS:
+                    continue
+                player = slot.get(side) or {}
+                if not isinstance(player, dict):
+                    continue
+                pro = player.get("proPlayer") or player.get("pro_player") or {}
+                if _get(pro, "id") is None:
+                    continue
+                cid = self._canonical_lookup(pro, xwalk, by_name)
+                if not cid or cid in seen:
+                    continue
+                seen.add(cid)
+                starters.append(cid)
+                raw_pts = (
+                    player.get("viewingActualPoints")
+                    or player.get("viewing_actual_points")
+                    or {}
+                )
+                points[cid] = _num(raw_pts)
+        return starters, points
+
     def get_matchups(self, league_id, season, week, *, token: Optional[str] = None):
         raw = self._call(
             "FetchLeagueScoreboard", league_id, season, ttl=600, token=token,
             scoring_period=int(week),
         )
+        by_name = self._build_name_index()
+        xwalk = {}
+        try:
+            xwalk = self._canonical_map(league_id, season, token=token)
+        except Exception:
+            logger.debug("Fleaflicker matchup crosswalk unavailable", exc_info=True)
         out = []
         for mid, game in enumerate(raw.get("games") or [], 1):
+            game_id = _get(game, "id")
+            lineups: list = []
+            if game_id is not None:
+                try:
+                    box = self._call(
+                        "FetchLeagueBoxscore", league_id, season, ttl=300,
+                        token=token,
+                        scoring_period=int(week),
+                        fantasy_game_id=int(game_id),
+                    )
+                    lineups = box.get("lineups") or []
+                except Exception:
+                    logger.debug(
+                        "Fleaflicker FetchLeagueBoxscore failed game=%s",
+                        game_id, exc_info=True,
+                    )
             for side, score_key in (("home", "homeScore"), ("away", "awayScore")):
                 team = game.get(side) or {}
                 team_id = _get(team, "id")
@@ -672,10 +773,15 @@ class FleaflickerProvider(ProviderAdapter):
                     "home_score" if side == "home" else "away_score"
                 ) or {}
                 points = _num(score_block.get("score") if isinstance(score_block, dict) else score_block)
+                starters, players_points = self._starters_from_boxscore(
+                    lineups, side, xwalk, by_name,
+                )
                 out.append({
                     "matchup_id": mid, "roster_id": _int(team_id),
-                    "points": points, "players": [], "starters": [],
-                    "starters_points": [], "players_points": {},
+                    "points": points, "players": list(starters),
+                    "starters": starters,
+                    "starters_points": [players_points.get(pid, 0.0) for pid in starters],
+                    "players_points": players_points,
                     "week": int(week), "custom_points": None,
                     "metadata": {"provider_game_id": str(_get(game, "id") or "")},
                 })

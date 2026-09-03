@@ -7,7 +7,8 @@ from dashboard_services.providers.base import (
 )
 from dashboard_services.providers.fleaflicker_api import (
     FleaflickerProvider, _CACHE, _fleaflicker_draft_status,
-    _fleaflicker_sleeper_league_type, _normalize_fleaflicker_draft_status, login,
+    _fleaflicker_sleeper_league_type, _name_index_from_players,
+    _normalize_fleaflicker_draft_status, _pick_canonical, login,
 )
 
 
@@ -554,3 +555,88 @@ def test_get_rosters_uses_fetch_roster_starters_when_bulk_list_exists(monkeypatc
     assert roster["players"] == ["canon-qb", "canon-rb"]
     assert roster["starters"] == ["canon-qb"]
     assert "canon-rb" not in roster["starters"]
+
+
+def test_name_index_reads_pos_and_keeps_both_lamars():
+    def norm(name):
+        return (name or "").strip().lower()
+
+    index = {
+        "4881": {"name": "Lamar Jackson", "pos": "QB", "team": "BAL"},
+        "6994": {"name": "Lamar Jackson", "pos": "CB", "team": "ATL"},
+        "7525": {"name": "DeVonta Smith", "pos": "WR", "team": "PHI"},
+        "13977": {"name": "DeVonta Smith", "position": "CB", "team": "CAR"},
+    }
+    by_name = _name_index_from_players(index, norm)
+    assert _pick_canonical(by_name, "lamar jackson", "QB") == "4881"
+    assert _pick_canonical(by_name, "lamar jackson", "CB") == "6994"
+    assert _pick_canonical(by_name, "devonta smith", "WR") == "7525"
+    # Fleaflicker QB/WR must not fall through to the IDP namesake.
+    assert _pick_canonical(by_name, "lamar jackson", "") == "4881"
+    assert _pick_canonical(by_name, "devonta smith", "") == "7525"
+
+
+def test_pick_canonical_legacy_tuple_map_still_works():
+    by_name = {("lamar jackson", "QB"): "4881", ("lamar jackson", "CB"): "6994"}
+    assert _pick_canonical(by_name, "lamar jackson", "QB") == "4881"
+    assert _pick_canonical(by_name, "lamar jackson", "CB") == "6994"
+
+
+def test_get_matchups_uses_boxscore_slot_order(monkeypatch):
+    provider = FleaflickerProvider()
+    payloads = {
+        "FetchLeagueScoreboard": {
+            "games": [{
+                "id": 77,
+                "home": {"id": 1},
+                "away": {"id": 2},
+                "homeScore": {"score": {"value": 0}},
+                "awayScore": {"score": {"value": 0}},
+            }],
+        },
+        "FetchLeagueBoxscore": {
+            "lineups": [{
+                "group": "START",
+                "slots": [
+                    {
+                        "position": {"label": "QB", "group": "START"},
+                        "home": {
+                            "proPlayer": {"id": 9, "nameFull": "Bo Nix", "position": "QB"},
+                            "viewingActualPoints": {"value": 0},
+                        },
+                        "away": {
+                            "proPlayer": {
+                                "id": 8, "nameFull": "Lamar Jackson", "position": "QB",
+                            },
+                            "viewingActualPoints": {"value": 0},
+                        },
+                    },
+                    {
+                        "position": {"label": "RB", "group": "START"},
+                        "home": {
+                            "proPlayer": {
+                                "id": 10, "nameFull": "Bijan Robinson", "position": "RB",
+                            },
+                        },
+                        "away": {
+                            "proPlayer": {
+                                "id": 11, "nameFull": "Breece Hall", "position": "RB",
+                            },
+                        },
+                    },
+                ],
+            }],
+        },
+    }
+    monkeypatch.setattr(provider, "_call", lambda method, *a, **k: payloads[method])
+    monkeypatch.setattr(
+        provider, "_canonical_map",
+        lambda *a, **k: {"9": "nix", "8": "lamar", "10": "bijan", "11": "breece"},
+    )
+    monkeypatch.setattr(provider, "_build_name_index", lambda: {})
+    rows = provider.get_matchups("14153", 2026, 1)
+    home = next(r for r in rows if r["roster_id"] == 1)
+    away = next(r for r in rows if r["roster_id"] == 2)
+    assert home["starters"] == ["nix", "bijan"]
+    assert away["starters"] == ["lamar", "breece"]
+    assert home["matchup_id"] == away["matchup_id"]
