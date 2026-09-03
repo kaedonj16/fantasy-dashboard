@@ -181,14 +181,17 @@ def portfolio_record_and_rank(lctx, rid, viewer_roster):
 
 
 def ctx_scoring_type(ctx: dict) -> str:
-    """``redraft`` for ESPN (always) and Sleeper type 0/1; otherwise ``dynasty``.
+    """``redraft`` for ESPN (always), Yahoo unless dynasty, and type 0/1.
 
-    ESPN fantasy football is redraft-only, so platform alone is enough. Other
-    platforms that publish type 0/1 (Yahoo/Fleaflicker adapters, Sleeper
+    ESPN fantasy football is redraft-only, so platform alone is enough. Yahoo
+    has no dynasty product either — treat a missing/unknown type as redraft so
+    trade suggestions use the same columns the calculator already does.
+    Other platforms that publish type 0/1 (Fleaflicker adapters, Sleeper
     redraft/keeper) also classify as redraft. Mirrors app._league_is_redraft.
     Honors string ``league_type`` when numeric ``type`` is missing (MFL).
     """
-    if str(ctx.get("platform") or "").strip().lower() == "espn":
+    platform = str(ctx.get("platform") or "").strip().lower()
+    if platform == "espn":
         return "redraft"
     settings = (
         ctx.get("league_settings")
@@ -209,6 +212,10 @@ def ctx_scoring_type(ctx: dict) -> str:
         return "redraft"
     if "dynasty" in lt:
         return "dynasty"
+    # Yahoo does not publish an explicit dynasty flag. Default redraft, matching
+    # app._league_is_redraft, so a settings miss cannot silently use dynasty values.
+    if platform == "yahoo":
+        return "redraft"
     return "dynasty"
 
 
