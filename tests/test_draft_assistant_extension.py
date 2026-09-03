@@ -38,7 +38,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.37"
+    assert manifest["version"] == "1.5.38"
     inject_ver = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     assert 'PRODUCT_VERSION = "1.0.0"' in inject_ver
     hosts = " ".join(manifest.get("host_permissions") or [])
@@ -371,6 +371,16 @@ def test_overlay_reads_league_settings_and_compares_players():
     assert "n <= 8 ? 4 : 6" in overlay
     assert "function gradeField" in score
     assert "teamGradeComposite" in score
+    assert "function ppgOf" in score
+    assert "function teamArchetype" in score
+    assert "function optimalLineup" in score
+    assert "function recapStats" in score
+    assert "function buildGradeCliffs" in score
+    assert "Highest average pick grade" in overlay
+    assert "Highest average ADP gap" not in overlay
+    assert "if (EMBEDDED) return []" in overlay
+    assert "liveLeague ? []" in overlay
+    assert "credentials: \"include\"" in (EXT / "background.js").read_text(encoding="utf-8")
     assert "fetchDraftPlayoffOdds" in (EXT / "background.js").read_text(encoding="utf-8")
     assert "draft_grade_team.js" in (EXT / "pack_extension.py").read_text(encoding="utf-8")
     assert "ovLeagueName" in overlay
@@ -646,6 +656,10 @@ if (S.kdefNeed(early, { K: 0, DEF: 0 }) != null) process.exit(6);
 const sorted = S.sortKdef({ adp: 142, ppg: 7 }, { adp: 118, ppg: 8 });
 if (sorted <= 0) process.exit(7);
 if (typeof S.gradeField !== "function") process.exit(8);
+if (typeof S.ppgOf !== "function" || typeof S.teamArchetype !== "function") process.exit(9);
+if (typeof S.optimalLineup !== "function" || typeof S.recapStats !== "function") process.exit(10);
+const max = S.gradeMax("redraft");
+if (!max || max.value !== 20 || max.starters !== 50 || max.construction !== 30) process.exit(11);
 console.log("ok");
 """
     out = subprocess.run(
@@ -697,6 +711,15 @@ const field = ctx.BROverlayScore.gradeField(players, bySlot, ctxState);
 if (!field || field.length !== 2) process.exit(2);
 if (!field[0].isMe || field[0].grade.score <= field[1].grade.score) process.exit(3);
 if (field[0].grade.window != null) process.exit(4);
+if (!field[0].gradeRows || field[0].gradeRows.length !== 4) process.exit(5);
+if (field[0].archetype && !field[0].archetype.label) process.exit(6);
+const ol = ctx.BROverlayScore.optimalLineup(players.slice(0, 4), ctxState);
+if (!ol || !ol.starters || ol.starters.length < 4) process.exit(7);
+const recap = ctx.BROverlayScore.recapStats(field.map(function (t) {
+  t.name = t.isMe ? "You" : "Other";
+  return t;
+}));
+if (recap && recap.steals && recap.steals.length < 1) process.exit(8);
 console.log(JSON.stringify(field.map(t => ({ slot: t.slot, score: t.grade.score, isMe: t.isMe }))));
 """
     out = subprocess.run(

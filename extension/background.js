@@ -671,6 +671,7 @@ async function fetchDraftPlayoffOdds(opts) {
     try {
       const res = await fetch(host + "/api/draft-playoff-odds", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });

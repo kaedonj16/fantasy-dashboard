@@ -1137,6 +1137,7 @@
   .grade-letter { font-size: 34px; font-weight: 800; line-height: 1; min-width: 48px; text-align: center; }
   .grade-early { font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin-top: 3px; text-align: center; }
   .grade-meta { flex: 1; min-width: 0; }
+  .grade-pace { font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; }
   .gbar-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
   .gbar-lbl { font-size: 10px; color: var(--text-muted); width: 84px; flex-shrink: 0; }
   .gbar { flex: 1; height: 6px; border-radius: 8px; background: rgba(127,127,127,.18); overflow: hidden; }

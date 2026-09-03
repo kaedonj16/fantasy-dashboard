@@ -551,6 +551,12 @@
   }
 
   function slotList() {
+    if (window.BROverlayScore && BROverlayScore.optimalLineup) {
+      const ol = BROverlayScore.optimalLineup([], scoreCtx());
+      if (ol && ol.starters && ol.starters.length >= 4) {
+        return ol.starters.map(function (s) { return s.slot; });
+      }
+    }
     if (window.BRDraftSlot && BRDraftSlot.slotListFromRoster && state.roster) {
       const list = BRDraftSlot.slotListFromRoster(state.roster);
       if (list && list.length >= 4) return list;
@@ -562,10 +568,16 @@
     const s = String(slot || "").toUpperCase();
     if (s === "FLEX") return p === "RB" || p === "WR" || p === "TE";
     if (s === "SF" || s === "OP") return p === "QB" || p === "RB" || p === "WR" || p === "TE";
+    if (s === "RB_WR") return p === "RB" || p === "WR";
+    if (s === "WR_TE") return p === "WR" || p === "TE";
+    if (s === "RB_TE") return p === "RB" || p === "TE";
     if (s === "DEF") return normPos(p) === "DEF";
     return normPos(p) === s;
   }
   function optimalLineup(list) {
+    if (window.BROverlayScore && BROverlayScore.optimalLineup) {
+      return BROverlayScore.optimalLineup(list, scoreCtx());
+    }
     const leftover = list.slice().sort(function (a, b) { return (b.ppg || 0) - (a.ppg || 0); });
     const starters = [];
     function take(slot, ok) {
@@ -641,16 +653,19 @@
 
   function gradeAllTeams() {
     const bySlot = picksBySlot();
-    if (state.sitePool && window.BROverlayScore && BROverlayScore.gradeField) {
-      const field = BROverlayScore.gradeField(players, bySlot, scoreCtx());
-      if (field && field.length) {
-        return field.map(function (t) {
-          t.name = t.isMe ? "You" : teamName(t.slot);
-          t.picks = teamPicks(t.slot);
-          return t;
-        });
-      }
+    if (window.BROverlayScore && BROverlayScore.gradeField && (state.sitePool || !EMBEDDED)) {
+      try {
+        const field = BROverlayScore.gradeField(players, bySlot, scoreCtx());
+        if (field && field.length) {
+          return field.map(function (t) {
+            t.name = t.isMe ? "You" : teamName(t.slot);
+            t.picks = teamPicks(t.slot);
+            return t;
+          });
+        }
+      } catch (_e) { /* fall through only for the standalone mockup */ }
     }
+    if (EMBEDDED) return [];
     const raw = [];
     for (let s = 1; s <= state.teams; s++) raw.push(rawTeamScore(s));
     const scores = raw.map(function (g) { return g.score; });
@@ -683,10 +698,11 @@
     const ol = optimalLineup(list);
     let s = 0;
     ol.starters.forEach(function (x) {
-      if (x.p) {
-        const v = Number(x.p.ppg) || 0;
-        if (isFinite(v) && v > 0) s += v;
-      }
+      if (!x.p) return;
+      const v = (window.BROverlayScore && BROverlayScore.lineupScore)
+        ? BROverlayScore.lineupScore(x.p, scoreCtx())
+        : (Number(x.p.ppg) || 0);
+      if (isFinite(v) && v > 0 && v !== -Infinity) s += v;
     });
     return s;
   }
@@ -760,13 +776,14 @@
       return;
     }
     poFetching = true;
+    const liveLeague = !!(state.leagueId && state.platform);
     const teamsPayload = all.map(function (t) {
       const rid = state.slotToRosterId[t.slot] || state.slotToRosterId[String(t.slot)] || t.slot;
       return {
         slot: t.slot,
         roster_id: rid,
         name: t.name,
-        players: (t.picks || []).map(function (x) {
+        players: liveLeague ? [] : (t.picks || []).map(function (x) {
           return (x.p && x.p.id != null) ? String(x.p.id) : (x.id != null ? String(x.id) : null);
         }).filter(Boolean),
       };
@@ -1050,8 +1067,15 @@
     return html;
   }
 
-  function gbar(label, val) {
-    const pct = Math.round(clamp(val, 0, 100));
+  function gradeMax() {
+    if (window.BROverlayScore && BROverlayScore.gradeMax) {
+      return BROverlayScore.gradeMax(scoreCtx().type);
+    }
+    return { value: 20, starters: 50, construction: 30 };
+  }
+  function gbar(label, val, max) {
+    const cap = max > 0 ? max : 100;
+    const pct = Math.round(clamp((Number(val) || 0) / cap * 100, 0, 100));
     const col = pct >= 80 ? "#22c55e" : pct >= 60 ? "#38bdf8" : pct >= 40 ? "#f59e0b" : "#ef4444";
     return '<div class="gbar-row"><span class="gbar-lbl">' + label + "</span>"
       + '<div class="gbar"><div class="gbar-fill" style="width:' + pct + "%;background:" + col + '"></div></div>'
@@ -1067,21 +1091,27 @@
     const settingsTxt = leagueSettingsLabel();
     let html = "";
     if (settingsTxt) html += '<div class="settings-line" id="leagueSettings">' + esc(settingsTxt) + "</div>";
+    const gMax = gradeMax();
+    const arch = me.archetype || (window.BROverlayScore && BROverlayScore.teamArchetype
+      ? BROverlayScore.teamArchetype(picksBySlot()[state.mySlot] || [], scoreCtx())
+      : null);
     html += '<div class="grade-card"><div><div class="grade-letter" style="color:' + gradeCol(g.score) + '">' + gradeLetter(g.score) + "</div>"
       + (g.provisional ? '<div class="grade-early">Early</div>' : "") + "</div>"
-      + '<div class="grade-meta">' + gbar("Value", g.value) + gbar("Starters", g.starters) + gbar("Construction", g.construction) + "</div></div>";
+      + '<div class="grade-meta">'
+      + (arch && arch.label ? '<div class="grade-pace">' + esc(arch.label) + "</div>" : "")
+      + gbar("Value", g.value, gMax.value) + gbar("Starters", g.starters, gMax.starters) + gbar("Construction", g.construction, gMax.construction)
+      + "</div></div>";
 
-    if (mine.length >= 1) {
-      const myAvg = mine.reduce(function (s, p) { return s + p.ppg; }, 0) / mine.length;
-      const draftedP = state.picks.map(function (x) { return x.p.ppg; });
-      const lgAvg = draftedP.length ? draftedP.reduce(function (a, b) { return a + b; }, 0) / draftedP.length : myAvg;
-      const pct = lgAvg > 0 ? Math.round(myAvg / lgAvg * 100) : 100;
-      const col = pct >= 108 ? "#22c55e" : pct >= 92 ? "#f59e0b" : "#ef4444";
+    const proj = (window.BROverlayScore && BROverlayScore.rosterProjection)
+      ? BROverlayScore.rosterProjection(mine, players, scoreCtx())
+      : null;
+    if (proj) {
+      const col = proj.pct >= 108 ? "#22c55e" : proj.pct >= 92 ? "#f59e0b" : "#ef4444";
       html += '<div class="proj-card"><div class="proj-title">Roster Projection</div><div class="proj-stats">'
-        + '<div class="proj-stat"><div class="proj-val">' + myAvg.toFixed(1) + '</div><div class="proj-lbl">My Avg PPG</div></div>'
-        + '<div class="proj-stat"><div class="proj-val">' + lgAvg.toFixed(1) + '</div><div class="proj-lbl">Avg Player</div></div>'
-        + '<div class="proj-stat"><div class="proj-val" style="color:' + col + '">' + pct + '%</div><div class="proj-lbl">vs League</div></div>'
-        + '</div><div class="proj-bar"><div class="gbar-fill" style="width:' + Math.min(100, pct) + "%;background:" + col + '"></div></div></div>';
+        + '<div class="proj-stat"><div class="proj-val">' + proj.myAvg.toFixed(1) + '</div><div class="proj-lbl">My Avg PPG</div></div>'
+        + (proj.lgAvg > 0 ? '<div class="proj-stat"><div class="proj-val">' + proj.lgAvg.toFixed(1) + '</div><div class="proj-lbl">Avg Player</div></div>' : "")
+        + (proj.lgAvg > 0 ? '<div class="proj-stat"><div class="proj-val" style="color:' + col + '">' + proj.pct + '%</div><div class="proj-lbl">vs League</div></div>' : "")
+        + '</div><div class="proj-bar"><div class="gbar-fill" style="width:' + Math.min(100, proj.pct) + "%;background:" + col + '"></div></div></div>';
     }
     const w = g.window;
     const wcls = w && w.label === "Future" ? "win-future" : w && w.label === "Win-Now" ? "win-winnow" : "win-balanced";
@@ -1108,36 +1138,30 @@
   }
 
   function recapHtml(all) {
-    const rows = state.picks.map(function (x) {
-      return { name: x.p.name, pos: x.p.pos, team: teamName(x.slot), pn: x.pn, gap: x.pn - x.p.adp, teamSlot: x.slot };
-    });
-    if (rows.length < 4) return "";
-    const steals = rows.slice().sort(function (a, b) { return b.gap - a.gap; }).slice(0, 3);
-    const reaches = rows.slice().sort(function (a, b) { return a.gap - b.gap; }).slice(0, 3);
-    function line(x, good) {
-      const txt = (x.gap >= 0 ? "+" : "") + Math.round(x.gap);
-      return '<div class="recap-row"><span class="posb" style="background:' + POS[x.pos] + '">' + x.pos + "</span>"
+    const recap = (window.BROverlayScore && BROverlayScore.recapStats)
+      ? BROverlayScore.recapStats(all)
+      : null;
+    if (!recap || !recap.steals.length) return "";
+    function line(x) {
+      const txt = recap.useGap && x.gap != null
+        ? ((x.gap > 0 ? "+" : "") + x.gap)
+        : String(Math.round(x.ps));
+      const col = recap.useGap && x.gap != null
+        ? (x.gap > 0 ? "var(--win)" : (x.gap < 0 ? "var(--loss)" : "var(--text-muted)"))
+        : psColor(x.ps);
+      return '<div class="recap-row"><span class="posb" style="background:' + (POS[x.pos] || POS.BN) + '">' + esc(x.pos || "-") + "</span>"
         + '<span class="recap-main"><span class="recap-name">' + esc(x.name) + "</span>"
         + '<span class="recap-sub">' + esc(x.team) + " · " + pickLabel(x.pn) + "</span></span>"
-        + '<span class="recap-gap" style="color:' + (good ? "var(--win)" : "var(--loss)") + '">' + txt + "</span></div>";
+        + '<span class="recap-gap" style="color:' + col + '">' + txt + "</span></div>";
     }
-    let bestT = all[0], bestAvg = -1e9;
-    all.forEach(function (t) {
-      if (!t.picks.length) return;
-      const avg = t.picks.reduce(function (s, p) { return s + (p.pn - p.adp); }, 0) / t.picks.length;
-      if (avg > bestAvg) { bestAvg = avg; bestT = t; }
-    });
-    const posCount = {};
-    state.picks.forEach(function (x) { posCount[x.p.pos] = (posCount[x.p.pos] || 0) + 1; });
-    const topPos = Object.keys(posCount).sort(function (a, b) { return posCount[b] - posCount[a]; })[0] || "-";
-    return '<div class="recap"><div><p class="recap-h">' + IC.gem + "Biggest steals</p>" + steals.map(function (x) { return line(x, true); }).join("")
-      + '</div><div><p class="recap-h">' + IC.down + "Biggest reaches</p>" + reaches.map(function (x) { return line(x, false); }).join("")
+    return '<div class="recap"><div><p class="recap-h">' + IC.gem + "Biggest steals</p>" + recap.steals.map(line).join("")
+      + '</div><div><p class="recap-h">' + IC.down + "Biggest reaches</p>" + recap.reaches.map(line).join("")
       + "</div></div>"
       + '<p class="recap-h" style="padding:4px 12px 0">' + IC.bars + "By the numbers</p>"
-      + '<div class="nums"><div class="tile"><div class="tile-l">Steal of the draft</div><div class="tile-b">' + esc(steals[0].name) + '</div><div class="tile-s">' + esc(steals[0].team) + " · " + pickLabel(steals[0].pn) + "</div></div>"
-      + '<div class="tile"><div class="tile-l">Biggest reach</div><div class="tile-b">' + esc(reaches[0].name) + '</div><div class="tile-s">' + esc(reaches[0].team) + " · " + pickLabel(reaches[0].pn) + "</div></div>"
-      + '<div class="tile"><div class="tile-l">Best value drafter</div><div class="tile-b">' + esc(bestT.name) + '</div><div class="tile-s">Highest average ADP gap</div></div>'
-      + '<div class="tile"><div class="tile-l">Most drafted</div><div class="tile-b">' + topPos + " (" + posCount[topPos] + ')</div><div class="tile-s">' + state.picks.length + " picks total</div></div></div>";
+      + '<div class="nums"><div class="tile"><div class="tile-l">Steal of the draft</div><div class="tile-b">' + esc(recap.steals[0].name) + '</div><div class="tile-s">' + esc(recap.steals[0].team) + " · " + pickLabel(recap.steals[0].pn) + "</div></div>"
+      + '<div class="tile"><div class="tile-l">Biggest reach</div><div class="tile-b">' + esc(recap.reaches[0].name) + '</div><div class="tile-s">' + esc(recap.reaches[0].team) + " · " + pickLabel(recap.reaches[0].pn) + "</div></div>"
+      + '<div class="tile"><div class="tile-l">Best value drafter</div><div class="tile-b">' + esc(recap.valueTeam) + '</div><div class="tile-s">Highest average pick grade</div></div>'
+      + '<div class="tile"><div class="tile-l">Most drafted</div><div class="tile-b">' + recap.topPos + (recap.posCount[recap.topPos] ? " (" + recap.posCount[recap.topPos] + ")" : "") + '</div><div class="tile-s">' + recap.pickCount + " picks total</div></div></div>";
   }
 
   function renderGrades() {
