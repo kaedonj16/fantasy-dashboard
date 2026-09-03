@@ -2,7 +2,7 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
-const CACHE_NAME = 'br-fantasy-v24';
+const CACHE_NAME = 'br-fantasy-v25';
 
 // How long to wait on the network for a page before painting a cached /
 // offline fallback. This is what kills the blank white screen on PWA launch:
@@ -192,12 +192,18 @@ async function handleNavigate(request) {
   // responses as usable wins — a fast 502 must not beat a good cached shell.
   // Clone BEFORE returning so the body isn't already consumed when we stash
   // it in the cache.
+  // Remember a non-OK HTTP response (404/500/…) separately from a dead
+  // connection. A fast 502 still must not beat a good cached shell, but a
+  // never-visited URL that the server answered with 404 should show that
+  // page — not the "You're offline" shell.
+  let networkError = null;
   const networkFetch = fetch(request).then(async response => {
     const clean = await unredirect(response);
     if (clean && clean.ok) {
       try { cache.put(request, clean.clone()); } catch (_) {}
       return clean;
     }
+    networkError = clean || null;
     return null;
   }).catch(() => null);
 
@@ -215,10 +221,14 @@ async function handleNavigate(request) {
   }
 
   // Timed out or network failed: never leave the navigation unsettled.
-  // Prefer the URL's own cache, then the home shell, then the offline page.
-  // Keep the in-flight fetch alive so a late success can nudge a reload.
+  // Prefer the URL's own cache, then a real HTTP error page (so a missing
+  // route isn't painted as "You're offline"), then the home shell, then
+  // the offline page. Keep the in-flight fetch alive so a late success
+  // can nudge a reload.
   notifyNavFresh(request, networkFetch);
-  return navigationFallback(cache, cached);
+  if (cached) return cached;
+  if (networkError) return networkError;
+  return navigationFallback(cache, null);
 }
 
 // ── Push notifications ─────────────────────────────────────────────────────────

@@ -9,7 +9,8 @@ screen.
 
 These contracts lock the fix:
   * Every navigation races the network against a timeout, cached or not.
-  * Timed-out / failed navigations fall back to cache → home → offline.html.
+  * Timed-out / failed navigations fall back to cache → HTTP error → home →
+    offline.html (a 404 is not painted as "You're offline").
   * Redirected responses are rebuilt without Content-Encoding headers.
   * The offline shell reloads when the SW later posts ``nav-fresh``.
   * Cache name is bumped so poisoned entries from older SWs are purged.
@@ -30,7 +31,7 @@ def _handle_navigate() -> str:
 
 
 def test_cache_name_bumped_for_blank_screen_fix():
-    assert "br-fantasy-v24" in SW
+    assert "br-fantasy-v25" in SW
 
 
 def test_nav_timeout_always_races_even_without_cache():
@@ -49,7 +50,9 @@ def test_navigation_fallback_chain():
     assert "cache.match(OFFLINE_URL)" in SW
     assert "cache.match('/')" in SW
     body = _handle_navigate()
-    assert "navigationFallback(cache, cached)" in body
+    assert "navigationFallback(cache, null)" in body
+    assert "if (cached) return cached;" in body
+    assert "if (networkError) return networkError;" in body
     assert "notifyNavFresh(request, networkFetch)" in body
 
 
