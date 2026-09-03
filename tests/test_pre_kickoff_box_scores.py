@@ -14,6 +14,12 @@ from datetime import datetime, timezone
 
 import pytest
 
+# utils.utils pulls requests + bs4 + dashboard_services.api (Flask). Gate the
+# file so the slim lint job skips instead of erroring at collection.
+pytest.importorskip("requests")
+pytest.importorskip("bs4")
+pytest.importorskip("flask")
+
 from utils.utils import (
     STATUS_NOT_STARTED,
     build_games_by_team,
