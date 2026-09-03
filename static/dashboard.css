@@ -36677,10 +36677,27 @@ a, button, [role="button"], [role="tab"], summary, label,
 .team-strength-card .tc-flag.s { color: #10b981; }
 .team-strength-card .tc-flag.w { color: #ef4444; }
 
-/* Expanded per-position detail */
-.team-strength-card .pos-detail-row > td { padding: 0 2px 10px; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
-.team-strength-card .tc-detail-stats { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 2px 0 10px; font-size: 11px; color: var(--text-subtle); font-variant-numeric: tabular-nums; }
+/* Expanded per-position detail — an inset drawer under the row */
+.team-strength-card .pos-detail-row > td { padding: 2px 2px 12px; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+.team-strength-card .pos-detail-inner { gap: 8px; padding: 11px; border-radius: 12px; background: var(--bg-alt); border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
+/* lead stats line (#players · age · z) */
+.team-strength-card .tc-detail-stats { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 2px; font-size: 11px; font-weight: 600; color: var(--text-subtle); font-variant-numeric: tabular-nums; }
 .team-strength-card .tc-detail-stats span { white-space: nowrap; }
+/* profile strip -> compact stat chips */
+.team-strength-card .pos-detail-inner .pos-profile-strip { margin: 0 !important; gap: 6px !important; }
+.team-strength-card .pos-detail-inner .mini-label { display: inline-flex; align-items: baseline; gap: 5px; padding: 4px 9px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: .01em; }
+.team-strength-card .pos-detail-inner .mini-label b { font-size: 12px; font-weight: 800; color: var(--text); }
+/* player rows — clickable cards that sit on the drawer */
+.team-strength-card .pos-detail-inner .player-activity { padding: 7px 10px; border-radius: 9px; background: var(--card); border: 1px solid var(--border); transition: border-color .15s ease, box-shadow .15s ease; }
+.team-strength-card .pos-detail-inner .player-activity:hover { border-color: color-mix(in srgb, var(--brand-blue) 45%, var(--border)); box-shadow: 0 2px 8px -4px color-mix(in srgb, var(--brand-blue) 55%, transparent); }
+.team-strength-card .pos-detail-inner .player-clickable { font-size: 13px; font-weight: 600; transition: color .15s ease; }
+.team-strength-card .pos-detail-inner .player-clickable:hover { color: var(--brand-blue); }
+.team-strength-card .pos-detail-inner .player-trade-value { font-weight: 800; font-variant-numeric: tabular-nums; }
+/* draft-capital pick list */
+.team-strength-card .pos-detail-inner .dc-pick-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.team-strength-card .pos-detail-inner .dc-pick { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: var(--card); border: 1px solid var(--border); border-radius: 9px; font-size: 12.5px; }
+.team-strength-card .pos-detail-inner .dc-pick-val { margin-left: auto; font-weight: 800; font-variant-numeric: tabular-nums; }
+.team-strength-card .pos-detail-inner .dc-none, .team-strength-card .pos-detail-inner .dc-note { font-size: 11px; color: var(--text-subtle); }
 
 @media (max-width: 768px) {
     /* Old header rules wrap .tc-id so a large image can take its own row.
