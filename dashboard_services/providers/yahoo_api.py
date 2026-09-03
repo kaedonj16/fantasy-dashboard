@@ -1472,19 +1472,49 @@ def _flatten_yahoo_matchup(entry: Any) -> Dict[str, Any]:
     return {}
 
 
-def get_matchups(season: int, league_id: str, week: int, access_token: str) -> List[Dict[str, Any]]:
-    try:
-        raw = _yahoo_get(
-            access_token,
-            f"league/{_league_key_for_season(league_id, season, access_token)}/scoreboard;week={week}",
-        )
-    except Exception as exc:
-        logger.warning("[yahoo] get_matchups failed week=%s league=%s: %s",
-                       week, league_id, exc)
-        return []
+def _matchups_from_scoreboard_node(node: Any) -> Any:
+    """Yahoo wraps scoreboard as ``{week, "0": {matchups}}`` more often than a
+    flat ``{matchups}`` object. Look in both places."""
+    if isinstance(node, list):
+        for item in node:
+            found = _matchups_from_scoreboard_node(item)
+            if found:
+                return found
+        return {}
+    if not isinstance(node, dict):
+        return {}
+    if "matchups" in node:
+        return node.get("matchups") or {}
+    inner = node.get("0")
+    if isinstance(inner, dict) and "matchups" in inner:
+        return inner.get("matchups") or {}
+    return {}
 
-    scoreboard = _yahoo_scoreboard_dict(raw if isinstance(raw, dict) else {})
-    matchups = scoreboard.get("matchups") or {}
+
+def _as_yahoo_matchup(entry: Any) -> Dict[str, Any]:
+    """Normalize a scoreboard row to a matchup dict with a ``teams`` block."""
+    return _flatten_yahoo_matchup(entry)
+
+
+def _yahoo_team_list_from_entry(tm_entry: Any) -> List:
+    """Scoreboard teams are ``{"team": [...]}`` or the positional team array."""
+    if isinstance(tm_entry, list):
+        return tm_entry
+    if not isinstance(tm_entry, dict):
+        return []
+    tm = tm_entry.get("team") if "team" in tm_entry else tm_entry
+    if isinstance(tm, dict) and "team" in tm:
+        tm = tm.get("team")
+    if isinstance(tm, list):
+        return tm
+    return [tm] if tm else []
+
+
+def _yahoo_roster_id_from_team(tm: List) -> int:
+    return _safe_int(
+        _team_attr(tm, "team_id")
+        or (_team_attr(tm, "team_key") or "").split(".")[-1]
+    )
 
 
 def get_matchups(season: int, league_id: str, week: int, access_token: str) -> List[Dict[str, Any]]:
@@ -1504,12 +1534,14 @@ def get_matchups(season: int, league_id: str, week: int, access_token: str) -> L
         return []
 
     matchups = _matchups_from_scoreboard_node(_league_child_block(raw, "scoreboard"))
+    if not matchups:
+        matchups = _yahoo_scoreboard_dict(raw if isinstance(raw, dict) else {}).get("matchups") or {}
     out: List[Dict[str, Any]] = []
-    for i, entry in enumerate(_yahoo_collection_rows(matchups, "matchup")):
-        matchup = _flatten_yahoo_matchup(entry)
+    m_id = 0
+    for entry in _yahoo_collection_rows(matchups, "matchup"):
+        matchup = _as_yahoo_matchup(entry)
         if not matchup:
             continue
-        m_id = i + 1
         teams_block = matchup.get("teams") or {}
         team_rows = _yahoo_collection_rows(teams_block, "team")
         if not team_rows and isinstance(teams_block, dict):
@@ -1518,18 +1550,12 @@ def get_matchups(season: int, league_id: str, week: int, access_token: str) -> L
                 if row:
                     team_rows.append(row)
 
+        sides: List[Dict[str, Any]] = []
         for tm_entry in team_rows:
-            if isinstance(tm_entry, dict) and "team" in tm_entry:
-                tm = tm_entry["team"]
-            elif isinstance(tm_entry, dict):
-                tm = tm_entry.get("team") or []
-            else:
-                tm = []
-
-            roster_id = _safe_int(
-                _team_attr(tm, "team_id")
-                or (_team_attr(tm, "team_key") or "").split(".")[-1]
-            )
+            tm = _yahoo_team_list_from_entry(tm_entry)
+            roster_id = _yahoo_roster_id_from_team(tm)
+            if not roster_id:
+                continue
             pts_block = _team_field_dict(tm, "team_points")
             sides.append({
                 "points":          _safe_float(pts_block.get("total")),

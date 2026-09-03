@@ -96,7 +96,7 @@ def test_get_matchups_returns_empty_on_http_error(monkeypatch):
     assert yahoo_api.get_matchups(2026, "1307110", 1, access_token="tok") == []
 
 
-def test_build_matchup_preview_synthesizes_when_scoreboard_raises():
+def test_build_matchup_preview_does_not_synthesize_when_scoreboard_raises():
     from unittest import mock
     from dashboard_services.matchups import build_matchup_preview
 
@@ -122,5 +122,5 @@ def test_build_matchup_preview_synthesizes_when_scoreboard_raises():
                          "22": {"name": "P2", "pos": "RB", "team": "SF"}},
             season="2026", platform="yahoo",
         )
-    assert len(preview) == 1
-    assert {preview[0]["left"]["roster_id"], preview[0]["right"]["roster_id"]} == {"1", "2"}
+    # Yahoo must not invent round-robin pairings when the scoreboard is missing.
+    assert preview == []
