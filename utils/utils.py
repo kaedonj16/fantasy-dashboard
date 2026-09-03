@@ -43,6 +43,8 @@ def from_players_map(pid: str, players_map: Optional[Dict[str, Any]] = None) -> 
             if first or last:
                 name = " ".join(x for x in (first, last) if x)
         nfl = info.get("team") or "FA"
+        if nfl and nfl != "FA":
+            nfl = canon_team(nfl) or nfl
         pos = info.get("pos") or info.get("position") or (
             info.get("fantasy_positions", [""])[0]
             if info.get("fantasy_positions")
@@ -52,7 +54,8 @@ def from_players_map(pid: str, players_map: Optional[Dict[str, Any]] = None) -> 
 
     # DEF fallback for team abbrevs
     if pid.isalpha() and 2 <= len(pid) <= 3:
-        return {"name": f"{pid} D/ST", "nfl": pid, "pos": "DEF"}
+        team = canon_team(pid) or pid
+        return {"name": f"{team} D/ST", "nfl": team, "pos": "DEF"}
 
     return {"name": pid, "nfl": "FA", "pos": ""}
 
@@ -94,8 +97,8 @@ TEAM_ALIASES = {
     "sea": "SEA", "den": "DEN", "ari": "ARI", "hou": "HOU", "ten": "TEN", "ind": "IND",
 }
 
-# Bidirectional abbreviation pairs. Sleeper/players_index use WAS; Tank01
-# schedules use WSH. Same split exists for JAC/JAX and LA/LAR.
+# Bidirectional abbreviation pairs for lookups. The site canonical form is
+# WAS / JAX / LAR; Tank01 and some other feeds still send WSH / JAC / LA.
 TEAM_ABBR_ALIASES = {
     "WAS": "WSH",
     "WSH": "WAS",
@@ -123,6 +126,54 @@ def lookup_team_map(mapping: Optional[dict], team: str):
         if key in mapping:
             return mapping[key]
     return None
+
+
+def canonical_teams_index(teams_index: Optional[dict]) -> dict:
+    """Merge alias keys (WSH into WAS) so each franchise appears once.
+
+    Incoming feeds still use WSH; the site stores and displays WAS. When both
+    keys exist, non-null fields from either copy are kept under WAS.
+    """
+    out: dict = {}
+    for abv, meta in (teams_index or {}).items():
+        if not isinstance(meta, dict):
+            continue
+        canon = canon_team(abv) or str(abv or "").strip().upper()
+        if not canon:
+            continue
+        cur = out.get(canon)
+        if cur is None:
+            out[canon] = dict(meta)
+            continue
+        for k, v in meta.items():
+            if cur.get(k) is None and v is not None:
+                cur[k] = v
+    return out
+
+
+def canonicalize_game_teams(game: Optional[dict]) -> dict:
+    """Rewrite a schedule game's home/away codes to site canonical form (WAS)."""
+    if not isinstance(game, dict):
+        return {}
+    out = dict(game)
+    for field in ("home", "away"):
+        val = out.get(field)
+        if not val:
+            continue
+        canon = canon_team(val)
+        if canon:
+            out[field] = canon
+    return out
+
+
+def canonicalize_schedule(data):
+    """Normalize home/away on a week schedule list (or pass other shapes through)."""
+    if isinstance(data, list):
+        return [
+            canonicalize_game_teams(g) if isinstance(g, dict) else g
+            for g in data
+        ]
+    return data
 
 DST_CANON = {
     "49ers": "SF",
@@ -452,8 +503,14 @@ def load_model_value_table(apply_calibration: bool = True):
 
 
 def load_teams_index() -> Optional[Dict]:
-    """Returns the cached teams index or None."""
-    return read_json(path_teams_index())
+    """Returns the cached teams index or None.
+
+    Alias keys such as WSH are merged into WAS so Washington appears once.
+    """
+    raw = read_json(path_teams_index())
+    if not raw:
+        return raw
+    return canonical_teams_index(raw)
 
 
 def load_idp_index() -> Optional[Dict]:
@@ -467,8 +524,8 @@ def load_week_stats(season: int, week: int) -> Optional[Dict]:
 
 
 def load_week_sched(season: int, week: int) -> Optional[Dict]:
-    """Returns cached weekly stats or None."""
-    return read_json(path_week_schedule(season, week))
+    """Returns cached weekly schedule or None."""
+    return canonicalize_schedule(read_json(path_week_schedule(season, week)))
 
 
 def load_week_schedule(season: int, w: int):
@@ -483,7 +540,7 @@ def load_week_schedule(season: int, w: int):
     with open(week_path, "r", encoding="utf-8") as f:
         schedule = json.load(f)
 
-    return schedule
+    return canonicalize_schedule(schedule)
 
 
 _WEEK_PROJ_MEMO: dict = {}
@@ -534,7 +591,7 @@ def save_week_projections(season: int, week: int, proj_map: dict) -> None:
 
 
 def save_week_schedule(season: int, week: int, data: List[Dict]) -> None:
-    write_json(path_week_schedule(season, week), data)
+    write_json(path_week_schedule(season, week), canonicalize_schedule(data))
 
 
 # ------------------------------------------------
@@ -1063,7 +1120,7 @@ def byes_for_season(payload: dict, season: int) -> dict[str, Optional[int]]:
     """
     out = {}
     for team in payload.get("body", []):
-        abv = team.get("teamAbv")
+        abv = canon_team(team.get("teamAbv")) or team.get("teamAbv")
         out[abv] = get_bye_week(team, season)
     return out
 
@@ -1333,8 +1390,10 @@ def pinfo_for_pid(
     # name from your players_index, fallback to pid
     name = info.get("name") or pid
 
-    # nfl team code (BAL, DET, BUF, etc.)
+    # nfl team code (BAL, DET, BUF, etc.) — WAS, never WSH
     nfl = info.get("team") or team_info.get("team") or (pid if pid in teams_index else None)
+    if nfl:
+        nfl = canon_team(nfl) or nfl
 
     # position (string)
     pos = ""

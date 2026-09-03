@@ -149,6 +149,9 @@ from utils.utils import (
     load_week_projection,
     load_week_schedule,
     streak_class,
+    canon_team,
+    canonicalize_schedule,
+    team_abbr_keys,
 )
 from utils.lineup_slots import (
     count_lineup_slots as _count_lineup_slots,
@@ -18450,7 +18453,7 @@ def api_player_details(player_id: str):
         if not player_meta:
             return jsonify({"error": "Player not found"}), 404
 
-        player_team = player_meta.get("team", "")
+        player_team = canon_team(player_meta.get("team", "")) or player_meta.get("team", "")
 
         # Get value data (use cache so FC/DP corrections are applied)
         value_table = get_model_value_table_cached() or []
@@ -19208,7 +19211,7 @@ def api_player_game_logs(player_id: str):
         if not player_meta:
             players_index_full = load_players_index() or {}
             player_meta = players_index_full.get(player_id) or {}
-        player_team = player_meta.get("team", "")
+        player_team = canon_team(player_meta.get("team", "")) or player_meta.get("team", "")
 
         # Reuse the years cache
         global _PLAYER_DETAIL_YEARS_CACHE, _PLAYER_DETAIL_YEARS_CACHE_TS
@@ -19420,7 +19423,7 @@ def api_player_game_logs(player_id: str):
                             with open(_sf) as _sff:
                                 _sg = json.load(_sff)
                             if isinstance(_sg, list) and _wn not in _sched:
-                                _sched[_wn] = _sg
+                                _sched[_wn] = canonicalize_schedule(_sg)
                         except Exception:
                             logger.debug("suppressed exception", exc_info=True)
 
@@ -19437,15 +19440,18 @@ def api_player_game_logs(player_id: str):
                         # Resolve opponent from schedule
                         _opp = "–"
                         _game_date = ""
+                        _player_keys = set(team_abbr_keys(player_team)) if player_team else set()
                         for _g in (_sched.get(_w) or []):
                             if not isinstance(_g, dict):
                                 continue
-                            if player_team and player_team == _g.get("home"):
-                                _opp = _g.get("away", "–")
+                            _home = _g.get("home")
+                            _away = _g.get("away")
+                            if _player_keys and _home in _player_keys:
+                                _opp = canon_team(_away) or _away or "–"
                                 _game_date = _g.get("gameDate", "")
                                 break
-                            elif player_team and player_team == _g.get("away"):
-                                _opp = f"@{_g.get('home', '–')}"
+                            if _player_keys and _away in _player_keys:
+                                _opp = f"@{canon_team(_home) or _home or '–'}"
                                 _game_date = _g.get("gameDate", "")
                                 break
 
@@ -19532,21 +19538,8 @@ def _canon_team_abbr(team: str) -> str:
 
 def _canonical_teams_index(teams_index: dict) -> dict:
     """Merge alias keys (e.g. WSH into WAS) so each franchise appears once."""
-    out: dict = {}
-    for abv, meta in (teams_index or {}).items():
-        if not isinstance(meta, dict):
-            continue
-        canon = _canon_team_abbr(abv)
-        if not canon:
-            continue
-        cur = out.get(canon)
-        if cur is None:
-            out[canon] = dict(meta)
-            continue
-        for k, v in meta.items():
-            if cur.get(k) is None and v is not None:
-                cur[k] = v
-    return out
+    from utils.utils import canonical_teams_index
+    return canonical_teams_index(teams_index)
 
 
 def _resolve_stats_reg_season(season: int) -> int:
@@ -20200,7 +20193,7 @@ def api_team_details(roster_id: str):
 
             # Special handling for defense players (team abbreviations as IDs)
             player_name = player_meta.get("name", "Unknown")
-            player_team = player_meta.get("team")
+            player_team = canon_team(player_meta.get("team")) or player_meta.get("team")
 
             # If player_id is a team abbreviation and no metadata found, treat as defense
             if len(pid_str) == 3 and pid_str.isupper() and player_name == "Unknown":
@@ -20208,7 +20201,7 @@ def api_team_details(roster_id: str):
                 full_team_name = get_team_full_name(pid_str)
                 player_name = f"{full_team_name} Defense"
                 position = "DEF"
-                player_team = pid_str
+                player_team = canon_team(pid_str) or pid_str
 
             # Apply the league's TE premium now that position is finalized.
             value = apply_te_premium(value, position, _tep)

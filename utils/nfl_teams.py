@@ -6,8 +6,8 @@ unit-tested without the pandas/DB stack.
 """
 from __future__ import annotations
 
-# Abbreviation -> full team name. Includes both WAS and WSH spellings for
-# Washington since upstream feeds disagree.
+# Abbreviation -> full team name. WSH is a lookup alias only; the site
+# displays and stores Washington as WAS.
 TEAM_FULL_NAMES = {
     "ARI": "Arizona Cardinals",
     "ATL": "Atlanta Falcons",
@@ -49,5 +49,6 @@ def get_team_full_name(abbreviation: str) -> str:
     """Map a team abbreviation to its full team name.
 
     Case-insensitive. Unknown abbreviations pass through unchanged.
+    WSH resolves to the Commanders the same as WAS.
     """
     return TEAM_FULL_NAMES.get(str(abbreviation).upper(), abbreviation)

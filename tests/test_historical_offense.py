@@ -44,7 +44,8 @@ def test_offense_ranges_cover_1_to_32():
 
 
 def test_normalize_team_aliases():
-    assert normalize_team_abbr("was") == "WSH"
+    assert normalize_team_abbr("was") == "WAS"
+    assert normalize_team_abbr("WSH") == "WAS"
     assert normalize_team_abbr("JAC") == "JAX"
     assert normalize_team_abbr("ARI") == "ARI"
     assert normalize_team_abbr("LA") == "LAR"
@@ -165,7 +166,7 @@ def test_usage_rows_rank_and_prior_lookup():
             },
         }
     )
-    assert team == "WSH"
+    assert team == "WAS"
     assert score == 400 + 100 + 40 * (2.0 + 1.0)
 
 

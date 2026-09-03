@@ -167,7 +167,8 @@ def test_trends_offense_ranges_are_disjoint():
     assert trends_offense_range(32)[1] == "21-32"
     assert trends_offense_range(None) is None
     assert offense_rank_bucket(4) == "top_10"
-    assert normalize_team_abbr("WAS") == "WSH"
+    assert normalize_team_abbr("WAS") == "WAS"
+    assert normalize_team_abbr("WSH") == "WAS"
     assert normalize_team_abbr("ARZ") == "ARI"
     assert normalize_team_abbr("LA") == "LAR"
     covered = []

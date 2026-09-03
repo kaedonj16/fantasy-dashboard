@@ -9,7 +9,13 @@ from typing import Dict, Optional
 import requests
 from bs4 import BeautifulSoup
 
-from utils.utils import load_teams_index, write_json, path_teams_index
+from utils.utils import (
+    canon_team,
+    canonical_teams_index,
+    load_teams_index,
+    write_json,
+    path_teams_index,
+)
 
 HTTP_SESSION = requests.Session()
 
@@ -71,7 +77,7 @@ TEAMRANKINGS_TO_ABBR: Dict[str, str] = {
     "Seattle": "SEA",
     "Tampa Bay": "TB",
     "Tennessee": "TEN",
-    "Washington": "WSH",
+    "Washington": "WAS",
 }
 
 
@@ -174,6 +180,7 @@ def enrich_teams_index_with_team_offense(season: int = 2024) -> None:
         return
 
     for team_abv, stats in per_game.items():
+        team_abv = canon_team(team_abv) or team_abv
         meta = teams_index.setdefault(team_abv, {})
         meta["pass_yds_pg"] = stats["pass_yds_pg"]
         meta["pass_att_pg"] = stats["pass_att_pg"]
@@ -195,7 +202,7 @@ def enrich_teams_index_with_team_offense(season: int = 2024) -> None:
         if not meta.get("sacks_allowed_pg"):
             meta["sacks_allowed_pg"] = 0.0
 
-    write_json(path_teams_index(), teams_index)
+    write_json(path_teams_index(), canonical_teams_index(teams_index))
 
 
 def enrich_teams_index_with_scoring_and_pressure() -> Dict[str, dict]:
@@ -247,6 +254,7 @@ def enrich_teams_index_with_scoring_and_pressure() -> Dict[str, dict]:
         if abbr in results.get("sacks_allowed_pg", {}):
             meta["sacks_allowed_pg"] = results["sacks_allowed_pg"][abbr]
 
+    teams_index = canonical_teams_index(teams_index)
     write_json(path_teams_index(), teams_index)
     return teams_index
 
@@ -376,6 +384,7 @@ def enrich_teams_index_with_rushing(
     opp_pass_yds = results.get("opp_pass_yds", {})
     opp_rush_yds = results.get("opp_rush_yds", {})
 
+    teams_index = canonical_teams_index(teams_index)
     for abbr, meta in teams_index.items():
         meta["rush_att_pg"] = rush_att.get(abbr)
         meta["rush_yds_pg"] = rush_yds.get(abbr)
