@@ -99,3 +99,5 @@ def test_page_has_multi_season_picker():
     assert 'id="amSeasonColHdr"' in _AM_PAGE
     assert "Pick any years that have data" in _AM_PAGE
     assert "am-season-col" in _AM_PAGE
+    assert "concat(amIsMultiSeason() ? ['Year'] : [])" in _AM_PAGE
+    assert "amRowKey(rx)" in _AM_PAGE

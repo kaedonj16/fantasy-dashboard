@@ -3041,15 +3041,16 @@ _AM_JS = r"""
       const byKey = {};
       uniq.forEach(function(k, i) { byKey[k] = (results[i] && results[i].players) || []; });
       const xRows = byKey[xk];
-      const yMap = new Map(byKey[yk].map(function(r) { return [String(r.player_id), Number(r.value)]; }));
-      const zMap = zk ? new Map((byKey[zk] || []).map(function(r) { return [String(r.player_id), Number(r.value)]; })) : null;
+      const yMap = new Map(byKey[yk].map(function(r) { return [amRowKey(r), Number(r.value)]; }));
+      const zMap = zk ? new Map((byKey[zk] || []).map(function(r) { return [amRowKey(r), Number(r.value)]; })) : null;
       let ptsAll = [];
       xRows.forEach(function(rx) {
-        const pid = String(rx.player_id);
+        const pid = amRowKey(rx);
         if (!yMap.has(pid)) return;
         const xv = Number(rx.value), yv = yMap.get(pid);
         if (!isFinite(xv) || !isFinite(yv)) return;
-        ptsAll.push({ pid: pid, name: rx.name, position: rx.position, headshot: rx.headshot || '',
+        const nm = (rx.name || '') + (amIsMultiSeason() && rx.season != null ? (' \u00b7 ' + rx.season) : '');
+        ptsAll.push({ pid: pid, name: nm, position: rx.position, headshot: rx.headshot || '',
                       x: xv, y: yv, z: (zMap && zMap.has(pid)) ? zMap.get(pid) : null });
       });
       const xLower = cfg.metrics[xk] && cfg.metrics[xk].lowerBetter;
@@ -4005,7 +4006,9 @@ _AM_JS = r"""
       if (!rows.length) return;
       const metricLbl = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric;
       const extraKeys = state.extraMetrics.filter(k => state.extraData[k]);
-      const head = ['Player', 'Team', 'Pos', 'Age', 'Exp', metricLbl, 'Games']
+      const head = ['Player', 'Team', 'Pos']
+        .concat(amIsMultiSeason() ? ['Year'] : [])
+        .concat(['Age', 'Exp', metricLbl, 'Games'])
         .concat(extraKeys.map(k => (cfg.metrics[k] && cfg.metrics[k].label) || k));
       const esc = function(v) {
         if (v == null) return '';
@@ -4016,11 +4019,13 @@ _AM_JS = r"""
       rows.forEach(function(r) {
         const line = [
           r.name || '', r.team || '', r.position || '',
+        ].concat(amIsMultiSeason() ? [r.season != null ? r.season : ''] : [])
+        .concat([
           r.age != null ? r.age : '', r.years_exp != null ? r.years_exp : '',
           r.value != null ? r.value : '',
           r.vol != null ? r.vol : (r.games != null ? r.games : ''),
-        ].concat(extraKeys.map(function(k) {
-          const v = state.extraData[k].byId[String(r.player_id)];
+        ]).concat(extraKeys.map(function(k) {
+          const v = state.extraData[k].byId[amRowKey(r)];
           return v != null ? v : '';
         }));
         lines.push(line.map(esc).join(','));
