@@ -216,6 +216,79 @@ def test_draft_room_standard_remains_zero():
     assert scoring["rec"] == 0
 
 
+def test_espn_300_yard_bonus_does_not_overwrite_per_yard_rate():
+    normalized = espn_api.normalize_espn_scoring_items([
+        {"statId": 3, "points": 0.04},
+        {"statId": 3, "points": 3, "isBonus": True, "rangeStart": 300},
+        {"statId": 24, "points": 0.1},
+        {"statId": 24, "points": 2, "rangeStart": 100, "rangeEnd": 199},
+        {"statId": 42, "points": 0.1},
+        {"statId": 53, "points": 0},
+        {"statId": 53, "points": 2, "isBonus": True, "rangeStart": 9},
+    ])
+    assert normalized["pass_yd"] == 0.04
+    assert normalized["rush_yd"] == 0.1
+    assert normalized["rec_yd"] == 0.1
+    assert normalized["rec"] == 0.0
+
+
+def test_espn_dst_and_kicker_ranges_are_scoring_rates_not_bonuses():
+    normalized = espn_api.normalize_espn_scoring_items([
+        {"statId": 89, "points": 10, "rangeStart": 0, "rangeEnd": 0, "isReverseItem": True},
+        {"statId": 90, "points": 7, "rangeStart": 1, "rangeEnd": 6, "isReverseItem": True},
+        {"statId": 80, "points": 3, "rangeStart": 0, "rangeEnd": 39},
+        {"statId": 77, "points": 4, "rangeStart": 40, "rangeEnd": 49},
+        {"statId": 3, "points": 0.04},
+    ])
+    assert normalized["pts_allow_0"] == 10
+    assert normalized["pts_allow_1_6"] == 7
+    assert normalized["fgm_0_39"] == 3
+    assert normalized["fgm_40_49"] == 4
+    assert normalized["pass_yd"] == 0.04
+
+
+def test_espn_standard_rec_zero_is_not_ppr_after_normalize():
+    scoring = normalize_league_scoring(
+        "espn", espn_api.normalize_espn_scoring_items(_items(0)),
+    )
+    assert scoring["rec"] == 0.0
+    assert scoring["pointsPerReception"] == 0.0
+
+
+def test_espn_standard_weekly_proj_is_not_one_point_per_yard():
+    from utils.fantasy_scoring import projection_points
+
+    ss = normalize_league_scoring(
+        "espn", espn_api.normalize_espn_scoring_items(
+            _items(0) + [{"statId": 3, "points": 3, "isBonus": True, "rangeStart": 300}],
+        ),
+    )
+    allen = projection_points(
+        {"raw_stats": {
+            "pass_yd": 235.21, "pass_td": 1.8, "pass_int": 0.6,
+            "rush_yd": 26.3, "rush_td": 0.55, "fum_lost": 0.2,
+        }},
+        ss, "QB",
+    )
+    assert allen < 40
+    assert allen != pytest.approx(268.9, abs=1)
+
+
+def test_normalized_settings_do_not_keep_espn_ppr_defaults():
+    from dashboard_services.api import (
+        get_effective_scoring_settings,
+        get_normalized_scoring_settings,
+        set_league_globals,
+    )
+
+    set_league_globals(scoring_settings={"rec": 0.0, "pass_yd": 0.04, "rec_yd": 0.1})
+    effective = get_effective_scoring_settings()
+    normalized = get_normalized_scoring_settings("espn")
+    assert effective.get("pointsPerReception") == 1
+    assert normalized["rec"] == 0.0
+    assert normalized["pointsPerReception"] == 0.0
+
+
 @pytest.mark.parametrize("value", [0, .5, 1, .75])
 def test_provider_agnostic_contract_preserves_reception_values(value):
     assert normalize_league_scoring("espn", {"rec": value})["rec"] == value

@@ -139,6 +139,66 @@ def test_yahoo_does_not_treat_head_scoring_type_as_standard_ppr():
     assert scoring["rec"] == 1.0
 
 
+def test_yahoo_standard_reception_modifier_stays_zero():
+    settings = {
+        "stat_modifiers": {"stats": [{"stat": {"stat_id": 11, "value": "0"}}]},
+    }
+    scoring = yahoo_api._yahoo_scoring_settings({"scoring_type": "head"}, settings)
+    assert scoring["rec"] == 0.0
+
+
+def test_yahoo_300_yard_bonus_does_not_overwrite_per_yard_rate():
+    settings = {
+        "stat_modifiers": {"stats": [
+            {"stat": {"stat_id": 4, "value": "0.04"}},
+            {"stat": {
+                "stat_id": 4, "value": "3",
+                "bonuses": {"bonus": [{"target": "300", "points": "3"}]},
+            }},
+            {"stat": {"stat_id": 11, "value": "0"}},
+        ]},
+    }
+    scoring = yahoo_api._yahoo_scoring_settings({"scoring_type": "head"}, settings)
+    assert scoring["pass_yd"] == 0.04
+    assert scoring["rec"] == 0.0
+
+
+def test_yahoo_standard_weekly_proj_is_not_one_point_per_yard():
+    from utils.fantasy_scoring import projection_points
+    from utils.league_scoring import normalize_league_scoring
+
+    settings = {
+        "stat_modifiers": {"stats": [
+            {"stat": {"stat_id": 4, "value": "0.04"}},
+            {"stat": {
+                "stat_id": 4, "value": "3",
+                "bonuses": {"bonus": [{"target": "300", "points": "3"}]},
+            }},
+            {"stat": {"stat_id": 5, "value": "4"}},
+            {"stat": {"stat_id": 6, "value": "-2"}},
+            {"stat": {"stat_id": 9, "value": "0.1"}},
+            {"stat": {"stat_id": 10, "value": "6"}},
+            {"stat": {"stat_id": 11, "value": "0"}},
+            {"stat": {"stat_id": 12, "value": "0.1"}},
+            {"stat": {"stat_id": 18, "value": "-2"}},
+        ]},
+    }
+    ss = normalize_league_scoring(
+        "yahoo", yahoo_api._yahoo_scoring_settings({"scoring_type": "head"}, settings),
+    )
+    allen = projection_points(
+        {"raw_stats": {
+            "pass_yd": 235.21, "pass_td": 1.8, "pass_int": 0.6,
+            "rush_yd": 26.3, "rush_td": 0.55, "fum_lost": 0.2,
+        }},
+        ss, "QB",
+    )
+    assert ss["rec"] == 0.0
+    assert ss["pointsPerReception"] == 0.0
+    assert allen < 40
+    assert allen != pytest.approx(268.9, abs=1)
+
+
 def test_mfl_positions_ignore_numeric_roster_size():
     provider = mfl_api.MFLProvider
     assert provider._positions({"id": "1", "rosterSize": "20"}) == []

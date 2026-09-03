@@ -694,6 +694,148 @@ def test_fleaflicker_scoring_divides_points_by_for_every():
     assert FleaflickerProvider._scoring(rules)["pass_yd"] == 0.04
 
 
+def _standard_flea_rules_with_bonuses():
+    """All American All Star League (92916) shape: standard scoring + milestones."""
+    return {"groups": [
+        {"label": "Passing", "scoringRules": [
+            {
+                "category": {"abbreviation": "Cmp", "nameSingular": "Passing Completion"},
+                "points": {"value": 2}, "boundLower": 25,
+                "description": "2 extra points when total Passing Completions is greater than or equal to 25",
+            },
+            {
+                "category": {"abbreviation": "Yd", "nameSingular": "Passing Yard"},
+                "points": {"value": 1}, "pointsPer": {"value": 0.05}, "forEvery": 20,
+                "description": "1 point for every 20 Passing Yards (0.05 per)",
+            },
+            {
+                "category": {"abbreviation": "Yd", "nameSingular": "Passing Yard"},
+                "points": {"value": 1}, "boundLower": 300,
+                "description": "1 extra point when total Passing Yards is greater than or equal to 300",
+            },
+            {
+                "category": {"abbreviation": "TD", "nameSingular": "Passing TD"},
+                "points": {"value": 4}, "forEvery": 1,
+            },
+            {
+                "category": {"abbreviation": "INT", "nameSingular": "Interception"},
+                "points": {"value": -2}, "forEvery": 1,
+            },
+        ]},
+        {"label": "Rushing", "scoringRules": [
+            {
+                "category": {"abbreviation": "Yd", "nameSingular": "Rushing Yard"},
+                "points": {"value": 1}, "pointsPer": {"value": 0.1}, "forEvery": 10,
+            },
+            {
+                "category": {"abbreviation": "TD", "nameSingular": "Rushing TD"},
+                "points": {"value": 6}, "forEvery": 1,
+            },
+        ]},
+        {"label": "Receiving", "scoringRules": [
+            {
+                "category": {"abbreviation": "Rec", "nameSingular": "Catch"},
+                "points": {"value": 2}, "boundLower": 9,
+                "description": "2 extra points when total Catches is greater than or equal to 9",
+                "template": "${points} extra points when total ${categoryPlural} is greater than or equal to ${boundLower}",
+            },
+            {
+                "category": {"abbreviation": "Yd", "nameSingular": "Receiving Yard"},
+                "points": {"value": 1}, "pointsPer": {"value": 0.1}, "forEvery": 10,
+            },
+            {
+                "category": {"abbreviation": "Yd", "nameSingular": "Receiving Yard"},
+                "points": {"value": 1}, "boundLower": 150,
+                "description": "1 extra point when total Receiving Yards is greater than or equal to 150",
+            },
+            {
+                "category": {"abbreviation": "TD", "nameSingular": "Receiving TD"},
+                "points": {"value": 6}, "forEvery": 1,
+            },
+        ]},
+        {"label": "Defense", "scoringRules": [
+            {
+                "category": {"abbreviation": "INT", "nameSingular": "Interception"},
+                "points": {"value": 2}, "forEvery": 1,
+            },
+        ]},
+    ]}
+
+
+def test_fleaflicker_threshold_bonuses_are_not_per_stat_rates():
+    out = FleaflickerProvider._scoring(_standard_flea_rules_with_bonuses())
+    assert out["pass_yd"] == 0.05
+    assert out["pass_td"] == 4.0
+    assert out["pass_int"] == -2.0
+    assert out["rush_yd"] == 0.1
+    assert out["rec_yd"] == 0.1
+    assert out["rec_td"] == 6.0
+    assert "rec" not in out
+    assert out.get("def_int") == 2.0
+
+
+def test_fleaflicker_standard_league_is_not_ppr():
+    from utils.league_scoring import normalize_league_scoring
+
+    raw = FleaflickerProvider._scoring(_standard_flea_rules_with_bonuses())
+    norm = normalize_league_scoring("fleaflicker", raw)
+    assert norm["rec"] == 0.0
+
+
+def test_fleaflicker_standard_weekly_proj_is_not_one_point_per_yard():
+    from utils.fantasy_scoring import projection_points
+    from utils.league_scoring import normalize_league_scoring
+
+    ss = normalize_league_scoring(
+        "fleaflicker", FleaflickerProvider._scoring(_standard_flea_rules_with_bonuses()),
+    )
+    pts = projection_points(
+        {"raw_stats": {
+            "rec": 6.0, "rec_yd": 83.0, "rec_td": 0.5,
+            "pts_ppr": 17.3, "pts_half_ppr": 14.3, "pts_std": 11.3,
+        }},
+        ss, "WR",
+    )
+    assert pts < 20
+    assert pts != 83.0
+    assert pts == pytest.approx(11.3, abs=0.2)
+
+
+def test_matchup_preview_screenshot_is_not_one_point_per_yard():
+    """All American Week 1 preview painted Josh Allen 268.9 / Jeanty 83.2 / JSN 111.9.
+
+    Those were Sleeper yardage totals scored at 1 pt/yard because a 150/300-yard
+    milestone extra overwrote the real 0.05 / 0.1 rates.
+    """
+    from utils.fantasy_scoring import projection_points
+    from utils.league_scoring import normalize_league_scoring
+
+    ss = normalize_league_scoring(
+        "fleaflicker", FleaflickerProvider._scoring(_standard_flea_rules_with_bonuses()),
+    )
+    allen = projection_points(
+        {"raw_stats": {
+            "pass_yd": 235.21, "pass_td": 1.8, "pass_int": 0.6,
+            "rush_yd": 26.3, "rush_td": 0.55, "fum_lost": 0.2,
+        }},
+        ss, "QB",
+    )
+    jeanty = projection_points(
+        {"raw_stats": {"rush_yd": 59.38, "rec_yd": 15.71, "rec": 2.0, "rush_td": 0.4}},
+        ss, "RB",
+    )
+    jsn = projection_points(
+        {"raw_stats": {"rec_yd": 94.17, "rush_yd": 1.85, "rec": 6.0, "rec_td": 0.5}},
+        ss, "WR",
+    )
+    assert allen < 40
+    assert jeanty < 20
+    assert jsn < 20
+    assert allen != pytest.approx(268.9, abs=1)
+    assert jeanty != pytest.approx(83.2, abs=1)
+    assert jsn != pytest.approx(111.9, abs=1)
+
+
 def test_get_matchups_uses_boxscore_slot_order(monkeypatch):
     provider = FleaflickerProvider()
     payloads = {
