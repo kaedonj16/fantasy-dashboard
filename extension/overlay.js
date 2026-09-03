@@ -266,7 +266,8 @@
       { value: "espn", label: "ESPN" },
       { value: "yahoo", label: "Yahoo" },
       { value: "mfl", label: "MFL" },
-      { value: "brfantasy", label: "BR Fantasy" }
+      { value: "brfantasy", label: "BR Fantasy" },
+      { value: "brfantasy_live", label: "BR Fantasy Live (7d)" }
     ]
   };
   let autoTimer = null, clockTimer = null;
