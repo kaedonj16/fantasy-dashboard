@@ -35,8 +35,8 @@ def test_redraft_grade_ignores_age_and_capital():
     )
     assert young_g["score"] == old_g["score"]
     assert young_g["grade"] == old_g["grade"]
-    assert young_g["win_window"] in ("Contend", "Bubble", "Out")
-    assert old_g["win_window"] in ("Contend", "Bubble", "Out")
+    assert young_g["win_window"] in ("Contend", "Bubble", "Long Shot")
+    assert old_g["win_window"] in ("Contend", "Bubble", "Long Shot")
     assert young_g["breakdown"]["scoring_type"] == "redraft"
 
 
@@ -58,4 +58,4 @@ def test_dynasty_grade_still_rewards_youth_and_picks():
         scoring_type="dynasty",
     )
     assert young_g["score"] > old_g["score"]
-    assert young_g["win_window"] not in ("Contend", "Bubble", "Out")
+    assert young_g["win_window"] not in ("Contend", "Bubble", "Long Shot")

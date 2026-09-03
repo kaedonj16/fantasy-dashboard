@@ -257,11 +257,11 @@ def test_build_power_rankings_context_redraft_uses_odds_not_picks():
 def test_redraft_window_label_uses_odds_then_percentile():
     assert redraft_window_label(playoff_pct=87) == "Contend"
     assert redraft_window_label(playoff_pct=46.3) == "Bubble"
-    assert redraft_window_label(playoff_pct=12) == "Out"
+    assert redraft_window_label(playoff_pct=12) == "Long Shot"
     # No odds: same bands on 0–1 redraft-value percentile.
     assert redraft_window_label(redraft_pct=0.80) == "Contend"
     assert redraft_window_label(redraft_pct=0.50) == "Bubble"
-    assert redraft_window_label(redraft_pct=0.10) == "Out"
+    assert redraft_window_label(redraft_pct=0.10) == "Long Shot"
     # Odds win when both are present — a mid roster with 80% odds is Contend.
     assert redraft_window_label(playoff_pct=80, redraft_pct=0.10) == "Contend"
     assert redraft_window_label() == ""

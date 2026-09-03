@@ -774,7 +774,7 @@ def build_teams_body(ctx: dict) -> str:
         _archetype_num = {
             "Contend":          1,
             "Bubble":           2,
-            "Out":              3,
+            "Long Shot":        3,
             "Contender":        1,
             "Win-Now":          2,
             "Aging Contender":  3,
@@ -789,7 +789,7 @@ def build_teams_body(ctx: dict) -> str:
         _window_cls = {
             "Contend":          "wt-contend",
             "Bubble":           "wt-bubble",
-            "Out":              "wt-out",
+            "Long Shot":        "wt-long-shot",
             "Contender":        "wt-contender",
             "Win-Now":          "wt-win-now",
             "Aging Contender":  "wt-aging-contender",
@@ -907,7 +907,7 @@ def build_teams_body(ctx: dict) -> str:
           <div class="wl-section-label" style="margin-top:10px;">This season</div>
           <div class="wl-row"><span class="wl-dot" style="background:#22c55e;"></span><strong class="wl-label">Contend</strong><span class="wl-desc">Playoff favorite &mdash; 70%+ odds to make the playoffs</span></div>
           <div class="wl-row"><span class="wl-dot" style="background:#f59e0b;"></span><strong class="wl-label">Bubble</strong><span class="wl-desc">Live but not locked &mdash; 35&ndash;70% playoff odds</span></div>
-          <div class="wl-row"><span class="wl-dot" style="background:#94a3b8;"></span><strong class="wl-label">Out</strong><span class="wl-desc">Long shot &mdash; under 35% playoff odds</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#94a3b8;"></span><strong class="wl-label">Long Shot</strong><span class="wl-desc">Under 35% playoff odds &mdash; still alive, not mathematically eliminated</span></div>
           <div class="wl-grade-note">This label is playoff odds, not the letter grade. A clean draft can still sit mid-pack.</div>
         """
         _grade_note = "Grade is this-season roster construction (starters + value). It is not playoff odds."

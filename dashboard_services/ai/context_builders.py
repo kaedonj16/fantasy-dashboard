@@ -493,7 +493,9 @@ def _playoff_status(pct, rank, playoff_teams: int) -> str:
 _REDRAFT_WINDOW_DISPLAY = {
     "contend": "Contend",
     "bubble": "Bubble",
-    "out": "Out",
+    # Display "Long Shot" (not "Out") — "Out" is reserved for mathematical
+    # elimination on the playoff picture. This band is under 35% playoff odds.
+    "out": "Long Shot",
 }
 
 
