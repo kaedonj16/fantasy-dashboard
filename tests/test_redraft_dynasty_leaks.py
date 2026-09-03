@@ -85,6 +85,31 @@ def test_trade_calc_hides_rebuilding_chip_for_redraft():
     guest_dyn = build_trade_calculator_body(None, 2026, scoring_type="dynasty")
     assert "AI-powered trade analysis for this season" in guest_rd
     assert "AI-powered trade analysis for dynasty leagues" in guest_dyn
+    assert "Sleeper redraft comps" in redraft
+    assert "Sleeper dynasty comps" in dynasty
+
+
+def test_similar_trades_js_sends_league_format():
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'params.set("league_format", scoringType)' in js
+    assert "Sleeper redraft comps" in js
+
+
+def test_trade_database_has_dynasty_redraft_toggle():
+    src = (ROOT / "routes" / "trade_bp.py").read_text(encoding="utf-8")
+    assert "tdbFormatFilter" in src
+    assert 'data-lf="dynasty"' in src
+    assert 'data-lf="redraft"' in src
+    assert "league_format: leagueFormat" in src
+
+
+def test_similar_trades_api_filters_by_league_format():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    start = src.find("def api_trade_intel_similar_trades")
+    end = src.find("def api_trade_intel_run_crawl", start)
+    body = src[start:end]
+    assert "league_format_sql_param" in body
+    assert "AND l.league_type = %s" in body
 
 
 def test_strategy_js_has_redraft_copy_and_hides_rebuild():

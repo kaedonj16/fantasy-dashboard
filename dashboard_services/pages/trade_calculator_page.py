@@ -493,7 +493,11 @@ def build_trade_calculator_body(
           <div id="similarTradesSection" style="display:none;margin-top:28px;">
             <div style="margin-bottom:14px;">
               <h3 class="stl-title">Recent Similar Trades</h3>
-              <div class="stl-sub">Sleeper dynasty comps — real trades where these players moved to opposite sides. A teaser of the full Trade Intel feed.</div>
+              <div class="stl-sub">{
+                  "Sleeper redraft comps — real trades where these players moved to opposite sides."
+                  if scoring_type_val == "redraft"
+                  else "Sleeper dynasty comps — real trades where these players moved to opposite sides. A teaser of the full Trade Intel feed."
+              }</div>
             </div>
             <div id="similarTradesList" class="stl-list"></div>
           </div>

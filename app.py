@@ -22313,12 +22313,9 @@ def api_trade_database():
             sf_param = False
         sf_clause = "AND l.is_superflex = %s " if sf_param is not None else ""
 
-        # Build dynasty/redraft filter (league_type column: 2=dynasty, 1=redraft)
-        lf_param = None
-        if league_format == "dynasty":
-            lf_param = 2
-        elif league_format == "redraft":
-            lf_param = 1
+        # Build dynasty/redraft filter (league_type column: 0=redraft, 2=dynasty)
+        from data_building.trade_intel.league_types import league_format_sql_param
+        lf_param = league_format_sql_param(league_format)
         lf_clause = "AND l.league_type = %s " if lf_param is not None else ""
 
         # Build player filter clauses.
@@ -22515,11 +22512,8 @@ def api_trade_intel_player_trades(player_id: str):
             sf_param = False
         sf_clause = "AND l.is_superflex = %s " if sf_param is not None else ""
 
-        lf_param = None
-        if league_format == "dynasty":
-            lf_param = 2
-        elif league_format == "redraft":
-            lf_param = 1
+        from data_building.trade_intel.league_types import league_format_sql_param
+        lf_param = league_format_sql_param(league_format)
         lf_clause = "AND l.league_type = %s " if lf_param is not None else ""
 
         from dashboard_services.db import get_conn
@@ -22685,6 +22679,18 @@ def api_trade_intel_similar_trades():
         if not side_a_ids and not side_b_ids:
             return jsonify({"trades": []})
 
+        # Match the calculator's dynasty/redraft setting so a redraft deal
+        # is not compared to dynasty comps (and vice versa).
+        league_format = (
+            request.args.get("league_format")
+            or request.args.get("scoring_type")
+            or "all"
+        ).strip().lower()
+        from data_building.trade_intel.league_types import league_format_sql_param
+        lf_param = league_format_sql_param(league_format)
+        lf_clause = "AND l.league_type = %s " if lf_param is not None else ""
+        lf_args = (lf_param,) if lf_param is not None else ()
+
         from dashboard_services.db import get_conn
         from utils.utils import load_players_index
 
@@ -22692,10 +22698,10 @@ def api_trade_intel_similar_trades():
             if side_a_ids and side_b_ids:
                 # Require players from each side to appear on OPPOSITE sides of the real trade
                 trade_rows = conn.execute(
-                    """
+                    f"""
                     SELECT DISTINCT
                         t.id, t.transaction_id, t.season, t.week, t.created_at,
-                        l.scoring_type, l.is_superflex, l.num_teams
+                        l.scoring_type, l.is_superflex, l.num_teams, l.league_type
                     FROM trade_intel_trades t
                     JOIN trade_intel_assets a1 ON a1.trade_id = t.id
                         AND a1.player_id = ANY(%s) AND a1.asset_type = 'player'
@@ -22703,29 +22709,29 @@ def api_trade_intel_similar_trades():
                         AND a2.player_id = ANY(%s) AND a2.asset_type = 'player'
                         AND a2.side != a1.side
                     LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                    WHERE t.season = %s
+                    WHERE t.season = %s {lf_clause}
                     ORDER BY t.created_at DESC NULLS LAST
                     LIMIT %s
                     """,
-                    (side_a_ids, side_b_ids, season, fetch_limit),
+                    (side_a_ids, side_b_ids, season) + lf_args + (fetch_limit,),
                 ).fetchall()
             else:
                 # Only one side populated - match any trade with those players
                 all_ids = side_a_ids or side_b_ids
                 trade_rows = conn.execute(
-                    """
+                    f"""
                     SELECT DISTINCT
                         t.id, t.transaction_id, t.season, t.week, t.created_at,
-                        l.scoring_type, l.is_superflex, l.num_teams
+                        l.scoring_type, l.is_superflex, l.num_teams, l.league_type
                     FROM trade_intel_trades t
                     JOIN trade_intel_assets a ON a.trade_id = t.id
                         AND a.player_id = ANY(%s) AND a.asset_type = 'player'
                     LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                    WHERE t.season = %s
+                    WHERE t.season = %s {lf_clause}
                     ORDER BY t.created_at DESC NULLS LAST
                     LIMIT %s
                     """,
-                    (all_ids, season, fetch_limit),
+                    (all_ids, season) + lf_args + (fetch_limit,),
                 ).fetchall()
 
             if not trade_rows:
@@ -22799,11 +22805,18 @@ def api_trade_intel_similar_trades():
                     trade_date = r["created_at"].strftime("%m/%d/%y")
                 except Exception:
                     trade_date = str(r["created_at"])[:10]
+            _lt = r.get("league_type")
+            try:
+                _lt_i = int(_lt) if _lt is not None else None
+            except (TypeError, ValueError):
+                _lt_i = None
+            _fmt = "dynasty" if _lt_i == 2 else ("redraft" if _lt_i == 0 else None)
             result.append({
                 "trade_id": r["transaction_id"],
                 "date": trade_date,
                 "season": r["season"],
                 "scoring_type": r["scoring_type"],
+                "league_format": _fmt,
                 "is_superflex": r["is_superflex"],
                 "num_teams": r["num_teams"],
                 "side_a": side_a,

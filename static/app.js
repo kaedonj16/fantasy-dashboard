@@ -5822,6 +5822,16 @@ window.initTradePage = function initTradePage(root = document) {
       const params = new URLSearchParams({ season, limit: 8 });
       if (sideAIds.length) params.set("side_a", sideAIds.join(","));
       if (sideBIds.length) params.set("side_b", sideBIds.join(","));
+      const scoringType = getScoringType();
+      if (scoringType === "redraft" || scoringType === "dynasty") {
+        params.set("league_format", scoringType);
+      }
+      const sub = root.querySelector(".stl-sub");
+      if (sub) {
+        sub.textContent = scoringType === "redraft"
+          ? "Sleeper redraft comps — real trades where these players moved to opposite sides."
+          : "Sleeper dynasty comps — real trades where these players moved to opposite sides. A teaser of the full Trade Intel feed.";
+      }
 
       const res = await fetch("/api/trade-intel/similar-trades?" + params);
       if (!res.ok) throw new Error("fetch failed");
@@ -5844,6 +5854,7 @@ window.initTradePage = function initTradePage(root = document) {
         const sfBadge    = t.is_superflex === true  ? '<span class="stl-badge stl-badge-sf">SF</span>'
                          : t.is_superflex === false ? '<span class="stl-badge">1QB</span>' : '';
         const teamsBadge = t.num_teams    ? `<span class="stl-badge">${t.num_teams} Teams</span>` : '';
+        const fmtBadge   = t.league_format ? `<span class="stl-badge">${esc(t.league_format).toUpperCase()}</span>` : '';
         const scoreBadge = t.scoring_type ? `<span class="stl-badge">${esc(t.scoring_type).toUpperCase()}</span>` : '';
 
         function renderAsset(a) {
@@ -5859,7 +5870,7 @@ window.initTradePage = function initTradePage(root = document) {
         return `<div class="stl-card">
           <div class="stl-card-head">
             <span class="stl-date">${esc(t.date || "-")}</span>
-            <div class="stl-badges">${sfBadge}${teamsBadge}${scoreBadge}</div>
+            <div class="stl-badges">${fmtBadge}${sfBadge}${teamsBadge}${scoreBadge}</div>
           </div>
           <div class="stl-card-body">
             <div class="stl-col">${sideA}</div>
