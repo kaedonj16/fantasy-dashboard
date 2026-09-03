@@ -598,6 +598,7 @@ function openPlayerModal(playerId, playerName, opts) {
       // hidden entirely — no dot, no legend entry.
       const _adpColors = {
         'Sleeper': 'var(--adp-c-sleeper)', 'BR Fantasy': 'var(--adp-c-brf)',
+        'BR Fantasy Live (7d)': 'var(--adp-c-brf-live)',
         'ESPN': 'var(--adp-c-espn)', 'Yahoo': 'var(--adp-c-yahoo)', 'MFL': 'var(--adp-c-mfl)',
       };
       const _adpEsc = s => String(s).replace(/[&<>"]/g,

@@ -1062,13 +1062,14 @@
   // season-gated list (which also hides globals with no snapshot). Keeper runs
   // as a redraft. Consensus is always offered and is the default.
   var CPU_ADP_SOURCE_FALLBACK = {
-    startup: ['consensus', 'sleeper', 'brfantasy'],
-    rookie:  ['consensus', 'sleeper', 'brfantasy'],
-    redraft: ['consensus', 'sleeper', 'espn', 'yahoo', 'mfl', 'brfantasy']
+    startup: ['consensus', 'sleeper', 'brfantasy', 'brfantasy_live'],
+    rookie:  ['consensus', 'sleeper', 'brfantasy', 'brfantasy_live'],
+    redraft: ['consensus', 'sleeper', 'espn', 'yahoo', 'mfl', 'brfantasy', 'brfantasy_live']
   };
   var CPU_ADP_SOURCE_LABELS = {
     consensus: 'Consensus (all platforms)', sleeper: 'Sleeper', espn: 'ESPN',
-    yahoo: 'Yahoo', mfl: 'MFL', brfantasy: 'BR Fantasy'
+    yahoo: 'Yahoo', mfl: 'MFL', brfantasy: 'BR Fantasy',
+    brfantasy_live: 'BR Fantasy Live (7d)'
   };
   // Rebuild the "CPU drafts from" options for the currently selected draft type,
   // preferring the payload's season-gated source list once a pool has loaded and

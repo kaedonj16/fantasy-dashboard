@@ -114,6 +114,34 @@ def _classify_draft(draft_meta: dict, league_type: int = 2) -> Optional[str]:
     return None
 
 
+def _draft_started_at(draft_meta: dict) -> Optional[datetime]:
+    """Parse Sleeper draft timing into a UTC datetime, or None.
+
+    Prefer ``start_time`` (when the draft began), then ``last_picked`` (when it
+    finished), then ``created``. Sleeper usually sends epoch milliseconds; values
+    that look like seconds are accepted too. Used for Live ADP windows so a
+    historical backfill does not stamp old drafts as "today" via crawled_at.
+    """
+    for key in ("start_time", "last_picked", "created"):
+        raw = (draft_meta or {}).get(key)
+        if raw is None or raw == "":
+            continue
+        try:
+            ts = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if ts <= 0:
+            continue
+        # Heuristic: < 1e12 is seconds, else milliseconds.
+        if ts < 1e12:
+            ts *= 1000.0
+        try:
+            return datetime.fromtimestamp(ts / 1000.0, tz=timezone.utc).replace(tzinfo=None)
+        except (OverflowError, OSError, ValueError):
+            continue
+    return None
+
+
 def crawl_league_drafts(league_id: str, is_superflex: bool, num_teams: int,
                         league_type: int = 2) -> tuple[int, int]:
     """
@@ -139,13 +167,23 @@ def crawl_league_drafts(league_id: str, is_superflex: bool, num_teams: int,
         if not draft_type:
             continue
 
-        # Skip drafts already indexed
+        started_at = _draft_started_at(draft)
+
+        # Skip drafts already indexed, but backfill draft_started_at when we
+        # learn it on a later pass (Live ADP needs real draft timing).
         with get_conn() as conn:
             existing = conn.execute(
-                "SELECT 1 FROM draft_adp_drafts WHERE draft_id = %s",
+                "SELECT draft_started_at FROM draft_adp_drafts WHERE draft_id = %s",
                 (draft_id,),
             ).fetchone()
         if existing:
+            if started_at is not None and existing.get("draft_started_at") is None:
+                with get_conn() as conn:
+                    conn.execute(
+                        "UPDATE draft_adp_drafts SET draft_started_at = %s "
+                        "WHERE draft_id = %s AND draft_started_at IS NULL",
+                        (started_at, draft_id),
+                    )
             continue
 
         season_raw = draft.get("season")
@@ -170,13 +208,15 @@ def crawl_league_drafts(league_id: str, is_superflex: bool, num_teams: int,
                 """
                 INSERT INTO draft_adp_drafts
                     (draft_id, league_id, season, draft_type, num_teams,
-                     is_superflex, rounds, status, total_picks, crawled_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                     is_superflex, rounds, status, total_picks, crawled_at,
+                     draft_started_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
                 ON CONFLICT (draft_id) DO NOTHING
                 """,
                 (
                     draft_id, league_id, season, draft_type,
                     num_teams, is_superflex, rounds, status, len(picks),
+                    started_at,
                 ),
             )
 

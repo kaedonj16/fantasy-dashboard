@@ -265,6 +265,25 @@ SOURCE_CAPABILITIES: Dict[str, SourceCapability] = {
         notes="Observed real/mock drafts crawled from league settings; the only "
               "native TE-premium source.",
     ),
+    # Same observed-draft capability as BR Fantasy, but limited to drafts from
+    # the past N days (Live ADP). Selector-only — never blended into Consensus
+    # (that would double-count recent drafts already in season-long BR Fantasy).
+    "brfantasy_live": SourceCapability(
+        key="brfantasy_live", display_name="BR Fantasy Live (7d)", scope="observed",
+        formats=(
+            FormatCapability(frozenset({"redraft", "startup", "rookie"}),
+                             frozenset({"1qb", "2qb", "superflex"}), ppr=UNKNOWN),
+            FormatCapability(frozenset({"startup", "redraft"}),
+                             frozenset({"1qb", "2qb", "superflex"}),
+                             ppr=UNKNOWN, te_premium=0.5),
+            FormatCapability(frozenset({"startup", "redraft"}),
+                             frozenset({"1qb", "2qb", "superflex"}),
+                             ppr=UNKNOWN, te_premium=1.0),
+        ),
+        provides_tep=True, real_vs_mock_known=True, league_size_known=True,
+        notes="Rolling window over recently started BR Fantasy observed drafts "
+              "(default past 7 days). Not part of Consensus.",
+    ),
     "yahoo": SourceCapability(
         key="yahoo", display_name="Yahoo", scope="global",
         formats=(

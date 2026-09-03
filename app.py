@@ -15922,8 +15922,8 @@ def _attach_adp_from_source(players, adp_season, source, league_id=None, token=N
     # some drafts, so the mean floats to ~3), so we show it as a clean 1..N draft
     # board. Rank it over the players WE actually list (this pool), not the whole
     # crawl population — otherwise a crawl-only player nobody sees holds slot #1
-    # and the top player we show reads as #2.
-    _brf = (source == "brfantasy")
+    # and the top player we show reads as #2. Same treatment for Live (7d).
+    _brf = (source in ("brfantasy", "brfantasy_live"))
     _pool_ids = {str(_p.get("id") or "") for _p in players}
     # Rookie-draft pool: rank the rookie axis among these alone so any source
     # becomes a clean 1..N rookie board (Sleeper has no rookie-specific ADP and
@@ -16019,7 +16019,7 @@ def _attach_all_adp_sources(players, adp_season, sources, league_id=None, token=
     for source in sources:
         if source == "consensus":
             continue
-        _brf = (source == "brfantasy")
+        _brf = (source in ("brfantasy", "brfantasy_live"))
         by_field = {}
         has_any = False
         for scoring_type, is_sf, field in _ADP_COLUMN_AXES:
@@ -18962,7 +18962,8 @@ def api_player_adp(player_id: str):
                     # silently become Sleeper's ADP).
                     _mkt_cache[_key] = resolve_market_adp(
                         int(season), _is_sf, _scoring, source=_source,
-                        as_rank=(_source == "brfantasy"), fallback=False) or {}
+                        as_rank=(_source in ("brfantasy", "brfantasy_live")),
+                        fallback=False) or {}
                 except Exception:
                     _mkt_cache[_key] = {}
             _v = _mkt_cache[_key].get(str(player_id))
@@ -18979,6 +18980,7 @@ def api_player_adp(player_id: str):
         # snapshot never produces a bare row. Consensus stays last.
         _source_specs = [
             ("brfantasy", "BR Fantasy"),
+            ("brfantasy_live", "BR Fantasy Live (7d)"),
             ("espn", "ESPN"),
             ("yahoo", "Yahoo"),
             ("mfl", "MFL"),

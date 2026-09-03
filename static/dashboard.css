@@ -19513,11 +19513,11 @@ img, svg, canvas {
    source is a dot on a shared draft-pick scale, with a spread band and a
    consensus marker. Source dot colors are theme-aware. */
 .pm-adp-block {
-    --adp-c-sleeper: #6C4BF0; --adp-c-brf: #E08A1E; --adp-c-espn: #D33A46;
+    --adp-c-sleeper: #6C4BF0; --adp-c-brf: #E08A1E; --adp-c-brf-live: #C45C12; --adp-c-espn: #D33A46;
     --adp-c-yahoo: #12A4A0;   --adp-c-mfl: #3B7DD8;
 }
 :root[data-theme="dark"] .pm-adp-block {
-    --adp-c-sleeper: #9A82FF; --adp-c-brf: #F0A94A; --adp-c-espn: #F0687C;
+    --adp-c-sleeper: #9A82FF; --adp-c-brf: #F0A94A; --adp-c-brf-live: #F08A3A; --adp-c-espn: #F0687C;
     --adp-c-yahoo: #38C7C1;   --adp-c-mfl: #6BA2F0;
 }
 

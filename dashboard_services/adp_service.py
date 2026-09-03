@@ -644,8 +644,8 @@ _SLEEPER_ADP_FIELDS = {
                          "adp_dynasty_2qb", "adp_dynasty_ppr", "adp_dynasty_half_ppr", "adp_dynasty_std"),
 }
 
-# Which market sources are valid per scoring axis, and which the selector UIs
-# offer. Only sources with verified capability on an axis appear:
+# Which market sources are valid per scoring axis, and which feed Consensus.
+# Only sources with verified capability on an axis appear:
 #   redraft — Sleeper, ESPN (global), Yahoo (global), MFL (global PPR), BR Fantasy.
 #   dynasty — Sleeper, BR Fantasy. ESPN/Yahoo/MFL global feeds are redraft-only
 #             and are deliberately excluded from dynasty (never mix redraft ADP
@@ -654,21 +654,40 @@ _SLEEPER_ADP_FIELDS = {
 # The globals (espn/yahoo/mfl) are retrieved on the request path the same way
 # Sleeper is (cache, then fetch) and BR Fantasy is (shared DB), so they stay
 # visible after a web deploy whose local disk starts empty.
+#
+# ``brfantasy_live`` (past-7-days observed drafts) is selector-only — see
+# ADP_SELECTOR_EXTRA. Including it in Consensus would double-count recent
+# drafts already present in season-long BR Fantasy. Other platforms (Sleeper /
+# ESPN / Yahoo / MFL) publish season/global snapshots with no pick-level
+# recency window, so Live ADP is BR Fantasy-native.
 ADP_SOURCES = {
     "redraft": ("sleeper", "espn", "yahoo", "mfl", "brfantasy"),
     "dynasty": ("sleeper", "brfantasy"),
     "rookie":  ("sleeper", "brfantasy"),
 }
 
+# Extra sources offered in selector UIs but never blended into Consensus.
+ADP_SELECTOR_EXTRA = {
+    "redraft": ("brfantasy_live",),
+    "dynasty": ("brfantasy_live",),
+    "rookie":  ("brfantasy_live",),
+}
+
 # Human labels for the ADP sources, for source-selector UIs.
 ADP_SOURCE_LABELS = {
-    "sleeper":   "Sleeper",
-    "espn":      "ESPN",
-    "yahoo":     "Yahoo",
-    "mfl":       "MFL",
-    "brfantasy": "BR Fantasy",
-    "consensus": "Consensus",
+    "sleeper":         "Sleeper",
+    "espn":            "ESPN",
+    "yahoo":           "Yahoo",
+    "mfl":             "MFL",
+    "brfantasy":       "BR Fantasy",
+    "brfantasy_live":  "BR Fantasy Live (7d)",
+    "consensus":       "Consensus",
 }
+
+# Default rolling window for Live ADP (days).
+BRFANTASY_LIVE_DAYS = 7
+# Lower sample floor than season-long (20): a 7-day window has fewer drafts.
+BRFANTASY_LIVE_MIN_SAMPLES = 5
 
 # resolver scoring axis -> draft_adp.draft_type produced by the BR Fantasy crawler.
 _CRAWLER_DRAFT_TYPE = {"dynasty": "startup", "redraft": "redraft", "rookie": "rookie"}
@@ -687,18 +706,22 @@ def adp_source_options(scoring_type: str, season: Optional[int] = None):
 
     Drives the source-selector dropdowns so each surface offers exactly the
     sources that make sense for what is being drafted (Yahoo/ESPN/MFL redraft
-    only, BR Fantasy on every axis).
+    only, BR Fantasy on every axis, BR Fantasy Live on every axis).
 
     When ``season`` is given, a global snapshot-backed source (ESPN/Yahoo/MFL) is
     hidden unless it actually has a non-empty snapshot for that season — so a
     selector never offers a source that would return nothing (Priority 4). Always-
-    on sources (Sleeper, BR Fantasy) and Consensus are never gated. With
-    ``season=None`` every configured source is listed (legacy behavior).
+    on sources (Sleeper, BR Fantasy, BR Fantasy Live) and Consensus are never
+    gated. With ``season=None`` every configured source is listed (legacy
+    behavior).
 
     A season-gated call also warms the global snapshots (DB, then live) so the
-    dropdown is not empty just because this container's disk is fresh."""
+    dropdown is not empty just because this container's disk is fresh.
+
+    ``brfantasy_live`` is appended after season-long BR Fantasy and is never
+    part of Consensus (see ADP_SELECTOR_EXTRA)."""
     st = scoring_type if scoring_type in ADP_SOURCES else "redraft"
-    values = ["consensus", *ADP_SOURCES[st]]
+    values = ["consensus", *ADP_SOURCES[st], *ADP_SELECTOR_EXTRA.get(st, ())]
     season_int: Optional[int] = None
     if season is not None:
         try:
@@ -835,8 +858,95 @@ def fetch_crawler_adp(season: int, is_sf: bool, scoring_type: str,
         _CRAWLER_ADP_LOCK.release()
 
 
+def fetch_crawler_adp_live(
+    season: int,
+    is_sf: bool,
+    scoring_type: str,
+    *,
+    days: int = BRFANTASY_LIVE_DAYS,
+    min_samples: int = BRFANTASY_LIVE_MIN_SAMPLES,
+) -> Dict[str, float]:
+    """canonical id -> avg pick from BR Fantasy drafts in the past ``days``.
+
+    Aggregates raw ``draft_adp_picks`` joined to drafts whose
+    ``draft_started_at`` (preferred) or ``crawled_at`` (fallback for rows not
+    yet backfilled) falls inside the rolling window. Preferring start time
+    keeps a historical crawl backfill from flooding Live ADP.
+
+    Unlike season-long ``fetch_crawler_adp``, this does **not** fall back to an
+    older season — an empty recent window means no live signal. Selector-only;
+    never blended into Consensus.
+    """
+    draft_type = _CRAWLER_DRAFT_TYPE.get(scoring_type)
+    if not draft_type:
+        return {}
+    try:
+        days_i = max(1, int(days))
+    except (TypeError, ValueError):
+        days_i = BRFANTASY_LIVE_DAYS
+    try:
+        min_i = max(1, int(min_samples))
+    except (TypeError, ValueError):
+        min_i = BRFANTASY_LIVE_MIN_SAMPLES
+
+    _ck = ("live", int(season), bool(is_sf), scoring_type, days_i, min_i)
+    _cached = _CRAWLER_ADP_CACHE.get(_ck)
+    if _cached is not None and (time.time() - _cached[0]) < _CRAWLER_ADP_TTL:
+        return _cached[1]
+
+    if not _CRAWLER_ADP_LOCK.acquire(timeout=3.0):
+        return _cached[1] if _cached is not None else {}
+    try:
+        _fresh = _CRAWLER_ADP_CACHE.get(_ck)
+        if _fresh is not None and (time.time() - _fresh[0]) < _CRAWLER_ADP_TTL:
+            return _fresh[1]
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT
+                        p.player_id,
+                        AVG(p.pick_no::numeric) AS avg_pick,
+                        COUNT(*) AS n
+                    FROM draft_adp_picks p
+                    JOIN draft_adp_drafts d ON d.draft_id = p.draft_id
+                    WHERE d.draft_type   = %s
+                      AND d.season       = %s
+                      AND d.is_superflex = %s
+                      AND COALESCE(d.num_teams, 12) BETWEEN 8 AND 18
+                      AND COALESCE(d.draft_started_at, d.crawled_at)
+                            >= NOW() - make_interval(days => %s)
+                    GROUP BY p.player_id
+                    HAVING COUNT(*) >= %s
+                    ORDER BY avg_pick ASC
+                    """,
+                    (draft_type, int(season), is_sf, days_i, min_i),
+                ).fetchall()
+            out: Dict[str, float] = {}
+            for r in rows or []:
+                _ap = r["avg_pick"]
+                if _ap is None:
+                    continue
+                try:
+                    out[str(r["player_id"])] = float(_ap)
+                except (TypeError, ValueError):
+                    continue
+            _CRAWLER_ADP_CACHE[_ck] = (time.time(), out)
+            return out
+        except Exception:
+            logger.debug("adp_service: live crawler ADP failed", exc_info=True)
+            return {}
+    finally:
+        _CRAWLER_ADP_LOCK.release()
+
+
 def _crawler_adp_source(season: int, is_sf: bool, scoring_type: str) -> Dict[str, float]:
     return fetch_crawler_adp(int(season), is_sf, scoring_type)
+
+
+def _crawler_live_adp_source(season: int, is_sf: bool, scoring_type: str) -> Dict[str, float]:
+    return fetch_crawler_adp_live(int(season), is_sf, scoring_type)
 
 
 def fetch_yahoo_adp(league_id, token, season: int, is_sf: bool) -> Dict[str, float]:
@@ -1022,11 +1132,14 @@ def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
     """canonical player_id -> overall market ADP for a scoring axis and source.
 
     scoring_type: ``redraft`` | ``dynasty`` | ``rookie``.
-    source:       ``sleeper`` | ``yahoo`` | ``brfantasy`` | ``consensus``.
-                  ``yahoo`` is redraft-only and ``brfantasy`` is dynasty/rookie
-                  only; requesting a source off its axis yields nothing and the
-                  resolver falls back. Empty result means no data (the caller can
-                  apply its own fallback, e.g. value rank).
+    source:       ``sleeper`` | ``yahoo`` | ``espn`` | ``mfl`` | ``brfantasy`` |
+                  ``brfantasy_live`` | ``consensus``.
+                  ``yahoo`` / ``espn`` / ``mfl`` are redraft-only;
+                  ``brfantasy`` / ``brfantasy_live`` cover every axis.
+                  ``brfantasy_live`` is past-7-days observed drafts and is never
+                  part of Consensus. Requesting a source off its axis yields
+                  nothing and the resolver falls back. Empty result means no
+                  data (the caller can apply its own fallback, e.g. value rank).
     as_rank:      when True the result is re-ranked to contiguous 1..N draft
                   order (see ``ordinal_rank_adp``) for a clean board display.
     restrict_ids: when given, each source is filtered to just these ids BEFORE
@@ -1036,6 +1149,7 @@ def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
                   rather than mixing a rookie's overall rank with its rookie rank."""
     scoring_type = scoring_type if scoring_type in ("redraft", "dynasty", "rookie") else "redraft"
     valid = ADP_SOURCES.get(scoring_type, ("sleeper",))
+    selectable = (*valid, *ADP_SELECTOR_EXTRA.get(scoring_type, ()))
     _restrict = set(restrict_ids) if restrict_ids is not None else None
 
     def _clip(m: Dict[str, float]) -> Dict[str, float]:
@@ -1048,11 +1162,12 @@ def resolve_market_adp(season: int, is_sf: bool, scoring_type: str = "redraft",
         return ordinal_rank_adp(m) if (as_rank and m) else m
 
     if source == "consensus":
+        # Consensus uses ADP_SOURCES only — never selector-extra (live) sources.
         names = list(valid)
         blended = consensus_adp([_src(n) for n in names], names)
         if blended:
             return _finish(blended)
-    elif source in valid:
+    elif source in selectable:
         got = _src(source)
         if got:
             return _finish(got)
@@ -1076,6 +1191,8 @@ def _raw_source_map(name: str, season: int, is_sf: bool, scoring_type: str,
         return _sleeper_adp_source(season, is_sf, scoring_type)
     if name == "brfantasy":
         return _crawler_adp_source(season, is_sf, scoring_type)
+    if name == "brfantasy_live":
+        return _crawler_live_adp_source(season, is_sf, scoring_type)
     if name == "yahoo":
         return _yahoo_adp_source(season, is_sf, scoring_type, league_id, token)
     if name == "espn":

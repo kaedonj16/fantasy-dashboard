@@ -25,8 +25,9 @@ def _player_adp_route_src() -> str:
 
 def test_player_adp_api_ordinal_ranks_brfantasy():
     body = _player_adp_route_src()
-    assert 'as_rank=(_source == "brfantasy")' in body
+    assert 'as_rank=(_source in ("brfantasy", "brfantasy_live"))' in body
     assert "fallback=False" in body
+    assert '"brfantasy_live", "BR Fantasy Live (7d)"' in body
 
 
 def test_player_modal_consensus_averages_plotted_dots():
