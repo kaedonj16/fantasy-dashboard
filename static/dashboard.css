@@ -36252,6 +36252,11 @@ a, button, [role="button"], [role="tab"], summary, label,
 .team-strength-card .roster-grade-inline.grade-b,
 .team-strength-card .roster-grade-inline.grade-c,
 .team-strength-card .roster-grade-inline.grade-d { border-color: color-mix(in srgb, currentColor 38%, transparent); }
+/* The draft-grade reveal animation sets display:inline-block (specificity 0,3,0),
+   which knocks the letter off-center on cards that have scrolled into view. Keep
+   the grid centering (this selector matches theirs and is later in source, so it
+   wins) while leaving their transform/animation untouched. */
+.br-mo-play[data-br-moment="draftgrade"] .roster-grade-inline { display: grid; place-items: center; }
 
 /* Positional Index — understated diverging meter */
 .team-strength-card .tc-index { margin: 14px 2px 2px; }
