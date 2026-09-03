@@ -22828,14 +22828,20 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
     # Redraft/keeper (and all ESPN) use this-season values; dynasty uses
     # long-term value. Matches _league_is_redraft everywhere else.
     is_redraft = _league_is_redraft(ctx)
+    is_sf = (league_type or "").lower() == "sf"
 
-    # Build value lookup keyed by player_id
-    if is_redraft:
-        val_key = "redraft_value_sf" if league_type == "sf" else "redraft_value_1qb"
-        val_fallback = "redraft_value_1qb" if league_type == "sf" else "value"
-    else:
-        val_key = "sf_value" if league_type == "sf" else "value"
-        val_fallback = "value"
+    # Build value lookup keyed by player_id. Values AND position ranks must use
+    # the same format columns — otherwise a redraft league shows dynasty RB23.
+    from utils.value_helpers import (
+        format_rank_key as _fmt_rank_key,
+        format_rank_label_key as _fmt_rank_lbl_key,
+        format_value_keys as _fmt_val_keys,
+        row_format_rank_label as _row_rank_lbl,
+        row_format_value as _row_fmt_val,
+    )
+    val_key, val_fallback = _fmt_val_keys(is_redraft=is_redraft, is_sf=is_sf)
+    rank_key = _fmt_rank_key(is_redraft=is_redraft, is_sf=is_sf)
+    rank_label_key = _fmt_rank_lbl_key(is_redraft=is_redraft, is_sf=is_sf)
     values_by_id: dict = {}
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -22843,12 +22849,15 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
         pid = str(row.get("id") or "")
         if not pid:
             continue
+        _pos_rank = row.get(rank_key)
+        if _pos_rank is None and rank_key != "pos_rank":
+            _pos_rank = row.get("pos_rank")
         values_by_id[pid] = {
-            "value": float(row.get(val_key) or row.get(val_fallback) or row.get("value") or 0),
+            "value": _row_fmt_val(row, val_key, val_fallback),
             "age": row.get("age"),
             "position": str(row.get("position") or "").upper(),
-            "pos_rank_label": row.get("pos_rank_label") or "",
-            "pos_rank": row.get("pos_rank"),
+            "pos_rank_label": _row_rank_lbl(row, rank_label_key),
+            "pos_rank": _pos_rank,
             "rank_change_7d": row.get("rank_change_7d"),
             "pos_rank_change_7d": row.get("pos_rank_change_7d"),
             "name": row.get("name") or "",

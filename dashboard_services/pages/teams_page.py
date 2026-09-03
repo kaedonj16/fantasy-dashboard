@@ -137,6 +137,21 @@ def build_teams_body(ctx: dict) -> str:
     # Expected rows like {id, name, position, team, value, search_name}
     model_vals = ctx.get("model_value_table") or []
 
+    # map sleeper_id -> row. Apply the league's TE premium up front (on a shallow
+    # copy, never the cached row) so every downstream value read — sort, age
+    # weighting, positional strength — uses the TE-adjusted value automatically.
+    # Redraft leagues rewrite ``value`` from redraft_value_* (same as Front Office).
+    _tep = te_premium_from_settings(ctx.get("scoring_settings"))
+    _rp_early = ctx.get("roster_positions") or []
+    from utils.lineup_slots import is_superflex_lineup
+    from utils.value_helpers import format_rank_label_key, row_format_rank_label
+    _is_sf_early = is_superflex_lineup(_rp_early)
+    _scoring = "redraft" if _is_redraft else "dynasty"
+    # Pos ranks like RB23 must match the league format (redraft vs dynasty, SF vs
+    # 1QB). Hardcoding dynasty pos_rank_label leaked dynasty ranks into redraft.
+    _rank_label_key = format_rank_label_key(is_redraft=_is_redraft, is_sf=_is_sf_early)
+    _valued = build_model_value_lookup(model_vals, is_sf=_is_sf_early, scoring_type=_scoring)
+
     name_to_rank_label: Dict[str, str] = {}
     name_to_age: Dict[str, Union[float, None]] = {}
 
@@ -146,7 +161,12 @@ def build_teams_body(ctx: dict) -> str:
         safe_name = str(obj.get("search_name") or "").strip().lower()
         if not safe_name:
             continue
-        pos_lbl = obj.get("pos_rank_label") or obj.get("position") or obj.get("pos") or ""
+        pos_lbl = (
+            row_format_rank_label(obj, _rank_label_key)
+            or obj.get("position")
+            or obj.get("pos")
+            or ""
+        )
         name_to_rank_label[safe_name] = str(pos_lbl)
         age_val = obj.get("age")
         if age_val is not None:
@@ -154,17 +174,6 @@ def build_teams_body(ctx: dict) -> str:
                 name_to_age[safe_name] = float(age_val)
             except Exception:
                 name_to_age[safe_name] = None
-
-    # map sleeper_id -> row. Apply the league's TE premium up front (on a shallow
-    # copy, never the cached row) so every downstream value read — sort, age
-    # weighting, positional strength — uses the TE-adjusted value automatically.
-    # Redraft leagues rewrite ``value`` from redraft_value_* (same as Front Office).
-    _tep = te_premium_from_settings(ctx.get("scoring_settings"))
-    _rp_early = ctx.get("roster_positions") or []
-    from utils.lineup_slots import is_superflex_lineup
-    _is_sf_early = is_superflex_lineup(_rp_early)
-    _scoring = "redraft" if _is_redraft else "dynasty"
-    _valued = build_model_value_lookup(model_vals, is_sf=_is_sf_early, scoring_type=_scoring)
 
     def _te_adj_row(p: dict) -> dict:
         if _tep and str(p.get("position") or p.get("pos") or "").upper() == "TE":
