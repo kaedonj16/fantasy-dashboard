@@ -865,24 +865,44 @@ def _resolve_player(
 # Data extraction helpers
 # ---------------------------------------------------------------------------
 
+def _yahoo_league_nodes(raw: Dict) -> List[Any]:
+    """Normalize ``fantasy_content.league`` to a list of nodes.
+
+    Official ``format=json`` uses an array. Some payloads use a count-keyed
+    object (``{"0": meta, "1": {scoreboard}}``) instead.
+    """
+    fc = (raw or {}).get("fantasy_content", {}) or {}
+    lg = fc.get("league")
+    if isinstance(lg, list):
+        return lg
+    if isinstance(lg, dict):
+        rows = []
+        count = _safe_int(lg.get("count")) or 0
+        if count:
+            for i in range(count):
+                entry = lg.get(str(i))
+                if entry is not None:
+                    rows.append(entry)
+        if not rows:
+            rows = [v for k, v in lg.items() if str(k).isdigit() and v is not None]
+        return rows
+    return []
+
+
 def _extract_league_meta(raw: Dict) -> Dict:
-    fc = raw.get("fantasy_content", {})
-    league_list = fc.get("league") or []
-    return league_list[0] if league_list else {}
+    league_list = _yahoo_league_nodes(raw)
+    first = league_list[0] if league_list else {}
+    return first if isinstance(first, dict) else {}
 
 
 def _league_child_block(raw: Dict, child_key: str) -> Any:
-    """Find a child collection (``teams``, ``settings``, …) anywhere in league[].
+    """Find a child collection (``teams``, ``settings``, ``scoreboard``, …).
 
     Yahoo usually nests these under ``league[1]``, but some sub-resource
     responses attach them to ``league[0]`` instead — scanning avoids empty
     extracts when the index shifts.
     """
-    fc = raw.get("fantasy_content", {}) or {}
-    lg = fc.get("league") or []
-    if not isinstance(lg, list):
-        return {}
-    for item in lg:
+    for item in _yahoo_league_nodes(raw):
         if isinstance(item, dict) and child_key in item:
             block = item.get(child_key)
             if block is not None:
@@ -1466,6 +1486,24 @@ def get_matchups(season: int, league_id: str, week: int, access_token: str) -> L
     scoreboard = _yahoo_scoreboard_dict(raw if isinstance(raw, dict) else {})
     matchups = scoreboard.get("matchups") or {}
 
+
+def get_matchups(season: int, league_id: str, week: int, access_token: str) -> List[Dict[str, Any]]:
+    """Return Sleeper-shaped matchup rows for Yahoo's published week pairings.
+
+    Yahoo's JSON scoreboard nests matchups under ``scoreboard["0"]["matchups"]``.
+    Reading only ``scoreboard["matchups"]`` yields an empty list, and the
+    Season Hub then invents round-robin opponents that do not match Yahoo.
+    """
+    try:
+        raw = _yahoo_get(
+            access_token,
+            f"league/{_league_key_for_season(league_id, season, access_token)}/scoreboard;week={week}",
+        )
+    except Exception as exc:
+        logger.warning("[yahoo] get_matchups failed: %s", exc)
+        return []
+
+    matchups = _matchups_from_scoreboard_node(_league_child_block(raw, "scoreboard"))
     out: List[Dict[str, Any]] = []
     for i, entry in enumerate(_yahoo_collection_rows(matchups, "matchup")):
         matchup = _flatten_yahoo_matchup(entry)
@@ -1493,18 +1531,27 @@ def get_matchups(season: int, league_id: str, week: int, access_token: str) -> L
                 or (_team_attr(tm, "team_key") or "").split(".")[-1]
             )
             pts_block = _team_field_dict(tm, "team_points")
-            points    = _safe_float(pts_block.get("total"))
-
-            out.append({
-                "points":          points,
+            sides.append({
+                "points":          _safe_float(pts_block.get("total")),
                 "players":         [],
                 "roster_id":       roster_id,
                 "custom_points":   None,
-                "matchup_id":      m_id,
                 "starters":        [],
                 "starters_points": [],
                 "players_points":  {},
             })
+        if len(sides) < 2:
+            continue
+        m_id += 1
+        for side in sides[:2]:
+            side["matchup_id"] = m_id
+            out.append(side)
+
+    _yahoo_debug(
+        "get_matchups league=%s season=%s week=%s -> %s rows pairings=%s",
+        league_id, season, week, len(out),
+        [(r.get("matchup_id"), r.get("roster_id")) for r in out],
+    )
     return out
 
 

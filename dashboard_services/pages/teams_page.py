@@ -759,8 +759,9 @@ def build_teams_body(ctx: dict) -> str:
             f"<div class='tc-mix-seg' style='flex:{v:.2f};background:{c};'></div>"
             for v, c in zip(_mix_values, _mix_colors) if v and v > 0
         )
-        _mix_legend = "".join(
-            f"<span class='tc-mix-leg'><i style='background:{c};'></i>{lbl} {v:,.0f}</span>"
+        _mix_legend = " ".join(
+            f"<span class='tc-mix-leg'><span class='tc-mix-dot' style='background:{c};'></span>"
+            f"<span class='tc-mix-k'>{lbl}</span> {v:,.0f}</span>"
             for lbl, v, c in zip(_mix_labels, _mix_values, _mix_colors)
         )
         _mix_html = (
@@ -821,15 +822,19 @@ def build_teams_body(ctx: dict) -> str:
         _initials = ("".join(w[0] for w in str(name).split()[:2]).upper() or "?")[:2]
         if img_html:
             _avatar_html = (
+                "<span class='tc-avatar-wrap'>"
                 f"<img class='tc-avatar' src='{avatar}' alt='' loading='lazy' decoding='async' "
                 "onerror=\"this.style.visibility='hidden'\">"
+                "</span>"
             )
         else:
-            _avatar_html = f"<span class='tc-avatar tc-avatar-mono'>{html.escape(_initials)}</span>"
+            _avatar_html = (
+                f"<span class='tc-avatar-wrap tc-avatar-mono'>{html.escape(_initials)}</span>"
+            )
         _you_pill = "<span class='tc-you'>YOU</span>" if _is_viewer else ""
         _shape_txt = f" &middot; {html.escape(_shape)}" if _shape else ""
         _window_pill = (
-            f"<span class='tc-window'><i style='background:{_win_color};'></i>"
+            f"<span class='tc-window'><span class='tc-window-dot' style='background:{_win_color};'></span>"
             f"<b>{html.escape(_win_window) if _win_window else 'Unranked'}</b>{_shape_txt}</span>"
         )
 
@@ -860,7 +865,7 @@ def build_teams_body(ctx: dict) -> str:
             "    <div class='tc-id'>"
             f"      {_avatar_html}"
             "      <div class='tc-idtext'>"
-            f"        <h2 class='team-clickable tc-name' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}{_you_pill}</h2>"
+            f"        <h2 class='team-clickable tc-name' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'><span class='tc-name-text'>{name}</span>{_you_pill}</h2>"
             f"        {_window_pill}"
             "      </div>"
             "    </div>"

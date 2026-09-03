@@ -214,8 +214,16 @@ def build_advanced_metrics_body(
             <select id="amMetric" style="display:none">__METRIC_OPTIONS__</select>
           </div>
           <div class="am-ctrl am-ctrl-season" id="amSeasonCtrl">
-            <label class="am-ctrl-label">Season</label>
-            <select id="amSeason" class="am-select am-season-select">__SEASON_OPTIONS__</select>
+            <label class="am-ctrl-label">Seasons</label>
+            <div class="am-season-multi" id="amSeasonMulti">
+              <button type="button" class="am-select am-season-select am-season-btn" id="amSeasonBtn"
+                aria-haspopup="listbox" aria-expanded="false" aria-label="Select seasons">
+                <span id="amSeasonBtnLabel"></span>
+                <i class="fa-solid fa-chevron-down am-metric-chevron"></i>
+              </button>
+              <div class="am-season-menu" id="amSeasonMenu" role="listbox" aria-multiselectable="true" style="display:none;"></div>
+            </div>
+            <select id="amSeason" class="am-select am-season-select" style="display:none" aria-hidden="true">__SEASON_OPTIONS__</select>
           </div>
           <div class="am-ctrl am-mobile-filter am-ctrl-weekbar" id="amWeekCtrl">
             <div class="am-weekbar-head">
@@ -407,6 +415,7 @@ def build_advanced_metrics_body(
             <tr>
               <th class="am-rank">#</th>
               <th class="am-player">Player</th>
+              <th class="am-season-col" id="amSeasonColHdr" style="display:none" title="NFL season">Year</th>
               <th class="am-games" title="Games played">G</th>
               <th class="am-weeks" style="display:none" title="Weeks in range">Wks</th>
               <th class="am-barcell" id="amMetricHeader">–</th>
@@ -521,6 +530,24 @@ def build_advanced_metrics_body(
         .am-md-cat { padding:9px 8px 9px 10px; font-size:12px; }
       }
       .am-season-select { min-width:90px; }
+      .am-season-multi { position:relative; }
+      .am-season-btn { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; text-align:left; cursor:pointer; }
+      .am-season-btn #amSeasonBtnLabel { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+      .am-season-menu {
+        position:absolute; z-index:40; top:calc(100% + 4px); left:0; min-width:100%;
+        background:var(--card); border:1px solid var(--border); border-radius:10px;
+        box-shadow:0 8px 24px rgba(0,0,0,.18); padding:6px 0; max-height:280px; overflow-y:auto;
+      }
+      .am-season-opt {
+        display:flex; align-items:center; gap:8px; width:100%; padding:7px 12px;
+        background:transparent; border:0; color:var(--text); font-size:13px; font-weight:600;
+        cursor:pointer; text-align:left;
+      }
+      .am-season-opt:hover { background:var(--row,rgba(0,0,0,.04)); }
+      .am-season-opt input { margin:0; accent-color:var(--accent,#2563eb); cursor:pointer; }
+      .am-season-opt-hint { padding:6px 12px 4px; font-size:11px; color:var(--text-muted); }
+      .am-season-col { width:48px; text-align:center; color:var(--text-muted); font-size:12px; white-space:nowrap; }
+      .am-table th.am-season-col, td.am-season-col { border-left:1px solid var(--border); }
       .am-search { width:100%; box-sizing:border-box; }
       .am-sort-btn { cursor:pointer; font-weight:600; white-space:nowrap; }
       /* Week Range header: label + quick-range chips share one row so the
@@ -1061,13 +1088,37 @@ _AM_JS = r"""
   const empty     = document.getElementById('amEmpty');
   if (!metricSel || !tbody) return;
 
+  function amParseSeasons(raw) {
+    return String(raw || '').split(',').map(function(s) { return s.trim(); })
+      .filter(function(s) { return /^\d{4}$/.test(s); })
+      .map(Number);
+  }
+  function amSelectedSeasons() { return amParseSeasons(state && state.season); }
+  function amIsMultiSeason() { return amSelectedSeasons().length > 1; }
+  function amRowKey(r) {
+    if (r && r.season != null && amIsMultiSeason()) return String(r.player_id) + ':' + r.season;
+    return String(r && r.player_id != null ? r.player_id : '');
+  }
+  function amSeasonLabel(years) {
+    years = (years || []).slice();
+    if (!years.length) return 'Season';
+    if (years.length === 1) return String(years[0]);
+    if (years.length === 2) return years[0] + ' + ' + years[1];
+    return years[0] + ' + ' + (years.length - 1) + ' more';
+  }
+
   // ── Read URL params and pre-set controls so state inherits them ───────────
   (function() {
     const p = new URLSearchParams(window.location.search);
     const m = p.get('metric');
     if (m && Array.from(metricSel.options).some(o => o.value === m)) metricSel.value = m;
     const s = p.get('season');
-    if (s && seasonSel && Array.from(seasonSel.options).some(o => o.value === s)) seasonSel.value = s;
+    const allowed = new Set((cfg.seasons || []).map(Number));
+    const years = amParseSeasons(s).filter(function(y) { return allowed.has(y); });
+    if (years.length && seasonSel) {
+      seasonSel.value = String(years[0]);
+      seasonSel.dataset.multi = years.join(',');
+    }
   })();
 
   // Hide season selector when only one season (or none) is available.
@@ -1096,7 +1147,7 @@ _AM_JS = r"""
   const state = { metric: metricSel.value,
                   position: _initParams.get('pos') || 'ALL',
                   sortDir: 'desc', sortBy: metricSel.value, rows: [], search: '',
-                  season: seasonSel ? (seasonSel.value || '') : '',
+                  season: (seasonSel && (seasonSel.dataset.multi || seasonSel.value)) || '',
                   minVol: _initParams.get('minvol') || '',
                   rosterOnly: false, page: 0,
                   team: _initParams.get('team') || '',
@@ -1515,8 +1566,9 @@ _AM_JS = r"""
     }
     const curSeason = state.season || (cfg.seasons && cfg.seasons[0] ? String(cfg.seasons[0]) : '');
     const seasons = cfg.seasons || [];
-    const curIdx = seasons.indexOf(Number(curSeason));
-    const prevSeason = (curIdx >= 0 && curIdx + 1 < seasons.length) ? seasons[curIdx + 1] : null;
+    const primaryYear = amSelectedSeasons()[0] || Number(curSeason) || null;
+    const curIdx = primaryYear != null ? seasons.indexOf(Number(primaryYear)) : -1;
+    const prevSeason = (!amIsMultiSeason() && curIdx >= 0 && curIdx + 1 < seasons.length) ? seasons[curIdx + 1] : null;
     const curUrl = '/api/advanced-metrics/leaderboard?' + _buildExtraParams(curSeason);
     const prevUrl = prevSeason ? '/api/advanced-metrics/leaderboard?' + _buildExtraParams(String(prevSeason)) : null;
     // Primary (current-season) column, with a hard timeout so a hung request
@@ -1541,7 +1593,7 @@ _AM_JS = r"""
           state.playerPos[String(r.player_id)] = String(r.position).toUpperCase();
         }
       });
-      state.extraData[key] = { byId: Object.fromEntries(rows.map(r => [String(r.player_id), Number(r.value)])), maxAbs };
+      state.extraData[key] = { byId: Object.fromEntries(rows.map(r => [amRowKey(r), Number(r.value)])), maxAbs };
       render();
       // Previous-season values (YoY trend arrows) are non-essential — fetch them
       // off the critical path so the column shows immediately and the initial
@@ -1549,7 +1601,7 @@ _AM_JS = r"""
       if (prevUrl) {
         _amCmpFetch(prevUrl, 12000).then(function(prev) {
           if (prev) {
-            state.extraPrevData[key] = Object.fromEntries((prev.players || []).map(r => [String(r.player_id), Number(r.value)]));
+            state.extraPrevData[key] = Object.fromEntries((prev.players || []).map(r => [amRowKey(r), Number(r.value)]));
             render();
           }
         });
@@ -2327,13 +2379,13 @@ _AM_JS = r"""
       }
       const ed = state.extraData[state.sortBy];
       return _amCmpVal(
-        ed.byId[String(a.player_id)],
-        ed.byId[String(b.player_id)],
+        ed.byId[amRowKey(a)],
+        ed.byId[amRowKey(b)],
         desc);
     });
 
     // Rank map so roster/search filters preserve original rank numbers.
-    const rankMap = new Map(posRows.map((r, i) => [String(r.player_id), i + 1]));
+    const rankMap = new Map(posRows.map((r, i) => [amRowKey(r), i + 1]));
 
     // Quality rank: standing on the PRIMARY metric in its "good" direction
     // (ascending for lower-is-better, descending otherwise), independent of the
@@ -2343,7 +2395,7 @@ _AM_JS = r"""
     const qualityRankMap = new Map(
       posRows.slice()
         .sort((a, b) => _amCmpVal(a.value, b.value, !_primLower))
-        .map((r, i) => [String(r.player_id), i + 1])
+        .map((r, i) => [amRowKey(r), i + 1])
     );
 
     // Scale to the true max, but if the leader is a big outlier (>30% above the
@@ -2387,7 +2439,7 @@ _AM_JS = r"""
       if (!ed) return;
       let mx = 0, sum = 0, n = 0, fMin = Infinity, fMax = -Infinity;
       posRows.forEach(function(r) {
-        const v = ed.byId[String(r.player_id)];
+        const v = ed.byId[amRowKey(r)];
         if (v != null) {
           const nv = Number(v) || 0;
           mx = Math.max(mx, Math.abs(nv));
@@ -2405,7 +2457,7 @@ _AM_JS = r"""
       if (n) extraAvgMap[key] = sum / n;
       const _extraLower = !!(cfg.metrics[key] && cfg.metrics[key].lowerBetter);
       const _ePairs = posRows
-        .map(r => [String(r.player_id), ed.byId[String(r.player_id)]])
+        .map(r => [amRowKey(r), ed.byId[amRowKey(r)]])
         .filter(([, v]) => v != null)
         .sort((a, b) => { const d = Number(a[1]) - Number(b[1]); return _extraLower ? d : -d; });
       const _eRankMap = {};
@@ -2455,7 +2507,7 @@ _AM_JS = r"""
           v = r.years_exp != null ? Number(r.years_exp) : null;
         } else {
           const ed2 = state.extraData[f.key];
-          v = ed2 ? ed2.byId[String(r.player_id)] : undefined;
+          v = ed2 ? ed2.byId[amRowKey(r)] : undefined;
           v = (v !== undefined && v !== null) ? Number(v) : null;
         }
         if (v == null) return false;
@@ -2472,7 +2524,7 @@ _AM_JS = r"""
           let hits = 0;
           for (let i = 0; i < loadedExtras.length; i++) {
             const ed = state.extraData[loadedExtras[i]];
-            if (ed && ed.byId[String(r.player_id)] != null) { hits++; if (hits >= minHits) return true; }
+            if (ed && ed.byId[amRowKey(r)] != null) { hits++; if (hits >= minHits) return true; }
           }
           return false;
         });
@@ -2535,11 +2587,11 @@ _AM_JS = r"""
 
     // Rank by sort position in posRows (not display position) so pinned players
     // show their true rank rather than 1, 2, 3... just because they float to top.
-    const _visibleIds = new Set(displayRows.map(r => String(r.player_id)));
+    const _visibleIds = new Set(displayRows.map(r => amRowKey(r)));
     const filteredRankMap = new Map(
       posRows
-        .filter(r => _visibleIds.has(String(r.player_id)))
-        .map((r, i) => [String(r.player_id), i + 1])
+        .filter(r => _visibleIds.has(amRowKey(r)))
+        .map((r, i) => [amRowKey(r), i + 1])
     );
 
     const multiMode = state.extraMetrics.length > 0;
@@ -2549,7 +2601,7 @@ _AM_JS = r"""
       const col = posColor(r.position);
       const owned = ownedIds.has(String(r.player_id));
       const pinned = state.pinnedIds.has(String(r.player_id));
-      const rank = filteredRankMap.get(String(r.player_id)) || '';
+      const rank = filteredRankMap.get(amRowKey(r)) || '';
       const volNum = r.vol != null ? r.vol : (r.games != null ? r.games : '–');
       const gamesCell = '<td class="am-games">' + volNum + '</td>';
       const weeksCell = '<td class="am-weeks" style="display:' + (!!(state.weekRange && state.weekRange !== '') ? '' : 'none') + '">' + (r.weeks != null ? r.weeks : '–') + '</td>';
@@ -2571,6 +2623,8 @@ _AM_JS = r"""
         + '<span class="am-meta">' + amTeamLabel(r) + '</span>'
         + '<span class="am-meta" style="color:' + col + ';font-weight:600">' + r.position + '</span>'
         + '</span></div></td>';
+      const seasonCell = '<td class="am-season-col" style="display:' + (amIsMultiSeason() ? '' : 'none') + '">'
+        + (r.season != null ? r.season : '–') + '</td>';
 
       // Compact filter-column cells (appear right before the primary metric cell).
       let filterColCells = '';
@@ -2581,13 +2635,13 @@ _AM_JS = r"""
             filterColCells += '<td class="am-games" style="opacity:.35">–</td>';
             return;
           }
-          const fval = fed.byId[String(r.player_id)];
+          const fval = fed.byId[amRowKey(r)];
           filterColCells += '<td class="am-games">' + (fval != null ? fmtVal(fval, fkey) : '–') + '</td>';
         });
       }
 
-      const badge = percentileBadge(qualityRankMap.get(String(r.player_id)) || rank, totalRanked);
-      const prevVal = state.prevData[String(r.player_id)];
+      const badge = percentileBadge(qualityRankMap.get(amRowKey(r)) || rank, totalRanked);
+      const prevVal = amIsMultiSeason() ? null : state.prevData[String(r.player_id)];
       const trend = trendArrow(r.value, prevVal);
       let metricCell;
       if (!multiMode) {
@@ -2619,7 +2673,7 @@ _AM_JS = r"""
               + '</div></td>';
             return;
           }
-          const val = ed.byId[String(r.player_id)] !== undefined ? ed.byId[String(r.player_id)] : null;
+          const val = ed.byId[amRowKey(r)] !== undefined ? ed.byId[amRowKey(r)] : null;
           const _eBar = extraBarMap[key] || { signed: false, lower: false, fieldMin: 0, fieldMax: 1, capMax: extraMaxMap[key] };
           const pctBar = val != null ? _barPct(Number(val), _eBar) : 2;
           const disp = val != null ? fmtVal(val, key) : '–';
@@ -2628,9 +2682,9 @@ _AM_JS = r"""
             ? '<div class="am-bar-avg" style="left:' + Math.max(0, Math.min(100, _barPct(avgVE, _eBar))) + '%" '
               + 'title="Average: ' + fmtVal(avgVE, key) + '"></div>'
             : '';
-          const rkE = extraRankMap[key] ? extraRankMap[key][String(r.player_id)] : null;
+          const rkE = extraRankMap[key] ? extraRankMap[key][amRowKey(r)] : null;
           const badgeE = (rkE && extraRankTotal[key]) ? percentileBadge(rkE, extraRankTotal[key]) : '';
-          const prevE = state.extraPrevData[key] ? state.extraPrevData[key][String(r.player_id)] : undefined;
+          const prevE = (!amIsMultiSeason() && state.extraPrevData[key]) ? state.extraPrevData[key][String(r.player_id)] : undefined;
           const trendE = (val != null && prevE !== undefined) ? trendArrow(val, prevE, key) : '';
           metricCell += '<td class="am-barcell"><div class="am-metric-cell">'
             + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pctBar + '%;background:' + col + '"></div>' + avgMarkE + '</div></div>'
@@ -2650,6 +2704,7 @@ _AM_JS = r"""
         + 'onclick="window.openPlayerModal&&openPlayerModal(\'' + r.player_id + '\',\'' + safe + '\',{tab:\'metrics\'})">'
         + rankCell
         + playerCell
+        + seasonCell
         + gamesCell
         + weeksCell
         + contextCells
@@ -2986,15 +3041,16 @@ _AM_JS = r"""
       const byKey = {};
       uniq.forEach(function(k, i) { byKey[k] = (results[i] && results[i].players) || []; });
       const xRows = byKey[xk];
-      const yMap = new Map(byKey[yk].map(function(r) { return [String(r.player_id), Number(r.value)]; }));
-      const zMap = zk ? new Map((byKey[zk] || []).map(function(r) { return [String(r.player_id), Number(r.value)]; })) : null;
+      const yMap = new Map(byKey[yk].map(function(r) { return [amRowKey(r), Number(r.value)]; }));
+      const zMap = zk ? new Map((byKey[zk] || []).map(function(r) { return [amRowKey(r), Number(r.value)]; })) : null;
       let ptsAll = [];
       xRows.forEach(function(rx) {
-        const pid = String(rx.player_id);
+        const pid = amRowKey(rx);
         if (!yMap.has(pid)) return;
         const xv = Number(rx.value), yv = yMap.get(pid);
         if (!isFinite(xv) || !isFinite(yv)) return;
-        ptsAll.push({ pid: pid, name: rx.name, position: rx.position, headshot: rx.headshot || '',
+        const nm = (rx.name || '') + (amIsMultiSeason() && rx.season != null ? (' \u00b7 ' + rx.season) : '');
+        ptsAll.push({ pid: pid, name: nm, position: rx.position, headshot: rx.headshot || '',
                       x: xv, y: yv, z: (zMap && zMap.has(pid)) ? zMap.get(pid) : null });
       });
       const xLower = cfg.metrics[xk] && cfg.metrics[xk].lowerBetter;
@@ -3594,10 +3650,10 @@ _AM_JS = r"""
 
     // Determine the previous season to fetch for YoY trend arrows.
     // Skip YoY when a week range is active (not meaningful cross-season).
-    const curSeason = state.season ? parseInt(state.season) : (cfg.seasons && cfg.seasons[0]);
-    const prevSeason = curSeason ? curSeason - 1 : null;
+    const curSeason = amSelectedSeasons()[0] || (cfg.seasons && cfg.seasons[0]);
+    const prevSeason = (!amIsMultiSeason() && curSeason) ? curSeason - 1 : null;
     const isWeekFiltered = !!(ws || we);
-    const hasPrevInData = !isWeekFiltered && prevSeason && cfg.seasons && cfg.seasons.includes(prevSeason);
+    const hasPrevInData = !amIsMultiSeason() && !isWeekFiltered && prevSeason && cfg.seasons && cfg.seasons.includes(prevSeason);
     const prevParams = new URLSearchParams({ metric: state.metric, platform: cfg.platform });
     if (cfg.leagueId) prevParams.set('league_id', cfg.leagueId);
     if (prevSeason) prevParams.set('season', String(prevSeason));
@@ -3803,8 +3859,86 @@ _AM_JS = r"""
     state.sortDir = state.sortDir === 'desc' ? 'asc' : 'desc'; state.page = 0;
     updateSortBtn(); updateSortHeaders(); render();
   });
+  function syncSeasonBtn() {
+    const label = document.getElementById('amSeasonBtnLabel');
+    if (label) label.textContent = amSeasonLabel(amSelectedSeasons());
+  }
+  function syncMultiSeasonUI() {
+    const multi = amIsMultiSeason();
+    const weekCtrl = document.getElementById('amWeekCtrl');
+    if (weekCtrl) weekCtrl.style.display = multi ? 'none' : '';
+    const seasonHdr = document.getElementById('amSeasonColHdr');
+    if (seasonHdr) seasonHdr.style.display = multi ? '' : 'none';
+    if (multi) {
+      state.weekRange = '';
+      state.weekStart = null;
+      state.weekEnd = null;
+      _amSyncQuickChips('');
+    }
+    syncSeasonBtn();
+  }
+  function applySeasonSelection(years) {
+    const allowed = new Set((cfg.seasons || []).map(Number));
+    const next = (years || []).map(Number).filter(function(y) { return allowed.has(y); });
+    next.sort(function(a, b) { return b - a; });
+    if (!next.length && cfg.seasons && cfg.seasons.length) next.push(Number(cfg.seasons[0]));
+    state.season = next.join(',');
+    if (seasonSel && next.length) seasonSel.value = String(next[0]);
+    syncMultiSeasonUI();
+    state.page = 0;
+    syncURL();
+    fetchData();
+  }
+  function fillSeasonMenu() {
+    const menu = document.getElementById('amSeasonMenu');
+    if (!menu) return;
+    const selected = new Set(amSelectedSeasons());
+    const years = cfg.seasons || [];
+    let html = '<div class="am-season-opt-hint">Pick any years that have data</div>';
+    years.forEach(function(yr) {
+      const on = selected.has(Number(yr));
+      html += '<label class="am-season-opt">'
+        + '<input type="checkbox" value="' + yr + '"' + (on ? ' checked' : '') + '>'
+        + yr + '</label>';
+    });
+    menu.innerHTML = html;
+    menu.querySelectorAll('input[type="checkbox"]').forEach(function(box) {
+      box.addEventListener('change', function() {
+        const picked = [];
+        menu.querySelectorAll('input[type="checkbox"]:checked').forEach(function(el) {
+          picked.push(Number(el.value));
+        });
+        if (!picked.length) {
+          box.checked = true;
+          return;
+        }
+        applySeasonSelection(picked);
+      });
+    });
+  }
+  (function initSeasonPicker() {
+    const btn = document.getElementById('amSeasonBtn');
+    const menu = document.getElementById('amSeasonMenu');
+    if (!btn || !menu) return;
+    fillSeasonMenu();
+    syncSeasonBtn();
+    syncMultiSeasonUI();
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      const open = menu.style.display !== 'none';
+      menu.style.display = open ? 'none' : '';
+      btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+      if (!open) fillSeasonMenu();
+    });
+    document.addEventListener('click', function(e) {
+      if (menu.style.display === 'none') return;
+      if (e.target.closest && e.target.closest('#amSeasonMulti')) return;
+      menu.style.display = 'none';
+      btn.setAttribute('aria-expanded', 'false');
+    });
+  })();
   if (seasonSel) {
-    seasonSel.addEventListener('change', () => { state.season = seasonSel.value || ''; state.page = 0; syncURL(); fetchData(); });
+    seasonSel.addEventListener('change', () => { applySeasonSelection([seasonSel.value]); });
   }
   if (teamSel) {
     teamSel.addEventListener('change', () => { state.team = teamSel.value || ''; state.page = 0; syncURL(); render(); });
@@ -3872,7 +4006,9 @@ _AM_JS = r"""
       if (!rows.length) return;
       const metricLbl = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric;
       const extraKeys = state.extraMetrics.filter(k => state.extraData[k]);
-      const head = ['Player', 'Team', 'Pos', 'Age', 'Exp', metricLbl, 'Games']
+      const head = ['Player', 'Team', 'Pos']
+        .concat(amIsMultiSeason() ? ['Year'] : [])
+        .concat(['Age', 'Exp', metricLbl, 'Games'])
         .concat(extraKeys.map(k => (cfg.metrics[k] && cfg.metrics[k].label) || k));
       const esc = function(v) {
         if (v == null) return '';
@@ -3883,11 +4019,13 @@ _AM_JS = r"""
       rows.forEach(function(r) {
         const line = [
           r.name || '', r.team || '', r.position || '',
+        ].concat(amIsMultiSeason() ? [r.season != null ? r.season : ''] : [])
+        .concat([
           r.age != null ? r.age : '', r.years_exp != null ? r.years_exp : '',
           r.value != null ? r.value : '',
           r.vol != null ? r.vol : (r.games != null ? r.games : ''),
-        ].concat(extraKeys.map(function(k) {
-          const v = state.extraData[k].byId[String(r.player_id)];
+        ]).concat(extraKeys.map(function(k) {
+          const v = state.extraData[k].byId[amRowKey(r)];
           return v != null ? v : '';
         }));
         lines.push(line.map(esc).join(','));

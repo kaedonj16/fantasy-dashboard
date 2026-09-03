@@ -1248,12 +1248,47 @@ def get_players_metrics_by_season(player_ids, season: int) -> Dict[str, Dict[str
     return out
 
 
-def get_player_career_metrics(player_id: str) -> Optional[Dict[str, Any]]:
+def parse_season_list(raw) -> List[int]:
+    """Parse a season query into unique years, newest first.
+
+    Accepts ``2024``, ``"2024"``, ``"2024,2025,2022"``, or an iterable of
+    ints/strings. Non-numeric tokens are ignored. Used by the Adv Metrics
+    page and player modal so callers can request any subset of seasons that
+    actually have stored data.
     """
-    Retrieve career-advanced metrics aggregated across all seasons for a player.
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, int):
+        return [int(raw)]
+    if isinstance(raw, (list, tuple, set)):
+        tokens = list(raw)
+    else:
+        tokens = str(raw).replace(" ", "").split(",")
+    seen = set()
+    out: List[int] = []
+    for tok in tokens:
+        try:
+            year = int(tok)
+        except (TypeError, ValueError):
+            continue
+        if year not in seen:
+            seen.add(year)
+            out.append(year)
+    out.sort(reverse=True)
+    return out
+
+
+def get_player_career_metrics(
+        player_id: str,
+        seasons: Optional[List[int]] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Retrieve career-advanced metrics aggregated across seasons for a player.
 
     Args:
         player_id: Sleeper player ID
+        seasons: Optional subset of years to include (e.g. [2025, 2024, 2022]).
+                 Years with no stored row are skipped. None = every season.
 
     Returns:
         Dict with aggregated career metrics or None if not found
@@ -1325,6 +1360,11 @@ def get_player_career_metrics(player_id: str) -> Optional[Dict[str, Any]]:
         seasons_ordered = sorted(
             (s for s in season_buckets if s is not None), reverse=True
         )
+        if seasons:
+            wanted = set(parse_season_list(seasons))
+            seasons_ordered = [s for s in seasons_ordered if s in wanted]
+            if not seasons_ordered:
+                return None
 
         if seasons_ordered:
             season_snapshots = []
@@ -2227,6 +2267,56 @@ def get_all_weekly_metrics_bulk(
     return {"byId": by_id, "keys": valid_keys}
 
 
+def _stamp_season(rows: List[Dict[str, Any]], season: Optional[int]) -> List[Dict[str, Any]]:
+    """Attach ``season`` to each leaderboard row when the query was for one year."""
+    if season is None:
+        return rows
+    year = int(season)
+    for row in rows:
+        row.setdefault("season", year)
+    return rows
+
+
+def _multi_season_leaderboard(
+        metric: str,
+        position: Optional[str],
+        limit: int,
+        seasons: List[int],
+        min_vol: Optional[int],
+) -> List[Dict[str, Any]]:
+    """One row per player-season for the requested years, ranked together.
+
+    Reuses the single-season query so volume gates, computed metrics, and
+    weekly/value fallbacks stay identical. Years with no data simply contribute
+    no rows (the UI only offers seasons that exist).
+    """
+    if not seasons:
+        return []
+    combined: List[Dict[str, Any]] = []
+    lower = bool((LEADERBOARD_METRICS.get(metric) or {}).get("lower_better"))
+    for year in seasons:
+        for row in get_metric_leaderboard(
+                metric, position=position, limit=limit, season=int(year), min_vol=min_vol,
+        ):
+            item = dict(row)
+            item["season"] = int(year)
+            combined.append(item)
+
+    def _sort_key(row: Dict[str, Any]):
+        val = row.get("value")
+        missing = val is None
+        try:
+            num = float(val) if val is not None else 0.0
+        except (TypeError, ValueError):
+            missing = True
+            num = 0.0
+        # Missing values last; otherwise sort by the metric's good direction.
+        return (missing, num if lower else -num)
+
+    combined.sort(key=_sort_key)
+    return combined
+
+
 def get_available_seasons() -> List[int]:
     """Return distinct seasons that have real player data, newest first.
 
@@ -2487,16 +2577,30 @@ def get_metric_leaderboard(
     """
     if metric not in LEADERBOARD_METRICS:
         return []
+    # Comma-separated or list of years → one row per player-season.
+    if not isinstance(season, int) and season is not None:
+        years = parse_season_list(season)
+        if len(years) > 1:
+            return _multi_season_leaderboard(
+                metric, position=position, limit=limit, seasons=years, min_vol=min_vol,
+            )
+        season = years[0] if years else None
     # Value metrics (VORP/WAR) are computed in Python, not from a DB column.
     if metric in VALUE_METRICS:
-        return get_value_leaderboard(metric, position=position, limit=limit, season=season)
+        return _stamp_season(
+            get_value_leaderboard(metric, position=position, limit=limit, season=season),
+            season,
+        )
     # ppr_pts / ppr_pts_per_game have no column in player_advanced_metrics — the
     # fantasy points live in player_weekly_metrics. In season mode (no week range)
     # aggregate the full season from the weekly table instead of querying a
     # non-existent column, which would otherwise return nothing.
     if metric in _SEASON_FROM_WEEKLY:
-        return get_weekly_range_leaderboard(
-            metric, position=position, season=season, min_vol=min_vol, limit=limit,
+        return _stamp_season(
+            get_weekly_range_leaderboard(
+                metric, position=position, season=season, min_vol=min_vol, limit=limit,
+            ),
+            season,
         )
     pos = (position or "").upper().strip() or None
     _spec = LEADERBOARD_METRICS[metric]
@@ -2732,6 +2836,7 @@ def get_metric_leaderboard(
         })
     # Cache non-empty results only; evict stale-date entries to stay bounded.
     if out:
+        _stamp_season(out, season)
         for _k in [k for k in _METRIC_LEADERBOARD_CACHE if k[0] != _lb_today]:
             _METRIC_LEADERBOARD_CACHE.pop(_k, None)
         _METRIC_LEADERBOARD_CACHE[_lb_key] = out
