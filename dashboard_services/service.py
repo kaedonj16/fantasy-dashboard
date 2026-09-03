@@ -17,6 +17,7 @@ from dashboard_services.api import (
     avatar_from_users,
     team_avatar,
 )
+from dashboard_services.display_names import public_owner_label
 from dashboard_services.matchups import build_matchup_preview
 from dashboard_services.platform_api import get_matchups, get_transactions as platform_get_transactions
 from dashboard_services.players import build_roster_display_maps
@@ -441,11 +442,11 @@ def build_tables(
     user_by_id = {u["user_id"]: u for u in users}
 
     user_fallback = {
-        u["user_id"]: (
-                (u.get("metadata") or {}).get("team_name")
-                or u.get("display_name")
-                or u.get("username")
-                or str(u["user_id"])
+        u["user_id"]: public_owner_label(
+            (u.get("metadata") or {}).get("team_name"),
+            u.get("display_name"),
+            u.get("username"),
+            fallback=str(u["user_id"]),
         )
         for u in users
     }
@@ -454,8 +455,10 @@ def build_tables(
     for r in rosters:
         rid = str(r["roster_id"])
         owner_id = r.get("owner_id")
-        roster_map[rid] = (r.get("metadata") or {}).get("team_name") or user_fallback.get(
-            owner_id, f"Roster {rid}"
+        roster_map[rid] = public_owner_label(
+            (r.get("metadata") or {}).get("team_name"),
+            user_fallback.get(owner_id),
+            fallback=f"Roster {rid}",
         )
 
     matchups_by_week = build_matchups_by_week(league_id, range(1, 18), roster_map, players, season, platform)

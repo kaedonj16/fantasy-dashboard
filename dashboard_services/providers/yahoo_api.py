@@ -25,6 +25,7 @@ from urllib.parse import urlencode
 
 import requests
 
+from dashboard_services.display_names import public_owner_label
 from utils.utils import load_players_index
 from utils.coerce import safe_float as _safe_float, safe_int as _safe_int
 
@@ -1228,11 +1229,15 @@ def get_users(season: int, league_id: str, access_token: str) -> List[Dict[str, 
 
         mgr   = _yahoo_primary_manager(t)
         guid  = _yahoo_owner_id(t, team_id)
-        nick  = mgr.get("nickname") or team_name
+        # Yahoo privacy mode returns nickname "--hidden--". Never treat that as
+        # a display name — fall back to the public team name.
+        nick  = public_owner_label(mgr.get("nickname"), team_name, fallback=team_name)
 
         out.append({
             "avatar":       logo_url,
             "display_name": nick,
+            "username":     nick,
+            "team_name":    team_name,
             "is_bot":       False,
             "is_owner":     None,
             "league_id":    str(league_id),
