@@ -28,8 +28,13 @@
 
     var SLOT_MAP = {
         QB: 'QB', RB: 'RB', WR: 'WR', TE: 'TE',
-        FLEX: 'FLEX', WRRB_FLEX: 'FLEX', REC_FLEX: 'FLEX', WRRBTE_FLEX: 'FLEX',
+        FLEX: 'FLEX', WRRBTE_FLEX: 'FLEX',
+        'RB/WR/TE': 'FLEX', 'WR/RB/TE': 'FLEX', 'W/R/T': 'FLEX',
+        WRRB_FLEX: 'RB_WR', RB_WR: 'RB_WR', 'RB/WR': 'RB_WR', 'WR/RB': 'RB_WR', 'W/R': 'RB_WR',
+        REC_FLEX: 'WR_TE', WR_TE: 'WR_TE', 'WR/TE': 'WR_TE', 'W/T': 'WR_TE',
+        RB_TE: 'RB_TE', 'RB/TE': 'RB_TE', 'R/T': 'RB_TE',
         SUPER_FLEX: 'SF', SFLEX: 'SF',
+        'QB/RB/WR/TE': 'SF', 'QB/WR/RB/TE': 'SF',
     };
 
     // Raw starter counts {QB,SF,RB,WR,TE,FLEX} from a roster_positions array,
@@ -38,14 +43,14 @@
     function rosterCounts(rosterPositions, sf) {
         var lg = null;
         if (rosterPositions && rosterPositions.length) {
-            lg = {QB: 0, SF: 0, RB: 0, WR: 0, TE: 0, FLEX: 0};
+            lg = {QB: 0, SF: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, RB_WR: 0, WR_TE: 0, RB_TE: 0};
             rosterPositions.forEach(function (s) {
                 var k = SLOT_MAP[String(s).toUpperCase()];
                 if (k) lg[k]++;
             });
-            if (!(lg.QB + lg.RB + lg.WR + lg.TE + lg.FLEX + lg.SF)) lg = null;
+            if (!(lg.QB + lg.RB + lg.WR + lg.TE + lg.FLEX + lg.SF + lg.RB_WR + lg.WR_TE + lg.RB_TE)) lg = null;
         }
-        if (!lg) lg = {QB: 1, SF: 0, RB: 2, WR: 3, TE: 1, FLEX: 1};
+        if (!lg) lg = {QB: 1, SF: 0, RB: 2, WR: 3, TE: 1, FLEX: 1, RB_WR: 0, WR_TE: 0, RB_TE: 0};
         if (sf) {
             if (!lg.SF) lg.SF = 1;
             if (!lg.FLEX) lg.FLEX = 1;
@@ -244,23 +249,36 @@
             return v;
         }
 
-        // New payloads carry the already-scored canonical result. Never silently
-        // rescale that displayed/model input in the browser.
-        if (p.projection && p.projection.projection_type === 'season_average'
-            && p.projection.unit === 'points_per_game'
-            && p.projection.ppg != null && isFinite(Number(p.projection.ppg))) {
-            return unitSafe(p.projection.ppg);
+        var key = pickProjVariant(scoring);
+        var canonical = p.projection;
+        var canonVar = canonical && canonical.scoring_variant;
+        var canonPpg = canonical
+            && canonical.projection_type === 'season_average'
+            && canonical.unit === 'points_per_game'
+            ? unitSafe(canonical.ppg)
+            : null;
+        // Trust the stamped canonical PPG only when it was scored for this
+        // variant (or the stamp predates scoring_variant). A PPR / TEP /
+        // pass-TD toggle must not keep showing the previous overlay's number.
+        if (canonPpg != null && (!canonVar || canonVar === key)) {
+            return canonPpg;
         }
+
         var base = unitSafe(p.proj_ppg);
         var by = p.proj_ppg_by;
-        var key = pickProjVariant(scoring);
         var variant = unitSafe(by && by[key]);
         var pprVar = unitSafe(by && by.ppr);
         if (variant != null && variant > 0) {
-            if (base != null && pprVar != null && pprVar > 0 && key !== 'ppr') {
+            // Overlay overwrites proj_ppg with the previous scoring's canonical
+            // value. Scaling that by variant/PPR would double-adjust, so when
+            // the stamp is for a different format just use Sleeper's variant.
+            var pprBaseline = !canonVar || canonVar === 'ppr';
+            if (pprBaseline && base != null && pprVar != null && pprVar > 0 && key !== 'ppr') {
                 return Math.round(base * (variant / pprVar) * 10) / 10;
             }
-            if (key !== 'ppr' || base == null) return Math.round(variant * 10) / 10;
+            if (!pprBaseline || key !== 'ppr' || base == null) {
+                return Math.round(variant * 10) / 10;
+            }
         }
         return base;
     }
@@ -335,8 +353,14 @@
         var aliases = {
             SUPER_FLEX: 'SF', SUPERFLEX: 'SF', SFLEX: 'SF', OP: 'SF',
             QB_RB_WR_TE: 'SF', Q_RB_WR_TE: 'SF',
-            WRRB_FLEX: 'FLEX', REC_FLEX: 'FLEX', WRRBTE_FLEX: 'FLEX',
-            RB_WR_FLEX: 'FLEX', RB_WR_TE: 'FLEX',
+            'QB/RB/WR/TE': 'SF', 'QB/WR/RB/TE': 'SF',
+            WRRBTE_FLEX: 'FLEX', RB_WR_TE: 'FLEX',
+            'RB/WR/TE': 'FLEX', 'WR/RB/TE': 'FLEX', 'W/R/T': 'FLEX',
+            WRRB_FLEX: 'RB_WR', RB_WR_FLEX: 'RB_WR', RBWR_FLEX: 'RB_WR',
+            'RB/WR': 'RB_WR', 'WR/RB': 'RB_WR', 'W/R': 'RB_WR',
+            REC_FLEX: 'WR_TE', WRTE_FLEX: 'WR_TE',
+            'WR/TE': 'WR_TE', 'W/T': 'WR_TE',
+            'RB/TE': 'RB_TE', 'R/T': 'RB_TE',
         };
         var normalized = (slots || []).map(function (s) {
             var u = String(s).toUpperCase();
@@ -345,6 +369,7 @@
         if (!normalized.length) normalized = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'FLEX'];
         var eligibility = {
             QB: ['QB'], RB: ['RB'], WR: ['WR'], TE: ['TE'],
+            RB_WR: ['RB', 'WR'], WR_TE: ['WR', 'TE'], RB_TE: ['RB', 'TE'],
             FLEX: ['RB', 'WR', 'TE'], SF: ['QB', 'RB', 'WR', 'TE']
         };
         var elig = function (s) {
@@ -402,7 +427,9 @@
     function effectiveStarters(pool, counts, teams, valFn) {
         if (!pool || !pool.length) return PS().starterCounts(counts);
         var slots = [];
-        [['QB', 'QB'], ['RB', 'RB'], ['WR', 'WR'], ['TE', 'TE'], ['FLEX', 'FLEX'], ['SF', 'SF']].forEach(function (pair) {
+        [['QB', 'QB'], ['RB', 'RB'], ['WR', 'WR'], ['TE', 'TE'],
+         ['RB_WR', 'RB_WR'], ['WR_TE', 'WR_TE'], ['RB_TE', 'RB_TE'],
+         ['FLEX', 'FLEX'], ['SF', 'SF']].forEach(function (pair) {
             var n = Math.max(0, Math.round(+(counts || {})[pair[0]] || 0));
             for (var i = 0; i < n; i++) slots.push(pair[1]);
         });
@@ -678,6 +705,28 @@
         return Math.min(11, 3.5 + 2.5 * Math.min(n, 3));
     }
 
+    // 1QB QB2 / 1TE TE2: leftover NFL starters keep 85-99 Pick Scores after the
+    // slot is filled because weekly PPG never went away. The 0.32 utility hit
+    // (~26 points) is not enough when remaining skill is late-round (PS ~55-70),
+    // so the rec list can lead with four "QB filled · backup-only value" rows.
+    // Tax that starter inflation. Fades in the last quarter of the draft so a
+    // backup QB/TE is still a normal closer. Opt-in via streamableBackup.
+    function streamableBackupTax(o) {
+        if (!o || !o.streamableBackup || !o.bench) return 0;
+        var base = +o.base || 0;
+        var inflation = Math.max(0, base - 62);
+        var tax = Math.min(22, 8 + inflation * 0.4);
+        var rd = +o.round || 0, total = +o.totalRounds || 0;
+        if (rd > 0 && total > 0) {
+            var fadeStart = total * 0.75;
+            if (rd >= fadeStart) {
+                var span = Math.max(1, total - fadeStart);
+                tax *= Math.max(0, Math.min(1, (total - rd) / span));
+            }
+        }
+        return tax;
+    }
+
     function decisionScore(o) {
         o = o || {};
         var base = +o.base || 0, util = o.utility == null ? 1 : +o.utility;
@@ -699,6 +748,7 @@
             // Mid-draft luxury bench while a real starter/flex hole remains. Opt-in
             // via draftType + lineupHoles so existing callers/tests stay unchanged.
             if (redraft) score -= redraftBenchHoleTax(holes);
+            score -= streamableBackupTax(o);
         } else if (redraft) {
             // Starter/flex: tilt toward this-year production among similar PS.
             score += Math.max(0, Math.min(4, (+o.quality || 0) * 4));

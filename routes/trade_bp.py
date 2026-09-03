@@ -266,7 +266,8 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
         viewer_roster_id = viewer.get("viewer_roster_id") or ""
         has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper", season)
         _rp = ctx.get("roster_positions") or []
-        _is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp)
+        from utils.lineup_slots import is_superflex_lineup
+        _is_sf = is_superflex_lineup(_rp)
         scoring_type = "redraft" if _league_is_redraft(ctx) else "dynasty"
         body = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
                                            scoring_format=scoring_format,
@@ -479,7 +480,8 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             from app import get_league_ctx_from_cache
             _ti_ctx = get_league_ctx_from_cache(platform, league_id, season)
             _ti_rp = _ti_ctx.get("roster_positions") or []
-            _ti_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _ti_rp)
+            from utils.lineup_slots import is_superflex_lineup
+            _ti_sf = is_superflex_lineup(_ti_rp)
             _ti_lt = "sf" if _ti_sf else "1qb"
             _ti_sz = len(_ti_ctx.get("rosters") or []) or 10
         except Exception:

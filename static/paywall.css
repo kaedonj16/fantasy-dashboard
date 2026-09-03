@@ -17,16 +17,17 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
+  background: color-mix(in srgb, var(--text) 55%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .paywall-content {
   position: relative;
   background: var(--card);
   border-radius: 16px;
-  max-width: 780px;
-  width: 90%;
+  max-width: 960px;
+  width: 94%;
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
@@ -135,14 +136,64 @@
 
 .paywall-pricing {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 16px;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 14px;
   margin-top: 32px;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 920px) {
+  .paywall-pricing {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
   .paywall-pricing {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .paywall-modal {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .paywall-content {
+    width: 100%;
+    max-width: none;
+    max-height: calc(100dvh - env(safe-area-inset-top));
+    border-radius: 16px 16px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .paywall-header {
+    padding: 18px 18px 12px;
+  }
+
+  .paywall-header h2 {
+    font-size: 20px;
+  }
+
+  .paywall-body {
+    padding: 24px 18px 28px;
+  }
+
+  .paywall-body h3 {
+    font-size: 22px;
+  }
+
+  .paywall-pricing {
+    gap: 12px;
+    margin-top: 24px;
+  }
+
+  .pricing-option {
+    padding: 18px;
+  }
+
+  .pricing-price {
+    font-size: 30px;
   }
 }
 

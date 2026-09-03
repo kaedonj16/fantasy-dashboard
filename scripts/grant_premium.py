@@ -5,29 +5,40 @@ Admin script to manually grant premium access.
 Usage:
   python scripts/grant_premium.py league <league_id> <subscriber_user_id> [--days 365] [--platform sleeper]
   python scripts/grant_premium.py user <user_id> [--days 365] [--platform sleeper]
+  python scripts/grant_premium.py single_league <user_id> <league_id> [--days 365] [--platform sleeper]
 """
 import argparse
 import sys
 from datetime import datetime, timezone, timedelta
 
 sys.path.insert(0, ".")
-from dashboard_services.subscriptions import create_league_subscription, create_user_subscription
+from dashboard_services.subscriptions import (
+    create_league_subscription,
+    create_user_league_subscription,
+    create_user_subscription,
+)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Grant premium access to a league or user")
     sub = parser.add_subparsers(dest="type", required=True)
 
-    lp = sub.add_parser("league", help="Grant a league subscription")
+    lp = sub.add_parser("league", help="Grant a shared league subscription")
     lp.add_argument("league_id", help="Sleeper league ID")
     lp.add_argument("subscriber_user_id", help="Sleeper username of the subscriber")
     lp.add_argument("--days", type=int, default=365, help="Days until expiry (default: 365)")
     lp.add_argument("--platform", default="sleeper", help="Platform (default: sleeper)")
 
-    up = sub.add_parser("user", help="Grant a user subscription")
+    up = sub.add_parser("user", help="Grant a personal all-leagues subscription")
     up.add_argument("user_id", help="Sleeper username")
     up.add_argument("--days", type=int, default=365, help="Days until expiry (default: 365)")
     up.add_argument("--platform", default="sleeper", help="Platform (default: sleeper)")
+
+    sl = sub.add_parser("single_league", help="Grant a personal single-league subscription")
+    sl.add_argument("user_id", help="User id / username / acct:N key")
+    sl.add_argument("league_id", help="League ID")
+    sl.add_argument("--days", type=int, default=365, help="Days until expiry (default: 365)")
+    sl.add_argument("--platform", default="sleeper", help="Platform (default: sleeper)")
 
     args = parser.parse_args()
     expires_at = datetime.now(timezone.utc) + timedelta(days=args.days)
@@ -40,6 +51,15 @@ def main():
             print(f"[OK] League premium granted: {args.league_id} via {args.subscriber_user_id}, expires {expires_at.date()}")
         else:
             print("[ERROR] Failed to grant league premium", file=sys.stderr)
+            sys.exit(1)
+    elif args.type == "single_league":
+        ok = create_user_league_subscription(
+            args.user_id, args.league_id, expires_at, args.platform
+        )
+        if ok:
+            print(f"[OK] Single-league premium granted: {args.user_id} @ {args.league_id}, expires {expires_at.date()}")
+        else:
+            print("[ERROR] Failed to grant single-league premium", file=sys.stderr)
             sys.exit(1)
     else:
         ok = create_user_subscription(args.user_id, expires_at, args.platform)

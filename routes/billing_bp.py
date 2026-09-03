@@ -19,9 +19,11 @@ from flask import Blueprint, jsonify, request, session
 from dashboard_services.subscriptions import (
     cancel_subscription,
     create_league_subscription,
+    create_user_league_subscription,
     create_user_subscription,
     has_premium_access,
     has_premium_for_viewer,
+    has_user_league_subscription,
 )
 
 billing_bp = Blueprint("billing", __name__)
@@ -30,6 +32,10 @@ logger = logging.getLogger(__name__)
 _STRIPE_LEAGUE_PRODUCT = "prod_USjDJYPhNGnmvM"
 _STRIPE_USER_PRODUCT   = "prod_USjDRuVDcwH1xb"
 _STRIPE_COMBO_PRODUCT  = "prod_UT5DaCA4u6hWgb"
+_STRIPE_SINGLE_LEAGUE_PRODUCT = (
+    os.environ.get("STRIPE_SINGLE_LEAGUE_PRODUCT", "").strip()
+    or "prod_VB4fRiQaKCTcu9"
+)
 
 
 def _stripe():
@@ -43,7 +49,15 @@ _STRIPE_PRICES = {
     "league": {"unit_amount": 1500, "product": _STRIPE_LEAGUE_PRODUCT},
     "user":   {"unit_amount": 1000, "product": _STRIPE_USER_PRODUCT},
     "combo":  {"unit_amount": 2000, "product": _STRIPE_COMBO_PRODUCT},
+    "single_league": {
+        "unit_amount": 500,
+        "product": _STRIPE_SINGLE_LEAGUE_PRODUCT,
+        "product_name": "BR Fantasy Single League PRO",
+    },
 }
+
+_LEAGUE_REQUIRED_PLANS = frozenset({"league", "combo", "single_league"})
+_MEMBERSHIP_REQUIRED_PLANS = frozenset({"league", "combo", "single_league"})
 
 _SUPPORTED_PLATFORMS = {"sleeper", "espn", "yahoo", "mfl", "fleaflicker"}
 
@@ -110,11 +124,11 @@ def _try_grant_from_stripe_success() -> None:
         sub_id    = cs.subscription
         cust_id   = cs.customer
 
-        if plan not in ("league", "user", "combo"):
+        if plan not in ("league", "user", "combo", "single_league"):
             return
         if plan == "user" and not user_id:
             return
-        if plan == "league" and not league_id:
+        if plan in ("league", "single_league") and not league_id:
             return
         if plan == "combo" and not league_id and not user_id:
             return
@@ -144,8 +158,50 @@ def _try_grant_from_stripe_success() -> None:
                 stripe_customer_id=cust_id,
                 platform=platform,
             )
+        if (plan == "single_league" and user_id and league_id
+                and not has_user_league_subscription(user_id, league_id, platform)):
+            create_user_league_subscription(
+                user_id, league_id, expires_at,
+                stripe_subscription_id=sub_id,
+                stripe_customer_id=cust_id,
+                platform=platform,
+            )
     except Exception:
         logger.exception("[stripe] success-page session verification failed")
+
+
+def _pricing_feature_item(icon: str, label: str, *, free: bool = False) -> str:
+    tier = "pricing-feature-free" if free else "pricing-feature-pro"
+    return (
+        f'<div class="pricing-feature-item {tier}">'
+        f'<span class="pricing-feature-icon" aria-hidden="true"><i class="fa-solid {html.escape(icon)}"></i></span>'
+        f'<span class="pricing-feature-label">{label}</span>'
+        f"</div>"
+    )
+
+
+def _pricing_features_grid(items: list[tuple[str, str]], *, free: bool = False) -> str:
+    cells = "".join(_pricing_feature_item(icon, label, free=free) for icon, label in items)
+    return f'<div class="pricing-features-grid">{cells}</div>'
+
+
+_PRO_FEATURES = [
+    ("fa-handshake", "Roster-Based Trade Suggestions"),
+    ("fa-chart-line", "Full Trade Intelligence feed &amp; history"),
+    ("fa-fire", "Breakout Engine candidate predictions"),
+    ("fa-trophy", "Playoff Impact simulations"),
+    ("fa-briefcase", "Front Office Report"),
+    ("fa-newspaper", "Weekly Recap"),
+    ("fa-clipboard-list", "Custom Draft Board"),
+    ("fa-magnifying-glass-chart", "Draft Deep Dive Analyzer"),
+]
+
+_FREE_FEATURES = [
+    ("fa-calculator", "Trade calculator &amp; Sleeper comps"),
+    ("fa-table", "Advanced Metrics"),
+    ("fa-gavel", "Auction Values"),
+    ("fa-file-csv", "Live cheat-sheet overlay &amp; CSV"),
+]
 
 
 def _pricing_body() -> str:
@@ -318,6 +374,7 @@ def _pricing_body() -> str:
 
     league_highlight = "border-color:#2563eb;box-shadow:0 8px 24px rgba(37,99,235,.2);" if plan == "league" else ""
     user_highlight   = "border-color:#2563eb;box-shadow:0 8px 24px rgba(37,99,235,.2);" if plan == "user"   else ""
+    single_highlight = "border-color:#2563eb;box-shadow:0 8px 24px rgba(37,99,235,.2);" if plan == "single_league" else ""
     canceled_banner = """
     <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 18px;margin-bottom:20px;color:#dc2626;font-size:14px;">
       <i class="fa-solid fa-circle-xmark" style="margin-right:6px;"></i>
@@ -325,7 +382,7 @@ def _pricing_body() -> str:
     </div>""" if canceled else ""
     return f"""
     {canceled_banner}
-    <div class="card central" style="max-width:760px;">
+    <div class="card central" style="max-width:920px;">
       <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;text-align:center;">
         <h2 style="margin:0 0 6px;font-size:22px;">Premium</h2>
         <div style="font-size:14px;color:var(--text-muted);">
@@ -335,73 +392,37 @@ def _pricing_body() -> str:
       <div class="card-body" style="padding-top:28px;">
 
         <!-- Feature list — must match static/paywall.js .paywall-features -->
-        <div style="margin-bottom:28px;">
-          <div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:12px;">What PRO includes</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-handshake" style="color:#2563eb;width:16px;text-align:center;"></i>
-              Roster-Based Trade Suggestions
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-chart-line" style="color:#2563eb;width:16px;text-align:center;"></i>
-              Full Trade Intelligence feed &amp; history
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-fire" style="color:#2563eb;width:16px;text-align:center;"></i>
-              Breakout Engine candidate predictions
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-trophy" style="color:#2563eb;width:16px;text-align:center;"></i>
-              Playoff Impact simulations
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-briefcase" style="color:#2563eb;width:16px;text-align:center;"></i>
-              Front Office Report
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-newspaper" style="color:#2563eb;width:16px;text-align:center;"></i>
-              Weekly Recap
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-clipboard-list" style="color:#2563eb;width:16px;text-align:center;"></i>
-              Custom Draft Board
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-magnifying-glass-chart" style="color:#2563eb;width:16px;text-align:center;"></i>
-              Draft Deep Dive Analyzer
-            </div>
-          </div>
-          <div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin:20px 0 12px;">Free includes</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-calculator" style="color:#16a34a;width:16px;text-align:center;"></i>
-              Trade calculator &amp; Sleeper comps
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-table" style="color:#16a34a;width:16px;text-align:center;"></i>
-              Advanced Metrics
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-gavel" style="color:#16a34a;width:16px;text-align:center;"></i>
-              Auction Values
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
-              <i class="fa-solid fa-file-csv" style="color:#16a34a;width:16px;text-align:center;"></i>
-              Live cheat-sheet overlay &amp; CSV
-            </div>
-          </div>
+        <div class="pricing-features-block">
+          <div class="pricing-features-heading">What PRO includes</div>
+          {_pricing_features_grid(_PRO_FEATURES)}
+          <div class="pricing-features-heading pricing-features-heading-secondary">Free includes</div>
+          {_pricing_features_grid(_FREE_FEATURES, free=True)}
         </div>
 
         <!-- Pricing cards -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:28px;">
+        <div class="pricing-plan-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:14px;margin-bottom:28px;">
+
+          <!-- Single-league personal plan -->
+          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:22px;transition:all .2s;background:var(--card);{single_highlight}">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;min-height:28px;">
+              <div style="font-size:16px;font-weight:700;">One League</div>
+            </div>
+            <div style="font-size:36px;font-weight:800;line-height:1;margin-bottom:4px;">
+              $5<span style="font-size:15px;font-weight:500;color:var(--text-muted);">/year</span>
+            </div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">PRO for you in one league you choose</div>
+            <button onclick="initiatePurchase('single_league', this)" style="width:100%;padding:11px;border-radius:9px;border:2px solid #2563eb;background:var(--card);color:#2563eb;font-size:14px;font-weight:700;cursor:pointer;">
+              Choose a League
+            </button>
+          </div>
 
           <!-- League plan -->
-          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);">
+          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:22px;transition:all .2s;background:var(--card);{league_highlight}">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;min-height:28px;">
-              <div style="font-size:17px;font-weight:700;">League Plan</div>
+              <div style="font-size:16px;font-weight:700;">League Plan</div>
             </div>
-            <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
-              $15<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
+            <div style="font-size:36px;font-weight:800;line-height:1;margin-bottom:4px;">
+              $15<span style="font-size:15px;font-weight:500;color:var(--text-muted);">/year</span>
             </div>
             <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for every manager in your league</div>
             <button onclick="initiatePurchase('league', this)" style="width:100%;padding:11px;border-radius:9px;border:2px solid #2563eb;background:var(--card);color:#2563eb;font-size:14px;font-weight:700;cursor:pointer;">
@@ -410,13 +431,13 @@ def _pricing_body() -> str:
           </div>
 
           <!-- Combo plan -->
-          <div style="border:2px solid #2563eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{league_highlight}">
+          <div style="border:2px solid #2563eb;border-radius:14px;padding:22px;transition:all .2s;background:var(--card);">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-              <div style="font-size:17px;font-weight:700;">League + Personal</div>
+              <div style="font-size:16px;font-weight:700;">League + Personal</div>
               <div style="background:linear-gradient(135deg,#122d4b,#2563eb);color:white;font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;">Best Value</div>
             </div>
-            <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
-              $20<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
+            <div style="font-size:36px;font-weight:800;line-height:1;margin-bottom:4px;">
+              $20<span style="font-size:15px;font-weight:500;color:var(--text-muted);">/year</span>
             </div>
             <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for your league and all your personal leagues</div>
             <button onclick="initiatePurchase('combo', this)" style="width:100%;padding:11px;border-radius:9px;border:none;background:linear-gradient(135deg,#122d4b,#2563eb);color:white;font-size:14px;font-weight:700;cursor:pointer;">
@@ -425,12 +446,12 @@ def _pricing_body() -> str:
           </div>
 
           <!-- Personal plan -->
-          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{user_highlight}">
+          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:22px;transition:all .2s;background:var(--card);{user_highlight}">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;min-height:28px;">
-              <div style="font-size:17px;font-weight:700;">Personal Plan</div>
+              <div style="font-size:16px;font-weight:700;">Personal Plan</div>
             </div>
-            <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
-              $10<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
+            <div style="font-size:36px;font-weight:800;line-height:1;margin-bottom:4px;">
+              $10<span style="font-size:15px;font-weight:500;color:var(--text-muted);">/year</span>
             </div>
             <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for all your leagues, one account</div>
             <button onclick="initiatePurchase('user', this)" style="width:100%;padding:11px;border-radius:9px;border:2px solid #2563eb;background:var(--card);color:#2563eb;font-size:14px;font-weight:700;cursor:pointer;">
@@ -443,16 +464,18 @@ def _pricing_body() -> str:
         <!-- Free tier note -->
         <div style="text-align:center;font-size:13px;color:var(--text-muted);padding-top:12px;border-top:1px solid var(--border);">
           <i class="fa-solid fa-circle-info" style="margin-right:4px;"></i>
-          ADP rankings and basic player data are always free.
+          ADP rankings and basic player data are always free. One League unlocks PRO for you only — not your league mates.
         </div>
 
       </div>
     </div>
 
     <style>
-      @media (max-width: 760px) {{
-        .card-body > div:nth-child(2) {{ grid-template-columns: 1fr !important; }}
-        .card-body > div:nth-child(3) {{ grid-template-columns: 1fr !important; }}
+      @media (max-width: 920px) {{
+        .pricing-plan-grid {{ grid-template-columns: 1fr 1fr !important; }}
+      }}
+      @media (max-width: 560px) {{
+        .pricing-plan-grid {{ grid-template-columns: 1fr !important; }}
       }}
     </style>
     """
@@ -601,13 +624,13 @@ def create_checkout_session():
         return jsonify({"error": "Invalid plan"}), 400
     if platform not in _SUPPORTED_PLATFORMS:
         return jsonify({"error": "Invalid platform"}), 400
-    if plan in ("league", "combo") and not league_id:
+    if plan in _LEAGUE_REQUIRED_PLANS and not league_id:
         return jsonify({"error": "Choose a league before purchasing this plan."}), 400
 
-    # League/combo plans are shared with co-managers — only sell them to someone
-    # who actually belongs to the league (otherwise buyers pay for an entitlement
-    # that has_premium_for_viewer will refuse to honor).
-    if plan in ("league", "combo") and league_id:
+    # League/combo/single_league require membership. Shared plans unlock
+    # co-managers; single_league is buyer-only but still must be a real league
+    # the buyer belongs to.
+    if plan in _MEMBERSHIP_REQUIRED_PLANS and league_id:
         from dashboard_services.subscriptions import viewer_is_league_member
         member_id = session.get("viewer_user_id") or session.get("viewer_username")
         if not viewer_is_league_member(member_id, league_id, platform, season):
@@ -624,12 +647,26 @@ def create_checkout_session():
         or (username and has_premium_access(username, None, platform))
         or (account_id and has_premium_access(None, None, platform, account_id=account_id))
     )
+    has_single = bool(
+        league_id and (
+            (stable_id and has_user_league_subscription(stable_id, league_id, platform))
+            or (username and has_user_league_subscription(username, league_id, platform))
+            or (account_id and has_user_league_subscription(
+                None, league_id, platform, account_id=account_id,
+            ))
+            or (user_id and has_user_league_subscription(user_id, league_id, platform))
+        )
+    )
     # A combo is its own Stripe subscription, not an in-place upgrade. Starting
     # one while either component is active would double-bill the customer.
+    # Single-league is redundant when a full personal or shared league plan
+    # already covers this room.
     duplicate = ((plan == "league" and has_league)
                  or (plan == "user" and has_user)
-                 or (plan == "combo" and (has_league or has_user)))
-    logger.info("[checkout] Existing components league=%s user=%s", has_league, has_user)
+                 or (plan == "combo" and (has_league or has_user))
+                 or (plan == "single_league" and (has_single or has_user or has_league)))
+    logger.info("[checkout] Existing components league=%s user=%s single=%s",
+                has_league, has_user, has_single)
     if duplicate:
         return jsonify({"error": "You already have this premium subscription."}), 400
 
@@ -648,16 +685,23 @@ def create_checkout_session():
     else:
         cancel_url = base_url + "/pricing?canceled=1&platform=" + urllib.parse.quote(platform, safe="")
 
+    price_data = {
+        "currency": "usd",
+        "unit_amount": price_spec["unit_amount"],
+        "recurring": {"interval": "year"},
+    }
+    if price_spec.get("product"):
+        price_data["product"] = price_spec["product"]
+    else:
+        price_data["product_data"] = {
+            "name": price_spec.get("product_name") or "BR Fantasy PRO",
+        }
+
     try:
         checkout = _stripe().checkout.Session.create(
             mode="subscription",
             line_items=[{
-                "price_data": {
-                    "currency": "usd",
-                    "product": price_spec["product"],
-                    "unit_amount": price_spec["unit_amount"],
-                    "recurring": {"interval": "year"},
-                },
+                "price_data": price_data,
                 "quantity": 1,
             }],
             success_url=success_url,
@@ -727,7 +771,16 @@ def stripe_webhook():
             )
             logger.info("[stripe] webhook user subscription %s for user=%s expires=%s",
                         "created" if ok else "FAILED", user_id, expires_at)
-        if plan not in ("league", "user", "combo"):
+        if plan == "single_league" and user_id and league_id:
+            ok = create_user_league_subscription(
+                user_id, league_id, expires_at,
+                stripe_subscription_id=sub_id,
+                stripe_customer_id=cust_id,
+                platform=platform,
+            )
+            logger.info("[stripe] webhook single-league subscription %s for user=%s league=%s expires=%s",
+                        "created" if ok else "FAILED", user_id, league_id, expires_at)
+        if plan not in ("league", "user", "combo", "single_league"):
             logger.warning("[stripe] webhook checkout.session.completed unhandled: plan=%s league=%s user=%s",
                            plan, league_id, user_id)
 
@@ -749,6 +802,10 @@ def stripe_webhook():
                             "UPDATE user_subscriptions SET expires_at=%s, updated_at=NOW() WHERE stripe_subscription_id=%s",
                             (expires_at, sub_id),
                         )
+                        cur.execute(
+                            "UPDATE user_league_subscriptions SET expires_at=%s, updated_at=NOW() WHERE stripe_subscription_id=%s",
+                            (expires_at, sub_id),
+                        )
             except Exception as e:
                 logger.exception("[stripe] invoice.paid renewal error: %s", e)
 
@@ -758,6 +815,7 @@ def stripe_webhook():
             sub_id = s.id
             cancel_subscription(sub_id, "league")
             cancel_subscription(sub_id, "user")
+            cancel_subscription(sub_id, "single_league")
 
     return "", 200
 

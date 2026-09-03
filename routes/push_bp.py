@@ -346,8 +346,21 @@ def api_cron_notifications():
         elif kind == "weekly":
             # Weekly email digest. Call once a week (e.g. Tuesday morning). Safe to
             # call more often — it de-dupes per account per ISO week.
+            # Optional one-person test: JSON/query account_id or email, plus force=1
+            # to bypass this week's dedupe. Do not omit those if you only want a
+            # self-send — a bare type=weekly still fans out to everyone.
             from utils.weekly_email import send_weekly_digests
-            summary = send_weekly_digests()
+            raw_aid = data.get("account_id") if data.get("account_id") not in (None, "") else request.args.get("account_id")
+            account_id = None
+            try:
+                if raw_aid not in (None, ""):
+                    account_id = int(raw_aid)
+            except (TypeError, ValueError):
+                account_id = None
+            email = str(data.get("email") or request.args.get("email") or "").strip() or None
+            force_raw = data.get("force") if "force" in data else request.args.get("force")
+            force = str(force_raw or "").strip().lower() in ("1", "true", "yes", "on")
+            summary = send_weekly_digests(account_id=account_id, email=email, force=force)
             return jsonify({"ok": True, "weekly_email": summary})
         else:
             run_hourly()

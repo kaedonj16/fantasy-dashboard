@@ -16,7 +16,7 @@ from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple
 
 from dashboard_services.ai.context_builders import ctx_scoring_type
-from utils.lineup_slots import canonicalize_slot
+from utils.lineup_slots import RESTRICTED_FLEX_SLOTS, canonicalize_slot, slot_eligible_positions
 from utils.roster_strength import STARTER_THRESHOLD, derive_league_thresholds
 from utils.tier_stack import asset_tier
 from utils.tier_thresholds import FALLBACK_THRESHOLDS, compute_tier_thresholds
@@ -176,6 +176,21 @@ def _f(v: Any, default: float = 0.0) -> float:
         return default
 
 
+def _asset_values(row: Any, *, is_sf: bool, is_redraft: bool) -> Tuple[float, float]:
+    """Return ``(match_value, redraft_value)`` for suggestion math.
+
+    Dynasty leagues match on long-term ``value`` / ``sf_value``. Redraft leagues
+    must match on ``redraft_value_*`` — otherwise a high-dynasty rookie (Makai
+    Lemon) looks like a fair 1-for-1 for a win-now veteran (Javonte Williams)
+    even though the trade calculator, using redraft columns, shows a 400+ gap.
+    """
+    val_key = "sf_value" if is_sf else "value"
+    rdft_key = "redraft_value_sf" if is_sf else "redraft_value_1qb"
+    dyn = _f((row or {}).get(val_key) or (row or {}).get("value"))
+    rdft = _f((row or {}).get(rdft_key) or (row or {}).get("redraft_value"))
+    return (rdft if is_redraft else dyn), rdft
+
+
 def _seed(standings_map: Dict, roster_id: Any, fallback: int = 99) -> int:
     """Look up standings seed tolerating int/str key mismatch."""
     rid_int = int(roster_id) if str(roster_id).isdigit() else None
@@ -211,7 +226,8 @@ def _optimal_lineup_value(
 
     use_redraft=True → score by redraft_value (current-season production),
     falling back to dynasty value if redraft is unavailable. Use this for
-    win-probability calculations; dynasty value for trade window matching.
+    win-probability calculations. Trade-window matching uses ``value``, which
+    is already rewritten to redraft columns in redraft leagues.
     """
     slots = SLOTS_SF if league_type == "sf" else SLOTS_1QB
 
@@ -277,6 +293,7 @@ def _ppg_lineup(
 
     fixed_slots: Dict[str, int] = {}
     flex_slots = sflex_slots = 0
+    restricted = {name: 0 for name in RESTRICTED_FLEX_SLOTS}
     for slot in roster_positions:
         s = canonicalize_slot(slot)
         if s in _BENCH_SLOTS:
@@ -285,6 +302,8 @@ def _ppg_lineup(
             sflex_slots += 1
         elif s == "FLEX":
             flex_slots += 1
+        elif s in restricted:
+            restricted[s] += 1
         elif s in SKILL_POS:
             fixed_slots[s] = fixed_slots.get(s, 0) + 1
 
@@ -323,17 +342,26 @@ def _ppg_lineup(
             total += pool[i] if i < len(pool) else 0.0
             used[slot_pos] = i + 1
 
-    flex_pool = sorted(
+    leftover = sorted(
         [(pos, ppg) for pos in _FLEX_ELIGIBLE for ppg in by_pos.get(pos, [])[used.get(pos, 0):]],
         key=lambda x: x[1], reverse=True,
     )
-    for i in range(flex_slots):
-        if i < len(flex_pool):
-            total += flex_pool[i][1]
-    remaining = flex_pool[flex_slots:]
+    for name in RESTRICTED_FLEX_SLOTS:
+        n = restricted.get(name, 0)
+        eligible = slot_eligible_positions(name)
+        taken, rest = [], []
+        for pos, ppg in leftover:
+            if len(taken) < n and pos in eligible:
+                taken.append((pos, ppg))
+            else:
+                rest.append((pos, ppg))
+        leftover = rest
+        total += sum(ppg for _, ppg in taken)
+    flex_taken, leftover = leftover[:flex_slots], leftover[flex_slots:]
+    total += sum(ppg for _, ppg in flex_taken)
 
     sflex_pool = sorted(
-        [("QB", ppg) for ppg in by_pos.get("QB", [])[used.get("QB", 0):]] + remaining,
+        [("QB", ppg) for ppg in by_pos.get("QB", [])[used.get("QB", 0):]] + leftover,
         key=lambda x: x[1], reverse=True,
     )
     for i in range(sflex_slots):
@@ -1744,9 +1772,11 @@ def get_archetype_suggestions(
     switching archetype chips and back, re-selecting a strategy, reopening the
     tab - skip the whole (expensive) Monte Carlo pipeline and return instantly.
     """
+    _score_ctx = ctx if (ctx or {}).get("platform") else {**(ctx or {}), "platform": platform}
     _key = (
         platform, str(league_id), int(season), str(viewer_roster_id),
         (archetype or "").lower().strip(), (league_type or "").lower(), int(league_size),
+        ctx_scoring_type(_score_ctx),
         tuple(sorted(str(x) for x in untouchable_ids)) if untouchable_ids else (),
         _roster_fingerprint(ctx),
     )
@@ -1828,8 +1858,12 @@ def _get_archetype_suggestions_impl(
     playoff_spots = max(4, round(num_teams * 0.4))
 
     # ── Build values_by_id ────────────────────────────────────────────────────
-    val_key  = "sf_value" if league_type == "sf" else "value"
-    rdft_key = "redraft_value_sf" if league_type == "sf" else "redraft_value_1qb"
+    # ``value`` is the column packages are matched on. In redraft it must be
+    # current-season production, not dynasty — otherwise a high-dynasty rookie
+    # is offered as "fair" for a win-now veteran the calculator prices 5× higher.
+    is_sf = league_type == "sf"
+    score_ctx = ctx if ctx.get("platform") else {**ctx, "platform": platform}
+    is_redraft = ctx_scoring_type(score_ctx) == "redraft"
 
     values_by_id: Dict[str, Any] = {}
     for p in model_tbl:
@@ -1837,13 +1871,14 @@ def _get_archetype_suggestions_impl(
         if not pid:
             continue
         pos = str(p.get("position") or "").upper()
+        match_val, rdft_val = _asset_values(p, is_sf=is_sf, is_redraft=is_redraft)
         values_by_id[pid] = {
             "name":           p.get("name", ""),
             "position":       pos,
             "team":           p.get("team", ""),
             "age":            p.get("age"),
-            "value":          _f(p.get(val_key) or p.get("value")),
-            "redraft_value":  0.0,   # filled from DB below
+            "value":          match_val,
+            "redraft_value":  rdft_val,
             "pos_rank_label": p.get("pos_rank_label") or "",
             "rank_change_7d": p.get("rank_change_7d"),
         }
@@ -1855,9 +1890,10 @@ def _get_archetype_suggestions_impl(
             pid = str(p.get("id") or "")
             if not pid:
                 continue
+            match_val, rdft_val = _asset_values(p, is_sf=is_sf, is_redraft=is_redraft)
             if pid in values_by_id:
-                values_by_id[pid]["value"]          = _f(p.get(val_key) or p.get("value"))
-                values_by_id[pid]["redraft_value"]  = _f(p.get(rdft_key))
+                values_by_id[pid]["value"]          = match_val
+                values_by_id[pid]["redraft_value"]  = rdft_val
                 values_by_id[pid]["rank_change_7d"] = p.get("rank_change_7d")
             else:
                 pos = str(p.get("position") or "").upper()
@@ -1866,8 +1902,8 @@ def _get_archetype_suggestions_impl(
                     "position":       pos,
                     "team":           p.get("team", ""),
                     "age":            p.get("age"),
-                    "value":          _f(p.get(val_key) or p.get("value")),
-                    "redraft_value":  _f(p.get(rdft_key)),
+                    "value":          match_val,
+                    "redraft_value":  rdft_val,
                     "pos_rank_label": p.get("pos_rank_label") or "",
                     "rank_change_7d": p.get("rank_change_7d"),
                 }

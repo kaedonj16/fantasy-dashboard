@@ -55,6 +55,20 @@ def test_consensus_matches_visible_source_value_average():
     assert A.consensus_adp(sources)["ceedee"] == pytest.approx(10.94)
 
 
+def test_displayed_source_consensus_averages_rank_and_sleeper():
+    # Rankings board: Sleeper raw 1.0 + BR Fantasy ordinal 2.0 → Cons 1.5,
+    # not the raw-ADP blend that showed 3.1 next to those two columns.
+    assert A.displayed_source_consensus({"sleeper": 1.0, "brfantasy": 2.0}) == 1.5
+    assert A.displayed_source_consensus({"sleeper": 2.1, "brfantasy": 1.0}) == 1.6
+    assert A.displayed_source_consensus({"sleeper": 4.1, "brfantasy": 4.0}) == 4.1
+    assert A.displayed_source_consensus({"sleeper": 3.7, "brfantasy": 3.0}) == 3.4
+    # (2.0 + 4.3) / 2 = 3.15 → 3.2, matching the modal range label.
+    assert A.displayed_source_consensus({"brfantasy": 2.0, "sleeper": 4.3}) == 3.2
+    assert A.displayed_source_consensus({"sleeper": 1.0, "brfantasy": 2.0, "consensus": 99.0}) == 1.5
+    assert A.displayed_source_consensus({"mfl": 57.8}) is None
+    assert A.displayed_source_consensus({}) is None
+
+
 # ── resolve_market_adp ───────────────────────────────────────────────────────
 
 def test_resolve_sleeper_field_by_format(monkeypatch):
@@ -302,24 +316,79 @@ def test_resolve_brfantasy_source_value(monkeypatch):
 
 def test_source_options_redraft_offers_yahoo_and_brfantasy():
     # The draft crawler now ingests keeper/redraft drafts, so BR Fantasy is a
-    # redraft source alongside Yahoo.
+    # redraft source alongside Yahoo. Live (7d) is selector-extra after it.
     opts = A.adp_source_options("redraft")
     values = [v for v, _label in opts]
     assert values[0] == "consensus"
     assert "yahoo" in values and "brfantasy" in values
+    assert "brfantasy_live" in values
+    assert values.index("brfantasy_live") > values.index("brfantasy")
     assert dict(opts)["yahoo"] == "Yahoo"
     assert dict(opts)["brfantasy"] == "BR Fantasy"
+    assert dict(opts)["brfantasy_live"] == "BR Fantasy Live (7d)"
 
 
 def test_source_options_dynasty_offers_brfantasy_not_yahoo():
     opts = A.adp_source_options("dynasty")
     values = [v for v, _label in opts]
     assert "brfantasy" in values and "yahoo" not in values
+    assert "brfantasy_live" in values
     assert dict(opts)["brfantasy"] == "BR Fantasy"
 
 
 def test_source_options_unknown_axis_falls_back_to_redraft():
     assert A.adp_source_options("bogus") == A.adp_source_options("redraft")
+
+
+def test_resolve_brfantasy_live_source(monkeypatch):
+    monkeypatch.setattr(
+        A, "_crawler_live_adp_source",
+        lambda season, is_sf, st: {"x": 5.0, "y": 18.0},
+    )
+    assert A.resolve_market_adp(2026, False, "dynasty", "brfantasy_live") == {
+        "x": 5.0, "y": 18.0,
+    }
+
+
+def test_consensus_excludes_brfantasy_live(monkeypatch):
+    # Live must not dilute Consensus — it would double-count recent drafts.
+    monkeypatch.setattr(
+        A, "fetch_sleeper_adp",
+        lambda season: {"a": {"adp_dynasty_ppr": 2.0}, "b": {"adp_dynasty_ppr": 4.0}},
+    )
+    monkeypatch.setattr(
+        A, "_crawler_adp_source",
+        lambda season, is_sf, st: {"a": 6.0, "b": 8.0},
+    )
+    calls = {"live": 0}
+
+    def _live(*_a, **_k):
+        calls["live"] += 1
+        return {"a": 99.0, "b": 99.0}
+
+    monkeypatch.setattr(A, "_crawler_live_adp_source", _live)
+    c = A.resolve_market_adp(2026, False, "dynasty", "consensus")
+    assert c["a"] == 4.0 and c["b"] == 6.0
+    assert calls["live"] == 0
+
+
+def test_crawler_live_filters_recent_drafts(monkeypatch):
+    A._CRAWLER_ADP_CACHE.clear()
+    seen = {}
+
+    def handler(sql, params):
+        seen["sql"] = sql
+        seen["params"] = params
+        return [{"player_id": "1", "avg_pick": 4.5, "n": 8}]
+
+    _install_fake_db(monkeypatch, handler)
+    out = A.fetch_crawler_adp_live(2026, False, "dynasty", days=7, min_samples=5)
+    assert out == {"1": 4.5}
+    assert "make_interval" in seen["sql"]
+    assert "draft_started_at" in seen["sql"]
+    # draft_type, season, is_sf, days, min_samples
+    assert seen["params"] == ("startup", 2026, False, 7, 5)
+    A._CRAWLER_ADP_CACHE.clear()
 
 
 # ── fetch_league_adp_from_db size-normalized combination ─────────────────────

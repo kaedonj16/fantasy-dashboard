@@ -234,6 +234,12 @@ def build_cohort_index(rows: Sequence[Mapping[str, Any]]) -> dict:
     outcome year. This is not a parquet scan at request time — cron rebuilds
     the index into the aggregates JSON.
     """
+    from dashboard_services.historical.offense import (
+        prior_offense_rank_for,
+        team_offense_lookup_from_rows,
+    )
+
+    offense_ranks, offense_teams = team_offense_lookup_from_rows(rows)
     by_player: dict[str, list[dict]] = {}
     for row in rows:
         pid = _obs_pid(row)
@@ -249,14 +255,27 @@ def build_cohort_index(rows: Sequence[Mapping[str, Any]]) -> dict:
                 r for r in ordered[:i]
                 if (_optional_int(r.get("season")) or 0) < (_optional_int(row.get("season")) or 0)
             ]
-            extra: dict[str, str] = {}
+            extra: dict[str, Any] = {}
             if len(prior) >= 2:
-                extra = trajectory_buckets(
-                    prior[-2],
-                    prior[-1],
-                    position=row.get("position"),
-                    current_season=row.get("season"),
+                extra.update(
+                    trajectory_buckets(
+                        prior[-2],
+                        prior[-1],
+                        position=row.get("position"),
+                        current_season=row.get("season"),
+                    )
                 )
+            season = _optional_int(row.get("season"))
+            team = None
+            if season is not None:
+                team = (offense_teams.get(pid) or {}).get(str(season))
+            if not team:
+                from dashboard_services.historical.definitions import normalize_team_abbr
+
+                team = normalize_team_abbr(row.get("team"))
+            rank = prior_offense_rank_for(offense_ranks, team, season)
+            if rank is not None:
+                extra["prior_offense_rank"] = rank
             rec = _compact_observation(row, extra_feats=extra or None)
             if rec is None:
                 continue
@@ -436,6 +455,9 @@ _EXAMPLE_TRAIT_ORDER = (
     "draft_capital",
     "age_bucket",
     "prior_finish",
+    "prior_offense_rank",
+    "projected_offense_rank",
+    "roster_spot",
     "target_share",
     "snap_pct",
     "adot",
@@ -527,6 +549,28 @@ def _example_trait_phrase(
     if key == "prior_finish":
         val = _bare_trait_value(raw, "Last Year")
         return f"Last Year: {val}" if val else ""
+    if key in ("prior_offense_rank", "prior_offense_rank_bucket", "offense"):
+        from dashboard_services.historical.definitions import trends_offense_range
+
+        band = trends_offense_range(value)
+        name = band[1] if band else _bare_trait_value(raw, "Offense")
+        if str(value) == "top_10":
+            name = "Top 10"
+        return f"Offense: {name} last year" if name else ""
+    if key in ("projected_offense_rank", "projected_offense_rank_bucket", "projected_offense"):
+        from dashboard_services.historical.definitions import trends_offense_range
+
+        band = trends_offense_range(value)
+        name = band[1] if band else _bare_trait_value(raw, "Offense")
+        if str(value) == "top_10":
+            name = "Top 10"
+        return f"Offense: {name} projected" if name else ""
+    if key == "roster_spot":
+        from dashboard_services.historical.roster import roster_spot_label
+
+        pos = str((feats or {}).get("position") or "").upper()
+        label = roster_spot_label(pos, value)
+        return f"Spot: {label}" if label else ""
     if key == "prior_elite":
         return raw
     if key == "adot":
@@ -559,6 +603,18 @@ def _example_traits(feats: Mapping[str, Any], filters: Sequence[Mapping[str, Any
 
     for spec in filters or ():
         if not isinstance(spec, Mapping):
+            continue
+        parts = list(spec.get("all") or [])
+        if parts:
+            if not matches_trend_filter(feats, spec):
+                continue
+            for part in parts:
+                if not isinstance(part, Mapping):
+                    continue
+                field = str(part.get("field") or part.get("group") or "")
+                value = feats.get(field) if field and feats.get(field) not in (None, "") else part.get("eq")
+                if field and value not in (None, ""):
+                    add(field, value)
             continue
         if not matches_trend_filter(feats, spec):
             continue
@@ -705,7 +761,7 @@ def _selected_filters_payload(filters: Sequence[Mapping[str, Any]], pos: str) ->
             "field": spec.get("field"),
             "label": spec.get("label") or spec.get("eq") or spec.get("field"),
         }
-        for key in ("eq", "in", "gte", "lte", "between", "null_as"):
+        for key in ("eq", "in", "gte", "lte", "between", "null_as", "all"):
             if key in spec:
                 rec[key] = spec[key]
         out.append(rec)
@@ -729,7 +785,13 @@ def evaluate_cohort(
     if wanted_tier not in COMP_BOARD_TIERS:
         wanted_tier = SIGNAL_BOARD_TIER
     selected = [dict(f) for f in (filters or []) if isinstance(f, Mapping)]
-    cache_key = (data_version, pos, wanted_tier, canonical_filter_key(selected))
+    cache_key = (
+        data_version,
+        id(aggregates),
+        pos,
+        wanted_tier,
+        canonical_filter_key(selected),
+    )
     global _CACHE_VERSION
     if data_version != _CACHE_VERSION:
         _COHORT_CACHE.clear()

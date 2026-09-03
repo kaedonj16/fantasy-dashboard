@@ -30,6 +30,71 @@ const YAHOO_DRAFT_TAB_URLS = [
   "https://sports.yahoo.com/fantasy/*/draft*",
 ];
 
+const SLEEPER_HOST_RE = /(^|\.)sleeper\.(com|app)$/i;
+
+function isSleeperDraftTabUrl(url) {
+  try {
+    const u = new URL(String(url || ""));
+    if (!SLEEPER_HOST_RE.test(u.hostname)) return false;
+    const blob = (u.pathname + "\n" + u.hash + "\n" + u.search).toLowerCase();
+    if (/[?&]draft_id=/.test(blob)) return true;
+    if (/\/draft\/[a-z0-9]+/.test(blob)) return true;
+    if (/\/leagues\/\d{6,20}\/draft(?:\/|$|\?|#)/.test(blob.replace(/\n/g, ""))) return true;
+    return false;
+  } catch (_e) {
+    return false;
+  }
+}
+
+async function ensureSleeperDraftAssistant(tabId) {
+  if (!tabId) return false;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      files: ["sleeper_draft_main.js"],
+    });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["draft_slot.js", "assistant_inject.js", "sleeper_draft.js"],
+    });
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
+async function openDraftAssistantOnTab(tabId) {
+  if (!tabId) return { ok: false, message: "No active tab." };
+  let tab = null;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch (_e) {
+    return { ok: false, message: "No active tab." };
+  }
+  const url = String((tab && tab.url) || "");
+  if (isSleeperDraftTabUrl(url)) {
+    const injected = await ensureSleeperDraftAssistant(tabId);
+    if (!injected) {
+      return { ok: false, message: "Could not attach to this Sleeper tab. Reload the draft page." };
+    }
+  }
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: "openDraftAssistant" });
+    return { ok: true };
+  } catch (_e) {
+    return { ok: false, message: "Open a Sleeper, Yahoo, or ESPN draft tab first." };
+  }
+}
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  const url = changeInfo.url || (tab && tab.url) || "";
+  if (!url || !isSleeperDraftTabUrl(url)) return;
+  if (changeInfo.url || changeInfo.status === "complete") {
+    void ensureSleeperDraftAssistant(tabId);
+  }
+});
+
 const RECONNECT_COOLDOWN_MS = 5000;
 const SESSION_TABS_KEY = "brDraftRoomTabs";
 let lastReconnectAt = 0;
@@ -404,10 +469,18 @@ function poolNum(v) {
   return isFinite(n) ? n : null;
 }
 
+function normDraftPos(pos) {
+  const p = String(pos || "").toUpperCase();
+  if (p === "PK") return "K";
+  if (p === "DST" || p === "D/ST" || p === "D-ST" || p === "D ST") return "DEF";
+  return p;
+}
+
 function compactDraftPlayer(raw, scoringType, isSf, teams, adpSource) {
   if (!raw || raw.id == null) return null;
-  const pos = String(raw.position || raw.pos || "").toUpperCase();
-  if (pos !== "QB" && pos !== "RB" && pos !== "WR" && pos !== "TE") return null;
+  const pos = normDraftPos(raw.position || raw.pos);
+  const isKd = pos === "K" || pos === "DEF";
+  if (pos !== "QB" && pos !== "RB" && pos !== "WR" && pos !== "TE" && !isKd) return null;
   const by = raw.adp_by_source && typeof raw.adp_by_source === "object" ? raw.adp_by_source : {};
   const src = (adpSource && by[adpSource]) || {};
   const cons = by.consensus || {};
@@ -439,7 +512,7 @@ function compactDraftPlayer(raw, scoringType, isSf, teams, adpSource) {
       poolNum(isSf ? cons.sf_avg_pick : cons.avg_pick);
     val = poolNum(isSf ? raw.sf_value : raw.value) || poolNum(raw.value);
   }
-  if (!(val > 0) && !(adp > 0)) return null;
+  if (!(val > 0) && !(adp > 0) && !isKd) return null;
   const adpN = adp && adp > 0 ? adp : 999;
   let tier = 6;
   if (adpN <= 12) tier = 1;
@@ -507,7 +580,8 @@ async function fetchDraftPool(opts) {
   const ppr = (opts && opts.ppr != null) ? Number(opts.ppr) : 1;
   const tep = (opts && opts.tep != null) ? Number(opts.tep) : 0;
   const passTd = (opts && opts.passTd != null) ? Number(opts.passTd) : 4;
-  const key = [scoringType, sf ? "sf" : "1qb", adpSource, teams || "", ppr, tep, passTd].join("|");
+  const kdef = opts.kdef !== false && scoringType !== "rookie";
+  const key = [scoringType, sf ? "sf" : "1qb", adpSource, teams || "", ppr, tep, passTd, kdef ? "kdef" : "nokd"].join("|");
   const now = Date.now();
   if (!opts.force && draftPoolCache && draftPoolCache.key === key && now - draftPoolCache.at < POOL_TTL_MS) {
     return {
@@ -529,6 +603,7 @@ async function fetchDraftPool(opts) {
     "proj_pass_td=" + encodeURIComponent(String((opts && opts.passTd != null) ? opts.passTd : 4)),
   ];
   if (teams >= 8) params.push("league_size=" + encodeURIComponent(String(teams)));
+  if (kdef) params.push("kdef=1");
   const path = "/api/league-players?" + params.join("&");
   let lastErr = "fetch failed";
   for (const host of BR_API_HOSTS) {
@@ -575,6 +650,45 @@ async function fetchDraftPool(opts) {
     };
   }
   return { ok: false, players: [], error: lastErr, scoringType: scoringType, sf: sf, adpSource: adpSource, adpOptions: [] };
+}
+
+async function fetchDraftPlayoffOdds(opts) {
+  const body = {
+    season: Number((opts && opts.season) || 0) || 0,
+    ppr: (opts && opts.ppr != null) ? Number(opts.ppr) : 1,
+    tep: (opts && opts.tep != null) ? Number(opts.tep) : 0,
+    pass_td: (opts && opts.passTd != null) ? Number(opts.passTd) : 4,
+    roster: (opts && opts.roster) || {},
+    playoff_teams: Number((opts && opts.playoffTeams) || 6) || 6,
+    platform: String((opts && opts.platform) || "sleeper"),
+    league_id: String((opts && opts.leagueId) || ""),
+    use_league: opts && opts.useLeague !== false,
+    viewer_slot: (opts && opts.viewerSlot) || null,
+    teams: (opts && opts.teams) || [],
+  };
+  let lastErr = "fetch failed";
+  for (const host of BR_API_HOSTS) {
+    try {
+      const res = await fetch(host + "/api/draft-playoff-odds", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        lastErr = "HTTP " + res.status;
+        continue;
+      }
+      const json = await res.json();
+      if (json && Array.isArray(json.odds) && json.odds.length) {
+        return { ok: true, odds: json.odds, source: json.source || "", playoffTeams: json.playoff_teams };
+      }
+      lastErr = (json && json.error) || "empty odds";
+    } catch (err) {
+      lastErr = String(err && err.message ? err.message : err);
+    }
+  }
+  return { ok: false, odds: [], error: lastErr };
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -679,6 +793,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
 
+  if (msg.type === "openDraftAssistantOnTab") {
+    const tabId = Number(msg.tabId || (sender && sender.tab && sender.tab.id) || 0);
+    openDraftAssistantOnTab(tabId)
+      .then(sendResponse)
+      .catch(() => sendResponse({ ok: false, message: "Open a Sleeper, Yahoo, or ESPN draft tab first." }));
+    return true;
+  }
+
   if (msg.type === "fetchDraftPool") {
     fetchDraftPool({
       scoringType: String(msg.scoringType || "redraft"),
@@ -686,9 +808,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       adpSource: String(msg.adpSource || "consensus"),
       teams: Number(msg.teams || 0),
       force: !!msg.force,
+      kdef: msg.kdef !== false,
+      ppr: msg.ppr,
+      tep: msg.tep,
+      passTd: msg.passTd,
     })
       .then(sendResponse)
       .catch(() => sendResponse({ ok: false, players: [] }));
+    return true;
+  }
+
+  if (msg.type === "fetchDraftPlayoffOdds") {
+    fetchDraftPlayoffOdds(msg)
+      .then(sendResponse)
+      .catch(() => sendResponse({ ok: false, odds: [] }));
     return true;
   }
 

@@ -101,8 +101,12 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             draft_dt = datetime.fromtimestamp(draft_ts_ms / 1000, tz=EASTERN)
             now_dt = datetime.now(EASTERN)
             delta_days = (draft_dt.date() - now_dt.date()).days
-            # "Done" = the draft is complete, or its scheduled time is in the past.
-            draft_done = _draft_status == "complete" or delta_days < 0
+            # "Done" = the draft is complete. A past scheduled time with an
+            # official pre-draft status is a stale date, not a finished draft
+            # (Fleaflicker keepers often keep last year's timestamp).
+            draft_done = _draft_status == "complete" or (
+                delta_days < 0 and _draft_status not in ("pre_draft", "drafting")
+            )
 
             if not draft_done:
                 # Draft hasn't happened yet — count down to it.
@@ -402,7 +406,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
     body = f"""
     <div class="os-layout">
-      <aside class="os-left-col os-tab-panel" id="os-jump-roster">
+      <aside class="os-left-col os-tab-panel os-side-rail" id="os-jump-roster">
         <section class="os-card os-card-soft os-col-fill">
           <div class="os-section-head">
             <div class="os-section-head-content">
@@ -574,7 +578,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
       </main>
 
-      <aside class="os-right-col os-tab-panel" id="os-jump-teams">
+      <aside class="os-right-col os-tab-panel os-side-rail" id="os-jump-teams">
         <div class="os-sidebar-shell">
           {teams_sidebar_html}
         </div>

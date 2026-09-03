@@ -47,7 +47,43 @@ def test_normalizes_transactions_and_draft_results(monkeypatch):
         "draftResults": {"draftResults": {"draftUnit": [{"round": "1", "pick": "1", "franchise": "0001", "player": "9"}]}},
     }[kind])
     assert provider.get_transactions("123", 2026, 1)[0]["type"] == "trade"
-    assert provider.get_drafts("123", 2026)[0]["picks"][0]["pick_no"] == 1
+    draft = provider.get_drafts("123", 2026)[0]
+    assert draft["picks"][0]["pick_no"] == 1
+    assert draft["status"] == "complete"
+
+
+def test_mfl_empty_draft_results_are_predraft(monkeypatch):
+    provider = MFLProvider()
+    monkeypatch.setattr(provider, "_export", lambda *a, **k: {"draftResults": {}})
+    draft = provider.get_drafts("123", 2026)[0]
+    assert draft["status"] == "pre_draft"
+    assert draft["picks"] == []
+
+
+def test_mfl_unpicked_slots_are_predraft(monkeypatch):
+    provider = MFLProvider()
+    monkeypatch.setattr(provider, "_export", lambda *a, **k: {
+        "draftResults": {"draftUnit": [
+            {"round": "1", "pick": "1", "franchise": "0001", "player": ""},
+            {"round": "1", "pick": "2", "franchise": "0002"},
+        ]},
+    })
+    draft = provider.get_drafts("123", 2026)[0]
+    assert draft["status"] == "pre_draft"
+    assert draft["picks"] == []
+
+
+def test_mfl_partial_draft_is_drafting(monkeypatch):
+    provider = MFLProvider()
+    monkeypatch.setattr(provider, "_export", lambda *a, **k: {
+        "draftResults": {"draftUnit": [
+            {"round": "1", "pick": "1", "franchise": "0001", "player": "9"},
+            {"round": "1", "pick": "2", "franchise": "0002", "player": ""},
+        ]},
+    })
+    draft = provider.get_drafts("123", 2026)[0]
+    assert draft["status"] == "drafting"
+    assert len(draft["picks"]) == 1
 
 
 @patch("dashboard_services.providers.mfl_api._request_get")

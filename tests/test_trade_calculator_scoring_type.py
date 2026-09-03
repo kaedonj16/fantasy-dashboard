@@ -46,6 +46,20 @@ def test_trade_calculator_exposes_league_scoring_type():
     assert "Top-3 Pick" not in html
 
 
+def test_strategy_impact_and_cards_are_two_columns():
+    html = build_trade_calculator_body("L1", 2026)
+    assert "#otcStrategyImpact" in html
+    assert "#otcStrategyCards" in html
+    # Both lists sit side-by-side on desktop and collapse at 600px.
+    assert "grid-template-columns:1fr 1fr" in html
+    assert html.count("grid-template-columns:1fr 1fr") >= 2
+    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert "#otcStrategyImpact {\n    display: grid;\n    grid-template-columns: 1fr 1fr;" in css
+    assert "#otcStrategyCards {\n    display: grid;\n    grid-template-columns: 1fr 1fr;" in css
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert "const _STRATEGY_PAGE_SIZE = 6;" in js
+
+
 def test_trade_page_wires_league_redraft_into_calculator():
     src = (ROOT / "routes" / "trade_bp.py").read_text(encoding="utf-8")
     assert "_league_is_redraft" in src
@@ -53,3 +67,20 @@ def test_trade_page_wires_league_redraft_into_calculator():
     assert "scoring_type=scoring_type" in src
     assert "get_viewer_session_for_league(" in src
     assert "platform, league_id, season" in src
+
+
+def test_otc_info_tooltip_shows_trade_count():
+    html = build_trade_calculator_body(None, 2026)
+    assert 'id="otcInfoTooltip"' in html
+    assert 'id="tradeCount"' in html
+    assert "We translate over" in html
+    assert "trade relationships" in html
+
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'id=\\"tradeCount\\"' in js or 'id="tradeCount"' in js
+    assert "We translate over" in js
+    # syncScoringTypeUi used to rewrite dynasty copy as "those trade
+    # relationships" and drop the live count. Guard against that regression.
+    assert "those trade relationships" not in js
+    assert "cachedTradeCountLabel" in js
+    assert "setTradeCountLabel" in js

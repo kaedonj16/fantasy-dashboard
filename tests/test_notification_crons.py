@@ -31,9 +31,14 @@ def test_web_service_has_cron_secret_for_notification_hook():
     assert "key: APP_URL" in hourly
     assert "key: CRON_SECRET" in hourly
     assert "value: America/New_York" in hourly
-    assert "schedule: 0 9 * * 2" in weekly
+    assert 'schedule: "0 13 * * 2"' in weekly
     assert "python scripts/trigger_notifications.py weekly" in weekly
     assert "value: America/New_York" in weekly
+    # Render cron is UTC; 13:00 UTC is 9am EDT / 8am EST. Do not regress to 09:00 UTC.
+    assert "schedule: 0 9 * * 2" not in weekly
+    assert "UTC" in weekly
+    assert 'data.get("email")' in PUSH_BP
+    assert "force=force" in PUSH_BP
 
 
 def test_production_does_not_start_inprocess_notify_scheduler_by_default():
@@ -86,7 +91,7 @@ def test_trigger_posts_type_and_secret(monkeypatch):
     monkeypatch.setattr(mod.urllib.request, "urlopen", _urlopen)
     assert mod.trigger("weekly", app_url="https://brfantasyfootball.com", secret="s3cret") == 0
     assert captured["url"] == "https://brfantasyfootball.com/api/cron/notifications"
-    assert captured["timeout"] == 300
+    assert captured["timeout"] == 900
     assert b'"type": "weekly"' in captured["body"]
     assert b'"secret": "s3cret"' in captured["body"]
     headers = {k.lower(): v for k, v in captured["headers"].items()}

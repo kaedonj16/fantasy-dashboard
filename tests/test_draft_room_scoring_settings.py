@@ -50,6 +50,19 @@ def test_setup_source_and_draft_pick_pills_match_canonical_chip_styles():
     assert "rgba(168,85,247,.14)" not in body
 
 
+def test_keeper_cells_keep_position_color():
+    """Keeper cards use the same position tint as live picks, not a green wash."""
+    body = build_draft_room_body(None, None, None, is_guest=True)
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert ".dr-cell-filled { background: color-mix(in srgb, var(--pos, var(--accent)) 14%, var(--bg));" in body
+    assert "pl && pl.keeper ? ' dr-cell-keeper'" in source
+    assert 'class="dr-cell-keepflag">KEEP' in source
+    assert ".dr-cell-keepflag" in body
+    assert "var(--win,#15803d) 10%, var(--card)" not in body
+    assert ".dr-cell-keeper { background:" not in body
+
+
 def test_keeper_banner_pages_six_and_counts_yours_by_roster():
     """Keepers Details lists 6 per page; 'yours' is ownership (viewer roster),
     not the old !projected flag that left assistant-mode keepers at 0 yours."""
@@ -353,6 +366,7 @@ def test_likely_next_pick_survivors_pay_current_pick_opportunity_cost():
     assert "c.demandByPos = _demandBeforeNext(next);" in source
     assert "var effectiveReturnProb = returnProb == null ? null : returnProb * (1 - demandRisk);" in source
     assert "waitPenalty: waitPenalty" in source
+    assert "streamableBackup: streamableBackup" in source
     # Wait target is the pick AFTER the rec pick, so waiting for #9 does not
     # treat pick 9 itself as "can wait until then". Manual fills for other
     # seats skip own-next wait math so the on-the-clock pool stays selectable.
@@ -451,7 +465,7 @@ def test_cpu_drafts_from_source_selector():
     # Setup control renders with consensus as the default option.
     assert 'id="drCpuAdpSource"' in body
     assert '<option value="consensus" selected>Consensus (all platforms)</option>' in body
-    for src in ("sleeper", "brfantasy", "espn", "mfl", "yahoo"):
+    for src in ("sleeper", "brfantasy", "brfantasy_live", "espn", "mfl", "yahoo"):
         assert '<option value="%s">' % src in body
 
     # Setup reads the field into state and hydrates it back for the Edit modal.
@@ -469,11 +483,13 @@ def test_cpu_drafts_from_options_filtered_by_draft_type():
     global platforms, dynasty/rookie only Sleeper + BR Fantasy, consensus always."""
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
-    # Static fallback mirrors the server's ADP_SOURCES (redraft gets the globals;
-    # dynasty/rookie do not); keeper maps to redraft; consensus leads every list.
-    assert "startup: ['consensus', 'sleeper', 'brfantasy']" in source
-    assert "rookie:  ['consensus', 'sleeper', 'brfantasy']" in source
-    assert "redraft: ['consensus', 'sleeper', 'espn', 'yahoo', 'mfl', 'brfantasy']" in source
+    # Static fallback mirrors the server's ADP_SOURCES + Live selector-extra
+    # (redraft gets the globals; dynasty/rookie do not); keeper maps to redraft;
+    # consensus leads every list.
+    assert "startup: ['consensus', 'sleeper', 'brfantasy', 'brfantasy_live']" in source
+    assert "rookie:  ['consensus', 'sleeper', 'brfantasy', 'brfantasy_live']" in source
+    assert "redraft: ['consensus', 'sleeper', 'espn', 'yahoo', 'mfl', 'brfantasy', 'brfantasy_live']" in source
+    assert "brfantasy_live: 'BR Fantasy Live (7d)'" in source
     assert "if (t === 'keeper') t = 'redraft';" in source
     # Prefers the payload's season-gated list when a pool has loaded.
     assert "adpSourceOptions && adpSourceOptions[t] && adpSourceOptions[t].length" in source

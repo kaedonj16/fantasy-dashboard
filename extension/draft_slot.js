@@ -180,6 +180,47 @@
     }
   }
 
+  function sleeperHrefString(href) {
+    const raw = String(href || (typeof location !== "undefined" ? location.href : "") || "");
+    if (raw) return raw;
+    if (typeof location === "undefined") return "";
+    return String(location.pathname || "") + String(location.search || "") + String(location.hash || "");
+  }
+
+  function sleeperNavText(href) {
+    return sleeperHrefString(href).toLowerCase();
+  }
+
+  function sleeperDraftIdFromUrl(href) {
+    try {
+      const text = sleeperNavText(href);
+      const q = text.match(/[?&#]draft_id=([a-z0-9]+)/i) || text.match(/[?&#]draftid=([a-z0-9]+)/i);
+      if (q && q[1]) return q[1];
+      const m = text.match(/\/draft\/(?:nfl\/|nba\/|ncaaf\/|cbb\/|epl\/)?([a-z0-9]+)/i);
+      return m ? m[1] : "";
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function sleeperLeagueIdFromUrl(href) {
+    try {
+      const m = sleeperNavText(href).match(/\/leagues\/(\d{6,20})/);
+      return m ? m[1] : "";
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function isSleeperDraftRoom(href) {
+    const text = sleeperNavText(href);
+    if (!text) return false;
+    if (sleeperDraftIdFromUrl(href)) return true;
+    if (/\/leagues\/\d{6,20}\/draft(?:\/|$|\?|#)/.test(text)) return true;
+    if (/\/draft\/[a-z0-9]+/.test(text)) return true;
+    return false;
+  }
+
   function yahooClientTeamId() {
     try {
       const m = String(location.pathname || "").match(/\/draftclient\/(?:nfl\/|f1\/)?(\d+)\/(\d+)/i);
@@ -269,13 +310,25 @@
   }
 
   function emptyRoster() {
-    return { QB: 0, SF: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, K: 0, DEF: 0, BN: 0 };
+    return { QB: 0, SF: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, RB_WR: 0, WR_TE: 0, RB_TE: 0, K: 0, DEF: 0, BN: 0 };
+  }
+
+  function normDraftPos(pos) {
+    const p = String(pos || "").toUpperCase();
+    if (p === "PK") return "K";
+    if (p === "DST" || p === "D/ST" || p === "D-ST" || p === "D ST") return "DEF";
+    return p;
+  }
+
+  function isKDefPos(pos) {
+    const p = normDraftPos(pos);
+    return p === "K" || p === "DEF";
   }
 
   function rosterFromEspnSlots(counts) {
     const out = emptyRoster();
     if (!counts || typeof counts !== "object") return out;
-    const map = { 0: "QB", 2: "RB", 4: "WR", 6: "TE", 7: "SF", 16: "DEF", 17: "K", 20: "BN", 23: "FLEX", 3: "FLEX", 5: "FLEX" };
+    const map = { 0: "QB", 2: "RB", 4: "WR", 6: "TE", 7: "SF", 16: "DEF", 17: "K", 20: "BN", 23: "FLEX", 3: "RB_WR", 5: "WR_TE" };
     Object.keys(counts).forEach(function (k) {
       const id = Number(k);
       if (id === 21 || id === 22) return;
@@ -294,11 +347,39 @@
     out.WR = Number(s.slots_wr || 0);
     out.TE = Number(s.slots_te || 0);
     out.FLEX = Number(s.slots_flex || s.slots_wr_rb_te || 0);
+    out.RB_WR = Number(s.slots_wr_rb || s.slots_rb_wr || 0);
+    out.WR_TE = Number(s.slots_rec_flex || s.slots_wr_te || 0);
     out.SF = Number(s.slots_super_flex || s.slots_sf || 0);
     out.K = Number(s.slots_k || 0);
     out.DEF = Number(s.slots_def || 0);
     out.BN = Number(s.slots_bn || 0);
     return out;
+  }
+
+  function rosterFromSleeperPositions(positions) {
+    return rosterFromYahooPositions(positions);
+  }
+
+  function rosterFromSleeperLeague(league) {
+    const src = league && typeof league === "object" ? league : {};
+    const settings = src.settings && typeof src.settings === "object" ? src.settings : src;
+    const fromSettings = rosterFromSleeperSettings(settings);
+    const fromPos = rosterFromSleeperPositions(src.roster_positions || []);
+    if (!rosterHasStarters(fromPos)) return fromSettings;
+    ["BN", "K", "DEF"].forEach(function (k) {
+      if (!fromPos[k] && fromSettings[k]) fromPos[k] = fromSettings[k];
+    });
+    return fromPos;
+  }
+
+  function isSleeperSuperflex(league, settings) {
+    const s = settings || (league && league.settings) || {};
+    if (Number(s.slots_super_flex || s.slots_sf || 0) > 0) return true;
+    const positions = (league && league.roster_positions) || [];
+    return positions.some(function (p) {
+      const raw = String(p || "").toUpperCase();
+      return raw === "SUPER_FLEX" || raw === "SUPERFLEX" || raw === "SFLEX" || raw === "OP";
+    });
   }
 
   function rosterFromYahooPositions(positions) {
@@ -315,18 +396,21 @@
       else if (raw === "DEF" || raw === "DST") out.DEF += n;
       else if (raw === "BN" || raw === "BENCH") out.BN += n;
       else if (raw === "Q/W/R/T" || raw === "QP" || raw === "SUPER_FLEX" || raw === "SF") out.SF += n;
-      else if (raw === "W/R/T" || raw === "W/R" || raw === "W/T" || raw === "R/T" || raw === "FLEX") out.FLEX += n;
+      else if (raw === "W/R" || raw === "RB/WR" || raw === "WRRB_FLEX" || raw === "RB_WR") out.RB_WR += n;
+      else if (raw === "W/T" || raw === "WR/TE" || raw === "REC_FLEX" || raw === "WR_TE") out.WR_TE += n;
+      else if (raw === "R/T" || raw === "RB/TE" || raw === "RB_TE") out.RB_TE += n;
+      else if (raw === "W/R/T" || raw === "FLEX") out.FLEX += n;
     });
     return out;
   }
 
   function rosterHasStarters(rs) {
     if (!rs) return false;
-    return (rs.QB || 0) + (rs.RB || 0) + (rs.WR || 0) + (rs.TE || 0) + (rs.FLEX || 0) + (rs.SF || 0) >= 4;
+    return (rs.QB || 0) + (rs.RB || 0) + (rs.WR || 0) + (rs.TE || 0) + (rs.FLEX || 0) + (rs.SF || 0) + (rs.RB_WR || 0) + (rs.WR_TE || 0) + (rs.RB_TE || 0) >= 4;
   }
 
   function slotListFromRoster(rs) {
-    const order = ["QB", "SF", "RB", "WR", "TE", "FLEX", "K", "DEF"];
+    const order = ["QB", "SF", "RB", "WR", "TE", "RB_WR", "WR_TE", "RB_TE", "FLEX", "K", "DEF"];
     const out = [];
     order.forEach(function (k) {
       const n = Number(rs && rs[k]) || 0;
@@ -338,14 +422,21 @@
   function settingsLabel(rs, scoring) {
     if (!rosterHasStarters(rs)) return "";
     const bits = [];
+    if (scoring && scoring.format) bits.push(String(scoring.format));
     bits.push((rs.SF ? "SF" : "1QB"));
     const ppr = scoring && scoring.ppr;
     if (ppr === 0.5) bits.push("HALF");
     else if (ppr === 0) bits.push("STD");
     else bits.push("PPR");
     if (scoring && Number(scoring.tep) > 0) bits.push("TEP");
+    if (scoring && scoring.order) bits.push(String(scoring.order));
+    if (scoring && scoring.bestBall) bits.push("Best Ball");
+    if (scoring && Number(scoring.passTd) === 6) bits.push("6PT");
     bits.push((rs.QB || 0) + "/" + (rs.RB || 0) + "/" + (rs.WR || 0) + "/" + (rs.TE || 0));
     if (rs.FLEX) bits.push("FLEX" + (rs.FLEX > 1 ? rs.FLEX : ""));
+    if (rs.RB_WR) bits.push("RB/WR" + (rs.RB_WR > 1 ? rs.RB_WR : ""));
+    if (rs.WR_TE) bits.push("WR/TE" + (rs.WR_TE > 1 ? rs.WR_TE : ""));
+    if (rs.RB_TE) bits.push("RB/TE" + (rs.RB_TE > 1 ? rs.RB_TE : ""));
     return bits.join(" · ");
   }
 
@@ -358,9 +449,106 @@
     };
   }
 
+  function sleeperDraftName(draft) {
+    const meta = (draft && draft.metadata) || {};
+    return String(meta.name || meta.description || (draft && draft.name) || "").toLowerCase();
+  }
+
+  function sleeperTruthy(v) {
+    return v === true || v === 1 || v === "1" || String(v).toLowerCase() === "true";
+  }
+
+  // Sleeper settings.type: 0 redraft, 1 keeper, 2 dynasty.
+  function sleeperLeagueKind(league, draft) {
+    const st = (league && league.settings) || {};
+    try {
+      if (st.type != null && st.type !== "") {
+        const t = Number(st.type);
+        if (t === 2) return "dynasty";
+        if (t === 1) return "keeper";
+        if (t === 0) return "redraft";
+      }
+    } catch (_e) { /* ignore */ }
+    const lt = String(st.league_type || (league && league.league_type) || "").toLowerCase();
+    if (lt.indexOf("keeper") >= 0) return "keeper";
+    if (lt.indexOf("redraft") >= 0 || lt.indexOf("re-draft") >= 0) return "redraft";
+    if (lt.indexOf("dynasty") >= 0) return "dynasty";
+    if (Number(st.taxi_slots || st.taxi_years || 0) > 0) return "dynasty";
+    const meta = (draft && draft.metadata) || {};
+    const blob = [
+      (league && league.name) || "",
+      sleeperDraftName(draft),
+      meta.scoring_type || "",
+      meta.league_type || "",
+    ].join(" ").toLowerCase();
+    if (/\bkeeper\b/.test(blob)) return "keeper";
+    if (/\bdynasty\b|\bstartup\b/.test(blob)) return "dynasty";
+    if (/\bredraft\b|\bre-draft\b/.test(blob)) return "redraft";
+    return "";
+  }
+
+  // Overlay / pool type: redraft | startup | rookie (same axes as Draft Room).
+  function sleeperDraftType(league, draft) {
+    const kind = sleeperLeagueKind(league, draft);
+    const settings = (draft && draft.settings) || {};
+    const rounds = Number(settings.rounds || (draft && draft.rounds) || 0);
+    const namedRookie = /\brookie\b/.test(sleeperDraftName(draft));
+    if (kind === "redraft") return "redraft";
+    if (namedRookie || ((kind === "dynasty" || kind === "keeper") && rounds > 0 && rounds <= 5)) {
+      return "rookie";
+    }
+    if (kind === "dynasty" || kind === "keeper") return "startup";
+    if (namedRookie || (rounds > 0 && rounds <= 5)) return "rookie";
+    return "redraft";
+  }
+
+  function formatKindLabel(kind, draftType) {
+    if (draftType === "rookie") return "Rookie";
+    if (kind === "keeper") return "Keeper";
+    if (kind === "dynasty" || draftType === "startup" || draftType === "dynasty") return "Dynasty";
+    return "Redraft";
+  }
+
+  function sleeperOrderFormat(draft) {
+    const settings = (draft && draft.settings) || {};
+    const dtype = String((draft && draft.type) || settings.type || "").toLowerCase();
+    if (dtype === "auction" || dtype === "salary" || dtype === "salary_cap" || sleeperTruthy(settings.is_auction)) {
+      return "auction";
+    }
+    if (dtype === "linear") return "linear";
+    try {
+      if (Number(settings.reversal_round || 0) === 3) return "3rr";
+    } catch (_e) { /* ignore */ }
+    return "snake";
+  }
+
+  function orderFormatLabel(order) {
+    if (order === "auction") return "Auction";
+    if (order === "linear") return "Linear";
+    if (order === "3rr") return "3RR";
+    return "Snake";
+  }
+
+  function sleeperIsBestBall(league, draft) {
+    const st = (league && league.settings) || {};
+    const ds = (draft && draft.settings) || {};
+    const lg = league || {};
+    if (sleeperTruthy(st.best_ball) || sleeperTruthy(st.bestBall) || sleeperTruthy(st.bestball)) return true;
+    if (sleeperTruthy(lg.best_ball) || sleeperTruthy(lg.bestBall)) return true;
+    if (sleeperTruthy(ds.best_ball) || sleeperTruthy(ds.bestBall)) return true;
+    return false;
+  }
+
+  function normDraftType(raw) {
+    const dt = String(raw || "").toLowerCase();
+    if (dt === "rookie") return "rookie";
+    if (dt === "startup" || dt === "dynasty") return "startup";
+    return "redraft";
+  }
+
   function rosterKey(rs) {
     if (!rs || typeof rs !== "object") return "";
-    return ["QB", "SF", "RB", "WR", "TE", "FLEX", "K", "DEF", "BN"].map(function (k) {
+    return ["QB", "SF", "RB", "WR", "TE", "FLEX", "RB_WR", "WR_TE", "RB_TE", "K", "DEF", "BN"].map(function (k) {
       return k + (Number(rs[k]) || 0);
     }).join("");
   }
@@ -734,7 +922,7 @@
       obj.real_name != null ||
       obj.is_bot === false ||
       /user|auth|session|token|login|\bme\b/i.test(String(key || ""));
-    if (uid && (un || dn) && loggedInHint) {
+    if (uid && loggedInHint && (un || dn || obj.token || obj.email || obj.access_token || obj.accessToken)) {
       addSleeperUserId(out, uid, true);
       if (un) out.username = String(un);
       if (dn) out.displayName = String(dn);
@@ -758,10 +946,20 @@
           /* fall through */
         }
       }
-      if (!out.userIds.length && /user|auth|session|token|login/i.test(String(key || ""))) {
+      const bare = trimmed.match(/^\d{6,20}$/);
+      if (bare && /user_id|userid|sleeper_user/i.test(String(key || ""))) {
+        addSleeperUserId(out, bare[0], true);
+      }
+      if (!out.userIds.length && /^(?:user|currentuser|current_user|me|session|auth|token|login|sleeper.?user)(?:[_-].*)?$/i.test(String(key || ""))) {
         const idRe = /"(?:user_id|userId)"\s*:\s*"?(\d{6,20})"?/g;
+        const found = [];
         let m;
-        while ((m = idRe.exec(trimmed))) addSleeperUserId(out, m[1]);
+        while ((m = idRe.exec(trimmed))) {
+          if (found.indexOf(m[1]) < 0) found.push(m[1]);
+        }
+        if (found.length && found.length <= 2) {
+          found.forEach(function (id) { addSleeperUserId(out, id); });
+        }
         if (!out.username) {
           const un = trimmed.match(/"username"\s*:\s*"([A-Za-z0-9_]{2,32})"/);
           if (un) out.username = un[1];
@@ -796,20 +994,72 @@
     return out;
   }
 
+  function sleeperUsernameFromHref(href) {
+    const m = String(href || "").match(/\/u\/([A-Za-z0-9_]+)/);
+    if (!m) return "";
+    const name = m[1];
+    if (/^(help|support|blog|about|settings|login|signup)$/i.test(name)) return "";
+    return name;
+  }
+
   function sleeperUsernameFromDom(doc) {
     doc = doc || (typeof document !== "undefined" ? document : null);
     if (!doc || !doc.querySelectorAll) return "";
+    const header = doc.querySelector("header, nav, [class*='Header'], [class*='header'], [class*='NavBar']");
+    if (header && header.querySelectorAll) {
+      const pinned = header.querySelectorAll('a[href*="/u/"]');
+      for (let i = 0; i < Math.min(pinned.length, 8); i++) {
+        const name = sleeperUsernameFromHref(pinned[i].getAttribute("href"));
+        if (name) return name;
+      }
+    }
     const links = doc.querySelectorAll('a[href*="/u/"]');
-    const n = Math.min(links.length, 20);
+    const counts = {};
+    const n = Math.min(links.length, 40);
     for (let i = 0; i < n; i++) {
-      const href = String(links[i].getAttribute("href") || "");
-      const m = href.match(/\/u\/([A-Za-z0-9_]+)/);
-      if (!m) continue;
-      const name = m[1];
-      if (/^(help|support|blog|about|settings|login|signup)$/i.test(name)) continue;
-      return name;
+      const name = sleeperUsernameFromHref(links[i].getAttribute("href"));
+      if (!name) continue;
+      counts[name] = (counts[name] || 0) + 1;
+    }
+    const uniq = Object.keys(counts);
+    if (uniq.length === 1) return uniq[0];
+    return "";
+  }
+
+  function sleeperUserIdFromUsers(users, ident) {
+    const names = [];
+    const seen = {};
+    function add(s) {
+      const n = String(s || "").replace(/\s+/g, " ").trim().toLowerCase();
+      if (n.length < 2 || n.length > 40 || seen[n]) return;
+      seen[n] = true;
+      names.push(n);
+    }
+    add(ident && ident.username);
+    add(ident && ident.displayName);
+    add(ident && ident.teamName);
+    if (!names.length) return "";
+    for (let i = 0; i < (users || []).length; i++) {
+      const u = users[i];
+      if (!u || u.user_id == null) continue;
+      const meta = u.metadata || {};
+      const cands = [u.username, u.display_name, u.displayName, meta.team_name, u.team_name];
+      const hit = cands.some(function (c) {
+        const n = String(c || "").replace(/\s+/g, " ").trim().toLowerCase();
+        return !!n && names.indexOf(n) >= 0;
+      });
+      if (hit) return String(u.user_id);
     }
     return "";
+  }
+
+  function userIdsInDraftOrder(order, userIds) {
+    const ids = userIds || [];
+    if (!order || typeof order !== "object") return ids;
+    const hit = ids.filter(function (id) {
+      return id && order[String(id)] != null;
+    });
+    return hit.length ? hit : ids;
   }
 
   function slotFromSleeperDraftOrder(order, userIds) {
@@ -865,7 +1115,7 @@
   function parseSleeperClock(text) {
     const s = String(text || "").replace(/\s+/g, " ");
     return {
-      onClock: /you(?:'re| are) on the clock|your (?:pick|turn)(?:\b| to pick)|waiting for you to pick/i.test(s),
+      onClock: /you(?:'re| are) on the clock|waiting for you to pick|you(?:'re| are) up(?:\s+now)?(?:\s*[!.])?(?:\s|$)|your turn to pick|it(?:'s| is) your (?:pick|turn)/i.test(s),
       upIn: (function () {
         const m = s.match(/you(?:'re| are) up in\s+(\d+)\s+picks?/i);
         return m ? Number(m[1]) : null;
@@ -945,7 +1195,7 @@
     opts = opts || {};
     const teams = Number(opts.teams) || 0;
     const identity = opts.identity || (opts.skipCollect ? { userIds: [] } : collectSleeperIdentity());
-    const userIds = (identity && identity.userIds) || [];
+    const userIds = userIdsInDraftOrder(opts.draft && opts.draft.draft_order, (identity && identity.userIds) || []);
     const draft = opts.draft || {};
     const picks = opts.picks || [];
     const max = teams || 32;
@@ -1118,14 +1368,29 @@
     slotFromYahooClock: slotFromYahooClock,
     parseYahooClock: parseYahooClock,
     isEspnDraftRoom: isEspnDraftRoom,
+    isSleeperDraftRoom: isSleeperDraftRoom,
+    sleeperDraftIdFromUrl: sleeperDraftIdFromUrl,
+    sleeperLeagueIdFromUrl: sleeperLeagueIdFromUrl,
     clampSlot: clampSlot,
+    normDraftPos: normDraftPos,
+    isKDefPos: isKDefPos,
     rosterFromEspnSlots: rosterFromEspnSlots,
     rosterFromSleeperSettings: rosterFromSleeperSettings,
+    rosterFromSleeperPositions: rosterFromSleeperPositions,
+    rosterFromSleeperLeague: rosterFromSleeperLeague,
+    isSleeperSuperflex: isSleeperSuperflex,
     rosterFromYahooPositions: rosterFromYahooPositions,
     rosterHasStarters: rosterHasStarters,
     slotListFromRoster: slotListFromRoster,
     settingsLabel: settingsLabel,
     scoringFromSleeperSettings: scoringFromSleeperSettings,
+    sleeperLeagueKind: sleeperLeagueKind,
+    sleeperDraftType: sleeperDraftType,
+    formatKindLabel: formatKindLabel,
+    sleeperOrderFormat: sleeperOrderFormat,
+    orderFormatLabel: orderFormatLabel,
+    sleeperIsBestBall: sleeperIsBestBall,
+    normDraftType: normDraftType,
     rosterKey: rosterKey,
     scrapeYahooBoard: scrapeYahooBoard,
     parseYahooDraftResultsHtml: parseYahooDraftResultsHtml,
@@ -1139,6 +1404,8 @@
     completedFromYahooClock: completedFromYahooClock,
     collectSleeperIdentity: collectSleeperIdentity,
     sleeperUsernameFromDom: sleeperUsernameFromDom,
+    sleeperUserIdFromUsers: sleeperUserIdFromUsers,
+    userIdsInDraftOrder: userIdsInDraftOrder,
     slotFromSleeperDraftOrder: slotFromSleeperDraftOrder,
     slotFromSleeperPickedBy: slotFromSleeperPickedBy,
     slotFromSleeperRosterMap: slotFromSleeperRosterMap,

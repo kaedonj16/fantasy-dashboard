@@ -1,0 +1,147 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    :root{
+      --bg:#020617; --card:#0f172a; --card-soft:#111827; --row:#0b1220;
+      --ink:#e5e7eb; --ink-soft:#cbd5e1; --ink-faint:#94a3b8;
+      --line:#1f2937; --line-strong:#303a4d;
+      --pos:#22c55e; --pos-bg:rgba(34,197,94,.14); --pos-line:rgba(34,197,94,.32);
+      --sky:#38bdf8; --amber:#f59e0b;
+      --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    }
+    *{box-sizing:border-box;}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}
+    a{color:var(--sky);} a:hover{color:#7dd3fc;}
+    .stage{width:600px;min-height:836px;background:
+      radial-gradient(120% 90% at 50% -10%, #0b1428 0%, var(--bg) 60%);
+      display:flex;align-items:flex-start;justify-content:center;padding:26px 24px;}
+    .card{width:528px;background:var(--card);color:var(--ink);
+      border:1px solid var(--line);border-radius:16px;
+      box-shadow:0 24px 60px rgba(0,0,0,.5);overflow:hidden;}
+    .muted{color:var(--ink-soft);} .faint{color:var(--ink-faint);}
+    .mono{font-family:var(--mono);}
+    .k{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint);}
+  </style>
+</helmet>
+
+<div class="stage">
+  <div class="card">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 16px 14px 20px;border-bottom:1px solid var(--line);">
+      <span class="mono" style="font-weight:800;font-size:11px;padding:4px 8px;border-radius:7px;color:var(--pos);background:var(--pos-bg);flex-shrink:0;">RB</span>
+      <div style="min-width:0;flex:1;">
+        <div style="font-size:17px;font-weight:800;line-height:1.15;">Bijan Robinson</div>
+        <div class="mono faint" style="font-size:11px;margin-top:3px;letter-spacing:.02em;">ATL · RB2 · ADP 1.03</div>
+      </div>
+      <button aria-label="Close" style="flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--ink-faint);cursor:pointer;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+
+    <div style="padding:16px 20px 20px;">
+      <!-- Verdict banner (from A) -->
+      <div style="display:flex;align-items:center;gap:16px;padding:16px;border-radius:14px;border:1px solid var(--pos-line);background:linear-gradient(180deg, var(--pos-bg), rgba(34,197,94,.05));">
+        <div style="display:flex;align-items:baseline;gap:2px;line-height:.8;">
+          <span style="font-weight:800;font-size:54px;letter-spacing:-.03em;color:var(--pos);font-variant-numeric:tabular-nums;">58</span>
+          <span style="font-weight:800;font-size:20px;color:var(--ink-soft);">%</span>
+        </div>
+        <div style="min-width:0;flex:1;">
+          <div style="font-size:15px;font-weight:800;line-height:1.25;">History likes him here</div>
+          <div class="muted" style="font-size:12.5px;line-height:1.4;margin-top:3px;">Backs with this profile finished <b style="color:var(--ink);">top&#8209;12</b> 58% of the time.</div>
+          <div class="mono" style="display:inline-flex;align-items:center;gap:6px;margin-top:9px;font-size:10.5px;font-weight:700;letter-spacing:.03em;color:var(--pos);background:var(--pos-bg);border-radius:999px;padding:3px 9px;">
+            <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>Strong signal · 214 seasons
+          </div>
+        </div>
+      </div>
+
+      <!-- profile vs price bar (from A) -->
+      <div style="margin-top:16px;">
+        <div class="k" style="margin-bottom:9px;">His profile vs. his draft price</div>
+        <div style="display:grid;gap:10px;">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;">
+              <span style="font-size:12.5px;font-weight:700;">Backs like Bijan</span>
+              <span class="mono" style="font-size:12.5px;font-weight:800;color:var(--pos);">58%</span>
+            </div>
+            <div style="height:9px;border-radius:999px;background:var(--row);overflow:hidden;"><div style="width:58%;height:100%;border-radius:999px;background:var(--pos);"></div></div>
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;">
+              <span style="font-size:12.5px;font-weight:700;color:var(--ink-soft);">Anyone at pick 1.03</span>
+              <span class="mono" style="font-size:12.5px;font-weight:800;color:var(--ink-soft);">41%</span>
+            </div>
+            <div style="height:9px;border-radius:999px;background:var(--row);overflow:hidden;"><div style="width:41%;height:100%;border-radius:999px;background:var(--line-strong);"></div></div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:7px;margin-top:11px;font-size:12.5px;color:var(--ink-soft);">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--pos)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14l5-5 4 4 7-7"/><path d="M20 6v5h-5"/></svg>
+          <span><b style="color:var(--pos);">+17 pts of edge</b> — history beats the room's price for this slot.</span>
+        </div>
+      </div>
+
+      <!-- tier strip (from A) -->
+      <div style="margin-top:16px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;">
+        <div style="border:1px solid var(--line);border-radius:11px;padding:8px 11px;background:var(--card-soft);">
+          <div class="mono faint" style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;">Top&#8209;5</div>
+          <div class="mono" style="font-weight:800;font-size:18px;margin-top:2px;">24%</div>
+        </div>
+        <div style="border:1px solid var(--pos-line);border-radius:11px;padding:8px 11px;background:var(--pos-bg);">
+          <div class="mono" style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--pos);">Top&#8209;12</div>
+          <div class="mono" style="font-weight:800;font-size:18px;margin-top:2px;color:var(--pos);">58%</div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:11px;padding:8px 11px;background:var(--card-soft);">
+          <div class="mono faint" style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;">Top&#8209;24</div>
+          <div class="mono" style="font-weight:800;font-size:18px;margin-top:2px;">79%</div>
+        </div>
+      </div>
+
+      <!-- trends inline (from B) — the key hybrid move -->
+      <div style="margin-top:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px;">
+          <span class="k">Trends behind it</span>
+          <a href="#" style="font-size:11.5px;font-weight:700;text-decoration:none;">See all 9 &#8250;</a>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;">
+          <div style="display:flex;align-items:center;gap:11px;padding:9px 13px;border-bottom:1px solid var(--line);">
+            <span style="width:7px;height:7px;border-radius:50%;background:var(--pos);flex-shrink:0;"></span>
+            <div style="flex:1;min-width:0;"><div style="font-size:12.5px;font-weight:700;">Drafted NFL top-10, any season</div><div class="mono faint" style="font-size:10px;margin-top:1px;">Sample: 61</div></div>
+            <div style="width:88px;height:6px;border-radius:999px;background:var(--row);overflow:hidden;flex-shrink:0;"><div style="width:64%;height:100%;background:var(--pos);"></div></div>
+            <span class="mono" style="font-size:12.5px;font-weight:800;width:54px;text-align:right;">64% <span style="color:var(--pos);font-size:10px;">+9</span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:11px;padding:9px 13px;border-bottom:1px solid var(--line);">
+            <span style="width:7px;height:7px;border-radius:50%;background:var(--pos);flex-shrink:0;"></span>
+            <div style="flex:1;min-width:0;"><div style="font-size:12.5px;font-weight:700;">Age 22, any capital</div><div class="mono faint" style="font-size:10px;margin-top:1px;">Sample: 88</div></div>
+            <div style="width:88px;height:6px;border-radius:999px;background:var(--row);overflow:hidden;flex-shrink:0;"><div style="width:55%;height:100%;background:var(--pos);"></div></div>
+            <span class="mono" style="font-size:12.5px;font-weight:800;width:54px;text-align:right;">55% <span style="color:var(--pos);font-size:10px;">+6</span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:11px;padding:9px 13px;">
+            <span style="width:7px;height:7px;border-radius:50%;background:var(--amber);flex-shrink:0;"></span>
+            <div style="flex:1;min-width:0;"><div style="font-size:12.5px;font-weight:700;">Top-10 projected offense, year 2</div><div class="mono faint" style="font-size:10px;margin-top:1px;">Sample: 34</div></div>
+            <div style="width:88px;height:6px;border-radius:999px;background:var(--row);overflow:hidden;flex-shrink:0;"><div style="width:47%;height:100%;background:var(--line-strong);"></div></div>
+            <span class="mono" style="font-size:12.5px;font-weight:800;width:54px;text-align:right;">47%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- comps as one tap row (from A) -->
+      <div style="margin-top:10px;display:flex;align-items:center;gap:11px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card-soft);cursor:pointer;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M15 11a3 3 0 100-6"/><path d="M3 20c0-3 2.7-5 6-5s6 2 6 5"/><path d="M17 15c2.5.4 4 2.2 4 5"/></svg>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:700;">Closest comps</div>
+          <div class="faint" style="font-size:11.5px;margin-top:1px;">Saquon &#39;18, Gibbs &#39;23, CMC &#39;17 …</div>
+        </div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

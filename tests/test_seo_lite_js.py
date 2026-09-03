@@ -58,6 +58,7 @@ def test_guest_seo_page_serves_public_js(offline_client, path):
         for s in srcs
     ), f"{path} should not load full app.js for guests; got {srcs}"
     assert "__FEATURES_JS" in html and "app-features" in html
+    assert "__DASHBOARD_CSS" in html and "dashboard" in html
     # Lite pages omit the blocking player_modal.js tag (features bundle owns it).
     assert not any("player_modal.js" in s for s in srcs)
 
@@ -72,7 +73,9 @@ def test_guest_seo_page_includes_seo_lite_css(offline_client):
     assert r.status_code == 200
     html = r.get_data(as_text=True)
     assert "/static/seo_lite.css" in html
-    assert "dashboard.min.css" not in html and "/static/dashboard.css" not in html
+    import re
+    assert not re.search(r'<link[^>]+href="[^"]*dashboard(?:\.min)?\.css', html)
+    assert "__DASHBOARD_CSS" in html
 
 
 def test_seo_lite_css_hides_guest_nav_chrome():
@@ -159,3 +162,5 @@ def test_app_js_eager_features_for_interactive_seo_shells():
     assert 'data-page="prospects"' in src
     assert 'data-page="breakouts"' in src
     assert "_eagerLite" in src
+    assert "ensureDashboardCss" in src
+    assert "__DASHBOARD_CSS" in src

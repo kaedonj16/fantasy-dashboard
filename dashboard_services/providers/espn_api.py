@@ -1,6 +1,7 @@
 # dashboard_services/espn_api.py
 from __future__ import annotations
 
+import hashlib
 import os
 import logging
 import threading
@@ -258,22 +259,120 @@ _PUBLIC_LEAGUE_TTL = 120  # seconds
 _public_league_cache: Dict[Tuple[int, str], Tuple[float, Any]] = {}
 _public_league_lock = threading.Lock()
 
+# Private leagues cannot be loaded anonymously. Remember that fact so every
+# later call skips a doomed ESPN round-trip (espn-api 0.45 also raises a
+# None-cookies AttributeError on 401/403, which flooded logs and slowed the
+# player modal's sync_league_globals path). Authenticated League objects are
+# cached separately, keyed by a credential fingerprint so one account never
+# reuses another's cookies.
+_ANON_DENIED_TTL = 300  # seconds — privacy of a league rarely flips mid-session
+_anon_denied_until: Dict[Tuple[int, str], float] = {}
+_AUTH_LEAGUE_TTL = 120  # seconds — same freshness window as public leagues
+_auth_league_cache: Dict[Tuple[int, str, str], Tuple[float, Any]] = {}
+_auth_league_lock = threading.Lock()
+_league_load_locks: Dict[Tuple[int, str], threading.Lock] = {}
+_league_load_locks_guard = threading.Lock()
+
+# Scoring/roster settings change rarely; caching them avoids a second ESPN
+# mSettings fetch on every player-modal open for the same league.
+_LEAGUE_GLOBALS_TTL = 120  # seconds
+_league_globals_cache: Dict[Tuple[int, str], Tuple[float, Dict[str, Any]]] = {}
+_league_globals_lock = threading.Lock()
+
+
+def _league_key(season: int, league_id: str) -> Tuple[int, str]:
+    return (int(season), str(league_id))
+
+
+def _cred_fingerprint(espn_s2: str, swid: str) -> str:
+    """Stable non-reversible key for auth-cache entries (never log this alone)."""
+    digest = hashlib.sha256(f"{swid}\0{espn_s2}".encode("utf-8")).hexdigest()
+    return digest[:16]
+
+
+def _load_lock_for(key: Tuple[int, str]) -> threading.Lock:
+    with _league_load_locks_guard:
+        lock = _league_load_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _league_load_locks[key] = lock
+            # Bound lock map growth on multi-league workers.
+            if len(_league_load_locks) > 64:
+                # Drop unlocked entries first; leave in-use locks alone.
+                for old_key, old_lock in list(_league_load_locks.items()):
+                    if old_key == key:
+                        continue
+                    if old_lock.acquire(blocking=False):
+                        old_lock.release()
+                        _league_load_locks.pop(old_key, None)
+                    if len(_league_load_locks) <= 48:
+                        break
+        return lock
+
+
+def _store_public_league(key: Tuple[int, str], league: Any) -> None:
+    with _public_league_lock:
+        _public_league_cache[key] = (time.time(), league)
+        if len(_public_league_cache) > 32:
+            oldest = min(_public_league_cache.items(), key=lambda kv: kv[1][0])[0]
+            _public_league_cache.pop(oldest, None)
+
+
+def _store_auth_league(auth_key: Tuple[int, str, str], league: Any) -> None:
+    with _auth_league_lock:
+        _auth_league_cache[auth_key] = (time.time(), league)
+        if len(_auth_league_cache) > 32:
+            oldest = min(_auth_league_cache.items(), key=lambda kv: kv[1][0])[0]
+            _auth_league_cache.pop(oldest, None)
+
+
+def _mark_anonymous_denied(key: Tuple[int, str], *, via_attr_error: bool) -> None:
+    now = time.time()
+    with _public_league_lock:
+        already = _anon_denied_until.get(key, 0.0) > now
+        _anon_denied_until[key] = now + _ANON_DENIED_TTL
+        if len(_anon_denied_until) > 64:
+            expired = [k for k, until in _anon_denied_until.items() if until <= now]
+            for k in expired:
+                _anon_denied_until.pop(k, None)
+    # Log once per denial window — concurrent dashboard + modal traffic used to
+    # emit dozens of identical INFO lines per second for the same private league.
+    if via_attr_error and not already:
+        logger.info(
+            "[espn] treating espn-api anonymous None-cookies AttributeError as access denied league_id=%s season=%s",
+            key[1], key[0],
+        )
+
+
+def _anonymous_denied(key: Tuple[int, str]) -> bool:
+    now = time.time()
+    with _public_league_lock:
+        until = _anon_denied_until.get(key)
+        if until is None:
+            return False
+        if until <= now:
+            _anon_denied_until.pop(key, None)
+            return False
+        return True
+
 
 def _public_league_cached(season: int, league_id: str) -> League:
-    key = (int(season), str(league_id))
+    key = _league_key(season, league_id)
     now = time.time()
     with _public_league_lock:
         hit = _public_league_cache.get(key)
         if hit and (now - hit[0]) < _PUBLIC_LEAGUE_TTL:
             return hit[1]
-    league = League(league_id=int(league_id), year=int(season))
-    with _public_league_lock:
-        _public_league_cache[key] = (time.time(), league)
-        # Bound memory if many leagues are touched on one worker.
-        if len(_public_league_cache) > 32:
-            oldest = min(_public_league_cache.items(), key=lambda kv: kv[1][0])[0]
-            _public_league_cache.pop(oldest, None)
-    return league
+    lock = _load_lock_for(key)
+    with lock:
+        now = time.time()
+        with _public_league_lock:
+            hit = _public_league_cache.get(key)
+            if hit and (now - hit[0]) < _PUBLIC_LEAGUE_TTL:
+                return hit[1]
+        league = League(league_id=int(league_id), year=int(season))
+        _store_public_league(key, league)
+        return league
 
 
 def _is_espn_access_denied(exc: Exception) -> bool:
@@ -293,36 +392,10 @@ def _is_espn_access_denied(exc: Exception) -> bool:
     )
 
 
-def _league_cached(season: int, league_id: str) -> League:
-    """Load a league anonymously when possible, then fall back to credentials.
-
-    ESPN cookies identify one account.  Sending them on every request can make
-    ESPN scope the request to that account, which prevents otherwise-public
-    leagues belonging to other users from loading.  Anonymous-first therefore
-    supports every public league; the configured cookies remain a fallback for
-    private leagues that the configured account may access.
-
-    ESPN does not offer OAuth for this API.  Consequently, an arbitrary private
-    league still cannot be read unless its owner makes it public or supplies
-    credentials for an account that belongs to it.
-    """
-    access_denied: Optional[Exception] = None
-    try:
-        return _public_league_cached(season, league_id)
-    except Exception as exc:
-        # Do not hide invalid IDs, bad seasons, or network/library errors behind
-        # a second request. Only an access denial can be fixed by authentication.
-        if not _is_espn_access_denied(exc):
-            raise
-        # Do not retain the third-party exception: some espn-api versions put
-        # cookie values in ESPNAccessDenied messages. Keep all later logs safe.
-        access_denied = ESPNAccessDenied("ESPN denied anonymous access to this league.")
-        if isinstance(exc, AttributeError):
-            logger.info(
-                "[espn] treating espn-api anonymous None-cookies AttributeError as access denied league_id=%s season=%s",
-                league_id, season,
-            )
-
+def _resolve_espn_request_creds(
+    league_id: str, season: int,
+) -> Tuple[Optional[str], Optional[str]]:
+    """Resolve ESPN cookies for this request: account → staged → env."""
     espn_s2, swid = _espn_creds()
     try:
         from flask import has_request_context, session
@@ -352,29 +425,99 @@ def _league_cached(season: int, league_id: str) -> League:
         # Database/configuration trouble must not expose credentials and the
         # original ESPN access-denied result remains the useful outcome.
         pass
+    return espn_s2, swid
+
+
+def _authenticated_league_cached(
+    season: int, league_id: str, espn_s2: str, swid: str,
+) -> League:
+    """Return a TTL-cached League built with the given credentials."""
+    key = _league_key(season, league_id)
+    fp = _cred_fingerprint(espn_s2, swid)
+    auth_key = (key[0], key[1], fp)
+    now = time.time()
+    with _auth_league_lock:
+        hit = _auth_league_cache.get(auth_key)
+        if hit and (now - hit[0]) < _AUTH_LEAGUE_TTL:
+            return hit[1]
+    lock = _load_lock_for(key)
+    with lock:
+        now = time.time()
+        with _auth_league_lock:
+            hit = _auth_league_cache.get(auth_key)
+            if hit and (now - hit[0]) < _AUTH_LEAGUE_TTL:
+                return hit[1]
+        try:
+            league = League(
+                league_id=int(league_id),
+                year=int(season),
+                espn_s2=espn_s2,
+                swid=swid,
+            )
+        except Exception as exc:
+            if _is_espn_access_denied(exc):
+                try:
+                    from flask import has_request_context, session
+                    if has_request_context() and session.get("account_id"):
+                        from dashboard_services.accounts import mark_espn_connection_status
+                        mark_espn_connection_status(
+                            int(session["account_id"]), str(league_id), int(season),
+                            "reauth_required", "espn_auth_rejected",
+                        )
+                except Exception:
+                    pass
+                raise ESPNAccessDenied(
+                    "ESPN denied authenticated access to this league."
+                ) from None
+            raise
+        _store_auth_league(auth_key, league)
+        return league
+
+
+def _league_cached(season: int, league_id: str) -> League:
+    """Load a league anonymously when possible, then fall back to credentials.
+
+    ESPN cookies identify one account.  Sending them on every request can make
+    ESPN scope the request to that account, which prevents otherwise-public
+    leagues belonging to other users from loading.  Anonymous-first therefore
+    supports every public league; the configured cookies remain a fallback for
+    private leagues that the configured account may access.
+
+    ESPN does not offer OAuth for this API.  Consequently, an arbitrary private
+    league still cannot be read unless its owner makes it public or supplies
+    credentials for an account that belongs to it.
+
+    After anonymous access is denied once, subsequent loads for the same
+    (season, league_id) skip the anonymous attempt for ``_ANON_DENIED_TTL`` and
+    reuse a credential-scoped League cache so private-league pages (and the
+    player modal's scoring sync) do not pay a failed ESPN round-trip each time.
+    """
+    key = _league_key(season, league_id)
+    access_denied: Optional[Exception] = None
+
+    if not _anonymous_denied(key):
+        try:
+            return _public_league_cached(season, league_id)
+        except Exception as exc:
+            # Do not hide invalid IDs, bad seasons, or network/library errors behind
+            # a second request. Only an access denial can be fixed by authentication.
+            if not _is_espn_access_denied(exc):
+                raise
+            # Do not retain the third-party exception: some espn-api versions put
+            # cookie values in ESPNAccessDenied messages. Keep all later logs safe.
+            access_denied = ESPNAccessDenied(
+                "ESPN denied anonymous access to this league."
+            )
+            _mark_anonymous_denied(key, via_attr_error=isinstance(exc, AttributeError))
+    else:
+        access_denied = ESPNAccessDenied(
+            "ESPN denied anonymous access to this league."
+        )
+
+    espn_s2, swid = _resolve_espn_request_creds(league_id, season)
     if not (espn_s2 and swid):
         raise access_denied
-    try:
-        return League(
-            league_id=int(league_id),
-            year=int(season),
-            espn_s2=espn_s2,
-            swid=swid,
-        )
-    except Exception as exc:
-        if _is_espn_access_denied(exc):
-            try:
-                from flask import has_request_context, session
-                if has_request_context() and session.get("account_id"):
-                    from dashboard_services.accounts import mark_espn_connection_status
-                    mark_espn_connection_status(
-                        int(session["account_id"]), str(league_id), int(season),
-                        "reauth_required", "espn_auth_rejected",
-                    )
-            except Exception:
-                pass
-            raise ESPNAccessDenied("ESPN denied authenticated access to this league.") from None
-        raise
+    return _authenticated_league_cached(season, league_id, espn_s2, swid)
 
 
 _league_cached.cache_clear = lambda: clear_espn_league_caches()  # type: ignore[attr-defined]
@@ -943,6 +1086,7 @@ def clear_espn_league_caches(league_id: Optional[str] = None, season: Optional[i
     with _public_league_lock:
         if league_id is None:
             _public_league_cache.clear()
+            _anon_denied_until.clear()
         else:
             lid = str(league_id)
             drop = [
@@ -951,6 +1095,34 @@ def clear_espn_league_caches(league_id: Optional[str] = None, season: Optional[i
             ]
             for key in drop:
                 _public_league_cache.pop(key, None)
+            drop_denied = [
+                key for key in _anon_denied_until
+                if str(key[1]) == lid and (season is None or int(key[0]) == int(season))
+            ]
+            for key in drop_denied:
+                _anon_denied_until.pop(key, None)
+    with _auth_league_lock:
+        if league_id is None:
+            _auth_league_cache.clear()
+        else:
+            lid = str(league_id)
+            drop = [
+                key for key in _auth_league_cache
+                if str(key[1]) == lid and (season is None or int(key[0]) == int(season))
+            ]
+            for key in drop:
+                _auth_league_cache.pop(key, None)
+    with _league_globals_lock:
+        if league_id is None:
+            _league_globals_cache.clear()
+        else:
+            lid = str(league_id)
+            drop = [
+                key for key in _league_globals_cache
+                if str(key[1]) == lid and (season is None or int(key[0]) == int(season))
+            ]
+            for key in drop:
+                _league_globals_cache.pop(key, None)
     with _draft_meta_lock:
         if league_id is None:
             _draft_meta_cache.clear()
@@ -1048,8 +1220,9 @@ def get_drafts(season: int, league_id: str) -> List[Dict[str, Any]]:
     dtype = draft_type or "snake"
     if date_ms:
         if drafted is None:
-            # No explicit flag — infer from whether the scheduled time has passed.
-            drafted = date_ms <= int(datetime.now().timestamp() * 1000)
+            # A missing drafted flag is not "done". Inferring complete from a
+            # past date marked postponed / stale-date leagues as already drafted.
+            drafted = False
         return [{
             "draft_id": f"espn_{league_id}_{season}",
             "league_id": str(league_id),
@@ -1101,7 +1274,7 @@ def iter_draft_picks(season: int, league_id: str) -> List[Any]:
 # ESPN slot name -> Sleeper roster position
 _ESPN_SLOT_TO_SLEEPER: Dict[str, str] = {
     "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
-    "FLEX": "FLEX", "RB/WR/TE": "FLEX", "RB/WR": "FLEX", "WR/TE": "FLEX",
+    "FLEX": "FLEX", "RB/WR/TE": "FLEX", "RB/WR": "RB_WR", "WR/TE": "WR_TE",
     "OP": "SUPER_FLEX",
     "K": "K",
     "D/ST": "DEF", "DST": "DEF", "DEF": "DEF", "D-ST": "DEF",
@@ -1139,11 +1312,37 @@ def _espn_scoring_item_points(item: dict):
     return item.get("points")
 
 
+# Passing / rushing / receiving yards (and receptions) publish both a per-unit
+# rate and a 300-yard / 9-catch extra under the same statId. DST points-allowed
+# and FG distance buckets also use rangeStart/rangeEnd — those *are* the rates.
+_ESPN_MILESTONE_RATE_STAT_IDS = frozenset({3, 24, 42, 53})
+
+
+def _espn_is_threshold_bonus(item: dict) -> bool:
+    """True for 300-yard / catch extras that must not replace per-stat rates."""
+    if not isinstance(item, dict):
+        return False
+    try:
+        stat_id = int(item.get("statId"))
+    except (TypeError, ValueError):
+        stat_id = None
+    ranged = item.get("rangeStart") is not None or item.get("rangeEnd") is not None
+    if stat_id in _ESPN_MILESTONE_RATE_STAT_IDS and (
+        item.get("isBonus") is True or ranged
+    ):
+        return True
+    if item.get("isBonus") is True and not ranged:
+        return True
+    return False
+
+
 def normalize_espn_scoring_items(scoring_items: List[dict]) -> Dict[str, float]:
     """Normalize raw ESPN mSettings scoringItems into the shared scoring shape."""
+    from utils.league_scoring import assign_scoring_rate
+
     normalized: Dict[str, float] = {}
     for item in scoring_items or []:
-        if not isinstance(item, dict):
+        if not isinstance(item, dict) or _espn_is_threshold_bonus(item):
             continue
         try:
             stat_id = int(item.get("statId"))
@@ -1154,7 +1353,7 @@ def normalize_espn_scoring_items(scoring_items: List[dict]) -> Dict[str, float]:
         if key is None or value is None:
             continue
         try:
-            normalized[key] = float(value)
+            assign_scoring_rate(normalized, key, float(value))
         except (TypeError, ValueError):
             continue
     return normalized
@@ -1271,7 +1470,17 @@ def get_league_globals(season: int, league_id: str) -> Dict[str, Any]:
     Extract ESPN league settings in Sleeper-compatible format.
     Returns a dict with: scoring_settings, roster_positions, league_settings, total_rosters.
     Called by platform_api.sync_league_globals() to populate api.py module globals.
+
+    Cached briefly so the player modal (and other per-request syncs) reuse the
+    same scoring/roster payload instead of re-hitting ESPN mSettings every open.
     """
+    key = _league_key(season, league_id)
+    now = time.time()
+    with _league_globals_lock:
+        hit = _league_globals_cache.get(key)
+        if hit and (now - hit[0]) < _LEAGUE_GLOBALS_TTL:
+            return hit[1]
+
     try:
         lg = _league(season, league_id)
     except Exception as e:
@@ -1371,12 +1580,18 @@ def get_league_globals(season: int, league_id: str) -> Dict[str, Any]:
         deadline_ts = int(deadline_raw / 1000) if deadline_raw > 10**12 else int(deadline_raw)
         league_settings["trade_deadline_ts"] = deadline_ts
 
-    return {
+    result = {
         "scoring_settings": scoring_settings,
         "roster_positions": roster_positions,
         "league_settings": league_settings,
         "total_rosters": total_rosters,
     }
+    with _league_globals_lock:
+        _league_globals_cache[key] = (time.time(), result)
+        if len(_league_globals_cache) > 32:
+            oldest = min(_league_globals_cache.items(), key=lambda kv: kv[1][0])[0]
+            _league_globals_cache.pop(oldest, None)
+    return result
 
 
 def build_espn_to_canonical(players_index: Dict[str, Dict[str, Any]]) -> Dict[str, str]:

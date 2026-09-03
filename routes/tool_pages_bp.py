@@ -75,7 +75,8 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
             if hasattr(_rp, "tolist"):
                 _rp = _rp.tolist()
             roster_positions = [str(s) for s in _rp] if _rp else None
-            is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp)
+            from utils.lineup_slots import is_superflex_lineup
+            is_sf = is_superflex_lineup(_rp)
             league_id = ctx.get("league_id") or league_id
             season = int(ctx.get("season") or season or datetime.now().year)
             _sc = ctx.get("scoring_settings") or {}
@@ -142,7 +143,21 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
         try:
             from dashboard_services.pages.keeper_page import compute_league_keepers, league_keeper_limit
             _ctx = get_league_ctx_from_cache(platform, league_id, season)
-            if request.args.get("keepers") or league_keeper_limit(_ctx) > 0:
+            # Sleeper commonly reports a leftover max_keepers (often 1) on plain
+            # redraft leagues (type 0), which made the room auto-surface a keeper
+            # banner and pull "kept" players off the board for a league that has
+            # no keepers. Sleeper's type is authoritative, so never auto-surface
+            # keepers for a pure redraft league; the keeper tool's explicit
+            # ?keepers=1 handoff still forces them. Non-Sleeper leagues publish no
+            # type, so they are unaffected and still infer from the limit.
+            _settings = (_ctx.get("league_settings")
+                         or (_ctx.get("league") or {}).get("settings")
+                         or _ctx.get("settings") or {}) if _ctx else {}
+            try:
+                _is_redraft_league = int(_settings.get("type")) == 0
+            except (TypeError, ValueError):
+                _is_redraft_league = False
+            if request.args.get("keepers") or (league_keeper_limit(_ctx) > 0 and not _is_redraft_league):
                 # The keeper tool hands off the limit and cost rules the user is
                 # playing by so rival projections use the same ones, instead of
                 # the server defaults (which price every undrafted player at the
@@ -191,8 +206,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
         "Draft Room | BR Fantasy", league_id, "draft", body, platform, season,
         description=(
             "Fantasy football draft assistant and draft board with best-available, "
-            "ADP, and snake / linear / third-round-reversal support for Sleeper and ESPN. "
-            "Yahoo coming soon."
+            "ADP, and snake / linear / third-round-reversal support for Sleeper, ESPN, and Yahoo."
         ),
     )
 
@@ -213,7 +227,8 @@ def _cheat_sheet_kwargs(platform, season, league_id):
             if hasattr(_rp, "tolist"):
                 _rp = _rp.tolist()
             roster_positions = [str(s) for s in _rp] if _rp else None
-            is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp)
+            from utils.lineup_slots import is_superflex_lineup
+            is_sf = is_superflex_lineup(_rp)
             league_id = ctx.get("league_id") or league_id
             season = int(ctx.get("season") or season or datetime.now().year)
             # Same scoring seed as Draft Room setup (ppr / TE premium / pass TD).

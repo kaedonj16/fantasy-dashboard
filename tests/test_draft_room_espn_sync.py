@@ -74,12 +74,17 @@ def test_extension_relay_wired_and_skips_manual_fallback():
     assert "Copy iOS Shortcut JS" not in ROOM_JS
     assert "Mobile Sync" not in ROOM_JS
     assert "dr-msync-title" in PAGE
+    assert "dr-msync-ver" in PAGE
     assert "github.com/kaedonj16/fantasy-dashboard/tree/main/extension" not in ROOM_JS
     assert "Extension setup" not in ROOM_JS
     assert "Get Chrome extension" in ROOM_JS
     assert "function openEspnExtensionInstall()" in ROOM_JS
     assert "chromeExtensionZipUrl" in PAGE
     assert "Load unpacked" in ROOM_JS
+    assert "Use the BR Fantasy extension" in ROOM_JS
+    assert "dr-msync-ver" in ROOM_JS
+    assert "1.0.0" in ROOM_JS
+    assert "Open Draft Assistant" in ROOM_JS
     assert "dr-espn-tools-body" in PAGE
     assert "dr-espn-tools-kicker" in PAGE
     assert "drEspnToolsDismiss" in ROOM_JS
@@ -101,20 +106,97 @@ def test_live_detect_requests_espn_sync_flag():
 
 
 def test_sequential_missing_picks_and_idempotent_apply():
-    assert "function applyOneLivePick(p)" in ROOM_JS
+    assert "function applyOneLivePick(p, cap)" in ROOM_JS
     assert "function applyMissingLivePicks(picks)" in ROOM_JS
-    assert "function _livePickAllowed(p)" in ROOM_JS
-    assert "state.current" in ROOM_JS.split("function _livePickAllowed(p)")[1].split("function applyLivePicks")[0]
+    assert "function _livePickAllowed(p, cap)" in ROOM_JS
+    assert "function _liveCatchUpCap(picks)" in ROOM_JS
+    assert "_liveCatchUpCap(picks)" in ROOM_JS.split("function applyLivePicks(picks)")[1].split("function applyOneLivePick")[0]
+    assert "_liveCatchUpCap(picks)" in ROOM_JS.split("function applyMissingLivePicks(picks)")[1].split("function liveStatusLabel")[0]
+    assert "state.current" in ROOM_JS.split("function _livePickAllowed(p, cap)")[1].split("function applyLivePicks")[0]
     assert "if (state.picks[p.pick_no]) return false;" in ROOM_JS
     assert "if (pid && !p.unresolved) drafted[pid] = true;" in ROOM_JS
     assert "applyMissingLivePicks(d.picks)" in ROOM_JS
+
+
+def test_mid_draft_connect_catchup_cap_admits_full_snapshot():
+    """Connect Live mid-draft must not drip-feed from pick 1 via state.current."""
+    import json
+    import shutil
+    import subprocess
+
+    import pytest
+
+    if shutil.which("node") is None:
+        pytest.skip("node not available")
+
+    # Extract the live-pick helpers into a Node sandbox and simulate Connect Live
+    # with current=1 while the remote snapshot is already in round 10.
+    start = ROOM_JS.index("function livePickIsSelection(p){")
+    end = ROOM_JS.index("function liveStatusLabel(s){", start)
+    helpers = ROOM_JS[start:end]
+    driver = r"""
+const helpers = %s;
+let state = {
+  mode: 'live', isComplete: false, isDrafting: true,
+  current: 1, teams: 12, rounds: 15, picks: {}, queue: []
+};
+let drafted = {};
+let lastLivePicks = null;
+let justPick = null;
+let _boardSig = null;
+const playersById = {};
+function valLookup(){ return null; }
+function valOf(){ return 0; }
+function pickScoreFor(){ return 0; }
+function psDisplay(x){ return x; }
+function psCtxInvalidate(){}
+function refreshPsPool(){}
+function _pruneQueueOfDrafted(){
+  if (!state || !state.queue) return;
+  state.queue = state.queue.filter(function(id){ return !drafted[String(id)]; });
+}
+eval(helpers);
+const remote = [];
+for (let i = 1; i <= 109; i++) {
+  remote.push({ pick_no: i, player_id: 'p' + i, name: 'Player ' + i, position: 'WR', team: 'KC' });
+}
+applyLivePicks(remote);
+const filled = Object.keys(state.picks).filter(function(k){ return state.picks[k]; }).length;
+if (filled !== 109) {
+  console.error('expected 109 picks after mid-draft connect, got', filled, 'current', state.current);
+  process.exit(1);
+}
+if (state.current !== 110) {
+  console.error('expected current=110 after catch-up, got', state.current);
+  process.exit(1);
+}
+// Future garbage beyond the snapshot max must still be rejected when applied alone.
+const rejected = applyOneLivePick({ pick_no: 200, player_id: 'ghost', name: 'Ghost' });
+if (rejected) {
+  console.error('future pick beyond clock should be rejected');
+  process.exit(1);
+}
+console.log(JSON.stringify({ filled: filled, current: state.current }));
+""" % json.dumps(helpers)
+    out = subprocess.run(
+        ["node", "-e", driver],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert out.returncode == 0, out.stderr + out.stdout
+    payload = json.loads(out.stdout.strip())
+    assert payload["filled"] == 109
+    assert payload["current"] == 110
 
 
 def test_predraft_placeholder_picks_are_not_applied():
     assert "function livePickIsSelection(p)" in ROOM_JS
     assert "if (!livePickIsSelection(p)) return;" in ROOM_JS
     assert "var remote = (picks || []).slice().filter(function(p){" in ROOM_JS
-    assert "livePickIsSelection(p) && _livePickAllowed(p)" in ROOM_JS
+    assert "livePickIsSelection(p) && _livePickAllowed(p, cap)" in ROOM_JS
     assert "if (state.mode === 'live' && String(state.status) === 'pre_draft' && !state.isComplete) return false;" in ROOM_JS
     assert "var done = _draftComplete();" in ROOM_JS
 

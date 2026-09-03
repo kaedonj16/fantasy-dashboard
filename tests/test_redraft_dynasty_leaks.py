@@ -100,7 +100,27 @@ def test_roster_grade_uses_scoring_type_on_teams_page():
     assert "scoring_type=_scoring" in src
 
 
-def test_trade_intel_skips_rebuild_window_for_redraft():
+def test_teams_page_pos_rank_uses_format_rank_label():
+    """Teams player meta (RB23) must use redraft/SF labels, not dynasty-only."""
+    src = (ROOT / "dashboard_services" / "pages" / "teams_page.py").read_text(encoding="utf-8")
+    assert "format_rank_label_key" in src
+    assert "row_format_rank_label" in src
+    assert "_rank_label_key" in src
+    # Must not hardcode dynasty pos_rank_label for the name→rank map.
+    assert 'obj.get("pos_rank_label") or obj.get("position")' not in src
+
+
+def test_roster_intel_pos_rank_uses_format_keys():
+    """Roster Intel on Teams must show/signal on format-matched pos ranks."""
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    start = src.find("def _api_roster_intel_compute")
+    end = src.find("def api_trade_targets", start)
+    body = src[start:end]
+    assert "format_rank_label_key" in body
+    assert "format_rank_key" in body
+    assert "rank_label_key" in body
+    assert 'row.get("pos_rank_label") or ""' not in body
+    assert 'row.get("pos_rank")' not in body or "rank_key" in body
     src = (ROOT / "app.py").read_text(encoding="utf-8")
     start = src.find("def api_trade_intel_player_packages")
     end = src.find("def _real_trade_packages_for_target", start)
@@ -131,6 +151,30 @@ def test_brctx_and_compare_flip_scoring_type():
     ranks = (ROOT / "static" / "rankings.js").read_text(encoding="utf-8")
     assert "__leagueScoringType" in ranks
     assert "this-season redraft value" in ranks
+
+
+def test_waiver_and_start_sit_use_format_value_and_rank():
+    """Redraft leagues must not show dynasty value / WR12 labels on waivers or start/sit."""
+    app = (ROOT / "app.py").read_text(encoding="utf-8")
+    waiver = (ROOT / "routes" / "waiver_api_bp.py").read_text(encoding="utf-8")
+    assert "def _waiver_rank_label_key" in app
+    assert "apply_redraft_display_fields" in app
+    assert "_waiver_rank_label_key(ctx)" in waiver
+    assert "_rk_wv" in waiver
+    assert "_tr_vf" in waiver
+    assert 'round(float(val_row.get("value") or 0))' not in waiver
+    start = app.find("def api_start_sit_options")
+    end = app.find("def page_weekly", start)
+    body = app[start:end]
+    assert "_waiver_value_keys(ctx)" in body
+    assert "_waiver_rank_label_key(ctx)" in body
+    assert "_ss_vkey" in body
+    assert "_ss_rkey" in body
+    assert 'float(row.get("value") or 0) or None' not in body
+    dash = app.find("def _build_waiver_targets_rows")
+    dash_end = app.find("def _render_do_next_waiver_card", dash)
+    dash_body = app[dash:dash_end]
+    assert "_waiver_rank_label_key(ctx)" in dash_body
 
 
 def test_roster_grade_badge_skips_age_for_redraft():

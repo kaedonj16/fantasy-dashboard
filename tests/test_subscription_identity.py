@@ -83,6 +83,37 @@ def test_league_plan_still_works_without_google(monkeypatch):
     assert subscriptions.has_premium_for_viewer("u", "uid", "lg1", "sleeper", 2026) is True
 
 
+def test_single_league_grants_buyer_only(monkeypatch):
+    monkeypatch.setattr(subscriptions, "pro_require_google", lambda: False)
+    monkeypatch.setattr(subscriptions, "_session_account_id", lambda: None)
+    monkeypatch.setattr(
+        subscriptions, "has_premium_access",
+        lambda user, league, platform="sleeper", account_id=None: False,
+    )
+    monkeypatch.setattr(
+        subscriptions, "has_user_league_subscription",
+        lambda user, league, platform="sleeper", account_id=None: user == "buyer-1" and league == "lg9",
+    )
+    assert subscriptions.has_premium_for_viewer("buyer", "buyer-1", "lg9", "sleeper", 2026) is True
+    assert subscriptions.has_premium_for_viewer("mate", "mate-2", "lg9", "sleeper", 2026) is False
+    assert subscriptions.has_premium_for_viewer("buyer", "buyer-1", "other", "sleeper", 2026) is False
+
+
+def test_single_league_via_google_account(monkeypatch):
+    monkeypatch.setattr(subscriptions, "pro_require_google", lambda: True)
+    monkeypatch.setattr(subscriptions, "_session_account_id", lambda: 55)
+    monkeypatch.setattr(
+        subscriptions, "has_premium_access",
+        lambda user, league, platform="sleeper", account_id=None: False,
+    )
+    monkeypatch.setattr(
+        subscriptions, "has_user_league_subscription",
+        lambda user, league, platform="sleeper", account_id=None: account_id == 55 and league == "lg9",
+    )
+    assert subscriptions.has_premium_for_viewer("n", "uid", "lg9", "sleeper", 2026) is True
+    assert subscriptions.has_premium_for_viewer("n", "uid", "other", "sleeper", 2026) is False
+
+
 def test_needs_google_link_when_legacy_sub_and_no_account(monkeypatch):
     monkeypatch.setattr(subscriptions, "_session_account_id", lambda: None)
     monkeypatch.setattr(

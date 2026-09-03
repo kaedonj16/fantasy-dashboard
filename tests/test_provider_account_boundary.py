@@ -5,6 +5,7 @@ flask = pytest.importorskip("flask")
 from routes.auth_bp import auth_bp
 from routes.link_bp import link_bp
 from routes.yahoo_auth_bp import yahoo_auth_bp
+from routes.google_auth_bp import google_auth_bp
 
 
 def test_sleeper_identify_sets_provider_session_but_never_google_account(monkeypatch):
@@ -187,3 +188,98 @@ def test_google_callback_persists_verified_sleeper_team_immediately():
     viewer_block = source[source.index("if viewer:"):source.index("if vuid:")]
     assert "add_user_league(" in viewer_block
     assert 'team_id=viewer.get("viewer_roster_id")' in viewer_block
+
+
+class _JsonResp:
+    def __init__(self, data):
+        self._data = data
+
+    def json(self):
+        return self._data
+
+
+def _stub_google_callback(monkeypatch, attached):
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "cid")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "csecret")
+    monkeypatch.setenv("GOOGLE_REDIRECT_URI", "http://localhost/auth/google/callback")
+    monkeypatch.setattr("requests.post", lambda *args, **kwargs: _JsonResp({"id_token": "tok"}))
+    monkeypatch.setattr(
+        "google.oauth2.id_token.verify_oauth2_token",
+        lambda *args, **kwargs: {
+            "sub": "g-sub", "email": "user@example.com",
+            "nonce": "nonce", "given_name": "Pat",
+        },
+    )
+    monkeypatch.setattr(
+        "dashboard_services.accounts.upsert_google_account",
+        lambda *args, **kwargs: 77,
+    )
+    monkeypatch.setattr(
+        "dashboard_services.accounts.link_platform_identity",
+        lambda *args, **kwargs: "ok",
+    )
+    monkeypatch.setattr(
+        "dashboard_services.accounts.add_user_league",
+        lambda *args, **kwargs: attached.append(("league", args, kwargs)),
+    )
+    monkeypatch.setattr(
+        "dashboard_services.accounts.get_post_login_destination",
+        lambda *args, **kwargs: "/",
+    )
+
+
+def test_google_callback_sends_pending_yahoo_to_yahoo_oauth(monkeypatch):
+    attached = []
+    _stub_google_callback(monkeypatch, attached)
+    app = flask.Flask(__name__)
+    app.secret_key = "test"
+    app.register_blueprint(google_auth_bp)
+
+    with app.test_client() as client:
+        with client.session_transaction() as session:
+            session["google_oauth_state"] = "state"
+            session["google_oauth_nonce"] = "nonce"
+            session["google_pkce_verifier"] = "verifier"
+            session["google_oauth_next"] = "/"
+            session["pending_link"] = {
+                "platform": "yahoo", "league_id": "123456",
+                "season": 2026, "username": "Dynasty Monsters",
+            }
+        response = client.get("/auth/google/callback?code=code&state=state")
+        with client.session_transaction() as session:
+            assert session["account_id"] == 77
+            assert "yahoo_access_token" not in session
+
+    assert response.status_code == 302
+    from urllib.parse import parse_qs, urlparse
+    loc = urlparse(response.headers["Location"])
+    assert loc.path == "/auth/yahoo"
+    qs = parse_qs(loc.query)
+    assert qs["league_id"] == ["123456"]
+    assert qs["team_name"] == ["Dynasty Monsters"]
+    assert attached == []
+
+
+def test_google_callback_attaches_pending_yahoo_when_yahoo_is_already_authorized(monkeypatch):
+    attached = []
+    _stub_google_callback(monkeypatch, attached)
+    app = flask.Flask(__name__)
+    app.secret_key = "test"
+    app.register_blueprint(google_auth_bp)
+
+    with app.test_client() as client:
+        with client.session_transaction() as session:
+            session["google_oauth_state"] = "state"
+            session["google_oauth_nonce"] = "nonce"
+            session["google_pkce_verifier"] = "verifier"
+            session["google_oauth_next"] = "/"
+            session["yahoo_access_token"] = "token"
+            session["pending_link"] = {
+                "platform": "yahoo", "league_id": "123456",
+                "season": 2026, "name": "Yahoo League",
+            }
+        response = client.get("/auth/google/callback?code=code&state=state")
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/yahoo/2026/123456/dashboard"
+    assert attached[0][1][:3] == (77, "yahoo", "123456")

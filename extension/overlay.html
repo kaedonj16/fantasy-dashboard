@@ -9,7 +9,7 @@
 <body>
 
   <div class="page">
-    <p class="eyebrow">BR Fantasy · League Connector - concept</p>
+    <p class="eyebrow">BR Fantasy · Draft Assistant - concept</p>
     <h1>Draft Assistant, docked in the host room.</h1>
     <p class="intro">A read-only overlay that watches Sleeper, Yahoo, or ESPN picks and mirrors BR Fantasy Draft Room tools - Best Available, roster construction, and live grades - without ever submitting a pick.</p>
 
@@ -70,10 +70,11 @@
             <img class="site-logo site-logo-light" src="icons/br-logo.png" alt="BR Fantasy" width="28" height="25">
             <img class="site-logo site-logo-dark" src="icons/br-logo-dark.png" alt="" width="28" height="25">
             <div class="ov-titles">
-              <div class="ov-title">Draft Assistant</div>
+              <div class="ov-title" id="ovLeagueName">Draft Assistant</div>
+              <div class="ov-sub" id="ovLeagueSettings" hidden></div>
             </div>
             <div class="sync-cluster">
-              <span class="sync-chip" id="syncChip"><i></i> SLEEPER</span>
+              <span class="sync-chip" id="syncChip"><i aria-hidden="true"></i><span class="sync-chip-txt">SLEEPER</span></span>
               <button type="button" class="sync-reconnect live-only" id="reconnectBtn" title="Reconnect" aria-label="Reconnect">↻</button>
             </div>
             <label class="live-only slot-lab" id="slotLab" hidden>
@@ -85,6 +86,10 @@
             <button type="button" class="tab-btn" data-tab="roster" role="tab">Team <span class="tab-chip" id="rosterChip">0</span></button>
             <button type="button" class="tab-btn" data-tab="grades" role="tab">League <span class="tab-chip" id="gradesChip">-</span></button>
             <div class="tab-opts">
+              <button type="button" class="opts-btn" id="sumBtn" data-open-summary="1" title="Open draft summary" aria-label="Draft summary" hidden>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>
+                <span>Summary</span>
+              </button>
               <button type="button" class="opts-btn" data-link="sheet" title="Open Cheat Sheet" aria-label="Cheat Sheet">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/></svg>
                 <span>Cheat</span>
@@ -108,6 +113,8 @@
               <button type="button" class="chip" data-pos="RB" aria-pressed="false">RB</button>
               <button type="button" class="chip" data-pos="WR" aria-pressed="false">WR</button>
               <button type="button" class="chip" data-pos="TE" aria-pressed="false">TE</button>
+              <button type="button" class="chip pos-kdef" data-pos="K" aria-pressed="false">K</button>
+              <button type="button" class="chip pos-kdef" data-pos="DEF" aria-pressed="false">DEF</button>
             </div>
             <div class="adp-src live-only">
               <label class="adp-src-label" for="adpSel">ADP source</label>
@@ -144,17 +151,21 @@
           <div class="dr-cmp-overlay" id="cmpModal" hidden>
             <div class="dr-cmp-card" id="cmpCard" role="dialog" aria-labelledby="cmpTitle"></div>
           </div>
+          <div class="dr-cmp-overlay" id="sumModal" hidden>
+            <div class="dr-cmp-card dr-sum-card" id="sumCard" role="dialog" aria-labelledby="sumTitle"></div>
+          </div>
         </aside>
       </div>
     </div>
 
-    <p class="footnote">Mockup of the League Connector overlay: illustrative data, not a live sync. Headshots are position-tinted silhouettes that fill with real photos when the assistant is wired to the app. The overlay reads host picks only - it never submits.</p>
-    <p class="footnote">Grade letters and playoff odds use a lightweight stand-in (value vs ADP, roster balance, and star power, curved against the field and damped early). Production Draft Room grades and odds come from the full Pick Score / team-grade / standings models.</p>
+    <p class="footnote">Mockup of the Draft Assistant overlay: illustrative data, not a live sync. Headshots are position-tinted silhouettes that fill with real photos when the assistant is wired to the app. The overlay reads host picks only - it never submits.</p>
+    <p class="footnote">Grades, recommendations, lineup, recap, and playoff odds use the same Draft Room kernels.</p>
   </div>
 
 <script src="draft_slot.js"></script>
 <script src="pick_score.js"></script>
 <script src="draft_board_core.js"></script>
+<script src="draft_grade_team.js"></script>
 <script src="overlay_score.js"></script>
 <script src="overlay.js"></script>
 </body>

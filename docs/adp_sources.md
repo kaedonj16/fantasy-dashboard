@@ -35,6 +35,7 @@ resolver never fails a page because a snapshot file is missing from this disk.
 |---|---|---|---|---|---|---|---|---|
 | **Sleeper** | global | no | redraft, dynasty, rookie | explicit std / half / full PPR fields | 1QB + a 2QB field (used as SF proxy) | none (no native field) | n/a | n/a |
 | **BR Fantasy** | observed drafts | no | redraft, dynasty (startup), rookie | observed per draft | 1QB / 2QB / superflex | **native** (observed) | observed | **known** |
+| **BR Fantasy Live** | observed drafts (past 7 days) | no | same as BR Fantasy | observed per draft | 1QB / 2QB / superflex | **native** | observed | **known** |
 | **Yahoo** | global | **no** | redraft only | **mixed / unspecified** | **mixed** | none | n/a | real |
 | **ESPN** | global | **no** | redraft only | **mixed / unspecified** | **mixed** | none | n/a | real |
 | **MFL** | global | no | redraft only (verified) | PPR / standard (`IS_PPR`) | 1QB | none | `FCOUNT` | `IS_MOCK` |
@@ -65,6 +66,13 @@ resolver never fails a page because a snapshot file is missing from this disk.
   it is the **only native TE-premium source** and the only feed that knows league
   size and real-vs-mock. Its `draft_adp` tables are kept distinct from the
   `adp_snapshots` third-party aggregates.
+- **BR Fantasy Live (7d)** is the same observed-draft feed restricted to drafts
+  whose `draft_started_at` (preferred) or `crawled_at` (fallback) falls in the
+  past 7 days. It is offered as a selector option on every axis but **never**
+  enters Consensus (that would double-count recent drafts already in season-long
+  BR Fantasy). Sleeper / ESPN / Yahoo publish season or blended global boards
+  with no pick-level recency window; MFL has an unverified `PERIOD`/`DAYS` filter
+  that is not enabled here.
 - **MFL dimensions are limited to verified filters.** Only `IS_PPR` (scoring),
   `FCOUNT` (league size), `IS_MOCK` (real/mock), and `PERIOD` are sent. Dynasty,
   rookie, superflex, and TEP are **not** inferable from MFL's ADP filters and are
@@ -159,11 +167,13 @@ one-source result is never labelled "Consensus".
 ## Selectors (UI)
 
 `adp_source_options(scoring_type, season)` drives the source dropdowns. Labels:
-Consensus, BR Fantasy, Sleeper, ESPN, Yahoo, MFL. Only axis-relevant sources are
-offered (ESPN/Yahoo/MFL on redraft only). When a `season` is passed, snapshots
-are warmed first (disk → DB → live) and a global source is still hidden until it
-has a non-empty snapshot, so a selector never offers a source that would return
-nothing.
+Consensus, BR Fantasy, BR Fantasy Live (7d), Sleeper, ESPN, Yahoo, MFL. Only
+axis-relevant sources are offered (ESPN/Yahoo/MFL on redraft only). Live ADP is
+BR Fantasy-only (past 7 days of observed drafts) and is never blended into
+Consensus — other platforms publish season/global snapshots without a pick-level
+recency window. When a `season` is passed, snapshots are warmed first (disk →
+DB → live) and a global source is still hidden until it has a non-empty
+snapshot, so a selector never offers a source that would return nothing.
 
 ## Backward compatibility & migrations
 
@@ -172,6 +182,8 @@ nothing.
   on `adp_source_options` is optional).
 - Migration `029_adp_snapshots.sql` is additive and idempotent
   (`CREATE TABLE IF NOT EXISTS`); it does not alter the `draft_adp*` tables.
+- Migration `034_draft_adp_started_at.sql` adds nullable `draft_started_at` on
+  `draft_adp_drafts` so Live ADP can window on real draft timing.
 
 ## Verification
 

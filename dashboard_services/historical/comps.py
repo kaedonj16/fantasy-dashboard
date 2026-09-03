@@ -5,8 +5,12 @@ capital, prior-finish bucket, age bucket, previous-season usage. Same-season
 actuals, ADP, and projections are not features.
 
 Missing dimensions are omitted (not 0 / UDFA / last-place). Tiny cells
-relax in ``COMP_RELAXATION_ORDER`` and shrink toward the position baseline
-via empirical Bayes. Named comps exclude the query player.
+relax in ``COMP_RELAXATION_ORDER``. Live Hist compiles nested sibling
+buckets (no overlap) until ``HIST_DISPLAY_MIN_N``, then falls back to the
+parent, keeping last-year finish and age for young players. The oldest
+open-ended age band waits for ``MIN_COMP_CELL_N`` so a 32+ cell is not
+one veteran repeating. Walk-forward still uses ``MIN_COMP_CELL_N`` then
+the position prior. Named comps exclude the query player.
 
 Cell rates are **pooled historical** (all warehouse seasons), not
 walk-forward. They are descriptive and do not enter ranking or Pick Score.
@@ -25,8 +29,15 @@ from dashboard_services.historical.definitions import (
     COMP_RELAXATION_ORDER,
     DEFAULT_BAYES_PRIOR_N,
     DRAFT_CAPITAL_ORDER,
+    HIST_DISPLAY_MIN_N,
+    HIST_NESTED_DROP_ORDER,
+    HIST_NESTED_DROP_ORDER_OLDEST,
+    HIST_NESTED_KEEP_DIMS,
     MIN_COMP_CELL_N,
     NAMED_EXAMPLES_PER_CELL,
+    PARENT_KEEP_WEIGHT,
+    PARENT_MIN_N,
+    PARENT_RELAXATION_ORDERS,
     PRIOR_FINISH_ORDER,
     SKILL_POSITIONS,
     SNAP_PCT_BUCKETS,
@@ -35,6 +46,7 @@ from dashboard_services.historical.definitions import (
     age_bucket,
     career_stage,
     draft_capital_bucket,
+    is_oldest_age_bucket,
     prior_finish_bucket,
     value_bucket,
     _optional_float,
@@ -156,6 +168,7 @@ def key_matches(leaf_key: Mapping[str, Any], required: Mapping[str, Any]) -> boo
 
 def iter_relaxed_keys(
     feats: Mapping[str, Any],
+    order: Sequence[str] = COMP_RELAXATION_ORDER,
 ) -> Iterator[tuple[dict[str, str], list[str]]]:
     """Yield (active_key, dropped_dims) from most specific to position-only."""
     active = {
@@ -165,11 +178,136 @@ def iter_relaxed_keys(
     }
     dropped: list[str] = []
     yield dict(active), list(dropped)
-    for dim in COMP_RELAXATION_ORDER:
+    for dim in order:
         if dim in active and dim != "position":
             del active[dim]
             dropped.append(dim)
             yield dict(active), list(dropped)
+
+
+def _leaf_match_n(
+    leaves: Sequence[Mapping[str, Any]],
+    active: Mapping[str, str],
+) -> tuple[list[Mapping[str, Any]], int]:
+    matching = [leaf for leaf in leaves if key_matches(leaf.get("key") or {}, active)]
+    n = sum(int(leaf.get("n") or 0) for leaf in matching)
+    return matching, n
+
+
+def _parent_keep_score(active: Mapping[str, str], *, weights: Optional[Mapping[str, int]] = None) -> int:
+    table = weights if isinstance(weights, Mapping) else PARENT_KEEP_WEIGHT
+    return sum(int(table.get(dim) or 0) for dim in active if dim != "position")
+
+
+def _parent_prior_cell(
+    feats: Mapping[str, Any],
+    leaves: Sequence[Mapping[str, Any]],
+    chosen_active: Mapping[str, str],
+    baselines: Mapping[str, Mapping[str, Any]],
+) -> tuple[Optional[dict[str, str]], Optional[int], Mapping[str, Mapping[str, Any]], list]:
+    """Pick a Bayes prior cell that keeps last-year finish and age when it can.
+
+    Young stars keep age so a 24-year-old RB1 is not mixed with declining
+    year-6+ backs. The oldest open-ended age band is the opposite problem:
+    32+ last-year top-5 TEs are often one player repeating (Kelce). Those
+    queries require n >= 15 and ignore age/capital so the prior is other
+    veteran TEs who were top-5 last year, not a 2/2 self-comp.
+    """
+    pos = str(feats.get("position") or chosen_active.get("position") or "")
+    oldest = is_oldest_age_bucket(pos, feats.get("age_bucket"))
+    min_n = MIN_COMP_CELL_N if oldest else PARENT_MIN_N
+    weights: dict[str, int] = dict(PARENT_KEEP_WEIGHT)
+    if oldest:
+        weights["age_bucket"] = 0
+        weights["draft_capital"] = 0
+    chosen_id = tuple(sorted((chosen_active or {}).items()))
+    best: Optional[tuple[int, int, dict[str, str], list]] = None
+    seen: set[tuple] = set()
+    for order in PARENT_RELAXATION_ORDERS:
+        for active, _dropped in iter_relaxed_keys(feats, order=order):
+            matching, n = _leaf_match_n(leaves, active)
+            if n < min_n:
+                continue
+            key_id = tuple(sorted(active.items()))
+            if key_id == chosen_id or key_id in seen:
+                continue
+            seen.add(key_id)
+            score = _parent_keep_score(active, weights=weights)
+            cand = (score, n, dict(active), matching)
+            if best is None or cand[0] > best[0] or (cand[0] == best[0] and cand[1] > best[1]):
+                best = cand
+    if best is None:
+        return None, None, baselines, []
+    _score, prior_n, prior_key, matching = best
+    return prior_key, prior_n, pool_leaves(matching, baselines=baselines), matching
+
+
+def _nested_hist_steps(
+    feats: Mapping[str, Any],
+    leaves: Sequence[Mapping[str, Any]],
+    *,
+    oldest: bool,
+) -> list[tuple[dict[str, str], list[str], list, int]]:
+    """Finest → coarsest nested parents. Each step pools disjoint siblings."""
+    order = HIST_NESTED_DROP_ORDER_OLDEST if oldest else HIST_NESTED_DROP_ORDER
+    steps: list[tuple[dict[str, str], list[str], list, int]] = []
+    for active, dropped in iter_relaxed_keys(feats, order=order):
+        matching, n = _leaf_match_n(leaves, active)
+        steps.append((dict(active), list(dropped), matching, n))
+    return steps
+
+
+def _kept_display_dims(active: Mapping[str, str]) -> tuple[str, ...]:
+    return tuple(dim for dim in HIST_NESTED_KEEP_DIMS if dim in active)
+
+
+def _compile_hist_cell(
+    feats: Mapping[str, Any],
+    leaves: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, str], list[str], list, int, int, str, dict[str, str], Optional[int], Mapping[str, Mapping[str, Any]]]:
+    """Display the finest nested bucket with enough sample.
+
+    Sibling values of a dropped dimension are disjoint, so pooling them
+    compiles buckets without overlap. If that is still short of
+    ``HIST_DISPLAY_MIN_N``, fall back to the parent (the bucket before it).
+    Oldest age bands wait for ``MIN_COMP_CELL_N``. Bayes, when used, shrinks
+    toward the next parent that still keeps last-year finish, age, and
+    capital, not every player at the position.
+    """
+    pos = str(feats.get("position") or "")
+    oldest = is_oldest_age_bucket(pos, feats.get("age_bucket"))
+    display_min = MIN_COMP_CELL_N if oldest else HIST_DISPLAY_MIN_N
+    steps = _nested_hist_steps(feats, leaves, oldest=oldest)
+    exact_step = next((step for step in steps if step[3] > 0), steps[0])
+    exact_n = exact_step[3]
+    display = next((step for step in steps if step[3] >= display_min), None)
+    if display is None:
+        display = next((step for step in steps if step[3] > 0), steps[-1])
+    active, dropped, matching, n = display
+    profile_dropped = [
+        dim for dim in COMP_RELAXATION_ORDER
+        if dim in feats and dim not in active
+    ]
+    dropped = profile_dropped
+    prior_source = "exact" if n == exact_n else "parent_displayed"
+    prior_key: dict[str, str] = {}
+    prior_n: Optional[int] = None
+    prior_rates: dict[str, dict] = {}
+    keep = _kept_display_dims(active)
+    after = False
+    for step in steps:
+        if step[0] == active and step[3] == n:
+            after = True
+            continue
+        if not after or step[3] <= n:
+            continue
+        if any(step[0].get(dim) != active.get(dim) for dim in keep):
+            break
+        prior_key = dict(step[0])
+        prior_n = step[3]
+        prior_rates = pool_leaves(step[2], baselines={})
+        break
+    return active, dropped, matching, n, exact_n, prior_source, prior_key, prior_n, prior_rates
 
 
 def _example_record(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -415,6 +553,12 @@ def lookup_board_probabilities(
 
     Walks ``COMP_RELAXATION_ORDER`` until the pooled cell reaches ``min_n``
     (or only position remains). Empty / unknown position → rates stay None.
+
+    Exact cells below ``MIN_COMP_CELL_N`` on the live Hist path compile
+    nested sibling buckets until ``HIST_DISPLAY_MIN_N`` (4), then fall
+    back to the parent. Young players keep last-year finish and age. The
+    oldest age band waits for ``MIN_COMP_CELL_N`` so a 2-season 32+ cell
+    is not one veteran repeating.
     """
     feats = extract_comp_query(query)
     pos = feats.get("position")
@@ -424,35 +568,69 @@ def lookup_board_probabilities(
     }
     for rate in empty_rates.values():
         rate["kind"] = "conditional"
+    empty = {
+        "position": pos,
+        "key_used": {},
+        "dropped": [],
+        "fallback": False,
+        "n": 0,
+        "rates": empty_rates,
+        "examples": [],
+        "kind": "conditional",
+        "prior_source": "position_baseline",
+        "prior_key": {},
+        "prior_n": None,
+        "profile_key": {},
+        "exact_n": 0,
+    }
     if not pos:
-        return {
-            "position": None,
-            "key_used": {},
-            "dropped": [],
-            "fallback": False,
-            "n": 0,
-            "rates": empty_rates,
-            "examples": [],
-            "kind": "conditional",
-        }
+        empty["position"] = None
+        return empty
     by_pos = (comps_payload.get("by_position") or {}).get(pos) or {}
     leaves = by_pos.get("leaves") or comps_payload.get("leaves") or []
     baselines = by_pos.get("baseline") or {}
     skip = exclude_sleeper_id if exclude_sleeper_id is not None else query.get("sleeper_id")
 
-    last: Optional[tuple] = None
+    steps: list[tuple[dict[str, str], list[str], list, int]] = []
     for active, dropped in iter_relaxed_keys(feats):
-        matching = [leaf for leaf in leaves if key_matches(leaf.get("key") or {}, active)]
-        n = sum(int(leaf.get("n") or 0) for leaf in matching)
-        last = (active, dropped, matching, n)
-        if n >= min_n:
+        matching, n = _leaf_match_n(leaves, active)
+        steps.append((dict(active), list(dropped), matching, n))
+    chosen = None
+    for step in steps:
+        if step[3] >= min_n:
+            chosen = step
             break
-    assert last is not None
-    active, dropped, matching, n = last
-    rates = pool_leaves(matching, baselines=baselines)
+    if chosen is None:
+        chosen = steps[-1]
+    active, dropped, matching, n = chosen
+    profile_key = dict(feats)
+    exact_n = n
+    prior_baselines = baselines
+    prior_source = "position_baseline"
+    prior_key: dict[str, str] = {}
+    prior_n: Optional[int] = None
+    if min_n < MIN_COMP_CELL_N:
+        (
+            active, dropped, matching, n, exact_n, prior_source,
+            prior_key, prior_n, compiled_prior,
+        ) = _compile_hist_cell(feats, leaves)
+        rates = pool_leaves(matching, baselines=compiled_prior)
+    elif 0 < n < MIN_COMP_CELL_N:
+        found_key, found_n, found_rates, found_matching = _parent_prior_cell(
+            feats, leaves, active, baselines,
+        )
+        if found_key:
+            prior_baselines = found_rates
+            prior_source = "parent_cell"
+            prior_key = dict(found_key)
+            prior_n = found_n
+        rates = pool_leaves(matching, baselines=prior_baselines)
+    else:
+        rates = pool_leaves(matching, baselines=prior_baselines)
     return {
         "position": pos,
         "key_used": dict(active),
+        "profile_key": profile_key,
         "dropped": list(dropped),
         "fallback": bool(dropped),
         "n": n,
@@ -461,6 +639,10 @@ def lookup_board_probabilities(
         "kind": "conditional",
         "min_n": min_n,
         "bayes_prior_n": DEFAULT_BAYES_PRIOR_N,
+        "prior_source": prior_source,
+        "prior_key": prior_key,
+        "prior_n": prior_n,
+        "exact_n": exact_n,
     }
 
 

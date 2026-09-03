@@ -10,6 +10,13 @@ pytest.importorskip("flask")
 from dashboard_services.providers import espn_api
 
 
+@pytest.fixture(autouse=True)
+def clear_espn_caches():
+    espn_api.clear_espn_league_caches()
+    yield
+    espn_api.clear_espn_league_caches()
+
+
 def test_espn_trade_deadline_date_mapped_to_ts(monkeypatch):
     # Mid-November-ish deadline as epoch ms (ESPN's usual unit).
     deadline_ms = 1_762_905_600_000

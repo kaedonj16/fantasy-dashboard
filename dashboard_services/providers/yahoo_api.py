@@ -17,6 +17,7 @@ import logging
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
@@ -24,6 +25,7 @@ from urllib.parse import urlencode
 
 import requests
 
+from dashboard_services.display_names import public_owner_label
 from utils.utils import load_players_index
 from utils.coerce import safe_float as _safe_float, safe_int as _safe_int
 
@@ -69,13 +71,26 @@ _season_key_lock = threading.Lock()
 def yahoo_enabled() -> bool:
     """Whether the Yahoo connect flow is offered to users.
 
-    Gated OFF by default while the Yahoo Fantasy API access request is pending:
-    without approval every Fantasy call 403s "application not authorized", so
-    presenting Yahoo just walks users into a dead end. Set YAHOO_ENABLED=1 (or
-    true/yes/on) on the host once access is granted to turn it back on — no code
-    change needed.
+    Enabled by default now that Yahoo Fantasy API access is granted. Set
+    YAHOO_ENABLED=0 (or false/no/off) on the host to turn it off without a
+    deploy-time code change.
     """
-    return (os.environ.get("YAHOO_ENABLED") or "").strip().lower() in ("1", "true", "yes", "on")
+    raw = (os.environ.get("YAHOO_ENABLED") or "").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def yahoo_api_debug_enabled() -> bool:
+    """Verbose Yahoo parse/API diagnostics for production troubleshooting.
+
+  Set YAHOO_API_DEBUG=1 on the host (or hit /api/yahoo-debug while signed in)
+  to capture response shapes and parsed team/roster counts in logs.
+    """
+    return (os.environ.get("YAHOO_API_DEBUG") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _yahoo_debug(msg: str, *args, **kwargs) -> None:
+    if yahoo_api_debug_enabled():
+        logger.info("[yahoo-debug] " + msg, *args, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +181,57 @@ def exchange_code_for_tokens(code: str) -> Dict[str, Any]:
     return tok
 
 
+def yahoo_oauth_start_url(
+    *,
+    league_id: str = "",
+    next_url: str = "/portfolio",
+    reauth: bool = False,
+) -> str:
+    """Build a local /auth/yahoo URL for the link modal or home connect flow."""
+    from urllib.parse import urlencode
+
+    params: Dict[str, str] = {"next": next_url or "/"}
+    if league_id:
+        params["league_id"] = str(league_id)
+    if reauth:
+        params["reauth"] = "1"
+    return "/auth/yahoo?" + urlencode(params)
+
+
+def resolve_session_yahoo_token(session) -> tuple[str, str]:
+    """Return (guid, access_token) from the Flask session, refreshing from DB if needed.
+
+    Prefer the DB-backed, expiry-aware accessor whenever we have a Yahoo GUID.
+    A stale ``session["yahoo_access_token"]`` is common after ~1 hour and must
+    not short-circuit refresh — Yahoo then answers ``token_expired`` 401s.
+    """
+    guid = str(session.get("yahoo_guid") or "")
+    if guid:
+        token = get_valid_access_token(guid) or ""
+        if token:
+            session["yahoo_access_token"] = token
+            return guid, token
+        # Refresh failed or no DB row — drop the stale session bearer so callers
+        # re-offer OAuth instead of retrying an expired token.
+        session.pop("yahoo_access_token", None)
+        return guid, ""
+    return "", str(session.get("yahoo_access_token") or "")
+
+
+def yahoo_auth_error_kind(exc: BaseException | str) -> str:
+    """Classify Yahoo HTTP failures for link/validate recovery.
+
+    Returns ``expired`` (needs refresh/reauth), ``forbidden`` (wrong account /
+    no league access), or ``""`` (other).
+    """
+    msg = str(exc or "").lower()
+    if "token_expired" in msg or "oauth_problem" in msg or "401" in msg:
+        return "expired"
+    if "403" in msg or "forbidden" in msg:
+        return "forbidden"
+    return ""
+
+
 def get_login_guid(access_token: str, league_id: str = "") -> str:
     """Return the logged-in user's Yahoo GUID via the Fantasy API.
 
@@ -203,13 +269,9 @@ def get_login_guid(access_token: str, league_id: str = "") -> str:
         try:
             raw   = _yahoo_get(access_token, f"league/{_league_key(league_id)}/teams")
             for t in _extract_teams(raw):
-                managers = _team_attr(t, "managers") or []
-                if isinstance(managers, dict):
-                    managers = [managers]
-                for m in managers:
-                    mgr = (m or {}).get("manager") or {}
-                    if str(mgr.get("is_current_login")) == "1" and mgr.get("guid"):
-                        return str(mgr["guid"])
+                mgr = _yahoo_primary_manager(t)
+                if str(mgr.get("is_current_login")) == "1" and mgr.get("guid"):
+                    return str(mgr["guid"])
         except Exception as exc:
             logger.warning("[yahoo] get_login_guid (league teams) failed: %s", exc)
 
@@ -303,8 +365,13 @@ def load_tokens(guid: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def get_valid_access_token(guid: str) -> Optional[str]:
-    """Return a valid access token for the given Yahoo GUID, refreshing if needed."""
+def get_valid_access_token(guid: str, *, force_refresh: bool = False) -> Optional[str]:
+    """Return a valid access token for the given Yahoo GUID, refreshing if needed.
+
+    ``force_refresh=True`` always hits Yahoo's token endpoint (used after a
+    ``token_expired`` API response when our stored ``expires_at`` was still in
+    the future — clock skew / Yahoo revoked early).
+    """
     tokens = load_tokens(guid)
     if not tokens:
         return None
@@ -313,8 +380,10 @@ def get_valid_access_token(guid: str) -> Optional[str]:
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
 
-    # Refresh if expiring within 5 minutes
-    if datetime.now(timezone.utc) >= expires_at - timedelta(minutes=5):
+    needs_refresh = force_refresh or (
+        datetime.now(timezone.utc) >= expires_at - timedelta(minutes=5)
+    )
+    if needs_refresh:
         try:
             new_tok = refresh_access_token(tokens["refresh_token"])
             save_tokens(
@@ -444,6 +513,12 @@ def _yahoo_get(access_token: str, path: str, params: Optional[Dict] = None) -> A
         logger.warning("[yahoo] %s %s -> %s body=%s", "GET", path, resp.status_code, body)
     resp.raise_for_status()
     data = resp.json()
+
+    if yahoo_api_debug_enabled():
+        _yahoo_debug(
+            "GET %s -> %s shape=%s",
+            path, resp.status_code, _summarize_fantasy_response(data),
+        )
 
     with _api_cache_lock:
         _api_cache[cache_key] = (time.time(), data)
@@ -680,6 +755,62 @@ def _yahoo_pos(raw_pos: str) -> str:
     return _MAP.get((raw_pos or "").upper(), (raw_pos or "").upper())
 
 
+def _merge_yahoo_dict_parts(node: Any, into: Dict[str, Any]) -> None:
+    """Recursively merge Yahoo's positional single-key dict fragments into ``into``."""
+    if isinstance(node, dict):
+        into.update(node)
+    elif isinstance(node, list):
+        for item in node:
+            _merge_yahoo_dict_parts(item, into)
+
+
+def _yahoo_position_from_selected(raw: Any) -> Optional[str]:
+    """Parse Yahoo ``selected_position`` which is often ``[meta, {position: BN}]``."""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, dict):
+        pos = raw.get("position")
+        if isinstance(pos, str):
+            return pos
+        if isinstance(pos, (list, dict)):
+            inner = _unwrap_yahoo_list_or_dict(pos).get("position")
+            return str(inner) if inner else None
+        return None
+    if isinstance(raw, list):
+        # Yahoo roster slots commonly use index 1 for the position string.
+        for item in reversed(raw):
+            if not isinstance(item, dict):
+                continue
+            if item.get("position"):
+                pos = item.get("position")
+                if isinstance(pos, str):
+                    return pos
+                if isinstance(pos, (list, dict)):
+                    inner = _unwrap_yahoo_list_or_dict(pos).get("position")
+                    if inner:
+                        return str(inner)
+            nested = _yahoo_position_from_selected(item.get("selected_position"))
+            if nested:
+                return nested
+        flat: Dict[str, Any] = {}
+        _merge_yahoo_dict_parts(raw, flat)
+        pos = flat.get("position")
+        return str(pos) if pos else None
+    return None
+
+
+def _yahoo_selected_position(slot_node: Any) -> Optional[str]:
+    """Extract roster slot (QB/BN/IR) from a Yahoo player slot fragment."""
+    slot = _unwrap_yahoo_list_or_dict(slot_node)
+    if not slot:
+        return None
+    if "selected_position" in slot:
+        return _yahoo_position_from_selected(slot.get("selected_position"))
+    return _yahoo_position_from_selected(slot)
+
+
 def _flatten_yahoo_player(rp: Any) -> tuple:
     """Normalize a Yahoo ``player`` entry to (meta_dict, selected_position).
 
@@ -687,17 +818,25 @@ def _flatten_yahoo_player(rp: Any) -> tuple:
     the metadata is a positional list of single-key dicts. Merge it into one
     flat dict (also tolerating an already-flat dict), so callers can read
     ``name``/``player_id``/``editorial_team_abbr`` uniformly."""
-    meta_part = rp[0] if isinstance(rp, list) and rp else rp
+    if isinstance(rp, dict):
+        return rp, _yahoo_selected_position(rp)
+
+    node = rp
+    while isinstance(node, list) and len(node) == 1:
+        node = node[0]
+
     flat: Dict[str, Any] = {}
-    if isinstance(meta_part, list):
-        for part in meta_part:
-            if isinstance(part, dict):
-                flat.update(part)
-    elif isinstance(meta_part, dict):
-        flat = meta_part
     sel_pos = None
-    if isinstance(rp, list) and len(rp) > 1 and isinstance(rp[1], dict):
-        sel_pos = (rp[1].get("selected_position") or {}).get("position")
+    if isinstance(node, list) and node:
+        _merge_yahoo_dict_parts(node[0], flat)
+        if len(node) > 1:
+            sel_pos = _yahoo_selected_position(node[1])
+    elif isinstance(node, dict):
+        flat = node
+        sel_pos = _yahoo_selected_position(node)
+
+    if not sel_pos:
+        sel_pos = _yahoo_selected_position(flat)
     return flat, sel_pos
 
 
@@ -732,46 +871,332 @@ def _extract_league_meta(raw: Dict) -> Dict:
     return league_list[0] if league_list else {}
 
 
+def _league_child_block(raw: Dict, child_key: str) -> Any:
+    """Find a child collection (``teams``, ``settings``, …) anywhere in league[].
+
+    Yahoo usually nests these under ``league[1]``, but some sub-resource
+    responses attach them to ``league[0]`` instead — scanning avoids empty
+    extracts when the index shifts.
+    """
+    fc = raw.get("fantasy_content", {}) or {}
+    lg = fc.get("league") or []
+    if not isinstance(lg, list):
+        return {}
+    for item in lg:
+        if isinstance(item, dict) and child_key in item:
+            block = item.get(child_key)
+            if block is not None:
+                return block
+    return {}
+
+
+def _summarize_fantasy_response(raw: Dict) -> Dict[str, Any]:
+    """Non-sensitive structural summary for debug logs / the debug endpoint."""
+    fc = raw.get("fantasy_content", {}) or {}
+    lg = fc.get("league") or []
+    summary: Dict[str, Any] = {
+        "league_nodes": len(lg) if isinstance(lg, list) else 0,
+        "league_indices": [],
+    }
+    if not isinstance(lg, list):
+        return summary
+    for i, item in enumerate(lg):
+        if not isinstance(item, dict):
+            summary["league_indices"].append({"index": i, "type": type(item).__name__})
+            continue
+        entry: Dict[str, Any] = {"index": i, "keys": sorted(item.keys())}
+        if "teams" in item and isinstance(item.get("teams"), dict):
+            tb = item["teams"]
+            entry["teams_count_field"] = _safe_int(tb.get("count"))
+            entry["teams_numeric_keys"] = sorted(
+                (k for k in tb if str(k).isdigit()), key=lambda x: int(x)
+            )
+        for meta_key in ("name", "league_key", "num_teams", "draft_status", "season"):
+            if meta_key in item:
+                entry[meta_key] = item.get(meta_key)
+        summary["league_indices"].append(entry)
+    return summary
+
+
+def _summarize_team_entry(team_data: List) -> Dict[str, Any]:
+    """Parsed team snapshot for debug output (no tokens / no full rosters)."""
+    team_key = _team_attr(team_data, "team_key") or ""
+    team_id = _team_attr(team_data, "team_id") or team_key.split(".")[-1]
+    raw_players = _extract_roster_players(team_data)
+    resolved = 0
+    unmapped_samples: List[str] = []
+    for rp in raw_players:
+        p_meta, _ = _flatten_yahoo_player(rp)
+        yid = str(p_meta.get("player_id") or "")
+        name = (p_meta.get("name") or {}).get("full") if isinstance(p_meta.get("name"), dict) else p_meta.get("name")
+        pos_list = p_meta.get("display_position") or ""
+        if isinstance(pos_list, dict):
+            pos_list = pos_list.get("position") or ""
+        pos = (pos_list.split(",")[0] if isinstance(pos_list, str) else "") or ""
+        team = (p_meta.get("editorial_team_abbr") or "").upper()
+        if _resolve_player(name or "", pos, team, yahoo_id=yid):
+            resolved += 1
+        elif len(unmapped_samples) < 5:
+            unmapped_samples.append(f"yid={yid} name={name!r} pos={pos}")
+    standings = _team_field_dict(team_data, "team_standings")
+    outcome = _unwrap_yahoo_list_or_dict(standings.get("outcome_totals"))
+    roster_block = _team_attr(team_data, "roster")
+    roster_keys = sorted(roster_block.keys()) if isinstance(roster_block, dict) else []
+    players_block = _roster_players_block(roster_block) if isinstance(roster_block, dict) else {}
+    return {
+        "team_id":        team_id,
+        "team_key":       team_key,
+        "name":           _team_attr(team_data, "name"),
+        "raw_players":    len(raw_players),
+        "resolved_players": resolved,
+        "unmapped_samples": unmapped_samples,
+        "has_roster":     isinstance(roster_block, dict) and bool(roster_block),
+        "roster_block_keys": roster_keys[:12],
+        "players_block_keys": sorted(
+            (k for k in (players_block or {}) if str(k).isdigit() or k == "count"),
+            key=lambda x: (0, int(x)) if str(x).isdigit() else (1, str(x)),
+        )[:6],
+        "wins":           outcome.get("wins"),
+        "points_for":     standings.get("points_for"),
+    }
+
+
+def diagnose_league(season: int, league_id: str, access_token: str) -> Dict[str, Any]:
+    """Structured Yahoo parse diagnostics for support / ``/api/yahoo-debug``."""
+    lk = _league_key_for_season(league_id, season, access_token)
+    teams_path = f"league/{lk}/teams;out=roster,stats,standings"
+    users_path = f"league/{lk}/teams"
+    out: Dict[str, Any] = {
+        "ok": True,
+        "season": int(season),
+        "league_id": str(league_id),
+        "league_key": lk,
+        "crosswalk_size": len(_yahoo_id_to_canonical()),
+    }
+    try:
+        raw_rosters = _yahoo_get(access_token, teams_path)
+        out["rosters_path"] = teams_path
+        out["rosters_response_shape"] = _summarize_fantasy_response(raw_rosters)
+        teams = _extract_teams(raw_rosters)
+        out["extracted_team_count"] = len(teams)
+        out["teams"] = [_summarize_team_entry(t) for t in teams]
+        out["parsed_users_count"] = len(get_users(season, league_id, access_token))
+        out["parsed_rosters_count"] = len(get_rosters(season, league_id, access_token))
+        meta_raw = _yahoo_get(access_token, f"league/{lk}")
+        meta = _extract_league_meta(meta_raw) or {}
+        out["league_meta"] = {
+            "name": meta.get("name"),
+            "num_teams": meta.get("num_teams"),
+            "draft_status": meta.get("draft_status"),
+            "scoring_type": meta.get("scoring_type"),
+            "current_week": meta.get("current_week"),
+        }
+    except Exception as exc:
+        out["ok"] = False
+        out["error"] = f"{type(exc).__name__}: {exc}"
+    out["users_path"] = users_path
+    return out
+
+
 def _extract_teams(raw: Dict) -> List[Dict]:
     """Extract the teams dict from a league+teams response."""
-    fc   = raw.get("fantasy_content", {})
-    lg   = fc.get("league") or []
-    meta = lg[1] if len(lg) > 1 else {}
-    teams_block = meta.get("teams") or {}
-    count = _safe_int(teams_block.get("count") or teams_block.get("0", {}).get("count")) or 0
+    teams_block = _league_child_block(raw, "teams") or {}
     out = []
-    for i in range(1, count + 1):
-        entry = teams_block.get(str(i))
-        if entry and "team" in entry:
+    # Yahoo collections are 0-indexed ("0", "1", …, count-1). A 1-based loop
+    # skipped team 0 and read past the end, so leagues looked empty or short.
+    for entry in _yahoo_collection_rows(teams_block, "team"):
+        if isinstance(entry, dict) and "team" in entry:
             out.append(entry["team"])
     return out
 
 
+_TEAM_SUBRESOURCES = frozenset({
+    "roster", "team_standings", "team_points", "team_projected_points",
+    "team_stats", "matchups", "draft_results",
+})
+
+
 def _team_attr(team_list: List, key: str, default=None):
-    """Yahoo returns team attributes as a list of dicts; find the one with `key`."""
-    for item in team_list or []:
-        if isinstance(item, dict) and key in item:
-            return item[key]
-    return default
+    """Find a team field in Yahoo's positional team array.
+
+    With sub-resources (``;out=roster,stats,standings``) metadata lives in
+    ``team[0]`` as a nested list of single-key dicts. Without sub-resources
+    it's often a flat list of dicts. Walk both shapes."""
+    def _walk(nodes):
+        for node in nodes:
+            if isinstance(node, dict):
+                if key in node:
+                    return node[key]
+                if any(k in node for k in _TEAM_SUBRESOURCES):
+                    continue
+            elif isinstance(node, list):
+                hit = _walk(node)
+                if hit is not None:
+                    return hit
+        return None
+
+    hit = _walk(team_list or [])
+    return default if hit is None else hit
+
+
+def _team_field_dict(team_list: List, key: str) -> Dict[str, Any]:
+    """Read a team sub-resource and normalize Yahoo list wrappers to a dict."""
+    return _unwrap_yahoo_list_or_dict(_team_attr(team_list, key))
+
+
+def _yahoo_manager_entries(team_list: List) -> List[Dict[str, Any]]:
+    """Normalize Yahoo ``managers`` nodes to flat manager dicts."""
+    raw = _team_attr(team_list, "managers")
+    if raw is None:
+        return []
+    rows = _yahoo_collection_rows(raw, "manager")
+    if not rows and isinstance(raw, list):
+        rows = raw
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        mgr_node = row.get("manager") if "manager" in row else row
+        flat: Dict[str, Any] = {}
+        _merge_yahoo_dict_parts(mgr_node, flat)
+        if flat:
+            out.append(flat)
+    return out
+
+
+def _yahoo_primary_manager(team_list: List) -> Dict[str, Any]:
+    entries = _yahoo_manager_entries(team_list)
+    return entries[0] if entries else {}
+
+
+def _yahoo_owner_id(team_list: List, team_id: Any) -> str:
+    mgr = _yahoo_primary_manager(team_list)
+    guid = mgr.get("guid") or mgr.get("manager_id")
+    if guid:
+        return str(guid)
+    return str(team_id)
+
+
+def _team_managers(team_list: List) -> List[Dict[str, Any]]:
+    """Normalize Yahoo ``managers`` nodes to ``[{"manager": ...}, ...]``."""
+    return [{"manager": m} for m in _yahoo_manager_entries(team_list)]
+
+
+def _roster_players_block(roster_block: Any) -> Dict[str, Any]:
+    """Locate the ``players`` collection inside a Yahoo roster blob.
+
+    Bulk ``league/.../teams;out=roster`` often returns a roster shell without
+    players; the team roster resource nests them under ``roster.players`` or an
+    extra wrapper layer (see yahoo_fantasy_api's team.roster parser).
+    """
+    if not isinstance(roster_block, dict):
+        return {}
+    players = roster_block.get("players")
+    if isinstance(players, dict):
+        return players
+    for value in roster_block.values():
+        if not isinstance(value, dict):
+            continue
+        if isinstance(value.get("players"), dict):
+            return value["players"]
+        inner = value.get("roster")
+        if isinstance(inner, dict) and isinstance(inner.get("players"), dict):
+            return inner["players"]
+    return {}
 
 
 def _extract_roster_players(team_data: List) -> List[Dict]:
     """Extract player list from the roster portion of a team entry."""
-    roster_block = None
-    for item in team_data or []:
-        if isinstance(item, dict) and "roster" in item:
-            roster_block = item["roster"]
-            break
-    if not roster_block:
+    roster_block = _team_attr(team_data, "roster")
+    if not isinstance(roster_block, dict):
+        for item in team_data or []:
+            if isinstance(item, dict) and "roster" in item:
+                roster_block = item["roster"]
+                break
+    if not isinstance(roster_block, dict):
         return []
 
-    players_block = roster_block.get("players") or {}
-    count = _safe_int(players_block.get("count") or players_block.get("0", {}).get("count")) or 0
+    players_block = _roster_players_block(roster_block) or {}
     out = []
-    for i in range(1, count + 1):
-        entry = players_block.get(str(i))
-        if entry and "player" in entry:
-            out.append(entry["player"])
+    for entry in _yahoo_collection_rows(players_block, "player"):
+        if not isinstance(entry, dict) or "player" not in entry:
+            continue
+        rp = entry["player"]
+        entry_slot = entry.get("selected_position")
+        if entry_slot is not None and isinstance(rp, list):
+            slot_node = rp[1] if len(rp) > 1 else None
+            if not _yahoo_selected_position(slot_node):
+                rp = list(rp) + [{"selected_position": entry_slot}]
+        out.append(rp)
+    return out
+
+
+def _league_current_week(access_token: str, league_key: str) -> Optional[int]:
+    try:
+        meta = _extract_league_meta(_yahoo_get(access_token, f"league/{league_key}"))
+        week = _safe_int(meta.get("current_week"))
+        return week if week > 0 else None
+    except Exception:
+        return None
+
+
+def _fetch_team_roster_players(
+    access_token: str, team_key: str, week: Optional[int] = None,
+) -> List[Dict]:
+    """Fetch one team's roster via the team resource (includes players).
+
+    Yahoo's bulk ``teams;out=roster`` attaches roster metadata but omits the
+    players collection — this endpoint is the reliable source.
+    """
+    if not team_key:
+        return []
+    path = f"team/{team_key}/roster"
+    if week and week > 0:
+        path += f";week={int(week)}"
+    try:
+        raw = _yahoo_get(access_token, path)
+    except Exception as exc:
+        logger.warning("[yahoo] team roster %s failed: %s", team_key, exc)
+        return []
+    fc = raw.get("fantasy_content", {}) or {}
+    team = fc.get("team")
+    if isinstance(team, list):
+        return _extract_roster_players(team)
+    return []
+
+
+def _prefetch_team_rosters(
+    access_token: str,
+    teams: List[List],
+    week: Optional[int] = None,
+    team_keys: Optional[List[str]] = None,
+) -> Dict[str, List[Dict]]:
+    """Parallel per-team roster fetch keyed by team_key."""
+    if team_keys is not None:
+        keys = [k for k in team_keys if k]
+    else:
+        keys = []
+        for t in teams:
+            tk = _team_attr(t, "team_key") or ""
+            if tk:
+                keys.append(tk)
+    if not keys:
+        return {}
+
+    out: Dict[str, List[Dict]] = {}
+    workers = min(len(keys), 8)
+
+    def _load(team_key: str) -> tuple[str, List[Dict]]:
+        return team_key, _fetch_team_roster_players(access_token, team_key, week)
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_load, tk): tk for tk in keys}
+        for fut in as_completed(futures):
+            try:
+                tk, players = fut.result()
+                out[tk] = players
+            except Exception as exc:
+                logger.warning("[yahoo] prefetch roster failed: %s", exc)
     return out
 
 
@@ -802,78 +1227,152 @@ def get_users(season: int, league_id: str, access_token: str) -> List[Dict[str, 
         if isinstance(logo, list) and logo:
             logo_url = (logo[0].get("team_logo") or {}).get("url")
 
-        managers = _team_attr(t, "managers") or []
-        if isinstance(managers, dict):
-            managers = [managers]
-        mgr   = (managers[0].get("manager") or {}) if managers else {}
-        guid  = mgr.get("guid") or str(team_id)
-        nick  = mgr.get("nickname") or team_name
+        mgr   = _yahoo_primary_manager(t)
+        guid  = _yahoo_owner_id(t, team_id)
+        # Yahoo privacy mode returns nickname "--hidden--". Never treat that as
+        # a display name — fall back to the public team name.
+        nick  = public_owner_label(mgr.get("nickname"), team_name, fallback=team_name)
 
         out.append({
             "avatar":       logo_url,
             "display_name": nick,
+            "username":     nick,
+            "team_name":    team_name,
             "is_bot":       False,
             "is_owner":     None,
             "league_id":    str(league_id),
-            "metadata":     {"team_name": team_name},
+            "metadata":     {"team_name": team_name, "avatar": logo_url},
             "settings":     None,
             "user_id":      guid,
             "roster_id":    _safe_int(team_id),
         })
+    _yahoo_debug(
+        "get_users league=%s season=%s -> %s users (ids=%s)",
+        league_id, season, len(out),
+        [u.get("roster_id") for u in out[:20]],
+    )
     return out
 
 
+def _yahoo_players_need_hydration(raw_players: List[Dict]) -> bool:
+    """True when roster players are missing or lack lineup slot info."""
+    if not raw_players:
+        return True
+    return any(not _flatten_yahoo_player(rp)[1] for rp in raw_players)
+
+
+# Bench stays on ``players`` only (dashboard bench list). IR-only goes to
+# ``reserve``, matching ESPN/Sleeper. NA is Yahoo's inactive/bye slot.
+_YAHOO_BENCH_SLOTS = frozenset({"BN", "NA"})
+_YAHOO_IR_SLOTS = frozenset({"IR", "IR+"})
+
+
+def _yahoo_player_canonical(rp: Any) -> tuple[Optional[str], Optional[str]]:
+    """Return (canonical_id, selected_position) for one Yahoo roster row."""
+    p_meta, sel_pos = _flatten_yahoo_player(rp)
+    name = (p_meta.get("name") or {}).get("full") or ""
+    pos_list = p_meta.get("display_position") or p_meta.get("eligible_positions") or ""
+    if isinstance(pos_list, dict):
+        pos_list = pos_list.get("position") or ""
+    pos = (pos_list.split(",")[0] if isinstance(pos_list, str) else "") or ""
+    team = (p_meta.get("editorial_team_abbr") or "").upper()
+    yid = str(p_meta.get("player_id") or "")
+    return _resolve_player(name, pos, team, yahoo_id=yid), sel_pos
+
+
+def _split_yahoo_lineup(raw_players: List[Any]) -> tuple[List[str], List[str], List[str]]:
+    """Map Yahoo roster rows to (players, starters, reserve/IR).
+
+    BN/NA are not starters and not IR — ``build_teams_overview`` puts those
+    leftover ``players`` on the dashboard Bench list. Putting BN in
+    ``reserve`` hid the rest of the roster because the teams-card does not
+    render IR.
+    """
+    players: List[str] = []
+    starters: List[str] = []
+    reserve: List[str] = []
+    for rp in raw_players:
+        canon, sel_pos = _yahoo_player_canonical(rp)
+        if not canon:
+            continue
+        players.append(canon)
+        slot = (sel_pos or "").upper()
+        if slot in _YAHOO_IR_SLOTS:
+            reserve.append(canon)
+        elif slot in _YAHOO_BENCH_SLOTS:
+            continue
+        else:
+            starters.append(canon)
+    if not starters and players:
+        # Yahoo tags every player BN before a lineup is submitted.
+        ir_set = set(reserve)
+        starters = [p for p in players if p not in ir_set][:9]
+    return players, starters, reserve
+
+
 def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str, Any]]:
+    lk = _league_key_for_season(league_id, season, access_token)
     raw = _yahoo_get(
         access_token,
-        f"league/{_league_key_for_season(league_id, season, access_token)}/teams;out=roster,stats,standings",
+        f"league/{lk}/teams;out=roster,stats,standings",
     )
     teams = _extract_teams(raw)
     out: List[Dict[str, Any]] = []
 
+    # Bulk teams;out=roster omits or misplaces lineup slots. During an active
+    # week, always hydrate from team/{team_key}/roster;week=N (reliable source).
+    roster_by_key: Dict[str, List[Dict]] = {}
+    week = _league_current_week(access_token, lk) or 1
+    team_keys = [_team_attr(t, "team_key") or "" for t in teams]
+    team_keys = [k for k in team_keys if k]
+    if week > 0 and team_keys:
+        roster_by_key = _prefetch_team_rosters(
+            access_token, teams, week, team_keys=team_keys,
+        )
+        _yahoo_debug(
+            "get_rosters prefetched %s team rosters week=%s counts=%s",
+            len(roster_by_key), week,
+            {k: len(v) for k, v in list(roster_by_key.items())[:5]},
+        )
+
     for t in teams:
-        team_id   = _safe_int(_team_attr(t, "team_id"))
-        managers  = _team_attr(t, "managers") or []
-        if isinstance(managers, dict):
-            managers = [managers]
-        mgr      = (managers[0].get("manager") or {}) if managers else {}
-        owner_id = mgr.get("guid") or str(team_id)
+        team_key  = _team_attr(t, "team_key") or ""
+        team_id   = _safe_int(_team_attr(t, "team_id") or team_key.split(".")[-1])
+        team_name = _team_attr(t, "name") or f"Team {team_id}"
+        owner_id = _yahoo_owner_id(t, team_id)
+        logo      = _team_attr(t, "team_logos", {})
+        logo_url  = None
+        if isinstance(logo, list) and logo:
+            logo_url = (logo[0].get("team_logo") or {}).get("url")
+        elif isinstance(logo, dict):
+            inner = _unwrap_yahoo_list_or_dict(logo.get("team_logo"))
+            logo_url = inner.get("url")
 
         # Standings / record
-        standings = _team_attr(t, "team_standings") or {}
-        outcome   = standings.get("outcome_totals") or {}
+        standings = _team_field_dict(t, "team_standings")
+        outcome   = _unwrap_yahoo_list_or_dict(standings.get("outcome_totals"))
         wins      = _safe_int(outcome.get("wins"))
         losses    = _safe_int(outcome.get("losses"))
         ties      = _safe_int(outcome.get("ties"))
         pts_for   = _safe_float(standings.get("points_for"))
         pts_ag    = _safe_float(standings.get("points_against"))
 
-        # Roster
-        raw_players = _extract_roster_players(t)
-        players:  List[str] = []
-        starters: List[str] = []
-        reserve:  List[str] = []
+        # Roster — prefer week-specific team resource (has lineup slots).
+        raw_players = roster_by_key.get(team_key) or _extract_roster_players(t)
+        if _yahoo_players_need_hydration(raw_players) and team_key:
+            raw_players = _fetch_team_roster_players(access_token, team_key, week)
+        players, starters, reserve = _split_yahoo_lineup(raw_players)
 
-        for rp in raw_players:
-            p_meta, sel_pos = _flatten_yahoo_player(rp)
-
-            name     = (p_meta.get("name") or {}).get("full") or ""
-            pos_list = p_meta.get("display_position") or p_meta.get("eligible_positions") or ""
-            if isinstance(pos_list, dict):
-                pos_list = pos_list.get("position") or ""
-            pos  = (pos_list.split(",")[0] if isinstance(pos_list, str) else "") or ""
-            team = (p_meta.get("editorial_team_abbr") or "").upper()
-            yid  = str(p_meta.get("player_id") or "")
-
-            canon = _resolve_player(name, pos, team, yahoo_id=yid)
-            if not canon:
-                continue
-
-            players.append(canon)
-            if sel_pos in ("BN", "IR", "IR+"):
-                reserve.append(canon)
-            else:
-                starters.append(canon)
+        # If every mapped player landed in starters, lineup slots are still missing.
+        if (
+            players
+            and len(starters) == len(players)
+            and len(players) > 9
+            and team_key
+        ):
+            retry_players = _fetch_team_roster_players(access_token, team_key, week)
+            if retry_players:
+                players, starters, reserve = _split_yahoo_lineup(retry_players)
 
         fpts_whole = int(pts_for)
         fpts_dec   = int(round((pts_for - fpts_whole) * 100))
@@ -884,7 +1383,7 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
             "co_owners":  None,
             "keepers":    None,
             "league_id":  str(league_id),
-            "metadata":   {},
+            "metadata":   {"team_name": team_name, "avatar": logo_url},
             "owner_id":   owner_id,
             "player_map": None,
             "players":    players,
@@ -907,37 +1406,52 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
             "starters": starters,
             "taxi":     None,
         })
+    _yahoo_debug(
+        "get_rosters league=%s season=%s -> %s rosters players_per_roster=%s",
+        league_id, season, len(out),
+        {r.get("roster_id"): len(r.get("players") or []) for r in out[:20]},
+    )
     return out
 
 
 def get_matchups(season: int, league_id: str, week: int, access_token: str) -> List[Dict[str, Any]]:
-    raw        = _yahoo_get(access_token, f"league/{_league_key(league_id)}/scoreboard;week={week}")
+    raw        = _yahoo_get(
+        access_token,
+        f"league/{_league_key_for_season(league_id, season, access_token)}/scoreboard;week={week}",
+    )
     fc         = raw.get("fantasy_content", {})
     lg         = fc.get("league") or []
     scoreboard = (lg[1] if len(lg) > 1 else {}).get("scoreboard") or {}
     matchups   = scoreboard.get("matchups") or {}
-    count      = _safe_int(matchups.get("count") or matchups.get("0", {}).get("count")) or 0
 
     out: List[Dict[str, Any]] = []
-    for i in range(count):
-        entry   = matchups.get(str(i)) or {}
-        matchup = entry.get("matchup") or {}
-        teams   = matchup.get("teams") or {}
-        m_id    = i + 1
+    for i, entry in enumerate(_yahoo_collection_rows(matchups, "matchup")):
+        matchup = entry.get("matchup") if isinstance(entry, dict) else {}
+        if not isinstance(matchup, dict):
+            continue
+        m_id = i + 1
+        teams_block = matchup.get("teams") or {}
+        team_rows = _yahoo_collection_rows(teams_block, "team")
+        if not team_rows and isinstance(teams_block, dict):
+            for j in range(_safe_int(teams_block.get("count")) or 2):
+                row = teams_block.get(str(j))
+                if row:
+                    team_rows.append(row)
 
-        for j in range(2):
-            tm_entry = teams.get(str(j)) or {}
-            tm       = tm_entry.get("team") or []
-            tm_meta  = tm[0] if tm else {}
-            if isinstance(tm_meta, list):
-                tm_meta = tm_meta[0] if tm_meta else {}
+        for idx, tm_entry in enumerate(team_rows):
+            if isinstance(tm_entry, dict) and "team" in tm_entry:
+                tm = tm_entry["team"]
+            elif isinstance(tm_entry, dict):
+                tm = tm_entry.get("team") or []
+            else:
+                tm = []
 
             roster_id = _safe_int(
-                tm_meta.get("team_id")
-                or (tm_meta.get("team_key") or "").split(".")[-1]
+                _team_attr(tm, "team_id")
+                or (_team_attr(tm, "team_key") or "").split(".")[-1]
             )
-            pts_block = (tm[1] if len(tm) > 1 else {}) if isinstance(tm, list) else {}
-            points    = _safe_float(pts_block.get("team_points", {}).get("total") if isinstance(pts_block, dict) else 0)
+            pts_block = _team_field_dict(tm, "team_points")
+            points    = _safe_float(pts_block.get("total"))
 
             out.append({
                 "points":          points,
@@ -1053,12 +1567,14 @@ def get_drafts(season: int, league_id: str, access_token: str) -> List[Dict[str,
 
     Yahoo does not expose a Sleeper-like draft list; one synthetic draft per
     league/season is enough for Draft Room Connect. Status prefers league
-    ``draft_status`` (predraft / draft / postdraft). Falls back to complete
-    only when meta is unavailable so keepers/history still see a draft.
+    ``draft_status`` (predraft / draft / postdraft). Missing meta stays
+    pre-draft so an undrafted keeper league is not marked complete.
     """
     from datetime import datetime as _dt
     start_ts_ms = int(_dt(int(season), 8, 1).timestamp() * 1000)
-    status = "complete"
+    # Missing meta is not a finished draft (same class as Fleaflicker omitting
+    # NOT_YET_DRAFTED). Keepers/history still see a record; status stays pending.
+    status = "pre_draft"
     teams = 0
     try:
         key = _league_key_for_season(league_id, season, access_token)
@@ -1269,6 +1785,9 @@ def get_league_globals(season: int, league_id: str, access_token: str) -> Dict[s
         return {}
 
     scoring_settings = _yahoo_scoring_settings(meta, settings)
+    from utils.league_scoring import normalize_league_scoring
+    scoring_settings = normalize_league_scoring(
+        "yahoo", scoring_settings, league_id=league_id, season=season)
 
     roster_positions = _yahoo_roster_positions(settings)
     if not roster_positions:
@@ -1285,10 +1804,12 @@ def get_league_globals(season: int, league_id: str, access_token: str) -> Dict[s
         _safe_int(settings.get("playoff_start_week"))
         or _safe_int(meta.get("playoff_start_week"))
     )
+    _lt = _yahoo_sleeper_league_type(meta, settings, num_teams)
     league_settings: Dict[str, Any] = {
         "playoff_teams": playoff_teams,
         "num_teams":     num_teams,
-        "type":          _yahoo_sleeper_league_type(meta, settings, num_teams),
+        "type":          _lt,
+        "league_type":   "dynasty" if _lt == 2 else ("keeper" if _lt == 1 else "redraft"),
     }
     if playoff_week_start:
         league_settings["playoff_week_start"] = playoff_week_start
@@ -1375,6 +1896,18 @@ _YAHOO_STAT_KEYS: Dict[int, str] = {
 }
 
 
+def _yahoo_is_threshold_bonus(stat: dict) -> bool:
+    """Skip a duplicate yardage row that is a 300-yard extra, not 0.04 / yard."""
+    if not isinstance(stat, dict):
+        return False
+    if not (stat.get("bonuses") or stat.get("bonus")):
+        return False
+    try:
+        return abs(float(stat.get("value"))) >= 1.0
+    except (TypeError, ValueError):
+        return False
+
+
 def _yahoo_scoring_settings(meta: Dict[str, Any], settings: Dict[str, Any]) -> Dict[str, Any]:
     """Build scoring from Yahoo ``stat_modifiers``, not competition ``scoring_type``.
 
@@ -1382,18 +1915,9 @@ def _yahoo_scoring_settings(meta: Dict[str, Any], settings: Dict[str, Any]) -> D
     ``stat_modifiers.stats``. Falling back to format labels previously forced H2H
     PPR leagues to ``rec=0`` and points leagues to full PPR.
     """
-    scoring: Dict[str, Any] = {
-        "rec": 0.0,
-        "pass_yd": 0.04,
-        "pass_td": 4.0,
-        "pass_int": -2.0,
-        "rush_yd": 0.1,
-        "rush_td": 6.0,
-        "rec_yd": 0.1,
-        "rec_td": 6.0,
-        "fum_lost": -2.0,
-        "2pt": 2.0,
-    }
+    from utils.league_scoring import assign_scoring_rate
+
+    scoring: Dict[str, Any] = {}
     modifiers = settings.get("stat_modifiers") or {}
     stats_node = modifiers.get("stats") if isinstance(modifiers, dict) else None
     rows = _yahoo_collection_rows(stats_node, "stat")
@@ -1403,6 +1927,8 @@ def _yahoo_scoring_settings(meta: Dict[str, Any], settings: Dict[str, Any]) -> D
             continue
         # Rows are either {"stat": {...}} wrappers or flat stat dicts.
         stat = row.get("stat") if isinstance(row.get("stat"), dict) else row
+        if _yahoo_is_threshold_bonus(stat):
+            continue
         try:
             stat_id = int(stat.get("stat_id"))
         except (TypeError, ValueError):
@@ -1414,9 +1940,16 @@ def _yahoo_scoring_settings(meta: Dict[str, Any], settings: Dict[str, Any]) -> D
             value = float(stat.get("value"))
         except (TypeError, ValueError):
             continue
-        scoring[key] = value
+        assign_scoring_rate(scoring, key, value)
         if key == "rec":
             found_rec = True
+    for key, default in (
+        ("rec", 0.0), ("pass_yd", 0.04), ("pass_td", 4.0), ("pass_int", -2.0),
+        ("rush_yd", 0.1), ("rush_td", 6.0), ("rec_yd", 0.1), ("rec_td", 6.0),
+        ("fum_lost", -2.0), ("2pt", 2.0),
+    ):
+        if key not in scoring:
+            scoring[key] = default
     if not found_rec:
         # Last-resort heuristic only when modifiers are missing entirely.
         scoring_type = str(meta.get("scoring_type") or settings.get("scoring_type") or "").lower()
@@ -1461,7 +1994,8 @@ def _yahoo_collection_rows(node: Any, item_key: str) -> List[Any]:
 
 _YAHOO_SLOT = {
     "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
-    "W/R/T": "FLEX", "W/R": "FLEX", "RB/WR/TE": "FLEX",
+    "W/R/T": "FLEX", "W/R": "RB_WR", "W/T": "WR_TE", "R/T": "RB_TE",
+    "RB/WR/TE": "FLEX", "WR/TE": "WR_TE", "RB/WR": "RB_WR", "RB/TE": "RB_TE",
     "Q/W/R/T": "SUPER_FLEX", "OP": "SUPER_FLEX",
     "K": "K", "DEF": "DEF", "D": "DEF",
     "BN": "BN", "IR": "IR",
@@ -1492,6 +2026,8 @@ def _yahoo_roster_positions(settings: Dict[str, Any]) -> List[str]:
         count = _safe_int(slot.get("count")) or 0
         if count <= 0 or not abbr:
             continue
-        norm = _YAHOO_SLOT.get(str(abbr).upper(), str(abbr).upper())
+        raw_abbr = str(abbr).upper()
+        from utils.lineup_slots import canonicalize_slot
+        norm = _YAHOO_SLOT.get(raw_abbr) or canonicalize_slot(raw_abbr) or raw_abbr
         roster_positions.extend([norm] * count)
     return roster_positions

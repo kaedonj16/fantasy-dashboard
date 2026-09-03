@@ -80,6 +80,41 @@ def inseason_ctx(monkeypatch):
     return appmod, ctx
 
 
+def test_standings_body_survives_fleaflicker_without_bracket(inseason_ctx):
+    """Fleaflicker has no public playoff-bracket API; standings must still render."""
+    appmod, ctx = inseason_ctx
+    ctx = dict(ctx)
+    ctx["platform"] = "fleaflicker"
+    body = appmod.build_standings_body(ctx)
+    assert "stPowerInner" in body
+    assert "Power Rankings" in body
+    assert "Playoff Picture" not in body
+
+
+def test_render_power_and_playoffs_when_bracket_raises(inseason_ctx, monkeypatch):
+    """A raising get_bracket must not 500 the Power Rankings card."""
+    from dashboard_services.providers.base import UnsupportedCapabilityError
+
+    appmod, ctx = inseason_ctx
+
+    def _boom(*_a, **_k):
+        raise UnsupportedCapabilityError(
+            "Fleaflicker playoff brackets are not exposed through the public API."
+        )
+
+    monkeypatch.setattr(appmod, "get_bracket", _boom)
+    html = appmod.render_power_and_playoffs(
+        ctx["team_stats"],
+        ctx["roster_map"],
+        ctx["league_id"],
+        "fleaflicker",
+        ctx["season"],
+    )
+    assert html
+    assert "Power Rankings" in html
+    assert "Playoff Picture" not in html
+
+
 def test_week_selector_renders_with_finalized_weeks(inseason_ctx):
     appmod, ctx = inseason_ctx
     assert appmod._standings_available_weeks(ctx) == list(range(1, 11))
@@ -230,3 +265,111 @@ def test_matchup_carousel_title_links_to_full_page():
     )
     assert "os-section-title-link" not in hub
     assert "matchup-carousel--compact" not in hub
+
+
+def test_allow_live_game_indicators_requires_reg_or_post(monkeypatch):
+    from dashboard_services import matchups as mmod
+
+    monkeypatch.setattr(
+        "dashboard_services.api.get_nfl_state",
+        lambda: {"season": 2025, "week": 3, "season_type": "pre"},
+    )
+    assert mmod._allow_live_game_indicators(2025) is False
+
+    monkeypatch.setattr(
+        "dashboard_services.api.get_nfl_state",
+        lambda: {"season": 2025, "week": 3, "season_type": "off"},
+    )
+    assert mmod._allow_live_game_indicators(2025) is False
+
+    monkeypatch.setattr(
+        "dashboard_services.api.get_nfl_state",
+        lambda: {"season": 2025, "week": 3, "season_type": "reg"},
+    )
+    assert mmod._allow_live_game_indicators(2025) is True
+
+    monkeypatch.setattr(
+        "dashboard_services.api.get_nfl_state",
+        lambda: {"season": 2025, "week": 18, "season_type": "post"},
+    )
+    assert mmod._allow_live_game_indicators(2025) is True
+
+    monkeypatch.setattr(
+        "dashboard_services.api.get_nfl_state",
+        lambda: {"season": 2025, "week": 3, "season_type": "reg"},
+    )
+    assert mmod._allow_live_game_indicators(2024) is False
+
+
+def test_matchup_player_live_dot_gated_offseason_and_preseason(monkeypatch):
+    from datetime import date
+
+    from dashboard_services import matchups as mmod
+
+    today = date.today().strftime("%Y%m%d")
+    live_game = {
+        "home": "KC",
+        "away": "LAC",
+        "gameDate": today,
+        "gameStatusCode": "1",
+        "lineScore": {"period": "Q2"},
+        "gameClock": "5:00",
+    }
+
+    def _slide(season_type: str) -> str:
+        monkeypatch.setattr(
+            "dashboard_services.api.get_nfl_state",
+            lambda: {"season": 2025, "week": 3, "season_type": season_type},
+        )
+        monkeypatch.setattr(mmod, "load_week_stats", lambda *a, **k: {})
+        monkeypatch.setattr(mmod, "load_week_schedule", lambda *a, **k: [])
+        monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
+        monkeypatch.setattr(mmod, "build_offense_rankings", lambda *a: {})
+        monkeypatch.setattr(mmod, "get_nfl_scores_for_date", lambda *a: None)
+
+        m = {
+            "left": {
+                "roster_id": "1",
+                "name": "Team A",
+                "avatar": "",
+                "record": "1-0",
+                "pts_total": 12.0,
+                "proj_total": 12.0,
+                "starters": [{"pid": "p1", "name": "Patrick Mahomes", "pos": "QB", "pts": 12.0, "nfl": "KC"}],
+                "starters_points": [],
+                "players_points": {},
+                "bench": [],
+                "pos_by_slot": [],
+                "matchup_id": 1,
+            },
+            "right": {
+                "roster_id": "2",
+                "name": "Team B",
+                "avatar": "",
+                "record": "0-1",
+                "pts_total": 0.0,
+                "proj_total": 0.0,
+                "starters": [],
+                "starters_points": [],
+                "players_points": {},
+                "bench": [],
+                "pos_by_slot": [],
+                "matchup_id": 1,
+            },
+            "h2h": {},
+        }
+        return mmod.render_matchup_slide(
+            "2025",
+            m,
+            w=3,
+            proj_week=2,
+            status_by_pid={"p1": mmod.STATUS_IN_PROGRESS},
+            projections={3: {"projections": {"p1": 20.0}}},
+            players={},
+            teams={},
+            team_game_lookup={"KC": live_game},
+        )
+
+    assert "live-dot" not in _slide("pre")
+    assert "live-dot" not in _slide("off")
+    assert "live-dot" in _slide("reg")

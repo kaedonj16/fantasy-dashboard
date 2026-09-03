@@ -6,11 +6,65 @@ or when league/player data is unavailable — never fail the whole digest.
 from __future__ import annotations
 
 import logging
+import re
 from html import escape
 from typing import Any, Optional
 from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
+
+
+# White cards on the cool-gray email canvas. Accent = left navy-blue bar for actions.
+EMAIL_CARD_STYLE = (
+    "margin:16px 0 0;padding:14px 16px;border-radius:12px;"
+    "background:#ffffff;border:1px solid #e6ebf2;"
+)
+EMAIL_CARD_ACCENT_STYLE = EMAIL_CARD_STYLE + "border-left:3px solid #2563eb;"
+_EMAIL_KICKER = (
+    "font-size:11px;font-weight:800;letter-spacing:.06em;"
+    "text-transform:uppercase;color:#334155;"
+)
+_EMAIL_CTA = (
+    "display:inline-block;margin-top:2px;font-size:13px;font-weight:700;"
+    "color:#2563eb;text-decoration:none;"
+)
+
+
+_EM_DASH = re.compile(r"\s*\u2014\s*")
+
+
+def _plain_punct(s: str) -> str:
+    """Email copy uses ASCII hyphen, not em/en dashes."""
+    return _EM_DASH.sub(" - ", s or "").replace("\u2013", "-")
+
+
+def section_card(
+    title: str,
+    inner_html: str,
+    *,
+    href: str = "",
+    cta: str = "",
+    accent: bool = True,
+) -> str:
+    """Email-safe titled card. ``inner_html`` is trusted markup (already escaped)."""
+    title_s = escape(_plain_punct(str(title or "")).strip(), quote=False)
+    inner = _plain_punct(inner_html or "").strip()
+    if not title_s or not inner:
+        return ""
+    link = ""
+    if href and cta:
+        link = (
+            f'<div style="margin-top:10px;">'
+            f'<a href="{escape(href, quote=True)}" style="{_EMAIL_CTA}">'
+            f"{escape(cta, quote=False)}</a></div>"
+        )
+    chrome = EMAIL_CARD_ACCENT_STYLE if accent else EMAIL_CARD_STYLE
+    return (
+        f'<div style="{chrome}">'
+        f'<div style="{_EMAIL_KICKER}">{title_s}</div>'
+        f'<div style="margin-top:8px;font-size:14px;color:#0f172a;line-height:1.5;">{inner}</div>'
+        f"{link}</div>"
+    )
 
 
 def action_section_html(
@@ -21,25 +75,8 @@ def action_section_html(
     cta: str = "Open →",
 ) -> str:
     """One titled action block for the digest email body."""
-    title_s = escape(str(title or "").strip())
-    body_s = escape(str(body or "").strip())
-    if not title_s or not body_s:
-        return ""
-    link = ""
-    if href:
-        link = (
-            f'<div style="margin-top:8px;">'
-            f'<a href="{escape(href)}" style="font-size:13px;font-weight:700;'
-            f'color:#2563eb;text-decoration:none;">{escape(cta)}</a></div>'
-        )
-    return (
-        f'<div style="margin:18px 0 0;padding:12px 14px;border-radius:10px;'
-        f'background:#f8fafc;border:1px solid #e2e8f0;">'
-        f'<div style="font-size:11px;font-weight:800;letter-spacing:.04em;'
-        f'text-transform:uppercase;color:#64748b;">{title_s}</div>'
-        f'<div style="margin-top:4px;font-size:14px;color:#0f172a;line-height:1.45;">{body_s}</div>'
-        f"{link}</div>"
-    )
+    body_s = escape(_plain_punct(str(body or "")).strip(), quote=False)
+    return section_card(title, body_s, href=href, cta=cta, accent=True)
 
 
 def player_deep_link(
@@ -125,6 +162,234 @@ def top_waiver_from_values(
     return best
 
 
+def value_keys_for_format(fmt: dict) -> tuple[str, str]:
+    """Same primary/fallback value columns the in-app waiver surfaces use."""
+    from utils.value_helpers import format_value_keys
+    return format_value_keys(
+        is_redraft=bool((fmt or {}).get("is_redraft") or (fmt or {}).get("is_keeper")),
+        is_sf=bool((fmt or {}).get("is_superflex")),
+    )
+
+
+def recommend_waivers(
+    model_rows: list[dict],
+    owned_ids: set[str],
+    *,
+    roster_players: Optional[list] = None,
+    roster_positions: Optional[list] = None,
+    pidx: Optional[dict] = None,
+    movers: Optional[dict] = None,
+    breakout_by_pid: Optional[dict] = None,
+    fmt: Optional[dict] = None,
+    limit: int = 3,
+    min_score: float = 35.0,
+) -> list[dict[str, Any]]:
+    """Rank unowned players with ``waiver_pickup_score`` (canonical model).
+
+    Returns up to ``limit`` actionable targets. Empty when nothing clears the
+    floor. Does not call the waiver HTTP API.
+    """
+    fmt = fmt or {}
+    pidx = pidx or {}
+    owned = {str(p) for p in (owned_ids or set())}
+    primary, fallback = value_keys_for_format(fmt)
+    need_mults: dict[str, float] = {}
+    try:
+        from utils.lineup_slots import count_lineup_slots, start_sit_pos
+        from utils.waiver_score import need_multiplier, positional_need_scores
+        counts: dict[str, int] = {}
+        for pid in roster_players or []:
+            meta = pidx.get(str(pid)) or {}
+            pos = start_sit_pos(meta.get("position") or meta.get("pos") or "")
+            if pos:
+                counts[pos] = counts.get(pos, 0) + 1
+        slots = count_lineup_slots(roster_positions or [])
+        starter_reqs = {
+            "QB": max(1, int(slots.get("QB") or 0) + int(slots.get("SUPER_FLEX") or 0)),
+            "RB": max(1, int(slots.get("RB") or 0) + int(slots.get("FLEX") or 0)),
+            "WR": max(1, int(slots.get("WR") or 0) + int(slots.get("FLEX") or 0)),
+            "TE": max(1, int(slots.get("TE") or 0)),
+        }
+        need_scores = positional_need_scores(counts, starter_reqs)
+        need_mults = {pos: need_multiplier(pos, need_scores) for pos in starter_reqs}
+    except Exception:
+        logger.debug("[digest-actions] positional need skipped", exc_info=True)
+
+    delta_by_pid: dict[str, float] = {}
+    for bucket in ("risers", "fallers"):
+        for m in (movers or {}).get(bucket) or []:
+            pid = str(m.get("player_id") or "")
+            try:
+                if pid:
+                    delta_by_pid[pid] = float(m.get("delta") or 0)
+            except (TypeError, ValueError):
+                continue
+
+    waiver_breakout: dict[str, float] = {}
+    for pid, rec in (breakout_by_pid or {}).items():
+        try:
+            waiver_breakout[str(pid)] = float(
+                rec.get("score") if isinstance(rec, dict) else rec or 0
+            )
+        except (TypeError, ValueError):
+            continue
+
+    try:
+        from utils.waiver_score import WEIGHTS, waiver_pickup_score, waiver_signal
+    except Exception:
+        return []
+
+    scored: list[tuple[float, dict]] = []
+    for row in model_rows or []:
+        if not isinstance(row, dict):
+            continue
+        pid = str(row.get("id") or row.get("player_id") or "").strip()
+        if not pid or pid in owned:
+            continue
+        pos = str(row.get("pos") or row.get("position") or "").upper()
+        if pos in ("K", "DEF", "DST") or not pos:
+            continue
+        try:
+            val = float(row.get(primary) or row.get(fallback) or row.get("value") or 0)
+        except (TypeError, ValueError):
+            val = 0.0
+        if val < float(getattr(WEIGHTS, "min_value", 25.0) or 25.0):
+            continue
+        age = row.get("age")
+        try:
+            age_f = float(age) if age is not None else 0
+        except (TypeError, ValueError):
+            age_f = 0.0
+        cand = {
+            "player_id": pid,
+            "value": val,
+            "age": age_f,
+            "position": pos,
+            "rank_change_7d": delta_by_pid.get(pid, 0.0),
+            "need_mult": need_mults.get(pos, 1.0),
+        }
+        try:
+            score = float(waiver_pickup_score(cand, waiver_breakout))
+        except Exception:
+            continue
+        if score < min_score:
+            continue
+        name = (
+            row.get("name") or row.get("full_name") or row.get("player")
+            or (pidx.get(pid) or {}).get("full_name")
+            or (pidx.get(pid) or {}).get("name")
+            or ""
+        )
+        name = str(name).strip()
+        if not name or name == pid:
+            continue
+        badge = ""
+        try:
+            _cls, label = waiver_signal(cand, waiver_breakout)
+            badge = str(label or "").strip()
+        except Exception:
+            badge = ""
+        reason_bits = []
+        if cand["need_mult"] and cand["need_mult"] > 1.05:
+            reason_bits.append(f"{pos} need")
+        if badge and badge.lower() not in ("target", ""):
+            reason_bits.append(badge)
+        elif val >= 40:
+            reason_bits.append(f"value {int(round(val))}")
+        scored.append((score, {
+            "player_id": pid,
+            "name": name,
+            "pos": pos,
+            "value": val,
+            "score": score,
+            "reason": ", ".join(reason_bits),
+        }))
+    scored.sort(key=lambda t: t[0], reverse=True)
+    return unique_waiver_targets([row for _s, row in scored], limit=limit)
+
+
+def unique_waiver_targets(targets: list, *, limit: int = 3) -> list:
+    """Keep one row per position+primary-reason so the email isn't three identical WRs."""
+    picked: list = []
+    seen: set[tuple] = set()
+    cap = max(0, int(limit or 0))
+    for row in targets or []:
+        if not isinstance(row, dict):
+            continue
+        key = (str(row.get("pos") or ""), str(row.get("reason") or "").split(",")[0].strip().lower())
+        if picked and key in seen:
+            continue
+        picked.append(row)
+        seen.add(key)
+        if len(picked) >= cap:
+            break
+    return picked
+
+
+def start_sit_swap_note(
+    *,
+    starters: list,
+    roster: dict,
+    pidx: dict,
+    nfl_players: dict,
+    proj_map: dict,
+    roster_positions: list,
+    min_gain: float = 2.0,
+) -> Optional[dict[str, str]]:
+    """Reuse ``projection_upgrades`` — do not invent a second start/sit model."""
+    if not starters or not proj_map or not roster_positions:
+        return None
+    try:
+        from utils.lineup_issues import projection_upgrades
+    except Exception:
+        return None
+    reserve = {str(p) for p in (roster.get("reserve") or [])}
+    taxi = {str(p) for p in (roster.get("taxi") or [])}
+    eligible = [
+        str(p) for p in (roster.get("players") or [])
+        if str(p) not in reserve and str(p) not in taxi
+    ]
+    pos_map = {}
+    for pid in eligible:
+        pl = nfl_players.get(pid) or pidx.get(pid) or {}
+        pos_map[pid] = str(pl.get("position") or pl.get("pos") or "")
+    try:
+        swaps = projection_upgrades(
+            [str(p) for p in starters], eligible, proj_map, pos_map,
+            list(roster_positions or []), min_gain=min_gain, max_swaps=1,
+        )
+    except Exception:
+        logger.debug("[digest-actions] projection_upgrades failed", exc_info=True)
+        return None
+    if not swaps:
+        return None
+    swap = swaps[0]
+    pin, pout = str(swap.get("in") or ""), str(swap.get("out") or "")
+    name_in = _display_name(pin, nfl_players, pidx)
+    name_out = _display_name(pout, nfl_players, pidx)
+    if not name_in or not name_out:
+        return None
+    gain = swap.get("gain")
+    try:
+        gain_s = f" (+{float(gain):.1f} projected)" if gain is not None else ""
+    except (TypeError, ValueError):
+        gain_s = ""
+    return {
+        "title": "Start/Sit",
+        "body": f"Consider {name_in} over {name_out}{gain_s}.",
+        "in_id": pin,
+        "out_id": pout,
+    }
+
+
+def _display_name(pid: str, nfl_players: dict, pidx: dict) -> str:
+    pl = (nfl_players or {}).get(pid) or (pidx or {}).get(pid) or {}
+    name = str(pl.get("full_name") or pl.get("name") or pl.get("last_name") or "").strip()
+    if not name or name == pid or name.lower().startswith("player "):
+        return ""
+    return name
+
+
 def gather_digest_actions(
     *,
     platform: str,
@@ -133,21 +398,68 @@ def gather_digest_actions(
     roster: dict,
     pidx: dict,
     base_url: str,
+    fmt: Optional[dict] = None,
+    owned_ids: Optional[set] = None,
+    model_rows: Optional[list] = None,
+    movers: Optional[dict] = None,
+    nfl_state: Optional[dict] = None,
+    nfl_players: Optional[dict] = None,
+    teams_playing: Optional[set] = None,
+    proj_map: Optional[dict] = None,
+    roster_positions: Optional[list] = None,
+    breakout_by_pid: Optional[dict] = None,
 ) -> list[str]:
     """Best-effort HTML action sections for one digest recipient.
 
     Returns an empty list when offseason / no useful actions. Never raises.
     """
+    items = gather_digest_action_items(
+        platform=platform, season=season, league_id=league_id, roster=roster,
+        pidx=pidx, base_url=base_url, fmt=fmt, owned_ids=owned_ids,
+        model_rows=model_rows, movers=movers, nfl_state=nfl_state,
+        nfl_players=nfl_players, teams_playing=teams_playing, proj_map=proj_map,
+        roster_positions=roster_positions, breakout_by_pid=breakout_by_pid,
+    )
     out: list[str] = []
-    try:
-        from dashboard_services.api import get_nfl_state
-        nfl = get_nfl_state() or {}
-    except Exception:
+    for item in items:
+        html = item.get("html") if isinstance(item, dict) else item
+        if html:
+            out.append(str(html))
+    return out
+
+
+def gather_digest_action_items(
+    *,
+    platform: str,
+    season: int,
+    league_id: str,
+    roster: dict,
+    pidx: dict,
+    base_url: str,
+    fmt: Optional[dict] = None,
+    owned_ids: Optional[set] = None,
+    model_rows: Optional[list] = None,
+    movers: Optional[dict] = None,
+    nfl_state: Optional[dict] = None,
+    nfl_players: Optional[dict] = None,
+    teams_playing: Optional[set] = None,
+    proj_map: Optional[dict] = None,
+    roster_positions: Optional[list] = None,
+    breakout_by_pid: Optional[dict] = None,
+) -> list[dict]:
+    """Structured action items (start/sit, waiver, injury) plus pre-rendered HTML."""
+    out: list[dict] = []
+    nfl = dict(nfl_state or {})
+    if not nfl:
         try:
-            from app import get_nfl_state
+            from dashboard_services.api import get_nfl_state
             nfl = get_nfl_state() or {}
         except Exception:
-            nfl = {}
+            try:
+                from app import get_nfl_state
+                nfl = get_nfl_state() or {}
+            except Exception:
+                nfl = {}
 
     season_type = str(nfl.get("season_type") or "")
     week = int(nfl.get("week") or 0)
@@ -159,91 +471,102 @@ def gather_digest_actions(
     waivers_url = f"{base}/{plat}/{int(season)}/{lid}/waivers"
     startsit_url = f"{waivers_url}?tab=startsit"
 
-    owned = {str(p) for p in (roster.get("players") or [])}
+    owned = {str(p) for p in (owned_ids or roster.get("players") or [])}
     starters = [str(p) for p in (roster.get("starters") or [])]
+    players_feed = nfl_players if nfl_players is not None else {}
+    if not players_feed:
+        try:
+            from dashboard_services.api import get_nfl_players
+            players_feed = get_nfl_players() or {}
+        except Exception:
+            players_feed = {}
+    playing = set(teams_playing or [])
+    if in_season and not playing:
+        try:
+            from utils.utils import load_week_schedule
+            for g in load_week_schedule(int(nfl.get("season") or season), week) or []:
+                for side in ("home", "away"):
+                    t = str(g.get(side) or "").upper()
+                    if t:
+                        playing.add(t)
+        except Exception:
+            playing = set()
 
-    # ── Start/Sit note (in-season only) ─────────────────────────────────────
-    if in_season and starters:
+    positions = list(roster_positions or [])
+    fmt = fmt or {}
+
+    if in_season and starters and not fmt.get("is_best_ball"):
         try:
             from utils.lineup_issues import find_lineup_issues
-            from utils.utils import load_week_schedule
-            try:
-                from dashboard_services.api import get_nfl_players
-                nfl_players = get_nfl_players() or {}
-            except Exception:
-                nfl_players = {}
-            teams_playing: set[str] = set()
-            try:
-                for g in load_week_schedule(int(nfl.get("season") or season), week) or []:
-                    for side in ("home", "away"):
-                        t = str(g.get(side) or "").upper()
-                        if t:
-                            teams_playing.add(t)
-            except Exception:
-                teams_playing = set()
             info = {}
             for pid in starters:
-                pl = nfl_players.get(pid) or pidx.get(pid) or {}
+                pl = players_feed.get(pid) or pidx.get(pid) or {}
                 info[pid] = {
                     "name": pl.get("full_name") or pl.get("name") or pl.get("last_name") or "",
                     "team": pl.get("team") or "",
                     "injury_status": pl.get("injury_status") or "",
                 }
-            issues = find_lineup_issues(starters, info, teams_playing or None)
+            issues = find_lineup_issues(starters, info, playing or None)
             note = lineup_digest_note(issues)
+            if not note:
+                note = start_sit_swap_note(
+                    starters=starters, roster=roster, pidx=pidx,
+                    nfl_players=players_feed, proj_map=proj_map or {},
+                    roster_positions=positions,
+                )
             if note:
                 html = action_section_html(
                     note["title"], note["body"], href=startsit_url, cta="Fix lineup →",
                 )
                 if html:
-                    out.append(html)
+                    out.append({"kind": "lineup", "html": html, **note, "href": startsit_url})
         except Exception:
             logger.debug("[digest-actions] lineup note failed", exc_info=True)
 
-    # ── Top waiver target (value heuristic; omit if nothing material) ───────
     try:
-        import time as _time
-        from app import DASHBOARD_CACHE, CACHE_TTL, _cache_key
-        key = _cache_key(plat, int(season), lid)
-        entry = DASHBOARD_CACHE.get(key) or {}
-        ctx = {}
-        if entry and (_time.time() - float(entry.get("ts") or 0) <= float(CACHE_TTL or 0)):
-            ctx = entry.get("ctx") or {}
-        rows = (ctx.get("model_value_table") or []) if ctx else []
-        # Also treat every rostered player in the league as owned when cached.
-        for r in (ctx.get("rosters") or []):
-            for p in (r.get("players") or []):
-                owned.add(str(p))
-        target = top_waiver_from_values(rows, owned) if rows else None
-        if target:
-            nm = target["name"]
-            pos = target.get("pos") or ""
-            body = f"Top available by BR value: {nm}"
-            if pos:
-                body = f"Top available by BR value: {pos} {nm}"
-            html = action_section_html(
-                "Waiver wire",
-                body + f" (≈{int(round(target['value']))} value).",
-                href=waivers_url,
-                cta="View waivers →",
-            )
+        rows = list(model_rows) if model_rows is not None else []
+        if model_rows is None:
+            import time as _time
+            from app import DASHBOARD_CACHE, CACHE_TTL, _cache_key
+            key = _cache_key(plat, int(season), lid)
+            entry = DASHBOARD_CACHE.get(key) or {}
+            ctx = {}
+            if entry and (_time.time() - float(entry.get("ts") or 0) <= float(CACHE_TTL or 0)):
+                ctx = entry.get("ctx") or {}
+            rows = list(ctx.get("model_value_table") or [])
+            for r in (ctx.get("rosters") or []):
+                for p in (r.get("players") or []):
+                    owned.add(str(p))
+            if not positions:
+                positions = list(ctx.get("roster_positions") or [])
+        league_owned = set(owned)
+        targets = recommend_waivers(
+            rows, league_owned,
+            roster_players=list(roster.get("players") or []),
+            roster_positions=positions,
+            pidx=pidx, movers=movers, breakout_by_pid=breakout_by_pid,
+            fmt=fmt, limit=3,
+        )
+        if not targets and rows:
+            hit = top_waiver_from_values(rows, league_owned)
+            if hit:
+                targets = [hit]
+        if targets:
+            from utils.digest_sections import waiver_html
+            html = waiver_html(targets, href=waivers_url)
             if html:
-                out.append(html)
+                out.append({
+                    "kind": "waiver", "html": html, "targets": targets, "href": waivers_url,
+                })
     except Exception:
         logger.debug("[digest-actions] waiver target failed", exc_info=True)
 
-    # ── Optional injury approx (only when R07 injury_plan is present) ───────
     if in_season and owned:
         try:
             from utils.injury_plan import injury_plan
             from dashboard_services.injury_return import weeks_out_for_player
-            try:
-                from dashboard_services.api import get_nfl_players
-                nfl_players = get_nfl_players() or {}
-            except Exception:
-                nfl_players = {}
             for pid in list(owned)[:50]:
-                pl = nfl_players.get(pid) or pidx.get(pid) or {}
+                pl = players_feed.get(pid) or pidx.get(pid) or {}
                 st = str(pl.get("injury_status") or "").strip()
                 if not st or st.upper() in ("ACTIVE", "ACT", "HEALTHY"):
                     continue
@@ -254,7 +577,9 @@ def gather_digest_actions(
                 )
                 if not plan or plan.get("verdict") not in ("IR", "Drop candidate", "Stash"):
                     continue
-                name = pl.get("full_name") or pl.get("name") or "Injured player"
+                name = pl.get("full_name") or pl.get("name") or ""
+                if not name:
+                    continue
                 weeks = plan.get("weeks_label") or "unknown window"
                 body = (
                     f"{name}: {plan['verdict']} ({weeks}, approx). "
@@ -267,7 +592,9 @@ def gather_digest_actions(
                     cta="Review roster →",
                 )
                 if html:
-                    out.append(html)
+                    out.append({
+                        "kind": "injury", "html": html, "body": body, "href": startsit_url,
+                    })
                 break
         except Exception:
             logger.debug("[digest-actions] injury note skipped", exc_info=True)

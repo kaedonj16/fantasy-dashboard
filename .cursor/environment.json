@@ -1,0 +1,19 @@
+{
+  "name": "Fantasy Dashboard",
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start.sh",
+  "terminals": [
+    {
+      "name": "flask",
+      "command": "export PATH=\"$HOME/.local/bin:$PATH\" DATABASE_URL=\"postgresql://brfantasy:brfantasy@127.0.0.1:5432/brfantasy\" FLASK_SECRET_KEY=dev PYTHONUNBUFFERED=1; source .venv/bin/activate; python app.py",
+      "description": "Flask dev server for the Fantasy Dashboard on http://localhost:5000 (uses the local Postgres brought up by start.sh)."
+    }
+  ],
+  "ports": [
+    {
+      "name": "web",
+      "port": 5000
+    }
+  ]
+}

@@ -197,6 +197,7 @@ def test_stamp_live_draft_class_adds_unprofiled_round_1_rookie():
     assert added == 1
     assert by_player["13287"]["draft_capital_bucket"] == "round_1"
     assert by_player["13287"]["nfl_draft_pick"] == 3
+    assert by_player["13287"]["team"] == "ARI"
     assert by_player["13287"]["years_experience"] == 0
     assert by_player["12527"]["years_experience"] == 1
     feats = extract_trend_features(by_player["13287"])

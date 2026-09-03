@@ -28,6 +28,9 @@ PLAYER_KEYS = (
     "redraft_avg_pick",
     "sf_redraft_avg_pick",
     "proj_ppg",
+    "proj_ppg_by",
+    "projection",
+    "projected_offense_rank",
     "market_vs_adp",
     "market_expected_adp",
     "market_confidence",
@@ -75,6 +78,36 @@ def _market_vs_adp_of(player: Mapping[str, Any], *, is_superflex: bool) -> Any:
     return player.get("market_vs_adp")
 
 
+def _slim_proj_ppg_by(by_variant: Any) -> Optional[dict]:
+    """Keep scoring-variant PPG so the sheet can retarget PPR / TEP / 6-pt TD
+    without waiting on a projection overlay rebuild."""
+    if not isinstance(by_variant, Mapping):
+        return None
+    out = {}
+    for key, value in by_variant.items():
+        try:
+            num = float(value)
+        except (TypeError, ValueError):
+            continue
+        if num:
+            out[str(key)] = num
+    return out or None
+
+
+def _slim_projection(projection: Any) -> Optional[dict]:
+    """Keep the canonical PPG stamp plus the variant it was scored for."""
+    if not isinstance(projection, Mapping):
+        return None
+    compact = {
+        key: projection[key]
+        for key in ("ppg", "unit", "projection_type", "scoring_variant")
+        if projection.get(key) is not None
+    }
+    if compact.get("ppg") is None:
+        return None
+    return compact
+
+
 def slim_board_player(player: Mapping[str, Any], *, is_superflex: bool) -> Optional[dict]:
     """One cheat-sheet row, or None when the player cannot appear on the board."""
     pos = str(player.get("position") or "").upper()
@@ -94,6 +127,10 @@ def slim_board_player(player: Mapping[str, Any], *, is_superflex: bool) -> Optio
             if not isinstance(value, Mapping) or not value:
                 continue
             value = dict(value)
+        elif key == "projection":
+            value = _slim_projection(player.get("projection"))
+        elif key == "proj_ppg_by":
+            value = _slim_proj_ppg_by(player.get("proj_ppg_by"))
         else:
             value = player.get(key)
         if value is not None:

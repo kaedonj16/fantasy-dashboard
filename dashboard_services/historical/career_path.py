@@ -156,4 +156,7 @@ def apply_career_path_history(
     out["dropped"] = []
     out["fallback"] = used != "stage"
     out["examples"] = []
+    out["prior_source"] = "career_path"
+    out["prior_key"] = {}
+    out["prior_n"] = None
     return out

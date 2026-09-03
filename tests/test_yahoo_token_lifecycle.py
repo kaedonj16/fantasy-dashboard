@@ -101,6 +101,18 @@ def test_save_league_owner_noops_on_missing_args(monkeypatch):
     yahoo_api.save_league_owner("L1", 2026, "")
 
 
+# ── yahoo_enabled gate ──────────────────────────────────────────────────────
+
+def test_yahoo_enabled_by_default(monkeypatch):
+    monkeypatch.delenv("YAHOO_ENABLED", raising=False)
+    assert yahoo_api.yahoo_enabled()
+
+
+def test_yahoo_enabled_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("YAHOO_ENABLED", "0")
+    assert not yahoo_api.yahoo_enabled()
+
+
 # ── _yahoo_token priority ───────────────────────────────────────────────────
 
 def test_yahoo_token_prefers_session_guid(monkeypatch):
@@ -116,6 +128,43 @@ def test_yahoo_token_prefers_session_guid(monkeypatch):
         from flask import session
         session["yahoo_guid"] = "G1"
         assert platform_api._yahoo_token("L1", 2026) == "TOK_SESSION"
+
+
+def test_yahoo_token_does_not_use_expired_session_bearer(monkeypatch):
+    from flask import Flask
+    app = Flask(__name__)
+    app.secret_key = "test"
+    monkeypatch.setattr(yahoo_api, "get_valid_access_token", lambda g: None)
+    monkeypatch.setattr(yahoo_api, "get_league_token", lambda *a, **k: "TOK_OWNER")
+    with app.test_request_context("/"):
+        from flask import session
+        session["yahoo_guid"] = "G1"
+        session["yahoo_access_token"] = "expired-session-token"
+        assert platform_api._yahoo_token("L1", 2026) == "TOK_OWNER"
+        assert "yahoo_access_token" not in session
+
+
+def test_resolve_session_yahoo_token_refreshes_stale_session_bearer(monkeypatch):
+    from flask import Flask
+    app = Flask(__name__)
+    app.secret_key = "test"
+    monkeypatch.setattr(yahoo_api, "get_valid_access_token",
+                        lambda g: "TOK_FRESH" if g == "G1" else None)
+    with app.test_request_context("/"):
+        from flask import session
+        session["yahoo_guid"] = "G1"
+        session["yahoo_access_token"] = "expired"
+        guid, token = yahoo_api.resolve_session_yahoo_token(session)
+        assert (guid, token) == ("G1", "TOK_FRESH")
+        assert session["yahoo_access_token"] == "TOK_FRESH"
+
+
+def test_yahoo_auth_error_kind_detects_token_expired():
+    assert yahoo_api.yahoo_auth_error_kind(
+        '401 Client Error: OAuth oauth_problem="token_expired"'
+    ) == "expired"
+    assert yahoo_api.yahoo_auth_error_kind("403 Forbidden") == "forbidden"
+    assert yahoo_api.yahoo_auth_error_kind("timeout") == ""
 
 
 def test_yahoo_token_falls_back_to_league_owner_without_session(monkeypatch):

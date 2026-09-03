@@ -1,0 +1,131 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    :root{
+      --bg:#020617; --card:#0f172a; --card-soft:#111827; --row:#0b1220;
+      --ink:#e5e7eb; --ink-soft:#cbd5e1; --ink-faint:#94a3b8;
+      --line:#1f2937; --line-strong:#303a4d;
+      --pos:#22c55e; --pos-bg:rgba(34,197,94,.14); --pos-line:rgba(34,197,94,.32);
+      --sky:#38bdf8; --amber:#f59e0b;
+      --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    }
+    *{box-sizing:border-box;}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}
+    a{color:var(--sky);} a:hover{color:#7dd3fc;}
+    .stage{width:600px;min-height:664px;background:
+      radial-gradient(120% 90% at 50% -10%, #0b1428 0%, var(--bg) 60%);
+      display:flex;align-items:flex-start;justify-content:center;padding:26px 24px;}
+    .card{width:528px;background:var(--card);color:var(--ink);
+      border:1px solid var(--line);border-radius:16px;
+      box-shadow:0 24px 60px rgba(0,0,0,.5);overflow:hidden;}
+    .muted{color:var(--ink-soft);} .faint{color:var(--ink-faint);}
+    .mono{font-family:var(--mono);}
+    .k{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint);}
+  </style>
+</helmet>
+
+<div class="stage">
+  <div class="card">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 16px 14px 18px;border-bottom:1px solid var(--line);">
+      <span class="mono" style="font-weight:800;font-size:11px;padding:4px 8px;border-radius:7px;color:var(--pos);background:var(--pos-bg);flex-shrink:0;">RB</span>
+      <div style="min-width:0;flex:1;">
+        <div style="font-size:16px;font-weight:800;line-height:1.15;">Bijan Robinson</div>
+        <div class="mono faint" style="font-size:11px;margin-top:2px;">ATL · RB2 · ADP 1.03</div>
+      </div>
+      <span class="mono" style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:800;letter-spacing:.02em;color:var(--pos);background:var(--pos-bg);border:1px solid var(--pos-line);border-radius:999px;padding:4px 10px;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14l5-5 4 4 7-7"/></svg>VALUE
+      </span>
+      <button aria-label="Close" style="flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--ink-faint);cursor:pointer;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+
+    <div style="padding:16px 18px 18px;">
+      <!-- Top row: hero + tier bars -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div style="border:1px solid var(--pos-line);border-radius:13px;padding:13px 14px;background:linear-gradient(180deg,var(--pos-bg),rgba(34,197,94,.04));display:flex;flex-direction:column;justify-content:center;">
+          <div class="k" style="color:var(--pos);">Top-12 chance</div>
+          <div style="display:flex;align-items:baseline;gap:2px;line-height:.8;margin:6px 0 2px;">
+            <span style="font-weight:800;font-size:48px;letter-spacing:-.03em;color:var(--pos);font-variant-numeric:tabular-nums;">58</span>
+            <span style="font-weight:800;font-size:18px;color:var(--ink-soft);">%</span>
+          </div>
+          <div class="mono faint" style="font-size:10.5px;">95% CI 51–65 · n=214</div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:13px;padding:12px 14px;background:var(--card-soft);">
+          <div class="k" style="margin-bottom:9px;">Finish ladder</div>
+          <div style="display:grid;gap:9px;">
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;"><span class="faint mono">TOP-5</span><span class="mono" style="font-weight:800;">24%</span></div>
+              <div style="height:7px;border-radius:999px;background:var(--row);overflow:hidden;"><div style="width:24%;height:100%;background:var(--line-strong);"></div></div>
+            </div>
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;"><span class="mono" style="color:var(--pos);font-weight:700;">TOP-12</span><span class="mono" style="font-weight:800;color:var(--pos);">58%</span></div>
+              <div style="height:7px;border-radius:999px;background:var(--row);overflow:hidden;"><div style="width:58%;height:100%;background:var(--pos);"></div></div>
+            </div>
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;"><span class="faint mono">TOP-24</span><span class="mono" style="font-weight:800;">79%</span></div>
+              <div style="height:7px;border-radius:999px;background:var(--row);overflow:hidden;"><div style="width:79%;height:100%;background:var(--line-strong);"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- vs market single diverging bar -->
+      <div style="margin-top:13px;border:1px solid var(--line);border-radius:13px;padding:13px 15px;background:var(--card-soft);">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
+          <span class="k">Profile vs. draft price</span>
+          <span class="mono" style="font-size:11px;font-weight:800;color:var(--pos);">+17 edge</span>
+        </div>
+        <div style="position:relative;height:26px;border-radius:8px;background:var(--row);overflow:hidden;">
+          <div style="position:absolute;left:0;top:0;bottom:0;width:41%;background:var(--line-strong);"></div>
+          <div style="position:absolute;left:0;top:0;bottom:0;width:58%;background:var(--pos);opacity:.55;"></div>
+          <div style="position:absolute;left:41%;top:0;bottom:0;width:2px;background:var(--ink);opacity:.55;"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:7px;font-size:11.5px;">
+          <span><span class="mono" style="font-weight:800;color:var(--pos);">58%</span> <span class="muted">backs like him</span></span>
+          <span class="muted"><span class="mono" style="font-weight:800;">41%</span> anyone at 1.03</span>
+        </div>
+      </div>
+
+      <!-- trends preview inline -->
+      <div style="margin-top:13px;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px;">
+          <span class="k">Trends behind it</span>
+          <a href="#" style="font-size:11.5px;font-weight:700;text-decoration:none;">See all 9 &#8250;</a>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;">
+          <!-- row -->
+          <div style="display:flex;align-items:center;gap:11px;padding:9px 13px;border-bottom:1px solid var(--line);">
+            <span style="width:7px;height:7px;border-radius:50%;background:var(--pos);flex-shrink:0;"></span>
+            <div style="flex:1;min-width:0;"><div style="font-size:12.5px;font-weight:700;">Drafted NFL top-10, any season</div><div class="mono faint" style="font-size:10px;margin-top:1px;">Sample: 61</div></div>
+            <div style="width:96px;height:6px;border-radius:999px;background:var(--row);overflow:hidden;flex-shrink:0;"><div style="width:64%;height:100%;background:var(--pos);"></div></div>
+            <span class="mono" style="font-size:12.5px;font-weight:800;width:52px;text-align:right;">64% <span style="color:var(--pos);font-size:10px;">+9</span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:11px;padding:9px 13px;border-bottom:1px solid var(--line);">
+            <span style="width:7px;height:7px;border-radius:50%;background:var(--pos);flex-shrink:0;"></span>
+            <div style="flex:1;min-width:0;"><div style="font-size:12.5px;font-weight:700;">Age 22, any capital</div><div class="mono faint" style="font-size:10px;margin-top:1px;">Sample: 88</div></div>
+            <div style="width:96px;height:6px;border-radius:999px;background:var(--row);overflow:hidden;flex-shrink:0;"><div style="width:55%;height:100%;background:var(--pos);"></div></div>
+            <span class="mono" style="font-size:12.5px;font-weight:800;width:52px;text-align:right;">55% <span style="color:var(--pos);font-size:10px;">+6</span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:11px;padding:9px 13px;">
+            <span style="width:7px;height:7px;border-radius:50%;background:var(--amber);flex-shrink:0;"></span>
+            <div style="flex:1;min-width:0;"><div style="font-size:12.5px;font-weight:700;">Top-10 projected offense, year 2</div><div class="mono faint" style="font-size:10px;margin-top:1px;">Sample: 34</div></div>
+            <div style="width:96px;height:6px;border-radius:999px;background:var(--row);overflow:hidden;flex-shrink:0;"><div style="width:47%;height:100%;background:var(--line-strong);"></div></div>
+            <span class="mono" style="font-size:12.5px;font-weight:800;width:52px;text-align:right;">47%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

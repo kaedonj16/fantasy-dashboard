@@ -58,6 +58,24 @@ def test_refresh_league_drops_draft_grades_cache():
     fn = fn[: fn.index("def api_flush_value_cache")]
     assert "_DRAFT_GRADES_CACHE" in fn
     assert "league_id" in fn
+    # ESPN cache bust must be scoped to the destination league — a global
+    # clear_espn_league_caches() wiped every room on the worker.
+    assert "clear_espn_league_caches(league_id, season)" in fn
+    assert "clear_espn_league_caches()" not in fn
+
+
+def test_prewarm_skips_espn_in_switcher_js():
+    src = _APP_JS.read_text(encoding="utf-8")
+    block = src[src.index("Prewarm the OTHER leagues") : src.index("fillLeagueChromeMenu(leagues)")]
+    assert "!== 'espn'" in block or "!== \"espn\"" in block
+    assert "/api/prewarm-league" in block
+
+
+def test_prewarm_league_endpoint_skips_espn():
+    fn = _ADMIN[_ADMIN.index("def api_prewarm_league") :]
+    fn = fn[: fn.index("def api_refresh_league")]
+    assert 'platform == "espn"' in fn
+    assert '"skipped"' in fn or "skipped" in fn
 
 
 def test_teams_loaders_resync_league_cfg():

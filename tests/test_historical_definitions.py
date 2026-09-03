@@ -9,6 +9,9 @@ from dashboard_services.historical.definitions import (
     COMP_RELAXATION_ORDER,
     DEFAULT_BAYES_PRIOR_N,
     MIN_COMP_CELL_N,
+    HIST_PANEL_MIN_N,
+    HIST_DISPLAY_MIN_N,
+    PARENT_MIN_N,
     POSITION_TIER_WIDTH,
     PRIOR_FINISH_NONE,
     RELIABLE_SEASON_FLOOR,
@@ -150,6 +153,29 @@ def test_trends_round1_pick_ranges_are_disjoint():
     assert covered == list(range(1, 33))
 
 
+def test_trends_offense_ranges_are_disjoint():
+    from dashboard_services.historical.definitions import (
+        TRENDS_OFFENSE_RANGES,
+        normalize_team_abbr,
+        offense_rank_bucket,
+        trends_offense_range,
+    )
+
+    assert trends_offense_range(1)[0] == "top_10"
+    assert trends_offense_range(10)[1] == "Top 10"
+    assert trends_offense_range(11)[0] == "11_20"
+    assert trends_offense_range(32)[1] == "21-32"
+    assert trends_offense_range(None) is None
+    assert offense_rank_bucket(4) == "top_10"
+    assert normalize_team_abbr("WAS") == "WSH"
+    assert normalize_team_abbr("ARZ") == "ARI"
+    assert normalize_team_abbr("LA") == "LAR"
+    covered = []
+    for _key, _label, lo, hi in TRENDS_OFFENSE_RANGES:
+        covered.extend(range(lo, hi + 1))
+    assert covered == list(range(1, 33))
+
+
 def test_positional_tier_label_and_flags():
     assert positional_tier_label("RB", 1) == "RB1"
     assert positional_tier_label("RB", 12) == "RB1"
@@ -210,9 +236,21 @@ def test_prior_finish_bucket_rookie_none_veteran_missing_omitted():
     assert prior_finish_bucket(36) == "top_36"
     assert prior_finish_bucket(37) == "outside_36"
     assert MIN_COMP_CELL_N == 15
+    assert HIST_PANEL_MIN_N == 1
+    assert HIST_DISPLAY_MIN_N == 4
+    assert PARENT_MIN_N == 8
     assert COMP_BOARD_TIERS == ("top_5", "top_12", "top_24")
     assert COMP_RELAXATION_ORDER[0] == "target_share"
     assert "position" not in COMP_RELAXATION_ORDER
+    from dashboard_services.historical.definitions import (
+        is_oldest_age_bucket,
+        oldest_age_bucket_label,
+    )
+    assert oldest_age_bucket_label("TE") == "32+"
+    assert oldest_age_bucket_label("RB") == "31+"
+    assert is_oldest_age_bucket("TE", "32+")
+    assert not is_oldest_age_bucket("TE", "29-31")
+    assert is_oldest_age_bucket("RB", "31+")
     assert SLEEPER_UNDRAFTED_ADP == 999.0
     assert normalize_adp(999) is None
     assert is_adp_relative_bust(None, 1) is None

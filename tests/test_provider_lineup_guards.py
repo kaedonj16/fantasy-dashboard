@@ -15,6 +15,25 @@ from dashboard_services.providers import mfl_api, yahoo_api
 from data_building.simulate_playoff_odds import _position_aware_lineup
 
 
+def test_position_aware_lineup_wrrb_flex_excludes_te():
+    ppg = {
+        "rb1": {"ppg": 16.0, "pos": "RB"},
+        "wr1": {"ppg": 14.0, "pos": "WR"},
+        "te1": {"ppg": 20.0, "pos": "TE"},
+        "rb2": {"ppg": 8.0, "pos": "RB"},
+    }
+    pos = {k: v["pos"] for k, v in ppg.items()}
+    flex_avg, flex_starters = _position_aware_lineup(
+        list(ppg), ppg, pos, ["RB", "WR", "FLEX"],
+    )
+    wrrb_avg, wrrb_starters = _position_aware_lineup(
+        list(ppg), ppg, pos, ["RB", "WR", "WRRB_FLEX"],
+    )
+    assert ("TE", 20.0) in flex_starters
+    assert ("TE", 20.0) not in wrrb_starters
+    assert wrrb_avg < flex_avg
+
+
 def test_empty_roster_positions_use_default_lineup_instead_of_zero_ppg():
     ppg = {
         "qb": {"ppg": 22.0, "pos": "QB"},
@@ -60,6 +79,23 @@ def test_yahoo_settings_come_from_league_index_one_not_meta():
     assert scoring["pass_td"] == 6.0
 
 
+def test_yahoo_restricted_flex_slots_stay_distinct():
+    slots = yahoo_api._yahoo_roster_positions({
+        "roster_positions": [
+            {"position": "QB", "count": 1},
+            {"position": "W/R", "count": 1},
+            {"position": "W/T", "count": 1},
+            {"position": "R/T", "count": 1},
+        ],
+    })
+    assert slots.count("RB_WR") == 1
+    assert slots.count("WR_TE") == 1
+    assert slots.count("RB_TE") == 1
+    assert slots.count("FLEX") == 0
+    assert "W/T" not in slots
+    assert "W/R" not in slots
+
+
 def test_yahoo_get_league_globals_reads_nested_settings(monkeypatch):
     payload = {
         "fantasy_content": {
@@ -103,6 +139,66 @@ def test_yahoo_does_not_treat_head_scoring_type_as_standard_ppr():
     assert scoring["rec"] == 1.0
 
 
+def test_yahoo_standard_reception_modifier_stays_zero():
+    settings = {
+        "stat_modifiers": {"stats": [{"stat": {"stat_id": 11, "value": "0"}}]},
+    }
+    scoring = yahoo_api._yahoo_scoring_settings({"scoring_type": "head"}, settings)
+    assert scoring["rec"] == 0.0
+
+
+def test_yahoo_300_yard_bonus_does_not_overwrite_per_yard_rate():
+    settings = {
+        "stat_modifiers": {"stats": [
+            {"stat": {"stat_id": 4, "value": "0.04"}},
+            {"stat": {
+                "stat_id": 4, "value": "3",
+                "bonuses": {"bonus": [{"target": "300", "points": "3"}]},
+            }},
+            {"stat": {"stat_id": 11, "value": "0"}},
+        ]},
+    }
+    scoring = yahoo_api._yahoo_scoring_settings({"scoring_type": "head"}, settings)
+    assert scoring["pass_yd"] == 0.04
+    assert scoring["rec"] == 0.0
+
+
+def test_yahoo_standard_weekly_proj_is_not_one_point_per_yard():
+    from utils.fantasy_scoring import projection_points
+    from utils.league_scoring import normalize_league_scoring
+
+    settings = {
+        "stat_modifiers": {"stats": [
+            {"stat": {"stat_id": 4, "value": "0.04"}},
+            {"stat": {
+                "stat_id": 4, "value": "3",
+                "bonuses": {"bonus": [{"target": "300", "points": "3"}]},
+            }},
+            {"stat": {"stat_id": 5, "value": "4"}},
+            {"stat": {"stat_id": 6, "value": "-2"}},
+            {"stat": {"stat_id": 9, "value": "0.1"}},
+            {"stat": {"stat_id": 10, "value": "6"}},
+            {"stat": {"stat_id": 11, "value": "0"}},
+            {"stat": {"stat_id": 12, "value": "0.1"}},
+            {"stat": {"stat_id": 18, "value": "-2"}},
+        ]},
+    }
+    ss = normalize_league_scoring(
+        "yahoo", yahoo_api._yahoo_scoring_settings({"scoring_type": "head"}, settings),
+    )
+    allen = projection_points(
+        {"raw_stats": {
+            "pass_yd": 235.21, "pass_td": 1.8, "pass_int": 0.6,
+            "rush_yd": 26.3, "rush_td": 0.55, "fum_lost": 0.2,
+        }},
+        ss, "QB",
+    )
+    assert ss["rec"] == 0.0
+    assert ss["pointsPerReception"] == 0.0
+    assert allen < 40
+    assert allen != pytest.approx(268.9, abs=1)
+
+
 def test_mfl_positions_ignore_numeric_roster_size():
     provider = mfl_api.MFLProvider
     assert provider._positions({"id": "1", "rosterSize": "20"}) == []
@@ -111,3 +207,24 @@ def test_mfl_positions_ignore_numeric_roster_size():
     ]
     # rosterSize must not contaminate a missing starters field into ["20"].
     assert "20" not in provider._positions({"id": "1", "rosterSize": 20, "starters": ""})
+    assert provider._positions({"id": "1", "starters": "QB,RB,WR,TE,RB+WR,WR+TE"}) == [
+        "QB", "RB", "WR", "TE", "RB_WR", "WR_TE",
+    ]
+
+
+def test_fleaflicker_positions_do_not_leave_slash_labels():
+    """Sibling of the ESPN/Yahoo/MFL slot bugs: raw Fleaflicker flex/DST labels
+    are invisible to draft-room and count_roster_positions."""
+    from dashboard_services.providers.fleaflicker_api import FleaflickerProvider
+
+    slots = FleaflickerProvider._positions({
+        "rosterPositions": [
+            {"label": "QB", "group": "START", "start": 1},
+            {"label": "RB/WR/TE", "group": "START", "start": 1},
+            {"label": "QB/RB/WR/TE", "group": "START", "start": 1},
+            {"label": "D/ST", "group": "START", "start": 1},
+        ],
+    })
+    assert slots == ["QB", "FLEX", "SUPER_FLEX", "DEF"]
+    assert "RB/WR/TE" not in slots
+    assert "D/ST" not in slots

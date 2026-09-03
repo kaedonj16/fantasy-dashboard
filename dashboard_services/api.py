@@ -236,6 +236,9 @@ def team_avatar(platform, roster: dict, users: list[dict]) -> Union[str, None]:
 
     owner_id = roster.get("owner_id")
     u = next((x for x in users if x.get("user_id") == owner_id), None) if owner_id else None
+    if not u and roster.get("roster_id") is not None:
+        rid = str(roster.get("roster_id"))
+        u = next((x for x in users if str(x.get("roster_id")) == rid), None)
     umeta = (u.get("metadata") if u else None) or {}
     if umeta.get("avatar"):
         return umeta["avatar"]
@@ -328,6 +331,32 @@ def sleeper_league_exists(league_id: str) -> bool | None:
         return bool(isinstance(payload, dict) and payload.get("league_id"))
     except (requests.RequestException, ValueError, TypeError):
         return None
+
+
+def get_provider_scoring_settings() -> Dict[str, float]:
+    """Scoring keys the provider actually published — no ESPN PPR defaults.
+
+    ``get_effective_scoring_settings`` overlays ``SCORING_DEFAULTS``
+    (``pointsPerReception: 1``). That turns a Fleaflicker standard league
+    into PPR as soon as it omits a Catch rule.
+    """
+    return dict(_league_state().get("scoring_settings") or {})
+
+
+def get_normalized_scoring_settings(
+    platform: Optional[str] = None, *, league_id=None, season=None,
+) -> Dict[str, Any]:
+    """League scoring for projections and point math.
+
+    ESPN / Yahoo / Fleaflicker / MFL use the provider's published rules.
+    Sleeper uses the league object. Never overlay ``SCORING_DEFAULTS``
+    (PPR, 1 pt/completion) — those are ESPN-shaped holes, not league settings.
+    """
+    from utils.league_scoring import normalize_league_scoring
+    plat = (platform or "").strip().lower() or "unknown"
+    return normalize_league_scoring(
+        plat, get_provider_scoring_settings(), league_id=league_id, season=season,
+    )
 
 
 def get_effective_scoring_settings() -> Dict[str, float]:

@@ -53,6 +53,25 @@ def test_compare_page_renders(offline_client):
     assert 'id="cmpPick1"' in html and 'id="cmpPick2"' in html
 
 
+def test_league_compare_page_renders(offline_client):
+    r = offline_client.get("/sleeper/2026/tourdemo/compare?tour=1")
+    assert r.status_code == 200, r.status_code
+    html = r.get_data(as_text=True)
+    assert 'data-page="compare"' in html
+    assert 'id="cmpPick1"' in html and 'id="cmpPick2"' in html
+    assert "You're offline" not in html
+    assert "Page not found" not in html
+
+
+def test_league_schedule_page_renders(offline_client):
+    r = offline_client.get("/sleeper/2026/tourdemo/schedule?tour=1")
+    assert r.status_code == 200, r.status_code
+    html = r.get_data(as_text=True)
+    assert "Schedule Assistant" in html
+    assert "You're offline" not in html
+    assert "Page not found" not in html
+
+
 def test_compare_page_seo_title_from_ids(offline_client):
     # When both ids resolve to names, the <title> names the matchup (shareable/SEO).
     from app import get_model_value_table_cached

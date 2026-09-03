@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import html
 import json
 from datetime import datetime, date
 from itertools import zip_longest
@@ -15,11 +16,76 @@ from dashboard_services.platform_api import (
     get_rosters,
     get_bracket
 )
-from utils.utils import write_json, load_week_schedule, load_teams_index, load_week_stats, normalize_name, from_players_map
+from utils.utils import (
+    write_json,
+    load_week_schedule,
+    load_teams_index,
+    load_week_stats,
+    normalize_name,
+    from_players_map,
+    game_has_started,
+    lookup_team_map,
+    team_abbr_keys,
+)
+from utils.matchup_schedule import lineup_from_roster, _starters_look_like_full_roster
+from utils.week_proj import week_proj_map_from_bundles as _week_proj_map_from_bundles
 
 STATUS_NOT_STARTED = "not_started"
 STATUS_IN_PROGRESS = "in_progress"
 STATUS_FINAL = "final"
+
+
+def _proj_value_for_pid(
+    week_proj_map: Dict[str, Any],
+    pid: Any,
+    *,
+    raw_week_map: Optional[Dict[str, Any]] = None,
+    scoring_settings: Optional[Dict[str, Any]] = None,
+    pos: str = "",
+) -> float:
+    """Resolve one player's weekly projection, with Scout-style raw fallback."""
+    if pid is None:
+        return 0.0
+    key = str(pid)
+    if key in week_proj_map:
+        try:
+            return float(week_proj_map.get(key) or 0.0)
+        except (TypeError, ValueError):
+            pass
+    if pid in week_proj_map and pid != key:
+        try:
+            return float(week_proj_map.get(pid) or 0.0)
+        except (TypeError, ValueError):
+            pass
+    if raw_week_map:
+        try:
+            from utils.fantasy_scoring import weekly_projection_points
+            pts = weekly_projection_points(
+                raw_week_map, key, scoring_settings or {}, pos or "",
+            )
+            if pts is not None:
+                return float(pts)
+        except Exception:
+            logging.getLogger(__name__).debug(
+                "suppressed projection fallback", exc_info=True,
+            )
+    return 0.0
+
+
+def _allow_live_game_indicators(viewed_season) -> bool:
+    """Live pulse/dot only during regular season or playoffs for the current NFL year."""
+    from dashboard_services.api import get_nfl_state
+
+    state = get_nfl_state() or {}
+    nfl_season = int(state.get("season") or 0)
+    season_type = (state.get("season_type") or "").lower()
+    try:
+        viewed = int(viewed_season or 0)
+    except (TypeError, ValueError):
+        return False
+    if not nfl_season or viewed != nfl_season:
+        return False
+    return season_type in ("reg", "post")
 
 
 def _synthetic_week_matchups(rosters: List[dict], week: int) -> List[dict]:
@@ -87,17 +153,18 @@ def build_matchup_preview(
     username_by_owner: Dict[str, Optional[str]] = {
         u["user_id"]: u.get("display_name") for u in users if "user_id" in u
     }
+    users_by_rid: Dict[str, dict] = {
+        str(u.get("roster_id")): u for u in users if u.get("roster_id") is not None
+    }
 
-    avatar_cache: Dict[Optional[str], Any] = {}
+    avatar_cache: Dict[str, Any] = {}
     roster_by_owner: Dict[Optional[str], dict] = {r.get("owner_id"): r for r in rosters}
+    roster_by_rid: Dict[str, dict] = {str(r.get("roster_id")): r for r in rosters}
 
-    def get_avatar(owner_id: Optional[str]) -> Any:
-        if owner_id not in avatar_cache:
-            avatar_cache[owner_id] = (
-                team_avatar(platform, roster_by_owner.get(owner_id), users)
-                if owner_id is not None else None
-            )
-        return avatar_cache[owner_id]
+    def get_avatar_for_rid(rid: str) -> Any:
+        if rid not in avatar_cache:
+            avatar_cache[rid] = team_avatar(platform, roster_by_rid.get(rid), users)
+        return avatar_cache[rid]
 
     def _to_int(x) -> Optional[int]:
         try:
@@ -124,13 +191,33 @@ def build_matchup_preview(
         all_players = [str(p) for p in (row.get("players") or []) if p]
         bench_raw = [p for p in all_players if p not in starter_set]
         pts_map = {str(k): v for k, v in (row.get("players_points") or {}).items()}
+
+        roster = roster_by_rid.get(rid) or {}
+        if not roster:
+            oid = owner_id_by_rid.get(rid)
+            if oid:
+                roster = next((r for r in rosters if str(r.get("owner_id")) == str(oid)), {})
+        need_roster_lineup = (
+            not starters_raw
+            or _starters_look_like_full_roster(starters_raw, all_players)
+        )
+        if need_roster_lineup and roster:
+            starters_raw, bench_raw = lineup_from_roster(roster)
+            all_players = [str(p) for p in (roster.get("players") or []) if p] or all_players
+        elif not starters_raw and roster:
+            starters_raw, bench_raw = lineup_from_roster(roster)
+            all_players = [str(p) for p in (roster.get("players") or []) if p] or all_players
+
         s_infos: List[dict] = [_pinfo(str(pid), pts_map) for pid in starters_raw]
         b_infos: List[dict] = [_pinfo(str(pid), pts_map) for pid in bench_raw]
         pts_total = float(row["points"]) if isinstance(row.get("points"), (int, float)) else None
 
         wins, losses = record_by_rid.get(rid, (0, 0))
         owner_id = owner_id_by_rid.get(rid)
-        username = username_by_owner.get(owner_id)
+        user = users_by_rid.get(rid) or (
+            next((u for u in users if u.get("user_id") == owner_id), None) if owner_id else None
+        )
+        username = (user or {}).get("display_name")
 
         return {
             "name": roster_map.get(rid, f"Roster {rid}"),
@@ -138,7 +225,7 @@ def build_matchup_preview(
             "starters": s_infos,
             "bench": b_infos,
             "pts_total": pts_total,
-            "avatar": get_avatar(owner_id),
+            "avatar": get_avatar_for_rid(rid),
             "record": f"{wins}-{losses}",
             "username": username,
         }
@@ -155,14 +242,17 @@ def build_matchup_preview(
             record = f"{w}-{l}"
 
         owner_id = owner_id_by_rid.get(rid_str)
+        user = users_by_rid.get(rid_str) if rid_str else None
         return {
             "name": name,
             "roster_id": rid_str,
             "starters": [],
             "pts_total": None,
-            "avatar": get_avatar(owner_id) if owner_id else None,
+            "avatar": get_avatar_for_rid(rid_str) if rid_str else None,
             "record": record,
-            "username": username_by_owner.get(owner_id) if owner_id else None,
+            "username": (user or {}).get("display_name") if user else (
+                username_by_owner.get(owner_id) if owner_id else None
+            ),
         }
 
     # ------------------------------------------------------------------
@@ -471,8 +561,7 @@ def compute_team_projections_for_weeks(
 
         # per-week projections
         if isinstance(projections_by_week, dict):
-            week_proj_container = projections_by_week.get(week) or {}
-            week_proj_map = week_proj_container.get("projections") or {}
+            week_proj_map = _week_proj_map_from_bundles(projections_by_week, week)
         else:
             # fallback – treat as already a flat {pid: proj_val}
             week_proj_map = projections_by_week or {}
@@ -512,9 +601,11 @@ def build_team_schedule_lookup(games: List[dict]) -> Dict[str, dict]:
         away = (g["away"] or "").upper()
 
         if home:
-            lookup[home] = g
+            for key in team_abbr_keys(home):
+                lookup[key] = g
         if away:
-            lookup[away] = g
+            for key in team_abbr_keys(away):
+                lookup[key] = g
 
     return lookup
 
@@ -626,7 +717,7 @@ def format_player_stats(
         lookup_pos = "IDP" if pos_norm in defensive_positions or pos_norm == "IDP" else pos_norm
 
     teams_stats = teams_stats or {}
-    team_data = teams_stats.get(team) or {}
+    team_data = lookup_team_map(teams_stats, team) or {}
     if not team_data:
         return None
 
@@ -838,6 +929,7 @@ def render_matchup_slide(
         fpts_against: Optional[dict] = None,
         viewer_roster_id: Optional[str] = None,
         compact: bool = False,
+        scoring_settings: Optional[dict] = None,
 ) -> str:
     """One slide with rows like:
        [Left Name] [Left Pts/Proj] [Right Pts/Proj] [Right Name]
@@ -850,6 +942,7 @@ def render_matchup_slide(
     """
     proj = w > proj_week
     compact = bool(compact)
+    allow_live = _allow_live_game_indicators(season)
 
     # Heavy stuff: do once per call. Compact slides skip week stats / schedule.
     _fpts_pos_cache: dict = {}
@@ -877,11 +970,36 @@ def render_matchup_slide(
         return rank, fpts_val
 
     # Projections for this week (dict {pid: proj_val})
-    if isinstance(projections, dict):
-        week_proj_container = projections.get(w) or {}
-        week_proj_map = week_proj_container.get("projections") or {}
-    else:
-        week_proj_map = projections or {}
+    week_proj_map = _week_proj_map_from_bundles(projections, w)
+    # Lazy raw-file fallback (same source Scout uses) when the bundle is empty
+    # or a starter pid is missing — common for Yahoo where scoreboard rows omit
+    # lineups and the first paint races projection hydration.
+    _raw_week_proj: Optional[Dict[str, Any]] = None
+
+    def _raw_week_map() -> Dict[str, Any]:
+        nonlocal _raw_week_proj
+        if _raw_week_proj is None:
+            try:
+                from utils.utils import load_week_projection
+                _raw_week_proj = load_week_projection(int(season), int(w)) or {}
+            except Exception:
+                _raw_week_proj = {}
+        return _raw_week_proj
+
+    def _pid_proj(pid: Any, pos: str = "") -> float:
+        mapped = _proj_value_for_pid(
+            week_proj_map, pid,
+            raw_week_map=None, scoring_settings=scoring_settings, pos=pos,
+        )
+        if mapped != 0.0 or (pid is not None and str(pid) in week_proj_map):
+            return mapped
+        # Bundle miss (or explicit absence): try the raw weekly file once.
+        return _proj_value_for_pid(
+            week_proj_map, pid,
+            raw_week_map=_raw_week_map(),
+            scoring_settings=scoring_settings,
+            pos=pos,
+        )
 
     # Cache NFL score lookups per date
     score_cache: dict[str, dict] = {}
@@ -937,10 +1055,12 @@ def render_matchup_slide(
         home = str(game.get("home") or "").upper()
         away = str(game.get("away") or "").upper()
         t_up = team_abv.upper()
-        if t_up not in (home, away):
+        home_keys = set(team_abbr_keys(home))
+        away_keys = set(team_abbr_keys(away))
+        if t_up not in home_keys and t_up not in away_keys:
             return ""
 
-        is_home = (t_up == home)
+        is_home = t_up in home_keys
         opp = away if is_home else home
         status_code = str(game.get("gameStatusCode") or "0")  # '0' scheduled, '1' live, '2' final
         game_date = str(game.get("gameDate") or game.get("gameID", "")[:8])  # '20251204'
@@ -1016,10 +1136,14 @@ def render_matchup_slide(
             clock = game.get("gameClock", "")
             prefix = "@ " + opp if not is_home else "vs " + opp
             extra = " ".join(x for x in [period, clock, prefix] if x).strip()
+            body = f"{score_str} {extra}".strip()
+
+            if not allow_live:
+                return body
 
             if side == "right":
-                return f"{score_str} {extra} <span class='live-dot'></span>".strip()
-            return f"<span class='live-dot'></span>{score_str} {extra}".strip()
+                return f"{body} <span class='live-dot'></span>".strip()
+            return f"<span class='live-dot'></span>{body}".strip()
 
         if status_code == "2":
             prefix = "@ " + opp if not is_home else "vs " + opp
@@ -1048,14 +1172,14 @@ def render_matchup_slide(
             pos = "IDP"
 
         if pos == "IDP":
-            team_stats = (week_stats or {}).get(nfl, {})
+            team_stats = lookup_team_map(week_stats or {}, nfl) or {}
             pos_data = team_stats.get(pos, {})
             player_stats = pos_data.get(normalize_name(name), {})
             actual = player_stats.get('pts_idp', 0.0)
         else:
             actual = p.get("pts") or 0.0
 
-        proj_val = week_proj_map.get(pid, 0.0)
+        proj_val = _pid_proj(pid, pos)
         is_bye = False
 
         player_index = players.get(pid) or teams.get(pid)
@@ -1063,7 +1187,14 @@ def render_matchup_slide(
             if proj_val == 0.0 and player_index.get("byeWeek") == w:
                 is_bye = True
 
-        status = status_by_pid.get(pid if pid != "WAS" else "WSH", STATUS_NOT_STARTED)
+        status = status_by_pid.get(pid)
+        if status is None:
+            for alt in team_abbr_keys(str(pid or "")):
+                if alt in status_by_pid:
+                    status = status_by_pid[alt]
+                    break
+        if status is None:
+            status = STATUS_NOT_STARTED
 
         if status == "BYE":
             is_bye = True
@@ -1090,16 +1221,14 @@ def render_matchup_slide(
         # game / stats
         game_line = ""
         stats = None
+        game = None
         if nfl:
             team_code = str(nfl).upper()
-            if team_code == "WAS":
-                team_code = "WSH"
-            game = None
 
             if team_game_lookup:
-                game = team_game_lookup.get(team_code)
+                game = lookup_team_map(team_game_lookup, team_code)
             if game is None and team_schedule_lookup:
-                game = team_schedule_lookup.get(team_code)
+                game = lookup_team_map(team_schedule_lookup, team_code)
             # normalized name (special-case Ken Walker)
             lookup_name = "ken walker" if name == "Kenneth Walker" else name
             if game:
@@ -1107,44 +1236,52 @@ def render_matchup_slide(
 
             stats = format_player_stats(
                 week_stats,
-                team_code if team_code != "WSH" else "WAS",
+                team_code,
                 pos,
                 lookup_name,
             )
 
         # Only surface a box-score line once the player's game has actually
-        # started. For an upcoming/not-yet-played matchup preview, week_stats can
-        # still carry a stale line, which reads as "stats before kickoff". Keep
-        # the schedule game_line; drop the stat line until the game is live/final.
-        if is_not_started or is_bye:
+        # started. week_stats can still carry last year's Wk 1 line (Footballguys
+        # keeps it until the new season plays), and WAS/WSH alias misses used to
+        # mark Commanders as FINAL so the old "hide if not_started" gate never
+        # fired. Keep the schedule game_line; drop the stat line until kickoff.
+        if is_not_started or is_bye or not game_has_started(game):
             stats = None
 
-        meta_content = f"&nbsp;{nfl}"
+        meta_content = html.escape(str(nfl or "").strip())
 
         # Add clickable attributes
-        clickable_attrs = f" class='pname player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{name}'" if pid else " class='pname'"
+        _safe_name = html.escape(name or "")
+        _safe_pid = html.escape(str(pid or ""))
+        clickable_attrs = (
+            f" class='pname player-clickable' style='cursor:pointer;'"
+            f" data-player-id='{_safe_pid}' data-player-name='{_safe_name}'"
+            if pid else " class='pname'"
+        )
 
         stats_inline_l = f"<span class='meta m-cell-stats'>{stats}</span>" if stats else ""
         stats_inline_r = f"<span class='meta m-cell-stats' style='text-align:right;'>{stats}</span>" if stats else ""
+        team_span = f"<span class='meta p-team'>{meta_content}</span>" if meta_content else ""
 
         if left_side:
             if is_bye:
                 cell = (
                     f"<div class='p {side}' style='opacity:0.4;'>"
                     f"<span class='pos-badge {pos}'>{pos}</span>"
-                    f"<span{clickable_attrs}>{name}</span>"
-                    f"<span class='meta'>{meta_content}</span>"
+                    f"<span{clickable_attrs}>{_safe_name}</span>"
+                    f"{team_span}"
                     f"</div>"
                 )
             else:
                 cell = (
                     f"<div class='p {side}'>"
                     f"<span class='pos-badge {pos}'>{pos}</span>"
-                    f"<div style='display:flex;flex-direction:column;min-width:0;overflow:hidden;flex:1;'>"
-                    f"<div style='min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;'>"
-                    f"<span{clickable_attrs}>{name}</span>"
-                    f"<span class='meta'>{meta_content}</span></div>"
-                    f"<span class='meta' style='white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;'>{game_line}</span>"
+                    f"<div class='p-text'>"
+                    f"<div class='p-name-line'>"
+                    f"<span{clickable_attrs}>{_safe_name}</span>"
+                    f"{team_span}</div>"
+                    f"<span class='meta p-game-line'>{game_line}</span>"
                     f"{stats_inline_l}"
                     f"</div>"
                     f"</div>"
@@ -1153,19 +1290,19 @@ def render_matchup_slide(
             if is_bye:
                 cell = (
                     f"<div class='p {side}' style='justify-content:flex-end; opacity:0.4;'>"
-                    f"<span class='meta'>{meta_content}</span>"
-                    f"<span{clickable_attrs}>{name}</span>"
+                    f"{team_span}"
+                    f"<span{clickable_attrs}>{_safe_name}</span>"
                     f"<span class='pos-badge {pos}'>{pos}</span>"
                     f"</div>"
                 )
             else:
                 cell = (
                     f"<div class='p {side}' style='justify-content:flex-end;'>"
-                    f"<div style='display:flex;flex-direction:column;min-width:0;overflow:hidden;text-align:right;flex:1;'>"
-                    f"<div style='min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;'>"
-                    f"<span class='meta'>{meta_content}</span>"
-                    f"<span{clickable_attrs}> {name}</span></div>"
-                    f"<span class='meta' style='white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;'>{game_line}</span>"
+                    f"<div class='p-text p-text--right'>"
+                    f"<div class='p-name-line p-name-line--right'>"
+                    f"{team_span}"
+                    f"<span{clickable_attrs}>{_safe_name}</span></div>"
+                    f"<span class='meta p-game-line'>{game_line}</span>"
                     f"{stats_inline_r}"
                     f"</div>"
                     f"<span class='pos-badge {pos}'>{pos}</span>"

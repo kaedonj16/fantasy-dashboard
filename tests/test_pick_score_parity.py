@@ -118,6 +118,8 @@ def test_empirical_slot_allocation_match():
         ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"],
         ["QB", "RB", "RB", "WR", "WR", "WR", "TE", "FLEX", "FLEX"],
         ["QB", "SUPER_FLEX", "RB", "RB", "WR", "WR", "TE", "FLEX"],
+        ["QB", "RB", "RB", "WR", "WR", "TE", "WRRB_FLEX"],
+        ["QB", "RB", "WR", "WR", "TE", "REC_FLEX", "W/R"],
         [],  # exercises the default-roster branch on both sides
     ]
     cases = []
@@ -158,6 +160,7 @@ def test_starter_counts_match():
         {"QB": 1, "SF": 0, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1},
         {"QB": 1, "SF": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 2},
         {"QB": 2, "SF": 0, "RB": 3, "WR": 3, "TE": 2, "FLEX": 0},
+        {"QB": 1, "SF": 0, "RB": 2, "WR": 2, "TE": 1, "FLEX": 0, "RB_WR": 1, "WR_TE": 1},
     ]
     for _ in range(50):
         cases.append({k: rng.randint(0, 4) for k in ("QB", "SF", "RB", "WR", "TE", "FLEX")})

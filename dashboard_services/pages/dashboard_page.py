@@ -135,6 +135,7 @@ def build_dashboard_body(ctx: dict) -> str:
                 team_game_lookup=team_game_lookup,
                 fpts_against=_fpts_against_dash,
                 compact=True,
+                scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
             )
             for m in _dash_matchups
         ]
@@ -170,7 +171,7 @@ def build_dashboard_body(ctx: dict) -> str:
     )
     ctx["model_value_table"] = list(get_model_value_table_cached() or []) or (ctx.get("model_value_table") or [])
     teams_sidebar_html, teams_tab_label = render_dashboard_teams_sidebar(
-        ctx, teams_ctx, filled_label="Team Values",
+        ctx, teams_ctx, filled_label="Rosters",
     )
 
     gm_card_html = ""
@@ -178,18 +179,23 @@ def build_dashboard_body(ctx: dict) -> str:
         # Prompt-only until Generate Report. Serving a cached memo on first
         # paint (or generating one) made the report appear without a click.
         gm_card_html = f"""
-        <div class="card gm-card">
-          <div class="card-header">
-            <h2>Front Office Report</h2>
-            <button type="button" id="generateGmMemoBtn" class="recap-generate-btn"
-                    data-league-id="{html.escape(str(league_id))}"
-                    data-season="{html.escape(str(season))}"
-                    data-platform="{html.escape(str(platform))}"
-                    data-viewer-roster-id="{html.escape(str(viewer_roster_id))}">
-              Generate Report
-            </button>
+        <section class="os-card os-card-soft" id="os-jump-report-card">
+          <div class="os-section-head">
+            <div class="os-section-head-content">
+              <h2 class="os-section-title">Front Office Report</h2>
+              <div class="os-section-subtitle">Roster, trade targets, and standings analysis</div>
+            </div>
+            <div class="os-section-head-actions">
+              <button type="button" id="generateGmMemoBtn" class="recap-generate-btn"
+                      data-league-id="{html.escape(str(league_id))}"
+                      data-season="{html.escape(str(season))}"
+                      data-platform="{html.escape(str(platform))}"
+                      data-viewer-roster-id="{html.escape(str(viewer_roster_id))}">
+                Generate Report
+              </button>
+            </div>
           </div>
-          <div class="card-body">
+          <div class="os-ai-copy">
             <div class="otc-ai-empty" id="gm-memo-empty">
               <div class="otc-ai-empty-sub">
                 Get personalized analysis on your roster, trade targets, and standings.
@@ -203,7 +209,7 @@ def build_dashboard_body(ctx: dict) -> str:
             </div>
             <div id="gm-memo-result" style="display:none;"></div>
           </div>
-        </div>
+        </section>
         """
 
     # ---- Hero stat cards — mirror the offseason hub's hero card ----
@@ -383,8 +389,9 @@ def build_dashboard_body(ctx: dict) -> str:
 
     body = f"""
     <div class="os-layout">
-      <aside class="os-left-col">
-        <div class="os-tab-panel" id="os-jump-standings">
+      <aside class="os-left-col os-side-rail">
+        {gm_card_html}
+        <div class="os-tab-panel os-tab-active" id="os-jump-standings">
           <section class="os-card os-col-fill">
             <div class="os-section-head">
               <div class="os-section-head-content">
@@ -402,7 +409,6 @@ def build_dashboard_body(ctx: dict) -> str:
           {awards_html}
         </div>
         <div id="os-jump-report" class="os-tab-panel">
-          {gm_card_html}
           {usage_movers_html}
           {season_review_html}
         </div>
@@ -441,7 +447,7 @@ def build_dashboard_body(ctx: dict) -> str:
         </div>
       </main>
 
-      <aside class="os-right-col os-tab-panel" id="os-jump-teams">
+      <aside class="os-right-col os-tab-panel os-side-rail" id="os-jump-teams">
         <div class="os-sidebar-shell">
           {teams_sidebar_html}
         </div>

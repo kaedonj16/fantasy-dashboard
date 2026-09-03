@@ -2,21 +2,26 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
-const CACHE_NAME = 'br-fantasy-v20';
+const CACHE_NAME = 'br-fantasy-v25';
 
-// How long to wait on the network for a page (when we already have a cached
-// copy) before painting the cached version. This is what kills the blank
-// white screen on PWA launch: instead of staring at the browser's blank page
-// while a slow/cold server trickles a response in, we show the last-good page
-// immediately and quietly update the cache once the network finishes.
+// How long to wait on the network for a page before painting a cached /
+// offline fallback. This is what kills the blank white screen on PWA launch:
+// instead of staring at the browser's blank page while a slow/cold server
+// trickles a response in (or never responds), we show the last-good page —
+// or the offline shell — and quietly update once the network finishes.
 const NAV_TIMEOUT_MS = 3500;
+// Explicit Refresh (bypass-cache / reload) skips the stale shell preference
+// but still must not hang forever on a stuck fetch.
+const NAV_REFRESH_TIMEOUT_MS = 20000;
 
 // Precache the offline shell + brand assets only. Versioned minified JS/CSS
 // are served with ?v= hashes from HTML and cached via stale-while-revalidate
 // on /static/* — precaching unversioned app.js/dashboard.css fought those URLs.
 const PRECACHE_URLS = [
   '/static/BR_Logo.png',
+  '/static/BR_Logo_dark.png',
   '/static/Website_Logo.png',
+  '/static/icon-180x180.png',
   '/static/offline.html',
 ];
 
@@ -80,12 +85,13 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Navigation: network-first with a timeout fallback to cache.
+  // Navigation: network-first with a timeout fallback to cache / offline.
   //  - Network wins quickly  → fresh page (and we refresh the cache).
-  //  - Network is slow        → serve the cached page after NAV_TIMEOUT_MS so the
-  //                             user never sees a blank screen; the in-flight
-  //                             request keeps going and updates the cache.
-  //  - Network fails / offline → cached page, else the cached home shell.
+  //  - Network is slow        → serve the cached page (or offline shell) after
+  //                             the timeout so the user never sees a blank
+  //                             screen; the in-flight request keeps going and
+  //                             updates the cache, then nudges the client.
+  //  - Network fails / offline → cached page, else home shell, else offline.
   // Every successful page (including the "/" PWA start_url) is cached so repeat
   // launches paint instantly.
   if (request.mode === 'navigate') {
@@ -93,11 +99,11 @@ self.addEventListener('fetch', event => {
   }
 });
 
-// Explicit Refresh (and location.reload) must not paint the 3.5s cached shell —
+// Explicit Refresh (and location.reload) must not prefer the 3.5s cached shell —
 // that shell still has the old data-cache-ts, so the mobile "Refresh data" time
 // looks unchanged even though the tap appeared to work. The page posts
-// bypass-cache immediately before reload; reload/no-cache navigations also skip
-// the timeout. Network failure still falls back to the last-good page.
+// bypass-cache immediately before reload; reload/no-cache navigations wait
+// longer for the network, then still fall back rather than hanging forever.
 const bypassNavUrls = new Set();
 
 function navKey(u) {
@@ -136,64 +142,93 @@ function forceNetworkNav(request) {
 // signed-in user to their dashboard, so every launch hit exactly this case.
 // Rebuild any redirected response as a plain, non-redirected one before it's
 // ever returned to a navigation or written to the cache.
+//
+// Also strip hop-by-hop / length / encoding headers: fetch() already decoded
+// the body, so keeping Content-Encoding: gzip (etc.) on the reconstructed
+// Response makes some browsers — especially iOS standalone PWAs — refuse the
+// navigation or paint a blank white screen.
 async function unredirect(response) {
   if (!response || !response.redirected) return response;
   const body = await response.clone().blob();
+  const headers = new Headers(response.headers);
+  headers.delete('content-encoding');
+  headers.delete('content-length');
+  headers.delete('transfer-encoding');
   return new Response(body, {
     status: response.status,
     statusText: response.statusText,
-    headers: response.headers,
+    headers,
   });
 }
 
-async function handleNavigate(request) {
-  const cache = await caches.open(CACHE_NAME);
-  const cached = await cache.match(request);
-
-  // Kick off the network request. Normalize redirects and clone BEFORE
-  // returning so the body isn't already consumed when we stash it in the cache.
-  const networkFetch = fetch(request).then(async response => {
-    const clean = await unredirect(response);
-    if (clean && clean.status === 200) {
-      try { cache.put(request, clean.clone()); } catch (_) {}
-    }
-    return clean;
-  }).catch(() => null);
-
-  const skipStaleShell = forceNetworkNav(request);
-
-  if (cached && !skipStaleShell) {
-    // Race the network against a timeout. Whichever resolves first wins; on a
-    // slow server the timeout fires and we serve the cached shell immediately
-    // while networkFetch keeps running in the background to refresh the cache.
-    const timeout = new Promise(resolve => setTimeout(() => resolve(null), NAV_TIMEOUT_MS));
-    const winner = await Promise.race([networkFetch, timeout]);
-    if (!winner) {
-      // Cached shell went to the screen; when the real page lands, tell the
-      // client so it can swap the stale paint for fresh data (app.js listens
-      // and reloads only within the first moments after launch).
-      networkFetch.then(response => {
-        if (!response) return;
-        clients.matchAll({ type: 'window' }).then(wcs => {
-          wcs.forEach(wc => {
-            if (wc.url === request.url) wc.postMessage({ type: 'nav-fresh', url: request.url });
-          });
-        });
+function notifyNavFresh(request, networkFetch) {
+  // Cached / offline shell went to the screen; when the real page lands, tell
+  // the client so it can swap the stale paint for fresh data (app.js and
+  // offline.html listen and reload only when appropriate).
+  networkFetch.then(response => {
+    if (!response) return;
+    clients.matchAll({ type: 'window' }).then(wcs => {
+      wcs.forEach(wc => {
+        if (wc.url === request.url) wc.postMessage({ type: 'nav-fresh', url: request.url });
       });
-      return cached;
-    }
-    return winner;
-  }
+    });
+  });
+}
 
-  // No cached copy, or an explicit refresh: wait for the network. On failure,
-  // the last-good cached page is better than a blank screen.
-  const net = await networkFetch;
-  if (net) return net;
+async function navigationFallback(cache, cached) {
   if (cached) return cached;
   const home = await cache.match('/');
   if (home) return home;
   const offline = await cache.match(OFFLINE_URL);
   return offline || Response.error();
+}
+
+async function handleNavigate(request) {
+  const cache = await caches.open(CACHE_NAME);
+  const cached = await cache.match(request);
+  const skipStaleShell = forceNetworkNav(request);
+
+  // Kick off the network request. Normalize redirects and only treat OK
+  // responses as usable wins — a fast 502 must not beat a good cached shell.
+  // Clone BEFORE returning so the body isn't already consumed when we stash
+  // it in the cache.
+  // Remember a non-OK HTTP response (404/500/…) separately from a dead
+  // connection. A fast 502 still must not beat a good cached shell, but a
+  // never-visited URL that the server answered with 404 should show that
+  // page — not the "You're offline" shell.
+  let networkError = null;
+  const networkFetch = fetch(request).then(async response => {
+    const clean = await unredirect(response);
+    if (clean && clean.ok) {
+      try { cache.put(request, clean.clone()); } catch (_) {}
+      return clean;
+    }
+    networkError = clean || null;
+    return null;
+  }).catch(() => null);
+
+  // ALWAYS race the network against a timeout — even with an empty cache.
+  // The previous "await network forever when uncached" path is what left PWA
+  // cold launches stuck on a blank white screen when the origin was slow,
+  // sleeping, or the fetch never settled (common on mobile / iOS standalone).
+  const waitMs = skipStaleShell ? NAV_REFRESH_TIMEOUT_MS : NAV_TIMEOUT_MS;
+  const timeout = new Promise(resolve => setTimeout(() => resolve(null), waitMs));
+  const winner = await Promise.race([networkFetch, timeout]);
+
+  if (winner) {
+    // Explicit refresh prefers the network win; otherwise any OK response is fine.
+    return winner;
+  }
+
+  // Timed out or network failed: never leave the navigation unsettled.
+  // Prefer the URL's own cache, then a real HTTP error page (so a missing
+  // route isn't painted as "You're offline"), then the home shell, then
+  // the offline page. Keep the in-flight fetch alive so a late success
+  // can nudge a reload.
+  notifyNavFresh(request, networkFetch);
+  if (cached) return cached;
+  if (networkError) return networkError;
+  return navigationFallback(cache, null);
 }
 
 // ── Push notifications ─────────────────────────────────────────────────────────

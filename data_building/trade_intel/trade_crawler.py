@@ -17,7 +17,6 @@ from typing import Any, Optional, Tuple
 
 import requests
 
-from dashboard_services.api import get_transactions
 from dashboard_services.db import get_conn
 from data_building.trade_intel.league_types import LeagueType
 
@@ -53,12 +52,16 @@ def _get(path: str) -> list | dict | None:
     url = f"{SLEEPER_BASE}{path}"
     try:
         resp = SESSION.get(url, timeout=10)
-        if resp.status_code == 429:
-            logger.warning("[crawler] Rate limited - sleeping %ds", _RATE_LIMIT_BACKOFF)
-            time.sleep(_RATE_LIMIT_BACKOFF)
-            resp = SESSION.get(url, timeout=10)
-        resp.raise_for_status()
-        return resp.json()
+        try:
+            if resp.status_code == 429:
+                logger.warning("[crawler] Rate limited - sleeping %ds", _RATE_LIMIT_BACKOFF)
+                time.sleep(_RATE_LIMIT_BACKOFF)
+                resp.close()
+                resp = SESSION.get(url, timeout=10)
+            resp.raise_for_status()
+            return resp.json()
+        finally:
+            resp.close()
     except Exception as exc:
         logger.debug("[crawler] %s failed: %s", path, exc)
         return None
@@ -165,9 +168,14 @@ def _extract_assets(txn: dict, slot_map: dict[tuple, int] | None = None) -> list
 
 
 def _fetch_week(league_id: str, week: int) -> tuple[int, list[dict]]:
-    """Fetch one week of transactions. Returns (week, trades_list)."""
-    transactions = get_transactions(league_id, week)
-    if not transactions:
+    """Fetch one week of transactions. Returns (week, trades_list).
+
+    Uses the crawler's own ``_get`` rather than ``dashboard_services.api.get_transactions``.
+    That helper's process-wide TTL cache never evicts expired keys, so crawling
+    N leagues × 18 weeks retained every payload for the life of the 512Mi cron.
+    """
+    transactions = _get(f"/league/{league_id}/transactions/{week}")
+    if not transactions or not isinstance(transactions, list):
         return week, []
     trades = [
         t for t in transactions
@@ -274,6 +282,7 @@ def crawl_league(
                         pending_value_snaps.append((pids, created_at))
                 new_trades += 1
 
+    week_trades.clear()
     _snapshot_trade_time_values(pending_value_snaps)
     return new_trades
 
@@ -432,7 +441,9 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
     # batch up front. With a large batch this keeps only ~in_flight_cap task
     # objects (and their pending HTTP responses) resident, replenishing as each
     # league finishes — the all-at-once submit grew peak memory with batch_size.
-    in_flight_cap = max(workers * 4, workers)
+    # workers*2 (not *4): each in-flight league also fetches weeks with 2
+    # inner workers, so *4 doubled the concurrent JSON peak on the 512Mi cron.
+    in_flight_cap = max(workers * 2, workers)
     league_iter = iter(leagues)
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {}

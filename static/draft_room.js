@@ -666,9 +666,14 @@
   // starters, so they don't inflate RB/WR need — they add stash/round capacity.
   var ROSTER_SLOT_MAP = {
     QB:'QB', RB:'RB', WR:'WR', TE:'TE',
-    FLEX:'FLEX', WRRB_FLEX:'FLEX', REC_FLEX:'FLEX', WRRBTE_FLEX:'FLEX',
+    FLEX:'FLEX', WRRBTE_FLEX:'FLEX',
+    'RB/WR/TE':'FLEX', 'WR/RB/TE':'FLEX', 'W/R/T':'FLEX',
+    WRRB_FLEX:'RB_WR', RB_WR:'RB_WR', 'RB/WR':'RB_WR', 'WR/RB':'RB_WR', 'W/R':'RB_WR',
+    REC_FLEX:'WR_TE', WR_TE:'WR_TE', 'WR/TE':'WR_TE', 'W/T':'WR_TE',
+    RB_TE:'RB_TE', 'RB/TE':'RB_TE', 'R/T':'RB_TE',
     SUPER_FLEX:'SF', SFLEX:'SF',
-    K:'K', DEF:'DEF', DST:'DEF',
+    'QB/RB/WR/TE':'SF', 'QB/WR/RB/TE':'SF',
+    K:'K', DEF:'DEF', DST:'DEF', 'D/ST':'DEF',
     BN:'BN', BE:'BN', BENCH:'BN',
     IR:'IR', RESERVE:'IR',
     TAXI:'TAXI',
@@ -681,12 +686,12 @@
   function rosterFromLeague(){
     var rp = cfg.rosterPositions;
     if (!rp || !rp.length) return null;
-    var r = { QB:0, SF:0, RB:0, WR:0, TE:0, FLEX:0, K:0, DEF:0, BN:0, IR:0, TAXI:0, IDP:0 };
+    var r = { QB:0, SF:0, RB:0, WR:0, TE:0, FLEX:0, RB_WR:0, WR_TE:0, RB_TE:0, K:0, DEF:0, BN:0, IR:0, TAXI:0, IDP:0 };
     rp.forEach(function(s){
       var key = rosterSlotKey(s);
       if (key) r[key]++;
     });
-    if (!(r.QB+r.RB+r.WR+r.TE+r.FLEX+r.SF)) return null;  // no usable starters
+    if (!(r.QB+r.RB+r.WR+r.TE+r.FLEX+r.SF+r.RB_WR+r.WR_TE+r.RB_TE)) return null;
     return r;
   }
   function defaultRoster(sf, rd){
@@ -714,7 +719,7 @@
   // fresh copy (does not mutate the input).
   function _reconcileRoster(r, sf, rd){
     var out = {};
-    ['QB','SF','RB','WR','TE','FLEX','K','DEF','BN','IR','TAXI','IDP'].forEach(function(k){ out[k] = r[k] || 0; });
+    ['QB','SF','RB','WR','TE','FLEX','RB_WR','WR_TE','RB_TE','K','DEF','BN','IR','TAXI','IDP'].forEach(function(k){ out[k] = r[k] || 0; });
     if (sf){ if (!out.SF) out.SF = 1; if (!out.FLEX) out.FLEX = 1; }
     else   { out.SF = 0; }
     // K/DEF are kept as-is across formats: if the league (or the user) rosters
@@ -1057,13 +1062,14 @@
   // season-gated list (which also hides globals with no snapshot). Keeper runs
   // as a redraft. Consensus is always offered and is the default.
   var CPU_ADP_SOURCE_FALLBACK = {
-    startup: ['consensus', 'sleeper', 'brfantasy'],
-    rookie:  ['consensus', 'sleeper', 'brfantasy'],
-    redraft: ['consensus', 'sleeper', 'espn', 'yahoo', 'mfl', 'brfantasy']
+    startup: ['consensus', 'sleeper', 'brfantasy', 'brfantasy_live'],
+    rookie:  ['consensus', 'sleeper', 'brfantasy', 'brfantasy_live'],
+    redraft: ['consensus', 'sleeper', 'espn', 'yahoo', 'mfl', 'brfantasy', 'brfantasy_live']
   };
   var CPU_ADP_SOURCE_LABELS = {
     consensus: 'Consensus (all platforms)', sleeper: 'Sleeper', espn: 'ESPN',
-    yahoo: 'Yahoo', mfl: 'MFL', brfantasy: 'BR Fantasy'
+    yahoo: 'Yahoo', mfl: 'MFL', brfantasy: 'BR Fantasy',
+    brfantasy_live: 'BR Fantasy Live (7d)'
   };
   // Rebuild the "CPU drafts from" options for the currently selected draft type,
   // preferring the payload's season-gated source list once a pool has loaded and
@@ -2373,11 +2379,15 @@
         // Visible needy teams between turns make a real shelf loss more urgent;
         // cap it so scarcity does not double-count VOR/tier effects excessively.
         _waitLoss *= 1 + Math.min(0.35, (_demand[pos] || 0) / Math.max(1, state.teams) * 0.7);
+        var _streamableBackup = _bench && state.type === 'redraft'
+          && DraftBoardCore.isStreamableSingleSlot
+          && DraftBoardCore.isStreamableSingleSlot(pos, _rs, { sf: !!state.sf, tep: scoringCfg().tep });
         c.ds = DraftBoardCore.decisionScore({ base: pv, utility: _util,
           bench: _bench, deepBench: _role === 'bench2', quality: ppgNormOf(p) || 0,
           required: cpuCtx.obligations.required, freePicks: cpuCtx.obligations.freePicks,
           recentPenalty: _recent, exceptional: _exceptional, waitLoss: _waitLoss,
-          draftType: state.type, lineupHoles: cpuCtx.obligations.lineupHoles || 0 });
+          draftType: state.type, lineupHoles: cpuCtx.obligations.lineupHoles || 0,
+          streamableBackup: _streamableBackup, round: _curRound, totalRounds: state.rounds || 16 });
         // Decision quality gates the ADP likelihood but does not replace it. A
         // persona may choose among close values; it cannot turn poor roster fit
         // into a favorite merely by stacking several heuristic multipliers.
@@ -4024,6 +4034,10 @@
     var waitLossScale = DraftBoardCore.waitLossScaleFor
       ? DraftBoardCore.waitLossScaleFor(pos, missDed, { sf: !!state.sf, tep: scoringCfg().tep })
       : (missDed >= 2 ? 1 : (missDed >= 1 ? 0.6 : 0.4));
+    var recRound = Math.floor(((state.current || 1) - 1) / Math.max(1, state.teams || 12)) + 1;
+    var streamableBackup = bench && state.type === 'redraft'
+      && DraftBoardCore.isStreamableSingleSlot
+      && DraftBoardCore.isStreamableSingleSlot(pos, c.roster, { sf: !!state.sf, tep: scoringCfg().tep });
     var score = DraftBoardCore.decisionScore({ base: base, utility: util,
       bench: bench, deepBench: role === 'bench2', recentPenalty: recentPenalty, exceptional: exceptional,
       quality: ppgNormOf(p) || 0, required: c.obligations.required,
@@ -4031,7 +4045,8 @@
       waitLoss: Math.max(0, base - expected) * (1 + demandRisk), waitLossScale: waitLossScale,
       waitPenalty: waitPenalty, handcuffBonus: handcuffBonus, upsideBonus: upsideBonus,
       byePenalty: byePenalty,
-      draftType: state.type, lineupHoles: c.obligations.lineupHoles || 0 });
+      draftType: state.type, lineupHoles: c.obligations.lineupHoles || 0,
+      streamableBackup: streamableBackup, round: recRound, totalRounds: state.rounds || 16 });
     return score;
   }
   // How many players remain in this player's (position|tier) bucket.
@@ -4338,7 +4353,7 @@
   function lineupSlots(){
     var rs = (state && state.roster) || defaultRoster();
     var slots = [];
-    ['QB','SF','RB','WR','TE','FLEX','K','DEF'].forEach(function(s){
+    ['QB','SF','RB','WR','TE','RB_WR','WR_TE','RB_TE','FLEX','K','DEF'].forEach(function(s){
       var n = rs[s] || 0;
       for (var i = 0; i < n; i++) slots.push(s);
     });
@@ -4350,6 +4365,9 @@
     if (pos === 'PK') pos = 'K';
     if (pos === 'D/ST' || pos === 'DST' || pos === 'D-ST') pos = 'DEF';
     if (slot === 'FLEX') return pos === 'RB' || pos === 'WR' || pos === 'TE';
+    if (slot === 'RB_WR') return pos === 'RB' || pos === 'WR';
+    if (slot === 'WR_TE') return pos === 'WR' || pos === 'TE';
+    if (slot === 'RB_TE') return pos === 'RB' || pos === 'TE';
     if (slot === 'SF')   return pos === 'QB' || pos === 'RB' || pos === 'WR' || pos === 'TE';
     return slot === pos;
   }
@@ -4375,7 +4393,7 @@
   function optimalLineup(playerList, slots){
     slots = slots || lineupSlots();
     function posOf(p){ return String((p && (p.position || p.pos)) || '').toUpperCase(); }
-    var flex = { SF: 3, FLEX: 2 };  // higher = more flexible, filled later
+    var flex = { SF: 3, FLEX: 2, RB_WR: 1.5, WR_TE: 1.5, RB_TE: 1.5 };  // higher = more flexible, filled later
     var order = slots.map(function(s, i){ return { slot: s, i: i }; });
     order.sort(function(a, b){ return (flex[a.slot] || 1) - (flex[b.slot] || 1) || a.i - b.i; });
     var used = {}, assign = {};
@@ -4397,7 +4415,7 @@
     return { starters: starters, bench: bench, starterIds: starterIds };
   }
   function slotColor(slot){
-    if (slot === 'FLEX') return '#14b8a6';
+    if (slot === 'FLEX' || slot === 'RB_WR' || slot === 'WR_TE' || slot === 'RB_TE') return '#14b8a6';
     if (slot === 'SF')   return '#a78bfa';
     if (slot === 'BN')   return '#64748b';
     return posColor(slot);
@@ -5447,19 +5465,32 @@
   }
   // During a live draft, ignore picks beyond the on-the-clock slot. ESPN's full
   // board JSON and DOM scrape can include mislabeled future cells that would
-  // otherwise paint empty seats as "Unknown".
-  function _livePickAllowed(p){
+  // otherwise paint empty seats as "Unknown". Mid-draft Connect seeds
+  // state.current at 1, so batch applies must raise the cap to the highest
+  // real selection in the snapshot (catch-up) or only pick 1 lands and the
+  // rest drip in one poll at a time.
+  function _liveCatchUpCap(picks){
+    var cap = parseInt(state && state.current, 10) || 1;
+    (picks || []).forEach(function(p){
+      if (!livePickIsSelection(p) || p.pick_no == null) return;
+      var n = parseInt(p.pick_no, 10) || 0;
+      if (n > cap) cap = n;
+    });
+    return cap;
+  }
+  function _livePickAllowed(p, cap){
     if (!p || p.pick_no == null) return false;
     if (!state || state.mode !== 'live' || state.isComplete || !state.isDrafting) return true;
-    var cap = parseInt(state.current, 10) || 1;
-    return parseInt(p.pick_no, 10) <= cap;
+    var limit = (cap != null && cap !== '') ? (parseInt(cap, 10) || 1) : (parseInt(state.current, 10) || 1);
+    return parseInt(p.pick_no, 10) <= limit;
   }
   function applyLivePicks(picks){
     lastLivePicks = picks;
+    var cap = _liveCatchUpCap(picks);
     state.picks = {}; drafted = {};
     var latestPickedAt = 0;
     (picks || []).forEach(function(p){
-      if (!livePickIsSelection(p) || !_livePickAllowed(p)) return;
+      if (!livePickIsSelection(p) || !_livePickAllowed(p, cap)) return;
       var pid = p.player_id ? String(p.player_id) : '';
       var meta = pid ? playersById[pid] : null;
       state.picks[p.pick_no] = {
@@ -5484,8 +5515,8 @@
   // that is already on the board is left alone so duplicate ESPN responses
   // cannot create a second copy. Unresolved ESPN ids never mark a canonical
   // player drafted.
-  function applyOneLivePick(p){
-    if (!state || !livePickIsSelection(p) || !_livePickAllowed(p)) return false;
+  function applyOneLivePick(p, cap){
+    if (!state || !livePickIsSelection(p) || !_livePickAllowed(p, cap)) return false;
     if (state.picks[p.pick_no]) return false;
     var pid = p.player_id ? String(p.player_id) : '';
     var row = pid ? playersById[pid] : null;
@@ -5516,8 +5547,9 @@
   }
   function applyMissingLivePicks(picks){
     lastLivePicks = picks;
+    var cap = _liveCatchUpCap(picks);
     var remote = (picks || []).slice().filter(function(p){
-      return livePickIsSelection(p) && _livePickAllowed(p);
+      return livePickIsSelection(p) && _livePickAllowed(p, cap);
     });
     remote.sort(function(a, b){ return (a.pick_no || 0) - (b.pick_no || 0); });
     var remoteCount = remote.length;
@@ -5533,7 +5565,7 @@
     }
     var applied = 0;
     remote.forEach(function(p){
-      if (applyOneLivePick(p)){
+      if (applyOneLivePick(p, cap)){
         applied++;
         try { psCtxInvalidate(); refreshPsPool(); } catch (e){}
       }
@@ -5979,22 +6011,22 @@
     if (!m || !msg || !btns) return;
     if (box) box.classList.add('is-wide');
     msg.innerHTML = ''
-      + '<div class="dr-msync-title">Install the Chrome extension</div>'
-      + '<p class="dr-msync-lead">On desktop Chrome or Edge, the extension watches your open ESPN or Yahoo draft and updates Draft Room automatically — no tapping after every pick.</p>'
-      + '<div class="dr-msync-warn"><b>Chrome / Edge on a computer.</b> Phones can\'t install this extension. Draft from your phone and <b>track picks manually</b> in Draft Room, or use a laptop for auto-sync.</div>'
+      + '<div class="dr-msync-title">Use the BR Fantasy extension <span class="dr-msync-ver">1.0.0</span></div>'
+      + '<p class="dr-msync-lead">On desktop Chrome or Edge, the extension docks Draft Assistant on your Sleeper, Yahoo, or ESPN draft and relays ESPN or Yahoo picks into this Draft Room. It never submits a pick.</p>'
+      + '<div class="dr-msync-warn"><b>Chrome / Edge on a computer.</b> Phones cannot install this extension. Draft from your phone and <b>track picks manually</b> in Draft Room, or use a laptop for auto-sync.</div>'
       + '<div class="dr-msync-sec"><h4>Install (about 30 seconds)</h4>'
       + '<ol>'
       + '<li>Download the extension zip (button below).</li>'
       + '<li>Unzip it somewhere permanent (e.g. Documents).</li>'
       + '<li>Open <code>chrome://extensions</code> (or Edge: <code>edge://extensions</code>).</li>'
       + '<li>Turn on <b>Developer mode</b> (top right).</li>'
-      + '<li>Click <b>Load unpacked</b> → select the unzipped folder.</li>'
-      + '<li>Keep this Draft Room open, open your ESPN or Yahoo draft in another tab, and draft normally.</li>'
+      + '<li>Click <b>Load unpacked</b> and select the unzipped folder.</li>'
+      + '<li>Keep this Draft Room open, open your draft in another tab, and choose <b>Open Draft Assistant</b> when asked.</li>'
       + '</ol></div>'
-      + '<div class="dr-msync-sec"><h4>You\'ll know it\'s working</h4>'
+      + '<div class="dr-msync-sec"><h4>You will know it is working</h4>'
       + '<ol>'
-      + '<li>A small <b>BR Fantasy</b> chip appears on the draft page.</li>'
-      + '<li>Picks show up here within a couple of seconds.</li>'
+      + '<li>A prompt from the BR Fantasy extension appears on the draft page.</li>'
+      + '<li>Draft Assistant docks beside the board, and ESPN or Yahoo picks show up here within a couple of seconds.</li>'
       + '</ol></div>';
     btns.innerHTML = '';
     var dl = document.createElement('a');
@@ -7317,11 +7349,16 @@
         var shelf = expectedByPos[pos] || [];
         var expected = shelf.length > 1 ? shelf[1] : 0;
         var waitLoss = Math.max(0, abs - expected);
+        var histBench = role === 'bench1' || role === 'bench2';
+        var histStreamable = histBench && state.type === 'redraft'
+          && Core.isStreamableSingleSlot
+          && Core.isStreamableSingleSlot(pos, rs, { sf: !!state.sf, tep: scoringCfg().tep });
         var ds = Core.decisionScore({
-          base: abs, utility: util, bench: role === 'bench1' || role === 'bench2',
+          base: abs, utility: util, bench: histBench,
           deepBench: role === 'bench2', quality: ppgNormOf(p) || 0,
           waitLoss: waitLoss, upsideBonus: upside, required: histOb.required,
-          freePicks: histOb.freePicks, draftType: state.type, lineupHoles: histOb.lineupHoles || 0
+          freePicks: histOb.freePicks, draftType: state.type, lineupHoles: histOb.lineupHoles || 0,
+          streamableBackup: histStreamable, round: rd, totalRounds: state.rounds || 16
         });
         return { absolutePickScore: abs, decisionScore: ds };
       }

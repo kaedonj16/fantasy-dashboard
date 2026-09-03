@@ -38,6 +38,7 @@ from dashboard_services.historical.definitions import (
     SIGNAL_RANK_ALIGN_SPOTS,
     SKILL_POSITIONS,
     TIER_CUTOFFS,
+    HIST_PANEL_MIN_N,
     adp_overall_bucket,
     normalize_adp,
     _optional_float,
@@ -205,7 +206,11 @@ def lookup_history_probability(
 ) -> dict:
     """Comps P(hit) from JSON leaves. Does not scan parquet."""
     comps = aggregates.get("comps") if isinstance(aggregates.get("comps"), Mapping) else aggregates
-    looked = lookup_board_probabilities(player, comps if isinstance(comps, Mapping) else {})
+    looked = lookup_board_probabilities(
+        player,
+        comps if isinstance(comps, Mapping) else {},
+        min_n=HIST_PANEL_MIN_N,
+    )
     looked = apply_career_path_history(player, looked, aggregates)
     rate = (looked.get("rates") or {}).get(tier) or {}
     p = probability_from_rate(rate)

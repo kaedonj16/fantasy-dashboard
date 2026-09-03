@@ -27,11 +27,15 @@ def test_dashboard_action_first_hierarchy():
     assert DASH.index("sinceLastVisitCard") < DASH.index("os-jump-matchup")
     assert DASH.index("os-jump-matchup") > DASH.index("do_next_waiver_html")
     assert DASH.index("matchup_html") > DASH.index("do_next_waiver_html")
-    # Front Office Report fills the left rail instead of stacking under matchup.
-    assert DASH.index("{gm_card_html}") < DASH.index('class="os-main-col"')
-    assert DASH.index("{matchup_html}") > DASH.index('class="os-main-col"')
+    # Front Office Report sits above Standings in the left rail.
+    left = DASH[DASH.index("os-left-col"): DASH.index('class="os-main-col"')]
+    assert "{gm_card_html}" in left
+    assert left.index("{gm_card_html}") < left.index('id="os-jump-standings"')
+    assert "{matchup_html}" not in left
     assert "Waiver Wire Targets" not in DASH
     assert "_render_do_next_waiver_card" in DASH
+    assert "bench-ok" in APP_PY
+    assert "bench-miss" in APP_PY
 
 
 def test_offseason_dashboard_action_queue():
@@ -68,6 +72,12 @@ def test_cross_feature_links():
     assert "wv-ctx-link" in WAIVERS
     assert "Compare to roster" in WAIVERS
     assert "View schedule" in WAIVERS
+    assert "wvLeaguePath('/compare')}}?p1=" in WAIVERS
+    assert "wvLeaguePath('/schedule')}}?add=" in WAIVERS
+    assert "wvLeaguePath('/compare')}}?a=" not in WAIVERS
+    # Compare page accepts the waiver deep-link (?p1= or legacy ?a=) and
+    # prefills player 1 so the user can pick a roster player as p2.
+    assert "params.get('p1') || params.get('a')" in APP_JS
 
 
 def test_command_palette_feature_navigation():
@@ -126,6 +136,8 @@ def test_hub_column_height_sync_helper():
     app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
     assert "initHubColumnHeightSync" in app_js
     assert "os-hub-cols-synced" in app_js
+    assert "os-side-rail" in DASH
+    assert "viewportFillHeight" in app_js
     assert "ResizeObserver" in app_js
 
 
@@ -133,6 +145,8 @@ def test_dashboard_css_action_and_palette_styles():
     assert ".os-action-queue" in DASH_CSS
     assert ".os-do-next-card" in DASH_CSS
     assert ".os-do-next-draft" in DASH_CSS
+    assert ".lineup-alert-card" in DASH_CSS
+    assert "--alert-tone" in DASH_CSS
     assert ".nav-search-group-label" in DASH_CSS
     assert ".br-pro-preview" in DASH_CSS
     assert ".pm-actions-menu" in DASH_CSS

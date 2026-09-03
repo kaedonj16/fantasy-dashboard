@@ -34,11 +34,11 @@ def build_trade_calculator_body(
         from dashboard_services.db import get_conn
         with get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM trade_intel_trades")
+            cursor.execute("SELECT COUNT(*) AS n FROM trade_intel_trades")
             result = cursor.fetchone()
             # Handle both tuple and dictionary return formats
             if isinstance(result, dict):
-                count = result.get('count', 0)
+                count = result.get("n", result.get("count", 0))
             else:
                 count = result[0] if result else 0
             trade_count = f"{count:,}"
@@ -291,7 +291,7 @@ def build_trade_calculator_body(
                     <div class="otc-info-tooltip-header">BR Value Model</div>
                     <div class="otc-info-tooltip-body">
                       <p>Player values are built directly from real dynasty trades, capturing how the market prices players and picks in actual deals.</p>
-                      <p>We translate over <strong>{trade_count}</strong> trade relationships into a unified value scale, then layer in production, age trajectory, and role stability to sharpen the signal.</p>
+                      <p>We translate over <strong id="tradeCount">{trade_count}</strong> trade relationships into a unified value scale, then layer in production, age trajectory, and role stability to sharpen the signal.</p>
                     </div>
                   </div>
                 </div>
@@ -856,12 +856,19 @@ def build_trade_calculator_body(
             }}
             .otc-strategy-clear-filter:hover {{ background:var(--row); }}
             /* ── Impact table rows ── */
+            #otcStrategyImpact {{
+              display:grid;grid-template-columns:1fr 1fr;
+            }}
+            #otcStrategyImpact > .empty-state,
+            #otcStrategyImpact > .error-state {{
+              grid-column:1/-1;
+            }}
             .otc-strategy-impact-row {{
               display:flex;align-items:center;gap:8px;
               padding:8px 14px;border-bottom:1px solid var(--border);
-              cursor:pointer;transition:background .1s;
+              cursor:pointer;transition:background .1s;min-width:0;
             }}
-            .otc-strategy-impact-row:last-child {{ border-bottom:none; }}
+            #otcStrategyImpact > .otc-strategy-impact-row:nth-child(odd) {{ border-right:1px solid var(--border); }}
             .otc-strategy-impact-row:hover,
             .otc-strategy-impact-row.is-active {{ background:var(--row); }}
             .otc-strategy-impact-name {{
@@ -876,7 +883,16 @@ def build_trade_calculator_body(
             }}
             /* ── Strategy cards container ── */
             #otcStrategyCards {{
-              padding:10px 14px;display:flex;flex-direction:column;gap:6px;
+              padding:10px 14px;display:grid;grid-template-columns:1fr 1fr;gap:8px;
+            }}
+            #otcStrategyCards > .otc-real-trade-card,
+            #otcStrategyCards > .otc-strategy-card {{
+              margin-bottom:0;
+            }}
+            #otcStrategyCards > .empty-state,
+            #otcStrategyCards > .error-state,
+            #otcStrategyCards > .pagination {{
+              grid-column:1/-1;
             }}
             /* partner line inside otc-rt-footer */
             .otc-strategy-partner {{
@@ -893,6 +909,11 @@ def build_trade_calculator_body(
                 font-size:11px;
                 padding:6px 6px;
               }}
+              #otcStrategyImpact,
+              #otcStrategyCards {{
+                grid-template-columns:1fr;
+              }}
+              #otcStrategyImpact > .otc-strategy-impact-row:nth-child(odd) {{ border-right:none; }}
               .otc-strategy-impact-badge {{
                 font-size:9px;
                 padding:2px 5px;

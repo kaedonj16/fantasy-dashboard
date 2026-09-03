@@ -254,6 +254,8 @@ zero-fills for live valuation. Do not point the historical layer at it.
 | Historical ADP | **redraft PPR 1QB**, frozen snapshots **2018–2025** | Sleeper `adp_ppr` 2020+ (empty 2018–19); MFL PPR 12-team real drafts 2018+ (selected-only ≥25%); ESPN only when the board passes a preseason quality gate (2021/22/25 fail the “170 wall”). Yahoo has **no season axis**. Sleeper 999 → missing. |
 | SF / TEP historical ADP | **does not exist** in free sources | Not claimed. Sleeper `adp_2qb` is stored on the Sleeper snapshot but is not blended into 1QB hit rates. |
 | Current-season projections | live Sleeper only (Phase 7) | Not stored on warehouse rows. No historical preseason backfill. |
+| Season-long projected team offense | **2016–2026** nflverse `spread_line` + `total_line` on regular-season games | Rank 1 = highest average implied total among games with a line. Overlay `team_offense_overlay.json`. Request path does not import `nfl_data_py`. Live 2026 uses every posted line, not week 1 only. |
+| Extra 2016–17 cohort seasons | skill-position PPR finishes from nflverse seasonal + rosters | Stamped onto the cohort index at load for Trends/Hist only. Not a full warehouse rebuild. |
 
 Do not claim “2012+” uniformly.
 
@@ -424,11 +426,17 @@ Two products stay distinct:
 1. **Conditional board probabilities** — P(this-season hit | profile).
    Stored as finest-grain *leaves* (one per unique present-dimension
    signature) plus position baselines. `lookup_board_probabilities` pools
-   matching leaves and walks `COMP_RELAXATION_ORDER` (`target_share` →
-   `snap_pct` → `age_bucket` → `draft_capital` → `career_stage` →
-   `prior_finish`; position is never dropped) until `n >= 15`, then
-   empirical-Bayes shrinks toward the position baseline
-   (`DEFAULT_BAYES_PRIOR_N = 10`). Empty cells keep `raw_rate=None`.
+matching leaves and walks `COMP_RELAXATION_ORDER` (`target_share` →
+`snap_pct` → `age_bucket` → `draft_capital` → `career_stage` →
+`prior_finish`; position is never dropped) until `n >= 15` (walk-forward /
+default). The live Hist column and modal start from the exact cell
+(`HIST_PANEL_MIN_N = 1`) then compile nested sibling buckets (one
+dropped dimension at a time, no overlap) until `HIST_DISPLAY_MIN_N = 4`,
+falling back to the parent. Young players keep last-year finish **and**
+age so a 24-year-old RB1 is not mixed with declining year-6+ backs.
+The oldest open-ended age band waits for `n >= 15` so a 32+ cell is not
+one veteran repeating. Empty cells keep
+`raw_rate=None`.
 2. **Named comps** — a few example player-seasons from the matched cell
    (hits first, then PPR points). The query player is excluded. A
    historical query with `as_of_season` cannot use later seasons.
@@ -457,8 +465,12 @@ RB ≈ 8%). Profile cells move that number.
 | Year-6+ WR who was top-5 last year | dropped usage/age/capital | 17 moderate | 59% | **39%** | Tyreek Hill 2023 WR2; D.Adams 2021 WR2 |
 | Year-5 day-3 WR, prior outside 36 | dropped usage | 38 moderate | 0% | **1%** | Jauan Jennings 2024 WR24 |
 
-Tiny exact cells do not print a fake precise rate: they relax, then shrink
-toward the position baseline. 0% raw with n>0 is a real zero and still
+Live Hist compiles nested sibling buckets until n ≥ 4, then falls back
+to the parent. Young players keep age and last-year finish. The oldest
+open-ended age band waits for n ≥ 15 so a 2-season 32+ / 31+ cell is
+not one veteran repeating (Kelce). Walk-forward still relaxes to n ≥ 15,
+then shrinks toward
+the position baseline. 0% raw with n>0 is a real zero and still
 smooths up slightly (the day-3 cell). Request-path lookup passes
 `sleeper_id` so a player is not listed as their own comp.
 

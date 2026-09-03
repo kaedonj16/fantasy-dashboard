@@ -463,6 +463,16 @@
     text-overflow: ellipsis;
     line-height: 1.2;
   }
+  .ov-sub {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.25;
+    margin-top: 1px;
+  }
   .sync-cluster {
     display: inline-flex;
     align-items: center;
@@ -489,6 +499,10 @@
     max-width: 100%;
     white-space: nowrap;
     overflow: hidden;
+  }
+  .sync-chip-txt {
+    min-width: 0;
+    overflow: hidden;
     text-overflow: ellipsis;
   }
   .sync-reconnect {
@@ -512,14 +526,19 @@
     border-color: var(--accent);
   }
   .sync-chip i {
-    width: 7px; height: 7px; border-radius: 50%;
+    display: block;
+    flex: 0 0 7px;
+    width: 7px;
+    height: 7px;
+    min-width: 7px;
+    border-radius: 50%;
     background: currentColor;
-    box-shadow: 0 0 0 0 currentColor;
-    animation: pulse 1.8s ease-out infinite;
+    box-shadow: none;
+    animation: pulse 1.6s ease-in-out infinite;
   }
   @keyframes pulse {
-    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--win) 55%, transparent); }
-    100% { box-shadow: 0 0 0 8px transparent; }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
   }
 
   .tab-bar {
@@ -792,9 +811,18 @@
     margin-top: 6px;
     flex-shrink: 0;
   }
-  .final-grade {
+  button.final-grade {
+    display: block;
+    width: calc(100% - 20px);
     text-align: center;
-    padding: 8px 4px 4px;
+    padding: 8px 4px 10px;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+  }
+  button.final-grade:hover {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, var(--card-soft));
   }
   .final-grade .letter {
     font-size: 48px;
@@ -804,6 +832,13 @@
   }
   .final-grade .rank { font-size: 14px; font-weight: 700; margin-top: 6px; }
   .final-grade .sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+  .final-grade .sum-open {
+    margin-top: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--accent);
+    letter-spacing: 0.02em;
+  }
 
   .banner {
     margin: 8px 10px 0;
@@ -1118,6 +1153,7 @@
   .grade-letter { font-size: 34px; font-weight: 800; line-height: 1; min-width: 48px; text-align: center; }
   .grade-early { font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin-top: 3px; text-align: center; }
   .grade-meta { flex: 1; min-width: 0; }
+  .grade-pace { font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; }
   .gbar-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
   .gbar-lbl { font-size: 10px; color: var(--text-muted); width: 84px; flex-shrink: 0; }
   .gbar { flex: 1; height: 6px; border-radius: 8px; background: rgba(127,127,127,.18); overflow: hidden; }
@@ -1330,6 +1366,55 @@
   html.br-da-embed.br-da-rail .ov-head label,
   html.br-da-embed.br-da-rail .side-head,
   html.br-da-embed.br-da-rail .tab-opts,
+  .dr-sum-card { max-width: 420px; }
+  .dr-sum-title {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--text-muted);
+    text-align: center;
+    margin-bottom: 10px;
+  }
+  .dr-sum-grade-wrap { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .dr-sum-letter { font-size: 46px; font-weight: 800; line-height: 1; letter-spacing: -1px; }
+  .dr-sum-bars { flex: 1; min-width: 0; }
+  .dr-sum-stats { display: flex; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; }
+  .dr-sum-stat { min-width: 72px; }
+  .dr-sum-stat-v { font-size: 18px; font-weight: 800; line-height: 1.1; }
+  .dr-sum-stat-l { font-size: 10px; font-weight: 700; color: var(--text-muted); letter-spacing: .03em; text-transform: uppercase; }
+  .dr-sum-arch { margin: 0 0 12px; font-size: 13px; font-weight: 700; }
+  .dr-sum-section {
+    margin: 10px 0 6px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .dr-sum-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+  }
+  .dr-sum-slot {
+    flex-shrink: 0;
+    min-width: 28px;
+    padding: 2px 5px;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 800;
+    text-align: center;
+  }
+  .dr-sum-empty { font-size: 12px; color: var(--text-muted); }
+  .dr-sum-body { min-width: 0; flex: 1; }
+  .dr-sum-name { font-size: 12px; font-weight: 800; line-height: 1.2; }
+  .dr-sum-meta { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+  .dr-sum-ps { font-size: 13px; font-weight: 800; }
+  .dr-sum-foot { display: flex; justify-content: flex-end; margin-top: 12px; }
+
   html.br-da-embed.br-da-rail .dr-cmp-overlay { display: none !important; }
   html.br-da-embed.br-da-rail .ov-head { justify-content: center; padding: 10px 4px; }
   html.br-da-embed.br-da-rail .ov-foot {

@@ -93,6 +93,12 @@ def test_slot_eligibility():
     assert dr_slot_eligible("DEF", "D/ST") is True
     assert dr_slot_eligible("DEF", "DST") is True
     assert dr_slot_eligible("FLEX", "PK") is False
+    assert dr_slot_eligible("RB_WR", "RB") is True
+    assert dr_slot_eligible("RB_WR", "TE") is False
+    assert dr_slot_eligible("WR_TE", "TE") is True
+    assert dr_slot_eligible("WR_TE", "RB") is False
+    assert dr_slot_eligible("RB_TE", "RB") is True
+    assert dr_slot_eligible("RB_TE", "WR") is False
 
 
 # ---- dr_lineup_score ------------------------------------------------------

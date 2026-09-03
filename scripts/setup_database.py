@@ -63,11 +63,32 @@ def create_subscription_tables():
             );
         """)
 
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_league_subscriptions (
+                id SERIAL PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                platform TEXT NOT NULL DEFAULT 'sleeper',
+                league_id TEXT NOT NULL,
+                subscription_status TEXT NOT NULL DEFAULT 'active',
+                stripe_subscription_id TEXT,
+                stripe_customer_id TEXT,
+                expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                CONSTRAINT valid_user_league_status CHECK (
+                    subscription_status IN ('active', 'canceled', 'expired')
+                ),
+                UNIQUE (user_id, platform, league_id)
+            );
+        """)
+
         # Indexes for subscription tables
         conn.execute("CREATE INDEX IF NOT EXISTS idx_league_subs_league_id ON league_subscriptions(league_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_league_subs_expires_at ON league_subscriptions(expires_at);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_user_subs_user_id ON user_subscriptions(user_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_user_subs_expires_at ON user_subscriptions(expires_at);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_league_subs_lookup ON user_league_subscriptions(user_id, platform, league_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_league_subs_expires ON user_league_subscriptions(expires_at);")
 
 
 def create_update_trigger():
@@ -95,6 +116,12 @@ def create_update_trigger():
         conn.execute("""
             DROP TRIGGER IF EXISTS update_user_subscriptions_updated_at ON user_subscriptions;
             CREATE TRIGGER update_user_subscriptions_updated_at BEFORE UPDATE ON user_subscriptions
+                FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+        """)
+
+        conn.execute("""
+            DROP TRIGGER IF EXISTS update_user_league_subscriptions_updated_at ON user_league_subscriptions;
+            CREATE TRIGGER update_user_league_subscriptions_updated_at BEFORE UPDATE ON user_league_subscriptions
                 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
         """)
 

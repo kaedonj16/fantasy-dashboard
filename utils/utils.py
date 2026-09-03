@@ -9,7 +9,7 @@ import requests
 import time
 import traceback
 from bs4 import BeautifulSoup
-from collections import defaultdict, Counter
+from collections import defaultdict
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional, Any, Callable, List, Iterable, TYPE_CHECKING
@@ -26,6 +26,7 @@ from dashboard_services.api import (
     get_nfl_state,
     get_nfl_players, fetch_team_game_logs_html, fetch_tank_boxscore, get_matchups,
 )
+from dashboard_services.display_names import team_label_from_user, username_from_user
 # ------------------------------------------------
 # Player info utilities
 # ------------------------------------------------
@@ -92,6 +93,36 @@ TEAM_ALIASES = {
     "min": "MIN", "chi": "CHI", "det": "DET", "atl": "ATL", "car": "CAR", "norleans": "NO",
     "sea": "SEA", "den": "DEN", "ari": "ARI", "hou": "HOU", "ten": "TEN", "ind": "IND",
 }
+
+# Bidirectional abbreviation pairs. Sleeper/players_index use WAS; Tank01
+# schedules use WSH. Same split exists for JAC/JAX and LA/LAR.
+TEAM_ABBR_ALIASES = {
+    "WAS": "WSH",
+    "WSH": "WAS",
+    "JAC": "JAX",
+    "JAX": "JAC",
+    "LA": "LAR",
+    "LAR": "LA",
+}
+
+
+def team_abbr_keys(team: str) -> tuple[str, ...]:
+    """Return the team code plus its schedule/index alias, if any."""
+    t = (team or "").strip().upper()
+    if not t:
+        return ()
+    alt = TEAM_ABBR_ALIASES.get(t)
+    return (t, alt) if alt else (t,)
+
+
+def lookup_team_map(mapping: Optional[dict], team: str):
+    """Lookup ``mapping[team]``, trying WAS/WSH (and other abbr aliases)."""
+    if not mapping or not team:
+        return None
+    for key in team_abbr_keys(team):
+        if key in mapping:
+            return mapping[key]
+    return None
 
 DST_CANON = {
     "49ers": "SF",
@@ -511,16 +542,34 @@ def save_week_schedule(season: int, week: int, data: List[Dict]) -> None:
 # ------------------------------------------------
 
 _WEEK_PROJ_TTL_HOURS = 1   # re-fetch the live week's projections at most hourly
+_WEEK_PROJ_EMPTY_TTL_SEC = 15 * 60
+_WEEK_PROJ_EMPTY_MAX_BYTES = 16
+
+
+def _week_proj_file_is_empty(cache_path: str) -> bool:
+    """True for a missing file or a failed-fetch ``{}`` placeholder."""
+    try:
+        return os.path.getsize(cache_path) < _WEEK_PROJ_EMPTY_MAX_BYTES
+    except OSError:
+        return True
 
 
 def _week_proj_is_stale(season: int, week: int, cache_path: str) -> bool:
-    """True only for the current/upcoming week of the live season.
+    """True when the cache should be re-fetched.
 
-    Completed weeks (and past seasons) never change, so their cached files are
-    treated as permanent — re-fetching them would just burn API calls. The
-    current and future weeks of the in-progress season DO change (injuries,
-    inactives, role and projection updates), so those honor a short TTL.
+    Completed weeks (and past seasons) never change, so a *populated* cache
+    is permanent. An empty ``{}`` file is not a real projection set — a
+    failed Sleeper fetch used to write one and then look fresh for an hour
+    (or forever once the week was treated as completed), which painted
+    every matchup as 0.0. Empty files retry after a short TTL.
     """
+    empty = _week_proj_file_is_empty(cache_path)
+    try:
+        age = time.time() - os.path.getmtime(cache_path)
+    except OSError:
+        return True
+    if empty:
+        return age > _WEEK_PROJ_EMPTY_TTL_SEC
     try:
         state = get_nfl_state() or {}
         cur_season = int(state.get("season") or 0)
@@ -531,10 +580,6 @@ def _week_proj_is_stale(season: int, week: int, cache_path: str) -> bool:
         return False                      # past season → immutable
     if season == cur_season and week < cur_week:
         return False                      # already-completed week → immutable
-    try:
-        age = time.time() - os.path.getmtime(cache_path)
-    except OSError:
-        return True
     return age > _WEEK_PROJ_TTL_HOURS * 3600
 
 
@@ -1091,6 +1136,23 @@ def normalize_game_status_from_tank01(game: dict, now: datetime | None = None) -
     return "pre"
 
 
+def game_has_started(game: Optional[dict], now: datetime | None = None) -> bool:
+    """True when a Tank01/schedule game is live or final.
+
+    Explicit ``gameStatusCode`` 0 (scheduled) wins even if a stale
+    ``gameTime_epoch`` would otherwise look like the game already ended —
+    that is what painted last year's box scores on the Week 1 preview.
+    """
+    if not game or not isinstance(game, dict):
+        return False
+    code = str(game.get("gameStatusCode") or "").strip()
+    if code == "0":
+        return False
+    if code in ("1", "2"):
+        return True
+    return normalize_game_status_from_tank01(game, now=now) in ("in", "post")
+
+
 def build_games_by_team(games: list[dict]) -> dict[str, dict]:
     """
     games -> { team_abbr: { 'status': 'pre' | 'in' | 'post', 'game': game_obj } }
@@ -1100,11 +1162,13 @@ def build_games_by_team(games: list[dict]) -> dict[str, dict]:
         home = g.get("home")  # e.g. "NE"
         away = g.get("away")  # e.g. "NYJ"
         norm_status = normalize_game_status_from_tank01(g)  # 'pre' | 'in' | 'post'
+        entry = {"status": norm_status, "game": g}
 
-        if home:
-            games_by_team[home] = {"status": norm_status, "game": g}
-        if away:
-            games_by_team[away] = {"status": norm_status, "game": g}
+        for raw in (home, away):
+            if not raw:
+                continue
+            for key in team_abbr_keys(raw):
+                games_by_team[key] = entry
 
     return games_by_team
 
@@ -1138,7 +1202,7 @@ def build_status_by_pid(
             status_by_pid[pid] = STATUS_FINAL
             continue
 
-        game = games_by_team.get(team)
+        game = lookup_team_map(games_by_team, team)
         if not game:
             # bye or missing schedule
             status_by_pid[pid] = STATUS_FINAL
@@ -1163,7 +1227,7 @@ def build_status_by_pid(
         if pid in status_by_pid:
             continue
 
-        game = games_by_team.get(team_code)
+        game = lookup_team_map(games_by_team, team_code)
 
         if not game:
             bye_week = team_info.get("byeWeek")
@@ -1301,6 +1365,7 @@ def build_teams_overview(
 ) -> List[dict]:
     teams_ctx: List[dict] = []
     users_by_id = {str(u["user_id"]): u for u in users_list}
+    users_by_rid = {str(u.get("roster_id")): u for u in users_list if u.get("roster_id") is not None}
 
     def normalize_pos(pos: str) -> str:
         p = (pos or "").strip().upper()
@@ -1396,7 +1461,7 @@ def build_teams_overview(
     for r in rosters:
         rid = str(r["roster_id"])
         owner_id = str(r.get("owner_id") or "")
-        user = users_by_id.get(owner_id, {})
+        user = users_by_rid.get(rid) or users_by_id.get(owner_id, {})
 
         settings = r.get("settings", {}) or {}
         wins = int(settings.get("wins", 0))
@@ -1426,10 +1491,8 @@ def build_teams_overview(
 
         teams_ctx.append({
             "roster_id": rid,
-            "name": user.get("metadata", {}).get("team_name")
-                    or user.get("display_name")
-                    or f"Team {rid}",
-            "username": user.get("username") or user.get("display_name") or "",
+            "name": team_label_from_user(user, r, fallback=f"Team {rid}"),
+            "username": username_from_user(user),
             "avatar": user.get("avatar_url") or user.get("avatar"),
             "record": record,
             "starters": enrich_list(starters_pids),
@@ -1971,6 +2034,33 @@ def build_and_save_week_stats_for_league(
     """
     league_week_stats: Dict[str, Dict[str, Dict[str, Dict[str, float]]]] = {}
 
+    # Footballguys "Wk N" still holds last season's box scores until this
+    # week's games are actually played. Scraping that into week_stats_s{year}
+    # makes the Weekly Hub look like players already suited up after a draft.
+    schedule: List[Dict[str, Any]] = []
+    try:
+        raw_sched = load_week_schedule(season, week)
+        if isinstance(raw_sched, list):
+            schedule = raw_sched
+        elif isinstance(raw_sched, dict):
+            maybe = raw_sched.get("body") or raw_sched.get("games") or []
+            if isinstance(maybe, list):
+                schedule = maybe
+    except Exception:
+        schedule = []
+
+    week_started = any(
+        game_has_started(g) for g in schedule if isinstance(g, dict)
+    ) or bool(live_game_ids)
+    if not week_started:
+        out_path = path_week_stats(season, week)
+        if schedule:
+            write_json(out_path, {})
+            print(f"[week_stats] no games started yet (season={season}, week={week}); wrote empty")
+        else:
+            print(f"[week_stats] skip scrape; no schedule and no live games (season={season}, week={week})")
+        return out_path
+
     print(f"[week_stats] building stats for the week (season={season}, week={week})")
     for team_abv in teams_index.keys():
         orig_team_abv = team_abv
@@ -2197,5 +2287,10 @@ def count_roster_positions(positions: list[str]) -> dict[str, int]:
     Takes a Sleeper roster_positions array and returns a count of each slot type.
     Example:
       ['QB','RB','RB','WR','WR','TE','FLEX',...] → {'QB':1,'RB':2,'WR':2,...}
+
+    Provider aliases (OP, RB/WR/TE, WRRB_FLEX, D/ST, …) collapse to the canonical name.
+    Restricted flex (WR/RB only, WR/TE, RB/TE) stays distinct from standard FLEX.
+    so Fleaflicker/Yahoo/ESPN slot lists count the same as Sleeper.
     """
-    return dict(Counter(positions))
+    from utils.lineup_slots import count_lineup_slots
+    return count_lineup_slots(positions)

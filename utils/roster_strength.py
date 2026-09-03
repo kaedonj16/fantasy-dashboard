@@ -14,8 +14,11 @@ from typing import Dict, Iterable, List, Mapping, Sequence
 
 from utils.lineup_slots import (
     FLEX_SLOT_NAMES as _FLEX_SLOT_NAMES,
+    RB_TE_SLOT_NAMES as _RB_TE_SLOT_NAMES,
+    RB_WR_SLOT_NAMES as _RB_WR_SLOT_NAMES,
     SKILL_POSITIONS,
     SUPERFLEX_SLOT_NAMES as _SUPERFLEX_SLOT_NAMES,
+    WR_TE_SLOT_NAMES as _WR_TE_SLOT_NAMES,
     canonicalize_slot,
     slot_total as _slot_total,
 )
@@ -43,6 +46,9 @@ def weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, in
     # differently depending on which platform supplied its settings.
     flex_slots = _slot_total(slot_counts, _FLEX_SLOT_NAMES)
     superflex_slots = _slot_total(slot_counts, _SUPERFLEX_SLOT_NAMES)
+    rb_wr_slots = _slot_total(slot_counts, _RB_WR_SLOT_NAMES | {"RB_WR"})
+    wr_te_slots = _slot_total(slot_counts, _WR_TE_SLOT_NAMES | {"WR_TE"})
+    rb_te_slots = _slot_total(slot_counts, _RB_TE_SLOT_NAMES | {"RB_TE"})
 
     if pos == "QB":
         qb_starters = max(1, int(slot_counts.get("QB") or 0) + superflex_slots)
@@ -52,26 +58,30 @@ def weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, in
         weights = [1.0] + [0.90] * (qb_starters - 1) + [0.20]
 
     elif pos == "RB":
-        # RB1/RB2 matter most, then some flex/depth credit
-        if flex_slots >= 2:
+        # RB1/RB2 matter most, then some flex/depth credit. Restricted
+        # RB/WR and RB/TE spots count; WR/TE-only does not.
+        rb_flex = flex_slots + rb_wr_slots + rb_te_slots
+        if rb_flex >= 2:
             weights = [1.0, 0.85, 0.35, 0.20, 0.10]
-        elif flex_slots == 1:
+        elif rb_flex == 1:
             weights = [1.0, 0.85, 0.30, 0.15]
         else:
             weights = [1.0, 0.85, 0.15]
 
     elif pos == "WR":
-        # Same idea as RB
-        if flex_slots >= 2:
+        wr_flex = flex_slots + rb_wr_slots + wr_te_slots
+        if wr_flex >= 2:
             weights = [1.0, 0.85, 0.35, 0.20, 0.10]
-        elif flex_slots == 1:
+        elif wr_flex == 1:
             weights = [1.0, 0.85, 0.30, 0.15]
         else:
             weights = [1.0, 0.85, 0.15]
 
     elif pos == "TE":
-        # TE premium on starter, little on TE2 unless you want more
-        if flex_slots >= 1:
+        # TE premium on starter, little on TE2 unless you want more.
+        # WR/RB-only flex does not make a TE2 startable.
+        te_flex = flex_slots + wr_te_slots + rb_te_slots
+        if te_flex >= 1:
             weights = [1.0, 0.20, 0.08]
         else:
             weights = [1.0, 0.15]
@@ -185,11 +195,18 @@ def positional_strength_profile(vals: List[float], pos: str,
                 "confidence": confidence_from_inputs(0, 1)}
     flex = _slot_total(slot_counts or {}, _FLEX_SLOT_NAMES)
     sf = _slot_total(slot_counts or {}, _SUPERFLEX_SLOT_NAMES)
+    rb_wr = _slot_total(slot_counts or {}, _RB_WR_SLOT_NAMES | {"RB_WR"})
+    wr_te = _slot_total(slot_counts or {}, _WR_TE_SLOT_NAMES | {"WR_TE"})
+    rb_te = _slot_total(slot_counts or {}, _RB_TE_SLOT_NAMES | {"RB_TE"})
     dedicated = max(1, int((slot_counts or {}).get(pos) or (2 if pos in {"RB", "WR"} else 1)))
     if pos == "QB":
         starters = dedicated + sf
-    elif pos in {"RB", "WR"}:
-        starters = dedicated + flex // 2
+    elif pos == "RB":
+        starters = dedicated + flex // 2 + rb_wr // 2 + rb_te // 2
+    elif pos == "WR":
+        starters = dedicated + flex // 2 + rb_wr // 2 + wr_te // 2
+    elif pos == "TE":
+        starters = dedicated + wr_te // 2 + rb_te // 2
     else:
         starters = dedicated
     starter_vals = clean[:starters]
@@ -251,6 +268,7 @@ def derive_league_thresholds(
     pos_counts: Dict[str, int] = {}
     flex_count = 0
     superflex_count = 0
+    rb_wr = wr_te = rb_te = 0
     for slot in roster_positions:
         s = canonicalize_slot(slot)
         if s in SKILL_POSITIONS:
@@ -259,18 +277,25 @@ def derive_league_thresholds(
             superflex_count += 1
         elif s == "FLEX":
             flex_count += 1
+        elif s == "RB_WR":
+            rb_wr += 1
+        elif s == "WR_TE":
+            wr_te += 1
+        elif s == "RB_TE":
+            rb_te += 1
 
     # A league with a superflex slot is a superflex league even if the caller
     # didn't flag it (and vice-versa) — treat either signal as SF.
     sf = bool(is_sf or superflex_count)
 
-    rb_flex = flex_count // 2
-    wr_flex = flex_count - rb_flex
+    rb_flex = flex_count // 2 + rb_wr // 2 + rb_te // 2
+    wr_flex = (flex_count - flex_count // 2) + (rb_wr - rb_wr // 2) + (wr_te - wr_te // 2)
+    te_flex = (wr_te // 2) + (rb_te - rb_te // 2)
     floor: Dict[str, int] = {
         "QB": max(1, pos_counts.get("QB", 1) + superflex_count),
         "RB": max(1, pos_counts.get("RB", 1) + rb_flex),
         "WR": max(1, pos_counts.get("WR", 1) + wr_flex),
-        "TE": max(1, pos_counts.get("TE", 1)),
+        "TE": max(1, pos_counts.get("TE", 1) + te_flex),
     }
 
     scale = 12 / max(num_teams, 6)

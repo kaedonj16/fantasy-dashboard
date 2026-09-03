@@ -50,7 +50,7 @@ from dashboard_services.api import (
     team_avatar,
     build_league_history_map,
     build_team_game_lookup,
-    get_effective_scoring_settings,
+    get_normalized_scoring_settings,
     get_league_settings,
     get_nfl_players,
     get_nfl_scores_for_date,
@@ -61,6 +61,7 @@ from dashboard_services.api import (
     avatar_url
 )
 from dashboard_services.awards import compute_awards_season, render_awards_section
+from dashboard_services.display_names import team_label_from_user, username_from_user
 from dashboard_services.changelog import CHANGELOG
 from dashboard_services.injuries import build_injury_report, render_injury_watch
 from dashboard_services.matchups import (
@@ -101,7 +102,17 @@ from dashboard_services.subscriptions import (
 import stripe
 
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
-from dashboard_services.providers.espn_api import safe_float
+from dashboard_services.providers.base import (
+    LeagueNotFoundError,
+    ProviderAuthenticationError,
+    ProviderUnavailableError,
+)
+from dashboard_services.providers.espn_api import (
+    ESPNAccessDenied,
+    ESPNInvalidLeague,
+    ESPNUnavailable,
+    safe_float,
+)
 from dashboard_services.service import (
     age_from_bday,
     build_matchups_by_week,
@@ -1154,6 +1165,17 @@ try:
 except Exception as e:
     logger.warning("[league-pages-bp] skipped: %s", e)
 
+try:
+    from utils.ui_audit_fixture import install_ui_audit_hooks
+
+    install_ui_audit_hooks()
+    from routes.ui_audit_bp import ui_audit_bp
+
+    app.register_blueprint(ui_audit_bp)
+    logger.info("[ui-audit] hub at /ui-audit (active when UI_AUDIT=1)")
+except Exception as e:
+    logger.warning("[ui-audit] skipped: %s", e)
+
 
 def generate_recent_updates_html(limit=5):
     """Generate HTML for recent changelog updates."""
@@ -1182,10 +1204,9 @@ from utils.nfl_teams import get_team_full_name  # noqa: E402
 
 
 def _yahoo_ui_enabled() -> bool:
-    """Whether to offer Yahoo connect in the UI. Off by default while the Yahoo
-    Fantasy API access request is pending (every call 403s until approved). Set
-    YAHOO_ENABLED=1 on the host to re-enable once granted."""
-    return (os.environ.get("YAHOO_ENABLED") or "").strip().lower() in ("1", "true", "yes", "on")
+    """Whether to offer Yahoo connect in the UI."""
+    from dashboard_services.providers.yahoo_api import yahoo_enabled
+    return yahoo_enabled()
 
 
 def _espn_otp_ui_enabled() -> bool:
@@ -1213,7 +1234,7 @@ FORM_BODY = """
       <p class="home-brand">BR Fantasy</p>
       <h1 class="home-title">Your dynasty league,<br><span class="home-rot" aria-label="upgraded"><span class="home-rot-track"><span>upgraded.</span><span>decoded.</span><span>dominated.</span><span>upgraded.</span></span></span></h1>
       <p class="home-subtitle">
-        Trade values, AI analysis, and league tools for Sleeper, ESPN, MFL, and Fleaflicker. Yahoo coming soon.
+        Trade values, AI analysis, and league tools for Sleeper, ESPN, Yahoo, MFL, and Fleaflicker.
       </p>
       <p class="home-hero-editorial">
         Original dynasty strategy, daily player values, and league dashboards.
@@ -1224,7 +1245,7 @@ FORM_BODY = """
       <div class="home-platform-row" aria-label="Supported platforms">
         <span class="home-platform-chip">Sleeper</span>
         <span class="home-platform-chip">ESPN</span>
-        <span class="home-platform-chip">Yahoo <span class="home-chip-note">Soon</span></span>
+        <span class="home-platform-chip">Yahoo</span>
         <span class="home-platform-chip">MFL</span>
         <span class="home-platform-chip">Fleaflicker</span>
       </div>
@@ -1273,12 +1294,7 @@ FORM_BODY = """
           <div class="platform-selector">
             <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
             <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
-            {% if yahoo_enabled %}
             <button type="button" class="platform-btn" data-platform="yahoo">Yahoo</button>
-            {% else %}
-            <button type="button" class="platform-btn platform-btn-disabled" disabled
-                    title="Yahoo is temporarily unavailable while we finish Yahoo API setup.">Yahoo <span class="platform-soon">Soon</span></button>
-            {% endif %}
             <button type="button" class="platform-btn" data-platform="mfl">MFL</button>
             <button type="button" class="platform-btn" data-platform="fleaflicker">Fleaflicker</button>
           </div>
@@ -1364,7 +1380,6 @@ FORM_BODY = """
         </div>
 
         <!-- Yahoo Flow -->
-        {% if yahoo_enabled %}
         <div id="yahooFlow" style="display:none;">
           <div class="row">
             <label for="yahooLeagueIdInput">Yahoo League ID</label>
@@ -1374,15 +1389,26 @@ FORM_BODY = """
             <label for="yahooTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
             <input type="text" id="yahooTeamName" placeholder="e.g. Dynasty Monsters">
           </div>
-          <div class="row">
+          <div class="row" id="yahooSubmitRow">
             <button type="button" id="yahooConnectBtn">Connect Yahoo Account</button>
           </div>
           <div id="yahooError" class="error-message" style="display:none;"></div>
+          <div id="yahooAccountChoice" class="provider-account-choice" style="display:none;">
+            <button type="button" id="yahooPrivateGoogle" class="google-continue-btn">
+              <span class="google-button-title">Continue with Google</span>
+              <span>Save your leagues &amp; settings, synced across devices</span>
+              <small>Free &middot; no password</small>
+            </button>
+            <div class="provider-choice-or">OR</div>
+            <button type="button" id="yahooPrivateGuest" class="continue-without-account-btn">
+              <strong>Continue without account</strong>
+              <span>Quick view on this device &middot; nothing saved</span>
+            </button>
+          </div>
           <p class="hint" style="margin-top:6px;">
             You'll be redirected to Yahoo to authorize access, then returned here.
           </p>
         </div>
-        {% endif %}
 
         <!-- MFL Flow -->
         <div id="mflFlow" style="display:none;">
@@ -1561,52 +1587,6 @@ FORM_BODY = """
       <span class="home-proof-label">League History</span>
       <span class="home-proof-desc">Season recaps, power rankings, and trend charts</span>
     </div>
-    </section>
-
-  <section class="home-publisher" aria-labelledby="homePublisherTitle">
-    <h2 class="home-publisher-title" id="homePublisherTitle">Dynasty tools with original strategy writing</h2>
-    <p>
-      BR Fantasy is a fantasy football site for dynasty and redraft managers. The
-      public pages are written as articles and reference tools, not as an empty
-      login wall: you can read how values are built, compare players, and study
-      prospect profiles before you connect a league.
-    </p>
-    <p>
-      Daily <a href="/rankings/dynasty">dynasty rankings</a> blend consensus market
-      prices with production, age curves, and opportunity metrics such as target
-      share and snap counts. The
-      <a href="/dynasty-trade-value-chart">dynasty trade value chart</a> is the
-      same model in a full positional view. Superflex and 1QB are separate
-      because quarterback scarcity changes every other price on the board. That
-      methodology is explained in
-      <a href="/guides/dynasty-trade-value">How Dynasty Trade Value Works</a>
-      and <a href="/guides/superflex-vs-1qb">Superflex vs 1QB</a>.
-    </p>
-    <p>
-      The <a href="/trade">trade calculator</a> grades both sides of a deal with
-      those values. <a href="/top-movers">Top movers</a> shows who is rising or
-      falling. <a href="/prospects">Rookie prospects</a> collect draft capital,
-      college production, and athleticism for the next rookie draft. The
-      <a href="/glossary">glossary</a> defines the vocabulary those pages use.
-    </p>
-    <p>
-      Strategy guides are long-form original writing, not captions under a widget.
-      Start with <a href="/guides">all guides</a> or jump to
-      <a href="/guides/evaluating-a-trade">evaluating a trade</a>,
-      <a href="/guides/dynasty-rebuild-strategy">rebuilding</a>,
-      <a href="/guides/contending-in-dynasty">contending</a>, or
-      <a href="/guides/startup-draft-guide">startup drafts</a>. About the author
-      and how we correct mistakes lives on the <a href="/about">About</a> page.
-      Questions go to <a href="/contact">Contact</a>.
-    </p>
-    <ul class="home-publisher-links">
-      <li><a href="/guides">Strategy guides</a></li>
-      <li><a href="/rankings/dynasty">Dynasty rankings</a></li>
-      <li><a href="/dynasty-trade-value-chart">Trade value chart</a></li>
-      <li><a href="/trade">Trade calculator</a></li>
-      <li><a href="/glossary">Glossary</a></li>
-      <li><a href="/about">About BR Fantasy</a></li>
-    </ul>
   </section>
 
   <div class="home-content-wrapper">
@@ -1747,6 +1727,62 @@ FORM_BODY = """
       </div>
     </aside>
   </div>
+
+  <section class="home-publisher" aria-labelledby="homePublisherTitle">
+    <div class="home-publisher-inner">
+      <header class="home-publisher-head">
+        <span class="home-publisher-eyebrow">Strategy &amp; resources</span>
+        <h2 class="home-publisher-title" id="homePublisherTitle">Dynasty tools with original strategy writing</h2>
+        <p class="home-publisher-lead">
+          BR Fantasy is a fantasy football site for dynasty and redraft managers. Read how values are built,
+          compare players, and study prospect profiles before you connect a league.
+        </p>
+      </header>
+      <div class="home-publisher-grid">
+        <div class="home-publisher-copy">
+          <p>
+            Daily <a href="/rankings/dynasty">dynasty rankings</a> blend consensus market
+            prices with production, age curves, and opportunity metrics such as target
+            share and snap counts. The
+            <a href="/dynasty-trade-value-chart">dynasty trade value chart</a> is the
+            same model in a full positional view. Superflex and 1QB are separate
+            because quarterback scarcity changes every other price on the board. That
+            methodology is explained in
+            <a href="/guides/dynasty-trade-value">How Dynasty Trade Value Works</a>
+            and <a href="/guides/superflex-vs-1qb">Superflex vs 1QB</a>.
+          </p>
+          <p>
+            The <a href="/trade">trade calculator</a> grades both sides of a deal with
+            those values. <a href="/top-movers">Top movers</a> shows who is rising or
+            falling. <a href="/prospects">Rookie prospects</a> collect draft capital,
+            college production, and athleticism for the next rookie draft. The
+            <a href="/glossary">glossary</a> defines the vocabulary those pages use.
+          </p>
+          <p>
+            Strategy guides are long-form original writing, not captions under a widget.
+            Start with <a href="/guides">all guides</a> or jump to
+            <a href="/guides/evaluating-a-trade">evaluating a trade</a>,
+            <a href="/guides/dynasty-rebuild-strategy">rebuilding</a>,
+            <a href="/guides/contending-in-dynasty">contending</a>, or
+            <a href="/guides/startup-draft-guide">startup drafts</a>. About the author
+            and how we correct mistakes lives on the <a href="/about">About</a> page.
+            Questions go to <a href="/contact">Contact</a>.
+          </p>
+        </div>
+        <nav class="home-publisher-aside" aria-label="Featured guides and tools">
+          <span class="home-publisher-aside-label">Start here</span>
+          <ul class="home-publisher-links">
+            <li><a href="/guides">Strategy guides</a></li>
+            <li><a href="/rankings/dynasty">Dynasty rankings</a></li>
+            <li><a href="/dynasty-trade-value-chart">Trade value chart</a></li>
+            <li><a href="/trade">Trade calculator</a></li>
+            <li><a href="/glossary">Glossary</a></li>
+            <li><a href="/about">About BR Fantasy</a></li>
+          </ul>
+        </nav>
+      </div>
+    </div>
+  </section>
 </div>
 
 <div class="fullscreen-loading-overlay" id="dashboardLoadingOverlay" style="display:none;">
@@ -1769,7 +1805,7 @@ BASE_HTML = """
          first paint (app.js is deferred, too late), or every page flashes white
          on load and the browser's inter-page gap is white too. Set data-theme
          and the <html> background up front so switching pages stays dark. -->
-    <style>html{{background:#f4f6f8}}html[data-theme="dark"]{{background:#020617}}</style>
+    <style>html{{background:#f8fafc}}html[data-theme="dark"]{{background:#020617}}</style>
     <script>(function(){{try{{if(localStorage.getItem('theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}}catch(e){{}}}})();</script>
     <meta name="google-adsense-account" content="ca-pub-9164153092633845">
     <meta name="google-site-verification" content="zuH_tCWKG_L4hm4eRDFit3xfMi-ZPFXwK2s9eap20FA">
@@ -1803,14 +1839,14 @@ BASE_HTML = """
 
     <link rel="icon" href="/static/BR_Logo.png" type="image/png">
     <link rel="shortcut icon" href="/static/BR_Logo.png" type="image/png">
-    <link rel="apple-touch-icon" href="/static/BR_Logo.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="/static/BR_Logo.png">
+    <link rel="apple-touch-icon" href="/static/icon-180x180.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180x180.png">
     <link rel="manifest" href="/static/manifest.json">
     <!-- Status-bar chrome matches the top nav's background so the app reads as
          one surface. The app theme is a manual toggle (not OS-driven), so this
          is kept in sync by app.js rather than a prefers-color-scheme meta, which
          would mismatch a user on OS-dark who hasn't switched the app to dark. -->
-    <meta name="theme-color" id="br-theme-color" content="#ffffff">
+    <meta name="theme-color" id="br-theme-color" content="#f8fafc">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="BR Fantasy">
@@ -1820,9 +1856,12 @@ BASE_HTML = """
 
     <!-- Instant branded splash (covers the PWA/first-paint white screen) -->
     <style>
-      #appSplash{{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#ffffff;transition:opacity .35s ease;}}
+      #appSplash{{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#f8fafc;transition:opacity .35s ease;}}
       html[data-theme="dark"] #appSplash{{background:#020617;}}
       #appSplash img{{width:170px;max-width:56%;height:auto;animation:appSplashPulse 1.5s ease-in-out infinite;}}
+      html[data-theme="dark"] #appSplash img.splash-logo-light{{display:none;}}
+      #appSplash img.splash-logo-dark{{display:none;}}
+      html[data-theme="dark"] #appSplash img.splash-logo-dark{{display:block;}}
       #appSplash.app-splash-hide{{opacity:0;pointer-events:none;}}
       @keyframes appSplashPulse{{0%,100%{{opacity:.5}}50%{{opacity:1}}}}
       @media (prefers-reduced-motion: reduce){{#appSplash img{{animation:none}}}}
@@ -1855,7 +1894,8 @@ BASE_HTML = """
   <body>
     <!-- Branded loading splash: shown instantly, removed once the page is ready -->
     <div id="appSplash" role="status" aria-label="Loading BR Fantasy">
-      <img src="/static/BR_Logo.png" alt="BR Fantasy" />
+      <img src="/static/BR_Logo.png" alt="" class="splash-logo-light" aria-hidden="true">
+      <img src="/static/BR_Logo_dark.png" alt="" class="splash-logo-dark" aria-hidden="true">
     </div>
     <script>
       (function(){{
@@ -1907,7 +1947,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueName:{league_name_js},leagueFormat:{league_format_js},currentWeek:{current_week_js},leagueType:{league_type_js},leagueSize:{league_size_js},scoringType:{league_scoring_type_js}}};</script>
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__DASHBOARD_CSS = {dashboard_css_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueName:{league_name_js},leagueFormat:{league_format_js},currentWeek:{current_week_js},leagueType:{league_type_js},leagueSize:{league_size_js},scoringType:{league_scoring_type_js}}};</script>
       <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -2097,28 +2137,51 @@ def _peek_league_ctx(platform, league_id, season) -> dict:
         return {}
 
 
+def _saved_league_chrome_name(platform, league_id) -> str:
+    """Display name from the signed-in account's saved leagues, if any."""
+    try:
+        account_id = session.get("account_id")
+        if not account_id:
+            return ""
+        from dashboard_services.accounts import get_saved_league_name
+        return get_saved_league_name(account_id, platform, league_id)
+    except Exception:
+        return ""
+
+
+def _provider_league_for_chrome(platform, league_id) -> dict:
+    """Live Sleeper league JSON when dashboard cache has no name/slots yet."""
+    if str(platform or "").lower() != "sleeper" or not league_id:
+        return {}
+    try:
+        from dashboard_services.api import get_league
+        live = get_league(str(league_id))
+        return live if isinstance(live, dict) else {}
+    except Exception:
+        return {}
+
+
 def _league_chrome_meta(platform, league_id, season, offseason_mode: bool = False) -> dict:
     """League name, format, and week for the persistent nav chip."""
-    from utils.league_chrome import build_league_chrome
+    from utils.league_chrome import merge_chrome_sources
     ctx = _peek_league_ctx(platform, league_id, season)
     nfl = get_nfl_state() or {}
     try:
         week = int(ctx.get("current_week") or nfl.get("week") or 0)
     except (TypeError, ValueError):
         week = 0
-    try:
-        size = int(
-            ctx.get("total_rosters")
-            or (ctx.get("league") or {}).get("total_rosters")
-            or len(ctx.get("rosters") or [])
-            or 0
-        )
-    except (TypeError, ValueError):
-        size = 0
-    return build_league_chrome(
-        name=((ctx.get("league") or {}).get("name") or ""),
-        size=size,
-        roster_positions=ctx.get("roster_positions") or [],
+    ctx_league = ctx.get("league") if isinstance(ctx.get("league"), dict) else {}
+    cache_name = str(ctx_league.get("name") or "").strip()
+    cache_slots = ctx.get("roster_positions") or ctx_league.get("roster_positions") or []
+    need_live = not (cache_name and cache_slots)
+    live = _provider_league_for_chrome(platform, league_id) if need_live else {}
+    saved = ""
+    if not (cache_name or (live or {}).get("name")):
+        saved = _saved_league_chrome_name(platform, league_id)
+    return merge_chrome_sources(
+        ctx=ctx,
+        saved_name=saved,
+        provider_league=live,
         week=week,
         season_type=str(nfl.get("season_type") or ""),
         offseason=bool(offseason_mode),
@@ -3435,7 +3498,12 @@ def _link_modal_html() -> str:
           var d=res.d;
           if(res.status===401&&d.needs_oauth){
             var hint=d.error||'Connect Yahoo, then come back and try again.';
-            box.innerHTML='<a class="link-go" href="'+esc(d.auth_url||'/auth/yahoo')+'">Connect Yahoo</a>'+
+            var authBase=d.auth_url||'/auth/yahoo?next=/portfolio';
+            var url=new URL(authBase, window.location.origin);
+            if(!url.searchParams.get('next')) url.searchParams.set('next','/portfolio');
+            if(window._hasAccount && !url.searchParams.get('league_id')) url.searchParams.set('league_id', id);
+            var href=url.pathname+url.search;
+            box.innerHTML='<a class="link-go" href="'+esc(href)+'">Connect Yahoo</a>'+
               '<div style="font-size:11.5px;color:var(--text-muted);margin-top:8px;">'+esc(hint)+'</div>';
             linkSetMsg('',''); return;
           }
@@ -3630,6 +3698,17 @@ def _link_modal_html() -> str:
             linkSetMsg('League connected. Opening dashboard…','ok'); location.href=d.redirect_url;
           }).catch(function(){linkSetMsg('Network error.','err');});
       };
+    })();
+    (function(){
+      var m=/[?&]link_yahoo=([^&]+)/.exec(location.search);
+      if(!m||!window.openLinkModal||!window.linkTab) return;
+      var lid=decodeURIComponent(m[1]);
+      window.openLinkModal();
+      window.linkTab('yahoo');
+      var inp=document.getElementById('linkYahooId');
+      if(inp) inp.value=lid;
+      if(window.linkYahooPreview) window.linkYahooPreview();
+      if(history.replaceState) history.replaceState(null,'',location.pathname+location.hash);
     })();
     </script>
     """
@@ -4303,17 +4382,24 @@ _AD_INIT = """(function(){
 def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
     """Dismissible weekly 'Recap is ready' banner.
 
-    Shown on Tuesdays during the NFL season (Sep–Jan) only.
-    Dismissal resets each week via an ISO-week-scoped localStorage key,
-    so the banner reappears the following Tuesday.
+    Shown on Tuesdays during the regular season or playoffs only (mirrors
+    notify_recap_ready). Dismissal resets each week via an ISO-week-scoped
+    localStorage key, so the banner reappears the following Tuesday.
     """
     import datetime as _dt
     now = _dt.datetime.now()
     if now.weekday() != 1:  # Tuesday only (0=Mon … 6=Sun)
         return ""
-    if now.month not in {9, 10, 11, 12, 1}:  # NFL season only
-        return ""
     if not (league_id and platform and season):
+        return ""
+
+    nfl_state = get_nfl_state() or {}
+    nfl_season = int(nfl_state.get("season") or 0)
+    season_type = (nfl_state.get("season_type") or "").lower()
+    week = int(nfl_state.get("week") or 0)
+    if not nfl_season or not week or season_type not in ("reg", "post"):
+        return ""
+    if int(season) != nfl_season:
         return ""
 
     recap_url = f"/{platform}/{season}/{league_id}/recap"
@@ -4328,6 +4414,16 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
   to   {{ opacity:1; transform:translateY(0); }}
 }}
 #recapReadyBanner {{ animation: recapSlideUp .3s ease forwards; }}
+/* On phones the fixed bottom dock (.br-mnav, 56px + safe-area) owns the bottom
+   edge, so lift the banner above it instead of letting the dock cover it. Also
+   pin it to both side gutters so the 300px card never runs off a narrow screen.
+   These override inline styles on the element, so they must be !important. */
+@media (max-width: 768px) {{
+  #recapReadyBanner {{
+    left:12px !important; right:12px !important; width:auto !important;
+    bottom:calc(var(--dock-safe-bottom) + 14px) !important;
+  }}
+}}
 </style>
 <div id="recapReadyBanner" style="
      display:none;
@@ -4397,22 +4493,39 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
 _DRAFT_IMMINENT_BANNER_HTML = r"""
 <div id="drImminentBanner" class="drgb" style="display:none;"></div>
 <style>
-.drgb { margin: 10px 14px 0; border-radius: 12px; border: 1px solid var(--accent,#38bdf8); overflow: hidden;
-  background: linear-gradient(90deg, rgba(56,189,248,.18), rgba(56,189,248,.05)); }
-.drgb.is-live { border-color: #22c55e; background: linear-gradient(90deg, rgba(34,197,94,.18), rgba(34,197,94,.05)); }
-.drgb-inner { display: flex; align-items: center; gap: 12px; padding: 11px 16px; }
-.drgb-ic { font-size: 20px; flex-shrink: 0; display: inline-flex; align-items: center; }
-.drgb-ic-live { animation: drgbPulse 1.4s ease-in-out infinite; }
-@keyframes drgbPulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
-.drgb-txt { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; flex: 1; }
-.drgb-txt b { font-size: 14px; font-weight: 800; color: var(--text); }
-.drgb-txt span { font-size: 12px; color: var(--text-muted); }
+.drgb { position: relative; margin: 12px 14px 0; border-radius: 16px; overflow: hidden;
+  border: 1px solid rgba(56,189,248,.32);
+  background: linear-gradient(135deg, rgba(56,189,248,.14), rgba(56,189,248,.03));
+  box-shadow: 0 10px 26px -14px rgba(15,23,42,.4); }
+.drgb::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--accent,#38bdf8); }
+.drgb.is-live { border-color: rgba(56,189,248,.42);
+  background: linear-gradient(135deg, rgba(56,189,248,.18), rgba(56,189,248,.04)); }
+.drgb.is-live::before { background: linear-gradient(#38bdf8, #0ea5e9); }
+.drgb-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 16px 44px 16px 18px; }
+.drgb-ic { flex-shrink: 0; width: 42px; height: 42px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 19px; color: var(--accent,#38bdf8); background: rgba(56,189,248,.16); box-shadow: inset 0 0 0 1px rgba(56,189,248,.28); }
+.drgb-ic-live { color: var(--accent,#38bdf8); background: rgba(56,189,248,.18); box-shadow: inset 0 0 0 1px rgba(56,189,248,.32);
+  animation: drgbPulse 1.9s ease-out infinite; }
+@keyframes drgbPulse { 0% { box-shadow: inset 0 0 0 1px rgba(56,189,248,.32), 0 0 0 0 rgba(56,189,248,.5); }
+  70% { box-shadow: inset 0 0 0 1px rgba(56,189,248,.32), 0 0 0 9px rgba(56,189,248,0); }
+  100% { box-shadow: inset 0 0 0 1px rgba(56,189,248,.32), 0 0 0 0 rgba(56,189,248,0); } }
+@media (prefers-reduced-motion: reduce) { .drgb-ic-live { animation: none; } }
+.drgb-txt { display: flex; flex-direction: column; gap: 2px; line-height: 1.3; min-width: 0; flex: 1 1 140px; }
+.drgb-txt b { font-size: 15px; font-weight: 800; color: var(--text); letter-spacing: -.01em; }
+.drgb-txt span { font-size: 12.5px; color: var(--text-muted); }
 .drgb-cd { font-variant-numeric: tabular-nums; }
-.drgb-join { flex-shrink: 0; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
-  background: var(--accent,#38bdf8); color: #fff; font-weight: 700; font-size: 13px; text-decoration: none; padding: 8px 14px; border-radius: 8px; }
-.drgb.is-live .drgb-join { background: #22c55e; }
+.drgb-join { flex: 1 1 100%; justify-content: center; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+  background: linear-gradient(180deg, #38bdf8, #0ea5e9); color: #fff; font-weight: 700; font-size: 13px; text-decoration: none;
+  padding: 11px 16px; border-radius: 11px; box-shadow: 0 5px 14px -4px rgba(14,165,233,.55);
+  transition: transform .12s ease, box-shadow .15s ease, filter .15s ease; }
+.drgb-join:hover { transform: translateY(-1px); box-shadow: 0 9px 20px -5px rgba(14,165,233,.65); }
+.drgb-join:active { transform: translateY(0); filter: brightness(.97); }
 .drgb-join i { font-size: 11px; }
-.drgb-x { flex-shrink: 0; background: none; border: none; color: var(--text-muted); font-size: 19px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.drgb-x { position: absolute; top: 9px; right: 10px; z-index: 1; background: none; border: none; color: var(--text-muted);
+  font-size: 18px; line-height: 1; cursor: pointer; padding: 3px 6px; border-radius: 7px; opacity: .55;
+  transition: opacity .15s ease, background .15s ease; }
+.drgb-x:hover { opacity: 1; background: rgba(127,127,127,.16); }
+@media (min-width: 560px) { .drgb-join { flex: 0 0 auto; } }
 </style>
 <script>
 (function(){
@@ -4687,8 +4800,8 @@ def _discord_banner() -> str:
 DEFAULT_META_DESCRIPTION = (
     "BR Fantasy is a free fantasy football toolkit: a dynasty and redraft trade "
     "calculator, daily-updated player trade values, real-trade market data, breakout "
-    "candidate rankings, and advanced metrics for Sleeper and ESPN leagues. "
-    "MFL and Fleaflicker leagues supported. Yahoo coming soon."
+    "candidate rankings, and advanced metrics for Sleeper, ESPN, and Yahoo leagues. "
+    "MFL and Fleaflicker leagues also supported."
 )
 
 
@@ -4744,7 +4857,9 @@ def _default_social_tags(title: str, description: str) -> str:
     their own. Gives every public page a proper link preview when shared."""
     origin = _site_origin()
     desc = (description or DEFAULT_META_DESCRIPTION).strip()
-    image = f"{origin}/static/BR_Logo.png" if origin else "/static/BR_Logo.png"
+    # Branded 1200×630 card (not the square logo) so Slack/X/iMessage previews
+    # render as summary_large_image instead of a tiny icon.
+    image = f"{origin}/static/og-default.png" if origin else "/static/og-default.png"
     t = html.escape(title, quote=True)
     d = html.escape(desc, quote=True)
     img = html.escape(image, quote=True)
@@ -4760,7 +4875,9 @@ def _default_social_tags(title: str, description: str) -> str:
         f"<meta property=\"og:description\" content=\"{d}\">"
         f"<meta property=\"og:url\" content=\"{url}\">"
         f"<meta property=\"og:image\" content=\"{img}\">"
-        f"<meta name=\"twitter:card\" content=\"summary\">"
+        f"<meta property=\"og:image:width\" content=\"1200\">"
+        f"<meta property=\"og:image:height\" content=\"630\">"
+        f"<meta name=\"twitter:card\" content=\"summary_large_image\">"
         f"<meta name=\"twitter:title\" content=\"{t}\">"
         f"<meta name=\"twitter:description\" content=\"{d}\">"
         f"<meta name=\"twitter:image\" content=\"{img}\">"
@@ -4894,6 +5011,10 @@ def render_page(
         json.dumps(f"/static/{_FEATURES_JS_FILE}?v={_FEATURES_JS_V}")
         if _use_lite else "null"
     )
+    _dashboard_css_js = (
+        json.dumps(f"/static/{_CSS_FILE}?v={_CSS_V}")
+        if _use_lite else "null"
+    )
 
     meta_tags = _build_seo_meta_tags(
         description, canonical, noindex,
@@ -5020,6 +5141,7 @@ def render_page(
         has_account_js="true" if session.get("account_id") else "false",
         account_email_js=_json.dumps(session.get("account_email") or ""),
         features_js_js=_features_js_js,
+        dashboard_css_js=_dashboard_css_js,
         platform_js=_json.dumps(platform or "sleeper"),
         season_js=_json.dumps(season),
         league_id_js=_json.dumps(str(league_id or "")),
@@ -5155,12 +5277,22 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     }
     _defaults = {"league": {}, "users": [], "rosters": [], "traded": [], "drafts": [], "state": {}}
     _results: dict = dict(_defaults)
+    _core_provider_errors = (
+        ProviderUnavailableError, ProviderAuthenticationError, LeagueNotFoundError,
+        ESPNUnavailable, ESPNAccessDenied, ESPNInvalidLeague,
+    )
     with _TPE(max_workers=len(_tasks)) as _pool:
         _fmap = {_pool.submit(fn): name for name, fn in _tasks.items()}
         for _fut in _ac(_fmap):
             _name = _fmap[_fut]
             try:
                 _results[_name] = _fut.result()
+            except _core_provider_errors as _e:
+                # League/users/rosters are required to render a league page.
+                # Surface platform outages as 503/403/404 instead of an empty 500.
+                if _name in ("league", "users", "rosters"):
+                    raise
+                logger.warning("[build_league_context] task %s failed: %s", _name, _e)
             except Exception as _e:
                 logger.warning("[build_league_context] task %s failed: %s", _name, _e)
 
@@ -5228,10 +5360,11 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         league_settings = (league or {}).get("settings") or {}
         total_rosters = int((league or {}).get("total_rosters") or 0)
     else:
-        scoring_settings = get_effective_scoring_settings()
-        # Provider adapters normalize into the same Sleeper-style keys. Preserve
-        # that object as the raw scoring contract used by projections and weekly
-        # features instead of silently falling back to Standard scoring.
+        from dashboard_services.api import get_provider_scoring_settings
+        # Do not merge ESPN-style SCORING_DEFAULTS (PPR, 1 pt/completion) into
+        # Fleaflicker/Yahoo/MFL. Those defaults made standard leagues look like
+        # PPR and inflated weekly projections into the 80s.
+        scoring_settings = get_provider_scoring_settings()
         raw_scoring_settings = dict(scoring_settings)
         roster_positions = get_roster_positions()
         league_settings = get_league_settings()
@@ -5267,7 +5400,14 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
             f"resolved_league_id={resolved_league_id}, season={season}"
         )
 
-    activity_df = build_week_activity(resolved_league_id, platform, season, players_map)
+    try:
+        activity_df = build_week_activity(
+            resolved_league_id, platform, season, players_map,
+            users=users, rosters=rosters,
+        )
+    except Exception as e:
+        logger.warning("[build_league_context] week activity failed: %s", e)
+        activity_df = pd.DataFrame(columns=["kind", "week", "ts", "data"])
     injury_df = build_injury_report(
         resolved_league_id,
         players,
@@ -5738,6 +5878,80 @@ _BRAND_FACES = _BRAND_FACES_MINI + (
 )
 
 
+def _branded_status_page(title: str, heading: str, message: str, status: int):
+    """JSON for /api/*; branded HTML everywhere else."""
+    if request.path.startswith("/api/"):
+        return jsonify({"ok": False, "error": message}), status
+    safe_title = html.escape(title)
+    safe_heading = html.escape(heading)
+    safe_message = html.escape(message)
+    return (
+            "<!doctype html><html lang='en'><head><title>" + safe_title + " - BR Fantasy</title>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<style>" + _BRAND_FACES_MINI + "body{font-family:'Archivo',sans-serif;background:#0f1623;color:#e2e8f0;"
+                                            "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
+                                            ".box{text-align:center;padding:40px 24px;max-width:400px;}"
+                                            ".logo{font-size:13px;font-weight:700;color:#38bdf8;letter-spacing:.04em;margin-bottom:24px;}"
+                                            "h2{margin:0 0 8px;font-size:22px;}p{color:#94a3b8;margin:0 0 24px;font-size:14px;}"
+                                            "a{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
+                                            "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;}</style>"
+                                            "</head><body><div class='box'>"
+                                            "<div class='logo'>BR Fantasy</div>"
+                                            "<h2>" + safe_heading + "</h2>"
+                                            "<p>" + safe_message + "</p>"
+                                            "<a href='/'>&#8592; Back to home</a>"
+                                            "</div></body></html>"
+    ), status
+
+
+def _provider_error_message(exc: Exception, fallback: str) -> str:
+    text = str(exc or "").strip()
+    if text and len(text) < 200 and "Traceback" not in text:
+        return text
+    return fallback
+
+
+@app.errorhandler(ProviderUnavailableError)
+@app.errorhandler(ESPNUnavailable)
+def handle_provider_unavailable(e):
+    message = _provider_error_message(e, "The fantasy platform is temporarily unavailable.")
+    logger.warning("[503] provider unavailable: %s", message)
+    return _branded_status_page(
+        "Temporarily unavailable",
+        "League data is temporarily unavailable",
+        message + " Please try again in a moment.",
+        503,
+    )
+
+
+@app.errorhandler(ProviderAuthenticationError)
+@app.errorhandler(ESPNAccessDenied)
+def handle_provider_auth(e):
+    message = _provider_error_message(
+        e, "This league is private or requires authentication.",
+    )
+    logger.warning("[403] provider access denied: %s", message)
+    return _branded_status_page(
+        "League access required",
+        "This league could not be accessed",
+        message,
+        403,
+    )
+
+
+@app.errorhandler(LeagueNotFoundError)
+@app.errorhandler(ESPNInvalidLeague)
+def handle_provider_not_found(e):
+    message = _provider_error_message(e, "No league was found for that ID and season.")
+    logger.warning("[404] provider league not found: %s", message)
+    return _branded_status_page(
+        "League not found",
+        "League not found",
+        message,
+        404,
+    )
+
+
 @app.errorhandler(500)
 def handle_500(e):
     logger.exception("[500] Internal server error")
@@ -5980,7 +6194,9 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     # ---------- League settings / refs that can matter to multiple pages ----------
     sync_league_globals(platform, resolved_league_id, viewed_season)
     try:
-        ctx["scoring_settings"] = get_effective_scoring_settings()
+        scoring_settings = get_normalized_scoring_settings(platform)
+        ctx["scoring_settings"] = scoring_settings
+        ctx["raw_scoring_settings"] = scoring_settings
     except Exception as e:
         logger.info(f"[ctx] scoring_settings failed: {e}")
 
@@ -6044,12 +6260,18 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     if full or page in ("activity", "dashboard"):
         clear_activity_cache_for_league(resolved_league_id)
 
-        ctx["activity_df"] = build_week_activity(
-            resolved_league_id,
-            platform,
-            viewed_season,
-            players_map,
-        )
+        try:
+            ctx["activity_df"] = build_week_activity(
+                resolved_league_id,
+                platform,
+                viewed_season,
+                players_map,
+                users=ctx.get("users"),
+                rosters=ctx.get("rosters"),
+            )
+        except Exception as e:
+            logger.warning("[refresh_league_ctx_section] week activity failed: %s", e)
+            ctx["activity_df"] = pd.DataFrame(columns=["kind", "week", "ts", "data"])
 
         if has_idp:
             statuses = build_status_by_week(
@@ -6844,7 +7066,7 @@ def _viewer_lineup_alert_html(ctx: dict, viewer_roster_id) -> str:
         return f"""
         <section class="os-card lineup-alert-card">
           <div class="lineup-alert-head">
-            <span class="lineup-alert-title">{title} for Week {current_week}</span>
+            <span class="lineup-alert-title"><svg class="lineup-alert-ico" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 3 22 20H2L12 3Zm-1 6h2v5h-2V9Zm0 7h2v2h-2v-2Z"/></svg>{title} for Week {current_week}</span>
             <a class="os-section-link" href="{fix_url}">Fix your lineup &rarr;</a>
           </div>
           <ul class="lineup-alert-list">{items}</ul>
@@ -7241,8 +7463,9 @@ def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> st
                 f"{opt_pts:.1f}. You scored {actual:.1f} and left "
                 f"{left_on_bench:.1f} points on the bench."
             )
+        tone_cls = " bench-ok" if left_on_bench < 1.0 else " bench-miss"
         return f"""
-        <section class="os-card bench-check-card">
+        <section class="os-card bench-check-card{tone_cls}">
           <div class="bench-check-row">
             <span class="bench-check-msg">{html.escape(msg)}</span>
             <a class="os-section-link" href="{eff_url}">Lineup efficiency &rarr;</a>
@@ -7496,8 +7719,18 @@ def render_power_and_playoffs(
 
     rankings_html = "<div class='rank-grid'>" + "".join(rank_cards) + "</div>"
 
-    # ---- Playoff bracket ----
-    wb = bracket_override if bracket_override is not None else get_bracket(platform, league_id, "winners", season)
+    # ---- Playoff bracket (optional; Fleaflicker/MFL do not expose one) ----
+    if bracket_override is not None:
+        wb = bracket_override
+    else:
+        try:
+            wb = get_bracket(platform, league_id, "winners", season) or []
+        except Exception:
+            logger.debug(
+                "playoff bracket unavailable platform=%s league=%s season=%s",
+                platform, league_id, season, exc_info=True,
+            )
+            wb = []
     roster_avatar_map = {
         str(owner): av
         for owner, av in zip(team_stats["owner"], team_stats["avatar"])
@@ -8379,6 +8612,23 @@ def _league_is_redraft(ctx: dict) -> bool:
     """
     if str(ctx.get("platform") or "").strip().lower() == "espn":
         return True
+    if str(ctx.get("platform") or "").strip().lower() == "yahoo":
+        # Yahoo has no dynasty product; treat unknown/missing type as redraft.
+        settings = (ctx.get("league_settings")
+                    or (ctx.get("league") or {}).get("settings")
+                    or ctx.get("settings") or {})
+        try:
+            t = settings.get("type")
+            if t is not None and int(t) == 2:
+                return False
+            if t is not None and int(t) in (0, 1):
+                return True
+        except (TypeError, ValueError, AttributeError):
+            pass
+        lt = str(settings.get("league_type") or "").strip().lower()
+        if "dynasty" in lt:
+            return False
+        return True
     settings = (ctx.get("league_settings")
                 or (ctx.get("league") or {}).get("settings")
                 or ctx.get("settings") or {})
@@ -8409,14 +8659,25 @@ def _waiver_value_keys(ctx: dict) -> "tuple[str, str]":
 
     The fallback is always the dynasty column, so a redraft league missing a
     redraft value for some player still ranks them off dynasty value rather than
-    dropping them below the value floor.
+    dropping them below the value floor. ``apply_redraft_display_fields`` fills
+    unpriced redraft values first so that fallback rarely fires on waivers.
     """
+    from utils.value_helpers import format_value_keys
     rp = ctx.get("roster_positions") or []
-    is_sf = _is_superflex_lineup(rp)
-    if _league_is_redraft(ctx):
-        return (("redraft_value_sf" if is_sf else "redraft_value_1qb"),
-                ("sf_value" if is_sf else "value"))
-    return (("sf_value" if is_sf else "value"), "value")
+    return format_value_keys(
+        is_redraft=_league_is_redraft(ctx),
+        is_sf=_is_superflex_lineup(rp),
+    )
+
+
+def _waiver_rank_label_key(ctx: dict) -> str:
+    """Position-rank label field matching ``_waiver_value_keys`` for this league."""
+    from utils.value_helpers import format_rank_label_key
+    rp = ctx.get("roster_positions") or []
+    return format_rank_label_key(
+        is_redraft=_league_is_redraft(ctx),
+        is_sf=_is_superflex_lineup(rp),
+    )
 
 
 def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 10) -> str:
@@ -8461,6 +8722,7 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
     # Rank/display off the value column that matches this league's format
     # (redraft vs dynasty, 1QB vs Superflex) — same selector as the API surface.
     _vkey_dash, _vfb_dash = _waiver_value_keys(ctx)
+    _rk_dash = _waiver_rank_label_key(ctx)
 
     waiver_candidates = []
     for row in model_value_table:
@@ -8509,7 +8771,7 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
             "team": row.get("team") or players_index.get(pid, {}).get("team") or "",
             "value": val,
             "age": age,
-            "pos_rank_label": row.get("pos_rank_label") or "",
+            "pos_rank_label": row.get(_rk_dash) or row.get("pos_rank_label") or "",
             "rank_change_7d": rank_change,
         })
 
@@ -9490,6 +9752,22 @@ def _maybe_check_roster_freshness(platform: str, league_id: str, season: int,
 
 
 def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dict:
+    try:
+        from utils.ui_audit_fixture import (
+            build_ui_audit_league_context,
+            is_ui_audit_league,
+            ui_audit_enabled,
+        )
+
+        if ui_audit_enabled() and is_ui_audit_league(league_id):
+            ctx = build_ui_audit_league_context(platform, league_id, season)
+            ctx["viewer"] = get_viewer_session_for_league(
+                ctx.get("users") or [], ctx.get("rosters") or [], platform, league_id, season
+            )
+            return ctx
+    except Exception:
+        logger.debug("[ui-audit] fixture lookup failed", exc_info=True)
+
     key = _cache_key(platform, season, league_id)
     entry = DASHBOARD_CACHE.get(key)
     if _league_ctx_cache_valid(entry, platform, season, league_id):
@@ -9796,6 +10074,8 @@ def api_start_sit_options():
     players_index = ctx.get("players_index") or {}
     players_full = ctx.get("players") or {}
     model_value_table = list(get_model_value_table_cached() or [])
+    _ss_vkey, _ss_vfb = _waiver_value_keys(ctx)
+    _ss_rkey = _waiver_rank_label_key(ctx)
 
     roster_positions = ctx.get("roster_positions") or []
     lineup_requirements = _count_lineup_slots(roster_positions)
@@ -9889,9 +10169,10 @@ def api_start_sit_options():
     prior_pts_map: dict = {}
     prior_season: Optional[int] = None
     try:
-        from dashboard_services.api import SCORING_DEFAULTS as _SD_SS
         from utils.consistency import BLEND_FULL_SEASON as _BLEND_FULL
-        _eff_ss = {**_SD_SS, **(ctx.get("raw_scoring_settings") or {})}
+        from utils.league_scoring import stamp_scoring_aliases
+        _raw_ss = ctx.get("raw_scoring_settings") or ctx.get("scoring_settings") or {}
+        _eff_ss = stamp_scoring_aliases(_raw_ss) if _raw_ss else {}
         weekly_pts_map = _load_season_weekly_points(season, _eff_ss)
         # Per-player gate: load last season while ANY rostered player is still
         # inside the crossfade window (fewer than a full crossfade's worth of
@@ -10047,7 +10328,7 @@ def api_start_sit_options():
                 from utils.injury_plan import injury_plan as _ss_plan
                 _pval = None
                 try:
-                    _pval = float(row.get("value") or 0) or None
+                    _pval = float(row.get(_ss_vkey) or row.get(_ss_vfb) or row.get("value") or 0) or None
                 except Exception:
                     _pval = None
                 _return_plan = _ss_plan(
@@ -10072,7 +10353,8 @@ def api_start_sit_options():
             "fpts_against": fpts_vs,
             "def_rank": def_rank,
             "def_total": def_total,
-            "pos_rank_label": row.get("pos_rank_label") or "",
+            "pos_rank_label": row.get(_ss_rkey) or row.get("pos_rank_label") or "",
+            "value": round(float(row.get(_ss_vkey) or row.get(_ss_vfb) or 0)),
             "injury_status": injury_status,
             "return_plan": _return_plan,
             "usage_delta": usage_delta,
@@ -10597,7 +10879,7 @@ def _redzone_collect(platform, league_id, season, week):
     """Build the raw per-league Redzone pieces (no top-level wrapper)."""
     from dashboard_services.api import (
         get_nfl_scores_for_date, build_team_game_lookup,
-        get_nfl_players, get_effective_scoring_settings, get_league,
+        get_nfl_players, get_normalized_scoring_settings, get_league,
     )
     from dashboard_services.platform_api import (
         get_matchups as _pm, get_rosters as _pr, get_users as _pu,
@@ -10620,7 +10902,7 @@ def _redzone_collect(platform, league_id, season, week):
         # settings rather than generic defaults. sync_league_globals routes
         # through the right provider for every platform (Sleeper included).
         sync_league_globals(platform, league_id, season)
-        scoring = get_effective_scoring_settings() or {}
+        scoring = get_normalized_scoring_settings(platform) or {}
     except Exception:
         scoring = {}
 
@@ -10995,7 +11277,7 @@ def api_redzone_data(platform: str, season: int, league_id: str):
 def api_redzone_player(platform: str, season: int, league_id: str):
     """Return Tank01 boxscore stats for a single player, tagged with fantasy pts."""
     from dashboard_services.api import (
-        get_nfl_players, fetch_tank_boxscore, get_effective_scoring_settings,
+        get_nfl_players, fetch_tank_boxscore, get_normalized_scoring_settings,
     )
     pid = request.args.get("pid", "")
     game_id = request.args.get("game_id", "")
@@ -11019,7 +11301,8 @@ def api_redzone_player(platform: str, season: int, league_id: str):
                         stats = ps
                         break
 
-        scoring = get_effective_scoring_settings() or {}
+        sync_league_globals(platform, league_id, season)
+        scoring = get_normalized_scoring_settings(platform) or {}
 
         def _pts(stat_key, score_key, multiplier=1):
             val = float(stats.get(stat_key) or 0) * multiplier
@@ -11470,7 +11753,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     _players_desc = (
         "Daily-updated fantasy football player rankings and trade values for dynasty and "
         "redraft leagues. Compare players with consensus rankings, trend charts, and advanced "
-        "metrics for Sleeper and ESPN. Yahoo coming soon."
+        "metrics for Sleeper, ESPN, and Yahoo."
     )
     _final_title = _title or "Fantasy Football Player Rankings & Trade Values | BR Fantasy"
     _final_desc = _desc or _players_desc
@@ -14125,7 +14408,7 @@ def index():
             "Free fantasy football tools and original dynasty strategy guides "
             "for Sleeper and ESPN: a trade calculator, daily player trade values, "
             "rankings, breakout candidates, and advanced metrics. "
-            "MFL and Fleaflicker leagues supported. Yahoo coming soon."
+            "MFL and Fleaflicker leagues also supported."
         ),
         lite_js=True,
     )
@@ -14253,6 +14536,7 @@ def api_weekly_week():
             team_game_lookup=team_game_lookup,
             fpts_against=_fpts_against_api,
             viewer_roster_id=_api_vid,
+            scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
         )
         for m in matchups
     ]
@@ -14673,6 +14957,10 @@ def get_model_value_table_cached():
 
         _rerank(tbl, "value", "pos_rank", "pos_rank_label")
         _rerank(tbl, "sf_value", "sf_pos_rank", "sf_pos_rank_label")
+        # Redraft columns + ranks so waiver/start-sit don't fall back to dynasty
+        # numbers (or dynasty WR12 labels) in a redraft league.
+        from utils.value_helpers import apply_redraft_display_fields as _ardf
+        _ardf(tbl)
 
     _MODEL_VALUE_CACHE = tbl
     _MODEL_VALUE_CACHE_TS = now
@@ -15650,8 +15938,8 @@ def _attach_adp_from_source(players, adp_season, source, league_id=None, token=N
     # some drafts, so the mean floats to ~3), so we show it as a clean 1..N draft
     # board. Rank it over the players WE actually list (this pool), not the whole
     # crawl population — otherwise a crawl-only player nobody sees holds slot #1
-    # and the top player we show reads as #2.
-    _brf = (source == "brfantasy")
+    # and the top player we show reads as #2. Same treatment for Live (7d).
+    _brf = (source in ("brfantasy", "brfantasy_live"))
     _pool_ids = {str(_p.get("id") or "") for _p in players}
     # Rookie-draft pool: rank the rookie axis among these alone so any source
     # becomes a clean 1..N rookie board (Sleeper has no rookie-specific ADP and
@@ -15696,6 +15984,36 @@ _ADP_COLUMN_AXES = (
 )
 
 
+def _fill_displayed_consensus(players) -> bool:
+    """Set ``adp_by_source['consensus']`` to the mean of the other source columns.
+
+    BR Fantasy is stored as a 1..N rank; Sleeper/ESPN/Yahoo/MFL stay on raw ADP.
+    Averaging those plotted numbers is what the Consensus column must show
+    (Gibbs 1.0 + 2.0 → 1.5), not the raw-ADP blend from resolve_market_adp."""
+    from dashboard_services.adp_service import displayed_source_consensus
+    fields = [field for _st, _sf, field in _ADP_COLUMN_AXES]
+    any_cons = False
+    for _p in players:
+        dest = _p.setdefault("adp_by_source", {})
+        cons = {}
+        has = False
+        for field in fields:
+            per_src = {
+                src: (row or {}).get(field)
+                for src, row in dest.items() if src != "consensus"
+            }
+            v = displayed_source_consensus(per_src)
+            cons[field] = v
+            if v is not None:
+                has = True
+        if has:
+            dest["consensus"] = cons
+            any_cons = True
+        else:
+            dest.pop("consensus", None)
+    return any_cons
+
+
 def _attach_all_adp_sources(players, adp_season, sources, league_id=None, token=None):
     """Attach EACH source's ADP separately so the rankings ADP view can show one
     sortable column per source.
@@ -15703,14 +16021,21 @@ def _attach_all_adp_sources(players, adp_season, sources, league_id=None, token=
     Writes ``p['adp_by_source'][src] = {avg_pick, sf_avg_pick, redraft_avg_pick,
     sf_redraft_avg_pick}`` and returns the ordered list of sources that actually
     have data: ``[{'value','label'}]``. Uses fallback=False so each column shows
-    only that source's own numbers (BR Fantasy never borrows Sleeper's)."""
+    only that source's own numbers (BR Fantasy never borrows Sleeper's).
+
+    Consensus is not resolved as a raw-ADP blend. After the other columns are
+    attached (BR Fantasy already re-ranked 1..N), it is the mean of those
+    displayed values so Cons sits between Sleeper and BR Fantasy on the board."""
     from dashboard_services.adp_service import (
         resolve_market_adp, ADP_SOURCE_LABELS, ordinal_rank_adp,
     )
     _pool_ids = {str(_p.get("id") or "") for _p in players}
+    want_consensus = any(s == "consensus" for s in sources)
     columns = []
     for source in sources:
-        _brf = (source == "brfantasy")
+        if source == "consensus":
+            continue
+        _brf = (source in ("brfantasy", "brfantasy_live"))
         by_field = {}
         has_any = False
         for scoring_type, is_sf, field in _ADP_COLUMN_AXES:
@@ -15734,6 +16059,8 @@ def _attach_all_adp_sources(players, adp_season, sources, league_id=None, token=
             dest = _p.setdefault("adp_by_source", {})
             dest[source] = {f: by_field[f].get(_pid) for f in by_field}
         columns.append({"value": source, "label": ADP_SOURCE_LABELS.get(source, source.title())})
+    if want_consensus and _fill_displayed_consensus(players):
+        columns.append({"value": "consensus", "label": ADP_SOURCE_LABELS.get("consensus", "Consensus")})
     return columns
 
 
@@ -16161,47 +16488,12 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     except Exception as _e_rd:
         logger.info(f"[api/league-players] redraft values skipped: {_e_rd}")
 
-    # Redraft depth fallback: the market source (FantasyCalc) only prices roughly
-    # the top ~64 RB / ~150 WR, so a deep redraft mock (e.g. 12-team x 17 rounds =
-    # 204 picks) drains the priced pool and the Draft Room's position filter goes
-    # empty ("no players match" for RB even though hundreds exist). Derive a redraft
-    # value for every unpriced skill player from its dynasty value, scaled strictly
-    # below the priced floor so real redraft values always rank first, relative
-    # order is preserved, and the pool never runs dry.
+    # Redraft depth fallback: shared with the value-table cache so Draft Room,
+    # waivers, and start/sit all read the same filled redraft numbers. Idempotent
+    # when the cache already ran apply_redraft_display_fields.
     try:
-        _skill = {"QB", "RB", "WR", "TE"}
-
-        def _num(_x):
-            try:
-                return float(_x)
-            except (TypeError, ValueError):
-                return 0.0
-
-        for _rd_field, _dyn_field in (("redraft_value_1qb", "value"),
-                                      ("redraft_value_sf", "sf_value")):
-            _priced = [
-                _num(_p.get(_rd_field)) for _p in model_value_table
-                if str(_p.get("position") or "").upper() in _skill
-                and _num(_p.get(_rd_field)) > 0
-            ]
-            _floor = min(_priced) if _priced else 1.0
-            _unpriced_dyn = [
-                _num(_p.get(_dyn_field)) for _p in model_value_table
-                if str(_p.get("position") or "").upper() in _skill
-                and _num(_p.get(_rd_field)) <= 0
-            ]
-            _dyn_max = max(_unpriced_dyn) if _unpriced_dyn else 0.0
-            if _dyn_max <= 0:
-                continue
-            _cap = _floor * 0.9   # best unpriced player still ranks below every priced one
-            for _p in model_value_table:
-                if str(_p.get("position") or "").upper() not in _skill:
-                    continue
-                if _num(_p.get(_rd_field)) > 0:
-                    continue
-                _dyn = _num(_p.get(_dyn_field))
-                if _dyn > 0:
-                    _p[_rd_field] = round(_cap * (_dyn / _dyn_max), 2)
+        from utils.value_helpers import fill_unpriced_redraft_values as _furd
+        _furd(model_value_table)
     except Exception as _e_rdfill:
         logger.info(f"[api/league-players] redraft depth fill skipped: {_e_rdfill}")
 
@@ -17188,12 +17480,8 @@ def api_teams():
 
             # Find the user for this roster
             user = next((u for u in users if u.get("user_id") == user_id), None)
-            if user:
-                team_name = user.get("team_name") or user.get("display_name") or f"Team {roster_id}"
-                username = user.get("username") or user.get("display_name") or ""
-            else:
-                team_name = f"Team {roster_id}"
-                username = ""
+            team_name = team_label_from_user(user, roster, fallback=f"Team {roster_id}")
+            username = username_from_user(user)
 
             teams.append({
                 "roster_id": roster_id,
@@ -17244,12 +17532,8 @@ def api_league_rosters():
             roster_id = str(roster.get("roster_id", ""))
             user_id = roster.get("owner_id")
             user = next((u for u in users if u.get("user_id") == user_id), None)
-            if user:
-                team_name = user.get("team_name") or user.get("display_name") or f"Team {roster_id}"
-                username = user.get("username") or user.get("display_name") or ""
-            else:
-                team_name = f"Team {roster_id}"
-                username = ""
+            team_name = team_label_from_user(user, roster, fallback=f"Team {roster_id}")
+            username = username_from_user(user)
             player_ids = [str(pid) for pid in (roster.get("players") or [])]
             # Resolve each owned pick to the exact draft slot its original owner
             # holds. A pick's slot is fixed by the standings of the season BEFORE
@@ -17975,7 +18259,6 @@ def api_player_details(player_id: str):
     """Get comprehensive player details for modal display."""
     try:
         from utils.utils import load_relevant_index, load_model_value_table
-        from dashboard_services.api import get_effective_scoring_settings
         from dashboard_services.platform_api import sync_league_globals
         import json
         import os
@@ -18005,7 +18288,7 @@ def api_player_details(player_id: str):
                 _get_league(league_id)
             else:
                 sync_league_globals(platform, league_id, season)
-            scoring_settings = get_effective_scoring_settings()
+            scoring_settings = get_normalized_scoring_settings(platform)
         else:
             # Default scoring settings if no league context
             scoring_settings = {
@@ -18677,13 +18960,17 @@ def api_player_adp(player_id: str):
                 try:
                     # Match the rankings page: re-rank BR Fantasy (ordered by its
                     # raw avg_pick) to a clean 1..N board so it tops out at 1
-                    # instead of the ~3 mean-pick floor. fallback=False so an
-                    # off-axis source shows nothing rather than borrowing Sleeper's
-                    # numbers — ESPN/Yahoo/MFL are redraft-only, so their dynasty
-                    # cells must stay empty (not silently become Sleeper's ADP).
+                    # instead of the ~3 mean-pick floor. The modal range then
+                    # averages those plotted values (rank + other source ADPs)
+                    # for Cons, so (BR 2.0 + Sleeper 4.3) → Cons 3.2.
+                    # fallback=False so an off-axis source shows nothing rather
+                    # than borrowing Sleeper's numbers — ESPN/Yahoo/MFL are
+                    # redraft-only, so their dynasty cells must stay empty (not
+                    # silently become Sleeper's ADP).
                     _mkt_cache[_key] = resolve_market_adp(
                         int(season), _is_sf, _scoring, source=_source,
-                        as_rank=(_source == "brfantasy"), fallback=False) or {}
+                        as_rank=(_source in ("brfantasy", "brfantasy_live")),
+                        fallback=False) or {}
                 except Exception:
                     _mkt_cache[_key] = {}
             _v = _mkt_cache[_key].get(str(player_id))
@@ -18700,6 +18987,7 @@ def api_player_adp(player_id: str):
         # snapshot never produces a bare row. Consensus stays last.
         _source_specs = [
             ("brfantasy", "BR Fantasy"),
+            ("brfantasy_live", "BR Fantasy Live (7d)"),
             ("espn", "ESPN"),
             ("yahoo", "Yahoo"),
             ("mfl", "MFL"),
@@ -18751,7 +19039,6 @@ def api_player_game_logs(player_id: str):
     try:
         import glob
         from utils.utils import load_relevant_index
-        from dashboard_services.api import get_effective_scoring_settings
         from dashboard_services.platform_api import sync_league_globals
 
         league_id = request.args.get("league_id")
@@ -18760,15 +19047,12 @@ def api_player_game_logs(player_id: str):
 
         if league_id:
             # sync_league_globals is a no-op for Sleeper - must call get_league explicitly
-            from dashboard_services.api import SCORING_DEFAULTS as _SD
             if platform == "sleeper":
                 from dashboard_services.api import get_league as _get_league
-                _league_data = _get_league(league_id) or {}
-                _raw_ss = _league_data.get("scoring_settings") or {}
-                scoring_settings = {**_SD, **_raw_ss}
+                _get_league(league_id)
             else:
                 sync_league_globals(platform, league_id, season)
-                scoring_settings = get_effective_scoring_settings()
+            scoring_settings = get_normalized_scoring_settings(platform)
         else:
             scoring_settings = {
                 "pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0,
@@ -19092,6 +19376,415 @@ def api_player_game_logs(player_id: str):
         return _api_err("Request failed", e)
 
 
+# ── Player modal Team tab ─────────────────────────────────────────────────────
+_TEAM_OFFENSE_RANKS_CACHE: dict = {}
+_TEAM_OFFENSE_RANKS_TTL = 3600  # 1 hour
+_PFR_SNAP_CACHE: dict = {}
+_PFR_SNAP_CACHE_TTL = 3600
+# Assembled Team-tab payloads, keyed by (player_id, season). Short TTL so a
+# prefetch + click and quick re-opens skip the depth-chart rebuild.
+_TEAM_PAYLOAD_CACHE: dict = {}
+_TEAM_PAYLOAD_TTL = 300  # 5 minutes
+
+
+def _canon_team_abbr(team: str) -> str:
+    """Normalize team codes (WSH→WAS, etc.) for ranking and lookups."""
+    from utils.utils import canon_team
+    t = canon_team(team) or ""
+    return str(t).upper()
+
+
+def _canonical_teams_index(teams_index: dict) -> dict:
+    """Merge alias keys (e.g. WSH into WAS) so each franchise appears once."""
+    out: dict = {}
+    for abv, meta in (teams_index or {}).items():
+        if not isinstance(meta, dict):
+            continue
+        canon = _canon_team_abbr(abv)
+        if not canon:
+            continue
+        cur = out.get(canon)
+        if cur is None:
+            out[canon] = dict(meta)
+            continue
+        for k, v in meta.items():
+            if cur.get(k) is None and v is not None:
+                cur[k] = v
+    return out
+
+
+def _resolve_stats_reg_season(season: int) -> int:
+    """Pick the stats_player_reg CSV year to use (requested season or latest)."""
+    csv_path = os.path.join(CACHE_DIR, f"stats_player_reg_{season}.csv")
+    if os.path.exists(csv_path):
+        return int(season)
+    files = sorted(glob.glob(os.path.join(CACHE_DIR, "stats_player_reg_*.csv")), reverse=True)
+    for fp in files:
+        m = re.match(r"stats_player_reg_(\d+)\.csv$", os.path.basename(fp))
+        if m:
+            return int(m.group(1))
+    return int(season)
+
+
+def _rank_desc(values: dict) -> dict:
+    """Rank teams descending (rank 1 = best). Values: {team: number}."""
+    items = [(t, float(v)) for t, v in (values or {}).items() if v is not None]
+    items.sort(key=lambda x: (-x[1], x[0]))
+    total = len(items)
+    out: dict = {}
+    for i, (team, val) in enumerate(items, 1):
+        out[team] = {"rank": i, "value": round(val, 2) if val == round(val, 2) else round(val, 3),
+                     "total": total}
+    return out
+
+
+def _compute_team_offense_ranks(season: int) -> dict:
+    """Aggregate team offensive stats and league ranks (cached ~1h)."""
+    stats_season = _resolve_stats_reg_season(season)
+    cache_key = stats_season
+    cached = _TEAM_OFFENSE_RANKS_CACHE.get(cache_key)
+    if cached and time.time() - cached[0] < _TEAM_OFFENSE_RANKS_TTL:
+        return cached[1]
+
+    from utils.utils import load_teams_index
+
+    agg: dict = defaultdict(lambda: {
+        "pass_yds": 0.0, "pass_att": 0.0, "rush_yds": 0.0, "rush_att": 0.0,
+        "pass_tds": 0.0, "rush_tds": 0.0,
+    })
+    csv_path = os.path.join(CACHE_DIR, f"stats_player_reg_{stats_season}.csv")
+    if os.path.exists(csv_path):
+        try:
+            import csv as _csv
+            with open(csv_path, newline="", encoding="utf-8") as f:
+                for row in _csv.DictReader(f):
+                    team = _canon_team_abbr(row.get("recent_team") or "")
+                    if not team:
+                        continue
+                    bucket = agg[team]
+                    bucket["pass_yds"] += float(row.get("passing_yards") or 0)
+                    bucket["pass_att"] += float(row.get("attempts") or 0)
+                    bucket["rush_yds"] += float(row.get("rushing_yards") or 0)
+                    bucket["rush_att"] += float(row.get("carries") or 0)
+                    bucket["pass_tds"] += float(row.get("passing_tds") or 0)
+                    bucket["rush_tds"] += float(row.get("rushing_tds") or 0)
+        except Exception:
+            logger.debug("team offense CSV aggregation failed", exc_info=True)
+
+    teams_index = _canonical_teams_index(load_teams_index() or {})
+    all_teams = set(teams_index.keys()) | set(agg.keys())
+
+    points_pg: dict = {}
+    plays_pg: dict = {}
+    total_yds: dict = {}
+    pass_rate: dict = {}
+    for team in all_teams:
+        ti = teams_index.get(team) or {}
+        ppg = ti.get("points_pg")
+        if ppg is not None:
+            try:
+                points_pg[team] = float(ppg)
+            except (TypeError, ValueError):
+                pass
+        osp = ti.get("off_snaps_pg")
+        if osp is not None:
+            try:
+                plays_pg[team] = float(osp)
+            except (TypeError, ValueError):
+                pass
+        b = agg.get(team) or {}
+        ty = float(b.get("pass_yds") or 0) + float(b.get("rush_yds") or 0)
+        if ty > 0:
+            total_yds[team] = ty
+        pa = float(b.get("pass_att") or 0)
+        ra = float(b.get("rush_att") or 0)
+        if pa + ra > 0:
+            pass_rate[team] = pa / (pa + ra)
+
+    ranks = {
+        "points": _rank_desc(points_pg),
+        "pass_yds": _rank_desc({t: agg[t]["pass_yds"] for t in agg if agg[t]["pass_yds"] > 0}),
+        "pass_att": _rank_desc({t: agg[t]["pass_att"] for t in agg if agg[t]["pass_att"] > 0}),
+        "rush_yds": _rank_desc({t: agg[t]["rush_yds"] for t in agg if agg[t]["rush_yds"] > 0}),
+        "rush_att": _rank_desc({t: agg[t]["rush_att"] for t in agg if agg[t]["rush_att"] > 0}),
+        "total_yds": _rank_desc(total_yds),
+        "pass_tds": _rank_desc({t: agg[t]["pass_tds"] for t in agg if agg[t]["pass_tds"] > 0}),
+        "rush_tds": _rank_desc({t: agg[t]["rush_tds"] for t in agg if agg[t]["rush_tds"] > 0}),
+        "plays_pg": _rank_desc(plays_pg),
+        "pass_rate": _rank_desc(pass_rate),
+    }
+
+    payload = {
+        "stats_season": stats_season,
+        "teams_index": teams_index,
+        "ranks": ranks,
+    }
+    _TEAM_OFFENSE_RANKS_CACHE[cache_key] = (time.time(), payload)
+    return payload
+
+
+def _get_pfr_snap_counts_cached(season: int) -> dict:
+    """PFR snap counts via nfl_data_py, cached in-memory and on disk."""
+    now = time.time()
+    hit = _PFR_SNAP_CACHE.get(season)
+    if hit and now - hit[0] < _PFR_SNAP_CACHE_TTL:
+        return hit[1]
+
+    cache_dir = os.path.join(CACHE_DIR, "snap_counts")
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_file = os.path.join(cache_dir, f"pfr_snaps_{season}.json")
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, encoding="utf-8") as f:
+                data = json.load(f) or {}
+            if isinstance(data, dict):
+                _PFR_SNAP_CACHE[season] = (now, data)
+                return data
+        except Exception:
+            logger.debug("PFR snap cache read failed", exc_info=True)
+
+    data: dict = {}
+    if not app.testing:
+        try:
+            from data_building.external_data.pfr_snap_counts import fetch_season_snap_counts
+            data = fetch_season_snap_counts(season) or {}
+            if data:
+                try:
+                    with open(cache_file, "w", encoding="utf-8") as f:
+                        json.dump(data, f)
+                except Exception:
+                    logger.debug("PFR snap cache write failed", exc_info=True)
+        except Exception:
+            logger.debug("PFR snap fetch failed", exc_info=True)
+
+    _PFR_SNAP_CACHE[season] = (now, data)
+    return data
+
+
+def _usage_for_player(player_id: str, players_index: dict, usage_table: dict) -> dict:
+    """Resolve usage block for a player from index or usage table."""
+    meta = (players_index or {}).get(str(player_id)) or {}
+    usage = meta.get("usage")
+    if isinstance(usage, dict) and usage:
+        return usage
+    if isinstance(usage_table, dict):
+        u = usage_table.get(str(player_id))
+        if isinstance(u, dict):
+            return u
+    if isinstance(usage_table, list):
+        for row in usage_table:
+            if not isinstance(row, dict):
+                continue
+            rid = str(row.get("id") or row.get("sleeper_id") or "")
+            if rid == str(player_id):
+                return row
+    return {}
+
+
+def _snap_pct_for_depth_player(
+        pid: str,
+        name: str,
+        team: str,
+        usage: dict,
+        pfr_by_norm: dict,
+        off_snaps_pg,
+) -> tuple:
+    """Return (snap_pct, snap_pct_source) preferring PFR, then derived estimate."""
+    from utils.utils import normalize_name
+
+    norm = normalize_name(name or "")
+    pfr = (pfr_by_norm.get(norm) or {}) if norm else {}
+    if pfr.get("avg_off_snap_pct") is not None:
+        try:
+            pct = float(pfr["avg_off_snap_pct"])
+            if pct > 0:
+                return round(pct * 100), "pfr"
+        except (TypeError, ValueError):
+            pass
+
+    avg_snaps = usage.get("avg_off_snaps")
+    if avg_snaps is not None and off_snaps_pg:
+        try:
+            denom = float(off_snaps_pg)
+            if denom > 0:
+                derived = round(100 * float(avg_snaps) / denom)
+                return min(max(derived, 0), 99), "derived"
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+    return None, None
+
+
+def _build_player_team_depth_chart(
+        focus_id: str,
+        focus_team: str,
+        full_players: dict,
+        players_index: dict,
+        usage_table,
+        teams_index: dict,
+        pfr_snaps: dict,
+) -> dict:
+    """Build QB/RB/WR/TE depth columns from Sleeper with usage overlays."""
+    from utils.utils import normalize_name
+
+    focus_team = _canon_team_abbr(focus_team)
+    positions = ("QB", "RB", "WR", "TE")
+    pfr_by_norm = {normalize_name(k): v for k, v in (pfr_snaps or {}).items()}
+    ti = (teams_index or {}).get(focus_team) or {}
+    off_snaps_pg = ti.get("off_snaps_pg")
+
+    by_pos: dict = {p: [] for p in positions}
+    for pid, p in (full_players or {}).items():
+        if not isinstance(p, dict):
+            continue
+        team = _canon_team_abbr(p.get("team") or "")
+        pos = str(p.get("position") or "").upper()
+        if team != focus_team or pos not in positions:
+            continue
+        is_focus = str(pid) == str(focus_id)
+        dco = p.get("depth_chart_order")
+        if dco is None and not is_focus:
+            continue
+        try:
+            order = int(dco) if dco is not None else 99
+        except (TypeError, ValueError):
+            order = 99
+        slot = str(p.get("depth_chart_position") or pos).upper() if pos == "WR" else pos
+        usage = _usage_for_player(str(pid), players_index, usage_table)
+        snap_pct, snap_src = _snap_pct_for_depth_player(
+            str(pid), p.get("full_name") or p.get("name") or "", focus_team,
+            usage, pfr_by_norm, off_snaps_pg,
+        )
+        tgt_share = usage.get("target_share")
+        tgt_pct = round(float(tgt_share) * 100) if tgt_share is not None else None
+        ppg = usage.get("ppr_ppg")
+        ppg_val = round(float(ppg), 1) if ppg is not None else None
+        inj = str(p.get("injury_status") or "").strip()
+        if inj.lower() in ("", "active", "act"):
+            inj = ""
+        by_pos[pos].append({
+            "id": str(pid),
+            "name": p.get("full_name") or p.get("name") or "",
+            "is_focus": is_focus,
+            "slot": slot,
+            "order": order,
+            "injury": inj,
+            "snap_pct": snap_pct,
+            "snap_pct_source": snap_src,
+            "tgt_share": tgt_pct,
+            "ppg": ppg_val,
+        })
+
+    out: dict = {}
+    for pos in positions:
+        rows = sorted(by_pos[pos], key=lambda r: (r.get("order") or 99, r.get("name") or ""))
+        out[pos] = rows[:6]
+    return out
+
+
+def _team_rank_entry(ranks: dict, team: str) -> Optional[dict]:
+    """Lookup one team's rank payload; None if team not ranked."""
+    entry = (ranks or {}).get(team)
+    if not entry:
+        return None
+    return {"rank": entry["rank"], "value": entry["value"], "total": entry["total"]}
+
+
+@app.route("/api/player-team/<player_id>")
+def api_player_team(player_id: str):
+    """Team context for the player modal Team tab (ranks, depth chart, usage)."""
+    try:
+        from utils.utils import load_relevant_index, load_teams_index, load_usage_table
+        from utils.nfl_teams import get_team_full_name
+
+        season = int(request.args.get("season", datetime.now().year))
+        skill_positions = {"QB", "RB", "WR", "TE"}
+
+        players_index = get_players_index_global() or load_relevant_index() or {}
+        player_meta = players_index.get(str(player_id)) or {}
+        if not player_meta:
+            players_index_full = load_players_index() or {}
+            player_meta = players_index_full.get(str(player_id)) or {}
+        if not player_meta:
+            relevant_only = load_relevant_index() or {}
+            player_meta = relevant_only.get(str(player_id)) or {}
+
+        if not player_meta:
+            return jsonify({"available": False, "error": "Player not found"}), 404
+
+        usage_index = load_relevant_index() or players_index
+
+        team = _canon_team_abbr(player_meta.get("team") or "")
+        position = str(player_meta.get("pos") or player_meta.get("position") or "").upper()
+        player_name = player_meta.get("name") or ""
+
+        if not team or position not in skill_positions:
+            return jsonify({"available": False})
+
+        _payload_key = (str(player_id), season)
+        _payload_hit = _TEAM_PAYLOAD_CACHE.get(_payload_key)
+        if _payload_hit and time.time() - _payload_hit[0] < _TEAM_PAYLOAD_TTL:
+            return jsonify(_payload_hit[1])
+
+        offense = _compute_team_offense_ranks(season)
+        stats_season = offense.get("stats_season", season)
+        teams_index = offense.get("teams_index") or _canonical_teams_index(load_teams_index() or {})
+        ranks_all = offense.get("ranks") or {}
+        ti = teams_index.get(team) or {}
+
+        logo = ti.get("Logo")
+        bye_week = ti.get("byeWeek")
+        if bye_week is None:
+            bye_week = player_meta.get("byeWeek")
+
+        ranks = {
+            "points": _team_rank_entry(ranks_all.get("points"), team),
+            "pass_yds": _team_rank_entry(ranks_all.get("pass_yds"), team),
+            "pass_att": _team_rank_entry(ranks_all.get("pass_att"), team),
+            "rush_yds": _team_rank_entry(ranks_all.get("rush_yds"), team),
+            "rush_att": _team_rank_entry(ranks_all.get("rush_att"), team),
+        }
+        ranks_more = {
+            "total_yds": _team_rank_entry(ranks_all.get("total_yds"), team),
+            "pass_tds": _team_rank_entry(ranks_all.get("pass_tds"), team),
+            "rush_tds": _team_rank_entry(ranks_all.get("rush_tds"), team),
+            "plays_pg": _team_rank_entry(ranks_all.get("plays_pg"), team),
+            "pass_rate": _team_rank_entry(ranks_all.get("pass_rate"), team),
+        }
+
+        full_players: dict = {}
+        try:
+            full_players = get_players_global() or {}
+        except Exception:
+            logger.debug("get_players_global failed for team tab", exc_info=True)
+
+        usage_table = load_usage_table()
+        pfr_snaps = _get_pfr_snap_counts_cached(stats_season)
+        depth_chart = _build_player_team_depth_chart(
+            str(player_id), team, full_players, usage_index, usage_table,
+            teams_index, pfr_snaps,
+        )
+
+        _payload = {
+            "available": True,
+            "team": team,
+            "team_name": get_team_full_name(team),
+            "logo": logo,
+            "bye_week": bye_week,
+            "position": position,
+            "player_id": str(player_id),
+            "player_name": player_name,
+            "stats_season": stats_season,
+            "ranks": ranks,
+            "ranks_more": ranks_more,
+            "depth_chart": depth_chart,
+        }
+        _TEAM_PAYLOAD_CACHE[_payload_key] = (time.time(), _payload)
+        return jsonify(_payload)
+    except Exception as e:
+        logger.exception("[api_player_team] error")
+        return _api_err("Request failed", e)
+
+
 # Same sanitizer as _sanitize_for_json (utils/json_sanitize.py). This name
 # previously only replaced NaN; it now also nulls infinities, which json.dumps
 # would otherwise emit as invalid-JSON Infinity literals.
@@ -19312,12 +20005,8 @@ def api_team_details(roster_id: str):
         owner_id = roster.get("owner_id")
         user = next((u for u in users if u.get("user_id") == owner_id), None)
 
-        username = user.get("display_name") if user else None
-        team_name = (
-            (roster.get("metadata") or {}).get("team_name")
-            or ((user.get("metadata") or {}).get("team_name") if user else None)
-            or username
-        )
+        username = username_from_user(user) or None
+        team_name = team_label_from_user(user, roster, fallback=username or "")
         avatar = team_avatar(platform, roster, users) or avatar_from_users(platform, users, owner_id)
         if team_name is None:
             team_name = username
@@ -20630,23 +21319,24 @@ def api_draft_grades():
             # (same source and math as the Draft Room's computeReplacement), so
             # VOR/PPG replacement levels match the front end instead of a
             # hardcoded guess. Falls back to a standard roster if slots are absent.
-            _rp_norm = {
-                "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
-                "FLEX": "FLEX", "WRRB_FLEX": "FLEX", "REC_FLEX": "FLEX", "WRRBTE_FLEX": "FLEX",
-                "SUPER_FLEX": "SF", "SFLEX": "SF",
-            }
-            _rp_counts = {"QB": 0, "SF": 0, "RB": 0, "WR": 0, "TE": 0, "FLEX": 0}
+            from utils.lineup_slots import canonicalize_slot
+            _rp_counts = {"QB": 0, "SF": 0, "RB": 0, "WR": 0, "TE": 0, "FLEX": 0,
+                          "RB_WR": 0, "WR_TE": 0, "RB_TE": 0}
             _rp_slots = []
             try:
                 _rp_slots = ((get_league(platform, league_id, season) or {}).get("roster_positions") or [])
                 for _s in _rp_slots:
-                    _k = _rp_norm.get(str(_s).upper())
+                    _canon = canonicalize_slot(_s)
+                    _k = "SF" if _canon == "SUPER_FLEX" else (
+                        _canon if _canon in _rp_counts else None
+                    )
                     if _k:
                         _rp_counts[_k] += 1
             except Exception:
                 logger.debug("[draft-grades] roster slots for starters failed", exc_info=True)
             if not any(_rp_counts.values()):
-                _rp_counts = {"QB": 1, "SF": 1 if is_sf else 0, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1}
+                _rp_counts = {"QB": 1, "SF": 1 if is_sf else 0, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1,
+                              "RB_WR": 0, "WR_TE": 0, "RB_TE": 0}
             _starters = _ps_starter_counts(_rp_counts)
             _by_pos: dict[str, list] = {"QB": [], "RB": [], "WR": [], "TE": []}
             # Eligible scoring pool: rookies for rookie drafts, else all skill players.
@@ -20987,25 +21677,26 @@ def api_draft_grades():
         # ── Draft-Room-aligned team grade inputs ─────────────────────────────
         # League starting-lineup slots (skill positions only; K/DEF excluded from
         # grading, matching the Draft Room) + league value/PPG pools.
-        _dr_norm = {
-            "QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE",
-            "FLEX": "FLEX", "WRRB_FLEX": "FLEX", "REC_FLEX": "FLEX", "WRRBTE_FLEX": "FLEX",
-            "SUPER_FLEX": "SF", "SFLEX": "SF",
-        }
-        _dr_counts = {"QB": 0, "SF": 0, "RB": 0, "WR": 0, "TE": 0, "FLEX": 0}
+        from utils.lineup_slots import canonicalize_slot
+        _dr_counts = {"QB": 0, "SF": 0, "RB": 0, "WR": 0, "TE": 0, "FLEX": 0,
+                      "RB_WR": 0, "WR_TE": 0, "RB_TE": 0}
         try:
             _dr_rp = (get_league(platform, league_id, season) or {}).get("roster_positions") or []
         except Exception:
             _dr_rp = []
         for _s in _dr_rp:
-            _k = _dr_norm.get(str(_s).upper())
+            _canon = canonicalize_slot(_s)
+            _k = "SF" if _canon == "SUPER_FLEX" else (
+                _canon if _canon in _dr_counts else None
+            )
             if _k:
                 _dr_counts[_k] += 1
         if not any(_dr_counts.values()):
             # Fallback mirrors the Draft Room's defaultRoster() skill slots.
-            _dr_counts = {"QB": 1, "SF": 1 if is_sf else 0, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1}
+            _dr_counts = {"QB": 1, "SF": 1 if is_sf else 0, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1,
+                          "RB_WR": 0, "WR_TE": 0, "RB_TE": 0}
         _dr_slots: list[str] = []
-        for _s in ("QB", "SF", "RB", "WR", "TE", "FLEX"):
+        for _s in ("QB", "SF", "RB", "WR", "TE", "RB_WR", "WR_TE", "RB_TE", "FLEX"):
             _dr_slots.extend([_s] * _dr_counts[_s])
         _dr_league_ppg = [v for v in ppg_by_id.values() if v is not None]
         _dr_league_val = [v for (v, _pid) in ps_pool_sorted]
@@ -22138,14 +22829,20 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
     # Redraft/keeper (and all ESPN) use this-season values; dynasty uses
     # long-term value. Matches _league_is_redraft everywhere else.
     is_redraft = _league_is_redraft(ctx)
+    is_sf = (league_type or "").lower() == "sf"
 
-    # Build value lookup keyed by player_id
-    if is_redraft:
-        val_key = "redraft_value_sf" if league_type == "sf" else "redraft_value_1qb"
-        val_fallback = "redraft_value_1qb" if league_type == "sf" else "value"
-    else:
-        val_key = "sf_value" if league_type == "sf" else "value"
-        val_fallback = "value"
+    # Build value lookup keyed by player_id. Values AND position ranks must use
+    # the same format columns — otherwise a redraft league shows dynasty RB23.
+    from utils.value_helpers import (
+        format_rank_key as _fmt_rank_key,
+        format_rank_label_key as _fmt_rank_lbl_key,
+        format_value_keys as _fmt_val_keys,
+        row_format_rank_label as _row_rank_lbl,
+        row_format_value as _row_fmt_val,
+    )
+    val_key, val_fallback = _fmt_val_keys(is_redraft=is_redraft, is_sf=is_sf)
+    rank_key = _fmt_rank_key(is_redraft=is_redraft, is_sf=is_sf)
+    rank_label_key = _fmt_rank_lbl_key(is_redraft=is_redraft, is_sf=is_sf)
     values_by_id: dict = {}
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -22153,12 +22850,15 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
         pid = str(row.get("id") or "")
         if not pid:
             continue
+        _pos_rank = row.get(rank_key)
+        if _pos_rank is None and rank_key != "pos_rank":
+            _pos_rank = row.get("pos_rank")
         values_by_id[pid] = {
-            "value": float(row.get(val_key) or row.get(val_fallback) or row.get("value") or 0),
+            "value": _row_fmt_val(row, val_key, val_fallback),
             "age": row.get("age"),
             "position": str(row.get("position") or "").upper(),
-            "pos_rank_label": row.get("pos_rank_label") or "",
-            "pos_rank": row.get("pos_rank"),
+            "pos_rank_label": _row_rank_lbl(row, rank_label_key),
+            "pos_rank": _pos_rank,
             "rank_change_7d": row.get("rank_change_7d"),
             "pos_rank_change_7d": row.get("pos_rank_change_7d"),
             "name": row.get("name") or "",
@@ -25930,7 +26630,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
 
         # ── Window badge colour ──────────────────────────────────────────────
         _window_color_map = {
-            "Contend": "#4ade80", "Bubble": "#fbbf24", "Out": "#94a3b8",
+            "Contend": "#4ade80", "Bubble": "#fbbf24", "Long Shot": "#94a3b8",
             "Contender": "#4ade80", "Win-Now": "#4ade80",
             "Contender Window": "#86efac", "Aging Contender": "#fbbf24",
             "2-3 Year Window": "#60a5fa", "Rising": "#60a5fa",

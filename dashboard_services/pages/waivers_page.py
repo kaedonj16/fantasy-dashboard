@@ -568,6 +568,7 @@ function wvStatsRow(p) {{
   const g1 = [];
   if (p.proj_pts > 0)   g1.push(chip('Proj PPG', p.proj_pts));
   if (p.recent_ppg > 0) g1.push(chip('L4 PPG', p.recent_ppg));
+  if (p.value > 0)      g1.push(chip('Value', Math.round(p.value)));
   if (p.market_signal) {{
     const d = p.market_signal.delta;
     const cls = d > 0 ? 'signal-positive' : (d < 0 ? 'signal-negative' : 'muted');
@@ -720,7 +721,7 @@ function wvRenderWaivers() {{
         ${{urgencyHint}}
         ${{returnHint}}
         <div class="wv-ctx-links" onclick="event.stopPropagation()">
-          <a class="wv-ctx-link" href="${{wvLeaguePath('/compare')}}?a=${{encodeURIComponent(p.player_id)}}">Compare to roster</a>
+          <a class="wv-ctx-link" href="${{wvLeaguePath('/compare')}}?p1=${{encodeURIComponent(p.player_id)}}">Compare to roster</a>
           <a class="wv-ctx-link" href="#" onclick="event.preventDefault();openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">Open player</a>
         </div>
       </div>
@@ -858,7 +859,8 @@ function wvCmpDerive(p) {{
     vegasNum: p.implied_total != null ? p.implied_total : null,
     vegas:    p.implied_total != null ? (p.implied_total + ' implied') : '–',
     venue:    env ? `<span class="wv-ss-env wv-ss-env-${{env.kind}}">${{env.label}}</span>` : (p.on_bye ? 'BYE' : '–'),
-    dynasty:  p.pos_rank_label || '–',
+    value:    p.value > 0 ? Math.round(p.value) : null,
+    rank:     p.pos_rank_label || '–',
   }};
 }}
 
@@ -944,6 +946,7 @@ function wvRenderCompare() {{
   const dash = (v) => (v == null ? '–' : v);
   const wProj = wvWinPair(da.proj, db.proj, true);
   const wL4   = wvWinPair(da.l4, db.l4, true);
+  const wVal  = wvWinPair(da.value, db.value, true);
   const wFl   = wvWinPair(da.floorNum, db.floorNum, true);
   const wVeg  = wvWinPair(da.vegasNum, db.vegasNum, true);
 
@@ -985,6 +988,7 @@ function wvRenderCompare() {{
         </div>
         ${{row('Proj PPG', dash(da.proj), dash(db.proj), wProj[0], wProj[1])}}
         ${{row('L4 PPG', dash(da.l4), dash(db.l4), wL4[0], wL4[1])}}
+        ${{row('Value', dash(da.value), dash(db.value), wVal[0], wVal[1])}}
         ${{row('Floor–Ceil', da.flCeil, db.flCeil, wFl[0], wFl[1])}}
         ${{row('Profile', da.profile, db.profile)}}
         ${{row('Boom / Bust', da.boomBust, db.boomBust)}}
@@ -1079,7 +1083,7 @@ function wvRenderStartSit() {{
                 onclick="event.stopPropagation();openPlayerModal('${{p.player_id}}', '${{(p.name||'').replace(/'/g,"\\'")}}')">
                 Open player
               </button>
-              <a class="wv-cmp-btn" href="${{wvLeaguePath('/schedule')}}" onclick="event.stopPropagation()">View schedule</a>
+              <a class="wv-cmp-btn" href="${{wvLeaguePath('/schedule')}}?add=${{encodeURIComponent(p.player_id)}}" onclick="event.stopPropagation()">View schedule</a>
               <button class="wv-cmp-btn ${{isSelected ? 'selected' : ''}}"
                 onclick="event.stopPropagation();wvToggleCompare(${{JSON.stringify(p).replace(/"/g,'&quot;')}})">
                 ${{isSelected ? '✓' : '+'}} Compare

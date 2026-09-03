@@ -32,6 +32,8 @@ from dashboard_services.historical.definitions import (
     age_as_of_season_start,
     draft_capital_bucket,
     integer_age,
+    normalize_team_abbr,
+    offense_rank_bucket,
     value_bucket,
     _optional_float,
     _optional_int,
@@ -194,7 +196,8 @@ def extract_trend_features(row: Mapping[str, Any]) -> dict[str, Any]:
     """Compact preseason buckets used by Scout and historical cohort matching.
 
     Same keys as ``build_player_feature_index``. Missing dims are omitted.
-    Same-season actuals / ADP / projections are not features.
+    Same-season actuals / ADP / projections are not features. Roster spot is
+    preseason ADP rank among teammates, not the ADP value itself.
     """
     if not isinstance(row, Mapping):
         return {}
@@ -236,6 +239,26 @@ def extract_trend_features(row: Mapping[str, Any]) -> dict[str, Any]:
         val = row.get(key)
         if isinstance(val, str) and val:
             feats[key] = val
+    team = normalize_team_abbr(row.get("team") or row.get("nfl_team"))
+    if team:
+        feats["team"] = team
+    rank = _optional_int(row.get("prior_offense_rank"))
+    if rank is not None and rank > 0:
+        feats["prior_offense_rank"] = rank
+        bucket = offense_rank_bucket(rank)
+        if bucket:
+            feats["prior_offense_rank_bucket"] = bucket
+    proj = _optional_int(row.get("projected_offense_rank"))
+    if proj is not None and proj > 0:
+        feats["projected_offense_rank"] = proj
+        bucket = offense_rank_bucket(proj)
+        if bucket:
+            feats["projected_offense_rank_bucket"] = bucket
+    from dashboard_services.historical.roster import normalize_roster_spot
+
+    spot = normalize_roster_spot(row.get("roster_spot"))
+    if spot is not None:
+        feats["roster_spot"] = spot
     return feats
 
 
@@ -290,6 +313,22 @@ def live_board_trend_features(player: Mapping[str, Any]) -> dict[str, Any]:
     count = _optional_int(player.get("prior_top12_count"))
     if count is not None:
         row["prior_top12_count"] = count
+    team = normalize_team_abbr(
+        player.get("team") or player.get("nfl_team") or player.get("actual_nfl_team")
+    )
+    if team:
+        row["team"] = team
+    rank = _optional_int(player.get("prior_offense_rank"))
+    if rank is not None and rank > 0:
+        row["prior_offense_rank"] = rank
+    proj = _optional_int(player.get("projected_offense_rank"))
+    if proj is not None and proj > 0:
+        row["projected_offense_rank"] = proj
+    from dashboard_services.historical.roster import normalize_roster_spot
+
+    spot = normalize_roster_spot(player.get("roster_spot"))
+    if spot is not None:
+        row["roster_spot"] = spot
     return extract_trend_features(row)
 
 
@@ -325,6 +364,11 @@ def live_class_preseason_profile(
         age = age_f
     if age is not None:
         rec["age"] = age
+    team = normalize_team_abbr(
+        pick.get("nfl_team") or pick.get("team") or identity.get("team")
+    )
+    if team:
+        rec["team"] = team
     return rec
 
 
@@ -443,6 +487,12 @@ def matched_filter_labels(
             continue
         if not matches_trend_filter(feats, spec):
             continue
+        if spec.get("all"):
+            label = str(spec.get("label") or "").strip()
+            if label and label not in seen:
+                seen.add(label)
+                labels.append(label)
+            continue
         label = str(spec.get("label") or spec.get("eq") or spec.get("field") or "").strip()
         if not label or label in seen:
             continue
@@ -504,6 +554,9 @@ def canonical_filter_key(filters: Iterable[Mapping[str, Any]]) -> tuple:
             for k in ("group", "field", "eq", "in", "gte", "lte", "between", "null_as")
             if k in spec and spec[k] is not None
         }
+        nested = spec.get("all")
+        if nested:
+            rec["all"] = canonical_filter_key(nested)
         if rec.get("in") is not None:
             rec["in"] = tuple(rec["in"])
         if rec.get("between") is not None:

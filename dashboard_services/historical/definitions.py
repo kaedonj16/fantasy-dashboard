@@ -122,6 +122,30 @@ TRENDS_ROUND1_PICK_RANGES: Tuple[Tuple[str, str, int, int], ...] = (
     ("picks_26_32", "Rest of Round 1", 26, 32),
 )
 
+# Team offense rank bands (1 = best). Used for season-long projected implied
+# totals and for last year's actual yards+TDs. Same-season actual rank
+# is not a feature. Inclusive lo/hi like TRENDS_ROUND1_PICK_RANGES.
+TRENDS_OFFENSE_RANGES: Tuple[Tuple[str, str, int, int], ...] = (
+    ("top_10", "Top 10", 1, 10),
+    ("11_20", "11-20", 11, 20),
+    ("21_32", "21-32", 21, 32),
+)
+# 1 TD ≈ 40 yards, matching matchups.build_offense_rankings.
+OFFENSE_TD_YARD_WEIGHT = 40.0
+TEAM_ABBR_ALIASES: Mapping[str, str] = {
+    "WAS": "WSH",
+    "JAC": "JAX",
+    "LA": "LAR",
+    "OAK": "LV",
+    "SD": "LAC",
+    "STL": "LAR",
+    "SL": "LAR",
+    "ARZ": "ARI",
+    "BLT": "BAL",
+    "CLV": "CLE",
+    "HST": "HOU",
+}
+
 # Career stage from completed seasons before this year (0 = rookie year).
 # Missing years_experience is None — never mapped to rookie.
 CAREER_STAGE_ROOKIE = "rookie"
@@ -178,8 +202,66 @@ COMP_RELAXATION_ORDER: Tuple[str, ...] = (
     "career_stage",
     "prior_finish",
 )
+# Parent priors for tiny Hist cells. Walk-forward still uses COMP_RELAXATION_ORDER
+# until n >= 15. Live Hist may keep an exact n=2 cell; the Bayes prior should
+# keep age and last-year finish so a 24-year-old RB1 is not mixed with
+# declining year-6+ backs.
+PARENT_MIN_N = 8
+PARENT_KEEP_WEIGHT: dict[str, int] = {
+    "prior_finish": 8,
+    "age_bucket": 4,
+    "draft_capital": 2,
+    "career_stage": 1,
+}
+PARENT_RELAXATION_ORDERS: Tuple[Tuple[str, ...], ...] = (
+    COMP_RELAXATION_ORDER,
+    (
+        "target_share",
+        "snap_pct",
+        "career_stage",
+        "draft_capital",
+        "age_bucket",
+        "prior_finish",
+    ),
+    (
+        "target_share",
+        "snap_pct",
+        "career_stage",
+        "age_bucket",
+        "draft_capital",
+        "prior_finish",
+    ),
+)
 COMP_BOARD_TIERS: Tuple[str, ...] = ("top_5", "top_12", "top_24")
 MIN_COMP_CELL_N = 15
+# Live Hist compiles nested sibling buckets (one dropped dimension at a
+# time, no overlap) until n >= HIST_DISPLAY_MIN_N, then falls back to the
+# parent. Walk-forward still uses MIN_COMP_CELL_N. Young players keep age
+# and last-year finish; the oldest open-ended age band waits for n >= 15
+# so a 32+ cell is not one veteran repeating.
+HIST_PANEL_MIN_N = 1
+HIST_DISPLAY_MIN_N = 4
+HIST_NESTED_DROP_ORDER: Tuple[str, ...] = (
+    "target_share",
+    "snap_pct",
+    "career_stage",
+    "draft_capital",
+    "age_bucket",
+    "prior_finish",
+)
+HIST_NESTED_DROP_ORDER_OLDEST: Tuple[str, ...] = (
+    "target_share",
+    "snap_pct",
+    "age_bucket",
+    "draft_capital",
+    "career_stage",
+    "prior_finish",
+)
+HIST_NESTED_KEEP_DIMS: Tuple[str, ...] = (
+    "prior_finish",
+    "age_bucket",
+    "draft_capital",
+)
 NAMED_EXAMPLES_PER_CELL = 3
 
 # Phase 9 league-winner proxy. Reuses the existing top_5 cutoff; do not invent
@@ -460,6 +542,23 @@ def age_bucket(position: Any, age: Any) -> Optional[str]:
     return None
 
 
+def oldest_age_bucket_label(position: Any) -> Optional[str]:
+    """Open-ended oldest UI age bucket for the position (``32+``, ``31+``)."""
+    pos = str(position or "").upper()
+    bounds = AGE_BUCKETS.get(pos) or ()
+    if not bounds:
+        return None
+    return bounds[-1][2]
+
+
+def is_oldest_age_bucket(position: Any, bucket: Any) -> bool:
+    """True when ``bucket`` is the position's oldest open-ended age band."""
+    label = oldest_age_bucket_label(position)
+    if not label or bucket is None or bucket == "":
+        return False
+    return str(bucket) == label
+
+
 def integer_age(age: Any) -> Optional[int]:
     """Floor of exact age for age-curve bins. Missing/unparseable → None."""
     try:
@@ -605,6 +704,32 @@ def trends_round1_pick_range(pick: Any) -> Optional[Tuple[str, str, int, int]]:
         if lo <= value <= hi:
             return rec
     return None
+
+
+def normalize_team_abbr(value: Any) -> Optional[str]:
+    """Canonical NFL team abbreviation. Unknown / empty stays None."""
+    text = str(value or "").strip().upper()
+    if not text or text in ("NAN", "NONE", "NULL", "FA", "UNK"):
+        return None
+    return TEAM_ABBR_ALIASES.get(text, text)
+
+
+def trends_offense_range(rank: Any) -> Optional[Tuple[str, str, int, int]]:
+    """Trends last-year offense band for a 1-best team rank, or None."""
+    value = _optional_int(rank)
+    if value is None or value <= 0:
+        return None
+    for rec in TRENDS_OFFENSE_RANGES:
+        _key, _label, lo, hi = rec
+        if lo <= value <= hi:
+            return rec
+    return None
+
+
+def offense_rank_bucket(rank: Any) -> Optional[str]:
+    """``top_10`` / ``11_20`` / ``21_32``. Missing or unranked → None."""
+    rec = trends_offense_range(rank)
+    return rec[0] if rec else None
 
 
 def positional_tier_label(position: Any, positional_finish: Any) -> Optional[str]:

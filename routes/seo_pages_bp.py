@@ -5,6 +5,7 @@ Routes:
     /dynasty-trade-value-chart
     /top-movers
     /compare
+    /<platform>/<season>/<league_id>/compare
     /rankings/dynasty[-qb|-rb|-wr|-te]
     /player/<slug>[/trade-value]
     /breakouts   (guest)
@@ -297,9 +298,13 @@ def build_compare_page_body(popular_html: str = "") -> str:
 
 
 @seo_pages_bp.route("/compare")
-def page_compare():
-    p1 = request.args.get("p1")
-    p2 = request.args.get("p2")
+@seo_pages_bp.route("/<platform>/<int:season>/<league_id>/compare")
+def page_compare(platform: str | None = None, season: int | None = None,
+                 league_id: str | None = None):
+    # Waiver "Compare to roster" used ?a= (the trade-calc share param). Accept
+    # it as an alias so those links land on the same deep-link as ?p1=.
+    p1 = request.args.get("p1") or request.args.get("a")
+    p2 = request.args.get("p2") or request.args.get("b")
     n1 = _compare_name_for_id(p1)
     n2 = _compare_name_for_id(p2)
     if n1 and n2:
@@ -311,6 +316,11 @@ def page_compare():
         desc = ("Put any two dynasty fantasy football players side by side: trade value, "
                 "advanced metrics, weekly usage, and game logs.")
     body = build_compare_page_body(_compare_popular_matchups())
+    if league_id and platform and season:
+        return render_page(
+            title, league_id, "compare", body, platform, season,
+            description=desc,
+        )
     # Do not pass a remembered league_id into render_page — that would flip this
     # public SEO page to noindex. Nav still inherits session last_* for signed-in
     # chrome via render_page's own session fallback.

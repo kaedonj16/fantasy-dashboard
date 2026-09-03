@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, date
@@ -16,11 +17,14 @@ from dashboard_services.api import (
     avatar_from_users,
     team_avatar,
 )
+from dashboard_services.display_names import public_owner_label
 from dashboard_services.matchups import build_matchup_preview
 from dashboard_services.platform_api import get_matchups, get_transactions as platform_get_transactions
 from dashboard_services.players import build_roster_display_maps
 from dashboard_services.team_crest import team_crest_data_uri
 from utils.utils import safe_owner_name
+
+logger = logging.getLogger(__name__)
 
 _NFL_CITY: dict[str, str] = {
     "ARI": "Arizona", "ATL": "Atlanta", "BAL": "Baltimore", "BUF": "Buffalo",
@@ -438,11 +442,11 @@ def build_tables(
     user_by_id = {u["user_id"]: u for u in users}
 
     user_fallback = {
-        u["user_id"]: (
-                (u.get("metadata") or {}).get("team_name")
-                or u.get("display_name")
-                or u.get("username")
-                or str(u["user_id"])
+        u["user_id"]: public_owner_label(
+            (u.get("metadata") or {}).get("team_name"),
+            u.get("display_name"),
+            u.get("username"),
+            fallback=str(u["user_id"]),
         )
         for u in users
     }
@@ -451,8 +455,10 @@ def build_tables(
     for r in rosters:
         rid = str(r["roster_id"])
         owner_id = r.get("owner_id")
-        roster_map[rid] = (r.get("metadata") or {}).get("team_name") or user_fallback.get(
-            owner_id, f"Roster {rid}"
+        roster_map[rid] = public_owner_label(
+            (r.get("metadata") or {}).get("team_name"),
+            user_fallback.get(owner_id),
+            fallback=f"Roster {rid}",
         )
 
     matchups_by_week = build_matchups_by_week(league_id, range(1, 18), roster_map, players, season, platform)
@@ -723,6 +729,8 @@ def build_week_activity(
         platform,
         season,
         players_map: Optional[Dict[str, Dict[str, str]]] = None,
+        users: Optional[list[dict]] = None,
+        rosters: Optional[list[dict]] = None,
 ) -> pd.DataFrame:
     """
     Builds a season-long activity table with:
@@ -736,7 +744,13 @@ def build_week_activity(
     # You can still change this to a dynamic list if needed
     season_weeks = list(range(1, 19))
 
-    roster_name, roster_avatar = build_roster_display_maps(league_id, platform, season)
+    try:
+        roster_name, roster_avatar = build_roster_display_maps(
+            league_id, platform, season, users=users, rosters=rosters,
+        )
+    except Exception as e:
+        logger.warning("[build_week_activity] roster display maps failed: %s", e)
+        return pd.DataFrame(columns=["kind", "week", "ts", "data"])
     tx_by_week = get_transactions_by_week(league_id, season_weeks, platform=platform, season=int(season)) or {}
     rows: list[dict] = []
 
@@ -1550,7 +1564,7 @@ def render_teams_sidebar(teams: List[dict]) -> str:
     pill_buttons = []
     for idx, t in enumerate(teams):
         active_class = " active" if idx == 0 else ""
-        label = t.get("username") or t["name"]
+        label = html.escape(t.get("name") or t.get("username") or f"Team {t['roster_id']}")
         pill_buttons.append(
             f"<button class='manager-pill{active_class}' "
             f"data-team-id='{t['roster_id']}'>{label}</button>"
@@ -1618,6 +1632,8 @@ def render_teams_sidebar(teams: List[dict]) -> str:
             sections.append(render_player_list("Starters", t["starters"]))
         if t["bench"]:
             sections.append(render_player_list("Bench", t["bench"]))
+        if t.get("ir"):
+            sections.append(render_player_list("IR", t["ir"], extra_class="ir"))
         if t["taxi"]:
             sections.append(render_player_list("Taxi", t["taxi"], extra_class="taxi"))
 

@@ -11,6 +11,61 @@ pytest.importorskip("bs4")
 yahoo_api = pytest.importorskip("dashboard_services.providers.yahoo_api")
 
 
+def test_split_yahoo_lineup_keeps_bench_out_of_reserve(monkeypatch):
+    """BN is bench, not IR — the dashboard teams-card only renders reserve as IR."""
+    import dashboard_services.api as api
+    monkeypatch.setattr(api, "get_nfl_players", lambda: {
+        "11111": {"yahoo_id": "5"},
+        "22222": {"yahoo_id": "6"},
+        "33333": {"yahoo_id": "7"},
+        "44444": {"yahoo_id": "8"},
+    })
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    starter = [[
+        {"player_id": "5"}, {"name": {"full": "Patrick Mahomes"}},
+        {"display_position": "QB"}, {"editorial_team_abbr": "KC"},
+    ], {"selected_position": {"position": "QB"}}]
+    bench = [[
+        {"player_id": "6"}, {"name": {"full": "Travis Kelce"}},
+        {"display_position": "TE"}, {"editorial_team_abbr": "KC"},
+    ], {"selected_position": {"position": "BN"}}]
+    inactive = [[
+        {"player_id": "7"}, {"name": {"full": "Xavier Worthy"}},
+        {"display_position": "WR"}, {"editorial_team_abbr": "KC"},
+    ], {"selected_position": {"position": "NA"}}]
+    ir = [[
+        {"player_id": "8"}, {"name": {"full": "Isiah Pacheco"}},
+        {"display_position": "RB"}, {"editorial_team_abbr": "KC"},
+    ], {"selected_position": {"position": "IR+"}}]
+    players, starters, reserve = yahoo_api._split_yahoo_lineup(
+        [starter, bench, inactive, ir]
+    )
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    assert players == ["11111", "22222", "33333", "44444"]
+    assert starters == ["11111"]
+    assert reserve == ["44444"]
+    bench_ids = [p for p in players if p not in set(starters) and p not in set(reserve)]
+    assert bench_ids == ["22222", "33333"]
+
+
+def test_split_yahoo_lineup_all_bn_still_fills_starters(monkeypatch):
+    import dashboard_services.api as api
+    ids = {str(10000 + i): {"yahoo_id": str(i)} for i in range(12)}
+    monkeypatch.setattr(api, "get_nfl_players", lambda: ids)
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    rows = []
+    for i in range(12):
+        rows.append([[
+            {"player_id": str(i)}, {"name": {"full": f"Player {i}"}},
+            {"display_position": "RB"}, {"editorial_team_abbr": "KC"},
+        ], {"selected_position": {"position": "BN"}}])
+    players, starters, reserve = yahoo_api._split_yahoo_lineup(rows)
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    assert len(players) == 12
+    assert starters == players[:9]
+    assert reserve == []
+
+
 def test_flatten_dict_form():
     meta, sel = yahoo_api._flatten_yahoo_player({"player_id": "5", "name": {"full": "X"}})
     assert meta["player_id"] == "5"
@@ -28,6 +83,59 @@ def test_flatten_positional_list_form():
     assert meta["name"]["full"] == "Patrick Mahomes"
     assert meta["editorial_team_abbr"] == "KC"
     assert sel == "BN"
+
+
+def test_flatten_list_wrapped_selected_position():
+    """Per-team roster resource wraps selected_position in single-element lists."""
+    rp = [
+        [{"player_id": "5"}, {"name": {"full": "Patrick Mahomes"}}, {"editorial_team_abbr": "KC"}],
+        [{"selected_position": [{"position": "QB"}]}],
+    ]
+    meta, sel = yahoo_api._flatten_yahoo_player(rp)
+    assert meta["player_id"] == "5"
+    assert sel == "QB"
+
+
+def test_flatten_triple_nested_player_from_team_roster():
+    rp = [[
+        [{"player_id": "9"}, {"name": {"full": "Travis Kelce"}}, {"editorial_team_abbr": "KC"}],
+        [{"selected_position": [{"position": "TE"}]}],
+    ]]
+    meta, sel = yahoo_api._flatten_yahoo_player(rp)
+    assert meta["player_id"] == "9"
+    assert sel == "TE"
+
+
+def test_yahoo_selected_position_index_one_pattern():
+    """yahoo_fantasy_api reads selected_position[1]['position'] for roster slots."""
+    rp = [
+        [{"player_id": "5"}, {"name": {"full": "Bench Guy"}}],
+        {"selected_position": [{}, {"position": "BN"}]},
+    ]
+    meta, sel = yahoo_api._flatten_yahoo_player(rp)
+    assert meta["player_id"] == "5"
+    assert sel == "BN"
+
+
+def test_extract_roster_players_merges_entry_level_selected_position():
+    team_data = [{
+        "roster": {
+            "players": {
+                "0": {
+                    "player": [[
+                        {"player_id": "5"},
+                        {"name": {"full": "Starter"}},
+                    ]],
+                    "selected_position": {"position": "QB"},
+                },
+                "count": 1,
+            }
+        }
+    }]
+    out = yahoo_api._extract_roster_players(team_data)
+    assert len(out) == 1
+    _, sel = yahoo_api._flatten_yahoo_player(out[0])
+    assert sel == "QB"
 
 
 def test_crosswalk_built_from_feed(monkeypatch):
@@ -184,3 +292,438 @@ def test_yahoo_league_exists_for_season(monkeypatch):
     monkeypatch.setattr(yahoo_api, "_yahoo_get", fake_get)
     assert yahoo_api.yahoo_league_exists_for_season("tok", "123", 2025) is True
     assert yahoo_api.yahoo_league_exists_for_season("tok", "123", 2024) is False
+
+
+# ── teams / roster collection indexing (Yahoo is 0-based) ────────────────────
+
+def _teams_payload(team_entries):
+    """Yahoo league/teams shape: teams keyed 0..n-1 plus count."""
+    block = {str(i): {"team": t} for i, t in enumerate(team_entries)}
+    block["count"] = len(team_entries)
+    return {"fantasy_content": {"league": [{}, {"teams": block}]}}
+
+
+def test_extract_teams_uses_zero_based_keys():
+    teams = [
+        [{"team_id": "1", "name": "Alpha"}],
+        [{"team_id": "2", "name": "Beta"}],
+    ]
+    out = yahoo_api._extract_teams(_teams_payload(teams))
+    assert len(out) == 2
+    assert yahoo_api._team_attr(out[0], "name") == "Alpha"
+    assert yahoo_api._team_attr(out[1], "name") == "Beta"
+
+
+def test_extract_teams_finds_teams_on_league_index_zero():
+    """Some Yahoo sub-resource payloads attach teams to league[0], not league[1]."""
+    teams = [[{"team_id": "1", "name": "Only"}]]
+    block = {str(i): {"team": t} for i, t in enumerate(teams)}
+    block["count"] = 1
+    payload = {
+        "fantasy_content": {
+            "league": [
+                {"league_key": "449.l.99", "name": "Test", "teams": block},
+            ]
+        }
+    }
+    out = yahoo_api._extract_teams(payload)
+    assert len(out) == 1
+    assert yahoo_api._team_attr(out[0], "name") == "Only"
+
+
+def test_get_rosters_uses_team_key_when_team_id_missing(monkeypatch):
+    team = [[
+        {"team_key": "449.l.99.t.7"},
+        {"name": "Key Only"},
+        {"managers": [{"manager": {"guid": "g7"}}]},
+    ]]
+    payload = _teams_payload([team])
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda *a, **k: payload)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    rosters = yahoo_api.get_rosters(2026, "99", "tok")
+    assert len(rosters) == 1
+    assert rosters[0]["roster_id"] == 7
+
+
+def test_diagnose_league_reports_parse_counts(monkeypatch):
+    teams = [_realistic_yahoo_team(i, f"T{i}", with_roster=True) for i in range(1, 3)]
+    payload = _teams_payload(teams)
+    meta_payload = {"fantasy_content": {"league": [{"name": "L", "num_teams": "2", "draft_status": "postdraft"}]}}
+    paths = {
+        "league/449.l.99/teams;out=roster,stats,standings": payload,
+        "league/449.l.99/teams": payload,
+        "league/449.l.99": meta_payload,
+    }
+    import dashboard_services.api as api
+    monkeypatch.setattr(api, "get_nfl_players", lambda: {"11111": {"yahoo_id": "5"}})
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda tok, path, params=None: paths[path])
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    report = yahoo_api.diagnose_league(2026, "99", "tok")
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    assert report["ok"] is True
+    assert report["extracted_team_count"] == 2
+    assert report["parsed_rosters_count"] == 2
+    assert report["teams"][0]["resolved_players"] == 1
+
+
+def test_extract_roster_players_uses_zero_based_keys():
+    roster = {
+        "roster": {
+            "players": {
+                "0": {"player": [[{"player_id": "5"}, {"name": {"full": "First"}}]]},
+                "1": {"player": [[{"player_id": "6"}, {"name": {"full": "Second"}}]]},
+                "count": 2,
+            }
+        }
+    }
+    team_data = [roster]
+    out = yahoo_api._extract_roster_players(team_data)
+    assert len(out) == 2
+    meta0, _ = yahoo_api._flatten_yahoo_player(out[0])
+    meta1, _ = yahoo_api._flatten_yahoo_player(out[1])
+    assert meta0["player_id"] == "5"
+    assert meta1["player_id"] == "6"
+
+
+def _realistic_yahoo_team(team_id, name, *, with_roster=False):
+    """Yahoo team shape when ``;out=roster,stats,standings`` is requested."""
+    meta = [
+        {"team_key": f"449.l.99.t.{team_id}"},
+        {"team_id": str(team_id)},
+        {"name": name},
+        {"managers": [{"manager": {"guid": f"g{team_id}", "nickname": f"Owner {team_id}"}}]},
+    ]
+    parts = [meta]
+    if with_roster:
+        parts.append({
+            "team_standings": {
+                "outcome_totals": {"wins": "1", "losses": "0", "ties": "0"},
+                "points_for": "120.5",
+                "points_against": "99.1",
+            }
+        })
+        parts.append({
+            "roster": {
+                "players": {
+                    "0": {"player": [[
+                        {"player_id": "5"},
+                        {"name": {"full": "Patrick Mahomes"}},
+                        {"display_position": "QB"},
+                        {"editorial_team_abbr": "KC"},
+                    ], {"selected_position": {"position": "QB"}}]},
+                    "count": 1,
+                }
+            }
+        })
+    return parts
+
+
+def test_team_attr_reads_nested_metadata_with_subresources():
+    team = _realistic_yahoo_team(3, "Champions", with_roster=True)
+    assert yahoo_api._team_attr(team, "team_id") == "3"
+    assert yahoo_api._team_attr(team, "name") == "Champions"
+    standings = yahoo_api._team_attr(team, "team_standings") or {}
+    assert standings.get("points_for") == "120.5"
+
+
+def test_yahoo_manager_entries_from_numeric_collection():
+    """Yahoo often returns managers as ``{"0": {"manager": ...}, "count": 1}``."""
+    team = [[
+        {"team_key": "449.l.99.t.2"},
+        {"team_id": "2"},
+        {"managers": {
+            "0": {"manager": {"guid": "GUID-2", "nickname": "Owner Two"}},
+            "count": 1,
+        }},
+    ]]
+    mgr = yahoo_api._yahoo_primary_manager(team)
+    assert mgr.get("guid") == "GUID-2"
+    assert yahoo_api._yahoo_owner_id(team, "2") == "GUID-2"
+
+
+def test_get_users_returns_distinct_owner_guids(monkeypatch):
+    teams = []
+    for i in range(1, 4):
+        teams.append([[
+            {"team_key": f"449.l.99.t.{i}"},
+            {"team_id": str(i)},
+            {"name": f"Team {i}"},
+            {"managers": {
+                "0": {"manager": {"guid": f"GUID-{i}", "nickname": f"Owner {i}"}},
+                "count": 1,
+            }},
+        ]])
+    payload = _teams_payload(teams)
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda *a, **k: payload)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    users = yahoo_api.get_users(2026, "99", "tok")
+    assert {u["user_id"] for u in users} == {"GUID-1", "GUID-2", "GUID-3"}
+
+
+def test_get_users_returns_distinct_roster_ids(monkeypatch):
+    teams = [_realistic_yahoo_team(i, f"Team {i}") for i in range(1, 4)]
+    payload = _teams_payload(teams)
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda *a, **k: payload)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    users = yahoo_api.get_users(2026, "99", "tok")
+    assert len(users) == 3
+    assert {u["roster_id"] for u in users} == {1, 2, 3}
+    assert users[0]["metadata"]["team_name"] == "Team 1"
+
+
+def test_get_users_replaces_hidden_yahoo_nickname(monkeypatch):
+    """Yahoo privacy mode returns nickname ``--hidden--``. The trade calculator
+    used that as the team label; fall back to the public team name instead."""
+    team = [[
+        {"team_key": "449.l.99.t.1"},
+        {"team_id": "1"},
+        {"name": "Sunday Funday B"},
+        {"managers": {
+            "0": {"manager": {"guid": "GUID-1", "nickname": "--hidden--"}},
+            "count": 1,
+        }},
+    ]]
+    payload = _teams_payload([team])
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda *a, **k: payload)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    users = yahoo_api.get_users(2026, "99", "tok")
+    assert len(users) == 1
+    assert users[0]["display_name"] == "Sunday Funday B"
+    assert users[0]["username"] == "Sunday Funday B"
+    assert users[0]["team_name"] == "Sunday Funday B"
+    assert users[0]["metadata"]["team_name"] == "Sunday Funday B"
+    assert "--hidden--" not in (
+        users[0]["display_name"], users[0]["username"], users[0]["team_name"]
+    )
+
+
+def test_get_rosters_maps_nested_team_players(monkeypatch):
+    import dashboard_services.api as api
+    monkeypatch.setattr(api, "get_nfl_players", lambda: {"11111": {"yahoo_id": "5"}})
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    team = _realistic_yahoo_team(7, "Nested Roster Team", with_roster=True)
+    payload = _teams_payload([team])
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda *a, **k: payload)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    rosters = yahoo_api.get_rosters(2026, "99", "tok")
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    assert len(rosters) == 1
+    assert rosters[0]["roster_id"] == 7
+    assert rosters[0]["players"] == ["11111"]
+    assert rosters[0]["settings"]["wins"] == 1
+    assert rosters[0]["settings"]["fpts"] == 120
+
+
+def test_get_rosters_prefetches_team_resource_when_bulk_roster_is_empty(monkeypatch):
+    """Bulk teams;out=roster often omits players — hydrate from team/{key}/roster."""
+    import dashboard_services.api as api
+    monkeypatch.setattr(api, "get_nfl_players", lambda: {"11111": {"yahoo_id": "5"}})
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    bulk_team = _realistic_yahoo_team(1, "Shell Only", with_roster=True)
+    bulk_team[2]["roster"] = {"coverage_type": "week", "week": "1"}
+    player_entry = [[
+        {"player_id": "5"}, {"name": {"full": "Patrick Mahomes"}},
+        {"display_position": "QB"}, {"editorial_team_abbr": "KC"},
+    ], [{"selected_position": [{"position": "QB"}]}]]
+    team_roster_response = {
+        "fantasy_content": {
+            "team": [
+                [{"team_key": "449.l.99.t.1"}],
+                {"roster": {"players": {"0": {"player": player_entry}, "count": 1}}},
+            ]
+        }
+    }
+
+    def fake_get(tok, path, params=None):
+        if path.startswith("team/"):
+            return team_roster_response
+        if "teams" in path:
+            return _teams_payload([bulk_team])
+        if path == "league/449.l.99":
+            return {"fantasy_content": {"league": [{"current_week": "1"}]}}
+        raise KeyError(path)
+
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", fake_get)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    rosters = yahoo_api.get_rosters(2026, "99", "tok")
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    assert len(rosters) == 1
+    assert rosters[0]["players"] == ["11111"]
+    assert rosters[0]["metadata"]["team_name"] == "Shell Only"
+
+
+def test_get_rosters_prefetches_when_bulk_players_lack_lineup_slots(monkeypatch):
+    """Bulk roster may list players without selected_position — hydrate per team."""
+    import dashboard_services.api as api
+    monkeypatch.setattr(api, "get_nfl_players", lambda: {
+        "11111": {"yahoo_id": "5"},
+        "22222": {"yahoo_id": "6"},
+        "33333": {"yahoo_id": "7"},
+    })
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    bulk_team = _realistic_yahoo_team(1, "Slot Hydrate", with_roster=True)
+    bulk_team[2]["roster"]["players"]["0"]["player"] = [[
+        {"player_id": "5"}, {"name": {"full": "Patrick Mahomes"}},
+        {"display_position": "QB"}, {"editorial_team_abbr": "KC"},
+    ]]
+    starter_entry = [[
+        {"player_id": "5"}, {"name": {"full": "Patrick Mahomes"}},
+        {"display_position": "QB"}, {"editorial_team_abbr": "KC"},
+    ], [{"selected_position": [{"position": "QB"}]}]]
+    bench_entry = [[
+        {"player_id": "6"}, {"name": {"full": "Travis Kelce"}},
+        {"display_position": "TE"}, {"editorial_team_abbr": "KC"},
+    ], [{"selected_position": [{"position": "BN"}]}]]
+    ir_entry = [[
+        {"player_id": "7"}, {"name": {"full": "Isiah Pacheco"}},
+        {"display_position": "RB"}, {"editorial_team_abbr": "KC"},
+    ], [{"selected_position": [{"position": "IR"}]}]]
+    team_roster_response = {
+        "fantasy_content": {
+            "team": [
+                [{"team_key": "449.l.99.t.1"}],
+                {"roster": {"players": {
+                    "0": {"player": starter_entry},
+                    "1": {"player": bench_entry},
+                    "2": {"player": ir_entry},
+                    "count": 3,
+                }}},
+            ]
+        }
+    }
+    paths_called = []
+
+    def fake_get(tok, path, params=None):
+        paths_called.append(path)
+        if path.startswith("team/"):
+            return team_roster_response
+        if "teams" in path:
+            return _teams_payload([bulk_team])
+        if path == "league/449.l.99":
+            return {"fantasy_content": {"league": [{"current_week": "1"}]}}
+        raise KeyError(path)
+
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", fake_get)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    rosters = yahoo_api.get_rosters(2026, "99", "tok")
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    assert any(p.startswith("team/") for p in paths_called)
+    assert rosters[0]["players"] == ["11111", "22222", "33333"]
+    assert rosters[0]["starters"] == ["11111"]
+    assert rosters[0]["reserve"] == ["33333"]  # IR only; BN stays on players for bench
+
+
+def _yahoo_team_with_list_standings(team_id, name, *, with_roster=False):
+    """Yahoo sometimes wraps ``team_standings`` (and managers) in single-element lists."""
+    meta = [
+        {"team_key": f"449.l.99.t.{team_id}"},
+        {"team_id": str(team_id)},
+        {"name": name},
+        {"managers": [[{"manager": [{"guid": f"g{team_id}", "nickname": f"Owner {team_id}"}]}]]},
+    ]
+    parts = [meta]
+    if with_roster:
+        parts.append({
+            "team_standings": [{
+                "outcome_totals": [{"wins": "2", "losses": "1", "ties": "0"}],
+                "points_for": "250.3",
+                "points_against": "210.0",
+            }]
+        })
+        parts.append({
+            "roster": {
+                "players": {
+                    "0": {"player": [[
+                        {"player_id": "5"},
+                        {"name": {"full": "Patrick Mahomes"}},
+                        {"display_position": "QB"},
+                        {"editorial_team_abbr": "KC"},
+                    ]]},
+                    "count": 1,
+                }
+            }
+        })
+    return parts
+
+
+def test_get_rosters_handles_list_wrapped_standings(monkeypatch):
+    import dashboard_services.api as api
+    monkeypatch.setattr(api, "get_nfl_players", lambda: {"11111": {"yahoo_id": "5"}})
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    team = _yahoo_team_with_list_standings(4, "List Standings", with_roster=True)
+    payload = _teams_payload([team])
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda *a, **k: payload)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    rosters = yahoo_api.get_rosters(2026, "99", "tok")
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    assert rosters[0]["settings"]["wins"] == 2
+    assert rosters[0]["settings"]["losses"] == 1
+    assert rosters[0]["settings"]["fpts"] == 250
+
+
+def test_diagnose_league_ok_with_list_wrapped_standings(monkeypatch):
+    teams = [_yahoo_team_with_list_standings(i, f"T{i}", with_roster=True) for i in range(1, 3)]
+    payload = _teams_payload(teams)
+    meta_payload = {"fantasy_content": {"league": [{"name": "L", "num_teams": "2", "draft_status": "postdraft"}]}}
+    paths = {
+        "league/449.l.99/teams;out=roster,stats,standings": payload,
+        "league/449.l.99/teams": payload,
+        "league/449.l.99": meta_payload,
+    }
+    import dashboard_services.api as api
+    monkeypatch.setattr(api, "get_nfl_players", lambda: {"11111": {"yahoo_id": "5"}})
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda tok, path, params=None: paths[path])
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    report = yahoo_api.diagnose_league(2026, "99", "tok")
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    assert report["ok"] is True
+    assert report["extracted_team_count"] == 2
+    assert report["teams"][0]["wins"] == "2"
+    assert report["teams"][0]["points_for"] == "250.3"
+
+
+def test_build_teams_overview_shows_yahoo_bench_and_ir():
+    """Yahoo BN must land on the dashboard Bench list, not disappear into IR."""
+    from utils.utils import build_teams_overview
+
+    rosters = [{
+        "roster_id": 1,
+        "owner_id": "g1",
+        "players": ["11111", "22222", "33333"],
+        "starters": ["11111"],
+        "reserve": ["33333"],
+        "taxi": [],
+        "settings": {"wins": 1, "losses": 0, "ties": 0},
+    }]
+    users = [{
+        "user_id": "g1",
+        "roster_id": 1,
+        "display_name": "Yahoo Owner",
+        "metadata": {"team_name": "The Squad"},
+    }]
+    players_index = {
+        "11111": {"name": "Patrick Mahomes", "team": "KC"},
+        "22222": {"name": "Travis Kelce", "team": "KC"},
+        "33333": {"name": "Isiah Pacheco", "team": "KC"},
+    }
+    players = {
+        "11111": {"pos": "QB"},
+        "22222": {"pos": "TE"},
+        "33333": {"pos": "RB"},
+    }
+    teams = build_teams_overview(
+        rosters, users, {}, players, players_index, {}, "yahoo",
+    )
+    assert len(teams) == 1
+    assert [p["name"] for p in teams[0]["starters"]] == ["Patrick Mahomes"]
+    assert [p["name"] for p in teams[0]["bench"]] == ["Travis Kelce"]
+    assert [p["name"] for p in teams[0]["ir"]] == ["Isiah Pacheco"]
+
+    from dashboard_services.service import render_teams_sidebar
+    card = render_teams_sidebar(teams)
+    assert "teams-card" in card
+    assert "Starters" in card and "Patrick Mahomes" in card
+    assert "Bench" in card and "Travis Kelce" in card
+    assert "IR" in card and "Isiah Pacheco" in card

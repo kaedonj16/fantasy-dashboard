@@ -37,6 +37,25 @@ function escapeHtml(s) {
   });
 }
 
+/**
+ * fetch() with a hard timeout. Rejects with AbortError when the timer fires so
+ * hung requests cannot leave spinners/overlays up forever.
+ */
+window.brFetchWithTimeout = function (url, opts, ms) {
+  ms = ms || 25000;
+  opts = opts || {};
+  if (typeof AbortController === 'undefined') return fetch(url, opts);
+  var ctl = new AbortController();
+  var outer = opts.signal;
+  if (outer) {
+    if (outer.aborted) ctl.abort();
+    else outer.addEventListener('abort', function () { ctl.abort(); }, { once: true });
+  }
+  var timer = setTimeout(function () { ctl.abort(); }, ms);
+  var merged = Object.assign({}, opts, { signal: ctl.signal });
+  return fetch(url, merged).finally(function () { clearTimeout(timer); });
+};
+
 // ── Canonical position palette ────────────────────────────────────────────────
 // Single source of truth for position → color across the app (rankings, trade
 // calculator, playoff table, etc.). Previously this map was copy-pasted a dozen
@@ -52,6 +71,19 @@ var POS_COLORS = {
 function posColorOf(pos) { return POS_COLORS[pos] || "var(--accent)"; }
 var __featuresState = 0;   // 0=not loaded, 1=loading, 2=loaded
 var __featuresCbs = [];
+function ensureDashboardCss(cb) {
+  // Lite SEO pages ship seo_lite.css for fast paint; the player modal (and Team
+  // tab) styles live in dashboard.css. Pull that sheet in once when the feature
+  // bundle is first requested so modal HTML isn't a raw unstyled dump.
+  if (document.querySelector('link[href*="dashboard"]')) { if (cb) cb(); return; }
+  var href = window.__DASHBOARD_CSS;
+  if (!href) { if (cb) cb(); return; }
+  var link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = href;
+  link.onload = link.onerror = function () { if (cb) cb(); };
+  document.head.appendChild(link);
+}
 function ensureFeatures(cb) {
   // Already present (full app.js bundle, or features finished loading).
   if (typeof openPlayerModal === 'function' && !openPlayerModal.__stub) { if (cb) cb(); return; }
@@ -59,18 +91,20 @@ function ensureFeatures(cb) {
   if (cb) __featuresCbs.push(cb);
   if (__featuresState) return;   // already loading
   __featuresState = 1;
-  var s = document.createElement('script');
-  s.src = window.__FEATURES_JS;
-  s.onload = function () {
-    __featuresState = 2;
-    var cbs = __featuresCbs; __featuresCbs = [];
-    cbs.forEach(function (f) { try { f(); } catch (e) { console.error(e); } });
-  };
-  s.onerror = function () {
-    __featuresState = 0;   // allow a retry on the next interaction
-    console.error('[features] failed to load', window.__FEATURES_JS);
-  };
-  document.head.appendChild(s);
+  ensureDashboardCss(function () {
+    var s = document.createElement('script');
+    s.src = window.__FEATURES_JS;
+    s.onload = function () {
+      __featuresState = 2;
+      var cbs = __featuresCbs; __featuresCbs = [];
+      cbs.forEach(function (f) { try { f(); } catch (e) { console.error(e); } });
+    };
+    s.onerror = function () {
+      __featuresState = 0;   // allow a retry on the next interaction
+      console.error('[features] failed to load', window.__FEATURES_JS);
+    };
+    document.head.appendChild(s);
+  });
 }
 // Stub so the many guarded `if (typeof openPlayerModal === 'function')` call sites
 // in the core fire the lazy load. The real openPlayerModal (a hoisted function in
@@ -973,7 +1007,7 @@ window.brHaptic = function (pattern) {
   // page is fetched (a same-document swap otherwise looks like nothing happened
   // on a slow page). It only appears if the fetch runs past ~180ms, so quick
   // navigations never flash it.
-  var progressEl, progressTimer, progressOn = false;
+  var progressEl, progressTimer, progressOn = false, progressFailsafe = 0;
   function progressBar() {
     if (!progressEl) {
       progressEl = document.createElement('div');
@@ -998,6 +1032,7 @@ window.brHaptic = function (pattern) {
   }
   function endProgress() {
     clearTimeout(progressTimer);
+    clearTimeout(progressFailsafe);
     if (!progressOn) return;
     progressOn = false;
     var el = progressBar();
@@ -1050,7 +1085,7 @@ window.brHaptic = function (pattern) {
     scrollTimer = setTimeout(function () { scrollTimer = null; scrollByUrl[location.href] = getScroll(); }, 150);
   }, { passive: true, capture: true });   // capture so a body-scroller's event is seen
 
-  var token = 0;
+  var token = 0, navAbort = null;
   function softNav(url, isPop) {
     var mine = ++token;
     var curRoot = document.getElementById('page-root');
@@ -1059,8 +1094,22 @@ window.brHaptic = function (pattern) {
     // preventDefaults the navigation, so no pageshow/DOMContentLoaded will ever
     // fire to finish it. Retire it now and let .br-nav-progress own the feedback.
     if (window.__brTopBarHide) window.__brTopBarHide();
+    if (navAbort) { try { navAbort.abort(); } catch (_) {} }
+    navAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     startProgress();
-    fetch(url, { headers: { 'X-Soft-Nav': '1' }, credentials: 'same-origin' })
+    clearTimeout(progressFailsafe);
+    progressFailsafe = setTimeout(function () {
+      if (mine !== token) return;
+      if (navAbort) { try { navAbort.abort(); } catch (_) {} }
+      endProgress();
+      location.href = url;
+    }, 25000);
+    var fetchOpts = { headers: { 'X-Soft-Nav': '1' }, credentials: 'same-origin' };
+    if (navAbort) fetchOpts.signal = navAbort.signal;
+    var fetchP = (typeof window.brFetchWithTimeout === 'function')
+      ? window.brFetchWithTimeout(url, fetchOpts, 25000)
+      : fetch(url, fetchOpts);
+    fetchP
       .then(function (resp) {
         var ct = resp.headers.get('content-type') || '';
         if (!resp.ok || ct.indexOf('text/html') === -1) throw new Error('bad response');
@@ -1098,6 +1147,9 @@ window.brHaptic = function (pattern) {
       })
       .catch(function () {
         if (mine === token) { endProgress(); location.href = url; }   // safe fallback: full navigation
+      })
+      .finally(function () {
+        if (mine === token) clearTimeout(progressFailsafe);
       });
   }
 
@@ -1393,6 +1445,114 @@ window.brLoadingState = function (container, opts) {
   el.innerHTML = html;
   return el;
 };
+
+/**
+ * Escape hatch for full-screen loading overlays that might never dismiss on a
+ * slow/hung navigation. After slowMs updates the subtext; after hardMs injects
+ * Cancel / Try again / Reload actions (Escape dismisses once actions show).
+ */
+(function () {
+  var armed = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+  var fallback = {};
+
+  function subtextEl(overlay) {
+    return overlay.querySelector('.fullscreen-loading-subtext')
+      || overlay.querySelector('.fullscreen-loading-text');
+  }
+
+  function actionsEl(overlay) {
+    var act = overlay.querySelector('.fullscreen-loading-actions');
+    if (act) return act;
+    act = document.createElement('div');
+    act.className = 'fullscreen-loading-actions';
+    act.setAttribute('role', 'group');
+    act.setAttribute('aria-label', 'Loading options');
+    overlay.appendChild(act);
+    return act;
+  }
+
+  function disarmOne(overlay) {
+    if (!overlay) return;
+    var state = armed ? armed.get(overlay) : fallback[overlay.id];
+    if (!state) return;
+    clearTimeout(state.slowTimer);
+    clearTimeout(state.hardTimer);
+    if (state.escHandler) document.removeEventListener('keydown', state.escHandler);
+    if (armed) armed.delete(overlay);
+    else if (overlay.id) delete fallback[overlay.id];
+    var act = overlay.querySelector('.fullscreen-loading-actions');
+    if (act) act.innerHTML = '';
+  }
+
+  window.brLoadingEscape = {
+    disarm: disarmOne,
+    arm: function (overlay, opts) {
+      if (!overlay) return function () {};
+      opts = opts || {};
+      disarmOne(overlay);
+      var slowMs = opts.slowMs || 8000;
+      var hardMs = opts.hardMs || 22000;
+      var state = { overlay: overlay };
+
+      state.slowTimer = setTimeout(function () {
+        var sub = subtextEl(overlay);
+        if (!sub) return;
+        sub.textContent = opts.slowMessage
+          || 'Still working… this can take a moment on a cold load.';
+      }, slowMs);
+
+      state.hardTimer = setTimeout(function () {
+        var sub = subtextEl(overlay);
+        if (sub) {
+          sub.textContent = opts.hardMessage || 'This is taking longer than usual.';
+        }
+        var act = actionsEl(overlay);
+        act.innerHTML = '';
+        var cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'fullscreen-loading-cancel';
+        cancelBtn.textContent = opts.cancelLabel || 'Cancel';
+        cancelBtn.addEventListener('click', function () {
+          disarmOne(overlay);
+          if (opts.onCancel) opts.onCancel();
+          else overlay.style.display = 'none';
+        });
+        act.appendChild(cancelBtn);
+        if (typeof opts.onRetry === 'function') {
+          var retryBtn = document.createElement('button');
+          retryBtn.type = 'button';
+          retryBtn.className = 'fullscreen-loading-retry';
+          retryBtn.textContent = opts.retryLabel || 'Try again';
+          retryBtn.addEventListener('click', function () {
+            disarmOne(overlay);
+            opts.onRetry();
+          });
+          act.appendChild(retryBtn);
+        }
+        if (opts.fallbackHref) {
+          var link = document.createElement('a');
+          link.className = 'fullscreen-loading-fallback';
+          link.href = opts.fallbackHref;
+          link.textContent = opts.fallbackLabel || 'Reload page';
+          act.appendChild(link);
+        }
+        state.cancelBtn = cancelBtn;
+      }, hardMs);
+
+      state.escHandler = function (e) {
+        if (e.key !== 'Escape') return;
+        if (!state.cancelBtn) return;
+        e.preventDefault();
+        state.cancelBtn.click();
+      };
+      document.addEventListener('keydown', state.escHandler);
+
+      if (armed) armed.set(overlay, state);
+      else if (overlay.id) fallback[overlay.id] = state;
+      return function () { disarmOne(overlay); };
+    }
+  };
+})();
 
 /**
  * Legacy signature kept for existing callers.
@@ -2750,7 +2910,10 @@ function showLoginGate(target, opts) {
   function showRefreshOverlay(on) {
     var el = document.getElementById('brRefreshOverlay');
     if (!on) {
-      if (el) el.style.display = 'none';
+      if (el) {
+        if (window.brLoadingEscape) window.brLoadingEscape.disarm(el);
+        el.style.display = 'none';
+      }
       return;
     }
     if (!el) {
@@ -2766,6 +2929,23 @@ function showLoginGate(target, opts) {
       document.body.appendChild(el);
     }
     el.style.display = 'flex';
+    if (window.brLoadingEscape) {
+      window.brLoadingEscape.disarm(el);
+      window.brLoadingEscape.arm(el, {
+        slowMessage: 'Still refreshing… rebuilding league data can take a moment.',
+        hardMessage: 'Refresh is taking longer than usual.',
+        onCancel: function () {
+          el.style.display = 'none';
+          doRefresh._busy = false;
+          var btn = document.getElementById('brSheetRefresh');
+          if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
+          updateLabels();
+        },
+        onRetry: function () { doRefresh(); },
+        fallbackHref: location.href,
+        fallbackLabel: 'Reload page',
+      });
+    }
   }
 
   function ackBypassCache(url) {
@@ -2788,16 +2968,21 @@ function showLoginGate(target, opts) {
   function expireLeague() {
     var parts = window.location.pathname.split('/').filter(Boolean);
     if (parts.length < 3) return Promise.resolve();
-    return fetch('/api/refresh-league', {
+    var body = JSON.stringify({
+      platform: parts[0],
+      season: parseInt(parts[1], 10),
+      league_id: parts[2]
+    });
+    var req = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({
-        platform: parts[0],
-        season: parseInt(parts[1], 10),
-        league_id: parts[2]
-      })
-    }).then(function (res) {
+      body: body
+    };
+    var p = (typeof window.brFetchWithTimeout === 'function')
+      ? window.brFetchWithTimeout('/api/refresh-league', req, 20000)
+      : fetch('/api/refresh-league', req);
+    return p.then(function (res) {
       if (!res.ok) throw new Error('refresh-league ' + res.status);
     });
   }
@@ -2841,11 +3026,18 @@ function showLoginGate(target, opts) {
           hardReload();
           return;
         }
-        return fetch(location.href, {
-          cache: 'reload',
-          credentials: 'same-origin',
-          headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
-        }).then(function (res) {
+        return (typeof window.brFetchWithTimeout === 'function'
+          ? window.brFetchWithTimeout(location.href, {
+              cache: 'reload',
+              credentials: 'same-origin',
+              headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+            }, 30000)
+          : fetch(location.href, {
+              cache: 'reload',
+              credentials: 'same-origin',
+              headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+            })
+        ).then(function (res) {
           if (!res.ok) throw new Error('page ' + res.status);
           return res.text();
         }).then(function (html) {
@@ -3003,7 +3195,9 @@ function bindOnce(el, key, type, handler, options) {
     const m = document.getElementById('br-theme-color');
     if (!m) return;
     const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-    m.setAttribute('content', dark ? '#020617' : '#ffffff');
+    // Match the top chrome / PWA splash (navy in dark, soft slate in light)
+    // so the OS status bar doesn't flash pure white against the app surface.
+    m.setAttribute('content', dark ? '#020617' : '#f8fafc');
   }
   syncThemeColor();
 
@@ -7510,7 +7704,7 @@ window.initTradePage = function initTradePage(root = document) {
     let _strategyFilter  = null;
     let _strategyPage    = 0;
     let _currentPlayoffPct = null;
-    const _STRATEGY_PAGE_SIZE = 5;
+    const _STRATEGY_PAGE_SIZE = 6;
     // Request sequencing: clicking off a strategy and back on fires overlapping
     // requests. Without this, a late/stale response (e.g. an empty archetype that
     // resolved after the one you re-selected) would clobber the current view with
@@ -8590,6 +8784,23 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   // League size doesn't affect redraft values, so grey it out in redraft mode.
+  // Keep the live trade-count label across redraft/dynasty tooltip rewrites —
+  // innerHTML replacement used to drop #tradeCount and the "over N trades" copy.
+  let cachedTradeCountLabel = (root.querySelector("#tradeCount")?.textContent || "").trim();
+
+  function tradeCountLabel() {
+    const el = root.querySelector("#tradeCount");
+    const fromEl = el && el.textContent.trim();
+    if (fromEl) cachedTradeCountLabel = fromEl;
+    return cachedTradeCountLabel || "150,000+";
+  }
+
+  function setTradeCountLabel(label) {
+    if (label) cachedTradeCountLabel = label;
+    const el = root.querySelector("#tradeCount");
+    if (el) el.textContent = cachedTradeCountLabel;
+  }
+
   function syncScoringTypeUi() {
     const redraft = getScoringType() === "redraft";
     const sizeCtrl = root.querySelector("#leagueSizeSelect");
@@ -8602,9 +8813,10 @@ window.initTradePage = function initTradePage(root = document) {
     }
     const tipBody = root.querySelector("#otcInfoTooltip .otc-info-tooltip-body");
     if (tipBody) {
+      const count = tradeCountLabel();
       tipBody.innerHTML = redraft
         ? "<p>Player values are this-season redraft values. Weekly production this year is what counts, not youth or future draft capital.</p><p>Switch to Dynasty in the scoring control if you want multi-year trade values instead.</p>"
-        : "<p>Player values are built directly from real dynasty trades, capturing how the market prices players and picks in actual deals.</p><p>We translate those trade relationships into a unified value scale, then layer in production, age trajectory, and role stability to sharpen the signal.</p>";
+        : "<p>Player values are built directly from real dynasty trades, capturing how the market prices players and picks in actual deals.</p><p>We translate over <strong id=\"tradeCount\">" + count + "</strong> trade relationships into a unified value scale, then layer in production, age trajectory, and role stability to sharpen the signal.</p>";
     }
   }
 
@@ -9107,16 +9319,12 @@ window.initTradePage = function initTradePage(root = document) {
         return response.json();
       })
       .then(data => {
-        const tradeCountElement = document.getElementById('tradeCount');
-        if (tradeCountElement && data.count !== undefined) {
-          tradeCountElement.textContent = data.count.toLocaleString();
+        if (data.count !== undefined) {
+          setTradeCountLabel(data.count.toLocaleString());
         }
       })
-      .catch(error => {
-        const tradeCountElement = document.getElementById('tradeCount');
-        if (tradeCountElement) {
-          tradeCountElement.textContent = '150,000+';
-        }
+      .catch(() => {
+        setTradeCountLabel(cachedTradeCountLabel || "150,000+");
       });
   }
 
@@ -9421,6 +9629,14 @@ function initRecapPage(root = document) {
     observedLayout = null;
   }
 
+  function viewportFillHeight(layout) {
+    var top = layout.getBoundingClientRect().top;
+    var footer = document.querySelector('.site-footer, footer.app-footer, .app-footer');
+    var footerH = footer ? footer.getBoundingClientRect().height : 0;
+    var pad = 24;
+    return Math.max(320, Math.floor(window.innerHeight - top - footerH - pad));
+  }
+
   function apply(layout, main) {
     if (!layout || !main || !mq.matches) {
       teardown();
@@ -9428,7 +9644,8 @@ function initRecapPage(root = document) {
     }
     layout.classList.add('os-hub-cols-synced');
     observedLayout = layout;
-    var h = Math.ceil(main.getBoundingClientRect().height);
+    var mainH = Math.ceil(main.getBoundingClientRect().height);
+    var h = Math.max(mainH, viewportFillHeight(layout));
     if (h > 0) layout.style.setProperty('--os-hub-main-h', h + 'px');
   }
 
@@ -9467,6 +9684,7 @@ function initRecapPage(root = document) {
     var onMq = function() { window.initHubColumnHeightSync(document); };
     if (mq.addEventListener) mq.addEventListener('change', onMq);
     else if (mq.addListener) mq.addListener(onMq);
+    window.addEventListener('resize', onMq, { passive: true });
     window._hubColMqBound = true;
   }
 })();
@@ -9531,6 +9749,26 @@ function showDashboardLoadingOverlay(text, subtext) {
   // Restart progress animation
   if (bar) { bar.style.animation = "none"; bar.offsetWidth; bar.style.animation = ""; }
   overlay.style.display = "flex";
+  if (window.brLoadingEscape) {
+    window.brLoadingEscape.disarm(overlay);
+    window.brLoadingEscape.arm(overlay, {
+      slowMessage: 'Still building… large leagues can take up to a minute.',
+      hardMessage: 'This is taking longer than usual. You can cancel and try again.',
+      onCancel: function () {
+        overlay.style.display = 'none';
+        const submitBtn = document.querySelector('#leagueSelectForm button[type="submit"]');
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Continue';
+        }
+        document.querySelectorAll('.saved-viewer-btn, #continueAsBtn').forEach(function (btn) {
+          btn.disabled = false;
+        });
+      },
+      fallbackHref: location.href,
+      fallbackLabel: 'Reload page',
+    });
+  }
 }
 
 bindOnce(document, "domContentLoadedInit", "DOMContentLoaded", () => {
@@ -9954,7 +10192,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const yahooLeagueIdInput = document.getElementById("yahooLeagueIdInput");
   const yahooTeamName = document.getElementById("yahooTeamName");
   const yahooConnectBtn = document.getElementById("yahooConnectBtn");
+  const yahooSubmitRow = document.getElementById("yahooSubmitRow");
   const yahooErrorBox = document.getElementById("yahooError");
+  const yahooAccountChoice = document.getElementById("yahooAccountChoice");
+  const yahooPrivateGoogle = document.getElementById("yahooPrivateGoogle");
+  const yahooPrivateGuest = document.getElementById("yahooPrivateGuest");
 
   const mflLeagueIdInput = document.getElementById("mflLeagueIdInput");
   const mflSeasonInput = document.getElementById("mflSeasonInput");
@@ -10162,6 +10404,7 @@ if (!platformBtns.length) return;
   let espnRequestedAction = "";
   let mflRequestedAction = "";
   let fleaRequestedAction = "";
+  let yahooRequestedAction = "";
   let sleeperLookupUser = null;
 
   async function saveLeagueToSignedInAccount(details) {
@@ -10292,12 +10535,18 @@ if (!platformBtns.length) return;
     if (fleaflickerFlow) fleaflickerFlow.style.display = platform === "fleaflicker" ? "block" : "none";
     if (sleeperHint) sleeperHint.style.display = platform === "sleeper" ? ""      : "none";
     if (platform === "espn") setHomeEspnMethod(homeEspnMethod);
+    if (platform === "yahoo") setHomeYahooChoice();
     if (platform === "mfl") setHomeMflMethod(homeMflMethod);
     if (platform === "fleaflicker") setHomeFleaMethod(homeFleaMethod);
     if (platform !== "espn") {
       if (espnSwidInput) espnSwidInput.value = "";
       if (espnS2Input) espnS2Input.value = "";
     }
+  }
+
+  function setHomeYahooChoice() {
+    if (yahooAccountChoice) yahooAccountChoice.style.display = !window._hasAccount ? "flex" : "none";
+    if (yahooSubmitRow) yahooSubmitRow.style.display = window._hasAccount ? "flex" : "none";
   }
 
   function setHomeMflMethod(method) {
@@ -10830,13 +11079,44 @@ if (!platformBtns.length) return;
       }
 
       if (yahooErrorBox) yahooErrorBox.style.display = "none";
+      const teamName = yahooTeamName?.value.trim() || "";
+
+      // Unsigned Google path: stash the league, then sign in with Google.
+      // Yahoo still has to authorize after that if this session has no Yahoo
+      // token — the Google callback sends them to /auth/yahoo. Do not bounce
+      // to Yahoo first; that would skip the Google account.
+      if (!window._hasAccount && yahooRequestedAction === "google") {
+        yahooConnectBtn.disabled = true;
+        yahooConnectBtn.textContent = "Continuing...";
+        try {
+          const pending = await fetch("/api/link/pending", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              platform: "yahoo",
+              league_id: leagueId,
+              username: teamName || null,
+            }),
+          });
+          const pendingData = await pending.json();
+          if (!pending.ok || !pendingData.ok) throw new Error(pendingData.error || "Could not save this league.");
+          showDashboardLoadingOverlay("Signing you in…", "Saving this Yahoo league to your account");
+          window.location.href = pendingData.auth_url || "/auth/google";
+        } catch (err) {
+          if (yahooErrorBox) {
+            yahooErrorBox.textContent = err.message || "Unable to connect to Yahoo.";
+            yahooErrorBox.style.display = "block";
+          }
+          yahooConnectBtn.disabled = false;
+          yahooConnectBtn.textContent = "Connect Yahoo Account";
+        }
+        return;
+      }
 
       try {
         const res = await fetch(`/api/yahoo-validate-league?league_id=${encodeURIComponent(leagueId)}`);
         const data = await res.json();
 
         if (res.status === 401 && data.needs_oauth) {
-          const teamName = yahooTeamName?.value.trim() || "";
           // Start from the server's auth_url when it sends one — a 403 recovery
           // returns /auth/yahoo?reauth=1 so Yahoo shows its account chooser
           // instead of silently re-authorizing the same wrong account. Then
@@ -10858,7 +11138,6 @@ if (!platformBtns.length) return;
         }
         if (formPlatform) formPlatform.value = "yahoo";
 
-        const teamName = yahooTeamName?.value.trim() || "";
         const formUsername = document.getElementById("formUsername");
         if (formUsername) formUsername.value = teamName;
 
@@ -10871,6 +11150,14 @@ if (!platformBtns.length) return;
       }
     });
   }
+  yahooPrivateGoogle?.addEventListener("click", () => {
+    yahooRequestedAction = "google";
+    yahooConnectBtn?.click();
+  });
+  yahooPrivateGuest?.addEventListener("click", () => {
+    yahooRequestedAction = "guest";
+    yahooConnectBtn?.click();
+  });
 
   // MFL: public preview, or private connect with cookie/APIKEY (password only
   // used server-side to obtain a cookie; never persisted). Guest Google/Guest
@@ -11642,6 +11929,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Remove any existing overlay
     const existingOverlay = document.getElementById('fullscreenLoadingOverlay');
     if (existingOverlay) {
+      if (window.brLoadingEscape) window.brLoadingEscape.disarm(existingOverlay);
       existingOverlay.remove();
     }
 
@@ -11652,8 +11940,18 @@ document.addEventListener('DOMContentLoaded', function() {
     overlay.innerHTML = `
       <div class="loading-spinner"></div>
       <div class="fullscreen-loading-text">${message}</div>
+      <div class="fullscreen-loading-subtext">Hang tight…</div>
     `;
     document.body.appendChild(overlay);
+    if (window.brLoadingEscape) {
+      window.brLoadingEscape.arm(overlay, {
+        slowMessage: 'Still switching… rebuilding league context can take a moment.',
+        hardMessage: 'League switch is taking longer than usual.',
+        onCancel: function () { overlay.remove(); },
+        fallbackHref: location.href,
+        fallbackLabel: 'Stay on this page',
+      });
+    }
   }
 
   // Handle league switcher
@@ -11795,9 +12093,15 @@ document.addEventListener('DOMContentLoaded', function() {
           // is the dominant switch latency). Sequential + throttled so we never
           // hammer the API; same-season leagues first (most likely to switch to),
           // current league skipped, and capped.
+          // Skip ESPN: private leagues pay a failed anonymous + credentialed
+          // ESPN round-trip per prewarm, contend with the live page / player
+          // modal, and switch already POSTs /api/refresh-league which expires
+          // the destination context anyway.
           try {
             const others = leagues.filter(
-              l => l.league_id && String(l.league_id) !== String(currentLeagueId)
+              l => l.league_id
+                && String(l.league_id) !== String(currentLeagueId)
+                && String(l.platform || currentPlatform).toLowerCase() !== 'espn'
             );
             others.sort((a, b) =>
               (String(b.season) === String(currentSeason)) -
@@ -11870,15 +12174,51 @@ document.addEventListener('DOMContentLoaded', function() {
           league_id: leagueId,
         }),
       }).then(function () { go(); }, function () { go(); });
+      // Never block the switch forever if refresh-league hangs.
+      setTimeout(go, 12000);
     }
 
     // Top-bar league chip: same league list as the settings switcher, so the
     // persistent chrome is the place you switch (and page titles stay clean).
+    function paintLeagueChromeChip(lg) {
+      if (!lg) return;
+      var nameEl = document.querySelector('#brLeagueChrome .br-ctx-name');
+      var fmtEl = document.querySelector('#brLeagueChrome .br-ctx-format');
+      var name = String(lg.name || '').trim();
+      if (nameEl && name && name !== 'This league') {
+        nameEl.textContent = name;
+      }
+      if (lg.format) {
+        if (fmtEl) {
+          fmtEl.textContent = lg.format;
+        } else if (nameEl && nameEl.parentNode) {
+          var span = document.createElement('span');
+          span.className = 'br-ctx-format';
+          span.textContent = lg.format;
+          nameEl.insertAdjacentElement('afterend', span);
+        }
+      }
+      if (window.__brctx) {
+        if (name) window.__brctx.leagueName = name;
+        if (lg.format) window.__brctx.leagueFormat = lg.format;
+        if (lg.sf != null) window.__brctx.leagueType = lg.sf ? 'sf' : '1qb';
+        if (lg.size) window.__brctx.leagueSize = lg.size;
+      }
+    }
+
     function fillLeagueChromeMenu(leagues) {
       var btn = document.getElementById('brCtxLeagueBtn');
       var menu = document.getElementById('brCtxLeagueMenu');
       if (!btn) return;
       var list = Array.isArray(leagues) ? leagues : [];
+      var cur = null;
+      for (var i = 0; i < list.length; i++) {
+        if (String(list[i].league_id || '') === String(currentLeagueId || '')) {
+          cur = list[i];
+          break;
+        }
+      }
+      paintLeagueChromeChip(cur);
       var can = list.length > 1;
       btn.classList.toggle('is-static', !can);
       btn.setAttribute('aria-disabled', can ? 'false' : 'true');
@@ -14260,16 +14600,21 @@ function initComparePage() {
   // when a ?p1=&p2= deep link is already populating both sides).
   (function _autofocus() {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('p1') && params.get('p2')) return;
-    const first = document.getElementById('cmpPick1');
+    const q1 = params.get('p1') || params.get('a');
+    const q2 = params.get('p2') || params.get('b');
+    if (q1 && q2) return;
+    const first = document.getElementById(q1 ? 'cmpPick2' : 'cmpPick1');
     if (first) { try { first.focus(); } catch (_) {} }
   })();
 
   // Deep link: ?p1=&p2= prefills both pickers (and optional ?p3=) and opens the
-  // comparison.
+  // comparison. A lone ?p1= (or waiver-wire ?a=) prefills player 1 so the user
+  // can pick a roster player to compare against.
   try {
     const params = new URLSearchParams(window.location.search);
-    const q1 = params.get('p1'), q2 = params.get('p2'), q3 = params.get('p3');
+    const q1 = params.get('p1') || params.get('a');
+    const q2 = params.get('p2') || params.get('b');
+    const q3 = params.get('p3');
     if (q1 && q2) {
       const qs = q3 ? [q1, q2, q3] : [q1, q2];
       Promise.all(qs.map(q => _fetchDetails(q))).then(ds => {
@@ -14281,6 +14626,14 @@ function initComparePage() {
         _syncClears();
         if (q3) { _revealThird(false); _openForTriple(ds[0], ds[1], ds[2]); } else _openFor(ds[0], ds[1]);
       }).catch(() => { if (resultEl) window.brErrorState(resultEl, 'Could not load that comparison.', null, { compact: true }); });
+    } else if (q1) {
+      _fetchDetails(q1).then(d => {
+        chosen[1] = { player_id: String(d.player_id || q1), name: d.name || d.full_name || '', position: d.position || '', team: d.team || '' };
+        const inp = document.getElementById('cmpPick1'); if (inp) inp.value = chosen[1].name;
+        _syncClears();
+        const second = document.getElementById('cmpPick2');
+        if (second) { try { second.focus(); } catch (_) {} }
+      }).catch(() => {});
     }
   } catch (_) {}
 }
@@ -16965,23 +17318,11 @@ function renderTeamDetails(data) {
   `;
   document.getElementById('teamModalMeta').innerHTML = metaHTML;
 
-  // Build roster table
+  // Build roster list
   let rosterHTML = '<div class="team-modal-section"><h3>Roster</h3>';
 
   if (data.roster && data.roster.length > 0) {
-    rosterHTML += '<table class="team-roster-table">';
-    rosterHTML += `
-      <thead>
-        <tr>
-          <th>Player</th>
-          <th>Pos</th>
-          <th>Team</th>
-          <th>Age</th>
-          <th>Value</th>
-        </tr>
-      </thead>
-      <tbody>
-    `;
+    rosterHTML += '<div class="tm-roster-list">';
 
     data.roster.forEach(player => {
       const isUnknown = !player.name || player.name === 'Unknown' || /^\d+$/.test(player.name);
@@ -17031,22 +17372,33 @@ function renderTeamDetails(data) {
         badges += `<span class="player-badge ${_icls}" title="${_tip.replace(/"/g, '&quot;')}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${_code}</span>`;
       }
 
+      const ageStr = player.age != null && !isNaN(parseFloat(player.age)) ? parseFloat(player.age).toFixed(1) : '—';
+      const valStr = player.value != null && !isNaN(parseFloat(player.value)) ? parseFloat(player.value).toFixed(1) : '—';
+      const rowAttrs = isUnknown
+        ? ''
+        : ` data-player-id="${player.player_id}" data-player-name="${player.name}" tabindex="0"`;
+      const rowCls = isUnknown ? 'tm-roster-row' : 'tm-roster-row tm-roster-click';
+
       rosterHTML += `
-        <tr ${isUnknown ? '' : `style="cursor:pointer;" data-player-id="${player.player_id}" data-player-name="${player.name}"`}>
-          <td>
-            ${isUnknown
-              ? `<span style="color:var(--text-muted);">${/^\d+$/.test(player.name) ? `Unknown ${player.position || ''}`.trim() : (player.name || 'Unknown')}</span>`
-              : `<strong class="player-clickable">${player.name}</strong>${badges}`}
-          </td>
-          <td><span class="pos-badge ${player.position}">${player.position}</span></td>
-          <td>${player.team || '-'}</td>
-          <td>${player.age != null && !isNaN(parseFloat(player.age)) ? parseFloat(player.age).toFixed(1) : '-'}</td>
-          <td>${player.value != null && !isNaN(parseFloat(player.value)) ? parseFloat(player.value).toFixed(1) : '-'}</td>
-        </tr>
+        <div class="${rowCls}"${rowAttrs}>
+          <div class="tm-roster-main">
+            <div class="tm-roster-name-row">
+              ${isUnknown
+                ? `<span class="tm-roster-name muted">${/^\d+$/.test(player.name) ? `Unknown ${player.position || ''}`.trim() : (player.name || 'Unknown')}</span>`
+                : `<span class="tm-roster-name player-clickable">${player.name}</span>`}
+              ${badges ? `<span class="tm-roster-badges">${badges}</span>` : ''}
+            </div>
+            <div class="tm-roster-meta">${player.team || '—'} · Age ${ageStr}</div>
+          </div>
+          <div class="tm-roster-side">
+            <span class="pos-badge ${player.position}">${player.position}</span>
+            <span class="tm-roster-value">${valStr}</span>
+          </div>
+        </div>
       `;
     });
 
-    rosterHTML += '</tbody></table>';
+    rosterHTML += '</div>';
   } else {
     rosterHTML += '<div class="team-modal-empty">No players on roster</div>';
   }

@@ -13,7 +13,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **My Leagues (Portfolio)** — Cross-league hub that lists every league you're in with at-a-glance value and standings. **PRO** unlocks the cross-league **This week's moves** digest (lineup and injury actions ranked across all linked leagues).
 - **League switcher** — Jump between your leagues from anywhere via the nav dropdown.
 - **Multi-season support** — View any league across multiple seasons.
-- **PRO / Premium tiers** — Subscription-gated features (Stripe checkout, billing portal, league-shared or user-based premium access) with a paywall on PRO-only tools.
+- **PRO / Premium tiers** — Subscription-gated features (Stripe checkout, billing portal) with a paywall on PRO-only tools. Plans: **One League** ($5/year, buyer-only for one selected league), **Personal** ($10/year, all your leagues), **League** ($15/year, shared with every manager), and **League + Personal** ($20/year combo).
 - **Dark mode** — Light/dark theme toggle with your preference saved automatically.
 - **Changelog** — In-app feed of every new feature and update.
 
@@ -124,7 +124,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **NFL state / news integration** — Live NFL week state, player news, and injury data.
 - **Responsive design** — Container-query-driven layouts that adapt cleanly from desktop to mobile, with a mobile tab-bar dock.
 - **PWA & offline** — Installable progressive web app (service worker, manifest, offline page) plus push notifications for trades, breakouts, waivers, and scores. Rate limits use Redis when `REDIS_URL` is set so they hold across web workers; otherwise they are per-process.
-- **Weekly email digest** — Once-a-week recap emailed to signed-in users: your record and league rank, your roster's value risers/fallers, and the biggest leaguewide movers, linking back to your dashboard. Accounts with multiple linked leagues also get short **Your other leagues** blocks (primary + up to two more). De-duped per account per week, with one-click signed unsubscribe. Render cron `weekly-email` fires Tuesday 9am ET via `/api/cron/notifications` (`type=weekly`). Hourly push checks (lineup lock, close games, drops, injuries) run from Render cron `hourly-notifications`.
+- **Weekly email digest** — Personalized Tuesday recap (Render cron `weekly-email`, 13:00 UTC) covering the user's primary league in full plus compact notes for other leagues. Redraft emails lead with matchup / start-sit / waivers; dynasty emails lead with meaningful roster-value movement, breakouts, and roster-construction notes. Delivered via Brevo (`htmlContent`) with SMTP fallback. De-duped per account per ISO week, with a signed unsubscribe link that opts out of the weekly digest only. See `docs/weekly-email.md`. Hourly push checks (lineup lock, close games, drops, injuries) run from Render cron `hourly-notifications`.
 - **Browser extension** — Companion extension for ESPN/Yahoo live-draft relay and one-click ESPN private-league connect. See `extension/README.md` for the parity checklist (Sleeper overlay not yet; phone drafts = manual track; production zip via `pack_extension.py`).
 - **Trending surfaces** — Trending adds, risers/fallers, and value-movers boards driven by the live value engine.
 - **Static / informational pages** — About, Pricing, FAQ, Contact, Support, Privacy, Terms.

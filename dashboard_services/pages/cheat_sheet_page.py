@@ -299,18 +299,28 @@ _CHEAT_HTML = r"""
   .cs-hist-sec { margin: 0 0 16px; }
   .cs-hist-sec:last-child { margin-bottom: 0; }
   .cs-hist-sec h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 8px; }
-  .cs-hist-hits { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; overflow: hidden; background: var(--cs-surface, var(--card)); }
-  .cs-hist-hit { display: flex; flex-direction: column; gap: 0; padding: 10px 12px 11px; border: 0; border-bottom: 1px solid var(--cs-line, var(--border)); border-radius: 0; background: var(--cs-surface, var(--card)); }
-  .cs-hist-hit:last-child { border-bottom: 0; }
+  .cs-hist-hits { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; border: 1px solid var(--cs-line, var(--border)); border-radius: 14px; overflow: hidden; background: var(--cs-line, var(--border)); }
+  .cs-hist-hit { display: flex; flex-direction: column; gap: 0; padding: 10px 12px 11px; border: 0; border-radius: 0; background: var(--cs-surface, var(--card)); min-width: 0; }
+  .cs-hist-hit:last-child:nth-child(odd) { grid-column: 1 / -1; }
   .cs-hist-hit-top { display: flex; align-items: baseline; gap: 8px; }
   .cs-hist-hit-top > div { flex: 1; min-width: 0; }
-  .cs-hist-hit-label { font-size: 13px; font-weight: 700; color: var(--cs-ink, var(--text)); }
+  .cs-hist-hit-label { font-size: 13px; font-weight: 700; color: var(--cs-ink, var(--text)); line-height: 1.3; overflow-wrap: anywhere; }
   .cs-hist-hit-meta { font-family: var(--cs-mono); font-size: 11px; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 2px; }
   .cs-hist-hit-pct { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--cs-ink, var(--text)); white-space: nowrap; }
   .cs-hist-hit-pct span { font-size: 11px; font-weight: 700; color: var(--cs-pos); }
   .cs-hist-hit.is-miss .cs-hist-hit-pct span { color: var(--cs-ink-faint, var(--text-muted)); }
   .cs-hist-hit .cs-trends-rail { margin-top: 6px; }
   .cs-hist-hit-top .cs-trends-conf { align-self: center; }
+  .cs-hist-hit.is-this { box-shadow: inset 3px 0 0 var(--cs-pos, #22c55e); }
+  .cs-hist-hit-role { display: block; margin: 3px 0 0; font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-pos); }
+  .cs-hist-tile-ex { margin-top: 6px; }
+  .cs-hist-tile-ex > summary { cursor: pointer; list-style: none; font-size: 11px; font-weight: 700; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.35; overflow-wrap: anywhere; }
+  .cs-hist-tile-ex > summary::-webkit-details-marker { display: none; }
+  .cs-hist-tile-ex > summary::after { content: " +"; color: var(--cs-pos); }
+  .cs-hist-tile-ex[open] > summary::after { content: "\2013"; }
+  .cs-hist-tile-ex ul { list-style: none; margin: 6px 0 0; padding: 0; }
+  .cs-hist-tile-ex li { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; padding: 3px 0; color: var(--cs-ink, var(--text)); }
+  .cs-hist-tile-ex li .cs-hist-ex-hit { font-size: 10px; }
   .cs-hist-profile { display: flex; flex-wrap: wrap; gap: 6px; }
   .cs-hist-chip { display: inline-flex; flex-direction: column; gap: 2px; border: 1px solid var(--cs-line, var(--border)); border-radius: 8px; padding: 6px 8px; min-width: 0; background: var(--cs-surface, var(--card)); }
   .cs-hist-chip-k { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-ink-faint, var(--text-muted)); }
@@ -329,14 +339,54 @@ _CHEAT_HTML = r"""
   .cs-hist-ex small { display: block; font-size: 11.5px; font-weight: 500; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 2px; line-height: 1.4; overflow-wrap: anywhere; }
   .cs-hist-ex-sum { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 8px; }
   .cs-hist-closest { margin-top: 4px; }
-  .cs-hist-market { display: grid; gap: 8px; margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; background: color-mix(in srgb, var(--cs-pos) 8%, transparent); }
-  .cs-hist-compare-h { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); }
-  .cs-hist-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .cs-hist-compare-col { min-width: 0; }
-  .cs-hist-compare-k { font-size: 12.5px; font-weight: 700; color: var(--cs-ink, var(--text)); }
-  .cs-hist-compare-v { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; margin: 2px 0; color: var(--cs-ink, var(--text)); }
-  .cs-hist-compare-s { font-size: 11.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.35; }
-  .cs-hist-gap { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.45; margin: 2px 0 0; }
+  .cs-hist-closest > summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; background: var(--cs-surface-2, var(--card)); }
+  .cs-hist-closest[open] > summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  .cs-hist-closest > summary:hover { border-color: var(--cs-pos); }
+  .cs-hist-closest > summary::-webkit-details-marker { display: none; }
+  .cs-hist-closest > summary::after { content: "+"; flex-shrink: 0; font-size: 15px; line-height: 1; color: var(--cs-pos); }
+  .cs-hist-closest[open] > summary::after { content: "\2013"; }
+  .cs-hist-closest > summary:focus-visible { outline: 2px solid var(--cs-pos); outline-offset: 3px; border-radius: 4px; }
+  .cs-hist-closest > summary h3 { margin: 0; }
+  .cs-hist-ex-peek { font-family: var(--cs-mono); font-size: 11px; font-weight: 700; color: var(--cs-ink-soft, var(--text-muted)); text-align: right; min-width: 0; overflow-wrap: anywhere; }
+  .cs-hist-closest-body { padding: 12px 14px 4px; border: 1px solid var(--cs-line, var(--border)); border-top: 0; border-radius: 0 0 12px 12px; }
+  .cs-hist-vp { margin: 14px 0 0; }
+  .cs-hist-vp-h { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--cs-ink-soft, var(--text-muted)); margin: 0 0 10px; }
+  .cs-hist-vp-row { margin: 0 0 10px; }
+  .cs-hist-vp-row:last-child { margin-bottom: 0; }
+  .cs-hist-vp-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 0 0 5px; }
+  .cs-hist-vp-k { font-size: 12.5px; font-weight: 700; color: var(--cs-ink, var(--text)); min-width: 0; overflow-wrap: anywhere; }
+  .cs-hist-vp-v { font-family: var(--cs-mono); font-size: 12.5px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cs-hist-vp-track { height: 9px; border-radius: 999px; background: var(--cs-surface-2, var(--card)); overflow: hidden; }
+  .cs-hist-vp-fill { height: 100%; border-radius: 999px; }
+  .cs-hist-vp-fill.is-hist { background: var(--cs-pos); }
+  .cs-hist-vp-fill.is-mkt { background: var(--cs-line-strong, var(--border)); }
+  .cs-hist-edge { display: flex; align-items: center; gap: 7px; margin: 11px 0 0; font-size: 12.5px; line-height: 1.4; color: var(--cs-ink-soft, var(--text-muted)); }
+  .cs-hist-edge svg { flex-shrink: 0; }
+  .cs-hist-edge.is-up { color: var(--cs-good, var(--win)); }
+  .cs-hist-edge.is-down { color: var(--cs-bad, var(--loss)); }
+  .cs-hist-edge.is-even { color: var(--cs-ink-soft, var(--text-muted)); }
+  .cs-hist-gap { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.45; margin: 11px 0 0; }
+  .cs-hist-tp { border: 1px solid var(--cs-line, var(--border)); border-radius: 12px; overflow: hidden; }
+  .cs-hist-tp-row { display: flex; align-items: center; gap: 11px; padding: 9px 13px; border-bottom: 1px solid var(--cs-line, var(--border)); }
+  .cs-hist-tp-row:last-child { border-bottom: 0; }
+  .cs-hist-tp-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--cs-line-strong, var(--border)); }
+  .cs-hist-tp-dot.is-up { background: var(--cs-pos); }
+  .cs-hist-tp-dot.is-miss { background: var(--cs-ink-faint, var(--text-muted)); }
+  .cs-hist-tp-main { flex: 1; min-width: 0; }
+  .cs-hist-tp-label { font-size: 12.5px; font-weight: 700; color: var(--cs-ink, var(--text)); line-height: 1.3; overflow-wrap: anywhere; }
+  .cs-hist-tp-meta { font-family: var(--cs-mono); font-size: 10px; color: var(--cs-ink-faint, var(--text-muted)); margin-top: 1px; }
+  .cs-hist-tp-bar { width: 84px; height: 6px; border-radius: 999px; background: var(--cs-surface-2, var(--card)); overflow: hidden; flex-shrink: 0; }
+  .cs-hist-tp-fill { height: 100%; border-radius: 999px; }
+  .cs-hist-tp-fill.is-up { background: var(--cs-pos); }
+  .cs-hist-tp-fill.is-neutral { background: var(--cs-line-strong, var(--border)); }
+  .cs-hist-tp-pct { font-family: var(--cs-mono); font-size: 12.5px; font-weight: 800; font-variant-numeric: tabular-nums; width: 58px; text-align: right; white-space: nowrap; color: var(--cs-ink, var(--text)); }
+  .cs-hist-tp-vs { font-size: 10px; font-weight: 700; }
+  .cs-hist-tp-vs.is-up { color: var(--cs-good, var(--win)); }
+  .cs-hist-tp-vs.is-down { color: var(--cs-bad, var(--loss)); }
+  .cs-hist-tmore { margin-top: 8px; }
+  .cs-hist-tmore > summary { cursor: pointer; list-style: none; font-size: 11.5px; font-weight: 700; color: var(--cs-pos); padding: 2px 0; }
+  .cs-hist-tmore > summary::-webkit-details-marker { display: none; }
+  .cs-hist-tmore[open] > summary { margin-bottom: 8px; }
   .cs-trends-qb, .cs-hist-modal.cs-hist-qb { --cs-pos: var(--cs-qb); --cs-pos-bg: var(--cs-qb-bg); }
   .cs-trends-rb, .cs-hist-modal.cs-hist-rb { --cs-pos: var(--cs-rb); --cs-pos-bg: var(--cs-rb-bg); }
   .cs-trends-wr, .cs-hist-modal.cs-hist-wr { --cs-pos: var(--cs-wr); --cs-pos-bg: var(--cs-wr-bg); }
@@ -510,12 +560,12 @@ _CHEAT_HTML = r"""
      tier stats, cohort line, and bucket trends supply the supporting story,
      and comps/profile tuck into a disclosure so the card reads in a glance. */
   .cs-hist-verdict { margin: 0 0 16px; }
-  .cs-hist-hero { display: flex; align-items: flex-end; gap: 16px; margin: 0 0 14px; padding: 12px 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--cs-pos) 28%, var(--cs-line, var(--border))); background: var(--cs-pos-bg); }
-  .cs-hist-big { font-weight: 800; font-size: 58px; line-height: .82; letter-spacing: -.03em; color: var(--cs-pos); font-variant-numeric: tabular-nums; }
-  .cs-hist-big sup { font-size: 22px; font-weight: 800; color: var(--cs-ink-soft, var(--text-muted)); vertical-align: super; }
-  .cs-hist-hero-cap { padding-bottom: 5px; min-width: 0; }
-  .cs-hist-hero-lead { font-size: 13.5px; font-weight: 700; color: var(--cs-ink, var(--text)); }
-  .cs-hist-hero-sub { font-size: 12px; color: var(--cs-ink-soft, var(--text-muted)); margin-top: 2px; }
+  .cs-hist-banner { display: flex; align-items: center; gap: 16px; margin: 0 0 14px; padding: 15px 16px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--cs-pos) 32%, var(--cs-line, var(--border))); background: linear-gradient(180deg, var(--cs-pos-bg), color-mix(in srgb, var(--cs-pos) 4%, transparent)); }
+  .cs-hist-banner-num { font-weight: 800; font-size: 52px; line-height: .82; letter-spacing: -.03em; color: var(--cs-pos); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .cs-hist-banner-num sup { font-size: 20px; font-weight: 800; color: var(--cs-ink-soft, var(--text-muted)); vertical-align: super; }
+  .cs-hist-banner-cap { min-width: 0; }
+  .cs-hist-banner-lead { font-size: 15px; font-weight: 800; line-height: 1.25; color: var(--cs-ink, var(--text)); }
+  .cs-hist-banner-sub { font-size: 12.5px; color: var(--cs-ink-soft, var(--text-muted)); line-height: 1.4; margin-top: 3px; }
   .cs-hist-conf { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-family: var(--cs-mono); font-size: 10.5px; font-weight: 700; letter-spacing: .03em; color: var(--cs-pos); background: var(--cs-pos-bg); border-radius: 999px; padding: 3px 9px; }
   .cs-hist-conf i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: inline-block; flex-shrink: 0; }
   .cs-hist-tiers { display: flex; gap: 8px; }
@@ -663,7 +713,7 @@ _CHEAT_HTML = r"""
     .cs-ctrl-row.cs-actions-row .cs-btn { min-width: 0; width: 100%; justify-content: center; white-space: normal; padding: 8px 6px; }
     /* Keep every primary signal on mobile. The table scrolls horizontally, as
        it did before Market vs ADP was added, rather than hiding VOR or Value. */
-    .cs-wrap table { min-width: 910px; border-collapse: separate; border-spacing: 0; }
+    .cs-wrap table { min-width: 980px; border-collapse: separate; border-spacing: 0; }
     .cs-wrap thead th.cs-rk, .cs-wrap tbody td.cs-rk {
       position: sticky; left: 0; z-index: 4; width: 42px; min-width: 42px; max-width: 42px;
       box-sizing: border-box; background: var(--cs-surface); padding-left: 8px; padding-right: 6px;
@@ -709,9 +759,20 @@ _CHEAT_HTML = r"""
     .cs-ovbtns { gap: 5px; }
     .cs-ovbtn { width: 34px; height: 34px; font-size: 14px; border-radius: 8px; }
     .cs-filterbar .cs-src, .cs-filterbar .csd-wrap { width: 100%; min-width: 0; }
-    .cs-hist-modal { align-items: center; justify-content: center; padding: 16px 12px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
-    .cs-hist-card { width: 100%; max-width: min(420px, 100%); max-height: min(78vh, 640px); border-radius: 14px; margin: 0; }
-    .cs-hist-big { font-size: 50px; }
+    .cs-hist-modal { align-items: center; justify-content: center; padding: max(12px, env(safe-area-inset-top)) 10px max(12px, env(safe-area-inset-bottom)); }
+    .cs-hist-card { width: 100%; max-width: 100%; max-height: min(88dvh, calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 12px)); border-radius: 14px; margin: 0; padding: 14px 14px 16px; }
+    .cs-hist-banner-num { font-size: 46px; }
+    .cs-hist-hits { grid-template-columns: 1fr; }
+    .cs-hist-hit:last-child:nth-child(odd) { grid-column: auto; }
+    .cs-hist-hit { padding: 12px 14px 13px; }
+    .cs-hist-hit-top { align-items: flex-start; }
+    .cs-hist-hit-top .cs-trends-conf { display: none; }
+    .cs-hist-hit-label { font-size: 13px; }
+    .cs-hist-hit-pct { font-size: 16px; }
+    .cs-hist-hit .cs-trends-rail { display: none; }
+    .cs-hist-tile-ex { margin-top: 8px; }
+    .cs-hist-closest > summary { align-items: flex-start; }
+    .cs-hist-ex-peek { flex: 1 1 100%; text-align: left; order: 3; }
     .cs-hist-tbarline { padding-left: 0; }
   }
   @media print {
@@ -839,7 +900,7 @@ _CHEAT_HTML = r"""
 
   <section class="cs-hidden" id="cs-panel-logic">
     <div class="cs-prose">
-      <div class="cs-rule"><span class="cs-k">VOR</span><div><h3>Ranked by value over replacement</h3><p>The board is ordered by VOR: a player's value minus the value of the last startable player at his position in your league. Each position is measured against its own replacement, so QB, RB, WR and TE compare fairly on one board instead of by raw points. It is the honest cross-position value, which is what a draft board should sort on. Click a column header (ADP, Value, Proj PPG, Sched Rk, and the rest) to reorder the Big Board without changing that model ranking; Rk stays the VOR rank, and By Position stays on VOR order.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">VOR</span><div><h3>Ranked by value over replacement</h3><p>The board is ordered by VOR: a player's value minus the value of the last startable player at his position in your league. Each position is measured against its own replacement, so QB, RB, WR and TE compare fairly on one board instead of by raw points. It is the honest cross-position value, which is what a draft board should sort on. Click a column header (ADP, Value, Proj PPG, Sched Rk, Off Rk, and the rest) to reorder the Big Board without changing that model ranking; Rk stays the VOR rank, and By Position stays on VOR order.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Recommendation</span><div><h3>Live context without reordering the sheet</h3><p>Open the cheat sheet from an active Draft Room and each available player can show the room's current REC rank, including roster fit, remaining slots and expected availability. VOR still controls the cheat-sheet order, so the printable board stays stable. Pick Score remains the separate player-and-price grade in Draft Room.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Roster</span><div><h3>Your league sets the replacement line</h3><p>Replacement level comes from your roster slots and league size, the same starter counts the Draft Room uses. Superflex moves that line: up to twice as many QBs start, so the replacement QB is far weaker and every startable QB climbs. Nothing is added by hand, the baseline simply moves.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Tiers</span><div><h3>Tiers are value cliffs</h3><p>Players group where the drop-off is small inside the group and large to the next. Inside a tier, order barely matters, so take need or the falling price. Do not reach across a cliff.</p></div></div>
@@ -848,6 +909,7 @@ _CHEAT_HTML = r"""
       <div class="cs-rule"><span class="cs-k">Scoring</span><div><h3>Same settings as Draft Room setup</h3><p>PPR (full / half / standard), TE premium, and passing-TD points match the Draft Room Format step. They rescale projected PPG and TE roster targets the same way the room does. Opened from a live or mock draft, the sheet inherits that room's scoring.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Proj PPG</span><div><h3>Expected weekly scoring</h3><p>Projected PPG is the player's upcoming-season fantasy points per game from Sleeper, adjusted for your PPR, TE premium, and passing-TD settings — the same projection pool the Draft Room uses. Players Sleeper does not project show a dash rather than last-season actuals.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Schedule</span><div><h3>Full-season matchup context</h3><p>Schedule Rank compares each player's position-specific matchups across fantasy Weeks 1-17. Rank 1 is the easiest schedule. It is useful context for close calls inside a tier, but it does not change the stable VOR order.</p></div></div>
+      <div class="cs-rule"><span class="cs-k">Offense</span><div><h3>Projected team offense</h3><p>Off Rk is the player's current NFL team's season-long projected offense, ranked 1-32 from implied totals (spread and total on regular-season games). Rank 1 is the strongest projected offense. It is the same number Hist uses for projected-offense buckets. Context for close calls, not a ranking input.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Hist</span><div><h3>Historical top-12 chance</h3><p>On the redraft Big Board, Hist is this player's historical chance of a top-12 season given career and situation. Green marks a strong cell, or when history beats that ADP round. Early ADP is a high bar (round-1 hit rates are often 60-90%), so stars like Chase or Bijan are not painted as misses just because the market bucket is hotter. The info panel compares players-like-this vs that ADP round. Trends stays available in dynasty with a 1QB redraft caveat. Hist does not change VOR or Pick Score.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Live</span><div><h3>It knows your live draft</h3><p>Open the sheet from your league during a draft and players already taken are struck through automatically. REC badges show the current Draft Room view without changing the VOR board. Reopen the sheet after more picks to refresh those ranks, or use Connect live draft to keep drafted-player status synchronized.</p></div></div>
       <div class="cs-rule"><span class="cs-k">Dynasty</span><div><h3>Dynasty values the window, not just this year</h3><p>Dynasty mode ranks on dynasty value, which already weights youth and multi-year outlook, and swaps in Age and a career-window tag in place of ADP, because you are drafting the next several seasons.</p></div></div>

@@ -93,10 +93,14 @@
         var sc = scoringCfg();
         [['csPpr', String(sc.ppr)], ['csTep', String(sc.tep)], ['csPassTd', String(sc.passTd)]].forEach(function (pair) {
             var el = $(pair[0]);
-            if (!el || el.value === pair[1]) return;
-            el.value = pair[1];
-            // CSD listens for change to refresh the visible trigger label.
-            try { el.dispatchEvent(new Event('change', {bubbles: true})); } catch (e) {}
+            if (!el) return;
+            if (el.value !== pair[1]) el.value = pair[1];
+            // Update the CSD trigger directly. Dispatching `change` would re-enter
+            // onScoringChange and refetch the pool a second time.
+            var valEl = el.parentNode && el.parentNode.querySelector('.csd-value');
+            if (valEl && el.selectedIndex >= 0) {
+                valEl.textContent = el.options[el.selectedIndex].textContent.trim();
+            }
         });
     }
     function scoringProjPpg(p) {
@@ -729,13 +733,14 @@
     // without rewriting that model board. Default is VOR descending.
     var SORT_DEFAULT_DIR = {
         rk: 1, name: 1, pos: 1, vor: -1, projectedPpg: -1,
-        adp: 1, age: 1, value: -1, window: 1, scheduleRank: 1, market: -1, hist: -1
+        adp: 1, age: 1, value: -1, window: 1, scheduleRank: 1, offenseRank: 1,
+        market: -1, hist: -1
     };
     var POS_SORT = {QB: 0, RB: 1, WR: 2, TE: 3};
     var SORT_LABEL = {
         rk: 'Rk', name: 'Player', pos: 'Pos', vor: 'VOR', projectedPpg: 'Proj PPG',
         adp: 'ADP', age: 'Age', value: 'Value', window: 'Window',
-        scheduleRank: 'Sched Rk', market: 'Market vs ADP', hist: 'Hist'
+        scheduleRank: 'Sched Rk', offenseRank: 'Off Rk', market: 'Market vs ADP', hist: 'Hist'
     };
 
     function isDefaultSort() {
@@ -760,6 +765,7 @@
         if (key === 'age' || key === 'window') return x.age;
         if (key === 'value') return x.value;
         if (key === 'scheduleRank') return x.scheduleRank;
+        if (key === 'offenseRank') return x.offenseRank;
         if (key === 'market') return x.marketVsAdp;
         if (key === 'hist') return x.histP;
         return null;
@@ -924,6 +930,17 @@
 
                 scheduleRank:
                     scheduleRanks[String(p.id)] || null,
+
+                offenseRank: (function () {
+                    if (p.projected_offense_rank != null && isFinite(Number(p.projected_offense_rank))) {
+                        return Number(p.projected_offense_rank);
+                    }
+                    var feats = p.historical && p.historical.trend_feats;
+                    if (feats && feats.projected_offense_rank != null && isFinite(Number(feats.projected_offense_rank))) {
+                        return Number(feats.projected_offense_rank);
+                    }
+                    return null;
+                })(),
 
                 historical: p.historical || null,
                 histP:
@@ -1465,6 +1482,7 @@
                 + '<span class="cs-lg"><span class="cs-val g">+7</span> above ADP, target it</span>'
                 + '<span class="cs-lg"><span class="cs-val b">-4</span> going early, let it fall</span>'
                 + '<span class="cs-lg"><b>Sched Rk</b> full-season schedule (1 = easiest)</span>'
+                + '<span class="cs-lg"><b>Off Rk</b> projected team offense (1 = best)</span>'
                 + (showHist(dyn) ? '<span class="cs-lg"><b>Hist</b> top-12 chance for this profile</span>' : '')
                 + sortNote
                 + projNote
@@ -1543,10 +1561,11 @@
             + sortTh(col5Key, col5, '', dyn ? 'Sort by age' : 'MARKET: Sort by ADP')
             + sortTh(col6Key, col6, 'cs-value-col', dyn ? 'Sort by career window (age)' : 'VALUE: Sort by value vs ADP')
             + sortTh('scheduleRank', 'Sched Rk', '', 'PROJECTION: Full fantasy-season strength of schedule rank (1 = easiest)')
+            + sortTh('offenseRank', 'Off Rk', '', 'PROJECTION: Projected team offense rank from season-long implied totals (1 = best)')
             + (showHist(dyn) ? sortTh('hist', 'Hist', 'cs-hist-col', 'HISTORY: Historical top-12 chance for this career and situation. Green when the cell is strong or history beats that ADP round. Early ADP is a high bar, not a miss.') : '')
             + (showMarket(dyn) ? sortTh('market', 'Market vs ADP', 'cs-market-col', 'MARKET: Where market signals imply this player should be drafted vs ADP') : '')
             + editTh + '</tr>';
-        var span = (editable ? 9 : 8) + (showMarket(dyn) ? 1 : 0) + (showHist(dyn) ? 1 : 0);
+        var span = (editable ? 10 : 9) + (showMarket(dyn) ? 1 : 0) + (showHist(dyn) ? 1 : 0);
         var lastT = null, html = '', shown = 0;
         var pickAt = boardSort ? projPickMap() : {};
         displayPlayers().forEach(function (x) {
@@ -1643,6 +1662,14 @@
                 (
                     x.scheduleRank
                         ? '#' + x.scheduleRank
+                        : '&ndash;'
+                ) +
+                '</td>' +
+                '<td class="cs-num"' +
+                ' title="Projected team offense rank from season-long implied totals; 1 is best">' +
+                (
+                    x.offenseRank
+                        ? '#' + x.offenseRank
                         : '&ndash;'
                 ) +
                 '</td>' +
@@ -2045,12 +2072,12 @@
     function exportCsv() {
         if (!players.length) return;
         var dyn = state.mode === 'dynasty';
-        var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', 'Proj PPG', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Schedule Rank'].concat(showHist(dyn) ? ['Hist P(top-12)'] : []).concat(showMarket(dyn) ? ['Market vs ADP'] : []).concat(['Tier']);
+        var head = ['Rank', 'Player', 'Pos', 'PosRank', 'VOR', 'Proj PPG', (dyn ? 'Age' : 'ADP'), (dyn ? 'Window' : 'Value'), 'Schedule Rank', 'Projected Offense Rank'].concat(showHist(dyn) ? ['Hist P(top-12)'] : []).concat(showMarket(dyn) ? ['Market vs ADP'] : []).concat(['Tier']);
         var rows = displayPlayers().map(function (x) {
             var c5 = dyn ? (x.age != null ? x.age : '') : fmtAdp(x.adp);
             var c6 = dyn ? youthWindow(x.age, x.pos)[0] : (x.value != null ? (x.value > 0 ? '+' + x.value : x.value) : '');
             var ppgCsv = x.projectedPpg != null ? x.projectedPpg.toFixed(1) : '';
-            return [x.rk, x.name, x.pos, x.prk, x.vor, ppgCsv, c5, c6, x.scheduleRank || ''].concat(showHist(dyn) ? [x.histP == null ? '' : x.histP] : []).concat(showMarket(dyn) ? [x.marketVsAdp == null ? '' : x.marketVsAdp] : []).concat([x.dtier]);
+            return [x.rk, x.name, x.pos, x.prk, x.vor, ppgCsv, c5, c6, x.scheduleRank || '', x.offenseRank || ''].concat(showHist(dyn) ? [x.histP == null ? '' : x.histP] : []).concat(showMarket(dyn) ? [x.marketVsAdp == null ? '' : x.marketVsAdp] : []).concat([x.dtier]);
         });
         var csv = [head].concat(rows).map(function (r) {
             return r.map(function (v) {
@@ -2197,6 +2224,8 @@
         if (liveProj != null) qs.push('proj_ppg=' + encodeURIComponent(liveProj));
         if (liveProjRk != null && isFinite(liveProjRk)) qs.push('proj_rk=' + encodeURIComponent(liveProjRk));
         if (liveAdpRk != null && isFinite(liveAdpRk)) qs.push('adp_rk=' + encodeURIComponent(liveAdpRk));
+        var liveSpot = hist.trend_feats && hist.trend_feats.roster_spot;
+        if (liveSpot != null && isFinite(Number(liveSpot))) qs.push('roster_spot=' + encodeURIComponent(liveSpot));
         if (qs.length) url += '?' + qs.join('&');
         fetch(url, {cache: 'no-store'})
             .then(function (r) {
@@ -2235,6 +2264,65 @@
             'last year receptions': 1, 'last year targets': 1,
             'last year games played': 1, 'last year pass attempts': 1
         };
+        if (kind === 'draft_capital' && bucket) return 'Drafted NFL ' + bucket + ', any season';
+        if (kind === 'top12_as_rookie' && bucket) return 'Drafted NFL ' + bucket + ', year 1';
+        if (kind === 'top12_by_year_2' && bucket) return 'Drafted NFL ' + bucket + ', year 2';
+        if (kind === 'capital_miss' && bucket) return 'Drafted NFL ' + bucket + ', miss (any season)';
+        if (kind === 'career_stage' && bucket) {
+            return (String(bucket).toLowerCase() === 'rookie' ? 'Rookie' : bucket) + ' season, any capital';
+        }
+        if ((kind === 'age' || kind === 'age_exact') && bucket) {
+            return (String(bucket).toLowerCase().indexOf('age') === 0 ? bucket : 'Age ' + bucket) + ', any season';
+        }
+        if (kind === 'offense' && bucket) {
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' projected offense';
+        }
+        if (kind === 'offense_year_1' && bucket) {
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' projected offense, year 1';
+        }
+        if (kind === 'offense_year_2' && bucket) {
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' projected offense, year 2';
+        }
+        if (kind === 'offense_last_year' && bucket) {
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' offense last year';
+        }
+        if (kind === 'offense_last_year_1' && bucket) {
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' offense last year, year 1';
+        }
+        if (kind === 'offense_last_year_2' && bucket) {
+            return (String(bucket).toLowerCase() === 'top 10' ? 'Top-10' : bucket) + ' offense last year, year 2';
+        }
+        if ((kind === 'offense_roster' || kind === 'offense_roster_1' || kind === 'offense_roster_2') && bucket) {
+            var bits = String(bucket).split(', ');
+            var band = bits[0] || bucket;
+            var spot = bits.length > 1 ? bits.slice(1).join(', ') : '';
+            var base = (String(band).toLowerCase() === 'top 10' ? 'Top-10' : band) + ' projected offense';
+            if (spot) base += ', ' + spot;
+            if (kind === 'offense_roster_1') return base + ', year 1';
+            if (kind === 'offense_roster_2') return base + ', year 2';
+            return base;
+        }
+        if ((kind === 'capital_roster' || kind === 'capital_roster_1' || kind === 'capital_roster_2') && bucket) {
+            var bits = String(bucket).split(', ');
+            var cap = bits[0] || bucket;
+            var spot = bits.length > 1 ? bits.slice(1).join(', ') : '';
+            var base = 'Drafted NFL ' + cap;
+            if (spot) base += ', ' + spot;
+            if (kind === 'capital_roster_1') return base + ', year 1';
+            if (kind === 'capital_roster_2') return base + ', year 2';
+            return base;
+        }
+        if (kind === 'offense_capital' && bucket) {
+            var bits = String(bucket).split(', ');
+            var band = bits[0] || bucket;
+            var cap = bits.length > 1 ? bits.slice(1).join(', ') : '';
+            var base = (String(band).toLowerCase() === 'top 10' ? 'Top-10' : band) + ' projected offense';
+            if (cap) base += ', ' + (String(cap).toLowerCase() === 'top 10' ? 'NFL Top 10' : cap);
+            return base;
+        }
+        if (kind === 'bounce_roster' && bucket) {
+            return 'Outside top 36 last year, ' + bucket;
+        }
         if (label && !generic[label.toLowerCase()]) return label;
         return qualified || label || row.sentence || '';
     }
@@ -2245,10 +2333,110 @@
         return Number(row.pct) - Number(row.vs_baseline);
     }
 
-    function histTrendRow(row, barHtml) {
+    function histSampleLabel(n) {
+        return n == null ? '' : ('Samples: ' + n);
+    }
+
+    // Plural noun for the verdict sub-line ("Running backs with this profile…").
+    function histPosNoun(pos) {
+        var p = String(pos || '').toUpperCase();
+        if (p === 'QB') return 'Quarterbacks';
+        if (p === 'RB') return 'Running backs';
+        if (p === 'WR') return 'Receivers';
+        if (p === 'TE') return 'Tight ends';
+        return 'Players';
+    }
+
+    // One labeled bar in the "profile vs. price" comparison. Width is the raw
+    // percentage clamped to 0-100 (both values are already 0-100 chances).
+    function histVpRow(label, pct, cls) {
+        var w = (pct != null && isFinite(Number(pct))) ? Math.max(0, Math.min(100, Number(pct))) : 0;
+        return '<div class="cs-hist-vp-row"><div class="cs-hist-vp-top">'
+            + '<span class="cs-hist-vp-k">' + esc(deDash(label)) + '</span>'
+            + '<span class="cs-hist-vp-v">' + (pct != null ? pct + '%' : '-') + '</span></div>'
+            + '<div class="cs-hist-vp-track"><div class="cs-hist-vp-fill ' + cls
+            + '" style="width:' + w + '%"></div></div></div>';
+    }
+
+    // Backend copy uses em/en dashes (e.g. age buckets "23–27"); the modal wants
+    // plain hyphens. Applied to every backend-derived string the modal shows.
+    function deDash(s) {
+        return String(s == null ? '' : s).replace(/—/g, '-').replace(/–/g, '-');
+    }
+
+    function histTrendRankKey(row) {
+        row = row || {};
+        var has = (typeof row.vs_baseline === 'number') ? 1 : 0;
+        var vs = has ? row.vs_baseline : 0;
+        var pct = (row.pct != null && isFinite(Number(row.pct))) ? Number(row.pct) : -1;
+        var n = (row.n != null && isFinite(Number(row.n))) ? Number(row.n) : 0;
+        return [has, vs, pct, n];
+    }
+
+    // Strongest evidence first (lift vs typical, then hit rate, then sample).
+    // The compact preview prefers one row per group so it is not four career
+    // repeats from construction order, then re-sorts those slots high-to-low.
+    function histRankTrends(rows, preview) {
+        var items = (Array.isArray(rows) ? rows : []).filter(Boolean).slice();
+        function byKey(a, b) {
+            var ak = histTrendRankKey(a);
+            var bk = histTrendRankKey(b);
+            return (bk[0] - ak[0]) || (bk[1] - ak[1]) || (bk[2] - ak[2]) || (bk[3] - ak[3]);
+        }
+        items.sort(byKey);
+        var shown = (preview != null && isFinite(Number(preview))) ? Number(preview) : 4;
+        if (shown <= 0 || items.length <= shown) return items;
+        var lead = [];
+        var rest = [];
+        var seen = {};
+        items.forEach(function (row) {
+            var gid = String(row.group || 'career');
+            if (lead.length < shown && !seen[gid]) {
+                lead.push(row);
+                seen[gid] = true;
+            } else {
+                rest.push(row);
+            }
+        });
+        while (lead.length < shown && rest.length) lead.push(rest.shift());
+        lead.sort(byKey);
+        return lead.concat(rest);
+    }
+
+    // One compact trend row for the "Trends behind it" table: signal dot, label,
+    // sample size, a mini bar scaled to the section span, and the pct + signed lift.
+    function histCompactTrendRow(row, span) {
+        row = row || {};
+        var pct = (row.pct != null && isFinite(Number(row.pct))) ? Number(row.pct) : null;
+        var miss = row.polarity === 'miss';
+        var beats = typeof row.vs_baseline === 'number' && row.vs_baseline > 0;
+        var strong = pct != null && pct >= HIST_STRONG_PCT;
+        var good = !miss && (beats || strong);
+        var dotCls = miss ? 'is-miss' : (good ? 'is-up' : '');
+        var fillCls = good ? 'is-up' : 'is-neutral';
+        var w = (pct != null && span > 0) ? Math.max(2, Math.min(100, (pct / span) * 100)) : 0;
+        var shown = row.display != null && row.display !== ''
+            ? row.display
+            : (pct != null ? pct + '%' : '-');
+        var vs = '';
+        if (typeof row.vs_baseline === 'number' && row.vs_baseline !== 0) {
+            vs = '<span class="cs-hist-tp-vs ' + (row.vs_baseline > 0 ? 'is-up' : 'is-down') + '">'
+                + (row.vs_baseline > 0 ? '+' : '') + row.vs_baseline + '</span>';
+        }
+        return '<div class="cs-hist-tp-row">'
+            + '<span class="cs-hist-tp-dot ' + dotCls + '"></span>'
+            + '<div class="cs-hist-tp-main"><div class="cs-hist-tp-label">' + esc(deDash(histTrendTitle(row))) + '</div>'
+            + (row.n != null ? '<div class="cs-hist-tp-meta">' + esc(histSampleLabel(row.n)) + '</div>' : '')
+            + '</div>'
+            + '<div class="cs-hist-tp-bar"><div class="cs-hist-tp-fill ' + fillCls + '" style="width:' + w + '%"></div></div>'
+            + '<span class="cs-hist-tp-pct">' + esc(String(shown)) + ' ' + vs + '</span>'
+            + '</div>';
+    }
+
+    function histTrendRow(row, barHtml, markCells) {
         row = row || {};
         var meta = [];
-        if (row.n != null) meta.push('n=' + row.n);
+        if (row.n != null) meta.push(histSampleLabel(row.n));
         if (row.secondary) meta.push(row.secondary);
         var shown = row.display != null && row.display !== ''
             ? row.display
@@ -2256,21 +2444,48 @@
         var vsShort = (typeof row.vs_baseline === 'number' && row.vs_baseline !== 0)
             ? ((row.vs_baseline > 0 ? '+' : '') + row.vs_baseline)
             : '';
-        return '<div class="cs-hist-hit' + (row.polarity === 'miss' ? ' is-miss' : '') + '"><div class="cs-hist-hit-top">'
+        var isThis = row.role === 'this';
+        var roleChip = (markCells && isThis)
+            ? '<span class="cs-hist-hit-role">This player</span>'
+            : '';
+        var roleClass = markCells ? (isThis ? ' is-this' : ' is-analog') : '';
+        var names = Array.isArray(row.examples) ? row.examples.filter(Boolean) : [];
+        var namesHtml = '';
+        if (names.length) {
+            var peek = names.slice(0, 2).map(function (ex) {
+                return (ex.name || '') + (ex.season ? ' ' + ex.season : '');
+            }).filter(Boolean).join(', ');
+            namesHtml = '<details class="cs-hist-tile-ex"><summary>'
+                + esc(peek || 'Names') + '</summary><ul>';
+            names.forEach(function (ex) {
+                var hit = histExampleHit(ex.positional_finish, ex);
+                namesHtml += '<li' + (hit && hit.tier ? ' class="is-' + esc(hit.tier) + '"' : '') + '>'
+                    + '<span>' + esc(ex.name || '')
+                    + (ex.season ? ' · ' + esc(String(ex.season)) : '') + '</span>'
+                    + (hit ? '<b class="cs-hist-ex-hit">' + esc(hit.label) + '</b>' : '')
+                    + '</li>';
+            });
+            namesHtml += '</ul></details>';
+        }
+        return '<div class="cs-hist-hit' + (row.polarity === 'miss' ? ' is-miss' : '')
+            + roleClass + '"><div class="cs-hist-hit-top">'
             + trendsConfDot(row.confidence_label)
             + '<div><div class="cs-hist-hit-label">' + esc(histTrendTitle(row)) + '</div>'
+            + roleChip
             + (meta.length ? '<div class="cs-hist-hit-meta">' + esc(meta.join(' · ')) + '</div>' : '')
             + '</div><div class="cs-hist-hit-pct">' + esc(String(shown))
             + (vsShort ? ' <span>' + esc(String(vsShort)) + '</span>' : '')
             + '</div></div>'
-            + (barHtml || '') + '</div>';
+            + (barHtml || '')
+            + namesHtml
+            + '</div>';
     }
 
-    function trendsHitRow(row, polarity, baselinePct, span) {
+    function trendsHitRow(row, polarity, baselinePct, span, markCells) {
         row = row || {};
         var pol = polarity || row.polarity;
         var base = pol === 'miss' ? null : (baselinePct != null ? baselinePct : trendsBaselineOf(row));
-        return histTrendRow(row, trendsRailHtml(row.pct, base, pol, span));
+        return histTrendRow(row, trendsRailHtml(row.pct, base, pol, span), markCells);
     }
 
     function defaultTrendsPos() {
@@ -2341,11 +2556,18 @@
         touches: 'usage', carries: 'usage', receptions: 'usage',
         targets: 'usage', games: 'usage', pass_attempts: 'usage',
         target_share_change: 'usage', snap_pct_change: 'usage',
-        workload_change: 'usage'
+        workload_change: 'usage',
+        offense: 'team', offense_year_1: 'team', offense_year_2: 'team',
+        offense_last_year: 'team', offense_last_year_1: 'team', offense_last_year_2: 'team',
+        offense_roster: 'team', offense_roster_1: 'team', offense_roster_2: 'team',
+        capital_roster: 'capital', capital_roster_1: 'capital', capital_roster_2: 'capital',
+        offense_capital: 'team',
+        bounce_roster: 'career'
     };
     var TRENDS_LANES = [
         ['all', 'All'], ['career', 'Career'],
-        ['capital', 'Capital'], ['age', 'Age'], ['usage', 'Usage']
+        ['capital', 'Capital'], ['age', 'Age'], ['usage', 'Usage'],
+        ['team', 'Team']
     ];
     var TRENDS_LABEL_PREFIX = {
         draft_capital: 'NFL',
@@ -2366,7 +2588,18 @@
         age_exact: 'Age',
         target_share_change: 'Targets',
         snap_pct_change: 'Snaps',
-        workload_change: 'Workload'
+        workload_change: 'Workload',
+        offense: 'Offense',
+        offense_year_1: 'Offense',
+        offense_year_2: 'Offense',
+        offense_roster: 'Offense',
+        offense_roster_1: 'Offense',
+        offense_roster_2: 'Offense',
+        capital_roster: 'NFL',
+        capital_roster_1: 'NFL',
+        capital_roster_2: 'NFL',
+        offense_capital: 'Offense',
+        bounce_roster: 'Last year'
     };
 
     function trendsConfKey(label) {
@@ -2502,11 +2735,11 @@
                 field: spec.field,
                 label: rec.label || spec.eq || spec.field
             };
-            ['eq', 'in', 'gte', 'lte', 'between', 'null_as'].forEach(function (k) {
+            ['eq', 'in', 'gte', 'lte', 'between', 'null_as', 'all'].forEach(function (k) {
                 if (spec[k] !== undefined) out[k] = spec[k];
             });
             return out;
-        }).filter(function (f) { return f.field; });
+        }).filter(function (f) { return f.field || (f.all && f.all.length); });
     }
 
     function loadTrendsCohort(picks, done) {
@@ -2613,7 +2846,7 @@
             + esc(trendsPos) + (labels.length ? ' · ' + esc(labels.join(' · ')) : '')
             + '</p></div>';
         if (cohort && cohort.available !== false) {
-            html += '<div class="cs-trends-profile-n">n=' + esc(String(n == null ? 0 : n))
+            html += '<div class="cs-trends-profile-n">' + esc(histSampleLabel(n == null ? 0 : n))
                 + (players != null ? ' · ' + esc(String(players)) + ' players' : '')
                 + '</div>';
         }
@@ -2921,7 +3154,7 @@
         var selectable = !!(row.match && row.id);
         var on = selectable && opts.selected && opts.selected[row.id];
         var meta = [];
-        if (row.n != null) meta.push('n=' + row.n);
+        if (row.n != null) meta.push(histSampleLabel(row.n));
         if (vs) meta.push(vs);
         if (row.secondary && (opts.tier || 'top_12') === 'top_12') meta.push(row.secondary);
         if (on && row.ci_low != null && row.ci_high != null) {
@@ -3014,7 +3247,7 @@
         bits.push(esc(trendsPos) + 's finished ' + esc(finishName) + ' in '
             + (baselinePct != null ? esc(String(baselinePct)) + '%' : 'an unknown share')
             + ' of player-seasons'
-            + (baselineN != null ? ' (n=' + esc(String(baselineN)) + ')' : '') + '.');
+            + (baselineN != null ? ' (' + esc(histSampleLabel(baselineN)) + ')' : '') + '.');
         if (page.prime_window) bits.push('Prime window is ages ' + esc(page.prime_window) + '.');
         html += bits.join(' ') + '</div></div></div>';
         if (edges.length) {
@@ -3094,7 +3327,7 @@
                 html += '<button type="button" class="cs-trends-age' + cls + '" data-age-tip="1" aria-label="'
                     + esc(tip) + '"><span class="cs-trends-age-bar" style="height:' + h
                     + '%"></span><span class="cs-trends-age-tip">' + esc('Age ' + pt.age + ' · ' + pt.pct + '%'
-                    + (pt.n != null ? ' · n=' + pt.n : '')) + '</span></button>';
+                    + (pt.n != null ? ' · ' + histSampleLabel(pt.n) : '')) + '</span></button>';
             });
             html += '</div><div class="cs-trends-ages-axis">';
             curve.forEach(function (pt) {
@@ -3232,20 +3465,57 @@
         }
         if (!lead && hits.length) lead = hits[0];
         if (lead) {
-            var confBits = [];
-            if (lead.confidence_label) confBits.push(lead.confidence_label);
-            if (lead.n != null) confBits.push('n=' + lead.n);
-            if (lead.ci_low != null && lead.ci_high != null) {
-                confBits.push('95% CI ' + lead.ci_low + '% to ' + lead.ci_high + '%');
-            }
+            var histPct = copy.history_pct != null ? copy.history_pct : lead.pct;
+            var mktPct = copy.market_pct;
+            // Edge = this profile's chance minus the chance of anyone taken in
+            // the same ADP round. Only defined when live ADP gave us both.
+            var edge = (histPct != null && mktPct != null)
+                ? Math.round(Number(histPct) - Number(mktPct))
+                : null;
+            // Plain-language verdict. With a market comparison it reads off the
+            // edge; without one it falls back to the absolute strength.
+            var vLead;
+            if (edge != null && edge >= 8) vLead = 'History likes him here';
+            else if (edge != null && edge <= -8) vLead = 'History is cautious here';
+            else if (edge != null) vLead = 'Priced about right';
+            else if (histPct != null && Number(histPct) >= HIST_STRONG_PCT) vLead = 'Strong historical profile';
+            else vLead = 'Historical profile';
+            var vSub = histPosNoun(histPosOf(resp, posHint))
+                + ' with this profile finished top-12 '
+                + (histPct != null ? histPct + '%' : 'at an unknown rate') + ' of the time.';
+            var confTitle = (lead.ci_low != null && lead.ci_high != null)
+                ? '95% CI ' + lead.ci_low + '% to ' + lead.ci_high + '%' : '';
+            var confShort = [];
+            if (lead.confidence_label) confShort.push(lead.confidence_label);
+            if (lead.n != null) confShort.push(histSampleLabel(lead.n));
             html += '<div class="cs-hist-verdict">'
-                + '<div class="cs-hist-hero">'
-                + '<div class="cs-hist-big">' + (lead.pct != null ? lead.pct : '-') + '<sup>%</sup></div>'
-                + '<div class="cs-hist-hero-cap">'
-                + '<div class="cs-hist-hero-lead">finished top-12</div>'
-                + '<div class="cs-hist-hero-sub">this player\'s historical chance</div>'
-                + (confBits.length ? '<span class="cs-hist-conf"><i></i>' + esc(confBits.join(' · ')) + '</span>' : '')
+                + '<div class="cs-hist-banner">'
+                + '<div class="cs-hist-banner-num">' + (lead.pct != null ? lead.pct : '-') + '<sup>%</sup></div>'
+                + '<div class="cs-hist-banner-cap">'
+                + '<div class="cs-hist-banner-lead">' + esc(vLead) + '</div>'
+                + '<div class="cs-hist-banner-sub">' + esc(vSub) + '</div>'
+                + (confShort.length ? '<span class="cs-hist-conf"' + (confTitle ? ' title="' + esc(confTitle) + '"' : '') + '><i></i>' + esc(confShort.join(' · ')) + '</span>' : '')
                 + '</div></div>';
+            if (histPct != null || mktPct != null) {
+                html += '<div class="cs-hist-vp">';
+                html += '<div class="cs-hist-vp-h">His profile vs. his draft price</div>';
+                html += histVpRow(copy.history_group_label || 'Players like this', histPct, 'is-hist');
+                if (mktPct != null) {
+                    html += histVpRow(copy.market_group_label || 'That ADP round', mktPct, 'is-mkt');
+                    var eTone = edge > 0 ? 'is-up' : (edge < 0 ? 'is-down' : 'is-even');
+                    var eText;
+                    if (edge > 0) eText = '+' + edge + ' pts of edge. History beats the market at this pick.';
+                    else if (edge < 0) eText = edge + ' pts. History trails the market at this pick.';
+                    else eText = 'Even with the market at this pick.';
+                    html += '<div class="cs-hist-edge ' + eTone + '">'
+                        + '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14l5-5 4 4 7-7"></path><path d="M20 6v5h-5"></path></svg>'
+                        + '<span>' + esc(eText) + '</span></div>';
+                } else {
+                    var gapNote = copy.gap_note || 'Need live ADP to show the other group.';
+                    html += '<p class="cs-hist-gap">' + esc(gapNote) + '</p>';
+                }
+                html += '</div>';
+            }
             html += '<div class="cs-hist-tiers">';
             hits.forEach(function (row) {
                 if (!row) return;
@@ -3255,92 +3525,79 @@
                     + '<div class="cs-hist-tier-v">' + (row.pct != null ? row.pct + '%' : '-') + '</div></div>';
             });
             html += '</div>';
-            var histPct = copy.history_pct != null ? copy.history_pct : lead.pct;
-            var mktPct = copy.market_pct;
-            if (histPct != null || mktPct != null) {
-                html += '<div class="cs-hist-market">';
-                html += '<div class="cs-hist-compare-h">'
-                    + esc(copy.market_compare_heading || 'Two groups, not one chance')
-                    + '</div>';
-                html += '<div class="cs-hist-compare">';
-                html += '<div class="cs-hist-compare-col">'
-                    + '<div class="cs-hist-compare-k">'
-                    + esc(copy.history_group_label || 'Players like this') + '</div>'
-                    + '<div class="cs-hist-compare-v">'
-                    + (histPct != null ? histPct + '%' : '-') + '</div>'
-                    + '<div class="cs-hist-compare-s">'
-                    + esc(copy.history_group_hint || 'this career and situation')
-                    + '</div></div>';
-                html += '<div class="cs-hist-compare-col">'
-                    + '<div class="cs-hist-compare-k">'
-                    + esc(copy.market_group_label || 'That ADP round') + '</div>'
-                    + '<div class="cs-hist-compare-v">'
-                    + (mktPct != null ? mktPct + '%' : 'need ADP') + '</div>'
-                    + '<div class="cs-hist-compare-s">'
-                    + esc(copy.market_group_hint || 'anyone taken in that fantasy round')
-                    + '</div></div>';
-                html += '</div>';
-                var gapNote = copy.gap_note;
-                if (!gapNote && mktPct == null) {
-                    gapNote = 'Need live ADP to show the other group.';
-                }
-                if (gapNote) html += '<p class="cs-hist-gap">' + esc(gapNote) + '</p>';
-                html += '</div>';
-            }
-            if (copy.headline) html += '<p class="cs-hist-cohort">' + esc(copy.headline) + '</p>';
+            if (copy.headline) html += '<p class="cs-hist-cohort">' + esc(deDash(copy.headline)) + '</p>';
+            if (copy.sample_prior_note) html += '<p class="cs-hist-note">' + esc(deDash(copy.sample_prior_note)) + '</p>';
+            if (copy.typical_note) html += '<p class="cs-hist-note">' + esc(deDash(copy.typical_note)) + '</p>';
             html += '</div>';
         }
+        // Trends next: the evidence behind the verdict, as a compact inline table
+        // (signal dot, label, sample, mini bar, lift). Rank by lift vs typical
+        // (then hit rate, then sample), and keep the first few on different
+        // groups so career repeats do not crowd the preview. The rest tuck
+        // behind a "See all" toggle so the modal stays short.
+        var TR_SHOWN = 4;
+        var trends = histRankTrends((Array.isArray(copy.trends) ? copy.trends : []).filter(function (row) {
+            var kind = row && row.kind;
+            return kind !== 'adp' && kind !== 'adp_positional';
+        }), TR_SHOWN);
+        if (trends.length) {
+            var trSpan = 1;
+            trends.forEach(function (row) {
+                if (row && row.pct != null && isFinite(Number(row.pct)) && Number(row.pct) > trSpan) {
+                    trSpan = Number(row.pct);
+                }
+            });
+            html += '<section class="cs-hist-sec"><h3>Trends behind it</h3>';
+            html += '<div class="cs-hist-tp">';
+            trends.slice(0, TR_SHOWN).forEach(function (row) {
+                html += histCompactTrendRow(row, trSpan);
+            });
+            html += '</div>';
+            if (trends.length > TR_SHOWN) {
+                html += '<details class="cs-hist-tmore"><summary>See all ' + trends.length + ' trends</summary>'
+                    + '<div class="cs-hist-tp">';
+                trends.slice(TR_SHOWN).forEach(function (row) {
+                    html += histCompactTrendRow(row, trSpan);
+                });
+                html += '</div></details>';
+            }
+            html += '</section>';
+        }
+        // Closest comps last: a longer list, tucked behind a tap-to-open row.
         var examples = (resp.history && Array.isArray(resp.history.closest_examples) && resp.history.closest_examples.length)
             ? resp.history.closest_examples
             : ((resp.history && Array.isArray(resp.history.examples)) ? resp.history.examples : []);
         if (examples.length) {
             var sum = copy.examples_summary || (resp.history && resp.history.closest_summary) || {};
-            html += '<section class="cs-hist-sec cs-hist-closest"><h3>'
-                + esc(copy.examples_heading || 'Closest historical examples') + '</h3>';
-            if (copy.examples_note) html += '<p class="cs-hist-note">' + esc(copy.examples_note) + '</p>';
+            html += '<details class="cs-hist-sec cs-hist-closest"><summary><h3>'
+                + esc(deDash(copy.examples_heading || 'Closest historical examples')) + '</h3>'
+                + (sum.label ? '<span class="cs-hist-ex-peek">' + esc(deDash(sum.label)) + '</span>' : '')
+                + '</summary><div class="cs-hist-closest-body">';
+            if (copy.examples_note) html += '<p class="cs-hist-note">' + esc(deDash(copy.examples_note)) + '</p>';
             if (copy.examples_vs_cohort_note) {
-                html += '<p class="cs-hist-note">' + esc(copy.examples_vs_cohort_note) + '</p>';
+                html += '<p class="cs-hist-note">' + esc(deDash(copy.examples_vs_cohort_note)) + '</p>';
             }
-            if (sum.label) html += '<p class="cs-hist-ex-sum">' + esc(sum.label) + '</p>';
+            if (sum.label) html += '<p class="cs-hist-ex-sum">' + esc(deDash(sum.label)) + '</p>';
             html += '<ul class="cs-hist-ex">';
             examples.forEach(function (ex) {
                 if (!ex) return;
-                var left = esc(ex.name || ex.sleeper_id || '') + (ex.season ? ' · ' + esc(String(ex.season)) : '');
+                var left = esc(deDash(ex.name || ex.sleeper_id || '')) + (ex.season ? ' · ' + esc(String(ex.season)) : '');
                 var right = [];
                 if (ex.adp != null && isFinite(Number(ex.adp))) right.push('ADP ' + Number(ex.adp).toFixed(1));
                 if (ex.positional_finish != null) right.push('#' + ex.positional_finish);
                 if (ex.ppr_points != null) right.push(ex.ppr_points + ' pts');
                 var hit = histExampleHit(ex.positional_finish, ex);
                 var traits = Array.isArray(ex.traits)
-                    ? ex.traits.filter(Boolean).map(function (t) { return esc(String(t)); }).join(' · ')
+                    ? ex.traits.filter(Boolean).map(function (t) { return esc(deDash(String(t))); }).join(' · ')
                     : '';
                 html += '<li' + (hit && hit.tier ? ' class="is-' + esc(hit.tier) + '"' : '') + '><span>' + left
                     + (traits ? '<small>' + traits + '</small>' : '')
                     + '</span><span class="cs-hist-ex-right">'
                     + (right.length ? '<span class="cs-hist-ex-meta">' + esc(right.join(' · ')) + '</span>' : '')
-                    + (hit ? '<b class="cs-hist-ex-hit">' + esc(hit.label) + '</b>' : '')
+                    + (hit ? '<b class="cs-hist-ex-hit">' + esc(deDash(hit.label)) + '</b>' : '')
                     + '</span></li>';
             });
-            html += '</ul></section>';
-        }
-        var trends = (Array.isArray(copy.trends) ? copy.trends : []).filter(function (row) {
-            var kind = row && row.kind;
-            return kind !== 'adp' && kind !== 'adp_positional';
-        });
-        if (trends.length) {
-            var histBaseline = null;
-            trends.forEach(function (row) {
-                var inferred = trendsBaselineOf(row);
-                if (histBaseline == null && inferred != null) histBaseline = inferred;
-            });
-            var histSpan = trendsRailSpan(histBaseline, [], trends.map(function (row) {
-                return row && row.pct;
-            }));
-            html += '<section class="cs-hist-sec"><h3>' + esc(copy.trends_heading || 'Trends for this player\'s buckets') + '</h3>';
-            if (copy.trends_note) html += '<p class="cs-hist-note">' + esc(copy.trends_note) + '</p>';
-            html += '<div class="cs-hist-hits">';
-            trends.forEach(function (row) { html += trendsHitRow(row, row && row.polarity, histBaseline, histSpan); });
-            html += '</div></section>';
+            html += '</ul></div></details>';
         }
 
         // Progressive disclosure: dropped filters and the full profile.
@@ -3444,11 +3701,16 @@
         });
 
         // Scoring selects: same three Draft Room Format controls. Changing them
-        // refetches the projection-aware player pool and rebuilds TE targets.
+        // immediately rescales Proj PPG / TE targets from the variant map, then
+        // refetches the canonical overlay for this scoring.
         function onScoringChange() {
             recommendationOrder = null;
             state.scoring = readScoringFromUi();
             resetBoardSort();
+            // Rescale Proj PPG / TE targets from the in-memory variant map now.
+            // loadPlayers then refreshes the canonical overlay for this scoring.
+            compute();
+            render();
             loadPlayers();
         }
         ['csPpr', 'csTep', 'csPassTd'].forEach(function (id) {

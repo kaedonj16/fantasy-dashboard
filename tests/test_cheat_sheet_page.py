@@ -109,7 +109,7 @@ def test_market_column_is_conditionally_omitted_from_table_and_export():
     body = build_cheat_sheet_body("league-123", 2026, "sleeper")
     script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
 
-    assert "min-width: 910px" in body
+    assert "min-width: 980px" in body
     assert ".cs-vor-col, .cs-value-col { display: none; }" not in body
     assert ".cs-market-col { display: none; }" not in body
     assert "sortTh('market', 'Market vs ADP', 'cs-market-col'" in script
@@ -134,6 +134,20 @@ def test_cheat_sheet_adds_full_season_schedule_rank_context():
     assert "p.sos_rank" in script
     assert "sortTh('scheduleRank', 'Sched Rk'" in script
     assert "'Schedule Rank'" in script
+
+
+def test_cheat_sheet_adds_projected_offense_rank():
+    body = build_cheat_sheet_body("league-123", 2026, "sleeper")
+    script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
+
+    assert "Off Rk is the player's current NFL team's season-long projected offense" in body
+    assert "sortTh('offenseRank', 'Off Rk'" in script
+    assert "'Projected Offense Rank'" in script
+    assert "x.offenseRank" in script
+    assert "p.projected_offense_rank" in script
+    assert "feats.projected_offense_rank" in script
+    assert "projected team offense (1 = best)" in script
+    assert "Click a column header (ADP, Value, Proj PPG, Sched Rk, Off Rk" in body
 
 
 def test_cheat_sheet_offers_draft_room_scoring_settings():
@@ -168,6 +182,11 @@ def test_cheat_sheet_offers_draft_room_scoring_settings():
     assert "projectedPpg: scoringProjPpg(p)" in script
     assert "C.posTargets(C.rosterCounts(cfg.rosterPositions, sf), scoringCfg().tep)" in script
     assert "state.scoring = readScoringFromUi()" in script
+    handler = script.split("function onScoringChange()")[1].split("['csPpr'")[0]
+    assert "compute();" in handler
+    assert "render();" in handler
+    assert "loadPlayers();" in handler
+    assert handler.find("compute();") < handler.find("loadPlayers();")
     assert "Same settings as Draft Room setup" in body
     assert "proj_rec='+encodeURIComponent(String(ppr))" in body
     assert "function cheatScoringQuery()" in room
@@ -395,7 +414,7 @@ def test_cheat_sheet_big_board_columns_are_sortable():
     body = build_cheat_sheet_body("league-123", 2026, "sleeper")
     script = (Path(__file__).parents[1] / "static" / "cheat_sheet.js").read_text()
 
-    for key in ("rk", "name", "pos", "vor", "projectedPpg", "scheduleRank", "market", "hist"):
+    for key in ("rk", "name", "pos", "vor", "projectedPpg", "scheduleRank", "offenseRank", "market", "hist"):
         assert "sortTh('%s'" % key in script
     assert "col5Key = dyn ? 'age' : 'adp'" in script
     assert "col6Key = dyn ? 'window' : 'value'" in script
@@ -411,7 +430,7 @@ def test_cheat_sheet_big_board_columns_are_sortable():
     assert "var pickAt = boardSort ? projPickMap() : {}" in script
     assert "th.cs-sort" in body
     assert ".cs-sortbtn" in body
-    assert "Click a column header (ADP, Value, Proj PPG, Sched Rk" in body
+    assert "Click a column header (ADP, Value, Proj PPG, Sched Rk, Off Rk" in body
     # Custom edits snap back to the VOR board so drag-reorder isn't fighting ADP.
     assert "if (editBoard) resetBoardSort()" in script
 
@@ -453,14 +472,46 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "historical chance for this career and situation" in body.lower()
     assert "var HIST_TIER_SHORT = { top_5: 'top-5', top_12: 'top-12', top_24: 'top-24' }" in script
     assert "function histExampleHit" in script
+    assert "function histSampleLabel" in script
+    assert "histSampleLabel(row.n)" in script
+    assert "'Samples: ' + n" in script
+    assert "'Sample: ' + n" not in script
+    assert "copy.sample_prior_note" in script
+    assert "copy.typical_note" in script
+    assert "'n=' + row.n" not in script
+    assert "'n=' + lead.n" not in script
     assert "cs-hist-ex-hit" in script
     assert ".cs-hist-ex-hit" in body
     assert "(lead.pct != null ? lead.pct : '-')" in script
     assert "(row.pct != null ? row.pct + '%' : '-')" in script
     assert "—" not in script.split("function renderHistPanel")[1].split("function init()")[0]
     assert "–" not in script.split("function renderHistPanel")[1].split("function init()")[0]
-    assert "copy.trends" in script or "Trends for this player's buckets" in script
-    assert "trendsHitRow(row, row && row.polarity, histBaseline, histSpan)" in script
+    assert "copy.trends" in script
+    assert "Trends behind it" in script
+    assert "function histRankTrends" in script
+    assert "function histTrendRankKey" in script
+    assert "histRankTrends(" in script
+    assert "function histCompactTrendRow" in script
+    assert "histCompactTrendRow(row, trSpan)" in script
+    assert "See all ' + trends.length + ' trends" in script
+    assert "function deDash" in script
+    assert ".cs-hist-tp-row" in body
+    assert ".cs-hist-tp-fill.is-up { background: var(--cs-pos); }" in body
+    assert ".cs-hist-hits { display: grid; grid-template-columns: 1fr 1fr;" in body
+    assert ".cs-hist-hit:last-child:nth-child(odd) { grid-column: 1 / -1; }" in body
+    assert ".cs-hist-hit-role { display: block;" in body
+    assert '.cs-hist-tile-ex[open] > summary::after { content: "\\2013"; }' in body
+    hist_mobile = body.split("@media (max-width: 640px)")[1].split("@media")[0]
+    assert ".cs-hist-hits { grid-template-columns: 1fr; }" in hist_mobile
+    assert ".cs-hist-hit:last-child:nth-child(odd) { grid-column: auto; }" in hist_mobile
+    assert ".cs-hist-hit-top .cs-trends-conf { display: none; }" in hist_mobile
+    assert "env(safe-area-inset-top)" in hist_mobile
+    assert ".cs-hist-card { width: 100%; max-width: 100%;" in hist_mobile
+    assert '<details class="cs-hist-sec cs-hist-closest">' in script
+    assert 'class="cs-hist-ex-peek"' in script
+    assert "cs-hist-closest-body" in script
+    assert ".cs-hist-closest > summary" in body
+    assert 'html += \'</ul></section>\'' not in script.split("function renderHistPanel")[1].split("function init()")[0]
     assert "copy.projection_trends" not in script
     assert "This board's projection" not in script
     assert "cs-hist-hit-top" in script
@@ -553,19 +604,23 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "/api/historical-cohort" in script
     assert "Historical red flags" in script
     assert "Closest historical examples" in script
-    assert "Two groups, not one chance" in script
+    assert "His profile vs. his draft price" in script
     assert "Players like this" in script
-    assert "anyone taken in that fantasy round" in script
+    assert "History likes him here" in script
+    assert "pts of edge. History beats the market at this pick." in script
     assert "Need live ADP to show the other group." in script
     assert "Expected at current ADP" not in script
     assert "Historical edge vs market" not in script
-    assert ".cs-hist-compare" in body
+    assert ".cs-hist-vp" in body
+    assert ".cs-hist-vp-fill.is-hist { background: var(--cs-pos); }" in body
     assert ".cs-hist-gap" in body
     assert "function trendsRedFlags" in script
     assert "ranking_edge" in script
     assert "'lte'" in script
     assert ".cs-trends-profile" in body
-    assert ".cs-hist-market" in body
+    assert ".cs-hist-banner" in body
+    assert ".cs-hist-edge" in body
+    assert ".cs-hist-edge.is-up { color: var(--cs-good, var(--win)); }" in body
     assert ".cs-hist-ex-sum" in body
     assert "shrinkage-adjusted lift" in script
     assert "Top 24 is the flex line" not in script
@@ -594,6 +649,23 @@ def test_cheat_sheet_hist_column_is_descriptive_and_lazy():
     assert "background: var(--cs-pos)" in body
     assert "function applyHistPos" in script
     assert "function histTrendTitle" in script
+    assert "Drafted NFL ' + bucket + ', year 1" in script
+    assert "Drafted NFL ' + bucket + ', any season" in script
+    assert "projected offense" in script
+    assert "offense_last_year" in script
+    assert "offense_roster" in script
+    assert "capital_roster" in script
+    assert "offense_capital" in script
+    assert "bounce_roster" in script
+    assert "+ '<div><div class=\"cs-hist-hit-label\">' + esc(histTrendTitle(row)) + '</div>'" in script
+    assert "+ roleChip" in script.split("function histTrendRow")[1].split("function trendsHitRow")[0]
+    assert "cs-hist-tile-ex" in script
+    assert "cs-hist-hit.is-this" in body
+    assert "Outside top 36 last year, " in script
+    assert "Drafted NFL ' + cap" in script
+    assert "NFL Top 10" in script
+    assert "roster_spot=" in script
+    assert "f.all && f.all.length" in script
     assert "function trendsBaselineOf" in script
     assert "trendsRailHtml(row.pct, base, pol, span)" in script
     assert 'id="csHistPos"' in body
@@ -793,6 +865,91 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     assert "combined chance" in two_groups["text"].lower()
     assert "—" not in two_groups["text"]
     assert "–" not in two_groups["text"]
+    hist_phone = next(
+        entry for entry in CHANGELOG
+        if "stack in one column" in entry.get("text", "").lower()
+    )
+    assert hist_phone["tag"] == "fix"
+    assert hist_phone["link"] == "/draft/cheat-sheet"
+    assert "Hist" in hist_phone["text"]
+    assert "—" not in hist_phone["text"]
+    assert "–" not in hist_phone["text"]
+    hist_match = next(
+        entry for entry in CHANGELOG
+        if "same top-12 chance as the player modal" in entry.get("text", "").lower()
+    )
+    assert hist_match["tag"] == "fix"
+    assert hist_match["link"] == "/draft/cheat-sheet"
+    assert "—" not in hist_match["text"]
+    assert "–" not in hist_match["text"]
+    parent_prior = next(
+        entry for entry in CHANGELOG
+        if "tiny exact cell" in entry.get("text", "").lower()
+        and "every player at the position" in entry.get("text", "").lower()
+    )
+    assert parent_prior["tag"] == "fix"
+    assert parent_prior["link"] == "/draft/cheat-sheet"
+    assert "15%" in parent_prior["text"]
+    assert "—" not in parent_prior["text"]
+    assert "–" not in parent_prior["text"]
+    age_prior = next(
+        entry for entry in CHANGELOG
+        if "declining" in entry.get("text", "").lower()
+        and "gibbs" in entry.get("text", "").lower()
+    )
+    assert age_prior["tag"] == "fix"
+    assert age_prior["link"] == "/draft/cheat-sheet"
+    assert "8%" in age_prior["text"]
+    assert "—" not in age_prior["text"]
+    assert "–" not in age_prior["text"]
+    kelce_prior = next(
+        entry for entry in CHANGELOG
+        if "kelce" in entry.get("text", "").lower()
+        and "77%" in entry.get("text", "")
+    )
+    assert kelce_prior["tag"] == "fix"
+    assert kelce_prior["link"] == "/draft/cheat-sheet"
+    assert "own seasons" in kelce_prior["text"]
+    assert "—" not in kelce_prior["text"]
+    assert "–" not in kelce_prior["text"]
+    nested = next(
+        entry for entry in CHANGELOG
+        if "nested sibling" in entry.get("text", "").lower()
+        and "at least 4" in entry.get("text", "").lower()
+    )
+    assert nested["tag"] == "fix"
+    assert nested["link"] == "/draft/cheat-sheet"
+    assert "n=6" in nested["text"]
+    assert "—" not in nested["text"]
+    assert "–" not in nested["text"]
+    samples_label = next(
+        entry for entry in CHANGELOG
+        if "samples: 6" in entry.get("text", "").lower()
+        and "sample: 6" in entry.get("text", "").lower()
+    )
+    assert samples_label["tag"] == "update"
+    assert samples_label["link"] == "/draft/cheat-sheet"
+    assert "—" not in samples_label["text"]
+    assert "–" not in samples_label["text"]
+    offense_col = next(
+        entry for entry in CHANGELOG
+        if "off rk" in entry.get("text", "").lower()
+        and "projected offense" in entry.get("text", "").lower()
+    )
+    assert offense_col["tag"] == "update"
+    assert offense_col["link"] == "/draft/cheat-sheet"
+    assert "does not change VOR" in offense_col["text"]
+    assert "—" not in offense_col["text"]
+    assert "–" not in offense_col["text"]
+    scoring_fix = next(
+        entry for entry in CHANGELOG
+        if "scoring-variant map" in entry.get("text", "").lower()
+    )
+    assert scoring_fix["tag"] == "fix"
+    assert scoring_fix["link"] == "/draft/cheat-sheet"
+    assert "Proj PPG" in scoring_fix["text"]
+    assert "—" not in scoring_fix["text"]
+    assert "–" not in scoring_fix["text"]
 
 
 def test_changelog_announces_portfolio_positional_percentiles():
