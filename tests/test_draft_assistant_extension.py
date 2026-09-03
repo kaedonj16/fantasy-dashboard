@@ -37,7 +37,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.34"
+    assert manifest["version"] == "1.5.35"
     inject_ver = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     assert 'PRODUCT_VERSION = "1.0.0"' in inject_ver
     hosts = " ".join(manifest.get("host_permissions") or [])
@@ -307,6 +307,10 @@ def test_overlay_does_not_end_live_espn_draft_after_each_round():
     assert "hostInProgress" in overlay
     assert "hostDrafted" in overlay
     assert "hostInProgress === true" in overlay
+    assert "if (state.hostDrafted === true) return true" in overlay
+    assert "function maybeShowSummary" in overlay
+    assert 'state.tab = "grades"' in overlay
+    assert "Draft Report Card" in overlay
     assert "Math.min(SPOTS, season.length)" in overlay
     assert "isHostDraftRoom" in (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     assert "mockdraftlobby" in (EXT / "draft_slot.js").read_text(encoding="utf-8")

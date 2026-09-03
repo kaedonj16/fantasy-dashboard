@@ -266,6 +266,7 @@
   let cliffLeft = null;
   let renderQueued = false;
   let compareIds = [];
+  let summaryShown = false;
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -295,7 +296,7 @@
   function draftDone() {
     if (state.live) {
       if (state.hostInProgress === true) return false;
-      if (state.hostDrafted === true) return state.current > state.teams * state.rounds;
+      if (state.hostDrafted === true) return true;
       return false;
     }
     return state.current > state.teams * state.rounds;
@@ -539,6 +540,7 @@
     state.clock = CLOCK_START;
     state.expanded = null;
     state.toast = "";
+    summaryShown = false;
     stopAuto();
   }
 
@@ -805,6 +807,32 @@
     return { "A+": 92, A: 87, "A-": 82, "B+": 77, B: 72, "B-": 67, "C+": 62, C: 57, "C-": 52, D: 43, F: 20 }[letter] || 55;
   }
 
+  function playoffOddsFor(all, slot) {
+    const odds = playoffOdds(all)[slot];
+    return odds != null && isFinite(Number(odds)) ? Number(odds) : null;
+  }
+
+  function finalGradeCard(all) {
+    const me = (all || []).filter(function (t) { return t.isMe; })[0] || (all || [])[0];
+    if (!me) return "";
+    const rank = all.findIndex(function (t) { return t.isMe; }) + 1;
+    const shownRank = rank >= 1 ? rank : 1;
+    const odds = playoffOddsFor(all, me.slot);
+    const oddsHtml = odds != null
+      ? ('<b class="tabular" style="color:' + (odds >= 50 ? "var(--win)" : "var(--warn)") + '">' + odds.toFixed(1) + "%</b>")
+      : "<b>-</b>";
+    return '<div class="rec-card final-grade"><div class="rec-label">Draft Report Card</div>'
+      + '<div class="letter" style="color:' + gradeCol(me.grade.score) + '">' + gradeLetter(me.grade.score) + "</div>"
+      + '<div class="rank">League rank #' + shownRank + " of " + state.teams + "</div>"
+      + '<div class="sub">Projected playoff odds ' + oddsHtml + "</div></div>";
+  }
+
+  function maybeShowSummary() {
+    if (summaryShown || !draftDone() || !state.picks.length) return;
+    summaryShown = true;
+    state.tab = "grades";
+  }
+
   function renderBoard() {
     if (EMBEDDED && !state.sitePool) {
       return '<div class="empty-log">Loading BR Fantasy ranks, ADP, and values…</div>';
@@ -815,16 +843,7 @@
     const pool = rankedPool(counts, recPn);
     let html = "";
     if (draftDone()) {
-      const all = gradeAllTeams();
-      const me = all.filter(function (t) { return t.isMe; })[0] || all[0];
-      if (me) {
-        const rank = all.findIndex(function (t) { return t.isMe; }) + 1;
-        const odds = playoffOdds(all)[state.mySlot];
-        html += '<div class="rec-card final-grade"><div class="rec-label">Draft complete</div>'
-          + '<div class="letter" style="color:' + gradeCol(me.grade.score) + '">' + gradeLetter(me.grade.score) + "</div>"
-          + '<div class="rank">League rank #' + rank + " of " + state.teams + "</div>"
-          + '<div class="sub">Projected playoff odds <b class="tabular" style="color:' + (odds >= 50 ? "var(--win)" : "var(--warn)") + '">' + (odds != null ? odds.toFixed(1) : "-") + "%</b></div></div>";
-      }
+      html += finalGradeCard(gradeAllTeams());
     } else if (pool[0]) {
       html += bannersHtml(counts, pool[0]);
     }
@@ -932,8 +951,10 @@
     html += '<div class="win-row"><span class="win-chip ' + wcls + '">' + w.label + "</span>";
     if (w.avgAge) html += '<span style="font-size:11px;color:var(--text-muted)">Avg age ' + w.avgAge.toFixed(1) + "</span>";
     if (draftDone()) {
-      const odds = playoffOdds(all)[state.mySlot];
-      html += '<span class="odds-chip" style="color:' + (odds >= 50 ? "var(--win)" : "var(--warn)") + '">' + odds.toFixed(1) + "% playoff</span>";
+      const odds = playoffOddsFor(all, me.slot);
+      if (odds != null) {
+        html += '<span class="odds-chip" style="color:' + (odds >= 50 ? "var(--win)" : "var(--warn)") + '">' + odds.toFixed(1) + "% playoff</span>";
+      }
     }
     html += "</div>";
 
@@ -984,7 +1005,8 @@
   function renderGrades() {
     const all = gradeAllTeams();
     const odds = draftDone() ? playoffOdds(all) : {};
-    let html = recapHtml(all);
+    let html = draftDone() ? finalGradeCard(all) : "";
+    html += recapHtml(all);
     html += '<p class="recap-h" style="padding:8px 12px 6px">' + IC.trophy + "Draft grades</p>";
     all.forEach(function (t, i) {
       const w = t.grade.window;
@@ -1749,9 +1771,14 @@
     const clockPn = Number(detail.current || detail.clockOverall || 0);
     if (clockPn >= 1) state.current = clockPn;
     else state.current = lastMade + 1;
+    if (state.hostDrafted && lastMade && state.teams) {
+      const inferred = Math.ceil(lastMade / state.teams);
+      if (inferred >= 6 && inferred <= 30) state.rounds = inferred;
+    }
     if (detail.clockSeconds == null) state.clock = CLOCK_START;
     fillSlotSel();
     paintSyncChip(true);
+    maybeShowSummary();
     render();
   }
 
