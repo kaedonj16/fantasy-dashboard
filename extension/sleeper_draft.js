@@ -390,8 +390,26 @@
     const draftName = String((draft && draft.metadata && draft.metadata.name) || "").trim();
     const leagueName = String((league && league.name) || "").trim()
       || (draftName && !/^draft$/i.test(draftName) ? draftName : "");
-    const leagueType = Number((league && league.settings && league.settings.type) || 0);
-    const draftType = (leagueType === 1 || leagueType === 2) ? "startup" : "redraft";
+    const leagueKind = window.BRDraftSlot && BRDraftSlot.sleeperLeagueKind
+      ? BRDraftSlot.sleeperLeagueKind(league)
+      : "";
+    const draftType = window.BRDraftSlot && BRDraftSlot.sleeperDraftType
+      ? BRDraftSlot.sleeperDraftType(league, draft)
+      : ((Number((league && league.settings && league.settings.type) || 0) === 2) ? "startup" : "redraft");
+    const formatLabel = window.BRDraftSlot && BRDraftSlot.formatKindLabel
+      ? BRDraftSlot.formatKindLabel(leagueKind, draftType)
+      : "";
+    const orderFormat = window.BRDraftSlot && BRDraftSlot.sleeperOrderFormat
+      ? BRDraftSlot.sleeperOrderFormat(draft)
+      : (String((draft && draft.type) || "snake").toLowerCase() === "linear" ? "linear"
+        : (String((draft && draft.type) || "").toLowerCase() === "auction" ? "auction" : "snake"));
+    const orderLabel = window.BRDraftSlot && BRDraftSlot.orderFormatLabel
+      ? BRDraftSlot.orderFormatLabel(orderFormat)
+      : (orderFormat === "3rr" ? "3RR" : (orderFormat === "linear" ? "Linear"
+        : (orderFormat === "auction" ? "Auction" : "Snake")));
+    const bestBall = window.BRDraftSlot && BRDraftSlot.sleeperIsBestBall
+      ? BRDraftSlot.sleeperIsBestBall(league, draft)
+      : !!(league && league.settings && league.settings.best_ball);
     const slotToRosterId = {};
     const draftOrder = (draft && draft.draft_order) || {};
     Object.keys(draftOrder).forEach(function (uid) {
@@ -409,6 +427,11 @@
       leagueId: String((draft && draft.league_id) || (league && league.league_id) || "") || undefined,
       season: Number((league && league.season) || (draft && draft.season) || 0) || undefined,
       draftType: draftType,
+      leagueKind: leagueKind || undefined,
+      formatLabel: formatLabel || undefined,
+      orderFormat: orderFormat || undefined,
+      orderLabel: orderLabel || undefined,
+      bestBall: bestBall,
       slotToRosterId: slotToRosterId,
       roster: roster || undefined,
       ppr: scoring.ppr,
@@ -435,6 +458,9 @@
       sf ? 1 : 0,
       leagueName,
       draftType,
+      leagueKind,
+      orderFormat,
+      bestBall ? 1 : 0,
       scoring.ppr,
       scoring.tep,
       scoring.passTd,

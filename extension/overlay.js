@@ -230,6 +230,11 @@
     leagueId: "",
     season: 0,
     draftType: "redraft",
+    leagueKind: "",
+    formatLabel: "",
+    orderFormat: "",
+    orderLabel: "",
+    bestBall: false,
     hostClock: null,
     hostClockAt: 0,
     pickTimer: 0,
@@ -272,6 +277,7 @@
   let renderQueued = false;
   let compareIds = [];
   let summaryShown = false;
+  let summaryOpen = false;
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -408,7 +414,10 @@
       mySlot: state.mySlot,
       pickOwners: state.pickOwners,
       sf: !!state.sf,
-      type: state.draftType === "startup" || state.draftType === "dynasty" ? "startup" : "redraft",
+      type: (window.BRDraftSlot && BRDraftSlot.normDraftType)
+        ? BRDraftSlot.normDraftType(state.draftType)
+        : (state.draftType === "rookie" ? "rookie"
+          : (state.draftType === "startup" || state.draftType === "dynasty" ? "startup" : "redraft")),
       tep: Number(state.tep) || 0,
       ppr: state.ppr != null ? Number(state.ppr) : 1,
       passTd: state.passTd >= 6 ? 6 : 4,
@@ -547,6 +556,7 @@
     state.expanded = null;
     state.toast = "";
     summaryShown = false;
+    summaryOpen = false;
     stopAuto();
   }
 
@@ -975,16 +985,115 @@
     const oddsHtml = odds != null
       ? ('<b class="tabular" style="color:' + (odds >= 50 ? "var(--win)" : "var(--warn)") + '">' + odds.toFixed(1) + "%</b>")
       : "<b>-</b>";
-    return '<div class="rec-card final-grade"><div class="rec-label">Draft Report Card</div>'
+    return '<button type="button" class="rec-card final-grade" data-open-summary="1" title="Open draft summary">'
+      + '<div class="rec-label">Draft Report Card</div>'
       + '<div class="letter" style="color:' + gradeCol(me.grade.score) + '">' + gradeLetter(me.grade.score) + "</div>"
       + '<div class="rank">League rank #' + shownRank + " of " + state.teams + "</div>"
-      + '<div class="sub">Projected playoff odds ' + oddsHtml + "</div></div>";
+      + '<div class="sub">Projected playoff odds ' + oddsHtml + "</div>"
+      + '<div class="sum-open">Open summary</div></button>';
   }
 
   function maybeShowSummary() {
     if (summaryShown || !draftDone() || !state.picks.length) return;
     summaryShown = true;
     state.tab = "grades";
+    summaryOpen = true;
+  }
+
+  function openSummary() {
+    if (!draftDone() && !myPicks().length) return;
+    summaryOpen = true;
+    render();
+  }
+
+  function closeSummary() {
+    summaryOpen = false;
+    const modal = document.getElementById("sumModal");
+    if (modal) modal.hidden = true;
+  }
+
+  function summaryRow(slot, p) {
+    if (!p) {
+      return '<div class="dr-sum-row"><span class="dr-sum-slot" style="background:' + slotColor(slot) + '">' + slot
+        + '</span><span class="dr-sum-empty">open</span></div>';
+    }
+    const pn = p.pn || 0;
+    const pickStr = pn ? pickLabel(pn) : "";
+    const ps = p._psShow != null ? p._psShow : (p.ps != null ? Math.round(p.ps) : null);
+    const psStr = ps != null
+      ? '<span class="dr-sum-ps" style="color:' + psColor(ps) + '">' + ps + "</span>"
+      : "";
+    return '<div class="dr-sum-row">'
+      + '<span class="dr-sum-slot" style="background:' + slotColor(slot) + '">' + slot + "</span>"
+      + '<div class="dr-sum-body"><div class="dr-sum-name">' + esc(p.name) + "</div>"
+      + '<div class="dr-sum-meta">' + esc(p.pos || "") + (p.team ? " · " + esc(p.team) : "")
+      + (pickStr ? " · " + pickStr : "") + "</div></div>"
+      + psStr + "</div>";
+  }
+
+  function summaryHtml() {
+    const all = gradeAllTeams();
+    const me = (all || []).filter(function (t) { return t.isMe; })[0] || (all || [])[0];
+    if (!me) return "";
+    const g = me.grade;
+    const gMax = gradeMax();
+    const ol = optimalLineup(me.picks);
+    const arch = me.archetype || (window.BROverlayScore && BROverlayScore.teamArchetype
+      ? BROverlayScore.teamArchetype(picksBySlot()[state.mySlot] || [], scoreCtx())
+      : null);
+    const odds = playoffOddsFor(all, me.slot);
+    const oddsPending = draftDone() && playoffOddsPending(all);
+    let stats = [];
+    const starters = (ol.starters || []).filter(function (s) { return s.p; });
+    let proj = 0;
+    let projN = 0;
+    starters.forEach(function (s) {
+      const v = (window.BROverlayScore && BROverlayScore.ppgOf)
+        ? BROverlayScore.ppgOf(s.p, scoreCtx())
+        : (Number(s.p.ppg) || 0);
+      if (v != null && isFinite(v) && v > 0) { proj += v; projN++; }
+    });
+    if (projN >= 2) stats.push({ v: proj.toFixed(1), l: "Proj PPG" });
+    if (oddsPending) stats.push({ v: "…", l: "Playoff Odds" });
+    else if (odds != null) stats.push({ v: poFmt(odds) + "%", l: "Playoff Odds" });
+    const profile = arch && arch.label
+      ? (arch.label + (g.window && g.window.label ? " · " + g.window.label : ""))
+      : (g.window && g.window.label ? g.window.label : "");
+    let html = '<button type="button" class="dr-cmp-close" id="drSumClose" data-sum-close="1" aria-label="Close">&times;</button>'
+      + '<div class="dr-sum-title" id="sumTitle">Draft Report Card</div>'
+      + '<div class="dr-sum-grade-wrap"><div class="dr-sum-letter" style="color:' + gradeCol(g.score) + '">' + gradeLetter(g.score) + "</div>"
+      + '<div class="dr-sum-bars">'
+      + (g.provisional ? '<div class="grade-early">Early - still forming</div>' : "")
+      + gbar("Value", g.value, gMax.value) + gbar("Starters", g.starters, gMax.starters)
+      + gbar("Construction", g.construction, gMax.construction)
+      + "</div></div>";
+    if (stats.length) {
+      html += '<div class="dr-sum-stats">';
+      stats.forEach(function (s) {
+        html += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + s.v + '</div><div class="dr-sum-stat-l">' + s.l + "</div></div>";
+      });
+      html += "</div>";
+    }
+    if (profile) html += '<div class="dr-sum-arch">' + esc(profile) + "</div>";
+    html += '<div class="dr-sum-section">Starters</div>';
+    (ol.starters || []).forEach(function (s) { html += summaryRow(s.slot, s.p); });
+    html += '<div class="dr-sum-section">Bench</div>';
+    if (ol.bench && ol.bench.length) ol.bench.forEach(function (p) { html += summaryRow("BN", p); });
+    else html += summaryRow("BN", null);
+    html += '<div class="dr-sum-foot"><button type="button" class="btn btn-ghost" data-sum-close="1">Close</button></div>';
+    return html;
+  }
+
+  function paintSummary() {
+    const modal = document.getElementById("sumModal");
+    const card = document.getElementById("sumCard");
+    if (!modal || !card) return;
+    if (!summaryOpen) {
+      modal.hidden = true;
+      return;
+    }
+    card.innerHTML = summaryHtml();
+    modal.hidden = false;
   }
 
   function renderBoard() {
@@ -1265,6 +1374,8 @@
     const chip = document.getElementById("gradesChip");
     chip.textContent = myPicks().length ? letter : "-";
     chip.style.color = myPicks().length && me ? gradeCol(me.grade.score) : "";
+    const sumBtn = document.getElementById("sumBtn");
+    if (sumBtn) sumBtn.hidden = !(draftDone() || myPicks().length);
     document.querySelectorAll(".tab-btn").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-tab") === state.tab);
     });
@@ -1301,6 +1412,7 @@
     }
     paintLeagueChrome();
     renderOverlay();
+    paintSummary();
   }
   function render() {
     if (!EMBEDDED) {
@@ -1386,15 +1498,28 @@
     resetDraft();
     render();
   });
-  const cmpModal = document.getElementById("cmpModal");
-  if (cmpModal) {
-    cmpModal.addEventListener("click", function (e) {
-      if (e.target === cmpModal || e.target.closest("#drCmpClose") || e.target.closest("[data-cmp-close]")) {
-        closeCompare();
-      }
-    });
-  }
+    const cmpModal = document.getElementById("cmpModal");
+    if (cmpModal) {
+      cmpModal.addEventListener("click", function (e) {
+        if (e.target === cmpModal || e.target.closest("#drCmpClose") || e.target.closest("[data-cmp-close]")) {
+          closeCompare();
+        }
+      });
+    }
+    const sumModal = document.getElementById("sumModal");
+    if (sumModal) {
+      sumModal.addEventListener("click", function (e) {
+        if (e.target === sumModal || e.target.closest("#drSumClose") || e.target.closest("[data-sum-close]")) {
+          closeSummary();
+        }
+      });
+    }
   document.getElementById("ovBody").addEventListener("click", function (e) {
+    if (e.target.closest("[data-open-summary]")) {
+      e.preventDefault();
+      openSummary();
+      return;
+    }
     const cmp = e.target.closest("[data-cmp]");
     if (cmp) {
       e.preventDefault();
@@ -1556,9 +1681,12 @@
     if (Array.isArray(detail.adpOptions) && detail.adpOptions.length) state.adpOptions = detail.adpOptions;
     if (detail.adpSource) state.adpSource = String(detail.adpSource);
     if (detail.sf != null) state.sf = !!detail.sf;
-    if (detail.scoringType) {
-      const st = String(detail.scoringType).toLowerCase();
-      state.draftType = (st === "dynasty" || st === "startup") ? "startup" : "redraft";
+    if (detail.scoringType && !state.leagueKind && !state.formatLabel) {
+      state.draftType = (window.BRDraftSlot && BRDraftSlot.normDraftType)
+        ? BRDraftSlot.normDraftType(detail.scoringType)
+        : (String(detail.scoringType).toLowerCase() === "rookie" ? "rookie"
+          : (String(detail.scoringType).toLowerCase() === "startup"
+            || String(detail.scoringType).toLowerCase() === "dynasty") ? "startup" : "redraft");
     }
     fillAdpSel();
     players = rows.map(function (p) {
@@ -1691,9 +1819,17 @@
     if (detail.leagueId) state.leagueId = String(detail.leagueId);
     if (detail.season) state.season = Number(detail.season) || state.season;
     if (detail.draftType) {
-      const dt = String(detail.draftType).toLowerCase();
-      state.draftType = (dt === "dynasty" || dt === "startup") ? "startup" : "redraft";
+      state.draftType = (window.BRDraftSlot && BRDraftSlot.normDraftType)
+        ? BRDraftSlot.normDraftType(detail.draftType)
+        : (String(detail.draftType).toLowerCase() === "rookie" ? "rookie"
+          : (String(detail.draftType).toLowerCase() === "startup"
+            || String(detail.draftType).toLowerCase() === "dynasty") ? "startup" : "redraft");
     }
+    if (detail.leagueKind) state.leagueKind = String(detail.leagueKind);
+    if (detail.formatLabel) state.formatLabel = String(detail.formatLabel);
+    if (detail.orderFormat) state.orderFormat = String(detail.orderFormat);
+    if (detail.orderLabel) state.orderLabel = String(detail.orderLabel);
+    if (detail.bestBall != null) state.bestBall = !!detail.bestBall;
     if (detail.slotToRosterId && typeof detail.slotToRosterId === "object") {
       state.slotToRosterId = detail.slotToRosterId;
     }
@@ -1702,7 +1838,8 @@
     if (detail.passTd != null && isFinite(Number(detail.passTd))) state.passTd = Number(detail.passTd);
     if (detail.roster && typeof detail.roster === "object") {
       const rs = detail.roster;
-      const starters = (rs.QB || 0) + (rs.RB || 0) + (rs.WR || 0) + (rs.TE || 0) + (rs.FLEX || 0) + (rs.SF || 0);
+      const starters = (rs.QB || 0) + (rs.RB || 0) + (rs.WR || 0) + (rs.TE || 0)
+        + (rs.FLEX || 0) + (rs.SF || 0) + (rs.RB_WR || 0) + (rs.WR_TE || 0) + (rs.RB_TE || 0);
       if (starters >= 4) {
         state.roster = {
           QB: Number(rs.QB) || 0,
@@ -1711,6 +1848,9 @@
           WR: Number(rs.WR) || 0,
           TE: Number(rs.TE) || 0,
           FLEX: Number(rs.FLEX) || 0,
+          RB_WR: Number(rs.RB_WR) || 0,
+          WR_TE: Number(rs.WR_TE) || 0,
+          RB_TE: Number(rs.RB_TE) || 0,
           K: Number(rs.K) || 0,
           DEF: Number(rs.DEF) || 0,
           BN: Number(rs.BN) || 0,
@@ -1721,10 +1861,23 @@
   }
 
   function leagueSettingsLabel() {
+    const format = state.formatLabel
+      || (window.BRDraftSlot && BRDraftSlot.formatKindLabel
+        ? BRDraftSlot.formatKindLabel(state.leagueKind, state.draftType)
+        : (state.draftType === "rookie" ? "Rookie"
+          : (state.draftType === "startup" || state.draftType === "dynasty" ? "Dynasty" : "Redraft")));
     if (window.BRDraftSlot && BRDraftSlot.settingsLabel && state.roster) {
-      return BRDraftSlot.settingsLabel(state.roster, { ppr: state.ppr, tep: state.tep, passTd: state.passTd });
+      return BRDraftSlot.settingsLabel(state.roster, {
+        ppr: state.ppr, tep: state.tep, passTd: state.passTd, format: format,
+        order: state.orderLabel || "",
+        bestBall: state.bestBall,
+      });
     }
-    return state.sf ? "SF" : "";
+    const bits = [format];
+    if (state.orderLabel) bits.push(state.orderLabel);
+    if (state.bestBall) bits.push("Best Ball");
+    if (state.sf) bits.push("SF");
+    return bits.filter(Boolean).join(" · ");
   }
 
   function paintLeagueChrome() {
@@ -2004,6 +2157,11 @@
   const colBtn = document.getElementById("collapseBtn");
   if (colBtn) colBtn.addEventListener("click", function () { postToHost("collapse"); });
   document.querySelector(".overlay").addEventListener("click", function (e) {
+    if (e.target.closest("[data-open-summary]")) {
+      e.preventDefault();
+      openSummary();
+      return;
+    }
     const link = e.target.closest("[data-link]");
     if (!link || link.getAttribute("data-link") !== "sheet") return;
     if (EMBEDDED) {

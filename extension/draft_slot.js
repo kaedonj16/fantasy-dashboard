@@ -422,12 +422,16 @@
   function settingsLabel(rs, scoring) {
     if (!rosterHasStarters(rs)) return "";
     const bits = [];
+    if (scoring && scoring.format) bits.push(String(scoring.format));
     bits.push((rs.SF ? "SF" : "1QB"));
     const ppr = scoring && scoring.ppr;
     if (ppr === 0.5) bits.push("HALF");
     else if (ppr === 0) bits.push("STD");
     else bits.push("PPR");
     if (scoring && Number(scoring.tep) > 0) bits.push("TEP");
+    if (scoring && scoring.order) bits.push(String(scoring.order));
+    if (scoring && scoring.bestBall) bits.push("Best Ball");
+    if (scoring && Number(scoring.passTd) === 6) bits.push("6PT");
     bits.push((rs.QB || 0) + "/" + (rs.RB || 0) + "/" + (rs.WR || 0) + "/" + (rs.TE || 0));
     if (rs.FLEX) bits.push("FLEX" + (rs.FLEX > 1 ? rs.FLEX : ""));
     if (rs.RB_WR) bits.push("RB/WR" + (rs.RB_WR > 1 ? rs.RB_WR : ""));
@@ -443,6 +447,103 @@
       tep: Number(src.bonus_rec_te || 0),
       passTd: Number(src.pass_td != null ? src.pass_td : 4),
     };
+  }
+
+  function sleeperDraftName(draft) {
+    const meta = (draft && draft.metadata) || {};
+    return String(meta.name || meta.description || (draft && draft.name) || "").toLowerCase();
+  }
+
+  function sleeperTruthy(v) {
+    return v === true || v === 1 || v === "1" || String(v).toLowerCase() === "true";
+  }
+
+  // Sleeper settings.type: 0 redraft, 1 keeper, 2 dynasty.
+  function sleeperLeagueKind(league, draft) {
+    const st = (league && league.settings) || {};
+    try {
+      if (st.type != null && st.type !== "") {
+        const t = Number(st.type);
+        if (t === 2) return "dynasty";
+        if (t === 1) return "keeper";
+        if (t === 0) return "redraft";
+      }
+    } catch (_e) { /* ignore */ }
+    const lt = String(st.league_type || (league && league.league_type) || "").toLowerCase();
+    if (lt.indexOf("keeper") >= 0) return "keeper";
+    if (lt.indexOf("redraft") >= 0 || lt.indexOf("re-draft") >= 0) return "redraft";
+    if (lt.indexOf("dynasty") >= 0) return "dynasty";
+    if (Number(st.taxi_slots || st.taxi_years || 0) > 0) return "dynasty";
+    const meta = (draft && draft.metadata) || {};
+    const blob = [
+      (league && league.name) || "",
+      sleeperDraftName(draft),
+      meta.scoring_type || "",
+      meta.league_type || "",
+    ].join(" ").toLowerCase();
+    if (/\bkeeper\b/.test(blob)) return "keeper";
+    if (/\bdynasty\b|\bstartup\b/.test(blob)) return "dynasty";
+    if (/\bredraft\b|\bre-draft\b/.test(blob)) return "redraft";
+    return "";
+  }
+
+  // Overlay / pool type: redraft | startup | rookie (same axes as Draft Room).
+  function sleeperDraftType(league, draft) {
+    const kind = sleeperLeagueKind(league, draft);
+    const settings = (draft && draft.settings) || {};
+    const rounds = Number(settings.rounds || (draft && draft.rounds) || 0);
+    const namedRookie = /\brookie\b/.test(sleeperDraftName(draft));
+    if (kind === "redraft") return "redraft";
+    if (namedRookie || ((kind === "dynasty" || kind === "keeper") && rounds > 0 && rounds <= 5)) {
+      return "rookie";
+    }
+    if (kind === "dynasty" || kind === "keeper") return "startup";
+    if (namedRookie || (rounds > 0 && rounds <= 5)) return "rookie";
+    return "redraft";
+  }
+
+  function formatKindLabel(kind, draftType) {
+    if (draftType === "rookie") return "Rookie";
+    if (kind === "keeper") return "Keeper";
+    if (kind === "dynasty" || draftType === "startup" || draftType === "dynasty") return "Dynasty";
+    return "Redraft";
+  }
+
+  function sleeperOrderFormat(draft) {
+    const settings = (draft && draft.settings) || {};
+    const dtype = String((draft && draft.type) || settings.type || "").toLowerCase();
+    if (dtype === "auction" || dtype === "salary" || dtype === "salary_cap" || sleeperTruthy(settings.is_auction)) {
+      return "auction";
+    }
+    if (dtype === "linear") return "linear";
+    try {
+      if (Number(settings.reversal_round || 0) === 3) return "3rr";
+    } catch (_e) { /* ignore */ }
+    return "snake";
+  }
+
+  function orderFormatLabel(order) {
+    if (order === "auction") return "Auction";
+    if (order === "linear") return "Linear";
+    if (order === "3rr") return "3RR";
+    return "Snake";
+  }
+
+  function sleeperIsBestBall(league, draft) {
+    const st = (league && league.settings) || {};
+    const ds = (draft && draft.settings) || {};
+    const lg = league || {};
+    if (sleeperTruthy(st.best_ball) || sleeperTruthy(st.bestBall) || sleeperTruthy(st.bestball)) return true;
+    if (sleeperTruthy(lg.best_ball) || sleeperTruthy(lg.bestBall)) return true;
+    if (sleeperTruthy(ds.best_ball) || sleeperTruthy(ds.bestBall)) return true;
+    return false;
+  }
+
+  function normDraftType(raw) {
+    const dt = String(raw || "").toLowerCase();
+    if (dt === "rookie") return "rookie";
+    if (dt === "startup" || dt === "dynasty") return "startup";
+    return "redraft";
   }
 
   function rosterKey(rs) {
@@ -1283,6 +1384,13 @@
     slotListFromRoster: slotListFromRoster,
     settingsLabel: settingsLabel,
     scoringFromSleeperSettings: scoringFromSleeperSettings,
+    sleeperLeagueKind: sleeperLeagueKind,
+    sleeperDraftType: sleeperDraftType,
+    formatKindLabel: formatKindLabel,
+    sleeperOrderFormat: sleeperOrderFormat,
+    orderFormatLabel: orderFormatLabel,
+    sleeperIsBestBall: sleeperIsBestBall,
+    normDraftType: normDraftType,
     rosterKey: rosterKey,
     scrapeYahooBoard: scrapeYahooBoard,
     parseYahooDraftResultsHtml: parseYahooDraftResultsHtml,

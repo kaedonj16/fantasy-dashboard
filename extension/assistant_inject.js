@@ -162,22 +162,42 @@
     return /portal|modal|dialog|toast|popover|tooltip|chat|fab/i.test(id + " " + cls + " " + role);
   }
 
+  function classNameOf(el) {
+    try {
+      const c = el.className;
+      return String(c && c.baseVal != null ? c.baseVal : c || "");
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function isSleeperBottomPanel(el) {
+    return /bottom-panel|player-queue|player_queue|queue-wrapper/.test(classNameOf(el));
+  }
+
   function constrainSleeperNode(el, px) {
     if (!el || el.id === ROOT_ID || el === document.body) return;
     try {
       const st = window.getComputedStyle(el);
+      const bottom = isSleeperBottomPanel(el);
+      const pinned = st.position === "fixed" || st.position === "absolute" || st.position === "sticky";
       el.style.setProperty("box-sizing", "border-box", "important");
       el.style.setProperty("min-width", "0", "important");
-      if (st.position === "fixed" || st.position === "absolute") {
+      if (pinned || bottom) {
         const r = el.getBoundingClientRect();
-        if (r.width < 8 || r.height < 8) return;
-        if (r.left <= 12 && r.width >= window.innerWidth - 80) {
-          el.style.setProperty("left", "0px", "important");
-          el.style.setProperty("right", px + "px", "important");
-          el.style.setProperty("width", "auto", "important");
-          el.style.setProperty("max-width", "none", "important");
+        if (!bottom && (r.width < 8 || r.height < 8)) return;
+        if (bottom || (r.left <= 12 && r.width >= window.innerWidth - 80)) {
+          if (pinned) {
+            el.style.setProperty("left", "0px", "important");
+            el.style.setProperty("right", px + "px", "important");
+            el.style.setProperty("width", "auto", "important");
+            el.style.setProperty("max-width", "none", "important");
+          } else {
+            el.style.setProperty("width", "calc(100vw - " + px + "px)", "important");
+            el.style.setProperty("max-width", "calc(100vw - " + px + "px)", "important");
+          }
         }
-        return;
+        if (pinned) return;
       }
       el.style.setProperty("width", "calc(100vw - " + px + "px)", "important");
       el.style.setProperty("max-width", "calc(100vw - " + px + "px)", "important");
@@ -195,7 +215,7 @@
       sleeperRoot.style.setProperty("overflow-x", "hidden", "important");
     }
     const named = document.querySelectorAll(
-      ".draft-layout-container, .draftboard-page, .bottom-container, .scrollbar-container"
+      ".draft-layout-container, .draftboard-page, .bottom-container, .bottom-panel-wrapper, .bottom-panel, .scrollbar-container, .player-queue, [class*='bottom-panel']"
     );
     for (let i = 0; i < named.length; i++) constrainSleeperNode(named[i], px);
     if (!sleeperRoot) return;
@@ -287,6 +307,7 @@
       "html.br-da-docked.br-da-sleeper body>*:not(#" + ROOT_ID + "):not(#root):not(#app){flex:0 0 auto!important;max-width:none!important;}" +
       "html.br-da-docked.br-da-sleeper #" + ROOT_ID + "{position:fixed!important;top:0!important;right:0!important;bottom:0!important;left:auto!important;flex:none!important;width:var(--br-da-shift)!important;height:100%!important;min-height:100vh!important;}" +
       "html.br-da-docked.br-da-sleeper .draft-layout-container,html.br-da-docked.br-da-sleeper .draftboard-page,html.br-da-docked.br-da-sleeper .bottom-container,html.br-da-docked.br-da-sleeper .scrollbar-container{width:calc(100vw - var(--br-da-shift))!important;max-width:calc(100vw - var(--br-da-shift))!important;min-width:0!important;box-sizing:border-box!important;}" +
+      "html.br-da-docked.br-da-sleeper .bottom-panel-wrapper,html.br-da-docked.br-da-sleeper .bottom-panel,html.br-da-docked.br-da-sleeper .player-queue,html.br-da-docked.br-da-sleeper [class*='bottom-panel']{left:0!important;right:var(--br-da-shift)!important;width:calc(100vw - var(--br-da-shift))!important;max-width:calc(100vw - var(--br-da-shift))!important;min-width:0!important;box-sizing:border-box!important;}" +
       "html.br-da-docked.br-da-sleeper #root>*{min-width:0!important;max-width:100%!important;}" +
       "html.br-da-docked.br-da-ready body{transition:none;}" +
       "#" + ROOT_ID + "{position:relative;flex:0 0 var(--br-da-shift);width:var(--br-da-shift);align-self:stretch;min-height:100vh;z-index:2147483645;box-shadow:none;border-left:1px solid rgba(18,45,75,.35);background:#122d4b;" +
@@ -487,6 +508,10 @@
       payload.ppr != null ? payload.ppr : "",
       payload.tep != null ? payload.tep : "",
       payload.passTd != null ? payload.passTd : "",
+      payload.draftType || "",
+      payload.leagueKind || "",
+      payload.orderFormat || "",
+      payload.bestBall ? 1 : 0,
       payload.teamNames ? Object.keys(payload.teamNames).length : "",
       payload.pickOwners ? Object.keys(payload.pickOwners).length : "",
       window.BRDraftSlot && BRDraftSlot.rosterKey ? BRDraftSlot.rosterKey(payload.roster) : ""
@@ -497,8 +522,11 @@
     if (payload.tep != null && isFinite(Number(payload.tep))) lastScoring.tep = Number(payload.tep);
     if (payload.passTd != null && isFinite(Number(payload.passTd))) lastScoring.passTd = Number(payload.passTd);
     if (payload.draftType) {
-      const dt = String(payload.draftType).toLowerCase();
-      lastDraftType = (dt === "dynasty" || dt === "startup") ? "startup" : "redraft";
+      lastDraftType = (window.BRDraftSlot && BRDraftSlot.normDraftType)
+        ? BRDraftSlot.normDraftType(payload.draftType)
+        : (String(payload.draftType).toLowerCase() === "rookie" ? "rookie"
+          : (String(payload.draftType).toLowerCase() === "startup" || String(payload.draftType).toLowerCase() === "dynasty")
+            ? "startup" : "redraft");
     }
     const key = [
       lastDraftType || "redraft",
