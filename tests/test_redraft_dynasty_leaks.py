@@ -133,6 +133,30 @@ def test_brctx_and_compare_flip_scoring_type():
     assert "this-season redraft value" in ranks
 
 
+def test_waiver_and_start_sit_use_format_value_and_rank():
+    """Redraft leagues must not show dynasty value / WR12 labels on waivers or start/sit."""
+    app = (ROOT / "app.py").read_text(encoding="utf-8")
+    waiver = (ROOT / "routes" / "waiver_api_bp.py").read_text(encoding="utf-8")
+    assert "def _waiver_rank_label_key" in app
+    assert "apply_redraft_display_fields" in app
+    assert "_waiver_rank_label_key(ctx)" in waiver
+    assert "_rk_wv" in waiver
+    assert "_tr_vf" in waiver
+    assert 'round(float(val_row.get("value") or 0))' not in waiver
+    start = app.find("def api_start_sit_options")
+    end = app.find("def page_weekly", start)
+    body = app[start:end]
+    assert "_waiver_value_keys(ctx)" in body
+    assert "_waiver_rank_label_key(ctx)" in body
+    assert "_ss_vkey" in body
+    assert "_ss_rkey" in body
+    assert 'float(row.get("value") or 0) or None' not in body
+    dash = app.find("def _build_waiver_targets_rows")
+    dash_end = app.find("def _render_do_next_waiver_card", dash)
+    dash_body = app[dash:dash_end]
+    assert "_waiver_rank_label_key(ctx)" in dash_body
+
+
 def test_roster_grade_badge_skips_age_for_redraft():
     src = (ROOT / "dashboard_services" / "ai" / "renderer.py").read_text(encoding="utf-8")
     start = src.find("def get_roster_grade")
