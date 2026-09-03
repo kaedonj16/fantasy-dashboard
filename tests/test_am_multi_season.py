@@ -200,6 +200,31 @@ def test_leaderboard_api_combine_flag(offline_client, monkeypatch):
     assert resp.get_json()["combine"] is True
 
 
+def test_get_metric_leaderboard_forwards_combine(monkeypatch):
+    import data_building.advanced_metrics as am
+
+    seen = {}
+
+    def _ms(*a, **k):
+        seen.update(k)
+        return [{"player_id": "1", "value": 1}]
+
+    monkeypatch.setattr(am, "_multi_season_leaderboard", _ms)
+    am.get_metric_leaderboard("yards_per_carry", season="2025,2022")
+    assert seen.get("combine") is False
+    am.get_metric_leaderboard("yards_per_carry", season=[2025, 2022], combine=True)
+    assert seen.get("combine") is True
+
+
+def test_metrics_page_renders_combine_toggle(offline_client):
+    resp = offline_client.get("/metrics")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'id="amCombineToggle"' in html
+    assert "Each year" in html
+    assert 'data-combine="1"' in html
+
+
 def test_page_has_multi_season_picker():
     assert 'id="amSeasonMenu"' in _AM_PAGE
     assert 'id="amSeasonBtn"' in _AM_PAGE
