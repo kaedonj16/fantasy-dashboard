@@ -4474,17 +4474,17 @@ _DRAFT_IMMINENT_BANNER_HTML = r"""
   background: linear-gradient(135deg, rgba(56,189,248,.14), rgba(56,189,248,.03));
   box-shadow: 0 10px 26px -14px rgba(15,23,42,.4); }
 .drgb::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--accent,#38bdf8); }
-.drgb.is-live { border-color: rgba(34,197,94,.38);
-  background: linear-gradient(135deg, rgba(34,197,94,.15), rgba(34,197,94,.03)); }
-.drgb.is-live::before { background: linear-gradient(#4ade80, #16a34a); }
+.drgb.is-live { border-color: rgba(56,189,248,.42);
+  background: linear-gradient(135deg, rgba(56,189,248,.18), rgba(56,189,248,.04)); }
+.drgb.is-live::before { background: linear-gradient(#38bdf8, #0ea5e9); }
 .drgb-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 16px 44px 16px 18px; }
 .drgb-ic { flex-shrink: 0; width: 42px; height: 42px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center;
   font-size: 19px; color: var(--accent,#38bdf8); background: rgba(56,189,248,.16); box-shadow: inset 0 0 0 1px rgba(56,189,248,.28); }
-.drgb-ic-live { color: #16a34a; background: rgba(34,197,94,.16); box-shadow: inset 0 0 0 1px rgba(34,197,94,.32);
+.drgb-ic-live { color: var(--accent,#38bdf8); background: rgba(56,189,248,.18); box-shadow: inset 0 0 0 1px rgba(56,189,248,.32);
   animation: drgbPulse 1.9s ease-out infinite; }
-@keyframes drgbPulse { 0% { box-shadow: inset 0 0 0 1px rgba(34,197,94,.32), 0 0 0 0 rgba(34,197,94,.5); }
-  70% { box-shadow: inset 0 0 0 1px rgba(34,197,94,.32), 0 0 0 9px rgba(34,197,94,0); }
-  100% { box-shadow: inset 0 0 0 1px rgba(34,197,94,.32), 0 0 0 0 rgba(34,197,94,0); } }
+@keyframes drgbPulse { 0% { box-shadow: inset 0 0 0 1px rgba(56,189,248,.32), 0 0 0 0 rgba(56,189,248,.5); }
+  70% { box-shadow: inset 0 0 0 1px rgba(56,189,248,.32), 0 0 0 9px rgba(56,189,248,0); }
+  100% { box-shadow: inset 0 0 0 1px rgba(56,189,248,.32), 0 0 0 0 rgba(56,189,248,0); } }
 @media (prefers-reduced-motion: reduce) { .drgb-ic-live { animation: none; } }
 .drgb-txt { display: flex; flex-direction: column; gap: 2px; line-height: 1.3; min-width: 0; flex: 1 1 140px; }
 .drgb-txt b { font-size: 15px; font-weight: 800; color: var(--text); letter-spacing: -.01em; }
@@ -4496,8 +4496,6 @@ _DRAFT_IMMINENT_BANNER_HTML = r"""
   transition: transform .12s ease, box-shadow .15s ease, filter .15s ease; }
 .drgb-join:hover { transform: translateY(-1px); box-shadow: 0 9px 20px -5px rgba(14,165,233,.65); }
 .drgb-join:active { transform: translateY(0); filter: brightness(.97); }
-.drgb.is-live .drgb-join { background: linear-gradient(180deg, #22c55e, #16a34a); box-shadow: 0 5px 14px -4px rgba(22,163,74,.55); }
-.drgb.is-live .drgb-join:hover { box-shadow: 0 9px 20px -5px rgba(22,163,74,.65); }
 .drgb-join i { font-size: 11px; }
 .drgb-x { position: absolute; top: 9px; right: 10px; z-index: 1; background: none; border: none; color: var(--text-muted);
   font-size: 18px; line-height: 1; cursor: pointer; padding: 3px 6px; border-radius: 7px; opacity: .55;
