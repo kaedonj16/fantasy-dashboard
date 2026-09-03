@@ -463,6 +463,16 @@
     text-overflow: ellipsis;
     line-height: 1.2;
   }
+  .ov-sub {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.25;
+    margin-top: 1px;
+  }
   .sync-cluster {
     display: inline-flex;
     align-items: center;

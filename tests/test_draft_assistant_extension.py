@@ -37,7 +37,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.35"
+    assert manifest["version"] == "1.5.36"
     inject_ver = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     assert 'PRODUCT_VERSION = "1.0.0"' in inject_ver
     hosts = " ".join(manifest.get("host_permissions") or [])
@@ -337,6 +337,9 @@ def test_overlay_reads_league_settings_and_compares_players():
     inject = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     assert "function rosterFromEspnSlots" in helper
     assert "function rosterFromSleeperSettings" in helper
+    assert "function rosterFromSleeperLeague" in helper
+    assert "function isSleeperSuperflex" in helper
+    assert "SUPER_FLEX" in helper
     assert "function rosterFromYahooPositions" in helper
     assert "function settingsLabel" in helper
     assert "function scoringFromSleeperSettings" in helper
@@ -353,9 +356,15 @@ def test_overlay_reads_league_settings_and_compares_players():
     assert "roster: detail.roster" in yahoo_iso
     assert "passTd: detail.passTd" in yahoo_iso
     assert "rosterFromSleeperSettings" in sleeper
+    assert "rosterFromSleeperLeague" in sleeper
+    assert "isSleeperSuperflex" in sleeper
+    assert "leagueName" in sleeper
     assert "api.sleeper.app/v1/league/" in sleeper
     assert "applyLeagueSettings" in overlay
     assert "leagueSettingsLabel" in overlay
+    assert "paintLeagueChrome" in overlay
+    assert "ovLeagueName" in overlay
+    assert "detail.leagueName" in overlay
     assert "scoreCtx" in overlay
     assert "pickOwners: state.pickOwners" in overlay
     assert "ctx.pickOwners" in score
@@ -376,6 +385,8 @@ def test_overlay_reads_league_settings_and_compares_players():
     assert 'data-cmp' in overlay
     assert "Compare Players" in overlay
     assert 'id="cmpModal"' in html
+    assert 'id="ovLeagueName"' in html
+    assert 'id="ovLeagueSettings"' in html
     assert "dr-cmp-overlay" in html
     assert 'src="draft_slot.js"' in html
     assert "dr-cmp-btn" in css

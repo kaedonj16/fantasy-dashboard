@@ -245,6 +245,7 @@
     valCap: 180,
     sitePool: false,
     sf: false,
+    leagueName: "",
     roster: null,
     ppr: 1,
     tep: 0,
@@ -321,6 +322,7 @@
       detail && detail.drafted ? 1 : 0,
       detail && detail.platform || "",
       detail && detail.sf ? 1 : 0,
+      detail && detail.leagueName || "",
       detail && detail.ppr != null ? detail.ppr : "",
       detail && detail.tep != null ? detail.tep : "",
       detail && detail.passTd != null ? detail.passTd : "",
@@ -1128,6 +1130,7 @@
       document.getElementById("stage").setAttribute("data-platform", state.platform);
       renderHost();
     }
+    paintLeagueChrome();
     renderOverlay();
   }
   function render() {
@@ -1511,6 +1514,7 @@
   function applyLeagueSettings(detail) {
     if (!detail) return;
     if (detail.sf != null) state.sf = !!detail.sf;
+    if (detail.leagueName) state.leagueName = String(detail.leagueName);
     if (detail.ppr != null && isFinite(Number(detail.ppr))) state.ppr = Number(detail.ppr);
     if (detail.tep != null && isFinite(Number(detail.tep))) state.tep = Number(detail.tep);
     if (detail.passTd != null && isFinite(Number(detail.passTd))) state.passTd = Number(detail.passTd);
@@ -1538,7 +1542,22 @@
     if (window.BRDraftSlot && BRDraftSlot.settingsLabel && state.roster) {
       return BRDraftSlot.settingsLabel(state.roster, { ppr: state.ppr, tep: state.tep, passTd: state.passTd });
     }
-    return "";
+    return state.sf ? "SF" : "";
+  }
+
+  function paintLeagueChrome() {
+    const nameEl = document.getElementById("ovLeagueName");
+    const settingsEl = document.getElementById("ovLeagueSettings");
+    if (nameEl && state.leagueName) nameEl.textContent = state.leagueName;
+    if (!settingsEl) return;
+    const bits = [];
+    if (state.teams >= 2) bits.push(state.teams + "tm");
+    const settingsTxt = leagueSettingsLabel();
+    if (settingsTxt) bits.push(settingsTxt);
+    else if (state.sf) bits.push("SF");
+    const label = bits.join(" · ");
+    settingsEl.textContent = label;
+    settingsEl.hidden = !label;
   }
 
   function toggleCompare(id) {

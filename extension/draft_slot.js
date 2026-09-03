@@ -356,6 +356,32 @@
     return out;
   }
 
+  function rosterFromSleeperPositions(positions) {
+    return rosterFromYahooPositions(positions);
+  }
+
+  function rosterFromSleeperLeague(league) {
+    const src = league && typeof league === "object" ? league : {};
+    const settings = src.settings && typeof src.settings === "object" ? src.settings : src;
+    const fromSettings = rosterFromSleeperSettings(settings);
+    const fromPos = rosterFromSleeperPositions(src.roster_positions || []);
+    if (!rosterHasStarters(fromPos)) return fromSettings;
+    ["BN", "K", "DEF"].forEach(function (k) {
+      if (!fromPos[k] && fromSettings[k]) fromPos[k] = fromSettings[k];
+    });
+    return fromPos;
+  }
+
+  function isSleeperSuperflex(league, settings) {
+    const s = settings || (league && league.settings) || {};
+    if (Number(s.slots_super_flex || s.slots_sf || 0) > 0) return true;
+    const positions = (league && league.roster_positions) || [];
+    return positions.some(function (p) {
+      const raw = String(p || "").toUpperCase();
+      return raw === "SUPER_FLEX" || raw === "SUPERFLEX" || raw === "SFLEX" || raw === "OP";
+    });
+  }
+
   function rosterFromYahooPositions(positions) {
     const out = emptyRoster();
     (positions || []).forEach(function (p) {
@@ -1249,6 +1275,9 @@
     isKDefPos: isKDefPos,
     rosterFromEspnSlots: rosterFromEspnSlots,
     rosterFromSleeperSettings: rosterFromSleeperSettings,
+    rosterFromSleeperPositions: rosterFromSleeperPositions,
+    rosterFromSleeperLeague: rosterFromSleeperLeague,
+    isSleeperSuperflex: isSleeperSuperflex,
     rosterFromYahooPositions: rosterFromYahooPositions,
     rosterHasStarters: rosterHasStarters,
     slotListFromRoster: slotListFromRoster,
