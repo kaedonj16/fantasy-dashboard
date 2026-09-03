@@ -1261,8 +1261,12 @@ def build_status_by_pid(
 
         game = lookup_team_map(games_by_team, team)
         if not game:
-            # bye or missing schedule
-            status_by_pid[pid] = STATUS_FINAL
+            if not games_by_team:
+                # Schedule data missing entirely — assume games haven't started
+                # so projections are shown instead of wall-to-wall 0.0 actuals.
+                status_by_pid[pid] = STATUS_NOT_STARTED
+            else:
+                status_by_pid[pid] = STATUS_FINAL
             continue
 
         t_status = game.get("status")  # 'pre' | 'in' | 'post'
@@ -1287,13 +1291,14 @@ def build_status_by_pid(
         game = lookup_team_map(games_by_team, team_code)
 
         if not game:
-            bye_week = team_info.get("byeWeek")
-
-            if bye_week == current_week:
-                status_by_pid[pid] = "BYE"
+            if not games_by_team:
+                status_by_pid[pid] = STATUS_NOT_STARTED
             else:
-                status_by_pid[pid] = STATUS_FINAL
-
+                bye_week = team_info.get("byeWeek")
+                if bye_week == current_week:
+                    status_by_pid[pid] = "BYE"
+                else:
+                    status_by_pid[pid] = STATUS_FINAL
             continue
 
         t_status = game.get("status")
