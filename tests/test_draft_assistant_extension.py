@@ -38,7 +38,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.38"
+    assert manifest["version"] == "1.5.39"
     inject_ver = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     assert 'PRODUCT_VERSION = "1.0.0"' in inject_ver
     hosts = " ".join(manifest.get("host_permissions") or [])
@@ -200,6 +200,9 @@ def test_collapsed_overlay_has_reopen_control():
     assert "function constrainSleeperDraft" in inject
     assert "draft-layout-container" in inject
     assert "draftboard-page" in inject
+    assert "bottom-panel-wrapper" in inject
+    assert "function isSleeperBottomPanel" in inject
+    assert "right:var(--br-da-shift)" in inject.replace(" ", "")
     assert "clearInlineShift" in inject
     assert "padding-right:var(--br-da-shift)" in inject.replace(" ", "")
     assert "position:fixed!important" in inject.replace(" ", "")
@@ -299,6 +302,7 @@ def test_overlay_autodetects_slot_and_keeps_header_on_one_line():
 
 def test_overlay_does_not_end_live_espn_draft_after_each_round():
     overlay = (EXT / "overlay.js").read_text(encoding="utf-8")
+    html = (EXT / "overlay.html").read_text(encoding="utf-8")
     espn_iso = (EXT / "espn_draft.js").read_text(encoding="utf-8")
     yahoo_iso = (EXT / "yahoo_draft.js").read_text(encoding="utf-8")
     espn_main = (EXT / "espn_draft_main.js").read_text(encoding="utf-8")
@@ -312,6 +316,12 @@ def test_overlay_does_not_end_live_espn_draft_after_each_round():
     assert "function maybeShowSummary" in overlay
     assert 'state.tab = "grades"' in overlay
     assert "Draft Report Card" in overlay
+    assert "data-open-summary" in overlay
+    assert "function openSummary" in overlay
+    assert "function closeSummary" in overlay
+    assert 'id="sumModal"' in html
+    assert 'id="sumCard"' in html
+    assert 'id="sumBtn"' in html
     assert "n <= 8 ? 4 : 6" in overlay
     assert "fetchDraftPlayoffOdds" in overlay
     assert "isHostDraftRoom" in (EXT / "assistant_inject.js").read_text(encoding="utf-8")
@@ -344,6 +354,22 @@ def test_overlay_reads_league_settings_and_compares_players():
     assert "SUPER_FLEX" in helper
     assert "function rosterFromYahooPositions" in helper
     assert "function settingsLabel" in helper
+    assert "function sleeperLeagueKind" in helper
+    assert "function sleeperDraftType" in helper
+    assert "function sleeperOrderFormat" in helper
+    assert "function sleeperIsBestBall" in helper
+    assert "function formatKindLabel" in helper
+    assert "function normDraftType" in helper
+    assert "sleeperDraftType" in sleeper
+    assert "sleeperLeagueKind" in sleeper
+    assert "sleeperOrderFormat" in sleeper
+    assert "orderLabel" in sleeper
+    assert "bestBall" in sleeper
+    assert "ctx.type === \"rookie\"" in score
+    assert "data-open-summary" in overlay
+    assert "Open summary" in overlay
+    assert "dr-sum-title" in css
+    assert "button.final-grade" in css
     assert "function scoringFromSleeperSettings" in helper
     assert "rosterFromEspnSlots" in espn_main
     assert "scoringFromEspnSettings" in espn_main
@@ -591,6 +617,26 @@ if (B.sleeperLeagueIdFromUrl("https://sleeper.com/leagues/123456789012345678/dra
 if (B.slotFromSleeperClock("Your pick queue and history", 8, 12) !== 0) process.exit(1);
 if (B.parseSleeperClock("Make your pick later").onClock) process.exit(1);
 if (!B.parseSleeperClock("You're on the clock").onClock) process.exit(1);
+if (B.sleeperLeagueKind({ settings: { type: 0 } }) !== "redraft") process.exit(20);
+if (B.sleeperLeagueKind({ settings: { type: 2 } }) !== "dynasty") process.exit(21);
+if (B.sleeperLeagueKind({ settings: { type: 1 } }) !== "keeper") process.exit(22);
+if (B.sleeperLeagueKind({ settings: { taxi_slots: 4 } }) !== "dynasty") process.exit(23);
+if (B.sleeperDraftType({ settings: { type: 2 } }, { settings: { rounds: 22 } }) !== "startup") process.exit(24);
+if (B.sleeperDraftType({ settings: { type: 2 } }, { settings: { rounds: 4 }, metadata: { name: "2026 Rookies" } }) !== "rookie") process.exit(25);
+if (B.sleeperDraftType({ settings: { type: 0 } }, { settings: { rounds: 15 } }) !== "redraft") process.exit(26);
+if (B.formatKindLabel("dynasty", "startup") !== "Dynasty") process.exit(27);
+if (B.formatKindLabel("dynasty", "rookie") !== "Rookie") process.exit(28);
+if (B.formatKindLabel("keeper", "startup") !== "Keeper") process.exit(29);
+if (B.normDraftType("dynasty") !== "startup") process.exit(30);
+if (B.normDraftType("rookie") !== "rookie") process.exit(31);
+if (B.sleeperOrderFormat({ type: "snake", settings: { reversal_round: 3 } }) !== "3rr") process.exit(32);
+if (B.sleeperOrderFormat({ type: "linear" }) !== "linear") process.exit(33);
+if (B.sleeperOrderFormat({ type: "auction" }) !== "auction") process.exit(34);
+if (B.orderFormatLabel("3rr") !== "3RR") process.exit(35);
+if (!B.sleeperIsBestBall({ settings: { best_ball: 1 } })) process.exit(36);
+if (B.sleeperIsBestBall({ settings: { best_ball: 0 } })) process.exit(37);
+if (!/Redraft/.test(B.settingsLabel({ QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, SF: 1 }, { format: "Redraft", ppr: 1, order: "Snake" }))) process.exit(38);
+if (!/3RR/.test(B.settingsLabel({ QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1 }, { format: "Dynasty", ppr: 1, order: "3RR" }))) process.exit(39);
 if (B.sleeperUserIdFromUsers(
   [{ user_id: "42", username: "kaedon", display_name: "Kae" }],
   { username: "kaedon" }
@@ -660,6 +706,8 @@ if (typeof S.ppgOf !== "function" || typeof S.teamArchetype !== "function") proc
 if (typeof S.optimalLineup !== "function" || typeof S.recapStats !== "function") process.exit(10);
 const max = S.gradeMax("redraft");
 if (!max || max.value !== 20 || max.starters !== 50 || max.construction !== 30) process.exit(11);
+const rookieMax = S.gradeMax("rookie");
+if (!rookieMax || rookieMax.value !== 100) process.exit(12);
 console.log("ok");
 """
     out = subprocess.run(

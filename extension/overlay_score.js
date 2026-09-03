@@ -771,7 +771,9 @@
       : ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"];
     if (ctx.sf && slots.indexOf("SF") < 0) slots.splice(1, 0, "SF");
     const targets = C && C.posTargets ? C.posTargets(rs, ctx.tep || 0) : { QB: 1, RB: 3, WR: 3, TE: 1 };
-    const draftType = ctx.type === "startup" || ctx.type === "dynasty" ? "startup" : "redraft";
+    const draftType = ctx.type === "rookie"
+      ? "rookie"
+      : (ctx.type === "startup" || ctx.type === "dynasty" ? "startup" : "redraft");
     const leaguePpg = [];
     const leagueVal = [];
     const leaguePlayers = [];
