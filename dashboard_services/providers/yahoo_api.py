@@ -1453,6 +1453,38 @@ def _yahoo_scoreboard_dict(raw: Dict) -> Dict[str, Any]:
     return {}
 
 
+def _yahoo_teams_block(node: Any, *, _depth: int = 0) -> Any:
+    """Find a ``teams`` collection inside Yahoo's matchup wrappers.
+
+    Official ``format=json`` often keeps ``<teams>`` under a numeric key
+    after the week/status scalars, e.g. ``{"0": {"teams": {...}}}`` or
+    ``[{week…}, {"0": {"teams": ...}}]``. Reading only ``matchup["teams"]``
+    then yields nothing and the dashboard prints "No matchup data found."
+    """
+    if _depth > 6 or node is None:
+        return {}
+    if isinstance(node, dict):
+        teams = node.get("teams")
+        if teams not in (None, "", [], {}):
+            return teams
+        for key, val in node.items():
+            if str(key).isdigit() or key == "matchup":
+                found = _yahoo_teams_block(val, _depth=_depth + 1)
+                if found:
+                    return found
+        for val in node.values():
+            if isinstance(val, (dict, list)):
+                found = _yahoo_teams_block(val, _depth=_depth + 1)
+                if found:
+                    return found
+    elif isinstance(node, list):
+        for item in node:
+            found = _yahoo_teams_block(item, _depth=_depth + 1)
+            if found:
+                return found
+    return {}
+
+
 def _flatten_yahoo_matchup(entry: Any) -> Dict[str, Any]:
     """Normalize a scoreboard matchup row to a dict with ``teams``.
 
@@ -1464,12 +1496,17 @@ def _flatten_yahoo_matchup(entry: Any) -> Dict[str, Any]:
     if isinstance(entry, dict) and "matchup" in entry:
         node = entry.get("matchup")
     if isinstance(node, dict):
-        return node
-    if isinstance(node, list):
-        flat: Dict[str, Any] = {}
+        flat = dict(node)
+    elif isinstance(node, list):
+        flat = {}
         _merge_yahoo_dict_parts(node, flat)
-        return flat
-    return {}
+    else:
+        return {}
+    if "teams" not in flat:
+        teams = _yahoo_teams_block(flat) or _yahoo_teams_block(node)
+        if teams:
+            flat["teams"] = teams
+    return flat
 
 
 def _matchups_from_scoreboard_node(node: Any) -> Any:
@@ -1517,32 +1554,20 @@ def _yahoo_roster_id_from_team(tm: List) -> int:
     )
 
 
-def get_matchups(season: int, league_id: str, week: int, access_token: str) -> List[Dict[str, Any]]:
-    """Return Sleeper-shaped matchup rows for Yahoo's published week pairings.
-
-    Yahoo's JSON scoreboard nests matchups under ``scoreboard["0"]["matchups"]``.
-    Reading only ``scoreboard["matchups"]`` yields an empty list, and the
-    Season Hub then invents round-robin opponents that do not match Yahoo.
-    """
-    try:
-        raw = _yahoo_get(
-            access_token,
-            f"league/{_league_key_for_season(league_id, season, access_token)}/scoreboard;week={week}",
-        )
-    except Exception as exc:
-        logger.warning("[yahoo] get_matchups failed: %s", exc)
+def _matchup_rows_from_scoreboard(raw: Any, week: int) -> List[Dict[str, Any]]:
+    """Parse one Yahoo scoreboard payload into Sleeper-shaped matchup rows."""
+    if not isinstance(raw, dict):
         return []
-
     matchups = _matchups_from_scoreboard_node(_league_child_block(raw, "scoreboard"))
     if not matchups:
-        matchups = _yahoo_scoreboard_dict(raw if isinstance(raw, dict) else {}).get("matchups") or {}
+        matchups = _yahoo_scoreboard_dict(raw).get("matchups") or {}
     out: List[Dict[str, Any]] = []
     m_id = 0
     for entry in _yahoo_collection_rows(matchups, "matchup"):
         matchup = _as_yahoo_matchup(entry)
         if not matchup:
             continue
-        teams_block = matchup.get("teams") or {}
+        teams_block = matchup.get("teams") or _yahoo_teams_block(matchup) or {}
         team_rows = _yahoo_collection_rows(teams_block, "team")
         if not team_rows and isinstance(teams_block, dict):
             for j in range(_safe_int(teams_block.get("count")) or 2):
@@ -1571,7 +1596,39 @@ def get_matchups(season: int, league_id: str, week: int, access_token: str) -> L
         m_id += 1
         for side in sides[:2]:
             side["matchup_id"] = m_id
+            side["week"] = int(week)
             out.append(side)
+    return out
+
+
+def get_matchups(season: int, league_id: str, week: int, access_token: str) -> List[Dict[str, Any]]:
+    """Return Sleeper-shaped matchup rows for Yahoo's published week pairings.
+
+    Yahoo's JSON scoreboard nests matchups under ``scoreboard["0"]["matchups"]``.
+    Reading only ``scoreboard["matchups"]`` yields an empty list, and the
+    Season Hub then invents round-robin opponents that do not match Yahoo.
+    """
+    lk = _league_key_for_season(league_id, season, access_token)
+    try:
+        raw = _yahoo_get(access_token, f"league/{lk}/scoreboard;week={week}")
+    except Exception as exc:
+        logger.warning("[yahoo] get_matchups failed: %s", exc)
+        raw = None
+
+    out = _matchup_rows_from_scoreboard(raw, week)
+    # Before kickoff Yahoo sometimes leaves ``;week=N`` empty while the
+    # default scoreboard already has the current week's pairings.
+    if not out:
+        try:
+            raw_default = _yahoo_get(access_token, f"league/{lk}/scoreboard")
+        except Exception as exc:
+            logger.warning("[yahoo] get_matchups default scoreboard failed: %s", exc)
+            raw_default = None
+        default_rows = _matchup_rows_from_scoreboard(raw_default, week)
+        sb = _yahoo_scoreboard_dict(raw_default if isinstance(raw_default, dict) else {})
+        sb_week = _safe_int(sb.get("week"))
+        if default_rows and (sb_week == _safe_int(week) or _safe_int(week) <= 1):
+            out = default_rows
 
     _yahoo_debug(
         "get_matchups league=%s season=%s week=%s -> %s rows pairings=%s",
