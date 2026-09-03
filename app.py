@@ -12179,56 +12179,45 @@ def _background_build_teams(platform: str, league_id: str, season: int) -> None:
 
 
 def _build_teams_skeleton(platform: str, season: int, league_id: str, num_teams: int) -> str:
-    def _sk_row(w1, w2, w3, w4, w5, bar_pct):
+    def _sk_row():
         return (
-            f"<tr>"
-            f"<td><div class='sk-shimmer' style='width:{w1}px;height:11px;border-radius:3px;'></div></td>"
-            f"<td><div class='sk-shimmer' style='width:{w2}px;height:11px;border-radius:3px;'></div></td>"
-            f"<td><div class='sk-shimmer' style='width:{w3}px;height:11px;border-radius:3px;'></div></td>"
-            f"<td><div class='sk-shimmer' style='width:{w4}px;height:11px;border-radius:3px;'></div></td>"
-            f"<td><div class='sk-shimmer' style='width:{w5}px;height:11px;border-radius:3px;'></div></td>"
-            f"<td><div class='sk-shimmer' style='width:{bar_pct}%;height:8px;border-radius:4px;'></div></td>"
-            f"<td><div class='sk-shimmer' style='width:24px;height:11px;border-radius:3px;'></div></td>"
-            f"</tr>"
+            "<tr>"
+            "<td class='pos-name'><div class='sk-shimmer' style='width:38px;height:22px;border-radius:7px;'></div></td>"
+            "<td class='pos-bar-cell'><div class='sk-shimmer' style='width:100%;height:8px;border-radius:5px;'></div></td>"
+            "<td class='pos-total'><div class='sk-shimmer' style='display:inline-block;width:40px;height:12px;border-radius:3px;'></div></td>"
+            "<td class='pos-rank'><div class='sk-shimmer' style='display:inline-block;width:22px;height:11px;border-radius:3px;'></div></td>"
+            "</tr>"
         )
 
-    table_rows = "".join([
-        _sk_row(22, 12, 36, 32, 16, 72),
-        _sk_row(22, 12, 42, 36, 16, 58),
-        _sk_row(22, 12, 38, 30, 16, 65),
-        _sk_row(22, 12, 30, 28, 16, 45),
-        _sk_row(28, 12, 24, 22, 16, 30),
-    ])
+    table_rows = _sk_row() * 4
+    # Mirror the real card layout so the loading state doesn't jump on swap:
+    # header (avatar · name/window · grade), index meter, value mix, pos rows.
     shimmer_card = f"""
     <div class="card team-strength-card teams-sk-card">
-      <div class="card-header-row">
-        <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
-          <div class="sk-shimmer" style="width:32px;height:32px;border-radius:50%;flex-shrink:0;"></div>
-          <div class="sk-shimmer" style="width:125px;height:15px;border-radius:4px;"></div>
-          <div class="sk-shimmer" style="width:72px;height:12px;border-radius:4px;opacity:0.7;"></div>
+      <div class="card-header-row tc-head">
+        <div class="tc-id">
+          <div class="sk-shimmer" style="width:42px;height:42px;border-radius:12px;flex-shrink:0;"></div>
+          <div class="tc-idtext">
+            <div class="sk-shimmer" style="width:130px;height:16px;border-radius:5px;"></div>
+            <div class="sk-shimmer" style="width:96px;height:12px;border-radius:4px;margin-top:7px;opacity:0.7;"></div>
+          </div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-          <div class="sk-shimmer" style="width:38px;height:24px;border-radius:6px;"></div>
-          <div class="sk-shimmer" style="width:22px;height:22px;border-radius:4px;"></div>
+        <div class="tc-head-right">
+          <div class="sk-shimmer" style="width:44px;height:44px;border-radius:12px;"></div>
+          <div class="sk-shimmer" style="width:22px;height:22px;border-radius:6px;"></div>
         </div>
       </div>
       <div class="card-body">
-        <div class="sk-shimmer" style="width:100%;height:120px;border-radius:6px;margin-bottom:14px;"></div>
+        <div class="tc-index">
+          <div class="sk-shimmer" style="width:120px;height:11px;border-radius:3px;"></div>
+          <div class="sk-shimmer" style="width:100%;height:6px;border-radius:4px;margin-top:9px;"></div>
+        </div>
+        <div class="tc-mix" style="margin-top:16px;">
+          <div class="sk-shimmer" style="width:120px;height:11px;border-radius:3px;"></div>
+          <div class="sk-shimmer" style="width:100%;height:9px;border-radius:5px;margin-top:8px;"></div>
+        </div>
         <div class="pos-table-wrap">
-          <table class="pos-strength-table">
-            <thead>
-              <tr>
-                <th><div class="sk-shimmer" style="width:22px;height:9px;border-radius:3px;"></div></th>
-                <th><div class="sk-shimmer" style="width:10px;height:9px;border-radius:3px;"></div></th>
-                <th><div class="sk-shimmer" style="width:32px;height:9px;border-radius:3px;"></div></th>
-                <th><div class="sk-shimmer" style="width:30px;height:9px;border-radius:3px;"></div></th>
-                <th><div class="sk-shimmer" style="width:10px;height:9px;border-radius:3px;"></div></th>
-                <th><div class="sk-shimmer" style="width:50px;height:9px;border-radius:3px;"></div></th>
-                <th><div class="sk-shimmer" style="width:24px;height:9px;border-radius:3px;"></div></th>
-              </tr>
-            </thead>
-            <tbody>{table_rows}</tbody>
-          </table>
+          <table class="pos-strength-table"><tbody>{table_rows}</tbody></table>
         </div>
       </div>
     </div>"""

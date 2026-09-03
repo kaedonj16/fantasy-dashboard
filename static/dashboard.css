@@ -36286,12 +36286,18 @@ a, button, [role="button"], [role="tab"], summary, label,
 .team-strength-card .pos-row > td { padding: 9px 2px; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); vertical-align: middle; background: transparent; }
 .team-strength-card .pos-row.pos-strongest, .team-strength-card .pos-row.pos-weakest { background: transparent; }
 .team-strength-card .pos-row:hover > td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
-.team-strength-card .pos-name { display: flex; align-items: center; gap: 8px; width: 76px; white-space: nowrap; }
-.team-strength-card .pos-row-toggle { display: inline-block; font-size: 9px; color: var(--text-subtle); transition: transform .15s ease; }
-.team-strength-card .tc-pos-chip { flex: 0 0 auto; width: 38px; padding: 4px 0; border-radius: 7px; text-align: center; font-weight: 700; font-size: 12.5px; letter-spacing: .02em; color: #fff; background: var(--p, #64748b); }
+/* Keep .pos-name a real table-cell (a display:flex td drops out of the table
+   layout and lets the column stretch). Lay the chevron + chip out inline. */
+.team-strength-card .pos-name { width: 74px; white-space: nowrap; }
+.team-strength-card .pos-row-toggle { display: inline-block; vertical-align: middle; margin-right: 5px; font-size: 9px; color: var(--text-subtle); transition: transform .15s ease; }
+.team-strength-card .tc-pos-chip { display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; width: 38px; padding: 4px 0; border-radius: 7px; text-align: center; font-weight: 700; font-size: 12.5px; letter-spacing: .02em; color: #fff; background: var(--p, #64748b); }
 .team-strength-card .tc-pos-chip-cap { color: var(--text); background: color-mix(in srgb, var(--p) 22%, var(--card)); }
-.team-strength-card td.pos-bar-cell { width: auto; min-width: 0; }
-.team-strength-card .tc-strength-track { position: relative; height: 8px; border-radius: 5px; background: var(--bg-alt); }
+/* The bar cell is the flexible column (width:100% in an auto table grabs the
+   slack left by the fixed name/value/rank columns). The track needs an explicit
+   width because its fills are absolutely positioned, so it has no intrinsic
+   width of its own and would otherwise collapse. */
+.team-strength-card td.pos-bar-cell { width: 100%; }
+.team-strength-card .tc-strength-track { position: relative; width: 100%; min-width: 60px; height: 8px; border-radius: 5px; background: var(--bg-alt); }
 .team-strength-card .tc-strength-zero { position: absolute; top: -2px; bottom: -2px; left: 50%; width: 2px; background: var(--border); transform: translateX(-50%); }
 .team-strength-card .tc-strength-fill { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
 .team-strength-card .tc-strength-fill.up { left: 50%; background: #10b981; }
