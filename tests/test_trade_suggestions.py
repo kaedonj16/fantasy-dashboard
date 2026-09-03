@@ -11,8 +11,10 @@ Pure functions only - no Flask/pandas needed, so they run in the base suite.
 """
 import math
 
+from dashboard_services.ai.context_builders import ctx_scoring_type
 from dashboard_services.archetype_engine import (
     _acquire_band,
+    _asset_values,
     _availability,
     _depth_penalty,
     _estimate_acceptance,
@@ -243,6 +245,38 @@ def test_tradable_picks_dropped_for_redraft_and_espn():
         {"picks_by_roster": _PICKS},
         platform="espn",
     ) == {}
+
+
+def test_yahoo_without_type_is_redraft_for_suggestions():
+    assert ctx_scoring_type({"platform": "yahoo"}) == "redraft"
+    assert ctx_scoring_type({"platform": "yahoo", "league_settings": {}}) == "redraft"
+
+
+def test_asset_values_use_redraft_columns_in_redraft():
+    """The reported Lemon / Javonte miss: high dynasty, low redraft (and the
+    reverse) must swap which number packages match on when the league is redraft."""
+    lemon = {
+        "value": 620.0, "sf_value": 640.0,
+        "redraft_value_1qb": 86.1, "redraft_value_sf": 90.0,
+    }
+    javonte = {
+        "value": 410.0, "sf_value": 430.0,
+        "redraft_value_1qb": 518.0, "redraft_value_sf": 500.0,
+    }
+    lemon_dyn, lemon_rd = _asset_values(lemon, is_sf=False, is_redraft=False)
+    jav_dyn, jav_rd = _asset_values(javonte, is_sf=False, is_redraft=False)
+    assert lemon_dyn == 620.0 and jav_dyn == 410.0
+    # Dynasty-shaped "fair" 1-for-1 (the bug the user saw).
+    assert abs(lemon_dyn - jav_dyn) < 250
+
+    lemon_rd_match, _ = _asset_values(lemon, is_sf=False, is_redraft=True)
+    jav_rd_match, _ = _asset_values(javonte, is_sf=False, is_redraft=True)
+    assert lemon_rd_match == 86.1
+    assert jav_rd_match == 518.0
+    # Same players are a smash in redraft — well outside the 0.96–1.08 fair band.
+    lo, hi = _acquire_band(jav_rd_match, "contending")
+    assert not (lo * jav_rd_match <= lemon_rd_match <= hi * jav_rd_match)
+    assert lemon_rd == 86.1 and jav_rd == 518.0
 
 
 def test_tradable_picks_kept_for_dynasty():

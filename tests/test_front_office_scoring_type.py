@@ -41,6 +41,20 @@ def test_ctx_scoring_type_uses_settings_type_for_other_platforms():
     assert ctx_scoring_type({}) == "dynasty"
 
 
+def test_ctx_scoring_type_yahoo_defaults_to_redraft():
+    """Yahoo has no dynasty product. A missing type must not silently use
+    dynasty values for trade suggestions (the calculator already defaults
+    redraft via app._league_is_redraft)."""
+    assert ctx_scoring_type({"platform": "yahoo"}) == "redraft"
+    assert ctx_scoring_type({"platform": "yahoo", "league_settings": {}}) == "redraft"
+    assert ctx_scoring_type({"platform": "yahoo", "league_settings": {"type": 0}}) == "redraft"
+    assert ctx_scoring_type({"platform": "yahoo", "league_settings": {"type": 2}}) == "dynasty"
+    assert ctx_scoring_type({
+        "platform": "yahoo",
+        "league_settings": {"league_type": "dynasty"},
+    }) == "dynasty"
+
+
 def test_build_model_value_lookup_uses_redraft_values():
     rows = [{
         "id": "1",

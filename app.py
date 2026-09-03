@@ -61,6 +61,7 @@ from dashboard_services.api import (
     avatar_url
 )
 from dashboard_services.awards import compute_awards_season, render_awards_section
+from dashboard_services.display_names import team_label_from_user, username_from_user
 from dashboard_services.changelog import CHANGELOG
 from dashboard_services.injuries import build_injury_report, render_injury_watch
 from dashboard_services.matchups import (
@@ -17479,12 +17480,8 @@ def api_teams():
 
             # Find the user for this roster
             user = next((u for u in users if u.get("user_id") == user_id), None)
-            if user:
-                team_name = user.get("team_name") or user.get("display_name") or f"Team {roster_id}"
-                username = user.get("username") or user.get("display_name") or ""
-            else:
-                team_name = f"Team {roster_id}"
-                username = ""
+            team_name = team_label_from_user(user, roster, fallback=f"Team {roster_id}")
+            username = username_from_user(user)
 
             teams.append({
                 "roster_id": roster_id,
@@ -17535,12 +17532,8 @@ def api_league_rosters():
             roster_id = str(roster.get("roster_id", ""))
             user_id = roster.get("owner_id")
             user = next((u for u in users if u.get("user_id") == user_id), None)
-            if user:
-                team_name = user.get("team_name") or user.get("display_name") or f"Team {roster_id}"
-                username = user.get("username") or user.get("display_name") or ""
-            else:
-                team_name = f"Team {roster_id}"
-                username = ""
+            team_name = team_label_from_user(user, roster, fallback=f"Team {roster_id}")
+            username = username_from_user(user)
             player_ids = [str(pid) for pid in (roster.get("players") or [])]
             # Resolve each owned pick to the exact draft slot its original owner
             # holds. A pick's slot is fixed by the standings of the season BEFORE
@@ -20012,12 +20005,8 @@ def api_team_details(roster_id: str):
         owner_id = roster.get("owner_id")
         user = next((u for u in users if u.get("user_id") == owner_id), None)
 
-        username = user.get("display_name") if user else None
-        team_name = (
-            (roster.get("metadata") or {}).get("team_name")
-            or ((user.get("metadata") or {}).get("team_name") if user else None)
-            or username
-        )
+        username = username_from_user(user) or None
+        team_name = team_label_from_user(user, roster, fallback=username or "")
         avatar = team_avatar(platform, roster, users) or avatar_from_users(platform, users, owner_id)
         if team_name is None:
             team_name = username
