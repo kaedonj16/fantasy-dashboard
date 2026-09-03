@@ -226,6 +226,10 @@
     hostDrafted: null,
     teamNames: {},
     pickOwners: {},
+    slotToRosterId: {},
+    leagueId: "",
+    season: 0,
+    draftType: "redraft",
     hostClock: null,
     hostClockAt: 0,
     pickTimer: 0,
@@ -404,7 +408,7 @@
       mySlot: state.mySlot,
       pickOwners: state.pickOwners,
       sf: !!state.sf,
-      type: "redraft",
+      type: state.draftType === "startup" || state.draftType === "dynasty" ? "startup" : "redraft",
       tep: Number(state.tep) || 0,
       ppr: state.ppr != null ? Number(state.ppr) : 1,
       passTd: state.passTd >= 6 ? 6 : 4,
@@ -576,6 +580,7 @@
   }
 
   function competitiveWindow(list) {
+    if (state.draftType === "redraft") return null;
     const ol = optimalLineup(list);
     let wSum = 0, aSum = 0;
     ol.starters.forEach(function (x) {
@@ -583,7 +588,7 @@
       const w = Math.max(1, x.p.val || 1);
       aSum += x.p.age * w; wSum += w;
     });
-    if (wSum <= 0) return { label: "Balanced", avgAge: 0 };
+    if (wSum <= 0) return null;
     const avgAge = aSum / wSum;
     const label = avgAge <= 24.5 ? "Future" : avgAge >= 26.5 ? "Win-Now" : "Balanced";
     return { label: label, avgAge: avgAge };
@@ -620,7 +625,32 @@
     };
   }
 
+  function picksBySlot() {
+    const out = {};
+    for (let s = 1; s <= state.teams; s++) out[s] = [];
+    state.picks.forEach(function (x) {
+      const slot = Number(x.slot) || 0;
+      if (!out[slot]) out[slot] = [];
+      out[slot].push({ pn: x.pn, p: x.p });
+    });
+    Object.keys(out).forEach(function (k) {
+      out[k].sort(function (a, b) { return a.pn - b.pn; });
+    });
+    return out;
+  }
+
   function gradeAllTeams() {
+    const bySlot = picksBySlot();
+    if (state.sitePool && window.BROverlayScore && BROverlayScore.gradeField) {
+      const field = BROverlayScore.gradeField(players, bySlot, scoreCtx());
+      if (field && field.length) {
+        return field.map(function (t) {
+          t.name = t.isMe ? "You" : teamName(t.slot);
+          t.picks = teamPicks(t.slot);
+          return t;
+        });
+      }
+    }
     const raw = [];
     for (let s = 1; s <= state.teams; s++) raw.push(rawTeamScore(s));
     const scores = raw.map(function (g) { return g.score; });
@@ -634,7 +664,7 @@
       const score = clamp(damp * curved + (1 - damp) * 70, 22, 97);
       return {
         slot: i + 1,
-        name: teamName(i + 1),
+        name: (i + 1 === state.mySlot) ? "You" : teamName(i + 1),
         isMe: i + 1 === state.mySlot,
         picks: teamPicks(i + 1),
         grade: {
@@ -649,34 +679,139 @@
     }).sort(function (a, b) { return b.grade.score - a.grade.score; });
   }
 
+  function teamStrengthPPG(list) {
+    const ol = optimalLineup(list);
+    let s = 0;
+    ol.starters.forEach(function (x) {
+      if (x.p) {
+        const v = Number(x.p.ppg) || 0;
+        if (isFinite(v) && v > 0) s += v;
+      }
+    });
+    return s;
+  }
+
+  let poMcCache = null, poMcSig = null;
+  function playoffOddsBySlot(all) {
+    const sig = all.map(function (t) { return t.slot + ":" + (t.picks ? t.picks.length : 0); }).join("|") + "@" + state.current;
+    if (poMcCache && poMcSig === sig) return poMcCache;
+    const teams = all.map(function (t) {
+      return { slot: t.slot, S: teamStrengthPPG((t.picks || []).map(function (x) { return x.p || x; }).filter(Boolean)) };
+    });
+    const n = teams.length;
+    const odds = {};
+    teams.forEach(function (t) { odds[t.slot] = 0; });
+    if (n >= 2) {
+      let spots = n <= 8 ? 4 : 6;
+      if (spots >= n) spots = Math.max(1, n - 1);
+      const W = 14, N = 2500, sigma = 27;
+      function gauss() {
+        let u = 0, v = 0;
+        while (!u) u = Math.random();
+        while (!v) v = Math.random();
+        return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+      }
+      for (let s = 0; s < N; s++) {
+        const wins = [], pts = [];
+        for (let t = 0; t < n; t++) { wins[t] = 0; pts[t] = 0; }
+        for (let w = 0; w < W; w++) {
+          const idx = [];
+          for (let q = 0; q < n; q++) idx[q] = q;
+          for (let i = idx.length - 1; i > 0; i--) {
+            const j = (Math.random() * (i + 1)) | 0;
+            const tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp;
+          }
+          for (let k = 0; k + 1 < idx.length; k += 2) {
+            const a = idx[k], b = idx[k + 1];
+            const sa = teams[a].S + gauss() * sigma;
+            const sb = teams[b].S + gauss() * sigma;
+            pts[a] += sa; pts[b] += sb;
+            if (sa >= sb) wins[a]++; else wins[b]++;
+          }
+        }
+        const ord = [];
+        for (let o = 0; o < n; o++) ord[o] = o;
+        ord.sort(function (x, y) { return (wins[y] - wins[x]) || (pts[y] - pts[x]); });
+        for (let r = 0; r < spots; r++) odds[teams[ord[r]].slot] += 1;
+      }
+      teams.forEach(function (t) { odds[t.slot] = Math.round(odds[t.slot] / N * 100); });
+    }
+    poMcCache = odds; poMcSig = sig;
+    return odds;
+  }
+
+  let poServer = null, poServerSig = null, poFetching = false, poFailedSig = null;
+  function poFmt(po) {
+    const n = Number(po);
+    if (!isFinite(n)) return "";
+    if (n >= 100) return "100";
+    if (n <= 0) return "0";
+    return n.toFixed(1);
+  }
+  function poColor(po) {
+    return po >= 60 ? "#22c55e" : po >= 35 ? "#f59e0b" : "#ef4444";
+  }
+  function refreshServerPlayoffOdds(all) {
+    if (!draftDone() || !all || all.length < 2) return;
+    const sig = all.map(function (t) { return t.slot + ":" + (t.picks ? t.picks.length : 0); }).join("|") + "@" + state.current;
+    if (poFetching || (poServer && poServerSig === sig) || poFailedSig === sig) return;
+    if (!state.leagueId || typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.sendMessage) {
+      poFailedSig = sig;
+      return;
+    }
+    poFetching = true;
+    const teamsPayload = all.map(function (t) {
+      const rid = state.slotToRosterId[t.slot] || state.slotToRosterId[String(t.slot)] || t.slot;
+      return {
+        slot: t.slot,
+        roster_id: rid,
+        name: t.name,
+        players: (t.picks || []).map(function (x) {
+          return (x.p && x.p.id != null) ? String(x.p.id) : (x.id != null ? String(x.id) : null);
+        }).filter(Boolean),
+      };
+    });
+    chrome.runtime.sendMessage({
+      type: "fetchDraftPlayoffOdds",
+      season: state.season || 0,
+      ppr: state.ppr,
+      tep: state.tep,
+      passTd: state.passTd,
+      roster: state.roster,
+      playoffTeams: state.teams <= 8 ? 4 : 6,
+      platform: state.platform || "sleeper",
+      leagueId: state.leagueId,
+      useLeague: true,
+      viewerSlot: state.mySlot || null,
+      teams: teamsPayload,
+    }, function (resp) {
+      void chrome.runtime.lastError;
+      poFetching = false;
+      if (resp && resp.odds && resp.odds.length) {
+        const m = {};
+        resp.odds.forEach(function (o) { if (o.slot != null) m[o.slot] = o.playoff_pct; });
+        poServer = m; poServerSig = sig; poFailedSig = null;
+        render();
+      } else {
+        poFailedSig = sig;
+        render();
+      }
+    });
+  }
+
   function playoffOdds(all) {
     if (!draftDone()) return {};
-    const str = all.map(function (t) {
-      const ol = optimalLineup(t.picks);
-      let s = 0;
-      ol.starters.forEach(function (x) { if (x.p) s += x.p.ppg; });
-      return { slot: t.slot, S: s };
-    });
-    const SIMS = 360, SPOTS = 6, N = 14, sigma = 7.5;
-    const hits = {};
-    str.forEach(function (t) { hits[t.slot] = 0; });
-    function gauss() {
-      let u = 0, v = 0;
-      while (!u) u = Math.random();
-      while (!v) v = Math.random();
-      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-    }
-    for (let i = 0; i < SIMS; i++) {
-      const season = str.map(function (t) {
-        return { slot: t.slot, pts: t.S * N + gauss() * sigma * Math.sqrt(N) };
-      }).sort(function (a, b) { return b.pts - a.pts; });
-      for (let k = 0; k < Math.min(SPOTS, season.length); k++) {
-        if (season[k]) hits[season[k].slot]++;
-      }
-    }
-    const out = {};
-    str.forEach(function (t) { out[t.slot] = Math.round(1000 * hits[t.slot] / SIMS) / 10; });
-    return out;
+    refreshServerPlayoffOdds(all);
+    const sig = all.map(function (t) { return t.slot + ":" + (t.picks ? t.picks.length : 0); }).join("|") + "@" + state.current;
+    if (poServer && poServerSig === sig) return poServer;
+    if (poFailedSig === sig) return playoffOddsBySlot(all);
+    return {};
+  }
+
+  function playoffOddsPending(all) {
+    if (!draftDone() || !all || all.length < 2) return false;
+    const sig = all.map(function (t) { return t.slot + ":" + (t.picks ? t.picks.length : 0); }).join("|") + "@" + state.current;
+    return !(poServer && poServerSig === sig) && poFailedSig !== sig;
   }
 
   function bannersHtml(counts, rec) {
@@ -949,9 +1084,10 @@
         + '</div><div class="proj-bar"><div class="gbar-fill" style="width:' + Math.min(100, pct) + "%;background:" + col + '"></div></div></div>';
     }
     const w = g.window;
-    const wcls = w.label === "Future" ? "win-future" : w.label === "Win-Now" ? "win-winnow" : "win-balanced";
-    html += '<div class="win-row"><span class="win-chip ' + wcls + '">' + w.label + "</span>";
-    if (w.avgAge) html += '<span style="font-size:11px;color:var(--text-muted)">Avg age ' + w.avgAge.toFixed(1) + "</span>";
+    const wcls = w && w.label === "Future" ? "win-future" : w && w.label === "Win-Now" ? "win-winnow" : "win-balanced";
+    html += '<div class="win-row">';
+    if (w && w.label) html += '<span class="win-chip ' + wcls + '">' + esc(w.label) + "</span>";
+    if (w && w.avgAge) html += '<span style="font-size:11px;color:var(--text-muted)">Avg age ' + w.avgAge.toFixed(1) + "</span>";
     if (draftDone()) {
       const odds = playoffOddsFor(all, me.slot);
       if (odds != null) {
@@ -1007,18 +1143,27 @@
   function renderGrades() {
     const all = gradeAllTeams();
     const odds = draftDone() ? playoffOdds(all) : {};
+    const pending = draftDone() && playoffOddsPending(all);
     let html = draftDone() ? finalGradeCard(all) : "";
     html += recapHtml(all);
     html += '<p class="recap-h" style="padding:8px 12px 6px">' + IC.trophy + "Draft grades</p>";
     all.forEach(function (t, i) {
       const w = t.grade.window;
-      const wcls = w.label === "Future" ? "win-future" : w.label === "Win-Now" ? "win-winnow" : "win-balanced";
+      const wcls = w && w.label === "Future" ? "win-future" : w && w.label === "Win-Now" ? "win-winnow" : "win-balanced";
       const open = state.expanded === t.slot;
+      const winTag = w && w.label ? '<span class="win-chip ' + wcls + '">' + esc(w.label) + "</span>" : "";
+      let poTag = "";
+      if (draftDone()) {
+        if (pending) poTag = '<span class="lpo" title="Calculating playoff odds">…</span>';
+        else if (odds[t.slot] != null) {
+          poTag = '<span class="lpo" style="color:' + poColor(odds[t.slot]) + '">' + poFmt(odds[t.slot]) + "%</span>";
+        }
+      }
       html += '<div class="lrow' + (t.isMe ? " is-me" : "") + (open ? " is-open" : "") + '" data-legslot="' + t.slot + '">'
         + rankMedal(i + 1)
         + '<span class="lname">' + esc(t.name) + "</span>"
-        + '<span class="win-chip ' + wcls + '">' + w.label + "</span>"
-        + (odds[t.slot] != null ? '<span class="lpo" style="color:' + (odds[t.slot] >= 50 ? "var(--win)" : "var(--text-muted)") + '">' + odds[t.slot].toFixed(0) + "%</span>" : "")
+        + winTag
+        + poTag
         + '<span class="lgrade" style="color:' + gradeCol(t.grade.score) + '">' + gradeLetter(t.grade.score) + "</span>"
         + '<span class="lchev" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 4l4 4 4-4"/></svg></span></div>';
       html += '<div class="ldtl' + (open ? " is-open" : "") + '" data-dtl="' + t.slot + '">';
@@ -1387,6 +1532,10 @@
     if (Array.isArray(detail.adpOptions) && detail.adpOptions.length) state.adpOptions = detail.adpOptions;
     if (detail.adpSource) state.adpSource = String(detail.adpSource);
     if (detail.sf != null) state.sf = !!detail.sf;
+    if (detail.scoringType) {
+      const st = String(detail.scoringType).toLowerCase();
+      state.draftType = (st === "dynasty" || st === "startup") ? "startup" : "redraft";
+    }
     fillAdpSel();
     players = rows.map(function (p) {
       const pos = normPos(p.pos || p.position || "RB");
@@ -1515,6 +1664,15 @@
     if (!detail) return;
     if (detail.sf != null) state.sf = !!detail.sf;
     if (detail.leagueName) state.leagueName = String(detail.leagueName);
+    if (detail.leagueId) state.leagueId = String(detail.leagueId);
+    if (detail.season) state.season = Number(detail.season) || state.season;
+    if (detail.draftType) {
+      const dt = String(detail.draftType).toLowerCase();
+      state.draftType = (dt === "dynasty" || dt === "startup") ? "startup" : "redraft";
+    }
+    if (detail.slotToRosterId && typeof detail.slotToRosterId === "object") {
+      state.slotToRosterId = detail.slotToRosterId;
+    }
     if (detail.ppr != null && isFinite(Number(detail.ppr))) state.ppr = Number(detail.ppr);
     if (detail.tep != null && isFinite(Number(detail.tep))) state.tep = Number(detail.tep);
     if (detail.passTd != null && isFinite(Number(detail.passTd))) state.passTd = Number(detail.passTd);

@@ -390,6 +390,15 @@
     const draftName = String((draft && draft.metadata && draft.metadata.name) || "").trim();
     const leagueName = String((league && league.name) || "").trim()
       || (draftName && !/^draft$/i.test(draftName) ? draftName : "");
+    const leagueType = Number((league && league.settings && league.settings.type) || 0);
+    const draftType = (leagueType === 1 || leagueType === 2) ? "startup" : "redraft";
+    const slotToRosterId = {};
+    const draftOrder = (draft && draft.draft_order) || {};
+    Object.keys(draftOrder).forEach(function (uid) {
+      const slot = Number(draftOrder[uid]);
+      const rid = ownerToRoster[uid];
+      if (slot >= 1 && rid != null) slotToRosterId[slot] = rid;
+    });
     const payload = {
       platform: "sleeper",
       teams: Number(settings.teams || (league && league.total_rosters) || 12),
@@ -397,6 +406,10 @@
       mySlot: mySlot || undefined,
       sf: sf,
       leagueName: leagueName || undefined,
+      leagueId: String((draft && draft.league_id) || (league && league.league_id) || "") || undefined,
+      season: Number((league && league.season) || (draft && draft.season) || 0) || undefined,
+      draftType: draftType,
+      slotToRosterId: slotToRosterId,
       roster: roster || undefined,
       ppr: scoring.ppr,
       tep: scoring.tep,
@@ -421,6 +434,7 @@
       window.BRDraftSlot && BRDraftSlot.rosterKey ? BRDraftSlot.rosterKey(roster) : "",
       sf ? 1 : 0,
       leagueName,
+      draftType,
       scoring.ppr,
       scoring.tep,
       scoring.passTd,

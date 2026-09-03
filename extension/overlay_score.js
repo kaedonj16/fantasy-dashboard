@@ -534,6 +534,133 @@
     return ranked;
   }
 
+  function gradeRowsForPicks(mine, allPlayers, ctx) {
+    const C = Core();
+    const Kernel = PS();
+    if (!C || !Kernel || !mine || !mine.length) return [];
+    const byId = {};
+    (allPlayers || []).forEach(function (p) {
+      if (p && p.id) byId[String(p.id)] = p;
+    });
+    const rs = rosterOf(ctx);
+    const valFn = valOf;
+    const starters = C.effectiveStarters(allPlayers, rs, ctx.teams || 12, valFn);
+    const repl = C.computeReplacement(allPlayers, valFn, starters, ctx.teams || 12) || {};
+    const ppgFn = function (pl) { return Number(pl.ppg) || 0; };
+    const ppgScale = C.computePpgScale(allPlayers, ppgFn, starters, ctx.teams || 12);
+    (allPlayers || []).forEach(function (p) {
+      p._vor = valOf(p) - (repl[posOf(p)] || 0);
+    });
+    refreshTiers(allPlayers);
+    const psc = buildPsCtx(Object.assign({}, ctx, { picks: mine }), byId, repl, ppgScale);
+    psc.qualByPos = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    let maxVal = 1;
+    (allPlayers || []).forEach(function (p) { if (valOf(p) > maxVal) maxVal = valOf(p); });
+    const counts = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    const rows = [];
+    mine.forEach(function (m) {
+      const full = byId[String(m.p && m.p.id)] || m.p;
+      const pos = posOf(full);
+      const ps = computePickScore(full, maxVal, counts, ctx, psc, repl, ppgScale, m.pn);
+      if (counts[pos] != null) counts[pos]++;
+      if (psc.qualByPos[pos] != null) {
+        const vor = full && full._vor != null ? full._vor : (valOf(full) - (repl[pos] || 0));
+        if (vor == null || vor > 0) psc.qualByPos[pos]++;
+      }
+      rows.push({
+        id: full && full.id,
+        pos: pos,
+        ps: ps,
+        pn: m.pn,
+        val: valOf(full),
+        ppg: full && full.ppg != null ? Number(full.ppg) : null,
+        age: full && full.age != null ? Number(full.age) : null,
+      });
+    });
+    return rows;
+  }
+
+  function competitiveWindow(rows, draftType) {
+    if (draftType === "redraft") return null;
+    let wSum = 0, aSum = 0;
+    (rows || []).forEach(function (x) {
+      if (x.age == null || !isFinite(x.age) || x.age <= 0) return;
+      const w = Math.max(1, x.val || 1);
+      aSum += x.age * w;
+      wSum += w;
+    });
+    if (wSum <= 0) return null;
+    const avgAge = aSum / wSum;
+    const label = avgAge <= 24.5 ? "Future" : avgAge >= 26.5 ? "Win-Now" : "Balanced";
+    return { label: label, avgAge: avgAge };
+  }
+
+  function gradeField(allPlayers, picksBySlot, ctx) {
+    const TG = root.BRTeamGrade;
+    if (!TG || typeof TG.teamGradeComposite !== "function") return null;
+    const C = Core();
+    const rs = rosterOf(ctx);
+    const slotFn = (root.BRDraftSlot && root.BRDraftSlot.slotListFromRoster)
+      || (C && C.slotListFromRoster);
+    const slots = slotFn
+      ? slotFn(rs).filter(function (s) { return s !== "K" && s !== "DEF"; })
+      : ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"];
+    if (ctx.sf && slots.indexOf("SF") < 0) slots.splice(1, 0, "SF");
+    const targets = C && C.posTargets ? C.posTargets(rs, ctx.tep || 0) : { QB: 1, RB: 3, WR: 3, TE: 1 };
+    const draftType = ctx.type === "startup" || ctx.type === "dynasty" ? "startup" : "redraft";
+    const leaguePpg = [];
+    const leagueVal = [];
+    const leaguePlayers = [];
+    (allPlayers || []).forEach(function (p) {
+      if (p && p.ppg != null) leaguePpg.push(Number(p.ppg));
+      leagueVal.push(valOf(p));
+      leaguePlayers.push({ pos: posOf(p), ppg: p && p.ppg != null ? Number(p.ppg) : null, val: valOf(p) });
+    });
+    const teams = Number(ctx.teams) || 12;
+    const lists = [];
+    const order = [];
+    const mineSlot = Number(ctx.mySlot) || 0;
+    if (mineSlot && picksBySlot[mineSlot] && picksBySlot[mineSlot].length) {
+      lists.push(picksBySlot[mineSlot]);
+      order.push({ slot: mineSlot, isMe: true });
+    }
+    for (let s = 1; s <= teams; s++) {
+      if (s === mineSlot) continue;
+      if (!picksBySlot[s] || !picksBySlot[s].length) continue;
+      lists.push(picksBySlot[s]);
+      order.push({ slot: s, isMe: false });
+    }
+    const leagueTeams = lists.map(function (mine) {
+      return gradeRowsForPicks(mine, allPlayers, ctx);
+    });
+    const out = [];
+    order.forEach(function (info, i) {
+      const rows = leagueTeams[i];
+      const comp = TG.teamGradeComposite(
+        rows, slots, targets, teams, draftType,
+        leaguePpg, leagueVal, leaguePlayers,
+        { sf: !!ctx.sf, tep: Number(ctx.tep) || 0, leagueTeams: leagueTeams }
+      );
+      if (!comp) return;
+      const starterRows = rows.filter(function (x) { return comp.starterIds[String(x.id)]; });
+      out.push({
+        slot: info.slot,
+        isMe: info.isMe,
+        grade: {
+          score: comp.total,
+          value: comp.value,
+          starters: comp.starter,
+          construction: comp.balance,
+          provisional: (picksBySlot[info.slot] || []).length < 8,
+          window: competitiveWindow(starterRows, draftType),
+        },
+        picks: picksBySlot[info.slot],
+      });
+    });
+    out.sort(function (a, b) { return b.grade.score - a.grade.score; });
+    return out;
+  }
+
   root.BROverlayScore = {
     rankPool: rankPool,
     pickReason: function (p, ranked) {
@@ -555,5 +682,6 @@
       return availProb(p, pn, ctx, byId);
     },
     psDisplay: psDisplay,
+    gradeField: gradeField,
   };
 })(typeof self !== "undefined" ? self : this);

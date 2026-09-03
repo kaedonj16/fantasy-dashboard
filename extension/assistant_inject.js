@@ -29,6 +29,7 @@
   let lastPoolKey = "";
   let adpSource = "consensus";
   let lastScoring = { ppr: 1, tep: 0, passTd: 4 };
+  let lastDraftType = "redraft";
   let slideTimer = null;
 
   function platformFromHost() {
@@ -378,7 +379,7 @@
     const opts = Object.assign(
       {
         type: "fetchDraftPool",
-        scoringType: "redraft",
+        scoringType: lastDraftType || "redraft",
         adpSource: adpSource || "consensus",
         sf: false,
         teams: 12,
@@ -495,8 +496,12 @@
     if (payload.ppr != null && isFinite(Number(payload.ppr))) lastScoring.ppr = Number(payload.ppr);
     if (payload.tep != null && isFinite(Number(payload.tep))) lastScoring.tep = Number(payload.tep);
     if (payload.passTd != null && isFinite(Number(payload.passTd))) lastScoring.passTd = Number(payload.passTd);
+    if (payload.draftType) {
+      const dt = String(payload.draftType).toLowerCase();
+      lastDraftType = (dt === "dynasty" || dt === "startup") ? "startup" : "redraft";
+    }
     const key = [
-      "redraft",
+      lastDraftType || "redraft",
       sf ? "sf" : "1qb",
       adpSource,
       teams >= 8 ? teams : 12,
@@ -508,6 +513,7 @@
       requestPool({
         teams: teams >= 8 ? teams : 12,
         sf: sf,
+        scoringType: lastDraftType,
         adpSource: adpSource,
         ppr: lastScoring.ppr,
         tep: lastScoring.tep,

@@ -11,6 +11,7 @@ def test_overlay_is_mv3_safe_extension_page():
     html = (EXT / "overlay.html").read_text(encoding="utf-8")
     assert 'src="overlay.js"' in html
     assert 'src="overlay_score.js"' in html
+    assert 'src="draft_grade_team.js"' in html
     assert 'src="pick_score.js"' in html
     assert 'src="draft_board_core.js"' in html
     assert "BROverlayScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
@@ -37,7 +38,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.36"
+    assert manifest["version"] == "1.5.37"
     inject_ver = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     assert 'PRODUCT_VERSION = "1.0.0"' in inject_ver
     hosts = " ".join(manifest.get("host_permissions") or [])
@@ -311,7 +312,8 @@ def test_overlay_does_not_end_live_espn_draft_after_each_round():
     assert "function maybeShowSummary" in overlay
     assert 'state.tab = "grades"' in overlay
     assert "Draft Report Card" in overlay
-    assert "Math.min(SPOTS, season.length)" in overlay
+    assert "n <= 8 ? 4 : 6" in overlay
+    assert "fetchDraftPlayoffOdds" in overlay
     assert "isHostDraftRoom" in (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     assert "mockdraftlobby" in (EXT / "draft_slot.js").read_text(encoding="utf-8")
     assert "r === inferred && r < 10" in overlay
@@ -363,6 +365,14 @@ def test_overlay_reads_league_settings_and_compares_players():
     assert "applyLeagueSettings" in overlay
     assert "leagueSettingsLabel" in overlay
     assert "paintLeagueChrome" in overlay
+    assert "BROverlayScore.gradeField" in overlay
+    assert 'name: t.isMe ? "You"' in overlay or 't.name = t.isMe ? "You"' in overlay
+    assert "fetchDraftPlayoffOdds" in overlay
+    assert "n <= 8 ? 4 : 6" in overlay
+    assert "function gradeField" in score
+    assert "teamGradeComposite" in score
+    assert "fetchDraftPlayoffOdds" in (EXT / "background.js").read_text(encoding="utf-8")
+    assert "draft_grade_team.js" in (EXT / "pack_extension.py").read_text(encoding="utf-8")
     assert "ovLeagueName" in overlay
     assert "detail.leagueName" in overlay
     assert "scoreCtx" in overlay
@@ -635,7 +645,59 @@ const early = {
 if (S.kdefNeed(early, { K: 0, DEF: 0 }) != null) process.exit(6);
 const sorted = S.sortKdef({ adp: 142, ppg: 7 }, { adp: 118, ppg: 8 });
 if (sorted <= 0) process.exit(7);
+if (typeof S.gradeField !== "function") process.exit(8);
 console.log("ok");
+"""
+    out = subprocess.run(
+        ["node", "-e", script],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert out.returncode == 0, out.stderr + out.stdout
+
+
+def test_overlay_grade_field_uses_draft_room_composite():
+    import subprocess
+
+    script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const ctx = { window: {}, self: null, console: console };
+ctx.window = ctx;
+ctx.self = ctx;
+vm.runInNewContext(fs.readFileSync("extension/draft_board_core.js", "utf8"), ctx);
+vm.runInNewContext(fs.readFileSync("extension/pick_score.js", "utf8"), ctx);
+vm.runInNewContext(fs.readFileSync("extension/draft_grade_team.js", "utf8"), ctx);
+vm.runInNewContext(fs.readFileSync("extension/draft_slot.js", "utf8"), ctx);
+vm.runInNewContext(fs.readFileSync("extension/overlay_score.js", "utf8"), ctx);
+if (!ctx.BRTeamGrade || !ctx.BROverlayScore.gradeField) process.exit(1);
+const players = [
+  { id: "1", pos: "QB", position: "QB", team: "KC", val: 8000, ppg: 22, adp: 12, tier: 1, age: 28 },
+  { id: "2", pos: "RB", position: "RB", team: "SF", val: 7000, ppg: 18, adp: 4, tier: 1, age: 24 },
+  { id: "3", pos: "WR", position: "WR", team: "CIN", val: 7500, ppg: 19, adp: 2, tier: 1, age: 25 },
+  { id: "4", pos: "TE", position: "TE", team: "SF", val: 4000, ppg: 12, adp: 30, tier: 2, age: 31 },
+  { id: "5", pos: "QB", position: "QB", team: "BUF", val: 2000, ppg: 8, adp: 80, tier: 5, age: 34 },
+  { id: "6", pos: "RB", position: "RB", team: "NYJ", val: 1800, ppg: 7, adp: 90, tier: 5, age: 29 },
+  { id: "7", pos: "WR", position: "WR", team: "CHI", val: 1600, ppg: 6, adp: 100, tier: 5, age: 30 },
+  { id: "8", pos: "TE", position: "TE", team: "DEN", val: 900, ppg: 4, adp: 140, tier: 6, age: 32 },
+];
+const ctxState = { teams: 2, rounds: 4, mySlot: 1, sf: true, type: "redraft", tep: 0, ppr: 1, passTd: 4,
+  roster: { QB: 1, SF: 1, RB: 2, WR: 2, TE: 1, FLEX: 1 } };
+const bySlot = {
+  1: [
+    { pn: 1, p: players[0] }, { pn: 3, p: players[1] }, { pn: 5, p: players[2] }, { pn: 7, p: players[3] },
+  ],
+  2: [
+    { pn: 2, p: players[4] }, { pn: 4, p: players[5] }, { pn: 6, p: players[6] }, { pn: 8, p: players[7] },
+  ],
+};
+const field = ctx.BROverlayScore.gradeField(players, bySlot, ctxState);
+if (!field || field.length !== 2) process.exit(2);
+if (!field[0].isMe || field[0].grade.score <= field[1].grade.score) process.exit(3);
+if (field[0].grade.window != null) process.exit(4);
+console.log(JSON.stringify(field.map(t => ({ slot: t.slot, score: t.grade.score, isMe: t.isMe }))));
 """
     out = subprocess.run(
         ["node", "-e", script],

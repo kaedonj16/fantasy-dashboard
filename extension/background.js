@@ -652,6 +652,44 @@ async function fetchDraftPool(opts) {
   return { ok: false, players: [], error: lastErr, scoringType: scoringType, sf: sf, adpSource: adpSource, adpOptions: [] };
 }
 
+async function fetchDraftPlayoffOdds(opts) {
+  const body = {
+    season: Number((opts && opts.season) || 0) || 0,
+    ppr: (opts && opts.ppr != null) ? Number(opts.ppr) : 1,
+    tep: (opts && opts.tep != null) ? Number(opts.tep) : 0,
+    pass_td: (opts && opts.passTd != null) ? Number(opts.passTd) : 4,
+    roster: (opts && opts.roster) || {},
+    playoff_teams: Number((opts && opts.playoffTeams) || 6) || 6,
+    platform: String((opts && opts.platform) || "sleeper"),
+    league_id: String((opts && opts.leagueId) || ""),
+    use_league: opts && opts.useLeague !== false,
+    viewer_slot: (opts && opts.viewerSlot) || null,
+    teams: (opts && opts.teams) || [],
+  };
+  let lastErr = "fetch failed";
+  for (const host of BR_API_HOSTS) {
+    try {
+      const res = await fetch(host + "/api/draft-playoff-odds", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        lastErr = "HTTP " + res.status;
+        continue;
+      }
+      const json = await res.json();
+      if (json && Array.isArray(json.odds) && json.odds.length) {
+        return { ok: true, odds: json.odds, source: json.source || "", playoffTeams: json.playoff_teams };
+      }
+      lastErr = (json && json.error) || "empty odds";
+    } catch (err) {
+      lastErr = String(err && err.message ? err.message : err);
+    }
+  }
+  return { ok: false, odds: [], error: lastErr };
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg !== "object") return false;
 
@@ -770,9 +808,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       teams: Number(msg.teams || 0),
       force: !!msg.force,
       kdef: msg.kdef !== false,
+      ppr: msg.ppr,
+      tep: msg.tep,
+      passTd: msg.passTd,
     })
       .then(sendResponse)
       .catch(() => sendResponse({ ok: false, players: [] }));
+    return true;
+  }
+
+  if (msg.type === "fetchDraftPlayoffOdds") {
+    fetchDraftPlayoffOdds(msg)
+      .then(sendResponse)
+      .catch(() => sendResponse({ ok: false, odds: [] }));
     return true;
   }
 
