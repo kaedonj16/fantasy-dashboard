@@ -6633,9 +6633,64 @@ def _all_play_from_df_weekly(df_weekly) -> dict:
         return {}
 
 
+def _standings_weekly_points(df_weekly) -> dict:
+    """{owner: [points, ...]} across finalized weeks in ascending week order.
+
+    Feeds the standings PF-trend sparklines and the "top single week" insight, so
+    a week-capped df (from build_standings_as_of_week) yields the trend as it stood
+    then. Any failure returns {} so the sparkline column just renders blank."""
+    try:
+        if df_weekly is None or df_weekly.empty or "points" not in df_weekly.columns:
+            return {}
+        d = df_weekly
+        if "finalized" in d.columns:
+            d = d[d["finalized"] == True]
+        if d.empty:
+            return {}
+        out: dict = {}
+        for owner, g in d.sort_values("week").groupby("owner"):
+            out[str(owner)] = [float(p or 0) for p in g["points"].tolist()]
+        return out
+    except Exception:
+        logger.debug("weekly points failed", exc_info=True)
+        return {}
+
+
+def _standings_sparkline(points, width: int = 76, height: int = 22) -> str:
+    """A tiny PF-trend sparkline (area + line + last-point dot) for a standings row.
+
+    Colors come from CSS tokens (.st-spark-* in the stylesheet) so it reads in both
+    themes. Returns a muted dash when there aren't at least two weeks to plot."""
+    pts = [float(p) for p in (points or []) if p is not None]
+    if len(pts) < 2:
+        return "<span class='st-spark-empty muted'>&ndash;</span>"
+    mn, mx = min(pts), max(pts)
+    rng = (mx - mn) or 1.0
+    pad = 2.0
+    step = (width - pad * 2) / (len(pts) - 1)
+    coords = [
+        (pad + i * step, height - pad - ((v - mn) / rng) * (height - pad * 2))
+        for i, v in enumerate(pts)
+    ]
+    line = " ".join(("M" if i == 0 else "L") + f"{x:.1f} {y:.1f}"
+                    for i, (x, y) in enumerate(coords))
+    area = (f"M{coords[0][0]:.1f} {height} "
+            + " ".join(f"L{x:.1f} {y:.1f}" for x, y in coords)
+            + f" L{coords[-1][0]:.1f} {height} Z")
+    lx, ly = coords[-1]
+    return (
+        f"<svg class='st-spark' width='{width}' height='{height}' "
+        f"viewBox='0 0 {width} {height}' aria-hidden='true' preserveAspectRatio='none'>"
+        f"<path d='{area}' class='st-spark-area'/>"
+        f"<path d='{line}' class='st-spark-line' fill='none'/>"
+        f"<circle cx='{lx:.1f}' cy='{ly:.1f}' r='2.4' class='st-spark-dot'/></svg>"
+    )
+
+
 def render_standings(team_stats, length, all_play: dict = None,
                      playoff_spots: int = None, total_regular_weeks: int = None,
-                     movement: dict = None, owner_to_rid: dict = None) -> str:
+                     movement: dict = None, owner_to_rid: dict = None,
+                     sparklines: dict = None) -> str:
     if team_stats is None or team_stats.empty:
         return """
         <div class="card-body">
@@ -6772,6 +6827,7 @@ def render_standings(team_stats, length, all_play: dict = None,
               <td>{record}</td>
               <td>{row['PF']:.1f}</td>
               <td>{row['PA']:.1f}</td>
+              <td class="st-trend-cell">{(sparklines or {}).get(owner) or ''}</td>
               <td>{streak}</td>
               <td>{_luck_cell}</td>
               <td>{_seed_cell}</td>
@@ -6785,14 +6841,14 @@ def render_standings(team_stats, length, all_play: dict = None,
         if (_p and _p.get("scenario") and _p["status"] == "bubble"
                 and _p["seed"] in (_spots, (_spots or 0) + 1)):
             rows.append(
-                "<tr class='pp-scnrow'><td colspan='10'>"
+                "<tr class='pp-scnrow'><td colspan='11'>"
                 f"<div class='pp-scn'>{html.escape(_p['scenario'])}</div></td></tr>"
             )
 
         # Draw the playoff cutoff line right below the last team that advances.
         if _spots and int(row['Rank']) == _spots and _spots < len(df):
             rows.append(
-                "<tr class='pp-cutrow'><td colspan='10'>"
+                "<tr class='pp-cutrow'><td colspan='11'>"
                 "<div class='pp-cut'>Playoff line</div></td></tr>"
             )
 
@@ -6803,6 +6859,7 @@ def render_standings(team_stats, length, all_play: dict = None,
 
     return f"""
         {ctx_line}
+        <div class="st-tblscroll">
         <table class="standings-table" data-page="standings">
           <thead>
             <tr>
@@ -6811,6 +6868,7 @@ def render_standings(team_stats, length, all_play: dict = None,
               <th scope="col">Record</th>
               <th scope="col">PF</th>
               <th scope="col">PA</th>
+              <th scope="col" class="st-trend-th" title="Points-for by week (most recent at the dot)">Trend</th>
               <th scope="col">Streak</th>
               <th scope="col" title="Actual wins minus expected wins (from all-play). + = luckier than your scoring earned.">Luck</th>
               <th scope="col" title="Where you'd be seeded by all-play record instead of actual wins.">Exp. Seed</th>
@@ -6822,6 +6880,7 @@ def render_standings(team_stats, length, all_play: dict = None,
             {''.join(total_rows)}
           </tbody>
         </table>
+        </div>
     """
 
 
@@ -7588,136 +7647,84 @@ def render_power_and_playoffs(
         except (TypeError, ValueError):
             return default
 
-    def podium_slot(rank: int, row) -> str:
-        name = row.get("owner", "Unknown")
+    # Whether any team has actually played — offseason (synthetic team_stats) has
+    # G == 0, so the record and PF/PA net columns are meaningless there and hide.
+    try:
+        _has_games = int(pd.to_numeric(pr_sorted.get("G"), errors="coerce").fillna(0).sum()) > 0
+    except Exception:
+        _has_games = False
 
-        # record
+    def _pwr_record(row):
         wins = safe_int(row.get("Wins"), 0)
         games = safe_int(row.get("G"), 0)
         losses = max(games - wins, 0)
         ties_val = safe_int(row.get("Ties"), 0)
-        rec = f"{wins}-{losses}" + (f"-{ties_val}" if ties_val else "")
+        return f"{wins}-{losses}" + (f"-{ties_val}" if ties_val else "")
 
-        base_cls = {1: "first", 2: "second", 3: "third"}[rank]
+    def _pwr_net(row):
+        """(diff_value, css_class) for PF/G − PA/G, or (None, '') offseason."""
+        if not _has_games:
+            return None, ""
+        games = safe_int(row.get("G"), 0) or 1
+        diff = safe_float(row.get("PF"), 0.0) / games - safe_float(row.get("PA"), 0.0) / games
+        return diff, ("pwr-pos" if diff > 0 else "pwr-neg" if diff < 0 else "")
 
-        power_val = safe_float(row.get("PowerScore"), 0.0)
-        w = pct_width(power_val)
-
-        # streak bits
-        streak_chip = row.get("Streak", "")  # e.g., "W3", "L2"
-        streak_frame_cls = streak_class(row)  # assumes you already have this helper
-        avatar_url = row.get("avatar")
-        avatar_html = (
-            f"<img class='avatar' src='{avatar_url}' alt='' loading='lazy' decoding='async' "
-            "onerror=\"this.style.display='none'\">"
-            if avatar_url else ""
-        )
-
-        # PF/G, PA/G, diff
-        pf = safe_float(row.get("PF"), 0.0)
-        pa = safe_float(row.get("PA"), 0.0)
-        g = games if games > 0 else 1
-        pfpg_v = pf / g
-        papg_v = pa / g
-        diff_v = pfpg_v - papg_v
-        diff_class = "diff-pos" if diff_v > 0 else "diff-neg" if diff_v < 0 else ""
-
-        chips_html = "<div class='chips'>"
-        chips_html += f"<span class='chip'>PF/G {pfpg_v:.1f}</span>"
-        chips_html += f"<span class='chip'>PA/G {papg_v:.1f}</span>"
-        chips_html += f"<span class='chip {diff_class}'>{diff_v:+.1f}</span>"
-        if streak_chip and streak_frame_cls == "streak-hot":
-            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-fire'></i>{streak_chip}</span>"
-        elif streak_chip and streak_frame_cls == "streak-cold":
-            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-snowflake'></i>{streak_chip}</span>"
-        chips_html += "</div>"
-
-        return f"""
-          <div class="slot {base_cls} {streak_frame_cls}" data-rk-key="{html.escape(str(name), quote=True)}">
-            <div class="wrap">
-              <div class='podium-header'>
-                <h3>#{rank}</h3>
-                {avatar_html}
-                {move_arrow(name)}
-              </div>
-              <div class="name">{_clickable_team_name(name, _o2r)}</div>
-              <div class="rec">{rec}</div>
-              <div class="bar"><div style="width:{w:.1f}%"></div></div>
-              {chips_html}
-            </div>
-          </div>
-        """
-
-    # ---- Top 3 podium ----
-    podium_html = """
-      <div class="podium">
-        {slot1}
-        {slot2}
-        {slot3}
-      </div>
-    """.format(
-        slot1=podium_slot(1, top3.iloc[0]) if len(top3) > 0 else "",
-        slot2=podium_slot(2, top3.iloc[1]) if len(top3) > 1 else "",
-        slot3=podium_slot(3, top3.iloc[2]) if len(top3) > 2 else "",
+    # ---- #1 hero card ----
+    lead = pr_sorted.iloc[0]
+    lead_name = lead.get("owner", "Unknown")
+    lead_av = lead.get("avatar")
+    lead_av_html = (
+        f"<img class='avatar' src='{lead_av}' alt='' loading='lazy' decoding='async' "
+        "onerror=\"this.style.visibility='hidden'\">" if lead_av
+        else "<span class='avatar pwr-noav'></span>"
+    )
+    lead_rec = _pwr_record(lead) if _has_games else ""
+    lead_diff, lead_diff_cls = _pwr_net(lead)
+    lead_sub = " &middot; ".join(
+        p for p in [lead_rec, (f"{lead_diff:+.1f} net" if lead_diff is not None else "")] if p
+    )
+    podium_html = (
+        f"<div class='pwr-lead {streak_class(lead)}' "
+        f"data-rk-key='{html.escape(str(lead_name), quote=True)}'>"
+        f"<div class='pwr-lead-top'>{lead_av_html}"
+        f"<div class='pwr-lead-id'>"
+        f"<div class='pwr-lead-badge'><i class='fa-solid fa-crown'></i> #1 Power</div>"
+        f"<div class='pwr-lead-name'>{_clickable_team_name(lead_name, _o2r)} {move_arrow(lead_name)}</div>"
+        f"<div class='pwr-lead-sub'>{lead_sub}</div></div>"
+        f"<div class='pwr-lead-score'><b>{safe_float(lead.get('PowerScore'), 0.0):.1f}</b>"
+        f"<span>Power</span></div></div>"
+        f"<div class='pwr-lead-bar'><div style='width:{pct_width(safe_float(lead.get('PowerScore'), 0.0)):.1f}%'></div></div>"
+        f"</div>"
     )
 
-    # ---- Remaining ranks list ----
-    others = pr_sorted.iloc[3:].reset_index(drop=True)
-    rank_cards = []
-    for i, row in others.iterrows():
-        pos = i + 4
+    # ---- Ranked list (2..N) ----
+    rows_html = []
+    for i, row in pr_sorted.iloc[1:].reset_index(drop=True).iterrows():
+        pos = i + 2
         team = row.get("owner", "Unknown")
-
-        wins = safe_int(row.get("Wins"), 0)
-        games = safe_int(row.get("G"), 0)
-        losses = max(games - wins, 0)
-        ties_val = safe_int(row.get("Ties"), 0)
-        record = f"{wins}-{losses}" + (f"-{ties_val}" if ties_val else "")
-
         power_val = safe_float(row.get("PowerScore"), 0.0)
-        bar_w = pct_width(power_val)
-
-        # per-row PF/G, PA/G, diff
-        pf = safe_float(row.get("PF"), 0.0)
-        pa = safe_float(row.get("PA"), 0.0)
-        g = games if games > 0 else 1
-        pfpg_v = pf / g
-        papg_v = pa / g
-        diff_v = pfpg_v - papg_v
-        diff_class = "diff-pos" if diff_v > 0 else "diff-neg" if diff_v < 0 else ""
-
-        streak_chip = row.get("Streak", "")
-        chips_html = (
-            f"<span class='chip'>PF/G {pfpg_v:.1f}</span>"
-            f"<span class='chip'>PA/G {papg_v:.1f}</span>"
-        )
-        css_cls = streak_class(row)
-        if streak_chip and css_cls == "streak-hot":
-            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-fire'></i>{streak_chip}</span>"
-        elif streak_chip and css_cls == "streak-cold":
-            chips_html += f"<span class='chip chip-streak'><i class='fa-solid fa-snowflake'></i>{streak_chip}</span>"
-        chips_html += f"<span class='chip {diff_class}'>{diff_v:+.1f}</span>"
-
-        avatar_url = row.get("avatar")
+        av = row.get("avatar")
         img = (
-            f"<img class='avatar sm' src='{avatar_url}' alt='' loading='lazy' decoding='async' "
-            "onerror=\"this.style.display='none'\">"
-            if avatar_url else ""
+            f"<img class='avatar sm' src='{av}' alt='' loading='lazy' decoding='async' "
+            "onerror=\"this.style.visibility='hidden'\">" if av
+            else "<span class='avatar sm pwr-noav'></span>"
         )
-
-        rank_cards.append(
-            f"<div class='rank-item {css_cls}' data-rk-key='{html.escape(str(team), quote=True)}'>"
-            f"<span class='pr-move-cell'>{move_arrow(team)}</span>"
-            f"<span class='pos'>#{pos}</span>"
-            f"{img}"
-            f"{_clickable_team_name(team, _o2r, cls='name')}"
-            f"<div class='bar'><div style='width:{bar_w:.1f}%'></div></div>"
-            f"<div class='chips'>{chips_html}</div>"
-            f"<span class='rec'>{record}</span>"
+        diff, diff_cls = _pwr_net(row)
+        right = (
+            f"<div class='pwr-diff {diff_cls}'>{diff:+.1f} net</div>"
+            if diff is not None else ""
+        )
+        rows_html.append(
+            f"<div class='pwr-row {streak_class(row)}' data-rk-key='{html.escape(str(team), quote=True)}'>"
+            f"<span class='pwr-pos'>{pos}</span>{img}"
+            f"<div class='pwr-mid'>"
+            f"<div class='pwr-name'>{_clickable_team_name(team, _o2r, cls='name')} {move_arrow(team)}</div>"
+            f"<div class='pwr-bar'><div style='width:{pct_width(power_val):.1f}%'></div></div></div>"
+            f"<div class='pwr-right'><div class='pwr-score'>{power_val:.1f}</div>{right}</div>"
             f"</div>"
         )
 
-    rankings_html = "<div class='rank-grid'>" + "".join(rank_cards) + "</div>"
+    rankings_html = "<div class='pwr-list'>" + "".join(rows_html) + "</div>"
 
     # ---- Playoff bracket (optional; Fleaflicker/MFL do not expose one) ----
     if bracket_override is not None:
@@ -7788,70 +7795,158 @@ def render_power_and_playoffs(
     return podium_card
 
 
-def render_standings_sidebar(team_stats, owner_to_rid=None) -> str:
+def _st_tile(icon: str, label: str, value_html: str, sub_html: str,
+             *, lead: bool = False, accent: str = "") -> str:
+    """One summary tile for the standings hero strip. `value_html`/`sub_html` are
+    pre-escaped (they may contain a clickable team name). `accent` optionally tints
+    the icon chip (e.g. 'st-ic-good' / 'st-ic-bad')."""
+    lead_cls = " st-tile-lead" if lead else ""
+    return (
+        f"<div class='st-tile{lead_cls}'>"
+        f"<div class='st-tile-top'><span class='st-tile-ic {accent}'>"
+        f"<i class='fa-solid {icon}'></i></span>"
+        f"<span class='st-tile-label'>{label}</span></div>"
+        f"<div class='st-tile-val'>{value_html}</div>"
+        f"<div class='st-tile-sub'>{sub_html}</div></div>"
+    )
+
+
+def _top_single_week(weekly_points: dict):
+    """(owner, week_number, points) of the single highest weekly score, or None."""
+    best = None
+    for owner, pts in (weekly_points or {}).items():
+        for i, v in enumerate(pts):
+            if best is None or v > best[2]:
+                best = (owner, i + 1, float(v))
+    return best
+
+
+def render_standings_tiles(team_stats, *, all_play=None, weekly_points=None,
+                           movement=None, owner_to_rid=None) -> str:
+    """The at-a-glance hero strip above the standings: top seed, highest week,
+    hottest team, luckiest team, and biggest riser. Every figure is derived from
+    the same team_stats / weekly scores the tables use, so it stays in step with a
+    week-capped view. Renders nothing until there's a finalized week to describe."""
     if team_stats is None or team_stats.empty:
         return ""
+    df = team_stats.copy()
+    all_play = all_play or {}
+    movement = movement or {}
+    tiles = []
 
-    ts = team_stats.copy()
+    # 1) Top seed (accent lead tile)
+    leader = df.sort_values(by=["Wins", "PF", "PA"],
+                            ascending=[False, False, True]).iloc[0]
+    rec = f"{int(leader['Wins'])}-{int(leader['Losses'])}"
+    if int(leader.get("Ties", 0) or 0):
+        rec += f"-{int(leader['Ties'])}"
+    tiles.append(_st_tile(
+        "fa-crown", "Top seed",
+        _clickable_team_name(leader["owner"], owner_to_rid, cls="st-tile-team"),
+        f"{rec} &middot; {float(leader['PF']):.0f} PF", lead=True))
 
-    hottest = None
-    coldest = None
-    if "StreakLen" in ts.columns and "StreakType" in ts.columns:
-        hot_df = ts[ts["StreakType"] == "W"]
-        cold_df = ts[ts["StreakType"] == "L"]
+    # 2) Highest single week
+    top = _top_single_week(weekly_points)
+    if top:
+        tiles.append(_st_tile(
+            "fa-arrow-trend-up", "Highest week", f"{top[2]:.1f}",
+            f"{_clickable_team_name(top[0], owner_to_rid)} &middot; Wk {top[1]}"))
 
-        if not hot_df.empty:
-            hottest = hot_df.loc[hot_df["StreakLen"].idxmax()]
-        if not cold_df.empty:
-            coldest = cold_df.loc[cold_df["StreakLen"].idxmax()]
+    # 3) Hottest team (longest active win streak)
+    if "StreakType" in df.columns and (df["StreakType"] == "W").any():
+        hot = df[df["StreakType"] == "W"].sort_values("StreakLen", ascending=False).iloc[0]
+        tiles.append(_st_tile(
+            "fa-fire", "Hottest",
+            _clickable_team_name(hot["owner"], owner_to_rid, cls="st-tile-team"),
+            f"Won last {int(hot['StreakLen'])}", accent="st-ic-hot"))
 
+    # 4) Luckiest team (most actual wins over all-play expectation)
+    lucky = None
+    for owner, ap in all_play.items():
+        ld = ap.get("luck_delta")
+        if ld is None:
+            continue
+        if lucky is None or ld > lucky[1]:
+            lucky = (owner, float(ld))
+    if lucky and lucky[1] >= 0.5:
+        tiles.append(_st_tile(
+            "fa-clover", "Luckiest", f"+{lucky[1]:.1f}",
+            f"{_clickable_team_name(lucky[0], owner_to_rid)} over expected",
+            accent="st-ic-good"))
+
+    # 5) Biggest riser (largest week-over-week climb)
+    riser = None
+    for owner, mv in movement.items():
+        if mv and mv > 0 and (riser is None or mv > riser[1]):
+            riser = (owner, int(mv))
+    if riser:
+        tiles.append(_st_tile(
+            "fa-arrow-up", "Biggest riser", f"+{riser[1]}",
+            f"{_clickable_team_name(riser[0], owner_to_rid)} this week",
+            accent="st-ic-good"))
+
+    if len(tiles) < 2:
+        return ""
+    return f"<div class='st-tiles'>{''.join(tiles)}</div>"
+
+
+def _st_insight(cls: str, icon: str, label: str, value_html: str, sub_html: str) -> str:
+    return (
+        f"<div class='st-insight {cls}'><span class='st-insight-ic'>"
+        f"<i class='fa-solid {icon}'></i></span>"
+        f"<div class='st-insight-body'><div class='st-insight-label'>{label}</div>"
+        f"<div class='st-insight-val'>{value_html}</div>"
+        f"<div class='st-insight-sub'>{sub_html}</div></div></div>"
+    )
+
+
+def render_standings_insights(team_stats, *, all_play=None, weekly_points=None,
+                              owner_to_rid=None) -> str:
+    """Full-width insight strip under the standings grid: hottest, coldest, top
+    single week, and most-unlucky team. Replaces the old narrow hottest/coldest
+    sidebar. Cards drop out individually when their stat isn't available yet."""
+    if team_stats is None or team_stats.empty:
+        return ""
+    df = team_stats.copy()
+    all_play = all_play or {}
     cards = []
 
-    # --------------------
-    # Hottest Team Card
-    # --------------------
-    if hottest is not None:
-        cards.append(f"""
-        <div class="card small hottest-card">
-          <div class="card-header">
-            <h3>Hottest Team</h3>
-            <h3><i class="fa-solid fa-fire"></i> {hottest['Streak']}</h3>
-          </div>
-          <div class="card-body">
-            <div class="highlight-game-card">
-              <div class="hg-row">
-                <div class="hg-team">
-                  {_clickable_team_name(hottest['owner'], owner_to_rid, cls='hg-name')}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        """)
+    if "StreakType" in df.columns and (df["StreakType"] == "W").any():
+        hot = df[df["StreakType"] == "W"].sort_values("StreakLen", ascending=False).iloc[0]
+        cards.append(_st_insight(
+            "st-in-hot", "fa-fire", "Hottest team",
+            _clickable_team_name(hot["owner"], owner_to_rid, cls="st-insight-name"),
+            f"Won {int(hot['StreakLen'])} straight"))
 
-    # --------------------
-    # Coldest Team Card
-    # --------------------
-    if coldest is not None:
-        cards.append(f"""
-        <div class="card small coldest-card">
-          <div class="card-header">
-            <h3>Coldest Team</h3>
-            <h3><i class="fa-solid fa-snowflake"></i> {coldest['Streak']}</h3>
-          </div>
-          <div class="card-body">
-            <div class="highlight-game-card">
-              <div class="hg-row">
-                <div class="hg-team">
-                  {_clickable_team_name(coldest['owner'], owner_to_rid, cls='hg-name')}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        """)
+    if "StreakType" in df.columns and (df["StreakType"] == "L").any():
+        cold = df[df["StreakType"] == "L"].sort_values("StreakLen", ascending=False).iloc[0]
+        cards.append(_st_insight(
+            "st-in-cold", "fa-snowflake", "Coldest team",
+            _clickable_team_name(cold["owner"], owner_to_rid, cls="st-insight-name"),
+            f"Lost {int(cold['StreakLen'])} straight"))
 
-    return "".join(cards)
+    top = _top_single_week(weekly_points)
+    if top:
+        cards.append(_st_insight(
+            "st-in-bolt", "fa-bolt", "Top single week", f"{top[2]:.1f}",
+            f"{_clickable_team_name(top[0], owner_to_rid)} &middot; Week {top[1]}"))
+
+    unlucky = None
+    for owner, ap in all_play.items():
+        ld = ap.get("luck_delta")
+        if ld is None:
+            continue
+        if unlucky is None or ld < unlucky[1]:
+            unlucky = (owner, float(ld))
+    if unlucky and unlucky[1] <= -0.5:
+        cards.append(_st_insight(
+            "st-in-unlucky", "fa-bullseye", "Most unlucky",
+            _clickable_team_name(unlucky[0], owner_to_rid, cls="st-insight-name"),
+            f"{unlucky[1]:.1f} wins below expected"))
+
+    if not cards:
+        return ""
+    return f"<div class='st-insights'>{''.join(cards)}</div>"
 
 
 def render_team_stats(team_stats, df_weekly, owner_to_rid=None) -> str:
@@ -8190,11 +8285,54 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         <div class="footer">{standings_footer}</div>
     """
 
+    # ── Offseason hero tiles: value leader, draft capital, projected favorite,
+    #    league value. Mirrors the in-season strip but framed around roster value.
+    def _name_o2r(row):
+        return {str(row["name"]): str(row["rid"])}
+
+    _os_tiles = []
+    if team_rows:
+        _lead = team_rows[0]
+        _os_tiles.append(_st_tile(
+            "fa-gem", "Top dynasty value",
+            _clickable_team_name(_lead["name"], _name_o2r(_lead), cls="st-tile-team"),
+            f"{_lead['total']:.0f} pts &middot; {_lead['value_pct']:.1f}% of league", lead=True))
+
+    if team_rows and not is_redraft:
+        def _firsts(rid):
+            pk_list = picks_by_roster.get(rid, []) if isinstance(picks_by_roster, dict) else []
+            return sum(1 for pk in pk_list if int(pk.get("round") or 0) == 1)
+        _cap = max(team_rows, key=lambda r: _firsts(r["rid"]))
+        _ncap = _firsts(_cap["rid"])
+        if _ncap:
+            _os_tiles.append(_st_tile(
+                "fa-folder-open", "Most draft capital",
+                f"{_ncap} 1st{'s' if _ncap != 1 else ''}",
+                _clickable_team_name(_cap["name"], _name_o2r(_cap)), accent="st-ic-good"))
+
+    if _proj_available and rid_to_proj:
+        _top_rid = max(rid_to_proj, key=rid_to_proj.get)
+        _top_row = next((r for r in team_rows if r["rid"] == _top_rid), None)
+        if _top_row:
+            _os_tiles.append(_st_tile(
+                "fa-medal", "Projected favorite",
+                _clickable_team_name(_top_row["name"], _name_o2r(_top_row), cls="st-tile-team"),
+                f"{rid_to_proj[_top_rid]:.1f} proj PPG", accent="st-ic-hot"))
+
+    _os_tiles.append(_st_tile(
+        "fa-calculator", "League value", f"{league_value_total:,.0f}",
+        f"across {len(team_rows)} rosters"))
+
+    _os_tiles_html = (
+        f"<div class='st-tiles'>{''.join(_os_tiles)}</div>" if len(_os_tiles) >= 2 else ""
+    )
+
     return f"""
     <nav class="os-jump-nav std-jump-nav" aria-label="Jump to section">
       <button type="button" class="active" data-jump="os-std-value">Value Rankings</button>
       <button type="button" data-jump="os-std-power">Power &amp; Playoffs</button>
     </nav>
+    {_os_tiles_html}
     <div class="standings-main two-col-standings">
       <div class="standings-col os-tab-panel os-tab-active" id="os-std-value">
         <div class="card">
@@ -8432,11 +8570,14 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
     _all_play = _all_play_from_df_weekly(df_weekly)
     _pp_spots, _pp_weeks = _standings_playoff_params(ctx, team_stats)
     _o2r = _owner_to_rid_map(roster_map=roster_map, df_weekly=df_weekly)
+    _weekly_pts = _standings_weekly_points(df_weekly)
+    _sparks = {o: _standings_sparkline(pts) for o, pts in _weekly_pts.items()}
+    _movement = _standings_movement(df_weekly)
 
     standings_html = render_standings(
         team_stats, num_teams, all_play=_all_play,
         playoff_spots=_pp_spots, total_regular_weeks=_pp_weeks,
-        movement=_standings_movement(df_weekly), owner_to_rid=_o2r,
+        movement=_movement, owner_to_rid=_o2r, sparklines=_sparks,
     )
 
     if (
@@ -8457,13 +8598,18 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
         ctx["season"],
         power_rankings=power_rankings,
     )
-    sidebar_html = render_standings_sidebar(team_stats, owner_to_rid=_o2r)
+    sidebar_html = render_standings_insights(
+        team_stats, all_play=_all_play, weekly_points=_weekly_pts, owner_to_rid=_o2r)
+    tiles_html = render_standings_tiles(
+        team_stats, all_play=_all_play, weekly_points=_weekly_pts,
+        movement=_movement, owner_to_rid=_o2r)
     shares_html = render_share_rankings(ctx)
     return {
         "standings": standings_html,
         "details": details_html,
         "power": power_html,
         "sidebar": sidebar_html,
+        "tiles": tiles_html,
         "shares": shares_html,
     }
 
@@ -8531,6 +8677,7 @@ def _standings_week_selector(ctx: dict, weeks: list) -> str:
       var seq = 0, ctrl = null;
       function panels() {{
         return {{
+          tiles:     document.getElementById('stTilesInner'),
           standings: document.getElementById('stStandingsInner'),
           details:   document.getElementById('stDetailsInner'),
           power:     document.getElementById('stPowerInner'),
@@ -8560,9 +8707,9 @@ def _standings_week_selector(ctx: dict, weeks: list) -> str:
           .then(function(data) {{
             if (my !== seq || !data || !data.ok) return;
             var p = panels();
-            var map = {{ standings: data.standings_html, details: data.details_html,
-                        power: data.power_html, sidebar: data.sidebar_html,
-                        shares: data.shares_html }};
+            var map = {{ tiles: data.tiles_html, standings: data.standings_html,
+                        details: data.details_html, power: data.power_html,
+                        sidebar: data.sidebar_html, shares: data.shares_html }};
             Object.keys(map).forEach(function(k) {{
               if (p[k] && typeof map[k] === 'string') {{
                 if (window.brSwapRanks) {{ window.brSwapRanks(p[k], map[k]); }}

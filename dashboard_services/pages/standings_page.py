@@ -24,6 +24,7 @@ def build_standings_body(ctx: dict) -> str:
 
     body = f"""
     {week_bar}
+    <div id="stTilesInner">{panels.get('tiles', '')}</div>
     <div class="standings-main two-col-standings">
       <div class="standings-col">
         <div class="card">
@@ -54,9 +55,7 @@ def build_standings_body(ctx: dict) -> str:
         <div id="stPowerInner">{panels['power']}</div>
       </div>
     </div>
-    <aside class="overview-sidebar">
-      <div id="stSidebarInner">{panels['sidebar']}</div>
-    </aside>
+    <div id="stSidebarInner" class="standings-insights-wrap">{panels['sidebar']}</div>
     """
 
     return body
