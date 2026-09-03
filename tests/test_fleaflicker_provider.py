@@ -801,6 +801,41 @@ def test_fleaflicker_standard_weekly_proj_is_not_one_point_per_yard():
     assert pts == pytest.approx(11.3, abs=0.2)
 
 
+def test_matchup_preview_screenshot_is_not_one_point_per_yard():
+    """All American Week 1 preview painted Josh Allen 268.9 / Jeanty 83.2 / JSN 111.9.
+
+    Those were Sleeper yardage totals scored at 1 pt/yard because a 150/300-yard
+    milestone extra overwrote the real 0.05 / 0.1 rates.
+    """
+    from utils.fantasy_scoring import projection_points
+    from utils.league_scoring import normalize_league_scoring
+
+    ss = normalize_league_scoring(
+        "fleaflicker", FleaflickerProvider._scoring(_standard_flea_rules_with_bonuses()),
+    )
+    allen = projection_points(
+        {"raw_stats": {
+            "pass_yd": 235.21, "pass_td": 1.8, "pass_int": 0.6,
+            "rush_yd": 26.3, "rush_td": 0.55, "fum_lost": 0.2,
+        }},
+        ss, "QB",
+    )
+    jeanty = projection_points(
+        {"raw_stats": {"rush_yd": 59.38, "rec_yd": 15.71, "rec": 2.0, "rush_td": 0.4}},
+        ss, "RB",
+    )
+    jsn = projection_points(
+        {"raw_stats": {"rec_yd": 94.17, "rush_yd": 1.85, "rec": 6.0, "rec_td": 0.5}},
+        ss, "WR",
+    )
+    assert allen < 40
+    assert jeanty < 20
+    assert jsn < 20
+    assert allen != pytest.approx(268.9, abs=1)
+    assert jeanty != pytest.approx(83.2, abs=1)
+    assert jsn != pytest.approx(111.9, abs=1)
+
+
 def test_get_matchups_uses_boxscore_slot_order(monkeypatch):
     provider = FleaflickerProvider()
     payloads = {
