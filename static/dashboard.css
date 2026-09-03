@@ -36294,7 +36294,7 @@ a, button, [role="button"], [role="tab"], summary, label,
     .st-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .st-tiles .st-tile-lead { grid-column: 1 / -1; }
 }
-@media (max-width: 560px) {
+@media (max-width: 600px) {
     .st-tiles { grid-template-columns: 1fr 1fr; gap: 8px; }
     .st-tile { padding: 11px 12px; }
     .st-tile-val { font-size: 17px; }
