@@ -100,7 +100,27 @@ def test_roster_grade_uses_scoring_type_on_teams_page():
     assert "scoring_type=_scoring" in src
 
 
-def test_trade_intel_skips_rebuild_window_for_redraft():
+def test_teams_page_pos_rank_uses_format_rank_label():
+    """Teams player meta (RB23) must use redraft/SF labels, not dynasty-only."""
+    src = (ROOT / "dashboard_services" / "pages" / "teams_page.py").read_text(encoding="utf-8")
+    assert "format_rank_label_key" in src
+    assert "row_format_rank_label" in src
+    assert "_rank_label_key" in src
+    # Must not hardcode dynasty pos_rank_label for the name→rank map.
+    assert 'obj.get("pos_rank_label") or obj.get("position")' not in src
+
+
+def test_roster_intel_pos_rank_uses_format_keys():
+    """Roster Intel on Teams must show/signal on format-matched pos ranks."""
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    start = src.find("def _api_roster_intel_compute")
+    end = src.find("def api_trade_targets", start)
+    body = src[start:end]
+    assert "format_rank_label_key" in body
+    assert "format_rank_key" in body
+    assert "rank_label_key" in body
+    assert 'row.get("pos_rank_label") or ""' not in body
+    assert 'row.get("pos_rank")' not in body or "rank_key" in body
     src = (ROOT / "app.py").read_text(encoding="utf-8")
     start = src.find("def api_trade_intel_player_packages")
     end = src.find("def _real_trade_packages_for_target", start)

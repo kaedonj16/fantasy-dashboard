@@ -77,6 +77,7 @@ def test_none_and_malformed_value_safe():
 from utils.value_helpers import (
     apply_redraft_display_fields,
     fill_unpriced_redraft_values,
+    format_rank_key,
     format_rank_label_key,
     format_value_keys,
     row_format_rank_label,
@@ -96,6 +97,13 @@ def test_format_rank_label_key_redraft_vs_dynasty():
     assert format_rank_label_key(is_redraft=True, is_sf=True) == "redraft_sf_pos_rank_label"
     assert format_rank_label_key(is_redraft=False, is_sf=False) == "pos_rank_label"
     assert format_rank_label_key(is_redraft=False, is_sf=True) == "sf_pos_rank_label"
+
+
+def test_format_rank_key_redraft_vs_dynasty():
+    assert format_rank_key(is_redraft=True, is_sf=False) == "redraft_pos_rank"
+    assert format_rank_key(is_redraft=True, is_sf=True) == "redraft_sf_pos_rank"
+    assert format_rank_key(is_redraft=False, is_sf=False) == "pos_rank"
+    assert format_rank_key(is_redraft=False, is_sf=True) == "sf_pos_rank"
 
 
 def test_row_format_value_prefers_redraft_over_dynasty():

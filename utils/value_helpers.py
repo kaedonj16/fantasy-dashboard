@@ -76,6 +76,13 @@ def format_rank_label_key(*, is_redraft: bool, is_sf: bool) -> str:
     return "sf_pos_rank_label" if is_sf else "pos_rank_label"
 
 
+def format_rank_key(*, is_redraft: bool, is_sf: bool) -> str:
+    """Numeric position-rank field matching ``format_rank_label_key``."""
+    if is_redraft:
+        return "redraft_sf_pos_rank" if is_sf else "redraft_pos_rank"
+    return "sf_pos_rank" if is_sf else "pos_rank"
+
+
 def row_format_value(row: dict, primary: str, fallback: str) -> float:
     """Numeric value from ``primary``, then ``fallback``, then 0."""
     if not isinstance(row, dict):
