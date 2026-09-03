@@ -11,6 +11,7 @@ def test_overlay_is_mv3_safe_extension_page():
     html = (EXT / "overlay.html").read_text(encoding="utf-8")
     assert 'src="overlay.js"' in html
     assert 'src="overlay_score.js"' in html
+    assert 'src="draft_grade_team.js"' in html
     assert 'src="pick_score.js"' in html
     assert 'src="draft_board_core.js"' in html
     assert "BROverlayScore" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
@@ -37,7 +38,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.32"
+    assert manifest["version"] == "1.5.38"
     inject_ver = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     assert 'PRODUCT_VERSION = "1.0.0"' in inject_ver
     hosts = " ".join(manifest.get("host_permissions") or [])
@@ -120,6 +121,14 @@ def test_overlay_uses_live_br_player_pool_and_headshots():
     assert "redraft_value_1qb" in background
     assert "redraft_avg_pick" in background
     assert "compactDraftPlayer" in background
+    assert "kdef=1" in background
+    assert 'pos === "K" || pos === "DEF"' in background
+    assert "normDraftPos" in background
+    assert "kdef: true" in inject
+    assert "Fill your " in overlay
+    assert 'data-pos="K"' in html
+    assert 'data-pos="DEF"' in html
+    assert "function kdefNeed" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert "rank_change_7d" in background
     assert "BROverlayScore.rankPool" in overlay
     assert "sleepercdn.com/content/nfl/players/" in background
@@ -188,6 +197,15 @@ def test_collapsed_overlay_has_reopen_control():
     assert "applyDockShift" in inject
     assert "br-da-sleeper body>#root" in inject
     assert "flex:0 0 auto" in inject
+    assert "function constrainSleeperDraft" in inject
+    assert "draft-layout-container" in inject
+    assert "draftboard-page" in inject
+    assert "clearInlineShift" in inject
+    assert "padding-right:var(--br-da-shift)" in inject.replace(" ", "")
+    assert "position:fixed!important" in inject.replace(" ", "")
+    assert "calc(100vw - var(--br-da-shift))" in inject
+    assert "function constrainSleeperNode" in inject
+    assert "watchSleeperRoot" in inject
     assert "data-br-da-shifted" in inject
     assert "transition:flex-basis" in inject.replace(" ", "")
     assert "br-da-ready" in inject
@@ -290,7 +308,12 @@ def test_overlay_does_not_end_live_espn_draft_after_each_round():
     assert "hostInProgress" in overlay
     assert "hostDrafted" in overlay
     assert "hostInProgress === true" in overlay
-    assert "Math.min(SPOTS, season.length)" in overlay
+    assert "if (state.hostDrafted === true) return true" in overlay
+    assert "function maybeShowSummary" in overlay
+    assert 'state.tab = "grades"' in overlay
+    assert "Draft Report Card" in overlay
+    assert "n <= 8 ? 4 : 6" in overlay
+    assert "fetchDraftPlayoffOdds" in overlay
     assert "isHostDraftRoom" in (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     assert "mockdraftlobby" in (EXT / "draft_slot.js").read_text(encoding="utf-8")
     assert "r === inferred && r < 10" in overlay
@@ -316,6 +339,9 @@ def test_overlay_reads_league_settings_and_compares_players():
     inject = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     assert "function rosterFromEspnSlots" in helper
     assert "function rosterFromSleeperSettings" in helper
+    assert "function rosterFromSleeperLeague" in helper
+    assert "function isSleeperSuperflex" in helper
+    assert "SUPER_FLEX" in helper
     assert "function rosterFromYahooPositions" in helper
     assert "function settingsLabel" in helper
     assert "function scoringFromSleeperSettings" in helper
@@ -332,9 +358,33 @@ def test_overlay_reads_league_settings_and_compares_players():
     assert "roster: detail.roster" in yahoo_iso
     assert "passTd: detail.passTd" in yahoo_iso
     assert "rosterFromSleeperSettings" in sleeper
+    assert "rosterFromSleeperLeague" in sleeper
+    assert "isSleeperSuperflex" in sleeper
+    assert "leagueName" in sleeper
     assert "api.sleeper.app/v1/league/" in sleeper
     assert "applyLeagueSettings" in overlay
     assert "leagueSettingsLabel" in overlay
+    assert "paintLeagueChrome" in overlay
+    assert "BROverlayScore.gradeField" in overlay
+    assert 'name: t.isMe ? "You"' in overlay or 't.name = t.isMe ? "You"' in overlay
+    assert "fetchDraftPlayoffOdds" in overlay
+    assert "n <= 8 ? 4 : 6" in overlay
+    assert "function gradeField" in score
+    assert "teamGradeComposite" in score
+    assert "function ppgOf" in score
+    assert "function teamArchetype" in score
+    assert "function optimalLineup" in score
+    assert "function recapStats" in score
+    assert "function buildGradeCliffs" in score
+    assert "Highest average pick grade" in overlay
+    assert "Highest average ADP gap" not in overlay
+    assert "if (EMBEDDED) return []" in overlay
+    assert "liveLeague ? []" in overlay
+    assert "credentials: \"include\"" in (EXT / "background.js").read_text(encoding="utf-8")
+    assert "fetchDraftPlayoffOdds" in (EXT / "background.js").read_text(encoding="utf-8")
+    assert "draft_grade_team.js" in (EXT / "pack_extension.py").read_text(encoding="utf-8")
+    assert "ovLeagueName" in overlay
+    assert "detail.leagueName" in overlay
     assert "scoreCtx" in overlay
     assert "pickOwners: state.pickOwners" in overlay
     assert "ctx.pickOwners" in score
@@ -355,6 +405,8 @@ def test_overlay_reads_league_settings_and_compares_players():
     assert 'data-cmp' in overlay
     assert "Compare Players" in overlay
     assert 'id="cmpModal"' in html
+    assert 'id="ovLeagueName"' in html
+    assert 'id="ovLeagueSettings"' in html
     assert "dr-cmp-overlay" in html
     assert 'src="draft_slot.js"' in html
     assert "dr-cmp-btn" in css
@@ -530,6 +582,9 @@ if (!B.isSleeperDraftRoom("https://sleeper.com/leagues/123456789012345678/draft"
 if (B.isSleeperDraftRoom("https://sleeper.com/leagues/123456789012345678")) process.exit(1);
 if (B.isSleeperDraftRoom("https://sleeper.com/")) process.exit(1);
 if (!B.isSleeperDraftRoom("https://sleeper.com/#/draft/nfl/abc123")) process.exit(1);
+if (B.normDraftPos("DST") !== "DEF") process.exit(1);
+if (B.normDraftPos("PK") !== "K") process.exit(1);
+if (!B.isKDefPos("D/ST")) process.exit(1);
 if (B.sleeperDraftIdFromUrl("https://sleeper.com/draft/nfl/abc123") !== "abc123") process.exit(1);
 if (B.sleeperDraftIdFromUrl("https://sleeper.com/draft/abc123") !== "abc123") process.exit(1);
 if (B.sleeperLeagueIdFromUrl("https://sleeper.com/leagues/123456789012345678/draft") !== "123456789012345678") process.exit(1);
@@ -581,7 +636,91 @@ const onClock = { current: 7, teams: 12, rounds: 15, mySlot: 7 };
 if (S.recommendationPickNo(onClock) !== 7) process.exit(1);
 const stringKeys = { current: 7, teams: 12, rounds: 15, mySlot: 5, pickOwners: { "7": 5 } };
 if (S.recommendationPickNo(stringKeys) !== 7) process.exit(1);
+if (!S.isKDef({ pos: "DST" }) || !S.isKDef({ position: "PK" })) process.exit(2);
+if (S.isKDef({ pos: "WR" })) process.exit(3);
+const late = {
+  current: 140, teams: 12, rounds: 15, mySlot: 5, sf: false,
+  roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DEF: 1 },
+  picks: [],
+};
+const need = S.kdefNeed(late, { QB: 1, RB: 2, WR: 2, TE: 1, K: 0, DEF: 0 });
+if (!need || need.needK !== 1 || need.needDef !== 1) process.exit(4);
+const filled = S.kdefNeed(late, { QB: 1, RB: 2, WR: 2, TE: 1, K: 1, DEF: 1 });
+if (filled != null) process.exit(5);
+const early = {
+  current: 8, teams: 12, rounds: 15, mySlot: 5, sf: false,
+  roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DEF: 1 },
+  picks: [],
+};
+if (S.kdefNeed(early, { K: 0, DEF: 0 }) != null) process.exit(6);
+const sorted = S.sortKdef({ adp: 142, ppg: 7 }, { adp: 118, ppg: 8 });
+if (sorted <= 0) process.exit(7);
+if (typeof S.gradeField !== "function") process.exit(8);
+if (typeof S.ppgOf !== "function" || typeof S.teamArchetype !== "function") process.exit(9);
+if (typeof S.optimalLineup !== "function" || typeof S.recapStats !== "function") process.exit(10);
+const max = S.gradeMax("redraft");
+if (!max || max.value !== 20 || max.starters !== 50 || max.construction !== 30) process.exit(11);
 console.log("ok");
+"""
+    out = subprocess.run(
+        ["node", "-e", script],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert out.returncode == 0, out.stderr + out.stdout
+
+
+def test_overlay_grade_field_uses_draft_room_composite():
+    import subprocess
+
+    script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const ctx = { window: {}, self: null, console: console };
+ctx.window = ctx;
+ctx.self = ctx;
+vm.runInNewContext(fs.readFileSync("extension/draft_board_core.js", "utf8"), ctx);
+vm.runInNewContext(fs.readFileSync("extension/pick_score.js", "utf8"), ctx);
+vm.runInNewContext(fs.readFileSync("extension/draft_grade_team.js", "utf8"), ctx);
+vm.runInNewContext(fs.readFileSync("extension/draft_slot.js", "utf8"), ctx);
+vm.runInNewContext(fs.readFileSync("extension/overlay_score.js", "utf8"), ctx);
+if (!ctx.BRTeamGrade || !ctx.BROverlayScore.gradeField) process.exit(1);
+const players = [
+  { id: "1", pos: "QB", position: "QB", team: "KC", val: 8000, ppg: 22, adp: 12, tier: 1, age: 28 },
+  { id: "2", pos: "RB", position: "RB", team: "SF", val: 7000, ppg: 18, adp: 4, tier: 1, age: 24 },
+  { id: "3", pos: "WR", position: "WR", team: "CIN", val: 7500, ppg: 19, adp: 2, tier: 1, age: 25 },
+  { id: "4", pos: "TE", position: "TE", team: "SF", val: 4000, ppg: 12, adp: 30, tier: 2, age: 31 },
+  { id: "5", pos: "QB", position: "QB", team: "BUF", val: 2000, ppg: 8, adp: 80, tier: 5, age: 34 },
+  { id: "6", pos: "RB", position: "RB", team: "NYJ", val: 1800, ppg: 7, adp: 90, tier: 5, age: 29 },
+  { id: "7", pos: "WR", position: "WR", team: "CHI", val: 1600, ppg: 6, adp: 100, tier: 5, age: 30 },
+  { id: "8", pos: "TE", position: "TE", team: "DEN", val: 900, ppg: 4, adp: 140, tier: 6, age: 32 },
+];
+const ctxState = { teams: 2, rounds: 4, mySlot: 1, sf: true, type: "redraft", tep: 0, ppr: 1, passTd: 4,
+  roster: { QB: 1, SF: 1, RB: 2, WR: 2, TE: 1, FLEX: 1 } };
+const bySlot = {
+  1: [
+    { pn: 1, p: players[0] }, { pn: 3, p: players[1] }, { pn: 5, p: players[2] }, { pn: 7, p: players[3] },
+  ],
+  2: [
+    { pn: 2, p: players[4] }, { pn: 4, p: players[5] }, { pn: 6, p: players[6] }, { pn: 8, p: players[7] },
+  ],
+};
+const field = ctx.BROverlayScore.gradeField(players, bySlot, ctxState);
+if (!field || field.length !== 2) process.exit(2);
+if (!field[0].isMe || field[0].grade.score <= field[1].grade.score) process.exit(3);
+if (field[0].grade.window != null) process.exit(4);
+if (!field[0].gradeRows || field[0].gradeRows.length !== 4) process.exit(5);
+if (field[0].archetype && !field[0].archetype.label) process.exit(6);
+const ol = ctx.BROverlayScore.optimalLineup(players.slice(0, 4), ctxState);
+if (!ol || !ol.starters || ol.starters.length < 4) process.exit(7);
+const recap = ctx.BROverlayScore.recapStats(field.map(function (t) {
+  t.name = t.isMe ? "You" : "Other";
+  return t;
+}));
+if (recap && recap.steals && recap.steals.length < 1) process.exit(8);
+console.log(JSON.stringify(field.map(t => ({ slot: t.slot, score: t.grade.score, isMe: t.isMe }))));
 """
     out = subprocess.run(
         ["node", "-e", script],

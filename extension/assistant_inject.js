@@ -29,6 +29,7 @@
   let lastPoolKey = "";
   let adpSource = "consensus";
   let lastScoring = { ppr: 1, tep: 0, passTd: 4 };
+  let lastDraftType = "redraft";
   let slideTimer = null;
 
   function platformFromHost() {
@@ -143,6 +144,100 @@
     void cap;
   }
 
+  function clearInlineShift(el) {
+    if (!el || el === document.body) return;
+    el.style.removeProperty("width");
+    el.style.removeProperty("max-width");
+    el.style.removeProperty("min-width");
+    el.style.removeProperty("left");
+    el.style.removeProperty("right");
+    el.removeAttribute("data-br-da-shifted");
+  }
+
+  function sleeperChromePortal(el) {
+    if (!el || el.id === ROOT_ID) return true;
+    const id = String(el.id || "");
+    const cls = String((el.className && el.className.baseVal != null ? el.className.baseVal : el.className) || "");
+    const role = String((el.getAttribute && el.getAttribute("role")) || "");
+    return /portal|modal|dialog|toast|popover|tooltip|chat|fab/i.test(id + " " + cls + " " + role);
+  }
+
+  function constrainSleeperNode(el, px) {
+    if (!el || el.id === ROOT_ID || el === document.body) return;
+    try {
+      const st = window.getComputedStyle(el);
+      el.style.setProperty("box-sizing", "border-box", "important");
+      el.style.setProperty("min-width", "0", "important");
+      if (st.position === "fixed" || st.position === "absolute") {
+        const r = el.getBoundingClientRect();
+        if (r.width < 8 || r.height < 8) return;
+        if (r.left <= 12 && r.width >= window.innerWidth - 80) {
+          el.style.setProperty("left", "0px", "important");
+          el.style.setProperty("right", px + "px", "important");
+          el.style.setProperty("width", "auto", "important");
+          el.style.setProperty("max-width", "none", "important");
+        }
+        return;
+      }
+      el.style.setProperty("width", "calc(100vw - " + px + "px)", "important");
+      el.style.setProperty("max-width", "calc(100vw - " + px + "px)", "important");
+    } catch (_e) { /* ignore */ }
+  }
+
+  function constrainSleeperDraft(px) {
+    const sleeperRoot = document.getElementById("root") || document.getElementById("app");
+    if (sleeperRoot && sleeperRoot !== document.body) {
+      clearInlineShift(sleeperRoot);
+      sleeperRoot.style.setProperty("box-sizing", "border-box", "important");
+      sleeperRoot.style.setProperty("min-width", "0", "important");
+      sleeperRoot.style.setProperty("width", "100%", "important");
+      sleeperRoot.style.setProperty("max-width", "100%", "important");
+      sleeperRoot.style.setProperty("overflow-x", "hidden", "important");
+    }
+    const named = document.querySelectorAll(
+      ".draft-layout-container, .draftboard-page, .bottom-container, .scrollbar-container"
+    );
+    for (let i = 0; i < named.length; i++) constrainSleeperNode(named[i], px);
+    if (!sleeperRoot) return;
+    const extras = [];
+    try {
+      const vw = sleeperRoot.querySelectorAll('[style*="100vw"]');
+      for (let i = 0; i < Math.min(vw.length, 24); i++) extras.push(vw[i]);
+    } catch (_e) { /* ignore */ }
+    try {
+      const kids = sleeperRoot.querySelectorAll(":scope > div, :scope > div > div");
+      for (let i = 0; i < Math.min(kids.length, 16); i++) {
+        if (looksFullBleed(kids[i])) extras.push(kids[i]);
+      }
+    } catch (_e) { /* ignore */ }
+    extras.forEach(function (el) {
+      if (sleeperChromePortal(el)) return;
+      constrainSleeperNode(el, px);
+    });
+    watchSleeperRoot();
+  }
+
+  let dockShiftRaf = 0;
+  function scheduleDockShift() {
+    if (dockShiftRaf) return;
+    dockShiftRaf = requestAnimationFrame(function () {
+      dockShiftRaf = 0;
+      applyDockShift();
+    });
+  }
+
+  function watchSleeperRoot() {
+    const sleeperRoot = document.getElementById("root") || document.getElementById("app");
+    if (!sleeperRoot || sleeperRoot.getAttribute("data-br-da-watch") === "1") return;
+    sleeperRoot.setAttribute("data-br-da-watch", "1");
+    try {
+      if (!window.__brDaSleeperMo) {
+        window.__brDaSleeperMo = new MutationObserver(function () { scheduleDockShift(); });
+      }
+      window.__brDaSleeperMo.observe(sleeperRoot, { childList: true, subtree: true });
+    } catch (_e) { /* ignore */ }
+  }
+
   function applyDockShift() {
     const px = dockShiftPx();
     const root = document.getElementById(ROOT_ID);
@@ -152,16 +247,12 @@
     html.classList.add("br-da-docked");
     html.classList.add("br-da-" + platform);
     html.style.setProperty("--br-da-shift", px + "px");
-    const shells = [];
-    hostRoots().forEach(function (el) { shells.push(el); });
     if (platform === "sleeper") {
-      shells.forEach(function (el) {
-        if (!el || el === root || (root && root.contains(el))) return;
-        if (isHostPortal(el)) return;
-        shiftShell(el, px, cap, root);
-      });
+      constrainSleeperDraft(px);
       return;
     }
+    const shells = [];
+    hostRoots().forEach(function (el) { shells.push(el); });
     if (document.body) {
       Array.prototype.forEach.call(document.body.children, function (el) { shells.push(el); });
       const nested = document.querySelectorAll("body > *:not(#" + ROOT_ID + ") > *");
@@ -191,8 +282,12 @@
       "html.br-da-docked body{display:flex!important;flex-direction:row!important;align-items:stretch!important;width:100%!important;max-width:100%!important;min-height:100%!important;height:100%!important;margin:0!important;overflow-x:hidden!important;box-sizing:border-box!important;}" +
       "html.br-da-docked body>*:not(#" + ROOT_ID + "){flex:1 1 auto!important;min-width:0!important;max-width:100%!important;box-sizing:border-box!important;}" +
       "html.br-da-docked.br-da-yahoo #root,html.br-da-docked.br-da-yahoo #app,html.br-da-docked.br-da-yahoo #__next,html.br-da-docked.br-da-yahoo #draft,html.br-da-docked.br-da-yahoo #draftapp,html.br-da-docked.br-da-sleeper #root,html.br-da-docked.br-da-sleeper #app,html.br-da-docked.br-da-sleeper [data-reactroot]{width:auto!important;max-width:100%!important;min-width:0!important;flex:1 1 auto!important;box-sizing:border-box!important;}" +
-      "html.br-da-docked.br-da-sleeper body>#root,html.br-da-docked.br-da-sleeper body>#app{flex:1 1 auto!important;min-width:0!important;max-width:100%!important;width:auto!important;}" +
+      "html.br-da-docked.br-da-sleeper body{display:block!important;padding-right:var(--br-da-shift)!important;width:100%!important;max-width:100%!important;box-sizing:border-box!important;overflow-x:hidden!important;}" +
+      "html.br-da-docked.br-da-sleeper body>#root,html.br-da-docked.br-da-sleeper body>#app{display:block!important;flex:none!important;min-width:0!important;width:100%!important;max-width:100%!important;overflow-x:hidden!important;}" +
       "html.br-da-docked.br-da-sleeper body>*:not(#" + ROOT_ID + "):not(#root):not(#app){flex:0 0 auto!important;max-width:none!important;}" +
+      "html.br-da-docked.br-da-sleeper #" + ROOT_ID + "{position:fixed!important;top:0!important;right:0!important;bottom:0!important;left:auto!important;flex:none!important;width:var(--br-da-shift)!important;height:100%!important;min-height:100vh!important;}" +
+      "html.br-da-docked.br-da-sleeper .draft-layout-container,html.br-da-docked.br-da-sleeper .draftboard-page,html.br-da-docked.br-da-sleeper .bottom-container,html.br-da-docked.br-da-sleeper .scrollbar-container{width:calc(100vw - var(--br-da-shift))!important;max-width:calc(100vw - var(--br-da-shift))!important;min-width:0!important;box-sizing:border-box!important;}" +
+      "html.br-da-docked.br-da-sleeper #root>*{min-width:0!important;max-width:100%!important;}" +
       "html.br-da-docked.br-da-ready body{transition:none;}" +
       "#" + ROOT_ID + "{position:relative;flex:0 0 var(--br-da-shift);width:var(--br-da-shift);align-self:stretch;min-height:100vh;z-index:2147483645;box-shadow:none;border-left:1px solid rgba(18,45,75,.35);background:#122d4b;" +
       "contain:layout paint;overflow:hidden;}" +
@@ -284,13 +379,14 @@
     const opts = Object.assign(
       {
         type: "fetchDraftPool",
-        scoringType: "redraft",
+        scoringType: lastDraftType || "redraft",
         adpSource: adpSource || "consensus",
         sf: false,
         teams: 12,
         ppr: lastScoring.ppr,
         tep: lastScoring.tep,
         passTd: lastScoring.passTd,
+        kdef: true,
       },
       extra || {}
     );
@@ -302,6 +398,7 @@
       opts.ppr,
       opts.tep,
       opts.passTd,
+      opts.kdef !== false ? "kdef" : "nokd",
     ].join("|");
     adpSource = String(opts.adpSource || "consensus");
     try {
@@ -399,8 +496,12 @@
     if (payload.ppr != null && isFinite(Number(payload.ppr))) lastScoring.ppr = Number(payload.ppr);
     if (payload.tep != null && isFinite(Number(payload.tep))) lastScoring.tep = Number(payload.tep);
     if (payload.passTd != null && isFinite(Number(payload.passTd))) lastScoring.passTd = Number(payload.passTd);
+    if (payload.draftType) {
+      const dt = String(payload.draftType).toLowerCase();
+      lastDraftType = (dt === "dynasty" || dt === "startup") ? "startup" : "redraft";
+    }
     const key = [
-      "redraft",
+      lastDraftType || "redraft",
       sf ? "sf" : "1qb",
       adpSource,
       teams >= 8 ? teams : 12,
@@ -412,6 +513,7 @@
       requestPool({
         teams: teams >= 8 ? teams : 12,
         sf: sf,
+        scoringType: lastDraftType,
         adpSource: adpSource,
         ppr: lastScoring.ppr,
         tep: lastScoring.tep,

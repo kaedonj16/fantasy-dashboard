@@ -313,6 +313,18 @@
     return { QB: 0, SF: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, RB_WR: 0, WR_TE: 0, RB_TE: 0, K: 0, DEF: 0, BN: 0 };
   }
 
+  function normDraftPos(pos) {
+    const p = String(pos || "").toUpperCase();
+    if (p === "PK") return "K";
+    if (p === "DST" || p === "D/ST" || p === "D-ST" || p === "D ST") return "DEF";
+    return p;
+  }
+
+  function isKDefPos(pos) {
+    const p = normDraftPos(pos);
+    return p === "K" || p === "DEF";
+  }
+
   function rosterFromEspnSlots(counts) {
     const out = emptyRoster();
     if (!counts || typeof counts !== "object") return out;
@@ -342,6 +354,32 @@
     out.DEF = Number(s.slots_def || 0);
     out.BN = Number(s.slots_bn || 0);
     return out;
+  }
+
+  function rosterFromSleeperPositions(positions) {
+    return rosterFromYahooPositions(positions);
+  }
+
+  function rosterFromSleeperLeague(league) {
+    const src = league && typeof league === "object" ? league : {};
+    const settings = src.settings && typeof src.settings === "object" ? src.settings : src;
+    const fromSettings = rosterFromSleeperSettings(settings);
+    const fromPos = rosterFromSleeperPositions(src.roster_positions || []);
+    if (!rosterHasStarters(fromPos)) return fromSettings;
+    ["BN", "K", "DEF"].forEach(function (k) {
+      if (!fromPos[k] && fromSettings[k]) fromPos[k] = fromSettings[k];
+    });
+    return fromPos;
+  }
+
+  function isSleeperSuperflex(league, settings) {
+    const s = settings || (league && league.settings) || {};
+    if (Number(s.slots_super_flex || s.slots_sf || 0) > 0) return true;
+    const positions = (league && league.roster_positions) || [];
+    return positions.some(function (p) {
+      const raw = String(p || "").toUpperCase();
+      return raw === "SUPER_FLEX" || raw === "SUPERFLEX" || raw === "SFLEX" || raw === "OP";
+    });
   }
 
   function rosterFromYahooPositions(positions) {
@@ -1233,8 +1271,13 @@
     sleeperDraftIdFromUrl: sleeperDraftIdFromUrl,
     sleeperLeagueIdFromUrl: sleeperLeagueIdFromUrl,
     clampSlot: clampSlot,
+    normDraftPos: normDraftPos,
+    isKDefPos: isKDefPos,
     rosterFromEspnSlots: rosterFromEspnSlots,
     rosterFromSleeperSettings: rosterFromSleeperSettings,
+    rosterFromSleeperPositions: rosterFromSleeperPositions,
+    rosterFromSleeperLeague: rosterFromSleeperLeague,
+    isSleeperSuperflex: isSleeperSuperflex,
     rosterFromYahooPositions: rosterFromYahooPositions,
     rosterHasStarters: rosterHasStarters,
     slotListFromRoster: slotListFromRoster,

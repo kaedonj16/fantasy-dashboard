@@ -105,12 +105,14 @@ def api_my_leagues():
         leagues, _season = resolve_my_leagues(
             session.get("viewer_user_id"), session.get("account_id"), _cur_season
         )
+        from utils.league_chrome import fields_from_provider_league, format_label
         for m in leagues:
             plat = m.get("platform") or "sleeper"
             season = m.get("season")
             name = m.get("name") or f"{plat.title()} League"
             label = f"{name} · {season}" if season else name
-            out.append({
+            live = fields_from_provider_league(m)
+            row = {
                 "platform": plat,
                 "league_id": m.get("league_id"),
                 "season": season,
@@ -120,7 +122,13 @@ def api_my_leagues():
                 "last_synced_at": m.get("last_synced_at"),
                 "last_successful_sync_at": m.get("last_successful_sync_at"),
                 "needs_reconnect": m.get("connection_status") == "reauth_required",
-            })
+            }
+            if live.get("has_format"):
+                row["sf"] = bool(live.get("is_sf"))
+                if live.get("size") and int(live["size"]) >= 2:
+                    row["size"] = int(live["size"])
+                row["format"] = format_label(live.get("size") or 0, bool(live.get("is_sf")))
+            out.append(row)
     except Exception as exc:
         logger.warning("[my-leagues] resolve failed: %s", exc)
 

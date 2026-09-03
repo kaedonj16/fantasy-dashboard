@@ -32,6 +32,7 @@ INCLUDE = [
     "overlay_score.js",
     "pick_score.js",
     "draft_board_core.js",
+    "draft_grade_team.js",
     "sleeper_draft.js",
     "sleeper_draft_main.js",
     "espn_draft.js",
@@ -70,6 +71,7 @@ def build_manifest() -> dict:
 SHARED_JS = (
     (REPO / "static" / "pick_score.js", ROOT / "pick_score.js"),
     (REPO / "static" / "draft_board_core.js", ROOT / "draft_board_core.js"),
+    (REPO / "static" / "draft_grade_team.js", ROOT / "draft_grade_team.js"),
 )
 
 

@@ -226,6 +226,10 @@
     hostDrafted: null,
     teamNames: {},
     pickOwners: {},
+    slotToRosterId: {},
+    leagueId: "",
+    season: 0,
+    draftType: "redraft",
     hostClock: null,
     hostClockAt: 0,
     pickTimer: 0,
@@ -245,6 +249,7 @@
     valCap: 180,
     sitePool: false,
     sf: false,
+    leagueName: "",
     roster: null,
     ppr: 1,
     tep: 0,
@@ -266,6 +271,7 @@
   let cliffLeft = null;
   let renderQueued = false;
   let compareIds = [];
+  let summaryShown = false;
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -295,7 +301,7 @@
   function draftDone() {
     if (state.live) {
       if (state.hostInProgress === true) return false;
-      if (state.hostDrafted === true) return state.current > state.teams * state.rounds;
+      if (state.hostDrafted === true) return true;
       return false;
     }
     return state.current > state.teams * state.rounds;
@@ -320,6 +326,7 @@
       detail && detail.drafted ? 1 : 0,
       detail && detail.platform || "",
       detail && detail.sf ? 1 : 0,
+      detail && detail.leagueName || "",
       detail && detail.ppr != null ? detail.ppr : "",
       detail && detail.tep != null ? detail.tep : "",
       detail && detail.passTd != null ? detail.passTd : "",
@@ -340,9 +347,24 @@
   function normName(s) {
     return String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "").replace(/(jr|sr|ii|iii|iv)$/, "");
   }
+  function normPos(pos) {
+    if (window.BRDraftSlot && BRDraftSlot.normDraftPos) return BRDraftSlot.normDraftPos(pos);
+    const p = String(pos || "").toUpperCase();
+    if (p === "PK") return "K";
+    if (p === "DST" || p === "D/ST" || p === "D-ST" || p === "D ST") return "DEF";
+    return p;
+  }
+  function isKDef(p) {
+    if (window.BROverlayScore && BROverlayScore.isKDef) return BROverlayScore.isKDef(p);
+    const pos = normPos(p && (p.pos || p.position || p));
+    return pos === "K" || pos === "DEF";
+  }
   function posCounts(list) {
-    const c = { QB: 0, RB: 0, WR: 0, TE: 0 };
-    list.forEach(function (p) { if (c[p.pos] != null) c[p.pos]++; });
+    const c = { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DEF: 0 };
+    list.forEach(function (p) {
+      const pos = normPos(p.pos || p.position);
+      if (c[pos] != null) c[pos]++;
+    });
     return c;
   }
   function posTargets() {
@@ -386,7 +408,7 @@
       mySlot: state.mySlot,
       pickOwners: state.pickOwners,
       sf: !!state.sf,
-      type: "redraft",
+      type: state.draftType === "startup" || state.draftType === "dynasty" ? "startup" : "redraft",
       tep: Number(state.tep) || 0,
       ppr: state.ppr != null ? Number(state.ppr) : 1,
       passTd: state.passTd >= 6 ? 6 : 4,
@@ -395,6 +417,7 @@
     };
   }
   function pickScore(p, counts, pickNo) {
+    if (isKDef(p)) return null;
     if (p && p._ps != null) return p._ps;
     const adp = p.adp;
     const rel = (pickNo - adp) / Math.max(adp, 1.5);
@@ -409,8 +432,10 @@
     return Math.round(clamp(s, 8, 99));
   }
   function decisionScore(p, counts, pickNo) {
+    if (isKDef(p)) return null;
     if (p && p._ds != null) return p._ds;
     const ps = pickScore(p, counts, pickNo);
+    if (ps == null) return null;
     const need = needOf(counts, p.pos);
     let ds = ps + need * 8 + (p.tier <= 2 ? 4 : 0);
     if (!need && p.pos === "QB" && (counts.QB || 0) >= 1) ds -= 18;
@@ -423,7 +448,7 @@
         return BROverlayScore.rankPool(players, available(), scoreCtx());
       } catch (_e) { /* fall through to local ranker */ }
     }
-    const pool = available();
+    const pool = available().filter(function (p) { return !isKDef(p); });
     for (let i = 0; i < pool.length; i++) {
       const p = pool[i];
       p._ps = pickScore(p, counts, pickNo);
@@ -521,10 +546,17 @@
     state.clock = CLOCK_START;
     state.expanded = null;
     state.toast = "";
+    summaryShown = false;
     stopAuto();
   }
 
   function slotList() {
+    if (window.BROverlayScore && BROverlayScore.optimalLineup) {
+      const ol = BROverlayScore.optimalLineup([], scoreCtx());
+      if (ol && ol.starters && ol.starters.length >= 4) {
+        return ol.starters.map(function (s) { return s.slot; });
+      }
+    }
     if (window.BRDraftSlot && BRDraftSlot.slotListFromRoster && state.roster) {
       const list = BRDraftSlot.slotListFromRoster(state.roster);
       if (list && list.length >= 4) return list;
@@ -536,11 +568,17 @@
     const s = String(slot || "").toUpperCase();
     if (s === "FLEX") return p === "RB" || p === "WR" || p === "TE";
     if (s === "SF" || s === "OP") return p === "QB" || p === "RB" || p === "WR" || p === "TE";
-    if (s === "DEF") return p === "DEF" || p === "DST";
-    return p === s;
+    if (s === "RB_WR") return p === "RB" || p === "WR";
+    if (s === "WR_TE") return p === "WR" || p === "TE";
+    if (s === "RB_TE") return p === "RB" || p === "TE";
+    if (s === "DEF") return normPos(p) === "DEF";
+    return normPos(p) === s;
   }
   function optimalLineup(list) {
-    const leftover = list.slice().sort(function (a, b) { return b.ppg - a.ppg; });
+    if (window.BROverlayScore && BROverlayScore.optimalLineup) {
+      return BROverlayScore.optimalLineup(list, scoreCtx());
+    }
+    const leftover = list.slice().sort(function (a, b) { return (b.ppg || 0) - (a.ppg || 0); });
     const starters = [];
     function take(slot, ok) {
       const i = leftover.findIndex(ok);
@@ -554,6 +592,7 @@
   }
 
   function competitiveWindow(list) {
+    if (state.draftType === "redraft") return null;
     const ol = optimalLineup(list);
     let wSum = 0, aSum = 0;
     ol.starters.forEach(function (x) {
@@ -561,7 +600,7 @@
       const w = Math.max(1, x.p.val || 1);
       aSum += x.p.age * w; wSum += w;
     });
-    if (wSum <= 0) return { label: "Balanced", avgAge: 0 };
+    if (wSum <= 0) return null;
     const avgAge = aSum / wSum;
     const label = avgAge <= 24.5 ? "Future" : avgAge >= 26.5 ? "Win-Now" : "Balanced";
     return { label: label, avgAge: avgAge };
@@ -598,7 +637,35 @@
     };
   }
 
+  function picksBySlot() {
+    const out = {};
+    for (let s = 1; s <= state.teams; s++) out[s] = [];
+    state.picks.forEach(function (x) {
+      const slot = Number(x.slot) || 0;
+      if (!out[slot]) out[slot] = [];
+      out[slot].push({ pn: x.pn, p: x.p });
+    });
+    Object.keys(out).forEach(function (k) {
+      out[k].sort(function (a, b) { return a.pn - b.pn; });
+    });
+    return out;
+  }
+
   function gradeAllTeams() {
+    const bySlot = picksBySlot();
+    if (window.BROverlayScore && BROverlayScore.gradeField && (state.sitePool || !EMBEDDED)) {
+      try {
+        const field = BROverlayScore.gradeField(players, bySlot, scoreCtx());
+        if (field && field.length) {
+          return field.map(function (t) {
+            t.name = t.isMe ? "You" : teamName(t.slot);
+            t.picks = teamPicks(t.slot);
+            return t;
+          });
+        }
+      } catch (_e) { /* fall through only for the standalone mockup */ }
+    }
+    if (EMBEDDED) return [];
     const raw = [];
     for (let s = 1; s <= state.teams; s++) raw.push(rawTeamScore(s));
     const scores = raw.map(function (g) { return g.score; });
@@ -612,7 +679,7 @@
       const score = clamp(damp * curved + (1 - damp) * 70, 22, 97);
       return {
         slot: i + 1,
-        name: teamName(i + 1),
+        name: (i + 1 === state.mySlot) ? "You" : teamName(i + 1),
         isMe: i + 1 === state.mySlot,
         picks: teamPicks(i + 1),
         grade: {
@@ -627,34 +694,141 @@
     }).sort(function (a, b) { return b.grade.score - a.grade.score; });
   }
 
+  function teamStrengthPPG(list) {
+    const ol = optimalLineup(list);
+    let s = 0;
+    ol.starters.forEach(function (x) {
+      if (!x.p) return;
+      const v = (window.BROverlayScore && BROverlayScore.lineupScore)
+        ? BROverlayScore.lineupScore(x.p, scoreCtx())
+        : (Number(x.p.ppg) || 0);
+      if (isFinite(v) && v > 0 && v !== -Infinity) s += v;
+    });
+    return s;
+  }
+
+  let poMcCache = null, poMcSig = null;
+  function playoffOddsBySlot(all) {
+    const sig = all.map(function (t) { return t.slot + ":" + (t.picks ? t.picks.length : 0); }).join("|") + "@" + state.current;
+    if (poMcCache && poMcSig === sig) return poMcCache;
+    const teams = all.map(function (t) {
+      return { slot: t.slot, S: teamStrengthPPG((t.picks || []).map(function (x) { return x.p || x; }).filter(Boolean)) };
+    });
+    const n = teams.length;
+    const odds = {};
+    teams.forEach(function (t) { odds[t.slot] = 0; });
+    if (n >= 2) {
+      let spots = n <= 8 ? 4 : 6;
+      if (spots >= n) spots = Math.max(1, n - 1);
+      const W = 14, N = 2500, sigma = 27;
+      function gauss() {
+        let u = 0, v = 0;
+        while (!u) u = Math.random();
+        while (!v) v = Math.random();
+        return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+      }
+      for (let s = 0; s < N; s++) {
+        const wins = [], pts = [];
+        for (let t = 0; t < n; t++) { wins[t] = 0; pts[t] = 0; }
+        for (let w = 0; w < W; w++) {
+          const idx = [];
+          for (let q = 0; q < n; q++) idx[q] = q;
+          for (let i = idx.length - 1; i > 0; i--) {
+            const j = (Math.random() * (i + 1)) | 0;
+            const tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp;
+          }
+          for (let k = 0; k + 1 < idx.length; k += 2) {
+            const a = idx[k], b = idx[k + 1];
+            const sa = teams[a].S + gauss() * sigma;
+            const sb = teams[b].S + gauss() * sigma;
+            pts[a] += sa; pts[b] += sb;
+            if (sa >= sb) wins[a]++; else wins[b]++;
+          }
+        }
+        const ord = [];
+        for (let o = 0; o < n; o++) ord[o] = o;
+        ord.sort(function (x, y) { return (wins[y] - wins[x]) || (pts[y] - pts[x]); });
+        for (let r = 0; r < spots; r++) odds[teams[ord[r]].slot] += 1;
+      }
+      teams.forEach(function (t) { odds[t.slot] = Math.round(odds[t.slot] / N * 100); });
+    }
+    poMcCache = odds; poMcSig = sig;
+    return odds;
+  }
+
+  let poServer = null, poServerSig = null, poFetching = false, poFailedSig = null;
+  function poFmt(po) {
+    const n = Number(po);
+    if (!isFinite(n)) return "";
+    if (n >= 100) return "100";
+    if (n <= 0) return "0";
+    return n.toFixed(1);
+  }
+  function poColor(po) {
+    return po >= 60 ? "#22c55e" : po >= 35 ? "#f59e0b" : "#ef4444";
+  }
+  function refreshServerPlayoffOdds(all) {
+    if (!draftDone() || !all || all.length < 2) return;
+    const sig = all.map(function (t) { return t.slot + ":" + (t.picks ? t.picks.length : 0); }).join("|") + "@" + state.current;
+    if (poFetching || (poServer && poServerSig === sig) || poFailedSig === sig) return;
+    if (!state.leagueId || typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.sendMessage) {
+      poFailedSig = sig;
+      return;
+    }
+    poFetching = true;
+    const liveLeague = !!(state.leagueId && state.platform);
+    const teamsPayload = all.map(function (t) {
+      const rid = state.slotToRosterId[t.slot] || state.slotToRosterId[String(t.slot)] || t.slot;
+      return {
+        slot: t.slot,
+        roster_id: rid,
+        name: t.name,
+        players: liveLeague ? [] : (t.picks || []).map(function (x) {
+          return (x.p && x.p.id != null) ? String(x.p.id) : (x.id != null ? String(x.id) : null);
+        }).filter(Boolean),
+      };
+    });
+    chrome.runtime.sendMessage({
+      type: "fetchDraftPlayoffOdds",
+      season: state.season || 0,
+      ppr: state.ppr,
+      tep: state.tep,
+      passTd: state.passTd,
+      roster: state.roster,
+      playoffTeams: state.teams <= 8 ? 4 : 6,
+      platform: state.platform || "sleeper",
+      leagueId: state.leagueId,
+      useLeague: true,
+      viewerSlot: state.mySlot || null,
+      teams: teamsPayload,
+    }, function (resp) {
+      void chrome.runtime.lastError;
+      poFetching = false;
+      if (resp && resp.odds && resp.odds.length) {
+        const m = {};
+        resp.odds.forEach(function (o) { if (o.slot != null) m[o.slot] = o.playoff_pct; });
+        poServer = m; poServerSig = sig; poFailedSig = null;
+        render();
+      } else {
+        poFailedSig = sig;
+        render();
+      }
+    });
+  }
+
   function playoffOdds(all) {
     if (!draftDone()) return {};
-    const str = all.map(function (t) {
-      const ol = optimalLineup(t.picks);
-      let s = 0;
-      ol.starters.forEach(function (x) { if (x.p) s += x.p.ppg; });
-      return { slot: t.slot, S: s };
-    });
-    const SIMS = 360, SPOTS = 6, N = 14, sigma = 7.5;
-    const hits = {};
-    str.forEach(function (t) { hits[t.slot] = 0; });
-    function gauss() {
-      let u = 0, v = 0;
-      while (!u) u = Math.random();
-      while (!v) v = Math.random();
-      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-    }
-    for (let i = 0; i < SIMS; i++) {
-      const season = str.map(function (t) {
-        return { slot: t.slot, pts: t.S * N + gauss() * sigma * Math.sqrt(N) };
-      }).sort(function (a, b) { return b.pts - a.pts; });
-      for (let k = 0; k < Math.min(SPOTS, season.length); k++) {
-        if (season[k]) hits[season[k].slot]++;
-      }
-    }
-    const out = {};
-    str.forEach(function (t) { out[t.slot] = Math.round(1000 * hits[t.slot] / SIMS) / 10; });
-    return out;
+    refreshServerPlayoffOdds(all);
+    const sig = all.map(function (t) { return t.slot + ":" + (t.picks ? t.picks.length : 0); }).join("|") + "@" + state.current;
+    if (poServer && poServerSig === sig) return poServer;
+    if (poFailedSig === sig) return playoffOddsBySlot(all);
+    return {};
+  }
+
+  function playoffOddsPending(all) {
+    if (!draftDone() || !all || all.length < 2) return false;
+    const sig = all.map(function (t) { return t.slot + ":" + (t.picks ? t.picks.length : 0); }).join("|") + "@" + state.current;
+    return !(poServer && poServerSig === sig) && poFailedSig !== sig;
   }
 
   function bannersHtml(counts, rec) {
@@ -726,11 +900,13 @@
     const cliff = isTierCliff(p);
     const pc = POS[p.pos];
     const mine = myPicks();
-    const byeLvl = mine.filter(function (x) { return x.bye === p.bye; }).length >= 2;
+    const byeLvl = !isKDef(p) && mine.filter(function (x) { return !isKDef(x) && x.bye === p.bye; }).length >= 2;
     let chip;
-    if (state.sort === "rec") {
+    if (isKDef(p) && p._rank == null) {
+      chip = "";
+    } else if (state.sort === "rec") {
       chip = '<div class="pschip recchip" title="Recommendation rank">#' + (opts.rank || p._rank) + "<small>REC</small></div>";
-    } else     if (state.sort === "ps") {
+    } else if (state.sort === "ps" && p._ps != null) {
       const shown = p._psShow != null ? p._psShow : p._ps;
       const col = psColor(shown);
       chip = '<div class="pschip" style="color:' + col + ";background:" + col + '1a" title="Pick Score">'+ shown + "<small>PS</small></div>";
@@ -785,6 +961,32 @@
     return { "A+": 92, A: 87, "A-": 82, "B+": 77, B: 72, "B-": 67, "C+": 62, C: 57, "C-": 52, D: 43, F: 20 }[letter] || 55;
   }
 
+  function playoffOddsFor(all, slot) {
+    const odds = playoffOdds(all)[slot];
+    return odds != null && isFinite(Number(odds)) ? Number(odds) : null;
+  }
+
+  function finalGradeCard(all) {
+    const me = (all || []).filter(function (t) { return t.isMe; })[0] || (all || [])[0];
+    if (!me) return "";
+    const rank = all.findIndex(function (t) { return t.isMe; }) + 1;
+    const shownRank = rank >= 1 ? rank : 1;
+    const odds = playoffOddsFor(all, me.slot);
+    const oddsHtml = odds != null
+      ? ('<b class="tabular" style="color:' + (odds >= 50 ? "var(--win)" : "var(--warn)") + '">' + odds.toFixed(1) + "%</b>")
+      : "<b>-</b>";
+    return '<div class="rec-card final-grade"><div class="rec-label">Draft Report Card</div>'
+      + '<div class="letter" style="color:' + gradeCol(me.grade.score) + '">' + gradeLetter(me.grade.score) + "</div>"
+      + '<div class="rank">League rank #' + shownRank + " of " + state.teams + "</div>"
+      + '<div class="sub">Projected playoff odds ' + oddsHtml + "</div></div>";
+  }
+
+  function maybeShowSummary() {
+    if (summaryShown || !draftDone() || !state.picks.length) return;
+    summaryShown = true;
+    state.tab = "grades";
+  }
+
   function renderBoard() {
     if (EMBEDDED && !state.sitePool) {
       return '<div class="empty-log">Loading BR Fantasy ranks, ADP, and values…</div>';
@@ -795,16 +997,7 @@
     const pool = rankedPool(counts, recPn);
     let html = "";
     if (draftDone()) {
-      const all = gradeAllTeams();
-      const me = all.filter(function (t) { return t.isMe; })[0] || all[0];
-      if (me) {
-        const rank = all.findIndex(function (t) { return t.isMe; }) + 1;
-        const odds = playoffOdds(all)[state.mySlot];
-        html += '<div class="rec-card final-grade"><div class="rec-label">Draft complete</div>'
-          + '<div class="letter" style="color:' + gradeCol(me.grade.score) + '">' + gradeLetter(me.grade.score) + "</div>"
-          + '<div class="rank">League rank #' + rank + " of " + state.teams + "</div>"
-          + '<div class="sub">Projected playoff odds <b class="tabular" style="color:' + (odds >= 50 ? "var(--win)" : "var(--warn)") + '">' + (odds != null ? odds.toFixed(1) : "-") + "%</b></div></div>";
-      }
+      html += finalGradeCard(gradeAllTeams());
     } else if (pool[0]) {
       html += bannersHtml(counts, pool[0]);
     }
@@ -813,28 +1006,76 @@
       html += '<div class="cmp-hint">Comparing ' + esc(waiting ? waiting.name : "player") + " - tap vs on another</div>";
     }
     const q = (state.query || "").trim().toLowerCase();
-    let rows = pool;
-    if (state.pos !== "ALL") rows = rows.filter(function (p) { return p.pos === state.pos; });
-    if (q) rows = rows.filter(function (p) { return String(p.name).toLowerCase().indexOf(q) >= 0; });
+    const kdAvail = available().filter(isKDef).sort(function (a, b) {
+      return (window.BROverlayScore && BROverlayScore.sortKdef)
+        ? BROverlayScore.sortKdef(a, b)
+        : ((a.adp || 999) - (b.adp || 999)) || ((b.ppg || 0) - (a.ppg || 0));
+    });
+    let promoted = [];
+    if (state.pos === "ALL" && kdAvail.length && window.BROverlayScore && BROverlayScore.kdefNeed) {
+      const need = BROverlayScore.kdefNeed(scoreCtx(), counts);
+      if (need) {
+        if (need.needK > 0) {
+          const bk = kdAvail.filter(function (p) { return normPos(p.pos) === "K"; })[0];
+          if (bk) promoted.push(bk);
+        }
+        if (need.needDef > 0) {
+          const bd = kdAvail.filter(function (p) { return normPos(p.pos) === "DEF"; })[0];
+          if (bd) promoted.push(bd);
+        }
+      }
+    }
+    const promotedIds = {};
+    promoted.forEach(function (p) { promotedIds[String(p.id)] = true; });
+    let kdRest = kdAvail.filter(function (p) { return !promotedIds[String(p.id)]; });
+    let rows = pool.filter(function (p) { return !isKDef(p); });
+    if (state.pos === "K" || state.pos === "DEF") {
+      rows = kdAvail.filter(function (p) { return normPos(p.pos) === state.pos; });
+      promoted = [];
+      kdRest = [];
+    } else if (state.pos !== "ALL") {
+      rows = rows.filter(function (p) { return normPos(p.pos) === state.pos; });
+      promoted = [];
+      kdRest = [];
+    }
+    if (q) {
+      const hit = function (p) { return String(p.name).toLowerCase().indexOf(q) >= 0; };
+      rows = rows.filter(hit);
+      promoted = promoted.filter(hit);
+      kdRest = kdRest.filter(hit);
+    }
     if (state.sort === "adp") rows = rows.slice().sort(function (a, b) { return a.adp - b.adp; });
-    else if (state.sort === "ps") rows = rows.slice().sort(function (a, b) { return b._ps - a._ps; });
-    else if (state.sort === "proj") rows = rows.slice().sort(function (a, b) { return b.ppg - a.ppg; });
-    else if (state.sort === "val") rows = rows.slice().sort(function (a, b) { return b.val - a.val; });
+    else if (state.sort === "ps") rows = rows.slice().sort(function (a, b) { return (b._ps || 0) - (a._ps || 0); });
+    else if (state.sort === "proj") rows = rows.slice().sort(function (a, b) { return (b.ppg || 0) - (a.ppg || 0); });
+    else if (state.sort === "val") rows = rows.slice().sort(function (a, b) { return (b.val || 0) - (a.val || 0); });
+    promoted.forEach(function (p) {
+      html += playerRow(p, { reason: "Fill your " + normPos(p.pos) + " slot before the draft ends" });
+    });
     rows.slice(0, 40).forEach(function (p, i) {
       let reason = "";
-      if (state.sort === "rec") {
+      if (state.sort === "rec" && !isKDef(p)) {
         reason = (window.BROverlayScore && pool && pool._reasonCtx)
           ? (BROverlayScore.pickReason(p, pool) || "")
           : (reasonsFor(p, counts, recPn)[0] || "");
       }
-      html += playerRow(p, { rank: state.sort === "rec" ? p._rank : i + 1, reason: reason });
+      html += playerRow(p, { rank: state.sort === "rec" && p._rank != null ? p._rank : i + 1, reason: reason });
     });
-    if (!rows.length) html += '<div class="empty-log" style="color:var(--text-muted)">No players match this filter.</div>';
+    kdRest.forEach(function (p) { html += playerRow(p, {}); });
+    if (!rows.length && !promoted.length && !kdRest.length) {
+      html += '<div class="empty-log" style="color:var(--text-muted)">No players match this filter.</div>';
+    }
     return html;
   }
 
-  function gbar(label, val) {
-    const pct = Math.round(clamp(val, 0, 100));
+  function gradeMax() {
+    if (window.BROverlayScore && BROverlayScore.gradeMax) {
+      return BROverlayScore.gradeMax(scoreCtx().type);
+    }
+    return { value: 20, starters: 50, construction: 30 };
+  }
+  function gbar(label, val, max) {
+    const cap = max > 0 ? max : 100;
+    const pct = Math.round(clamp((Number(val) || 0) / cap * 100, 0, 100));
     const col = pct >= 80 ? "#22c55e" : pct >= 60 ? "#38bdf8" : pct >= 40 ? "#f59e0b" : "#ef4444";
     return '<div class="gbar-row"><span class="gbar-lbl">' + label + "</span>"
       + '<div class="gbar"><div class="gbar-fill" style="width:' + pct + "%;background:" + col + '"></div></div>'
@@ -850,29 +1091,38 @@
     const settingsTxt = leagueSettingsLabel();
     let html = "";
     if (settingsTxt) html += '<div class="settings-line" id="leagueSettings">' + esc(settingsTxt) + "</div>";
+    const gMax = gradeMax();
+    const arch = me.archetype || (window.BROverlayScore && BROverlayScore.teamArchetype
+      ? BROverlayScore.teamArchetype(picksBySlot()[state.mySlot] || [], scoreCtx())
+      : null);
     html += '<div class="grade-card"><div><div class="grade-letter" style="color:' + gradeCol(g.score) + '">' + gradeLetter(g.score) + "</div>"
       + (g.provisional ? '<div class="grade-early">Early</div>' : "") + "</div>"
-      + '<div class="grade-meta">' + gbar("Value", g.value) + gbar("Starters", g.starters) + gbar("Construction", g.construction) + "</div></div>";
+      + '<div class="grade-meta">'
+      + (arch && arch.label ? '<div class="grade-pace">' + esc(arch.label) + "</div>" : "")
+      + gbar("Value", g.value, gMax.value) + gbar("Starters", g.starters, gMax.starters) + gbar("Construction", g.construction, gMax.construction)
+      + "</div></div>";
 
-    if (mine.length >= 1) {
-      const myAvg = mine.reduce(function (s, p) { return s + p.ppg; }, 0) / mine.length;
-      const draftedP = state.picks.map(function (x) { return x.p.ppg; });
-      const lgAvg = draftedP.length ? draftedP.reduce(function (a, b) { return a + b; }, 0) / draftedP.length : myAvg;
-      const pct = lgAvg > 0 ? Math.round(myAvg / lgAvg * 100) : 100;
-      const col = pct >= 108 ? "#22c55e" : pct >= 92 ? "#f59e0b" : "#ef4444";
+    const proj = (window.BROverlayScore && BROverlayScore.rosterProjection)
+      ? BROverlayScore.rosterProjection(mine, players, scoreCtx())
+      : null;
+    if (proj) {
+      const col = proj.pct >= 108 ? "#22c55e" : proj.pct >= 92 ? "#f59e0b" : "#ef4444";
       html += '<div class="proj-card"><div class="proj-title">Roster Projection</div><div class="proj-stats">'
-        + '<div class="proj-stat"><div class="proj-val">' + myAvg.toFixed(1) + '</div><div class="proj-lbl">My Avg PPG</div></div>'
-        + '<div class="proj-stat"><div class="proj-val">' + lgAvg.toFixed(1) + '</div><div class="proj-lbl">Avg Player</div></div>'
-        + '<div class="proj-stat"><div class="proj-val" style="color:' + col + '">' + pct + '%</div><div class="proj-lbl">vs League</div></div>'
-        + '</div><div class="proj-bar"><div class="gbar-fill" style="width:' + Math.min(100, pct) + "%;background:" + col + '"></div></div></div>';
+        + '<div class="proj-stat"><div class="proj-val">' + proj.myAvg.toFixed(1) + '</div><div class="proj-lbl">My Avg PPG</div></div>'
+        + (proj.lgAvg > 0 ? '<div class="proj-stat"><div class="proj-val">' + proj.lgAvg.toFixed(1) + '</div><div class="proj-lbl">Avg Player</div></div>' : "")
+        + (proj.lgAvg > 0 ? '<div class="proj-stat"><div class="proj-val" style="color:' + col + '">' + proj.pct + '%</div><div class="proj-lbl">vs League</div></div>' : "")
+        + '</div><div class="proj-bar"><div class="gbar-fill" style="width:' + Math.min(100, proj.pct) + "%;background:" + col + '"></div></div></div>';
     }
     const w = g.window;
-    const wcls = w.label === "Future" ? "win-future" : w.label === "Win-Now" ? "win-winnow" : "win-balanced";
-    html += '<div class="win-row"><span class="win-chip ' + wcls + '">' + w.label + "</span>";
-    if (w.avgAge) html += '<span style="font-size:11px;color:var(--text-muted)">Avg age ' + w.avgAge.toFixed(1) + "</span>";
+    const wcls = w && w.label === "Future" ? "win-future" : w && w.label === "Win-Now" ? "win-winnow" : "win-balanced";
+    html += '<div class="win-row">';
+    if (w && w.label) html += '<span class="win-chip ' + wcls + '">' + esc(w.label) + "</span>";
+    if (w && w.avgAge) html += '<span style="font-size:11px;color:var(--text-muted)">Avg age ' + w.avgAge.toFixed(1) + "</span>";
     if (draftDone()) {
-      const odds = playoffOdds(all)[state.mySlot];
-      html += '<span class="odds-chip" style="color:' + (odds >= 50 ? "var(--win)" : "var(--warn)") + '">' + odds.toFixed(1) + "% playoff</span>";
+      const odds = playoffOddsFor(all, me.slot);
+      if (odds != null) {
+        html += '<span class="odds-chip" style="color:' + (odds >= 50 ? "var(--win)" : "var(--warn)") + '">' + odds.toFixed(1) + "% playoff</span>";
+      }
     }
     html += "</div>";
 
@@ -888,52 +1138,56 @@
   }
 
   function recapHtml(all) {
-    const rows = state.picks.map(function (x) {
-      return { name: x.p.name, pos: x.p.pos, team: teamName(x.slot), pn: x.pn, gap: x.pn - x.p.adp, teamSlot: x.slot };
-    });
-    if (rows.length < 4) return "";
-    const steals = rows.slice().sort(function (a, b) { return b.gap - a.gap; }).slice(0, 3);
-    const reaches = rows.slice().sort(function (a, b) { return a.gap - b.gap; }).slice(0, 3);
-    function line(x, good) {
-      const txt = (x.gap >= 0 ? "+" : "") + Math.round(x.gap);
-      return '<div class="recap-row"><span class="posb" style="background:' + POS[x.pos] + '">' + x.pos + "</span>"
+    const recap = (window.BROverlayScore && BROverlayScore.recapStats)
+      ? BROverlayScore.recapStats(all)
+      : null;
+    if (!recap || !recap.steals.length) return "";
+    function line(x) {
+      const txt = recap.useGap && x.gap != null
+        ? ((x.gap > 0 ? "+" : "") + x.gap)
+        : String(Math.round(x.ps));
+      const col = recap.useGap && x.gap != null
+        ? (x.gap > 0 ? "var(--win)" : (x.gap < 0 ? "var(--loss)" : "var(--text-muted)"))
+        : psColor(x.ps);
+      return '<div class="recap-row"><span class="posb" style="background:' + (POS[x.pos] || POS.BN) + '">' + esc(x.pos || "-") + "</span>"
         + '<span class="recap-main"><span class="recap-name">' + esc(x.name) + "</span>"
         + '<span class="recap-sub">' + esc(x.team) + " · " + pickLabel(x.pn) + "</span></span>"
-        + '<span class="recap-gap" style="color:' + (good ? "var(--win)" : "var(--loss)") + '">' + txt + "</span></div>";
+        + '<span class="recap-gap" style="color:' + col + '">' + txt + "</span></div>";
     }
-    let bestT = all[0], bestAvg = -1e9;
-    all.forEach(function (t) {
-      if (!t.picks.length) return;
-      const avg = t.picks.reduce(function (s, p) { return s + (p.pn - p.adp); }, 0) / t.picks.length;
-      if (avg > bestAvg) { bestAvg = avg; bestT = t; }
-    });
-    const posCount = {};
-    state.picks.forEach(function (x) { posCount[x.p.pos] = (posCount[x.p.pos] || 0) + 1; });
-    const topPos = Object.keys(posCount).sort(function (a, b) { return posCount[b] - posCount[a]; })[0] || "-";
-    return '<div class="recap"><div><p class="recap-h">' + IC.gem + "Biggest steals</p>" + steals.map(function (x) { return line(x, true); }).join("")
-      + '</div><div><p class="recap-h">' + IC.down + "Biggest reaches</p>" + reaches.map(function (x) { return line(x, false); }).join("")
+    return '<div class="recap"><div><p class="recap-h">' + IC.gem + "Biggest steals</p>" + recap.steals.map(line).join("")
+      + '</div><div><p class="recap-h">' + IC.down + "Biggest reaches</p>" + recap.reaches.map(line).join("")
       + "</div></div>"
       + '<p class="recap-h" style="padding:4px 12px 0">' + IC.bars + "By the numbers</p>"
-      + '<div class="nums"><div class="tile"><div class="tile-l">Steal of the draft</div><div class="tile-b">' + esc(steals[0].name) + '</div><div class="tile-s">' + esc(steals[0].team) + " · " + pickLabel(steals[0].pn) + "</div></div>"
-      + '<div class="tile"><div class="tile-l">Biggest reach</div><div class="tile-b">' + esc(reaches[0].name) + '</div><div class="tile-s">' + esc(reaches[0].team) + " · " + pickLabel(reaches[0].pn) + "</div></div>"
-      + '<div class="tile"><div class="tile-l">Best value drafter</div><div class="tile-b">' + esc(bestT.name) + '</div><div class="tile-s">Highest average ADP gap</div></div>'
-      + '<div class="tile"><div class="tile-l">Most drafted</div><div class="tile-b">' + topPos + " (" + posCount[topPos] + ')</div><div class="tile-s">' + state.picks.length + " picks total</div></div></div>";
+      + '<div class="nums"><div class="tile"><div class="tile-l">Steal of the draft</div><div class="tile-b">' + esc(recap.steals[0].name) + '</div><div class="tile-s">' + esc(recap.steals[0].team) + " · " + pickLabel(recap.steals[0].pn) + "</div></div>"
+      + '<div class="tile"><div class="tile-l">Biggest reach</div><div class="tile-b">' + esc(recap.reaches[0].name) + '</div><div class="tile-s">' + esc(recap.reaches[0].team) + " · " + pickLabel(recap.reaches[0].pn) + "</div></div>"
+      + '<div class="tile"><div class="tile-l">Best value drafter</div><div class="tile-b">' + esc(recap.valueTeam) + '</div><div class="tile-s">Highest average pick grade</div></div>'
+      + '<div class="tile"><div class="tile-l">Most drafted</div><div class="tile-b">' + recap.topPos + (recap.posCount[recap.topPos] ? " (" + recap.posCount[recap.topPos] + ")" : "") + '</div><div class="tile-s">' + recap.pickCount + " picks total</div></div></div>";
   }
 
   function renderGrades() {
     const all = gradeAllTeams();
     const odds = draftDone() ? playoffOdds(all) : {};
-    let html = recapHtml(all);
+    const pending = draftDone() && playoffOddsPending(all);
+    let html = draftDone() ? finalGradeCard(all) : "";
+    html += recapHtml(all);
     html += '<p class="recap-h" style="padding:8px 12px 6px">' + IC.trophy + "Draft grades</p>";
     all.forEach(function (t, i) {
       const w = t.grade.window;
-      const wcls = w.label === "Future" ? "win-future" : w.label === "Win-Now" ? "win-winnow" : "win-balanced";
+      const wcls = w && w.label === "Future" ? "win-future" : w && w.label === "Win-Now" ? "win-winnow" : "win-balanced";
       const open = state.expanded === t.slot;
+      const winTag = w && w.label ? '<span class="win-chip ' + wcls + '">' + esc(w.label) + "</span>" : "";
+      let poTag = "";
+      if (draftDone()) {
+        if (pending) poTag = '<span class="lpo" title="Calculating playoff odds">…</span>';
+        else if (odds[t.slot] != null) {
+          poTag = '<span class="lpo" style="color:' + poColor(odds[t.slot]) + '">' + poFmt(odds[t.slot]) + "%</span>";
+        }
+      }
       html += '<div class="lrow' + (t.isMe ? " is-me" : "") + (open ? " is-open" : "") + '" data-legslot="' + t.slot + '">'
         + rankMedal(i + 1)
         + '<span class="lname">' + esc(t.name) + "</span>"
-        + '<span class="win-chip ' + wcls + '">' + w.label + "</span>"
-        + (odds[t.slot] != null ? '<span class="lpo" style="color:' + (odds[t.slot] >= 50 ? "var(--win)" : "var(--text-muted)") + '">' + odds[t.slot].toFixed(0) + "%</span>" : "")
+        + winTag
+        + poTag
         + '<span class="lgrade" style="color:' + gradeCol(t.grade.score) + '">' + gradeLetter(t.grade.score) + "</span>"
         + '<span class="lchev" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 4l4 4 4-4"/></svg></span></div>';
       html += '<div class="ldtl' + (open ? " is-open" : "") + '" data-dtl="' + t.slot + '">';
@@ -1045,6 +1299,7 @@
       document.getElementById("stage").setAttribute("data-platform", state.platform);
       renderHost();
     }
+    paintLeagueChrome();
     renderOverlay();
   }
   function render() {
@@ -1301,9 +1556,13 @@
     if (Array.isArray(detail.adpOptions) && detail.adpOptions.length) state.adpOptions = detail.adpOptions;
     if (detail.adpSource) state.adpSource = String(detail.adpSource);
     if (detail.sf != null) state.sf = !!detail.sf;
+    if (detail.scoringType) {
+      const st = String(detail.scoringType).toLowerCase();
+      state.draftType = (st === "dynasty" || st === "startup") ? "startup" : "redraft";
+    }
     fillAdpSel();
     players = rows.map(function (p) {
-      const pos = p.pos || p.position || "RB";
+      const pos = normPos(p.pos || p.position || "RB");
       return {
         id: String(p.id),
         name: p.name,
@@ -1337,6 +1596,12 @@
     players.forEach(function (p) {
       if (p.id) byId[String(p.id)] = p;
       byName[normName(p.name)] = p;
+      if (normPos(p.pos) === "DEF" && p.team && p.team !== "FA") {
+        byId[String(p.team)] = byId[String(p.team)] || p;
+        byName[normName(p.team + " dst")] = p;
+        byName[normName(p.team + " def")] = p;
+        byName[normName(p.team + " d/st")] = p;
+      }
     });
     state.sitePool = true;
     let maxVal = 1;
@@ -1388,8 +1653,12 @@
     const name = (raw && (raw.playerName || raw.name)) || "";
     const key = normName(name);
     if (key && byName[key]) return byName[key];
-    const pos = String((raw && (raw.pos || raw.position)) || "").toUpperCase();
+    const pos = normPos((raw && (raw.pos || raw.position)) || "");
     const nfl = String((raw && (raw.nflTeam || raw.team || raw.proTeam)) || "").toUpperCase().slice(0, 3) || "FA";
+    if (pos === "DEF" && nfl && nfl !== "FA") {
+      const defHit = players.filter(function (p) { return normPos(p.pos) === "DEF" && p.team === nfl; })[0];
+      if (defHit) return defHit;
+    }
     const abbrev = matchAbbrevName(name, pos, nfl === "FA" ? "" : nfl);
     if (abbrev) return abbrev;
     const usePos = POS[pos] ? pos : "WR";
@@ -1418,6 +1687,16 @@
   function applyLeagueSettings(detail) {
     if (!detail) return;
     if (detail.sf != null) state.sf = !!detail.sf;
+    if (detail.leagueName) state.leagueName = String(detail.leagueName);
+    if (detail.leagueId) state.leagueId = String(detail.leagueId);
+    if (detail.season) state.season = Number(detail.season) || state.season;
+    if (detail.draftType) {
+      const dt = String(detail.draftType).toLowerCase();
+      state.draftType = (dt === "dynasty" || dt === "startup") ? "startup" : "redraft";
+    }
+    if (detail.slotToRosterId && typeof detail.slotToRosterId === "object") {
+      state.slotToRosterId = detail.slotToRosterId;
+    }
     if (detail.ppr != null && isFinite(Number(detail.ppr))) state.ppr = Number(detail.ppr);
     if (detail.tep != null && isFinite(Number(detail.tep))) state.tep = Number(detail.tep);
     if (detail.passTd != null && isFinite(Number(detail.passTd))) state.passTd = Number(detail.passTd);
@@ -1445,7 +1724,22 @@
     if (window.BRDraftSlot && BRDraftSlot.settingsLabel && state.roster) {
       return BRDraftSlot.settingsLabel(state.roster, { ppr: state.ppr, tep: state.tep, passTd: state.passTd });
     }
-    return "";
+    return state.sf ? "SF" : "";
+  }
+
+  function paintLeagueChrome() {
+    const nameEl = document.getElementById("ovLeagueName");
+    const settingsEl = document.getElementById("ovLeagueSettings");
+    if (nameEl && state.leagueName) nameEl.textContent = state.leagueName;
+    if (!settingsEl) return;
+    const bits = [];
+    if (state.teams >= 2) bits.push(state.teams + "tm");
+    const settingsTxt = leagueSettingsLabel();
+    if (settingsTxt) bits.push(settingsTxt);
+    else if (state.sf) bits.push("SF");
+    const label = bits.join(" · ");
+    settingsEl.textContent = label;
+    settingsEl.hidden = !label;
   }
 
   function toggleCompare(id) {
@@ -1483,11 +1777,18 @@
   }
 
   function posRankOf(p) {
-    const pos = String((p && (p.pos || p.position)) || "").toUpperCase();
+    const pos = normPos(p && (p.pos || p.position));
     if (!pos) return { label: "", n: null };
     const ranked = players.filter(function (x) {
-      return String(x.pos || x.position || "").toUpperCase() === pos;
-    }).slice().sort(function (a, b) { return (Number(b.val) || 0) - (Number(a.val) || 0); });
+      return normPos(x.pos || x.position) === pos;
+    }).slice().sort(function (a, b) {
+      if (pos === "K" || pos === "DEF") {
+        return (window.BROverlayScore && BROverlayScore.sortKdef)
+          ? BROverlayScore.sortKdef(a, b)
+          : ((a.adp || 999) - (b.adp || 999)) || ((b.ppg || 0) - (a.ppg || 0));
+      }
+      return (Number(b.val) || 0) - (Number(a.val) || 0);
+    });
     const i = ranked.findIndex(function (x) { return String(x.id) === String(p.id); });
     if (i < 0) return { label: "", n: null };
     return { label: pos + (i + 1), n: i + 1 };
@@ -1671,9 +1972,14 @@
     const clockPn = Number(detail.current || detail.clockOverall || 0);
     if (clockPn >= 1) state.current = clockPn;
     else state.current = lastMade + 1;
+    if (state.hostDrafted && lastMade && state.teams) {
+      const inferred = Math.ceil(lastMade / state.teams);
+      if (inferred >= 6 && inferred <= 30) state.rounds = inferred;
+    }
     if (detail.clockSeconds == null) state.clock = CLOCK_START;
     fillSlotSel();
     paintSyncChip(true);
+    maybeShowSummary();
     render();
   }
 

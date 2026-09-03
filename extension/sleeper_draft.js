@@ -20,6 +20,7 @@
   let pickQueued = false;
   let cachedLeagueId = "";
   let cachedScoring = { ppr: 1, tep: 0, passTd: 4 };
+  let cachedLeague = null;
   let cachedUser = { username: "", userId: "" };
   let mainIdentity = { userIds: [], username: "", displayName: "", teamName: "" };
   let cachedOwnerMap = { leagueId: "", map: {} };
@@ -31,13 +32,14 @@
 
   async function leagueScoring(leagueId) {
     if (!leagueId) return cachedScoring;
-    if (cachedLeagueId === String(leagueId) && cachedScoring) return cachedScoring;
+    if (cachedLeagueId === String(leagueId) && cachedLeague) return cachedScoring;
     try {
       const res = await fetch(
         "https://api.sleeper.app/v1/league/" + encodeURIComponent(leagueId),
         { cache: "no-store" }
       );
       const league = res.ok ? await res.json() : null;
+      if (league && typeof league === "object") cachedLeague = league;
       const src = (league && league.scoring_settings) || {};
       cachedScoring = window.BRDraftSlot && BRDraftSlot.scoringFromSleeperSettings
         ? BRDraftSlot.scoringFromSleeperSettings(src)
@@ -311,7 +313,9 @@
       overallPickNumber: pn,
       playerId: row.player_id != null ? String(row.player_id) : "",
       playerName: name,
-      pos: String(md.position || row.position || "").toUpperCase(),
+      pos: window.BRDraftSlot && BRDraftSlot.normDraftPos
+        ? BRDraftSlot.normDraftPos(md.position || row.position)
+        : String(md.position || row.position || "").toUpperCase(),
       nflTeam: String(md.team || "").toUpperCase(),
       slot: Number(row.draft_slot || row.slot || 0),
       pickedBy: row.picked_by != null ? String(row.picked_by) : "",
@@ -372,16 +376,40 @@
     const clockSeconds = window.BRDraftSlot && BRDraftSlot.sleeperClockRemaining
       ? BRDraftSlot.sleeperClockRemaining(draft)
       : null;
-    const roster = window.BRDraftSlot && BRDraftSlot.rosterFromSleeperSettings
-      ? BRDraftSlot.rosterFromSleeperSettings(settings)
-      : null;
+    const league = cachedLeague;
+    const roster = window.BRDraftSlot && BRDraftSlot.rosterFromSleeperLeague
+      ? BRDraftSlot.rosterFromSleeperLeague(league ? Object.assign({}, league, { settings: settings }) : { settings: settings })
+      : (window.BRDraftSlot && BRDraftSlot.rosterFromSleeperSettings
+        ? BRDraftSlot.rosterFromSleeperSettings(settings)
+        : null);
     const scoring = cachedScoring || { ppr: 1, tep: 0, passTd: 4 };
+    const sf = window.BRDraftSlot && BRDraftSlot.isSleeperSuperflex
+      ? BRDraftSlot.isSleeperSuperflex(league, settings)
+      : (Number(settings.slots_super_flex || settings.slots_sf || 0) > 0
+        || !!(roster && roster.SF));
+    const draftName = String((draft && draft.metadata && draft.metadata.name) || "").trim();
+    const leagueName = String((league && league.name) || "").trim()
+      || (draftName && !/^draft$/i.test(draftName) ? draftName : "");
+    const leagueType = Number((league && league.settings && league.settings.type) || 0);
+    const draftType = (leagueType === 1 || leagueType === 2) ? "startup" : "redraft";
+    const slotToRosterId = {};
+    const draftOrder = (draft && draft.draft_order) || {};
+    Object.keys(draftOrder).forEach(function (uid) {
+      const slot = Number(draftOrder[uid]);
+      const rid = ownerToRoster[uid];
+      if (slot >= 1 && rid != null) slotToRosterId[slot] = rid;
+    });
     const payload = {
       platform: "sleeper",
-      teams: Number(settings.teams || 12),
+      teams: Number(settings.teams || (league && league.total_rosters) || 12),
       rounds: Number(settings.rounds || 15),
       mySlot: mySlot || undefined,
-      sf: Number(settings.slots_super_flex || settings.slots_sf || 0) > 0,
+      sf: sf,
+      leagueName: leagueName || undefined,
+      leagueId: String((draft && draft.league_id) || (league && league.league_id) || "") || undefined,
+      season: Number((league && league.season) || (draft && draft.season) || 0) || undefined,
+      draftType: draftType,
+      slotToRosterId: slotToRosterId,
       roster: roster || undefined,
       ppr: scoring.ppr,
       tep: scoring.tep,
@@ -404,6 +432,9 @@
       Object.keys(teamNames).length,
       Object.keys(pickOwners).length,
       window.BRDraftSlot && BRDraftSlot.rosterKey ? BRDraftSlot.rosterKey(roster) : "",
+      sf ? 1 : 0,
+      leagueName,
+      draftType,
       scoring.ppr,
       scoring.tep,
       scoring.passTd,
@@ -425,6 +456,9 @@
       fetch("https://api.sleeper.app/v1/draft/" + encodeURIComponent(id) + "/picks", { cache: "no-store" }),
     ]);
     const draft = draftRes.ok ? await draftRes.json() : cachedDraft;
+    if (draft && draft.league_id && cachedLeagueId !== String(draft.league_id)) {
+      await leagueScoring(draft.league_id);
+    }
     let picks = cachedPicks;
     if (pickRes.ok) {
       const rows = await pickRes.json();

@@ -70,7 +70,8 @@
             <img class="site-logo site-logo-light" src="icons/br-logo.png" alt="BR Fantasy" width="28" height="25">
             <img class="site-logo site-logo-dark" src="icons/br-logo-dark.png" alt="" width="28" height="25">
             <div class="ov-titles">
-              <div class="ov-title">Draft Assistant</div>
+              <div class="ov-title" id="ovLeagueName">Draft Assistant</div>
+              <div class="ov-sub" id="ovLeagueSettings" hidden></div>
             </div>
             <div class="sync-cluster">
               <span class="sync-chip" id="syncChip"><i aria-hidden="true"></i><span class="sync-chip-txt">SLEEPER</span></span>
@@ -108,6 +109,8 @@
               <button type="button" class="chip" data-pos="RB" aria-pressed="false">RB</button>
               <button type="button" class="chip" data-pos="WR" aria-pressed="false">WR</button>
               <button type="button" class="chip" data-pos="TE" aria-pressed="false">TE</button>
+              <button type="button" class="chip pos-kdef" data-pos="K" aria-pressed="false">K</button>
+              <button type="button" class="chip pos-kdef" data-pos="DEF" aria-pressed="false">DEF</button>
             </div>
             <div class="adp-src live-only">
               <label class="adp-src-label" for="adpSel">ADP source</label>
@@ -149,12 +152,13 @@
     </div>
 
     <p class="footnote">Mockup of the Draft Assistant overlay: illustrative data, not a live sync. Headshots are position-tinted silhouettes that fill with real photos when the assistant is wired to the app. The overlay reads host picks only - it never submits.</p>
-    <p class="footnote">Grade letters and playoff odds use a lightweight stand-in (value vs ADP, roster balance, and star power, curved against the field and damped early). Production Draft Room grades and odds come from the full Pick Score / team-grade / standings models.</p>
+    <p class="footnote">Grades, recommendations, lineup, recap, and playoff odds use the same Draft Room kernels.</p>
   </div>
 
 <script src="draft_slot.js"></script>
 <script src="pick_score.js"></script>
 <script src="draft_board_core.js"></script>
+<script src="draft_grade_team.js"></script>
 <script src="overlay_score.js"></script>
 <script src="overlay.js"></script>
 </body>

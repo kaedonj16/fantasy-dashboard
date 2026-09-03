@@ -12180,11 +12180,45 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Top-bar league chip: same league list as the settings switcher, so the
     // persistent chrome is the place you switch (and page titles stay clean).
+    function paintLeagueChromeChip(lg) {
+      if (!lg) return;
+      var nameEl = document.querySelector('#brLeagueChrome .br-ctx-name');
+      var fmtEl = document.querySelector('#brLeagueChrome .br-ctx-format');
+      var name = String(lg.name || '').trim();
+      if (nameEl && name && name !== 'This league') {
+        nameEl.textContent = name;
+      }
+      if (lg.format) {
+        if (fmtEl) {
+          fmtEl.textContent = lg.format;
+        } else if (nameEl && nameEl.parentNode) {
+          var span = document.createElement('span');
+          span.className = 'br-ctx-format';
+          span.textContent = lg.format;
+          nameEl.insertAdjacentElement('afterend', span);
+        }
+      }
+      if (window.__brctx) {
+        if (name) window.__brctx.leagueName = name;
+        if (lg.format) window.__brctx.leagueFormat = lg.format;
+        if (lg.sf != null) window.__brctx.leagueType = lg.sf ? 'sf' : '1qb';
+        if (lg.size) window.__brctx.leagueSize = lg.size;
+      }
+    }
+
     function fillLeagueChromeMenu(leagues) {
       var btn = document.getElementById('brCtxLeagueBtn');
       var menu = document.getElementById('brCtxLeagueMenu');
       if (!btn) return;
       var list = Array.isArray(leagues) ? leagues : [];
+      var cur = null;
+      for (var i = 0; i < list.length; i++) {
+        if (String(list[i].league_id || '') === String(currentLeagueId || '')) {
+          cur = list[i];
+          break;
+        }
+      }
+      paintLeagueChromeChip(cur);
       var can = list.length > 1;
       btn.classList.toggle('is-static', !can);
       btn.setAttribute('aria-disabled', can ? 'false' : 'true');
