@@ -164,6 +164,7 @@ def api_player_advanced_metrics(player_id: str):
             get_available_metric_weeks,
             strip_premium_metrics,
             _normalize_position,
+            parse_season_list,
         )
 
         # Determine default season from NFL state
@@ -171,28 +172,33 @@ def api_player_advanced_metrics(player_id: str):
         nfl_season = int(nfl_state.get("season") or datetime.now().year)
         is_offseason = (nfl_state.get("season_type") or "").lower() == "off"
 
-        # Parse requested season from query param
-        requested_season = request.args.get("season")
-        is_career_request = requested_season == "career" or requested_season is None
+        # Parse requested season from query param. "career" or omitted = all
+        # seasons. "2024,2025,2022" = combine only those years that this player
+        # actually has stored (others are dropped).
+        requested_raw = request.args.get("season")
+        requested_seasons = (
+            parse_season_list(requested_raw)
+            if requested_raw and requested_raw != "career" else []
+        )
+        is_multi_season = len(requested_seasons) > 1
+        is_career_request = (
+            requested_raw == "career" or requested_raw is None
+        ) and not is_multi_season
+        requested_season = requested_seasons[0] if len(requested_seasons) == 1 else None
 
         # Optional week filter: a single week (week=) or an inclusive range
         # (week_start=/week_end=). A single week is treated as start == end.
+        # Week ranges are per-season, so they are ignored for multi-year views.
         _ws = request.args.get("week_start")
         _we = request.args.get("week_end")
         _wk = request.args.get("week")
         week_lo = week_hi = None
-        if _ws and _ws.isdigit() and _we and _we.isdigit():
+        if not is_multi_season and _ws and _ws.isdigit() and _we and _we.isdigit():
             week_lo, week_hi = int(_ws), int(_we)
             if week_lo > week_hi:
                 week_lo, week_hi = week_hi, week_lo
-        elif _wk and _wk.isdigit():
+        elif not is_multi_season and _wk and _wk.isdigit():
             week_lo = week_hi = int(_wk)
-
-        if requested_season and requested_season != "career":
-            try:
-                requested_season = int(requested_season)
-            except (ValueError, TypeError):
-                requested_season = None
 
         # Get all seasons with data for this player
         available_seasons = get_available_seasons_for_player(str(player_id))
@@ -200,6 +206,8 @@ def api_player_advanced_metrics(player_id: str):
         # Choose target season: explicit request → current (if in-season) → most recent
         if requested_season:
             target_season = requested_season
+        elif is_multi_season:
+            target_season = None
         elif not is_offseason and nfl_season in available_seasons:
             target_season = nfl_season
         elif available_seasons:
@@ -208,7 +216,23 @@ def api_player_advanced_metrics(player_id: str):
             target_season = nfl_season
 
         # Fetch metrics
-        if is_career_request:
+        if is_multi_season:
+            avail = set(available_seasons)
+            requested_seasons = [s for s in requested_seasons if s in avail]
+            if len(requested_seasons) > 1:
+                metrics = get_player_career_metrics(
+                    str(player_id), seasons=requested_seasons,
+                )
+                target_season = None
+            elif len(requested_seasons) == 1:
+                # Only one of the requested years exists for this player.
+                is_multi_season = False
+                requested_season = requested_seasons[0]
+                target_season = requested_season
+                metrics = get_player_metrics_by_season(str(player_id), requested_season)
+            else:
+                metrics = None
+        elif is_career_request:
             # Career mode - aggregate across all seasons
             metrics = get_player_career_metrics(str(player_id))
             target_season = None
@@ -329,6 +353,9 @@ def api_player_advanced_metrics(player_id: str):
             "week_end": active_week_end,
             "available_seasons": available_seasons,
             "available_weeks": available_weeks,
+            "selected_seasons": requested_seasons if is_multi_season else (
+                [int(target_season)] if target_season else []
+            ),
             "metrics": metrics_payload,
             "as_of_date": as_of_date,
         })

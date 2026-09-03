@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-09-03",
+        "tag": "new",
+        "text": "Advanced Metrics: pick more than one season (2025 + 2024 + 2022, or any years we have). The leaderboard ranks those player-seasons together with a Year column. In a player modal, tap extra year pills to combine only seasons that player actually has; Career still uses every year.",
+        "link": "/metrics"
+    },
+    {
         "date": "2026-09-01",
         "tag": "fix",
         "text": "Draft Cheat Sheet: changing PPR, TE premium, or passing-TD settings now updates Proj PPG and TE roster targets immediately. The compact board payload had dropped the scoring-variant map, so those dropdowns kept the previous scoring.",
