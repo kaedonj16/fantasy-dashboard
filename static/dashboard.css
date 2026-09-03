@@ -14816,7 +14816,7 @@ html[data-theme="dark"] .contact-social-pill img {
 
 .teams-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
     gap: 16px;
 }
 
@@ -36505,7 +36505,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 .team-strength-card .tc-head h2.tc-name {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     min-width: 0;
     font-size: 19px;
     font-weight: 700;
@@ -36643,7 +36643,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 .team-strength-card .tc-mix-k { font-weight: 700; }
 
 /* Position strength rows (4-col: chip · strength bar · value · rank) */
-.team-strength-card .pos-table-wrap { margin-top: 12px; border-top: 1px solid var(--border); overflow-x: visible; }
+.team-strength-card .pos-table-wrap { margin-top: 12px; border-top: 1px solid var(--border); overflow-x: auto; }
 .team-strength-card .pos-strength-table { width: 100%; border-collapse: collapse; }
 .team-strength-card .pos-row { cursor: pointer; }
 .team-strength-card .pos-row > td { padding: 9px 2px; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); vertical-align: middle; background: transparent; }
@@ -36680,4 +36680,7 @@ a, button, [role="button"], [role="tab"], summary, label,
     /* Old header rules wrap .tc-id so a large image can take its own row.
        Avatars are clamped; keep the identity row on one line. */
     .team-strength-card .tc-id { flex-wrap: nowrap; }
+    .team-strength-card .tc-mix,
+    .team-strength-card .tc-index { min-width: 0; }
+    .team-strength-card .tc-mix-bar { max-width: 100%; }
 }
