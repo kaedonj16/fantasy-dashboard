@@ -36223,3 +36223,86 @@ a, button, [role="button"], [role="tab"], summary, label,
     .pm-mini-item .player-badge i { display: none; }
     .pm-mini-item .player-badge { padding-left: 4px; padding-right: 4px; }
 }
+
+/* ============================================================================
+   TEAM STRENGTH CARD — reworked layout (teams-grid)
+   Appended so these rules win by source order; scoped to .team-strength-card
+   so nothing else is affected. Window accent (border-left) and grade colors
+   are inherited from the .wt-* / .grade-* rules above.
+   ============================================================================ */
+.team-strength-card { border-radius: 16px; padding: 16px 16px 10px; border-left-width: 4px; }
+
+/* Header: avatar · name (+YOU) / window pill · grade chip + actions */
+.team-strength-card .card-header-row.tc-head { display: flex; align-items: center; gap: 11px; }
+.team-strength-card .tc-id { display: flex; align-items: center; gap: 11px; min-width: 0; flex: 1; }
+.team-strength-card .tc-avatar { flex: 0 0 auto; width: 42px; height: 42px; border-radius: 12px; object-fit: cover; background: var(--bg-alt); }
+.team-strength-card .tc-avatar-mono { display: grid; place-items: center; font-weight: 700; font-size: 16px; color: #fff; letter-spacing: .02em; background: linear-gradient(150deg, var(--brand-blue), #6366f1); box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); }
+.team-strength-card .tc-idtext { min-width: 0; flex: 1; }
+.team-strength-card .tc-head h2.tc-name { font-size: 19px; font-weight: 700; line-height: 1.15; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.team-strength-card .tc-you { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: .09em; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent); border-radius: 5px; padding: 1px 5px; margin-left: 8px; vertical-align: middle; }
+:root .team-strength-card .tc-you { color: var(--brand-blue); background: color-mix(in srgb, var(--brand-blue) 14%, transparent); border-color: color-mix(in srgb, var(--brand-blue) 34%, transparent); }
+.team-strength-card .tc-window { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 12px; font-weight: 500; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.team-strength-card .tc-window i { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.team-strength-card .tc-window b { color: var(--text); font-weight: 600; }
+.team-strength-card .tc-head-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+/* Grade chip: keep the .grade-* colors, restyle to a square tile */
+.team-strength-card .roster-grade-inline { display: grid; place-items: center; width: 44px; height: 44px; min-width: 0; padding: 0; border-radius: 12px; font-size: 21px; border: 1px solid currentColor; }
+.team-strength-card .roster-grade-inline.grade-a,
+.team-strength-card .roster-grade-inline.grade-b,
+.team-strength-card .roster-grade-inline.grade-c,
+.team-strength-card .roster-grade-inline.grade-d { border-color: color-mix(in srgb, currentColor 38%, transparent); }
+
+/* Positional Index — understated diverging meter */
+.team-strength-card .tc-index { margin: 14px 2px 2px; }
+.team-strength-card .tc-index-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.team-strength-card .tc-index-lbl { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-muted); }
+.team-strength-card .tc-index-num { font-size: 15px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.team-strength-card .tc-index-num.up { color: #10b981; }
+.team-strength-card .tc-index-num.dn { color: #ef4444; }
+.team-strength-card .tc-meter { position: relative; height: 6px; margin: 7px 0 5px; border-radius: 4px; background: var(--bg-alt); overflow: hidden; }
+.team-strength-card .tc-meter-mid { position: absolute; top: -2px; bottom: -2px; left: 50%; width: 2px; background: var(--border); transform: translateX(-50%); }
+.team-strength-card .tc-meter-fill { position: absolute; top: 0; bottom: 0; border-radius: 4px; }
+.team-strength-card .tc-meter-fill.up { left: 50%; background: linear-gradient(90deg, color-mix(in srgb, #10b981 55%, transparent), #10b981); }
+.team-strength-card .tc-meter-fill.dn { right: 50%; background: linear-gradient(270deg, color-mix(in srgb, #ef4444 55%, transparent), #ef4444); }
+.team-strength-card .tc-meter-mark { position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 50%; background: var(--card); border: 2px solid var(--text); transform: translate(-50%, -50%); }
+.team-strength-card .tc-index-scale { display: flex; justify-content: space-between; font-size: 9px; font-weight: 600; color: var(--text-subtle); letter-spacing: .02em; }
+
+/* Value-by-position mix */
+.team-strength-card .tc-mix { margin: 14px 2px 6px; }
+.team-strength-card .tc-mix-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 7px; }
+.team-strength-card .tc-mix-lbl { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-muted); }
+.team-strength-card .tc-mix-total { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.team-strength-card .tc-mix-bar { display: flex; height: 9px; border-radius: 5px; overflow: hidden; gap: 2px; }
+.team-strength-card .tc-mix-seg { height: 100%; border-radius: 2px; min-width: 3px; }
+.team-strength-card .tc-mix-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; }
+.team-strength-card .tc-mix-leg { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.team-strength-card .tc-mix-leg i { width: 8px; height: 8px; border-radius: 2.5px; }
+
+/* Position strength rows (4-col: chip · strength bar · value · rank) */
+.team-strength-card .pos-table-wrap { margin-top: 12px; border-top: 1px solid var(--border); overflow-x: visible; }
+.team-strength-card .pos-strength-table { width: 100%; border-collapse: collapse; }
+.team-strength-card .pos-row { cursor: pointer; }
+.team-strength-card .pos-row > td { padding: 9px 2px; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); vertical-align: middle; background: transparent; }
+.team-strength-card .pos-row.pos-strongest, .team-strength-card .pos-row.pos-weakest { background: transparent; }
+.team-strength-card .pos-row:hover > td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.team-strength-card .pos-name { display: flex; align-items: center; gap: 8px; width: 76px; white-space: nowrap; }
+.team-strength-card .pos-row-toggle { display: inline-block; font-size: 9px; color: var(--text-subtle); transition: transform .15s ease; }
+.team-strength-card .tc-pos-chip { flex: 0 0 auto; width: 38px; padding: 4px 0; border-radius: 7px; text-align: center; font-weight: 700; font-size: 12.5px; letter-spacing: .02em; color: #fff; background: var(--p, #64748b); }
+.team-strength-card .tc-pos-chip-cap { color: var(--text); background: color-mix(in srgb, var(--p) 22%, var(--card)); }
+.team-strength-card td.pos-bar-cell { width: auto; min-width: 0; }
+.team-strength-card .tc-strength-track { position: relative; height: 8px; border-radius: 5px; background: var(--bg-alt); }
+.team-strength-card .tc-strength-zero { position: absolute; top: -2px; bottom: -2px; left: 50%; width: 2px; background: var(--border); transform: translateX(-50%); }
+.team-strength-card .tc-strength-fill { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
+.team-strength-card .tc-strength-fill.up { left: 50%; background: #10b981; }
+.team-strength-card .tc-strength-fill.dn { right: 50%; background: #ef4444; }
+.team-strength-card .pos-total { width: 52px; text-align: right; font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
+.team-strength-card .pos-rank { width: 46px; text-align: right; font-weight: 600; font-size: 12.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.team-strength-card .tc-flag { font-size: 9px; margin-left: 4px; }
+.team-strength-card .tc-flag.s { color: #10b981; }
+.team-strength-card .tc-flag.w { color: #ef4444; }
+
+/* Expanded per-position detail */
+.team-strength-card .pos-detail-row > td { padding: 0 2px 10px; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+.team-strength-card .tc-detail-stats { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 2px 0 10px; font-size: 11px; color: var(--text-subtle); font-variant-numeric: tabular-nums; }
+.team-strength-card .tc-detail-stats span { white-space: nowrap; }
