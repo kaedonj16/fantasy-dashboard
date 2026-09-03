@@ -10,6 +10,7 @@ avoid import-time collection failures there.
 
 import pytest
 
+pytest.importorskip("flask")
 pytest.importorskip("bs4")
 
 from utils.utils import build_status_by_pid, STATUS_NOT_STARTED, STATUS_FINAL
