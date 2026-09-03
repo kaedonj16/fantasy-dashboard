@@ -2362,22 +2362,60 @@ def _combine_season_rows(group: List[Dict[str, Any]], metric: str) -> Dict[str, 
     return base
 
 
+def _multi_season_sort_key(metric: str):
+    """Sort key: missing last, then metric value (lower_better respected)."""
+    lower = bool((LEADERBOARD_METRICS.get(metric) or {}).get("lower_better"))
+
+    def _sort_key(row: Dict[str, Any]):
+        val = row.get("value")
+        missing = val is None
+        try:
+            num = float(val) if val is not None else 0.0
+        except (TypeError, ValueError):
+            missing = True
+            num = 0.0
+        return (missing, num if lower else -num)
+
+    return _sort_key
+
+
 def _multi_season_leaderboard(
         metric: str,
         position: Optional[str],
         limit: int,
         seasons: List[int],
         min_vol: Optional[int],
+        combine: bool = False,
 ) -> List[Dict[str, Any]]:
-    """One combined row per player across the requested years.
+    """Rank players across the requested years.
 
-    Each year is loaded with the single-season query (no min-vol gate, so a
-    30-carry year still counts toward a 50-carry combined filter). Rates are
-    volume-weighted; counting stats and VORP/WAR are summed. Years with no
-    data contribute nothing.
+    Default (``combine=False``): one row per player-season. Each year is
+    queried with the same min-vol gate as a single-season board, then the
+    rows are pooled, sorted, and sliced.
+
+    ``combine=True``: one row per player. Years are loaded without min-vol
+    (so a 30-carry year still counts toward a 50-carry combined filter).
+    Rates are volume-weighted; counting stats and VORP/WAR are summed.
+    Years with no data contribute nothing.
     """
     if not seasons:
         return []
+    sort_key = _multi_season_sort_key(metric)
+    if not combine:
+        rows: List[Dict[str, Any]] = []
+        for year in seasons:
+            for row in get_metric_leaderboard(
+                    metric, position=position, limit=limit,
+                    season=int(year), min_vol=min_vol,
+            ):
+                item = dict(row)
+                item["season"] = int(year)
+                if item.get("player_id") is None:
+                    continue
+                rows.append(item)
+        rows.sort(key=sort_key)
+        return rows[:limit] if limit else rows
+
     by_pid: Dict[str, List[Dict[str, Any]]] = {}
     for year in seasons:
         for row in get_metric_leaderboard(
@@ -2405,19 +2443,7 @@ def _multi_season_leaderboard(
                 kept.append(row)
         combined = kept
 
-    lower = bool((LEADERBOARD_METRICS.get(metric) or {}).get("lower_better"))
-
-    def _sort_key(row: Dict[str, Any]):
-        val = row.get("value")
-        missing = val is None
-        try:
-            num = float(val) if val is not None else 0.0
-        except (TypeError, ValueError):
-            missing = True
-            num = 0.0
-        return (missing, num if lower else -num)
-
-    combined.sort(key=_sort_key)
+    combined.sort(key=sort_key)
     return combined[:limit] if limit else combined
 
 
@@ -2668,6 +2694,7 @@ def get_metric_leaderboard(
     limit: int = 500,
     season: Optional[int] = None,
     min_vol: Optional[int] = None,
+    combine: bool = False,
 ) -> List[Dict[str, Any]]:
     """Players ranked by a single advanced metric.
 
@@ -2677,16 +2704,19 @@ def get_metric_leaderboard(
     (e.g. targets for catch rate, carries for YPC, attempts for completion %) so
     small-sample players with degenerate rates don't crowd the leaderboard. Rows
     with a NULL volume count are kept since older snapshots predate the columns.
+    When `season` is several years, default is one row per player-season;
+    `combine=True` collapses those years into one row per player.
     Returns [{player_id, name, team, position, value, games}].
     """
     if metric not in LEADERBOARD_METRICS:
         return []
-    # Comma-separated or list of years → one row per player-season.
+    # Comma-separated or list of years → one row per player-season (or combined).
     if not isinstance(season, int) and season is not None:
         years = parse_season_list(season)
         if len(years) > 1:
             return _multi_season_leaderboard(
-                metric, position=position, limit=limit, seasons=years, min_vol=min_vol,
+                metric, position=position, limit=limit, seasons=years,
+                min_vol=min_vol, combine=bool(combine),
             )
         season = years[0] if years else None
     # Value metrics (VORP/WAR) are computed in Python, not from a DB column.

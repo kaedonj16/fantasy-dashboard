@@ -268,6 +268,10 @@ def build_advanced_metrics_body(
           </div>
           <button id="amAddFilterBtn" type="button" class="am-add-stat-btn">&#43; Filter</button>
           <button id="amFiltersBtn" type="button" class="am-sort-btn am-filters-btn">Filters &#9662;</button>
+          <div id="amCombineToggle" class="otc-day-filters am-combine-toggle" style="display:none;" title="Each year keeps one row per player-season. Combine merges selected years into one row per player.">
+            <button type="button" class="otc-day-filter am-combine-btn active" data-combine="0">Each year</button>
+            <button type="button" class="otc-day-filter am-combine-btn" data-combine="1">Combine</button>
+          </div>
           <label class="am-roster-toggle" id="amTrendToggleWrap" title="Show each player's recent usage trend (last 6 weeks) next to the metric">
             <input type="checkbox" id="amTrendToggle">
             <span>Usage trends</span>
@@ -561,6 +565,7 @@ def build_advanced_metrics_body(
       /* Subcontrols row: positions + action buttons + toggles */
       .am-subcontrols { display:flex; align-items:center; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
       .am-positions { display:flex; gap:6px; flex:1 1 auto; min-width:0; overflow-x:auto; padding-bottom:1px; }
+      .am-combine-toggle { display:flex; gap:6px; flex-shrink:0; }
       .am-roster-toggle { flex-shrink:0; }
       .am-filters-btn { display:none; }
       /* Mobile-only add-filter button living inside the Filters panel; on
@@ -1095,8 +1100,10 @@ _AM_JS = r"""
   }
   function amSelectedSeasons() { return amParseSeasons(state && state.season); }
   function amIsMultiSeason() { return amSelectedSeasons().length > 1; }
+  function amIsCombine() { return !!(state && state.combine) && amIsMultiSeason(); }
+  function amIsEachYear() { return amIsMultiSeason() && !amIsCombine(); }
   function amRowKey(r) {
-    if (r && r.season != null && amIsMultiSeason()) return String(r.player_id) + ':' + r.season;
+    if (r && r.season != null && amIsEachYear()) return String(r.player_id) + ':' + r.season;
     return String(r && r.player_id != null ? r.player_id : '');
   }
   function amSeasonLabel(years) {
@@ -1138,6 +1145,7 @@ _AM_JS = r"""
     if (state.metric) p.set('metric', state.metric);
     if (state.position && state.position !== 'ALL') p.set('pos', state.position);
     if (state.season) p.set('season', state.season);
+    if (state.combine && amIsMultiSeason()) p.set('combine', '1');
     if (state.minVol) p.set('minvol', String(state.minVol));
     if (state.team) p.set('team', state.team);
     const qs = p.toString();
@@ -1148,6 +1156,7 @@ _AM_JS = r"""
                   position: _initParams.get('pos') || 'ALL',
                   sortDir: 'desc', sortBy: metricSel.value, rows: [], search: '',
                   season: (seasonSel && (seasonSel.dataset.multi || seasonSel.value)) || '',
+                  combine: (_initParams.get('combine') || '') === '1' || (_initParams.get('combine') || '').toLowerCase() === 'true',
                   minVol: _initParams.get('minvol') || '',
                   rosterOnly: false, page: 0,
                   team: _initParams.get('team') || '',
@@ -1556,6 +1565,7 @@ _AM_JS = r"""
       const p = new URLSearchParams({ metric: key, platform: cfg.platform });
       if (cfg.leagueId) p.set('league_id', cfg.leagueId);
       if (s) p.set('season', String(s));
+      if (state.combine && amIsMultiSeason()) p.set('combine', '1');
       const vol = defaultVol(key);
       if (vol) p.set('min_vol', vol);
       // Apply the same week range as the primary metric so columns stay in sync.
@@ -2623,7 +2633,9 @@ _AM_JS = r"""
         + '<span class="am-meta">' + amTeamLabel(r) + '</span>'
         + '<span class="am-meta" style="color:' + col + ';font-weight:600">' + r.position + '</span>'
         + '</span></div></td>';
-      const seasonCell = '<td class="am-season-col" style="display:none"></td>';
+      const showYear = amIsEachYear();
+      const seasonCell = '<td class="am-season-col"' + (showYear ? '' : ' style="display:none"') + '>'
+        + (showYear && r.season != null ? r.season : '') + '</td>';
 
       // Compact filter-column cells (appear right before the primary metric cell).
       let filterColCells = '';
@@ -2883,6 +2895,7 @@ _AM_JS = r"""
     const p = new URLSearchParams({ metric: metricKey, platform: cfg.platform });
     if (cfg.leagueId) p.set('league_id', cfg.leagueId);
     if (state.season) p.set('season', String(state.season));
+    if (state.combine && amIsMultiSeason()) p.set('combine', '1');
     const graphPos = _amGraphPos || (state.position !== 'ALL' ? state.position : null);
     if (graphPos) p.set('position', graphPos);
     const vol = isX ? _amGraphMinVol : defaultVol(metricKey);
@@ -2916,7 +2929,7 @@ _AM_JS = r"""
   // Drop cached leaderboards when the season/week/league context changes so we
   // never show stale data after the user switches the page-level filters.
   function _amSyncLbCache() {
-    const sig = [state.season || '', cfg.leagueId || '', cfg.platform || '',
+    const sig = [state.season || '', state.combine ? '1' : '0', cfg.leagueId || '', cfg.platform || '',
                  (resolveWeekRange().ws || ''), (resolveWeekRange().we || '')].join('|');
     if (sig !== _amLbCacheSig) { _amLbCache.clear(); _amLbCacheSig = sig; }
   }
@@ -3048,7 +3061,9 @@ _AM_JS = r"""
         if (!yMap.has(pid)) return;
         const xv = Number(rx.value), yv = yMap.get(pid);
         if (!isFinite(xv) || !isFinite(yv)) return;
-        const nm = rx.name || '';
+        const nm = (amIsEachYear() && rx.season != null)
+          ? ((rx.name || '') + ' · ' + rx.season)
+          : (rx.name || '');
         ptsAll.push({ pid: pid, name: nm, position: rx.position, headshot: rx.headshot || '',
                       x: xv, y: yv, z: (zMap && zMap.has(pid)) ? zMap.get(pid) : null });
       });
@@ -3639,6 +3654,7 @@ _AM_JS = r"""
     const params = new URLSearchParams({ metric: state.metric, platform: cfg.platform });
     if (cfg.leagueId) params.set('league_id', cfg.leagueId);
     if (state.season) params.set('season', state.season);
+    if (state.combine && amIsMultiSeason()) params.set('combine', '1');
     if (state.minVol) params.set('min_vol', state.minVol);
 
     // Add week range params when a filter is active.
@@ -3862,18 +3878,29 @@ _AM_JS = r"""
     const label = document.getElementById('amSeasonBtnLabel');
     if (label) label.textContent = amSeasonLabel(amSelectedSeasons());
   }
+  function syncCombineToggle() {
+    const wrap = document.getElementById('amCombineToggle');
+    if (!wrap) return;
+    const multi = amIsMultiSeason();
+    wrap.style.display = multi ? '' : 'none';
+    wrap.querySelectorAll('[data-combine]').forEach(function(b) {
+      const on = (b.getAttribute('data-combine') === '1') === !!state.combine;
+      b.classList.toggle('active', on);
+    });
+  }
   function syncMultiSeasonUI() {
     const multi = amIsMultiSeason();
     const weekCtrl = document.getElementById('amWeekCtrl');
     if (weekCtrl) weekCtrl.style.display = multi ? 'none' : '';
     const seasonHdr = document.getElementById('amSeasonColHdr');
-    if (seasonHdr) seasonHdr.style.display = 'none';
+    if (seasonHdr) seasonHdr.style.display = amIsEachYear() ? '' : 'none';
     if (multi) {
       state.weekRange = '';
       state.weekStart = null;
       state.weekEnd = null;
       _amSyncQuickChips('');
     }
+    syncCombineToggle();
     syncSeasonBtn();
   }
   function applySeasonSelection(years) {
@@ -3893,7 +3920,7 @@ _AM_JS = r"""
     if (!menu) return;
     const selected = new Set(amSelectedSeasons());
     const years = cfg.seasons || [];
-    let html = '<div class="am-season-opt-hint">Pick any years that have data. Multiple years combine into one row per player.</div>';
+    let html = '<div class="am-season-opt-hint">Pick any years that have data. Then choose Each year (one row per season) or Combine (one row per player).</div>';
     years.forEach(function(yr) {
       const on = selected.has(Number(yr));
       html += '<label class="am-season-opt">'
@@ -3938,6 +3965,20 @@ _AM_JS = r"""
   })();
   if (seasonSel) {
     seasonSel.addEventListener('change', () => { applySeasonSelection([seasonSel.value]); });
+  }
+  const combineWrap = document.getElementById('amCombineToggle');
+  if (combineWrap) {
+    combineWrap.addEventListener('click', function(e) {
+      const btn = e.target.closest('[data-combine]');
+      if (!btn) return;
+      const next = btn.getAttribute('data-combine') === '1';
+      if (!!state.combine === next) return;
+      state.combine = next;
+      state.page = 0;
+      syncMultiSeasonUI();
+      syncURL();
+      fetchData();
+    });
   }
   if (teamSel) {
     teamSel.addEventListener('change', () => { state.team = teamSel.value || ''; state.page = 0; syncURL(); render(); });
@@ -4007,6 +4048,7 @@ _AM_JS = r"""
       const extraKeys = state.extraMetrics.filter(k => state.extraData[k]);
       const head = ['Player', 'Team', 'Pos', 'Age', 'Exp', metricLbl, 'Games']
         .concat(extraKeys.map(k => (cfg.metrics[k] && cfg.metrics[k].label) || k));
+      if (amIsEachYear()) head.splice(1, 0, 'Year');
       const esc = function(v) {
         if (v == null) return '';
         v = String(v);
@@ -4023,6 +4065,7 @@ _AM_JS = r"""
           const v = state.extraData[k].byId[amRowKey(r)];
           return v != null ? v : '';
         }));
+        if (amIsEachYear()) line.splice(1, 0, r.season != null ? r.season : '');
         lines.push(line.map(esc).join(','));
       });
       const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });

@@ -69,6 +69,8 @@ def api_advanced_metrics_leaderboard():
         season = None
     min_vol_str = (request.args.get("min_vol") or "").strip()
     min_vol = int(min_vol_str) if min_vol_str.isdigit() else None
+    combine_raw = (request.args.get("combine") or "").strip().lower()
+    combine = combine_raw in ("1", "true", "yes")
     week_start_str = (request.args.get("week_start") or "").strip()
     week_end_str   = (request.args.get("week_end") or "").strip()
     week_start = int(week_start_str) if week_start_str.isdigit() else None
@@ -111,7 +113,9 @@ def api_advanced_metrics_leaderboard():
                 week_start=week_start, week_end=week_end, min_vol=min_vol,
             )
         else:
-            players = get_metric_leaderboard(metric, position=position, season=season, min_vol=min_vol)
+            players = get_metric_leaderboard(
+                metric, position=position, season=season, min_vol=min_vol, combine=combine,
+            )
     except Exception as e:
         logger.exception(f"[api/advanced-metrics/leaderboard] error for metric={metric}: {e}")
         players = []
@@ -182,6 +186,7 @@ def api_advanced_metrics_leaderboard():
         "weekly_capable": weekly_capable,
         "is_week_filtered": is_week_filtered,
         "selected_seasons": selected_seasons,
+        "combine": bool(combine) and is_multi_season,
         "players": players,
     })
     # Leaderboard data is rebuilt at most daily, so let the browser reuse the
