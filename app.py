@@ -26631,7 +26631,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
 
         # ── Window badge colour ──────────────────────────────────────────────
         _window_color_map = {
-            "Contend": "#4ade80", "Bubble": "#fbbf24", "Out": "#94a3b8",
+            "Contend": "#4ade80", "Bubble": "#fbbf24", "Long Shot": "#94a3b8",
             "Contender": "#4ade80", "Win-Now": "#4ade80",
             "Contender Window": "#86efac", "Aging Contender": "#fbbf24",
             "2-3 Year Window": "#60a5fa", "Rising": "#60a5fa",
