@@ -116,3 +116,40 @@ def test_bare_team_array_rows(monkeypatch):
     payload["fantasy_content"]["league"][1]["scoreboard"]["0"]["matchups"]["0"]["matchup"]["teams"] = teams
     rows = _run_get_matchups(monkeypatch, payload)
     assert _pairings(rows) == [(3, 6)]
+
+
+def test_teams_nested_under_numeric_wrapper(monkeypatch):
+    """Yahoo's XML→JSON converter wraps <teams> as matchup["0"]["teams"]."""
+    payload = _scoreboard_payload([(1, 2)], nested=True)
+    payload["fantasy_content"]["league"][1]["scoreboard"]["0"]["matchups"]["0"] = {
+        "matchup": [
+            {"week": "1", "status": "preevent", "is_tied": 0},
+            {"0": {"teams": {
+                "count": 2,
+                "0": _team_entry(1, "0.00"),
+                "1": _team_entry(4, "0.00"),
+            }}},
+        ]
+    }
+    rows = _run_get_matchups(monkeypatch, payload)
+    assert _pairings(rows) == [(1, 4)]
+
+
+def test_matchup_dict_with_numeric_teams_wrapper(monkeypatch):
+    payload = _scoreboard_payload([(1, 2)], nested=True)
+    payload["fantasy_content"]["league"][1]["scoreboard"]["0"]["matchups"]["0"] = {
+        "matchup": {
+            "week": "1",
+            "status": "preevent",
+            "0": {"teams": {
+                "count": 2,
+                "0": _team_entry(2, "3.0"),
+                "1": _team_entry(7, "4.0"),
+            }},
+        }
+    }
+    rows = _run_get_matchups(monkeypatch, payload)
+    assert _pairings(rows) == [(2, 7)]
+    pts = {(r["matchup_id"], r["roster_id"]): r["points"] for r in rows}
+    assert pts[(1, 2)] == 3.0
+    assert pts[(1, 7)] == 4.0
