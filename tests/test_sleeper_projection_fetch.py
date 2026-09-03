@@ -113,3 +113,40 @@ def test_season_ppg_fills_player_missing_from_weekly_files(monkeypatch):
     assert variants["9224"]["ppr"] == round(255.2 / 17.0, 2)
     assert "5859" in variants
     assert variants["5859"]["ppr"] == round(247.2 / 17.0, 2)
+
+
+def test_empty_week_proj_cache_is_stale_after_short_ttl(tmp_path):
+    import os
+    import time
+
+    empty = tmp_path / "projections_s2026_w1.json"
+    empty.write_text("{}")
+    os.utime(empty, (time.time() - 3600, time.time() - 3600))
+    assert utils._week_proj_is_stale(2026, 1, str(empty)) is True
+
+
+def test_fresh_empty_week_proj_cache_is_not_immediately_stale(tmp_path):
+    empty = tmp_path / "projections_s2026_w1.json"
+    empty.write_text("{}")
+    assert utils._week_proj_is_stale(2026, 1, str(empty)) is False
+
+
+def test_populated_past_season_proj_cache_stays_immutable(tmp_path, monkeypatch):
+    path = tmp_path / "projections_s2025_w1.json"
+    path.write_text('{"4984": {"ppr": 20.1}}')
+    monkeypatch.setattr(utils, "get_nfl_state", lambda: {"season": 2026, "week": 1})
+    assert utils._week_proj_is_stale(2025, 1, str(path)) is False
+
+
+def test_get_week_projections_cached_refetches_aged_empty_file(tmp_path, monkeypatch):
+    import os
+    import time
+
+    cache = tmp_path / "projections_s2026_w1.json"
+    cache.write_text("{}")
+    os.utime(cache, (time.time() - 3600, time.time() - 3600))
+    monkeypatch.setattr(utils, "path_week_proj", lambda season, week: str(cache))
+    fetched = {"4984": {"ppr": 22.4, "raw_stats": {"pass_yd": 250}}}
+    monkeypatch.setattr(utils, "save_week_projections", lambda *a, **k: cache.write_text('{"4984": {"ppr": 22.4}}'))
+    out = utils.get_week_projections_cached(2026, 1, lambda *_a, **_k: fetched)
+    assert out == fetched
