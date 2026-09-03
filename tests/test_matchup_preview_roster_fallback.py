@@ -59,3 +59,58 @@ def test_yahoo_empty_matchup_row_backfills_from_roster():
     right = preview[0]["right"]
     assert len(left["starters"]) == 9
     assert len(right["starters"]) == 9
+
+
+def test_yahoo_empty_scoreboard_does_not_invent_round_robin_pairings():
+    rosters = [
+        {"roster_id": i, "owner_id": f"o{i}", "players": ["1"], "starters": ["1"],
+         "reserve": [], "settings": {"wins": 0, "losses": 0}}
+        for i in range(1, 5)
+    ]
+    users = [{"user_id": f"o{i}", "roster_id": i, "display_name": f"U{i}"} for i in range(1, 5)]
+    with mock.patch("dashboard_services.matchups.get_matchups", return_value=[]), mock.patch(
+        "dashboard_services.matchups.get_rosters", return_value=rosters
+    ), mock.patch("dashboard_services.matchups.get_users", return_value=users), mock.patch(
+        "dashboard_services.matchups.get_league_settings", return_value={}
+    ), mock.patch(
+        "dashboard_services.matchups.team_avatar", return_value=""
+    ):
+        preview = build_matchup_preview(
+            league_id="1307110",
+            week=1,
+            roster_map={str(i): f"Team {i}" for i in range(1, 5)},
+            players_map={"1": {"name": "P", "pos": "RB", "team": "KC"}},
+            season="2026",
+            platform="yahoo",
+        )
+    assert preview == []
+
+
+def test_sleeper_empty_matchups_still_synthesize_pairings():
+    rosters = [
+        {"roster_id": i, "owner_id": f"o{i}", "players": ["1"], "starters": ["1"],
+         "reserve": [], "settings": {"wins": 0, "losses": 0}}
+        for i in range(1, 5)
+    ]
+    users = [{"user_id": f"o{i}", "roster_id": i, "display_name": f"U{i}"} for i in range(1, 5)]
+    with mock.patch("dashboard_services.matchups.get_matchups", return_value=[]), mock.patch(
+        "dashboard_services.matchups.get_rosters", return_value=rosters
+    ), mock.patch("dashboard_services.matchups.get_users", return_value=users), mock.patch(
+        "dashboard_services.matchups.get_league_settings", return_value={}
+    ), mock.patch(
+        "dashboard_services.matchups.team_avatar", return_value=""
+    ):
+        preview = build_matchup_preview(
+            league_id="1",
+            week=1,
+            roster_map={str(i): f"Team {i}" for i in range(1, 5)},
+            players_map={"1": {"name": "P", "pos": "RB", "team": "KC"}},
+            season="2026",
+            platform="sleeper",
+        )
+    assert len(preview) == 2
+    paired = {
+        tuple(sorted((m["left"]["roster_id"], m["right"]["roster_id"])))
+        for m in preview
+    }
+    assert paired == {("1", "2"), ("3", "4")}

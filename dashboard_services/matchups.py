@@ -113,7 +113,9 @@ def build_matchup_preview(
     # starts. Some platforms still return an empty matchup feed for Week 1+
     # until that draft finishes. Synthesize a deterministic round-robin so the
     # Season Hub Matchups tab is never blank once the league is in-season.
-    if not mlist and rosters:
+    # Yahoo publishes the full-season scoreboard; inventing opponents here is
+    # how Yahoo pairings drifted from the real Yahoo matchup page.
+    if not mlist and rosters and str(platform or "").lower() != "yahoo":
         mlist = _synthetic_week_matchups(rosters, week)
         if not mlist:
             return []
