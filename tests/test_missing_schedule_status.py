@@ -1,12 +1,18 @@
 """When NFL schedule data is missing (e.g., preseason or Tank01 down),
 players must default to NOT_STARTED so projections display instead of
 wall-to-wall 0.0 actuals.
+
+This test imports from ``utils.utils`` which pulls in optional heavyweight
+dependencies (BeautifulSoup) at module-import time. The repo's CI runs a
+lightweight unit-test job that installs only pytest, so gate the module to
+avoid import-time collection failures there.
 """
-from utils.utils import (
-    build_status_by_pid,
-    STATUS_NOT_STARTED,
-    STATUS_FINAL,
-)
+
+import pytest
+
+pytest.importorskip("bs4")
+
+from utils.utils import build_status_by_pid, STATUS_NOT_STARTED, STATUS_FINAL
 
 
 _PLAYERS = {
