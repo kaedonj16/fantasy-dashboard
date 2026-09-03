@@ -143,7 +143,21 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
         try:
             from dashboard_services.pages.keeper_page import compute_league_keepers, league_keeper_limit
             _ctx = get_league_ctx_from_cache(platform, league_id, season)
-            if request.args.get("keepers") or league_keeper_limit(_ctx) > 0:
+            # Sleeper commonly reports a leftover max_keepers (often 1) on plain
+            # redraft leagues (type 0), which made the room auto-surface a keeper
+            # banner and pull "kept" players off the board for a league that has
+            # no keepers. Sleeper's type is authoritative, so never auto-surface
+            # keepers for a pure redraft league; the keeper tool's explicit
+            # ?keepers=1 handoff still forces them. Non-Sleeper leagues publish no
+            # type, so they are unaffected and still infer from the limit.
+            _settings = (_ctx.get("league_settings")
+                         or (_ctx.get("league") or {}).get("settings")
+                         or _ctx.get("settings") or {}) if _ctx else {}
+            try:
+                _is_redraft_league = int(_settings.get("type")) == 0
+            except (TypeError, ValueError):
+                _is_redraft_league = False
+            if request.args.get("keepers") or (league_keeper_limit(_ctx) > 0 and not _is_redraft_league):
                 # The keeper tool hands off the limit and cost rules the user is
                 # playing by so rival projections use the same ones, instead of
                 # the server defaults (which price every undrafted player at the
