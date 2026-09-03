@@ -721,7 +721,7 @@ function wvRenderWaivers() {{
         ${{urgencyHint}}
         ${{returnHint}}
         <div class="wv-ctx-links" onclick="event.stopPropagation()">
-          <a class="wv-ctx-link" href="${{wvLeaguePath('/compare')}}?a=${{encodeURIComponent(p.player_id)}}">Compare to roster</a>
+          <a class="wv-ctx-link" href="${{wvLeaguePath('/compare')}}?p1=${{encodeURIComponent(p.player_id)}}">Compare to roster</a>
           <a class="wv-ctx-link" href="#" onclick="event.preventDefault();openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">Open player</a>
         </div>
       </div>
@@ -1083,7 +1083,7 @@ function wvRenderStartSit() {{
                 onclick="event.stopPropagation();openPlayerModal('${{p.player_id}}', '${{(p.name||'').replace(/'/g,"\\'")}}')">
                 Open player
               </button>
-              <a class="wv-cmp-btn" href="${{wvLeaguePath('/schedule')}}" onclick="event.stopPropagation()">View schedule</a>
+              <a class="wv-cmp-btn" href="${{wvLeaguePath('/schedule')}}?add=${{encodeURIComponent(p.player_id)}}" onclick="event.stopPropagation()">View schedule</a>
               <button class="wv-cmp-btn ${{isSelected ? 'selected' : ''}}"
                 onclick="event.stopPropagation();wvToggleCompare(${{JSON.stringify(p).replace(/"/g,'&quot;')}})">
                 ${{isSelected ? '✓' : '+'}} Compare

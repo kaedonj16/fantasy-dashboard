@@ -311,6 +311,7 @@ LEAGUE_PAGES = [
     "draft/cheat-sheet",
     "metrics",
     "schedule",
+    "compare",
     "breakouts",
     "prospects",
     "league_health",
