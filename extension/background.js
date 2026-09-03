@@ -469,10 +469,18 @@ function poolNum(v) {
   return isFinite(n) ? n : null;
 }
 
+function normDraftPos(pos) {
+  const p = String(pos || "").toUpperCase();
+  if (p === "PK") return "K";
+  if (p === "DST" || p === "D/ST" || p === "D-ST" || p === "D ST") return "DEF";
+  return p;
+}
+
 function compactDraftPlayer(raw, scoringType, isSf, teams, adpSource) {
   if (!raw || raw.id == null) return null;
-  const pos = String(raw.position || raw.pos || "").toUpperCase();
-  if (pos !== "QB" && pos !== "RB" && pos !== "WR" && pos !== "TE") return null;
+  const pos = normDraftPos(raw.position || raw.pos);
+  const isKd = pos === "K" || pos === "DEF";
+  if (pos !== "QB" && pos !== "RB" && pos !== "WR" && pos !== "TE" && !isKd) return null;
   const by = raw.adp_by_source && typeof raw.adp_by_source === "object" ? raw.adp_by_source : {};
   const src = (adpSource && by[adpSource]) || {};
   const cons = by.consensus || {};
@@ -504,7 +512,7 @@ function compactDraftPlayer(raw, scoringType, isSf, teams, adpSource) {
       poolNum(isSf ? cons.sf_avg_pick : cons.avg_pick);
     val = poolNum(isSf ? raw.sf_value : raw.value) || poolNum(raw.value);
   }
-  if (!(val > 0) && !(adp > 0)) return null;
+  if (!(val > 0) && !(adp > 0) && !isKd) return null;
   const adpN = adp && adp > 0 ? adp : 999;
   let tier = 6;
   if (adpN <= 12) tier = 1;
@@ -572,7 +580,8 @@ async function fetchDraftPool(opts) {
   const ppr = (opts && opts.ppr != null) ? Number(opts.ppr) : 1;
   const tep = (opts && opts.tep != null) ? Number(opts.tep) : 0;
   const passTd = (opts && opts.passTd != null) ? Number(opts.passTd) : 4;
-  const key = [scoringType, sf ? "sf" : "1qb", adpSource, teams || "", ppr, tep, passTd].join("|");
+  const kdef = opts.kdef !== false && scoringType !== "rookie";
+  const key = [scoringType, sf ? "sf" : "1qb", adpSource, teams || "", ppr, tep, passTd, kdef ? "kdef" : "nokd"].join("|");
   const now = Date.now();
   if (!opts.force && draftPoolCache && draftPoolCache.key === key && now - draftPoolCache.at < POOL_TTL_MS) {
     return {
@@ -594,6 +603,7 @@ async function fetchDraftPool(opts) {
     "proj_pass_td=" + encodeURIComponent(String((opts && opts.passTd != null) ? opts.passTd : 4)),
   ];
   if (teams >= 8) params.push("league_size=" + encodeURIComponent(String(teams)));
+  if (kdef) params.push("kdef=1");
   const path = "/api/league-players?" + params.join("&");
   let lastErr = "fetch failed";
   for (const host of BR_API_HOSTS) {
@@ -759,6 +769,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       adpSource: String(msg.adpSource || "consensus"),
       teams: Number(msg.teams || 0),
       force: !!msg.force,
+      kdef: msg.kdef !== false,
     })
       .then(sendResponse)
       .catch(() => sendResponse({ ok: false, players: [] }));

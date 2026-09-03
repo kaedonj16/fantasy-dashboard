@@ -37,7 +37,7 @@ def test_overlay_is_mv3_safe_extension_page():
 
 def test_manifest_docks_overlay_on_host_drafts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.33"
+    assert manifest["version"] == "1.5.34"
     inject_ver = (EXT / "assistant_inject.js").read_text(encoding="utf-8")
     assert 'PRODUCT_VERSION = "1.0.0"' in inject_ver
     hosts = " ".join(manifest.get("host_permissions") or [])
@@ -120,6 +120,14 @@ def test_overlay_uses_live_br_player_pool_and_headshots():
     assert "redraft_value_1qb" in background
     assert "redraft_avg_pick" in background
     assert "compactDraftPlayer" in background
+    assert "kdef=1" in background
+    assert 'pos === "K" || pos === "DEF"' in background
+    assert "normDraftPos" in background
+    assert "kdef: true" in inject
+    assert "Fill your " in overlay
+    assert 'data-pos="K"' in html
+    assert 'data-pos="DEF"' in html
+    assert "function kdefNeed" in (EXT / "overlay_score.js").read_text(encoding="utf-8")
     assert "rank_change_7d" in background
     assert "BROverlayScore.rankPool" in overlay
     assert "sleepercdn.com/content/nfl/players/" in background
@@ -539,6 +547,9 @@ if (!B.isSleeperDraftRoom("https://sleeper.com/leagues/123456789012345678/draft"
 if (B.isSleeperDraftRoom("https://sleeper.com/leagues/123456789012345678")) process.exit(1);
 if (B.isSleeperDraftRoom("https://sleeper.com/")) process.exit(1);
 if (!B.isSleeperDraftRoom("https://sleeper.com/#/draft/nfl/abc123")) process.exit(1);
+if (B.normDraftPos("DST") !== "DEF") process.exit(1);
+if (B.normDraftPos("PK") !== "K") process.exit(1);
+if (!B.isKDefPos("D/ST")) process.exit(1);
 if (B.sleeperDraftIdFromUrl("https://sleeper.com/draft/nfl/abc123") !== "abc123") process.exit(1);
 if (B.sleeperDraftIdFromUrl("https://sleeper.com/draft/abc123") !== "abc123") process.exit(1);
 if (B.sleeperLeagueIdFromUrl("https://sleeper.com/leagues/123456789012345678/draft") !== "123456789012345678") process.exit(1);
@@ -590,6 +601,25 @@ const onClock = { current: 7, teams: 12, rounds: 15, mySlot: 7 };
 if (S.recommendationPickNo(onClock) !== 7) process.exit(1);
 const stringKeys = { current: 7, teams: 12, rounds: 15, mySlot: 5, pickOwners: { "7": 5 } };
 if (S.recommendationPickNo(stringKeys) !== 7) process.exit(1);
+if (!S.isKDef({ pos: "DST" }) || !S.isKDef({ position: "PK" })) process.exit(2);
+if (S.isKDef({ pos: "WR" })) process.exit(3);
+const late = {
+  current: 140, teams: 12, rounds: 15, mySlot: 5, sf: false,
+  roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DEF: 1 },
+  picks: [],
+};
+const need = S.kdefNeed(late, { QB: 1, RB: 2, WR: 2, TE: 1, K: 0, DEF: 0 });
+if (!need || need.needK !== 1 || need.needDef !== 1) process.exit(4);
+const filled = S.kdefNeed(late, { QB: 1, RB: 2, WR: 2, TE: 1, K: 1, DEF: 1 });
+if (filled != null) process.exit(5);
+const early = {
+  current: 8, teams: 12, rounds: 15, mySlot: 5, sf: false,
+  roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DEF: 1 },
+  picks: [],
+};
+if (S.kdefNeed(early, { K: 0, DEF: 0 }) != null) process.exit(6);
+const sorted = S.sortKdef({ adp: 142, ppg: 7 }, { adp: 118, ppg: 8 });
+if (sorted <= 0) process.exit(7);
 console.log("ok");
 """
     out = subprocess.run(

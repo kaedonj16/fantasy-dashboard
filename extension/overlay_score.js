@@ -63,7 +63,15 @@
   }
 
   function posOf(p) {
-    return String((p && (p.position || p.pos)) || "").toUpperCase();
+    const raw = String((p && (p.position || p.pos)) || "").toUpperCase();
+    if (raw === "PK") return "K";
+    if (raw === "DST" || raw === "D/ST" || raw === "D-ST" || raw === "D ST") return "DEF";
+    return raw;
+  }
+
+  function isKDef(p) {
+    const pos = typeof p === "string" ? posOf({ pos: p }) : posOf(p);
+    return pos === "K" || pos === "DEF";
   }
 
   function valOf(p) {
@@ -81,12 +89,35 @@
   }
 
   function myPosCounts(ctx) {
-    const c = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    const c = { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DEF: 0 };
     myPicks(ctx).forEach(function (x) {
       const pos = posOf(x.p);
       if (c[pos] != null) c[pos]++;
     });
     return c;
+  }
+
+  function sortKdef(a, b) {
+    const aa = adpOf(a);
+    const ba = adpOf(b);
+    if (aa != null || ba != null) {
+      return (aa != null ? aa : 99999) - (ba != null ? ba : 99999);
+    }
+    return (Number(b && b.ppg) || 0) - (Number(a && a.ppg) || 0);
+  }
+
+  function kdefNeed(ctx, counts) {
+    counts = counts || myPosCounts(ctx);
+    const rs = rosterOf(ctx);
+    const needK = Math.max(0, (rs.K || 0) - (counts.K || 0));
+    const needDef = Math.max(0, (rs.DEF || 0) - (counts.DEF || 0));
+    if (needK + needDef <= 0) return null;
+    const remaining = upcomingOwned(ctx).length;
+    const remainRds = (ctx.rounds || 15) - Math.floor(((ctx.current || 1) - 1) / (ctx.teams || 12));
+    if (remaining <= (needK + needDef) + 2 || remainRds <= 3) {
+      return { needK: needK, needDef: needDef };
+    }
+    return null;
   }
 
   function simSigma(a) {
@@ -185,10 +216,12 @@
   }
 
   function byeConflictLevel(p, ctx) {
+    if (isKDef(p)) return 0;
     const bye = Number(p && (p.bye_week || p.bye)) || 0;
     if (!bye) return 0;
     let n = 0;
     myPicks(ctx).forEach(function (x) {
+      if (isKDef(x.p)) return;
       const b = Number(x.p && (x.p.bye_week || x.p.bye)) || 0;
       if (b === bye) n++;
     });
@@ -510,6 +543,10 @@
     },
     recommendationPickNo: recommendationPickNo,
     recWaitPickNo: recWaitPickNo,
+    isKDef: isKDef,
+    sortKdef: sortKdef,
+    kdefNeed: kdefNeed,
+    myPosCounts: myPosCounts,
     availProb: function (p, pn, ctx, allPlayers) {
       const byId = {};
       (allPlayers || []).forEach(function (pl) {

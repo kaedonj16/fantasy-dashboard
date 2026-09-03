@@ -340,9 +340,24 @@
   function normName(s) {
     return String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "").replace(/(jr|sr|ii|iii|iv)$/, "");
   }
+  function normPos(pos) {
+    if (window.BRDraftSlot && BRDraftSlot.normDraftPos) return BRDraftSlot.normDraftPos(pos);
+    const p = String(pos || "").toUpperCase();
+    if (p === "PK") return "K";
+    if (p === "DST" || p === "D/ST" || p === "D-ST" || p === "D ST") return "DEF";
+    return p;
+  }
+  function isKDef(p) {
+    if (window.BROverlayScore && BROverlayScore.isKDef) return BROverlayScore.isKDef(p);
+    const pos = normPos(p && (p.pos || p.position || p));
+    return pos === "K" || pos === "DEF";
+  }
   function posCounts(list) {
-    const c = { QB: 0, RB: 0, WR: 0, TE: 0 };
-    list.forEach(function (p) { if (c[p.pos] != null) c[p.pos]++; });
+    const c = { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DEF: 0 };
+    list.forEach(function (p) {
+      const pos = normPos(p.pos || p.position);
+      if (c[pos] != null) c[pos]++;
+    });
     return c;
   }
   function posTargets() {
@@ -395,6 +410,7 @@
     };
   }
   function pickScore(p, counts, pickNo) {
+    if (isKDef(p)) return null;
     if (p && p._ps != null) return p._ps;
     const adp = p.adp;
     const rel = (pickNo - adp) / Math.max(adp, 1.5);
@@ -409,8 +425,10 @@
     return Math.round(clamp(s, 8, 99));
   }
   function decisionScore(p, counts, pickNo) {
+    if (isKDef(p)) return null;
     if (p && p._ds != null) return p._ds;
     const ps = pickScore(p, counts, pickNo);
+    if (ps == null) return null;
     const need = needOf(counts, p.pos);
     let ds = ps + need * 8 + (p.tier <= 2 ? 4 : 0);
     if (!need && p.pos === "QB" && (counts.QB || 0) >= 1) ds -= 18;
@@ -423,7 +441,7 @@
         return BROverlayScore.rankPool(players, available(), scoreCtx());
       } catch (_e) { /* fall through to local ranker */ }
     }
-    const pool = available();
+    const pool = available().filter(function (p) { return !isKDef(p); });
     for (let i = 0; i < pool.length; i++) {
       const p = pool[i];
       p._ps = pickScore(p, counts, pickNo);
@@ -536,11 +554,11 @@
     const s = String(slot || "").toUpperCase();
     if (s === "FLEX") return p === "RB" || p === "WR" || p === "TE";
     if (s === "SF" || s === "OP") return p === "QB" || p === "RB" || p === "WR" || p === "TE";
-    if (s === "DEF") return p === "DEF" || p === "DST";
-    return p === s;
+    if (s === "DEF") return normPos(p) === "DEF";
+    return normPos(p) === s;
   }
   function optimalLineup(list) {
-    const leftover = list.slice().sort(function (a, b) { return b.ppg - a.ppg; });
+    const leftover = list.slice().sort(function (a, b) { return (b.ppg || 0) - (a.ppg || 0); });
     const starters = [];
     function take(slot, ok) {
       const i = leftover.findIndex(ok);
@@ -726,11 +744,13 @@
     const cliff = isTierCliff(p);
     const pc = POS[p.pos];
     const mine = myPicks();
-    const byeLvl = mine.filter(function (x) { return x.bye === p.bye; }).length >= 2;
+    const byeLvl = !isKDef(p) && mine.filter(function (x) { return !isKDef(x) && x.bye === p.bye; }).length >= 2;
     let chip;
-    if (state.sort === "rec") {
+    if (isKDef(p) && p._rank == null) {
+      chip = "";
+    } else if (state.sort === "rec") {
       chip = '<div class="pschip recchip" title="Recommendation rank">#' + (opts.rank || p._rank) + "<small>REC</small></div>";
-    } else     if (state.sort === "ps") {
+    } else if (state.sort === "ps" && p._ps != null) {
       const shown = p._psShow != null ? p._psShow : p._ps;
       const col = psColor(shown);
       chip = '<div class="pschip" style="color:' + col + ";background:" + col + '1a" title="Pick Score">'+ shown + "<small>PS</small></div>";
@@ -813,23 +833,64 @@
       html += '<div class="cmp-hint">Comparing ' + esc(waiting ? waiting.name : "player") + " - tap vs on another</div>";
     }
     const q = (state.query || "").trim().toLowerCase();
-    let rows = pool;
-    if (state.pos !== "ALL") rows = rows.filter(function (p) { return p.pos === state.pos; });
-    if (q) rows = rows.filter(function (p) { return String(p.name).toLowerCase().indexOf(q) >= 0; });
+    const kdAvail = available().filter(isKDef).sort(function (a, b) {
+      return (window.BROverlayScore && BROverlayScore.sortKdef)
+        ? BROverlayScore.sortKdef(a, b)
+        : ((a.adp || 999) - (b.adp || 999)) || ((b.ppg || 0) - (a.ppg || 0));
+    });
+    let promoted = [];
+    if (state.pos === "ALL" && kdAvail.length && window.BROverlayScore && BROverlayScore.kdefNeed) {
+      const need = BROverlayScore.kdefNeed(scoreCtx(), counts);
+      if (need) {
+        if (need.needK > 0) {
+          const bk = kdAvail.filter(function (p) { return normPos(p.pos) === "K"; })[0];
+          if (bk) promoted.push(bk);
+        }
+        if (need.needDef > 0) {
+          const bd = kdAvail.filter(function (p) { return normPos(p.pos) === "DEF"; })[0];
+          if (bd) promoted.push(bd);
+        }
+      }
+    }
+    const promotedIds = {};
+    promoted.forEach(function (p) { promotedIds[String(p.id)] = true; });
+    let kdRest = kdAvail.filter(function (p) { return !promotedIds[String(p.id)]; });
+    let rows = pool.filter(function (p) { return !isKDef(p); });
+    if (state.pos === "K" || state.pos === "DEF") {
+      rows = kdAvail.filter(function (p) { return normPos(p.pos) === state.pos; });
+      promoted = [];
+      kdRest = [];
+    } else if (state.pos !== "ALL") {
+      rows = rows.filter(function (p) { return normPos(p.pos) === state.pos; });
+      promoted = [];
+      kdRest = [];
+    }
+    if (q) {
+      const hit = function (p) { return String(p.name).toLowerCase().indexOf(q) >= 0; };
+      rows = rows.filter(hit);
+      promoted = promoted.filter(hit);
+      kdRest = kdRest.filter(hit);
+    }
     if (state.sort === "adp") rows = rows.slice().sort(function (a, b) { return a.adp - b.adp; });
-    else if (state.sort === "ps") rows = rows.slice().sort(function (a, b) { return b._ps - a._ps; });
-    else if (state.sort === "proj") rows = rows.slice().sort(function (a, b) { return b.ppg - a.ppg; });
-    else if (state.sort === "val") rows = rows.slice().sort(function (a, b) { return b.val - a.val; });
+    else if (state.sort === "ps") rows = rows.slice().sort(function (a, b) { return (b._ps || 0) - (a._ps || 0); });
+    else if (state.sort === "proj") rows = rows.slice().sort(function (a, b) { return (b.ppg || 0) - (a.ppg || 0); });
+    else if (state.sort === "val") rows = rows.slice().sort(function (a, b) { return (b.val || 0) - (a.val || 0); });
+    promoted.forEach(function (p) {
+      html += playerRow(p, { reason: "Fill your " + normPos(p.pos) + " slot before the draft ends" });
+    });
     rows.slice(0, 40).forEach(function (p, i) {
       let reason = "";
-      if (state.sort === "rec") {
+      if (state.sort === "rec" && !isKDef(p)) {
         reason = (window.BROverlayScore && pool && pool._reasonCtx)
           ? (BROverlayScore.pickReason(p, pool) || "")
           : (reasonsFor(p, counts, recPn)[0] || "");
       }
-      html += playerRow(p, { rank: state.sort === "rec" ? p._rank : i + 1, reason: reason });
+      html += playerRow(p, { rank: state.sort === "rec" && p._rank != null ? p._rank : i + 1, reason: reason });
     });
-    if (!rows.length) html += '<div class="empty-log" style="color:var(--text-muted)">No players match this filter.</div>';
+    kdRest.forEach(function (p) { html += playerRow(p, {}); });
+    if (!rows.length && !promoted.length && !kdRest.length) {
+      html += '<div class="empty-log" style="color:var(--text-muted)">No players match this filter.</div>';
+    }
     return html;
   }
 
@@ -1303,7 +1364,7 @@
     if (detail.sf != null) state.sf = !!detail.sf;
     fillAdpSel();
     players = rows.map(function (p) {
-      const pos = p.pos || p.position || "RB";
+      const pos = normPos(p.pos || p.position || "RB");
       return {
         id: String(p.id),
         name: p.name,
@@ -1337,6 +1398,12 @@
     players.forEach(function (p) {
       if (p.id) byId[String(p.id)] = p;
       byName[normName(p.name)] = p;
+      if (normPos(p.pos) === "DEF" && p.team && p.team !== "FA") {
+        byId[String(p.team)] = byId[String(p.team)] || p;
+        byName[normName(p.team + " dst")] = p;
+        byName[normName(p.team + " def")] = p;
+        byName[normName(p.team + " d/st")] = p;
+      }
     });
     state.sitePool = true;
     let maxVal = 1;
@@ -1388,8 +1455,12 @@
     const name = (raw && (raw.playerName || raw.name)) || "";
     const key = normName(name);
     if (key && byName[key]) return byName[key];
-    const pos = String((raw && (raw.pos || raw.position)) || "").toUpperCase();
+    const pos = normPos((raw && (raw.pos || raw.position)) || "");
     const nfl = String((raw && (raw.nflTeam || raw.team || raw.proTeam)) || "").toUpperCase().slice(0, 3) || "FA";
+    if (pos === "DEF" && nfl && nfl !== "FA") {
+      const defHit = players.filter(function (p) { return normPos(p.pos) === "DEF" && p.team === nfl; })[0];
+      if (defHit) return defHit;
+    }
     const abbrev = matchAbbrevName(name, pos, nfl === "FA" ? "" : nfl);
     if (abbrev) return abbrev;
     const usePos = POS[pos] ? pos : "WR";
@@ -1483,11 +1554,18 @@
   }
 
   function posRankOf(p) {
-    const pos = String((p && (p.pos || p.position)) || "").toUpperCase();
+    const pos = normPos(p && (p.pos || p.position));
     if (!pos) return { label: "", n: null };
     const ranked = players.filter(function (x) {
-      return String(x.pos || x.position || "").toUpperCase() === pos;
-    }).slice().sort(function (a, b) { return (Number(b.val) || 0) - (Number(a.val) || 0); });
+      return normPos(x.pos || x.position) === pos;
+    }).slice().sort(function (a, b) {
+      if (pos === "K" || pos === "DEF") {
+        return (window.BROverlayScore && BROverlayScore.sortKdef)
+          ? BROverlayScore.sortKdef(a, b)
+          : ((a.adp || 999) - (b.adp || 999)) || ((b.ppg || 0) - (a.ppg || 0));
+      }
+      return (Number(b.val) || 0) - (Number(a.val) || 0);
+    });
     const i = ranked.findIndex(function (x) { return String(x.id) === String(p.id); });
     if (i < 0) return { label: "", n: null };
     return { label: pos + (i + 1), n: i + 1 };

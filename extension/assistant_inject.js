@@ -385,6 +385,7 @@
         ppr: lastScoring.ppr,
         tep: lastScoring.tep,
         passTd: lastScoring.passTd,
+        kdef: true,
       },
       extra || {}
     );
@@ -396,6 +397,7 @@
       opts.ppr,
       opts.tep,
       opts.passTd,
+      opts.kdef !== false ? "kdef" : "nokd",
     ].join("|");
     adpSource = String(opts.adpSource || "consensus");
     try {

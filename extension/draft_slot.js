@@ -313,6 +313,18 @@
     return { QB: 0, SF: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, RB_WR: 0, WR_TE: 0, RB_TE: 0, K: 0, DEF: 0, BN: 0 };
   }
 
+  function normDraftPos(pos) {
+    const p = String(pos || "").toUpperCase();
+    if (p === "PK") return "K";
+    if (p === "DST" || p === "D/ST" || p === "D-ST" || p === "D ST") return "DEF";
+    return p;
+  }
+
+  function isKDefPos(pos) {
+    const p = normDraftPos(pos);
+    return p === "K" || p === "DEF";
+  }
+
   function rosterFromEspnSlots(counts) {
     const out = emptyRoster();
     if (!counts || typeof counts !== "object") return out;
@@ -1233,6 +1245,8 @@
     sleeperDraftIdFromUrl: sleeperDraftIdFromUrl,
     sleeperLeagueIdFromUrl: sleeperLeagueIdFromUrl,
     clampSlot: clampSlot,
+    normDraftPos: normDraftPos,
+    isKDefPos: isKDefPos,
     rosterFromEspnSlots: rosterFromEspnSlots,
     rosterFromSleeperSettings: rosterFromSleeperSettings,
     rosterFromYahooPositions: rosterFromYahooPositions,

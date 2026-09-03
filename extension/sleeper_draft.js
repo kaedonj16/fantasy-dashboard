@@ -311,7 +311,9 @@
       overallPickNumber: pn,
       playerId: row.player_id != null ? String(row.player_id) : "",
       playerName: name,
-      pos: String(md.position || row.position || "").toUpperCase(),
+      pos: window.BRDraftSlot && BRDraftSlot.normDraftPos
+        ? BRDraftSlot.normDraftPos(md.position || row.position)
+        : String(md.position || row.position || "").toUpperCase(),
       nflTeam: String(md.team || "").toUpperCase(),
       slot: Number(row.draft_slot || row.slot || 0),
       pickedBy: row.picked_by != null ? String(row.picked_by) : "",
