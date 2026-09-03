@@ -1780,6 +1780,9 @@ def get_league_globals(season: int, league_id: str, access_token: str) -> Dict[s
         return {}
 
     scoring_settings = _yahoo_scoring_settings(meta, settings)
+    from utils.league_scoring import normalize_league_scoring
+    scoring_settings = normalize_league_scoring(
+        "yahoo", scoring_settings, league_id=league_id, season=season)
 
     roster_positions = _yahoo_roster_positions(settings)
     if not roster_positions:
@@ -1888,6 +1891,18 @@ _YAHOO_STAT_KEYS: Dict[int, str] = {
 }
 
 
+def _yahoo_is_threshold_bonus(stat: dict) -> bool:
+    """Skip a duplicate yardage row that is a 300-yard extra, not 0.04 / yard."""
+    if not isinstance(stat, dict):
+        return False
+    if not (stat.get("bonuses") or stat.get("bonus")):
+        return False
+    try:
+        return abs(float(stat.get("value"))) >= 1.0
+    except (TypeError, ValueError):
+        return False
+
+
 def _yahoo_scoring_settings(meta: Dict[str, Any], settings: Dict[str, Any]) -> Dict[str, Any]:
     """Build scoring from Yahoo ``stat_modifiers``, not competition ``scoring_type``.
 
@@ -1895,18 +1910,9 @@ def _yahoo_scoring_settings(meta: Dict[str, Any], settings: Dict[str, Any]) -> D
     ``stat_modifiers.stats``. Falling back to format labels previously forced H2H
     PPR leagues to ``rec=0`` and points leagues to full PPR.
     """
-    scoring: Dict[str, Any] = {
-        "rec": 0.0,
-        "pass_yd": 0.04,
-        "pass_td": 4.0,
-        "pass_int": -2.0,
-        "rush_yd": 0.1,
-        "rush_td": 6.0,
-        "rec_yd": 0.1,
-        "rec_td": 6.0,
-        "fum_lost": -2.0,
-        "2pt": 2.0,
-    }
+    from utils.league_scoring import assign_scoring_rate
+
+    scoring: Dict[str, Any] = {}
     modifiers = settings.get("stat_modifiers") or {}
     stats_node = modifiers.get("stats") if isinstance(modifiers, dict) else None
     rows = _yahoo_collection_rows(stats_node, "stat")
@@ -1916,6 +1922,8 @@ def _yahoo_scoring_settings(meta: Dict[str, Any], settings: Dict[str, Any]) -> D
             continue
         # Rows are either {"stat": {...}} wrappers or flat stat dicts.
         stat = row.get("stat") if isinstance(row.get("stat"), dict) else row
+        if _yahoo_is_threshold_bonus(stat):
+            continue
         try:
             stat_id = int(stat.get("stat_id"))
         except (TypeError, ValueError):
@@ -1927,9 +1935,16 @@ def _yahoo_scoring_settings(meta: Dict[str, Any], settings: Dict[str, Any]) -> D
             value = float(stat.get("value"))
         except (TypeError, ValueError):
             continue
-        scoring[key] = value
+        assign_scoring_rate(scoring, key, value)
         if key == "rec":
             found_rec = True
+    for key, default in (
+        ("rec", 0.0), ("pass_yd", 0.04), ("pass_td", 4.0), ("pass_int", -2.0),
+        ("rush_yd", 0.1), ("rush_td", 6.0), ("rec_yd", 0.1), ("rec_td", 6.0),
+        ("fum_lost", -2.0), ("2pt", 2.0),
+    ):
+        if key not in scoring:
+            scoring[key] = default
     if not found_rec:
         # Last-resort heuristic only when modifiers are missing entirely.
         scoring_type = str(meta.get("scoring_type") or settings.get("scoring_type") or "").lower()

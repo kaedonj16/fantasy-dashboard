@@ -1192,6 +1192,8 @@ class FleaflickerProvider(ProviderAdapter):
         abbreviations last-write-wins, so ``projection_points`` never saw
         ``pass_yd`` / ``rec`` and every starter painted 0.0.
         """
+        from utils.league_scoring import assign_scoring_rate
+
         out = {}
         for group in rules.get("groups") or []:
             group_label = str(group.get("label") or group.get("name") or "").strip()
@@ -1207,9 +1209,7 @@ class FleaflickerProvider(ProviderAdapter):
                 rate = _flea_points_per(rule)
                 if rate is None:
                     continue
-                # Per-unit rule first; later milestone dupes must not overwrite.
-                if key not in out:
-                    out[key] = rate
+                assign_scoring_rate(out, key, rate)
         return out
 
     def get_league_globals(self, league_id, season, *, token: Optional[str] = None):

@@ -50,7 +50,7 @@ from dashboard_services.api import (
     team_avatar,
     build_league_history_map,
     build_team_game_lookup,
-    get_effective_scoring_settings,
+    get_normalized_scoring_settings,
     get_league_settings,
     get_nfl_players,
     get_nfl_scores_for_date,
@@ -6193,7 +6193,9 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     # ---------- League settings / refs that can matter to multiple pages ----------
     sync_league_globals(platform, resolved_league_id, viewed_season)
     try:
-        ctx["scoring_settings"] = get_effective_scoring_settings()
+        scoring_settings = get_normalized_scoring_settings(platform)
+        ctx["scoring_settings"] = scoring_settings
+        ctx["raw_scoring_settings"] = scoring_settings
     except Exception as e:
         logger.info(f"[ctx] scoring_settings failed: {e}")
 
@@ -10142,9 +10144,10 @@ def api_start_sit_options():
     prior_pts_map: dict = {}
     prior_season: Optional[int] = None
     try:
-        from dashboard_services.api import SCORING_DEFAULTS as _SD_SS
         from utils.consistency import BLEND_FULL_SEASON as _BLEND_FULL
-        _eff_ss = {**_SD_SS, **(ctx.get("raw_scoring_settings") or {})}
+        from utils.league_scoring import stamp_scoring_aliases
+        _raw_ss = ctx.get("raw_scoring_settings") or ctx.get("scoring_settings") or {}
+        _eff_ss = stamp_scoring_aliases(_raw_ss) if _raw_ss else {}
         weekly_pts_map = _load_season_weekly_points(season, _eff_ss)
         # Per-player gate: load last season while ANY rostered player is still
         # inside the crossfade window (fewer than a full crossfade's worth of
@@ -10850,7 +10853,7 @@ def _redzone_collect(platform, league_id, season, week):
     """Build the raw per-league Redzone pieces (no top-level wrapper)."""
     from dashboard_services.api import (
         get_nfl_scores_for_date, build_team_game_lookup,
-        get_nfl_players, get_effective_scoring_settings, get_league,
+        get_nfl_players, get_normalized_scoring_settings, get_league,
     )
     from dashboard_services.platform_api import (
         get_matchups as _pm, get_rosters as _pr, get_users as _pu,
@@ -10873,7 +10876,7 @@ def _redzone_collect(platform, league_id, season, week):
         # settings rather than generic defaults. sync_league_globals routes
         # through the right provider for every platform (Sleeper included).
         sync_league_globals(platform, league_id, season)
-        scoring = get_effective_scoring_settings() or {}
+        scoring = get_normalized_scoring_settings(platform) or {}
     except Exception:
         scoring = {}
 
@@ -11248,7 +11251,7 @@ def api_redzone_data(platform: str, season: int, league_id: str):
 def api_redzone_player(platform: str, season: int, league_id: str):
     """Return Tank01 boxscore stats for a single player, tagged with fantasy pts."""
     from dashboard_services.api import (
-        get_nfl_players, fetch_tank_boxscore, get_effective_scoring_settings,
+        get_nfl_players, fetch_tank_boxscore, get_normalized_scoring_settings,
     )
     pid = request.args.get("pid", "")
     game_id = request.args.get("game_id", "")
@@ -11272,7 +11275,8 @@ def api_redzone_player(platform: str, season: int, league_id: str):
                         stats = ps
                         break
 
-        scoring = get_effective_scoring_settings() or {}
+        sync_league_globals(platform, league_id, season)
+        scoring = get_normalized_scoring_settings(platform) or {}
 
         def _pts(stat_key, score_key, multiplier=1):
             val = float(stats.get(stat_key) or 0) * multiplier
@@ -18268,7 +18272,6 @@ def api_player_details(player_id: str):
     """Get comprehensive player details for modal display."""
     try:
         from utils.utils import load_relevant_index, load_model_value_table
-        from dashboard_services.api import get_effective_scoring_settings
         from dashboard_services.platform_api import sync_league_globals
         import json
         import os
@@ -18298,7 +18301,7 @@ def api_player_details(player_id: str):
                 _get_league(league_id)
             else:
                 sync_league_globals(platform, league_id, season)
-            scoring_settings = get_effective_scoring_settings()
+            scoring_settings = get_normalized_scoring_settings(platform)
         else:
             # Default scoring settings if no league context
             scoring_settings = {
@@ -19047,7 +19050,6 @@ def api_player_game_logs(player_id: str):
     try:
         import glob
         from utils.utils import load_relevant_index
-        from dashboard_services.api import get_effective_scoring_settings
         from dashboard_services.platform_api import sync_league_globals
 
         league_id = request.args.get("league_id")
@@ -19056,15 +19058,12 @@ def api_player_game_logs(player_id: str):
 
         if league_id:
             # sync_league_globals is a no-op for Sleeper - must call get_league explicitly
-            from dashboard_services.api import SCORING_DEFAULTS as _SD
             if platform == "sleeper":
                 from dashboard_services.api import get_league as _get_league
-                _league_data = _get_league(league_id) or {}
-                _raw_ss = _league_data.get("scoring_settings") or {}
-                scoring_settings = {**_SD, **_raw_ss}
+                _get_league(league_id)
             else:
                 sync_league_globals(platform, league_id, season)
-                scoring_settings = get_effective_scoring_settings()
+            scoring_settings = get_normalized_scoring_settings(platform)
         else:
             scoring_settings = {
                 "pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0,

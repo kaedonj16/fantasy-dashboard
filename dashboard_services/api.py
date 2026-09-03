@@ -343,6 +343,22 @@ def get_provider_scoring_settings() -> Dict[str, float]:
     return dict(_league_state().get("scoring_settings") or {})
 
 
+def get_normalized_scoring_settings(
+    platform: Optional[str] = None, *, league_id=None, season=None,
+) -> Dict[str, Any]:
+    """League scoring for projections and point math.
+
+    ESPN / Yahoo / Fleaflicker / MFL use the provider's published rules.
+    Sleeper uses the league object. Never overlay ``SCORING_DEFAULTS``
+    (PPR, 1 pt/completion) — those are ESPN-shaped holes, not league settings.
+    """
+    from utils.league_scoring import normalize_league_scoring
+    plat = (platform or "").strip().lower() or "unknown"
+    return normalize_league_scoring(
+        plat, get_provider_scoring_settings(), league_id=league_id, season=season,
+    )
+
+
 def get_effective_scoring_settings() -> Dict[str, float]:
     """
     Defaults overlaid with league-specific scoring.
