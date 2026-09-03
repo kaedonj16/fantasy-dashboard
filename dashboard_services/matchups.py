@@ -103,7 +103,14 @@ def build_matchup_preview(
         season: str,
         platform: str
 ) -> List[dict]:
-    mlist = get_matchups(platform, league_id, week, season) or []
+    try:
+        mlist = get_matchups(platform, league_id, week, season) or []
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "get_matchups failed platform=%s league=%s week=%s; synthesizing",
+            platform, league_id, week, exc_info=True,
+        )
+        mlist = []
 
     # Pre-fetch users/rosters once instead of per team
     users = get_users(platform, league_id, season) or []

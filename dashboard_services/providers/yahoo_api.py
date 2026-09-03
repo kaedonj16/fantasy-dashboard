@@ -1434,6 +1434,44 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
     return out
 
 
+def _yahoo_scoreboard_dict(raw: Dict) -> Dict[str, Any]:
+    """Unwrap Yahoo ``scoreboard`` which is often a list of fragments."""
+    block = _league_child_block(raw, "scoreboard")
+    if isinstance(block, list):
+        flat: Dict[str, Any] = {}
+        _merge_yahoo_dict_parts(block, flat)
+        return flat
+    if isinstance(block, dict):
+        if "matchups" in block:
+            return block
+        inner = block.get("0")
+        if isinstance(inner, dict) and ("matchups" in inner or "week" in inner):
+            merged = dict(block)
+            merged.update(inner)
+            return merged
+        return block
+    return {}
+
+
+def _flatten_yahoo_matchup(entry: Any) -> Dict[str, Any]:
+    """Normalize a scoreboard matchup row to a dict with ``teams``.
+
+    Yahoo commonly returns ``{"matchup": [{week/status…}, {teams: …}]}`` —
+    a list of single-key fragments — not a flat dict. Treating a list as
+    invalid dropped every pairing and painted "No matchups".
+    """
+    node = entry
+    if isinstance(entry, dict) and "matchup" in entry:
+        node = entry.get("matchup")
+    if isinstance(node, dict):
+        return node
+    if isinstance(node, list):
+        flat: Dict[str, Any] = {}
+        _merge_yahoo_dict_parts(node, flat)
+        return flat
+    return {}
+
+
 def _matchups_from_scoreboard_node(node: Any) -> Any:
     """Yahoo wraps scoreboard as ``{week, "0": {matchups}}`` more often than a
     flat ``{matchups}`` object. Look in both places."""
@@ -1455,16 +1493,7 @@ def _matchups_from_scoreboard_node(node: Any) -> Any:
 
 def _as_yahoo_matchup(entry: Any) -> Dict[str, Any]:
     """Normalize a scoreboard row to a matchup dict with a ``teams`` block."""
-    node = entry
-    if isinstance(entry, dict) and "matchup" in entry:
-        node = entry.get("matchup")
-    if isinstance(node, list):
-        merged: Dict[str, Any] = {}
-        for item in node:
-            if isinstance(item, dict):
-                merged.update(item)
-        return merged
-    return node if isinstance(node, dict) else {}
+    return _flatten_yahoo_matchup(entry)
 
 
 def _yahoo_team_list_from_entry(tm_entry: Any) -> List:
@@ -1505,12 +1534,22 @@ def get_matchups(season: int, league_id: str, week: int, access_token: str) -> L
         return []
 
     matchups = _matchups_from_scoreboard_node(_league_child_block(raw, "scoreboard"))
+    if not matchups:
+        matchups = _yahoo_scoreboard_dict(raw if isinstance(raw, dict) else {}).get("matchups") or {}
     out: List[Dict[str, Any]] = []
     m_id = 0
     for entry in _yahoo_collection_rows(matchups, "matchup"):
         matchup = _as_yahoo_matchup(entry)
+        if not matchup:
+            continue
         teams_block = matchup.get("teams") or {}
         team_rows = _yahoo_collection_rows(teams_block, "team")
+        if not team_rows and isinstance(teams_block, dict):
+            for j in range(_safe_int(teams_block.get("count")) or 2):
+                row = teams_block.get(str(j))
+                if row:
+                    team_rows.append(row)
+
         sides: List[Dict[str, Any]] = []
         for tm_entry in team_rows:
             tm = _yahoo_team_list_from_entry(tm_entry)
