@@ -39,6 +39,7 @@ _HEADERS = {
 # Endpoints whose OpenAPI signatures do not take ``season``.
 _NO_SEASON = frozenset({"FetchLeagueRules"})
 _CACHE: dict[tuple, tuple[float, dict]] = {}
+_FAIL_CACHE: dict[tuple, tuple[float, Exception]] = {}
 
 # players_index uses ``pos``; a few overlays still use ``position``.
 _SKILL_POS = frozenset({"QB", "RB", "WR", "TE", "K", "DEF", "DST", "PK"})
@@ -339,7 +340,8 @@ def _response_looks_like_html(response) -> bool:
 def _classify_http_error(response, method: str, league_id: str):
     """Map upstream HTTP failures to provider errors without leaking bodies."""
     status = getattr(response, "status_code", None)
-    logger.warning(
+    log = logger.debug if status == 400 else logger.warning
+    log(
         "Fleaflicker HTTP failure method=%s league=%s status=%s content_type=%s html=%s",
         method, league_id, status,
         (getattr(response, "headers", None) or {}).get("Content-Type"),
@@ -602,6 +604,9 @@ class FleaflickerProvider(ProviderAdapter):
         cached = _CACHE.get(key)
         if cached and time.monotonic() - cached[0] < ttl:
             return cached[1]
+        failed = _FAIL_CACHE.get(key)
+        if failed and time.monotonic() - failed[0] < ttl:
+            raise failed[1]
         query = {"sport": SPORT, "league_id": int(league_id), **params}
         if include_season:
             query["season"] = int(season)
@@ -621,7 +626,8 @@ class FleaflickerProvider(ProviderAdapter):
                 )
                 raise ProviderUnavailableError("Fleaflicker returned an invalid response.")
             payload = response.json()
-        except (ProviderAuthenticationError, LeagueNotFoundError, ProviderUnavailableError):
+        except (ProviderAuthenticationError, LeagueNotFoundError, ProviderUnavailableError) as exc:
+            _FAIL_CACHE[key] = (time.monotonic(), exc)
             raise
         except ValueError as exc:
             logger.warning(
@@ -931,10 +937,11 @@ class FleaflickerProvider(ProviderAdapter):
         except Exception:
             logger.debug("Fleaflicker matchup crosswalk unavailable", exc_info=True)
         out = []
+        boxscore_failed = False
         for mid, game in enumerate(raw.get("games") or [], 1):
             game_id = _get(game, "id")
             lineups: list = []
-            if game_id is not None:
+            if game_id is not None and not boxscore_failed:
                 try:
                     box = self._call(
                         "FetchLeagueBoxscore", league_id, season, ttl=300,
@@ -944,9 +951,11 @@ class FleaflickerProvider(ProviderAdapter):
                     )
                     lineups = box.get("lineups") or []
                 except Exception:
+                    boxscore_failed = True
                     logger.debug(
-                        "Fleaflicker FetchLeagueBoxscore failed game=%s",
-                        game_id, exc_info=True,
+                        "Fleaflicker FetchLeagueBoxscore failed game=%s; "
+                        "skipping remaining boxscores for week %s",
+                        game_id, week, exc_info=True,
                     )
             for side, score_key in (("home", "homeScore"), ("away", "awayScore")):
                 team = game.get(side) or {}
