@@ -5359,10 +5359,11 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         league_settings = (league or {}).get("settings") or {}
         total_rosters = int((league or {}).get("total_rosters") or 0)
     else:
-        scoring_settings = get_effective_scoring_settings()
-        # Provider adapters normalize into the same Sleeper-style keys. Preserve
-        # that object as the raw scoring contract used by projections and weekly
-        # features instead of silently falling back to Standard scoring.
+        from dashboard_services.api import get_provider_scoring_settings
+        # Do not merge ESPN-style SCORING_DEFAULTS (PPR, 1 pt/completion) into
+        # Fleaflicker/Yahoo/MFL. Those defaults made standard leagues look like
+        # PPR and inflated weekly projections into the 80s.
+        scoring_settings = get_provider_scoring_settings()
         raw_scoring_settings = dict(scoring_settings)
         roster_positions = get_roster_positions()
         league_settings = get_league_settings()

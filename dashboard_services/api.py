@@ -333,6 +333,16 @@ def sleeper_league_exists(league_id: str) -> bool | None:
         return None
 
 
+def get_provider_scoring_settings() -> Dict[str, float]:
+    """Scoring keys the provider actually published — no ESPN PPR defaults.
+
+    ``get_effective_scoring_settings`` overlays ``SCORING_DEFAULTS``
+    (``pointsPerReception: 1``). That turns a Fleaflicker standard league
+    into PPR as soon as it omits a Catch rule.
+    """
+    return dict(_league_state().get("scoring_settings") or {})
+
+
 def get_effective_scoring_settings() -> Dict[str, float]:
     """
     Defaults overlaid with league-specific scoring.

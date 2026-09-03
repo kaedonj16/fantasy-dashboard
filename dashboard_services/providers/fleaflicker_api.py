@@ -75,6 +75,9 @@ _FLEA_STAT_BY_GROUP_ABBREV = {
     ("receiving", "2pc"): "rec_2pt",
     ("receiving", "fd"): "rec_fd",
     ("misc", "fum"): "fum_lost",
+    ("misc", "lost"): "fum_lost",
+    ("defense", "int"): "def_int",
+    ("defense", "sack"): "sack",
     ("kicking", "fg"): "fgm",
     ("kicking", "xpt"): "xpm",
     ("kicking", "xp"): "xpm",
@@ -142,15 +145,37 @@ def _flea_stat_key(group_label: str, category: dict) -> Optional[str]:
         mapped = _FLEA_STAT_BY_GROUP_ABBREV.get((group, abbrev))
         if mapped:
             return mapped
-        if group == "passing" and abbrev == "int":
-            return "pass_int"
     if name:
         mapped = _FLEA_STAT_BY_NAME.get(name)
         if mapped:
             return mapped
-        if "interception" in name and (not group or "pass" in group):
-            return "pass_int"
+        if "interception" in name:
+            if "pass" in group:
+                return "pass_int"
+            if "defense" in group or group in {"dst", "d/st"}:
+                return "def_int"
+            return None
     return None
+
+
+def _flea_is_threshold_bonus(rule: dict) -> bool:
+    """True for milestone extras, not per-stat rates.
+
+    Fleaflicker lists both ``1 point for every 10 Receiving Yards`` and
+    ``1 extra point when total Receiving Yards >= 150`` under the same
+    ``Yd`` abbreviation. Treating the extra as a rate scored 83-yard
+    games as 83 points and 9-catch bonuses as 2-PPR.
+    """
+    if not isinstance(rule, dict):
+        return False
+    if _get(rule, "boundLower", "bound_lower") is not None:
+        return True
+    if _get(rule, "boundUpper", "bound_upper") is not None:
+        return True
+    text = f"{rule.get('description') or ''} {rule.get('template') or ''}".lower()
+    if "extra point" in text or "when total" in text:
+        return True
+    return False
 
 
 def _flea_points_per(rule: dict) -> Optional[float]:
@@ -1173,6 +1198,8 @@ class FleaflickerProvider(ProviderAdapter):
             for rule in group.get("scoringRules") or group.get("scoring_rules") or []:
                 if not isinstance(rule, dict):
                     continue
+                if _flea_is_threshold_bonus(rule):
+                    continue
                 cat = rule.get("category") or {}
                 key = _flea_stat_key(group_label, cat)
                 if not key:
@@ -1180,7 +1207,9 @@ class FleaflickerProvider(ProviderAdapter):
                 rate = _flea_points_per(rule)
                 if rate is None:
                     continue
-                out[key] = rate
+                # Per-unit rule first; later milestone dupes must not overwrite.
+                if key not in out:
+                    out[key] = rate
         return out
 
     def get_league_globals(self, league_id, season, *, token: Optional[str] = None):
