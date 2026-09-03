@@ -109,6 +109,15 @@
     })();
     // Auto-retry the moment the connection returns, so the user doesn't have to.
     window.addEventListener('online', function () { location.reload(); });
+    // The SW serves this shell when a PWA navigation times out with nothing
+    // cached. When the in-flight network fetch later succeeds it posts
+    // nav-fresh — reload so the real page replaces this placeholder.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', function (e) {
+        var d = e.data || {};
+        if (d.type === 'nav-fresh') location.reload();
+      });
+    }
   </script>
 </body>
 </html>
