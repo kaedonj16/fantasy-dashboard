@@ -1247,15 +1247,34 @@ def page_trade_intel_guest():
 
 # ── Trade Database ─────────────────────────────────────────────────────────────
 
+def _trade_db_default_format(platform: str, season: int, league_id: Optional[str]) -> str:
+    """Default the Trade DB dynasty/redraft toggle from the open league."""
+    if not league_id:
+        return "all"
+    try:
+        from app import _league_is_redraft, get_league_ctx_from_cache
+        ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
+        if not ctx:
+            return "all"
+        return "redraft" if _league_is_redraft(ctx) else "dynasty"
+    except Exception:
+        logger.debug("trade-db default format lookup failed", exc_info=True)
+        return "all"
+
+
 @trade_bp.route("/<platform>/<int:season>/<league_id>/trade-database")
 def page_trade_database(platform: str, season: int, league_id: str):
     from app import render_page
+    _tdb_fmt = _trade_db_default_format(platform, season, league_id)
+    _tdb_all = " active" if _tdb_fmt == "all" else ""
+    _tdb_dyn = " active" if _tdb_fmt == "dynasty" else ""
+    _tdb_rd = " active" if _tdb_fmt == "redraft" else ""
     body_html = f"""
     <div class="card central" style="max-width:960px;">
       <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
         <h2 style="margin:0 0 4px;font-size:20px;">Trade Database</h2>
         <div style="font-size:13px;color:var(--text-muted);">
-          Explore thousands of real Sleeper dynasty trades to understand player values and market trends. {_TI_SOURCE_NOTE}
+          Explore thousands of real Sleeper trades. Filter by dynasty or redraft to match the market you care about. {_TI_SOURCE_NOTE}
         </div>
       </div>
       <div class="card-body" style="padding-top:20px;">
@@ -1280,10 +1299,17 @@ def page_trade_database(platform: str, season: int, league_id: str):
               <div id="tdbSideBChip" class="tdb-chip-area" style="display:none;"></div>
             </div>
           </div>
-          <div class="otc-day-filters tdb-lt-filters">
-            <button class="otc-day-filter tdb-lt active" data-lt="all" onclick="tdbFilter('all')">All</button>
-            <button class="otc-day-filter tdb-lt" data-lt="1qb" onclick="tdbFilter('1qb')">1QB</button>
-            <button class="otc-day-filter tdb-lt" data-lt="sf"  onclick="tdbFilter('sf')">SF</button>
+          <div class="tdb-filter-col">
+            <div class="otc-day-filters tdb-lt-filters">
+              <button class="otc-day-filter tdb-lt active" data-lt="all" onclick="tdbFilter('all')">All</button>
+              <button class="otc-day-filter tdb-lt" data-lt="1qb" onclick="tdbFilter('1qb')">1QB</button>
+              <button class="otc-day-filter tdb-lt" data-lt="sf"  onclick="tdbFilter('sf')">SF</button>
+            </div>
+            <div class="otc-day-filters tdb-lf-filters">
+              <button class="otc-day-filter tdb-lf{_tdb_all}" data-lf="all" onclick="tdbFormatFilter('all')">All</button>
+              <button class="otc-day-filter tdb-lf{_tdb_dyn}" data-lf="dynasty" onclick="tdbFormatFilter('dynasty')">Dynasty</button>
+              <button class="otc-day-filter tdb-lf{_tdb_rd}" data-lf="redraft" onclick="tdbFormatFilter('redraft')">Redraft</button>
+            </div>
           </div>
         </div>
 
@@ -1373,7 +1399,8 @@ def page_trade_database(platform: str, season: int, league_id: str):
         padding: 0; opacity: .7;
       }}
       .tdb-chip-x:hover {{ opacity: 1; }}
-      .tdb-lt-filters {{ display: flex; gap: 6px; align-self: flex-end; padding-bottom: 1px; }}
+        .tdb-filter-col {{ display: flex; flex-direction: column; gap: 6px; align-self: flex-end; padding-bottom: 1px; }}
+        .tdb-lt-filters, .tdb-lf-filters {{ display: flex; gap: 6px; }}
       .tdb-status {{ font-size: 12px; color: var(--text-muted); margin-bottom: 14px; min-height: 16px; }}
       .tdb-list {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }}
       @media(max-width: 600px) {{ .tdb-list {{ grid-template-columns: 1fr; }} }}
@@ -1419,8 +1446,9 @@ def page_trade_database(platform: str, season: int, league_id: str):
         .tdb-search-outer {{ width: 100%; box-sizing: border-box; }}
         .tdb-chip-area {{ flex-wrap: wrap; gap: 6px; min-height: 0; }}
         .tdb-side-sep {{ align-self: flex-start; padding-top: 0; font-size: 12px; }}
-        .tdb-lt-filters {{ width: 100%; display: flex; }}
-        .tdb-lt {{ flex: 1; text-align: center; }}
+        .tdb-filter-col {{ width: 100%; }}
+        .tdb-lt-filters, .tdb-lf-filters {{ width: 100%; display: flex; }}
+        .tdb-lt, .tdb-lf {{ flex: 1; text-align: center; }}
       }}
       /* ── Pagination (matches site-wide style) ── */
       .ti-pagination {{
@@ -1454,10 +1482,10 @@ def page_trade_database(platform: str, season: int, league_id: str):
     (function() {{
       const TDB_SEASON = {season};
       const TDB_PLATFORM = '{platform}';
-      const TDB_LEAGUE_FORMAT = TDB_PLATFORM === 'espn' ? 'redraft' : TDB_PLATFORM === 'sleeper' ? 'dynasty' : 'all';
       let currentPage = 1;
       let paginationData = null;
       let leagueType = 'all';
+      let leagueFormat = '{_tdb_fmt}';
       let loading = false;
       let selectedA = []; // [{{ id, name }}, ...]
       let selectedB = [];
@@ -1584,7 +1612,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
         listEl.style.display = 'none';
         document.getElementById('tdbLoading').style.display = '';
         document.getElementById('tdbPagination').style.display = 'none';
-        const params = new URLSearchParams({{ page: page - 1, limit: 20, league_type: leagueType, season: TDB_SEASON, league_format: TDB_LEAGUE_FORMAT }});
+        const params = new URLSearchParams({{ page: page - 1, limit: 20, league_type: leagueType, season: TDB_SEASON, league_format: leagueFormat }});
         if (selectedA.length) params.set('player_a', selectedA.map(p => p.id).join(','));
         if (selectedB.length) params.set('player_b', selectedB.map(p => p.id).join(','));
         fetch('/api/trade-database?' + params)
@@ -1677,6 +1705,12 @@ def page_trade_database(platform: str, season: int, league_id: str):
       window.tdbFilter = function(lt) {{
         leagueType = lt;
         document.querySelectorAll('.tdb-lt').forEach(b => b.classList.toggle('active', b.dataset.lt === lt));
+        loadTDBPage(1);
+      }};
+
+      window.tdbFormatFilter = function(lf) {{
+        leagueFormat = lf;
+        document.querySelectorAll('.tdb-lf').forEach(b => b.classList.toggle('active', b.dataset.lf === lf));
         loadTDBPage(1);
       }};
 

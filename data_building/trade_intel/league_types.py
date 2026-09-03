@@ -13,6 +13,19 @@ class LeagueType(IntEnum):
 CALIBRATABLE_LEAGUE_TYPES = (LeagueType.REDRAFT, LeagueType.DYNASTY)
 
 
+def league_format_sql_param(league_format: str) -> int | None:
+    """Map a UI ``dynasty``/``redraft``/``all`` filter onto ``trade_intel_leagues.league_type``.
+
+    Crawler contract is Sleeper's: 0 = redraft, 1 = keeper (not stored), 2 = dynasty.
+    """
+    lf = str(league_format or "all").strip().lower()
+    if lf == "dynasty":
+        return int(LeagueType.DYNASTY)
+    if lf == "redraft":
+        return int(LeagueType.REDRAFT)
+    return None
+
+
 def calibration_mode(league_type: int) -> str:
     """Return the value-market name, rejecting keeper and unknown formats."""
     try:
