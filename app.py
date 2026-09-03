@@ -7824,17 +7824,112 @@ def _top_single_week(weekly_points: dict):
     return best
 
 
+def _standings_roster_value_map(ctx: dict) -> dict:
+    """{owner_name: total roster value} from the player_values table, using the
+    superflex/1QB column that matches the league. Powers the preseason tiles (and
+    any no-games view) where records are all 0-0 but roster strength still ranks
+    teams. Returns {} on any failure so callers just skip the value tiles."""
+    rosters = ctx.get("rosters") or []
+    roster_map = ctx.get("roster_map") or {}
+    if not rosters:
+        return {}
+    is_sf = _is_superflex_lineup(ctx.get("roster_positions") or [])
+    val_col = "value_sf" if is_sf else "value_1qb"
+    values_by_pid: Dict[str, float] = {}
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as _conn:
+            rows = _conn.execute(
+                f"SELECT player_id, {val_col} AS v FROM player_values WHERE {val_col} IS NOT NULL"
+            ).fetchall()
+        for r in rows:
+            values_by_pid[str(r["player_id"])] = float(r["v"] or 0)
+    except Exception:
+        logger.debug("[standings] roster value map failed", exc_info=True)
+        return {}
+    out: Dict[str, float] = {}
+    for r in rosters:
+        rid = str(r.get("roster_id"))
+        name = roster_map.get(rid, f"Roster {rid}")
+        pids = [str(p) for p in (r.get("players") or [])]
+        out[str(name)] = sum(values_by_pid.get(p, 0.0) for p in pids)
+    return out
+
+
+def _games_played_max(team_stats) -> int:
+    """Most games any team has played, from the records in team_stats (0 preseason)."""
+    try:
+        df = team_stats
+        def _c(name):
+            return df[name].fillna(0) if name in df.columns else 0
+        if "Wins" not in df.columns:
+            return 0
+        return int((_c("Wins") + _c("Losses") + _c("Ties")).max())
+    except Exception:
+        return 0
+
+
+def _render_preseason_tiles(team_stats, power_rankings, roster_values, owner_to_rid) -> str:
+    """Value/power-based hero tiles for a league that hasn't played yet, so the top
+    of the standings isn't barren before Week 1. Game-derived tiles (highest week,
+    hottest, luck) can't exist yet, so this leads with roster value + power rank."""
+    df = team_stats
+    rv = roster_values or {}
+    total_v = sum(rv.values())
+    if power_rankings:
+        order = [str(t.get("team_name")) for t in power_rankings]
+    elif "PowerScore" in df.columns:
+        order = [str(r["owner"]) for _, r in
+                 df.sort_values("PowerScore", ascending=False).iterrows()]
+    else:
+        order = [str(r["owner"]) for _, r in df.iterrows()]
+
+    specs = []  # (icon, label, value_html, sub_html, accent)
+    if rv and total_v > 0:
+        vl = max(rv, key=rv.get)
+        specs.append((
+            "fa-gem", "Roster value leader",
+            _clickable_team_name(vl, owner_to_rid, cls="st-tile-team"),
+            f"{rv[vl]:,.0f} &middot; {rv[vl] / total_v * 100:.1f}% of league", ""))
+    if order:
+        specs.append((
+            "fa-ranking-star", "Top ranked",
+            _clickable_team_name(order[0], owner_to_rid, cls="st-tile-team"),
+            "Preseason power ranking", "st-ic-good"))
+    if rv and total_v > 0:
+        specs.append((
+            "fa-calculator", "League value", f"{total_v:,.0f}",
+            f"across {len(rv)} rosters", ""))
+    specs.append((
+        "fa-users", "League size", f"{len(df)} teams",
+        "Records &amp; trends start Week 1", ""))
+
+    if len(specs) < 2:
+        return ""
+    tiles = [
+        _st_tile(ic, lbl, val, sub, lead=(i == 0), accent=acc)
+        for i, (ic, lbl, val, sub, acc) in enumerate(specs)
+    ]
+    return f"<div class='st-tiles'>{''.join(tiles)}</div>"
+
+
 def render_standings_tiles(team_stats, *, all_play=None, weekly_points=None,
-                           movement=None, owner_to_rid=None) -> str:
+                           movement=None, owner_to_rid=None,
+                           power_rankings=None, roster_values=None) -> str:
     """The at-a-glance hero strip above the standings: top seed, highest week,
     hottest team, luckiest team, and biggest riser. Every figure is derived from
     the same team_stats / weekly scores the tables use, so it stays in step with a
-    week-capped view. Renders nothing until there's a finalized week to describe."""
+    week-capped view. Before any games are played it falls back to value/power
+    tiles so the strip isn't empty preseason."""
     if team_stats is None or team_stats.empty:
         return ""
     df = team_stats.copy()
     all_play = all_play or {}
     movement = movement or {}
+
+    if _games_played_max(df) == 0:
+        return _render_preseason_tiles(df, power_rankings, roster_values, owner_to_rid)
+
     tiles = []
 
     # 1) Top seed (accent lead tile)
@@ -8603,9 +8698,15 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
     )
     sidebar_html = render_standings_insights(
         team_stats, all_play=_all_play, weekly_points=_weekly_pts, owner_to_rid=_o2r)
+    # Roster values only feed the preseason tiles (records all 0-0); skip the DB
+    # read once games are being played and the game-derived tiles take over.
+    _roster_vals = (
+        _standings_roster_value_map(ctx) if _games_played_max(team_stats) == 0 else None
+    )
     tiles_html = render_standings_tiles(
         team_stats, all_play=_all_play, weekly_points=_weekly_pts,
-        movement=_movement, owner_to_rid=_o2r)
+        movement=_movement, owner_to_rid=_o2r,
+        power_rankings=power_rankings, roster_values=_roster_vals)
     shares_html = render_share_rankings(ctx)
     return {
         "standings": standings_html,
