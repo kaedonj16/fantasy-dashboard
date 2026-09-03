@@ -116,6 +116,7 @@ def api_standings_week():
             "details_html": panels["details"],
             "power_html": panels["power"],
             "sidebar_html": panels["sidebar"],
+            "tiles_html": panels.get("tiles", ""),
             "shares_html": panels["shares"],
         })
     except Exception as e:
