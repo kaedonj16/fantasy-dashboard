@@ -16,7 +16,17 @@ from dashboard_services.platform_api import (
     get_rosters,
     get_bracket
 )
-from utils.utils import write_json, load_week_schedule, load_teams_index, load_week_stats, normalize_name, from_players_map
+from utils.utils import (
+    write_json,
+    load_week_schedule,
+    load_teams_index,
+    load_week_stats,
+    normalize_name,
+    from_players_map,
+    game_has_started,
+    lookup_team_map,
+    team_abbr_keys,
+)
 from utils.matchup_schedule import lineup_from_roster, _starters_look_like_full_roster
 from utils.week_proj import week_proj_map_from_bundles as _week_proj_map_from_bundles
 
@@ -591,9 +601,11 @@ def build_team_schedule_lookup(games: List[dict]) -> Dict[str, dict]:
         away = (g["away"] or "").upper()
 
         if home:
-            lookup[home] = g
+            for key in team_abbr_keys(home):
+                lookup[key] = g
         if away:
-            lookup[away] = g
+            for key in team_abbr_keys(away):
+                lookup[key] = g
 
     return lookup
 
@@ -705,7 +717,7 @@ def format_player_stats(
         lookup_pos = "IDP" if pos_norm in defensive_positions or pos_norm == "IDP" else pos_norm
 
     teams_stats = teams_stats or {}
-    team_data = teams_stats.get(team) or {}
+    team_data = lookup_team_map(teams_stats, team) or {}
     if not team_data:
         return None
 
@@ -1043,10 +1055,12 @@ def render_matchup_slide(
         home = str(game.get("home") or "").upper()
         away = str(game.get("away") or "").upper()
         t_up = team_abv.upper()
-        if t_up not in (home, away):
+        home_keys = set(team_abbr_keys(home))
+        away_keys = set(team_abbr_keys(away))
+        if t_up not in home_keys and t_up not in away_keys:
             return ""
 
-        is_home = (t_up == home)
+        is_home = t_up in home_keys
         opp = away if is_home else home
         status_code = str(game.get("gameStatusCode") or "0")  # '0' scheduled, '1' live, '2' final
         game_date = str(game.get("gameDate") or game.get("gameID", "")[:8])  # '20251204'
@@ -1158,7 +1172,7 @@ def render_matchup_slide(
             pos = "IDP"
 
         if pos == "IDP":
-            team_stats = (week_stats or {}).get(nfl, {})
+            team_stats = lookup_team_map(week_stats or {}, nfl) or {}
             pos_data = team_stats.get(pos, {})
             player_stats = pos_data.get(normalize_name(name), {})
             actual = player_stats.get('pts_idp', 0.0)
@@ -1173,7 +1187,14 @@ def render_matchup_slide(
             if proj_val == 0.0 and player_index.get("byeWeek") == w:
                 is_bye = True
 
-        status = status_by_pid.get(pid if pid != "WAS" else "WSH", STATUS_NOT_STARTED)
+        status = status_by_pid.get(pid)
+        if status is None:
+            for alt in team_abbr_keys(str(pid or "")):
+                if alt in status_by_pid:
+                    status = status_by_pid[alt]
+                    break
+        if status is None:
+            status = STATUS_NOT_STARTED
 
         if status == "BYE":
             is_bye = True
@@ -1200,16 +1221,14 @@ def render_matchup_slide(
         # game / stats
         game_line = ""
         stats = None
+        game = None
         if nfl:
             team_code = str(nfl).upper()
-            if team_code == "WAS":
-                team_code = "WSH"
-            game = None
 
             if team_game_lookup:
-                game = team_game_lookup.get(team_code)
+                game = lookup_team_map(team_game_lookup, team_code)
             if game is None and team_schedule_lookup:
-                game = team_schedule_lookup.get(team_code)
+                game = lookup_team_map(team_schedule_lookup, team_code)
             # normalized name (special-case Ken Walker)
             lookup_name = "ken walker" if name == "Kenneth Walker" else name
             if game:
@@ -1217,16 +1236,17 @@ def render_matchup_slide(
 
             stats = format_player_stats(
                 week_stats,
-                team_code if team_code != "WSH" else "WAS",
+                team_code,
                 pos,
                 lookup_name,
             )
 
         # Only surface a box-score line once the player's game has actually
-        # started. For an upcoming/not-yet-played matchup preview, week_stats can
-        # still carry a stale line, which reads as "stats before kickoff". Keep
-        # the schedule game_line; drop the stat line until the game is live/final.
-        if is_not_started or is_bye:
+        # started. week_stats can still carry last year's Wk 1 line (Footballguys
+        # keeps it until the new season plays), and WAS/WSH alias misses used to
+        # mark Commanders as FINAL so the old "hide if not_started" gate never
+        # fired. Keep the schedule game_line; drop the stat line until kickoff.
+        if is_not_started or is_bye or not game_has_started(game):
             stats = None
 
         meta_content = html.escape(str(nfl or "").strip())
