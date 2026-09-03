@@ -26,6 +26,7 @@ from dashboard_services.api import (
     get_nfl_state,
     get_nfl_players, fetch_team_game_logs_html, fetch_tank_boxscore, get_matchups,
 )
+from dashboard_services.display_names import team_label_from_user, username_from_user
 # ------------------------------------------------
 # Player info utilities
 # ------------------------------------------------
@@ -1490,10 +1491,8 @@ def build_teams_overview(
 
         teams_ctx.append({
             "roster_id": rid,
-            "name": user.get("metadata", {}).get("team_name")
-                    or user.get("display_name")
-                    or f"Team {rid}",
-            "username": user.get("username") or user.get("display_name") or "",
+            "name": team_label_from_user(user, r, fallback=f"Team {rid}"),
+            "username": username_from_user(user),
             "avatar": user.get("avatar_url") or user.get("avatar"),
             "record": record,
             "starters": enrich_list(starters_pids),

@@ -472,6 +472,32 @@ def test_get_users_returns_distinct_roster_ids(monkeypatch):
     assert users[0]["metadata"]["team_name"] == "Team 1"
 
 
+def test_get_users_replaces_hidden_yahoo_nickname(monkeypatch):
+    """Yahoo privacy mode returns nickname ``--hidden--``. The trade calculator
+    used that as the team label; fall back to the public team name instead."""
+    team = [[
+        {"team_key": "449.l.99.t.1"},
+        {"team_id": "1"},
+        {"name": "Sunday Funday B"},
+        {"managers": {
+            "0": {"manager": {"guid": "GUID-1", "nickname": "--hidden--"}},
+            "count": 1,
+        }},
+    ]]
+    payload = _teams_payload([team])
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda *a, **k: payload)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    users = yahoo_api.get_users(2026, "99", "tok")
+    assert len(users) == 1
+    assert users[0]["display_name"] == "Sunday Funday B"
+    assert users[0]["username"] == "Sunday Funday B"
+    assert users[0]["team_name"] == "Sunday Funday B"
+    assert users[0]["metadata"]["team_name"] == "Sunday Funday B"
+    assert "--hidden--" not in (
+        users[0]["display_name"], users[0]["username"], users[0]["team_name"]
+    )
+
+
 def test_get_rosters_maps_nested_team_players(monkeypatch):
     import dashboard_services.api as api
     monkeypatch.setattr(api, "get_nfl_players", lambda: {"11111": {"yahoo_id": "5"}})

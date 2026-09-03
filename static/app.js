@@ -14600,16 +14600,21 @@ function initComparePage() {
   // when a ?p1=&p2= deep link is already populating both sides).
   (function _autofocus() {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('p1') && params.get('p2')) return;
-    const first = document.getElementById('cmpPick1');
+    const q1 = params.get('p1') || params.get('a');
+    const q2 = params.get('p2') || params.get('b');
+    if (q1 && q2) return;
+    const first = document.getElementById(q1 ? 'cmpPick2' : 'cmpPick1');
     if (first) { try { first.focus(); } catch (_) {} }
   })();
 
   // Deep link: ?p1=&p2= prefills both pickers (and optional ?p3=) and opens the
-  // comparison.
+  // comparison. A lone ?p1= (or waiver-wire ?a=) prefills player 1 so the user
+  // can pick a roster player to compare against.
   try {
     const params = new URLSearchParams(window.location.search);
-    const q1 = params.get('p1'), q2 = params.get('p2'), q3 = params.get('p3');
+    const q1 = params.get('p1') || params.get('a');
+    const q2 = params.get('p2') || params.get('b');
+    const q3 = params.get('p3');
     if (q1 && q2) {
       const qs = q3 ? [q1, q2, q3] : [q1, q2];
       Promise.all(qs.map(q => _fetchDetails(q))).then(ds => {
@@ -14621,6 +14626,14 @@ function initComparePage() {
         _syncClears();
         if (q3) { _revealThird(false); _openForTriple(ds[0], ds[1], ds[2]); } else _openFor(ds[0], ds[1]);
       }).catch(() => { if (resultEl) window.brErrorState(resultEl, 'Could not load that comparison.', null, { compact: true }); });
+    } else if (q1) {
+      _fetchDetails(q1).then(d => {
+        chosen[1] = { player_id: String(d.player_id || q1), name: d.name || d.full_name || '', position: d.position || '', team: d.team || '' };
+        const inp = document.getElementById('cmpPick1'); if (inp) inp.value = chosen[1].name;
+        _syncClears();
+        const second = document.getElementById('cmpPick2');
+        if (second) { try { second.focus(); } catch (_) {} }
+      }).catch(() => {});
     }
   } catch (_) {}
 }

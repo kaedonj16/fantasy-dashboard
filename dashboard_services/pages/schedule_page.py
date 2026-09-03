@@ -16,7 +16,11 @@ def build_schedule_body(ctx):
     platform = ctx.get("platform") or "sleeper"
     viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
     rosters = ctx.get("rosters") or []
-    players_idx = get_players_index_global() or {}
+    try:
+        players_idx = get_players_index_global() or {}
+    except Exception:
+        logger.debug("[schedule] players index unavailable", exc_info=True)
+        players_idx = {}
 
     current_week = int(ctx.get("current_week") or 0)
     max_week = 18
@@ -146,6 +150,10 @@ def build_schedule_body(ctx):
       var selPids = [];
       try { selPids = JSON.parse(localStorage.getItem(LS_PIDS) || 'null'); } catch (e) {}
       if (!Array.isArray(selPids) || !selPids.length) selPids = CFG.initPids.slice();
+      try {
+        var addPid = new URLSearchParams(window.location.search).get('add');
+        if (addPid && selPids.indexOf(addPid) === -1) selPids.unshift(addPid);
+      } catch (e) {}
 
       var wkStart = CFG.defStart, wkEnd = CFG.defEnd;
       try {

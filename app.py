@@ -61,6 +61,7 @@ from dashboard_services.api import (
     avatar_url
 )
 from dashboard_services.awards import compute_awards_season, render_awards_section
+from dashboard_services.display_names import team_label_from_user, username_from_user
 from dashboard_services.changelog import CHANGELOG
 from dashboard_services.injuries import build_injury_report, render_injury_watch
 from dashboard_services.matchups import (
@@ -7725,8 +7726,18 @@ def render_power_and_playoffs(
 
     rankings_html = "<div class='pwr-list'>" + "".join(rows_html) + "</div>"
 
-    # ---- Playoff bracket ----
-    wb = bracket_override if bracket_override is not None else get_bracket(platform, league_id, "winners", season)
+    # ---- Playoff bracket (optional; Fleaflicker/MFL do not expose one) ----
+    if bracket_override is not None:
+        wb = bracket_override
+    else:
+        try:
+            wb = get_bracket(platform, league_id, "winners", season) or []
+        except Exception:
+            logger.debug(
+                "playoff bracket unavailable platform=%s league=%s season=%s",
+                platform, league_id, season, exc_info=True,
+            )
+            wb = []
     roster_avatar_map = {
         str(owner): av
         for owner, av in zip(team_stats["owner"], team_stats["avatar"])
@@ -12369,56 +12380,45 @@ def _background_build_teams(platform: str, league_id: str, season: int) -> None:
 
 
 def _build_teams_skeleton(platform: str, season: int, league_id: str, num_teams: int) -> str:
-    def _sk_row(w1, w2, w3, w4, w5, bar_pct):
+    def _sk_row():
         return (
-            f"<tr>"
-            f"<td><div class='sk-shimmer' style='width:{w1}px;height:11px;border-radius:3px;'></div></td>"
-            f"<td><div class='sk-shimmer' style='width:{w2}px;height:11px;border-radius:3px;'></div></td>"
-            f"<td><div class='sk-shimmer' style='width:{w3}px;height:11px;border-radius:3px;'></div></td>"
-            f"<td><div class='sk-shimmer' style='width:{w4}px;height:11px;border-radius:3px;'></div></td>"
-            f"<td><div class='sk-shimmer' style='width:{w5}px;height:11px;border-radius:3px;'></div></td>"
-            f"<td><div class='sk-shimmer' style='width:{bar_pct}%;height:8px;border-radius:4px;'></div></td>"
-            f"<td><div class='sk-shimmer' style='width:24px;height:11px;border-radius:3px;'></div></td>"
-            f"</tr>"
+            "<tr>"
+            "<td class='pos-name'><div class='sk-shimmer' style='width:38px;height:22px;border-radius:7px;'></div></td>"
+            "<td class='pos-bar-cell'><div class='sk-shimmer' style='width:100%;height:8px;border-radius:5px;'></div></td>"
+            "<td class='pos-total'><div class='sk-shimmer' style='display:inline-block;width:40px;height:12px;border-radius:3px;'></div></td>"
+            "<td class='pos-rank'><div class='sk-shimmer' style='display:inline-block;width:22px;height:11px;border-radius:3px;'></div></td>"
+            "</tr>"
         )
 
-    table_rows = "".join([
-        _sk_row(22, 12, 36, 32, 16, 72),
-        _sk_row(22, 12, 42, 36, 16, 58),
-        _sk_row(22, 12, 38, 30, 16, 65),
-        _sk_row(22, 12, 30, 28, 16, 45),
-        _sk_row(28, 12, 24, 22, 16, 30),
-    ])
+    table_rows = _sk_row() * 4
+    # Mirror the real card layout so the loading state doesn't jump on swap:
+    # header (avatar · name/window · grade), index meter, value mix, pos rows.
     shimmer_card = f"""
     <div class="card team-strength-card teams-sk-card">
-      <div class="card-header-row">
-        <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
-          <div class="sk-shimmer" style="width:32px;height:32px;border-radius:50%;flex-shrink:0;"></div>
-          <div class="sk-shimmer" style="width:125px;height:15px;border-radius:4px;"></div>
-          <div class="sk-shimmer" style="width:72px;height:12px;border-radius:4px;opacity:0.7;"></div>
+      <div class="card-header-row tc-head">
+        <div class="tc-id">
+          <div class="sk-shimmer" style="width:42px;height:42px;border-radius:12px;flex-shrink:0;"></div>
+          <div class="tc-idtext">
+            <div class="sk-shimmer" style="width:130px;height:16px;border-radius:5px;"></div>
+            <div class="sk-shimmer" style="width:96px;height:12px;border-radius:4px;margin-top:7px;opacity:0.7;"></div>
+          </div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-          <div class="sk-shimmer" style="width:38px;height:24px;border-radius:6px;"></div>
-          <div class="sk-shimmer" style="width:22px;height:22px;border-radius:4px;"></div>
+        <div class="tc-head-right">
+          <div class="sk-shimmer" style="width:44px;height:44px;border-radius:12px;"></div>
+          <div class="sk-shimmer" style="width:22px;height:22px;border-radius:6px;"></div>
         </div>
       </div>
       <div class="card-body">
-        <div class="sk-shimmer" style="width:100%;height:120px;border-radius:6px;margin-bottom:14px;"></div>
+        <div class="tc-index">
+          <div class="sk-shimmer" style="width:120px;height:11px;border-radius:3px;"></div>
+          <div class="sk-shimmer" style="width:100%;height:6px;border-radius:4px;margin-top:9px;"></div>
+        </div>
+        <div class="tc-mix" style="margin-top:16px;">
+          <div class="sk-shimmer" style="width:120px;height:11px;border-radius:3px;"></div>
+          <div class="sk-shimmer" style="width:100%;height:9px;border-radius:5px;margin-top:8px;"></div>
+        </div>
         <div class="pos-table-wrap">
-          <table class="pos-strength-table">
-            <thead>
-              <tr>
-                <th><div class="sk-shimmer" style="width:22px;height:9px;border-radius:3px;"></div></th>
-                <th><div class="sk-shimmer" style="width:10px;height:9px;border-radius:3px;"></div></th>
-                <th><div class="sk-shimmer" style="width:32px;height:9px;border-radius:3px;"></div></th>
-                <th><div class="sk-shimmer" style="width:30px;height:9px;border-radius:3px;"></div></th>
-                <th><div class="sk-shimmer" style="width:10px;height:9px;border-radius:3px;"></div></th>
-                <th><div class="sk-shimmer" style="width:50px;height:9px;border-radius:3px;"></div></th>
-                <th><div class="sk-shimmer" style="width:24px;height:9px;border-radius:3px;"></div></th>
-              </tr>
-            </thead>
-            <tbody>{table_rows}</tbody>
-          </table>
+          <table class="pos-strength-table"><tbody>{table_rows}</tbody></table>
         </div>
       </div>
     </div>"""
@@ -17616,12 +17616,8 @@ def api_teams():
 
             # Find the user for this roster
             user = next((u for u in users if u.get("user_id") == user_id), None)
-            if user:
-                team_name = user.get("team_name") or user.get("display_name") or f"Team {roster_id}"
-                username = user.get("username") or user.get("display_name") or ""
-            else:
-                team_name = f"Team {roster_id}"
-                username = ""
+            team_name = team_label_from_user(user, roster, fallback=f"Team {roster_id}")
+            username = username_from_user(user)
 
             teams.append({
                 "roster_id": roster_id,
@@ -17672,12 +17668,8 @@ def api_league_rosters():
             roster_id = str(roster.get("roster_id", ""))
             user_id = roster.get("owner_id")
             user = next((u for u in users if u.get("user_id") == user_id), None)
-            if user:
-                team_name = user.get("team_name") or user.get("display_name") or f"Team {roster_id}"
-                username = user.get("username") or user.get("display_name") or ""
-            else:
-                team_name = f"Team {roster_id}"
-                username = ""
+            team_name = team_label_from_user(user, roster, fallback=f"Team {roster_id}")
+            username = username_from_user(user)
             player_ids = [str(pid) for pid in (roster.get("players") or [])]
             # Resolve each owned pick to the exact draft slot its original owner
             # holds. A pick's slot is fixed by the standings of the season BEFORE
@@ -20149,12 +20141,8 @@ def api_team_details(roster_id: str):
         owner_id = roster.get("owner_id")
         user = next((u for u in users if u.get("user_id") == owner_id), None)
 
-        username = user.get("display_name") if user else None
-        team_name = (
-            (roster.get("metadata") or {}).get("team_name")
-            or ((user.get("metadata") or {}).get("team_name") if user else None)
-            or username
-        )
+        username = username_from_user(user) or None
+        team_name = team_label_from_user(user, roster, fallback=username or "")
         avatar = team_avatar(platform, roster, users) or avatar_from_users(platform, users, owner_id)
         if team_name is None:
             team_name = username
