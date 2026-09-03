@@ -1,7 +1,13 @@
 """Unit tests for the persistent league + week chrome labels."""
 from pathlib import Path
 
-from utils.league_chrome import build_league_chrome, format_label, week_label
+from utils.league_chrome import (
+    build_league_chrome,
+    fields_from_provider_league,
+    format_label,
+    merge_chrome_sources,
+    week_label,
+)
 
 _PAGES = Path(__file__).resolve().parents[1] / "dashboard_services" / "pages"
 
@@ -44,6 +50,70 @@ def test_build_chrome_fallback_name_and_1qb():
     assert meta["raw_name"] == ""
     assert meta["format"] == "10tm 1QB"
     assert meta["week_label"] == ""
+
+
+def test_build_chrome_omits_format_when_slots_unknown():
+    meta = build_league_chrome(name="", size=0)
+    assert meta["name"] == "This league"
+    assert meta["format"] == ""
+    assert meta["sf"] is False
+
+
+def test_merge_chrome_uses_sleeper_league_name_and_superflex():
+    meta = merge_chrome_sources(
+        ctx={},
+        saved_name="",
+        provider_league={
+            "name": "KC fantasy-yearly",
+            "total_rosters": 8,
+            "roster_positions": ["QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX", "BN"],
+            "settings": {"slots_qb": 1},
+        },
+        week=1,
+    )
+    assert meta["name"] == "KC fantasy-yearly"
+    assert meta["raw_name"] == "KC fantasy-yearly"
+    assert meta["format"] == "8tm SF"
+    assert meta["sf"] is True
+    assert meta["size"] == 8
+
+
+def test_merge_chrome_detects_sf_from_settings_slots():
+    meta = merge_chrome_sources(
+        ctx={"league": {"name": "Deep Ball"}},
+        provider_league={"settings": {"slots_super_flex": 1, "num_teams": 12}},
+    )
+    assert meta["name"] == "Deep Ball"
+    assert meta["format"] == "12tm SF"
+    assert meta["sf"] is True
+
+
+def test_merge_chrome_uses_saved_name_when_cache_and_provider_empty():
+    meta = merge_chrome_sources(ctx={}, saved_name="KC fantasy-yearly", provider_league=None)
+    assert meta["name"] == "KC fantasy-yearly"
+    assert meta["format"] == ""
+
+
+def test_fields_from_provider_league_reads_sleeper_payload():
+    fields = fields_from_provider_league({
+        "name": "  KC fantasy-yearly  ",
+        "total_rosters": 8,
+        "roster_positions": ["QB", "SUPER_FLEX"],
+    })
+    assert fields["name"] == "KC fantasy-yearly"
+    assert fields["size"] == 8
+    assert fields["is_sf"] is True
+    assert fields["has_format"] is True
+
+
+def test_league_chrome_meta_falls_back_to_live_sleeper():
+    src = Path(__file__).resolve().parents[1] / "app.py"
+    text = src.read_text(encoding="utf-8")
+    start = text.index("def _league_chrome_meta")
+    block = text[start:start + 1800]
+    assert "merge_chrome_sources" in block
+    assert "_provider_league_for_chrome" in block
+    assert "_saved_league_chrome_name" in block
 
 
 def test_hub_page_titles_do_not_restate_week():

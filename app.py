@@ -2136,28 +2136,51 @@ def _peek_league_ctx(platform, league_id, season) -> dict:
         return {}
 
 
+def _saved_league_chrome_name(platform, league_id) -> str:
+    """Display name from the signed-in account's saved leagues, if any."""
+    try:
+        account_id = session.get("account_id")
+        if not account_id:
+            return ""
+        from dashboard_services.accounts import get_saved_league_name
+        return get_saved_league_name(account_id, platform, league_id)
+    except Exception:
+        return ""
+
+
+def _provider_league_for_chrome(platform, league_id) -> dict:
+    """Live Sleeper league JSON when dashboard cache has no name/slots yet."""
+    if str(platform or "").lower() != "sleeper" or not league_id:
+        return {}
+    try:
+        from dashboard_services.api import get_league
+        live = get_league(str(league_id))
+        return live if isinstance(live, dict) else {}
+    except Exception:
+        return {}
+
+
 def _league_chrome_meta(platform, league_id, season, offseason_mode: bool = False) -> dict:
     """League name, format, and week for the persistent nav chip."""
-    from utils.league_chrome import build_league_chrome
+    from utils.league_chrome import merge_chrome_sources
     ctx = _peek_league_ctx(platform, league_id, season)
     nfl = get_nfl_state() or {}
     try:
         week = int(ctx.get("current_week") or nfl.get("week") or 0)
     except (TypeError, ValueError):
         week = 0
-    try:
-        size = int(
-            ctx.get("total_rosters")
-            or (ctx.get("league") or {}).get("total_rosters")
-            or len(ctx.get("rosters") or [])
-            or 0
-        )
-    except (TypeError, ValueError):
-        size = 0
-    return build_league_chrome(
-        name=((ctx.get("league") or {}).get("name") or ""),
-        size=size,
-        roster_positions=ctx.get("roster_positions") or [],
+    ctx_league = ctx.get("league") if isinstance(ctx.get("league"), dict) else {}
+    cache_name = str(ctx_league.get("name") or "").strip()
+    cache_slots = ctx.get("roster_positions") or ctx_league.get("roster_positions") or []
+    need_live = not (cache_name and cache_slots)
+    live = _provider_league_for_chrome(platform, league_id) if need_live else {}
+    saved = ""
+    if not (cache_name or (live or {}).get("name")):
+        saved = _saved_league_chrome_name(platform, league_id)
+    return merge_chrome_sources(
+        ctx=ctx,
+        saved_name=saved,
+        provider_league=live,
         week=week,
         season_type=str(nfl.get("season_type") or ""),
         offseason=bool(offseason_mode),
