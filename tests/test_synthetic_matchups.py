@@ -1,5 +1,5 @@
 """Synthetic Week-1 matchups when the platform schedule feed is empty."""
-from utils.matchup_schedule import synthetic_week_matchups
+from utils.matchup_schedule import resolve_matchup_week, synthetic_week_matchups
 
 
 def test_synthetic_week_matchups_pairs_every_team():
@@ -24,3 +24,12 @@ def test_synthetic_week_matchups_deterministic_across_calls():
 def test_synthetic_week_matchups_needs_two_teams():
     assert synthetic_week_matchups([{"roster_id": 1}], week=1) == []
     assert synthetic_week_matchups([], week=1) == []
+
+
+def test_resolve_matchup_week_skips_nfl_week_zero():
+    preview = [{"matchup_id": 1, "left": {}, "right": {}}]
+    assert resolve_matchup_week(0, {1: preview}) == 1
+    assert resolve_matchup_week(None, {1: preview}) == 1
+    assert resolve_matchup_week(1, {1: preview}) == 1
+    assert resolve_matchup_week(0, {}) == 1
+    assert resolve_matchup_week(2, {2: preview}) == 2

@@ -116,8 +116,10 @@ def build_dashboard_body(ctx: dict) -> str:
         rosters,
         is_dynasty=not _league_is_redraft(ctx),
     )
+    from utils.matchup_schedule import resolve_matchup_week
+    matchup_week = resolve_matchup_week(current_week, matchups_by_week)
     _dash_matchups = sorted(
-        matchups_by_week.get(current_week, []),
+        matchups_by_week.get(matchup_week, []) or matchups_by_week.get(str(matchup_week), []) or [],
         key=lambda m: 0 if _dash_vid and _dash_vid in (str((m.get("left") or {}).get("roster_id", "")),
                                                        str((m.get("right") or {}).get("roster_id", ""))) else 1,
     ) if _show_matchup_preview else []
@@ -126,9 +128,9 @@ def build_dashboard_body(ctx: dict) -> str:
             render_matchup_slide(
                 season,
                 m,
-                current_week,
+                matchup_week,
                 last_final_week,
-                status_by_pid=statuses[current_week].get("statuses", {}),
+                status_by_pid=(statuses.get(matchup_week) or statuses.get(str(matchup_week)) or {}).get("statuses", {}) or {},
                 projections=proj_by_week,
                 players=players_index,
                 teams=teams_index,
@@ -139,7 +141,7 @@ def build_dashboard_body(ctx: dict) -> str:
             )
             for m in _dash_matchups
         ]
-        slides_by_week = {current_week: "".join(slides)}
+        slides_by_week = {matchup_week: "".join(slides)}
         _matchup_href = ""
         try:
             _matchup_href = url_for(
@@ -150,7 +152,7 @@ def build_dashboard_body(ctx: dict) -> str:
         matchup_html = render_matchup_carousel_weeks(
             slides_by_week,
             dashboard=True,
-            active_week=current_week,
+            active_week=matchup_week,
             title_href=_matchup_href or None,
         )
     else:
@@ -237,13 +239,13 @@ def build_dashboard_body(ctx: dict) -> str:
             # matchup slides' win bar uses. Only for a live/upcoming week.
             _win_sub = ""
             try:
-                if _dash_matchups and current_week > last_final_week:
+                if _dash_matchups and matchup_week > last_final_week:
                     _m0 = _dash_matchups[0]
                     _l0 = _m0.get("left") or {}
                     _r0 = _m0.get("right") or {}
                     if _dash_vid and _dash_vid in (str(_l0.get("roster_id", "")), str(_r0.get("roster_id", ""))):
-                        _wp_proj = (proj_by_week.get(current_week) or {}).get("projections") or {}
-                        _wp_status = (statuses.get(current_week) or {}).get("statuses", {})
+                        _wp_proj = (proj_by_week.get(matchup_week) or {}).get("projections") or {}
+                        _wp_status = (statuses.get(matchup_week) or {}).get("statuses", {})
                         _wp = compute_win_prob(_l0, _r0, _wp_status, _wp_proj)
                         if str(_r0.get("roster_id", "")) == _dash_vid:
                             _wp = 1.0 - _wp
@@ -261,7 +263,7 @@ def build_dashboard_body(ctx: dict) -> str:
                     f"{len(_dash_matchups)} matchups"
                     if _show_matchup_preview else "Waiting on the draft"
                 )
-            _hero_cards.append(("This week", f"Week {current_week}", _tw_sub))
+            _hero_cards.append(("This week", f"Week {matchup_week}", _tw_sub))
         else:
             _top = _hs.iloc[0]
             _hero_cards.append(("League leader", str(_top["owner"]),

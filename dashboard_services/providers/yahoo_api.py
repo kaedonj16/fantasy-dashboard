@@ -1414,20 +1414,62 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
     return out
 
 
+def _yahoo_scoreboard_dict(raw: Dict) -> Dict[str, Any]:
+    """Unwrap Yahoo ``scoreboard`` which is often a list of fragments."""
+    block = _league_child_block(raw, "scoreboard")
+    if isinstance(block, list):
+        flat: Dict[str, Any] = {}
+        _merge_yahoo_dict_parts(block, flat)
+        return flat
+    if isinstance(block, dict):
+        if "matchups" in block:
+            return block
+        inner = block.get("0")
+        if isinstance(inner, dict) and ("matchups" in inner or "week" in inner):
+            merged = dict(block)
+            merged.update(inner)
+            return merged
+        return block
+    return {}
+
+
+def _flatten_yahoo_matchup(entry: Any) -> Dict[str, Any]:
+    """Normalize a scoreboard matchup row to a dict with ``teams``.
+
+    Yahoo commonly returns ``{"matchup": [{week/status…}, {teams: …}]}`` —
+    a list of single-key fragments — not a flat dict. Treating a list as
+    invalid dropped every pairing and painted "No matchups".
+    """
+    node = entry
+    if isinstance(entry, dict) and "matchup" in entry:
+        node = entry.get("matchup")
+    if isinstance(node, dict):
+        return node
+    if isinstance(node, list):
+        flat: Dict[str, Any] = {}
+        _merge_yahoo_dict_parts(node, flat)
+        return flat
+    return {}
+
+
 def get_matchups(season: int, league_id: str, week: int, access_token: str) -> List[Dict[str, Any]]:
-    raw        = _yahoo_get(
-        access_token,
-        f"league/{_league_key_for_season(league_id, season, access_token)}/scoreboard;week={week}",
-    )
-    fc         = raw.get("fantasy_content", {})
-    lg         = fc.get("league") or []
-    scoreboard = (lg[1] if len(lg) > 1 else {}).get("scoreboard") or {}
-    matchups   = scoreboard.get("matchups") or {}
+    try:
+        raw = _yahoo_get(
+            access_token,
+            f"league/{_league_key_for_season(league_id, season, access_token)}/scoreboard;week={week}",
+        )
+    except Exception as exc:
+        logger.warning("[yahoo] get_matchups failed week=%s league=%s: %s",
+                       week, league_id, exc)
+        return []
+
+    scoreboard = _yahoo_scoreboard_dict(raw if isinstance(raw, dict) else {})
+    matchups = scoreboard.get("matchups") or {}
 
     out: List[Dict[str, Any]] = []
     for i, entry in enumerate(_yahoo_collection_rows(matchups, "matchup")):
-        matchup = entry.get("matchup") if isinstance(entry, dict) else {}
-        if not isinstance(matchup, dict):
+        matchup = _flatten_yahoo_matchup(entry)
+        if not matchup:
             continue
         m_id = i + 1
         teams_block = matchup.get("teams") or {}
@@ -1438,7 +1480,7 @@ def get_matchups(season: int, league_id: str, week: int, access_token: str) -> L
                 if row:
                     team_rows.append(row)
 
-        for idx, tm_entry in enumerate(team_rows):
+        for tm_entry in team_rows:
             if isinstance(tm_entry, dict) and "team" in tm_entry:
                 tm = tm_entry["team"]
             elif isinstance(tm_entry, dict):
