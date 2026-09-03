@@ -107,8 +107,8 @@ def test_compare_page_not_noindexed_by_remembered_league():
     # Must not pass session last_league_id as the league_id positional.
     assert "nav_lid" not in compare
     # League-scoped URL (waivers "Compare to roster") must exist so the PWA
-    # does not 404 → "You're offline".
-    assert "/<platform>/<int:season>/<league_id>/compare" in compare
+    # does not 404 → "You're offline". The decorator sits above def page_compare.
+    assert '@seo_pages_bp.route("/<platform>/<int:season>/<league_id>/compare")' in SEO
 
 
 def test_sitemap_includes_compare_and_cache_control():
