@@ -3,6 +3,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("flask")
+
 ROOT = Path(__file__).resolve().parents[1]
 _AM_PAGE = (ROOT / "dashboard_services" / "pages" / "advanced_metrics_page.py").read_text(
     encoding="utf-8"
