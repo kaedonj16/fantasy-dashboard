@@ -19215,6 +19215,12 @@ img, svg, canvas {
     color: #fff;
 }
 
+.adv-season-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin: -6px 0 10px;
+}
+
 /* ── Shared week-bar range selector (Custom Slider 3 style) ─────────────── */
 .adv-week-bar-row {
     display: flex;

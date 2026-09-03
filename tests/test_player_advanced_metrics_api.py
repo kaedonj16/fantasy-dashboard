@@ -119,3 +119,53 @@ def test_modal_js_treats_404_as_empty_not_network_error():
     assert "res.status === 404" in load_fn
     assert "encodeURIComponent(playerId)" in load_fn
     assert "No metrics available for this player" in load_fn
+
+
+def test_modal_js_can_combine_available_seasons():
+    js = (ROOT / "static" / "player_modal.js").read_text(encoding="utf-8")
+    assert "window.advPickSeason" in js
+    assert 'data-year="career"' in js
+    assert "Tap more years to combine" in js
+    assert "isMultiSeason" in js
+
+
+def test_multi_season_combines_only_years_the_player_has(offline_client, monkeypatch):
+    import data_building.advanced_metrics as am
+
+    seen = {}
+
+    def _career(pid, seasons=None):
+        seen["seasons"] = seasons
+        return {
+            "player_id": pid,
+            "position": "WR",
+            "season": None,
+            "as_of_date": date(2025, 12, 28),
+            "yards_per_target": 7.5,
+        }
+
+    monkeypatch.setattr(am, "get_available_seasons_for_player", lambda pid: [2025, 2024, 2022])
+    monkeypatch.setattr(am, "get_player_career_metrics", _career)
+
+    resp = offline_client.get("/api/player-advanced-metrics/4034?season=2025,2024,2022,2019")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    data = resp.get_json()
+    assert seen["seasons"] == [2025, 2024, 2022]
+    assert data["selected_seasons"] == [2025, 2024, 2022]
+    assert data["season"] is None
+    assert data["metrics"]["yards_per_target"] == 7.5
+
+
+def test_multi_season_falls_back_to_single_when_only_one_exists(offline_client, monkeypatch):
+    import data_building.advanced_metrics as am
+
+    monkeypatch.setattr(am, "get_available_seasons_for_player", lambda pid: [2024])
+    monkeypatch.setattr(am, "get_player_metrics_by_season", lambda pid, season: _season_row(season=season))
+    monkeypatch.setattr(am, "get_available_metric_weeks", lambda pid, season: [])
+    monkeypatch.setattr(am, "get_player_value_metrics", lambda *a, **k: {"metrics": {}})
+
+    resp = offline_client.get("/api/player-advanced-metrics/4034?season=2024,2019")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    data = resp.get_json()
+    assert data["season"] == 2024
+    assert data["selected_seasons"] == [2024]
