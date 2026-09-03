@@ -140,18 +140,34 @@ def api_advanced_metrics_leaderboard():
         try:
             from data_building.external_data.player_team_history import teams_in_season
             for _p in players or []:
-                row_season = _p.get("season") or (selected_seasons[0] if len(selected_seasons) == 1 else None)
-                if not row_season:
+                years = _p.get("seasons") or (
+                    [_p["season"]] if _p.get("season") is not None else selected_seasons
+                )
+                all_stints = []
+                team_weeks: dict = {}
+                for year in years:
+                    try:
+                        year_i = int(year)
+                    except (TypeError, ValueError):
+                        continue
+                    for stint in teams_in_season(str(_p.get("player_id")), year_i) or []:
+                        all_stints.append(stint)
+                        team = stint.get("team")
+                        if not team:
+                            continue
+                        team_weeks.setdefault(team, [])
+                        for wk in stint.get("weeks") or []:
+                            if wk not in team_weeks[team]:
+                                team_weeks[team].append(wk)
+                if not all_stints:
                     continue
-                stints = teams_in_season(str(_p.get("player_id")), int(row_season))
-                if not stints:
-                    continue
-                _p["teams"] = [s["team"] for s in stints]
-                _p["team_weeks"] = {s["team"]: s["weeks"] for s in stints}
-                # Display team = the one with the most weeks (ties -> first stint).
-                _primary = max(stints, key=lambda s: len(s.get("weeks") or []))
+                _p["teams"] = list(dict.fromkeys(
+                    s["team"] for s in all_stints if s.get("team")
+                ))
+                _p["team_weeks"] = team_weeks
+                _primary = max(all_stints, key=lambda s: len(s.get("weeks") or []))
                 _p["team"] = _primary["team"]
-                _p["multi_team"] = len(stints) > 1
+                _p["multi_team"] = len(_p["teams"]) > 1
         except Exception:
             logger.debug("leaderboard season-team enrich failed", exc_info=True)
 

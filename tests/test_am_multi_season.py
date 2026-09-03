@@ -56,21 +56,73 @@ def test_career_metrics_filters_to_requested_seasons(monkeypatch):
     assert am.get_player_career_metrics("1", seasons=[2019]) is None
 
 
-def test_multi_season_leaderboard_stamps_each_year(monkeypatch):
+def test_multi_season_leaderboard_combines_by_player(monkeypatch):
     import data_building.advanced_metrics as am
 
     def _single(metric, position=None, limit=500, season=None, min_vol=None):
         if isinstance(season, list):
             raise AssertionError("inner call must be a single year")
-        return [{"player_id": "1", "name": "A", "position": "RB", "value": float(season)}]
+        assert min_vol is None
+        if season == 2025:
+            return [
+                {"player_id": "1", "name": "A", "position": "RB",
+                 "value": 5.0, "vol": 100, "games": 10, "car": 100},
+                {"player_id": "2", "name": "B", "position": "RB",
+                 "value": 4.0, "vol": 80, "games": 8, "car": 80},
+            ]
+        return [
+            {"player_id": "1", "name": "A", "position": "RB",
+             "value": 3.0, "vol": 50, "games": 5, "car": 50},
+        ]
 
-    # Bypass the public wrapper so we exercise the merge helper directly.
     monkeypatch.setattr(am, "get_metric_leaderboard", _single)
     rows = am._multi_season_leaderboard(
         "yards_per_carry", position=None, limit=50, seasons=[2025, 2022], min_vol=None,
     )
-    assert [r["season"] for r in rows] == [2025, 2022]
-    assert [r["value"] for r in rows] == [2025.0, 2022.0]
+    by_id = {r["player_id"]: r for r in rows}
+    assert set(by_id) == {"1", "2"}
+    assert by_id["1"]["value"] == pytest.approx((5.0 * 100 + 3.0 * 50) / 150)
+    assert by_id["1"]["vol"] == 150
+    assert by_id["1"]["games"] == 15
+    assert by_id["1"]["car"] == 150
+    assert by_id["1"]["season"] is None
+    assert by_id["2"]["value"] == pytest.approx(4.0)
+    assert by_id["2"]["vol"] == 80
+
+
+def test_multi_season_min_vol_applies_after_combine(monkeypatch):
+    import data_building.advanced_metrics as am
+
+    def _single(metric, position=None, limit=500, season=None, min_vol=None):
+        if season == 2025:
+            return [
+                {"player_id": "1", "name": "A", "position": "RB", "value": 5.0, "vol": 100},
+                {"player_id": "2", "name": "B", "position": "RB", "value": 4.0, "vol": 80},
+            ]
+        return [
+            {"player_id": "1", "name": "A", "position": "RB", "value": 3.0, "vol": 50},
+        ]
+
+    monkeypatch.setattr(am, "get_metric_leaderboard", _single)
+    rows = am._multi_season_leaderboard(
+        "yards_per_carry", position=None, limit=50, seasons=[2025, 2022], min_vol=120,
+    )
+    assert [r["player_id"] for r in rows] == ["1"]
+
+
+def test_multi_season_sums_counting_metrics(monkeypatch):
+    import data_building.advanced_metrics as am
+
+    def _single(metric, position=None, limit=500, season=None, min_vol=None):
+        return [{"player_id": "1", "name": "A", "position": "RB",
+                 "value": 100 if season == 2025 else 50, "vol": 100 if season == 2025 else 50}]
+
+    monkeypatch.setattr(am, "get_metric_leaderboard", _single)
+    rows = am._multi_season_leaderboard(
+        "total_carries", position=None, limit=50, seasons=[2025, 2022], min_vol=None,
+    )
+    assert len(rows) == 1
+    assert rows[0]["value"] == 150
 
 
 def test_leaderboard_api_passes_season_list(offline_client, monkeypatch):
@@ -100,6 +152,5 @@ def test_page_has_multi_season_picker():
     assert "function amIsMultiSeason" in _AM_PAGE
     assert 'id="amSeasonColHdr"' in _AM_PAGE
     assert "Pick any years that have data" in _AM_PAGE
-    assert "am-season-col" in _AM_PAGE
-    assert "concat(amIsMultiSeason() ? ['Year'] : [])" in _AM_PAGE
-    assert "amRowKey(rx)" in _AM_PAGE
+    assert "combine into one row per player" in _AM_PAGE
+    assert "amRowKey" in _AM_PAGE
