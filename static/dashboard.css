@@ -36778,3 +36778,10 @@ a, button, [role="button"], [role="tab"], summary, label,
 .std-rework .standings-table tbody tr.pp-scnrow:hover td {
     background: transparent;
 }
+
+/* Give team names room on the reworked standings page instead of the base
+   table's max-width:0 crush; the .st-tblscroll wrapper handles any overflow. */
+.std-rework .standings-table td.team {
+    max-width: none;
+    min-width: 150px;
+}
