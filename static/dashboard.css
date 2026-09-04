@@ -12473,20 +12473,21 @@ a.signed-home-league:hover {
     margin: 14px 0 0;
 }
 
-.home-pro-hero-cta a {
+.home-pro-hero-cta .home-pro-open-btn {
     display: inline-flex;
     align-items: center;
     padding: 8px 14px;
+    border: 0;
     border-radius: 9px;
     background: linear-gradient(135deg, #122d4b, #2563eb);
     color: #fff;
     font-size: 13px;
     font-weight: 800;
-    text-decoration: none;
     letter-spacing: 0.01em;
+    cursor: pointer;
 }
 
-.home-pro-hero-cta a:hover {
+.home-pro-hero-cta .home-pro-open-btn:hover {
     filter: brightness(1.06);
 }
 
@@ -12518,12 +12519,13 @@ a.signed-home-league:hover {
     border: 1px solid var(--border);
     border-top: 3px solid #2563eb;
     border-radius: 16px;
-    padding: 22px 22px 20px;
+    padding: 26px 24px 22px;
     box-shadow: var(--shadow-sm);
 }
 
 .home-pro-head {
-    margin-bottom: 16px;
+    max-width: 40rem;
+    margin-bottom: 20px;
 }
 
 .home-pro-eyebrow {
@@ -12533,250 +12535,93 @@ a.signed-home-league:hover {
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: #2563eb;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
 }
 
 .home-pro-title {
-    margin: 0 0 6px;
-    font-size: 22px;
+    margin: 0 0 8px;
+    font-size: 26px;
     letter-spacing: -0.02em;
     color: var(--text);
 }
 
 .home-pro-lead {
     margin: 0;
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: 15px;
+    line-height: 1.55;
     color: var(--text-muted);
 }
 
-.home-pro-progress {
-    display: flex;
-    gap: 10px;
-    list-style: none;
-    margin: 0 0 16px;
-    padding: 0;
-}
-
-.home-pro-progress li {
-    font-size: 12px;
-    font-weight: 800;
-    color: var(--text-muted);
-}
-
-.home-pro-progress li.is-active {
-    color: #2563eb;
-}
-
-.home-pro-plans {
+.home-pro-benefits {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 10px;
+    gap: 12px;
+    list-style: none;
+    margin: 0 0 22px;
+    padding: 0;
 }
 
-.home-pro-plan {
-    position: relative;
+.home-pro-benefits li {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-    text-align: left;
-    padding: 14px 14px 12px;
-    border: 2px solid var(--border);
+    gap: 6px;
+    padding: 14px 14px 13px;
+    border: 1px solid var(--border);
     border-radius: 12px;
-    background: var(--card);
-    color: var(--text);
-    cursor: pointer;
+    background: var(--card-soft, var(--card));
 }
 
-.home-pro-plan:hover,
-.home-pro-plan[aria-pressed="true"] {
-    border-color: #2563eb;
-}
-
-.home-pro-plan[aria-pressed="true"] {
-    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.14);
-}
-
-.home-pro-plan.is-featured {
-    border-color: #2563eb;
-}
-
-.home-pro-plan-badge {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    background: linear-gradient(135deg, #122d4b, #2563eb);
-    color: #fff;
-    font-size: 9px;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    padding: 2px 7px;
-    border-radius: 9999px;
-}
-
-.home-pro-plan-name {
-    font-size: 13px;
-    font-weight: 800;
-}
-
-.home-pro-plan-price {
-    font-size: 26px;
-    font-weight: 800;
-    line-height: 1.1;
-}
-
-.home-pro-plan-price span {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-muted);
-}
-
-.home-pro-plan-desc {
-    font-size: 12px;
-    line-height: 1.4;
-    color: var(--text-muted);
-}
-
-.home-pro-back {
-    background: none;
-    border: 0;
-    padding: 0;
-    margin: 0 0 8px;
+.home-pro-benefit-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    background: color-mix(in srgb, #2563eb 12%, transparent);
     color: #2563eb;
-    font-size: 13px;
-    font-weight: 700;
-    cursor: pointer;
+    font-size: 14px;
 }
 
-.home-pro-picked {
-    margin: 0 0 14px;
-    font-size: 13px;
-    color: var(--text-muted);
-}
-
-.home-pro-saved-wrap,
-#homeProSavedWrap {
-    margin-bottom: 14px;
-}
-
-.home-pro-or {
-    margin: 10px 0 0;
-    font-size: 11px;
+.home-pro-benefits strong {
+    font-size: 14px;
     font-weight: 800;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    color: var(--text);
+}
+
+.home-pro-benefits li > span:last-child {
+    font-size: 13px;
+    line-height: 1.45;
     color: var(--text-muted);
 }
 
-.home-pro-platforms {
+.home-pro-cta-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-    margin-bottom: 12px;
+    align-items: center;
+    gap: 12px 16px;
 }
 
-.home-pro-platform {
-    border: 1px solid var(--border);
-    background: var(--card);
-    color: var(--text-muted);
-    border-radius: 9999px;
-    padding: 7px 11px;
-    font-size: 12px;
-    font-weight: 700;
-    cursor: pointer;
-}
-
-.home-pro-platform.is-active,
-.home-pro-platform[aria-pressed="true"] {
-    background: #2563eb;
-    border-color: #2563eb;
-    color: #fff;
-}
-
-.home-pro-fields {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-bottom: 14px;
-}
-
-.home-pro-fields[hidden],
-.home-pro-step[hidden],
-#homeProSavedWrap[hidden],
-#homeProSleeperLeagueWrap[hidden],
-#homeProSeasonWrap[hidden],
-#homeProCheckout[hidden],
-.home-pro-error[hidden] {
-    display: none !important;
-}
-
-.home-pro-fields label {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--text-muted);
-}
-
-.home-pro-fields input,
-.home-pro-fields select,
-#homeProSavedSelect {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 10px 12px;
-    border: 1px solid var(--border);
-    border-radius: 9px;
-    background: var(--card);
-    color: var(--text);
-    font: inherit;
-}
-
-.home-pro-inline {
-    display: flex;
-    gap: 8px;
-}
-
-.home-pro-inline input {
-    flex: 1;
-    min-width: 0;
-}
-
-.home-pro-inline button,
-#homeProFindLeagues {
-    flex: 0 0 auto;
-    padding: 10px 12px;
-    border: 0;
-    border-radius: 9px;
-    background: #122d4b;
-    color: #fff;
-    font-size: 13px;
-    font-weight: 700;
-    cursor: pointer;
-}
-
-.home-pro-error {
-    margin: 0 0 12px;
-    font-size: 13px;
-    color: #dc2626;
-}
-
-.home-pro-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    max-width: 420px;
-}
-
-.home-pro-checkout-btn {
-    width: 100%;
-    padding: 12px 14px;
+.home-pro-cta-row .home-pro-open-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 12px 18px;
     border: 0;
     border-radius: 10px;
     background: linear-gradient(135deg, #122d4b, #2563eb);
     color: #fff;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 800;
     cursor: pointer;
+}
+
+.home-pro-cta-row .home-pro-open-btn:hover {
+    filter: brightness(1.06);
+}
+
+.home-pro-cta-note {
+    font-size: 13px;
+    color: var(--text-muted);
 }
 
 /* Home content wrapper: main content + sidebar */
@@ -15848,7 +15693,7 @@ img, svg, canvas {
         justify-content: flex-start;
     }
 
-    .home-pro-plans {
+    .home-pro-benefits {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
@@ -15896,7 +15741,7 @@ img, svg, canvas {
         padding: 4px 9px;
     }
 
-    .home-pro-plans {
+    .home-pro-benefits {
         grid-template-columns: 1fr;
     }
 

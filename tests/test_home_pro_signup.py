@@ -27,16 +27,12 @@ def test_home_proof_is_replaced_by_pro_signup():
     home = _home_form()
     assert 'class="home-proof"' not in home
     assert 'id="homeProSignup"' in home
-    assert 'href="#homeProSignup"' in home
-    assert 'data-plan="single_league"' in home
-    assert 'data-plan="league"' in home
-    assert 'data-plan="combo"' in home
-    assert 'data-plan="user"' in home
-    assert 'id="homeProGoogle" class="google-continue-btn"' in home
-    assert "Continue with Google" in home
-    assert 'id="homeProCheckout"' in home
-    assert 'id="homeProSleeperUser"' in home
-    assert 'id="homeProLeagueId"' in home
+    assert 'data-home-pro-open' in home
+    assert "Unlock PRO" in home
+    assert "Trade Intelligence" in home
+    assert "Breakout Engine" in home
+    assert "Playoff Impact" in home
+    assert "data-plan=" not in home
     assert "—" not in home
     assert "&mdash;" not in home
 
@@ -44,19 +40,25 @@ def test_home_proof_is_replaced_by_pro_signup():
 def test_home_pro_styles_live_in_dashboard_and_landing_css():
     for css in (DASH_CSS, LANDING_CSS):
         assert ".home-pro {" in css
-        assert ".home-pro-plans {" in css
+        assert ".home-pro-benefits {" in css
         assert ".home-pro-hero-cta" in css
-        assert ".home-pro-fields[hidden]" in css
+        assert ".home-pro-open-btn" in css
         assert ".home-proof {" not in css
+    paywall_css = (ROOT / "static" / "paywall.css").read_text(encoding="utf-8")
+    assert ".paywall-modal .home-pro-fields[hidden]" in paywall_css
 
 
-def test_home_pro_js_stages_google_then_checkout():
-    wizard = PAYWALL_JS[PAYWALL_JS.index("function initHomeProSignup"):]
-    assert "fetch('/api/pro-signup/pending'" in wizard
-    assert "/auth/google?intent=onboarding&next=/pro/resume-checkout" in wizard
-    assert "/api/sleeper-user-leagues?username=" in wizard
-    assert "_initiatePurchaseWithLeague" in wizard
-    assert "Continue with Google" not in wizard or "homeProGoogle" in wizard
+def test_home_pro_js_opens_modal_then_stages_google():
+    source = PAYWALL_JS[PAYWALL_JS.index("function openHomeProModal"):]
+    assert "className = 'paywall-modal'" in source
+    assert 'data-plan="single_league"' in source
+    assert 'data-plan="combo"' in source
+    assert 'id="homeProGoogle" class="google-continue-btn"' in source
+    assert "fetch('/api/pro-signup/pending'" in source
+    assert "/auth/google?intent=onboarding&next=/pro/resume-checkout" in source
+    assert "/api/sleeper-user-leagues?username=" in source
+    assert "_initiatePurchaseWithLeague" in source
+    assert "data-home-pro-open" in PAYWALL_JS[PAYWALL_JS.index("function initHomeProSignup"):]
 
 
 def test_google_and_yahoo_resume_pending_checkout():
@@ -145,8 +147,9 @@ def test_guest_home_renders_pro_signup(offline_client):
     html = offline_client.get("/").get_data(as_text=True)
     assert "homeProSignup" in html
     assert "home-proof" not in html
+    assert "Unlock PRO" in html
+    assert "data-home-pro-open" in html
     assert "Continue with Google" in html
-    assert "Start PRO" in html
 
 
 class _JsonResp:

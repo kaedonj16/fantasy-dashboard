@@ -324,3 +324,159 @@
   font-size: 48px;
   opacity: 0.3;
 }
+
+.paywall-modal .home-pro-step {
+  text-align: left;
+}
+
+.paywall-modal .home-pro-progress {
+  display: flex;
+  gap: 12px;
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 0;
+}
+
+.paywall-modal .home-pro-progress li {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-muted);
+}
+
+.paywall-modal .home-pro-progress li.is-active {
+  color: #2563eb;
+}
+
+.paywall-modal .home-pro-back {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0 0 8px;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.paywall-modal .home-pro-picked {
+  margin: 0 0 14px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.paywall-modal .home-pro-or {
+  margin: 10px 0 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.paywall-modal .home-pro-platforms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.paywall-modal .home-pro-platform {
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text-muted);
+  border-radius: 9999px;
+  padding: 7px 11px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.paywall-modal .home-pro-platform.is-active,
+.paywall-modal .home-pro-platform[aria-pressed="true"] {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.paywall-modal .home-pro-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.paywall-modal .home-pro-fields[hidden],
+.paywall-modal .home-pro-step[hidden],
+.paywall-modal #homeProSavedWrap[hidden],
+.paywall-modal #homeProSleeperLeagueWrap[hidden],
+.paywall-modal #homeProSeasonWrap[hidden],
+.paywall-modal #homeProCheckout[hidden],
+.paywall-modal .home-pro-error[hidden] {
+  display: none !important;
+}
+
+.paywall-modal .home-pro-fields label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.paywall-modal .home-pro-fields input,
+.paywall-modal .home-pro-fields select,
+.paywall-modal #homeProSavedSelect {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+}
+
+.paywall-modal .home-pro-inline {
+  display: flex;
+  gap: 8px;
+}
+
+.paywall-modal .home-pro-inline input {
+  flex: 1;
+  min-width: 0;
+}
+
+.paywall-modal .home-pro-inline button {
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: #122d4b;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.paywall-modal .home-pro-error {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #dc2626;
+}
+
+.paywall-modal .home-pro-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 420px;
+}
+
+.paywall-modal .home-pro-checkout-btn {
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #122d4b, #2563eb);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
