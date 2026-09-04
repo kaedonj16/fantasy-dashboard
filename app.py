@@ -15032,8 +15032,27 @@ def api_refresh_page():
             scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
             te_premium = float(_ss.get("bonus_rec_te") or 0)
             scoring_type = "redraft" if _league_is_redraft(ctx) else "dynasty"
+            # Match the canonical render in routes/trade_bp.py: seed the superflex
+            # toggle, viewer roster, and premium state from league context.
+            # Omitting is_superflex made this refresh render default every league
+            # to 1QB, so an SF league's Strategy tab ran in 1QB mode after a
+            # refresh - suppressing QB values, slots, and scarcity, which is why
+            # a QB-starved SF team saw no QB suggestions.
+            _rp = ctx.get("roster_positions") or []
+            _is_sf = _is_superflex_lineup(_rp)
+            _user_id = session.get("viewer_username") or None
+            viewer = get_viewer_session_for_league(
+                ctx.get("users") or [], ctx.get("rosters") or [],
+                platform, league_id, season,
+            )
+            viewer_roster_id = viewer.get("viewer_roster_id") or ""
+            has_premium = has_premium_for_viewer(
+                _user_id, session.get("viewer_user_id"), league_id, platform or "sleeper", season)
             body_html = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
                                                     scoring_format=scoring_format,
+                                                    viewer_roster_id=viewer_roster_id,
+                                                    has_premium=has_premium,
+                                                    is_superflex=_is_sf,
                                                     te_premium=te_premium,
                                                     platform=platform,
                                                     scoring_type=scoring_type)

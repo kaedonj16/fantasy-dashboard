@@ -69,6 +69,40 @@ def test_trade_page_wires_league_redraft_into_calculator():
     assert "platform, league_id, season" in src
 
 
+def test_trade_calculator_defaults_to_1qb_toggle():
+    html = build_trade_calculator_body("L1", 2026)
+    # No is_superflex passed -> SF toggle unchecked, page seeds _leagueType='1qb'.
+    assert 'id="leagueTypeToggle">' in html and 'id="leagueTypeToggle" checked' not in html
+    assert "var _leagueType = '1qb'" in html
+
+
+def test_trade_calculator_preselects_superflex_when_league_is_sf():
+    html = build_trade_calculator_body("L1", 2026, is_superflex=True)
+    # SF league -> toggle pre-checked and _leagueType='sf', so the Strategy tab's
+    # getLeagueType() reads "sf" and the archetype engine runs in superflex mode
+    # (2 QB slots, SF QB values/scarcity). This is what surfaces QB suggestions
+    # for a QB-starved superflex roster.
+    assert 'id="leagueTypeToggle" checked' in html
+    assert "var _leagueType = 'sf'" in html
+
+
+def test_refresh_page_trade_render_forwards_superflex():
+    """/api/refresh-page rebuilds the trade page body. It must pass is_superflex
+    (and viewer/premium) like the canonical render in routes/trade_bp.py -
+    omitting it defaulted every league to 1QB after a refresh, so a superflex
+    league's Strategy tab ran in 1QB mode and stopped suggesting QB upgrades."""
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    marker = 'elif page == "trade":'
+    start = src.index(marker)
+    # The trade branch ends where the next branch (else:) begins.
+    branch = src[start:src.index("else:", start)]
+    assert "build_trade_calculator_body(" in branch
+    assert "is_superflex=" in branch, "refresh render must seed the superflex toggle"
+    assert "_is_superflex_lineup(" in branch
+    assert "has_premium=" in branch
+    assert "viewer_roster_id=" in branch
+
+
 def test_otc_info_tooltip_shows_trade_count():
     html = build_trade_calculator_body(None, 2026)
     assert 'id="otcInfoTooltip"' in html
