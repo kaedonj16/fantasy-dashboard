@@ -1053,13 +1053,24 @@ class FleaflickerProvider(ProviderAdapter):
                 score_block = game.get(score_key) or game.get(
                     "home_score" if side == "home" else "away_score"
                 ) or {}
-                points = _num(score_block.get("score") if isinstance(score_block, dict) else score_block)
+                if not isinstance(score_block, dict):
+                    score_block = {"score": score_block}
+                points = _num(score_block.get("score"))
+                # Scoreboard publishes team projected totals (same role as Yahoo
+                # team_projected_points). Boxscore slots are often empty before
+                # kickoff, so Sleeper player joins miss and headers painted 0.0
+                # unless we carry this through as projected_points / proj_total.
+                projected_points = None
+                if score_block.get("projected") is not None:
+                    projected_points = _num(score_block.get("projected"))
                 starters, players_points = self._starters_from_boxscore(
                     lineups, side, xwalk, by_name,
                 )
                 out.append({
                     "matchup_id": mid, "roster_id": _int(team_id),
-                    "points": points, "players": list(starters),
+                    "points": points,
+                    "projected_points": projected_points,
+                    "players": list(starters),
                     "starters": starters,
                     "starters_points": [players_points.get(pid, 0.0) for pid in starters],
                     "players_points": players_points,
