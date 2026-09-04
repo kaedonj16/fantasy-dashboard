@@ -36508,27 +36508,31 @@ a, button, [role="button"], [role="tab"], summary, label,
     box-shadow: inset 0 0 0 1px rgba(255,255,255,.14);
 }
 .team-strength-card .tc-idtext { min-width: 0; flex: 1; }
+/* Name + YOU share one flex line. Prefer wrapping the title over a
+   single-line ellipsis ("Move the …") — the YOU pill is flex-shrink:0 and
+   used to steal the last word of mid-length viewer names on narrow cards. */
 .team-strength-card .tc-head h2.tc-name {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     min-width: 0;
+    width: 100%;
     font-size: 19px;
     font-weight: 700;
-    line-height: 1.15;
+    line-height: 1.2;
     margin: 0;
-    white-space: nowrap;
-    overflow: hidden;
+    white-space: normal;
 }
 .team-strength-card .tc-name-text {
+    flex: 1 1 auto;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
 }
 .team-strength-card .tc-you {
     display: inline-block;
-    flex-shrink: 0;
+    flex: 0 0 auto;
     font-size: 9.5px;
     font-weight: 700;
     letter-spacing: .09em;
@@ -36539,6 +36543,7 @@ a, button, [role="button"], [role="tab"], summary, label,
     padding: 1px 5px;
     margin-left: 0;
     vertical-align: middle;
+    align-self: center;
 }
 :root .team-strength-card .tc-you {
     color: var(--brand-blue);
@@ -36703,6 +36708,7 @@ a, button, [role="button"], [role="tab"], summary, label,
     /* Old header rules wrap .tc-id so a large image can take its own row.
        Avatars are clamped; keep the identity row on one line. */
     .team-strength-card .tc-id { flex-wrap: nowrap; }
+    .team-strength-card .tc-head h2.tc-name { font-size: 17px; }
     .team-strength-card .tc-mix,
     .team-strength-card .tc-index { min-width: 0; }
     .team-strength-card .tc-mix-bar { max-width: 100%; }
