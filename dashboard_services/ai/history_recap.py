@@ -6,6 +6,7 @@ import threading
 
 from dashboard_services.ai.cache import load_cached_ai_text, save_cached_ai_text
 from dashboard_services.ai.client import clean_ai_text
+from dashboard_services.ai.html_sanitize import sanitize_ai_html
 from dashboard_services.ai.prompts import get_ai_client
 from dashboard_services.ai.renderer import ai_available
 from dashboard_services.platform_api import get_bracket
@@ -286,10 +287,10 @@ def get_history_ai_recap(history_ctx: dict, roster_id: str) -> str:
     # Try to get from cache first
     cached = load_cached_ai_text(cache_key)
     if cached:
-        return cached
+        return sanitize_ai_html(cached)
 
     if not ai_available():
-        return _fallback_recap(history_ctx, roster_id)
+        return sanitize_ai_html(_fallback_recap(history_ctx, roster_id))
 
     try:
         payload = build_history_recap_payload(history_ctx, roster_id)
@@ -300,11 +301,11 @@ def get_history_ai_recap(history_ctx: dict, roster_id: str) -> str:
 
         # Cache the result
         save_cached_ai_text(cache_key, html_out)
-        return html_out
+        return sanitize_ai_html(html_out)
 
     except Exception as e:
         print(f"[history-recap] AI error: {e}")
-        return _fallback_recap(history_ctx, roster_id)
+        return sanitize_ai_html(_fallback_recap(history_ctx, roster_id))
 
 
 def _generate_recap_ai_result(payload: dict) -> dict:
