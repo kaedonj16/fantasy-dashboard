@@ -175,6 +175,69 @@ _NOT_IN_LEAGUE = (
 )
 
 
+def test_parse_nfl_game_keys_pairs_list_of_fragments():
+    raw = {
+        "fantasy_content": {
+            "games": [
+                {"game_key": "470"},
+                {"season": "2026"},
+                {"game_key": "461"},
+                {"season": "2025"},
+            ]
+        }
+    }
+    parsed = yahoo_api._parse_nfl_game_keys(raw)
+    assert parsed[2026] == "470"
+    assert parsed[2025] == "461"
+
+
+def test_parse_nfl_game_keys_merges_wrapped_game_lists():
+    raw = {
+        "fantasy_content": {
+            "games": {
+                "count": 2,
+                "0": {"game": [{"game_key": "470"}, {"season": "2026"}]},
+                "1": {"game": [{"game_key": "461"}, {"season": "2025"}]},
+            }
+        }
+    }
+    parsed = yahoo_api._parse_nfl_game_keys(raw)
+    assert parsed[2026] == "470"
+    assert parsed[2025] == "461"
+
+
+def test_league_key_for_2026_uses_470_when_games_collection_empty(monkeypatch):
+    yahoo_api._clear_yahoo_request_state()
+    monkeypatch.setattr(yahoo_api, "_nfl_game_keys", lambda token: [])
+    assert yahoo_api._league_key_for_season("1307110", 2026, "tok") == "470.l.1307110"
+    assert yahoo_api._league_key_for_season("1307110", 2025, "tok") == "461.l.1307110"
+
+
+def test_yahoo_get_retries_2026_game_key_when_461_says_not_in_league(monkeypatch):
+    """A 2026 member 403s on last year's 461.l.<id>; same token can read 470."""
+    yahoo_api._clear_yahoo_request_state()
+    urls = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        urls.append(url)
+        if "470.l.1307110" in url:
+            return _FakeYahooResp(200, "{}", {"fantasy_content": {"ok": True}})
+        return _FakeYahooResp(403, _NOT_IN_LEAGUE)
+
+    monkeypatch.setattr(yahoo_api.requests, "get", fake_get)
+    monkeypatch.setattr(yahoo_api, "get_league_token", lambda *a, **k: None)
+    data = yahoo_api._yahoo_get("member-tok", "league/461.l.1307110/scoreboard;week=1")
+    assert data["fantasy_content"]["ok"] is True
+    assert any("461.l.1307110" in u for u in urls)
+    assert any("470.l.1307110" in u for u in urls)
+    assert yahoo_api._season_key_map.get(("1307110", 2026)) == "470.l.1307110"
+
+    n = len(urls)
+    yahoo_api._yahoo_get("member-tok", "league/461.l.1307110/scoreboard;week=2")
+    assert any("470.l.1307110" in u and "week=2" in u for u in urls[n:])
+    assert not any("461.l.1307110" in u and "week=2" in u for u in urls[n:])
+
+
 def test_yahoo_get_retries_owner_token_when_session_not_in_league(monkeypatch):
     yahoo_api._clear_yahoo_request_state()
     auths = []
@@ -190,12 +253,16 @@ def test_yahoo_get_retries_owner_token_when_session_not_in_league(monkeypatch):
     monkeypatch.setattr(yahoo_api, "get_league_token", lambda lid, season: "owner-tok")
     data = yahoo_api._yahoo_get("session-tok", "league/461.l.1307110/scoreboard;week=1")
     assert data["fantasy_content"]["ok"] is True
-    assert auths == ["Bearer session-tok", "Bearer owner-tok"]
+    assert auths[0] == "Bearer session-tok"
+    assert "Bearer owner-tok" in auths
+    # Same token is tried on 461 then nfl / 470 / 449 before the owner account.
+    session_first = auths.count("Bearer session-tok")
+    assert session_first >= 2
 
-    # Later weeks skip the session token that already 403'd.
+    # Later weeks skip every session game-key that already 403'd.
     yahoo_api._yahoo_get("session-tok", "league/461.l.1307110/scoreboard;week=2")
-    assert auths.count("Bearer session-tok") == 1
-    assert auths.count("Bearer owner-tok") == 2
+    assert auths.count("Bearer session-tok") == session_first
+    assert auths.count("Bearer owner-tok") >= 2
 
 
 def test_yahoo_get_short_circuits_after_membership_403(monkeypatch):
@@ -210,9 +277,11 @@ def test_yahoo_get_short_circuits_after_membership_403(monkeypatch):
     monkeypatch.setattr(yahoo_api, "get_league_token", lambda *a, **k: None)
     with pytest.raises(yahoo_api.YahooLeagueAccessDenied):
         yahoo_api._yahoo_get("session-tok", "league/461.l.1307110/scoreboard;week=5")
+    first_wave = len(calls)
+    assert first_wave >= 2
     with pytest.raises(yahoo_api.YahooLeagueAccessDenied):
         yahoo_api._yahoo_get("session-tok", "league/461.l.1307110/scoreboard;week=6")
-    assert len(calls) == 1
+    assert len(calls) == first_wave
 
 
 def test_build_matchup_preview_does_not_synthesize_when_scoreboard_raises():

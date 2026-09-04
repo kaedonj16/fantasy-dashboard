@@ -49,6 +49,14 @@ YAHOO_SCOPE     = "fspt-r"  # unused; see get_authorization_url
 
 # Only NFL for now; extend as needed.
 _GAME_CODE = "nfl"
+# Yahoo's numeric game key changes every season. 461 is 2025; 2026 is 470.
+# Used when the games collection can't be parsed (list-of-fragments JSON)
+# so we never reuse last year's key and 403 a member as "not in this league".
+_NFL_GAME_KEYS_FALLBACK = {
+    2024: "449",
+    2025: "461",
+    2026: "470",
+}
 
 # Per-process cache: (league_key, endpoint) -> (fetched_at, data)
 _api_cache: Dict[str, tuple[float, Any]] = {}
@@ -504,6 +512,10 @@ def _clear_yahoo_request_state() -> None:
         _api_cache.clear()
     with _yahoo_no_access_lock:
         _yahoo_no_access.clear()
+    with _league_key_lock:
+        _league_key_map.clear()
+    with _season_key_lock:
+        _season_key_map.clear()
 
 
 def _league_key_from_yahoo_path(path: str) -> str:
@@ -550,17 +562,74 @@ def _owner_token_for_league_path(path: str, used_token: str) -> str:
     return ""
 
 
+def _alternate_league_paths(path: str) -> List[str]:
+    """Same league id under the current-season game key (470 / nfl), not last year's 461."""
+    hit = re.match(r"league/(\d+|nfl)\.l\.(\d+)(.*)$", path or "")
+    if not hit:
+        return []
+    used, lid, rest = hit.group(1), hit.group(2), hit.group(3)
+    year = datetime.now().year
+    candidates: List[str] = ["nfl"]
+    current = _NFL_GAME_KEYS_FALLBACK.get(year)
+    if current:
+        candidates.append(str(current))
+    for gk in _NFL_GAME_KEYS_FALLBACK.values():
+        candidates.append(str(gk))
+    out: List[str] = []
+    seen = {str(used)}
+    for gk in candidates:
+        if not gk or gk in seen:
+            continue
+        seen.add(gk)
+        out.append(f"league/{gk}.l.{lid}{rest}")
+    return out
+
+
+def _remember_full_league_key(full: str) -> None:
+    """Cache a league key that actually returned 200, by id and by season."""
+    if not full or ".l." not in full:
+        return
+    lid = _bare_yahoo_id(full)
+    gk = str(full).split(".l.", 1)[0]
+    with _league_key_lock:
+        _league_key_map[lid] = full
+    year = None
+    if gk == "nfl":
+        year = datetime.now().year
+    else:
+        for season, key in _NFL_GAME_KEYS_FALLBACK.items():
+            if str(key) == gk:
+                year = season
+                break
+    if year:
+        with _season_key_lock:
+            _season_key_map[(lid, int(year))] = full
+
+
 def _yahoo_get(
     access_token: str,
     path: str,
     params: Optional[Dict] = None,
     *,
     _retried: bool = False,
+    _retried_key: bool = False,
 ) -> Any:
     """Make a GET request to the Yahoo Fantasy API, returning parsed JSON."""
     league_key = _league_key_from_yahoo_path(path)
     if _yahoo_access_blocked(league_key, access_token):
-        if not _retried:
+        if not _retried_key:
+            for alt_path in _alternate_league_paths(path):
+                alt_key = _league_key_from_yahoo_path(alt_path)
+                if alt_key and not _yahoo_access_blocked(alt_key, access_token):
+                    try:
+                        return _yahoo_get(
+                            access_token, alt_path, params,
+                            _retried=_retried, _retried_key=True,
+                        )
+                    except YahooLeagueAccessDenied:
+                        continue
+        # Try every game key with this token before switching accounts.
+        if not _retried and not _retried_key:
             alt = _owner_token_for_league_path(path, access_token)
             if alt and not _yahoo_access_blocked(league_key, alt):
                 return _yahoo_get(alt, path, params, _retried=True)
@@ -594,7 +663,19 @@ def _yahoo_get(
         logger.warning("[yahoo] %s %s -> %s body=%s", "GET", path, resp.status_code, body)
         if _yahoo_not_in_league(resp.status_code, body):
             _mark_yahoo_access_denied(league_key, access_token)
-            if not _retried:
+            if not _retried_key:
+                for alt_path in _alternate_league_paths(path):
+                    try:
+                        logger.info("[yahoo] retrying %s as %s", path, alt_path)
+                        data = _yahoo_get(
+                            access_token, alt_path, params,
+                            _retried=_retried, _retried_key=True,
+                        )
+                        _remember_full_league_key(_league_key_from_yahoo_path(alt_path))
+                        return data
+                    except YahooLeagueAccessDenied:
+                        continue
+            if not _retried and not _retried_key:
                 alt = _owner_token_for_league_path(path, access_token)
                 if alt and not _yahoo_access_blocked(league_key, alt):
                     logger.info(
@@ -616,6 +697,8 @@ def _yahoo_get(
     with _api_cache_lock:
         _api_cache[cache_key] = (time.time(), data)
 
+    if league_key and ".l." in league_key:
+        _remember_full_league_key(league_key)
     return data
 
 
@@ -668,6 +751,16 @@ def _league_key_for_season(league_id: str, season: int, access_token: str = "") 
         with _season_key_lock:
             _season_key_map[cache_key] = full
         return full
+    gk = _NFL_GAME_KEYS_FALLBACK.get(season_i)
+    if gk:
+        full = f"{gk}.l.{lid}"
+        with _season_key_lock:
+            _season_key_map[cache_key] = full
+        return full
+    # Current season: ``nfl.l.<id>`` works for members. Do not reuse a
+    # prior-year numeric key from ``_league_key_map`` (461 is 2025).
+    if season_i == datetime.now().year:
+        return f"{_GAME_CODE}.l.{lid}"
     return _league_key(league_id)
 
 
@@ -703,13 +796,70 @@ def yahoo_league_exists_for_season(access_token: str, league_id: str, season: in
     return True
 
 
+def _flatten_yahoo_game_entry(entry: Any) -> Dict[str, Any]:
+    node = entry
+    if isinstance(entry, dict) and "game" in entry:
+        node = entry.get("game")
+    if isinstance(node, dict):
+        return dict(node)
+    if isinstance(node, list):
+        flat: Dict[str, Any] = {}
+        _merge_yahoo_dict_parts(node, flat)
+        return flat
+    return {}
+
+
+def _parse_nfl_game_keys(raw: Any) -> Dict[int, str]:
+    """Pair Yahoo game_key/season fragments into {season: game_key}.
+
+    ``format=json`` often returns games as a list of one-key dicts
+    (``[{game_key: "470"}, {season: "2026"}]``) instead of one dict per season.
+    Walking those nodes independently never joins the pair, so 2026 used to
+    miss ``470`` and fall back to last year's ``461``.
+    """
+    parsed: Dict[int, str] = {}
+    if not isinstance(raw, dict):
+        return parsed
+    games = ((raw.get("fantasy_content") or {}).get("games"))
+    rows = _yahoo_collection_rows(games, "game")
+    pending: Dict[str, Any] = {}
+
+    def _take(flat: Dict[str, Any]) -> None:
+        if not flat:
+            return
+        gk = str(flat.get("game_key") or flat.get("game_id") or "")
+        se = flat.get("season")
+        if gk and se is not None:
+            try:
+                parsed[int(se)] = gk
+            except (TypeError, ValueError):
+                pass
+            return
+        if gk:
+            pending["game_key"] = gk
+        if se is not None:
+            pending["season"] = se
+        pk = str(pending.get("game_key") or pending.get("game_id") or "")
+        ps = pending.get("season")
+        if pk and ps is not None:
+            try:
+                parsed[int(ps)] = pk
+            except (TypeError, ValueError):
+                pass
+            pending.clear()
+
+    for entry in rows:
+        _take(_flatten_yahoo_game_entry(entry))
+    return parsed
+
+
 def _nfl_game_keys(access_token: str) -> List[tuple]:
     """Return [(season:int, game_key:str), ...] for recent NFL seasons, newest
     first. Yahoo's game key changes every season and a league key is
     "<game_key>.l.<id>", so we need the actual keys to reach a specific season's
     league. This reads the games collection (not the user resource, so fspt-r is
-    fine) for the last several seasons. Returns [] if it can't be read."""
-    from datetime import datetime
+    fine) for the last several seasons. Returns known fallbacks if it can't be read."""
+    parsed: Dict[int, str] = {}
     yr = datetime.now().year
     seasons = [yr - i for i in range(0, 8)]
     try:
@@ -719,25 +869,13 @@ def _nfl_game_keys(access_token: str) -> List[tuple]:
         )
     except Exception as exc:
         logger.warning("[yahoo] _nfl_game_keys failed: %s", exc)
-        return []
-    keys: Dict[str, int] = {}
+        raw = None
 
-    def _walk(node):
-        if isinstance(node, dict):
-            gk, se = node.get("game_key"), node.get("season")
-            if gk and se is not None:
-                try:
-                    keys[str(gk)] = int(se)
-                except (TypeError, ValueError):
-                    pass
-            for v in node.values():
-                _walk(v)
-        elif isinstance(node, list):
-            for v in node:
-                _walk(v)
+    parsed.update(_parse_nfl_game_keys(raw))
 
-    _walk(raw)
-    return sorted(((s, gk) for gk, s in keys.items()), reverse=True)
+    merged = dict(_NFL_GAME_KEYS_FALLBACK)
+    merged.update(parsed)
+    return sorted(merged.items(), reverse=True)
 
 
 def resolve_league_key(access_token: str, league_id: str) -> Dict[str, Any]:
