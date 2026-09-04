@@ -372,7 +372,7 @@ def notify_lineup_lock():
                     "Your lineup needs attention", body, fix_url, tag,
                 )
             for oid, orows in bench_by_owner.items():
-                body = f"Week {week} kicks off soon — {bench_summary_by_owner[oid]}."
+                body = f"Week {week} kicks off soon. {bench_summary_by_owner[oid]}."
                 sent += _send_to_endpoints(
                     _filter_prefs(orows, "lineup_lock"),
                     "Points on your bench", body, fix_url, tag,
