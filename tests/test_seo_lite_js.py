@@ -128,14 +128,14 @@ def test_seo_lite_css_hides_guest_nav_chrome():
     assert ".filter-settings-panel" in css
 
 
-def test_guest_homepage_keeps_dashboard_css(offline_client, monkeypatch):
-    """Landing page styles live in dashboard.css; seo_lite.css must not replace them.
+def test_guest_homepage_uses_landing_lite_css(offline_client, monkeypatch):
+    """Guest `/` serves landing_lite.css (seo_lite + home extract), not full dashboard.
 
-    R14.3 swapped every lite_js page onto seo_lite.css. The homepage opted into
-    lite_js for a faster JS paint, but its layout (hero, onboarding card,
-    feature grid, ticker) is not in the slim pack — serving that pack unstyles
-    the page.
+    R14.3 forbade swapping home onto seo_lite alone (unstyled hero/ticker).
+    Option A ships landing_lite.css for guests; signed-in home keeps dashboard.
     """
+    import re
+    from pathlib import Path
     import app as app_mod
 
     # Force the lite JS path even if the features bundle failed to build here,
@@ -147,8 +147,41 @@ def test_guest_homepage_keeps_dashboard_css(offline_client, monkeypatch):
     assert r.status_code == 200
     html = r.get_data(as_text=True)
     assert "home-hero" in html
+    assert "/static/landing_lite.css" in html
     assert "/static/seo_lite.css" not in html
-    assert "dashboard.min.css" in html or "/static/dashboard.css" in html
+    assert not re.search(r'<link[^>]+href="[^"]*dashboard(?:\.min)?\.css', html), (
+        "guest / should not link full dashboard.css as primary stylesheet"
+    )
+    landing = (Path(__file__).resolve().parents[1] / "static" / "landing_lite.css").read_text(
+        encoding="utf-8"
+    )
+    # Smoke: key home selectors must exist in the lite pack.
+    for cls in (".home-hero", ".home-card", ".home-ticker-band", ".home-feature-row",
+                ".google-continue-btn", ".platform-btn"):
+        assert cls in landing, f"landing_lite.css missing {cls}"
+    home_rules = len([ln for ln in landing.splitlines() if ln.startswith(".home-")])
+    assert home_rules >= 100, f"expected ≥100 .home- rules, got {home_rules}"
+
+
+def test_signed_in_homepage_keeps_dashboard_css(offline_client, monkeypatch):
+    """Signed-in home ignores lite CSS and keeps the full dashboard stylesheet."""
+    import re
+    import app as app_mod
+
+    monkeypatch.setattr(app_mod, "_FEATURES_JS_FILE", app_mod._FEATURES_JS_FILE or "app-features.js")
+    monkeypatch.setattr(app_mod, "_FEATURES_JS_V", getattr(app_mod, "_FEATURES_JS_V", None) or "test")
+
+    with offline_client.session_transaction() as sess:
+        sess["viewer_username"] = "tester"
+        sess["viewer_user_id"] = "u1"
+        sess["account_id"] = "acct1"
+
+    r = offline_client.get("/")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "/static/landing_lite.css" not in html
+    assert "/static/seo_lite.css" not in html
+    assert re.search(r'<link[^>]+href="[^"]*dashboard(?:\.min)?\.css', html)
 
 def test_signed_in_seo_page_keeps_full_app_js(offline_client):
     """lite_js is ignored when a session is signed in — full app.js stays."""

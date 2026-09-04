@@ -70,17 +70,26 @@ def test_home_copy_touched_by_state_machine_has_no_em_dash():
     assert "&mdash;" not in home_form
 
 
-def test_lite_css_swap_excludes_homepage():
-    """R14.3 seo_lite.css is for SEO shells; the landing page keeps dashboard.css.
+def test_lite_css_swap_uses_landing_lite_for_guest_home():
+    """Guest home uses landing_lite.css; seo_lite stays free of home-* rules.
 
-    Homepage layout (hero, onboarding card, feature grid, ticker) lives in
-    dashboard.css. Applying the slim pack to lite_js=home unstyles the page.
+    Homepage layout (hero, onboarding card, feature grid, ticker) is not in
+    seo_lite.css — guests get landing_lite.css instead. Signed-in home keeps
+    full dashboard.css via the non-lite branch.
     """
     app_py = (ROOT / "app.py").read_text(encoding="utf-8")
-    assert '_use_lite_css = _use_lite and active != "home"' in app_py
+    assert '_page_css_file = "landing_lite.css"' in app_py
+    assert 'active == "home"' in app_py
+    assert "_LANDING_LITE_CSS_V" in app_py
     seo_css = (ROOT / "static" / "seo_lite.css").read_text(encoding="utf-8")
     assert ".home-hero" not in seo_css
     assert ".home-card" not in seo_css
+    landing = (ROOT / "static" / "landing_lite.css").read_text(encoding="utf-8")
+    assert ".home-hero" in landing
+    assert ".home-card" in landing
+    assert ".home-ticker-band" in landing
+    home_rules = len([ln for ln in landing.splitlines() if ln.startswith(".home-")])
+    assert home_rules >= 100
     # Guest SEO pages still emit dropdowns + the More sheet. Without these
     # hides, every nav link spills in-flow on logged-out pages.
     assert ".nav-pill-dropdown-menu" in seo_css

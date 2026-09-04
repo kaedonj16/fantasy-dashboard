@@ -687,6 +687,7 @@ _TEAMS_JS_V = _static_hash("teams.js")
 _CSS_FILE = _ensure_minified_css()
 _CSS_V = _static_hash(_CSS_FILE)
 _SEO_LITE_CSS_V = _static_hash("seo_lite.css")
+_LANDING_LITE_CSS_V = _static_hash("landing_lite.css")
 _FA_V = _static_hash("font-awesome.css")
 _ICONS_V = _static_hash("icons.css")
 
@@ -4979,14 +4980,19 @@ def render_page(
                  and bool(_FEATURES_JS_FILE))
     _page_js_file = _PUBLIC_JS_FILE if _use_lite else _APP_JS_FILE
     _page_js_v = _PUBLIC_JS_V if _use_lite else _APP_JS_V
-    # Logged-out lite_js SEO shells (rankings, compare, player, etc.) get a
-    # smaller CSS pack instead of the full dashboard bundle. The landing page
-    # keeps dashboard.css: its hero, onboarding card, feature grid, and ticker
-    # all live there, and seo_lite.css does not cover them. Signed-in visitors
-    # always keep the full stylesheet.
-    _use_lite_css = _use_lite and active != "home"
-    _page_css_file = "seo_lite.css" if _use_lite_css else _CSS_FILE
-    _page_css_v = _SEO_LITE_CSS_V if _use_lite_css else _CSS_V
+    # Logged-out lite_js SEO shells (rankings, compare, player, etc.) get
+    # seo_lite.css. Guest landing (`active == "home"`) gets landing_lite.css
+    # (seo_lite + home/ticker/connect extract) so we skip the full ~515 KB
+    # dashboard pack. Signed-in visitors always keep the full stylesheet.
+    if _use_lite and active == "home":
+        _page_css_file = "landing_lite.css"
+        _page_css_v = _LANDING_LITE_CSS_V
+    elif _use_lite:
+        _page_css_file = "seo_lite.css"
+        _page_css_v = _SEO_LITE_CSS_V
+    else:
+        _page_css_file = _CSS_FILE
+        _page_css_v = _CSS_V
     # Tell the lazy-loader where the feature bundle lives (only on lite pages;
     # on full pages the features are already present so the loader no-ops).
     _features_js_js = (
