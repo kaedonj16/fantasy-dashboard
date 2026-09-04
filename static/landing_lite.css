@@ -3378,7 +3378,7 @@ input[type="search"] {
     letter-spacing: 0.04em;
     text-transform: uppercase;
     padding: 2px 7px;
-    border-radius: 999px;
+    border-radius: 9999px;
 }
 
 .home-pro-plan-name {
@@ -3446,7 +3446,7 @@ input[type="search"] {
     border: 1px solid var(--border);
     background: var(--card);
     color: var(--text-muted);
-    border-radius: 999px;
+    border-radius: 9999px;
     padding: 7px 11px;
     font-size: 12px;
     font-weight: 700;
