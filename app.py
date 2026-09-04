@@ -26063,8 +26063,8 @@ def _portfolio_movers_card(holdings: list, pos_colors: dict) -> str:
     return (
         "<style>"
         # minmax(0,1fr) (not the default 1fr = minmax(auto,1fr)) lets each column
-        # shrink below its content's min width, so a long player name ellipsizes
-        # instead of forcing the row - and its delta - off the card's edge.
+        # shrink below its content's min width, so a long player name wraps to a
+        # second line instead of forcing the row - and its delta - off the card's edge.
         ".pfm-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 22px;padding:4px 16px 14px;}"
         "@media(max-width:640px){.pfm-grid{grid-template-columns:1fr;gap:0;}}"
         ".pfm-col{min-width:0;}"
@@ -26075,7 +26075,7 @@ def _portfolio_movers_card(holdings: list, pos_colors: dict) -> str:
         ".pfm-row:last-child{border-bottom:none;}"
         ".pfm-row:hover{background:var(--row,rgba(127,127,127,.05));}"
         ".pfm-pos{font-weight:800;font-size:11px;min-width:26px;}"
-        ".pfm-name{flex:1;min-width:0;font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}"
+        ".pfm-name{flex:1;min-width:0;font-weight:600;font-size:13px;line-height:1.25;overflow-wrap:anywhere;}"
         ".pfm-sh{font-size:10px;font-weight:700;color:var(--text-subtle);"
         "background:var(--row,rgba(127,127,127,.1));padding:1px 5px;border-radius:5px;}"
         ".pfm-val{font-size:12px;font-weight:700;color:var(--text-muted);font-variant-numeric:tabular-nums;min-width:34px;text-align:right;}"
@@ -26255,7 +26255,9 @@ def build_portfolio_body(
         ".pf-move-accent{width:4px;flex-shrink:0;background:var(--text-subtle);}"
         ".pf-move-row--lineup .pf-move-accent{background:#ef4444;}"
         ".pf-move-row--injury .pf-move-accent{background:#f59e0b;}"
+        ".pf-move-row--roster .pf-move-accent{background:#10b981;}"
         ".pf-move-row--waiver .pf-move-accent{background:#3b82f6;}"
+        ".pf-move-row--calendar .pf-move-accent{background:#14b8a6;}"
         ".pf-move-row--trade .pf-move-accent{background:#8b5cf6;}"
         ".pf-move-body{flex:1;min-width:0;padding:12px 10px 12px 12px;}"
         ".pf-move-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;}"
@@ -26265,7 +26267,9 @@ def build_portfolio_body(
         "padding:3px 8px;border-radius:999px;line-height:1.2;}"
         ".pf-move-row--lineup .pf-move-kind{color:#b91c1c;background:color-mix(in srgb,#ef4444 14%,transparent);}"
         ".pf-move-row--injury .pf-move-kind{color:#b45309;background:color-mix(in srgb,#f59e0b 16%,transparent);}"
+        ".pf-move-row--roster .pf-move-kind{color:#047857;background:color-mix(in srgb,#10b981 16%,transparent);}"
         ".pf-move-row--waiver .pf-move-kind{color:#1d4ed8;background:color-mix(in srgb,#3b82f6 14%,transparent);}"
+        ".pf-move-row--calendar .pf-move-kind{color:#0f766e;background:color-mix(in srgb,#14b8a6 16%,transparent);}"
         ".pf-move-row--trade .pf-move-kind{color:#6d28d9;background:color-mix(in srgb,#8b5cf6 14%,transparent);}"
         ".pf-move-title{display:block;font-size:14px;font-weight:800;color:var(--text);line-height:1.35;letter-spacing:-.01em;}"
         ".pf-move-detail{display:block;font-size:12px;color:var(--text-muted);margin-top:4px;line-height:1.45;}"
@@ -26325,7 +26329,7 @@ def build_portfolio_body(
         "return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c];});}"
         "function kindKey(k){return String(k||'').toLowerCase().replace(/[^a-z0-9_-]/g,'')||'action';}"
         "function kindLabel(k){"
-        "var m={lineup:'Lineup',injury:'Injury',waiver:'Waiver',trade:'Trade'};"
+        "var m={lineup:'Lineup',injury:'Injury',roster:'Roster',waiver:'Waiver',calendar:'Calendar',trade:'Trade'};"
         "return m[kindKey(k)]||String(k||'Action');"
         "}"
         "function paywallHtml(msg,btn){"
@@ -26343,7 +26347,7 @@ def build_portfolio_body(
         "(document.getElementById('page-root')&&document.getElementById('page-root').getAttribute('data-premium')==='true');"
         "if(!prem){"
         "card.hidden=false;"
-        "body.innerHTML=paywallHtml('PRO surfaces your top lineup and injury moves across every linked league.');"
+        "body.innerHTML=paywallHtml('PRO surfaces your top lineup, waiver, roster, and deadline moves across every linked league.');"
         "return;}"
         "fetch('/api/portfolio-actions',{cache:'no-store'}).then(function(r){return r.json().then(function(d){return {status:r.status,d:d||{}};});})"
         ".then(function(res){"
