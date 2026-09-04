@@ -764,7 +764,47 @@ def build_commissioner_body(ctx):
     except Exception:
         history_panel = ""
 
-    return f'<div class="lh-wrap"><p class="lh-readonly" style="margin:0 0 12px;font-size:13px;color:var(--text-muted);">Read-only analytics for commissioners — nothing here changes the league.</p>{health_html}{history_panel}{roster_table}{trade_card}</div>'
+    invite_card = ""
+    try:
+        from utils.league_invite import league_invite_path
+        _inv = html.escape(league_invite_path(platform, season, league_id), quote=True)
+        invite_card = f"""
+<div class="card" id="lhLeagueInvite" style="margin-bottom:16px;">
+  <div class="card-header">
+    <h3>Invite your league to PRO</h3>
+  </div>
+  <div class="card-body" style="padding:16px 18px;">
+    <p style="margin:0 0 10px;font-size:13px;line-height:1.45;color:var(--text-muted);">
+      Share this link so teammates can claim League PRO on this league after a League plan is active.
+    </p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <input id="lhInvitePath" type="text" readonly value="{_inv}"
+        style="flex:1;min-width:180px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:13px;">
+      <button type="button" class="btn" id="lhInviteCopy">Copy invite link</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){{
+  var btn = document.getElementById('lhInviteCopy');
+  var inp = document.getElementById('lhInvitePath');
+  if (!btn || !inp) return;
+  btn.addEventListener('click', function(){{
+    var url = (window.location.origin || '') + inp.value;
+    if (navigator.clipboard && navigator.clipboard.writeText) {{
+      navigator.clipboard.writeText(url).then(function(){{ btn.textContent = 'Copied'; }});
+    }} else {{
+      inp.select();
+      document.execCommand('copy');
+      btn.textContent = 'Copied';
+    }}
+  }});
+}})();
+</script>"""
+    except Exception:
+        invite_card = ""
+
+    return f'<div class="lh-wrap"><p class="lh-readonly" style="margin:0 0 12px;font-size:13px;color:var(--text-muted);">Read-only analytics for commissioners. Nothing here changes the league.</p>{invite_card}{health_html}{history_panel}{roster_table}{trade_card}</div>'
 
 
 # /<...>/league_health and /<...>/commissioner are served by routes/league_pages_bp.py.

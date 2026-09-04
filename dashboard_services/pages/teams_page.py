@@ -86,8 +86,8 @@ def build_teams_body(ctx: dict) -> str:
     league_id = str(ctx.get("league_id") or "")
     current_season = _safe_int((ctx.get("league") or {}).get("season"), datetime.now().year)
     _is_redraft = bool(_league_is_redraft(ctx) or ctx_scoring_type(ctx) == "redraft")
-    # Redraft leagues (all ESPN) have no future draft capital — don't invent/show picks.
-    if _is_redraft:
+    # Redraft leagues and hosts without a pick feed do not invent future picks.
+    if _is_redraft or not ctx.get("draft_capital_available", True):
         picks_by_roster = {}
 
     # Projected draft slots for next year's picks, from projected final
@@ -643,8 +643,10 @@ def build_teams_body(ctx: dict) -> str:
             table_rows.append(main_row)
             table_rows.append(detail_row)
 
-        # Draft Capital row — dynasty only (redraft leagues have no future picks).
-        if not _is_redraft:
+        # Draft Capital row: dynasty/keeper hosts that publish picks only.
+        # ESPN/Yahoo have no pick feed; do not show a zeroed CAP row as if
+        # every team simply owns nothing.
+        if not _is_redraft and ctx.get("draft_capital_available", True):
             pick_val = team_pick_value.get(rid, 0.0)
             pick_z = team_pick_z.get(rid, 0.0)
             if pick_z_max > pick_z_min:

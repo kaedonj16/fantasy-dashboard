@@ -5,7 +5,7 @@ fall back to status-class duration bands from the waiver model.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 from utils.waiver_score import INJURY_DURATION_WEEKS
 
@@ -77,32 +77,32 @@ def injury_plan(
 
     if weeks is not None and weeks <= 1.0:
         verdict = "Monitor"
-        reason = "Listed return is soon (approx) — check inactive reports before lock."
+        reason = "Listed return is soon (approx). Check inactive reports before lock."
     elif weeks is not None and weeks <= 3.0:
         if val is not None and val >= _VALUE_HOLD:
             verdict = "Stash"
             reason = "Short absence (~%.0f wk approx) and enough roster value to hold." % weeks
         else:
             verdict = "Drop candidate"
-            reason = "Short absence but limited stash value — free the spot if you need it."
+            reason = "Short absence but limited stash value. Free the spot if you need it."
     elif weeks is not None and weeks <= 6.0:
         if has_open_ir_slot:
             verdict = "IR"
-            reason = "Multi-week absence (~%.0f wk approx) — use an IR slot if available." % weeks
+            reason = "Multi-week absence (~%.0f wk approx). Use an IR slot if available." % weeks
         elif val is not None and val >= _VALUE_STASH:
             verdict = "Stash"
-            reason = "Longer absence (~%.0f wk approx) but high value — stash if you can." % weeks
+            reason = "Longer absence (~%.0f wk approx) but high value. Stash if you can." % weeks
         else:
             verdict = "Drop candidate"
-            reason = "Longer absence (~%.0f wk approx) without IR room — lean drop unless deep bench." % weeks
+            reason = "Longer absence (~%.0f wk approx) without IR room. Lean drop unless deep bench." % weeks
     else:
         # IR / PUP / unknown long
         if has_open_ir_slot or (st and st.upper() in ("IR", "PUP", "NFI")):
             verdict = "IR"
-            reason = "Extended absence (approx) — IR if the league allows; otherwise stash only if elite."
+            reason = "Extended absence (approx). IR if the league allows; otherwise stash only if elite."
         elif val is not None and val >= _VALUE_STASH:
             verdict = "Stash"
-            reason = "Extended absence (approx) but elite value — hold through the window if possible."
+            reason = "Extended absence (approx) but elite value. Hold through the window if possible."
         else:
             verdict = "Drop candidate"
             reason = "Extended absence (approx) with limited stash value."
@@ -122,4 +122,22 @@ def injury_plan(
         "source": source,
         "approximate": True,
         "status": st or None,
+    }
+
+
+def ir_capacity(
+    roster_positions: Optional[Sequence] = None,
+    reserve_ids: Optional[Sequence] = None,
+) -> dict[str, Any]:
+    """How many IR slots the league has and whether one is open."""
+    from utils.lineup_slots import canonicalize_slots
+
+    slots = canonicalize_slots(roster_positions or [])
+    ir_slots = sum(1 for s in slots if s == "IR")
+    used = len([x for x in (reserve_ids or []) if x])
+    return {
+        "has_ir_slot": ir_slots > 0,
+        "ir_open": ir_slots > 0 and used < ir_slots,
+        "ir_slots": ir_slots,
+        "ir_used": used,
     }

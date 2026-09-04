@@ -41,7 +41,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     users = ctx["users"]
     roster_map = ctx["roster_map"]
     picks_by_roster = ctx.get("picks_by_roster", {})
-    if _league_is_redraft(ctx):
+    if _league_is_redraft(ctx) or not ctx.get("draft_capital_available", True):
         picks_by_roster = {}
     players_index = ctx["players_index"]
     players_map = ctx["players_map"]
@@ -313,6 +313,15 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
               <div class="os-stat-label">League Parity</div>
               <div class="os-stat-value">{_parity_word}</div>
               <div class="os-stat-sub">{_parity_sub}</div>
+            </div>"""
+    elif not ctx.get("draft_capital_available", True):
+        from utils.draft_capital import draft_capital_unavailable_copy
+        _cap_note = html.escape(draft_capital_unavailable_copy(platform))
+        capital_tile_html = f"""
+            <div class="os-stat-card">
+              <div class="os-stat-label">Draft Capital</div>
+              <div class="os-stat-value">n/a</div>
+              <div class="os-stat-sub">{_cap_note}</div>
             </div>"""
     else:
         capital_tile_html = f"""

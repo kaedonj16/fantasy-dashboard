@@ -458,7 +458,7 @@ def api_lineup_lock_hint():
                         pin.get("full_name") or pin.get("last_name") or "a bench player",
                         pout.get("full_name") or pout.get("last_name") or "a starter",
                     )
-                    message = f"Week {week} kicks off soon — {swap_line}."
+                    message = f"Week {week} kicks off soon. {swap_line}."
 
         return jsonify({
             "ok": True,

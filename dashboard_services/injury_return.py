@@ -238,3 +238,50 @@ def get_return_date(player_id: str) -> Optional[str]:
 def weeks_out_for_player(player_id: str, today: Optional[date] = None) -> Optional[float]:
     """ESPN-derived weeks remaining, or ``None`` when ESPN has no return date."""
     return weeks_until_return(get_return_date(player_id), today=today)
+
+
+def injury_roster_verdict(
+    *,
+    weeks_out: Optional[float] = None,
+    status: Optional[str] = None,
+    has_ir_slot: bool = False,
+    ir_open: bool = False,
+    player_value: Optional[float] = None,
+    weeks_left_in_season: Optional[int] = None,
+) -> dict:
+    """Approx stash / IR / drop / hold guidance. Never claims medical certainty.
+
+    Thin label map over ``injury_plan`` so roster chips and Start/Sit share
+    one kernel. ``weeks_left_in_season`` is accepted for callers but the
+    planner already treats a long window as IR / stash / drop.
+    """
+    del weeks_left_in_season  # reserved; duration bands already cover late-season
+    from utils.injury_plan import injury_plan
+
+    plan = injury_plan(
+        status=status,
+        espn_weeks=weeks_out,
+        player_value=player_value,
+        has_open_ir_slot=bool(has_ir_slot and ir_open),
+    )
+    if not plan:
+        return {
+            "verdict": "hold",
+            "label": "Hold",
+            "approx": True,
+            "reason": "No return window yet.",
+            "weeks_out": None,
+        }
+    mapped = {
+        "IR": ("ir", "Move to IR"),
+        "Stash": ("stash", "Stash"),
+        "Drop candidate": ("drop", "Consider drop"),
+        "Monitor": ("hold", "Hold"),
+    }.get(plan.get("verdict"), ("hold", "Hold"))
+    return {
+        "verdict": mapped[0],
+        "label": mapped[1],
+        "approx": True,
+        "reason": plan.get("reason") or "Approximate return guidance.",
+        "weeks_out": plan.get("weeks_out"),
+    }

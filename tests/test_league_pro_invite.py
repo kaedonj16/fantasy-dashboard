@@ -65,6 +65,23 @@ def test_pricing_success_html_includes_invite_panel():
     assert "/invite/" in text
 
 
+def test_commissioner_page_has_invite_copy():
+    from pathlib import Path
+    commish = (Path(__file__).resolve().parents[1] / "dashboard_services" / "pages" / "commissioner_page.py").read_text()
+    assert "lhLeagueInvite" in commish
+    assert "Copy invite link" in commish
+    assert "league_invite_path" in commish
+    assert "—" not in commish.split("Invite your league to PRO", 1)[-1][:400]
+
+
+def test_dashboard_shows_league_pro_welcome():
+    from pathlib import Path
+    app = (Path(__file__).resolve().parents[1] / "app.py").read_text()
+    assert 'league_pro") or "") == "1"' in app or "league_pro" in app
+    assert "leagueProWelcome" in app
+    assert "League PRO is on for this league." in app
+
+
 def test_paywall_nudges_non_pro_teammates():
     """R11.4 — league has PRO but viewer hasn't claimed access yet."""
     from pathlib import Path

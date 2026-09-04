@@ -1423,6 +1423,64 @@
         return { dollars: dollars, label: 'guidance' };
     }
 
+    // Custom board (pin / mute / neighbor re-anchor). Shared by the Cheat Sheet
+    // and Draft Room so a PRO board follows the manager into the live room.
+    function applyCustomBoardOverrides(list, overridesMap) {
+        overridesMap = overridesMap || {};
+        var custom = false;
+        for (var k in overridesMap) {
+            if (Object.prototype.hasOwnProperty.call(overridesMap, k)) {
+                custom = true;
+                break;
+            }
+        }
+        var byId = {};
+        (list || []).forEach(function (p, i) {
+            p._mr = i;
+            byId[p.id] = p;
+        });
+        (list || []).forEach(function (p) {
+            var o = custom ? overridesMap[p.id] : null;
+            if (o && o.p) {
+                p.bucket = -1;
+                p.moved = false;
+                p._eff = p._mr;
+            } else if (o && o.m) {
+                p.bucket = 1;
+                p.moved = false;
+                p._eff = p._mr;
+            } else if (o && o.r != null) {
+                p.bucket = 0;
+                p.moved = true;
+                p._eff = o.r;
+            } else {
+                p.bucket = 0;
+                p.moved = false;
+                p._eff = p._mr;
+            }
+        });
+        if (!custom) return list;
+        (list || []).filter(function (p) { return p.moved; })
+            .sort(function (a, b) {
+                var sa = (overridesMap[a.id] && overridesMap[a.id].s) || 0;
+                var sb = (overridesMap[b.id] && overridesMap[b.id].s) || 0;
+                return sa - sb;
+            })
+            .forEach(function (p) {
+                var o = overridesMap[p.id] || {};
+                var aP = o.a ? byId[o.a] : null;
+                var bP = o.b ? byId[o.b] : null;
+                if (aP && bP) p._eff = (aP._eff + bP._eff) / 2;
+                else if (aP) p._eff = aP._eff + 0.5;
+                else if (bP) p._eff = bP._eff - 0.5;
+            });
+        (list || []).sort(function (a, b) {
+            if (a.bucket !== b.bucket) return a.bucket - b.bucket;
+            return a._eff - b._eff || a._mr - b._mr;
+        });
+        return list;
+    }
+
     return {
         rosterCounts: rosterCounts, startersFor: startersFor,
         redraftVal: redraftVal, dynVal: dynVal, valOf: valOf, adpOf: adpOf,
@@ -1455,6 +1513,7 @@
         autoDraftNeedMultiplier: autoDraftNeedMultiplier,
         specialTeamsFillPos: specialTeamsFillPos,
         suggestAuctionBid: suggestAuctionBid,
+        applyCustomBoardOverrides: applyCustomBoardOverrides,
         ADP_REACH_CLUSTER: ADP_REACH_CLUSTER, ADP_REACH_SURVIVE: ADP_REACH_SURVIVE,
         adpUncertainty: adpUncertainty,
         isRemainingAdpBpa: isRemainingAdpBpa, bestRemainingAdp: bestRemainingAdp,

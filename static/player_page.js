@@ -179,7 +179,9 @@
         "<div class='pp-signin-platforms'>" +
           "<button type='button' class='pp-plat-btn' data-platform='sleeper'>Sleeper</button>" +
           "<button type='button' class='pp-plat-btn' data-platform='espn'>ESPN</button>" +
-          "<button type='button' class='pp-plat-btn pp-plat-soon' data-platform='yahoo' disabled>Yahoo <span class='pp-soon'>Soon</span></button>" +
+          "<button type='button' class='pp-plat-btn' data-platform='yahoo'>Yahoo</button>" +
+          "<button type='button' class='pp-plat-btn' data-platform='mfl'>MFL</button>" +
+          "<button type='button' class='pp-plat-btn' data-platform='fleaflicker'>Fleaflicker</button>" +
         "</div>" +
         "<div id='ppStep'></div>" +
         "<div class='pp-signin-err' id='ppSigninErr'></div>" +
@@ -314,6 +316,28 @@
           window.location.href = "/auth/yahoo?league_id=" + encodeURIComponent(lid) +
             "&team_name=" + encodeURIComponent((teamEl.value || "").trim()) +
             "&next=" + encodeURIComponent(next);
+        });
+      } else if (platform === "mfl" || platform === "fleaflicker") {
+        var hostLabel = platform === "mfl" ? "MFL" : "Fleaflicker";
+        var preview = platform === "mfl" ? "/api/link/mfl/preview" : "/api/link/fleaflicker/preview";
+        stepEl.innerHTML =
+          "<input class='pp-signin-input' id='ppLid' type='text' placeholder='" + hostLabel + " League ID' inputmode='numeric'>" +
+          "<input class='pp-signin-input' id='ppTeam' type='text' placeholder='Your team name (optional)'>" +
+          "<button type='button' class='otc-btn otc-btn-primary' id='ppGo' style='width:100%;'>View " + esc(name) + "</button>";
+        var lidEl = document.getElementById("ppLid");
+        var teamEl = document.getElementById("ppTeam");
+        var go = document.getElementById("ppGo");
+        lidEl.focus();
+        go.addEventListener("click", async function () {
+          var lid = (lidEl.value || "").trim();
+          if (!/^\d+$/.test(lid)) { errEl.textContent = "Enter a valid " + hostLabel + " League ID (numbers only)."; return; }
+          errEl.textContent = ""; go.disabled = true; go.textContent = "Loading…";
+          try {
+            var res = await fetch(preview + "?league_id=" + encodeURIComponent(lid) + "&season=" + encodeURIComponent(season));
+            var data = await res.json();
+            if (!res.ok || !data.ok) throw new Error(data.error || ("Could not load that " + hostLabel + " league."));
+            finishSignIn(platform, lid, (teamEl.value || "").trim(), (teamEl.value || "").trim());
+          } catch (e2) { errEl.textContent = e2.message || "Could not load league."; go.disabled = false; go.textContent = "View " + name; }
         });
       }
     }

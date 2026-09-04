@@ -247,7 +247,7 @@ function openPlayerModal(playerId, playerName, opts) {
         if (plan && plan.verdict) {
           const wk = plan.weeks_label || '';
           const src = plan.source === 'espn' ? 'ESPN approx' : 'approx';
-          const tip = String(plan.reason || 'Approximate return guidance — not medical advice.')
+          const tip = String(plan.reason || 'Approximate return guidance, not medical advice.')
             .replace(/"/g, '&quot;');
           badges += `<span class="player-badge player-badge-inj-q" title="${tip}"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> ${escapeHtml(plan.verdict)}${wk ? ' · ' + escapeHtml(wk) : ''} <span style="opacity:.7;font-weight:500;">(${escapeHtml(src)})</span></span>`;
         }

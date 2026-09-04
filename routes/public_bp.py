@@ -48,7 +48,8 @@ def _render(title: str, league_id: Optional[str], active: str, body: str,
     # Late import avoids circular dependency at module load time.
     from app import render_page
     return render_page(title, league_id, active, body, platform, season,
-                       description=description, canonical=canonical)
+                       description=description, canonical=canonical,
+                       lite_js=True)
 
 
 # ── Weekly-email unsubscribe (signed, no login) ───────────────────────────────

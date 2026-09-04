@@ -5258,7 +5258,10 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         return get_rosters(platform, resolved_league_id, season)
 
     def _get_traded():
-        return get_traded_picks(platform, resolved_league_id, season) if platform == "sleeper" else None
+        from utils.draft_capital import provider_exposes_draft_capital
+        if not provider_exposes_draft_capital(platform):
+            return None
+        return get_traded_picks(platform, resolved_league_id, season)
 
     def _get_drafts():
         try:
@@ -5426,14 +5429,16 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         standings_map = {}
 
     picks_by_roster = {}
-    # Future draft capital is a dynasty asset. Sleeper still exposes a pick
-    # grid for redraft/keeper leagues; synthesizing those rows makes trade
-    # suggestions offer picks that cannot actually be traded.
-    if platform == "sleeper" and not _league_is_redraft({
-        "platform": platform,
-        "league_settings": league_settings,
-        "league": league,
-    }):
+    # Future draft capital is a dynasty/keeper asset on hosts that publish
+    # pick ownership. ESPN and Yahoo have no pick feed; inventing own-picks
+    # would fake capital on those boards.
+    from utils.draft_capital import has_future_draft_capital
+    draft_capital_available = has_future_draft_capital(
+        platform,
+        league=league,
+        settings=league_settings,
+    )
+    if draft_capital_available:
         # Compute draft-ended locally to avoid circular cache dependency
         _draft_ts_ms = None
         if isinstance(latest_draft, dict):
@@ -5483,6 +5488,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         "activity_df": activity_df,
         "standings_map": standings_map,
         "picks_by_roster": picks_by_roster,
+        "draft_capital_available": draft_capital_available,
         "team_game_lookup": team_game_lookup,
         "model_value_table": model_value_table,
         "scoring_settings": scoring_settings,
@@ -6166,7 +6172,8 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     rosters = get_rosters(platform, resolved_league_id, viewed_season)
 
     traded = None
-    if platform == "sleeper":
+    from utils.draft_capital import provider_exposes_draft_capital, has_future_draft_capital
+    if provider_exposes_draft_capital(platform):
         try:
             traded = get_traded_picks(platform, resolved_league_id, viewed_season)
         except Exception:
@@ -6399,7 +6406,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
         # Rosters/traded already re-fetched from cleared cache in core section above.
         ctx["model_value_table"] = ctx.get("model_value_table") or list(get_model_value_table_cached() or [])
 
-        if platform == "sleeper" and not _league_is_redraft(ctx):
+        if has_future_draft_capital(platform, league=league, settings=(league or {}).get("settings")):
             try:
                 _teams_draft_ts = None
                 if isinstance(latest_draft, dict):
@@ -6417,10 +6424,12 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                     traded=traded,
                     draft_ended=_teams_draft_ended,
                 )
+                ctx["draft_capital_available"] = True
             except Exception as e:
                 logger.info(f"[refresh] teams picks refresh skipped: {e}")
-        elif _league_is_redraft(ctx):
+        else:
             ctx["picks_by_roster"] = {}
+            ctx["draft_capital_available"] = False
 
     # ---------- Trade page ----------
     if full or page == "trade":
@@ -6436,7 +6445,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     if (full or page == "dashboard") and offseason_mode:
         ctx["model_value_table"] = ctx.get("model_value_table") or list(get_model_value_table_cached() or [])
 
-        if platform == "sleeper" and not _league_is_redraft(ctx):
+        if has_future_draft_capital(platform, league=league, settings=(league or {}).get("settings")):
             try:
                 _ref_draft_ts = None
                 if isinstance(latest_draft, dict):
@@ -6454,10 +6463,12 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                     traded=traded,
                     draft_ended=_ref_draft_ended,
                 )
+                ctx["draft_capital_available"] = True
             except Exception as e:
                 logger.info(f"[refresh] picks refresh skipped: {e}")
-        elif _league_is_redraft(ctx):
+        else:
             ctx["picks_by_roster"] = {}
+            ctx["draft_capital_available"] = False
 
         # These aren't strictly required because build_offseason_dashboard_body can rebuild
         # from ctx, but keeping them fresh helps consistency if reused elsewhere.
@@ -8404,7 +8415,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
             _clickable_team_name(_lead["name"], _name_o2r(_lead), cls="st-tile-team"),
             f"{_lead['total']:.0f} pts &middot; {_lead['value_pct']:.1f}% of league", lead=True))
 
-    if team_rows and not is_redraft:
+    if team_rows and not is_redraft and ctx.get("draft_capital_available", True):
         def _firsts(rid):
             pk_list = picks_by_roster.get(rid, []) if isinstance(picks_by_roster, dict) else []
             return sum(1 for pk in pk_list if int(pk.get("round") or 0) == 1)
@@ -10070,6 +10081,18 @@ def page_dashboard(platform: str, season: int, league_id: str):
         ensure_weekly_bits(ctx)
         body = build_dashboard_body(ctx)
 
+    if str(request.args.get("league_pro") or "") == "1":
+        body = (
+            '<div class="os-card" id="leagueProWelcome" style="margin-bottom:16px;padding:14px 16px;">'
+            '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">'
+            '<div><strong>League PRO is on for this league.</strong>'
+            '<div style="margin-top:4px;font-size:13px;color:var(--text-muted);">'
+            'Teammates can claim access from the commissioner invite link on League Health.'
+            '</div></div>'
+            '<button type="button" class="btn" onclick="var el=document.getElementById(\'leagueProWelcome\');'
+            'if(el)el.remove();">Dismiss</button></div></div>'
+        ) + body
+
     return render_page("BR Fantasy Dashboard", league_id, "dashboard", body, platform, season)
 
 
@@ -10340,6 +10363,8 @@ def api_start_sit_options():
     lineup_requirements = _count_lineup_slots(roster_positions)
     if not lineup_requirements:
         lineup_requirements = ctx.get("lineup_requirements") or {}
+    from utils.injury_plan import ir_capacity as _ss_ir_once
+    _ss_ir_open = bool(_ss_ir_once(roster_positions, viewer_roster.get("reserve") or []).get("ir_open"))
 
     rows_by_id: dict = {}
     for row in model_value_table:
@@ -10594,7 +10619,7 @@ def api_start_sit_options():
                     status=injury_status,
                     espn_weeks=_ss_wo(pid),
                     player_value=_pval,
-                    has_open_ir_slot=False,
+                    has_open_ir_slot=_ss_ir_open,
                 )
             except Exception:
                 _return_plan = None
@@ -20274,6 +20299,12 @@ def api_team_details(roster_id: str):
 
         player_ids = roster.get("players") or []
         starters = roster.get("starters") or []
+        from utils.injury_plan import ir_capacity, injury_plan as _team_injury_plan
+        _ir_cap = ir_capacity(
+            (league or {}).get("roster_positions"),
+            roster.get("reserve") or [],
+        )
+        _ir_open = bool(_ir_cap.get("ir_open"))
 
         # Build roster with values
         roster_players = []
@@ -20330,6 +20361,18 @@ def api_team_details(roster_id: str):
             _raw_inj = str(_fp.get("injury_status") or "").strip()
             inj_status = "" if _raw_inj.lower() in ("", "active", "act") else _raw_inj
             inj_body = (_fp.get("injury_body_part") or "").strip() if inj_status else ""
+            _return_plan = None
+            if inj_status:
+                try:
+                    from dashboard_services.injury_return import weeks_out_for_player as _tm_wo
+                    _return_plan = _team_injury_plan(
+                        status=inj_status,
+                        espn_weeks=_tm_wo(pid_str),
+                        player_value=value or None,
+                        has_open_ir_slot=_ir_open,
+                    )
+                except Exception:
+                    _return_plan = None
 
             roster_players.append({
                 "player_id": pid_str,
@@ -20343,18 +20386,23 @@ def api_team_details(roster_id: str):
                 "is_starter": pid_str in starters,
                 "injury_status": inj_status,
                 "injury_body_part": inj_body,
+                "return_plan": _return_plan,
             })
 
         # Sort by position order (QB, RB, WR, TE, K, DEF), then by value within position
         pos_order = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
         roster_players.sort(key=lambda p: (pos_order.get(p["position"], 99), -(p["value"] or 0)))
 
-        # Get draft picks — redraft leagues (including all ESPN) have no future
-        # dynasty draft capital; inventing default own-picks would fake a dynasty
+        # Get draft picks. ESPN/Yahoo have no pick feed; redraft leagues have
+        # no future capital. Inventing default own-picks would fake a dynasty
         # portfolio on the modal.
         all_picks = []
         current_season = int(league.get("season") or season)
-        if not is_redraft:
+        from utils.draft_capital import has_future_draft_capital, draft_capital_unavailable_copy
+        _cap_ok = has_future_draft_capital(
+            platform, league=league, settings=(league or {}).get("settings"),
+        )
+        if not is_redraft and _cap_ok:
             traded_picks = get_traded_picks(platform, league_id, season)
             num_rounds = int((league.get("settings") or {}).get("draft_rounds", 4))
             _modal_draft_ended = has_draft_ended(league_id, platform, season)
@@ -20697,6 +20745,10 @@ def api_team_details(roster_id: str):
             "roster": roster_players,
             "picks": all_picks,
             "is_redraft": bool(is_redraft),
+            "draft_capital_available": bool((not is_redraft) and _cap_ok),
+            "draft_capital_note": (
+                "" if is_redraft or _cap_ok else draft_capital_unavailable_copy(platform)
+            ),
             "graphs": graphs_data,
             "trends_html": trends_html,
         }
