@@ -10,8 +10,11 @@ only the returned token is retained (encrypted by the accounts layer).
 from __future__ import annotations
 
 import logging
+import threading
 import time
+from datetime import date, datetime, timedelta
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from .base import (
     BRACKET, DRAFTS, DRAFT_RESULTS, FUTURE_PICKS, HISTORY, LEAGUE, MATCHUPS,
@@ -36,10 +39,28 @@ _HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
     "Referer": "https://www.fleaflicker.com/",
 }
-# Endpoints whose OpenAPI signatures do not take ``season``.
-_NO_SEASON = frozenset({"FetchLeagueRules"})
+# Endpoints whose OpenAPI signatures do not take ``season``. Passing one
+# returns HTML 400, which we used to surface as a generic outage — and
+# ``get_transactions_by_week`` then printed that error 18 times.
+_NO_SEASON = frozenset({
+    "FetchLeagueRules",
+    "FetchLeagueTransactions",
+    "FetchTrades",
+    "FetchTeamPicks",
+    "FetchLeagueActivity",
+    "FetchLeagueBoxscore",
+})
 _CACHE: dict[tuple, tuple[float, dict]] = {}
 _FAIL_CACHE: dict[tuple, tuple[float, Exception]] = {}
+_KEY_LOCKS: dict[tuple, threading.Lock] = {}
+_KEY_LOCKS_GUARD = threading.Lock()
+_KEY_LOCKS_MAX = 256
+_TX_PAGE_CAP = 25
+_TRADE_PAGE_CAP = 15
+_TX_BY_WEEK: dict[tuple, tuple[float, dict]] = {}
+_TX_BY_WEEK_TTL = 300
+_TX_BY_WEEK_MAX = 64
+_ET = ZoneInfo("America/New_York")
 
 # players_index uses ``pos``; a few overlays still use ``position``.
 _SKILL_POS = frozenset({"QB", "RB", "WR", "TE", "K", "DEF", "DST", "PK"})
@@ -101,6 +122,54 @@ _FLEA_STAT_BY_NAME = {
     "receiving first down": "rec_fd",
     "fumble": "fum_lost",
 }
+
+
+def _lock_for(key: tuple) -> threading.Lock:
+    """Serialize identical in-flight Fleaflicker GETs (18 weeks used to stampede)."""
+    with _KEY_LOCKS_GUARD:
+        lock = _KEY_LOCKS.get(key)
+        if lock is None:
+            if len(_KEY_LOCKS) >= _KEY_LOCKS_MAX:
+                _KEY_LOCKS.clear()
+            lock = threading.Lock()
+            _KEY_LOCKS[key] = lock
+        return lock
+
+
+def _fantasy_week_from_ms(ts_ms: Optional[int], season: int) -> Optional[int]:
+    """Map an epoch-milli timestamp onto NFL regular-season week 1-18.
+
+    Fantasy weeks start the Tuesday after Labor Day (first Monday in September).
+    Activity from the two months before week 1 lands in week 1 so waiver/FA
+    adds still show on the activity page. Older seasons return None.
+    """
+    if not ts_ms:
+        return None
+    try:
+        when = datetime.fromtimestamp(ts_ms / 1000.0, tz=_ET).date()
+        year = int(season)
+    except (OSError, OverflowError, TypeError, ValueError):
+        return None
+    sep1 = date(year, 9, 1)
+    labor = sep1 + timedelta(days=(0 - sep1.weekday()) % 7)
+    week1_tue = labor + timedelta(days=1)
+    delta = (when - week1_tue).days
+    if delta < -90:
+        return None
+    if delta < 0:
+        return 1
+    week = delta // 7 + 1
+    if week > 22:
+        return None
+    return min(18, week)
+
+
+def _activity_tx_kind(tx: dict) -> str:
+    """Protobuf omits the default ``TRANSACTION_ADD`` from JSON."""
+    kind = str(_get(tx or {}, "type", "transactionType", "transaction_type") or "").upper()
+    if kind:
+        return kind
+    return "TRANSACTION_ADD" if tx else ""
 
 
 def _index_pos(info: dict) -> str:
@@ -607,52 +676,59 @@ class FleaflickerProvider(ProviderAdapter):
         failed = _FAIL_CACHE.get(key)
         if failed and time.monotonic() - failed[0] < ttl:
             raise failed[1]
-        query = {"sport": SPORT, "league_id": int(league_id), **params}
-        if include_season:
-            query["season"] = int(season)
-        headers = dict(_HEADERS)
-        if auth:
-            headers["Authorization"] = auth
-        try:
-            response = _request_get(
-                f"{BASE_URL}/{method}", params=query, timeout=TIMEOUT, headers=headers,
-            )
-            if response.status_code >= 400:
-                _classify_http_error(response, method, league_id)
-            if _response_looks_like_html(response):
+        with _lock_for(key):
+            cached = _CACHE.get(key)
+            if cached and time.monotonic() - cached[0] < ttl:
+                return cached[1]
+            failed = _FAIL_CACHE.get(key)
+            if failed and time.monotonic() - failed[0] < ttl:
+                raise failed[1]
+            query = {"sport": SPORT, "league_id": int(league_id), **params}
+            if include_season:
+                query["season"] = int(season)
+            headers = dict(_HEADERS)
+            if auth:
+                headers["Authorization"] = auth
+            try:
+                response = _request_get(
+                    f"{BASE_URL}/{method}", params=query, timeout=TIMEOUT, headers=headers,
+                )
+                if response.status_code >= 400:
+                    _classify_http_error(response, method, league_id)
+                if _response_looks_like_html(response):
+                    logger.warning(
+                        "Fleaflicker non-JSON body method=%s league=%s status=%s",
+                        method, league_id, response.status_code,
+                    )
+                    raise ProviderUnavailableError("Fleaflicker returned an invalid response.")
+                payload = response.json()
+            except (ProviderAuthenticationError, LeagueNotFoundError, ProviderUnavailableError) as exc:
+                _FAIL_CACHE[key] = (time.monotonic(), exc)
+                raise
+            except ValueError as exc:
                 logger.warning(
-                    "Fleaflicker non-JSON body method=%s league=%s status=%s",
-                    method, league_id, response.status_code,
+                    "Fleaflicker call failed method=%s league=%s error=%s",
+                    method, league_id, type(exc).__name__,
+                )
+                raise ProviderUnavailableError("Fleaflicker returned an invalid response.") from exc
+            if not isinstance(payload, dict):
+                raise ProviderUnavailableError("Fleaflicker returned an invalid response.")
+            error = payload.get("error")
+            if error:
+                message = str(error.get("message") if isinstance(error, dict) else error).lower()
+                if any(x in message for x in ("private", "auth", "login", "permission", "forbidden")):
+                    raise ProviderAuthenticationError(
+                        "This Fleaflicker league is private or requires authentication."
+                    )
+                if "not found" in message:
+                    raise LeagueNotFoundError("No Fleaflicker league was found for that ID and season.")
+                logger.warning(
+                    "Fleaflicker API error method=%s league=%s message=%s",
+                    method, league_id, message[:120],
                 )
                 raise ProviderUnavailableError("Fleaflicker returned an invalid response.")
-            payload = response.json()
-        except (ProviderAuthenticationError, LeagueNotFoundError, ProviderUnavailableError) as exc:
-            _FAIL_CACHE[key] = (time.monotonic(), exc)
-            raise
-        except ValueError as exc:
-            logger.warning(
-                "Fleaflicker call failed method=%s league=%s error=%s",
-                method, league_id, type(exc).__name__,
-            )
-            raise ProviderUnavailableError("Fleaflicker returned an invalid response.") from exc
-        if not isinstance(payload, dict):
-            raise ProviderUnavailableError("Fleaflicker returned an invalid response.")
-        error = payload.get("error")
-        if error:
-            message = str(error.get("message") if isinstance(error, dict) else error).lower()
-            if any(x in message for x in ("private", "auth", "login", "permission", "forbidden")):
-                raise ProviderAuthenticationError(
-                    "This Fleaflicker league is private or requires authentication."
-                )
-            if "not found" in message:
-                raise LeagueNotFoundError("No Fleaflicker league was found for that ID and season.")
-            logger.warning(
-                "Fleaflicker API error method=%s league=%s message=%s",
-                method, league_id, message[:120],
-            )
-            raise ProviderUnavailableError("Fleaflicker returned an invalid response.")
-        _CACHE[key] = (time.monotonic(), payload)
-        return payload
+            _CACHE[key] = (time.monotonic(), payload)
+            return payload
 
     def connect_league(self, league_id: str, season: int, *, token: Optional[str] = None) -> dict:
         """Validate access and return a minimal league summary for connect flows."""
@@ -993,21 +1069,281 @@ class FleaflickerProvider(ProviderAdapter):
         return out
 
     def get_transactions(self, league_id, season, week, *, token: Optional[str] = None):
-        raw = self._call("FetchLeagueTransactions", league_id, season, ttl=300, token=token)
-        out = []
-        for i, tx in enumerate(raw.get("transactions") or raw.get("items") or []):
-            kind = str(_get(tx, "type", "transactionType", "transaction_type") or "").upper()
-            normalized = "trade" if "TRADE" in kind else (
-                "waiver" if "WAIVER" in kind else "free_agent"
+        """Return this week's adds/claims/drops/trades.
+
+        ``FetchLeagueTransactions`` has no season or scoring_period. The old
+        path sent ``season`` (HTML 400) and ignored ``week``, so
+        ``get_transactions_by_week`` fired 18 identical failing requests.
+        Fetch once, paginate, and bucket by fantasy week.
+        """
+        try:
+            want = int(week)
+        except (TypeError, ValueError):
+            want = 1
+        by_week = self._transactions_by_week(league_id, season, token=token)
+        return list(by_week.get(want) or [])
+
+    def _paginate_items(
+        self, method: str, league_id, season, *, token: Optional[str] = None,
+        list_keys: tuple[str, ...] = ("items",), max_pages: int = _TX_PAGE_CAP,
+        extra: Optional[dict] = None,
+    ) -> list:
+        items: list = []
+        offset = None
+        params = dict(extra or {})
+        for _ in range(max(1, int(max_pages))):
+            page_params = dict(params)
+            if offset is not None:
+                page_params["result_offset"] = int(offset)
+            raw = self._call(
+                method, league_id, season, ttl=300, token=token, **page_params,
             )
-            out.append({
-                "transaction_id": str(_get(tx, "id") or f"flea-{season}-{i}"),
-                "type": normalized, "status": "complete",
-                "created": _int(_get(tx, "timestamp", "timeEpochMilli", "time_epoch_milli")),
-                "roster_ids": [], "adds": {}, "drops": {}, "draft_picks": [],
-                "metadata": {"provider_type": kind},
-            })
+            chunk = []
+            for key in list_keys:
+                found = raw.get(key) if isinstance(raw, dict) else None
+                if isinstance(found, list) and found:
+                    chunk = found
+                    break
+            if not chunk:
+                break
+            items.extend(chunk)
+            nxt = _get(raw, "resultOffsetNext", "result_offset_next")
+            if nxt is None:
+                break
+            try:
+                nxt_i = int(nxt)
+            except (TypeError, ValueError):
+                break
+            if offset is not None and nxt_i == int(offset):
+                break
+            offset = nxt_i
+        return items
+
+    def _tx_canonical_player(self, blob, xwalk: dict, by_name: dict) -> Optional[str]:
+        if not isinstance(blob, dict):
+            return None
+        pro = blob.get("proPlayer") or blob.get("pro_player") or blob
+        if not isinstance(pro, dict) or _get(pro, "id") is None:
+            return None
+        cid = self._canonical_lookup(pro, xwalk, by_name)
+        if cid:
+            return cid
+        return str(_get(pro, "id"))
+
+    def _transactions_by_week(
+        self, league_id, season, *, token: Optional[str] = None,
+    ) -> dict[int, list]:
+        auth = resolve_credentials(str(league_id), season, token=token) or ""
+        cache_key = (str(league_id), int(season), auth)
+        hit = _TX_BY_WEEK.get(cache_key)
+        if hit and time.monotonic() - hit[0] < _TX_BY_WEEK_TTL:
+            return hit[1]
+        with _lock_for(("tx-by-week",) + cache_key):
+            hit = _TX_BY_WEEK.get(cache_key)
+            if hit and time.monotonic() - hit[0] < _TX_BY_WEEK_TTL:
+                return hit[1]
+            assembled = self._assemble_transactions_by_week(
+                league_id, season, token=token,
+            )
+            if len(_TX_BY_WEEK) >= _TX_BY_WEEK_MAX:
+                _TX_BY_WEEK.clear()
+            _TX_BY_WEEK[cache_key] = (time.monotonic(), assembled)
+            return assembled
+
+    def _assemble_transactions_by_week(
+        self, league_id, season, *, token: Optional[str] = None,
+    ) -> dict[int, list]:
+        xwalk = {}
+        try:
+            xwalk = self._canonical_map(league_id, season, token=token)
+        except Exception:
+            logger.debug("Fleaflicker transaction crosswalk unavailable", exc_info=True)
+        by_name = self._build_name_index()
+        by_week: dict[int, list] = {}
+        seen: set[str] = set()
+
+        items = self._paginate_items(
+            "FetchLeagueTransactions", league_id, season, token=token,
+            list_keys=("items", "transactions"), max_pages=_TX_PAGE_CAP,
+        )
+        for item in items:
+            row = self._normalize_activity_transaction(item, season, xwalk, by_name)
+            if not row:
+                continue
+            tid = str(row.get("transaction_id") or "")
+            if tid and tid in seen:
+                continue
+            if tid:
+                seen.add(tid)
+            by_week.setdefault(int(row["leg"]), []).append(row)
+
+        try:
+            for row in self._completed_trades(
+                league_id, season, token=token, xwalk=xwalk, by_name=by_name,
+            ):
+                tid = str(row.get("transaction_id") or "")
+                if tid and tid in seen:
+                    continue
+                if tid:
+                    seen.add(tid)
+                by_week.setdefault(int(row["leg"]), []).append(row)
+        except Exception:
+            logger.debug("Fleaflicker completed trades unavailable", exc_info=True)
+        return by_week
+
+    def _normalize_activity_transaction(
+        self, item, season, xwalk: dict, by_name: dict,
+    ) -> Optional[dict]:
+        if not isinstance(item, dict):
+            return None
+        tx = item.get("transaction") or {}
+        if not isinstance(tx, dict) or not tx:
+            return None
+        kind = _activity_tx_kind(tx)
+        if kind in {"TRANSACTION_DRAFT", "TRANSACTION_IMPORT"} or "TRADE" in kind:
+            return None
+        ts = _epoch_ms(
+            _get(item, "timeEpochMilli", "time_epoch_milli", "timestamp")
+        ) or _epoch_ms(_get(tx, "timestamp", "timeEpochMilli", "time_epoch_milli"))
+        week = _fantasy_week_from_ms(ts, season)
+        if week is None:
+            return None
+        team = tx.get("team") or {}
+        team_id = _int(_get(team, "id")) if isinstance(team, dict) else 0
+        cid = self._tx_canonical_player(tx.get("player") or {}, xwalk, by_name)
+        adds: dict[str, int] = {}
+        drops: dict[str, int] = {}
+        if cid and team_id:
+            if "DROP" in kind:
+                drops[cid] = team_id
+            else:
+                adds[cid] = team_id
+        if not adds and not drops:
+            return None
+        normalized = "waiver" if ("CLAIM" in kind or "WAIVER" in kind) else "free_agent"
+        return {
+            "transaction_id": str(
+                _get(tx, "id") or f"flea-{season}-{ts}-{team_id}-{cid}"
+            ),
+            "type": normalized,
+            "status": "complete",
+            "created": ts or 0,
+            "roster_ids": [team_id] if team_id else [],
+            "adds": adds,
+            "drops": drops,
+            "draft_picks": [],
+            "leg": week,
+            "metadata": {"provider_type": kind},
+        }
+
+    def _completed_trades(
+        self, league_id, season, *, token, xwalk: dict, by_name: dict,
+    ) -> list[dict]:
+        out: list[dict] = []
+        offset = None
+        for _ in range(_TRADE_PAGE_CAP):
+            params: dict[str, Any] = {"filter": "TRADES_COMPLETED"}
+            if offset is not None:
+                params["result_offset"] = int(offset)
+            raw = self._call(
+                "FetchTrades", league_id, season, ttl=300, token=token, **params,
+            )
+            page = raw.get("trades") if isinstance(raw, dict) else None
+            if not isinstance(page, list) or not page:
+                break
+            hit_older = False
+            for trade in page:
+                row = self._normalize_completed_trade(trade, season, xwalk, by_name)
+                if row:
+                    out.append(row)
+                    continue
+                ts = _epoch_ms(_get(
+                    trade if isinstance(trade, dict) else {},
+                    "approvedOn", "approved_on", "proposedOn", "proposed_on",
+                ))
+                if ts and _fantasy_week_from_ms(ts, season) is None:
+                    hit_older = True
+            if hit_older:
+                break
+            nxt = _get(raw, "resultOffsetNext", "result_offset_next")
+            if nxt is None:
+                break
+            try:
+                nxt_i = int(nxt)
+            except (TypeError, ValueError):
+                break
+            if offset is not None and nxt_i == int(offset):
+                break
+            offset = nxt_i
         return out
+
+    def _normalize_completed_trade(
+        self, trade, season, xwalk: dict, by_name: dict,
+    ) -> Optional[dict]:
+        if not isinstance(trade, dict):
+            return None
+        status = str(_get(trade, "status") or "").upper()
+        if any(x in status for x in ("VETO", "REJECT", "CANCEL", "OPEN", "REVIEW", "PROPOSE")):
+            return None
+        ts = _epoch_ms(_get(
+            trade, "approvedOn", "approved_on",
+            "tentativeExecutionTime", "tentative_execution_time",
+            "proposedOn", "proposed_on",
+        ))
+        week = _fantasy_week_from_ms(ts, season)
+        if week is None:
+            return None
+        adds: dict[str, int] = {}
+        roster_ids: list[int] = []
+        draft_picks: list[dict] = []
+        for side in trade.get("teams") or []:
+            if not isinstance(side, dict):
+                continue
+            team = side.get("team") or {}
+            team_id = _int(_get(team, "id")) if isinstance(team, dict) else 0
+            if not team_id:
+                continue
+            roster_ids.append(team_id)
+            for player in side.get("playersObtained") or side.get("players_obtained") or []:
+                cid = self._tx_canonical_player(player, xwalk, by_name)
+                if cid:
+                    adds[cid] = team_id
+            for pick in side.get("picksObtained") or side.get("picks_obtained") or []:
+                if not isinstance(pick, dict):
+                    continue
+                slot = pick.get("slot") or {}
+                rnd = _int(_get(slot, "round") if isinstance(slot, dict) else None) or _int(
+                    _get(pick, "round")
+                )
+                orig = pick.get("originalOwner") or pick.get("original_owner") or {}
+                orig_id = _int(_get(orig, "id")) if isinstance(orig, dict) else 0
+                draft_picks.append({
+                    "season": str(_get(pick, "season", "year") or season),
+                    "round": rnd,
+                    "roster_id": orig_id or team_id,
+                    "owner_id": team_id,
+                    "previous_owner_id": orig_id or None,
+                })
+        drops: dict[str, int] = {}
+        if len(roster_ids) == 2:
+            a, b = roster_ids[0], roster_ids[1]
+            for pid, to in adds.items():
+                drops[pid] = b if int(to) == int(a) else a
+        if not adds and not draft_picks:
+            return None
+        trade_id = _get(trade, "id", "tradeId", "trade_id")
+        return {
+            "transaction_id": str(trade_id or f"flea-trade-{season}-{ts}"),
+            "type": "trade",
+            "status": "complete",
+            "created": ts or 0,
+            "roster_ids": roster_ids,
+            "adds": adds,
+            "drops": drops,
+            "draft_picks": draft_picks,
+            "leg": week,
+            "metadata": {"provider_type": "TRADE"},
+        }
 
     def get_drafts(self, league_id, season, *, token: Optional[str] = None):
         standings = self._call(

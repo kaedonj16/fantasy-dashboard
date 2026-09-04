@@ -57,6 +57,11 @@ standings, rules, rosters, scoreboard, transactions, draft board, and team
 future picks, normalized to the Sleeper-shaped dictionaries used elsewhere.
 Playoff brackets are not claimed.
 
+Do not send `season` to OpenAPI methods that omit it (`FetchLeagueRules`,
+`FetchLeagueTransactions`, `FetchTrades`, `FetchTeamPicks`, `FetchLeagueBoxscore`,
+`FetchLeagueActivity`). Fleaflicker returns HTML 400, which used to look like a
+generic outage and made `get_transactions_by_week` fail all 18 weeks.
+
 ## ESPN live draft (Draft Room companion)
 
 ESPN leagues can open Draft Room as an observe-only companion while the actual
