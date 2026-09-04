@@ -430,7 +430,7 @@ def _pricing_body() -> str:
                 if league_id_meta:
                     season = int(meta.get("season") or _dt.now().year)
                     platform = meta.get("platform") or "sleeper"
-                    return_to = f"/{platform}/{season}/{league_id_meta}/dashboard?new_subscriber=1"
+                    return_to = f"/{platform}/{season}/{league_id_meta}/dashboard?new_subscriber=1&welcome=personal"
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
 
@@ -539,12 +539,27 @@ def _pricing_body() -> str:
         window.location.href = returnTo || '/pricing';
       }}
 
-      function finishActive(msg) {{
+      function finishActive(msg, leaguePlan) {{
         document.getElementById('sub-spinner').style.display = 'none';
         document.getElementById('sub-msg').textContent = msg;
         var btn = document.getElementById('sub-return');
         var showedInvite = showInvitePanel();
         if (btn) btn.style.display = 'inline-block';
+        // League buyers already got the invite moment here — tag the dashboard
+        // welcome as the feature CTA (no second invite), and suppress the
+        // floating invite banner on arrival.
+        if (leaguePlan) {{
+          try {{ sessionStorage.setItem('br_skip_league_pro_banner', '1'); }} catch (e) {{}}
+          try {{
+            if (returnTo) {{
+              var u = new URL(returnTo, window.location.origin);
+              u.searchParams.set('new_subscriber', '1');
+              u.searchParams.set('welcome', 'league');
+              returnTo = u.pathname + u.search;
+              if (btn) btn.setAttribute('href', returnTo);
+            }}
+          }} catch (e) {{}}
+        }}
         if (!showedInvite) setTimeout(redirect, 800);
       }}
 
@@ -557,13 +572,13 @@ def _pricing_body() -> str:
               var leaguePlan = !!(d.has_league_subscription);
               finishActive(leaguePlan
                 ? 'PRO is active for your league.'
-                : 'Premium is active - taking you there now!');
+                : 'Premium is active - taking you there now!', leaguePlan);
               if (!leaguePlan) setTimeout(redirect, 800);
             }} else if (attempts < maxAttempts) {{
               setTimeout(activate, 1000);
             }} else {{
               // Grant may be on its way via webhook - show continue anyway
-              finishActive('Access granted! If features take a moment to appear, try refreshing.');
+              finishActive('Access granted! If features take a moment to appear, try refreshing.', !!leagueId);
               if (!leagueId) setTimeout(redirect, 2000);
             }}
           }})
@@ -869,7 +884,7 @@ def resume_pro_checkout():
             return redirect("/pricing?canceled=1")
 
     return_url = (
-        f"/{platform}/{season}/{urllib.parse.quote(league_id, safe='')}/dashboard?new_subscriber=1"
+        f"/{platform}/{season}/{urllib.parse.quote(league_id, safe='')}/dashboard?new_subscriber=1&welcome=personal"
         if league_id else "/pricing?success=1"
     )
     payload = {

@@ -17997,27 +17997,65 @@ window.brUiPrefs = (function () {
 })();
 
 // ── New Subscriber Welcome ────────────────────────────────────────────────────
+// Variants: personal (default), league (buyer after checkout invite), claim (teammate).
 window.showSubWelcome = function (opts) {
   'use strict';
   opts = opts || {};
   if (document.getElementById('subWelcomeTour')) return;
 
+  var variant = opts.variant || 'personal';
+  if (variant !== 'league' && variant !== 'claim') variant = 'personal';
+
   window.__brWelcomeActive = true;
   if (!opts.replay) {
     window.brUiPrefs.markSubWelcomeDone();
-    window.brTrack('sub_welcome_show', {});
+    window.brTrack('sub_welcome_show', { variant: variant });
   }
+
+  // Suppress floating league-PRO banners that would duplicate this moment.
+  try {
+    if (variant === 'league' || variant === 'claim') {
+      sessionStorage.setItem('br_skip_league_pro_banner', '1');
+    }
+  } catch (e) {}
 
   var parts = window.location.pathname.split('/').filter(Boolean);
   var hasLeague = parts.length >= 3;
   var base = hasLeague ? '/' + parts.slice(0, 3).join('/') : '';
-  var primaryHref = base + '/trade-intel';
+
+  var copy = {
+    personal: {
+      eyebrow: 'PRO',
+      title: 'Welcome to PRO',
+      lead: 'Start with Trade Suggestions — archetype packages with playoff-odds impact — or take a short PRO tour.',
+      primaryLabel: 'Open Trade Suggestions →',
+      primaryHref: base + '/trade?tab=suggestions',
+      primaryCta: 'trade-suggestions',
+    },
+    league: {
+      eyebrow: 'League PRO',
+      title: 'PRO is on for your league',
+      lead: 'Managers can join from the invite you just got. Here are the tools worth opening first.',
+      primaryLabel: 'Open Trade Suggestions →',
+      primaryHref: base + '/trade?tab=suggestions',
+      primaryCta: 'trade-suggestions',
+    },
+    claim: {
+      eyebrow: 'League PRO',
+      title: 'League PRO unlocked',
+      lead: 'A league mate shared PRO with you. Start with Trade Suggestions, or take a short PRO tour.',
+      primaryLabel: 'Open Trade Suggestions →',
+      primaryHref: base + '/trade?tab=suggestions',
+      primaryCta: 'trade-suggestions',
+    },
+  }[variant];
 
   var features = [
-    { label: 'Trade Intelligence', desc: 'Market values, momentum, and real trade frequency', href: base + '/trade-intel' },
-    { label: 'Breakout Engine', desc: 'Opportunity projections and breakout candidate rankings', href: base + '/breakouts' },
-    { label: 'AI Insights', desc: 'Front office briefings personalized to your roster', href: base + '/dashboard' },
-    { label: 'Roster Grades', desc: 'Letter grades, archetypes, and portfolio value trends', href: base + '/teams' },
+    { label: 'Trade Suggestions', desc: 'Archetype packages with playoff-odds impact', href: base + '/trade?tab=suggestions' },
+    { label: 'Playoff Impact', desc: 'Simulate how a deal shifts your odds before you send it', href: base + '/trade' },
+    { label: 'Front Office Report', desc: 'AI roster briefing personalized to your team', href: base + '/dashboard' },
+    { label: 'Trade Intel', desc: 'Market values, momentum, and real trade frequency', href: base + '/trade-intel' },
+    { label: 'Breakout Engine', desc: 'Opportunity projections and breakout candidates', href: base + '/breakouts' },
   ];
 
   var overlay = document.createElement('div');
@@ -18026,11 +18064,11 @@ window.showSubWelcome = function (opts) {
   overlay.innerHTML =
     '<div class="sub-welcome-card" role="dialog" aria-modal="true" aria-labelledby="subWelcomeTitle">' +
       '<div class="sub-welcome-hero">' +
-        '<p class="sub-welcome-eyebrow">Premium</p>' +
-        '<h2 id="subWelcomeTitle" class="sub-welcome-title">Welcome to Premium</h2>' +
-        '<p class="sub-welcome-lead">Start with Trade Intel for your roster — or take a short tour of the hub.</p>' +
+        '<p class="sub-welcome-eyebrow">' + copy.eyebrow + '</p>' +
+        '<h2 id="subWelcomeTitle" class="sub-welcome-title">' + copy.title + '</h2>' +
+        '<p class="sub-welcome-lead">' + copy.lead + '</p>' +
       '</div>' +
-      '<a class="sub-welcome-primary" href="' + primaryHref + '" data-welcome-cta="trade-intel">See Trade Intel for your roster →</a>' +
+      '<a class="sub-welcome-primary" href="' + copy.primaryHref + '" data-welcome-cta="' + copy.primaryCta + '">' + copy.primaryLabel + '</a>' +
       '<div class="sub-welcome-features">' +
         features.map(function (f) {
           return '<a class="sub-welcome-feature" href="' + f.href + '" data-welcome-cta="' + f.label + '">' +
@@ -18042,7 +18080,7 @@ window.showSubWelcome = function (opts) {
       '</div>' +
       '<div class="sub-welcome-actions">' +
         (hasLeague
-          ? '<button type="button" class="sub-welcome-secondary" data-welcome-tour>Take a quick tour</button>'
+          ? '<button type="button" class="sub-welcome-secondary" data-welcome-tour>Take a PRO tour</button>'
           : '') +
         '<button type="button" class="sub-welcome-dismiss" data-welcome-dismiss>Let\'s go</button>' +
       '</div>' +
@@ -18055,25 +18093,28 @@ window.showSubWelcome = function (opts) {
 
   overlay.addEventListener('click', function (e) {
     if (e.target === overlay) {
-      window.brTrack('sub_welcome_dismiss', { via: 'overlay' });
+      window.brTrack('sub_welcome_dismiss', { via: 'overlay', variant: variant });
       closeWelcome();
     }
   });
   overlay.querySelector('[data-welcome-dismiss]').addEventListener('click', function () {
-    window.brTrack('sub_welcome_dismiss', { via: 'button' });
+    window.brTrack('sub_welcome_dismiss', { via: 'button', variant: variant });
     closeWelcome();
   });
   var tourBtn = overlay.querySelector('[data-welcome-tour]');
   if (tourBtn) {
     tourBtn.addEventListener('click', function () {
-      window.brTrack('sub_welcome_start_tour', {});
+      window.brTrack('sub_welcome_start_tour', { variant: variant });
       closeWelcome();
-      if (typeof window.startSiteTour === 'function') window.startSiteTour();
+      if (typeof window.startSiteTour === 'function') window.startSiteTour({ mode: 'pro' });
     });
   }
   overlay.querySelectorAll('[data-welcome-cta]').forEach(function (a) {
     a.addEventListener('click', function () {
-      window.brTrack('sub_welcome_cta', { target: a.getAttribute('data-welcome-cta') || '' });
+      window.brTrack('sub_welcome_cta', {
+        target: a.getAttribute('data-welcome-cta') || '',
+        variant: variant,
+      });
     });
   });
 
@@ -18085,19 +18126,25 @@ window.showSubWelcome = function (opts) {
   var params = new URLSearchParams(window.location.search);
   if (params.get('new_subscriber') !== '1') return;
 
+  var variant = params.get('welcome') || 'personal';
+  if (variant !== 'league' && variant !== 'claim') variant = 'personal';
+
   // Synchronous gate so the site tour cannot auto-start while welcome is pending.
   window.__brWelcomePending = true;
 
   // Clean URL so refresh does not re-trigger.
-  var cleaned = window.location.search.replace(/[?&]new_subscriber=1/, '').replace(/^\?$/, '');
-  history.replaceState(null, '', window.location.pathname + cleaned);
+  var cleanedParams = new URLSearchParams(window.location.search);
+  cleanedParams.delete('new_subscriber');
+  cleanedParams.delete('welcome');
+  var cleaned = cleanedParams.toString();
+  history.replaceState(null, '', window.location.pathname + (cleaned ? '?' + cleaned : ''));
 
   function maybeShow() {
     if (window.brUiPrefs.isSubWelcomeDone()) {
       window.__brWelcomePending = false;
       return;
     }
-    window.showSubWelcome({});
+    window.showSubWelcome({ variant: variant });
   }
 
   if (window._hasAccount) {
@@ -18207,7 +18254,7 @@ window.showSubWelcome = function (opts) {
     {
       page: 'dashboard', selector: null,
       title: "You're all set",
-      body: 'Explore from here. Replay this tour or the Premium welcome anytime from the settings gear.',
+      body: 'Explore from here. Replay this tour or the PRO welcome anytime from the settings gear.',
     },
   ];
 
@@ -18251,7 +18298,74 @@ window.showSubWelcome = function (opts) {
     },
   ];
 
+  var PRO_DESKTOP_STEPS = [
+    {
+      page: 'dashboard', selector: null,
+      title: 'Welcome to PRO',
+      body: 'A short tour of the PRO tools that matter most. Use arrow keys to navigate, or Esc to exit.',
+    },
+    Object.assign({
+      page: 'dashboard', selector: '#tradesNavDropdown',
+      title: 'Trade Suggestions',
+      body: 'Open Trades → Suggestions for archetype packages with playoff-odds impact. Playoff Impact lives on the Trade Calculator.',
+      interactive: true,
+    }, _navDropStep('tradesNavDropdown')),
+    {
+      page: 'trade-intel', selector: '.card, .page-shell, .ti-root, main',
+      title: 'Trade Intel',
+      body: 'Live market values, momentum, and real trade frequency for your roster.',
+      navigate: 'trade-intel',
+    },
+    {
+      page: 'breakouts', selector: '.card, .page-shell, .breakouts-root, main',
+      title: 'Breakout Engine',
+      body: 'Opportunity projections and breakout candidates — ranked for your format.',
+      navigate: 'breakouts',
+    },
+    {
+      page: 'dashboard', selector: null,
+      title: "You're all set",
+      body: 'Replay this PRO tour or the PRO welcome anytime from the settings gear.',
+    },
+  ];
+
+  var PRO_MOBILE_STEPS = [
+    {
+      page: 'dashboard', selector: null,
+      title: 'Welcome to PRO',
+      body: 'Here are the PRO essentials on mobile. Tap Next to continue, or exit anytime.',
+    },
+    {
+      page: 'dashboard', selector: '.br-tabbar',
+      title: 'Trades',
+      body: 'Use the Trades tab for the calculator, Suggestions, and Playoff Impact.',
+      interactive: true,
+    },
+    {
+      page: 'dashboard', selector: '#brMoreTab',
+      title: 'More → PRO tools',
+      body: 'Open More for Trade Intel, Breakouts, Front Office, and the rest of PRO.',
+      interactive: true,
+    },
+    {
+      page: 'trade-intel', selector: '.card, .page-shell, .ti-root, main',
+      title: 'Trade Intel',
+      body: 'Market values and real trade frequency for players on your roster.',
+      navigate: 'trade-intel',
+    },
+    {
+      page: 'dashboard', selector: null,
+      title: "You're all set",
+      body: 'Replay the PRO tour or PRO welcome from Settings whenever you like.',
+    },
+  ];
+
+  var tourMode = 'default';
+
   function tourSteps() {
+    if (tourMode === 'pro') {
+      return isMobile() ? PRO_MOBILE_STEPS : PRO_DESKTOP_STEPS;
+    }
     return isMobile() ? MOBILE_STEPS : DESKTOP_STEPS;
   }
 
@@ -18270,6 +18384,9 @@ window.showSubWelcome = function (opts) {
       history.replaceState(null, '', window.location.pathname);
       var idx = parseInt(resumeAt, 10);
       if (!isNaN(idx)) {
+        try {
+          if (sessionStorage.getItem('br_tour_mode') === 'pro') tourMode = 'pro';
+        } catch (e) {}
         startTour(idx);
         return;
       }
@@ -18611,7 +18728,14 @@ window.showSubWelcome = function (opts) {
     if (tooltipEl && target) placeTooltip(target);
   });
 
-  window.startSiteTour = function () {
+  window.startSiteTour = function (opts) {
+    opts = opts || {};
+    tourMode = (opts.mode === 'pro') ? 'pro' : 'default';
+    // Persist PRO mode across page navigations during the tour.
+    try {
+      if (tourMode === 'pro') sessionStorage.setItem('br_tour_mode', 'pro');
+      else sessionStorage.removeItem('br_tour_mode');
+    } catch (e) {}
     window.brUiPrefs.clearTourDone(leagueId);
     var dd = document.getElementById('settingsDropdown');
     if (dd) dd.style.display = 'none';

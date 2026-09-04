@@ -31,7 +31,7 @@ def league_invite_url(base: str, platform: str, season: int, league_id: str) -> 
 def dashboard_after_invite(platform: str, season: int, league_id: str) -> str:
     plat = normalize_invite_platform(platform)
     lid = quote(str(league_id or "").strip(), safe="")
-    return f"/{plat}/{int(season)}/{lid}/dashboard?league_pro=1"
+    return f"/{plat}/{int(season)}/{lid}/dashboard?new_subscriber=1&welcome=claim"
 
 
 def is_league_plan_buyer(viewer_ids: set[str], subscriber_user_id: Optional[str]) -> bool:
