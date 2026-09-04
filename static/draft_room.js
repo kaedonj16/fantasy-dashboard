@@ -4183,8 +4183,8 @@
     // numeric 0-100 chip for Pick Score (pool-relative on live surfaces).
     var _isRec = opts.rank && p._ds != null;
     var psChip = _isRec
-      ? '<div class="dr-ba-pschip dr-ba-recchip" title="Recommendation Rank">#' + opts.rank + '<small>REC</small></div>'
-      : (ps != null ? '<div class="dr-ba-pschip" style="color:' + psColor(ps) + ';background:' + psColor(ps) + '1a;" title="Pick Score vs best available">'+ ps + '<small>PS</small></div>' : '');
+      ? '<div class="dr-ba-pschip dr-ba-recchip" title="Recommendation Rank — who to draft now (Decision Score order). Not Pick Score.">#' + opts.rank + '<small>REC</small></div>'
+      : (ps != null ? '<div class="dr-ba-pschip" style="color:' + psColor(ps) + ';background:' + psColor(ps) + '1a;" title="Pick Score vs best available — player quality at this pick, not Recommendation Rank">'+ ps + '<small>PS</small></div>' : '');
     var availClass = '';
     var availLine = '';
     if (opts.availAt){
@@ -4198,9 +4198,9 @@
     var byeFlag = '';
     var byeLvl = byeConflictLevel(p);
     if (byeLvl === 'severe' || byeLvl === 'meaningful')
-      byeFlag = '<span class="dr-bye-flag">Bye ' + p.bye_week + ' starters</span>';
+      byeFlag = '<span class="dr-bye-flag" title="Bye-week scheduling risk for starters — not a Pick Score or Draft Grade">Bye ' + p.bye_week + ' starters</span>';
     else if (byeLvl === 'mild')
-      byeFlag = '<span class="dr-bye-flag">Bye ' + p.bye_week + '</span>';
+      byeFlag = '<span class="dr-bye-flag" title="Mild bye concentration — manageable scheduling risk, not a bad draft">Bye ' + p.bye_week + '</span>';
     // Projected PPG (scoring-adjusted Sleeper upcoming-season only). Last-season
     // actual is a separate stat, never a projection stand-in.
     var ppgNum = scoringProjPpg(p);
@@ -7043,10 +7043,11 @@
   // Single source of truth so the inline ⓘ tooltips and the help popover agree.
   // Labels match docs/draft-room-evaluation-plan.md § Semantic contract.
   var _GLOSSARY = [
-    { term: 'Recommendation Rank', def: 'Who should I draft right now? The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. In redraft it favors this-season lineup strength: filling an open starter or FLEX hole beats luxury bench BPA, while 1QB/1TE empties stay streamable and a major ADP fall can still win. It does not rank by simulated playoff odds. When it is not your turn, the order is for your next owned pick and players unlikely to last there are ranked down. Shown as a rank (REC #) rather than a grade because its internal Decision Score naturally changes as the board is depleted — not a historical grade.' },
-    { term: 'Pick Score (PS)', def: 'How good is this player at this pick? The absolute 0-100 quality kernel combines model value, a scarcity residual (VOR as a share of the player\'s own value, so same-position stars are not double-counted), ADP, tier, roster need, and projected points. Live surfaces may scale it vs the best player still available so late boards stay readable. Live survival, handcuffs, and late-round upside live in Recommendation Rank, not here. Kickers and defenses are not scored.' },
-    { term: 'Board PS', def: 'How good was this selection relative to what was available then? Made-pick chips and Deep Dive replay the historical remaining pool and scale absolute Pick Score against its best option at that slot. Avg Board PS on the report uses the same relative scale. Board PS is not live Recommendation Rank.' },
-    { term: 'Draft Grade', def: 'How good is the resulting roster? It primarily evaluates the optimal starters, functional bench depth, efficient construction, and role- and round-weighted pick quality. It is not an average Recommendation Rank, and K/DEF are grade-neutral.' },
+    { term: 'Recommendation Rank', def: 'Who should I draft right now? The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. In redraft it favors this-season lineup strength: filling an open starter or FLEX hole beats luxury bench BPA, while 1QB/1TE empties stay streamable and a major ADP fall can still win. Late-round upside and bye-week severity also adjust this order. It does not rank by simulated playoff odds. When it is not your turn, the order is for your next owned pick and players unlikely to last there are ranked down. Shown as a rank (REC #) rather than a grade because its internal Decision Score naturally changes as the board is depleted — not a historical grade, and not Pick Score.' },
+    { term: 'Decision Score', def: 'The internal ranking number behind Recommendation Rank. It starts from absolute Pick Score, then adds live roster fit, survival, scarcity, obligations, handcuff timing, late-round upside, and bye-week severity. You see Recommendation as REC # because Decision Score moves as the board depletes — it is not a 0-100 Pick Score, not Board PS, and not a Draft Grade.' },
+    { term: 'Pick Score (PS)', def: 'How good is this player at this pick? The absolute 0-100 quality kernel combines model value, a scarcity residual (VOR as a share of the player\'s own value, so same-position stars are not double-counted), ADP, tier, roster need, and projected points. Live surfaces may scale it vs the best player still available so late boards stay readable. Live survival, handcuffs, bye severity, and late-round upside live in Recommendation Rank / Decision Score, not here. Kickers and defenses are not scored.' },
+    { term: 'Board PS', def: 'How good was this selection relative to what was available then? Made-pick chips and Deep Dive replay the historical remaining pool and scale absolute Pick Score against its best option at that slot. Avg Board PS on the report uses the same relative scale. Board PS is not live Recommendation Rank or Decision Score.' },
+    { term: 'Draft Grade', def: 'How good is the resulting roster? It primarily evaluates the optimal starters, functional bench depth, efficient construction, and role- and round-weighted pick quality. It is not an average Recommendation Rank or Decision Score, and K/DEF are grade-neutral.' },
     { term: 'Value', def: 'The player’s trade value as an asset on a 0-999 scale - dynasty value for startup/rookie drafts, redraft value for redraft.' },
     { term: 'VOR / VORP', def: 'Value Over Replacement: how much better a player is than a replacement-level starter at their position (a fixed, preseason-style baseline). VORP uses projected season fantasy points; VOR uses dynasty or redraft trade value. Last season\'s injury-shortened totals are not used.' },
     { term: 'ADP', def: 'Average Draft Position - the typical overall pick a player goes at in real drafts. If it’s below your current pick, they’ve fallen and may be a value. When a sample size (n=) is shown, a small n means the ADP is noisy.' },
