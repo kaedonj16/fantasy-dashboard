@@ -206,6 +206,13 @@ def yahoo_auth_callback():
                 )
             except Exception:
                 logger.warning("[yahoo_auth] account league attach failed", exc_info=True)
+        try:
+            from routes.billing_bp import pending_checkout_resume_path
+            resume = pending_checkout_resume_path()
+            if resume:
+                return redirect(resume)
+        except Exception:
+            logger.debug("[yahoo_auth] pending checkout check failed", exc_info=True)
         return redirect(f"/yahoo/{season}/{league_id}/dashboard")
 
     # Link-modal resume when OAuth started without league_id in the URL.
@@ -238,6 +245,13 @@ def yahoo_auth_callback():
             )
         except Exception:
             logger.warning("[yahoo_auth] account league attach failed", exc_info=True)
+        try:
+            from routes.billing_bp import pending_checkout_resume_path
+            resume = pending_checkout_resume_path()
+            if resume:
+                return redirect(resume)
+        except Exception:
+            logger.debug("[yahoo_auth] pending checkout check failed", exc_info=True)
         return redirect(f"/yahoo/{season}/{resume_id}/dashboard")
 
     if pending_link_league:

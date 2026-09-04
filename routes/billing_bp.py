@@ -2,7 +2,7 @@
 Billing / subscription routes.
 
 Routes: /pricing, /api/create-checkout-session, /api/stripe-webhook,
-        /api/subscription-status
+        /api/subscription-status, /api/pro-signup/pending, /pro/resume-checkout
 Also handles: /<platform>/<season>/<league_id>/pricing
 """
 from __future__ import annotations
@@ -76,6 +76,52 @@ def _safe_local_url(value: str, fallback: str) -> str:
     """Allow same-site absolute/local redirects, rejecting protocol-relative URLs."""
     from utils.safe_url import safe_local_url
     return safe_local_url(value, fallback, host_url=request.host_url)
+
+
+def _checkout_user_id() -> str | None:
+    """Stable checkout identity: provider viewer, else Google account."""
+    return (
+        session.get("viewer_user_id")
+        or session.get("viewer_username")
+        or (("acct:" + str(session.get("account_id")).strip()) if session.get("account_id") else None)
+    )
+
+
+def pending_checkout_resume_path() -> str | None:
+    """Return the resume URL when a home-page PRO signup is staged."""
+    pending = session.get("pending_checkout")
+    if isinstance(pending, dict) and pending.get("plan"):
+        return "/pro/resume-checkout"
+    return None
+
+
+def _normalize_pending_checkout(data: dict) -> tuple[dict | None, str | None]:
+    """Validate a home PRO signup payload. Returns (pending, error)."""
+    plan = str((data or {}).get("plan") or "").strip()
+    if plan not in _STRIPE_PRICES:
+        return None, "Pick a plan to continue."
+    platform = _request_platform(data)
+    if platform not in _SUPPORTED_PLATFORMS:
+        return None, "Choose a supported platform."
+    league_id = str((data or {}).get("league_id") or "").strip()
+    if not league_id:
+        return None, "Enter your league info to continue."
+    try:
+        season = int((data or {}).get("season") or datetime.now().year)
+    except (TypeError, ValueError):
+        return None, "Invalid season."
+    username = str((data or {}).get("username") or "").strip() or None
+    team_id = str((data or {}).get("team_id") or "").strip() or None
+    name = str((data or {}).get("name") or "").strip() or None
+    return {
+        "plan": plan,
+        "platform": platform,
+        "league_id": league_id,
+        "season": season,
+        "username": username,
+        "team_id": team_id,
+        "name": name,
+    }, None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -599,6 +645,140 @@ def page_pricing_guest():
     )
 
 
+@billing_bp.route("/api/pro-signup/pending", methods=["POST"])
+def pro_signup_pending():
+    """Stage plan + league from the home-page PRO wizard, then send guests to Google."""
+    data = request.get_json(force=True) or {}
+    pending, error = _normalize_pending_checkout(data)
+    if error or not pending:
+        return jsonify({"ok": False, "error": error or "Could not save this signup."}), 400
+    session["pending_checkout"] = {
+        "plan": pending["plan"],
+        "platform": pending["platform"],
+        "league_id": pending["league_id"],
+        "season": pending["season"],
+    }
+    session["pending_link"] = {
+        "platform": pending["platform"],
+        "league_id": pending["league_id"],
+        "season": pending["season"],
+        "team_id": pending.get("team_id"),
+        "name": pending.get("name"),
+        "username": pending.get("username"),
+    }
+    return jsonify({
+        "ok": True,
+        "auth_url": "/auth/google?intent=onboarding&next=/pro/resume-checkout",
+    })
+
+
+@billing_bp.route("/pro/resume-checkout")
+def resume_pro_checkout():
+    """After Google (or Yahoo) returns, open Stripe for the staged home PRO signup."""
+    from flask import redirect
+
+    pending = session.get("pending_checkout")
+    if not isinstance(pending, dict) or not pending.get("plan"):
+        return redirect("/pricing")
+
+    user_id = _checkout_user_id()
+    if not user_id:
+        return redirect("/auth/google?intent=onboarding&next=/pro/resume-checkout")
+
+    plan = str(pending.get("plan") or "").strip()
+    league_id = str(pending.get("league_id") or "").strip()
+    platform = str(pending.get("platform") or "sleeper").strip().lower()
+    try:
+        season = int(pending.get("season") or datetime.now().year)
+    except (TypeError, ValueError):
+        season = datetime.now().year
+    if plan not in _STRIPE_PRICES or platform not in _SUPPORTED_PLATFORMS:
+        session.pop("pending_checkout", None)
+        return redirect("/pricing")
+    if plan in _LEAGUE_REQUIRED_PLANS and not league_id:
+        return redirect("/pricing")
+
+    if plan in _MEMBERSHIP_REQUIRED_PLANS and league_id:
+        from dashboard_services.subscriptions import viewer_is_league_member
+        member_id = session.get("viewer_user_id") or session.get("viewer_username")
+        if not viewer_is_league_member(member_id, league_id, platform, season):
+            return redirect("/pricing?canceled=1")
+
+    return_url = (
+        f"/{platform}/{season}/{urllib.parse.quote(league_id, safe='')}/dashboard?new_subscriber=1"
+        if league_id else "/pricing?success=1"
+    )
+    payload = {
+        "plan": plan,
+        "league_id": league_id,
+        "platform": platform,
+        "season": season,
+        "return_url": return_url,
+    }
+    url, error = _stripe_checkout_url(user_id, payload)
+    if url:
+        session.pop("pending_checkout", None)
+        return redirect(url)
+    logger.warning("[checkout] resume failed: %s", error)
+    return redirect("/pricing?canceled=1")
+
+
+def _stripe_checkout_url(user_id: str, payload: dict) -> tuple[str | None, str | None]:
+    """Create a Stripe Checkout session. Returns (url, error)."""
+    plan = str(payload.get("plan") or "").strip()
+    league_id = str(payload.get("league_id") or "").strip()
+    platform = _request_platform(payload)
+    try:
+        season = int(payload.get("season") or datetime.now().year)
+    except (TypeError, ValueError):
+        return None, "Invalid season"
+    return_url = str(payload.get("return_url") or "").strip()
+    if plan not in _STRIPE_PRICES:
+        return None, "Invalid plan"
+    if platform not in _SUPPORTED_PLATFORMS:
+        return None, "Invalid platform"
+
+    price_spec = _STRIPE_PRICES[plan]
+    base_url = request.host_url.rstrip("/")
+    return_url = _safe_local_url(return_url, "")
+    success_url = base_url + "/pricing?success=1&session_id={CHECKOUT_SESSION_ID}"
+    if return_url:
+        success_url += "&return_to=" + urllib.parse.quote(return_url, safe="")
+    success_url += "&platform=" + urllib.parse.quote(platform, safe="")
+    if league_id:
+        cancel_url = f"{base_url}/{platform}/{season}/{urllib.parse.quote(league_id, safe='')}/pricing?canceled=1"
+    else:
+        cancel_url = base_url + "/pricing?canceled=1&platform=" + urllib.parse.quote(platform, safe="")
+    price_data = {
+        "currency": "usd",
+        "unit_amount": price_spec["unit_amount"],
+        "recurring": {"interval": "year"},
+    }
+    if price_spec.get("product"):
+        price_data["product"] = price_spec["product"]
+    else:
+        price_data["product_data"] = {
+            "name": price_spec.get("product_name") or "BR Fantasy PRO",
+        }
+    try:
+        checkout = _stripe().checkout.Session.create(
+            mode="subscription",
+            line_items=[{
+                "price_data": price_data,
+                "quantity": 1,
+            }],
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={"plan": plan, "user_id": user_id, "league_id": league_id,
+                      "platform": platform, "season": str(season),
+                      "account_id": str(session.get("account_id") or "")},
+        )
+        return checkout.url, None
+    except Exception:
+        logger.exception("[stripe] checkout session error")
+        return None, "Internal error"
+
+
 # ── Stripe API endpoints ──────────────────────────────────────────────────────
 
 @billing_bp.route("/api/create-checkout-session", methods=["POST"])
@@ -679,49 +859,16 @@ def create_checkout_session():
         return jsonify({"error": "You already have this premium subscription."}), 400
 
     price_spec = _STRIPE_PRICES[plan]
-    base_url   = request.host_url.rstrip("/")
-
-    return_url = _safe_local_url(return_url, "")
-
-    success_url = base_url + "/pricing?success=1&session_id={CHECKOUT_SESSION_ID}"
-    if return_url:
-        success_url += "&return_to=" + urllib.parse.quote(return_url, safe="")
-    success_url += "&platform=" + urllib.parse.quote(platform, safe="")
-
-    if league_id:
-        cancel_url = f"{base_url}/{platform}/{season}/{urllib.parse.quote(league_id, safe='')}/pricing?canceled=1"
-    else:
-        cancel_url = base_url + "/pricing?canceled=1&platform=" + urllib.parse.quote(platform, safe="")
-
-    price_data = {
-        "currency": "usd",
-        "unit_amount": price_spec["unit_amount"],
-        "recurring": {"interval": "year"},
-    }
-    if price_spec.get("product"):
-        price_data["product"] = price_spec["product"]
-    else:
-        price_data["product_data"] = {
-            "name": price_spec.get("product_name") or "BR Fantasy PRO",
-        }
-
-    try:
-        checkout = _stripe().checkout.Session.create(
-            mode="subscription",
-            line_items=[{
-                "price_data": price_data,
-                "quantity": 1,
-            }],
-            success_url=success_url,
-            cancel_url=cancel_url,
-            metadata={"plan": plan, "user_id": user_id, "league_id": league_id,
-                      "platform": platform, "season": str(season),
-                      "account_id": str(session.get("account_id") or "")},
-        )
-        return jsonify({"url": checkout.url})
-    except Exception:
-        logger.exception("[stripe] checkout session error")
-        return jsonify({"error": "Internal error"}), 500
+    url, error = _stripe_checkout_url(user_id, {
+        "plan": plan,
+        "league_id": league_id,
+        "platform": platform,
+        "season": season,
+        "return_url": return_url,
+    })
+    if url:
+        return jsonify({"url": url})
+    return jsonify({"error": error or "Internal error"}), 500
 
 
 @billing_bp.route("/api/stripe-webhook", methods=["POST"])

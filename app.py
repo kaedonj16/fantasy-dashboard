@@ -1232,6 +1232,10 @@ FORM_BODY = """
         <span class="home-platform-chip">MFL</span>
         <span class="home-platform-chip">Fleaflicker</span>
       </div>
+      <p class="home-pro-hero-cta">
+        <a href="#homeProSignup">Start PRO</a>
+        <span>Pick a plan, connect your league, finish with Google.</span>
+      </p>
     </div>
 
     <div class="home-hero-right">
@@ -1553,22 +1557,100 @@ FORM_BODY = """
     </div>
   </section>
 
-  <section class="home-proof" aria-label="What you get">
-    <div class="home-proof-item">
-      <span class="home-proof-label">AI Trade Analyst</span>
-      <span class="home-proof-desc">Deal grades and counter suggestions tailored to your roster</span>
-    </div>
-    <div class="home-proof-item">
-      <span class="home-proof-label">Dynasty Values</span>
-      <span class="home-proof-desc">Hybrid consensus and metrics model updated daily</span>
-    </div>
-    <div class="home-proof-item">
-      <span class="home-proof-label">Weekly Command</span>
-      <span class="home-proof-desc">Live scoring, matchups, and storyline tracking</span>
-    </div>
-    <div class="home-proof-item">
-      <span class="home-proof-label">League History</span>
-      <span class="home-proof-desc">Season recaps, power rankings, and trend charts</span>
+  <section class="home-pro" id="homeProSignup" aria-label="Start PRO">
+    <div class="home-pro-inner">
+      <header class="home-pro-head">
+        <span class="home-pro-eyebrow">BR Fantasy PRO</span>
+        <h2 class="home-pro-title">Unlock PRO instantly</h2>
+        <p class="home-pro-lead">Pick a plan, enter your league, then continue with Google to checkout.</p>
+      </header>
+
+      <ol class="home-pro-progress" aria-label="PRO signup steps">
+        <li class="is-active" data-home-pro-step="plan">1. Plan</li>
+        <li data-home-pro-step="league">2. League</li>
+      </ol>
+
+      <div id="homeProStepPlan" class="home-pro-step">
+        <div class="home-pro-plans" role="radiogroup" aria-label="PRO plans">
+          <button type="button" class="home-pro-plan" data-plan="single_league" aria-pressed="false">
+            <span class="home-pro-plan-name">One League</span>
+            <span class="home-pro-plan-price">$5<span>/year</span></span>
+            <span class="home-pro-plan-desc">PRO for you in one league</span>
+          </button>
+          <button type="button" class="home-pro-plan" data-plan="league" aria-pressed="false">
+            <span class="home-pro-plan-name">League</span>
+            <span class="home-pro-plan-price">$15<span>/year</span></span>
+            <span class="home-pro-plan-desc">PRO for every manager</span>
+          </button>
+          <button type="button" class="home-pro-plan is-featured" data-plan="combo" aria-pressed="false">
+            <span class="home-pro-plan-badge">Best value</span>
+            <span class="home-pro-plan-name">League + Personal</span>
+            <span class="home-pro-plan-price">$20<span>/year</span></span>
+            <span class="home-pro-plan-desc">Your league plus all your rooms</span>
+          </button>
+          <button type="button" class="home-pro-plan" data-plan="user" aria-pressed="false">
+            <span class="home-pro-plan-name">Personal</span>
+            <span class="home-pro-plan-price">$10<span>/year</span></span>
+            <span class="home-pro-plan-desc">PRO for all your leagues</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="homeProStepLeague" class="home-pro-step" hidden>
+        <button type="button" id="homeProBack" class="home-pro-back">Change plan</button>
+        <p class="home-pro-picked">Selected: <strong id="homeProPickedLabel"></strong></p>
+
+        <div id="homeProSavedWrap" hidden>
+          <label for="homeProSavedSelect">Your saved leagues</label>
+          <select id="homeProSavedSelect">
+            <option value="">Choose a saved league</option>
+          </select>
+          <p class="home-pro-or">or connect a different league</p>
+        </div>
+
+        <div class="home-pro-platforms" role="radiogroup" aria-label="League platform">
+          <button type="button" class="home-pro-platform is-active" data-platform="sleeper" aria-pressed="true">Sleeper</button>
+          <button type="button" class="home-pro-platform" data-platform="espn" aria-pressed="false">ESPN</button>
+          <button type="button" class="home-pro-platform" data-platform="yahoo" aria-pressed="false">Yahoo</button>
+          <button type="button" class="home-pro-platform" data-platform="mfl" aria-pressed="false">MFL</button>
+          <button type="button" class="home-pro-platform" data-platform="fleaflicker" aria-pressed="false">Fleaflicker</button>
+        </div>
+
+        <div id="homeProSleeperFields" class="home-pro-fields">
+          <label for="homeProSleeperUser">Sleeper username</label>
+          <div class="home-pro-inline">
+            <input type="text" id="homeProSleeperUser" autocomplete="username" placeholder="Your Sleeper username">
+            <button type="button" id="homeProFindLeagues">Find leagues</button>
+          </div>
+          <div id="homeProSleeperLeagueWrap" hidden>
+            <label for="homeProSleeperLeague">Choose league</label>
+            <select id="homeProSleeperLeague">
+              <option value="">Select a league</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="homeProIdFields" class="home-pro-fields" hidden>
+          <label for="homeProLeagueId">League ID</label>
+          <input type="text" id="homeProLeagueId" autocomplete="off" placeholder="From your league URL">
+          <div id="homeProSeasonWrap" hidden>
+            <label for="homeProSeason">Season</label>
+            <input type="text" id="homeProSeason" inputmode="numeric" placeholder="{{ viewed_season }}" value="{{ viewed_season }}">
+          </div>
+        </div>
+
+        <p id="homeProError" class="home-pro-error" hidden></p>
+
+        <div class="home-pro-actions">
+          <button type="button" id="homeProGoogle" class="google-continue-btn">
+            <span class="google-button-title">Continue with Google</span>
+            <span>Creates your account and opens secure checkout</span>
+          </button>
+          <button type="button" id="homeProCheckout" class="home-pro-checkout-btn"{% if not session.get('account_id') %} hidden{% endif %}>
+            Continue to checkout
+          </button>
+        </div>
+      </div>
     </div>
   </section>
 
