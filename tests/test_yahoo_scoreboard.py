@@ -138,11 +138,81 @@ def test_get_matchups_falls_back_to_default_scoreboard(monkeypatch):
 
 
 def test_get_matchups_returns_empty_on_http_error(monkeypatch):
-    def _boom(*a, **k):
-        raise RuntimeError("404 scoreboard")
+    calls = []
+
+    def _boom(token, path, params=None):
+        calls.append(path)
+        raise RuntimeError("403 scoreboard")
+
     monkeypatch.setattr(yahoo_api, "_yahoo_get", _boom)
     monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "461.l.1307110")
     assert yahoo_api.get_matchups(2026, "1307110", 1, access_token="tok") == []
+    assert len(calls) == 1
+    assert "week=" in calls[0]
+
+
+class _FakeYahooResp:
+    def __init__(self, status, text, payload=None):
+        self.status_code = status
+        self.text = text
+        self._payload = payload if payload is not None else {}
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            err = __import__("requests").HTTPError(
+                f"{self.status_code} Client Error: Forbidden for url: x"
+            )
+            err.response = self
+            raise err
+
+
+_NOT_IN_LEAGUE = (
+    '{"error":{"description":"You are not allowed to view this page '
+    'because you are not in this league.","detail":""}}'
+)
+
+
+def test_yahoo_get_retries_owner_token_when_session_not_in_league(monkeypatch):
+    yahoo_api._clear_yahoo_request_state()
+    auths = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        auth = (headers or {}).get("Authorization", "")
+        auths.append(auth)
+        if "session-tok" in auth:
+            return _FakeYahooResp(403, _NOT_IN_LEAGUE)
+        return _FakeYahooResp(200, "{}", {"fantasy_content": {"ok": True}})
+
+    monkeypatch.setattr(yahoo_api.requests, "get", fake_get)
+    monkeypatch.setattr(yahoo_api, "get_league_token", lambda lid, season: "owner-tok")
+    data = yahoo_api._yahoo_get("session-tok", "league/461.l.1307110/scoreboard;week=1")
+    assert data["fantasy_content"]["ok"] is True
+    assert auths == ["Bearer session-tok", "Bearer owner-tok"]
+
+    # Later weeks skip the session token that already 403'd.
+    yahoo_api._yahoo_get("session-tok", "league/461.l.1307110/scoreboard;week=2")
+    assert auths.count("Bearer session-tok") == 1
+    assert auths.count("Bearer owner-tok") == 2
+
+
+def test_yahoo_get_short_circuits_after_membership_403(monkeypatch):
+    yahoo_api._clear_yahoo_request_state()
+    calls = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        calls.append(url)
+        return _FakeYahooResp(403, _NOT_IN_LEAGUE)
+
+    monkeypatch.setattr(yahoo_api.requests, "get", fake_get)
+    monkeypatch.setattr(yahoo_api, "get_league_token", lambda *a, **k: None)
+    with pytest.raises(yahoo_api.YahooLeagueAccessDenied):
+        yahoo_api._yahoo_get("session-tok", "league/461.l.1307110/scoreboard;week=5")
+    with pytest.raises(yahoo_api.YahooLeagueAccessDenied):
+        yahoo_api._yahoo_get("session-tok", "league/461.l.1307110/scoreboard;week=6")
+    assert len(calls) == 1
 
 
 def test_build_matchup_preview_does_not_synthesize_when_scoreboard_raises():

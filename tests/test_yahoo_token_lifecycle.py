@@ -164,6 +164,9 @@ def test_yahoo_auth_error_kind_detects_token_expired():
         '401 Client Error: OAuth oauth_problem="token_expired"'
     ) == "expired"
     assert yahoo_api.yahoo_auth_error_kind("403 Forbidden") == "forbidden"
+    assert yahoo_api.yahoo_auth_error_kind(
+        "You are not allowed to view this page because you are not in this league."
+    ) == "forbidden"
     assert yahoo_api.yahoo_auth_error_kind("timeout") == ""
 
 
