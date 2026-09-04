@@ -248,9 +248,17 @@ def test_keeper_digest_includes_value_movers_not_zero_record(monkeypatch):
 def test_unsubscribe_token_roundtrip(monkeypatch):
     monkeypatch.setenv("FLASK_SECRET_KEY", "unit-test-secret")
     token = we.make_unsub_token(42)
+    assert token is not None
     assert we.verify_unsub_token(token) == 42
     assert we.verify_unsub_token("42.deadbeef") is None
     assert we.verify_unsub_token("nope") is None
+
+
+def test_unsubscribe_hmac_fails_closed_without_secret(monkeypatch):
+    monkeypatch.delenv("FLASK_SECRET_KEY", raising=False)
+    assert we._secret() is None
+    assert we.make_unsub_token(42) is None
+    assert we.verify_unsub_token("42.deadbeef") is None
 
 
 def test_choose_subject_hierarchy_lineup_beats_waiver():
