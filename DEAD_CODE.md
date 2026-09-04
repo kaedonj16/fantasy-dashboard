@@ -198,11 +198,14 @@ after normalizing names — consolidating into one shared helper removes ~12 cop
 >   interchangeable. Merging needs an explicit refactor (promote to a parameterized
 >   module-level helper), not a simple import.
 > - `_get_num`/`_raw_float` — bodies have diverged; no longer duplicates.
-> - `fetch_sleeper_players` + `update_player_teams_from_sleeper`: `data_building/players.py`
->   and `data_building/updates/update_players.py` are **byte-identical standalone scripts**
->   (each ends in `if __name__ == "__main__"`), neither imported anywhere. The right fix
->   is deleting one file once the canonical entry point is confirmed — a file-deletion
->   decision, not a function merge.
+> - ~~`fetch_sleeper_players` + `update_player_teams_from_sleeper`~~ **RESOLVED
+>   (2026-06-07 / reconfirmed 2026-09-04):** `data_building/players.py` was a
+>   byte-identical standalone duplicate of
+>   `data_building/updates/update_players.py` and was deleted in commit
+>   `1099ed53`. Survivor is `data_building/updates/update_players.py`
+>   (`refresh_current_nfl_teams` imported by `cron_daily.py` and
+>   `tests/test_refresh_current_nfl_teams.py`). Nested-closure score helpers
+>   remain deferred (do not delete).
 
 > **UPDATE (2026-08-02): fresh AST re-scan + two more consolidations.** Re-ran an
 > exact-body duplicate scan (blank the def name, strip docstrings, group by
@@ -241,8 +244,10 @@ after normalizing names — consolidating into one shared helper removes ~12 cop
   - `app.py:4756` — `_waiver_pickup_score()`
   - `app.py:9064` — `_wv_score()`
 
-- **2 copies** (10 stmts, same name)
-  - `data_building/players.py:18` — `update_player_teams_from_sleeper()`
+- **2 copies** (10 stmts, same name) — **RESOLVED 2026-09-04** (duplicate file
+  `data_building/players.py` deleted earlier; survivor
+  `data_building/updates/update_players.py::update_player_teams_from_sleeper`)
+  - ~~`data_building/players.py:18` — `update_player_teams_from_sleeper()`~~
   - `data_building/updates/update_players.py:18` — `update_player_teams_from_sleeper()`
 
 - **2 copies** (9 stmts, different names: `_pearson`, `_pearson_r`)
@@ -257,8 +262,9 @@ after normalizing names — consolidating into one shared helper removes ~12 cop
   - `data_building/rookie_pipeline/sportradar_ncaa.py:284` — `normalize_profile()`
   - `data_building/rookie_pipeline/sportradar_ncaa.py:462` — `_normalize_profile_inline()`
 
-- **2 copies** (3 stmts, same name)
-  - `data_building/players.py:12` — `fetch_sleeper_players()`
+- **2 copies** (3 stmts, same name) — **RESOLVED 2026-09-04** (duplicate file
+  deleted; survivor `data_building/updates/update_players.py::fetch_sleeper_players`)
+  - ~~`data_building/players.py:12` — `fetch_sleeper_players()`~~
   - `data_building/updates/update_players.py:12` — `fetch_sleeper_players()`
 
 - **2 copies** (3 stmts, different names: `_get_num`, `_raw_float`)
@@ -396,7 +402,8 @@ Small private helpers re-implemented across modules. Prime candidates for a shar
 - `clean_asset()` ×2: `dashboard_services/ai/context_builders.py:275`, `dashboard_services/ai/renderer.py:227`
 - `create_performance_indexes()` ×2: `data_building/offseason_opportunity.py:196`, `scripts/setup_database.py:391`
 - `decorator()` ×2: `app.py:297`, `dashboard_services/api.py:142`
-- `fetch_sleeper_players()` ×2: `data_building/players.py:12`, `data_building/updates/update_players.py:12`
+- ~~`fetch_sleeper_players()` ×2~~ **RESOLVED:** survivor
+  `data_building/updates/update_players.py` (`data_building/players.py` deleted)
 - `get_latest_snapshot_date()` ×2: `dashboard_services/player_value_history.py:158`, `data_building/player_value_history.py:284`
 - `get_league_rostered_player_ids()` ×2: `dashboard_services/players.py:89`, `utils/utils.py:610`
 - `get_owner_id()` ×2: `dashboard_services/matchups.py:24`, `dashboard_services/service.py:610`
@@ -416,7 +423,8 @@ Small private helpers re-implemented across modules. Prime candidates for a shar
 - `run_calibration()` ×2: `data_building/rookie_pipeline/historical_calibration.py:775`, `data_building/trade_intel/market_calibration.py:329`
 - `safe_float()` ×3: `app.py:3521`, `dashboard_services/providers/espn_api.py:41`, `data_building/player_value_history.py:178`
 - `stat_row()` ×2: `app.py:14701`, `data_building/updates/preview_og.py:77`
-- `update_player_teams_from_sleeper()` ×2: `data_building/players.py:18`, `data_building/updates/update_players.py:18`
+- ~~`update_player_teams_from_sleeper()` ×2~~ **RESOLVED:** survivor
+  `data_building/updates/update_players.py` (`data_building/players.py` deleted)
 - `worker()` ×3: `data_building/external_data/nfl_target_share.py:131`, `data_building/external_data/team_enrichment.py:262`, `data_building/external_data/team_enrichment.py:392`
 
 ---
