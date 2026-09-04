@@ -85,32 +85,68 @@ def test_my_leagues_cards_do_not_overflow_on_mobile():
     assert "min-width:0" in fn
     assert "max-width:100%" in fn
     assert "grid-template-columns:minmax(0,1fr)" in fn
-    assert ".pf-lg-meta .pf-arch" in fn
+    assert ".pf-lg-foot .pf-arch" in fn
     assert "flex-shrink:0" in fn
     assert ".pf-lg-open" in fn
     assert "overflow:hidden;box-sizing:border-box;" in fn
 
 
 def test_my_leagues_fav_and_arch_share_a_tools_group():
-    """Favorite star stays in tools; archetype badge sits under the title."""
+    """Favorite star stays in tools; archetype badge sits in the action row."""
     fn = _portfolio_fn()
     assert "def _lg_tools(" in fn
     assert "class='pf-lg-tools'" in fn
     assert ".pf-lg-tools{display:flex;align-items:center;gap:4px;flex:0 0 auto;}" in fn
     assert "width:24px;height:24px;display:inline-flex" in fn
     assert "class='pf-lg-meta'" in fn
-    assert ".pf-lg-meta .pf-arch{" in fn
+    # Archetype badge moved out of the identity meta line into the foot so it
+    # can't collide with the platform script / owner name.
+    assert ".pf-lg-foot .pf-arch{" in fn
     # Star and arch are no longer competing for the same top-right slot.
     assert fn.count("_lg_tools(") >= 3
-    assert "_lg_id(name_link, plat, off_note, arch_badge, lg.get('team_name') or '')" in fn
+    assert "_lg_id(name_link, plat, off_note, '', lg.get('team_name') or '')" in fn
     assert "pf-lg-fav' aria-label='Favorite league'" not in fn.split("def _lg_tools")[0]
+
+
+def test_my_leagues_cards_promote_position_strength_strip():
+    """Positional rank is the signature data: a quality-tinted strength strip,
+    not a grey footer line. Best position is crowned only when top-third."""
+    fn = _portfolio_fn()
+    assert "def _pos_tier(" in fn
+    assert "class='pf-lg-strength'" in fn
+    assert "Position strength" in fn
+    assert "class='pf-strbar'" in fn
+    assert "pf-pos-chip q-" in fn
+    assert ".q-good{" in fn and ".q-mid{" in fn and ".q-weak{" in fn
+    assert "pc-crown" in fn
+    assert "_crown_ok" in fn
+    # Old grey inline footer chips must not come back.
+    assert "class='pf-pos-chips'" not in fn.split("league_rows += (")[-1]
+
+
+def test_my_leagues_standing_is_an_ordinal_place_with_a_flag():
+    fn = _portfolio_fn()
+    assert "from utils.format import ord_suffix" in fn
+    assert "pf-lg-v--weak" in fn
+    assert "class='pf-lg-l'>Standing</span>" in fn
+    # A bottom-third standing is flagged via the tier helper, not hard-coded.
+    assert "_pos_tier(_rank_i, _total_i)" in fn
+
+
+def test_my_leagues_streak_uses_win_loss_pills_not_empty_dots():
+    fn = _portfolio_fn()
+    assert "pf-s-pill" in fn
+    assert ".pf-s-w{background:var(--win);}" in fn
+    assert "pf-streak-empty" in fn
+    # The old always-on three grey dots are gone from the played-team card.
+    assert "range(3 - len(streak))" not in fn
 
 
 def test_my_leagues_cards_show_resolved_team_and_standings_rank():
     fn = _portfolio_fn()
     assert "class='pf-lg-team'" in fn
     assert "Regular-season standings: wins, then points for" in fn
-    assert "pf-lg-l'>Rank</span>" in fn
+    assert "pf-lg-l'>Standing</span>" in fn
 
 
 def test_my_leagues_cards_are_compact():
