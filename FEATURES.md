@@ -6,10 +6,10 @@ A full breakdown of every feature on the site, organized by the main navigation.
 
 ## Platform & Account
 
-- **Multi-platform support** — Connect dynasty leagues from **Sleeper** (username sign-in) and **ESPN** (league ID validation). **Yahoo** OAuth is built but shown as Soon until API access is granted. **MFL** supports public leagues only (league ID, no private-auth path).
+- **Multi-platform support**: Connect leagues from **Sleeper** (username sign-in), **ESPN** (league ID), **Yahoo** (OAuth), **MFL** (league ID, public or private auth), and **Fleaflicker** (league ID). ESPN football does not expose future draft picks, so draft capital stays empty rather than invented. ESPN leagues are treated as redraft.
 - **Username sign-in / Identify** — Log in with just a Sleeper username; the app finds all your leagues automatically.
 - **Google sign-in** — Sign in with a Google account for cross-device, account-scoped state (watchlist sync, one-time "since last visit" digests).
-- **Keeper & redraft leagues** — Automatic detection of keeper-eligible and redraft leagues; keeper-specific tools and nav appear only where relevant. **Auction** leagues are detected from provider draft settings (Sleeper/ESPN/MFL signals); Draft Room and Keeper show an honest provisional banner until auction grades / budget tools ship. **Best Ball** leagues get a Season Hub badge, nav labeled Waivers (no Start/Sit), and Start/Sit hidden on the waivers page.
+- **Keeper & redraft leagues**: Automatic detection of keeper-eligible and redraft leagues; keeper-specific tools and nav appear only where relevant. **Auction** leagues are detected from provider draft settings (Sleeper/ESPN/MFL signals); Draft Room and Keeper show an honest provisional banner. Snake-round draft grades stay off for auction. **Best Ball** leagues get a Season Hub badge, nav labeled Waivers (no Start/Sit), and Start/Sit hidden on the waivers page.
 - **My Leagues (Portfolio)** — Cross-league hub that lists every league you're in with at-a-glance value and standings. **PRO** unlocks the cross-league **This week's moves** digest (lineup and injury actions ranked across all linked leagues).
 - **League switcher** — Jump between your leagues from anywhere via the nav dropdown.
 - **Multi-season support** — View any league across multiple seasons.
@@ -76,7 +76,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
   - **Draft Grades** — Grades every rookie draft pick (ADP value, positional need, best player available); view by team or round.
 - **Activity** — League transaction feed plus a live NFL news feed of the latest headlines.
 - **League Health** — Multi-season league health view with trend tracking that only compares completed seasons (no partial-season skew).
-- **Commissioner** — Dedicated commissioner view for league-level oversight.
+- **Commissioner**: Dedicated commissioner view for league-level oversight, including a copyable League PRO invite link for teammates.
 
 ---
 
@@ -88,9 +88,9 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **Player Modals** — Detailed player view: PPG and season total with positional ranks, advanced metrics (snap share, role score, efficiency), career/per-season game logs, value history, live ESPN headlines, and a **Trades** tab that toggles between **This League** (every season, real counterparties, picks resolved to drafted players) and the **Trade Database** (same free cross-league comps, also with pick→player resolution when drafts are complete).
 - **Player Comparison** — Compare any two players with position-specific stats and metrics.
 - **Prospect Rankings** — Full rookie evaluation: production, athleticism, draft capital, and dynasty value for the active class, plus historical player comps.
-- **Draft Room** — Live and mock draft board with best-available rankings, pick scoring, and post-draft grades. Run a mock for any format or connect to a live Sleeper draft. Supports rookie, startup, and redraft leagues.
-  - **Mock Draft simulator** — Run a full mock draft against simulated opponents from the draft room.
-  - **Cheat Sheet** — Sortable, printable draft cheat sheet with live Sleeper draft sync (free), free CSV download, and an embeddable in-draft overlay that stays crossed-off as picks land (without turning on Sleeper live polling). Custom board edits stay PRO.
+- **Draft Room**: Live and mock draft board with best-available rankings, pick scoring, and post-draft grades. Run a mock for any format or connect to a live Sleeper or ESPN draft. Custom Cheat Sheet board (pin, mute, reorder) follows PRO users into the Draft Room. Deep Dive replays Decision Score against the historical remaining pool. Supports rookie, startup, and redraft leagues.
+  - **Mock Draft simulator**: Run a full mock draft against simulated opponents from the draft room.
+  - **Cheat Sheet**: Sortable, printable draft cheat sheet with live Sleeper draft sync (free), free CSV download, and an embeddable in-draft overlay that stays crossed-off as picks land (without turning on Sleeper live polling). Custom board edits stay PRO.
   - **Draft History** — Review completed drafts.
 - **Keeper Assistant** — For keeper leagues: auto-detects each player's draft-round keeper cost from Sleeper, Yahoo, and ESPN drafts (and years-kept on Sleeper season chains / ESPN keeper flags), then picks the best keepers under your league's keeper limit and cost rules, with a full sortable table and live re-calc as you tweak the limit. Auction/FAAB keeper costs are not auto-detected — set the drafted round by hand.
 - **Breakout Engine (PRO)** — Breakout candidates with opportunity projections, vacated-target totals, historical peer comps from real breakout seasons, and confidence-adjusted projected PPG ranges. Also includes offseason breakout candidates. If roster-change data has not been loaded for the season, the board stays empty instead of ranking players on readiness alone.
@@ -125,6 +125,6 @@ A full breakdown of every feature on the site, organized by the main navigation.
 - **Responsive design** — Container-query-driven layouts that adapt cleanly from desktop to mobile, with a mobile tab-bar dock.
 - **PWA & offline** — Installable progressive web app (service worker, manifest, offline page) plus push notifications for trades, breakouts, waivers, and scores. Rate limits use Redis when `REDIS_URL` is set so they hold across web workers; otherwise they are per-process.
 - **Weekly email digest** — Personalized Tuesday recap (Render cron `weekly-email`, 13:00 UTC) covering the user's primary league in full plus compact notes for other leagues. Redraft emails lead with matchup / start-sit / waivers; dynasty emails lead with meaningful roster-value movement, breakouts, and roster-construction notes. Delivered via Brevo (`htmlContent`) with SMTP fallback. De-duped per account per ISO week, with a signed unsubscribe link that opts out of the weekly digest only. See `docs/weekly-email.md`. Hourly push checks (lineup lock, close games, drops, injuries) run from Render cron `hourly-notifications`.
-- **Browser extension** — Companion extension for ESPN/Yahoo live-draft relay and one-click ESPN private-league connect. See `extension/README.md` for the parity checklist (Sleeper overlay not yet; phone drafts = manual track; production zip via `pack_extension.py`).
+- **Browser extension**: Companion extension for ESPN/Yahoo live-draft relay, one-click ESPN private-league connect, and a Sleeper in-draft overlay. See `extension/README.md` for the parity checklist (phone drafts stay manual track; production zip via `pack_extension.py`).
 - **Trending surfaces** — Trending adds, risers/fallers, and value-movers boards driven by the live value engine.
 - **Static / informational pages** — About, Pricing, FAQ, Contact, Support, Privacy, Terms.

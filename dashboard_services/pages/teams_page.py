@@ -86,8 +86,8 @@ def build_teams_body(ctx: dict) -> str:
     league_id = str(ctx.get("league_id") or "")
     current_season = _safe_int((ctx.get("league") or {}).get("season"), datetime.now().year)
     _is_redraft = bool(_league_is_redraft(ctx) or ctx_scoring_type(ctx) == "redraft")
-    # Redraft leagues (all ESPN) have no future draft capital — don't invent/show picks.
-    if _is_redraft:
+    # Redraft leagues and hosts without a pick feed do not invent future picks.
+    if _is_redraft or not ctx.get("draft_capital_available", True):
         picks_by_roster = {}
 
     # Projected draft slots for next year's picks, from projected final

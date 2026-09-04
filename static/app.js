@@ -17381,6 +17381,13 @@ function renderTeamDetails(data) {
           : (_u.length > 4 ? _u.slice(0, 4) : _u);
         const _tip = [injRaw, player.injury_body_part].filter(Boolean).join(' · ');
         badges += `<span class="player-badge ${_icls}" title="${_tip.replace(/"/g, '&quot;')}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${_code}</span>`;
+        const plan = player.return_plan;
+        if (plan && plan.verdict) {
+          const wk = plan.weeks_label || '';
+          const tip = String(plan.reason || 'Approximate return guidance, not medical advice.')
+            .replace(/"/g, '&quot;');
+          badges += `<span class="player-badge player-badge-inj-q" title="${tip}">${plan.verdict}${wk ? ' · ' + wk : ''} (approx)</span>`;
+        }
       }
 
       const ageStr = player.age != null && !isNaN(parseFloat(player.age)) ? parseFloat(player.age).toFixed(1) : '—';
@@ -17416,7 +17423,7 @@ function renderTeamDetails(data) {
 
   rosterHTML += '</div>';
 
-  // Build picks section — redraft (all ESPN) has no future draft capital.
+  // Build picks section. Redraft and hosts without a pick feed stay honest.
   let picksHTML = '';
   if (!data.is_redraft) {
     picksHTML = '<div class="team-modal-section"><h3>Draft Picks</h3>';
@@ -17435,6 +17442,8 @@ function renderTeamDetails(data) {
       });
 
       picksHTML += '</div>';
+    } else if (data.draft_capital_available === false && data.draft_capital_note) {
+      picksHTML += '<div class="team-modal-empty">' + data.draft_capital_note + '</div>';
     } else {
       picksHTML += '<div class="team-modal-empty">No future picks</div>';
     }

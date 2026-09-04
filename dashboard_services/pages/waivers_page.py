@@ -373,7 +373,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
     startsit_section_hidden = " hidden" if is_bb else ""
     bb_note = (
         '<div class="muted" style="font-size:13px;margin:0 0 12px;">'
-        'Best Ball league — weekly Start/Sit is hidden.</div>'
+        'Best Ball league: weekly Start/Sit is hidden.</div>'
         if is_bb else ""
     )
 
@@ -681,8 +681,8 @@ function wvRenderWaivers() {{
         ? (low + ' · ' + mid + ' · ' + hi)
         : (low !== '' && hi !== '' ? (low + '&ndash;' + hi) : ('&le;' + hi));
       const tip = (p.faab_rationale
-        ? ('Suggested FAAB % of budget — low · target · stretch. ' + p.faab_rationale)
-        : 'Suggested FAAB % of budget — low · target · stretch');
+        ? ('Suggested FAAB % of budget: low · target · stretch. ' + p.faab_rationale)
+        : 'Suggested FAAB % of budget: low · target · stretch');
       faabChip = `<span class="wv-advice-metric"><span class="wv-advice-label">FAAB bid</span><span class="chip chip--sm chip--accent" title="${{tip}}">${{bid}}%</span></span>`;
     }}
     const marketChip = p.market_opportunity
@@ -690,7 +690,7 @@ function wvRenderWaivers() {{
       : '';
     let dropHint = '';
     if (p.drop && p.drop.name) {{
-      dropHint = `<div class="wv-drop-hint" title="Suggested drop to make room — your roster is full; weakest spare below this target's value">`
+      dropHint = `<div class="wv-drop-hint" title="Suggested drop to make room. Your roster is full; weakest spare below this target's value">`
         + `<span class="wv-drop-lbl">Drop</span> `
         + `<span class="wv-drop-pos">${{p.drop.position}}</span> ${{p.drop.name}}</div>`;
     }}
@@ -1055,7 +1055,7 @@ function wvRenderStartSit() {{
       const injBadge = wvInjBadge(p.injury_status);
       const plan = p.return_plan;
       const planNote = (plan && plan.verdict)
-        ? `<span class="wv-ss-demote" title="${{(plan.reason || 'Approximate — not medical advice').replace(/"/g, '&quot;')}}">`
+        ? `<span class="wv-ss-demote" title="${{(plan.reason || 'Approximate, not medical advice').replace(/"/g, '&quot;')}}">`
           + `${{plan.verdict}}${{plan.weeks_label ? ' · ' + plan.weeks_label : ''}} (approx)</span>`
         : '';
       const cmpCls   = isSelected ? 'selected' : '';
@@ -1115,7 +1115,7 @@ function wvLineupAdvice() {{
   if (!a || !a.has_current) return '';
   const esc = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
   if (!a.swaps.length || a.delta < 1) {{
-    return `<div class="wv-ss-advice wv-ss-advice-ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Your lineup is optimal — start score ${{a.optimal_pts}}.</div>`;
+    return `<div class="wv-ss-advice wv-ss-advice-ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Your lineup is optimal. Start score ${{a.optimal_pts}}.</div>`;
   }}
   const swaps = a.swaps.slice(0, 4).map(s => {{
     const g = Number(s.gain) || 0;

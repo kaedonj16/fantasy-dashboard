@@ -334,18 +334,18 @@ def build_dashboard_body(ctx: dict) -> str:
                 '<span class="os-hero-tag" style="display:inline-flex;align-items:center;'
                 'margin-left:8px;padding:3px 9px;border-radius:8px;font-size:11px;font-weight:800;'
                 'letter-spacing:.03em;vertical-align:middle;color:var(--accent);'
-                'background:var(--accent-soft);" title="Best Ball — no weekly lineup locks">'
+                'background:var(--accent-soft);" title="Best Ball: no weekly lineup locks">'
                 'Best Ball</span>'
             )
             if _viewer_team:
                 _hero_copy = (
                     f"Welcome back, {html.escape(str(_viewer_team))}. Best Ball mode: "
-                    "weekly Start/Sit and lineup locks are hidden — focus on waivers and the draft."
+                    "weekly Start/Sit and lineup locks are hidden. Focus on waivers and the draft."
                 )
             else:
                 _hero_copy = (
-                    "Best Ball mode: weekly Start/Sit and lineup locks are hidden — "
-                    "focus on waivers and the draft."
+                    "Best Ball mode: weekly Start/Sit and lineup locks are hidden. "
+                    "Focus on waivers and the draft."
                 )
             # R10.3 thin season outlook — playoff odds when available; honest v1 copy.
             _outlook_odds = ""
@@ -354,7 +354,7 @@ def build_dashboard_body(ctx: dict) -> str:
                     _outlook_odds = (
                         f'<div class="os-section-subtitle" style="margin-top:6px">'
                         f'Playoff odds: <strong>{html.escape(str(_po_val))}</strong>'
-                        f'{(" — " + _po_sub) if _po_sub else ""}'
+                        f'{(" · " + _po_sub) if _po_sub else ""}'
                         f'</div>'
                     )
                 else:
@@ -368,7 +368,7 @@ def build_dashboard_body(ctx: dict) -> str:
           <div class="os-section-head">
             <div class="os-section-head-content">
               <h2 class="os-section-title">Season outlook (thin)</h2>
-              <div class="os-section-subtitle">Best Ball — no weekly lineup. Finish framing only for v1.</div>
+              <div class="os-section-subtitle">Best Ball: no weekly lineup. Finish framing only for v1.</div>
             </div>
           </div>
           <p style="margin:0;font-size:13px;line-height:1.45;color:var(--text-muted)">

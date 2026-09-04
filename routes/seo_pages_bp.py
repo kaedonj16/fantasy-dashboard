@@ -319,7 +319,7 @@ def page_compare(platform: str | None = None, season: int | None = None,
     if league_id and platform and season:
         return render_page(
             title, league_id, "compare", body, platform, season,
-            description=desc,
+            description=desc, lite_js=True,
         )
     # Do not pass a remembered league_id into render_page — that would flip this
     # public SEO page to noindex. Nav still inherits session last_* for signed-in
