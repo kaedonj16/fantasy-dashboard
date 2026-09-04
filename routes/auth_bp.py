@@ -49,10 +49,23 @@ def api_identify():
     if session.get("account_id") and session.get("viewer_user_id"):
         try:
             from dashboard_services.accounts import link_platform_identity
-            link_platform_identity(
+            status = link_platform_identity(
                 int(session["account_id"]), "sleeper",
                 session["viewer_user_id"], session.get("viewer_username"),
             )
+            if status == "conflict":
+                # Same as Google sign-in: do not keep browsing as a Sleeper
+                # identity that already belongs to another Google account.
+                logger.warning(
+                    "[identify] sleeper identity conflict for acct=%s uid=%s",
+                    session.get("account_id"), session.get("viewer_user_id"),
+                )
+                for k in ("viewer_user_id", "viewer_username", "viewer_roster_id",
+                          "viewer_display_name", "viewer_team_name"):
+                    session.pop(k, None)
+                return jsonify({
+                    "error": "That Sleeper username is already linked to another account.",
+                }), 409
         except Exception:
             logger.debug("[identify] sleeper bridge failed", exc_info=True)
 

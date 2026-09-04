@@ -138,11 +138,150 @@ def test_get_matchups_falls_back_to_default_scoreboard(monkeypatch):
 
 
 def test_get_matchups_returns_empty_on_http_error(monkeypatch):
-    def _boom(*a, **k):
-        raise RuntimeError("404 scoreboard")
+    calls = []
+
+    def _boom(token, path, params=None):
+        calls.append(path)
+        raise RuntimeError("403 scoreboard")
+
     monkeypatch.setattr(yahoo_api, "_yahoo_get", _boom)
     monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "461.l.1307110")
     assert yahoo_api.get_matchups(2026, "1307110", 1, access_token="tok") == []
+    assert len(calls) == 1
+    assert "week=" in calls[0]
+
+
+class _FakeYahooResp:
+    def __init__(self, status, text, payload=None):
+        self.status_code = status
+        self.text = text
+        self._payload = payload if payload is not None else {}
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            err = __import__("requests").HTTPError(
+                f"{self.status_code} Client Error: Forbidden for url: x"
+            )
+            err.response = self
+            raise err
+
+
+_NOT_IN_LEAGUE = (
+    '{"error":{"description":"You are not allowed to view this page '
+    'because you are not in this league.","detail":""}}'
+)
+
+
+def test_parse_nfl_game_keys_pairs_list_of_fragments():
+    raw = {
+        "fantasy_content": {
+            "games": [
+                {"game_key": "470"},
+                {"season": "2026"},
+                {"game_key": "461"},
+                {"season": "2025"},
+            ]
+        }
+    }
+    parsed = yahoo_api._parse_nfl_game_keys(raw)
+    assert parsed[2026] == "470"
+    assert parsed[2025] == "461"
+
+
+def test_parse_nfl_game_keys_merges_wrapped_game_lists():
+    raw = {
+        "fantasy_content": {
+            "games": {
+                "count": 2,
+                "0": {"game": [{"game_key": "470"}, {"season": "2026"}]},
+                "1": {"game": [{"game_key": "461"}, {"season": "2025"}]},
+            }
+        }
+    }
+    parsed = yahoo_api._parse_nfl_game_keys(raw)
+    assert parsed[2026] == "470"
+    assert parsed[2025] == "461"
+
+
+def test_league_key_for_2026_uses_470_when_games_collection_empty(monkeypatch):
+    yahoo_api._clear_yahoo_request_state()
+    monkeypatch.setattr(yahoo_api, "_nfl_game_keys", lambda token: [])
+    assert yahoo_api._league_key_for_season("1307110", 2026, "tok") == "470.l.1307110"
+    assert yahoo_api._league_key_for_season("1307110", 2025, "tok") == "461.l.1307110"
+
+
+def test_yahoo_get_retries_2026_game_key_when_461_says_not_in_league(monkeypatch):
+    """A 2026 member 403s on last year's 461.l.<id>; same token can read 470."""
+    yahoo_api._clear_yahoo_request_state()
+    urls = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        urls.append(url)
+        if "470.l.1307110" in url:
+            return _FakeYahooResp(200, "{}", {"fantasy_content": {"ok": True}})
+        return _FakeYahooResp(403, _NOT_IN_LEAGUE)
+
+    monkeypatch.setattr(yahoo_api.requests, "get", fake_get)
+    monkeypatch.setattr(yahoo_api, "get_league_token", lambda *a, **k: None)
+    data = yahoo_api._yahoo_get("member-tok", "league/461.l.1307110/scoreboard;week=1")
+    assert data["fantasy_content"]["ok"] is True
+    assert any("461.l.1307110" in u for u in urls)
+    assert any("470.l.1307110" in u for u in urls)
+    assert yahoo_api._season_key_map.get(("1307110", 2026)) == "470.l.1307110"
+
+    n = len(urls)
+    yahoo_api._yahoo_get("member-tok", "league/461.l.1307110/scoreboard;week=2")
+    assert any("470.l.1307110" in u and "week=2" in u for u in urls[n:])
+    assert not any("461.l.1307110" in u and "week=2" in u for u in urls[n:])
+
+
+def test_yahoo_get_retries_owner_token_when_session_not_in_league(monkeypatch):
+    yahoo_api._clear_yahoo_request_state()
+    auths = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        auth = (headers or {}).get("Authorization", "")
+        auths.append(auth)
+        if "session-tok" in auth:
+            return _FakeYahooResp(403, _NOT_IN_LEAGUE)
+        return _FakeYahooResp(200, "{}", {"fantasy_content": {"ok": True}})
+
+    monkeypatch.setattr(yahoo_api.requests, "get", fake_get)
+    monkeypatch.setattr(yahoo_api, "get_league_token", lambda lid, season: "owner-tok")
+    data = yahoo_api._yahoo_get("session-tok", "league/461.l.1307110/scoreboard;week=1")
+    assert data["fantasy_content"]["ok"] is True
+    assert auths[0] == "Bearer session-tok"
+    assert "Bearer owner-tok" in auths
+    # Same token is tried on 461 then nfl / 470 / 449 before the owner account.
+    session_first = auths.count("Bearer session-tok")
+    assert session_first >= 2
+
+    # Later weeks skip every session game-key that already 403'd.
+    yahoo_api._yahoo_get("session-tok", "league/461.l.1307110/scoreboard;week=2")
+    assert auths.count("Bearer session-tok") == session_first
+    assert auths.count("Bearer owner-tok") >= 2
+
+
+def test_yahoo_get_short_circuits_after_membership_403(monkeypatch):
+    yahoo_api._clear_yahoo_request_state()
+    calls = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        calls.append(url)
+        return _FakeYahooResp(403, _NOT_IN_LEAGUE)
+
+    monkeypatch.setattr(yahoo_api.requests, "get", fake_get)
+    monkeypatch.setattr(yahoo_api, "get_league_token", lambda *a, **k: None)
+    with pytest.raises(yahoo_api.YahooLeagueAccessDenied):
+        yahoo_api._yahoo_get("session-tok", "league/461.l.1307110/scoreboard;week=5")
+    first_wave = len(calls)
+    assert first_wave >= 2
+    with pytest.raises(yahoo_api.YahooLeagueAccessDenied):
+        yahoo_api._yahoo_get("session-tok", "league/461.l.1307110/scoreboard;week=6")
+    assert len(calls) == first_wave
 
 
 def test_build_matchup_preview_does_not_synthesize_when_scoreboard_raises():

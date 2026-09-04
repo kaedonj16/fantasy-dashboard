@@ -275,6 +275,7 @@
     --z-toast: 99999; /* #toast-container, fullscreen loading overlay */
     --z-gate: 100000; /* .pp-signin-overlay (paywall / sign-in gate) */
     --z-tooltip: 100001; /* hover/tap text tooltips (.adv-def-tip and peers) */
+    --z-gate-nested: 100002; /* identify / league picker stacked on paywall */
     --z-progress: 999999; /* #page-load-bar (top progress bar) */
 
     /* Space the fixed mobile bottom dock (.br-mnav / .br-tabbar, 56px +

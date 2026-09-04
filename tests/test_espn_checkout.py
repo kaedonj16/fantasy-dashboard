@@ -66,6 +66,8 @@ def test_checkout_preserves_provider_at_every_plan_entry(
     assert captured["metadata"]["season"] == "2026"
     assert captured["metadata"]["user_id"] == f"{platform}-owner-7"
     assert captured["metadata"]["plan"] == plan
+    assert captured["subscription_data"]["metadata"]["plan"] == plan
+    assert captured["subscription_data"]["metadata"]["league_id"] == "123"
     assert f"/{platform}/2026/123/dashboard" in urllib.parse.unquote(captured["success_url"])
     assert captured["cancel_url"].endswith(f"/{platform}/2026/123/pricing?canceled=1")
     if plan == "single_league":

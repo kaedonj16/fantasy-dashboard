@@ -26050,6 +26050,9 @@ def build_portfolio_body(
         ".pf-summary{display:flex;flex-direction:column;gap:14px;}"
         ".pf-summary-title{font-size:21px;font-weight:800;letter-spacing:-.01em;color:var(--text);line-height:1.1;}"
         ".pf-summary-sub{font-size:13px;color:var(--text-muted);margin-top:3px;}"
+        ".pf-reset-user{color:var(--text-muted);font-size:12px;font-weight:700;"
+        "text-decoration:underline;text-underline-offset:2px;}"
+        ".pf-reset-user:hover{color:var(--accent);}"
         ".pf-stat-bar{display:grid;grid-template-columns:repeat(3,1fr);"
         "border:1px solid var(--grid);border-radius:12px;overflow:hidden;background:var(--row);}"
         ".pf-stat{padding:12px 10px;text-align:center;min-width:0;}"
@@ -26199,7 +26202,8 @@ def build_portfolio_body(
         f"<div class='pf-summary'>"
         f"<div>"
         f"<div class='pf-summary-title'>My Leagues</div>"
-        f"<div class='pf-summary-sub'>Signed in as <strong>{_who}</strong></div>"
+        f"<div class='pf-summary-sub'>Signed in as <strong>{_who}</strong>"
+        f" · <a class='pf-reset-user' href='/reset-user'>Not me?</a></div>"
         f"</div>"
         f"<div class='pf-stat-bar'>"
         f"<div class='pf-stat'><div class='pf-stat-val'>{num_leagues}</div><div class='pf-stat-label'>Leagues</div></div>"
@@ -26317,9 +26321,13 @@ def build_portfolio_body(
             f"{html.escape(label)}</span>"
         )
 
-    def _lg_id(name_inner, _plat, extra="", arch=""):
+    def _lg_id(name_inner, _plat, extra="", arch="", team=""):
         plat = _plat_script(_plat)
-        meta_inner = f"{plat}{arch}" if (plat or arch) else ""
+        team_html = (
+            f"<span class='pf-lg-team'>{html.escape(team)}</span>"
+            if team else ""
+        )
+        meta_inner = f"{plat}{team_html}{arch}" if (plat or team_html or arch) else ""
         meta = f"<div class='pf-lg-meta'>{meta_inner}</div>" if meta_inner else ""
         return (
             f"<div class='pf-lg-id'><div class='pf-lg-title'>{name_inner}{extra}</div>"
@@ -26477,13 +26485,14 @@ def build_portfolio_body(
             f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}'>"
             f"<div class='pf-lg-top'>"
             f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
-            f"{_lg_id(name_link, plat, off_note, arch_badge)}"
+            f"{_lg_id(name_link, plat, off_note, arch_badge, lg.get('team_name') or '')}"
             f"{_lg_tools(_unlink_btn(plat, lid))}"
             f"</div>"
             f"<div class='pf-lg-mid'>"
             f"<span class='pf-lg-stat'><span class='pf-lg-v {rec_cls2}'>{rec}</span>"
             f"<span class='pf-lg-l'>Rec</span></span>"
-            f"<span class='pf-lg-stat'><span class='pf-lg-v'>{rank}/{total}</span>"
+            f"<span class='pf-lg-stat' title='Regular-season standings: wins, then points for'>"
+            f"<span class='pf-lg-v'>{rank}/{total}</span>"
             f"<span class='pf-lg-l'>Rank</span></span>"
             f"<span class='pf-lg-stat pf-lg-stat--streak'><span class='pf-streak'>{dots}</span>"
             f"<span class='pf-lg-l'>Streak</span></span>"
@@ -26508,6 +26517,9 @@ def build_portfolio_body(
         ".pf-lg-name:hover{color:var(--accent);}"
         ".pf-lg-off{font-size:10px;color:var(--text-subtle);flex:0 0 auto;white-space:nowrap;}"
         ".pf-lg-meta{display:flex;align-items:center;gap:6px;min-width:0;max-width:100%;}"
+        ".pf-lg-team{font-size:11px;color:var(--text-muted);line-height:1.2;"
+        "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}"
+        ".pf-lg-plat+.pf-lg-team::before{content:'·';margin-right:6px;color:var(--text-subtle);}"
         ".pf-lg-plat{font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;line-height:1.2;"
         "flex:0 0 auto;}"
         ".pf-lg-plat-sleeper{color:#6C4BF0;}"

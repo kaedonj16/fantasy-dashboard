@@ -59,6 +59,29 @@ def test_active_viewer_and_linked_identity_are_deduplicated(monkeypatch):
     assert [league["league_id"] for league in leagues] == ["league-1"]
 
 
+def test_unlinked_session_viewer_is_not_fetched_for_google_accounts(monkeypatch):
+    fetched = []
+    monkeypatch.setattr(
+        accounts, "list_account_platform_ids", lambda account_id, platform: ["linked-user"]
+    )
+    monkeypatch.setattr(accounts, "list_user_leagues", lambda account_id: [
+        {"platform": "sleeper", "league_id": "mine", "season": 2026},
+    ])
+
+    def fetch(user_id, season):
+        fetched.append(user_id)
+        if user_id == "linked-user":
+            return [{"league_id": "mine", "season": season}]
+        return [{"league_id": "someone-elses", "season": season}]
+
+    monkeypatch.setattr("dashboard_services.api.get_sleeper_user_leagues", fetch)
+
+    leagues, _ = accounts.resolve_my_leagues("leftover-other-person", 42, 2026)
+
+    assert fetched == ["linked-user"]
+    assert [league["league_id"] for league in leagues] == ["mine"]
+
+
 def test_one_failed_sleeper_identity_does_not_hide_other_leagues(monkeypatch):
     monkeypatch.setattr(
         accounts, "list_account_platform_ids", lambda account_id, platform: ["stale", "working"]
