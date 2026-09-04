@@ -23936,6 +23936,10 @@ tr.team-clickable {
     color: var(--text-muted);
 }
 
+.sos-cols span:last-child {
+    text-align: right;
+}
+
 .sos-list {
     display: flex;
     flex-direction: column;
@@ -23945,7 +23949,7 @@ tr.team-clickable {
 
 .sos-row {
     display: grid;
-    grid-template-columns: 28px minmax(0, 1fr);
+    grid-template-columns: 28px minmax(0, 1fr) 44px;
     gap: 8px;
     align-items: center;
     padding: 8px 6px;
@@ -24028,9 +24032,9 @@ tr.team-clickable {
     font-size: 9px;
     font-weight: 800;
     letter-spacing: 0.06em;
-    color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 14%, transparent);
-    border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+    color: var(--brand-blue);
+    background: color-mix(in srgb, var(--brand-blue) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--brand-blue) 34%, transparent);
     border-radius: 5px;
     padding: 1px 5px;
 }
@@ -24051,7 +24055,7 @@ tr.team-clickable {
 }
 
 .sos-diff-mid {
-    color: var(--warning);
+    color: color-mix(in srgb, var(--warning) 72%, var(--text));
     background: color-mix(in srgb, var(--warning) 16%, transparent);
 }
 
@@ -24065,14 +24069,8 @@ tr.team-clickable {
     background: var(--row);
 }
 
-.sos-bar-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
 .sos-track {
-    flex: 1;
+    width: 100%;
     min-width: 0;
     height: 8px;
     background: var(--bg-alt);

@@ -313,13 +313,11 @@
                 '</span>' +
                 '<span class="sos-diff sos-diff-' + tier.key + '">' + tier.label + '</span>' +
               '</div>' +
-              '<div class="sos-bar-row">' +
-                '<div class="sos-track">' +
-                  '<div class="sos-fill sos-fill-' + tier.key + '" style="width:' + pct + '%"></div>' +
-                '</div>' +
-                '<span class="sos-val">' + vsLbl + '</span>' +
+              '<div class="sos-track">' +
+                '<div class="sos-fill sos-fill-' + tier.key + '" style="width:' + pct + '%"></div>' +
               '</div>' +
             '</div>' +
+            '<span class="sos-val">' + vsLbl + '</span>' +
           '</div>';
         });
 
