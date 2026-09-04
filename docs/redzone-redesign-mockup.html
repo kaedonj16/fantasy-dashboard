@@ -512,8 +512,16 @@
   }
   .ev-tag.mine { color: var(--red-hot); background: var(--red-glow); border: 1px solid rgba(239,68,68,.3); }
   .ev-tag.opp { color: var(--muted); background: var(--raise); border: 1px solid var(--line); }
-  .ev-desc { font-size: 12.5px; color: var(--text); margin-top: 2px; }
+  .ev-desc { font-size: 12.5px; color: var(--text); margin-top: 3px; display: flex; align-items: center; gap: 7px; }
   .ev-desc.warn { color: var(--amber); }
+  .ev-kind {
+    font-family: var(--display);
+    font-weight: 700; font-size: 9.5px; letter-spacing: .08em;
+    padding: 2px 5px; border-radius: 4px; flex: 0 0 auto;
+    line-height: 1.2;
+  }
+  .ev-kind.td { color: #fff; background: var(--red); }
+  .ev-kind.inj { color: #0a0d12; background: var(--amber); }
   .ev-sub {
     font-size: 11px; color: var(--faint); margin-top: 3px;
     display: flex; align-items: center; gap: 6px;
@@ -680,7 +688,7 @@
             <!-- on deck -->
             <div class="ondeck">
               <span class="lab">On deck</span>
-              <span class="clock">▶ 38m</span>
+              <span class="clock">in 38m</span>
               <span>BUF @ NYJ</span>
               <span class="players">J. Allen</span>
             </div>
@@ -711,7 +719,7 @@
                       <span class="ev-name">L. Jackson</span>
                       <span class="ev-tag mine">MY TEAM</span>
                     </div>
-                    <div class="ev-desc">🏈 34-yd passing TD to M. Andrews</div>
+                    <div class="ev-desc"><span class="ev-kind td">TD</span>34-yd pass to M. Andrews</div>
                     <div class="ev-sub"><span class="myteam">BAL</span> 21 · HOU 14 <span class="clk">Q3 4:32</span></div>
                   </div>
                   <div class="ev-delta">+6.8</div>
@@ -724,7 +732,7 @@
                       <span class="ev-name">J. Gibbs</span>
                       <span class="ev-tag mine">MY TEAM</span>
                     </div>
-                    <div class="ev-desc">🏈 2-yd rushing TD</div>
+                    <div class="ev-desc"><span class="ev-kind td">TD</span>2-yd rush up the middle</div>
                     <div class="ev-sub"><span class="myteam">DET</span> 24 · CHI 7 <span class="clk">Q4 2:14</span></div>
                   </div>
                   <div class="ev-delta">+7.2</div>
@@ -739,7 +747,7 @@
                       <span class="ev-name">D. Henry</span>
                       <span class="ev-tag mine">MY TEAM</span>
                     </div>
-                    <div class="ev-desc warn">⚠️ Ruled OUT — hamstring</div>
+                    <div class="ev-desc warn"><span class="ev-kind inj">OUT</span>Ruled out — hamstring</div>
                     <div class="ev-sub"><span class="myteam">TEN</span> 28 · IND 17 · Final</div>
                   </div>
                   <div class="ev-delta neg">Q→O</div>
