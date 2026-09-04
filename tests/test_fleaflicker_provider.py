@@ -431,6 +431,33 @@ def test_positions_canonicalizes_fleaflicker_flex_sf_and_dst():
     ]
 
 
+def test_positions_detects_superflex_from_permuted_label_and_object_eligibility():
+    """Fleaflicker superflex slots must be recognized even when the label lists
+    positions in an order the alias table doesn't enumerate, or eligibility comes
+    back as position objects rather than plain strings. Otherwise an SF league is
+    misread as 1QB and the trade calc / strategy run in the wrong format."""
+    from utils.lineup_slots import is_superflex_lineup
+
+    slots = FleaflickerProvider._positions({
+        "rosterPositions": [
+            {"label": "QB", "group": "START", "start": 1},
+            {"label": "RB", "group": "START", "start": 2},
+            {"label": "WR", "group": "START", "start": 2},
+            {"label": "TE", "group": "START", "start": 1},
+            # Ordering not in SUPERFLEX_SLOT_NAMES; label tokens must still resolve.
+            {"label": "TE/QB/RB/WR", "group": "START", "start": 1},
+            # Unrecognized label; SF-ness only visible via object-shaped
+            # eligibility. The old code returned the raw label and dropped it.
+            {"label": "OffPlayer", "group": "START", "start": 1,
+             "eligibility": [{"label": "QB"}, {"label": "RB"},
+                             {"label": "WR"}, {"label": "TE"}]},
+            {"label": "BN", "group": "BENCH", "max": 6},
+        ],
+    })
+    assert slots.count("SUPER_FLEX") == 2, slots
+    assert is_superflex_lineup(slots)
+
+
 def test_positions_skips_bench_even_when_start_is_set():
     slots = FleaflickerProvider._positions({
         "roster_positions": [

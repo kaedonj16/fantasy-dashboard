@@ -1641,21 +1641,42 @@ class FleaflickerProvider(ProviderAdapter):
         """
         from utils.lineup_slots import canonicalize_slot, normalize_slot_name
 
+        # Canonical tokens we trust the label to name directly. Anything else the
+        # label normalizes to (an unrecognized or oddly-ordered multi-position
+        # name) must defer to the eligibility set, not be returned verbatim.
+        known = {
+            "QB", "RB", "WR", "TE", "K", "DEF",
+            "FLEX", "SUPER_FLEX", "RB_WR", "WR_TE", "RB_TE", "BN", "IR",
+        }
+        skill = {"QB", "RB", "WR", "TE"}
+
         label = str(_get(pos, "label") or "").strip()
         mapped = canonicalize_slot(label)
-        elig = {
-            normalize_slot_name(e)
-            for e in (pos.get("eligibility") or [])
-            if e is not None and str(e).strip()
-        }
+
+        def _elig_token(e) -> str:
+            # Eligibility entries are usually strings ("QB") but Fleaflicker also
+            # returns position objects ({"label": "QB"} / {"name": ...}); pull a
+            # name out either way before normalizing.
+            if isinstance(e, dict):
+                e = e.get("label") or e.get("name") or e.get("position") or ""
+            return normalize_slot_name(e)
+
+        elig = {tok for tok in (_elig_token(e) for e in (pos.get("eligibility") or [])) if tok}
+        # A superflex/flex slot is often only distinguishable from its listed
+        # eligible positions, and Fleaflicker orders them inconsistently. Fold the
+        # skill-position tokens embedded in the label into the eligibility set so
+        # "QB/RB/WR/TE" is recognized as superflex regardless of ordering, even
+        # when that exact permutation isn't in the canonical alias table.
+        elig |= {tok for tok in normalize_slot_name(label).split("_") if tok in skill}
         refined = FleaflickerProvider._slot_from_eligibility(elig)
+
         if mapped == "FLEX":
-            if refined:
-                return refined
-            return "FLEX"
-        if mapped:
+            # Eligibility decides whether this "flex" actually starts a QB.
+            return refined or "FLEX"
+        if mapped in known:
             return mapped
-        return refined
+        # Unrecognized / permuted label: trust the eligibility we parsed.
+        return refined or mapped
 
     @staticmethod
     def _slot_from_eligibility(elig: set) -> str:
