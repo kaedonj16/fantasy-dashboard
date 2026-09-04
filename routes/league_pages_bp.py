@@ -80,11 +80,27 @@ def _standings_panels(*args, **kwargs):
     from app import _standings_panels as _fn
     return _fn(*args, **kwargs)
 
+def _standings_no_games(ctx) -> bool:
+    """True when no regular-season games have been finalized yet, so the in-season
+    standings would be all 0-0. The value-based (offseason) layout is the useful,
+    populated view for that state and matches the artifact's offseason mode."""
+    try:
+        from app import _games_played_max
+        ts = ctx.get("team_stats")
+        if ts is None or getattr(ts, "empty", True):
+            return True
+        return _games_played_max(ts) == 0
+    except Exception:
+        return False
+
 @league_pages_bp.route("/<platform>/<int:season>/<league_id>/standings")
 def page_standings(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
 
-    if ctx.get("offseason_mode"):
+    # Before any games are played the in-season standings are all 0-0, so show the
+    # populated value-based layout (the artifact's offseason mode) instead. It
+    # switches back automatically once the first week finalizes.
+    if ctx.get("offseason_mode") or _standings_no_games(ctx):
         body = _build_offseason_standings_body(ctx)
     else:
         body = build_standings_body(ctx)
