@@ -744,8 +744,11 @@
 
   function renderSetupRoster(){
     var sf = document.getElementById('drSf').value === '1';
-    var rd = document.getElementById('drType').value === 'redraft';
-    var rk = document.getElementById('drType').value === 'rookie';
+    // A keeper draft is a redraft that starts with picks spent (see readSetup),
+    // so it takes the redraft roster shape (K/DEF, standard bench), not dynasty.
+    var _typeVal = document.getElementById('drType').value;
+    var rd = _typeVal === 'redraft' || _typeVal === 'keeper';
+    var rk = _typeVal === 'rookie';
     var leagueRaw = rosterFromLeague();   // null when no league connected
     var hasLeague = !!leagueRaw;
 
@@ -1248,7 +1251,8 @@
     if (state.roster){
       var rr = {}; Object.keys(state.roster).forEach(function(k){ rr[k] = state.roster[k]; });
       rr._sf = document.getElementById('drSf').value === '1';
-      rr._rd = document.getElementById('drType').value === 'redraft';
+      var _rdTypeVal = document.getElementById('drType').value;
+      rr._rd = _rdTypeVal === 'redraft' || _rdTypeVal === 'keeper';
       _setupRoster = rr; _rosterMode = 'custom';
     }
     // Draft-capital editor: seed owned picks and match the signature so it is
@@ -1577,6 +1581,26 @@
     if (!keeperSet.length) return;
     keepersOn = true;
     renderKeeperBanner();
+    // A keeper league starts on the board with each kept player already spent on
+    // his team's real pick slot, not merely hidden from the pool. Default the
+    // setup's Draft Type to Keeper so starting a fresh draft runs seedKeeperPicks
+    // and shows the keepers in their seats. Left on Startup/Redraft, applyKeepers
+    // only pulls the players and the board never shows a keeper - which reads as
+    // "keepers not applied to the draft room". Only when the Keeper type is
+    // actually offered (show_keeper); a resumed session or an explicit type
+    // change still wins, since resumeFromSession runs after initKeepers.
+    var _tEl = document.getElementById('drType');
+    var _hasKeeperType = _tEl && Array.prototype.some.call(_tEl.options, function(o){ return o.value === 'keeper'; });
+    if (_tEl && _hasKeeperType && _tEl.value !== 'keeper'){
+      _tEl.value = 'keeper';
+      // Re-seed the roster from league/defaults for the new type, then refresh
+      // the dependent setup UI (mirrors the drType change handler).
+      _rosterMode = 'auto'; _rosterPreset = null; _setupRoster = null;
+      syncKeeperSetupFields(true);
+      syncCpuAdpSourceOptions();
+      renderSetupRoster();
+      renderSetupCapital();
+    }
   }
 
   // Effective keepers for the current setup. "Pick my own" uses the selections
