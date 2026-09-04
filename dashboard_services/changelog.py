@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-09-04",
         "tag": "update",
+        "text": "Trade Targets: the list is mixed across your real holes (not four elites at each weak position). A quality starter at a bottom-ranked spot is no longer treated as a shop-for-Allen need; mid-tier players who fill the hole and owners who need your surplus rank first, with a one-line reason on each row.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-09-04",
+        "tag": "update",
         "text": "Trade Targets: suggestions rank players by roster fit — how much they upgrade your gap, whether you can pay, owner surplus, and age window — instead of always listing the top few at a weak position.",
         "link": "/trade"
     },

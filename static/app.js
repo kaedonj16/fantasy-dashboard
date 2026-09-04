@@ -6386,7 +6386,7 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   // ------------------------------------------------------------
-  // loadTradeTargets - surfaces players to pursue based on positional rank gaps
+  // loadTradeTargets - roster-fit targets for this team's holes (not top-N at a pos)
   // ------------------------------------------------------------
   async function loadTradeTargets(containerEl) {
     const body = containerEl || root.querySelector("#tradeTargetsBody");
@@ -6450,7 +6450,11 @@ window.initTradePage = function initTradePage(root = document) {
       const grouped = data.by_position || {};
       const needPositions = Object.keys(grouped);
       const allGrouped = data.all_positions || {};
+      const mixed = Array.isArray(data.targets) ? data.targets : [];
       const isBalanced = !needPositions.length;
+      const summary = data.summary || (isBalanced
+        ? "No glaring gaps — upgrades that fit your roster"
+        : "");
 
       const posColor = POS_COLORS;
 
@@ -6466,7 +6470,7 @@ window.initTradePage = function initTradePage(root = document) {
             <div style="font-size:11px;color:var(--text-muted);">${whyLine}</div>
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-            <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position}</span>
+            <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position || pos}</span>
             <span style="font-size:13px;font-weight:800;color:var(--text);">${parseFloat(t.value).toFixed(1)}</span>
             <button class="get-target-btn"
               data-pid="${safePid}" data-name="${safeName}"
@@ -6477,14 +6481,18 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       let html = "";
+      if (summary) {
+        html += `<div style="font-size:11px;color:var(--text-muted);padding:2px 0 8px;">${escapeHtml(summary)}</div>`;
+      }
 
-      if (isBalanced) {
+      if (mixed.length) {
+        mixed.forEach(t => { html += renderPlayerRow(t, t.position || ""); });
+      } else if (isBalanced) {
         const allKeys = Object.keys(allGrouped);
         if (!allKeys.length) {
           body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">No player data available.</div>';
           return;
         }
-        html += `<div style="font-size:11px;color:var(--text-muted);padding:2px 0 8px;">No glaring gaps — upgrades that fit your roster:</div>`;
         allKeys.forEach(pos => {
           const players = allGrouped[pos] || [];
           if (!players.length) return;
@@ -7685,14 +7693,21 @@ window.initTradePage = function initTradePage(root = document) {
 
         const grouped     = data.by_position || {};
         const allGrouped  = data.all_positions || {};
+        const mixed       = Array.isArray(data.targets) ? data.targets : [];
         const isBalanced  = !Object.keys(grouped).length;
+        const summary     = data.summary || (isBalanced
+          ? "No glaring gaps — upgrades that fit your roster"
+          : "");
         const posColor2   = POS_COLORS;
 
         function renderRow(t, pos) {
           const col      = posColor2[pos] || "var(--accent)";
           const safeName = escapeHtml(t.name);
           const safePid  = escapeHtml(t.player_id);
-          const why      = t.why ? `<span class="otc-sugg-target-why">${escapeHtml(t.why)}</span>` : "";
+          const whyBits  = [t.owner_team, t.why].filter(Boolean);
+          const why      = whyBits.length
+            ? `<span class="otc-sugg-target-why">${escapeHtml(whyBits.join(" · "))}</span>`
+            : "";
           return `<div class="otc-sugg-target-row">
             <span class="otc-sugg-target-pos" style="background:${col}20;color:${col};">${pos}</span>
             <span class="otc-sugg-target-meta">
@@ -7707,8 +7722,12 @@ window.initTradePage = function initTradePage(root = document) {
         }
 
         let html = "";
-        if (isBalanced) {
-          html += `<div style="font-size:11px;color:var(--text-muted);padding:2px 0 8px;">No glaring gaps — upgrades that fit your roster:</div>`;
+        if (summary) {
+          html += `<div class="otc-sugg-targets-summary">${escapeHtml(summary)}</div>`;
+        }
+        if (mixed.length) {
+          mixed.forEach(t => { html += renderRow(t, t.position || ""); });
+        } else if (isBalanced) {
           Object.keys(allGrouped).forEach(pos => {
             (allGrouped[pos] || []).forEach(t => { html += renderRow(t, pos); });
           });

@@ -6827,6 +6827,13 @@ strong + .player-badge,
     white-space: nowrap;
 }
 
+.otc-sugg-targets-summary {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 4px 14px 8px;
+    line-height: 1.35;
+}
+
 .otc-sugg-target-why {
     font-size: 10px;
     color: var(--text-muted);
