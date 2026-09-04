@@ -1021,6 +1021,7 @@ def guide_page(slug: str, platform: Optional[str] = None, season: Optional[int] 
 
     import json
     origin = _seo_origin()
+    article_url = f"{origin}{base}/guides/{slug}"
     article_ld = {
         "@context": "https://schema.org",
         "@type": "Article",
@@ -1038,13 +1039,26 @@ def guide_page(slug: str, platform: Optional[str] = None, season: Optional[int] 
             "name": "BR Fantasy",
             "logo": {"@type": "ImageObject", "url": f"{origin}/static/BR_Logo.png"},
         },
-        "mainEntityOfPage": f"{origin}{base}/guides/{slug}",
+        "mainEntityOfPage": article_url,
     }
-    jsonld = (
-        '<script type="application/ld+json">'
-        + json.dumps(article_ld, separators=(",", ":")).replace("<", "\\u003c")
-        + "</script>"
-    )
+    breadcrumb_ld = {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {"@type": "ListItem", "position": 1, "name": "Home", "item": f"{origin}/"},
+            {"@type": "ListItem", "position": 2, "name": "Guides", "item": f"{origin}{base}/guides"},
+            {"@type": "ListItem", "position": 3, "name": g["title"], "item": article_url},
+        ],
+    }
+
+    def _ld_script(obj: dict) -> str:
+        return (
+            '<script type="application/ld+json">'
+            + json.dumps(obj, separators=(",", ":")).replace("<", "\\u003c")
+            + "</script>"
+        )
+
+    jsonld = _ld_script(article_ld) + _ld_script(breadcrumb_ld)
 
     body = f"""
         <div class="static-page">

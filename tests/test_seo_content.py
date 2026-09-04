@@ -160,6 +160,9 @@ def test_guides_are_substantial_articles_with_schema(offline_client):
         assert f"/guides/{slug}" in xml
         html = _html(offline_client, f"/guides/{slug}")
         assert '"@type":"Article"' in html
+        assert '"@type":"BreadcrumbList"' in html
+        assert '"name":"Home"' in html
+        assert '"name":"Guides"' in html
         assert g["title"] in html
         assert "hoodiekj" in html
         assert "adsbygoogle" in html
