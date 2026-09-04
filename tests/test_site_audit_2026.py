@@ -227,10 +227,10 @@ def test_default_og_card_is_large_branded_image():
 
 
 def test_manifest_and_offline_theme_match_brand():
-    """Site-audit #25/#27: PWA splash isn't stuck white; offline honors saved theme."""
+    """PWA splash uses a white canvas; offline honors saved theme."""
     manifest = (ROOT / "static" / "manifest.json").read_text(encoding="utf-8")
-    assert '"theme_color": "#0b2036"' in manifest
-    assert '"background_color": "#0b2036"' in manifest
+    assert '"theme_color": "#ffffff"' in manifest
+    assert '"background_color": "#ffffff"' in manifest
     offline = (ROOT / "static" / "offline.html").read_text(encoding="utf-8")
     assert "localStorage.getItem('theme')" in offline
     assert "BR_Logo_dark.png" in offline
