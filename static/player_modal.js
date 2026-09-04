@@ -660,7 +660,7 @@ function openPlayerModal(playerId, playerName, opts) {
         const legend = present.map(s =>
           `<span class="pm-adp-lg"><i class="pm-adp-dot-sm" style="background:${_adpColors[s.label] || 'var(--text-muted)'}"></i>${_adpEsc(s.label)}</span>`).join('');
         return `
-          <div class="pm-adp-card">
+          <div class="pm-adp-card" data-adp-fmt="${fmtKey}">
             <div class="pm-adp-card-h">${fmtLabel}</div>
             <div class="pm-adp-ranges">
               ${_adpRangeBlock(fmtKey, '1qb', '1QB', !_adpIsSf, present)}
@@ -676,7 +676,33 @@ function openPlayerModal(playerId, playerName, opts) {
         const srcs = sources.filter(s => s.label !== 'Consensus');
         const dyn = _adpFmtCard(srcs, 'dynasty', 'Dynasty');
         const rdr = _adpFmtCard(srcs, 'redraft', 'Redraft');
-        return (dyn || rdr) ? (dyn + rdr) : '';
+        if (!dyn && !rdr) return '';
+        if (!dyn || !rdr) return dyn + rdr;   // one format only → no tabs needed
+        // Both formats present: a Dynasty/Redraft segmented control so mobile
+        // shows one card at a time (see .pm-adp-tabbed). Opens on the format the
+        // modal is already set to; wider screens ignore the tabs and show both.
+        const active = pmScoringType === 'redraft' ? 'redraft' : 'dynasty';
+        const _tab = (key, label) =>
+          `<button type="button" class="pm-adp-tab${key === active ? ' active' : ''}" data-adp-fmt="${key}" role="tab" aria-selected="${key === active}">${label}</button>`;
+        return `<div class="pm-adp-tabs" role="tablist" aria-label="ADP format">${_tab('dynasty', 'Dynasty')}${_tab('redraft', 'Redraft')}</div>${dyn}${rdr}`;
+      };
+      // Wire the ADP format tabs after the grid renders: clicking a tab shows its
+      // card and hides the other (mobile); on wide screens CSS shows both and
+      // hides the tabs, so this state is simply ignored there.
+      const _wireAdpTabs = (root) => {
+        const tabs = Array.from(root.querySelectorAll('.pm-adp-tab'));
+        if (!tabs.length) return;
+        const cards = Array.from(root.querySelectorAll('.pm-adp-card[data-adp-fmt]'));
+        const show = (fmt) => {
+          cards.forEach(c => { c.hidden = c.getAttribute('data-adp-fmt') !== fmt; });
+          tabs.forEach(b => {
+            const on = b.getAttribute('data-adp-fmt') === fmt;
+            b.classList.toggle('active', on);
+            b.setAttribute('aria-selected', on ? 'true' : 'false');
+          });
+        };
+        tabs.forEach(b => b.addEventListener('click', () => show(b.getAttribute('data-adp-fmt'))));
+        show(pmScoringType === 'redraft' ? 'redraft' : 'dynasty');
       };
       // Skeleton shown while the market sources load, so all sources appear
       // together rather than Sleeper first.
@@ -909,8 +935,12 @@ function openPlayerModal(playerId, playerName, opts) {
           // Bail if the modal was closed or a different player is now shown.
           if (!block || !grid || block.dataset.pid !== String(playerId)) return;
           const inner = _adpGridHTML(_adpSources.concat(extra || []));
-          if (inner) { grid.innerHTML = inner; block.style.display = ''; }
-          else { block.style.display = 'none'; }   // no ADP anywhere → drop it
+          if (inner) {
+            grid.innerHTML = inner;
+            grid.classList.toggle('pm-adp-tabbed', !!grid.querySelector('.pm-adp-tabs'));
+            _wireAdpTabs(grid);
+            block.style.display = '';
+          } else { block.style.display = 'none'; }   // no ADP anywhere → drop it
         };
         // Safety net: if the request hangs, reveal what we have so the skeleton
         // never sticks.

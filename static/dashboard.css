@@ -19692,6 +19692,48 @@ img, svg, canvas {
 
 .pm-adp-na { color: var(--text-subtle); font-weight: 700; }
 
+/* Format tabs: on phones the Dynasty/Redraft cards are shown one at a time
+   behind this segmented control instead of stacked, to cut the ADP block's
+   height. When tabbed, the container drops its 2-col grid and the per-card
+   format header is hidden (the active tab already names the format). On wider
+   screens the tabs hide and both cards return side by side, as before. */
+.pm-adp-tabs {
+    display: flex;
+    gap: 2px;
+    background: var(--card-soft);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 3px;
+    margin-bottom: 8px;
+}
+.pm-adp-tab {
+    flex: 1;
+    font: inherit;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--text-subtle);
+    background: transparent;
+    border: 0;
+    padding: 5px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.pm-adp-tab.active { background: var(--accent); color: var(--on-accent); }
+.pm-adp-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pm-adp-grid.pm-adp-tabbed { display: block; }
+.pm-adp-grid.pm-adp-tabbed .pm-adp-card-h { display: none; }
+
+@media (min-width: 601px) {
+    /* Wide screens: ignore the tab state and show both cards side by side. */
+    .pm-adp-grid.pm-adp-tabbed { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .pm-adp-grid.pm-adp-tabbed .pm-adp-tabs { display: none; }
+    /* [hidden] targets the tab-hidden card so both show side by side here. */
+    .pm-adp-grid.pm-adp-tabbed .pm-adp-card[data-adp-fmt][hidden] { display: block; }
+    .pm-adp-grid.pm-adp-tabbed .pm-adp-card-h { display: block; }
+}
+
 .pm-section-divider {
     border: none;
     border-top: 1px solid var(--border);
