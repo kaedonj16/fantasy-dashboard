@@ -39,6 +39,9 @@ _OPTIONAL_METHODS = frozenset({
     "FetchTeamPicks",
     "FetchLeagueBoxscore",
     "FetchRoster",
+    "FetchLeagueTransactions",
+    "FetchTrades",
+    "FetchLeagueActivity",
 })
 # Browser-like UA: some Fleaflicker edge configs are picky about obvious bots.
 _UA = (
@@ -65,12 +68,16 @@ _NO_SEASON = frozenset({
 _CACHE: dict[tuple, tuple[float, dict]] = {}
 _FAIL_CACHE: dict[tuple, tuple[float, Exception]] = {}
 _OPTIONAL_FAIL: dict[str, tuple[float, Exception]] = {}
+_HOST_FAIL = _OPTIONAL_FAIL  # any unavailable error trips every subsequent _call
+_XWALK: dict[tuple, tuple[float, Optional[dict]]] = {}
+_XWALK_TTL = 300
+_XWALK_WARN_TS = 0.0
 _KEY_LOCKS: dict[tuple, threading.Lock] = {}
 _KEY_LOCKS_GUARD = threading.Lock()
 _KEY_LOCKS_MAX = 256
 _TX_PAGE_CAP = 25
 _TRADE_PAGE_CAP = 15
-_TX_BY_WEEK: dict[tuple, tuple[float, dict]] = {}
+_TX_BY_WEEK: dict[tuple, tuple] = {}
 _TX_BY_WEEK_TTL = 300
 _TX_BY_WEEK_MAX = 64
 _ET = ZoneInfo("America/New_York")
@@ -170,14 +177,24 @@ def _optional_fail_key(auth: Optional[str]) -> str:
     return auth or ""
 
 
-def _raise_if_optional_down(auth: Optional[str]) -> None:
-    exc = _cached_failure(_OPTIONAL_FAIL, _optional_fail_key(auth), _OPTIONAL_FAIL_TTL)
+def _raise_if_host_down(auth: Optional[str]) -> None:
+    exc = _cached_failure(_HOST_FAIL, _optional_fail_key(auth), _OPTIONAL_FAIL_TTL)
     if exc is not None:
         raise exc
 
 
-def _trip_optional_down(auth: Optional[str], exc: Exception) -> None:
-    _OPTIONAL_FAIL[_optional_fail_key(auth)] = (time.monotonic(), exc)
+def _trip_host_down(auth: Optional[str], exc: Exception) -> None:
+    _HOST_FAIL[_optional_fail_key(auth)] = (time.monotonic(), exc)
+
+
+def _warn_crosswalk_once(exc: Exception) -> None:
+    global _XWALK_WARN_TS
+    now = time.monotonic()
+    if now - _XWALK_WARN_TS < _OPTIONAL_FAIL_TTL:
+        logger.debug("Fleaflicker player crosswalk unavailable error=%s", type(exc).__name__)
+        return
+    _XWALK_WARN_TS = now
+    logger.warning("Fleaflicker player crosswalk unavailable error=%s", type(exc).__name__)
 
 
 def _fantasy_week_from_ms(ts_ms: Optional[int], season: int) -> Optional[int]:
@@ -715,20 +732,18 @@ class FleaflickerProvider(ProviderAdapter):
             auth or "", include_season, tuple(sorted(params.items())),
         )
         optional = method in _OPTIONAL_METHODS
-        if optional:
-            _raise_if_optional_down(auth)
         cached = _CACHE.get(key)
         if cached and time.monotonic() - cached[0] < ttl:
             return cached[1]
+        _raise_if_host_down(auth)
         failed = _cached_failure(_FAIL_CACHE, key, _FAIL_TTL)
         if failed is not None:
             raise failed
         with _lock_for(key):
-            if optional:
-                _raise_if_optional_down(auth)
             cached = _CACHE.get(key)
             if cached and time.monotonic() - cached[0] < ttl:
                 return cached[1]
+            _raise_if_host_down(auth)
             failed = _cached_failure(_FAIL_CACHE, key, _FAIL_TTL)
             if failed is not None:
                 raise failed
@@ -757,7 +772,7 @@ class FleaflickerProvider(ProviderAdapter):
             except (ProviderAuthenticationError, LeagueNotFoundError, ProviderUnavailableError) as exc:
                 _remember_failure(key, exc)
                 if isinstance(exc, ProviderUnavailableError):
-                    _trip_optional_down(auth, exc)
+                    _trip_host_down(auth, exc)
                 raise
             except ValueError as exc:
                 logger.warning(
@@ -949,6 +964,18 @@ class FleaflickerProvider(ProviderAdapter):
         return players, starters, reserve, seen
 
     def _canonical_map(self, league_id, season, *, token: Optional[str] = None):
+        auth = resolve_credentials(str(league_id), season, token=token) or ""
+        cache_key = (str(league_id), int(season), auth)
+        hit = _XWALK.get(cache_key)
+        if hit:
+            ts, payload = hit
+            ttl = _FAIL_TTL if payload is None else _XWALK_TTL
+            if time.monotonic() - ts < ttl:
+                return payload or {}
+        try:
+            _raise_if_host_down(auth)
+        except ProviderUnavailableError:
+            return {}
         try:
             from utils.utils import load_players_index, normalize_name
             by_name = _name_index_from_players(load_players_index() or {}, normalize_name)
@@ -965,9 +992,11 @@ class FleaflickerProvider(ProviderAdapter):
                     canonical = _pick_canonical(by_name, name, pos, _flea_pro_team(pro))
                     if canonical:
                         out[str(pid)] = canonical
+            _XWALK[cache_key] = (time.monotonic(), out)
             return out
         except Exception as exc:
-            logger.warning("Fleaflicker player crosswalk unavailable error=%s", type(exc).__name__)
+            _XWALK[cache_key] = (time.monotonic(), None)
+            _warn_crosswalk_once(exc)
             return {}
 
     def get_rosters(self, league_id, season, *, token: Optional[str] = None):
@@ -1155,7 +1184,10 @@ class FleaflickerProvider(ProviderAdapter):
             want = int(week)
         except (TypeError, ValueError):
             want = 1
-        by_week = self._transactions_by_week(league_id, season, token=token)
+        try:
+            by_week = self._transactions_by_week(league_id, season, token=token)
+        except ProviderUnavailableError:
+            return []
         return list(by_week.get(want) or [])
 
     def _paginate_items(
@@ -1211,18 +1243,23 @@ class FleaflickerProvider(ProviderAdapter):
         auth = resolve_credentials(str(league_id), season, token=token) or ""
         cache_key = (str(league_id), int(season), auth)
         hit = _TX_BY_WEEK.get(cache_key)
-        if hit and time.monotonic() - hit[0] < _TX_BY_WEEK_TTL:
+        if hit and time.monotonic() - hit[0] < (hit[2] if len(hit) > 2 else _TX_BY_WEEK_TTL):
             return hit[1]
         with _lock_for(("tx-by-week",) + cache_key):
             hit = _TX_BY_WEEK.get(cache_key)
-            if hit and time.monotonic() - hit[0] < _TX_BY_WEEK_TTL:
+            if hit and time.monotonic() - hit[0] < (hit[2] if len(hit) > 2 else _TX_BY_WEEK_TTL):
                 return hit[1]
-            assembled = self._assemble_transactions_by_week(
-                league_id, season, token=token,
-            )
+            try:
+                assembled = self._assemble_transactions_by_week(
+                    league_id, season, token=token,
+                )
+                ttl = _TX_BY_WEEK_TTL
+            except ProviderUnavailableError:
+                assembled = {}
+                ttl = _FAIL_TTL
             if len(_TX_BY_WEEK) >= _TX_BY_WEEK_MAX:
                 _TX_BY_WEEK.clear()
-            _TX_BY_WEEK[cache_key] = (time.monotonic(), assembled)
+            _TX_BY_WEEK[cache_key] = (time.monotonic(), assembled, ttl)
             return assembled
 
     def _assemble_transactions_by_week(

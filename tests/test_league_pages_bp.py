@@ -99,6 +99,27 @@ def test_build_week_activity_skips_refetch_when_rosters_provided(monkeypatch):
     assert frame.empty
 
 
+def test_get_transactions_by_week_logs_once_for_many_week_failures(caplog, monkeypatch):
+    """18 parallel week fetches used to print the same Fleaflicker outage."""
+    import logging
+    from dashboard_services.providers.base import ProviderUnavailableError
+    from dashboard_services import service as svc
+
+    def _boom(*_a, **_k):
+        raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
+
+    monkeypatch.setattr(svc, "platform_get_transactions", _boom)
+    with caplog.at_level(logging.WARNING, logger=svc.logger.name):
+        result = svc.get_transactions_by_week(
+            "92916", list(range(0, 19)), platform="fleaflicker", season=2026,
+        )
+    assert result[1] == []
+    assert result[18] == []
+    warnings = [r for r in caplog.records if "[transactions]" in r.getMessage()]
+    assert len(warnings) == 1
+    assert "19 week(s) failed" in warnings[0].getMessage()
+
+
 def test_build_league_context_draft_warning_is_rate_limited(caplog, monkeypatch):
     """A Fleaflicker blip used to reprint the same drafts warning per page build."""
     import logging
