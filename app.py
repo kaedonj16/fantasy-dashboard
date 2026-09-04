@@ -20461,6 +20461,76 @@ def api_team_details(roster_id: str):
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
 
+        # Positional strength — redraft's answer to dynasty draft capital. Where
+        # a dynasty modal shows future picks, redraft has none, so surface how
+        # this team's QB/RB/WR/TE rooms rank against the rest of the league using
+        # the same calibrated composite that drives the Teams page grades.
+        positional_strength = []
+        if is_redraft:
+            try:
+                from utils.utils import count_roster_positions
+                from utils.roster_strength import (
+                    positional_strength_profile,
+                    strength_percentile,
+                )
+
+                slot_counts = count_roster_positions(
+                    (league or {}).get("roster_positions") or [])
+                core_pos = ["QB", "RB", "WR", "TE"]
+
+                def _pos_values_for(roster_obj):
+                    """value lists per core position for one roster."""
+                    buckets = {p: [] for p in core_pos}
+                    for pid in (roster_obj.get("players") or []):
+                        meta = players_index.get(str(pid), {})
+                        pos = meta.get("pos") or ""
+                        if pos == "PK":
+                            pos = "K"
+                        elif pos in ("DST", "D/ST"):
+                            pos = "DEF"
+                        if pos not in buckets:
+                            continue
+                        vrow = values_by_id.get(str(pid), {})
+                        raw = vrow.get(_value_primary)
+                        if raw is None:
+                            raw = vrow.get(_value_fallback, 0) or 0
+                        try:
+                            raw = float(raw or 0)
+                        except (TypeError, ValueError):
+                            raw = 0.0
+                        raw = apply_te_premium(raw, pos, _tep)
+                        if raw > 0:
+                            buckets[pos].append(raw)
+                    return buckets
+
+                # League-wide composite per position, so ranks are relative.
+                league_composite = {p: [] for p in core_pos}
+                for r in rosters:
+                    vals = _pos_values_for(r)
+                    for p in core_pos:
+                        prof = positional_strength_profile(vals[p], p, slot_counts)
+                        league_composite[p].append(prof["composite"])
+
+                target_vals = _pos_values_for(roster)
+                n_teams = len(rosters)
+                for p in core_pos:
+                    prof = positional_strength_profile(target_vals[p], p, slot_counts)
+                    comp = prof["composite"]
+                    others = league_composite[p]
+                    rank = 1 + sum(1 for c in others if c > comp)
+                    pct = strength_percentile(comp, others)
+                    positional_strength.append({
+                        "position": p,
+                        "value": round(sum(target_vals[p]), 1),
+                        "rank": rank,
+                        "of": n_teams,
+                        "percentile": round(pct),
+                    })
+            except Exception:
+                logger.debug("[api_team_details] positional strength skipped",
+                             exc_info=True)
+                positional_strength = []
+
         # Get graph data for team modal
         graphs_data = {}
         try:
@@ -20688,6 +20758,7 @@ def api_team_details(roster_id: str):
             "total_value": round(total_value, 1),
             "roster": roster_players,
             "picks": all_picks,
+            "positional_strength": positional_strength,
             "is_redraft": bool(is_redraft),
             "graphs": graphs_data,
             "trends_html": trends_html,

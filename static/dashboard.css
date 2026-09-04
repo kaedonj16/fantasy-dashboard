@@ -20614,6 +20614,62 @@ img, svg, canvas {
     margin-top: 4px;
 }
 
+/* Positional strength (redraft right column, in place of draft picks) */
+.tm-strength-note {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 12px;
+}
+
+.tm-strength-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.tm-strength-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.tm-strength-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tm-strength-rank {
+    font-weight: 600;
+    color: var(--text);
+    font-size: 13px;
+}
+
+.tm-strength-val {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.tm-strength-bar {
+    height: 8px;
+    border-radius: 999px;
+    background: var(--card-soft);
+    border: 1px solid var(--border);
+    overflow: hidden;
+}
+
+.tm-strength-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width .3s ease;
+}
+
+.tm-strength-strong { background: var(--win); }
+.tm-strength-mid { background: var(--info); }
+.tm-strength-weak { background: var(--warning); }
+
 .team-modal-empty {
     text-align: center;
     padding: 40px 20px;
