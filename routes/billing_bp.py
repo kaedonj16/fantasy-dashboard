@@ -719,9 +719,9 @@ def create_checkout_session():
                       "account_id": str(session.get("account_id") or "")},
         )
         return jsonify({"url": checkout.url})
-    except Exception as e:
-        logger.exception("[stripe] checkout session error: %s", e)
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("[stripe] checkout session error")
+        return jsonify({"error": "Internal error"}), 500
 
 
 @billing_bp.route("/api/stripe-webhook", methods=["POST"])
@@ -891,9 +891,9 @@ def api_subscription_status():
         for _k in ("stripe_customer_id", "subscriber_user_id"):
             sub_info.pop(_k, None)
         return jsonify(sub_info)
-    except Exception as e:
-        logger.error("[api_subscription_status] Error: %s", e)
-        return jsonify({"has_premium": False, "subscription_type": None, "error": str(e)}), 500
+    except Exception:
+        logger.exception("[api_subscription_status] Error")
+        return jsonify({"has_premium": False, "subscription_type": None, "error": "Internal error"}), 500
 
 
 # ── Stripe Customer Portal ────────────────────────────────────────────────────
@@ -952,6 +952,6 @@ def api_create_portal_session():
             return_url=return_url,
         )
         return jsonify({"url": portal_session.url})
-    except Exception as e:
-        logger.exception("[api_create_portal_session] Error: %s", e)
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("[api_create_portal_session] Error")
+        return jsonify({"error": "Internal error"}), 500

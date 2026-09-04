@@ -17,6 +17,7 @@ HEALTH = (ROOT / "routes" / "health_bp.py").read_text(encoding="utf-8")
 PUSH = (ROOT / "routes" / "push_bp.py").read_text(encoding="utf-8")
 PUBLIC = (ROOT / "routes" / "public_bp.py").read_text(encoding="utf-8")
 SEO = (ROOT / "routes" / "seo_pages_bp.py").read_text(encoding="utf-8")
+BREAKOUT2 = (ROOT / "routes" / "breakout_api_bp2.py").read_text(encoding="utf-8")
 PLAYERS = (ROOT / "dashboard_services" / "pages" / "players_page.py").read_text(encoding="utf-8")
 RANKINGS = (ROOT / "static" / "rankings.js").read_text(encoding="utf-8")
 CSS = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
@@ -109,6 +110,19 @@ def test_diag_apis_require_admin_secret_gate():
         assert "_forbidden_unless_admin" in fn, fn_name
         assert "X-Admin-Secret" in fn, fn_name
         assert "@limiter.limit" in APP_PY[max(0, start - 200):start], fn_name
+
+
+def test_api_exception_handlers_do_not_leak_str_e():
+    """Site-audit #23 follow-up: billing/breakout/admin return generic Internal error."""
+    for src, label in (
+        (BILLING, "billing_bp"),
+        (BREAKOUT2, "breakout_api_bp2"),
+        (ADMIN, "admin_api_bp"),
+    ):
+        assert '"error": str(e)' not in src, label
+        assert "'error': str(e)" not in src, label
+        assert '"Internal error"' in src, label
+        assert "logger.exception" in src, label
 
 
 def test_compare_page_not_noindexed_by_remembered_league():

@@ -434,5 +434,6 @@ def api_debug_values():
         if lookup is not None:
             _resp["lookup"] = lookup
         return jsonify(_resp)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("[api_debug_values] Error")
+        return jsonify({"error": "Internal error"}), 500
