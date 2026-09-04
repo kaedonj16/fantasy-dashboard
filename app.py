@@ -10015,7 +10015,11 @@ from utils.roster_strength import (  # noqa: E402
     derive_league_thresholds,
     weighted_pos_strength as _weighted_pos_strength,
 )
-from utils.trade_targets import package_ceiling, select_trade_targets  # noqa: E402
+from utils.trade_targets import (  # noqa: E402
+    detect_needed_positions,
+    package_ceiling,
+    select_trade_targets,
+)
 
 # Pure logic lives in utils/pick_slots.py; re-exported under the original name.
 from utils.pick_slots import avg_pick_value_for_round as _avg_pick_value_for_round  # noqa: E402
@@ -23826,9 +23830,10 @@ def api_trade_targets():
     """
     Suggest trade acquisition targets for the viewer's team based on roster fit.
     Need detection uses starter-slot-weighted positional strength (same as Teams).
-    Candidates are ranked by gap fill, what the viewer can pay, owner surplus,
-    and age window — not raw value — so a TE-needy roster sees a reachable TE,
-    not the same four elites every time.
+    Candidates are ranked by gap fill, what the viewer can pay, whether the
+    owner needs the viewer's surplus, and age window — not raw value — and
+    returned as a mixed list so a TE-needy roster sees a reachable TE, not
+    the same four elites every time.
     """
     platform = str(request.args.get("platform") or "sleeper").strip()
     league_id = str(request.args.get("league_id") or "").strip()
@@ -24012,6 +24017,15 @@ def api_trade_targets():
     _is_sf = league_type == "sf"
     _thr, _floors = derive_league_thresholds(_rp_list, num_teams, is_sf=_is_sf)
 
+    owner_needs_by_roster = {}
+    for rid, vals in roster_vals.items():
+        if rid == viewer_roster_id:
+            continue
+        ranks = {pos: pos_ranks[pos].get(rid, num_teams) for pos in POSITIONS}
+        owner_needs_by_roster[rid] = detect_needed_positions(
+            ranks, vals, num_teams, _thr, _floors,
+        )
+
     picked = select_trade_targets(
         viewer_vals=roster_vals.get(viewer_roster_id) or {p: [] for p in POSITIONS},
         pos_ranks=position_ranks_out,
@@ -24024,14 +24038,18 @@ def api_trade_targets():
         starter_thresholds=_thr,
         starter_floors=_floors,
         is_redraft=_league_is_redraft(ctx),
+        owner_needs_by_roster=owner_needs_by_roster,
     )
 
     return jsonify({
         "by_position": picked.get("by_position") or {},
         "all_positions": picked.get("all_positions") or {},
+        "targets": picked.get("targets") or [],
         "position_ranks": position_ranks_out,
         "projected_picks": _projected_picks_out,
         "window": picked.get("window") or "balanced",
+        "summary": picked.get("summary") or "",
+        "needed_positions": picked.get("needed_positions") or [],
     })
 
 

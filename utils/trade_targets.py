@@ -4,7 +4,8 @@ Need detection still uses starter-slot-weighted positional strength (same as
 the Teams page). Candidate *selection* used to sort the other teams' players
 by raw value, so every QB-needy roster saw the same elites. This module ranks
 candidates by how well they fill THIS roster's gap at a price the viewer can
-actually pay, with owner-surplus and age-window as tie-breakers.
+actually pay, prefers owners who need the viewer's surplus, and returns a
+mixed list (not four elites per weak position).
 """
 from __future__ import annotations
 
@@ -17,6 +18,21 @@ PEAK_AGE = {"QB": 29, "RB": 26, "WR": 27, "TE": 27}
 
 # Bottom-of-league cutoff used by the API before this ranker existed.
 NEED_RANK_FRACTION = 0.35
+
+# A "quality" starter — bottom-ranked but already this good is not a shop list.
+QUALITY_STARTER_MULT = 1.4
+
+# Clearing this fraction of the starter bar counts as filling a hole, so a
+# 350 QB can fill a 1QB hole (threshold 500) and a 400 QB can be a SF QB2.
+_HOLE_FILL_FRAC = 0.50
+
+# Don't let a stack of future 1sts make every elite look reachable.
+_MAX_PICK_IN_CEILING = 870.0  # one 1st + one 2nd
+
+# Mixed-list caps: never dump four elites at the same spot.
+MAX_TARGETS = 8
+MAX_PER_POS_HARD = 3
+MAX_PER_POS_SOFT = 2
 
 # Value floor for a "real" trade chip. Mirrors the API's collect filter.
 _MIN_ASSET = 150.0
@@ -175,20 +191,22 @@ def strength_gain(
     return max(0.0, after - before)
 
 
-def detect_needed_positions(
+def classify_position_needs(
     pos_ranks: Dict[str, int],
     viewer_vals: Dict[str, Sequence[float]],
     num_teams: int,
     starter_thresholds: Dict[str, float],
     starter_floors: Dict[str, int],
-) -> List[str]:
-    """Positions the viewer should shop: bottom 35% and/or a starter hole.
+) -> List[Tuple[str, str]]:
+    """``(pos, 'hard'|'soft')`` the viewer should shop, worst gap first.
 
-    Ordered worst-gap first (starter deficit, then league rank).
+    Hard = missing a starter-caliber body. Soft = bottom of the league *and*
+    the current best is still below a quality-starter bar. A 7th-place QB
+    room that already has a 700 QB is not a shop-for-Allen list.
     """
     n = max(int(num_teams or 1), 1)
     cutoff = max(1, round(n * NEED_RANK_FRACTION))
-    scored: List[Tuple[int, int, str]] = []
+    scored: List[Tuple[int, int, str, str]] = []
     for pos in POSITIONS:
         vals = [float(v or 0.0) for v in (viewer_vals or {}).get(pos, [])]
         threshold = float((starter_thresholds or {}).get(pos) or 0.0)
@@ -197,10 +215,82 @@ def detect_needed_positions(
         deficit = max(0, floor - starters)
         rank = int((pos_ranks or {}).get(pos) or n)
         is_bottom = rank > n - cutoff
-        if deficit or is_bottom:
-            scored.append((deficit, rank, pos))
+        best = max(vals, default=0.0)
+        quality_bar = threshold * QUALITY_STARTER_MULT if threshold else 0.0
+        if deficit:
+            scored.append((deficit, rank, pos, "hard"))
+        elif is_bottom and (not quality_bar or best < quality_bar):
+            scored.append((0, rank, pos, "soft"))
     scored.sort(key=lambda t: (-t[0], -t[1], POSITIONS.index(t[2])))
-    return [pos for _, _, pos in scored]
+    return [(pos, kind) for _, _, pos, kind in scored]
+
+
+def detect_needed_positions(
+    pos_ranks: Dict[str, int],
+    viewer_vals: Dict[str, Sequence[float]],
+    num_teams: int,
+    starter_thresholds: Dict[str, float],
+    starter_floors: Dict[str, int],
+) -> List[str]:
+    """Positions the viewer should shop: starter hole, or thin + bottom 35%."""
+    return [pos for pos, _ in classify_position_needs(
+        pos_ranks, viewer_vals, num_teams, starter_thresholds, starter_floors,
+    )]
+
+
+def detect_surplus_positions(
+    pos_ranks: Dict[str, int],
+    viewer_vals: Dict[str, Sequence[float]],
+    num_teams: int,
+    starter_thresholds: Dict[str, float],
+    starter_floors: Dict[str, int],
+) -> List[str]:
+    """Positions the viewer can actually deal from: extra starter-caliber bodies.
+
+    Rank alone is not surplus — a 4th-place 1QB room still has only one QB.
+    """
+    surplus: List[str] = []
+    for pos in POSITIONS:
+        vals = [float(v or 0.0) for v in (viewer_vals or {}).get(pos, [])]
+        threshold = float((starter_thresholds or {}).get(pos) or 0.0)
+        floor = int((starter_floors or {}).get(pos) or 1)
+        starters = sum(1 for v in vals if v >= threshold) if threshold else 0
+        if starters - floor >= 1:
+            surplus.append(pos)
+    return surplus
+
+
+def complementary_multiplier(
+    owner_needs: Sequence[str],
+    viewer_surplus: Sequence[str],
+) -> Tuple[float, Optional[str]]:
+    """Boost when the owner needs a position the viewer can send."""
+    overlap = [p for p in POSITIONS if p in (owner_needs or []) and p in (viewer_surplus or [])]
+    if overlap:
+        return 1.18, overlap[0]
+    return 1.0, None
+
+
+def need_summary(needed: Sequence[Tuple[str, str]], window: str = "balanced") -> str:
+    """One line for the UI: which hole this list is answering."""
+    holes = [p for p, k in (needed or []) if k == "hard"]
+    thin = [p for p, k in (needed or []) if k == "soft"]
+    if not holes and not thin:
+        return "No glaring gaps — upgrades that fit your roster"
+    bits: List[str] = []
+    if holes:
+        if len(holes) == 1:
+            bits.append(f"your {holes[0]} hole")
+        else:
+            bits.append("your " + " & ".join(holes) + " holes")
+    if thin:
+        bits.append("thin " + "/".join(thin))
+    line = " and ".join(bits)
+    if window == "rebuild":
+        return f"Based on {line} · rebuild window"
+    if window == "contend":
+        return f"Based on {line} · win-now window"
+    return f"Based on {line}"
 
 
 def annotate_owner_depth(candidates: Iterable[Dict[str, Any]]) -> None:
@@ -218,6 +308,10 @@ def annotate_owner_depth(candidates: Iterable[Dict[str, Any]]) -> None:
             row["owner_pos_count"] = n
 
 
+def _fill_bar(threshold: float) -> float:
+    return max(0.0, float(threshold or 0.0) * _HOLE_FILL_FRAC)
+
+
 def fit_reason(
     *,
     pos: str,
@@ -231,15 +325,19 @@ def fit_reason(
     one_for_one: float,
     depth_rank: int,
     owner_pos_count: int,
+    complementary_pos: Optional[str] = None,
 ) -> str:
     """One short line for the UI: why this player is on THIS roster's list."""
     pos = str(pos or "").upper()
-    if starter_count < floor and value >= threshold:
+    fill_bar = _fill_bar(threshold)
+    if starter_count < floor and value >= fill_bar:
         return f"Fills your {pos} hole"
     if viewer_best > 0 and value >= viewer_best * 1.15:
         return f"Upgrades your {pos}1"
-    if floor >= 2 and starter_count >= 1 and value >= threshold:
+    if floor >= 2 and starter_count >= 1 and value >= fill_bar:
         return f"Adds {pos}{starter_count + 1} depth"
+    if complementary_pos:
+        return f"They need your {complementary_pos}s"
     if owner_pos_count >= 3 and depth_rank >= 2:
         return f"Their {pos} surplus"
     if window == "rebuild" and age and float(age) <= PEAK_AGE.get(pos, 27) - 2:
@@ -264,29 +362,44 @@ def _candidate_score(
     starter_count: int,
     floor: int,
     threshold: float,
+    viewer_surplus: Sequence[str] = (),
 ) -> Tuple[float, str]:
     value = float(row.get("value") or 0.0)
     age = row.get("age")
+    viewer_best = max((float(v or 0.0) for v in (viewer_vals or [])), default=0.0)
+    fill_bar = _fill_bar(threshold)
     gain = strength_gain(viewer_vals, value, pos, slot_counts)
     # Absolute gain fills a hole; efficiency stops 900-value elites from
     # always beating the mid-tier player who actually fits the budget.
     efficiency = gain / max(value, 1.0)
     raw = (0.55 * gain) + (0.45 * efficiency * 400.0)
-    if starter_count < floor and value >= threshold:
+    if starter_count < floor and value >= fill_bar:
         raw *= 1.25
-    elif starter_count >= floor and value < threshold:
+    elif starter_count >= floor and value < fill_bar:
         raw *= 0.55
+    elif starter_count >= floor and viewer_best > 0:
+        # Already have a starter: prefer a real upgrade, fade 1.5x trophy hunts
+        # so a 7th-place QB room with a 550 QB doesn't list Josh Allen.
+        ratio = value / viewer_best
+        if 1.10 <= ratio <= 1.50:
+            raw *= 1.15
+        elif ratio > 1.50:
+            raw *= 0.62
+        elif ratio < 1.0:
+            raw *= 0.70
     afford = affordability_multiplier(value, one_for_one, package_max)
     avail = availability_multiplier(row.get("depth_rank") or 1, row.get("owner_pos_count") or 1)
     age_m = age_fit_multiplier(age, pos, window, is_redraft=is_redraft)
-    score = raw * afford * avail * age_m
+    comp, matched = complementary_multiplier(row.get("owner_needs") or [], viewer_surplus)
+    score = raw * afford * avail * age_m * comp
     why = fit_reason(
         pos=pos, value=value, age=age,
-        viewer_best=max((float(v or 0.0) for v in (viewer_vals or [])), default=0.0),
+        viewer_best=viewer_best,
         starter_count=starter_count, floor=floor, threshold=threshold,
         window=window, one_for_one=one_for_one,
         depth_rank=int(row.get("depth_rank") or 1),
         owner_pos_count=int(row.get("owner_pos_count") or 1),
+        complementary_pos=matched,
     )
     return score, why
 
@@ -304,6 +417,7 @@ def rank_position_candidates(
     starter_threshold: float,
     starter_floor: int,
     limit: int,
+    viewer_surplus: Sequence[str] = (),
 ) -> List[Dict[str, Any]]:
     """Highest-fit players at one position, already annotated with why/score."""
     vals = [float(v or 0.0) for v in (viewer_vals or [])]
@@ -319,6 +433,7 @@ def rank_position_candidates(
             one_for_one=one_for_one, package_max=package_max,
             window=window, is_redraft=is_redraft,
             starter_count=starter_count, floor=floor, threshold=threshold,
+            viewer_surplus=viewer_surplus,
         )
         out = dict(row)
         out["why"] = why
@@ -343,11 +458,14 @@ def select_trade_targets(
     is_redraft: bool = False,
     per_pos_limit: int = 4,
     balanced_per_pos: int = 2,
+    owner_needs_by_roster: Optional[Dict[str, Sequence[str]]] = None,
 ) -> Dict[str, Any]:
     """Pick the targets the UI lists, grouped the same way the API always has.
 
-    ``by_position`` is populated when the roster has a real need. Balanced
-    rosters get ``all_positions`` — still fit-ranked, not top-by-value.
+    ``targets`` is the mixed, fit-ranked list (capped per position) so the
+    page is not "top four at QB, top four at TE". ``by_position`` stays
+    populated when the roster has a real need. Balanced rosters get
+    ``all_positions`` — still fit-ranked, not top-by-value.
     """
     thresholds = dict(starter_thresholds or {})
     floors = dict(starter_floors or {})
@@ -356,12 +474,20 @@ def select_trade_targets(
         floors.setdefault(pos, 1 if pos in ("QB", "TE") else 2)
 
     chip = one_for_one_chip(viewer_asset_values)
-    ceiling = package_ceiling(viewer_asset_values, pick_value)
+    ceiling = package_ceiling(
+        viewer_asset_values, min(float(pick_value or 0.0), _MAX_PICK_IN_CEILING),
+    )
     window = infer_roster_window(valued_ages, is_redraft=is_redraft)
 
-    needed = detect_needed_positions(
+    classified = classify_position_needs(
         pos_ranks, viewer_vals, num_teams, thresholds, floors,
     )
+    needed = [pos for pos, _ in classified]
+    severity = {pos: kind for pos, kind in classified}
+    surplus = detect_surplus_positions(
+        pos_ranks, viewer_vals, num_teams, thresholds, floors,
+    )
+    owner_needs = owner_needs_by_roster or {}
 
     # Depth ranks are a property of the owner's room, so annotate the full
     # candidate pool before we slice it.
@@ -370,6 +496,8 @@ def select_trade_targets(
         for row in candidates_by_pos.get(pos) or []:
             item = dict(row)
             item["position"] = str(item.get("position") or pos).upper()
+            rid = str(item.get("owner_roster_id") or "")
+            item["owner_needs"] = list(owner_needs.get(rid) or [])
             flat.append(item)
     annotate_owner_depth(flat)
     pooled: Dict[str, List[Dict[str, Any]]] = {p: [] for p in POSITIONS}
@@ -377,6 +505,9 @@ def select_trade_targets(
         pos = row.get("position")
         if pos in pooled:
             pooled[pos].append(row)
+
+    def _public(row: Dict[str, Any]) -> Dict[str, Any]:
+        return {k: v for k, v in row.items() if k != "owner_needs"}
 
     def _rank(pos: str, limit: int) -> List[Dict[str, Any]]:
         return rank_position_candidates(
@@ -391,21 +522,63 @@ def select_trade_targets(
             starter_threshold=thresholds[pos],
             starter_floor=floors[pos],
             limit=limit,
+            viewer_surplus=surplus,
         )
 
+    def _allocate(rows: Sequence[Dict[str, Any]], pos_caps: Dict[str, int]) -> List[Dict[str, Any]]:
+        picked: List[Dict[str, Any]] = []
+        counts: Dict[str, int] = {}
+        ordered = sorted(
+            rows,
+            key=lambda r: (-float(r.get("fit_score") or 0.0), -float(r.get("value") or 0.0)),
+        )
+        for row in ordered:
+            pos = str(row.get("position") or "")
+            cap = pos_caps.get(pos, MAX_PER_POS_SOFT)
+            if counts.get(pos, 0) >= cap:
+                continue
+            picked.append(_public(row))
+            counts[pos] = counts.get(pos, 0) + 1
+            if len(picked) >= MAX_TARGETS:
+                break
+        return picked
+
     if needed:
-        by_position = {pos: rows for pos in needed if (rows := _rank(pos, per_pos_limit))}
+        pool_limit = max(int(per_pos_limit or 4) * 2, 8)
+        pool: List[Dict[str, Any]] = []
+        for pos in needed:
+            pool.extend(_rank(pos, pool_limit))
+        caps = {
+            pos: MAX_PER_POS_HARD if severity.get(pos) == "hard" else MAX_PER_POS_SOFT
+            for pos in needed
+        }
+        targets = _allocate(pool, caps)
+        by_position: Dict[str, List[Dict[str, Any]]] = {p: [] for p in needed}
+        for row in targets:
+            pos = str(row.get("position") or "")
+            if pos in by_position:
+                by_position[pos].append(row)
+        by_position = {pos: rows for pos, rows in by_position.items() if rows}
         return {
             "by_position": by_position,
             "all_positions": {},
+            "targets": targets,
             "needed_positions": needed,
             "window": window,
+            "summary": need_summary(classified, window),
+            "surplus_positions": surplus,
         }
 
-    all_positions = {pos: rows for pos in POSITIONS if (rows := _rank(pos, balanced_per_pos))}
+    all_positions = {pos: [_public(r) for r in rows]
+                     for pos in POSITIONS if (rows := _rank(pos, balanced_per_pos))}
+    balanced_pool = [r for rows in all_positions.values() for r in rows]
+    targets = _allocate(balanced_pool, {p: balanced_per_pos for p in POSITIONS})
     return {
         "by_position": {},
         "all_positions": all_positions,
+        "targets": targets,
         "needed_positions": [],
         "window": window,
+        "summary": need_summary([], window),
+        "surplus_positions": surplus,
     }

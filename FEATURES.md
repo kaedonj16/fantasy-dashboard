@@ -41,7 +41,7 @@ A full breakdown of every feature on the site, organized by the main navigation.
   - Format controls (team count, PPR/scoring, 1QB/Superflex).
 - **Playoff Impact (PRO)** — Live Monte Carlo simulation of how a trade shifts your **playoff odds, projected wins, projected PPG, top-3 draft-pick odds, roster age, and prime years left**, with a plain-language verdict (Win-Now Move, Building Move, Balanced, etc.) and metric-explanation tooltip. Gated in the UI and on the API.
 - **Trade Suggestions (PRO)** — Archetype-driven packages for all four team profiles (**Contending, Rebuilding, Consolidate, Distribute**); each runs a full post-trade playoff sim so the Win% / playoff-odds shifts reflect the real net effect. Consolidate only surfaces genuine trade-up packages.
-- **Trade Targets (PRO)** — Roster-fit targets for your gaps: players that upgrade the hole at a price you can pay (owner surplus and age window as tie-breakers), not just the top names at a weak position.
+- **Trade Targets (PRO)** — Roster-fit targets for your gaps: players that upgrade the hole at a price you can pay, from teams that need your surplus, mixed across positions — not the top four names at a weak spot.
 - **Trade Intel (PRO)** — Market analytics with real trade frequency, market values, and momentum trends; shows how people actually acquire a given player, with packages loadable into the calculator in one click. Shown on ESPN/Yahoo/MFL with a note that comps are sourced from Sleeper dynasty trades.
 - **Trade Database** — Browse real dynasty trades from thousands of leagues; search by single or multiple players per side, filter by league type, and see actual packages.
 - **Trade Outcome** — Historical value analysis of past trades (player value at trade date vs. current).
