@@ -202,6 +202,7 @@ window.showPaywall = function showPaywall(feature, opts) {
     return modal.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])');
   }
   function onKey(e) {
+    if (modal.dataset.nestedOpen) return;
     if (e.key === 'Escape') { e.preventDefault(); closePaywall(); return; }
     if (e.key !== 'Tab') return;
     const nodes = focusables();
@@ -223,13 +224,11 @@ async function initiatePurchase(type, btn) {
   // `_isSignedIn` is retained as a fallback for an older cached page shell.
   // New shells provide __brctx, including the provider needed by checkout.
   if (!(ctx.is_logged_in || window._isSignedIn)) {
-    const navModal = document.getElementById('signinModal');
-    if (navModal) {
-      if (window.brOpenSignin) window.brOpenSignin();
-      else navModal.style.display = 'flex';
-    } else {
-      _showIdentifyModal(type, btn);
-    }
+    // Always use the identify modal from checkout — it keeps the selected
+    // plan, lets guests pick a league, and is appended to <body> so it is
+    // not trapped under the inert Premium Feature paywall. The nav
+    // #signinModal lives inside #app-scale and would open behind/inert.
+    _showIdentifyModal(type, btn);
     return;
   }
 
@@ -482,6 +481,33 @@ if (document.readyState === 'loading') {
   window.refreshLeagueProInviteCta();
 }
 
+function _activePaywall() {
+  return document.querySelector('.paywall-modal');
+}
+
+function _pausePaywallForNested() {
+  const paywall = _activePaywall();
+  if (!paywall) return;
+  paywall.dataset.nestedOpen = '1';
+  paywall.setAttribute('aria-hidden', 'true');
+  paywall.setAttribute('inert', '');
+}
+
+function _resumePaywallAfterNested() {
+  const paywall = _activePaywall();
+  if (!paywall) return;
+  delete paywall.dataset.nestedOpen;
+  paywall.removeAttribute('aria-hidden');
+  paywall.removeAttribute('inert');
+}
+
+function _stackAbovePaywall(modal) {
+  if (!modal) return;
+  modal.classList.add('over-paywall');
+  if (modal.parentElement !== document.body) document.body.appendChild(modal);
+  _pausePaywallForNested();
+}
+
 /** Signed-in league picker when a plan needs a league but URL has none. */
 function _showLeaguePickerModal(planType, triggerBtn) {
   const existing = document.getElementById('_leaguePickerModal');
@@ -511,6 +537,7 @@ function _showLeaguePickerModal(planType, triggerBtn) {
       </div>
     </div>`;
   document.body.appendChild(modal);
+  _stackAbovePaywall(modal);
 
   const select = modal.querySelector('#_leaguePickerSelect');
   const submitBtn = modal.querySelector('#_leaguePickerSubmit');
@@ -519,6 +546,7 @@ function _showLeaguePickerModal(planType, triggerBtn) {
 
   function closePicker() {
     document.removeEventListener('keydown', onKey);
+    _resumePaywallAfterNested();
     modal.remove();
     if (prevFocus && typeof prevFocus.focus === 'function') {
       try { prevFocus.focus(); } catch (_) {}
@@ -610,6 +638,7 @@ function _showIdentifyModal(planType, triggerBtn) {
       </div>
     </div>`;
   document.body.appendChild(modal);
+  _stackAbovePaywall(modal);
 
   const input = modal.querySelector('#_identifyInput');
   const submitBtn = modal.querySelector('#_identifySubmit');
@@ -624,6 +653,7 @@ function _showIdentifyModal(planType, triggerBtn) {
   }
   function closeIdentify() {
     document.removeEventListener('keydown', onKey);
+    _resumePaywallAfterNested();
     modal.remove();
     if (prevFocus && typeof prevFocus.focus === 'function') {
       try { prevFocus.focus(); } catch (_) {}
