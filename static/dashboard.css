@@ -19503,6 +19503,22 @@ img, svg, canvas {
     text-overflow: ellipsis;
 }
 
+/* Unify the Overview / player-page hero tiles with the Team tab's tile
+   treatment so a hero tile reads as one component across modal tabs:
+   left-aligned content and the same micro-cap label weight/tracking.
+   Scoped to .pm-hero-row so Compare (.compare-hero-row) keeps its own
+   centered, win-checkmark layout. Tile surface and value size are left
+   as-is on purpose — bg-alt keeps the tiles readable on the white modal
+   body, and the big Overview numbers keep their prominence. */
+.pm-hero-row .pm-hero-stat {
+    text-align: left;
+}
+
+.pm-hero-row .pm-hero-label {
+    font-weight: 800;
+    letter-spacing: 0.06em;
+}
+
 /* Sleeper ADP: two format cards (Dynasty / Redraft), each with 1QB + SF. */
 .pm-adp-block {
     margin-top: 8px;
