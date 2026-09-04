@@ -8,7 +8,8 @@ from dashboard_services.providers.base import (
     ProviderAuthenticationError, ProviderUnavailableError,
 )
 from dashboard_services.providers.fleaflicker_api import (
-    FleaflickerProvider, _CACHE, _FAIL_CACHE, _TX_BY_WEEK, _flea_pro_team,
+    FleaflickerProvider, _CACHE, _FAIL_CACHE, _OPTIONAL_FAIL, _TX_BY_WEEK,
+    _XWALK, _FAIL_TTL, _flea_pro_team,
     _fleaflicker_draft_status,
     _fleaflicker_sleeper_league_type, _fantasy_week_from_ms,
     _name_index_from_players,
@@ -26,9 +27,13 @@ def response(payload, status=200):
 
 @pytest.fixture(autouse=True)
 def clear_cache():
+    import dashboard_services.providers.fleaflicker_api as flea
     _CACHE.clear()
     _FAIL_CACHE.clear()
+    _OPTIONAL_FAIL.clear()
     _TX_BY_WEEK.clear()
+    _XWALK.clear()
+    flea._XWALK_WARN_TS = 0.0
 
 
 def test_normalizes_league_users_rosters_and_matchups(monkeypatch):
@@ -1161,3 +1166,141 @@ def test_identical_in_flight_calls_share_one_http_request(mock_get):
     assert errors == []
     assert mock_get.call_count == 1
     assert len(results) == 2
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_fail_cache_ttl_is_short_not_success_ttl(mock_get, monkeypatch):
+    """Draft-board failures used to be cached for the 1h success TTL."""
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(
+        "dashboard_services.providers.fleaflicker_api.time.monotonic",
+        lambda: clock["t"],
+    )
+    mock_get.side_effect = ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
+    provider = FleaflickerProvider()
+    with pytest.raises(ProviderUnavailableError):
+        provider._call("FetchLeagueDraftBoard", "92916", 2026, ttl=3600)
+    mock_get.side_effect = None
+    mock_get.return_value = response({"rows": []})
+    with pytest.raises(ProviderUnavailableError, match="temporarily unavailable"):
+        provider._call("FetchLeagueDraftBoard", "92916", 2026, ttl=3600)
+    assert mock_get.call_count == 1
+    clock["t"] += _FAIL_TTL + 1
+    assert provider._call("FetchLeagueDraftBoard", "92916", 2026, ttl=3600) == {"rows": []}
+    assert mock_get.call_count == 2
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_host_outage_skips_all_subsequent_methods(mock_get):
+    """One timeout must not sequentially retry every season/week/team key."""
+    mock_get.side_effect = ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
+    provider = FleaflickerProvider()
+    with pytest.raises(ProviderUnavailableError):
+        provider._call("FetchLeagueDraftBoard", "92916", 2026)
+    assert mock_get.call_count == 1
+    with pytest.raises(ProviderUnavailableError, match="temporarily unavailable"):
+        provider._call("FetchTeamPicks", "92916", 2026, team_id=1)
+    with pytest.raises(ProviderUnavailableError, match="temporarily unavailable"):
+        provider._call("FetchLeagueStandings", "92916", 2025)
+    assert mock_get.call_count == 1
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_get_traded_picks_stops_after_first_team_outage(mock_get):
+    standings = response({
+        "league": {"id": 92916, "size": 3},
+        "divisions": [{"teams": [
+            {"id": 1, "name": "A"},
+            {"id": 2, "name": "B"},
+            {"id": 3, "name": "C"},
+        ]}],
+    })
+
+    def side_effect(url, **kwargs):
+        if "FetchLeagueStandings" in url:
+            return standings
+        raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
+
+    mock_get.side_effect = side_effect
+    out = FleaflickerProvider().get_traded_picks("92916", 2026)
+    assert out == []
+    pick_calls = [c for c in mock_get.call_args_list if "FetchTeamPicks" in c.args[0]]
+    assert len(pick_calls) == 1
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_get_rosters_keeps_bulk_list_after_fetchroster_outage(mock_get):
+    rosters = response({
+        "rosters": [
+            {"team": {"id": 1, "name": "Owls"}, "players": [
+                {"proPlayer": {"id": 9, "nameFull": "Known Player", "position": "QB"}},
+            ]},
+            {"team": {"id": 2, "name": "Bears"}, "players": [
+                {"proPlayer": {"id": 8, "nameFull": "Other", "position": "WR"}},
+            ]},
+        ],
+    })
+    standings = response({
+        "divisions": [{"teams": [
+            {"id": 1, "name": "Owls"},
+            {"id": 2, "name": "Bears"},
+        ]}],
+    })
+
+    def side_effect(url, **kwargs):
+        if "FetchLeagueRosters" in url:
+            return rosters
+        if "FetchLeagueStandings" in url:
+            return standings
+        if "FetchRoster" in url:
+            raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
+        raise AssertionError(url)
+
+    mock_get.side_effect = side_effect
+    provider = FleaflickerProvider()
+    provider._canonical_map = lambda *a, **k: {"9": "canon-9", "8": "canon-8"}
+    provider._build_name_index = lambda: {}
+    result = provider.get_rosters("92916", 2026)
+    assert {r["roster_id"] for r in result} == {1, 2}
+    assert result[0]["players"] == ["canon-9"]
+    assert result[1]["players"] == ["canon-8"]
+    roster_calls = [c for c in mock_get.call_args_list if "FetchRoster" in c.args[0]]
+    assert len(roster_calls) == 1
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_optional_methods_use_shorter_timeout(mock_get):
+    mock_get.return_value = response({"rows": []})
+    FleaflickerProvider()._call("FetchLeagueDraftBoard", "92916", 2026)
+    assert mock_get.call_args.kwargs["timeout"] == (3, 6)
+    mock_get.return_value = response({"league": {"id": 92916}})
+    FleaflickerProvider()._call("FetchLeagueStandings", "92916", 2026)
+    assert mock_get.call_args.kwargs["timeout"] == (5, 20)
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_canonical_map_warns_once_and_returns_empty_on_outage(mock_get, caplog):
+    import logging
+    mock_get.side_effect = ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
+    provider = FleaflickerProvider()
+    provider._build_name_index = lambda: {}
+    with caplog.at_level(logging.WARNING, logger="dashboard_services.providers.fleaflicker_api"):
+        assert provider._canonical_map("92916", 2026) == {}
+        assert provider._canonical_map("92916", 2026) == {}
+        assert provider._canonical_map("92916", 2025) == {}
+    warnings = [r for r in caplog.records if "player crosswalk unavailable" in r.getMessage()]
+    assert len(warnings) == 1
+    assert mock_get.call_count == 1
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_get_transactions_returns_empty_on_outage_without_raising(mock_get):
+    mock_get.side_effect = ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
+    provider = FleaflickerProvider()
+    provider._canonical_map = lambda *a, **k: {}
+    provider._build_name_index = lambda: {}
+    assert provider.get_transactions("92916", 2026, 1) == []
+    assert provider.get_transactions("92916", 2026, 2) == []
+    assert provider.get_transactions("92916", 2025, 1) == []
+    tx_calls = [c for c in mock_get.call_args_list if "FetchLeagueTransactions" in c.args[0]]
+    assert len(tx_calls) == 1

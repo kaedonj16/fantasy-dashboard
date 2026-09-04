@@ -5307,6 +5307,32 @@ def _load_rookie_rankings_for_ctx() -> list[dict]:
         return []
 
 
+_CTX_TASK_WARN_TS: dict[tuple, float] = {}
+_CTX_TASK_WARN_TTL = 60.0
+_CTX_TASK_WARN_MAX = 128
+
+
+def _warn_league_ctx_once(kind: str, league_id: str, msg: str, *args) -> None:
+    """Rate-limit identical build_league_context warnings (one per kind/league/min).
+
+    Optional Fleaflicker/MFL calls fail-soft, but a brief upstream blip used to
+    reprint the same warning on every concurrent page build.
+    """
+    key = (str(kind), str(league_id))
+    now = time.monotonic()
+    last = _CTX_TASK_WARN_TS.get(key, 0.0)
+    if now - last < _CTX_TASK_WARN_TTL:
+        logger.debug(msg, *args)
+        return
+    _CTX_TASK_WARN_TS[key] = now
+    if len(_CTX_TASK_WARN_TS) > _CTX_TASK_WARN_MAX:
+        cutoff = now - _CTX_TASK_WARN_TTL
+        for stale, ts in list(_CTX_TASK_WARN_TS.items()):
+            if ts < cutoff:
+                _CTX_TASK_WARN_TS.pop(stale, None)
+    logger.warning(msg, *args)
+
+
 def build_league_context(platform: str, league_id: str, season: int) -> dict:
     """
     Fetch all core data for a league once and reuse across pages.
@@ -5342,7 +5368,11 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         try:
             return get_drafts(platform, resolved_league_id, season) or []
         except Exception as e:
-            logger.warning("[build_league_context] failed to load drafts for league %s: %s", resolved_league_id, e)
+            _warn_league_ctx_once(
+                "drafts", resolved_league_id,
+                "[build_league_context] failed to load drafts for league %s: %s",
+                resolved_league_id, e,
+            )
             return []
 
     def _get_state():
@@ -5373,9 +5403,15 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
                 # Surface platform outages as 503/403/404 instead of an empty 500.
                 if _name in ("league", "users", "rosters"):
                     raise
-                logger.warning("[build_league_context] task %s failed: %s", _name, _e)
+                _warn_league_ctx_once(
+                    _name, resolved_league_id,
+                    "[build_league_context] task %s failed: %s", _name, _e,
+                )
             except Exception as _e:
-                logger.warning("[build_league_context] task %s failed: %s", _name, _e)
+                _warn_league_ctx_once(
+                    _name, resolved_league_id,
+                    "[build_league_context] task %s failed: %s", _name, _e,
+                )
 
     league = _results["league"] or {}
     users = _results["users"] or []

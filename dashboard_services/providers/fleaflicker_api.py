@@ -28,6 +28,21 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://www.fleaflicker.com/api"
 SPORT = "NFL"
 TIMEOUT = (5, 20)
+# Draft board, per-team picks, and lineup detail are optional for a 200 page.
+# A hung FetchLeagueDraftBoard used to stall /teams for the full 20s read
+# timeout, then cache that failure for the success TTL (up to an hour).
+OPTIONAL_TIMEOUT = (3, 6)
+_FAIL_TTL = 30
+_OPTIONAL_FAIL_TTL = 30
+_OPTIONAL_METHODS = frozenset({
+    "FetchLeagueDraftBoard",
+    "FetchTeamPicks",
+    "FetchLeagueBoxscore",
+    "FetchRoster",
+    "FetchLeagueTransactions",
+    "FetchTrades",
+    "FetchLeagueActivity",
+})
 # Browser-like UA: some Fleaflicker edge configs are picky about obvious bots.
 _UA = (
     "Mozilla/5.0 (compatible; BR-Fantasy/1.0; +https://www.brfantasyfootball.com) "
@@ -52,12 +67,17 @@ _NO_SEASON = frozenset({
 })
 _CACHE: dict[tuple, tuple[float, dict]] = {}
 _FAIL_CACHE: dict[tuple, tuple[float, Exception]] = {}
+_OPTIONAL_FAIL: dict[str, tuple[float, Exception]] = {}
+_HOST_FAIL = _OPTIONAL_FAIL  # any unavailable error trips every subsequent _call
+_XWALK: dict[tuple, tuple[float, Optional[dict]]] = {}
+_XWALK_TTL = 300
+_XWALK_WARN_TS = 0.0
 _KEY_LOCKS: dict[tuple, threading.Lock] = {}
 _KEY_LOCKS_GUARD = threading.Lock()
 _KEY_LOCKS_MAX = 256
 _TX_PAGE_CAP = 25
 _TRADE_PAGE_CAP = 15
-_TX_BY_WEEK: dict[tuple, tuple[float, dict]] = {}
+_TX_BY_WEEK: dict[tuple, tuple] = {}
 _TX_BY_WEEK_TTL = 300
 _TX_BY_WEEK_MAX = 64
 _ET = ZoneInfo("America/New_York")
@@ -134,6 +154,47 @@ def _lock_for(key: tuple) -> threading.Lock:
             lock = threading.Lock()
             _KEY_LOCKS[key] = lock
         return lock
+
+
+def _cached_failure(cache: dict, key, ttl: float):
+    hit = cache.get(key)
+    if hit and time.monotonic() - hit[0] < ttl:
+        return hit[1]
+    return None
+
+
+def _remember_failure(key: tuple, exc: Exception) -> None:
+    now = time.monotonic()
+    _FAIL_CACHE[key] = (now, exc)
+    if len(_FAIL_CACHE) > 256:
+        cutoff = now - _FAIL_TTL
+        for stale, (ts, _) in list(_FAIL_CACHE.items()):
+            if ts < cutoff:
+                _FAIL_CACHE.pop(stale, None)
+
+
+def _optional_fail_key(auth: Optional[str]) -> str:
+    return auth or ""
+
+
+def _raise_if_host_down(auth: Optional[str]) -> None:
+    exc = _cached_failure(_HOST_FAIL, _optional_fail_key(auth), _OPTIONAL_FAIL_TTL)
+    if exc is not None:
+        raise exc
+
+
+def _trip_host_down(auth: Optional[str], exc: Exception) -> None:
+    _HOST_FAIL[_optional_fail_key(auth)] = (time.monotonic(), exc)
+
+
+def _warn_crosswalk_once(exc: Exception) -> None:
+    global _XWALK_WARN_TS
+    now = time.monotonic()
+    if now - _XWALK_WARN_TS < _OPTIONAL_FAIL_TTL:
+        logger.debug("Fleaflicker player crosswalk unavailable error=%s", type(exc).__name__)
+        return
+    _XWALK_WARN_TS = now
+    logger.warning("Fleaflicker player crosswalk unavailable error=%s", type(exc).__name__)
 
 
 def _fantasy_week_from_ms(ts_ms: Optional[int], season: int) -> Optional[int]:
@@ -670,19 +731,22 @@ class FleaflickerProvider(ProviderAdapter):
             method, league_id, int(season) if include_season else 0,
             auth or "", include_season, tuple(sorted(params.items())),
         )
+        optional = method in _OPTIONAL_METHODS
         cached = _CACHE.get(key)
         if cached and time.monotonic() - cached[0] < ttl:
             return cached[1]
-        failed = _FAIL_CACHE.get(key)
-        if failed and time.monotonic() - failed[0] < ttl:
-            raise failed[1]
+        _raise_if_host_down(auth)
+        failed = _cached_failure(_FAIL_CACHE, key, _FAIL_TTL)
+        if failed is not None:
+            raise failed
         with _lock_for(key):
             cached = _CACHE.get(key)
             if cached and time.monotonic() - cached[0] < ttl:
                 return cached[1]
-            failed = _FAIL_CACHE.get(key)
-            if failed and time.monotonic() - failed[0] < ttl:
-                raise failed[1]
+            _raise_if_host_down(auth)
+            failed = _cached_failure(_FAIL_CACHE, key, _FAIL_TTL)
+            if failed is not None:
+                raise failed
             query = {"sport": SPORT, "league_id": int(league_id), **params}
             if include_season:
                 query["season"] = int(season)
@@ -691,7 +755,10 @@ class FleaflickerProvider(ProviderAdapter):
                 headers["Authorization"] = auth
             try:
                 response = _request_get(
-                    f"{BASE_URL}/{method}", params=query, timeout=TIMEOUT, headers=headers,
+                    f"{BASE_URL}/{method}",
+                    params=query,
+                    timeout=OPTIONAL_TIMEOUT if optional else TIMEOUT,
+                    headers=headers,
                 )
                 if response.status_code >= 400:
                     _classify_http_error(response, method, league_id)
@@ -703,7 +770,9 @@ class FleaflickerProvider(ProviderAdapter):
                     raise ProviderUnavailableError("Fleaflicker returned an invalid response.")
                 payload = response.json()
             except (ProviderAuthenticationError, LeagueNotFoundError, ProviderUnavailableError) as exc:
-                _FAIL_CACHE[key] = (time.monotonic(), exc)
+                _remember_failure(key, exc)
+                if isinstance(exc, ProviderUnavailableError):
+                    _trip_host_down(auth, exc)
                 raise
             except ValueError as exc:
                 logger.warning(
@@ -895,9 +964,27 @@ class FleaflickerProvider(ProviderAdapter):
         return players, starters, reserve, seen
 
     def _canonical_map(self, league_id, season, *, token: Optional[str] = None):
+        auth = resolve_credentials(str(league_id), season, token=token) or ""
+        cache_key = (str(league_id), int(season), auth)
+        hit = _XWALK.get(cache_key)
+        if hit:
+            ts, payload = hit
+            ttl = _FAIL_TTL if payload is None else _XWALK_TTL
+            if time.monotonic() - ts < ttl:
+                return payload or {}
         try:
-            from utils.utils import load_players_index, normalize_name
-            by_name = _name_index_from_players(load_players_index() or {}, normalize_name)
+            _raise_if_host_down(auth)
+        except ProviderUnavailableError:
+            return {}
+        try:
+            # Name index is optional (slim CI has no requests). Still hit
+            # FetchLeagueRosters so an upstream outage trips the host breaker.
+            by_name = self._build_name_index()
+            try:
+                from utils.utils import normalize_name
+            except Exception:
+                def normalize_name(value):
+                    return str(value or "").strip().lower()
             out = {}
             raw = self._call("FetchLeagueRosters", league_id, season, ttl=300, token=token)
             for roster in raw.get("rosters") or []:
@@ -911,9 +998,11 @@ class FleaflickerProvider(ProviderAdapter):
                     canonical = _pick_canonical(by_name, name, pos, _flea_pro_team(pro))
                     if canonical:
                         out[str(pid)] = canonical
+            _XWALK[cache_key] = (time.monotonic(), out)
             return out
         except Exception as exc:
-            logger.warning("Fleaflicker player crosswalk unavailable error=%s", type(exc).__name__)
+            _XWALK[cache_key] = (time.monotonic(), None)
+            _warn_crosswalk_once(exc)
             return {}
 
     def get_rosters(self, league_id, season, *, token: Optional[str] = None):
@@ -932,6 +1021,7 @@ class FleaflickerProvider(ProviderAdapter):
         except Exception:
             logger.debug("Fleaflicker standings unavailable for roster names", exc_info=True)
         out = []
+        roster_detail_unavailable = False
         for roster in raw.get("rosters") or []:
             team = roster.get("team") or {}
             team_id = _get(team, "id")
@@ -943,16 +1033,25 @@ class FleaflickerProvider(ProviderAdapter):
             seen: set[str] = set()
             mapped_flat = 0
             # FetchRoster carries START/BENCH groups; the bulk roster list does not.
-            try:
-                detail = self._call(
-                    "FetchRoster", league_id, season, ttl=300, token=token,
-                    team_id=int(team_id),
-                )
-                players, starters, reserve, seen = self._parse_fetch_roster_groups(
-                    detail, xwalk, by_name,
-                )
-            except Exception:
-                logger.debug("Fleaflicker FetchRoster lineup parse failed", exc_info=True)
+            # One upstream outage used to sequentially timeout every team.
+            if not roster_detail_unavailable:
+                try:
+                    detail = self._call(
+                        "FetchRoster", league_id, season, ttl=300, token=token,
+                        team_id=int(team_id),
+                    )
+                    players, starters, reserve, seen = self._parse_fetch_roster_groups(
+                        detail, xwalk, by_name,
+                    )
+                except ProviderUnavailableError:
+                    roster_detail_unavailable = True
+                    logger.debug(
+                        "Fleaflicker FetchRoster unavailable league=%s; "
+                        "using bulk roster list for remaining teams",
+                        league_id,
+                    )
+                except Exception:
+                    logger.debug("Fleaflicker FetchRoster lineup parse failed", exc_info=True)
             starter_set = set(starters)
             for player in entries:
                 pro = player.get("proPlayer") or player.get("pro_player") or {}
@@ -1091,7 +1190,10 @@ class FleaflickerProvider(ProviderAdapter):
             want = int(week)
         except (TypeError, ValueError):
             want = 1
-        by_week = self._transactions_by_week(league_id, season, token=token)
+        try:
+            by_week = self._transactions_by_week(league_id, season, token=token)
+        except ProviderUnavailableError:
+            return []
         return list(by_week.get(want) or [])
 
     def _paginate_items(
@@ -1147,18 +1249,23 @@ class FleaflickerProvider(ProviderAdapter):
         auth = resolve_credentials(str(league_id), season, token=token) or ""
         cache_key = (str(league_id), int(season), auth)
         hit = _TX_BY_WEEK.get(cache_key)
-        if hit and time.monotonic() - hit[0] < _TX_BY_WEEK_TTL:
+        if hit and time.monotonic() - hit[0] < (hit[2] if len(hit) > 2 else _TX_BY_WEEK_TTL):
             return hit[1]
         with _lock_for(("tx-by-week",) + cache_key):
             hit = _TX_BY_WEEK.get(cache_key)
-            if hit and time.monotonic() - hit[0] < _TX_BY_WEEK_TTL:
+            if hit and time.monotonic() - hit[0] < (hit[2] if len(hit) > 2 else _TX_BY_WEEK_TTL):
                 return hit[1]
-            assembled = self._assemble_transactions_by_week(
-                league_id, season, token=token,
-            )
+            try:
+                assembled = self._assemble_transactions_by_week(
+                    league_id, season, token=token,
+                )
+                ttl = _TX_BY_WEEK_TTL
+            except ProviderUnavailableError:
+                assembled = {}
+                ttl = _FAIL_TTL
             if len(_TX_BY_WEEK) >= _TX_BY_WEEK_MAX:
                 _TX_BY_WEEK.clear()
-            _TX_BY_WEEK[cache_key] = (time.monotonic(), assembled)
+            _TX_BY_WEEK[cache_key] = (time.monotonic(), assembled, ttl)
             return assembled
 
     def _assemble_transactions_by_week(
@@ -1409,15 +1516,22 @@ class FleaflickerProvider(ProviderAdapter):
         # Future picks are per-team; aggregate from standings team ids.
         standings = self._call("FetchLeagueStandings", league_id, season, ttl=1800, token=token)
         out = []
+        picks_unavailable = False
         for team in self._teams_from_standings(standings):
             team_id = _get(team, "id")
             if team_id is None:
                 continue
+            if picks_unavailable:
+                break
             try:
                 raw = self._call(
                     "FetchTeamPicks", league_id, season, ttl=1800, token=token,
                     team_id=int(team_id),
                 )
+            except ProviderUnavailableError:
+                # Same host outage will fail every team; don't pay N timeouts.
+                picks_unavailable = True
+                continue
             except Exception:
                 continue
             for pick in raw.get("picks") or raw.get("futurePicks") or raw.get("future_picks") or []:

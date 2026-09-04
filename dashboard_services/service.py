@@ -710,6 +710,7 @@ def get_transactions_by_week(
         tx = platform_get_transactions(platform=platform, league_id=league_id, week=w, season=season)
         return w, tx if isinstance(tx, list) else []
 
+    failures: list[tuple[int, Exception]] = []
     with ThreadPoolExecutor(max_workers=min(len(season_weeks), 8)) as pool:
         futures = {pool.submit(_fetch, w): w for w in season_weeks}
         for fut in as_completed(futures):
@@ -718,9 +719,14 @@ def get_transactions_by_week(
                 week, tx = fut.result()
                 results[week] = tx
             except Exception as e:
-                print(f"[transactions] Week {w} failed → {e}")
+                failures.append((w, e))
                 results[w] = []
 
+    if failures:
+        logger.warning(
+            "[transactions] %s week(s) failed for league %s: %s",
+            len(failures), league_id, failures[0][1],
+        )
     return results
 
 

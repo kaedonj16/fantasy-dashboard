@@ -97,3 +97,45 @@ def test_build_week_activity_skips_refetch_when_rosters_provided(monkeypatch):
         "92916", "fleaflicker", 2026, {}, users=[], rosters=[],
     )
     assert frame.empty
+
+
+def test_get_transactions_by_week_logs_once_for_many_week_failures(caplog, monkeypatch):
+    """18 parallel week fetches used to print the same Fleaflicker outage."""
+    import logging
+    from dashboard_services.providers.base import ProviderUnavailableError
+    from dashboard_services import service as svc
+
+    def _boom(*_a, **_k):
+        raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
+
+    monkeypatch.setattr(svc, "platform_get_transactions", _boom)
+    with caplog.at_level(logging.WARNING, logger=svc.logger.name):
+        result = svc.get_transactions_by_week(
+            "92916", list(range(0, 19)), platform="fleaflicker", season=2026,
+        )
+    assert result[1] == []
+    assert result[18] == []
+    warnings = [r for r in caplog.records if "[transactions]" in r.getMessage()]
+    assert len(warnings) == 1
+    assert "19 week(s) failed" in warnings[0].getMessage()
+
+
+def test_build_league_context_draft_warning_is_rate_limited(caplog, monkeypatch):
+    """A Fleaflicker blip used to reprint the same drafts warning per page build."""
+    import logging
+    import app as appmod
+
+    appmod._CTX_TASK_WARN_TS.clear()
+    with caplog.at_level(logging.WARNING, logger=appmod.logger.name):
+        appmod._warn_league_ctx_once(
+            "drafts", "92916",
+            "[build_league_context] failed to load drafts for league %s: %s",
+            "92916", "Fleaflicker is temporarily unavailable.",
+        )
+        appmod._warn_league_ctx_once(
+            "drafts", "92916",
+            "[build_league_context] failed to load drafts for league %s: %s",
+            "92916", "Fleaflicker is temporarily unavailable.",
+        )
+    warnings = [r for r in caplog.records if "failed to load drafts" in r.getMessage()]
+    assert len(warnings) == 1
