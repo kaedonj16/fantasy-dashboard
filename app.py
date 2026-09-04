@@ -1233,8 +1233,8 @@ FORM_BODY = """
         <span class="home-platform-chip">Fleaflicker</span>
       </div>
       <p class="home-pro-hero-cta">
-        <a href="#homeProSignup">Start PRO</a>
-        <span>Pick a plan, connect your league, finish with Google.</span>
+        <button type="button" class="home-pro-open-btn" data-home-pro-open>Unlock PRO</button>
+        <span>See what PRO includes. A Google account is required to subscribe.</span>
       </p>
     </div>
 
@@ -1557,99 +1557,58 @@ FORM_BODY = """
     </div>
   </section>
 
-  <section class="home-pro" id="homeProSignup" aria-label="Start PRO">
+  <section class="home-pro" id="homeProSignup" aria-labelledby="homeProTitle">
     <div class="home-pro-inner">
       <header class="home-pro-head">
-        <span class="home-pro-eyebrow">BR Fantasy PRO</span>
-        <h2 class="home-pro-title">Unlock PRO instantly</h2>
-        <p class="home-pro-lead">Pick a plan, enter your league, then continue with Google to checkout.</p>
+        <span class="home-pro-eyebrow">Unlock PRO</span>
+        <h2 class="home-pro-title" id="homeProTitle">The tools that decide trades, waivers, and playoffs</h2>
+        <p class="home-pro-lead">PRO unlocks roster-aware analysis for your league. A Google account is required to subscribe. See what you get, then pick a plan and connect your league.</p>
       </header>
-
-      <ol class="home-pro-progress" aria-label="PRO signup steps">
-        <li class="is-active" data-home-pro-step="plan">1. Plan</li>
-        <li data-home-pro-step="league">2. League</li>
-      </ol>
-
-      <div id="homeProStepPlan" class="home-pro-step">
-        <div class="home-pro-plans" role="radiogroup" aria-label="PRO plans">
-          <button type="button" class="home-pro-plan" data-plan="single_league" aria-pressed="false">
-            <span class="home-pro-plan-name">One League</span>
-            <span class="home-pro-plan-price">$5<span>/year</span></span>
-            <span class="home-pro-plan-desc">PRO for you in one league</span>
-          </button>
-          <button type="button" class="home-pro-plan" data-plan="league" aria-pressed="false">
-            <span class="home-pro-plan-name">League</span>
-            <span class="home-pro-plan-price">$15<span>/year</span></span>
-            <span class="home-pro-plan-desc">PRO for every manager</span>
-          </button>
-          <button type="button" class="home-pro-plan is-featured" data-plan="combo" aria-pressed="false">
-            <span class="home-pro-plan-badge">Best value</span>
-            <span class="home-pro-plan-name">League + Personal</span>
-            <span class="home-pro-plan-price">$20<span>/year</span></span>
-            <span class="home-pro-plan-desc">Your league plus all your rooms</span>
-          </button>
-          <button type="button" class="home-pro-plan" data-plan="user" aria-pressed="false">
-            <span class="home-pro-plan-name">Personal</span>
-            <span class="home-pro-plan-price">$10<span>/year</span></span>
-            <span class="home-pro-plan-desc">PRO for all your leagues</span>
-          </button>
-        </div>
-      </div>
-
-      <div id="homeProStepLeague" class="home-pro-step" hidden>
-        <button type="button" id="homeProBack" class="home-pro-back">Change plan</button>
-        <p class="home-pro-picked">Selected: <strong id="homeProPickedLabel"></strong></p>
-
-        <div id="homeProSavedWrap" hidden>
-          <label for="homeProSavedSelect">Your saved leagues</label>
-          <select id="homeProSavedSelect">
-            <option value="">Choose a saved league</option>
-          </select>
-          <p class="home-pro-or">or connect a different league</p>
-        </div>
-
-        <div class="home-pro-platforms" role="radiogroup" aria-label="League platform">
-          <button type="button" class="home-pro-platform is-active" data-platform="sleeper" aria-pressed="true">Sleeper</button>
-          <button type="button" class="home-pro-platform" data-platform="espn" aria-pressed="false">ESPN</button>
-          <button type="button" class="home-pro-platform" data-platform="yahoo" aria-pressed="false">Yahoo</button>
-          <button type="button" class="home-pro-platform" data-platform="mfl" aria-pressed="false">MFL</button>
-          <button type="button" class="home-pro-platform" data-platform="fleaflicker" aria-pressed="false">Fleaflicker</button>
-        </div>
-
-        <div id="homeProSleeperFields" class="home-pro-fields">
-          <label for="homeProSleeperUser">Sleeper username</label>
-          <div class="home-pro-inline">
-            <input type="text" id="homeProSleeperUser" autocomplete="username" placeholder="Your Sleeper username">
-            <button type="button" id="homeProFindLeagues">Find leagues</button>
-          </div>
-          <div id="homeProSleeperLeagueWrap" hidden>
-            <label for="homeProSleeperLeague">Choose league</label>
-            <select id="homeProSleeperLeague">
-              <option value="">Select a league</option>
-            </select>
-          </div>
-        </div>
-
-        <div id="homeProIdFields" class="home-pro-fields" hidden>
-          <label for="homeProLeagueId">League ID</label>
-          <input type="text" id="homeProLeagueId" autocomplete="off" placeholder="From your league URL">
-          <div id="homeProSeasonWrap" hidden>
-            <label for="homeProSeason">Season</label>
-            <input type="text" id="homeProSeason" inputmode="numeric" placeholder="{{ viewed_season }}" value="{{ viewed_season }}">
-          </div>
-        </div>
-
-        <p id="homeProError" class="home-pro-error" hidden></p>
-
-        <div class="home-pro-actions">
-          <button type="button" id="homeProGoogle" class="google-continue-btn">
-            <span class="google-button-title">Continue with Google</span>
-            <span>Creates your account and opens secure checkout</span>
-          </button>
-          <button type="button" id="homeProCheckout" class="home-pro-checkout-btn"{% if not session.get('account_id') %} hidden{% endif %}>
-            Continue to checkout
-          </button>
-        </div>
+      <ul class="home-pro-benefits">
+        <li>
+          <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-handshake"></i></span>
+          <strong>Trade Strategy</strong>
+          <span>Roster-based suggestions with Monte Carlo win-probability shifts</span>
+        </li>
+        <li>
+          <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-chart-line"></i></span>
+          <strong>Trade Intelligence</strong>
+          <span>Live market values, buy-low and sell-high signals from real trades</span>
+        </li>
+        <li>
+          <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-fire"></i></span>
+          <strong>Breakout Engine</strong>
+          <span>Spot value shifts from target share, snaps, and depth-chart changes</span>
+        </li>
+        <li>
+          <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-trophy"></i></span>
+          <strong>Playoff Impact</strong>
+          <span>Week-by-week simulations for your path to the playoffs</span>
+        </li>
+        <li>
+          <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-briefcase"></i></span>
+          <strong>Front Office Report</strong>
+          <span>A weekly GM memo for your roster, needs, and next moves</span>
+        </li>
+        <li>
+          <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-newspaper"></i></span>
+          <strong>Weekly Recap</strong>
+          <span>What happened in your league, written for managers</span>
+        </li>
+        <li>
+          <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-clipboard-list"></i></span>
+          <strong>Custom Draft Board</strong>
+          <span>Your board, values, and live overlay for startup and rookie drafts</span>
+        </li>
+        <li>
+          <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-magnifying-glass-chart"></i></span>
+          <strong>Draft Deep Dive</strong>
+          <span>Grade every pick and see how a class actually landed</span>
+        </li>
+      </ul>
+      <div class="home-pro-cta-row">
+        <button type="button" class="home-pro-open-btn" data-home-pro-open>Unlock PRO</button>
+        <span class="home-pro-cta-note">From $5/year. A Google account is required to subscribe.</span>
       </div>
     </div>
   </section>
