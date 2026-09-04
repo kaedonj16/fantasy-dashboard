@@ -1,0 +1,566 @@
+<title>Waivers &amp; Start/Sit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Archivo:wght@600;700;800;900&display=swap">
+<style>
+  /* ===== Real site tokens (static/dashboard.css) ===== */
+  :root {
+    --bg: #ffffff; --bg-alt: #f4f6f8; --card: #ffffff; --card-soft: #f8fafc;
+    --surface: #ffffff; --row: #f8fafc;
+    --text: #122d4b; --text-muted: #6b7280; --text-subtle: #64748b;
+    --border: #e8eef4; --accent: #122d4b; --accent-soft: #e9eef5;
+    --win: #16a34a; --loss: #ef4444; --warning: #f59e0b; --orange: #ea580c; --inj-q: #ca8a04;
+    --shadow-sm: 0 1px 3px rgba(16,44,75,.06);
+    --shadow-md: 0 6px 22px -10px rgba(16,44,75,.22);
+    --radius: 14px; --radius-lg: 16px; --pill: 999px;
+    --font: "Inter", "Archivo", system-ui, sans-serif;
+    color-scheme: light;
+  }
+  [data-theme="dark"] {
+    --bg: #020617; --bg-alt: #060d1f; --card: #0f172a; --card-soft: #111827;
+    --surface: #0f172a; --row: #0b1220;
+    --text: #e5e7eb; --text-muted: #94a3b8; --text-subtle: #94a3b8;
+    --border: #1f2937; --accent: #38bdf8; --accent-soft: #162032;
+    --win: #4ade80; --loss: #f87171; --warning: #f59e0b; --orange: #fb923c; --inj-q: #facc15;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,.4);
+    --shadow-md: 0 8px 26px -12px rgba(0,0,0,.7);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg-alt); color: var(--text); font-family: var(--font); -webkit-font-smoothing: antialiased; font-size: 14px; line-height: 1.5; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+  /* ===== Studio bar ===== */
+  .studio-bar { position: sticky; top: 0; z-index: 200; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 14px 22px; background: var(--card); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-sm); }
+  .studio-bar .title { display: flex; flex-direction: column; margin-right: auto; }
+  .studio-bar .title b { font-family: "Archivo", sans-serif; font-weight: 900; font-size: 16px; }
+  .studio-bar .title span { font-size: 12px; color: var(--text-muted); }
+  .segmented { display: inline-flex; gap: 3px; background: var(--card-soft); border: 1px solid var(--border); border-radius: 11px; padding: 3px; }
+  .segmented button { font-family: var(--font); font-weight: 700; font-size: 12px; color: var(--text-muted); background: none; border: 0; padding: 7px 14px; border-radius: 8px; cursor: pointer; }
+  .segmented button.on { background: var(--card); color: var(--text); box-shadow: var(--shadow-sm); }
+  [data-theme="dark"] .segmented button.on { color: var(--accent); }
+  .seg-label { font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); margin-right: 2px; }
+
+  /* ===== Frame ===== */
+  .frame-outer { padding: 30px 22px 30px; display: flex; justify-content: center; }
+  .frame { background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow-md); overflow: hidden; transition: max-width .35s ease; }
+  .frame.desktop { width: 100%; max-width: 1200px; border-radius: 16px; }
+  .frame.mobile { width: 400px; max-width: 100%; border-radius: 30px; padding: 9px; background: #10151d; }
+  [data-theme="dark"] .frame.mobile { background: #05070b; }
+  .chrome { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--card-soft); }
+  .frame.mobile .chrome { display: none; }
+  .chrome .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .chrome .dot:nth-child(1){background:#ff5f57;} .chrome .dot:nth-child(2){background:#febc2e;} .chrome .dot:nth-child(3){background:#28c840;}
+  .chrome .url { margin-left: 10px; flex: 1; max-width: 520px; font-size: 12px; color: var(--text-muted); background: var(--bg-alt); border: 1px solid var(--border); border-radius: 8px; padding: 5px 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .screen { background: var(--bg-alt); overflow: hidden; }
+  .frame.mobile .screen { border-radius: 22px; }
+  .frame.mobile .app { height: 820px; overflow-y: auto; }
+  .app::-webkit-scrollbar { width: 8px; } .app::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+
+  /* ===== Site nav ===== */
+  .topnav { display: flex; align-items: center; gap: 4px; padding: 0 18px; height: 52px; background: var(--card); border-bottom: 1px solid var(--border); }
+  .topnav .logo { font-family: "Archivo", sans-serif; font-weight: 900; font-size: 15px; margin-right: 18px; }
+  .topnav .logo em { color: var(--accent); font-style: normal; }
+  .topnav a { font-size: 13px; font-weight: 700; color: var(--text-muted); text-decoration: none; padding: 8px 12px; border-radius: 9px; }
+  .topnav a.on { color: var(--text); background: var(--bg-alt); }
+  .topnav .spacer { flex: 1; }
+  .topnav .avatar { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), #16a34a); color: #fff; font-weight: 800; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+  .frame.mobile .topnav .desk-only { display: none; }
+
+  /* ===== Page header ===== */
+  .pg-head { padding: 18px 20px 0; max-width: 1140px; margin: 0 auto; }
+  .pg-title-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .pg-title { font-family: "Archivo", sans-serif; font-weight: 900; font-size: 22px; letter-spacing: -.01em; }
+  .pg-sub { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
+  .pg-sub b { color: var(--text); font-weight: 700; }
+  .faab-budget { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; min-width: 190px; }
+  .faab-budget .lab { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
+  .faab-budget .amt { font-family: "Archivo", sans-serif; font-weight: 900; font-size: 15px; }
+  .faab-budget .amt b { color: var(--win); }
+  .faab-bar { width: 190px; height: 6px; border-radius: 6px; background: var(--card-soft); border: 1px solid var(--border); overflow: hidden; }
+  .faab-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--win), #4ade80); }
+
+  /* ===== Controls row ===== */
+  .controls { padding: 14px 20px 0; max-width: 1140px; margin: 0 auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .pos-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pos-btn { font-family: var(--font); font-size: 12px; font-weight: 800; color: var(--text-muted); background: var(--card); border: 1px solid var(--border); border-radius: var(--pill); padding: 6px 13px; cursor: pointer; transition: .12s; }
+  .pos-btn:hover { color: var(--text); }
+  .pos-btn.on { color: #fff; background: var(--accent); border-color: var(--accent); }
+  [data-theme="dark"] .pos-btn.on { color: #04121f; }
+  .faab-toggle { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; color: var(--text-muted); cursor: pointer; margin-left: auto; user-select: none; }
+  .faab-toggle input { accent-color: var(--accent); width: 15px; height: 15px; }
+  .tab-bar { display: none; }
+
+  /* ===== Layout ===== */
+  .layout { padding: 14px 20px 26px; max-width: 1140px; margin: 0 auto; display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 22px; align-items: start; }
+  .layout > * { min-width: 0; }
+  .app.is-mobile .layout { grid-template-columns: minmax(0,1fr); }
+  .app.is-mobile .tab-bar { display: flex; margin: 14px 20px 0; max-width: none; background: var(--card-soft); border: 1px solid var(--border); border-radius: 12px; padding: 4px; }
+  .app.is-mobile .tab-btn { flex: 1; font-family: var(--font); font-weight: 800; font-size: 13px; color: var(--text-muted); background: none; border: 0; padding: 9px; border-radius: 9px; cursor: pointer; }
+  .app.is-mobile .tab-btn.on { background: var(--accent); color: #fff; }
+  [data-theme="dark"] .app.is-mobile .tab-btn.on { color: #04121f; }
+  .app.is-mobile .col.hide-m { display: none; }
+
+  .sec-title { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+  .sec-title .flame { color: var(--orange); display: inline-flex; }
+  .col { display: flex; flex-direction: column; }
+
+  /* ===== Trending strip ===== */
+  .trend-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 18px; scrollbar-width: none; }
+  .trend-strip::-webkit-scrollbar { display: none; }
+  .trend-chip { flex: 0 0 auto; background: var(--card); border: 1px solid var(--border); border-radius: 11px; padding: 8px 11px; min-width: 120px; cursor: pointer; transition: border-color .12s; }
+  .trend-chip:hover { border-color: var(--accent); }
+  .trend-adds { font-family: "Archivo", sans-serif; font-size: 12px; font-weight: 900; color: var(--orange); }
+  .trend-name { font-size: 12.5px; font-weight: 700; margin-top: 2px; white-space: nowrap; }
+  .trend-sub { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; }
+
+  /* ===== Waiver rows ===== */
+  .wv-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 8px; cursor: pointer; transition: border-color .12s, box-shadow .12s; }
+  .wv-row:hover { border-color: var(--accent); box-shadow: var(--shadow-sm); }
+  .wv-rank { font-family: "Archivo", sans-serif; font-weight: 900; font-size: 13px; color: var(--text-subtle); width: 20px; text-align: center; flex-shrink: 0; }
+  .wv-main { flex: 1; min-width: 0; }
+  .wv-name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 7px; }
+  .wv-pos { font-size: 9px; font-weight: 800; padding: 2px 6px; border-radius: 5px; }
+  .pos-QB{background:rgba(59,130,246,.14);color:#2563eb;} [data-theme="dark"] .pos-QB{color:#60a5fa;}
+  .pos-RB{background:rgba(22,163,74,.14);color:#16a34a;} [data-theme="dark"] .pos-RB{color:#4ade80;}
+  .pos-WR{background:rgba(147,51,234,.14);color:#9333ea;} [data-theme="dark"] .pos-WR{color:#c084fc;}
+  .pos-TE{background:rgba(234,88,12,.14);color:#ea580c;} [data-theme="dark"] .pos-TE{color:#fb923c;}
+  .pos-K{background:rgba(202,138,4,.16);color:#ca8a04;} [data-theme="dark"] .pos-K{color:#facc15;}
+  .pos-DEF{background:rgba(220,38,38,.14);color:#dc2626;} [data-theme="dark"] .pos-DEF{color:#f87171;}
+  .wv-sub { font-size: 11px; color: var(--text-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wv-sub .up { color: var(--orange); font-weight: 700; }
+  .wv-metrics { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+  .wv-metric { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .wv-metric .m-lab { font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-subtle); }
+  .chip { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 7px; white-space: nowrap; }
+  .chip-good { background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); }
+  .chip-accent { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+  .chip-neutral { background: rgba(148,163,184,.16); color: var(--text-muted); }
+  .wv-value { font-family: "Archivo", sans-serif; font-size: 15px; font-weight: 900; font-variant-numeric: tabular-nums; }
+  .faab-band { display: inline-flex; align-items: baseline; gap: 3px; font-variant-numeric: tabular-nums; }
+  .faab-band .t { font-family: "Archivo", sans-serif; font-weight: 900; font-size: 13px; color: var(--accent); }
+  .faab-band .r { font-size: 10px; color: var(--text-subtle); }
+  .faab-col { display: none; }
+  .app.show-faab .faab-col { display: flex; }
+
+  /* ===== Streaming ===== */
+  .stream-wrap { margin-top: 22px; }
+  .stream-sub { font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text-subtle); margin: 12px 0 7px; }
+  .stream-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 6px; }
+  .stream-name { font-weight: 700; font-size: 13px; }
+  .stream-matchup { font-size: 11.5px; color: var(--text-muted); flex: 1; }
+  .stream-imp { font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+  .imp-good { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
+  .imp-bad { background: color-mix(in srgb, var(--loss) 14%, transparent); color: var(--loss); }
+  .imp-mid { background: rgba(148,163,184,.16); color: var(--text-muted); }
+
+  /* ===== Start/Sit advice banner ===== */
+  .ss-advice { border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  .ss-advice-head { font-size: 14px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+  .ss-advice-head .up { color: var(--accent); display: inline-flex; }
+  .ss-advice-head strong { color: var(--accent); font-family: "Archivo", sans-serif; }
+  .ss-advice-sub { font-size: 11px; color: var(--text-muted); margin: 4px 0 10px; }
+  .ss-swap { display: flex; align-items: center; gap: 9px; font-size: 13px; padding: 8px 0; border-top: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border)); flex-wrap: wrap; }
+  .ss-swap-slot { font-size: 9px; font-weight: 800; letter-spacing: .04em; color: var(--text-muted); border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px; flex-shrink: 0; }
+  .ss-swap-in { font-weight: 800; color: var(--win); }
+  .ss-swap-arrow { font-size: 11px; color: var(--text-muted); }
+  .ss-swap-out { font-weight: 600; color: var(--text-muted); text-decoration: line-through; }
+  .ss-swap-gain { margin-left: auto; font-family: "Archivo", sans-serif; font-weight: 900; font-size: 13px; color: var(--win); font-variant-numeric: tabular-nums; }
+  .ss-swap-wp { flex-basis: 100%; font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+  .ss-swap-wp strong { color: var(--win); font-variant-numeric: tabular-nums; }
+  .ss-optimal { border-radius: 12px; padding: 12px 15px; margin-bottom: 16px; border: 1px solid color-mix(in srgb, var(--win) 30%, var(--border)); background: color-mix(in srgb, var(--win) 8%, transparent); font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .ss-optimal .ck { color: var(--win); display: inline-flex; }
+
+  /* ===== Start/Sit position groups ===== */
+  .ss-group { margin-bottom: 16px; }
+  .ss-group-lab { font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+  .ss-player { padding: 11px 13px; border-radius: 11px; background: var(--card); border: 1px solid var(--border); margin-bottom: 7px; transition: border-color .12s, box-shadow .12s; }
+  .ss-player.start { border-color: color-mix(in srgb, var(--win) 55%, var(--border)); background: color-mix(in srgb, var(--win) 6%, transparent); }
+  .ss-player.rec { border-color: var(--win); box-shadow: 0 0 0 2px color-mix(in srgb, var(--win) 16%, transparent); }
+  .ss-player.bye { opacity: .6; }
+  .ss-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ss-name-block { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .ss-name { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .badge { font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 6px; flex-shrink: 0; white-space: nowrap; }
+  .b-start { background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); }
+  .b-flexstart { background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); border: 1px solid color-mix(in srgb, var(--win) 30%, transparent); }
+  .b-flex { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+  .b-sit { background: var(--row); color: var(--text-muted); }
+  .b-bye { background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); }
+  .b-q { background: color-mix(in srgb, var(--inj-q) 18%, transparent); color: var(--inj-q); }
+  .b-out { background: color-mix(in srgb, var(--loss) 16%, transparent); color: var(--loss); }
+  .cmp-btn { font-size: 11px; font-weight: 800; padding: 4px 9px; border-radius: 7px; border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer; transition: .12s; flex-shrink: 0; }
+  .cmp-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .cmp-btn.sel { background: var(--accent); color: #fff; border-color: var(--accent); }
+  [data-theme="dark"] .cmp-btn.sel { color: #04121f; }
+  .ss-stats { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 9px; align-items: flex-end; }
+  .ss-stat { display: flex; flex-direction: column; gap: 2px; }
+  .ss-stat .s-lab { font-size: 9.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--text-subtle); }
+  .ss-stat .s-val { font-family: "Archivo", sans-serif; font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .ss-stat .s-val.muted { color: var(--text-muted); font-weight: 700; }
+  .mu { font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 6px; }
+  .mu-easy { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
+  .mu-ok { background: color-mix(in srgb, #84cc16 14%, transparent); color: #65a30d; } [data-theme="dark"] .mu-ok { color: #a3e635; }
+  .mu-avg { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
+  .mu-hard { background: color-mix(in srgb, var(--loss) 15%, transparent); color: var(--loss); }
+  .cons { font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 6px; }
+  .cons-steady { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
+  .cons-volatile { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
+  .vegas { font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+  .vegas-high { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
+  .vegas-low { background: color-mix(in srgb, var(--loss) 15%, transparent); color: var(--loss); }
+
+  /* ===== Compare panel ===== */
+  .cmp-panel { background: var(--card); border: 1px solid var(--accent); border-radius: 12px; margin-bottom: 16px; overflow: hidden; box-shadow: var(--shadow-sm); }
+  .cmp-verdict { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 15px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--win) 9%, transparent); }
+  .cmp-verdict-pill { font-size: 10px; font-weight: 900; letter-spacing: .06em; padding: 3px 9px; border-radius: 6px; background: var(--win); color: #fff; flex-shrink: 0; }
+  [data-theme="dark"] .cmp-verdict-pill { color: #052e14; }
+  .cmp-verdict-name { font-size: 14px; font-weight: 900; }
+  .cmp-verdict-why { font-size: 12px; color: var(--text-muted); flex-basis: 100%; }
+  .cmp-close { margin-left: auto; background: none; border: 0; color: var(--text-muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px; }
+  .cmp-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; gap: 10px; padding: 12px 15px 10px; border-bottom: 2px solid var(--border); }
+  .cmp-hname { font-size: 14px; font-weight: 900; }
+  .cmp-hsub { font-size: 11px; color: var(--text-muted); }
+  .cmp-head .r { text-align: right; }
+  .cmp-vs { font-size: 10px; font-weight: 800; color: var(--text-subtle); letter-spacing: .06em; border: 1px solid var(--border); border-radius: var(--pill); padding: 3px 8px; }
+  .cmp-row { display: grid; grid-template-columns: 1fr minmax(90px,auto) 1fr; align-items: center; gap: 10px; padding: 8px 15px; border-bottom: 1px solid var(--border); }
+  .cmp-row:last-child { border-bottom: 0; }
+  .cmp-a { text-align: right; font-family: "Archivo", sans-serif; font-weight: 800; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .cmp-b { text-align: left; font-family: "Archivo", sans-serif; font-weight: 800; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .cmp-lbl { text-align: center; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-subtle); }
+  .cmp-win { color: var(--win); }
+  .cmp-win .v { background: color-mix(in srgb, var(--win) 14%, transparent); padding: 2px 9px; border-radius: var(--pill); display: inline-block; }
+
+  .note { font-size: 11px; color: var(--text-muted); text-align: center; padding: 16px 16px 2px; grid-column: 1 / -1; }
+  .note code { background: var(--card-soft); padding: 1px 5px; border-radius: 5px; border: 1px solid var(--border); }
+
+  /* ===== Change list ===== */
+  .changes { max-width: 1200px; margin: 0 auto; padding: 20px 22px 60px; }
+  .changes h2 { font-family: "Archivo", sans-serif; font-weight: 900; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 18px; }
+  .change-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
+  .change { display: flex; gap: 13px; }
+  .change .n { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); font-family: "Archivo", sans-serif; font-weight: 900; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+  .change h3 { font-family: "Archivo", sans-serif; font-weight: 800; font-size: 14px; margin: 3px 0 5px; }
+  .change p { margin: 0; font-size: 13px; color: var(--text-muted); }
+  .change p b { color: var(--text); font-weight: 600; }
+</style>
+
+<div class="studio-bar">
+  <div class="title">
+    <b>Waivers &amp; Start/Sit — Redesign</b>
+    <span>Interactive mockup · your real design tokens · visual only</span>
+  </div>
+  <div class="segmented" id="view-seg"><span class="seg-label">View</span><button data-view="desktop" class="on">Desktop</button><button data-view="mobile">Mobile</button></div>
+  <div class="segmented" id="theme-seg"><span class="seg-label">Theme</span><button data-theme="light" class="on">Light</button><button data-theme="dark">Dark</button></div>
+</div>
+
+<div class="frame-outer">
+  <div class="frame desktop" id="frame">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">bigrivalry.app/sleeper/2025/dynasty-warriors/waivers</span></div>
+    <div class="screen">
+      <div class="app is-desktop" id="app">
+        <div class="topnav">
+          <span class="logo">Big<em>Rivalry</em></span>
+          <a href="#" class="desk-only">Home</a>
+          <a href="#" class="desk-only">Players</a>
+          <a href="#" class="desk-only">Weekly</a>
+          <a href="#" class="on">Waivers &amp; Start/Sit</a>
+          <a href="#" class="desk-only">Trades</a>
+          <span class="spacer"></span>
+          <span class="avatar">KJ</span>
+        </div>
+
+        <div class="pg-head">
+          <div class="pg-title-row">
+            <div>
+              <div class="pg-title">Waivers &amp; Start/Sit</div>
+              <div class="pg-sub"><b>Dynasty Warriors</b> · Week 14 · Wed waivers process 3:00 AM ET</div>
+            </div>
+            <div class="faab-budget">
+              <span class="lab">FAAB remaining</span>
+              <span class="amt"><b>$47</b> <span style="color:var(--text-muted)">of $100</span></span>
+              <span class="faab-bar"><i style="width:47%"></i></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-bar">
+          <button class="tab-btn on" data-tab="waivers">Waiver Wire</button>
+          <button class="tab-btn" data-tab="startsit">Start/Sit</button>
+        </div>
+
+        <div class="controls">
+          <div class="pos-pills" id="pos-pills">
+            <button class="pos-btn on" data-pos="ALL">ALL</button>
+            <button class="pos-btn" data-pos="QB">QB</button>
+            <button class="pos-btn" data-pos="RB">RB</button>
+            <button class="pos-btn" data-pos="WR">WR</button>
+            <button class="pos-btn" data-pos="TE">TE</button>
+          </div>
+          <label class="faab-toggle"><input type="checkbox" id="faab-check"> Show FAAB bids</label>
+        </div>
+
+        <div class="layout">
+          <!-- LEFT: Waiver Wire -->
+          <div class="col" id="col-waivers">
+            <div class="sec-title"><span class="flame"><svg width="13" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2s4 4 4 8a4 4 0 01-8 0c0-1 .3-1.8.5-2.3C7 8 6 10 6 12.5A6 6 0 0018 12c0-5-6-10-6-10z"/></svg></span> Trending across leagues</div>
+            <div class="trend-strip" id="trend-strip"></div>
+
+            <div class="sec-title">Waiver Wire · <span style="color:var(--text)" id="wv-count">6 targets</span></div>
+            <div id="wv-list"></div>
+
+            <div class="stream-wrap">
+              <div class="sec-title">Streaming this week</div>
+              <div class="stream-sub">Defense</div>
+              <div id="stream-def"></div>
+              <div class="stream-sub">Kicker</div>
+              <div id="stream-k"></div>
+            </div>
+          </div>
+
+          <!-- RIGHT: Start/Sit -->
+          <div class="col hide-m" id="col-startsit">
+            <div class="sec-title">Start/Sit Advisor</div>
+            <div class="ss-advice">
+              <div class="ss-advice-head"><span class="up"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg></span> You're leaving <strong>8.4</strong> start-score points on the bench</div>
+              <div class="ss-advice-sub">Two moves close the gap before Sunday. Win odds shown vs your current matchup.</div>
+              <div class="ss-swap">
+                <span class="ss-swap-slot">FLEX</span>
+                <span class="ss-swap-in">Jaylen Wright</span>
+                <span class="ss-swap-arrow">replaces</span>
+                <span class="ss-swap-out">Roschon Johnson</span>
+                <span class="ss-swap-gain">+6.2</span>
+                <span class="ss-swap-wp">Win odds <strong>52% → 56%</strong> · Wright is the lead back with Achane out</span>
+              </div>
+              <div class="ss-swap">
+                <span class="ss-swap-slot">WR3</span>
+                <span class="ss-swap-in">Jalen McMillan</span>
+                <span class="ss-swap-arrow">replaces</span>
+                <span class="ss-swap-out">Demario Douglas</span>
+                <span class="ss-swap-gain">+2.2</span>
+                <span class="ss-swap-wp">Win odds <strong>56% → 57%</strong> · McMillan has 3 TD over 2 weeks vs a soft TB matchup</span>
+              </div>
+            </div>
+
+            <div id="cmp-panel-wrap"></div>
+            <div id="ss-groups"></div>
+          </div>
+
+          <p class="note">Projections, matchup ranks, Vegas totals and consistency come from the same start-score engine used across the app. Compare any two players with the <b>Compare</b> buttons.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="changes">
+  <h2>What the redesign changes — layout &amp; styling only</h2>
+  <div class="change-grid">
+    <div class="change"><span class="n">1</span><div><h3>Advice, not just a list</h3><p>The Start/Sit column now <b>leads with the verdict</b> — "you're leaving 8.4 points on the bench" and the exact swaps to fix it, with win-odds impact — instead of making you scan every card to find the tension.</p></div></div>
+    <div class="change"><span class="n">2</span><div><h3>A FAAB budget you can see</h3><p>Your remaining FAAB sits in the header as a <b>bar and a number</b>, and each target shows a low·target·stretch bid band. Today the budget is invisible and bids hide behind a toggle.</p></div></div>
+    <div class="change"><span class="n">3</span><div><h3>Cleaner waiver rows</h3><p>Rank, name, and the "why add" signal read first; Value and FAAB sit in aligned metric columns with <b>tabular figures</b> so the whole list scans down cleanly.</p></div></div>
+    <div class="change"><span class="n">4</span><div><h3>Recommended starter, highlighted</h3><p>The player the advisor wants you to start gets a <b>green ring</b> in his position group, tying the swap banner to the actual lineup card. Byes and injuries stay dimmed / flagged.</p></div></div>
+    <div class="change"><span class="n">5</span><div><h3>Same components, both themes &amp; sizes</h3><p>Position pills, badges, matchup and Vegas chips, the compare panel — <b>all your existing pieces</b>, on your real tokens. Toggle light/dark and desktop/mobile above.</p></div></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var $ = function (s, r) { return (r||document).querySelector(s); };
+  var esc = function (s) { return String(s).replace(/[&<>]/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; }); };
+
+  // ---- data ----
+  var TREND = [
+    {n:'Jaylen Wright', pos:'RB', adds:1204, sub:'RB · MIA'},
+    {n:'Demario Douglas', pos:'WR', adds:806, sub:'WR · NE'},
+    {n:'Cade Otton', pos:'TE', adds:512, sub:'TE · TB'},
+    {n:'Jalen McMillan', pos:'WR', adds:288, sub:'WR · TB'},
+    {n:'Kyle Pitts', pos:'TE', adds:240, sub:'TE · ATL'}
+  ];
+  var WAIVERS = [
+    {pos:'RB', n:'Jaylen Wright', sub:'RB · MIA · RB2 ROS · 34% rostered', adds:1204, why:'Lead back, Achane out', wcls:'chip-good', value:42, faab:[9,18,26]},
+    {pos:'WR', n:'Demario Douglas', sub:'WR · NE · WR55 · 12% rostered', adds:806, why:'9 targets, slot role', wcls:'chip-accent', value:28, faab:[3,6,11]},
+    {pos:'TE', n:'Cade Otton', sub:'TE · TB · TE14 · 41% rostered', adds:512, why:'Streamer, easy matchup', wcls:'chip-accent', value:22, faab:[2,4,7]},
+    {pos:'RB', n:'Tyjae Spears', sub:'RB · TEN · RB40 · 55% rostered', adds:330, why:'Handcuff w/ upside', wcls:'chip-neutral', value:19, faab:[1,3,6]},
+    {pos:'WR', n:'Jalen McMillan', sub:'WR · TB · WR61 · 8% rostered', adds:288, why:'3 TD in 2 weeks', wcls:'chip-good', value:17, faab:[2,5,9]},
+    {pos:'QB', n:'Bo Nix', sub:'QB · DEN · QB18 · 44% rostered', adds:210, why:'Rushing floor rising', wcls:'chip-accent', value:14, faab:[1,2,4]}
+  ];
+  var STREAM_DEF = [
+    {n:'Titans D/ST', mu:'vs NYG', imp:17.0, cls:'good'},
+    {n:'Commanders D/ST', mu:'vs CAR', imp:18.5, cls:'good'},
+    {n:'Raiders D/ST', mu:'@ ATL', imp:23.0, cls:'bad'}
+  ];
+  var STREAM_K = [
+    {n:'Cameron Dicker', mu:'LAC vs TEN', imp:25.5, cls:'good'},
+    {n:'Chris Boswell', mu:'PIT vs CLE', imp:21.5, cls:'mid'}
+  ];
+  var GROUPS = [
+    {lab:'Quarterback', players:[
+      {n:'Jalen Hurts', pos:'QB', badge:['START','b-start'], proj:21.4, l4:22.1, mu:['#6 favorable','mu-ok'], vegas:['26.5','vegas-high'], cons:['Steady','cons-steady'], id:'hurts'}
+    ]},
+    {lab:'Running Back', players:[
+      {n:'Bijan Robinson', pos:'RB', badge:['START','b-start'], proj:18.2, l4:19.0, mu:['#9 tough','mu-avg'], vegas:['24.0','vegas-high'], cons:['Steady','cons-steady'], id:'bijan'},
+      {n:'Jaylen Wright', pos:'RB', badge:['FLEX START','b-flexstart'], proj:14.2, l4:15.1, mu:['#4 easiest','mu-easy'], vegas:['24.0','vegas-high'], cons:['Volatile','cons-volatile'], rec:true, id:'wright'},
+      {n:'Roschon Johnson', pos:'RB', badge:['SIT','b-sit'], proj:8.0, l4:6.2, mu:['#22 hardest','mu-hard'], vegas:['19.5','vegas-low'], cons:['Volatile','cons-volatile'], id:'roschon'}
+    ]},
+    {lab:'Wide Receiver', players:[
+      {n:'CeeDee Lamb', pos:'WR', badge:['START','b-start'], proj:17.9, l4:18.4, mu:['#8 favorable','mu-ok'], vegas:['22.0','vegas-high'], cons:['Steady','cons-steady'], id:'lamb'},
+      {n:'Malik Nabers', pos:'WR', badge:['START','b-start'], inj:['Q','b-q'], proj:15.1, l4:16.2, mu:['#12 tough','mu-avg'], vegas:['20.5','vegas-low'], cons:['Volatile','cons-volatile'], id:'nabers'},
+      {n:'Jalen McMillan', pos:'WR', badge:['FLEX','b-flex'], proj:11.8, l4:13.0, mu:['#3 easiest','mu-easy'], vegas:['24.0','vegas-high'], cons:['Volatile','cons-volatile'], id:'mcmillan'},
+      {n:'Demario Douglas', pos:'WR', badge:['SIT','b-sit'], proj:9.6, l4:8.1, mu:['#18 tough','mu-avg'], vegas:['18.0','vegas-low'], cons:['Volatile','cons-volatile'], id:'douglas'}
+    ]},
+    {lab:'Tight End', players:[
+      {n:'Trey McBride', pos:'TE', badge:['START','b-start'], proj:13.4, l4:14.2, mu:['#7 favorable','mu-ok'], vegas:['21.0','vegas-high'], cons:['Steady','cons-steady'], id:'mcbride'},
+      {n:'Cade Otton', pos:'TE', badge:['BYE','b-bye'], bye:true, proj:0, l4:9.1, mu:['—','mu-avg'], vegas:['—','vegas-low'], cons:['Balanced','cons-volatile'], id:'otton'}
+    ]}
+  ];
+  var CMP = { // Wright vs Roschon
+    verdict:'Start Jaylen Wright', why:'Higher floor and ceiling, far easier matchup, and the lead role with Achane out.',
+    a:{n:'Jaylen Wright', sub:'RB · MIA'}, b:{n:'Roschon Johnson', sub:'RB · CHI'},
+    rows:[
+      {lab:'Proj PPG', a:'14.2', b:'8.0', win:'a'},
+      {lab:'L4 PPG', a:'15.1', b:'6.2', win:'a'},
+      {lab:'Matchup', a:'#4 easiest', b:'#22 hardest', win:'a'},
+      {lab:'Vegas total', a:'24.0', b:'19.5', win:'a'},
+      {lab:'Snap %', a:'68%', b:'41%', win:'a'}
+    ]
+  };
+
+  var state = { pos:'ALL', faab:false, tab:'waivers', compare:[] };
+
+  function posMatch(p) { return state.pos==='ALL' || p.pos===state.pos; }
+
+  function faabHtml(f) {
+    return '<span class="faab-band"><span class="r">'+f[0]+'</span><span class="t">'+f[1]+'%</span><span class="r">'+f[2]+'</span></span>';
+  }
+  function renderTrend() {
+    $('#trend-strip').innerHTML = TREND.filter(posMatch).map(function(t){
+      return '<div class="trend-chip"><div class="trend-adds">+'+t.adds.toLocaleString()+'</div><div class="trend-name">'+esc(t.n)+'</div><div class="trend-sub">'+esc(t.sub)+'</div></div>';
+    }).join('') || '<div class="trend-sub" style="padding:8px">No trending '+state.pos+'s.</div>';
+  }
+  function renderWaivers() {
+    var list = WAIVERS.filter(posMatch);
+    $('#wv-count').textContent = list.length + ' target' + (list.length===1?'':'s');
+    $('#wv-list').innerHTML = list.map(function(p, i){
+      return '<div class="wv-row">'
+        + '<span class="wv-rank">'+(i+1)+'</span>'
+        + '<div class="wv-main"><div class="wv-name"><span class="wv-pos pos-'+p.pos+'">'+p.pos+'</span>'+esc(p.n)+'</div>'
+        +   '<div class="wv-sub">'+esc(p.sub)+' · <span class="up">+'+p.adds.toLocaleString()+' adds</span></div></div>'
+        + '<div class="wv-metrics">'
+        +   '<div class="wv-metric"><span class="m-lab">Why add</span><span class="chip '+p.wcls+'">'+esc(p.why)+'</span></div>'
+        +   '<div class="wv-metric faab-col"><span class="m-lab">FAAB bid</span>'+faabHtml(p.faab)+'</div>'
+        +   '<div class="wv-metric"><span class="m-lab">Value</span><span class="wv-value">'+p.value+'</span></div>'
+        + '</div></div>';
+    }).join('') || '<div class="wv-sub" style="padding:14px">No '+state.pos+' targets on the wire.</div>';
+  }
+  function streamRow(p) {
+    return '<div class="stream-row"><span class="stream-name">'+esc(p.n)+'</span><span class="stream-matchup">'+esc(p.mu)+'</span><span class="stream-imp imp-'+p.cls+'">'+p.imp.toFixed(1)+' impl</span></div>';
+  }
+  function renderStream() {
+    $('#stream-def').innerHTML = STREAM_DEF.map(streamRow).join('');
+    $('#stream-k').innerHTML = STREAM_K.map(streamRow).join('');
+  }
+
+  function playerCard(p) {
+    var cls = 'ss-player' + (p.badge[1]==='b-start'||p.badge[1]==='b-flexstart' ? ' start' : '') + (p.rec ? ' rec' : '') + (p.bye ? ' bye' : '');
+    var inj = p.inj ? '<span class="badge '+p.inj[1]+'">'+p.inj[0]+'</span>' : '';
+    var sel = state.compare.indexOf(p.id) >= 0 ? ' sel' : '';
+    var stats = ''
+      + '<div class="ss-stat"><span class="s-lab">Proj</span><span class="s-val">'+(p.proj?p.proj.toFixed(1):'—')+'</span></div>'
+      + '<div class="ss-stat"><span class="s-lab">L4 PPG</span><span class="s-val muted">'+(p.l4?p.l4.toFixed(1):'—')+'</span></div>'
+      + '<div class="ss-stat"><span class="s-lab">Matchup</span><span class="mu '+p.mu[1]+'">'+esc(p.mu[0])+'</span></div>'
+      + '<div class="ss-stat"><span class="s-lab">Vegas</span><span class="vegas '+p.vegas[1]+'">'+esc(p.vegas[0])+'</span></div>'
+      + '<div class="ss-stat"><span class="s-lab">Profile</span><span class="cons '+p.cons[1]+'">'+esc(p.cons[0])+'</span></div>';
+    return '<div class="'+cls+'">'
+      + '<div class="ss-top"><div class="ss-name-block"><span class="badge '+p.badge[1]+'">'+esc(p.badge[0])+'</span><span class="ss-name">'+esc(p.n)+'</span>'+inj+'</div>'
+      +   '<button class="cmp-btn'+sel+'" data-cmp="'+p.id+'">Compare</button></div>'
+      + '<div class="ss-stats">'+stats+'</div></div>';
+  }
+  function renderGroups() {
+    $('#ss-groups').innerHTML = GROUPS.map(function(g){
+      var players = g.players.filter(function(p){ return state.pos==='ALL' || p.pos===state.pos; });
+      if (!players.length) return '';
+      return '<div class="ss-group"><div class="ss-group-lab">'+esc(g.lab)+'</div>'+players.map(playerCard).join('')+'</div>';
+    }).join('') || '<div class="wv-sub" style="padding:14px">No '+state.pos+' in your lineup.</div>';
+    $('#ss-groups').querySelectorAll('.cmp-btn').forEach(function(b){
+      b.addEventListener('click', function(){ toggleCompare(b.dataset.cmp); });
+    });
+  }
+  function toggleCompare(id) {
+    var i = state.compare.indexOf(id);
+    if (i >= 0) state.compare.splice(i, 1);
+    else { state.compare.push(id); if (state.compare.length > 2) state.compare.shift(); }
+    renderGroups(); renderCompare();
+  }
+  function renderCompare() {
+    var wrap = $('#cmp-panel-wrap');
+    // Demo: show the prebuilt Wright-vs-Roschon panel whenever exactly those two (or 2 of anything) are picked
+    if (state.compare.length < 2) { wrap.innerHTML = ''; return; }
+    var c = CMP;
+    wrap.innerHTML = '<div class="cmp-panel">'
+      + '<div class="cmp-verdict"><span class="cmp-verdict-pill">START</span><span class="cmp-verdict-name">'+esc(c.verdict)+'</span>'
+      +   '<button class="cmp-close" id="cmp-close" title="Close">×</button>'
+      +   '<span class="cmp-verdict-why">'+esc(c.why)+'</span></div>'
+      + '<div class="cmp-head"><div class="r"><div class="cmp-hname">'+esc(c.a.n)+'</div><div class="cmp-hsub">'+esc(c.a.sub)+'</div></div>'
+      +   '<span class="cmp-vs">VS</span>'
+      +   '<div><div class="cmp-hname">'+esc(c.b.n)+'</div><div class="cmp-hsub">'+esc(c.b.sub)+'</div></div></div>'
+      + c.rows.map(function(r){
+          var aw = r.win==='a' ? ' cmp-win' : '', bw = r.win==='b' ? ' cmp-win' : '';
+          return '<div class="cmp-row"><span class="cmp-a'+aw+'"><span class="v">'+esc(r.a)+'</span></span>'
+            + '<span class="cmp-lbl">'+esc(r.lab)+'</span>'
+            + '<span class="cmp-b'+bw+'"><span class="v">'+esc(r.b)+'</span></span></div>';
+        }).join('')
+      + '</div>';
+    var close = $('#cmp-close');
+    if (close) close.addEventListener('click', function(){ state.compare = []; renderGroups(); renderCompare(); });
+    wrap.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  }
+
+  // ---- wiring ----
+  $('#pos-pills').querySelectorAll('.pos-btn').forEach(function(b){
+    b.addEventListener('click', function(){
+      state.pos = b.dataset.pos;
+      $('#pos-pills').querySelectorAll('.pos-btn').forEach(function(x){ x.classList.toggle('on', x===b); });
+      renderTrend(); renderWaivers(); renderGroups();
+    });
+  });
+  $('#faab-check').addEventListener('change', function(){
+    state.faab = this.checked;
+    $('#app').classList.toggle('show-faab', state.faab);
+  });
+  document.querySelectorAll('.tab-btn').forEach(function(b){
+    b.addEventListener('click', function(){
+      state.tab = b.dataset.tab;
+      document.querySelectorAll('.tab-btn').forEach(function(x){ x.classList.toggle('on', x===b); });
+      $('#col-waivers').style.display = state.tab==='waivers' ? '' : 'none';
+      $('#col-startsit').style.display = state.tab==='startsit' ? 'flex' : 'none';
+    });
+  });
+  function applyTabForView() {
+    if ($('#app').classList.contains('is-mobile')) {
+      $('#col-waivers').style.display = state.tab==='waivers' ? '' : 'none';
+      $('#col-startsit').style.display = state.tab==='startsit' ? 'flex' : 'none';
+    } else {
+      $('#col-waivers').style.display = '';
+      $('#col-startsit').style.display = 'flex';
+    }
+  }
+  $('#view-seg').querySelectorAll('button').forEach(function(b){
+    b.addEventListener('click', function(){
+      var v = b.dataset.view;
+      $('#view-seg').querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
+      $('#frame').className = 'frame ' + v;
+      $('#app').className = 'app is-' + v + (state.faab ? ' show-faab' : '');
+      applyTabForView();
+    });
+  });
+  $('#theme-seg').querySelectorAll('button').forEach(function(b){
+    b.addEventListener('click', function(){
+      $('#theme-seg').querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
+      document.documentElement.setAttribute('data-theme', b.dataset.theme);
+    });
+  });
+
+  renderTrend(); renderWaivers(); renderStream(); renderGroups();
+})();
+</script>
