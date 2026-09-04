@@ -546,21 +546,18 @@ def _suggestion_rank(r: Dict[str, Any]) -> float:
     return 0.6 * impact + 0.4 * accept
 
 
-# ── Viewer positional need (Teams-page ranks → suggestion slate) ──────────────
-# Contending used to score targets by production / scarcity / availability only.
-# Scarcity down-weights 1QB QB (0.80) and TE (0.85), and availability prefers a
-# rival's surplus RB3/WR3, so a WR-factory last at QB and TE saw a slate of
-# flex RBs/WRs. These helpers use the same weighted_pos_strength ranks the
-# Teams page and /api/trade-targets already publish, then reserve slate slots
-# so the holes a manager is staring at actually appear.
+# ── Viewer positional need (Teams-page ranks → a mild hole nudge) ─────────────
+# Contending follows the *rise*: a WR-factory can still get its best weekly
+# win% from another stud WR/RB who starts in FLEX. Scarcity used to bury QB/TE
+# even when replacing a 14-point QB room would move the needle; the opposite
+# overcorrection (reserved hole slots + a 0.80 strength penalty) buried those
+# high-rise adds. Need is now a small bottom-half boost only — never a penalty
+# on a strength, never a reserved seat that jumps a low-rise TE over Chase Brown.
 
 _NEED_POS_ORDER = ("QB", "RB", "WR", "TE")
-_NEED_BOTTOM_FRAC = 0.35          # same cutoff as /api/trade-targets
-_NEED_MULT_BEST = 0.80            # first-place position
-_NEED_MULT_WORST = 1.45           # last-place position
+_NEED_MULT_WORST = 1.12           # last-place tiebreaker; top half stays 1.0
 _MAX_TARGETS = 8
 _MAX_PER_POS = 3
-_RESERVED_PER_NEED = 2
 
 
 def _default_slot_counts(league_type: str) -> Dict[str, int]:
@@ -615,46 +612,50 @@ def _viewer_pos_league_ranks(
 
 
 def _need_multiplier(rank: Optional[int], n_field: int) -> float:
-    """Score multiplier from league rank (1 = best). Last place ~1.45, first ~0.80."""
+    """Mild hole boost from league rank (1 = best). Top half stays 1.0.
+
+    Last place gets ``_NEED_MULT_WORST``. A stacked room is never penalized —
+    Contending can still get its best rise from a position the team is heavy at.
+    """
     if not rank or n_field <= 1:
         return 1.0
     clamped = min(max(int(rank), 1), n_field)
-    pct_from_bottom = (n_field - clamped) / (n_field - 1)
-    return _NEED_MULT_BEST + (_NEED_MULT_WORST - _NEED_MULT_BEST) * (1.0 - pct_from_bottom)
+    hole = (clamped - 1) / (n_field - 1)  # 0 at first, 1 at last
+    if hole <= 0.5:
+        return 1.0
+    return 1.0 + (_NEED_MULT_WORST - 1.0) * ((hole - 0.5) / 0.5)
 
 
-def _needed_positions(ranks: Dict[str, int], n_field: int) -> List[str]:
-    """Positions in the bottom 35% of the league, worst first.
+def _acquire_rank_score(
+    score: float,
+    wpd: float,
+    avail: float,
+    need_mult: float,
+    archetype: str,
+) -> float:
+    """Blend production score with the actual win-prob rise.
 
-    Falls back to the two weakest spots when they sit in the bottom half so a
-    4-team fixture (or a league with no one in the strict cutoff) still
-    reserves QB/TE on a WR-factory. A truly balanced top-half roster returns
-    nothing and keeps the variety slate as-is.
+    Contending is rise-first: a +6% weekly add at a WR/RB strength beats a
+    +0.5% hole-fill even after the last-place nudge. Consolidate still
+    balances value with fit so a real upgrade at a weak spot can compete
+    with a raw-value stud.
     """
-    if not ranks or n_field <= 1:
-        return []
-    cutoff = max(1, round(n_field * _NEED_BOTTOM_FRAC))
-    needed = [pos for pos in _NEED_POS_ORDER
-              if ranks.get(pos, n_field) > n_field - cutoff]
-    needed.sort(key=lambda p: ranks.get(p, n_field), reverse=True)
-    if needed:
-        return needed
-    ordered = sorted(_NEED_POS_ORDER, key=lambda p: ranks.get(p, n_field), reverse=True)
-    return [p for p in ordered[:2] if ranks.get(p, 1) > n_field / 2]
+    fit = min(1.0, max(0.0, wpd) / 0.06)
+    if archetype == "consolidate":
+        return (0.55 * score + 0.45 * fit) * avail * need_mult
+    return (0.35 * score + 0.65 * fit) * avail * need_mult
 
 
 def _select_varied_slate(
     scored: List[Tuple[float, Dict]],
-    needed_positions: Optional[List[str]] = None,
     max_targets: int = _MAX_TARGETS,
     max_per_pos: int = _MAX_PER_POS,
-    reserved_per_need: int = _RESERVED_PER_NEED,
 ) -> List[Dict]:
-    """Pick a varied slate, reserving slots for the viewer's weakest positions.
+    """Pick a varied slate in score order.
 
     One player per (owner, position), at most ``max_per_pos`` per position.
-    Needed positions take their best-scored players first so scarcity and
-    surplus-availability cannot flood the list with RB/WR depth.
+    No reserved seats — a low-rise hole does not jump a high-rise add at a
+    strength. Falls back to filling remaining slots if the caps leave it thin.
     """
     scored = sorted(scored, key=lambda x: x[0], reverse=True)
     seen_owner_pos: set = set()
@@ -675,23 +676,6 @@ def _select_varied_slate(
         pos_in_top[t["position"]] = pos_in_top.get(t["position"], 0) + 1
         top.append(t)
         return True
-
-    need = [p for p in (needed_positions or []) if p]
-    if need:
-        reserved_budget = min(reserved_per_need * len(need), max(0, max_targets - 2))
-        reserved_taken = 0
-        reserved_per_pos: Dict[str, int] = {p: 0 for p in need}
-        for _, t in scored:
-            if reserved_taken >= reserved_budget:
-                break
-            pos = t.get("position")
-            if pos not in reserved_per_pos:
-                continue
-            if reserved_per_pos[pos] >= reserved_per_need:
-                continue
-            if _try_add(t):
-                reserved_per_pos[pos] += 1
-                reserved_taken += 1
 
     for _, t in scored:
         if len(top) >= max_targets:
@@ -2413,16 +2397,13 @@ def _get_archetype_suggestions_impl(
             _viewer_best_val[_pp] = _f(_vv.get("value"))
 
     # League rank of the viewer's positional rooms (1 = best) — same numbers
-    # the Teams page shows. Contending/consolidate use this to boost holes
-    # (last-place QB/TE) and reserve slate slots so RB/WR surplus can't
-    # crowd them out.
+    # the Teams page shows. Used as a mild last-place tiebreaker only.
     _n_field = max(1, len(rosters))
     _viewer_league_ranks = _viewer_pos_league_ranks(
         rosters, values_by_id, str(viewer_roster_id),
         roster_positions or ctx.get("roster_positions") or [],
         league_type,
     )
-    _need_pos = _needed_positions(_viewer_league_ranks, _n_field)
 
     # Starter-caliber value thresholds for this league (matches the depth-warning
     # definition), used by the consolidation ceiling below.
@@ -2519,16 +2500,7 @@ def _get_archetype_suggestions_impl(
             avail = _availability(_drank, _pcounts.get(pos, 0))
 
         need_mult = _need_multiplier(_viewer_league_ranks.get(pos), _n_field)
-        if archetype == "consolidate":
-            # Gear toward the USER's team: how much this target upgrades their
-            # lineup (win-prob delta) weighs about as much as the player's raw
-            # value/production, so the list isn't just the top-5 overall names -
-            # it favors real upgrades at the user's weaker spots. fit is 0..1.
-            # need_mult then tilts the same way the Teams page ranks rooms.
-            fit = min(1.0, max(0.0, wpd) / 0.06)
-            final = (0.55 * score + 0.45 * fit) * avail * need_mult
-        else:
-            final = (score + wpd * 0.25) * avail * need_mult
+        final = _acquire_rank_score(score, wpd, avail, need_mult, archetype)
 
         # Off-pattern targets sort below natural fits but stay in the slate.
         final *= stretch
@@ -2536,10 +2508,8 @@ def _get_archetype_suggestions_impl(
 
         scored.append((final, t))
 
-    # Varied slate + reserved slots at the viewer's weakest positions (the
-    # holes the Teams page already shows as #12 QB / #12 TE).
     scored.sort(key=lambda x: x[0], reverse=True)
-    top = _select_varied_slate(scored, _need_pos)
+    top = _select_varied_slate(scored)
 
     # ── Build send packages & assemble response ───────────────────────────────
     send_candidates = _score_sends(viewer_players, values_by_id, archetype, untouchable_ids=untouchable_ids)

@@ -1,10 +1,9 @@
-"""Viewer positional holes must show up on the Contending slate.
+"""Contending suggestions follow the win-prob rise, with a mild hole nudge.
 
-A WR-factory last at QB and TE used to see a Strategy tab full of flex RBs/WRs.
-1QB scarcity down-weights QB/TE, availability prefers a rival's surplus RB3,
-and the old slate cap (3 per position, no reservation) let those two effects
-crowd the holes out. These tests pin the Teams-page rank helpers, the reserved
-slate, and the full Contending path on that roster shape.
+A last-place QB/TE should compete fairly (1QB scarcity must not bury a real
+upgrade), but a WR-factory can still get its best rise from another stud
+WR/RB. Hard-reserved hole slots and a first-place penalty were the wrong
+fix — they jumped a low-rise TE over a high-rise flex add.
 
 Pure helpers + the impl (network stubbed) so this runs without flask/pandas.
 """
@@ -37,7 +36,7 @@ def _info(pid, name, pos, val):
     return {"name": name, "position": pos, "value": val}
 
 
-# ── Rank / multiplier helpers ─────────────────────────────────────────────────
+# ── Rank / multiplier / rise-first scoring ────────────────────────────────────
 
 def test_viewer_pos_ranks_match_teams_style_holes():
     """Last-place QB/TE on a WR-factory read as last, not 'average'."""
@@ -67,23 +66,32 @@ def test_viewer_pos_ranks_match_teams_style_holes():
     assert ranks["RB"] == 1
 
 
-def test_need_multiplier_boosts_last_place_and_dampens_first():
-    assert ae._need_multiplier(1, 12) == pytest.approx(ae._NEED_MULT_BEST)
+def test_need_multiplier_boosts_holes_only():
+    """Top-half rooms stay 1.0 — a strength is never taxed. Last place gets
+    the small tiebreaker, not a 1.45 hammer."""
+    assert ae._need_multiplier(1, 12) == 1.0
+    assert ae._need_multiplier(6, 12) == 1.0
     assert ae._need_multiplier(12, 12) == pytest.approx(ae._NEED_MULT_WORST)
-    # Mid-pack is near neutral.
-    assert 0.95 < ae._need_multiplier(6, 12) < 1.20
+    assert 1.0 < ae._need_multiplier(10, 12) < ae._NEED_MULT_WORST
     assert ae._need_multiplier(None, 12) == 1.0
     assert ae._need_multiplier(1, 1) == 1.0
 
 
-def test_needed_positions_are_bottom_35_percent_worst_first():
-    # 12-team: cutoff 4 → ranks 9-12 are holes.
-    ranks = {"QB": 12, "TE": 11, "RB": 3, "WR": 2}
-    assert ae._needed_positions(ranks, 12) == ["QB", "TE"]
-    # Balanced top-half roster: no reservation.
-    assert ae._needed_positions({"QB": 2, "RB": 3, "WR": 4, "TE": 5}, 12) == []
-    # 4-team field: only last place (rank 4) is in the cutoff of 1.
-    assert ae._needed_positions({"QB": 4, "TE": 4, "RB": 1, "WR": 1}, 4) == ["QB", "TE"]
+def test_contending_ranks_by_rise_not_by_hole():
+    """A +6% weekly add at a stacked WR/RB room outranks a +0.5% last-place
+    TE fill. A real hole-fill (+7%) still beats a flat add at a strength."""
+    strength = ae._acquire_rank_score(0.70, 0.06, 1.00, 1.00, "contending")
+    token_hole = ae._acquire_rank_score(0.70, 0.005, 1.00, ae._NEED_MULT_WORST, "contending")
+    assert strength > token_hole
+
+    real_hole = ae._acquire_rank_score(0.55, 0.07, 0.75, ae._NEED_MULT_WORST, "contending")
+    flat_strength = ae._acquire_rank_score(0.80, 0.01, 1.25, 1.00, "contending")
+    assert real_hole > flat_strength
+
+    # Same rise: the last-place nudge breaks the tie toward the hole.
+    hole_tie = ae._acquire_rank_score(0.60, 0.04, 1.00, ae._NEED_MULT_WORST, "contending")
+    strength_tie = ae._acquire_rank_score(0.60, 0.04, 1.00, 1.00, "contending")
+    assert hole_tie > strength_tie
 
 
 def _tgt(pid, pos, owner, score):
@@ -92,38 +100,30 @@ def _tgt(pid, pos, owner, score):
     })
 
 
-def test_select_varied_slate_reserves_worst_positions():
-    """Without a reservation, 3 RB + 3 WR fill 6 of 8 slots and TE never lands.
-    With QB/TE marked as needed, both appear from the best-scored player there."""
+def test_select_varied_slate_follows_score_not_holes():
+    """The slate is score order + variety caps. A low-score TE/QB does not
+    jump a high-score RB/WR just because the room is a hole."""
     scored = [
         _tgt("rb1", "RB", "2", 9), _tgt("rb2", "RB", "3", 8.5), _tgt("rb3", "RB", "4", 8),
         _tgt("wr1", "WR", "2", 8.8), _tgt("wr2", "WR", "3", 8.4), _tgt("wr3", "WR", "4", 8.1),
         _tgt("qb1", "QB", "2", 4.0),
         _tgt("te1", "TE", "3", 3.5),
-        _tgt("qb2", "QB", "3", 3.0),
-        _tgt("te2", "TE", "4", 2.8),
     ]
-    # 6 slots = the old "3 RB + 3 WR fill the board" shape the user saw.
-    plain = ae._select_varied_slate(scored, needed_positions=[], max_targets=6)
-    assert {t["position"] for t in plain} == {"RB", "WR"}
-    assert [t["position"] for t in plain].count("RB") == 3
-    assert [t["position"] for t in plain].count("WR") == 3
+    top = ae._select_varied_slate(scored, max_targets=6)
+    assert {t["position"] for t in top} == {"RB", "WR"}
+    assert [t["player_id"] for t in top][:2] == ["rb1", "wr1"]
 
-    reserved = ae._select_varied_slate(
-        scored, needed_positions=["QB", "TE"], max_targets=6)
-    pos = {t["position"] for t in reserved}
-    assert "QB" in pos
-    assert "TE" in pos
-    # Best-scored hole-fillers, not the leftovers.
-    assert "qb1" in {t["player_id"] for t in reserved}
-    assert "te1" in {t["player_id"] for t in reserved}
+    # With room for 8, the next-best (QB, then TE) still land — on merit.
+    full = ae._select_varied_slate(scored, max_targets=8)
+    assert [t["player_id"] for t in full][-2:] == ["qb1", "te1"]
 
 
 # ── Full Contending path on the reported roster shape ─────────────────────────
 
 def _ctx_wr_factory_last_at_qb_te():
     """Viewer is a WR/RB factory last at QB and TE. Rivals hold startable
-    QB/TE upgrades plus a pile of RB/WR depth that used to flood the slate."""
+    QB/TE upgrades (real dedicated-slot rises) plus RB/WR depth that can
+    also raise a flex lineup."""
     table = [
         _P("v_wr1", "Viewer WR1", "WR", 900, 25),
         _P("v_wr2", "Viewer WR2", "WR", 820, 26),
@@ -176,9 +176,10 @@ def _ctx_wr_factory_last_at_qb_te():
     }
 
 
-def test_contending_surfaces_last_place_qb_and_te():
-    """The reported Teams-page case: #last QB and #last TE must appear as
-    Contending acquire targets, not get buried under flex RB/WR depth."""
+def test_contending_keeps_strength_rises_and_real_hole_fills():
+    """A WR-factory last at QB/TE still sees high-rise RB/WR adds, and the
+    dedicated-slot QB/TE upgrades (scrub → startable) compete on impact
+    rather than being reserved or buried."""
     out = ae._get_archetype_suggestions_impl(
         archetype="contending", platform="sleeper", league_id="holes",
         season=2026, viewer_roster_id="1", league_type="1qb", league_size=6,
@@ -188,11 +189,12 @@ def test_contending_surfaces_last_place_qb_and_te():
     assert sugg, "expected contending suggestions"
     positions = {s["position"] for s in sugg}
     names = {s["name"] for s in sugg}
+    # Heavy rooms can still produce the best rise — they must stay on the slate.
+    assert positions & {"RB", "WR"}, names
+    # Replacing a 12-value QB / 40-value TE is a real dedicated-slot rise, so
+    # those upgrades should compete their way on (not be scarcity-buried).
     assert "QB" in positions, names
     assert "TE" in positions, names
-    # The startable upgrades, not a leftover backup, should be the ones reserved.
-    assert "Upgrade QB" in names or any(s["position"] == "QB" for s in sugg)
-    assert "Upgrade TE" in names or any(s["position"] == "TE" for s in sugg)
     for s in sugg:
         if s["position"] in ("QB", "TE"):
             assert s.get("suggested_send"), f"{s['name']} surfaced with an empty send"
