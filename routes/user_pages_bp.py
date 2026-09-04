@@ -495,9 +495,13 @@ def api_portfolio_actions():
     from flask import jsonify, session
     from dashboard_services.subscriptions import has_premium_for_viewer
     from utils.cross_league_actions import (
+        calendar_action,
         injury_stash_action,
         lineup_actions_from_issues,
         rank_cross_league_actions,
+        roster_slot_action,
+        waiver_pickup_action,
+        waiver_value_threshold,
     )
     from utils.lineup_issues import find_lineup_issues
     from utils.redzone_user import match_viewer_roster
@@ -534,13 +538,16 @@ def api_portfolio_actions():
         return jsonify({"paywall": True, "error": "Premium required", "actions": []}), 403
 
     actions: list = []
+    week = 0
+    in_season = False
     try:
         from dashboard_services.api import get_nfl_players
         from utils.utils import load_week_schedule
         nfl_players = get_nfl_players() or {}
         week = int(nfl_state.get("week") or 0)
+        in_season = bool(week and nfl_state.get("season_type") in ("reg", "post"))
         teams_playing = set()
-        if week and nfl_state.get("season_type") in ("reg", "post"):
+        if in_season:
             for g in (load_week_schedule(season, week) or []):
                 for side in ("home", "away"):
                     t = str(g.get(side) or "").upper()
@@ -549,6 +556,18 @@ def api_portfolio_actions():
     except Exception:
         nfl_players = {}
         teams_playing = set()
+
+    # Model value table (cached) powers the format-aware waiver pickup. Load it
+    # once for all leagues rather than per-league.
+    try:
+        model_value_table = list(get_model_value_table_cached() or [])
+    except Exception:
+        model_value_table = []
+    try:
+        from utils.waiver_score import WEIGHTS as _WAIVER_WEIGHTS
+        _waiver_base_min = float(_WAIVER_WEIGHTS.min_value)
+    except Exception:
+        _waiver_base_min = 25.0
 
     for lg in (league_inputs or [])[:8]:
         lid = str(lg.get("league_id") or "")
@@ -642,6 +661,129 @@ def api_portfolio_actions():
                     break
         except Exception:
             pass
+
+        # Best available waiver pickup, ranked off THIS league's value column
+        # (redraft vs dynasty) so the suggestion reflects value for the format.
+        try:
+            if model_value_table:
+                from app import (
+                    _league_is_redraft,
+                    _waiver_rank_label_key,
+                    _waiver_value_keys,
+                )
+                is_rd = _league_is_redraft(lctx)
+                vf, vfb = _waiver_value_keys(lctx)
+                rank_key = _waiver_rank_label_key(lctx)
+                threshold = waiver_value_threshold(_waiver_base_min, is_redraft=is_rd)
+                rostered_ids = {
+                    str(p) for r in rosters for p in (r.get("players") or [])
+                }
+                players_index = lctx.get("players_index") or {}
+                best_row = None
+                best_val = 0.0
+                _out_status = {"IR", "PUP", "NFI", "OUT", "SUSP", "DOUBTFUL"}
+                for row in model_value_table:
+                    if not isinstance(row, dict):
+                        continue
+                    pid = str(row.get("id") or "")
+                    if not pid or pid in rostered_ids:
+                        continue
+                    pos = str(row.get("position") or row.get("pos") or "").upper()
+                    if pos not in ("QB", "RB", "WR", "TE"):
+                        continue
+                    team = str(
+                        row.get("team") or players_index.get(pid, {}).get("team") or ""
+                    ).upper()
+                    if team in ("", "FA", "FREE AGENT", "N/A"):
+                        continue
+                    inj = str(
+                        (nfl_players.get(pid) or {}).get("injury_status") or ""
+                    ).upper()
+                    if inj in _out_status:
+                        continue
+                    try:
+                        v = float(row.get(vf) or row.get(vfb) or 0.0)
+                    except (TypeError, ValueError):
+                        v = 0.0
+                    if v > best_val:
+                        best_val = v
+                        best_row = row
+                if best_row is not None and best_val >= threshold:
+                    actions.append(waiver_pickup_action(
+                        platform=plat, season=lg_season, league_id=lid,
+                        league_name=league_name,
+                        player_name=(
+                            best_row.get("name")
+                            or players_index.get(str(best_row.get("id")), {}).get("name")
+                            or "a free agent"
+                        ),
+                        position=str(best_row.get("position") or best_row.get("pos") or ""),
+                        is_redraft=is_rd,
+                        pos_rank_label=str(
+                            best_row.get(rank_key) or best_row.get("pos_rank_label") or ""
+                        ),
+                        value=best_val,
+                    ))
+        except Exception:
+            logger.debug("[portfolio-actions] waiver pickup failed", exc_info=True)
+
+        # Wasted roster capacity: IR-eligible players in active spots, recovered
+        # players stuck on IR, open taxi slots (Sleeper IR/taxi settings only).
+        try:
+            settings = (
+                league_obj.get("settings")
+                or lctx.get("league_settings")
+                or {}
+            )
+            reserve_slots = int(settings.get("reserve_slots") or 0)
+            taxi_slots = int(settings.get("taxi_slots") or 0)
+            if reserve_slots > 0 or taxi_slots > 0:
+                from utils.roster_compliance import roster_compliance_issues
+                r_players = [str(p) for p in (viewer_roster.get("players") or [])]
+                r_info = {}
+                for pid in r_players:
+                    pl = nfl_players.get(pid) or {}
+                    r_info[pid] = {
+                        "name": pl.get("full_name") or pl.get("last_name") or "",
+                        "injury_status": pl.get("injury_status") or "",
+                        "years_exp": pl.get("years_exp"),
+                    }
+                r_issues = roster_compliance_issues(
+                    players=r_players,
+                    starters=starters,
+                    reserve=[str(p) for p in (viewer_roster.get("reserve") or [])],
+                    taxi=[str(p) for p in (viewer_roster.get("taxi") or [])],
+                    player_info=r_info,
+                    reserve_slots=reserve_slots,
+                    taxi_slots=taxi_slots,
+                )
+                r_act = roster_slot_action(
+                    r_issues, platform=plat, season=lg_season,
+                    league_id=lid, league_name=league_name,
+                )
+                if r_act:
+                    actions.append(r_act)
+        except Exception:
+            logger.debug("[portfolio-actions] roster slot check failed", exc_info=True)
+
+        # Calendar nudge: trade deadline / playoff countdown (in-season only).
+        if in_season:
+            try:
+                settings = (
+                    league_obj.get("settings")
+                    or lctx.get("league_settings")
+                    or {}
+                )
+                c_act = calendar_action(
+                    platform=plat, season=lg_season, league_id=lid,
+                    league_name=league_name, week=week,
+                    trade_deadline=int(settings.get("trade_deadline") or 0),
+                    playoff_week_start=int(settings.get("playoff_week_start") or 0),
+                )
+                if c_act:
+                    actions.append(c_act)
+            except Exception:
+                logger.debug("[portfolio-actions] calendar nudge failed", exc_info=True)
 
     return jsonify({"actions": rank_cross_league_actions(actions, limit=8)})
 

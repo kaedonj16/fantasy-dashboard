@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from utils.cross_league_actions import (
     action_priority,
+    calendar_action,
     injury_stash_action,
     lineup_actions_from_issues,
     make_action,
     rank_cross_league_actions,
+    roster_slot_action,
+    waiver_pickup_action,
+    waiver_value_threshold,
 )
 
 
@@ -88,3 +92,81 @@ def test_injury_stash_action_skips_players_already_on_ir():
     )
     assert drop is not None
     assert drop["title"] == "Drop candidate: Drop Me"
+
+
+def test_waiver_threshold_is_higher_for_dynasty():
+    assert waiver_value_threshold(25.0, is_redraft=True) < waiver_value_threshold(
+        25.0, is_redraft=False
+    )
+    # Tied to the shared floor, not hard-coded.
+    assert waiver_value_threshold(50.0, is_redraft=True) == 50.0 * 1.4
+
+
+def test_waiver_pickup_action_labels_format():
+    rd = waiver_pickup_action(
+        platform="sleeper", season=2025, league_id="1", league_name="N",
+        player_name="Rookie WR", position="wr", is_redraft=True,
+        pos_rank_label="WR48", value=120.0,
+    )
+    assert rd["kind"] == "waiver"
+    assert rd["title"] == "Add Rookie WR (WR)"
+    assert "redraft value" in rd["detail"]
+    assert "WR48" in rd["detail"]
+    assert "/sleeper/2025/1/waivers" in rd["href"]
+    dyn = waiver_pickup_action(
+        platform="sleeper", season=2025, league_id="1", league_name="N",
+        player_name="Young RB", position="RB", is_redraft=False,
+    )
+    assert "dynasty value" in dyn["detail"]
+
+
+def test_roster_slot_action_prefers_most_actionable():
+    issues = [
+        {"kind": "taxi_stash", "pid": "3", "name": "Rook", "detail": "taxi open"},
+        {"kind": "ir_activate", "pid": "1", "name": "Back", "detail": "no longer IR"},
+        {"kind": "ir_stash", "pid": "2", "name": "Hurt", "detail": "move to IR"},
+    ]
+    act = roster_slot_action(
+        issues, platform="sleeper", season=2025, league_id="42", league_name="N",
+    )
+    assert act is not None
+    assert act["kind"] == "roster"
+    assert act["title"] == "Activate or drop a recovered IR player"
+    assert act["detail"] == "no longer IR"
+    assert "/sleeper/2025/42/teams" in act["href"]
+    assert roster_slot_action(
+        [], platform="sleeper", season=2025, league_id="42", league_name="N",
+    ) is None
+
+
+def test_calendar_action_deadline_precedes_playoffs():
+    # Deadline in 1 week wins over a playoff countdown.
+    act = calendar_action(
+        platform="sleeper", season=2025, league_id="1", league_name="N",
+        week=11, trade_deadline=12, playoff_week_start=13,
+    )
+    assert act["kind"] == "calendar"
+    assert act["title"] == "Trade deadline in 1 week"
+    assert "/trade" in act["href"]
+    # This-week deadline phrasing.
+    now = calendar_action(
+        platform="sleeper", season=2025, league_id="1", league_name="N",
+        week=12, trade_deadline=12,
+    )
+    assert now["title"] == "Trade deadline is this week"
+    # Playoffs only (no/expired deadline).
+    po = calendar_action(
+        platform="sleeper", season=2025, league_id="1", league_name="N",
+        week=13, trade_deadline=0, playoff_week_start=14,
+    )
+    assert po["title"] == "Playoffs start in 1 week"
+    assert "/matchups" in po["href"]
+    # Nothing near, or out of season.
+    assert calendar_action(
+        platform="sleeper", season=2025, league_id="1", league_name="N",
+        week=5, trade_deadline=12, playoff_week_start=14,
+    ) is None
+    assert calendar_action(
+        platform="sleeper", season=2025, league_id="1", league_name="N",
+        week=0, trade_deadline=12,
+    ) is None
