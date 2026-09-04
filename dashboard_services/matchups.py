@@ -222,6 +222,10 @@ def build_matchup_preview(
         s_infos: List[dict] = [_pinfo(str(pid), pts_map) for pid in starters_raw]
         b_infos: List[dict] = [_pinfo(str(pid), pts_map) for pid in bench_raw]
         pts_total = float(row["points"]) if isinstance(row.get("points"), (int, float)) else None
+        proj_total = None
+        raw_proj = row.get("projected_points")
+        if isinstance(raw_proj, (int, float)):
+            proj_total = float(raw_proj)
 
         wins, losses = record_by_rid.get(rid, (0, 0))
         owner_id = owner_id_by_rid.get(rid)
@@ -236,6 +240,7 @@ def build_matchup_preview(
             "starters": s_infos,
             "bench": b_infos,
             "pts_total": pts_total,
+            "proj_total": proj_total,
             "avatar": get_avatar_for_rid(rid),
             "record": f"{wins}-{losses}",
             "username": username,
@@ -465,6 +470,8 @@ def team_live_totals(
         team: dict,
         status_by_pid: dict[str, str],
         projections: dict[str, float],
+        *,
+        proj_lookup=None,
 ) -> tuple[float, float]:
     """
     actual_total:
@@ -472,9 +479,14 @@ def team_live_totals(
     live_proj_total:
         - players not started  -> use projection
         - players started/finished -> use actual
+
+    Compact dashboard slides never render starter rows, so this total is the
+    only projected number the user sees. Yahoo scoreboard rows often have no
+    Sleeper-mapped starter projs; fall back to Yahoo ``proj_total``.
     """
     actual_total = 0.0
     live_proj_total = 0.0
+    any_locked = False
 
     starters = team.get("starters") or []
     projections = projections or {}
@@ -486,15 +498,30 @@ def team_live_totals(
         actual_total += actual
 
         status = status_by_pid.get(pid, STATUS_NOT_STARTED)
-        proj_val = float(projections.get(pid, 0.0))
+        if pid is not None and status == STATUS_NOT_STARTED:
+            status = status_by_pid.get(str(pid), status)
+        if proj_lookup:
+            try:
+                proj_val = float(proj_lookup(pid, p.get("pos") or "") or 0.0)
+            except TypeError:
+                proj_val = float(proj_lookup(pid) or 0.0)
+        else:
+            proj_val = _proj_value_for_pid(projections, pid)
 
         # Use == for strings, not `is`
         if status in (STATUS_IN_PROGRESS, STATUS_FINAL):
-            # started or finished → use actual
+            any_locked = True
             live_proj_total += actual
         else:
-            # not started (or unknown) → use projection
             live_proj_total += proj_val
+
+    if live_proj_total == 0.0 and not any_locked:
+        fallback = team.get("proj_total")
+        try:
+            if fallback is not None and float(fallback) > 0:
+                live_proj_total = float(fallback)
+        except (TypeError, ValueError):
+            pass
 
     return actual_total, live_proj_total
 
@@ -520,13 +547,24 @@ def compute_win_prob(
             pid = p.get("pid")
             actual = float(p.get("pts") or 0.0)
             status = status_by_pid.get(pid, STATUS_NOT_STARTED)
-            proj = float(proj_map.get(pid, 0.0))
+            if pid is not None and status == STATUS_NOT_STARTED:
+                status = status_by_pid.get(str(pid), status)
+            proj = _proj_value_for_pid(proj_map, pid)
             if status in (STATUS_IN_PROGRESS, STATUS_FINAL):
                 locked += actual
             else:
                 pend_proj += proj
                 sigma = max(0.4 * proj, 4.0)
                 pend_var += sigma * sigma
+        if pend_proj == 0.0 and locked == 0.0:
+            try:
+                fallback = float(team.get("proj_total") or 0.0)
+            except (TypeError, ValueError):
+                fallback = 0.0
+            if fallback > 0:
+                pend_proj = fallback
+                sigma = max(0.4 * fallback, 4.0)
+                pend_var = sigma * sigma
         return locked, pend_proj, pend_var
 
     l_lock, l_pend, l_var = _stats(left)
@@ -1036,7 +1074,9 @@ def render_matchup_slide(
         if not proj_mode:
             points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "-"
             return f"<span class='num'>{points}</span>", False
-        actual_total, live_proj_total = team_live_totals(t, status_by_pid, week_proj_map)
+        actual_total, live_proj_total = team_live_totals(
+            t, status_by_pid, week_proj_map, proj_lookup=_pid_proj,
+        )
         any_started = any(
             status_by_pid.get(p.get("pid"), STATUS_NOT_STARTED) in (STATUS_IN_PROGRESS, STATUS_FINAL)
             for p in (t.get("starters") or [])

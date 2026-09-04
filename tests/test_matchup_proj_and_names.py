@@ -135,3 +135,47 @@ def test_render_matchup_keeps_team_abbr_outside_name_ellipsis():
     assert "IND" in html
     assert "Jonathan Taylor" in html
     assert "14.2" in html
+
+
+def test_team_live_totals_uses_yahoo_proj_total_when_starters_have_no_sleeper_proj():
+    mmod = _matchups()
+    team = {
+        "starters": [{"pid": "missing", "pos": "QB", "pts": None}],
+        "proj_total": 118.4,
+    }
+    actual, live = mmod.team_live_totals(team, {}, {})
+    assert actual == 0.0
+    assert live == pytest.approx(118.4)
+
+
+def test_compact_slide_shows_yahoo_team_projected_points(monkeypatch):
+    """Dashboard matchup headers are compact (no starter rows). Yahoo's
+    scoreboard projected total must still appear when Sleeper week files miss."""
+    mmod = _matchups()
+    monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: False)
+    monkeypatch.setattr("utils.utils.load_week_projection", lambda *_a, **_k: {})
+    matchup = {
+        "left": {
+            "name": "Free win", "roster_id": "1", "record": "0-0", "username": "a",
+            "avatar": "", "pts_total": 0.0, "proj_total": 118.4,
+            "starters": [{"pid": "yahoo-only", "name": "P1", "pos": "QB", "nfl": "KC", "pts": None}],
+        },
+        "right": {
+            "name": "Red Zone Zach", "roster_id": "2", "record": "0-0", "username": "b",
+            "avatar": "", "pts_total": 0.0, "proj_total": 104.1,
+            "starters": [{"pid": "yahoo-only-2", "name": "P2", "pos": "RB", "nfl": "SF", "pts": None}],
+        },
+    }
+    html = mmod.render_matchup_slide(
+        "2026", matchup, w=1, proj_week=0,
+        status_by_pid={},
+        projections={},
+        players={},
+        teams={},
+        team_game_lookup={},
+        compact=True,
+        scoring_settings={"rec": 1.0},
+    )
+    assert "118.4" in html
+    assert "104.1" in html
+    assert "m-proj-only" in html
