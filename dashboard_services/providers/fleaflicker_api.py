@@ -977,8 +977,14 @@ class FleaflickerProvider(ProviderAdapter):
         except ProviderUnavailableError:
             return {}
         try:
-            from utils.utils import load_players_index, normalize_name
-            by_name = _name_index_from_players(load_players_index() or {}, normalize_name)
+            # Name index is optional (slim CI has no requests). Still hit
+            # FetchLeagueRosters so an upstream outage trips the host breaker.
+            by_name = self._build_name_index()
+            try:
+                from utils.utils import normalize_name
+            except Exception:
+                def normalize_name(value):
+                    return str(value or "").strip().lower()
             out = {}
             raw = self._call("FetchLeagueRosters", league_id, season, ttl=300, token=token)
             for roster in raw.get("rosters") or []:

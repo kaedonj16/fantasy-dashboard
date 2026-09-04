@@ -1283,6 +1283,7 @@ def test_canonical_map_warns_once_and_returns_empty_on_outage(mock_get, caplog):
     import logging
     mock_get.side_effect = ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
     provider = FleaflickerProvider()
+    provider._build_name_index = lambda: {}
     with caplog.at_level(logging.WARNING, logger="dashboard_services.providers.fleaflicker_api"):
         assert provider._canonical_map("92916", 2026) == {}
         assert provider._canonical_map("92916", 2026) == {}
