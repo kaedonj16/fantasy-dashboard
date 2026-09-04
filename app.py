@@ -3822,7 +3822,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "</button>"
             "<button type='button' class='settings-menu-item' id='settingsWelcomeBtn'>"
             "  " + _nav_icon("sparkles", cls="settings-menu-icon") +
-            "  <span class='settings-menu-label'>Premium Welcome</span>"
+            "  <span class='settings-menu-label'>PRO Welcome</span>"
             "</button>"
     ) if league_id else ""
 

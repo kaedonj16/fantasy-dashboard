@@ -313,9 +313,10 @@ async function initiatePurchase(type, btn) {
   // Build a destination that lands in the league dashboard after payment
   const _platform = ctx.platform || 'sleeper';
   const _season   = ctx.season   || new Date().getFullYear();
+  const _welcome = (type === 'league' || type === 'combo') ? 'league' : 'personal';
   const returnUrl = leagueId
-    ? `/${_platform}/${_season}/${leagueId}/dashboard?new_subscriber=1`
-    : window.location.href;
+    ? `/${_platform}/${_season}/${leagueId}/dashboard?new_subscriber=1&welcome=${_welcome}`
+    : `${window.location.pathname}?new_subscriber=1&welcome=${_welcome}`;
 
   if (btn) {
     btn.disabled = true;
@@ -465,6 +466,9 @@ window.refreshLeagueProInviteCta = async function refreshLeagueProInviteCta() {
       : data.has_premium
         ? `league-pro-teammate-${lid}`
         : `league-pro-nudge-${lid}`;
+    try {
+      if (sessionStorage.getItem('br_skip_league_pro_banner') === '1') return;
+    } catch (e) {}
     try { if (localStorage.getItem(key) === '1') return; } catch (e) {}
 
     let el = document.getElementById('leagueProShareBanner');
@@ -1007,9 +1011,12 @@ async function _initiatePurchaseWithLeague(type, btn, leagueId) {
   const ctx = window.__brctx || {};
   const platform = ctx.platform || 'sleeper';
   const season   = ctx.season   || new Date().getFullYear();
+  const _welcome = (type === 'league' || type === 'combo' || type === 'single_league')
+    ? ((type === 'league' || type === 'combo') ? 'league' : 'personal')
+    : 'personal';
   const returnUrl = leagueId
-    ? `/${platform}/${season}/${leagueId}/dashboard?new_subscriber=1`
-    : (window.location.pathname + '?new_subscriber=1');
+    ? `/${platform}/${season}/${leagueId}/dashboard?new_subscriber=1&welcome=${_welcome}`
+    : (window.location.pathname + `?new_subscriber=1&welcome=${_welcome}`);
 
   if (btn) {
     btn.disabled = true;

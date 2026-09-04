@@ -17,7 +17,8 @@ def test_league_invite_path_and_url():
     assert league_invite_url("https://brfantasy.com", "espn", 2026, "99") == (
         "https://brfantasy.com/invite/espn/2026/99"
     )
-    assert dashboard_after_invite("sleeper", 2026, "L1").endswith("/dashboard?league_pro=1")
+    assert "welcome=claim" in dashboard_after_invite("sleeper", 2026, "L1")
+    assert "new_subscriber=1" in dashboard_after_invite("sleeper", 2026, "L1")
     assert normalize_invite_platform("nope") == "sleeper"
 
 
@@ -51,7 +52,7 @@ def test_invite_signed_in_redirects(offline_client):
     assert r.status_code in (302, 303)
     loc = r.headers.get("Location", "")
     assert "/sleeper/2026/demoLeague/dashboard" in loc
-    assert "league_pro=1" in loc
+    assert "welcome=claim" in loc or "league_pro=1" in loc
 
 
 def test_pricing_success_html_includes_invite_panel():

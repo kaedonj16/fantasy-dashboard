@@ -37,11 +37,26 @@ def test_site_tour_is_shortened_with_mobile_path():
 def test_premium_welcome_restyle_and_replay():
     assert "showSubWelcome" in APP_JS
     assert "sub-welcome-overlay" in APP_JS
-    assert "See Trade Intel for your roster" in APP_JS
+    assert "Welcome to PRO" in APP_JS
+    assert "Open Trade Suggestions" in APP_JS
+    assert "Playoff Impact" in APP_JS
     assert "settingsWelcomeBtn" in APP_PY
-    assert "Premium Welcome" in APP_PY
+    assert "PRO Welcome" in APP_PY
     assert ".sub-welcome-card" in CSS
     assert "tour-hole-shield" in CSS
+
+
+def test_welcome_is_plan_aware_and_names_pro():
+    assert "variant !== 'league'" in APP_JS
+    assert "variant !== 'claim'" in APP_JS
+    assert "PRO_DESKTOP_STEPS" in APP_JS
+    assert "mode: 'pro'" in APP_JS
+    assert "br_skip_league_pro_banner" in APP_JS
+    invite = (Path(__file__).resolve().parents[1] / "utils" / "league_invite.py").read_text()
+    assert "welcome=claim" in invite
+    paywall = (Path(__file__).resolve().parents[1] / "static" / "paywall.js").read_text()
+    assert "welcome=${_welcome}" in paywall or "welcome=" in paywall
+    assert "br_skip_league_pro_banner" in paywall
 
 
 def test_welcome_gates_site_tour_auto_start():
