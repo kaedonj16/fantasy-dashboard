@@ -21,6 +21,9 @@ def test_live_matchup_endpoint_wired_and_gated():
     assert 'viewer_roster_id' in endpoint
     # Totals come from the shared live-total helper, oriented you/opp.
     assert "team_live_totals" in endpoint
+    # Win probability from the shared model, only when there's an opponent.
+    assert "compute_win_prob" in endpoint
+    assert '"win_prob": win_prob' in endpoint
 
 
 def test_live_matchup_fetch_is_cached_and_current_week_only():
@@ -62,6 +65,10 @@ def test_portfolio_card_has_live_slot_and_hydration():
     assert "data-platform=" in fn
     assert "data-league-id=" in fn
     assert "pf-lg-live" in fn
+    # Win-probability bar is rendered (hidden at final / bye inside wpBar).
+    assert "pf-live-wp" in fn
+    assert "wpBar" in fn
+    assert "win_prob" in fn
     # Client hydration hits the endpoint, caps concurrency, refreshes live games.
     assert "/api/portfolio/matchup" in fn
     assert "document.hidden" in fn

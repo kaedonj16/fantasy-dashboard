@@ -928,7 +928,7 @@ def api_portfolio_matchup():
     if not you:
         return jsonify({"live": False})
 
-    from dashboard_services.matchups import team_live_totals
+    from dashboard_services.matchups import compute_win_prob, team_live_totals
 
     def _side(team):
         actual, proj = team_live_totals(team, status_by_pid, proj_map)
@@ -939,10 +939,20 @@ def api_portfolio_matchup():
         }
 
     you_side = _side(you)
-    opp_side = _side(opp) if opp and opp.get("roster_id") else None
+    has_opp = bool(opp and opp.get("roster_id"))
+    opp_side = _side(opp) if has_opp else None
+
+    # Your win probability from the same model the matchup slides' win bar uses:
+    # locked scores plus projected remaining points as normal distributions.
+    win_prob = None
+    if has_opp:
+        try:
+            win_prob = round(compute_win_prob(you, opp, status_by_pid, proj_map) * 100.0, 1)
+        except Exception:
+            logger.debug("[portfolio-matchup] win prob failed", exc_info=True)
 
     pids = [p.get("pid") for p in (you.get("starters") or [])]
-    if opp:
+    if has_opp:
         pids += [p.get("pid") for p in (opp.get("starters") or [])]
     status = _matchup_status_label(status_by_pid, pids)
 
@@ -952,6 +962,7 @@ def api_portfolio_matchup():
         "status": status,
         "you": you_side,
         "opp": opp_side,
+        "win_prob": win_prob,
     })
 
 
