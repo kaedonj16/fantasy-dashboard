@@ -60,7 +60,7 @@ def test_oauth_and_pricing_sanitize_next_return_to():
 
 def test_billing_portal_accepts_acct_identity():
     portal = BILLING[BILLING.index("def api_create_portal_session"):]
-    portal = portal[: portal.index("except Exception as e:")]
+    portal = portal[: portal.index("except Exception:")]
     assert 'acct:"' in portal or "acct:'" in portal
     assert 'session.get("account_id")' in portal
 
