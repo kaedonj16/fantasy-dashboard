@@ -98,6 +98,19 @@ def test_cron_admin_secrets_use_compare_digest():
     assert "hmac.compare_digest" in crawl
 
 
+def test_diag_apis_require_admin_secret_gate():
+    """Site-audit #24: /api/proj-debug and market-intel health are not public."""
+    for fn_name in ("def api_proj_debug", "def api_market_intel_health"):
+        start = APP_PY.index(fn_name)
+        # Slice until the next top-level def after this one.
+        rest = APP_PY[start + len(fn_name):]
+        next_def = rest.find("\ndef ")
+        fn = APP_PY[start: start + len(fn_name) + (next_def if next_def > 0 else 800)]
+        assert "_forbidden_unless_admin" in fn, fn_name
+        assert "X-Admin-Secret" in fn, fn_name
+        assert "@limiter.limit" in APP_PY[max(0, start - 200):start], fn_name
+
+
 def test_compare_page_not_noindexed_by_remembered_league():
     compare = SEO[SEO.index("def page_compare"):]
     compare = compare[: compare.index("def _rankings_page")]
