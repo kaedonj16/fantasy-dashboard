@@ -24,6 +24,18 @@ from urllib.parse import urlencode
 
 from flask import Blueprint, redirect, request, session
 
+
+def _redirect_after_google(default: str):
+    """Prefer a staged home PRO checkout over the usual post-login destination."""
+    try:
+        from routes.billing_bp import pending_checkout_resume_path
+        resume = pending_checkout_resume_path()
+        if resume:
+            return redirect(resume)
+    except Exception:
+        logger.debug("[google_auth] pending checkout check failed", exc_info=True)
+    return redirect(default)
+
 google_auth_bp = Blueprint("google_auth", __name__)
 logger = logging.getLogger(__name__)
 
@@ -218,7 +230,7 @@ def google_auth_callback():
                     except Exception:
                         logger.warning("[google_auth] fleaflicker viewer persist failed", exc_info=True)
                 session.pop("onboarding_progress", None)
-                return redirect(
+                return _redirect_after_google(
                     f"/{provider}/{pending_provider['season']}/"
                     f"{pending_provider['league_id']}/dashboard"
                 )
@@ -329,7 +341,7 @@ def google_auth_callback():
                         session["viewer_platform"] = pending["platform"]
                 except Exception:
                     logger.warning("[google_auth] pending team viewer resolve failed", exc_info=True)
-            return redirect(
+            return _redirect_after_google(
                 f"/{pending['platform']}/{pending.get('season') or ''}/{pending['league_id']}/dashboard"
             )
         except Exception:
@@ -343,4 +355,4 @@ def google_auth_callback():
     except Exception:
         logger.warning("[google_auth] saved league destination unavailable", exc_info=True)
         destination = None
-    return redirect(destination or next_url)
+    return _redirect_after_google(destination or next_url)

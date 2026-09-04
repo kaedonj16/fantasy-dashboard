@@ -88,6 +88,7 @@ def test_lite_css_swap_uses_landing_lite_for_guest_home():
     assert ".home-hero" in landing
     assert ".home-card" in landing
     assert ".home-ticker-band" in landing
+    assert ".home-pro" in landing
     home_rules = len([ln for ln in landing.splitlines() if ln.startswith(".home-")])
     assert home_rules >= 100
     # Guest SEO pages still emit dropdowns + the More sheet. Without these

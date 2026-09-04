@@ -753,3 +753,269 @@ async function _initiatePurchaseWithLeague(type, btn, leagueId) {
     else alert('Checkout unavailable. Please try again.');
   }
 }
+
+function initHomeProSignup() {
+  const root = document.getElementById('homeProSignup');
+  if (!root) return;
+
+  const PLAN_LABELS = {
+    single_league: 'One League · $5/year',
+    league: 'League · $15/year',
+    combo: 'League + Personal · $20/year',
+    user: 'Personal · $10/year',
+  };
+  const NEEDS_SEASON = { mfl: true, fleaflicker: true };
+
+  const stepPlan = document.getElementById('homeProStepPlan');
+  const stepLeague = document.getElementById('homeProStepLeague');
+  const pickedLabel = document.getElementById('homeProPickedLabel');
+  const errorEl = document.getElementById('homeProError');
+  const savedWrap = document.getElementById('homeProSavedWrap');
+  const savedSelect = document.getElementById('homeProSavedSelect');
+  const sleeperFields = document.getElementById('homeProSleeperFields');
+  const idFields = document.getElementById('homeProIdFields');
+  const seasonWrap = document.getElementById('homeProSeasonWrap');
+  const sleeperUser = document.getElementById('homeProSleeperUser');
+  const sleeperLeagueWrap = document.getElementById('homeProSleeperLeagueWrap');
+  const sleeperLeague = document.getElementById('homeProSleeperLeague');
+  const leagueIdInput = document.getElementById('homeProLeagueId');
+  const seasonInput = document.getElementById('homeProSeason');
+  const findBtn = document.getElementById('homeProFindLeagues');
+  const googleBtn = document.getElementById('homeProGoogle');
+  const checkoutBtn = document.getElementById('homeProCheckout');
+  const progressItems = root.querySelectorAll('[data-home-pro-step]');
+
+  let selectedPlan = '';
+  let selectedPlatform = 'sleeper';
+
+  function currentSeason() {
+    const raw = (seasonInput && seasonInput.value) || (window.__brctx || {}).season || new Date().getFullYear();
+    const year = parseInt(raw, 10);
+    return year || new Date().getFullYear();
+  }
+
+  function showError(msg) {
+    if (!errorEl) return;
+    if (!msg) {
+      errorEl.hidden = true;
+      errorEl.textContent = '';
+      return;
+    }
+    errorEl.hidden = false;
+    errorEl.textContent = msg;
+  }
+
+  function setStep(step) {
+    const league = step === 'league';
+    if (stepPlan) stepPlan.hidden = league;
+    if (stepLeague) stepLeague.hidden = !league;
+    progressItems.forEach(function (item) {
+      item.classList.toggle('is-active', item.getAttribute('data-home-pro-step') === step);
+    });
+    showError('');
+  }
+
+  function setPlatform(platform) {
+    selectedPlatform = platform;
+    root.querySelectorAll('.home-pro-platform').forEach(function (btn) {
+      const on = btn.getAttribute('data-platform') === platform;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    const sleeper = platform === 'sleeper';
+    if (sleeperFields) sleeperFields.hidden = !sleeper;
+    if (idFields) idFields.hidden = sleeper;
+    if (seasonWrap) seasonWrap.hidden = !NEEDS_SEASON[platform];
+  }
+
+  function collectPayload() {
+    const savedVal = savedSelect && savedSelect.value ? savedSelect.value : '';
+    if (savedVal) {
+      const opt = savedSelect.options[savedSelect.selectedIndex];
+      return {
+        plan: selectedPlan,
+        platform: opt.getAttribute('data-platform') || 'sleeper',
+        league_id: savedVal,
+        season: parseInt(opt.getAttribute('data-season') || '', 10) || currentSeason(),
+        name: (opt.textContent || '').trim() || null,
+        username: (sleeperUser && sleeperUser.value || '').trim() || null,
+      };
+    }
+    if (selectedPlatform === 'sleeper') {
+      const leagueId = (sleeperLeague && sleeperLeague.value || '').trim();
+      const opt = sleeperLeague && sleeperLeague.options[sleeperLeague.selectedIndex];
+      return {
+        plan: selectedPlan,
+        platform: 'sleeper',
+        league_id: leagueId,
+        season: currentSeason(),
+        name: opt && opt.textContent ? opt.textContent.trim() : null,
+        username: (sleeperUser && sleeperUser.value || '').trim() || null,
+      };
+    }
+    return {
+      plan: selectedPlan,
+      platform: selectedPlatform,
+      league_id: (leagueIdInput && leagueIdInput.value || '').trim(),
+      season: currentSeason(),
+      username: null,
+      name: null,
+    };
+  }
+
+  function validatePayload(payload) {
+    if (!payload.plan) return 'Pick a plan to continue.';
+    if (!payload.league_id) return 'Enter your league info to continue.';
+    if (payload.platform === 'sleeper' && !payload.username && !(savedSelect && savedSelect.value)) {
+      return 'Enter your Sleeper username and choose a league.';
+    }
+    return '';
+  }
+
+  function loadSavedLeagues() {
+    if (!window._hasAccount || !savedWrap || !savedSelect) return;
+    fetch('/api/my-leagues', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        const leagues = (data && data.leagues) || [];
+        if (!leagues.length) return;
+        savedSelect.innerHTML = '<option value="">Choose a saved league</option>' + leagues.map(function (lg) {
+          const id = lg.league_id || lg.id || '';
+          const name = lg.name || lg.league_name || id;
+          const plat = lg.platform || 'sleeper';
+          const season = lg.season || '';
+          const label = season ? (name + ' (' + plat + ' · ' + season + ')') : (name + ' (' + plat + ')');
+          return '<option value="' + String(id).replace(/"/g, '') + '" data-platform="' + plat + '" data-season="' + season + '">' + label + '</option>';
+        }).join('');
+        savedWrap.hidden = false;
+      })
+      .catch(function () {});
+  }
+
+  root.querySelectorAll('.home-pro-plan').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      selectedPlan = btn.getAttribute('data-plan') || '';
+      root.querySelectorAll('.home-pro-plan').forEach(function (other) {
+        other.setAttribute('aria-pressed', other === btn ? 'true' : 'false');
+      });
+      if (pickedLabel) pickedLabel.textContent = PLAN_LABELS[selectedPlan] || selectedPlan;
+      if (checkoutBtn) checkoutBtn.hidden = !(window._hasAccount || window._isSignedIn);
+      setStep('league');
+      loadSavedLeagues();
+    });
+  });
+
+  const backBtn = document.getElementById('homeProBack');
+  if (backBtn) {
+    backBtn.addEventListener('click', function () {
+      setStep('plan');
+    });
+  }
+
+  root.querySelectorAll('.home-pro-platform').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      setPlatform(btn.getAttribute('data-platform') || 'sleeper');
+    });
+  });
+
+  if (findBtn) {
+    findBtn.addEventListener('click', async function () {
+      const username = (sleeperUser && sleeperUser.value || '').trim();
+      if (!username) {
+        showError('Enter a Sleeper username.');
+        return;
+      }
+      showError('');
+      findBtn.disabled = true;
+      findBtn.textContent = 'Loading...';
+      try {
+        const res = await fetch('/api/sleeper-user-leagues?username=' + encodeURIComponent(username));
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || 'Unable to load leagues.');
+        const leagues = data.leagues || [];
+        if (!leagues.length) throw new Error('No leagues found for that username.');
+        if (sleeperLeague) {
+          sleeperLeague.innerHTML = '<option value="">Select a league</option>' + leagues.map(function (lg) {
+            const id = lg.league_id || lg.id || '';
+            const name = lg.name || 'League';
+            return '<option value="' + String(id).replace(/"/g, '') + '">' + name + '</option>';
+          }).join('');
+        }
+        if (sleeperLeagueWrap) sleeperLeagueWrap.hidden = false;
+      } catch (err) {
+        showError(err.message || 'Unable to load leagues.');
+        if (sleeperLeagueWrap) sleeperLeagueWrap.hidden = true;
+      } finally {
+        findBtn.disabled = false;
+        findBtn.textContent = 'Find leagues';
+      }
+    });
+  }
+
+  async function stagePending(payload) {
+    const res = await fetch('/api/pro-signup/pending', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not save this signup.');
+    return data;
+  }
+
+  if (googleBtn) {
+    googleBtn.addEventListener('click', async function () {
+      const payload = collectPayload();
+      const invalid = validatePayload(payload);
+      if (invalid) { showError(invalid); return; }
+      showError('');
+      googleBtn.disabled = true;
+      try {
+        const data = await stagePending(payload);
+        window.location.href = data.auth_url || '/auth/google?intent=onboarding&next=/pro/resume-checkout';
+      } catch (err) {
+        showError(err.message || 'Unable to continue with Google.');
+        googleBtn.disabled = false;
+      }
+    });
+  }
+
+  if (checkoutBtn) {
+    checkoutBtn.addEventListener('click', async function () {
+      const payload = collectPayload();
+      const invalid = validatePayload(payload);
+      if (invalid) { showError(invalid); return; }
+      showError('');
+      if (window.__brctx) {
+        window.__brctx.platform = payload.platform;
+        window.__brctx.season = payload.season;
+        window.__brctx.leagueId = payload.league_id;
+      }
+      if (payload.platform === 'sleeper' && payload.username && !window._isSignedIn) {
+        try {
+          await fetch('/api/identify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: payload.username }),
+          });
+        } catch (e) {}
+      }
+      if (typeof _initiatePurchaseWithLeague === 'function') {
+        _initiatePurchaseWithLeague(payload.plan, checkoutBtn, payload.league_id);
+      } else if (typeof initiatePurchase === 'function') {
+        initiatePurchase(payload.plan, checkoutBtn);
+      }
+    });
+  }
+
+  if (window._hasAccount || window._isSignedIn) {
+    if (checkoutBtn) checkoutBtn.hidden = false;
+  }
+  setPlatform('sleeper');
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initHomeProSignup);
+} else {
+  initHomeProSignup();
+}
