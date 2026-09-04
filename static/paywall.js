@@ -285,7 +285,7 @@ function _startGoogleSubscribe(planType, triggerBtn, extra) {
 async function initiatePurchase(type, btn) {
   // Checkout requires a Google account site-wide. Sleeper-only sign-in is
   // enough to view a league, not to subscribe. Guests who pick a league plan
-  // without a league open the Google overlay above the paywall.
+  // without a league open the platform picker above the paywall, then Google.
   const ctx = window.__brctx || {};
   const leagueId = new URLSearchParams(window.location.search).get('league_id') ||
     window.location.pathname.split('/').filter(Boolean)[2] ||
@@ -294,10 +294,14 @@ async function initiatePurchase(type, btn) {
 
   if (!_hasGoogleAccount()) {
     if (needsLeague && !leagueId) {
-      _showIdentifyModal(type, btn);
+      _openCheckoutLeaguePicker(type, btn);
       return;
     }
-    _startGoogleSubscribe(type, btn);
+    if (needsLeague && leagueId) {
+      _startGoogleSubscribe(type, btn);
+      return;
+    }
+    _showIdentifyModal(type, btn);
     return;
   }
 
@@ -741,6 +745,7 @@ function _showIdentifyModal(planType, triggerBtn) {
   const existing = document.getElementById('_identifyModal');
   if (existing) existing.remove();
 
+  const needsLeague = planType === 'league' || planType === 'combo' || planType === 'single_league';
   const next = encodeURIComponent(window.location.pathname + window.location.search);
   const yahooOn = !!document.querySelector('#linkModal .link-tab[data-lp="yahoo"]');
   const googleCtl = needsLeague
@@ -764,18 +769,46 @@ function _showIdentifyModal(planType, triggerBtn) {
   modal.style.display = 'flex';
   modal.innerHTML = `
     <div class="signin-modal-box">
-      <h3 class="signin-modal-title" id="_identifyTitle">Sign in with Google to subscribe</h3>
-      <p class="signin-modal-sub" id="_identifySub">A Google account is required to subscribe. Continue with Google, then we will send you to checkout.</p>
-      <a class="google-continue-btn" id="_identifyGoogle" href="/auth/google?intent=login&amp;next=${next}">
-        <span class="google-button-title">Continue with Google</span>
-      </a>
+      <h3 class="signin-modal-title" id="_identifyTitle">${needsLeague ? 'Choose a league' : 'Sign in with Google to subscribe'}</h3>
+      <p class="signin-modal-sub" id="_identifySub">${needsLeague
+        ? 'Pick a league on any platform, then continue with Google. A Google account is required to subscribe.'
+        : 'A Google account is required to subscribe. Continue with Google, or enter a Sleeper username to find your leagues.'}</p>
+      ${platformTabs}
+      ${googleCtl}
+      <div class="signin-modal-or">or</div>
+      <div id="_identifySleeperPane">
+        <input class="signin-modal-input" id="_identifyInput" type="text" placeholder="Sleeper username" aria-label="Sleeper username" autocomplete="username">
+      </div>
+      <div id="_identifyExtWrap" style="display:none;margin-bottom:16px;">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">League ID</label>
+        <input class="signin-modal-input" id="_identifyExtId" type="text" placeholder="e.g. 123456" autocomplete="off">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Season</label>
+        <input class="signin-modal-input" id="_identifyExtSeason" type="text" inputmode="numeric" placeholder="current season" autocomplete="off">
+      </div>
+      <div id="_identifyLeagueWrap" style="display:none;margin-bottom:16px;">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Select League</label>
+        <select class="signin-modal-input" id="_identifyLeague" style="margin-bottom:0;cursor:pointer;"></select>
+      </div>
+      <div id="_identifyError" style="display:none;font-size:12px;color:#ef4444;margin:-8px 0 12px;"></div>
       <div class="signin-modal-actions">
+        <button type="button" class="signin-modal-submit" id="_identifySubmit">Continue</button>
         <button type="button" class="signin-modal-cancel" id="_identifyCancel">Cancel</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
   _stackAbovePaywall(modal);
 
+  const input = modal.querySelector('#_identifyInput');
+  const submitBtn = modal.querySelector('#_identifySubmit');
+  const errorEl = modal.querySelector('#_identifyError');
+  const leagueWrap = modal.querySelector('#_identifyLeagueWrap');
+  const leagueSel = modal.querySelector('#_identifyLeague');
+  const subText = modal.querySelector('#_identifySub');
+  const sleeperPane = modal.querySelector('#_identifySleeperPane');
+  const extWrap = modal.querySelector('#_identifyExtWrap');
+  const extId = modal.querySelector('#_identifyExtId');
+  const extSeason = modal.querySelector('#_identifyExtSeason');
+  const googleBtn = modal.querySelector('#_identifyGoogle');
   const prevFocus = document.activeElement;
   let identPlat = 'sleeper';
 
@@ -802,17 +835,164 @@ function _showIdentifyModal(planType, triggerBtn) {
   document.addEventListener('keydown', onKey);
   modal.addEventListener('click', e => { if (e.target === modal) closeIdentify(); });
   modal.querySelector('#_identifyCancel').addEventListener('click', closeIdentify);
-  const googleLink = modal.querySelector('#_identifyGoogle');
-  googleLink.addEventListener('click', function (e) {
-    const leagueId = _checkoutLeagueId();
-    const needsLeague = planType === 'league' || planType === 'combo' || planType === 'single_league';
-    if (needsLeague && !leagueId) return;
-    e.preventDefault();
-    closeIdentify();
-    _startGoogleSubscribe(planType, triggerBtn, { leagueId });
-  });
   const first = focusables()[0];
   if (first) try { first.focus(); } catch (_) {}
+
+  let identified = false;
+
+  if (needsLeague) {
+    modal.querySelectorAll('#_identifyPlatTabs .link-tab').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        identPlat = tab.dataset.lp || 'sleeper';
+        modal.querySelectorAll('#_identifyPlatTabs .link-tab').forEach(function (b) {
+          b.classList.toggle('active', b === tab);
+        });
+        const sleeper = identPlat === 'sleeper';
+        if (sleeperPane) sleeperPane.style.display = sleeper ? '' : 'none';
+        if (extWrap) extWrap.style.display = sleeper ? 'none' : 'block';
+        if (sleeper) leagueWrap.style.display = identified ? 'block' : 'none';
+        else leagueWrap.style.display = 'none';
+        errorEl.style.display = 'none';
+      });
+    });
+  }
+
+  async function goGoogleWithLeague() {
+    let leagueId = '';
+    let season = '';
+    let name = '';
+    let username = '';
+    if (identPlat === 'sleeper') {
+      leagueId = (leagueSel && leagueSel.value) || '';
+      username = (input && input.value || '').trim();
+      if (leagueSel && leagueSel.selectedIndex >= 0) {
+        name = leagueSel.options[leagueSel.selectedIndex].textContent || '';
+      }
+    } else {
+      leagueId = (extId && extId.value || '').trim();
+      season = (extSeason && extSeason.value || '').trim();
+    }
+    if (!leagueId) {
+      errorEl.textContent = 'Pick a league before continuing with Google.';
+      errorEl.style.display = 'block';
+      return;
+    }
+    errorEl.style.display = 'none';
+    try {
+      const payload = {
+        platform: identPlat, league_id: leagueId, name, username,
+        checkout_plan: planType,
+      };
+      if (season) payload.season = Number(season) || season;
+      const res = await fetch('/api/link/pending', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        errorEl.textContent = data.error || 'Could not save that league.';
+        errorEl.style.display = 'block';
+        return;
+      }
+      window.location.href = data.auth_url || '/auth/google';
+    } catch (e) {
+      errorEl.textContent = 'Network error. Please try again.';
+      errorEl.style.display = 'block';
+    }
+  }
+
+  if (needsLeague && googleBtn) {
+    googleBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      goGoogleWithLeague();
+    });
+  } else if (googleBtn && googleBtn.tagName === 'A') {
+    googleBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      closeIdentify();
+      _startGoogleSubscribe(planType, triggerBtn);
+    });
+  }
+
+  async function doStep() {
+    if (needsLeague && identPlat !== 'sleeper') {
+      await goGoogleWithLeague();
+      return;
+    }
+    if (!identified) {
+      await doIdentify();
+    } else {
+      doCheckout();
+    }
+  }
+
+  async function doIdentify() {
+    const username = (input.value || '').trim();
+    if (!username) { input.focus(); return; }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Checking…';
+    errorEl.style.display = 'none';
+
+    try {
+      const res = await fetch('/api/identify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        errorEl.textContent = data.error || 'Could not verify username.';
+        errorEl.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Continue';
+        return;
+      }
+
+      identified = true;
+
+      if (needsLeague && data.leagues && data.leagues.length > 0) {
+        input.disabled = true;
+        subText.textContent = 'Choose which league to subscribe for, then continue with Google.';
+        leagueSel.innerHTML = data.leagues
+          .map(lg => `<option value="${lg.league_id}" data-platform="sleeper" data-season="${lg.season || ''}">${lg.name}</option>`)
+          .join('');
+        leagueWrap.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Continue with Google';
+        leagueSel.focus();
+      } else {
+        closeIdentify();
+        _startGoogleSubscribe(planType, triggerBtn, { username });
+      }
+    } catch (e) {
+      errorEl.textContent = 'Network error. Please try again.';
+      errorEl.style.display = 'block';
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Continue';
+    }
+  }
+
+  function doCheckout() {
+    const opt = leagueSel.options[leagueSel.selectedIndex];
+    const leagueId = leagueSel.value || '';
+    if (window.__brctx) {
+      window.__brctx.leagueId = leagueId;
+      if (opt && opt.dataset.platform) window.__brctx.platform = opt.dataset.platform;
+      if (opt && opt.dataset.season) window.__brctx.season = Number(opt.dataset.season) || window.__brctx.season;
+    }
+    closeIdentify();
+    if (!_hasGoogleAccount()) {
+      _startGoogleSubscribe(planType, triggerBtn, { leagueId: leagueId });
+      return;
+    }
+    _initiatePurchaseWithLeague(planType, triggerBtn, leagueId);
+  }
+
+  submitBtn.addEventListener('click', doStep);
+  if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') doStep(); });
+  if (extId) extId.addEventListener('keydown', e => { if (e.key === 'Enter') doStep(); });
 }
 
 async function _initiatePurchaseWithLeague(type, btn, leagueId) {
@@ -859,6 +1039,28 @@ async function _initiatePurchaseWithLeague(type, btn, leagueId) {
     else alert('Checkout unavailable. Please try again.');
   }
 }
+
+window._initiatePurchaseWithLeague = _initiatePurchaseWithLeague;
+
+(function resumeCheckoutFromGoogle() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('checkout') !== '1') return;
+    const plan = params.get('plan') || '';
+    if (!_CHECKOUT_PLANS[plan]) return;
+    if (!_hasGoogleAccount()) return;
+    history.replaceState(null, '', window.location.pathname);
+    const start = function () {
+      const btn = document.querySelector('[onclick*="initiatePurchase"]');
+      initiatePurchase(plan, btn);
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', start);
+    } else {
+      start();
+    }
+  } catch (e) {}
+})();
 
 function openHomeProModal() {
   const PLAN_LABELS = {

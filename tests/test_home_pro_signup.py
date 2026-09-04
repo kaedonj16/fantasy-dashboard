@@ -72,8 +72,8 @@ def test_paywall_subscribe_requires_google_account():
     ident = PAYWALL_JS[PAYWALL_JS.index("function _showIdentifyModal"):]
     ident = ident[: PAYWALL_JS.index("async function _initiatePurchaseWithLeague") - PAYWALL_JS.index("function _showIdentifyModal")]
     assert "A Google account is required to subscribe" in ident
-    assert "fetch('/api/identify'" not in ident
-    assert "_identifyInput" not in ident
+    assert "goGoogleWithLeague" in ident
+    assert "_startGoogleSubscribe" in ident
     checkout = BILLING[BILLING.index("def create_checkout_session"):]
     checkout = checkout[: checkout.index("if plan not in _STRIPE_PRICES")]
     assert "_require_google_to_subscribe" in checkout
