@@ -23806,6 +23806,329 @@ tr.team-clickable {
     }
 }
 
+/* ── Schedule Strength (teams analytics tab) ─────────────
+   Remaining-opponent ranking in the Teams sidebar. Bars scale to the
+   min–max spread (not just /max) so clustered preseason values still
+   read as a ranking instead of identical full-width red pills. */
+.sos-panel {
+    padding: 2px 0 8px;
+}
+
+.sos-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 12px 4px;
+}
+
+.sos-header-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.sos-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.sos-subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.35;
+}
+
+.sos-full-link {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--brand-blue);
+    text-decoration: none;
+    white-space: nowrap;
+    flex-shrink: 0;
+    padding-top: 2px;
+}
+
+.sos-full-link:hover {
+    text-decoration: underline;
+}
+
+.sos-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 12px 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.sos-weeks {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.sos-weeks strong {
+    color: var(--text);
+    font-weight: 700;
+}
+
+.sos-sort-note {
+    font-size: 11px;
+    color: var(--text-subtle);
+}
+
+.sos-note {
+    margin: 8px 12px 2px;
+    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--text-muted);
+    background: var(--card-soft);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+
+.sos-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 10px 12px 2px;
+}
+
+.sos-leg {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10.5px;
+    color: var(--text-muted);
+}
+
+.sos-leg i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+}
+
+.sos-leg-hard i {
+    background: var(--loss);
+}
+
+.sos-leg-mid i {
+    background: var(--warning);
+}
+
+.sos-leg-easy i {
+    background: var(--win);
+}
+
+.sos-cols {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) 44px;
+    gap: 8px;
+    padding: 8px 12px 4px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+}
+
+.sos-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 8px 8px;
+}
+
+.sos-row {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    padding: 8px 6px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    border-left: 3px solid transparent;
+    transition: background 0.12s;
+}
+
+.sos-row:hover {
+    background: var(--accent-soft);
+    border-color: var(--border);
+}
+
+.sos-row.sos-hard {
+    border-left-color: var(--loss);
+}
+
+.sos-row.sos-mid {
+    border-left-color: var(--warning);
+}
+
+.sos-row.sos-easy {
+    border-left-color: var(--win);
+}
+
+.sos-row.sos-even {
+    border-left-color: var(--border);
+}
+
+.sos-row.sos-mine {
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.sos-rank {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sos-rank-num {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+}
+
+.sos-body {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.sos-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.sos-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.sos-name-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sos-you {
+    flex: 0 0 auto;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+    border-radius: 5px;
+    padding: 1px 5px;
+}
+
+.sos-diff {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 999px;
+}
+
+.sos-diff-hard {
+    color: var(--loss);
+    background: color-mix(in srgb, var(--loss) 14%, transparent);
+}
+
+.sos-diff-mid {
+    color: var(--warning);
+    background: color-mix(in srgb, var(--warning) 16%, transparent);
+}
+
+.sos-diff-easy {
+    color: var(--win);
+    background: color-mix(in srgb, var(--win) 14%, transparent);
+}
+
+.sos-diff-even {
+    color: var(--text-muted);
+    background: var(--row);
+}
+
+.sos-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sos-track {
+    flex: 1;
+    min-width: 0;
+    height: 8px;
+    background: var(--bg-alt);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.sos-fill {
+    height: 100%;
+    border-radius: 999px;
+    min-width: 6px;
+}
+
+.sos-fill-hard {
+    background: var(--loss);
+}
+
+.sos-fill-mid {
+    background: var(--warning);
+}
+
+.sos-fill-easy {
+    background: var(--win);
+}
+
+.sos-fill-even {
+    background: var(--text-muted);
+}
+
+.sos-val {
+    width: 40px;
+    flex-shrink: 0;
+    text-align: right;
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
+.sos-row.sos-hard .sos-val {
+    color: var(--loss);
+}
+
+.sos-row.sos-easy .sos-val {
+    color: var(--win);
+}
+
+.teams-sidebar .sos-header,
+.teams-sidebar .sos-meta,
+.teams-sidebar .sos-note,
+.teams-sidebar .sos-legend,
+.teams-sidebar .sos-cols {
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
 /* ── Roster Intel ─────────────────────────────────────── */
 .ri-pos-section {
     padding: 12px 0;
@@ -33702,6 +34025,7 @@ button:disabled {
 }
 
 .analytics-bar-fill,
+.sos-fill,
 .compare-bar-fill,
 .dr-gbar-fill,
 .dr-proj-bar-fill,
@@ -33948,7 +34272,7 @@ button:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .br-page-enter, .br-stagger > *, .analytics-bar-fill, .compare-bar-fill,
+    .br-page-enter, .br-stagger > *, .analytics-bar-fill, .sos-fill, .compare-bar-fill,
     .dr-gbar-fill, .dr-proj-bar-fill, .pos-bar-inner, .rivalry-bar-fill,
     .br-bar-grow, .rank-mark, .br-pop, .live-dot::after, .br-chip-pop > *,
     .br-flash-up, .br-flash-down, .br-shake, .br-draw path, .dr-cell-reveal {
