@@ -58,6 +58,8 @@ _CASES = [
     ("/sleeper/2026/abc/draft", False),      # draft loads its own scripts
     ("/sleeper/2026/abc/draft/history", False),
     ("/sleeper/2026/abc/keeper", False),     # not on the allowlist
+    ("/sleeper/2026/abc/league_health", True),  # League Health URL (not "commissioner")
+    ("/sleeper/2026/abc/commissioner", True),   # legacy alias still allowlisted
     # Script-driven pages that init on DOMContentLoaded / a bootstrap don't
     # survive an in-place swap, so they navigate natively.
     ("/sleeper/2026/abc/waivers", False),
@@ -125,3 +127,27 @@ def test_skip_link_targets_page_root(offline_client):
     # which only actually moves focus now that page-root is focusable.
     html = _html(offline_client, GRAPHS)
     assert 'class="skip-link" href="#page-root"' in html
+
+
+def test_soft_nav_header_omits_ads_and_app_scripts(offline_client):
+    """X-Soft-Nav responses stay swap-ready but drop dead weight the client ignores."""
+    path = "/sleeper/2026/tourdemo/dashboard"
+    full = offline_client.get(path).get_data(as_text=True)
+    soft = offline_client.get(path, headers={"X-Soft-Nav": "1"}).get_data(as_text=True)
+    assert 'id="page-root"' in soft
+    assert 'class="top-nav"' in soft or "br-tabbar" in soft or "nav-pill" in soft
+    # Soft payload should not re-download the app / paywall bundles.
+    assert re.search(r'<script[^>]+/static/app(?:\.min)?\.js', soft) is None
+    assert re.search(r'<script[^>]+/static/paywall\.js', soft) is None
+    # Ad slots / AdSense loader omitted (preconnect hints in <head> may remain).
+    assert "adsbygoogle" not in soft
+    assert 'site-footer" hidden' in soft
+    # Full navigations still ship deferred app JS.
+    assert re.search(r'<script[^>]+src="/static/(?:app|public)[^"]*"[^>]*\sdefer', full)
+
+
+def test_app_js_declares_soft_nav_prefetch():
+    src = open(_APP_JS, encoding="utf-8").read()
+    assert "softPrefetchStart" in src
+    assert "pointerdown" in src
+    assert "X-Soft-Nav" in src

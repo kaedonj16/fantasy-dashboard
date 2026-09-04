@@ -1967,9 +1967,9 @@ BASE_HTML = """
     <!-- Page navigation loading overlay -->
     <!-- Cookie consent handled by Google's certified CMP (Funding Choices) -->
 
-    <script src="/static/{app_js_file}?v={app_js_v}"></script>
+    <script src="/static/{app_js_file}?v={app_js_v}" defer></script>
     {player_modal_js}
-    <script src="/static/paywall.js?v={paywall_js_v}"></script>
+    <script src="/static/paywall.js?v={paywall_js_v}" defer></script>
     <script>
       {adsense_init}
 
@@ -5084,22 +5084,27 @@ def render_page(
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
 
+    # Soft-nav only swaps #page-root (+ syncs nav/dock/title). Drop ads, footer,
+    # splash, and re-downloaded app scripts so each dock tap is a much smaller
+    # HTML payload. Full navigations keep the complete document.
+    _soft_nav = (request.headers.get("X-Soft-Nav") or "").strip() == "1"
+
     html = BASE_HTML.format(
         title=title,
-        yahoo_attribution=_yahoo_attribution,
-        meta_tags=meta_tags,
-        og_tags=og_tags,
-        json_ld=json_ld,
+        yahoo_attribution=_yahoo_attribution if not _soft_nav else "",
+        meta_tags=meta_tags if not _soft_nav else "",
+        og_tags=og_tags if not _soft_nav else "",
+        json_ld=json_ld if not _soft_nav else "",
         nav=nav_html,
-        recap_banner=banner_html,
+        recap_banner="" if _soft_nav else banner_html,
         body=wrapped_body,
         bottom_nav=_bottom,
         cache_ts=_league_cache_ts_ms(platform, season, league_id),
         user_premium="true" if is_premium else "false",
-        adsense_script="" if not show_ads else _AD_SCRIPT,
-        ad_top="" if not show_ads else _AD_TOP,
-        ad_bottom="" if not show_ads else _AD_BOTTOM,
-        adsense_init="" if not show_ads else _AD_INIT,
+        adsense_script="" if (_soft_nav or not show_ads) else _AD_SCRIPT,
+        ad_top="" if (_soft_nav or not show_ads) else _AD_TOP,
+        ad_bottom="" if (_soft_nav or not show_ads) else _AD_BOTTOM,
+        adsense_init="" if (_soft_nav or not show_ads) else _AD_INIT,
         about_url=f"/{platform}/{season}/{league_id}/about" if (league_id and platform and season) else "/about",
         guides_url=f"/{platform}/{season}/{league_id}/guides" if (league_id and platform and season) else "/guides",
         glossary_url=f"/{platform}/{season}/{league_id}/glossary" if (league_id and platform and season) else "/glossary",
@@ -5110,12 +5115,14 @@ def render_page(
         contact_url=f"/{platform}/{season}/{league_id}/contact" if (league_id and platform and season) else "/contact",
         yt_url="https://youtube.com/@hoodiekj",
         app_js_file=_page_js_file,
-        sentry_js=_SENTRY_JS_SNIPPET,
-        plotly_loader=_PLOTLY_LOADER,
+        sentry_js="" if _soft_nav else _SENTRY_JS_SNIPPET,
+        plotly_loader="" if _soft_nav else _PLOTLY_LOADER,
         app_js_v=_page_js_v,
         player_modal_js=(
-            f'<script src="/static/player_modal.js?v={_PLAYER_MODAL_JS_V}"></script>'
-            if not _use_lite else ""
+            "" if _soft_nav else (
+                f'<script src="/static/player_modal.js?v={_PLAYER_MODAL_JS_V}" defer></script>'
+                if not _use_lite else ""
+            )
         ),
         paywall_js_v=_PAYWALL_JS_V,
         paywall_css_v=_PAYWALL_CSS_V,
@@ -5140,6 +5147,29 @@ def render_page(
         league_size_js=_json.dumps(_league_size),
         league_scoring_type_js=_json.dumps(_scoring_type),
     )
+    # Soft-nav documents are disposable swap payloads — still no-store for auth,
+    # but clients already hold a short in-memory prefetch map.
+    if _soft_nav:
+        # Strip splash + footer + body script tags the soft-nav client never runs
+        # (already present on the live page). Keeps CSS so #page-root styles apply.
+        html = html.replace(
+            '<div id="appSplash" role="status" aria-label="Loading BR Fantasy">',
+            '<div id="appSplash" hidden aria-hidden="true" role="status" aria-label="Loading BR Fantasy">',
+            1,
+        )
+        # Omit re-downloading app/paywall JS on every soft-nav (already loaded).
+        html = re.sub(
+            r'<script src="/static/(?:app|public|app-features|paywall)[^"]*" defer></script>\s*',
+            '',
+            html,
+        )
+        html = re.sub(
+            r'<footer class="site-footer"[^>]*>.*?</footer>',
+            '<footer class="site-footer" hidden></footer>',
+            html,
+            count=1,
+            flags=re.DOTALL,
+        )
     resp = make_response(html)
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     resp.headers['Pragma'] = 'no-cache'
