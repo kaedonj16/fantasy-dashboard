@@ -148,12 +148,12 @@ def test_sw_no_cache_and_shell_precache():
     sw_route = PUBLIC[PUBLIC.index("def service_worker"):]
     sw_route = sw_route[: sw_route.index("def ads_txt")]
     assert "no-cache" in sw_route
-    assert "br-fantasy-v26" in SW
+    assert "br-fantasy-v27" in SW
     assert "'/static/app.js'" not in SW and '"/static/app.js"' not in SW
     assert "'/static/dashboard.css'" not in SW and '"/static/dashboard.css"' not in SW
     assert "/static/offline.html" in SW
     assert "/static/BR_Logo_dark.png" in SW
-    assert "/static/icon-180x180.png" in SW
+    assert "/static/app-icon-180.png" in SW
     # Explicit Refresh must not paint the 3.5s cached shell (stale timestamp).
     assert "bypass-cache" in SW
     assert "forceNetworkNav" in SW
@@ -254,10 +254,66 @@ def test_bract_empty_aliases_share_empty_state_look():
 
 def test_apple_touch_icon_is_proper_180_asset():
     """Site-audit low backlog: home-screen icon matches declared 180×180 size."""
-    assert (ROOT / "static" / "icon-180x180.png").is_file()
-    assert _png_dimensions(ROOT / "static" / "icon-180x180.png") == (180, 180)
-    assert "icon-180x180.png" in APP_PY
-    assert 'apple-touch-icon" sizes="180x180" href="/static/icon-180x180.png"' in APP_PY
+    assert (ROOT / "static" / "app-icon-180.png").is_file()
+    assert _png_dimensions(ROOT / "static" / "app-icon-180.png") == (180, 180)
+    assert "app-icon-180.png" in APP_PY
+    assert 'apple-touch-icon" sizes="180x180" href="/static/app-icon-180.png"' in APP_PY
+
+
+def _png_corner_rgb(path):
+    """Decode the top-left RGB pixel of an 8-bit RGB PNG (no Pillow)."""
+    import struct
+    import zlib
+
+    data = path.read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+    w, h, bit, color = struct.unpack(">IIBB", data[16:26])
+    assert bit == 8 and color == 2, f"{path.name} must be opaque 8-bit RGB"
+    i = 8
+    idat = b""
+    while i < len(data):
+        ln = struct.unpack(">I", data[i : i + 4])[0]
+        typ = data[i + 4 : i + 8]
+        payload = data[i + 8 : i + 8 + ln]
+        if typ == b"tRNS":
+            raise AssertionError(f"{path.name} has a tRNS chunk (not fully opaque)")
+        if typ == b"IDAT":
+            idat += payload
+        if typ == b"IEND":
+            break
+        i += 12 + ln
+    raw = zlib.decompress(idat)
+    filt = raw[0]
+    row = bytearray(raw[1 : 1 + w * 3])
+    if filt == 1:
+        for x in range(3, len(row)):
+            row[x] = (row[x] + row[x - 3]) & 255
+    elif filt == 2:
+        pass
+    elif filt not in (0,):
+        # Sub/Up/Average/Paeth: first pixel of first row only needs Sub or None
+        if filt == 4:
+            pass
+    return (row[0], row[1], row[2]), (w, h)
+
+
+def test_pwa_icons_are_opaque_white():
+    """Home-screen icons must be opaque white so iOS/Android do not fill navy."""
+    icons = (
+        ROOT / "static" / "app-icon-180.png",
+        ROOT / "static" / "app-icon-192.png",
+        ROOT / "static" / "app-icon-192-maskable.png",
+        ROOT / "static" / "app-icon-512.png",
+        ROOT / "static" / "app-icon-512-maskable.png",
+    )
+    for icon in icons:
+        rgb, (w, h) = _png_corner_rgb(icon)
+        assert rgb == (255, 255, 255), f"{icon.name} corner is {rgb}, expected white"
+        assert w == h
+    manifest = (ROOT / "static" / "manifest.json").read_text(encoding="utf-8")
+    assert "/static/app-icon-192.png" in manifest
+    assert "/static/app-icon-512-maskable.png" in manifest
+    assert 'href="/static/app-icon-192.png"' in APP_PY
 
 
 def test_app_splash_matches_theme_boot():

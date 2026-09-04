@@ -1860,10 +1860,10 @@ BASE_HTML = """
     <link rel="preload" href="/static/fonts/web/archivo-700.woff2" as="font" type="font/woff2" crossorigin>
     {sentry_js}
 
-    <link rel="icon" href="/static/BR_Logo.png" type="image/png">
-    <link rel="shortcut icon" href="/static/BR_Logo.png" type="image/png">
-    <link rel="apple-touch-icon" href="/static/icon-180x180.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180x180.png">
+    <link rel="icon" href="/static/app-icon-192.png" type="image/png">
+    <link rel="shortcut icon" href="/static/app-icon-192.png" type="image/png">
+    <link rel="apple-touch-icon" href="/static/app-icon-180.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/app-icon-180.png">
     <link rel="manifest" href="/static/manifest.json">
     <!-- Status-bar chrome matches the top nav's background so the app reads as
          one surface. The app theme is a manual toggle (not OS-driven), so this
