@@ -58,7 +58,26 @@ def test_home_pro_js_opens_modal_then_stages_google():
     assert "/auth/google?intent=onboarding&next=/pro/resume-checkout" in source
     assert "/api/sleeper-user-leagues?username=" in source
     assert "_initiatePurchaseWithLeague" in source
+    assert "checkoutBtn.hidden = !window._hasAccount" in source
+    assert "fetch('/api/identify'" not in source
     assert "data-home-pro-open" in PAYWALL_JS[PAYWALL_JS.index("function initHomeProSignup"):]
+
+
+def test_paywall_subscribe_requires_google_account():
+    purchase = PAYWALL_JS[PAYWALL_JS.index("async function initiatePurchase"):]
+    purchase = purchase[: PAYWALL_JS.index("function addPremiumBadge") - PAYWALL_JS.index("async function initiatePurchase")]
+    assert "_hasGoogleAccount()" in purchase
+    assert "brOpenSignin" not in purchase
+    assert "signinModal" not in purchase
+    ident = PAYWALL_JS[PAYWALL_JS.index("function _showIdentifyModal"):]
+    ident = ident[: PAYWALL_JS.index("async function _initiatePurchaseWithLeague") - PAYWALL_JS.index("function _showIdentifyModal")]
+    assert "A Google account is required to subscribe" in ident
+    assert "fetch('/api/identify'" not in ident
+    assert "_identifyInput" not in ident
+    checkout = BILLING[BILLING.index("def create_checkout_session"):]
+    checkout = checkout[: checkout.index("if plan not in _STRIPE_PRICES")]
+    assert "_require_google_to_subscribe" in checkout
+    assert 'session.get("account_id")' in BILLING[BILLING.index("def resume_pro_checkout"):]
 
 
 def test_google_and_yahoo_resume_pending_checkout():
@@ -69,9 +88,16 @@ def test_google_and_yahoo_resume_pending_checkout():
 
 
 def test_pro_signup_pending_requires_plan_and_league(offline_client):
-    missing = offline_client.post("/api/pro-signup/pending", json={"plan": "user"})
+    missing = offline_client.post("/api/pro-signup/pending", json={})
     assert missing.status_code == 400
     assert missing.json["ok"] is False
+
+    league_missing = offline_client.post("/api/pro-signup/pending", json={"plan": "league"})
+    assert league_missing.status_code == 400
+
+    user_ok = offline_client.post("/api/pro-signup/pending", json={"plan": "user"})
+    assert user_ok.status_code == 200
+    assert user_ok.json["ok"] is True
 
     bad_plan = offline_client.post("/api/pro-signup/pending", json={
         "plan": "lifetime", "league_id": "123", "platform": "sleeper",
@@ -98,6 +124,18 @@ def test_pro_signup_pending_requires_plan_and_league(offline_client):
 
 def test_resume_checkout_sends_guests_to_google(offline_client):
     with offline_client.session_transaction() as sess:
+        sess["pending_checkout"] = {
+            "plan": "user", "league_id": "123", "platform": "sleeper", "season": 2026,
+        }
+    response = offline_client.get("/pro/resume-checkout")
+    assert response.status_code == 302
+    assert "/auth/google" in response.headers["Location"]
+
+
+def test_resume_checkout_requires_google_not_sleeper_only(offline_client):
+    with offline_client.session_transaction() as sess:
+        sess["viewer_username"] = "Ryan"
+        sess["viewer_user_id"] = "u1"
         sess["pending_checkout"] = {
             "plan": "user", "league_id": "123", "platform": "sleeper", "season": 2026,
         }
@@ -150,6 +188,7 @@ def test_guest_home_renders_pro_signup(offline_client):
     assert "Unlock PRO" in html
     assert "data-home-pro-open" in html
     assert "Continue with Google" in html
+    assert "A Google account is required to subscribe" in html
 
 
 class _JsonResp:

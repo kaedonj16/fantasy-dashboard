@@ -1234,7 +1234,7 @@ FORM_BODY = """
       </div>
       <p class="home-pro-hero-cta">
         <button type="button" class="home-pro-open-btn" data-home-pro-open>Unlock PRO</button>
-        <span>See what PRO includes, then pick a plan.</span>
+        <span>See what PRO includes. A Google account is required to subscribe.</span>
       </p>
     </div>
 
@@ -1562,7 +1562,7 @@ FORM_BODY = """
       <header class="home-pro-head">
         <span class="home-pro-eyebrow">Unlock PRO</span>
         <h2 class="home-pro-title" id="homeProTitle">The tools that decide trades, waivers, and playoffs</h2>
-        <p class="home-pro-lead">PRO unlocks roster-aware analysis for your league. See what you get, then open checkout to pick a plan and connect your league.</p>
+        <p class="home-pro-lead">PRO unlocks roster-aware analysis for your league. A Google account is required to subscribe. See what you get, then pick a plan and connect your league.</p>
       </header>
       <ul class="home-pro-benefits">
         <li>
@@ -1608,7 +1608,7 @@ FORM_BODY = """
       </ul>
       <div class="home-pro-cta-row">
         <button type="button" class="home-pro-open-btn" data-home-pro-open>Unlock PRO</button>
-        <span class="home-pro-cta-note">From $5/year. Pick a plan, enter your league, finish with Google.</span>
+        <span class="home-pro-cta-note">From $5/year. A Google account is required to subscribe.</span>
       </div>
     </div>
   </section>

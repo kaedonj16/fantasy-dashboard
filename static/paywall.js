@@ -126,7 +126,7 @@ window.showPaywall = function showPaywall(feature, opts) {
         <div class="paywall-icon"><i class="fa-solid fa-star" aria-hidden="true"></i></div>
         <h3>${featureName}</h3>
         ${previewLine}
-        <p>This is a premium feature. Upgrade to access:</p>
+        <p>This is a premium feature. A Google account is required to subscribe.</p>
         <ul class="paywall-features">
           <li>✓ Roster-Based Trade Suggestions</li>
           <li>✓ Full Trade Intelligence feed &amp; history</li>
@@ -217,19 +217,76 @@ window.showPaywall = function showPaywall(feature, opts) {
   if (first) try { first.focus(); } catch (_) {}
 }
 
-async function initiatePurchase(type, btn) {
-  // Prompt login before hitting the API
+function _hasGoogleAccount() {
+  return !!window._hasAccount;
+}
+
+function _checkoutLeagueId() {
   const ctx = window.__brctx || {};
-  // `_isSignedIn` is retained as a fallback for an older cached page shell.
-  // New shells provide __brctx, including the provider needed by checkout.
-  if (!(ctx.is_logged_in || window._isSignedIn)) {
-    const navModal = document.getElementById('signinModal');
-    if (navModal) {
-      if (window.brOpenSignin) window.brOpenSignin();
-      else navModal.style.display = 'flex';
-    } else {
-      _showIdentifyModal(type, btn);
-    }
+  return (
+    new URLSearchParams(window.location.search).get('league_id') ||
+    window.location.pathname.split('/').filter(Boolean)[2] ||
+    ctx.leagueId ||
+    ''
+  );
+}
+
+function _startGoogleSubscribe(planType, triggerBtn, extra) {
+  extra = extra || {};
+  const ctx = window.__brctx || {};
+  const leagueId = extra.leagueId || _checkoutLeagueId();
+  const needsLeague = planType === 'league' || planType === 'combo' || planType === 'single_league';
+  if (needsLeague && !leagueId) {
+    _showIdentifyModal(planType, triggerBtn);
+    return;
+  }
+  const payload = {
+    plan: planType,
+    league_id: leagueId || '',
+    platform: extra.platform || ctx.platform || 'sleeper',
+    season: extra.season || ctx.season || new Date().getFullYear(),
+    username: extra.username || '',
+  };
+  if (triggerBtn) {
+    triggerBtn.disabled = true;
+    if (!triggerBtn.dataset.origText) triggerBtn.dataset.origText = triggerBtn.innerHTML;
+    triggerBtn.innerHTML = 'Continue with Google…';
+  }
+  fetch('/api/pro-signup/pending', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify(payload),
+  })
+    .then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, data: d }; });
+    })
+    .then(function (res) {
+      if (!res.ok) {
+        if (triggerBtn) {
+          triggerBtn.disabled = false;
+          triggerBtn.innerHTML = triggerBtn.dataset.origText;
+        }
+        if (window.showToast) {
+          showToast((res.data && res.data.error) || 'Sign in with Google to subscribe.', 'error');
+        }
+        _showIdentifyModal(planType, triggerBtn);
+        return;
+      }
+      window.location.href = (res.data && res.data.auth_url)
+        || '/auth/google?intent=onboarding&next=/pro/resume-checkout';
+    })
+    .catch(function () {
+      window.location.href = '/auth/google?intent=onboarding&next=/pro/resume-checkout';
+    });
+}
+
+async function initiatePurchase(type, btn) {
+  // Checkout requires a Google account site-wide. Sleeper-only sign-in is
+  // enough to view a league, not to subscribe.
+  const ctx = window.__brctx || {};
+  if (!_hasGoogleAccount()) {
+    _startGoogleSubscribe(type, btn);
     return;
   }
 
@@ -272,8 +329,8 @@ async function initiatePurchase(type, btn) {
     } else {
       if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.origText; }
       if (_handleAlreadySubscribed(data, leagueId)) return;
-      if (window.showToast) showToast(data.error || 'Could not start checkout. Make sure you are logged in.', 'error', 5000);
-      else alert(data.error || 'Could not start checkout. Make sure you are logged in.');
+      if (window.showToast) showToast(data.error || 'Could not start checkout. Sign in with Google to subscribe.', 'error', 5000);
+      else alert(data.error || 'Could not start checkout. Sign in with Google to subscribe.');
     }
   } catch (e) {
     if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.origText; }
@@ -323,8 +380,7 @@ async function protectFeature(featureName, userId, leagueId, callbackIfPremium) 
 }
 
 /**
- * Self-contained "enter username → subscribe" modal for guest pages
- * that don't have the nav signin modal in the DOM.
+ * Self-contained Google subscribe gate. Sleeper username is not enough to pay.
  */
 function _handleAlreadySubscribed(data, leagueId) {
   if (!data.error || !data.error.toLowerCase().includes('already have')) return false;
@@ -580,7 +636,6 @@ function _showIdentifyModal(planType, triggerBtn) {
   const existing = document.getElementById('_identifyModal');
   if (existing) existing.remove();
 
-  const needsLeague = planType === 'league' || planType === 'combo' || planType === 'single_league';
   const next = encodeURIComponent(window.location.pathname + window.location.search);
 
   const modal = document.createElement('div');
@@ -592,31 +647,17 @@ function _showIdentifyModal(planType, triggerBtn) {
   modal.style.display = 'flex';
   modal.innerHTML = `
     <div class="signin-modal-box">
-      <h3 class="signin-modal-title" id="_identifyTitle">Sign in to subscribe</h3>
-      <p class="signin-modal-sub" id="_identifySub">Continue with Google to use your account, or enter a Sleeper username.</p>
+      <h3 class="signin-modal-title" id="_identifyTitle">Sign in with Google to subscribe</h3>
+      <p class="signin-modal-sub" id="_identifySub">A Google account is required to subscribe. Continue with Google, then we will send you to checkout.</p>
       <a class="google-continue-btn" id="_identifyGoogle" href="/auth/google?intent=login&amp;next=${next}">
         <span class="google-button-title">Continue with Google</span>
       </a>
-      <div class="signin-modal-or">or</div>
-      <input class="signin-modal-input" id="_identifyInput" type="text" placeholder="Sleeper username" aria-label="Sleeper username" autocomplete="username">
-      <div id="_identifyLeagueWrap" style="display:none;margin-bottom:16px;">
-        <label style="display:block;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Select League</label>
-        <select class="signin-modal-input" id="_identifyLeague" style="margin-bottom:0;cursor:pointer;"></select>
-      </div>
-      <div id="_identifyError" style="display:none;font-size:12px;color:#ef4444;margin:-8px 0 12px;"></div>
       <div class="signin-modal-actions">
-        <button type="button" class="signin-modal-submit" id="_identifySubmit">Continue</button>
         <button type="button" class="signin-modal-cancel" id="_identifyCancel">Cancel</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
 
-  const input = modal.querySelector('#_identifyInput');
-  const submitBtn = modal.querySelector('#_identifySubmit');
-  const errorEl = modal.querySelector('#_identifyError');
-  const leagueWrap = modal.querySelector('#_identifyLeagueWrap');
-  const leagueSel = modal.querySelector('#_identifyLeague');
-  const subText = modal.querySelector('#_identifySub');
   const prevFocus = document.activeElement;
 
   function focusables() {
@@ -641,79 +682,24 @@ function _showIdentifyModal(planType, triggerBtn) {
   document.addEventListener('keydown', onKey);
   modal.addEventListener('click', e => { if (e.target === modal) closeIdentify(); });
   modal.querySelector('#_identifyCancel').addEventListener('click', closeIdentify);
+  const googleLink = modal.querySelector('#_identifyGoogle');
+  googleLink.addEventListener('click', function (e) {
+    const leagueId = _checkoutLeagueId();
+    const needsLeague = planType === 'league' || planType === 'combo' || planType === 'single_league';
+    if (needsLeague && !leagueId) return;
+    e.preventDefault();
+    closeIdentify();
+    _startGoogleSubscribe(planType, triggerBtn, { leagueId });
+  });
   const first = focusables()[0];
   if (first) try { first.focus(); } catch (_) {}
-
-  let identified = false;
-
-  async function doStep() {
-    if (!identified) {
-      await doIdentify();
-    } else {
-      doCheckout();
-    }
-  }
-
-  async function doIdentify() {
-    const username = (input.value || '').trim();
-    if (!username) { input.focus(); return; }
-
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Checking…';
-    errorEl.style.display = 'none';
-
-    try {
-      const res = await fetch('/api/identify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        errorEl.textContent = data.error || 'Could not verify username.';
-        errorEl.style.display = 'block';
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Continue';
-        return;
-      }
-
-      if (window.__brctx) window.__brctx.is_logged_in = true;
-      identified = true;
-
-      if (needsLeague && data.leagues && data.leagues.length > 0) {
-        input.disabled = true;
-        subText.textContent = 'Choose which league to subscribe for.';
-        leagueSel.innerHTML = data.leagues
-          .map(lg => `<option value="${lg.league_id}">${lg.name}</option>`)
-          .join('');
-        leagueWrap.style.display = 'block';
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Continue to Checkout';
-        leagueSel.focus();
-      } else {
-        closeIdentify();
-        initiatePurchase(planType, triggerBtn);
-      }
-    } catch (e) {
-      errorEl.textContent = 'Network error. Please try again.';
-      errorEl.style.display = 'block';
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Continue';
-    }
-  }
-
-  function doCheckout() {
-    const leagueId = leagueSel.value || '';
-    if (window.__brctx) window.__brctx.leagueId = leagueId;
-    closeIdentify();
-    _initiatePurchaseWithLeague(planType, triggerBtn, leagueId);
-  }
-
-  submitBtn.addEventListener('click', doStep);
-  input.addEventListener('keydown', e => { if (e.key === 'Enter') doStep(); });
 }
 
 async function _initiatePurchaseWithLeague(type, btn, leagueId) {
+  if (!_hasGoogleAccount()) {
+    _startGoogleSubscribe(type, btn, { leagueId });
+    return;
+  }
   // Build a post-checkout destination: league dashboard if we have a league,
   // otherwise the current page. Append ?new_subscriber=1 to trigger the welcome tour.
   const ctx = window.__brctx || {};
@@ -786,7 +772,7 @@ function openHomeProModal() {
         </ol>
         <div id="homeProStepPlan" class="home-pro-step">
           <h3>Choose a plan</h3>
-          <p>Then enter your league and finish with Google checkout.</p>
+          <p>Then enter your league. A Google account is required to subscribe.</p>
           <div class="paywall-pricing">
             <div class="pricing-option">
               <div class="pricing-header"><h4>One League</h4></div>
@@ -1007,7 +993,7 @@ function openHomeProModal() {
     btn.addEventListener('click', function () {
       selectedPlan = btn.getAttribute('data-plan') || '';
       if (pickedLabel) pickedLabel.textContent = PLAN_LABELS[selectedPlan] || selectedPlan;
-      if (checkoutBtn) checkoutBtn.hidden = !(window._hasAccount || window._isSignedIn);
+      if (checkoutBtn) checkoutBtn.hidden = !window._hasAccount;
       setStep('league');
       loadSavedLeagues();
     });
@@ -1073,14 +1059,14 @@ function openHomeProModal() {
       window.__brctx.season = payload.season;
       window.__brctx.leagueId = payload.league_id;
     }
-    if (payload.platform === 'sleeper' && payload.username && !window._isSignedIn) {
-      try {
-        await fetch('/api/identify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: payload.username }),
-        });
-      } catch (e) {}
+    if (!_hasGoogleAccount()) {
+      _startGoogleSubscribe(payload.plan, checkoutBtn, {
+        leagueId: payload.league_id,
+        platform: payload.platform,
+        season: payload.season,
+        username: payload.username,
+      });
+      return;
     }
     if (typeof _initiatePurchaseWithLeague === 'function') {
       _initiatePurchaseWithLeague(payload.plan, checkoutBtn, payload.league_id);

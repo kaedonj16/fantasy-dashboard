@@ -150,3 +150,5 @@ def test_identify_modal_is_a_dialog_with_google():
     assert "/auth/google?intent=login" in ident
     assert "function closeIdentify" in ident
     assert "e.key === 'Escape'" in ident
+    assert "fetch('/api/identify'" not in ident
+    assert "A Google account is required to subscribe" in ident

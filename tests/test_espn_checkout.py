@@ -46,6 +46,7 @@ def test_checkout_preserves_provider_at_every_plan_entry(
     )
 
     with offline_client.session_transaction() as sess:
+        sess["account_id"] = 7
         sess["viewer_username"] = "Ryan"
         sess["viewer_user_id"] = f"{platform}-owner-7"
 
@@ -86,6 +87,7 @@ def test_league_checkout_rejects_non_members(offline_client, monkeypatch, plan):
         lambda *args, **kwargs: False,
     )
     with offline_client.session_transaction() as sess:
+        sess["account_id"] = 8
         sess["viewer_username"] = "outsider"
         sess["viewer_user_id"] = "outsider-1"
 
@@ -104,6 +106,7 @@ def test_league_plans_cannot_charge_without_a_league(offline_client, monkeypatch
         lambda: (_ for _ in ()).throw(AssertionError("Stripe must not be called")),
     )
     with offline_client.session_transaction() as sess:
+        sess["account_id"] = 9
         sess["viewer_username"] = "ryan"
 
     response = offline_client.post("/api/create-checkout-session", json={
@@ -126,6 +129,7 @@ def test_single_league_checkout_rejects_when_already_owned(offline_client, monke
         lambda *args, **kwargs: True,
     )
     with offline_client.session_transaction() as sess:
+        sess["account_id"] = 10
         sess["viewer_username"] = "ryan"
         sess["viewer_user_id"] = "sleeper-7"
 
@@ -153,6 +157,7 @@ def test_combo_checkout_rejects_double_billing_when_one_component_exists(
         lambda *args, **kwargs: True,
     )
     with offline_client.session_transaction() as sess:
+        sess["account_id"] = 11
         sess["viewer_username"] = "ryan"
         sess["viewer_user_id"] = "sleeper-7"
 
@@ -190,6 +195,23 @@ def test_subscription_status_uses_stable_id_and_espn_provider(offline_client, mo
     assert response.get_json()["has_premium"] is True
     assert "stripe_customer_id" not in response.get_json()
     assert calls == [("espn-owner-7", "123", "espn")]
+
+
+def test_checkout_requires_google_account(offline_client, monkeypatch):
+    monkeypatch.setattr(
+        billing, "_stripe",
+        lambda: (_ for _ in ()).throw(AssertionError("Stripe must not be called")),
+    )
+    with offline_client.session_transaction() as sess:
+        sess["viewer_username"] = "Ryan"
+        sess["viewer_user_id"] = "sleeper-7"
+
+    response = offline_client.post("/api/create-checkout-session", json={
+        "plan": "user", "platform": "sleeper", "season": 2026,
+    })
+
+    assert response.status_code == 401
+    assert "google" in response.get_json()["error"].lower()
 
 
 def test_checkout_allows_google_account_without_sleeper_viewer(offline_client, monkeypatch):

@@ -104,7 +104,7 @@ def _normalize_pending_checkout(data: dict) -> tuple[dict | None, str | None]:
     if platform not in _SUPPORTED_PLATFORMS:
         return None, "Choose a supported platform."
     league_id = str((data or {}).get("league_id") or "").strip()
-    if not league_id:
+    if plan in _LEAGUE_REQUIRED_PLANS and not league_id:
         return None, "Enter your league info to continue."
     try:
         season = int((data or {}).get("season") or datetime.now().year)
@@ -122,6 +122,13 @@ def _normalize_pending_checkout(data: dict) -> tuple[dict | None, str | None]:
         "team_id": team_id,
         "name": name,
     }, None
+
+
+def _require_google_to_subscribe():
+    """New subscriptions require a Google account. Sleeper-only identity is not enough."""
+    if session.get("account_id"):
+        return None
+    return jsonify({"error": "Sign in with Google to subscribe."}), 401
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -432,7 +439,8 @@ def _pricing_body() -> str:
       <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;text-align:center;">
         <h2 style="margin:0 0 6px;font-size:22px;">Premium</h2>
         <div style="font-size:14px;color:var(--text-muted);">
-          Unlock the shipped PRO tools. Calculator, Advanced Metrics, and Auction Values stay free.
+          Unlock the shipped PRO tools. A Google account is required to subscribe.
+          Calculator, Advanced Metrics, and Auction Values stay free.
         </div>
       </div>
       <div class="card-body" style="padding-top:28px;">
@@ -681,6 +689,8 @@ def resume_pro_checkout():
     if not isinstance(pending, dict) or not pending.get("plan"):
         return redirect("/pricing")
 
+    if not session.get("account_id"):
+        return redirect("/auth/google?intent=onboarding&next=/pro/resume-checkout")
     user_id = _checkout_user_id()
     if not user_id:
         return redirect("/auth/google?intent=onboarding&next=/pro/resume-checkout")
@@ -783,9 +793,12 @@ def _stripe_checkout_url(user_id: str, payload: dict) -> tuple[str | None, str |
 
 @billing_bp.route("/api/create-checkout-session", methods=["POST"])
 def create_checkout_session():
-    # New subscriptions use the immutable provider account id. Existing rows
-    # keyed by a username remain readable through the entitlement resolver.
-    # Google-only managers have account_id without a Sleeper viewer id.
+    # New subscriptions require a Google account. Existing rows keyed by a
+    # username remain readable through the entitlement resolver. Google-only
+    # managers have account_id without a Sleeper viewer id.
+    blocked = _require_google_to_subscribe()
+    if blocked:
+        return blocked
     user_id = (
         session.get("viewer_user_id")
         or session.get("viewer_username")
@@ -793,7 +806,7 @@ def create_checkout_session():
     )
     logger.info("[checkout] Request from user: %s", user_id)
     if not user_id:
-        return jsonify({"error": "Must be logged in to subscribe"}), 401
+        return jsonify({"error": "Sign in with Google to subscribe."}), 401
 
     payload    = request.get_json(force=True)
     plan       = str(payload.get("plan") or "").strip()
