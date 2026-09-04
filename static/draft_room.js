@@ -1335,20 +1335,11 @@
   }
   function redraftVal(p){
     if (!p) return 0;
-    var teams = (state && state.teams) ? Number(state.teams) : 10;
+    // Size-invariant: same 10-team columns the player modal / rankings use.
     if (state.sf) {
-      if (teams === 10) {
-        return finiteVal(p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb);
-      }
-      var sfKey = 'redraft_sf_value_' + teams;
-      return finiteVal(
-        p[sfKey] != null ? p[sfKey]
-          : (p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb)
-      );
+      return finiteVal(p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb);
     }
-    if (teams === 10) return finiteVal(p.redraft_value_1qb);
-    var key = 'redraft_value_' + teams;
-    return finiteVal(p[key] != null ? p[key] : p.redraft_value_1qb);
+    return finiteVal(p.redraft_value_1qb);
   }
   function valOf(p){
     if (!p) return 0;

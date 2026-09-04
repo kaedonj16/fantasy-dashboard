@@ -62,22 +62,11 @@
 
     function redraftVal(p, sf, teams) {
         if (!p) return null;
-        var size = Number(teams) || 10;
-        var raw;
-        if (sf) {
-            if (size === 10) {
-                raw = p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb;
-            } else {
-                var sfKey = 'redraft_sf_value_' + size;
-                raw = p[sfKey] != null ? p[sfKey]
-                    : (p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb);
-            }
-        } else if (size === 10) {
-            raw = p.redraft_value_1qb;
-        } else {
-            var key = 'redraft_value_' + size;
-            raw = p[key] != null ? p[key] : p.redraft_value_1qb;
-        }
+        // Size-invariant: same 10-team columns the player modal / rankings use.
+        // `teams` is kept in the signature so callers stay unchanged.
+        var raw = sf
+            ? (p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb)
+            : p.redraft_value_1qb;
 
         if (raw == null || !isFinite(Number(raw))) return null;
 

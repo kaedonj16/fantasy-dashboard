@@ -47,24 +47,15 @@ def player_trade_value(
             return 0.0
 
     if st == "redraft":
-        # Prefer size-bucketed redraft columns when present; fall back to the
-        # 10-team base columns (redraft_value_1qb / redraft_value_sf).
+        # Redraft is size-invariant. The 10-team base columns are the
+        # FantasyCalc-ratio board the player modal shows. Size-bucketed
+        # redraft_*_{8,12,14} columns are a WLS overlay and can invert
+        # Superflex (elite QBs priced like 1QB). League-size controls are
+        # disabled in redraft for the same reason.
         if lt == "sf":
-            if size == 10:
-                val = _n(player.get("redraft_value_sf") or player.get("redraft_value_1qb"))
-            else:
-                size_key = f"redraft_sf_value_{size}"
-                val = _n(
-                    player.get(size_key)
-                    or player.get("redraft_value_sf")
-                    or player.get("redraft_value_1qb")
-                )
+            val = _n(player.get("redraft_value_sf") or player.get("redraft_value_1qb"))
         else:
-            if size == 10:
-                val = _n(player.get("redraft_value_1qb"))
-            else:
-                size_key = f"redraft_value_{size}"
-                val = _n(player.get(size_key) or player.get("redraft_value_1qb"))
+            val = _n(player.get("redraft_value_1qb"))
     elif lt == "sf":
         size_key = "sf_value" if size == 10 else f"sf_value_{size}"
         val = _n(player.get(size_key) or player.get("sf_value") or player.get("value"))

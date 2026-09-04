@@ -122,6 +122,22 @@ CASES = [
             "redraft_sf_value_14": 2700,
         },
     },
+    # Collapsed 12-team SF overlay (the rankings bug): size column is
+    # 1QB-shaped (~447) while the 10-team SF base has the real premium.
+    {
+        "league_type": "sf",
+        "league_size": 12,
+        "scoring_format": "ppr",
+        "scoring_type": "redraft",
+        "te_premium": 0.0,
+        "player": {
+            "position": "QB",
+            "value": 577,
+            "redraft_value_1qb": 587,
+            "redraft_value_sf": 1079.1,
+            "redraft_sf_value_12": 447.4,
+        },
+    },
 ]
 
 

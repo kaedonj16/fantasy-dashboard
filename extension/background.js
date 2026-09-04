@@ -496,14 +496,9 @@ function compactDraftPlayer(raw, scoringType, isSf, teams, adpSource) {
       poolNum(isSf ? cons.sf_redraft_avg_pick : cons.redraft_avg_pick) ||
       poolNum(isSf ? sleeper.sf_redraft_avg_pick : sleeper.redraft_avg_pick);
     if (isSf) {
-      val =
-        (size !== 10 ? poolNum(raw["redraft_sf_value_" + size]) : null) ||
-        poolNum(raw.redraft_value_sf) ||
-        poolNum(raw.redraft_value_1qb);
+      val = poolNum(raw.redraft_value_sf) || poolNum(raw.redraft_value_1qb);
     } else {
-      val =
-        (size !== 10 ? poolNum(raw["redraft_value_" + size]) : null) ||
-        poolNum(raw.redraft_value_1qb);
+      val = poolNum(raw.redraft_value_1qb);
     }
   } else {
     adp =
