@@ -135,14 +135,13 @@ def _subscriber_user_id(meta: dict) -> str:
 
 
 def _checkout_metadata(plan: str, user_id: str, league_id: str, platform: str, season: int) -> dict:
-    from flask import session as _session
     return {
         "plan": plan,
         "user_id": user_id,
         "league_id": league_id,
         "platform": platform,
         "season": str(season),
-        "account_id": str(_session.get("account_id") or ""),
+        "account_id": str(session.get("account_id") or ""),
     }
 
 
@@ -907,7 +906,12 @@ def stripe_webhook():
         s         = event["data"]["object"]
         meta      = _metadata_dict(s)
         plan      = (meta.get("plan") or "").strip()
-        user_id   = _subscriber_user_id(meta)
+        # Prefer checkout user_id; Google-only sessions store acct identity here.
+        user_id   = meta.get("user_id") or meta.get("account_id")
+        user_id   = _subscriber_user_id({
+            "user_id": user_id or "",
+            "account_id": meta.get("account_id") or "",
+        })
         platform  = meta.get("platform") or "sleeper"
         league_id = meta.get("league_id") or ""
         if etype == "customer.subscription.created":
