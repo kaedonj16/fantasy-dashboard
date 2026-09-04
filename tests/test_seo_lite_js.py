@@ -18,6 +18,8 @@ _SEO_LITE_PATHS = [
     "/breakouts",
     "/prospects",
     "/dynasty-trade-value-chart",
+    "/guides",
+    "/glossary",
 ]
 
 

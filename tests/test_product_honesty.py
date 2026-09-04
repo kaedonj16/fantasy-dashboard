@@ -205,8 +205,21 @@ def test_draft_room_loads_custom_board_overrides():
 
 def test_lineup_lock_push_has_no_em_dash():
     push = (ROOT / "utils" / "push_notifications.py").read_text(encoding="utf-8")
+    hint = (ROOT / "routes" / "league_meta_bp.py").read_text(encoding="utf-8")
     assert "kicks off soon —" not in push
+    assert "kicks off soon —" not in hint
     assert "kicks off soon." in push
+    assert "kicks off soon." in hint
+
+
+def test_teams_page_hides_cap_row_without_a_pick_feed():
+    teams = (ROOT / "dashboard_services" / "pages" / "teams_page.py").read_text(encoding="utf-8")
+    assert "if not _is_redraft and ctx.get(\"draft_capital_available\", True):" in teams
+
+
+def test_public_pages_opt_into_lite_js():
+    public = (ROOT / "routes" / "public_bp.py").read_text(encoding="utf-8")
+    assert "lite_js=True" in public
 
 
 def test_league_compare_opts_into_lite_js():
