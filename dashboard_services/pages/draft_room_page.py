@@ -138,7 +138,7 @@ _DRAFT_ROOM_HTML = r"""
       <a class="dr-hero-link" id="drToHistory" href="/draft/history">Draft History</a>
     </div>
     <div class="dr-auction-note" id="drAuctionNote" hidden style="margin-top:12px;padding:10px 12px;border-radius:10px;background:var(--accent-soft,rgba(37,99,235,.08));border:1px solid var(--border);font-size:13px;line-height:1.45;color:var(--text);">
-      <strong>Auction league detected.</strong> Recommendation Rank and Pick Score still help nominations. Suggested $ amounts are guidance from BR values — not clearing prices. Snake-round draft grades are disabled for auction.
+      <strong>Auction league detected.</strong> Recommendation Rank and Pick Score still help nominations. Suggested $ amounts are guidance from BR values, not clearing prices. Snake-round draft grades are disabled for auction.
     </div>
   </div>
 

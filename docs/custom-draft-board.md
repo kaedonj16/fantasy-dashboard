@@ -1,7 +1,7 @@
 # Custom Draft Board (personal ranking overrides)
 
 Status: cheat sheet, with server persistence and drag-reorder. Pro feature.
-Draft Room integration still pending.
+Draft Room best-available now reads the same overrides.
 
 ## Goal
 
@@ -111,9 +111,9 @@ model board is free, personalization is pro.
    cache in front of it.
 3. [done] Full drag-to-reorder (pointer-based, mouse + touch) plus one-row arrow
    nudges, on the fractional-rank model so drops stay refresh-safe.
-4. [next] Draft Room best-available reads the same overrides (the API and
-   `board_key` scheme are already in place; `DraftBoardCore` applies the same
-   bucket/sort step after it ranks the pool).
+4. [done] Draft Room best-available reads the same overrides (the API and
+   `board_key` scheme; `DraftBoardCore.applyCustomBoardOverrides` after the
+   pool loads).
 
 ## Open questions
 

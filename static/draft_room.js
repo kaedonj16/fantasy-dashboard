@@ -1511,6 +1511,7 @@
         }
         playersById = {};
         players.forEach(function(p){ playersById[String(p.id)] = p; });
+        loadCustomBoardOverrides();
         _posRankSig = '';
         // Live mode: re-apply picks now that values are available; else rebuild
         // the drafted set from saved picks.
@@ -3274,9 +3275,45 @@
   // Canonical all-position Recommendation order. Position/search filters are
   // views into this list, not new rankings; RB #7 remains REC #7 when the user
   // switches from All to RB instead of being relabeled REC #1.
+  function customBoardKey(){
+    var mode = (state && state.type === 'redraft') ? 'redraft' : 'dynasty';
+    return mode + ':' + ((state && state.sf) ? 'sf' : '1qb');
+  }
+  function hasCustomBoardOrder(){
+    return players.some(function(p){ return p.bucket === -1 || p.bucket === 1 || p.moved; });
+  }
+  var _customBoardOverrides = {};
+  function applyDraftRoomBoardOverrides(map){
+    _customBoardOverrides = map || {};
+    if (!window.DraftBoardCore || !DraftBoardCore.applyCustomBoardOverrides) return;
+    DraftBoardCore.applyCustomBoardOverrides(players, _customBoardOverrides);
+  }
+  function loadCustomBoardOverrides(){
+    if (!cfg.hasPremium || !cfg.leagueId) return;
+    var params = ['board_key=' + encodeURIComponent(customBoardKey())];
+    if (cfg.platform) params.push('platform=' + encodeURIComponent(cfg.platform));
+    params.push('league_id=' + encodeURIComponent(String(cfg.leagueId)));
+    if (cfg.season) params.push('season=' + encodeURIComponent(String(cfg.season)));
+    fetch('/api/draft-board/overrides?' + params.join('&'), {cache: 'no-store'})
+      .then(function(r){ return r.ok ? r.json() : {overrides: {}}; })
+      .then(function(data){
+        applyDraftRoomBoardOverrides((data && data.overrides) || {});
+        render();
+      })
+      .catch(function(){});
+  }
   function rankedRecommendationPool(){
-    return availablePool().filter(function(p){ return p._ds != null; })
-      .sort(function(a,b){ return b._ds - a._ds || (b._ps || 0) - (a._ps || 0); });
+    var list = availablePool().filter(function(p){ return p._ds != null; });
+    if (hasCustomBoardOrder()) {
+      return list.sort(function(a,b){
+        var ba = a.bucket != null ? a.bucket : 0;
+        var bb = b.bucket != null ? b.bucket : 0;
+        if (ba !== bb) return ba - bb;
+        if (a._eff != null && b._eff != null && a._eff !== b._eff) return a._eff - b._eff;
+        return b._ds - a._ds || (b._ps || 0) - (a._ps || 0);
+      });
+    }
+    return list.sort(function(a,b){ return b._ds - a._ds || (b._ps || 0) - (a._ps || 0); });
   }
   // Map a raw pick score onto the pool-relative display scale. Live board,
   // sidebar, compare modal, and player preview all use this so a strong pick
