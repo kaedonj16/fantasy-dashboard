@@ -1613,38 +1613,9 @@ function pmSwitchTab(tab) {
   // ── Lazy-load Team tab (10-min localStorage cache for instant re-opens) ───
   if (tab === 'team' && panel && !panel.dataset.loaded && pmTabBar && pmTabBar.dataset.pmHasTeam) {
     panel.dataset.loaded = '1';
-    const _teamUrl = `/api/player-team/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}`;
-    const _teamKey = 'pm_team_v1_' + _teamUrl;
-    const _teamTTL = 10 * 60 * 1000;
-    const _renderTeam = (data) => {
-      if (!panel.isConnected) return;
-      if (!data || data.available === false) {
-        window.brEmptyState(panel, { icon: 'search', title: 'No team data', message: 'Team context is not available for this player.', compact: true });
-        return;
-      }
-      panel.innerHTML = _pmBuildTeamHTML(data);
-      _pmWireTeamPanel(panel);
-    };
-    let _teamCached = null;
-    try {
-      const _e = JSON.parse(localStorage.getItem(_teamKey) || 'null');
-      if (_e && Date.now() - _e.ts < _teamTTL) _teamCached = _e.data;
-    } catch (_) {}
-    if (_teamCached) {
-      _renderTeam(_teamCached);
-    } else {
-      fetch(_teamUrl)
-        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-        .then(data => {
-          try { localStorage.setItem(_teamKey, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
-          _renderTeam(data);
-        })
-        .catch(() => {
-          if (panel.isConnected) {
-            window.brErrorState(panel, 'Could not load team.', () => { panel.dataset.loaded = ''; pmSwitchTab(tab); }, { compact: true });
-          }
-        });
-    }
+    const _viewSeason = panel.dataset.pmTeamSeason || season;
+    panel.dataset.pmTeamSeason = String(_viewSeason);
+    _pmLoadTeamPanel(panel, playerId, _viewSeason);
   }
 
   // ── Lazy-load Stats tab ──────────────────────────────────────────────────
@@ -1995,6 +1966,60 @@ function _pmTeamMiniItem(row, i) {
   return `<div class="${cls}"${attrs}><span class="pm-mini-ord">${i + 1}</span><span class="pm-mini-name">${row.name || '—'}</span>${inj}</div>`;
 }
 
+function _pmLoadTeamPanel(panel, playerId, viewSeason) {
+  if (!panel || !playerId) return;
+  const season = String(viewSeason || new Date().getFullYear());
+  panel.dataset.pmTeamSeason = season;
+  const _teamUrl = `/api/player-team/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}`;
+  const _teamKey = 'pm_team_v2_' + _teamUrl;
+  const _teamTTL = 10 * 60 * 1000;
+  const _renderTeam = (data) => {
+    if (!panel.isConnected) return;
+    if (!data || data.available === false) {
+      window.brEmptyState(panel, { icon: 'search', title: 'No team data', message: 'Team context is not available for this player.', compact: true });
+      return;
+    }
+    panel.innerHTML = _pmBuildTeamHTML(data);
+    _pmWireTeamPanel(panel, playerId);
+  };
+  let _teamCached = null;
+  try {
+    const _e = JSON.parse(localStorage.getItem(_teamKey) || 'null');
+    if (_e && Date.now() - _e.ts < _teamTTL) _teamCached = _e.data;
+  } catch (_) {}
+  if (_teamCached) {
+    _renderTeam(_teamCached);
+    return;
+  }
+  panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div class="loading-spinner"></div><div>Loading team...</div></div>';
+  fetch(_teamUrl)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(data => {
+      try { localStorage.setItem(_teamKey, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
+      _renderTeam(data);
+    })
+    .catch(() => {
+      if (panel.isConnected) {
+        window.brErrorState(panel, 'Could not load team.', () => {
+          panel.dataset.loaded = '';
+          pmSwitchTab('team');
+        }, { compact: true });
+      }
+    });
+}
+
+window.pmPickTeamSeason = function (playerId, yr) {
+  const panel = document.getElementById('pm-panel-team');
+  if (!panel || !playerId) return;
+  const season = String(yr);
+  if (String(panel.dataset.pmTeamSeason || '') === season && panel.querySelector('.pm-team-wrap')) {
+    return;
+  }
+  panel.dataset.pmTeamSeason = season;
+  panel.dataset.loaded = '1';
+  _pmLoadTeamPanel(panel, playerId, season);
+};
+
 function _pmBuildTeamHTML(data) {
   const team = data.team || '';
   const pos = String(data.position || '').toUpperCase();
@@ -2038,6 +2063,24 @@ function _pmBuildTeamHTML(data) {
   const advChev = advOpen ? '&#9662;' : '&#9656;';
   const advHint = advOpen ? 'click to collapse' : 'click to expand';
 
+  const viewSeason = Number(data.stats_season || data.season) || '';
+  const dataMode = data.data_mode === 'projection' ? 'projection' : 'actual';
+  const modeLabel = dataMode === 'projection' ? 'projections' : 'stats';
+  const seasonNote = viewSeason ? `${viewSeason} · ${modeLabel}` : modeLabel;
+  const availableSeasons = (data.available_seasons || []).map(Number).filter(Boolean);
+  const pid = String(data.player_id || '').replace(/'/g, '');
+  let seasonPills = '';
+  if (availableSeasons.length > 1 && pid) {
+    seasonPills = '<div class="pm-team-season-pills" role="tablist" aria-label="Team season">'
+      + availableSeasons.map(function (yr) {
+        const active = Number(yr) === Number(viewSeason) ? ' active' : '';
+        return `<button type="button" class="pm-team-season-pill${active}" data-year="${yr}" onclick="pmPickTeamSeason('${pid}', ${yr})">${yr}</button>`;
+      }).join('')
+      + '</div>';
+  } else if (viewSeason) {
+    seasonPills = `<span class="pm-team-season">${viewSeason} ${modeLabel}</span>`;
+  }
+
   return `<div class="pm-team-wrap">
     <div class="pm-team-header">
       ${wm}
@@ -2047,14 +2090,14 @@ function _pmBuildTeamHTML(data) {
           <div class="pm-team-name">${data.team_name || team}</div>
           <div class="pm-team-meta">${posLine}</div>
         </div>
-        <span class="pm-team-season">${data.stats_season} stats</span>
+        ${seasonPills}
       </div>
       ${heroStats ? '<div class="pm-team-herostats">' + heroStats + '</div>' : ''}
     </div>
     <div class="pm-team-sec">
-      <div class="pm-section-header"><span class="pm-section-label">Offense Profile</span><span class="pm-team-secnote">${data.stats_season} · rank of 32</span></div>
+      <div class="pm-section-header"><span class="pm-section-label">Offense Profile</span><span class="pm-team-secnote">${seasonNote} · rank of 32</span></div>
       ${_pmTeamProfileAxis()}${profile}
-      <div class="pm-team-note">Dot = team rank (right = 1st). Color = rank tier: <b style="color:var(--win)">green good</b>, <b style="color:var(--warning)">yellow mid</b>, <b style="color:var(--loss)">red bad</b>.</div>
+      <div class="pm-team-note">Dot = team rank (right = 1st). Color = rank tier: <b style="color:var(--win)">green good</b>, <b style="color:var(--warning)">yellow mid</b>, <b style="color:var(--loss)">red bad</b>.${dataMode === 'projection' ? ' Values are Sleeper season projections aggregated by team.' : ''}</div>
       <div class="pm-section-header pm-section-collapsible pm-team-adv-toggle" role="button" tabindex="0" aria-expanded="${advOpen ? 'true' : 'false'}" aria-controls="pmTeamAdvBody">
         <span class="pm-collapse-chevron" aria-hidden="true">${advChev}</span>
         <span class="pm-section-label">More team ranks</span>
@@ -2081,7 +2124,7 @@ function _pmBuildTeamHTML(data) {
 }
 
 
-function _pmWireTeamPanel(panel) {
+function _pmWireTeamPanel(panel, playerId) {
   if (!panel) return;
   // Any clickable teammate (depth chart or usage table) carries data-pid.
   const _pmOpenTeammate = (row) => {
@@ -2123,6 +2166,8 @@ function _pmWireTeamPanel(panel) {
       }
     });
   }
+  // Season pills also use onclick; keep dataset in sync for re-entry.
+  if (playerId) panel.dataset.pmPlayerId = String(playerId);
 }
 
 function pmPrefetchTabs() {
