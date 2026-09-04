@@ -2,7 +2,7 @@
 Billing / subscription routes.
 
 Routes: /pricing, /api/create-checkout-session, /api/stripe-webhook,
-        /api/subscription-status
+        /api/subscription-status, /api/pro-signup/pending, /pro/resume-checkout
 Also handles: /<platform>/<season>/<league_id>/pricing
 """
 from __future__ import annotations
@@ -45,6 +45,177 @@ def _stripe():
     return _s
 
 
+def _stripe_field(obj, key, default=None):
+    """Read a field from a Stripe object or a plain dict."""
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    if hasattr(obj, "get"):
+        try:
+            return obj.get(key, default)
+        except Exception:
+            pass
+    return getattr(obj, key, default)
+
+
+def _stripe_id(value) -> str:
+    """Coerce a Stripe id that may arrive as a string or expanded object."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    return str(_stripe_field(value, "id", "") or "")
+
+
+def _metadata_dict(obj) -> dict:
+    """Normalize Stripe metadata to a plain str→str dict.
+
+    ``dict(stripe_object.metadata)`` is unreliable across stripe-python
+    versions; Checkout success already uses ``to_dict()``. The webhook must
+    do the same or ``plan`` / ``league_id`` come through empty and One League
+    never writes ``user_league_subscriptions``.
+    """
+    raw = _stripe_field(obj, "metadata", None)
+    if not raw:
+        return {}
+    if hasattr(raw, "to_dict"):
+        try:
+            raw = raw.to_dict()
+        except Exception:
+            pass
+    if not isinstance(raw, dict):
+        try:
+            raw = dict(raw)
+        except Exception:
+            return {}
+    out = {}
+    for key, value in raw.items():
+        if key is None:
+            continue
+        out[str(key)] = "" if value is None else str(value)
+    return out
+
+
+def _product_plan_map() -> dict:
+    return {
+        _STRIPE_LEAGUE_PRODUCT: "league",
+        _STRIPE_USER_PRODUCT: "user",
+        _STRIPE_COMBO_PRODUCT: "combo",
+        _STRIPE_SINGLE_LEAGUE_PRODUCT: "single_league",
+    }
+
+
+def _plan_from_subscription(sub) -> str:
+    """Infer plan from the Stripe product on a subscription's items."""
+    if not sub:
+        return ""
+    items = _stripe_field(sub, "items")
+    data = _stripe_field(items, "data") or []
+    product_map = _product_plan_map()
+    for item in data:
+        price = _stripe_field(item, "price") or {}
+        product = _stripe_field(price, "product")
+        product_id = _stripe_id(product)
+        plan = product_map.get(product_id)
+        if plan:
+            return plan
+    return ""
+
+
+def _subscriber_user_id(meta: dict) -> str:
+    """Prefer checkout ``user_id``; fall back to ``acct:<account_id>``."""
+    user_id = str(meta.get("user_id") or "").strip()
+    if user_id:
+        return user_id
+    account_id = str(meta.get("account_id") or "").strip()
+    if not account_id:
+        return ""
+    return account_id if account_id.startswith("acct:") else f"acct:{account_id}"
+
+
+def _checkout_metadata(plan: str, user_id: str, league_id: str, platform: str, season: int) -> dict:
+    return {
+        "plan": plan,
+        "user_id": user_id,
+        "league_id": league_id,
+        "platform": platform,
+        "season": str(season),
+        "account_id": str(session.get("account_id") or ""),
+    }
+
+
+def _apply_plan_grant(
+    plan: str,
+    user_id: str,
+    league_id: str,
+    platform: str,
+    expires_at,
+    sub_id: str,
+    cust_id: str,
+    *,
+    source: str,
+) -> None:
+    """Write the entitlement row(s) for a paid plan. Idempotent upserts."""
+    plan = (plan or "").strip()
+    user_id = (user_id or "").strip()
+    league_id = (league_id or "").strip()
+    platform = (platform or "sleeper").strip() or "sleeper"
+    sub_id = _stripe_id(sub_id) or None
+    cust_id = _stripe_id(cust_id) or None
+    if not plan:
+        logger.info(
+            "[stripe] %s missing plan metadata user=%s league=%s",
+            source, user_id, league_id,
+        )
+        return
+
+    if plan in ("league", "combo") and league_id:
+        ok = create_league_subscription(
+            league_id, user_id or "", expires_at,
+            stripe_subscription_id=sub_id,
+            stripe_customer_id=cust_id,
+            platform=platform,
+        )
+        logger.info(
+            "[stripe] %s league subscription %s for league=%s user=%s expires=%s",
+            source, "created" if ok else "FAILED", league_id, user_id, expires_at,
+        )
+    if plan in ("user", "combo") and user_id:
+        ok = create_user_subscription(
+            user_id, expires_at,
+            stripe_subscription_id=sub_id,
+            stripe_customer_id=cust_id,
+            platform=platform,
+        )
+        logger.info(
+            "[stripe] %s user subscription %s for user=%s expires=%s",
+            source, "created" if ok else "FAILED", user_id, expires_at,
+        )
+    if plan == "single_league":
+        if user_id and league_id:
+            ok = create_user_league_subscription(
+                user_id, league_id, expires_at,
+                stripe_subscription_id=sub_id,
+                stripe_customer_id=cust_id,
+                platform=platform,
+            )
+            logger.info(
+                "[stripe] %s single-league subscription %s for user=%s league=%s expires=%s",
+                source, "created" if ok else "FAILED", user_id, league_id, expires_at,
+            )
+        else:
+            logger.warning(
+                "[stripe] %s single_league grant skipped: user_id=%r league_id=%r",
+                source, user_id, league_id,
+            )
+    elif plan not in ("league", "user", "combo"):
+        logger.warning(
+            "[stripe] %s unhandled plan=%s league=%s user=%s",
+            source, plan, league_id, user_id,
+        )
+
+
 _STRIPE_PRICES = {
     "league": {"unit_amount": 1500, "product": _STRIPE_LEAGUE_PRODUCT},
     "user":   {"unit_amount": 1000, "product": _STRIPE_USER_PRODUCT},
@@ -76,6 +247,52 @@ def _safe_local_url(value: str, fallback: str) -> str:
     """Allow same-site absolute/local redirects, rejecting protocol-relative URLs."""
     from utils.safe_url import safe_local_url
     return safe_local_url(value, fallback, host_url=request.host_url)
+
+
+def _checkout_user_id() -> str | None:
+    """Stable checkout identity: provider viewer, else Google account."""
+    return (
+        session.get("viewer_user_id")
+        or session.get("viewer_username")
+        or (("acct:" + str(session.get("account_id")).strip()) if session.get("account_id") else None)
+    )
+
+
+def pending_checkout_resume_path() -> str | None:
+    """Return the resume URL when a home-page PRO signup is staged."""
+    pending = session.get("pending_checkout")
+    if isinstance(pending, dict) and pending.get("plan"):
+        return "/pro/resume-checkout"
+    return None
+
+
+def _normalize_pending_checkout(data: dict) -> tuple[dict | None, str | None]:
+    """Validate a home PRO signup payload. Returns (pending, error)."""
+    plan = str((data or {}).get("plan") or "").strip()
+    if plan not in _STRIPE_PRICES:
+        return None, "Pick a plan to continue."
+    platform = _request_platform(data)
+    if platform not in _SUPPORTED_PLATFORMS:
+        return None, "Choose a supported platform."
+    league_id = str((data or {}).get("league_id") or "").strip()
+    if not league_id:
+        return None, "Enter your league info to continue."
+    try:
+        season = int((data or {}).get("season") or datetime.now().year)
+    except (TypeError, ValueError):
+        return None, "Invalid season."
+    username = str((data or {}).get("username") or "").strip() or None
+    team_id = str((data or {}).get("team_id") or "").strip() or None
+    name = str((data or {}).get("name") or "").strip() or None
+    return {
+        "plan": plan,
+        "platform": platform,
+        "league_id": league_id,
+        "season": season,
+        "username": username,
+        "team_id": team_id,
+        "name": name,
+    }, None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -116,13 +333,25 @@ def _try_grant_from_stripe_success() -> None:
         if cs.status != "complete":
             return
 
-        meta      = cs.metadata.to_dict() if cs.metadata else {}
-        plan      = meta.get("plan")
-        user_id   = meta.get("user_id")
+        meta      = _metadata_dict(cs)
+        plan      = (meta.get("plan") or "").strip()
+        user_id   = _subscriber_user_id(meta)
         platform  = meta.get("platform") or "sleeper"
         league_id = meta.get("league_id") or ""
-        sub_id    = cs.subscription
-        cust_id   = cs.customer
+        sub_id    = _stripe_id(_stripe_field(cs, "subscription"))
+        cust_id   = _stripe_id(_stripe_field(cs, "customer"))
+
+        try:
+            sub        = _stripe().Subscription.retrieve(sub_id) if sub_id else None
+            expires_at = (
+                _subscription_period_end(sub)
+                if sub else datetime.now(timezone.utc) + timedelta(days=366)
+            )
+            if plan not in ("league", "user", "combo", "single_league"):
+                plan = _plan_from_subscription(sub)
+        except Exception:
+            expires_at = datetime.now(timezone.utc) + timedelta(days=366)
+            sub = None
 
         if plan not in ("league", "user", "combo", "single_league"):
             return
@@ -133,39 +362,10 @@ def _try_grant_from_stripe_success() -> None:
         if plan == "combo" and not league_id and not user_id:
             return
 
-        try:
-            sub        = _stripe().Subscription.retrieve(sub_id) if sub_id else None
-            expires_at = (
-                _subscription_period_end(sub)
-                if sub else datetime.now(timezone.utc) + timedelta(days=366)
-            )
-        except Exception:
-            expires_at = datetime.now(timezone.utc) + timedelta(days=366)
-
-        if (plan in ("league", "combo") and league_id
-                and not has_premium_access(None, league_id, platform)):
-            create_league_subscription(
-                league_id, user_id or "", expires_at,
-                stripe_subscription_id=sub_id,
-                stripe_customer_id=cust_id,
-                platform=platform,
-            )
-        if (plan in ("user", "combo") and user_id
-                and not has_premium_access(user_id, None, platform)):
-            create_user_subscription(
-                user_id, expires_at,
-                stripe_subscription_id=sub_id,
-                stripe_customer_id=cust_id,
-                platform=platform,
-            )
-        if (plan == "single_league" and user_id and league_id
-                and not has_user_league_subscription(user_id, league_id, platform)):
-            create_user_league_subscription(
-                user_id, league_id, expires_at,
-                stripe_subscription_id=sub_id,
-                stripe_customer_id=cust_id,
-                platform=platform,
-            )
+        _apply_plan_grant(
+            plan, user_id, league_id, platform, expires_at, sub_id, cust_id,
+            source="success-page",
+        )
     except Exception:
         logger.exception("[stripe] success-page session verification failed")
 
@@ -599,6 +799,140 @@ def page_pricing_guest():
     )
 
 
+@billing_bp.route("/api/pro-signup/pending", methods=["POST"])
+def pro_signup_pending():
+    """Stage plan + league from the home-page PRO wizard, then send guests to Google."""
+    data = request.get_json(force=True) or {}
+    pending, error = _normalize_pending_checkout(data)
+    if error or not pending:
+        return jsonify({"ok": False, "error": error or "Could not save this signup."}), 400
+    session["pending_checkout"] = {
+        "plan": pending["plan"],
+        "platform": pending["platform"],
+        "league_id": pending["league_id"],
+        "season": pending["season"],
+    }
+    session["pending_link"] = {
+        "platform": pending["platform"],
+        "league_id": pending["league_id"],
+        "season": pending["season"],
+        "team_id": pending.get("team_id"),
+        "name": pending.get("name"),
+        "username": pending.get("username"),
+    }
+    return jsonify({
+        "ok": True,
+        "auth_url": "/auth/google?intent=onboarding&next=/pro/resume-checkout",
+    })
+
+
+@billing_bp.route("/pro/resume-checkout")
+def resume_pro_checkout():
+    """After Google (or Yahoo) returns, open Stripe for the staged home PRO signup."""
+    from flask import redirect
+
+    pending = session.get("pending_checkout")
+    if not isinstance(pending, dict) or not pending.get("plan"):
+        return redirect("/pricing")
+
+    user_id = _checkout_user_id()
+    if not user_id:
+        return redirect("/auth/google?intent=onboarding&next=/pro/resume-checkout")
+
+    plan = str(pending.get("plan") or "").strip()
+    league_id = str(pending.get("league_id") or "").strip()
+    platform = str(pending.get("platform") or "sleeper").strip().lower()
+    try:
+        season = int(pending.get("season") or datetime.now().year)
+    except (TypeError, ValueError):
+        season = datetime.now().year
+    if plan not in _STRIPE_PRICES or platform not in _SUPPORTED_PLATFORMS:
+        session.pop("pending_checkout", None)
+        return redirect("/pricing")
+    if plan in _LEAGUE_REQUIRED_PLANS and not league_id:
+        return redirect("/pricing")
+
+    if plan in _MEMBERSHIP_REQUIRED_PLANS and league_id:
+        from dashboard_services.subscriptions import viewer_is_league_member
+        member_id = session.get("viewer_user_id") or session.get("viewer_username")
+        if not viewer_is_league_member(member_id, league_id, platform, season):
+            return redirect("/pricing?canceled=1")
+
+    return_url = (
+        f"/{platform}/{season}/{urllib.parse.quote(league_id, safe='')}/dashboard?new_subscriber=1"
+        if league_id else "/pricing?success=1"
+    )
+    payload = {
+        "plan": plan,
+        "league_id": league_id,
+        "platform": platform,
+        "season": season,
+        "return_url": return_url,
+    }
+    url, error = _stripe_checkout_url(user_id, payload)
+    if url:
+        session.pop("pending_checkout", None)
+        return redirect(url)
+    logger.warning("[checkout] resume failed: %s", error)
+    return redirect("/pricing?canceled=1")
+
+
+def _stripe_checkout_url(user_id: str, payload: dict) -> tuple[str | None, str | None]:
+    """Create a Stripe Checkout session. Returns (url, error)."""
+    plan = str(payload.get("plan") or "").strip()
+    league_id = str(payload.get("league_id") or "").strip()
+    platform = _request_platform(payload)
+    try:
+        season = int(payload.get("season") or datetime.now().year)
+    except (TypeError, ValueError):
+        return None, "Invalid season"
+    return_url = str(payload.get("return_url") or "").strip()
+    if plan not in _STRIPE_PRICES:
+        return None, "Invalid plan"
+    if platform not in _SUPPORTED_PLATFORMS:
+        return None, "Invalid platform"
+
+    price_spec = _STRIPE_PRICES[plan]
+    base_url = request.host_url.rstrip("/")
+    return_url = _safe_local_url(return_url, "")
+    success_url = base_url + "/pricing?success=1&session_id={CHECKOUT_SESSION_ID}"
+    if return_url:
+        success_url += "&return_to=" + urllib.parse.quote(return_url, safe="")
+    success_url += "&platform=" + urllib.parse.quote(platform, safe="")
+    if league_id:
+        cancel_url = f"{base_url}/{platform}/{season}/{urllib.parse.quote(league_id, safe='')}/pricing?canceled=1"
+    else:
+        cancel_url = base_url + "/pricing?canceled=1&platform=" + urllib.parse.quote(platform, safe="")
+    price_data = {
+        "currency": "usd",
+        "unit_amount": price_spec["unit_amount"],
+        "recurring": {"interval": "year"},
+    }
+    if price_spec.get("product"):
+        price_data["product"] = price_spec["product"]
+    else:
+        price_data["product_data"] = {
+            "name": price_spec.get("product_name") or "BR Fantasy PRO",
+        }
+    try:
+        checkout = _stripe().checkout.Session.create(
+            mode="subscription",
+            line_items=[{
+                "price_data": price_data,
+                "quantity": 1,
+            }],
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={"plan": plan, "user_id": user_id, "league_id": league_id,
+                      "platform": platform, "season": str(season),
+                      "account_id": str(session.get("account_id") or "")},
+        )
+        return checkout.url, None
+    except Exception:
+        logger.exception("[stripe] checkout session error")
+        return None, "Internal error"
+
+
 # ── Stripe API endpoints ──────────────────────────────────────────────────────
 
 @billing_bp.route("/api/create-checkout-session", methods=["POST"])
@@ -714,9 +1048,12 @@ def create_checkout_session():
             }],
             success_url=success_url,
             cancel_url=cancel_url,
-            metadata={"plan": plan, "user_id": user_id, "league_id": league_id,
-                      "platform": platform, "season": str(season),
-                      "account_id": str(session.get("account_id") or "")},
+            metadata=_checkout_metadata(plan, user_id, league_id, platform, season),
+            # Copy onto the Subscription so invoice / subscription.created
+            # events can grant One League even if session metadata is dropped.
+            subscription_data={
+                "metadata": _checkout_metadata(plan, user_id, league_id, platform, season),
+            },
         )
         return jsonify({"url": checkout.url})
     except Exception:
@@ -745,52 +1082,45 @@ def stripe_webhook():
 
     etype = event["type"]
 
-    if etype == "checkout.session.completed":
+    if etype in ("checkout.session.completed", "customer.subscription.created"):
         s         = event["data"]["object"]
-        meta      = dict(s.metadata) if s.metadata else {}
-        plan      = meta.get("plan")
+        meta      = _metadata_dict(s)
+        plan      = (meta.get("plan") or "").strip()
+        # Prefer checkout user_id; Google-only sessions store acct identity here.
         user_id   = meta.get("user_id") or meta.get("account_id")
+        user_id   = _subscriber_user_id({
+            "user_id": user_id or "",
+            "account_id": meta.get("account_id") or "",
+        })
         platform  = meta.get("platform") or "sleeper"
         league_id = meta.get("league_id") or ""
-        sub_id    = s.subscription
-        cust_id   = s.customer
+        if etype == "customer.subscription.created":
+            sub_id = _stripe_id(_stripe_field(s, "id"))
+            cust_id = _stripe_id(_stripe_field(s, "customer"))
+            sub = s
+            try:
+                expires_at = _subscription_period_end(sub)
+            except Exception:
+                expires_at = datetime.now(timezone.utc) + timedelta(days=32)
+            if plan not in ("league", "user", "combo", "single_league"):
+                plan = _plan_from_subscription(sub)
+        else:
+            sub_id    = _stripe_id(_stripe_field(s, "subscription"))
+            cust_id   = _stripe_id(_stripe_field(s, "customer"))
+            try:
+                sub = _stripe().Subscription.retrieve(sub_id) if sub_id else None
+                expires_at = _subscription_period_end(sub) if sub else (
+                    datetime.now(timezone.utc) + timedelta(days=32)
+                )
+                if plan not in ("league", "user", "combo", "single_league"):
+                    plan = _plan_from_subscription(sub)
+            except Exception:
+                expires_at = datetime.now(timezone.utc) + timedelta(days=32)
 
-        try:
-            sub = _stripe().Subscription.retrieve(sub_id)
-            expires_at = _subscription_period_end(sub)
-        except Exception:
-            expires_at = datetime.now(timezone.utc) + timedelta(days=32)
-
-        if plan in ("league", "combo") and league_id:
-            ok = create_league_subscription(
-                league_id, user_id or "", expires_at,
-                stripe_subscription_id=sub_id,
-                stripe_customer_id=cust_id,
-                platform=platform,
-            )
-            logger.info("[stripe] webhook league subscription %s for league=%s user=%s expires=%s",
-                        "created" if ok else "FAILED", league_id, user_id, expires_at)
-        if plan in ("user", "combo") and user_id:
-            ok = create_user_subscription(
-                user_id, expires_at,
-                stripe_subscription_id=sub_id,
-                stripe_customer_id=cust_id,
-                platform=platform,
-            )
-            logger.info("[stripe] webhook user subscription %s for user=%s expires=%s",
-                        "created" if ok else "FAILED", user_id, expires_at)
-        if plan == "single_league" and user_id and league_id:
-            ok = create_user_league_subscription(
-                user_id, league_id, expires_at,
-                stripe_subscription_id=sub_id,
-                stripe_customer_id=cust_id,
-                platform=platform,
-            )
-            logger.info("[stripe] webhook single-league subscription %s for user=%s league=%s expires=%s",
-                        "created" if ok else "FAILED", user_id, league_id, expires_at)
-        if plan not in ("league", "user", "combo", "single_league"):
-            logger.warning("[stripe] webhook checkout.session.completed unhandled: plan=%s league=%s user=%s",
-                           plan, league_id, user_id)
+        _apply_plan_grant(
+            plan, user_id, league_id, platform, expires_at, sub_id, cust_id,
+            source=f"webhook:{etype}",
+        )
 
     elif etype == "invoice.paid":
         s      = event["data"]["object"]

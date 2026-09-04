@@ -27,6 +27,33 @@ def test_sleeper_identify_sets_provider_session_but_never_google_account(monkeyp
     assert response.status_code == 200
 
 
+def test_sleeper_identify_conflict_does_not_keep_foreign_viewer(monkeypatch):
+    monkeypatch.setattr(
+        "dashboard_services.api.get_sleeper_user_by_username",
+        lambda username: {"user_id": "other-sleeper", "username": username},
+    )
+    monkeypatch.setattr("dashboard_services.api.get_sleeper_user_leagues", lambda *args: [])
+    monkeypatch.setattr(
+        "dashboard_services.accounts.link_platform_identity",
+        lambda *args, **kwargs: "conflict",
+    )
+    app = flask.Flask(__name__)
+    app.secret_key = "test"
+    app.register_blueprint(auth_bp)
+
+    with app.test_client() as client:
+        with client.session_transaction() as session:
+            session["account_id"] = 42
+        response = client.post("/api/identify", json={"username": "someone-else"})
+        with client.session_transaction() as session:
+            assert session.get("account_id") == 42
+            assert "viewer_user_id" not in session
+            assert "viewer_username" not in session
+
+    assert response.status_code == 409
+    assert b"already linked" in response.data
+
+
 def _mock_yahoo(monkeypatch, attached):
     monkeypatch.setattr(
         "dashboard_services.providers.yahoo_api.exchange_code_for_tokens",

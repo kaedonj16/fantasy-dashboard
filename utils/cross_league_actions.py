@@ -116,9 +116,14 @@ def injury_stash_action(
     player_name: str,
     verdict: str,
     weeks_label: str = "",
+    already_on_ir: bool = False,
 ) -> Optional[dict]:
     v = str(verdict or "").strip()
     if v not in ("IR", "Drop candidate", "Stash"):
+        return None
+    # Already occupying an IR slot — stash/move-to-IR tips are not actionable.
+    # Drop candidate can still matter (free the IR slot).
+    if already_on_ir and v in ("IR", "Stash"):
         return None
     return make_action(
         kind="injury",

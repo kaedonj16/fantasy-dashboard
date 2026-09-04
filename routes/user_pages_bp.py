@@ -26,6 +26,41 @@ logger = logging.getLogger(__name__)
 user_pages_bp = Blueprint("user_pages", __name__)
 
 
+def portfolio_signed_in_label(sess=None) -> str:
+    """Who My Leagues should say you're signed in as.
+
+    ``viewer_username`` is league-scoped: opening an ESPN / Fleaflicker / Yahoo
+    league overwrites it with that team's owner or team name. Prefer the Google
+    account label (same as the home-page greeting) so the hub doesn't claim
+    you're a different manager.
+    """
+    data = sess if sess is not None else session
+    for key in ("account_first_name", "account_email", "viewer_username"):
+        value = str(data.get(key) or "").strip()
+        if value:
+            return value
+    return "your account"
+
+
+def sleeper_owner_id_for_account(account_id, viewer_user_id, platform="sleeper"):
+    """Session viewer_user_id is only a Sleeper owner when linked to this account.
+
+    Visiting another platform overwrites session ``viewer_user_id`` with that
+    league's owner id. Using it as a Sleeper user id would attach the wrong
+    roster (and the wrong Rank / Rec on the card).
+    """
+    if str(platform or "sleeper").lower() != "sleeper":
+        return None
+    uid = str(viewer_user_id or "").strip()
+    if not uid:
+        return None
+    if not account_id:
+        return uid
+    from dashboard_services.accounts import list_account_platform_ids
+    linked = {str(x) for x in list_account_platform_ids(account_id, "sleeper")}
+    return uid if uid in linked else None
+
+
 # ── Lazy shims to app.py internals (resolved at request time) ─────────────────
 
 def render_page(*args, **kwargs):
@@ -142,10 +177,13 @@ def page_portfolio():
                 logger.debug("portfolio account viewer resolve failed", exc_info=True)
         if viewer_roster is None:
             from utils.redzone_user import match_viewer_roster
+            sleeper_owner = sleeper_owner_id_for_account(
+                _account_id, viewer_user_id, lg_platform,
+            )
             viewer_roster = match_viewer_roster(
                 rosters,
                 team_id=lg.get("team_id"),
-                owner_id=viewer_user_id if lg_platform == "sleeper" else None,
+                owner_id=sleeper_owner,
             )
         if not viewer_roster:
             # Startup/redraft-not-started already returned above. A full roster
@@ -161,7 +199,15 @@ def page_portfolio():
             }
         rid = str(viewer_roster.get("roster_id"))
         from dashboard_services.ai.context_builders import portfolio_record_and_rank
+        from dashboard_services.display_names import team_label_from_user
         wins, losses, ties, pf, rank = portfolio_record_and_rank(lctx, rid, viewer_roster)
+        owner_id = str(viewer_roster.get("owner_id") or "")
+        owner_user = next(
+            (u for u in (lctx.get("users") or [])
+             if str(u.get("user_id") or "") == owner_id),
+            None,
+        )
+        team_name = team_label_from_user(owner_user, viewer_roster, fallback="")
         total_teams = int(lctx.get("total_rosters") or len(rosters) or 12)
         player_ids = [str(p) for p in (viewer_roster.get("players") or [])]
         all_players = {}
@@ -274,6 +320,7 @@ def page_portfolio():
             "pos_user_pctile": pos_user_pctile,
             "pos_user_rank": pos_user_rank,
             "offseason": lctx.get("offseason_mode", False),
+            "team_name": team_name,
         }
 
     leagues_data = []
@@ -375,10 +422,7 @@ def page_portfolio():
         logger.debug("suppressed exception", exc_info=True)
 
     body = build_portfolio_body(
-        viewer_username
-        or session.get("account_email")
-        or session.get("account_first_name")
-        or "your account",
+        portfolio_signed_in_label(),
         valid_leagues, leagues_data, season,
         holdings, num_leagues, nfl_exposure, cross_pos,
         total_wins, total_losses, total_ties,
@@ -539,7 +583,9 @@ def api_portfolio_actions():
             viewer_roster = match_viewer_roster(
                 rosters,
                 team_id=lg.get("team_id"),
-                owner_id=viewer_user_id if plat == "sleeper" else None,
+                owner_id=sleeper_owner_id_for_account(
+                    account_id, viewer_user_id, plat,
+                ),
             )
         if not viewer_roster:
             continue
@@ -558,7 +604,8 @@ def api_portfolio_actions():
                 issues, platform=plat, season=lg_season,
                 league_id=lid, league_name=league_name,
             ))
-        # One injury stash/drop hint per league (bench/IR candidates).
+        # One injury stash/drop hint per league (active-roster candidates only;
+        # players already in reserve/IR do not need a stash/move-to-IR tip).
         try:
             from utils.injury_plan import injury_plan
             from dashboard_services.injury_return import weeks_out_for_player
@@ -567,6 +614,7 @@ def api_portfolio_actions():
                 for r in (lctx.get("model_value_table") or [])
                 if r.get("id")
             }
+            reserve_set = {str(p) for p in (viewer_roster.get("reserve") or []) if p}
             for pid in [str(p) for p in (viewer_roster.get("players") or [])][:40]:
                 pl = nfl_players.get(pid) or {}
                 st = str(pl.get("injury_status") or "").strip()
@@ -587,6 +635,7 @@ def api_portfolio_actions():
                     player_name=pl.get("full_name") or pl.get("last_name") or "Player",
                     verdict=plan["verdict"],
                     weeks_label=plan.get("weeks_label") or "",
+                    already_on_ir=pid in reserve_set,
                 )
                 if act:
                     actions.append(act)

@@ -70,3 +70,21 @@ def test_injury_stash_action_filters_unknown_verdicts():
     assert act["kind"] == "injury"
     assert act["title"] == "Stash: Injured Guy"
     assert "Approx return ~3 wk" in act["detail"] or "~3 wk" in act["detail"]
+
+
+def test_injury_stash_action_skips_players_already_on_ir():
+    assert injury_stash_action(
+        platform="sleeper", season=2025, league_id="1", league_name="N",
+        player_name="Already Stashed", verdict="Stash", already_on_ir=True,
+    ) is None
+    assert injury_stash_action(
+        platform="sleeper", season=2025, league_id="1", league_name="N",
+        player_name="Already Stashed", verdict="IR", already_on_ir=True,
+    ) is None
+    # Drop from IR can still free a slot.
+    drop = injury_stash_action(
+        platform="sleeper", season=2025, league_id="1", league_name="N",
+        player_name="Drop Me", verdict="Drop candidate", already_on_ir=True,
+    )
+    assert drop is not None
+    assert drop["title"] == "Drop candidate: Drop Me"

@@ -157,7 +157,7 @@ def test_guest_homepage_uses_landing_lite_css(offline_client, monkeypatch):
     )
     # Smoke: key home selectors must exist in the lite pack.
     for cls in (".home-hero", ".home-card", ".home-ticker-band", ".home-feature-row",
-                ".google-continue-btn", ".platform-btn"):
+                ".google-continue-btn", ".platform-btn", ".home-pro"):
         assert cls in landing, f"landing_lite.css missing {cls}"
     home_rules = len([ln for ln in landing.splitlines() if ln.startswith(".home-")])
     assert home_rules >= 100, f"expected ≥100 .home- rules, got {home_rules}"
