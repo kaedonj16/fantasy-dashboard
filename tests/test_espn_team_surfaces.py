@@ -17,12 +17,13 @@ def test_team_details_skips_picks_and_uses_redraft_for_redraft_leagues():
     assert "is_redraft = _league_is_redraft(" in body
     assert "_value_primary" in body
     assert "redraft_value" in body
-    assert "if not is_redraft:" in body
+    assert "has_future_draft_capital" in body
+    assert "if not is_redraft and _cap_ok:" in body
     assert '"is_redraft": bool(is_redraft)' in body
-    # Must not invent picks when redraft — the invent-default block lives under
-    # the is_redraft guard.
+    assert '"draft_capital_available": bool((not is_redraft) and _cap_ok)' in body
+    # Must not invent picks when redraft or when the host has no pick feed.
     invent = body.find('"current_owner": int(roster_id)')
-    guard = body.find("if not is_redraft:")
+    guard = body.find("if not is_redraft and _cap_ok:")
     assert guard > 0 and invent > guard
 
 
@@ -49,11 +50,13 @@ def test_trade_suggestions_ai_prompt_forbids_redraft_picks():
 
 def test_league_context_skips_synthesized_picks_for_redraft():
     src = Path("app.py").read_text(encoding="utf-8")
-    start = src.find("# Future draft capital is a dynasty asset.")
+    start = src.find("# Future draft capital is a dynasty/keeper asset")
     assert start > 0
-    chunk = src[start:start + 1200]
-    assert "not _league_is_redraft" in chunk
+    chunk = src[start:start + 1600]
+    assert "has_future_draft_capital" in chunk
+    assert "if draft_capital_available:" in chunk
     assert "build_picks_by_roster(" in chunk
+    assert "inventing own-picks" in chunk
 
 
 def test_teams_page_uses_team_avatar_and_redraft_values():
@@ -61,7 +64,7 @@ def test_teams_page_uses_team_avatar_and_redraft_values():
     assert "team_avatar(platform, r, users)" in src
     assert "avatar_from_users(platform, users, str(rid))" not in src
     assert "build_model_value_lookup" in src
-    assert "if not _is_redraft:" in src
+    assert "if not _is_redraft and ctx.get(\"draft_capital_available\", True):" in src
     assert "picks_by_roster = {}" in src
     assert "redraft_window_label" in src
     assert "This season" in src
