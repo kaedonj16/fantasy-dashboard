@@ -8048,21 +8048,32 @@ def render_standings_insights(team_stats, *, all_play=None, weekly_points=None,
 
 
 def render_team_stats(team_stats, df_weekly, owner_to_rid=None) -> str:
-    if team_stats is None or team_stats.empty or df_weekly is None or df_weekly.empty:
+    # Show the table whenever there are teams. The season aggregates (Win %, PF,
+    # PA, …) exist from preseason on; only Best/Worst Week come from finalized
+    # weekly games, so those fall back to "–" before any week is final rather than
+    # hiding the whole table behind an empty-state message.
+    if team_stats is None or team_stats.empty:
         return """
         <div class="card-body">
           <p>No detailed stats available for this season yet.</p>
         </div>
         """
 
-    best = df_weekly.groupby("owner")["points"].max().rename("Best Week")
-    worst = df_weekly.groupby("owner")["points"].min().rename("Worst Week")
+    stats_tbl = team_stats.rename(
+        columns={"owner": "Team", "AVG": "Average", "STD": "Std Dev", "Win%": "Win %"}
+    ).copy()
 
-    stats_tbl = (
-        team_stats.rename(columns={"owner": "Team", "AVG": "Average", "STD": "Std Dev", "Win%": "Win %"})
-        .merge(best, left_on="Team", right_index=True, how="left")
-        .merge(worst, left_on="Team", right_index=True, how="left")
-    )
+    if df_weekly is not None and not df_weekly.empty:
+        best = df_weekly.groupby("owner")["points"].max().rename("Best Week")
+        worst = df_weekly.groupby("owner")["points"].min().rename("Worst Week")
+        stats_tbl = (
+            stats_tbl
+            .merge(best, left_on="Team", right_index=True, how="left")
+            .merge(worst, left_on="Team", right_index=True, how="left")
+        )
+    else:
+        stats_tbl["Best Week"] = float("nan")
+        stats_tbl["Worst Week"] = float("nan")
 
     cols = ["Team", "Win %", "PF", "PA", "Average", "Std Dev", "Best Week", "Worst Week"]
     stats_tbl = stats_tbl[cols].copy()
@@ -8070,23 +8081,20 @@ def render_team_stats(team_stats, df_weekly, owner_to_rid=None) -> str:
     for c in ["Win %", "PF", "PA", "Average", "Std Dev", "Best Week", "Worst Week"]:
         stats_tbl[c] = stats_tbl[c].astype(float).round(3 if c == "Win %" else 2)
 
+    def _num(v, nd: int) -> str:
+        return "–" if pd.isna(v) else f"{float(v):.{nd}f}"
+
     body_rows = []
     for _, r in stats_tbl[cols].iterrows():
-        avatar = r.get("avatar", "")
-        img = (
-            f"<img class='avatar sm' src='{avatar}' alt='' loading='lazy' decoding='async' "
-            "onerror=\"this.style.display='none'\">"
-            if avatar else ""
-        )
         body_rows.append("<tr>" + "".join([
-            f"<td class='team'>{img} {_clickable_team_name(r['Team'], owner_to_rid)}</td>",
-            f"<td class='num'>{r['Win %']:.3f}</td>",
-            f"<td class='num'>{float(r['PF']):.2f}</td>",
-            f"<td class='num'>{float(r['PA']):.2f}</td>",
-            f"<td class='num'>{float(r['Average']):.2f}</td>",
-            f"<td class='num'>{float(r['Std Dev']):.2f}</td>",
-            f"<td class='num'>{float(r['Best Week']):.2f}</td>",
-            f"<td class='num'>{float(r['Worst Week']):.2f}</td>",
+            f"<td class='team'>{_clickable_team_name(r['Team'], owner_to_rid)}</td>",
+            f"<td class='num'>{_num(r['Win %'], 3)}</td>",
+            f"<td class='num'>{_num(r['PF'], 2)}</td>",
+            f"<td class='num'>{_num(r['PA'], 2)}</td>",
+            f"<td class='num'>{_num(r['Average'], 2)}</td>",
+            f"<td class='num'>{_num(r['Std Dev'], 2)}</td>",
+            f"<td class='num'>{_num(r['Best Week'], 2)}</td>",
+            f"<td class='num'>{_num(r['Worst Week'], 2)}</td>",
         ]) + "</tr>")
 
     table_html = f"""
