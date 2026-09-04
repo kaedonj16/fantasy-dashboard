@@ -858,9 +858,11 @@ def resolve_my_leagues(viewer_user_id, account_id, current_season):
       * Every row saved to the Google account's ``user_leagues`` is included,
         regardless of platform. The database is the durable source of truth for
         a fresh Google login and remains available during provider outages.
-      * Sleeper memberships from every identity linked to the account (plus the
-        current viewer) are fetched live to refresh saved metadata. Discovery
-        alone neither attaches new leagues nor removes saved account leagues.
+      * Sleeper memberships from every identity linked to the account are
+        fetched live to refresh saved metadata. A leftover session
+        ``viewer_user_id`` from another platform is never treated as a Sleeper
+        user. Discovery alone neither attaches new leagues nor removes saved
+        account leagues.
       * For ESPN, Yahoo, and any future provider, saved leagues do not depend on
         a provider-specific browser session being present after Google login.
         ESPN league IDs persist across seasons, so a league linked in a prior
@@ -875,12 +877,16 @@ def resolve_my_leagues(viewer_user_id, account_id, current_season):
     """
     season = int(current_season or 0)
     sleeper_ids = []
-    if viewer_user_id:
-        sleeper_ids.append(str(viewer_user_id))
     if account_id:
+        # Google account: only Sleeper identities actually linked to the
+        # account. Session viewer_user_id is league-scoped — opening ESPN /
+        # Fleaflicker / Yahoo overwrites it with that platform's owner id,
+        # which must not be sent to Sleeper as if it were a user.
         sleeper_ids.extend(list_account_platform_ids(account_id, "sleeper"))
-    # Preserve order while avoiding duplicate provider requests when the active
-    # viewer is also (normally) linked to the account.
+    elif viewer_user_id:
+        sleeper_ids.append(str(viewer_user_id))
+    # Preserve order while avoiding duplicate provider requests when the same
+    # identity is listed twice.
     sleeper_ids = list(dict.fromkeys(sleeper_ids))
 
     from dashboard_services.api import get_sleeper_user_leagues
