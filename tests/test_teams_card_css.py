@@ -65,3 +65,32 @@ def test_team_card_mix_legend_has_flex_gap():
     body = legend.group(1)
     assert "display: flex" in body
     assert "column-gap" in body or "gap:" in body
+
+
+def test_team_card_name_wraps_instead_of_ellipsis():
+    """Viewer rows with a YOU pill must not single-line-ellipsis the title.
+
+    A nowrap + text-overflow clamp turned mid-length names into
+    "Move the …" once the non-shrinking YOU badge took the last ~40px.
+    """
+    name = re.search(
+        r"\.team-strength-card\s+\.tc-head\s+h2\.tc-name\s*\{([^}]+)\}", CSS
+    )
+    assert name, "missing h2.tc-name rule"
+    name_body = name.group(1)
+    assert "white-space: normal" in name_body
+    assert "overflow: hidden" not in name_body
+    assert "text-overflow" not in name_body
+
+    text = re.search(r"\.team-strength-card\s+\.tc-name-text\s*\{([^}]+)\}", CSS)
+    assert text, "missing .tc-name-text rule"
+    text_body = text.group(1)
+    assert "white-space: normal" in text_body
+    assert "overflow-wrap" in text_body
+    assert "text-overflow" not in text_body
+    assert "ellipsis" not in text_body
+
+    you = re.search(r"\.team-strength-card\s+\.tc-you\s*\{([^}]+)\}", CSS)
+    assert you, "missing .tc-you rule"
+    you_body = you.group(1)
+    assert "flex: 0 0 auto" in you_body or "flex-shrink: 0" in you_body
