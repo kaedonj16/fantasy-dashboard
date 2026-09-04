@@ -25862,7 +25862,7 @@ def api_trade_ideas_for_target():
 
     except Exception as e:
         logger.exception("[api-trade-ideas-for-target] Error: %s", e)
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": "Internal error"}), 500
 
 
 _POS_CLS_MAP = {"QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE"}
