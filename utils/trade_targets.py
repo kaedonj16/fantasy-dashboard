@@ -528,17 +528,28 @@ def select_trade_targets(
     def _allocate(rows: Sequence[Dict[str, Any]], pos_caps: Dict[str, int]) -> List[Dict[str, Any]]:
         picked: List[Dict[str, Any]] = []
         counts: Dict[str, int] = {}
+        # Once a position has a reachable hole-fill, skip the 1.5x trophy hunts
+        # so Maye doesn't drag Burrow/Lamar along as "also QBs."
+        filled_reachable: set[str] = set()
+        stretch_cut = chip * 1.35
+        reachable_cut = chip * 1.15
         ordered = sorted(
             rows,
             key=lambda r: (-float(r.get("fit_score") or 0.0), -float(r.get("value") or 0.0)),
         )
         for row in ordered:
             pos = str(row.get("position") or "")
+            val = float(row.get("value") or 0.0)
             cap = pos_caps.get(pos, MAX_PER_POS_SOFT)
             if counts.get(pos, 0) >= cap:
                 continue
+            if pos in filled_reachable and val > stretch_cut:
+                continue
             picked.append(_public(row))
             counts[pos] = counts.get(pos, 0) + 1
+            why = str(row.get("why") or "")
+            if why.startswith("Fills your") and val <= reachable_cut:
+                filled_reachable.add(pos)
             if len(picked) >= MAX_TARGETS:
                 break
         return picked

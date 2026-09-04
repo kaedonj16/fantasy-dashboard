@@ -365,6 +365,7 @@ class TestSelect:
         assert names
         elites = {"Josh Allen", "Lamar Jackson", "Joe Burrow", "Brock Bowers", "Trey McBride"}
         assert names[0] not in elites
+        assert not elites.intersection(names)
         assert not names[:3] == ["Josh Allen", "Lamar Jackson", "Joe Burrow"]
         qb_count = sum(1 for t in result["targets"] if t["position"] == "QB")
         te_count = sum(1 for t in result["targets"] if t["position"] == "TE")
