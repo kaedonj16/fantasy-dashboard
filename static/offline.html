@@ -89,10 +89,10 @@
 <body>
   <img id="offlineLogo" src="/static/BR_Logo.png" alt="BR Fantasy">
   <p class="brand">BR Fantasy</p>
-  <h1>You're offline</h1>
-  <p>We can't reach BR Fantasy right now. Check your connection and try again. Pages you've
+  <h1 id="offlineTitle">You're offline</h1>
+  <p id="offlineCopy">We can't reach BR Fantasy right now. Check your connection and try again. Pages you've
   already opened stay available.</p>
-  <button type="button" onclick="location.reload()">Try again</button>
+  <button type="button" id="offlineRetry" onclick="location.reload()">Try again</button>
   <script>
     (function () {
       var dark = document.documentElement.classList.contains('boot-dark')
@@ -106,18 +106,48 @@
       if (logo) logo.src = dark ? '/static/BR_Logo_dark.png' : '/static/BR_Logo.png';
       var meta = document.getElementById('br-theme-color');
       if (meta) meta.setAttribute('content', dark ? '#020617' : '#f8fafc');
-    })();
-    // Auto-retry the moment the connection returns, so the user doesn't have to.
-    window.addEventListener('online', function () { location.reload(); });
-    // The SW serves this shell when a PWA navigation times out with nothing
-    // cached. When the in-flight network fetch later succeeds it posts
-    // nav-fresh — reload so the real page replaces this placeholder.
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.addEventListener('message', function (e) {
-        var d = e.data || {};
-        if (d.type === 'nav-fresh') location.reload();
+
+      // The SW can serve this shell on a slow-but-online timeout. Don't claim
+      // the user is offline when navigator.onLine says otherwise — show a
+      // connecting message and keep retrying until the origin answers.
+      var title = document.getElementById('offlineTitle');
+      var copy = document.getElementById('offlineCopy');
+      var retryBtn = document.getElementById('offlineRetry');
+      var retryTimer = null;
+      function paintCopy() {
+        var online = !(typeof navigator !== 'undefined' && navigator.onLine === false);
+        document.title = online ? 'Connecting · BR Fantasy' : 'Offline · BR Fantasy';
+        if (title) title.textContent = online ? 'Still connecting…' : "You're offline";
+        if (copy) {
+          copy.textContent = online
+            ? "You're online, but BR Fantasy is taking longer than usual. We'll keep trying."
+            : "We can't reach BR Fantasy right now. Check your connection and try again. Pages you've already opened stay available.";
+        }
+        if (retryBtn) retryBtn.textContent = online ? 'Retry now' : 'Try again';
+        return online;
+      }
+      function scheduleRetry(online) {
+        if (retryTimer) clearTimeout(retryTimer);
+        if (!online) return;
+        retryTimer = setTimeout(function () { location.reload(); }, 2500);
+      }
+      scheduleRetry(paintCopy());
+      window.addEventListener('online', function () {
+        scheduleRetry(paintCopy());
       });
-    }
+      window.addEventListener('offline', function () {
+        scheduleRetry(paintCopy());
+      });
+      // The SW serves this shell when a PWA navigation times out with nothing
+      // cached. When the in-flight network fetch later succeeds it posts
+      // nav-fresh — reload so the real page replaces this placeholder.
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.addEventListener('message', function (e) {
+          var d = e.data || {};
+          if (d.type === 'nav-fresh') location.reload();
+        });
+      }
+    })();
   </script>
 </body>
 </html>

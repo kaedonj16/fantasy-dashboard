@@ -2,7 +2,7 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
-const CACHE_NAME = 'br-fantasy-v25';
+const CACHE_NAME = 'br-fantasy-v26';
 
 // How long to wait on the network for a page before painting a cached /
 // offline fallback. This is what kills the blank white screen on PWA launch:
@@ -13,6 +13,12 @@ const NAV_TIMEOUT_MS = 3500;
 // Explicit Refresh (bypass-cache / reload) skips the stale shell preference
 // but still must not hang forever on a stuck fetch.
 const NAV_REFRESH_TIMEOUT_MS = 20000;
+// When there is nothing cached to paint after NAV_TIMEOUT_MS, keep waiting for
+// the in-flight fetch up to this ceiling before showing the offline shell.
+// Serving "You're offline" at 3.5s while the user is online (Render cold start,
+// slow mobile) is a false positive — only use the offline page after this
+// longer wait, or when the network has actually failed.
+const NAV_UNCACHED_GRACE_MS = 15000;
 
 // Precache the offline shell + brand assets only. Versioned minified JS/CSS
 // are served with ?v= hashes from HTML and cached via stale-while-revalidate
@@ -222,12 +228,24 @@ async function handleNavigate(request) {
 
   // Timed out or network failed: never leave the navigation unsettled.
   // Prefer the URL's own cache, then a real HTTP error page (so a missing
-  // route isn't painted as "You're offline"), then the home shell, then
-  // the offline page. Keep the in-flight fetch alive so a late success
-  // can nudge a reload.
-  notifyNavFresh(request, networkFetch);
-  if (cached) return cached;
+  // route isn't painted as "You're offline"), then wait for the in-flight
+  // fetch (uncached grace) before the home / offline shells. Keep the
+  // fetch alive so a late success can nudge a reload when we did paint
+  // a cached shell.
+  if (cached) {
+    notifyNavFresh(request, networkFetch);
+    return cached;
+  }
   if (networkError) return networkError;
+
+  // No cached paint available. Do NOT jump to offline.html yet — that is what
+  // showed "You're offline" during slow-but-online loads. Wait for the network
+  // (or a longer grace) first.
+  const grace = new Promise(resolve => setTimeout(() => resolve(null), NAV_UNCACHED_GRACE_MS));
+  const late = await Promise.race([networkFetch, grace]);
+  if (late) return late;
+  if (networkError) return networkError;
+  notifyNavFresh(request, networkFetch);
   return navigationFallback(cache, null);
 }
 
