@@ -16932,10 +16932,6 @@ img, svg, canvas {
 }
 
 @media (max-width: 480px) {
-    body {
-        font-size: 14px;
-    }
-
     .nav-pill {
         font-size: 14px;
         padding: 4px 6px;
