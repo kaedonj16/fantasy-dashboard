@@ -47,6 +47,16 @@ def _fn_block(name: str) -> str:
 def test_sos_css_selectors_exist():
     for sel in _SOS_SELECTORS:
         assert sel in CSS, f"missing Schedule-tab CSS for {sel}"
+    # Site-audit forbids stadium pills; chips/bars use the shared token.
+    assert "border-radius: 999px" not in CSS
+    assert "border-radius: var(--radius-pill)" in _css_rule(".sos-diff")
+    assert "border-radius: var(--radius-pill)" in _css_rule(".sos-track")
+
+
+def _css_rule(sel: str) -> str:
+    match = re.search(re.escape(sel) + r"\s*\{([^}]+)\}", CSS)
+    assert match, f"missing {sel} rule"
+    return match.group(1)
 
 
 def test_sos_name_ellipsis_lives_on_inner_text():

@@ -24046,7 +24046,7 @@ tr.team-clickable {
     letter-spacing: 0.03em;
     text-transform: uppercase;
     padding: 2px 7px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
 }
 
 .sos-diff-hard {
@@ -24074,13 +24074,13 @@ tr.team-clickable {
     min-width: 0;
     height: 8px;
     background: var(--bg-alt);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     overflow: hidden;
 }
 
 .sos-fill {
     height: 100%;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     min-width: 6px;
 }
 
