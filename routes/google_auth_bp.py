@@ -329,6 +329,13 @@ def google_auth_callback():
                         session["viewer_platform"] = pending["platform"]
                 except Exception:
                     logger.warning("[google_auth] pending team viewer resolve failed", exc_info=True)
+            checkout_plan = str(pending.get("checkout_plan") or "").strip()
+            if checkout_plan in {"single_league", "league", "combo", "user"}:
+                season = pending.get("season") or ""
+                return redirect(
+                    f"/{pending['platform']}/{season}/{pending['league_id']}"
+                    f"/pricing?plan={checkout_plan}&checkout=1"
+                )
             return redirect(
                 f"/{pending['platform']}/{pending.get('season') or ''}/{pending['league_id']}/dashboard"
             )

@@ -159,6 +159,53 @@ def test_pre_google_link_stages_provider_context_without_authenticating_account(
     assert response.json["auth_url"].startswith("/auth/google")
 
 
+def test_pending_link_with_checkout_plan_returns_pricing_next():
+    app = flask.Flask(__name__)
+    app.secret_key = "test"
+    app.register_blueprint(link_bp)
+
+    with app.test_client() as client:
+        response = client.post("/api/link/pending", json={
+            "platform": "espn", "league_id": "555", "season": 2026,
+            "checkout_plan": "single_league",
+        })
+        with client.session_transaction() as session:
+            assert session["pending_link"]["checkout_plan"] == "single_league"
+            assert session["pending_link"]["platform"] == "espn"
+
+    from urllib.parse import unquote
+    assert response.status_code == 200
+    auth_url = unquote(response.json["auth_url"])
+    assert "checkout=1" in auth_url
+    assert "plan=single_league" in auth_url
+    assert "/espn/2026/555/pricing" in auth_url
+
+
+def test_google_callback_checkout_plan_lands_on_pricing(monkeypatch):
+    attached = []
+    _stub_google_callback(monkeypatch, attached)
+    app = flask.Flask(__name__)
+    app.secret_key = "test"
+    app.register_blueprint(google_auth_bp)
+
+    with app.test_client() as client:
+        with client.session_transaction() as session:
+            session["google_oauth_state"] = "state"
+            session["google_oauth_nonce"] = "nonce"
+            session["google_pkce_verifier"] = "verifier"
+            session["google_oauth_next"] = "/"
+            session["pending_link"] = {
+                "platform": "espn", "league_id": "555", "season": 2026,
+                "checkout_plan": "single_league",
+            }
+        response = client.get("/auth/google/callback?code=code&state=state")
+
+    assert response.status_code == 302
+    loc = response.headers["Location"]
+    assert loc.endswith("/espn/2026/555/pricing?plan=single_league&checkout=1") or \
+        "/espn/2026/555/pricing?plan=single_league&checkout=1" in loc
+
+
 def test_explicit_unlink_requires_google_and_removes_only_requested_membership(monkeypatch):
     removed = []
     monkeypatch.setattr(
