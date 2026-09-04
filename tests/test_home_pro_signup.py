@@ -46,6 +46,7 @@ def test_home_pro_styles_live_in_dashboard_and_landing_css():
         assert ".home-pro {" in css
         assert ".home-pro-plans {" in css
         assert ".home-pro-hero-cta" in css
+        assert ".home-pro-fields[hidden]" in css
         assert ".home-proof {" not in css
 
 

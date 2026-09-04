@@ -3467,6 +3467,16 @@ input[type="search"] {
     margin-bottom: 14px;
 }
 
+.home-pro-fields[hidden],
+.home-pro-step[hidden],
+#homeProSavedWrap[hidden],
+#homeProSleeperLeagueWrap[hidden],
+#homeProSeasonWrap[hidden],
+#homeProCheckout[hidden],
+.home-pro-error[hidden] {
+    display: none !important;
+}
+
 .home-pro-fields label {
     font-size: 12px;
     font-weight: 700;
