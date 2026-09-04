@@ -604,7 +604,8 @@ def api_portfolio_actions():
                 issues, platform=plat, season=lg_season,
                 league_id=lid, league_name=league_name,
             ))
-        # One injury stash/drop hint per league (bench/IR candidates).
+        # One injury stash/drop hint per league (active-roster candidates only;
+        # players already in reserve/IR do not need a stash/move-to-IR tip).
         try:
             from utils.injury_plan import injury_plan
             from dashboard_services.injury_return import weeks_out_for_player
@@ -613,6 +614,7 @@ def api_portfolio_actions():
                 for r in (lctx.get("model_value_table") or [])
                 if r.get("id")
             }
+            reserve_set = {str(p) for p in (viewer_roster.get("reserve") or []) if p}
             for pid in [str(p) for p in (viewer_roster.get("players") or [])][:40]:
                 pl = nfl_players.get(pid) or {}
                 st = str(pl.get("injury_status") or "").strip()
@@ -633,6 +635,7 @@ def api_portfolio_actions():
                     player_name=pl.get("full_name") or pl.get("last_name") or "Player",
                     verdict=plan["verdict"],
                     weeks_label=plan.get("weeks_label") or "",
+                    already_on_ir=pid in reserve_set,
                 )
                 if act:
                     actions.append(act)
