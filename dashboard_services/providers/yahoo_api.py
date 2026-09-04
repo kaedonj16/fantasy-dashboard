@@ -1814,11 +1814,13 @@ def _matchup_rows_from_scoreboard(raw: Any, week: int) -> List[Dict[str, Any]]:
                 continue
             pts_block = _team_field_dict(tm, "team_points")
             proj_block = _team_field_dict(tm, "team_projected_points")
+            team_key = str(_team_attr(tm, "team_key") or "")
             sides.append({
                 "points":            _safe_float(pts_block.get("total")),
                 "projected_points":  _safe_float(proj_block.get("total")),
                 "players":           [],
                 "roster_id":         roster_id,
+                "team_key":          team_key,
                 "custom_points":     None,
                 "starters":          [],
                 "starters_points":   [],
@@ -1834,12 +1836,71 @@ def _matchup_rows_from_scoreboard(raw: Any, week: int) -> List[Dict[str, Any]]:
     return out
 
 
+def _yahoo_team_key_for_matchup_row(row: Dict[str, Any], league_key: str) -> str:
+    tk = str(row.get("team_key") or "")
+    if tk:
+        return tk
+    rid = row.get("roster_id")
+    lk = str(league_key or "")
+    if rid and lk and ".l." in lk:
+        return f"{lk}.t.{rid}"
+    return ""
+
+
+def _hydrate_yahoo_matchup_lineups(
+    access_token: str,
+    league_key: str,
+    week: int,
+    rows: List[Dict[str, Any]],
+) -> None:
+    """Fill scoreboard rows with week-N roster starters mapped to Sleeper ids.
+
+    Yahoo's scoreboard has pairings and team totals but no player keys, so
+    Sleeper weekly projections cannot resolve until we pull
+    ``team/{key}/roster;week=N`` and run the yahoo_id crosswalk.
+    """
+    if not rows or not access_token:
+        return
+    try:
+        week_i = int(week)
+    except (TypeError, ValueError):
+        week_i = 0
+    keys: List[str] = []
+    seen = set()
+    for row in rows:
+        tk = _yahoo_team_key_for_matchup_row(row, league_key)
+        if tk:
+            row["team_key"] = tk
+        if tk and tk not in seen:
+            seen.add(tk)
+            keys.append(tk)
+    if not keys:
+        return
+    by_key = _prefetch_team_rosters(
+        access_token, [], week=week_i if week_i > 0 else None, team_keys=keys,
+    )
+    for row in rows:
+        tk = str(row.get("team_key") or "")
+        raw_players = by_key.get(tk) or []
+        if not raw_players:
+            continue
+        players, starters, _reserve = _split_yahoo_lineup(raw_players)
+        if players and len(starters) == len(players) and len(players) > 9:
+            starters = players[:9]
+        if players:
+            row["players"] = players
+        if starters:
+            row["starters"] = starters
+
+
 def get_matchups(season: int, league_id: str, week: int, access_token: str) -> List[Dict[str, Any]]:
     """Return Sleeper-shaped matchup rows for Yahoo's published week pairings.
 
     Yahoo's JSON scoreboard nests matchups under ``scoreboard["0"]["matchups"]``.
     Reading only ``scoreboard["matchups"]`` yields an empty list, and the
     Season Hub then invents round-robin opponents that do not match Yahoo.
+    Scoreboard rows have no player keys — week rosters are pulled next so
+    starter pids can join Sleeper weekly projections.
     """
     lk = _league_key_for_season(league_id, season, access_token)
     try:
@@ -1868,10 +1929,17 @@ def get_matchups(season: int, league_id: str, week: int, access_token: str) -> L
         if default_rows and (sb_week == _safe_int(week) or _safe_int(week) <= 1):
             out = default_rows
 
+    if out:
+        try:
+            _hydrate_yahoo_matchup_lineups(access_token, lk, week, out)
+        except Exception as exc:
+            logger.warning("[yahoo] matchup roster hydrate failed: %s", exc)
+
     _yahoo_debug(
-        "get_matchups league=%s season=%s week=%s -> %s rows pairings=%s",
+        "get_matchups league=%s season=%s week=%s -> %s rows pairings=%s starters=%s",
         league_id, season, week, len(out),
         [(r.get("matchup_id"), r.get("roster_id")) for r in out],
+        {r.get("roster_id"): len(r.get("starters") or []) for r in out[:20]},
     )
     return out
 
