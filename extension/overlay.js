@@ -916,11 +916,11 @@
     if (isKDef(p) && p._rank == null) {
       chip = "";
     } else if (state.sort === "rec") {
-      chip = '<div class="pschip recchip" title="Recommendation rank">#' + (opts.rank || p._rank) + "<small>REC</small></div>";
+      chip = '<div class="pschip recchip" title="Recommendation Rank - who to draft now (Decision Score order). Not Pick Score.">#' + (opts.rank || p._rank) + "<small>REC</small></div>";
     } else if (state.sort === "ps" && p._ps != null) {
       const shown = p._psShow != null ? p._psShow : p._ps;
       const col = psColor(shown);
-      chip = '<div class="pschip" style="color:' + col + ";background:" + col + '1a" title="Pick Score">'+ shown + "<small>PS</small></div>";
+      chip = '<div class="pschip" style="color:' + col + ";background:" + col + '1a" title="Pick Score vs best available - player quality at this pick, not Recommendation Rank">'+ shown + "<small>PS</small></div>";
     } else {
       chip = "";
     }

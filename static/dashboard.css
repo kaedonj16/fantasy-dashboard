@@ -3151,6 +3151,22 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     -webkit-overflow-scrolling: touch;
 }
 
+/* Empty / sparse activity cards left a tall blank band on phones when the
+   desktop 600px min-height applied. Cap it on narrow viewports. */
+@media (max-width: 768px) {
+    .card.activity-card .scroll-box,
+    .card.central .scroll-box {
+        min-height: 160px;
+    }
+}
+
+@media (max-width: 600px) {
+    .card.activity-card .scroll-box,
+    .card.central .scroll-box {
+        min-height: 120px;
+    }
+}
+
 .card.central, .card.power, .trends-card {
     overflow: hidden;
 }
@@ -3983,8 +3999,10 @@ button:hover {
 }
 
 .pp-t-bub {
-    color: var(--warning);
-    background: color-mix(in srgb, var(--warning) 15%, transparent);
+    /* Slightly denser warning mix so BUBBLE stays readable on light + dark cards. */
+    color: color-mix(in srgb, var(--warning) 88%, var(--text));
+    background: color-mix(in srgb, var(--warning) 22%, var(--card));
+    border: 1px solid color-mix(in srgb, var(--warning) 36%, var(--border));
 }
 
 .pp-t-out {
@@ -4402,12 +4420,12 @@ thead th {
 
 @media (max-width: 600px) {
     .empty-state {
-        padding: 24px 14px;
-        gap: 6px;
+        padding: 16px 12px;
+        gap: 4px;
     }
 
     .empty-state.is-compact {
-        padding: 14px 10px;
+        padding: 10px 8px;
     }
 
     .empty-state-icon {
@@ -8837,17 +8855,30 @@ select:focus {
     .os-jump-nav {
         display: flex;
         gap: 4px;
+        /* Stay within the hub column so overflow scrolls here — not clipped by
+           the parent hub overflow-x hidden. flex:0 tabs + snap keep the last
+           tab reachable; trailing fade hints that more tabs exist. */
+        max-width: 100%;
+        min-width: 0;
+        width: 100%;
+        box-sizing: border-box;
         overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scroll-snap-type: x proximity;
+        scroll-padding-inline: 8px;
         scrollbar-width: none;
         position: sticky;
         top: 8px;
         z-index: 30;
         padding: 5px;
+        padding-inline-end: 18px;
         margin: 4px 0 14px;
         background: var(--surface2);
         border: 1px solid var(--border);
         border-radius: 14px;
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+        -webkit-mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 22px), transparent 100%);
+        mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 22px), transparent 100%);
     }
 
     .os-jump-nav::-webkit-scrollbar {
@@ -8855,8 +8886,9 @@ select:focus {
     }
 
     .os-jump-nav button {
-        flex: 1 1 0;
+        flex: 0 0 auto;
         min-width: max-content;
+        scroll-snap-align: start;
         border: none;
         background: transparent;
         color: var(--text-muted);
@@ -14377,6 +14409,19 @@ html[data-theme="dark"] .podium .bar {
     text-decoration: underline;
 }
 
+@media (max-width: 768px) {
+    .site-footer-links {
+        gap: 4px 8px;
+    }
+
+    .site-footer-links a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        padding: 8px 6px;
+    }
+}
+
 .site-footer-note {
     grid-column: 1 / -1;
     margin-top: 4px;
@@ -16726,7 +16771,7 @@ img, svg, canvas {
 
 @media (max-width: 480px) {
     body {
-        font-size: 13px;
+        font-size: 14px;
     }
 
     .nav-pill {
@@ -16887,10 +16932,6 @@ img, svg, canvas {
 }
 
 @media (max-width: 480px) {
-    body {
-        font-size: 13px;
-    }
-
     .nav-pill {
         font-size: 14px;
         padding: 4px 6px;

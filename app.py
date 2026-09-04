@@ -687,33 +687,13 @@ _TEAMS_JS_V = _static_hash("teams.js")
 _CSS_FILE = _ensure_minified_css()
 _CSS_V = _static_hash(_CSS_FILE)
 _SEO_LITE_CSS_V = _static_hash("seo_lite.css")
+_LANDING_LITE_CSS_V = _static_hash("landing_lite.css")
 _FA_V = _static_hash("font-awesome.css")
 _ICONS_V = _static_hash("icons.css")
 
 # When this worker booted — a cheap "did the deploy actually restart me?" signal
-# alongside the bundle hashes in /healthz/version.
+# alongside the bundle hashes in /healthz/version (served by routes.health_bp).
 _PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat()
-
-
-@app.route("/healthz/version")
-def healthz_version():
-    """Deploy smoke-check: the content hashes of the bundles this process is
-    actually serving, plus the git SHA when available. After a deploy, hit this
-    and confirm the hashes changed / match the built files — so "is it live yet?"
-    is a one-request answer instead of guessing at a stale cache. Cache-busting
-    headers so an intermediary can never hand back a previous deploy's answer."""
-    resp = jsonify({
-        "app_js": _APP_JS_V,
-        "public_js": _PUBLIC_JS_V,
-        "rankings_js": _RANKINGS_JS_V,
-        "teams_js": _TEAMS_JS_V,
-        "redzone_js": _REDZONE_JS_V,
-        "css": _CSS_V,
-        "git_sha": os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("GIT_SHA") or "",
-        "started_at": _PROCESS_STARTED_AT,
-    })
-    resp.headers["Cache-Control"] = "no-store, max-age=0"
-    return resp
 
 
 @app.before_request
@@ -5000,14 +4980,19 @@ def render_page(
                  and bool(_FEATURES_JS_FILE))
     _page_js_file = _PUBLIC_JS_FILE if _use_lite else _APP_JS_FILE
     _page_js_v = _PUBLIC_JS_V if _use_lite else _APP_JS_V
-    # Logged-out lite_js SEO shells (rankings, compare, player, etc.) get a
-    # smaller CSS pack instead of the full dashboard bundle. The landing page
-    # keeps dashboard.css: its hero, onboarding card, feature grid, and ticker
-    # all live there, and seo_lite.css does not cover them. Signed-in visitors
-    # always keep the full stylesheet.
-    _use_lite_css = _use_lite and active != "home"
-    _page_css_file = "seo_lite.css" if _use_lite_css else _CSS_FILE
-    _page_css_v = _SEO_LITE_CSS_V if _use_lite_css else _CSS_V
+    # Logged-out lite_js SEO shells (rankings, compare, player, etc.) get
+    # seo_lite.css. Guest landing (`active == "home"`) gets landing_lite.css
+    # (seo_lite + home/ticker/connect extract) so we skip the full ~515 KB
+    # dashboard pack. Signed-in visitors always keep the full stylesheet.
+    if _use_lite and active == "home":
+        _page_css_file = "landing_lite.css"
+        _page_css_v = _LANDING_LITE_CSS_V
+    elif _use_lite:
+        _page_css_file = "seo_lite.css"
+        _page_css_v = _SEO_LITE_CSS_V
+    else:
+        _page_css_file = _CSS_FILE
+        _page_css_v = _CSS_V
     # Tell the lazy-loader where the feature bundle lives (only on lite pages;
     # on full pages the features are already present so the loader no-ops).
     _features_js_js = (
@@ -9584,14 +9569,21 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
 
 
 @app.route("/api/proj-debug")
+@limiter.limit("30 per minute")
 def api_proj_debug():
     """Read-only diagnostic: for one player, show OUR cached weekly projection
     (raw stat line + Sleeper's own pts_* + our computed value + the league
     scoring/variant applied) next to Sleeper's LIVE projection fetched fresh, so
     we can see exactly where a number diverges from the Sleeper app.
 
+    Requires ``X-Admin-Secret`` header matching ``ADMIN_SECRET``.
     Usage: /api/proj-debug?name=stroud&league=<league_id>[&season=&week=]
     """
+    from routes.health_bp import _forbidden_unless_admin
+    denied = _forbidden_unless_admin()
+    if denied:
+        return denied
+
     import requests as _rq
     from utils.utils import load_week_projection, pick_proj_variant
     from utils.fantasy_scoring import projection_points, score_stats
@@ -15270,7 +15262,7 @@ def api_gm_memo():
         logger.exception("[api-gm-memo] Error: %s", e)
         return jsonify({
             "success": False,
-            "error": str(e)
+            "error": "Internal error"
         }), 500
 
 
@@ -15291,7 +15283,7 @@ def api_power_rankings():
         return jsonify({"success": True, "html": html_out})
     except Exception as e:
         logger.exception("[api-power-rankings] Error: %s", e)
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": "Internal error"}), 500
 
 
 @app.route("/api/trade-suggestions", methods=["POST"])
@@ -15316,7 +15308,7 @@ def api_trade_suggestions():
         return jsonify({"success": True, "html": html_out})
     except Exception as e:
         logger.exception("[api-trade-suggestions] Error: %s", e)
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": "Internal error"}), 500
 
 
 @app.route("/api/roster-grade", methods=["POST"])
@@ -15339,7 +15331,7 @@ def api_roster_grade():
         return jsonify({"success": True, "grade_data": grade_data, "badge_html": badge_html})
     except Exception as e:
         logger.exception("[api-roster-grade] Error: %s", e)
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": "Internal error"}), 500
 
 
 @app.route("/api/trade-outcome", methods=["POST"])
@@ -15575,7 +15567,7 @@ def api_trade_outcome():
         })
     except Exception as e:
         logger.exception("[api-trade-outcome] Error: %s", e)
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": "Internal error"}), 500
 
 
 @app.route("/api/trade-eval", methods=["POST"])
@@ -17208,6 +17200,7 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
 
 
 @app.route("/api/market-intel/health")
+@limiter.limit("30 per minute")
 def api_market_intel_health():
     """Diagnostic for the Market vs ADP / market-intelligence pipeline.
 
@@ -17216,7 +17209,15 @@ def api_market_intel_health():
     and the projection-cache coverage the expected-ADP curve needs. It ends with
     a one-line ``diagnosis`` naming the first broken link, so an empty Market vs
     ADP column can be traced without opening the database. No secrets are
-    returned — only whether each is configured."""
+    returned — only whether each is configured.
+
+    Requires ``X-Admin-Secret`` header matching ``ADMIN_SECRET``.
+    """
+    from routes.health_bp import _forbidden_unless_admin
+    denied = _forbidden_unless_admin()
+    if denied:
+        return denied
+
     _season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
     out = {
         "season": _season,
@@ -25846,7 +25847,7 @@ def api_trade_ideas_for_target():
 
     except Exception as e:
         logger.exception("[api-trade-ideas-for-target] Error: %s", e)
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": "Internal error"}), 500
 
 
 _POS_CLS_MAP = {"QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE"}

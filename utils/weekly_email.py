@@ -36,23 +36,37 @@ def _iso_week(dt: datetime | None = None) -> str:
 
 # ── Unsubscribe tokens (HMAC, no login needed) ────────────────────────────────
 
-def _secret() -> bytes:
-    return (os.environ.get("FLASK_SECRET_KEY") or "br-fantasy-weekly").encode()
+def _secret() -> bytes | None:
+    """Return FLASK_SECRET_KEY bytes, or None when unset (fail closed).
+
+    A hardcoded fallback would let anyone forge unsubscribe tokens in any
+    environment that forgot to set the key. Callers must treat None as
+    unsigned/disabled — do not mint or accept tokens without a real secret.
+    """
+    key = (os.environ.get("FLASK_SECRET_KEY") or "").strip()
+    return key.encode() if key else None
 
 
-def make_unsub_token(account_id: int) -> str:
-    mac = hmac.new(_secret(), f"unsub:{account_id}".encode(), hashlib.sha256).hexdigest()[:32]
+def make_unsub_token(account_id: int) -> str | None:
+    secret = _secret()
+    if secret is None:
+        logger.error("[weekly-email] FLASK_SECRET_KEY unset; cannot sign unsubscribe token")
+        return None
+    mac = hmac.new(secret, f"unsub:{account_id}".encode(), hashlib.sha256).hexdigest()[:32]
     return f"{account_id}.{mac}"
 
 
 def verify_unsub_token(token: str):
     """Return the account_id encoded in a valid token, else None."""
+    secret = _secret()
+    if secret is None:
+        return None
     try:
         aid_s, mac = (token or "").split(".", 1)
         aid = int(aid_s)
     except (ValueError, AttributeError):
         return None
-    expect = hmac.new(_secret(), f"unsub:{aid}".encode(), hashlib.sha256).hexdigest()[:32]
+    expect = hmac.new(secret, f"unsub:{aid}".encode(), hashlib.sha256).hexdigest()[:32]
     return aid if hmac.compare_digest(mac, expect) else None
 
 
@@ -1035,7 +1049,15 @@ def send_weekly_digests(
             skipped += 1
             continue
 
-        unsub = f"{_base_url()}/email/unsubscribe?token={make_unsub_token(int(aid))}"
+        token = make_unsub_token(int(aid))
+        if not token:
+            logger.error(
+                "[weekly-email] skipping send account=%s: unsubscribe HMAC disabled",
+                aid, extra={"account_id": aid},
+            )
+            failed += 1
+            continue
+        unsub = f"{_base_url()}/email/unsubscribe?token={token}"
         html = digest["html"].replace("{UNSUB}", unsub)
         last_preview_html = html
         last_preview_subject = digest.get("subject")

@@ -123,7 +123,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-trend-chip {
   flex: 0 0 auto; display: flex; flex-direction: column; gap: 2px; text-align: left;
   padding: 8px 12px; border-radius: 10px; background: var(--card);
-  border: 1px solid var(--border); cursor: pointer; min-width: 120px;
+  border: 1px solid var(--border); cursor: pointer; min-width: 120px; max-width: 148px;
   transition: border-color .12s;
 }
 .wv-trend-chip:hover { border-color: var(--accent); }
@@ -131,7 +131,10 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   font-size: 11px; font-weight: 800; color: #f97316;
   display: flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums;
 }
-.wv-trend-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.wv-trend-name {
+  font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
 .wv-trend-sub { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 
 /* Streaming this week: matchup-ranked D/ST and K, shown under the waiver list
@@ -757,9 +760,11 @@ function wvRenderTrending(items) {{
     const pos = p.position || '';
     const sub = [pos, p.team].filter(Boolean).join(' · ');
     const nm = (p.name || '').replace(/'/g, "\\\\'");
+    const tipName = (p.name || '').replace(/"/g, '&quot;');
+    const tipAdds = wvFmtAdds(p.adds) + ' adds across Sleeper leagues';
     return `
       <button type="button" class="wv-trend-chip" onclick="openPlayerModal('${{p.player_id}}', '${{nm}}')"
-              title="${{wvFmtAdds(p.adds)}} adds across Sleeper leagues">
+              title="${{tipName}} · ${{tipAdds}}">
         <span class="wv-trend-adds"><i class="fa-solid fa-fire" aria-hidden="true"></i> ${{wvFmtAdds(p.adds)}}</span>
         <span class="wv-trend-name">${{p.name || ''}}</span>
         <span class="wv-trend-sub">${{sub}}</span>

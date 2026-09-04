@@ -139,6 +139,9 @@ def test_glossary_explains_live_recommendation_logic():
 
     assert "{ term: 'Recommendation Rank'" in source
     assert "Who should I draft right now?" in source
+    assert "{ term: 'Decision Score'" in source
+    assert "internal ranking number behind Recommendation Rank" in source
+    assert "not a 0-100 Pick Score" in source
     assert "{ term: 'Pick Score (PS)'" in source
     assert "How good is this player at this pick?" in source
     assert "{ term: 'Board PS'" in source
@@ -150,6 +153,7 @@ def test_glossary_explains_live_recommendation_logic():
     assert "When it is not your turn, the order is for your next owned pick" in source
     assert "luxury bench BPA" in source
     assert "does not rank by simulated playoff odds" in source
+    assert "Late-round upside and bye-week severity also adjust this order" in source
 
 
 def test_recommendation_rows_use_compact_rank_and_reason_copy():
@@ -157,7 +161,9 @@ def test_recommendation_rows_use_compact_rank_and_reason_copy():
     body = build_draft_room_body(None, None, None, is_guest=True)
 
     assert "Decision ' + p._ds + ' · recommendation #" not in source
-    assert 'dr-ba-recchip" title="Recommendation Rank">#' in source
+    assert 'dr-ba-recchip" title="Recommendation Rank — who to draft now (Decision Score order). Not Pick Score.">#' in source
+    assert 'title="Pick Score vs best available — player quality at this pick, not Recommendation Rank"' in source
+    assert "Bye-week scheduling risk for starters" in source
     assert "ppgNum.toFixed(1) + ' proj'" in source
     assert ".dr-ba-recchip {" in body
 

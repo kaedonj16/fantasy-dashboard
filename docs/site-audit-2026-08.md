@@ -13,7 +13,7 @@ this PR** shipped with accompanying regression tests in
 |---|---------|--------|
 | 1 | **Open redirect** via Google/Yahoo OAuth `next` and Stripe `/pricing?return_to=` | **Fixed** — `utils/safe_url.py` + call sites |
 | 2 | **Public `/compare` noindex** when session remembers a league | **Fixed** — pass `league_id=None`, force `noindex=False` |
-| 3 | **Unauthenticated Sleeper identity = PRO entitlement** (`/api/identify`) | **Mitigated** — soft dual-read + Google-link prompt; hard cutover via `PRO_REQUIRE_GOOGLE=1` |
+| 3 | **Unauthenticated Sleeper identity = PRO entitlement** (`/api/identify`) | **Mitigated** — hard cutover enabled (`PRO_REQUIRE_GOOGLE=1` in Render) |
 | 4 | Stripe success page embedded raw `return_to` into JS redirect | **Fixed** |
 
 ---
@@ -32,9 +32,9 @@ this PR** shipped with accompanying regression tests in
 | 12 | CRON/ADMIN secret compares used `!=` (timing leak) | **Fixed** — `hmac.compare_digest` |
 | 13 | Default OG image is square logo; twitter card=`summary` | **Fixed** — `/static/og-default.png` 1200×630 + `summary_large_image` |
 | 14 | Monolithic `dashboard.css` (~724KB) + full `app.js` on SEO pages | Open — structural |
-| 15 | AI HTML → `innerHTML` under CSP `unsafe-inline` | Open — sanitize / allowlist |
-| 16 | Yahoo access token stored in session cookie | Open |
-| 17 | Rate limits per-process without Redis in Render | Open |
+| 15 | AI HTML → `innerHTML` under CSP `unsafe-inline` | **Fixed** — client `brSanitizeHtml` + server allowlist |
+| 16 | Yahoo access token stored in session cookie | **Fixed** — guid in session; tokens from DB only |
+| 17 | Rate limits per-process without Redis in Render | **Fixed** — `brfantasy-redis` Key Value + `REDIS_URL` on web |
 
 ---
 
@@ -47,8 +47,8 @@ this PR** shipped with accompanying regression tests in
 | 20 | Guide/legal pages reused default meta description | **Fixed** — unique `description=` |
 | 21 | `paywall.css` unversioned | **Fixed** |
 | 22 | Duplicate `sentry-sdk` pin in `requirements.txt` | **Fixed** |
-| 23 | Exception strings leaked from some APIs | Open |
-| 24 | Unauthenticated `/api/proj-debug`, market-intel health | Open |
+| 23 | Exception strings leaked from some APIs | **Fixed** — generic `"Internal error"` + `logger.exception` on high-risk public/league endpoints |
+| 24 | Unauthenticated `/api/proj-debug`, market-intel health | **Fixed** — `X-Admin-Secret` via `_forbidden_unless_admin` + rate limit |
 | 25 | Manifest theme/background stuck white | **Fixed** — navy `#0b2036` splash + theme-synced status bar |
 | 26 | Conflicting global `:focus-visible` rings | **Fixed** — single `--accent` ring |
 | 27 | Offline page ignores app theme preference | **Fixed** — reads `localStorage.theme` |
@@ -82,15 +82,14 @@ this PR** shipped with accompanying regression tests in
 
 ## Personal PRO / Google backfill
 
-1. **Soft (default, `PRO_REQUIRE_GOOGLE` unset/0):** bare Sleeper viewer id still unlocks a personal subscription so buyers aren't locked out. Username-only sessions that hold a user-plan sub see a dismissible **Secure your PRO** banner → `/auth/google`.
+1. **Soft (legacy notice period, `PRO_REQUIRE_GOOGLE` unset/0):** bare Sleeper viewer id still unlocks a personal subscription so buyers aren't locked out. Username-only sessions that hold a user-plan sub see a dismissible **Secure your PRO** banner → `/auth/google`. Unit tests monkeypatch soft mode when needed.
 2. **Natural link:** Google sign-in while a Sleeper session is present bridges via `link_platform_identity` (refuses steal if that Sleeper id already belongs to another account). `/api/identify` also bridges when Google is already signed in.
-3. **Hard cutover:** set `PRO_REQUIRE_GOOGLE=1` in Render. User-plan PRO then requires `session.account_id` (linked identity / `acct:` rows). League plans still work via membership alone.
+3. **Hard cutover (enabled in `render.yaml`):** `PRO_REQUIRE_GOOGLE=1`. User-plan PRO requires `session.account_id` (linked identity / `acct:` rows). League plans still work via membership alone.
 
 ---
 
 ## Recommended next waves
 
-1. Flip `PRO_REQUIRE_GOOGLE=1` after the notice period (monitor `needs_google_link` traffic).
+1. Monitor `needs_google_link` traffic after the hard cutover; keep soft-mode tests monkeypatched.
 2. **Asset split** — extend `lite_js` to all logged-out SEO pages; CSS packs per surface.
-3. **AI HTML sanitization** — DOMPurify or server allowlist before `innerHTML`.
-4. **Redis** — wire `REDIS_URL` in Render for global rate limits + shared caches.
+3. Confirm Redis limiter + espn draft relay healthy after `REDIS_URL` wiring.

@@ -142,9 +142,10 @@ def yahoo_auth_callback():
 
     save_tokens(guid, access_token, refresh_token, expires_in)
 
-    # Store Yahoo identity in session
+    # Store Yahoo identity in session — guid only. Access tokens live in the DB
+    # after save_tokens; do not persist the bearer in the session cookie.
     session["yahoo_guid"]         = guid
-    session["yahoo_access_token"] = access_token
+    session.pop("yahoo_access_token", None)
     session["viewer_username"]    = team_name or guid
     session.permanent             = True
 
@@ -249,7 +250,7 @@ def yahoo_auth_callback():
 @yahoo_auth_bp.route("/api/yahoo-validate-league")
 def api_yahoo_validate_league():
     """Validate a Yahoo league ID and return its name.
-    Requires the user to have already completed OAuth (yahoo_access_token in session).
+    Requires the user to have already completed OAuth (yahoo_guid in session).
     """
     from dashboard_services.providers.yahoo_api import yahoo_enabled
     if not yahoo_enabled():
@@ -302,7 +303,7 @@ def api_yahoo_validate_league():
         logger.warning("[yahoo] validate league %s failed: %s", league_id, msg)
         from dashboard_services.providers.yahoo_api import yahoo_auth_error_kind, yahoo_oauth_start_url
         kind = yahoo_auth_error_kind(exc)
-        # 401 token_expired / 403 wrong account — drop stale session creds and
+        # 401 token_expired / 403 wrong account — drop stale session identity and
         # send the user back through OAuth.
         if kind in ("expired", "forbidden"):
             session.pop("yahoo_access_token", None)
@@ -348,10 +349,11 @@ def api_yahoo_debug():
                     league_id = tail[1]
                     break
 
-    access_token = session.get("yahoo_access_token") or ""
+    access_token = ""
     guid = session.get("yahoo_guid") or ""
-    if not access_token and guid:
+    if guid:
         access_token = get_valid_access_token(guid) or ""
+    session.pop("yahoo_access_token", None)
 
     if not access_token:
         return jsonify({"ok": False, "error": "Yahoo OAuth required.", "needs_oauth": True}), 401

@@ -81,6 +81,10 @@ def test_manifest_docks_overlay_on_host_drafts():
     assert "feedAssistant" in espn_iso
     assert "feedAssistant" in yahoo_iso
     assert "br-fantasy-espn-sync-chip" in inject
+    assert "br-fantasy-sleeper-sync-chip" in inject
+    assert "br-fantasy-sleeper-sync-chip" in sleeper
+    assert "observing ·" in sleeper
+    assert "never submits" in sleeper.lower() or "Observe-only" in sleeper
     csp = (manifest.get("content_security_policy") or {}).get("extension_pages") or ""
     assert "script-src 'self'" in csp
     assert "unsafe-eval" not in csp

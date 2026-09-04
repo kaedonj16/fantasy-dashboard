@@ -257,7 +257,7 @@ def google_auth_callback():
             # to authorize before membership is verified and the league attached.
             if (
                 str(pending.get("platform") or "").strip().lower() == "yahoo"
-                and not session.get("yahoo_access_token")
+                and not session.get("yahoo_guid")
             ):
                 params = {"league_id": str(pending["league_id"])}
                 team_name = str(pending.get("username") or "").strip()

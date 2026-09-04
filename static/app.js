@@ -38,6 +38,79 @@ function escapeHtml(s) {
 }
 
 /**
+ * Allowlist sanitizer for AI HTML before innerHTML assignment.
+ * Strips script/iframe/object/embed, on* handlers, and javascript: URLs.
+ * Keeps the tag set emitted by dashboard_services.ai.renderer.
+ */
+window.brSanitizeHtml = function (html) {
+  if (html == null || html === '') return '';
+  var ALLOWED = {
+    P: 1, DIV: 1, SPAN: 1, STRONG: 1, EM: 1, B: 1, I: 1,
+    UL: 1, OL: 1, LI: 1, BR: 1, H3: 1, H4: 1,
+    TABLE: 1, THEAD: 1, TBODY: 1, TR: 1, TH: 1, TD: 1, A: 1
+  };
+  var VOID = { BR: 1 };
+  var DROP = { SCRIPT: 1, IFRAME: 1, OBJECT: 1, EMBED: 1, LINK: 1, META: 1, STYLE: 1, BASE: 1 };
+  var tmpl = document.createElement('template');
+  try {
+    tmpl.innerHTML = String(html);
+  } catch (_) {
+    return escapeHtml(html);
+  }
+
+  function safeHref(href) {
+    var raw = String(href || '').trim();
+    if (!raw) return null;
+    var lower = raw.toLowerCase();
+    if (lower.indexOf('javascript:') === 0 || lower.indexOf('data:') === 0 || lower.indexOf('vbscript:') === 0) {
+      return null;
+    }
+    if (raw.indexOf('//') === 0) return null;
+    if (/^https?:\/\//i.test(raw)) return raw;
+    if (raw.charAt(0) === '/' || raw.charAt(0) === '#' || raw.charAt(0) === '?') return raw;
+    return null;
+  }
+
+  function walk(node) {
+    var out = '';
+    var kids = node.childNodes;
+    for (var i = 0; i < kids.length; i++) {
+      var child = kids[i];
+      if (child.nodeType === 3) {
+        out += escapeHtml(child.nodeValue);
+        continue;
+      }
+      if (child.nodeType !== 1) continue;
+      var tag = child.tagName;
+      if (DROP[tag]) continue;
+      if (!ALLOWED[tag]) {
+        out += walk(child);
+        continue;
+      }
+      var attrs = '';
+      if (child.hasAttribute('class')) {
+        attrs += ' class="' + escapeHtml(child.getAttribute('class')) + '"';
+      }
+      if (child.hasAttribute('id')) {
+        attrs += ' id="' + escapeHtml(child.getAttribute('id')) + '"';
+      }
+      if (tag === 'A') {
+        var href = safeHref(child.getAttribute('href'));
+        if (href) attrs += ' href="' + escapeHtml(href) + '"';
+      }
+      if (VOID[tag]) {
+        out += '<' + tag.toLowerCase() + attrs + '>';
+      } else {
+        out += '<' + tag.toLowerCase() + attrs + '>' + walk(child) + '</' + tag.toLowerCase() + '>';
+      }
+    }
+    return out;
+  }
+
+  return walk(tmpl.content);
+};
+
+/**
  * fetch() with a hard timeout. Rejects with AbortError when the timer fires so
  * hung requests cannot leave spinners/overlays up forever.
  */
@@ -8328,7 +8401,7 @@ window.initTradePage = function initTradePage(root = document) {
         // so that sibling state nodes (loading/empty) survive intact
         const _isPremium = document.getElementById('page-root')?.dataset.premium === 'true';
         if (data.analysis_html) {
-          resultState.innerHTML = data.analysis_html;
+          resultState.innerHTML = window.brSanitizeHtml(data.analysis_html);
           if (window.brRevealText) window.brRevealText(resultState);
         } else if (!_isPremium) {
           resultState.innerHTML = `
@@ -9498,7 +9571,7 @@ async function generateSeasonRecap() {
     if (resultState) {
       resultState.style.display = "block";
       if (data.html) {
-        resultState.innerHTML = data.html;
+        resultState.innerHTML = window.brSanitizeHtml(data.html);
         if (window.brRevealText) window.brRevealText(resultState);
       } else {
         resultState.innerHTML = `
@@ -12698,7 +12771,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (loadingState) loadingState.style.display = 'none';
         if (resultState) {
           resultState.style.display = 'block';
-          resultState.innerHTML = data.gm_memo_html;
+          resultState.innerHTML = window.brSanitizeHtml(data.gm_memo_html);
           if (window.brRevealText) window.brRevealText(resultState);
         }
         generateGmMemoBtn.textContent = 'Refresh Report';

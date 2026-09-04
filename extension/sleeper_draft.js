@@ -29,6 +29,79 @@
   let cachedDraft = null;
   let cachedPicks = [];
   let lastClockSent = "";
+  let chip = null;
+  let lastChipCount = 0;
+
+  // Observe-only host-page status chip (parity with ESPN/Yahoo). Never submits
+  // picks - Sleeper sync only feeds the docked Draft Assistant overlay.
+  function ensureChip() {
+    if (chip && document.documentElement.contains(chip)) return chip;
+    chip = document.createElement("div");
+    chip.id = "br-fantasy-sleeper-sync-chip";
+    chip.setAttribute(
+      "style",
+      [
+        "position:fixed",
+        "z-index:2147483646",
+        "right:12px",
+        "bottom:12px",
+        "max-width:min(280px,calc(100vw - 24px))",
+        "padding:10px 12px",
+        "border-radius:10px",
+        "background:#0f172a",
+        "color:#f8fafc",
+        "font:600 12px/1.35 system-ui,-apple-system,sans-serif",
+        "box-shadow:0 10px 28px rgba(0,0,0,.35)",
+      ].join(";")
+    );
+    chip.innerHTML =
+      '<span class="br-chip-text">BR Fantasy · watching Sleeper draft…</span>'
+      + '<button type="button" class="br-chip-reconnect" title="Refresh observe sync" style="margin-top:6px;display:block;width:100%;padding:4px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#f8fafc;font:600 11px/1.2 system-ui,sans-serif;cursor:pointer;">↻ Refresh</button>';
+    const btn = chip.querySelector(".br-chip-reconnect");
+    if (btn) {
+      btn.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        lastFp = "";
+        setChip("BR Fantasy · refreshing…", false);
+        requestPicks().then(pollMeta).then(function () {
+          if (lastChipCount > 0) {
+            setChip("BR Fantasy · observing · " + lastChipCount + " picks", true);
+          } else {
+            setChip("BR Fantasy · observing · waiting for picks", true);
+          }
+        });
+      });
+    }
+    document.documentElement.appendChild(chip);
+    return chip;
+  }
+
+  function setChip(text, ok) {
+    if (!isSleeperDraftRoom()) return;
+    const el = ensureChip();
+    const textEl = el.querySelector(".br-chip-text");
+    if (textEl) textEl.textContent = text;
+    else el.textContent = text;
+    el.style.background = ok ? "#065f46" : "#0f172a";
+    if (typeof window.__brDaSetSync === "function") {
+      const n = lastChipCount;
+      const syncText = ok
+        ? (n ? "SLEEPER · " + n : "SLEEPER · LIVE")
+        : "SLEEPER · …";
+      window.__brDaSetSync(!!ok, syncText);
+    }
+  }
+
+  function showObservingChip(count) {
+    lastChipCount = Math.max(0, Number(count) || 0);
+    setChip(
+      lastChipCount > 0
+        ? "BR Fantasy · observing · " + lastChipCount + " picks"
+        : "BR Fantasy · observing · waiting for picks",
+      true
+    );
+  }
 
   async function leagueScoring(leagueId) {
     if (!leagueId) return cachedScoring;
@@ -469,6 +542,7 @@
       lastFp = settingsFp;
       push(payload);
     }
+    showObservingChip(picks.length);
     const clockKey = String(clockSeconds) + "|" + String(timer || "");
     if (clockKey !== lastClockSent && typeof window.__brDaPushClock === "function") {
       lastClockSent = clockKey;
@@ -503,6 +577,7 @@
   async function pollPicks() {
     const id = await resolveDraftId();
     if (!id) {
+      setChip("BR Fantasy · open a Sleeper draft room", false);
       if (typeof window.__brDaSetSync === "function") {
         window.__brDaSetSync(false, "SLEEPER · …");
       }
@@ -512,6 +587,7 @@
       const snap = await fetchDraftAndPicks(id);
       emitPayload(snap.draft, snap.picks);
     } catch (_e) {
+      setChip("BR Fantasy · reconnecting to Sleeper…", false);
       if (typeof window.__brDaSetSync === "function") {
         window.__brDaSetSync(false, "SLEEPER · …");
       }

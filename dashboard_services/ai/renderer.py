@@ -26,6 +26,7 @@ from dashboard_services.ai.prompts import (
 import logging
 
 from dashboard_services.ai.client import AIRateLimitError, AIUnavailableError
+from dashboard_services.ai.html_sanitize import sanitize_ai_html
 from dashboard_services.ai.prose import scrub_ai_prose_field_names, scrub_ai_result_strings
 from dashboard_services.providers.espn_api import safe_float
 from dashboard_services.rank_medals import rank_mark
@@ -33,6 +34,11 @@ from dashboard_services.rank_medals import rank_mark
 logger = logging.getLogger(__name__)
 
 AI_ENABLED = os.getenv("AI_ENABLED", "true").lower() == "true"
+
+
+def _emit_ai_html(raw: str) -> str:
+    """Final gate for every AI HTML string returned to the browser."""
+    return sanitize_ai_html(raw)
 
 
 def ai_available() -> bool:
@@ -239,7 +245,7 @@ def get_team_gm_memo(ctx: dict, viewer_roster_id: str, force_refresh: bool = Fal
     if not force_refresh:
         cached = load_cached_ai_text(cache_key)
         if cached:
-            return scrub_ai_prose_field_names(cached)
+            return _emit_ai_html(scrub_ai_prose_field_names(cached))
 
     if not team_ctx.get("playoff_pct") and ctx is not None:
         # Kick a background sim so the next refresh can cite odds.
@@ -252,7 +258,7 @@ def get_team_gm_memo(ctx: dict, viewer_roster_id: str, force_refresh: bool = Fal
     if not ai_available():
         html_out = _gm_memo_fallback_html(team_ctx)
         save_cached_ai_text(cache_key, html_out)
-        return html_out
+        return _emit_ai_html(html_out)
 
     try:
         result = generate_team_ai_result(team_ctx, mode="gm_memo")
@@ -266,7 +272,7 @@ def get_team_gm_memo(ctx: dict, viewer_roster_id: str, force_refresh: bool = Fal
         html_out = _ai_error_notice() + _gm_memo_fallback_html(team_ctx)
 
     save_cached_ai_text(cache_key, html_out)
-    return html_out
+    return _emit_ai_html(html_out)
 
 
 def get_front_office_briefing(ctx: dict, viewer_roster_id: str) -> str:
@@ -277,12 +283,12 @@ def get_front_office_briefing(ctx: dict, viewer_roster_id: str) -> str:
     cache_key = build_ai_cache_key("front_office_briefing", team_ctx, "v6")
     cached = load_cached_ai_text(cache_key)
     if cached:
-        return scrub_ai_prose_field_names(cached)
+        return _emit_ai_html(scrub_ai_prose_field_names(cached))
 
     if not ai_available():
         html_out = _fo_brief_fallback_html(team_ctx)
         save_cached_ai_text(cache_key, html_out)
-        return html_out
+        return _emit_ai_html(html_out)
 
     try:
         result = generate_team_ai_result(team_ctx, mode="front_office_briefing")
@@ -296,7 +302,7 @@ def get_front_office_briefing(ctx: dict, viewer_roster_id: str) -> str:
         html_out = _ai_error_notice() + _fo_brief_fallback_html(team_ctx)
 
     save_cached_ai_text(cache_key, html_out)
-    return html_out
+    return _emit_ai_html(html_out)
 
 
 def get_trade_ai_analysis(
@@ -572,7 +578,7 @@ def get_trade_ai_analysis(
     # Try to get from cache first
     cached = load_cached_ai_text(cache_key)
     if cached:
-        return cached
+        return _emit_ai_html(cached)
 
     if not ai_available():
         verdict = "ACCEPT" if market_delta > 40 else "DECLINE" if market_delta < -40 else "COUNTER"
@@ -586,13 +592,13 @@ def get_trade_ai_analysis(
         }
         html_out = render_trade_ai_html(fallback)
         save_cached_ai_text(cache_key, html_out)
-        return html_out
+        return _emit_ai_html(html_out)
 
     try:
         result = generate_trade_ai_result(payload)
         html_out = render_trade_ai_html(result)
         save_cached_ai_text(cache_key, html_out)
-        return html_out
+        return _emit_ai_html(html_out)
     except (AIRateLimitError, AIUnavailableError) as e:
         reason = "rate limited" if isinstance(e, AIRateLimitError) else "service unavailable"
         logger.warning("[trade-ai] %s: %s", reason, e)
@@ -607,7 +613,7 @@ def get_trade_ai_analysis(
         }
         html_out = _ai_error_notice(reason) + render_trade_ai_html(fallback)
         save_cached_ai_text(cache_key, html_out)
-        return html_out
+        return _emit_ai_html(html_out)
     except Exception as e:
         logger.exception("[trade-ai] unexpected error: %s", e)
         verdict = "ACCEPT" if market_delta > 40 else "DECLINE" if market_delta < -40 else "COUNTER"
@@ -621,7 +627,7 @@ def get_trade_ai_analysis(
         }
         html_out = _ai_error_notice() + render_trade_ai_html(fallback)
         save_cached_ai_text(cache_key, html_out)
-        return html_out
+        return _emit_ai_html(html_out)
 
 
 def render_trade_ai_html(result: dict) -> str:
@@ -758,12 +764,12 @@ def get_power_rankings_html(ctx: dict) -> str:
     rankings_ctx = build_power_rankings_context(_ctx_with_playoff_odds(ctx))
     teams = rankings_ctx.get("teams") or []
     if not teams:
-        return "<p>Not enough data for power rankings.</p>"
+        return _emit_ai_html("<p>Not enough data for power rankings.</p>")
 
     cache_key = build_ai_cache_key("power_rankings", {"week": rankings_ctx.get("week"), "season": rankings_ctx.get("season"), "teams": [t["roster_id"] for t in teams]}, "v5")
     cached = load_cached_ai_text(cache_key)
     if cached:
-        return cached
+        return _emit_ai_html(cached)
 
     # Build fallback narrative map
     fallback_narratives: dict[str, str] = {}
@@ -779,7 +785,7 @@ def get_power_rankings_html(ctx: dict) -> str:
     if not ai_available():
         html_out = _render_power_rankings_html_from_data(teams, fallback_narratives)
         save_cached_ai_text(cache_key, html_out)
-        return html_out
+        return _emit_ai_html(html_out)
 
     try:
         # Trim context for AI - only send what's needed
@@ -827,7 +833,7 @@ def get_power_rankings_html(ctx: dict) -> str:
         html_out = _render_power_rankings_html_from_data(teams, fallback_narratives)
 
     save_cached_ai_text(cache_key, html_out)
-    return html_out
+    return _emit_ai_html(html_out)
 
 
 def _render_power_rankings_html_from_data(
@@ -882,7 +888,7 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
         _ctx_with_playoff_odds(ctx), viewer_roster_id,
     )
     if not suggestions_ctx:
-        return "<p>Could not build trade suggestions context.</p>"
+        return _emit_ai_html("<p>Could not build trade suggestions context.</p>")
 
     cache_key = build_ai_cache_key(
         "trade_suggestions",
@@ -897,12 +903,12 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
     )
     cached = load_cached_ai_text(cache_key)
     if cached:
-        return cached
+        return _emit_ai_html(cached)
 
     if not ai_available() or (not suggestions_ctx.get("top_partners") and not suggestions_ctx.get("pick_trade_partners")):
         html_out = _render_trade_suggestions_fallback(suggestions_ctx)
         save_cached_ai_text(cache_key, html_out)
-        return html_out
+        return _emit_ai_html(html_out)
 
     try:
         result = generate_trade_suggestions_result(suggestions_ctx)
@@ -916,7 +922,7 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
         html_out = _render_trade_suggestions_fallback(suggestions_ctx)
 
     save_cached_ai_text(cache_key, html_out)
-    return html_out
+    return _emit_ai_html(html_out)
 
 
 def _fmt_pick_label(pk: dict) -> str:

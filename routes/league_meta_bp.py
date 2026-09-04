@@ -83,7 +83,8 @@ def api_sleeper_user_leagues():
             "leagues": [format_sleeper_league_option(lg) for lg in leagues],
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        logger.exception("[api/sleeper-user-leagues] unexpected error")
+        return jsonify({"ok": False, "error": "Internal error"}), 500
 
 
 @league_meta_bp.route("/api/my-leagues")
@@ -329,11 +330,12 @@ def api_espn_debug():
             info = espn_get_league(season, league_id)
             out["league_load"] = {"ok": True, "season": season, "name": info.get("name")}
         except Exception as e:
+            logger.exception("[api/espn-debug] league load failed for %s/%s", season, league_id)
             out["league_load"] = {
                 "ok": False,
                 "season": season,
                 "error_type": type(e).__name__,
-                "error": str(e)[:300],
+                "error": "Internal error",
             }
     return jsonify(out)
 

@@ -271,11 +271,9 @@ def api_calculate_breakout_scores():
             "season": season
         })
 
-    except Exception as e:
-        logger.info(f"[calculate-breakout-scores] Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e), "success": False}), 500
+    except Exception:
+        logger.exception("[calculate-breakout-scores] Error")
+        return jsonify({"error": "Internal error", "success": False}), 500
 
 
 @breakout_api_bp2.route("/api/compare-baselines")

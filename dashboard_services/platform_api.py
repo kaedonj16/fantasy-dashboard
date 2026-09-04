@@ -22,18 +22,13 @@ def _yahoo_token(league_id: str = "", season: int = 0) -> str:
     from dashboard_services.providers.yahoo_api import get_valid_access_token, get_league_token
     try:
         from flask import session
+        # Never keep access tokens in the session cookie after DB storage.
+        session.pop("yahoo_access_token", None)
         guid = session.get("yahoo_guid") or ""
         if guid:
             token = get_valid_access_token(guid)
             if token:
-                session["yahoo_access_token"] = token
                 return token
-            # Refresh failed — do not fall back to a stale session bearer.
-            session.pop("yahoo_access_token", None)
-        else:
-            raw = session.get("yahoo_access_token") or ""
-            if raw:
-                return raw
     except RuntimeError:
         pass
     return (get_league_token(league_id, season or 0) or "") if league_id else ""

@@ -75,6 +75,7 @@ def test_yahoo_oauth_only_attaches_league_when_google_is_already_active(
         response = client.get("/auth/yahoo/callback?code=code&state=state")
         with client.session_transaction() as session:
             assert session["yahoo_guid"] == "yahoo-guid"
+            assert "yahoo_access_token" not in session
             assert session.get("account_id") == google_account
 
     assert response.status_code == 302
@@ -273,7 +274,7 @@ def test_google_callback_attaches_pending_yahoo_when_yahoo_is_already_authorized
             session["google_oauth_nonce"] = "nonce"
             session["google_pkce_verifier"] = "verifier"
             session["google_oauth_next"] = "/"
-            session["yahoo_access_token"] = "token"
+            session["yahoo_guid"] = "yahoo-guid"
             session["pending_link"] = {
                 "platform": "yahoo", "league_id": "123456",
                 "season": 2026, "name": "Yahoo League",

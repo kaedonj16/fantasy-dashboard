@@ -46,11 +46,13 @@ def test_yahoo_preview_uses_db_token_when_session_access_token_missing(link_app,
     with link_app.test_client() as client:
         with client.session_transaction() as session:
             session["yahoo_guid"] = "yahoo-guid"
-            # Stale session bearer must not win over DB refresh.
+            # Stale session bearer must be ignored; DB token wins and is not
+            # written back into the session cookie.
             session["yahoo_access_token"] = "expired-session-token"
         res = client.get("/api/link/yahoo/preview?league_id=1307110")
         with client.session_transaction() as session:
-            assert session.get("yahoo_access_token") == "db-token"
+            assert "yahoo_access_token" not in session
+            assert session.get("yahoo_guid") == "yahoo-guid"
 
     assert res.status_code == 200
     body = res.get_json()
@@ -127,7 +129,8 @@ def test_yahoo_preview_retries_after_forced_token_refresh(link_app, monkeypatch)
             session["yahoo_guid"] = "yahoo-guid"
         res = client.get("/api/link/yahoo/preview?league_id=1307110")
         with client.session_transaction() as session:
-            assert session.get("yahoo_access_token") == "fresh-token"
+            assert "yahoo_access_token" not in session
+            assert session.get("yahoo_guid") == "yahoo-guid"
 
     assert res.status_code == 200
     assert res.get_json()["ok"] is True
