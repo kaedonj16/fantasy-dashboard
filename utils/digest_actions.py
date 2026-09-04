@@ -565,6 +565,7 @@ def gather_digest_action_items(
         try:
             from utils.injury_plan import injury_plan
             from dashboard_services.injury_return import weeks_out_for_player
+            reserve_set = {str(p) for p in (roster.get("reserve") or []) if p}
             for pid in list(owned)[:50]:
                 pl = players_feed.get(pid) or pidx.get(pid) or {}
                 st = str(pl.get("injury_status") or "").strip()
@@ -576,6 +577,9 @@ def gather_digest_action_items(
                     player_value=None,
                 )
                 if not plan or plan.get("verdict") not in ("IR", "Drop candidate", "Stash"):
+                    continue
+                # Already on IR: stash/move tips are not actionable (drop still is).
+                if pid in reserve_set and plan.get("verdict") in ("IR", "Stash"):
                     continue
                 name = pl.get("full_name") or pl.get("name") or ""
                 if not name:
