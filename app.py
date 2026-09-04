@@ -26637,6 +26637,18 @@ def build_portfolio_body(
             "</div>"
         ) if strength_chips else ""
 
+        # Live matchup slot: hydrated client-side (see pfLiveScores below) only
+        # in-season during game weeks; otherwise it stays hidden and the card
+        # falls back to the record/standing row. Kept out of the offseason cards.
+        _lg_season_live = lg.get("season") or season
+        live_slot = (
+            "" if lg.get("offseason") else
+            f"<div class='pf-lg-live' data-lg-live hidden "
+            f"data-platform='{html.escape(str(plat), quote=True)}' "
+            f"data-league-id='{html.escape(str(lid), quote=True)}' "
+            f"data-season='{html.escape(str(_lg_season_live), quote=True)}'></div>"
+        )
+
         league_rows += (
             f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}'>"
             f"<div class='pf-lg-top'>"
@@ -26644,6 +26656,7 @@ def build_portfolio_body(
             f"{_lg_id(name_link, plat, off_note, '', lg.get('team_name') or '')}"
             f"{_lg_tools(_unlink_btn(plat, lid))}"
             f"</div>"
+            f"{live_slot}"
             f"<div class='pf-lg-stats'>"
             f"<span class='pf-lg-stat'><span class='pf-lg-v {rec_cls2}'>{rec}</span>"
             f"<span class='pf-lg-l'>Record</span></span>"
@@ -26755,6 +26768,42 @@ def build_portfolio_body(
         "border-radius:8px;padding:5px 12px;font-size:13px;font-weight:700;cursor:pointer;}"
         ".pf-lg-pager button:disabled{opacity:.4;cursor:default;}"
         ".pf-lg-pager-lbl{font-size:12.5px;color:var(--text-muted);font-weight:600;min-width:96px;text-align:center;}"
+        # Live matchup band: your total vs opponent as a head-to-head, each side's
+        # projected final, and a win-probability bar (your share green, the
+        # opponent's the remainder). Hydrated client-side (pfLiveScores); hidden
+        # until it has data. A neutral inset — not another bordered card — so it
+        # doesn't echo the Record/Standing/Streak row beneath it.
+        ".pf-lg-live{border-radius:8px;padding:7px 9px 8px;"
+        "background:color-mix(in srgb,var(--text-subtle) 9%,transparent);"
+        "display:flex;flex-direction:column;gap:6px;}"
+        ".pf-live-status{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
+        "color:var(--text-subtle);display:flex;align-items:center;gap:5px;}"
+        ".pf-live-dot{width:6px;height:6px;border-radius:50%;background:var(--text-subtle);flex:0 0 auto;}"
+        ".pf-live-status.is-live{color:var(--win);}"
+        ".pf-live-status.is-live .pf-live-dot{background:var(--win);animation:pfLivePulse 1.6s ease-in-out infinite;}"
+        "@keyframes pfLivePulse{0%,100%{opacity:1;}50%{opacity:.35;}}"
+        # Head-to-head: your side left-aligned, opponent right-aligned. The leader's
+        # score is crisp; the trailer's is muted, so who's ahead reads at a glance.
+        ".pf-live-grid{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;}"
+        ".pf-live-side{min-width:0;display:flex;flex-direction:column;gap:1px;}"
+        ".pf-live-side.opp{align-items:flex-end;text-align:right;}"
+        ".pf-live-lbl{font-size:10px;font-weight:700;color:var(--text-muted);max-width:100%;"
+        "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
+        ".pf-live-score{font-size:20px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;"
+        "color:var(--text-subtle);}"
+        ".pf-live-side.win .pf-live-score{color:var(--text);}"
+        ".pf-live-proj{font-size:9.5px;color:var(--text-subtle);font-variant-numeric:tabular-nums;}"
+        # Win-probability bar: your chance filled from the left in win-green over a
+        # loss-red remainder (the opponent's chance). Reads as a tug-of-war.
+        ".pf-live-wp{display:flex;flex-direction:column;gap:3px;}"
+        ".pf-live-wp-track{position:relative;height:6px;border-radius:999px;overflow:hidden;"
+        "background:color-mix(in srgb,var(--loss) 24%,transparent);}"
+        ".pf-live-wp-fill{position:absolute;left:0;top:0;bottom:0;border-radius:999px;"
+        "background:var(--win);transition:width .5s ease;}"
+        ".pf-live-wp-lbls{display:flex;justify-content:space-between;font-size:9px;font-weight:800;"
+        "font-variant-numeric:tabular-nums;letter-spacing:.02em;}"
+        ".pf-live-wp-you{color:var(--win);}"
+        ".pf-live-wp-opp{color:var(--loss);}"
         "@media(max-width:640px){"
         ".pf-lg-grid{grid-template-columns:minmax(0,1fr);gap:7px;}"
         ".pf-lg-card{padding:9px 10px;gap:6px;}"
@@ -26826,6 +26875,52 @@ def build_portfolio_body(
         "if(when)when.textContent=new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});"
         "});}"
         "tick();setInterval(tick,1000);})();</script>"
+        # Live matchup scores: hydrate each league card client-side and lazily so
+        # one slow provider never blocks the page. Only in-progress matchups
+        # refresh, and only while the tab is visible.
+        "<script>(function(){"
+        "var slots=[].slice.call(document.querySelectorAll('[data-lg-live]'));if(!slots.length)return;"
+        "function esc(s){var d=document.createElement('div');d.textContent=(s==null?'':s);return d.innerHTML;}"
+        "function fmt(n){return (Math.round((n||0)*10)/10).toFixed(1);}"
+        "function side(t,lbl,isOpp,win){"
+        "var cls='pf-live-side'+(isOpp?' opp':'')+(win?' win':'');"
+        "if(!t)return '<div class=\"'+cls+'\"><div class=\"pf-live-lbl\">'+esc(lbl)+'</div>'"
+        "+'<div class=\"pf-live-score\">&mdash;</div></div>';"
+        "return '<div class=\"'+cls+'\"><div class=\"pf-live-lbl\">'+esc(lbl)+'</div>'"
+        "+'<div class=\"pf-live-score\">'+fmt(t.score)+'</div>'"
+        "+'<div class=\"pf-live-proj\">proj '+fmt(t.proj)+'</div></div>';}"
+        "function wpBar(d){"
+        # No bar without an opponent, or once the result is settled (the scores
+        # say it). Otherwise your chance fills from the left, opponent's remains.
+        "if(!d.opp||d.status==='final'||d.win_prob==null)return '';"
+        "var y=Math.max(0,Math.min(100,Math.round(d.win_prob))),o=100-y;"
+        "return '<div class=\"pf-live-wp\" title=\"Win probability\">'"
+        "+'<div class=\"pf-live-wp-track\"><div class=\"pf-live-wp-fill\" style=\"width:'+y+'%\"></div></div>'"
+        "+'<div class=\"pf-live-wp-lbls\"><span class=\"pf-live-wp-you\">'+y+'% to win</span>'"
+        "+'<span class=\"pf-live-wp-opp\">'+o+'%</span></div></div>';}"
+        "function render(slot,d){"
+        "if(!d||!d.live||!d.you){slot.hidden=true;slot.innerHTML='';return;}"
+        "var st=d.status||'pre';"
+        "var txt=st==='in'?('Live \\u00b7 Wk '+d.week):(st==='final'?('Final \\u00b7 Wk '+d.week):('Wk '+d.week));"
+        "var you=d.you,opp=d.opp;"
+        "var yWin=opp?(you.score>opp.score):false,oWin=opp?(opp.score>you.score):false;"
+        "slot.innerHTML='<div class=\"pf-live-status'+(st==='in'?' is-live':'')+'\">'"
+        "+'<span class=\"pf-live-dot\"></span>'+esc(txt)+'</div>'"
+        "+'<div class=\"pf-live-grid\">'+side(you,'You',false,yWin)"
+        "+side(opp,opp?(opp.name||'Opp'):'Bye',true,oWin)+'</div>'"
+        "+wpBar(d);"
+        "slot.hidden=false;}"
+        "function load(slot){"
+        "var p=slot.getAttribute('data-platform'),l=slot.getAttribute('data-league-id'),s=slot.getAttribute('data-season');"
+        "var u='/api/portfolio/matchup?platform='+encodeURIComponent(p)+'&league_id='+encodeURIComponent(l)+'&season='+encodeURIComponent(s);"
+        "return fetch(u,{headers:{'X-Requested-With':'fetch'}}).then(function(r){return r.ok?r.json():null;})"
+        ".then(function(d){render(slot,d);return d;}).catch(function(){return null;});}"
+        "var i=0,LIVE=[];"
+        "function pump(){if(i>=slots.length)return;var slot=slots[i++];"
+        "load(slot).then(function(d){if(d&&d.live&&d.status==='in')LIVE.push(slot);pump();});}"
+        "for(var k=0;k<3;k++)pump();"
+        "setInterval(function(){if(document.hidden||!LIVE.length)return;LIVE.forEach(load);},45000);"
+        "})();</script>"
     )
 
     # ── Positional strength ───────────────────────────────────────────────
