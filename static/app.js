@@ -6459,10 +6459,11 @@ window.initTradePage = function initTradePage(root = document) {
         const col      = posColor[pos] || "var(--text-muted)";
         const safeName = escapeHtml(t.name);
         const safePid  = escapeHtml(t.player_id);
+        const whyLine = [t.owner_team, t.why].filter(Boolean).map(escapeHtml).join(" · ");
         return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
           <div style="min-width:0;flex:1;">
             <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;"><span class="player-clickable" data-player-id="${safePid}" data-player-name="${safeName}">${safeName}</span></div>
-            <div style="font-size:11px;color:var(--text-muted);">${escapeHtml(t.owner_team)}</div>
+            <div style="font-size:11px;color:var(--text-muted);">${whyLine}</div>
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
             <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position}</span>
@@ -6483,7 +6484,7 @@ window.initTradePage = function initTradePage(root = document) {
           body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">No player data available.</div>';
           return;
         }
-        html += `<div style="font-size:11px;color:var(--text-muted);padding:2px 0 8px;">Your roster is balanced - top available at each position:</div>`;
+        html += `<div style="font-size:11px;color:var(--text-muted);padding:2px 0 8px;">No glaring gaps — upgrades that fit your roster:</div>`;
         allKeys.forEach(pos => {
           const players = allGrouped[pos] || [];
           if (!players.length) return;
@@ -7691,9 +7692,13 @@ window.initTradePage = function initTradePage(root = document) {
           const col      = posColor2[pos] || "var(--accent)";
           const safeName = escapeHtml(t.name);
           const safePid  = escapeHtml(t.player_id);
+          const why      = t.why ? `<span class="otc-sugg-target-why">${escapeHtml(t.why)}</span>` : "";
           return `<div class="otc-sugg-target-row">
             <span class="otc-sugg-target-pos" style="background:${col}20;color:${col};">${pos}</span>
-            <span class="otc-sugg-target-name">${safeName}</span>
+            <span class="otc-sugg-target-meta">
+              <span class="otc-sugg-target-name">${safeName}</span>
+              ${why}
+            </span>
             <button class="sugg-target-get-btn otc-sugg-target-btn"
               data-pid="${safePid}" data-name="${safeName}">
               Find packages
@@ -7703,7 +7708,7 @@ window.initTradePage = function initTradePage(root = document) {
 
         let html = "";
         if (isBalanced) {
-          html += `<div style="font-size:11px;color:var(--text-muted);padding:2px 0 8px;">Roster is balanced - top available at each position:</div>`;
+          html += `<div style="font-size:11px;color:var(--text-muted);padding:2px 0 8px;">No glaring gaps — upgrades that fit your roster:</div>`;
           Object.keys(allGrouped).forEach(pos => {
             (allGrouped[pos] || []).forEach(t => { html += renderRow(t, pos); });
           });

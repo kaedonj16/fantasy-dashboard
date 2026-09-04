@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-09-04",
+        "tag": "update",
+        "text": "Trade Targets: suggestions rank players by roster fit — how much they upgrade your gap, whether you can pay, owner surplus, and age window — instead of always listing the top few at a weak position.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-09-04",
         "tag": "fix",
         "text": "My Leagues: Signed in as now uses your Google name, not the last league's team owner. Opening an ESPN, Yahoo, or Fleaflicker league used to overwrite that label (and could attach the wrong Sleeper roster). Each card also shows your team name; Rank is regular-season standings (wins, then points for) for that team.",
         "link": "/portfolio"
