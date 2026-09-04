@@ -326,7 +326,7 @@
       "#br-fantasy-assistant-expand svg{width:16px;height:16px;flex-shrink:0;}" +
       "@media (prefers-reduced-motion:reduce){html.br-da-ready #" +
       ROOT_ID + ",html.br-da-ready #br-fantasy-assistant-expand{transition:none !important;}}" +
-      "#br-fantasy-espn-sync-chip,#br-fantasy-yahoo-sync-chip{display:none!important;}";
+      "#br-fantasy-espn-sync-chip,#br-fantasy-yahoo-sync-chip,#br-fantasy-sleeper-sync-chip{display:none!important;}";
     (document.head || document.documentElement).appendChild(style);
   }
 
