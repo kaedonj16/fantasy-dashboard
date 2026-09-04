@@ -172,8 +172,14 @@ def restricted_flex_counts(roster_positions: Optional[Iterable] = None,
 
 def is_superflex_lineup(roster_positions: Optional[Iterable] = None,
                         slot_counts: Optional[Dict[str, int]] = None) -> bool:
-    """True when the lineup starts a Superflex / OP / 2QB slot."""
-    return superflex_count(roster_positions, slot_counts) > 0
+    """True when the lineup starts a Superflex / OP slot or two or more
+    dedicated QB slots (a 2QB league). Both start a second QB every week and
+    so use the same superflex player values.
+    """
+    if superflex_count(roster_positions, slot_counts) > 0:
+        return True
+    counts = slot_counts if slot_counts is not None else count_lineup_slots(roster_positions)
+    return slot_total(counts, {"QB"}) >= 2
 
 
 def is_restricted_flex_slot(slot) -> bool:

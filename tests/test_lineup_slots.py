@@ -69,6 +69,13 @@ def test_standard_league_is_not_superflex():
     assert is_superflex_lineup(["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"]) is False
 
 
+def test_two_qb_league_is_superflex():
+    # A 2QB lineup starts a second QB every week without an explicit SUPER_FLEX
+    # slot, so it uses superflex player values just like a superflex league.
+    assert is_superflex_lineup(["QB", "QB", "RB", "RB", "WR", "WR", "TE", "FLEX"]) is True
+    assert is_superflex_lineup(slot_counts={"QB": 2, "RB": 2, "WR": 3}) is True
+
+
 def test_starter_need_does_not_double_count_flex():
     # 1QB / 2RB / 2WR / 1TE / 1FLEX: flex is split (WR gets the odd slot), plus
     # one depth player at each position. Superflex is NOT added to RB/WR.
