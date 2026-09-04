@@ -151,7 +151,8 @@ def test_league_card_html_includes_team_name_and_standings_rank(offline_client):
             total_ties=0,
         )
     assert "East Bay Biters" in html
-    assert "3/12" in html
-    assert "Rank" in html
+    # Standing renders as an ordinal place ("3rd / 12"), not the old "3/12".
+    assert "3<small>rd</small> <small>/ 12</small>" in html
+    assert "Standing" in html
     assert "Signed in as <strong>Kaedon</strong>" in html
     assert "Not me?" in html
