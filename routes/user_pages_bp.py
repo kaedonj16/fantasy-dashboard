@@ -91,6 +91,10 @@ def build_portfolio_body(*args, **kwargs):
     from app import build_portfolio_body as _fn
     return _fn(*args, **kwargs)
 
+def build_projections_by_week(*args, **kwargs):
+    from app import build_projections_by_week as _fn
+    return _fn(*args, **kwargs)
+
 
 @user_pages_bp.route("/portfolio")
 def page_portfolio():
@@ -786,6 +790,169 @@ def api_portfolio_actions():
                 logger.debug("[portfolio-actions] calendar nudge failed", exc_info=True)
 
     return jsonify({"actions": rank_cross_league_actions(actions, limit=8)})
+
+
+# ── Live matchup score for a My Leagues card ──────────────────────────────────
+# The card's live-score slot fetches this per league, client-side and lazily, so
+# a slow provider on one league never blocks the page or the other cards. The
+# expensive part (a live matchup fetch + game statuses) is cached per
+# league/week for a short window so a card refresh — or several cards on the
+# same league — does not hammer the provider APIs.
+_LIVE_MATCHUP_CACHE: dict = {}
+_LIVE_MATCHUP_TTL = 30.0  # seconds
+
+
+def _matchup_status_label(status_by_pid: dict, pids: list) -> str:
+    """pre / in / final for the two teams' starters combined."""
+    from dashboard_services.matchups import (
+        STATUS_FINAL, STATUS_IN_PROGRESS, STATUS_NOT_STARTED,
+    )
+    seen = [
+        status_by_pid.get(p) or status_by_pid.get(str(p)) or STATUS_NOT_STARTED
+        for p in pids if p is not None
+    ]
+    if not seen:
+        return "pre"
+    if all(s == STATUS_FINAL for s in seen):
+        return "final"
+    if any(s in (STATUS_IN_PROGRESS, STATUS_FINAL) for s in seen):
+        return "in"
+    return "pre"
+
+
+def _build_live_matchups(platform, resolved_league_id, season, week, ctx):
+    """(matchups, status_by_pid, proj_map) for one league/week, TTL-cached.
+
+    Only the live pieces are cached — the viewer's side is picked per request."""
+    import time as _time
+    key = (str(platform), str(resolved_league_id), int(season), int(week))
+    hit = _LIVE_MATCHUP_CACHE.get(key)
+    if hit and (_time.time() - hit[0]) < _LIVE_MATCHUP_TTL:
+        return hit[1]
+
+    from dashboard_services.matchups import build_matchup_preview
+    from utils.utils import build_status_for_week
+
+    matchups = build_matchup_preview(
+        league_id=resolved_league_id,
+        week=week,
+        roster_map=ctx.get("roster_map") or {},
+        players_map=ctx.get("players") or {},
+        season=season,
+        platform=platform,
+    ) or []
+    status_by_pid = build_status_for_week(
+        season, week, ctx.get("players_index") or {}, ctx.get("teams_index") or {},
+    ) or {}
+    proj_bundle = build_projections_by_week(
+        season, week, ctx.get("raw_scoring_settings"),
+    ) or {}
+    proj_map = (proj_bundle.get(week) or {}).get("projections") or {}
+
+    result = (matchups, status_by_pid, proj_map)
+    _LIVE_MATCHUP_CACHE[key] = (_time.time(), result)
+    # Bound the cache: it is keyed per league/week, so it stays small, but prune
+    # stale entries opportunistically so it never grows without limit.
+    if len(_LIVE_MATCHUP_CACHE) > 200:
+        cutoff = _time.time() - _LIVE_MATCHUP_TTL
+        for k in [k for k, v in _LIVE_MATCHUP_CACHE.items() if v[0] < cutoff]:
+            _LIVE_MATCHUP_CACHE.pop(k, None)
+    return result
+
+
+@user_pages_bp.route("/api/portfolio/matchup")
+def api_portfolio_matchup():
+    """Live matchup score (your total vs opponent) for one My Leagues card.
+
+    Returns {"live": false} for any state where a live score is meaningless
+    (offseason, pre-draft, no linked team, bye week, or the fetch failing) so
+    the card silently falls back to its record. When live, returns each side's
+    current score and projected final total plus a pre/in/final status."""
+    from flask import jsonify
+
+    viewer_username = session.get("viewer_username")
+    viewer_user_id = session.get("viewer_user_id")
+    if (not viewer_username or not viewer_user_id) and not session.get("account_id"):
+        return jsonify({"live": False})
+
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    if not league_id:
+        return jsonify({"live": False})
+
+    nfl_state = get_nfl_state() or {}
+    # Live scoring only makes sense in the regular season or playoffs.
+    if str(nfl_state.get("season_type") or "").lower() not in ("regular", "post"):
+        return jsonify({"live": False})
+    try:
+        default_season = int(nfl_state.get("season") or datetime.now().year)
+        season = int(request.args.get("season") or default_season)
+        week = int(nfl_state.get("week") or nfl_state.get("leg") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"live": False})
+    if week < 1:
+        return jsonify({"live": False})
+
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+    except Exception:
+        logger.debug("[portfolio-matchup] ctx load failed", exc_info=True)
+        return jsonify({"live": False})
+    if not ctx or ctx.get("offseason_mode"):
+        return jsonify({"live": False})
+
+    viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
+    if not viewer_rid:
+        return jsonify({"live": False})
+
+    resolved_league_id = ctx.get("resolved_league_id") or league_id
+    try:
+        matchups, status_by_pid, proj_map = _build_live_matchups(
+            platform, resolved_league_id, season, week, ctx,
+        )
+    except Exception:
+        logger.debug("[portfolio-matchup] live build failed", exc_info=True)
+        return jsonify({"live": False})
+
+    # Find the viewer's matchup and orient "you" / "opp".
+    you = opp = None
+    for m in matchups:
+        left = m.get("left") or {}
+        right = m.get("right") or {}
+        if str(left.get("roster_id") or "") == viewer_rid:
+            you, opp = left, right
+            break
+        if str(right.get("roster_id") or "") == viewer_rid:
+            you, opp = right, left
+            break
+    if not you:
+        return jsonify({"live": False})
+
+    from dashboard_services.matchups import team_live_totals
+
+    def _side(team):
+        actual, proj = team_live_totals(team, status_by_pid, proj_map)
+        return {
+            "name": team.get("name") or "",
+            "score": round(float(actual or 0.0), 1),
+            "proj": round(float(proj or 0.0), 1),
+        }
+
+    you_side = _side(you)
+    opp_side = _side(opp) if opp and opp.get("roster_id") else None
+
+    pids = [p.get("pid") for p in (you.get("starters") or [])]
+    if opp:
+        pids += [p.get("pid") for p in (opp.get("starters") or [])]
+    status = _matchup_status_label(status_by_pid, pids)
+
+    return jsonify({
+        "live": True,
+        "week": week,
+        "status": status,
+        "you": you_side,
+        "opp": opp_side,
+    })
 
 
 @user_pages_bp.route("/watchlist")
