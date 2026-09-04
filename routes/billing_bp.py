@@ -575,7 +575,12 @@ def page_pricing(platform: str, season: int, league_id: str):
     _try_grant_from_stripe_success()
     body_html = _pricing_body()
     # active="pricing" keeps AdSense off this checkout/utility page.
-    return render_page("Pricing", league_id, "pricing", body_html, platform, season)
+    # lite_js: guests get public.js + seo_lite.css (pricing is card chrome only);
+    # signed-in visitors still receive full app.js / dashboard.css via render_page.
+    return render_page(
+        "Pricing", league_id, "pricing", body_html, platform, season,
+        lite_js=True,
+    )
 
 
 @billing_bp.route("/pricing")
@@ -588,7 +593,10 @@ def page_pricing_guest():
     platform = _request_platform()
     if platform not in _SUPPORTED_PLATFORMS:
         platform = "sleeper"
-    return render_page("Pricing", None, "pricing", body_html, platform, current_season)
+    return render_page(
+        "Pricing", None, "pricing", body_html, platform, current_season,
+        lite_js=True,
+    )
 
 
 # ── Stripe API endpoints ──────────────────────────────────────────────────────

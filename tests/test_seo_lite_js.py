@@ -20,6 +20,7 @@ _SEO_LITE_PATHS = [
     "/dynasty-trade-value-chart",
     "/guides",
     "/glossary",
+    "/pricing",
 ]
 
 
@@ -65,19 +66,34 @@ def test_guest_seo_page_serves_public_js(offline_client, path):
     assert not any("player_modal.js" in s for s in srcs)
 
 
-def test_guest_seo_page_includes_seo_lite_css(offline_client):
+@pytest.mark.parametrize("path", ["/compare", "/pricing", "/rankings/dynasty"])
+def test_guest_seo_page_includes_seo_lite_css(offline_client, path):
     """Logged-out SEO shells (not the landing page) link seo_lite.css."""
     import app as app_mod
     if not getattr(app_mod, "_FEATURES_JS_FILE", None):
         pytest.skip("app-features.js bundle not built in this environment")
 
-    r = offline_client.get("/compare")
-    assert r.status_code == 200
+    r = offline_client.get(path)
+    assert r.status_code == 200, f"{path} -> {r.status_code}"
     html = r.get_data(as_text=True)
-    assert "/static/seo_lite.css" in html
+    assert "/static/seo_lite.css" in html, f"{path} should link seo_lite.css"
     import re
-    assert not re.search(r'<link[^>]+href="[^"]*dashboard(?:\.min)?\.css', html)
+    assert not re.search(r'<link[^>]+href="[^"]*dashboard(?:\.min)?\.css', html), (
+        f"{path} should not link full dashboard.css for guests"
+    )
     assert "__DASHBOARD_CSS" in html
+
+
+def test_pricing_opts_into_lite_js_in_source():
+    """Guest + league pricing must pass lite_js so guests skip the full app bundle."""
+    from pathlib import Path
+    billing = (Path(__file__).resolve().parents[1] / "routes" / "billing_bp.py").read_text(
+        encoding="utf-8"
+    )
+    guest = billing[billing.index("def page_pricing_guest"):]
+    league = billing[billing.index("def page_pricing("):billing.index("def page_pricing_guest")]
+    assert "lite_js=True" in guest
+    assert "lite_js=True" in league
 
 
 def test_seo_lite_css_hides_guest_nav_chrome():
