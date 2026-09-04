@@ -19676,17 +19676,60 @@ def _canonical_teams_index(teams_index: dict) -> dict:
     return canonical_teams_index(teams_index)
 
 
-def _resolve_stats_reg_season(season: int) -> int:
-    """Pick the stats_player_reg CSV year to use (requested season or latest)."""
-    csv_path = os.path.join(CACHE_DIR, f"stats_player_reg_{season}.csv")
-    if os.path.exists(csv_path):
-        return int(season)
-    files = sorted(glob.glob(os.path.join(CACHE_DIR, "stats_player_reg_*.csv")), reverse=True)
-    for fp in files:
+def _stats_reg_csv_path(season: int) -> str:
+    return os.path.join(CACHE_DIR, f"stats_player_reg_{int(season)}.csv")
+
+
+def _has_stats_reg_csv(season: int) -> bool:
+    return os.path.exists(_stats_reg_csv_path(season))
+
+
+def _list_stats_reg_seasons() -> list:
+    """Seasons with a stats_player_reg CSV on disk, newest first."""
+    out = []
+    for fp in sorted(glob.glob(os.path.join(CACHE_DIR, "stats_player_reg_*.csv")), reverse=True):
         m = re.match(r"stats_player_reg_(\d+)\.csv$", os.path.basename(fp))
         if m:
-            return int(m.group(1))
-    return int(season)
+            out.append(int(m.group(1)))
+    return out
+
+
+def _resolve_stats_reg_season(season: int) -> int:
+    """Pick the stats_player_reg CSV year to use (requested season or latest)."""
+    if _has_stats_reg_csv(season):
+        return int(season)
+    seasons = _list_stats_reg_seasons()
+    return int(seasons[0]) if seasons else int(season)
+
+
+def _sleeper_season_proj_lines(season: int) -> dict:
+    """Sleeper season projection totals keyed by player id. {} when unavailable."""
+    try:
+        from data_building.fetch_projections import load_sleeper_season_stat_lines
+        lines = load_sleeper_season_stat_lines(int(season)) or {}
+        return lines if isinstance(lines, dict) else {}
+    except Exception:
+        logger.debug("sleeper season proj load failed for %s", season, exc_info=True)
+        return {}
+
+
+def _has_team_offense_projections(season: int) -> bool:
+    """True when Sleeper season projections can back a Team-tab projection view."""
+    return bool(_sleeper_season_proj_lines(season))
+
+
+def _list_team_tab_seasons(current_season: int) -> list:
+    """Seasons the Team tab can show: actual CSVs + projection years + current/next."""
+    seasons = set(_list_stats_reg_seasons())
+    cur = int(current_season or datetime.now().year)
+    for y in (cur, cur + 1):
+        if y in seasons or _has_team_offense_projections(y):
+            seasons.add(y)
+        elif y == cur:
+            # Always offer the league/current season even before proj cache fills,
+            # so the selector defaults cleanly; ranks may be empty until data lands.
+            seasons.add(y)
+    return sorted(seasons, reverse=True)
 
 
 def _rank_desc(values: dict) -> dict:
@@ -19701,61 +19744,92 @@ def _rank_desc(values: dict) -> dict:
     return out
 
 
-def _compute_team_offense_ranks(season: int) -> dict:
-    """Aggregate team offensive stats and league ranks (cached ~1h)."""
-    stats_season = _resolve_stats_reg_season(season)
-    cache_key = stats_season
-    cached = _TEAM_OFFENSE_RANKS_CACHE.get(cache_key)
-    if cached and time.time() - cached[0] < _TEAM_OFFENSE_RANKS_TTL:
-        return cached[1]
-
-    from utils.utils import load_teams_index
-
+def _aggregate_player_reg_offense(csv_path: str) -> dict:
+    """Sum player-reg CSV rows into per-team offense buckets."""
     agg: dict = defaultdict(lambda: {
         "pass_yds": 0.0, "pass_att": 0.0, "rush_yds": 0.0, "rush_att": 0.0,
         "pass_tds": 0.0, "rush_tds": 0.0,
     })
-    csv_path = os.path.join(CACHE_DIR, f"stats_player_reg_{stats_season}.csv")
-    if os.path.exists(csv_path):
-        try:
-            import csv as _csv
-            with open(csv_path, newline="", encoding="utf-8") as f:
-                for row in _csv.DictReader(f):
-                    team = _canon_team_abbr(row.get("recent_team") or "")
-                    if not team:
-                        continue
-                    bucket = agg[team]
-                    bucket["pass_yds"] += float(row.get("passing_yards") or 0)
-                    bucket["pass_att"] += float(row.get("attempts") or 0)
-                    bucket["rush_yds"] += float(row.get("rushing_yards") or 0)
-                    bucket["rush_att"] += float(row.get("carries") or 0)
-                    bucket["pass_tds"] += float(row.get("passing_tds") or 0)
-                    bucket["rush_tds"] += float(row.get("rushing_tds") or 0)
-        except Exception:
-            logger.debug("team offense CSV aggregation failed", exc_info=True)
+    if not os.path.exists(csv_path):
+        return agg
+    try:
+        import csv as _csv
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            for row in _csv.DictReader(f):
+                team = _canon_team_abbr(row.get("recent_team") or "")
+                if not team:
+                    continue
+                bucket = agg[team]
+                bucket["pass_yds"] += float(row.get("passing_yards") or 0)
+                bucket["pass_att"] += float(row.get("attempts") or 0)
+                bucket["rush_yds"] += float(row.get("rushing_yards") or 0)
+                bucket["rush_att"] += float(row.get("carries") or 0)
+                bucket["pass_tds"] += float(row.get("passing_tds") or 0)
+                bucket["rush_tds"] += float(row.get("rushing_tds") or 0)
+    except Exception:
+        logger.debug("team offense CSV aggregation failed", exc_info=True)
+    return agg
 
-    teams_index = _canonical_teams_index(load_teams_index() or {})
-    all_teams = set(teams_index.keys()) | set(agg.keys())
 
-    points_pg: dict = {}
-    plays_pg: dict = {}
+def _player_team_for_proj(pid: str, players_index: dict, full_players: dict) -> str:
+    """Resolve a player's NFL team abbr for season-projection aggregation."""
+    meta = (players_index or {}).get(str(pid)) or {}
+    team = _canon_team_abbr(meta.get("team") or "")
+    if team:
+        return team
+    p = (full_players or {}).get(str(pid)) or {}
+    if isinstance(p, dict):
+        return _canon_team_abbr(p.get("team") or "")
+    return ""
+
+
+def _aggregate_projected_team_offense(season: int) -> dict:
+    """Sum Sleeper season-projection raw stats into per-team offense buckets."""
+    lines = _sleeper_season_proj_lines(season)
+    agg: dict = defaultdict(lambda: {
+        "pass_yds": 0.0, "pass_att": 0.0, "rush_yds": 0.0, "rush_att": 0.0,
+        "pass_tds": 0.0, "rush_tds": 0.0,
+    })
+    if not lines:
+        return agg
+
+    from utils.utils import load_relevant_index
+
+    players_index = load_relevant_index() or {}
+    full_players: dict = {}
+    try:
+        full_players = get_players_global() or {}
+    except Exception:
+        full_players = {}
+
+    for pid, row in lines.items():
+        if not isinstance(row, dict):
+            continue
+        team = _player_team_for_proj(str(pid), players_index, full_players)
+        if not team:
+            continue
+        rs = row.get("raw_stats") if isinstance(row.get("raw_stats"), dict) else row
+        if not isinstance(rs, dict):
+            continue
+        bucket = agg[team]
+        bucket["pass_yds"] += float(rs.get("pass_yd") or 0)
+        bucket["pass_att"] += float(rs.get("pass_att") or 0)
+        bucket["rush_yds"] += float(rs.get("rush_yd") or 0)
+        bucket["rush_att"] += float(rs.get("rush_att") or 0)
+        bucket["pass_tds"] += float(rs.get("pass_td") or 0)
+        bucket["rush_tds"] += float(rs.get("rush_td") or 0)
+    return agg
+
+
+def _ranks_from_team_offense_agg(agg: dict, *, points_pg: dict = None, plays_pg: dict = None) -> dict:
+    """Build the Team-tab rank tables from per-team offense buckets."""
+    points_pg = points_pg or {}
+    plays_pg = plays_pg or {}
     total_yds: dict = {}
     pass_rate: dict = {}
-    for team in all_teams:
-        ti = teams_index.get(team) or {}
-        ppg = ti.get("points_pg")
-        if ppg is not None:
-            try:
-                points_pg[team] = float(ppg)
-            except (TypeError, ValueError):
-                pass
-        osp = ti.get("off_snaps_pg")
-        if osp is not None:
-            try:
-                plays_pg[team] = float(osp)
-            except (TypeError, ValueError):
-                pass
-        b = agg.get(team) or {}
+    scoring_proxy: dict = {}
+    pace_proxy: dict = {}
+    for team, b in (agg or {}).items():
         ty = float(b.get("pass_yds") or 0) + float(b.get("rush_yds") or 0)
         if ty > 0:
             total_yds[team] = ty
@@ -19763,9 +19837,13 @@ def _compute_team_offense_ranks(season: int) -> dict:
         ra = float(b.get("rush_att") or 0)
         if pa + ra > 0:
             pass_rate[team] = pa / (pa + ra)
-
-    ranks = {
-        "points": _rank_desc(points_pg),
+            pace_proxy[team] = pa + ra
+        # Approx NFL scoring when teams_index points_pg is unavailable (projections).
+        tds = float(b.get("pass_tds") or 0) + float(b.get("rush_tds") or 0)
+        if tds > 0 or ty > 0:
+            scoring_proxy[team] = tds * 6.0 + ty / 20.0
+    return {
+        "points": _rank_desc(points_pg or scoring_proxy),
         "pass_yds": _rank_desc({t: agg[t]["pass_yds"] for t in agg if agg[t]["pass_yds"] > 0}),
         "pass_att": _rank_desc({t: agg[t]["pass_att"] for t in agg if agg[t]["pass_att"] > 0}),
         "rush_yds": _rank_desc({t: agg[t]["rush_yds"] for t in agg if agg[t]["rush_yds"] > 0}),
@@ -19773,14 +19851,61 @@ def _compute_team_offense_ranks(season: int) -> dict:
         "total_yds": _rank_desc(total_yds),
         "pass_tds": _rank_desc({t: agg[t]["pass_tds"] for t in agg if agg[t]["pass_tds"] > 0}),
         "rush_tds": _rank_desc({t: agg[t]["rush_tds"] for t in agg if agg[t]["rush_tds"] > 0}),
-        "plays_pg": _rank_desc(plays_pg),
+        "plays_pg": _rank_desc(plays_pg or pace_proxy),
         "pass_rate": _rank_desc(pass_rate),
     }
 
+
+def _compute_team_offense_ranks(season: int) -> dict:
+    """Aggregate team offensive stats and league ranks (cached ~1h).
+
+    Prefer actual ``stats_player_reg_{season}`` when present. Otherwise build
+    ranks from Sleeper season projections for that year so the Team tab can
+    show next/current-season projections instead of silently falling back.
+    """
+    season = int(season)
+    use_actual = _has_stats_reg_csv(season)
+    data_mode = "actual" if use_actual else "projection"
+    cache_key = (season, data_mode)
+    cached = _TEAM_OFFENSE_RANKS_CACHE.get(cache_key)
+    if cached and time.time() - cached[0] < _TEAM_OFFENSE_RANKS_TTL:
+        return cached[1]
+
+    from utils.utils import load_teams_index
+
+    teams_index = _canonical_teams_index(load_teams_index() or {})
+    if use_actual:
+        agg = _aggregate_player_reg_offense(_stats_reg_csv_path(season))
+        points_pg: dict = {}
+        plays_pg: dict = {}
+        for team in set(teams_index.keys()) | set(agg.keys()):
+            ti = teams_index.get(team) or {}
+            ppg = ti.get("points_pg")
+            if ppg is not None:
+                try:
+                    points_pg[team] = float(ppg)
+                except (TypeError, ValueError):
+                    pass
+            osp = ti.get("off_snaps_pg")
+            if osp is not None:
+                try:
+                    plays_pg[team] = float(osp)
+                except (TypeError, ValueError):
+                    pass
+        ranks = _ranks_from_team_offense_agg(agg, points_pg=points_pg, plays_pg=plays_pg)
+        stats_season = season
+    else:
+        agg = _aggregate_projected_team_offense(season)
+        ranks = _ranks_from_team_offense_agg(agg)
+        stats_season = season
+
     payload = {
         "stats_season": stats_season,
+        "season": season,
+        "data_mode": data_mode,
         "teams_index": teams_index,
         "ranks": ranks,
+        "available_seasons": _list_team_tab_seasons(season),
     }
     _TEAM_OFFENSE_RANKS_CACHE[cache_key] = (time.time(), payload)
     return payload
@@ -19990,6 +20115,10 @@ def api_player_team(player_id: str):
 
         offense = _compute_team_offense_ranks(season)
         stats_season = offense.get("stats_season", season)
+        data_mode = offense.get("data_mode") or (
+            "actual" if _has_stats_reg_csv(stats_season) else "projection"
+        )
+        available_seasons = offense.get("available_seasons") or _list_team_tab_seasons(season)
         teams_index = offense.get("teams_index") or _canonical_teams_index(load_teams_index() or {})
         ranks_all = offense.get("ranks") or {}
         ti = teams_index.get(team) or {}
@@ -20021,7 +20150,10 @@ def api_player_team(player_id: str):
             logger.debug("get_players_global failed for team tab", exc_info=True)
 
         usage_table = load_usage_table()
-        pfr_snaps = _get_pfr_snap_counts_cached(stats_season)
+        # Snap counts only exist for completed seasons; for projections fall back
+        # to the latest actual CSV year so depth-chart snap % still populates.
+        snap_season = stats_season if data_mode == "actual" else _resolve_stats_reg_season(season)
+        pfr_snaps = _get_pfr_snap_counts_cached(snap_season)
         depth_chart = _build_player_team_depth_chart(
             str(player_id), team, full_players, usage_index, usage_table,
             teams_index, pfr_snaps,
@@ -20036,7 +20168,10 @@ def api_player_team(player_id: str):
             "position": position,
             "player_id": str(player_id),
             "player_name": player_name,
+            "season": season,
             "stats_season": stats_season,
+            "data_mode": data_mode,
+            "available_seasons": available_seasons,
             "ranks": ranks,
             "ranks_more": ranks_more,
             "depth_chart": depth_chart,
