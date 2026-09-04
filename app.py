@@ -10011,7 +10011,11 @@ def _activity_your_players_block(roster_pids: dict) -> str:
 from dashboard_services.pages.activity_page import build_activity_body  # noqa: E402
 
 
-from utils.roster_strength import weighted_pos_strength as _weighted_pos_strength  # noqa: E402
+from utils.roster_strength import (  # noqa: E402
+    derive_league_thresholds,
+    weighted_pos_strength as _weighted_pos_strength,
+)
+from utils.trade_targets import package_ceiling, select_trade_targets  # noqa: E402
 
 # Pure logic lives in utils/pick_slots.py; re-exported under the original name.
 from utils.pick_slots import avg_pick_value_for_round as _avg_pick_value_for_round  # noqa: E402
@@ -23820,8 +23824,11 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
 @app.route("/api/trade-targets")
 def api_trade_targets():
     """
-    Suggest trade acquisition targets for the viewer's team based on positional needs.
-    Compares viewer's positional value vs league average, surfaces best available from other teams.
+    Suggest trade acquisition targets for the viewer's team based on roster fit.
+    Need detection uses starter-slot-weighted positional strength (same as Teams).
+    Candidates are ranked by gap fill, what the viewer can pay, owner surplus,
+    and age window — not raw value — so a TE-needy roster sees a reachable TE,
+    not the same four elites every time.
     """
     platform = str(request.args.get("platform") or "sleeper").strip()
     league_id = str(request.args.get("league_id") or "").strip()
@@ -23953,32 +23960,28 @@ def api_trade_targets():
                              key=lambda rid: pos_strength[rid].get(pos, 0.0), reverse=True)
         pos_ranks[pos] = {rid: i + 1 for i, rid in enumerate(sorted_rids)}
 
-    # Viewer is needy at a position if they rank in the bottom 35%
-    need_cutoff = max(1, round(num_teams * 0.35))
-    needed_positions = [
-        pos for pos in POSITIONS
-        if pos_ranks[pos].get(viewer_roster_id, num_teams) > num_teams - need_cutoff
-    ]
-
-    # Compute the viewer's realistic offer ceiling: best 2 players + pick value.
-    # Targets are filtered to players the viewer could plausibly acquire.
     viewer_roster_obj = next((r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None)
+    viewer_pids = [str(p) for p in (viewer_roster_obj.get("players") or [])] if viewer_roster_obj else []
     viewer_player_vals = sorted(
-        [float(values_by_id[str(p)]["value"]) for p in (viewer_roster_obj.get("players") or [])
-         if str(p) in values_by_id and values_by_id[str(p)]["value"] >= 150],
+        [float(values_by_id[p]["value"]) for p in viewer_pids
+         if p in values_by_id and values_by_id[p]["value"] >= 150],
         reverse=True,
-    ) if viewer_roster_obj else []
+    )
+    valued_ages = [
+        (float(values_by_id[p]["value"]), float(values_by_id[p]["age"]))
+        for p in viewer_pids
+        if p in values_by_id and values_by_id[p].get("age") is not None
+        and values_by_id[p]["position"] in POSITIONS
+    ]
     _pick_val_est = sum(
         650 if p.get("round") == 1 else 220 if p.get("round") == 2 else 80
         for p in picks_by_roster.get(viewer_roster_id, [])
         if int(p.get("season", 0)) <= _cur_yr + 1
     )
-    # Max realistic package: top 2 players + picks, with 20% premium the buyer might pay
-    _offer_1for1 = (viewer_player_vals[0] * 1.25) if viewer_player_vals else 300
-    _offer_package = (sum(viewer_player_vals[:2]) + _pick_val_est) * 1.2 if viewer_player_vals else 500
-    _realistic_max = max(_offer_1for1, _offer_package)
+    _realistic_max = package_ceiling(viewer_player_vals, _pick_val_est)
 
-    # Collect players from other teams, filtered by realistic acquire value
+    # Collect players from other teams; the ranker drops anyone above the
+    # package ceiling and orders the rest by roster fit, not raw value.
     all_collected: dict[str, list] = {pos: [] for pos in POSITIONS}
     for roster in rosters:
         rid = str(roster.get("roster_id"))
@@ -23991,7 +23994,7 @@ def api_trade_targets():
             if not info or info["position"] not in POSITIONS or info["value"] < 150:
                 continue
             if info["value"] > _realistic_max:
-                continue  # not realistically acquirable given viewer's trade assets
+                continue
             all_collected[info["position"]].append({
                 "player_id": pid,
                 "name": info["name"],
@@ -24005,27 +24008,30 @@ def api_trade_targets():
                 "owner_roster_id": rid,
             })
 
-    for pos in POSITIONS:
-        all_collected[pos].sort(key=lambda p: p["value"], reverse=True)
-
     position_ranks_out = {pos: pos_ranks[pos].get(viewer_roster_id, num_teams) for pos in POSITIONS}
+    _is_sf = league_type == "sf"
+    _thr, _floors = derive_league_thresholds(_rp_list, num_teams, is_sf=_is_sf)
 
-    if not needed_positions:
-        # Balanced team: return top 2 per position as a discovery/browsing view
-        all_positions = {pos: all_collected[pos][:2] for pos in POSITIONS if all_collected[pos]}
-        return jsonify({
-            "by_position": {}, "all_positions": all_positions,
-            "position_ranks": position_ranks_out,
-            "projected_picks": _projected_picks_out,
-        })
-
-    by_position = {pos: all_collected[pos][:4] for pos in needed_positions if all_collected[pos]}
+    picked = select_trade_targets(
+        viewer_vals=roster_vals.get(viewer_roster_id) or {p: [] for p in POSITIONS},
+        pos_ranks=position_ranks_out,
+        num_teams=num_teams,
+        slot_counts=slot_counts,
+        candidates_by_pos=all_collected,
+        viewer_asset_values=viewer_player_vals,
+        pick_value=_pick_val_est,
+        valued_ages=valued_ages,
+        starter_thresholds=_thr,
+        starter_floors=_floors,
+        is_redraft=_league_is_redraft(ctx),
+    )
 
     return jsonify({
-        "by_position": by_position,
-        "all_positions": {},
+        "by_position": picked.get("by_position") or {},
+        "all_positions": picked.get("all_positions") or {},
         "position_ranks": position_ranks_out,
         "projected_picks": _projected_picks_out,
+        "window": picked.get("window") or "balanced",
     })
 
 
