@@ -3386,10 +3386,16 @@ def _link_modal_html() -> str:
           }
         });
       }
+      function withCheckout(payload){
+        payload=payload||{};
+        if(window.__brCheckoutPlan) payload.checkout_plan=String(window.__brCheckoutPlan);
+        return payload;
+      }
       function linkAdd(platform,league_id,season,team_id,name,btn){
         var hasAcct=!!window._hasAccount;
-        if(btn){ btn.disabled=true; btn.textContent=hasAcct?'Adding…':'Continuing…'; }
-        var payload={platform:platform,league_id:league_id,season:season,team_id:team_id,name:name};
+        var checkoutPlan=window.__brCheckoutPlan;
+        if(btn){ btn.disabled=true; btn.textContent=hasAcct?(checkoutPlan?'Continuing…':'Adding…'):'Continuing…'; }
+        var payload=withCheckout({platform:platform,league_id:league_id,season:season,team_id:team_id,name:name});
         // Sleeper add/pending both key off the username the user looked up with:
         // /api/link/add verifies league membership through it (and sets team_id),
         // and /api/link/pending stashes it to set the viewer after Google. Without
@@ -3401,13 +3407,27 @@ def _link_modal_html() -> str:
           body:JSON.stringify(payload)})
           .then(function(r){return r.json();}).then(function(d){
             if(d.ok){
-              if(hasAcct){ linkSetMsg('Added '+(name||'league')+'. Refreshing…','ok');
+              if(hasAcct){
+                if(checkoutPlan && typeof window._initiatePurchaseWithLeague==='function'){
+                  if(window.__brctx){
+                    window.__brctx.leagueId=String(league_id);
+                    if(platform) window.__brctx.platform=platform;
+                    if(season) window.__brctx.season=Number(season)||window.__brctx.season;
+                  }
+                  var cta=window.__brCheckoutBtn;
+                  window.__brCheckoutPlan=null;
+                  window.__brCheckoutBtn=null;
+                  if(window.closeLinkModal) window.closeLinkModal();
+                  window._initiatePurchaseWithLeague(checkoutPlan, cta, String(league_id));
+                  return;
+                }
+                linkSetMsg('Added '+(name||'league')+'. Refreshing…','ok');
                 if(btn){ btn.textContent='Added ✓'; } setTimeout(function(){ location.reload(); },900); }
-              else { linkSetMsg('Saved. Signing you in with Google…','ok');
+              else { linkSetMsg(checkoutPlan?'League saved. Continue with Google to subscribe…':'Saved. Signing you in with Google…','ok');
                 location.href=d.auth_url||'/auth/google'; }
             }
-            else { linkSetMsg(d.error||'Could not add that league.','err'); if(btn){ btn.disabled=false; btn.textContent='Add'; } }
-          }).catch(function(){ linkSetMsg('Network error.','err'); if(btn){ btn.disabled=false; btn.textContent='Add'; } });
+            else { linkSetMsg(d.error||'Could not add that league.','err'); if(btn){ btn.disabled=false; btn.textContent=checkoutPlan?'Choose':'Add'; } }
+          }).catch(function(){ linkSetMsg('Network error.','err'); if(btn){ btn.disabled=false; btn.textContent=checkoutPlan?'Choose':'Add'; } });
       }
       window.linkSleeperLookup=function(){
         var u=(document.getElementById('linkSleeperUser').value||'').trim();
@@ -3419,7 +3439,7 @@ def _link_modal_html() -> str:
           linkSetMsg('','');
           box.innerHTML=d.leagues.map(function(l){
             return '<div class="link-item"><span>'+esc(l.label||l.name)+'</span>'+
-              '<button type="button" class="link-add" data-lid="'+esc(l.league_id)+'" data-season="'+esc(l.season||'')+'" data-name="'+esc(l.name||l.label)+'">Add</button></div>';
+              '<button type="button" class="link-add" data-lid="'+esc(l.league_id)+'" data-season="'+esc(l.season||'')+'" data-name="'+esc(l.name||l.label)+'">'+(window.__brCheckoutPlan?'Choose':'Add')+'</button></div>';
           }).join('');
           box.querySelectorAll('.link-add').forEach(function(b){ b.addEventListener('click',function(){
             linkAdd('sleeper', b.dataset.lid, b.dataset.season?Number(b.dataset.season):null, null, b.dataset.name, b); }); });
@@ -3429,7 +3449,7 @@ def _link_modal_html() -> str:
         var opts=teams.map(function(t){ return '<option value="'+esc(t.team_id)+'"'+(String(t.team_id)===String(myId)?' selected':'')+'>'+esc(t.name)+'</option>'; }).join('');
         box.innerHTML='<div class="link-item"><span>'+esc(name)+'</span></div>'+
           (teams.length?'<select class="link-sel" id="linkTeamSel">'+opts+'</select>':'')+
-          '<div style="margin-top:10px;text-align:right;"><button type="button" class="link-btn" id="linkConfirm">Add league</button></div>';
+          '<div style="margin-top:10px;text-align:right;"><button type="button" class="link-btn" id="linkConfirm">'+(window.__brCheckoutPlan?'Choose league':'Add league')+'</button></div>';
         if(teams.length && window.initCustomSelects) window.initCustomSelects(box);
         document.getElementById('linkConfirm').addEventListener('click',function(){
           var sel=document.getElementById('linkTeamSel');
@@ -3530,7 +3550,7 @@ def _link_modal_html() -> str:
               document.getElementById('linkEspnGoogle').addEventListener('click',function(){
                 this.disabled=true;this.textContent='Continuing…';
                 var picked=espnPickedTeam();
-                fetch('/api/link/pending',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({platform:'espn',league_id:id,season:d.league.season,name:d.league.name,team_id:picked.team_id,username:picked.username})})
+                fetch('/api/link/pending',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(withCheckout({platform:'espn',league_id:id,season:d.league.season,name:d.league.name,team_id:picked.team_id,username:picked.username}))})
                   .then(function(r){return r.json();}).then(function(saved){if(saved.ok)location.href=saved.auth_url||'/auth/google';else linkSetMsg(saved.error||'Could not save league.','err');});
               });
               document.getElementById('linkEspnGuest').addEventListener('click',function(){
@@ -3619,7 +3639,7 @@ def _link_modal_html() -> str:
                 pane.appendChild(choice);
                 document.getElementById('linkMflGoogle').addEventListener('click',function(){
                   this.disabled=true; this.textContent='Continuing…';
-                  fetch('/api/link/pending',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({platform:'mfl',league_id:d.league_id,season:d.season,name:d.name})})
+                  fetch('/api/link/pending',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(withCheckout({platform:'mfl',league_id:d.league_id,season:d.season,name:d.name}))})
                     .then(function(r){return r.json();}).then(function(saved){if(saved.ok)location.href=saved.auth_url||'/auth/google';else linkSetMsg(saved.error||'Could not save league.','err');});
                 });
                 document.getElementById('linkMflGuest').addEventListener('click',function(){
@@ -3713,7 +3733,7 @@ def _link_modal_html() -> str:
                 pane.appendChild(choice);
                 document.getElementById('linkFleaGoogle').addEventListener('click',function(){
                   this.disabled=true; this.textContent='Continuing…';
-                  fetch('/api/link/pending',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({platform:'fleaflicker',league_id:d.league_id,season:d.season,name:d.name})})
+                  fetch('/api/link/pending',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(withCheckout({platform:'fleaflicker',league_id:d.league_id,season:d.season,name:d.name}))})
                     .then(function(r){return r.json();}).then(function(saved){if(saved.ok)location.href=saved.auth_url||'/auth/google';else linkSetMsg(saved.error||'Could not save league.','err');});
                 });
                 document.getElementById('linkFleaGuest').addEventListener('click',function(){

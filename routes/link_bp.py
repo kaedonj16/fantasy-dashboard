@@ -608,6 +608,15 @@ def link_pending():
         # team and set the viewer identity (personalizes the dashboard).
         "username": (str(data.get("username")).strip() or None) if data.get("username") else None,
     }
+    checkout_plan = str(data.get("checkout_plan") or "").strip()
+    if checkout_plan in {"single_league", "league", "combo", "user"}:
+        session["pending_link"]["checkout_plan"] = checkout_plan
+        from urllib.parse import quote
+        next_url = (
+            f"/{platform}/{season}/{quote(league_id, safe='')}"
+            f"/pricing?plan={quote(checkout_plan, safe='')}&checkout=1"
+        )
+        return jsonify({"ok": True, "auth_url": f"/auth/google?next={quote(next_url, safe='')}"})
     return jsonify({"ok": True, "auth_url": "/auth/google?next=/"})
 
 
