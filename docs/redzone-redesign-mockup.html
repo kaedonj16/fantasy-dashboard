@@ -1,0 +1,840 @@
+<title>Redzone Redesign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Archivo:wght@400;500;600;700&display=swap">
+<style>
+  :root {
+    --ground: #0a0d12;
+    --studio: #0c0f14;
+    --surface: #12161d;
+    --surface-2: #171c24;
+    --raise: #1d232c;
+    --line: #262d38;
+    --line-soft: #1c222b;
+    --text: #e7eaf0;
+    --muted: #8b94a3;
+    --faint: #626b78;
+    --red: #ef4444;
+    --red-hot: #f8524a;
+    --red-glow: rgba(239, 68, 68, .16);
+    --green: #34d399;
+    --green-soft: rgba(52, 211, 153, .14);
+    --amber: #fbbf24;
+    --amber-soft: rgba(251, 191, 36, .14);
+    --blue: #60a5fa;
+    --pos-qb: #a78bfa;
+    --pos-rb: #34d399;
+    --pos-wr: #60a5fa;
+    --pos-te: #fbbf24;
+    --pos-k:  #94a3b8;
+    --pos-def:#f472b6;
+    --display: 'Oswald', 'Arial Narrow', sans-serif;
+    --body: 'Archivo', system-ui, sans-serif;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--studio);
+    background-image:
+      radial-gradient(1100px 620px at 78% -6%, rgba(239, 68, 68, .10), transparent 60%),
+      radial-gradient(900px 620px at 8% 108%, rgba(96, 165, 250, .06), transparent 55%);
+    color: var(--text);
+    font-family: var(--body);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+
+  .stage {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 40px 24px 72px;
+    display: grid;
+    grid-template-columns: minmax(0, 390px) minmax(0, 1fr);
+    gap: 56px;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .stage { grid-template-columns: 1fr; gap: 40px; justify-items: center; }
+  }
+
+  /* ── Studio header (presentation chrome) ─────────────────────────── */
+  .lede { grid-column: 1 / -1; max-width: 640px; }
+  .lede .kicker {
+    font-family: var(--display);
+    font-weight: 600;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    font-size: 12px;
+    color: var(--red-hot);
+    margin: 0 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .lede .kicker::before {
+    content: "";
+    width: 22px; height: 2px;
+    background: var(--red);
+    display: inline-block;
+  }
+  .lede h1 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(30px, 5vw, 44px);
+    line-height: 1.02;
+    letter-spacing: -.01em;
+    margin: 0 0 12px;
+    text-wrap: balance;
+  }
+  .lede p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 15px;
+    max-width: 52ch;
+  }
+  .lede .tag {
+    display: inline-block;
+    margin-top: 16px;
+    font-size: 12.5px;
+    color: var(--faint);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 13px;
+  }
+
+  /* ── Phone frame ─────────────────────────────────────────────────── */
+  .phone-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; position: sticky; top: 28px; }
+  @media (max-width: 900px) { .phone-wrap { position: static; } }
+
+  .phone {
+    width: 390px;
+    max-width: 92vw;
+    border-radius: 46px;
+    padding: 11px;
+    background: linear-gradient(160deg, #23272f, #0e1116 70%);
+    box-shadow:
+      0 0 0 2px #05070b,
+      0 34px 70px -28px rgba(0, 0, 0, .9),
+      0 0 60px -20px var(--red-glow);
+  }
+  .screen {
+    position: relative;
+    border-radius: 36px;
+    overflow: hidden;
+    background: var(--ground);
+    height: 812px;
+    display: flex;
+    flex-direction: column;
+  }
+  .notch {
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 132px; height: 26px;
+    background: #05070b;
+    border-radius: 0 0 16px 16px;
+    z-index: 40;
+  }
+
+  .statusbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 11px 22px 4px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    flex: 0 0 auto;
+  }
+  .statusbar .sig { display: flex; gap: 6px; align-items: center; letter-spacing: .04em; }
+
+  .app { flex: 1 1 auto; overflow: hidden; display: flex; flex-direction: column; }
+
+  /* ── App header ──────────────────────────────────────────────────── */
+  .rz-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 16px 12px;
+    background: linear-gradient(180deg, rgba(239,68,68,.07), transparent);
+    border-bottom: 1px solid var(--line-soft);
+    position: relative;
+    flex: 0 0 auto;
+  }
+  .rz-head::after {
+    content: "";
+    position: absolute; left: 0; bottom: -1px;
+    width: 120px; height: 2px;
+    background: linear-gradient(90deg, var(--red), rgba(248,82,74,0));
+  }
+  .brand { display: flex; align-items: baseline; gap: 9px; }
+  .brand .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--red);
+    align-self: center;
+    box-shadow: 0 0 0 4px var(--red-glow);
+    animation: pulse 1.6s ease-out infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 var(--red-glow); }
+    70% { box-shadow: 0 0 0 7px rgba(239,68,68,0); }
+    100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+  }
+  .brand .name {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 19px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .brand .name em { color: var(--red-hot); font-style: normal; }
+  .brand .wk {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: .06em;
+  }
+  .head-right { display: flex; align-items: center; gap: 8px; }
+  .live-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 11.5px;
+    letter-spacing: .1em;
+    color: var(--red-hot);
+    background: var(--red-glow);
+    border: 1px solid rgba(239,68,68,.32);
+    padding: 4px 9px;
+    border-radius: 999px;
+  }
+  .live-chip .b { width: 6px; height: 6px; border-radius: 50%; background: var(--red); animation: pulse 1.6s infinite; }
+  .timer {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 12.5px;
+    color: var(--muted);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-variant-numeric: tabular-nums;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .timer .ring {
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid var(--line);
+    border-top-color: var(--red);
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .scroll { flex: 1 1 auto; overflow-y: auto; padding: 14px 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .scroll::-webkit-scrollbar { width: 0; }
+
+  /* ── Scope toggle ────────────────────────────────────────────────── */
+  .scope {
+    display: grid; grid-template-columns: 1fr 1fr;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 4px;
+    gap: 4px;
+  }
+  .scope button {
+    font-family: var(--body);
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--muted);
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    padding: 8px 0;
+    cursor: pointer;
+  }
+  .scope button.on {
+    color: var(--text);
+    background: var(--raise);
+    box-shadow: 0 1px 0 rgba(255,255,255,.04) inset;
+  }
+
+  /* ── Hero matchup ────────────────────────────────────────────────── */
+  .hero {
+    position: relative;
+    border-radius: 18px;
+    overflow: hidden;
+    background:
+      linear-gradient(180deg, var(--surface-2), var(--surface));
+    border: 1px solid var(--line);
+    padding: 16px 18px 18px;
+  }
+  .hero::before {
+    content: "";
+    position: absolute; inset: 0;
+    background-image: repeating-linear-gradient(90deg, rgba(255,255,255,.028) 0 1px, transparent 1px 44px);
+    pointer-events: none;
+  }
+  .hero::after {
+    content: "";
+    position: absolute; top: -40%; right: -18%;
+    width: 240px; height: 240px;
+    background: radial-gradient(circle, var(--red-glow), transparent 68%);
+    pointer-events: none;
+  }
+  .hero-top {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+    position: relative;
+  }
+  .hero-top .close {
+    color: var(--amber);
+    border: 1px solid var(--amber-soft);
+    background: var(--amber-soft);
+    border-radius: 999px;
+    padding: 2px 8px;
+    letter-spacing: .1em;
+  }
+  .score-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; position: relative; }
+  .side { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .side.right { text-align: right; align-items: flex-end; }
+  .side .tname {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: .01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    color: var(--text);
+  }
+  .side .pts {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 42px;
+    line-height: .95;
+    letter-spacing: -.01em;
+    font-variant-numeric: tabular-nums;
+    color: var(--faint);
+  }
+  .side.lead .pts { color: var(--text); }
+  .side.lead .tname { color: var(--text); }
+  .side .proj { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .side .left-ct {
+    font-family: var(--display);
+    font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--red-hot);
+  }
+  .vs {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 12px;
+    color: var(--faint);
+    letter-spacing: .1em;
+  }
+
+  .wp {
+    margin-top: 16px;
+    position: relative;
+  }
+  .wp-track {
+    height: 8px; border-radius: 999px;
+    background: var(--raise);
+    overflow: hidden;
+    display: flex;
+    border: 1px solid var(--line);
+  }
+  .wp-fill { background: linear-gradient(90deg, var(--red), var(--red-hot)); }
+  .wp-fill.opp { background: var(--line); }
+  .wp-labels {
+    display: flex; justify-content: space-between;
+    margin-top: 7px;
+    font-family: var(--display);
+    font-size: 11px; letter-spacing: .05em;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .wp-labels b { color: var(--text); }
+  .hero-meta {
+    margin-top: 12px;
+    font-size: 11.5px;
+    color: var(--muted);
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .hero-meta .rz-tag {
+    color: var(--red-hot); font-weight: 600;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .hero-meta .rz-tag::before { content: "▪"; color: var(--red); }
+
+  /* ── On deck ─────────────────────────────────────────────────────── */
+  .ondeck {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface);
+    border: 1px dashed var(--line);
+    border-radius: 12px;
+    padding: 10px 13px;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .ondeck .lab {
+    font-family: var(--display);
+    font-weight: 600; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--amber);
+  }
+  .ondeck .clock { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ondeck .players { color: var(--text); margin-left: auto; font-weight: 500; }
+
+  /* ── Main card ───────────────────────────────────────────────────── */
+  .maincard {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    overflow: hidden;
+  }
+  .tabs {
+    display: flex;
+    padding: 6px;
+    gap: 4px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .tab {
+    flex: 1;
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: transparent;
+    border: 0;
+    border-radius: 9px;
+    padding: 9px 0;
+    cursor: pointer;
+    position: relative;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .tab.on { color: var(--text); background: var(--raise); }
+  .tab .count {
+    font-size: 10px; font-weight: 700;
+    background: var(--red); color: #fff;
+    border-radius: 999px; padding: 1px 6px;
+    font-family: var(--body);
+  }
+
+  .chips { display: flex; gap: 7px; padding: 12px 13px 4px; overflow-x: auto; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip {
+    flex: 0 0 auto;
+    font-size: 12px; font-weight: 500;
+    color: var(--muted);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 12px;
+    white-space: nowrap;
+  }
+  .chip.on { color: var(--text); border-color: rgba(239,68,68,.5); background: var(--red-glow); }
+  .chip.on .x { color: var(--red-hot); margin-left: 4px; }
+
+  /* ── Play feed ───────────────────────────────────────────────────── */
+  .feed { padding: 8px 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .feed-hdr {
+    font-family: var(--display);
+    font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--faint);
+    padding: 6px 4px 2px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .feed-hdr::after { content: ""; flex: 1; height: 1px; background: var(--line-soft); }
+
+  .event {
+    display: grid;
+    grid-template-columns: 42px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    background: var(--surface-2);
+    border: 1px solid var(--line-soft);
+    border-radius: 13px;
+    padding: 11px 13px;
+    position: relative;
+  }
+  .event.td {
+    border-color: rgba(239,68,68,.4);
+    background: linear-gradient(100deg, var(--red-glow), var(--surface-2) 60%);
+  }
+  .event.td::before {
+    content: "";
+    position: absolute; left: 0; top: 10px; bottom: 10px;
+    width: 3px; border-radius: 3px; background: var(--red);
+  }
+  .event.injury { border-color: rgba(251,191,36,.32); }
+  .event.injury::before {
+    content: "";
+    position: absolute; left: 0; top: 10px; bottom: 10px;
+    width: 3px; border-radius: 3px; background: var(--amber);
+  }
+
+  .av {
+    width: 42px; height: 42px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--display);
+    font-weight: 700; font-size: 15px;
+    color: #0a0d12;
+    letter-spacing: .02em;
+  }
+  .av.qb  { background: linear-gradient(150deg, #c4b5fd, var(--pos-qb)); }
+  .av.rb  { background: linear-gradient(150deg, #6ee7b7, var(--pos-rb)); }
+  .av.wr  { background: linear-gradient(150deg, #93c5fd, var(--pos-wr)); }
+  .av.te  { background: linear-gradient(150deg, #fde68a, var(--pos-te)); }
+  .av.k   { background: linear-gradient(150deg, #cbd5e1, var(--pos-k)); }
+  .av.def { background: linear-gradient(150deg, #f9a8d4, var(--pos-def)); }
+
+  .ev-body { min-width: 0; }
+  .ev-main { display: flex; align-items: center; gap: 8px; }
+  .ev-name {
+    font-family: var(--display);
+    font-weight: 600; font-size: 15px;
+    color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ev-tag {
+    font-family: var(--display);
+    font-size: 9.5px; font-weight: 600; letter-spacing: .1em;
+    padding: 2px 6px; border-radius: 5px;
+    flex: 0 0 auto;
+  }
+  .ev-tag.mine { color: var(--red-hot); background: var(--red-glow); border: 1px solid rgba(239,68,68,.3); }
+  .ev-tag.opp { color: var(--muted); background: var(--raise); border: 1px solid var(--line); }
+  .ev-desc { font-size: 12.5px; color: var(--text); margin-top: 2px; }
+  .ev-desc.warn { color: var(--amber); }
+  .ev-sub {
+    font-size: 11px; color: var(--faint); margin-top: 3px;
+    display: flex; align-items: center; gap: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ev-sub .myteam { color: var(--text); font-weight: 600; }
+  .ev-sub .clk { color: var(--red-hot); }
+  .ev-delta {
+    font-family: var(--display);
+    font-weight: 700; font-size: 19px;
+    font-variant-numeric: tabular-nums;
+    justify-self: end;
+    color: var(--green);
+  }
+  .ev-delta.neg { color: var(--amber); font-size: 13px; }
+
+  .homebar {
+    flex: 0 0 auto;
+    display: flex; justify-content: space-around; align-items: center;
+    padding: 9px 0 10px;
+    border-top: 1px solid var(--line-soft);
+    background: var(--ground);
+  }
+  .homebar .item {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    font-size: 9.5px; color: var(--faint);
+    font-weight: 500;
+  }
+  .homebar .item.on { color: var(--red-hot); }
+  .homebar .ic { width: 20px; height: 20px; border-radius: 6px; background: currentColor; opacity: .85; }
+  .homebar .item:not(.on) .ic { opacity: .32; }
+
+  .caption { font-size: 12px; color: var(--faint); text-align: center; }
+
+  /* ── Annotation rail ─────────────────────────────────────────────── */
+  .notes { display: flex; flex-direction: column; gap: 22px; padding-top: 4px; }
+  .notes h2 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 4px;
+  }
+  .note {
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 15px;
+    align-items: start;
+  }
+  .note .num {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--red-hot);
+    background: var(--red-glow);
+    border: 1px solid rgba(239,68,68,.28);
+    border-radius: 9px;
+    width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .note h3 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 16px;
+    margin: 4px 0 5px;
+    letter-spacing: .01em;
+  }
+  .note p { margin: 0; color: var(--muted); font-size: 14px; max-width: 46ch; }
+  .note p .hl { color: var(--text); font-weight: 500; }
+
+  .footnote {
+    grid-column: 1 / -1;
+    margin-top: 8px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line-soft);
+    color: var(--faint);
+    font-size: 12.5px;
+    max-width: 70ch;
+  }
+</style>
+
+<div class="stage">
+
+  <div class="lede">
+    <p class="kicker">Redesign Mockup · Visual Only</p>
+    <h1>BR Redzone, game-day ready.</h1>
+    <p>A visual pass on the live Redzone page. Same data, same features, same tabs — retuned for scanning at a glance while games are running: a real matchup hero with a win-probability bar, a clearer live play feed, and a broadcast-grade type system.</p>
+    <span class="tag">No functional changes — layout &amp; styling only</span>
+  </div>
+
+  <!-- ── PHONE ─────────────────────────────────────────────── -->
+  <div class="phone-wrap">
+    <div class="phone">
+      <div class="screen">
+        <div class="notch"></div>
+
+        <div class="statusbar">
+          <span>9:41</span>
+          <span class="sig">LIVE · SUN 4:32 <span>▟▙</span></span>
+        </div>
+
+        <div class="app">
+          <!-- header -->
+          <div class="rz-head">
+            <div class="brand">
+              <span class="dot"></span>
+              <span class="name">BR <em>Redzone</em></span>
+              <span class="wk">WK 14</span>
+            </div>
+            <div class="head-right">
+              <span class="live-chip"><span class="b"></span>LIVE</span>
+              <span class="timer"><span class="ring"></span>0:12</span>
+            </div>
+          </div>
+
+          <div class="scroll">
+            <!-- scope -->
+            <div class="scope">
+              <button class="on">This League</button>
+              <button>My Leagues</button>
+            </div>
+
+            <!-- hero matchup -->
+            <div class="hero">
+              <div class="hero-top">
+                Your Matchup
+                <span class="close">Close game</span>
+              </div>
+              <div class="score-row">
+                <div class="side lead">
+                  <span class="tname">My Squad</span>
+                  <span class="pts">92.4</span>
+                  <span class="proj">Proj 118.6</span>
+                  <span class="left-ct">6 to play</span>
+                </div>
+                <span class="vs">VS</span>
+                <div class="side right">
+                  <span class="tname">TD Tyrones</span>
+                  <span class="pts">88.1</span>
+                  <span class="proj">Proj 112.0</span>
+                  <span class="left-ct">4 to play</span>
+                </div>
+              </div>
+              <div class="wp">
+                <div class="wp-track">
+                  <div class="wp-fill" style="width:58%"></div>
+                  <div class="wp-fill opp" style="width:42%"></div>
+                </div>
+                <div class="wp-labels">
+                  <span><b>58%</b> win</span>
+                  <span>+4.3</span>
+                  <span><b>42%</b></span>
+                </div>
+              </div>
+              <div class="hero-meta">
+                <span class="rz-tag">L. Jackson in the red zone</span>
+                <span>· 2 of your players yet to kick off</span>
+              </div>
+            </div>
+
+            <!-- on deck -->
+            <div class="ondeck">
+              <span class="lab">On deck</span>
+              <span class="clock">▶ 38m</span>
+              <span>BUF @ NYJ</span>
+              <span class="players">J. Allen</span>
+            </div>
+
+            <!-- main card -->
+            <div class="maincard">
+              <div class="tabs">
+                <button class="tab on">Plays <span class="count">7</span></button>
+                <button class="tab">Mine</button>
+                <button class="tab">Opp</button>
+                <button class="tab">Top</button>
+              </div>
+              <div class="chips">
+                <span class="chip on">My Team <span class="x">×</span></span>
+                <span class="chip">All plays</span>
+                <span class="chip">Touchdowns</span>
+                <span class="chip">QB</span>
+                <span class="chip">RB</span>
+              </div>
+
+              <div class="feed">
+                <div class="feed-hdr">Just now</div>
+
+                <div class="event td">
+                  <div class="av qb">LJ</div>
+                  <div class="ev-body">
+                    <div class="ev-main">
+                      <span class="ev-name">L. Jackson</span>
+                      <span class="ev-tag mine">MY TEAM</span>
+                    </div>
+                    <div class="ev-desc">🏈 34-yd passing TD to M. Andrews</div>
+                    <div class="ev-sub"><span class="myteam">BAL</span> 21 · HOU 14 <span class="clk">Q3 4:32</span></div>
+                  </div>
+                  <div class="ev-delta">+6.8</div>
+                </div>
+
+                <div class="event td">
+                  <div class="av rb">JG</div>
+                  <div class="ev-body">
+                    <div class="ev-main">
+                      <span class="ev-name">J. Gibbs</span>
+                      <span class="ev-tag mine">MY TEAM</span>
+                    </div>
+                    <div class="ev-desc">🏈 2-yd rushing TD</div>
+                    <div class="ev-sub"><span class="myteam">DET</span> 24 · CHI 7 <span class="clk">Q4 2:14</span></div>
+                  </div>
+                  <div class="ev-delta">+7.2</div>
+                </div>
+
+                <div class="feed-hdr">Earlier this quarter</div>
+
+                <div class="event injury">
+                  <div class="av rb">DH</div>
+                  <div class="ev-body">
+                    <div class="ev-main">
+                      <span class="ev-name">D. Henry</span>
+                      <span class="ev-tag mine">MY TEAM</span>
+                    </div>
+                    <div class="ev-desc warn">⚠️ Ruled OUT — hamstring</div>
+                    <div class="ev-sub"><span class="myteam">TEN</span> 28 · IND 17 · Final</div>
+                  </div>
+                  <div class="ev-delta neg">Q→O</div>
+                </div>
+
+                <div class="event">
+                  <div class="av wr">CL</div>
+                  <div class="ev-body">
+                    <div class="ev-main">
+                      <span class="ev-name">CeeDee Lamb</span>
+                      <span class="ev-tag opp">OPP</span>
+                    </div>
+                    <div class="ev-desc">18-yd reception</div>
+                    <div class="ev-sub"><span class="myteam">DAL</span> 35 · NYG 10 · Final</div>
+                  </div>
+                  <div class="ev-delta">+1.8</div>
+                </div>
+
+                <div class="event">
+                  <div class="av k">EM</div>
+                  <div class="ev-body">
+                    <div class="ev-main">
+                      <span class="ev-name">E. McPherson</span>
+                      <span class="ev-tag mine">MY TEAM</span>
+                    </div>
+                    <div class="ev-desc">51-yd field goal</div>
+                    <div class="ev-sub"><span class="myteam">CIN</span> 24 · PIT 13 · Final</div>
+                  </div>
+                  <div class="ev-delta">+5.0</div>
+                </div>
+              </div>
+            </div>
+
+            <p class="caption">Live scores &amp; player lines via Tank01 box scores.</p>
+          </div>
+
+          <!-- bottom nav -->
+          <div class="homebar">
+            <div class="item"><span class="ic"></span>Weekly</div>
+            <div class="item"><span class="ic"></span>Recap</div>
+            <div class="item on"><span class="ic"></span>Redzone</div>
+            <div class="item"><span class="ic"></span>Waivers</div>
+            <div class="item"><span class="ic"></span>Trades</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="caption">Redesigned Plays view · dark game-day theme</p>
+  </div>
+
+  <!-- ── ANNOTATIONS ───────────────────────────────────────── -->
+  <div class="notes">
+    <h2>What changed</h2>
+
+    <div class="note">
+      <span class="num">1</span>
+      <div>
+        <h3>A matchup hero worth leading with</h3>
+        <p>Your score fills the top of the screen with a <span class="hl">win-probability bar</span> and a live spread, so game state reads in under a second. "Close game" and "in the red zone" flags surface tension without you doing math.</p>
+      </div>
+    </div>
+
+    <div class="note">
+      <span class="num">2</span>
+      <div>
+        <h3>The play feed is the star</h3>
+        <p>Every scoring play is a <span class="hl">card, not a row</span>: position-colored avatar, the play, the NFL game line with clock, and the fantasy points earned. Touchdowns get a red rail; injuries get an amber one — glanceable event types.</p>
+      </div>
+    </div>
+
+    <div class="note">
+      <span class="num">3</span>
+      <div>
+        <h3>Broadcast typography</h3>
+        <p>A <span class="hl">condensed athletic face (Oswald)</span> carries scores, team names, and labels; a clean grotesque handles body text. Tabular figures keep every score column aligned as numbers tick up.</p>
+      </div>
+    </div>
+
+    <div class="note">
+      <span class="num">4</span>
+      <div>
+        <h3>Red used with intent</h3>
+        <p>The brand red now means <span class="hl">"your points, live"</span> — the pulse, TD rails, and your side of the win bar — instead of coating every border. Green reads as points gained, amber as risk. Semantic color, not decoration.</p>
+      </div>
+    </div>
+
+    <div class="note">
+      <span class="num">5</span>
+      <div>
+        <h3>Same structure, calmer surface</h3>
+        <p>Scope toggle, tabs (Plays / Mine / Opp / Top), filters, and on-deck strip all stay <span class="hl">exactly where they are</span>. Softer panels, one consistent radius scale, and more breathing room reduce the visual noise of a fast-moving page.</p>
+      </div>
+    </div>
+
+    <p class="footnote">Mockup only — nothing here alters <code>static/redzone.js</code> or the live routes. It maps 1:1 onto the current components so the redesign can be adopted incrementally: hero card first, then the feed cards, then the type and color tokens. The app also ships a light theme; this mock shows the game-day dark treatment.</p>
+  </div>
+
+</div>
