@@ -284,18 +284,23 @@ function _startGoogleSubscribe(planType, triggerBtn, extra) {
 
 async function initiatePurchase(type, btn) {
   // Checkout requires a Google account site-wide. Sleeper-only sign-in is
-  // enough to view a league, not to subscribe.
+  // enough to view a league, not to subscribe. Guests who pick a league plan
+  // without a league open the Google overlay above the paywall.
   const ctx = window.__brctx || {};
+  const leagueId = new URLSearchParams(window.location.search).get('league_id') ||
+    window.location.pathname.split('/').filter(Boolean)[2] ||
+    (ctx.leagueId || '');
+  const needsLeague = type === 'league' || type === 'combo' || type === 'single_league';
+
   if (!_hasGoogleAccount()) {
+    if (needsLeague && !leagueId) {
+      _showIdentifyModal(type, btn);
+      return;
+    }
     _startGoogleSubscribe(type, btn);
     return;
   }
 
-  const leagueId = new URLSearchParams(window.location.search).get('league_id') ||
-    window.location.pathname.split('/').filter(Boolean)[2] ||
-    (ctx.leagueId || '');
-
-  const needsLeague = type === 'league' || type === 'combo' || type === 'single_league';
   if (needsLeague && !leagueId) {
     _showLeaguePickerModal(type, btn);
     return;
