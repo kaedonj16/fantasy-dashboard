@@ -9584,14 +9584,21 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
 
 
 @app.route("/api/proj-debug")
+@limiter.limit("30 per minute")
 def api_proj_debug():
     """Read-only diagnostic: for one player, show OUR cached weekly projection
     (raw stat line + Sleeper's own pts_* + our computed value + the league
     scoring/variant applied) next to Sleeper's LIVE projection fetched fresh, so
     we can see exactly where a number diverges from the Sleeper app.
 
+    Requires ``X-Admin-Secret`` header matching ``ADMIN_SECRET``.
     Usage: /api/proj-debug?name=stroud&league=<league_id>[&season=&week=]
     """
+    from routes.health_bp import _forbidden_unless_admin
+    denied = _forbidden_unless_admin()
+    if denied:
+        return denied
+
     import requests as _rq
     from utils.utils import load_week_projection, pick_proj_variant
     from utils.fantasy_scoring import projection_points, score_stats
@@ -15270,7 +15277,7 @@ def api_gm_memo():
         logger.exception("[api-gm-memo] Error: %s", e)
         return jsonify({
             "success": False,
-            "error": str(e)
+            "error": "Internal error"
         }), 500
 
 
@@ -15291,7 +15298,7 @@ def api_power_rankings():
         return jsonify({"success": True, "html": html_out})
     except Exception as e:
         logger.exception("[api-power-rankings] Error: %s", e)
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": "Internal error"}), 500
 
 
 @app.route("/api/trade-suggestions", methods=["POST"])
@@ -15316,7 +15323,7 @@ def api_trade_suggestions():
         return jsonify({"success": True, "html": html_out})
     except Exception as e:
         logger.exception("[api-trade-suggestions] Error: %s", e)
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": "Internal error"}), 500
 
 
 @app.route("/api/roster-grade", methods=["POST"])
@@ -15339,7 +15346,7 @@ def api_roster_grade():
         return jsonify({"success": True, "grade_data": grade_data, "badge_html": badge_html})
     except Exception as e:
         logger.exception("[api-roster-grade] Error: %s", e)
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": "Internal error"}), 500
 
 
 @app.route("/api/trade-outcome", methods=["POST"])
@@ -15575,7 +15582,7 @@ def api_trade_outcome():
         })
     except Exception as e:
         logger.exception("[api-trade-outcome] Error: %s", e)
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": "Internal error"}), 500
 
 
 @app.route("/api/trade-eval", methods=["POST"])
@@ -17208,6 +17215,7 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
 
 
 @app.route("/api/market-intel/health")
+@limiter.limit("30 per minute")
 def api_market_intel_health():
     """Diagnostic for the Market vs ADP / market-intelligence pipeline.
 
@@ -17216,7 +17224,15 @@ def api_market_intel_health():
     and the projection-cache coverage the expected-ADP curve needs. It ends with
     a one-line ``diagnosis`` naming the first broken link, so an empty Market vs
     ADP column can be traced without opening the database. No secrets are
-    returned — only whether each is configured."""
+    returned — only whether each is configured.
+
+    Requires ``X-Admin-Secret`` header matching ``ADMIN_SECRET``.
+    """
+    from routes.health_bp import _forbidden_unless_admin
+    denied = _forbidden_unless_admin()
+    if denied:
+        return denied
+
     _season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
     out = {
         "season": _season,

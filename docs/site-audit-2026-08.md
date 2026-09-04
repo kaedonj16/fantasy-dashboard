@@ -47,8 +47,8 @@ this PR** shipped with accompanying regression tests in
 | 20 | Guide/legal pages reused default meta description | **Fixed** — unique `description=` |
 | 21 | `paywall.css` unversioned | **Fixed** |
 | 22 | Duplicate `sentry-sdk` pin in `requirements.txt` | **Fixed** |
-| 23 | Exception strings leaked from some APIs | Open |
-| 24 | Unauthenticated `/api/proj-debug`, market-intel health | Open |
+| 23 | Exception strings leaked from some APIs | **Fixed** — generic `"Internal error"` + `logger.exception` on high-risk public/league endpoints |
+| 24 | Unauthenticated `/api/proj-debug`, market-intel health | **Fixed** — `X-Admin-Secret` via `_forbidden_unless_admin` + rate limit |
 | 25 | Manifest theme/background stuck white | **Fixed** — navy `#0b2036` splash + theme-synced status bar |
 | 26 | Conflicting global `:focus-visible` rings | **Fixed** — single `--accent` ring |
 | 27 | Offline page ignores app theme preference | **Fixed** — reads `localStorage.theme` |
