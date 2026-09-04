@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from dashboard_services.providers.base import (
-    ProviderAuthenticationError, ProviderUnavailableError, UnsupportedCapabilityError,
+    ProviderAuthenticationError, ProviderUnavailableError,
 )
 from dashboard_services.providers.fleaflicker_api import (
     FleaflickerProvider, _CACHE, _flea_pro_team, _fleaflicker_draft_status,
@@ -112,8 +112,6 @@ def test_build_roster_map_uses_fleaflicker_team_names():
     ]
     rosters = [{"roster_id": 1, "owner_id": "1", "metadata": {"team_name": "Owls"}}]
     assert build_roster_map(users, rosters) == {"1": "Owls"}
-    with pytest.raises(UnsupportedCapabilityError):
-        FleaflickerProvider().get_bracket("1", 2026, "winners")
 
 
 @patch("dashboard_services.providers.fleaflicker_api._request_get")
@@ -894,3 +892,16 @@ def test_get_matchups_uses_boxscore_slot_order(monkeypatch):
     assert home["starters"] == ["nix", "bijan"]
     assert away["starters"] == ["lamar", "breece"]
     assert home["matchup_id"] == away["matchup_id"]
+
+
+def test_fleaflicker_bracket_projects_from_seeds(monkeypatch):
+    provider = FleaflickerProvider()
+    monkeypatch.setattr(provider, "get_league", lambda *a, **k: {
+        "settings": {"playoff_week_start": 15, "playoff_teams": 6},
+    })
+    monkeypatch.setattr(provider, "get_matchups", lambda *a, **k: [])
+    monkeypatch.setattr(provider, "_playoff_seeds", lambda *a, **k: [1, 2, 3, 4, 5, 6])
+    games = provider.get_bracket("14153", 2026, "winners")
+    assert len(games) == 2
+    assert all(g.get("projected") for g in games)
+    assert provider.get_bracket("14153", 2026, "losers") == []

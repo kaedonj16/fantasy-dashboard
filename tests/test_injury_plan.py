@@ -33,6 +33,31 @@ def test_injury_plan_verdicts():
     assert "approx" in ir["reason"].lower() or ir["approximate"]
 
 
+def test_ir_capacity_counts_open_slots():
+    from utils.injury_plan import ir_capacity
+    cap = ir_capacity(["QB", "RB", "IR", "IR", "BN"], ["p1"])
+    assert cap["has_ir_slot"] is True
+    assert cap["ir_slots"] == 2
+    assert cap["ir_used"] == 1
+    assert cap["ir_open"] is True
+    empty = ir_capacity(["QB", "BN"], [])
+    assert empty["has_ir_slot"] is False
+    assert empty["ir_open"] is False
+
+
+def test_injury_roster_verdict_maps_plan_labels():
+    from dashboard_services.injury_return import injury_roster_verdict
+    hold = injury_roster_verdict()
+    assert hold["verdict"] == "hold" and hold["approx"] is True
+    ir = injury_roster_verdict(status="IR", weeks_out=5.0, player_value=50, has_ir_slot=True, ir_open=True)
+    assert ir["verdict"] == "ir" and ir["label"] == "Move to IR"
+    drop = injury_roster_verdict(status="OUT", weeks_out=2.0, player_value=10)
+    assert drop["verdict"] == "drop"
+    stash = injury_roster_verdict(status="OUT", weeks_out=2.0, player_value=100)
+    assert stash["verdict"] == "stash"
+    assert "—" not in (ir["reason"] + drop["reason"] + stash["reason"])
+
+
 def test_player_modal_renders_return_plan_badge():
     from pathlib import Path
     src = (Path(__file__).resolve().parents[1] / "static" / "player_modal.js").read_text()

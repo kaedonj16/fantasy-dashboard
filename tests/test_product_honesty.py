@@ -175,6 +175,47 @@ def test_draft_room_nav_does_not_claim_sleeper_live_only():
     assert '("Draft Room", "tool_pages.page_draft_room", "draft", False)' in APP_PY
 
 
+def test_player_page_yahoo_is_live_not_soon():
+    pp = (ROOT / "static" / "player_page.js").read_text(encoding="utf-8")
+    assert "pp-plat-soon" not in pp
+    assert "data-platform='yahoo'>Yahoo</button>" in pp
+    assert "Connect Yahoo" in pp
+    assert "data-platform='mfl'>MFL</button>" in pp
+    assert "data-platform='fleaflicker'>Fleaflicker</button>" in pp
+    assert "/api/link/mfl/preview" in pp
+    assert "/api/link/fleaflicker/preview" in pp
+
+
+def test_features_md_does_not_call_yahoo_soon_or_mfl_public_only():
+    features = (ROOT / "FEATURES.md").read_text(encoding="utf-8")
+    assert "shown as Soon" not in features
+    assert "public leagues only" not in features
+    assert "ESPN football does not expose future draft picks" in features
+    assert "Custom Cheat Sheet board" in features
+
+
+def test_draft_room_loads_custom_board_overrides():
+    assert "applyCustomBoardOverrides" in DRAFT_JS
+    assert "loadCustomBoardOverrides" in DRAFT_JS
+    assert "/api/draft-board/overrides" in DRAFT_JS
+    core = (ROOT / "static" / "draft_board_core.js").read_text(encoding="utf-8")
+    assert "function applyCustomBoardOverrides" in core
+    assert "applyCustomBoardOverrides: applyCustomBoardOverrides" in core
+
+
+def test_lineup_lock_push_has_no_em_dash():
+    push = (ROOT / "utils" / "push_notifications.py").read_text(encoding="utf-8")
+    assert "kicks off soon —" not in push
+    assert "kicks off soon." in push
+
+
+def test_league_compare_opts_into_lite_js():
+    seo = (ROOT / "routes" / "seo_pages_bp.py").read_text(encoding="utf-8")
+    compare = seo[seo.index("def page_compare"):seo.index("def _rankings_page")]
+    assert "lite_js=True" in compare
+    assert compare.count("lite_js=True") >= 2
+
+
 def test_league_bulletins_are_off_for_all_platforms():
     bulletins = APP_PY[APP_PY.index("def api_league_bulletins"):]
     next_route = bulletins.find("@app.route", 1)
