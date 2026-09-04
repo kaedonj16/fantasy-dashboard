@@ -26363,17 +26363,37 @@ def build_portfolio_body(
         )
 
     def _lg_id(name_inner, _plat, extra="", arch="", team=""):
+        # Platform script sits inline with the name (line 1); the owner/team and
+        # any archetype live on the muted meta line (line 2). This keeps the
+        # identity to two clean lines instead of one overloaded row.
         plat = _plat_script(_plat)
         team_html = (
             f"<span class='pf-lg-team'>{html.escape(team)}</span>"
             if team else ""
         )
-        meta_inner = f"{plat}{team_html}{arch}" if (plat or team_html or arch) else ""
+        meta_inner = f"{team_html}{arch}" if (team_html or arch) else ""
         meta = f"<div class='pf-lg-meta'>{meta_inner}</div>" if meta_inner else ""
         return (
-            f"<div class='pf-lg-id'><div class='pf-lg-title'>{name_inner}{extra}</div>"
+            f"<div class='pf-lg-id'><div class='pf-lg-title'>{name_inner}{plat}{extra}</div>"
             f"{meta}</div>"
         )
+
+    def _pos_tier(_r, _n):
+        # Rank quality within a league: top third is "good", bottom third
+        # "weak", the middle "mid". Drives the strength strip's color scale.
+        try:
+            _r = int(_r)
+            _n = int(_n)
+        except (TypeError, ValueError):
+            return "mid"
+        if _n <= 1 or _r <= 0:
+            return "mid"
+        frac = (_r - 1) / (_n - 1)
+        if frac <= 1 / 3 + 1e-9:
+            return "good"
+        if frac >= 2 / 3 - 1e-9:
+            return "weak"
+        return "mid"
 
     all_rows = valid_leagues + [
         lg for lg in all_leagues_data
@@ -26485,13 +26505,40 @@ def build_portfolio_body(
         rec = lg.get("record") or f"{wins}-{losses}"
         rec_cls2 = "color-win" if wins > losses else ("color-loss" if losses > wins else "")
 
+        # Standing as an ordinal place ("10th / 10") with a red flag for a
+        # bottom-third finish — a place reads more clearly than the old "10/10",
+        # which looked like a score.
+        from utils.format import ord_suffix
+        try:
+            _rank_i = int(rank)
+        except (TypeError, ValueError):
+            _rank_i = None
+        try:
+            _total_i = int(total)
+        except (TypeError, ValueError):
+            _total_i = None
+        if _rank_i and _total_i:
+            _st_flag = " pf-lg-v--weak" if _pos_tier(_rank_i, _total_i) == "weak" else ""
+            standing_html = (
+                f"<span class='pf-lg-v{_st_flag}'>{_rank_i}"
+                f"<small>{ord_suffix(_rank_i)}</small> <small>/ {_total_i}</small></span>"
+            )
+        else:
+            standing_html = (
+                f"<span class='pf-lg-v'>{html.escape(str(rank))}/{html.escape(str(total))}</span>"
+            )
+
+        # Streak as W/L pills (most recent three) instead of grey dots; before
+        # any game is played the pills would be meaningless, so show a dash.
         streak = lg.get("streak") or []
-        dots = ""
-        for _ in range(3 - len(streak)):
-            dots += "<div class='pf-dot' style='background:var(--border);'></div>"
-        for r in streak:
-            color = "var(--win)" if r == "W" else "var(--loss)"
-            dots += f"<div class='pf-dot' style='background:{color};'></div>"
+        if streak:
+            _pills = ""
+            for r in streak[-3:]:
+                _cls = "pf-s-w" if r == "W" else "pf-s-l"
+                _pills += f"<span class='pf-s-pill {_cls}'>{'W' if r == 'W' else 'L'}</span>"
+            streak_html = f"<span class='pf-streak'>{_pills}</span>"
+        else:
+            streak_html = "<span class='pf-streak-empty'>&mdash;</span>"
 
         _uvs = lg.get("pos_user_vals") or {}
         _avgs = lg.get("pos_league_avgs") or {}
@@ -26504,41 +26551,56 @@ def build_portfolio_body(
 
         off_note = "<span class='pf-lg-off'>(Off)</span>" if lg.get("offseason") else ""
 
+        # Position strength strip: the signature data of this app, promoted from
+        # a grey footer line to four equal, quality-tinted chips. The single best
+        # position gets a crown, but only when it's genuinely top-third — a
+        # last-place team's "best" of #8 doesn't deserve a laurel.
         pos_ranks = lg.get("pos_user_rank") or {}
-        rank_chips = ""
+        _present = {p: pos_ranks.get(p) for p in ["QB", "RB", "WR", "TE"] if pos_ranks.get(p)}
+        _best_pos_chip = min(_present, key=_present.get) if _present else None
+        _crown_ok = bool(_best_pos_chip) and _pos_tier(_present.get(_best_pos_chip), _total_i) == "good"
+        strength_chips = ""
         for _pos in ["QB", "RB", "WR", "TE"]:
             _pr = pos_ranks.get(_pos)
-            if _pr:
-                _pc = _POS_CLS_MAP.get(_pos, "pos-k")
-                rank_chips += (
-                    f"<span>"
-                    f"<span class='pos-badge {_pc}' style='font-size:0.62em;padding:0 3px;height:13px;line-height:13px;'>{_pos}</span>"
-                    f"#{_pr}"
-                    f"</span>"
-                )
-
-        badges_div = (
-            f"<div class='pf-pos-chips'>{rank_chips}</div>"
-            if rank_chips else ""
-        )
+            if not _pr:
+                continue
+            _tier = _pos_tier(_pr, _total_i)
+            _lead = _pos == _best_pos_chip and _crown_ok
+            _pc = _POS_CLS_MAP.get(_pos, "K")
+            _crown = "<span class='pc-crown'>&#9650; best</span>" if _lead else ""
+            strength_chips += (
+                f"<div class='pf-pos-chip q-{_tier}{' lead' if _lead else ''}'>"
+                f"<span class='pos-badge {_pc}'>{_pos}</span>"
+                f"<span class='pc-rank'>{_pr}<sup>{ord_suffix(_pr)}</sup></span>"
+                f"{_crown}</div>"
+            )
+        strength_html = (
+            "<div class='pf-lg-strength'>"
+            "<div class='pf-lg-strength-head'>"
+            "<span class='pf-lg-l'>Position strength</span>"
+            "<span class='pf-lg-l pf-lg-l--muted'>rank in league</span>"
+            "</div>"
+            f"<div class='pf-strbar'>{strength_chips}</div>"
+            "</div>"
+        ) if strength_chips else ""
 
         league_rows += (
             f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}'>"
             f"<div class='pf-lg-top'>"
             f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
-            f"{_lg_id(name_link, plat, off_note, arch_badge, lg.get('team_name') or '')}"
+            f"{_lg_id(name_link, plat, off_note, '', lg.get('team_name') or '')}"
             f"{_lg_tools(_unlink_btn(plat, lid))}"
             f"</div>"
-            f"<div class='pf-lg-mid'>"
+            f"<div class='pf-lg-stats'>"
             f"<span class='pf-lg-stat'><span class='pf-lg-v {rec_cls2}'>{rec}</span>"
-            f"<span class='pf-lg-l'>Rec</span></span>"
+            f"<span class='pf-lg-l'>Record</span></span>"
             f"<span class='pf-lg-stat' title='Regular-season standings: wins, then points for'>"
-            f"<span class='pf-lg-v'>{rank}/{total}</span>"
-            f"<span class='pf-lg-l'>Rank</span></span>"
-            f"<span class='pf-lg-stat pf-lg-stat--streak'><span class='pf-streak'>{dots}</span>"
+            f"{standing_html}<span class='pf-lg-l'>Standing</span></span>"
+            f"<span class='pf-lg-stat pf-lg-stat--streak'>{streak_html}"
             f"<span class='pf-lg-l'>Streak</span></span>"
             f"</div>"
-            f"<div class='pf-lg-foot'>{badges_div}<a href='{href}' class='pf-lg-open'>Open &rarr;</a></div>"
+            f"{strength_html}"
+            f"<div class='pf-lg-foot'>{arch_badge}<a href='{href}' class='pf-lg-open'>Open &rarr;</a></div>"
             f"</div>"
         )
 
@@ -26580,8 +26642,48 @@ def build_portfolio_body(
         ".pf-lg-l{font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;"
         "color:var(--text-subtle);margin:0;line-height:1;}"
         ".pf-lg-card .pf-dot{width:6px;height:6px;}"
+        # Stats row: three equal, divided columns (Record / Standing / Streak),
+        # value over a small uppercase label.
+        ".pf-lg-stats{display:flex;align-items:stretch;min-width:0;}"
+        ".pf-lg-stats .pf-lg-stat{flex:1;min-width:0;display:flex;flex-direction:column;"
+        "align-items:flex-start;gap:1px;}"
+        ".pf-lg-stats .pf-lg-stat+.pf-lg-stat{border-left:1px solid var(--grid);"
+        "padding-left:10px;margin-left:10px;}"
+        ".pf-lg-v small{font-size:.72em;font-weight:700;color:var(--text-subtle);}"
+        ".pf-lg-v--weak{color:var(--loss);}"
+        # Streak as W/L pills (reuses the base .pf-streak flex row).
+        ".pf-s-pill{width:15px;height:15px;border-radius:5px;display:grid;place-items:center;"
+        "font-size:9px;font-weight:800;color:#fff;line-height:1;}"
+        ".pf-s-w{background:var(--win);}.pf-s-l{background:var(--loss);}"
+        ".pf-streak-empty{font-size:13px;font-weight:800;color:var(--text-subtle);line-height:1.1;}"
+        # Position-strength strip: a full-bleed band inside the card.
+        ".pf-lg-strength{margin:0 -12px;padding:8px 12px 9px;display:flex;flex-direction:column;"
+        "gap:5px;border-top:1px solid var(--grid);"
+        "background:color-mix(in srgb,var(--text-subtle) 7%,transparent);}"
+        ".pf-lg-strength-head{display:flex;align-items:center;justify-content:space-between;}"
+        ".pf-lg-l--muted{color:var(--text-muted);}"
+        ".pf-strbar{display:flex;gap:6px;min-width:0;}"
+        ".pf-pos-chip{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;"
+        "gap:3px;padding:5px 2px 4px;border-radius:8px;border:1px solid var(--q-line,var(--grid));"
+        "background:var(--q-fill,transparent);}"
+        ".pf-pos-chip .pos-badge{font-size:8px;padding:0 4px;height:14px;line-height:14px;"
+        "border-radius:4px;letter-spacing:.02em;}"
+        ".pf-pos-chip .pc-rank{font-size:14px;font-weight:800;line-height:1;"
+        "color:var(--q-ink,var(--text));font-variant-numeric:tabular-nums;}"
+        ".pf-pos-chip .pc-rank sup{font-size:.55em;font-weight:700;}"
+        ".pf-pos-chip.lead{box-shadow:inset 0 0 0 1px var(--win);}"
+        ".pf-pos-chip .pc-crown{font-size:8.5px;font-weight:800;line-height:1;color:var(--win);"
+        "white-space:nowrap;}"
+        ".q-good{--q-fill:color-mix(in srgb,var(--win) 12%,transparent);"
+        "--q-line:color-mix(in srgb,var(--win) 34%,transparent);--q-ink:var(--win);}"
+        ".q-mid{--q-fill:color-mix(in srgb,var(--text-subtle) 9%,transparent);"
+        "--q-line:var(--grid);--q-ink:var(--text);}"
+        ".q-weak{--q-fill:color-mix(in srgb,var(--loss) 11%,transparent);"
+        "--q-line:color-mix(in srgb,var(--loss) 30%,transparent);--q-ink:var(--loss);}"
         ".pf-lg-foot{display:flex;align-items:center;gap:8px;border-top:1px solid var(--grid);"
         "padding-top:6px;flex-wrap:nowrap;min-width:0;}"
+        ".pf-lg-foot .pf-arch{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;"
+        "font-size:10px;padding:2px 8px;}"
         ".pf-lg-foot .pf-pos-chips{margin-top:0;flex:1 1 auto;min-width:0;gap:6px 8px;"
         "overflow:hidden;}"
         ".pf-lg-open{margin-left:auto;font-weight:800;font-size:12px;color:var(--accent);text-decoration:none;white-space:nowrap;flex-shrink:0;}"
@@ -26608,9 +26710,11 @@ def build_portfolio_body(
         ".pf-lg-card{padding:9px 10px;gap:6px;}"
         ".pf-lg-top{gap:7px;}"
         ".pf-lg-mid{gap:4px 12px;}"
+        ".pf-lg-stats .pf-lg-stat+.pf-lg-stat{padding-left:8px;margin-left:8px;}"
+        ".pf-lg-strength{margin:0 -10px;padding:7px 10px 8px;}"
         ".pf-lg-foot{gap:6px;padding-top:5px;}"
         ".pf-lg-foot .pf-pos-chips{gap:4px 7px;}"
-        ".pf-lg-meta .pf-arch{font-size:.55em;padding:1px 5px;}"
+        ".pf-lg-foot .pf-arch{font-size:9.5px;padding:1px 6px;}"
         "}"
         "</style>"
         f"<div class='card'>"
