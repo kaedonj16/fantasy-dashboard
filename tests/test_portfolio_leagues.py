@@ -110,7 +110,7 @@ def test_my_leagues_fav_and_arch_share_a_tools_group():
 
 def test_my_leagues_cards_promote_position_strength_strip():
     """Positional rank is the signature data: a quality-tinted strength strip,
-    not a grey footer line. Best position is crowned only when top-third."""
+    not a grey footer line. Rank quality carries in the tint alone."""
     fn = _portfolio_fn()
     assert "def _pos_tier(" in fn
     assert "class='pf-lg-strength'" in fn
@@ -118,8 +118,9 @@ def test_my_leagues_cards_promote_position_strength_strip():
     assert "class='pf-strbar'" in fn
     assert "pf-pos-chip q-" in fn
     assert ".q-good{" in fn and ".q-mid{" in fn and ".q-weak{" in fn
-    assert "pc-crown" in fn
-    assert "_crown_ok" in fn
+    # No "best" crown — it misread as a #1 badge on merely top-third positions.
+    assert "pc-crown" not in fn
+    assert "&#9650; best" not in fn
     # Old grey inline footer chips must not come back.
     assert "class='pf-pos-chips'" not in fn.split("league_rows += (")[-1]
 

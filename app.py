@@ -26528,27 +26528,21 @@ def build_portfolio_body(
         off_note = "<span class='pf-lg-off'>(Off)</span>" if lg.get("offseason") else ""
 
         # Position strength strip: the signature data of this app, promoted from
-        # a grey footer line to four equal, quality-tinted chips. The single best
-        # position gets a crown, but only when it's genuinely top-third — a
-        # last-place team's "best" of #8 doesn't deserve a laurel.
+        # a grey footer line to four equal, quality-tinted chips. Rank quality
+        # carries in the tint alone — no "best" crown.
         pos_ranks = lg.get("pos_user_rank") or {}
-        _present = {p: pos_ranks.get(p) for p in ["QB", "RB", "WR", "TE"] if pos_ranks.get(p)}
-        _best_pos_chip = min(_present, key=_present.get) if _present else None
-        _crown_ok = bool(_best_pos_chip) and _pos_tier(_present.get(_best_pos_chip), _total_i) == "good"
         strength_chips = ""
         for _pos in ["QB", "RB", "WR", "TE"]:
             _pr = pos_ranks.get(_pos)
             if not _pr:
                 continue
             _tier = _pos_tier(_pr, _total_i)
-            _lead = _pos == _best_pos_chip and _crown_ok
             _pc = _POS_CLS_MAP.get(_pos, "K")
-            _crown = "<span class='pc-crown'>&#9650; best</span>" if _lead else ""
             strength_chips += (
-                f"<div class='pf-pos-chip q-{_tier}{' lead' if _lead else ''}'>"
+                f"<div class='pf-pos-chip q-{_tier}'>"
                 f"<span class='pos-badge {_pc}'>{_pos}</span>"
                 f"<span class='pc-rank'>{_pr}<sup>{ord_suffix(_pr)}</sup></span>"
-                f"{_crown}</div>"
+                f"</div>"
             )
         strength_html = (
             "<div class='pf-lg-strength'>"
@@ -26647,9 +26641,6 @@ def build_portfolio_body(
         ".pf-pos-chip .pc-rank{font-size:14px;font-weight:800;line-height:1;"
         "color:var(--q-ink,var(--text));font-variant-numeric:tabular-nums;}"
         ".pf-pos-chip .pc-rank sup{font-size:.55em;font-weight:700;}"
-        ".pf-pos-chip.lead{box-shadow:inset 0 0 0 1px var(--win);}"
-        ".pf-pos-chip .pc-crown{font-size:8.5px;font-weight:800;line-height:1;color:var(--win);"
-        "white-space:nowrap;}"
         ".q-good{--q-fill:color-mix(in srgb,var(--win) 12%,transparent);"
         "--q-line:color-mix(in srgb,var(--win) 34%,transparent);--q-ink:var(--win);}"
         ".q-mid{--q-fill:color-mix(in srgb,var(--text-subtle) 9%,transparent);"
