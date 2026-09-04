@@ -614,6 +614,44 @@ def create_user_subscription(
         return False
 
 
+_USER_LEAGUE_SUBS_DDL = """
+CREATE TABLE IF NOT EXISTS user_league_subscriptions (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    platform TEXT NOT NULL DEFAULT 'sleeper',
+    league_id TEXT NOT NULL,
+    subscription_status TEXT NOT NULL DEFAULT 'active',
+    stripe_subscription_id TEXT,
+    stripe_customer_id TEXT,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    CONSTRAINT valid_user_league_status CHECK (
+        subscription_status IN ('active', 'canceled', 'expired')
+    ),
+    UNIQUE (user_id, platform, league_id)
+)
+"""
+
+
+def _ensure_user_league_subscriptions_table(cur) -> None:
+    """Create the One League table if migration 032 never applied.
+
+    ``scripts/run_migrations.py`` stops on the first failing file, so a
+    non-idempotent earlier migration can leave this table missing. Checkout
+    still succeeds; the grant then fails and the buyer never appears in the DB.
+    """
+    cur.execute(_USER_LEAGUE_SUBS_DDL)
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_user_league_subs_lookup "
+        "ON user_league_subscriptions(user_id, platform, league_id)"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_user_league_subs_expires "
+        "ON user_league_subscriptions(expires_at)"
+    )
+
+
 def create_user_league_subscription(
         user_id: str,
         league_id: str,
@@ -626,6 +664,7 @@ def create_user_league_subscription(
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
+                _ensure_user_league_subscriptions_table(cur)
                 cur.execute("""
                     INSERT INTO user_league_subscriptions (
                         user_id, platform, league_id, subscription_status,
