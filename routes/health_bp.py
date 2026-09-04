@@ -1,12 +1,14 @@
 """Admin health/monitoring API endpoints.
 
 Routes:
+    /healthz/version      - deploy smoke: bundle hashes + process start time
     /api/health/errors    - warning/error counts since process start
     /api/health/timing    - per-endpoint request timing since process start
     /api/health/pipeline  - last cron-step timestamps from pipeline_health.json
 
-All require the X-Admin-Secret header. Extracted from app.py; depends only on
-extensions.limiter + utils monitors / cache files, no app.py internals.
+Admin routes require the X-Admin-Secret header. ``/healthz/version`` is public
+(deploy checks). Extracted from app.py; version hashes are lazy-imported from
+app so this module stays free of circular imports at registration time.
 """
 from __future__ import annotations
 
@@ -28,6 +30,31 @@ def _forbidden_unless_admin():
     if not admin_secret or not secret or not hmac.compare_digest(secret, admin_secret):
         return jsonify({"error": "Forbidden"}), 403
     return None
+
+
+@health_bp.route("/healthz/version")
+def healthz_version():
+    """Deploy smoke-check: content hashes of the bundles this process is
+    actually serving, plus the git SHA when available. After a deploy, hit this
+    and confirm the hashes changed / match the built files — so "is it live yet?"
+    is a one-request answer instead of guessing at a stale cache. Cache-busting
+    headers so an intermediary can never hand back a previous deploy's answer."""
+    # Lazy import: app registers this blueprint at import time; version stamps
+    # live as module-level constants on app and are safe to read per-request.
+    import app as _app
+
+    resp = jsonify({
+        "app_js": _app._APP_JS_V,
+        "public_js": _app._PUBLIC_JS_V,
+        "rankings_js": _app._RANKINGS_JS_V,
+        "teams_js": _app._TEAMS_JS_V,
+        "redzone_js": _app._REDZONE_JS_V,
+        "css": _app._CSS_V,
+        "git_sha": os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("GIT_SHA") or "",
+        "started_at": _app._PROCESS_STARTED_AT,
+    })
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
 
 
 @health_bp.route("/api/health/errors")
