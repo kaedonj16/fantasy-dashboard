@@ -12,6 +12,7 @@ from utils.waiver_score import (
     depth_analysis_for_player,
     depth_chart_vacancy_score,
     expected_vacated_points,
+    faab_bid_bands,
     strip_bye_weeks,
     weeks_out_from_projections,
     injured_ahead,
@@ -623,3 +624,43 @@ def test_signal_default_available():
 def test_tables_have_expected_positions():
     assert set(WAIVER_PRIME_MAX) == {"QB", "RB", "WR", "TE"}
     assert set(USAGE_SPIKE_MIN) == {"snap_pct", "touches", "targets"}
+
+
+# ---- faab_bid_bands (low · target · stretch) -------------------------------
+
+def test_faab_bid_bands_shape_and_ordering():
+    """UI chips expect faab_low ≤ faab_target < faab_high ints + rationale."""
+    out = faab_bid_bands(pickup_score=50.0, score_min=0.0, score_range=100.0)
+    assert set(out) >= {"faab_low", "faab_target", "faab_high", "faab_rationale"}
+    assert isinstance(out["faab_low"], int)
+    assert isinstance(out["faab_target"], int)
+    assert isinstance(out["faab_high"], int)
+    assert out["faab_low"] <= out["faab_target"] < out["faab_high"]
+    assert out["faab_high"] <= 50
+    assert isinstance(out["faab_rationale"], str) and out["faab_rationale"]
+
+
+def test_faab_bid_bands_scales_with_score():
+    low = faab_bid_bands(10.0, 0.0, 100.0)
+    high = faab_bid_bands(95.0, 0.0, 100.0)
+    assert high["faab_target"] > low["faab_target"]
+    assert "top target" in high["faab_rationale"]
+    assert "speculative" in low["faab_rationale"] or "flier" in low["faab_rationale"]
+
+
+def test_faab_bid_bands_need_and_handcuff_nudge_center():
+    base = faab_bid_bands(60.0, 0.0, 100.0)
+    needy = faab_bid_bands(60.0, 0.0, 100.0, need_mult=1.2)
+    cuff = faab_bid_bands(60.0, 0.0, 100.0, handcuff_upside=0.4)
+    assert needy["faab_target"] >= base["faab_target"]
+    assert cuff["faab_target"] > base["faab_target"]
+    assert "fills a roster need" in needy["faab_rationale"]
+    assert "handcuff upside" in cuff["faab_rationale"]
+
+
+def test_faab_bid_bands_bad_input_baseline():
+    out = faab_bid_bands("x", None, None)
+    assert out["faab_low"] == 0
+    assert out["faab_target"] == 1
+    assert out["faab_high"] == 2
+    assert "Baseline" in out["faab_rationale"]
