@@ -15,11 +15,11 @@ import time
 from typing import Any, Optional
 
 from .base import (
-    DRAFTS, DRAFT_RESULTS, FUTURE_PICKS, HISTORY, LEAGUE, MATCHUPS, ROSTERS,
-    ROSTER_SETTINGS, SCORING_SETTINGS, STANDINGS, STARTERS, TRADED_PICKS,
-    TRANSACTIONS, TRADES, USERS, LeagueNotFoundError, ProviderAdapter,
-    ProviderAuthenticationError, ProviderMetadata, ProviderUnavailableError,
-    UnsupportedCapabilityError,
+    BRACKET, DRAFTS, DRAFT_RESULTS, FUTURE_PICKS, HISTORY, LEAGUE, MATCHUPS,
+    ROSTERS, ROSTER_SETTINGS, SCORING_SETTINGS, STANDINGS, STARTERS,
+    TRADED_PICKS, TRANSACTIONS, TRADES, USERS, LeagueNotFoundError,
+    ProviderAdapter, ProviderAuthenticationError, ProviderMetadata,
+    ProviderUnavailableError,
 )
 
 logger = logging.getLogger(__name__)
@@ -202,9 +202,9 @@ def resolve_credentials(
 class MFLProvider(ProviderAdapter):
     metadata = ProviderMetadata(
         "mfl", "MyFantasyLeague", "league_id", capabilities=frozenset({
-            LEAGUE, USERS, ROSTERS, MATCHUPS, STANDINGS,
+            LEAGUE, USERS, ROSTERS, STARTERS, MATCHUPS, STANDINGS,
             TRANSACTIONS, TRADES, DRAFTS, DRAFT_RESULTS, TRADED_PICKS,
-            FUTURE_PICKS, HISTORY, SCORING_SETTINGS, ROSTER_SETTINGS,
+            FUTURE_PICKS, HISTORY, SCORING_SETTINGS, ROSTER_SETTINGS, BRACKET,
         }),
     )
 
@@ -279,6 +279,8 @@ class MFLProvider(ProviderAdapter):
             "total_rosters": _int(lg.get("size") or len(franchises)),
             "settings": {
                 "playoff_week_start": _int(lg.get("lastRegularSeasonWeek"), 14) + 1,
+                "playoff_teams": _int(lg.get("playoffTeams") or lg.get("playoff_teams"), 6),
+                "draft_rounds": _int(lg.get("draftRounds") or lg.get("draft_rounds"), 4),
                 "type": sleeper_type,
                 "league_type": league_type_label,
             },
@@ -328,15 +330,36 @@ class MFLProvider(ProviderAdapter):
         # MFL rosters carry no lineup, so derive each team's starters from the most
         # recent scored week (weeklyResults flags starter/nonstarter per player).
         starters_by_fid = self._latest_starters(league_id, season, xwalk)
+        slots = []
+        pos_by_pid: dict[str, str] = {}
+        if not any(starters_by_fid.values()):
+            try:
+                lg = self.get_league(league_id, season)
+                slots = lg.get("roster_positions") or []
+            except Exception:
+                slots = []
+            try:
+                from utils.utils import load_players_index
+                index = load_players_index() or {}
+                pos_by_pid = {
+                    str(pid): str((info or {}).get("position") or (info or {}).get("pos") or "").upper()
+                    for pid, info in index.items()
+                }
+            except Exception:
+                pos_by_pid = {}
         out = []
         for r in rosters:
             entries = _items(r.get("player", []), "player")
             mapped = [(xwalk.get(str(p.get("id"))), str(p.get("status") or "")) for p in entries]
             players = [p for p, _ in mapped if p]
             reserve = [p for p, status in mapped if p and status.upper() in {"INJURED_RESERVE", "TAXI_SQUAD"}]
+            starters = starters_by_fid.get(str(r.get("id")), [])
+            if not starters and players and slots:
+                from utils.starter_lineup import derive_starters_from_slots
+                starters = derive_starters_from_slots(players, slots, pos_by_pid)
             out.append({"league_id": str(league_id), "roster_id": _int(r.get("id")),
                         "owner_id": str(r.get("id")), "players": players,
-                        "starters": starters_by_fid.get(str(r.get("id")), []),
+                        "starters": starters,
                         "reserve": reserve, "taxi": None,
                         "settings": {}, "metadata": {"unmapped_player_count": len(entries)-len(players)}})
         return out
@@ -352,22 +375,43 @@ class MFLProvider(ProviderAdapter):
                     starters.append(cid)
         return starters
 
+    def _starters_from_weekly_block(self, block: dict, xwalk) -> dict:
+        out: dict = {}
+        for matchup in _items((block or {}).get("matchup", []), "matchup"):
+            for team in _items(matchup.get("franchise", []), "franchise"):
+                ids = self._starter_ids(team, xwalk)
+                if ids:
+                    out[str(team.get("id"))] = ids
+        return out
+
     def _latest_starters(self, league_id, season, xwalk) -> dict:
         """{franchise_id: [canonical starter ids]} from the most recent scored
-        week. weeklyResults with no W returns the current/most-recent week; empty
-        (e.g. offseason) yields {} so rosters simply carry no starters."""
+        week. weeklyResults with no W returns the current/most-recent week.
+        If that week has no starter flags, walk backward so in-season boards
+        still get a real lineup."""
         try:
             block = self._export("weeklyResults", league_id, season, ttl=600).get("weeklyResults") or {}
-            out: dict = {}
-            for matchup in _items(block.get("matchup", []), "matchup"):
-                for team in _items(matchup.get("franchise", []), "franchise"):
-                    ids = self._starter_ids(team, xwalk)
-                    if ids:
-                        out[str(team.get("id"))] = ids
-            return out
+            out = self._starters_from_weekly_block(block, xwalk)
+            if out:
+                return out
+            # Current-week export already returned the latest week. If that
+            # week has matchups but no starter flags (pre-game / offseason),
+            # walking 18 more identical weeks just repeats the same empty.
+            if _items((block or {}).get("matchup", []), "matchup"):
+                return {}
         except Exception:
             logger.debug("MFL latest starters unavailable", exc_info=True)
-            return {}
+        for week in range(18, 0, -1):
+            try:
+                block = self._export(
+                    "weeklyResults", league_id, season, ttl=600, W=int(week),
+                ).get("weeklyResults") or {}
+                out = self._starters_from_weekly_block(block, xwalk)
+                if out:
+                    return out
+            except Exception:
+                continue
+        return {}
 
     def get_matchups(self, league_id, season, week):
         raw = self._export("weeklyResults", league_id, season, ttl=600, W=int(week))
@@ -460,8 +504,58 @@ class MFLProvider(ProviderAdapter):
                  "previous_owner_id": _int(p.get("previousPickFor")) or None}
                 for p in picks]
 
+    def _playoff_seeds(self, league_id, season) -> list[int]:
+        """Roster ids in standings order when leagueStandings is available."""
+        try:
+            raw = self._export("leagueStandings", league_id, season, ttl=1800)
+        except Exception:
+            return []
+        block = raw.get("leagueStandings") or raw.get("standings") or raw
+        franchises = _items(
+            (block.get("franchise") if isinstance(block, dict) else None) or [],
+            "franchise",
+        )
+        ranked = []
+        for i, fr in enumerate(franchises, 1):
+            fid = _int(fr.get("id"))
+            if not fid:
+                continue
+            try:
+                rank = int(fr.get("rank") or fr.get("seed") or i)
+            except (TypeError, ValueError):
+                rank = i
+            ranked.append((rank, fid))
+        ranked.sort(key=lambda x: x[0])
+        return [fid for _, fid in ranked]
+
     def get_bracket(self, league_id, season, kind):
-        raise UnsupportedCapabilityError("MFL playoff brackets are not reliably available through the export API.")
+        """Derive a winners bracket from playoff-week matchups, or project seeds."""
+        from utils.playoff_bracket import derive_or_project_bracket
+
+        if str(kind or "winners").lower() != "winners":
+            return []
+        try:
+            league = self.get_league(league_id, season)
+        except Exception:
+            league = {}
+        settings = (league or {}).get("settings") or {}
+        start = _int(settings.get("playoff_week_start"), 15)
+        playoff_teams = _int(settings.get("playoff_teams"), 6)
+        by_week: dict[int, list] = {}
+        for week in range(start, start + 4):
+            try:
+                rows = self.get_matchups(league_id, season, week) or []
+            except Exception:
+                rows = []
+            if rows:
+                by_week[week] = rows
+        return derive_or_project_bracket(
+            matchups_by_week=by_week,
+            playoff_week_start=start,
+            seed_roster_ids=self._playoff_seeds(league_id, season),
+            playoff_teams=playoff_teams,
+            kind=kind,
+        )
 
     @staticmethod
     def _positions(lg):

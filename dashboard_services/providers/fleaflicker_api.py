@@ -14,11 +14,11 @@ import time
 from typing import Any, Optional
 
 from .base import (
-    DRAFTS, DRAFT_RESULTS, FUTURE_PICKS, HISTORY, LEAGUE, MATCHUPS, ROSTERS,
-    ROSTER_SETTINGS, SCORING_SETTINGS, STANDINGS, STARTERS, TRADED_PICKS,
-    TRANSACTIONS, TRADES, USERS, LeagueNotFoundError, ProviderAdapter,
-    ProviderAuthenticationError, ProviderMetadata, ProviderUnavailableError,
-    UnsupportedCapabilityError,
+    BRACKET, DRAFTS, DRAFT_RESULTS, FUTURE_PICKS, HISTORY, LEAGUE, MATCHUPS,
+    ROSTERS, ROSTER_SETTINGS, SCORING_SETTINGS, STANDINGS, STARTERS,
+    TRADED_PICKS, TRANSACTIONS, TRADES, USERS, LeagueNotFoundError,
+    ProviderAdapter, ProviderAuthenticationError, ProviderMetadata,
+    ProviderUnavailableError,
 )
 
 logger = logging.getLogger(__name__)
@@ -583,7 +583,7 @@ class FleaflickerProvider(ProviderAdapter):
         "fleaflicker", "Fleaflicker", "league_id", capabilities=frozenset({
             LEAGUE, USERS, ROSTERS, STARTERS, MATCHUPS, STANDINGS,
             TRANSACTIONS, TRADES, DRAFTS, DRAFT_RESULTS, TRADED_PICKS,
-            FUTURE_PICKS, HISTORY, SCORING_SETTINGS, ROSTER_SETTINGS,
+            FUTURE_PICKS, HISTORY, SCORING_SETTINGS, ROSTER_SETTINGS, BRACKET,
         }),
     )
 
@@ -699,10 +699,22 @@ class FleaflickerProvider(ProviderAdapter):
         sleeper_type, league_type = _fleaflicker_sleeper_league_type(
             max_keepers, total_rosters,
         )
+        playoff_week_start = (
+            _int(_get(league, "playoff_week_start", "playoffStartWeek", "playoff_start_week"))
+            or _int(_get(rules, "playoff_week_start", "playoffStartWeek"))
+            or 15
+        )
+        playoff_teams = (
+            _int(_get(league, "playoff_teams", "playoffTeams", "num_playoff_teams"))
+            or _int(_get(rules, "playoff_teams", "playoffTeams"))
+            or 6
+        )
         settings: dict[str, Any] = {
             "type": sleeper_type,
             "league_type": league_type,
             "draft_status": _fleaflicker_draft_status(league),
+            "playoff_week_start": playoff_week_start,
+            "playoff_teams": playoff_teams,
         }
         if max_keepers > 0:
             settings["max_keepers"] = max_keepers
@@ -1072,9 +1084,57 @@ class FleaflickerProvider(ProviderAdapter):
                 })
         return out
 
+    def _playoff_seeds(self, league_id, season, *, token: Optional[str] = None) -> list[int]:
+        """Team ids in standings order (best first)."""
+        try:
+            standings = self._call(
+                "FetchLeagueStandings", league_id, season, ttl=1800, token=token,
+            )
+        except Exception:
+            return []
+        ranked = []
+        for i, team in enumerate(self._teams_from_standings(standings), 1):
+            team_id = _get(team, "id")
+            if team_id is None:
+                continue
+            rec = team.get("recordOverall") or team.get("record_overall") or team.get("record") or {}
+            if not isinstance(rec, dict):
+                rec = {}
+            try:
+                rank = int(_get(team, "rank", "seed") or _get(rec, "rank", "seed") or i)
+            except (TypeError, ValueError):
+                rank = i
+            ranked.append((rank, _int(team_id)))
+        ranked.sort(key=lambda x: x[0])
+        return [tid for _, tid in ranked if tid]
+
     def get_bracket(self, league_id, season, kind):
-        raise UnsupportedCapabilityError(
-            "Fleaflicker playoff brackets are not exposed through the public API."
+        """Derive a winners bracket from playoff-week scoreboards, or project seeds."""
+        from utils.playoff_bracket import derive_or_project_bracket
+
+        if str(kind or "winners").lower() != "winners":
+            return []
+        try:
+            league = self.get_league(league_id, season)
+        except Exception:
+            league = {}
+        settings = (league or {}).get("settings") or {}
+        start = _int(settings.get("playoff_week_start"), 15)
+        playoff_teams = _int(settings.get("playoff_teams"), 6)
+        by_week: dict[int, list] = {}
+        for week in range(start, start + 4):
+            try:
+                rows = self.get_matchups(league_id, season, week) or []
+            except Exception:
+                rows = []
+            if rows:
+                by_week[week] = rows
+        return derive_or_project_bracket(
+            matchups_by_week=by_week,
+            playoff_week_start=start,
+            seed_roster_ids=self._playoff_seeds(league_id, season),
+            playoff_teams=playoff_teams,
+            kind=kind,
         )
 
     @staticmethod
