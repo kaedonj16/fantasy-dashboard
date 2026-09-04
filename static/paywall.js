@@ -472,7 +472,9 @@ window.refreshLeagueProInviteCta = async function refreshLeagueProInviteCta() {
     el = document.createElement('div');
     el.id = 'leagueProShareBanner';
     el.setAttribute('role', 'status');
-    el.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9998;max-width:320px;background:var(--card);border:1px solid var(--border);border-top:3px solid #2563eb;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);padding:16px 18px;display:flex;flex-direction:column;gap:10px;';
+    // Lift above the mobile dock nav so the CTA button isn't clipped behind it;
+    // --dock-safe-bottom is 0 on desktop and the dock height + safe area on mobile.
+    el.style.cssText = 'position:fixed;bottom:calc(24px + var(--dock-safe-bottom, 0px));right:24px;z-index:9998;max-width:min(320px, calc(100vw - 48px));background:var(--card);border:1px solid var(--border);border-top:3px solid #2563eb;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);padding:16px 18px;display:flex;flex-direction:column;gap:10px;';
     if (data.is_league_buyer) {
       if (!data.invite_path) return;
       el.innerHTML = `
