@@ -58,7 +58,6 @@ from dashboard_services.api import (
     get_roster_positions,
     get_total_rosters,
     resolve_league_id_for_season,
-    avatar_url
 )
 from dashboard_services.awards import compute_awards_season, render_awards_section
 from dashboard_services.display_names import team_label_from_user, username_from_user
@@ -8224,19 +8223,17 @@ def _build_offseason_standings_body(ctx: dict) -> str:
 
     pick_by_key: dict[str, float] = load_pick_value_table() or {}
 
-    # ── avatar lookup from users ──────────────────────────────────────────────
-    user_by_id = {str(u.get("user_id", "")): u for u in users}
+    # ── avatar lookup ─────────────────────────────────────────────────────────
+    # Resolve each team's picture the same way the Matchups page does, via
+    # team_avatar(): it prefers the roster-level team picture
+    # (roster.metadata.avatar) over the league-user one. Yahoo stores each team's
+    # logo on the roster, so reading only the user avatar (as this used to) made
+    # every team fall back to one shared default; roster-first fixes that and
+    # keeps standings consistent with the Matchups page.
     rid_to_avatar: dict[str, str] = {}
     for r in rosters:
         rid = str(r.get("roster_id"))
-        owner_id = str(r.get("owner_id") or "")
-        u = user_by_id.get(owner_id) or {}
-        u_meta = u.get("metadata") or {}
-        u_av = u.get("avatar") or ""
-        av_raw = u_meta.get("avatar") or (
-            f"https://sleepercdn.com/avatars/{u_av}" if platform == "sleeper" and u_av else u_av
-        )
-        rid_to_avatar[rid] = avatar_url(av_raw) or ""
+        rid_to_avatar[rid] = team_avatar(platform, r, users) or ""
 
     # ── build per-team data ───────────────────────────────────────────────────
     team_rows: list[dict] = []

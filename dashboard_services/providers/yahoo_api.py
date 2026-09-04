@@ -1469,10 +1469,17 @@ def get_users(season: int, league_id: str, access_token: str) -> List[Dict[str, 
         team_key  = _team_attr(t, "team_key") or ""
         team_id   = _team_attr(t, "team_id") or team_key.split(".")[-1]
         team_name = _team_attr(t, "name") or f"Team {team_id}"
+        # Yahoo returns team_logos either as a list of {team_logo:{url}} or, for a
+        # single logo, as a bare {team_logo:{url}} dict. Handle both — parsing only
+        # the list shape (as this once did) dropped the logo for dict-shaped teams,
+        # leaving user-level avatars empty.
         logo      = _team_attr(t, "team_logos", {})
         logo_url  = None
         if isinstance(logo, list) and logo:
             logo_url = (logo[0].get("team_logo") or {}).get("url")
+        elif isinstance(logo, dict):
+            inner = _unwrap_yahoo_list_or_dict(logo.get("team_logo"))
+            logo_url = inner.get("url")
 
         mgr   = _yahoo_primary_manager(t)
         guid  = _yahoo_owner_id(t, team_id)
