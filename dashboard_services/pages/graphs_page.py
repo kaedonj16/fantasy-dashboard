@@ -19,6 +19,7 @@ from utils.utils import z_better_outward
 from dashboard_services.plotly_theme import apply_brand_layout
 from utils.all_play import all_play_analysis
 from utils.standings_viz import luck_quadrant_svg, value_age_svg
+from utils.scatter_labels import scatter_label_placements
 
 
 def owner_color_map(owners) -> Dict[str, str]:
@@ -211,16 +212,23 @@ def build_graphs_body(ctx: dict) -> str:
     figs: Dict[str, go.Figure] = {}
 
     # ---------- PF vs PA scatter ----------
+    # Offset / hide overlapping team labels in dense clusters (tour mock + big
+    # leagues); markers still carry hover/name when text is cleared.
     scatter_traces = []
-    for _, r in team_stats.iterrows():
-        owner = r["owner"]
+    _owners = [str(r["owner"]) for _, r in team_stats.iterrows()]
+    _pas = [float(r["PA"]) for _, r in team_stats.iterrows()]
+    _pfs = [float(r["PF"]) for _, r in team_stats.iterrows()]
+    _label_plan = scatter_label_placements(_pas, _pfs, _owners)
+    for i, (_, r) in enumerate(team_stats.iterrows()):
+        owner = _owners[i]
+        text, textposition = _label_plan[i]
         scatter_traces.append(
             go.Scatter(
-                x=[r["PA"]],
-                y=[r["PF"]],
-                mode="markers+text",
-                text=[owner],
-                textposition="top center",
+                x=[_pas[i]],
+                y=[_pfs[i]],
+                mode="markers+text" if text else "markers",
+                text=[text] if text else None,
+                textposition=textposition if text else None,
                 cliponaxis=False,
                 marker=dict(
                     size=11,
@@ -615,15 +623,20 @@ def build_career_graphs_body(career_ctx: dict) -> str:
 
     # ── 1. Career PF vs PA scatter ─────────────────────────────────────────
     scatter_traces = []
-    for _, r in team_stats.iterrows():
-        owner = r["owner"]
+    _owners = [str(r["owner"]) for _, r in team_stats.iterrows()]
+    _pas = [float(r["PA"]) for _, r in team_stats.iterrows()]
+    _pfs = [float(r["PF"]) for _, r in team_stats.iterrows()]
+    _label_plan = scatter_label_placements(_pas, _pfs, _owners)
+    for i, (_, r) in enumerate(team_stats.iterrows()):
+        owner = _owners[i]
+        text, textposition = _label_plan[i]
         scatter_traces.append(
             go.Scatter(
-                x=[r["PA"]],
-                y=[r["PF"]],
-                mode="markers+text",
-                text=[owner],
-                textposition="top center",
+                x=[_pas[i]],
+                y=[_pfs[i]],
+                mode="markers+text" if text else "markers",
+                text=[text] if text else None,
+                textposition=textposition if text else None,
                 cliponaxis=False,
                 marker=dict(size=12, color=owner_colors.get(owner), line=dict(color="black", width=1)),
                 name=owner,
