@@ -121,10 +121,13 @@ def _record_pf_pa_for_roster(ctx: dict, roster_id: str, roster: dict | None = No
 
 
 def portfolio_record_and_rank(lctx, rid, viewer_roster):
-    """Wins/losses/PF/rank for My Leagues, tolerating seed-int standings_map.
+    """Wins/losses/PF/standings-rank for My Leagues.
 
-    Production ``build_standings_map`` stores ``{roster_id: seed:int}``. Older
-    fixtures pass dicts with wins/pf — accept both without 500'ing ``.get``.
+    Rank is the same seed the Standings page uses: ``build_standings_map``
+    sorts every team by wins, then points for. Production stores
+    ``{roster_id: seed:int}``. Older fixtures pass dicts with wins/pf —
+    accept both without 500'ing ``.get``. When the map has no entry, rank
+    falls back to sorting ``rosters`` by the same wins-then-PF key.
     """
     standings_map = lctx.get("standings_map") or {}
     std_raw = _standings_map_lookup(standings_map, rid)
@@ -176,6 +179,19 @@ def portfolio_record_and_rank(lctx, rid, viewer_roster):
 
         all_std = sorted(standings_map.items(), key=_sort_key)
         rank = next((i + 1 for i, (k, _) in enumerate(all_std) if str(k) == str(rid)), "?")
+
+    if rank == "?" and (lctx.get("rosters") or []):
+        def _roster_key(r):
+            s = (r or {}).get("settings") or {}
+            w = int(s.get("wins") or 0)
+            p = float(s.get("fpts") or 0) + float(s.get("fpts_decimal") or 0) / 100.0
+            return (-w, -p)
+
+        ordered = sorted(lctx.get("rosters") or [], key=_roster_key)
+        rank = next(
+            (i + 1 for i, r in enumerate(ordered) if str(r.get("roster_id")) == str(rid)),
+            "?",
+        )
 
     return wins, losses, ties, pf, rank
 
