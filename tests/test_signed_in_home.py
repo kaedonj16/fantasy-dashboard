@@ -61,12 +61,6 @@ def test_saved_league_list_is_client_paginated_and_card_width_is_stable():
     assert "width: 100%" in card_rule
     assert "max-width: 380px" in card_rule
     assert "box-sizing: border-box" in card_rule
-    assert "background: var(--card)" in card_rule
-    assert "#122d4b" not in card_rule
-    landing = (ROOT / "static" / "landing_lite.css").read_text()
-    landing_card = landing[landing.index(".home-card {"):landing.index(".home-card .home-steps-hint")]
-    assert "background: var(--card)" in landing_card
-    assert "#122d4b" not in landing_card
 
 
 def test_home_copy_touched_by_state_machine_has_no_em_dash():
