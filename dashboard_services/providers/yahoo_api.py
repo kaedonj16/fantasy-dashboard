@@ -199,23 +199,19 @@ def yahoo_oauth_start_url(
 
 
 def resolve_session_yahoo_token(session) -> tuple[str, str]:
-    """Return (guid, access_token) from the Flask session, refreshing from DB if needed.
+    """Return (guid, access_token) preferring DB-backed tokens.
 
-    Prefer the DB-backed, expiry-aware accessor whenever we have a Yahoo GUID.
-    A stale ``session["yahoo_access_token"]`` is common after ~1 hour and must
-    not short-circuit refresh — Yahoo then answers ``token_expired`` 401s.
+    Session keeps ``yahoo_guid`` (and other non-secret ids) only. Access tokens
+    live in the DB after OAuth; a leftover ``yahoo_access_token`` in the session
+    cookie is cleared and never trusted as a long-lived bearer.
     """
     guid = str(session.get("yahoo_guid") or "")
-    if guid:
-        token = get_valid_access_token(guid) or ""
-        if token:
-            session["yahoo_access_token"] = token
-            return guid, token
-        # Refresh failed or no DB row — drop the stale session bearer so callers
-        # re-offer OAuth instead of retrying an expired token.
-        session.pop("yahoo_access_token", None)
-        return guid, ""
-    return "", str(session.get("yahoo_access_token") or "")
+    # Drop any stale cookie bearer — tokens belong in the DB after OAuth.
+    session.pop("yahoo_access_token", None)
+    if not guid:
+        return "", ""
+    token = get_valid_access_token(guid) or ""
+    return guid, token
 
 
 def yahoo_auth_error_kind(exc: BaseException | str) -> str:

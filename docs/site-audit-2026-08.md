@@ -33,7 +33,7 @@ this PR** shipped with accompanying regression tests in
 | 13 | Default OG image is square logo; twitter card=`summary` | **Fixed** — `/static/og-default.png` 1200×630 + `summary_large_image` |
 | 14 | Monolithic `dashboard.css` (~724KB) + full `app.js` on SEO pages | Open — structural |
 | 15 | AI HTML → `innerHTML` under CSP `unsafe-inline` | **Fixed** — client `brSanitizeHtml` + server allowlist |
-| 16 | Yahoo access token stored in session cookie | Open |
+| 16 | Yahoo access token stored in session cookie | **Fixed** — guid in session; tokens from DB only |
 | 17 | Rate limits per-process without Redis in Render | **Fixed** — `brfantasy-redis` Key Value + `REDIS_URL` on web |
 
 ---
@@ -92,5 +92,4 @@ this PR** shipped with accompanying regression tests in
 
 1. Monitor `needs_google_link` traffic after the hard cutover; keep soft-mode tests monkeypatched.
 2. **Asset split** — extend `lite_js` to all logged-out SEO pages; CSS packs per surface.
-3. **Yahoo token out of session** — keep guid in session; resolve access tokens from DB only.
-4. Confirm Redis limiter + espn draft relay healthy after `REDIS_URL` wiring.
+3. Confirm Redis limiter + espn draft relay healthy after `REDIS_URL` wiring.

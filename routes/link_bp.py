@@ -561,7 +561,6 @@ def link_yahoo_preview():
         if kind == "expired" and guid:
             refreshed = get_valid_access_token(guid, force_refresh=True) or ""
             if refreshed:
-                session["yahoo_access_token"] = refreshed
                 try:
                     return _yahoo_preview_payload(league_id, season, refreshed, guid)
                 except Exception as retry_exc:

@@ -144,7 +144,7 @@ def test_yahoo_token_does_not_use_expired_session_bearer(monkeypatch):
         assert "yahoo_access_token" not in session
 
 
-def test_resolve_session_yahoo_token_refreshes_stale_session_bearer(monkeypatch):
+def test_resolve_session_yahoo_token_uses_db_and_clears_session_bearer(monkeypatch):
     from flask import Flask
     app = Flask(__name__)
     app.secret_key = "test"
@@ -156,7 +156,22 @@ def test_resolve_session_yahoo_token_refreshes_stale_session_bearer(monkeypatch)
         session["yahoo_access_token"] = "expired"
         guid, token = yahoo_api.resolve_session_yahoo_token(session)
         assert (guid, token) == ("G1", "TOK_FRESH")
-        assert session["yahoo_access_token"] == "TOK_FRESH"
+        # Access token must not remain in the session cookie.
+        assert "yahoo_access_token" not in session
+
+
+def test_resolve_session_yahoo_token_ignores_bearer_without_guid(monkeypatch):
+    from flask import Flask
+    app = Flask(__name__)
+    app.secret_key = "test"
+    monkeypatch.setattr(yahoo_api, "get_valid_access_token",
+                        lambda g: (_ for _ in ()).throw(AssertionError("no guid")))
+    with app.test_request_context("/"):
+        from flask import session
+        session["yahoo_access_token"] = "orphan-token"
+        guid, token = yahoo_api.resolve_session_yahoo_token(session)
+        assert (guid, token) == ("", "")
+        assert "yahoo_access_token" not in session
 
 
 def test_yahoo_auth_error_kind_detects_token_expired():
