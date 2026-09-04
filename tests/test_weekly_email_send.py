@@ -3,8 +3,20 @@ from __future__ import annotations
 
 from unittest import mock
 
+import pytest
+
 import utils.weekly_email as we
 from utils.email_delivery import SendResult
+
+
+@pytest.fixture(autouse=True)
+def _weekly_email_hmac_secret(monkeypatch):
+    """Send path signs unsubscribe links; fail-closed without FLASK_SECRET_KEY.
+
+    CI unit jobs do not set the secret globally, so provide one for every
+    send-loop test. Tests that assert the fail-closed path delete it explicitly.
+    """
+    monkeypatch.setenv("FLASK_SECRET_KEY", "unit-test-weekly-email-secret")
 
 
 def _recip(**kw):
@@ -220,3 +232,23 @@ def test_suppressed_address_skipped(monkeypatch):
         summary = we.send_weekly_digests()
     send.assert_not_called()
     assert summary["skipped_suppressed"] == 1
+
+
+def test_send_fails_closed_without_hmac_secret(monkeypatch):
+    """No FLASK_SECRET_KEY → no forged unsub tokens; digests are not sent."""
+    monkeypatch.delenv("FLASK_SECRET_KEY", raising=False)
+    monkeypatch.setenv("BREVO_API_KEY", "xkeysib-test")
+    digest = {"subject": "Hello", "html": "<p>x {UNSUB}</p>", "tags": ["weekly-digest"]}
+    with mock.patch.object(we, "_recipients", return_value=[_recip()]), \
+         mock.patch.object(we, "build_digest", return_value=digest), \
+         mock.patch.object(we, "other_leagues_for_account", return_value=[]), \
+         mock.patch.object(we, "multi_league_sections_html", return_value=""), \
+         mock.patch("utils.email_preferences.is_enabled", return_value=True), \
+         mock.patch("utils.email_events.is_suppressed", return_value=False), \
+         mock.patch("utils.email_delivery.send_email") as send, \
+         mock.patch("utils.digest_context.DigestRunCache.load_shared", lambda self: None), \
+         mock.patch("dashboard_services.db.get_conn", return_value=_Conn()):
+        summary = we.send_weekly_digests()
+    send.assert_not_called()
+    assert summary["sent"] == 0
+    assert summary["failed"] >= 1
