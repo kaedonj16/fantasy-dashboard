@@ -1159,6 +1159,51 @@ window.brHaptic = function (pattern) {
   }, { passive: true, capture: true });   // capture so a body-scroller's event is seen
 
   var token = 0, navAbort = null;
+  // Soft-nav prefetch: start the HTML fetch on pointerdown / hover so a click
+  // often finds the response already in flight (or done). Keyed by absolute URL.
+  // Store a promise of HTML text (not the Response) — Response bodies are one-shot.
+  var softPrefetch = Object.create(null);
+  var SOFT_PREFETCH_TTL_MS = 20000;
+  function softAbsUrl(href) {
+    try { return new URL(href, location.href).href; } catch (_) { return ''; }
+  }
+  function softPrefetchGet(abs) {
+    var e = softPrefetch[abs];
+    if (!e) return null;
+    if (Date.now() - e.at > SOFT_PREFETCH_TTL_MS) {
+      delete softPrefetch[abs];
+      return null;
+    }
+    return e;
+  }
+  function softFetchHtml(url, signal) {
+    var opts = { headers: { 'X-Soft-Nav': '1' }, credentials: 'same-origin' };
+    if (signal) opts.signal = signal;
+    var fetchP = (typeof window.brFetchWithTimeout === 'function')
+      ? window.brFetchWithTimeout(url, opts, 25000)
+      : fetch(url, opts);
+    return fetchP.then(function (resp) {
+      var ct = resp.headers.get('content-type') || '';
+      if (!resp.ok || ct.indexOf('text/html') === -1) throw new Error('bad response');
+      if (resp.redirected) {
+        try {
+          if (new URL(resp.url).pathname !== new URL(url, location.href).pathname) {
+            location.href = resp.url; throw new Error('redirected');
+          }
+        } catch (e) { location.href = url; throw e; }
+      }
+      return resp.text();
+    });
+  }
+  function softPrefetchStart(href) {
+    var abs = softAbsUrl(href);
+    if (!abs || softPrefetchGet(abs)) return;
+    var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var p = softFetchHtml(abs, ctl ? ctl.signal : null);
+    softPrefetch[abs] = { at: Date.now(), promise: p, abort: ctl };
+    // Drop failed entries so the next hover retries.
+    p.catch(function () { if (softPrefetch[abs] && softPrefetch[abs].promise === p) delete softPrefetch[abs]; });
+  }
   function softNav(url, isPop) {
     var mine = ++token;
     var curRoot = document.getElementById('page-root');
@@ -1177,25 +1222,17 @@ window.brHaptic = function (pattern) {
       endProgress();
       location.href = url;
     }, 25000);
-    var fetchOpts = { headers: { 'X-Soft-Nav': '1' }, credentials: 'same-origin' };
-    if (navAbort) fetchOpts.signal = navAbort.signal;
-    var fetchP = (typeof window.brFetchWithTimeout === 'function')
-      ? window.brFetchWithTimeout(url, fetchOpts, 25000)
-      : fetch(url, fetchOpts);
-    fetchP
-      .then(function (resp) {
-        var ct = resp.headers.get('content-type') || '';
-        if (!resp.ok || ct.indexOf('text/html') === -1) throw new Error('bad response');
-        // A redirect to a different path (login, etc.): hand off to the browser.
-        if (resp.redirected) {
-          try {
-            if (new URL(resp.url).pathname !== new URL(url, location.href).pathname) {
-              location.href = resp.url; throw new Error('redirected');
-            }
-          } catch (e) { location.href = url; throw e; }
-        }
-        return resp.text();
-      })
+    var abs = softAbsUrl(url) || url;
+    var pre = softPrefetchGet(abs);
+    var htmlP;
+    if (pre && pre.promise) {
+      // Reuse the in-flight / completed prefetch (HTML text promise).
+      htmlP = pre.promise;
+      delete softPrefetch[abs];
+    } else {
+      htmlP = softFetchHtml(url, navAbort ? navAbort.signal : null);
+    }
+    htmlP
       .then(function (html) {
         if (mine !== token) return;   // a newer tap superseded this one
         var doc = new DOMParser().parseFromString(html, 'text/html');
@@ -1356,7 +1393,8 @@ window.brHaptic = function (pattern) {
   // their own scripts, so let the browser navigate to them natively.
   var SOFT_NAV_PAGES = {
     dashboard: 1, standings: 1, teams: 1, activity: 1, weekly: 1,
-    recap: 1, awards: 1, history: 1, commissioner: 1, players: 1, breakouts: 1,
+    recap: 1, awards: 1, history: 1, commissioner: 1, league_health: 1,
+    players: 1, breakouts: 1,
   };
   function softNavigable(href) {
     var path;
@@ -1366,18 +1404,41 @@ window.brHaptic = function (pattern) {
     return SOFT_NAV_PAGES[seg] === 1;
   }
 
-  document.addEventListener('click', function (e) {
-    if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  function softNavTargetFromEvent(e) {
     // Mobile navigates from the dock + sheet; desktop from the top nav pills,
     // dropdown items and the logo.
-    var a = mq.matches
+    return mq.matches
       ? e.target.closest('a.br-tabbar-item, .br-sheet a.br-sheet-link')
       : e.target.closest('.top-nav a.nav-pill, .top-nav a.nav-pill-dropdown-item, .top-nav .nav-left > a');
-    if (!a) return;
+  }
+  function softNavHrefFromAnchor(a) {
+    if (!a) return '';
     var href = a.getAttribute('href');
-    if (!href || href.charAt(0) === '#' || a.target === '_blank' || !sameOrigin(href)) return;
-    if (new URL(href, location.href).href === location.href) { e.preventDefault(); return; }
-    if (!softNavigable(href)) return;   // heavy pages navigate natively, in a single load
+    if (!href || href.charAt(0) === '#' || a.target === '_blank' || !sameOrigin(href)) return '';
+    if (new URL(href, location.href).href === location.href) return '';
+    if (!softNavigable(href)) return '';
+    return href;
+  }
+
+  // Start the soft-nav fetch as soon as the user presses / hovers a nav link so
+  // the click often lands on an in-flight (or finished) response.
+  document.addEventListener('pointerdown', function (e) {
+    if (e.button) return;
+    var href = softNavHrefFromAnchor(softNavTargetFromEvent(e));
+    if (href) softPrefetchStart(href);
+  }, true);
+  document.addEventListener('mouseover', function (e) {
+    var a = softNavTargetFromEvent(e);
+    if (!a) return;
+    var href = softNavHrefFromAnchor(a);
+    if (href) softPrefetchStart(href);
+  }, true);
+
+  document.addEventListener('click', function (e) {
+    if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    var a = softNavTargetFromEvent(e);
+    var href = softNavHrefFromAnchor(a);
+    if (!href) return;
     e.preventDefault();
     // Close any open desktop dropdown so it doesn't linger after the soft-nav.
     if (!mq.matches) {
