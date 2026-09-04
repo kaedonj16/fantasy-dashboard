@@ -17451,6 +17451,43 @@ function renderTeamDetails(data) {
     picksHTML += '</div>';
   }
 
+  // Positional strength — the redraft stand-in for dynasty draft capital. Fills
+  // the right column with how each position room ranks in the league, since
+  // redraft teams have no future picks to show there.
+  let strengthHTML = '';
+  if (data.is_redraft && Array.isArray(data.positional_strength) && data.positional_strength.length > 0) {
+    const _ordinal = (n) => {
+      const s = ['th', 'st', 'nd', 'rd'];
+      const v = n % 100;
+      return n + (s[(v - 20) % 10] || s[v] || s[0]);
+    };
+    strengthHTML = '<div class="team-modal-section"><h3>Positional Strength</h3>'
+      + '<div class="tm-strength-note">Each position room ranked against the league.</div>'
+      + '<div class="tm-strength-list">';
+    data.positional_strength.forEach(row => {
+      const pct = Math.max(0, Math.min(100, Number(row.percentile) || 0));
+      const rankTxt = row.of ? `${_ordinal(row.rank)} of ${row.of}` : _ordinal(row.rank);
+      const valTxt = row.value != null ? Number(row.value).toFixed(1) : '—';
+      // Rank drives the bar color: top third strong, bottom third weak.
+      let tier = 'mid';
+      if (row.of) {
+        if (row.rank <= Math.ceil(row.of / 3)) tier = 'strong';
+        else if (row.rank > row.of - Math.ceil(row.of / 3)) tier = 'weak';
+      }
+      strengthHTML += `
+        <div class="tm-strength-row">
+          <div class="tm-strength-head">
+            <span class="pos-badge ${row.position}">${row.position}</span>
+            <span class="tm-strength-rank">${rankTxt}</span>
+            <span class="tm-strength-val">${valTxt}</span>
+          </div>
+          <div class="tm-strength-bar"><div class="tm-strength-fill tm-strength-${tier}" style="width:${pct}%;"></div></div>
+        </div>
+      `;
+    });
+    strengthHTML += '</div></div>';
+  }
+
   // Build graphs section - each chart in its own section for side-by-side layout
   let graphsHTML = '';
 
@@ -17487,8 +17524,9 @@ function renderTeamDetails(data) {
   // Populate tab panels
   const rosterPanel = document.getElementById('tm-panel-roster');
   if (rosterPanel) {
-    rosterPanel.innerHTML = picksHTML
-      ? `<div class="team-modal-body-left">${rosterHTML}</div><div class="team-modal-body-right">${picksHTML}</div>`
+    const sideHTML = picksHTML || strengthHTML;
+    rosterPanel.innerHTML = sideHTML
+      ? `<div class="team-modal-body-left">${rosterHTML}</div><div class="team-modal-body-right">${sideHTML}</div>`
       : `<div class="team-modal-body-left" style="flex:1;max-width:100%;">${rosterHTML}</div>`;
   }
   const chartsPanel = document.getElementById('tm-panel-charts');
