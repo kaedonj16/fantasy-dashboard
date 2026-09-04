@@ -9,6 +9,43 @@ pytest.importorskip("requests")
 from dashboard_services.matchups import build_matchup_preview
 
 
+def test_fleaflicker_empty_starters_use_scoreboard_projected_total():
+    """Pre-kickoff boxscore slots are empty; scoreboard.projected must still win."""
+    rosters = [
+        {"roster_id": 1, "owner_id": "a", "players": ["1"], "starters": ["1"],
+         "reserve": [], "settings": {"wins": 0, "losses": 0}},
+        {"roster_id": 2, "owner_id": "b", "players": ["2"], "starters": ["2"],
+         "reserve": [], "settings": {"wins": 0, "losses": 0}},
+    ]
+    matchups = [
+        {"matchup_id": 1, "roster_id": 1, "points": 0.0, "projected_points": 66.31,
+         "starters": [], "players": [], "players_points": {}},
+        {"matchup_id": 1, "roster_id": 2, "points": 0.0, "projected_points": 35.91,
+         "starters": [], "players": [], "players_points": {}},
+    ]
+    users = [
+        {"user_id": "a", "roster_id": 1, "display_name": "Ada"},
+        {"user_id": "b", "roster_id": 2, "display_name": "Bea"},
+    ]
+    with mock.patch("dashboard_services.matchups.get_matchups", return_value=matchups), mock.patch(
+        "dashboard_services.matchups.get_rosters", return_value=rosters
+    ), mock.patch("dashboard_services.matchups.get_users", return_value=users), mock.patch(
+        "dashboard_services.matchups.get_league_settings", return_value={}
+    ), mock.patch(
+        "dashboard_services.matchups.team_avatar", return_value=""
+    ):
+        preview = build_matchup_preview(
+            league_id="14153", week=1,
+            roster_map={"1": "Owls", "2": "Bears"},
+            players_map={"1": {"name": "P1", "pos": "QB", "team": "KC"},
+                         "2": {"name": "P2", "pos": "RB", "team": "SF"}},
+            season="2026", platform="fleaflicker",
+        )
+    assert len(preview) == 1
+    assert preview[0]["left"]["proj_total"] == pytest.approx(66.31)
+    assert preview[0]["right"]["proj_total"] == pytest.approx(35.91)
+
+
 def test_yahoo_empty_matchup_row_backfills_from_roster():
     players = [str(i) for i in range(12)]
     rosters = [

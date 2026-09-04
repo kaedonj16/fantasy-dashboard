@@ -179,3 +179,35 @@ def test_compact_slide_shows_yahoo_team_projected_points(monkeypatch):
     assert "118.4" in html
     assert "104.1" in html
     assert "m-proj-only" in html
+
+
+def test_compact_slide_shows_fleaflicker_team_projected_points(monkeypatch):
+    """Fleaflicker scoreboard.projected flows through proj_total the same way."""
+    mmod = _matchups()
+    monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: False)
+    monkeypatch.setattr("utils.utils.load_week_projection", lambda *_a, **_k: {})
+    matchup = {
+        "left": {
+            "name": "Owls", "roster_id": "1", "record": "0-0", "username": "a",
+            "avatar": "", "pts_total": 0.0, "proj_total": 66.31,
+            "starters": [{"pid": "flea-only", "name": "P1", "pos": "QB", "nfl": "KC", "pts": 0.0}],
+        },
+        "right": {
+            "name": "Bears", "roster_id": "2", "record": "0-0", "username": "b",
+            "avatar": "", "pts_total": 0.0, "proj_total": 35.91,
+            "starters": [{"pid": "flea-only-2", "name": "P2", "pos": "RB", "nfl": "SF", "pts": 0.0}],
+        },
+    }
+    html = mmod.render_matchup_slide(
+        "2026", matchup, w=1, proj_week=0,
+        status_by_pid={},
+        projections={},
+        players={},
+        teams={},
+        team_game_lookup={},
+        compact=True,
+        scoring_settings={"rec": 1.0},
+    )
+    assert "66.3" in html
+    assert "35.9" in html
+    assert "m-proj-only" in html

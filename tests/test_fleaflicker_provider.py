@@ -916,6 +916,44 @@ def test_get_matchups_uses_boxscore_slot_order(monkeypatch):
     assert home["matchup_id"] == away["matchup_id"]
 
 
+def test_scoreboard_keeps_fleaflicker_team_projected_points(monkeypatch):
+    """Fleaflicker scoreboard publishes homeScore/awayScore.projected; empty
+    boxscore starters used to paint dashboard matchup headers as 0.0."""
+    provider = FleaflickerProvider()
+    payloads = {
+        "FetchLeagueScoreboard": {
+            "games": [{
+                "id": 77,
+                "home": {"id": 1},
+                "away": {"id": 2},
+                "homeScore": {
+                    "yetToPlay": 8,
+                    "score": {"formatted": "0"},
+                    "projected": {"value": 118.42, "formatted": "118.42"},
+                },
+                "awayScore": {
+                    "yetToPlay": 8,
+                    "score": {"formatted": "0"},
+                    "projected": {"value": 104.10, "formatted": "104.10"},
+                },
+            }],
+        },
+        "FetchLeagueBoxscore": {"lineups": [{"group": "START", "slots": [
+            {"position": {"label": "QB", "group": "START"}},
+        ]}]},
+    }
+    monkeypatch.setattr(provider, "_call", lambda method, *a, **k: payloads[method])
+    monkeypatch.setattr(provider, "_canonical_map", lambda *a, **k: {})
+    monkeypatch.setattr(provider, "_build_name_index", lambda: {})
+    rows = provider.get_matchups("14153", 2026, 1)
+    by_rid = {r["roster_id"]: r for r in rows}
+    assert by_rid[1]["projected_points"] == pytest.approx(118.42)
+    assert by_rid[2]["projected_points"] == pytest.approx(104.10)
+    assert by_rid[1]["points"] == 0.0
+    assert by_rid[1]["starters"] == []
+    assert by_rid[2]["starters"] == []
+
+
 def test_fleaflicker_bracket_projects_from_seeds(monkeypatch):
     provider = FleaflickerProvider()
     monkeypatch.setattr(provider, "get_league", lambda *a, **k: {
