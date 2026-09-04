@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-09-04",
+        "tag": "fix",
+        "text": "My Leagues: Signed in as now uses your Google name, not the last league's team owner. Opening an ESPN, Yahoo, or Fleaflicker league used to overwrite that label (and could attach the wrong Sleeper roster). Each card also shows your team name; Rank is regular-season standings (wins, then points for) for that team.",
+        "link": "/portfolio"
+    },
+    {
         "date": "2026-09-03",
         "tag": "new",
         "text": "Advanced Metrics: pick more than one season (2025 + 2024 + 2022, or any years we have). The board defaults to one row per player-season (Year column on). Switch to Combine for one row per player (rates volume-weighted, totals added). Controls are grouped: metric + seasons + search, then positions, then filters (team, sort, age, volume). In a player modal, tap extra year pills to combine only seasons that player actually has; Career still uses every year.",

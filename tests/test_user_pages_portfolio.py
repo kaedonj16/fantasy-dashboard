@@ -12,8 +12,23 @@ def test_portfolio_uses_account_viewer_resolution():
     fn = source.split("def _league_summary")[1].split("\n    leagues_data")[0]
     assert "resolve_account_viewer_for_league" in fn
     assert "match_viewer_roster" in fn
-    assert 'owner_id=viewer_user_id if lg_platform == "sleeper"' in fn
+    assert "sleeper_owner_id_for_account" in fn
+    assert "owner_id=sleeper_owner" in fn
     assert 'str(r.get("owner_id")) == str(viewer_user_id)' not in fn
+    assert "team_label_from_user" in fn
+    assert '"team_name": team_name' in fn
+
+
+def test_sleeper_owner_id_ignores_unlinked_session_viewer(monkeypatch):
+    pytest.importorskip("flask")
+    from routes.user_pages_bp import sleeper_owner_id_for_account
+    import dashboard_services.accounts as accounts
+
+    monkeypatch.setattr(accounts, "list_account_platform_ids", lambda *a, **k: ["linked-sleeper"])
+    assert sleeper_owner_id_for_account(42, "linked-sleeper", "sleeper") == "linked-sleeper"
+    assert sleeper_owner_id_for_account(42, "1020439", "sleeper") is None
+    assert sleeper_owner_id_for_account(42, "1020439", "fleaflicker") is None
+    assert sleeper_owner_id_for_account(None, "sleeper-only", "sleeper") == "sleeper-only"
 
 
 def test_portfolio_undrafted_leagues_use_startup_draft_phase():
@@ -113,3 +128,19 @@ def test_portfolio_record_and_rank_accepts_dict_standings_map():
     assert wins == 5 and losses == 2
     assert pf == pytest.approx(800.0)
     assert rank == 1
+
+
+def test_portfolio_record_and_rank_falls_back_to_roster_settings():
+    from dashboard_services.ai.context_builders import portfolio_record_and_rank
+
+    lctx = {
+        "standings_map": {},
+        "rosters": [
+            {"roster_id": 1, "settings": {"wins": 2, "losses": 4, "fpts": 90, "fpts_decimal": 0}},
+            {"roster_id": 2, "settings": {"wins": 5, "losses": 1, "fpts": 140, "fpts_decimal": 0}},
+            {"roster_id": 3, "settings": {"wins": 5, "losses": 1, "fpts": 150, "fpts_decimal": 0}},
+        ],
+    }
+    wins, losses, ties, pf, rank = portfolio_record_and_rank(lctx, "1", lctx["rosters"][0])
+    assert wins == 2 and losses == 4
+    assert rank == 3

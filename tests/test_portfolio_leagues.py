@@ -14,7 +14,7 @@ def _portfolio_fn() -> str:
 def test_my_leagues_cards_show_a_platform_script():
     fn = _portfolio_fn()
     assert "def _plat_script(_plat):" in fn
-    assert "def _lg_id(name_inner, _plat, extra=\"\", arch=\"\"):" in fn
+    assert "def _lg_id(name_inner, _plat, extra=\"\", arch=\"\", team=\"\"):" in fn
     assert "class='pf-lg-plat pf-lg-plat-" in fn
     assert ".pf-lg-plat-sleeper{color:#6C4BF0;}" in fn
     assert ".pf-lg-plat-espn{color:#D33A46;}" in fn
@@ -102,8 +102,15 @@ def test_my_leagues_fav_and_arch_share_a_tools_group():
     assert ".pf-lg-meta .pf-arch{" in fn
     # Star and arch are no longer competing for the same top-right slot.
     assert fn.count("_lg_tools(") >= 3
-    assert "_lg_id(name_link, plat, off_note, arch_badge)" in fn
+    assert "_lg_id(name_link, plat, off_note, arch_badge, lg.get('team_name') or '')" in fn
     assert "pf-lg-fav' aria-label='Favorite league'" not in fn.split("def _lg_tools")[0]
+
+
+def test_my_leagues_cards_show_resolved_team_and_standings_rank():
+    fn = _portfolio_fn()
+    assert "class='pf-lg-team'" in fn
+    assert "Regular-season standings: wins, then points for" in fn
+    assert "pf-lg-l'>Rank</span>" in fn
 
 
 def test_my_leagues_cards_are_compact():
