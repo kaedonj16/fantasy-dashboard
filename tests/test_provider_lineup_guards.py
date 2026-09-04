@@ -129,6 +129,34 @@ def test_yahoo_get_league_globals_reads_nested_settings(monkeypatch):
     assert out["league_settings"]["playoff_teams"] == 6
 
 
+def test_yahoo_get_league_globals_reads_count_keyed_league(monkeypatch):
+    payload = {
+        "fantasy_content": {
+            "league": {
+                "count": 2,
+                "0": {"league_key": "470.l.99", "num_teams": "10", "scoring_type": "head"},
+                "1": {"settings": [{
+                    "num_playoff_teams": "4",
+                    "playoff_start_week": "15",
+                    "roster_positions": [
+                        {"position": "QB", "count": 1},
+                        {"position": "RB", "count": 2},
+                    ],
+                    "stat_modifiers": {"stats": [
+                        {"stat": {"stat_id": 11, "value": "1.0"}},
+                    ]},
+                }]},
+            }
+        }
+    }
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda *a, **k: payload)
+    out = yahoo_api.get_league_globals(2026, "99", access_token="tok")
+    assert out["roster_positions"].count("QB") == 1
+    assert out["roster_positions"].count("RB") == 2
+    assert out["scoring_settings"]["rec"] == 1.0
+    assert out["league_settings"]["num_teams"] == 10
+
+
 def test_yahoo_does_not_treat_head_scoring_type_as_standard_ppr():
     # Competition format "head" must not zero out an explicit PPR modifier.
     settings = {

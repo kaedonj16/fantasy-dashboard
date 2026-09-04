@@ -30,8 +30,10 @@ def test_yahoo_empty_matchup_row_backfills_from_roster():
         },
     ]
     matchups = [
-        {"matchup_id": 1, "roster_id": 1, "points": 0.0, "starters": [], "players": [], "players_points": {}},
-        {"matchup_id": 1, "roster_id": 2, "points": 88.8, "starters": [], "players": [], "players_points": {}},
+        {"matchup_id": 1, "roster_id": 1, "points": 0.0, "projected_points": 118.4,
+         "starters": [], "players": [], "players_points": {}},
+        {"matchup_id": 1, "roster_id": 2, "points": 88.8, "projected_points": 104.1,
+         "starters": [], "players": [], "players_points": {}},
     ]
     users = [
         {"user_id": "owner-a", "roster_id": 1, "display_name": "Lucas"},
@@ -59,6 +61,8 @@ def test_yahoo_empty_matchup_row_backfills_from_roster():
     right = preview[0]["right"]
     assert len(left["starters"]) == 9
     assert len(right["starters"]) == 9
+    assert left["proj_total"] == pytest.approx(118.4)
+    assert right["proj_total"] == pytest.approx(104.1)
 
 
 def test_yahoo_empty_scoreboard_does_not_invent_round_robin_pairings():

@@ -10,17 +10,22 @@ pytest.importorskip("flask")
 yahoo_api = pytest.importorskip("dashboard_services.providers.yahoo_api")
 
 
-def _team_entry(team_id, points="0.00"):
-    return {
-        "team": [
-            [
-                {"team_key": f"461.l.99.t.{team_id}"},
-                {"team_id": str(team_id)},
-                {"name": f"Team {team_id}"},
-            ],
-            {"team_points": {"coverage_type": "week", "week": "1", "total": str(points)}},
-        ]
-    }
+def _team_entry(team_id, points="0.00", projected=None):
+    team = [
+        [
+            {"team_key": f"461.l.99.t.{team_id}"},
+            {"team_id": str(team_id)},
+            {"name": f"Team {team_id}"},
+        ],
+        {"team_points": {"coverage_type": "week", "week": "1", "total": str(points)}},
+    ]
+    if projected is not None:
+        team.append({
+            "team_projected_points": {
+                "coverage_type": "week", "week": "1", "total": str(projected),
+            }
+        })
+    return {"team": team}
 
 
 def _matchup_object(left, right, week=1, pts_l="10.0", pts_r="20.0"):
@@ -153,3 +158,24 @@ def test_matchup_dict_with_numeric_teams_wrapper(monkeypatch):
     pts = {(r["matchup_id"], r["roster_id"]): r["points"] for r in rows}
     assert pts[(1, 2)] == 3.0
     assert pts[(1, 7)] == 4.0
+
+
+def test_scoreboard_keeps_yahoo_team_projected_points(monkeypatch):
+    """Yahoo scoreboard publishes team_projected_points; empty starters used to
+    paint dashboard matchup headers as 0.0."""
+    payload = _scoreboard_payload([(1, 2)], nested=True)
+    payload["fantasy_content"]["league"][1]["scoreboard"]["0"]["matchups"]["0"] = {
+        "matchup": {
+            "week": "1",
+            "teams": {
+                "count": 2,
+                "0": _team_entry(1, "0.00", projected="118.42"),
+                "1": _team_entry(2, "0.00", projected="104.10"),
+            },
+        }
+    }
+    rows = _run_get_matchups(monkeypatch, payload)
+    by_rid = {r["roster_id"]: r for r in rows}
+    assert by_rid[1]["projected_points"] == pytest.approx(118.42)
+    assert by_rid[2]["projected_points"] == pytest.approx(104.10)
+    assert by_rid[1]["points"] == 0.0

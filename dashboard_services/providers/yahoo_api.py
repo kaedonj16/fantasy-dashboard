@@ -1813,14 +1813,16 @@ def _matchup_rows_from_scoreboard(raw: Any, week: int) -> List[Dict[str, Any]]:
             if not roster_id:
                 continue
             pts_block = _team_field_dict(tm, "team_points")
+            proj_block = _team_field_dict(tm, "team_projected_points")
             sides.append({
-                "points":          _safe_float(pts_block.get("total")),
-                "players":         [],
-                "roster_id":       roster_id,
-                "custom_points":   None,
-                "starters":        [],
-                "starters_points": [],
-                "players_points":  {},
+                "points":            _safe_float(pts_block.get("total")),
+                "projected_points":  _safe_float(proj_block.get("total")),
+                "players":           [],
+                "roster_id":         roster_id,
+                "custom_points":     None,
+                "starters":          [],
+                "starters_points":   [],
+                "players_points":    {},
             })
         if len(sides) < 2:
             continue
@@ -2183,13 +2185,14 @@ def get_league_globals(season: int, league_id: str, access_token: str) -> Dict[s
     Called by platform_api.sync_league_globals().
     """
     try:
-        raw  = _yahoo_get(access_token, f"league/{_league_key(league_id)}/settings")
-        fc   = raw.get("fantasy_content", {})
-        lg   = fc.get("league") or []
-        meta = lg[0] if isinstance(lg, list) and lg else {}
-        # Yahoo nests settings under league[1].settings[0] (same shape yahoo_fantasy_api
-        # and our teams/scoreboard extractors use). league[0].settings is usually absent.
-        settings = _yahoo_settings_dict(lg)
+        lk = _league_key_for_season(league_id, season, access_token)
+        raw = _yahoo_get(access_token, f"league/{lk}/settings")
+        meta = _extract_league_meta(raw) or {}
+        # Prefer the shared league-child walker so count-keyed ``league`` dicts
+        # still yield settings. ``_yahoo_settings_dict`` covers the list shape.
+        settings = _unwrap_yahoo_list_or_dict(_league_child_block(raw, "settings"))
+        if not settings:
+            settings = _yahoo_settings_dict(_yahoo_league_nodes(raw))
     except Exception as exc:
         logger.warning("[yahoo] get_league_globals failed: %s", exc)
         return {}
@@ -2269,13 +2272,24 @@ def _yahoo_sleeper_league_type(
 
 def _yahoo_settings_dict(league_list: Any) -> Dict[str, Any]:
     """Unwrap Yahoo ``fantasy_content.league[1].settings`` into a plain dict."""
-    if not isinstance(league_list, list) or len(league_list) < 2:
+    nodes = league_list
+    if isinstance(league_list, dict):
+        nodes = []
+        count = _safe_int(league_list.get("count")) or 0
+        if count:
+            for i in range(count):
+                entry = league_list.get(str(i))
+                if entry is not None:
+                    nodes.append(entry)
+        if not nodes:
+            nodes = [v for k, v in league_list.items() if str(k).isdigit() and v is not None]
+    if not isinstance(nodes, list) or len(nodes) < 2:
         # Rare: some payloads put a settings blob on league[0].
-        meta0 = league_list[0] if isinstance(league_list, list) and league_list else {}
+        meta0 = nodes[0] if isinstance(nodes, list) and nodes else {}
         maybe = meta0.get("settings") if isinstance(meta0, dict) else None
         return _unwrap_yahoo_list_or_dict(maybe)
 
-    block = league_list[1] if isinstance(league_list[1], dict) else {}
+    block = nodes[1] if isinstance(nodes[1], dict) else {}
     return _unwrap_yahoo_list_or_dict(block.get("settings"))
 
 
