@@ -16,8 +16,17 @@ from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple
 
 from dashboard_services.ai.context_builders import ctx_scoring_type
-from utils.lineup_slots import RESTRICTED_FLEX_SLOTS, canonicalize_slot, slot_eligible_positions
-from utils.roster_strength import STARTER_THRESHOLD, derive_league_thresholds
+from utils.lineup_slots import (
+    RESTRICTED_FLEX_SLOTS,
+    canonicalize_slot,
+    count_lineup_slots,
+    slot_eligible_positions,
+)
+from utils.roster_strength import (
+    STARTER_THRESHOLD,
+    derive_league_thresholds,
+    weighted_pos_strength,
+)
 from utils.tier_stack import asset_tier
 from utils.tier_thresholds import FALLBACK_THRESHOLDS, compute_tier_thresholds
 
@@ -535,6 +544,166 @@ def _suggestion_rank(r: Dict[str, Any]) -> float:
     impact = min(1.0, (r.get("net_playoff_odds_delta") or 0.0) / 0.15)
     accept = (r.get("acceptance_pct") or 0) / 100.0
     return 0.6 * impact + 0.4 * accept
+
+
+# ── Viewer positional need (Teams-page ranks → suggestion slate) ──────────────
+# Contending used to score targets by production / scarcity / availability only.
+# Scarcity down-weights 1QB QB (0.80) and TE (0.85), and availability prefers a
+# rival's surplus RB3/WR3, so a WR-factory last at QB and TE saw a slate of
+# flex RBs/WRs. These helpers use the same weighted_pos_strength ranks the
+# Teams page and /api/trade-targets already publish, then reserve slate slots
+# so the holes a manager is staring at actually appear.
+
+_NEED_POS_ORDER = ("QB", "RB", "WR", "TE")
+_NEED_BOTTOM_FRAC = 0.35          # same cutoff as /api/trade-targets
+_NEED_MULT_BEST = 0.80            # first-place position
+_NEED_MULT_WORST = 1.45           # last-place position
+_MAX_TARGETS = 8
+_MAX_PER_POS = 3
+_RESERVED_PER_NEED = 2
+
+
+def _default_slot_counts(league_type: str) -> Dict[str, int]:
+    if (league_type or "").lower() == "sf":
+        return {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1, "SUPER_FLEX": 1}
+    return {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 2}
+
+
+def _slot_counts_for(roster_positions: List[str], league_type: str) -> Dict[str, int]:
+    counts = count_lineup_slots(roster_positions or [])
+    if not any(counts.get(p) for p in ("QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX")):
+        return _default_slot_counts(league_type)
+    return counts
+
+
+def _viewer_pos_league_ranks(
+    rosters: List[Dict[str, Any]],
+    values_by_id: Dict[str, Any],
+    viewer_roster_id: str,
+    roster_positions: List[str],
+    league_type: str = "1qb",
+) -> Dict[str, int]:
+    """League rank (1 = strongest) of the viewer at each skill position.
+
+    Matches Teams / trade-targets: starter-slot-weighted strength, not a raw
+    value sum that over-credits flex depth.
+    """
+    slots = _slot_counts_for(roster_positions, league_type)
+    strengths: Dict[str, Dict[str, float]] = {}
+    for r in rosters or []:
+        rid = str(r.get("roster_id"))
+        vals: Dict[str, List[float]] = {p: [] for p in _NEED_POS_ORDER}
+        for pid in r.get("players") or []:
+            info = values_by_id.get(str(pid)) or {}
+            pos = str(info.get("position") or "").upper()
+            if pos in vals:
+                vals[pos].append(_f(info.get("value")))
+        strengths[rid] = {
+            pos: weighted_pos_strength(v, pos, slots) for pos, v in vals.items()
+        }
+    field = list(strengths.keys())
+    vid = str(viewer_roster_id)
+    ranks: Dict[str, int] = {}
+    for pos in _NEED_POS_ORDER:
+        ordered = sorted(
+            field, key=lambda rid: strengths.get(rid, {}).get(pos, 0.0), reverse=True)
+        try:
+            ranks[pos] = ordered.index(vid) + 1
+        except ValueError:
+            ranks[pos] = max(1, len(field))
+    return ranks
+
+
+def _need_multiplier(rank: Optional[int], n_field: int) -> float:
+    """Score multiplier from league rank (1 = best). Last place ~1.45, first ~0.80."""
+    if not rank or n_field <= 1:
+        return 1.0
+    clamped = min(max(int(rank), 1), n_field)
+    pct_from_bottom = (n_field - clamped) / (n_field - 1)
+    return _NEED_MULT_BEST + (_NEED_MULT_WORST - _NEED_MULT_BEST) * (1.0 - pct_from_bottom)
+
+
+def _needed_positions(ranks: Dict[str, int], n_field: int) -> List[str]:
+    """Positions in the bottom 35% of the league, worst first.
+
+    Falls back to the two weakest spots when they sit in the bottom half so a
+    4-team fixture (or a league with no one in the strict cutoff) still
+    reserves QB/TE on a WR-factory. A truly balanced top-half roster returns
+    nothing and keeps the variety slate as-is.
+    """
+    if not ranks or n_field <= 1:
+        return []
+    cutoff = max(1, round(n_field * _NEED_BOTTOM_FRAC))
+    needed = [pos for pos in _NEED_POS_ORDER
+              if ranks.get(pos, n_field) > n_field - cutoff]
+    needed.sort(key=lambda p: ranks.get(p, n_field), reverse=True)
+    if needed:
+        return needed
+    ordered = sorted(_NEED_POS_ORDER, key=lambda p: ranks.get(p, n_field), reverse=True)
+    return [p for p in ordered[:2] if ranks.get(p, 1) > n_field / 2]
+
+
+def _select_varied_slate(
+    scored: List[Tuple[float, Dict]],
+    needed_positions: Optional[List[str]] = None,
+    max_targets: int = _MAX_TARGETS,
+    max_per_pos: int = _MAX_PER_POS,
+    reserved_per_need: int = _RESERVED_PER_NEED,
+) -> List[Dict]:
+    """Pick a varied slate, reserving slots for the viewer's weakest positions.
+
+    One player per (owner, position), at most ``max_per_pos`` per position.
+    Needed positions take their best-scored players first so scarcity and
+    surplus-availability cannot flood the list with RB/WR depth.
+    """
+    scored = sorted(scored, key=lambda x: x[0], reverse=True)
+    seen_owner_pos: set = set()
+    seen_players: set = set()
+    pos_in_top: Dict[str, int] = {}
+    top: List[Dict] = []
+
+    def _try_add(t: Dict) -> bool:
+        if t["player_id"] in seen_players:
+            return False
+        key = (t["owner_roster_id"], t["position"])
+        if key in seen_owner_pos:
+            return False
+        if pos_in_top.get(t["position"], 0) >= max_per_pos:
+            return False
+        seen_owner_pos.add(key)
+        seen_players.add(t["player_id"])
+        pos_in_top[t["position"]] = pos_in_top.get(t["position"], 0) + 1
+        top.append(t)
+        return True
+
+    need = [p for p in (needed_positions or []) if p]
+    if need:
+        reserved_budget = min(reserved_per_need * len(need), max(0, max_targets - 2))
+        reserved_taken = 0
+        reserved_per_pos: Dict[str, int] = {p: 0 for p in need}
+        for _, t in scored:
+            if reserved_taken >= reserved_budget:
+                break
+            pos = t.get("position")
+            if pos not in reserved_per_pos:
+                continue
+            if reserved_per_pos[pos] >= reserved_per_need:
+                continue
+            if _try_add(t):
+                reserved_per_pos[pos] += 1
+                reserved_taken += 1
+
+    for _, t in scored:
+        if len(top) >= max_targets:
+            break
+        _try_add(t)
+
+    if len(top) < 4:
+        for _, t in scored:
+            if t["player_id"] not in seen_players and len(top) < max_targets:
+                seen_players.add(t["player_id"])
+                top.append(t)
+    return top
 
 
 def _depth_penalty(delta: int, sorted_vals: Optional[List[float]], league_size: int = 10) -> float:
@@ -2243,6 +2412,18 @@ def _get_archetype_suggestions_impl(
             _viewer_best_rank[_pp] = _rr
             _viewer_best_val[_pp] = _f(_vv.get("value"))
 
+    # League rank of the viewer's positional rooms (1 = best) — same numbers
+    # the Teams page shows. Contending/consolidate use this to boost holes
+    # (last-place QB/TE) and reserve slate slots so RB/WR surplus can't
+    # crowd them out.
+    _n_field = max(1, len(rosters))
+    _viewer_league_ranks = _viewer_pos_league_ranks(
+        rosters, values_by_id, str(viewer_roster_id),
+        roster_positions or ctx.get("roster_positions") or [],
+        league_type,
+    )
+    _need_pos = _needed_positions(_viewer_league_ranks, _n_field)
+
     # Starter-caliber value thresholds for this league (matches the depth-warning
     # definition), used by the consolidation ceiling below.
     _starter_thr, _ = derive_league_thresholds(ctx.get("roster_positions") or [], num_teams)
@@ -2337,15 +2518,17 @@ def _get_archetype_suggestions_impl(
         else:
             avail = _availability(_drank, _pcounts.get(pos, 0))
 
+        need_mult = _need_multiplier(_viewer_league_ranks.get(pos), _n_field)
         if archetype == "consolidate":
             # Gear toward the USER's team: how much this target upgrades their
             # lineup (win-prob delta) weighs about as much as the player's raw
             # value/production, so the list isn't just the top-5 overall names -
             # it favors real upgrades at the user's weaker spots. fit is 0..1.
+            # need_mult then tilts the same way the Teams page ranks rooms.
             fit = min(1.0, max(0.0, wpd) / 0.06)
-            final = (0.55 * score + 0.45 * fit) * avail
+            final = (0.55 * score + 0.45 * fit) * avail * need_mult
         else:
-            final = (score + wpd * 0.25) * avail
+            final = (score + wpd * 0.25) * avail * need_mult
 
         # Off-pattern targets sort below natural fits but stay in the slate.
         final *= stretch
@@ -2353,38 +2536,10 @@ def _get_archetype_suggestions_impl(
 
         scored.append((final, t))
 
-    # ── Rank: surface a varied slate, not just the top overall names ──────────
-    # One player per (team, position), and at most a few per position, so the
-    # list spreads across positions/tiers instead of being five RB studs. Falls
-    # back to filling remaining slots if the caps leave it thin.
-    _MAX_TARGETS = 8
-    _MAX_PER_POS = 3
+    # Varied slate + reserved slots at the viewer's weakest positions (the
+    # holes the Teams page already shows as #12 QB / #12 TE).
     scored.sort(key=lambda x: x[0], reverse=True)
-    seen_owner_pos: set = set()
-    seen_players:   set = set()
-    pos_in_top:     Dict[str, int] = {}
-    top: List[Dict] = []
-    for _, t in scored:
-        if t["player_id"] in seen_players:
-            continue
-        key = (t["owner_roster_id"], t["position"])
-        if key in seen_owner_pos:
-            continue
-        if pos_in_top.get(t["position"], 0) >= _MAX_PER_POS:
-            continue
-        seen_owner_pos.add(key)
-        seen_players.add(t["player_id"])
-        pos_in_top[t["position"]] = pos_in_top.get(t["position"], 0) + 1
-        top.append(t)
-        if len(top) >= _MAX_TARGETS:
-            break
-
-    # Relax the caps if the slate is thin.
-    if len(top) < 4:
-        for _, t in scored:
-            if t["player_id"] not in seen_players and len(top) < _MAX_TARGETS:
-                seen_players.add(t["player_id"])
-                top.append(t)
+    top = _select_varied_slate(scored, _need_pos)
 
     # ── Build send packages & assemble response ───────────────────────────────
     send_candidates = _score_sends(viewer_players, values_by_id, archetype, untouchable_ids=untouchable_ids)
