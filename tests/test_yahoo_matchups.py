@@ -10,17 +10,22 @@ pytest.importorskip("flask")
 yahoo_api = pytest.importorskip("dashboard_services.providers.yahoo_api")
 
 
-def _team_entry(team_id, points="0.00"):
-    return {
-        "team": [
-            [
-                {"team_key": f"461.l.99.t.{team_id}"},
-                {"team_id": str(team_id)},
-                {"name": f"Team {team_id}"},
-            ],
-            {"team_points": {"coverage_type": "week", "week": "1", "total": str(points)}},
-        ]
-    }
+def _team_entry(team_id, points="0.00", projected=None):
+    team = [
+        [
+            {"team_key": f"461.l.99.t.{team_id}"},
+            {"team_id": str(team_id)},
+            {"name": f"Team {team_id}"},
+        ],
+        {"team_points": {"coverage_type": "week", "week": "1", "total": str(points)}},
+    ]
+    if projected is not None:
+        team.append({
+            "team_projected_points": {
+                "coverage_type": "week", "week": "1", "total": str(projected),
+            }
+        })
+    return {"team": team}
 
 
 def _matchup_object(left, right, week=1, pts_l="10.0", pts_r="20.0"):
@@ -153,3 +158,91 @@ def test_matchup_dict_with_numeric_teams_wrapper(monkeypatch):
     pts = {(r["matchup_id"], r["roster_id"]): r["points"] for r in rows}
     assert pts[(1, 2)] == 3.0
     assert pts[(1, 7)] == 4.0
+
+
+def test_scoreboard_keeps_yahoo_team_projected_points(monkeypatch):
+    """Yahoo scoreboard publishes team_projected_points; empty starters used to
+    paint dashboard matchup headers as 0.0."""
+    payload = _scoreboard_payload([(1, 2)], nested=True)
+    payload["fantasy_content"]["league"][1]["scoreboard"]["0"]["matchups"]["0"] = {
+        "matchup": {
+            "week": "1",
+            "teams": {
+                "count": 2,
+                "0": _team_entry(1, "0.00", projected="118.42"),
+                "1": _team_entry(2, "0.00", projected="104.10"),
+            },
+        }
+    }
+    rows = _run_get_matchups(monkeypatch, payload)
+    by_rid = {r["roster_id"]: r for r in rows}
+    assert by_rid[1]["projected_points"] == pytest.approx(118.42)
+    assert by_rid[2]["projected_points"] == pytest.approx(104.10)
+    assert by_rid[1]["points"] == 0.0
+
+
+def _team_roster_payload(team_id, yahoo_id, name, *, pos="QB", nfl="BUF", slot="QB"):
+    player_entry = [[
+        {"player_id": str(yahoo_id)},
+        {"name": {"full": name}},
+        {"display_position": pos},
+        {"editorial_team_abbr": nfl},
+    ], [{"selected_position": [{"position": slot}]}]]
+    return {
+        "fantasy_content": {
+            "team": [
+                [{"team_key": f"461.l.99.t.{team_id}"}, {"team_id": str(team_id)}],
+                {"roster": {"players": {"0": {"player": player_entry}, "count": 1}}},
+            ]
+        }
+    }
+
+
+def test_get_matchups_hydrates_starters_from_week_roster(monkeypatch):
+    """Scoreboard has no player keys; week roster + yahoo_id → Sleeper pids."""
+    import dashboard_services.api as api
+
+    monkeypatch.setattr(api, "get_nfl_players", lambda: {
+        "4984": {"yahoo_id": "1001"},
+        "11564": {"yahoo_id": "1002"},
+    })
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    scoreboard = _scoreboard_payload([(1, 2)], nested=True)
+    roster_paths = []
+
+    def fake_get(token, path, params=None):
+        if path.startswith("team/"):
+            roster_paths.append(path)
+            tid = path.split(".t.")[-1].split("/")[0]
+            if tid == "1":
+                return _team_roster_payload(1, "1001", "Josh Allen")
+            return _team_roster_payload(2, "1002", "Drake Maye", nfl="NE")
+        return scoreboard
+
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", fake_get)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "461.l.99")
+    rows = yahoo_api.get_matchups(2026, "99", 1, "tok")
+    yahoo_api._yahoo_id_to_canonical.cache_clear()
+    by_rid = {r["roster_id"]: r for r in rows}
+    assert by_rid[1]["starters"] == ["4984"]
+    assert by_rid[2]["starters"] == ["11564"]
+    assert by_rid[1]["players"] == ["4984"]
+    assert any("roster;week=1" in p for p in roster_paths)
+
+
+def test_yahoo_roster_starters_join_sleeper_week_projections():
+    """Mapped Yahoo starters must sum Sleeper weekly projs on the matchup header."""
+    pytest.importorskip("flask")
+    pytest.importorskip("requests")
+    from dashboard_services.matchups import team_live_totals
+
+    team = {
+        "starters": [
+            {"pid": "4984", "pos": "QB", "pts": None},
+            {"pid": "11564", "pos": "QB", "pts": None},
+        ],
+        "proj_total": 999.0,  # must not win when Sleeper pids hit
+    }
+    proj_map = {"4984": 21.5, "11564": 19.0}
+    _actual, live = team_live_totals(team, {}, proj_map)
+    assert live == pytest.approx(40.5)

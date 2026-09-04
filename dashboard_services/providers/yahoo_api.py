@@ -1809,14 +1809,18 @@ def _matchup_rows_from_scoreboard(raw: Any, week: int) -> List[Dict[str, Any]]:
             if not roster_id:
                 continue
             pts_block = _team_field_dict(tm, "team_points")
+            proj_block = _team_field_dict(tm, "team_projected_points")
+            team_key = str(_team_attr(tm, "team_key") or "")
             sides.append({
-                "points":          _safe_float(pts_block.get("total")),
-                "players":         [],
-                "roster_id":       roster_id,
-                "custom_points":   None,
-                "starters":        [],
-                "starters_points": [],
-                "players_points":  {},
+                "points":            _safe_float(pts_block.get("total")),
+                "projected_points":  _safe_float(proj_block.get("total")),
+                "players":           [],
+                "roster_id":         roster_id,
+                "team_key":          team_key,
+                "custom_points":     None,
+                "starters":          [],
+                "starters_points":   [],
+                "players_points":    {},
             })
         if len(sides) < 2:
             continue
@@ -1828,12 +1832,71 @@ def _matchup_rows_from_scoreboard(raw: Any, week: int) -> List[Dict[str, Any]]:
     return out
 
 
+def _yahoo_team_key_for_matchup_row(row: Dict[str, Any], league_key: str) -> str:
+    tk = str(row.get("team_key") or "")
+    if tk:
+        return tk
+    rid = row.get("roster_id")
+    lk = str(league_key or "")
+    if rid and lk and ".l." in lk:
+        return f"{lk}.t.{rid}"
+    return ""
+
+
+def _hydrate_yahoo_matchup_lineups(
+    access_token: str,
+    league_key: str,
+    week: int,
+    rows: List[Dict[str, Any]],
+) -> None:
+    """Fill scoreboard rows with week-N roster starters mapped to Sleeper ids.
+
+    Yahoo's scoreboard has pairings and team totals but no player keys, so
+    Sleeper weekly projections cannot resolve until we pull
+    ``team/{key}/roster;week=N`` and run the yahoo_id crosswalk.
+    """
+    if not rows or not access_token:
+        return
+    try:
+        week_i = int(week)
+    except (TypeError, ValueError):
+        week_i = 0
+    keys: List[str] = []
+    seen = set()
+    for row in rows:
+        tk = _yahoo_team_key_for_matchup_row(row, league_key)
+        if tk:
+            row["team_key"] = tk
+        if tk and tk not in seen:
+            seen.add(tk)
+            keys.append(tk)
+    if not keys:
+        return
+    by_key = _prefetch_team_rosters(
+        access_token, [], week=week_i if week_i > 0 else None, team_keys=keys,
+    )
+    for row in rows:
+        tk = str(row.get("team_key") or "")
+        raw_players = by_key.get(tk) or []
+        if not raw_players:
+            continue
+        players, starters, _reserve = _split_yahoo_lineup(raw_players)
+        if players and len(starters) == len(players) and len(players) > 9:
+            starters = players[:9]
+        if players:
+            row["players"] = players
+        if starters:
+            row["starters"] = starters
+
+
 def get_matchups(season: int, league_id: str, week: int, access_token: str) -> List[Dict[str, Any]]:
     """Return Sleeper-shaped matchup rows for Yahoo's published week pairings.
 
     Yahoo's JSON scoreboard nests matchups under ``scoreboard["0"]["matchups"]``.
     Reading only ``scoreboard["matchups"]`` yields an empty list, and the
     Season Hub then invents round-robin opponents that do not match Yahoo.
+    Scoreboard rows have no player keys — week rosters are pulled next so
+    starter pids can join Sleeper weekly projections.
     """
     lk = _league_key_for_season(league_id, season, access_token)
     try:
@@ -1862,10 +1925,17 @@ def get_matchups(season: int, league_id: str, week: int, access_token: str) -> L
         if default_rows and (sb_week == _safe_int(week) or _safe_int(week) <= 1):
             out = default_rows
 
+    if out:
+        try:
+            _hydrate_yahoo_matchup_lineups(access_token, lk, week, out)
+        except Exception as exc:
+            logger.warning("[yahoo] matchup roster hydrate failed: %s", exc)
+
     _yahoo_debug(
-        "get_matchups league=%s season=%s week=%s -> %s rows pairings=%s",
+        "get_matchups league=%s season=%s week=%s -> %s rows pairings=%s starters=%s",
         league_id, season, week, len(out),
         [(r.get("matchup_id"), r.get("roster_id")) for r in out],
+        {r.get("roster_id"): len(r.get("starters") or []) for r in out[:20]},
     )
     return out
 
@@ -2179,13 +2249,14 @@ def get_league_globals(season: int, league_id: str, access_token: str) -> Dict[s
     Called by platform_api.sync_league_globals().
     """
     try:
-        raw  = _yahoo_get(access_token, f"league/{_league_key(league_id)}/settings")
-        fc   = raw.get("fantasy_content", {})
-        lg   = fc.get("league") or []
-        meta = lg[0] if isinstance(lg, list) and lg else {}
-        # Yahoo nests settings under league[1].settings[0] (same shape yahoo_fantasy_api
-        # and our teams/scoreboard extractors use). league[0].settings is usually absent.
-        settings = _yahoo_settings_dict(lg)
+        lk = _league_key_for_season(league_id, season, access_token)
+        raw = _yahoo_get(access_token, f"league/{lk}/settings")
+        meta = _extract_league_meta(raw) or {}
+        # Prefer the shared league-child walker so count-keyed ``league`` dicts
+        # still yield settings. ``_yahoo_settings_dict`` covers the list shape.
+        settings = _unwrap_yahoo_list_or_dict(_league_child_block(raw, "settings"))
+        if not settings:
+            settings = _yahoo_settings_dict(_yahoo_league_nodes(raw))
     except Exception as exc:
         logger.warning("[yahoo] get_league_globals failed: %s", exc)
         return {}
@@ -2265,13 +2336,24 @@ def _yahoo_sleeper_league_type(
 
 def _yahoo_settings_dict(league_list: Any) -> Dict[str, Any]:
     """Unwrap Yahoo ``fantasy_content.league[1].settings`` into a plain dict."""
-    if not isinstance(league_list, list) or len(league_list) < 2:
+    nodes = league_list
+    if isinstance(league_list, dict):
+        nodes = []
+        count = _safe_int(league_list.get("count")) or 0
+        if count:
+            for i in range(count):
+                entry = league_list.get(str(i))
+                if entry is not None:
+                    nodes.append(entry)
+        if not nodes:
+            nodes = [v for k, v in league_list.items() if str(k).isdigit() and v is not None]
+    if not isinstance(nodes, list) or len(nodes) < 2:
         # Rare: some payloads put a settings blob on league[0].
-        meta0 = league_list[0] if isinstance(league_list, list) and league_list else {}
+        meta0 = nodes[0] if isinstance(nodes, list) and nodes else {}
         maybe = meta0.get("settings") if isinstance(meta0, dict) else None
         return _unwrap_yahoo_list_or_dict(maybe)
 
-    block = league_list[1] if isinstance(league_list[1], dict) else {}
+    block = nodes[1] if isinstance(nodes[1], dict) else {}
     return _unwrap_yahoo_list_or_dict(block.get("settings"))
 
 

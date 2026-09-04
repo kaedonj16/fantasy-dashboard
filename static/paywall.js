@@ -571,6 +571,71 @@ function _stackAbovePaywall(modal) {
   _pausePaywallForNested();
 }
 
+const _CHECKOUT_PLANS = { single_league: 1, league: 1, combo: 1, user: 1 };
+
+function _hookCheckoutLinkModal() {
+  if (window.__brCheckoutLinkHooked) return;
+  window.__brCheckoutLinkHooked = true;
+  const origClose = window.closeLinkModal;
+  window.closeLinkModal = function () {
+    const link = document.getElementById('linkModal');
+    if (link && link.classList.contains('over-paywall')) {
+      link.classList.remove('over-paywall');
+      const title = link.querySelector('.link-head span');
+      if (title && link.dataset.prevTitle) title.textContent = link.dataset.prevTitle;
+      delete link.dataset.prevTitle;
+      const hint = document.getElementById('linkCheckoutHint');
+      if (hint) hint.remove();
+      _resumePaywallAfterNested();
+      window.__brCheckoutPlan = null;
+      window.__brCheckoutBtn = null;
+    }
+    if (typeof origClose === 'function') origClose();
+  };
+}
+
+/** Open the Link-a-league modal so checkout can pick any platform, then Google. */
+function _openCheckoutLeaguePicker(planType, triggerBtn) {
+  const link = document.getElementById('linkModal');
+  if (!link || typeof window.openLinkModal !== 'function') {
+    _showIdentifyModal(planType, triggerBtn);
+    return;
+  }
+  _hookCheckoutLinkModal();
+  window.__brCheckoutPlan = planType;
+  window.__brCheckoutBtn = triggerBtn;
+  const title = link.querySelector('.link-head span');
+  if (title && !link.dataset.prevTitle) {
+    link.dataset.prevTitle = title.textContent || 'Link a league';
+    title.textContent = 'Choose a league';
+  }
+  let hint = document.getElementById('linkCheckoutHint');
+  if (!hint) {
+    hint = document.createElement('p');
+    hint.id = 'linkCheckoutHint';
+    hint.className = 'link-help';
+    hint.style.margin = '0 0 12px';
+    const head = link.querySelector('.link-head');
+    if (head && head.parentNode) head.insertAdjacentElement('afterend', hint);
+  }
+  hint.textContent = (function () {
+    const names = Array.from(link.querySelectorAll('.link-tab')).map(function (t) {
+      return (t.textContent || '').trim();
+    }).filter(Boolean);
+    const list = names.length ? names.join(', ') : 'Sleeper, ESPN, MFL, Fleaflicker, or Yahoo';
+    return 'Pick ' + list + ', then continue. Google sign-in happens after you choose a league.';
+  })();
+  _stackAbovePaywall(link);
+  window.openLinkModal();
+  const ctx = window.__brctx || {};
+  const lid = ctx.leagueId && ctx.leagueId !== 'None' ? String(ctx.leagueId) : '';
+  if (lid && ctx.platform && typeof window.linkMyTeam === 'function') {
+    window.linkMyTeam(ctx.platform, lid, ctx.season);
+  } else if (typeof window.linkTab === 'function') {
+    window.linkTab('sleeper');
+  }
+}
+
 /** Signed-in league picker when a plan needs a league but URL has none. */
 function _showLeaguePickerModal(planType, triggerBtn) {
   const existing = document.getElementById('_leaguePickerModal');
@@ -598,6 +663,7 @@ function _showLeaguePickerModal(planType, triggerBtn) {
         <button type="button" class="signin-modal-submit" id="_leaguePickerSubmit" disabled>Continue to Checkout</button>
         <button type="button" class="signin-modal-cancel" id="_leaguePickerCancel">Cancel</button>
       </div>
+      <button type="button" class="signin-modal-cancel" id="_leaguePickerOther" style="width:100%;margin-top:10px;">Connect a league on another platform</button>
     </div>`;
   document.body.appendChild(modal);
   _stackAbovePaywall(modal);
@@ -621,6 +687,10 @@ function _showLeaguePickerModal(planType, triggerBtn) {
   document.addEventListener('keydown', onKey);
   modal.addEventListener('click', e => { if (e.target === modal) closePicker(); });
   modal.querySelector('#_leaguePickerCancel').addEventListener('click', closePicker);
+  modal.querySelector('#_leaguePickerOther').addEventListener('click', function () {
+    closePicker();
+    _openCheckoutLeaguePicker(planType, triggerBtn);
+  });
 
   fetch('/api/my-leagues', { cache: 'no-store' })
     .then(r => r.json())
@@ -672,6 +742,18 @@ function _showIdentifyModal(planType, triggerBtn) {
   if (existing) existing.remove();
 
   const next = encodeURIComponent(window.location.pathname + window.location.search);
+  const yahooOn = !!document.querySelector('#linkModal .link-tab[data-lp="yahoo"]');
+  const googleCtl = needsLeague
+    ? `<button type="button" class="google-continue-btn" id="_identifyGoogle"><span class="google-button-title">Continue with Google</span></button>`
+    : `<a class="google-continue-btn" id="_identifyGoogle" href="/auth/google?intent=login&amp;next=${next}"><span class="google-button-title">Continue with Google</span></a>`;
+  const platformTabs = needsLeague ? `
+      <div class="link-tabs" id="_identifyPlatTabs" role="tablist" style="margin-bottom:14px;">
+        <button type="button" class="link-tab active" data-lp="sleeper">Sleeper</button>
+        <button type="button" class="link-tab" data-lp="espn">ESPN</button>
+        <button type="button" class="link-tab" data-lp="mfl">MFL</button>
+        <button type="button" class="link-tab" data-lp="fleaflicker">Fleaflicker</button>
+        ${yahooOn ? '<button type="button" class="link-tab" data-lp="yahoo">Yahoo</button>' : ''}
+      </div>` : '';
 
   const modal = document.createElement('div');
   modal.id = '_identifyModal';
@@ -695,6 +777,7 @@ function _showIdentifyModal(planType, triggerBtn) {
   _stackAbovePaywall(modal);
 
   const prevFocus = document.activeElement;
+  let identPlat = 'sleeper';
 
   function focusables() {
     return modal.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])');

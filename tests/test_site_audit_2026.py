@@ -287,14 +287,39 @@ def test_checkout_overlays_stack_above_paywall():
     assert "_stackAbovePaywall" in paywall
     assert "dataset.nestedOpen" in paywall
     initiate = paywall[paywall.index("async function initiatePurchase"): paywall.index("function addPremiumBadge")]
+    assert "_openCheckoutLeaguePicker" in initiate
     assert "_showIdentifyModal(type, btn)" in initiate
     assert "brOpenSignin" not in initiate
+    assert "_openCheckoutLeaguePicker" in paywall
+    assert "linkModal" in paywall[paywall.index("function _openCheckoutLeaguePicker"): paywall.index("function _showLeaguePickerModal")]
     picker = paywall[paywall.index("function _showLeaguePickerModal"): paywall.index("function _showIdentifyModal")]
     ident = paywall[paywall.index("function _showIdentifyModal"): paywall.index("async function _initiatePurchaseWithLeague")]
     assert "_stackAbovePaywall(modal)" in picker
     assert "_resumePaywallAfterNested()" in picker
+    assert "_leaguePickerOther" in picker
     assert "_stackAbovePaywall(modal)" in ident
     assert "_resumePaywallAfterNested()" in ident
+    assert "_identifyPlatTabs" in ident
+    assert "goGoogleWithLeague" in ident
+    assert "checkout_plan" in ident
+    assert "Pick a league before continuing with Google." in ident
+
+
+def test_checkout_google_uses_link_modal_platforms():
+    """One League / Google checkout must pick a league on every platform first."""
+    paywall = (ROOT / "static" / "paywall.js").read_text(encoding="utf-8")
+    app_py = (ROOT / "app.py").read_text(encoding="utf-8")
+    link_bp = (ROOT / "routes" / "link_bp.py").read_text(encoding="utf-8")
+    google = (ROOT / "routes" / "google_auth_bp.py").read_text(encoding="utf-8")
+    assert "function _openCheckoutLeaguePicker" in paywall
+    assert "window.__brCheckoutPlan" in paywall
+    assert "function withCheckout(payload)" in app_py
+    assert "payload.checkout_plan" in app_py
+    assert "checkout_plan" in link_bp
+    assert "/pricing?plan=" in link_bp
+    assert 'checkout_plan in {"single_league", "league", "combo", "user"}' in google
+    assert "/pricing?plan={checkout_plan}&checkout=1" in google
+    assert "resumeCheckoutFromGoogle" in paywall
 
 
 def test_paywall_mobile_uses_bottom_sheet_layout():

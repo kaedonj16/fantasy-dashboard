@@ -14,7 +14,8 @@
 /* Identify + league-picker overlays use .signin-modal-overlay (--z-modal-top).
    That sits under the paywall, so "Choose a League" opened behind Premium
    Feature and could not be used. Stack those follow-up dialogs above it. */
-.signin-modal-overlay.over-paywall {
+.signin-modal-overlay.over-paywall,
+.link-ov.over-paywall {
   z-index: var(--z-gate-nested, 100002);
 }
 

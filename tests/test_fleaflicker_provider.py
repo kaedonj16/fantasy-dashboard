@@ -1,4 +1,6 @@
+from datetime import datetime
 from unittest.mock import Mock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -6,8 +8,10 @@ from dashboard_services.providers.base import (
     ProviderAuthenticationError, ProviderUnavailableError,
 )
 from dashboard_services.providers.fleaflicker_api import (
-    FleaflickerProvider, _CACHE, _flea_pro_team, _fleaflicker_draft_status,
-    _fleaflicker_sleeper_league_type, _name_index_from_players,
+    FleaflickerProvider, _CACHE, _FAIL_CACHE, _TX_BY_WEEK, _flea_pro_team,
+    _fleaflicker_draft_status,
+    _fleaflicker_sleeper_league_type, _fantasy_week_from_ms,
+    _name_index_from_players,
     _normalize_fleaflicker_draft_status, _pick_canonical, login,
 )
 
@@ -23,6 +27,8 @@ def response(payload, status=200):
 @pytest.fixture(autouse=True)
 def clear_cache():
     _CACHE.clear()
+    _FAIL_CACHE.clear()
+    _TX_BY_WEEK.clear()
 
 
 def test_normalizes_league_users_rosters_and_matchups(monkeypatch):
@@ -161,6 +167,22 @@ def test_rules_request_omits_season_by_default(mock_get):
     FleaflickerProvider()._call("FetchLeagueRules", "92916", 2026)
     params = mock_get.call_args.kwargs["params"]
     assert "season" not in params
+    assert params["league_id"] == 92916
+
+
+@pytest.mark.parametrize("method,extra", [
+    ("FetchLeagueTransactions", {}),
+    ("FetchTrades", {"filter": "TRADES_COMPLETED"}),
+    ("FetchTeamPicks", {"team_id": 1}),
+    ("FetchLeagueBoxscore", {"fantasy_game_id": 58530021, "scoring_period": 1}),
+])
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_no_season_endpoints_omit_season(mock_get, method, extra):
+    """Passing season to these OpenAPI methods returns HTML 400 upstream."""
+    mock_get.return_value = response({"items": [], "trades": [], "picks": [], "lineups": []})
+    FleaflickerProvider()._call(method, "92916", 2026, **extra)
+    params = mock_get.call_args.kwargs["params"]
+    assert "season" not in params, method
     assert params["league_id"] == 92916
 
 
@@ -905,3 +927,199 @@ def test_fleaflicker_bracket_projects_from_seeds(monkeypatch):
     assert len(games) == 2
     assert all(g.get("projected") for g in games)
     assert provider.get_bracket("14153", 2026, "losers") == []
+
+
+def _et_ms(year, month, day, hour=12):
+    return int(datetime(year, month, day, hour, tzinfo=ZoneInfo("America/New_York")).timestamp() * 1000)
+
+
+def test_fantasy_week_from_ms_clamps_preweek_and_skips_old_seasons():
+    # 2026 Labor Day is Sep 7; fantasy week 1 starts Tuesday Sep 8.
+    assert _fantasy_week_from_ms(_et_ms(2026, 9, 4), 2026) == 1
+    assert _fantasy_week_from_ms(_et_ms(2026, 9, 16), 2026) == 2
+    assert _fantasy_week_from_ms(_et_ms(2024, 11, 3), 2026) is None
+    assert _fantasy_week_from_ms(None, 2026) is None
+
+
+def test_get_transactions_omits_drafts_and_buckets_by_week(monkeypatch):
+    provider = FleaflickerProvider()
+    week1_ms = _et_ms(2026, 9, 4)
+    week2_ms = _et_ms(2026, 9, 16)
+
+    def fake_call(method, *a, **k):
+        if method == "FetchLeagueTransactions":
+            return {"items": [
+                {
+                    "timeEpochMilli": str(week1_ms),
+                    "transaction": {
+                        "player": {"proPlayer": {"id": 9, "nameFull": "Deshaun Watson"}},
+                        "team": {"id": 1},
+                    },
+                },
+                {
+                    "timeEpochMilli": str(week1_ms),
+                    "transaction": {
+                        "type": "TRANSACTION_DROP",
+                        "player": {"proPlayer": {"id": 10, "nameFull": "Detroit Lions"}},
+                        "team": {"id": 1},
+                    },
+                },
+                {
+                    "timeEpochMilli": str(week2_ms),
+                    "transaction": {
+                        "type": "TRANSACTION_CLAIM",
+                        "player": {"proPlayer": {"id": 11, "nameFull": "Mac Jones"}},
+                        "team": {"id": 2},
+                    },
+                },
+                {
+                    "timeEpochMilli": str(week1_ms),
+                    "transaction": {
+                        "type": "TRANSACTION_DRAFT",
+                        "player": {"proPlayer": {"id": 9, "nameFull": "Deshaun Watson"}},
+                        "team": {"id": 1},
+                    },
+                },
+            ]}
+        if method == "FetchTrades":
+            return {"trades": []}
+        return {}
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    monkeypatch.setattr(provider, "_canonical_map", lambda *a, **k: {
+        "9": "watson", "10": "lions", "11": "mac",
+    })
+    monkeypatch.setattr(provider, "_build_name_index", lambda: {})
+
+    week1 = provider.get_transactions("92916", 2026, 1)
+    week2 = provider.get_transactions("92916", 2026, 2)
+    assert [t["type"] for t in week1] == ["free_agent", "free_agent"]
+    assert week1[0]["adds"] == {"watson": 1}
+    assert week1[1]["drops"] == {"lions": 1}
+    assert week2[0]["type"] == "waiver"
+    assert week2[0]["adds"] == {"mac": 2}
+    assert provider.get_transactions("92916", 2026, 3) == []
+
+
+def test_get_transactions_keeps_unmapped_player_ids(monkeypatch):
+    """Missing players_index must not drop the whole activity feed."""
+    provider = FleaflickerProvider()
+    ts = _et_ms(2026, 9, 4)
+
+    def fake_call(method, *a, **k):
+        if method == "FetchLeagueTransactions":
+            return {"items": [{
+                "timeEpochMilli": str(ts),
+                "transaction": {
+                    "player": {"proPlayer": {"id": 12919, "nameFull": "Deshaun Watson"}},
+                    "team": {"id": 1},
+                },
+            }]}
+        if method == "FetchTrades":
+            return {"trades": []}
+        return {}
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    monkeypatch.setattr(provider, "_canonical_map", lambda *a, **k: {})
+    monkeypatch.setattr(provider, "_build_name_index", lambda: {})
+    rows = provider.get_transactions("92916", 2026, 1)
+    assert rows[0]["adds"] == {"12919": 1}
+
+
+def test_get_transactions_merges_completed_trades(monkeypatch):
+    provider = FleaflickerProvider()
+    ts = _et_ms(2026, 9, 20)
+
+    def fake_call(method, *a, **k):
+        if method == "FetchLeagueTransactions":
+            return {"items": []}
+        if method == "FetchTrades":
+            return {"trades": [{
+                "id": 9454791,
+                "status": "TRADE_STATUS_EXECUTED",
+                "approvedOn": str(ts),
+                "teams": [
+                    {
+                        "team": {"id": 1},
+                        "playersObtained": [{"proPlayer": {"id": 9, "nameFull": "Cooper Kupp"}}],
+                    },
+                    {
+                        "team": {"id": 2},
+                        "playersObtained": [{"proPlayer": {"id": 11, "nameFull": "George Pickens"}}],
+                        "picksObtained": [{"slot": {"round": 3}, "season": 2027}],
+                    },
+                ],
+            }]}
+        return {}
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    monkeypatch.setattr(provider, "_canonical_map", lambda *a, **k: {"9": "kupp", "11": "pickens"})
+    monkeypatch.setattr(provider, "_build_name_index", lambda: {})
+    rows = provider.get_transactions("92916", 2026, 2)
+    assert len(rows) == 1
+    trade = rows[0]
+    assert trade["type"] == "trade"
+    assert trade["adds"] == {"kupp": 1, "pickens": 2}
+    assert trade["drops"] == {"kupp": 2, "pickens": 1}
+    assert trade["draft_picks"][0]["round"] == 3
+    assert trade["draft_picks"][0]["owner_id"] == 2
+
+
+def test_get_transactions_does_not_refetch_for_each_week(monkeypatch):
+    """18 week fetches used to hammer FetchLeagueTransactions identically."""
+    provider = FleaflickerProvider()
+    calls = []
+
+    def fake_call(method, *a, **k):
+        calls.append(method)
+        if method == "FetchLeagueTransactions":
+            return {"items": []}
+        if method == "FetchTrades":
+            return {"trades": []}
+        return {}
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    monkeypatch.setattr(provider, "_canonical_map", lambda *a, **k: {})
+    monkeypatch.setattr(provider, "_build_name_index", lambda: {})
+    for week in range(1, 19):
+        provider.get_transactions("92916", 2026, week)
+    assert calls.count("FetchLeagueTransactions") == 1
+    assert calls.count("FetchTrades") == 1
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_identical_in_flight_calls_share_one_http_request(mock_get):
+    import threading
+    import time as time_mod
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow(*_a, **_k):
+        started.set()
+        assert release.wait(timeout=2)
+        return response({"league": {"id": 14153}})
+
+    mock_get.side_effect = slow
+    provider = FleaflickerProvider()
+    errors = []
+    results = []
+
+    def run():
+        try:
+            results.append(provider._call("FetchLeagueStandings", "14153", 2026))
+        except Exception as exc:
+            errors.append(exc)
+
+    t1 = threading.Thread(target=run)
+    t2 = threading.Thread(target=run)
+    t1.start()
+    t2.start()
+    assert started.wait(timeout=2)
+    time_mod.sleep(0.05)
+    release.set()
+    t1.join(timeout=2)
+    t2.join(timeout=2)
+    assert errors == []
+    assert mock_get.call_count == 1
+    assert len(results) == 2
