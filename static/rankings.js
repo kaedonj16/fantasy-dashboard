@@ -228,19 +228,12 @@ function prFuzzyScore(name, query) {
 function prGetValue(p) {
   let base;
   if (prScoringType === 'redraft') {
-    if (prLeagueType === 'sf') {
-      if (prLeagueSize === 10) {
-        base = Number(p.redraft_value_sf ?? p.redraft_value_1qb ?? 0);
-      } else {
-        const key = 'redraft_sf_value_' + prLeagueSize;
-        base = Number(p[key] ?? p.redraft_value_sf ?? p.redraft_value_1qb ?? 0);
-      }
-    } else if (prLeagueSize === 10) {
-      base = Number(p.redraft_value_1qb ?? 0);
-    } else {
-      const key = 'redraft_value_' + prLeagueSize;
-      base = Number(p[key] ?? p.redraft_value_1qb ?? 0);
-    }
+    // Size-invariant: same 10-team columns the player modal shows.
+    // redraft_sf_value_{8,12,14} is a trade-WLS overlay that has been
+    // collapsing to a 1QB-shaped board (QB1 ~450, overall #30+).
+    base = prLeagueType === 'sf'
+      ? Number(p.redraft_value_sf ?? p.redraft_value_1qb ?? 0)
+      : Number(p.redraft_value_1qb ?? 0);
   } else if (prLeagueType === 'sf') {
     base = Number(p[prValueKey(true)] ?? p.sf_value ?? p.value ?? 0);
   } else {

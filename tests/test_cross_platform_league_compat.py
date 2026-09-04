@@ -77,7 +77,7 @@ def test_yahoo_sleeper_league_type_from_max_keepers():
     assert fn_impl({"cant_cut_list": "yahoo"}, {}, 12) == 1
 
 
-def test_redraft_size_columns_in_player_trade_value():
+def test_redraft_ignores_size_columns_in_player_trade_value():
     p = {
         "position": "WR",
         "redraft_value_1qb": 100,
@@ -90,10 +90,23 @@ def test_redraft_size_columns_in_player_trade_value():
     ) == 100.0
     assert player_trade_value(
         p, league_type="1qb", league_size=12, scoring_type="redraft"
-    ) == 140.0
+    ) == 100.0
     assert player_trade_value(
         p, league_type="sf", league_size=12, scoring_type="redraft"
-    ) == 160.0
+    ) == 110.0
+
+
+def test_redraft_sf_uses_base_column_when_size_overlay_is_collapsed():
+    """12-team WLS SF overlay can invert Superflex (QB1 ~447). Use 10-team SF."""
+    allen = {
+        "position": "QB",
+        "redraft_value_1qb": 587,
+        "redraft_value_sf": 1079.1,
+        "redraft_sf_value_12": 447.4,
+    }
+    assert player_trade_value(
+        allen, league_type="sf", league_size=12, scoring_type="redraft"
+    ) == 1079.1
 
 
 def test_load_pick_value_table_selects_sf_axis(tmp_path, monkeypatch):

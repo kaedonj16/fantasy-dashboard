@@ -5347,20 +5347,14 @@ window.initTradePage = function initTradePage(root = document) {
     const _n = v => Number(v) || 0;  // falsy fallback, matching the server's `or`
     let base;
     if (scoringType === "redraft") {
-      // Prefer size-bucketed redraft columns when present (mirrors
-      // utils/trade_value.player_trade_value); fall back to 10-team base.
+      // Size-invariant: same 10-team columns the player modal shows.
+      // Size-bucketed redraft_*_{8,12,14} is a WLS overlay that can
+      // invert Superflex (QB1 ~450, overall #30+). Mirrors
+      // utils/trade_value.player_trade_value.
       if (leagueType === "sf") {
-        if (size === 10) {
-          base = _n(player.redraft_value_sf) || _n(player.redraft_value_1qb);
-        } else {
-          const key = `redraft_sf_value_${size}`;
-          base = _n(player[key]) || _n(player.redraft_value_sf) || _n(player.redraft_value_1qb);
-        }
-      } else if (size === 10) {
-        base = _n(player.redraft_value_1qb);
+        base = _n(player.redraft_value_sf) || _n(player.redraft_value_1qb);
       } else {
-        const key = `redraft_value_${size}`;
-        base = _n(player[key]) || _n(player.redraft_value_1qb);
+        base = _n(player.redraft_value_1qb);
       }
     } else if (leagueType === "sf") {
       const key = size === 10 ? "sf_value" : `sf_value_${size}`;

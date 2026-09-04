@@ -213,3 +213,34 @@ def test_roster_grade_badge_skips_age_for_redraft():
     assert "redraft_window_label(" in body
     assert 'if scoring != "redraft":' in body
     assert "Age:" in body
+
+
+def test_redraft_lookups_do_not_prefer_size_overlay_columns():
+    """12-team SF redraft must use the 10-team FantasyCalc-ratio columns.
+
+    Size-bucketed redraft_sf_value_N is a WLS overlay that has collapsed to a
+    1QB-shaped board (Josh Allen ~447, overall #32) while redraft_value_sf
+    keeps the real Superflex premium (~1079, overall #2).
+    """
+    files = (
+        "static/rankings.js",
+        "static/app.js",
+        "static/draft_room.js",
+        "static/draft_board_core.js",
+        "extension/draft_board_core.js",
+        "extension/background.js",
+        "utils/trade_value.py",
+    )
+    needles = (
+        "redraft_sf_value_${size}",
+        "redraft_sf_value_' + prLeagueSize",
+        "redraft_sf_value_' + teams",
+        "redraft_sf_value_' + size",
+        'redraft_sf_value_" + size',
+        "f\"redraft_sf_value_{size}\"",
+        "f'redraft_sf_value_{size}'",
+    )
+    for rel in files:
+        src = (ROOT / rel).read_text(encoding="utf-8")
+        for needle in needles:
+            assert needle not in src, f"{rel} still prefers size-bucketed redraft SF ({needle})"
