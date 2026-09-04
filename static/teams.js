@@ -203,45 +203,139 @@
         fetchBtm(30);
       }
 
+      function _sosEsc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+      }
+
+      // Rank 0 = hardest remaining schedule. Spread-based bars so clustered
+      // opponent values (typical before week 1) still read as a ranking, not
+      // a stack of identical full-width red pills.
+      function _sosTier(idx, n, even) {
+        if (even) return { key: 'even', label: 'Even' };
+        var q = n <= 1 ? 0.5 : idx / (n - 1);
+        if (q <= 0.2) return { key: 'hard', label: idx === 0 ? 'Hardest' : 'Hard' };
+        if (q <= 0.45) return { key: 'hard', label: 'Hard' };
+        if (q <= 0.7) return { key: 'mid', label: 'Average' };
+        if (q < 1) return { key: 'easy', label: 'Easy' };
+        return { key: 'easy', label: 'Easiest' };
+      }
+
+      function _sosBarPct(val, minOpp, spread) {
+        if (spread < 0.05) return 48;
+        return Math.round(22 + ((val - minOpp) / spread) * 78);
+      }
+
+      function renderSos(panel, data) {
+        if (data.error) {
+          _panelEmpty(panel, 'Couldn’t load', data.error, { error: true, icon: 'error' });
+          return;
+        }
+        var teams = data.teams || [];
+        if (!teams.length) {
+          _panelEmpty(panel, 'No schedule data', 'Schedule strength will appear once games are available.');
+          return;
+        }
+
+        var usingPR = !!data.using_power_rankings;
+        var wr = data.weeks_remaining || 0;
+        var values = teams.map(function(t) { return Number(t.avg_opp_points) || 0; });
+        var maxOpp = Math.max.apply(null, values);
+        var minOpp = Math.min.apply(null, values);
+        var spread = maxOpp - minOpp;
+        var even = spread < 0.05;
+        var avgOpp = values.reduce(function(a, b) { return a + b; }, 0) / values.length;
+        var n = teams.length;
+        var viewerId = _viewerRosterId != null && _viewerRosterId !== '' ? String(_viewerRosterId) : '';
+        var schedHref = (_platform && _leagueId && _season)
+          ? '/' + _platform + '/' + _season + '/' + _leagueId + '/schedule'
+          : '';
+
+        var html = '<div class="sos-panel">';
+        html += '<div class="sos-header">' +
+          '<div class="sos-header-text">' +
+            '<span class="sos-title">Remaining schedule</span>' +
+            '<span class="sos-subtitle">' +
+              (usingPR
+                ? 'Opponent strength estimated from roster values'
+                : 'Sorted by average opponent score') +
+            '</span>' +
+          '</div>';
+        if (schedHref) {
+          html += '<a class="sos-full-link" href="' + schedHref + '">Full view →</a>';
+        }
+        html += '</div>';
+
+        html += '<div class="sos-meta">' +
+          '<span class="sos-weeks"><strong>' + wr + '</strong> week' + (wr === 1 ? '' : 's') + ' left</span>' +
+          '<span class="sos-sort-note">' + (even ? 'Schedules look even' : 'Hardest first') + '</span>' +
+          '</div>';
+
+        if (usingPR) {
+          html += '<div class="sos-note" role="note">No games played yet — bars compare remaining opponents by roster value.</div>';
+        }
+
+        html += '<div class="sos-legend" aria-hidden="true">' +
+          '<span class="sos-leg sos-leg-hard"><i></i>Hard</span>' +
+          '<span class="sos-leg sos-leg-mid"><i></i>Average</span>' +
+          '<span class="sos-leg sos-leg-easy"><i></i>Easy</span>' +
+          '</div>';
+
+        html += '<div class="sos-cols" aria-hidden="true"><span>#</span><span>Team</span><span>vs Avg</span></div>';
+        html += '<div class="sos-list">';
+
+        teams.forEach(function(t, idx) {
+          var val = Number(t.avg_opp_points) || 0;
+          var tier = _sosTier(idx, n, even);
+          var vs = val - avgOpp;
+          var vsLbl = (vs >= 0 ? '+' : '') + vs.toFixed(1);
+          var mine = viewerId && String(t.roster_id) === viewerId;
+          var pct = _sosBarPct(val, minOpp, spread);
+          var rankHtml;
+          if (idx === 0) rankHtml = '<span class="btm-rank-badge rk-gold">1</span>';
+          else if (idx === 1) rankHtml = '<span class="btm-rank-badge rk-silver">2</span>';
+          else if (idx === 2) rankHtml = '<span class="btm-rank-badge rk-bronze">3</span>';
+          else rankHtml = '<span class="sos-rank-num">' + (idx + 1) + '</span>';
+
+          var tipParts = [t.team_name || ''];
+          if (!usingPR && val) tipParts.push('Opp avg ' + val.toFixed(1));
+          if (t.games_remaining) tipParts.push(t.games_remaining + ' games left');
+
+          html += '<div class="sos-row sos-' + tier.key + (mine ? ' sos-mine' : '') + '"' +
+            ' title="' + _sosEsc(tipParts.join(' · ')) + '">' +
+            '<div class="sos-rank">' + rankHtml + '</div>' +
+            '<div class="sos-body">' +
+              '<div class="sos-top">' +
+                '<span class="sos-name">' +
+                  '<span class="sos-name-text">' + _sosEsc(t.team_name) + '</span>' +
+                  (mine ? '<span class="sos-you">YOU</span>' : '') +
+                '</span>' +
+                '<span class="sos-diff sos-diff-' + tier.key + '">' + tier.label + '</span>' +
+              '</div>' +
+              '<div class="sos-track">' +
+                '<div class="sos-fill sos-fill-' + tier.key + '" style="width:' + pct + '%"></div>' +
+              '</div>' +
+            '</div>' +
+            '<span class="sos-val">' + vsLbl + '</span>' +
+          '</div>';
+        });
+
+        html += '</div></div>';
+        panel.innerHTML = html;
+      }
+
       function loadSos() {
         _syncLeagueCfg();
         if (_loaded.sos) return;
         _loaded.sos = true;
         var panel = document.getElementById('sosPanel');
         if (!panel) return;
+        panel.innerHTML = '<div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:60%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>';
         fetch('/api/schedule-strength?platform=' + _platform +
               '&league_id=' + _leagueId + '&season=' + _season)
-          .then(r => r.json())
-          .then(data => {
-            if (data.error) { _panelEmpty(panel, 'Couldn’t load', data.error, { error: true, icon: 'error' }); return; }
-            var teams = data.teams || [];
-            if (!teams.length) { _panelEmpty(panel, 'No schedule data', 'Schedule strength will appear once games are available.'); return; }
-            var usingPR = data.using_power_rankings;
-            var maxOpp = Math.max(...teams.map(t => t.avg_opp_points), 1);
-            var wr = data.weeks_remaining || 0;
-            var sortLabel = usingPR ? 'Based on roster strength (no games played yet)' : 'Sorted by avg opponent score (hardest first)';
-            var html = '<div class="analytics-btm-header"><span class="analytics-date-label">Weeks remaining: ' + wr +
-              '</span><span class="analytics-avg-label">' + sortLabel + '</span></div>';
-            if (usingPR) {
-              html += '<p class="analytics-empty" style="margin:4px 0 8px;font-size:12px;color:var(--text-muted)">No games played - opponent strength estimated from roster values.</p>';
-            }
-            html += '<div class="analytics-bar-list">';
-            teams.forEach(function(t) {
-              var pct = Math.min(100, Math.round(t.avg_opp_points / maxOpp * 100));
-              var cls = t.avg_opp_points >= maxOpp * 0.75 ? 'analytics-bar-neg' :
-                        t.avg_opp_points <= maxOpp * 0.5  ? 'analytics-bar-pos' : 'analytics-bar-mid';
-              var valLabel = usingPR ? '' : t.avg_opp_points.toFixed(1);
-              html += '<div class="analytics-bar-row">' +
-                '<span class="analytics-bar-name">' + t.team_name + '</span>' +
-                '<div class="analytics-bar-track">' +
-                  '<div class="analytics-bar-fill ' + cls + '" style="width:' + pct + '%"></div>' +
-                '</div>' +
-                '<span class="analytics-bar-val">' + valLabel + '</span>' +
-              '</div>';
-            });
-            html += '</div>';
-            panel.innerHTML = html;
-          })
+          .then(function(r) { return r.json(); })
+          .then(function(data) { renderSos(panel, data); })
           .catch(function() { _panelError(panel, 'Could not load data.'); });
       }
 
