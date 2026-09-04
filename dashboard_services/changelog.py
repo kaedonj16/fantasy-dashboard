@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-09-03",
         "tag": "new",
-        "text": "Advanced Metrics: pick more than one season (2025 + 2024 + 2022, or any years we have). The board defaults to one row per player-season (Year column on). Switch to Combine for one row per player (rates volume-weighted, totals added). In a player modal, tap extra year pills to combine only seasons that player actually has; Career still uses every year.",
+        "text": "Advanced Metrics: pick more than one season (2025 + 2024 + 2022, or any years we have). The board defaults to one row per player-season (Year column on). Switch to Combine for one row per player (rates volume-weighted, totals added). Controls are grouped: metric + seasons + search, then positions, then filters (team, sort, age, volume). In a player modal, tap extra year pills to combine only seasons that player actually has; Career still uses every year.",
         "link": "/metrics"
     },
     {
