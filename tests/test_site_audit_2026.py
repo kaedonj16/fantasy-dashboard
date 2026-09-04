@@ -276,6 +276,27 @@ def test_paywall_inerts_background():
     assert "app-scale" in paywall
 
 
+def test_checkout_overlays_stack_above_paywall():
+    """Guest 'Choose a League' must open above the Premium Feature modal."""
+    paywall = (ROOT / "static" / "paywall.js").read_text(encoding="utf-8")
+    paywall_css = (ROOT / "static" / "paywall.css").read_text(encoding="utf-8")
+    dash_css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert "--z-gate-nested" in dash_css
+    assert "over-paywall" in paywall_css
+    assert "--z-gate-nested" in paywall_css
+    assert "_stackAbovePaywall" in paywall
+    assert "dataset.nestedOpen" in paywall
+    initiate = paywall[paywall.index("async function initiatePurchase"): paywall.index("function addPremiumBadge")]
+    assert "_showIdentifyModal(type, btn)" in initiate
+    assert "brOpenSignin" not in initiate
+    picker = paywall[paywall.index("function _showLeaguePickerModal"): paywall.index("function _showIdentifyModal")]
+    ident = paywall[paywall.index("function _showIdentifyModal"): paywall.index("async function _initiatePurchaseWithLeague")]
+    assert "_stackAbovePaywall(modal)" in picker
+    assert "_resumePaywallAfterNested()" in picker
+    assert "_stackAbovePaywall(modal)" in ident
+    assert "_resumePaywallAfterNested()" in ident
+
+
 def test_paywall_mobile_uses_bottom_sheet_layout():
     """Paywall should read as a phone sheet with safe-area padding, not a cramped modal."""
     paywall_css = (ROOT / "static" / "paywall.css").read_text(encoding="utf-8")
