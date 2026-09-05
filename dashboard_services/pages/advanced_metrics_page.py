@@ -2828,7 +2828,7 @@ _AM_JS = r"""
   const _amLogoCache = {};
   function _amLoadLogo(theme) {
     if (_amLogoCache[theme] !== undefined) return Promise.resolve(_amLogoCache[theme]);
-    const url = (theme === 'dark') ? '/static/BR_Logo_dark.png' : '/static/BR_Logo.png';
+    const url = (theme === 'dark') ? '/static/BR_Logo_dark.png?v=f4228e0e' : '/static/BR_Logo.png?v=f4228e0e';
     return fetch(url).then(function(r) { return r.ok ? r.blob() : null; }).then(function(b) {
       if (!b) { _amLogoCache[theme] = ''; return ''; }
       return new Promise(function(res) {

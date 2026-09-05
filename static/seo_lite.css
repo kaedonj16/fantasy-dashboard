@@ -200,7 +200,7 @@ h3 { font-size: 16px; }
 }
 
 [data-theme="dark"] .site-logo {
-    content: url('/static/Website_Logo_dark.png');
+    content: url('/static/Website_Logo_dark.png?v=f4228e0e');
 }
 
 /* Discord brand glyph is a black PNG; invert to white with the rest of chrome. */

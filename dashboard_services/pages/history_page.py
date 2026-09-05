@@ -1259,7 +1259,7 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
     season_txt = _esc(str(season)) if season not in (None, "") else ""
     foot = (
         "<div class='wrapped-foot'>"
-        "<img src='/static/BR_Logo_dark.png' alt=''>"
+        "<img src='/static/BR_Logo_dark.png?v=f4228e0e' alt=''>"
         "<span class='wrapped-foot-line'></span>"
         f"<span class='wrapped-foot-season'>{season_txt} SEASON</span>"
         "</div>"
@@ -1277,7 +1277,7 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
 
         if kind == "intro":
             body = (
-                "<img src='/static/BR_Logo_dark.png' alt='BR Fantasy' class='wrapped-intro-logo'>"
+                "<img src='/static/BR_Logo_dark.png?v=f4228e0e' alt='BR Fantasy' class='wrapped-intro-logo'>"
                 f"<div class='wrapped-league'>{_esc(str(s['big']))}</div>"
                 "<div class='wrapped-word'>SEASON<br>WRAPPED</div>"
                 + sub

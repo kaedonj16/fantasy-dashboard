@@ -1926,7 +1926,7 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
 }
 
 [data-theme="dark"] .site-logo {
-    content: url('/static/Website_Logo_dark.png');
+    content: url('/static/Website_Logo_dark.png?v=f4228e0e');
 }
 
 .top-nav {
