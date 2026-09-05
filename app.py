@@ -1809,8 +1809,8 @@ FORM_BODY = """
 </div>
 
 <div class="fullscreen-loading-overlay" id="dashboardLoadingOverlay" style="display:none;">
-  <img src="/static/BR_Logo.png"      alt="BR Fantasy" class="flo-logo flo-logo-light">
-  <img src="/static/BR_Logo_dark.png" alt="BR Fantasy" class="flo-logo flo-logo-dark">
+  <img src="/static/BR_Mark.png"      alt="BR Fantasy" class="flo-logo flo-logo-light">
+  <img src="/static/BR_Mark_dark.png" alt="BR Fantasy" class="flo-logo flo-logo-dark">
   <div class="fullscreen-loading-text">Building your dashboard…</div>
   <div class="fullscreen-loading-subtext">This usually takes a few seconds</div>
   <div class="flo-progress-track"><div class="flo-progress-bar" id="floProgressBar"></div></div>
@@ -27665,7 +27665,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
     </div>
     <div class="share-card">
       <div class="sc-header">
-        <div class="sc-brand"><img src="/static/BR_Logo_dark.png" alt="BR Fantasy" style="height:20px;opacity:.9"> BR Fantasy</div>
+        <div class="sc-brand"><img src="/static/BR_Mark_dark.png" alt="BR Fantasy" style="height:20px;opacity:.9"> BR Fantasy</div>
         <div class="sc-league">{league_name}</div>
       </div>
       <div class="sc-team-row">
@@ -27707,7 +27707,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
     function applyTheme(t) {{
       root.setAttribute('data-theme', t);
       var logo = document.querySelector('.sc-brand img');
-      if (logo) logo.src = t === 'dark' ? '/static/BR_Logo_dark.png' : '/static/BR_Logo.png';
+      if (logo) logo.src = t === 'dark' ? '/static/BR_Mark_dark.png' : '/static/BR_Mark.png';
       var btn = document.getElementById('scThemeToggle');
       if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;';
     }}
@@ -28188,7 +28188,7 @@ def page_trade_card(share_id: str):
   <meta name="twitter:title" content="{og_title}">
   <meta name="twitter:description" content="{verdict}">
   <meta name="twitter:image" content="{_og_image_url}">
-  <link rel="icon" href="/static/BR_Logo.png" type="image/png">
+  <link rel="icon" href="/static/BR_Mark.png" type="image/png">
   <script>
     (function(){{{"document.documentElement.setAttribute('data-theme','light');" if is_og else "var t=localStorage.getItem('sc-card-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);"}}})();
   </script>
@@ -28274,7 +28274,7 @@ def page_trade_card(share_id: str):
     <div class="card">
       <div class="card-header">
         <div class="brand">
-          <img src="/static/BR_Logo_dark.png" id="tcLogo" alt="BR Fantasy" style="height:18px;opacity:.9">
+          <img src="/static/BR_Mark_dark.png" id="tcLogo" alt="BR Fantasy" style="height:18px;opacity:.9">
           BR Fantasy
         </div>
         <div style="display:flex;align-items:center;gap:8px">
@@ -28329,7 +28329,7 @@ def page_trade_card(share_id: str):
     function applyTheme(t){{
       root.setAttribute('data-theme', t);
       var logo = document.getElementById('tcLogo');
-      if (logo) logo.src = t === 'dark' ? '/static/BR_Logo_dark.png' : '/static/BR_Logo.png';
+      if (logo) logo.src = t === 'dark' ? '/static/BR_Mark_dark.png' : '/static/BR_Mark.png';
       var btn = document.getElementById('tcToggle');
       if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;';
     }}

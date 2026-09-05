@@ -233,7 +233,7 @@ def test_manifest_and_offline_theme_match_brand():
     assert '"background_color": "#ffffff"' in manifest
     offline = (ROOT / "static" / "offline.html").read_text(encoding="utf-8")
     assert "localStorage.getItem('theme')" in offline
-    assert "BR_Logo_dark.png" in offline
+    assert "BR_Mark_dark.png" in offline
     assert "is-dark" in offline
 
 
