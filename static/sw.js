@@ -26,6 +26,8 @@ const NAV_UNCACHED_GRACE_MS = 15000;
 const PRECACHE_URLS = [
   '/static/BR_Logo.png',
   '/static/BR_Logo_dark.png',
+  '/static/BR_Mark.png',
+  '/static/BR_Mark_dark.png',
   '/static/Website_Logo.png',
   '/static/app-icon-180.png',
   '/static/offline.html',
@@ -257,8 +259,8 @@ self.addEventListener('push', event => {
   }
   const options = {
     body: data.body || '',
-    icon: '/static/BR_Logo.png',
-    badge: '/static/BR_Logo.png',
+    icon: '/static/BR_Mark.png',
+    badge: '/static/BR_Mark.png',
     vibrate: [100, 50, 100],
     data: { url: data.url || '/' },
     tag: data.tag || 'br-fantasy',

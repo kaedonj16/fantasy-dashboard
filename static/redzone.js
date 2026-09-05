@@ -497,7 +497,7 @@
             myTDs.forEach(function(ev) {
               var p = sw.showNotification('TD: ' + ev.name, {
                 body: ev.desc + (ev.pts > 0 ? '  +' + _fmt(ev.pts) + ' pts' : ''),
-                icon: '/static/BR_Logo.png', tag: 'rz-td-' + ev.pid
+                icon: '/static/BR_Mark.png', tag: 'rz-td-' + ev.pid
               });
               if (p && p.catch) p.catch(function() {});
             });

@@ -2157,7 +2157,7 @@ window._brPromoEligible = function () {
     banner.id = 'pwa-install-banner';
     banner.innerHTML =
       '<div class="pwa-banner-left">' +
-        '<img src="/static/BR_Logo.png" class="pwa-banner-icon" alt="BR Fantasy">' +
+        '<img src="/static/BR_Mark.png" class="pwa-banner-icon" alt="BR Fantasy">' +
         '<div>' +
           '<div class="pwa-banner-title">Add to Home Screen</div>' +
           '<div class="pwa-banner-sub">Install BR Fantasy for quick access</div>' +
@@ -2203,7 +2203,7 @@ window._brPromoEligible = function () {
     banner.id = 'pwa-install-banner';
     banner.innerHTML =
       '<div class="pwa-banner-left">' +
-        '<img src="/static/BR_Logo.png" class="pwa-banner-icon" alt="BR Fantasy">' +
+        '<img src="/static/BR_Mark.png" class="pwa-banner-icon" alt="BR Fantasy">' +
         '<div>' +
           '<div class="pwa-banner-title">Add to Home Screen</div>' +
           '<div class="pwa-banner-sub">Tap <strong>Share</strong> then <strong>Add to Home Screen</strong></div>' +
