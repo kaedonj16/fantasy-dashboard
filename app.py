@@ -2841,15 +2841,16 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         "</div>"
     )
 
-    # Section order mirrors the desktop nav bar (Trades, Weekly, League, Players,
-    # Draft, Stats) so the two navs read the same. Find (search) and Account are
-    # mobile-only, so they bookend the list — Find on top, Account last.
+    # Find + Account sit at the top so Search / Notifications / Settings are
+    # thumb-reachable without scrolling past every page link. Page sections still
+    # mirror the desktop nav order (Trades → Weekly → League → Players → Draft →
+    # Stats) underneath.
     sheet = (
         "<div class='br-sheet-scrim' id='brSheetScrim'></div>"
         "<nav class='br-sheet' id='brMoreSheet' aria-label='More' aria-hidden='true'>"
         "  <div class='br-sheet-grip' aria-hidden='true'></div>"
-        f"  {find_html}{trades_html}{weekly_html}{league_html}{players_html}"
-        f"  {draft_html}{stats_html}{account_html}"
+        f"  {find_html}{account_html}{trades_html}{weekly_html}{league_html}"
+        f"  {players_html}{draft_html}{stats_html}"
         "</nav>"
     )
 
@@ -2997,11 +2998,13 @@ def _mobile_nav_guest(active: str) -> str:
         "</div>"
     )
 
+    # Match the league sheet: Account (settings mount) sits under Find so Dark
+    # Mode / Sign In are reachable without scrolling the full page list.
     sheet = (
         "<div class='br-sheet-scrim' id='brSheetScrim'></div>"
         "<nav class='br-sheet' id='brMoreSheet' aria-label='More' aria-hidden='true'>"
         "  <div class='br-sheet-grip' aria-hidden='true'></div>"
-        f"  {find_html}{trades_html}{players_html}{draft_html}{learn_html}{account_html}"
+        f"  {find_html}{account_html}{trades_html}{players_html}{draft_html}{learn_html}"
         "</nav>"
     )
     search_screen = (
