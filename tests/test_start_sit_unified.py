@@ -4,7 +4,7 @@ The green START badges, the optimal-lineup banner ("you're leaving X on the
 bench"), and the head-to-head Compare card used to run three different ranking
 formulas, so they could contradict each other on the same screen. They are now
 unified onto the single server-computed ``start_score`` (projection blended with
-form, matchup, usage, availability, Vegas and floor). These tests guard that
+form, usage, availability, Vegas, floor and weather). These tests guard that
 wiring in the rendered page.
 """
 
@@ -36,11 +36,13 @@ def test_lineup_advice_formats_signed_gain_without_plus_minus():
     assert "SUPERFLEX" in body
 
 
-def test_compare_reasons_come_from_the_six_factor_breakdown():
+def test_compare_reasons_come_from_the_score_factor_breakdown():
     body = _body()
     assert "function wvVerdictReasons(a, b, wi)" in body
     # Reasons are drawn from score_factors so the "why" agrees with the pick.
+    # Matchup is omitted on purpose (weekly proj already includes the opponent).
     assert "score_factors" in body
-    for txt in ("an easier matchup", "a safer floor", "better recent form",
-                "a rising role", "a higher team total"):
+    assert "an easier matchup" not in body
+    for txt in ("a safer floor", "better recent form",
+                "a rising role", "a higher team total", "a cleaner forecast"):
         assert txt in body
