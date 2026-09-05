@@ -36267,6 +36267,68 @@ a, button, [role="button"], [role="tab"], summary, label,
         margin: 18px 28px 7px;
     }
 
+    /* Collapsible Account: a tappable section header that matches .br-sheet-h,
+       plus a chevron. Starts collapsed so Trades isn't pushed off-screen. */
+    .br-sheet-acct-toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: calc(100% - 28px);
+        box-sizing: border-box;
+        margin: 18px 14px 7px;
+        padding: 0 14px;
+        background: none;
+        border: 0;
+        font: inherit;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        text-align: left;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+        appearance: none;
+        -webkit-appearance: none;
+    }
+
+    .br-sheet-acct-label {
+        flex: 0 0 auto;
+    }
+
+    .br-sheet-acct-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #E24B4A;
+        flex: 0 0 auto;
+    }
+
+    .br-sheet-acct-chev {
+        margin-left: auto;
+        color: var(--text-muted);
+        transition: transform .18s ease;
+        flex: 0 0 auto;
+    }
+
+    .br-sheet-acct-toggle[aria-expanded="true"] .br-sheet-acct-chev {
+        transform: rotate(180deg);
+    }
+
+    .br-sheet-acct-toggle:active {
+        color: var(--text);
+    }
+
+    .br-sheet-acct-body[hidden] {
+        display: none !important;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .br-sheet-acct-chev {
+            transition: none;
+        }
+    }
+
     /* Each section is a rounded, inset card; rows inside are split by hairlines. */
     .br-sheet-group {
         background: var(--card);

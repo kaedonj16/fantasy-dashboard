@@ -880,6 +880,30 @@ window.brHaptic = function (pattern) {
   };
 
   function sheetOpen() { var s = document.getElementById('brMoreSheet'); return !!(s && s.classList.contains('open')); }
+  // Restore Account expand/collapse (collapsed by default so Trades stays visible).
+  function syncAcctSection() {
+    var toggle = document.getElementById('brSheetAcctToggle');
+    var body = document.getElementById('brSheetAcctBody');
+    if (!toggle || !body) return;
+    var open = false;
+    try { open = sessionStorage.getItem('br_acct_open') === '1'; } catch (_) {}
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) body.removeAttribute('hidden');
+    else body.setAttribute('hidden', '');
+  }
+  function setAcctOpen(open) {
+    var toggle = document.getElementById('brSheetAcctToggle');
+    var body = document.getElementById('brSheetAcctBody');
+    if (!toggle || !body) return;
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) body.removeAttribute('hidden');
+    else body.setAttribute('hidden', '');
+    try { sessionStorage.setItem('br_acct_open', open ? '1' : '0'); } catch (_) {}
+    // Re-sync the Account-header notif dot (shown only while collapsed).
+    if (typeof setChangelogDot === 'function' && typeof window.__brHasNewNotifs === 'boolean') {
+      setChangelogDot(window.__brHasNewNotifs);
+    }
+  }
   // The "What's New" toast sits above the dock (z-notif-toast) and would cover
   // Account rows (Notifications, Dark Mode) while the More sheet is open.
   function dismissNotifToasts() {
@@ -933,6 +957,7 @@ window.brHaptic = function (pattern) {
     var scrim = document.getElementById('brSheetScrim');
     if (!tab || !sheet || !scrim) return;   // not a league page
     relocate();                              // re-home the relocated widgets each call
+    syncAcctSection();                       // apply collapsed/expanded after soft-nav
     // The dock now lives OUTSIDE #page-root, so it survives a soft-nav swap and
     // its handlers must bind exactly once (a second bind on the same persistent
     // nodes would double-fire). syncMobileDock() updates the active tab per nav.
@@ -979,6 +1004,11 @@ window.brHaptic = function (pattern) {
     });
 
     sheet.addEventListener('click', function (e) {
+      if (e.target.closest('#brSheetAcctToggle')) {
+        var t = document.getElementById('brSheetAcctToggle');
+        setAcctOpen(!(t && t.getAttribute('aria-expanded') === 'true'));
+        return;
+      }
       if (e.target.closest('#brSheetSearchRow')) { setOpen(false); openSearch(); return; }
       if (e.target.closest('.br-sheet-link, .nav-search-result')) setOpen(false);
     });
@@ -11831,6 +11861,7 @@ function _showNotifToast(entry) {
 function setChangelogDot(hasNew, showSettingsDot = false) {
   // Update the global notification state
   hasNewNotifications = hasNew;
+  window.__brHasNewNotifs = hasNew;
 
   // Update gear dot - hide it when settings dropdown is opened and we want to show the dot there instead
   const gearDot = document.getElementById("gearDot");
@@ -11845,6 +11876,18 @@ function setChangelogDot(hasNew, showSettingsDot = false) {
     const mobileInline = window.matchMedia("(max-width: 768px)").matches
       && !!document.getElementById("brSheetAccount");
     settingsDot.style.display = (hasNew && (showSettingsDot || mobileInline)) ? "block" : "none";
+  }
+
+  // Account-header dot: only while Account is collapsed on mobile (the row-level
+  // settingsNotifDot is hidden inside the collapsed body).
+  const acctDot = document.getElementById("brSheetAcctDot");
+  const acctToggle = document.getElementById("brSheetAcctToggle");
+  if (acctDot && acctToggle) {
+    const mobile = window.matchMedia("(max-width: 768px)").matches;
+    const collapsed = acctToggle.getAttribute("aria-expanded") !== "true";
+    const show = !!(hasNew && mobile && collapsed);
+    acctDot.hidden = !show;
+    acctDot.setAttribute("aria-hidden", show ? "false" : "true");
   }
 }
 
