@@ -2649,6 +2649,31 @@ def _nav_is_best_ball(platform, league_id, season) -> bool:
         return False
 
 
+def _sheet_account_section(body: str) -> str:
+    """Collapsible Account block for the mobile More sheet.
+
+    Starts collapsed so Trades / page sections stay in the first viewport; the
+    header stays under Find for one-tap access to settings. app.js toggles
+    ``aria-expanded`` / ``hidden`` on the controls below.
+    """
+    chev = (
+        "<svg class='br-sheet-acct-chev' width='16' height='16' viewBox='0 0 24 24' "
+        "fill='none' stroke='currentColor' stroke-width='2.25' stroke-linecap='round' "
+        "stroke-linejoin='round' aria-hidden='true'>"
+        "<polyline points='6 9 12 15 18 9'></polyline></svg>"
+    )
+    return (
+        "<div class='br-sheet-acct' id='brSheetAcct'>"
+        "<button type='button' class='br-sheet-acct-toggle' id='brSheetAcctToggle' "
+        "aria-expanded='false' aria-controls='brSheetAcctBody'>"
+        "<span class='br-sheet-acct-label'>Account</span>"
+        "<span class='br-sheet-acct-dot' id='brSheetAcctDot' hidden aria-hidden='true'></span>"
+        f"{chev}</button>"
+        f"<div class='br-sheet-group br-sheet-acct-body' id='brSheetAcctBody' hidden>"
+        f"{body}</div></div>"
+    )
+
+
 def _mobile_nav(active: str, league_id, platform, season) -> str:
     """Mobile navigation: a dynamic bottom dock plus a full "More" sheet.
 
@@ -2832,19 +2857,15 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         "<img src='/static/images/discord-brands-solid.png' alt='' class='br-sheet-icon-img'>"
         "<span>Join the Discord</span></a>"
     )
-    account_html = (
-        "<h3 class='br-sheet-h'>Account</h3>"
-        "<div class='br-sheet-group'>"
-        f"{portfolio_link}"
-        f"{refresh_row}{discord_row}"
+    account_html = _sheet_account_section(
+        f"{portfolio_link}{refresh_row}{discord_row}"
         "<div class='br-sheet-mount' id='brSheetAccount'></div>"
-        "</div>"
     )
 
-    # Find + Account sit at the top so Search / Notifications / Settings are
-    # thumb-reachable without scrolling past every page link. Page sections still
-    # mirror the desktop nav order (Trades → Weekly → League → Players → Draft →
-    # Stats) underneath.
+    # Find + a collapsed Account header sit at the top so Search and settings stay
+    # thumb-reachable; Account starts collapsed so Trades / page sections aren't
+    # pushed off-screen. Page sections still mirror the desktop nav order
+    # (Trades → Weekly → League → Players → Draft → Stats) underneath.
     sheet = (
         "<div class='br-sheet-scrim' id='brSheetScrim'></div>"
         "<nav class='br-sheet' id='brMoreSheet' aria-label='More' aria-hidden='true'>"
@@ -2989,17 +3010,14 @@ def _mobile_nav_guest(active: str) -> str:
         "<span>Join the Discord</span></a>"
     )
     # brSheetAccount is the mount app.js relocates the settings menu (dark mode
-    # etc.) into on mobile, exactly as the league sheet does.
-    account_html = (
-        "<h3 class='br-sheet-h'>Account</h3>"
-        "<div class='br-sheet-group'>"
+    # etc.) into on mobile, exactly as the league sheet does. Account starts
+    # collapsed so Trades / page sections stay reachable without scrolling.
+    account_html = _sheet_account_section(
         f"{portfolio_link}{discord_row}"
         "<div class='br-sheet-mount' id='brSheetAccount'></div>"
-        "</div>"
     )
 
-    # Match the league sheet: Account (settings mount) sits under Find so Dark
-    # Mode / Sign In are reachable without scrolling the full page list.
+    # Match the league sheet: collapsed Account header under Find, then pages.
     sheet = (
         "<div class='br-sheet-scrim' id='brSheetScrim'></div>"
         "<nav class='br-sheet' id='brMoreSheet' aria-label='More' aria-hidden='true'>"

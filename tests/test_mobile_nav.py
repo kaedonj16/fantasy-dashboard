@@ -85,16 +85,29 @@ def test_current_page_earns_a_dock_tab(offline_client):
 def test_more_sheet_lists_core_pages(offline_client):
     html = _html(offline_client, GRAPHS)
     # A scannable, grouped list of everything else lives in the sheet.
-    for section in ("Find", "League", "Draft", "Players", "Stats", "Account"):
+    for section in ("Find", "League", "Draft", "Players", "Stats"):
         assert f"br-sheet-h'>{section}<" in html
+    # Account is a collapsible header (not a static .br-sheet-h) so it doesn't
+    # crowd Trades / page sections off the first viewport.
+    assert "id='brSheetAcctToggle'" in html
+    assert "br-sheet-acct-label'>Account<" in html
+    assert "id='brSheetAcctBody'" in html
+    assert "aria-expanded='false'" in html
     # Watchlist is a plain link to the full page (no popover to reposition).
     assert "href='/watchlist'" in html
-    # Account (Notifications / Settings) sits under Find — not buried under every
-    # page link — so those actions are reachable without a long scroll.
+    # Collapsed Account sits under Find — settings stay one tap away, Trades
+    # stays reachable without scrolling past ten Account rows.
     find_at = html.index("br-sheet-h'>Find<")
-    account_at = html.index("br-sheet-h'>Account<")
+    account_at = html.index("id='brSheetAcct'")
     trades_at = html.index("br-sheet-h'>Trades<")
     assert find_at < account_at < trades_at
+    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert ".br-sheet-acct-toggle" in css
+    assert ".br-sheet-acct-body[hidden]" in css
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert "brSheetAcctToggle" in js
+    assert "setAcctOpen" in js
+    assert "brSheetAcctDot" in js
 
 
 def test_guest_more_sheet_puts_account_after_find():
@@ -103,9 +116,13 @@ def test_guest_more_sheet_puts_account_after_find():
     with app.app.test_request_context("/players"):
         html = app._mobile_nav_guest("players")
     find_at = html.index("br-sheet-h'>Find<")
-    account_at = html.index("br-sheet-h'>Account<")
+    account_at = html.index("id='brSheetAcct'")
     trades_at = html.index("br-sheet-h'>Trades<")
     assert find_at < account_at < trades_at
+    assert "id='brSheetAcctToggle'" in html
+    assert "br-sheet-acct-label'>Account<" in html
+    # Account body starts collapsed (hidden attribute on the group).
+    assert "id='brSheetAcctBody' hidden>" in html
 
 
 def test_mobile_notifications_click_outside_handles_relocated_dropdown():
