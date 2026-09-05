@@ -886,8 +886,10 @@ function wvPosChip(p) {{
 }}
 
 // Human-readable reasons the winner (side wi) beat the loser, drawn from the
-// same six-factor breakdown the score is built from, so the "why" always agrees
+// same factor breakdown the score is built from, so the "why" always agrees
 // with the pick. Sorted by each factor's actual impact on the score.
+// Matchup is intentionally omitted: weekly projections already include the
+// opponent, so it is not part of the score product.
 function wvVerdictReasons(a, b, wi) {{
   const fw = (wi === 0 ? a : b).score_factors || {{}};
   const fl = (wi === 0 ? b : a).score_factors || {{}};
@@ -897,11 +899,11 @@ function wvVerdictReasons(a, b, wi) {{
     cand.push({{ imp: projL > 0 ? projW / projL : 2, txt: 'higher projection (+' + (projW - projL).toFixed(1) + ')' }});
   }}
   const mult = [
-    ['matchup', 'an easier matchup'],
     ['floor',   'a safer floor'],
     ['form',    'better recent form'],
     ['usage',   'a rising role'],
     ['vegas',   'a higher team total'],
+    ['weather', 'a cleaner forecast'],
     ['avail',   'fewer injury concerns'],
   ];
   mult.forEach(f => {{
@@ -914,8 +916,8 @@ function wvVerdictReasons(a, b, wi) {{
 
 // The advisor's call: the single unified start_score decides it — the exact same
 // score behind the START badges and the optimal-lineup banner, so the three can
-// never contradict each other. Returns the winning side plus the one or two of
-// the six signals that most decided it, or a toss-up when the scores are level.
+// never contradict each other. Returns the winning side plus the one or two
+// signals that most decided it, or a toss-up when the scores are level.
 function wvVerdict(a, b) {{
   const sa = a.start_score, sb = b.start_score;
   if (sa == null || sb == null) return null;

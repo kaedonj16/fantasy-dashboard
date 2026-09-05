@@ -10700,8 +10700,12 @@ def api_start_sit_options():
             def_rank, def_total = None, 32
 
         _imp_ss = (game_conditions.get(team) or {}).get("implied_total") if not on_bye else None
+        _wx_ss = (game_conditions.get(team) or {}).get("weather") if not on_bye else None
+        _wx_kind = (_wx_ss or {}).get("kind") if isinstance(_wx_ss, dict) else None
 
-        # ── Start/sit score: one engine, six signals (utils.start_sit_score). ──
+        # ── Start/sit score: one engine (utils.start_sit_score). Matchup is not
+        # re-multiplied — weekly proj already reflects the opponent. Weather and
+        # Vegas are applied here because projection feeds usually omit them.
         from utils.start_sit_score import compute_start_score
         _ut_ss = _ss_usage_trends.get(pid) or {}
         usage_delta = _ut_ss.get("delta")
@@ -10721,6 +10725,8 @@ def api_start_sit_options():
             injury_status=injury_status,
             implied_total=_imp_ss,
             bust_rate=_bust,
+            weather_kind=_wx_kind,
+            position=pos,
         )
         _form = _factors["form"]
         _mu = _factors["matchup"]
@@ -10728,6 +10734,7 @@ def api_start_sit_options():
         _avail = _factors["avail"]
         _vg = _factors["vegas"]
         _fl = _factors["floor"]
+        _wx = _factors["weather"]
 
         _return_plan = None
         if injury_status:
@@ -10769,17 +10776,18 @@ def api_start_sit_options():
             "usage_stat": _ut_ss.get("stat"),
             "game_env": _ss_game_env(home_team_of.get(team), current_week) if not on_bye else None,
             "implied_total": _imp_ss,
-            "weather": (game_conditions.get(team) or {}).get("weather") if not on_bye else None,
+            "weather": _wx_ss,
             "consistency": _cons,
             "demotion": demotion,
             # Unified start/sit score (the single ranking used everywhere) plus the
             # per-factor multipliers behind it, so the Compare card can name which
-            # of the six signals decided the verdict.
+            # signals decided the verdict.
             "start_score": round(score, 2),
             "score_factors": {
                 "proj": proj_pts, "form": round(_form, 3), "matchup": round(_mu, 3),
                 "usage": round(_ug, 3), "avail": round(_avail, 3),
                 "vegas": round(_vg, 3), "floor": round(_fl, 3),
+                "weather": round(_wx, 3),
             },
             "_score": score,
         })
@@ -19141,12 +19149,37 @@ def api_player_details(player_id: str):
                 except Exception:
                     _ss_bye = False
             _ss_inj = (injury or {}).get("status") if injury else None
+            _ss_pos = str(player_meta.get("pos") or "").upper()
+            _ss_imp = None
+            _ss_wx_kind = None
+            # Best-effort Vegas/weather so Compare matches the Start/Sit page.
+            if _ss_team and _ss_week and not _ss_bye:
+                try:
+                    from utils.utils import load_week_sched as _ss_lsched
+                    from utils.game_conditions import build_week_conditions as _ss_bwc
+                    _ss_games = []
+                    for _g in (_ss_lsched(int(season), int(_ss_week)) or []):
+                        _h = str(_g.get("home") or "").upper()
+                        _a = str(_g.get("away") or "").upper()
+                        if _h and _a:
+                            _ss_games.append((_h, _a, str(_g.get("gameDate") or "")))
+                    if _ss_games:
+                        _ss_cond = (_ss_bwc(int(season), int(_ss_week), _ss_games) or {}).get(_ss_team) or {}
+                        _ss_imp = _ss_cond.get("implied_total")
+                        _ss_wx = _ss_cond.get("weather") or {}
+                        if isinstance(_ss_wx, dict):
+                            _ss_wx_kind = _ss_wx.get("kind")
+                except Exception:
+                    logger.debug("[api_player_details] start_score conditions skipped", exc_info=True)
             if _ss_proj > 0 or _ss_inj or _ss_bye:
                 _ss_val, _ss_fac, _ss_dem = compute_start_score(
                     _ss_proj,
                     on_bye=_ss_bye,
                     season_ppg=float(_ppg or 0),
                     injury_status=_ss_inj,
+                    implied_total=_ss_imp,
+                    weather_kind=_ss_wx_kind,
+                    position=_ss_pos,
                 )
                 _start_score = round(float(_ss_val), 2)
         except Exception:
