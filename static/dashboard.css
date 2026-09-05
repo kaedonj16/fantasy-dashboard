@@ -36214,6 +36214,8 @@ a, button, [role="button"], [role="tab"], summary, label,
     .br-sheet-scrim.open {
         opacity: 1;
         pointer-events: auto;
+        /* Above .notif-toast so Account rows stay tappable while the sheet is open. */
+        z-index: calc(var(--z-notif-toast) + 1);
     }
 
     .br-sheet {
@@ -36244,6 +36246,8 @@ a, button, [role="button"], [role="tab"], summary, label,
     .br-sheet.open {
         transform: translateY(0);
         visibility: visible;
+        /* Match the open scrim — sit above the What's New toast. */
+        z-index: calc(var(--z-notif-toast) + 2);
     }
 
     .br-sheet-grip {
@@ -36417,6 +36421,14 @@ a, button, [role="button"], [role="tab"], summary, label,
         border: 0;
         margin: 4px 0 0;
         max-height: 46vh;
+        /* Avoid the ≤640px fixed/centered popover rules fighting the sheet layout. */
+        left: auto !important;
+        right: auto !important;
+        top: auto !important;
+        transform: none !important;
+        border-radius: 12px;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
     }
 
     /* The relocated settings menu (Notifications, Dark Mode, Site Tour, Sign Out,

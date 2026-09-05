@@ -880,6 +880,16 @@ window.brHaptic = function (pattern) {
   };
 
   function sheetOpen() { var s = document.getElementById('brMoreSheet'); return !!(s && s.classList.contains('open')); }
+  // The "What's New" toast sits above the dock (z-notif-toast) and would cover
+  // Account rows (Notifications, Dark Mode) while the More sheet is open.
+  function dismissNotifToasts() {
+    document.querySelectorAll('.notif-toast').forEach(function (popup) {
+      popup.classList.remove('notif-toast-visible');
+      popup.addEventListener('transitionend', function () { popup.remove(); }, { once: true });
+      // Fallback remove if transitionend never fires (display:none / reduced motion).
+      setTimeout(function () { if (popup.parentNode) popup.remove(); }, 400);
+    });
+  }
   function setOpen(o) {
     var sheet = document.getElementById('brMoreSheet');
     var scrim = document.getElementById('brSheetScrim');
@@ -891,6 +901,7 @@ window.brHaptic = function (pattern) {
     if (tab) { tab.setAttribute('aria-expanded', o ? 'true' : 'false'); tab.classList.toggle('active', o); }
     if (o && window.brHaptic) window.brHaptic(10);
     if (o) {
+      dismissNotifToasts();
       sheet._brPrevFocus = document.activeElement;
       var first = sheet.querySelector('a, button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
       if (first) try { first.focus(); } catch (_) {}
@@ -11826,11 +11837,14 @@ function setChangelogDot(hasNew, showSettingsDot = false) {
   if (gearDot) {
     gearDot.style.display = (hasNew && !showSettingsDot) ? "block" : "none";
   }
-  
-  // Only show settings notification dot when explicitly requested (when settings is opened)
+
+  // Settings-row dot: show when the gear menu is open (desktop), or always on
+  // mobile where settings are inlined in the More sheet (no gear badge visible).
   const settingsDot = document.getElementById("settingsNotifDot");
   if (settingsDot) {
-    settingsDot.style.display = (hasNew && showSettingsDot) ? "block" : "none";
+    const mobileInline = window.matchMedia("(max-width: 768px)").matches
+      && !!document.getElementById("brSheetAccount");
+    settingsDot.style.display = (hasNew && (showSettingsDot || mobileInline)) ? "block" : "none";
   }
 }
 
@@ -11968,7 +11982,15 @@ document.addEventListener("DOMContentLoaded", () => {
       if (changelogData && changelogData.length > 0) {
         const latestDate = changelogData[0].date;
         localStorage.setItem("changelog_last_seen", latestDate);
-setChangelogDot(false);
+        setChangelogDot(false);
+      }
+
+      // On mobile the panel lives inline at the bottom of Account; scroll it into
+      // view so "Recent Updates" isn't mostly below the fold of the More sheet.
+      if (dropdown.closest("#brMoreSheet") || dropdown.closest("#brSheetAccount")) {
+        requestAnimationFrame(function () {
+          try { dropdown.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (_) {}
+        });
       }
     } else {
       dropdown.style.display = "none";
@@ -11989,11 +12011,15 @@ setChangelogDot(false);
     toggleDropdown();
   });
 
-  // Close on click outside
+  // Close on click outside. On mobile the dropdown is relocated out of
+  // .changelog-bell-wrapper into #brSheetAccount, so also treat the panel itself
+  // and the Notifications row as inside.
   document.addEventListener("click", (e) => {
-    if (bellWrapper && !bellWrapper.contains(e.target)) {
-      closeDropdown();
-    }
+    if (!isDropdownOpen) return;
+    if (dropdown.contains(e.target)) return;
+    if (bellWrapper && bellWrapper.contains(e.target)) return;
+    if (e.target.closest && e.target.closest("#settingsChangelogBtn")) return;
+    closeDropdown();
   });
 
   // Initialize
@@ -12028,8 +12054,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (isDropdownOpen) {
       isDropdownOpen = false;
       dropdown.style.display = "none";
-      // Hide settings notification dot when dropdown closes
-      setChangelogDot(true, false);
+      // Restore gear badge from real unread state — never invent unread=true.
+      setChangelogDot(hasNewNotifications, false);
     }
   }
 
@@ -12039,6 +12065,9 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.addEventListener("click", (e) => {
+    // On mobile settings are relocated into #brSheetAccount (outside the gear
+    // wrapper) and forced visible — skip the outside-click close there.
+    if (dropdown.closest("#brSheetAccount")) return;
     if (gearWrapper && !gearWrapper.contains(e.target)) {
       closeDropdown();
     }
@@ -12059,6 +12088,10 @@ document.addEventListener("DOMContentLoaded", () => {
     settingsChangelogBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       closeDropdown();
+      // Dismiss any leftover What's New toast so it can't cover the panel.
+      document.querySelectorAll(".notif-toast").forEach(function (popup) {
+        popup.remove();
+      });
       changelogBellBtn.click();
     });
   }

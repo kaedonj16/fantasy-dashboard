@@ -89,6 +89,34 @@ def test_more_sheet_lists_core_pages(offline_client):
         assert f"br-sheet-h'>{section}<" in html
     # Watchlist is a plain link to the full page (no popover to reposition).
     assert "href='/watchlist'" in html
+    # Account (Notifications / Settings) sits under Find — not buried under every
+    # page link — so those actions are reachable without a long scroll.
+    find_at = html.index("br-sheet-h'>Find<")
+    account_at = html.index("br-sheet-h'>Account<")
+    trades_at = html.index("br-sheet-h'>Trades<")
+    assert find_at < account_at < trades_at
+
+
+def test_guest_more_sheet_puts_account_after_find():
+    """Guest More sheet mirrors the league order: Find, then Account, then pages."""
+    import app
+    with app.app.test_request_context("/players"):
+        html = app._mobile_nav_guest("players")
+    find_at = html.index("br-sheet-h'>Find<")
+    account_at = html.index("br-sheet-h'>Account<")
+    trades_at = html.index("br-sheet-h'>Trades<")
+    assert find_at < account_at < trades_at
+
+
+def test_mobile_notifications_click_outside_handles_relocated_dropdown():
+    """Changelog click-outside must treat the relocated panel + Notifications row
+    as inside; otherwise opening Notifications on mobile instantly closes it."""
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'e.target.closest("#settingsChangelogBtn")' in js
+    assert "dropdown.contains(e.target)" in js
+    assert "dismissNotifToasts" in js
+    assert 'dropdown.scrollIntoView' in js
+    assert "brSheetAccount" in js  # mobile inline settings-dot path
 
 
 @pytest.mark.parametrize("settings,expected", [
