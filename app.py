@@ -8324,10 +8324,10 @@ def _build_offseason_standings_body(ctx: dict) -> str:
             r["prod_pct_label"] = "—"
 
     # ── normalize to a PPG-like scale (100–160) matching Teams page formula ──
+    from dashboard_services.power_score import value_scale_score
     raw_vals = [r["total"] for r in team_rows]
-    raw_max = max(raw_vals) if raw_vals else 1
-    for r in team_rows:
-        r["power_score"] = round(100.0 + r["total"] / max(raw_max, 1) * 60.0, 2)
+    for r, score in zip(team_rows, value_scale_score(raw_vals)):
+        r["power_score"] = score
 
     # ── synthetic team_stats DataFrame for render_power_and_playoffs ─────────
     df_rows = []

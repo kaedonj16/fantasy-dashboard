@@ -766,7 +766,7 @@ def get_power_rankings_html(ctx: dict) -> str:
     if not teams:
         return _emit_ai_html("<p>Not enough data for power rankings.</p>")
 
-    cache_key = build_ai_cache_key("power_rankings", {"week": rankings_ctx.get("week"), "season": rankings_ctx.get("season"), "teams": [t["roster_id"] for t in teams]}, "v5")
+    cache_key = build_ai_cache_key("power_rankings", {"week": rankings_ctx.get("week"), "season": rankings_ctx.get("season"), "teams": [t["roster_id"] for t in teams]}, "v6")
     cached = load_cached_ai_text(cache_key)
     if cached:
         return _emit_ai_html(cached)

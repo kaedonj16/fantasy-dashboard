@@ -317,7 +317,7 @@ def finalize_team_stats(
         regular_season_weeks: int | None = None,
 ) -> pd.DataFrame:
     """Build the full standings/power team_stats table from finalized weekly
-    rows (records, PF/PA/AVG, performance PowerScore, strength of schedule, and
+    rows (records, PF/PA/AVG, shared performance PowerScore (incl. past SoS), strength of schedule, and
     current streaks).
 
     Shared by the season builder (build_tables) and the standings week-selector,
@@ -382,17 +382,8 @@ def finalize_team_stats(
     team_stats["Z_Consistency"] = _z(cons_inv)
     team_stats["Z_Ceiling"] = _z(ceiling)
 
-    # Weights: recency (Last3) promoted; raw Avg and Win% trimmed slightly
-    # so a hot team closing strong is rewarded over a stale season-long average.
-    W_WIN, W_AVG, W_LAST3, W_CONS, W_CEIL = 0.15, 0.25, 0.25, 0.15, 0.20
     team_stats["Win%"] = win_pct
-    team_stats["PowerScore"] = (
-            W_WIN * team_stats["Z_WinPercentage"]
-            + W_AVG * team_stats["Z_Avg"]
-            + W_LAST3 * team_stats["Z_Last3"]
-            + W_CONS * team_stats["Z_Consistency"]
-            + W_CEIL * team_stats["Z_Ceiling"]
-    )
+    # PowerScore is applied after SOS so past_sos can enter the blend.
 
     sos = build_team_strength(team_stats)
     _reg_weeks = (
@@ -417,6 +408,21 @@ def finalize_team_stats(
     for _col in ("past_sos", "ros_sos", "past_cnt", "ros_cnt"):
         if _col in team_stats.columns:
             team_stats[_col] = team_stats[_col].fillna(0.0)
+
+    # Shared performance PowerScore (results + past SoS when present).
+    from dashboard_services.power_score import performance_power_scores
+    _past = None
+    if "past_sos" in team_stats.columns and team_stats["past_sos"].notna().any():
+        _past = team_stats["past_sos"].fillna(100.0).astype(float).tolist()
+    team_stats["PowerScore"] = performance_power_scores(
+        win_pct=win_pct.tolist(),
+        avg=avg_pts.tolist(),
+        last3=last3_series.tolist(),
+        consistency=cons_inv.tolist(),
+        ceiling=ceiling.tolist(),
+        past_sos=_past,
+    )
+
 
     streaks_df = compute_streaks(df_finalized.copy())
     team_stats = team_stats.merge(streaks_df, on="owner", how="left")
