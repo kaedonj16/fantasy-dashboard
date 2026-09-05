@@ -87,7 +87,7 @@
 </script>
 </head>
 <body>
-  <img id="offlineLogo" src="/static/BR_Mark.png" alt="BR Fantasy">
+  <img id="offlineLogo" src="/static/BR_Mark.png?v=f4228e0e" alt="BR Fantasy">
   <p class="brand">BR Fantasy</p>
   <h1 id="offlineTitle">You're offline</h1>
   <p id="offlineCopy">We can't reach BR Fantasy right now. Check your connection and try again. Pages you've
@@ -103,7 +103,7 @@
       document.body.classList.toggle('is-dark', dark);
       document.body.classList.toggle('is-light', !dark);
       var logo = document.getElementById('offlineLogo');
-      if (logo) logo.src = dark ? '/static/BR_Mark_dark.png' : '/static/BR_Mark.png';
+      if (logo) logo.src = dark ? '/static/BR_Mark_dark.png?v=f4228e0e' : '/static/BR_Mark.png?v=f4228e0e';
       var meta = document.getElementById('br-theme-color');
       if (meta) meta.setAttribute('content', dark ? '#020617' : '#f8fafc');
 

@@ -2,7 +2,7 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
-const CACHE_NAME = 'br-fantasy-v27';
+const CACHE_NAME = 'br-fantasy-v28';
 
 // How long to wait on the network for a page before painting a cached /
 // offline fallback. This is what kills the blank white screen on PWA launch:
@@ -24,11 +24,11 @@ const NAV_UNCACHED_GRACE_MS = 15000;
 // are served with ?v= hashes from HTML and cached via stale-while-revalidate
 // on /static/* — precaching unversioned app.js/dashboard.css fought those URLs.
 const PRECACHE_URLS = [
-  '/static/BR_Logo.png',
-  '/static/BR_Logo_dark.png',
-  '/static/BR_Mark.png',
-  '/static/BR_Mark_dark.png',
-  '/static/Website_Logo.png',
+  '/static/BR_Logo.png?v=f4228e0e',
+  '/static/BR_Logo_dark.png?v=f4228e0e',
+  '/static/BR_Mark.png?v=f4228e0e',
+  '/static/BR_Mark_dark.png?v=f4228e0e',
+  '/static/Website_Logo.png?v=f4228e0e',
   '/static/app-icon-180.png',
   '/static/offline.html',
 ];
@@ -259,8 +259,8 @@ self.addEventListener('push', event => {
   }
   const options = {
     body: data.body || '',
-    icon: '/static/BR_Mark.png',
-    badge: '/static/BR_Mark.png',
+    icon: '/static/BR_Mark.png?v=f4228e0e',
+    badge: '/static/BR_Mark.png?v=f4228e0e',
     vibrate: [100, 50, 100],
     data: { url: data.url || '/' },
     tag: data.tag || 'br-fantasy',

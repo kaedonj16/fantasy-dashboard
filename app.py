@@ -1809,8 +1809,8 @@ FORM_BODY = """
 </div>
 
 <div class="fullscreen-loading-overlay" id="dashboardLoadingOverlay" style="display:none;">
-  <img src="/static/BR_Mark.png"      alt="BR Fantasy" class="flo-logo flo-logo-light">
-  <img src="/static/BR_Mark_dark.png" alt="BR Fantasy" class="flo-logo flo-logo-dark">
+  <img src="/static/BR_Mark.png?v=f4228e0e"      alt="BR Fantasy" class="flo-logo flo-logo-light">
+  <img src="/static/BR_Mark_dark.png?v=f4228e0e" alt="BR Fantasy" class="flo-logo flo-logo-dark">
   <div class="fullscreen-loading-text">Building your dashboard…</div>
   <div class="fullscreen-loading-subtext">This usually takes a few seconds</div>
   <div class="flo-progress-track"><div class="flo-progress-bar" id="floProgressBar"></div></div>
@@ -1917,8 +1917,8 @@ BASE_HTML = """
   <body>
     <!-- Branded loading splash: shown instantly, removed once the page is ready -->
     <div id="appSplash" role="status" aria-label="Loading BR Fantasy">
-      <img src="/static/BR_Logo.png" alt="" class="splash-logo-light" aria-hidden="true">
-      <img src="/static/BR_Logo_dark.png" alt="" class="splash-logo-dark" aria-hidden="true">
+      <img src="/static/BR_Logo.png?v=f4228e0e" alt="" class="splash-logo-light" aria-hidden="true">
+      <img src="/static/BR_Logo_dark.png?v=f4228e0e" alt="" class="splash-logo-dark" aria-hidden="true">
     </div>
     <script>
       (function(){{
@@ -3959,7 +3959,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "<nav class='top-nav br-mnav' aria-label='Main navigation'>"
             "  <div class='nav-left'>"
             "    <a href='/' aria-label='BR Fantasy home'>"
-            "      <img src='/static/Website_Logo.png' alt='BR Fantasy' class='site-logo'/>"
+            "      <img src='/static/Website_Logo.png?v=f4228e0e' alt='BR Fantasy' class='site-logo'/>"
             "    </a>"
             "  </div>"
             "  <div class='nav-center'>"
@@ -4352,7 +4352,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         f"<nav class='{_mnav_cls}' aria-label='Main navigation'>"
         "  <div class='nav-left'>"
         f"    <a href='{dashboard_url}' aria-label='BR Fantasy dashboard'>"
-        "      <img src='/static/Website_Logo.png' alt='BR Fantasy' class='site-logo'/>"
+        "      <img src='/static/Website_Logo.png?v=f4228e0e' alt='BR Fantasy' class='site-logo'/>"
         "    </a>"
         f"    {_chrome_chip}"
         "  </div>"
@@ -4942,7 +4942,7 @@ def _site_json_ld() -> str:
             "@type": "Organization",
             "name": "BR Fantasy",
             "url": base or "/",
-            "logo": f"{base}/static/BR_Logo.png",
+            "logo": f"{base}/static/BR_Logo.png?v=f4228e0e",
             "sameAs": [
                 "https://youtube.com/@hoodiekj",
                 "https://x.com/hoodiekj",
@@ -12224,7 +12224,7 @@ def metrics_graph_og_image(platform: str, season: int, league_id: str):
         cache_key=cache_key,
     )
     if not png:
-        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png")
+        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=f4228e0e")
     return Response(png, mimetype="image/png",
                     headers={"Cache-Control": "public, max-age=3600"})
 
@@ -27665,7 +27665,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
     </div>
     <div class="share-card">
       <div class="sc-header">
-        <div class="sc-brand"><img src="/static/BR_Mark_dark.png" alt="BR Fantasy" style="height:20px;opacity:.9"> BR Fantasy</div>
+        <div class="sc-brand"><img src="/static/BR_Mark_dark.png?v=f4228e0e" alt="BR Fantasy" style="height:20px;opacity:.9"> BR Fantasy</div>
         <div class="sc-league">{league_name}</div>
       </div>
       <div class="sc-team-row">
@@ -27707,7 +27707,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
     function applyTheme(t) {{
       root.setAttribute('data-theme', t);
       var logo = document.querySelector('.sc-brand img');
-      if (logo) logo.src = t === 'dark' ? '/static/BR_Mark_dark.png' : '/static/BR_Mark.png';
+      if (logo) logo.src = t === 'dark' ? '/static/BR_Mark_dark.png?v=f4228e0e' : '/static/BR_Mark.png?v=f4228e0e';
       var btn = document.getElementById('scThemeToggle');
       if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;';
     }}
@@ -27768,7 +27768,7 @@ def share_card_og_image(platform: str, season: int, league_id: str, roster_id: s
         cache_key=f"team:{platform}:{season}:{league_id}:{roster_id}:v{int(_value_cache_bust_mtime() or 0)}",
     )
     if not png:
-        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png")
+        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=f4228e0e")
     return Response(png, mimetype="image/png",
                     headers={"Cache-Control": "public, max-age=3600"})
 
@@ -28188,7 +28188,7 @@ def page_trade_card(share_id: str):
   <meta name="twitter:title" content="{og_title}">
   <meta name="twitter:description" content="{verdict}">
   <meta name="twitter:image" content="{_og_image_url}">
-  <link rel="icon" href="/static/BR_Mark.png" type="image/png">
+  <link rel="icon" href="/static/BR_Mark.png?v=f4228e0e" type="image/png">
   <script>
     (function(){{{"document.documentElement.setAttribute('data-theme','light');" if is_og else "var t=localStorage.getItem('sc-card-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);"}}})();
   </script>
@@ -28274,7 +28274,7 @@ def page_trade_card(share_id: str):
     <div class="card">
       <div class="card-header">
         <div class="brand">
-          <img src="/static/BR_Mark_dark.png" id="tcLogo" alt="BR Fantasy" style="height:18px;opacity:.9">
+          <img src="/static/BR_Mark_dark.png?v=f4228e0e" id="tcLogo" alt="BR Fantasy" style="height:18px;opacity:.9">
           BR Fantasy
         </div>
         <div style="display:flex;align-items:center;gap:8px">
@@ -28329,7 +28329,7 @@ def page_trade_card(share_id: str):
     function applyTheme(t){{
       root.setAttribute('data-theme', t);
       var logo = document.getElementById('tcLogo');
-      if (logo) logo.src = t === 'dark' ? '/static/BR_Mark_dark.png' : '/static/BR_Mark.png';
+      if (logo) logo.src = t === 'dark' ? '/static/BR_Mark_dark.png?v=f4228e0e' : '/static/BR_Mark.png?v=f4228e0e';
       var btn = document.getElementById('tcToggle');
       if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;';
     }}
@@ -28389,7 +28389,7 @@ def trade_card_og_image(share_id: str):
         cache_key=f"trade:{share_id}",
     )
     if not png:
-        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png")
+        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=f4228e0e")
     return Response(png, mimetype="image/png",
                     headers={"Cache-Control": "public, max-age=3600"})
 
