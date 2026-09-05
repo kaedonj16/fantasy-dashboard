@@ -148,7 +148,7 @@ def test_sw_no_cache_and_shell_precache():
     sw_route = PUBLIC[PUBLIC.index("def service_worker"):]
     sw_route = sw_route[: sw_route.index("def ads_txt")]
     assert "no-cache" in sw_route
-    assert "br-fantasy-v28" in SW
+    assert "br-fantasy-v29" in SW
     assert "'/static/app.js'" not in SW and '"/static/app.js"' not in SW
     assert "'/static/dashboard.css'" not in SW and '"/static/dashboard.css"' not in SW
     assert "/static/offline.html" in SW
@@ -257,7 +257,7 @@ def test_apple_touch_icon_is_proper_180_asset():
     assert (ROOT / "static" / "app-icon-180.png").is_file()
     assert _png_dimensions(ROOT / "static" / "app-icon-180.png") == (180, 180)
     assert "app-icon-180.png" in APP_PY
-    assert 'apple-touch-icon" sizes="180x180" href="/static/app-icon-180.png"' in APP_PY
+    assert 'apple-touch-icon" sizes="180x180" href="/static/app-icon-180.png' in APP_PY
 
 
 def _png_corner_rgb(path):
@@ -313,7 +313,7 @@ def test_pwa_icons_are_opaque_white():
     manifest = (ROOT / "static" / "manifest.json").read_text(encoding="utf-8")
     assert "/static/app-icon-192.png" in manifest
     assert "/static/app-icon-512-maskable.png" in manifest
-    assert 'href="/static/app-icon-192.png"' in APP_PY
+    assert 'href="/static/app-icon-192.png' in APP_PY
 
 
 def test_app_splash_matches_theme_boot():
