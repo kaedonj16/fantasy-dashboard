@@ -822,16 +822,14 @@ def build_tour_mock_graphs_ctx(df_weekly) -> dict:
     team_stats = sort_team_stats(team_stats)
 
     if not team_stats.empty and "PF" in team_stats.columns:
-        pf_z = (team_stats["PF"] - team_stats["PF"].mean()) / max(float(team_stats["PF"].std()), 1.0)
-        win_z = (team_stats["Win%"] - team_stats["Win%"].mean()) / max(float(team_stats["Win%"].std()), 1.0)
-        avg_z = (team_stats["AVG"] - team_stats["AVG"].mean()) / max(float(team_stats["AVG"].std()), 1.0)
-        team_stats["PowerScore"] = 0.30 * pf_z + 0.40 * win_z + 0.30 * avg_z
+        from dashboard_services.power_score import approximate_power_score_frame
+        team_stats = approximate_power_score_frame(team_stats)
         # Z-score columns required by z_better_outward
         for col in ["PF", "PA", "MAX", "MIN", "AVG", "STD"]:
             zc = f"Z_{col}"
-            if col in team_stats.columns:
+            if col in team_stats.columns and zc not in team_stats.columns:
                 col_vals = team_stats[col]
-                std_val = float(col_vals.std())
+                std_val = float(col_vals.std()) if len(col_vals) else 1.0
                 team_stats[zc] = (col_vals - col_vals.mean()) / max(std_val, 1.0)
 
     return {"team_stats": team_stats, "df_weekly": df}
@@ -923,16 +921,14 @@ def build_career_graphs_ctx(
     team_stats = pd.DataFrame(stat_rows) if stat_rows else pd.DataFrame()
 
     if not team_stats.empty and "PF" in team_stats.columns:
-        # Approximate PowerScore for career (win% + avg PF rank)
-        pf_z  = (team_stats["PF"]  - team_stats["PF"].mean())  / max(float(team_stats["PF"].std()),  1.0)
-        win_z = (team_stats["Win%"]- team_stats["Win%"].mean()) / max(float(team_stats["Win%"].std()), 1.0)
-        avg_z = (team_stats["AVG"] - team_stats["AVG"].mean())  / max(float(team_stats["AVG"].std()),  1.0)
-        team_stats["PowerScore"] = 0.30 * pf_z + 0.40 * win_z + 0.30 * avg_z
+        from dashboard_services.power_score import approximate_power_score_frame
+        team_stats = approximate_power_score_frame(team_stats)
         for col in ["PF", "PA", "MAX", "MIN", "AVG", "STD"]:
-            if col in team_stats.columns:
+            zc = f"Z_{col}"
+            if col in team_stats.columns and zc not in team_stats.columns:
                 cv = team_stats[col]
-                sd = max(float(cv.std()), 1.0)
-                team_stats[f"Z_{col}"] = (cv - cv.mean()) / sd
+                sd = max(float(cv.std()) if len(cv) else 1.0, 1.0)
+                team_stats[zc] = (cv - cv.mean()) / sd
 
     # Combined df_weekly (with season column) for box/line charts
     # Relabel every season with the newest known team name while retaining the

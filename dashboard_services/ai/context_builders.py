@@ -1636,20 +1636,14 @@ def build_power_rankings_context(ctx: dict) -> dict:
     """
     Build context for AI-generated power rankings.
 
-    For each roster, compute a PowerScore:
-      0.23 * Z(PF)
-      + 0.28 * Z(luck-adjusted win%)
-      + 0.19 * Z(starter value)
-      + 0.14 * Z(momentum)
-      + 0.08 * Z(consistency)
-      + 0.08 * Z(strength of schedule)
-    where the win term blends all-play (schedule-luck-free) with actual record,
-    value is the top-8 win-now (redraft) total, momentum is recent all-play form
-    vs the season baseline, consistency rewards steady week-to-week scoring, and
-    SoS credits a résumé earned against tougher opponents. Then pass top_assets,
-    direction, and win_window to AI for narrative generation.
-    win_window uses the same league-context percentile logic as the teams page cards.
+    PowerScore comes from ``dashboard_services.power_score.blended_team_scores``:
+      phase-weighted Z(AVG) + Z(luck-adjusted win%) + Z(slot-legal starter value)
+      + Z(momentum) + Z(consistency) + Z(past SoS) + Z(ROS ease) + Z(playoff%)
+    when each signal is available. Weights shift preseason → early → mid → late.
+    Starter value fills real lineup slots when ``roster_positions`` are known.
+    Then pass top_assets, direction, and win_window to AI for narrative generation.
     """
+
     rosters = ctx.get("rosters") or []
     standings_map = ctx.get("standings_map") or {}
     roster_map = ctx.get("roster_map") or {}
@@ -1671,6 +1665,13 @@ def build_power_rankings_context(ctx: dict) -> dict:
     season_phase = _season_phase(ctx.get("current_week"), "")
     redraft_key = "redraft_value_sf" if is_sf else "redraft_value_1qb"
     _CORE_POS = {"QB", "RB", "WR", "TE"}
+
+    from dashboard_services.power_score import (
+        blended_team_scores,
+        season_phase_from_progress,
+        starter_lineup_value,
+    )
+    roster_positions = ctx.get("roster_positions") or []
 
     # ── Pre-compute dynasty totals, redraft totals, and dynasty/redraft ratios ──
     _team_dynasty_total: dict = {}
@@ -1779,6 +1780,55 @@ def build_power_rankings_context(ctx: dict) -> dict:
         _consistency = {}
         _sos = {}
 
+
+    # Rest-of-season schedule ease: 1 - mean(opponent season all-play). Higher =
+    # easier remaining path. Uses matchups_by_week when present.
+    _ros_ease: dict[str, float] = {}
+    try:
+        _mbw = ctx.get("matchups_by_week") or {}
+        _cur_wk = int(ctx.get("current_week") or 0)
+        _weeks_done = set()
+        _dfw_ros = ctx.get("df_weekly")
+        if _dfw_ros is not None and getattr(_dfw_ros, "empty", True) is False and "week" in getattr(_dfw_ros, "columns", []):
+            _fin_ros = _dfw_ros[_dfw_ros["finalized"] == True] if "finalized" in _dfw_ros.columns else _dfw_ros
+            if not _fin_ros.empty:
+                _weeks_done = set(int(w) for w in _fin_ros["week"].tolist())
+                _cur_wk = max(_cur_wk, max(_weeks_done) if _weeks_done else _cur_wk)
+        _remaining_opp: dict[str, list[float]] = {}
+        if _mbw and _all_play_pct:
+            for _wk, _ms in _mbw.items():
+                try:
+                    _wki = int(_wk)
+                except (TypeError, ValueError):
+                    continue
+                if _wki <= _cur_wk:
+                    continue
+                for _m in (_ms or []):
+                    if not isinstance(_m, dict):
+                        continue
+                    _left = _m.get("left") or {}
+                    _right = _m.get("right") or {}
+                    _a = str(_left.get("roster_id") or _left.get("name") or "")
+                    _b = str(_right.get("roster_id") or _right.get("name") or "")
+                    if not _a or not _b:
+                        continue
+                    # Map owner names → roster ids via roster_map inverse when needed.
+                    _remaining_opp.setdefault(_a, []).append(_all_play_pct.get(_b, 0.5))
+                    _remaining_opp.setdefault(_b, []).append(_all_play_pct.get(_a, 0.5))
+            # Also try matching via roster_map values (owner names as keys).
+            _name_to_rid = {str(v): str(k) for k, v in (roster_map or {}).items()}
+            _resolved: dict[str, list[float]] = {}
+            for _key, _opps in _remaining_opp.items():
+                _rid_key = _key if _key in _all_play_pct else _name_to_rid.get(_key, _key)
+                _resolved.setdefault(_rid_key, []).extend(_opps)
+            _ros_ease = {
+                rid: round(1.0 - (sum(opps) / len(opps)), 4)
+                for rid, opps in _resolved.items() if opps
+            }
+    except Exception:
+        _ros_ease = {}
+
+
     team_data = []
     for roster in rosters:
         rid = str(roster.get("roster_id") or "")
@@ -1792,6 +1842,7 @@ def build_power_rankings_context(ctx: dict) -> dict:
         fpts = _safe_float(settings.get("fpts")) + _safe_float(settings.get("fpts_decimal")) / 100.0
         standing = _standing_dict(standings_map, rid)
         pf = _safe_float(standing.get("PF") or fpts)
+        avg_ppg = (pf / total_games) if total_games > 0 else pf
 
         # Luck-adjusted win rate: mostly all-play (de-luffed strength), with a
         # nod to the actual record you're living in. Falls back to raw win%.
@@ -1813,11 +1864,14 @@ def build_power_rankings_context(ctx: dict) -> dict:
             val = _safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value"))
             roster_players_vals.append(val)
         avg_value = sum(roster_players_vals) / len(roster_players_vals) if roster_players_vals else 0.0
-        # Starter-weighted, win-now roster strength (top-8 redraft value already
-        # computed above). Better than a whole-roster dynasty average, which
-        # dilutes studs with deep benches and over-credits youth that doesn't
-        # help win this season.
-        starter_value = round(_team_redraft_total.get(rid_int, 0.0), 1)
+        # Slot-legal win-now starter strength (falls back to top-8 redraft).
+
+        starter_value = starter_lineup_value(
+            roster.get("players") or [],
+            model_value_lookup,
+            redraft_key=redraft_key,
+            roster_positions=roster_positions,
+        )
 
         players_summary = summarize_roster_players(
             roster=roster,
@@ -1875,6 +1929,7 @@ def build_power_rankings_context(ctx: dict) -> dict:
             "luck_adj_win": round(luck_adj_win, 4),
             "all_play_pct": round(ap_pct, 4) if ap_pct is not None else None,
             "pf": pf,
+            "avg": round(avg_ppg, 2),
             "avg_value": round(avg_value, 1),
             "starter_value": starter_value,
             "momentum": momentum,
@@ -1882,6 +1937,7 @@ def build_power_rankings_context(ctx: dict) -> dict:
             "consistency": consistency,
             "sos": sos,
             "sos_label": sos_label,
+            "ros_ease": _ros_ease.get(rid),
             "avg_age": avg_age,
             "win_window": win_window,
             "direction": direction,
@@ -1898,54 +1954,17 @@ def build_power_rankings_context(ctx: dict) -> dict:
     if not team_data:
         return {"teams": []}
 
-    # Z-score normalization
-    def _z_scores(values: list[float]) -> list[float]:
-        if len(values) < 2:
-            return [0.0] * len(values)
-        mean = sum(values) / len(values)
-        variance = sum((v - mean) ** 2 for v in values) / len(values)
-        std = variance ** 0.5
-        if std == 0:
-            return [0.0] * len(values)
-        return [(v - mean) / std for v in values]
+    # Canonical blended PowerScore (phase-weighted, shared engine).
+    _games_played = max((t["wins"] + t["losses"] for t in team_data), default=0)
+    _phase = season_phase_from_progress(
+        games_played=_games_played,
+        current_week=ctx.get("current_week"),
+    )
+    team_data = blended_team_scores(team_data, phase=_phase)
+    season_phase = _phase if _games_played > 0 else season_phase
 
-    pf_z = _z_scores([t["pf"] for t in team_data])
-    win_z = _z_scores([t["luck_adj_win"] for t in team_data])    # luck-adjusted, not raw
-    val_z = _z_scores([t["starter_value"] for t in team_data])   # starter-weighted, win-now
-    mom_z = _z_scores([t["momentum"] for t in team_data])        # recent form
-    con_z = _z_scores([t["consistency"] for t in team_data])     # steadiness
-    sos_z = _z_scores([t["sos"] for t in team_data])             # schedule faced
 
-    # PowerScore: résumé (PF + luck-adjusted record + win-now roster value), form
-    # (recent momentum), steadiness (consistency), and how tough the schedule that
-    # produced the résumé was (SoS). Weights sum to 1.0.
-    for i, team in enumerate(team_data):
-        team["power_score"] = round(
-            0.23 * pf_z[i]
-            + 0.28 * win_z[i]
-            + 0.19 * val_z[i]
-            + 0.14 * mom_z[i]
-            + 0.08 * con_z[i]
-            + 0.08 * sos_z[i],
-            3,
-        )
-        team["power_components"] = {
-            "pf": round(pf_z[i], 2),
-            "record": round(win_z[i], 2),
-            "value": round(val_z[i], 2),
-            "momentum": round(mom_z[i], 2),
-            "consistency": round(con_z[i], 2),
-            "sos": round(sos_z[i], 2),
-        }
 
-    team_data.sort(key=lambda t: t["power_score"], reverse=True)
-
-    # Assign rank and momentum hint (prior rank not available without history; use score quartile)
-    for rank, team in enumerate(team_data, start=1):
-        team["rank"] = rank
-
-    if any((t["wins"] + t["losses"]) > 0 for t in team_data):
-        season_phase = "in_season"
 
     return {
         "season": ctx.get("current_season"),
