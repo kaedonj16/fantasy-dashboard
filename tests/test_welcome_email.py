@@ -44,8 +44,11 @@ def test_signup_welcome_html_has_logos_and_depth(monkeypatch):
     assert out["subject"].startswith("Welcome to BR Fantasy")
     assert "BR_Logo_dark.png" in html
     assert "BR_Mark_dark.png" in html
-    assert "sleeper-logo.png" in html
-    assert "espn-logo.png" in html
+    assert "sleeper-logo.png" not in html
+    assert "espn-logo.png" not in html
+    assert "email/trade.jpg" in html
+    assert "email/rankings.jpg" in html
+    assert "email/draft.jpg" in html
     assert "Trade Calculator" in html
     assert "Weekly email digest" in html
     assert "Ways managers use" in html
@@ -55,8 +58,7 @@ def test_signup_welcome_html_has_logos_and_depth(monkeypatch):
     assert "welcome and onboarding emails" in html
     assert "{UNSUB}" in html or "unsubscribe" in html.lower()
     assert "—" not in html and "\u2014" not in html
-    assert html.count("<img ") >= 8
-    assert "images/" in html
+    assert html.count("<img ") >= 5
 
 
 def test_pro_welcome_html_covers_toolkit(monkeypatch):
@@ -77,11 +79,13 @@ def test_pro_welcome_html_covers_toolkit(monkeypatch):
     assert "Playoff Impact" in html
     assert "Full PRO toolkit" in html
     assert "BR_Logo_dark.png" in html
+    assert "email/trade.jpg" in html
+    assert "email/draft.jpg" in html
+    assert "sleeper-logo.png" not in html
     assert "/sleeper/2026/12345/trade?tab=suggestions" in html
     assert "welcome and onboarding emails" in html
     assert "—" not in html and "\u2014" not in html
-    assert html.count("<img ") >= 8
-    assert "images/" in html
+    assert html.count("<img ") >= 5
 
 
 def test_send_signup_respects_opt_out(monkeypatch):
