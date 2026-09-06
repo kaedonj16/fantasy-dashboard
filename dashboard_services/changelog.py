@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-09-06",
         "tag": "fix",
-        "text": "Live keeper drafts: recommendations treat every player as available until the host drafts them. Projected keepers no longer leave the pool or burn early pick slots, so pick-2 advice stays early-round BPA instead of mid/late-round leftovers.",
+        "text": "Draft recommendations always rank the full undrafted pool for the pick on the clock. Rec no longer looks ahead to later owned picks or hides projected keepers, so early-pick advice stays early-round BPA in live, mock, and manual drafts.",
         "link": "/draft"
     },
     {
