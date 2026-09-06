@@ -1390,32 +1390,39 @@
   // player's raw ADP (mirrors utils.keeper_value.adjust_adp_for_keepers).
   var _keeperAdpCache = null; // sorted raw ADPs of active keepers
   function invalidateKeeperAdpCache(){ _keeperAdpCache = null; }
-  // ADP compression is independent of rec-pool availability: projected keepers
-  // still leave the ADP board even when Rec treats them as undrafted until they
-  // appear on a pick slot. Skip live — the host board is the source of truth.
+  // Compress whenever we know the keeper set. Rec-pool availability is separate
+  // (applyKeepers is a no-op); ADP math still needs the thinner market so
+  // Pick Score / Recap / Deep Dive don't grade open picks against a full board.
   function keepersCompressAdp(){
-    return !!(keepersOn && keeperSet && keeperSet.length && !(state && state.mode === 'live'));
+    return !!(keepersOn && keeperSet && keeperSet.length);
   }
-  function keeperRawAdps(adpFn){
+  function isKeeperPick(pl){
+    return !!(pl && pl.keeper);
+  }
+  function keeperRawAdps(adpFn, excludeId){
     if (!keepersCompressAdp()) return [];
-    // Cache the default (rawAdpOf) list; source-specific callers pass their own fn.
-    if (adpFn == null && _keeperAdpCache) return _keeperAdpCache;
+    // Cache the default (rawAdpOf, no exclude) list; source-specific or
+    // self-excluding callers pass their own args and skip the cache.
+    var canCache = (adpFn == null && excludeId == null);
+    if (canCache && _keeperAdpCache) return _keeperAdpCache;
     var fn = adpFn || rawAdpOf;
     var out = [];
+    var ex = excludeId != null ? String(excludeId) : null;
     keeperSet.forEach(function(k){
       if (!k || k.id == null) return;
+      if (ex && String(k.id) === ex) return;
       var pl = playersById[String(k.id)];
       if (!pl) return;
       var a = fn(pl);
       if (a != null && isFinite(Number(a)) && Number(a) > 0) out.push(Number(a));
     });
     out.sort(function(a, b){ return a - b; });
-    if (adpFn == null) _keeperAdpCache = out;
+    if (canCache) _keeperAdpCache = out;
     return out;
   }
-  function adjustAdpForKeepers(raw, adpFn){
+  function adjustAdpForKeepers(raw, adpFn, excludeId){
     if (raw == null || !isFinite(Number(raw)) || Number(raw) <= 0) return raw;
-    var kept = keeperRawAdps(adpFn);
+    var kept = keeperRawAdps(adpFn, excludeId);
     if (!kept.length) return raw;
     var adp = Number(raw), n = 0;
     for (var i = 0; i < kept.length; i++){
@@ -1425,7 +1432,7 @@
     return Math.max(1, adp - n);
   }
   function adpOf(p){
-    return adjustAdpForKeepers(rawAdpOf(p), null);
+    return adjustAdpForKeepers(rawAdpOf(p), null, p && p.id);
   }
   // One named source's ADP from the per-source payload (adp_by_source), read on
   // the axis the current draft is on (redraft vs dynasty x 1QB vs SF). Null when
@@ -1451,7 +1458,7 @@
     var src = source;
     return adjustAdpForKeepers(rawAdpBySource(p, src), function(kp){
       return rawAdpBySource(kp, src);
-    });
+    }, p && p.id);
   }
   function resolvedAdp(p, source){
     var Core = window.DraftBoardCore;
@@ -1701,9 +1708,9 @@
   // In a keeper draft each kept player costs his team the pick at his keeper
   // round, so those picks are spent before the draft starts. Seeding them onto
   // the board (rather than only hiding the players) makes the pick economy real:
-  // teams draft fewer times, the rounds line up, and because a keeper occupies a
-  // genuine pick slot it flows into the draft grade exactly like any other pick
-  // - which is the point of a keeper, a stud held at a late round grades great.
+  // teams draft fewer times and the rounds line up. Keeper picks are flagged
+  // separately so Recap / Pick Score / Deep Dive grade the open draft only —
+  // a stud held in round 15 would otherwise look like a fake steal.
   // Live synced drafts skip seeding: the host already reports who is drafted.
 
   // Map a keeper's roster to a draft seat. The viewer's own seat is known; rival
@@ -1759,7 +1766,9 @@
         position: k.pos || p.position || '',
         team: p.team || '',
         val: Math.round(p.id != null ? valOf(p) : 0),
-        ps: (p.id != null ? pickScoreFor(p, pn) : null),
+        // Keepers are not open-draft picks — leave PS blank so grades/recap
+        // don't treat a late-round keep as a board steal.
+        ps: null,
         reason: 'Keeper (R' + rnd + ')',
         keeper: true
       };
@@ -3458,6 +3467,8 @@
   // Pool-relative score for a made pick: the commit-time capture (mock), else the
   // reconstruction (synced), else the absolute score as a last resort.
   function relPS(pl, pn){
+    // Keeper slots aren't open-draft picks — no Pick Score chip / Value avg.
+    if (isKeeperPick(pl)) return null;
     if (pl && pl.psRel != null) return pl.psRel;
     if (!pn) pn = _pnOf(pl);
     var m = _ensureRelScores();
@@ -4913,20 +4924,23 @@
     (mine || []).forEach(function(m){
       var pos = (m.p.position || '').toUpperCase();
       var full = playersById[String(m.p.id)];
+      var kept = isKeeperPick(m.p);
       var ps = null;
-      if (players.length > 0 && _gmaxVal > 0 && full){
+      // Keepers still count for starter strength / construction, but their
+      // pick-score is N/A — a late cost-round keep must not inflate Value.
+      if (!kept && players.length > 0 && _gmaxVal > 0 && full){
         ps = pickScore(full, _gmaxVal, countsSoFar, {
           grading: true, pickNo: m.pn, qualByPos: qualSoFar
         });
       }
-      if (ps == null) ps = m.p.ps;
+      if (!kept && ps == null) ps = m.p.ps;
       if (countsSoFar[pos] != null) countsSoFar[pos]++;
       if (counts[pos] != null) counts[pos]++;
       if (qualSoFar[pos] != null){
         var _qv = full ? vorOf(full) : null;
         if (_qv == null || _qv > 0) qualSoFar[pos]++;
       }
-      picks.push({ id: m.p.id, pos: pos, ps: ps, pn: m.pn,
+      picks.push({ id: m.p.id, pos: pos, ps: ps, pn: m.pn, keeper: kept,
         val: full ? valOf(full) : (m.p.val || 0), ppg: full ? ppgOf(full) : null });
     });
     return picks;
@@ -4942,7 +4956,10 @@
     // (round-weighted kernel via BRTeamGrade). avgPs is the Deep Dive / share
     // "Avg Board PS" chip — average the same pool-relative scores the board
     // and Deep Dive ledger show (relPS), not the absolute kernel scale.
-    var relVals = mine.map(function(m){ return relPS(m.p, m.pn); })
+    // Value / Avg Board PS reflect the open draft only — keeper keeps would
+    // otherwise dominate averages (ADP-1 stud kept in R15).
+    var relVals = mine.filter(function(m){ return !isKeeperPick(m.p); })
+      .map(function(m){ return relPS(m.p, m.pn); })
       .filter(function(v){ return v != null; });
     var avgPs = relVals.length
       ? relVals.reduce(function(a, b){ return a + b; }, 0) / relVals.length
@@ -4968,10 +4985,15 @@
       var _rCounts = { QB:0, RB:0, WR:0, TE:0 };
       var _letters = [];
       picks.forEach(function(x){
+        var pos = x.pos;
+        // Keepers aren't open-draft picks — skip letter grades (still count need).
+        if (x.keeper){
+          if (_rCounts[pos] != null) _rCounts[pos]++;
+          return;
+        }
         var full = playersById[String(x.id)];
         var myAdp = full ? adpOf(full) : null;
         var adpDiff = (myAdp != null) ? (x.pn - myAdp) : null;
-        var pos = x.pos;
         var need = (posTargets()[pos] || 0) > (_rCounts[pos] || 0);
         var qbCount = _rCounts['QB'] || 0;
         // BPA: find players with a better ADP still on the board at this pick.
@@ -5353,6 +5375,8 @@
     allTeams.forEach(function(t){
       (t.picks || []).forEach(function(pk){
         if (!pk || !pk.p) return;
+        // Open-draft steals/reaches only — keeper slots aren't draft "value".
+        if (isKeeperPick(pk.p)) return;
         var ps = storedPickScore(pk.pn, pk.p);
         if (ps == null) return;
         var full = playersById[String(pk.p.id)] || pk.p;
@@ -6795,6 +6819,9 @@
   // (same approach gradePicks uses) and cache it back onto the pick object.
   function storedPickScore(pn, pl){
     if (!pl) return null;
+    // Keepers aren't graded as open-draft picks (a round-15 keep of ADP 2
+    // would otherwise inflate Value / Recap / Deep Dive).
+    if (isKeeperPick(pl)) return null;
     // Display the GRADE score so every per-pick chip matches the Teams-page
     // grade. The kernel carries no timing terms, so this equals the board's
     // Pick Score for the same inputs; memoized separately from the live pl.ps.
@@ -7326,6 +7353,8 @@
   function deepDiveAdp(p){ return p && p.consAdp != null ? p.consAdp : (p ? p.adp : null); }
   function deepDiveDiff(p){ return p && p.consDiff != null ? p.consDiff : (p ? p.diff : null); }
   function ddVerdict(p){
+    // Keepers are roster slots, not open-draft outcomes — don't grade as Steal/Reach.
+    if (p && p.keeper) return { label:'Keep', cls:'keep' };
     var Core = window.DraftBoardCore;
     if (p == null || typeof p === 'number'){
       return Core && Core.adpDeltaVerdict
@@ -7525,7 +7554,7 @@
         : (consDiff != null ? consDiff : diff);
       var marketAdp = consAdp != null ? consAdp : adp;
       var oppConf = (marketAdp == null || survivePct == null) ? 'low' : 'high';
-      rows.push({ pn: pn, pl: pl, full: full, pos: pos,
+      rows.push({ pn: pn, pl: pl, full: full, pos: pos, keeper: isKeeperPick(pl),
         adp: adp, diff: diff, consAdp: consAdp, consDiff: consDiff,
         isBpa: isBpa, consIsBpa: consIsBpa, survivePct: survivePct, adpTolerance: adpTolerance,
         boardDiff: boardDiff, consBoardDiff: consBoardDiff,
@@ -7590,7 +7619,10 @@
     try { odds = playoffOddsSource(field) || {}; } catch (e){ odds = {}; }
 
     var picks = ddMyPicks();
-    var withAdp = picks.filter(function(p){ return deepDiveDiff(p) != null; });
+    // Open-draft picks only for ADP net / value / reach tiles — keepers aren't
+    // "steals" just because their cost round is late.
+    var openPicks = picks.filter(function(p){ return !p.keeper; });
+    var withAdp = openPicks.filter(function(p){ return deepDiveDiff(p) != null; });
     // Cap each pick's contribution so one late-round freefall doesn't dominate
     // the "net ADP value" tile (a +40 slide in round 14 ≠ forty early-round steals).
     // Use the remaining-board delta so leftover-ADP BPA picks don't look like
@@ -7771,7 +7803,9 @@
   }
   function ddDrawTimeline(picks){
     var svg = document.getElementById('drDdTl'); if (!svg) return;
-    var pts = picks.filter(function(p){ return ddTlDelta(p) != null; });
+    // Keepers skip the ADP chart — a late cost-round keep of an early ADP
+    // would dominate the cumulative value line.
+    var pts = picks.filter(function(p){ return !p.keeper && ddTlDelta(p) != null; });
     if (!pts.length){ svg.parentNode.parentNode.style.display = 'none'; return; }
     var NS = 'http://www.w3.org/2000/svg';
     function el(nm, a){ var e = document.createElementNS(NS, nm); for (var k in a) e.setAttribute(k, a[k]); return e; }
@@ -7866,12 +7900,12 @@
       if (p.consIsBpa || p.isBpa) why = 'Best remaining ADP at the pick.';
       else if (p.survivePct != null && p.survivePct < 20) why = 'Under 20% to last to your next pick.';
     }
-    var oppCopy = ddOppCopy(p);
+    var oppCopy = p.keeper ? '' : ddOppCopy(p);
     var sevLab = ddOppSeverityLabel(p.opportunitySeverity);
     tip.innerHTML = '<b>' + esc(p.pl.name) + '</b> <span style="color:var(--text-muted)">' + p.pos + (p.pl.team ? ' · ' + esc(p.pl.team) : '') + '</span>'
-      + '<div class="dd-tip-r">Pick <b>' + roundPickStr(p.pn) + '</b></div>'
+      + '<div class="dd-tip-r">Pick <b>' + roundPickStr(p.pn) + '</b>' + (p.keeper ? ' · Keeper' : '') + '</div>'
       + (adp != null ? '<div class="dd-tip-r">' + adpLbl + ' <b>' + Number(adp).toFixed(1) + '</b></div>' : '')
-      + (dlt != null ? '<div class="dd-tip-r">± vs ADP <b style="color:' + (dlt >= 0 ? '#22c55e' : '#ef4444') + '">' + fmtAdpDelta(dlt) + '</b></div>' : '')
+      + (!p.keeper && dlt != null ? '<div class="dd-tip-r">± vs ADP <b style="color:' + (dlt >= 0 ? '#22c55e' : '#ef4444') + '">' + fmtAdpDelta(dlt) + '</b></div>' : '')
       + (p.ps != null ? '<div class="dd-tip-r">Board PS <b style="color:' + psColor(p.ps) + '">' + p.ps + '</b> <span style="color:var(--text-muted)">(vs best avail)</span></div>' : '')
       + '<div class="dd-tip-r">Verdict <b>' + vd.label + '</b></div>'
       + (oppCopy ? '<div class="dd-tip-opp">' + esc(oppCopy)
@@ -7903,18 +7937,19 @@
   function ddLedgerRows(list){
     return list.map(function(p){
       var vd = ddVerdict(p);
-      var dd = deepDiveDiff(p), da = deepDiveAdp(p);
+      // Keepers aren't open-draft market outcomes — blank ± / opportunity copy.
+      var dd = p.keeper ? null : deepDiveDiff(p), da = deepDiveAdp(p);
       var dcl = dd == null ? 'z' : dd > 0 ? 'p' : dd < 0 ? 'n' : 'z';
       // Historically this was `var dtxt = fmtAdpDelta(p.diff);`; Deep Dive now
       // deliberately formats its consensus-first delta instead.
-      var dtxt = fmtAdpDelta(dd);
-      var oppCopy = ddOppCopy(p);
+      var dtxt = p.keeper ? '—' : fmtAdpDelta(dd);
+      var oppCopy = p.keeper ? '' : ddOppCopy(p);
       var sevLab = ddOppSeverityLabel(p.opportunitySeverity);
       var sub = oppCopy
         ? '<div class="dd-pl-sub">' + esc(oppCopy)
           + (sevLab ? ' <span class="dd-opp-sev dd-opp-' + p.opportunitySeverity + '">' + sevLab + '</span>' : '')
           + '</div>'
-        : '';
+        : (p.keeper ? '<div class="dd-pl-sub">Keeper slot</div>' : '');
       return '<tr>'
         + '<td class="num" style="color:var(--text-muted)">' + roundPickStr(p.pn) + '</td>'
         + '<td class="dd-plcell"><div class="dd-plname">' + esc(p.pl.name) + ' <span style="color:var(--text-subtle,var(--text-muted));font-size:11px">' + esc(p.pl.team || '') + '</span></div>' + sub + '</td>'
@@ -8207,13 +8242,15 @@
 
   // ── Edges & risks ────────────────────────────────────────────────────────────
   function ddEdgesHtml(picks, me){
-    var withAdp = picks.filter(function(p){ return deepDiveDiff(p) != null; });
+    // Edge cards compare open-draft picks only — keepers aren't steals/reaches.
+    var open = (picks || []).filter(function(p){ return p && !p.keeper; });
+    var withAdp = open.filter(function(p){ return deepDiveDiff(p) != null; });
     var edges = '';
     if (withAdp.length){
       var steal = withAdp.slice().sort(function(a, b){ return deepDiveDiff(b) - deepDiveDiff(a); })[0];
       var reach = withAdp.filter(function(p){ return ddVerdict(p).cls === 'reach'; })
         .sort(function(a, b){ return deepDiveDiff(a) - deepDiveDiff(b); })[0];
-      var best = picks.filter(function(p){ return p.ps != null; }).sort(function(a, b){ return b.ps - a.ps; })[0];
+      var best = open.filter(function(p){ return p.ps != null; }).sort(function(a, b){ return b.ps - a.ps; })[0];
       function edge(kind, cls, p, extra){
         return '<div class="dd-edge ' + cls + '"><div class="dd-edge-k">' + kind + '</div>'
           + '<div class="dd-edge-pl">' + esc(p.pl.name) + '</div>'

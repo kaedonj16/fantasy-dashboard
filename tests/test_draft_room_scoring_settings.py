@@ -214,7 +214,9 @@ def test_deep_dive_avg_pick_score_uses_relative():
     )
     assert match
     body = match.group(1)
-    assert "var relVals = mine.map(function(m){ return relPS(m.p, m.pn); })" in body
+    # Open-draft picks only — keeper keeps would otherwise dominate Avg Board PS.
+    assert "var relVals = mine.filter(function(m){ return !isKeeperPick(m.p); })" in body
+    assert ".map(function(m){ return relPS(m.p, m.pn); })" in body
     assert "var avgPs = relVals.length" in body
     # Absolute kernel scores still feed the letter-grade composite — don't
     # accidentally average those for the display chip again.
@@ -423,11 +425,47 @@ def test_keeper_drafts_compress_adp_when_keepers_leave_pool():
     CPU mocks treat remaining players as if the kept stars were still available."""
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
     assert "function rawAdpOf(p)" in source
-    assert "function adjustAdpForKeepers(raw, adpFn)" in source
+    assert "function adjustAdpForKeepers(raw, adpFn, excludeId)" in source
     assert "function invalidateKeeperAdpCache()" in source
-    assert "return adjustAdpForKeepers(rawAdpOf(p), null);" in source
+    assert "function isKeeperPick(pl)" in source
+    # Compress whenever the keeper set is known (not only before live sync).
+    assert "return !!(keepersOn && keeperSet && keeperSet.length);" in source
+    # Exclude the player being graded so their own keep doesn't double-count.
+    assert "return adjustAdpForKeepers(rawAdpOf(p), null, p && p.id);" in source
     assert "adjustAdpForKeepers(rawAdpBySource(p, src)" in source
 
+
+def test_keeper_drafts_exclude_keeps_from_recap_pick_score_and_deep_dive():
+    """Keeper slots must not inflate Recap steals, Pick Score averages, or Deep
+    Dive net-ADP / edge cards (a round-15 keep of ADP 2 is not an open-draft steal)."""
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    body = build_draft_room_body(None, None, None, is_guest=True)
+
+    # Seeded keepers leave PS blank and flag keeper:true.
+    assert "ps: null," in source
+    assert "keeper: true" in source
+    # Pick Score / Value avg skip keepers.
+    assert "if (isKeeperPick(pl)) return null;" in source
+    assert "!isKeeperPick(m.p)" in source
+    assert "keeper: kept" in source
+    assert "if (x.keeper)" in source
+
+    # Draft recap steals/reaches are open-draft only.
+    recap = source.split("function _draftRecapHtml(allTeams){", 1)[1].split(
+        "\n  function renderLeague", 1
+    )[0]
+    assert "if (isKeeperPick(pk.p)) return;" in recap
+
+    # Deep Dive: Keep verdict, openPicks for net ADP, ledger blank ±, edges filter.
+    assert "if (p && p.keeper) return { label:'Keep', cls:'keep' };" in source
+    assert "var openPicks = picks.filter(function(p){ return !p.keeper; });" in source
+    assert "Keeper slot" in source
+    assert "open = (picks || []).filter(function(p){ return p && !p.keeper; });" in source
+    assert "!p.keeper && ddTlDelta" in source
+
+    # Keep / Aggressive verdict chips are styled.
+    assert ".dd-v-keep" in body
+    assert ".dd-v-aggressive" in body
 
 
 def test_autodraft_uses_shared_need_multiplier_instead_of_uncapped_starter_boost():

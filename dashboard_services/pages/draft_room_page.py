@@ -1542,7 +1542,9 @@ _DRAFT_ROOM_HTML = r"""
   .dd-v-steal { background:color-mix(in srgb,#22c55e 16%,transparent); color:#16a34a; }
   .dd-v-value { background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--accent); }
   .dd-v-fair { background:var(--bg); color:var(--text-muted); border:1px solid var(--border); }
+  .dd-v-aggressive { background:color-mix(in srgb,#f59e0b 14%,transparent); color:#d97706; }
   .dd-v-reach { background:color-mix(in srgb,#ef4444 14%,transparent); color:#dc2626; }
+  .dd-v-keep { background:color-mix(in srgb,var(--text-muted) 12%,transparent); color:var(--text-muted); border:1px solid var(--border); }
   .dd-v-na { color:var(--text-subtle,var(--text-muted)); }
   /* league board */
   .dd-league tbody tr.dd-me { background:color-mix(in srgb,var(--accent) 9%,transparent); }
