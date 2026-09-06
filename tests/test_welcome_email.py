@@ -58,7 +58,12 @@ def test_signup_welcome_html_has_logos_and_depth(monkeypatch):
     assert "Connect your league" in html
     assert "Player Rankings" in html
     assert "Free tools worth trying" in html
+    assert "Start/Sit" in html
+    assert "watchlist" not in html.lower()
     assert "welcome and onboarding emails" in html
+    # Site theme: navy accent, no generic blue.
+    assert "#122d4b" in html
+    assert "#2563eb" not in html
     assert "{UNSUB}" in html or "unsubscribe" in html.lower()
     assert "—" not in html and "\u2014" not in html
     # Single wordmark in the header; hero strip is logo-free; no screenshots.

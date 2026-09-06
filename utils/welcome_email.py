@@ -60,15 +60,15 @@ def _section(title: str, body_html: str) -> str:
     t = escape(title, quote=False)
     return (
         f'<h3 style="margin:22px 0 10px;font-size:11px;font-weight:800;text-transform:uppercase;'
-        f'letter-spacing:.06em;color:#334155;">{t}</h3>'
-        f'<div style="margin:0;font-size:14px;color:#0f172a;line-height:1.55;">{body_html}</div>'
+        f'letter-spacing:.06em;color:#0f2747;">{t}</h3>'
+        f'<div style="margin:0;font-size:14px;color:#122d4b;line-height:1.55;">{body_html}</div>'
     )
 
 
 def _lead(body_html: str) -> str:
     """A single lead/closing paragraph. Caller supplies safe inline HTML."""
     return (
-        f'<p style="margin:0 0 18px;font-size:15px;color:#0f172a;line-height:1.6;">'
+        f'<p style="margin:0 0 18px;font-size:15px;color:#122d4b;line-height:1.6;">'
         f"{body_html}</p>"
     )
 
@@ -77,10 +77,10 @@ def _link_label(title: str, href: str = "") -> str:
     label = escape(title, quote=False)
     if href:
         return (
-            f'<a href="{escape(href, quote=True)}" style="color:#1d4ed8;'
+            f'<a href="{escape(href, quote=True)}" style="color:#3b82f6;'
             f'text-decoration:none;font-weight:700;">{label}</a>'
         )
-    return f'<strong style="color:#0f172a;">{label}</strong>'
+    return f'<strong style="color:#122d4b;">{label}</strong>'
 
 
 def _step(num: int, title: str, detail: str, href: str = "") -> str:
@@ -88,12 +88,12 @@ def _step(num: int, title: str, detail: str, href: str = "") -> str:
     return (
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
         f'<td style="width:34px;vertical-align:top;padding:0 12px 16px 0;">'
-        f'<div style="width:26px;height:26px;border-radius:50%;background:#2563eb;'
+        f'<div style="width:26px;height:26px;border-radius:50%;background:#122d4b;'
         f'color:#ffffff;font-size:13px;font-weight:800;line-height:26px;text-align:center;">'
         f"{int(num)}</div></td>"
         f'<td style="vertical-align:top;padding:0 0 16px;">'
         f'<div style="font-size:15px;line-height:1.4;">{_link_label(title, href)}</div>'
-        f'<div style="margin-top:3px;font-size:13px;color:#475569;line-height:1.5;">'
+        f'<div style="margin-top:3px;font-size:13px;color:#6b7280;line-height:1.5;">'
         f"{escape(detail, quote=False)}</div>"
         f"</td></tr></table>"
     )
@@ -101,12 +101,12 @@ def _step(num: int, title: str, detail: str, href: str = "") -> str:
 
 def _feature(title: str, detail: str, href: str = "", first: bool = False) -> str:
     """A compact divided list row (no heavy card border)."""
-    border = "" if first else "border-top:1px solid #e6ebf2;"
+    border = "" if first else "border-top:1px solid #e8eef4;"
     return (
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
         f'<tr><td style="padding:12px 0;{border}">'
         f'<div style="font-size:14px;line-height:1.4;">{_link_label(title, href)}</div>'
-        f'<div style="margin-top:2px;font-size:13px;color:#475569;line-height:1.5;">'
+        f'<div style="margin-top:2px;font-size:13px;color:#6b7280;line-height:1.5;">'
         f"{escape(detail, quote=False)}</div>"
         f"</td></tr></table>"
     )
@@ -123,11 +123,11 @@ def _hero_banner(logos: dict[str, str], eyebrow: str = "") -> str:
         return ""
     return (
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'style="margin:0 0 16px;background:#eff4ff;border:1px solid #dbe6fb;'
-        f'border-left:3px solid #2563eb;border-radius:10px;">'
+        f'style="margin:0 0 16px;background:#eef4fb;border:1px solid #e8eef4;'
+        f'border-left:3px solid #122d4b;border-radius:10px;">'
         f'<tr><td style="padding:12px 16px;">'
         f'<div style="font-size:12px;font-weight:800;letter-spacing:.08em;'
-        f'text-transform:uppercase;color:#1d4ed8;">{eye}</div>'
+        f'text-transform:uppercase;color:#0f2747;">{eye}</div>'
         f"</td></tr></table>"
     )
 
@@ -164,7 +164,7 @@ def build_signup_welcome(
                 1,
                 "Connect your league",
                 "Sign in with Sleeper, ESPN, Yahoo, MFL, or Fleaflicker. It takes about "
-                "two minutes, and Google keeps your watchlist and settings synced on "
+                "two minutes, and Google keeps your leagues and settings synced on "
                 "every device.",
                 dash,
             )
@@ -177,9 +177,10 @@ def build_signup_welcome(
             )
             + _step(
                 3,
-                "Star the players you follow",
-                "Your watchlist flags value moves and injuries the next time you "
-                "come back.",
+                "Set your lineup with Start/Sit",
+                "Weekly start scores rank your roster, including K and DST when your "
+                "league uses them, so you set the strongest lineup in seconds.",
+                dash,
             ),
         ),
         _section(
@@ -208,7 +209,7 @@ def build_signup_welcome(
             "Every Tuesday we send a personalized digest for your main league: start/sit, "
             "waivers, and value moves. When you want deeper tools like trade suggestions, "
             "playoff sims, and breakout detection, PRO starts at $5/year "
-            f'(<a href="{escape(pricing, quote=True)}" style="color:#1d4ed8;font-weight:700;'
+            f'(<a href="{escape(pricing, quote=True)}" style="color:#3b82f6;font-weight:700;'
             'text-decoration:none;">see plans</a>).'
         ),
     ]
