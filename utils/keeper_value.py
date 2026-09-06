@@ -45,7 +45,13 @@ class KeeperRules:
     escalation:      rounds the cost climbs (gets earlier / more expensive) for
                      each year the player has already been kept.
     undrafted_round: keeper cost for a player who wasn't drafted (waiver/FA add).
-                     Defaults to the last round.
+                     Defaults to the last round. Ignored when ``last_round_cost``
+                     is True (every keeper costs the last round).
+    last_round_cost: when True, every keeper costs the last draft round
+                     regardless of where they were drafted last year. Common in
+                     leagues that spend "your last pick" instead of the prior
+                     drafted round. Escalation still applies (multi-year keeps
+                     move earlier).
     keep_at / pass_at: surplus thresholds for the KEEP / PASS verdict tiers.
     one_per_round:   when True, no two kept players may share a cost round (the
                      common "you only own one pick per round" rule); the optimizer
@@ -57,6 +63,7 @@ class KeeperRules:
     round_offset: int = 0
     escalation: int = 1
     undrafted_round: Optional[int] = None
+    last_round_cost: bool = False
     keep_at: int = 2      # surplus >= keep_at  -> KEEP
     pass_at: int = 0      # surplus <  pass_at  -> PASS  (between the two -> TOSS)
     one_per_round: bool = False
@@ -70,6 +77,41 @@ def market_round(adp_overall: Optional[float], league_size: int) -> Optional[int
     if not adp_overall or adp_overall <= 0 or league_size <= 0:
         return None
     return ceil(float(adp_overall) / league_size)
+
+
+def adjust_adp_for_keepers(
+    adp: Optional[float],
+    kept_adps: Sequence[Optional[float]],
+) -> Optional[float]:
+    """Compress ADP after keepers leave the draft pool.
+
+    Redraft ADP assumes the full player pool. When keepers are set, those
+    players are gone — everyone behind them slides up. A player with ADP 24
+    and 10 keepers at ADP ≤ 24 is effectively the 14th player available.
+
+    ``kept_adps`` should be the raw ADPs of *other* kept players (do not include
+    the player being adjusted, or he will subtract himself). Keepers with
+    unknown ADP are ignored. Returns None when ``adp`` is None/invalid.
+    """
+    if adp is None:
+        return None
+    try:
+        raw = float(adp)
+    except (TypeError, ValueError):
+        return None
+    if raw <= 0:
+        return None
+    n = 0
+    for k in kept_adps or ():
+        if k is None:
+            continue
+        try:
+            kv = float(k)
+        except (TypeError, ValueError):
+            continue
+        if kv > 0 and kv <= raw:
+            n += 1
+    return max(1.0, raw - n)
 
 
 def pick_value(overall_pick: float) -> float:
@@ -103,11 +145,15 @@ def keeper_cost_round(
     """The draft round it costs to keep this player next season.
 
     ``drafted_round`` is the round he was drafted (None = undrafted / waiver add,
-    which costs ``rules.undrafted_round`` or the last round). Escalation makes a
+    which costs ``rules.undrafted_round`` or the last round). When
+    ``rules.last_round_cost`` is set, every keeper starts at the last round
+    instead (drafted round / undrafted override ignored). Escalation makes a
     long-held keeper progressively more expensive (an earlier round). Always
     clamped into a real round [1, num_rounds]."""
     last = max(1, int(rules.num_rounds))
-    if drafted_round is None:
+    if rules.last_round_cost:
+        base = last
+    elif drafted_round is None:
         base = rules.undrafted_round if rules.undrafted_round is not None else last
     else:
         base = int(drafted_round) + int(rules.round_offset)

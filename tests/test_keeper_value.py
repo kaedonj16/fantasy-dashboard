@@ -2,7 +2,8 @@
 from utils.keeper_value import (
     KeeperRules, KeeperCandidate, market_round, keeper_cost_round, verdict,
     analyze, evaluate, total_surplus, project_league_keepers, cost_collisions,
-    resolve_cost_collisions, keeper_surplus_value, pick_value, KEEP, TOSS, PASS,
+    resolve_cost_collisions, keeper_surplus_value, pick_value,
+    adjust_adp_for_keepers, KEEP, TOSS, PASS,
 )
 
 
@@ -24,6 +25,33 @@ def test_market_round_unknown_adp_is_none():
     assert market_round(None, 12) is None
     assert market_round(0, 12) is None
     assert market_round(50, 0) is None
+
+
+def test_adjust_adp_for_keepers_compresses_by_keepers_ahead():
+    # 10 keepers at ADP 1..10 → ADP 24 becomes effective 14.
+    kept = list(range(1, 11))
+    assert adjust_adp_for_keepers(24, kept) == 14
+    assert adjust_adp_for_keepers(11, kept) == 1
+    assert adjust_adp_for_keepers(5, kept) == 1  # clamped
+
+
+def test_adjust_adp_for_keepers_ignores_keepers_behind():
+    assert adjust_adp_for_keepers(10, [12, 15, 20]) == 10
+
+
+def test_adjust_adp_for_keepers_skips_unknown_and_invalid():
+    assert adjust_adp_for_keepers(20, [None, 0, -1, "x", 5]) == 19
+    assert adjust_adp_for_keepers(None, [1, 2]) is None
+    assert adjust_adp_for_keepers(0, [1]) is None
+
+
+def test_adjust_adp_shifts_market_round():
+    # Raw ADP 36 → R3 in a 12-team league; 12 keepers ahead → ADP 24 → R2.
+    kept = list(range(1, 13))
+    adj = adjust_adp_for_keepers(36, kept)
+    assert adj == 24
+    assert market_round(36, 12) == 3
+    assert market_round(adj, 12) == 2
 
 
 def test_pick_value_curve_rewards_early_round_savings_more():
@@ -60,6 +88,15 @@ def test_cost_round_clamped_into_real_rounds():
 def test_cost_round_undrafted_defaults_to_last_round():
     assert keeper_cost_round(None, years_kept=0, rules=_rules(num_rounds=15)) == 15
     assert keeper_cost_round(None, years_kept=0, rules=_rules(undrafted_round=13)) == 13
+
+
+def test_cost_round_last_round_cost_ignores_drafted_round():
+    # Flat "last pick" leagues: every keeper starts at the final round.
+    r = _rules(num_rounds=15, last_round_cost=True, undrafted_round=10, round_offset=-1)
+    assert keeper_cost_round(3, years_kept=0, rules=r) == 15
+    assert keeper_cost_round(None, years_kept=0, rules=r) == 15
+    # Escalation still moves multi-year keeps earlier.
+    assert keeper_cost_round(3, years_kept=2, rules=_rules(num_rounds=15, last_round_cost=True, escalation=1)) == 13
 
 
 # ── verdict ──────────────────────────────────────────────────────────────────

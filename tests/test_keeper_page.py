@@ -240,6 +240,20 @@ def test_rules_override_is_bounded_to_real_rounds(monkeypatch):
     assert {k["costRound"] for k in out["kept"]} == {20}
 
 
+def test_last_round_cost_override_ignores_drafted_rounds(monkeypatch):
+    """Some leagues spend a final pick for every keeper, not last year's round."""
+    ctx = _league_ctx_for_limits(monkeypatch)
+    # Player a was drafted R3; without last_round_cost that would be the cost.
+    monkeypatch.setattr(kp, "_draft_context",
+                        lambda plat, lid, season: ({"a": 3, "b": 8, "c": 11}, 15))
+    flat = kp.compute_league_keepers(
+        ctx, platform="sleeper", league_id="L",
+        viewer_roster_id="1", limit_override=3,
+        rules_override={"last_round_cost": True, "one_per_round": False, "escalation": 0},
+    )
+    assert {k["costRound"] for k in flat["kept"]} == {15}
+
+
 def test_keeper_limit_override_is_bounded(monkeypatch):
     """The value arrives from a query param, so it must not be trusted raw."""
     ctx = _league_ctx_for_limits(monkeypatch)
@@ -420,9 +434,15 @@ def test_body_renders_undrafted_dropdown_and_one_per_round_toggle(monkeypatch):
     # default and explicit rounds.
     assert '<select id="kpr-undr">' in html
     assert ">Last round<" in html
+    # Keeper cost can be last year's drafted round *or* a flat last-round pick.
+    assert '<select id="kpr-cost">' in html
+    assert 'value="last">Last round</option>' in html
     # One-keeper-per-round toggle, on by default (in the UI and the seed).
     assert 'id="kpr-opr"' in html and "checked" in html
     assert '"onePerRound":true' in html.replace(" ", "")
+    # Rival keepers compress Market ADP; seed carries their raw ADPs (may be empty
+    # when stubs have no other-team projection, but the key must be present).
+    assert '"rivalKeptAdps"' in html.replace(" ", "")
     assert "Auction/FAAB keeper costs are not auto-detected" in html
 
 

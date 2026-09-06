@@ -1373,7 +1373,9 @@
     if (n == null) return { label: '', n: null };
     return { label: ((p.position || '').toUpperCase()) + n, n: n };
   }
-  function adpOf(p){
+  function rawAdpOf(p){
+    // Unadjusted ADP (full redraft pool). Prefer this when measuring how many
+    // keepers sit ahead of a player — adjusted ADP would recurse.
     // Sleeper community ADP (server-side, aggregated from real Sleeper drafts).
     // Redraft has no Sleeper feed, so it falls back to a value-derived rank.
     if (state.type === 'rookie') return state.sf ? p.sf_rookie_avg_pick : p.rookie_avg_pick;
@@ -1383,13 +1385,55 @@
     }
     return state.sf ? p.sf_avg_pick : p.avg_pick;
   }
+  // When keepers leave the pool, redraft ADP is too deep — everyone behind the
+  // kept players slides up. Compress by one slot per keeper with ADP ≤ this
+  // player's raw ADP (mirrors utils.keeper_value.adjust_adp_for_keepers).
+  var _keeperAdpCache = null; // sorted raw ADPs of active keepers
+  function invalidateKeeperAdpCache(){ _keeperAdpCache = null; }
+  // ADP compression is independent of rec-pool availability: projected keepers
+  // still leave the ADP board even when Rec treats them as undrafted until they
+  // appear on a pick slot. Skip live — the host board is the source of truth.
+  function keepersCompressAdp(){
+    return !!(keepersOn && keeperSet && keeperSet.length && !(state && state.mode === 'live'));
+  }
+  function keeperRawAdps(adpFn){
+    if (!keepersCompressAdp()) return [];
+    // Cache the default (rawAdpOf) list; source-specific callers pass their own fn.
+    if (adpFn == null && _keeperAdpCache) return _keeperAdpCache;
+    var fn = adpFn || rawAdpOf;
+    var out = [];
+    keeperSet.forEach(function(k){
+      if (!k || k.id == null) return;
+      var pl = playersById[String(k.id)];
+      if (!pl) return;
+      var a = fn(pl);
+      if (a != null && isFinite(Number(a)) && Number(a) > 0) out.push(Number(a));
+    });
+    out.sort(function(a, b){ return a - b; });
+    if (adpFn == null) _keeperAdpCache = out;
+    return out;
+  }
+  function adjustAdpForKeepers(raw, adpFn){
+    if (raw == null || !isFinite(Number(raw)) || Number(raw) <= 0) return raw;
+    var kept = keeperRawAdps(adpFn);
+    if (!kept.length) return raw;
+    var adp = Number(raw), n = 0;
+    for (var i = 0; i < kept.length; i++){
+      if (kept[i] <= adp) n++;
+      else break;
+    }
+    return Math.max(1, adp - n);
+  }
+  function adpOf(p){
+    return adjustAdpForKeepers(rawAdpOf(p), null);
+  }
   // One named source's ADP from the per-source payload (adp_by_source), read on
   // the axis the current draft is on (redraft vs dynasty x 1QB vs SF). Null when
   // the source isn't on the player: the rookie axis (no per-source ADP), a
   // historical completed-draft overlay (grades vs that season's ADP), a
   // source-less payload, or a source with no entry for this player/format —
   // callers fall back to consensus or adpOf().
-  function adpBySource(p, source){
+  function rawAdpBySource(p, source){
     if (!p || !state) return null;
     if (state.type === 'rookie') return null;
     if (state.mode === 'live' && state.isComplete && state.season && cfg.season
@@ -1402,6 +1446,12 @@
     var v = by[field];
     if (v == null || !isFinite(Number(v))) return null;
     return Number(v);
+  }
+  function adpBySource(p, source){
+    var src = source;
+    return adjustAdpForKeepers(rawAdpBySource(p, src), function(kp){
+      return rawAdpBySource(kp, src);
+    });
   }
   function resolvedAdp(p, source){
     var Core = window.DraftBoardCore;
@@ -1571,6 +1621,7 @@
     keeperSet = computeKeeperSet();
     if (!keeperSet.length) return;
     keepersOn = true;
+    invalidateKeeperAdpCache();
     renderKeeperBanner();
     // A keeper league starts on the board with each kept player already spent on
     // his team's real pick slot, not merely hidden from the pool. Default the
@@ -1679,6 +1730,7 @@
     // (initKeepers runs at page load, before any draft is configured).
     keeperSet = computeKeeperSet();
     if (!keeperSet.length) return;
+    invalidateKeeperAdpCache();
     // Live: host picks are the only drafted set. Do not invent keeper slots or
     // advance the clock — recommendations need the real undrafted pool.
     if (state.mode === 'live') return;
@@ -1725,6 +1777,7 @@
 
   function setKeepersOn(on){
     keepersOn = on;
+    invalidateKeeperAdpCache();
     // Availability follows board picks only (applyKeepers is a no-op). The
     // banner remains a reference list; mock keeper drafts seed slots at start.
     render();

@@ -179,6 +179,11 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
                 _kopr = request.args.get("kopr")
                 if _kopr in ("0", "1"):
                     _krules["one_per_round"] = (_kopr == "1")
+                # Flat last-round cost (klast=0/1): every keeper spends a final
+                # pick instead of last year's drafted round.
+                _klast = request.args.get("klast")
+                if _klast in ("0", "1"):
+                    _krules["last_round_cost"] = (_klast == "1")
                 keepers_payload = compute_league_keepers(
                     _ctx, platform=platform, league_id=league_id,
                     viewer_roster_id=session.get("viewer_roster_id"),
