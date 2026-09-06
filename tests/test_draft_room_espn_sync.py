@@ -144,6 +144,7 @@ let drafted = {};
 let lastLivePicks = null;
 let justPick = null;
 let _boardSig = null;
+let keeperSet = [];
 const playersById = {};
 function valLookup(){ return null; }
 function valOf(){ return 0; }
@@ -151,6 +152,8 @@ function pickScoreFor(){ return 0; }
 function psDisplay(x){ return x; }
 function psCtxInvalidate(){}
 function refreshPsPool(){}
+function invalidateKeeperAdpCache(){}
+function isKnownKeeperId(){ return false; }
 function _pruneQueueOfDrafted(){
   if (!state || !state.queue) return;
   state.queue = state.queue.filter(function(id){ return !drafted[String(id)]; });
