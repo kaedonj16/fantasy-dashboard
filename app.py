@@ -7288,7 +7288,7 @@ def _roster_moves_alert_html(ctx: dict, viewer_roster_id) -> str:
     if not viewer_roster_id:
         return ""
     try:
-        from utils.roster_compliance import roster_compliance_issues
+        from utils.roster_compliance import effective_taxi_slots, roster_compliance_issues
 
         rosters = ctx.get("rosters") or []
         roster = next(
@@ -7298,9 +7298,16 @@ def _roster_moves_alert_html(ctx: dict, viewer_roster_id) -> str:
         if not roster:
             return ""
 
-        settings = (ctx.get("league") or {}).get("settings") or {}
+        league = ctx.get("league") or {}
+        settings = league.get("settings") or {}
+
         reserve_slots = int(settings.get("reserve_slots") or 0)
-        taxi_slots = int(settings.get("taxi_slots") or 0)
+        # Taxi is dynasty-only; ignore leftover taxi_slots on keeper/redraft.
+        taxi_slots = effective_taxi_slots(
+            settings,
+            league=league,
+            platform=str(ctx.get("platform") or league.get("platform") or ""),
+        )
         if reserve_slots <= 0 and taxi_slots <= 0:
             return ""  # league has neither IR nor taxi slots
 

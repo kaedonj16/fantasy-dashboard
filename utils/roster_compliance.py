@@ -7,10 +7,47 @@ purpose: only statuses that are IR-eligible in every Sleeper league are
 flagged (Out/Doubtful are league-setting dependent and excluded), so a flag
 always means a legal move exists.
 """
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 # Statuses that qualify for an IR slot under Sleeper's strictest setting.
 IR_SLOT_ELIGIBLE = {"IR", "PUP", "NFI"}
+
+
+def effective_taxi_slots(
+    settings: Optional[dict] = None,
+    *,
+    league: Optional[dict] = None,
+    platform: str = "",
+) -> int:
+    """Usable taxi slot count for stash tips.
+
+    Sleeper taxi squads are dynasty-only. Keeper/redraft leagues can still carry
+    a leftover ``taxi_slots`` value in settings after a type change (or from
+    copied dynasty settings); those spots are not real, so tips must not fire.
+    """
+    st = settings if isinstance(settings, dict) else {}
+    if not st and isinstance(league, dict):
+        st = league.get("settings") or league.get("league_settings") or {}
+        if not isinstance(st, dict):
+            st = {}
+    try:
+        slots = int(st.get("taxi_slots") or 0)
+    except (TypeError, ValueError):
+        slots = 0
+    if slots <= 0:
+        return 0
+    try:
+        from utils.league_format import classify_league_roster_format
+
+        fmt = classify_league_roster_format(
+            league=league, settings=st, platform=platform,
+        )
+        if not fmt.get("is_dynasty"):
+            return 0
+    except Exception:
+        # Classification unavailable — keep historical behavior (trust slots).
+        pass
+    return slots
 
 
 def roster_compliance_issues(

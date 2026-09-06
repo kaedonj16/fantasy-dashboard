@@ -732,17 +732,23 @@ def api_portfolio_actions():
             logger.debug("[portfolio-actions] waiver pickup failed", exc_info=True)
 
         # Wasted roster capacity: IR-eligible players in active spots, recovered
-        # players stuck on IR, open taxi slots (Sleeper IR/taxi settings only).
+        # players stuck on IR, open taxi slots (Sleeper IR/taxi; taxi is
+        # dynasty-only — leftover taxi_slots on keeper/redraft are ignored).
         try:
             settings = (
                 league_obj.get("settings")
                 or lctx.get("league_settings")
                 or {}
             )
+            from utils.roster_compliance import (
+                effective_taxi_slots,
+                roster_compliance_issues,
+            )
             reserve_slots = int(settings.get("reserve_slots") or 0)
-            taxi_slots = int(settings.get("taxi_slots") or 0)
+            taxi_slots = effective_taxi_slots(
+                settings, league=league_obj, platform=plat,
+            )
             if reserve_slots > 0 or taxi_slots > 0:
-                from utils.roster_compliance import roster_compliance_issues
                 r_players = [str(p) for p in (viewer_roster.get("players") or [])]
                 r_info = {}
                 for pid in r_players:
