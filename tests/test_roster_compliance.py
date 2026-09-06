@@ -1,5 +1,9 @@
 """Tests for utils.roster_compliance."""
-from utils.roster_compliance import IR_SLOT_ELIGIBLE, roster_compliance_issues
+from utils.roster_compliance import (
+    IR_SLOT_ELIGIBLE,
+    effective_taxi_slots,
+    roster_compliance_issues,
+)
 
 INFO = {
     "1": {"name": "Healthy Starter", "injury_status": "", "years_exp": 4},
@@ -19,6 +23,34 @@ def _issues(**kw):
     )
     defaults.update(kw)
     return roster_compliance_issues(**defaults)
+
+
+class TestEffectiveTaxiSlots:
+    def test_zero_when_unset(self):
+        assert effective_taxi_slots({}) == 0
+        assert effective_taxi_slots({"taxi_slots": 0}) == 0
+
+    def test_dynasty_keeps_slots(self):
+        assert effective_taxi_slots({"type": 2, "taxi_slots": 4}) == 4
+        assert effective_taxi_slots(
+            {"league_type": "dynasty", "taxi_slots": 3},
+        ) == 3
+
+    def test_keeper_suppresses_leftover_slots(self):
+        # Sleeper type=1 keeper can still carry dynasty taxi_slots leftovers.
+        assert effective_taxi_slots({"type": 1, "taxi_slots": 5}) == 0
+        assert effective_taxi_slots(
+            {"league_type": "keeper", "taxi_slots": 2},
+        ) == 0
+
+    def test_redraft_suppresses_leftover_slots(self):
+        assert effective_taxi_slots({"type": 0, "taxi_slots": 3}) == 0
+
+    def test_reads_settings_from_league_when_omitted(self):
+        league = {"settings": {"type": 1, "taxi_slots": 4}}
+        assert effective_taxi_slots(league=league) == 0
+        league_dyn = {"settings": {"type": 2, "taxi_slots": 4}}
+        assert effective_taxi_slots(league=league_dyn) == 4
 
 
 class TestIrStash:
@@ -91,6 +123,14 @@ class TestTaxiStash:
         issues = _issues(players=["1", "2"], starters=["1"],
                          taxi=["2"], reserve_slots=1, taxi_slots=1)
         assert all(i["kind"] != "ir_stash" for i in issues)
+
+    def test_keeper_leftover_taxi_slots_do_not_surface_stash(self):
+        # Call-site contract: effective_taxi_slots must zero keeper leftovers
+        # before roster_compliance_issues runs, so no taxi tip fires.
+        slots = effective_taxi_slots({"type": 1, "taxi_slots": 4})
+        issues = _issues(players=["1", "4"], starters=["1"], taxi_slots=slots)
+        assert issues == []
+        assert all(i["kind"] != "taxi_stash" for i in issues)
 
 
 def test_clean_roster_no_issues():
