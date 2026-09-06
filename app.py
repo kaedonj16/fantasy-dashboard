@@ -6019,13 +6019,70 @@ _BRAND_FACES = _BRAND_FACES_MINI + (
 )
 
 
-def _branded_status_page(title: str, heading: str, message: str, status: int):
+def _espn_league_route_ids():
+    """Return (season, league_id) when the request is an ESPN league page."""
+    va = request.view_args or {}
+    platform = str(va.get("platform") or "").lower().strip()
+    season = va.get("season")
+    league_id = str(va.get("league_id") or "").strip()
+    if platform == "espn" and league_id.isdigit():
+        try:
+            return int(season), league_id
+        except (TypeError, ValueError):
+            pass
+    parts = [p for p in request.path.strip("/").split("/") if p]
+    if (
+        len(parts) >= 3
+        and parts[0].lower() == "espn"
+        and parts[1].isdigit()
+        and parts[2].isdigit()
+    ):
+        return int(parts[1]), parts[2]
+    return None, None
+
+
+def _espn_reconnect_home_url(season=None, league_id=None) -> str:
+    """Deep-link home into the ESPN private reconnect cookie form."""
+    from urllib.parse import urlencode
+    params = {"espn_reconnect": "1"}
+    if league_id and str(league_id).isdigit():
+        params["league_id"] = str(league_id)
+    if season is not None:
+        try:
+            params["season"] = str(int(season))
+        except (TypeError, ValueError):
+            pass
+    return "/?" + urlencode(params)
+
+
+def _branded_status_page(
+    title: str,
+    heading: str,
+    message: str,
+    status: int,
+    *,
+    primary_href: str = "/",
+    primary_label: str = "&#8592; Back to home",
+    secondary_href: str | None = None,
+    secondary_label: str | None = None,
+):
     """JSON for /api/*; branded HTML everywhere else."""
     if request.path.startswith("/api/"):
         return jsonify({"ok": False, "error": message}), status
     safe_title = html.escape(title)
     safe_heading = html.escape(heading)
     safe_message = html.escape(message)
+    safe_primary_href = html.escape(primary_href, quote=True)
+    # primary_label may include intentional HTML entities (e.g. &#8592;).
+    actions = (
+        f"<a class='primary' href='{safe_primary_href}'>{primary_label}</a>"
+    )
+    if secondary_href and secondary_label:
+        safe_secondary_href = html.escape(secondary_href, quote=True)
+        actions += (
+            f"<a class='secondary' href='{safe_secondary_href}'>"
+            f"{html.escape(secondary_label)}</a>"
+        )
     return (
             "<!doctype html><html lang='en'><head><title>" + safe_title + " - BR Fantasy</title>"
             "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -6034,13 +6091,15 @@ def _branded_status_page(title: str, heading: str, message: str, status: int):
                                             ".box{text-align:center;padding:40px 24px;max-width:400px;}"
                                             ".logo{font-size:13px;font-weight:700;color:#38bdf8;letter-spacing:.04em;margin-bottom:24px;}"
                                             "h2{margin:0 0 8px;font-size:22px;}p{color:#94a3b8;margin:0 0 24px;font-size:14px;}"
-                                            "a{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
-                                            "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;}</style>"
+                                            ".actions{display:flex;flex-direction:column;align-items:center;gap:12px;}"
+                                            "a.primary{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
+                                            "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;}"
+                                            "a.secondary{color:#94a3b8;font-size:13px;text-decoration:underline;}</style>"
                                             "</head><body><div class='box'>"
                                             "<div class='logo'>BR Fantasy</div>"
                                             "<h2>" + safe_heading + "</h2>"
                                             "<p>" + safe_message + "</p>"
-                                            "<a href='/'>&#8592; Back to home</a>"
+                                            "<div class='actions'>" + actions + "</div>"
                                             "</div></body></html>"
     ), status
 
@@ -6072,6 +6131,25 @@ def handle_provider_auth(e):
         e, "This league is private or requires authentication.",
     )
     logger.warning("[403] provider access denied: %s", message)
+    season, league_id = _espn_league_route_ids()
+    is_espn = isinstance(e, ESPNAccessDenied) or season is not None
+    if is_espn:
+        # Expired/wrong ESPN cookies need a reconnect, not a blind retry.
+        message = (
+            "Your ESPN session expired or can't access this private league. "
+            "Reconnect with fresh SWID and espn_s2 cookies from an ESPN "
+            "account that belongs to the league."
+        )
+        return _branded_status_page(
+            "League access required",
+            "This league could not be accessed",
+            message,
+            403,
+            primary_href=_espn_reconnect_home_url(season, league_id),
+            primary_label="Reconnect ESPN",
+            secondary_href="/",
+            secondary_label="Back to home",
+        )
     return _branded_status_page(
         "League access required",
         "This league could not be accessed",

@@ -10574,17 +10574,13 @@ if (!platformBtns.length) return;
         signedInLeagueList.innerHTML = items.map((league) => {
           const url = `/${encodeURIComponent(league.platform)}/${encodeURIComponent(league.season)}/${encodeURIComponent(league.league_id)}/dashboard`;
           const attention = league.needs_reconnect ? '<span class="connection-attention">Connection needs attention</span>' : "";
-          if (league.needs_reconnect) return `<div class="signed-home-league signed-home-league-attention"><span class="signed-home-league-name">${safeHomeText(league.name || "Fantasy League")}${attention}</span><button type="button" class="reconnect-home-espn" data-league="${safeHomeText(league.league_id)}">Reconnect</button></div>`;
+          if (league.needs_reconnect) return `<div class="signed-home-league signed-home-league-attention"><span class="signed-home-league-name">${safeHomeText(league.name || "Fantasy League")}${attention}</span><button type="button" class="reconnect-home-espn" data-league="${safeHomeText(league.league_id)}" data-season="${safeHomeText(league.season || "")}">Reconnect</button></div>`;
           return `<a class="signed-home-league" href="${url}"><span class="signed-home-league-name">${safeHomeText(league.name || "Fantasy League")}</span><span class="signed-home-league-open">Open <span aria-hidden="true">→</span></span></a>`;
         }).join("") + (pageCount > 1 ? `<div class="signed-home-pagination"><button type="button" class="signed-home-page-prev" ${leaguePage === 0 ? "disabled" : ""} aria-label="Previous leagues">←</button><span>Page ${leaguePage + 1} of ${pageCount}</span><button type="button" class="signed-home-page-next" ${leaguePage === pageCount - 1 ? "disabled" : ""} aria-label="Next leagues">→</button></div>` : "");
         signedInLeagueList.querySelector(".signed-home-page-prev")?.addEventListener("click", () => { leaguePage--; renderLeaguePage(); });
         signedInLeagueList.querySelector(".signed-home-page-next")?.addEventListener("click", () => { leaguePage++; renderLeaguePage(); });
         signedInLeagueList.querySelectorAll(".reconnect-home-espn").forEach((button) => button.addEventListener("click", () => {
-            document.querySelector('.platform-btn[data-platform="espn"]')?.click();
-            document.querySelector('.espn-home-method[data-espn-method="private"]')?.click();
-            if (espnLeagueIdInput) espnLeagueIdInput.value = button.dataset.league || "";
-            if (espnPrivateFields) { espnPrivateFields.style.display = "block"; espnPrivateFields.dataset.reconnect = "true"; }
-            espnLeagueIdInput?.scrollIntoView({ behavior: "smooth", block: "center" });
+          window.openHomeEspnReconnect?.(button.dataset.league || "", button.dataset.season || "");
         }));
       };
       renderLeaguePage();
@@ -10610,6 +10606,42 @@ if (!platformBtns.length) return;
   let fleaRequestedAction = "";
   let yahooRequestedAction = "";
   let sleeperLookupUser = null;
+
+  // Open the ESPN private cookie form for reconnect (home list + 403 deep-link).
+  window.openHomeEspnReconnect = function openHomeEspnReconnect(leagueId, season) {
+    setHomeCardState("connect");
+    document.getElementById("signedInAddLeague")?.setAttribute("aria-expanded", "true");
+    document.querySelector('.platform-btn[data-platform="espn"]')?.click();
+    document.querySelector('.espn-home-method[data-espn-method="private"]')?.click();
+    if (espnLeagueIdInput) espnLeagueIdInput.value = String(leagueId || "").trim();
+    const seasonInput = document.querySelector('#leagueSelectForm input[name="season"]');
+    if (seasonInput && String(season || "").trim()) seasonInput.value = String(season).trim();
+    if (espnPrivateFields) {
+      espnPrivateFields.style.display = "block";
+      espnPrivateFields.dataset.reconnect = "true";
+    }
+    if (espnErrorBox) {
+      espnErrorBox.textContent = "Paste fresh SWID and espn_s2 cookies from an ESPN account in this league, then reconnect.";
+      espnErrorBox.style.display = "block";
+    }
+    espnLeagueIdInput?.scrollIntoView({ behavior: "smooth", block: "center" });
+    (espnCookieBlob || espnSwidInput)?.focus();
+  };
+
+  // 403 ESPN access page links here with ?espn_reconnect=1&league_id=&season=
+  try {
+    const reconnectParams = new URLSearchParams(window.location.search);
+    if (reconnectParams.get("espn_reconnect") === "1") {
+      const reconnectLeague = reconnectParams.get("league_id") || "";
+      const reconnectSeason = reconnectParams.get("season") || "";
+      reconnectParams.delete("espn_reconnect");
+      reconnectParams.delete("league_id");
+      reconnectParams.delete("season");
+      const qs = reconnectParams.toString();
+      window.history.replaceState({}, "", window.location.pathname + (qs ? "?" + qs : "") + window.location.hash);
+      window.openHomeEspnReconnect(reconnectLeague, reconnectSeason);
+    }
+  } catch (_) {}
 
   async function saveLeagueToSignedInAccount(details) {
     const response = await fetch("/api/link/add", {

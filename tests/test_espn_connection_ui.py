@@ -244,3 +244,34 @@ def test_every_google_action_gets_shared_google_logo():
     assert "url('/static/google-logo.svg')" in css
     assert re.search(r"gap:\s*9px", css)  # 9px logo/text gap (any whitespace)
     assert "#4285F4" in logo and "#34A853" in logo
+
+
+def test_espn_403_page_offers_reconnect_deep_link():
+    source = Path("app.py").read_text()
+    script = Path("static/app.js").read_text()
+    assert "def _espn_reconnect_home_url(" in source
+    assert 'primary_label="Reconnect ESPN"' in source
+    assert 'params = {"espn_reconnect": "1"}' in source
+    assert "window.openHomeEspnReconnect" in script
+    assert 'reconnectParams.get("espn_reconnect") === "1"' in script
+    assert 'data-season="${safeHomeText(league.season || "")}"' in script
+
+
+def test_espn_access_denied_html_includes_reconnect_cta():
+    import app as appmod
+    from dashboard_services.providers.espn_api import ESPNAccessDenied
+
+    @appmod.app.route("/espn/<int:season>/<league_id>/__reconnect_probe")
+    def __espn_reconnect_probe(season, league_id):
+        raise ESPNAccessDenied("ESPN denied authenticated access to this league.")
+
+    client = appmod.app.test_client()
+    response = client.get("/espn/2026/424242/__reconnect_probe")
+    body = response.get_data(as_text=True)
+    assert response.status_code == 403
+    assert "Reconnect ESPN" in body
+    assert "espn_reconnect=1" in body
+    assert "league_id=424242" in body
+    assert "season=2026" in body
+    assert "Back to home" in body
+    assert "SWID" in body and "espn_s2" in body
