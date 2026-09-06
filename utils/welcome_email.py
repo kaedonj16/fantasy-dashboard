@@ -35,11 +35,11 @@ def brand_asset_url(filename: str) -> str:
 
 
 def _logo_urls() -> dict[str, str]:
-    """Absolute URLs for email-safe brand marks (dark header / light body)."""
+    """Absolute URLs for email-safe brand marks (light header, full-color)."""
     return {
-        "logo": brand_asset_url("BR_Logo_dark.png"),
-        "mark": brand_asset_url("BR_Mark_dark.png"),
-        "site": brand_asset_url("Website_Logo_dark.png"),
+        "logo": brand_asset_url("BR_Logo.png"),
+        "mark": brand_asset_url("BR_Mark.png"),
+        "site": brand_asset_url("Website_Logo.png"),
         "app": brand_asset_url("app-icon-192.png"),
     }
 
@@ -97,37 +97,22 @@ def _bullet(title: str, detail: str, href: str = "", icon: str = "") -> str:
 
 
 def _hero_banner(logos: dict[str, str], eyebrow: str = "") -> str:
-    """Large brand mark strip under the greeting."""
-    logo = logos.get("logo") or ""
-    mark = logos.get("mark") or logos.get("app") or ""
+    """Light accent strip under the greeting.
+
+    The masthead already carries the wordmark, so this no longer repeats the
+    logo. It is just an eyebrow label on a tinted, accent-ruled bar.
+    """
     eye = escape(eyebrow, quote=False) if eyebrow else ""
-    eye_html = (
-        f'<div style="margin:0 0 10px;font-size:11px;font-weight:800;letter-spacing:.08em;'
-        f'text-transform:uppercase;color:#1d4ed8;">{eye}</div>'
-        if eye else ""
-    )
-    mark_html = ""
-    if mark:
-        mark_html = (
-            f'<img src="{escape(mark, quote=True)}" alt="" width="48" height="48" '
-            f'style="display:block;border:0;width:48px;height:48px;border-radius:10px;'
-            f'object-fit:contain;" />'
-        )
-    logo_html = ""
-    if logo:
-        logo_html = (
-            f'<img src="{escape(logo, quote=True)}" alt="BR Fantasy" width="180" '
-            f'style="display:block;border:0;width:180px;height:auto;max-width:100%;" />'
-        )
+    if not eye:
+        return ""
     return (
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'style="margin:0 0 16px;background:#0b1220;border-radius:12px;">'
-        f'<tr><td style="padding:18px 16px;">'
-        f"{eye_html}"
-        f'<table role="presentation" cellpadding="0" cellspacing="0"><tr>'
-        f'<td style="vertical-align:middle;padding-right:14px;">{mark_html}</td>'
-        f'<td style="vertical-align:middle;">{logo_html}</td>'
-        f"</tr></table></td></tr></table>"
+        f'style="margin:0 0 16px;background:#eff4ff;border:1px solid #dbe6fb;'
+        f'border-left:3px solid #2563eb;border-radius:10px;">'
+        f'<tr><td style="padding:12px 16px;">'
+        f'<div style="font-size:12px;font-weight:800;letter-spacing:.08em;'
+        f'text-transform:uppercase;color:#1d4ed8;">{eye}</div>'
+        f"</td></tr></table>"
     )
 
 
@@ -293,8 +278,9 @@ def build_signup_welcome(
         cta_label="Open BR Fantasy →",
         unsub_href=unsub_href,
         logo_url=logos["logo"],
-        brand_mark_url=logos["mark"],
+        brand_mark_url="",
         footer_kind="onboarding",
+        header_theme="light",
     )
     hi = (first_name or "").strip() or "there"
     return {
@@ -490,8 +476,9 @@ def build_pro_welcome(
         cta_label="Open Trade Suggestions →",
         unsub_href=unsub_href,
         logo_url=logos["logo"],
-        brand_mark_url=logos["mark"],
+        brand_mark_url="",
         footer_kind="onboarding",
+        header_theme="light",
     )
     return {
         "subject": f"Your {plan_label} is ready",

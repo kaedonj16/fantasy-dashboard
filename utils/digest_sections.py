@@ -23,12 +23,18 @@ def email_shell(
     logo_url: str = "",
     brand_mark_url: str = "",
     footer_kind: str = "weekly_digest",
+    header_theme: str = "dark",
 ) -> str:
     """Wrap email body in the BR Fantasy chrome.
 
     ``footer_kind`` controls unsubscribe copy:
       - ``weekly_digest`` (default)
       - ``onboarding``: signup / PRO welcome emails
+
+    ``header_theme`` controls the masthead:
+      - ``dark`` (default): navy header with the light distressed wordmark.
+      - ``light``: white header with the full-color navy wordmark and no
+        redundant kicker line (pair with light-mode logo assets).
     """
     sub = escape(subtitle or "Your weekly fantasy digest", quote=False)
     base_logo = (logo_url or "").strip()
@@ -83,13 +89,24 @@ def email_shell(
             f'<a href="{escape(unsub_href, quote=True)}" style="color:#64748b;">Unsubscribe</a> '
             "from weekly digest emails."
         )
+    if header_theme == "light":
+        header_bg = "#ffffff"
+        subtitle_color = "#0f172a"
+        kicker_html = ""
+    else:
+        header_bg = "#0b1220"
+        subtitle_color = "#ffffff"
+        kicker_html = (
+            '<div style="color:#93c5fd;font-size:11px;font-weight:800;'
+            'letter-spacing:.14em;text-transform:uppercase;">BR Fantasy</div>'
+        )
     return f"""\
 <div style="background:#e8eef5;padding:28px 12px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
   <div style="max-width:{MAX_WIDTH_PX}px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #dbe3ee;">
-    <div style="background:#0b1220;padding:22px 24px 18px;">
+    <div style="background:{header_bg};padding:22px 24px 18px;">
       {logo_block}
-      <div style="color:#93c5fd;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;">BR Fantasy</div>
-      <div style="color:#ffffff;font-size:20px;font-weight:800;margin-top:6px;line-height:1.25;">{sub}</div>
+      {kicker_html}
+      <div style="color:{subtitle_color};font-size:20px;font-weight:800;margin-top:6px;line-height:1.25;">{sub}</div>
     </div>
     <div style="height:4px;background:#2563eb;line-height:4px;font-size:0;">&nbsp;</div>
     <div style="padding:22px 20px 24px;background:#f7f9fc;">
