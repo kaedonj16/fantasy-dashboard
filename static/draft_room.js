@@ -1386,18 +1386,33 @@
     return state.sf ? p.sf_avg_pick : p.avg_pick;
   }
   // When keepers leave the pool, redraft ADP is too deep — everyone behind the
-  // kept players slides up. Compress by one slot per keeper with ADP ≤ this
-  // player's raw ADP (mirrors utils.keeper_value.adjust_adp_for_keepers).
+  // kept players slides up (mid-tier talent goes earlier). Compress by one slot
+  // per keeper with ADP ≤ this player's raw ADP (mirrors
+  // utils.keeper_value.adjust_adp_for_keepers).
   var _keeperAdpCache = null; // sorted raw ADPs of active keepers
   function invalidateKeeperAdpCache(){ _keeperAdpCache = null; }
-  // Compress whenever we know the keeper set. Rec-pool availability is separate
-  // (applyKeepers is a no-op); ADP math still needs the thinner market so
-  // Pick Score / Recap / Deep Dive don't grade open picks against a full board.
+  function boardHasKeeperPicks(){
+    if (!state || !state.picks) return false;
+    return Object.keys(state.picks).some(function(k){
+      var pl = state.picks[k];
+      return !!(pl && pl.keeper);
+    });
+  }
+  // Compress whenever keepers are known — do NOT gate on the banner show/hide
+  // toggle (keepersOn). Rec-pool availability is separate (applyKeepers is a
+  // no-op); ADP math still needs the thinner market so Pick Score / Recap /
+  // Deep Dive don't grade open picks as if the kept stars were still available.
   function keepersCompressAdp(){
-    return !!(keepersOn && keeperSet && keeperSet.length);
+    return !!((keeperSet && keeperSet.length) || boardHasKeeperPicks());
   }
   function isKeeperPick(pl){
     return !!(pl && pl.keeper);
+  }
+  function isKnownKeeperId(id){
+    if (id == null) return false;
+    var sid = String(id);
+    if (keeperSet && keeperSet.some(function(k){ return k && String(k.id) === sid; })) return true;
+    return false;
   }
   function keeperRawAdps(adpFn, excludeId){
     if (!keepersCompressAdp()) return [];
@@ -1407,15 +1422,28 @@
     if (canCache && _keeperAdpCache) return _keeperAdpCache;
     var fn = adpFn || rawAdpOf;
     var out = [];
+    var seen = {};
     var ex = excludeId != null ? String(excludeId) : null;
-    keeperSet.forEach(function(k){
-      if (!k || k.id == null) return;
-      if (ex && String(k.id) === ex) return;
-      var pl = playersById[String(k.id)];
+    function addId(id){
+      if (id == null) return;
+      var sid = String(id);
+      if (ex && sid === ex) return;
+      if (seen[sid]) return;
+      seen[sid] = true;
+      var pl = playersById[sid];
       if (!pl) return;
       var a = fn(pl);
       if (a != null && isFinite(Number(a)) && Number(a) > 0) out.push(Number(a));
-    });
+    }
+    (keeperSet || []).forEach(function(k){ if (k) addId(k.id); });
+    // Live / synced boards may flag keepers on the pick itself even when the
+    // projected keeperSet is empty — still compress from those slots.
+    if (state && state.picks){
+      Object.keys(state.picks).forEach(function(k){
+        var pl = state.picks[k];
+        if (pl && pl.keeper) addId(pl.id);
+      });
+    }
     out.sort(function(a, b){ return a - b; });
     if (canCache) _keeperAdpCache = out;
     return out;
@@ -5627,7 +5655,10 @@
         position: _normLivePos((meta && meta.position) || p.position),
         team: (meta && meta.team) || p.team,
         val: valLookup(pid),
-        unresolved: !!p.unresolved
+        unresolved: !!p.unresolved,
+        // Platform / extension keeper flags, or a known league keep — needed so
+        // ADP compression slides remaining players earlier for Recap / grades.
+        keeper: !!(p.keeper || p.is_keeper || p.isKeeper || isKnownKeeperId(pid))
       };
       if (pid && !p.unresolved) drafted[pid] = true;
       if (p.picked_at && p.picked_at > latestPickedAt) latestPickedAt = p.picked_at;
@@ -5637,6 +5668,7 @@
     var _tot = (state.teams || 12) * (state.rounds || 15), _next = _tot + 1;
     for (var _pn = 1; _pn <= _tot; _pn++){ if (!state.picks[_pn]){ _next = _pn; break; } }
     state.current = _next;
+    invalidateKeeperAdpCache();
     _boardSig = null;   // force a full board rebuild on the next render
   }
   // Apply one newly observed live pick in order. Idempotent: an overall pick
@@ -5654,13 +5686,15 @@
       position: _normLivePos((row && row.position) || p.position || ''),
       team: (row && row.team) || p.team || '',
       val: row ? Math.round(valOf(row)) : valLookup(pid),
-      unresolved: !!p.unresolved
+      unresolved: !!p.unresolved,
+      keeper: !!(p.keeper || p.is_keeper || p.isKeeper || isKnownKeeperId(pid))
     };
     if (row){
       try { pickObj.ps = pickScoreFor(row); } catch (e){}
       try { pickObj.psRel = psDisplay(pickObj.ps); } catch (e){}
     }
     state.picks[p.pick_no] = pickObj;
+    invalidateKeeperAdpCache();
     if (pid && !p.unresolved) drafted[pid] = true;
     if (pid && state.queue){
       var qi = state.queue.indexOf(pid);
@@ -8548,6 +8582,7 @@
     try { reason = pickReason(p, myPosCounts(), { rank: recRankOf(p) }); } catch (e){ reason = ''; }
     state.picks[pn] = { id: p.id, name: p.name, position: p.position, team: p.team, val: Math.round(valOf(p)), ps: ps, psRel: psRel, reason: reason };
     drafted[String(p.id)] = true;
+    invalidateKeeperAdpCache();
     // Drop the just-drafted player from the queue so it stays a live target list
     // (and auto-draft never re-considers a taken player).
     if (state.queue){ var _qi = state.queue.indexOf(String(p.id)); if (_qi >= 0) state.queue.splice(_qi, 1); }
@@ -8581,7 +8616,7 @@
     var wasDone = state.current > state.teams * state.rounds;
     state.current--;
     var p = state.picks[state.current];
-    if (p) { delete drafted[String(p.id)]; delete state.picks[state.current]; }
+    if (p) { delete drafted[String(p.id)]; delete state.picks[state.current]; invalidateKeeperAdpCache(); }
     paintCell(state.current);
     refreshCurrent();
     if (wasDone && !sim){ sim = true; simStarted = true; _summaryShown = false; syncSimControls(); }

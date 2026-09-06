@@ -421,18 +421,24 @@ def test_recs_rank_full_undrafted_pool_not_expected_survivors():
 
 
 def test_keeper_drafts_compress_adp_when_keepers_leave_pool():
-    """With keepers on, redraft ADP must slide up — otherwise vs-ADP grades and
-    CPU mocks treat remaining players as if the kept stars were still available."""
+    """When keepers leave the pool, redraft ADP must slide up — otherwise vs-ADP
+    grades and CPU mocks treat remaining players as if the kept stars were still
+    available (mid-tier talent goes earlier in keeper drafts)."""
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
     assert "function rawAdpOf(p)" in source
     assert "function adjustAdpForKeepers(raw, adpFn, excludeId)" in source
     assert "function invalidateKeeperAdpCache()" in source
     assert "function isKeeperPick(pl)" in source
-    # Compress whenever the keeper set is known (not only before live sync).
-    assert "return !!(keepersOn && keeperSet && keeperSet.length);" in source
+    assert "function boardHasKeeperPicks()" in source
+    # Compress from the known keeper set OR board keeper picks — not the banner
+    # show/hide toggle (hiding the list must not restore full-board ADP).
+    assert "return !!((keeperSet && keeperSet.length) || boardHasKeeperPicks());" in source
+    assert "keepersOn && keeperSet && keeperSet.length" not in source
     # Exclude the player being graded so their own keep doesn't double-count.
     assert "return adjustAdpForKeepers(rawAdpOf(p), null, p && p.id);" in source
     assert "adjustAdpForKeepers(rawAdpBySource(p, src)" in source
+    # Live picks carry keeper flags so compression works on synced boards too.
+    assert "keeper: !!(p.keeper || p.is_keeper || p.isKeeper || isKnownKeeperId(pid))" in source
 
 
 def test_keeper_drafts_exclude_keeps_from_recap_pick_score_and_deep_dive():
