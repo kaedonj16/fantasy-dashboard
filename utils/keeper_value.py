@@ -79,6 +79,41 @@ def market_round(adp_overall: Optional[float], league_size: int) -> Optional[int
     return ceil(float(adp_overall) / league_size)
 
 
+def adjust_adp_for_keepers(
+    adp: Optional[float],
+    kept_adps: Sequence[Optional[float]],
+) -> Optional[float]:
+    """Compress ADP after keepers leave the draft pool.
+
+    Redraft ADP assumes the full player pool. When keepers are set, those
+    players are gone — everyone behind them slides up. A player with ADP 24
+    and 10 keepers at ADP ≤ 24 is effectively the 14th player available.
+
+    ``kept_adps`` should be the raw ADPs of *other* kept players (do not include
+    the player being adjusted, or he will subtract himself). Keepers with
+    unknown ADP are ignored. Returns None when ``adp`` is None/invalid.
+    """
+    if adp is None:
+        return None
+    try:
+        raw = float(adp)
+    except (TypeError, ValueError):
+        return None
+    if raw <= 0:
+        return None
+    n = 0
+    for k in kept_adps or ():
+        if k is None:
+            continue
+        try:
+            kv = float(k)
+        except (TypeError, ValueError):
+            continue
+        if kv > 0 and kv <= raw:
+            n += 1
+    return max(1.0, raw - n)
+
+
 def pick_value(overall_pick: float) -> float:
     """Relative value of a draft selection on a diminishing-return curve.
 

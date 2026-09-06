@@ -664,6 +664,7 @@ def compute_league_keepers(
             kept.append({
                 "id": pid, "name": c.name, "pos": c.position,
                 "rosterId": rid, "costRound": c.cost_round,
+                "adpOverall": c.adp_overall,
                 "projected": not (vr is not None and rid == vr),
             })
     return {
@@ -739,6 +740,30 @@ def build_keeper_body(
     rules = KeeperRules(league_size=league_size, num_rounds=num_rounds, one_per_round=True)
     ranked = evaluate(candidates, rules, limit=max_keepers)
 
+    # Rival keepers leave the draft pool, so market ADP for remaining (and for
+    # surplus) must compress. Project other teams' keepers and seed their raw
+    # ADPs; the client subtracts keepers ahead when pricing Market (ADP).
+    rival_kept_adps: List[float] = []
+    try:
+        per_team: Dict[str, List[KeeperCandidate]] = {}
+        vr = str(viewer_roster_id) if viewer_roster_id is not None else None
+        for r in (ctx.get("rosters") or []):
+            rid = str(r.get("roster_id"))
+            if vr is not None and rid == vr:
+                continue
+            pids = [str(p) for p in (r.get("players") or [])]
+            per_team[rid] = _candidates_for_ids(
+                pids, players_index, values, adp, drafted, value_rank, years_kept,
+            )
+        for rid, ids in project_league_keepers(per_team, rules, max_keepers).items():
+            by_id = {c.player_id: c for c in per_team.get(rid, [])}
+            for pid in ids:
+                c = by_id.get(pid)
+                if c and c.adp_overall and c.adp_overall > 0:
+                    rival_kept_adps.append(float(c.adp_overall))
+    except Exception:
+        logger.debug("[keeper] rival keeper ADP projection failed", exc_info=True)
+
     _plat = (platform or "sleeper").lower()
     # Reuses the resolved season above (ctx, else the route's). Deriving it from
     # ctx alone here silently produced an empty link - and therefore no
@@ -763,6 +788,7 @@ def build_keeper_body(
         "adpSource": adp_source,
         "adpSourceOptions": _src_opts,
         "viewerRoster": str(viewer_roster_id) if viewer_roster_id is not None else "",
+        "rivalKeptAdps": rival_kept_adps,
         "players": [
             {
                 "id": c.player_id, "name": c.name, "pos": c.position,

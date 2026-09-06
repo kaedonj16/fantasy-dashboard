@@ -417,6 +417,18 @@ def test_live_keeper_recs_only_exclude_host_drafted_players():
     assert "if (keepersAffectAvailability() && keeperSet && keeperSet.length)" in source
 
 
+def test_keeper_drafts_compress_adp_when_keepers_leave_pool():
+    """With keepers on, redraft ADP must slide up — otherwise vs-ADP grades and
+    CPU mocks treat remaining players as if the kept stars were still available."""
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    assert "function rawAdpOf(p)" in source
+    assert "function adjustAdpForKeepers(raw, adpFn)" in source
+    assert "function invalidateKeeperAdpCache()" in source
+    assert "return adjustAdpForKeepers(rawAdpOf(p), null);" in source
+    assert "adjustAdpForKeepers(rawAdpBySource(p, src)" in source
+
+
+
 def test_autodraft_uses_shared_need_multiplier_instead_of_uncapped_starter_boost():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
     core = (REPO / "static" / "draft_board_core.js").read_text(encoding="utf-8")

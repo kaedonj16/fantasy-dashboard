@@ -21,17 +21,18 @@ import tempfile
 import pytest
 
 from utils.keeper_value import (
-    KeeperRules, KeeperCandidate, analyze, evaluate,
+    KeeperRules, KeeperCandidate, analyze, evaluate, adjust_adp_for_keepers,
 )
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _KEEPER_JS = os.path.join(_REPO_ROOT, "static", "keeper.js")
 
-# Pull the pure math out of keeper.js verbatim: clamp / costRound / marketRound /
-# verdict / resolveCollisions, i.e. everything from `function clamp` up to (but
-# not including) `function compute`. These depend only on the module vars
-# numRounds / leagueSize / lastBumps, which the harness supplies.
-_MATH_RE = re.compile(r"function clamp\(n, lo, hi\).*?(?=\n  function compute\(\))", re.DOTALL)
+# Pull the pure math out of keeper.js verbatim: clamp / adjustAdpForKeepers /
+# costRound / marketRound / verdict / resolveCollisions, i.e. everything from
+# `function clamp` up to (but not including) `function pricedRow` (which needs
+# the page seed). These depend only on the module vars numRounds / leagueSize /
+# lastBumps, which the harness supplies.
+_MATH_RE = re.compile(r"function clamp\(n, lo, hi\).*?(?=\n  function pricedRow\()", re.DOTALL)
 
 _NUM_ROUNDS = 15
 _LEAGUE_SIZE = 12
@@ -147,6 +148,15 @@ def test_keeper_math_matches_python():
         + "  if (mkt !== t.expect.mkt) bad.push('unit ' + i + ' mkt ' + mkt + ' != ' + t.expect.mkt);\n"
         + "  if (surplus !== t.expect.surplus) bad.push('unit ' + i + ' surplus ' + surplus + ' != ' + t.expect.surplus);\n"
         + "  if (v !== t.expect.verdict) bad.push('unit ' + i + ' verdict ' + v + ' != ' + t.expect.verdict);\n"
+        + "});\n"
+        + "var adjCases = " + json.dumps([
+            {"adp": 24, "kept": list(range(1, 11)), "expect": 14},
+            {"adp": 10, "kept": [12, 15], "expect": 10},
+            {"adp": 20, "kept": [None, 0, 5], "expect": 19},
+        ]) + ";\n"
+        + "adjCases.forEach(function (t, i) {\n"
+        + "  var got = adjustAdpForKeepers(t.adp, t.kept);\n"
+        + "  if (got !== t.expect) bad.push('adj ' + i + ' ' + got + ' != ' + t.expect);\n"
         + "});\n"
         + "var rows = coll.rows.map(function (r) {\n"
         + "  return { p: { id: r.id, name: String(r.id), value: r.value },\n"

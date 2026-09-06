@@ -44,6 +44,19 @@
 
   function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
 
+  // Compress ADP after keepers leave the pool (mirrors
+  // utils.keeper_value.adjust_adp_for_keepers). keptAdps = raw ADPs of *other*
+  // keepers; unknown/invalid entries are ignored.
+  function adjustAdpForKeepers(adp, keptAdps) {
+    if (adp == null || !isFinite(Number(adp)) || Number(adp) <= 0) return adp;
+    var raw = Number(adp), n = 0;
+    (keptAdps || []).forEach(function (k) {
+      if (k == null || !isFinite(Number(k)) || Number(k) <= 0) return;
+      if (Number(k) <= raw) n++;
+    });
+    return Math.max(1, raw - n);
+  }
+
   function costRound(p, r) {
     var base;
     if (r.lastRoundCost) {
@@ -149,15 +162,29 @@
     });
   }
 
+  function pricedRow(p, r, keptAdps) {
+    // Price one player against a keeper-compressed ADP (rivals + other keeps).
+    var priced = Object.assign({}, p);
+    priced.adpOverall = adjustAdpForKeepers(p.adpOverall, keptAdps);
+    priced._rawAdp = p.adpOverall;
+    var cost = costRound(p, r); // cost uses drafted round, not ADP
+    var mkt = marketRound(priced);
+    var surplus = mkt == null ? null : (cost - mkt);
+    return { p: priced, cost: cost, mkt: mkt, surplus: surplus,
+      surplusValue: surplusValue(priced, cost), verdict: verdict(surplus, r),
+      keep: false };
+  }
+
+  // Other teams' projected keepers (raw ADP). Seeded by the server so Market
+  // (ADP) reflects the thinner pool once those players are off the board.
+  var rivalKeptAdps = (seed.rivalKeptAdps || []).filter(function (a) {
+    return a != null && isFinite(Number(a)) && Number(a) > 0;
+  }).map(Number);
+
   function compute() {
     var r = rules();
-    var rows = players.map(function (p) {
-      var cost = costRound(p, r);
-      var mkt = marketRound(p);
-      var surplus = mkt == null ? null : (cost - mkt);
-      return { p: p, cost: cost, mkt: mkt, surplus: surplus,
-        surplusValue: surplusValue(p, cost), verdict: verdict(surplus, r) };
-    });
+    // Pass 1: compress by rival keepers only, then pick this roster's keep set.
+    var rows = players.map(function (p) { return pricedRow(p, r, rivalKeptAdps); });
     rows.sort(function (a, b) {
       var ae = a.surplus != null && a.surplus > 0, be = b.surplus != null && b.surplus > 0;
       if (ae !== be) return ae ? -1 : 1;
@@ -174,6 +201,26 @@
         if (row.keep) remaining--;
       });
     }
+    // Pass 2: also subtract this roster's other keepers so Market (ADP) matches
+    // the true remaining pool (rivals + your other keeps).
+    var myKeptRaw = {};
+    rows.forEach(function (row) {
+      if (row.keep && row.p._rawAdp != null && row.p._rawAdp > 0) {
+        myKeptRaw[String(row.p.id)] = Number(row.p._rawAdp);
+      }
+    });
+    rows.forEach(function (row) {
+      var others = rivalKeptAdps.slice();
+      Object.keys(myKeptRaw).forEach(function (id) {
+        if (id !== String(row.p.id)) others.push(myKeptRaw[id]);
+      });
+      var adj = adjustAdpForKeepers(row.p._rawAdp, others);
+      row.p.adpOverall = adj;
+      row.mkt = marketRound(row.p);
+      row.surplus = row.mkt == null ? null : (row.cost - row.mkt);
+      row.surplusValue = surplusValue(row.p, row.cost);
+      row.verdict = verdict(row.surplus, r);
+    });
     lastBumps = [];
     return rows;
   }

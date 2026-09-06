@@ -410,7 +410,8 @@ def render_keeper_html(seed: dict) -> str:
     <div class="kpr-note">
       Surplus is in draft rounds, from BR’s redraft value model + market ADP. Keeper cost defaults to last
       season’s drafted round (or Last round for leagues that spend a final pick instead); edit any player’s
-      round in the table.
+      round in the table. Market ADP compresses when league keepers leave the pool — if 10 players are
+      kept ahead of someone, their ADP slides up so surplus isn’t priced off a full redraft board.
       {auction_note}
       Two keepers that would cost the same round is a league-specific rule the tool flags rather than resolves.
     </div>

@@ -440,6 +440,9 @@ def test_body_renders_undrafted_dropdown_and_one_per_round_toggle(monkeypatch):
     # One-keeper-per-round toggle, on by default (in the UI and the seed).
     assert 'id="kpr-opr"' in html and "checked" in html
     assert '"onePerRound":true' in html.replace(" ", "")
+    # Rival keepers compress Market ADP; seed carries their raw ADPs (may be empty
+    # when stubs have no other-team projection, but the key must be present).
+    assert '"rivalKeptAdps"' in html.replace(" ", "")
     assert "Auction/FAAB keeper costs are not auto-detected" in html
 
 
