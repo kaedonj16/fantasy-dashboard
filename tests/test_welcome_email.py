@@ -48,6 +48,10 @@ def test_signup_welcome_html_has_logos_and_depth(monkeypatch):
     assert "espn-logo.png" in html
     assert "Trade Calculator" in html
     assert "Weekly email digest" in html
+    assert "Ways managers use" in html
+    assert "Morning scan" in html
+    assert "Waivers, Start/Sit" in html
+    assert "Draft Room" in html
     assert "welcome and onboarding emails" in html
     assert "{UNSUB}" in html or "unsubscribe" in html.lower()
 
@@ -66,6 +70,9 @@ def test_pro_welcome_html_covers_toolkit(monkeypatch):
     assert "Trade Suggestions" in html
     assert "Breakout Engine" in html
     assert "Front Office Report" in html
+    assert "How to use PRO this week" in html
+    assert "Playoff Impact" in html
+    assert "Full PRO toolkit" in html
     assert "BR_Logo_dark.png" in html
     assert "/sleeper/2026/12345/trade?tab=suggestions" in html
     assert "welcome and onboarding emails" in html
