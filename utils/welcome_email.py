@@ -2,7 +2,7 @@
 
 Fired once when a Google account is first created, and once when a PRO plan is
 granted. Reuses the weekly digest chrome (with brand logos) and the shared
-Brevo/SMTP delivery layer. Opt-out is the ``onboarding`` preference type —
+Brevo/SMTP delivery layer. Opt-out is the ``onboarding`` preference type,
 independent of weekly_digest.
 """
 from __future__ import annotations
@@ -39,9 +39,16 @@ def _logo_urls() -> dict[str, str]:
     return {
         "logo": brand_asset_url("BR_Logo_dark.png"),
         "mark": brand_asset_url("BR_Mark_dark.png"),
+        "site": brand_asset_url("Website_Logo_dark.png"),
         "sleeper": brand_asset_url("sleeper-logo.png"),
         "espn": brand_asset_url("espn-logo.png"),
+        "app": brand_asset_url("app-icon-192.png"),
     }
+
+
+def _icon_url(name: str) -> str:
+    """PNG icons under ``static/images/`` for feature cards."""
+    return brand_asset_url(f"images/{name}")
 
 
 def _unsub_url(account_id: int) -> Optional[str]:
@@ -57,13 +64,13 @@ def _unsub_url(account_id: int) -> Optional[str]:
 def _section(title: str, body_html: str) -> str:
     t = escape(title, quote=False)
     return (
-        f'<h3 style="margin:22px 0 8px;font-size:11px;font-weight:800;text-transform:uppercase;'
+        f'<h3 style="margin:22px 0 10px;font-size:11px;font-weight:800;text-transform:uppercase;'
         f'letter-spacing:.06em;color:#334155;">{t}</h3>'
         f'<div style="margin:0;font-size:14px;color:#0f172a;line-height:1.55;">{body_html}</div>'
     )
 
 
-def _bullet(title: str, detail: str, href: str = "") -> str:
+def _bullet(title: str, detail: str, href: str = "", icon: str = "") -> str:
     label = escape(title, quote=False)
     body = escape(detail, quote=False)
     if href:
@@ -73,34 +80,86 @@ def _bullet(title: str, detail: str, href: str = "") -> str:
         )
     else:
         label = f'<strong style="color:#0f172a;">{label}</strong>'
+    icon_cell = ""
+    if icon:
+        icon_cell = (
+            f'<td style="width:40px;vertical-align:top;padding:0 12px 0 0;">'
+            f'<img src="{escape(icon, quote=True)}" alt="" width="28" height="28" '
+            f'style="display:block;border:0;width:28px;height:28px;object-fit:contain;" />'
+            f"</td>"
+        )
     return (
-        f'<div style="margin:0 0 12px;padding:12px 14px;background:#ffffff;border:1px solid #e6ebf2;'
-        f'border-radius:10px;">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'style="margin:0 0 12px;background:#ffffff;border:1px solid #e6ebf2;border-radius:10px;">'
+        f'<tr><td style="padding:12px 14px;">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
+        f"{icon_cell}"
+        f'<td style="vertical-align:top;">'
         f'<div style="font-size:14px;line-height:1.35;">{label}</div>'
         f'<div style="margin-top:4px;font-size:13px;color:#475569;line-height:1.45;">{body}</div>'
-        f"</div>"
+        f"</td></tr></table></td></tr></table>"
+    )
+
+
+def _hero_banner(logos: dict[str, str], eyebrow: str = "") -> str:
+    """Large brand mark strip under the greeting."""
+    logo = logos.get("logo") or ""
+    mark = logos.get("mark") or logos.get("app") or ""
+    eye = escape(eyebrow, quote=False) if eyebrow else ""
+    eye_html = (
+        f'<div style="margin:0 0 10px;font-size:11px;font-weight:800;letter-spacing:.08em;'
+        f'text-transform:uppercase;color:#1d4ed8;">{eye}</div>'
+        if eye else ""
+    )
+    mark_html = ""
+    if mark:
+        mark_html = (
+            f'<img src="{escape(mark, quote=True)}" alt="" width="48" height="48" '
+            f'style="display:block;border:0;width:48px;height:48px;border-radius:10px;'
+            f'object-fit:contain;" />'
+        )
+    logo_html = ""
+    if logo:
+        logo_html = (
+            f'<img src="{escape(logo, quote=True)}" alt="BR Fantasy" width="180" '
+            f'style="display:block;border:0;width:180px;height:auto;max-width:100%;" />'
+        )
+    return (
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'style="margin:0 0 16px;background:#0b1220;border-radius:12px;">'
+        f'<tr><td style="padding:18px 16px;">'
+        f"{eye_html}"
+        f'<table role="presentation" cellpadding="0" cellspacing="0"><tr>'
+        f'<td style="vertical-align:middle;padding-right:14px;">{mark_html}</td>'
+        f'<td style="vertical-align:middle;">{logo_html}</td>'
+        f"</tr></table></td></tr></table>"
     )
 
 
 def _platform_row(logos: dict[str, str]) -> str:
-    cells = []
+    """Labeled platform logo cards (Sleeper + ESPN) plus text for the rest."""
+    cards = []
     for key, label in (("sleeper", "Sleeper"), ("espn", "ESPN")):
         src = logos.get(key) or ""
         if not src:
             continue
-        cells.append(
-            f'<td style="padding:0 10px 0 0;vertical-align:middle;">'
+        cards.append(
+            f'<td style="padding:0 8px 8px 0;vertical-align:top;">'
+            f'<table role="presentation" cellpadding="0" cellspacing="0" '
+            f'style="background:#ffffff;border:1px solid #e6ebf2;border-radius:10px;">'
+            f'<tr><td style="padding:12px 14px;text-align:center;">'
             f'<img src="{escape(src, quote=True)}" alt="{escape(label, quote=True)}" '
-            f'width="28" height="28" style="display:block;border:0;border-radius:6px;'
-            f'width:28px;height:28px;object-fit:contain;" />'
-            f"</td>"
+            f'width="40" height="40" style="display:block;margin:0 auto 8px;border:0;'
+            f'width:40px;height:40px;object-fit:contain;border-radius:8px;" />'
+            f'<div style="font-size:12px;font-weight:700;color:#0f172a;">{escape(label, quote=False)}</div>'
+            f"</td></tr></table></td>"
         )
-    text_plats = "Yahoo · MFL · Fleaflicker"
     return (
-        '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 0;">'
-        f"<tr>{''.join(cells)}"
-        f'<td style="vertical-align:middle;font-size:12px;color:#64748b;font-weight:600;">'
-        f"{escape(text_plats, quote=False)}</td></tr></table>"
+        '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:12px 0 4px;">'
+        f"<tr>{''.join(cards)}"
+        f'<td style="padding:0 0 8px 4px;vertical-align:middle;font-size:12px;color:#64748b;'
+        f'font-weight:600;line-height:1.4;">Also Yahoo, MFL,<br/>and Fleaflicker</td>'
+        f"</tr></table>"
     )
 
 
@@ -122,11 +181,30 @@ def build_signup_welcome(
     compare = f"{base}/compare"
     prospects = f"{base}/prospects"
 
+    ic = {
+        "sun": _icon_url("sun-solid.png"),
+        "scale": _icon_url("scale-balanced-solid.png"),
+        "clipboard": _icon_url("clipboard-list-solid.png"),
+        "trophy": _icon_url("trophy-solid.png"),
+        "calendar": _icon_url("calendar-days-solid.png"),
+        "chart": _icon_url("chart-line-solid.png"),
+        "search": _icon_url("magnifying-glass-solid.png"),
+        "star": _icon_url("star-solid.png"),
+        "seedling": _icon_url("seedling-solid.png"),
+        "football": _icon_url("football-solid.png"),
+        "bolt": _icon_url("bolt-solid.png"),
+        "fire": _icon_url("fire-solid.png"),
+        "medal": _icon_url("medal-solid.png"),
+        "rocket": _icon_url("rocket-solid.png"),
+        "crown": _icon_url("crown-solid.png"),
+    }
+
     parts = [
         greeting_html(first_name),
+        _hero_banner(logos, eyebrow="Your front office is ready"),
         (
             '<p style="margin:0 0 8px;font-size:15px;color:#0f172a;line-height:1.55;">'
-            "Welcome to <strong>BR Fantasy</strong> — the front office managers use to "
+            "Welcome to <strong>BR Fantasy</strong>, the front office managers use to "
             "run dynasty, redraft, and keeper leagues. Below is how people actually use "
             "the site week to week, plus the free features to open first.</p>"
         ),
@@ -139,9 +217,10 @@ def build_signup_welcome(
             + _platform_row(logos)
             + _bullet(
                 "Open your dashboard",
-                "Land in the league you just connected — activity, waivers, and standings "
+                "Land in the league you just connected. Activity, waivers, and standings "
                 "context load with your roster.",
                 dash,
+                icon=ic["football"],
             ),
         ),
         _section(
@@ -149,29 +228,34 @@ def build_signup_welcome(
             ""
             + _bullet(
                 "Morning scan (in season)",
-                "Open the dashboard for Since Last Visit, then Waivers & Start/Sit and "
-                "Matchups. Star anyone you're tracking so value and injury alerts stick.",
+                "Open the dashboard for Since Last Visit, then Waivers and Start/Sit and "
+                "Matchups. Star anyone you are tracking so value and injury alerts stick.",
+                icon=ic["sun"],
             )
             + _bullet(
                 "Trade desk anytime",
                 "Build a deal in the Trade Calculator, share the link in chat, and check "
                 "counter-suggestions before you send. Free on every connected league.",
+                icon=ic["scale"],
             )
             + _bullet(
                 "Offseason / draft prep",
-                "Use Rankings, Prospects, Draft Room mocks, and the Cheat Sheet (CSV + "
+                "Use Rankings, Prospects, Draft Room mocks, and the Cheat Sheet (CSV plus "
                 "live Sleeper sync). Keeper leagues get Keeper Assistant with auto costs.",
+                icon=ic["clipboard"],
             )
             + _bullet(
-                "League history & bragging rights",
+                "League history and bragging rights",
                 "Standings, Awards, Graphs, and History turn multi-year leagues into a "
-                "story — share cards when you want the group chat to notice.",
+                "story. Share cards when you want the group chat to notice.",
+                icon=ic["trophy"],
             )
             + _bullet(
                 "Weekly email digest",
-                "We email a personalized start/sit, waiver, and value recap for your "
-                "primary league every Tuesday. Opt out from that footer anytime — it "
-                "doesn't turn off this welcome mail.",
+                "Every Tuesday we send a weekly email digest: a personalized start/sit, "
+                "waiver, and value recap for your primary league. Opt out from that footer "
+                "anytime. It does not turn off this welcome mail.",
+                icon=ic["calendar"],
             ),
         ),
         _section(
@@ -182,64 +266,80 @@ def build_signup_welcome(
                 "Grade both sides with BR values, format controls (teams, PPR, Superflex), "
                 "AI analysis, and shareable trade links.",
                 dash,
+                icon=ic["scale"],
             )
             + _bullet(
-                "Player Rankings & search",
+                "Player Rankings and search",
                 "Filter by position and format, sort by value/age/PPG, and open any player "
                 "modal for metrics, game logs, value history, and trade comps.",
                 rankings,
+                icon=ic["search"],
             )
             + _bullet(
                 "Dynasty Trade Value Chart",
-                "Public value chart you can use even before a league is linked — great for "
+                "Public value chart you can use even before a league is linked. Great for "
                 "quick fairness checks.",
                 trade_values,
+                icon=ic["chart"],
             )
             + _bullet(
                 "Player Compare",
-                "Side-by-side stats and metrics when you're stuck between two names.",
+                "Side-by-side stats and metrics when you are stuck between two names.",
                 compare,
+                icon=ic["chart"],
             )
             + _bullet(
                 "Prospect Rankings",
                 "Rookie production, athleticism, draft capital, and comps for the active class.",
                 prospects,
+                icon=ic["seedling"],
             )
             + _bullet(
                 "Watchlist",
-                "Star players once; get value-move and injury flags when you return "
+                "Star players once. Get value-move and injury flags when you return "
                 "(synced when signed in).",
+                icon=ic["star"],
             )
             + _bullet(
-                "Draft Room & Cheat Sheet",
+                "Draft Room and Cheat Sheet",
                 "Mock any format, connect a live Sleeper/ESPN draft, print/export a cheat "
                 "sheet, and review draft history after the fact.",
+                icon=ic["clipboard"],
             )
             + _bullet(
-                "Waivers, Start/Sit & Schedule Assistant",
+                "Waivers, Start/Sit and Schedule Assistant",
                 "Ranked free-agent targets, weekly start scores (including K/DST when your "
                 "league uses them), and matchup difficulty across a week range.",
+                icon=ic["bolt"],
             )
             + _bullet(
-                "Matchups hub & Redzone",
+                "Matchups hub and Redzone",
                 "Optimal lineup, scout report, power rankings, SOS, streaming options, "
                 "and a live red-zone tracker during games.",
+                icon=ic["fire"],
             )
             + _bullet(
-                "Teams, Standings & Activity",
-                "Deep team tabs, standings, and a transaction feed plus NFL headlines — "
-                "your league's command center.",
+                "Teams, Standings and Activity",
+                "Deep team tabs, standings, and a transaction feed plus NFL headlines. "
+                "Your league command center.",
+                icon=ic["medal"],
             ),
         ),
         _section(
-            "4. When you're ready for PRO",
-            "PRO adds Trade Suggestions with playoff-odds impact, Trade Targets & Intel, "
+            "4. When you are ready for PRO",
+            "PRO adds Trade Suggestions with playoff-odds impact, Trade Targets and Intel, "
             "Playoff Impact sims, Breakout Engine, Front Office Report, Weekly Recap "
             "storylines, Custom Draft Board, Draft Deep Dive, Roster Intel, and "
             "cross-league This Week's Moves. Plans: One League $5/yr, Personal $10/yr, "
-            "League $15/yr, League + Personal $20/yr — see "
+            "League $15/yr, League + Personal $20/yr. See "
             f'<a href="{escape(pricing, quote=True)}" style="color:#1d4ed8;font-weight:700;'
             'text-decoration:none;">Pricing</a>.'
+            + _bullet(
+                "Explore PRO plans",
+                "Start at $5/year for one league, or unlock Personal and League access.",
+                pricing,
+                icon=ic["crown"],
+            ),
         ),
         (
             '<p style="margin:20px 0 0;font-size:13px;color:#64748b;line-height:1.5;">'
@@ -313,7 +413,7 @@ def build_pro_welcome(
             "Other leagues stay on the free tier unless you upgrade."
         ),
         "user": (
-            "Personal PRO follows you across every league on your Google account — "
+            "Personal PRO follows you across every league on your Google account, "
             "ideal if you manage multiple teams."
         ),
         "league": (
@@ -326,14 +426,29 @@ def build_pro_welcome(
         ),
     }.get(plan_key, "Your PRO plan is active.")
 
+    ic = {
+        "rocket": _icon_url("rocket-solid.png"),
+        "crown": _icon_url("crown-solid.png"),
+        "bullseye": _icon_url("bullseye-solid.png"),
+        "fire": _icon_url("fire-solid.png"),
+        "robot": _icon_url("robot-solid.png"),
+        "share": _icon_url("share-solid.png"),
+        "clipboard": _icon_url("clipboard-list-solid.png"),
+        "chart": _icon_url("chart-line-solid.png"),
+        "seedling": _icon_url("seedling-solid.png"),
+        "medal": _icon_url("medal-solid.png"),
+        "bolt": _icon_url("bolt-solid.png"),
+        "star": _icon_url("star-solid.png"),
+        "football": _icon_url("football-solid.png"),
+    }
+
     parts = [
         greeting_html(first_name),
+        _hero_banner(logos, eyebrow=f"{plan_label} unlocked"),
         (
-            '<p style="margin:0 0 4px;font-size:12px;font-weight:800;letter-spacing:.08em;'
-            'text-transform:uppercase;color:#1d4ed8;">PRO unlocked</p>'
             f'<p style="margin:0 0 12px;font-size:15px;color:#0f172a;line-height:1.55;">'
             f"Thanks for going <strong>{escape(plan_label, quote=False)}</strong>. "
-            f"{escape(plan_blurb, quote=False)} Here's how to put it to work — not just "
+            f"{escape(plan_blurb, quote=False)} Here is how to put it to work: not just "
             "a feature list, but when to open each tool.</p>"
         ),
         _section(
@@ -344,34 +459,40 @@ def build_pro_welcome(
                 "Pick Contending, Rebuilding, Consolidate, or Distribute. Each package "
                 "runs a full post-trade playoff sim so Win% and playoff-odds shifts are real.",
                 trade_sugg,
+                icon=ic["rocket"],
             )
             + _bullet(
                 "2. Pressure-test a deal with Playoff Impact",
                 "Before you accept anything, run Playoff Impact on the calculator: playoff "
                 "odds, projected wins/PPG, top-3 pick odds, roster age, and a plain-language "
-                "verdict (Win-Now, Building, Balanced…).",
+                "verdict (Win-Now, Building, Balanced).",
+                icon=ic["chart"],
             )
             + _bullet(
                 "3. Fill holes with Trade Targets",
-                "Roster-fit targets from teams that need your surplus — mixed across "
+                "Roster-fit targets from teams that need your surplus, mixed across "
                 "positions, not just the top four names at a weak spot.",
+                icon=ic["bullseye"],
             )
             + _bullet(
-                "4. Scan Breakouts & Roster Intel",
-                "Breakout Engine ranks opportunity + vacated targets with historical comps. "
+                "4. Scan Breakouts and Roster Intel",
+                "Breakout Engine ranks opportunity and vacated targets with historical comps. "
                 "Teams → Roster Intel tags Core / Sell High / Buy Window / Breakout Hold.",
                 breakouts,
+                icon=ic["fire"],
             )
             + _bullet(
                 "5. Share the Weekly Recap",
                 "Generate the AI storyline after your week and drop the share card in the "
-                "league chat — PRO content that makes you look like the commissioner.",
+                "league chat. PRO content that makes you look like the commissioner.",
                 weekly,
+                icon=ic["share"],
             )
             + _bullet(
                 "Replay the in-app PRO tour",
-                "Short welcome overlay after checkout; reopen anytime from Settings → "
+                "Short welcome overlay after checkout. Reopen anytime from Settings → "
                 "PRO welcome.",
+                icon=ic["star"],
             ),
         ),
         _section(
@@ -381,67 +502,82 @@ def build_pro_welcome(
                 "Trade Suggestions",
                 "Use when you want packages built for your archetype with playoff-odds impact baked in.",
                 trade_sugg,
+                icon=ic["rocket"],
             )
             + _bullet(
                 "Trade Intelligence",
                 "Use when you need real dynasty trade frequency, market values, and "
                 "one-click load into the calculator.",
                 trade_intel,
+                icon=ic["chart"],
             )
             + _bullet(
                 "Playoff Impact",
-                "Use on every non-trivial trade — Monte Carlo on playoff odds, wins, PPG, "
+                "Use on every non-trivial trade. Monte Carlo on playoff odds, wins, PPG, "
                 "draft capital, age, and prime years left.",
+                icon=ic["medal"],
             )
             + _bullet(
                 "Breakout Engine",
                 "Use in offseason and early season to find opportunity before the wire heats up.",
                 breakouts,
+                icon=ic["fire"],
             )
             + _bullet(
                 "Front Office Report",
                 "Use for a full AI read on roster construction, trade lanes, and standings path "
-                "(in-season hub + offseason generate).",
+                "(in-season hub plus offseason generate).",
                 dashboard,
+                icon=ic["robot"],
             )
             + _bullet(
                 "Weekly Recap",
                 "Use after each week for an AI storyline plus shareable OG image.",
                 weekly,
+                icon=ic["share"],
             )
             + _bullet(
-                "Custom Draft Board & Deep Dive",
-                "Use before and during drafts: pin/mute/reorder (follows you into Draft Room); "
+                "Custom Draft Board and Deep Dive",
+                "Use before and during drafts: pin/mute/reorder (follows you into Draft Room). "
                 "Deep Dive replays Decision Score vs the remaining pool.",
                 draft,
+                icon=ic["clipboard"],
             )
             + _bullet(
-                "Roster Grades, Archetypes & Playoff Scenarios",
+                "Roster Grades, Archetypes and Playoff Scenarios",
                 "Use under Teams for letter grades, competitive window, playoff odds, and "
                 "clinch/elimination magic numbers late season.",
                 teams,
+                icon=ic["crown"],
             )
             + _bullet(
                 "Cross-league This Week's Moves (Personal / Combo)",
-                "Use My Leagues when you run multiple teams — lineup and injury actions "
+                "Use My Leagues when you run multiple teams. Lineup and injury actions "
                 "ranked across every linked league so nothing slips.",
+                icon=ic["bolt"],
             ),
         ),
         _section(
             "Still free (and worth combining with PRO)",
-            "Trade Calculator & share links, Rankings, Watchlist alerts, Waivers/Start-Sit, "
+            "Trade Calculator and share links, Rankings, Watchlist alerts, Waivers/Start-Sit, "
             "Matchups, Redzone, Awards/History, and the Tuesday digest all stay available. "
-            "PRO layers decision quality on top — it doesn't replace the free workflow."
+            "PRO layers decision quality on top. It does not replace the free workflow."
+            + _bullet(
+                "Keep using the free tools",
+                "The Trade Calculator, Rankings, and Matchups hub still sit beside every PRO surface.",
+                dash if dash else base,
+                icon=ic["football"],
+            ),
         ),
         _section(
-            "Billing & sharing",
+            "Billing and sharing",
             "Subscriptions renew yearly through Stripe. Manage payment method, invoices, "
             "or cancel from Pricing → Manage billing while signed in. League PRO buyers "
             "keep a copyable invite link under Commissioner so teammates can claim access."
         ),
         (
             '<p style="margin:20px 0 0;font-size:13px;color:#64748b;line-height:1.5;">'
-            "You're also on the Tuesday weekly digest for your primary league — opt out "
+            "You are also on the Tuesday weekly digest for your primary league. Opt out "
             "from any digest footer without losing PRO or these onboarding emails.</p>"
         ),
     ]
