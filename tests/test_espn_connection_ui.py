@@ -258,17 +258,17 @@ def test_espn_403_page_offers_reconnect_deep_link():
 
 
 def test_espn_access_denied_html_includes_reconnect_cta():
+    # Call the error handler under an ESPN league request context. Do not
+    # register a new route — Flask forbids that after the app has already
+    # served requests (the full CI integration suite).
     import app as appmod
     from dashboard_services.providers.espn_api import ESPNAccessDenied
 
-    @appmod.app.route("/espn/<int:season>/<league_id>/__reconnect_probe")
-    def __espn_reconnect_probe(season, league_id):
-        raise ESPNAccessDenied("ESPN denied authenticated access to this league.")
-
-    client = appmod.app.test_client()
-    response = client.get("/espn/2026/424242/__reconnect_probe")
-    body = response.get_data(as_text=True)
-    assert response.status_code == 403
+    with appmod.app.test_request_context("/espn/2026/424242/dashboard"):
+        body, status = appmod.handle_provider_auth(
+            ESPNAccessDenied("ESPN denied authenticated access to this league.")
+        )
+    assert status == 403
     assert "Reconnect ESPN" in body
     assert "espn_reconnect=1" in body
     assert "league_id=424242" in body
