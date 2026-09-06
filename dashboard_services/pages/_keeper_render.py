@@ -356,6 +356,7 @@ def render_keeper_html(seed: dict) -> str:
           <option value="0" selected>Round drafted</option>
           <option value="-1">Round drafted − 1 (earlier)</option>
           <option value="1">Round drafted + 1 (later)</option>
+          <option value="last">Last round</option>
         </select>
       </div>
       <div class="kpr-rule">
@@ -407,8 +408,9 @@ def render_keeper_html(seed: dict) -> str:
     </div>
 
     <div class="kpr-note">
-      Surplus is in draft rounds, from BR’s redraft value model + market ADP. Keeper cost auto-fills from last
-      season’s draft where available; edit any player’s round in the table.
+      Surplus is in draft rounds, from BR’s redraft value model + market ADP. Keeper cost defaults to last
+      season’s drafted round (or Last round for leagues that spend a final pick instead); edit any player’s
+      round in the table.
       {auction_note}
       Two keepers that would cost the same round is a league-specific rule the tool flags rather than resolves.
     </div>

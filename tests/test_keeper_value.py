@@ -62,6 +62,15 @@ def test_cost_round_undrafted_defaults_to_last_round():
     assert keeper_cost_round(None, years_kept=0, rules=_rules(undrafted_round=13)) == 13
 
 
+def test_cost_round_last_round_cost_ignores_drafted_round():
+    # Flat "last pick" leagues: every keeper starts at the final round.
+    r = _rules(num_rounds=15, last_round_cost=True, undrafted_round=10, round_offset=-1)
+    assert keeper_cost_round(3, years_kept=0, rules=r) == 15
+    assert keeper_cost_round(None, years_kept=0, rules=r) == 15
+    # Escalation still moves multi-year keeps earlier.
+    assert keeper_cost_round(3, years_kept=2, rules=_rules(num_rounds=15, last_round_cost=True, escalation=1)) == 13
+
+
 # ── verdict ──────────────────────────────────────────────────────────────────
 
 def test_verdict_tiers():

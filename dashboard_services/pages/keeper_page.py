@@ -620,12 +620,15 @@ def compute_league_keepers(
     # one_per_round defaults on (matches the keeper page); the handoff can turn it
     # off for leagues that let two keepers share a round.
     _opr = _ro.get("one_per_round", True) if _ro else True
+    # last_round_cost: every keeper costs the last pick (not last year's round).
+    _lrc = bool(_ro.get("last_round_cost")) if _ro else False
     rules = KeeperRules(
         league_size=league_size,
         num_rounds=num_rounds,
         round_offset=_rule_int("round_offset", -5, 5, 0) or 0,
         escalation=_rule_int("escalation", 0, 5, 1) if _ro else 1,
         undrafted_round=_rule_int("undrafted_round", 1, num_rounds),
+        last_round_cost=_lrc,
         one_per_round=bool(_opr),
     )
 

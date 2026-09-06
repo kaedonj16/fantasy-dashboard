@@ -30,8 +30,11 @@
 
   function rules() {
     var undr = parseInt(elUndr && elUndr.value, 10);
+    var costVal = elCost && elCost.value;
+    var lastRound = costVal === "last";
     return {
-      roundOffset: parseInt(elCost && elCost.value, 10) || 0,
+      roundOffset: lastRound ? 0 : (parseInt(costVal, 10) || 0),
+      lastRoundCost: lastRound,
       escalation: parseInt(elEsc && elEsc.value, 10) || 0,
       undraftedRound: (undr > 0 ? undr : numRounds),
       onePerRound: elOpr ? !!elOpr.checked : (seed.onePerRound !== false),
@@ -42,9 +45,14 @@
   function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
 
   function costRound(p, r) {
-    var base = (p.draftedRound == null || p.draftedRound === "")
-      ? r.undraftedRound
-      : (parseInt(p.draftedRound, 10) + r.roundOffset);
+    var base;
+    if (r.lastRoundCost) {
+      base = numRounds;
+    } else if (p.draftedRound == null || p.draftedRound === "") {
+      base = r.undraftedRound;
+    } else {
+      base = parseInt(p.draftedRound, 10) + r.roundOffset;
+    }
     var cost = base - Math.max(0, p.yearsKept || 0) * r.escalation;
     return clamp(cost, 1, numRounds);
   }
@@ -320,7 +328,18 @@
     });
   }
 
+  function syncUndraftedControl() {
+    // Flat last-round cost ignores the undrafted override; grey it out so the
+    // control doesn't look like it still applies.
+    if (!elUndr) return;
+    var last = elCost && elCost.value === "last";
+    elUndr.disabled = !!last;
+    var wrap = elUndr.closest ? elUndr.closest(".kpr-rule") : null;
+    if (wrap) wrap.style.opacity = last ? "0.45" : "";
+  }
+
   function render() {
+    syncUndraftedControl();
     var rows = compute();
     renderOptimizer(rows);
     renderTable(rows);
@@ -375,7 +394,8 @@
                "&kundr=" + encodeURIComponent(r.undraftedRound) +
                "&koff="  + encodeURIComponent(r.roundOffset) +
                "&kesc="  + encodeURIComponent(r.escalation) +
-               "&kopr="  + (r.onePerRound ? "1" : "0");
+               "&kopr="  + (r.onePerRound ? "1" : "0") +
+               "&klast=" + (r.lastRoundCost ? "1" : "0");
       window.location.href = seed.draftUrl +
         (seed.draftUrl.indexOf("?") >= 0 ? "&" : "?") + qs;
     });

@@ -54,7 +54,8 @@ def _rules(**kw) -> KeeperRules:
 
 def _js_rule(r: KeeperRules) -> dict:
     return {"roundOffset": r.round_offset, "escalation": r.escalation,
-            "undraftedRound": r.undrafted_round, "keepAt": r.keep_at, "passAt": r.pass_at}
+            "undraftedRound": r.undrafted_round, "lastRoundCost": r.last_round_cost,
+            "keepAt": r.keep_at, "passAt": r.pass_at}
 
 
 def _unit_cases():
@@ -71,6 +72,11 @@ def _unit_cases():
         # round offset earlier / later
         (KeeperCandidate("5", "E", "RB", 5, 0, 40, 400), _rules(round_offset=-1)),
         (KeeperCandidate("6", "F", "QB", 5, 0, 40, 400), _rules(round_offset=1)),
+        # flat last-round cost (ignores drafted round / undrafted override)
+        (KeeperCandidate("6b", "Fb", "WR", 5, 0, 40, 400),
+         _rules(last_round_cost=True, undrafted_round=10, round_offset=-1)),
+        (KeeperCandidate("6c", "Fc", "RB", 5, 2, 18, 500),
+         _rules(last_round_cost=True, escalation=1)),
         # clamp at the shallow end
         (KeeperCandidate("7", "G", "RB", 1, 5, 4, 300), _rules(escalation=1)),
         # off-board (unknown ADP) -> no surplus, PASS
