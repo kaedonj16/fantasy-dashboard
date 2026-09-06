@@ -46,11 +46,6 @@ def _logo_urls() -> dict[str, str]:
 
 
 
-def _icon_url(name: str) -> str:
-    """PNG icons under ``static/images/`` for feature cards."""
-    return brand_asset_url(f"images/{name}")
-
-
 def _unsub_url(account_id: int) -> Optional[str]:
     from utils.email_preferences import ONBOARDING
     from utils.weekly_email import make_unsub_token
