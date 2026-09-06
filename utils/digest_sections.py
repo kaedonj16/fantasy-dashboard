@@ -28,7 +28,7 @@ def email_shell(
 
     ``footer_kind`` controls unsubscribe copy:
       - ``weekly_digest`` (default)
-      - ``onboarding`` — signup / PRO welcome emails
+      - ``onboarding``: signup / PRO welcome emails
     """
     sub = escape(subtitle or "Your weekly fantasy digest", quote=False)
     base_logo = (logo_url or "").strip()
