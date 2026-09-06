@@ -44,9 +44,6 @@ def _logo_urls() -> dict[str, str]:
     }
 
 
-def _shot_url(name: str) -> str:
-    """Product UI screenshots under ``static/email/``."""
-    return brand_asset_url(f"email/{name}")
 
 
 def _icon_url(name: str) -> str:
@@ -139,28 +136,6 @@ def _hero_banner(logos: dict[str, str], eyebrow: str = "") -> str:
     )
 
 
-def _product_shot(src: str, caption: str, href: str = "") -> str:
-    """Full-width site screenshot with caption for email bodies."""
-    if not src:
-        return ""
-    cap = escape(caption, quote=False)
-    img = (
-        f'<img src="{escape(src, quote=True)}" alt="{cap}" width="552" '
-        f'style="display:block;border:0;width:100%;max-width:552px;height:auto;'
-        f'border-radius:10px;" />'
-    )
-    if href:
-        img = f'<a href="{escape(href, quote=True)}" style="text-decoration:none;">{img}</a>'
-    return (
-        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'style="margin:12px 0 16px;background:#ffffff;border:1px solid #e6ebf2;'
-        f'border-radius:12px;overflow:hidden;">'
-        f'<tr><td style="padding:0;">{img}</td></tr>'
-        f'<tr><td style="padding:10px 14px 12px;font-size:12px;font-weight:700;'
-        f'color:#334155;line-height:1.4;">{cap}</td></tr></table>'
-    )
-
-
 
 def build_signup_welcome(
     *,
@@ -182,22 +157,14 @@ def build_signup_welcome(
     prospects = f"{base}/prospects"
     draft = f"{base}/draft"
 
-    shots = {
-        "trade": _shot_url("trade.jpg"),
-        "rankings": _shot_url("rankings.jpg"),
-        "draft": _shot_url("draft.jpg"),
-        "trade_values": _shot_url("trade_values.jpg"),
-        "home": _shot_url("home.jpg"),
-    }
-
     parts = [
         greeting_html(first_name),
         _hero_banner(logos, eyebrow="Your front office is ready"),
         (
             '<p style="margin:0 0 8px;font-size:15px;color:#0f172a;line-height:1.55;">'
             "Welcome to <strong>BR Fantasy</strong>, the front office managers use to "
-            "run dynasty, redraft, and keeper leagues. Below is how people actually use "
-            "the site week to week, with real screenshots of the tools.</p>"
+            "run dynasty, redraft, and keeper leagues. Here is how people actually use "
+            "the site week to week, plus the free features to open first.</p>"
         ),
         _section(
             "1. Connect your leagues (2 minutes)",
@@ -205,11 +172,6 @@ def build_signup_welcome(
             "OAuth, MFL, or Fleaflicker. Google keeps your watchlist, digests, and "
             "settings synced on every device. Multi-league managers live in "
             "<strong>My Leagues</strong> and jump with the league switcher."
-            + _product_shot(
-                shots["home"],
-                "Home and league hub: connect a league, then jump into your dashboard.",
-                dash,
-            )
             + _bullet(
                 "Open your dashboard",
                 "Land in the league you just connected. Activity, waivers, and standings "
@@ -229,20 +191,12 @@ def build_signup_welcome(
                 "Trade desk anytime",
                 "Build a deal in the Trade Calculator, share the link in chat, and check "
                 "fairness before you send. Free on every connected league.",
-            )
-            + _product_shot(
-                shots["trade"],
-                "Trade Calculator: grade both sides, set dynasty/PPR/SF, and analyze the deal.",
                 trade,
             )
             + _bullet(
                 "Offseason / draft prep",
                 "Use Rankings, Prospects, Draft Room mocks, and the Cheat Sheet (CSV plus "
                 "live Sleeper sync). Keeper leagues get Keeper Assistant with auto costs.",
-            )
-            + _product_shot(
-                shots["draft"],
-                "Draft Room: configure format and roster slots, then mock or sync a live draft.",
                 draft,
             )
             + _bullet(
@@ -272,20 +226,10 @@ def build_signup_welcome(
                 "modal for metrics, game logs, value history, and trade comps.",
                 rankings,
             )
-            + _product_shot(
-                shots["rankings"],
-                "Dynasty rankings: overall board with 1QB/SF values, age, and 7-day movers.",
-                rankings,
-            )
             + _bullet(
                 "Dynasty Trade Value Chart",
                 "Public value chart you can use even before a league is linked. Great for "
                 "quick fairness checks.",
-                trade_values,
-            )
-            + _product_shot(
-                shots["trade_values"],
-                "Trade value chart: a quick fairness check before you offer a deal.",
                 trade_values,
             )
             + _bullet(
@@ -402,18 +346,9 @@ def build_pro_welcome(
         weekly = f"{root}/weekly"
         teams = f"{root}/teams"
         dashboard = f"{root}/dashboard"
-        trade = f"{root}/trade"
     else:
         trade_sugg = f"{base}/pricing"
         trade_intel = breakouts = draft = weekly = teams = dashboard = dash
-        trade = f"{base}/trade"
-
-    shots = {
-        "trade": _shot_url("trade.jpg"),
-        "rankings": _shot_url("rankings.jpg"),
-        "draft": _shot_url("draft.jpg"),
-        "trade_values": _shot_url("trade_values.jpg"),
-    }
 
     plan_blurb = {
         "single_league": (
@@ -440,13 +375,8 @@ def build_pro_welcome(
         (
             f'<p style="margin:0 0 12px;font-size:15px;color:#0f172a;line-height:1.55;">'
             f"Thanks for going <strong>{escape(plan_label, quote=False)}</strong>. "
-            f"{escape(plan_blurb, quote=False)} Here is how to put it to work, with "
-            "screenshots of the surfaces you will live in.</p>"
-        ),
-        _product_shot(
-            shots["trade"],
-            "Trade Calculator and Suggestions: build packages, then pressure-test with Playoff Impact.",
-            trade_sugg if "trade" in trade_sugg else trade,
+            f"{escape(plan_blurb, quote=False)} Here is how to put it to work: not just "
+            "a feature list, but when to open each tool.</p>"
         ),
         _section(
             "How to use PRO this week",
@@ -505,11 +435,6 @@ def build_pro_welcome(
                 "Use on every non-trivial trade. Monte Carlo on playoff odds, wins, PPG, "
                 "draft capital, age, and prime years left.",
             )
-            + _product_shot(
-                shots["rankings"],
-                "Rankings and values stay the backbone under PRO Suggestions, Targets, and Intel.",
-                f"{base}/rankings/dynasty",
-            )
             + _bullet(
                 "Breakout Engine",
                 "Use in offseason and early season to find opportunity before the wire heats up.",
@@ -523,7 +448,7 @@ def build_pro_welcome(
             )
             + _bullet(
                 "Weekly Recap",
-                "Use after each week for an AI storyline plus shareable OG image.",
+                "Use after each week for an AI storyline plus shareable image.",
                 weekly,
             )
             + _bullet(
@@ -531,11 +456,6 @@ def build_pro_welcome(
                 "Use before and during drafts: pin/mute/reorder (follows you into Draft Room). "
                 "Deep Dive replays Decision Score vs the remaining pool.",
                 draft,
-            )
-            + _product_shot(
-                shots["draft"],
-                "Draft Room and Custom Board: mock, sync live drafts, and keep your board pinned.",
-                draft if draft.startswith('http') else f"{base}/draft",
             )
             + _bullet(
                 "Roster Grades, Archetypes and Playoff Scenarios",
@@ -554,11 +474,6 @@ def build_pro_welcome(
             "Trade Calculator and share links, Rankings, Watchlist alerts, Waivers/Start-Sit, "
             "Matchups, Redzone, Awards/History, and the Tuesday digest all stay available. "
             "PRO layers decision quality on top. It does not replace the free workflow."
-            + _product_shot(
-                shots["trade_values"],
-                "Trade value chart stays free: quick fairness checks beside PRO Suggestions.",
-                f"{base}/dynasty-trade-value-chart",
-            ),
         ),
         _section(
             "Billing and sharing",
