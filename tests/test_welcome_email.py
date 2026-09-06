@@ -42,24 +42,32 @@ def test_signup_welcome_html_has_logos_and_depth(monkeypatch):
     out = we.build_signup_welcome(first_name="Pat", dash_url="https://brfantasyfootball.com/")
     html = out["html"]
     assert out["subject"].startswith("Welcome to BR Fantasy")
-    assert "BR_Logo_dark.png" in html
-    assert "BR_Mark_dark.png" in html
+    # Light-mode masthead: single full-color wordmark, no dark logo, no
+    # redundant square mark.
+    assert "BR_Logo.png" in html
+    assert "BR_Logo_dark.png" not in html
+    assert "BR_Mark" not in html
     assert "sleeper-logo.png" not in html
     assert "espn-logo.png" not in html
     assert "email/trade.jpg" not in html
     assert "email/rankings.jpg" not in html
     assert "email/draft.jpg" not in html
     assert "Trade Calculator" in html
-    assert "Weekly email digest" in html
-    assert "Ways managers use" in html
-    assert "Morning scan" in html
-    assert "Waivers, Start/Sit" in html
-    assert "Draft Room" in html
+    assert "personalized digest" in html
+    assert "Start here" in html
+    assert "Connect your league" in html
+    assert "Player Rankings" in html
+    assert "Free tools worth trying" in html
+    assert "Start/Sit" in html
+    assert "watchlist" not in html.lower()
     assert "welcome and onboarding emails" in html
+    # Site theme: navy accent, no generic blue.
+    assert "#122d4b" in html
+    assert "#2563eb" not in html
     assert "{UNSUB}" in html or "unsubscribe" in html.lower()
     assert "—" not in html and "\u2014" not in html
-    # Brand marks only (header + hero); no product screenshots.
-    assert html.count("<img ") == 4
+    # Single wordmark in the header; hero strip is logo-free; no screenshots.
+    assert html.count("<img ") == 1
 
 
 def test_pro_welcome_html_covers_toolkit(monkeypatch):
@@ -76,17 +84,19 @@ def test_pro_welcome_html_covers_toolkit(monkeypatch):
     assert "Trade Suggestions" in html
     assert "Breakout Engine" in html
     assert "Front Office Report" in html
-    assert "How to use PRO this week" in html
+    assert "Do this first" in html
     assert "Playoff Impact" in html
-    assert "Full PRO toolkit" in html
-    assert "BR_Logo_dark.png" in html
+    assert "The rest of your PRO toolkit" in html
+    assert "BR_Logo.png" in html
+    assert "BR_Logo_dark.png" not in html
     assert "email/trade.jpg" not in html
     assert "email/draft.jpg" not in html
     assert "sleeper-logo.png" not in html
     assert "/sleeper/2026/12345/trade?tab=suggestions" in html
     assert "welcome and onboarding emails" in html
     assert "—" not in html and "\u2014" not in html
-    assert html.count("<img ") == 4
+    assert "BR_Mark" not in html
+    assert html.count("<img ") == 1
 
 
 def test_send_signup_respects_opt_out(monkeypatch):
