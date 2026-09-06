@@ -1807,6 +1807,16 @@
             (keeperPage >= pages ? ' disabled' : '') + '>Next &#8594;</button>' +
         '</div>';
     }
+    var live = !!(state && state.mode === 'live');
+    var title = live
+      ? ('Keepers ' + (keepersOn ? 'listed' : 'hidden'))
+      : ('Keepers ' + (keepersOn ? 'applied' : 'off'));
+    var sub = live
+      ? (keeperSet.length + ' listed · recs follow host picks only · ' + mine + ' yours, ' + proj + ' projected')
+      : (keeperSet.length + ' off the board · ' + mine + ' yours, ' + proj + ' projected');
+    var note = live
+      ? 'Live recommendations treat every player as available until the host drafts them. Keepers here are reference only.'
+      : 'Other teams’ keepers are projected from the same surplus model. They are estimates, not their declared keepers.';
     el.className = 'dr-keeper-banner' + (keepersOn ? ' is-on' : '');
     el.innerHTML =
       '<div class="dr-keeper-head">' +
@@ -1816,6 +1826,7 @@
         '<button type="button" id="drKeeperView" class="dr-keeper-btn dr-keeper-view' + (keeperDetailsOpen ? ' is-open' : '') + '"' +
           ' aria-expanded="' + (keeperDetailsOpen ? 'true' : 'false') + '" aria-controls="drKeeperList">Details' +
           '<span class="dr-keeper-caret" aria-hidden="true"></span></button>' +
+        (live ? '' :
         '<button type="button" id="drKeeperToggle" class="dr-keeper-btn dr-keeper-btn-primary">' +
           (keepersOn ? 'Hide' : 'Show') + '</button>' +
       '</div>' +
