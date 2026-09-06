@@ -171,7 +171,7 @@ def google_auth_callback():
     from dashboard_services.accounts import (
         upsert_google_account, link_platform_identity, add_user_league,
     )
-    account_id = upsert_google_account(sub, email, info.get("given_name"))
+    account_id, account_created = upsert_google_account(sub, email, info.get("given_name"))
     if not account_id:
         return redirect("/?google_error=account_error")
 
@@ -179,6 +179,17 @@ def google_auth_callback():
     session["account_email"] = email
     session["account_first_name"] = info.get("given_name") or ""
     session.permanent = True
+
+    if account_created and email:
+        try:
+            from utils.welcome_email import send_signup_welcome
+            send_signup_welcome(
+                int(account_id),
+                email=email,
+                first_name=info.get("given_name") or "",
+            )
+        except Exception:
+            logger.warning("[google_auth] signup welcome email failed", exc_info=True)
 
     # Private provider onboarding is validated and encrypted before Google sign-in.
     # The browser session carries only an opaque one-time token; consume it now

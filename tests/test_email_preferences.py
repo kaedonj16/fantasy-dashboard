@@ -56,6 +56,24 @@ def test_unknown_types_default_off_without_row():
         assert is_enabled(1, "product_updates", email_opt_out=False) is False
 
 
+def test_onboarding_defaults_on_without_row():
+    class _Conn:
+        def execute(self, *a, **k):
+            class R:
+                def fetchone(self):
+                    return None
+            return R()
+
+    with mock.patch("utils.email_preferences.ensure_schema"), \
+         mock.patch("dashboard_services.db.get_conn") as gc:
+        ctx = mock.MagicMock()
+        ctx.__enter__.return_value = _Conn()
+        ctx.__exit__.return_value = False
+        gc.return_value = ctx
+        from utils.email_preferences import ONBOARDING
+        assert is_enabled(1, ONBOARDING) is True
+
+
 def test_unsubscribe_sets_weekly_digest_false():
     with mock.patch("utils.email_preferences.set_enabled", return_value=True) as se:
         assert unsubscribe_weekly_digest(5) is True

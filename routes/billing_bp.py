@@ -155,6 +155,8 @@ def _apply_plan_grant(
     cust_id: str,
     *,
     source: str,
+    account_id: str = "",
+    season: str = "",
 ) -> None:
     """Write the entitlement row(s) for a paid plan. Idempotent upserts."""
     plan = (plan or "").strip()
@@ -170,6 +172,7 @@ def _apply_plan_grant(
         )
         return
 
+    granted = False
     if plan in ("league", "combo") and league_id:
         ok = create_league_subscription(
             league_id, user_id or "", expires_at,
@@ -177,6 +180,7 @@ def _apply_plan_grant(
             stripe_customer_id=cust_id,
             platform=platform,
         )
+        granted = granted or bool(ok)
         logger.info(
             "[stripe] %s league subscription %s for league=%s user=%s expires=%s",
             source, "created" if ok else "FAILED", league_id, user_id, expires_at,
@@ -188,6 +192,7 @@ def _apply_plan_grant(
             stripe_customer_id=cust_id,
             platform=platform,
         )
+        granted = granted or bool(ok)
         logger.info(
             "[stripe] %s user subscription %s for user=%s expires=%s",
             source, "created" if ok else "FAILED", user_id, expires_at,
@@ -200,6 +205,7 @@ def _apply_plan_grant(
                 stripe_customer_id=cust_id,
                 platform=platform,
             )
+            granted = granted or bool(ok)
             logger.info(
                 "[stripe] %s single-league subscription %s for user=%s league=%s expires=%s",
                 source, "created" if ok else "FAILED", user_id, league_id, expires_at,
@@ -214,6 +220,58 @@ def _apply_plan_grant(
             "[stripe] %s unhandled plan=%s league=%s user=%s",
             source, plan, league_id, user_id,
         )
+
+    if granted and plan in ("league", "user", "combo", "single_league"):
+        try:
+            _maybe_send_pro_welcome(
+                plan=plan,
+                user_id=user_id,
+                account_id=account_id,
+                league_id=league_id,
+                platform=platform,
+                season=season,
+            )
+        except Exception:
+            logger.warning("[stripe] pro welcome email failed", exc_info=True)
+
+
+def _maybe_send_pro_welcome(
+    *,
+    plan: str,
+    user_id: str,
+    account_id: str = "",
+    league_id: str = "",
+    platform: str = "",
+    season: str = "",
+) -> None:
+    """Best-effort PRO onboarding email after a successful grant."""
+    from utils.welcome_email import resolve_account_from_subscriber, send_pro_welcome
+
+    aid = None
+    raw_aid = (account_id or "").strip()
+    if raw_aid:
+        try:
+            aid = int(raw_aid.replace("acct:", "") if raw_aid.startswith("acct:") else raw_aid)
+        except (TypeError, ValueError):
+            aid = None
+    row = resolve_account_from_subscriber(user_id=user_id, account_id=aid)
+    if not row:
+        logger.info("[stripe] pro welcome skipped: no account for user=%s", user_id)
+        return
+    season_i = None
+    try:
+        season_i = int(season) if season else None
+    except (TypeError, ValueError):
+        season_i = None
+    send_pro_welcome(
+        int(row["id"]),
+        email=row.get("email"),
+        first_name=row.get("first_name"),
+        plan=plan,
+        platform=platform or "sleeper",
+        season=season_i,
+        league_id=league_id or "",
+    )
 
 
 _STRIPE_PRICES = {
@@ -372,6 +430,8 @@ def _try_grant_from_stripe_success() -> None:
         _apply_plan_grant(
             plan, user_id, league_id, platform, expires_at, sub_id, cust_id,
             source="success-page",
+            account_id=str(meta.get("account_id") or ""),
+            season=str(meta.get("season") or ""),
         )
     except Exception:
         logger.exception("[stripe] success-page session verification failed")
@@ -1148,6 +1208,8 @@ def stripe_webhook():
         _apply_plan_grant(
             plan, user_id, league_id, platform, expires_at, sub_id, cust_id,
             source=f"webhook:{etype}",
+            account_id=str(meta.get("account_id") or ""),
+            season=str(meta.get("season") or ""),
         )
 
     elif etype == "invoice.paid":

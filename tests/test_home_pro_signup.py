@@ -214,7 +214,7 @@ def test_google_callback_resumes_home_pro_checkout(monkeypatch):
             "nonce": "nonce", "given_name": "Pat",
         },
     )
-    monkeypatch.setattr("dashboard_services.accounts.upsert_google_account", lambda *a, **k: 77)
+    monkeypatch.setattr("dashboard_services.accounts.upsert_google_account", lambda *a, **k: (77, False))
     monkeypatch.setattr("dashboard_services.accounts.link_platform_identity", lambda *a, **k: "ok")
     monkeypatch.setattr("dashboard_services.accounts.add_user_league", lambda *a, **k: None)
     monkeypatch.setattr("dashboard_services.accounts.get_post_login_destination", lambda *a, **k: "/")

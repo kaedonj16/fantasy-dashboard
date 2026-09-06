@@ -12,13 +12,18 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 WEEKLY_DIGEST = "weekly_digest"
+ONBOARDING = "onboarding"
 KNOWN_TYPES = (
     WEEKLY_DIGEST,
+    ONBOARDING,
     "waiver_report",
     "trade_alerts",
     "player_alerts",
     "product_updates",
 )
+
+# Types that send unless the user opts out (default enabled with no preference row).
+_OPT_OUT_TYPES = frozenset({WEEKLY_DIGEST, ONBOARDING})
 
 _SCHEMA_READY = False
 
@@ -78,8 +83,8 @@ def is_enabled(
 
     Preference row wins. If none exists, ``weekly_digest`` falls back to
     ``NOT email_opt_out`` (existing users keep receiving mail until they
-    unsubscribe). Unknown future types default to disabled until opted in,
-    except weekly_digest which is opt-out.
+    unsubscribe). ``onboarding`` (signup / PRO welcome) also defaults on.
+    Unknown future types default to disabled until opted in.
     """
     ntype = (notification_type or WEEKLY_DIGEST).strip().lower()
     row = None
@@ -110,6 +115,8 @@ def is_enabled(
         if email_opt_out is None:
             email_opt_out = _legacy_opt_out(account_id)
         return not bool(email_opt_out)
+    if ntype in _OPT_OUT_TYPES:
+        return True
     return False
 
 
@@ -166,6 +173,21 @@ def set_enabled(
 def unsubscribe_weekly_digest(account_id: int) -> bool:
     """Opt out of weekly digest only. Does not disable future email categories."""
     return set_enabled(int(account_id), False, WEEKLY_DIGEST)
+
+
+def unsubscribe_onboarding(account_id: int) -> bool:
+    """Opt out of signup / PRO welcome (and other onboarding) emails."""
+    return set_enabled(int(account_id), False, ONBOARDING)
+
+
+def unsubscribe_type(account_id: int, notification_type: str) -> bool:
+    """Opt out of one notification type."""
+    ntype = (notification_type or WEEKLY_DIGEST).strip().lower()
+    if ntype == WEEKLY_DIGEST:
+        return unsubscribe_weekly_digest(int(account_id))
+    if ntype == ONBOARDING:
+        return unsubscribe_onboarding(int(account_id))
+    return set_enabled(int(account_id), False, ntype)
 
 
 def _legacy_opt_out(account_id: int) -> bool:

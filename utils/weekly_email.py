@@ -16,6 +16,7 @@ import hashlib
 import hmac
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from html import escape
 
@@ -47,27 +48,56 @@ def _secret() -> bytes | None:
     return key.encode() if key else None
 
 
-def make_unsub_token(account_id: int) -> str | None:
+def make_unsub_token(account_id: int, notification_type: str = "weekly_digest") -> str | None:
+    """Sign an unsubscribe token.
+
+    Weekly digest keeps the legacy ``{account_id}.{mac}`` shape so existing
+    inbox links keep working. Other types use ``{account_id}.{type}.{mac}``.
+    """
     secret = _secret()
     if secret is None:
         logger.error("[weekly-email] FLASK_SECRET_KEY unset; cannot sign unsubscribe token")
         return None
-    mac = hmac.new(secret, f"unsub:{account_id}".encode(), hashlib.sha256).hexdigest()[:32]
-    return f"{account_id}.{mac}"
+    ntype = (notification_type or "weekly_digest").strip().lower() or "weekly_digest"
+    if ntype == "weekly_digest":
+        mac = hmac.new(secret, f"unsub:{account_id}".encode(), hashlib.sha256).hexdigest()[:32]
+        return f"{account_id}.{mac}"
+    safe = re.sub(r"[^a-z0-9_]+", "", ntype)[:40]
+    if not safe:
+        return None
+    mac = hmac.new(secret, f"unsub:{safe}:{account_id}".encode(), hashlib.sha256).hexdigest()[:32]
+    return f"{account_id}.{safe}.{mac}"
 
 
 def verify_unsub_token(token: str):
-    """Return the account_id encoded in a valid token, else None."""
+    """Return ``(account_id, notification_type)`` for a valid token, else None.
+
+    Legacy two-part tokens verify as ``weekly_digest``. Callers that only need
+    the account id can unpack ``result[0]``.
+    """
     secret = _secret()
     if secret is None:
         return None
+    parts = (token or "").split(".")
     try:
-        aid_s, mac = (token or "").split(".", 1)
-        aid = int(aid_s)
-    except (ValueError, AttributeError):
+        if len(parts) == 2:
+            aid = int(parts[0])
+            mac = parts[1]
+            expect = hmac.new(secret, f"unsub:{aid}".encode(), hashlib.sha256).hexdigest()[:32]
+            return (aid, "weekly_digest") if hmac.compare_digest(mac, expect) else None
+        if len(parts) == 3:
+            aid = int(parts[0])
+            ntype = re.sub(r"[^a-z0-9_]+", "", (parts[1] or "").lower())[:40]
+            mac = parts[2]
+            if not ntype:
+                return None
+            expect = hmac.new(
+                secret, f"unsub:{ntype}:{aid}".encode(), hashlib.sha256
+            ).hexdigest()[:32]
+            return (aid, ntype) if hmac.compare_digest(mac, expect) else None
+    except (ValueError, AttributeError, TypeError):
         return None
-    expect = hmac.new(secret, f"unsub:{aid}".encode(), hashlib.sha256).hexdigest()[:32]
-    return aid if hmac.compare_digest(mac, expect) else None
+    return None
 
 
 # ── Opt-out storage ───────────────────────────────────────────────────────────
@@ -88,11 +118,11 @@ def _ensure_columns(conn) -> None:
         logger.debug("[weekly-email] delivery-event schema skipped", exc_info=True)
 
 
-def unsubscribe(account_id: int) -> bool:
-    """Opt out of the weekly digest. Does not disable future email categories."""
+def unsubscribe(account_id: int, notification_type: str = "weekly_digest") -> bool:
+    """Opt out of one email category. Defaults to weekly digest."""
     try:
-        from utils.email_preferences import unsubscribe_weekly_digest
-        return unsubscribe_weekly_digest(int(account_id))
+        from utils.email_preferences import unsubscribe_type
+        return unsubscribe_type(int(account_id), notification_type or "weekly_digest")
     except Exception as exc:
         logger.warning("[weekly-email] unsubscribe failed: %s", exc)
         return False
