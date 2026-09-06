@@ -820,31 +820,24 @@ def _matchup_status_label(status_by_pid: dict, pids: list) -> str:
     return "pre"
 
 
-def _within_game_window(games, now=None, lead_seconds=90 * 60) -> bool:
-    """True only on game day / around kickoff, so the band isn't up all week.
+def _week_scores_visible(games, now=None, lead_seconds=90 * 60) -> bool:
+    """Show from ~90 min before the week's first kickoff through the rest of the
+    week, so live scores appear at kickoff and the final result stays up after.
 
-    Shows when any of the week's NFL games is live now, or kicks off within the
-    lead window (~90 min). It stays hidden the rest of the week (Tue-Sat between
-    slates), and staggered Sunday kickoffs keep it continuous through the day."""
-    from utils.utils import normalize_game_status_from_tank01
-
+    Hidden only in the pre-week, projection-only stretch before any game has
+    started (the "up all week" case). Once the earliest kickoff is within the
+    lead window or in the past, the band stays visible until the NFL week rolls
+    over and these become next week's not-yet-played games again."""
     if now is None:
         now = datetime.now(timezone.utc)
-    now_ts = now.timestamp()
+    threshold = now.timestamp() + lead_seconds
     for g in (games or []):
-        try:
-            if normalize_game_status_from_tank01(g, now) == "in":
-                return True
-        except Exception:
-            pass
         raw = g.get("gameTime_epoch")
         try:
             ts = float(raw) if raw not in (None, "") else None
         except (TypeError, ValueError):
             ts = None
-        if ts is None:
-            continue
-        if 0 <= (ts - now_ts) <= lead_seconds:
+        if ts is not None and ts <= threshold:
             return True
     return False
 
@@ -922,14 +915,16 @@ def api_portfolio_matchup():
     if week < 1:
         return jsonify({"live": False})
 
-    # Only on game day / around kickoff — not all week. Cached schedule read, and
-    # league-independent, so gate here before the per-league ctx/matchup work.
+    # Not up all week: hide the pre-week projection-only stretch, then show from
+    # ~90 min before the first kickoff through the rest of the week (live, then
+    # the final result). Cached schedule read, league-independent, so gate here
+    # before the per-league ctx/matchup work.
     from utils.utils import get_nfl_games_for_week
     try:
         games = get_nfl_games_for_week(week, default_season)
     except Exception:
         games = []
-    if not _within_game_window(games):
+    if not _week_scores_visible(games):
         return jsonify({"live": False})
 
     try:
