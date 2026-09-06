@@ -56,8 +56,8 @@ def _render(title: str, league_id: Optional[str], active: str, body: str,
 
 @public_bp.route("/email/unsubscribe", methods=["GET", "POST"])
 def email_unsubscribe():
-    """One-click unsubscribe from weekly digest emails. The token is an HMAC over
-    the account id, so no login is needed and the link can't be forged.
+    """One-click unsubscribe. The token is an HMAC over the account id (and
+    notification type for non-weekly mail), so no login is needed.
 
     GET renders a confirmation page (the link in the email body). POST is the
     RFC 8058 one-click path a mail client hits from the List-Unsubscribe header;
@@ -65,11 +65,13 @@ def email_unsubscribe():
     from flask import request as _req
     from utils.weekly_email import verify_unsub_token, unsubscribe
     token = _req.args.get("token", "") or (_req.form.get("token", "") if _req.method == "POST" else "")
-    account_id = verify_unsub_token(token)
+    verified = verify_unsub_token(token)
+    account_id = verified[0] if verified else None
+    ntype = verified[1] if verified else "weekly_digest"
 
     if _req.method == "POST":
         if account_id is not None:
-            unsubscribe(account_id)
+            unsubscribe(account_id, ntype)
         return ("", 200)
 
     if account_id is None:
@@ -77,11 +79,20 @@ def email_unsubscribe():
                "<p style='color:var(--text-muted);font-size:14px;'>We couldn't verify "
                "this unsubscribe link. You can manage email preferences from your "
                "account settings.</p>")
-    elif unsubscribe(account_id):
+    elif unsubscribe(account_id, ntype):
+        if ntype == "onboarding":
+            detail = (
+                "You won't receive signup or PRO welcome emails. "
+                "Weekly digest emails are unchanged — use the link in a digest "
+                "footer to opt out of those separately."
+            )
+        else:
+            detail = (
+                "You won't receive any more weekly digest emails. You can "
+                "re-enable them anytime from your account settings."
+            )
         msg = ("<h2 style='margin:0 0 8px;'>You're unsubscribed</h2>"
-               "<p style='color:var(--text-muted);font-size:14px;'>You won't receive "
-               "any more weekly digest emails. You can re-enable them anytime from "
-               "your account settings.</p>")
+               f"<p style='color:var(--text-muted);font-size:14px;'>{detail}</p>")
     else:
         msg = ("<h2 style='margin:0 0 8px;'>Something went wrong</h2>"
                "<p style='color:var(--text-muted);font-size:14px;'>We couldn't update "

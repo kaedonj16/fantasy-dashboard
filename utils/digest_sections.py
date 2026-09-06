@@ -20,8 +20,46 @@ def email_shell(
     dash_url: str = "",
     cta_label: str = "Open your dashboard →",
     unsub_href: str = "{UNSUB}",
+    logo_url: str = "",
+    brand_mark_url: str = "",
+    footer_kind: str = "weekly_digest",
 ) -> str:
+    """Wrap email body in the BR Fantasy chrome.
+
+    ``footer_kind`` controls unsubscribe copy:
+      - ``weekly_digest`` (default)
+      - ``onboarding`` — signup / PRO welcome emails
+    """
     sub = escape(subtitle or "Your weekly fantasy digest", quote=False)
+    base_logo = (logo_url or "").strip()
+    mark = (brand_mark_url or "").strip()
+    logo_block = ""
+    if base_logo or mark:
+        imgs = []
+        if mark:
+            imgs.append(
+                f'<img src="{escape(mark, quote=True)}" alt="" width="36" height="36" '
+                f'style="display:block;border:0;outline:none;width:36px;height:36px;'
+                f'border-radius:8px;" />'
+            )
+        if base_logo:
+            imgs.append(
+                f'<img src="{escape(base_logo, quote=True)}" alt="BR Fantasy" width="160" '
+                f'style="display:block;border:0;outline:none;width:160px;height:auto;'
+                f'max-width:70%;" />'
+            )
+        logo_block = (
+            '<div style="margin:0 0 14px;">'
+            + (
+                f'<table role="presentation" cellpadding="0" cellspacing="0"><tr>'
+                f'<td style="vertical-align:middle;padding-right:12px;">{imgs[0]}</td>'
+                f'<td style="vertical-align:middle;">{imgs[1] if len(imgs) > 1 else ""}</td>'
+                f"</tr></table>"
+                if len(imgs) == 2
+                else imgs[0]
+            )
+            + "</div>"
+        )
     cta = ""
     if dash_url:
         cta = f"""\
@@ -32,10 +70,24 @@ def email_shell(
     </td>
   </tr>
 </table>"""
+    if footer_kind == "onboarding":
+        footer = (
+            "You're getting this because you created a BR Fantasy account "
+            "(or upgraded to PRO). "
+            f'<a href="{escape(unsub_href, quote=True)}" style="color:#64748b;">Unsubscribe</a> '
+            "from welcome and onboarding emails. Weekly digests are separate."
+        )
+    else:
+        footer = (
+            "You're getting this because you signed in to BR Fantasy. "
+            f'<a href="{escape(unsub_href, quote=True)}" style="color:#64748b;">Unsubscribe</a> '
+            "from weekly digest emails."
+        )
     return f"""\
 <div style="background:#e8eef5;padding:28px 12px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
   <div style="max-width:{MAX_WIDTH_PX}px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #dbe3ee;">
     <div style="background:#0b1220;padding:22px 24px 18px;">
+      {logo_block}
       <div style="color:#93c5fd;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;">BR Fantasy</div>
       <div style="color:#ffffff;font-size:20px;font-weight:800;margin-top:6px;line-height:1.25;">{sub}</div>
     </div>
@@ -46,9 +98,7 @@ def email_shell(
     </div>
     <div style="padding:16px 22px;background:#ffffff;border-top:1px solid #e6ebf2;">
       <p style="margin:0;font-size:11px;color:#94a3b8;line-height:1.6;">
-        You're getting this because you signed in to BR Fantasy.
-        <a href="{escape(unsub_href, quote=True)}" style="color:#64748b;">Unsubscribe</a>
-        from weekly digest emails.
+        {footer}
       </p>
     </div>
   </div>

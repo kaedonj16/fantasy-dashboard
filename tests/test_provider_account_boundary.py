@@ -287,7 +287,7 @@ def _stub_google_callback(monkeypatch, attached):
     )
     monkeypatch.setattr(
         "dashboard_services.accounts.upsert_google_account",
-        lambda *args, **kwargs: 77,
+        lambda *args, **kwargs: (77, False),
     )
     monkeypatch.setattr(
         "dashboard_services.accounts.link_platform_identity",

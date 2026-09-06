@@ -1,0 +1,612 @@
+"""Signup and PRO onboarding emails.
+
+Fired once when a Google account is first created, and once when a PRO plan is
+granted. Reuses the weekly digest chrome (with brand logos) and the shared
+Brevo/SMTP delivery layer. Opt-out is the ``onboarding`` preference type —
+independent of weekly_digest.
+"""
+from __future__ import annotations
+
+import logging
+import os
+from html import escape
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+_SIGNUP_STATE = "signup_welcome_sent:"  # + account_id
+_PRO_STATE = "pro_welcome_sent:"  # + account_id
+
+_PLAN_LABELS = {
+    "single_league": "One League PRO",
+    "user": "Personal PRO",
+    "league": "League PRO",
+    "combo": "League + Personal PRO",
+}
+
+
+def _base_url() -> str:
+    return (os.environ.get("SITE_BASE_URL") or "https://brfantasyfootball.com").rstrip("/")
+
+
+def brand_asset_url(filename: str) -> str:
+    name = (filename or "").lstrip("/")
+    return f"{_base_url()}/static/{name}"
+
+
+def _logo_urls() -> dict[str, str]:
+    """Absolute URLs for email-safe brand + platform marks (dark header / light body)."""
+    return {
+        "logo": brand_asset_url("BR_Logo_dark.png"),
+        "mark": brand_asset_url("BR_Mark_dark.png"),
+        "sleeper": brand_asset_url("sleeper-logo.png"),
+        "espn": brand_asset_url("espn-logo.png"),
+    }
+
+
+def _unsub_url(account_id: int) -> Optional[str]:
+    from utils.email_preferences import ONBOARDING
+    from utils.weekly_email import make_unsub_token
+
+    token = make_unsub_token(int(account_id), ONBOARDING)
+    if not token:
+        return None
+    return f"{_base_url()}/email/unsubscribe?token={token}"
+
+
+def _section(title: str, body_html: str) -> str:
+    t = escape(title, quote=False)
+    return (
+        f'<h3 style="margin:22px 0 8px;font-size:11px;font-weight:800;text-transform:uppercase;'
+        f'letter-spacing:.06em;color:#334155;">{t}</h3>'
+        f'<div style="margin:0;font-size:14px;color:#0f172a;line-height:1.55;">{body_html}</div>'
+    )
+
+
+def _bullet(title: str, detail: str, href: str = "") -> str:
+    label = escape(title, quote=False)
+    body = escape(detail, quote=False)
+    if href:
+        label = (
+            f'<a href="{escape(href, quote=True)}" style="color:#1d4ed8;text-decoration:none;'
+            f'font-weight:700;">{label}</a>'
+        )
+    else:
+        label = f'<strong style="color:#0f172a;">{label}</strong>'
+    return (
+        f'<div style="margin:0 0 12px;padding:12px 14px;background:#ffffff;border:1px solid #e6ebf2;'
+        f'border-radius:10px;">'
+        f'<div style="font-size:14px;line-height:1.35;">{label}</div>'
+        f'<div style="margin-top:4px;font-size:13px;color:#475569;line-height:1.45;">{body}</div>'
+        f"</div>"
+    )
+
+
+def _platform_row(logos: dict[str, str]) -> str:
+    cells = []
+    for key, label in (("sleeper", "Sleeper"), ("espn", "ESPN")):
+        src = logos.get(key) or ""
+        if not src:
+            continue
+        cells.append(
+            f'<td style="padding:0 10px 0 0;vertical-align:middle;">'
+            f'<img src="{escape(src, quote=True)}" alt="{escape(label, quote=True)}" '
+            f'width="28" height="28" style="display:block;border:0;border-radius:6px;'
+            f'width:28px;height:28px;object-fit:contain;" />'
+            f"</td>"
+        )
+    text_plats = "Yahoo · MFL · Fleaflicker"
+    return (
+        '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 0;">'
+        f"<tr>{''.join(cells)}"
+        f'<td style="vertical-align:middle;font-size:12px;color:#64748b;font-weight:600;">'
+        f"{escape(text_plats, quote=False)}</td></tr></table>"
+    )
+
+
+def build_signup_welcome(
+    *,
+    first_name: Optional[str] = None,
+    dash_url: str = "",
+    unsub_href: str = "{UNSUB}",
+) -> dict:
+    """Return ``{subject, html, tags}`` for a new-account welcome email."""
+    from utils.digest_sections import email_shell, greeting_html
+
+    logos = _logo_urls()
+    base = _base_url()
+    dash = (dash_url or base).rstrip("/") or base
+    pricing = f"{base}/pricing"
+    rankings = f"{base}/rankings"
+
+    parts = [
+        greeting_html(first_name),
+        (
+            '<p style="margin:0 0 8px;font-size:15px;color:#0f172a;line-height:1.55;">'
+            "Welcome to <strong>BR Fantasy</strong> — your front office for dynasty, "
+            "redraft, and keeper leagues. This note is a guided tour of what to open "
+            "first so you get value in the next five minutes.</p>"
+        ),
+        _section(
+            "1. Connect every league",
+            "Sign in from the home page with your Sleeper username, ESPN league ID, "
+            "Yahoo OAuth, MFL, or Fleaflicker. Google keeps watchlists, digests, and "
+            "PRO entitlements synced across devices."
+            + _platform_row(logos),
+        ),
+        _section(
+            "2. Live inside your dashboard",
+            "Your league hub surfaces since-last-visit activity, waiver targets, "
+            "standings context, and (in season) matchup tools. Use the league switcher "
+            "or <strong>My Leagues</strong> portfolio when you run more than one team."
+            + _bullet(
+                "Open your dashboard",
+                "Jump straight into the league you just connected.",
+                dash,
+            ),
+        ),
+        _section(
+            "3. Free tools worth opening today",
+            ""
+            + _bullet(
+                "Trade Calculator",
+                "Grade any deal with BR values, shareable links, and roster context — "
+                "open Trades from any connected league.",
+                dash,
+            )
+            + _bullet(
+                "Player Rankings & search",
+                "Filter by position and format, then open any player modal for value "
+                "history, advanced metrics, and trade comps.",
+                rankings,
+            )
+            + _bullet(
+                "Watchlist",
+                "Star players to get value-move and injury signals when you come back.",
+            )
+            + _bullet(
+                "Draft Room & Cheat Sheet",
+                "Mock any format, sync a live Sleeper/ESPN draft, and export a CSV board.",
+            )
+            + _bullet(
+                "Weekly email digest",
+                "Every Tuesday we email a personalized start/sit, waiver, and value "
+                "recap for your primary league. You can opt out of that separately.",
+            ),
+        ),
+        _section(
+            "4. When you're ready for PRO",
+            "PRO unlocks Trade Suggestions with playoff-odds impact, Trade Intel, "
+            "Breakout Engine, Front Office Report, Playoff Impact sims, Weekly Recap "
+            "storylines, Custom Draft Board, and Draft Deep Dive. Plans start at "
+            f'$5/year for one league — see <a href="{escape(pricing, quote=True)}" '
+            'style="color:#1d4ed8;font-weight:700;text-decoration:none;">Pricing</a>.'
+        ),
+        (
+            '<p style="margin:20px 0 0;font-size:13px;color:#64748b;line-height:1.5;">'
+            "Questions? Reply to this email or visit Support from the site footer. "
+            "We're glad you're here.</p>"
+        ),
+    ]
+
+    html = email_shell(
+        "".join(parts),
+        subtitle="Welcome to BR Fantasy",
+        dash_url=dash,
+        cta_label="Open BR Fantasy →",
+        unsub_href=unsub_href,
+        logo_url=logos["logo"],
+        brand_mark_url=logos["mark"],
+        footer_kind="onboarding",
+    )
+    hi = (first_name or "").strip() or "there"
+    return {
+        "subject": f"Welcome to BR Fantasy, {hi}",
+        "html": html,
+        "tags": ["signup-welcome", "onboarding"],
+    }
+
+
+def build_pro_welcome(
+    *,
+    first_name: Optional[str] = None,
+    plan: str = "user",
+    platform: str = "",
+    season: Optional[int] = None,
+    league_id: str = "",
+    dash_url: str = "",
+    unsub_href: str = "{UNSUB}",
+) -> dict:
+    """Return ``{subject, html, tags}`` for a new PRO subscription welcome."""
+    from utils.digest_sections import email_shell, greeting_html
+
+    logos = _logo_urls()
+    base = _base_url()
+    plan_key = (plan or "user").strip().lower()
+    plan_label = _PLAN_LABELS.get(plan_key, "PRO")
+    plat = (platform or "sleeper").strip().lower() or "sleeper"
+    season_i = int(season) if season else None
+    lid = (league_id or "").strip()
+
+    if dash_url:
+        dash = dash_url.rstrip("/")
+    elif lid and season_i:
+        dash = f"{base}/{plat}/{season_i}/{lid}/dashboard"
+    else:
+        dash = base
+
+    trade_sugg = f"{dash.replace('/dashboard', '')}/trade?tab=suggestions" if "/dashboard" in dash else f"{base}/pricing"
+    # Prefer league-scoped links when we have a dashboard path.
+    if lid and season_i:
+        root = f"{base}/{plat}/{season_i}/{lid}"
+        trade_sugg = f"{root}/trade?tab=suggestions"
+        breakouts = f"{root}/breakouts"
+        draft = f"{root}/draft"
+        weekly = f"{root}/weekly"
+        teams = f"{root}/teams"
+    else:
+        breakouts = draft = weekly = teams = dash
+
+    plan_blurb = {
+        "single_league": (
+            "One League PRO unlocks premium tools for the league you chose at checkout. "
+            "Other leagues stay on the free tier unless you upgrade."
+        ),
+        "user": (
+            "Personal PRO follows you across every league on your Google account — "
+            "ideal if you manage multiple teams."
+        ),
+        "league": (
+            "League PRO is shared with every manager in the league you purchased for. "
+            "Send them the invite link from Commissioner / pricing so they can claim access."
+        ),
+        "combo": (
+            "League + Personal PRO covers shared access for one league plus Personal PRO "
+            "on all of your other teams."
+        ),
+    }.get(plan_key, "Your PRO plan is active.")
+
+    parts = [
+        greeting_html(first_name),
+        (
+            '<p style="margin:0 0 4px;font-size:12px;font-weight:800;letter-spacing:.08em;'
+            'text-transform:uppercase;color:#1d4ed8;">PRO unlocked</p>'
+            f'<p style="margin:0 0 12px;font-size:15px;color:#0f172a;line-height:1.55;">'
+            f"Thanks for going <strong>{escape(plan_label, quote=False)}</strong>. "
+            f"{escape(plan_blurb, quote=False)}</p>"
+        ),
+        _section(
+            "Start here (highest leverage)",
+            ""
+            + _bullet(
+                "Trade Suggestions",
+                "Archetype packages (contend / rebuild / consolidate / distribute) with "
+                "full post-trade playoff-odds impact — the fastest way to see PRO working.",
+                trade_sugg,
+            )
+            + _bullet(
+                "Take the in-app PRO tour",
+                "After checkout you'll see a short welcome overlay; replay it anytime from "
+                "Settings → PRO welcome.",
+            ),
+        ),
+        _section(
+            "Your full PRO toolkit",
+            ""
+            + _bullet(
+                "Trade Intelligence",
+                "Real dynasty trade frequency, market values, and packages you can load "
+                "into the calculator in one click.",
+                trade_sugg.replace("tab=suggestions", "tab=intel") if "tab=" in trade_sugg else trade_sugg,
+            )
+            + _bullet(
+                "Playoff Impact",
+                "Monte Carlo sims for how a deal shifts playoff odds, projected wins, PPG, "
+                "and draft capital — with a plain-language verdict.",
+            )
+            + _bullet(
+                "Breakout Engine",
+                "Opportunity projections, vacated targets, historical comps, and "
+                "confidence-adjusted PPG ranges.",
+                breakouts,
+            )
+            + _bullet(
+                "Front Office Report",
+                "AI report on your roster construction, trade lanes, and standings path.",
+                dash if dash.endswith("/dashboard") else f"{dash}/dashboard" if lid else dash,
+            )
+            + _bullet(
+                "Weekly Recap",
+                "AI storyline for your league week plus a shareable card for the group chat.",
+                weekly,
+            )
+            + _bullet(
+                "Custom Draft Board & Deep Dive",
+                "Pin, mute, and reorder your board (follows you into Draft Room) and replay "
+                "Decision Score against the remaining pool.",
+                draft,
+            )
+            + _bullet(
+                "Roster Intel & playoff picture",
+                "Per-player signals (Core, Sell High, Buy Window…), archetypes, and "
+                "playoff scenarios under Teams.",
+                teams,
+            )
+            + _bullet(
+                "Cross-league moves (Personal / Combo)",
+                "My Leagues ranks lineup and injury actions across every linked team so "
+                "you don't miss a start elsewhere.",
+            ),
+        ),
+        _section(
+            "How billing works",
+            "Subscriptions renew yearly through Stripe. Manage payment method, invoices, "
+            "or cancellation from Pricing → Manage billing while signed in. League PRO "
+            "buyers keep an invite link for teammates under Commissioner."
+        ),
+        (
+            '<p style="margin:20px 0 0;font-size:13px;color:#64748b;line-height:1.5;">'
+            "You're also on the Tuesday weekly digest for your primary league — opt out "
+            "of that from any digest footer without losing PRO.</p>"
+        ),
+    ]
+
+    html = email_shell(
+        "".join(parts),
+        subtitle=f"Welcome to {plan_label}",
+        dash_url=trade_sugg if "trade" in trade_sugg else dash,
+        cta_label="Open Trade Suggestions →",
+        unsub_href=unsub_href,
+        logo_url=logos["logo"],
+        brand_mark_url=logos["mark"],
+        footer_kind="onboarding",
+    )
+    return {
+        "subject": f"Your {plan_label} is ready",
+        "html": html,
+        "tags": ["pro-welcome", "onboarding", f"plan-{plan_key}"],
+    }
+
+
+def _claim_once(key: str, value: str = "1") -> bool:
+    """Insert app_state key; True only if this caller won the claim."""
+    try:
+        from dashboard_services.db import get_conn
+
+        with get_conn() as conn:
+            cur = conn.execute(
+                "INSERT INTO app_state (key, value) VALUES (%s, %s) "
+                "ON CONFLICT (key) DO NOTHING",
+                (key, value),
+            )
+            conn.commit()
+            rc = getattr(cur, "rowcount", None)
+            if rc is not None:
+                return int(rc) == 1
+            # Driver without rowcount: treat a fresh insert as claimed only when
+            # the stored value matches what we just wrote (best-effort).
+            row = conn.execute(
+                "SELECT value FROM app_state WHERE key = %s", (key,)
+            ).fetchone()
+            val = row.get("value") if isinstance(row, dict) else (row[0] if row else None)
+            return val == value
+    except Exception:
+        logger.debug("[welcome-email] claim_once failed key=%s", key, exc_info=True)
+        return False
+
+
+def _release_claim(key: str) -> None:
+    try:
+        from dashboard_services.db import get_conn
+
+        with get_conn() as conn:
+            conn.execute("DELETE FROM app_state WHERE key = %s", (key,))
+            conn.commit()
+    except Exception:
+        logger.debug("[welcome-email] release_claim failed key=%s", key, exc_info=True)
+
+
+def _account_email_row(account_id: int) -> Optional[dict]:
+    try:
+        from dashboard_services.db import get_conn
+
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT id, email, first_name FROM accounts WHERE id = %s",
+                (int(account_id),),
+            ).fetchone()
+        return dict(row) if row else None
+    except Exception:
+        logger.debug("[welcome-email] account lookup failed", exc_info=True)
+        return None
+
+
+def resolve_account_from_subscriber(
+    user_id: str = "",
+    account_id: Optional[int] = None,
+) -> Optional[dict]:
+    """Map Stripe ``user_id`` / ``acct:<id>`` metadata to an accounts row."""
+    if account_id:
+        return _account_email_row(int(account_id))
+    uid = (user_id or "").strip()
+    if uid.startswith("acct:"):
+        try:
+            return _account_email_row(int(uid.split(":", 1)[1]))
+        except (TypeError, ValueError):
+            return None
+    if uid.isdigit():
+        # Bare account id sometimes stored in metadata.
+        row = _account_email_row(int(uid))
+        if row:
+            return row
+    return None
+
+
+def _should_send(account_id: int, email: str) -> tuple[bool, str]:
+    from utils.email_events import is_suppressed
+    from utils.email_preferences import ONBOARDING, is_enabled
+
+    if not email or "@" not in email:
+        return False, "no_email"
+    if is_suppressed(email):
+        return False, "suppressed"
+    if not is_enabled(int(account_id), ONBOARDING):
+        return False, "opted_out"
+    return True, "ok"
+
+
+def _deliver(
+    *,
+    account_id: int,
+    email: str,
+    payload: dict,
+    email_type: str,
+    unsub: str,
+    state_key: str,
+) -> bool:
+    from utils.email_delivery import is_configured, send_email
+    from utils.email_events import record_send
+
+    if not is_configured():
+        logger.info("[welcome-email] sender not configured; skip type=%s account=%s", email_type, account_id)
+        _release_claim(state_key)
+        return False
+
+    html = (payload.get("html") or "").replace("{UNSUB}", unsub)
+    result = send_email(
+        email,
+        payload.get("subject") or "BR Fantasy",
+        html,
+        unsubscribe_url=unsub,
+        tags=payload.get("tags") or ["onboarding"],
+    )
+    if result.ok:
+        record_send(
+            account_id=int(account_id),
+            email=email,
+            email_type=email_type,
+            provider=result.provider,
+            provider_message_id=result.message_id,
+            status="sent",
+        )
+        return True
+    logger.warning(
+        "[welcome-email] send failed type=%s account=%s provider=%s err=%s",
+        email_type, account_id, result.provider, (result.error or "")[:200],
+    )
+    record_send(
+        account_id=int(account_id),
+        email=email,
+        email_type=email_type,
+        provider=result.provider or "none",
+        provider_message_id=result.message_id,
+        status="failed",
+        error_category=result.error_category,
+        error_detail=result.error,
+    )
+    _release_claim(state_key)
+    return False
+
+
+def send_signup_welcome(
+    account_id: int,
+    *,
+    email: Optional[str] = None,
+    first_name: Optional[str] = None,
+    dash_url: str = "",
+    force: bool = False,
+) -> bool:
+    """Send the new-account welcome once. Returns True if accepted by the provider."""
+    row = _account_email_row(int(account_id)) if not email else {
+        "id": int(account_id), "email": email, "first_name": first_name,
+    }
+    if not row and email:
+        row = {"id": int(account_id), "email": email, "first_name": first_name}
+    if not row:
+        return False
+    to = (row.get("email") or email or "").strip()
+    name = first_name if first_name is not None else row.get("first_name")
+    ok, reason = _should_send(int(account_id), to)
+    if not ok:
+        logger.info("[welcome-email] signup skip account=%s reason=%s", account_id, reason)
+        return False
+
+    state_key = f"{_SIGNUP_STATE}{int(account_id)}"
+    if not force and not _claim_once(state_key):
+        logger.info("[welcome-email] signup already claimed account=%s", account_id)
+        return False
+
+    unsub = _unsub_url(int(account_id))
+    if not unsub:
+        logger.error("[welcome-email] cannot mint onboarding unsub token; skip signup")
+        _release_claim(state_key)
+        return False
+
+    payload = build_signup_welcome(
+        first_name=name, dash_url=dash_url or _base_url(), unsub_href=unsub,
+    )
+    return _deliver(
+        account_id=int(account_id),
+        email=to,
+        payload=payload,
+        email_type="signup_welcome",
+        unsub=unsub,
+        state_key=state_key,
+    )
+
+
+def send_pro_welcome(
+    account_id: int,
+    *,
+    email: Optional[str] = None,
+    first_name: Optional[str] = None,
+    plan: str = "user",
+    platform: str = "",
+    season: Optional[int] = None,
+    league_id: str = "",
+    dash_url: str = "",
+    force: bool = False,
+) -> bool:
+    """Send the PRO welcome once per account (idempotent across webhook + success page)."""
+    row = _account_email_row(int(account_id)) if not email else None
+    if row is None and email:
+        row = {"id": int(account_id), "email": email, "first_name": first_name}
+    if not row:
+        row = _account_email_row(int(account_id))
+    if not row:
+        return False
+    to = (email or row.get("email") or "").strip()
+    name = first_name if first_name is not None else row.get("first_name")
+    ok, reason = _should_send(int(account_id), to)
+    if not ok:
+        logger.info("[welcome-email] pro skip account=%s reason=%s", account_id, reason)
+        return False
+
+    state_key = f"{_PRO_STATE}{int(account_id)}"
+    if not force and not _claim_once(state_key):
+        logger.info("[welcome-email] pro already claimed account=%s", account_id)
+        return False
+
+    unsub = _unsub_url(int(account_id))
+    if not unsub:
+        logger.error("[welcome-email] cannot mint onboarding unsub token; skip pro")
+        _release_claim(state_key)
+        return False
+
+    payload = build_pro_welcome(
+        first_name=name,
+        plan=plan,
+        platform=platform,
+        season=season,
+        league_id=league_id,
+        dash_url=dash_url,
+        unsub_href=unsub,
+    )
+    return _deliver(
+        account_id=int(account_id),
+        email=to,
+        payload=payload,
+        email_type="pro_welcome",
+        unsub=unsub,
+        state_key=state_key,
+    )

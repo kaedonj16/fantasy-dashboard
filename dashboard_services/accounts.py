@@ -542,10 +542,14 @@ def consume_league_visit(
 
 def upsert_google_account(
     google_sub: str, email: Optional[str], first_name: Optional[str] = None,
-) -> Optional[int]:
-    """Resolve a Google subject to exactly one canonical application account."""
+) -> tuple[Optional[int], bool]:
+    """Resolve a Google subject to exactly one canonical application account.
+
+    Returns ``(account_id, created)``. ``created`` is True only when a new
+    ``accounts`` row was inserted (true first-time signup).
+    """
     if not google_sub:
-        return None
+        return None, False
     google_sub = str(google_sub).strip()
     email = (str(email).strip().lower() or None) if email else None
     first_name = (str(first_name).strip() or None) if first_name else None
@@ -566,6 +570,7 @@ def upsert_google_account(
                    WHERE i.account_id=a.id AND i.auth_provider='google')""",
                 (email,),
             ).fetchone()
+        created = False
         if row:
             acct_id = row["id"]
             conn.execute(
@@ -578,6 +583,7 @@ def upsert_google_account(
                 "INSERT INTO accounts (email,google_sub,first_name) VALUES (%s,%s,%s) RETURNING id",
                 (email, google_sub, first_name),
             ).fetchone()["id"]
+            created = True
         conn.execute(
             """INSERT INTO account_auth_identities
                (account_id,auth_provider,auth_provider_subject) VALUES (%s,'google',%s)
@@ -585,7 +591,7 @@ def upsert_google_account(
             (acct_id, google_sub),
         )
         conn.commit()
-        return acct_id
+        return acct_id, created
 
 
 def link_platform_identity(

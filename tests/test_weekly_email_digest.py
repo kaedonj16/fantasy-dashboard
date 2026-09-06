@@ -249,9 +249,20 @@ def test_unsubscribe_token_roundtrip(monkeypatch):
     monkeypatch.setenv("FLASK_SECRET_KEY", "unit-test-secret")
     token = we.make_unsub_token(42)
     assert token is not None
-    assert we.verify_unsub_token(token) == 42
+    assert we.verify_unsub_token(token) == (42, "weekly_digest")
     assert we.verify_unsub_token("42.deadbeef") is None
     assert we.verify_unsub_token("nope") is None
+
+
+def test_unsubscribe_token_typed_onboarding(monkeypatch):
+    monkeypatch.setenv("FLASK_SECRET_KEY", "unit-test-secret")
+    token = we.make_unsub_token(42, "onboarding")
+    assert token is not None
+    assert token.count(".") == 2
+    assert we.verify_unsub_token(token) == (42, "onboarding")
+    # Weekly token must not verify as onboarding payload
+    weekly = we.make_unsub_token(42, "weekly_digest")
+    assert we.verify_unsub_token(weekly) == (42, "weekly_digest")
 
 
 def test_unsubscribe_hmac_fails_closed_without_secret(monkeypatch):
