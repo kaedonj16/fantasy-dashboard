@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-09-06",
+        "tag": "fix",
+        "text": "Live keeper drafts: recommendations treat every player as available until the host drafts them. Projected keepers no longer leave the pool or burn early pick slots, so pick-2 advice stays early-round BPA instead of mid/late-round leftovers.",
+        "link": "/draft"
+    },
+    {
         "date": "2026-09-04",
         "tag": "update",
         "text": "Trade Targets: the list is mixed across your real holes (not four elites at each weak position). A quality starter at a bottom-ranked spot is no longer treated as a shop-for-Allen need; mid-tier players who fill the hole and owners who need your surplus rank first, with a one-line reason on each row.",

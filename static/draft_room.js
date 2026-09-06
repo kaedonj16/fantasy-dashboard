@@ -1647,8 +1647,15 @@
     return out;
   }
 
+  // Live drafts: the host board is the only source of "taken". Projected
+  // keepers must not leave the recommendation pool or burn pick slots — that
+  // made pick-2 recs look like mid/late-round advice (elite names already gone).
+  function keepersAffectAvailability(){
+    return !!(keepersOn && !(state && state.mode === 'live'));
+  }
+
   function applyKeepers(){
-    if (!keepersOn) return;
+    if (!keepersAffectAvailability()) return;
     keeperSet.forEach(function(k){ if (k && k.id != null) drafted[String(k.id)] = true; });
   }
 
@@ -1659,6 +1666,7 @@
   // teams draft fewer times, the rounds line up, and because a keeper occupies a
   // genuine pick slot it flows into the draft grade exactly like any other pick
   // - which is the point of a keeper, a stud held at a late round grades great.
+  // Live synced drafts skip seeding: the host already reports who is drafted.
 
   // Map a keeper's roster to a draft seat. The viewer's own seat is known; rival
   // rosters get a stable, deterministic seat so each team loses picks in the
@@ -1683,8 +1691,11 @@
     // Re-derive now that the draft's keeper source and per-team cap are known
     // (initKeepers runs at page load, before any draft is configured).
     keeperSet = computeKeeperSet();
-    keeperSet.forEach(function(k){ if (k && k.id != null) drafted[String(k.id)] = true; });
     if (!keeperSet.length) return;
+    // Live: keepers are informational (banner only). Recommendations treat
+    // every player as available until the host marks them drafted.
+    if (state.mode === 'live') return;
+    keeperSet.forEach(function(k){ if (k && k.id != null) drafted[String(k.id)] = true; });
     var teams = state.teams, rounds = state.rounds, order = state.order;
     var slotBy = keeperSlotMap();
     var used = {};
@@ -1728,6 +1739,12 @@
 
   function setKeepersOn(on){
     keepersOn = on;
+    if (state && state.mode === 'live'){
+      // Live availability follows host picks only; the toggle is display-only.
+      render();
+      renderKeeperBanner();
+      return;
+    }
     if (on){ applyKeepers(); }
     else { keeperSet.forEach(function(k){ if (k && k.id != null) delete drafted[String(k.id)]; }); }
     render();
@@ -1810,21 +1827,31 @@
             (keeperPage >= pages ? ' disabled' : '') + '>Next &#8594;</button>' +
         '</div>';
     }
+    var live = !!(state && state.mode === 'live');
+    var title = live
+      ? ('Keepers ' + (keepersOn ? 'listed' : 'hidden'))
+      : ('Keepers ' + (keepersOn ? 'applied' : 'off'));
+    var sub = live
+      ? (keeperSet.length + ' listed · recs follow host picks only · ' + mine + ' yours, ' + proj + ' projected')
+      : (keeperSet.length + ' off the board · ' + mine + ' yours, ' + proj + ' projected');
+    var note = live
+      ? 'Live recommendations treat every player as available until the host drafts them. Keepers here are reference only.'
+      : 'Other teams’ keepers are projected from the same surplus model. They are estimates, not their declared keepers.';
     el.className = 'dr-keeper-banner' + (keepersOn ? ' is-on' : '');
     el.innerHTML =
       '<div class="dr-keeper-head">' +
-        '<span class="dr-keeper-title"><b>Keepers ' + (keepersOn ? 'applied' : 'off') + '</b></span>' +
-        '<span class="dr-keeper-sub">' + keeperSet.length + ' off the board · ' +
-          mine + ' yours, ' + proj + ' projected</span>' +
+        '<span class="dr-keeper-title"><b>' + title + '</b></span>' +
+        '<span class="dr-keeper-sub">' + sub + '</span>' +
         '<button type="button" id="drKeeperView" class="dr-keeper-btn dr-keeper-view' + (keeperDetailsOpen ? ' is-open' : '') + '"' +
           ' aria-expanded="' + (keeperDetailsOpen ? 'true' : 'false') + '" aria-controls="drKeeperList">Details' +
           '<span class="dr-keeper-caret" aria-hidden="true"></span></button>' +
+        (live ? '' :
         '<button type="button" id="drKeeperToggle" class="dr-keeper-btn dr-keeper-btn-primary">' +
-          (keepersOn ? 'Turn off' : 'Apply') + '</button>' +
+          (keepersOn ? 'Turn off' : 'Apply') + '</button>') +
       '</div>' +
       '<div id="drKeeperList" class="dr-keeper-list"' + (keeperDetailsOpen ? '' : ' hidden') + '>' +
         '<div class="dr-keeper-items">' + rows + '</div>' + pager +
-        '<div class="dr-keeper-note">Other teams’ keepers are projected from the same surplus model. They are estimates, not their declared keepers.</div>' +
+        '<div class="dr-keeper-note">' + note + '</div>' +
       '</div>';
     var vbtn = document.getElementById('drKeeperView');
     var tbtn = document.getElementById('drKeeperToggle');
@@ -7294,13 +7321,14 @@
     if (diff > -5)  return { label:'Fair',  cls:'fair'  };
     return { label:'Reach', cls:'reach' };
   }
-  // Players taken before `pn` (plus keepers that never landed on a pick slot).
+  // Players taken before `pn`. Mock keeper drafts also treat unseeded keepers
+  // as gone; live drafts only count host picks (same rule as recommendations).
   function ddTakenBefore(pn){
     var taken = {};
     Object.keys(state.picks).forEach(function(k){
       if (parseInt(k, 10) < pn && state.picks[k]) taken[String(state.picks[k].id)] = true;
     });
-    if (keepersOn && keeperSet && keeperSet.length){
+    if (keepersAffectAvailability() && keeperSet && keeperSet.length){
       var onBoard = {};
       Object.keys(state.picks).forEach(function(k){
         if (state.picks[k]) onBoard[String(state.picks[k].id)] = true;
@@ -7348,7 +7376,7 @@
       taken: taken,
       teams: state.teams || 12,
       rounds: state.rounds || 16,
-      keepers: (keepersOn && keeperSet) ? keeperSet : [],
+      keepers: keepersAffectAvailability() ? (keeperSet || []) : [],
       viewerRosterId: (cfg.keepers && cfg.keepers.viewerRoster) || null,
       qualityOf: function (f) { var q = ppgNormOf(f); return q == null ? 0.35 : q; },
       vorPositive: function (f) { return vorOf(f) == null || vorOf(f) > 0; }
