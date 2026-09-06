@@ -65,34 +65,50 @@ def _section(title: str, body_html: str) -> str:
     )
 
 
-def _bullet(title: str, detail: str, href: str = "", icon: str = "") -> str:
-    label = escape(title, quote=False)
-    body = escape(detail, quote=False)
-    if href:
-        label = (
-            f'<a href="{escape(href, quote=True)}" style="color:#1d4ed8;text-decoration:none;'
-            f'font-weight:700;">{label}</a>'
-        )
-    else:
-        label = f'<strong style="color:#0f172a;">{label}</strong>'
-    icon_cell = ""
-    if icon:
-        icon_cell = (
-            f'<td style="width:40px;vertical-align:top;padding:0 12px 0 0;">'
-            f'<img src="{escape(icon, quote=True)}" alt="" width="28" height="28" '
-            f'style="display:block;border:0;width:28px;height:28px;object-fit:contain;" />'
-            f"</td>"
-        )
+def _lead(body_html: str) -> str:
+    """A single lead/closing paragraph. Caller supplies safe inline HTML."""
     return (
-        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'style="margin:0 0 12px;background:#ffffff;border:1px solid #e6ebf2;border-radius:10px;">'
-        f'<tr><td style="padding:12px 14px;">'
+        f'<p style="margin:0 0 18px;font-size:15px;color:#0f172a;line-height:1.6;">'
+        f"{body_html}</p>"
+    )
+
+
+def _link_label(title: str, href: str = "") -> str:
+    label = escape(title, quote=False)
+    if href:
+        return (
+            f'<a href="{escape(href, quote=True)}" style="color:#1d4ed8;'
+            f'text-decoration:none;font-weight:700;">{label}</a>'
+        )
+    return f'<strong style="color:#0f172a;">{label}</strong>'
+
+
+def _step(num: int, title: str, detail: str, href: str = "") -> str:
+    """A numbered step: accent circle + title + one line of detail."""
+    return (
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
-        f"{icon_cell}"
-        f'<td style="vertical-align:top;">'
-        f'<div style="font-size:14px;line-height:1.35;">{label}</div>'
-        f'<div style="margin-top:4px;font-size:13px;color:#475569;line-height:1.45;">{body}</div>'
-        f"</td></tr></table></td></tr></table>"
+        f'<td style="width:34px;vertical-align:top;padding:0 12px 16px 0;">'
+        f'<div style="width:26px;height:26px;border-radius:50%;background:#2563eb;'
+        f'color:#ffffff;font-size:13px;font-weight:800;line-height:26px;text-align:center;">'
+        f"{int(num)}</div></td>"
+        f'<td style="vertical-align:top;padding:0 0 16px;">'
+        f'<div style="font-size:15px;line-height:1.4;">{_link_label(title, href)}</div>'
+        f'<div style="margin-top:3px;font-size:13px;color:#475569;line-height:1.5;">'
+        f"{escape(detail, quote=False)}</div>"
+        f"</td></tr></table>"
+    )
+
+
+def _feature(title: str, detail: str, href: str = "", first: bool = False) -> str:
+    """A compact divided list row (no heavy card border)."""
+    border = "" if first else "border-top:1px solid #e6ebf2;"
+    return (
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
+        f'<tr><td style="padding:12px 0;{border}">'
+        f'<div style="font-size:14px;line-height:1.4;">{_link_label(title, href)}</div>'
+        f'<div style="margin-top:2px;font-size:13px;color:#475569;line-height:1.5;">'
+        f"{escape(detail, quote=False)}</div>"
+        f"</td></tr></table>"
     )
 
 
@@ -133,141 +149,67 @@ def build_signup_welcome(
     rankings = f"{base}/rankings/dynasty"
     trade = f"{base}/trade"
     trade_values = f"{base}/dynasty-trade-value-chart"
-    compare = f"{base}/compare"
-    prospects = f"{base}/prospects"
-    draft = f"{base}/draft"
 
     parts = [
         greeting_html(first_name),
         _hero_banner(logos, eyebrow="Your front office is ready"),
-        (
-            '<p style="margin:0 0 8px;font-size:15px;color:#0f172a;line-height:1.55;">'
-            "Welcome to <strong>BR Fantasy</strong>, the front office managers use to "
-            "run dynasty, redraft, and keeper leagues. Here is how people actually use "
-            "the site week to week, plus the free features to open first.</p>"
+        _lead(
+            "Welcome to <strong>BR Fantasy</strong>, the front office for your dynasty, "
+            "redraft, and keeper leagues. Connect a league and the whole site builds "
+            "itself around your roster."
         ),
         _section(
-            "1. Connect your leagues (2 minutes)",
-            "From the home page, sign in with Sleeper username, ESPN league ID, Yahoo "
-            "OAuth, MFL, or Fleaflicker. Google keeps your watchlist, digests, and "
-            "settings synced on every device. Multi-league managers live in "
-            "<strong>My Leagues</strong> and jump with the league switcher."
-            + _bullet(
-                "Open your dashboard",
-                "Land in the league you just connected. Activity, waivers, and standings "
-                "context load with your roster.",
+            "Start here",
+            _step(
+                1,
+                "Connect your league",
+                "Sign in with Sleeper, ESPN, Yahoo, MFL, or Fleaflicker. It takes about "
+                "two minutes, and Google keeps your watchlist and settings synced on "
+                "every device.",
                 dash,
+            )
+            + _step(
+                2,
+                "Open your dashboard",
+                "Land in the league you just connected. Activity, waivers, standings, "
+                "and start/sit all load around your team.",
+                dash,
+            )
+            + _step(
+                3,
+                "Star the players you follow",
+                "Your watchlist flags value moves and injuries the next time you "
+                "come back.",
             ),
         ),
         _section(
-            "2. Ways managers use BR Fantasy",
-            ""
-            + _bullet(
-                "Morning scan (in season)",
-                "Open the dashboard for Since Last Visit, then Waivers and Start/Sit and "
-                "Matchups. Star anyone you are tracking so value and injury alerts stick.",
-            )
-            + _bullet(
-                "Trade desk anytime",
-                "Build a deal in the Trade Calculator, share the link in chat, and check "
-                "fairness before you send. Free on every connected league.",
-                trade,
-            )
-            + _bullet(
-                "Offseason / draft prep",
-                "Use Rankings, Prospects, Draft Room mocks, and the Cheat Sheet (CSV plus "
-                "live Sleeper sync). Keeper leagues get Keeper Assistant with auto costs.",
-                draft,
-            )
-            + _bullet(
-                "League history and bragging rights",
-                "Standings, Awards, Graphs, and History turn multi-year leagues into a "
-                "story. Share cards when you want the group chat to notice.",
-            )
-            + _bullet(
-                "Weekly email digest",
-                "Every Tuesday we send a weekly email digest: a personalized start/sit, "
-                "waiver, and value recap for your primary league. Opt out from that footer "
-                "anytime. It does not turn off this welcome mail.",
-            ),
-        ),
-        _section(
-            "3. Free features to try today",
-            ""
-            + _bullet(
+            "Free tools worth trying first",
+            _feature(
                 "Trade Calculator",
-                "Grade both sides with BR values, format controls (teams, PPR, Superflex), "
-                "AI analysis, and shareable trade links.",
+                "Grade any deal with BR values and format controls, then share a link "
+                "with your league.",
                 trade,
+                first=True,
             )
-            + _bullet(
-                "Player Rankings and search",
-                "Filter by position and format, sort by value/age/PPG, and open any player "
-                "modal for metrics, game logs, value history, and trade comps.",
+            + _feature(
+                "Player Rankings",
+                "Filter by position and format, then open any player for metrics, game "
+                "logs, and value history.",
                 rankings,
             )
-            + _bullet(
+            + _feature(
                 "Dynasty Trade Value Chart",
-                "Public value chart you can use even before a league is linked. Great for "
-                "quick fairness checks.",
+                "A public value chart for quick fairness checks, even before you link "
+                "a league.",
                 trade_values,
-            )
-            + _bullet(
-                "Player Compare",
-                "Side-by-side stats and metrics when you are stuck between two names.",
-                compare,
-            )
-            + _bullet(
-                "Prospect Rankings",
-                "Rookie production, athleticism, draft capital, and comps for the active class.",
-                prospects,
-            )
-            + _bullet(
-                "Watchlist",
-                "Star players once. Get value-move and injury flags when you return "
-                "(synced when signed in).",
-            )
-            + _bullet(
-                "Draft Room and Cheat Sheet",
-                "Mock any format, connect a live Sleeper/ESPN draft, print/export a cheat "
-                "sheet, and review draft history after the fact.",
-                draft,
-            )
-            + _bullet(
-                "Waivers, Start/Sit and Schedule Assistant",
-                "Ranked free-agent targets, weekly start scores (including K/DST when your "
-                "league uses them), and matchup difficulty across a week range.",
-            )
-            + _bullet(
-                "Matchups hub and Redzone",
-                "Optimal lineup, scout report, power rankings, SOS, streaming options, "
-                "and a live red-zone tracker during games.",
-            )
-            + _bullet(
-                "Teams, Standings and Activity",
-                "Deep team tabs, standings, and a transaction feed plus NFL headlines. "
-                "Your league command center.",
             ),
         ),
-        _section(
-            "4. When you are ready for PRO",
-            "PRO adds Trade Suggestions with playoff-odds impact, Trade Targets and Intel, "
-            "Playoff Impact sims, Breakout Engine, Front Office Report, Weekly Recap "
-            "storylines, Custom Draft Board, Draft Deep Dive, Roster Intel, and "
-            "cross-league This Week's Moves. Plans: One League $5/yr, Personal $10/yr, "
-            "League $15/yr, League + Personal $20/yr. See "
-            f'<a href="{escape(pricing, quote=True)}" style="color:#1d4ed8;font-weight:700;'
-            'text-decoration:none;">Pricing</a>.'
-            + _bullet(
-                "Explore PRO plans",
-                "Start at $5/year for one league, or unlock Personal and League access.",
-                pricing,
-            ),
-        ),
-        (
-            '<p style="margin:20px 0 0;font-size:13px;color:#64748b;line-height:1.5;">'
-            "Tip: after you connect a league, replay the short site tour from Settings "
-            "anytime. Questions? Reply to this email or open Support in the footer.</p>"
+        _lead(
+            "Every Tuesday we send a personalized digest for your main league: start/sit, "
+            "waivers, and value moves. When you want deeper tools like trade suggestions, "
+            "playoff sims, and breakout detection, PRO starts at $5/year "
+            f'(<a href="{escape(pricing, quote=True)}" style="color:#1d4ed8;font-weight:700;'
+            'text-decoration:none;">see plans</a>).'
         ),
     ]
 
@@ -350,122 +292,87 @@ def build_pro_welcome(
         ),
     }.get(plan_key, "Your PRO plan is active.")
 
+    feats = [
+        (
+            "Trade Intelligence",
+            "Real dynasty trade frequency and market values, one click into the calculator.",
+            trade_intel,
+        ),
+        (
+            "Trade Targets",
+            "Roster-fit targets from teams that need your surplus, mixed across positions.",
+            "",
+        ),
+        (
+            "Breakout Engine",
+            "Opportunity and vacated targets ranked with historical comps.",
+            breakouts,
+        ),
+        (
+            "Front Office Report",
+            "A full AI read on roster construction, trade lanes, and your standings path.",
+            dashboard,
+        ),
+        (
+            "Custom Draft Board and Deep Dive",
+            "Pin, mute, and reorder into the Draft Room, then replay your picks afterward.",
+            draft,
+        ),
+        (
+            "Roster Grades and Playoff Scenarios",
+            "Letter grades, competitive window, playoff odds, and late-season magic numbers.",
+            teams,
+        ),
+    ]
+    if plan_key in ("user", "combo"):
+        feats.append(
+            (
+                "Cross-league This Week's Moves",
+                "Lineup and injury actions ranked across every linked league so nothing slips.",
+                "",
+            )
+        )
+    toolkit = "".join(
+        _feature(t, d, h, first=(i == 0)) for i, (t, d, h) in enumerate(feats)
+    )
+
     parts = [
         greeting_html(first_name),
         _hero_banner(logos, eyebrow=f"{plan_label} unlocked"),
-        (
-            f'<p style="margin:0 0 12px;font-size:15px;color:#0f172a;line-height:1.55;">'
+        _lead(
             f"Thanks for going <strong>{escape(plan_label, quote=False)}</strong>. "
-            f"{escape(plan_blurb, quote=False)} Here is how to put it to work: not just "
-            "a feature list, but when to open each tool.</p>"
+            f"{escape(plan_blurb, quote=False)} Here is where to start."
         ),
         _section(
-            "How to use PRO this week",
-            ""
-            + _bullet(
-                "1. Open Trade Suggestions first",
+            "Do this first",
+            _step(
+                1,
+                "Open Trade Suggestions",
                 "Pick Contending, Rebuilding, Consolidate, or Distribute. Each package "
-                "runs a full post-trade playoff sim so Win% and playoff-odds shifts are real.",
+                "runs a full post-trade playoff sim, so the Win% and playoff-odds shifts "
+                "are real.",
                 trade_sugg,
             )
-            + _bullet(
-                "2. Pressure-test a deal with Playoff Impact",
-                "Before you accept anything, run Playoff Impact on the calculator: playoff "
-                "odds, projected wins/PPG, top-3 pick odds, roster age, and a plain-language "
-                "verdict (Win-Now, Building, Balanced).",
-            )
-            + _bullet(
-                "3. Fill holes with Trade Targets",
-                "Roster-fit targets from teams that need your surplus, mixed across "
-                "positions, not just the top four names at a weak spot.",
-            )
-            + _bullet(
-                "4. Scan Breakouts and Roster Intel",
-                "Breakout Engine ranks opportunity and vacated targets with historical comps. "
-                "Teams → Roster Intel tags Core / Sell High / Buy Window / Breakout Hold.",
-                breakouts,
-            )
-            + _bullet(
-                "5. Share the Weekly Recap",
-                "Generate the AI storyline after your week and drop the share card in the "
-                "league chat. PRO content that makes you look like the commissioner.",
-                weekly,
-            )
-            + _bullet(
-                "Replay the in-app PRO tour",
-                "Short welcome overlay after checkout. Reopen anytime from Settings → "
-                "PRO welcome.",
-            ),
-        ),
-        _section(
-            "Full PRO toolkit (and when to use it)",
-            ""
-            + _bullet(
-                "Trade Suggestions",
-                "Use when you want packages built for your archetype with playoff-odds impact baked in.",
-                trade_sugg,
-            )
-            + _bullet(
-                "Trade Intelligence",
-                "Use when you need real dynasty trade frequency, market values, and "
-                "one-click load into the calculator.",
-                trade_intel,
-            )
-            + _bullet(
-                "Playoff Impact",
-                "Use on every non-trivial trade. Monte Carlo on playoff odds, wins, PPG, "
-                "draft capital, age, and prime years left.",
-            )
-            + _bullet(
-                "Breakout Engine",
-                "Use in offseason and early season to find opportunity before the wire heats up.",
-                breakouts,
-            )
-            + _bullet(
-                "Front Office Report",
-                "Use for a full AI read on roster construction, trade lanes, and standings path "
-                "(in-season hub plus offseason generate).",
+            + _step(
+                2,
+                "Pressure-test a deal with Playoff Impact",
+                "Run any trade through the calculator for playoff odds, projected wins and "
+                "PPG, roster age, and a plain-language verdict.",
                 dashboard,
             )
-            + _bullet(
-                "Weekly Recap",
-                "Use after each week for an AI storyline plus shareable image.",
+            + _step(
+                3,
+                "Share your Weekly Recap",
+                "Generate the AI storyline after your week and drop the share card in "
+                "your league chat.",
                 weekly,
-            )
-            + _bullet(
-                "Custom Draft Board and Deep Dive",
-                "Use before and during drafts: pin/mute/reorder (follows you into Draft Room). "
-                "Deep Dive replays Decision Score vs the remaining pool.",
-                draft,
-            )
-            + _bullet(
-                "Roster Grades, Archetypes and Playoff Scenarios",
-                "Use under Teams for letter grades, competitive window, playoff odds, and "
-                "clinch/elimination magic numbers late season.",
-                teams,
-            )
-            + _bullet(
-                "Cross-league This Week's Moves (Personal / Combo)",
-                "Use My Leagues when you run multiple teams. Lineup and injury actions "
-                "ranked across every linked league so nothing slips.",
             ),
         ),
-        _section(
-            "Still free (and worth combining with PRO)",
-            "Trade Calculator and share links, Rankings, Watchlist alerts, Waivers/Start-Sit, "
-            "Matchups, Redzone, Awards/History, and the Tuesday digest all stay available. "
-            "PRO layers decision quality on top. It does not replace the free workflow."
-        ),
-        _section(
-            "Billing and sharing",
-            "Subscriptions renew yearly through Stripe. Manage payment method, invoices, "
-            "or cancel from Pricing → Manage billing while signed in. League PRO buyers "
-            "keep a copyable invite link under Commissioner so teammates can claim access."
-        ),
-        (
-            '<p style="margin:20px 0 0;font-size:13px;color:#64748b;line-height:1.5;">'
-            "You are also on the Tuesday weekly digest for your primary league. Opt out "
-            "from any digest footer without losing PRO or these onboarding emails.</p>"
+        _section("The rest of your PRO toolkit", toolkit),
+        _lead(
+            "Your plan renews yearly through Stripe. Manage your payment method or cancel "
+            "from Pricing, then Manage billing. You are also on the Tuesday digest for "
+            "your main league, which you can opt out of without losing PRO."
         ),
     ]
 
