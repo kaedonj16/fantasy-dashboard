@@ -401,6 +401,22 @@ def test_manual_draft_ranks_on_the_clock_pool_for_other_teams():
     assert "DraftBoardCore.futurePickDecisionScore(score, availProb(p, recPn))" not in source
 
 
+def test_live_keeper_recs_only_exclude_host_drafted_players():
+    """Live keeper leagues must not pull projected keepers out of the rec pool
+    or seed them onto early pick slots — that made pick-2 advice look like
+    mid/late-round BPA because elites were already marked gone."""
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+
+    assert "function keepersAffectAvailability()" in source
+    assert "return !!(keepersOn && !(state && state.mode === 'live'));" in source
+    assert "if (!keepersAffectAvailability()) return;" in source
+    assert "if (state.mode === 'live') return;" in source
+    assert "Live availability follows host picks only" in source
+    assert "recs follow host picks only" in source
+    assert "keepersAffectAvailability() ? (keeperSet || []) : []" in source
+    assert "if (keepersAffectAvailability() && keeperSet && keeperSet.length)" in source
+
+
 def test_autodraft_uses_shared_need_multiplier_instead_of_uncapped_starter_boost():
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
     core = (REPO / "static" / "draft_board_core.js").read_text(encoding="utf-8")
