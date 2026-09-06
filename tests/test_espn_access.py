@@ -297,3 +297,30 @@ def test_connection_logs_safe_upstream_response_metadata(monkeypatch, caplog):
 def test_private_connection_rejects_partial_credentials(swid, espn_s2):
     with pytest.raises(espn_api.ESPNRequestValidationError):
         espn_api.ESPNFantasyClient(swid=swid, espn_s2=espn_s2)
+
+
+def test_unbraced_swid_is_normalized_before_authenticated_league_load(monkeypatch):
+    """OTP/connect can succeed while dashboard League() rejects an unbraced SWID.
+
+    connect_league braces via ESPNFantasyClient; stored/resolved cookies must
+    get the same treatment or a just-linked private league 403s after OTP.
+    """
+    calls = []
+
+    def fake_league(**kwargs):
+        calls.append(kwargs)
+        if "espn_s2" not in kwargs:
+            raise ESPNAccessDenied()
+        swid = kwargs.get("swid") or ""
+        if not (swid.startswith("{") and swid.endswith("}")):
+            raise ESPNAccessDenied("unbraced swid rejected")
+        return SimpleNamespace(name="Private league")
+
+    monkeypatch.setattr(espn_api, "League", fake_league)
+    monkeypatch.setattr(espn_api, "_espn_creds", lambda: ("secret", "owner-uuid"))
+
+    league = espn_api._league_cached(2026, "1848268449")
+
+    assert league.name == "Private league"
+    assert calls[-1]["swid"] == "{owner-uuid}"
+    assert calls[-1]["espn_s2"] == "secret"
