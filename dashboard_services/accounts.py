@@ -478,6 +478,16 @@ def add_espn_league_connection(
     if connection_method == "private":
         if not swid or not espn_s2:
             raise ValueError("Private ESPN connections require both credentials.")
+        # Persist the same braced SWID shape connect_league accepts, so later
+        # espn-api League() loads (dashboard) do not fail after OTP/cookie link.
+        swid = str(swid).strip()
+        espn_s2 = str(espn_s2).strip()
+        if len(espn_s2) >= 2 and espn_s2[0] == espn_s2[-1] and espn_s2[0] in ("'", '"'):
+            espn_s2 = espn_s2[1:-1].strip()
+        if swid and not (swid.startswith("{") and swid.endswith("}")):
+            swid = "{" + swid.strip("{}") + "}"
+        if not swid or not espn_s2:
+            raise ValueError("Private ESPN connections require both credentials.")
         credentials = {"swid": swid, "espn_s2": espn_s2}
     add_provider_league_connection(
         account_id, "espn", league_id, season, name, connection_method,

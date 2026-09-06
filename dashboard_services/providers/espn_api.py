@@ -425,6 +425,12 @@ def _resolve_espn_request_creds(
         # Database/configuration trouble must not expose credentials and the
         # original ESPN access-denied result remains the useful outcome.
         pass
+    # Match ESPNFantasyClient / connect_league: OneID and some pasted cookies
+    # return an unbraced SWID that ESPN rejects on later espn-api League() loads
+    # even though the lighter connect_league HTTP check succeeded.
+    if espn_s2 or swid:
+        espn_s2 = _clean_secret(espn_s2 or "") or None
+        swid = _normalize_swid(swid or "") or None
     return espn_s2, swid
 
 
@@ -432,6 +438,10 @@ def _authenticated_league_cached(
     season: int, league_id: str, espn_s2: str, swid: str,
 ) -> League:
     """Return a TTL-cached League built with the given credentials."""
+    espn_s2 = _clean_secret(espn_s2 or "")
+    swid = _normalize_swid(swid or "")
+    if not (espn_s2 and swid):
+        raise ESPNAccessDenied("ESPN denied authenticated access to this league.")
     key = _league_key(season, league_id)
     fp = _cred_fingerprint(espn_s2, swid)
     auth_key = (key[0], key[1], fp)
