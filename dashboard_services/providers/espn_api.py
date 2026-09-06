@@ -465,6 +465,19 @@ def _authenticated_league_cached(
                 swid=swid,
             )
         except Exception as exc:
+            # [espn-diag] Credentials WERE resolved (this path is only reached with
+            # both cookies present), yet the full espn-api League() load failed.
+            # Log the credential shape (never the values) and the failure type so a
+            # future dashboard 403 tells us "cookies present, League() rejected"
+            # versus the no-credentials case logged in _league_cached below.
+            logger.warning(
+                "[espn-diag] authenticated League() load failed league_id=%s season=%s "
+                "exc_type=%s swid_len=%s swid_braced=%s s2_len=%s access_denied=%s",
+                league_id, season, type(exc).__name__,
+                len(swid or ""),
+                bool(swid and swid.startswith("{") and swid.endswith("}")),
+                len(espn_s2 or ""), _is_espn_access_denied(exc),
+            )
             if _is_espn_access_denied(exc):
                 try:
                     from flask import has_request_context, session
@@ -526,6 +539,16 @@ def _league_cached(season: int, league_id: str) -> League:
 
     espn_s2, swid = _resolve_espn_request_creds(league_id, season)
     if not (espn_s2 and swid):
+        # [espn-diag] No usable credentials reached the dashboard load. For a user
+        # who just connected and picked a team, this means the cookies never made
+        # it from onboarding into storage (or were dropped when read back) — the
+        # persistence branch. Contrast with the "authenticated League() load
+        # failed" line above, which means cookies were present but rejected.
+        logger.warning(
+            "[espn-diag] no credentials resolved for dashboard load league_id=%s "
+            "season=%s has_s2=%s has_swid=%s",
+            league_id, season, bool(espn_s2), bool(swid),
+        )
         raise access_denied
     return _authenticated_league_cached(season, league_id, espn_s2, swid)
 
