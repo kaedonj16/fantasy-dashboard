@@ -148,9 +148,10 @@ def test_glossary_explains_live_recommendation_logic():
     assert "How good was this selection relative to what was available then?" in source
     assert "starter or FLEX spot" in source
     assert "required slots and picks remaining" in source
-    assert "expected availability at your next pick" in source
+    assert "opportunity cost vs your next pick" in source
     assert "shown as a rank" in source.lower() or "Shown as a rank" in source
-    assert "When it is not your turn, the order is for your next owned pick" in source
+    assert "Every undrafted player is eligible" in source
+    assert "When it is not your turn, the order is for your next owned pick" not in source
     assert "luxury bench BPA" in source
     assert "does not rank by simulated playoff odds" in source
     assert "Late-round upside and bye-week severity also adjust this order" in source
@@ -379,9 +380,9 @@ def test_likely_next_pick_survivors_pay_current_pick_opportunity_cost():
     assert "var nextPick = fillingOtherSeat ? null : recWaitPickNo();" in source
     assert "function recWaitPickNo()" in source
     assert "function recommendationPickNo()" in source
-    assert "state.mode === 'live' && state.isDrafting" in source
+    # Rec always ranks the on-the-clock pick against the full undrafted pool.
+    assert "return (state && state.current) || 1;" in source
     assert "function isManualDraft()" in source
-    assert "if (isManualDraft()) return cur;" in source
     assert "function recommendationCounts()" in source
     assert "DraftBoardCore.futurePickDecisionScore(score, availProb(p, recPn))" not in source
 
@@ -393,7 +394,7 @@ def test_manual_draft_ranks_on_the_clock_pool_for_other_teams():
 
     assert "function isManualDraft()" in source
     assert "mode !== 'mock' && mode !== 'live'" in source
-    assert "if (isManualDraft()) return cur;" in source
+    assert "return (state && state.current) || 1;" in source
     assert "fillingOtherSeat = isManualDraft() && state && !isMyPick(state.current)" in source
     assert "var counts = recommendationCounts();" in source
     assert "sortBy === 'ps' ? recommendationCounts()" in source
@@ -401,20 +402,20 @@ def test_manual_draft_ranks_on_the_clock_pool_for_other_teams():
     assert "DraftBoardCore.futurePickDecisionScore(score, availProb(p, recPn))" not in source
 
 
-def test_live_keeper_recs_only_exclude_host_drafted_players():
-    """Live keeper leagues must not pull projected keepers out of the rec pool
-    or seed them onto early pick slots — that made pick-2 advice look like
-    mid/late-round BPA because elites were already marked gone."""
+def test_recs_rank_full_undrafted_pool_not_expected_survivors():
+    """All draft modes: Rec looks at every undrafted player for the pick on
+    the clock. Projected keepers / survival look-ahead must not shrink the pool."""
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
-    assert "function keepersAffectAvailability()" in source
-    assert "return !!(keepersOn && !(state && state.mode === 'live'));" in source
-    assert "if (!keepersAffectAvailability()) return;" in source
+    assert "function recommendationPickNo(){\n    return (state && state.current) || 1;\n  }" in source
+    assert "No-op for availability" in source
     assert "if (state.mode === 'live') return;" in source
-    assert "Live availability follows host picks only" in source
-    assert "recs follow host picks only" in source
-    assert "keepersAffectAvailability() ? (keeperSet || []) : []" in source
-    assert "if (keepersAffectAvailability() && keeperSet && keeperSet.length)" in source
+    assert "recs use drafted players only" in source
+    assert "keepers: []" in source
+    assert "DraftBoardCore.futurePickDecisionScore(score, availProb(p, recPn))" not in source
+    # ddTakenBefore must not invent taken ids from projected keepers.
+    dd = source.split("function ddTakenBefore(pn){", 1)[1].split("\n  function ", 1)[0]
+    assert "keeperSet" not in dd
 
 
 def test_keeper_drafts_compress_adp_when_keepers_leave_pool():

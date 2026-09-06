@@ -358,26 +358,17 @@
     for (var i = 0; i < owned.length; i++){ if (owned[i] > pn) return owned[i]; }
     return null;
   }
-  // The pick Rec / liveDecisionScore is advising. On the clock that's the
-  // current selection; while waiting (mock/live) it's your next owned pick so
-  // the board doesn't rank 1.01 talent as a pick-9 recommendation.
-  // Manual drafts fill every seat by hand — always rank for the pick on the
-  // clock so the full on-the-clock pool stays selectable when entering other
-  // teams' picks (future-pick survival demotion is only for mock/live waits).
+  // Manual drafts fill every seat by hand. Roster counts for Rec still score
+  // the team on the clock so other teams' picks aren't ranked against yours.
   function isManualDraft(){
     var mode = state && state.mode;
     return mode !== 'mock' && mode !== 'live';
   }
+  // Rec always ranks the pick on the clock against the full undrafted pool.
+  // Looking ahead to a later owned pick (or demoting by survival odds) buried
+  // available players and made early picks read like mid/late-round advice.
   function recommendationPickNo(){
-    var cur = (state && state.current) || 1;
-    if (isManualDraft()) return cur;
-    // Live drafts rank the pick on the clock. Looking ahead to a later
-    // owned pick buried available players while you were up.
-    if (state && state.mode === 'live' && state.isDrafting) return cur;
-    if (isMyPick(cur)) return cur;
-    var ups = upcomingOwnedPicks();
-    if (ups && ups.length) return ups[0];
-    return cur;
+    return (state && state.current) || 1;
   }
   // Roster counts used when ranking the BA / Recommendation list. Manual
   // multi-seat fills score for the team on the clock so other teams' picks
@@ -1399,8 +1390,14 @@
   // player's raw ADP (mirrors utils.keeper_value.adjust_adp_for_keepers).
   var _keeperAdpCache = null; // sorted raw ADPs of active keepers
   function invalidateKeeperAdpCache(){ _keeperAdpCache = null; }
+  // ADP compression is independent of rec-pool availability: projected keepers
+  // still leave the ADP board even when Rec treats them as undrafted until they
+  // appear on a pick slot. Skip live — the host board is the source of truth.
+  function keepersCompressAdp(){
+    return !!(keepersOn && keeperSet && keeperSet.length && !(state && state.mode === 'live'));
+  }
   function keeperRawAdps(adpFn){
-    if (!keepersAffectAvailability() || !keeperSet || !keeperSet.length) return [];
+    if (!keepersCompressAdp()) return [];
     // Cache the default (rawAdpOf) list; source-specific callers pass their own fn.
     if (adpFn == null && _keeperAdpCache) return _keeperAdpCache;
     var fn = adpFn || rawAdpOf;
@@ -1692,17 +1689,12 @@
     return out;
   }
 
-  // Live drafts: the host board is the only source of "taken". Projected
-  // keepers must not leave the recommendation pool or burn pick slots — that
-  // made pick-2 recs look like mid/late-round advice (elite names already gone).
-  function keepersAffectAvailability(){
-    return !!(keepersOn && !(state && state.mode === 'live'));
-  }
-
+  // Recommendations only treat a player as gone once they are on the board
+  // (a real pick or a seeded mock-keeper slot). Projected keepers must not
+  // silently leave the pool — that made early-pick recs look mid/late-round.
   function applyKeepers(){
-    if (!keepersAffectAvailability()) return;
-    invalidateKeeperAdpCache();
-    keeperSet.forEach(function(k){ if (k && k.id != null) drafted[String(k.id)] = true; });
+    // No-op for availability. Mock keeper drafts still place keepers via
+    // seedKeeperPicks(); live/host drafts mark players drafted from picks only.
   }
 
   // ── Keeper drafts ────────────────────────────────────────────────────────
@@ -1739,10 +1731,9 @@
     keeperSet = computeKeeperSet();
     if (!keeperSet.length) return;
     invalidateKeeperAdpCache();
-    // Live: keepers are informational (banner only). Recommendations treat
-    // every player as available until the host marks them drafted.
+    // Live: host picks are the only drafted set. Do not invent keeper slots or
+    // advance the clock — recommendations need the real undrafted pool.
     if (state.mode === 'live') return;
-    keeperSet.forEach(function(k){ if (k && k.id != null) drafted[String(k.id)] = true; });
     var teams = state.teams, rounds = state.rounds, order = state.order;
     var slotBy = keeperSlotMap();
     var used = {};
@@ -1787,14 +1778,8 @@
   function setKeepersOn(on){
     keepersOn = on;
     invalidateKeeperAdpCache();
-    if (state && state.mode === 'live'){
-      // Live availability follows host picks only; the toggle is display-only.
-      render();
-      renderKeeperBanner();
-      return;
-    }
-    if (on){ applyKeepers(); }
-    else { keeperSet.forEach(function(k){ if (k && k.id != null) delete drafted[String(k.id)]; }); }
+    // Availability follows board picks only (applyKeepers is a no-op). The
+    // banner remains a reference list; mock keeper drafts seed slots at start.
     render();
     renderKeeperBanner();
   }
@@ -1875,31 +1860,23 @@
             (keeperPage >= pages ? ' disabled' : '') + '>Next &#8594;</button>' +
         '</div>';
     }
-    var live = !!(state && state.mode === 'live');
-    var title = live
-      ? ('Keepers ' + (keepersOn ? 'listed' : 'hidden'))
-      : ('Keepers ' + (keepersOn ? 'applied' : 'off'));
-    var sub = live
-      ? (keeperSet.length + ' listed · recs follow host picks only · ' + mine + ' yours, ' + proj + ' projected')
-      : (keeperSet.length + ' off the board · ' + mine + ' yours, ' + proj + ' projected');
-    var note = live
-      ? 'Live recommendations treat every player as available until the host drafts them. Keepers here are reference only.'
-      : 'Other teams’ keepers are projected from the same surplus model. They are estimates, not their declared keepers.';
+    // Keepers are reference-only for Rec in every mode: availability follows
+    // drafted board picks (including seeded mock-keeper slots), never projections.
     el.className = 'dr-keeper-banner' + (keepersOn ? ' is-on' : '');
     el.innerHTML =
       '<div class="dr-keeper-head">' +
-        '<span class="dr-keeper-title"><b>' + title + '</b></span>' +
-        '<span class="dr-keeper-sub">' + sub + '</span>' +
+        '<span class="dr-keeper-title"><b>Keepers ' + (keepersOn ? 'listed' : 'hidden') + '</b></span>' +
+        '<span class="dr-keeper-sub">' + keeperSet.length + ' listed · recs use drafted players only · ' +
+          mine + ' yours, ' + proj + ' projected</span>' +
         '<button type="button" id="drKeeperView" class="dr-keeper-btn dr-keeper-view' + (keeperDetailsOpen ? ' is-open' : '') + '"' +
           ' aria-expanded="' + (keeperDetailsOpen ? 'true' : 'false') + '" aria-controls="drKeeperList">Details' +
           '<span class="dr-keeper-caret" aria-hidden="true"></span></button>' +
-        (live ? '' :
         '<button type="button" id="drKeeperToggle" class="dr-keeper-btn dr-keeper-btn-primary">' +
-          (keepersOn ? 'Turn off' : 'Apply') + '</button>') +
+          (keepersOn ? 'Hide' : 'Show') + '</button>' +
       '</div>' +
       '<div id="drKeeperList" class="dr-keeper-list"' + (keeperDetailsOpen ? '' : ' hidden') + '>' +
         '<div class="dr-keeper-items">' + rows + '</div>' + pager +
-        '<div class="dr-keeper-note">' + note + '</div>' +
+        '<div class="dr-keeper-note">Recommendations treat every undrafted player as available. Keepers here are reference; mock keeper drafts still place seeded keepers on the board as picks.</div>' +
       '</div>';
     var vbtn = document.getElementById('drKeeperView');
     var tbtn = document.getElementById('drKeeperToggle');
@@ -7133,7 +7110,7 @@
   // Single source of truth so the inline ⓘ tooltips and the help popover agree.
   // Labels match docs/draft-room-evaluation-plan.md § Semantic contract.
   var _GLOSSARY = [
-    { term: 'Recommendation Rank', def: 'Who should I draft right now? The live, roster-aware order for this pick. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, expected availability at your next pick, and recent investment at QB or TE. In redraft it favors this-season lineup strength: filling an open starter or FLEX hole beats luxury bench BPA, while 1QB/1TE empties stay streamable and a major ADP fall can still win. Late-round upside and bye-week severity also adjust this order. It does not rank by simulated playoff odds. When it is not your turn, the order is for your next owned pick and players unlikely to last there are ranked down. Shown as a rank (REC #) rather than a grade because its internal Decision Score naturally changes as the board is depleted — not a historical grade, and not Pick Score.' },
+    { term: 'Recommendation Rank', def: 'Who should I draft right now? The live, roster-aware order for the pick on the clock. It starts with Pick Score, then accounts for whether the player fills a starter or FLEX spot, backup and overfill cost, required slots and picks remaining, positional depth, opportunity cost vs your next pick, and recent investment at QB or TE. In redraft it favors this-season lineup strength: filling an open starter or FLEX hole beats luxury bench BPA, while 1QB/1TE empties stay streamable and a major ADP fall can still win. Late-round upside and bye-week severity also adjust this order. It does not rank by simulated playoff odds. Every undrafted player is eligible — Rec does not shrink the pool to names expected to survive until a later pick. Shown as a rank (REC #) rather than a grade because its internal Decision Score naturally changes as the board is depleted — not a historical grade, and not Pick Score.' },
     { term: 'Decision Score', def: 'The internal ranking number behind Recommendation Rank. It starts from absolute Pick Score, then adds live roster fit, survival, scarcity, obligations, handcuff timing, late-round upside, and bye-week severity. You see Recommendation as REC # because Decision Score moves as the board depletes — it is not a 0-100 Pick Score, not Board PS, and not a Draft Grade.' },
     { term: 'Pick Score (PS)', def: 'How good is this player at this pick? The absolute 0-100 quality kernel combines model value, a scarcity residual (VOR as a share of the player\'s own value, so same-position stars are not double-counted), ADP, tier, roster need, and projected points. Live surfaces may scale it vs the best player still available so late boards stay readable. Live survival, handcuffs, bye severity, and late-round upside live in Recommendation Rank / Decision Score, not here. Kickers and defenses are not scored.' },
     { term: 'Board PS', def: 'How good was this selection relative to what was available then? Made-pick chips and Deep Dive replay the historical remaining pool and scale absolute Pick Score against its best option at that slot. Avg Board PS on the report uses the same relative scale. Board PS is not live Recommendation Rank or Decision Score.' },
@@ -7369,22 +7346,13 @@
     if (diff > -5)  return { label:'Fair',  cls:'fair'  };
     return { label:'Reach', cls:'reach' };
   }
-  // Players taken before `pn`. Mock keeper drafts also treat unseeded keepers
-  // as gone; live drafts only count host picks (same rule as recommendations).
+  // Players taken before `pn`. Only board picks count — projected keepers that
+  // were never drafted stay in the alternative pool (same rule as live Rec).
   function ddTakenBefore(pn){
     var taken = {};
     Object.keys(state.picks).forEach(function(k){
       if (parseInt(k, 10) < pn && state.picks[k]) taken[String(state.picks[k].id)] = true;
     });
-    if (keepersAffectAvailability() && keeperSet && keeperSet.length){
-      var onBoard = {};
-      Object.keys(state.picks).forEach(function(k){
-        if (state.picks[k]) onBoard[String(state.picks[k].id)] = true;
-      });
-      keeperSet.forEach(function(k){
-        if (k && k.id != null && !onBoard[String(k.id)]) taken[String(k.id)] = true;
-      });
-    }
     return taken;
   }
   // Chance this player lasts to `nextPn` from ADP alone (no future-board
@@ -7424,7 +7392,7 @@
       taken: taken,
       teams: state.teams || 12,
       rounds: state.rounds || 16,
-      keepers: keepersAffectAvailability() ? (keeperSet || []) : [],
+      keepers: [],
       viewerRosterId: (cfg.keepers && cfg.keepers.viewerRoster) || null,
       qualityOf: function (f) { var q = ppgNormOf(f); return q == null ? 0.35 : q; },
       vorPositive: function (f) { return vorOf(f) == null || vorOf(f) > 0; }
@@ -8798,7 +8766,7 @@
       + (f.projPpg != null ? statBox('Proj PPG', f.projPpg.toFixed(1), 'projected', 'Points per game, projected for the upcoming season.') : '')
       + (f.lastPpg != null ? statBox((f.ppgSeason ? f.ppgSeason + ' PPG' : 'PPG'), f.lastPpg.toFixed(1), f.ppgRank != null ? (pos + f.ppgRank) : 'last season', 'Points per game last season.') : '')
       + (f.posRank ? statBox('Pos Rank', f.posRank, null, 'Rank at this position by current value.') : '')
-      + (f.rec != null ? statBox('REC', '#' + f.rec, null, 'Recommendation Rank — who to draft now. Roster-aware order, not a grade. While you wait, it is ranked for your next owned pick.') : '')
+      + (f.rec != null ? statBox('REC', '#' + f.rec, null, 'Recommendation Rank — who to draft now. Roster-aware order for the pick on the clock across every undrafted player, not a grade.') : '')
       + (f.bye != null ? statBox('Bye', f.bye, null, 'NFL bye week. Stacking several players on the same bye can leave a hole.') : '')
       + (f.projPts != null ? statBox('Proj Pts', Math.round(f.projPts), 'season', 'Projected fantasy points for the full upcoming season.') : '')
       + (f.market != null ? statBox('Mkt vs ADP', fmtSigned(Math.round(f.market), 0), null, 'How much earlier (positive) or later (negative) betting markets imply this player should go versus ADP.') : '')
