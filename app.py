@@ -4923,7 +4923,7 @@ def _default_social_tags(title: str, description: str) -> str:
     desc = (description or DEFAULT_META_DESCRIPTION).strip()
     # Branded 1200×630 card (not the square logo) so Slack/X/iMessage previews
     # render as summary_large_image instead of a tiny icon.
-    image = f"{origin}/static/og-default.png" if origin else "/static/og-default.png"
+    image = f"{origin}/static/og-default.png?v=23ccc21e" if origin else "/static/og-default.png?v=23ccc21e"
     t = html.escape(title, quote=True)
     d = html.escape(desc, quote=True)
     img = html.escape(image, quote=True)
