@@ -58,6 +58,10 @@
 :root {
     --bg: #ffffff;
     --bg-alt: #f4f6f8;
+    /* Brand PRO / upsell gradient (navy -> royal blue). Theme-independent, so
+       one definition serves both themes. Defined here too because guests load
+       landing_lite.css without dashboard.css. */
+    --pro-gradient: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
     --card: #ffffff;
     --card-soft: #f8fafc;
     --row: #f8fafc;
@@ -482,7 +486,7 @@ html[data-theme="dark"] .fp-discord-icon {
     letter-spacing: 0.4px;
     text-transform: uppercase;
     color: #fff;
-    background: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
+    background: var(--pro-gradient);
     border-radius: 6px;
     vertical-align: middle;
     line-height: 14px;
@@ -1139,7 +1143,7 @@ table, .standings-table {
         letter-spacing: .04em;
         text-transform: uppercase;
         color: #fff;
-        background: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
+        background: var(--pro-gradient);
         padding: 2px 6px;
         border-radius: 5px;
     }
@@ -2814,7 +2818,7 @@ input[type="search"] {
 }
 
 .home-feature-badge-pro {
-    background: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
+    background: var(--pro-gradient);
     color: #fff;
 }
 
@@ -3247,7 +3251,7 @@ input[type="search"] {
     padding: 8px 14px;
     border: 0;
     border-radius: 9px;
-    background: linear-gradient(135deg, #122d4b, #2563eb);
+    background: var(--pro-gradient);
     color: #fff;
     font-size: 13px;
     font-weight: 800;
@@ -3376,7 +3380,7 @@ input[type="search"] {
     padding: 12px 18px;
     border: 0;
     border-radius: 10px;
-    background: linear-gradient(135deg, #122d4b, #2563eb);
+    background: var(--pro-gradient);
     color: #fff;
     font-size: 15px;
     font-weight: 800;

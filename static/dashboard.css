@@ -349,6 +349,10 @@
     --hero-from: #0b2a55;
     --hero-to: #1d4ed8;
     --hero-glow: rgba(56, 189, 248, 0.22);
+    /* Brand PRO / upsell gradient (navy -> royal blue). Theme-independent, so
+       one definition serves both themes. Mirrored in landing_lite.css for
+       guests, who load that stylesheet without dashboard.css. */
+    --pro-gradient: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
     /* Typography */
     --font-sans: "Archivo", "InterVariable", system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
     --text-xs: 11px;
@@ -1221,7 +1225,7 @@ ul {
     letter-spacing: 0.4px;
     text-transform: uppercase;
     color: #fff;
-    background: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
+    background: var(--pro-gradient);
     border-radius: 6px;
     vertical-align: middle;
     line-height: 14px;
@@ -2607,7 +2611,7 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     padding: 9px 18px;
     border-radius: 8px;
     border: none;
-    background: linear-gradient(135deg, #122d4b, #2563eb);
+    background: var(--pro-gradient);
     color: #fff;
     font-size: 13px;
     font-weight: 700;
@@ -12084,7 +12088,7 @@ a.signed-home-league:hover {
 }
 
 .home-feature-badge-pro {
-    background: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
+    background: var(--pro-gradient);
     color: #fff;
 }
 
@@ -12519,7 +12523,7 @@ a.signed-home-league:hover {
     padding: 8px 14px;
     border: 0;
     border-radius: 9px;
-    background: linear-gradient(135deg, #122d4b, #2563eb);
+    background: var(--pro-gradient);
     color: #fff;
     font-size: 13px;
     font-weight: 800;
@@ -12648,7 +12652,7 @@ a.signed-home-league:hover {
     padding: 12px 18px;
     border: 0;
     border-radius: 10px;
-    background: linear-gradient(135deg, #122d4b, #2563eb);
+    background: var(--pro-gradient);
     color: #fff;
     font-size: 15px;
     font-weight: 800;
@@ -36439,7 +36443,7 @@ a, button, [role="button"], [role="tab"], summary, label,
         letter-spacing: .04em;
         text-transform: uppercase;
         color: #fff;
-        background: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
+        background: var(--pro-gradient);
         padding: 2px 6px;
         border-radius: 5px;
     }
