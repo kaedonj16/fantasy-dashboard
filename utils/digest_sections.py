@@ -23,12 +23,18 @@ def email_shell(
     logo_url: str = "",
     brand_mark_url: str = "",
     footer_kind: str = "weekly_digest",
+    header_theme: str = "dark",
 ) -> str:
     """Wrap email body in the BR Fantasy chrome.
 
     ``footer_kind`` controls unsubscribe copy:
       - ``weekly_digest`` (default)
       - ``onboarding``: signup / PRO welcome emails
+
+    ``header_theme`` controls the masthead:
+      - ``dark`` (default): navy header with the light distressed wordmark.
+      - ``light``: white header with the full-color navy wordmark and no
+        redundant kicker line (pair with light-mode logo assets).
     """
     sub = escape(subtitle or "Your weekly fantasy digest", quote=False)
     base_logo = (logo_url or "").strip()
@@ -60,13 +66,41 @@ def email_shell(
             )
             + "</div>"
         )
+    # Palette. "light" matches the site theme (navy --accent #122d4b on a
+    # white masthead); "dark" keeps the original weekly-digest chrome so that
+    # email is unchanged.
+    if header_theme == "light":
+        wrapper_bg = "#f4f6f8"
+        card_border = "#e8eef4"
+        header_bg = "#ffffff"
+        subtitle_color = "#122d4b"
+        divider = "#122d4b"
+        body_bg = "#f8fafc"
+        cta_bg = "#122d4b"
+        footer_border = "#e8eef4"
+        footer_color = "#64748b"
+        kicker_html = ""
+    else:
+        wrapper_bg = "#e8eef5"
+        card_border = "#dbe3ee"
+        header_bg = "#0b1220"
+        subtitle_color = "#ffffff"
+        divider = "#2563eb"
+        body_bg = "#f7f9fc"
+        cta_bg = "#2563eb"
+        footer_border = "#e6ebf2"
+        footer_color = "#94a3b8"
+        kicker_html = (
+            '<div style="color:#93c5fd;font-size:11px;font-weight:800;'
+            'letter-spacing:.14em;text-transform:uppercase;">BR Fantasy</div>'
+        )
     cta = ""
     if dash_url:
         cta = f"""\
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">
   <tr>
     <td>
-      <a href="{escape(dash_url, quote=True)}" style="display:block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 20px;border-radius:10px;text-align:center;">{escape(cta_label, quote=False)}</a>
+      <a href="{escape(dash_url, quote=True)}" style="display:block;background:{cta_bg};color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 20px;border-radius:10px;text-align:center;">{escape(cta_label, quote=False)}</a>
     </td>
   </tr>
 </table>"""
@@ -74,30 +108,30 @@ def email_shell(
         footer = (
             "You're getting this because you created a BR Fantasy account "
             "(or upgraded to PRO). "
-            f'<a href="{escape(unsub_href, quote=True)}" style="color:#64748b;">Unsubscribe</a> '
+            f'<a href="{escape(unsub_href, quote=True)}" style="color:{footer_color};">Unsubscribe</a> '
             "from welcome and onboarding emails. Weekly digests are separate."
         )
     else:
         footer = (
             "You're getting this because you signed in to BR Fantasy. "
-            f'<a href="{escape(unsub_href, quote=True)}" style="color:#64748b;">Unsubscribe</a> '
+            f'<a href="{escape(unsub_href, quote=True)}" style="color:{footer_color};">Unsubscribe</a> '
             "from weekly digest emails."
         )
     return f"""\
-<div style="background:#e8eef5;padding:28px 12px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
-  <div style="max-width:{MAX_WIDTH_PX}px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #dbe3ee;">
-    <div style="background:#0b1220;padding:22px 24px 18px;">
+<div style="background:{wrapper_bg};padding:28px 12px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:{MAX_WIDTH_PX}px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid {card_border};">
+    <div style="background:{header_bg};padding:22px 24px 18px;">
       {logo_block}
-      <div style="color:#93c5fd;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;">BR Fantasy</div>
-      <div style="color:#ffffff;font-size:20px;font-weight:800;margin-top:6px;line-height:1.25;">{sub}</div>
+      {kicker_html}
+      <div style="color:{subtitle_color};font-size:20px;font-weight:800;margin-top:6px;line-height:1.25;">{sub}</div>
     </div>
-    <div style="height:4px;background:#2563eb;line-height:4px;font-size:0;">&nbsp;</div>
-    <div style="padding:22px 20px 24px;background:#f7f9fc;">
+    <div style="height:4px;background:{divider};line-height:4px;font-size:0;">&nbsp;</div>
+    <div style="padding:22px 20px 24px;background:{body_bg};">
       {inner_html}
       {cta}
     </div>
-    <div style="padding:16px 22px;background:#ffffff;border-top:1px solid #e6ebf2;">
-      <p style="margin:0;font-size:11px;color:#94a3b8;line-height:1.6;">
+    <div style="padding:16px 22px;background:#ffffff;border-top:1px solid {footer_border};">
+      <p style="margin:0;font-size:11px;color:{footer_color};line-height:1.6;">
         {footer}
       </p>
     </div>
