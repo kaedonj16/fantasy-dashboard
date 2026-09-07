@@ -342,6 +342,13 @@
     /* the app's mid blue (blue-500) — used for links, active
                             states and accents that are intentionally blue rather than
                             the navy --accent. Same value in both themes. */
+    /* Season Hub hero — brand-blue gradient, derived from --brand-blue so the
+       banner tracks the palette instead of a hardcoded pair of hexes. Defined
+       per theme below; brand blue is theme-independent, so light keeps the same
+       deep-navy → blue field (a dark banner on white) with a softer glow. */
+    --hero-from: #0b2a55;
+    --hero-to: #1d4ed8;
+    --hero-glow: rgba(56, 189, 248, 0.22);
     /* Typography */
     --font-sans: "Archivo", "InterVariable", system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
     --text-xs: 11px;
@@ -439,6 +446,11 @@
     --wk-bar-tick-in: rgba(255, 255, 255, 0.88);
     --wk-bar-sel-fill: rgba(59, 130, 246, 0.14);
     --wk-bar-grip-dot: rgba(96, 165, 250, 0.9);
+    /* Season Hub hero — brand blue on the dark ground; a stronger sky glow gives
+       the banner depth against the near-black chrome. */
+    --hero-from: #0b2a55;
+    --hero-to: #1d4ed8;
+    --hero-glow: rgba(56, 189, 248, 0.28);
 }
 
 /* ============================================
@@ -8821,9 +8833,11 @@ select:focus {
 
 .os-hero-card {
     padding: 22px;
-    /* Layered: soft radial glow over the brand gradient for depth. */
-    background: radial-gradient(ellipse 80% 60% at 85% -10%, rgba(56, 189, 248, 0.18), transparent 60%),
-    linear-gradient(135deg, #0f2747 0%, #183a63 100%);
+    /* Layered: soft radial glow over the brand-blue gradient for depth. The
+       gradient is token-driven (--hero-*) so it tracks the theme instead of a
+       frozen hex pair. */
+    background: radial-gradient(ellipse 85% 65% at 88% -15%, var(--hero-glow), transparent 60%),
+    linear-gradient(135deg, var(--hero-from) 0%, var(--hero-to) 100%);
     color: #ffffff;
     margin-bottom: 18px;
     max-width: 100%;
