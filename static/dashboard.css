@@ -11293,10 +11293,13 @@ select:focus {
 }
 
 .home-card {
-    background: #122d4b;
+    /* Brand-blue hero, matched to the Season Hub (--hero-*). Kept inline (not the
+       tokens) so it stays identical to the guest home card in landing_lite.css,
+       which loads without dashboard.css; this card is always navy in both themes. */
+    background: #0b2a55;
     background:
-        radial-gradient(ellipse 90% 70% at 100% 0%, rgba(56, 189, 248, 0.18), transparent 55%),
-        linear-gradient(165deg, #163557 0%, #122d4b 48%, #0d233c 100%);
+        radial-gradient(ellipse 90% 70% at 100% 0%, rgba(56, 189, 248, 0.28), transparent 55%),
+        linear-gradient(135deg, #0b2a55 0%, #1d4ed8 100%);
     padding: 22px 24px 20px;
     border-radius: 18px;
     border: 1px solid rgba(125, 211, 252, 0.12);
