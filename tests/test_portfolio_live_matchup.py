@@ -19,6 +19,9 @@ def test_live_matchup_endpoint_wired_and_gated():
     assert '("regular", "post")' in endpoint
     assert 'offseason_mode' in endpoint
     assert 'viewer_roster_id' in endpoint
+    # Not up all week: gated on the week's schedule.
+    assert "_week_scores_visible" in endpoint
+    assert "get_nfl_games_for_week" in endpoint
     # Totals come from the shared live-total helper, oriented you/opp.
     assert "team_live_totals" in endpoint
     # Win probability from the shared model, only when there's an opponent.
@@ -55,6 +58,28 @@ def test_matchup_status_label():
                                  ["a", "b"]) == "final"
     # Int pids resolve through the str() fallback.
     assert _matchup_status_label({"7": STATUS_FINAL}, [7]) == "final"
+
+
+def test_week_scores_visible_gate():
+    pytest.importorskip("flask")
+    from datetime import datetime, timezone
+    from routes.user_pages_bp import _week_scores_visible
+
+    now = datetime(2026, 9, 13, 17, 0, 0, tzinfo=timezone.utc)
+    now_ts = now.timestamp()
+
+    def g(epoch):
+        return {"gameTime_epoch": str(epoch)}
+
+    # Live now (20 min ago) and starting soon (in 30 min) show.
+    assert _week_scores_visible([g(now_ts - 1200)], now) is True
+    assert _week_scores_visible([g(now_ts + 1800)], now) is True
+    # Finished earlier this week stays up (the "scores too" case).
+    assert _week_scores_visible([g(now_ts - 5 * 3600)], now) is True
+    # Still >lead before the first kickoff (2h out) and days away are hidden.
+    assert _week_scores_visible([g(now_ts + 2 * 3600)], now) is False
+    assert _week_scores_visible([g(now_ts + 3 * 86400)], now) is False
+    assert _week_scores_visible([], now) is False
 
 
 def test_portfolio_card_has_live_slot_and_hydration():
