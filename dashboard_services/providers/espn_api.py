@@ -478,6 +478,30 @@ def _authenticated_league_cached(
                 bool(swid and swid.startswith("{") and swid.endswith("}")),
                 len(espn_s2 or ""), _is_espn_access_denied(exc),
             )
+            # [espn-diag] The lightweight connect probe (mSettings+mTeam) accepts
+            # these same cookies, but espn-api's League() asks for the heavier view
+            # set and was denied. Re-issue the heavy views directly with the same
+            # cookies and log ONLY the status. If this returns 200, ESPN grants the
+            # heavy views and the fault is espn-api's fetch path (fix in our code);
+            # if it also returns 401/403, ESPN limits this account to settings/teams
+            # for this league (a real permission boundary, not a bug).
+            try:
+                _diag = requests.get(
+                    ESPN_FFL_LEAGUE_URL.format(season=int(season), league_id=int(league_id)),
+                    params=(("view", "mTeam"), ("view", "mRoster"), ("view", "mMatchup"),
+                            ("view", "mSettings"), ("view", "mStandings")),
+                    cookies={"SWID": swid, "espn_s2": espn_s2},
+                    timeout=ESPN_REQUEST_TIMEOUT,
+                )
+                logger.warning(
+                    "[espn-diag] heavy-view direct probe league_id=%s season=%s status=%s",
+                    league_id, season, _diag.status_code,
+                )
+            except Exception as _probe_exc:
+                logger.warning(
+                    "[espn-diag] heavy-view direct probe errored league_id=%s season=%s exc_type=%s",
+                    league_id, season, type(_probe_exc).__name__,
+                )
             if _is_espn_access_denied(exc):
                 try:
                     from flask import has_request_context, session
