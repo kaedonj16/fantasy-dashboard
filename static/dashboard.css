@@ -8258,21 +8258,21 @@ select:focus {
 }
 
 /* Dark mode overrides */
-.dark .history-card.is-champion {
+[data-theme="dark"] .history-card.is-champion {
     background: linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, var(--card) 60%);
     border-color: rgba(245, 158, 11, 0.35);
 }
 
-.dark .history-card.is-champion .history-card-label {
+[data-theme="dark"] .history-card.is-champion .history-card-label {
     color: #fbbf24;
 }
 
-.dark .history-card.is-runner-up {
+[data-theme="dark"] .history-card.is-runner-up {
     background: linear-gradient(135deg, rgba(148, 163, 184, 0.09) 0%, var(--card) 60%);
     border-color: rgba(148, 163, 184, 0.3);
 }
 
-.dark .history-card.is-runner-up .history-card-label {
+[data-theme="dark"] .history-card.is-runner-up .history-card-label {
     color: var(--text-subtle);
 }
 
@@ -8342,7 +8342,7 @@ select:focus {
     text-transform: uppercase;
     opacity: 0.7;
     margin-bottom: 12px;
-    color: #6b7280;
+    color: var(--text-muted);
 }
 
 .history-page {
@@ -8362,7 +8362,7 @@ select:focus {
 .history-season-picker label {
     font-size: 0.76rem;
     font-weight: 900;
-    color: #6b7280;
+    color: var(--text-muted);
     letter-spacing: 0.1em;
     text-transform: uppercase;
 }
@@ -8370,13 +8370,13 @@ select:focus {
 .history-season-picker select {
     padding: 0 14px;
     border-radius: 18px;
-    border: 1px solid #d6dfeb;
-    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid var(--border);
+    background: var(--card);
     font: inherit;
     height: 52px;
     font-size: 1rem;
     font-weight: 700;
-    color: #1f2937;
+    color: var(--text);
     box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
 }
 
@@ -8756,13 +8756,13 @@ select:focus {
 .history-standings-title {
     font-size: 0.98rem;
     font-weight: 800;
-    color: #1f2937;
+    color: var(--text);
     margin-bottom: 12px;
 }
 
 .history-subtitle {
     margin: 16px 0 0;
-    color: #667085;
+    color: var(--text-muted);
     max-width: 900px;
     font-size: 1.03rem;
     line-height: 1.6;
@@ -8775,7 +8775,7 @@ select:focus {
     font-size: clamp(2rem, 3vw, 3rem);
     line-height: 1.02;
     font-weight: 900;
-    color: #0f2747;
+    color: var(--text);
     letter-spacing: -0.03em;
     word-wrap: break-word;
     overflow-wrap: break-word;
@@ -26909,7 +26909,7 @@ tr.team-clickable {
     font-weight: 600;
 }
 
-.dark .history-table tbody tr.champ-recent td {
+[data-theme="dark"] .history-table tbody tr.champ-recent td {
     background: linear-gradient(90deg, rgba(245, 158, 11, 0.1) 0%, var(--card) 100%);
 }
 
