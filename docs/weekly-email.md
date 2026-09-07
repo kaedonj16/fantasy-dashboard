@@ -32,7 +32,7 @@ Pinned in `render.yaml` (you do not need to create these in the dashboard):
 |---|---|
 | `BREVO_SENDER_EMAIL` | `noreply@brfantasyfootball.com` |
 | `BREVO_SENDER_NAME` | `BR Fantasy` |
-| `BREVO_REPLY_TO_EMAIL` | `admin@brfantasy.com` |
+| `BREVO_REPLY_TO_EMAIL` | `noreply@brfantasyfootball.com` |
 | `SITE_BASE_URL` | `https://brfantasyfootball.com` |
 
 You still paste these in the Render dashboard (Environment → `brfantasy`):

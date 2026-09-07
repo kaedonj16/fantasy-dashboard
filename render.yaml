@@ -24,11 +24,11 @@ services:
           type: keyvalue
           property: connectionString
       - key: EMAIL_USER
-        value: kjenkins3232@gmail.com
+        value: kaedonj@brfantasyfootball.com
       - key: EMAIL_PASSWORD
         sync: false
       - key: RECIPIENT_EMAIL
-        value: kjenkins3232@gmail.com
+        value: kaedonj@brfantasyfootball.com
       - key: SMTP_SERVER
         value: smtp.gmail.com
       - key: SMTP_PORT
@@ -43,7 +43,7 @@ services:
       - key: BREVO_SENDER_NAME
         value: BR Fantasy
       - key: BREVO_REPLY_TO_EMAIL
-        value: admin@brfantasy.com
+        value: noreply@brfantasyfootball.com
       - key: BREVO_WEBHOOK_SECRET
         sync: false
       - key: SITE_BASE_URL
@@ -154,11 +154,11 @@ services:
           name: brfantasy-db
           property: connectionString
       - key: EMAIL_USER
-        value: kjenkins3232@gmail.com
+        value: kaedonj@brfantasyfootball.com
       - key: EMAIL_PASSWORD
         sync: false
       - key: RECIPIENT_EMAIL
-        value: kjenkins3232@gmail.com
+        value: kaedonj@brfantasyfootball.com
       - key: SMTP_SERVER
         value: smtp.gmail.com
       - key: SMTP_PORT
