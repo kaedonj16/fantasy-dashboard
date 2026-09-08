@@ -3,6 +3,7 @@ from utils.trade_window import (
     BUY_THRESHOLD,
     REDRAFT_DEADLINE_WINDOW,
     SELL_THRESHOLD,
+    deadline_line_visible,
     redraft_deadline_card_visible,
     trade_partners,
     trade_window_verdict,
@@ -109,3 +110,18 @@ class TestRedraftDeadlineCardVisible:
 
     def test_hidden_after_deadline(self):
         assert not redraft_deadline_card_visible(-1)
+
+
+class TestDeadlineLineVisible:
+    def test_hidden_when_far_off(self):
+        # The dynasty advisor shows year-round, but the deadline context line
+        # should stay hidden until the deadline is close.
+        assert not deadline_line_visible(10)
+        assert not deadline_line_visible(REDRAFT_DEADLINE_WINDOW + 1)
+
+    def test_hidden_without_deadline(self):
+        assert not deadline_line_visible(None)
+
+    def test_visible_when_close(self):
+        assert deadline_line_visible(0)
+        assert deadline_line_visible(REDRAFT_DEADLINE_WINDOW)

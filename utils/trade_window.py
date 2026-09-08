@@ -34,6 +34,16 @@ def redraft_deadline_card_visible(weeks_to_deadline: Optional[int]) -> bool:
     return 0 <= weeks <= REDRAFT_DEADLINE_WINDOW
 
 
+def deadline_line_visible(weeks_to_deadline: Optional[int]) -> bool:
+    """True when the "deadline in N weeks" context line is worth showing.
+
+    Dynasty paints the trade-window advisor year-round, so far-off deadlines
+    would make a standing buy/sell card read like a countdown alert. Gate the
+    deadline line to the same near-deadline window redraft uses for its card.
+    """
+    return redraft_deadline_card_visible(weeks_to_deadline)
+
+
 def trade_window_verdict(
     playoff_pct: float,
     weeks_to_deadline: Optional[int] = None,

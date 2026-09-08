@@ -7444,6 +7444,7 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
     try:
         import time as _time
         from utils.trade_window import (
+            deadline_line_visible,
             redraft_deadline_card_visible,
             trade_partners,
             trade_window_verdict,
@@ -7557,7 +7558,9 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
             titles = {"buy": "Buy window", "sell": "Sell window", "hold": "Hold"}
             section_label = "Trade window"
         lines = []
-        if weeks_to is not None:
+        # Only lead with the deadline when it's close enough to be actionable;
+        # otherwise a year-round dynasty advisor reads like a countdown alert.
+        if deadline_line_visible(weeks_to):
             when = "this week" if weeks_to == 0 else (
                 "next week" if weeks_to == 1 else f"{weeks_to} weeks away")
             lines.append(
