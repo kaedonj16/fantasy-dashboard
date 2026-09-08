@@ -1244,9 +1244,7 @@ FORM_BODY = """
         {% if not session.get('account_id') %}
         <div class="home-account-entry home-account-top">
           <span class="home-account-lead">Connect your league below. No account needed to look around.</span>
-          <div class="home-account-new-label">Already have an account?</div>
-          <a class="google-continue-btn" href="/auth/google?intent=login&amp;next=/"><span class="google-button-title">Continue with Google</span></a>
-          <span>Sign in to access your saved leagues.</span>
+          <a class="home-signin-link" href="/auth/google?intent=login&amp;next=/">Already have an account? <strong>Sign in</strong></a>
         </div>
         {% else %}
         <div id="signedInHome" class="signed-in-home">

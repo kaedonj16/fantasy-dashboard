@@ -131,7 +131,9 @@ def test_google_actions_share_google_continue_style():
     markup = Path("app.py").read_text()
     css = Path("static/dashboard.css").read_text()
     assert 'id="googleContinueBtn" class="google-continue-btn"' in markup
-    assert 'class="google-continue-btn" href="/auth/google?intent=login' in markup
+    # The top returning-user sign-in was intentionally demoted from a full
+    # Google button to a quiet link, so it no longer shares google-continue-btn.
+    assert 'class="home-signin-link" href="/auth/google?intent=login' in markup
     assert 'class="google-continue-btn google-create-account-btn" href="/auth/google?intent=onboarding' in markup
     # Whitespace-tolerant so a CSS reformat (space before the brace) doesn't
     # break the check while the rule is still present.

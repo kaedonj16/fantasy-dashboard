@@ -2225,6 +2225,24 @@ input[type="search"] {
     pointer-events: none;
 }
 
+/* Demoted sign-in: a quiet link instead of a full Google button competing with
+   the connect-a-league task (returning users only). */
+.home-signin-link {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #9fb0c6;
+    text-decoration: none;
+}
+.home-signin-link strong {
+    color: #8fb6ff;
+    font-weight: 800;
+}
+.home-signin-link:hover strong {
+    text-decoration: underline;
+}
+
 .home-card .home-steps-hint {
     background: rgba(255, 255, 255, 0.06);
     border-color: rgba(255, 255, 255, 0.12);
