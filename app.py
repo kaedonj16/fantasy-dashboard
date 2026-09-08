@@ -21076,6 +21076,11 @@ def api_team_details(roster_id: str):
             + float(settings.get("fpts_decimal") or 0) / 100.0,
             1,
         )
+        points_against = round(
+            float(settings.get("fpts_against") or 0)
+            + float(settings.get("fpts_against_decimal") or 0) / 100.0,
+            1,
+        )
 
         # Playoff odds — warm-cache only so a cold Monte Carlo sim never blocks
         # the modal paint. The tile stays hidden until the sim is warm, then
@@ -21656,6 +21661,18 @@ def api_team_details(roster_id: str):
                 "players": _sched_player_list(r),
             })
 
+        # Played-week count for the schedule tab: always the *viewed* season,
+        # never the prior-season graph fallback. Empty / unfinalized → 0 so
+        # the tab doesn't invent a 0-5 record before kickoff.
+        last_finalized_week = 0
+        try:
+            from utils.matchup_schedule import last_finalized_week as _lfw
+            _view_ctx = get_league_ctx_from_cache(platform, league_id, season)
+            last_finalized_week = _lfw((_view_ctx or {}).get("df_weekly"))
+        except Exception:
+            logger.debug("[api_team_details] last_finalized_week skipped", exc_info=True)
+            last_finalized_week = 0
+
         response = {
             "roster_id": roster_id,
             "team_name": team_name,
@@ -21668,6 +21685,8 @@ def api_team_details(roster_id: str):
             "losses": losses,
             "ties": ties,
             "points_for": points_for,
+            "points_against": points_against,
+            "last_finalized_week": last_finalized_week,
             "playoff_odds": playoff_odds,
             "total_value": round(total_value, 1),
             "roster": roster_players,
