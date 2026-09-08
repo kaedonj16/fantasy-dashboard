@@ -21058,6 +21058,195 @@ img, svg, canvas {
 .tm-strength-mid { background: var(--info); }
 .tm-strength-weak { background: var(--warning); }
 
+/* ── Ages tab ──────────────────────────────────────────────────────────── */
+.tm-ages-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+    gap: 10px;
+    margin-bottom: 24px;
+}
+
+.tm-ages-tiles .tm-stat-tile {
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 8px;
+    text-align: center;
+}
+
+.tm-age-bucket {
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--text);
+    min-width: 44px;
+}
+
+.tm-age-cols {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+}
+
+.tm-age-cols > .team-modal-section {
+    flex: 1 1 200px;
+    min-width: 0;
+    margin-bottom: 0;
+}
+
+.tm-age-pill-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.tm-age-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-alt);
+}
+
+.tm-age-pill-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.tm-age-pill-age {
+    margin-left: auto;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Schedule tab (mock) ───────────────────────────────────────────────── */
+.tm-sched-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    line-height: 1.35;
+    color: var(--text-muted);
+    background: color-mix(in srgb, var(--warning) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--border));
+    border-radius: 10px;
+    padding: 9px 12px;
+    margin-bottom: 18px;
+}
+
+.tm-sched-banner i {
+    color: var(--warning);
+    flex-shrink: 0;
+}
+
+.tm-sched-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.tm-sched-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-alt);
+}
+
+.tm-sched-row-upcoming {
+    opacity: 0.72;
+    border-style: dashed;
+}
+
+.tm-sched-row-playoff {
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+.tm-sched-week {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    width: 34px;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.tm-sched-result {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .02em;
+    flex-shrink: 0;
+}
+
+.tm-sched-w { background: color-mix(in srgb, var(--win) 18%, transparent); color: var(--win); }
+.tm-sched-l { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
+.tm-sched-t { background: color-mix(in srgb, var(--info) 18%, transparent); color: var(--info); }
+.tm-sched-upcoming { background: var(--card-soft); color: var(--text-muted); }
+
+.tm-sched-opp {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1;
+}
+
+.tm-sched-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+    text-transform: uppercase;
+}
+
+.tm-sched-opp-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.tm-sched-score {
+    margin-left: auto;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+.tm-sched-score.tm-sched-proj {
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
 .team-modal-empty {
     text-align: center;
     padding: 40px 20px;

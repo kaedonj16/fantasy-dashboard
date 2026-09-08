@@ -17054,6 +17054,8 @@ function openTeamModal(rosterId, teamName) {
     </div>
     <div class="tm-tab-bar">
       <button class="tm-tab active" data-tab="roster" onclick="tmSwitchTab('roster')">Roster</button>
+      <button class="tm-tab" data-tab="schedule" onclick="tmSwitchTab('schedule')">Schedule</button>
+      <button class="tm-tab" data-tab="ages" onclick="tmSwitchTab('ages')">Ages</button>
       <button class="tm-tab" data-tab="charts" onclick="tmSwitchTab('charts')">Graphs</button>
       <button class="tm-tab" data-tab="trades" onclick="tmSwitchTab('trades')">Trades</button>
     </div>
@@ -17061,6 +17063,8 @@ function openTeamModal(rosterId, teamName) {
       <div class="tm-panel active" id="tm-panel-roster">
         ${_tmLoadingHtml()}
       </div>
+      <div class="tm-panel" id="tm-panel-schedule"></div>
+      <div class="tm-panel" id="tm-panel-ages"></div>
       <div class="tm-panel" id="tm-panel-charts"></div>
       <div class="tm-panel" id="tm-panel-trades"></div>
     </div>
@@ -17536,6 +17540,248 @@ function _renderBkModalContent(data, playerId) {
   }
 }
 
+// ── Ages / demographics tab ─────────────────────────────────────────────────
+// Built entirely from the roster payload already loaded for the modal (each
+// player carries a real `age`, `position`, `is_starter` and `value`). No mock
+// data here — this is the actual age profile of the team's roster.
+function _tmBuildAgesHtml(data) {
+  const POS_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
+  const roster = (data && Array.isArray(data.roster)) ? data.roster : [];
+  // Only players we actually have an age for. Unknown/placeholder rows (numeric
+  // names) never carry an age, so they drop out naturally.
+  const withAge = roster
+    .map(p => ({
+      name: p.name,
+      pos: p.position,
+      age: parseFloat(p.age),
+      value: parseFloat(p.value) || 0,
+      starter: !!p.is_starter,
+    }))
+    .filter(p => p.pos && !isNaN(p.age) && p.age > 0);
+
+  if (!withAge.length) {
+    return '<div class="team-modal-empty">No age data available for this roster.</div>';
+  }
+
+  const mean = arr => arr.reduce((s, x) => s + x, 0) / arr.length;
+  const fmt1 = n => (n == null || isNaN(n)) ? '—' : n.toFixed(1);
+
+  const allAges = withAge.map(p => p.age);
+  const avgAge = mean(allAges);
+  const starterAges = withAge.filter(p => p.starter).map(p => p.age);
+  const starterAvg = starterAges.length ? mean(starterAges) : null;
+
+  // Value-weighted age: where the roster's value actually sits on the age curve.
+  // A young roster with an old, high-value core reads differently than the plain
+  // average lets on, and this tile surfaces that.
+  let vwAge = null;
+  const vSum = withAge.reduce((s, p) => s + p.value, 0);
+  if (vSum > 0) vwAge = withAge.reduce((s, p) => s + p.age * p.value, 0) / vSum;
+
+  const sortedYoung = [...withAge].sort((a, b) => a.age - b.age);
+  const youngest = sortedYoung[0];
+  const oldest = sortedYoung[sortedYoung.length - 1];
+
+  // Map an age onto a 0–100 bar. Fantasy-relevant range is ~21 (rookies) to ~34
+  // (aging vets); clamp outside it. Younger = fuller + greener bar.
+  const AGE_MIN = 21, AGE_MAX = 34;
+  const agePct = a => Math.max(4, Math.min(100, ((AGE_MAX - a) / (AGE_MAX - AGE_MIN)) * 100));
+  const ageTier = a => a <= 25 ? 'strong' : (a >= 29 ? 'weak' : 'mid');
+
+  // ── Header stat tiles ──
+  const tiles = [
+    { v: fmt1(avgAge), l: 'Avg Age' },
+    { v: starterAvg != null ? fmt1(starterAvg) : '—', l: 'Starter Avg' },
+    { v: vwAge != null ? fmt1(vwAge) : '—', l: 'Value-Wtd Age' },
+    { v: youngest ? fmt1(youngest.age) : '—', l: 'Youngest' },
+    { v: oldest ? fmt1(oldest.age) : '—', l: 'Oldest' },
+  ];
+  let html = '<div class="tm-ages-tiles">' + tiles.map(t =>
+    `<div class="tm-stat-tile"><div class="tm-stat-tile-value">${t.v}</div><div class="tm-stat-tile-label">${t.l}</div></div>`
+  ).join('') + '</div>';
+
+  // ── Average age by position ──
+  const byPos = {};
+  withAge.forEach(p => { (byPos[p.pos] = byPos[p.pos] || []).push(p.age); });
+  const posRows = POS_ORDER.filter(pos => byPos[pos] && byPos[pos].length).map(pos => {
+    const ages = byPos[pos];
+    const a = mean(ages);
+    return `
+      <div class="tm-strength-row">
+        <div class="tm-strength-head">
+          <span class="pos-badge ${pos}">${pos}</span>
+          <span class="tm-strength-rank">${ages.length} player${ages.length === 1 ? '' : 's'}</span>
+          <span class="tm-strength-val">${fmt1(a)} yrs</span>
+        </div>
+        <div class="tm-strength-bar"><div class="tm-strength-fill tm-strength-${ageTier(a)}" style="width:${agePct(a)}%;"></div></div>
+      </div>`;
+  }).join('');
+  html += '<div class="team-modal-section"><h3>Average Age by Position</h3>'
+    + '<div class="tm-strength-note">Younger rooms show a fuller, greener bar (scaled ' + AGE_MIN + '–' + AGE_MAX + ').</div>'
+    + '<div class="tm-strength-list">' + posRows + '</div></div>';
+
+  // ── Age distribution ──
+  const buckets = [
+    { label: '≤ 23', test: a => a <= 23 },
+    { label: '24–26', test: a => a >= 24 && a <= 26 },
+    { label: '27–29', test: a => a >= 27 && a <= 29 },
+    { label: '30+', test: a => a >= 30 },
+  ];
+  const maxBucket = Math.max(1, ...buckets.map(b => withAge.filter(p => b.test(p.age)).length));
+  const distRows = buckets.map(b => {
+    const n = withAge.filter(p => b.test(p.age)).length;
+    const pct = (n / maxBucket) * 100;
+    const tier = b.label === '≤ 23' || b.label === '24–26' ? 'strong' : (b.label === '30+' ? 'weak' : 'mid');
+    return `
+      <div class="tm-strength-row">
+        <div class="tm-strength-head">
+          <span class="tm-age-bucket">${b.label}</span>
+          <span class="tm-strength-val">${n}</span>
+        </div>
+        <div class="tm-strength-bar"><div class="tm-strength-fill tm-strength-${tier}" style="width:${Math.max(n ? 4 : 0, pct)}%;"></div></div>
+      </div>`;
+  }).join('');
+  html += '<div class="team-modal-section"><h3>Age Distribution</h3>'
+    + '<div class="tm-strength-list">' + distRows + '</div></div>';
+
+  // ── Youngest / oldest lists ──
+  const pill = p => `<div class="tm-age-pill"><span class="pos-badge ${p.pos}">${p.pos}</span>`
+    + `<span class="tm-age-pill-name">${p.name}</span><span class="tm-age-pill-age">${fmt1(p.age)}</span></div>`;
+  const youngList = sortedYoung.slice(0, 3).map(pill).join('');
+  const oldList = [...sortedYoung].reverse().slice(0, 3).map(pill).join('');
+  html += '<div class="tm-age-cols">'
+    + '<div class="team-modal-section"><h3>Youngest</h3><div class="tm-age-pill-list">' + youngList + '</div></div>'
+    + '<div class="team-modal-section"><h3>Oldest</h3><div class="tm-age-pill-list">' + oldList + '</div></div>'
+    + '</div>';
+
+  return html;
+}
+
+// ── Schedule tab ─────────────────────────────────────────────────────────────
+// NOTE: this is a mocked/illustrative schedule. This team's per-week points come
+// from real data (data.graphs.weekly_scores) where available; opponents and
+// their scores are generated deterministically from the roster id so the layout
+// is stable across re-opens. Wire to a real league-matchups endpoint to make it
+// live. A banner in the tab makes the mock explicit to the user.
+function _tmSeededRng(seed) {
+  // mulberry32 — small, stable, good enough for placeholder data.
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function _tmBuildScheduleHtml(data) {
+  const OPP_POOL = [
+    'Gridiron Gurus', 'Sunday Scaries', 'The Audibles', 'Waiver Wire Kings',
+    'End Zone Elite', 'Pigskin Prophets', 'Hail Mary Heroes', 'Blitz Brigade',
+    'Turf Titans', 'Red Zone Raiders', 'Fourth & Long', 'Comeback Kids',
+    'Gronk & Roll', 'Dynasty Dawgs', 'The Zombie RBs', 'Special Teams',
+  ];
+
+  const rosterId = window._tmRosterId != null ? window._tmRosterId : 0;
+  let seed = 0;
+  String(rosterId).split('').forEach(c => { seed = (seed * 31 + c.charCodeAt(0)) | 0; });
+  seed = (seed ^ 0x9e3779b9) >>> 0;
+  const rng = _tmSeededRng(seed);
+
+  const REG_WEEKS = 14;
+  const PLAYOFF_WEEKS = [15, 16, 17];
+
+  // Real per-week points for THIS team, keyed by week.
+  const scoreByWeek = {};
+  const ws = (data && data.graphs && Array.isArray(data.graphs.weekly_scores)) ? data.graphs.weekly_scores : [];
+  ws.forEach(d => { if (d && d.week != null) scoreByWeek[Number(d.week)] = Number(d.points); });
+  const playedWeeks = ws.map(d => Number(d.week)).filter(w => !isNaN(w));
+  const lastPlayed = playedWeeks.length ? Math.max(...playedWeeks) : 0;
+
+  // A stable opponent order: shuffle the pool with the seeded RNG.
+  const opps = OPP_POOL.slice();
+  for (let i = opps.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const tmp = opps[i]; opps[i] = opps[j]; opps[j] = tmp;
+  }
+
+  const AVATAR_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'];
+  const avatar = (name, idx) => {
+    const color = AVATAR_COLORS[idx % AVATAR_COLORS.length];
+    return `<span class="tm-sched-avatar" style="background:${color}">${(name || '?').charAt(0)}</span>`;
+  };
+
+  let wins = 0, losses = 0, ties = 0, pf = 0, pa = 0;
+  let streakType = '', streakLen = 0;
+  const rows = [];
+
+  const allWeeks = [];
+  for (let w = 1; w <= REG_WEEKS; w++) allWeeks.push({ week: w, playoff: false });
+  PLAYOFF_WEEKS.forEach(w => allWeeks.push({ week: w, playoff: true }));
+
+  allWeeks.forEach((wk, idx) => {
+    const oppName = opps[idx % opps.length];
+    const played = wk.week <= lastPlayed && scoreByWeek[wk.week] != null;
+    // My score: real if we have it, otherwise a plausible generated number.
+    const myScore = scoreByWeek[wk.week] != null ? scoreByWeek[wk.week] : (85 + rng() * 55);
+    // Opponent score generated around a similar band.
+    const oppScore = 80 + rng() * 60;
+
+    let resultBadge = '', resultCls = '', scoreHtml = '';
+    if (played) {
+      pf += myScore; pa += oppScore;
+      let res;
+      if (Math.abs(myScore - oppScore) < 0.05) { res = 'T'; ties++; }
+      else if (myScore > oppScore) { res = 'W'; wins++; }
+      else { res = 'L'; losses++; }
+      // Track current streak (walking in week order).
+      if (res === streakType) streakLen++;
+      else { streakType = res; streakLen = 1; }
+      resultCls = res === 'W' ? 'tm-sched-w' : (res === 'L' ? 'tm-sched-l' : 'tm-sched-t');
+      resultBadge = `<span class="tm-sched-result ${resultCls}">${res}</span>`;
+      scoreHtml = `<span class="tm-sched-score">${myScore.toFixed(1)} – ${oppScore.toFixed(1)}</span>`;
+    } else {
+      resultBadge = `<span class="tm-sched-result tm-sched-upcoming">${wk.playoff ? 'PLYF' : '—'}</span>`;
+      scoreHtml = `<span class="tm-sched-score tm-sched-proj">Proj ${myScore.toFixed(1)}</span>`;
+    }
+
+    rows.push(`
+      <div class="tm-sched-row${played ? '' : ' tm-sched-row-upcoming'}${wk.playoff ? ' tm-sched-row-playoff' : ''}">
+        <span class="tm-sched-week">${wk.playoff ? 'R' + (wk.week - REG_WEEKS) : 'W' + wk.week}</span>
+        ${resultBadge}
+        <span class="tm-sched-opp">
+          ${avatar(oppName, idx)}
+          <span class="tm-sched-opp-name">${oppName}</span>
+        </span>
+        ${scoreHtml}
+      </div>`);
+  });
+
+  const recordStr = ties ? `${wins}-${losses}-${ties}` : `${wins}-${losses}`;
+  const streakStr = streakLen ? `${streakType}${streakLen}` : '—';
+
+  const summaryTiles = [
+    { v: recordStr, l: 'Record' },
+    { v: streakStr, l: 'Streak' },
+    { v: pf ? pf.toFixed(0) : '—', l: 'Points For' },
+    { v: pa ? pa.toFixed(0) : '—', l: 'Points Against' },
+  ];
+  const tilesHtml = '<div class="tm-ages-tiles">' + summaryTiles.map(t =>
+    `<div class="tm-stat-tile"><div class="tm-stat-tile-value">${t.v}</div><div class="tm-stat-tile-label">${t.l}</div></div>`
+  ).join('') + '</div>';
+
+  return `
+    <div class="tm-sched-banner">
+      <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+      Sample schedule — opponents and scores are illustrative. This team's weekly points use real data where available.
+    </div>
+    ${tilesHtml}
+    <div class="team-modal-section">
+      <h3>Season Schedule</h3>
+      <div class="tm-sched-list">${rows.join('')}</div>
+    </div>`;
+}
+
 function renderTeamDetails(data) {
   // Update avatar
   const avatarHTML = data.avatar 
@@ -17800,6 +18046,20 @@ function renderTeamDetails(data) {
   const chartsPanel = document.getElementById('tm-panel-charts');
   if (chartsPanel) {
     chartsPanel.innerHTML = graphsHTML || '<div class="team-modal-empty">No chart data available</div>';
+  }
+
+  // Stash the payload so the Schedule / Ages tabs can build from it, then fill
+  // those panels now (data is here, same as the charts panel above).
+  window._tmData = data;
+  const schedulePanel = document.getElementById('tm-panel-schedule');
+  if (schedulePanel) {
+    try { schedulePanel.innerHTML = _tmBuildScheduleHtml(data); }
+    catch (e) { schedulePanel.innerHTML = '<div class="team-modal-empty">Schedule unavailable</div>'; }
+  }
+  const agesPanel = document.getElementById('tm-panel-ages');
+  if (agesPanel) {
+    try { agesPanel.innerHTML = _tmBuildAgesHtml(data); }
+    catch (e) { agesPanel.innerHTML = '<div class="team-modal-empty">Age data unavailable</div>'; }
   }
 
   // Helper function to get theme-appropriate Plotly styling. Aligned with the
