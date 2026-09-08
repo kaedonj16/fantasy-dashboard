@@ -202,7 +202,10 @@ def _ctx_signature(ctx: dict, platform: str) -> str:
     for r in sorted(ctx.get("rosters") or [], key=lambda x: x.get("roster_id") or 0):
         pids = ",".join(sorted(str(p) for p in (r.get("players") or [])))
         h.update(f"{r.get('roster_id')}:{pids};".encode())
-    return f"{platform}:{league_id}:{season}:{cw}:{h.hexdigest()}"
+    # Include the published H2H slate so the moment the platform posts the
+    # real schedule we drop the round-robin fallback and rebuild sim state.
+    sched = playoff_schedule_sig(ctx, platform)
+    return f"{platform}:{league_id}:{season}:{cw}:{h.hexdigest()}:{sched}"
 
 
 def _evict_sim_cache() -> None:
@@ -1441,6 +1444,11 @@ def _fetch_remaining_schedule(
     season: int,
     weeks: list[int],
 ) -> dict[int, list[tuple[int, int]]]:
+    """Return only weeks the platform has actually paired (real schedule).
+
+    Weeks with empty / null ``matchup_id`` rows are omitted so callers fall
+    back to the deterministic round-robin until the commissioner publishes.
+    """
     if not league_id or not weeks:
         return {}
     try:
@@ -1458,12 +1466,61 @@ def _fetch_remaining_schedule(
         for m in raw:
             mid = m.get("matchup_id")
             rid = m.get("roster_id")
-            if mid and rid is not None:
-                by_mid[mid].append(int(rid))
+            # Null / 0 matchup_id means "not scheduled yet" on Sleeper (and
+            # ESPN never emits 0). Require a real mid before treating the
+            # week as published.
+            if mid is None or mid == "" or mid == 0:
+                continue
+            if rid is None:
+                continue
+            try:
+                by_mid[int(mid)].append(int(rid))
+            except (TypeError, ValueError):
+                continue
         pairs = [(v[0], v[1]) for v in by_mid.values() if len(v) == 2]
         if pairs:
             result[week] = pairs
     return result
+
+
+def _schedule_fingerprint(
+    platform: str,
+    league_id: str,
+    season: int,
+    weeks: list[int],
+) -> str:
+    """Stable hash of the published H2H slate (or ``fallback`` if none yet).
+
+    Used by sim-state / playoff-odds caches so odds rebuild the moment the
+    platform posts real pairings instead of serving a round-robin sim until
+    an unrelated roster change or TTL expiry.
+    """
+    if not league_id or not weeks:
+        return "fallback"
+    real = _fetch_remaining_schedule(platform, league_id, season, weeks)
+    if not real:
+        return "fallback"
+    parts: list[str] = []
+    for week in sorted(real):
+        pairs = tuple(
+            sorted(tuple(sorted(pair)) for pair in real[week])
+        )
+        parts.append(f"{week}:{pairs}")
+    return hashlib.md5("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def playoff_schedule_sig(ctx: dict, platform: str = "sleeper") -> str:
+    """Fingerprint of the league's published regular-season schedule.
+
+    Scans weeks 1 .. playoff_week_start-1 so a mid-preseason publish
+    invalidates caches even when ``current_week`` is still 0.
+    """
+    settings = ctx.get("league_settings") or {}
+    playoff_week_start = int(settings.get("playoff_week_start") or 15)
+    season = int(ctx.get("season") or 0)
+    league_id = str(ctx.get("league_id") or "")
+    weeks = list(range(1, max(2, playoff_week_start)))
+    return _schedule_fingerprint(platform, league_id, season, weeks)
 
 
 def _fallback_schedule(

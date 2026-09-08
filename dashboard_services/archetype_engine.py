@@ -2085,9 +2085,21 @@ def _get_archetype_suggestions_impl(
             build_sim_state as _build_sim_state,
             run_base_simulation as _run_base_sim,
             build_ppg_map as _build_ppg_map,
+            playoff_schedule_sig as _playoff_schedule_sig,
         )
+        # Compare published-schedule fingerprint on hit so trade-suggestion
+        # odds switch off the round-robin fallback the moment the real slate
+        # is posted (same key shape as before for invalidate / tests).
+        try:
+            _sched_sig = _playoff_schedule_sig(ctx, platform)
+        except Exception:
+            _sched_sig = "fallback"
         _cached = _SIM_CACHE.get(_cache_key)
-        if _cached and (_time.time() - _cached["ts"]) < _SIM_CACHE_TTL:
+        if (
+            _cached
+            and (_time.time() - _cached["ts"]) < _SIM_CACHE_TTL
+            and _cached.get("sched_sig", "fallback") == _sched_sig
+        ):
             sim_state  = _cached["sim_state"]
             base_odds  = _cached["base_odds"]
             log.debug("[archetype] sim cache hit for %s", _cache_key)
@@ -2097,14 +2109,23 @@ def _get_archetype_suggestions_impl(
             # inside the lock - the request we waited on may have just filled it.
             with _sim_lock_for(_cache_key):
                 _cached = _SIM_CACHE.get(_cache_key)
-                if _cached and (_time.time() - _cached["ts"]) < _SIM_CACHE_TTL:
+                if (
+                    _cached
+                    and (_time.time() - _cached["ts"]) < _SIM_CACHE_TTL
+                    and _cached.get("sched_sig", "fallback") == _sched_sig
+                ):
                     sim_state = _cached["sim_state"]
                     base_odds = _cached["base_odds"]
                     log.debug("[archetype] sim cache hit (post-lock) for %s", _cache_key)
                 else:
                     sim_state = _build_sim_state(ctx, platform=platform)
                     base_odds = _run_base_sim(sim_state, n_sims=_SUGGESTION_N_SIMS) if sim_state else {}
-                    _SIM_CACHE[_cache_key] = {"sim_state": sim_state, "base_odds": base_odds, "ts": _time.time()}
+                    _SIM_CACHE[_cache_key] = {
+                        "sim_state": sim_state,
+                        "base_odds": base_odds,
+                        "ts": _time.time(),
+                        "sched_sig": _sched_sig,
+                    }
                     log.debug("[archetype] sim cache miss, built fresh for %s", _cache_key)
         if sim_state:
             ppg_map  = sim_state["ppg_map"]
