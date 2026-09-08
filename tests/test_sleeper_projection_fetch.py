@@ -115,20 +115,17 @@ def test_season_ppg_fills_player_missing_from_weekly_files(monkeypatch):
     assert variants["5859"]["ppr"] == round(247.2 / 17.0, 2)
 
 
-def test_empty_week_proj_cache_is_stale_after_short_ttl(tmp_path):
-    import os
-    import time
-
+def test_empty_week_proj_cache_is_always_stale(tmp_path):
     empty = tmp_path / "projections_s2026_w1.json"
     empty.write_text("{}")
-    os.utime(empty, (time.time() - 3600, time.time() - 3600))
     assert utils._week_proj_is_stale(2026, 1, str(empty)) is True
 
 
-def test_fresh_empty_week_proj_cache_is_not_immediately_stale(tmp_path):
+def test_fresh_empty_week_proj_cache_is_stale(tmp_path):
+    """Empty placeholders must never look fresh — they poison deploys."""
     empty = tmp_path / "projections_s2026_w1.json"
     empty.write_text("{}")
-    assert utils._week_proj_is_stale(2026, 1, str(empty)) is False
+    assert utils._week_proj_is_stale(2026, 1, str(empty)) is True
 
 
 def test_populated_past_season_proj_cache_stays_immutable(tmp_path, monkeypatch):
@@ -146,7 +143,48 @@ def test_get_week_projections_cached_refetches_aged_empty_file(tmp_path, monkeyp
     cache.write_text("{}")
     os.utime(cache, (time.time() - 3600, time.time() - 3600))
     monkeypatch.setattr(utils, "path_week_proj", lambda season, week: str(cache))
+    utils._WEEK_PROJ_FAIL_UNTIL.clear()
     fetched = {"4984": {"ppr": 22.4, "raw_stats": {"pass_yd": 250}}}
     monkeypatch.setattr(utils, "save_week_projections", lambda *a, **k: cache.write_text('{"4984": {"ppr": 22.4}}'))
     out = utils.get_week_projections_cached(2026, 1, lambda *_a, **_k: fetched)
     assert out == fetched
+
+
+def test_get_week_projections_cached_does_not_persist_empty_fetch(tmp_path, monkeypatch):
+    cache = tmp_path / "projections_s2026_w1.json"
+    cache.write_text("{}")
+    monkeypatch.setattr(utils, "path_week_proj", lambda season, week: str(cache))
+    utils._WEEK_PROJ_FAIL_UNTIL.clear()
+    saved = []
+    monkeypatch.setattr(utils, "save_week_projections", lambda *a, **k: saved.append(a))
+    out = utils.get_week_projections_cached(2026, 1, lambda *_a, **_k: {})
+    assert out == {}
+    assert saved == []
+    assert not cache.exists()
+    assert (2026, 1) in utils._WEEK_PROJ_FAIL_UNTIL
+
+
+def test_adp_only_sleeper_row_is_not_a_projection():
+    assert utils._sleeper_stats_to_variants({"adp_dd_ppr": 1000.0}, "WR") is None
+    assert utils._sleeper_stats_to_variants(
+        {"adp_dd_ppr": 12.0, "pos_adp_dd_ppr": 3.0}, "RB",
+    ) is None
+
+
+def test_real_sleeper_row_still_builds_variants():
+    out = utils._sleeper_stats_to_variants(
+        {"adp_dd_ppr": 12.0, "rec": 5, "rec_yd": 60, "rec_td": 0.4, "pts_ppr": 14.0},
+        "WR",
+    )
+    assert out is not None
+    assert out["ppr"] > 0
+
+
+def test_cron_rejects_empty_projection_files_as_fresh(tmp_path):
+    from cron_daily import _projection_file_fresh
+
+    empty = tmp_path / "projections_s2026_w1.json"
+    empty.write_text("{}")
+    assert _projection_file_fresh(empty) is False
+    empty.write_text('{"4984": {"ppr": 22.4}}')
+    assert _projection_file_fresh(empty) is True
