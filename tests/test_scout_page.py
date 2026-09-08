@@ -58,6 +58,11 @@ def _ctx(matchups):
         "statuses": {3: {"statuses": {}}},
         "proj_by_roster": {(3, "2"): 118.4},
         "proj_by_week": {3: {"111": 21.0, "222": 18.4}},
+        # Inject empty weekly-score maps so tests never read the stat-file cache
+        # from disk. Boom/bust tests below override prior_pts_map with real data.
+        "weekly_pts_map": {},
+        "prior_pts_map": {},
+        "prior_season": None,
     }
 
 
@@ -136,3 +141,67 @@ def test_scout_no_matchup_found():
     ])
     html = build_scout_body(ctx)
     assert "No matchup found" in html
+
+
+def _boom_bust_ctx():
+    """Opponent with two starters: one steady, one boom/bust, from injected
+    prior-season weekly scores (current season empty, as in Week 1)."""
+    ctx = _ctx([
+        {
+            "left": {"roster_id": "1", "starters": [{"pid": "111"}]},
+            "right": {"roster_id": "2", "starters": [{"pid": "222"}, {"pid": "333"}]},
+        }
+    ])
+    ctx["rosters"][1]["players"] = ["222", "333"]
+    ctx["rosters"][1]["starters"] = ["222", "333"]
+    ctx["players_index"]["333"] = {"name": "Swing Guy", "pos": "WR", "team": "SF"}
+    ctx["proj_by_week"] = {3: {"111": 21.0, "222": 18.4, "333": 12.0}}
+    ctx["prior_pts_map"] = {
+        "222": [14, 15, 14, 16, 15, 14, 15, 16, 14],       # steady WR
+        "333": [2, 28, 3, 30, 1, 26, 4, 25],               # boom-or-bust WR
+    }
+    ctx["prior_season"] = 2025
+    return ctx
+
+
+def test_scout_renders_boom_bust_profiles():
+    html = build_scout_body(_boom_bust_ctx())
+    # Real distribution labels + floor–ceiling range, no fabrication.
+    assert "Steady" in html
+    assert "Boom/bust" in html
+    assert "class='scout-profile" in html
+    assert "boom/bust from weekly scores" in html
+
+
+def test_scout_profile_absent_without_scores():
+    # No injected history and empty maps -> no profile chip, no crash.
+    ctx = _ctx([
+        {
+            "left": {"roster_id": "1", "starters": [{"pid": "111"}]},
+            "right": {"roster_id": "2", "starters": [{"pid": "222"}]},
+        }
+    ])
+    html = build_scout_body(ctx)
+    assert "class='scout-profile" not in html
+    assert "Their starters" in html
+
+
+def test_scout_volatility_read_line():
+    # Four boom/bust starters -> the high-variance one-line read fires.
+    ctx = _ctx([
+        {
+            "left": {"roster_id": "1", "starters": [{"pid": "111"}]},
+            "right": {"roster_id": "2", "starters": [
+                {"pid": "222"}, {"pid": "333"}, {"pid": "444"}, {"pid": "555"},
+            ]},
+        }
+    ])
+    ctx["rosters"][1]["players"] = ["222", "333", "444", "555"]
+    ctx["rosters"][1]["starters"] = ["222", "333", "444", "555"]
+    for pid in ("333", "444", "555"):
+        ctx["players_index"][pid] = {"name": f"WR {pid}", "pos": "WR", "team": "SF"}
+    swingy = [2, 28, 3, 30, 1, 26, 4, 25]
+    ctx["prior_pts_map"] = {pid: list(swingy) for pid in ("222", "333", "444", "555")}
+    ctx["prior_season"] = 2025
+    html = build_scout_body(ctx)
+    assert "High-variance lineup" in html
