@@ -90,6 +90,9 @@ def test_portfolio_card_has_live_slot_and_hydration():
     assert "data-platform=" in fn
     assert "data-league-id=" in fn
     assert "pf-lg-live" in fn
+    # The slot sets display:flex, so it needs an explicit [hidden] rule to beat
+    # it — otherwise an un-hydrated slot paints an empty grey band on the card.
+    assert ".pf-lg-live[hidden]{display:none;}" in fn
     # Win-probability bar is rendered (hidden at final / bye inside wpBar).
     assert "pf-live-wp" in fn
     assert "wpBar" in fn
