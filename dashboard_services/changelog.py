@@ -6,6 +6,18 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-09-08",
+        "tag": "update",
+        "text": "Lineup-lock alerts now recommend concrete Sit A for B swaps even when a starter is hurt or on bye (up to two), and waiver pushes deep-link into Waivers with FAAB/drop guidance instead of the Players page.",
+        "link": "/waivers"
+    },
+    {
+        "date": "2026-09-08",
+        "tag": "fix",
+        "text": "Mobile polish: truncated trade chips and waiver rows expose the full name on hover, empty activity cards leave less blank space, and hub jump-nav / footer tap targets stay reachable.",
+        "link": "/"
+    },
+    {
+        "date": "2026-09-08",
         "tag": "fix",
         "text": "Draft Room Deep Dive treats rookie drafts as a class recap: no fake starters vs league, no Early tag after a team is done, no thin-roster or waiver flags, and playoff odds only on live connected leagues. Steal/reach cards, survival, and Decision Score no longer use startup lineup math on a 3-round board.",
         "link": "/draft"

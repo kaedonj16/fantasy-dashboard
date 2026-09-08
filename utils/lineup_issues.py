@@ -163,6 +163,29 @@ def format_lineup_lock_swap(swap: dict, name_in: str, name_out: str) -> str:
     return f"Sit {sit} for {start} (+{gain_f:.1f} proj)"
 
 
+def format_lineup_lock_swaps(swaps: list, name_by_pid: dict | None = None) -> str:
+    """Join up to two swap lines for push / toast copy (R06.2).
+
+    ``name_by_pid`` maps player id → display name. Missing names fall back to
+    the single-swap defaults.
+    """
+    names = name_by_pid or {}
+    lines: list[str] = []
+    for swap in (swaps or [])[:2]:
+        if not isinstance(swap, dict):
+            continue
+        pin = str(swap.get("in") or "")
+        pout = str(swap.get("out") or "")
+        lines.append(
+            format_lineup_lock_swap(
+                swap,
+                str(names.get(pin) or ""),
+                str(names.get(pout) or ""),
+            )
+        )
+    return " ".join(lines)
+
+
 def pair_start_sit_swaps(
     to_start,
     to_sit,

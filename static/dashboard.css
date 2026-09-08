@@ -9472,6 +9472,9 @@ select:focus {
     font-size: 12px;
     color: #728198;
     font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .os-waiver-value {

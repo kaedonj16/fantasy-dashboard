@@ -5481,6 +5481,8 @@ window.initTradePage = function initTradePage(root = document) {
       const nameEl = document.createElement("div");
       nameEl.className = "otc-chip-name player-clickable";
       nameEl.textContent = p.name || "Unknown";
+      // Truncated chip names still expose the full name on hover/long-press.
+      nameEl.title = p.name || "Unknown";
 
       // Make player name clickable - route prospects to prospect modal
       if (p.id) {
@@ -5537,6 +5539,7 @@ window.initTradePage = function initTradePage(root = document) {
         (p.team && bit === p.team) ? `<span class="otc-chip-team">${bit}</span>` : bit
       ).join(" • ");
       metaEl.innerHTML = badges.length ? `${metaHtml} ${badges.join(" ")}` : metaHtml;
+      if (metaBits.length) metaEl.title = metaBits.join(" • ");
 
       leftWrap.appendChild(nameEl);
       leftWrap.appendChild(metaEl);
@@ -5586,10 +5589,12 @@ window.initTradePage = function initTradePage(root = document) {
       const nameEl = document.createElement("div");
       nameEl.className = "otc-chip-name";
       nameEl.textContent = pk.display || pk.id || "Pick";
+      nameEl.title = pk.display || pk.id || "Pick";
 
       const metaEl = document.createElement("div");
       metaEl.className = "otc-chip-meta";
       metaEl.textContent = "Rookie pick";
+      metaEl.title = "Rookie pick";
 
       leftWrap.appendChild(nameEl);
       leftWrap.appendChild(metaEl);

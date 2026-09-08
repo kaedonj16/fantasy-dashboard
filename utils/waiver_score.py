@@ -576,6 +576,62 @@ def roster_needs_drop(active_count: int, roster_slots: int) -> bool:
     return slots > 0 and n >= slots
 
 
+def pick_waiver_push_candidate(
+    value_tbl: list,
+    rostered: set,
+    *,
+    min_value: float = 500.0,
+) -> dict | None:
+    """Top free-agent for the hourly waiver push (R05.4).
+
+    Prefers higher dynasty value among skill-position players who still have an
+    NFL team. Returns ``{name, position, value, player_id}`` or None.
+    """
+    available = []
+    rostered_ids = {str(p) for p in (rostered or set())}
+    for p in value_tbl or []:
+        if not isinstance(p, dict):
+            continue
+        pid = str(p.get("id") or "")
+        if not pid or pid in rostered_ids:
+            continue
+        pos = str(p.get("position") or "").upper()
+        if pos not in ("QB", "RB", "WR", "TE"):
+            continue
+        team = str(p.get("team") or "").strip().upper()
+        if team in ("", "FA", "FREE AGENT", "NONE"):
+            continue
+        try:
+            val = float(p.get("value") or 0)
+        except (TypeError, ValueError):
+            val = 0.0
+        if val < float(min_value):
+            continue
+        available.append({
+            "player_id": pid,
+            "name": p.get("name") or p.get("full_name") or "A top player",
+            "position": pos,
+            "value": val,
+        })
+    if not available:
+        return None
+    available.sort(key=lambda row: row["value"], reverse=True)
+    return available[0]
+
+
+def waiver_push_copy(candidate: dict) -> tuple[str, str]:
+    """Title + body for the waiver-of-the-week push."""
+    name = str((candidate or {}).get("name") or "A top player").strip() or "A top player"
+    pos = str((candidate or {}).get("position") or "").strip()
+    label = f"{name} ({pos})" if pos else name
+    title = "Waiver of the week"
+    body = (
+        f"{label} leads available adds in your league. "
+        "Open Waivers for FAAB bands, drop suggestions, and Start/Sit."
+    )
+    return title, body
+
+
 def faab_bid_bands(pickup_score: float, score_min: float, score_range: float,
                    need_mult: float = 1.0, handcuff_upside: float = 0.0) -> dict:
     """Low / target / stretch FAAB % of budget for a waiver target.
