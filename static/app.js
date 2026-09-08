@@ -17070,16 +17070,19 @@ function openTeamModal(rosterId, teamName) {
 
   modal.innerHTML = `
     <div class="team-modal-header">
-      <div class="team-modal-avatar" id="teamModalAvatar">
-        <div class="loading-spinner" style="width: 32px; height: 32px;"></div>
-      </div>
-      <div class="team-modal-title-section">
-        <h2 class="team-modal-name">${teamName || 'Loading...'}</h2>
-        <div class="team-modal-meta" id="teamModalMeta">
-          <div class="loading-spinner" style="width: 16px; height: 16px;"></div>
+      <div class="team-modal-header-top">
+        <div class="team-modal-avatar" id="teamModalAvatar">
+          <div class="loading-spinner" style="width: 32px; height: 32px;"></div>
         </div>
+        <div class="team-modal-title-section">
+          <h2 class="team-modal-name">${teamName || 'Loading...'}</h2>
+          <div class="team-modal-meta" id="teamModalMeta">
+            <div class="loading-spinner" style="width: 16px; height: 16px;"></div>
+          </div>
+        </div>
+        <div class="team-modal-statbar" id="teamModalStatbar" hidden></div>
+        <button class="team-modal-close" onclick="closeTeamModal()" aria-label="Close">×</button>
       </div>
-      <button class="team-modal-close" onclick="closeTeamModal()" aria-label="Close">×</button>
     </div>
     <div class="tm-tab-bar">
       <button class="tm-tab active" data-tab="roster" onclick="tmSwitchTab('roster')">Roster</button>
@@ -17577,12 +17580,9 @@ function renderTeamDetails(data) {
        </div>`;
   document.getElementById('teamModalAvatar').innerHTML = avatarHTML;
 
-  // Update header
+  // Update header. Record now lives in the stat tiles beside the title, so
+  // it is dropped from these meta rows to avoid showing it twice.
   const metaHTML = `
-    <div class="team-modal-stat-row">
-      <span class="team-modal-stat-label">Record:</span>
-      <span class="team-modal-stat-value">${data.record}</span>
-    </div>
     <div class="team-modal-stat-row">
       <span class="team-modal-stat-label">Manager:</span>
       <span class="team-modal-stat-value">@${data.username || 'Unknown'}</span>
@@ -17593,6 +17593,41 @@ function renderTeamDetails(data) {
     </div>
   `;
   document.getElementById('teamModalMeta').innerHTML = metaHTML;
+
+  // Header stat tiles: Record · PF · Playoff Odds. Playoff odds come from a
+  // warm sim cache, so the tile only shows once the number is available.
+  const statbar = document.getElementById('teamModalStatbar');
+  if (statbar) {
+    const tiles = [];
+    if (data.record) {
+      tiles.push(`
+        <div class="tm-stat-tile">
+          <div class="tm-stat-tile-value">${data.record}</div>
+          <div class="tm-stat-tile-label">Record</div>
+        </div>`);
+    }
+    if (data.points_for != null && !isNaN(parseFloat(data.points_for))) {
+      tiles.push(`
+        <div class="tm-stat-tile">
+          <div class="tm-stat-tile-value">${Math.round(parseFloat(data.points_for))}</div>
+          <div class="tm-stat-tile-label">PF</div>
+        </div>`);
+    }
+    if (data.playoff_odds != null && !isNaN(parseFloat(data.playoff_odds))) {
+      tiles.push(`
+        <div class="tm-stat-tile">
+          <div class="tm-stat-tile-value">${Math.round(parseFloat(data.playoff_odds))}%</div>
+          <div class="tm-stat-tile-label">Playoff Odds</div>
+        </div>`);
+    }
+    if (tiles.length) {
+      statbar.innerHTML = tiles.join('');
+      statbar.hidden = false;
+    } else {
+      statbar.innerHTML = '';
+      statbar.hidden = true;
+    }
+  }
 
   // Build roster list
   let rosterHTML = '<div class="team-modal-section"><h3>Roster</h3>';
