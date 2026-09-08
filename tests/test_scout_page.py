@@ -1,7 +1,8 @@
-"""Scout tab smoke test: player rows include the week projection chip.
+"""Scout tab smoke tests: weekly opponent scouting report.
 
-Does not import Flask. Live value-table lookup is stubbed.
-Matchups must use the live hub shape (left/right), with team1/team2 fallback.
+Does not import Flask. Matchups may use the live hub shape (left/right) or the
+older team1/team2 shape. The report has two sections: a positional edge
+("Where the matchup is won") and an opponent threat list ("Their starters").
 """
 from __future__ import annotations
 
@@ -28,6 +29,11 @@ def test_scout_unsigned_in_yahoo_and_mfl_hints():
     assert "Sleeper username" not in mfl
 
 
+def test_scout_offseason_message():
+    html = build_scout_body({"viewer": {"viewer_roster_id": "1"}, "offseason_mode": True})
+    assert "regular season" in html
+
+
 def _ctx(matchups):
     return {
         "viewer": {"viewer_roster_id": "1"},
@@ -44,53 +50,35 @@ def _ctx(matchups):
         "standings_map": {
             "2": {"wins": 3, "losses": 1, "pf": 412.4, "pa": 355.1},
         },
-        "model_value_table": [
-            {
-                "id": "222",
-                "name": "Rival Star",
-                "position": "WR",
-                "value": 8200,
-                "team": "KC",
-                "pos_rank_label": "WR12",
-            }
-        ],
-        "players_index": {"222": {"name": "Rival Star", "pos": "WR", "team": "KC"}},
+        "players_index": {
+            "111": {"name": "You Star", "pos": "QB", "team": "BUF"},
+            "222": {"name": "Rival Star", "pos": "WR", "team": "KC"},
+        },
         "matchups_by_week": {3: matchups},
         "statuses": {3: {"statuses": {}}},
         "proj_by_roster": {(3, "2"): 118.4},
-        "proj_by_week": {3: {"222": 18.4}},
+        "proj_by_week": {3: {"111": 21.0, "222": 18.4}},
     }
 
 
-def test_scout_renders_from_live_left_right_matchups(monkeypatch):
-    import dashboard_services.pages.scout_page as scout_page
-
-    monkeypatch.setattr(scout_page, "_live_model_value_table", lambda: [])
+def test_scout_renders_from_live_left_right_matchups():
     html = build_scout_body(_ctx([
         {
-            "left": {
-                "roster_id": "1",
-                "starters": [{"pid": "111", "name": "You Star", "pos": "QB"}],
-            },
-            "right": {
-                "roster_id": "2",
-                "starters": [{"pid": "222", "name": "Rival Star", "pos": "WR"}],
-                "pts_total": None,
-            },
+            "left": {"roster_id": "1", "starters": [{"pid": "111"}]},
+            "right": {"roster_id": "2", "starters": [{"pid": "222"}], "pts_total": None},
         }
     ]))
     assert "No matchup found" not in html
-    assert "Rival Star" in html
-    assert "18.4 proj" in html
+    assert "Rival Star" in html          # opponent starter, name resolved
+    assert "18.4 proj" in html           # their projection chip
     assert "scout-ppg" in html
-    assert "Rival FC" in html
+    assert "Rival FC" in html            # opponent team name
     assert "Sleeper proj" in html
+    assert "Where the matchup is won" in html
+    assert "Their starters" in html
 
 
-def test_scout_falls_back_to_team1_team2(monkeypatch):
-    import dashboard_services.pages.scout_page as scout_page
-
-    monkeypatch.setattr(scout_page, "_live_model_value_table", lambda: [])
+def test_scout_falls_back_to_team1_team2():
     html = build_scout_body(_ctx([
         {
             "team1": {"roster_id": 1, "starters": ["111"]},
@@ -101,10 +89,18 @@ def test_scout_falls_back_to_team1_team2(monkeypatch):
     assert "18.4 proj" in html
 
 
-def test_scout_missing_proj_is_labeled(monkeypatch):
-    import dashboard_services.pages.scout_page as scout_page
+def test_scout_positional_edge_flags_underdog():
+    # You: QB 21.0. Them: WR 18.4. You lead overall, so "You favored".
+    html = build_scout_body(_ctx([
+        {
+            "left": {"roster_id": "1", "starters": [{"pid": "111"}]},
+            "right": {"roster_id": "2", "starters": [{"pid": "222"}]},
+        }
+    ]))
+    assert "You favored by" in html
 
-    monkeypatch.setattr(scout_page, "_live_model_value_table", lambda: [])
+
+def test_scout_missing_proj_is_labeled():
     ctx = _ctx([
         {
             "left": {"roster_id": "1", "starters": [{"pid": "111"}]},
@@ -114,3 +110,29 @@ def test_scout_missing_proj_is_labeled(monkeypatch):
     ctx["proj_by_week"] = {3: {}}
     html = build_scout_body(ctx)
     assert "Proj unavailable" in html
+    # No weekly projections at all -> edge section explains why, no crash.
+    assert "projections aren't available" in html
+
+
+def test_scout_injury_note_surfaces_out_starter():
+    ctx = _ctx([
+        {
+            "left": {"roster_id": "1", "starters": [{"pid": "111"}]},
+            "right": {"roster_id": "2", "starters": [{"pid": "222"}]},
+        }
+    ])
+    ctx["statuses"] = {3: {"statuses": {"222": "O"}}}
+    html = build_scout_body(ctx)
+    assert "may not play" in html
+    assert "inj-o" in html
+
+
+def test_scout_no_matchup_found():
+    ctx = _ctx([
+        {
+            "left": {"roster_id": "8", "starters": [{"pid": "111"}]},
+            "right": {"roster_id": "9", "starters": [{"pid": "222"}]},
+        }
+    ])
+    html = build_scout_body(ctx)
+    assert "No matchup found" in html

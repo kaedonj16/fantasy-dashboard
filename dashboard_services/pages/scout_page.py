@@ -1,8 +1,18 @@
 """Opponent scouting report for the Weekly Hub Scout tab.
 
-Moved from app.py so a smoke test can render a player row (including projected
-PPG) without importing Flask. Live value-table lookup is lazy-imported from
-app at request time.
+Weekly-focused, not dynasty. The old version leaned on the dynasty trade-value
+table (big 400/1000 numbers) for both the player rows and the strength/weakness
+math, which is meaningless in a weekly matchup and left real starters blank
+whenever that table lacked a name. This version scouts *this week*:
+
+  1. "Where the matchup is won" - your projected starters vs theirs, by
+     position, so you can see where you're favored and where you're the dog.
+  2. "Their starters" - the opponent's lineup ranked by this week's projection,
+     with injury flags, so the biggest threats are on top.
+
+Names come from the same players map the matchup preview uses, so rows never
+render blank. Kept Flask-free (and bs4-free) so the slim unit/lint job can
+render it.
 """
 from __future__ import annotations
 
@@ -24,12 +34,6 @@ def platform_sign_in_hint(platform: str) -> str:
     }.get(p, "your Sleeper username")
 
 
-def _live_model_value_table():
-    """Live dynasty values. Overridable in tests so they never import Flask."""
-    from app import get_model_value_table_cached
-    return get_model_value_table_cached() or []
-
-
 def _week_proj_points(week_map, pid, scoring=None, pos="") -> "float | None":
     """Numeric weekly projection for a player, scored for the league.
 
@@ -40,24 +44,90 @@ def _week_proj_points(week_map, pid, scoring=None, pos="") -> "float | None":
     return weekly_projection_points(week_map, pid, scoring, pos)
 
 
+# Positions we break the matchup down by, in display order. K/DEF are appended
+# only when a lineup actually starts them (some leagues don't).
+_POS_ORDER = ["QB", "RB", "WR", "TE", "K", "DEF"]
+_PRIMARY_POS = ["QB", "RB", "WR", "TE"]
+_INJ_CLS = {"Q": "inj-q", "D": "inj-d", "O": "inj-o", "IR": "inj-o", "Sus": "inj-o"}
+_INJ_LABEL = {
+    "Q": "Q", "D": "D", "O": "O", "IR": "IR", "Sus": "SUS",
+    "Questionable": "Q", "Doubtful": "D", "Out": "O", "Suspended": "SUS",
+}
+_INJ_SITTING = {"O", "IR", "Sus", "Out", "Suspended"}  # very likely not playing
+
+
+def _resolve_player(pid: str, players_map: dict, players_index: dict) -> tuple[str, str, str]:
+    """(name, pos, team) for a pid, using the same sources as the matchup view.
+
+    Mirrors utils.from_players_map without importing it (that module pulls bs4,
+    which the slim test job lacks). Falls back to a readable D/ST label for the
+    2-3 letter team codes platforms use for defenses.
+    """
+    info = players_map.get(pid) or players_index.get(pid) or {}
+    name = info.get("name") or info.get("full_name") or ""
+    if not name:
+        first = info.get("first_name") or ""
+        last = info.get("last_name") or ""
+        name = " ".join(x for x in (first, last) if x)
+    pos = (info.get("pos") or info.get("position") or "").upper()
+    team = (info.get("team") or "").upper()
+
+    is_def_code = pid.isalpha() and 2 <= len(pid) <= 3
+    if not name and is_def_code:
+        name, pos, team = f"{pid} D/ST", "DEF", pid
+    if not pos and is_def_code:
+        pos, team = "DEF", pid
+    if not name:
+        name = f"Player {pid}"
+    return name, (pos or "?"), team
+
+
+def _starter_pids(team_block: dict) -> list[str]:
+    """Starter pids from a matchup team block (dicts with pid, or bare ids)."""
+    out: list[str] = []
+    for s in team_block.get("starters") or []:
+        if not s:
+            continue
+        pid = s.get("pid") or s.get("player_id") if isinstance(s, dict) else s
+        if pid:
+            out.append(str(pid))
+    return out
+
+
+def _build_starters(pids, players_map, players_index, week_proj_map, status_by_pid, scoring):
+    """List of starter entries: pos, name, team, proj (float|None), injury key."""
+    entries = []
+    for pid in pids:
+        name, pos, team = _resolve_player(pid, players_map, players_index)
+        raw_inj = str(status_by_pid.get(pid) or "")
+        inj_key = raw_inj if raw_inj in _INJ_CLS else None
+        entries.append({
+            "pid": pid,
+            "name": name,
+            "pos": pos,
+            "team": team,
+            "proj": _week_proj_points(week_proj_map, pid, scoring, pos),
+            "inj_key": inj_key,
+            "inj_raw": raw_inj,
+        })
+    return entries
+
+
 def build_scout_body(ctx: dict) -> str:
     viewer = ctx.get("viewer") or {}
     viewer_roster_id = str(viewer.get("viewer_roster_id") or "")
     platform = ctx.get("platform") or "sleeper"
-    league_id = ctx.get("league_id") or ""
     season = ctx.get("season") or datetime.now().year
     current_week = ctx.get("current_week") or 0
 
     _sign_in_hint = platform_sign_in_hint(platform)
-    _NOT_SIGNED_IN = (
-        "<div class='card' style='text-align:center;padding:40px;'>"
-        "<h2 style='margin-bottom:8px;'>Sign in to view your scouting report</h2>"
-        f"<p style='color:var(--muted);'>Enter {_sign_in_hint} in the menu to unlock opponent scouting.</p>"
-        "</div>"
-    )
-
     if not viewer_roster_id:
-        return _NOT_SIGNED_IN
+        return (
+            "<div class='card' style='text-align:center;padding:40px;'>"
+            "<h2 style='margin-bottom:8px;'>Sign in to view your scouting report</h2>"
+            f"<p style='color:var(--muted);'>Enter {_sign_in_hint} in the menu to unlock opponent scouting.</p>"
+            "</div>"
+        )
 
     if ctx.get("offseason_mode"):
         return (
@@ -70,56 +140,46 @@ def build_scout_body(ctx: dict) -> str:
     rosters = ctx.get("rosters") or []
     roster_map = ctx.get("roster_map") or {}
     standings_map = ctx.get("standings_map") or {}
-    model_value_table = ctx.get("model_value_table") or []
-    try:
-        live = _live_model_value_table() or []
-        if live:
-            model_value_table = live
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
     players_index = ctx.get("players_index") or {}
+    players_map = ctx.get("players_map") or {}
     matchups_by_week = ctx.get("matchups_by_week") or {}
     statuses = ctx.get("statuses") or {}
-    proj_by_roster = ctx.get("proj_by_roster") or {}
+    scoring = ctx.get("raw_scoring_settings")
+
     week_proj_map: dict = {}
     try:
-        # Flask-free unwrap (do not import dashboard_services.matchups here —
-        # that module pulls Flask via api, which the slim unit/lint job lacks).
         from utils.week_proj import week_proj_map_from_bundles
-        pw = ctx.get("proj_by_week") or {}
-        week_proj_map = week_proj_map_from_bundles(pw, current_week)
+        week_proj_map = week_proj_map_from_bundles(ctx.get("proj_by_week") or {}, current_week)
         if not week_proj_map:
             from utils.utils import load_week_projection
             week_proj_map = load_week_projection(int(season), int(current_week)) or {}
     except Exception:
         week_proj_map = {}
 
-    values_by_id = {str(r.get("id") or ""): r for r in model_value_table if r.get("id")}
-
-    # Find viewer's matchup for current week
+    # Find the viewer's matchup for the current week; capture both sides.
     from utils.matchup_schedule import resolve_matchup_week
     matchup_week = resolve_matchup_week(current_week, matchups_by_week)
-    current_matchups = matchups_by_week.get(matchup_week) or matchups_by_week.get(str(matchup_week)) or []
-    viewer_matchup = None
+    current_matchups = (
+        matchups_by_week.get(matchup_week)
+        or matchups_by_week.get(str(matchup_week))
+        or []
+    )
+    viewer_block = opponent_block = None
     opponent_roster_id = None
-    opponent_team_block = None
-
     for m in current_matchups:
-        # Live hub matchups use left/right; older/tour shapes used team1/team2.
+        # Live hub uses left/right; older/tour shapes used team1/team2.
         t1 = m.get("left") or m.get("team1") or {}
         t2 = m.get("right") or m.get("team2") or {}
         if str(t1.get("roster_id")) == viewer_roster_id:
-            viewer_matchup = m
+            viewer_block, opponent_block = t1, t2
             opponent_roster_id = str(t2.get("roster_id"))
-            opponent_team_block = t2
             break
-        elif str(t2.get("roster_id")) == viewer_roster_id:
-            viewer_matchup = m
+        if str(t2.get("roster_id")) == viewer_roster_id:
+            viewer_block, opponent_block = t2, t1
             opponent_roster_id = str(t1.get("roster_id"))
-            opponent_team_block = t1
             break
 
-    if not viewer_matchup or not opponent_roster_id:
+    if not opponent_block or not opponent_roster_id:
         return (
             f"<div class='card' style='text-align:center;padding:40px;'>"
             f"<h2 style='margin-bottom:8px;'>No matchup found for Week {current_week}</h2>"
@@ -128,254 +188,214 @@ def build_scout_body(ctx: dict) -> str:
         )
 
     opponent_roster = next((r for r in rosters if str(r.get("roster_id")) == opponent_roster_id), None)
-    if not opponent_roster:
-        return "<div class='card'>Opponent roster not found.</div>"
 
     opp_name = html.escape(roster_map.get(opponent_roster_id, f"Roster {opponent_roster_id}"))
-    # Production standings_map is {roster_id: seed:int}; record/PF live on roster.settings.
     opp_standing = standings_map.get(opponent_roster_id)
     if not isinstance(opp_standing, dict):
         opp_standing = standings_map.get(str(opponent_roster_id))
     if not isinstance(opp_standing, dict):
         opp_standing = {}
-    opp_settings = opponent_roster.get("settings") or {}
+    opp_settings = (opponent_roster or {}).get("settings") or {}
     opp_wins = int(opp_standing.get("wins") or opp_settings.get("wins") or 0)
     opp_losses = int(opp_standing.get("losses") or opp_settings.get("losses") or 0)
-    opp_pf = float(
-        opp_standing.get("pf")
-        or opp_standing.get("PF")
-        or (
-            float(opp_settings.get("fpts") or 0)
-            + float(opp_settings.get("fpts_decimal") or 0) / 100.0
-        )
-        or 0
-    )
-    opp_pa = float(
-        opp_standing.get("pa")
-        or opp_standing.get("PA")
-        or (
-            float(opp_settings.get("fpts_against") or 0)
-            + float(opp_settings.get("fpts_against_decimal") or 0) / 100.0
-        )
-        or 0
-    )
     opp_rec_cls = "color-win" if opp_wins > opp_losses else ("color-loss" if opp_losses > opp_wins else "")
 
-    # Starters from matchup block (dicts with pid) or roster id strings.
-    starter_pids = set()
-    for s in opponent_team_block.get("starters") or []:
-        if not s:
-            continue
-        if isinstance(s, dict):
-            pid = s.get("pid") or s.get("player_id")
-        else:
-            pid = s
-        if pid:
-            starter_pids.add(str(pid))
-    opp_pts = opponent_team_block.get("pts_total")
-
-    # Projected score for opponent
-    opp_proj = proj_by_roster.get((current_week, opponent_roster_id))
-
-    # Injury statuses
     status_by_pid = (statuses.get(current_week) or {}).get("statuses", {}) or {}
 
-    # Build player list grouped by position
-    _POS_ORDER = ["QB", "RB", "WR", "TE", "K", "DEF"]
-    _POS_CLS = {"QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE", "K": "K", "DEF": "DEF"}
-    _INJ_CLS = {"Q": "inj-q", "D": "inj-d", "O": "inj-o", "IR": "inj-o", "Sus": "inj-o"}
-    _INJ_LABEL = {"Q": "Q", "D": "D", "O": "O", "IR": "IR", "Questionable": "Q", "Doubtful": "D", "Out": "O",
-                  "Suspended": "SUS"}
+    opp_starters = _build_starters(
+        _starter_pids(opponent_block), players_map, players_index,
+        week_proj_map, status_by_pid, scoring,
+    )
+    you_starters = _build_starters(
+        _starter_pids(viewer_block or {}), players_map, players_index,
+        week_proj_map, status_by_pid, scoring,
+    )
 
-    all_pids = [str(p) for p in (opponent_roster.get("players") or [])]
-    starters_by_pos: dict = {}
-    bench_players = []
+    have_proj = any(p["proj"] is not None for p in opp_starters + you_starters)
 
-    for pid in all_pids:
-        v = values_by_id.get(pid) or {}
-        meta = players_index.get(pid) or {}
-        pos = (v.get("position") or meta.get("pos") or "?").upper()
-        val = float(v.get("value") or 0)
-        name = v.get("name") or meta.get("name") or f"Player {pid}"
-        team = (v.get("team") or meta.get("team") or "").upper()
-        pos_rank = v.get("pos_rank_label") or ""
-        is_starter = pid in starter_pids
-        raw_inj = str(status_by_pid.get(pid) or "")
-        inj_key = raw_inj if raw_inj in _INJ_CLS else None
-        proj_ppg = _week_proj_points(week_proj_map, pid, ctx.get("raw_scoring_settings"), pos)
+    def _pos_total(starters: list, pos: str) -> "float | None":
+        vals = [p["proj"] for p in starters if p["pos"] == pos and p["proj"] is not None]
+        return sum(vals) if vals else None
 
-        entry = {
-            "pid": pid, "name": name, "pos": pos, "team": team,
-            "value": val, "pos_rank": pos_rank, "is_starter": is_starter,
-            "inj_key": inj_key, "proj_ppg": proj_ppg,
-        }
-        if is_starter:
-            starters_by_pos.setdefault(pos, []).append(entry)
+    you_total = sum(p["proj"] for p in you_starters if p["proj"] is not None)
+    opp_total = sum(p["proj"] for p in opp_starters if p["proj"] is not None)
+
+    # ── Section 1: positional edge ────────────────────────────────────────────
+    positions = [p for p in _POS_ORDER if p in _PRIMARY_POS]
+    for pos in ("K", "DEF"):
+        if any(p["pos"] == pos for p in opp_starters + you_starters):
+            positions.append(pos)
+
+    def _edge_row(pos: str) -> str:
+        you_p = _pos_total(you_starters, pos)
+        opp_p = _pos_total(opp_starters, pos)
+        if you_p is None and opp_p is None:
+            return ""
+        yv, ov = (you_p or 0.0), (opp_p or 0.0)
+        total = yv + ov
+        you_share = (yv / total * 100.0) if total > 0 else 50.0
+        delta = yv - ov
+        if abs(delta) < 1.0:
+            pill_cls, pill = "edge-even", "Even"
+        elif delta > 0:
+            pill_cls, pill = "edge-you", f"You +{delta:.1f}"
         else:
-            bench_players.append(entry)
+            pill_cls, pill = "edge-them", f"Them +{abs(delta):.1f}"
+        pc = pos if pos in _POS_ORDER else "K"
+        you_txt = f"{yv:.1f}" if you_p is not None else "—"
+        opp_txt = f"{ov:.1f}" if opp_p is not None else "—"
+        return (
+            f"<div class='scout-edge'>"
+            f"<span class='pos-badge {pc}'>{pos}</span>"
+            f"<span class='scout-edge-you'>{you_txt}</span>"
+            f"<span class='scout-edge-bar'>"
+            f"<span class='scout-edge-fill' style='width:{you_share:.0f}%;'></span>"
+            f"</span>"
+            f"<span class='scout-edge-opp'>{opp_txt}</span>"
+            f"<span class='scout-edge-pill {pill_cls}'>{pill}</span>"
+            f"</div>"
+        )
 
-    # Compute position group values and league-wide averages for strength/weakness
-    _STARTER_COUNTS = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
-    pos_group_vals = {}
-    for pos, players in starters_by_pos.items():
-        players.sort(key=lambda x: x["value"], reverse=True)
-        pos_group_vals[pos] = sum(p["value"] for p in players)
+    edge_rows = "".join(_edge_row(pos) for pos in positions)
 
-    # League-wide average top-N value per position
-    league_pos_avgs = {}
-    for pos, top_n in _STARTER_COUNTS.items():
-        sums = []
-        for r in rosters:
-            r_pids = [str(p) for p in (r.get("players") or [])]
-            r_vals = sorted(
-                [float((values_by_id.get(p) or {}).get("value") or 0) for p in r_pids
-                 if (values_by_id.get(p) or {}).get("position", "").upper() == pos],
-                reverse=True,
-            )
-            sums.append(sum(r_vals[:top_n]))
-        league_pos_avgs[pos] = (sum(sums) / len(sums)) if sums else 0
+    if have_proj and edge_rows:
+        total_delta = you_total - opp_total
+        if abs(total_delta) < 1.0:
+            head_cls, head_txt = "edge-even", "Dead even"
+        elif total_delta > 0:
+            head_cls, head_txt = "edge-you", f"You favored by {total_delta:.1f}"
+        else:
+            head_cls, head_txt = "edge-them", f"Underdog by {abs(total_delta):.1f}"
+        edge_section = (
+            f"<div class='card scout-card'>"
+            f"<div class='card-header scout-edge-header'>"
+            f"<h2>Where the matchup is won</h2>"
+            f"<span class='scout-edge-pill {head_cls}'>{head_txt}</span>"
+            f"</div>"
+            f"<div class='card-body'>"
+            f"<div class='scout-edge scout-edge-key'>"
+            f"<span class='pos-badge' style='visibility:hidden;'>·</span>"
+            f"<span class='scout-edge-you'>You {you_total:.1f}</span>"
+            f"<span class='scout-edge-bar' style='visibility:hidden;'></span>"
+            f"<span class='scout-edge-opp'>{opp_total:.1f} Them</span>"
+            f"<span class='scout-edge-pill' style='visibility:hidden;'>·</span>"
+            f"</div>"
+            f"{edge_rows}"
+            f"</div></div>"
+        )
+    else:
+        edge_section = (
+            "<div class='card scout-card'><div class='card-body' "
+            "style='color:var(--muted);font-size:0.9em;padding:18px;'>"
+            "Weekly projections aren't available yet, so the positional edge "
+            "can't be computed. Check back closer to kickoff.</div></div>"
+        )
 
-    # Build strength/weakness summary
-    strengths, weaknesses = [], []
-    for pos in ["QB", "RB", "WR", "TE"]:
-        opp_val = pos_group_vals.get(pos) or 0
-        avg = league_pos_avgs.get(pos) or 1
-        delta_pct = ((opp_val - avg) / avg) * 100 if avg else 0
-        if delta_pct >= 12:
-            strengths.append((pos, delta_pct, opp_val))
-        elif delta_pct <= -12:
-            weaknesses.append((pos, delta_pct, opp_val))
+    # ── Section 2: opponent threat report ─────────────────────────────────────
+    def _proj_sort_key(p):
+        return p["proj"] if p["proj"] is not None else -1.0
 
-    strengths.sort(key=lambda x: -x[1])
-    weaknesses.sort(key=lambda x: x[1])
+    ranked = sorted(opp_starters, key=_proj_sort_key, reverse=True)
+    top_pid = ranked[0]["pid"] if ranked and ranked[0]["proj"] is not None else None
+    banged_up = [p for p in opp_starters if p["inj_raw"] in _INJ_SITTING]
 
-    # Build HTML
-    def _player_row(p, show_bench_label=False):
-        pc = _POS_CLS.get(p["pos"], "pos-k")
+    def _threat_row(p: dict) -> str:
+        pc = p["pos"] if p["pos"] in _POS_ORDER else "K"
         inj_html = ""
-        if p.get("inj_key"):
+        if p["inj_key"]:
             ic = _INJ_CLS.get(p["inj_key"], "")
             il = _INJ_LABEL.get(p["inj_key"], p["inj_key"])
             inj_html = f"<span class='inj-badge {ic}'>{il}</span>"
-        pr_html = f"<span class='scout-pos-rank'>{html.escape(p.get('pos_rank', ''))}</span>" if p.get(
-            "pos_rank") else ""
-        ppg_html = (
-            f"<span class='scout-ppg'>{p['proj_ppg']:.1f} proj</span>"
-            if p.get("proj_ppg") is not None
-            else "<span class='scout-ppg scout-ppg-miss' title='Week projection unavailable'>Proj unavailable</span>"
-        )
-        val_html = f"<span class='scout-val'>{p['value']:.0f}</span>" if p["value"] else ""
-        bench_cls = " scout-bench" if show_bench_label else ""
+        tag_html = ""
+        if p["pid"] == top_pid:
+            tag_html = "<span class='scout-tag scout-tag-threat'>Top threat</span>"
+        if p["proj"] is not None:
+            ppg_html = f"<span class='scout-ppg'>{p['proj']:.1f} proj</span>"
+        else:
+            ppg_html = (
+                "<span class='scout-ppg scout-ppg-miss' "
+                "title='Week projection unavailable'>Proj unavailable</span>"
+            )
+        team_html = f"<span class='scout-team'>{html.escape(p['team'])}</span>" if p["team"] else ""
         return (
-            f"<div class='scout-player-row{bench_cls}'>"
+            f"<div class='scout-player-row'>"
             f"<span class='pos-badge {pc}'>{p['pos']}</span>"
             f"<span class='scout-player-name'>{html.escape(p['name'])}</span>"
-            f"<span class='scout-team'>{html.escape(p['team'])}</span>"
-            f"{pr_html}{inj_html}{ppg_html}{val_html}"
+            f"{team_html}{tag_html}{inj_html}{ppg_html}"
             f"</div>"
         )
 
-    # Starters section
-    starters_html = ""
-    for pos in _POS_ORDER:
-        for p in starters_by_pos.get(pos, []):
-            starters_html += _player_row(p)
-    # Handle any FLEX/unknown positions
-    for pos, players in starters_by_pos.items():
-        if pos not in _POS_ORDER:
-            for p in players:
-                starters_html += _player_row(p)
+    threat_rows = "".join(_threat_row(p) for p in ranked)
+    if not threat_rows:
+        threat_rows = "<p style='color:var(--muted);font-size:0.9em;'>Lineup not yet set.</p>"
 
-    bench_players.sort(key=lambda x: x["value"], reverse=True)
-    bench_html = "".join(_player_row(p, show_bench_label=True) for p in bench_players[:10])
-
-    # Strengths / weaknesses cards
-    def _sw_chip(pos, delta_pct, val, is_strength):
-        color = "var(--color-win)" if is_strength else "var(--color-loss)"
-        arrow = "▲" if is_strength else "▼"
-        pc = _POS_CLS.get(pos, "pos-k")
-        return (
-            f"<div class='scout-sw-chip'>"
-            f"<span class='pos-badge {pc}'>{pos}</span>"
-            f"<span class='scout-sw-val' style='color:{color};'>{arrow} {abs(delta_pct):.0f}% vs avg</span>"
+    inj_note = ""
+    if banged_up:
+        names = ", ".join(html.escape(p["name"]) for p in banged_up[:3])
+        more = f" +{len(banged_up) - 3} more" if len(banged_up) > 3 else ""
+        inj_note = (
+            f"<div class='scout-inj-note'>"
+            f"⚠ {names}{more} may not play — a chance to gain ground."
             f"</div>"
         )
 
-    sw_html = ""
-    if strengths or weaknesses:
-        s_chips = "".join(_sw_chip(pos, d, v, True) for pos, d, v in
-                          strengths) or "<span style='color:var(--muted);font-size:0.85em;'>None notable</span>"
-        w_chips = "".join(_sw_chip(pos, d, v, False) for pos, d, v in
-                          weaknesses) or "<span style='color:var(--muted);font-size:0.85em;'>None notable</span>"
-        sw_html = (
-            f"<div class='main-two-col' style='margin-bottom:14px;'>"
-            f"<div class='card'>"
-            f"<div class='card-header'><h2>Their Strengths</h2></div>"
-            f"<div class='card-body scout-sw-list'>{s_chips}</div>"
-            f"</div>"
-            f"<div class='card'>"
-            f"<div class='card-header'><h2>Their Weaknesses</h2></div>"
-            f"<div class='card-body scout-sw-list'>{w_chips}</div>"
-            f"</div>"
-            f"</div>"
-        )
-
-    proj_html = ""
-    if opp_proj is not None:
-        proj_html = f"<span class='scout-proj'>Proj: <strong>{opp_proj:.1f}</strong></span>"
-    pts_html = ""
-    if opp_pts is not None:
-        pts_html = f"<span class='scout-proj' style='color:var(--muted);'>Score: <strong>{opp_pts:.1f}</strong></span>"
-
-    return (
-            f"<style>"
-            f".scout-header-row{{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:4px;}}"
-            f".scout-opp-name{{font-size:1.3em;font-weight:700;}}"
-            f".scout-record{{font-size:0.9em;}}"
-            f".scout-proj{{font-size:0.9em;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:3px 8px;}}"
-            f".scout-stat-row{{display:flex;gap:20px;flex-wrap:wrap;margin-top:6px;margin-bottom:16px;}}"
-            f".scout-stat{{display:flex;flex-direction:column;gap:1px;}}"
-            f".scout-stat-lbl{{font-size:0.7em;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}}"
-            f".scout-stat-val{{font-size:1em;font-weight:600;}}"
-            f".scout-player-row{{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:0.88em;}}"
-            f".scout-player-row:last-child{{border-bottom:none;}}"
-            f".scout-bench{{opacity:.7;}}"
-            f".scout-player-name{{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;}}"
-            f".scout-team{{font-size:0.78em;color:var(--muted);min-width:28px;}}"
-            f".scout-pos-rank{{font-size:0.75em;color:var(--muted);}}"
-            f".scout-ppg{{font-size:0.75em;color:var(--muted);min-width:52px;text-align:right;}}"
-            f".scout-ppg-miss{{min-width:88px;font-style:italic;}}"
-            f".scout-proj-stamp{{font-size:0.75em;color:var(--muted);font-weight:500;margin-top:2px;}}"
-            f".scout-val{{font-weight:600;color:var(--accent);font-size:0.85em;min-width:32px;text-align:right;}}"
-            f".scout-sw-list{{display:flex;flex-direction:column;gap:8px;padding-top:4px;}}"
-            f".scout-sw-chip{{display:flex;align-items:center;gap:8px;}}"
-            f".scout-sw-val{{font-size:0.88em;font-weight:600;}}"
-            f".inj-badge{{font-size:0.7em;font-weight:700;padding:1px 5px;border-radius:4px;line-height:1.4;}}"
-            f".inj-q{{background:#fef08a;color:#713f12;}}"
-            f".inj-d{{background:#fed7aa;color:#7c2d12;}}"
-            f".inj-o{{background:#fecaca;color:#7f1d1d;}}"
-            f"</style>"
-            f"<div class='scout-header-row'>"
-            f"<span class='scout-opp-name'>{opp_name}</span>"
-            f"<span class='scout-record {opp_rec_cls}'>{opp_wins}-{opp_losses}</span>"
-            f"{proj_html}{pts_html}"
-            f"</div>"
-            f"<div class='scout-stat-row'>"
-            f"<div class='scout-stat'><span class='scout-stat-lbl'>Points For</span><span class='scout-stat-val'>{opp_pf:.1f}</span></div>"
-            f"<div class='scout-stat'><span class='scout-stat-lbl'>Points Against</span><span class='scout-stat-val'>{opp_pa:.1f}</span></div>"
-            f"</div>"
-            f"{sw_html}"
-            f"<div class='main-two-col'>"
-            f"<div class='card'>"
-            f"<div class='card-header'><h2>Week {current_week} Starters</h2>"
-            f"<div class='scout-proj-stamp'>Week {current_week} Sleeper proj</div></div>"
-            "<div class='card-body'>" + (
-                    starters_html or "<p style='color:var(--muted);font-size:0.85em;'>Lineup not yet set.</p>") + "</div>"
-                                                                                                                  "</div>"
-                                                                                                                  "<div class='card'>"
-                                                                                                                  f"<div class='card-header'><h2>Bench (Top 10)</h2></div>"
-                                                                                                                  "<div class='card-body'>" + (
-                    bench_html or "<p style='color:var(--muted);font-size:0.85em;'>No bench data.</p>") + "</div>"
-                                                                                                          "</div>"
-                                                                                                          "</div>"
+    threat_section = (
+        f"<div class='card scout-card'>"
+        f"<div class='card-header scout-edge-header'>"
+        f"<h2>Their starters</h2>"
+        f"<span class='scout-proj-stamp'>Week {current_week} Sleeper proj</span>"
+        f"</div>"
+        f"<div class='card-body'>{inj_note}{threat_rows}</div>"
+        f"</div>"
     )
+
+    return _SCOUT_STYLE + (
+        f"<div class='scout-report'>"
+        f"<div class='scout-header-row'>"
+        f"<span class='scout-opp-name'>{opp_name}</span>"
+        f"<span class='scout-record {opp_rec_cls}'>{opp_wins}-{opp_losses}</span>"
+        f"</div>"
+        f"{edge_section}"
+        f"{threat_section}"
+        f"</div>"
+    )
+
+
+_SCOUT_STYLE = (
+    "<style>"
+    ".scout-report{display:flex;flex-direction:column;gap:14px;}"
+    ".scout-header-row{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;}"
+    ".scout-opp-name{font-size:1.3em;font-weight:700;}"
+    ".scout-record{font-size:0.95em;font-weight:600;}"
+    ".scout-record.color-win{color:var(--win);}"
+    ".scout-record.color-loss{color:var(--loss);}"
+    ".scout-card{margin:0;}"
+    ".scout-edge-header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}"
+    ".scout-edge{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);}"
+    ".scout-edge:last-child{border-bottom:none;}"
+    ".scout-edge-key{font-size:0.72em;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600;padding-bottom:2px;}"
+    ".scout-edge-you,.scout-edge-opp{min-width:40px;font-weight:600;font-size:0.9em;}"
+    ".scout-edge-you{text-align:right;}"
+    ".scout-edge-opp{text-align:left;}"
+    ".scout-edge-bar{flex:1;height:8px;border-radius:4px;background:color-mix(in srgb,var(--loss) 55%,transparent);overflow:hidden;min-width:60px;}"
+    ".scout-edge-fill{display:block;height:100%;background:var(--win);border-radius:4px 0 0 4px;}"
+    ".scout-edge-pill{font-size:0.75em;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap;min-width:64px;text-align:center;}"
+    ".edge-you{background:color-mix(in srgb,var(--win) 16%,transparent);color:var(--win);}"
+    ".edge-them{background:color-mix(in srgb,var(--loss) 16%,transparent);color:var(--loss);}"
+    ".edge-even{background:color-mix(in srgb,var(--muted) 16%,transparent);color:var(--muted);}"
+    ".scout-player-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:0.9em;}"
+    ".scout-player-row:last-child{border-bottom:none;}"
+    ".scout-player-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;}"
+    ".scout-team{font-size:0.78em;color:var(--muted);min-width:30px;}"
+    ".scout-ppg{font-size:0.82em;font-weight:600;min-width:66px;text-align:right;}"
+    ".scout-ppg-miss{min-width:92px;font-style:italic;font-weight:400;color:var(--muted);}"
+    ".scout-proj-stamp{font-size:0.72em;color:var(--muted);font-weight:500;}"
+    ".scout-tag{font-size:0.68em;font-weight:700;padding:2px 7px;border-radius:999px;text-transform:uppercase;letter-spacing:.03em;}"
+    ".scout-tag-threat{background:color-mix(in srgb,var(--warning) 20%,transparent);color:color-mix(in srgb,var(--warning) 85%,var(--text));}"
+    ".scout-inj-note{font-size:0.82em;color:color-mix(in srgb,var(--warning) 85%,var(--text));background:color-mix(in srgb,var(--warning) 10%,transparent);border:1px solid color-mix(in srgb,var(--warning) 30%,var(--border));border-radius:6px;padding:7px 10px;margin-bottom:10px;}"
+    ".inj-badge{font-size:0.7em;font-weight:700;padding:1px 5px;border-radius:4px;line-height:1.4;}"
+    ".inj-q{background:#fef08a;color:#713f12;}"
+    ".inj-d{background:#fed7aa;color:#7c2d12;}"
+    ".inj-o{background:#fecaca;color:#7f1d1d;}"
+    "</style>"
+)

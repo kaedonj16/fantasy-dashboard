@@ -121,11 +121,16 @@ def test_prospects_page_has_no_draft_assistant():
     assert "Draft Board that analyzes positional needs" not in features
 
 
-def test_scout_uses_live_value_cache():
+def test_scout_is_weekly_not_dynasty():
+    # Scout was reworked to be a weekly matchup report: positional edge (your
+    # projected starters vs theirs) plus an opponent threat list. It must render
+    # weekly projections and must NOT lean on the dynasty trade-value table,
+    # which was meaningless in a weekly context and left rows blank.
     scout = (ROOT / "dashboard_services" / "pages" / "scout_page.py").read_text(encoding="utf-8")
-    assert "get_model_value_table_cached()" in scout
-    assert "proj_ppg" in scout
     assert "scout-ppg" in scout
+    assert "Where the matchup is won" in scout
+    assert "get_model_value_table_cached" not in scout
+    assert "model_value_table" not in scout
 
 
 def test_add_pct_on_waivers_and_streaming():
