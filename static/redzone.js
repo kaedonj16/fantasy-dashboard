@@ -41,6 +41,7 @@
   var _prevInjury = {};
   var _prevLeader = {}; // matchup_id → leading roster_id (for lead-change events)
   var _scoreDelta = { me: 0, opp: 0 }; // pts gained since last poll (for hero card)
+  var _loadingScope = false; // true while awaiting the first fetch after a scope switch
 
   document.addEventListener('click', function() { _hadInteraction = true; }, { once: true });
 
@@ -925,6 +926,24 @@
       + '</div>';
   }
 
+  // Placeholder matchup cards shown while a scope switch (e.g. "My Leagues")
+  // fetches its data, which can take a while when it spans many leagues.
+  function _renderSkeletonHero() {
+    var one =
+      '<div class="rz-mc-hero rz-mc-skel" aria-hidden="true">'
+      + '<div class="rz-skel-line rz-skel-league"></div>'
+      + '<div class="rz-mch-matchup">'
+      +   '<div class="rz-mch-side"><div class="rz-skel-line rz-skel-name"></div><div class="rz-skel-num"></div></div>'
+      +   '<div class="rz-mch-vs"><div class="rz-skel-badge"></div></div>'
+      +   '<div class="rz-mch-side right"><div class="rz-skel-line rz-skel-name"></div><div class="rz-skel-num"></div></div>'
+      + '</div>'
+      + '</div>';
+    var cards = '';
+    for (var i = 0; i < 4; i++) cards += one;
+    return '<div class="rz-hero-cards"><div class="rz-hero-scroller"><div class="rz-hero-cards-row">'
+      + cards + '</div></div></div>';
+  }
+
   function _renderHeroCards() {
     // Score delta badge ("+N this update"): reflects the change from the most
     // recent poll. _detectChanges recomputes (and resets) _scoreDelta every
@@ -1321,6 +1340,13 @@
     var container = document.getElementById('rz-feed-list');
     if (!container) return;
 
+    if (_loadingScope) {
+      container.innerHTML = '<div class="rz-feed-loading">'
+        + '<span class="rz-feed-spinner"></span>Loading your leagues…</div>';
+      _renderPagination(1);
+      return;
+    }
+
     var list = _feed.filter(_eventMatches);
     var anyFilter = _filters.team !== 'all' || _filters.nfl !== 'all' || _filters.pos !== 'all' || _filters.stat !== 'all' || !!_heroMid;
     var totalPages = Math.max(1, Math.ceil(list.length / _PAGE_SIZE));
@@ -1699,7 +1725,7 @@
     var mine = _myMatchups();
     var myMatchup = mine[0], oppMatchup = myMatchup ? _oppOf(myMatchup) : null;
 
-    var summary = _renderHeroCards();
+    var summary = _loadingScope ? _renderSkeletonHero() : _renderHeroCards();
 
     var tabBar = '<div class="rz-tab-bar">' + TABS.map(function(t) {
       var badge = (t.key === 'plays' && _unreadCount > 0 && _activeTab !== 'plays')
@@ -1711,7 +1737,7 @@
 
     // Pinned score bar for the Plays tab
     var playsScoreBar = '';
-    if (myMatchup) {
+    if (myMatchup && !_loadingScope) {
       var _mm = myMatchup, _om = oppMatchup;
       var _myP = parseFloat(_mm.points || 0), _opP = parseFloat(_om ? _om.points || 0 : 0);
       var _win = _myP >= _opP, _diff = Math.abs(_myP - _opP).toFixed(1);
@@ -1799,6 +1825,8 @@
         _heroMid = null;
         _feedPage = 0;
         _countdown = 1;
+        // Show skeleton cards until this scope's (often multi-league) data lands.
+        _loadingScope = true;
         _render();
         _refresh();
       });
@@ -1889,9 +1917,10 @@
       var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=' + _scope;
       if (_isDemo) { _demoT += 15; url += '&demo=1&t=' + _demoT; }
       var resp = await fetch(url);
-      if (!resp.ok) { _lastPollFailed = true; return; }
+      if (!resp.ok) { _lastPollFailed = true; if (_loadingScope) { _loadingScope = false; _render(); } return; }
       var newData = await resp.json();
       _lastPollFailed = false;
+      _loadingScope = false;
       _myRids = _myRidSet(newData);
       _detectChanges(newData);
       _state = newData;
@@ -1931,7 +1960,7 @@
         });
         _flashRids.clear();
       }
-    } catch (_) { _lastPollFailed = true; }
+    } catch (_) { _lastPollFailed = true; if (_loadingScope) { _loadingScope = false; _render(); } }
   }
 
   function _isGameDay() {
