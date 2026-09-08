@@ -10720,20 +10720,11 @@ if (!platformBtns.length) return;
       btn.style.cursor = hasLeague ? "pointer" : "not-allowed";
       btn.title = hasLeague ? "" : "Select a league first";
     });
-    const createHint = document.getElementById("createAcctHint");
-    const readyNudge = document.getElementById("homeLeagueReadyNudge");
-    const bottomLabel = document.getElementById("homeAcctBottomLabel");
-    if (createHint) createHint.hidden = hasLeague;
-    if (readyNudge) {
-      readyNudge.hidden = !hasLeague;
-      if (hasLeague && readyNudge.dataset.tracked !== "1") {
-        readyNudge.dataset.tracked = "1";
-        window.brTrack?.("home_league_selected", { platform: currentPlatform || "" });
-        window.brTrack?.("home_create_account_nudge", {});
-      }
-    }
-    if (bottomLabel) {
-      bottomLabel.textContent = hasLeague ? "Save this league to your account" : "New to BR Fantasy?";
+    // Fire the "league selected" analytics once, when a league is first picked
+    // (previously gated on the removed bottom nudge).
+    if (hasLeague && googleBtnEl && googleBtnEl.dataset.tracked !== "1") {
+      googleBtnEl.dataset.tracked = "1";
+      window.brTrack?.("home_league_selected", { platform: currentPlatform || "" });
     }
     if (hasLeague && googleBtnEl) {
       googleBtnEl.classList.add("home-google-ready");
@@ -11274,33 +11265,8 @@ if (!platformBtns.length) return;
     });
   }
 
-  // "Create Account with Google" (new-user path): a fresh account must be tied to
-  // a league, so don't sign in with nothing. If a league is already picked, route
-  // through the league-aware path; otherwise send the user into the connect form
-  // first and explain, instead of following the bare onboarding link.
-  const createAcctBtn = document.querySelector(".google-create-account-btn");
-  if (createAcctBtn) {
-    createAcctBtn.addEventListener("click", (event) => {
-      const sel = document.getElementById("league");
-      if (sel && sel.value) {
-        event.preventDefault();
-        window.brTrack?.("home_create_account_nudge", { via: "bottom_cta_ready" });
-        googleContinueBtn?.click();
-        return;
-      }
-      event.preventDefault();
-      window.brTrack?.("home_create_account_nudge", { via: "bottom_cta_prompt" });
-      const hint = document.getElementById("createAcctHint");
-      if (hint) hint.hidden = false;
-      const readyNudge = document.getElementById("homeLeagueReadyNudge");
-      if (readyNudge) readyNudge.hidden = true;
-      const flow = document.getElementById("connectLeagueFlow");
-      if (flow) { flow.hidden = false; flow.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
-      const firstField = document.getElementById("username");
-      if (firstField) { firstField.focus(); window.brShake?.(firstField); }
-      else { const pb = document.querySelector(".platform-btn"); if (pb) window.brShake?.(pb); }
-    });
-  }
+  // (The old bottom "Create Account with Google" nudge was removed; saving now
+  // happens only at step 3 via the inline #googleContinueBtn prompt.)
 
   if (yahooConnectBtn) {
     yahooConnectBtn.addEventListener("click", async () => {
@@ -19345,9 +19311,11 @@ function setupFunAwardsGrid() {
 // (Sleeper / ESPN public+private / Yahoo / MFL / Fleaflicker) before relying
 // on it or flipping the default on.
 (function initSteppedOnboarding() {
+  // Default ON for guests. Escape hatch: ?onboarding=classic falls back to the
+  // old all-at-once card (quick rollback without a deploy).
   try {
-    if (new URLSearchParams(location.search).get('onboarding') !== 'stepped') return;
-  } catch (e) { return; }
+    if (new URLSearchParams(location.search).get('onboarding') === 'classic') return;
+  } catch (e) { /* default: stepped on */ }
 
   var card = document.querySelector('.home-card');
   var flow = document.getElementById('connectLeagueFlow');
