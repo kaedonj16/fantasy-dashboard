@@ -7444,6 +7444,7 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
     try:
         import time as _time
         from utils.trade_window import (
+            deadline_line_visible,
             redraft_deadline_card_visible,
             trade_partners,
             trade_window_verdict,
@@ -7557,11 +7558,15 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
             titles = {"buy": "Buy window", "sell": "Sell window", "hold": "Hold"}
             section_label = "Trade window"
         lines = []
-        if weeks_to is not None:
+        # Only lead with the deadline when it's close enough to be actionable;
+        # otherwise a year-round dynasty advisor reads like a countdown alert.
+        if deadline_line_visible(weeks_to):
             when = "this week" if weeks_to == 0 else (
                 "next week" if weeks_to == 1 else f"{weeks_to} weeks away")
-            lines.append(f"Week {deadline} trade deadline, {when}.")
-        _odds_line = f"You're at {pct:.0f}% playoff odds"
+            lines.append(
+                f'Week {deadline} trade deadline, <span class="la-em">{when}</span>.'
+            )
+        _odds_line = f'You\'re at <span class="la-em">{pct:.0f}%</span> playoff odds'
         if (not is_redraft) and age_rank and n_teams:
             _sfx = "th" if 10 <= age_rank % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(age_rank % 10, "th")
             _odds_line += f" with the {age_rank}{_sfx}-oldest core of {n_teams}"
@@ -7576,7 +7581,11 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
                 lines.append(mod_lines[vw["modifier"]])
         if partners:
             who = "Sellers to call" if verdict == "buy" else "Buyers to call"
-            lines.append(f"{who}: {', '.join(html.escape(p) for p in partners)}.")
+            _names = ", ".join(html.escape(p) for p in partners)
+            lines.append(
+                f'<span class="la-label">{who}</span>'
+                f'<span class="la-em">{_names}</span>'
+            )
 
         platform = ctx.get("platform", "sleeper")
         season = ctx.get("current_season") or ctx.get("season")
@@ -7745,19 +7754,19 @@ def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> st
         if left_on_bench < 1.0:
             msg = (
                 f"Week {last_final_week} bench check: you started your optimal "
-                f"lineup. Nothing left on the bench."
+                f'lineup. <span class="la-em">Nothing left on the bench.</span>'
             )
         else:
             msg = (
                 f"Week {last_final_week} bench check: your optimal lineup scored "
                 f"{opt_pts:.1f}. You scored {actual:.1f} and left "
-                f"{left_on_bench:.1f} points on the bench."
+                f'<span class="la-em">{left_on_bench:.1f} points</span> on the bench.'
             )
         tone_cls = " bench-ok" if left_on_bench < 1.0 else " bench-miss"
         return f"""
         <section class="os-card bench-check-card{tone_cls}">
           <div class="bench-check-row">
-            <span class="bench-check-msg">{html.escape(msg)}</span>
+            <span class="bench-check-msg">{msg}</span>
             <a class="os-section-link" href="{eff_url}">Lineup efficiency &rarr;</a>
           </div>
         </section>"""
