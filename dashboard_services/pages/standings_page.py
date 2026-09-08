@@ -10,9 +10,9 @@ def build_standings_body(ctx: dict) -> str:
         _standings_available_weeks, _standings_panels, _standings_week_selector,
     )
 
-    # Value-blended power ranking (matches the Teams page "Power Rankings" tab)
-    # for the live view; the week-selector re-renders with the performance
-    # PowerScore, which is what past weeks can reconstruct faithfully.
+    # Value-blended power ranking for the live Standings Power Rankings card;
+    # the week-selector re-renders with the performance PowerScore, which is
+    # what past weeks can reconstruct faithfully.
     try:
         from dashboard_services.ai.context_builders import build_power_rankings_context
         _pr_teams = (build_power_rankings_context(ctx) or {}).get("teams") or []

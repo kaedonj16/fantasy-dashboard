@@ -1,5 +1,8 @@
 """Teams page builder (deep team analytics: roster grades, intel, archetypes,
-playoff odds, draft grades, pick value).
+value trends / Beat the Market, and in-season schedule difficulty).
+
+Playoff odds / Power Rankings live on Standings; draft grades live in Draft
+Room / Draft History — not as Teams sidebar tabs.
 
 Moved verbatim from app.py to shrink the monolith. The heavy app.py internals it
 uses are lazy-imported from app inside the function (resolved at request time),

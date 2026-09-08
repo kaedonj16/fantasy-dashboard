@@ -84,15 +84,18 @@ def test_teams_loaders_resync_league_cfg():
     for name in (
         "loadBtm",
         "loadSos",
-        "loadDraft",
         "loadRosterIntel",
-        "loadPowerRankings",
     ):
         block = src[src.index("function %s()" % name) :]
         head = block[: block.index("\n      function ") if "\n      function " in block[:800] else 200]
         # Each loader must re-read cfg before the lazy-load short-circuit.
         assert "_syncLeagueCfg()" in head, name
         assert head.index("_syncLeagueCfg()") < head.index("if (_loaded.")
+    # Draft Grades / Power Rankings tabs were removed from Teams; keep them gone.
+    assert "function loadDraft()" not in src
+    assert "function loadPowerRankings()" not in src
+    assert "draftPanel" not in src
+    assert "powerRankingsPanel" not in src
 
 
 _CASES = [

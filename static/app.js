@@ -19970,12 +19970,6 @@ function setupFunAwardsGrid() {
 (function initEmptyStates() {
   var CONFIG = [
     {
-      selector: '.bulletins-list',
-      icon: '💬',
-      msg: 'No league bulletins yet. Be the first to post in your Sleeper league.',
-      check: function(el) { return el.children.length === 0; }
-    },
-    {
       selector: '.activity-feed-list',
       icon: '📋',
       msg: 'No recent activity. Transactions and news will appear here.',
@@ -20046,80 +20040,6 @@ function setupFunAwardsGrid() {
   }, { rootMargin: '200px' });
 
   observer.observe(sentinel);
-})();
-
-
-// ── Feature 12: League Bulletins ────────────────────────────────────────────
-(function initLeagueBulletins() {
-  var container = document.getElementById('leagueBulletinsContainer');
-  if (!container) return;
-
-  var leagueId = container.dataset.league;
-  if (!leagueId) return;
-
-  function timeAgo(ts) {
-    if (!ts) return '';
-    var ms = ts > 1e12 ? ts : ts * 1000;
-    var diff = Math.floor((Date.now() - ms) / 1000);
-    if (diff < 60) return 'just now';
-    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
-    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
-    return Math.floor(diff / 86400) + 'd ago';
-  }
-
-  function renderBulletins(bulletins) {
-    var list = container.querySelector('.bulletins-list');
-    if (!list) return;
-    if (!bulletins || !bulletins.length) {
-      window.brEmptyState(list, {
-        icon: 'empty',
-        title: 'No bulletins yet',
-        message: 'Post one in the Sleeper app to see it here.',
-        compact: true
-      });
-      return;
-    }
-    list.innerHTML = bulletins.map(function(b) {
-      var avatar = b.author_avatar
-        ? '<img class="bulletin-avatar" src="https://sleepercdn.com/avatars/thumbs/' + b.author_avatar + '" alt="" onerror="this.outerHTML=\'<div class=\\\"bulletin-avatar-fallback\\\"><i class=\\\"fa-solid fa-user\\\"></i></div>\'">'
-        : '<div class="bulletin-avatar-fallback"><i class="fa-solid fa-user"></i></div>';
-      var likes = b.likes > 0 ? '<div class="bulletin-likes"><i class="fa-solid fa-heart"></i> ' + b.likes + '</div>' : '';
-      return '<div class="bulletin-item">'
-        + '<div class="bulletin-author-row">' + avatar
-        + '<span class="bulletin-author">' + (b.author || 'Unknown') + '</span>'
-        + '<span class="bulletin-time">' + timeAgo(b.created) + '</span>'
-        + '</div>'
-        + '<div class="bulletin-body">' + (b.body || '') + '</div>'
-        + likes
-        + '</div>';
-    }).join('');
-  }
-
-  var platform = container.dataset.platform || 'sleeper';
-  var season   = container.dataset.season   || '';
-  var url = '/api/league-bulletins?league_id=' + encodeURIComponent(leagueId)
-    + '&platform=' + encodeURIComponent(platform)
-    + (season ? '&season=' + encodeURIComponent(season) : '');
-
-  fetch(url)
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.unavailable) {
-        var list = container.querySelector('.bulletins-list');
-        if (list) window.brEmptyState(list, {
-          icon: 'lock',
-          title: 'Not available',
-          message: 'League bulletins are not available for this platform.',
-          compact: true
-        });
-        return;
-      }
-      renderBulletins(data.bulletins || []);
-    })
-    .catch(function() {
-      var list = container.querySelector('.bulletins-list');
-      if (list) window.brErrorState(list, 'Could not load bulletins.', null, { compact: true });
-    });
 })();
 
 
