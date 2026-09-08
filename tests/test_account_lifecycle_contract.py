@@ -11,9 +11,14 @@ def test_google_oidc_uses_pkce_nonce_and_verified_id_token():
 
 
 def test_login_and_onboarding_share_one_google_endpoint():
+    # Returning users sign in via the markup link. New users onboard through the
+    # connect-then-save flow (the bottom "Create Account" markup link was
+    # removed), whose Google hand-off uses intent=onboarding in app.js. Both
+    # entry points still exist and both route through /auth/google.
     markup = Path("app.py").read_text()
+    app_js = Path("static/app.js").read_text()
     assert '/auth/google?intent=login&amp;next=/' in markup
-    assert '/auth/google?intent=onboarding&amp;next=/' in markup
+    assert '/auth/google?intent=onboarding&next=/' in app_js
     assert "account_auth_identities" in Path("dashboard_services/accounts.py").read_text()
 
 

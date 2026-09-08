@@ -1542,14 +1542,6 @@ FORM_BODY = """
           Pick a league, then <strong>Continue with Google</strong> to save it across devices, or continue without an account for a quick look.
         </p>
         </div>
-        {% if not session.get('account_id') %}
-        <div class="home-account-entry home-account-bottom" id="homeAcctBottom">
-          <div class="home-account-new-label" id="homeAcctBottomLabel">New to BR Fantasy?</div>
-          <a class="google-continue-btn google-create-account-btn" href="/auth/google?intent=onboarding&amp;next=/"><span class="google-button-title">Create Account with Google</span></a>
-          <p class="hint home-create-acct-hint" id="createAcctHint">Connect a league above, then save it to your free account, synced across devices.</p>
-          <p class="hint home-league-ready-nudge" id="homeLeagueReadyNudge" hidden>League selected. Finish with <strong>Continue with Google</strong> above to save it to your account.</p>
-        </div>
-        {% endif %}
       </div>
     </div>
   </section>

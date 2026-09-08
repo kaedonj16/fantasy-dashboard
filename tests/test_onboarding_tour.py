@@ -76,8 +76,9 @@ def test_ui_prefs_and_events_endpoints_exist():
 
 
 def test_home_onboarding_account_nudge_and_espn_guidance():
-    assert 'id="homeLeagueReadyNudge"' in APP_PY
+    # The bottom "Create Account" nudge was removed; saving now happens only at
+    # step 3 via the inline #googleContinueBtn prompt. Keep the checks for the
+    # inline save behavior + ESPN guidance copy.
     assert "Success = your league dashboard loads" in APP_PY
     assert "home_league_selected" in APP_JS
     assert "home-google-ready" in APP_JS
-    assert "Save this league to your account" in APP_JS
