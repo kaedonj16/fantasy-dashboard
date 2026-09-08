@@ -386,7 +386,7 @@ def api_lineup_lock_hint():
     try:
         from utils.lineup_issues import (
             find_lineup_issues,
-            format_lineup_lock_swap,
+            format_lineup_lock_swaps,
             projection_upgrades,
             summarize_issues,
         )
@@ -423,43 +423,46 @@ def api_lineup_lock_hint():
         message = ""
         if issues:
             message = f"Week {week} kicks off soon. {summarize_issues(issues)}."
-        else:
-            league = get_league(platform, str(league_id), int(season)) or {}
-            roster_positions = [str(s) for s in (league.get("roster_positions") or [])]
+
+        league = get_league(platform, str(league_id), int(season)) or {}
+        roster_positions = [str(s) for s in (league.get("roster_positions") or [])]
+        proj_map_wk = {}
+        try:
+            from app import build_projections_by_week
+            _bpw = build_projections_by_week(season, int(week), None) or {}
+            proj_map_wk = {
+                str(k): v
+                for k, v in ((_bpw.get(int(week)) or {}).get("projections") or {}).items()
+            }
+        except Exception:
             proj_map_wk = {}
-            try:
-                from app import build_projections_by_week
-                _bpw = build_projections_by_week(season, int(week), None) or {}
-                proj_map_wk = {
-                    str(k): v
-                    for k, v in ((_bpw.get(int(week)) or {}).get("projections") or {}).items()
-                }
-            except Exception:
-                proj_map_wk = {}
-            if proj_map_wk and roster_positions:
-                reserve_set = {str(p) for p in (roster.get("reserve") or [])}
-                taxi_set = {str(p) for p in (roster.get("taxi") or [])}
-                eligible = [
-                    str(p) for p in (roster.get("players") or [])
-                    if str(p) not in reserve_set and str(p) not in taxi_set
-                ]
-                pos_map = {
-                    pid: str((nfl_players.get(pid) or {}).get("position") or "")
-                    for pid in eligible
-                }
-                swaps = projection_upgrades(
-                    starters, eligible, proj_map_wk, pos_map,
-                    roster_positions, min_gain=2.0, max_swaps=1,
-                )
-                if swaps:
-                    s0 = swaps[0]
-                    pin = (nfl_players.get(s0["in"]) or {})
-                    pout = (nfl_players.get(s0["out"]) or {})
-                    swap_line = format_lineup_lock_swap(
-                        s0,
-                        pin.get("full_name") or pin.get("last_name") or "a bench player",
-                        pout.get("full_name") or pout.get("last_name") or "a starter",
-                    )
+        if proj_map_wk and roster_positions:
+            reserve_set = {str(p) for p in (roster.get("reserve") or [])}
+            taxi_set = {str(p) for p in (roster.get("taxi") or [])}
+            eligible = [
+                str(p) for p in (roster.get("players") or [])
+                if str(p) not in reserve_set and str(p) not in taxi_set
+            ]
+            pos_map = {
+                pid: str((nfl_players.get(pid) or {}).get("position") or "")
+                for pid in eligible
+            }
+            swaps = projection_upgrades(
+                starters, eligible, proj_map_wk, pos_map,
+                roster_positions, min_gain=2.0, max_swaps=2,
+            )
+            if swaps:
+                names = {}
+                for sw in swaps:
+                    for pid in (sw.get("in"), sw.get("out")):
+                        pl = nfl_players.get(str(pid or "")) or {}
+                        names[str(pid)] = (
+                            pl.get("full_name") or pl.get("last_name") or ""
+                        )
+                swap_line = format_lineup_lock_swaps(swaps, names)
+                if message:
+                    message = f"{message} {swap_line}."
+                else:
                     message = f"Week {week} kicks off soon. {swap_line}."
 
         return jsonify({

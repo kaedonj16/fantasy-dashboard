@@ -255,7 +255,7 @@ def notify_lineup_lock():
         # instead of the generic reminder.
         from utils.lineup_issues import (
             find_lineup_issues, summarize_issues, projection_upgrades,
-            format_lineup_lock_swap,
+            format_lineup_lock_swaps,
         )
 
         teams_playing = set()
@@ -315,9 +315,9 @@ def notify_lineup_lock():
                     issues = find_lineup_issues(starters, player_info, teams_playing)
                     if issues:
                         issue_summary_by_owner[str(owner_id)] = summarize_issues(issues)
-                        continue
-                    # No hard problem — is a bench player out-projecting a
-                    # starter at the same slot? (Legal like-for-like swaps.)
+                    # Always scan for material bench upgrades (even when there is
+                    # a hard issue). Injured/bye starters still benefit from a
+                    # concrete Sit X for Y line; R06.2 caps at two swaps.
                     if proj_map_wk and roster_positions:
                         try:
                             _res = {str(p) for p in (roster.get("reserve") or [])}
@@ -328,16 +328,20 @@ def notify_lineup_lock():
                                        for pid in eligible}
                             swaps = projection_upgrades(
                                 starters, eligible, proj_map_wk, pos_map,
-                                roster_positions, min_gain=2.0, max_swaps=1,
+                                roster_positions, min_gain=2.0, max_swaps=2,
                             )
                             if swaps:
-                                _s0 = swaps[0]
-                                _in = (nfl_players.get(_s0["in"]) or {})
-                                _out = (nfl_players.get(_s0["out"]) or {})
-                                _in_nm = _in.get("full_name") or _in.get("last_name") or "a bench player"
-                                _out_nm = _out.get("full_name") or _out.get("last_name") or "a starter"
-                                bench_summary_by_owner[str(owner_id)] = format_lineup_lock_swap(
-                                    _s0, _in_nm, _out_nm,
+                                _names = {}
+                                for _sw in swaps:
+                                    for _pid in (_sw.get("in"), _sw.get("out")):
+                                        _pl = nfl_players.get(str(_pid or "")) or {}
+                                        _names[str(_pid)] = (
+                                            _pl.get("full_name")
+                                            or _pl.get("last_name")
+                                            or ""
+                                        )
+                                bench_summary_by_owner[str(owner_id)] = format_lineup_lock_swaps(
+                                    swaps, _names,
                                 )
                         except Exception as se:
                             logger.debug("[notify] lineup_lock bench scan %s: %s", league_id, se)
@@ -367,6 +371,9 @@ def notify_lineup_lock():
                     bench_by_owner.setdefault(oid, []).append(r)
             for oid, orows in flagged_by_owner.items():
                 body = f"Week {week} kicks off in about an hour. {issue_summary_by_owner[oid]}."
+                swap_line = bench_summary_by_owner.get(oid)
+                if swap_line:
+                    body = f"{body} {swap_line}."
                 sent += _send_to_endpoints(
                     _filter_prefs(orows, "lineup_lock"),
                     "Your lineup needs attention", body, fix_url, tag,
@@ -456,12 +463,17 @@ def notify_value_drops():
 # ── Notification 3: Waiver wire ───────────────────────────────────────────────
 
 def notify_waiver_candidates():
-    """Notify league subscribers about the top available free agent once per week."""
+    """Notify league subscribers about the top available free agent once per week.
+
+    R05.4: deep-link into Waivers (FAAB bands / drop suggestions live there) and
+    use shared copy helpers so the push body stays action-oriented.
+    """
     try:
         from dashboard_services.db import get_conn
         from dashboard_services.api import get_nfl_state
         from dashboard_services.platform_api import get_rosters
         from utils.utils import load_model_value_table
+        from utils.waiver_score import pick_waiver_push_candidate, waiver_push_copy
 
         state  = get_nfl_state() or {}
         season = state.get("season")
@@ -485,26 +497,15 @@ def notify_waiver_candidates():
             try:
                 rosters  = get_rosters(platform, league_id, season) or []
                 rostered = {pid for r in rosters for pid in (r.get("players") or [])}
-                available = sorted(
-                    [
-                        p for p in value_tbl
-                        if p.get("id") and p["id"] not in rostered
-                        and p.get("value", 0) > 500
-                        and p.get("position") in ("QB", "RB", "WR", "TE")
-                        and p.get("team") not in ("FA", "FREE AGENT", "", None)
-                    ],
-                    key=lambda p: p.get("value", 0), reverse=True
-                )
-                if not available:
+                top = pick_waiver_push_candidate(value_tbl, rostered)
+                if not top:
                     continue
-                top  = available[0]
-                name = top.get("name") or top.get("full_name") or "A top player"
-                pos  = top.get("position", "")
+                title, body = waiver_push_copy(top)
                 _broadcast_league(
                     league_id,
-                    title="Waivers are open",
-                    body=f"{name} ({pos}) is the top available player in your league this week.",
-                    url=f"/{platform}/{season}/{league_id}/players",
+                    title=title,
+                    body=body,
+                    url=f"/{platform}/{season}/{league_id}/waivers",
                     notif_type="waiver_candidates",
                     tag=f"waiver-{league_id}-{week}",
                 )

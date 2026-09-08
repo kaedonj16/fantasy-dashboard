@@ -126,10 +126,86 @@ def test_lineup_lock_sends_bench_points_push():
 
 
 def test_format_lineup_lock_swap():
-    from utils.lineup_issues import format_lineup_lock_swap
+    from utils.lineup_issues import format_lineup_lock_swap, format_lineup_lock_swaps
     assert format_lineup_lock_swap(
         {"in": "a", "out": "b", "gain": 3.25}, "Bench WR", "Start WR",
     ) == "Sit Start WR for Bench WR (+3.2 proj)"
     assert format_lineup_lock_swap(
         {"gain": None}, "", "",
     ) == "Sit a starter for a bench player (+0.0 proj)"
+    joined = format_lineup_lock_swaps(
+        [
+            {"in": "a", "out": "b", "gain": 10},
+            {"in": "c", "out": "d", "gain": 4},
+            {"in": "e", "out": "f", "gain": 3},  # capped at 2
+        ],
+        {"a": "Strong RB", "b": "Weak RB", "c": "Bench WR", "d": "Start WR"},
+    )
+    assert "Sit Weak RB for Strong RB (+10.0 proj)" in joined
+    assert "Sit Start WR for Bench WR (+4.0 proj)" in joined
+    assert "(+3.0 proj)" not in joined  # third swap capped out
+
+
+def test_lineup_lock_appends_swap_when_starter_is_out():
+    """Hard lineup issues still get a Sit X for Y recommendation when available."""
+    import pytest
+    pytest.importorskip("utils.utils")
+    pytest.importorskip("dashboard_services.db")
+
+    import sys
+    import time
+    import types
+    from unittest import mock
+    import utils.push_notifications as pn
+
+    kick_ms = int((time.time() + 60 * 60) * 1000)
+
+    class FakeConn:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, q, params=None):
+            class R:
+                def fetchall(self_):
+                    return [
+                        {"endpoint": "e1", "p256dh": "k", "auth": "a", "prefs": None, "owner_id": "O1"},
+                    ]
+            return R()
+        def commit(self): pass
+
+    sent = []
+    rosters = [
+        {"owner_id": "O1", "starters": ["q1", "r_out"],
+         "players": ["q1", "r_out", "r_strong"], "reserve": [], "taxi": []},
+    ]
+    nfl = {
+        "q1": {"full_name": "QB One", "team": "KC", "position": "QB", "injury_status": ""},
+        "r_out": {"full_name": "Hurt RB", "team": "KC", "position": "RB", "injury_status": "Out"},
+        "r_strong": {"full_name": "Strong RB", "team": "BUF", "position": "RB", "injury_status": ""},
+    }
+    proj = {"q1": 20.0, "r_out": 2.0, "r_strong": 14.0}
+    fake_app = types.ModuleType("app")
+    fake_app.build_projections_by_week = lambda season, week, ss: {int(week): {"projections": proj}}
+
+    with mock.patch("dashboard_services.api.get_nfl_state",
+                    return_value={"season": 2025, "week": 9, "season_type": "reg"}), \
+         mock.patch("utils.utils.load_week_schedule",
+                    return_value=[{"gameTime_epoch": kick_ms, "home": "KC", "away": "BUF"}]), \
+         mock.patch("dashboard_services.db.get_conn", return_value=FakeConn()), \
+         mock.patch.object(pn, "_get_subscribed_leagues", return_value=[("L1", "sleeper")]), \
+         mock.patch.object(pn, "_app_state_get", return_value=None), \
+         mock.patch.object(pn, "_app_state_set", return_value=None), \
+         mock.patch.object(pn, "_send_to_endpoints",
+                           side_effect=lambda eps, title, body, url="/", tag="update":
+                           sent.append({"title": title, "body": body, "url": url}) or 1), \
+         mock.patch.object(pn, "_filter_prefs", side_effect=lambda rows, t: list(rows)), \
+         mock.patch("dashboard_services.api.get_nfl_players", return_value=nfl), \
+         mock.patch("dashboard_services.platform_api.get_rosters", return_value=rosters), \
+         mock.patch("dashboard_services.platform_api.get_league",
+                    return_value={"roster_positions": ["QB", "RB"]}), \
+         mock.patch.dict(sys.modules, {"app": fake_app}):
+        pn.notify_lineup_lock()
+
+    assert len(sent) == 1
+    assert sent[0]["title"] == "Your lineup needs attention"
+    assert "Hurt RB" in sent[0]["body"] or "injured" in sent[0]["body"].lower() or "Out" in sent[0]["body"]
+    assert "Sit Hurt RB for Strong RB (+12.0 proj)" in sent[0]["body"]

@@ -1,5 +1,11 @@
 """FAAB bands, roster-full drop gate, and schedule urgency (roadmap R05)."""
-from utils.waiver_score import faab_bid_bands, roster_needs_drop, schedule_urgency
+from utils.waiver_score import (
+    faab_bid_bands,
+    pick_waiver_push_candidate,
+    roster_needs_drop,
+    schedule_urgency,
+    waiver_push_copy,
+)
 
 
 def test_faab_bid_bands_shape_and_order():
@@ -35,3 +41,29 @@ def test_waivers_ui_shows_faab_bands_and_urgency():
     assert "faab_rationale" in body
     assert "schedule_urgency" in body
     assert "low · target · stretch" in body
+
+
+def test_pick_waiver_push_candidate_skips_rostered_and_fa():
+    tbl = [
+        {"id": "1", "name": "Rostered Star", "position": "WR", "team": "KC", "value": 9000},
+        {"id": "2", "name": "Free Agent", "position": "RB", "team": "FA", "value": 8000},
+        {"id": "3", "name": "Wire Gem", "position": "RB", "team": "BUF", "value": 700},
+        {"id": "4", "name": "Cheap", "position": "WR", "team": "DAL", "value": 100},
+    ]
+    top = pick_waiver_push_candidate(tbl, {"1"})
+    assert top is not None
+    assert top["player_id"] == "3"
+    assert top["name"] == "Wire Gem"
+    title, body = waiver_push_copy(top)
+    assert title == "Waiver of the week"
+    assert "Wire Gem (RB)" in body
+    assert "FAAB" in body
+
+
+def test_waiver_push_deep_links_to_waivers_page():
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[1] / "utils" / "push_notifications.py").read_text()
+    fn = src.split("def notify_waiver_candidates", 1)[1].split("\ndef notify_", 1)[0]
+    assert "/waivers" in fn
+    assert "waiver_push_copy" in fn
+    assert "/players" not in fn

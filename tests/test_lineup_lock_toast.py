@@ -17,3 +17,5 @@ def test_lineup_lock_hint_route_registered():
     src = (ROOT / "routes" / "league_meta_bp.py").read_text(encoding="utf-8")
     assert '@league_meta_bp.route("/api/lineup-lock-hint")' in src
     assert "summarize_issues" in src
+    assert "format_lineup_lock_swaps" in src
+    assert "max_swaps=2" in src
