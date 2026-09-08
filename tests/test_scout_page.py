@@ -2,7 +2,8 @@
 
 Does not import Flask. Matchups may use the live hub shape (left/right) or the
 older team1/team2 shape. The report has two sections: a positional edge
-("Where the matchup is won") and an opponent threat list ("Their starters").
+("Positional Edge") and an opponent threat list ("Their starters"), shown as a
+single-open accordion.
 """
 from __future__ import annotations
 
@@ -79,8 +80,11 @@ def test_scout_renders_from_live_left_right_matchups():
     assert "scout-ppg" in html
     assert "Rival FC" in html            # opponent team name
     assert "Sleeper proj" in html
-    assert "Where the matchup is won" in html
+    assert "Positional Edge" in html
     assert "Their starters" in html
+    # Two collapsible sections, first (edge) open by default.
+    assert html.count("<details class='card scout-card scout-acc'") == 2
+    assert "scout-acc' name='scout-acc' open>" in html
 
 
 def test_scout_falls_back_to_team1_team2():

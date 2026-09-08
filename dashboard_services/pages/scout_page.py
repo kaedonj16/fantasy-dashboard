@@ -152,6 +152,11 @@ def _resolve_weekly_points(ctx: dict, season: int) -> tuple[dict, dict, "int | N
     return cur, prior, prior_season
 
 
+# Accordion header for the positional-edge section (kept short so it reads well
+# in a collapsed row next to the favored/underdog pill).
+_EDGE_TITLE = "Positional Edge"
+
+
 # Boom/bust profile label -> (css kind, short display). "Boom or bust" and
 # "Volatile" both read as risk; "Steady" is the reassuring one.
 _PROFILE_KIND = {
@@ -402,11 +407,12 @@ def build_scout_body(ctx: dict) -> str:
         else:
             head_cls, head_txt = "edge-them", f"Underdog by {abs(total_delta):.1f}"
         edge_section = (
-            f"<div class='card scout-card'>"
-            f"<div class='card-header scout-edge-header'>"
-            f"<h2>Where the matchup is won</h2>"
+            f"<details class='card scout-card scout-acc' name='scout-acc' open>"
+            f"<summary class='card-header scout-acc-head'>"
+            f"<h2>{_EDGE_TITLE}</h2>"
             f"<span class='scout-edge-pill {head_cls}'>{head_txt}</span>"
-            f"</div>"
+            f"<span class='scout-acc-chev'></span>"
+            f"</summary>"
             f"<div class='card-body'>"
             f"<div class='scout-edge scout-edge-key'>"
             f"<span class='pos-badge' style='visibility:hidden;'>·</span>"
@@ -416,14 +422,17 @@ def build_scout_body(ctx: dict) -> str:
             f"<span class='scout-edge-pill' style='visibility:hidden;'>·</span>"
             f"</div>"
             f"{edge_rows}"
-            f"</div></div>"
+            f"</div></details>"
         )
     else:
         edge_section = (
-            "<div class='card scout-card'><div class='card-body' "
-            "style='color:var(--muted);font-size:0.9em;padding:18px;'>"
+            f"<details class='card scout-card scout-acc' name='scout-acc' open>"
+            f"<summary class='card-header scout-acc-head'>"
+            f"<h2>{_EDGE_TITLE}</h2><span class='scout-acc-chev'></span>"
+            f"</summary>"
+            "<div class='card-body' style='color:var(--muted);font-size:0.9em;padding:18px;'>"
             "Weekly projections aren't available yet, so the positional edge "
-            "can't be computed. Check back closer to kickoff.</div></div>"
+            "can't be computed. Check back closer to kickoff.</div></details>"
         )
 
     # ── Section 2: opponent threat report ─────────────────────────────────────
@@ -518,14 +527,18 @@ def build_scout_body(ctx: dict) -> str:
                 f"{len(profiled)} starters are consistent, so don't count on them cratering.</div>"
             )
 
+    threat_stamp = (
+        f"<div class='scout-proj-stamp' style='margin-bottom:8px;'>"
+        f"Week {current_week} Sleeper proj · boom/bust from weekly scores</div>"
+    )
     threat_section = (
-        f"<div class='card scout-card'>"
-        f"<div class='card-header scout-edge-header'>"
+        f"<details class='card scout-card scout-acc' name='scout-acc'>"
+        f"<summary class='card-header scout-acc-head'>"
         f"<h2>Their starters</h2>"
-        f"<span class='scout-proj-stamp'>Week {current_week} Sleeper proj · boom/bust from weekly scores</span>"
-        f"</div>"
-        f"<div class='card-body'>{inj_note}{read_note}{threat_rows}</div>"
-        f"</div>"
+        f"<span class='scout-acc-chev'></span>"
+        f"</summary>"
+        f"<div class='card-body'>{threat_stamp}{inj_note}{read_note}{threat_rows}</div>"
+        f"</details>"
     )
 
     return _SCOUT_STYLE + (
@@ -537,7 +550,7 @@ def build_scout_body(ctx: dict) -> str:
         f"{edge_section}"
         f"{threat_section}"
         f"</div>"
-    )
+    ) + _SCOUT_ACCORDION_JS
 
 
 _SCOUT_STYLE = (
@@ -549,7 +562,14 @@ _SCOUT_STYLE = (
     ".scout-record.color-win{color:var(--win);}"
     ".scout-record.color-loss{color:var(--loss);}"
     ".scout-card{margin:0;}"
-    ".scout-edge-header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}"
+    # Accordion: summary is the clickable card-header; native marker hidden and
+    # replaced by a CSS chevron that flips when the section is open.
+    ".scout-acc-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;cursor:pointer;list-style:none;user-select:none;}"
+    ".scout-acc-head::-webkit-details-marker{display:none;}"
+    ".scout-acc-head h2{margin:0;margin-right:auto;}"
+    ".scout-acc-chev{flex-shrink:0;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid var(--muted);transition:transform .15s ease;}"
+    ".scout-acc[open]>.scout-acc-head .scout-acc-chev{transform:rotate(180deg);}"
+    ".scout-acc-head:hover .scout-acc-chev{border-top-color:var(--text);}"
     ".scout-edge{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);}"
     ".scout-edge:last-child{border-bottom:none;}"
     ".scout-edge-key{font-size:0.72em;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600;padding-bottom:2px;}"
@@ -586,4 +606,24 @@ _SCOUT_STYLE = (
     ".inj-d{background:#fed7aa;color:#7c2d12;}"
     ".inj-o{background:#fecaca;color:#7f1d1d;}"
     "</style>"
+)
+
+
+# Enforce single-open accordion behavior. Modern browsers already do this via
+# the shared name="scout-acc" attribute; this is a defensive fallback for older
+# engines and runs once per report. Inline so scout_page stays self-contained.
+_SCOUT_ACCORDION_JS = (
+    "<script>(function(){"
+    "var reports=document.querySelectorAll('.scout-report');"
+    "for(var i=0;i<reports.length;i++){"
+    "var r=reports[i];if(r.__accBound)continue;r.__accBound=true;"
+    "var accs=r.querySelectorAll('details.scout-acc');"
+    "(function(group){"
+    "for(var j=0;j<group.length;j++){"
+    "group[j].addEventListener('toggle',function(){"
+    "if(this.open){for(var k=0;k<group.length;k++){if(group[k]!==this)group[k].open=false;}}"
+    "});}"
+    "})(accs);"
+    "}"
+    "})();</script>"
 )
