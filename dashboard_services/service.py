@@ -1863,16 +1863,47 @@ def pill(s):
     return f"<span class='badge'>{s}</span>"
 
 
-def build_standings_map(team_stats, roster_map) -> dict[int, int]:
-    ordered = (
-        team_stats.sort_values(["Wins", "PF"], ascending=[False, False]).reset_index(drop=True)
-    )
-    owner_to_rid = {owner: rid for rid, owner in roster_map.items()}
+def build_standings_map(team_stats, roster_map, division_by_rid=None) -> dict[int, int]:
+    """``roster_id -> playoff seed`` (1 = best).
 
-    standings: dict[int, int] = {}
-    for idx, row in ordered.iterrows():
+    When ``division_by_rid`` maps roster ids onto 2+ divisions, seeds follow
+    division winners then wild cards; otherwise overall wins / PF.
+    """
+    owner_to_rid = {owner: rid for rid, owner in roster_map.items()}
+    if team_stats is None or getattr(team_stats, "empty", True):
+        return {}
+
+    teams = []
+    owners = []
+    for _, row in team_stats.iterrows():
         owner = row["owner"]
         rid = owner_to_rid.get(owner)
-        seed = idx + 1
-        standings[rid] = seed
-    return standings
+        if rid is None:
+            continue
+        try:
+            rid_int = int(rid)
+        except (TypeError, ValueError):
+            rid_int = rid
+        div = 0
+        if division_by_rid:
+            div = (
+                division_by_rid.get(rid_int)
+                or division_by_rid.get(str(rid))
+                or division_by_rid.get(rid)
+                or 0
+            )
+        teams.append({
+            "wins": float(row.get("Wins", 0) or 0),
+            "ties": float(row.get("Ties", 0) or 0),
+            "pf": float(row.get("PF", 0) or 0),
+            "pa": float(row.get("PA", 0) or 0),
+            "division": int(div or 0),
+        })
+        owners.append(rid_int)
+
+    if not teams:
+        return {}
+
+    from utils.standings_divisions import assign_playoff_seeds
+    seeds = assign_playoff_seeds(teams)
+    return {rid: seed for rid, seed in zip(owners, seeds)}

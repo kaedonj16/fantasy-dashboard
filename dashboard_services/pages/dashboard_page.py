@@ -58,9 +58,11 @@ def build_dashboard_body(ctx: dict) -> str:
     viewer = ctx.get("viewer") or {}
     viewer_roster_id = viewer.get("viewer_roster_id")
 
+    from utils.standings_divisions import resolve_divisions
     standings_html = render_standings_compact(
         team_stats, movement=_standings_movement(df_weekly),
         owner_to_rid=_owner_to_rid_map(roster_map=ctx.get("roster_map"), df_weekly=df_weekly),
+        divisions=resolve_divisions(ctx),
     )
     usage_movers_html = _render_usage_movers(ctx, viewer_roster_id)
     lineup_alert_html = _viewer_lineup_alert_html(ctx, viewer_roster_id)

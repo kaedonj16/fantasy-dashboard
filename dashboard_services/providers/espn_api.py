@@ -790,6 +790,32 @@ def get_rosters(season: int, league_id: str) -> List[Dict[str, Any]]:
         if team_name:
             meta["team_name"] = team_name
 
+        # ESPN teams carry division_id / division_name when the league uses
+        # divisions; surface them on roster.settings so standings can split.
+        div_id = _safe_int(
+            getattr(t, "division_id", None)
+            or getattr(t, "divisionId", None)
+        )
+        div_name = getattr(t, "division_name", None) or getattr(t, "divisionName", None)
+        settings: Dict[str, Any] = {
+            "wins": wins,
+            "losses": losses,
+            "ties": ties,
+            "fpts": fpts,
+            "fpts_decimal": fpts_dec,
+            "fpts_against": fpa,
+            "fpts_against_decimal": fpa_dec,
+            "ppts": 0,
+            "ppts_decimal": 0,
+            "total_moves": 0,
+            "waiver_budget_used": 0,
+            "waiver_position": 0,
+        }
+        if div_id:
+            settings["division"] = div_id
+        if div_name:
+            meta["division_name"] = str(div_name)
+
         rosters.append({
             "co_owners": None,
             "keepers": None,
@@ -800,20 +826,7 @@ def get_rosters(season: int, league_id: str) -> List[Dict[str, Any]]:
             "players": players,
             "reserve": reserve,
             "roster_id": roster_id,
-            "settings": {
-                "wins": wins,
-                "losses": losses,
-                "ties": ties,
-                "fpts": fpts,
-                "fpts_decimal": fpts_dec,
-                "fpts_against": fpa,
-                "fpts_against_decimal": fpa_dec,
-                "ppts": 0,
-                "ppts_decimal": 0,
-                "total_moves": 0,
-                "waiver_budget_used": 0,
-                "waiver_position": 0,
-            },
+            "settings": settings,
             "starters": starters,
             "taxi": None,
         })
@@ -1624,6 +1637,15 @@ def get_league_globals(season: int, league_id: str) -> Dict[str, Any]:
     }
     if playoff_week_start:
         league_settings["playoff_week_start"] = playoff_week_start
+
+    # Count ESPN divisions when teams carry division_id so standings can split.
+    div_ids = set()
+    for t in getattr(lg, "teams", None) or []:
+        did = _safe_int(getattr(t, "division_id", None) or getattr(t, "divisionId", None))
+        if did:
+            div_ids.add(did)
+    if len(div_ids) >= 2:
+        league_settings["divisions"] = len(div_ids)
 
     # ESPN trade deadline is a calendar timestamp on tradeSettings.deadlineDate
     # (epoch ms). Map it so Season Hub can gate the trade-deadline card instead
