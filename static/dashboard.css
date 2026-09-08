@@ -11315,13 +11315,15 @@ select:focus {
 }
 
 .home-card {
-    /* Brand-blue hero, matched to the Season Hub (--hero-*). Kept inline (not the
-       tokens) so it stays identical to the guest home card in landing_lite.css,
-       which loads without dashboard.css; this card is always navy in both themes. */
-    background: #0b2a55;
+    /* "Chrome edge" onboarding card — matches the Season Hub hero: near-black
+       field with a soft sky glow and a brand->sky hairline on the top edge
+       (::before). Kept inline (not the tokens) so it stays identical to the
+       guest card in landing_lite.css, which loads without dashboard.css. */
+    position: relative;
+    background: #0d1626;
     background:
-        radial-gradient(ellipse 90% 70% at 100% 0%, rgba(56, 189, 248, 0.28), transparent 55%),
-        linear-gradient(135deg, #0b2a55 0%, #1d4ed8 100%);
+        radial-gradient(ellipse 90% 70% at 100% 0%, rgba(56, 189, 248, 0.12), transparent 55%),
+        linear-gradient(180deg, #0d1626 0%, #070e1d 100%);
     padding: 22px 24px 20px;
     border-radius: 18px;
     border: 1px solid rgba(125, 211, 252, 0.12);
@@ -11333,7 +11335,38 @@ select:focus {
     color: #e5e7eb;
 }
 
-/* Onboarding card is always navy — nested controls must not pull light-page tokens. */
+/* Brand-blue -> sky hairline on the card's top edge, inset from the rounded
+   corners (the card has no overflow:hidden so it can show control popovers). */
+.home-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 16px;
+    right: 16px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #3b82f6 30%, #38bdf8 70%, transparent);
+    pointer-events: none;
+}
+
+/* Demoted sign-in: a quiet link instead of a full Google button competing with
+   the connect-a-league task (returning users only). */
+.home-signin-link {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #9fb0c6;
+    text-decoration: none;
+}
+.home-signin-link strong {
+    color: #8fb6ff;
+    font-weight: 800;
+}
+.home-signin-link:hover strong {
+    text-decoration: underline;
+}
+
+/* Onboarding card is always dark — nested controls must not pull light-page tokens. */
 .home-card .home-steps-hint {
     background: rgba(255, 255, 255, 0.06);
     border-color: rgba(255, 255, 255, 0.12);
@@ -20310,18 +20343,58 @@ img, svg, canvas {
 }
 
 .team-modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
     padding: 24px;
     border-bottom: 1px solid var(--border);
     background: var(--card);
 }
 
+.team-modal-header-top {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+/* Header stat tiles: Record · PF · Playoff Odds — beside the title on
+   larger screens, dropping to a full-width row below the title on mobile. */
+.team-modal-statbar {
+    display: flex;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.tm-stat-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: 96px;
+    padding: 12px 6px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-alt);
+    text-align: center;
+}
+
+.tm-stat-tile-value {
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1.1;
+    color: var(--text);
+    letter-spacing: -0.02em;
+}
+
+.tm-stat-tile-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
 .team-modal-avatar {
-    width: 102px;
-    height: 102px;
-    margin-right: 16px;
+    width: 84px;
+    height: 84px;
     flex-shrink: 0;
 }
 
@@ -20348,7 +20421,8 @@ img, svg, canvas {
 }
 
 .team-modal-title-section {
-    flex: 1;
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .team-modal-name {
@@ -20396,6 +20470,7 @@ img, svg, canvas {
     border-radius: 10px;
     transition: all 0.2s;
     flex-shrink: 0;
+    align-self: flex-start;
 }
 
 .team-modal-close:hover {
@@ -21059,10 +21134,42 @@ tr.team-clickable {
         padding: 16px;
     }
 
+    /* No room for tiles beside the title on a phone: wrap the header so the
+       stat bar drops to a full-width 3-up row below the title/close line. */
+    .team-modal-header-top {
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .team-modal-close {
+        order: 1;
+    }
+
+    .team-modal-statbar {
+        order: 2;
+        flex-basis: 100%;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+    }
+
+    .tm-stat-tile {
+        width: auto;
+        padding: 10px 6px;
+    }
+
+    .tm-stat-tile-value {
+        font-size: 20px;
+    }
+
+    .tm-stat-tile-label {
+        font-size: 11px;
+    }
+
     .team-modal-avatar {
         width: 48px;
         height: 48px;
-        margin-right: 12px;
     }
 
     .team-modal-avatar-placeholder {

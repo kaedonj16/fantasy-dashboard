@@ -12,7 +12,8 @@
 // half (player modal, nav player-search, compare, adv metrics — everything below
 // the @public-js:core-end marker) lives in app-features.js and is loaded on
 // demand. window.__FEATURES_JS is the bundle URL (set by the page ONLY on lite
-// pages); on the full app.js it's null, so ensureFeatures no-ops.
+// pages). Signed-in pages set window.__PLAYER_MODAL_JS instead, so the 170KB+
+// modal is idle-prefetched rather than parsed on every navigation.
 //
 // _deferInit runs an init fn at the right time whether the code loads normally
 // (register for DOMContentLoaded) or LATE via the lazy bundle after the DOM is
@@ -158,15 +159,16 @@ function ensureDashboardCss(cb) {
   document.head.appendChild(link);
 }
 function ensureFeatures(cb) {
-  // Already present (full app.js bundle, or features finished loading).
+  // Already present (full app.js bundle + modal loaded, or features finished).
   if (typeof openPlayerModal === 'function' && !openPlayerModal.__stub) { if (cb) cb(); return; }
-  if (!window.__FEATURES_JS) { if (cb) cb(); return; }  // no lazy bundle → nothing to load
+  var src = window.__FEATURES_JS || window.__PLAYER_MODAL_JS;
+  if (!src) { if (cb) cb(); return; }  // no lazy bundle → nothing to load
   if (cb) __featuresCbs.push(cb);
   if (__featuresState) return;   // already loading
   __featuresState = 1;
   ensureDashboardCss(function () {
     var s = document.createElement('script');
-    s.src = window.__FEATURES_JS;
+    s.src = src;
     s.onload = function () {
       __featuresState = 2;
       var cbs = __featuresCbs; __featuresCbs = [];
@@ -174,7 +176,7 @@ function ensureFeatures(cb) {
     };
     s.onerror = function () {
       __featuresState = 0;   // allow a retry on the next interaction
-      console.error('[features] failed to load', window.__FEATURES_JS);
+      console.error('[features] failed to load', src);
     };
     document.head.appendChild(s);
   });
@@ -192,18 +194,18 @@ if (typeof window.openPlayerModal === 'undefined') {
   };
   window.openPlayerModal.__stub = true;
 }
-// Prefetch the feature bundle once the page is idle so the first real interaction
-// is instant (no-op when there's no lazy bundle, i.e. the full app.js is loaded).
+// Prefetch the feature bundle (guests) or the player-modal script (signed-in)
+// once the page is idle so the first real interaction is instant.
 // Interactive SEO shells (compare / prospects / breakouts) need feature-half init
 // before first paint is useful — load eagerly instead of waiting for idle.
-if (window.__FEATURES_JS) {
+if (window.__FEATURES_JS || window.__PLAYER_MODAL_JS) {
   var _pf = function () { ensureFeatures(); };
   var _eagerLite = document.querySelector(
     '.page-shell[data-page="compare"],' +
     '.page-shell[data-page="prospects"],' +
     '.page-shell[data-page="breakouts"]'
   );
-  if (_eagerLite) _pf();
+  if (_eagerLite && window.__FEATURES_JS) _pf();
   else if ('requestIdleCallback' in window) requestIdleCallback(_pf, { timeout: 4000 });
   else setTimeout(_pf, 2500);
 }
@@ -10725,20 +10727,11 @@ if (!platformBtns.length) return;
       btn.style.cursor = hasLeague ? "pointer" : "not-allowed";
       btn.title = hasLeague ? "" : "Select a league first";
     });
-    const createHint = document.getElementById("createAcctHint");
-    const readyNudge = document.getElementById("homeLeagueReadyNudge");
-    const bottomLabel = document.getElementById("homeAcctBottomLabel");
-    if (createHint) createHint.hidden = hasLeague;
-    if (readyNudge) {
-      readyNudge.hidden = !hasLeague;
-      if (hasLeague && readyNudge.dataset.tracked !== "1") {
-        readyNudge.dataset.tracked = "1";
-        window.brTrack?.("home_league_selected", { platform: currentPlatform || "" });
-        window.brTrack?.("home_create_account_nudge", {});
-      }
-    }
-    if (bottomLabel) {
-      bottomLabel.textContent = hasLeague ? "Save this league to your account" : "New to BR Fantasy?";
+    // Fire the "league selected" analytics once, when a league is first picked
+    // (previously gated on the removed bottom nudge).
+    if (hasLeague && googleBtnEl && googleBtnEl.dataset.tracked !== "1") {
+      googleBtnEl.dataset.tracked = "1";
+      window.brTrack?.("home_league_selected", { platform: currentPlatform || "" });
     }
     if (hasLeague && googleBtnEl) {
       googleBtnEl.classList.add("home-google-ready");
@@ -11279,33 +11272,8 @@ if (!platformBtns.length) return;
     });
   }
 
-  // "Create Account with Google" (new-user path): a fresh account must be tied to
-  // a league, so don't sign in with nothing. If a league is already picked, route
-  // through the league-aware path; otherwise send the user into the connect form
-  // first and explain, instead of following the bare onboarding link.
-  const createAcctBtn = document.querySelector(".google-create-account-btn");
-  if (createAcctBtn) {
-    createAcctBtn.addEventListener("click", (event) => {
-      const sel = document.getElementById("league");
-      if (sel && sel.value) {
-        event.preventDefault();
-        window.brTrack?.("home_create_account_nudge", { via: "bottom_cta_ready" });
-        googleContinueBtn?.click();
-        return;
-      }
-      event.preventDefault();
-      window.brTrack?.("home_create_account_nudge", { via: "bottom_cta_prompt" });
-      const hint = document.getElementById("createAcctHint");
-      if (hint) hint.hidden = false;
-      const readyNudge = document.getElementById("homeLeagueReadyNudge");
-      if (readyNudge) readyNudge.hidden = true;
-      const flow = document.getElementById("connectLeagueFlow");
-      if (flow) { flow.hidden = false; flow.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
-      const firstField = document.getElementById("username");
-      if (firstField) { firstField.focus(); window.brShake?.(firstField); }
-      else { const pb = document.querySelector(".platform-btn"); if (pb) window.brShake?.(pb); }
-    });
-  }
+  // (The old bottom "Create Account with Google" nudge was removed; saving now
+  // happens only at step 3 via the inline #googleContinueBtn prompt.)
 
   if (yahooConnectBtn) {
     yahooConnectBtn.addEventListener("click", async () => {
@@ -17070,16 +17038,19 @@ function openTeamModal(rosterId, teamName) {
 
   modal.innerHTML = `
     <div class="team-modal-header">
-      <div class="team-modal-avatar" id="teamModalAvatar">
-        <div class="loading-spinner" style="width: 32px; height: 32px;"></div>
-      </div>
-      <div class="team-modal-title-section">
-        <h2 class="team-modal-name">${teamName || 'Loading...'}</h2>
-        <div class="team-modal-meta" id="teamModalMeta">
-          <div class="loading-spinner" style="width: 16px; height: 16px;"></div>
+      <div class="team-modal-header-top">
+        <div class="team-modal-avatar" id="teamModalAvatar">
+          <div class="loading-spinner" style="width: 32px; height: 32px;"></div>
         </div>
+        <div class="team-modal-title-section">
+          <h2 class="team-modal-name">${teamName || 'Loading...'}</h2>
+          <div class="team-modal-meta" id="teamModalMeta">
+            <div class="loading-spinner" style="width: 16px; height: 16px;"></div>
+          </div>
+        </div>
+        <div class="team-modal-statbar" id="teamModalStatbar" hidden></div>
+        <button class="team-modal-close" onclick="closeTeamModal()" aria-label="Close">×</button>
       </div>
-      <button class="team-modal-close" onclick="closeTeamModal()" aria-label="Close">×</button>
     </div>
     <div class="tm-tab-bar">
       <button class="tm-tab active" data-tab="roster" onclick="tmSwitchTab('roster')">Roster</button>
@@ -17577,12 +17548,9 @@ function renderTeamDetails(data) {
        </div>`;
   document.getElementById('teamModalAvatar').innerHTML = avatarHTML;
 
-  // Update header
+  // Update header. Record now lives in the stat tiles beside the title, so
+  // it is dropped from these meta rows to avoid showing it twice.
   const metaHTML = `
-    <div class="team-modal-stat-row">
-      <span class="team-modal-stat-label">Record:</span>
-      <span class="team-modal-stat-value">${data.record}</span>
-    </div>
     <div class="team-modal-stat-row">
       <span class="team-modal-stat-label">Manager:</span>
       <span class="team-modal-stat-value">@${data.username || 'Unknown'}</span>
@@ -17593,6 +17561,41 @@ function renderTeamDetails(data) {
     </div>
   `;
   document.getElementById('teamModalMeta').innerHTML = metaHTML;
+
+  // Header stat tiles: Record · PF · Playoff Odds. Playoff odds come from a
+  // warm sim cache, so the tile only shows once the number is available.
+  const statbar = document.getElementById('teamModalStatbar');
+  if (statbar) {
+    const tiles = [];
+    if (data.record) {
+      tiles.push(`
+        <div class="tm-stat-tile">
+          <div class="tm-stat-tile-value">${data.record}</div>
+          <div class="tm-stat-tile-label">Record</div>
+        </div>`);
+    }
+    if (data.points_for != null && !isNaN(parseFloat(data.points_for))) {
+      tiles.push(`
+        <div class="tm-stat-tile">
+          <div class="tm-stat-tile-value">${Math.round(parseFloat(data.points_for))}</div>
+          <div class="tm-stat-tile-label">PF</div>
+        </div>`);
+    }
+    if (data.playoff_odds != null && !isNaN(parseFloat(data.playoff_odds))) {
+      tiles.push(`
+        <div class="tm-stat-tile">
+          <div class="tm-stat-tile-value">${Math.round(parseFloat(data.playoff_odds))}%</div>
+          <div class="tm-stat-tile-label">Playoff Odds</div>
+        </div>`);
+    }
+    if (tiles.length) {
+      statbar.innerHTML = tiles.join('');
+      statbar.hidden = false;
+    } else {
+      statbar.innerHTML = '';
+      statbar.hidden = true;
+    }
+  }
 
   // Build roster list
   let rosterHTML = '<div class="team-modal-section"><h3>Roster</h3>';
@@ -19338,6 +19341,72 @@ function setupFunAwardsGrid() {
   document.querySelectorAll('.platform-btn').forEach(function(btn) {
     btn.addEventListener('click', function() { setStep(1); });
   });
+})();
+
+
+// ── Stepped onboarding (FLAG-GATED prototype: add ?onboarding=stepped) ───────
+// Off by default, so production behavior is unchanged. When enabled it gates
+// the guest connect card into one-step-at-a-time: platform → credentials →
+// league + save. JS-only and additive: it toggles the same inline display
+// styles the existing flow already uses, so it adds no new layout risk. NOT
+// yet verified in a running app — enable the flag and click every platform
+// (Sleeper / ESPN public+private / Yahoo / MFL / Fleaflicker) before relying
+// on it or flipping the default on.
+(function initSteppedOnboarding() {
+  // Default ON for guests. Escape hatch: ?onboarding=classic falls back to the
+  // old all-at-once card (quick rollback without a deploy).
+  try {
+    if (new URLSearchParams(location.search).get('onboarding') === 'classic') return;
+  } catch (e) { /* default: stepped on */ }
+
+  var card = document.querySelector('.home-card');
+  var flow = document.getElementById('connectLeagueFlow');
+  if (!card || !flow) return;
+  if (document.getElementById('signedInHome')) return;  // signed-in users skip
+
+  var flows = ['sleeperFlow', 'espnFlow', 'yahooFlow', 'mflFlow', 'fleaflickerFlow']
+    .map(function (id) { return document.getElementById(id); })
+    .filter(Boolean);
+  var leagueWrap = document.getElementById('leagueSelectWrap');
+  var steps = [document.getElementById('hintStep1'),
+               document.getElementById('hintStep2'),
+               document.getElementById('hintStep3')];
+
+  function setStep(n) {
+    steps.forEach(function (el, i) {
+      if (!el) return;
+      el.classList.remove('active', 'done');
+      if (i + 1 < n) el.classList.add('done');
+      else if (i + 1 === n) el.classList.add('active');
+    });
+    card.setAttribute('data-onb-step', String(n));
+    if (n === 1) flows.forEach(function (f) { f.style.display = 'none'; });
+  }
+
+  // Start on step 1: only the platform picker + step bar; hide the default
+  // (Sleeper) credential fields until the user explicitly picks a platform.
+  setStep(1);
+
+  // Choosing a platform reveals just that platform's fields (step 2). Run after
+  // the existing click handlers (setTimeout) so this wins over initStepsHint's
+  // reset-to-1, and show the chosen flow explicitly in case re-clicking the
+  // already-active button does not re-run the platform switch.
+  document.querySelectorAll('.platform-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var plat = btn.dataset.platform || '';
+      setTimeout(function () {
+        flows.forEach(function (f) { f.style.display = f.id.indexOf(plat) === 0 ? 'block' : 'none'; });
+        setStep(2);
+      }, 0);
+    });
+  });
+
+  // When the league list appears (any platform's connect succeeded), step 3.
+  if (leagueWrap) {
+    new MutationObserver(function () {
+      if (leagueWrap.style.display !== 'none') setStep(3);
+    }).observe(leagueWrap, { attributes: true, attributeFilter: ['style'] });
+  }
 })();
 
 

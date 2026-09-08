@@ -131,13 +131,15 @@ def test_google_actions_share_google_continue_style():
     markup = Path("app.py").read_text()
     css = Path("static/dashboard.css").read_text()
     assert 'id="googleContinueBtn" class="google-continue-btn"' in markup
-    assert 'class="google-continue-btn" href="/auth/google?intent=login' in markup
-    assert 'class="google-continue-btn google-create-account-btn" href="/auth/google?intent=onboarding' in markup
+    # The top returning-user sign-in was intentionally demoted from a full
+    # Google button to a quiet link, so it no longer shares google-continue-btn.
+    assert 'class="home-signin-link" href="/auth/google?intent=login' in markup
+    # The bottom "Create Account with Google" nudge was removed; saving now
+    # happens only at step 3 via the inline #googleContinueBtn prompt.
+    assert "google-create-account-btn" not in markup
     # Whitespace-tolerant so a CSS reformat (space before the brace) doesn't
     # break the check while the rule is still present.
     assert re.search(r"\.google-continue-btn\s*\{", css)
-    assert "google-create-account-btn" in markup
-    assert re.search(r"\.google-create-account-btn\s*\{", css)
 
 
 def test_both_espn_methods_use_full_account_choice_copy():

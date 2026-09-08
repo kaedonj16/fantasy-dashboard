@@ -257,6 +257,9 @@ def build_player_page_body(
         """
 
     trade_value_label = "Dynasty Trade Value"
+    from utils.static_minify import served_name, static_hash
+    _pp_js = served_name("player_page.js")
+    _pp_v = static_hash(_pp_js)
     return f"""
     <div class="page-shell-narrow" style="max-width:760px;margin:0 auto;">
       <nav class="pp-breadcrumb" aria-label="Breadcrumb" style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
@@ -334,4 +337,4 @@ def build_player_page_body(
       window.__ppName = {json.dumps(name or "Player")};
       window.__ppSeason = {season};
     </script>
-    <script src="/static/player_page.js?v={season}"></script>"""
+    <script src="/static/{_pp_js}?v={_pp_v}" defer></script>"""

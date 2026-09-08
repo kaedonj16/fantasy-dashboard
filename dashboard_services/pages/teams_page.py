@@ -914,7 +914,7 @@ def build_teams_body(ctx: dict) -> str:
 
     _teams_foot_scripts = f"""
     <script>window.__teamsCfg = {_teams_cfg_json};</script>
-    <script src="/static/teams.js?v={_TEAMS_JS_V}" defer></script>
+    <script src="/static/{_TEAMS_JS_FILE}?v={_TEAMS_JS_V}" defer></script>
     """
 
     # ---------- Window legend ----------
