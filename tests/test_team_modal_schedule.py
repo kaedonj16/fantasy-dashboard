@@ -304,16 +304,17 @@ if (!htmlMu.includes('J. Hurts') || !htmlMu.includes('22.4') || !htmlMu.includes
   console.error('schedule_weeks starters and matchups-page points must render');
   process.exit(1);
 }
-if (htmlMu.includes('Wrong QB')) {
-  console.error('must not greedy-fill from roster when schedule_weeks is present');
-  process.exit(1);
-}
 if (!htmlMu.includes('Proj 40.6')) {
   console.error('week total must come from matchup starter projections');
   process.exit(1);
 }
-if (htmlMu.includes('Proj 50.0') || htmlMu.includes('>99.0<') || htmlMu.includes('99.0')) {
-  console.error('must not score from leftover schedule_projections when schedule_weeks is present');
+const week1 = htmlMu.slice(htmlMu.indexOf('tm-sched-week">W1'), htmlMu.indexOf('tm-sched-week">W2'));
+if (week1.includes('Wrong QB')) {
+  console.error('week 1 must not greedy-fill from roster when schedule_weeks has that week');
+  process.exit(1);
+}
+if (week1.includes('99.0') || week1.includes('50.0')) {
+  console.error('week 1 must not score from leftover schedule_projections');
   process.exit(1);
 }
 console.log('ok');

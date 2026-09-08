@@ -17989,7 +17989,6 @@ function _tmBuildScheduleHtml(data) {
   schedWeeks.forEach(w => {
     if (w && w.week != null && !isNaN(Number(w.week))) schedByWeek[Number(w.week)] = w;
   });
-  const useMatchups = schedWeeks.length > 0;
 
   const badge = (p) => `<span class="pos-badge ${_tmBadgeClass(p.pos)}">${p.pos}</span>`;
   // A player name: clickable (opens the player modal) when we have a real id.
@@ -18021,9 +18020,10 @@ function _tmBuildScheduleHtml(data) {
   // Render one week's row + expandable card. countRecord=false for playoff games
   // so they don't alter the regular-season record tiles.
   const buildRow = (wk, idx, countRecord) => {
+    const sw = schedByWeek[wk.week];
     let opp, me, them;
-    if (useMatchups) {
-      const sides = _tmSidesFromScheduleWeek(schedByWeek[wk.week], slots);
+    if (sw) {
+      const sides = _tmSidesFromScheduleWeek(sw, slots);
       opp = sides.opp;
       me = sides.me;
       them = sides.them;
