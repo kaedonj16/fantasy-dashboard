@@ -1810,7 +1810,7 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
 }
 
 .breakout-score-badge {
-    background: #10b981;
+    background: var(--win);
     color: white;
     font-size: 18px;
     font-weight: 700;
@@ -1818,7 +1818,7 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     border-radius: 10px;
     min-width: 50px;
     text-align: center;
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+    box-shadow: 0 2px 8px rgba(22, 163, 74, 0.3);
 }
 
 .breakout-card-body {
@@ -10340,7 +10340,7 @@ select:focus {
 }
 
 .rivalry-side--leader {
-    background: rgba(16, 185, 129, .07);
+    background: rgba(22, 163, 74, .07);
 }
 
 .rivalry-name {
@@ -10525,7 +10525,7 @@ select:focus {
 
 .rivalry-table .rivalry-w {
     font-weight: 800;
-    color: #10b981;
+    color: var(--win);
 }
 
 .rivalry-table-footer {
@@ -21269,12 +21269,12 @@ tr.team-clickable {
    ============================================ */
 
 #bkModal {
-    border-top: 3px solid #10b981;
+    border-top: 3px solid var(--win);
     max-width: 680px;
 }
 
 #bkModal .player-modal-header {
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.06) 0%, transparent 55%);
+    background: linear-gradient(135deg, rgba(22, 163, 74, 0.06) 0%, transparent 55%);
 }
 
 .bk-reasons {
@@ -21296,7 +21296,7 @@ tr.team-clickable {
 }
 
 .bk-reason-bullet {
-    color: #10b981;
+    color: var(--win);
     font-weight: 700;
     flex-shrink: 0;
 }
@@ -37353,12 +37353,12 @@ a, button, [role="button"], [role="tab"], summary, label,
 .team-strength-card .tc-index-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .team-strength-card .tc-index-lbl { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-muted); }
 .team-strength-card .tc-index-num { font-size: 15px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
-.team-strength-card .tc-index-num.up { color: #10b981; }
+.team-strength-card .tc-index-num.up { color: var(--win); }
 .team-strength-card .tc-index-num.dn { color: #ef4444; }
 .team-strength-card .tc-meter { position: relative; height: 6px; margin: 7px 0 5px; border-radius: 4px; background: var(--bg-alt); overflow: hidden; }
 .team-strength-card .tc-meter-mid { position: absolute; top: -2px; bottom: -2px; left: 50%; width: 2px; background: var(--border); transform: translateX(-50%); }
 .team-strength-card .tc-meter-fill { position: absolute; top: 0; bottom: 0; border-radius: 4px; }
-.team-strength-card .tc-meter-fill.up { left: 50%; background: linear-gradient(90deg, color-mix(in srgb, #10b981 55%, transparent), #10b981); }
+.team-strength-card .tc-meter-fill.up { left: 50%; background: linear-gradient(90deg, color-mix(in srgb, var(--win) 55%, transparent), var(--win)); }
 .team-strength-card .tc-meter-fill.dn { right: 50%; background: linear-gradient(270deg, color-mix(in srgb, #ef4444 55%, transparent), #ef4444); }
 .team-strength-card .tc-meter-mark { position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 50%; background: var(--card); border: 2px solid var(--text); transform: translate(-50%, -50%); }
 .team-strength-card .tc-index-scale { display: flex; justify-content: space-between; font-size: 9px; font-weight: 600; color: var(--text-subtle); letter-spacing: .02em; }
@@ -37419,12 +37419,12 @@ a, button, [role="button"], [role="tab"], summary, label,
 .team-strength-card .tc-strength-track { position: relative; width: 100%; min-width: 60px; height: 8px; border-radius: 5px; background: var(--bg-alt); }
 .team-strength-card .tc-strength-zero { position: absolute; top: -2px; bottom: -2px; left: 50%; width: 2px; background: var(--border); transform: translateX(-50%); }
 .team-strength-card .tc-strength-fill { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
-.team-strength-card .tc-strength-fill.up { left: 50%; background: #10b981; }
+.team-strength-card .tc-strength-fill.up { left: 50%; background: var(--win); }
 .team-strength-card .tc-strength-fill.dn { right: 50%; background: #ef4444; }
 .team-strength-card .pos-total { width: 52px; text-align: right; font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
 .team-strength-card .pos-rank { width: 46px; text-align: right; font-weight: 600; font-size: 12.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .team-strength-card .tc-flag { font-size: 9px; margin-left: 4px; }
-.team-strength-card .tc-flag.s { color: #10b981; }
+.team-strength-card .tc-flag.s { color: var(--win); }
 .team-strength-card .tc-flag.w { color: #ef4444; }
 
 /* Expanded per-position detail — an inset drawer under the row */
