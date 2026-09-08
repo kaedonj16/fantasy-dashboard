@@ -21135,23 +21135,50 @@ img, svg, canvas {
     gap: 6px;
 }
 
+.tm-sched-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+}
+
+.tm-sched-item {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-alt);
+    overflow: hidden;
+}
+
+.tm-sched-item-playoff {
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
 .tm-sched-row {
     display: flex;
     align-items: center;
     gap: 10px;
+    width: 100%;
     padding: 9px 12px;
-    border: 1px solid var(--border);
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background .12s;
+}
+
+.tm-sched-row:hover {
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.tm-sched-row:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
     border-radius: 10px;
-    background: var(--bg-alt);
 }
 
 .tm-sched-row-upcoming {
-    opacity: 0.72;
-    border-style: dashed;
-}
-
-.tm-sched-row-playoff {
-    border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+    opacity: 0.78;
 }
 
 .tm-sched-week {
@@ -21190,6 +21217,15 @@ img, svg, canvas {
     flex: 1;
 }
 
+.tm-sched-vs {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
 .tm-sched-avatar {
     display: inline-flex;
     align-items: center;
@@ -21226,6 +21262,129 @@ img, svg, canvas {
 .tm-sched-score.tm-sched-proj {
     font-weight: 600;
     color: var(--text-muted);
+}
+
+.tm-sched-dash { color: var(--text-muted); font-weight: 400; margin: 0 1px; }
+
+.tm-sched-chevron {
+    flex-shrink: 0;
+    color: var(--text-muted);
+    font-size: 12px;
+    transition: transform .18s ease;
+    margin-left: 2px;
+}
+
+.tm-sched-row-open .tm-sched-chevron {
+    transform: rotate(90deg);
+    color: var(--accent);
+}
+
+/* ── Expanded matchup: two lineup columns ── */
+.tm-sched-detail {
+    border-top: 1px solid var(--border);
+    background: var(--card-soft);
+    padding: 12px;
+}
+
+.tm-mu {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.tm-mu-col {
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+    padding: 8px;
+}
+
+.tm-mu-col-win {
+    border-color: color-mix(in srgb, var(--win) 45%, var(--border));
+    background: color-mix(in srgb, var(--win) 7%, var(--card));
+}
+
+.tm-mu-teamhead {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 4px 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 6px;
+}
+
+.tm-mu-teamname {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1;
+}
+
+.tm-mu-total {
+    margin-left: auto;
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+.tm-mu-teamhead-win .tm-mu-total { color: var(--win); }
+
+.tm-mu-player {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 3px;
+    font-size: 12px;
+}
+
+.tm-mu-player + .tm-mu-player {
+    border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+
+.tm-mu-slot {
+    width: 34px;
+    flex-shrink: 0;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.tm-mu-player .pos-badge {
+    height: 18px;
+    min-width: 30px;
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
+.tm-mu-pname {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+    font-weight: 500;
+}
+
+.tm-mu-pts {
+    margin-left: auto;
+    flex-shrink: 0;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 520px) {
+    .tm-mu { grid-template-columns: 1fr; }
 }
 
 .team-modal-empty {

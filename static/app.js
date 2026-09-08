@@ -17658,11 +17658,12 @@ function _tmBuildAgesHtml(data) {
 }
 
 // ── Schedule tab ─────────────────────────────────────────────────────────────
-// NOTE: this is a mocked/illustrative schedule. This team's per-week points come
-// from real data (data.graphs.weekly_scores) where available; opponents and
-// their scores are generated deterministically from the roster id so the layout
-// is stable across re-opens. Wire to a real league-matchups endpoint to make it
-// live. A banner in the tab makes the mock explicit to the user.
+// NOTE: this is a mocked/illustrative schedule. Opponents, lineups and every
+// point total are generated deterministically from the roster id so the layout
+// is stable across re-opens; this team's own starters use the real roster names
+// where they exist. Each team's total is the sum of its starters' points, so the
+// score shown on a row always matches the expanded matchup breakdown below it.
+// Wire to a real league-matchups endpoint to make it live.
 function _tmSeededRng(seed) {
   // mulberry32 — small, stable, good enough for placeholder data.
   let a = seed >>> 0;
@@ -17674,12 +17675,93 @@ function _tmSeededRng(seed) {
   };
 }
 
+// Standard 10-slot fantasy lineup. FLEX draws from the RB/WR/TE leftovers.
+const _TM_LINEUP_SLOTS = [
+  { slot: 'QB', pos: 'QB' },
+  { slot: 'RB', pos: 'RB' }, { slot: 'RB', pos: 'RB' },
+  { slot: 'WR', pos: 'WR' }, { slot: 'WR', pos: 'WR' }, { slot: 'WR', pos: 'WR' },
+  { slot: 'TE', pos: 'TE' },
+  { slot: 'FLEX', pos: 'FLEX' },
+  { slot: 'K', pos: 'K' },
+  { slot: 'DEF', pos: 'DEF' },
+];
+
+// Plausible weekly fantasy-point band per position (PPR-ish).
+const _TM_PTS_RANGE = { QB: [11, 37], RB: [3, 29], WR: [2, 29], TE: [1, 20], K: [3, 15], DEF: [0, 19] };
+
+// Fallback names used when the real roster can't fill a slot (and for opponents).
+const _TM_NAME_POOL = {
+  QB: ['J. Hurts', 'L. Jackson', 'J. Allen', 'J. Goff', 'B. Purdy', 'C. Stroud', 'K. Murray'],
+  RB: ['S. Barkley', 'J. Gibbs', 'J. Jacobs', 'K. Walker', 'B. Hall', 'C. Hubbard', 'T. Etienne', 'A. Kamara', 'R. White'],
+  WR: ['A. Brown', 'G. Wilson', 'D. London', 'C. Lamb', 'N. Collins', 'D. Smith', 'T. McLaurin', 'D. Moore', 'C. Olave'],
+  TE: ['G. Kittle', 'D. Kincaid', 'S. LaPorta', 'E. Engram', 'M. Andrews', 'T. Hockenson'],
+  K: ['J. Bass', 'C. Boswell', 'B. Aubrey', 'J. Sanders', 'H. Butker'],
+  DEF: ['Steelers D', 'Broncos D', 'Texans D', 'Bills D', 'Ravens D', 'Jets D'],
+};
+
+function _tmGenPts(pos, rng) {
+  const band = _TM_PTS_RANGE[pos] || [2, 24];
+  return Math.round((band[0] + rng() * (band[1] - band[0])) * 10) / 10;
+}
+
+// Build this team's starting lineup from the real roster, best-by-value first,
+// falling back to pool names for any slot the roster can't cover.
+function _tmMyLineup(roster) {
+  const byPos = { QB: [], RB: [], WR: [], TE: [], K: [], DEF: [] };
+  (roster || []).forEach(p => {
+    if (byPos[p.position]) byPos[p.position].push(p.name);
+  });
+  const poolIdx = { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DEF: 0 };
+  const nextFallback = (pos) => {
+    const pool = _TM_NAME_POOL[pos] || ['—'];
+    return pool[(poolIdx[pos]++) % pool.length];
+  };
+  return _TM_LINEUP_SLOTS.map(s => {
+    const pos = s.pos === 'FLEX'
+      ? (byPos.RB.length ? 'RB' : byPos.WR.length ? 'WR' : byPos.TE.length ? 'TE' : 'WR')
+      : s.pos;
+    const name = byPos[pos] && byPos[pos].length ? byPos[pos].shift() : nextFallback(pos);
+    return { slot: s.slot, pos, name };
+  });
+}
+
+// A fully generated opponent lineup (unique-ish names per matchup).
+function _tmOppLineup(rng) {
+  const used = {};
+  const pick = (pos) => {
+    const pool = _TM_NAME_POOL[pos] || ['—'];
+    let n, guard = 0;
+    do { n = pool[Math.floor(rng() * pool.length)]; guard++; }
+    while (used[n] && guard < 8);
+    used[n] = true;
+    return n;
+  };
+  return _TM_LINEUP_SLOTS.map(s => {
+    const pos = s.pos === 'FLEX' ? ['RB', 'WR', 'TE'][Math.floor(rng() * 3)] : s.pos;
+    return { slot: s.slot, pos, name: pick(pos) };
+  });
+}
+
+// Score a lineup for one week: each starter gets seeded points; team total is
+// the sum, so it always reconciles with the row score. Returns { starters, total }.
+function _tmScoreLineup(lineup, rng) {
+  let total = 0;
+  const starters = lineup.map(pl => {
+    const points = _tmGenPts(pl.pos, rng);
+    total += points;
+    return { ...pl, points };
+  });
+  return { starters, total: Math.round(total * 10) / 10 };
+}
+
+let _tmMatchupSeq = 0;
+
 function _tmBuildScheduleHtml(data) {
   const OPP_POOL = [
     'Gridiron Gurus', 'Sunday Scaries', 'The Audibles', 'Waiver Wire Kings',
     'End Zone Elite', 'Pigskin Prophets', 'Hail Mary Heroes', 'Blitz Brigade',
     'Turf Titans', 'Red Zone Raiders', 'Fourth & Long', 'Comeback Kids',
-    'Gronk & Roll', 'Dynasty Dawgs', 'The Zombie RBs', 'Special Teams',
+    'Gronk & Roll', 'The Zombie RBs', 'Special Teams', 'Sack Religious',
   ];
 
   const rosterId = window._tmRosterId != null ? window._tmRosterId : 0;
@@ -17687,18 +17769,18 @@ function _tmBuildScheduleHtml(data) {
   String(rosterId).split('').forEach(c => { seed = (seed * 31 + c.charCodeAt(0)) | 0; });
   seed = (seed ^ 0x9e3779b9) >>> 0;
   const rng = _tmSeededRng(seed);
+  _tmMatchupSeq = 0;
 
   const REG_WEEKS = 14;
   const PLAYOFF_WEEKS = [15, 16, 17];
+  const myTeamName = (data && (data.team_name || data.username)) || 'My Team';
 
-  // Real per-week points for THIS team, keyed by week.
-  const scoreByWeek = {};
+  // Weeks already played: derived from how many weekly scores exist (the scores
+  // themselves are regenerated so lineups and totals stay self-consistent).
   const ws = (data && data.graphs && Array.isArray(data.graphs.weekly_scores)) ? data.graphs.weekly_scores : [];
-  ws.forEach(d => { if (d && d.week != null) scoreByWeek[Number(d.week)] = Number(d.points); });
-  const playedWeeks = ws.map(d => Number(d.week)).filter(w => !isNaN(w));
-  const lastPlayed = playedWeeks.length ? Math.max(...playedWeeks) : 0;
+  const lastPlayed = ws.length ? Math.max(...ws.map(d => Number(d.week)).filter(w => !isNaN(w))) : 5;
 
-  // A stable opponent order: shuffle the pool with the seeded RNG.
+  // Stable opponent order: shuffle the pool with the seeded RNG.
   const opps = OPP_POOL.slice();
   for (let i = opps.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
@@ -17711,6 +17793,15 @@ function _tmBuildScheduleHtml(data) {
     return `<span class="tm-sched-avatar" style="background:${color}">${(name || '?').charAt(0)}</span>`;
   };
 
+  // One starter row inside an expanded matchup column.
+  const playerRow = (pl) => `
+    <div class="tm-mu-player">
+      <span class="tm-mu-slot">${pl.slot}</span>
+      <span class="pos-badge ${pl.pos}">${pl.pos}</span>
+      <span class="tm-mu-pname">${pl.name}</span>
+      <span class="tm-mu-pts">${pl.points.toFixed(1)}</span>
+    </div>`;
+
   let wins = 0, losses = 0, ties = 0, pf = 0, pa = 0;
   let streakType = '', streakLen = 0;
   const rows = [];
@@ -17719,43 +17810,78 @@ function _tmBuildScheduleHtml(data) {
   for (let w = 1; w <= REG_WEEKS; w++) allWeeks.push({ week: w, playoff: false });
   PLAYOFF_WEEKS.forEach(w => allWeeks.push({ week: w, playoff: true }));
 
+  const myLineup = _tmMyLineup((data && data.roster) || []);
+
   allWeeks.forEach((wk, idx) => {
     const oppName = opps[idx % opps.length];
-    const played = wk.week <= lastPlayed && scoreByWeek[wk.week] != null;
-    // My score: real if we have it, otherwise a plausible generated number.
-    const myScore = scoreByWeek[wk.week] != null ? scoreByWeek[wk.week] : (85 + rng() * 55);
-    // Opponent score generated around a similar band.
-    const oppScore = 80 + rng() * 60;
+    const played = wk.week <= lastPlayed;
 
-    let resultBadge = '', resultCls = '', scoreHtml = '';
+    // Score both lineups for this week (my lineup fixed, opponent fresh).
+    const me = _tmScoreLineup(myLineup, rng);
+    const opp = _tmScoreLineup(_tmOppLineup(rng), rng);
+    const myScore = me.total, oppScore = opp.total;
+
+    let res = null;
     if (played) {
       pf += myScore; pa += oppScore;
-      let res;
       if (Math.abs(myScore - oppScore) < 0.05) { res = 'T'; ties++; }
       else if (myScore > oppScore) { res = 'W'; wins++; }
       else { res = 'L'; losses++; }
-      // Track current streak (walking in week order).
       if (res === streakType) streakLen++;
       else { streakType = res; streakLen = 1; }
-      resultCls = res === 'W' ? 'tm-sched-w' : (res === 'L' ? 'tm-sched-l' : 'tm-sched-t');
-      resultBadge = `<span class="tm-sched-result ${resultCls}">${res}</span>`;
-      scoreHtml = `<span class="tm-sched-score">${myScore.toFixed(1)} – ${oppScore.toFixed(1)}</span>`;
-    } else {
-      resultBadge = `<span class="tm-sched-result tm-sched-upcoming">${wk.playoff ? 'PLYF' : '—'}</span>`;
-      scoreHtml = `<span class="tm-sched-score tm-sched-proj">Proj ${myScore.toFixed(1)}</span>`;
     }
 
+    const resultCls = res === 'W' ? 'tm-sched-w' : res === 'L' ? 'tm-sched-l' : res === 'T' ? 'tm-sched-t' : 'tm-sched-upcoming';
+    const resultBadge = `<span class="tm-sched-result ${resultCls}">${played ? res : (wk.playoff ? 'PLYF' : '—')}</span>`;
+    const scoreHtml = played
+      ? `<span class="tm-sched-score">${myScore.toFixed(1)} <span class="tm-sched-dash">–</span> ${oppScore.toFixed(1)}</span>`
+      : `<span class="tm-sched-score tm-sched-proj">Proj ${myScore.toFixed(1)} <span class="tm-sched-dash">–</span> ${oppScore.toFixed(1)}</span>`;
+
+    const mid = 'tm-mu-' + (_tmMatchupSeq++);
+    const myWin = played && res === 'W';
+    const oppWin = played && res === 'L';
+    const colHead = (name, av, total, win) => `
+      <div class="tm-mu-teamhead${win ? ' tm-mu-teamhead-win' : ''}">
+        ${av}
+        <span class="tm-mu-teamname">${name}</span>
+        <span class="tm-mu-total">${total.toFixed(1)}</span>
+      </div>`;
+
+    const detail = `
+      <div class="tm-sched-detail" id="${mid}" hidden>
+        <div class="tm-mu">
+          <div class="tm-mu-col${myWin ? ' tm-mu-col-win' : ''}">
+            ${colHead(myTeamName, avatar(myTeamName, 99), me.total, myWin)}
+            ${me.starters.map(playerRow).join('')}
+          </div>
+          <div class="tm-mu-col${oppWin ? ' tm-mu-col-win' : ''}">
+            ${colHead(oppName, avatar(oppName, idx), opp.total, oppWin)}
+            ${opp.starters.map(playerRow).join('')}
+          </div>
+        </div>
+      </div>`;
+
     rows.push(`
-      <div class="tm-sched-row${played ? '' : ' tm-sched-row-upcoming'}${wk.playoff ? ' tm-sched-row-playoff' : ''}">
-        <span class="tm-sched-week">${wk.playoff ? 'R' + (wk.week - REG_WEEKS) : 'W' + wk.week}</span>
-        ${resultBadge}
-        <span class="tm-sched-opp">
-          ${avatar(oppName, idx)}
-          <span class="tm-sched-opp-name">${oppName}</span>
-        </span>
-        ${scoreHtml}
+      <div class="tm-sched-item${wk.playoff ? ' tm-sched-item-playoff' : ''}">
+        <button type="button" class="tm-sched-row${played ? '' : ' tm-sched-row-upcoming'}"
+                aria-expanded="false" aria-controls="${mid}" onclick="tmToggleMatchup(this)">
+          <span class="tm-sched-week">${wk.playoff ? 'R' + (wk.week - REG_WEEKS) : 'W' + wk.week}</span>
+          ${resultBadge}
+          <span class="tm-sched-opp">
+            <span class="tm-sched-vs">vs</span>
+            ${avatar(oppName, idx)}
+            <span class="tm-sched-opp-name">${oppName}</span>
+          </span>
+          ${scoreHtml}
+          <span class="tm-sched-chevron" aria-hidden="true">▸</span>
+        </button>
+        ${detail}
       </div>`);
   });
+
+  // Split the list with a Playoffs subheader.
+  const regRows = rows.slice(0, REG_WEEKS).join('');
+  const playoffRows = rows.slice(REG_WEEKS).join('');
 
   const recordStr = ties ? `${wins}-${losses}-${ties}` : `${wins}-${losses}`;
   const streakStr = streakLen ? `${streakType}${streakLen}` : '—';
@@ -17774,8 +17900,24 @@ function _tmBuildScheduleHtml(data) {
     ${tilesHtml}
     <div class="team-modal-section">
       <h3>Season Schedule</h3>
-      <div class="tm-sched-list">${rows.join('')}</div>
+      <div class="tm-sched-hint">Tap any week to see both starting lineups and points.</div>
+      <div class="tm-sched-list">${regRows}</div>
+    </div>
+    <div class="team-modal-section">
+      <h3>Playoffs</h3>
+      <div class="tm-sched-list">${playoffRows}</div>
     </div>`;
+}
+
+// Expand / collapse a matchup row to reveal the two lineups.
+function tmToggleMatchup(btn) {
+  const item = btn.closest('.tm-sched-item');
+  const detail = item ? item.querySelector('.tm-sched-detail') : null;
+  if (!detail) return;
+  const willOpen = detail.hidden;
+  detail.hidden = !willOpen;
+  btn.setAttribute('aria-expanded', String(willOpen));
+  btn.classList.toggle('tm-sched-row-open', willOpen);
 }
 
 function renderTeamDetails(data) {
