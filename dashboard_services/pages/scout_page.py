@@ -377,8 +377,8 @@ def build_scout_body(ctx: dict) -> str:
         else:
             pill_cls, pill = "edge-them", f"Them +{abs(delta):.1f}"
         pc = pos if pos in _POS_ORDER else "K"
-        you_txt = f"{yv:.1f}" if you_p is not None else "—"
-        opp_txt = f"{ov:.1f}" if opp_p is not None else "—"
+        you_txt = f"{yv:.1f}" if you_p is not None else "–"
+        opp_txt = f"{ov:.1f}" if opp_p is not None else "–"
         return (
             f"<div class='scout-edge'>"
             f"<span class='pos-badge {pc}'>{pos}</span>"
@@ -496,7 +496,7 @@ def build_scout_body(ctx: dict) -> str:
         more = f" +{len(banged_up) - 3} more" if len(banged_up) > 3 else ""
         inj_note = (
             f"<div class='scout-inj-note'>"
-            f"⚠ {names}{more} may not play — a chance to gain ground."
+            f"{names}{more} may not play. A chance to gain ground."
             f"</div>"
         )
 
@@ -509,12 +509,12 @@ def build_scout_body(ctx: dict) -> str:
         steady = sum(1 for p in profiled if p["profile"]["label"] == "Steady")
         if risky >= max(3, len(profiled) // 2):
             read_note = (
-                f"<div class='scout-read'>📈 High-variance lineup — {risky} of their "
-                f"{len(profiled)} starters run hot-or-cold, so a quiet week from them is in play.</div>"
+                f"<div class='scout-read'>High-variance lineup: {risky} of their "
+                f"{len(profiled)} starters run hot or cold, so a quiet week from them is in play.</div>"
             )
         elif steady >= max(3, len(profiled) // 2):
             read_note = (
-                f"<div class='scout-read'>🧱 Steady lineup — {steady} of their "
+                f"<div class='scout-read'>Steady lineup: {steady} of their "
                 f"{len(profiled)} starters are consistent, so don't count on them cratering.</div>"
             )
 
