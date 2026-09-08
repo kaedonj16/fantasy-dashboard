@@ -31628,6 +31628,56 @@ button:disabled {
 .rz-hero-scroller.rz-fade-left::before { opacity: 1; }
 .rz-hero-scroller.rz-fade-right::after { opacity: 1; }
 
+/* Skeleton matchup cards shown while a scope's data loads. */
+.rz-mc-hero.rz-mc-skel {
+    cursor: default;
+    border-color: var(--rz-border);
+}
+
+.rz-skel-line,
+.rz-skel-num,
+.rz-skel-badge {
+    border-radius: 4px;
+    background: linear-gradient(90deg,
+        var(--rz-row) 25%, var(--rz-hover) 37%, var(--rz-row) 63%);
+    background-size: 400% 100%;
+    animation: rz-skel-shimmer 1.4s ease infinite;
+}
+
+.rz-skel-league { height: 8px; width: 60%; margin-bottom: 8px; }
+.rz-skel-name   { height: 10px; width: 70%; margin-bottom: 6px; }
+.rz-mch-side.right .rz-skel-name { margin-left: auto; }
+.rz-skel-num    { height: 18px; width: 42px; }
+.rz-mch-side.right .rz-skel-num { margin-left: auto; }
+.rz-skel-badge  { height: 12px; width: 30px; }
+
+@keyframes rz-skel-shimmer {
+    0%   { background-position: 100% 0; }
+    100% { background-position: 0 0; }
+}
+
+/* Feed loading indicator (paired with the skeleton cards). */
+.rz-feed-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    padding: 28px 16px;
+    color: var(--rz-muted);
+    font-size: 13px;
+}
+
+.rz-feed-spinner {
+    width: 15px;
+    height: 15px;
+    border: 2px solid var(--rz-border);
+    border-top-color: var(--rz-red);
+    border-radius: 50%;
+    animation: rz-feed-spin .7s linear infinite;
+}
+
+@keyframes rz-feed-spin { to { transform: rotate(360deg); } }
+
 .rz-mc-hero {
     flex: 0 0 auto;
     min-width: 130px;
