@@ -20864,40 +20864,6 @@ img, svg, canvas {
     color: var(--text-muted);
 }
 
-.tm-roster-note {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin: -4px 0 10px;
-    line-height: 1.4;
-}
-
-.tm-roster-sos {
-    display: inline-block;
-    margin-left: 6px;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    padding: 1px 6px;
-    border-radius: var(--radius-pill);
-    vertical-align: middle;
-}
-
-.tm-roster-sos.sos-hard {
-    color: var(--loss);
-    background: color-mix(in srgb, var(--loss) 14%, transparent);
-}
-
-.tm-roster-sos.sos-mid {
-    color: color-mix(in srgb, var(--warning) 72%, var(--text));
-    background: color-mix(in srgb, var(--warning) 16%, transparent);
-}
-
-.tm-roster-sos.sos-easy {
-    color: var(--win);
-    background: color-mix(in srgb, var(--win) 14%, transparent);
-}
-
 .tm-roster-side {
     display: flex;
     flex-direction: column;
@@ -24730,13 +24696,6 @@ tr.team-clickable {
 }
 
 /* ── Roster Intel ─────────────────────────────────────── */
-.ri-note {
-    font-size: 12px;
-    color: var(--text-muted);
-    line-height: 1.4;
-    padding: 0 0 10px;
-}
-
 .ri-pos-section {
     padding: 12px 0;
     border-bottom: 1px solid var(--border);

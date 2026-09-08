@@ -258,7 +258,7 @@
             '<span class="sos-title">Remaining schedule</span>' +
             '<span class="sos-subtitle">' +
               (usingPR
-                ? 'Opponent strength estimated from starting lineups'
+                ? 'Opponent strength estimated from roster values'
                 : 'Sorted by average opponent score') +
             '</span>' +
           '</div>';
@@ -273,7 +273,7 @@
           '</div>';
 
         if (usingPR) {
-          html += '<div class="sos-note" role="note">No games played yet — bars compare remaining opponents by this-season starter strength, not total roster value.</div>';
+          html += '<div class="sos-note" role="note">No games played yet — bars compare remaining opponents by roster value.</div>';
         }
 
         html += '<div class="sos-legend" aria-hidden="true">' +
@@ -726,7 +726,7 @@
             var esc = function(s) { return (s || '').replace(/"/g, '&quot;'); };
             var names = function(arr) { return arr.map(function(p) { return p.name; }).join(', '); };
 
-            var html = '<div class="ri-note">Positional ranks use this-season starter strength — the same signal remaining schedule uses for opponent difficulty.</div>';
+            var html = '';
             teams.forEach(function(t) {
               var positions = t.positions || {};
 
@@ -782,9 +782,7 @@
 
                 var rankStr = pd.league_rank ? (pd.league_rank + '/' + pd.num_teams) : '';
                 var hc = healthColor[pd.health] || 'var(--text-muted)';
-                var maxVal = pd.players.reduce(function(m, p) {
-                  return Math.max(m, p.prod_value || p.value || 0);
-                }, 0) || 1;
+                var maxVal = pd.players.reduce(function(m, p) { return Math.max(m, p.value || 0); }, 0) || 1;
                 var pc = posColor[pos] || 'var(--text-muted)';
 
                 html += '<div class="ri-pos-section">' +
@@ -812,7 +810,7 @@
                   if (p.age) metaParts.push('Age ' + parseFloat(p.age).toFixed(1));
                   if (p.fc_pos_rank) metaParts.push('FC ' + pos + p.fc_pos_rank);
                   var safeName = esc(p.name);
-                  var barPct = Math.max(4, Math.round((p.prod_value || p.value || 0) / maxVal * 100));
+                  var barPct = Math.max(4, Math.round((p.value || 0) / maxVal * 100));
                   html += '<div class="ri-player-row">' +
                     '<div class="ri-player-info">' +
                       '<span class="ri-player-name player-clickable" style="cursor:pointer;" data-player-id="' + (p.player_id || '') + '" data-player-name="' + safeName + '">' + p.name + mktNote + '</span>' +
@@ -820,7 +818,7 @@
                     '</div>' +
                     '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
                       '<span class="ri-signal" style="color:' + sc + ';background:color-mix(in srgb,' + sc + ' 15%,transparent);" title="' + esc(sigDesc[p.signal] || '') + '">' + p.signal + '</span>' +
-                      '<span class="ri-val"><span class="ri-val-bar" style="width:' + barPct + '%;background:' + pc + ';"></span><span class="ri-val-num">' + (p.prod_value != null ? p.prod_value : (p.value || 0)) + '</span></span>' +
+                      '<span class="ri-val"><span class="ri-val-bar" style="width:' + barPct + '%;background:' + pc + ';"></span><span class="ri-val-num">' + (p.value || 0) + '</span></span>' +
                     '</div>' +
                   '</div>';
                 });

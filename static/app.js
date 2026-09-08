@@ -17783,8 +17783,8 @@ function _tmLineupFromPool(byPos, slots) {
   });
 }
 
-// This team's lineup from its real roster (best this-season production first —
-// roster is pre-sorted), carrying player_id so each starter opens the player modal.
+// This team's lineup from its real roster (best-by-value first — roster is
+// pre-sorted), carrying player_id so each starter opens the player modal.
 function _tmMyLineup(roster, slots) {
   return _tmLineupFromPool(_tmGroupByPos(roster, 'position'), slots);
 }
@@ -18097,10 +18097,8 @@ function renderTeamDetails(data) {
     }
   }
 
-  // Build roster list — this-season starter strength (same signal remaining
-  // schedule SOS uses), plus remaining NFL matchup ease when available.
-  let rosterHTML = '<div class="team-modal-section"><h3>Roster</h3>'
-    + '<div class="tm-roster-note">Sorted by this-season starter strength — the same signal remaining schedule uses for opponent difficulty.</div>';
+  // Build roster list
+  let rosterHTML = '<div class="team-modal-section"><h3>Roster</h3>';
 
   if (data.roster && data.roster.length > 0) {
     rosterHTML += '<div class="tm-roster-list">';
@@ -18162,14 +18160,6 @@ function renderTeamDetails(data) {
 
       const ageStr = player.age != null && !isNaN(parseFloat(player.age)) ? parseFloat(player.age).toFixed(1) : '—';
       const valStr = player.value != null && !isNaN(parseFloat(player.value)) ? parseFloat(player.value).toFixed(1) : '—';
-      let sosChip = '';
-      const ease = player.sos_ease;
-      if (ease != null && !isNaN(Number(ease))) {
-        const e = Number(ease);
-        const sosKey = e >= 60 ? 'easy' : e <= 40 ? 'hard' : 'mid';
-        const sosLbl = e >= 60 ? 'Easy SOS' : e <= 40 ? 'Hard SOS' : 'Avg SOS';
-        sosChip = ` <span class="tm-roster-sos sos-${sosKey}" title="Remaining NFL matchup ease (same ratings as strength of schedule)">${sosLbl}</span>`;
-      }
       const rowAttrs = isUnknown
         ? ''
         : ` data-player-id="${player.player_id}" data-player-name="${player.name}" tabindex="0"`;
@@ -18184,11 +18174,11 @@ function renderTeamDetails(data) {
                 : `<span class="tm-roster-name player-clickable">${player.name}</span>`}
               ${badges ? `<span class="tm-roster-badges">${badges}</span>` : ''}
             </div>
-            <div class="tm-roster-meta">${player.team || '—'} · Age ${ageStr}${sosChip}</div>
+            <div class="tm-roster-meta">${player.team || '—'} · Age ${ageStr}</div>
           </div>
           <div class="tm-roster-side">
             <span class="pos-badge ${player.position}">${player.position}</span>
-            <span class="tm-roster-value" title="This-season starter strength">${valStr}</span>
+            <span class="tm-roster-value">${valStr}</span>
           </div>
         </div>
       `;
