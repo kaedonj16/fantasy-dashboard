@@ -333,6 +333,23 @@ def _roster_sig(ctx: dict) -> str:
     return hashlib.md5("|".join(parts).encode("utf-8")).hexdigest()  # noqa: S324 (non-crypto)
 
 
+def _playoff_sim_sig(ctx: dict, platform: str) -> str:
+    """Roster + week + published-schedule fingerprint for the playoff-odds cache.
+
+    Roster changes already forced a re-sim; without a schedule component the
+    cache kept serving round-robin odds for up to an hour after the platform
+    posted the real H2H slate. ``current_week`` is included so a week rollover
+    also refreshes projected remaining games.
+    """
+    try:
+        from data_building.simulate_playoff_odds import playoff_schedule_sig
+        sched = playoff_schedule_sig(ctx, platform)
+    except Exception:
+        sched = "fallback"
+    cw = int(ctx.get("current_week") or 0)
+    return f"{_roster_sig(ctx)}|w{cw}|{sched}"
+
+
 def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
     """simulate_playoff_odds behind the module TTL cache (shared by the odds
     API, standings seeding, the trade-window card, and draft capital).
@@ -348,14 +365,15 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
             platform,
             str(ctx.get("league_id") or ""),
             int(ctx.get("season") or ctx.get("current_season") or 0),
-            # v2: Week-1 seeded standings must use roster projections, not
-            # RangeIndex-as-roster_id (mis-attributed FO / sellers-to-call).
-            "v2",
+            # v3: invalidate when the published H2H schedule appears / changes
+            # (v2 only keyed on roster composition).
+            "v3",
         )
-        sig = _roster_sig(ctx)
+        sig = _playoff_sim_sig(ctx, platform)
         hit = _PLAYOFF_SIM_CACHE.get(key)
-        # Serve the cache only while it's fresh AND built on the current rosters —
-        # a trade changes the signature and forces a re-sim right away.
+        # Serve the cache only while it's fresh AND built on the current
+        # rosters / week / schedule — a trade or newly published slate
+        # changes the signature and forces a re-sim right away.
         if hit and time.time() - hit["ts"] < _PLAYOFF_SIM_CACHE_TTL and hit.get("sig") == sig:
             return hit["data"] or []
 
@@ -8485,8 +8503,8 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     # Playoff Odds tab), sort by first_seed → bye → overall playoff probability
     try:
         from data_building.simulate_playoff_odds import simulate_playoff_odds
-        _sim_key = (platform, str(ctx.get("league_id") or ""), int(ctx.get("season") or 0), "v2")
-        _sim_sig = _roster_sig(ctx)
+        _sim_key = (platform, str(ctx.get("league_id") or ""), int(ctx.get("season") or 0), "v3")
+        _sim_sig = _playoff_sim_sig(ctx, platform)
         _sim_cached = _PLAYOFF_SIM_CACHE.get(_sim_key)
         if (_sim_cached and time.time() - _sim_cached["ts"] < _PLAYOFF_SIM_CACHE_TTL
                 and _sim_cached.get("sig") == _sim_sig):
@@ -21629,8 +21647,8 @@ def api_playoff_odds():
             return jsonify({"error": "league not found"}), 404
 
         from data_building.simulate_playoff_odds import simulate_playoff_odds
-        _sim_key2 = (platform, str(league_id), season, "v2")
-        _sim_sig2 = _roster_sig(ctx)
+        _sim_key2 = (platform, str(league_id), season, "v3")
+        _sim_sig2 = _playoff_sim_sig(ctx, platform)
         _sim_cached2 = _PLAYOFF_SIM_CACHE.get(_sim_key2)
         if (_sim_cached2 and time.time() - _sim_cached2["ts"] < _PLAYOFF_SIM_CACHE_TTL
                 and _sim_cached2.get("sig") == _sim_sig2):
