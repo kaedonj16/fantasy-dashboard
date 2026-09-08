@@ -914,11 +914,6 @@ def _snapshot_entry_from_snapshot(snap: dict) -> dict:
     }
 
 
-def _overview_card_from_snapshot(snap: dict) -> str:
-    from utils.digest_sections import leagues_snapshot_table_html
-    return leagues_snapshot_table_html([_snapshot_entry_from_snapshot(snap)])
-
-
 def choose_multi_league_subject(snapshots: list[dict], n_leagues: int) -> str:
     """Most urgent action across leagues; otherwise a portfolio teaser."""
 
