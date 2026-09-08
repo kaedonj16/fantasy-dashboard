@@ -8,7 +8,14 @@ whenever that table lacked a name. This version scouts *this week*:
   1. "Where the matchup is won" - your projected starters vs theirs, by
      position, so you can see where you're favored and where you're the dog.
   2. "Their starters" - the opponent's lineup ranked by this week's projection,
-     with injury flags, so the biggest threats are on top.
+     with injury flags and a boom/bust profile, so the biggest (and shakiest)
+     threats are on top.
+
+The boom/bust profile is a real distribution off a player's game-by-game
+scores (floor, ceiling, a steady/volatile label), not a guess: it reuses
+``utils.consistency`` on the same weekly Sleeper stat files the start/sit page
+scores. Early in a season, when the current year has too few games, it leans on
+last season and molds toward this one as games play (blended_consistency_profile).
 
 Names come from the same players map the matchup preview uses, so rows never
 render blank. Kept Flask-free (and bs4-free) so the slim unit/lint job can
@@ -20,7 +27,15 @@ import html
 import logging
 from datetime import datetime
 
+from utils.consistency import BLEND_FULL_SEASON, blended_consistency_profile
+
 logger = logging.getLogger(__name__)
+
+# Season weekly-points cache: {(season, scoring_sig): (loaded_at, {pid: [pts]})}.
+# Rendering the Scout tab shouldn't re-glob and re-score a season's stat files on
+# every request, so hold the scored map briefly (mirrors the start/sit loader).
+_WEEKLY_PTS_CACHE: dict = {}
+_WEEKLY_PTS_TTL = 3600.0
 
 
 def platform_sign_in_hint(platform: str) -> str:
@@ -42,6 +57,110 @@ def _week_proj_points(week_map, pid, scoring=None, pos="") -> "float | None":
     """
     from utils.fantasy_scoring import weekly_projection_points
     return weekly_projection_points(week_map, pid, scoring, pos)
+
+
+def _stamped_scoring(ctx: dict) -> dict:
+    """League scoring settings, alias-stamped the way the stat scorer expects."""
+    raw = ctx.get("raw_scoring_settings") or ctx.get("scoring_settings") or {}
+    if not raw:
+        return {}
+    try:
+        from utils.league_scoring import stamp_scoring_aliases
+        return stamp_scoring_aliases(raw)
+    except Exception:
+        return raw
+
+
+def _season_weekly_points(season: int, scoring: dict) -> dict:
+    """{pid: [weekly fantasy points]} for a season's played games, league-scored.
+
+    Flask-free twin of app._load_season_weekly_points: globs the cached Sleeper
+    weekly stat files and scores each line with ``score_stats``. Cached by
+    (season, scoring signature); never raises.
+    """
+    import glob
+    import hashlib
+    import json
+    import os
+    import time
+    from pathlib import Path
+
+    sig = hashlib.md5(
+        json.dumps(scoring or {}, sort_keys=True, default=str).encode()
+    ).hexdigest()[:10]
+    key = (int(season), sig)
+    hit = _WEEKLY_PTS_CACHE.get(key)
+    if hit and time.time() - hit[0] < _WEEKLY_PTS_TTL:
+        return hit[1]
+
+    out: dict = {}
+    try:
+        from utils.fantasy_scoring import score_stats
+        # scout_page.py -> dashboard_services/pages/ -> repo root is parents[2].
+        base = Path(__file__).resolve().parents[2] / "cache" / "sleeper_stats"
+        pattern = os.path.join(str(base), f"sleeper_stats_s{int(season)}_w*.json")
+        for wf in glob.glob(pattern):
+            try:
+                with open(wf) as f:
+                    week_stats = json.load(f)
+            except Exception:
+                continue
+            if not isinstance(week_stats, dict):
+                continue
+            for pid, st in week_stats.items():
+                if not isinstance(st, dict):
+                    continue
+                try:
+                    out.setdefault(str(pid), []).append(
+                        round(float(score_stats(st, scoring or {})), 2)
+                    )
+                except Exception:
+                    continue
+    except Exception:
+        logger.debug("scout: weekly points load failed", exc_info=True)
+
+    _WEEKLY_PTS_CACHE[key] = (time.time(), out)
+    return out
+
+
+def _resolve_weekly_points(ctx: dict, season: int) -> tuple[dict, dict, "int | None"]:
+    """(current_map, prior_map, prior_season) of {pid: [weekly pts]}.
+
+    Tests (and any caller that already computed them) can inject
+    ``weekly_pts_map`` / ``prior_pts_map`` / ``prior_season`` on the ctx. Absent
+    that, load from the cached stat files: the current season, plus last season
+    (or the one before) while the current year is still a thin sample, so early
+    in the year the profile leans on real history instead of one or two games.
+    """
+    if "weekly_pts_map" in ctx:
+        return (
+            ctx.get("weekly_pts_map") or {},
+            ctx.get("prior_pts_map") or {},
+            ctx.get("prior_season"),
+        )
+
+    scoring = _stamped_scoring(ctx)
+    cur = _season_weekly_points(season, scoring)
+    prior: dict = {}
+    prior_season: "int | None" = None
+    if max((len(v) for v in cur.values()), default=0) < BLEND_FULL_SEASON:
+        for py in (int(season) - 1, int(season) - 2):
+            pm = _season_weekly_points(py, scoring)
+            if max((len(v) for v in pm.values()), default=0) >= 3:
+                prior, prior_season = pm, py
+                break
+    return cur, prior, prior_season
+
+
+# Boom/bust profile label -> (css kind, short display). "Boom or bust" and
+# "Volatile" both read as risk; "Steady" is the reassuring one.
+_PROFILE_KIND = {
+    "Boom or bust": ("boom", "Boom/bust"),
+    "Volatile": ("volatile", "Volatile"),
+    "Balanced": ("balanced", "Balanced"),
+    "Steady": ("steady", "Steady"),
+    "Small sample": ("small", "New/limited"),
+}
 
 
 # Positions we break the matchup down by, in display order. K/DEF are appended
@@ -211,6 +330,22 @@ def build_scout_body(ctx: dict) -> str:
         week_proj_map, status_by_pid, scoring,
     )
 
+    # Boom/bust profile per opponent starter, from real weekly scores. Best-effort:
+    # if the stat files or math are unavailable, rows just render without a chip.
+    try:
+        cur_pts, prior_pts, prior_season = _resolve_weekly_points(ctx, int(season))
+        for p in opp_starters:
+            p["profile"] = blended_consistency_profile(
+                cur_pts.get(p["pid"]) or [],
+                prior_pts.get(p["pid"]) or [],
+                p["pos"],
+                prior_season=prior_season,
+            )
+    except Exception:
+        logger.debug("scout: consistency profiles unavailable", exc_info=True)
+        for p in opp_starters:
+            p.setdefault("profile", None)
+
     have_proj = any(p["proj"] is not None for p in opp_starters + you_starters)
 
     def _pos_total(starters: list, pos: str) -> "float | None":
@@ -299,6 +434,30 @@ def build_scout_body(ctx: dict) -> str:
     top_pid = ranked[0]["pid"] if ranked and ranked[0]["proj"] is not None else None
     banged_up = [p for p in opp_starters if p["inj_raw"] in _INJ_SITTING]
 
+    def _profile_html(prof: "dict | None") -> str:
+        """Boom/bust chip + floor–ceiling range, with the rates in the tooltip."""
+        if not prof:
+            return ""
+        kind, short = _PROFILE_KIND.get(prof.get("label", ""), ("balanced", prof.get("label", "")))
+        floor, ceiling = prof.get("floor"), prof.get("ceiling")
+        range_html = ""
+        if floor is not None and ceiling is not None:
+            range_html = f"<span class='scout-range'>{floor:.0f}–{ceiling:.0f}</span>"
+        boom = int(round((prof.get("boom_rate") or 0) * 100))
+        bust = int(round((prof.get("bust_rate") or 0) * 100))
+        season_note = ""
+        if prof.get("blended") is False and prof.get("season"):
+            season_note = f", {prof['season']} data"
+        title = (
+            f"{prof.get('label', '')}: floor {floor}, ceiling {ceiling} "
+            f"(20th–80th pct of weekly scores){season_note}. "
+            f"Boom {boom}% / bust {bust}% of games."
+        )
+        return (
+            f"<span class='scout-profile scout-prof-{kind}' title='{html.escape(title)}'>"
+            f"{html.escape(short)}</span>{range_html}"
+        )
+
     def _threat_row(p: dict) -> str:
         pc = p["pos"] if p["pos"] in _POS_ORDER else "K"
         inj_html = ""
@@ -321,7 +480,9 @@ def build_scout_body(ctx: dict) -> str:
             f"<div class='scout-player-row'>"
             f"<span class='pos-badge {pc}'>{p['pos']}</span>"
             f"<span class='scout-player-name'>{html.escape(p['name'])}</span>"
-            f"{team_html}{tag_html}{inj_html}{ppg_html}"
+            f"{team_html}{tag_html}{inj_html}"
+            f"<span class='scout-prof-wrap'>{_profile_html(p.get('profile'))}</span>"
+            f"{ppg_html}"
             f"</div>"
         )
 
@@ -339,13 +500,31 @@ def build_scout_body(ctx: dict) -> str:
             f"</div>"
         )
 
+    # One-line volatility read: only when the lineup leans clearly one way, and
+    # only off players with a real (non-small-sample) profile.
+    read_note = ""
+    profiled = [p for p in opp_starters if p.get("profile") and not p["profile"].get("small_sample")]
+    if len(profiled) >= 4:
+        risky = sum(1 for p in profiled if p["profile"]["label"] in ("Boom or bust", "Volatile"))
+        steady = sum(1 for p in profiled if p["profile"]["label"] == "Steady")
+        if risky >= max(3, len(profiled) // 2):
+            read_note = (
+                f"<div class='scout-read'>📈 High-variance lineup — {risky} of their "
+                f"{len(profiled)} starters run hot-or-cold, so a quiet week from them is in play.</div>"
+            )
+        elif steady >= max(3, len(profiled) // 2):
+            read_note = (
+                f"<div class='scout-read'>🧱 Steady lineup — {steady} of their "
+                f"{len(profiled)} starters are consistent, so don't count on them cratering.</div>"
+            )
+
     threat_section = (
         f"<div class='card scout-card'>"
         f"<div class='card-header scout-edge-header'>"
         f"<h2>Their starters</h2>"
-        f"<span class='scout-proj-stamp'>Week {current_week} Sleeper proj</span>"
+        f"<span class='scout-proj-stamp'>Week {current_week} Sleeper proj · boom/bust from weekly scores</span>"
         f"</div>"
-        f"<div class='card-body'>{inj_note}{threat_rows}</div>"
+        f"<div class='card-body'>{inj_note}{read_note}{threat_rows}</div>"
         f"</div>"
     )
 
@@ -393,6 +572,15 @@ _SCOUT_STYLE = (
     ".scout-tag{font-size:0.68em;font-weight:700;padding:2px 7px;border-radius:999px;text-transform:uppercase;letter-spacing:.03em;}"
     ".scout-tag-threat{background:color-mix(in srgb,var(--warning) 20%,transparent);color:color-mix(in srgb,var(--warning) 85%,var(--text));}"
     ".scout-inj-note{font-size:0.82em;color:color-mix(in srgb,var(--warning) 85%,var(--text));background:color-mix(in srgb,var(--warning) 10%,transparent);border:1px solid color-mix(in srgb,var(--warning) 30%,var(--border));border-radius:6px;padding:7px 10px;margin-bottom:10px;}"
+    ".scout-read{font-size:0.84em;color:var(--text);background:var(--card-soft,color-mix(in srgb,var(--muted) 8%,transparent));border:1px solid var(--border);border-radius:6px;padding:7px 10px;margin-bottom:10px;}"
+    ".scout-prof-wrap{display:inline-flex;align-items:center;gap:5px;justify-content:flex-end;min-width:118px;}"
+    ".scout-profile{font-size:0.68em;font-weight:700;padding:2px 7px;border-radius:999px;white-space:nowrap;cursor:default;}"
+    ".scout-prof-steady{background:color-mix(in srgb,var(--win) 16%,transparent);color:var(--win);}"
+    ".scout-prof-balanced{background:color-mix(in srgb,var(--muted) 16%,transparent);color:var(--muted);}"
+    ".scout-prof-volatile{background:color-mix(in srgb,var(--warning) 20%,transparent);color:color-mix(in srgb,var(--warning) 85%,var(--text));}"
+    ".scout-prof-boom{background:color-mix(in srgb,var(--loss) 16%,transparent);color:var(--loss);}"
+    ".scout-prof-small{background:color-mix(in srgb,var(--muted) 12%,transparent);color:var(--muted);font-style:italic;font-weight:500;}"
+    ".scout-range{font-size:0.72em;color:var(--muted);min-width:38px;text-align:right;}"
     ".inj-badge{font-size:0.7em;font-weight:700;padding:1px 5px;border-radius:4px;line-height:1.4;}"
     ".inj-q{background:#fef08a;color:#713f12;}"
     ".inj-d{background:#fed7aa;color:#7c2d12;}"
