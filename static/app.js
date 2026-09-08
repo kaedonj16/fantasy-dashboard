@@ -17771,10 +17771,6 @@ function _tmBuildScheduleHtml(data) {
   ).join('') + '</div>';
 
   return `
-    <div class="tm-sched-banner">
-      <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-      Sample schedule — opponents and scores are illustrative. This team's weekly points use real data where available.
-    </div>
     ${tilesHtml}
     <div class="team-modal-section">
       <h3>Season Schedule</h3>
