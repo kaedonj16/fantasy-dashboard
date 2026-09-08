@@ -92,7 +92,10 @@ def test_sos_render_escapes_team_names_and_marks_viewer():
     assert "sos-you" in render
     assert "No games played yet" in render
     assert "Same formula as SOS" in render
+    assert "projected scoring until week 1" in render
+    assert "projected starter scoring" in render
     assert "scoring and win rate" in render
+    assert "usingProj || !usingPR" in render
     assert "SOS ' + val.toFixed(1)" in render
     assert "estimated from roster values" not in render
     assert "bars compare remaining opponents by roster value." not in render

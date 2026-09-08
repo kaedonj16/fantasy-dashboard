@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-09-08",
         "tag": "fix",
-        "text": "Teams Schedule tab remaining-schedule ranking now uses the same SOS formula as standings (opponent scoring 65% + win rate 35%, 100 = league average) instead of opponent PPG or preseason roster value.",
+        "text": "Teams Schedule tab remaining-schedule ranking now uses the same SOS formula as standings (opponent scoring 65% + win rate 35%, 100 = league average). Before week 1 it ranks remaining opponents from projected starter scoring instead of roster value or even bars.",
         "link": "/teams"
     },
     {

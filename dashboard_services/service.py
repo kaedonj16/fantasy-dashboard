@@ -1254,12 +1254,15 @@ def remaining_schedule_strength(
         current_week: int,
         regular_season_weeks: int,
         roster_names: Optional[Dict[str, str]] = None,
-) -> tuple[list[dict], bool]:
+        projected_avg_by_rid: Optional[Dict[str, float]] = None,
+) -> tuple[list[dict], str]:
     """Teams-page remaining-schedule rows using standings SOS Future.
 
     Opponent weights are 65% scoring average + 35% win rate, indexed so
     100 is league average. Playoff weeks are ignored via
-    ``regular_season_weeks``. Returns ``(rows, no_games_played)``.
+    ``regular_season_weeks``. Before any games are scored, ``projected_avg_by_rid``
+    fills AVG (win rate stays even at .500). Returns ``(rows, source)`` where
+    source is ``actual``, ``projected``, or ``even``.
     """
     names = roster_names or {}
     roster_list = [r for r in (rosters or []) if isinstance(r, dict)]
@@ -1325,6 +1328,25 @@ def remaining_schedule_strength(
         win_pct = ((wins[rid] + 0.5 * ties[rid]) / decided) if decided else 0.0
         rows.append({"owner": rid, "AVG": avg, "Win%": win_pct})
 
+    source = "actual"
+    if games_played == 0:
+        proj: dict[str, float] = {}
+        for raw_k, raw_v in (projected_avg_by_rid or {}).items():
+            try:
+                val = float(raw_v)
+            except (TypeError, ValueError):
+                continue
+            if val > 0:
+                proj[str(raw_k)] = val
+        if proj:
+            rows = [
+                {"owner": rid, "AVG": float(proj.get(rid) or 0.0), "Win%": 0.5}
+                for rid in rids
+            ]
+            source = "projected"
+        else:
+            source = "even"
+
     team_stats = pd.DataFrame(rows)
     strength = build_team_strength(team_stats)
     sos = compute_sos_by_team(
@@ -1347,7 +1369,7 @@ def remaining_schedule_strength(
             "my_avg_points": round(float(avg_by_rid.get(rid) or 0.0), 2),
         })
     results.sort(key=lambda x: x["avg_opp_points"], reverse=True)
-    return results, games_played == 0
+    return results, source
 
 
 from collections import defaultdict

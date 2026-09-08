@@ -239,6 +239,7 @@
         }
 
         var usingPR = !!data.using_power_rankings;
+        var usingProj = !!data.using_projections;
         var wr = data.weeks_remaining || 0;
         var values = teams.map(function(t) { return Number(t.avg_opp_points) || 0; });
         var maxOpp = Math.max.apply(null, values);
@@ -257,7 +258,9 @@
           '<div class="sos-header-text">' +
             '<span class="sos-title">Remaining schedule</span>' +
             '<span class="sos-subtitle">' +
-              (usingPR
+              (usingProj
+                ? 'Same formula as SOS, using projected scoring until week 1'
+                : usingPR
                 ? 'Same formula as SOS — scoring and win rate'
                 : 'Same formula as SOS: opponent scoring (65%) and win rate (35%)') +
             '</span>' +
@@ -272,7 +275,9 @@
           '<span class="sos-sort-note">' + (even ? 'Schedules look even' : 'Hardest first') + '</span>' +
           '</div>';
 
-        if (usingPR) {
+        if (usingProj) {
+          html += '<div class="sos-note" role="note">No games played yet — remaining opponents ranked by projected starter scoring.</div>';
+        } else if (usingPR) {
           html += '<div class="sos-note" role="note">No games played yet — SOS needs scoring and win rate, so remaining schedules look even.</div>';
         }
 
@@ -299,7 +304,7 @@
           else rankHtml = '<span class="sos-rank-num">' + (idx + 1) + '</span>';
 
           var tipParts = [t.team_name || ''];
-          if (!usingPR && val) tipParts.push('SOS ' + val.toFixed(1));
+          if ((usingProj || !usingPR) && val) tipParts.push('SOS ' + val.toFixed(1));
           if (t.games_remaining) tipParts.push(t.games_remaining + ' games left');
 
           html += '<div class="sos-row sos-' + tier.key + (mine ? ' sos-mine' : '') + '"' +
