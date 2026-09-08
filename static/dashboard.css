@@ -18250,7 +18250,7 @@ img, svg, canvas {
     --alert-tone: var(--warning);
     position: relative;
     overflow: hidden;
-    padding: 14px 18px 14px 22px;
+    padding: 16px 18px 16px 22px;
     background: var(--card);
     border: 1px solid var(--border);
     box-shadow: var(--shadow-sm);
@@ -18261,8 +18261,8 @@ img, svg, canvas {
 .bench-check-card::before {
     content: "";
     position: absolute;
-    top: 10px;
-    bottom: 10px;
+    top: 12px;
+    bottom: 12px;
     left: 8px;
     width: 3px;
     border-radius: 99px;
@@ -18280,21 +18280,58 @@ img, svg, canvas {
     min-width: 0;
     font-weight: 700;
     font-size: 14px;
-    line-height: 1.35;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
     color: var(--alert-tone);
+}
+
+.lineup-alert-ico {
+    flex: none;
+    margin-right: 6px;
+    vertical-align: -2px;
 }
 
 .lineup-alert-list {
     list-style: none;
-    margin: 4px 0 0;
+    margin: 8px 0 0;
     padding: 0;
     font-size: 13px;
-    line-height: 1.45;
+    line-height: 1.5;
     color: var(--text);
 }
 
 .lineup-alert-list li {
-    padding: 1px 0;
+    padding: 2px 0;
+}
+
+.lineup-alert-list li:first-child {
+    padding-top: 0;
+}
+
+.lineup-alert-list li:last-child {
+    padding-bottom: 0;
+}
+
+/* Inline text hierarchy for the status strips: key values pick up the card's
+   semantic tone, and "X to call" style prefixes become quiet micro-labels. */
+.lineup-alert-card .la-em,
+.trade-window-card .la-em,
+.bench-check-card .la-em {
+    font-weight: 700;
+    color: var(--alert-tone);
+}
+
+.lineup-alert-card .la-label,
+.trade-window-card .la-label,
+.bench-check-card .la-label {
+    display: inline-block;
+    margin-right: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+    vertical-align: 1px;
 }
 
 .lineup-alert-card .os-section-link,
@@ -18436,7 +18473,7 @@ img, svg, canvas {
 
 .bench-check-msg {
     font-size: 13px;
-    line-height: 1.45;
+    line-height: 1.5;
     color: var(--text);
 }
 
