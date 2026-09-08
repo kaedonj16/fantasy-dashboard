@@ -20719,6 +20719,28 @@ def api_team_details(roster_id: str):
         if ties:
             record_str += f"-{ties}"
 
+        # Season points-for (settings.fpts[.fpts_decimal] is normalized to
+        # Sleeper shape by every platform adapter, same as wins/losses above).
+        points_for = round(
+            float(settings.get("fpts") or 0)
+            + float(settings.get("fpts_decimal") or 0) / 100.0,
+            1,
+        )
+
+        # Playoff odds — warm-cache only so a cold Monte Carlo sim never blocks
+        # the modal paint. The tile stays hidden until the sim is warm, then
+        # fills on the next open (mirrors how the hub playoff tile seeds).
+        playoff_odds = None
+        try:
+            _odds_ctx = get_league_ctx_from_cache(platform, league_id, season)
+            if _odds_ctx:
+                for _row in (_playoff_sim_cached(_odds_ctx, platform, block=False) or []):
+                    if str((_row or {}).get("roster_id")) == str(roster_id):
+                        playoff_odds = (_row or {}).get("playoff_pct")
+                        break
+        except Exception:
+            logger.debug("[api_team_details] playoff odds skipped", exc_info=True)
+
         # Get players with values
         players_index = load_players_index() or {}
         value_table = list(get_model_value_table_cached() or [])
@@ -21246,6 +21268,8 @@ def api_team_details(roster_id: str):
             "wins": wins,
             "losses": losses,
             "ties": ties,
+            "points_for": points_for,
+            "playoff_odds": playoff_odds,
             "total_value": round(total_value, 1),
             "roster": roster_players,
             "picks": all_picks,
