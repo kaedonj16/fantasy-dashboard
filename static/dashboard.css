@@ -20310,9 +20310,6 @@ img, svg, canvas {
 }
 
 .team-modal-header {
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
     padding: 24px;
     border-bottom: 1px solid var(--border);
     background: var(--card);
@@ -20320,15 +20317,16 @@ img, svg, canvas {
 
 .team-modal-header-top {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
+    align-items: center;
+    gap: 20px;
 }
 
-/* Header stat tiles: Record · PF · Playoff Odds */
+/* Header stat tiles: Record · PF · Playoff Odds — beside the title on
+   larger screens, dropping to a full-width row below the title on mobile. */
 .team-modal-statbar {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    display: flex;
     gap: 12px;
+    flex-shrink: 0;
 }
 
 .tm-stat-tile {
@@ -20337,7 +20335,8 @@ img, svg, canvas {
     align-items: center;
     justify-content: center;
     gap: 4px;
-    padding: 12px 8px;
+    width: 96px;
+    padding: 12px 6px;
     border: 1px solid var(--border);
     border-radius: 12px;
     background: var(--bg-alt);
@@ -20345,7 +20344,7 @@ img, svg, canvas {
 }
 
 .tm-stat-tile-value {
-    font-size: 26px;
+    font-size: 24px;
     font-weight: 800;
     line-height: 1.1;
     color: var(--text);
@@ -20353,7 +20352,7 @@ img, svg, canvas {
 }
 
 .tm-stat-tile-label {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -20361,9 +20360,8 @@ img, svg, canvas {
 }
 
 .team-modal-avatar {
-    width: 102px;
-    height: 102px;
-    margin-right: 16px;
+    width: 84px;
+    height: 84px;
     flex-shrink: 0;
 }
 
@@ -20390,7 +20388,8 @@ img, svg, canvas {
 }
 
 .team-modal-title-section {
-    flex: 1;
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .team-modal-name {
@@ -20438,6 +20437,7 @@ img, svg, canvas {
     border-radius: 10px;
     transition: all 0.2s;
     flex-shrink: 0;
+    align-self: flex-start;
 }
 
 .team-modal-close:hover {
@@ -21099,10 +21099,30 @@ tr.team-clickable {
 
     .team-modal-header {
         padding: 16px;
-        gap: 14px;
+    }
+
+    /* No room for tiles beside the title on a phone: wrap the header so the
+       stat bar drops to a full-width 3-up row below the title/close line. */
+    .team-modal-header-top {
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .team-modal-close {
+        order: 1;
+    }
+
+    .team-modal-statbar {
+        order: 2;
+        flex-basis: 100%;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
     }
 
     .tm-stat-tile {
+        width: auto;
         padding: 10px 6px;
     }
 
@@ -21117,7 +21137,6 @@ tr.team-clickable {
     .team-modal-avatar {
         width: 48px;
         height: 48px;
-        margin-right: 12px;
     }
 
     .team-modal-avatar-placeholder {

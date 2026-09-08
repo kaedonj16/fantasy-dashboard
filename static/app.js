@@ -17080,9 +17080,9 @@ function openTeamModal(rosterId, teamName) {
             <div class="loading-spinner" style="width: 16px; height: 16px;"></div>
           </div>
         </div>
+        <div class="team-modal-statbar" id="teamModalStatbar" hidden></div>
         <button class="team-modal-close" onclick="closeTeamModal()" aria-label="Close">×</button>
       </div>
-      <div class="team-modal-statbar" id="teamModalStatbar" hidden></div>
     </div>
     <div class="tm-tab-bar">
       <button class="tm-tab active" data-tab="roster" onclick="tmSwitchTab('roster')">Roster</button>
@@ -17580,12 +17580,9 @@ function renderTeamDetails(data) {
        </div>`;
   document.getElementById('teamModalAvatar').innerHTML = avatarHTML;
 
-  // Update header
+  // Update header. Record now lives in the stat tiles beside the title, so
+  // it is dropped from these meta rows to avoid showing it twice.
   const metaHTML = `
-    <div class="team-modal-stat-row">
-      <span class="team-modal-stat-label">Record:</span>
-      <span class="team-modal-stat-value">${data.record}</span>
-    </div>
     <div class="team-modal-stat-row">
       <span class="team-modal-stat-label">Manager:</span>
       <span class="team-modal-stat-value">@${data.username || 'Unknown'}</span>
