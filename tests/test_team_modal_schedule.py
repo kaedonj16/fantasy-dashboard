@@ -35,6 +35,9 @@ def test_api_sends_last_finalized_week_and_points_against():
     # Viewed season only — not the graph fallback season.
     assert "get_league_ctx_from_cache(platform, league_id, season)" in body
     assert "the tab doesn't invent a 0-5 record before kickoff" in body
+    # Opponent logos on the schedule tab.
+    assert '"avatar": team_avatar(platform, r, users) or ""' in body
+    assert "schedule_opponents.append" in body
 
 
 def test_js_does_not_default_last_played_to_week_five():
@@ -133,3 +136,56 @@ console.log('ok');
     result = subprocess.run(["node", str(script)], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr or result.stdout
     assert "ok" in result.stdout
+
+
+@pytest.mark.skipif(not _node_available(), reason="node is required to eval the schedule helpers")
+def test_schedule_html_uses_opponent_avatar_when_present(tmp_path):
+    helpers = _schedule_helpers_js()
+    script = tmp_path / "schedule_avatars.js"
+    script.write_text(
+        helpers
+        + r"""
+global.window = { _tmRosterId: 1 };
+global.location = { pathname: '/sleeper/2026/1/standings' };
+const html = _tmBuildScheduleHtml({
+  team_name: "Caleb's Casting Couch",
+  avatar: 'https://cdn.example/me.png',
+  record: '0-0',
+  points_for: 0,
+  points_against: 0,
+  last_finalized_week: 0,
+  roster: [{ name: 'A. Player', position: 'QB', player_id: '1' }],
+  schedule_opponents: [
+    {
+      roster_id: 2,
+      team_name: 'Little Dike',
+      avatar: 'https://cdn.example/opp.png',
+      players: [{ name: 'B. Player', pos: 'RB', player_id: '2' }],
+    },
+  ],
+});
+const failures = [];
+if (!html.includes('src="https://cdn.example/opp.png"')) failures.push('opponent logo missing');
+if (!html.includes('src="https://cdn.example/me.png"')) failures.push('own team logo missing in matchup');
+if (!html.includes('tm-sched-avatar-img')) failures.push('logo img class missing');
+if (!html.includes('Little Dike')) failures.push('opponent name missing');
+if (failures.length) { console.error(failures.join('; ')); process.exit(1); }
+console.log('ok');
+""",
+        encoding="utf-8",
+    )
+    result = subprocess.run(["node", str(script)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert "ok" in result.stdout
+
+
+def test_ages_tiles_css_does_not_leave_fixed_chips_in_stretched_tracks():
+    css = (_REPO / "static" / "dashboard.css").read_text(encoding="utf-8")
+    start = css.index(".tm-ages-tiles {")
+    end = css.index(".tm-age-bucket", start)
+    block = css[start:end]
+    assert "display: flex" in block
+    assert "width: auto" in block
+    assert "grid-template-columns: repeat(auto-fit, minmax(84px, 1fr))" not in block
+    assert "img.tm-sched-avatar" in css
+
