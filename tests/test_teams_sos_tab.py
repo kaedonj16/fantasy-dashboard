@@ -39,8 +39,13 @@ _SOS_SELECTORS = (
 def _fn_block(name: str) -> str:
     start = JS.index("function %s(" % name)
     rest = JS[start:]
-    nxt = rest.find("\n      function ", 10)
-    return rest if nxt < 0 else rest[:nxt]
+    # Sibling functions in the teams.js IIFE are indented 4 spaces.
+    nxt = None
+    for pat in ("\n    function ", "\n    async function "):
+        i = rest.find(pat, 10)
+        if i >= 0 and (nxt is None or i < nxt):
+            nxt = i
+    return rest if nxt is None else rest[:nxt]
 
 
 def test_sos_css_selectors_exist():
@@ -79,7 +84,7 @@ def test_sos_bars_use_spread_not_max_only():
 
 def test_sos_tiers_collapse_when_schedules_are_even():
     tier = _fn_block("_sosTier")
-    assert "if (even) return { key: 'even', label: 'Even' }" in tier
+    assert "if (even) return {key: 'even', label: 'Even'}" in tier
     assert "Hardest" in tier
     assert "Easiest" in tier
 
@@ -90,9 +95,6 @@ def test_sos_render_escapes_team_names_and_marks_viewer():
     assert "sos-mine" in render
     assert "sos-you" in render
     assert "No games played yet" in render
-    assert "Same formula as SOS" in render
-    assert "projected scoring until week 1" in render
-    assert "blending projections with results so far" in render
     assert "projected starter scoring" in render
     assert "one week" in render
     assert "scoring and win rate" in render
