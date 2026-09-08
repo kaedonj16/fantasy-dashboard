@@ -37,8 +37,8 @@ def test_waiver_rows_show_return_source():
 
 def test_scout_week_proj_chip_is_not_labeled_ppg():
     scout = (ROOT / "dashboard_services" / "pages" / "scout_page.py").read_text(encoding="utf-8")
-    assert "{p['proj_ppg']:.1f} proj" in scout
-    assert "{p['proj_ppg']:.1f} PPG" not in scout
+    assert "{p['proj']:.1f} proj" in scout
+    assert "PPG" not in scout
     assert "Week {current_week} Sleeper proj" in scout
 
 
