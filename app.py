@@ -6795,6 +6795,21 @@ def _ranking_movement(league_id, season, kind, ordered_roster_ids) -> dict:
         return {}
 
 
+def _standings_div_header(label: str, n_teams: int, colspan: int) -> str:
+    """Section header row that splits a standings table into divisions."""
+    safe = html.escape(str(label))
+    meta = f"{int(n_teams)} team{'s' if int(n_teams) != 1 else ''}"
+    return (
+        f"<tr class='st-div-row'>"
+        f"<td colspan='{int(colspan)}'>"
+        f"<div class='st-div-head'>"
+        f"<span class='st-div-mark' aria-hidden='true'></span>"
+        f"<span class='st-div-label'>{safe}</span>"
+        f"<span class='st-div-meta'>{html.escape(meta)}</span>"
+        f"</div></td></tr>"
+    )
+
+
 def _clickable_team_name(owner, owner_to_rid=None, *, inner=None, cls="") -> str:
     """Wrap a team (owner) name so the global .team-clickable handler opens its
     modal. Falls back to plain text (or a plain span with `cls`) when the roster
@@ -6868,16 +6883,23 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
 
     rows = []
     _prev_div = None
+    _div_counts = {}
+    if _use_div:
+        for d in df["_division"]:
+            try:
+                di = int(d or 0)
+            except (TypeError, ValueError):
+                di = 0
+            if di:
+                _div_counts[di] = _div_counts.get(di, 0) + 1
     for _, row in df.iterrows():
         div_id = int(row.get("_division") or 0)
+        _is_div_lead = False
         if _use_div and div_id and div_id != _prev_div:
-            _label = html.escape(str(_div_names.get(div_id) or f"Division {div_id}"))
-            rows.append(
-                "<tr class='st-div-row'>"
-                f"<td colspan='4'><div class='st-div-label'>{_label}</div></td>"
-                "</tr>"
-            )
+            _label = str(_div_names.get(div_id) or f"Division {div_id}")
+            rows.append(_standings_div_header(_label, _div_counts.get(div_id, 0), 4))
             _prev_div = div_id
+            _is_div_lead = True
         record = f"{int(row['Wins'])}-{int(row['Losses'])}"
         if int(row.get("Ties", 0) or 0):
             record += f"-{int(row['Ties'])}"
@@ -6893,10 +6915,12 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
                 mv_html = f"<span class='rank-move up' title='Up {_mv} since last week'>&#9650;{_mv}</span>"
             elif _mv < 0:
                 mv_html = f"<span class='rank-move down' title='Down {abs(_mv)} since last week'>&#9660;{abs(_mv)}</span>"
+        _lead = " <span class='st-div-lead' title='Division leader'>DIV</span>" if _is_div_lead else ""
+        _tr = " class='st-div-leader'" if _is_div_lead else ""
         rows.append(f"""
-            <tr>
+            <tr{_tr}>
               <td class="num">{int(row['Rank'])}{mv_html}</td>
-              <td class="team">{img} {_clickable_team_name(row['owner'], owner_to_rid)}</td>
+              <td class="team">{img} {_clickable_team_name(row['owner'], owner_to_rid)}{_lead}</td>
               <td>{record}</td>
               <td>{row['PF']:.0f}</td>
             </tr>""")
@@ -7131,19 +7155,26 @@ def render_standings(team_stats, length, all_play: dict = None,
         return ""  # "in" carries the green accent, no tag needed
 
     _prev_div = None
+    _div_counts = {}
+    if _use_div:
+        for d in df["_division"]:
+            try:
+                di = int(d or 0)
+            except (TypeError, ValueError):
+                di = 0
+            if di:
+                _div_counts[di] = _div_counts.get(di, 0) + 1
     for _, row in df.iterrows():
         owner = str(row['owner'])
         div_id = int(row.get("_division") or 0)
+        _is_div_lead = False
 
         # Division section header between groups (skip when no divisions).
         if _use_div and div_id and div_id != _prev_div:
-            _label = html.escape(str(_div_names.get(div_id) or f"Division {div_id}"))
-            rows.append(
-                "<tr class='st-div-row'>"
-                f"<td colspan='11'><div class='st-div-label'>{_label}</div></td>"
-                "</tr>"
-            )
+            _label = str(_div_names.get(div_id) or f"Division {div_id}")
+            rows.append(_standings_div_header(_label, _div_counts.get(div_id, 0), 11))
             _prev_div = div_id
+            _is_div_lead = True
 
         record = f"{int(row['Wins'])}-{int(row['Losses'])}"
         if int(row.get("Ties", 0)):
@@ -7170,11 +7201,15 @@ def render_standings(team_stats, length, all_play: dict = None,
         _seed_cell = _ord_str(_seed) if _seed else "<span class='muted'>&ndash;</span>"
 
         _p = pic_by_name.get(owner)
-        _trcls = ""
+        _trcls = "st-div-leader" if _is_div_lead else ""
         _tdcls = "team"
         _mo_attr = ""
+        _div_lead_tag = (
+            "<span class='st-div-lead' title='Division leader'>DIV</span>"
+            if _is_div_lead else ""
+        )
         if _p:
-            _trcls = _STATUS_CLS.get(_p["status"], "")
+            _trcls = (_trcls + " " + _STATUS_CLS.get(_p["status"], "")).strip()
             _tdcls = "team pp-team-cell"
             _tag = _pp_tag(_p)
             # Clinch moment: a team that has locked a playoff spot gets a green
@@ -7185,10 +7220,13 @@ def render_standings(team_stats, length, all_play: dict = None,
             # under the name on very tight widths rather than getting cut off).
             team_cell = (
                 f"<div class='pp-teamline'>{img}"
-                f"{_clickable_team_name(owner, owner_to_rid, cls='pp-team-name')}{_tag}</div>"
+                f"{_clickable_team_name(owner, owner_to_rid, cls='pp-team-name')}"
+                f"{_div_lead_tag}{_tag}</div>"
             )
         else:
-            team_cell = f"{img} {_clickable_team_name(owner, owner_to_rid)}"
+            team_cell = (
+                f"{img} {_clickable_team_name(owner, owner_to_rid)}{_div_lead_tag}"
+            )
 
         # Week-over-week seed movement (positive = climbed). Same arrows as the
         # compact standings; blank when there's no prior week to compare.
