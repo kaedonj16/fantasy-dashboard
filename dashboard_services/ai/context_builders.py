@@ -264,13 +264,18 @@ def build_model_value_lookup(
 
 
 def league_format_value_lookup(ctx: dict) -> dict[str, dict]:
-    """pid → value row, rewritten for SF/redraft and TE premium.
+    """pid → value row with ``value`` rewritten for this league's type.
 
-    Shared by My Leagues positional ranks and the Teams page so a WR5 on one
-    surface cannot read as WR6 on the other from a different value column.
+    Same picker the trade calculator uses (``player_trade_value``): Superflex
+    vs 1QB, 8/10/12/14-team columns, redraft vs dynasty, PPR/half/std, and TE
+    premium. Shared by My Leagues and the Teams page so a WR5 on one surface
+    cannot read as WR6 on the other from a different value column.
     """
     from utils.lineup_slots import is_superflex_lineup
-    from utils.value_helpers import apply_te_premium, te_premium_from_settings
+    from utils.trade_value import player_trade_value, snap_league_size
+    from utils.value_helpers import (
+        format_rank_label_key, row_format_rank_label, te_premium_from_settings,
+    )
 
     model_vals = ctx.get("model_value_table") or []
     roster_positions = (
@@ -279,21 +284,42 @@ def league_format_value_lookup(ctx: dict) -> dict[str, dict]:
         or []
     )
     is_sf = is_superflex_lineup(roster_positions)
-    scoring = ctx_scoring_type(ctx)
-    lookup = build_model_value_lookup(model_vals, is_sf=is_sf, scoring_type=scoring)
-    tep = te_premium_from_settings(
+    is_redraft = ctx_scoring_type(ctx) == "redraft"
+    scoring = "redraft" if is_redraft else "dynasty"
+    n_teams = ctx.get("total_rosters") or len(ctx.get("rosters") or []) or 10
+    settings = (
         ctx.get("scoring_settings")
         or (ctx.get("league") or {}).get("scoring_settings")
+        or {}
     )
-    if not tep:
-        return lookup
+    try:
+        rec = float(settings.get("rec") or 0)
+    except (TypeError, ValueError):
+        rec = 0.0
+    scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
+    tep = te_premium_from_settings(settings)
+    rank_label_key = format_rank_label_key(is_redraft=is_redraft, is_sf=is_sf)
+
     out: dict[str, dict] = {}
-    for pid, row in lookup.items():
-        pos = str(row.get("position") or row.get("pos") or "").upper()
-        if pos == "TE":
-            out[pid] = {**row, "value": apply_te_premium(row.get("value"), "TE", tep)}
-        else:
-            out[pid] = row
+    for row in model_vals:
+        if not isinstance(row, dict):
+            continue
+        pid = str(row.get("id") or row.get("player_id") or "")
+        if not pid:
+            continue
+        val = player_trade_value(
+            row,
+            league_type="sf" if is_sf else "1qb",
+            league_size=snap_league_size(n_teams),
+            scoring_format=scoring_format,
+            scoring_type=scoring,
+            te_premium=tep,
+        )
+        out[pid] = {
+            **row,
+            "value": val,
+            "pos_rank_label": row_format_rank_label(row, rank_label_key),
+        }
     return out
 
 

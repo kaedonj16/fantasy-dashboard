@@ -9,6 +9,19 @@ from __future__ import annotations
 import math
 from typing import Mapping, Optional
 
+SUPPORTED_LEAGUE_SIZES = (8, 10, 12, 14)
+
+
+def snap_league_size(n) -> int:
+    """Nearest supported value-table size (8 / 10 / 12 / 14)."""
+    try:
+        size = int(n or 10)
+    except (TypeError, ValueError):
+        return 10
+    if size in SUPPORTED_LEAGUE_SIZES:
+        return size
+    return min(SUPPORTED_LEAGUE_SIZES, key=lambda s: abs(s - size))
+
 
 SCORING_MULTS = {
     "ppr": {"QB": 1.00, "RB": 1.00, "WR": 1.00, "TE": 1.00},
@@ -31,10 +44,7 @@ def player_trade_value(
     scoring_mults = SCORING_MULTS.get(fmt, SCORING_MULTS["ppr"])
     lt = (league_type or "1qb").strip().lower()
     st = (scoring_type or "dynasty").strip().lower()
-    try:
-        size = int(league_size or 10)
-    except (TypeError, ValueError):
-        size = 10
+    size = snap_league_size(league_size)
     try:
         tep = float(te_premium or 0)
     except (TypeError, ValueError):

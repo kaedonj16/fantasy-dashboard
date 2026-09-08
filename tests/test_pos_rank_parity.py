@@ -12,6 +12,7 @@ from dashboard_services.ai.context_builders import league_format_value_lookup
 from utils.roster_strength import (
     positional_strength_profile, rank_rosters_by_position, weighted_pos_strength,
 )
+from utils.trade_value import snap_league_size
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -48,8 +49,9 @@ def test_league_format_value_lookup_uses_sf_and_te_premium():
     ctx = {
         "platform": "sleeper",
         "roster_positions": ["QB", "QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "SUPER_FLEX"],
-        "scoring_settings": {"bonus_rec_te": 1.0},
+        "scoring_settings": {"bonus_rec_te": 1.0, "rec": 1.0},
         "league_settings": {"type": 2},
+        "total_rosters": 10,
         "model_value_table": [
             {"id": "qb", "position": "QB", "value": 100, "sf_value": 180},
             {"id": "te", "position": "TE", "value": 100, "sf_value": 100},
@@ -60,6 +62,45 @@ def test_league_format_value_lookup_uses_sf_and_te_premium():
     assert lookup["te"]["value"] == pytest.approx(120.0)
 
 
+def test_league_format_value_lookup_uses_12_team_sf_column():
+    """12-team Superflex must not rank off the 10-team sf_value column."""
+    ctx = {
+        "platform": "sleeper",
+        "roster_positions": ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "SUPER_FLEX"],
+        "scoring_settings": {"rec": 1.0},
+        "league_settings": {"type": 2},
+        "total_rosters": 12,
+        "model_value_table": [
+            {"id": "qb", "position": "QB", "value": 100, "sf_value": 180, "sf_value_12": 240},
+        ],
+    }
+    lookup = league_format_value_lookup(ctx)
+    assert lookup["qb"]["value"] == 240
+
+
+def test_league_format_value_lookup_uses_redraft_not_dynasty():
+    ctx = {
+        "platform": "espn",
+        "roster_positions": ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"],
+        "scoring_settings": {"rec": 1.0},
+        "total_rosters": 10,
+        "model_value_table": [
+            {"id": "wr", "position": "WR", "value": 400, "redraft_value_1qb": 40},
+        ],
+    }
+    lookup = league_format_value_lookup(ctx)
+    assert lookup["wr"]["value"] == 40
+
+
+def test_snap_league_size_nearest_supported_bucket():
+    assert snap_league_size(10) == 10
+    assert snap_league_size(12) == 12
+    assert snap_league_size(11) == 10
+    assert snap_league_size(13) == 12
+    assert snap_league_size(16) == 14
+    assert snap_league_size(None) == 10
+
+
 def test_my_leagues_and_teams_page_share_ranker_and_values():
     teams = (ROOT / "dashboard_services" / "pages" / "teams_page.py").read_text()
     portfolio = (ROOT / "routes" / "user_pages_bp.py").read_text()
@@ -68,6 +109,7 @@ def test_my_leagues_and_teams_page_share_ranker_and_values():
     assert "rank_rosters_by_position" in summary
     assert "league_format_value_lookup" in teams
     assert "league_format_value_lookup" in summary
+    assert "player_trade_value" in (ROOT / "dashboard_services" / "ai" / "context_builders.py").read_text()
     # Composite profile is detail-only on Teams; it must not assign the #N place.
     assert 'profile["composite"]' not in teams
     assert "rank by z-score" not in teams

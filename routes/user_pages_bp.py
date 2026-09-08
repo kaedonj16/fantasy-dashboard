@@ -238,8 +238,8 @@ def page_portfolio():
             m = n // 2
             return s[m] if n % 2 else (s[m - 1] + s[m]) / 2
 
-        # Same ranking helper as the Teams page (weighted_pos_strength, format-
-        # aware values, TE premium) so a WR5 chip cannot read as WR6 in-league.
+        # Same ranking helper as the Teams page (weighted_pos_strength +
+        # league-type values) so a WR5 chip cannot read as WR6 in-league.
         #
         # The My Leagues summary card shows the in-league PERCENTILE of that
         # strength (then averages those percentiles across leagues). Percentiles

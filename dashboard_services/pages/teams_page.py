@@ -137,8 +137,9 @@ def build_teams_body(ctx: dict) -> str:
     # Expected rows like {id, name, position, team, value, search_name}
     model_vals = ctx.get("model_value_table") or []
 
-    # map sleeper_id -> row. Format-aware values + TE premium come from the
-    # shared lookup so My Leagues and this page rank the same rooms the same way.
+    # map sleeper_id -> row. League-type values (1QB/SF, size, redraft) + TE
+    # premium come from the shared lookup so My Leagues and this page rank the
+    # same rooms the same way.
     _rp_early = ctx.get("roster_positions") or []
     from utils.lineup_slots import is_superflex_lineup
     from utils.value_helpers import format_rank_label_key, row_format_rank_label
