@@ -194,6 +194,57 @@ def test_features_md_does_not_call_yahoo_soon_or_mfl_public_only():
     assert "Custom Cheat Sheet board" in features
 
 
+def test_features_md_matches_current_ui_placement():
+    """Keep FEATURES.md honest about tabs, PRO gates, and platform coverage."""
+    features = (ROOT / "FEATURES.md").read_text(encoding="utf-8")
+    # Weekly hub tabs (not Power Rankings / SOS)
+    assert "**Matchups**" in features
+    assert "**Scorers**" in features
+    assert "**Scout**" in features
+    assert "**Lineup**" in features
+    assert "Power Rankings** — Weekly power ranking" not in features
+    assert "Strength of Schedule (SOS)** — Schedule difficulty" not in features
+    # Teams sidebar tabs
+    assert "Value (Beat the Market)" in features
+    assert "Roster Intel" in features
+    assert "Schedule (SOS)" in features
+    assert "Draft Grades** — Grades every rookie draft pick" not in features
+    # Standings hosts Power Rankings + Playoff Odds Outlook
+    assert "Power Rankings" in features
+    assert "Outlook" in features
+    assert "no separate Commissioner nav item" in features
+    # PRO / generate honesty
+    assert "never auto-served on page load" in features
+    assert "**AI trade analysis (PRO)**" in features
+    assert "**Deep Dive (PRO)**" in features
+    assert "Trend Scout (PRO)" in features
+    # Platforms
+    assert "Sleeper, ESPN, or Yahoo" in features
+    assert "Sleeper, Yahoo, and ESPN" in features
+    assert "Fleaflicker" in features
+    assert "public or private email/token" in features
+    # Streaming lives on Waivers
+    assert "Streaming this week" in features
+    assert "lives on the Waivers page" in features
+    # Playoff Impact dynasty-only future outlook
+    assert "Future Outlook" in features
+    assert "stripped for redraft" in features
+    # Advanced Metrics documented
+    assert "**Advanced Metrics**" in features
+    # No stale Sleeper-only live-sync claims
+    assert "live Sleeper draft sync" not in features
+    assert "connect to a live Sleeper or ESPN draft" not in features
+    assert "a Sleeper in-draft overlay" not in features
+
+
+def test_app_js_has_no_league_bulletins_client():
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert "initLeagueBulletins" not in js
+    assert "leagueBulletinsContainer" not in js
+    assert ".bulletins-list" not in js
+    assert "No league bulletins yet" not in js
+
+
 def test_draft_room_loads_custom_board_overrides():
     assert "applyCustomBoardOverrides" in DRAFT_JS
     assert "loadCustomBoardOverrides" in DRAFT_JS

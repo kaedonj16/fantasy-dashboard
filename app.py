@@ -8091,7 +8091,7 @@ def render_power_and_playoffs(
     power_rankings: list of team dicts from build_power_rankings_context()
         ({"team_name", "power_score", "rank"}). When provided, the podium's
         order and PowerScore are taken from here so this card matches the
-        Teams page "Power Rankings" tab exactly.
+        Standings Power Rankings source exactly.
     """
     if team_stats is None or team_stats.empty:
         return ""
@@ -8099,7 +8099,7 @@ def render_power_and_playoffs(
     team_stats = team_stats.copy()
     _o2r = _owner_to_rid_map(roster_map=roster_map)
 
-    # ---- Align with the Teams page Power Rankings tab when provided ----
+    # ---- Align with Standings Power Rankings when provided ----
     # Override PowerScore (and therefore ordering) using the canonical
     # build_power_rankings_context() output, matched by team name.
     if power_rankings:

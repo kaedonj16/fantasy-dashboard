@@ -285,7 +285,7 @@ def build_pro_welcome(
         ),
         "league": (
             "League PRO is shared with every manager in the league you purchased for. "
-            "Send them the invite link from Commissioner / pricing so they can claim access."
+            "Send them the invite link from League Health / pricing so they can claim access."
         ),
         "combo": (
             "League + Personal PRO covers shared access for one league plus Personal PRO "
@@ -311,7 +311,7 @@ def build_pro_welcome(
         ),
         (
             "Front Office Report",
-            "A full AI read on roster construction, trade lanes, and your standings path.",
+            "Generate an AI read on roster construction, trade lanes, and your standings path.",
             dashboard,
         ),
         (
@@ -320,8 +320,8 @@ def build_pro_welcome(
             draft,
         ),
         (
-            "Roster Grades and Playoff Scenarios",
-            "Letter grades, competitive window, playoff odds, and late-season magic numbers.",
+            "Roster Grades and Playoff Outlook",
+            "Letter grades and competitive windows on Teams; playoff odds and late-season clinch Outlook on Standings.",
             teams,
         ),
     ]
@@ -358,7 +358,8 @@ def build_pro_welcome(
                 2,
                 "Pressure-test a deal with Playoff Impact",
                 "Run any trade through the calculator for playoff odds, projected wins and "
-                "PPG, roster age, and a plain-language verdict.",
+                "PPG, plus a plain-language verdict. Dynasty leagues also get Future Outlook "
+                "(pick odds, roster age, prime years).",
                 dashboard,
             )
             + _step(
