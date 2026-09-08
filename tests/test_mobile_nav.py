@@ -153,10 +153,22 @@ def test_nav_show_keeper_rules(monkeypatch, settings, expected):
     assert app._nav_show_keeper("sleeper", "L", 2026) is expected
 
 
+def _no_games_this_week(monkeypatch):
+    """Pin offseason dock tests to the no-slate case.
+
+    Production treats a regular-season game in the current Tue–Mon window as
+    in-season even when Sleeper still says ``off``/``pre``. These tests are
+    about the August-style offseason dock, so they stub that check.
+    """
+    import app
+    monkeypatch.setattr(app, "_regular_season_week_with_games", lambda *a, **k: None)
+
+
 def test_dynasty_offseason_dock_has_no_keeper(monkeypatch):
     """A dynasty league in the offseason gets the redraft dock layout
     (Draft, Trades, Teams) rather than a Keeper tab."""
     import app, re
+    _no_games_this_week(monkeypatch)
     monkeypatch.setattr(app, "get_league_ctx_from_cache",
                         lambda *a, **k: {"league_settings": {"type": 2, "max_keepers": 20}})
     monkeypatch.setattr(app, "get_nfl_state", lambda: {"season": "2026", "season_type": "off"})
@@ -171,6 +183,7 @@ def test_offseason_dock_swaps_draft_for_matchups_once_drafted(monkeypatch):
     """A league that has finished its draft is effectively underway, so the
     offseason Draft dock tab becomes Matchups (weekly)."""
     import app, re
+    _no_games_this_week(monkeypatch)
     monkeypatch.setattr(app, "get_league_ctx_from_cache",
                         lambda *a, **k: {"league_settings": {"type": 0, "max_keepers": 0}})
     monkeypatch.setattr(app, "get_nfl_state", lambda: {"season": "2026", "season_type": "off"})
@@ -186,6 +199,7 @@ def test_redraft_offseason_dock_shows_teams_not_keeper(monkeypatch):
     offseason even when Sleeper reports a default keeper limit — only real
     keeper leagues get the Keeper tab."""
     import app, re
+    _no_games_this_week(monkeypatch)
     monkeypatch.setattr(app, "get_league_ctx_from_cache",
                         lambda *a, **k: {"league_settings": {"type": 0, "max_keepers": 1}})
     monkeypatch.setattr(app, "get_nfl_state", lambda: {"season": "2026", "season_type": "off"})
@@ -199,6 +213,7 @@ def test_redraft_offseason_dock_shows_teams_not_keeper(monkeypatch):
 def test_keeper_offseason_dock_still_shows_keeper(monkeypatch):
     """A real keeper league (Sleeper type 1) still gets the Keeper dock tab."""
     import app, re
+    _no_games_this_week(monkeypatch)
     monkeypatch.setattr(app, "get_league_ctx_from_cache",
                         lambda *a, **k: {"league_settings": {"type": 1, "max_keepers": 2}})
     monkeypatch.setattr(app, "get_nfl_state", lambda: {"season": "2026", "season_type": "off"})
@@ -212,6 +227,7 @@ def test_preseason_is_treated_as_offseason(monkeypatch):
     """Preseason ("pre", ~August) has no fantasy games, so it gets the same
     offseason dock as "off" — not the empty in-season layout."""
     import app, re
+    _no_games_this_week(monkeypatch)
     monkeypatch.setattr(app, "get_league_ctx_from_cache",
                         lambda *a, **k: {"league_settings": {"type": 2, "max_keepers": 20}})
     monkeypatch.setattr(app, "get_nfl_state", lambda: {"season": "2026", "season_type": "pre"})
@@ -219,6 +235,21 @@ def test_preseason_is_treated_as_offseason(monkeypatch):
     with app.app.test_request_context("/x"):
         labels = re.findall(r"br-tabbar-lbl'>([^<]+)<", app._mobile_nav("dashboard", "L", "sleeper", 2026))
     assert labels == ["Home", "Draft", "Trades", "Teams", "More"]
+
+
+def test_game_this_week_uses_inseason_dock_even_in_preseason(monkeypatch):
+    """A regular-season game on this week's slate (including tomorrow) flips
+    the dock to in-season even when Sleeper still reports season_type 'pre'."""
+    import app, re
+    monkeypatch.setattr(app, "get_league_ctx_from_cache",
+                        lambda *a, **k: {"league_settings": {"type": 2, "max_keepers": 20}})
+    monkeypatch.setattr(app, "get_nfl_state",
+                        lambda: {"season": "2026", "week": 0, "season_type": "pre"})
+    monkeypatch.setattr(app, "has_draft_ended", lambda *a, **k: True)
+    monkeypatch.setattr(app, "_regular_season_week_with_games", lambda *a, **k: 1)
+    with app.app.test_request_context("/x"):
+        labels = re.findall(r"br-tabbar-lbl'>([^<]+)<", app._mobile_nav("dashboard", "L", "sleeper", 2026))
+    assert labels == ["Home", "Matchups", "Trades", "Teams", "More"]
 
 
 @pytest.mark.parametrize("settings,shown", [
@@ -231,6 +262,7 @@ def test_keeper_assistant_gated_everywhere(monkeypatch, settings, shown):
     """Keeper Assistant appears in the mobile sheet and the desktop Draft
     dropdown only for keeper leagues, hidden for dynasty and plain redraft."""
     import app
+    _no_games_this_week(monkeypatch)
     monkeypatch.setattr(app, "get_league_ctx_from_cache",
                         lambda *a, **k: {"league_settings": settings})
     monkeypatch.setattr(app, "get_nfl_state", lambda: {"season": "2026", "season_type": "off"})
