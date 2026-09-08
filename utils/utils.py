@@ -601,6 +601,11 @@ def save_week_schedule(season: int, week: int, data: List[Dict]) -> None:
 _WEEK_PROJ_TTL_HOURS = 1   # re-fetch the live week's projections at most hourly
 _WEEK_PROJ_EMPTY_TTL_SEC = 15 * 60
 _WEEK_PROJ_EMPTY_MAX_BYTES = 16
+# Failed / empty Sleeper fetches must not poison disk (deployed ``{}``
+# placeholders + "fresh today" cron skips caused "Projections unavailable").
+# Back off in-process instead of writing empty cache files.
+_WEEK_PROJ_FAIL_UNTIL: Dict[tuple, float] = {}
+_WEEK_PROJ_FAIL_LOCK = _threading.Lock()
 
 
 def _week_proj_file_is_empty(cache_path: str) -> bool:
@@ -611,22 +616,30 @@ def _week_proj_file_is_empty(cache_path: str) -> bool:
         return True
 
 
+def _remove_empty_week_proj(cache_path: str) -> None:
+    """Delete a ``{}`` placeholder so it cannot look like a real cache hit."""
+    if not _week_proj_file_is_empty(cache_path):
+        return
+    try:
+        os.remove(cache_path)
+    except OSError:
+        pass
+
+
 def _week_proj_is_stale(season: int, week: int, cache_path: str) -> bool:
     """True when the cache should be re-fetched.
 
     Completed weeks (and past seasons) never change, so a *populated* cache
-    is permanent. An empty ``{}`` file is not a real projection set — a
-    failed Sleeper fetch used to write one and then look fresh for an hour
-    (or forever once the week was treated as completed), which painted
-    every matchup as 0.0. Empty files retry after a short TTL.
+    is permanent. An empty ``{}`` file is never a real projection set — treat
+    it as missing so the next request refetches (failed-fetch backoff lives
+    in memory, not on disk).
     """
-    empty = _week_proj_file_is_empty(cache_path)
+    if _week_proj_file_is_empty(cache_path):
+        return True
     try:
         age = time.time() - os.path.getmtime(cache_path)
     except OSError:
         return True
-    if empty:
-        return age > _WEEK_PROJ_EMPTY_TTL_SEC
     try:
         state = get_nfl_state() or {}
         cur_season = int(state.get("season") or 0)
@@ -650,15 +663,34 @@ def get_week_projections_cached(
     fetch_fn returns { sleeper_id: {ppr, half_ppr, std, tep, ...} }.
     """
     cache_path = path_week_proj(season, week)
+    memo_key = (int(season), int(week))
 
     if os.path.exists(cache_path) and not force_refresh:
         # Serve from disk unless this is the live week and its cache has aged out.
+        # Empty ``{}`` placeholders are always stale and are removed below.
         if not _week_proj_is_stale(season, week, cache_path):
             return load_week_projection(season, week) or {}
+        _remove_empty_week_proj(cache_path)
 
-    data = fetch_fn(season, week)
-    save_week_projections(season, week, proj_map=data)
-    return data
+    if not force_refresh:
+        with _WEEK_PROJ_FAIL_LOCK:
+            fail_until = _WEEK_PROJ_FAIL_UNTIL.get(memo_key, 0.0)
+        if fail_until and time.time() < fail_until:
+            return {}
+
+    data = fetch_fn(season, week) or {}
+    if data:
+        with _WEEK_PROJ_FAIL_LOCK:
+            _WEEK_PROJ_FAIL_UNTIL.pop(memo_key, None)
+        save_week_projections(season, week, proj_map=data)
+        return data
+
+    # Do not persist ``{}`` — it masquerades as a populated cache after deploys
+    # and cron "fresh today" checks. Back off briefly in this process instead.
+    with _WEEK_PROJ_FAIL_LOCK:
+        _WEEK_PROJ_FAIL_UNTIL[memo_key] = time.time() + _WEEK_PROJ_EMPTY_TTL_SEC
+    _remove_empty_week_proj(cache_path)
+    return {}
 
 
 def get_or_refresh_schedule_path(season: int, week: int) -> Optional[str]:
@@ -860,8 +892,18 @@ def _sleeper_stats_to_variants(st: dict, pos: str, raw_scoring_settings: dict = 
 
     # Do not discard kickers, defenses, returners, or IDP projections merely
     # because they have no offensive yardage. Keep any numeric projected stat
-    # that the league can score.
-    if not any(isinstance(v, (int, float)) and v != 0 for v in st.values()):
+    # that the league can score. ADP-only rows (``adp_*`` / ``pos_adp_*``)
+    # are not projections — Sleeper pads the feed with those before weekly
+    # lines publish, and treating them as 0.0 projections hid real misses.
+    def _is_proj_stat(key: str, value: Any) -> bool:
+        if not isinstance(value, (int, float)) or value == 0:
+            return False
+        k = str(key).lower()
+        if k.startswith("adp") or k.startswith("pos_adp"):
+            return False
+        return True
+
+    if not any(_is_proj_stat(k, v) for k, v in st.items()):
         return None
 
     # League-specific scoring rates (with standard defaults)

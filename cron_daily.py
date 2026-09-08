@@ -88,6 +88,20 @@ def _file_fresh_today(path: Path) -> bool:
     return date.fromtimestamp(path.stat().st_mtime) == _today()
 
 
+def _projection_file_fresh(path: Path) -> bool:
+    """True when a weekly projection cache is populated and mtime is today.
+
+    Empty ``{}`` placeholders (from failed fetches or accidental git checkins)
+    must not count as fresh — otherwise cron skips the real Sleeper pull and
+    the site stays on "Projections unavailable".
+    """
+    if not _file_fresh_today(path):
+        return False
+    try:
+        return path.stat().st_size >= 16
+    except OSError:
+        return False
+
 def _model_values_fresh() -> bool:
     mv = DATA_DIR / "model_values.json"
     if not _file_fresh_today(mv):
@@ -327,7 +341,7 @@ build_daily_data({season!r}, {week!r}, force={force_rebuild!r})
     if in_season:
         _proj_weeks = sorted(set([week, min(week + 1, 18)]))
         _proj_fresh = all(
-            _file_fresh_today(Path(f"{CACHE_DIR}/projections/projections_s{season}_w{w}.json"))
+            _projection_file_fresh(Path(f"{CACHE_DIR}/projections/projections_s{season}_w{w}.json"))
             for w in _proj_weeks
         )
     else:
@@ -335,6 +349,7 @@ build_daily_data({season!r}, {week!r}, force={force_rebuild!r})
         _proj_fresh = all(
             (
                 (p := Path(f"{CACHE_DIR}/projections/projections_s{season}_w{w}.json")).exists()
+                and p.stat().st_size >= 16
                 and (date.today() - date.fromtimestamp(p.stat().st_mtime)).days < 7
             )
             for w in _proj_weeks
@@ -347,9 +362,12 @@ build_daily_data({season!r}, {week!r}, force={force_rebuild!r})
 from dotenv import load_dotenv; load_dotenv()
 from utils.utils import fetch_week_projections, save_week_projections
 for w in {_proj_weeks!r}:
-    data = fetch_week_projections({season!r}, w)
-    save_week_projections({season!r}, w, data)
-    print(f"[cron] Projections week {{w}}: {{len(data)}} players")
+    data = fetch_week_projections({season!r}, w) or {{}}
+    if data:
+        save_week_projections({season!r}, w, data)
+        print(f"[cron] Projections week {{w}}: {{len(data)}} players")
+    else:
+        print(f"[cron] Projections week {{w}}: empty fetch — left previous cache untouched")
 """, "fetch_weekly_projections")
 
     # ------------------------------------------------------------------ #

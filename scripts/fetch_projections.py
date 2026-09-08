@@ -45,11 +45,14 @@ def main() -> None:
     print(f"Fetching projections for season {season}, weeks {weeks}")
     total = 0
     for w in weeks:
-        data = fetch_week_projections(season, w)
-        save_week_projections(season, w, data)
-        n = len(data or {})
-        total += n
-        print(f"  week {w}: {n} players")
+        data = fetch_week_projections(season, w) or {}
+        if data:
+            save_week_projections(season, w, data)
+            n = len(data)
+            total += n
+            print(f"  week {w}: {n} players")
+        else:
+            print(f"  week {w}: empty fetch — left previous cache untouched")
     print(f"Done — {total} player-week projections cached.")
 
 
