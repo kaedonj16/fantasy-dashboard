@@ -1,5 +1,8 @@
-"""Division-aware standings: grouping, seeding, and render hooks."""
-import pandas as pd
+"""Division-aware standings: grouping, seeding, and render hooks.
+
+Pure helper tests run in lightweight CI (pytest only). Flask/pandas-backed
+render + standings_map checks importorskip so the collection path stays clean.
+"""
 import pytest
 
 from utils.standings_divisions import (
@@ -74,6 +77,7 @@ def test_resolve_divisions_from_ctx():
 
 def test_render_standings_splits_by_division():
     pytest.importorskip("flask")
+    pd = pytest.importorskip("pandas")
     import app as appmod
 
     rows = [
@@ -115,6 +119,7 @@ def test_render_standings_splits_by_division():
 
 def test_build_standings_map_uses_division_seeds():
     pytest.importorskip("flask")
+    pd = pytest.importorskip("pandas")
     from dashboard_services.service import build_standings_map
 
     df = pd.DataFrame([
