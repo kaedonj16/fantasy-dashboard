@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-09-08",
         "tag": "fix",
-        "text": "My Leagues position strength now matches the league Teams page, using the same starter-weighted ranker and league-type values (1QB vs Superflex, 8/10/12/14, redraft vs dynasty).",
+        "text": "My Leagues position strength now matches the league Teams page, using the same starter-weighted ranker and the same values the player modal shows (1QB vs Superflex, redraft vs dynasty, PPR/TE premium).",
         "link": "/portfolio"
     },
     {

@@ -61,7 +61,8 @@ def player_trade_value(
         # FantasyCalc-ratio board the player modal shows. Size-bucketed
         # redraft_*_{8,12,14} columns are a WLS overlay and can invert
         # Superflex (elite QBs priced like 1QB). League-size controls are
-        # disabled in redraft for the same reason.
+        # disabled in redraft for the same reason. Ranked surfaces
+        # (My Leagues / Teams) pin league_size=10 so they match the modal.
         if lt == "sf":
             val = _n(player.get("redraft_value_sf") or player.get("redraft_value_1qb"))
         else:

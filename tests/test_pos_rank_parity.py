@@ -12,7 +12,7 @@ from dashboard_services.ai.context_builders import league_format_value_lookup
 from utils.roster_strength import (
     positional_strength_profile, rank_rosters_by_position, weighted_pos_strength,
 )
-from utils.trade_value import snap_league_size
+from utils.trade_value import player_trade_value, snap_league_size
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -62,20 +62,58 @@ def test_league_format_value_lookup_uses_sf_and_te_premium():
     assert lookup["te"]["value"] == pytest.approx(120.0)
 
 
-def test_league_format_value_lookup_uses_12_team_sf_column():
-    """12-team Superflex must not rank off the 10-team sf_value column."""
+def test_league_format_value_lookup_matches_player_modal_not_size_overlay():
+    """12-team Superflex still uses the modal's 10-team sf_value, not sf_value_12."""
+    row = {"id": "qb", "position": "QB", "value": 100, "sf_value": 180, "sf_value_12": 240}
     ctx = {
         "platform": "sleeper",
         "roster_positions": ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "SUPER_FLEX"],
         "scoring_settings": {"rec": 1.0},
         "league_settings": {"type": 2},
         "total_rosters": 12,
+        "model_value_table": [row],
+    }
+    lookup = league_format_value_lookup(ctx)
+    modal = player_trade_value(
+        row, league_type="sf", league_size=10, scoring_type="dynasty",
+    )
+    overlay = player_trade_value(
+        row, league_type="sf", league_size=12, scoring_type="dynasty",
+    )
+    assert lookup["qb"]["value"] == modal == 180
+    assert overlay == 240
+    assert lookup["qb"]["value"] != overlay
+
+
+def test_league_format_value_lookup_missing_rec_defaults_to_ppr():
+    """Player modal treats missing rec as PPR, not standard."""
+    ctx = {
+        "platform": "sleeper",
+        "roster_positions": ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"],
+        "scoring_settings": {},
+        "league_settings": {"type": 2},
+        "total_rosters": 10,
         "model_value_table": [
-            {"id": "qb", "position": "QB", "value": 100, "sf_value": 180, "sf_value_12": 240},
+            {"id": "wr", "position": "WR", "value": 100},
         ],
     }
     lookup = league_format_value_lookup(ctx)
-    assert lookup["qb"]["value"] == 240
+    assert lookup["wr"]["value"] == 100
+
+
+def test_league_format_value_lookup_half_ppr_scales_like_modal():
+    ctx = {
+        "platform": "sleeper",
+        "roster_positions": ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"],
+        "scoring_settings": {"rec": 0.5},
+        "league_settings": {"type": 2},
+        "total_rosters": 10,
+        "model_value_table": [
+            {"id": "wr", "position": "WR", "value": 100},
+        ],
+    }
+    lookup = league_format_value_lookup(ctx)
+    assert lookup["wr"]["value"] == 97.0
 
 
 def test_league_format_value_lookup_uses_redraft_not_dynasty():

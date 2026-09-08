@@ -266,15 +266,17 @@ def build_model_value_lookup(
 def league_format_value_lookup(ctx: dict) -> dict[str, dict]:
     """pid → value row with ``value`` rewritten for this league's type.
 
-    Same picker the trade calculator uses (``player_trade_value``): Superflex
-    vs 1QB, 8/10/12/14-team columns, redraft vs dynasty, PPR/half/std, and TE
-    premium. Shared by My Leagues and the Teams page so a WR5 on one surface
-    cannot read as WR6 on the other from a different value column.
+    Numbers match the player-modal hero: Superflex vs 1QB, redraft vs dynasty,
+    PPR/half/std, and TE premium on the 10-team ``value`` / ``sf_value`` (or
+    redraft twin) columns. Size overlays (``sf_value_12``, …) are a trade-calc
+    board and are not what the modal shows. Shared by My Leagues and the Teams
+    page so a WR5 on one surface cannot read as WR6 on the other.
     """
     from utils.lineup_slots import is_superflex_lineup
-    from utils.trade_value import player_trade_value, snap_league_size
+    from utils.trade_value import player_trade_value
     from utils.value_helpers import (
-        format_rank_label_key, row_format_rank_label, te_premium_from_settings,
+        format_rank_label_key, row_format_rank_label,
+        scoring_format_from_settings, te_premium_from_settings,
     )
 
     model_vals = ctx.get("model_value_table") or []
@@ -286,17 +288,12 @@ def league_format_value_lookup(ctx: dict) -> dict[str, dict]:
     is_sf = is_superflex_lineup(roster_positions)
     is_redraft = ctx_scoring_type(ctx) == "redraft"
     scoring = "redraft" if is_redraft else "dynasty"
-    n_teams = ctx.get("total_rosters") or len(ctx.get("rosters") or []) or 10
     settings = (
         ctx.get("scoring_settings")
         or (ctx.get("league") or {}).get("scoring_settings")
         or {}
     )
-    try:
-        rec = float(settings.get("rec") or 0)
-    except (TypeError, ValueError):
-        rec = 0.0
-    scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
+    scoring_format = scoring_format_from_settings(settings)
     tep = te_premium_from_settings(settings)
     rank_label_key = format_rank_label_key(is_redraft=is_redraft, is_sf=is_sf)
 
@@ -310,7 +307,8 @@ def league_format_value_lookup(ctx: dict) -> dict[str, dict]:
         val = player_trade_value(
             row,
             league_type="sf" if is_sf else "1qb",
-            league_size=snap_league_size(n_teams),
+            # Player modal always shows 10-team columns, not size overlays.
+            league_size=10,
             scoring_format=scoring_format,
             scoring_type=scoring,
             te_premium=tep,

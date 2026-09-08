@@ -18,6 +18,27 @@ from typing import Iterable
 _SKILL_POS = {"QB", "RB", "WR", "TE"}
 
 
+def scoring_format_from_settings(scoring_settings) -> str:
+    """PPR / half / std the player modal uses for this league.
+
+    Missing reception scoring defaults to PPR, matching ``/api/player-details``.
+    ESPN leagues may only set ``pointsPerReception``.
+    """
+    settings = scoring_settings if isinstance(scoring_settings, dict) else {}
+    rec = settings.get("rec")
+    if rec is None:
+        rec = settings.get("pointsPerReception")
+    try:
+        rec_f = float(rec) if rec is not None else 1.0
+    except (TypeError, ValueError):
+        return "ppr"
+    if rec_f >= 1.0:
+        return "ppr"
+    if rec_f >= 0.5:
+        return "half"
+    return "std"
+
+
 def te_premium_from_settings(scoring_settings) -> float:
     """Snap a league's Sleeper ``bonus_rec_te`` to a supported premium tier.
 
