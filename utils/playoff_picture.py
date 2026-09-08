@@ -65,9 +65,12 @@ def compute_playoff_picture(
     """Return the teams sorted by seed, each annotated with playoff status.
 
     ``teams``: dicts with ``id``, ``name``, ``wins``, ``losses`` and optionally
-    ``ties`` and ``pf``. ``total_regular_weeks`` is the number of regular-season
-    games each team plays (``playoff_week_start - 1``). ``bye_spots`` defaults to
-    the standard bracket byes for ``playoff_spots``.
+    ``ties``, ``pf``, and ``division``. ``total_regular_weeks`` is the number of
+    regular-season games each team plays (``playoff_week_start - 1``).
+    ``bye_spots`` defaults to the standard bracket byes for ``playoff_spots``.
+
+    When 2+ distinct ``division`` ids are present, seeding follows division
+    winners then wild cards (same rule as playoff scenarios / standings).
 
     Each returned dict adds: ``seed``, ``status`` (one of the module constants),
     ``games_left``, ``max_wins``, ``games_back`` (from the playoff line, ≥ 0),
@@ -84,17 +87,26 @@ def compute_playoff_picture(
         ti = int(t.get("ties", 0) or 0)
         played = w + l + ti
         gl = max(0, int(total_regular_weeks) - played)
+        try:
+            div = int(t.get("division") or 0)
+        except (TypeError, ValueError):
+            div = 0
         ts.append({
             "id": t.get("id"),
             "name": t.get("name", ""),
             "wins": w, "losses": l, "ties": ti,
             "pf": float(t.get("pf", 0.0) or 0.0),
+            "division": div,
             "games_left": gl,
             "max_wins": w + gl,
         })
 
-    # Seed by wins, then PF (mirrors the standings sort).
-    ts.sort(key=lambda x: (-x["wins"], -x["pf"]))
+    from utils.standings_divisions import assign_playoff_seeds, playoff_seed_order
+
+    use_div = len({t["division"] for t in ts if t["division"]}) >= 2
+    # Seed by wins/PF, or division winners + wild cards when divisions exist.
+    order = playoff_seed_order(ts)
+    ts = [ts[i] for i in order]
     for i, t in enumerate(ts):
         t["seed"] = i + 1
 
@@ -111,17 +123,60 @@ def compute_playoff_picture(
         whose best case is `ceiling`. Used for the safe elimination test."""
         return sum(1 for o in ts if o["id"] != self_id and o["wins"] > ceiling)
 
+    def _in_under(win_map: Dict[Any, int], self_id) -> bool:
+        """Whether ``self_id`` is inside the playoff field under ``win_map``
+        wins, using the same seeding rules as the live standings."""
+        hypo = []
+        for o in ts:
+            hypo.append({
+                "wins": win_map.get(o["id"], o["wins"]),
+                "ties": o["ties"],
+                "pf": o["pf"],
+                "pa": 0.0,
+                "division": o["division"],
+                "id": o["id"],
+            })
+        seeds = assign_playoff_seeds(hypo)
+        for i, o in enumerate(hypo):
+            if o["id"] == self_id:
+                return seeds[i] <= spots
+        return False
+
     # Wins at the playoff line, for games-back and comfort.
     cut_in_wins = ts[spots - 1]["wins"] if spots >= 1 else 0
     cut_in_losses = ts[spots - 1]["losses"] if spots >= 1 else 0
     first_out = ts[spots] if n > spots else None
 
     for t in ts:
-        clinched_playoff = _threats(t["wins"], t["id"]) < spots
-        clinched_bye = bye_spots > 0 and _threats(t["wins"], t["id"]) < bye_spots
-        eliminated = _locked_above(t["max_wins"], t["id"]) >= spots
-        # Would winning out guarantee a berth?
-        controls = _threats(t["max_wins"], t["id"]) < spots and not clinched_playoff
+        if use_div:
+            # Safe clinch / elim under division seeding: win-out / lose-out
+            # snapshots re-seeded the same way the standings page does.
+            best_wins = {o["id"]: (o["max_wins"] if o["id"] == t["id"] else o["wins"])
+                         for o in ts}
+            worst_wins = {o["id"]: (o["wins"] if o["id"] == t["id"] else o["max_wins"])
+                         for o in ts}
+            even_wins = {o["id"]: o["max_wins"] for o in ts}
+            clinched_playoff = _in_under(worst_wins, t["id"])
+            eliminated = not _in_under(best_wins, t["id"])
+            controls = _in_under(even_wins, t["id"]) and not clinched_playoff
+            # Bye clinch: win floor still locks a top-``bye_spots`` seed under
+            # division rules when every rival wins out against this team's floor.
+            if bye_spots > 0:
+                bye_worst = {o["id"]: (o["wins"] if o["id"] == t["id"] else o["max_wins"])
+                             for o in ts}
+                hypo = [{"wins": bye_worst[o["id"]], "ties": o["ties"], "pf": o["pf"],
+                         "division": o["division"], "id": o["id"]} for o in ts]
+                seeds = assign_playoff_seeds(hypo)
+                self_seed = next(seeds[i] for i, o in enumerate(hypo) if o["id"] == t["id"])
+                clinched_bye = self_seed <= bye_spots
+            else:
+                clinched_bye = False
+        else:
+            clinched_playoff = _threats(t["wins"], t["id"]) < spots
+            clinched_bye = bye_spots > 0 and _threats(t["wins"], t["id"]) < bye_spots
+            eliminated = _locked_above(t["max_wins"], t["id"]) >= spots
+            # Would winning out guarantee a berth?
+            controls = _threats(t["max_wins"], t["id"]) < spots and not clinched_playoff
 
         inside = t["seed"] <= spots
         if inside:

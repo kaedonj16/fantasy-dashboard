@@ -38198,6 +38198,33 @@ a, button, [role="button"], [role="tab"], summary, label,
     background: transparent;
 }
 
+/* Division section headers inside the standings table. */
+.standings-table tr.st-div-row td,
+.std-rework .standings-table tbody tr.st-div-row td {
+    border-bottom: 0;
+    padding: 14px 9px 6px;
+    text-align: left;
+    background: transparent;
+}
+.standings-table tr.st-div-row:first-child td,
+.std-rework .standings-table tbody tr.st-div-row:first-child td {
+    padding-top: 6px;
+}
+.std-rework .standings-table tbody tr.st-div-row:hover td {
+    background: transparent;
+}
+.st-div-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.standings-compact .st-div-label {
+    font-size: 10px;
+    padding-left: 2px;
+}
+
 /* Give team names room on the reworked standings page instead of the base
    table's max-width:0 crush; the .st-tblscroll wrapper handles any overflow. */
 .std-rework .standings-table td.team {

@@ -5590,7 +5590,11 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     )
 
     if team_stats is not None and not team_stats.empty and {"Wins", "PF"}.issubset(team_stats.columns):
-        standings_map = build_standings_map(team_stats, roster_map)
+        from utils.standings_divisions import roster_division_map
+        standings_map = build_standings_map(
+            team_stats, roster_map,
+            division_by_rid=roster_division_map(rosters),
+        )
     else:
         standings_map = {}
 
@@ -6506,7 +6510,11 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
             ctx["team_stats"] = team_stats
 
             if team_stats is not None and not team_stats.empty and {"Wins", "PF"}.issubset(team_stats.columns):
-                ctx["standings_map"] = build_standings_map(team_stats, roster_map)
+                from utils.standings_divisions import roster_division_map
+                ctx["standings_map"] = build_standings_map(
+                    team_stats, roster_map,
+                    division_by_rid=roster_division_map(rosters),
+                )
             else:
                 ctx["standings_map"] = {}
 
@@ -6805,24 +6813,71 @@ def _clickable_team_name(owner, owner_to_rid=None, *, inner=None, cls="") -> str
     return body
 
 
-def render_standings_compact(team_stats, length=None, movement=None, owner_to_rid=None) -> str:
+def render_standings_compact(team_stats, length=None, movement=None, owner_to_rid=None,
+                             divisions: dict = None) -> str:
     """Narrow standings for the dashboard left rail: Rank · Team · Record · PF.
 
     The full render_standings table has 8 columns and is too wide for a 340px
     sidebar; this trims to the essentials so it fits. ``movement`` is an optional
     {owner: delta} map (positive = climbed since last week) rendered as a small
-    arrow next to the rank.
+    arrow next to the rank. When ``divisions`` is active, rows group under
+    division headers and ranks are playoff seeds (winners then wild cards).
     """
     if team_stats is None or team_stats.empty:
         return "<div class='muted' style='padding:12px 14px;'>No standings data yet.</div>"
 
     movement = movement or {}
     df = team_stats.copy()
-    df = df.sort_values(by=["Wins", "PF", "PA"], ascending=[False, False, True]).reset_index(drop=True)
-    df["Rank"] = df.index + 1
+    _div_by_rid = (divisions or {}).get("by_rid") or {}
+    _div_names = (divisions or {}).get("names") or {}
+    _use_div = bool(_div_by_rid) and len({d for d in _div_by_rid.values() if d}) >= 2
+
+    def _row_div(owner) -> int:
+        rid = (owner_to_rid or {}).get(str(owner))
+        if rid is None:
+            return 0
+        try:
+            rid_i = int(rid)
+        except (TypeError, ValueError):
+            rid_i = rid
+        return int(
+            _div_by_rid.get(rid_i)
+            or _div_by_rid.get(str(rid))
+            or _div_by_rid.get(rid)
+            or 0
+        )
+
+    df["_division"] = [_row_div(o) for o in df["owner"]]
+    from utils.standings_divisions import assign_playoff_seeds
+    _seed_teams = [
+        {"wins": float(rr["Wins"]), "ties": float(rr.get("Ties", 0) or 0),
+         "pf": float(rr["PF"]), "pa": float(rr.get("PA", 0) or 0),
+         "division": int(rr["_division"] or 0)}
+        for _, rr in df.iterrows()
+    ]
+    df["Rank"] = assign_playoff_seeds(_seed_teams)
+
+    if _use_div:
+        df["_div_sort"] = df["_division"].map(lambda d: int(d) if int(d) else 10_000)
+        df = df.sort_values(
+            by=["_div_sort", "Wins", "PF", "PA"],
+            ascending=[True, False, False, True],
+        ).reset_index(drop=True)
+    else:
+        df = df.sort_values(by=["Rank"], ascending=[True]).reset_index(drop=True)
 
     rows = []
+    _prev_div = None
     for _, row in df.iterrows():
+        div_id = int(row.get("_division") or 0)
+        if _use_div and div_id and div_id != _prev_div:
+            _label = html.escape(str(_div_names.get(div_id) or f"Division {div_id}"))
+            rows.append(
+                "<tr class='st-div-row'>"
+                f"<td colspan='4'><div class='st-div-label'>{_label}</div></td>"
+                "</tr>"
+            )
+            _prev_div = div_id
         record = f"{int(row['Wins'])}-{int(row['Losses'])}"
         if int(row.get("Ties", 0) or 0):
             record += f"-{int(row['Ties'])}"
@@ -6846,11 +6901,11 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
               <td>{row['PF']:.0f}</td>
             </tr>""")
 
-    if length:
+    if length and not _use_div:
         rows = rows[:length]
 
     return f"""
-        <table class="standings-table standings-compact" data-page="standings">
+        <table class="standings-table standings-compact" data-page="standings"{' data-divisions="1"' if _use_div else ''}>
           <thead>
             <tr><th scope='col'>#</th><th scope='col'>Team</th><th scope='col'>Rec</th><th scope='col'>PF</th></tr>
           </thead>
@@ -6948,7 +7003,7 @@ def _standings_sparkline(points, width: int = 76, height: int = 22) -> str:
 def render_standings(team_stats, length, all_play: dict = None,
                      playoff_spots: int = None, total_regular_weeks: int = None,
                      movement: dict = None, owner_to_rid: dict = None,
-                     sparklines: dict = None) -> str:
+                     sparklines: dict = None, divisions: dict = None) -> str:
     if team_stats is None or team_stats.empty:
         return """
         <div class="card-body">
@@ -6959,16 +7014,58 @@ def render_standings(team_stats, length, all_play: dict = None,
     rows = []
 
     df = team_stats.copy()
-    df["WinPct"] = df["Win%"].astype(float)
-    df = (
-        df.sort_values(
-            by=["Wins", "PF", "PA"],
-            ascending=[False, False, True],
-        )
-        .reset_index(drop=True)
-    )
+    if "Win%" in df.columns:
+        df["WinPct"] = df["Win%"].astype(float)
 
-    df["Rank"] = df.index + 1
+    # Attach division ids (when the league uses them) so seeding + grouping
+    # can follow division winners → wild cards.
+    _div_by_rid = (divisions or {}).get("by_rid") or {}
+    _div_names = (divisions or {}).get("names") or {}
+    _use_div = bool(_div_by_rid) and len({d for d in _div_by_rid.values() if d}) >= 2
+
+    def _row_div(owner) -> int:
+        rid = (owner_to_rid or {}).get(str(owner))
+        if rid is None:
+            return 0
+        try:
+            rid_i = int(rid)
+        except (TypeError, ValueError):
+            rid_i = rid
+        return int(
+            _div_by_rid.get(rid_i)
+            or _div_by_rid.get(str(rid))
+            or _div_by_rid.get(rid)
+            or 0
+        )
+
+    df["_division"] = [_row_div(o) for o in df["owner"]]
+
+    from utils.standings_divisions import assign_playoff_seeds
+    _seed_teams = [
+        {"wins": float(rr["Wins"]), "ties": float(rr.get("Ties", 0) or 0),
+         "pf": float(rr["PF"]), "pa": float(rr.get("PA", 0) or 0),
+         "division": int(rr["_division"] or 0)}
+        for _, rr in df.iterrows()
+    ]
+    _seeds = assign_playoff_seeds(_seed_teams)
+    df["Rank"] = _seeds
+
+    # Display order: by division (then record within), or overall seed.
+    # Unassigned (division 0) sorts last so named divisions stay contiguous.
+    if _use_div:
+        df["_div_sort"] = df["_division"].map(lambda d: int(d) if int(d) else 10_000)
+        df = (
+            df.sort_values(
+                by=["_div_sort", "Wins", "PF", "PA"],
+                ascending=[True, False, False, True],
+            )
+            .reset_index(drop=True)
+        )
+    else:
+        df = (
+            df.sort_values(by=["Rank"], ascending=[True])
+            .reset_index(drop=True)
+        )
 
     # ── Playoff picture (optional; enriches rows with clinch/seed status) ──────
     pic_by_name: dict = {}
@@ -6980,7 +7077,8 @@ def render_standings(team_stats, length, all_play: dict = None,
             _teams = [
                 {"id": str(rr["owner"]), "name": str(rr["owner"]),
                  "wins": int(rr["Wins"]), "losses": int(rr["Losses"]),
-                 "ties": int(rr.get("Ties", 0) or 0), "pf": float(rr["PF"])}
+                 "ties": int(rr.get("Ties", 0) or 0), "pf": float(rr["PF"]),
+                 "division": int(rr["_division"] or 0)}
                 for _, rr in df.iterrows()
             ]
             _pic = compute_playoff_picture(_teams, int(playoff_spots), int(total_regular_weeks))
@@ -6990,9 +7088,20 @@ def render_standings(team_stats, length, all_play: dict = None,
             _left = max((p["games_left"] for p in _pic), default=0)
             _bye_txt = f" · top {_byes} get a bye" if _byes else ""
             _left_txt = f" · {_left} to play" if _left else " · regular season complete"
+            if _use_div:
+                _n_div = len({d for d in df["_division"] if d})
+                _wc = max(0, _spots - _n_div)
+                _adv = (
+                    f"Division winners + {_wc} wild card{'s' if _wc != 1 else ''} "
+                    f"({_spots} total)"
+                    if _wc else
+                    f"Division winners advance ({_spots} total)"
+                )
+            else:
+                _adv = f"Top {_spots} advance"
             ctx_line = (
                 "<div class='pp-ctx'>"
-                f"<span class='pp-ctx-main'>Top {_spots} advance{_bye_txt}{_left_txt}</span>"
+                f"<span class='pp-ctx-main'>{_adv}{_bye_txt}{_left_txt}</span>"
                 "<span class='pp-legend'>"
                 "<span class='pp-lg'><i class='pp-dot pp-d-bye'></i>Bye</span>"
                 "<span class='pp-lg'><i class='pp-dot pp-d-in'></i>Clinched / In</span>"
@@ -7021,7 +7130,21 @@ def render_standings(team_stats, length, all_play: dict = None,
             return "<span class='pp-tag pp-t-bub'>BUBBLE</span>"
         return ""  # "in" carries the green accent, no tag needed
 
+    _prev_div = None
     for _, row in df.iterrows():
+        owner = str(row['owner'])
+        div_id = int(row.get("_division") or 0)
+
+        # Division section header between groups (skip when no divisions).
+        if _use_div and div_id and div_id != _prev_div:
+            _label = html.escape(str(_div_names.get(div_id) or f"Division {div_id}"))
+            rows.append(
+                "<tr class='st-div-row'>"
+                f"<td colspan='11'><div class='st-div-label'>{_label}</div></td>"
+                "</tr>"
+            )
+            _prev_div = div_id
+
         record = f"{int(row['Wins'])}-{int(row['Losses'])}"
         if int(row.get("Ties", 0)):
             record += f"-{int(row['Ties'])}"
@@ -7046,7 +7169,6 @@ def render_standings(team_stats, length, all_play: dict = None,
         _seed = _ap.get('expected_seed')
         _seed_cell = _ord_str(_seed) if _seed else "<span class='muted'>&ndash;</span>"
 
-        owner = str(row['owner'])
         _p = pic_by_name.get(owner)
         _trcls = ""
         _tdcls = "team"
@@ -7103,22 +7225,24 @@ def render_standings(team_stats, length, all_play: dict = None,
                 f"<div class='pp-scn'>{html.escape(_p['scenario'])}</div></td></tr>"
             )
 
-        # Draw the playoff cutoff line right below the last team that advances.
-        if _spots and int(row['Rank']) == _spots and _spots < len(df):
+        # Overall playoff cut line only when teams are listed in seed order.
+        # Division grouping would put the cut in the wrong visual place.
+        if (not _use_div and _spots and int(row['Rank']) == _spots
+                and _spots < len(df)):
             rows.append(
                 "<tr class='pp-cutrow'><td colspan='11'>"
                 "<div class='pp-cut'>Playoff line</div></td></tr>"
             )
 
-    if _spots:
-        total_rows = rows  # cutoff rows shift the count; show every team
+    if _spots or _use_div:
+        total_rows = rows  # cutoff / division headers shift the count; show all
     else:
         total_rows = rows[:length] if len(rows) != length else rows
 
     return f"""
         {ctx_line}
         <div class="st-tblscroll">
-        <table class="standings-table" data-page="standings">
+        <table class="standings-table" data-page="standings"{' data-divisions="1"' if _use_div else ''}>
           <thead>
             <tr>
               <th scope="col">Seed</th>
@@ -8949,10 +9073,14 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
     _sparks = {o: _standings_sparkline(pts) for o, pts in _weekly_pts.items()}
     _movement = _standings_movement(df_weekly)
 
+    from utils.standings_divisions import resolve_divisions
+    _div_info = resolve_divisions(ctx)
+
     standings_html = render_standings(
         team_stats, num_teams, all_play=_all_play,
         playoff_spots=_pp_spots, total_regular_weeks=_pp_weeks,
         movement=_movement, owner_to_rid=_o2r, sparklines=_sparks,
+        divisions=_div_info,
     )
 
     if (
