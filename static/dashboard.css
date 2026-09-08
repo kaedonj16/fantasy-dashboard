@@ -21420,6 +21420,12 @@ img, svg, canvas {
 .tm-mu-h-lead .tm-mu-hpts { color: var(--win); }
 .tm-mu-h-lead .tm-mu-hname { color: var(--text); font-weight: 600; }
 
+/* Clickable names / opponent teams inside a matchup card. */
+.tm-mu-hname.player-clickable,
+.tm-team-link { cursor: pointer; }
+.tm-mu-hname.player-clickable:hover,
+.tm-team-link:hover { color: var(--accent); text-decoration: underline; }
+
 .tm-mu-h-slot {
     font-size: 9px;
     font-weight: 800;

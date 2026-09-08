@@ -21284,12 +21284,51 @@ def api_team_details(roster_id: str):
             if str(s).strip().upper() not in _bench_slots
         ]
 
+        # Real opponents for the schedule tab: every OTHER team in the league,
+        # with its real roster_id, name, and player list (id/name/position). The
+        # schedule pairings and scores are still mocked, but using real teams and
+        # players makes both clickable — a team opens its modal, a player opens
+        # the player modal.
+        def _sched_player_list(r):
+            out = []
+            for pid in (r.get("players") or []):
+                meta = players_index.get(str(pid), {})
+                pos = meta.get("pos") or ""
+                if pos == "PK":
+                    pos = "K"
+                elif pos in ("DST", "D/ST"):
+                    pos = "DEF"
+                if not pos:
+                    continue
+                out.append({
+                    "player_id": str(pid),
+                    "name": meta.get("name") or "",
+                    "pos": pos,
+                })
+            return out
+
+        schedule_opponents = []
+        for r in rosters:
+            if str(r.get("roster_id")) == str(roster_id):
+                continue
+            u = next((x for x in users if x.get("user_id") == r.get("owner_id")), None)
+            un = username_from_user(u) or None
+            tn = team_label_from_user(u, r, fallback=un or "")
+            if tn is None:
+                tn = un
+            schedule_opponents.append({
+                "roster_id": r.get("roster_id"),
+                "team_name": tn or ("Team " + str(r.get("roster_id"))),
+                "players": _sched_player_list(r),
+            })
+
         response = {
             "roster_id": roster_id,
             "team_name": team_name,
             "username": username,
             "avatar": avatar,
             "starter_slots": starter_slots,
+            "schedule_opponents": schedule_opponents,
             "record": record_str,
             "wins": wins,
             "losses": losses,
