@@ -346,9 +346,9 @@
        banner tracks the palette instead of a hardcoded pair of hexes. Defined
        per theme below; brand blue is theme-independent, so light keeps the same
        deep-navy → blue field (a dark banner on white) with a softer glow. */
-    --hero-from: #0b2a55;
-    --hero-to: #1d4ed8;
-    --hero-glow: rgba(56, 189, 248, 0.22);
+    --hero-from: #0d1626;
+    --hero-to: #070e1d;
+    --hero-glow: rgba(56, 189, 248, 0.12);
     /* Brand PRO / upsell gradient (navy -> royal blue). Theme-independent, so
        one definition serves both themes. Mirrored in landing_lite.css for
        guests, who load that stylesheet without dashboard.css. */
@@ -452,9 +452,9 @@
     --wk-bar-grip-dot: rgba(96, 165, 250, 0.9);
     /* Season Hub hero — brand blue on the dark ground; a stronger sky glow gives
        the banner depth against the near-black chrome. */
-    --hero-from: #0b2a55;
-    --hero-to: #1d4ed8;
-    --hero-glow: rgba(56, 189, 248, 0.28);
+    --hero-from: #0d1626;
+    --hero-to: #070e1d;
+    --hero-glow: rgba(56, 189, 248, 0.16);
 }
 
 /* ============================================
@@ -8837,16 +8837,29 @@ select:focus {
 
 .os-hero-card {
     padding: 22px;
-    /* Layered: soft radial glow over the brand-blue gradient for depth. The
-       gradient is token-driven (--hero-*) so it tracks the theme instead of a
-       frozen hex pair. */
-    background: radial-gradient(ellipse 85% 65% at 88% -15%, var(--hero-glow), transparent 60%),
-    linear-gradient(135deg, var(--hero-from) 0%, var(--hero-to) 100%);
+    position: relative;
+    /* "Chrome edge" hero: a near-black field (--hero-*) that matches the dark
+       nav in both themes, a soft sky glow for depth, and a thin brand->sky
+       hairline on the top edge (::before). Token-driven so it tracks the theme. */
+    background: radial-gradient(ellipse 72% 60% at 90% -10%, var(--hero-glow), transparent 58%),
+    linear-gradient(180deg, var(--hero-from) 0%, var(--hero-to) 100%);
     color: #ffffff;
     margin-bottom: 18px;
     max-width: 100%;
     overflow: hidden;
     box-sizing: border-box;
+}
+
+/* Brand-blue -> sky accent hairline along the hero's top edge. Hardcoded to the
+   brand blues (theme-independent) so it reads the same on the light and dark
+   near-black field. */
+.os-hero-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--brand-blue) 30%, #38bdf8 70%, transparent);
+    pointer-events: none;
 }
 
 .os-hero-copy {
@@ -9368,8 +9381,10 @@ select:focus {
 .os-stat-card {
     border-radius: 14px;
     padding: 14px 16px;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    /* Accent-tinted tiles for the "chrome edge" hero — a faint sky wash instead
+       of a flat white overlay, so they read as part of the near-black field. */
+    background: rgba(56, 189, 248, 0.06);
+    border: 1px solid rgba(56, 189, 248, 0.18);
     backdrop-filter: blur(2px);
     min-width: 0;
 }
@@ -15975,9 +15990,9 @@ img, svg, canvas {
     }
 
     .os-hero-stats .os-stat-card {
-        border: 1px solid rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(56, 189, 248, 0.18);
         border-radius: 12px;
-        background: rgba(255, 255, 255, 0.06);
+        background: rgba(56, 189, 248, 0.06);
         padding: 11px 12px;
         min-width: 0;
     }
