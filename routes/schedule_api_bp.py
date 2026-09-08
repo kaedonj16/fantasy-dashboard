@@ -311,11 +311,11 @@ def api_schedule_rankings():
 @schedule_api_bp.route("/api/schedule-strength")
 def api_schedule_strength():
     """
-    Compute schedule strength remaining for each team in a league.
+    Remaining-schedule difficulty for each team, using the same SOS formula
+    as standings: opponent scoring average (65%) blended with win rate (35%).
 
-    For each team's future matchups (weeks > current_week), look up their
-    opponent's average points scored this season. The team with the hardest
-    remaining schedule faces the highest-scoring opponents on average.
+    Higher ``avg_opp_points`` is a tougher remaining slate (SOS Future index,
+    100 = league average). Playoff weeks are excluded.
 
     Query params: platform, league_id, season
     """
@@ -331,114 +331,51 @@ def api_schedule_strength():
         season = datetime.now().year
 
     current_week = int(nfl_state.get("leg") or nfl_state.get("week") or 0)
-    season_type = str(nfl_state.get("season_type") or "").lower()
-    FULL_SEASON_WEEKS = 17  # safe scan cap; loop breaks on empty weeks
 
     try:
         from dashboard_services.platform_api import get_matchups as pf_get_matchups
+        from dashboard_services.service import (
+            remaining_schedule_strength,
+            regular_season_length,
+        )
 
         rosters = get_rosters(platform, league_id, season) or []
         users = get_users(platform, league_id, season) or []
         roster_map = _build_roster_map(users, rosters)
 
-        # Build per-roster average points from completed weeks
-        avg_pts_by_rid: dict[str, float] = {}
-        weekly_pts: dict[str, list] = {str(r.get("roster_id")): [] for r in rosters}
+        settings = {}
+        try:
+            ctx = get_league_ctx_from_cache(platform, league_id, season)
+            settings = (
+                (ctx.get("league") or {}).get("settings")
+                or ctx.get("league_settings")
+                or {}
+            )
+        except Exception:
+            logger.debug("suppressed exception", exc_info=True)
+        reg_weeks = regular_season_length(settings)
 
-        for w in range(1, current_week + 1):
+        matchups_by_week: dict[int, list] = {}
+        for w in range(1, reg_weeks + 1):
             try:
                 week_data = pf_get_matchups(platform, league_id, w, season) or []
             except Exception:
-                continue
-            for m in week_data:
-                rid = str(m.get("roster_id", ""))
-                pts = float(m.get("points") or 0.0)
-                if rid in weekly_pts:
-                    weekly_pts[rid].append(pts)
+                week_data = []
+            matchups_by_week[w] = week_data
 
-        for rid, pts_list in weekly_pts.items():
-            avg_pts_by_rid[rid] = round(sum(pts_list) / len(pts_list), 2) if pts_list else 0.0
-
-        # When no games have been played, fall back to this-season starter
-        # production (slot-legal redraft value) — the same signal remaining-
-        # schedule opponent difficulty should use. A raw dynasty roster sum
-        # overrates rebuilds with young bench depth.
-        games_played = sum(1 for pts in avg_pts_by_rid.values() if pts > 0)
-        if games_played == 0:
-            try:
-                from dashboard_services.power_score import preseason_opponent_strength
-                from utils.lineup_slots import is_superflex_lineup
-
-                ctx = get_league_ctx_from_cache(platform, league_id, season)
-                model_vals = ctx.get("model_value_table") or []
-                lookup = {
-                    str(p["id"]): p
-                    for p in model_vals
-                    if isinstance(p, dict) and p.get("id")
-                }
-                rp = (
-                    ctx.get("roster_positions")
-                    or (ctx.get("league") or {}).get("roster_positions")
-                    or []
-                )
-                is_sf = is_superflex_lineup(rp)
-                for r in rosters:
-                    rid = str(r.get("roster_id", ""))
-                    avg_pts_by_rid[rid] = round(
-                        preseason_opponent_strength(
-                            r.get("players") or [],
-                            lookup,
-                            is_sf=is_sf,
-                            roster_positions=rp,
-                        ),
-                        2,
-                    )
-            except Exception:
-                logger.debug("suppressed exception", exc_info=True)
-
-        # Build future matchups map: rid -> list of opponent roster_ids
-        future_opponents: dict[str, list] = {str(r.get("roster_id")): [] for r in rosters}
-
-        for w in range(current_week + 1, FULL_SEASON_WEEKS + 1):
-            try:
-                week_data = pf_get_matchups(platform, league_id, w, season) or []
-            except Exception:
-                continue
-            if not week_data:
-                break
-            # Group by matchup_id
-            by_mid: dict = {}
-            for m in week_data:
-                mid = m.get("matchup_id")
-                if mid is None:
-                    continue
-                by_mid.setdefault(mid, []).append(str(m.get("roster_id", "")))
-            for mid, rids in by_mid.items():
-                if len(rids) == 2:
-                    future_opponents[rids[0]].append(rids[1])
-                    future_opponents[rids[1]].append(rids[0])
-
-        results = []
-        for r in rosters:
-            rid = str(r.get("roster_id", ""))
-            opp_rids = future_opponents.get(rid, [])
-            opp_avgs = [avg_pts_by_rid.get(o, 0.0) for o in opp_rids]
-            avg_opp = round(sum(opp_avgs) / len(opp_avgs), 2) if opp_avgs else 0.0
-            results.append({
-                "roster_id": rid,
-                "team_name": roster_map.get(rid, f"Roster {rid}"),
-                "games_remaining": len(opp_rids),
-                "avg_opp_points": avg_opp,
-                "my_avg_points": avg_pts_by_rid.get(rid, 0.0),
-            })
-
-        results.sort(key=lambda x: x["avg_opp_points"], reverse=True)
+        results, no_games = remaining_schedule_strength(
+            rosters,
+            matchups_by_week,
+            current_week=current_week,
+            regular_season_weeks=reg_weeks,
+            roster_names=roster_map,
+        )
 
         return jsonify({
             "current_week": current_week,
-            "weeks_remaining": max(len(v) for v in future_opponents.values()) if future_opponents else 0,
+            "weeks_remaining": max((t["games_remaining"] for t in results), default=0),
             "teams": results,
-            "using_power_rankings": games_played == 0,
+            "using_power_rankings": no_games,
         })
 
     except Exception:

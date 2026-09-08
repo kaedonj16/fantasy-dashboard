@@ -1242,6 +1242,114 @@ def compute_sos_by_team(
     return out
 
 
+def _matchup_field(row: Any, key: str, default: Any = None) -> Any:
+    if isinstance(row, dict):
+        return row.get(key, default)
+    return getattr(row, key, default)
+
+
+def remaining_schedule_strength(
+        rosters: Iterable[dict],
+        matchups_by_week: Dict[int, List[Any]],
+        current_week: int,
+        regular_season_weeks: int,
+        roster_names: Optional[Dict[str, str]] = None,
+) -> tuple[list[dict], bool]:
+    """Teams-page remaining-schedule rows using standings SOS Future.
+
+    Opponent weights are 65% scoring average + 35% win rate, indexed so
+    100 is league average. Playoff weeks are ignored via
+    ``regular_season_weeks``. Returns ``(rows, no_games_played)``.
+    """
+    names = roster_names or {}
+    roster_list = [r for r in (rosters or []) if isinstance(r, dict)]
+    rids = [str(r.get("roster_id") or "") for r in roster_list]
+    rids = [rid for rid in rids if rid]
+
+    weekly_pts: dict[str, list[float]] = {rid: [] for rid in rids}
+    wins = {rid: 0.0 for rid in rids}
+    losses = {rid: 0.0 for rid in rids}
+    ties = {rid: 0.0 for rid in rids}
+
+    try:
+        past_end = min(max(0, int(current_week)), int(regular_season_weeks))
+    except (TypeError, ValueError):
+        past_end = 0
+
+    for w in range(1, past_end + 1):
+        week_ms = matchups_by_week.get(w) or []
+        pts_by_rid: dict[str, float] = {}
+        by_mid: dict[Any, list[str]] = {}
+        for m in week_ms:
+            rid = str(_matchup_field(m, "roster_id") or "")
+            if not rid:
+                continue
+            pts = float(_matchup_field(m, "points") or 0.0)
+            pts_by_rid[rid] = pts
+            if rid in weekly_pts:
+                weekly_pts[rid].append(pts)
+            mid = _matchup_field(m, "matchup_id")
+            if mid is not None:
+                by_mid.setdefault(mid, []).append(rid)
+        for pair in by_mid.values():
+            if len(pair) != 2:
+                continue
+            a, b = pair[0], pair[1]
+            pa, pb = pts_by_rid.get(a, 0.0), pts_by_rid.get(b, 0.0)
+            if pa == 0.0 and pb == 0.0:
+                continue
+            if pa > pb:
+                if a in wins:
+                    wins[a] += 1
+                if b in losses:
+                    losses[b] += 1
+            elif pb > pa:
+                if b in wins:
+                    wins[b] += 1
+                if a in losses:
+                    losses[a] += 1
+            else:
+                if a in ties:
+                    ties[a] += 1
+                if b in ties:
+                    ties[b] += 1
+
+    rows = []
+    games_played = 0
+    for rid in rids:
+        pts_list = weekly_pts.get(rid) or []
+        avg = (sum(pts_list) / len(pts_list)) if pts_list else 0.0
+        if avg > 0:
+            games_played += 1
+        decided = wins[rid] + losses[rid] + ties[rid]
+        win_pct = ((wins[rid] + 0.5 * ties[rid]) / decided) if decided else 0.0
+        rows.append({"owner": rid, "AVG": avg, "Win%": win_pct})
+
+    team_stats = pd.DataFrame(rows)
+    strength = build_team_strength(team_stats)
+    sos = compute_sos_by_team(
+        matchups_by_week,
+        strength,
+        weeks_past=past_end,
+        users=[],
+        regular_season_weeks=int(regular_season_weeks) if regular_season_weeks else 14,
+    )
+    avg_by_rid = {row["owner"]: row["AVG"] for row in rows}
+
+    results = []
+    for rid in rids:
+        row = sos.get(rid) or {}
+        results.append({
+            "roster_id": rid,
+            "team_name": names.get(rid, f"Roster {rid}"),
+            "games_remaining": int(row.get("ros_cnt") or 0),
+            "avg_opp_points": round(float(row.get("ros_sos") or 0.0), 2),
+            "my_avg_points": round(float(avg_by_rid.get(rid) or 0.0), 2),
+        })
+    results.sort(key=lambda x: x["avg_opp_points"], reverse=True)
+    return results, games_played == 0
+
+
 from collections import defaultdict
 
 
