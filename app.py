@@ -1243,10 +1243,8 @@ FORM_BODY = """
 
         {% if not session.get('account_id') %}
         <div class="home-account-entry home-account-top">
-          <span class="home-account-lead">New to BR Fantasy? Connect your league below, then create your free account at the bottom to save it.</span>
-          <div class="home-account-new-label">Already have an account?</div>
-          <a class="google-continue-btn" href="/auth/google?intent=login&amp;next=/"><span class="google-button-title">Continue with Google</span></a>
-          <span>Sign in to access your saved leagues.</span>
+          <span class="home-account-lead">Connect your league below. No account needed to look around.</span>
+          <a class="home-signin-link" href="/auth/google?intent=login&amp;next=/">Already have an account? <strong>Sign in</strong></a>
         </div>
         {% else %}
         <div id="signedInHome" class="signed-in-home">
@@ -1548,7 +1546,7 @@ FORM_BODY = """
         <div class="home-account-entry home-account-bottom" id="homeAcctBottom">
           <div class="home-account-new-label" id="homeAcctBottomLabel">New to BR Fantasy?</div>
           <a class="google-continue-btn google-create-account-btn" href="/auth/google?intent=onboarding&amp;next=/"><span class="google-button-title">Create Account with Google</span></a>
-          <p class="hint home-create-acct-hint" id="createAcctHint">Connect a league above first, then create your free account so it stays saved across devices.</p>
+          <p class="hint home-create-acct-hint" id="createAcctHint">Connect a league above, then save it to your free account, synced across devices.</p>
           <p class="hint home-league-ready-nudge" id="homeLeagueReadyNudge" hidden>League selected. Finish with <strong>Continue with Google</strong> above to save it to your account.</p>
         </div>
         {% endif %}

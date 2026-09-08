@@ -11315,13 +11315,15 @@ select:focus {
 }
 
 .home-card {
-    /* Brand-blue hero, matched to the Season Hub (--hero-*). Kept inline (not the
-       tokens) so it stays identical to the guest home card in landing_lite.css,
-       which loads without dashboard.css; this card is always navy in both themes. */
-    background: #0b2a55;
+    /* "Chrome edge" onboarding card — matches the Season Hub hero: near-black
+       field with a soft sky glow and a brand->sky hairline on the top edge
+       (::before). Kept inline (not the tokens) so it stays identical to the
+       guest card in landing_lite.css, which loads without dashboard.css. */
+    position: relative;
+    background: #0d1626;
     background:
-        radial-gradient(ellipse 90% 70% at 100% 0%, rgba(56, 189, 248, 0.28), transparent 55%),
-        linear-gradient(135deg, #0b2a55 0%, #1d4ed8 100%);
+        radial-gradient(ellipse 90% 70% at 100% 0%, rgba(56, 189, 248, 0.12), transparent 55%),
+        linear-gradient(180deg, #0d1626 0%, #070e1d 100%);
     padding: 22px 24px 20px;
     border-radius: 18px;
     border: 1px solid rgba(125, 211, 252, 0.12);
@@ -11333,7 +11335,38 @@ select:focus {
     color: #e5e7eb;
 }
 
-/* Onboarding card is always navy — nested controls must not pull light-page tokens. */
+/* Brand-blue -> sky hairline on the card's top edge, inset from the rounded
+   corners (the card has no overflow:hidden so it can show control popovers). */
+.home-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 16px;
+    right: 16px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #3b82f6 30%, #38bdf8 70%, transparent);
+    pointer-events: none;
+}
+
+/* Demoted sign-in: a quiet link instead of a full Google button competing with
+   the connect-a-league task (returning users only). */
+.home-signin-link {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #9fb0c6;
+    text-decoration: none;
+}
+.home-signin-link strong {
+    color: #8fb6ff;
+    font-weight: 800;
+}
+.home-signin-link:hover strong {
+    text-decoration: underline;
+}
+
+/* Onboarding card is always dark — nested controls must not pull light-page tokens. */
 .home-card .home-steps-hint {
     background: rgba(255, 255, 255, 0.06);
     border-color: rgba(255, 255, 255, 0.12);

@@ -19341,6 +19341,70 @@ function setupFunAwardsGrid() {
 })();
 
 
+// ── Stepped onboarding (FLAG-GATED prototype: add ?onboarding=stepped) ───────
+// Off by default, so production behavior is unchanged. When enabled it gates
+// the guest connect card into one-step-at-a-time: platform → credentials →
+// league + save. JS-only and additive: it toggles the same inline display
+// styles the existing flow already uses, so it adds no new layout risk. NOT
+// yet verified in a running app — enable the flag and click every platform
+// (Sleeper / ESPN public+private / Yahoo / MFL / Fleaflicker) before relying
+// on it or flipping the default on.
+(function initSteppedOnboarding() {
+  try {
+    if (new URLSearchParams(location.search).get('onboarding') !== 'stepped') return;
+  } catch (e) { return; }
+
+  var card = document.querySelector('.home-card');
+  var flow = document.getElementById('connectLeagueFlow');
+  if (!card || !flow) return;
+  if (document.getElementById('signedInHome')) return;  // signed-in users skip
+
+  var flows = ['sleeperFlow', 'espnFlow', 'yahooFlow', 'mflFlow', 'fleaflickerFlow']
+    .map(function (id) { return document.getElementById(id); })
+    .filter(Boolean);
+  var leagueWrap = document.getElementById('leagueSelectWrap');
+  var steps = [document.getElementById('hintStep1'),
+               document.getElementById('hintStep2'),
+               document.getElementById('hintStep3')];
+
+  function setStep(n) {
+    steps.forEach(function (el, i) {
+      if (!el) return;
+      el.classList.remove('active', 'done');
+      if (i + 1 < n) el.classList.add('done');
+      else if (i + 1 === n) el.classList.add('active');
+    });
+    card.setAttribute('data-onb-step', String(n));
+    if (n === 1) flows.forEach(function (f) { f.style.display = 'none'; });
+  }
+
+  // Start on step 1: only the platform picker + step bar; hide the default
+  // (Sleeper) credential fields until the user explicitly picks a platform.
+  setStep(1);
+
+  // Choosing a platform reveals just that platform's fields (step 2). Run after
+  // the existing click handlers (setTimeout) so this wins over initStepsHint's
+  // reset-to-1, and show the chosen flow explicitly in case re-clicking the
+  // already-active button does not re-run the platform switch.
+  document.querySelectorAll('.platform-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var plat = btn.dataset.platform || '';
+      setTimeout(function () {
+        flows.forEach(function (f) { f.style.display = f.id.indexOf(plat) === 0 ? 'block' : 'none'; });
+        setStep(2);
+      }, 0);
+    });
+  });
+
+  // When the league list appears (any platform's connect succeeded), step 3.
+  if (leagueWrap) {
+    new MutationObserver(function () {
+      if (leagueWrap.style.display !== 'none') setStep(3);
+    }).observe(leagueWrap, { attributes: true, attributeFilter: ['style'] });
+  }
+})();
+
+
 // ── Feature 7: Empty State Auto-Injection ────────────────────────────────────
 (function initEmptyStates() {
   var CONFIG = [
