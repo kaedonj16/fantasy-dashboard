@@ -504,8 +504,8 @@ def api_portfolio_actions():
         lineup_actions_from_issues,
         rank_cross_league_actions,
         roster_slot_action,
+        select_waiver_add,
         waiver_pickup_action,
-        waiver_value_threshold,
     )
     from utils.lineup_issues import find_lineup_issues
     from utils.redzone_user import match_viewer_roster
@@ -666,8 +666,8 @@ def api_portfolio_actions():
         except Exception:
             pass
 
-        # Best available waiver pickup, ranked off THIS league's value column
-        # (redraft vs dynasty) so the suggestion reflects value for the format.
+        # Waiver add only when the player clears the quality bar (startable
+        # rank / roster hole) — not merely the highest leftover FA value.
         try:
             if model_value_table:
                 from app import (
@@ -675,58 +675,61 @@ def api_portfolio_actions():
                     _waiver_rank_label_key,
                     _waiver_value_keys,
                 )
+                from utils.lineup_slots import is_superflex_lineup
+                from utils.value_helpers import format_rank_key
                 is_rd = _league_is_redraft(lctx)
+                rp = lctx.get("roster_positions") or []
+                is_sf = is_superflex_lineup(rp)
                 vf, vfb = _waiver_value_keys(lctx)
-                rank_key = _waiver_rank_label_key(lctx)
-                threshold = waiver_value_threshold(_waiver_base_min, is_redraft=is_rd)
+                rank_label_key = _waiver_rank_label_key(lctx)
+                rank_key = format_rank_key(is_redraft=is_rd, is_sf=is_sf)
                 rostered_ids = {
                     str(p) for r in rosters for p in (r.get("players") or [])
                 }
-                players_index = lctx.get("players_index") or {}
-                best_row = None
-                best_val = 0.0
-                _out_status = {"IR", "PUP", "NFI", "OUT", "SUSP", "DOUBTFUL"}
-                for row in model_value_table:
-                    if not isinstance(row, dict):
-                        continue
-                    pid = str(row.get("id") or "")
-                    if not pid or pid in rostered_ids:
-                        continue
-                    pos = str(row.get("position") or row.get("pos") or "").upper()
-                    if pos not in ("QB", "RB", "WR", "TE"):
-                        continue
-                    team = str(
-                        row.get("team") or players_index.get(pid, {}).get("team") or ""
-                    ).upper()
-                    if team in ("", "FA", "FREE AGENT", "N/A"):
-                        continue
-                    inj = str(
-                        (nfl_players.get(pid) or {}).get("injury_status") or ""
-                    ).upper()
-                    if inj in _out_status:
-                        continue
-                    try:
-                        v = float(row.get(vf) or row.get(vfb) or 0.0)
-                    except (TypeError, ValueError):
-                        v = 0.0
-                    if v > best_val:
-                        best_val = v
-                        best_row = row
-                if best_row is not None and best_val >= threshold:
+                players_index = dict(lctx.get("players_index") or {})
+                for pid in (viewer_roster.get("players") or []):
+                    spid = str(pid)
+                    pl = nfl_players.get(spid) or {}
+                    prev = players_index.get(spid) or {}
+                    players_index[spid] = {
+                        **prev,
+                        "position": pl.get("position") or prev.get("position"),
+                        "team": pl.get("team") or prev.get("team"),
+                        "injury_status": pl.get("injury_status") or prev.get("injury_status") or "",
+                        "name": pl.get("full_name") or prev.get("name"),
+                    }
+                inj_by_pid = {
+                    str(k): str((v or {}).get("injury_status") or "")
+                    for k, v in (nfl_players or {}).items()
+                    if isinstance(v, dict) and v.get("injury_status")
+                }
+                hit = select_waiver_add(
+                    model_value_table, rostered_ids,
+                    value_key=vf, fallback_key=vfb,
+                    rank_key=rank_key, rank_label_key=rank_label_key,
+                    is_redraft=is_rd, is_sf=is_sf,
+                    n_teams=len(rosters) or 12,
+                    roster_players=list(viewer_roster.get("players") or []),
+                    roster_positions=rp,
+                    pidx=players_index,
+                    min_value=_waiver_base_min,
+                    injured_status_by_pid=inj_by_pid,
+                )
+                if hit:
                     actions.append(waiver_pickup_action(
                         platform=plat, season=lg_season, league_id=lid,
                         league_name=league_name,
-                        player_name=(
-                            best_row.get("name")
-                            or players_index.get(str(best_row.get("id")), {}).get("name")
-                            or "a free agent"
-                        ),
-                        position=str(best_row.get("position") or best_row.get("pos") or ""),
+                        player_name=hit["name"],
+                        position=hit.get("position") or "",
                         is_redraft=is_rd,
-                        pos_rank_label=str(
-                            best_row.get(rank_key) or best_row.get("pos_rank_label") or ""
-                        ),
-                        value=best_val,
+                        pos_rank_label=hit.get("pos_rank_label") or "",
+                        value=float(hit.get("value") or 0),
+                        reason=hit.get("reason") or "",
+                        severity=float(hit.get("severity") or 0),
+                        starter_gap=float(hit.get("starter_gap") or 0),
+                        pos_rank=hit.get("pos_rank"),
+                        is_sf=is_sf,
+                        n_teams=len(rosters) or 12,
                     ))
         except Exception:
             logger.debug("[portfolio-actions] waiver pickup failed", exc_info=True)

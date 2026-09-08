@@ -236,8 +236,17 @@ def recommend_waivers(
 
     try:
         from utils.waiver_score import WEIGHTS, waiver_pickup_score, waiver_signal
+        from utils.cross_league_actions import parse_pos_rank, waiver_add_clears_quality_bar
     except Exception:
         return []
+
+    is_rd = bool(fmt.get("is_redraft") or fmt.get("is_keeper"))
+    is_sf = bool(fmt.get("is_superflex"))
+    try:
+        n_teams = int(fmt.get("n_teams") or fmt.get("num_teams") or 12)
+    except (TypeError, ValueError):
+        n_teams = 12
+    min_val = float(getattr(WEIGHTS, "min_value", 25.0) or 25.0)
 
     scored: list[tuple[float, dict]] = []
     for row in model_rows or []:
@@ -253,13 +262,22 @@ def recommend_waivers(
             val = float(row.get(primary) or row.get(fallback) or row.get("value") or 0)
         except (TypeError, ValueError):
             val = 0.0
-        if val < float(getattr(WEIGHTS, "min_value", 25.0) or 25.0):
+        if val < min_val:
             continue
         age = row.get("age")
         try:
             age_f = float(age) if age is not None else 0
         except (TypeError, ValueError):
             age_f = 0.0
+        rk = parse_pos_rank(row.get("pos_rank"), str(row.get("pos_rank_label") or ""))
+        # extra_depth=1 need_mult > 1 is "thin", not a starter hole. Approximate
+        # a hole when the position still wants a meaningful need bump.
+        gap = 1.0 if (need_mults.get(pos, 1.0) or 1.0) >= 1.12 else 0.0
+        if not waiver_add_clears_quality_bar(
+            pos=pos, pos_rank=rk, value=val, is_redraft=is_rd, is_sf=is_sf,
+            n_teams=n_teams, age=age_f, starter_gap=gap, min_value=min_val,
+        ):
+            continue
         cand = {
             "player_id": pid,
             "value": val,
@@ -547,10 +565,6 @@ def gather_digest_action_items(
             pidx=pidx, movers=movers, breakout_by_pid=breakout_by_pid,
             fmt=fmt, limit=3,
         )
-        if not targets and rows:
-            hit = top_waiver_from_values(rows, league_owned)
-            if hit:
-                targets = [hit]
         if targets:
             from utils.digest_sections import waiver_html
             html = waiver_html(targets, href=waivers_url)

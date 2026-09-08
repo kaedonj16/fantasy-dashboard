@@ -65,7 +65,7 @@ def test_portfolio_actions_api_wired():
     assert '@user_pages_bp.route("/api/portfolio-actions")' in source
     assert "rank_cross_league_actions" in source
     assert "lineup_actions_from_issues" in source
-    assert "injury_stash_action" in source
+    assert "select_waiver_add" in source
     assert "already_on_ir=" in source
     assert 'viewer_roster.get("reserve")' in source
     assert "_portfolio_viewer_has_pro" in source
