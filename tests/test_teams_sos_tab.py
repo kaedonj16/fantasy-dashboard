@@ -37,9 +37,12 @@ _SOS_SELECTORS = (
 
 
 def _fn_block(name: str) -> str:
-    start = JS.index("function %s(" % name)
+    needle = "function %s(" % name
+    start = JS.index(needle)
+    line_start = JS.rfind("\n", 0, start) + 1
+    indent = JS[line_start:start]
     rest = JS[start:]
-    nxt = rest.find("\n      function ", 10)
+    nxt = rest.find("\n" + indent + "function ", 1)
     return rest if nxt < 0 else rest[:nxt]
 
 
@@ -79,7 +82,7 @@ def test_sos_bars_use_spread_not_max_only():
 
 def test_sos_tiers_collapse_when_schedules_are_even():
     tier = _fn_block("_sosTier")
-    assert "if (even) return { key: 'even', label: 'Even' }" in tier
+    assert "if (even) return {key: 'even', label: 'Even'}" in tier
     assert "Hardest" in tier
     assert "Easiest" in tier
 
@@ -90,9 +93,8 @@ def test_sos_render_escapes_team_names_and_marks_viewer():
     assert "sos-mine" in render
     assert "sos-you" in render
     assert "No games played yet" in render
-    assert "Same formula as SOS" in render
-    assert "projected scoring until week 1" in render
-    assert "blending projections with results so far" in render
+    assert "remaining opponents ranked by projected starter scoring" in render
+    assert "Early results are mixed with preseason projections" in render
     assert "projected starter scoring" in render
     assert "one week" in render
     assert "scoring and win rate" in render

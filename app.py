@@ -21624,10 +21624,10 @@ def api_team_details(roster_id: str):
         ]
 
         # Real opponents for the schedule tab: every OTHER team in the league,
-        # with its real roster_id, name, and player list (id/name/position). The
-        # schedule pairings and scores are still mocked, but using real teams and
-        # players makes both clickable — a team opens its modal, a player opens
-        # the player modal.
+        # with its real roster_id, name, avatar, and player list (id/name/position).
+        # The schedule pairings and scores are still mocked, but using real teams
+        # and players makes both clickable — a team opens its modal, a player
+        # opens the player modal. Avatars replace the letter-circle placeholders.
         def _sched_player_list(r):
             out = []
             for pid in (r.get("players") or []):
@@ -21658,6 +21658,7 @@ def api_team_details(roster_id: str):
             schedule_opponents.append({
                 "roster_id": r.get("roster_id"),
                 "team_name": tn or ("Team " + str(r.get("roster_id"))),
+                "avatar": team_avatar(platform, r, users) or "",
                 "players": _sched_player_list(r),
             })
 

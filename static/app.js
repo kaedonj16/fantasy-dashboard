@@ -17879,9 +17879,15 @@ function _tmBuildScheduleHtml(data) {
   const lastPlayed = _tmScheduleLastPlayed(data);
 
   const AVATAR_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'];
-  const avatar = (name, idx) => {
+  const avatar = (name, idx, url) => {
     const color = AVATAR_COLORS[idx % AVATAR_COLORS.length];
-    return `<span class="tm-sched-avatar" style="background:${color}">${_tmEsc((name || '?').charAt(0))}</span>`;
+    const letter = _tmEsc((name || '?').charAt(0));
+    const fallbackStyle = url
+      ? `display:none;background:${color}`
+      : `background:${color}`;
+    const fallback = `<span class="tm-sched-avatar" style="${fallbackStyle}">${letter}</span>`;
+    if (!url) return fallback;
+    return `<img class="tm-sched-avatar tm-sched-avatar-img" src="${_tmEsc(url)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none';var n=this.nextElementSibling;if(n)n.style.display='flex';">` + fallback;
   };
 
   // Opponents: real league teams when the API sent them (so teams and players
@@ -17932,8 +17938,8 @@ function _tmBuildScheduleHtml(data) {
   const buildRow = (wk, idx, countRecord) => {
     const raw = oppOrder[idx % oppOrder.length];
     const opp = useReal
-      ? { name: raw.team_name || ('Team ' + raw.roster_id), roster_id: raw.roster_id, players: raw.players }
-      : { name: raw, roster_id: null, players: null };
+      ? { name: raw.team_name || ('Team ' + raw.roster_id), roster_id: raw.roster_id, players: raw.players, avatar: raw.avatar || '' }
+      : { name: raw, roster_id: null, players: null, avatar: '' };
     const played = wk.week <= lastPlayed;
 
     const me = _tmScoreLineup(myLineup, rng);
@@ -17972,7 +17978,7 @@ function _tmBuildScheduleHtml(data) {
         <div class="tm-mu">
           <div class="tm-mu-head">
             <div class="tm-mu-team tm-mu-team-l${myWin ? ' tm-mu-team-win' : ''}">
-              ${avatar(myTeamName, 99)}
+              ${avatar(myTeamName, 99, data && data.avatar)}
               <span class="tm-mu-tname">${_tmEsc(myTeamName)}</span>
               <span class="tm-mu-tscore">${myScore.toFixed(1)}</span>
             </div>
@@ -17980,7 +17986,7 @@ function _tmBuildScheduleHtml(data) {
             <div class="tm-mu-team tm-mu-team-r${oppWin ? ' tm-mu-team-win' : ''}">
               <span class="tm-mu-tscore">${oppScore.toFixed(1)}</span>
               ${oppTeamName(opp)}
-              ${avatar(opp.name, idx)}
+              ${avatar(opp.name, idx, opp.avatar)}
             </div>
           </div>
           <div class="tm-mu-bar" role="img" aria-label="Score share ${myScore.toFixed(1)} to ${oppScore.toFixed(1)}">
@@ -17999,7 +18005,7 @@ function _tmBuildScheduleHtml(data) {
           ${resultBadge}
           <span class="tm-sched-opp">
             <span class="tm-sched-vs">vs</span>
-            ${avatar(opp.name, idx)}
+            ${avatar(opp.name, idx, opp.avatar)}
             <span class="tm-sched-opp-name">${_tmEsc(opp.name)}</span>
           </span>
           ${scoreHtml}

@@ -21061,20 +21061,44 @@ img, svg, canvas {
 .tm-strength-mid { background: var(--info); }
 .tm-strength-weak { background: var(--warning); }
 
-/* ── Ages tab ──────────────────────────────────────────────────────────── */
+/* ── Ages / Schedule summary tiles ─────────────────────────────────────── */
+/* Header .tm-stat-tile is a fixed 96px chip. Reusing it in a 1fr grid left
+   96px boxes stranded in wide tracks (big gaps, tiny values). Keep these
+   as compact equal chips in one row, capped so they don't stretch into
+   empty-looking slabs. */
 .tm-ages-tiles {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
-    gap: 10px;
-    margin-bottom: 24px;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    margin-bottom: 20px;
 }
 
 .tm-ages-tiles .tm-stat-tile {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+    max-width: 148px;
     background: var(--bg-alt);
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 12px 8px;
     text-align: center;
+}
+
+.tm-ages-tiles .tm-stat-tile-label {
+    line-height: 1.25;
+    overflow-wrap: break-word;
+}
+
+@media (max-width: 480px) {
+    .tm-ages-tiles {
+        flex-wrap: wrap;
+    }
+
+    .tm-ages-tiles .tm-stat-tile {
+        flex: 1 1 calc(50% - 8px);
+        max-width: none;
+    }
 }
 
 .tm-age-bucket {
@@ -21241,6 +21265,18 @@ img, svg, canvas {
     font-weight: 700;
     flex-shrink: 0;
     text-transform: uppercase;
+}
+
+img.tm-sched-avatar {
+    object-fit: cover;
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    color: transparent;
+}
+
+/* Author `display: inline-flex` would otherwise keep [hidden] fallbacks visible. */
+.tm-sched-avatar[hidden] {
+    display: none !important;
 }
 
 .tm-sched-opp-name {
