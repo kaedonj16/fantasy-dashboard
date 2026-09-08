@@ -342,6 +342,17 @@
     /* the app's mid blue (blue-500) — used for links, active
                             states and accents that are intentionally blue rather than
                             the navy --accent. Same value in both themes. */
+    /* Season Hub hero — brand-blue gradient, derived from --brand-blue so the
+       banner tracks the palette instead of a hardcoded pair of hexes. Defined
+       per theme below; brand blue is theme-independent, so light keeps the same
+       deep-navy → blue field (a dark banner on white) with a softer glow. */
+    --hero-from: #0b2a55;
+    --hero-to: #1d4ed8;
+    --hero-glow: rgba(56, 189, 248, 0.22);
+    /* Brand PRO / upsell gradient (navy -> royal blue). Theme-independent, so
+       one definition serves both themes. Mirrored in landing_lite.css for
+       guests, who load that stylesheet without dashboard.css. */
+    --pro-gradient: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
     /* Typography */
     --font-sans: "Archivo", "InterVariable", system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
     --text-xs: 11px;
@@ -439,6 +450,11 @@
     --wk-bar-tick-in: rgba(255, 255, 255, 0.88);
     --wk-bar-sel-fill: rgba(59, 130, 246, 0.14);
     --wk-bar-grip-dot: rgba(96, 165, 250, 0.9);
+    /* Season Hub hero — brand blue on the dark ground; a stronger sky glow gives
+       the banner depth against the near-black chrome. */
+    --hero-from: #0b2a55;
+    --hero-to: #1d4ed8;
+    --hero-glow: rgba(56, 189, 248, 0.28);
 }
 
 /* ============================================
@@ -1209,7 +1225,7 @@ ul {
     letter-spacing: 0.4px;
     text-transform: uppercase;
     color: #fff;
-    background: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
+    background: var(--pro-gradient);
     border-radius: 6px;
     vertical-align: middle;
     line-height: 14px;
@@ -2595,7 +2611,7 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     padding: 9px 18px;
     border-radius: 8px;
     border: none;
-    background: linear-gradient(135deg, #122d4b, #2563eb);
+    background: var(--pro-gradient);
     color: #fff;
     font-size: 13px;
     font-weight: 700;
@@ -8246,21 +8262,21 @@ select:focus {
 }
 
 /* Dark mode overrides */
-.dark .history-card.is-champion {
+[data-theme="dark"] .history-card.is-champion {
     background: linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, var(--card) 60%);
     border-color: rgba(245, 158, 11, 0.35);
 }
 
-.dark .history-card.is-champion .history-card-label {
+[data-theme="dark"] .history-card.is-champion .history-card-label {
     color: #fbbf24;
 }
 
-.dark .history-card.is-runner-up {
+[data-theme="dark"] .history-card.is-runner-up {
     background: linear-gradient(135deg, rgba(148, 163, 184, 0.09) 0%, var(--card) 60%);
     border-color: rgba(148, 163, 184, 0.3);
 }
 
-.dark .history-card.is-runner-up .history-card-label {
+[data-theme="dark"] .history-card.is-runner-up .history-card-label {
     color: var(--text-subtle);
 }
 
@@ -8330,7 +8346,7 @@ select:focus {
     text-transform: uppercase;
     opacity: 0.7;
     margin-bottom: 12px;
-    color: #6b7280;
+    color: var(--text-muted);
 }
 
 .history-page {
@@ -8350,7 +8366,7 @@ select:focus {
 .history-season-picker label {
     font-size: 0.76rem;
     font-weight: 900;
-    color: #6b7280;
+    color: var(--text-muted);
     letter-spacing: 0.1em;
     text-transform: uppercase;
 }
@@ -8358,13 +8374,13 @@ select:focus {
 .history-season-picker select {
     padding: 0 14px;
     border-radius: 18px;
-    border: 1px solid #d6dfeb;
-    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid var(--border);
+    background: var(--card);
     font: inherit;
     height: 52px;
     font-size: 1rem;
     font-weight: 700;
-    color: #1f2937;
+    color: var(--text);
     box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
 }
 
@@ -8744,13 +8760,13 @@ select:focus {
 .history-standings-title {
     font-size: 0.98rem;
     font-weight: 800;
-    color: #1f2937;
+    color: var(--text);
     margin-bottom: 12px;
 }
 
 .history-subtitle {
     margin: 16px 0 0;
-    color: #667085;
+    color: var(--text-muted);
     max-width: 900px;
     font-size: 1.03rem;
     line-height: 1.6;
@@ -8763,7 +8779,7 @@ select:focus {
     font-size: clamp(2rem, 3vw, 3rem);
     line-height: 1.02;
     font-weight: 900;
-    color: #0f2747;
+    color: var(--text);
     letter-spacing: -0.03em;
     word-wrap: break-word;
     overflow-wrap: break-word;
@@ -8821,9 +8837,11 @@ select:focus {
 
 .os-hero-card {
     padding: 22px;
-    /* Layered: soft radial glow over the brand gradient for depth. */
-    background: radial-gradient(ellipse 80% 60% at 85% -10%, rgba(56, 189, 248, 0.18), transparent 60%),
-    linear-gradient(135deg, #0f2747 0%, #183a63 100%);
+    /* Layered: soft radial glow over the brand-blue gradient for depth. The
+       gradient is token-driven (--hero-*) so it tracks the theme instead of a
+       frozen hex pair. */
+    background: radial-gradient(ellipse 85% 65% at 88% -15%, var(--hero-glow), transparent 60%),
+    linear-gradient(135deg, var(--hero-from) 0%, var(--hero-to) 100%);
     color: #ffffff;
     margin-bottom: 18px;
     max-width: 100%;
@@ -11279,10 +11297,13 @@ select:focus {
 }
 
 .home-card {
-    background: #122d4b;
+    /* Brand-blue hero, matched to the Season Hub (--hero-*). Kept inline (not the
+       tokens) so it stays identical to the guest home card in landing_lite.css,
+       which loads without dashboard.css; this card is always navy in both themes. */
+    background: #0b2a55;
     background:
-        radial-gradient(ellipse 90% 70% at 100% 0%, rgba(56, 189, 248, 0.18), transparent 55%),
-        linear-gradient(165deg, #163557 0%, #122d4b 48%, #0d233c 100%);
+        radial-gradient(ellipse 90% 70% at 100% 0%, rgba(56, 189, 248, 0.28), transparent 55%),
+        linear-gradient(135deg, #0b2a55 0%, #1d4ed8 100%);
     padding: 22px 24px 20px;
     border-radius: 18px;
     border: 1px solid rgba(125, 211, 252, 0.12);
@@ -12067,7 +12088,7 @@ a.signed-home-league:hover {
 }
 
 .home-feature-badge-pro {
-    background: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
+    background: var(--pro-gradient);
     color: #fff;
 }
 
@@ -12502,7 +12523,7 @@ a.signed-home-league:hover {
     padding: 8px 14px;
     border: 0;
     border-radius: 9px;
-    background: linear-gradient(135deg, #122d4b, #2563eb);
+    background: var(--pro-gradient);
     color: #fff;
     font-size: 13px;
     font-weight: 800;
@@ -12631,7 +12652,7 @@ a.signed-home-league:hover {
     padding: 12px 18px;
     border: 0;
     border-radius: 10px;
-    background: linear-gradient(135deg, #122d4b, #2563eb);
+    background: var(--pro-gradient);
     color: #fff;
     font-size: 15px;
     font-weight: 800;
@@ -26892,7 +26913,7 @@ tr.team-clickable {
     font-weight: 600;
 }
 
-.dark .history-table tbody tr.champ-recent td {
+[data-theme="dark"] .history-table tbody tr.champ-recent td {
     background: linear-gradient(90deg, rgba(245, 158, 11, 0.1) 0%, var(--card) 100%);
 }
 
@@ -36422,7 +36443,7 @@ a, button, [role="button"], [role="tab"], summary, label,
         letter-spacing: .04em;
         text-transform: uppercase;
         color: #fff;
-        background: linear-gradient(135deg, #122d4b 0%, #2563eb 100%);
+        background: var(--pro-gradient);
         padding: 2px 6px;
         border-radius: 5px;
     }
