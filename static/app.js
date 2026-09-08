@@ -17675,19 +17675,48 @@ function _tmSeededRng(seed) {
   };
 }
 
-// Standard 10-slot fantasy lineup. FLEX draws from the RB/WR/TE leftovers.
-const _TM_LINEUP_SLOTS = [
-  { slot: 'QB', pos: 'QB' },
-  { slot: 'RB', pos: 'RB' }, { slot: 'RB', pos: 'RB' },
-  { slot: 'WR', pos: 'WR' }, { slot: 'WR', pos: 'WR' }, { slot: 'WR', pos: 'WR' },
-  { slot: 'TE', pos: 'TE' },
-  { slot: 'FLEX', pos: 'FLEX' },
-  { slot: 'K', pos: 'K' },
-  { slot: 'DEF', pos: 'DEF' },
-];
+// Slot code → { label shown in the lineup, positions eligible to fill it }.
+// Covers Sleeper/ESPN roster_positions codes; anything unknown falls back to a
+// single-position slot named after the code.
+const _TM_SLOT_DEFS = {
+  QB: { label: 'QB', elig: ['QB'] },
+  RB: { label: 'RB', elig: ['RB'] },
+  WR: { label: 'WR', elig: ['WR'] },
+  TE: { label: 'TE', elig: ['TE'] },
+  K: { label: 'K', elig: ['K'] },
+  DEF: { label: 'DEF', elig: ['DEF'] },
+  DST: { label: 'DEF', elig: ['DEF'] },
+  FLEX: { label: 'FLEX', elig: ['RB', 'WR', 'TE'] },
+  WRRB_FLEX: { label: 'W/R', elig: ['RB', 'WR'] },
+  WRRB: { label: 'W/R', elig: ['RB', 'WR'] },
+  RB_WR: { label: 'W/R', elig: ['RB', 'WR'] },
+  REC_FLEX: { label: 'W/T', elig: ['WR', 'TE'] },
+  WRTE_FLEX: { label: 'W/T', elig: ['WR', 'TE'] },
+  SUPER_FLEX: { label: 'SFLEX', elig: ['QB', 'RB', 'WR', 'TE'] },
+  SUPERFLEX: { label: 'SFLEX', elig: ['QB', 'RB', 'WR', 'TE'] },
+  QB_WR_RB_TE: { label: 'SFLEX', elig: ['QB', 'RB', 'WR', 'TE'] },
+  IDP_FLEX: { label: 'IDP', elig: ['DL', 'LB', 'DB'] },
+  DL: { label: 'DL', elig: ['DL'] },
+  LB: { label: 'LB', elig: ['LB'] },
+  DB: { label: 'DB', elig: ['DB'] },
+  DE: { label: 'DE', elig: ['DE'] },
+  DT: { label: 'DT', elig: ['DT'] },
+  CB: { label: 'CB', elig: ['CB'] },
+  S: { label: 'S', elig: ['S'] },
+};
+
+// A sensible default when the league sends no roster_positions.
+const _TM_DEFAULT_SLOTS = ['QB', 'RB', 'RB', 'WR', 'WR', 'WR', 'TE', 'FLEX', 'K', 'DEF'];
 
 // Plausible weekly fantasy-point band per position (PPR-ish).
-const _TM_PTS_RANGE = { QB: [11, 37], RB: [3, 29], WR: [2, 29], TE: [1, 20], K: [3, 15], DEF: [0, 19] };
+const _TM_PTS_RANGE = {
+  QB: [11, 37], RB: [3, 29], WR: [2, 29], TE: [1, 20], K: [3, 15], DEF: [0, 19],
+  DL: [1, 14], LB: [2, 16], DB: [1, 14], DE: [1, 14], DT: [1, 12], CB: [1, 13], S: [2, 15],
+};
+
+// Positions that share a colored badge class in the CSS.
+const _TM_IDP_POS = { DL: 1, LB: 1, DB: 1, DE: 1, DT: 1, CB: 1, S: 1 };
+function _tmBadgeClass(pos) { return _TM_IDP_POS[pos] ? 'IDP' : pos; }
 
 // Fallback names used when the real roster can't fill a slot (and for opponents).
 const _TM_NAME_POOL = {
@@ -17697,6 +17726,11 @@ const _TM_NAME_POOL = {
   TE: ['G. Kittle', 'D. Kincaid', 'S. LaPorta', 'E. Engram', 'M. Andrews', 'T. Hockenson'],
   K: ['J. Bass', 'C. Boswell', 'B. Aubrey', 'J. Sanders', 'H. Butker'],
   DEF: ['Steelers D', 'Broncos D', 'Texans D', 'Bills D', 'Ravens D', 'Jets D'],
+  DL: ['M. Garrett', 'N. Bosa', 'A. Donald', 'C. Young'],
+  LB: ['R. Smith', 'F. Warner', 'B. Wagner', 'D. Leonard'],
+  DB: ['A. Simmons', 'D. James', 'M. Fitzpatrick', 'B. Hall'],
+  DE: ['M. Garrett', 'N. Bosa'], DT: ['J. Allen', 'C. Jones'],
+  CB: ['P. Surtain', 'S. Gardner'], S: ['K. Byard', 'J. Bates'],
 };
 
 function _tmGenPts(pos, rng) {
@@ -17704,29 +17738,41 @@ function _tmGenPts(pos, rng) {
   return Math.round((band[0] + rng() * (band[1] - band[0])) * 10) / 10;
 }
 
+// Resolve the league's raw slot codes into descriptors, falling back to a
+// standard lineup when the league didn't send any.
+function _tmResolveSlots(starterSlots) {
+  const codes = (Array.isArray(starterSlots) && starterSlots.length) ? starterSlots : _TM_DEFAULT_SLOTS;
+  return codes.map(code => {
+    const key = String(code).trim().toUpperCase();
+    const def = _TM_SLOT_DEFS[key] || { label: key, elig: [key] };
+    return { label: def.label, elig: def.elig };
+  });
+}
+
 // Build this team's starting lineup from the real roster, best-by-value first,
 // falling back to pool names for any slot the roster can't cover.
-function _tmMyLineup(roster) {
-  const byPos = { QB: [], RB: [], WR: [], TE: [], K: [], DEF: [] };
+function _tmMyLineup(roster, slots) {
+  const byPos = {};
   (roster || []).forEach(p => {
-    if (byPos[p.position]) byPos[p.position].push(p.name);
+    if (!p.position) return;
+    (byPos[p.position] = byPos[p.position] || []).push(p.name);
   });
-  const poolIdx = { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DEF: 0 };
+  const poolIdx = {};
   const nextFallback = (pos) => {
     const pool = _TM_NAME_POOL[pos] || ['—'];
+    poolIdx[pos] = (poolIdx[pos] || 0);
     return pool[(poolIdx[pos]++) % pool.length];
   };
-  return _TM_LINEUP_SLOTS.map(s => {
-    const pos = s.pos === 'FLEX'
-      ? (byPos.RB.length ? 'RB' : byPos.WR.length ? 'WR' : byPos.TE.length ? 'TE' : 'WR')
-      : s.pos;
+  return slots.map(s => {
+    // Take the first eligible position that still has a real player left.
+    const pos = s.elig.find(p => byPos[p] && byPos[p].length) || s.elig[0];
     const name = byPos[pos] && byPos[pos].length ? byPos[pos].shift() : nextFallback(pos);
-    return { slot: s.slot, pos, name };
+    return { label: s.label, pos, name };
   });
 }
 
 // A fully generated opponent lineup (unique-ish names per matchup).
-function _tmOppLineup(rng) {
+function _tmOppLineup(slots, rng) {
   const used = {};
   const pick = (pos) => {
     const pool = _TM_NAME_POOL[pos] || ['—'];
@@ -17736,9 +17782,9 @@ function _tmOppLineup(rng) {
     used[n] = true;
     return n;
   };
-  return _TM_LINEUP_SLOTS.map(s => {
-    const pos = s.pos === 'FLEX' ? ['RB', 'WR', 'TE'][Math.floor(rng() * 3)] : s.pos;
-    return { slot: s.slot, pos, name: pick(pos) };
+  return slots.map(s => {
+    const pos = s.elig[Math.floor(rng() * s.elig.length)];
+    return { label: s.label, pos, name: pick(pos) };
   });
 }
 
@@ -17793,14 +17839,27 @@ function _tmBuildScheduleHtml(data) {
     return `<span class="tm-sched-avatar" style="background:${color}">${(name || '?').charAt(0)}</span>`;
   };
 
-  // One starter row inside an expanded matchup column.
-  const playerRow = (pl) => `
-    <div class="tm-mu-player">
-      <span class="tm-mu-slot">${pl.slot}</span>
-      <span class="pos-badge ${pl.pos}">${pl.pos}</span>
-      <span class="tm-mu-pname">${pl.name}</span>
-      <span class="tm-mu-pts">${pl.points.toFixed(1)}</span>
-    </div>`;
+  // A head-to-head lineup row: my starter on the left, the opponent's on the
+  // right, the slot label between them, and the higher score highlighted.
+  const hRow = (mine, theirs, slotLabel) => {
+    const myP = mine.points, opP = theirs.points;
+    const myLead = myP > opP + 0.05, opLead = opP > myP + 0.05;
+    const badge = (p) => `<span class="pos-badge ${_tmBadgeClass(p.pos)}">${p.pos}</span>`;
+    return `
+      <div class="tm-mu-hrow">
+        <span class="tm-mu-h tm-mu-h-left${myLead ? ' tm-mu-h-lead' : ''}">
+          <span class="tm-mu-hname">${mine.name}</span>
+          ${badge(mine)}
+          <span class="tm-mu-hpts">${myP.toFixed(1)}</span>
+        </span>
+        <span class="tm-mu-h-slot">${slotLabel}</span>
+        <span class="tm-mu-h tm-mu-h-right${opLead ? ' tm-mu-h-lead' : ''}">
+          <span class="tm-mu-hpts">${opP.toFixed(1)}</span>
+          ${badge(theirs)}
+          <span class="tm-mu-hname">${theirs.name}</span>
+        </span>
+      </div>`;
+  };
 
   let wins = 0, losses = 0, ties = 0, pf = 0, pa = 0;
   let streakType = '', streakLen = 0;
@@ -17810,7 +17869,8 @@ function _tmBuildScheduleHtml(data) {
   for (let w = 1; w <= REG_WEEKS; w++) allWeeks.push({ week: w, playoff: false });
   PLAYOFF_WEEKS.forEach(w => allWeeks.push({ week: w, playoff: true }));
 
-  const myLineup = _tmMyLineup((data && data.roster) || []);
+  const slots = _tmResolveSlots(data && data.starter_slots);
+  const myLineup = _tmMyLineup((data && data.roster) || [], slots);
 
   allWeeks.forEach((wk, idx) => {
     const oppName = opps[idx % opps.length];
@@ -17818,7 +17878,7 @@ function _tmBuildScheduleHtml(data) {
 
     // Score both lineups for this week (my lineup fixed, opponent fresh).
     const me = _tmScoreLineup(myLineup, rng);
-    const opp = _tmScoreLineup(_tmOppLineup(rng), rng);
+    const opp = _tmScoreLineup(_tmOppLineup(slots, rng), rng);
     const myScore = me.total, oppScore = opp.total;
 
     let res = null;
@@ -17840,24 +17900,35 @@ function _tmBuildScheduleHtml(data) {
     const mid = 'tm-mu-' + (_tmMatchupSeq++);
     const myWin = played && res === 'W';
     const oppWin = played && res === 'L';
-    const colHead = (name, av, total, win) => `
-      <div class="tm-mu-teamhead${win ? ' tm-mu-teamhead-win' : ''}">
-        ${av}
-        <span class="tm-mu-teamname">${name}</span>
-        <span class="tm-mu-total">${total.toFixed(1)}</span>
-      </div>`;
+
+    // Score-share bar across the top of the card.
+    const sumScore = myScore + oppScore;
+    const myPct = sumScore > 0 ? Math.round((myScore / sumScore) * 100) : 50;
+    const centerTag = played ? 'FINAL' : (wk.playoff ? 'PLAYOFFS' : 'PROJECTED');
+
+    const hRows = me.starters.map((s, i) => hRow(s, opp.starters[i], slots[i].label)).join('');
 
     const detail = `
       <div class="tm-sched-detail" id="${mid}" hidden>
         <div class="tm-mu">
-          <div class="tm-mu-col${myWin ? ' tm-mu-col-win' : ''}">
-            ${colHead(myTeamName, avatar(myTeamName, 99), me.total, myWin)}
-            ${me.starters.map(playerRow).join('')}
+          <div class="tm-mu-head">
+            <div class="tm-mu-team tm-mu-team-l${myWin ? ' tm-mu-team-win' : ''}">
+              ${avatar(myTeamName, 99)}
+              <span class="tm-mu-tname">${myTeamName}</span>
+              <span class="tm-mu-tscore">${myScore.toFixed(1)}</span>
+            </div>
+            <span class="tm-mu-tag">${centerTag}</span>
+            <div class="tm-mu-team tm-mu-team-r${oppWin ? ' tm-mu-team-win' : ''}">
+              <span class="tm-mu-tscore">${oppScore.toFixed(1)}</span>
+              <span class="tm-mu-tname">${oppName}</span>
+              ${avatar(oppName, idx)}
+            </div>
           </div>
-          <div class="tm-mu-col${oppWin ? ' tm-mu-col-win' : ''}">
-            ${colHead(oppName, avatar(oppName, idx), opp.total, oppWin)}
-            ${opp.starters.map(playerRow).join('')}
+          <div class="tm-mu-bar" role="img" aria-label="Score share ${myScore.toFixed(1)} to ${oppScore.toFixed(1)}">
+            <span class="tm-mu-bar-l${myWin ? ' tm-mu-bar-win' : ''}" style="width:${myPct}%"></span>
+            <span class="tm-mu-bar-r${oppWin ? ' tm-mu-bar-win' : ''}" style="width:${100 - myPct}%"></span>
           </div>
+          <div class="tm-mu-grid">${hRows}</div>
         </div>
       </div>`;
 

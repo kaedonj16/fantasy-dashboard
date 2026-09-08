@@ -21275,11 +21275,21 @@ def api_team_details(roster_id: str):
         except Exception:
             logger.debug("[api_team_details] trends skipped", exc_info=True)
 
+        # Starting-lineup slots for this league (drives the mocked matchup
+        # lineups in the schedule tab). Filter out bench/IR/taxi so only real
+        # starter slots remain, preserving their configured order.
+        _bench_slots = {"BN", "IR", "TAXI", "RES", "RESERVE"}
+        starter_slots = [
+            str(s) for s in ((league or {}).get("roster_positions") or [])
+            if str(s).strip().upper() not in _bench_slots
+        ]
+
         response = {
             "roster_id": roster_id,
             "team_name": team_name,
             "username": username,
             "avatar": avatar,
+            "starter_slots": starter_slots,
             "record": record_str,
             "wins": wins,
             "losses": losses,
