@@ -128,7 +128,7 @@ def test_scout_is_weekly_not_dynasty():
     # which was meaningless in a weekly context and left rows blank.
     scout = (ROOT / "dashboard_services" / "pages" / "scout_page.py").read_text(encoding="utf-8")
     assert "scout-ppg" in scout
-    assert "Where the matchup is won" in scout
+    assert "Positional Edge" in scout
     assert "get_model_value_table_cached" not in scout
     assert "model_value_table" not in scout
 
