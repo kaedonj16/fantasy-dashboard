@@ -7,7 +7,26 @@ from decimal import Decimal
 
 import pytest
 
-from utils.value_helpers import apply_te_premium, te_premium_from_settings
+from utils.value_helpers import (
+    apply_te_premium, scoring_format_from_settings, te_premium_from_settings,
+)
+
+
+# ── scoring_format_from_settings (player-modal rec mapping) ────────────────
+def test_scoring_format_missing_rec_is_ppr():
+    assert scoring_format_from_settings({}) == "ppr"
+    assert scoring_format_from_settings(None) == "ppr"
+
+
+def test_scoring_format_rec_thresholds():
+    assert scoring_format_from_settings({"rec": 1.0}) == "ppr"
+    assert scoring_format_from_settings({"rec": 0.5}) == "half"
+    assert scoring_format_from_settings({"rec": 0.0}) == "std"
+
+
+def test_scoring_format_espn_points_per_reception():
+    assert scoring_format_from_settings({"pointsPerReception": 0.5}) == "half"
+    assert scoring_format_from_settings({"rec": None, "pointsPerReception": 0.0}) == "std"
 
 
 # ── te_premium_from_settings ────────────────────────────────────────────────

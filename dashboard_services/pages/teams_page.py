@@ -69,15 +69,15 @@ def build_teams_body(ctx: dict) -> str:
       - Positional Index summary per team in header
     """
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
-        _playoff_sim_cached, _safe_int, _team_pick_value, _weighted_pos_strength,
-        apply_te_premium, team_avatar,
+        _playoff_sim_cached, _safe_int, _team_pick_value,
+        team_avatar,
         build_historical_pick_slot_map, count_roster_positions, get_roster_positions,
-        has_draft_ended, load_pick_value_table, te_premium_from_settings, _TEAMS_JS_V,
+        has_draft_ended, load_pick_value_table, _TEAMS_JS_V,
         _TEAMS_JS_FILE,
         _league_is_redraft,
     )
     from dashboard_services.ai.context_builders import (
-        build_model_value_lookup, ctx_scoring_type, redraft_window_label,
+        ctx_scoring_type, league_format_value_lookup, redraft_window_label,
     )
     rosters = ctx["rosters"]  # Sleeper /rosters
     roster_map = ctx["roster_map"]  # mapping roster_id -> team name
@@ -138,11 +138,9 @@ def build_teams_body(ctx: dict) -> str:
     # Expected rows like {id, name, position, team, value, search_name}
     model_vals = ctx.get("model_value_table") or []
 
-    # map sleeper_id -> row. Apply the league's TE premium up front (on a shallow
-    # copy, never the cached row) so every downstream value read — sort, age
-    # weighting, positional strength — uses the TE-adjusted value automatically.
-    # Redraft leagues rewrite ``value`` from redraft_value_* (same as Front Office).
-    _tep = te_premium_from_settings(ctx.get("scoring_settings"))
+    # map sleeper_id -> row. League-type values (1QB/SF, size, redraft) + TE
+    # premium come from the shared lookup so My Leagues and this page rank the
+    # same rooms the same way.
     _rp_early = ctx.get("roster_positions") or []
     from utils.lineup_slots import is_superflex_lineup
     from utils.value_helpers import format_rank_label_key, row_format_rank_label
@@ -151,7 +149,7 @@ def build_teams_body(ctx: dict) -> str:
     # Pos ranks like RB23 must match the league format (redraft vs dynasty, SF vs
     # 1QB). Hardcoding dynasty pos_rank_label leaked dynasty ranks into redraft.
     _rank_label_key = format_rank_label_key(is_redraft=_is_redraft, is_sf=_is_sf_early)
-    _valued = build_model_value_lookup(model_vals, is_sf=_is_sf_early, scoring_type=_scoring)
+    by_id: Dict[str, Dict] = league_format_value_lookup(ctx)
 
     name_to_rank_label: Dict[str, str] = {}
     name_to_age: Dict[str, Union[float, None]] = {}
@@ -175,16 +173,6 @@ def build_teams_body(ctx: dict) -> str:
                 name_to_age[safe_name] = float(age_val)
             except Exception:
                 name_to_age[safe_name] = None
-
-    def _te_adj_row(p: dict) -> dict:
-        if _tep and str(p.get("position") or p.get("pos") or "").upper() == "TE":
-            return {**p, "value": apply_te_premium(p.get("value"), "TE", _tep)}
-        return p
-
-    by_id: Dict[str, Dict] = {
-        pid: _te_adj_row(row)
-        for pid, row in _valued.items()
-    }
 
     CORE_POS = {"QB", "RB", "WR", "TE"}
     POS_ORDER = ["QB", "RB", "WR", "TE"]
@@ -294,17 +282,21 @@ def build_teams_body(ctx: dict) -> str:
     pick_z_max = max(team_pick_z.values()) if team_pick_z else 0.0
 
     # ----------------- Compute per-team positional strength + league baselines -----------------
-    from utils.roster_strength import positional_strength_profile
-    team_pos_strength: Dict[int, Dict[str, float]] = defaultdict(dict)
+    # Rank + bars use weighted_pos_strength (same helper as My Leagues). The
+    # starter/depth/fragility profile stays in the expandable detail strip.
+    from utils.roster_strength import positional_strength_profile, rank_rosters_by_position
+    slot_counts = count_roster_positions(
+        ctx.get("roster_positions") or get_roster_positions() or []
+    )
+    team_pos_strength, pos_rank = rank_rosters_by_position(
+        team_pos_values, slot_counts, positions=POS_ORDER,
+    )
     team_pos_profiles: Dict[int, Dict[str, dict]] = defaultdict(dict)
-    slot_counts = count_roster_positions(get_roster_positions())
-
     for rid, pos_map in team_pos_values.items():
         for pos, vals in pos_map.items():
-            profile = positional_strength_profile(vals, pos, slot_counts)
-            team_pos_profiles[rid][pos] = profile
-            # The calibrated, explainable composite now drives comparisons.
-            team_pos_strength[rid][pos] = profile["composite"]
+            team_pos_profiles[rid][pos] = positional_strength_profile(
+                vals, pos, slot_counts,
+            )
 
     league_pos_avg: Dict[str, float] = {}
     league_pos_std: Dict[str, float] = {}
@@ -363,20 +355,6 @@ def build_teams_body(ctx: dict) -> str:
             pos_z_min[pos] = 0.0
         if pos_z_max[pos] == float("-inf"):
             pos_z_max[pos] = 0.0
-
-    # ----------------- Positional ranks (per position) -----------------
-    # pos_rank[pos][rid] = rank (1 = best at that position)
-    pos_rank: Dict[str, Dict[int, int]] = {pos: {} for pos in POS_ORDER}
-
-    for pos in POS_ORDER:
-        # rank by z-score (strongest to weakest)
-        ranked = sorted(
-            team_meta.keys(),
-            key=lambda rid: team_pos_z[rid].get(pos, 0.0),
-            reverse=True,
-        )
-        for i, rid in enumerate(ranked, start=1):
-            pos_rank[pos][rid] = i
 
     # ----------------- Helper: players under a position row -----------------
     def render_pos_players(rid: int, pos_code: str) -> str:
@@ -906,9 +884,8 @@ def build_teams_body(ctx: dict) -> str:
     platform_js = platform
     season_js = current_season
 
-    # Detect league type (sf vs 1qb) from roster positions
-    _rp = get_roster_positions()
-    _rp_list = list(_rp) if _rp else []
+    # Detect league type (sf vs 1qb) from this league's roster positions
+    _rp_list = list(ctx.get("roster_positions") or get_roster_positions() or [])
     from utils.lineup_slots import is_superflex_lineup
     _is_sf = is_superflex_lineup(_rp_list)
     _league_type_js = "sf" if _is_sf else "1qb"

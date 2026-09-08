@@ -63,7 +63,7 @@ def test_teams_page_uses_team_avatar_and_redraft_values():
     src = Path("dashboard_services/pages/teams_page.py").read_text(encoding="utf-8")
     assert "team_avatar(platform, r, users)" in src
     assert "avatar_from_users(platform, users, str(rid))" not in src
-    assert "build_model_value_lookup" in src
+    assert "league_format_value_lookup" in src
     assert "if not _is_redraft and ctx.get(\"draft_capital_available\", True):" in src
     assert "picks_by_roster = {}" in src
     assert "redraft_window_label" in src

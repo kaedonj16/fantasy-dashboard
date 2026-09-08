@@ -49,7 +49,10 @@ def test_portfolio_undrafted_leagues_use_startup_draft_phase():
 def test_portfolio_positional_strength_uses_in_league_percentiles():
     source = (ROOT / "routes" / "user_pages_bp.py").read_text()
     summary = source.split("def _league_summary")[1].split("\n    leagues_data")[0]
-    assert "from utils.roster_strength import strength_percentile" in summary
+    assert "rank_rosters_by_position" in summary
+    assert "league_format_value_lookup" in summary
+    assert "from utils.roster_strength import" in summary
+    assert "strength_percentile" in summary
     assert "pos_user_pctile[pos] = strength_percentile(" in summary
     assert '"pos_user_pctile": pos_user_pctile' in summary
 

@@ -6,7 +6,8 @@ import pytest
 
 from utils.roster_strength import (
     average_league_percentiles, fit_roster_component_weights,
-    positional_strength_profile, strength_percentile, weighted_pos_strength,
+    positional_strength_profile, rank_rosters_by_position,
+    roster_pos_value_lists, strength_percentile, weighted_pos_strength,
 )
 
 
@@ -192,3 +193,41 @@ def test_component_weight_fitter_learns_outcome_signal():
     assert fitted["starter"] > fitted["depth"]
     assert fitted["starter"] > fitted["resilience"]
     assert sum(fitted[k] for k in ("starter", "depth", "resilience")) == pytest.approx(1)
+
+
+def test_roster_pos_value_lists_skips_zero_and_missing():
+    rosters = [
+        {"roster_id": 1, "players": ["a", "b", "c", "gone"]},
+        {"roster_id": 2, "players": ["d"]},
+    ]
+    values = {
+        "a": {"position": "WR", "value": 100},
+        "b": {"position": "WR", "value": 0},
+        "c": {"pos": "RB", "value": 50},
+    }
+    buckets = roster_pos_value_lists(rosters, values, rid_cast=str)
+    assert buckets["1"]["WR"] == [100]
+    assert buckets["1"]["RB"] == [50]
+    assert buckets["2"]["WR"] == []
+
+
+def test_rank_rosters_by_position_orders_by_weighted_strength():
+    slots = {"WR": 2, "FLEX": 1}
+    team_pos = {
+        "elite": {"QB": [], "RB": [], "WR": [110, 90, 5], "TE": []},
+        "depth": {"QB": [], "RB": [], "WR": [95, 88, 70, 50, 40], "TE": []},
+    }
+    strengths, ranks = rank_rosters_by_position(team_pos, slots)
+    assert strengths["elite"]["WR"] > strengths["depth"]["WR"]
+    assert ranks["WR"]["elite"] == 1
+    assert ranks["WR"]["depth"] == 2
+
+
+def test_rank_rosters_by_position_tie_breaks_by_roster_id():
+    team_pos = {
+        "b": {"QB": [10], "RB": [], "WR": [], "TE": []},
+        "a": {"QB": [10], "RB": [], "WR": [], "TE": []},
+    }
+    _strengths, ranks = rank_rosters_by_position(team_pos, {"QB": 1})
+    assert ranks["QB"]["a"] == 1
+    assert ranks["QB"]["b"] == 2
