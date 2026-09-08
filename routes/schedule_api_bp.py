@@ -308,14 +308,69 @@ def api_schedule_rankings():
         return _api_err("Schedule rankings unavailable", e)
 
 
+def _projected_starter_avgs(rosters, ctx: dict, season: int, current_week: int) -> dict[str, float]:
+    """Projected weekly starter scoring per roster — same source as playoff odds."""
+    roster_positions = ctx.get("roster_positions") or []
+    if hasattr(roster_positions, "tolist"):
+        roster_positions = roster_positions.tolist()
+    scoring = ctx.get("raw_scoring_settings") or ctx.get("scoring_settings") or {}
+    ppg_map: dict = {}
+    pos_map: dict = {}
+    try:
+        from data_building.simulate_playoff_odds import build_ppg_map
+        ppg_map, pos_map = build_ppg_map({
+            "season": season,
+            "current_week": current_week,
+            "raw_scoring_settings": scoring,
+            "rosters": rosters,
+        })
+    except Exception:
+        logger.debug("schedule-strength week projections unavailable", exc_info=True)
+    if not ppg_map:
+        try:
+            from utils.projection_resolver import resolve_projected_ppg_many
+            players_index = ctx.get("players_index") or {}
+            pids = {str(pid) for r in (rosters or []) for pid in (r.get("players") or [])}
+            positions = {}
+            for pid in pids:
+                info = players_index.get(pid) or {}
+                positions[pid] = str(info.get("pos") or info.get("position") or "")
+            resolved = resolve_projected_ppg_many(pids, scoring, season, positions=positions)
+            for pid, info in (resolved or {}).items():
+                ppg = float((info or {}).get("ppg") or 0.0)
+                if ppg > 0:
+                    ppg_map[str(pid)] = {"ppg": ppg, "pos": positions.get(str(pid), "")}
+            pos_map = {**positions, **(pos_map or {})}
+        except Exception:
+            logger.debug("schedule-strength season projections unavailable", exc_info=True)
+    if not ppg_map:
+        return {}
+    try:
+        from data_building.simulate_playoff_odds import _position_aware_lineup
+    except Exception:
+        logger.debug("schedule-strength lineup projector unavailable", exc_info=True)
+        return {}
+    out: dict[str, float] = {}
+    for r in rosters or []:
+        rid = str(r.get("roster_id") or "")
+        if not rid:
+            continue
+        avg, _starters = _position_aware_lineup(
+            r.get("players") or [], ppg_map, pos_map, roster_positions,
+        )
+        out[rid] = float(avg or 0.0)
+    return out
+
+
 @schedule_api_bp.route("/api/schedule-strength")
 def api_schedule_strength():
     """
-    Compute schedule strength remaining for each team in a league.
+    Remaining-schedule difficulty for each team, using the same SOS formula
+    as standings: opponent scoring average (65%) blended with win rate (35%).
 
-    For each team's future matchups (weeks > current_week), look up their
-    opponent's average points scored this season. The team with the hardest
-    remaining schedule faces the highest-scoring opponents on average.
+    Higher ``avg_opp_points`` is a tougher remaining slate (SOS Future index,
+    100 = league average). Playoff weeks are excluded. Projected starter
+    scoring is a 4-game prior that fades as real results come in.
 
     Query params: platform, league_id, season
     """
@@ -331,96 +386,56 @@ def api_schedule_strength():
         season = datetime.now().year
 
     current_week = int(nfl_state.get("leg") or nfl_state.get("week") or 0)
-    season_type = str(nfl_state.get("season_type") or "").lower()
-    FULL_SEASON_WEEKS = 17  # safe scan cap; loop breaks on empty weeks
 
     try:
         from dashboard_services.platform_api import get_matchups as pf_get_matchups
+        from dashboard_services.service import (
+            remaining_schedule_strength,
+            regular_season_length,
+        )
 
         rosters = get_rosters(platform, league_id, season) or []
         users = get_users(platform, league_id, season) or []
         roster_map = _build_roster_map(users, rosters)
 
-        # Build per-roster average points from completed weeks
-        avg_pts_by_rid: dict[str, float] = {}
-        weekly_pts: dict[str, list] = {str(r.get("roster_id")): [] for r in rosters}
+        ctx = {}
+        settings = {}
+        try:
+            ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
+            settings = (
+                (ctx.get("league") or {}).get("settings")
+                or ctx.get("league_settings")
+                or {}
+            )
+        except Exception:
+            logger.debug("suppressed exception", exc_info=True)
+        reg_weeks = regular_season_length(settings)
 
-        for w in range(1, current_week + 1):
+        matchups_by_week: dict[int, list] = {}
+        for w in range(1, reg_weeks + 1):
             try:
                 week_data = pf_get_matchups(platform, league_id, w, season) or []
             except Exception:
-                continue
-            for m in week_data:
-                rid = str(m.get("roster_id", ""))
-                pts = float(m.get("points") or 0.0)
-                if rid in weekly_pts:
-                    weekly_pts[rid].append(pts)
+                week_data = []
+            matchups_by_week[w] = week_data
 
-        for rid, pts_list in weekly_pts.items():
-            avg_pts_by_rid[rid] = round(sum(pts_list) / len(pts_list), 2) if pts_list else 0.0
-
-        # When no games have been played, fall back to power rankings (roster value) as proxy
-        games_played = sum(1 for pts in avg_pts_by_rid.values() if pts > 0)
-        if games_played == 0:
-            try:
-                ctx = get_league_ctx_from_cache(platform, league_id, season)
-                model_vals = ctx.get("model_value_table") or []
-                picks_by_roster = ctx.get("picks_by_roster") or {}
-                values_by_id = {str(p["id"]): float(p.get("value") or 0) for p in model_vals if p.get("id")}
-                pick_values = load_pick_value_table() or {}
-                standings_map = ctx.get("standings_map") or {}
-                for r in rosters:
-                    rid = str(r.get("roster_id", ""))
-                    player_ids = [str(pid) for pid in (r.get("players") or [])]
-                    roster_val = sum(values_by_id.get(pid, 0.0) for pid in player_ids)
-                    # Normalize to a "projected points" scale (~100-160 range) for display consistency
-                    avg_pts_by_rid[rid] = round(100.0 + roster_val / 50.0, 2)
-            except Exception:
-                logger.debug("suppressed exception", exc_info=True)
-
-        # Build future matchups map: rid -> list of opponent roster_ids
-        future_opponents: dict[str, list] = {str(r.get("roster_id")): [] for r in rosters}
-
-        for w in range(current_week + 1, FULL_SEASON_WEEKS + 1):
-            try:
-                week_data = pf_get_matchups(platform, league_id, w, season) or []
-            except Exception:
-                continue
-            if not week_data:
-                break
-            # Group by matchup_id
-            by_mid: dict = {}
-            for m in week_data:
-                mid = m.get("matchup_id")
-                if mid is None:
-                    continue
-                by_mid.setdefault(mid, []).append(str(m.get("roster_id", "")))
-            for mid, rids in by_mid.items():
-                if len(rids) == 2:
-                    future_opponents[rids[0]].append(rids[1])
-                    future_opponents[rids[1]].append(rids[0])
-
-        results = []
-        for r in rosters:
-            rid = str(r.get("roster_id", ""))
-            opp_rids = future_opponents.get(rid, [])
-            opp_avgs = [avg_pts_by_rid.get(o, 0.0) for o in opp_rids]
-            avg_opp = round(sum(opp_avgs) / len(opp_avgs), 2) if opp_avgs else 0.0
-            results.append({
-                "roster_id": rid,
-                "team_name": roster_map.get(rid, f"Roster {rid}"),
-                "games_remaining": len(opp_rids),
-                "avg_opp_points": avg_opp,
-                "my_avg_points": avg_pts_by_rid.get(rid, 0.0),
-            })
-
-        results.sort(key=lambda x: x["avg_opp_points"], reverse=True)
+        proj = _projected_starter_avgs(rosters, ctx, season, current_week)
+        results, source = remaining_schedule_strength(
+            rosters,
+            matchups_by_week,
+            current_week=current_week,
+            regular_season_weeks=reg_weeks,
+            roster_names=roster_map,
+            projected_avg_by_rid=proj or None,
+        )
 
         return jsonify({
             "current_week": current_week,
-            "weeks_remaining": max(len(v) for v in future_opponents.values()) if future_opponents else 0,
+            "weeks_remaining": max((t["games_remaining"] for t in results), default=0),
             "teams": results,
-            "using_power_rankings": games_played == 0,
+            "using_power_rankings": source == "even",
+            "using_projections": source == "projected",
+            "using_blend": source == "blended",
         })
 
     except Exception:

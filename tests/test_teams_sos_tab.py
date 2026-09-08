@@ -91,6 +91,18 @@ def test_sos_render_escapes_team_names_and_marks_viewer():
     assert "sos-mine" in render
     assert "sos-you" in render
     assert "No games played yet" in render
+    assert "Same formula as SOS" in render
+    assert "projected scoring until week 1" in render
+    assert "blending projections with results so far" in render
+    assert "projected starter scoring" in render
+    assert "one week" in render
+    assert "scoring and win rate" in render
+    assert "usingProj || usingBlend || !usingPR" in render
+    assert "SOS ' + val.toFixed(1)" in render
+    assert "estimated from roster values" not in render
+    assert "bars compare remaining opponents by roster value." not in render
+    assert "starter strength" not in render
+    assert "starting lineups" not in render
     # Duplicate preseason copy is gone.
     assert "Based on roster strength (no games played yet)" not in render
     assert "analytics-bar-list" not in render

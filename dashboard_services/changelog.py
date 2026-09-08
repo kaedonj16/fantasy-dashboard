@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-09-08",
         "tag": "fix",
+        "text": "Teams Schedule tab remaining-schedule ranking now uses the same SOS formula as standings (65% scoring + 35% win rate). Preseason uses projected starter scoring, then those projections fade in as a 4-game prior instead of dropping off after week 1.",
+        "link": "/teams"
+    },
+    {
+        "date": "2026-09-08",
+        "tag": "fix",
         "text": "My Leagues position strength now matches the league Teams page, using the same starter-weighted ranker and the same values the player modal shows (1QB vs Superflex, redraft vs dynasty, PPR/TE premium).",
         "link": "/portfolio"
     },
