@@ -32,13 +32,17 @@ def test_python_empty_grades_are_none_not_a_letter():
 
 
 def test_early_label_until_eight_picks_rookie_three():
-    assert "function gradeIsProvisional(count){" in ROOM_JS
+    assert "function gradeIsProvisional(count, remainingOwned){" in ROOM_JS
+    assert "if (_draftComplete()) return false;" in ROOM_JS
+    assert "if (remainingOwned != null && remainingOwned <= 0 && count > 0) return false;" in ROOM_JS
     assert "if ((state && state.type) === 'rookie') return count < 3;" in ROOM_JS
     assert "return count < 8;" in ROOM_JS
-    assert "provisional: gradeIsProvisional(mine.length)" in ROOM_JS
+    assert "provisional: gradeIsProvisional(mine.length, remainingOwnedForPicks(mine))" in ROOM_JS
+    assert "function remainingOwnedForPicks(mine){" in ROOM_JS
     assert "gradeEarlySuffix(g)" in ROOM_JS
     assert "Grade · Early" in ROOM_JS
     assert ".dr-grade-early {" in PAGE_PY
+    assert "A finished draft, or a team that has used every pick it owns, is never tagged Early." in ROOM_JS
 
 
 def test_early_does_not_hide_the_letter():

@@ -650,6 +650,16 @@
         counts = counts || {};
         rc = rc || {};
         opts = opts || {};
+        remainingPicks = Math.max(0, +remainingPicks || 0);
+        // Rookie drafts are a short class, not a full starting-lineup build.
+        // Treating 3 remaining picks as 9 starter holes made Decision Score
+        // prefer "need" over BPA. Keep the return shape so callers stay unchanged.
+        if (opts.draftType === 'rookie') {
+            return {
+                missing: { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DEF: 0, FLEX: 0 },
+                required: 0, remaining: remainingPicks, freePicks: remainingPicks, lineupHoles: 0
+            };
+        }
         var req = starterRequirements(rc, sf);
         var missing = {
             QB: Math.max(0, req.QB - (+counts.QB || 0)), RB: Math.max(0, req.RB - (+counts.RB || 0)),
@@ -1048,10 +1058,16 @@
         return {gap: gap, severity: severity, significantReach: significantReach};
     }
 
-    // significantSteal: marketFall ≥ max(8, 0.5×σ) and Board PS ≥ 80.
+    // significantSteal: marketFall ≥ max(floor, 0.5×σ) and Board PS ≥ 80.
+    // Long boards use an 8-pick floor. Rookie / short classes scale to half a
+    // round (min 4) so a 6-spot fall in a 3-round class can still be a steal.
     function significantSteal(o) {
         o = o || {};
-        var threshold = Math.max(8, 0.5 * Math.max(0, +o.adpUncertainty || 0));
+        var teams = Math.max(1, +o.teams || 12);
+        var rounds = Math.max(1, +o.rounds || 16);
+        var shortBoard = o.draftType === 'rookie' || (teams * rounds) <= 60;
+        var fallFloor = shortBoard ? Math.max(4, 0.5 * teams) : 8;
+        var threshold = Math.max(fallFloor, 0.5 * Math.max(0, +o.adpUncertainty || 0));
         return (+o.marketFall || 0) >= threshold && (+o.boardPickScore || 0) >= 80;
     }
 
@@ -1173,9 +1189,11 @@
     };
 
     function calibrateAvailability(probability, draftType, sf) {
+        var p = Math.max(0, Math.min(100, +probability || 0));
+        // Short rookie boards do not share the startup 20+ round survival curve.
+        if (draftType === 'rookie') return p;
         var type = draftType === 'redraft' ? 'redraft' : 'startup';
         var points = AVAILABILITY_CALIBRATION[type + '_' + (sf ? 'sf' : '1qb')];
-        var p = Math.max(0, Math.min(100, +probability || 0));
         for (var i = 1; i < points.length; i++) {
             if (p <= points[i][0]) {
                 var left = points[i - 1], right = points[i];

@@ -113,7 +113,7 @@ function runOne(cfg, source, random, aggregate) {
     }
     const roster = rosters[slot], counts = { QB:0, RB:0, WR:0, TE:0, K:0, DEF:0 };
     roster.forEach(p => { counts[p.position] = (counts[p.position] || 0) + 1; });
-    const obligations = Core.remainingObligations(counts, rc, cfg.rounds - round + 1, cfg.sf, { tep: cfg.tep });
+    const obligations = Core.remainingObligations(counts, rc, cfg.rounds - round + 1, cfg.sf, { tep: cfg.tep, draftType: cfg.type });
     const candidates = available.slice(0, Math.min(100, available.length)).filter(p => {
       const limit = Core.positionRosterLimit(p.position, rc, { draftType: cfg.type, tep: cfg.tep });
       return counts[p.position] < limit;
@@ -158,7 +158,7 @@ function runOne(cfg, source, random, aggregate) {
   rosters.forEach(roster => {
     const finalCounts = { QB:0, RB:0, WR:0, TE:0, K:0, DEF:0 };
     roster.forEach(p => { finalCounts[p.position] = (finalCounts[p.position] || 0) + 1; });
-    const finalObligations = Core.remainingObligations(finalCounts, rc, 0, cfg.sf);
+    const finalObligations = Core.remainingObligations(finalCounts, rc, 0, cfg.sf, { tep: cfg.tep, draftType: cfg.type });
     if (finalObligations.required > 0) aggregate.invariants.incompleteRosters++;
     if (roster.length !== cfg.rounds) aggregate.invariants.wrongRosterSize++;
     if (finalCounts.K > cfg.k || finalCounts.DEF > cfg.def) aggregate.invariants.specialTeamsOverfill++;

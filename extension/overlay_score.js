@@ -380,7 +380,7 @@
       if (!lastPickByPos[pos] || x.pn > lastPickByPos[pos]) lastPickByPos[pos] = x.pn;
     });
     const obligations = C && C.remainingObligations
-      ? C.remainingObligations(counts, rs, remaining, !!ctx.sf, { tep: ctx.tep || 0 })
+      ? C.remainingObligations(counts, rs, remaining, !!ctx.sf, { tep: ctx.tep || 0, draftType: ctx.type })
       : { missing: {}, required: 0, remaining: remaining, freePicks: remaining, lineupHoles: 0 };
     return {
       targets: targets,
