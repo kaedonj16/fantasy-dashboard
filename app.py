@@ -27486,6 +27486,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         return _sc_cached["html"], 200, {"Content-Type": "text/html; charset=utf-8"}
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
+        from dashboard_services.ai.context_builders import share_card_header_fields
         rosters = ctx.get("rosters") or []
         users = ctx.get("users") or []
         picks_by_roster = ctx.get("picks_by_roster") or {}
@@ -27562,7 +27563,6 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
             owner_id = str(r.get("owner_id") or "")
             owner_name = uid_to_name.get(owner_id, "Unknown")
             avatar_url = _av_from_users(platform, users, owner_id) or ""
-            from dashboard_services.ai.context_builders import share_card_header_fields
             _user = next((u for u in users if str(u.get("user_id", "")) == owner_id), None)
             team_name, record, pf, pa = share_card_header_fields(
                 ctx, r, roster_id, owner_name=owner_name, user=_user,
