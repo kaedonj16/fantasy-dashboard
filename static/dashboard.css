@@ -31544,11 +31544,17 @@ button:disabled {
     display: block;
 }
 
+/* Positioning context for the overlaid prev/next arrows + edge fades. */
+.rz-hero-scroller {
+    position: relative;
+}
+
 .rz-hero-cards-row {
     display: flex;
     gap: 10px;
     padding: 14px 14px 4px;
     overflow-x: auto;
+    scroll-behavior: smooth;
     scrollbar-width: none;
     -ms-overflow-style: none;
 }
@@ -31556,6 +31562,71 @@ button:disabled {
 .rz-hero-cards-row::-webkit-scrollbar {
     display: none;
 }
+
+/* Prev/next arrows: a discoverable scroll affordance for mouse users, since
+   the strip's scrollbar is hidden. JS toggles .rz-arrow-off at the ends. */
+.rz-hero-arrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 3;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid var(--rz-border);
+    background: var(--rz-card);
+    color: var(--rz-text);
+    font-size: 18px;
+    line-height: 1;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, .18);
+    transition: opacity .15s, background .15s, border-color .15s;
+}
+
+.rz-hero-arrow.left { left: 4px; }
+.rz-hero-arrow.right { right: 4px; }
+
+.rz-hero-arrow:hover {
+    background: var(--rz-hover);
+    border-color: var(--rz-muted);
+}
+
+.rz-hero-arrow.rz-arrow-off {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Edge fades hint that more matchups exist beyond the visible strip. */
+.rz-hero-scroller::before,
+.rz-hero-scroller::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 34px;
+    z-index: 2;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .15s;
+}
+
+.rz-hero-scroller::before {
+    left: 0;
+    background: linear-gradient(to right, var(--rz-bg), transparent);
+}
+
+.rz-hero-scroller::after {
+    right: 0;
+    background: linear-gradient(to left, var(--rz-bg), transparent);
+}
+
+.rz-hero-scroller.rz-fade-left::before { opacity: 1; }
+.rz-hero-scroller.rz-fade-right::after { opacity: 1; }
 
 .rz-mc-hero {
     flex: 0 0 auto;
