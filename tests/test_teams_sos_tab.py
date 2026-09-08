@@ -21,7 +21,6 @@ _SOS_SELECTORS = (
     ".sos-panel",
     ".sos-header",
     ".sos-title",
-    ".sos-subtitle",
     ".sos-meta",
     ".sos-note",
     ".sos-legend",

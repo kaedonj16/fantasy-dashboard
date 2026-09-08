@@ -24406,12 +24406,6 @@ tr.team-clickable {
     color: var(--text);
 }
 
-.sos-subtitle {
-    font-size: 11px;
-    color: var(--text-muted);
-    line-height: 1.35;
-}
-
 .sos-full-link {
     font-size: 11px;
     font-weight: 600;
