@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from utils.cross_league_actions import make_action
-from utils.digest_sections import league_overview_card_html, matchup_one_liner
+from utils.digest_sections import (
+    league_focus_line,
+    league_overview_card_html,
+    leagues_snapshot_table_html,
+    matchup_one_liner,
+)
 from utils.weekly_email import (
     MAX_DIGEST_LEAGUES,
     build_multi_league_digest,
@@ -166,21 +171,55 @@ def test_league_overview_card_includes_standing_matchup_and_waiver():
         format_label="1QB · Dynasty",
         rank=3, wins=5, losses=2,
         dash_url="https://brfantasy.com/sleeper/2026/A/dashboard",
-        matchup={"opponent_name": "Gridiron FC", "user_proj": 120.4, "opp_proj": 110.1, "win_prob": 0.62},
-        waiver={"name": "Gabe Davis", "pos": "WR", "reason": "Available"},
+        is_dynasty=True,
         top_asset={"name": "Jeremiyah Love", "pos": "RB", "value": 773},
+        waiver={"name": "Gabe Davis", "pos": "WR", "reason": "Available"},
     )
     assert "blackedraw" in html
     assert "1QB · Dynasty" in html
     assert "#3" in html
     assert "5-2" in html
-    assert "Gridiron FC" in html
-    assert "Gabe Davis" in html
     assert "Jeremiyah Love" in html
-    assert "Open league" in html
     assert "/sleeper/2026/A/dashboard" in html
     assert "—" not in html
     assert "–" not in html
+
+
+def test_league_focus_line_prefers_lineup_then_format():
+    lineup = {"title": "Start/Sit · empty slot", "body": "1 empty starting slot"}
+    assert league_focus_line(
+        is_dynasty=False, lineup_note=lineup,
+        matchup={"opponent_name": "Rival", "win_prob": 0.62},
+        waiver={"name": "Gabe Davis", "pos": "WR"},
+    ) == "1 empty starting slot"
+    assert "Favored 62%" in league_focus_line(
+        is_dynasty=False,
+        matchup={"opponent_name": "Rival", "win_prob": 0.62},
+        waiver={"name": "Gabe Davis", "pos": "WR"},
+    )
+    assert league_focus_line(
+        is_dynasty=True,
+        top_asset={"name": "Jeremiyah Love", "pos": "RB", "value": 773},
+        waiver={"name": "Gabe Davis", "pos": "WR"},
+    ) == "Jeremiyah Love · RB · 773"
+
+
+def test_leagues_snapshot_table_lists_every_league():
+    html = leagues_snapshot_table_html([
+        {"name": "blackedraw", "href": "https://brfantasy.com/a", "chip": "1QB · Dynasty",
+         "standing": "#3 · 5-2", "focus": "Jeremiyah Love · RB · 773", "urgent": False},
+        {"name": "The Gridiron", "href": "https://brfantasy.com/b", "chip": "1QB · Redraft",
+         "standing": "#1 · 6-1", "focus": "1 empty starting slot", "urgent": True},
+        {"name": "Yahoo H2H-Pts 1307110", "href": "https://brfantasy.com/c", "chip": "1QB · Dynasty",
+         "standing": "#8 · 2-5", "focus": "Drake London ▲48", "urgent": False},
+    ])
+    assert html.index("blackedraw") < html.index("The Gridiron") < html.index("Yahoo H2H-Pts")
+    assert "#3 · 5-2" in html
+    assert "#1 · 6-1" in html
+    assert "empty starting slot" in html
+    assert "https://brfantasy.com/a" in html
+    assert "https://brfantasy.com/c" in html
+    assert "—" not in html
 
 
 def test_matchup_one_liner_omits_empty():
@@ -188,7 +227,7 @@ def test_matchup_one_liner_omits_empty():
     assert matchup_one_liner({}) == ""
     line = matchup_one_liner({"opponent_name": "Them", "win_prob": 0.4})
     assert "vs Them" in line
-    assert "40%" in line
+    assert "Underdog 40%" in line
 
 
 def test_choose_multi_league_subject_prefers_lineup():
@@ -306,7 +345,7 @@ def test_build_multi_league_digest_covers_every_connected_league(monkeypatch):
     assert out is not None
     html = out["html"]
     assert "Hey Kaedon" in html
-    assert "3 connected league" in html
+    assert "1 of 3 leagues needs a look" in html
     assert "Your leagues" in html
     assert "Your other leagues" not in html
     assert "blackedraw" in html
@@ -314,7 +353,6 @@ def test_build_multi_league_digest_covers_every_connected_league(monkeypatch):
     assert "Yahoo H2H-Pts 1307110" in html
     assert "#3" in html and "5-2" in html
     assert "#1" in html and "6-1" in html
-    assert "Gabe Davis" in html
     assert "Rival" in html
     assert "empty starting slot" in html
     assert "Open your leagues" in html

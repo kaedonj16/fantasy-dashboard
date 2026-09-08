@@ -2,10 +2,10 @@
 
 Reuses the same value/roster/start-sit/waiver data the in-app dashboard shows.
 The digest covers every connected league on the account: one league gets the
-full recap, two or more get a per-league overview (standing, matchup, lineup,
-waiver, and dynasty notes) plus cross-league action bullets. The app decides
-recipients, content, unsubscribe, and dedupe; Brevo (or SMTP fallback) only
-delivers. Call ``send_weekly_digests()`` from the weekly cron.
+full recap; two or more get a snapshot table (record + one focus line each)
+plus lineup/injury bullets. The app decides recipients, content, unsubscribe,
+and dedupe; Brevo (or SMTP fallback) only delivers. Call
+``send_weekly_digests()`` from the weekly cron.
 
 A recipient is any account that (a) has an email, (b) has a known most-recent
 league (accounts.last_active_*), (c) has weekly_digest enabled, and (d) is not
@@ -458,37 +458,50 @@ def multi_league_sections_html(
     )
     parts: list[str] = []
     if others:
-        cards = []
+        from utils.digest_sections import heading, leagues_snapshot_table_html
+        entries: list[dict] = []
+        blurbs: list[str] = []
+        base = (base_url or _base_url()).rstrip("/")
         for o in others:
-            card = ""
+            snap = None
             try:
                 snap = _collect_league_digest(
                     o["platform"], o["league_id"], int(o.get("season") or primary_season),
                     str(o.get("roster_id") or ""),
                     run_cache=run_cache, league_name_hint=o.get("name") or "",
                 )
-                if snap:
-                    card = _overview_card_from_snapshot(snap)
             except Exception:
-                card = ""
-            if not card:
-                card = compact_league_blurb(
-                    platform=o["platform"], season=o["season"], league_id=o["league_id"],
-                    roster_id=o.get("roster_id") or "", league_name=o.get("name") or "",
-                    base_url=base_url, run_cache=run_cache,
-                )
-                if card and card.strip().startswith("<tr"):
+                snap = None
+            if snap:
+                entries.append(_snapshot_entry_from_snapshot(snap))
+                continue
+            card = compact_league_blurb(
+                platform=o["platform"], season=o["season"], league_id=o["league_id"],
+                roster_id=o.get("roster_id") or "", league_name=o.get("name") or "",
+                base_url=base, run_cache=run_cache,
+            )
+            if card:
+                blurbs.append(card)
+            elif o.get("name"):
+                entries.append({
+                    "name": o.get("name") or "",
+                    "href": f"{base}/{o['platform']}/{o['season']}/{o['league_id']}/dashboard",
+                    "chip": "", "standing": "", "focus": "", "urgent": False,
+                })
+        if entries:
+            parts.append(heading("Your other leagues") + leagues_snapshot_table_html(entries))
+        elif blurbs:
+            wrapped = []
+            for card in blurbs:
+                if card.strip().startswith("<tr"):
                     card = (
                         '<div style="margin:8px 0 0;padding:4px 16px 8px;border-radius:12px;'
                         'background:#ffffff;border:1px solid #e6ebf2;">'
                         '<table style="width:100%;border-collapse:collapse;">'
                         + card + "</table></div>"
                     )
-            if card:
-                cards.append(card)
-        if cards:
-            from utils.digest_sections import heading
-            parts.append(heading("Your other leagues") + "".join(cards))
+                wrapped.append(card)
+            parts.append(heading("Your other leagues") + "".join(wrapped))
     try:
         cl = cross_league_digest_html(actions or [], base_url=base_url, limit=3)
         if cl:
@@ -855,8 +868,8 @@ def _collect_league_digest(
     }
 
 
-def _overview_card_from_snapshot(snap: dict) -> str:
-    from utils.digest_sections import league_overview_card_html
+def _snapshot_entry_from_snapshot(snap: dict) -> dict:
+    from utils.digest_sections import league_focus_line
 
     riser_name = ""
     riser_delta = None
@@ -866,27 +879,44 @@ def _overview_card_from_snapshot(snap: dict) -> str:
         riser_name = _player_name(str(pid), snap.get("pidx") or {})
         riser_delta = delta
     watch = snap.get("watch") or {}
-    trade = snap.get("trade") or {}
     inj = snap.get("injury_item") or {}
     core = snap.get("core") or []
     waivers = snap.get("waivers") or []
-    return league_overview_card_html(
-        league_name=snap.get("league_name") or "",
-        format_label=snap.get("chip") or "",
-        rank=snap.get("rank"),
-        wins=int(snap.get("wins") or 0),
-        losses=int(snap.get("losses") or 0),
-        dash_url=snap.get("dash_url") or "",
+    note = snap.get("lineup_note") or {}
+    injury_body = str(inj.get("body") or "")
+    rank = snap.get("rank")
+    wins = int(snap.get("wins") or 0)
+    losses = int(snap.get("losses") or 0)
+    games = wins + losses
+    standing = ""
+    if rank is not None and games > 0:
+        standing = f"#{int(rank)} · {wins}-{losses}"
+    fmt = snap.get("fmt") or {}
+    is_dynasty = bool(snap.get("is_dynasty") or fmt.get("is_dynasty") or fmt.get("is_keeper"))
+    focus = league_focus_line(
+        is_dynasty=is_dynasty,
         matchup=snap.get("matchup"),
-        lineup_note=snap.get("lineup_note"),
+        lineup_note=note,
         waiver=waivers[0] if waivers else None,
-        injury_body=str(inj.get("body") or ""),
+        injury_body=injury_body,
         top_asset=core[0] if core else None,
         riser_name=riser_name,
         riser_delta=riser_delta,
         breakout_name=str(watch.get("name") or ""),
-        trade_body=str(trade.get("body") or ""),
     )
+    return {
+        "name": snap.get("league_name") or "",
+        "href": snap.get("dash_url") or "",
+        "chip": snap.get("chip") or "",
+        "standing": standing,
+        "focus": focus,
+        "urgent": bool(str(note.get("body") or note.get("title") or "").strip() or injury_body),
+    }
+
+
+def _overview_card_from_snapshot(snap: dict) -> str:
+    from utils.digest_sections import leagues_snapshot_table_html
+    return leagues_snapshot_table_html([_snapshot_entry_from_snapshot(snap)])
 
 
 def choose_multi_league_subject(snapshots: list[dict], n_leagues: int) -> str:
@@ -1069,7 +1099,7 @@ def build_multi_league_digest(
 ) -> dict | None:
     """Overview digest covering every connected league equally."""
     from utils.digest_context import DigestRunCache
-    from utils.digest_sections import email_shell, greeting_html, heading
+    from utils.digest_sections import email_shell, greeting_html, heading, leagues_snapshot_table_html
 
     if not leagues:
         return None
@@ -1080,7 +1110,7 @@ def build_multi_league_digest(
         logger.debug("[weekly-email] shared cache load failed", exc_info=True)
 
     snapshots: list[dict] = []
-    cards: list[str] = []
+    entries: list[dict] = []
     for lg in leagues[:MAX_DIGEST_LEAGUES]:
         plat = str(lg.get("platform") or "sleeper").strip().lower()
         lid = str(lg.get("league_id") or "").strip()
@@ -1103,33 +1133,36 @@ def build_multi_league_digest(
             snap = None
         if snap:
             snapshots.append(snap)
-            card = _overview_card_from_snapshot(snap)
-            if card:
-                cards.append(card)
+            entries.append(_snapshot_entry_from_snapshot(snap))
             continue
-        fallback = compact_league_blurb(
-            platform=plat, season=season, league_id=lid,
-            roster_id=rid, league_name=str(lg.get("name") or ""),
-            run_cache=cache,
-        )
-        if fallback:
-            if fallback.strip().startswith("<tr"):
-                fallback = (
-                    '<div style="margin:16px 0 0;padding:14px 16px;border-radius:12px;'
-                    'background:#ffffff;border:1px solid #e6ebf2;">'
-                    '<table style="width:100%;border-collapse:collapse;">'
-                    + fallback + "</table></div>"
-                )
-            cards.append(fallback)
+        name = str(lg.get("name") or "").strip()
+        href = f"{_base_url()}/{plat}/{season}/{lid}/dashboard"
+        if not name:
+            try:
+                from dashboard_services.platform_api import get_league
+                name = str((get_league(plat, lid, season) or {}).get("name") or "")
+            except Exception:
+                name = ""
+        if name:
+            entries.append({
+                "name": name, "href": href, "chip": "", "standing": "",
+                "focus": "", "urgent": False,
+            })
 
-    if not cards:
+    if not entries:
         return None
 
-    n = len(cards)
+    n = len(entries)
+    n_urgent = sum(1 for e in entries if e.get("urgent"))
+    if n_urgent == 1:
+        intro_txt = f"1 of {n} leagues needs a look this week."
+    elif n_urgent > 1:
+        intro_txt = f"{n_urgent} of {n} leagues need a look this week."
+    else:
+        intro_txt = f"Snapshot across {n} connected leagues."
     intro = (
         f'<p style="margin:0 0 4px;font-size:14px;color:#475569;line-height:1.5;">'
-        f"Here's where you stand across {n} connected league"
-        f"{'s' if n != 1 else ''}.</p>"
+        f"{escape(intro_txt, quote=False)}</p>"
     )
     moves = ""
     try:
@@ -1141,7 +1174,7 @@ def build_multi_league_digest(
         + intro
         + moves
         + heading("Your leagues")
-        + "".join(cards)
+        + leagues_snapshot_table_html(entries)
     )
     base = _base_url()
     html = email_shell(

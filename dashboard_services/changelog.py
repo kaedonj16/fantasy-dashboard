@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-09-08",
         "tag": "update",
-        "text": "Weekly digest: if you have more than one connected league, Tuesday's email is now an overview of all of them (record, matchup, lineup, waiver) instead of a deep dive on the last league you opened plus a name-only list of the rest.",
+        "text": "Weekly digest: if you have more than one connected league, Tuesday's email is a snapshot of all of them (record + one focus line each) with lineup/injury bullets on top, instead of a deep dive on the last league you opened plus a name-only list of the rest.",
         "link": "/portfolio"
     },
     {

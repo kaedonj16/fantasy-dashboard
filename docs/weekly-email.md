@@ -161,9 +161,10 @@ TEP) with `utils.league_format.classify_league_roster_format`.
 with matchup and start/sit; dynasty leads with meaningful roster value movement.
 Empty sections are omitted.
 
-**Two or more connected leagues:** the email is a portfolio overview. Every
-linked league gets the same card (record, matchup, lineup, waiver, top asset /
-riser) instead of a deep dive on `last_active_*` plus a name-only list of the
-rest. Cross-league action bullets sit at the top. The primary CTA opens
-`/portfolio`. Accounts with more than eight linked leagues are capped at eight
-(primary first, then newest). Single-league recap is unchanged.
+**Two or more connected leagues:** the email is a portfolio snapshot. Every
+linked league is one row (record + a single focus line: lineup, matchup,
+riser, or top asset) instead of a deep dive on `last_active_*` plus a
+name-only list of the rest. Lineup and injury bullets sit at the top. The
+primary CTA opens `/portfolio`. Accounts with more than eight linked leagues
+are capped at eight (primary first, then newest). Single-league recap is
+unchanged.
