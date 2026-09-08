@@ -9,7 +9,13 @@ from __future__ import annotations
 
 import pytest
 
+# simulate_playoff_odds imports numpy at module load; the lint-only CI job
+# installs just pytest, so skip cleanly there like other heavy-dep suites.
+pytest.importorskip("numpy")
+
 from data_building import simulate_playoff_odds as spo
+
+pytestmark = pytest.mark.integration
 
 
 def _teams(n=4):
