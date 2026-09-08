@@ -383,12 +383,59 @@ def build_dashboard_body(ctx: dict) -> str:
         _bb_badge = ""
         _bb_outlook_html = ""
 
-    _action_queue_html = f"""
-        <div class="os-action-queue os-tab-panel os-tab-active" id="os-jump-actions">
+    # The Actions queue is the default-active tab, so it must never render blank.
+    # Every card above returns "" with no viewer roster (nothing is personalized)
+    # or when the roster is clean this week; without a fallback the landing tab
+    # looked empty/broken. Show a "link your team" prompt when unidentified, or an
+    # all-clear card when identified but there is nothing to do.
+    _action_cards = [lineup_alert_html, roster_moves_html, trade_window_html, do_next_waiver_html]
+    if any((c or "").strip() for c in _action_cards):
+        _action_inner = f"""
           {lineup_alert_html}
           {roster_moves_html}
           {trade_window_html}
-          {do_next_waiver_html}
+          {do_next_waiver_html}"""
+    elif not viewer_roster_id:
+        _lm_args = (
+            f"'{html.escape(str(platform), quote=True)}', "
+            f"'{html.escape(str(league_id), quote=True)}', "
+            f"'{html.escape(str(season), quote=True)}'"
+        )
+        _action_inner = f"""
+          <section class="os-card os-actions-empty">
+            <div class="os-section-head">
+              <div class="os-section-head-content">
+                <h2 class="os-section-title">Link your team to see this week's actions</h2>
+                <div class="os-section-subtitle">Lineup fixes, roster moves, and waiver targets are personalized to your team.</div>
+              </div>
+            </div>
+            <p style="margin:0 0 12px;font-size:13px;line-height:1.45;color:var(--text-muted)">
+              We could not match you to a team in this league yet. Link your team and your weekly to-dos show up here.
+            </p>
+            <button type="button" class="recap-generate-btn"
+                    onclick="if(window.linkMyTeam){{linkMyTeam({_lm_args});}}else if(window.openLinkModal){{openLinkModal();}}">
+              Link my team
+            </button>
+          </section>"""
+    else:
+        _waivers_href = f"/{html.escape(str(platform), quote=True)}/{int(season)}/{html.escape(str(league_id), quote=True)}/waivers"
+        _action_inner = f"""
+          <section class="os-card os-actions-empty">
+            <div class="os-section-head">
+              <div class="os-section-head-content">
+                <h2 class="os-section-title">You're all set for Week {html.escape(str(current_week))}</h2>
+                <div class="os-section-subtitle">No lineup, roster, or waiver moves need your attention right now.</div>
+              </div>
+            </div>
+            <p style="margin:0;font-size:13px;line-height:1.45;color:var(--text-muted)">
+              Check back after games and waivers process, or review your
+              <a class="os-section-link" href="{_waivers_href}?tab=startsit">Start/Sit</a> and
+              <a class="os-section-link" href="{_waivers_href}">Waivers</a> any time.
+            </p>
+          </section>"""
+
+    _action_queue_html = f"""
+        <div class="os-action-queue os-tab-panel os-tab-active" id="os-jump-actions">{_action_inner}
         </div>"""
 
     body = f"""
