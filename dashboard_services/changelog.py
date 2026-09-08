@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-09-08",
         "tag": "fix",
+        "text": "My Leagues This week's moves no longer disappears when the digest is empty. PRO users now always see the section: it shows an all-caught-up note when nothing needs attention across your leagues instead of hiding the card so it looks missing.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-09-08",
+        "tag": "fix",
         "text": "Season Hub Actions tab no longer shows up blank. When your team is not linked yet it prompts you to link it, and when your lineup, roster, and waivers are all clean it says you're all set for the week instead of rendering nothing.",
         "link": "/dashboard"
     },
