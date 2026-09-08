@@ -335,8 +335,8 @@ def test_cheat_sheet_proj_pick_uses_custom_select_dropdown():
     from dashboard_services.pages.cheat_sheet_page import build_cheat_sheet_embed_document
     embed = build_cheat_sheet_embed_document("league-123", 2026, "sleeper")
 
-    assert "custom_selects.js" in body
-    assert "custom_selects.js" in embed
+    assert "custom_selects" in body
+    assert "custom_selects" in embed
     assert "window.initCustomSelects" in csd
     assert "if (window.initCustomSelects) window.initCustomSelects" in sheet
     assert ".cs-filterbar .cs-src, .cs-filterbar .csd-wrap { flex: 0 0 auto; min-width: 168px; }" in body

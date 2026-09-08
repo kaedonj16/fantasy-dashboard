@@ -8,8 +8,8 @@ minified when the boot-time minify step has produced them).
 
 | Asset | Raw | Served (typical) |
 |-------|-----|------------------|
-| `seo_lite.css` | ~44 KB | ~44 KB (not minified separately) |
-| `landing_lite.css` | ~83 KB | ~83 KB (seo_lite + home extract) |
+| `seo_lite.css` | ~44 KB | `seo_lite.min.css` (boot minify) |
+| `landing_lite.css` | ~83 KB | `landing_lite.min.css` (boot minify) |
 | `dashboard.css` | ~789 KB | `dashboard.min.css` ~515 KB |
 | `public.js` | ~570 KB | `public.min.js` ~382 KB |
 | `app.js` | ~865 KB | `app.min.js` ~594 KB |
@@ -96,6 +96,23 @@ choice, referenced `@keyframes`).
   not full `dashboard.css`).
 - Signed-in `/` still uses `dashboard(.min).css`.
 - Other SEO shells still use `seo_lite.css`.
+
+## Signed-in / per-page leftovers (follow-up)
+
+Guest SEO already used lite CSS + `public.min.js`. Signed-in and tool pages
+still shipped large **unminified** extras on every load:
+
+| Asset | Before (raw) | After |
+|-------|----------------|-------|
+| `player_modal.js` | ~243 KB, deferred on every signed-in page | minified + **idle/lazy** (`__PLAYER_MODAL_JS`) |
+| `paywall.js` | ~60 KB unminified, every page | `paywall.min.js` |
+| `seo_lite.css` / `landing_lite.css` | unminified | minified at boot |
+| `rankings.js` / `redzone.js` / `teams.js` / `draft_room.js` | unminified | minified at boot |
+
+Deferred `app.js` / `paywall.js` also moved into `<head>` so the preload scanner
+finds them before the (often large) body HTML.
+
+Regression: `tests/test_page_load_perf.py`.
 
 ## Cache / hashing (option C) — verified OK
 

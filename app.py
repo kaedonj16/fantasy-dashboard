@@ -677,16 +677,36 @@ _PUBLIC_JS_V = _static_hash(_PUBLIC_JS_FILE)
 # it couldn't be built — render_page then serves the full app.js instead of lite.
 _FEATURES_JS_FILE = _ensure_features_js()
 _FEATURES_JS_V = _static_hash(_FEATURES_JS_FILE) if _FEATURES_JS_FILE else ""
-_PLAYER_MODAL_JS_V = _static_hash("player_modal.js")
-_PAYWALL_JS_V = _static_hash("paywall.js")
-_PAYWALL_CSS_V = _static_hash("paywall.css")
-_REDZONE_JS_V = _static_hash("redzone.js")
-_RANKINGS_JS_V = _static_hash("rankings.js")
-_TEAMS_JS_V = _static_hash("teams.js")
 _CSS_FILE = _ensure_minified_css()
 _CSS_V = _static_hash(_CSS_FILE)
-_SEO_LITE_CSS_V = _static_hash("seo_lite.css")
-_LANDING_LITE_CSS_V = _static_hash("landing_lite.css")
+
+# First-paint / per-page assets that used to ship unminified. Minify at boot
+# (same sidecar pattern as app.js / dashboard.css) so signed-in shells and
+# rankings / draft / redzone pages don't parse 200KB+ of comments and spaces.
+from utils.static_minify import served_name as _served_static  # noqa: E402
+
+
+def _min_asset(name: str) -> tuple:
+    served = _served_static(name)
+    return served, _static_hash(served)
+
+_PLAYER_MODAL_JS_FILE, _PLAYER_MODAL_JS_V = _min_asset("player_modal.js")
+_PAYWALL_JS_FILE, _PAYWALL_JS_V = _min_asset("paywall.js")
+_PAYWALL_CSS_FILE, _PAYWALL_CSS_V = _min_asset("paywall.css")
+_REDZONE_JS_FILE, _REDZONE_JS_V = _min_asset("redzone.js")
+_RANKINGS_JS_FILE, _RANKINGS_JS_V = _min_asset("rankings.js")
+_TEAMS_JS_FILE, _TEAMS_JS_V = _min_asset("teams.js")
+_SEO_LITE_CSS_FILE, _SEO_LITE_CSS_V = _min_asset("seo_lite.css")
+_LANDING_LITE_CSS_FILE, _LANDING_LITE_CSS_V = _min_asset("landing_lite.css")
+# Warm the draft-room / cheat-sheet / player-page bundles so the first visit
+# does not pay minify cost on-request (those pages resolve via served_name).
+for _warm in (
+    "draft_room.js", "cheat_sheet.js", "player_page.js",
+    "pick_score.js", "draft_board_core.js", "draft_grade_team.js",
+    "custom_selects.js",
+):
+    _served_static(_warm)
+del _warm
 _FA_V = _static_hash("font-awesome.css")
 _ICONS_V = _static_hash("icons.css")
 
@@ -1902,12 +1922,17 @@ BASE_HTML = """
     <link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}">
     <!-- Paywall CSS only styles the (hidden) upgrade modal — no above-the-fold
          layout impact — so it stays async and doesn't block first paint. -->
-    <link rel="stylesheet" href="/static/paywall.css?v={paywall_css_v}" media="print" onload="this.media='all'">
-    <noscript><link rel="stylesheet" href="/static/paywall.css?v={paywall_css_v}"></noscript>
+    <link rel="stylesheet" href="/static/{paywall_css_file}?v={paywall_css_v}" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="/static/{paywall_css_file}?v={paywall_css_v}"></noscript>
 
     <!-- Plotly is loaded on demand (window.ensurePlotly) only when a chart is
          actually rendered, instead of ~1 MB on every page. -->
     {plotly_loader}
+    <!-- Deferred shell JS in <head> so the preload scanner finds it before the
+         (often large) body HTML, instead of after footer. defer = parse-order,
+         run after document parse, same as the old bottom-of-body tags. -->
+    <script src="/static/{app_js_file}?v={app_js_v}" defer></script>
+    <script src="/static/{paywall_js_file}?v={paywall_js_v}" defer></script>
     <script>
       if ('serviceWorker' in navigator) {{
         navigator.serviceWorker.register('/sw.js').catch(() => {{}});
@@ -1970,7 +1995,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__DASHBOARD_CSS = {dashboard_css_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueName:{league_name_js},leagueFormat:{league_format_js},currentWeek:{current_week_js},leagueType:{league_type_js},leagueSize:{league_size_js},scoringType:{league_scoring_type_js}}};</script>
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js}; window._hasAccount = {has_account_js}; window._accountEmail = {account_email_js}; window.__FEATURES_JS = {features_js_js}; window.__PLAYER_MODAL_JS = {player_modal_js_js}; window.__DASHBOARD_CSS = {dashboard_css_js}; window.__brctx = {{is_logged_in:{signed_in_js},isPremium:{user_premium},platform:{platform_js},season:{season_js},leagueId:{league_id_js},leagueName:{league_name_js},leagueFormat:{league_format_js},currentWeek:{current_week_js},leagueType:{league_type_js},leagueSize:{league_size_js},scoringType:{league_scoring_type_js}}};</script>
       <main id="page-root" role="main" tabindex="-1" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -2007,9 +2032,6 @@ BASE_HTML = """
     <!-- Page navigation loading overlay -->
     <!-- Cookie consent handled by Google's certified CMP (Funding Choices) -->
 
-    <script src="/static/{app_js_file}?v={app_js_v}" defer></script>
-    {player_modal_js}
-    <script src="/static/paywall.js?v={paywall_js_v}" defer></script>
     <script>
       {adsense_init}
 
@@ -5066,10 +5088,10 @@ def render_page(
     # (seo_lite + home/ticker/connect extract) so we skip the full ~515 KB
     # dashboard pack. Signed-in visitors always keep the full stylesheet.
     if _use_lite and active == "home":
-        _page_css_file = "landing_lite.css"
+        _page_css_file = _LANDING_LITE_CSS_FILE
         _page_css_v = _LANDING_LITE_CSS_V
     elif _use_lite:
-        _page_css_file = "seo_lite.css"
+        _page_css_file = _SEO_LITE_CSS_FILE
         _page_css_v = _SEO_LITE_CSS_V
     else:
         _page_css_file = _CSS_FILE
@@ -5083,6 +5105,13 @@ def render_page(
     _dashboard_css_js = (
         json.dumps(f"/static/{_CSS_FILE}?v={_CSS_V}")
         if _use_lite else "null"
+    )
+    # Signed-in pages lazy-load the player modal (~170 KB min) on first open /
+    # idle prefetch instead of parsing it on every navigation. Lite pages get
+    # it inside the features bundle, so this stays null there.
+    _player_modal_js_js = (
+        "null" if _use_lite
+        else json.dumps(f"/static/{_PLAYER_MODAL_JS_FILE}?v={_PLAYER_MODAL_JS_V}")
     )
 
     meta_tags = _build_seo_meta_tags(
@@ -5199,13 +5228,9 @@ def render_page(
         sentry_js="" if _soft_nav else _SENTRY_JS_SNIPPET,
         plotly_loader="" if _soft_nav else _PLOTLY_LOADER,
         app_js_v=_page_js_v,
-        player_modal_js=(
-            "" if _soft_nav else (
-                f'<script src="/static/player_modal.js?v={_PLAYER_MODAL_JS_V}" defer></script>'
-                if not _use_lite else ""
-            )
-        ),
+        paywall_js_file=_PAYWALL_JS_FILE,
         paywall_js_v=_PAYWALL_JS_V,
+        paywall_css_file=_PAYWALL_CSS_FILE,
         paywall_css_v=_PAYWALL_CSS_V,
         css_file=_page_css_file,
         css_v=_page_css_v,
@@ -5217,6 +5242,7 @@ def render_page(
         has_account_js="true" if session.get("account_id") else "false",
         account_email_js=_json.dumps(session.get("account_email") or ""),
         features_js_js=_features_js_js,
+        player_modal_js_js=_player_modal_js_js,
         dashboard_css_js=_dashboard_css_js,
         platform_js=_json.dumps(platform or "sleeper"),
         season_js=_json.dumps(season),
@@ -5240,7 +5266,7 @@ def render_page(
         )
         # Omit re-downloading app/paywall JS on every soft-nav (already loaded).
         html = re.sub(
-            r'<script src="/static/(?:app|public|app-features|paywall)[^"]*" defer></script>\s*',
+            r'<script src="/static/(?:app|public|app-features|paywall|player_modal)[^"]*" defer></script>\s*',
             '',
             html,
         )
@@ -11782,7 +11808,7 @@ def page_redzone(platform: str, season: int, league_id: str):
         # The Redzone live module is split out of app.js so it only loads here.
         # `defer` runs it after the page's blocking app.js, so the shared helpers
         # (openPlayerModal, window._rzBuildLiveHtml/_rzSyncTabLive) are defined.
-        f'<script src="/static/redzone.js?v={_REDZONE_JS_V}" defer></script>'
+        f'<script src="/static/{_REDZONE_JS_FILE}?v={_REDZONE_JS_V}" defer></script>'
     )
     return render_page("BR Redzone", league_id, "redzone", body, platform, season)
 
@@ -12279,7 +12305,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     # Rankings logic was moved to a cacheable, minified static file. `defer` runs
     # it after the page's app.js and after the inline __leagueTePremium injection
     # above, so the league's TE premium auto-applies on first render.
-    body_html += f'\n<script src="/static/rankings.js?v={_RANKINGS_JS_V}" defer></script>'
+    body_html += f'\n<script src="/static/{_RANKINGS_JS_FILE}?v={_RANKINGS_JS_V}" defer></script>'
 
     _players_desc = (
         "Daily-updated fantasy football player rankings and trade values for dynasty and "

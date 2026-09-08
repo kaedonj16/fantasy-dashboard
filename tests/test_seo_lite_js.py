@@ -29,6 +29,11 @@ def _script_srcs(html: str) -> list[str]:
     return re.findall(r'<script[^>]+src="([^"]+)"', html)
 
 
+def _css_href(html: str, stem: str) -> bool:
+    import re
+    return bool(re.search(rf"/static/{re.escape(stem)}(?:\.min)?\.css", html))
+
+
 def _page_js(html: str) -> str | None:
     for src in _script_srcs(html):
         if "/static/public" in src or "/static/app." in src or "/static/app?" in src:
@@ -76,7 +81,7 @@ def test_guest_seo_page_includes_seo_lite_css(offline_client, path):
     r = offline_client.get(path)
     assert r.status_code == 200, f"{path} -> {r.status_code}"
     html = r.get_data(as_text=True)
-    assert "/static/seo_lite.css" in html, f"{path} should link seo_lite.css"
+    assert _css_href(html, "seo_lite"), f"{path} should link seo_lite.css"
     import re
     assert not re.search(r'<link[^>]+href="[^"]*dashboard(?:\.min)?\.css', html), (
         f"{path} should not link full dashboard.css for guests"
@@ -147,8 +152,8 @@ def test_guest_homepage_uses_landing_lite_css(offline_client, monkeypatch):
     assert r.status_code == 200
     html = r.get_data(as_text=True)
     assert "home-hero" in html
-    assert "/static/landing_lite.css" in html
-    assert "/static/seo_lite.css" not in html
+    assert _css_href(html, "landing_lite")
+    assert not _css_href(html, "seo_lite")
     assert not re.search(r'<link[^>]+href="[^"]*dashboard(?:\.min)?\.css', html), (
         "guest / should not link full dashboard.css as primary stylesheet"
     )
@@ -179,8 +184,8 @@ def test_signed_in_homepage_keeps_dashboard_css(offline_client, monkeypatch):
     r = offline_client.get("/")
     assert r.status_code == 200
     html = r.get_data(as_text=True)
-    assert "/static/landing_lite.css" not in html
-    assert "/static/seo_lite.css" not in html
+    assert not _css_href(html, "landing_lite")
+    assert not _css_href(html, "seo_lite")
     assert re.search(r'<link[^>]+href="[^"]*dashboard(?:\.min)?\.css', html)
 
 def test_signed_in_seo_page_keeps_full_app_js(offline_client):
@@ -215,3 +220,4 @@ def test_app_js_eager_features_for_interactive_seo_shells():
     assert "_eagerLite" in src
     assert "ensureDashboardCss" in src
     assert "__DASHBOARD_CSS" in src
+    assert "__PLAYER_MODAL_JS" in src

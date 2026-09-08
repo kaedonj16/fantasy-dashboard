@@ -14,35 +14,23 @@ start; the JS file needs no f-string brace escaping.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
-from pathlib import Path
 from typing import Optional
 
 # Cache-busting hash for the external Draft Room script (mirrors app.js's ?v=).
 # The 4k-line draft IIFE lives in static/draft_room.js so the browser caches it
 # across visits instead of re-receiving it inline on every Draft Room load.
-_DRAFT_ROOM_JS_V: Optional[str] = None
 
 
-def _draft_room_js_v() -> str:
-    global _DRAFT_ROOM_JS_V
-    if _DRAFT_ROOM_JS_V is None:
-        try:
-            _p = Path(__file__).resolve().parents[2] / "static" / "draft_room.js"
-            _DRAFT_ROOM_JS_V = hashlib.md5(_p.read_bytes()).hexdigest()[:8]
-        except OSError:
-            _DRAFT_ROOM_JS_V = "0"
-    return _DRAFT_ROOM_JS_V
+def _static_src(name: str) -> str:
+    from utils.static_minify import served_name
+    return served_name(name)
 
 
 def _static_v(name: str) -> str:
-    try:
-        _p = Path(__file__).resolve().parents[2] / "static" / name
-        return hashlib.md5(_p.read_bytes()).hexdigest()[:8]
-    except OSError:
-        return "0"
+    from utils.static_minify import served_name, static_hash
+    return static_hash(served_name(name))
 
 
 def build_draft_room_body(
@@ -120,10 +108,10 @@ def build_draft_room_body(
             + _DRAFT_ROOM_HTML
             # draft_grade_curve.js is intentionally not loaded: live grades are absolute
             # (no field curve). The file remains for backtests + parity tests only.
-            + f'\n<script src="/static/pick_score.js?v={_static_v("pick_score.js")}" defer></script>\n'
-            + f'\n<script src="/static/draft_board_core.js?v={_static_v("draft_board_core.js")}" defer></script>\n'
-            + f'\n<script src="/static/draft_grade_team.js?v={_static_v("draft_grade_team.js")}" defer></script>\n'
-            + f'\n<script src="/static/draft_room.js?v={_draft_room_js_v()}" defer></script>\n'
+            + f'\n<script src="/static/{_static_src("pick_score.js")}?v={_static_v("pick_score.js")}" defer></script>\n'
+            + f'\n<script src="/static/{_static_src("draft_board_core.js")}?v={_static_v("draft_board_core.js")}" defer></script>\n'
+            + f'\n<script src="/static/{_static_src("draft_grade_team.js")}?v={_static_v("draft_grade_team.js")}" defer></script>\n'
+            + f'\n<script src="/static/{_static_src("draft_room.js")}?v={_static_v("draft_room.js")}" defer></script>\n'
     )
 
 

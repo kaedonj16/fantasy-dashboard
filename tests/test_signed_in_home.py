@@ -78,7 +78,7 @@ def test_lite_css_swap_uses_landing_lite_for_guest_home():
     full dashboard.css via the non-lite branch.
     """
     app_py = (ROOT / "app.py").read_text(encoding="utf-8")
-    assert '_page_css_file = "landing_lite.css"' in app_py
+    assert '_page_css_file = _LANDING_LITE_CSS_FILE' in app_py
     assert 'active == "home"' in app_py
     assert "_LANDING_LITE_CSS_V" in app_py
     seo_css = (ROOT / "static" / "seo_lite.css").read_text(encoding="utf-8")
