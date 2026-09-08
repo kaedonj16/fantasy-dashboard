@@ -6394,14 +6394,14 @@ window.initTradePage = function initTradePage(root = document) {
     intelBody.innerHTML = valid.map(r => {
       const delta = r.value_delta;
       const deltaStr = delta != null
-        ? `<span style="color:${delta >= 0 ? "#10b981" : "#ef4444"};font-weight:600;">${delta >= 0 ? "+" : ""}${delta}</span>`
+        ? `<span style="color:${delta >= 0 ? "var(--win)" : "#ef4444"};font-weight:600;">${delta >= 0 ? "+" : ""}${delta}</span>`
         : "";
       const marketVal = r.market_value ? `<span style="color:#e2e8f0;">${Math.round(r.market_value)}</span>` : "-";
       const modelVal = r.model_value ? `<span style="color:#94a3b8;">${Math.round(r.model_value)}</span>` : "-";
 
       const bsr = r.buy_sell_ratio;
       const bsrLabel = bsr != null
-        ? (bsr > 0.6 ? "<i class=\"fa-solid fa-circle\" style=\"color:#10b981;font-size:9px;vertical-align:middle;\" aria-hidden=\"true\"></i> Buy pressure" : bsr < 0.4 ? "<i class=\"fa-solid fa-circle\" style=\"color:#ef4444;font-size:9px;vertical-align:middle;\" aria-hidden=\"true\"></i> Sell pressure" : "<i class=\"fa-regular fa-circle\" style=\"color:var(--text-muted);font-size:9px;vertical-align:middle;\" aria-hidden=\"true\"></i> Neutral")
+        ? (bsr > 0.6 ? "<i class=\"fa-solid fa-circle\" style=\"color:var(--win);font-size:9px;vertical-align:middle;\" aria-hidden=\"true\"></i> Buy pressure" : bsr < 0.4 ? "<i class=\"fa-solid fa-circle\" style=\"color:#ef4444;font-size:9px;vertical-align:middle;\" aria-hidden=\"true\"></i> Sell pressure" : "<i class=\"fa-regular fa-circle\" style=\"color:var(--text-muted);font-size:9px;vertical-align:middle;\" aria-hidden=\"true\"></i> Neutral")
         : "";
 
       const packages = (r.common_packages || []).slice(0, 2).map(pkg => {
@@ -7250,7 +7250,7 @@ window.initTradePage = function initTradePage(root = document) {
         const vc = valueClass(pkg.value_label);
         const extra = pkg.extra_receive || null;
         const freqLabel = extra
-          ? `<span class="otc-sugg-pkg-freq" style="color:#10b981;">+ bonus player</span>`
+          ? `<span class="otc-sugg-pkg-freq" style="color:var(--win);">+ bonus player</span>`
           : pkg.is_profile_match
             ? `<span class="otc-sugg-pkg-freq" style="color:var(--accent);">From your roster</span>`
             : `<span class="otc-sugg-pkg-freq">${pkg.frequency}× traded</span>`;
@@ -8185,8 +8185,8 @@ window.initTradePage = function initTradePage(root = document) {
         const pod    = t.playoff_odds_delta || 0;
         const wpdStr = (wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1) + "% wk";
         const podStr = (pod >= 0 ? "+" : "") + (pod * 100).toFixed(1) + "% po";
-        const wpdBg  = wpd >= 0 ? "#10b9811f" : "#ef44441f";
-        const wpdCol = wpd >= 0 ? "#10b981"    : "#ef4444";
+        const wpdBg  = wpd >= 0 ? "#16a34a1f" : "#ef44441f";
+        const wpdCol = wpd >= 0 ? "var(--win)"    : "#ef4444";
         const podBg  = pod >= 0 ? "#6366f11f"  : "#ef44441f";
         const podCol = pod >= 0 ? "#6366f1"    : "#ef4444";
         const wpdTitle = isSellArch
@@ -8337,7 +8337,7 @@ window.initTradePage = function initTradePage(root = document) {
         // Win % + playoff odds - always prefer net_* fields (full trade swap effect)
         const wpd = (t.net_win_prob_delta ?? t.win_prob_delta) || 0;
         const pod = (t.net_playoff_odds_delta ?? t.playoff_odds_delta) || 0;
-        const wpdCol = wpd >= 0 ? "#10b981" : "#ef4444";
+        const wpdCol = wpd >= 0 ? "var(--win)" : "#ef4444";
         const podCol = pod >= 0 ? "#6366f1" : "#ef4444";
         const wpdHtml = `<span title="Change in typical remaining-week win chance for this full trade (what you send and receive)." style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;background:${wpdCol}15;border:1px solid ${wpdCol}30;color:${wpdCol};white-space:nowrap;">${(wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1)}% wk</span>`;
         const podHtml = `<span title="Change in simulated playoff-make odds for this full trade. Playoffs can rise even when weekly win % dips because they depend on the rest of the season, schedule, and ceiling." style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;background:${podCol}15;border:1px solid ${podCol}30;color:${podCol};white-space:nowrap;">${(pod >= 0 ? "+" : "") + (pod * 100).toFixed(1)}% po</span>`;
@@ -16817,7 +16817,7 @@ function _cmp3UsageTable(players, weeksArr) {
     const tds = cells.map(function (c) {
       if (c.avg == null) return '<td class="cmp3-cell">&ndash;</td>';
       let arrow = '';
-      if (c.trend >= 0.5) arrow = '<span class="cmp3-trend" style="color:#10b981">&#9650;</span>';
+      if (c.trend >= 0.5) arrow = '<span class="cmp3-trend" style="color:var(--win)">&#9650;</span>';
       else if (c.trend <= -0.5) arrow = '<span class="cmp3-trend" style="color:#ef4444">&#9660;</span>';
       const isBest = best != null && c.avg === best;
       return '<td class="cmp3-cell' + (isBest ? ' cmp3-best' : '') + '">' + c.avg.toFixed(1) + (def.suffix || '') + arrow + '</td>';

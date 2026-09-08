@@ -346,9 +346,9 @@
        banner tracks the palette instead of a hardcoded pair of hexes. Defined
        per theme below; brand blue is theme-independent, so light keeps the same
        deep-navy → blue field (a dark banner on white) with a softer glow. */
-    --hero-from: #0b2a55;
-    --hero-to: #1d4ed8;
-    --hero-glow: rgba(56, 189, 248, 0.22);
+    --hero-from: #0d1626;
+    --hero-to: #070e1d;
+    --hero-glow: rgba(56, 189, 248, 0.12);
     /* Brand PRO / upsell gradient (navy -> royal blue). Theme-independent, so
        one definition serves both themes. Mirrored in landing_lite.css for
        guests, who load that stylesheet without dashboard.css. */
@@ -452,9 +452,9 @@
     --wk-bar-grip-dot: rgba(96, 165, 250, 0.9);
     /* Season Hub hero — brand blue on the dark ground; a stronger sky glow gives
        the banner depth against the near-black chrome. */
-    --hero-from: #0b2a55;
-    --hero-to: #1d4ed8;
-    --hero-glow: rgba(56, 189, 248, 0.28);
+    --hero-from: #0d1626;
+    --hero-to: #070e1d;
+    --hero-glow: rgba(56, 189, 248, 0.16);
 }
 
 /* ============================================
@@ -1810,7 +1810,7 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
 }
 
 .breakout-score-badge {
-    background: #10b981;
+    background: var(--win);
     color: white;
     font-size: 18px;
     font-weight: 700;
@@ -1818,7 +1818,7 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     border-radius: 10px;
     min-width: 50px;
     text-align: center;
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+    box-shadow: 0 2px 8px rgba(22, 163, 74, 0.3);
 }
 
 .breakout-card-body {
@@ -8837,16 +8837,29 @@ select:focus {
 
 .os-hero-card {
     padding: 22px;
-    /* Layered: soft radial glow over the brand-blue gradient for depth. The
-       gradient is token-driven (--hero-*) so it tracks the theme instead of a
-       frozen hex pair. */
-    background: radial-gradient(ellipse 85% 65% at 88% -15%, var(--hero-glow), transparent 60%),
-    linear-gradient(135deg, var(--hero-from) 0%, var(--hero-to) 100%);
+    position: relative;
+    /* "Chrome edge" hero: a near-black field (--hero-*) that matches the dark
+       nav in both themes, a soft sky glow for depth, and a thin brand->sky
+       hairline on the top edge (::before). Token-driven so it tracks the theme. */
+    background: radial-gradient(ellipse 72% 60% at 90% -10%, var(--hero-glow), transparent 58%),
+    linear-gradient(180deg, var(--hero-from) 0%, var(--hero-to) 100%);
     color: #ffffff;
     margin-bottom: 18px;
     max-width: 100%;
     overflow: hidden;
     box-sizing: border-box;
+}
+
+/* Brand-blue -> sky accent hairline along the hero's top edge. Hardcoded to the
+   brand blues (theme-independent) so it reads the same on the light and dark
+   near-black field. */
+.os-hero-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--brand-blue) 30%, #38bdf8 70%, transparent);
+    pointer-events: none;
 }
 
 .os-hero-copy {
@@ -9368,8 +9381,10 @@ select:focus {
 .os-stat-card {
     border-radius: 14px;
     padding: 14px 16px;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    /* Accent-tinted tiles for the "chrome edge" hero — a faint sky wash instead
+       of a flat white overlay, so they read as part of the near-black field. */
+    background: rgba(56, 189, 248, 0.06);
+    border: 1px solid rgba(56, 189, 248, 0.18);
     backdrop-filter: blur(2px);
     min-width: 0;
 }
@@ -10340,7 +10355,7 @@ select:focus {
 }
 
 .rivalry-side--leader {
-    background: rgba(16, 185, 129, .07);
+    background: rgba(22, 163, 74, .07);
 }
 
 .rivalry-name {
@@ -10525,7 +10540,7 @@ select:focus {
 
 .rivalry-table .rivalry-w {
     font-weight: 800;
-    color: #10b981;
+    color: var(--win);
 }
 
 .rivalry-table-footer {
@@ -15975,9 +15990,9 @@ img, svg, canvas {
     }
 
     .os-hero-stats .os-stat-card {
-        border: 1px solid rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(56, 189, 248, 0.18);
         border-radius: 12px;
-        background: rgba(255, 255, 255, 0.06);
+        background: rgba(56, 189, 248, 0.06);
         padding: 11px 12px;
         min-width: 0;
     }
@@ -21306,12 +21321,12 @@ tr.team-clickable {
    ============================================ */
 
 #bkModal {
-    border-top: 3px solid #10b981;
+    border-top: 3px solid var(--win);
     max-width: 680px;
 }
 
 #bkModal .player-modal-header {
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.06) 0%, transparent 55%);
+    background: linear-gradient(135deg, rgba(22, 163, 74, 0.06) 0%, transparent 55%);
 }
 
 .bk-reasons {
@@ -21333,7 +21348,7 @@ tr.team-clickable {
 }
 
 .bk-reason-bullet {
-    color: #10b981;
+    color: var(--win);
     font-weight: 700;
     flex-shrink: 0;
 }
@@ -37390,12 +37405,12 @@ a, button, [role="button"], [role="tab"], summary, label,
 .team-strength-card .tc-index-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .team-strength-card .tc-index-lbl { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-muted); }
 .team-strength-card .tc-index-num { font-size: 15px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
-.team-strength-card .tc-index-num.up { color: #10b981; }
+.team-strength-card .tc-index-num.up { color: var(--win); }
 .team-strength-card .tc-index-num.dn { color: #ef4444; }
 .team-strength-card .tc-meter { position: relative; height: 6px; margin: 7px 0 5px; border-radius: 4px; background: var(--bg-alt); overflow: hidden; }
 .team-strength-card .tc-meter-mid { position: absolute; top: -2px; bottom: -2px; left: 50%; width: 2px; background: var(--border); transform: translateX(-50%); }
 .team-strength-card .tc-meter-fill { position: absolute; top: 0; bottom: 0; border-radius: 4px; }
-.team-strength-card .tc-meter-fill.up { left: 50%; background: linear-gradient(90deg, color-mix(in srgb, #10b981 55%, transparent), #10b981); }
+.team-strength-card .tc-meter-fill.up { left: 50%; background: linear-gradient(90deg, color-mix(in srgb, var(--win) 55%, transparent), var(--win)); }
 .team-strength-card .tc-meter-fill.dn { right: 50%; background: linear-gradient(270deg, color-mix(in srgb, #ef4444 55%, transparent), #ef4444); }
 .team-strength-card .tc-meter-mark { position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 50%; background: var(--card); border: 2px solid var(--text); transform: translate(-50%, -50%); }
 .team-strength-card .tc-index-scale { display: flex; justify-content: space-between; font-size: 9px; font-weight: 600; color: var(--text-subtle); letter-spacing: .02em; }
@@ -37456,12 +37471,12 @@ a, button, [role="button"], [role="tab"], summary, label,
 .team-strength-card .tc-strength-track { position: relative; width: 100%; min-width: 60px; height: 8px; border-radius: 5px; background: var(--bg-alt); }
 .team-strength-card .tc-strength-zero { position: absolute; top: -2px; bottom: -2px; left: 50%; width: 2px; background: var(--border); transform: translateX(-50%); }
 .team-strength-card .tc-strength-fill { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
-.team-strength-card .tc-strength-fill.up { left: 50%; background: #10b981; }
+.team-strength-card .tc-strength-fill.up { left: 50%; background: var(--win); }
 .team-strength-card .tc-strength-fill.dn { right: 50%; background: #ef4444; }
 .team-strength-card .pos-total { width: 52px; text-align: right; font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
 .team-strength-card .pos-rank { width: 46px; text-align: right; font-weight: 600; font-size: 12.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .team-strength-card .tc-flag { font-size: 9px; margin-left: 4px; }
-.team-strength-card .tc-flag.s { color: #10b981; }
+.team-strength-card .tc-flag.s { color: var(--win); }
 .team-strength-card .tc-flag.w { color: #ef4444; }
 
 /* Expanded per-position detail — an inset drawer under the row */
