@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-09-08",
+        "tag": "update",
+        "text": "My Leagues This week's moves: waiver adds now require a startable rank or a real roster hole instead of always naming the highest leftover free agent. Deep RB35s, 1QB streamer QBs, and aging dynasty leftovers are dropped; cards explain the need or startable reason.",
+        "link": "/portfolio"
+    },
+    {
         "date": "2026-09-06",
         "tag": "fix",
         "text": "Draft recommendations always rank the full undrafted pool for the pick on the clock. Rec no longer looks ahead to later owned picks or hides projected keepers, so early-pick advice stays early-round BPA in live, mock, and manual drafts.",

@@ -58,9 +58,11 @@ def test_recommend_waivers_uses_pickup_score_and_skips_owned():
 
     rows = [
         {"id": "owned", "name": "Starter", "pos": "WR", "value": 800},
-        {"id": "fa1", "name": "Need RB", "pos": "RB", "value": 120, "age": 24},
+        {"id": "fa1", "name": "Need RB", "pos": "RB", "value": 120, "age": 24,
+         "pos_rank": 18, "pos_rank_label": "RB18"},
         {"id": "k", "name": "Kicker", "pos": "K", "value": 500},
-        {"id": "fa2", "name": "Deep WR", "pos": "WR", "value": 40, "age": 28},
+        {"id": "fa2", "name": "Deep WR", "pos": "WR", "value": 40, "age": 28,
+         "pos_rank": 48, "pos_rank_label": "WR48"},
     ]
     hits = recommend_waivers(
         rows, {"owned"},
@@ -81,9 +83,12 @@ def test_recommend_waivers_skips_duplicate_pos_reason():
     from utils.digest_actions import recommend_waivers
 
     rows = [
-        {"id": "w1", "name": "Parker Washington", "pos": "WR", "value": 90, "age": 23},
-        {"id": "w2", "name": "Luther Burden III", "pos": "WR", "value": 88, "age": 22},
-        {"id": "w3", "name": "Need RB", "pos": "RB", "value": 70, "age": 24},
+        {"id": "w1", "name": "Parker Washington", "pos": "WR", "value": 90, "age": 23,
+         "pos_rank": 22, "pos_rank_label": "WR22"},
+        {"id": "w2", "name": "Luther Burden III", "pos": "WR", "value": 88, "age": 22,
+         "pos_rank": 23, "pos_rank_label": "WR23"},
+        {"id": "w3", "name": "Need RB", "pos": "RB", "value": 70, "age": 24,
+         "pos_rank": 20, "pos_rank_label": "RB20"},
     ]
     hits = recommend_waivers(
         rows, set(),
