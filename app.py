@@ -11593,9 +11593,11 @@ def _redzone_fetch_user(platform, league_id, season, week):
     """Aggregate the viewer's matchup across every league they belong to.
 
     Signed-in Google accounts use the cross-platform portfolio (Sleeper, ESPN,
-    Yahoo, MFL). A Sleeper-only session without an account still walks that
-    viewer's Sleeper leagues. Other platforms without either identity fall
-    through to league scope.
+    Yahoo, MFL) unioned with the live Sleeper memberships of every Sleeper
+    identity linked to the account, so all of a viewer's Sleeper leagues appear
+    even when only one was ever explicitly opened. A Sleeper-only session
+    without an account still walks that viewer's Sleeper leagues. Other
+    platforms without either identity fall through to league scope.
     """
     from utils.redzone_user import (
         portfolio_from_account_leagues,
@@ -11605,25 +11607,54 @@ def _redzone_fetch_user(platform, league_id, season, week):
 
     account_id = session.get("account_id")
     viewer_uid = str(session.get("viewer_user_id") or "")
+
+    # Build the viewer's league portfolio as a deduped union of two sources so
+    # "My Leagues" here matches (and can exceed) the league switcher:
+    #   1. The canonical account portfolio (resolve_my_leagues) — the same set
+    #      the My Leagues page and /api/my-leagues switcher show.
+    #   2. Live Sleeper memberships for every Sleeper identity linked to the
+    #      account (or the session viewer for a Sleeper-only login).
+    # Without (2) a Google account that has only ever opened one league would
+    # show a single Redzone card even though it belongs to many Sleeper leagues,
+    # because the account resolver never auto-attaches undiscovered leagues.
     portfolio: list = []
+    seen_keys: set = set()
+
+    def _merge_leagues(rows):
+        for row in rows or []:
+            key = (str(row.get("platform") or "").lower(), str(row.get("league_id") or ""))
+            if not key[0] or not key[1] or key in seen_keys:
+                continue
+            seen_keys.add(key)
+            portfolio.append(row)
 
     if account_id:
         try:
-            from dashboard_services.accounts import resolve_account_leagues
-            saved = resolve_account_leagues(int(account_id), current_season=season) or []
-            portfolio = portfolio_from_account_leagues(saved, season=season)
+            from dashboard_services.accounts import resolve_my_leagues
+            saved, _ = resolve_my_leagues(viewer_uid or None, int(account_id), season)
+            _merge_leagues(portfolio_from_account_leagues(saved, season=season))
         except Exception:
             logger.debug("[redzone] account portfolio load failed", exc_info=True)
-            portfolio = []
 
-    if not portfolio and viewer_uid:
+    # Sleeper identities to expand into their full membership list. Prefer the
+    # account's linked identities; fall back to the session viewer only for a
+    # Sleeper login (an ESPN/Yahoo owner id left in session is not a Sleeper uid).
+    sleeper_ids: list = []
+    if account_id:
+        try:
+            from dashboard_services.accounts import list_account_platform_ids
+            sleeper_ids.extend(list_account_platform_ids(int(account_id), "sleeper") or [])
+        except Exception:
+            logger.debug("[redzone] sleeper identity load failed", exc_info=True)
+    if viewer_uid and str(session.get("viewer_platform") or "sleeper").lower() == "sleeper":
+        sleeper_ids.append(viewer_uid)
+    for sid in list(dict.fromkeys(str(s) for s in sleeper_ids if s)):
         try:
             from dashboard_services.api import get_sleeper_user_leagues
-            sleeper_raw = get_sleeper_user_leagues(viewer_uid, season) or []
-            portfolio = portfolio_from_sleeper_leagues(sleeper_raw, season=season)
+            sleeper_raw = get_sleeper_user_leagues(sid, season) or []
+            _merge_leagues(portfolio_from_sleeper_leagues(sleeper_raw, season=season))
         except Exception:
-            logger.debug("[redzone] sleeper league list failed", exc_info=True)
-            portfolio = []
+            logger.debug("[redzone] sleeper league list failed sid=%s", sid, exc_info=True)
 
     if not portfolio:
         raise ValueError("user scope requires a signed-in viewer with at least one league")
