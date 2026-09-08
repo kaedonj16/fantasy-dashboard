@@ -912,6 +912,19 @@
     return '<div class="rz-league-board"><div class="rz-lb-title">Around the League</div>' + rows + '</div>';
   }
 
+  // Wrap the matchup cards in a horizontal scroller with prev/next arrows so
+  // the strip is navigable on desktop (mouse, no h-scroll gesture) as well as
+  // touch. Arrows/fades are toggled by _updateHeroArrows based on overflow.
+  function _heroCardsWrap(deltaHtml, cardsHtml) {
+    return '<div class="rz-hero-cards">' + deltaHtml
+      + '<div class="rz-hero-scroller">'
+      +   '<button type="button" class="rz-hero-arrow left rz-arrow-off" data-hero-arrow="-1" aria-label="Scroll to earlier matchups">&#8249;</button>'
+      +   '<div class="rz-hero-cards-row">' + cardsHtml + '</div>'
+      +   '<button type="button" class="rz-hero-arrow right rz-arrow-off" data-hero-arrow="1" aria-label="Scroll to more matchups">&#8250;</button>'
+      + '</div>'
+      + '</div>';
+  }
+
   function _renderHeroCards() {
     // Score delta badge ("+N this update"): reflects the change from the most
     // recent poll. _detectChanges recomputes (and resets) _scoreDelta every
@@ -962,7 +975,7 @@
           + '</div>'
           + '</div>';
       }).join('');
-      return '<div class="rz-hero-cards">' + _deltaHtml + '<div class="rz-hero-cards-row">' + cards + '</div></div>';
+      return _heroCardsWrap(_deltaHtml, cards);
     }
 
     // This League mode: one card per matchup, viewer's first
@@ -1012,7 +1025,7 @@
         + '</div>'
         + '</div>';
     }).filter(Boolean).join('');
-    return '<div class="rz-hero-cards">' + _deltaHtml + '<div class="rz-hero-cards-row">' + cards2 + '</div></div>';
+    return _heroCardsWrap(_deltaHtml, cards2);
   }
 
   function _renderLeaguesSummary() {
@@ -1518,6 +1531,54 @@
     });
   }
 
+  // Toggle the hero-strip arrows + edge fades based on current scroll position.
+  // Re-queries the live DOM each call so it is safe to bind to window resize
+  // once (the strip node is replaced on every render).
+  function _updateHeroArrows() {
+    var scroller = root.querySelector('.rz-hero-scroller');
+    if (!scroller) return;
+    var row = scroller.querySelector('.rz-hero-cards-row');
+    if (!row) return;
+    var maxScroll = row.scrollWidth - row.clientWidth;
+    var overflow = maxScroll > 4;
+    var x = row.scrollLeft;
+    var leftBtn = scroller.querySelector('[data-hero-arrow="-1"]');
+    var rightBtn = scroller.querySelector('[data-hero-arrow="1"]');
+    if (leftBtn) leftBtn.classList.toggle('rz-arrow-off', !overflow || x <= 2);
+    if (rightBtn) rightBtn.classList.toggle('rz-arrow-off', !overflow || x >= maxScroll - 2);
+    scroller.classList.toggle('rz-fade-left', overflow && x > 2);
+    scroller.classList.toggle('rz-fade-right', overflow && x < maxScroll - 2);
+  }
+
+  function _wireHeroScroll() {
+    var scroller = root.querySelector('.rz-hero-scroller');
+    if (!scroller) return;
+    var row = scroller.querySelector('.rz-hero-cards-row');
+    if (!row) return;
+
+    function scrollByDir(dir) {
+      var amt = Math.max(row.clientWidth * 0.8, 160);
+      row.scrollBy({ left: dir * amt, behavior: 'smooth' });
+    }
+    scroller.querySelectorAll('[data-hero-arrow]').forEach(function(btn) {
+      btn.addEventListener('click', function() { scrollByDir(parseInt(btn.dataset.heroArrow, 10)); });
+    });
+
+    // Vertical mouse-wheel → horizontal scroll (desktop mice have no h-scroll).
+    row.addEventListener('wheel', function(e) {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return; // let native h-scroll pass
+      var maxScroll = row.scrollWidth - row.clientWidth;
+      if (maxScroll <= 4) return;
+      if ((e.deltaY < 0 && row.scrollLeft <= 0) || (e.deltaY > 0 && row.scrollLeft >= maxScroll)) return;
+      e.preventDefault();
+      row.scrollLeft += e.deltaY;
+      _updateHeroArrows();
+    }, { passive: false });
+
+    row.addEventListener('scroll', _updateHeroArrows, { passive: true });
+    _updateHeroArrows();
+  }
+
   function _renderScopeToggle() {
     var canUser = _isDemo || (_state.viewer_roster_ids && _state.viewer_roster_ids.length) || window._isSignedIn;
     if (!canUser) return '';
@@ -1546,15 +1607,23 @@
       headerRight.innerHTML = demoLink + liveChipHtml + '<button class="rz-refresh-timer" id="rz-timer">' + _fmtTimer(_countdown) + '</button>';
     }
 
-    // Replace hero cards in-place and re-wire
+    // Replace hero cards in-place and re-wire. Preserve the strip's horizontal
+    // scroll position so a live poll doesn't yank the user back to the start.
     var heroWrap = root.querySelector('.rz-hero-cards, .rz-no-matchup');
     if (heroWrap) {
+      var prevRow = heroWrap.querySelector('.rz-hero-cards-row');
+      var prevScrollLeft = prevRow ? prevRow.scrollLeft : 0;
       var tempDiv = document.createElement('div');
       tempDiv.innerHTML = _renderHeroCards();
       var newHero = tempDiv.firstChild;
-      if (newHero) heroWrap.parentNode.replaceChild(newHero, heroWrap);
+      if (newHero) {
+        heroWrap.parentNode.replaceChild(newHero, heroWrap);
+        var newRow = newHero.querySelector && newHero.querySelector('.rz-hero-cards-row');
+        if (newRow && prevScrollLeft) newRow.scrollLeft = prevScrollLeft;
+      }
     }
     _wireHeroCards();
+    _wireHeroScroll();
 
     // Update filter chips (hero chip may change)
     var showFilters = (_activeTab === 'plays' || _activeTab === 'top');
@@ -1801,6 +1870,7 @@
     });
 
     _wireHeroCards();
+    _wireHeroScroll();
     root.querySelectorAll('[data-pid]').forEach(function(el) {
       if (el.classList.contains('rz-player-pts')) return;
       // Feed events are wired by _syncFeed (el.onclick) — skip them here so a
@@ -1941,4 +2011,6 @@
   _render();
   if (_isDemo) setTimeout(_refresh, 300);
   _timer = setInterval(_tick, 1000);
+  // Re-evaluate hero-strip arrows when the viewport width changes.
+  window.addEventListener('resize', _updateHeroArrows);
 })();
