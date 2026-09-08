@@ -12,7 +12,8 @@
 // half (player modal, nav player-search, compare, adv metrics — everything below
 // the @public-js:core-end marker) lives in app-features.js and is loaded on
 // demand. window.__FEATURES_JS is the bundle URL (set by the page ONLY on lite
-// pages); on the full app.js it's null, so ensureFeatures no-ops.
+// pages). Signed-in pages set window.__PLAYER_MODAL_JS instead, so the 170KB+
+// modal is idle-prefetched rather than parsed on every navigation.
 //
 // _deferInit runs an init fn at the right time whether the code loads normally
 // (register for DOMContentLoaded) or LATE via the lazy bundle after the DOM is
@@ -158,15 +159,16 @@ function ensureDashboardCss(cb) {
   document.head.appendChild(link);
 }
 function ensureFeatures(cb) {
-  // Already present (full app.js bundle, or features finished loading).
+  // Already present (full app.js bundle + modal loaded, or features finished).
   if (typeof openPlayerModal === 'function' && !openPlayerModal.__stub) { if (cb) cb(); return; }
-  if (!window.__FEATURES_JS) { if (cb) cb(); return; }  // no lazy bundle → nothing to load
+  var src = window.__FEATURES_JS || window.__PLAYER_MODAL_JS;
+  if (!src) { if (cb) cb(); return; }  // no lazy bundle → nothing to load
   if (cb) __featuresCbs.push(cb);
   if (__featuresState) return;   // already loading
   __featuresState = 1;
   ensureDashboardCss(function () {
     var s = document.createElement('script');
-    s.src = window.__FEATURES_JS;
+    s.src = src;
     s.onload = function () {
       __featuresState = 2;
       var cbs = __featuresCbs; __featuresCbs = [];
@@ -174,7 +176,7 @@ function ensureFeatures(cb) {
     };
     s.onerror = function () {
       __featuresState = 0;   // allow a retry on the next interaction
-      console.error('[features] failed to load', window.__FEATURES_JS);
+      console.error('[features] failed to load', src);
     };
     document.head.appendChild(s);
   });
@@ -192,18 +194,18 @@ if (typeof window.openPlayerModal === 'undefined') {
   };
   window.openPlayerModal.__stub = true;
 }
-// Prefetch the feature bundle once the page is idle so the first real interaction
-// is instant (no-op when there's no lazy bundle, i.e. the full app.js is loaded).
+// Prefetch the feature bundle (guests) or the player-modal script (signed-in)
+// once the page is idle so the first real interaction is instant.
 // Interactive SEO shells (compare / prospects / breakouts) need feature-half init
 // before first paint is useful — load eagerly instead of waiting for idle.
-if (window.__FEATURES_JS) {
+if (window.__FEATURES_JS || window.__PLAYER_MODAL_JS) {
   var _pf = function () { ensureFeatures(); };
   var _eagerLite = document.querySelector(
     '.page-shell[data-page="compare"],' +
     '.page-shell[data-page="prospects"],' +
     '.page-shell[data-page="breakouts"]'
   );
-  if (_eagerLite) _pf();
+  if (_eagerLite && window.__FEATURES_JS) _pf();
   else if ('requestIdleCallback' in window) requestIdleCallback(_pf, { timeout: 4000 });
   else setTimeout(_pf, 2500);
 }

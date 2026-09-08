@@ -88,7 +88,7 @@ def test_player_modal_extracted_and_not_on_lite_pages():
     assert "function closePlayerModal()" not in APP_JS
     assert "function _getWatchlist()" in APP_JS
     assert "player_modal.js" in APP_PY
-    assert "if not _use_lite else \"\"" in APP_PY
+    assert "__PLAYER_MODAL_JS" in APP_PY
     assert "player_modal.js" in APP_PY[APP_PY.index("def _ensure_features_js"): APP_PY.index("def _ensure_minified_css")]
 
 

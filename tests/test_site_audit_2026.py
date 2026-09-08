@@ -176,7 +176,7 @@ def test_text_subtle_contrast_and_paywall_css_versioned():
     light = light[: light.index("--border:")]
     assert "--text-subtle: #64748b" in light
     assert "_PAYWALL_CSS_V" in APP_PY
-    assert "paywall.css?v={paywall_css_v}" in APP_PY
+    assert "paywall_css_file}?v={paywall_css_v}" in APP_PY
 
 
 def test_guide_and_legal_pages_have_unique_descriptions():

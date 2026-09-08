@@ -75,6 +75,12 @@ static/app-features.js
 static/app-features.min.js
 static/app-features.min.js.src
 
+# Generated at startup by utils.static_minify.served_name()
+static/*.min.js
+static/*.min.css
+static/*.min.js.src
+static/*.min.css.src
+
 # Read-only output from scripts/value_model_experiment.py
 value_experiment_output/
 

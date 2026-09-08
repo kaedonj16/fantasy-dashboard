@@ -17,18 +17,18 @@ BRPickScore.starterCounts.
 """
 from __future__ import annotations
 
-import hashlib
 import json
-from pathlib import Path
 from typing import Optional
 
 
+def _static_src(name: str) -> str:
+    from utils.static_minify import served_name
+    return served_name(name)
+
+
 def _static_v(name: str) -> str:
-    try:
-        _p = Path(__file__).resolve().parents[2] / "static" / name
-        return hashlib.md5(_p.read_bytes()).hexdigest()[:8]
-    except OSError:
-        return "0"
+    from utils.static_minify import served_name, static_hash
+    return static_hash(served_name(name))
 
 
 def build_cheat_sheet_body(
@@ -95,10 +95,10 @@ def build_cheat_sheet_body(
         f"<script>window.__cheatCfg = {cfg_json};</script>\n"
         + prefetch
         + _CHEAT_HTML
-        + f'\n<script src="/static/pick_score.js?v={_static_v("pick_score.js")}" defer></script>\n'
-        + f'\n<script src="/static/draft_board_core.js?v={_static_v("draft_board_core.js")}" defer></script>\n'
-        + f'\n<script src="/static/cheat_sheet.js?v={_static_v("cheat_sheet.js")}" defer></script>\n'
-        + f'\n<script src="/static/custom_selects.js?v={_static_v("custom_selects.js")}" defer></script>\n'
+        + f'\n<script src="/static/{_static_src("pick_score.js")}?v={_static_v("pick_score.js")}" defer></script>\n'
+        + f'\n<script src="/static/{_static_src("draft_board_core.js")}?v={_static_v("draft_board_core.js")}" defer></script>\n'
+        + f'\n<script src="/static/{_static_src("cheat_sheet.js")}?v={_static_v("cheat_sheet.js")}" defer></script>\n'
+        + f'\n<script src="/static/{_static_src("custom_selects.js")}?v={_static_v("custom_selects.js")}" defer></script>\n'
     )
 
 
@@ -108,12 +108,13 @@ def build_cheat_sheet_embed_document(*args, **kwargs) -> str:
     stylesheet for the theme tokens and mirrors the parent's light/dark choice via
     the shared same-origin localStorage, so it looks native inside the modal."""
     body = build_cheat_sheet_body(*args, **kwargs)
+    css_file = _static_src("dashboard.css")
     css_v = _static_v("dashboard.css")
     return (
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
         "<title>Draft Cheat Sheet</title>"
-        f"<link rel='stylesheet' href='/static/dashboard.css?v={css_v}'>"
+        f"<link rel='stylesheet' href='/static/{css_file}?v={css_v}'>"
         # Match the parent tab's theme (same-origin iframe shares localStorage).
         "<script>(function(){try{if(localStorage.getItem('theme')==='dark')"
         "document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>"
