@@ -133,6 +133,69 @@ def _weighted_sum(components: Mapping[str, float], weights: Mapping[str, float])
 # ── Starter value ─────────────────────────────────────────────────────────────
 
 
+def this_season_production(
+    row: Mapping[str, Any] | None,
+    *,
+    is_sf: bool = False,
+) -> float:
+    """This-season scoring talent for one player.
+
+    Prefers redraft/this-season columns (the same signal slot-legal starter
+    strength and remaining-schedule opponent difficulty use) and only falls
+    back to dynasty trade value when those prices are missing.
+    """
+    if not isinstance(row, Mapping):
+        return 0.0
+    primary = "redraft_value_sf" if is_sf else "redraft_value_1qb"
+    keys = (
+        primary,
+        "redraft_value_sf" if not is_sf else "redraft_value_1qb",
+        "sf_value" if is_sf else "value",
+        "value",
+    )
+    for key in keys:
+        try:
+            val = float(row.get(key) or 0.0)
+        except (TypeError, ValueError):
+            val = 0.0
+        if val > 0:
+            return val
+    return 0.0
+
+
+def preseason_opponent_strength(
+    player_ids: Sequence[Any],
+    model_value_lookup: Mapping[str, Mapping[str, Any]],
+    *,
+    is_sf: bool = False,
+    roster_positions: Sequence[Any] | None = None,
+) -> float:
+    """Opponent difficulty proxy when no games have been played.
+
+    Slot-legal this-season starter production — not a raw dynasty roster
+    sum, which overrates rebuilds with young bench depth.
+    """
+    key = "redraft_value_sf" if is_sf else "redraft_value_1qb"
+    filled: dict[str, dict] = {}
+    for pid, row in (model_value_lookup or {}).items():
+        if not isinstance(row, Mapping):
+            continue
+        rec = dict(row)
+        try:
+            have = float(rec.get(key) or 0.0)
+        except (TypeError, ValueError):
+            have = 0.0
+        if have <= 0:
+            rec[key] = this_season_production(rec, is_sf=is_sf)
+        filled[str(pid)] = rec
+    return starter_lineup_value(
+        player_ids,
+        filled,
+        redraft_key=key,
+        roster_positions=roster_positions,
+    )
+
+
 def starter_lineup_value(
     player_ids: Sequence[Any],
     model_value_lookup: Mapping[str, Mapping[str, Any]],

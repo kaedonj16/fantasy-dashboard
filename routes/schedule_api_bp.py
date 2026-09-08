@@ -359,22 +359,40 @@ def api_schedule_strength():
         for rid, pts_list in weekly_pts.items():
             avg_pts_by_rid[rid] = round(sum(pts_list) / len(pts_list), 2) if pts_list else 0.0
 
-        # When no games have been played, fall back to power rankings (roster value) as proxy
+        # When no games have been played, fall back to this-season starter
+        # production (slot-legal redraft value) — the same signal remaining-
+        # schedule opponent difficulty should use. A raw dynasty roster sum
+        # overrates rebuilds with young bench depth.
         games_played = sum(1 for pts in avg_pts_by_rid.values() if pts > 0)
         if games_played == 0:
             try:
+                from dashboard_services.power_score import preseason_opponent_strength
+                from utils.lineup_slots import is_superflex_lineup
+
                 ctx = get_league_ctx_from_cache(platform, league_id, season)
                 model_vals = ctx.get("model_value_table") or []
-                picks_by_roster = ctx.get("picks_by_roster") or {}
-                values_by_id = {str(p["id"]): float(p.get("value") or 0) for p in model_vals if p.get("id")}
-                pick_values = load_pick_value_table() or {}
-                standings_map = ctx.get("standings_map") or {}
+                lookup = {
+                    str(p["id"]): p
+                    for p in model_vals
+                    if isinstance(p, dict) and p.get("id")
+                }
+                rp = (
+                    ctx.get("roster_positions")
+                    or (ctx.get("league") or {}).get("roster_positions")
+                    or []
+                )
+                is_sf = is_superflex_lineup(rp)
                 for r in rosters:
                     rid = str(r.get("roster_id", ""))
-                    player_ids = [str(pid) for pid in (r.get("players") or [])]
-                    roster_val = sum(values_by_id.get(pid, 0.0) for pid in player_ids)
-                    # Normalize to a "projected points" scale (~100-160 range) for display consistency
-                    avg_pts_by_rid[rid] = round(100.0 + roster_val / 50.0, 2)
+                    avg_pts_by_rid[rid] = round(
+                        preseason_opponent_strength(
+                            r.get("players") or [],
+                            lookup,
+                            is_sf=is_sf,
+                            roster_positions=rp,
+                        ),
+                        2,
+                    )
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
 

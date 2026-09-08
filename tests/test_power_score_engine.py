@@ -7,8 +7,10 @@ from dashboard_services.power_score import (
     approximate_power_score_frame,
     blended_team_scores,
     performance_power_scores,
+    preseason_opponent_strength,
     season_phase_from_progress,
     starter_lineup_value,
+    this_season_production,
     z_scores,
 )
 
@@ -166,3 +168,34 @@ def test_approximate_frame_sets_powerscore():
     out = approximate_power_score_frame(df)
     assert "PowerScore" in out.columns
     assert out.loc[0, "PowerScore"] > out.loc[1, "PowerScore"]
+
+
+def test_this_season_production_prefers_redraft_over_dynasty():
+    row = {"redraft_value_1qb": 80.0, "value": 400.0, "sf_value": 450.0}
+    assert this_season_production(row, is_sf=False) == 80.0
+    assert this_season_production({"redraft_value_sf": 90.0, "value": 10.0}, is_sf=True) == 90.0
+    # Missing redraft still ranks the player from dynasty so they are not dropped.
+    assert this_season_production({"value": 400.0}, is_sf=False) == 400.0
+    assert this_season_production({}, is_sf=False) == 0.0
+
+
+def test_preseason_strength_ranks_starters_not_dynasty_bench():
+    """A win-now lineup outranks a rebuild whose dynasty value is all on the bench."""
+    lookup = {
+        "qb": {"position": "QB", "redraft_value_1qb": 100, "value": 40},
+        "rb1": {"position": "RB", "redraft_value_1qb": 100, "value": 40},
+        "wr1": {"position": "WR", "redraft_value_1qb": 100, "value": 40},
+        "te": {"position": "TE", "redraft_value_1qb": 80, "value": 30},
+        "kid": {"position": "RB", "redraft_value_1qb": 10, "value": 500},
+    }
+    slots = ["QB", "RB", "WR", "TE"]
+    win_now = preseason_opponent_strength(
+        ["qb", "rb1", "wr1", "te"], lookup, is_sf=False, roster_positions=slots,
+    )
+    rebuild = preseason_opponent_strength(
+        ["kid", "qb"], lookup, is_sf=False, roster_positions=slots,
+    )
+    dynasty_win_now = sum(lookup[p]["value"] for p in ("qb", "rb1", "wr1", "te"))
+    dynasty_rebuild = sum(lookup[p]["value"] for p in ("kid", "qb"))
+    assert dynasty_rebuild > dynasty_win_now
+    assert win_now > rebuild

@@ -20821,6 +20821,7 @@ def api_team_details(roster_id: str):
 
         player_ids = roster.get("players") or []
         starters = roster.get("starters") or []
+        from dashboard_services.power_score import this_season_production
         from utils.injury_plan import ir_capacity, injury_plan as _team_injury_plan
         _ir_cap = ir_capacity(
             (league or {}).get("roster_positions"),
@@ -20846,6 +20847,12 @@ def api_team_details(roster_id: str):
                 value = float(value or 0)
             except (TypeError, ValueError):
                 value = 0.0
+            # Roster tab + schedule lineups score this-season production
+            # (redraft), the same signal remaining-schedule SOS uses — not
+            # dynasty trade value, which overrates young bench depth.
+            prod_value = this_season_production(value_row, is_sf=is_sf)
+            if prod_value <= 0:
+                prod_value = value
 
             position = player_meta.get("pos") or ""
             if position == "PK":
@@ -20867,6 +20874,7 @@ def api_team_details(roster_id: str):
 
             # Apply the league's TE premium now that position is finalized.
             value = apply_te_premium(value, position, _tep)
+            prod_value = apply_te_premium(prod_value, position, _tep)
             total_value += float(value)
 
             # Compute precise decimal age from birthday (bDay) when available;
@@ -20903,7 +20911,8 @@ def api_team_details(roster_id: str):
                 "team": player_team,
                 "age": age,
                 "years_exp": player_meta.get("years_exp"),
-                "value": round(float(value), 1) if value else None,
+                "value": round(float(prod_value), 1) if prod_value else None,
+                "trade_value": round(float(value), 1) if value else None,
                 "pos_rank_label": value_row.get("pos_rank_label"),
                 "is_starter": pid_str in starters,
                 "injury_status": inj_status,
@@ -20911,9 +20920,30 @@ def api_team_details(roster_id: str):
                 "return_plan": _return_plan,
             })
 
-        # Sort by position order (QB, RB, WR, TE, K, DEF), then by value within position
+        # Sort by position order (QB, RB, WR, TE, K, DEF), then this-season
+        # production within position so the roster tab and mocked lineups
+        # pick the same weekly talent remaining-schedule SOS uses.
         pos_order = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
         roster_players.sort(key=lambda p: (pos_order.get(p["position"], 99), -(p["value"] or 0)))
+
+        # Remaining NFL SOS (pts-allowed / matchup ease) for the roster tab —
+        # same ratings the Schedule Assistant and remaining-schedule SOS use.
+        try:
+            _st = get_nfl_state() or {}
+            _cw = int(_st.get("leg") or _st.get("week") or 1)
+            _weeks = list(range(max(_cw, 1), 19))
+            _sos_by_pid = {
+                str(p.get("pid")): p
+                for p in (_compute_schedule_grid(season, player_ids, _weeks) or [])
+                if p.get("pid")
+            }
+            for _pl in roster_players:
+                _sos = _sos_by_pid.get(str(_pl.get("player_id"))) or {}
+                _pl["sos_ease"] = _sos.get("sos_ease")
+                _pl["sos_rank"] = _sos.get("sos_rank")
+                _pl["sos_total"] = _sos.get("sos_total")
+        except Exception:
+            logger.debug("[api_team_details] remaining SOS skipped", exc_info=True)
 
         # Get draft picks. ESPN/Yahoo have no pick feed; redraft leagues have
         # no future capital. Inventing default own-picks would fake a dynasty
@@ -21349,11 +21379,14 @@ def api_team_details(roster_id: str):
                     pos = "DEF"
                 if not pos:
                     continue
+                prod = this_season_production(values_by_id.get(str(pid), {}), is_sf=is_sf)
                 out.append({
                     "player_id": str(pid),
                     "name": meta.get("name") or "",
                     "pos": pos,
+                    "prod": prod,
                 })
+            out.sort(key=lambda p: -(p.get("prod") or 0))
             return out
 
         schedule_opponents = []
@@ -23787,6 +23820,7 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
         row_format_rank_label as _row_rank_lbl,
         row_format_value as _row_fmt_val,
     )
+    from dashboard_services.power_score import this_season_production
     val_key, val_fallback = _fmt_val_keys(is_redraft=is_redraft, is_sf=is_sf)
     rank_key = _fmt_rank_key(is_redraft=is_redraft, is_sf=is_sf)
     rank_label_key = _fmt_rank_lbl_key(is_redraft=is_redraft, is_sf=is_sf)
@@ -23802,6 +23836,7 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
             _pos_rank = row.get("pos_rank")
         values_by_id[pid] = {
             "value": _row_fmt_val(row, val_key, val_fallback),
+            "prod_value": this_season_production(row, is_sf=is_sf),
             "age": row.get("age"),
             "position": str(row.get("position") or "").upper(),
             "pos_rank_label": _row_rank_lbl(row, rank_label_key),
@@ -23943,8 +23978,9 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
 
         return "Hold"
 
-    # ── Compute per-position strength for ALL teams using the same weighted
-    #    formula as the teams page cards so ranks match exactly.
+    # ── Compute per-position strength for ALL teams using this-season
+    #    production (redraft), the same signal remaining-schedule SOS uses
+    #    for opponent difficulty — not dynasty trade value.
     # Pull the starting lineup from the cached league ctx (the request-scoped
     # get_roster_positions() global isn't populated on this API path). Without
     # real starting slots the depth tiers below collapse and every player past
@@ -23963,7 +23999,9 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
             info = values_by_id.get(pid)
             if not info or info["position"] not in POSITIONS:
                 continue
-            pos_vals[rid][info["position"]].append(info["value"])
+            pos_vals[rid][info["position"]].append(
+                float(info.get("prod_value") or 0) or info["value"]
+            )
 
     pos_strength: dict = {}  # {rid: {pos: weighted_strength}}
     for rid, pmap in pos_vals.items():
@@ -24053,6 +24091,7 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
                     "name": name,
                     "age": info["age"],
                     "value": round(info["value"], 0),
+                    "prod_value": round(float(info.get("prod_value") or info["value"] or 0), 0),
                     "pos_rank": _int_pos_rk,
                     "pos_rank_label": info["pos_rank_label"],
                     "rank_change_7d": info["pos_rank_change_7d"] or info["rank_change_7d"],
@@ -24065,8 +24104,8 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
                 if info["age"]:
                     pos_ages.append(float(info["age"]))
 
-            # Sort by value descending (starters first)
-            pos_players.sort(key=lambda p: -(p["value"] or 0))
+            # Sort by this-season production (starters first)
+            pos_players.sort(key=lambda p: -(p.get("prod_value") or p["value"] or 0))
 
             total_val = sum(pos_vals.get(rid, {}).get(pos, []))
             avg_age = round(sum(pos_ages) / len(pos_ages), 1) if pos_ages else None

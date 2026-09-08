@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-09-08",
+        "tag": "update",
+        "text": "Teams roster views (team-modal Roster tab, Roster Intel, and preseason remaining schedule) now rank rooms and opponents by this-season starter strength — the same signal SOS uses — instead of total dynasty roster value. Remaining NFL matchup ease also shows on each roster row.",
+        "link": "/teams"
+    },
+    {
+        "date": "2026-09-08",
         "tag": "fix",
         "text": "My Leagues position strength now matches the league Teams page, using the same starter-weighted ranker and the same values the player modal shows (1QB vs Superflex, redraft vs dynasty, PPR/TE premium).",
         "link": "/portfolio"
