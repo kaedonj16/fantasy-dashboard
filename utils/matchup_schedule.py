@@ -90,6 +90,42 @@ def synthetic_week_matchups(rosters: List[dict], week: int) -> List[dict]:
     return out
 
 
+def last_finalized_week(df_weekly) -> int:
+    """Highest week with a finalized result, or 0 before any games.
+
+    Accepts a pandas DataFrame (``week`` / optional ``finalized`` columns) or
+    a sequence of row dicts so callers and tests don't need pandas.
+    """
+    if df_weekly is None:
+        return 0
+    try:
+        if getattr(df_weekly, "empty", False):
+            return 0
+        if hasattr(df_weekly, "columns"):
+            df = df_weekly
+            if "finalized" in df.columns:
+                df = df[df["finalized"] == True]  # noqa: E712 — pandas boolean filter
+            if getattr(df, "empty", True) or "week" not in getattr(df, "columns", []):
+                return 0
+            return max(0, int(df["week"].max()))
+        rows = list(df_weekly)
+    except (TypeError, ValueError):
+        return 0
+    weeks = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        if "finalized" in r and not r.get("finalized"):
+            continue
+        try:
+            w = int(r.get("week"))
+        except (TypeError, ValueError):
+            continue
+        if w > 0:
+            weeks.append(w)
+    return max(weeks) if weeks else 0
+
+
 def resolve_matchup_week(current_week, matchups_by_week=None) -> int:
     """Week to paint on the dashboard / scout.
 

@@ -17658,12 +17658,11 @@ function _tmBuildAgesHtml(data) {
 }
 
 // ── Schedule tab ─────────────────────────────────────────────────────────────
-// NOTE: this is a mocked/illustrative schedule. Opponents, lineups and every
-// point total are generated deterministically from the roster id so the layout
-// is stable across re-opens; this team's own starters use the real roster names
-// where they exist. Each team's total is the sum of its starters' points, so the
-// score shown on a row always matches the expanded matchup breakdown below it.
-// Wire to a real league-matchups endpoint to make it live.
+// NOTE: opponent pairings and unplayed-week lineups are still illustrative
+// (seeded from the roster id so the layout is stable). Completed vs upcoming
+// is real: last_finalized_week / current-season weekly scores, never a fake
+// mid-season default. Record / PF / PA tiles prefer the league's real stats
+// so they match the modal header. Wire pairings to a matchups endpoint later.
 function _tmSeededRng(seed) {
   // mulberry32 — small, stable, good enough for placeholder data.
   let a = seed >>> 0;
@@ -17826,6 +17825,38 @@ function _tmScoreLineup(lineup, rng) {
 
 let _tmMatchupSeq = 0;
 
+// Season from /{platform}/{season}/{leagueId}/... ; null when the path has none.
+function _tmPageSeason() {
+  try {
+    const parts = String((typeof location !== 'undefined' && location.pathname) || '').split('/').filter(Boolean);
+    const n = Number(parts[1]);
+    return (!isNaN(n) && n >= 2000) ? n : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Weeks that have actually finished. Missing / prior-season graph data → 0,
+// so a league that hasn't kicked off does not paint W1–W5 as final losses.
+function _tmScheduleLastPlayed(data) {
+  if (data && data.last_finalized_week != null && data.last_finalized_week !== '') {
+    const n = Number(data.last_finalized_week);
+    if (!isNaN(n)) return Math.max(0, n);
+  }
+  const graphs = data && data.graphs;
+  const ws = (graphs && Array.isArray(graphs.weekly_scores)) ? graphs.weekly_scores : [];
+  const graphSeason = graphs && graphs.season_used != null ? Number(graphs.season_used) : NaN;
+  const pageSeason = _tmPageSeason();
+  if (pageSeason != null && !isNaN(graphSeason) && graphSeason !== pageSeason) return 0;
+  const weeks = ws.map(d => Number(d && d.week)).filter(w => !isNaN(w) && w > 0);
+  return weeks.length ? Math.max.apply(null, weeks) : 0;
+}
+
+function _tmScheduleTileNumber(raw, fallback) {
+  if (raw != null && raw !== '' && !isNaN(parseFloat(raw))) return String(Math.round(parseFloat(raw)));
+  return fallback;
+}
+
 function _tmBuildScheduleHtml(data) {
   const OPP_POOL = [
     'Gridiron Gurus', 'Sunday Scaries', 'The Audibles', 'Waiver Wire Kings',
@@ -17845,10 +17876,7 @@ function _tmBuildScheduleHtml(data) {
   const PLAYOFF_WEEKS = [15, 16, 17];
   const myTeamName = (data && (data.team_name || data.username)) || 'My Team';
 
-  // Weeks already played: derived from how many weekly scores exist (the scores
-  // themselves are regenerated so lineups and totals stay self-consistent).
-  const ws = (data && data.graphs && Array.isArray(data.graphs.weekly_scores)) ? data.graphs.weekly_scores : [];
-  const lastPlayed = ws.length ? Math.max(...ws.map(d => Number(d.week)).filter(w => !isNaN(w))) : 5;
+  const lastPlayed = _tmScheduleLastPlayed(data);
 
   const AVATAR_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'];
   const avatar = (name, idx) => {
@@ -17985,7 +18013,10 @@ function _tmBuildScheduleHtml(data) {
   const regRows = [];
   for (let w = 1; w <= REG_WEEKS; w++) regRows.push(buildRow({ week: w, playoff: false }, w - 1, true));
 
-  const recordStr = ties ? `${wins}-${losses}-${ties}` : `${wins}-${losses}`;
+  // Prefer the league's real record / scoring so the schedule tiles match the
+  // modal header (0-0 / 0 PF before kickoff) instead of summing mock results.
+  const recordStr = (data && data.record) ? String(data.record)
+    : (ties ? `${wins}-${losses}-${ties}` : `${wins}-${losses}`);
   const streakStr = streakLen ? `${streakType}${streakLen}` : '—';
 
   // Only show the Playoffs block if this team actually made the playoffs. Use
@@ -18008,8 +18039,8 @@ function _tmBuildScheduleHtml(data) {
   const summaryTiles = [
     { v: recordStr, l: 'Record' },
     { v: streakStr, l: 'Streak' },
-    { v: pf ? pf.toFixed(0) : '—', l: 'Points For' },
-    { v: pa ? pa.toFixed(0) : '—', l: 'Points Against' },
+    { v: _tmScheduleTileNumber(data && data.points_for, pf ? pf.toFixed(0) : '—'), l: 'Points For' },
+    { v: _tmScheduleTileNumber(data && data.points_against, pa ? pa.toFixed(0) : '—'), l: 'Points Against' },
   ];
   const tilesHtml = '<div class="tm-ages-tiles">' + summaryTiles.map(t =>
     `<div class="tm-stat-tile"><div class="tm-stat-tile-value">${t.v}</div><div class="tm-stat-tile-label">${t.l}</div></div>`
