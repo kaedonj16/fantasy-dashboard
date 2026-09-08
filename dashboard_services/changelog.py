@@ -13,6 +13,12 @@ CHANGELOG = [
     {
         "date": "2026-09-08",
         "tag": "update",
+        "text": "Weekly digest: if you have more than one connected league, Tuesday's email is a snapshot of all of them (record + one focus line each) with lineup/injury bullets on top, instead of a deep dive on the last league you opened plus a name-only list of the rest.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-09-08",
+        "tag": "update",
         "text": "My Leagues This week's moves: waiver adds now require a startable rank or a real roster hole instead of always naming the highest leftover free agent. Deep RB35s, 1QB streamer QBs, and aging dynasty leftovers are dropped; cards explain the need or startable reason.",
         "link": "/portfolio"
     },

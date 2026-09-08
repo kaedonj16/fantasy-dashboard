@@ -168,6 +168,201 @@ def format_chip_html(label: str) -> str:
     )
 
 
+def matchup_one_liner(matchup: Optional[dict]) -> str:
+    """Compact matchup line for a multi-league overview."""
+    if not matchup:
+        return ""
+    opp = str(matchup.get("opponent_name") or "").strip()
+    if not opp:
+        return ""
+    bits = [f"vs {opp}"]
+    wp = matchup.get("win_prob")
+    try:
+        if wp is not None:
+            pct = max(1, min(99, int(round(float(wp) * 100))))
+            wpf = float(wp)
+            if wpf >= 0.55:
+                bits.append(f"Favored {pct}%")
+            elif wpf <= 0.45:
+                bits.append(f"Underdog {pct}%")
+            else:
+                bits.append(f"{pct}%")
+            return " · ".join(bits)
+    except (TypeError, ValueError):
+        pass
+    you, them = matchup.get("user_proj"), matchup.get("opp_proj")
+    try:
+        if you is not None and them is not None:
+            bits.append(f"{float(you):.0f} to {float(them):.0f}")
+    except (TypeError, ValueError):
+        pass
+    return " · ".join(bits)
+
+
+def league_focus_line(
+    *,
+    is_dynasty: bool = False,
+    matchup: Optional[dict] = None,
+    lineup_note: Optional[dict] = None,
+    waiver: Optional[dict] = None,
+    injury_body: str = "",
+    top_asset: Optional[dict] = None,
+    riser_name: str = "",
+    riser_delta: Optional[float] = None,
+    breakout_name: str = "",
+) -> str:
+    """One scan-line per league. Actionable items beat flavor."""
+    note = lineup_note or {}
+    lineup_body = str(note.get("body") or note.get("title") or "").strip()
+    if lineup_body:
+        return lineup_body
+    inj = str(injury_body or "").strip()
+    if inj:
+        return inj.split(".")[0].strip()[:90]
+    if not is_dynasty:
+        mu = matchup_one_liner(matchup)
+        if mu:
+            return mu
+    rname = str(riser_name or "").strip()
+    if rname:
+        try:
+            delta = float(riser_delta) if riser_delta is not None else None
+        except (TypeError, ValueError):
+            delta = None
+        extra = f" ▲{abs(delta):.0f}" if delta is not None else ""
+        return f"{rname}{extra}"
+    asset = top_asset or {}
+    aname = str(asset.get("name") or "").strip()
+    if aname:
+        pos = str(asset.get("pos") or "").upper()
+        try:
+            val = float(asset.get("value") or 0)
+        except (TypeError, ValueError):
+            val = 0.0
+        bits = [aname]
+        if pos:
+            bits.append(pos)
+        if val >= 40:
+            bits.append(f"{val:.0f}")
+        return " · ".join(bits)
+    wv = waiver or {}
+    wname = str(wv.get("name") or "").strip()
+    if wname:
+        wpos = str(wv.get("pos") or "").upper()
+        return f"Add {wname}" + (f" ({wpos})" if wpos else "")
+    mu = matchup_one_liner(matchup)
+    if mu:
+        return mu
+    bname = str(breakout_name or "").strip()
+    if bname:
+        return f"Breakout: {bname}"
+    return ""
+
+
+def leagues_snapshot_table_html(entries: list) -> str:
+    """One card: every connected league as a row (name, record, one focus)."""
+    rows = [e for e in (entries or []) if isinstance(e, dict) and str(e.get("name") or "").strip()]
+    if not rows:
+        return ""
+    from utils.digest_actions import EMAIL_CARD_STYLE
+
+    body = ""
+    for i, ent in enumerate(rows):
+        name = str(ent.get("name") or "").strip()
+        href = str(ent.get("href") or "").strip()
+        chip = str(ent.get("chip") or "").strip()
+        standing = str(ent.get("standing") or "").strip()
+        focus = str(ent.get("focus") or "").strip()
+        urgent = bool(ent.get("urgent"))
+        label = escape(name, quote=False)
+        if href:
+            label = (
+                f'<a href="{escape(href, quote=True)}" style="color:#0f172a;'
+                f'text-decoration:none;">{label}</a>'
+            )
+        meta = escape(chip, quote=False)
+        focus_color = "#1d4ed8" if urgent else "#334155"
+        border = "border-top:1px solid #eef2f7;" if i else ""
+        standing_html = (
+            f'<td style="padding:12px 0 12px 12px;{border}font-size:13px;font-weight:700;'
+            f'color:#0f172a;text-align:right;white-space:nowrap;vertical-align:top;">'
+            f"{escape(standing, quote=False)}</td>"
+            if standing else
+            f'<td style="padding:12px 0;{border}"></td>'
+        )
+        focus_html = (
+            f'<div style="font-size:13px;color:{focus_color};margin-top:4px;line-height:1.4;">'
+            f"{escape(focus, quote=False)}</div>"
+            if focus else ""
+        )
+        meta_html = (
+            f'<div style="font-size:12px;color:#64748b;margin-top:2px;">{meta}</div>'
+            if meta else ""
+        )
+        body += (
+            f"<tr>"
+            f'<td style="padding:12px 0;{border}vertical-align:top;">'
+            f'<div style="font-size:15px;font-weight:700;color:#0f172a;line-height:1.3;">{label}</div>'
+            f"{meta_html}{focus_html}</td>"
+            f"{standing_html}</tr>"
+        )
+    return (
+        f'<div style="{EMAIL_CARD_STYLE}">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'style="width:100%;border-collapse:collapse;">{body}</table></div>'
+    )
+
+
+def league_overview_card_html(
+    *,
+    league_name: str,
+    format_label: str = "",
+    rank: Optional[int] = None,
+    wins: int = 0,
+    losses: int = 0,
+    dash_url: str = "",
+    matchup: Optional[dict] = None,
+    lineup_note: Optional[dict] = None,
+    waiver: Optional[dict] = None,
+    injury_body: str = "",
+    top_asset: Optional[dict] = None,
+    riser_name: str = "",
+    riser_delta: Optional[float] = None,
+    breakout_name: str = "",
+    trade_body: str = "",
+    is_dynasty: bool = False,
+) -> str:
+    """Compact one-league row used in snapshot tables and leftover footers."""
+    name = str(league_name or "").strip()
+    if not name:
+        return ""
+    games = int(wins or 0) + int(losses or 0)
+    standing = ""
+    if rank is not None and games > 0:
+        standing = f"#{int(rank)} · {int(wins or 0)}-{int(losses or 0)}"
+    note = lineup_note or {}
+    urgent = bool(str(note.get("body") or note.get("title") or "").strip() or str(injury_body or "").strip())
+    focus = league_focus_line(
+        is_dynasty=is_dynasty,
+        matchup=matchup,
+        lineup_note=lineup_note,
+        waiver=waiver,
+        injury_body=injury_body,
+        top_asset=top_asset,
+        riser_name=riser_name,
+        riser_delta=riser_delta,
+        breakout_name=breakout_name,
+    )
+    return leagues_snapshot_table_html([{
+        "name": name,
+        "href": dash_url,
+        "chip": format_label,
+        "standing": standing,
+        "focus": focus,
+        "urgent": urgent,
+    }])
+
+
 def league_summary_html(
     *,
     league_name: str,

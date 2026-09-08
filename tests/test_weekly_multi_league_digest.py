@@ -1,8 +1,18 @@
 from __future__ import annotations
 
 from utils.cross_league_actions import make_action
+from utils.digest_sections import (
+    league_focus_line,
+    league_overview_card_html,
+    leagues_snapshot_table_html,
+    matchup_one_liner,
+)
 from utils.weekly_email import (
+    MAX_DIGEST_LEAGUES,
+    build_multi_league_digest,
+    choose_multi_league_subject,
     compact_league_blurb,
+    connected_leagues_for_account,
     cross_league_digest_html,
     multi_league_sections_html,
     other_leagues_for_account,
@@ -118,3 +128,240 @@ def test_multi_league_includes_cross_league_actions(monkeypatch):
     assert "This week's moves" in html
     assert "Starter on bye" in html
     assert "Alt League" in html
+
+
+def test_connected_leagues_primary_first_then_others(monkeypatch):
+    monkeypatch.setattr(
+        "utils.weekly_email.other_leagues_for_account",
+        lambda *a, **k: [
+            {"platform": "espn", "league_id": "B", "season": 2026, "roster_id": "2", "name": "The Gridiron"},
+            {"platform": "yahoo", "league_id": "C", "season": 2026, "roster_id": "3", "name": "Yahoo H2H"},
+        ],
+    )
+    rows = connected_leagues_for_account(
+        7,
+        primary_platform="sleeper",
+        primary_league_id="A",
+        primary_season=2026,
+        primary_roster_id="1",
+        primary_name="blackedraw",
+        limit=8,
+    )
+    assert [r["league_id"] for r in rows] == ["A", "B", "C"]
+    assert rows[0]["name"] == "blackedraw"
+    assert MAX_DIGEST_LEAGUES >= 3
+
+
+def test_connected_leagues_respects_cap(monkeypatch):
+    extras = [
+        {"platform": "espn", "league_id": str(i), "season": 2026, "roster_id": "1", "name": f"L{i}"}
+        for i in range(12)
+    ]
+    monkeypatch.setattr("utils.weekly_email.other_leagues_for_account", lambda *a, **k: extras[: k.get("limit", 99)])
+    rows = connected_leagues_for_account(
+        1, primary_platform="sleeper", primary_league_id="A", primary_season=2026, limit=4,
+    )
+    assert len(rows) == 4
+    assert rows[0]["league_id"] == "A"
+
+
+def test_league_overview_card_includes_standing_matchup_and_waiver():
+    html = league_overview_card_html(
+        league_name="blackedraw",
+        format_label="1QB · Dynasty",
+        rank=3, wins=5, losses=2,
+        dash_url="https://brfantasy.com/sleeper/2026/A/dashboard",
+        is_dynasty=True,
+        top_asset={"name": "Jeremiyah Love", "pos": "RB", "value": 773},
+        waiver={"name": "Gabe Davis", "pos": "WR", "reason": "Available"},
+    )
+    assert "blackedraw" in html
+    assert "1QB · Dynasty" in html
+    assert "#3" in html
+    assert "5-2" in html
+    assert "Jeremiyah Love" in html
+    assert "/sleeper/2026/A/dashboard" in html
+    assert "—" not in html
+    assert "–" not in html
+
+
+def test_league_focus_line_prefers_lineup_then_format():
+    lineup = {"title": "Start/Sit · empty slot", "body": "1 empty starting slot"}
+    assert league_focus_line(
+        is_dynasty=False, lineup_note=lineup,
+        matchup={"opponent_name": "Rival", "win_prob": 0.62},
+        waiver={"name": "Gabe Davis", "pos": "WR"},
+    ) == "1 empty starting slot"
+    assert "Favored 62%" in league_focus_line(
+        is_dynasty=False,
+        matchup={"opponent_name": "Rival", "win_prob": 0.62},
+        waiver={"name": "Gabe Davis", "pos": "WR"},
+    )
+    assert league_focus_line(
+        is_dynasty=True,
+        top_asset={"name": "Jeremiyah Love", "pos": "RB", "value": 773},
+        waiver={"name": "Gabe Davis", "pos": "WR"},
+    ) == "Jeremiyah Love · RB · 773"
+
+
+def test_leagues_snapshot_table_lists_every_league():
+    html = leagues_snapshot_table_html([
+        {"name": "blackedraw", "href": "https://brfantasy.com/a", "chip": "1QB · Dynasty",
+         "standing": "#3 · 5-2", "focus": "Jeremiyah Love · RB · 773", "urgent": False},
+        {"name": "The Gridiron", "href": "https://brfantasy.com/b", "chip": "1QB · Redraft",
+         "standing": "#1 · 6-1", "focus": "1 empty starting slot", "urgent": True},
+        {"name": "Yahoo H2H-Pts 1307110", "href": "https://brfantasy.com/c", "chip": "1QB · Dynasty",
+         "standing": "#8 · 2-5", "focus": "Drake London ▲48", "urgent": False},
+    ])
+    assert html.index("blackedraw") < html.index("The Gridiron") < html.index("Yahoo H2H-Pts")
+    assert "#3 · 5-2" in html
+    assert "#1 · 6-1" in html
+    assert "empty starting slot" in html
+    assert "https://brfantasy.com/a" in html
+    assert "https://brfantasy.com/c" in html
+    assert "—" not in html
+
+
+def test_matchup_one_liner_omits_empty():
+    assert matchup_one_liner(None) == ""
+    assert matchup_one_liner({}) == ""
+    line = matchup_one_liner({"opponent_name": "Them", "win_prob": 0.4})
+    assert "vs Them" in line
+    assert "Underdog 40%" in line
+
+
+def test_choose_multi_league_subject_prefers_lineup():
+    snaps = [
+        {
+            "league_name": "blackedraw",
+            "fmt": {"is_dynasty": True},
+            "rank": 3, "wins": 5, "losses": 2,
+            "lineup_note": {"title": "Start/Sit · empty slot", "body": "1 empty starting slot"},
+            "matchup": None, "waivers": [], "my_risers": [], "pidx": {},
+        },
+        {
+            "league_name": "The Gridiron",
+            "fmt": {"is_dynasty": False},
+            "rank": 1, "wins": 6, "losses": 1,
+            "lineup_note": None,
+            "matchup": {"win_prob": 0.7},
+            "waivers": [{"name": "Waive Me"}],
+            "my_risers": [], "pidx": {},
+        },
+    ]
+    assert choose_multi_league_subject(snaps, 2) == "blackedraw: Fix your lineup before Sunday"
+
+
+def test_choose_multi_league_subject_portfolio_fallback():
+    snaps = [
+        {"league_name": "A", "fmt": {}, "rank": None, "wins": 0, "losses": 0,
+         "lineup_note": None, "matchup": None, "waivers": [], "my_risers": [], "pidx": {}},
+    ]
+    assert choose_multi_league_subject(snaps, 3) == "Your 3 leagues this week"
+
+
+def _league_bundle(name, roster_id, players, settings, fmt, wins=3, losses=1):
+    roster = {
+        "roster_id": roster_id,
+        "players": players,
+        "settings": {"wins": wins, "losses": losses},
+    }
+    return {
+        "league": {"name": name, "settings": settings, "roster_positions": ["QB", "RB", "WR", "TE", "FLEX"]},
+        "rosters": [roster],
+        "format": fmt,
+        "uid_name": {},
+        "owned_ids": set(players),
+        "roster_by_id": {str(roster_id): roster},
+        "matchups": [],
+        "week": 4,
+    }
+
+
+def test_build_multi_league_digest_covers_every_connected_league(monkeypatch):
+    monkeypatch.setenv("SITE_BASE_URL", "https://brfantasy.com")
+    bundles = {
+        "A": _league_bundle(
+            "blackedraw", "1", ["4046"], {"type": 2},
+            {"is_dynasty": True, "is_superflex": False, "type": "dynasty", "is_redraft": False},
+            wins=5, losses=2,
+        ),
+        "B": _league_bundle(
+            "The Gridiron", "2", ["6794"], {"type": 0},
+            {"is_dynasty": False, "is_superflex": False, "type": "redraft", "is_redraft": True},
+            wins=6, losses=1,
+        ),
+        "C": _league_bundle(
+            "Yahoo H2H-Pts 1307110", "3", ["1"], {"type": 2},
+            {"is_dynasty": True, "is_superflex": False, "type": "dynasty", "is_redraft": False},
+            wins=2, losses=5,
+        ),
+    }
+    standings = {
+        "A": (3, 5, 2),
+        "B": (1, 6, 1),
+        "C": (8, 2, 5),
+    }
+
+    def _standing(plat, lid, season, rid):
+        return standings.get(str(lid), (None, 0, 0))
+
+    def _actions(**kw):
+        lid = str(kw.get("league_id") or "")
+        if lid == "B":
+            return [{"kind": "waiver", "targets": [
+                {"name": "Gabe Davis", "pos": "WR", "reason": "Available"},
+            ]}]
+        if lid == "C":
+            return [{"kind": "lineup", "title": "Start/Sit · empty slot",
+                     "body": "1 empty starting slot"}]
+        return []
+
+    from utils.digest_context import DigestRunCache
+    cache = DigestRunCache()
+    cache.nfl_state = {"season_type": "reg", "week": 4, "season": 2026}
+    cache.league_bundle = lambda plat, season, lid: bundles.get(str(lid))
+
+    monkeypatch.setattr("utils.digest_context.DigestRunCache.load_shared", lambda self: None)
+    monkeypatch.setattr("utils.weekly_email._canonical_standing", _standing)
+    monkeypatch.setattr("utils.digest_actions.gather_digest_action_items", _actions)
+    monkeypatch.setattr(
+        "utils.digest_context.matchup_for_roster",
+        lambda bundle, rid, cache: (
+            {"opponent_name": "Rival", "user_proj": 118.0, "opp_proj": 109.0, "win_prob": 0.61}
+            if (bundle.get("league") or {}).get("name") == "The Gridiron" else None
+        ),
+    )
+    out = build_multi_league_digest(
+        [
+            {"platform": "sleeper", "league_id": "A", "season": 2026, "roster_id": "1", "name": "blackedraw"},
+            {"platform": "espn", "league_id": "B", "season": 2026, "roster_id": "2", "name": "The Gridiron"},
+            {"platform": "yahoo", "league_id": "C", "season": 2026, "roster_id": "3", "name": "Yahoo H2H-Pts 1307110"},
+        ],
+        first_name="Kaedon",
+        run_cache=cache,
+    )
+
+    assert out is not None
+    html = out["html"]
+    assert "Hey Kaedon" in html
+    assert "1 of 3 leagues needs a look" in html
+    assert "Your leagues" in html
+    assert "Your other leagues" not in html
+    assert "blackedraw" in html
+    assert "The Gridiron" in html
+    assert "Yahoo H2H-Pts 1307110" in html
+    assert "#3" in html and "5-2" in html
+    assert "#1" in html and "6-1" in html
+    assert "Rival" in html
+    assert "empty starting slot" in html
+    assert "Open your leagues" in html
+    assert "https://brfantasy.com/portfolio" in html
+    assert "sleeper/2026/A/dashboard" in html
+    assert "espn/2026/B/dashboard" in html
+    assert "yahoo/2026/C/dashboard" in html
+    assert "—" not in html
+    assert "–" not in html
+    assert out["league_count"] == 3
+    assert "multi-league" in out["tags"]
+    assert "weekly-digest" in out["tags"]

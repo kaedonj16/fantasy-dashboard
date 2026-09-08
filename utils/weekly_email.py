@@ -1,8 +1,11 @@
 """Weekly email digest — a once-a-week recap emailed to signed-in users.
 
 Reuses the same value/roster/start-sit/waiver data the in-app dashboard shows.
-The app decides recipients, content, unsubscribe, and dedupe; Brevo (or SMTP
-fallback) only delivers. Call ``send_weekly_digests()`` from the weekly cron.
+The digest covers every connected league on the account: one league gets the
+full recap; two or more get a snapshot table (record + one focus line each)
+plus lineup/injury bullets. The app decides recipients, content, unsubscribe,
+and dedupe; Brevo (or SMTP fallback) only delivers. Call
+``send_weekly_digests()`` from the weekly cron.
 
 A recipient is any account that (a) has an email, (b) has a known most-recent
 league (accounts.last_active_*), (c) has weekly_digest enabled, and (d) is not
@@ -23,6 +26,8 @@ from html import escape
 logger = logging.getLogger(__name__)
 
 _STATE_PREFIX = "weekly_email_sent:"  # + account_id  -> value = ISO "YYYY-Www"
+# Cap connected leagues in one email so cron runtime and inbox length stay sane.
+MAX_DIGEST_LEAGUES = 8
 
 
 def _base_url() -> str:
@@ -330,9 +335,9 @@ def other_leagues_for_account(
     primary_platform: str,
     primary_league_id: str,
     primary_season: int,
-    limit: int = 2,
+    limit: int = MAX_DIGEST_LEAGUES,
 ) -> list[dict]:
-    """Up to ``limit`` non-primary leagues linked to the account (newest first)."""
+    """Non-primary leagues linked to the account (newest first), capped at ``limit``."""
     if not account_id or limit <= 0:
         return []
     try:
@@ -388,6 +393,44 @@ def other_leagues_for_account(
     return out
 
 
+def connected_leagues_for_account(
+    account_id: int,
+    *,
+    primary_platform: str,
+    primary_league_id: str,
+    primary_season: int,
+    primary_roster_id: str = "",
+    primary_name: str = "",
+    limit: int = MAX_DIGEST_LEAGUES,
+) -> list[dict]:
+    """Primary league first, then every other connected league (newest first)."""
+    cap = max(1, int(limit or MAX_DIGEST_LEAGUES))
+    plat = (primary_platform or "sleeper").strip().lower()
+    lid = str(primary_league_id or "").strip()
+    try:
+        season = int(primary_season)
+    except (TypeError, ValueError):
+        season = 0
+    out: list[dict] = []
+    if plat and lid:
+        out.append({
+            "platform": plat,
+            "league_id": lid,
+            "season": season,
+            "roster_id": str(primary_roster_id or ""),
+            "name": primary_name or "",
+        })
+    extra = other_leagues_for_account(
+        account_id,
+        primary_platform=plat,
+        primary_league_id=lid,
+        primary_season=season,
+        limit=max(0, cap - len(out)),
+    )
+    out.extend(extra)
+    return out[:cap]
+
+
 def multi_league_sections_html(
     account_id: int,
     *,
@@ -395,14 +438,16 @@ def multi_league_sections_html(
     primary_league_id: str,
     primary_season: int,
     base_url: str = "",
-    limit: int = 2,
+    limit: int = MAX_DIGEST_LEAGUES,
     actions: list | None = None,
     run_cache=None,
 ) -> str:
-    """HTML for 'Your other leagues' (+ optional cross-league action bullets).
+    """HTML for secondary-league overview cards (+ optional cross-league bullets).
 
-    ``actions`` is optional/best-effort (R04.4): when provided, the top 1–3 from
-    ``rank_cross_league_actions`` are appended. Returns "" when nothing to show.
+    Used when a single-league recap still needs a footer for the rest of the
+    portfolio. Prefer ``build_multi_league_digest`` when the account has 2+
+    leagues so every league gets an equal overview. Returns "" when nothing
+    to show.
     """
     others = other_leagues_for_account(
         account_id,
@@ -413,25 +458,50 @@ def multi_league_sections_html(
     )
     parts: list[str] = []
     if others:
-        bits = [
-            compact_league_blurb(
+        from utils.digest_sections import heading, leagues_snapshot_table_html
+        entries: list[dict] = []
+        blurbs: list[str] = []
+        base = (base_url or _base_url()).rstrip("/")
+        for o in others:
+            snap = None
+            try:
+                snap = _collect_league_digest(
+                    o["platform"], o["league_id"], int(o.get("season") or primary_season),
+                    str(o.get("roster_id") or ""),
+                    run_cache=run_cache, league_name_hint=o.get("name") or "",
+                )
+            except Exception:
+                snap = None
+            if snap:
+                entries.append(_snapshot_entry_from_snapshot(snap))
+                continue
+            card = compact_league_blurb(
                 platform=o["platform"], season=o["season"], league_id=o["league_id"],
                 roster_id=o.get("roster_id") or "", league_name=o.get("name") or "",
-                base_url=base_url, run_cache=run_cache,
+                base_url=base, run_cache=run_cache,
             )
-            for o in others
-        ]
-        bits = [b for b in bits if b]
-        if bits:
-            from utils.digest_sections import heading
-            parts.append(
-                heading("Your other leagues")
-                + '<div style="margin:8px 0 0;padding:4px 16px 8px;border-radius:12px;'
-                'background:#ffffff;border:1px solid #e6ebf2;">'
-                '<table style="width:100%;border-collapse:collapse;">'
-                + "".join(bits)
-                + "</table></div>"
-            )
+            if card:
+                blurbs.append(card)
+            elif o.get("name"):
+                entries.append({
+                    "name": o.get("name") or "",
+                    "href": f"{base}/{o['platform']}/{o['season']}/{o['league_id']}/dashboard",
+                    "chip": "", "standing": "", "focus": "", "urgent": False,
+                })
+        if entries:
+            parts.append(heading("Your other leagues") + leagues_snapshot_table_html(entries))
+        elif blurbs:
+            wrapped = []
+            for card in blurbs:
+                if card.strip().startswith("<tr"):
+                    card = (
+                        '<div style="margin:8px 0 0;padding:4px 16px 8px;border-radius:12px;'
+                        'background:#ffffff;border:1px solid #e6ebf2;">'
+                        '<table style="width:100%;border-collapse:collapse;">'
+                        + card + "</table></div>"
+                    )
+                wrapped.append(card)
+            parts.append(heading("Your other leagues") + "".join(wrapped))
     try:
         cl = cross_league_digest_html(actions or [], base_url=base_url, limit=3)
         if cl:
@@ -592,24 +662,25 @@ def _digest_tags(fmt: dict, platform: str, season: int) -> list[str]:
     return tags
 
 
-def build_digest(platform: str, league_id: str, season: int, roster_id: str,
-                 first_name: str | None = None,
-                 movers: dict | None = None, pidx: dict | None = None,
-                 extra_html: str = "",
-                 *,
-                 run_cache=None) -> dict | None:
-    """Assemble one recipient's digest. Returns {subject, html, ...} or None."""
+def _collect_league_digest(
+    platform: str,
+    league_id: str,
+    season: int,
+    roster_id: str,
+    *,
+    movers: dict | None = None,
+    pidx: dict | None = None,
+    run_cache=None,
+    league_name_hint: str = "",
+) -> dict | None:
+    """Load one league's digest snapshot. None when the league cannot be loaded."""
     from utils.digest_context import (
         DigestRunCache, DYNASTY_MOVE_MIN, LEAGUEWIDE_MOVE_MIN,
         breakout_for_roster, filter_movers, in_season, matchup_for_roster,
         mover_notes, roster_core, trade_insight_for_roster, uses_long_term_value,
     )
-    from utils.digest_sections import (
-        breakout_html, email_shell, format_chip, greeting_html, injury_html,
-        league_summary_html, matchup_html, player_movement_html, roster_core_html,
-        start_sit_html, trade_insight_html, waiver_html,
-    )
-    from utils.digest_actions import gather_digest_action_items, player_deep_link as _pdl, unique_waiver_targets
+    from utils.digest_actions import gather_digest_action_items, unique_waiver_targets
+    from utils.digest_sections import format_chip
     from utils.league_format import classify_league_roster_format
 
     cache = run_cache if run_cache is not None else DigestRunCache()
@@ -654,7 +725,7 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
         if not rosters:
             return None
 
-    league_name = str(league.get("name") or "Your league")
+    league_name = str(league.get("name") or league_name_hint or "Your league")
     mine = (bundle.get("roster_by_id") or {}).get(str(roster_id)) or {}
     if not mine:
         mine = next((r for r in rosters if str(r.get("roster_id")) == str(roster_id)), {}) or {}
@@ -755,35 +826,221 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
     except Exception:
         core = []
 
-    chip = format_chip(fmt)
+    has_record = rank is not None and (int(wins or 0) + int(losses or 0) > 0)
+    useful = any([
+        has_record, matchup, lineup_note, waivers, injury_item,
+        my_risers, core, watch, trade,
+    ])
+    return {
+        "platform": platform,
+        "league_id": str(league_id),
+        "season": int(season),
+        "roster_id": str(roster_id or ""),
+        "league_name": league_name,
+        "fmt": fmt,
+        "chip": format_chip(fmt),
+        "rank": rank,
+        "wins": wins,
+        "losses": losses,
+        "pidx": pidx or {},
+        "my_risers": my_risers,
+        "my_fallers": my_fallers,
+        "lg_risers": lg_risers,
+        "notes": notes,
+        "matchup": matchup,
+        "lineup_note": lineup_note,
+        "waiver_item": waiver_item,
+        "injury_item": injury_item,
+        "waivers": waivers,
+        "watch": watch,
+        "trade": trade,
+        "core": core,
+        "show_assets": show_assets,
+        "is_dynasty": is_dynasty,
+        "season_on": in_season(cache),
+        "dash_url": dash_url,
+        "matchups_url": matchups_url,
+        "waivers_url": waivers_url,
+        "startsit_url": startsit_url,
+        "trades_url": trades_url,
+        "useful": useful,
+        "cache": cache,
+    }
+
+
+def _snapshot_entry_from_snapshot(snap: dict) -> dict:
+    from utils.digest_sections import league_focus_line
+
+    riser_name = ""
+    riser_delta = None
+    risers = snap.get("my_risers") or []
+    if risers:
+        pid, delta = risers[0][0], risers[0][1]
+        riser_name = _player_name(str(pid), snap.get("pidx") or {})
+        riser_delta = delta
+    watch = snap.get("watch") or {}
+    inj = snap.get("injury_item") or {}
+    core = snap.get("core") or []
+    waivers = snap.get("waivers") or []
+    note = snap.get("lineup_note") or {}
+    injury_body = str(inj.get("body") or "")
+    rank = snap.get("rank")
+    wins = int(snap.get("wins") or 0)
+    losses = int(snap.get("losses") or 0)
+    games = wins + losses
+    standing = ""
+    if rank is not None and games > 0:
+        standing = f"#{int(rank)} · {wins}-{losses}"
+    fmt = snap.get("fmt") or {}
+    is_dynasty = bool(snap.get("is_dynasty") or fmt.get("is_dynasty") or fmt.get("is_keeper"))
+    focus = league_focus_line(
+        is_dynasty=is_dynasty,
+        matchup=snap.get("matchup"),
+        lineup_note=note,
+        waiver=waivers[0] if waivers else None,
+        injury_body=injury_body,
+        top_asset=core[0] if core else None,
+        riser_name=riser_name,
+        riser_delta=riser_delta,
+        breakout_name=str(watch.get("name") or ""),
+    )
+    return {
+        "name": snap.get("league_name") or "",
+        "href": snap.get("dash_url") or "",
+        "chip": snap.get("chip") or "",
+        "standing": standing,
+        "focus": focus,
+        "urgent": bool(str(note.get("body") or note.get("title") or "").strip() or injury_body),
+    }
+
+
+def choose_multi_league_subject(snapshots: list[dict], n_leagues: int) -> str:
+    """Most urgent action across leagues; otherwise a portfolio teaser."""
+
+    def _urgency(snap: dict) -> int:
+        note = snap.get("lineup_note") or {}
+        title = str(note.get("title") or "").lower()
+        body = str(note.get("body") or "").strip()
+        if "empty" in title:
+            return 0
+        if "injured" in title:
+            return 1
+        if "bye" in title:
+            return 2
+        if body.startswith("Consider ") and " over " in body:
+            return 3
+        fmt = snap.get("fmt") or {}
+        matchup = snap.get("matchup") or {}
+        if not fmt.get("is_dynasty") and matchup:
+            try:
+                wp = matchup.get("win_prob")
+                if wp is not None and (float(wp) >= 0.55 or float(wp) <= 0.45):
+                    return 4
+            except (TypeError, ValueError):
+                pass
+        if snap.get("waivers"):
+            return 5
+        if (fmt.get("is_dynasty") or fmt.get("is_keeper")) and snap.get("my_risers"):
+            return 6
+        rank = snap.get("rank")
+        games = int(snap.get("wins") or 0) + int(snap.get("losses") or 0)
+        if rank and games > 0:
+            return 7
+        return 9
+
+    ordered = sorted(snapshots or [], key=_urgency)
+    for snap in ordered:
+        subj = choose_subject(
+            snap.get("league_name") or "Your league",
+            snap.get("fmt") or {},
+            rank=snap.get("rank"),
+            wins=int(snap.get("wins") or 0),
+            losses=int(snap.get("losses") or 0),
+            lineup_note=snap.get("lineup_note"),
+            matchup=snap.get("matchup"),
+            waivers=snap.get("waivers"),
+            my_risers=snap.get("my_risers"),
+            pidx=snap.get("pidx") or {},
+        )
+        if subj and "weekly fantasy digest" not in subj.lower():
+            return subj
+    n = int(n_leagues or 0)
+    if n > 1:
+        return f"Your {n} leagues this week"
+    return "Your weekly fantasy digest"
+
+
+def build_digest(platform: str, league_id: str, season: int, roster_id: str,
+                 first_name: str | None = None,
+                 movers: dict | None = None, pidx: dict | None = None,
+                 extra_html: str = "",
+                 *,
+                 run_cache=None) -> dict | None:
+    """Assemble one recipient's single-league digest. Returns {subject, html, ...} or None."""
+    from utils.digest_sections import (
+        breakout_html, email_shell, greeting_html, injury_html,
+        league_summary_html, matchup_html, player_movement_html, roster_core_html,
+        start_sit_html, trade_insight_html, waiver_html,
+    )
+    from utils.digest_actions import player_deep_link as _pdl
+
+    snap = _collect_league_digest(
+        platform, league_id, season, roster_id,
+        movers=movers, pidx=pidx, run_cache=run_cache,
+    )
+    if not snap:
+        return None
+
+    league_name = snap["league_name"]
+    fmt = snap["fmt"]
+    rank, wins, losses = snap["rank"], snap["wins"], snap["losses"]
+    chip = snap["chip"]
+    matchup = snap["matchup"]
+    lineup_note = snap["lineup_note"]
+    waiver_item = snap["waiver_item"]
+    injury_item = snap["injury_item"]
+    waivers = snap["waivers"]
+    watch = snap["watch"]
+    trade = snap["trade"]
+    core = snap["core"]
+    pidx_s = snap["pidx"]
+    my_risers, my_fallers, lg_risers = snap["my_risers"], snap["my_fallers"], snap["lg_risers"]
+    notes = snap["notes"]
+    show_assets = snap["show_assets"]
+    is_dynasty = snap["is_dynasty"]
+    season_on = snap["season_on"]
+    dash_url = snap["dash_url"]
+    plat = snap["platform"]
+    lid = snap["league_id"]
+    seas = snap["season"]
+
     summary = league_summary_html(
         league_name=league_name, rank=rank, wins=wins, losses=losses,
         format_label=chip,
     )
-    matchup_block = matchup_html(matchup, href=matchups_url) if matchup else ""
-    lineup_block = start_sit_html(lineup_note, href=startsit_url) if lineup_note else ""
+    matchup_block = matchup_html(matchup, href=snap["matchups_url"]) if matchup else ""
+    lineup_block = start_sit_html(lineup_note, href=snap["startsit_url"]) if lineup_note else ""
     waiver_block = waiver_html(
-        waivers, href=waivers_url, base=base, platform=platform,
-        season=int(season), league_id=str(league_id),
+        waivers, href=snap["waivers_url"], base=_base_url(), platform=plat,
+        season=seas, league_id=lid,
     ) if waivers else (waiver_item or {}).get("html") or ""
-    injury_block = injury_html(injury_item, href=startsit_url) if injury_item else ""
+    injury_block = injury_html(injury_item, href=snap["startsit_url"]) if injury_item else ""
     movement_block = player_movement_html(
         my_risers=my_risers, my_fallers=my_fallers, lg_risers=lg_risers,
-        base=base, platform=platform, season=int(season), league_id=str(league_id),
-        pidx=pidx or {}, notes=notes, show_leaguewide=show_assets, dynasty=show_assets,
+        base=_base_url(), platform=plat, season=seas, league_id=lid,
+        pidx=pidx_s, notes=notes, show_leaguewide=show_assets, dynasty=show_assets,
     )
     core_block = roster_core_html(
-        core, base=base, platform=platform, season=int(season), league_id=str(league_id),
+        core, base=_base_url(), platform=plat, season=seas, league_id=lid,
     )
     breakout_href = ""
     if watch:
-        breakout_href = _pdl(base, platform, season, league_id, watch["player_id"], watch.get("name") or "")
+        breakout_href = _pdl(_base_url(), plat, seas, lid, watch["player_id"], watch.get("name") or "")
     breakout_block = breakout_html(watch, href=breakout_href)
-    trade_block = trade_insight_html(trade, href=trades_url)
+    trade_block = trade_insight_html(trade, href=snap["trades_url"])
 
     # Format-aware order, shared components. Keepers keep players, so they get
     # value sections; in-season they still lead with matchup/lineup.
-    season_on = in_season(cache)
     if is_dynasty or (show_assets and not season_on):
         ordered = [
             summary, movement_block, core_block, trade_block, breakout_block,
@@ -813,16 +1070,129 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
     subject = choose_subject(
         league_name, fmt, rank=rank, wins=wins, losses=losses,
         lineup_note=lineup_note, matchup=matchup, waivers=waivers,
-        my_risers=my_risers, pidx=pidx,
+        my_risers=my_risers, pidx=pidx_s,
     )
     return {
         "subject": subject,
         "html": html,
-        "tags": _digest_tags(fmt, platform, int(season)),
+        "tags": _digest_tags(fmt, plat, seas),
         "format": fmt,
         "matchup": matchup,
         "waivers": waivers,
         "lineup": lineup_note,
+    }
+
+
+def build_multi_league_digest(
+    leagues: list[dict],
+    *,
+    first_name: str | None = None,
+    movers: dict | None = None,
+    pidx: dict | None = None,
+    run_cache=None,
+    actions: list | None = None,
+) -> dict | None:
+    """Overview digest covering every connected league equally."""
+    from utils.digest_context import DigestRunCache
+    from utils.digest_sections import email_shell, greeting_html, heading, leagues_snapshot_table_html
+
+    if not leagues:
+        return None
+    cache = run_cache if run_cache is not None else DigestRunCache()
+    try:
+        cache.load_shared()
+    except Exception:
+        logger.debug("[weekly-email] shared cache load failed", exc_info=True)
+
+    snapshots: list[dict] = []
+    entries: list[dict] = []
+    for lg in leagues[:MAX_DIGEST_LEAGUES]:
+        plat = str(lg.get("platform") or "sleeper").strip().lower()
+        lid = str(lg.get("league_id") or "").strip()
+        try:
+            season = int(lg.get("season") or 0)
+        except (TypeError, ValueError):
+            season = 0
+        rid = str(lg.get("roster_id") or "")
+        if not plat or not lid or not season:
+            continue
+        snap = None
+        try:
+            snap = _collect_league_digest(
+                plat, lid, season, rid,
+                movers=movers, pidx=pidx, run_cache=cache,
+                league_name_hint=str(lg.get("name") or ""),
+            )
+        except Exception:
+            logger.debug("[weekly-email] league overview failed", extra={"league_id": lid})
+            snap = None
+        if snap:
+            snapshots.append(snap)
+            entries.append(_snapshot_entry_from_snapshot(snap))
+            continue
+        name = str(lg.get("name") or "").strip()
+        href = f"{_base_url()}/{plat}/{season}/{lid}/dashboard"
+        if not name:
+            try:
+                from dashboard_services.platform_api import get_league
+                name = str((get_league(plat, lid, season) or {}).get("name") or "")
+            except Exception:
+                name = ""
+        if name:
+            entries.append({
+                "name": name, "href": href, "chip": "", "standing": "",
+                "focus": "", "urgent": False,
+            })
+
+    if not entries:
+        return None
+
+    n = len(entries)
+    n_urgent = sum(1 for e in entries if e.get("urgent"))
+    if n_urgent == 1:
+        intro_txt = f"1 of {n} leagues needs a look this week."
+    elif n_urgent > 1:
+        intro_txt = f"{n_urgent} of {n} leagues need a look this week."
+    else:
+        intro_txt = f"Snapshot across {n} connected leagues."
+    intro = (
+        f'<p style="margin:0 0 4px;font-size:14px;color:#475569;line-height:1.5;">'
+        f"{escape(intro_txt, quote=False)}</p>"
+    )
+    moves = ""
+    try:
+        moves = cross_league_digest_html(actions or [], base_url=_base_url(), limit=4)
+    except Exception:
+        moves = ""
+    inner = (
+        greeting_html(first_name)
+        + intro
+        + moves
+        + heading("Your leagues")
+        + leagues_snapshot_table_html(entries)
+    )
+    base = _base_url()
+    html = email_shell(
+        inner,
+        subtitle="Your leagues this week",
+        dash_url=f"{base}/portfolio",
+        cta_label="Open your leagues →",
+    )
+    tags = ["weekly-digest", "multi-league"]
+    for snap in snapshots:
+        for t in _digest_tags(snap.get("fmt") or {}, snap.get("platform") or "", snap.get("season") or 0):
+            if t not in tags:
+                tags.append(t)
+    subject = choose_multi_league_subject(snapshots, n)
+    return {
+        "subject": subject,
+        "html": html,
+        "tags": tags,
+        "format": (snapshots[0].get("fmt") if snapshots else {}),
+        "matchup": next((s.get("matchup") for s in snapshots if s.get("matchup")), None),
+        "waivers": next((s.get("waivers") for s in snapshots if s.get("waivers")), []),
+        "lineup": next((s.get("lineup_note") for s in snapshots if s.get("lineup_note")), None),
+        "league_count": n,
     }
 
 
@@ -843,7 +1213,7 @@ def _best_effort_lineup_actions(leagues: list[dict], run_cache=None) -> list:
     if cache is None or not in_season_safe(cache):
         return out
 
-    for lg in leagues[:4]:
+    for lg in leagues[:MAX_DIGEST_LEAGUES]:
         try:
             plat = str(lg.get("platform") or "sleeper").strip().lower()
             lid = str(lg.get("league_id") or "").strip()
@@ -1032,43 +1402,54 @@ def send_weekly_digests(
             except Exception:
                 pass
 
+        digest = None
         extra = ""
         try:
-            cl_actions: list = []
-            try:
-                others = other_leagues_for_account(
-                    int(aid),
-                    primary_platform=str(r.get("platform") or "sleeper"),
-                    primary_league_id=str(r.get("league_id") or ""),
-                    primary_season=int(r.get("season") or datetime.now().year),
-                    limit=4,
-                )
-                cl_actions = _best_effort_lineup_actions(others, run_cache=cache)
-            except Exception:
-                logger.debug("[weekly-email] cross-league action gather failed", exc_info=True)
-            extra = multi_league_sections_html(
+            leagues = connected_leagues_for_account(
                 int(aid),
                 primary_platform=str(r.get("platform") or "sleeper"),
                 primary_league_id=str(r.get("league_id") or ""),
                 primary_season=int(r.get("season") or datetime.now().year),
-                base_url=_base_url(),
-                limit=2,
-                actions=cl_actions,
-                run_cache=cache,
+                primary_roster_id=str(r.get("roster_id") or ""),
+                limit=MAX_DIGEST_LEAGUES,
             )
+            cl_actions: list = []
+            try:
+                cl_actions = _best_effort_lineup_actions(leagues, run_cache=cache)
+            except Exception:
+                logger.debug("[weekly-email] cross-league action gather failed", exc_info=True)
+            if len(leagues) > 1:
+                digest = build_multi_league_digest(
+                    leagues,
+                    first_name=r.get("first_name"),
+                    run_cache=cache,
+                    actions=cl_actions,
+                )
+            if not digest:
+                extra = multi_league_sections_html(
+                    int(aid),
+                    primary_platform=str(r.get("platform") or "sleeper"),
+                    primary_league_id=str(r.get("league_id") or ""),
+                    primary_season=int(r.get("season") or datetime.now().year),
+                    base_url=_base_url(),
+                    limit=MAX_DIGEST_LEAGUES,
+                    actions=cl_actions,
+                    run_cache=cache,
+                )
         except Exception:
             logger.debug("[weekly-email] multi-league sections failed", exc_info=True)
 
         try:
-            digest = build_digest(
-                str(r.get("platform") or "sleeper"),
-                str(r.get("league_id") or ""),
-                int(r.get("season") or datetime.now().year),
-                str(r.get("roster_id") or ""),
-                first_name=r.get("first_name"),
-                extra_html=extra,
-                run_cache=cache,
-            )
+            if not digest:
+                digest = build_digest(
+                    str(r.get("platform") or "sleeper"),
+                    str(r.get("league_id") or ""),
+                    int(r.get("season") or datetime.now().year),
+                    str(r.get("roster_id") or ""),
+                    first_name=r.get("first_name"),
+                    extra_html=extra,
+                    run_cache=cache,
+                )
         except Exception:
             logger.warning("[weekly-email] digest generation failed account=%s", aid, extra={"account_id": aid})
             failed += 1
@@ -1246,15 +1627,28 @@ def preview_digest(
     seas = int(season or datetime.now().year)
     rid = roster_id or ""
     extra = ""
+    digest = None
     if account_id:
-        extra = multi_league_sections_html(
+        leagues = connected_leagues_for_account(
             int(account_id), primary_platform=plat, primary_league_id=str(lid),
-            primary_season=seas, base_url=_base_url(), limit=2,
+            primary_season=seas, primary_roster_id=str(rid),
+            limit=MAX_DIGEST_LEAGUES,
         )
-    digest = build_digest(
-        plat, str(lid), seas, str(rid), first_name=first_name,
-        extra_html=extra, run_cache=cache,
-    )
+        if len(leagues) > 1:
+            digest = build_multi_league_digest(
+                leagues, first_name=first_name, run_cache=cache,
+            )
+        if not digest:
+            extra = multi_league_sections_html(
+                int(account_id), primary_platform=plat, primary_league_id=str(lid),
+                primary_season=seas, base_url=_base_url(), limit=MAX_DIGEST_LEAGUES,
+                run_cache=cache,
+            )
+    if not digest:
+        digest = build_digest(
+            plat, str(lid), seas, str(rid), first_name=first_name,
+            extra_html=extra, run_cache=cache,
+        )
     if digest and out_path:
         html = digest["html"].replace("{UNSUB}", "#unsubscribe")
         from pathlib import Path as _P
