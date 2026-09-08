@@ -73,6 +73,7 @@ def build_teams_body(ctx: dict) -> str:
         team_avatar,
         build_historical_pick_slot_map, count_roster_positions, get_roster_positions,
         has_draft_ended, load_pick_value_table, _TEAMS_JS_V,
+        _TEAMS_JS_FILE,
         _league_is_redraft,
     )
     from dashboard_services.ai.context_builders import (
