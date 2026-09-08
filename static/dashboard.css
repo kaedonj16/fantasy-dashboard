@@ -21340,7 +21340,7 @@ img, svg, canvas {
     text-transform: uppercase;
     padding: 3px 8px;
     border: 1px solid var(--border);
-    border-radius: 999px;
+    border-radius: 9999px;
     background: var(--bg-alt);
     white-space: nowrap;
 }
@@ -21349,7 +21349,7 @@ img, svg, canvas {
 .tm-mu-bar {
     display: flex;
     height: 6px;
-    border-radius: 999px;
+    border-radius: 9999px;
     overflow: hidden;
     margin-bottom: 12px;
     background: var(--card-soft);
@@ -21439,7 +21439,7 @@ img, svg, canvas {
     border-radius: 5px;
 }
 
-@media (max-width: 460px) {
+@media (max-width: 480px) {
     .tm-mu-hname { display: none; }
 }
 
