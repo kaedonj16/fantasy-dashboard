@@ -72,6 +72,11 @@ def _record_pf_pa_for_roster(ctx: dict, roster_id: str, roster: dict | None = No
             or standing.get("Record")
             or ""
         )
+        if not record and (standing.get("wins") is not None or standing.get("losses") is not None):
+            w = _safe_int(standing.get("wins"))
+            l = _safe_int(standing.get("losses"))
+            t = _safe_int(standing.get("ties"))
+            record = f"{w}-{l}" + (f"-{t}" if t else "")
         pf = _safe_float(standing.get("PF") if standing.get("PF") is not None else standing.get("pf"))
         pa = _safe_float(standing.get("PA") if standing.get("PA") is not None else standing.get("pa"))
 
@@ -118,6 +123,37 @@ def _record_pf_pa_for_roster(ctx: dict, roster_id: str, roster: dict | None = No
             + _safe_float(settings.get("fpts_against_decimal")) / 100.0
         )
     return str(record or ""), float(pf or 0.0), float(pa or 0.0)
+
+
+def share_card_header_fields(
+    ctx: dict,
+    roster: dict | None,
+    roster_id,
+    *,
+    owner_name: str = "",
+    user: dict | None = None,
+) -> tuple[str, str, float, float]:
+    """(team_name, record, pf, pa) for the share card.
+
+    Production ``standings_map`` is ``{roster_id: seed:int}``. Treating those
+    values as record dicts 500'd ``/share-card`` with:
+    ``AttributeError: 'int' object has no attribute 'get'``.
+    """
+    from dashboard_services.display_names import team_label_from_user
+
+    std = _standing_dict(ctx.get("standings_map") or {}, roster_id)
+    roster = roster or {}
+    mapped = _roster_map_owner(ctx.get("roster_map") or {}, roster_id)
+    team_name = str(
+        std.get("team_name")
+        or team_label_from_user(user, roster, fallback="")
+        or mapped
+        or owner_name
+        or f"Roster {roster_id}"
+    )
+    rec, pf, pa = _record_pf_pa_for_roster(ctx, str(roster_id), roster)
+    record = (rec or "0-0").replace("-", "–")
+    return team_name, record, round(float(pf or 0), 1), round(float(pa or 0), 1)
 
 
 def portfolio_record_and_rank(lctx, rid, viewer_roster):

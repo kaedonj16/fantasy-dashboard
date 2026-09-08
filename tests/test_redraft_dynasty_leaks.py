@@ -48,6 +48,8 @@ def test_share_card_uses_redraft_labels_not_espn_only():
         end = src.find("@app.route", start + 10)
     body = src[start:end]
     assert "is_redraft = _league_is_redraft(ctx)" in body
+    assert "share_card_header_fields" in body
+    assert "std.get(\"team_name\")" not in body
     assert '"Roster Rank" if is_redraft else "Dynasty Rank"' in body
     assert '"Roster Value" if is_redraft else "Dynasty Value"' in body
     assert "_picks = [] if is_redraft" in body
