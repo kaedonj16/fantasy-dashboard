@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-09-08",
+        "tag": "fix",
+        "text": "My Leagues position strength (WR 6th vs WR 5th) now uses the same ranking as the league Teams page: starter-weighted strength, format-aware values, and TE premium.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-09-08",
         "tag": "update",
         "text": "Lineup-lock alerts now recommend concrete Sit A for B swaps even when a starter is hurt or on bye (up to two), and waiver pushes deep-link into Waivers with FAAB/drop guidance instead of the Players page.",
         "link": "/waivers"

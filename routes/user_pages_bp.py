@@ -83,9 +83,6 @@ def count_roster_positions(*args, **kwargs):
     from app import count_roster_positions as _fn
     return _fn(*args, **kwargs)
 
-def _weighted_pos_strength(*args, **kwargs):
-    from app import _weighted_pos_strength as _fn
-    return _fn(*args, **kwargs)
 
 def build_portfolio_body(*args, **kwargs):
     from app import build_portfolio_body as _fn
@@ -135,11 +132,7 @@ def page_portfolio():
             return {"league_id": lid, "name": lg.get("name", "Unknown"),
                     "platform": lg_platform, "error": True}
         rosters = lctx.get("rosters") or []
-        roster_map = lctx.get("roster_map") or {}
-        standings_map = lctx.get("standings_map") or {}
-        model_value_table = lctx.get("model_value_table") or []
         players_index = lctx.get("players_index") or {}
-        values_by_id = {str(r.get("id") or ""): r for r in model_value_table if r.get("id")}
         league_obj = lctx.get("league") or {}
         latest_draft = lctx.get("latest_draft") if isinstance(lctx.get("latest_draft"), dict) else {}
         from utils.league_payload import draft_start_ms, startup_draft_phase
@@ -202,8 +195,14 @@ def page_portfolio():
                 "reason": "Team not linked yet",
             }
         rid = str(viewer_roster.get("roster_id"))
-        from dashboard_services.ai.context_builders import portfolio_record_and_rank
+        from dashboard_services.ai.context_builders import (
+            league_format_value_lookup, portfolio_record_and_rank,
+        )
         from dashboard_services.display_names import team_label_from_user
+        from utils.roster_strength import (
+            rank_rosters_by_position, roster_pos_value_lists, strength_percentile,
+        )
+        values_by_id = league_format_value_lookup(lctx)
         wins, losses, ties, pf, rank = portfolio_record_and_rank(lctx, rid, viewer_roster)
         owner_id = str(viewer_roster.get("owner_id") or "")
         owner_user = next(
@@ -230,12 +229,6 @@ def page_portfolio():
                 "pos_rank": v.get("pos_rank_label") or "",
                 "nfl_team": nfl_team,
             }
-        # Resolve a player's position from the value table, falling back to the
-        # players index — so the user side and the league side bucket the same
-        # players (the user side already uses this same fallback above).
-        def _pos_of(p):
-            return ((values_by_id.get(p) or {}).get("position")
-                    or (players_index.get(p) or {}).get("pos") or "").upper()
 
         def _median(xs):
             s = sorted(xs)
@@ -245,49 +238,40 @@ def page_portfolio():
             m = n // 2
             return s[m] if n % 2 else (s[m - 1] + s[m]) / 2
 
-        # Positional strength uses the SAME starter-weighted strength as the
-        # league-card ranks, so a #2 WR chip and a high WR percentile never
-        # disagree. weighted_pos_strength emphasizes startable top-end talent
-        # and only lightly credits bench depth.
+        # Same ranking helper as the Teams page (weighted_pos_strength, format-
+        # aware values, TE premium) so a WR5 chip cannot read as WR6 in-league.
         #
         # The My Leagues summary card shows the in-league PERCENTILE of that
         # strength (then averages those percentiles across leagues). Percentiles
         # stay centered at 50th for a typical team; averaging signed % vs median
         # let one thin league drag a stacked position negative.
-        from utils.roster_strength import strength_percentile
         roster_positions = lctx.get("roster_positions") or []
         try:
             slot_counts = count_roster_positions(roster_positions)
         except Exception:
             slot_counts = {"QB": 1, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1}
+        team_pos_values = roster_pos_value_lists(
+            rosters, values_by_id, players_index=players_index, rid_cast=str,
+        )
+        pos_strengths, pos_ranks_map = rank_rosters_by_position(
+            team_pos_values, slot_counts,
+        )
         pos_user_rank = {}
         pos_user_vals = {}
         pos_user_pctile = {}
         pos_league_avgs = {}
         for pos in ["QB", "RB", "WR", "TE"]:
-            all_strengths = []
-            user_strength = 0.0
-            for r in rosters:
-                r_pids = [str(p) for p in (r.get("players") or [])]
-                r_vals = sorted(
-                    [float((values_by_id.get(p) or {}).get("value") or 0)
-                     for p in r_pids if _pos_of(p) == pos],
-                    reverse=True,
-                )
-                strength = _weighted_pos_strength(r_vals, pos, slot_counts)
-                all_strengths.append((str(r.get("roster_id")), strength))
-                if str(r.get("roster_id")) == rid:
-                    user_strength = strength
+            all_strengths = [s.get(pos, 0.0) for s in pos_strengths.values()]
+            user_strength = (pos_strengths.get(rid) or {}).get(pos, 0.0)
             # Median is still used for the per-league "WR-Spread" archetype
             # badge (ratio vs a typical team). The summary card uses percentile.
             pos_user_vals[pos] = user_strength
-            pos_league_avgs[pos] = _median([s for _, s in all_strengths]) or 1
+            pos_league_avgs[pos] = _median(all_strengths) or 1
             pos_user_pctile[pos] = strength_percentile(
-                user_strength, [s for _, s in all_strengths],
+                user_strength, all_strengths,
             )
             if len(all_strengths) > 1:
-                ranked = sorted(all_strengths, key=lambda x: -x[1])
-                pos_user_rank[pos] = next((i + 1 for i, (r_id, _) in enumerate(ranked) if r_id == rid), "?")
+                pos_user_rank[pos] = (pos_ranks_map.get(pos) or {}).get(rid, "?")
             else:
                 pos_user_rank[pos] = 1
         # Recent streak from df_weekly (last 3 finalized weeks for this roster)

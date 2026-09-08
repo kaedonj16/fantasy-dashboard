@@ -263,6 +263,40 @@ def build_model_value_lookup(
     return out
 
 
+def league_format_value_lookup(ctx: dict) -> dict[str, dict]:
+    """pid → value row, rewritten for SF/redraft and TE premium.
+
+    Shared by My Leagues positional ranks and the Teams page so a WR5 on one
+    surface cannot read as WR6 on the other from a different value column.
+    """
+    from utils.lineup_slots import is_superflex_lineup
+    from utils.value_helpers import apply_te_premium, te_premium_from_settings
+
+    model_vals = ctx.get("model_value_table") or []
+    roster_positions = (
+        ctx.get("roster_positions")
+        or (ctx.get("league") or {}).get("roster_positions")
+        or []
+    )
+    is_sf = is_superflex_lineup(roster_positions)
+    scoring = ctx_scoring_type(ctx)
+    lookup = build_model_value_lookup(model_vals, is_sf=is_sf, scoring_type=scoring)
+    tep = te_premium_from_settings(
+        ctx.get("scoring_settings")
+        or (ctx.get("league") or {}).get("scoring_settings")
+    )
+    if not tep:
+        return lookup
+    out: dict[str, dict] = {}
+    for pid, row in lookup.items():
+        pos = str(row.get("position") or row.get("pos") or "").upper()
+        if pos == "TE":
+            out[pid] = {**row, "value": apply_te_premium(row.get("value"), "TE", tep)}
+        else:
+            out[pid] = row
+    return out
+
+
 def summarize_roster_players(
         roster: dict,
         players_index: dict,

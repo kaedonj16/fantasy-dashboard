@@ -10,7 +10,7 @@ adapt to how many FLEX slots the league runs (more flex -> more depth credit).
 """
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Mapping, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from utils.lineup_slots import (
     FLEX_SLOT_NAMES as _FLEX_SLOT_NAMES,
@@ -95,6 +95,97 @@ def weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, in
 
 
 CORE_POSITIONS = ("QB", "RB", "WR", "TE")
+
+
+def _player_position(
+    pid: str,
+    values_by_id: Mapping[str, Mapping],
+    players_index: Optional[Mapping] = None,
+) -> str:
+    row = values_by_id.get(pid) or {}
+    pos = str(row.get("position") or row.get("pos") or "").upper()
+    if pos:
+        return pos
+    meta = (players_index or {}).get(pid) or {}
+    return str(meta.get("pos") or meta.get("position") or "").upper()
+
+
+def roster_pos_value_lists(
+    rosters: Sequence[Mapping],
+    values_by_id: Mapping[str, Mapping],
+    *,
+    positions: Sequence[str] = CORE_POSITIONS,
+    players_index: Optional[Mapping] = None,
+    rid_cast=None,
+) -> Dict[Any, Dict[str, List[float]]]:
+    """Per-roster lists of positive player values, bucketed by skill position.
+
+    Players missing from the value table, or with value <= 0, are omitted so
+    they do not occupy a starter-weight slot. ``rid_cast`` defaults to identity
+    (the Teams page keeps the provider roster_id type); pass ``str`` for
+    My Leagues so lookups match ``str(viewer_roster_id)``.
+    """
+    wanted = {str(p).upper() for p in positions}
+    out: Dict[Any, Dict[str, List[float]]] = {}
+    for roster in rosters or []:
+        rid = roster.get("roster_id")
+        if rid is None:
+            continue
+        key = rid_cast(rid) if rid_cast else rid
+        buckets: Dict[str, List[float]] = {pos: [] for pos in wanted}
+        for pid in roster.get("players") or []:
+            spid = str(pid)
+            row = values_by_id.get(spid)
+            if not row:
+                continue
+            pos = _player_position(spid, values_by_id, players_index)
+            if pos not in wanted:
+                continue
+            try:
+                val = float(row.get("value") or 0.0)
+            except (TypeError, ValueError):
+                val = 0.0
+            if val <= 0:
+                continue
+            buckets[pos].append(val)
+        out[key] = buckets
+    return out
+
+
+def rank_rosters_by_position(
+    team_pos_values: Mapping[Any, Mapping[str, Sequence[float]]],
+    slot_counts: Mapping[str, int],
+    *,
+    positions: Sequence[str] = CORE_POSITIONS,
+) -> tuple[Dict[Any, Dict[str, float]], Dict[str, Dict[Any, int]]]:
+    """Rank every roster at each skill position with ``weighted_pos_strength``.
+
+    This is the single ranking used by My Leagues and the Teams page. The
+    Teams detail strip may still show a starter/depth/fragility profile, but
+    the visible ``#N`` place is this order — 1 = strongest.
+
+    Returns ``(strengths, ranks)``:
+      strengths[rid][pos] = float
+      ranks[pos][rid] = 1-based rank
+
+    Ties break by ``str(rid)`` so two pages cannot assign adjacent places to
+    the same pair in opposite orders.
+    """
+    slots = dict(slot_counts or {})
+    strengths: Dict[Any, Dict[str, float]] = {}
+    for rid, pos_map in (team_pos_values or {}).items():
+        strengths[rid] = {
+            pos: weighted_pos_strength(list((pos_map or {}).get(pos) or []), pos, slots)
+            for pos in positions
+        }
+    ranks: Dict[str, Dict[Any, int]] = {}
+    for pos in positions:
+        ordered = sorted(
+            strengths.keys(),
+            key=lambda rid: (-float(strengths[rid].get(pos) or 0.0), str(rid)),
+        )
+        ranks[pos] = {rid: i + 1 for i, rid in enumerate(ordered)}
+    return strengths, ranks
 
 
 def strength_percentile(user_strength: float, all_strengths: Sequence[float]) -> float:
