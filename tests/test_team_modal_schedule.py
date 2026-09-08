@@ -187,7 +187,7 @@ def test_ages_tiles_css_does_not_leave_fixed_chips_in_stretched_tracks():
     assert "display: flex" in block
     assert "flex-wrap: nowrap" in block
     assert "width: auto" in block
-    assert "flex: 1 1 0" in block
+    assert "max-width: 148px" in block
     assert "grid-template-columns: repeat(auto-fit, minmax(84px, 1fr))" not in block
     assert "img.tm-sched-avatar" in css
     assert ".tm-sched-avatar[hidden]" in css
