@@ -17658,11 +17658,10 @@ function _tmBuildAgesHtml(data) {
 }
 
 // ── Schedule tab ─────────────────────────────────────────────────────────────
-// NOTE: opponent pairings and unplayed-week lineups are still illustrative
-// (seeded from the roster id so the layout is stable). Completed vs upcoming
-// is real: last_finalized_week / current-season weekly scores, never a fake
-// mid-season default. Record / PF / PA tiles prefer the league's real stats
-// so they match the modal header. Wire pairings to a matchups endpoint later.
+// Pairings are still a placeholder rotation of league opponents. Lineup rows
+// and projected totals use Sleeper weekly projections (schedule_projections),
+// never per-position RNG. Completed vs upcoming is last_finalized_week.
+// Record / PF / PA tiles prefer the league's real stats.
 function _tmSeededRng(seed) {
   // mulberry32 — small, stable, good enough for placeholder data.
   let a = seed >>> 0;
@@ -17811,12 +17810,46 @@ function _tmOppLineup(slots, rng) {
   });
 }
 
-// Score a lineup for one week: each starter gets seeded points; team total is
-// the sum, so it always reconciles with the row score. Returns { starters, total }.
-function _tmScoreLineup(lineup, rng) {
+function _tmProjOf(projMap, id) {
+  if (id == null || !projMap) return null;
+  const raw = projMap[String(id)];
+  if (raw == null || raw === '' || isNaN(Number(raw))) return null;
+  return Math.round(Number(raw) * 10) / 10;
+}
+
+// Fill starter slots with the highest-projected remaining eligible player.
+// Empty slots stay "—" (no fake names, no invented points).
+function _tmLineupForWeek(players, posKey, slots, projMap) {
+  const pool = [];
+  (players || []).forEach(p => {
+    const pos = p[posKey] || p.position || p.pos;
+    if (!pos) return;
+    const id = p.player_id != null ? p.player_id : p.id;
+    const proj = _tmProjOf(projMap, id);
+    pool.push({ name: p.name, id: id, pos: pos, proj: proj == null ? -1 : proj });
+  });
+  const used = {};
+  return slots.map(s => {
+    let bestI = -1;
+    for (let i = 0; i < pool.length; i++) {
+      if (used[i]) continue;
+      if (s.elig.indexOf(pool[i].pos) === -1) continue;
+      if (bestI < 0 || pool[i].proj > pool[bestI].proj) bestI = i;
+    }
+    if (bestI < 0) return { label: s.label, pos: s.elig[0], name: '—', id: null };
+    used[bestI] = true;
+    const pl = pool[bestI];
+    return { label: s.label, pos: pl.pos, name: pl.name, id: pl.id };
+  });
+}
+
+// Score a lineup from that week's projection map. Missing / unknown → 0
+// (bye or no projection), never a random point band.
+function _tmScoreLineup(lineup, projMap) {
   let total = 0;
   const starters = lineup.map(pl => {
-    const points = _tmGenPts(pl.pos, rng);
+    const looked = _tmProjOf(projMap, pl.id);
+    const points = looked == null ? 0 : looked;
     total += points;
     return { ...pl, points };
   });
@@ -17877,6 +17910,9 @@ function _tmBuildScheduleHtml(data) {
   const myTeamName = (data && (data.team_name || data.username)) || 'My Team';
 
   const lastPlayed = _tmScheduleLastPlayed(data);
+  const projByWeek = (data && data.schedule_projections && typeof data.schedule_projections === 'object')
+    ? data.schedule_projections : {};
+  const projFor = (week) => projByWeek[week] || projByWeek[String(week)] || {};
 
   const AVATAR_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'];
   const avatar = (name, idx) => {
@@ -17898,7 +17934,6 @@ function _tmBuildScheduleHtml(data) {
   const oppOrder = useReal ? shuffle(realOpps) : shuffle(OPP_POOL);
 
   const slots = _tmResolveSlots(data && data.starter_slots);
-  const myLineup = _tmMyLineup((data && data.roster) || [], slots);
 
   const badge = (p) => `<span class="pos-badge ${_tmBadgeClass(p.pos)}">${p.pos}</span>`;
   // A player name: clickable (opens the player modal) when we have a real id.
@@ -17935,10 +17970,13 @@ function _tmBuildScheduleHtml(data) {
       ? { name: raw.team_name || ('Team ' + raw.roster_id), roster_id: raw.roster_id, players: raw.players }
       : { name: raw, roster_id: null, players: null };
     const played = wk.week <= lastPlayed;
-
-    const me = _tmScoreLineup(myLineup, rng);
-    const oppLineup = useReal ? _tmOppLineupReal(opp, slots) : _tmOppLineup(slots, rng);
-    const them = _tmScoreLineup(oppLineup, rng);
+    const weekProj = projFor(wk.week);
+    const myLineup = _tmLineupForWeek((data && data.roster) || [], 'position', slots, weekProj);
+    const me = _tmScoreLineup(myLineup, weekProj);
+    const oppLineup = useReal
+      ? _tmLineupForWeek(opp.players || [], 'pos', slots, weekProj)
+      : _tmLineupForWeek([], 'pos', slots, weekProj);
+    const them = _tmScoreLineup(oppLineup, weekProj);
     const myScore = me.total, oppScore = them.total;
 
     let res = null;

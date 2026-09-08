@@ -21495,9 +21495,9 @@ def api_team_details(roster_id: str):
         except Exception:
             logger.debug("[api_team_details] trends skipped", exc_info=True)
 
-        # Starting-lineup slots for this league (drives the mocked matchup
-        # lineups in the schedule tab). Filter out bench/IR/taxi so only real
-        # starter slots remain, preserving their configured order.
+        # Starting-lineup slots for this league (drives the schedule-tab
+        # matchup grid). Filter out bench/IR/taxi so only real starter slots
+        # remain, preserving their configured order.
         _bench_slots = {"BN", "IR", "TAXI", "RES", "RESERVE"}
         starter_slots = [
             str(s) for s in ((league or {}).get("roster_positions") or [])
@@ -21505,12 +21505,12 @@ def api_team_details(roster_id: str):
         ]
 
         # Real opponents for the schedule tab: every OTHER team in the league,
-        # with its real roster_id, name, and player list (id/name/position). The
-        # schedule pairings and scores are still mocked, but using real teams and
-        # players makes both clickable — a team opens its modal, a player opens
-        # the player modal.
+        # with its real roster_id, name, and player list (id/name/position).
+        # Pairings are still a placeholder rotation; weekly points come from
+        # schedule_projections so the expanded rows match actual projections.
         def _sched_player_list(r):
             out = []
+            starter_set = {str(s) for s in (r.get("starters") or []) if s and str(s) != "0"}
             for pid in (r.get("players") or []):
                 meta = players_index.get(str(pid), {})
                 pos = meta.get("pos") or ""
@@ -21524,6 +21524,7 @@ def api_team_details(roster_id: str):
                     "player_id": str(pid),
                     "name": meta.get("name") or "",
                     "pos": pos,
+                    "is_starter": str(pid) in starter_set,
                 })
             return out
 
@@ -21554,6 +21555,24 @@ def api_team_details(roster_id: str):
             logger.debug("[api_team_details] last_finalized_week skipped", exc_info=True)
             last_finalized_week = 0
 
+        # Weekly fantasy projections for every player on a league roster, so the
+        # schedule-tab matchup rows show Sleeper numbers (bye = 0) instead of
+        # the old per-position RNG placeholders.
+        schedule_projections = {}
+        try:
+            from utils.week_proj import league_player_week_projections as _lpwp
+            _league_pids = []
+            for _r in rosters:
+                _league_pids.extend(str(p) for p in (_r.get("players") or []) if p)
+            schedule_projections = _lpwp(
+                season, 17, _league_pids,
+                scoring_settings=(league or {}).get("scoring_settings"),
+                pos_by_pid=players_index,
+            )
+        except Exception:
+            logger.debug("[api_team_details] schedule_projections skipped", exc_info=True)
+            schedule_projections = {}
+
         response = {
             "roster_id": roster_id,
             "team_name": team_name,
@@ -21561,6 +21580,7 @@ def api_team_details(roster_id: str):
             "avatar": avatar,
             "starter_slots": starter_slots,
             "schedule_opponents": schedule_opponents,
+            "schedule_projections": schedule_projections,
             "record": record_str,
             "wins": wins,
             "losses": losses,
