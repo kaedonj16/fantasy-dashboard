@@ -369,8 +369,8 @@ def api_schedule_strength():
     as standings: opponent scoring average (65%) blended with win rate (35%).
 
     Higher ``avg_opp_points`` is a tougher remaining slate (SOS Future index,
-    100 = league average). Playoff weeks are excluded. Before week 1, scoring
-    comes from projected starter lineups and win rate is even.
+    100 = league average). Playoff weeks are excluded. Projected starter
+    scoring is a 4-game prior that fades as real results come in.
 
     Query params: platform, league_id, season
     """
@@ -419,24 +419,15 @@ def api_schedule_strength():
                 week_data = []
             matchups_by_week[w] = week_data
 
+        proj = _projected_starter_avgs(rosters, ctx, season, current_week)
         results, source = remaining_schedule_strength(
             rosters,
             matchups_by_week,
             current_week=current_week,
             regular_season_weeks=reg_weeks,
             roster_names=roster_map,
+            projected_avg_by_rid=proj or None,
         )
-        if source == "even":
-            proj = _projected_starter_avgs(rosters, ctx, season, current_week)
-            if any((v or 0) > 0 for v in proj.values()):
-                results, source = remaining_schedule_strength(
-                    rosters,
-                    matchups_by_week,
-                    current_week=current_week,
-                    regular_season_weeks=reg_weeks,
-                    roster_names=roster_map,
-                    projected_avg_by_rid=proj,
-                )
 
         return jsonify({
             "current_week": current_week,
@@ -444,6 +435,7 @@ def api_schedule_strength():
             "teams": results,
             "using_power_rankings": source == "even",
             "using_projections": source == "projected",
+            "using_blend": source == "blended",
         })
 
     except Exception:

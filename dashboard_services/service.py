@@ -1248,6 +1248,70 @@ def _matchup_field(row: Any, key: str, default: Any = None) -> Any:
     return getattr(row, key, default)
 
 
+SOS_PROJECTION_PRIOR_GAMES = 4.0
+
+
+def _positive_proj_map(raw: Optional[Dict[str, float]]) -> dict[str, float]:
+    out: dict[str, float] = {}
+    for key, val in (raw or {}).items():
+        try:
+            num = float(val)
+        except (TypeError, ValueError):
+            continue
+        if num > 0:
+            out[str(key)] = num
+    return out
+
+
+def sos_shrink_avg(
+        actual: float,
+        games: int,
+        projected: Optional[float],
+        prior_games: float = SOS_PROJECTION_PRIOR_GAMES,
+) -> float:
+    """Blend actual PPG toward a preseason projection as a virtual sample.
+
+    ``prior_games=4`` matches the live-ranking early-season window: week 0 is
+    pure projection, week 4 is 50/50, and later weeks keep fading the prior.
+    """
+    try:
+        proj = float(projected) if projected is not None else 0.0
+    except (TypeError, ValueError):
+        proj = 0.0
+    n = max(0, int(games or 0))
+    if proj <= 0:
+        return float(actual or 0.0)
+    try:
+        prior = float(prior_games)
+    except (TypeError, ValueError):
+        prior = SOS_PROJECTION_PRIOR_GAMES
+    if prior <= 0:
+        return float(actual or 0.0) if n else proj
+    return (prior * proj + n * float(actual or 0.0)) / (prior + n)
+
+
+def sos_shrink_win_pct(
+        wins: float,
+        losses: float,
+        ties: float,
+        *,
+        has_projection: bool,
+        prior_games: float = SOS_PROJECTION_PRIOR_GAMES,
+) -> float:
+    """Shrink win rate toward .500 when a preseason projection is in play."""
+    decided = float(wins or 0.0) + float(losses or 0.0) + float(ties or 0.0)
+    actual = ((float(wins or 0.0) + 0.5 * float(ties or 0.0)) / decided) if decided else 0.0
+    if not has_projection:
+        return actual
+    try:
+        prior = float(prior_games)
+    except (TypeError, ValueError):
+        prior = SOS_PROJECTION_PRIOR_GAMES
+    if prior <= 0:
+        return actual if decided else 0.5
+    return (prior * 0.5 + float(wins or 0.0) + 0.5 * float(ties or 0.0)) / (prior + decided)
+
+
 def remaining_schedule_strength(
         rosters: Iterable[dict],
         matchups_by_week: Dict[int, List[Any]],
@@ -1260,9 +1324,10 @@ def remaining_schedule_strength(
 
     Opponent weights are 65% scoring average + 35% win rate, indexed so
     100 is league average. Playoff weeks are ignored via
-    ``regular_season_weeks``. Before any games are scored, ``projected_avg_by_rid``
-    fills AVG (win rate stays even at .500). Returns ``(rows, source)`` where
-    source is ``actual``, ``projected``, or ``even``.
+    ``regular_season_weeks``. Projected starter PPG (when provided) is a
+    4-game prior that fades as real results accumulate. Returns
+    ``(rows, source)`` where source is ``actual``, ``projected``,
+    ``blended``, or ``even``.
     """
     names = roster_names or {}
     roster_list = [r for r in (rosters or []) if isinstance(r, dict)]
@@ -1289,8 +1354,6 @@ def remaining_schedule_strength(
                 continue
             pts = float(_matchup_field(m, "points") or 0.0)
             pts_by_rid[rid] = pts
-            if rid in weekly_pts:
-                weekly_pts[rid].append(pts)
             mid = _matchup_field(m, "matchup_id")
             if mid is not None:
                 by_mid.setdefault(mid, []).append(rid)
@@ -1301,6 +1364,10 @@ def remaining_schedule_strength(
             pa, pb = pts_by_rid.get(a, 0.0), pts_by_rid.get(b, 0.0)
             if pa == 0.0 and pb == 0.0:
                 continue
+            if a in weekly_pts:
+                weekly_pts[a].append(pa)
+            if b in weekly_pts:
+                weekly_pts[b].append(pb)
             if pa > pb:
                 if a in wins:
                     wins[a] += 1
@@ -1317,35 +1384,30 @@ def remaining_schedule_strength(
                 if b in ties:
                     ties[b] += 1
 
+    proj = _positive_proj_map(projected_avg_by_rid)
     rows = []
-    games_played = 0
+    scored_teams = 0
     for rid in rids:
         pts_list = weekly_pts.get(rid) or []
-        avg = (sum(pts_list) / len(pts_list)) if pts_list else 0.0
-        if avg > 0:
-            games_played += 1
-        decided = wins[rid] + losses[rid] + ties[rid]
-        win_pct = ((wins[rid] + 0.5 * ties[rid]) / decided) if decided else 0.0
+        n = len(pts_list)
+        actual_avg = (sum(pts_list) / n) if n else 0.0
+        if n:
+            scored_teams += 1
+        projected = proj.get(rid)
+        avg = sos_shrink_avg(actual_avg, n, projected)
+        win_pct = sos_shrink_win_pct(
+            wins[rid], losses[rid], ties[rid], has_projection=bool(proj),
+        )
         rows.append({"owner": rid, "AVG": avg, "Win%": win_pct})
 
-    source = "actual"
-    if games_played == 0:
-        proj: dict[str, float] = {}
-        for raw_k, raw_v in (projected_avg_by_rid or {}).items():
-            try:
-                val = float(raw_v)
-            except (TypeError, ValueError):
-                continue
-            if val > 0:
-                proj[str(raw_k)] = val
-        if proj:
-            rows = [
-                {"owner": rid, "AVG": float(proj.get(rid) or 0.0), "Win%": 0.5}
-                for rid in rids
-            ]
-            source = "projected"
-        else:
-            source = "even"
+    if scored_teams == 0 and proj:
+        source = "projected"
+    elif scored_teams == 0:
+        source = "even"
+    elif proj:
+        source = "blended"
+    else:
+        source = "actual"
 
     team_stats = pd.DataFrame(rows)
     strength = build_team_strength(team_stats)

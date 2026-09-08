@@ -9,9 +9,12 @@ pytest.importorskip("pandas")
 pd = pytest.importorskip("pandas")
 
 from dashboard_services.service import (
+    SOS_PROJECTION_PRIOR_GAMES,
     build_team_strength,
     compute_sos_by_team,
     remaining_schedule_strength,
+    sos_shrink_avg,
+    sos_shrink_win_pct,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,6 +40,8 @@ def test_schedule_strength_source_uses_sos_not_roster_value():
     assert "regular_season_length" in body
     assert "_projected_starter_avgs" in body
     assert "using_projections" in body
+    assert "using_blend" in body
+    assert "projected_avg_by_rid=proj" in body
     assert "roster_val / 50.0" not in body
     assert "preseason_opponent_strength" not in body
     assert "load_pick_value_table" not in body
@@ -50,6 +55,7 @@ def test_schedule_strength_source_uses_sos_not_roster_value():
     assert "build_team_strength" in fn
     assert "compute_sos_by_team" in fn
     assert "projected_avg_by_rid" in fn
+    assert "sos_shrink_avg" in fn
     assert "0.65" not in fn  # blend lives in build_team_strength, not a local copy
 
 
@@ -145,6 +151,23 @@ def test_projected_starter_avgs_uses_playoff_odds_lineup(monkeypatch):
     assert out["2"] == 12.0
 
 
+def test_sos_shrink_avg_fades_projection_with_sample():
+    assert sos_shrink_avg(100.0, 0, 140.0) == 140.0
+    assert sos_shrink_avg(100.0, 4, 140.0) == pytest.approx(120.0)
+    eight = (SOS_PROJECTION_PRIOR_GAMES * 140.0 + 8 * 100.0) / (SOS_PROJECTION_PRIOR_GAMES + 8)
+    assert sos_shrink_avg(100.0, 8, 140.0) == pytest.approx(eight)
+    assert sos_shrink_avg(100.0, 4, None) == 100.0
+    assert abs(sos_shrink_avg(100.0, 1, 140.0) - 140.0) < abs(sos_shrink_avg(100.0, 8, 140.0) - 140.0)
+
+
+def test_sos_shrink_win_pct_starts_even_then_trusts_record():
+    assert sos_shrink_win_pct(0, 0, 0, has_projection=True) == pytest.approx(0.5)
+    # One win: (4*0.5 + 1) / 5 = 0.6, not 1.0
+    assert sos_shrink_win_pct(1, 0, 0, has_projection=True) == pytest.approx(0.6)
+    assert sos_shrink_win_pct(1, 0, 0, has_projection=False) == pytest.approx(1.0)
+    assert sos_shrink_win_pct(8, 0, 0, has_projection=True) > sos_shrink_win_pct(1, 0, 0, has_projection=True)
+
+
 def test_remaining_schedule_preseason_is_even_without_projections():
     rosters = _rosters("1", "2", "3", "4")
     matchups = {
@@ -180,16 +203,21 @@ def test_remaining_schedule_preseason_uses_projected_scoring():
     assert {r["avg_opp_points"] for r in rows} != {100.0}
 
 
-def test_remaining_schedule_ignores_projections_once_games_are_played():
+def test_remaining_schedule_early_games_blend_projections():
+    """Week 1 does not throw away the preseason prior."""
     rosters = _rosters("1", "2", "3", "4")
     matchups = {
         1: _week_pair(1, "1", 118, "2", 120) + _week_pair(2, "3", 90, "4", 110),
         2: _week_pair(1, "3", 0, "1", 0) + _week_pair(2, "4", 0, "2", 0),
     }
+    proj = {"1": 200.0, "2": 10.0, "3": 10.0, "4": 200.0}
     rows, source = remaining_schedule_strength(
         rosters, matchups, current_week=1, regular_season_weeks=2,
-        projected_avg_by_rid={"1": 200.0, "2": 10.0, "3": 10.0, "4": 200.0},
+        projected_avg_by_rid=proj,
     )
-    assert source == "actual"
+    assert source == "blended"
     by_id = {r["roster_id"]: r for r in rows}
-    assert by_id["1"]["my_avg_points"] == 118.0
+    # (4*200 + 118) / 5 = 183.6, not the raw 118 actual.
+    assert by_id["1"]["my_avg_points"] == round(sos_shrink_avg(118.0, 1, 200.0), 2)
+    assert 118.0 < by_id["1"]["my_avg_points"] < 200.0
+    assert by_id["1"]["my_avg_points"] != 118.0

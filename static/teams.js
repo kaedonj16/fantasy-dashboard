@@ -240,6 +240,7 @@
 
         var usingPR = !!data.using_power_rankings;
         var usingProj = !!data.using_projections;
+        var usingBlend = !!data.using_blend;
         var wr = data.weeks_remaining || 0;
         var values = teams.map(function(t) { return Number(t.avg_opp_points) || 0; });
         var maxOpp = Math.max.apply(null, values);
@@ -260,6 +261,8 @@
             '<span class="sos-subtitle">' +
               (usingProj
                 ? 'Same formula as SOS, using projected scoring until week 1'
+                : usingBlend
+                ? 'Same formula as SOS, blending projections with results so far'
                 : usingPR
                 ? 'Same formula as SOS — scoring and win rate'
                 : 'Same formula as SOS: opponent scoring (65%) and win rate (35%)') +
@@ -277,6 +280,8 @@
 
         if (usingProj) {
           html += '<div class="sos-note" role="note">No games played yet — remaining opponents ranked by projected starter scoring.</div>';
+        } else if (usingBlend) {
+          html += '<div class="sos-note" role="note">Early results are mixed with preseason projections so one week doesn’t flip SOS.</div>';
         } else if (usingPR) {
           html += '<div class="sos-note" role="note">No games played yet — SOS needs scoring and win rate, so remaining schedules look even.</div>';
         }
@@ -304,7 +309,7 @@
           else rankHtml = '<span class="sos-rank-num">' + (idx + 1) + '</span>';
 
           var tipParts = [t.team_name || ''];
-          if ((usingProj || !usingPR) && val) tipParts.push('SOS ' + val.toFixed(1));
+          if ((usingProj || usingBlend || !usingPR) && val) tipParts.push('SOS ' + val.toFixed(1));
           if (t.games_remaining) tipParts.push(t.games_remaining + ' games left');
 
           html += '<div class="sos-row sos-' + tier.key + (mine ? ' sos-mine' : '') + '"' +
