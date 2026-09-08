@@ -155,6 +155,15 @@ clock.
 ## League format
 
 The digest classifies each league (dynasty / redraft / keeper, 1QB / superflex,
-TEP) with `utils.league_format.classify_league_roster_format` and reorders
-shared sections. Redraft leads with matchup and start/sit; dynasty leads with
-meaningful roster value movement. Empty sections are omitted.
+TEP) with `utils.league_format.classify_league_roster_format`.
+
+**One connected league:** shared sections in a format-aware order. Redraft leads
+with matchup and start/sit; dynasty leads with meaningful roster value movement.
+Empty sections are omitted.
+
+**Two or more connected leagues:** the email is a portfolio overview. Every
+linked league gets the same card (record, matchup, lineup, waiver, top asset /
+riser) instead of a deep dive on `last_active_*` plus a name-only list of the
+rest. Cross-league action bullets sit at the top. The primary CTA opens
+`/portfolio`. Accounts with more than eight linked leagues are capped at eight
+(primary first, then newest). Single-league recap is unchanged.

@@ -252,3 +252,32 @@ def test_send_fails_closed_without_hmac_secret(monkeypatch):
     send.assert_not_called()
     assert summary["sent"] == 0
     assert summary["failed"] >= 1
+
+
+def test_multi_league_account_sends_overview_digest(monkeypatch):
+    monkeypatch.setenv("BREVO_API_KEY", "xkeysib-test")
+    overview = {
+        "subject": "Your 2 leagues this week",
+        "html": "<p>all leagues {UNSUB}</p>",
+        "tags": ["weekly-digest", "multi-league"],
+    }
+    others = [{"platform": "espn", "league_id": "B", "season": 2026, "roster_id": "2", "name": "Alt"}]
+    with mock.patch.object(we, "_recipients", return_value=[_recip()]), \
+         mock.patch.object(we, "other_leagues_for_account", return_value=others), \
+         mock.patch.object(we, "build_multi_league_digest", return_value=overview) as multi, \
+         mock.patch.object(we, "build_digest") as single, \
+         mock.patch("utils.email_preferences.is_enabled", return_value=True), \
+         mock.patch("utils.email_events.is_suppressed", return_value=False), \
+         mock.patch("utils.email_events.record_send"), \
+         mock.patch("utils.email_delivery.send_email",
+                    return_value=SendResult(ok=True, provider="brevo", message_id="mid-ml")) as send, \
+         mock.patch("utils.digest_context.DigestRunCache.load_shared", lambda self: None), \
+         mock.patch.object(we, "_best_effort_lineup_actions", return_value=[]), \
+         mock.patch("dashboard_services.db.get_conn", return_value=_Conn()):
+        summary = we.send_weekly_digests()
+    single.assert_not_called()
+    multi.assert_called_once()
+    send.assert_called_once()
+    assert send.call_args[0][1] == "Your 2 leagues this week"
+    assert "all leagues" in send.call_args[0][2]
+    assert summary["sent"] == 1

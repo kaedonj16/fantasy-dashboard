@@ -168,6 +168,147 @@ def format_chip_html(label: str) -> str:
     )
 
 
+def matchup_one_liner(matchup: Optional[dict]) -> str:
+    """Compact matchup line for a multi-league overview card."""
+    if not matchup:
+        return ""
+    opp = str(matchup.get("opponent_name") or "").strip()
+    if not opp:
+        return ""
+    bits = [f"vs {opp}"]
+    you, them = matchup.get("user_proj"), matchup.get("opp_proj")
+    try:
+        if you is not None and them is not None:
+            bits.append(f"{float(you):.1f} to {float(them):.1f}")
+    except (TypeError, ValueError):
+        pass
+    wp = matchup.get("win_prob")
+    try:
+        if wp is not None:
+            pct = max(1, min(99, int(round(float(wp) * 100))))
+            bits.append(f"Win probability {pct}%")
+    except (TypeError, ValueError):
+        pass
+    return " · ".join(bits)
+
+
+def league_overview_card_html(
+    *,
+    league_name: str,
+    format_label: str = "",
+    rank: Optional[int] = None,
+    wins: int = 0,
+    losses: int = 0,
+    dash_url: str = "",
+    matchup: Optional[dict] = None,
+    lineup_note: Optional[dict] = None,
+    waiver: Optional[dict] = None,
+    injury_body: str = "",
+    top_asset: Optional[dict] = None,
+    riser_name: str = "",
+    riser_delta: Optional[float] = None,
+    breakout_name: str = "",
+    trade_body: str = "",
+) -> str:
+    """One connected-league overview: standing plus a few actionable lines."""
+    name = str(league_name or "").strip()
+    if not name:
+        return ""
+    from utils.digest_actions import EMAIL_CARD_STYLE, _EMAIL_CTA
+
+    chip = format_chip_html(format_label)
+    title = escape(name, quote=False)
+    if dash_url:
+        title = (
+            f'<a href="{escape(dash_url, quote=True)}" style="color:#0f172a;'
+            f'text-decoration:none;">{title}</a>'
+        )
+    games = int(wins or 0) + int(losses or 0)
+    standing = ""
+    if rank is not None and games > 0:
+        standing = f"#{int(rank)} · {int(wins or 0)}-{int(losses or 0)}"
+
+    rows: list[tuple[str, str]] = []
+    if standing:
+        rows.append(("Record", standing))
+    mu = matchup_one_liner(matchup)
+    if mu:
+        rows.append(("Matchup", mu))
+    note = lineup_note or {}
+    lineup_body = str(note.get("body") or note.get("title") or "").strip()
+    if lineup_body:
+        rows.append(("Lineup", lineup_body))
+    inj = str(injury_body or "").strip()
+    if inj and len(rows) < 5:
+        rows.append(("Injury", inj))
+    wv = waiver or {}
+    wname = str(wv.get("name") or "").strip()
+    if wname:
+        wpos = str(wv.get("pos") or "").upper()
+        wreason = str(wv.get("reason") or "").strip()
+        wdetail = " · ".join(p for p in (wpos, wreason) if p)
+        rows.append(("Waiver", f"{wname}" + (f" ({wdetail})" if wdetail else "")))
+    rname = str(riser_name or "").strip()
+    if rname and len(rows) < 5:
+        try:
+            delta = float(riser_delta) if riser_delta is not None else None
+        except (TypeError, ValueError):
+            delta = None
+        extra = f" ▲{abs(delta):.0f}" if delta is not None else ""
+        rows.append(("Rising", f"{rname}{extra}"))
+    asset = top_asset or {}
+    aname = str(asset.get("name") or "").strip()
+    if aname and len(rows) < 5:
+        pos = str(asset.get("pos") or "").upper()
+        try:
+            val = float(asset.get("value") or 0)
+        except (TypeError, ValueError):
+            val = 0.0
+        bits = [aname]
+        if pos:
+            bits.append(pos)
+        if val >= 40:
+            bits.append(f"{val:.0f}")
+        rows.append(("Top asset", " · ".join(bits)))
+    bname = str(breakout_name or "").strip()
+    if bname and len(rows) < 5:
+        rows.append(("Breakout", bname))
+    tbody = str(trade_body or "").strip()
+    if tbody and len(rows) < 5:
+        rows.append(("Roster", tbody))
+
+    body_rows = ""
+    for i, (label, text) in enumerate(rows[:5]):
+        border = "border-top:1px solid #eef2f7;" if i else ""
+        body_rows += (
+            f'<tr><td style="padding:7px 0;{border}font-size:13px;color:#0f172a;'
+            f'vertical-align:top;">'
+            f'<span style="display:inline-block;min-width:72px;color:#64748b;'
+            f'font-size:11px;font-weight:800;letter-spacing:.04em;'
+            f'text-transform:uppercase;">{escape(label, quote=False)}</span> '
+            f"{escape(text, quote=False)}</td></tr>"
+        )
+    table = (
+        f'<table style="width:100%;border-collapse:collapse;margin-top:8px;">'
+        f"{body_rows}</table>"
+        if body_rows else ""
+    )
+    cta = ""
+    if dash_url:
+        cta = (
+            f'<div style="margin-top:10px;">'
+            f'<a href="{escape(dash_url, quote=True)}" style="{_EMAIL_CTA}">'
+            f"Open league →</a></div>"
+        )
+    return (
+        f'<div style="{EMAIL_CARD_STYLE}">'
+        f'<div style="font-size:16px;font-weight:800;color:#0f172a;line-height:1.3;">'
+        f"{title}</div>"
+        f"{chip}"
+        f"{table}{cta}</div>"
+    )
+
+
 def league_summary_html(
     *,
     league_name: str,
