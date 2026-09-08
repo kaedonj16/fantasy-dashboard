@@ -26924,6 +26924,9 @@ def build_portfolio_body(
         ".pf-lg-live{border-radius:8px;padding:7px 9px 8px;"
         "background:color-mix(in srgb,var(--text-subtle) 9%,transparent);"
         "display:flex;flex-direction:column;gap:6px;}"
+        # The class sets display:flex, which would otherwise beat the UA
+        # [hidden]{display:none}; keep the empty slot truly hidden until hydrated.
+        ".pf-lg-live[hidden]{display:none;}"
         ".pf-live-status{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
         "color:var(--text-subtle);display:flex;align-items:center;gap:5px;}"
         ".pf-live-dot{width:6px;height:6px;border-radius:50%;background:var(--text-subtle);flex:0 0 auto;}"
