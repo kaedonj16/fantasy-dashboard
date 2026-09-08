@@ -487,11 +487,15 @@ def build_scout_body(ctx: dict) -> str:
         team_html = f"<span class='scout-team'>{html.escape(p['team'])}</span>" if p["team"] else ""
         return (
             f"<div class='scout-player-row'>"
+            f"<span class='scout-player-id'>"
             f"<span class='pos-badge {pc}'>{p['pos']}</span>"
             f"<span class='scout-player-name'>{html.escape(p['name'])}</span>"
             f"{team_html}{tag_html}{inj_html}"
+            f"</span>"
+            f"<span class='scout-player-meta'>"
             f"<span class='scout-prof-wrap'>{_profile_html(p.get('profile'))}</span>"
             f"{ppg_html}"
+            f"</span>"
             f"</div>"
         )
 
@@ -582,10 +586,12 @@ _SCOUT_STYLE = (
     ".edge-you{background:color-mix(in srgb,var(--win) 16%,transparent);color:var(--win);}"
     ".edge-them{background:color-mix(in srgb,var(--loss) 16%,transparent);color:var(--loss);}"
     ".edge-even{background:color-mix(in srgb,var(--muted) 16%,transparent);color:var(--muted);}"
-    ".scout-player-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:0.9em;}"
+    ".scout-player-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border);font-size:0.9em;}"
     ".scout-player-row:last-child{border-bottom:none;}"
-    ".scout-player-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;}"
-    ".scout-team{font-size:0.78em;color:var(--muted);min-width:30px;}"
+    ".scout-player-id{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:8px;}"
+    ".scout-player-meta{flex:0 0 auto;margin-left:auto;display:flex;align-items:center;gap:8px;justify-content:flex-end;}"
+    ".scout-player-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;}"
+    ".scout-team{font-size:0.78em;color:var(--muted);flex-shrink:0;}"
     ".scout-ppg{font-size:0.82em;font-weight:600;min-width:66px;text-align:right;}"
     ".scout-ppg-miss{min-width:92px;font-style:italic;font-weight:400;color:var(--muted);}"
     ".scout-proj-stamp{font-size:0.72em;color:var(--muted);font-weight:500;}"
@@ -605,6 +611,17 @@ _SCOUT_STYLE = (
     ".inj-q{background:#fef08a;color:#713f12;}"
     ".inj-d{background:#fed7aa;color:#7c2d12;}"
     ".inj-o{background:#fecaca;color:#7f1d1d;}"
+    # Narrow screens (phones): the identity (badge + full name + team/tags) takes
+    # the whole first line so names are never truncated, and the profile/proj
+    # metrics drop to a second line indented under the name. Kept last in the
+    # sheet so these rules win the source-order tie against the base rules above.
+    "@media (max-width:560px){"
+    ".scout-player-id{flex-basis:100%;}"
+    ".scout-player-name{white-space:normal;overflow:visible;text-overflow:clip;}"
+    ".scout-player-meta{flex:1 1 100%;min-width:0;margin-left:44px;justify-content:flex-start;}"
+    ".scout-prof-wrap{min-width:0;justify-content:flex-start;}"
+    ".scout-ppg{margin-left:auto;}"
+    "}"
     "</style>"
 )
 
