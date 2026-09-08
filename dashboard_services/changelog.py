@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-09-08",
+        "tag": "fix",
+        "text": "Draft Room Deep Dive treats rookie drafts as a class recap: no fake starters vs league, no Early tag after a team is done, no thin-roster or waiver flags, and playoff odds only on live connected leagues. Steal/reach cards, survival, and Decision Score no longer use startup lineup math on a 3-round board.",
+        "link": "/draft"
+    },
+    {
+        "date": "2026-09-08",
         "tag": "update",
         "text": "My Leagues This week's moves: waiver adds now require a startable rank or a real roster hole instead of always naming the highest leftover free agent. Deep RB35s, 1QB streamer QBs, and aging dynasty leftovers are dropped; cards explain the need or startable reason.",
         "link": "/portfolio"

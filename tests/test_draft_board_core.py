@@ -985,3 +985,28 @@ def test_rank_historical_alternatives_uses_score_row():
     assert out["bestAlternativeScore"] == 95
     assert out["bestAlternative"]["id"] == "b"
     assert [r["id"] for r in out["topAlternatives"]] == ["b", "c"]
+
+
+def test_rookie_class_skips_lineup_holes_and_startup_survival_curve():
+    """Rookie drafts are a short class, not a 9-slot startup build."""
+    out = _run_need_cases("""(() => {
+      const rc={QB:1,RB:2,WR:3,TE:1,FLEX:1,BN:7};
+      const counts={QB:0,RB:1,WR:1,TE:0};
+      const rk=C.remainingObligations(counts,rc,2,false,{draftType:'rookie',tep:0});
+      const st=C.remainingObligations(counts,rc,2,false,{draftType:'startup',tep:0});
+      const stealLong=C.significantSteal({marketFall:6,adpUncertainty:4,boardPickScore:82});
+      const stealRookie=C.significantSteal({marketFall:6,adpUncertainty:4,boardPickScore:82,draftType:'rookie',teams:12,rounds:3});
+      const stealRookieTiny=C.significantSteal({marketFall:3,adpUncertainty:4,boardPickScore:90,draftType:'rookie',teams:12,rounds:3});
+      const raw=C.calibrateAvailability(57,'rookie',false);
+      const startup=C.calibrateAvailability(57,'startup',false);
+      return {rk, st, stealLong, stealRookie, stealRookieTiny, raw, startup};
+    })()""")
+    assert out["rk"]["required"] == 0
+    assert out["rk"]["lineupHoles"] == 0
+    assert out["rk"]["freePicks"] == 2
+    assert out["st"]["lineupHoles"] > 0
+    assert out["stealLong"] is False
+    assert out["stealRookie"] is True
+    assert out["stealRookieTiny"] is False
+    assert out["raw"] == 57
+    assert out["startup"] != 57

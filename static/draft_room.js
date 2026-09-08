@@ -2276,7 +2276,7 @@
     }
     var counts = teamCounts(slot), rs = (state && state.roster) || defaultRoster();
     var obligations = window.DraftBoardCore
-      ? DraftBoardCore.remainingObligations(counts, rs, remaining, !!state.sf, { tep: scoringCfg().tep })
+      ? DraftBoardCore.remainingObligations(counts, rs, remaining, !!state.sf, { tep: scoringCfg().tep, draftType: state.type })
       : { required: 0, freePicks: remaining, lineupHoles: 0 };
     return { qualByPos: qualByPos, picksList: picksList, rosterQualities: rosterQualities, nextOwned: nextOwned,
              lastPickByPos: lastPickByPos, remaining: remaining, obligations: obligations };
@@ -3532,7 +3532,7 @@
     var rs = (state && state.roster) || defaultRoster();
     var remaining = hasOwned() ? upcomingOwnedPicks().length : 0;
     var obligations = window.DraftBoardCore
-      ? DraftBoardCore.remainingObligations(myPosCounts(), rs, remaining, !!state.sf, { tep: scoringCfg().tep })
+      ? DraftBoardCore.remainingObligations(myPosCounts(), rs, remaining, !!state.sf, { tep: scoringCfg().tep, draftType: state.type })
       : { missing: {}, required: 0, remaining: remaining, freePicks: remaining, lineupHoles: 0 };
     _psCtxCache = { targets: targets, qualByPos: qualByPos, rosterQualities: rosterQualities,
                     lastPickByPos: lastPickByPos, roster: rs,
@@ -4719,6 +4719,17 @@
     if (state.mode === 'live' && String(state.status) === 'pre_draft' && !state.isComplete) return false;
     return !!state.isComplete || state.current > (state.teams || 12) * (state.rounds || 0);
   }
+  function isRookieDraft(){
+    return !!(state && state.type === 'rookie');
+  }
+  // Live connected leagues can use Standings odds (existing roster + this class).
+  // Rookie mocks have no real lineup, so recap playoff odds stay hidden.
+  function recapUsesLivePlayoffOdds(){
+    return !!(state && state.mode === 'live' && cfg.leagueId && cfg.platform);
+  }
+  function recapShowsPlayoffOdds(){
+    return !isRookieDraft() || recapUsesLivePlayoffOdds();
+  }
 
   // Server-computed playoff odds.
   // Live league drafts post use_league so the server runs the SAME cached sim
@@ -4743,6 +4754,7 @@
   }
   function refreshServerPlayoffOdds(allTeams){
     if (!_draftComplete() || !allTeams || allTeams.length < 2) return;
+    if (!recapShowsPlayoffOdds()) return;
     var sig = _poSig(allTeams);
     if (_poFetching || (_poServer && _poServerSig === sig)) return;
     if (_poFailedSig === sig) return;
@@ -4821,6 +4833,7 @@
   // Odds for display. Completed drafts wait for the standings engine (empty
   // object = pending). Mid-draft and failed fetches use the JS estimate.
   function playoffOddsSource(allTeams){
+    if (!recapShowsPlayoffOdds()) return {};
     refreshServerPlayoffOdds(allTeams);
     var sig = _poSig(allTeams);
     if (_poServer && _poServerSig === sig) return _poServer;
@@ -4829,6 +4842,7 @@
     return {};
   }
   function playoffOddsPending(allTeams){
+    if (!recapShowsPlayoffOdds()) return false;
     if (!_draftComplete() || !allTeams || allTeams.length < 2) return false;
     var sig = _poSig(allTeams);
     return !(_poServer && _poServerSig === sig) && _poFailedSig !== sig;
@@ -5052,7 +5066,7 @@
       return { score: rv, value: avgPs != null ? Math.round(avgPs) : 50,
         balance: 0, tier: 0, count: mine.length,
         avgPs: avgPs ? Math.round(avgPs) : null, window: null,
-        provisional: gradeIsProvisional(mine.length) };
+        provisional: gradeIsProvisional(mine.length, remainingOwnedForPicks(mine)) };
     }
 
     // Startup / redraft composite lives in static/draft_grade_team.js
@@ -5084,7 +5098,7 @@
       starterIds: _comp.starterIds, functionalDepth: _comp.functionalDepth,
       benchEfficiency: _comp.benchEfficiency,
       window: _competitiveWindow(_starterArr),
-      provisional: gradeIsProvisional(mine.length) };
+      provisional: gradeIsProvisional(mine.length, remainingOwnedForPicks(mine)) };
   }
   // At-pick tier-cliff map for grading: walk the full draft in order starting from
   // the full-pool tier counts, so each historical pick sees remaining-at-that-slot
@@ -5232,10 +5246,36 @@
     if (s>=60) return 'C+'; if (s>=55) return 'C'; if (s>=50) return 'C-';
     if (s>=40) return 'D';  return 'F';
   }
+  // Unfilled picks still owned by this team's group. Used so a 1-2 pick rookie
+  // team is not "Early" after it has made every pick it owns (or the draft ends).
+  function remainingOwnedForPicks(mine){
+    if (!state || !mine || !mine.length) return 0;
+    var tot = (state.teams || 0) * (state.rounds || 0);
+    var viewer = isMyPick(mine[0].pn);
+    var sampleOwner = (state.pickOwners && mine[0].pn != null && state.pickOwners[mine[0].pn] != null)
+      ? state.pickOwners[mine[0].pn]
+      : slotOnClock(mine[0].pn, state.teams, state.order);
+    var n = 0;
+    for (var pn = 1; pn <= tot; pn++){
+      if (state.picks && state.picks[pn]) continue;
+      if (viewer){
+        if (isMyPick(pn)) n++;
+      } else {
+        var owner = (state.pickOwners && state.pickOwners[pn] != null)
+          ? state.pickOwners[pn]
+          : slotOnClock(pn, state.teams, state.order);
+        if (owner === sampleOwner) n++;
+      }
+    }
+    return n;
+  }
   // Construction ramps with min(1, picks/8). Show the real letter from pick 1
   // (including two-pick / start-of-round-3 boards — that F-grade bug is fixed)
   // but mark it Early until the sample is large enough to trust construction.
-  function gradeIsProvisional(count){
+  // Completed drafts (and teams that have used every pick they own) are never Early.
+  function gradeIsProvisional(count, remainingOwned){
+    if (_draftComplete()) return false;
+    if (remainingOwned != null && remainingOwned <= 0 && count > 0) return false;
     if ((state && state.type) === 'rookie') return count < 3;
     return count < 8;
   }
@@ -5510,7 +5550,7 @@
         if (_sl) stratTag = '<span class="dr-strat-tag">' + _sl + '</span>';
       }
       var poTag = '';
-      if (_leagueDone){
+      if (_leagueDone && recapShowsPlayoffOdds()){
         if (playoffOddsPending(allTeams)){
           poTag = '<span class="dr-sum-lpo dr-sum-lpo-pending" title="Calculating playoff odds">…</span>';
         } else if (_poOdds[t.slot] != null){
@@ -5546,14 +5586,6 @@
           var team = allTeams.filter(function(t){ return t.slot === slot; })[0];
           if (!team || !team.picks) return;
           var _sp = team.picks.slice().map(function(x){ return x.p; }).filter(Boolean);
-          var _tst = optimalLineup(_sp).starters.filter(function(x){ return x.p; });
-          // Starters fill the lineup slots; everything else is bench. Show the
-          // whole board, not just starters, so a team's full set of picks is visible.
-          var _starterIds = {};
-          _tst.forEach(function(x){ if (x.p && x.p.id != null) _starterIds[x.p.id] = true; });
-          var _bench = team.picks.slice()
-            .filter(function(pk){ return pk.p && !_starterIds[pk.p.id]; })
-            .sort(function(a, b){ return (a.pn || 0) - (b.pn || 0); });
           function _pickRx(pn){
             if (!pn) return '';
             var rd = Math.ceil(pn / state.teams); var pp = pn - (rd - 1) * state.teams;
@@ -5570,11 +5602,27 @@
               + psRx + '</div>';
           }
           var dtlHtml = '';
-          _tst.forEach(function(x){
-            var _pnx = (team.picks.filter(function(pk){ return pk.p && pk.p.id === x.p.id; })[0] || {}).pn || 0;
-            dtlHtml += _ldtlRow(x.slot, x.p, _pnx);
-          });
-          _bench.forEach(function(pk){ dtlHtml += _ldtlRow('BN', pk.p, pk.pn || 0); });
+          if (isRookieDraft()){
+            team.picks.slice().sort(function(a, b){ return (a.pn || 0) - (b.pn || 0); })
+              .forEach(function(pk){
+                if (!pk || !pk.p) return;
+                dtlHtml += _ldtlRow(pk.p.position || 'PICK', pk.p, pk.pn || 0);
+              });
+          } else {
+            var _tst = optimalLineup(_sp).starters.filter(function(x){ return x.p; });
+            // Starters fill the lineup slots; everything else is bench. Show the
+            // whole board, not just starters, so a team's full set of picks is visible.
+            var _starterIds = {};
+            _tst.forEach(function(x){ if (x.p && x.p.id != null) _starterIds[x.p.id] = true; });
+            var _bench = team.picks.slice()
+              .filter(function(pk){ return pk.p && !_starterIds[pk.p.id]; })
+              .sort(function(a, b){ return (a.pn || 0) - (b.pn || 0); });
+            _tst.forEach(function(x){
+              var _pnx = (team.picks.filter(function(pk){ return pk.p && pk.p.id === x.p.id; })[0] || {}).pn || 0;
+              dtlHtml += _ldtlRow(x.slot, x.p, _pnx);
+            });
+            _bench.forEach(function(pk){ dtlHtml += _ldtlRow('BN', pk.p, pk.pn || 0); });
+          }
           dtl.innerHTML = dtlHtml || '<span style="font-size:10px;color:var(--text-muted);padding:4px 0;display:block">No picks found</span>';
         }
       });
@@ -7185,7 +7233,7 @@
     { term: 'Grade · Value', def: 'How strong your picks are by pick score versus this league’s average, weighted toward the earlier rounds where it matters most.' },
     { term: 'Grade · Starters', def: 'How good your projected starting lineup is versus this league’s actual starting lineups. 100% is the average of those lineups; the rank is among teams in this draft. Snake drafts are close to zero-sum, so a lineup near 100% of average can still rank 1st or 2nd.' },
     { term: 'Grade · Construction', def: 'How well you’ve filled your starting slots and balanced your positions.' },
-    { term: 'Grade · Early', def: 'Shown until your team has 8 picks (3 in a rookie draft). The letter is real — including at two picks / the start of round 3 — but construction is still ramping and the sample is small.' },
+    { term: 'Grade · Early', def: 'Shown while this team still has picks left and the sample is small (under 8 picks in startup/redraft, under 3 in a rookie draft). The letter is real. A finished draft, or a team that has used every pick it owns, is never tagged Early.' },
     { term: 'Hist', def: 'Historical top-12 chance for this career profile and situation. Compare it to the ADP-round rate in Deep Dive — early ADP is a high bar. Not a Pick Score, Recommendation Rank, VOR, or Draft Grade input.' }
   ];
   // Inline info icon: data-tip drives a CSS hover/focus bubble. tabindex makes it
@@ -7284,7 +7332,7 @@
       }
       // Projected playoff odds for this team - only once the draft is complete.
       // Wait for the standings engine so the tile never flashes a different %.
-      if (_draftComplete()){
+      if (_draftComplete() && recapShowsPlayoffOdds()){
         var _allT = gradeAllTeams(), _meT = null;
         for (var _ti = 0; _ti < _allT.length; _ti++){ if (_allT[_ti].isMe){ _meT = _allT[_ti]; break; } }
         if (_meT){
@@ -7340,14 +7388,29 @@
         + '</div>' + psStr + '</div>';
     }
 
-    // Starters + bench HTML
+    // Starters + bench HTML. Rookie drafts list class picks, not a fake lineup.
     var starterBenchHtml = '';
     if (hasSlot){
-      starterBenchHtml = '<div class="dr-sum-section">Starters</div>';
-      starters.forEach(function(s){ starterBenchHtml += sumRow(s.slot, s.p); });
-      starterBenchHtml += '<div class="dr-sum-section">Bench</div>';
-      if (bench.length){ bench.forEach(function(p){ starterBenchHtml += sumRow('BN', p); }); }
-      else { starterBenchHtml += sumRow('BN', null); }
+      if (isRookieDraft()){
+        starterBenchHtml = '<div class="dr-sum-section">Picks</div>';
+        var _rkRows = [];
+        Object.keys(state.picks || {}).forEach(function(k){
+          var _pn = parseInt(k, 10);
+          if (isMyPick(_pn) && state.picks[k]) _rkRows.push({ pn: _pn, p: state.picks[k] });
+        });
+        _rkRows.sort(function(a, b){ return a.pn - b.pn; });
+        if (_rkRows.length){
+          _rkRows.forEach(function(row){ starterBenchHtml += sumRow(row.p.position || 'PICK', row.p); });
+        } else {
+          starterBenchHtml += sumRow('PICK', null);
+        }
+      } else {
+        starterBenchHtml = '<div class="dr-sum-section">Starters</div>';
+        starters.forEach(function(s){ starterBenchHtml += sumRow(s.slot, s.p); });
+        starterBenchHtml += '<div class="dr-sum-section">Bench</div>';
+        if (bench.length){ bench.forEach(function(p){ starterBenchHtml += sumRow('BN', p); }); }
+        else { starterBenchHtml += sumRow('BN', null); }
+      }
     }
 
     var html = '<button class="dr-prev-close" id="drSumClose" aria-label="Close">&times;</button>'
@@ -7478,7 +7541,7 @@
       expectedByPos[pos].sort(function(a,b){ return b - a; });
     });
     var histOb = Core.remainingObligations
-      ? Core.remainingObligations(counts, rs, ctx.remainingMyPicks, !!state.sf, { tep: scoringCfg().tep })
+      ? Core.remainingObligations(counts, rs, ctx.remainingMyPicks, !!state.sf, { tep: scoringCfg().tep, draftType: state.type })
       : { required: 0, freePicks: ctx.remainingMyPicks, lineupHoles: 0 };
     var summary = Core.rankHistoricalAlternatives({
       selectedId: selected.id,
@@ -7755,7 +7818,7 @@
     var tileDefs = [
       { v: fmtAdpDelta(netValue), l: 'Net ADP value (capped)', cls: netValue >= 0 ? 'good' : 'bad' },
       { v: nValues, l: 'Values (fell 3+ to you)', cls: 'good' },
-      { v: nReaches, l: 'Reaches (early 5+, could wait)', cls: nReaches ? 'bad' : '' },
+      { v: nReaches, l: isRookieDraft() ? 'Reaches vs ADP' : 'Reaches (early 5+, could wait)', cls: nReaches ? 'bad' : '' },
       { v: g.avgPs != null ? g.avgPs : '—', l: 'Avg Board PS' }
     ];
     tileDefs.forEach(function(t){
@@ -7797,13 +7860,25 @@
           { k: 'roster construction', pct: (m.balance ? g.balance / m.balance : 0) }
         ];
     comps.forEach(function(c){ if (c.pct >= 0.72) strong.push(c.k); else if (c.pct <= 0.5) weak.push(c.k); });
-    var title = g.score >= 80 ? 'Elite draft' : g.score >= 70 ? 'Strong, well-rounded board'
-      : g.score >= 58 ? 'Solid with a soft spot' : g.score >= 45 ? 'Playable but uneven' : 'Rebuild from the wire';
+    var title;
+    if (state.type === 'rookie'){
+      title = g.score >= 80 ? 'Elite class' : g.score >= 70 ? 'Strong BPA / ADP class'
+        : g.score >= 58 ? 'Solid class with a reach' : g.score >= 45 ? 'Uneven class' : 'Reached off the board';
+    } else {
+      title = g.score >= 80 ? 'Elite draft' : g.score >= 70 ? 'Strong, well-rounded board'
+        : g.score >= 58 ? 'Solid with a soft spot' : g.score >= 45 ? 'Playable but uneven' : 'Rebuild from the wire';
+    }
     var parts = [];
     parts.push('You banked <b>' + fmtAdpDelta(netValue) + ' picks of ADP value</b>');
-    if (strong.length) parts.push('your <b>' + strong[0] + '</b> is a league strength');
-    if (weak.length) parts.push('but <b>' + weak[0] + '</b> is where you can lose');
-    else parts.push('with no glaring hole');
+    if (state.type === 'rookie'){
+      if (strong.length) parts.push('pick value is a league strength');
+      if (weak.length) parts.push('but several picks sat off the market');
+      else parts.push('with no glaring ADP hole');
+    } else {
+      if (strong.length) parts.push('your <b>' + strong[0] + '</b> is a league strength');
+      if (weak.length) parts.push('but <b>' + weak[0] + '</b> is where you can lose');
+      else parts.push('with no glaring hole');
+    }
     return { title: title, say: parts.join(', ') + '.' };
   }
 
@@ -7957,13 +8032,14 @@
 
   // ── Pick ledger (sortable) ───────────────────────────────────────────────────
   function ddLedgerHtml(picks){
+    var showHist = !isRookieDraft();
     return '<div class="dd-card">'
       + '<div class="dd-sec"><h4>Pick ledger</h4><p>Every selection with market delta, <b>Board PS</b> (Pick Score vs best available at that slot), tier, and verdict. When a better historical Decision Score alternative was available, the player row shows that opportunity-cost gap. Reach means you skipped a better remaining ADP and the player was likely to last to your next pick. Click a header to sort. Board PS is not live Recommendation Rank.</p></div>'
       + '<div class="dd-tablescroll"><table class="dd-ledger" id="drDdLedger">'
       + '<thead><tr>'
       + '<th data-k="pn" data-t="n">Pick</th><th data-k="name" data-t="s">Player</th><th data-k="pos" data-t="s">Pos</th>'
       + '<th data-k="adp" data-t="n" class="r">ADP</th><th data-k="diff" data-t="n" class="r dd-sorted">± ADP</th>'
-      + '<th data-k="hist" data-t="n" class="r" title="Historical top-12 chance for this career and situation. Compare to the ADP round.">Hist</th>'
+      + (showHist ? '<th data-k="hist" data-t="n" class="r" title="Historical top-12 chance for this career and situation. Compare to the ADP round.">Hist</th>' : '')
       + '<th data-k="ps" data-t="n" class="r" title="Board PS: Pick Score vs best available at that historical slot — not Recommendation Rank">Board PS</th><th data-k="tier" data-t="n" class="r">Tier</th>'
       + '<th data-k="vord" data-t="s">Verdict</th>'
       + '</tr></thead><tbody id="drDdLedgerBody"></tbody></table></div></div>';
@@ -7990,8 +8066,8 @@
         + '<td><span class="dd-posbadge" style="background:' + posColor(p.pos) + '">' + p.pos + '</span></td>'
         + '<td class="r num">' + (da != null ? Number(da).toFixed(1) : '—') + '</td>'
         + '<td class="r num"><span class="dd-diff ' + dcl + '">' + dtxt + '</span></td>'
-        + '<td class="r"><span class="dd-hist-pct' + (ddHist(p).h_vs_m === 'history_higher' ? ' is-strong' : '') + '">'
-        + (ddHistPct(p) != null ? ddHistPct(p) + '%' : '-') + '</span></td>'
+        + (isRookieDraft() ? '' : '<td class="r"><span class="dd-hist-pct' + (ddHist(p).h_vs_m === 'history_higher' ? ' is-strong' : '') + '">'
+        + (ddHistPct(p) != null ? ddHistPct(p) + '%' : '-') + '</span></td>')
         + '<td class="r">' + (p.ps != null ? '<span class="num" style="font-weight:700;color:' + psColor(p.ps) + '">' + p.ps + '</span>' : '<span style="color:var(--text-subtle,var(--text-muted))">—</span>') + '</td>'
         + '<td class="r"><span style="color:var(--text-muted);font-size:12px">' + (p.tier != null ? 'T' + p.tier : '—') + '</span></td>'
         + '<td><span class="dd-verd dd-v-' + vd.cls + '">' + vd.label + '</span></td>'
@@ -8029,35 +8105,45 @@
   // ── League board: grades + playoff odds for every team ───────────────────────
   function ddLeagueHtml(field, odds, n){
     if (!field.length) return '';
-    var pending = playoffOddsPending(field);
+    var showOdds = recapShowsPlayoffOdds();
+    var pending = showOdds && playoffOddsPending(field);
     var rows = field.map(function(t, i){
       var col = ddGradeCol(t.grade.score);
-      var od = (!pending && odds && odds[t.slot] != null) ? odds[t.slot] : null;
-      var odBar = pending
-        ? '<span class="dd-odds-pending">Calculating…</span>'
-        : (od != null
-          ? '<div class="dd-odds"><div class="dd-odds-track"><i style="width:' + Math.max(2, od) + '%;background:' + (od >= 60 ? '#22c55e' : od >= 35 ? '#38bdf8' : '#f59e0b') + '"></i></div><span class="num">' + _poFmt(od) + '%</span></div>'
-          : '<span style="color:var(--text-subtle,var(--text-muted));font-size:12px">—</span>');
+      var od = (showOdds && !pending && odds && odds[t.slot] != null) ? odds[t.slot] : null;
+      var odBar = !showOdds ? ''
+        : (pending
+          ? '<span class="dd-odds-pending">Calculating…</span>'
+          : (od != null
+            ? '<div class="dd-odds"><div class="dd-odds-track"><i style="width:' + Math.max(2, od) + '%;background:' + (od >= 60 ? '#22c55e' : od >= 35 ? '#38bdf8' : '#f59e0b') + '"></i></div><span class="num">' + _poFmt(od) + '%</span></div>'
+            : '<span style="color:var(--text-subtle,var(--text-muted));font-size:12px">—</span>'));
       return '<tr class="' + (t.isMe ? 'dd-me' : '') + '">'
         + '<td class="num" style="color:var(--text-muted)">' + (i + 1) + '</td>'
         + '<td class="dd-plname">' + esc(t.name) + (t.isMe ? ' <span class="dd-youtag">YOU</span>' : '') + '</td>'
         + '<td class="r"><span class="dd-gletter" style="color:' + col + '">' + gradeLetter(t.grade.score)
         + (t.grade.provisional ? '<span class="dr-grade-early-inline"> Early</span>' : '') + '</span></td>'
         + '<td class="r num" style="color:var(--text-muted)">' + Math.round(t.grade.score) + '</td>'
-        + '<td>' + odBar + '</td>'
+        + (showOdds ? '<td>' + odBar + '</td>' : '')
         + '</tr>';
     }).join('');
-    var note = !_draftComplete()
-      ? 'Live estimate — odds sharpen to the full simulation once the draft completes.'
-      : (pending
-        ? 'Running the standings simulation engine…'
-        : (state.mode === 'live'
-          ? 'Playoff odds from this league’s standings simulation (real settings and rosters).'
-          : 'Playoff odds for this mock — these drafted teams, this mock’s scoring and lineup.'));
+    var note;
+    if (!showOdds){
+      note = 'Grades for this rookie class. Playoff odds stay on live connected leagues, where they use existing rosters plus this class.';
+    } else if (!_draftComplete()){
+      note = 'Live estimate — odds sharpen to the full simulation once the draft completes.';
+    } else if (pending){
+      note = 'Running the standings simulation engine…';
+    } else if (isRookieDraft() && recapUsesLivePlayoffOdds()){
+      note = 'Playoff odds from this league’s standings (existing rosters plus this class).';
+    } else if (state.mode === 'live'){
+      note = 'Playoff odds from this league’s standings simulation (real settings and rosters).';
+    } else {
+      note = 'Playoff odds for this mock — these drafted teams, this mock’s scoring and lineup.';
+    }
     return '<div class="dd-card">'
-      + '<div class="dd-sec"><h4>League board &amp; playoff odds</h4><p>' + note + '</p></div>'
+      + '<div class="dd-sec"><h4>' + (showOdds ? 'League board &amp; playoff odds' : 'League board') + '</h4><p>' + note + '</p></div>'
       + '<div class="dd-tablescroll"><table class="dd-ledger dd-league">'
-      + '<thead><tr><th>#</th><th>Team</th><th class="r">Grade</th><th class="r">Score</th><th>Playoff odds</th></tr></thead>'
+      + '<thead><tr><th>#</th><th>Team</th><th class="r">Grade</th><th class="r">Score</th>'
+      + (showOdds ? '<th>Playoff odds</th>' : '') + '</tr></thead>'
       + '<tbody>' + rows + '</tbody></table></div></div>';
   }
 
@@ -8105,7 +8191,17 @@
         + '<div class="dd-cap-val num">' + mine + '%<small>lg ' + lg + '%</small></div></div>';
     }).join('');
 
+    var capHtml = '<div><div class="dd-sec"><h4>' + (isRookieDraft() ? 'Class capital' : 'Draft capital') + '</h4><p>'
+      + (isRookieDraft()
+        ? 'Share of this class spent per position vs the room average (tick).'
+        : 'Share of your value spent per position vs the league average (tick).')
+      + '</p></div>' + capBars + '</div>';
+    if (isRookieDraft()){
+      return '<div class="dd-card">' + capHtml + '</div>';
+    }
+
     // Starters vs league: per-starter positional rank + team strength ratio.
+    // Hidden for rookie drafts — 3 class picks are not a starting lineup.
     var mine = myPicksList().slice();
     var ol = optimalLineup(mine);
     var posIdx = ddPosRankIndex();
@@ -8135,7 +8231,7 @@
       : '';
 
     return '<div class="dd-card"><div class="dd-two">'
-      + '<div><div class="dd-sec"><h4>Draft capital</h4><p>Share of your value spent per position vs the league average (tick).</p></div>' + capBars + '</div>'
+      + capHtml
       + '<div><div class="dd-sec"><h4>Starters vs league</h4><p>'
       + (strength != null ? 'Your starters project <b>' + strength + '%</b> of a league-average lineup.' : 'Your starting lineup, ranked by position.')
       + '</p>' + benchSummary + '</div>' + starterRows + '</div>'
@@ -8295,8 +8391,12 @@
       // Only label Steal/Reach when the market delta clears the same thresholds
       // the ledger uses — otherwise a "Fair" pick was being sold as an edge.
       var stealSig = steal && window.DraftBoardCore && DraftBoardCore.significantSteal
-        ? DraftBoardCore.significantSteal({marketFall:deepDiveDiff(steal),adpUncertainty:steal.adpTolerance,boardPickScore:steal.ps})
-        : steal && deepDiveDiff(steal) >= 8;
+        ? DraftBoardCore.significantSteal({
+            marketFall: deepDiveDiff(steal), adpUncertainty: steal.adpTolerance,
+            boardPickScore: steal.ps, teams: state.teams, rounds: state.rounds,
+            draftType: state.type
+          })
+        : steal && deepDiveDiff(steal) >= (isRookieDraft() ? 4 : 8);
       if (steal && stealSig){
         parts.push(edge('Biggest steal', 'win', steal, 'Fell <b>' + Math.abs(deepDiveDiff(steal)).toFixed(1) + '</b> picks past ADP' + (steal.ps != null ? ' — a ' + steal.ps + ' pick score.' : '.')));
       }
@@ -8308,12 +8408,25 @@
         parts.push(edge('Biggest reach', 'bad', reach, '<b>' + Math.abs(deepDiveDiff(reach)).toFixed(1) + '</b> picks outside the expected market range'
           + (oppCopy ? '; ' + esc(oppCopy) + '.' : '.')));
       } else {
-        parts.push('<div class="dd-edge winb"><div class="dd-edge-k">No major reaches</div><div class="dd-edge-say">Your picks stayed within reasonable market ranges or close decision-quality bands; late swings used wider ADP uncertainty.</div></div>');
+        parts.push('<div class="dd-edge winb"><div class="dd-edge-k">No major reaches</div><div class="dd-edge-say">'
+          + (isRookieDraft()
+            ? 'Your picks stayed within reasonable market ranges.'
+            : 'Your picks stayed within reasonable market ranges or close decision-quality bands; late swings used wider ADP uncertainty.')
+          + '</div></div>');
       }
       if (parts.length) edges = '<div class="dd-edges">' + parts.join('') + '</div>';
     }
-    // Risk flags
+    // Risk flags. Rookie drafts skip starter-coverage / waiver language — a
+    // 3-pick class is always "thin" against a full lineup.
     var flags = [];
+    var counts = { QB:0, RB:0, WR:0, TE:0 };
+    picks.forEach(function(p){ if (counts[p.pos] != null) counts[p.pos]++; });
+    if (isRookieDraft()){
+      if (!state.sf && (counts.QB || 0) >= 2){
+        flags.push({ cls: 'warn', ttl: 'Two QBs in a 1QB class',
+          ds: 'A second quarterback in a 1QB rookie draft is usually depth, not a starter upgrade.' });
+      }
+    } else {
     if (!cfg.isBestBall && state.type === 'redraft'){
       var benchSeen = {}, byePlayers = picks.map(function(p){
         var starter = me.grade.starterIds && me.grade.starterIds[String(p.pl.id)];
@@ -8333,8 +8446,6 @@
     }
     // Thin position: rostered count at or below starter demand, including FLEX/SF
     // shares so a 2-RB + FLEX roster with only 2 RBs still flags as thin.
-    var counts = { QB:0, RB:0, WR:0, TE:0 };
-    picks.forEach(function(p){ if (counts[p.pos] != null) counts[p.pos]++; });
     var rs = (state && state.roster) || defaultRoster();
     var flex = rs.FLEX || 0, sf = rs.SF || 0;
     var starterNeed = {
@@ -8359,6 +8470,7 @@
           ds: 'Those historical profiles hit top-12 less often than typical players drafted in the same ADP band. Descriptive only, not a ranking input.' });
       }
     }
+    }
     var flagsHtml = flags.length ? '<div class="dd-flags">' + flags.map(function(f){
       return '<div class="dd-flag dd-flag-' + f.cls + '"><div class="dd-flag-ic">' + (f.cls === 'crit' ? '!' : '▾') + '</div>'
         + '<div><div class="dd-flag-ttl">' + f.ttl + '</div><div class="dd-flag-ds">' + esc(f.ds) + '</div></div></div>';
@@ -8366,7 +8478,10 @@
 
     if (!edges && !flagsHtml) return '';
     return '<div class="dd-card"><div class="dd-sec"><h4>Edges &amp; risks</h4>'
-      + '<p>The picks that define your team and the exposures to plan for.</p></div>' + edges + flagsHtml + '</div>';
+      + '<p>' + (isRookieDraft()
+        ? 'The picks that defined this class.'
+        : 'The picks that define your team and the exposures to plan for.')
+      + '</p></div>' + edges + flagsHtml + '</div>';
   }
 
   // ── Custom modal (replaces native confirm/alert) ─────────────────────────────
@@ -8671,10 +8786,18 @@
 
   function _buildShareCanvas(dark){
     var mine = myPicksList().slice();
-    var _olShare = optimalLineup(mine);
     var rows = [];
-    _olShare.starters.forEach(function(s){ rows.push({ slot: s.slot, p: s.p }); });
-    _olShare.bench.forEach(function(p){ rows.push({ slot: 'BN', p: p }); });
+    if (isRookieDraft()){
+      Object.keys(state.picks || {}).forEach(function(k){
+        var pn = parseInt(k, 10);
+        if (isMyPick(pn) && state.picks[k]) rows.push({ slot: state.picks[k].position || 'PICK', p: state.picks[k], pn: pn });
+      });
+      rows.sort(function(a, b){ return a.pn - b.pn; });
+    } else {
+      var _olShare = optimalLineup(mine);
+      _olShare.starters.forEach(function(s){ rows.push({ slot: s.slot, p: s.p }); });
+      _olShare.bench.forEach(function(p){ rows.push({ slot: 'BN', p: p }); });
+    }
     var clr = _readThemeVars(dark);
     var POSC = POS_COLOR;  // shared palette defined at top of the IIFE
     var W = 720, pad = 30, lineH = 44, headerH = 130;

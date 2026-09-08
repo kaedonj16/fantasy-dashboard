@@ -765,3 +765,37 @@ def test_deep_dive_includes_descriptive_historical_trends():
     assert groups["link"] == "/draft"
     assert "—" not in groups["text"]
     assert "–" not in groups["text"]
+
+
+def test_rookie_deep_dive_hides_startup_lineup_surfaces():
+    """Rookie recap is a class report, not a fake starting lineup."""
+    source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
+    assert "function recapShowsPlayoffOdds(){" in source
+    assert "function isRookieDraft(){" in source
+    assert "if (isRookieDraft()){\n      return '<div class=\"dd-card\">' + capHtml + '</div>';" in source
+    assert "Class capital" in source
+    assert "Share of this class spent per position vs the room average" in source
+    assert "The picks that defined this class." in source
+    assert "Two QBs in a 1QB class" in source
+    assert "Reaches vs ADP" in source
+    assert "Elite class" in source
+    assert "Reached off the board" in source
+    assert "var showHist = !isRookieDraft();" in source
+    assert "return !isRookieDraft() || recapUsesLivePlayoffOdds();" in source
+    assert "recapShowsPlayoffOdds()" in source
+    # Thin / waiver flags stay behind the non-rookie branch.
+    thin = source.split("Rookie drafts skip starter-coverage")[1].split("function drAlert")[0]
+    assert "Prioritize depth on the waiver wire." in thin
+    assert "if (isRookieDraft()){" in source.split("function ddEdgesHtml")[1]
+    assert "starterBenchHtml = '<div class=\"dr-sum-section\">Picks</div>';" in source
+    from dashboard_services.changelog import CHANGELOG
+    entry = next(
+        item for item in CHANGELOG
+        if "rookie" in item.get("text", "").lower()
+        and "deep dive" in item.get("text", "").lower()
+        and "class" in item.get("text", "").lower()
+    )
+    assert entry["tag"] == "fix"
+    assert entry["link"] == "/draft"
+    assert "—" not in entry["text"]
+    assert "–" not in entry["text"]
