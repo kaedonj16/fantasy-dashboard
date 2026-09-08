@@ -3420,7 +3420,11 @@ def _link_modal_html() -> str:
     <script>
     (function(){
       window.openLinkModal=function(){
-        var m=document.getElementById('linkModal'); if(!m)return; m.style.display='flex';
+        var m=document.getElementById('linkModal'); if(!m)return;
+        // More sheet (open) stacks above --z-modal; dismiss so the dialog isn't
+        // trapped behind the menu on phones (users had to swipe the sheet away).
+        if(window.brCloseMoreSheet) window.brCloseMoreSheet();
+        m.style.display='flex';
         // Select-league-then-login: everyone picks a league first; the Google
         // sign-in happens on Add (see linkAdd) if there's no account yet.
         var gate=document.getElementById('linkAccountGate'), body=document.getElementById('linkBody');

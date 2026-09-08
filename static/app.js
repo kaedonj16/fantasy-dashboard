@@ -739,6 +739,8 @@ window.showToast = (function () {
   window.brOpenSignin = function () {
     var m = modal();
     if (!m) return;
+    // Same stacking trap as Link a league: dismiss More sheet first on mobile.
+    if (window.brCloseMoreSheet) window.brCloseMoreSheet();
     prevFocus = document.activeElement;
     m.style.display = 'flex';
     m.setAttribute('aria-hidden', 'false');
@@ -936,6 +938,9 @@ window.brHaptic = function (pattern) {
       sheet._brPrevFocus = null;
     }
   }
+  // Public close so Account overlays (Link a league, etc.) can dismiss the sheet
+  // before opening — open sheet z-index beats --z-modal and would cover them.
+  window.brCloseMoreSheet = function () { setOpen(false); };
   function openSearch() {
     var ss = document.getElementById('brSearchScreen'); if (!ss) return;
     // On lite pages the nav-search wiring (initNavSearch) lives in the lazy

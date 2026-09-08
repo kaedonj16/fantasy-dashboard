@@ -349,6 +349,18 @@ def test_home_ticker_immediately_follows_top_nav(offline_client):
     assert html[nav_end:ticker_start].strip() == ""
 
 
+def test_account_overlays_dismiss_more_sheet_before_opening():
+    """Link a league / Sign in open at --z-modal, but the open More sheet sits at
+    z-notif-toast+2. Closing the sheet first keeps those dialogs tappable on phones.
+    """
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert "window.brCloseMoreSheet" in js
+    assert "brCloseMoreSheet" in js[js.index("window.brOpenSignin"):js.index("window.brCloseSignin")]
+    modal = (ROOT / "app.py").read_text(encoding="utf-8")
+    open_fn = modal[modal.index("window.openLinkModal=function"):modal.index("window.closeLinkModal=function")]
+    assert "brCloseMoreSheet" in open_fn
+
+
 def test_background_context_build_has_no_request_session_dependency():
     import app
 
