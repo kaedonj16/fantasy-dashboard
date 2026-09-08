@@ -13,7 +13,11 @@ from pathlib import Path
 import pytest
 
 from utils.matchup_schedule import last_finalized_week
-from utils.week_proj import league_player_week_projections
+from utils.week_proj import (
+    flatten_proj_by_week,
+    league_player_week_projections,
+    team_schedule_from_matchups,
+)
 
 _REPO = Path(__file__).parents[1]
 _APP_JS = (_REPO / "static" / "app.js").read_text(encoding="utf-8")
@@ -33,6 +37,12 @@ def test_api_sends_last_finalized_week_and_points_against():
     assert '"last_finalized_week": last_finalized_week' in body
     assert '"points_against": points_against' in body
     assert '"schedule_projections": schedule_projections' in body
+    assert '"schedule_weeks": schedule_weeks' in body
+    assert "team_schedule_from_matchups" in body
+    assert "flatten_proj_by_week" in body
+    assert "ensure_weekly_bits" in body
+    assert "build_projections_by_week" in body
+    assert "raw_scoring_settings" in body
     assert "league_player_week_projections" in body
     assert "fpts_against" in body
     # Viewed season only — not the graph fallback season.
@@ -49,6 +59,8 @@ def test_js_does_not_default_last_played_to_week_five():
     assert "(data && data.record) ? String(data.record)" in block
     assert "function _tmLineupForWeek" in block
     assert "data.schedule_projections" in block
+    assert "data.schedule_weeks" in block
+    assert "_tmSidesFromScheduleWeek" in block
     assert "_tmScoreLineup(myLineup, weekProj)" in block
     assert "_tmGenPts(pl.pos, rng)" not in block
 
@@ -84,6 +96,64 @@ def test_league_player_week_projections_uses_weekly_map_and_median_gap():
 
 def test_league_player_week_projections_empty_without_players():
     assert league_player_week_projections(2026, 17, [], load_week=lambda *_: {"x": 1}) == {}
+
+
+def test_flatten_proj_by_week_unwraps_matchup_bundles():
+    bundles = {
+        1: {"projections": {"a": 22.4, "b": 10.0}},
+        "2": {"a": 0.0, "b": 11.5},
+        "_available": True,
+    }
+    out = flatten_proj_by_week(bundles)
+    assert out["1"]["a"] == 22.4
+    assert out["1"]["b"] == 10.0
+    assert out["2"]["a"] == 0.0
+    assert out["2"]["b"] == 11.5
+    assert "_available" not in out
+
+
+def test_team_schedule_from_matchups_uses_starter_projections():
+    matchups = {
+        1: [{
+            "left": {
+                "roster_id": "7",
+                "name": "Caleb's Casting Couch",
+                "starters": [
+                    {"pid": "q", "name": "J. Hurts", "pos": "QB"},
+                    {"pid": "s", "name": "S. Barkley", "pos": "RB"},
+                ],
+            },
+            "right": {
+                "roster_id": "3",
+                "name": "The Audibles",
+                "starters": [
+                    {"pid": "q2", "name": "J. Allen", "pos": "QB"},
+                    {"pid": "s2", "name": "J. Gibbs", "pos": "RB"},
+                ],
+            },
+        }],
+    }
+    proj = {1: {"projections": {"q": 22.4, "s": 18.2, "q2": 24.1, "s2": 15.0}}}
+    out = team_schedule_from_matchups("7", matchups, proj, starter_slots=["QB", "RB"])
+    assert len(out) == 1
+    week = out[0]
+    assert week["week"] == 1
+    assert week["opp"]["name"] == "The Audibles"
+    assert week["opp"]["roster_id"] == "3"
+    assert week["me"]["starters"][0]["name"] == "J. Hurts"
+    assert week["me"]["starters"][0]["points"] == 22.4
+    assert week["me"]["starters"][1]["points"] == 18.2
+    assert week["me"]["total"] == 40.6
+    assert week["opp"]["total"] == 39.1
+    assert week["me"]["starters"][0]["label"] == "QB"
+
+
+def test_team_schedule_from_matchups_skips_weeks_without_this_roster():
+    matchups = {
+        1: [{"left": {"roster_id": "1", "name": "A", "starters": []},
+             "right": {"roster_id": "2", "name": "B", "starters": []}}],
+    }
+    assert team_schedule_from_matchups("7", matchups, {}) == []
 
 
 def _node_available() -> bool:
@@ -194,6 +264,56 @@ if (!htmlProj.includes('22.4') || !htmlProj.includes('18.2')) {
 }
 if (!htmlProj.includes('Proj 40.6')) {
   console.error('week total should be the sum of starter projections, got missing Proj 40.6');
+  process.exit(1);
+}
+const htmlMu = _tmBuildScheduleHtml({
+  team_name: 'Proj Team',
+  record: '0-0',
+  points_for: 0,
+  points_against: 0,
+  last_finalized_week: 0,
+  starter_slots: ['QB', 'RB'],
+  roster: [{name:'Wrong QB', position:'QB', player_id:'wrong'}],
+  schedule_projections: {1: {q: 99, s: 99, wrong: 50}},
+  schedule_weeks: [{
+    week: 1,
+    me: {
+      roster_id: '7',
+      name: 'Proj Team',
+      total: 40.6,
+      starters: [
+        {id:'q', name:'J. Hurts', pos:'QB', label:'QB', points:22.4},
+        {id:'s', name:'S. Barkley', pos:'RB', label:'RB', points:18.2},
+      ],
+    },
+    opp: {
+      roster_id: '3',
+      name: 'The Audibles',
+      total: 19.5,
+      starters: [
+        {id:'q2', name:'J. Allen', pos:'QB', label:'QB', points:19.5},
+      ],
+    },
+  }],
+});
+if (!htmlMu.includes('The Audibles')) {
+  console.error('schedule_weeks opponent must be used instead of a shuffled name');
+  process.exit(1);
+}
+if (!htmlMu.includes('J. Hurts') || !htmlMu.includes('22.4') || !htmlMu.includes('S. Barkley')) {
+  console.error('schedule_weeks starters and matchups-page points must render');
+  process.exit(1);
+}
+if (htmlMu.includes('Wrong QB')) {
+  console.error('must not greedy-fill from roster when schedule_weeks is present');
+  process.exit(1);
+}
+if (!htmlMu.includes('Proj 40.6')) {
+  console.error('week total must come from matchup starter projections');
+  process.exit(1);
+}
+if (htmlMu.includes('Proj 50.0') || htmlMu.includes('>99.0<') || htmlMu.includes('99.0')) {
+  console.error('must not score from leftover schedule_projections when schedule_weeks is present');
   process.exit(1);
 }
 console.log('ok');

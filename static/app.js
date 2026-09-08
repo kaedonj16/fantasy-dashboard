@@ -17658,10 +17658,11 @@ function _tmBuildAgesHtml(data) {
 }
 
 // ── Schedule tab ─────────────────────────────────────────────────────────────
-// Pairings are still a placeholder rotation of league opponents. Lineup rows
-// and projected totals use Sleeper weekly projections (schedule_projections),
-// never per-position RNG. Completed vs upcoming is last_finalized_week.
-// Record / PF / PA tiles prefer the league's real stats.
+// Prefer schedule_weeks from the API: the same weekly matchup previews and
+// proj_by_week numbers as the matchups page. Fallback is a placeholder
+// opponent rotation scored from schedule_projections (never per-position RNG).
+// Completed vs upcoming is last_finalized_week. Record / PF / PA tiles
+// prefer the league's real stats.
 function _tmSeededRng(seed) {
   // mulberry32 — small, stable, good enough for placeholder data.
   let a = seed >>> 0;
@@ -17890,6 +17891,55 @@ function _tmScheduleTileNumber(raw, fallback) {
   return fallback;
 }
 
+function _tmBlankStarter(label) {
+  const lab = label || '—';
+  return { label: lab, pos: lab === '—' ? 'FLEX' : lab, name: '—', id: null, points: 0 };
+}
+
+function _tmStarterFromSchedule(raw, fallbackLabel) {
+  if (!raw) return _tmBlankStarter(fallbackLabel);
+  const label = raw.label || raw.pos || fallbackLabel || '—';
+  const pos = raw.pos || label || 'FLEX';
+  const id = (raw.id != null && raw.id !== '' && String(raw.id) !== '0')
+    ? raw.id
+    : (raw.pid != null && raw.pid !== '' && String(raw.pid) !== '0' ? raw.pid : null);
+  return {
+    label: label,
+    pos: pos,
+    name: raw.name || '—',
+    id: id,
+    points: Number(raw.points) || 0,
+  };
+}
+
+function _tmSidesFromScheduleWeek(sw, slots) {
+  const meSide = (sw && sw.me) || {};
+  const oppSide = (sw && sw.opp) || {};
+  const n = Math.max(
+    (meSide.starters || []).length,
+    (oppSide.starters || []).length,
+    (slots || []).length
+  );
+  const myStarters = [];
+  const oppStarters = [];
+  for (let i = 0; i < n; i++) {
+    const lab = (slots && slots[i] && slots[i].label) || '—';
+    myStarters.push(_tmStarterFromSchedule((meSide.starters || [])[i], lab));
+    oppStarters.push(_tmStarterFromSchedule((oppSide.starters || [])[i], lab));
+  }
+  const sumPts = (arr) => Math.round(arr.reduce((a, s) => a + (Number(s.points) || 0), 0) * 10) / 10;
+  const meTotal = (meSide.total != null && meSide.total !== '') ? Number(meSide.total) : sumPts(myStarters);
+  const oppTotal = (oppSide.total != null && oppSide.total !== '') ? Number(oppSide.total) : sumPts(oppStarters);
+  return {
+    opp: {
+      name: oppSide.name || 'BYE',
+      roster_id: oppSide.roster_id != null ? oppSide.roster_id : null,
+    },
+    me: { starters: myStarters, total: Math.round((Number(meTotal) || 0) * 10) / 10 },
+    them: { starters: oppStarters, total: Math.round((Number(oppTotal) || 0) * 10) / 10 },
+  };
+}
+
 function _tmBuildScheduleHtml(data) {
   const OPP_POOL = [
     'Gridiron Gurus', 'Sunday Scaries', 'The Audibles', 'Waiver Wire Kings',
@@ -17934,6 +17984,12 @@ function _tmBuildScheduleHtml(data) {
   const oppOrder = useReal ? shuffle(realOpps) : shuffle(OPP_POOL);
 
   const slots = _tmResolveSlots(data && data.starter_slots);
+  const schedWeeks = (data && Array.isArray(data.schedule_weeks)) ? data.schedule_weeks : [];
+  const schedByWeek = {};
+  schedWeeks.forEach(w => {
+    if (w && w.week != null && !isNaN(Number(w.week))) schedByWeek[Number(w.week)] = w;
+  });
+  const useMatchups = schedWeeks.length > 0;
 
   const badge = (p) => `<span class="pos-badge ${_tmBadgeClass(p.pos)}">${p.pos}</span>`;
   // A player name: clickable (opens the player modal) when we have a real id.
@@ -17965,18 +18021,26 @@ function _tmBuildScheduleHtml(data) {
   // Render one week's row + expandable card. countRecord=false for playoff games
   // so they don't alter the regular-season record tiles.
   const buildRow = (wk, idx, countRecord) => {
-    const raw = oppOrder[idx % oppOrder.length];
-    const opp = useReal
-      ? { name: raw.team_name || ('Team ' + raw.roster_id), roster_id: raw.roster_id, players: raw.players }
-      : { name: raw, roster_id: null, players: null };
+    let opp, me, them;
+    if (useMatchups) {
+      const sides = _tmSidesFromScheduleWeek(schedByWeek[wk.week], slots);
+      opp = sides.opp;
+      me = sides.me;
+      them = sides.them;
+    } else {
+      const raw = oppOrder[idx % oppOrder.length];
+      opp = useReal
+        ? { name: raw.team_name || ('Team ' + raw.roster_id), roster_id: raw.roster_id, players: raw.players }
+        : { name: raw, roster_id: null, players: null };
+      const weekProj = projFor(wk.week);
+      const myLineup = _tmLineupForWeek((data && data.roster) || [], 'position', slots, weekProj);
+      me = _tmScoreLineup(myLineup, weekProj);
+      const oppLineup = useReal
+        ? _tmLineupForWeek(opp.players || [], 'pos', slots, weekProj)
+        : _tmLineupForWeek([], 'pos', slots, weekProj);
+      them = _tmScoreLineup(oppLineup, weekProj);
+    }
     const played = wk.week <= lastPlayed;
-    const weekProj = projFor(wk.week);
-    const myLineup = _tmLineupForWeek((data && data.roster) || [], 'position', slots, weekProj);
-    const me = _tmScoreLineup(myLineup, weekProj);
-    const oppLineup = useReal
-      ? _tmLineupForWeek(opp.players || [], 'pos', slots, weekProj)
-      : _tmLineupForWeek([], 'pos', slots, weekProj);
-    const them = _tmScoreLineup(oppLineup, weekProj);
     const myScore = me.total, oppScore = them.total;
 
     let res = null;
@@ -18003,7 +18067,11 @@ function _tmBuildScheduleHtml(data) {
     const sumScore = myScore + oppScore;
     const myPct = sumScore > 0 ? Math.round((myScore / sumScore) * 100) : 50;
     const centerTag = played ? 'FINAL' : (wk.playoff ? 'PLAYOFFS' : 'PROJECTED');
-    const hRows = me.starters.map((s, i) => hRow(s, them.starters[i], slots[i].label)).join('');
+    const hRows = me.starters.map((s, i) => {
+      const theirs = them.starters[i] || _tmBlankStarter(s.label);
+      const slotLabel = s.label || (slots[i] && slots[i].label) || s.pos || '—';
+      return hRow(s, theirs, slotLabel);
+    }).join('');
 
     const detail = `
       <div class="tm-sched-detail" id="${mid}" hidden>

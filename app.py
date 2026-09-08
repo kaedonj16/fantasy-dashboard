@@ -21504,10 +21504,10 @@ def api_team_details(roster_id: str):
             if str(s).strip().upper() not in _bench_slots
         ]
 
-        # Real opponents for the schedule tab: every OTHER team in the league,
-        # with its real roster_id, name, and player list (id/name/position).
-        # Pairings are still a placeholder rotation; weekly points come from
-        # schedule_projections so the expanded rows match actual projections.
+        # Real opponents for the schedule-tab fallback (when matchup previews
+        # are missing): every OTHER team in the league, with roster_id, name,
+        # and player list. Pairings in that fallback are still a rotation;
+        # the primary path is schedule_weeks from the matchups page.
         def _sched_player_list(r):
             out = []
             starter_set = {str(s) for s in (r.get("starters") or []) if s and str(s) != "0"}
@@ -21547,6 +21547,7 @@ def api_team_details(roster_id: str):
         # never the prior-season graph fallback. Empty / unfinalized → 0 so
         # the tab doesn't invent a 0-5 record before kickoff.
         last_finalized_week = 0
+        _view_ctx = None
         try:
             from utils.matchup_schedule import last_finalized_week as _lfw
             _view_ctx = get_league_ctx_from_cache(platform, league_id, season)
@@ -21555,23 +21556,47 @@ def api_team_details(roster_id: str):
             logger.debug("[api_team_details] last_finalized_week skipped", exc_info=True)
             last_finalized_week = 0
 
-        # Weekly fantasy projections for every player on a league roster, so the
-        # schedule-tab matchup rows show Sleeper numbers (bye = 0) instead of
-        # the old per-position RNG placeholders.
+        # Same weekly matchups + proj_by_week the matchups page uses (ensure_weekly_bits
+        # / build_projections_by_week with raw_scoring_settings). Disk-only
+        # league_player_week_projections is a last-resort fallback.
         schedule_projections = {}
+        schedule_weeks = []
         try:
-            from utils.week_proj import league_player_week_projections as _lpwp
-            _league_pids = []
-            for _r in rosters:
-                _league_pids.extend(str(p) for p in (_r.get("players") or []) if p)
-            schedule_projections = _lpwp(
-                season, 17, _league_pids,
-                scoring_settings=(league or {}).get("scoring_settings"),
-                pos_by_pid=players_index,
+            from utils.week_proj import (
+                flatten_proj_by_week as _fpbw,
+                league_player_week_projections as _lpwp,
+                team_schedule_from_matchups as _tsfm,
             )
+            if _view_ctx is None:
+                _view_ctx = get_league_ctx_from_cache(platform, league_id, season)
+            if _view_ctx:
+                ensure_weekly_bits(_view_ctx)
+                _proj_week = _view_ctx.get("proj_by_week") or {}
+                if not _proj_week:
+                    _proj_week = build_projections_by_week(
+                        season, 17, _view_ctx.get("raw_scoring_settings"),
+                    )
+                    _view_ctx["proj_by_week"] = _proj_week
+                schedule_weeks = _tsfm(
+                    roster_id,
+                    _view_ctx.get("matchups_by_week") or {},
+                    _proj_week,
+                    starter_slots=starter_slots,
+                )
+                schedule_projections = _fpbw(_proj_week)
+            if not schedule_projections:
+                _league_pids = []
+                for _r in rosters:
+                    _league_pids.extend(str(p) for p in (_r.get("players") or []) if p)
+                schedule_projections = _lpwp(
+                    season, 17, _league_pids,
+                    scoring_settings=(league or {}).get("scoring_settings"),
+                    pos_by_pid=players_index,
+                )
         except Exception:
             logger.debug("[api_team_details] schedule_projections skipped", exc_info=True)
-            schedule_projections = {}
+            schedule_projections = schedule_projections or {}
+            schedule_weeks = schedule_weeks or []
 
         response = {
             "roster_id": roster_id,
@@ -21581,6 +21606,7 @@ def api_team_details(roster_id: str):
             "starter_slots": starter_slots,
             "schedule_opponents": schedule_opponents,
             "schedule_projections": schedule_projections,
+            "schedule_weeks": schedule_weeks,
             "record": record_str,
             "wins": wins,
             "losses": losses,
