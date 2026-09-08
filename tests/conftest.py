@@ -91,6 +91,9 @@ def offline_client(monkeypatch):
     import app
     # Skip the per-request daily-build hook (it calls get_nfl_state + heavy work).
     monkeypatch.setattr(app, "daily_completed", _dt.date.today(), raising=False)
+    # Tour/offline pages pin NFL state to offseason; don't let the on-disk
+    # Week 1 schedule flip them to in-season when tests run during the opener.
+    monkeypatch.setattr(app, "_regular_season_week_with_games", lambda *a, **k: None)
     app.app.config["TESTING"] = True
     with app.app.test_client() as client:
         yield client

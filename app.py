@@ -2495,6 +2495,97 @@ def _games_scheduled_today(season, week) -> bool:
         return False
 
 
+def _parse_schedule_game_date(value) -> Optional[date]:
+    """Parse Tank01 ``gameDate`` (YYYYMMDD, int or str) to a date."""
+    raw = str(value or "").strip()
+    if len(raw) < 8 or not raw[:8].isdigit():
+        return None
+    try:
+        return date(int(raw[0:4]), int(raw[4:6]), int(raw[6:8]))
+    except ValueError:
+        return None
+
+
+def _nfl_week_window(today: Optional[date] = None) -> Tuple[date, date]:
+    """Tue–Mon fantasy week containing ``today`` (America/New_York)."""
+    d = today or datetime.now(EASTERN).date()
+    days_since_tue = (d.weekday() - 1) % 7
+    start = d - timedelta(days=days_since_tue)
+    return start, start + timedelta(days=6)
+
+
+def _week_schedule_has_game_in_window(season, week, start: date, end: date) -> bool:
+    try:
+        sched = load_week_schedule(int(season), int(week)) or []
+    except Exception as _e:
+        logger.info(f"[games-this-week] schedule load failed s{season} w{week}: {_e}")
+        return False
+    for g in sched:
+        if not isinstance(g, dict):
+            continue
+        gd = _parse_schedule_game_date(g.get("gameDate"))
+        if gd and start <= gd <= end:
+            return True
+    return False
+
+
+def _regular_season_week_with_games(season, hint_week=None, *, today=None) -> Optional[int]:
+    """Return the regular-season week that has a game in the current NFL week.
+
+    Sleeper often stays on season_type ``pre``/``off`` (and sometimes week=0)
+    until Thursday kickoff. If this Tue–Mon window already has a regular-season
+    game — including one tomorrow — treat that week as the live slate.
+    """
+    try:
+        season_n = int(season or 0)
+    except (TypeError, ValueError):
+        return None
+    if season_n <= 0:
+        return None
+    try:
+        hint = int(hint_week or 0)
+    except (TypeError, ValueError):
+        hint = 0
+    start, end = _nfl_week_window(today)
+    weeks = []
+    if 1 <= hint <= 18:
+        weeks.append(hint)
+    # During preseason Sleeper's week is a preseason number; always also check
+    # regular-season week 1 so the opener is visible the week it is scheduled.
+    if 1 not in weeks:
+        weeks.append(1)
+    for w in weeks:
+        if _week_schedule_has_game_in_window(season_n, w, start, end):
+            return w
+    return None
+
+
+def _games_scheduled_this_week(season, week=None, *, today=None) -> bool:
+    """True if a regular-season game falls in the current Tue–Mon NFL week."""
+    return _regular_season_week_with_games(season, week, today=today) is not None
+
+
+def _nfl_offseason_mode(nfl_state, season) -> bool:
+    """Offseason hub/nav unless this league season is the live NFL year *and*
+    Sleeper still says off/pre *and* there is no regular-season game this week.
+    """
+    nfl = nfl_state or {}
+    st = (nfl.get("season_type") or "").lower()
+    try:
+        nfl_season = int(nfl.get("season") or datetime.now().year)
+        league_season = int(season or 0)
+    except (TypeError, ValueError):
+        return False
+    if league_season != nfl_season:
+        return False
+    if st not in ("off", "pre"):
+        return False
+    week = nfl.get("week") or nfl.get("display_week") or 0
+    if _regular_season_week_with_games(nfl_season, week):
+        return False
+    return True
+
+
 # ── Inline nav icons (Lucide outlines) ────────────────────────────────────────
 # One icon system for the chrome instead of mixed PNGs: consistent 1.75px
 # strokes, currentColor so they follow the button's theme color, no image
@@ -2732,9 +2823,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         active_norm = _tab
 
     nfl_state = get_nfl_state() or {}
-    offseason = ((nfl_state.get("season_type") or "").lower() in ("off", "pre")) and (
-            int(nfl_state.get("season") or datetime.now().year) == int(season or 0)
-    )
+    offseason = _nfl_offseason_mode(nfl_state, season)
     draft_ended = has_draft_ended(league_id, platform, season)
 
     def _href(ep, suffix):
@@ -3838,9 +3927,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         active = _tab_param
 
     nfl_state = get_nfl_state() or {}
-    offseason_mode = ((nfl_state.get("season_type") or "").lower() in ("off", "pre")) and (
-            int(nfl_state.get("season") or datetime.now().year) == int(season or 0)
-    )
+    offseason_mode = _nfl_offseason_mode(nfl_state, season)
     # Exposed for client code (e.g. the player-modal Redzone tab, which hides in
     # the offseason). Uses the same condition that gates the Redzone nav item.
     season_active_flag = f"<script>window.__seasonActive={'false' if offseason_mode else 'true'};</script>"
@@ -5187,8 +5274,7 @@ def render_page(
     if league_id and platform and season:
         try:
             _nfl_st = get_nfl_state() or {}
-            _off = ((str(_nfl_st.get("season_type") or "").lower() in ("off", "pre"))
-                    and int(_nfl_st.get("season") or datetime.now().year) == int(season or 0))
+            _off = _nfl_offseason_mode(_nfl_st, season)
             _chrome_meta = _league_chrome_meta(platform, league_id, season, _off)
             if _chrome_meta.get("sf"):
                 _league_type = "sf"
@@ -5493,9 +5579,21 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     # Offseason mode should only apply to the current upcoming season,
     # not to old historical seasons.
     # Preseason ("pre", ~August) has no regular-season games either, so treat it
-    # like the offseason — show the offseason hub, not an empty in-season view
-    # (which also has no finalized data to render).
-    offseason_mode = (season == current_season and season_type in ("off", "pre"))
+    # like the offseason — unless a regular-season game is scheduled this NFL
+    # week. Sleeper often stays on "pre"/"off" until Thursday kickoff; once
+    # there is a game this week (even tomorrow), show in-season standings,
+    # weekly, and the dashboard.
+    scheduled_week = _regular_season_week_with_games(
+        current_season, current_week or current.get("display_week")
+    )
+    offseason_mode = (
+        season == current_season
+        and season_type in ("off", "pre")
+        and not scheduled_week
+    )
+    if scheduled_week and season_type in ("off", "pre"):
+        current_week = scheduled_week
+        current_leg = max(current_leg, scheduled_week)
     mode = "offseason" if offseason_mode else "in_season"
 
     if offseason_mode:
@@ -8300,6 +8398,23 @@ def _games_played_max(team_stats) -> int:
         return int((_c("Wins") + _c("Losses") + _c("Ties")).max())
     except Exception:
         return 0
+
+
+def _use_offseason_standings(ctx) -> bool:
+    """Value-based (offseason) standings until a regular-season game is on
+    this week's slate. 0-0 records after Sleeper flips to ``regular`` still
+    hide behind that board if the opener is not this week yet."""
+    if _games_scheduled_this_week(ctx.get("season"), ctx.get("current_week")):
+        return False
+    if ctx.get("offseason_mode"):
+        return True
+    try:
+        ts = ctx.get("team_stats")
+        if ts is None or getattr(ts, "empty", True):
+            return True
+        return _games_played_max(ts) == 0
+    except Exception:
+        return True
 
 
 def _render_preseason_tiles(team_stats, power_rankings, roster_values, owner_to_rid) -> str:
@@ -15345,7 +15460,11 @@ def api_refresh_page():
                 body_html = build_dashboard_body(ctx)
 
         elif page == "standings":
-            body_html = _build_offseason_standings_body(ctx) if ctx.get("offseason_mode") else build_standings_body(ctx)
+            body_html = (
+                _build_offseason_standings_body(ctx)
+                if _use_offseason_standings(ctx)
+                else build_standings_body(ctx)
+            )
 
         elif page == "weekly":
             if ctx.get("offseason_mode"):
