@@ -17882,9 +17882,12 @@ function _tmBuildScheduleHtml(data) {
   const avatar = (name, idx, url) => {
     const color = AVATAR_COLORS[idx % AVATAR_COLORS.length];
     const letter = _tmEsc((name || '?').charAt(0));
-    const fallback = `<span class="tm-sched-avatar"${url ? ' hidden' : ''} style="background:${color}">${letter}</span>`;
+    const fallbackStyle = url
+      ? `display:none;background:${color}`
+      : `background:${color}`;
+    const fallback = `<span class="tm-sched-avatar" style="${fallbackStyle}">${letter}</span>`;
     if (!url) return fallback;
-    return `<img class="tm-sched-avatar tm-sched-avatar-img" src="${_tmEsc(url)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none';var n=this.nextElementSibling;if(n)n.hidden=false;">` + fallback;
+    return `<img class="tm-sched-avatar tm-sched-avatar-img" src="${_tmEsc(url)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none';var n=this.nextElementSibling;if(n)n.style.display='flex';">` + fallback;
   };
 
   // Opponents: real league teams when the API sent them (so teams and players

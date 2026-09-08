@@ -21064,10 +21064,11 @@ img, svg, canvas {
 /* ── Ages / Schedule summary tiles ─────────────────────────────────────── */
 /* Header .tm-stat-tile is a fixed 96px chip. Reusing it in a 1fr grid left
    96px boxes stranded in wide tracks (big gaps, tiny values). A connected
-   strip lets the tiles share the row without looking spread out. */
+   one-row strip shares the width without wrapping the last tile onto its
+   own line or leaving empty gaps between chips. */
 .tm-ages-tiles {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 1px;
     margin-bottom: 20px;
     background: var(--border);
@@ -21077,18 +21078,29 @@ img, svg, canvas {
 }
 
 .tm-ages-tiles .tm-stat-tile {
-    flex: 1 1 104px;
+    flex: 1 1 0;
     width: auto;
     min-width: 0;
     background: var(--bg-alt);
     border: none;
     border-radius: 0;
-    padding: 12px 8px;
+    padding: 12px 6px;
     text-align: center;
 }
 
 .tm-ages-tiles .tm-stat-tile-label {
     line-height: 1.25;
+    overflow-wrap: break-word;
+}
+
+@media (max-width: 480px) {
+    .tm-ages-tiles {
+        flex-wrap: wrap;
+    }
+
+    .tm-ages-tiles .tm-stat-tile {
+        flex: 1 1 calc(50% - 1px);
+    }
 }
 
 .tm-age-bucket {
@@ -21262,6 +21274,11 @@ img.tm-sched-avatar {
     background: var(--bg-alt);
     border: 1px solid var(--border);
     color: transparent;
+}
+
+/* Author `display: inline-flex` would otherwise keep [hidden] fallbacks visible. */
+.tm-sched-avatar[hidden] {
+    display: none !important;
 }
 
 .tm-sched-opp-name {
