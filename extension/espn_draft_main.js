@@ -184,6 +184,94 @@
     }
   }
 
+  function teamIdFromUrl() {
+    try {
+      const u = new URL(location.href);
+      const t = (u.searchParams.get("teamId") || u.searchParams.get("teamid") || "").trim();
+      if (/^\d+$/.test(t) && Number(t) >= 1) return t;
+      const hm = u.hash.match(/[?&]teamId=(\d+)/i);
+      if (hm && Number(hm[1]) >= 1) return hm[1];
+      return "";
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function activeLeagueId() {
+    return String(leagueFromUrl().leagueId || "");
+  }
+
+  // Pull a league id out of a container-shaped object, if it clearly is one.
+  // A bare `id` is only trusted as a league id when the object also carries
+  // league-shaped siblings, so a player/team/pick `id` is never mistaken for it.
+  function leagueIdOf(obj) {
+    if (!isTraversableObject(obj)) return "";
+    const direct = safeProp(obj, "leagueId") ?? safeProp(obj, "league_id");
+    if (direct != null && direct !== "") return String(direct);
+    const id = safeProp(obj, "id");
+    if (id != null && id !== "") {
+      const looksLeague =
+        safeProp(obj, "draftDetail") != null ||
+        safeProp(obj, "scoringPeriodId") != null ||
+        (safeProp(obj, "settings") != null && Array.isArray(safeProp(obj, "teams"))) ||
+        (Array.isArray(safeProp(obj, "teams")) && safeProp(obj, "members") != null);
+      if (looksLeague) return String(id);
+    }
+    return "";
+  }
+
+  // Block pick/draftDetail data that positively belongs to a *different*
+  // league. Unknown (no league id) is allowed: nested nodes and socket
+  // deltas carry no id and belong to the draft currently open.
+  function belongsToActiveLeague(obj) {
+    const active = activeLeagueId();
+    if (!active) return true;
+    const lid = leagueIdOf(obj);
+    if (!lid) return true;
+    return lid === active;
+  }
+
+  // Settings/teams/user detection is stricter: in a real league (URL has a
+  // leagueId) only accept metadata from an object that positively matches
+  // that league. This stops another league's settings object sitting in ESPN
+  // page memory from clobbering the team count, roster, scoring, or user slot.
+  // Mock drafts have no leagueId, so detection stays permissive there.
+  function leagueDetectionAllowed(obj) {
+    const active = activeLeagueId();
+    if (!active) return true;
+    return leagueIdOf(obj) === active;
+  }
+
+  let scopeLeagueId = "";
+  function resetDetectedLeagueMeta() {
+    detectedUserTeamId = null;
+    detectedSlot = 0;
+    detectedTeams = 0;
+    detectedRounds = 0;
+    detectedRoster = null;
+    detectedSf = false;
+    detectedPpr = 1;
+    detectedTep = 0;
+    detectedPassTd = 4;
+    lastClockSeconds = null;
+    Object.keys(detectedTeamNamesById).forEach(function (k) { delete detectedTeamNamesById[k]; });
+    Object.keys(detectedTeamSlotsById).forEach(function (k) { delete detectedTeamSlotsById[k]; });
+  }
+
+  // Reset accumulated picks + detected metadata when the open league changes
+  // (SPA navigation between drafts), so one draft's picks never bleed into
+  // another's. Player metadata is league-agnostic and is left intact.
+  function ensureLeagueScope() {
+    const active = activeLeagueId();
+    if (!active || active === scopeLeagueId) return;
+    scopeLeagueId = active;
+    pickAccumulator.clear();
+    pickSources.clear();
+    bestOverallSeen = 0;
+    lastFingerprint = "";
+    resetDetectedLeagueMeta();
+  }
+
   function playerIdSelected(pid) {
     if (pid == null) return false;
     const text = String(pid).trim();
@@ -512,6 +600,7 @@
 
   function rememberEspnUser(obj) {
     if (!isTraversableObject(obj)) return;
+    if (!leagueDetectionAllowed(obj)) return;
     rememberEspnSettings(obj);
     const uid =
       safeProp(obj, "userTeamId") ??
@@ -562,6 +651,13 @@
   }
 
   function computeMySlot(picks) {
+    // The draft URL names the user's own team for this league (teamId=…).
+    // It is the most reliable anchor, so seed it when host detection has not
+    // yet flagged the user's team.
+    if (detectedUserTeamId == null || detectedUserTeamId === "") {
+      const fromUrl = teamIdFromUrl();
+      if (fromUrl) detectedUserTeamId = fromUrl;
+    }
     if (detectedSlot >= 1) return detectedSlot;
     if (detectedUserTeamId == null || detectedUserTeamId === "") return 0;
     const want = String(detectedUserTeamId);
@@ -751,6 +847,8 @@
     if (depth == null) depth = 0;
     if (!best) best = { detail: null, count: 0 };
     if (depth > 16) return best;
+    // Never let another league's draftDetail win the "most picks" contest.
+    if (!belongsToActiveLeague(data)) return best;
     if (Array.isArray(data)) {
       for (let i = 0; i < Math.min(data.length, 32); i++) {
         best = findBestDraftDetail(data[i], depth + 1, best);
@@ -791,6 +889,10 @@
 
   function inspectJson(data, source) {
     if (!isTraversableObject(data)) return;
+    ensureLeagueScope();
+    // Drop a response that positively belongs to another league (e.g. a
+    // background call ESPN made for a different league in the same tab).
+    if (!belongsToActiveLeague(data)) return;
     rememberEspnUser(data);
     const players = safeProp(data, "players");
     if (Array.isArray(players)) {
@@ -828,9 +930,10 @@
       if (seen.has(cur)) continue;
       seen.add(cur);
       rememberEspnUser(cur);
-      const draftDetail = safeProp(cur, "draftDetail");
+      const curInLeague = belongsToActiveLeague(cur);
+      const draftDetail = curInLeague ? safeProp(cur, "draftDetail") : null;
       if (draftDetail && maybeFromDraftDetail(draftDetail, "react")) found = true;
-      const picks = safeProp(cur, "picks");
+      const picks = curInLeague ? safeProp(cur, "picks") : null;
       if (Array.isArray(picks) && picks.some(isPickRow)) {
         emit(
           picks.filter(isPickRow),
@@ -861,7 +964,7 @@
       if (props) next.push(props);
       for (const k of safeKeys(cur)) {
         if (k === "draftDetail") {
-          const dd = safeProp(cur, k);
+          const dd = curInLeague ? safeProp(cur, k) : null;
           if (dd && maybeFromDraftDetail(dd, "react-key")) found = true;
         }
         const v = safeProp(cur, k);
@@ -1113,6 +1216,7 @@
 
   function scanAll() {
     if (!isEspnDraftRoom() || !document.body) return;
+    ensureLeagueScope();
     scrapeDomPicks();
     scanReact();
   }
@@ -1164,6 +1268,7 @@
 
   function pollEspnApi() {
     if (apiPollInFlight || !isEspnDraftRoom()) return;
+    ensureLeagueScope();
     const ids = leagueFromUrl();
     if (!ids.leagueId) return;
     apiPollInFlight = true;
