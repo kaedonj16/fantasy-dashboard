@@ -27068,7 +27068,11 @@ tr.team-clickable {
 }
 
 @media (max-width: 600px) {
-    .compare-pickers {
+    /* Stack every slot in one column. The .has-third variant needs its own
+       (higher-specificity) override or it keeps the 5-column desktop track and
+       squeezes each picker — and its results dropdown — down to ~1/3 width. */
+    .compare-pickers,
+    .compare-pickers.has-third {
         grid-template-columns: 1fr;
     }
 
