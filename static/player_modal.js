@@ -2117,12 +2117,17 @@ function _pmBuildTeamHTML(data) {
   const ol = data.oline;
   let olineRows = '';
   if (ol) {
+    // These grades reflect realized pass-pro / run-block *outcomes* from the
+    // O-line data season, which may differ from the viewed projection season
+    // (there is no future-season O-line data). Tag the season when it differs
+    // so a 2025-based grade is never read as a 2026 projection.
+    const _olYr = (ol.season && Number(ol.season) !== Number(viewSeason)) ? ` '${String(ol.season).slice(-2)}` : '';
     if (ol.pass_block != null) {
-      olineRows += _pmTeamProfileRow(pos, 'Pass Block Grade', 'oline_pass',
+      olineRows += _pmTeamProfileRow(pos, 'Pass Block Grade' + _olYr, 'oline_pass',
         { rank: ol.pass_block_rank, total: ol.total_teams, value: Math.round(ol.pass_block) });
     }
     if (ol.run_block != null) {
-      olineRows += _pmTeamProfileRow(pos, 'Run Block Grade', 'oline_run',
+      olineRows += _pmTeamProfileRow(pos, 'Run Block Grade' + _olYr, 'oline_run',
         { rank: ol.run_block_rank, total: ol.total_teams, value: Math.round(ol.run_block) });
     }
   }
@@ -2143,7 +2148,7 @@ function _pmBuildTeamHTML(data) {
     <div class="pm-team-sec">
       <div class="pm-section-header"><span class="pm-section-label">Offense Profile</span><span class="pm-team-secnote">${seasonNote} · rank of 32</span></div>
       ${_pmTeamProfileAxis()}${profile}${olineRows}
-      <div class="pm-team-note">Dot = team rank (right = 1st). Color = rank tier: <b style="color:var(--win)">green good</b>, <b style="color:var(--warning)">yellow mid</b>, <b style="color:var(--loss)">red bad</b>.${dataMode === 'projection' ? ' Values are Sleeper season projections aggregated by team.' : ''}</div>
+      <div class="pm-team-note">Dot = team rank (right = 1st). Color = rank tier: <b style="color:var(--win)">green good</b>, <b style="color:var(--warning)">yellow mid</b>, <b style="color:var(--loss)">red bad</b>.${dataMode === 'projection' ? ' Values are Sleeper season projections aggregated by team.' : ''}${olineRows ? ` Block grades measure realized pass-pro / run-block results from ${ol.season || 'the latest'} play-by-play (not a preseason talent ranking), so a scrambling QB can drag the pass grade below the line's reputation.` : ''}</div>
       <div class="pm-section-header pm-section-collapsible pm-team-adv-toggle" role="button" tabindex="0" aria-expanded="${advOpen ? 'true' : 'false'}" aria-controls="pmTeamAdvBody">
         <span class="pm-collapse-chevron" aria-hidden="true">${advChev}</span>
         <span class="pm-section-label">More team ranks</span>
