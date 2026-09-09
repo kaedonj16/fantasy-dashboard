@@ -24,6 +24,7 @@
   var _filterOpen  = false;
   var _myTeamOnly  = false;
   var _heroMid    = null;
+  var _heroTouched = false; // true once the viewer explicitly picks/clears the hero matchup
   var _slideDir   = 'none';
   var _feedPage   = 0;
   var _prevMatchupPts = {};
@@ -818,6 +819,24 @@
     return (_state.matchups || []).find(function(m) { return String(m.matchup_id) === mid && !_isMyRid(m.roster_id); });
   }
 
+  // The viewer's own matchup, used as the default focused "game" in This League
+  // mode so a signed-in user lands on their own matchup rather than all of them.
+  // Returns null in My Leagues scope (where _heroMid is a roster id, not a
+  // matchup id) or when the viewer has no roster in this league.
+  function _defaultHeroMid() {
+    if (_scope !== 'league') return null;
+    var mine = _myMatchups();
+    return mine[0] ? String(mine[0].matchup_id) : null;
+  }
+
+  // Apply the default hero once, unless the viewer has explicitly chosen or
+  // cleared one (_heroTouched). Idempotent: once _heroMid is set it won't move.
+  function _applyDefaultHero() {
+    if (_heroTouched || _heroMid !== null) return;
+    var def = _defaultHeroMid();
+    if (def) _heroMid = def;
+  }
+
   function _playersLeft(matchup) {
     if (!matchup) return 0;
     return (matchup.starters || []).filter(function(pid) {
@@ -1551,6 +1570,7 @@
           _slideDir = 'from-right';
         }
         _heroMid = prevMid === mid ? null : mid;
+        _heroTouched = true;
         _feedPage = 0;
         _render();
       });
@@ -1668,7 +1688,7 @@
         btn.addEventListener('click', function() { _filters[btn.dataset.clear] = 'all'; _feedPage = 0; _render(); });
       });
       root.querySelectorAll('[data-clear-hero]').forEach(function(el) {
-        el.addEventListener('click', function() { _heroMid = null; _feedPage = 0; _render(); });
+        el.addEventListener('click', function() { _heroMid = null; _heroTouched = true; _feedPage = 0; _render(); });
       });
       root.querySelectorAll('[data-fk]').forEach(function(btn) {
         btn.addEventListener('click', function() { _filters[btn.dataset.fk] = btn.dataset.fv; _filterOpen = false; _feedPage = 0; _render(); });
@@ -1823,6 +1843,7 @@
         _filterOpen = false;
         _myTeamOnly = false;
         _heroMid = null;
+        _heroTouched = false; // let the new scope re-apply its default focus
         _feedPage = 0;
         _countdown = 1;
         // Show skeleton cards until this scope's (often multi-league) data lands.
@@ -1859,7 +1880,7 @@
       });
     });
     root.querySelectorAll('[data-clear-hero]').forEach(function(el) {
-      el.addEventListener('click', function() { _heroMid = null; _feedPage = 0; _render(); });
+      el.addEventListener('click', function() { _heroMid = null; _heroTouched = true; _feedPage = 0; _render(); });
     });
     var exitDemo = root.querySelector('#rz-demo-exit');
     if (exitDemo) exitDemo.addEventListener('click', function() { window.location.href = window.location.pathname; });
@@ -1925,6 +1946,7 @@
       _detectChanges(newData);
       _state = newData;
       _seedPrevStats(newData);
+      _applyDefaultHero(); // focus the viewer's own matchup by default in This League
       _countdown = _pollInterval();
 
       var savedFeedHtml = null;
@@ -2036,6 +2058,7 @@
   _seedLeaders(_state);      // snapshot leading rosters so lead-change events don't fire on load
   _detectChanges(_state);    // populate initial feed from empty _prevStats
   _seedPrevStats(_state);    // snapshot stat lines for the next poll diff
+  _applyDefaultHero();       // focus the viewer's own matchup by default in This League
 
   _render();
   if (_isDemo) setTimeout(_refresh, 300);
