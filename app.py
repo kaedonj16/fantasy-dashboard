@@ -2448,10 +2448,13 @@ def _ss_scoring_sig(scoring_settings) -> str:
 def start_score_pos_anchors(season, week, scoring_settings=None) -> dict:
     """Return ``{pos: anchor_points}`` for one week under one scoring config.
 
-    ``anchor`` is the 95th-percentile weekly projection at that position — high
-    enough that clamping the 0-100 index rarely bites, but robust to a single
-    boom-projection outlier the way a raw max would not be. Cached per key so
-    the pool is scanned at most once per week/scoring per process.
+    ``anchor`` is the position's TOP weekly projection, so the 0-100 index reads
+    as "share of the best startable option at your position" and 100 marks the
+    single top projection rather than the whole elite tier. (A 95th-percentile
+    anchor made every WR1-caliber player clamp to 100, because the projection
+    pool is dominated by low-projection bench players that drag the percentile
+    down.) Cached per key so the pool is scanned at most once per week/scoring
+    per process.
     """
     if not season or not week:
         return {}
@@ -2481,9 +2484,7 @@ def start_score_pos_anchors(season, week, scoring_settings=None) -> dict:
         for pos, vals in by_pos.items():
             if not vals:
                 continue
-            vals.sort()
-            idx = max(0, min(len(vals) - 1, int(round(0.95 * (len(vals) - 1)))))
-            anchor = vals[idx]
+            anchor = max(vals)  # the position's top weekly projection
             if anchor and anchor > 0:
                 anchors[pos] = round(anchor, 2)
     except Exception:
@@ -12095,19 +12096,24 @@ def _redzone_fetch(platform, league_id, season, week=None, scope="league"):
     return d
 
 
-def _redzone_fetch_user(platform, league_id, season, week):
-    """Aggregate the viewer's matchup across every league they belong to.
+def _redzone_user_portfolio(season):
+    """Resolve the viewer's My Leagues portfolio and account identities.
+
+    Returns ``(portfolio, identities_by_platform, account_id, viewer_uid)``.
+    Reads the Flask ``session``, so call it inside a request context. Raises
+    ``ValueError`` when the viewer has no resolvable leagues (same contract the
+    aggregate relied on). Split out of ``_redzone_fetch_user`` so the aggregate
+    and the streaming endpoint build the exact same portfolio.
 
     Signed-in Google accounts use the cross-platform portfolio (Sleeper, ESPN,
     Yahoo, MFL) unioned with the live Sleeper memberships of every Sleeper
     identity linked to the account, so all of a viewer's Sleeper leagues appear
     even when only one was ever explicitly opened. A Sleeper-only session
-    without an account still walks that viewer's Sleeper leagues. Other
-    platforms without either identity fall through to league scope.
+    without an account still walks that viewer's Sleeper leagues.
     """
     from utils.redzone_user import (
         portfolio_from_account_leagues,
-        portfolio_from_sleeper_leagues, resolve_portfolio_viewer_roster,
+        portfolio_from_sleeper_leagues,
         MAX_USER_LEAGUES, owner_id_variants,
     )
 
@@ -12184,6 +12190,137 @@ def _redzone_fetch_user(platform, league_id, season, week):
         except Exception:
             logger.debug("[redzone] account identities load failed", exc_info=True)
 
+    return portfolio, identities_by_platform, account_id, viewer_uid
+
+
+def _redzone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
+                               identities_by_platform, default_platform="sleeper"):
+    """Collect one portfolio league's viewer-matchup slice for My Leagues.
+
+    ``li`` is the league's index in the portfolio; ids are namespaced ``"{li}:"``
+    so a slice fetched on its own lines up with the same league in the aggregate.
+    Returns a dict (matchups/rosters/users/player_info/scoring/…) or ``None`` when
+    the viewer's roster or matchup can't be resolved. Pure per-league work, no
+    session reads, so it is safe to call while streaming.
+    """
+    from utils.redzone_user import (
+        resolve_portfolio_viewer_roster, owner_id_variants,
+    )
+
+    lid = str(lg.get("league_id") or "")
+    lg_plat = str(lg.get("platform") or default_platform or "sleeper").lower()
+    lg_season = int(lg.get("season") or season or 0)
+    lname = lg.get("name") or f"League {li + 1}"
+    if not lid:
+        return None
+    try:
+        d = _redzone_collect(lg_plat, lid, lg_season, week)
+    except Exception:
+        logger.debug(
+            "[redzone] collect failed platform=%s league=%s season=%s",
+            lg_plat, lid, lg_season, exc_info=True,
+        )
+        return None
+
+    # Same viewer resolution as /portfolio: account team + platform identity
+    # first. Never feed an ESPN session owner id into Sleeper (or vice versa).
+    account_roster_id = None
+    account_owner_ids = list(identities_by_platform.get(lg_plat) or [])
+    if account_id:
+        try:
+            from dashboard_services.accounts import resolve_account_viewer_for_league
+            av = resolve_account_viewer_for_league(
+                int(account_id), lg_plat, lid, lg_season,
+                d.get("users") or [], d.get("rosters") or [],
+            ) or {}
+            account_roster_id = av.get("viewer_roster_id")
+            oid = av.get("viewer_user_id")
+            if oid:
+                account_owner_ids = list(
+                    {*account_owner_ids, *owner_id_variants(str(oid))}
+                )
+        except Exception:
+            logger.debug(
+                "[redzone] account viewer resolve failed platform=%s league=%s",
+                lg_plat, lid, exc_info=True,
+            )
+        # ESPN private leagues often store SWID on the connection even when
+        # account_identities is empty — reuse that for roster matching.
+        if lg_plat == "espn" and not account_roster_id:
+            try:
+                from dashboard_services.accounts import get_espn_league_credentials
+                swid = (get_espn_league_credentials(
+                    int(account_id), lid, lg_season,
+                ) or {}).get("swid")
+                if swid:
+                    account_owner_ids = list(
+                        {*account_owner_ids, *owner_id_variants(str(swid))}
+                    )
+            except Exception:
+                pass
+
+    vr = resolve_portfolio_viewer_roster(
+        d["rosters"],
+        platform=lg_plat,
+        team_id=lg.get("team_id"),
+        session_owner_id=viewer_uid,
+        account_roster_id=account_roster_id,
+        account_owner_ids=account_owner_ids,
+    )
+    if not vr:
+        return None
+    vrid = str(vr.get("roster_id"))
+    vmid = next((str(m.get("matchup_id")) for m in d["matchups"]
+                 if str(m.get("roster_id")) == vrid), None)
+    if vmid is not None:
+        pair = [m for m in d["matchups"] if str(m.get("matchup_id")) == vmid]
+    else:
+        pair = [m for m in d["matchups"] if str(m.get("roster_id")) == vrid]
+    if not pair:
+        return None
+    ns = f"{li}:"
+    pair_rids = {str(m.get("roster_id")) for m in pair}
+    slice_matchups, slice_rosters = [], []
+    slice_pid_league: dict = {}
+    for m in pair:
+        m2 = dict(m)
+        m2["roster_id"] = ns + str(m.get("roster_id"))
+        m2["matchup_id"] = ns + str(m.get("matchup_id"))
+        m2["league_name"] = lname
+        m2["league_id"] = lid
+        m2["platform"] = lg_plat
+        slice_matchups.append(m2)
+        for _pid in (m.get("players") or []):
+            slice_pid_league[str(_pid)] = lid
+    for r in d["rosters"]:
+        if str(r.get("roster_id")) in pair_rids:
+            r2 = dict(r)
+            r2["roster_id"] = ns + str(r.get("roster_id"))
+            slice_rosters.append(r2)
+    lg_scoring = d.get("scoring") or {}
+    return {
+        "index": li,
+        "matchups": slice_matchups,
+        "rosters": slice_rosters,
+        "users": list(d.get("users") or []),
+        "player_info": d.get("player_info") or {},
+        "scoring": lg_scoring,
+        "scoring_by_league": {lid: lg_scoring},
+        "pid_league": slice_pid_league,
+        "viewer_roster_id": ns + vrid,
+        "leagues": [{"league_id": lid, "name": lname, "platform": lg_plat}],
+    }
+
+
+def _redzone_fetch_user(platform, league_id, season, week):
+    """Aggregate the viewer's matchup across every league they belong to.
+
+    Thin consumer of ``_redzone_user_portfolio`` + ``_redzone_user_league_slice``
+    (the same pieces the streaming endpoint uses one-league-at-a-time), so the
+    all-at-once payload and the progressive stream stay byte-for-byte consistent.
+    """
+    portfolio, identities_by_platform, account_id, viewer_uid = _redzone_user_portfolio(season)
+
     matchups, rosters, users, leagues = [], [], [], []
     player_info: dict = {}
     scoring: dict = {}
@@ -12193,105 +12330,27 @@ def _redzone_fetch_user(platform, league_id, season, week):
     seen_users = set()
 
     for li, lg in enumerate(portfolio):
-        lid = str(lg.get("league_id") or "")
-        lg_plat = str(lg.get("platform") or platform or "sleeper").lower()
-        lg_season = int(lg.get("season") or season or 0)
-        lname = lg.get("name") or f"League {li + 1}"
-        if not lid:
-            continue
-        try:
-            d = _redzone_collect(lg_plat, lid, lg_season, week)
-        except Exception:
-            logger.debug(
-                "[redzone] collect failed platform=%s league=%s season=%s",
-                lg_plat, lid, lg_season, exc_info=True,
-            )
-            continue
-        if not scoring:
-            scoring = d.get("scoring") or {}
-        scoring_by_league[lid] = d.get("scoring") or {}
-
-        # Same viewer resolution as /portfolio: account team + platform identity
-        # first. Never feed an ESPN session owner id into Sleeper (or vice versa).
-        account_roster_id = None
-        account_owner_ids = list(identities_by_platform.get(lg_plat) or [])
-        if account_id:
-            try:
-                from dashboard_services.accounts import resolve_account_viewer_for_league
-                av = resolve_account_viewer_for_league(
-                    int(account_id), lg_plat, lid, lg_season,
-                    d.get("users") or [], d.get("rosters") or [],
-                ) or {}
-                account_roster_id = av.get("viewer_roster_id")
-                oid = av.get("viewer_user_id")
-                if oid:
-                    account_owner_ids = list(
-                        {*account_owner_ids, *owner_id_variants(str(oid))}
-                    )
-            except Exception:
-                logger.debug(
-                    "[redzone] account viewer resolve failed platform=%s league=%s",
-                    lg_plat, lid, exc_info=True,
-                )
-            # ESPN private leagues often store SWID on the connection even when
-            # account_identities is empty — reuse that for roster matching.
-            if lg_plat == "espn" and not account_roster_id:
-                try:
-                    from dashboard_services.accounts import get_espn_league_credentials
-                    swid = (get_espn_league_credentials(
-                        int(account_id), lid, lg_season,
-                    ) or {}).get("swid")
-                    if swid:
-                        account_owner_ids = list(
-                            {*account_owner_ids, *owner_id_variants(str(swid))}
-                        )
-                except Exception:
-                    pass
-
-        vr = resolve_portfolio_viewer_roster(
-            d["rosters"],
-            platform=lg_plat,
-            team_id=lg.get("team_id"),
-            session_owner_id=viewer_uid,
-            account_roster_id=account_roster_id,
-            account_owner_ids=account_owner_ids,
+        s = _redzone_user_league_slice(
+            li, lg, season, week, account_id, viewer_uid,
+            identities_by_platform, default_platform=platform,
         )
-        if not vr:
+        if not s:
             continue
-        vrid = str(vr.get("roster_id"))
-        vmid = next((str(m.get("matchup_id")) for m in d["matchups"]
-                     if str(m.get("roster_id")) == vrid), None)
-        if vmid is not None:
-            pair = [m for m in d["matchups"] if str(m.get("matchup_id")) == vmid]
-        else:
-            pair = [m for m in d["matchups"] if str(m.get("roster_id")) == vrid]
-        if not pair:
-            continue
-        ns = f"{li}:"
-        pair_rids = {str(m.get("roster_id")) for m in pair}
-        for m in pair:
-            m2 = dict(m)
-            m2["roster_id"] = ns + str(m.get("roster_id"))
-            m2["matchup_id"] = ns + str(m.get("matchup_id"))
-            m2["league_name"] = lname
-            m2["league_id"] = lid
-            m2["platform"] = lg_plat
-            matchups.append(m2)
-            for _pid in (m.get("players") or []):
-                pid_league[str(_pid)] = lid
-        for r in d["rosters"]:
-            if str(r.get("roster_id")) in pair_rids:
-                r2 = dict(r)
-                r2["roster_id"] = ns + str(r.get("roster_id"))
-                rosters.append(r2)
-        for u in d["users"]:
+        matchups.extend(s["matchups"])
+        rosters.extend(s["rosters"])
+        for u in s["users"]:
             uid = u.get("user_id")
             if uid not in seen_users:
                 seen_users.add(uid)
                 users.append(u)
-        player_info.update(d["player_info"])
-        viewer_rids.append(ns + vrid)
-        leagues.append({"league_id": lid, "name": lname, "platform": lg_plat})
+        player_info.update(s["player_info"])
+        if not scoring:
+            scoring = s["scoring"] or {}
+        scoring_by_league.update(s["scoring_by_league"])
+        pid_league.update(s["pid_league"])
+        if s.get("viewer_roster_id"):
+            viewer_rids.append(s["viewer_roster_id"])
+        leagues.extend(s["leagues"])
 
     return {
         "week": week, "season": season, "platform": platform, "league_id": league_id,
@@ -12340,6 +12399,55 @@ def page_redzone(platform: str, season: int, league_id: str):
     return render_page("BR Redzone", league_id, "redzone", body, platform, season)
 
 
+def _redzone_user_stream_response(platform, season, league_id, week):
+    """NDJSON stream of the viewer's My Leagues: a ``meta`` line naming every
+    league, then one ``league`` line per league as it finishes collecting, so
+    the client can paint each card the moment its data lands instead of waiting
+    for the whole portfolio. Falls back to the aggregate JSON when the viewer
+    has no resolvable portfolio (same outcome the non-stream path gives)."""
+    from dashboard_services.api import get_nfl_state
+    state = get_nfl_state() or {}
+    _season = int(season or state.get("season") or date.today().year)
+    _week = int((week or 0) or state.get("week") or 1)
+    gt = _games_scheduled_today(_season, _week)
+    try:
+        portfolio, identities, account_id, viewer_uid = _redzone_user_portfolio(_season)
+    except Exception as _e:
+        logger.warning("[redzone] user-scope stream portfolio failed: %s", _e)
+        # No portfolio → let the aggregate path fall through to league scope.
+        return jsonify(_redzone_fetch(platform, league_id, _season, week=week, scope="user"))
+
+    def _gen():
+        meta = {
+            "type": "meta", "scope": "user", "week": _week, "season": _season,
+            "platform": platform, "league_id": league_id, "games_today": gt,
+            "leagues": [
+                {"index": i, "league_id": str(lg.get("league_id") or ""),
+                 "name": lg.get("name") or f"League {i + 1}",
+                 "platform": str(lg.get("platform") or "").lower()}
+                for i, lg in enumerate(portfolio)
+            ],
+        }
+        yield json.dumps(meta) + "\n"
+        for li, lg in enumerate(portfolio):
+            try:
+                s = _redzone_user_league_slice(
+                    li, lg, _season, _week, account_id, viewer_uid,
+                    identities, default_platform=platform,
+                )
+            except Exception:
+                logger.debug("[redzone] stream slice failed idx=%s", li, exc_info=True)
+                s = None
+            if not s:
+                yield json.dumps({"type": "league", "index": li, "empty": True}) + "\n"
+                continue
+            s["type"] = "league"
+            yield json.dumps(s) + "\n"
+        yield json.dumps({"type": "done"}) + "\n"
+
+    return Response(stream_with_context(_gen()), mimetype="application/x-ndjson")
+
+
 @app.route("/api/<platform>/<int:season>/<league_id>/redzone-data")
 def api_redzone_data(platform: str, season: int, league_id: str):
     scope = "user" if request.args.get("scope") == "user" else "league"
@@ -12350,6 +12458,13 @@ def api_redzone_data(platform: str, season: int, league_id: str):
             _t = _RZ_DEMO_START
         return jsonify(_redzone_demo_data(_t, scope=scope))
     week = request.args.get("week")
+    # Progressive My Leagues: stream one card's data at a time (opt-in via
+    # &stream=1). Any failure inside the stream setup falls back to aggregate.
+    if scope == "user" and request.args.get("stream") == "1":
+        try:
+            return _redzone_user_stream_response(platform, season, league_id, week)
+        except Exception as _e:
+            logger.warning("[redzone] user-scope stream failed, using aggregate: %s", _e)
     try:
         return jsonify(_redzone_fetch(platform, league_id, season, week=week, scope=scope))
     except Exception as _e:
@@ -14653,6 +14768,7 @@ def _oline_for_player(season: int, team: str, position: str):
     primary_rank, total = _rank_on(primary)
     pass_rank, _ = _rank_on("pass_block")
     run_rank, _ = _rank_on("run_block")
+    composite_rank, _ = _rank_on("composite")
     return {
         "season": season,
         "team": team,
@@ -14665,6 +14781,7 @@ def _oline_for_player(season: int, team: str, position: str):
         "run_block": row.get("run_block"),
         "pass_block_rank": pass_rank,
         "run_block_rank": run_rank,
+        "composite_rank": composite_rank,
         "pressure_rate": row.get("pressure_rate"),
         "sack_rate": row.get("sack_rate"),
         "line_yards": row.get("line_yards"),

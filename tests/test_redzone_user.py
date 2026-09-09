@@ -143,10 +143,15 @@ def test_resolve_portfolio_viewer_espn_uses_account_owner_ids_not_sleeper_sessio
 
 
 def test_redzone_fetch_user_uses_portfolio_viewer_resolver():
-    """Source contract: My Leagues must not pass session owner into every platform."""
+    """Source contract: My Leagues must not pass session owner into every platform.
+
+    The per-league viewer resolution lives in ``_redzone_user_league_slice`` (the
+    helper both the aggregate and the progressive stream share), so span the whole
+    My Leagues aggregation block, from the portfolio builder to the redzone page.
+    """
     from pathlib import Path
     src = Path("app.py").read_text(encoding="utf-8")
-    fn = src[src.index("def _redzone_fetch_user"): src.index("def page_redzone")]
+    fn = src[src.index("def _redzone_user_portfolio"): src.index("def page_redzone")]
     assert "resolve_portfolio_viewer_roster" in fn
     assert "resolve_account_viewer_for_league" in fn
     # Old bug: match_viewer_roster(..., owner_id=viewer_uid) for every platform.

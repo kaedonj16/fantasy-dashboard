@@ -1876,6 +1876,8 @@ function _pmFmtTeamVal(key, val) {
     return Math.round(n).toLocaleString();
   }
   if (key === 'pass_tds' || key === 'rush_tds') return String(Math.round(n));
+  // O-line unit ratings are 0-100 league percentiles (100 = best).
+  if (String(key || '').startsWith('oline_')) return String(Math.round(n));
   return String(n);
 }
 
@@ -1921,14 +1923,19 @@ function _pmTeamProfileRow(pos, label, key, entry) {
   const x = Math.max(3, Math.min(97, ((total - rank) / Math.max(1, total - 1)) * 100));
   const c = _pmTeamMetricColor(pos, key, rank, total);
   const val = _pmFmtTeamVal(key, entry.value);
-  const tip = `${label}: ${_pmTeamOrd(rank)} of ${total} · ${val}`.replace(/"/g, '&quot;');
+  const tipExtra = entry.tip_extra ? ` · ${entry.tip_extra}` : '';
+  const tip = `${label}: ${_pmTeamOrd(rank)} of ${total} · ${val}${tipExtra}`.replace(/"/g, '&quot;');
   // Whole row is hoverable/focusable (not just the 13px dot) so the detail is
   // reachable by pointer and keyboard. Uses the shared themed tooltip engine
   // (advEnterMetricDef/advShowMetricDef) rather than a native `title`: the
   // modal body clips overflow, so this fixed-position bubble actually shows
   // (and matches the app theme) where a native tooltip did not.
-  return `<div class="pm-tp-row" data-def="${tip}" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)" onclick="advShowMetricDef(event)" tabindex="0" aria-label="${tip}">
-    <span class="pm-tp-label">${label}</span>
+  const primaryCls = entry.primary ? ' pm-tp-primary' : '';
+  const forChip = entry.primary && entry.primary_for
+    ? `<span class="pm-tp-for">for ${String(entry.primary_for).replace(/</g, '')}</span>`
+    : '';
+  return `<div class="pm-tp-row${primaryCls}" data-def="${tip}" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)" onclick="advShowMetricDef(event)" tabindex="0" aria-label="${tip}">
+    <span class="pm-tp-label">${label}${forChip}</span>
     <span class="pm-tp-track"><span class="pm-tp-base"></span><span class="pm-tp-mid"></span>
       <span class="pm-tp-fill" style="width:${x}%;background:${c}"></span>
       <span class="pm-tp-dot" style="left:${x}%;background:${c}"></span></span>
@@ -2111,9 +2118,12 @@ function _pmBuildTeamHTML(data) {
     seasonPills = `<span class="pm-team-season">${viewSeason} ${modeLabel}</span>`;
   }
 
-  // Offensive-line grades as Offense-Profile bars (0-100, 100 = best), from
-  // public play-by-play. Rendered with the same rank-bar format as the other
-  // profile rows; rank 1 = best line so the dot sits toward the "1ST" end.
+  // Offensive-line unit ratings (0-100, 100 = best) from public play-by-play.
+  // Kept as their own section — not mixed into Offense Profile — because they
+  // are a different data source (not Sleeper volume/projections) and the
+  // position-relevant metric should be easy to spot. Rank bars match the
+  // Offense Profile visual language; "Grade" wording is avoided so these
+  // aren't read as PFF-style grades (they're league-percentile unit ratings).
   const ol = data.oline;
   let olineRows = '';
   if (ol) {
@@ -2158,6 +2168,7 @@ function _pmBuildTeamHTML(data) {
         ${_pmTeamProfileAxis()}${moreProfile}
       </div>
     </div>
+    ${olineSec}
     <div class="pm-team-sec">
       <div class="pm-section-header"><span class="pm-section-label">${roleName}&#39;s Role</span><span class="pm-team-secnote">${pos} room</span></div>
       ${shareBar}

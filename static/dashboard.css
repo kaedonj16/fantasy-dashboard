@@ -31719,6 +31719,22 @@ button:disabled {
     text-transform: uppercase;
 }
 
+/* Pregame state (hour before kickoff): same shape as LIVE, amber not red, so
+   it reads as "warming up" rather than claiming a game is already in play. */
+.rz-live-chip.rz-pregame-chip {
+    background: rgba(202, 138, 4, .14);
+    border-color: rgba(202, 138, 4, .30);
+    color: #b45309;
+}
+
+.rz-live-chip.rz-pregame-chip .rz-nav-dot {
+    background: #ca8a04;
+}
+
+:root[data-theme="dark"] .rz-live-chip.rz-pregame-chip {
+    color: #fbbf24;
+}
+
 .rz-refresh-timer {
     font-size: 11px;
     color: var(--rz-muted);
@@ -32618,34 +32634,37 @@ button:disabled {
     flex-shrink: 0;
 }
 
+/* Position hues mirror the site-wide .pos-badge palette (QB blue, RB green,
+   WR amber, TE purple, K pink, DEF slate) so Redzone shares one palette with
+   the rest of the app — rendered here as Redzone's soft tinted chips. */
 .rz-pos-QB {
     background: rgba(59, 130, 246, .14);
-    color: #2563eb;
+    color: var(--brand-blue);
 }
 
 .rz-pos-RB {
-    background: rgba(22, 163, 74, .14);
+    background: rgba(34, 197, 94, .14);
     color: #16a34a;
 }
 
 .rz-pos-WR {
-    background: rgba(168, 85, 247, .14);
-    color: #9333ea;
+    background: rgba(245, 158, 11, .16);
+    color: #d97706;
 }
 
 .rz-pos-TE {
-    background: rgba(234, 88, 12, .14);
-    color: #ea580c;
+    background: rgba(139, 92, 246, .14);
+    color: #7c3aed;
 }
 
 .rz-pos-K {
-    background: rgba(202, 138, 4, .16);
-    color: #ca8a04;
+    background: rgba(201, 44, 104, .14);
+    color: #c92c68;
 }
 
 .rz-pos-DEF {
-    background: rgba(220, 38, 38, .14);
-    color: #dc2626;
+    background: rgba(71, 85, 105, .16);
+    color: #475569;
 }
 
 .rz-pos-WRT, .rz-pos-FLEX, .rz-pos-SUPER_FLEX, .rz-pos-BN, .rz-pos-IR, .rz-pos- {
@@ -32662,19 +32681,19 @@ button:disabled {
 }
 
 :root[data-theme="dark"] .rz-pos-WR {
-    color: #c084fc;
+    color: #fbbf24;
 }
 
 :root[data-theme="dark"] .rz-pos-TE {
-    color: #fb923c;
+    color: #a78bfa;
 }
 
 :root[data-theme="dark"] .rz-pos-K {
-    color: #facc15;
+    color: #f472b6;
 }
 
 :root[data-theme="dark"] .rz-pos-DEF {
-    color: #f87171;
+    color: #94a3b8;
 }
 
 /* Roster / player rows */
@@ -33623,7 +33642,7 @@ button:disabled {
     color: var(--rz-muted);
     flex-shrink: 0;
     text-align: right;
-    max-width: 130px;
+    max-width: 160px;
     line-height: 1.4;
 }
 
@@ -33634,6 +33653,35 @@ button:disabled {
     font-weight: 800;
     letter-spacing: .04em;
     text-transform: uppercase;
+    margin-bottom: 2px;
+}
+
+.rz-pregame-player {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 5px;
+    margin-top: 3px;
+}
+
+.rz-pregame-player .rz-pos-badge {
+    font-size: 8px;
+    min-width: 24px;
+    padding: 2px 4px;
+}
+
+.rz-pregame-pname {
+    color: var(--rz-text);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.rz-pregame-more {
+    display: block;
+    margin-top: 2px;
+    font-size: 10px;
 }
 
 .rz-pregame-empty-hint {
@@ -37654,6 +37702,29 @@ a, button, [role="button"], [role="tab"], summary, label,
 /* profile rows are hoverable/focusable data points (native title tooltip) */
 .pm-tp-row { cursor: help; border-radius: 6px; }
 .pm-tp-row:hover, .pm-tp-row:focus-visible { background: var(--row); outline: none; }
+
+/* O-line section: highlight the position-relevant rating row */
+.pm-tp-primary { background: var(--accent-soft); }
+.pm-tp-row.pm-tp-primary:hover,
+.pm-tp-row.pm-tp-primary:focus-visible { background: var(--accent-soft); filter: brightness(0.97); }
+.pm-tp-for {
+  display: block;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-top: 1px;
+  line-height: 1.1;
+}
+.pm-oline-link {
+  color: var(--accent);
+  font-style: normal;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.pm-oline-link:hover { text-decoration: underline; }
 
 /* Team tab manages its own section padding — drop the modal body inset. */
 .player-modal-body.pm-body-flush { padding: 0; }

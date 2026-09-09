@@ -76,6 +76,10 @@ def test_oline_for_player_helper():
     assert rb and rb["primary"] == "run_block"
     assert rb["primary_value"] == rb["run_block"]
     assert 1 <= rb["primary_rank"] <= rb["total_teams"]
+    assert rb.get("composite_rank") is not None
+    assert 1 <= rb["composite_rank"] <= rb["total_teams"]
+    assert rb.get("pass_block_rank") is not None
+    assert rb.get("run_block_rank") is not None
     qb = app._oline_for_player(2026, "BUF", "QB")
     assert qb and qb["primary"] == "pass_block"
     # 2026 isn't built in the seed; helper falls back to the newest season.

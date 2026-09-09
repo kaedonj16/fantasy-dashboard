@@ -84,24 +84,36 @@ def _row(**kw):
                 defteam="DEF", rush_attempt=0, pass_attempt=0, qb_dropback=0,
                 rushing_yards=0, yards_gained=0, sack=0, qb_hit=0,
                 was_pressure=0, time_to_throw=2.6, qb_kneel=0, qb_spike=0,
-                run_location="middle", run_gap="guard", wp=0.5, score_differential=0)
+                qb_scramble=0, run_location="middle", run_gap="guard",
+                success=0, passer_player_id=None, rusher_player_id=None,
+                wp=0.5, score_differential=0)
     base.update(kw)
     return base
 
 
 def _synthetic_pbp():
     """GOOD blocks well; BAD gets stuffed and pressured. Same time to throw,
-    so the residualiser can't explain BAD's pressure away."""
+    so the residualiser can't explain BAD's pressure away. Includes success
+    flags so the run-block blend has both inputs."""
     rows = []
     for _ in range(60):
-        rows.append(_row(posteam="GOOD", rush_attempt=1, rushing_yards=4, yards_gained=4))
+        rows.append(_row(posteam="GOOD", rush_attempt=1, rushing_yards=4, yards_gained=4, success=1))
         rows.append(_row(posteam="GOOD", qb_dropback=1, pass_attempt=1, was_pressure=0, sack=0))
     for i in range(60):
-        rows.append(_row(posteam="BAD", rush_attempt=1, rushing_yards=-1, yards_gained=-1))
+        rows.append(_row(posteam="BAD", rush_attempt=1, rushing_yards=-1, yards_gained=-1, success=0))
         rows.append(_row(posteam="BAD", qb_dropback=1, pass_attempt=1,
                          was_pressure=1 if i < 40 else 0,
                          sack=1 if i < 15 else 0, qb_hit=1 if i < 30 else 0))
     return pd.DataFrame(rows)
+
+
+def test_is_qb_run_filters_scramble_and_keeper():
+    from data_building.oline_ratings import _is_qb_run
+    assert _is_qb_run(1, "QB1", "QB1") is True
+    assert _is_qb_run(0, "QB1", "QB1") is True          # designed keep
+    assert _is_qb_run(0, "QB1", "RB1") is False
+    assert _is_qb_run(0, None, "RB1") is False
+    assert _is_qb_run(None, None, None) is False
 
 
 def test_build_end_to_end_ranks_good_over_bad(monkeypatch):
@@ -119,5 +131,38 @@ def test_build_end_to_end_ranks_good_over_bad(monkeypatch):
     assert r["GOOD"]["run_block"] > r["BAD"]["run_block"]
     assert r["BAD"]["stuffed_rate"] > r["GOOD"]["stuffed_rate"]
     assert r["BAD"]["pressure_rate"] > r["GOOD"]["pressure_rate"]
+    assert r["GOOD"]["success_rate"] > r["BAD"]["success_rate"]
+    assert out["weights"]["run_ly"] + out["weights"]["run_success"] == pytest.approx(1.0)
     for row in r.values():
         assert 0.0 <= row["composite"] <= 100.0
+
+
+def test_qb_runs_excluded_from_run_grade(monkeypatch):
+    """A team whose only 'good' rushes are QB keeps should not get credit."""
+    rows = []
+    for _ in range(50):
+        # RB rushes are stuffed
+        rows.append(_row(posteam="MOBILE", rush_attempt=1, rushing_yards=-1,
+                         yards_gained=-1, success=0, rusher_player_id="RB1",
+                         passer_player_id="QB1"))
+        # QB keeps look great but must be excluded
+        rows.append(_row(posteam="MOBILE", rush_attempt=1, rushing_yards=8,
+                         yards_gained=8, success=1, qb_scramble=0,
+                         rusher_player_id="QB1", passer_player_id="QB1"))
+        # Honest line with solid RB rushes
+        rows.append(_row(posteam="SOLID", rush_attempt=1, rushing_yards=4,
+                         yards_gained=4, success=1, rusher_player_id="RB2",
+                         passer_player_id="QB2"))
+        rows.append(_row(posteam="MOBILE", qb_dropback=1, pass_attempt=1, was_pressure=0, sack=0))
+        rows.append(_row(posteam="SOLID", qb_dropback=1, pass_attempt=1, was_pressure=0, sack=0))
+    frame = pd.DataFrame(rows)
+    monkeypatch.setattr(
+        "data_building.oline_ratings._load_pbp_year",
+        lambda year, pd_, nfl=None: frame if year == 2025 else None,
+    )
+    out = build_oline_ratings(2025, through_week=1, save=False)
+    r = out["ratings"]
+    assert r["SOLID"]["run_block"] > r["MOBILE"]["run_block"]
+    # MOBILE's graded rushes are the stuffed RB runs only.
+    assert r["MOBILE"]["line_yards"] < 0
+    assert r["MOBILE"]["n_rush"] == 50
