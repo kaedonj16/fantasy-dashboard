@@ -98,8 +98,8 @@ def test_prewarm_league_requires_league_id(offline_client):
 
 
 def test_prewarm_league_skips_espn(offline_client):
-    # ESPN idle prewarm is a no-op: it contended with private-league ESPN traffic
-    # and switch already refreshes the destination context.
+    # ESPN idle prewarm is a no-op: a full context prewarm fetches weekly box
+    # scores and contended with the live page. Switch navigates immediately.
     r = offline_client.get(
         "/api/prewarm-league",
         query_string={"platform": "espn", "league_id": "887776065", "season": "2026"},

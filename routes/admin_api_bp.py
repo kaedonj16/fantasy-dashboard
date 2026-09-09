@@ -52,9 +52,10 @@ def api_prewarm_league():
     (just ok/cached), so it's safe to call speculatively. Returns immediately
     when the context is already warm.
 
-    ESPN is intentionally skipped: private ESPN prewarms contend with the live
-    page and player modal, and ``navigateToLeague`` already refreshes the
-    destination before switch so a warm DASHBOARD_CACHE entry is discarded.
+    ESPN is intentionally skipped: a full context prewarm fetches weekly box
+    scores and contended with the live page / player modal. Switch navigates
+    to ESPN immediately (no refresh-league wait) and reuses any warm context;
+    roster-freshness polling expires it if rosters changed.
     """
     platform = (request.args.get("platform") or "sleeper").strip().lower()
     league_id = (request.args.get("league_id") or "").strip()

@@ -58,6 +58,30 @@ def test_clear_espn_league_caches_forces_reload(monkeypatch):
     assert len(calls) == 2
 
 
+def test_scoped_clear_keeps_anonymous_denied_hint(monkeypatch):
+    """Refresh/switch must drop League objects without forgetting the room is private."""
+    calls = []
+
+    def fake_league(**kwargs):
+        calls.append(kwargs)
+        if "espn_s2" not in kwargs:
+            raise espn_api.ESPNAccessDenied("anonymous")
+        return SimpleNamespace(name="Private")
+
+    monkeypatch.setattr(espn_api, "League", fake_league)
+    monkeypatch.setattr(espn_api, "_espn_creds", lambda: ("secret", "{owner}"))
+
+    espn_api._league_cached(2026, "55")
+    assert espn_api._anonymous_denied(espn_api._league_key(2026, "55"))
+    espn_api.clear_espn_league_caches("55", 2026)
+    assert espn_api._anonymous_denied(espn_api._league_key(2026, "55"))
+    espn_api._league_cached(2026, "55")
+    anon = [c for c in calls if "espn_s2" not in c]
+    auth = [c for c in calls if "espn_s2" in c]
+    assert len(anon) == 1
+    assert len(auth) == 2
+
+
 def test_league_cached_cache_clear_alias(monkeypatch):
     monkeypatch.setattr(espn_api, "League", lambda **kw: SimpleNamespace())
     espn_api._public_league_cached(2026, "7")

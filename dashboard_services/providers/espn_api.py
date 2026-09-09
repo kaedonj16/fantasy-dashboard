@@ -370,7 +370,18 @@ def _public_league_cached(season: int, league_id: str) -> League:
             hit = _public_league_cache.get(key)
             if hit and (now - hit[0]) < _PUBLIC_LEAGUE_TTL:
                 return hit[1]
-        league = League(league_id=int(league_id), year=int(season))
+        # Parallel dashboard tasks (league/users/rosters/drafts) all call
+        # _league() on a cold private room. Without this re-check, each waiter
+        # that acquired the lock after a 401 still paid another anonymous ESPN
+        # round-trip — switching leagues felt like it hung for tens of seconds.
+        if _anonymous_denied(key):
+            raise ESPNAccessDenied("ESPN denied anonymous access to this league.")
+        try:
+            league = League(league_id=int(league_id), year=int(season))
+        except Exception as exc:
+            if _is_espn_access_denied(exc):
+                _mark_anonymous_denied(key, via_attr_error=isinstance(exc, AttributeError))
+            raise
         _store_public_league(key, league)
         return league
 
@@ -390,6 +401,37 @@ def _is_espn_access_denied(exc: Exception) -> bool:
         isinstance(exc, AttributeError)
         and str(exc) == "'NoneType' object has no attribute 'get'"
     )
+
+
+def _has_bound_espn_credentials(league_id: str, season: int) -> bool:
+    """True when this request already has cookies bound to THIS league.
+
+    Bound cookies (saved on the linked row, or staged during connect) mean we
+    should skip the doomed anonymous ESPN round-trip. Env cookies and the
+    any-account fallback stay anonymous-first so a public league belonging to
+    someone else still loads without the viewer's ESPN login scoping the request.
+    """
+    try:
+        from flask import has_request_context, session
+        if not has_request_context():
+            return False
+        if session.get("account_id"):
+            from dashboard_services.accounts import get_espn_league_credentials
+            stored = get_espn_league_credentials(
+                session["account_id"], league_id, season,
+            ) or {}
+            if stored.get("espn_s2") and stored.get("swid"):
+                return True
+        if session.get("pending_provider_connection_token"):
+            from dashboard_services.accounts import peek_private_espn_connection
+            staged = peek_private_espn_connection(
+                session["pending_provider_connection_token"], league_id, season,
+            ) or {}
+            if staged.get("espn_s2") and staged.get("swid"):
+                return True
+    except Exception:
+        return False
+    return False
 
 
 def _resolve_espn_request_creds(
@@ -538,11 +580,18 @@ def _league_cached(season: int, league_id: str) -> League:
     (season, league_id) skip the anonymous attempt for ``_ANON_DENIED_TTL`` and
     reuse a credential-scoped League cache so private-league pages (and the
     player modal's scoring sync) do not pay a failed ESPN round-trip each time.
+
+    Linked private leagues (cookies stored on this league row, or staged during
+    connect) skip anonymous entirely — switching into those rooms used to wait
+    on a 401 before the credentialed ``League()`` that actually succeeds.
     """
     key = _league_key(season, league_id)
     access_denied: Optional[Exception] = None
+    skip_anonymous = _anonymous_denied(key) or _has_bound_espn_credentials(
+        league_id, season,
+    )
 
-    if not _anonymous_denied(key):
+    if not skip_anonymous:
         try:
             return _public_league_cached(season, league_id)
         except Exception as exc:
@@ -1274,12 +1323,9 @@ def clear_espn_league_caches(league_id: Optional[str] = None, season: Optional[i
             ]
             for key in drop:
                 _public_league_cache.pop(key, None)
-            drop_denied = [
-                key for key in _anon_denied_until
-                if str(key[1]) == lid and (season is None or int(key[0]) == int(season))
-            ]
-            for key in drop_denied:
-                _anon_denied_until.pop(key, None)
+            # Keep _anon_denied_until. It is an access-mode hint ("this room is
+            # private"), not roster data. Switching leagues used to wipe it and
+            # force another doomed anonymous ESPN round-trip on the next load.
     with _auth_league_lock:
         if league_id is None:
             _auth_league_cache.clear()
