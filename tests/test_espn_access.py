@@ -161,10 +161,10 @@ def test_private_guest_dashboard_uses_staged_credentials_after_anonymous_bug(mon
         league = espn_api._league_cached(2026, "456")
 
     assert league.name == "Private league"
-    assert calls[-1] == {
+    assert calls == [{
         "league_id": 456, "year": 2026,
         "espn_s2": "staged-secret", "swid": "{staged-owner}",
-    }
+    }]
 
 
 def test_unrelated_attribute_error_is_not_treated_as_access_denied(monkeypatch):
@@ -324,3 +324,95 @@ def test_unbraced_swid_is_normalized_before_authenticated_league_load(monkeypatc
     assert league.name == "Private league"
     assert calls[-1]["swid"] == "{owner-uuid}"
     assert calls[-1]["espn_s2"] == "secret"
+
+
+def test_parallel_private_loads_pay_one_anonymous_attempt(monkeypatch):
+    """build_league_context fans out league/users/rosters/drafts in parallel.
+
+    Each task calls _league(). A cold private room must not serialize N doomed
+    anonymous ESPN round-trips through the load lock — that is what made
+    switching into ESPN feel hung.
+    """
+    import threading
+    import time
+
+    calls = []
+    lock = threading.Lock()
+
+    def fake_league(**kwargs):
+        with lock:
+            calls.append(dict(kwargs))
+        if "espn_s2" not in kwargs:
+            time.sleep(0.05)
+            raise ESPNAccessDenied()
+        return SimpleNamespace(name="Private league")
+
+    monkeypatch.setattr(espn_api, "League", fake_league)
+    monkeypatch.setattr(espn_api, "_espn_creds", lambda: ("secret", "{owner}"))
+
+    errors = []
+
+    def worker():
+        try:
+            espn_api._league_cached(2026, "456")
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors
+    anon = [c for c in calls if "espn_s2" not in c]
+    auth = [c for c in calls if "espn_s2" in c]
+    assert len(anon) == 1, calls
+    assert len(auth) == 1, calls
+
+
+def test_bound_league_credentials_skip_anonymous_attempt(monkeypatch):
+    flask = pytest.importorskip("flask")
+    app = flask.Flask(__name__)
+    app.secret_key = "test"
+    calls = []
+
+    def fake_league(**kwargs):
+        calls.append(kwargs)
+        if "espn_s2" not in kwargs:
+            raise ESPNAccessDenied("should not be called")
+        return SimpleNamespace(name="Private league")
+
+    monkeypatch.setattr(espn_api, "League", fake_league)
+    monkeypatch.setattr(espn_api, "_espn_creds", lambda: (None, None))
+    import dashboard_services.accounts as accounts
+    monkeypatch.setattr(accounts, "get_espn_league_credentials", lambda *a: {
+        "espn_s2": "bound-secret", "swid": "{bound-owner}",
+    })
+
+    with app.test_request_context("/espn/2026/456/dashboard"):
+        flask.session["account_id"] = 42
+        league = espn_api._league_cached(2026, "456")
+
+    assert league.name == "Private league"
+    assert calls == [{
+        "league_id": 456, "year": 2026,
+        "espn_s2": "bound-secret", "swid": "{bound-owner}",
+    }]
+
+
+def test_env_cookies_still_try_anonymous_first(monkeypatch):
+    """Env / any-account fallback must not skip anonymous — public rooms break."""
+    calls = []
+
+    def fake_league(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(name="Public league")
+
+    monkeypatch.setattr(espn_api, "League", fake_league)
+    monkeypatch.setattr(espn_api, "_espn_creds", lambda: ("secret", "{owner}"))
+    monkeypatch.setattr(espn_api, "_has_bound_espn_credentials", lambda *a: False)
+
+    league = espn_api._league_cached(2026, "123")
+    assert league.name == "Public league"
+    assert calls == [{"league_id": 123, "year": 2026}]

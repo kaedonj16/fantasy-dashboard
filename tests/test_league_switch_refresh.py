@@ -48,6 +48,8 @@ def test_navigate_to_league_refreshes_destination_and_keeps_page():
     assert "pathParts.slice(3)" in src
     assert "pageParts.join('/')" in src
     assert "window.location.href = dest" in src
+    # ESPN skips the refresh wait — it was the slow switch path.
+    assert "=== 'espn'" in src or '=== "espn"' in src
     # Do not fall back to a last-segment allowlist that drops /draft.
     assert "leaguePages" not in src
     assert "lastSegment" not in src
@@ -105,6 +107,7 @@ _CASES = [
         "want_dest": "/espn/2026/bbb/draft",
         "want_league": "bbb",
         "want_platform": "espn",
+        "want_refresh": False,
     },
     {
         "from": "/sleeper/2026/aaa/draft/history",
@@ -112,6 +115,7 @@ _CASES = [
         "want_dest": "/sleeper/2026/ccc/draft/history",
         "want_league": "ccc",
         "want_platform": "sleeper",
+        "want_refresh": True,
     },
     {
         "from": "/sleeper/2026/aaa/teams",
@@ -119,6 +123,7 @@ _CASES = [
         "want_dest": "/sleeper/2026/ddd/teams",
         "want_league": "ddd",
         "want_platform": "sleeper",
+        "want_refresh": True,
     },
     {
         "from": "/sleeper/2026/aaa",
@@ -126,6 +131,7 @@ _CASES = [
         "want_dest": "/yahoo/2025/eee/dashboard",
         "want_league": "eee",
         "want_platform": "yahoo",
+        "want_refresh": True,
     },
 ]
 
@@ -155,16 +161,20 @@ cases.forEach(function (c) {
   window.location.pathname = c.from;
   window.location.href = '';
   navigateToLeague(c.to[0], c.to[1], c.to[2]);
-  if (fetches.length !== 1 || fetches[0].url !== '/api/refresh-league') {
-    bad.push(c.from + ' missing refresh-league fetch');
-    return;
-  }
-  var body = JSON.parse(fetches[0].opts.body);
-  if (String(body.league_id) !== String(c.want_league)) {
-    bad.push(c.from + ' refresh league_id=' + body.league_id + ' want ' + c.want_league);
-  }
-  if (String(body.platform) !== String(c.want_platform)) {
-    bad.push(c.from + ' refresh platform=' + body.platform + ' want ' + c.want_platform);
+  if (c.want_refresh) {
+    if (fetches.length !== 1 || fetches[0].url !== '/api/refresh-league') {
+      bad.push(c.from + ' missing refresh-league fetch');
+      return;
+    }
+    var body = JSON.parse(fetches[0].opts.body);
+    if (String(body.league_id) !== String(c.want_league)) {
+      bad.push(c.from + ' refresh league_id=' + body.league_id + ' want ' + c.want_league);
+    }
+    if (String(body.platform) !== String(c.want_platform)) {
+      bad.push(c.from + ' refresh platform=' + body.platform + ' want ' + c.want_platform);
+    }
+  } else if (fetches.length) {
+    bad.push(c.from + ' should skip refresh-league, got ' + fetches.length);
   }
   if (window.location.href !== c.want_dest) {
     bad.push(c.from + ' dest=' + window.location.href + ' want ' + c.want_dest);
@@ -179,6 +189,7 @@ if (fetches.length || window.location.href) {
   bad.push('same-league switch should be a no-op');
 }
 if (bad.length) { console.error(bad.join('\n')); process.exit(1); }
+process.exit(0);
 """
     with tempfile.TemporaryDirectory() as td:
         fp = os.path.join(td, "league_switch_check.js")

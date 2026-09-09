@@ -12342,10 +12342,9 @@ document.addEventListener('DOMContentLoaded', function() {
           // is the dominant switch latency). Sequential + throttled so we never
           // hammer the API; same-season leagues first (most likely to switch to),
           // current league skipped, and capped.
-          // Skip ESPN: private leagues pay a failed anonymous + credentialed
-          // ESPN round-trip per prewarm, contend with the live page / player
-          // modal, and switch already POSTs /api/refresh-league which expires
-          // the destination context anyway.
+          // Skip ESPN: a full context prewarm fetches weekly box scores and
+          // contended with the live page / player modal. Switch navigates
+          // to ESPN immediately instead of waiting on refresh-league.
           try {
             const others = leagues.filter(
               l => l.league_id
@@ -12410,6 +12409,15 @@ document.addEventListener('DOMContentLoaded', function() {
       const currentPage = pageParts.length ? pageParts.join('/') : 'dashboard';
       const dest = '/' + destPlatform + '/' + destSeason + '/' + leagueId + '/' + currentPage;
       const go = function () { window.location.href = dest; };
+      // ESPN is never prewarmed. Waiting on /api/refresh-league delayed the
+      // landing page (up to 12s if the POST hung) and busted ESPN's
+      // anonymous-denied cache, so every switch paid a doomed ESPN 401
+      // before League() could succeed. Navigate immediately; roster-freshness
+      // polling expires a stale 12h context if rosters actually changed.
+      if (String(destPlatform).toLowerCase() === 'espn') {
+        go();
+        return;
+      }
       // Expire the destination league's cached context/HTML/grades so the
       // landing page is that league's current data, not a prewarmed snapshot
       // of the last time we idled on another room.

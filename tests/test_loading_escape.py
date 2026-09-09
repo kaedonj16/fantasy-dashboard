@@ -53,8 +53,10 @@ def test_do_refresh_uses_timed_fetch():
 
 def test_league_switcher_never_blocks_forever():
     start = APP_JS.index("function navigateToLeague(leagueId")
-    block = APP_JS[start: start + 1800]
+    block = APP_JS[start: start + 2800]
     assert "setTimeout(go, 12000)" in block
+    # ESPN switches must not wait on refresh-league (that was the slow path).
+    assert "=== 'espn'" in block or '=== "espn"' in block
     assert "brLoadingEscape.arm(overlay" in APP_JS
 
 
