@@ -16306,7 +16306,6 @@ function _buildStartSitTabHTML(players) {
     _ssTableRow('Proj PPG', players.map(p => { const n = _ssNum(ss(p).proj_pts); return { num: n, html: n != null ? n : dash }; }), 'max'),
     _ssTableRow('L4 PPG', players.map(p => { const n = _ssNum(ss(p).recent_ppg) != null ? _ssNum(ss(p).recent_ppg) : _ssNum(s(p).ppg); return { num: n, html: n != null ? n : dash }; }), 'max'),
     _ssTableRow('Value', players.map(p => { const n = _ssNum(isSf ? s(p).sf_value : s(p).value); return { num: n, html: n != null ? Math.round(n) : dash }; }), 'max'),
-    _ssTableRow('Start/Sit score', players.map(p => { const n = _ssNum(s(p).start_score); return { num: n, html: n != null ? (Math.round(n * 10) / 10) : dash }; }), 'max'),
     _ssTableRow('Floor&ndash;Ceil', players.map(p => { const c = cons(p); return { num: c ? _ssNum(c.floor) : null, html: c ? (c.floor + '&ndash;' + c.ceiling) : dash }; }), 'max'),
     _ssTableRow('Profile', players.map(p => { const c = cons(p); return { num: null, html: _ssProfileChip(c) || dash }; }), null),
     _ssTableRow('Boom / Bust', players.map(p => { const c = cons(p); return { num: null, html: (c && !c.small_sample) ? (Math.round(c.boom_rate * 100) + '% / ' + Math.round(c.bust_rate * 100) + '%') : dash }; }), null),
