@@ -20,6 +20,15 @@ from data_building.oline_ratings import (  # noqa: E402
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_availability_network(monkeypatch):
+    """Availability shrink loads injuries; unit tests stay offline."""
+    monkeypatch.setattr(
+        "data_building.oline_ratings._load_availability_scale",
+        lambda *a, **k: {},
+    )
+
+
 def test_line_yards_weighting():
     assert _line_yards(-2) == pytest.approx(-2.4)   # stuffed 1.2x
     assert _line_yards(3) == pytest.approx(3.0)      # 0-4 full
@@ -426,3 +435,179 @@ def test_talent_flag_on_shifts_grade_and_labels_realized(monkeypatch):
     assert on["ratings"]["LOSE"]["composite"] > off["ratings"]["LOSE"]["composite"]
     assert "talent_prior_w" in on["weights"]
     assert "talent_prior_w" not in off["weights"]
+
+
+def test_recency_weight_decays_with_lag():
+    from data_building.oline_ratings import _recency_weight
+    assert _recency_weight(4, 4, 0) == 1.0
+    assert _recency_weight(4, 4, 4) == 1.0
+    assert _recency_weight(0, 4, 4) == pytest.approx(0.5)
+    assert _recency_weight(2, 4, 4) == pytest.approx(0.5 ** 0.5)
+
+
+def test_mix_prior_blends_and_falls_back():
+    from data_building.oline_ratings import _mix_prior
+    y1 = {"A": 10.0, "B": 4.0}
+    y2 = {"A": 0.0, "C": 8.0}
+    assert _mix_prior(y1, y2, 0) == y1
+    mixed = _mix_prior(y1, y2, 0.25)
+    assert mixed["A"] == pytest.approx(7.5)
+    assert mixed["B"] == pytest.approx(4.0)
+    assert mixed["C"] == pytest.approx(8.0)
+
+
+def test_availability_shrink_pulls_toward_league():
+    from data_building.oline_ratings import _apply_availability_shrink
+    prior = {"A": 10.0, "B": 10.0}
+    out = _apply_availability_shrink(prior, {"A": 0.5, "B": 1.0}, league=0.0)
+    assert out["A"] == pytest.approx(5.0)
+    assert out["B"] == pytest.approx(10.0)
+    assert _apply_availability_shrink(prior, {}, 0.0) == prior
+
+
+def test_availability_scale_from_snaps():
+    from data_building.oline_talent_prior import availability_scale_from_snaps
+    snaps = [
+        {"player_id": "00-1", "team": "PHI", "snaps": 800},
+        {"player_id": "00-2", "team": "PHI", "snaps": 200},
+        {"player_id": "00-3", "team": "DAL", "snaps": 500},
+    ]
+    scale = availability_scale_from_snaps(snaps, {"00-1"})
+    assert scale["PHI"] == pytest.approx(0.2)
+    assert scale["DAL"] == pytest.approx(1.0)
+    assert availability_scale_from_snaps(snaps, set()) == {}
+
+
+def test_weighted_alt_adjust_respects_recency_weight():
+    # Same additive design as test_alt_adjust_recovers_offense_effect, but
+    # GOOD's plays against TOUGH are up-weighted — adjusted GOOD should still
+    # recover near league+skill.
+    league = 3.0
+    triples = []
+    for _ in range(10):
+        triples.append(("GOOD", "TOUGH", league + 1.0 - 1.0, 4.0))
+        triples.append(("GOOD", "SOFT", league + 1.0 + 1.0, 1.0))
+        triples.append(("BAD", "TOUGH", league - 1.0 - 1.0, 1.0))
+        triples.append(("BAD", "SOFT", league - 1.0 + 1.0, 1.0))
+    adj, n, lg = _alt_adjust(triples)
+    assert adj["GOOD"] > adj["BAD"]
+    assert n["GOOD"] == 20
+
+
+def test_stuffed_blend_rewards_low_stuff_rate():
+    from data_building.oline_ratings import _blend_run_index
+    ly = {"CLEAN": 50.0, "STUFF": 50.0}
+    su = {"CLEAN": 50.0, "STUFF": 50.0}
+    st = {"CLEAN": 100.0, "STUFF": 0.0}  # percentile: low stuffed -> 100
+    equal = _blend_run_index(ly, su, stuff_index=st, stuff_weight=0.0, round_to=None)
+    mixed = _blend_run_index(ly, su, stuff_index=st, stuff_weight=0.2, round_to=None)
+    assert equal["CLEAN"] == pytest.approx(equal["STUFF"])
+    assert mixed["CLEAN"] > mixed["STUFF"]
+
+
+def test_recency_prefers_recent_plays(monkeypatch):
+    """Week-2 plays should dominate week-1 when half-life is short."""
+    rows = []
+    # LATE: stuffed in week 1, good in week 2.
+    for _ in range(40):
+        rows.append(_row(posteam="LATE", week=1, rush_attempt=1,
+                         rushing_yards=-1, yards_gained=-1, success=0))
+        rows.append(_row(posteam="LATE", week=1, qb_dropback=1, pass_attempt=1,
+                         was_pressure=1, sack=1))
+        rows.append(_row(posteam="LATE", week=2, rush_attempt=1,
+                         rushing_yards=5, yards_gained=5, success=1))
+        rows.append(_row(posteam="LATE", week=2, qb_dropback=1, pass_attempt=1,
+                         was_pressure=0, sack=0))
+        # EARLY: the reverse.
+        rows.append(_row(posteam="EARLY", week=1, rush_attempt=1,
+                         rushing_yards=5, yards_gained=5, success=1))
+        rows.append(_row(posteam="EARLY", week=1, qb_dropback=1, pass_attempt=1,
+                         was_pressure=0, sack=0))
+        rows.append(_row(posteam="EARLY", week=2, rush_attempt=1,
+                         rushing_yards=-1, yards_gained=-1, success=0))
+        rows.append(_row(posteam="EARLY", week=2, qb_dropback=1, pass_attempt=1,
+                         was_pressure=1, sack=1))
+    frame = pd.DataFrame(rows)
+    monkeypatch.setattr(
+        "data_building.oline_ratings._load_pbp_year",
+        lambda year, pd_, nfl=None: frame if year == 2025 else None,
+    )
+    flat = build_oline_ratings(
+        2025, through_week=2, save=False, recency_half_life=0.0)
+    rec = build_oline_ratings(
+        2025, through_week=2, save=False, recency_half_life=1.0)
+    # Unweighted, the two weeks cancel; recency should prefer LATE.
+    assert rec["ratings"]["LATE"]["composite"] > rec["ratings"]["EARLY"]["composite"]
+    assert rec["ratings"]["LATE"]["composite"] > flat["ratings"]["LATE"]["composite"]
+
+
+def test_availability_inputs_shrink_prior_without_network(monkeypatch):
+    cur_rows = []
+    for t in ("HURT", "HEALTHY", "MEH", "LOSE"):
+        cur_rows += _balanced_plays(t, rush_yds=4, press=10, n=40)
+    cur = pd.DataFrame(cur_rows)
+    prior_rows = []
+    prior_rows += _balanced_plays("HURT", rush_yds=6, press=2, n=40)
+    prior_rows += _balanced_plays("HEALTHY", rush_yds=5, press=4, n=40)
+    prior_rows += _balanced_plays("MEH", rush_yds=4, press=10, n=40)
+    prior_rows += _balanced_plays("LOSE", rush_yds=1, press=28, n=40)
+    prior = pd.DataFrame(prior_rows)
+    monkeypatch.setattr(
+        "data_building.oline_ratings._load_pbp_year",
+        lambda year, pd_, nfl=None: cur if year == 2025 else prior if year == 2024 else None,
+    )
+    off = build_oline_ratings(
+        2025, through_week=1, save=False, availability_shrink=False)
+    on = build_oline_ratings(
+        2025, through_week=1, save=False, availability_shrink=True,
+        availability_inputs={"scale": {"HURT": 0.0, "HEALTHY": 1.0, "MEH": 1.0, "LOSE": 1.0}})
+    assert off["ratings"]["HURT"]["composite"] > off["ratings"]["HEALTHY"]["composite"]
+    # HURT's last-year unit is treated as gone; HEALTHY keeps its prior.
+    assert on["ratings"]["HEALTHY"]["composite"] > on["ratings"]["HURT"]["composite"]
+    assert on["ratings"]["HURT"]["composite"] < off["ratings"]["HURT"]["composite"]
+
+
+def test_apy_weights_veteran_net_toward_high_paid_movers():
+    from data_building.oline_talent_prior import ol_continuity_and_veteran_net
+    prior = [
+        {"player_id": "star", "team": "PHI", "snaps": 500},
+        {"player_id": "backup", "team": "DAL", "snaps": 500},
+    ]
+    current = {"star": "DAL", "backup": "PHI"}
+    snap_cont, snap_vet, _ = ol_continuity_and_veteran_net(prior, current)
+    # With equal snaps the swap is symmetric.
+    cont, vet, detail = ol_continuity_and_veteran_net(
+        prior, current, apy_by_player={"star": 20.0, "backup": 1.0})
+    # PHI lost the star and gained the backup -> large negative net.
+    assert snap_vet["PHI"] == pytest.approx(0.0)
+    assert vet["PHI"] < snap_vet["PHI"] < vet["DAL"]
+    assert detail["PHI"]["veteran_net_unit"] == "snap_apy"
+    # Continuity is still snap-share (both teams lost their only guy).
+    assert cont["PHI"] == pytest.approx(0.0)
+    assert cont["DAL"] == pytest.approx(0.0)
+
+
+def test_rushers_residual_does_not_punish_extra_rusher_looks():
+    """Pressure that tracks pass-rushers 1:1 should residualise away."""
+    from data_building.oline_ratings import _maybe_resid_rushers
+    # Five teams so _residualize fits a line.
+    value = {"A": 0.20, "B": 0.25, "C": 0.30, "D": 0.35, "E": 0.40}
+    rushers = {"A": 3.0, "B": 3.5, "C": 4.0, "D": 4.5, "E": 5.0}
+    resid = _maybe_resid_rushers(value, rushers, enabled=True)
+    assert all(abs(v) < 1e-6 for v in resid.values())
+    assert _maybe_resid_rushers(value, rushers, enabled=False) == value
+
+
+def test_legacy_kwargs_match_default_build(monkeypatch):
+    frame = _synthetic_pbp()
+    monkeypatch.setattr(
+        "data_building.oline_ratings._load_pbp_year",
+        lambda year, pd_, nfl=None: frame if year == 2025 else None,
+    )
+    default = build_oline_ratings(2025, through_week=1, save=False)
+    explicit = build_oline_ratings(
+        2025, through_week=1, save=False,
+        recency_half_life=0.0, prior_y2_weight=0.0, run_stuff_weight=0.0,
+        pass_rushers_resid=False, availability_shrink=False, k_mult=1.0)
+    assert default["ratings"]["GOOD"]["composite"] == explicit["ratings"]["GOOD"]["composite"]
+    assert default["ratings"]["BAD"]["composite"] == explicit["ratings"]["BAD"]["composite"]

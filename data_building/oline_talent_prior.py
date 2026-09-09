@@ -24,8 +24,9 @@ Open-data provenance (nothing licensed)
     identify linemen by PFR id; rosters identify them by GSIS. The join is
     identity-only; the players file's `pff_id` column is ignored.
   * Veteran additions/losses — inferred from roster team changes, weighted by
-    prior-season OL snaps. That captures free agency, trades, and cuts without
-    a licensed transaction feed.
+    prior-season OL snaps, and when OTC/nflverse contracts load, by APY so a
+    high-paid starter moving is more signal than a backup. That captures free
+    agency, trades, and cuts without a licensed transaction feed.
 
 Coaching / scheme change is omitted: there is no clean, redistributable
 encoding of OC / OL-coach turnover that we can stand behind, and inventing
@@ -102,6 +103,21 @@ _DRAFT_VALUES_URLS = (
 _PLAYERS_URLS = (
     "https://github.com/nflverse/nflverse-data/releases/download/players/players.parquet",
 )
+_INJURY_URLS = (
+    "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_{year}.parquet",
+)
+# OTC / nflverse contract dumps. Team is a nickname ("Bengals"), not a code.
+_CONTRACT_URLS = (
+    "https://github.com/nflverse/nflverse-data/releases/download/contracts/historical_contracts.parquet",
+    "https://raw.githubusercontent.com/nflverse/nfldata/master/data/contracts.csv",
+)
+
+# Injury report_status tokens treated as "not playing this week".
+# Questionable / Doubtful are too noisy for a prior shrink.
+_UNAVAILABLE_STATUS = frozenset({
+    "OUT", "IR", "INJURED RESERVE", "INJURED_RESERVE",
+    "PUP", "PHYSICALLY UNABLE TO PERFORM", "PHYSICALLY UNABLE TO PERFORM (PUP)",
+})
 
 # Exponential fallback calibrated to Stuart pick-1 = 34.6 (Football Perspective).
 # Used only when the CSV cannot be loaded. Not a PFF chart.
@@ -256,15 +272,35 @@ def _pid(*candidates):
     return None
 
 
-def ol_continuity_and_veteran_net(prior_snaps, current_team_by_player):
+def _player_weight(pid, snaps, apy_by_player=None, median_apy=None):
+    """Snap weight, optionally multiplied by contract APY when available."""
+    if not apy_by_player:
+        return snaps
+    apy = apy_by_player.get(pid)
+    if apy is None:
+        apy = median_apy if median_apy else 1.0
+    try:
+        apy = float(apy)
+    except (TypeError, ValueError):
+        apy = median_apy if median_apy else 1.0
+    if apy is None or apy < 0:
+        apy = 1.0
+    return snaps * apy
+
+
+def ol_continuity_and_veteran_net(prior_snaps, current_team_by_player,
+                                  apy_by_player=None):
     """Snap-weighted returning continuity and veteran addition/loss.
 
     `prior_snaps` is an iterable of dicts
         {player_id, team, snaps}  (player_id is pfr_id / gsis_id / name)
     `current_team_by_player` maps the same player_id space -> current team.
+    `apy_by_player` optionally maps player_id -> OTC APY; when present,
+    veteran_net is snap * APY (missing APY uses the OL median). Continuity
+    stays snap-share — it is a body-count of the returning unit.
 
     continuity[t] = returning_snaps / prior_ol_snaps on team t
-    veteran_net[t] = incoming veterans' prior snaps - departing players' snaps
+    veteran_net[t] = incoming veterans' weight - departing players' weight
 
     A returning starter is any prior-season OL snap on a player whose current
     team is the same team; backups are automatically down-weighted by snaps.
@@ -288,17 +324,25 @@ def ol_continuity_and_veteran_net(prior_snaps, current_team_by_player):
         by_player[pid][team] += snaps
         prior_snaps_by_team[team] += snaps
 
+    median_apy = None
+    if apy_by_player:
+        apys = [v for v in apy_by_player.values() if v is not None and v > 0]
+        if apys:
+            apys.sort()
+            median_apy = apys[len(apys) // 2]
+
     for pid, team_snaps in by_player.items():
         now = _norm_team(current_team_by_player.get(pid)) if pid in current_team_by_player else ""
         # A player can (rarely) have snaps for two teams last year; credit
         # each prior team separately.
         for prior_team, snaps in team_snaps.items():
+            wt = _player_weight(pid, snaps, apy_by_player, median_apy)
             if now and now == prior_team:
                 returning[prior_team] += snaps
             else:
-                lost[prior_team] += snaps
+                lost[prior_team] += wt
                 if now:
-                    gained[now] += snaps
+                    gained[now] += wt
 
     continuity = {}
     veteran_net = {}
@@ -317,6 +361,7 @@ def ol_continuity_and_veteran_net(prior_snaps, current_team_by_player):
             "veteran_gained_snaps": round(gained.get(t, 0.0), 1),
             "veteran_lost_snaps": round(lost.get(t, 0.0), 1),
             "veteran_net": round(veteran_net[t], 1),
+            "veteran_net_unit": "snap_apy" if apy_by_player else "snaps",
         }
     return continuity, veteran_net, detail
 
@@ -347,13 +392,14 @@ def compute_talent_scores(
     w_continuity=1.0 / 3.0,
     w_draft=1.0 / 3.0,
     w_veteran=1.0 / 3.0,
+    apy_by_player=None,
 ):
     """Pure computation of the labeled talent residual from already-parsed lists.
 
     Returns (score_by_team, detail_by_team, used_weights). score is z-scored.
     """
     continuity, veteran_net, cdetail = ol_continuity_and_veteran_net(
-        prior_snaps, current_team_by_player)
+        prior_snaps, current_team_by_player, apy_by_player=apy_by_player)
     draft_val, ddetail = ol_draft_value(draft_picks, pick_chart)
     # Teams with no OL pick get draft_value 0 so z-scoring has a real floor.
     for t in set(continuity) | set(veteran_net):
@@ -664,7 +710,182 @@ def _parse_draft_picks(draft_df, year, pd):
     return out
 
 
-def load_talent_inputs(season, pd, nfl=None):
+def _otc_nick_to_code():
+    """OTC `team` is a nickname ('Bengals'). Map last word of TEAM_FULL_NAMES."""
+    from utils.nfl_teams import TEAM_FULL_NAMES
+    out = {}
+    for code, full in TEAM_FULL_NAMES.items():
+        if str(code).upper() == "WSH":
+            continue
+        nick = str(full).rsplit(" ", 1)[-1].upper()
+        out[nick] = code
+    out["REDSKINS"] = "WAS"
+    out["COMMANDERS"] = "WAS"
+    out["FOOTBALL"] = "WAS"  # last word of "Washington Football Team" is messy
+    return out
+
+
+def _otc_team(name, nick_map=None):
+    t = _norm_team(name)
+    if t and len(t) <= 3:
+        return t
+    nick_map = nick_map if nick_map is not None else _otc_nick_to_code()
+    raw = str(name or "").strip()
+    if not raw:
+        return ""
+    upper = raw.upper()
+    if upper in nick_map:
+        return nick_map[upper]
+    last = upper.rsplit(" ", 1)[-1]
+    return nick_map.get(last, "")
+
+
+def _load_injuries(year, pd, nfl=None):
+    if nfl is not None:
+        try:
+            d = nfl.import_injuries([year])
+            if d is not None and not d.empty:
+                return d
+        except Exception as e:
+            print(f"[oline_talent_prior] nfl_data_py injuries {year} failed ({e})")
+    return _read_first_url(_INJURY_URLS, pd, year)
+
+
+def _load_contracts(pd, nfl=None):
+    if nfl is not None:
+        try:
+            d = nfl.import_contracts()
+            if d is not None and not d.empty:
+                return d
+        except Exception as e:
+            print(f"[oline_talent_prior] nfl_data_py contracts failed ({e})")
+    return _read_first_url(_CONTRACT_URLS, pd)
+
+
+def _parse_ol_apy(contract_df):
+    """-> {gsis_id: apy} for offensive linemen. Empty if the dump is missing."""
+    if contract_df is None or getattr(contract_df, "empty", True):
+        return {}
+    d = contract_df
+    pos_col = next((c for c in ("position", "pos") if c in d.columns), None)
+    if pos_col:
+        ol = d[d[pos_col].map(_is_ol_pos)]
+        if not ol.empty:
+            d = ol
+    if "is_active" in d.columns:
+        try:
+            active = d[d["is_active"] == True]  # noqa: E712 — pandas
+            if not active.empty:
+                d = active
+        except Exception:
+            pass
+    gsis_col = next((c for c in ("gsis_id", "player_id") if c in d.columns), None)
+    apy_col = next((c for c in ("apy", "apy_cap_pct", "annual_value") if c in d.columns), None)
+    if not gsis_col or not apy_col:
+        return {}
+    out = {}
+    gsiss = d[gsis_col].tolist()
+    apys = d[apy_col].tolist()
+    for g, a in zip(gsiss, apys):
+        pid = _pid(g)
+        val = _f(a)
+        if not pid or val is None or val < 0:
+            continue
+        # Keep the larger APY if a player has stacked rows.
+        if pid not in out or val > out[pid]:
+            out[pid] = val
+    return out
+
+
+def availability_scale_from_snaps(prior_snaps, unavailable_ids):
+    """s[team] = 1 - (snaps of unavailable last-year OL / prior OL snaps).
+
+    Missing / empty unavailable set -> {}. Callers treat that as no-op shrink.
+    """
+    unavailable_ids = {p for p in (unavailable_ids or set()) if p}
+    if not prior_snaps or not unavailable_ids:
+        return {}
+    tot = defaultdict(float)
+    out_snaps = defaultdict(float)
+    for row in prior_snaps:
+        team = _norm_team(row.get("team"))
+        pid = _pid(row.get("player_id"), row.get("gsis_id"), row.get("pfr_id"))
+        snaps = _f(row.get("snaps"))
+        if not team or not pid or not snaps or snaps <= 0:
+            continue
+        tot[team] += snaps
+        if pid in unavailable_ids:
+            out_snaps[team] += snaps
+    scale = {}
+    for t, n in tot.items():
+        if n > 0:
+            s = 1.0 - out_snaps.get(t, 0.0) / n
+            scale[t] = min(1.0, max(0.0, s))
+    return scale
+
+
+def _parse_unavailable_ids(injury_df, pd, through_week=None):
+    """GSIS ids whose report_status is Out/IR/PUP in the rating week."""
+    if injury_df is None or getattr(injury_df, "empty", True):
+        return set()
+    d = injury_df
+    if "week" in d.columns and through_week is not None:
+        wk = pd.to_numeric(d["week"], errors="coerce")
+        d_w = d[wk == through_week]
+        if d_w.empty:
+            d_w = d[wk <= through_week]
+            if not d_w.empty:
+                max_wk = pd.to_numeric(d_w["week"], errors="coerce").max()
+                d_w = d_w[pd.to_numeric(d_w["week"], errors="coerce") == max_wk]
+        d = d_w if not d_w.empty else d
+    elif "week" in d.columns:
+        wk = pd.to_numeric(d["week"], errors="coerce")
+        if wk.notna().any():
+            d = d[wk == wk.max()]
+    status_col = next((c for c in ("report_status", "injury_status", "status")
+                       if c in d.columns), None)
+    if not status_col:
+        return set()
+    gsis_col = next((c for c in ("gsis_id", "player_id") if c in d.columns), None)
+    if not gsis_col:
+        return set()
+    # Prefer OL rows when a position column exists; still count any Out OL.
+    pos_col = next((c for c in ("position", "pos") if c in d.columns), None)
+    out = set()
+    n = len(d)
+    statuses = d[status_col].tolist()
+    gsiss = d[gsis_col].tolist()
+    poss = d[pos_col].tolist() if pos_col else [None] * n
+    for i in range(n):
+        st = str(statuses[i] or "").upper().strip()
+        if st not in _UNAVAILABLE_STATUS:
+            continue
+        if pos_col and poss[i] is not None and not _is_ol_pos(poss[i]):
+            continue
+        pid = _pid(gsiss[i])
+        if pid:
+            out.add(pid)
+    return out
+
+
+def compute_availability_scale(season, through_week, pd, nfl=None, prior_snaps=None):
+    """Load injuries + last-year OL snaps and return {team: available snap share}.
+
+    Missing files -> {}. Never raises to the caller.
+    """
+    try:
+        if prior_snaps is None:
+            xwalk = _load_id_xwalk(pd, nfl)
+            snaps = _load_snaps(season - 1, pd, nfl)
+            prior_snaps = _parse_prior_ol_snaps(snaps, pd, xwalk=xwalk)
+        if not prior_snaps:
+            return {}
+        injuries = _load_injuries(season, pd, nfl)
+        unavailable = _parse_unavailable_ids(injuries, pd, through_week)
+        return availability_scale_from_snaps(prior_snaps, unavailable)
+    except Exception as e:
+        print(f"[oline_talent_prior] availability scale failed ({e})")
+        return {}
     """Load the open-data inputs for `season`'s offseason prior.
 
     Returns a dict with parsed lists, or None if the *required* pieces
@@ -691,16 +912,19 @@ def load_talent_inputs(season, pd, nfl=None):
 
     draft_picks = _parse_draft_picks(_load_draft_picks(season, pd, nfl), season, pd)
     chart = _load_stuart_chart(pd, nfl)
+    apy_by_player = _parse_ol_apy(_load_contracts(pd, nfl))
     return {
         "prior_snaps": prior_snaps,
         "current_team_by_player": roster,
         "draft_picks": draft_picks,
         "pick_chart": chart,
+        "apy_by_player": apy_by_player,
         "roster_source": roster_source,
         "n_prior_ol_rows": len(prior_snaps),
         "n_current_ol": len(roster),
         "n_draft_rows": len(draft_picks),
         "n_id_xwalk": len(xwalk),
+        "n_ol_apy": len(apy_by_player),
     }
 
 
@@ -734,6 +958,7 @@ def compute_oline_talent_prior(
         w_continuity=w_continuity,
         w_draft=w_draft,
         w_veteran=w_veteran,
+        apy_by_player=inputs.get("apy_by_player") or None,
     )
     if not scores:
         return None
@@ -747,13 +972,19 @@ def compute_oline_talent_prior(
             "n_current_ol": inputs.get("n_current_ol"),
             "n_draft_rows": inputs.get("n_draft_rows"),
             "n_id_xwalk": inputs.get("n_id_xwalk"),
+            "n_ol_apy": inputs.get("n_ol_apy"),
             "pick_chart": "stuart" if inputs.get("pick_chart") else "exponential_fallback",
+            "veteran_net_unit": (
+                "snap_apy" if inputs.get("apy_by_player") else "snaps"
+            ),
             "sources": [
                 "nflverse PFR snap_counts (prior season)",
                 "nflverse weekly/seasonal rosters (week-1 current vs prior snaps)",
                 "nflverse players file (PFR↔GSIS id join only; pff_id ignored)",
                 "nflverse draft_picks + nfldata draft_values.stuart "
                 "(Chase Stuart public expected-AV; PFF column ignored)",
+                "OTC / nflverse contracts (OL APY weights veteran adds/losses; "
+                "not a licensed grade)",
             ],
             "omitted": (
                 "Coaching/scheme change: no clean redistributable encoding of "
