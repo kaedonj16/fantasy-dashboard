@@ -24,6 +24,7 @@
   var _filterOpen  = false;
   var _myTeamOnly  = false;
   var _heroMid    = null;
+  var _heroTouched = false; // true once the viewer explicitly picks/clears the hero matchup
   var _slideDir   = 'none';
   var _feedPage   = 0;
   var _prevMatchupPts = {};
@@ -112,6 +113,47 @@
       (m.starters || []).forEach(function(pid) { if (_gameStatus(pid).type === 'live') live = true; });
     });
     return live;
+  }
+
+  // True when a not-yet-started game in this view kicks off within `mins`
+  // minutes. player_info is already scoped to the fetched matchups, so this
+  // only counts games that involve players on screen.
+  function _kickoffWithin(mins) {
+    var now = Date.now() / 1000;
+    var horizon = now + mins * 60;
+    return Object.keys(_state.player_info || {}).some(function(pid) {
+      var p = _state.player_info[pid] || {};
+      if (String(p.game_code || '0') !== '0') return false; // upcoming games only
+      var ep = parseFloat(p.game_time_epoch || 0);
+      return ep > 0 && ep <= horizon;
+    });
+  }
+
+  // The window where Redzone presents its "live" look: a game actually in
+  // progress, or the hour before the next kickoff. Used for the page-level
+  // status chip (per-game badges stay accurate — PRE until their own kickoff).
+  function _liveWindow() {
+    if (_anyLive()) return { on: true, live: true };
+    if (_isDemo) return { on: true, live: true };
+    if (_kickoffWithin(60)) return { on: true, live: false };
+    return { on: false, live: false };
+  }
+
+  // Header status chip: "LIVE" once a game is in progress, "PREGAME" in the
+  // hour before kickoff, nothing otherwise. Same pulsing dot in both states.
+  function _statusChipHtml() {
+    var w = _liveWindow();
+    if (!w.on) return '';
+    var cls = w.live ? 'rz-live-chip' : 'rz-live-chip rz-pregame-chip';
+    return '<span class="' + cls + '"><span class="rz-nav-dot"></span>' + (w.live ? 'LIVE' : 'PREGAME') + '</span>';
+  }
+
+  function _fmtKickoff(ep) {
+    var d = new Date(ep * 1000);
+    if (isNaN(d.getTime())) return 'Upcoming';
+    var day = d.toLocaleDateString([], { weekday: 'short' });
+    var time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return day + ' ' + time;
   }
 
   function _fmt(n) {
@@ -818,6 +860,24 @@
     return (_state.matchups || []).find(function(m) { return String(m.matchup_id) === mid && !_isMyRid(m.roster_id); });
   }
 
+  // The viewer's own matchup, used as the default focused "game" in This League
+  // mode so a signed-in user lands on their own matchup rather than all of them.
+  // Returns null in My Leagues scope (where _heroMid is a roster id, not a
+  // matchup id) or when the viewer has no roster in this league.
+  function _defaultHeroMid() {
+    if (_scope !== 'league') return null;
+    var mine = _myMatchups();
+    return mine[0] ? String(mine[0].matchup_id) : null;
+  }
+
+  // Apply the default hero once, unless the viewer has explicitly chosen or
+  // cleared one (_heroTouched). Idempotent: once _heroMid is set it won't move.
+  function _applyDefaultHero() {
+    if (_heroTouched || _heroMid !== null) return;
+    var def = _defaultHeroMid();
+    if (def) _heroMid = def;
+  }
+
   function _playersLeft(matchup) {
     if (!matchup) return 0;
     return (matchup.starters || []).filter(function(pid) {
@@ -1296,8 +1356,8 @@
       if (!gid || !p.home || !p.away) return;
       var code = String(p.game_code || '0');
       if (code === '2') return; // skip final games
-      if (!gameMap[gid]) gameMap[gid] = { home: p.home, away: p.away, status: p.game_status || '', code: code, mine: [], other: [] };
-      if (myPids.has(pid)) gameMap[gid].mine.push(p.name || pid);
+      if (!gameMap[gid]) gameMap[gid] = { home: p.home, away: p.away, status: p.game_status || '', code: code, kickoff: parseFloat(p.game_time_epoch || 0) || 0, mine: [], other: [] };
+      if (myPids.has(pid)) gameMap[gid].mine.push({ name: p.name || pid, pos: p.pos || '' });
       else gameMap[gid].other.push(pid);
     });
 
@@ -1317,11 +1377,18 @@
 
     gameIds.forEach(function(gid) {
       var g = gameMap[gid];
-      var statusText = g.code === '1' ? 'LIVE · ' + (g.status || '') : (g.status || 'Upcoming');
+      var statusText = g.code === '1'
+        ? 'LIVE · ' + (g.status || '')
+        : (g.kickoff ? _fmtKickoff(g.kickoff) : (g.status || 'Upcoming'));
       var playerChip = '';
       if (g.mine.length) {
-        var names = g.mine.slice(0, 3).join(', ') + (g.mine.length > 3 ? ' +' + (g.mine.length - 3) : '');
-        playerChip = '<div class="rz-pregame-players"><strong>My Players</strong>' + names + '</div>';
+        var rows = g.mine.slice(0, 3).map(function(pl) {
+          return '<span class="rz-pregame-player">' + _posHtml(pl.pos)
+            + '<span class="rz-pregame-pname">' + pl.name + '</span></span>';
+        }).join('');
+        var moreN = g.mine.length - 3;
+        var more = moreN > 0 ? '<span class="rz-pregame-more">+' + moreN + ' more</span>' : '';
+        playerChip = '<div class="rz-pregame-players"><strong>My Players</strong>' + rows + more + '</div>';
       }
       html += '<div class="rz-pregame-game">'
         + '<div class="rz-pregame-teams">'
@@ -1551,6 +1618,7 @@
           _slideDir = 'from-right';
         }
         _heroMid = prevMid === mid ? null : mid;
+        _heroTouched = true;
         _feedPage = 0;
         _render();
       });
@@ -1627,8 +1695,7 @@
     var liveChipEl = root.querySelector('.rz-live-chip');
     var headerRight = root.querySelector('.rz-header-right');
     if (headerRight) {
-      var live = _anyLive();
-      var liveChipHtml = live ? '<span class="rz-live-chip"><span class="rz-nav-dot"></span>LIVE</span>' : '';
+      var liveChipHtml = _statusChipHtml();
       var demoLink = !_isDemo ? '<a href="?demo=1" class="rz-demo-btn">Demo</a>' : '';
       headerRight.innerHTML = demoLink + liveChipHtml + '<button class="rz-refresh-timer" id="rz-timer">' + _fmtTimer(_countdown) + '</button>';
     }
@@ -1668,7 +1735,7 @@
         btn.addEventListener('click', function() { _filters[btn.dataset.clear] = 'all'; _feedPage = 0; _render(); });
       });
       root.querySelectorAll('[data-clear-hero]').forEach(function(el) {
-        el.addEventListener('click', function() { _heroMid = null; _feedPage = 0; _render(); });
+        el.addEventListener('click', function() { _heroMid = null; _heroTouched = true; _feedPage = 0; _render(); });
       });
       root.querySelectorAll('[data-fk]').forEach(function(btn) {
         btn.addEventListener('click', function() { _filters[btn.dataset.fk] = btn.dataset.fv; _filterOpen = false; _feedPage = 0; _render(); });
@@ -1718,7 +1785,7 @@
 
     var live = _anyLive();
     var idle = !_isDemo && !live && !_isGameDay();  // offseason / no games today
-    var liveChip = live ? '<span class="rz-live-chip"><span class="rz-nav-dot"></span>LIVE</span>' : '';
+    var liveChip = _statusChipHtml();
     var demoPill = _isDemo ? '<span class="rz-demo-pill">DEMO</span>' : '';
     var showFilters = (_activeTab === 'plays' || _activeTab === 'top');
 
@@ -1823,6 +1890,7 @@
         _filterOpen = false;
         _myTeamOnly = false;
         _heroMid = null;
+        _heroTouched = false; // let the new scope re-apply its default focus
         _feedPage = 0;
         _countdown = 1;
         // Show skeleton cards until this scope's (often multi-league) data lands.
@@ -1859,7 +1927,7 @@
       });
     });
     root.querySelectorAll('[data-clear-hero]').forEach(function(el) {
-      el.addEventListener('click', function() { _heroMid = null; _feedPage = 0; _render(); });
+      el.addEventListener('click', function() { _heroMid = null; _heroTouched = true; _feedPage = 0; _render(); });
     });
     var exitDemo = root.querySelector('#rz-demo-exit');
     if (exitDemo) exitDemo.addEventListener('click', function() { window.location.href = window.location.pathname; });
@@ -1925,6 +1993,7 @@
       _detectChanges(newData);
       _state = newData;
       _seedPrevStats(newData);
+      _applyDefaultHero(); // focus the viewer's own matchup by default in This League
       _countdown = _pollInterval();
 
       var savedFeedHtml = null;
@@ -2036,6 +2105,7 @@
   _seedLeaders(_state);      // snapshot leading rosters so lead-change events don't fire on load
   _detectChanges(_state);    // populate initial feed from empty _prevStats
   _seedPrevStats(_state);    // snapshot stat lines for the next poll diff
+  _applyDefaultHero();       // focus the viewer's own matchup by default in This League
 
   _render();
   if (_isDemo) setTimeout(_refresh, 300);

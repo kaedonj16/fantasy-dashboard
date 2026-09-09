@@ -31719,6 +31719,22 @@ button:disabled {
     text-transform: uppercase;
 }
 
+/* Pregame state (hour before kickoff): same shape as LIVE, amber not red, so
+   it reads as "warming up" rather than claiming a game is already in play. */
+.rz-live-chip.rz-pregame-chip {
+    background: rgba(202, 138, 4, .14);
+    border-color: rgba(202, 138, 4, .30);
+    color: #b45309;
+}
+
+.rz-live-chip.rz-pregame-chip .rz-nav-dot {
+    background: #ca8a04;
+}
+
+:root[data-theme="dark"] .rz-live-chip.rz-pregame-chip {
+    color: #fbbf24;
+}
+
 .rz-refresh-timer {
     font-size: 11px;
     color: var(--rz-muted);
@@ -33623,7 +33639,7 @@ button:disabled {
     color: var(--rz-muted);
     flex-shrink: 0;
     text-align: right;
-    max-width: 130px;
+    max-width: 160px;
     line-height: 1.4;
 }
 
@@ -33634,6 +33650,35 @@ button:disabled {
     font-weight: 800;
     letter-spacing: .04em;
     text-transform: uppercase;
+    margin-bottom: 2px;
+}
+
+.rz-pregame-player {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 5px;
+    margin-top: 3px;
+}
+
+.rz-pregame-player .rz-pos-badge {
+    font-size: 8px;
+    min-width: 22px;
+    padding: 2px 4px;
+}
+
+.rz-pregame-pname {
+    color: var(--rz-text);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.rz-pregame-more {
+    display: block;
+    margin-top: 2px;
+    font-size: 10px;
 }
 
 .rz-pregame-empty-hint {
