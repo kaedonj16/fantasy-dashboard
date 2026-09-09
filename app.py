@@ -2427,6 +2427,75 @@ def get_players_index_global():
     return _PLAYERS_INDEX_GLOBAL
 
 
+# Per-position "elite starter" projection anchors, one set per (season, week,
+# scoring). The raw start/sit score is projected points scaled by capped
+# multipliers, so it is unbounded and position-relative — a QB 20 and a WR 20
+# mean different things. Dividing by the position's top weekly projection maps
+# the score onto a 0-100 confidence index that IS comparable across positions.
+_SS_POS_ANCHOR_CACHE: dict = {}
+_SS_POS_ANCHOR_LOCK = threading.Lock()
+
+
+def _ss_scoring_sig(scoring_settings) -> str:
+    try:
+        return hashlib.sha1(
+            json.dumps(scoring_settings or {}, sort_keys=True).encode()
+        ).hexdigest()[:12]
+    except Exception:
+        return "default"
+
+
+def start_score_pos_anchors(season, week, scoring_settings=None) -> dict:
+    """Return ``{pos: anchor_points}`` for one week under one scoring config.
+
+    ``anchor`` is the 95th-percentile weekly projection at that position — high
+    enough that clamping the 0-100 index rarely bites, but robust to a single
+    boom-projection outlier the way a raw max would not be. Cached per key so
+    the pool is scanned at most once per week/scoring per process.
+    """
+    if not season or not week:
+        return {}
+    key = (int(season), int(week), _ss_scoring_sig(scoring_settings))
+    cached = _SS_POS_ANCHOR_CACHE.get(key)
+    if cached is not None:
+        return cached
+    anchors: dict = {}
+    try:
+        from utils.utils import load_week_projection as _swp
+        from utils.fantasy_scoring import weekly_projection_points as _wpp
+        from utils.lineup_slots import start_sit_pos as _ssp
+        proj_map = _swp(int(season), int(week)) or {}
+        index = get_players_index_global() or {}
+        by_pos: dict = {}
+        for pid in proj_map.keys():
+            meta = index.get(str(pid)) or index.get(pid) or {}
+            pos = _ssp((meta.get("pos") or meta.get("position") or ""))
+            if not pos:
+                continue
+            try:
+                pts = _wpp(proj_map, pid, scoring_settings, pos)
+            except Exception:
+                pts = None
+            if pts and pts > 0:
+                by_pos.setdefault(pos, []).append(float(pts))
+        for pos, vals in by_pos.items():
+            if not vals:
+                continue
+            vals.sort()
+            idx = max(0, min(len(vals) - 1, int(round(0.95 * (len(vals) - 1)))))
+            anchor = vals[idx]
+            if anchor and anchor > 0:
+                anchors[pos] = round(anchor, 2)
+    except Exception:
+        logger.debug("[start_score_pos_anchors] failed", exc_info=True)
+        anchors = {}
+    with _SS_POS_ANCHOR_LOCK:
+        if len(_SS_POS_ANCHOR_CACHE) > 64:
+            _SS_POS_ANCHOR_CACHE.clear()
+        _SS_POS_ANCHOR_CACHE[key] = anchors
+    return anchors
+
+
 def run_daily_data_async(season: int, week: int) -> None:
     """Start daily data build in a background thread."""
     # Never kick off the real daily build under tests: build_daily_data scrapes
@@ -19591,8 +19660,13 @@ def api_player_details(player_id: str):
             logger.debug("[api_player_details] injury lookup skipped", exc_info=True)
 
         # Unified start/sit score (same formula as Waivers START badges) so
-        # Compare can show a real number instead of a decorative dash.
+        # Compare can show a real number instead of a decorative dash. The
+        # per-factor multipliers and demotion reason ride along so the Compare
+        # Start/Sit tab can explain what moved the score, not just show it.
         _start_score = None
+        _start_score_pct = None
+        _start_factors = None
+        _start_demotion = None
         try:
             from utils.start_sit_score import compute_start_score
             from dashboard_services.api import get_nfl_state as _ss_nfl_state
@@ -19651,6 +19725,21 @@ def api_player_details(player_id: str):
                     position=_ss_pos,
                 )
                 _start_score = round(float(_ss_val), 2)
+                _start_factors = _ss_fac
+                _start_demotion = _ss_dem
+                # Position-relative 0-100 index so Compare can rank a QB against a
+                # WR honestly. 100 = the position's top weekly projection; a
+                # player whose favorable multipliers push past it simply caps.
+                try:
+                    _ss_anchor = (start_score_pos_anchors(
+                        int(season), _ss_week, scoring_settings
+                    ) or {}).get(_start_sit_pos(_ss_pos))
+                    if _ss_anchor and _ss_anchor > 0:
+                        _start_score_pct = int(max(0, min(100, round(
+                            100.0 * float(_ss_val) / float(_ss_anchor)
+                        ))))
+                except Exception:
+                    logger.debug("[api_player_details] start_score_pct skipped", exc_info=True)
         except Exception:
             logger.debug("[api_player_details] start_score skipped", exc_info=True)
 
@@ -19848,6 +19937,9 @@ def api_player_details(player_id: str):
                 "total_pts_ovr_rank": _total_pts_ovr_rank,
                 "adp": _adp,
                 "start_score": _start_score,
+                "start_score_pct": _start_score_pct,
+                "start_score_factors": _start_factors,
+                "start_score_demotion": _start_demotion,
             },
             "value_history": value_history,
             "game_logs_by_year": game_logs_by_year,

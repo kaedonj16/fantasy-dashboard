@@ -20,12 +20,19 @@ def test_player_details_returns_unified_start_score():
     details = app[app.index("def api_player_details"): app.index("def api_player_game_logs")]
     assert "from utils.start_sit_score import compute_start_score" in details
     assert '"start_score": _start_score' in details
+    # Position-relative 0-100 index rides alongside the raw score.
+    assert '"start_score_pct": _start_score_pct' in details
+    assert "def start_score_pos_anchors" in app
 
 
 def test_compare_surfaces_start_score_on_two_and_three_player_views():
     js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
-    assert "p.stats?.start_score" in js
-    assert "row('Start/Sit score'" in js
+    # The start/sit score lives in its own Start/Sit tab on both compare
+    # surfaces (two-player modal/page and the three-player page), fed by the
+    # shared breakdown helper rather than the Overview hero/table.
+    assert "_buildStartSitTabHTML([p1, p2])" in js
+    assert "_buildStartSitTabHTML(players)" in js
+    assert "st.start_score" in js
 
 
 def test_waiver_rows_show_return_source():

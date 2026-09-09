@@ -15194,9 +15194,6 @@ function _buildCompareHeroHTML(p, other) {
   const winsf  = _win(valsf, isRedraft ? _o.redraft_value_sf : _o.sf_value) ? ' compare-hero-win' : '';
   const winppg = _win(ppg, _o.ppg) ? ' compare-hero-win' : '';
   const wintot = _win(total, _o.total_pts) ? ' compare-hero-win' : '';
-  const ss = p.stats?.start_score;
-  const oSs = _o.start_score;
-  const winss = _win(ss, oSs) ? ' compare-hero-win' : '';
 
   const scoringCols = (ppg != null ? 1 : 0) + (total != null ? 1 : 0);
   const scoringRow = hasScoringRow ? `
@@ -15263,14 +15260,6 @@ function _buildCompareHeroHTML(p, other) {
       ${isSf ? cardSf + card1qb : card1qb + cardSf}
     </div>
     ${scoringRow}
-    ${(ss != null || oSs != null) ? `
-    <div class="compare-hero-row" style="grid-template-columns:1fr;margin-top:6px;">
-      <div class="pm-hero-stat${winss}" style="padding:10px 10px;">
-        <div class="pm-hero-label">Start/Sit score</div>
-        <div class="pm-hero-val" style="font-size:20px;">${ss != null ? (Math.round(ss * 10) / 10) : '–'}</div>
-        <div class="pm-hero-sub">this week</div>
-      </div>
-    </div>` : ''}
     ${adpRow}
   `;
 }
@@ -16187,6 +16176,115 @@ function _cmpLoadGameLogs(pid, position, containerId) {
     });
 }
 
+// ── Start/Sit breakdown (shared) ────────────────────────────────────────────
+// The single start/sit score (utils/start_sit_score) is projected points scaled
+// by capped signal multipliers. This renders one player's score plus a chip for
+// every signal that actually moved it, so Compare explains the number instead of
+// just showing it. Used by both the two- and three-player Start/Sit tabs.
+const _SS_FACTOR_LABELS = {
+  form: 'Form', matchup: 'Matchup', usage: 'Usage', avail: 'Availability',
+  vegas: 'Game total', floor: 'Floor', weather: 'Weather',
+};
+const _SS_DEMOTION_NOTES = {
+  bye: 'On bye this week — score zeroed.',
+  out: 'Ruled out (OUT/IR/SUSP) — score zeroed.',
+  questionable: 'Questionable tag applied — score trimmed.',
+  low_total: 'Low implied team total drags the game environment.',
+  weather: 'Weather headwind for this matchup.',
+};
+
+function _startSitFactorChips(fac) {
+  if (!fac || typeof fac !== 'object') return '';
+  const chips = [];
+  Object.keys(_SS_FACTOR_LABELS).forEach(function (key) {
+    const m = fac[key];
+    if (m == null || isNaN(m)) return;
+    const label = _SS_FACTOR_LABELS[key];
+    // Availability of exactly 0 means ruled out; show a hard label, not −100%.
+    if (key === 'avail' && Number(m) === 0) {
+      chips.push('<span class="ss-chip ss-chip-down">' + label + ': out</span>');
+      return;
+    }
+    const delta = Math.round((Number(m) - 1) * 100);
+    if (delta === 0) return; // neutral signal — nothing to explain
+    const cls = delta > 0 ? 'ss-chip-up' : 'ss-chip-down';
+    const sign = delta > 0 ? '+' : '';
+    chips.push('<span class="ss-chip ' + cls + '">' + label + ' ' + sign + delta + '%</span>');
+  });
+  if (!chips.length) return '<div class="ss-chips-empty">Projection only — no signals moved the score this week.</div>';
+  return '<div class="ss-chips">' + chips.join('') + '</div>';
+}
+
+function _buildStartSitBreakdownHTML(p) {
+  const st = (p && p.stats) || {};
+  const score = st.start_score;
+  const esc = (typeof escapeHtml === 'function') ? escapeHtml : (s => String(s == null ? '' : s));
+  const name = esc(p && (p.name || p.full_name) || 'Player');
+  if (score == null) {
+    return '<div class="ss-card"><div class="ss-card-name">' + name + '</div>'
+      + '<div class="ss-empty">No start/sit score this week.</div></div>';
+  }
+  const fac = st.start_score_factors || null;
+  const proj = fac && fac.proj != null ? fac.proj : null;
+  const demo = st.start_score_demotion || null;
+  const rawDisp = Math.round(Number(score) * 10) / 10;
+  // Position-relative 0-100 index is the headline when the server could build
+  // it (needs the week's position pool); otherwise fall back to the raw score.
+  const pct = st.start_score_pct;
+  const hasPct = pct != null && !isNaN(pct);
+  const bigDisp = hasPct ? Math.round(Number(pct)) : rawDisp;
+  const cap = hasPct ? 'Start/Sit index (0&ndash;100) · this week' : 'Start/Sit score · this week';
+  const projParts = [];
+  if (proj != null) projParts.push('Projection <b>' + (Math.round(Number(proj) * 10) / 10) + '</b> pts');
+  if (hasPct) projParts.push('raw score <b>' + rawDisp + '</b>');
+  const projLine = projParts.length
+    ? '<div class="ss-proj">' + projParts.join(' · ') + '</div>' : '';
+  const demoNote = (demo && _SS_DEMOTION_NOTES[demo])
+    ? '<div class="ss-demo">' + _SS_DEMOTION_NOTES[demo] + '</div>' : '';
+  return '<div class="ss-card">'
+    + '<div class="ss-card-name">' + name + '</div>'
+    + '<div class="ss-score">' + bigDisp + '</div>'
+    + '<div class="ss-score-cap">' + cap + '</div>'
+    + projLine
+    + _startSitFactorChips(fac)
+    + demoNote
+    + '</div>';
+}
+
+// One <style> block for the Start/Sit tab, injected once per surface render.
+const _SS_TAB_CSS =
+  '<style>'
+  + '.ss-tab-intro{font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.45;}'
+  + '.ss-cards{display:grid;gap:12px;}'
+  + '.ss-cards-2{grid-template-columns:1fr 1fr;}'
+  + '.ss-cards-3{grid-template-columns:1fr 1fr 1fr;}'
+  + '@media(max-width:600px){.ss-cards-2,.ss-cards-3{grid-template-columns:1fr;}}'
+  + '.ss-card{border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center;background:var(--surface2,rgba(127,127,127,.04));min-width:0;}'
+  + '.ss-card-name{font-weight:800;font-size:13px;color:var(--text);margin-bottom:6px;}'
+  + '.ss-score{font-size:34px;font-weight:800;color:var(--text);line-height:1;font-variant-numeric:tabular-nums;}'
+  + '.ss-score-cap{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin-top:4px;}'
+  + '.ss-proj{font-size:12px;color:var(--muted);margin-top:10px;}'
+  + '.ss-chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:10px;}'
+  + '.ss-chip{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;white-space:nowrap;}'
+  + '.ss-chip-up{color:var(--win,#16a34a);background:color-mix(in srgb,var(--win,#16a34a) 14%,transparent);}'
+  + '.ss-chip-down{color:#dc2626;background:color-mix(in srgb,#dc2626 12%,transparent);}'
+  + '.ss-chips-empty{font-size:11px;color:var(--muted);margin-top:10px;}'
+  + '.ss-demo{font-size:11px;color:#dc2626;font-weight:600;margin-top:10px;}'
+  + '.ss-empty{font-size:12px;color:var(--muted);padding:18px 0;}'
+  + '</style>';
+
+// Full Start/Sit tab body for N players (2 for compare/modal, 3 for the page).
+function _buildStartSitTabHTML(players) {
+  const cards = (players || []).map(_buildStartSitBreakdownHTML).join('');
+  const gridCls = (players && players.length === 3) ? 'ss-cards-3' : 'ss-cards-2';
+  return _SS_TAB_CSS
+    + '<div class="ss-tab-intro">A 0&ndash;100 start-confidence index for this week, relative to each '
+    + 'player&rsquo;s own position (100 = the top weekly projection at that position). It starts from '
+    + 'projected points and applies capped signal multipliers (form, usage, availability, game total, '
+    + 'floor, weather), so a QB&rsquo;s number and a WR&rsquo;s number are comparable. Higher is the stronger start.</div>'
+    + '<div class="ss-cards ' + gridCls + '">' + cards + '</div>';
+}
+
 // Comparison body markup, shared by the player-modal compare view and the
 // standalone /compare page so the two never drift. opts.nav adds the modal-only
 // back / profile buttons (the page has its own navigation).
@@ -16201,6 +16299,7 @@ function _compareBodyHTML(p1, p2, opts) {
     <div class="compare-body">
       <div class="pm-tab-bar compare-tab-bar" role="tablist">
         <button type="button" class="pm-tab active" data-cmptab="overview" role="tab" aria-selected="true" onclick="cmpSwitchTab('overview')">Overview</button>
+        <button type="button" class="pm-tab" data-cmptab="startsit" role="tab" aria-selected="false" onclick="cmpSwitchTab('startsit')">Start/Sit</button>
         <button type="button" class="pm-tab" data-cmptab="logs" role="tab" aria-selected="false" onclick="cmpSwitchTab('logs')">Stats</button>
         <button type="button" class="pm-tab" data-cmptab="metrics" role="tab" aria-selected="false" onclick="cmpSwitchTab('metrics')">Advanced Metrics</button>
         <button type="button" class="pm-tab" data-cmptab="usage" role="tab" aria-selected="false" onclick="cmpSwitchTab('usage')">Usage</button>
@@ -16215,6 +16314,10 @@ function _compareBodyHTML(p1, p2, opts) {
         <hr class="pm-section-divider">
         <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
         <div id="compareValueChart" class="player-modal-chart-container" style="min-height:220px;"></div>`}
+      </div>
+
+      <div class="compare-tab-panel" data-cmppanel="startsit" hidden>
+        ${_buildStartSitTabHTML([p1, p2])}
       </div>
 
       <div class="compare-tab-panel" data-cmppanel="metrics" hidden>
@@ -16485,7 +16588,6 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
     row('Redraft ADP', players.map(p => st(p).adp && (isSf ? st(p).adp.redraft_sf : st(p).adp.redraft_1qb)), 'min', v => (v == null || v === '') ? '&ndash;' : v),
     row('Age', players.map(p => p.age), 'min', v => v == null ? '&ndash;' : (Math.round(v * 10) / 10)),
     row((ppgSeason ? ppgSeason + ' ' : '') + 'PPG', players.map(p => st(p).ppg), 'max', v => v == null ? '&ndash;' : v),
-    row('Start/Sit score', players.map(p => st(p).start_score), 'max', v => v == null ? '&ndash;' : (Math.round(v * 10) / 10)),
     row('Total Pts', players.map(p => st(p).total_pts), 'max', v => v == null ? '&ndash;' : v),
     row('Games', players.map(p => st(p).ppg_games), null, v => (v == null || v === '') ? '&ndash;' : v),
   ].join('');
@@ -16547,10 +16649,12 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
     + '.cmp3-colp .pm-wt-grid{grid-template-columns:1fr;}'
     + '</style>'
     + '<div class="pm-tab-bar compare-tab-bar cmp3-tabs" role="tablist">'
-    + _tab('overview', 'Overview', true) + _tab('logs', 'Stats', false)
+    + _tab('overview', 'Overview', true) + _tab('startsit', 'Start/Sit', false)
+    + _tab('logs', 'Stats', false)
     + _tab('metrics', 'Advanced Metrics', false) + _tab('usage', 'Usage', false)
     + '</div>'
     + '<div class="compare-tab-panel" data-cmp3panel="overview">' + overviewHTML + '</div>'
+    + '<div class="compare-tab-panel" data-cmp3panel="startsit" hidden>' + _buildStartSitTabHTML(players) + '</div>'
     + '<div class="compare-tab-panel" data-cmp3panel="logs" hidden>' + _cols('cmp3Logs') + '</div>'
     + '<div class="compare-tab-panel" data-cmp3panel="metrics" hidden><div id="cmp3MetricsPanel"><div class="cmp3-colp-load">Loading&hellip;</div></div></div>'
     + '<div class="compare-tab-panel" data-cmp3panel="usage" hidden><div id="cmp3UsagePanel"><div class="cmp3-colp-load">Loading&hellip;</div></div></div>';
