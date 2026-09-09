@@ -8,6 +8,11 @@ Weekly projections already bake in the opponent, so defensive matchup rank is
 *not* re-multiplied into the score (that used to double-count). Matchup stays on
 the row as a chip only. Weather and Vegas *are* applied here because those
 signals are usually missing from raw projection feeds.
+
+Offensive-line quality is only *partly* reflected in projection feeds, so it is
+applied as a deliberately small residual (±4%), not a full multiplier — the same
+double-count caution as matchup. Callers pass the position-relevant 0-100 index
+(run block for RB, pass block for QB/WR/TE); 50 is league-average and neutral.
 """
 from __future__ import annotations
 
@@ -33,6 +38,7 @@ def _neutral_factors(proj: float) -> dict:
         "vegas": 1.0,
         "floor": 1.0,
         "weather": 1.0,
+        "oline": 1.0,
     }
 
 
@@ -86,19 +92,25 @@ def compute_start_score(
     bust_rate: Optional[float] = None,
     weather_kind: Optional[str] = None,
     position: Optional[str] = None,
+    oline_index: Optional[float] = None,
     apply_matchup: bool = False,
 ) -> tuple[float, dict, Optional[str]]:
     """Return ``(score, score_factors, demotion)``.
 
-    Factors: proj, form, matchup, usage, avail, vegas, floor, weather.
+    Factors: proj, form, matchup, usage, avail, vegas, floor, weather, oline.
     Bye and OUT/IR zero the score. Non-projection signals are capped multipliers.
+
+    ``oline_index`` is the player's position-relevant 0-100 O-line rating (run
+    block for RB, pass block for QB/WR/TE, composite otherwise); 50 is neutral.
+    It is applied as a small ±4% residual because projections already reflect
+    line quality in part. Pass None to leave the factor neutral.
 
     ``apply_matchup`` defaults to False because weekly projections already
     reflect the opponent. Pass True only for matchup-neutral projection feeds.
     ``def_rank`` / ``def_total`` are still accepted so callers can pass them
     without branching; they only affect the score when ``apply_matchup`` is True.
     """
-    form = mu = usage = avail = vegas = floor = weather = 1.0
+    form = mu = usage = avail = vegas = floor = weather = oline = 1.0
     demotion = None
     try:
         proj = float(proj_pts or 0)
@@ -156,7 +168,17 @@ def compute_start_score(
     if weather < 1.0:
         demotion = demotion or "weather"
 
-    score = proj * form * mu * usage * avail * vegas * floor * weather
+    if oline_index is not None:
+        try:
+            e = max(0.0, min(100.0, float(oline_index))) / 100.0
+            # 0.96 (worst line) .. 1.04 (best line); ~1.0 at league-average (50).
+            oline = 0.96 + e * 0.08
+            if oline < 1.0:
+                demotion = demotion or "oline"
+        except (TypeError, ValueError):
+            oline = 1.0
+
+    score = proj * form * mu * usage * avail * vegas * floor * weather * oline
     return score, {
         "proj": proj,
         "form": round(form, 3),
@@ -166,4 +188,5 @@ def compute_start_score(
         "vegas": round(vegas, 3),
         "floor": round(floor, 3),
         "weather": round(weather, 3),
+        "oline": round(oline, 3),
     }, demotion

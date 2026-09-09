@@ -11045,6 +11045,12 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
     except Exception:
         logger.debug("[startsit extras] game_env failed", exc_info=True)
 
+    # O-line context, matching the field the Start/Sit page rows carry.
+    try:
+        out["oline"] = _oline_for_player(int(season), team, pos)
+    except Exception:
+        logger.debug("[startsit extras] oline failed", exc_info=True)
+
     return out
 
 
@@ -11336,6 +11342,7 @@ def api_start_sit_options():
         _bust = None
         if _cons and not _cons.get("small_sample"):
             _bust = _cons.get("bust_rate")
+        _ol_ss = _oline_for_player(season, team, pos)
         score, _factors, demotion = compute_start_score(
             proj_pts,
             on_bye=on_bye,
@@ -11350,6 +11357,7 @@ def api_start_sit_options():
             bust_rate=_bust,
             weather_kind=_wx_kind,
             position=pos,
+            oline_index=(_ol_ss or {}).get("primary_value"),
         )
         _form = _factors["form"]
         _mu = _factors["matchup"]
@@ -11358,6 +11366,7 @@ def api_start_sit_options():
         _vg = _factors["vegas"]
         _fl = _factors["floor"]
         _wx = _factors["weather"]
+        _ol = _factors["oline"]
 
         _return_plan = None
         if injury_status:
@@ -11401,6 +11410,7 @@ def api_start_sit_options():
             "implied_total": _imp_ss,
             "weather": _wx_ss,
             "consistency": _cons,
+            "oline": _ol_ss,
             "demotion": demotion,
             # Unified start/sit score (the single ranking used everywhere) plus the
             # per-factor multipliers behind it, so the Compare card can name which
@@ -11414,7 +11424,7 @@ def api_start_sit_options():
                 "proj": proj_pts, "form": round(_form, 3), "matchup": round(_mu, 3),
                 "usage": round(_ug, 3), "avail": round(_avail, 3),
                 "vegas": round(_vg, 3), "floor": round(_fl, 3),
-                "weather": round(_wx, 3),
+                "weather": round(_wx, 3), "oline": round(_ol, 3),
             },
             "_score": score,
         })
@@ -20033,6 +20043,9 @@ def api_player_details(player_id: str):
                     _ss_usa = _ss_ut.get("season_avg")
                 except Exception:
                     logger.debug("[api_player_details] usage trend skipped", exc_info=True)
+                # Reuse the O-line context the payload already resolved, so the
+                # modal start score gets the same small residual as the page.
+                _ss_ol = _ssp.get("oline") or _oline_for_player(season, _ss_team or player_team, _ss_pos)
                 _ss_val, _ss_fac, _ss_dem = compute_start_score(
                     _ss_proj,
                     on_bye=_ss_bye,
@@ -20047,6 +20060,7 @@ def api_player_details(player_id: str):
                     bust_rate=_ss_bust,
                     weather_kind=_ss_wx_kind,
                     position=_ss_pos,
+                    oline_index=(_ss_ol or {}).get("primary_value"),
                 )
                 _start_score = round(float(_ss_val), 2)
                 _start_factors = _ss_fac
