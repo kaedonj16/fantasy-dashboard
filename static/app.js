@@ -16222,16 +16222,24 @@ function _buildStartSitBreakdownHTML(p) {
   const fac = st.start_score_factors || null;
   const proj = fac && fac.proj != null ? fac.proj : null;
   const demo = st.start_score_demotion || null;
-  const scoreDisp = Math.round(Number(score) * 10) / 10;
-  const projLine = proj != null
-    ? '<div class="ss-proj">Base projection: <b>' + (Math.round(Number(proj) * 10) / 10) + '</b> pts</div>'
-    : '';
+  const rawDisp = Math.round(Number(score) * 10) / 10;
+  // Position-relative 0-100 index is the headline when the server could build
+  // it (needs the week's position pool); otherwise fall back to the raw score.
+  const pct = st.start_score_pct;
+  const hasPct = pct != null && !isNaN(pct);
+  const bigDisp = hasPct ? Math.round(Number(pct)) : rawDisp;
+  const cap = hasPct ? 'Start/Sit index (0&ndash;100) · this week' : 'Start/Sit score · this week';
+  const projParts = [];
+  if (proj != null) projParts.push('Projection <b>' + (Math.round(Number(proj) * 10) / 10) + '</b> pts');
+  if (hasPct) projParts.push('raw score <b>' + rawDisp + '</b>');
+  const projLine = projParts.length
+    ? '<div class="ss-proj">' + projParts.join(' · ') + '</div>' : '';
   const demoNote = (demo && _SS_DEMOTION_NOTES[demo])
     ? '<div class="ss-demo">' + _SS_DEMOTION_NOTES[demo] + '</div>' : '';
   return '<div class="ss-card">'
     + '<div class="ss-card-name">' + name + '</div>'
-    + '<div class="ss-score">' + scoreDisp + '</div>'
-    + '<div class="ss-score-cap">Start/Sit score · this week</div>'
+    + '<div class="ss-score">' + bigDisp + '</div>'
+    + '<div class="ss-score-cap">' + cap + '</div>'
     + projLine
     + _startSitFactorChips(fac)
     + demoNote
@@ -16265,8 +16273,10 @@ function _buildStartSitTabHTML(players) {
   const cards = (players || []).map(_buildStartSitBreakdownHTML).join('');
   const gridCls = (players && players.length === 3) ? 'ss-cards-3' : 'ss-cards-2';
   return _SS_TAB_CSS
-    + '<div class="ss-tab-intro">Projected points for this week, scaled by capped signal multipliers '
-    + '(form, usage, availability, game total, floor, weather). Higher is the stronger start.</div>'
+    + '<div class="ss-tab-intro">A 0&ndash;100 start-confidence index for this week, relative to each '
+    + 'player&rsquo;s own position (100 = the top weekly projection at that position). It starts from '
+    + 'projected points and applies capped signal multipliers (form, usage, availability, game total, '
+    + 'floor, weather), so a QB&rsquo;s number and a WR&rsquo;s number are comparable. Higher is the stronger start.</div>'
     + '<div class="ss-cards ' + gridCls + '">' + cards + '</div>';
 }
 

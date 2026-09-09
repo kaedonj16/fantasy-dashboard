@@ -20,6 +20,9 @@ def test_player_details_returns_unified_start_score():
     details = app[app.index("def api_player_details"): app.index("def api_player_game_logs")]
     assert "from utils.start_sit_score import compute_start_score" in details
     assert '"start_score": _start_score' in details
+    # Position-relative 0-100 index rides alongside the raw score.
+    assert '"start_score_pct": _start_score_pct' in details
+    assert "def start_score_pos_anchors" in app
 
 
 def test_compare_surfaces_start_score_on_two_and_three_player_views():
