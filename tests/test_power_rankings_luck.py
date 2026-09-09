@@ -1,10 +1,10 @@
 """Guards the power-ranking accuracy upgrades in build_power_rankings_context:
 
-  1. The win term is luck-adjusted (blended toward all-play), so a team that
-     scores well but lost the schedule lottery isn't punished as if it were bad,
-     and a team that won on a soft schedule isn't over-credited.
+  1. The win term is all-play (not a mix with actual W-L), so a team that
+     scores well but lost the schedule lottery isn't punished as if it were bad.
   2. The value term is the top-8 win-now (redraft) starter total, not a
-     whole-roster dynasty average.
+     whole-roster dynasty average. In-season it is display-only.
+  3. Momentum / SoS chips stay on the payload but do not reorder in-season rank.
 
 The heavy roster-summary/grade helpers are stubbed so this stays a pure-math
 test with no Flask/pandas-provider dependencies (pandas itself is fine).
@@ -71,8 +71,9 @@ def test_all_play_replaces_raw_record():
     # ...but all-play knows Unlucky is the strongest scorer every week.
     assert unlucky["all_play_pct"] == 1.0
     assert lucky["all_play_pct"] == 0.5
-    # The luck-adjusted win term flips them: the high scorer outranks the
-    # schedule-lucky team on the win dimension.
+    # The record term is all-play, not a mix with actual W-L.
+    assert unlucky["luck_adj_win"] == unlucky["all_play_pct"]
+    assert lucky["luck_adj_win"] == lucky["all_play_pct"]
     assert unlucky["luck_adj_win"] > lucky["luck_adj_win"]
 
 
@@ -121,17 +122,18 @@ def _momentum_ctx():
     }
 
 
-def test_momentum_breaks_a_tie_between_identical_resumes():
+def test_momentum_is_labeled_but_does_not_reorder_in_season():
     teams = _by_name(cb.build_power_rankings_context(_momentum_ctx()))
     hot, cold = teams["HotNow"], teams["ColdNow"]
     # Same PF/record/value components...
     assert hot["power_components"]["pf"] == cold["power_components"]["pf"]
     assert hot["power_components"]["record"] == cold["power_components"]["record"]
-    # ...but recent form separates them.
+    # ...recent form is still computed for chips...
     assert hot["momentum"] > 0 and cold["momentum"] < 0
     assert hot["momentum_label"] == "Heating up"
     assert cold["momentum_label"] == "Cooling off"
-    assert hot["power_score"] > cold["power_score"]
+    # ...but in-season rank is all-play, so identical résumés stay tied.
+    assert hot["power_score"] == cold["power_score"]
 
 
 def test_power_components_are_exposed():
@@ -165,13 +167,15 @@ def _sos_ctx():
     }
 
 
-def test_strength_of_schedule_breaks_a_tie():
+def test_strength_of_schedule_is_labeled_but_does_not_reorder_in_season():
     teams = _by_name(cb.build_power_rankings_context(_sos_ctx()))
     tough, cake = teams["TeamTough"], teams["TeamCake"]
     # Identical scoring résumé...
     assert tough["power_components"]["pf"] == cake["power_components"]["pf"]
-    # ...but the tougher schedule is recognized and rewarded.
+    assert tough["power_components"]["record"] == cake["power_components"]["record"]
+    # ...but the tougher schedule is still recognized for the chip.
     assert tough["sos"] > cake["sos"]
     assert tough["sos_label"] == "Brutal"
     assert cake["sos_label"] == "Soft"
-    assert tough["power_score"] > cake["power_score"]
+    # In-season rank ignores SoS.
+    assert tough["power_score"] == cake["power_score"]
