@@ -16248,7 +16248,14 @@ function _ssVerdict(players) {
 
 // One metric row across N player columns, with the best value highlighted when a
 // direction is given ('max' higher wins, 'min' lower wins; null = display only).
+// Returns '' when every cell is empty, so a signal with no data for any player
+// (e.g. Vegas total before lines are posted) drops out instead of showing a row
+// of dashes.
+function _ssRowIsEmpty(h) {
+  return h == null || h === '' || h === '&ndash;' || h === '–' || h === '-';
+}
 function _ssTableRow(label, cells, dir) {
+  if (cells.every(c => _ssRowIsEmpty(c.html))) return '';
   let best = null;
   if (dir) {
     const nums = cells.map(c => c.num).filter(v => v != null);
@@ -16328,11 +16335,15 @@ function _buildStartSitTabHTML(players) {
   const rDef = _ssTableRow('Def vs pos', players.map(p => { const f = _ssNum(ss(p).fpts_against); return { num: null, cls: _ssMuClass(ss(p).def_rank, ss(p).def_total), html: f != null ? (f + ' pts') : (ss(p).on_bye ? 'BYE' : dash) }; }), null);
   const rMatchup = _ssTableRow('Matchup', players.map(p => { const c = _ssMuChip(ss(p).def_rank, ss(p).def_total); return { num: null, html: c || dash }; }), null);
 
+  // Empty rows return '' from _ssTableRow; drop them and skip a section header
+  // whose whole group hid out, so a missing signal leaves no trace.
+  const scoreRows = [rProj, rL4, rFloor, rProfile, rBoom, rOline, rVegas, rVenue].filter(Boolean);
+  const ctxRows = [rValue, rOpp, rDef, rMatchup].filter(Boolean);
   const rows = [
-    section('What drives the score'),
-    rProj, rL4, rFloor, rProfile, rBoom, rOline, rVegas, rVenue,
-    section('Context (not in the score)'),
-    rValue, rOpp, rDef, rMatchup,
+    scoreRows.length ? section('What drives the score') : '',
+    scoreRows.join(''),
+    ctxRows.length ? section('Context (not in the score)') : '',
+    ctxRows.join(''),
   ].join('');
 
   const table = '<div class="ss-tbl-wrap"><table class="ss-tbl"><thead><tr><th class="ss-rowlbl" aria-hidden="true"></th>' + heads + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
