@@ -19587,8 +19587,12 @@ def api_player_details(player_id: str):
             logger.debug("[api_player_details] injury lookup skipped", exc_info=True)
 
         # Unified start/sit score (same formula as Waivers START badges) so
-        # Compare can show a real number instead of a decorative dash.
+        # Compare can show a real number instead of a decorative dash. The
+        # per-factor multipliers and demotion reason ride along so the Compare
+        # Start/Sit tab can explain what moved the score, not just show it.
         _start_score = None
+        _start_factors = None
+        _start_demotion = None
         try:
             from utils.start_sit_score import compute_start_score
             from dashboard_services.api import get_nfl_state as _ss_nfl_state
@@ -19647,6 +19651,8 @@ def api_player_details(player_id: str):
                     position=_ss_pos,
                 )
                 _start_score = round(float(_ss_val), 2)
+                _start_factors = _ss_fac
+                _start_demotion = _ss_dem
         except Exception:
             logger.debug("[api_player_details] start_score skipped", exc_info=True)
 
@@ -19844,6 +19850,8 @@ def api_player_details(player_id: str):
                 "total_pts_ovr_rank": _total_pts_ovr_rank,
                 "adp": _adp,
                 "start_score": _start_score,
+                "start_score_factors": _start_factors,
+                "start_score_demotion": _start_demotion,
             },
             "value_history": value_history,
             "game_logs_by_year": game_logs_by_year,

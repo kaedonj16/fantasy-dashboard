@@ -24,8 +24,12 @@ def test_player_details_returns_unified_start_score():
 
 def test_compare_surfaces_start_score_on_two_and_three_player_views():
     js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
-    assert "p.stats?.start_score" in js
-    assert "row('Start/Sit score'" in js
+    # The start/sit score lives in its own Start/Sit tab on both compare
+    # surfaces (two-player modal/page and the three-player page), fed by the
+    # shared breakdown helper rather than the Overview hero/table.
+    assert "_buildStartSitTabHTML([p1, p2])" in js
+    assert "_buildStartSitTabHTML(players)" in js
+    assert "st.start_score" in js
 
 
 def test_waiver_rows_show_return_source():
