@@ -38326,74 +38326,93 @@ a, button, [role="button"], [role="tab"], summary, label,
 .st-div-head {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 9px 12px;
-    border-radius: 10px;
+    gap: 11px;
+    padding: 10px 14px;
+    border-radius: 12px;
     background:
         linear-gradient(
             105deg,
-            color-mix(in srgb, var(--accent) 12%, var(--card-soft, var(--card))) 0%,
-            color-mix(in srgb, var(--card-soft, var(--card)) 88%, transparent) 62%
+            color-mix(in srgb, var(--accent) 15%, var(--card-soft, var(--card))) 0%,
+            color-mix(in srgb, var(--accent) 6%, var(--card-soft, var(--card))) 34%,
+            color-mix(in srgb, var(--card-soft, var(--card)) 92%, transparent) 78%
         );
-    border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
-    box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+    box-shadow:
+        inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent),
+        0 1px 3px color-mix(in srgb, var(--accent) 10%, transparent);
 }
+/* Rounded vertical accent bar reads as a section marker better than a dot. */
 .st-div-mark {
-    width: 7px;
-    height: 7px;
-    border-radius: 3px;
+    width: 4px;
+    height: 16px;
+    border-radius: 4px;
     flex: 0 0 auto;
-    background: var(--accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+    background: linear-gradient(
+        to bottom,
+        var(--accent),
+        color-mix(in srgb, var(--accent) 62%, transparent)
+    );
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .st-div-label {
     font-size: 12px;
     font-weight: 800;
-    letter-spacing: .08em;
+    letter-spacing: .09em;
     text-transform: uppercase;
     color: var(--text);
     line-height: 1;
 }
+/* Team count reads as a small pill rather than loose grey text. */
 .st-div-meta {
     margin-left: auto;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .01em;
     text-transform: none;
-    color: var(--text-muted);
+    color: color-mix(in srgb, var(--accent) 62%, var(--text-muted));
+    background: color-mix(in srgb, var(--accent) 9%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--border));
 }
 .st-div-lead {
     display: inline-flex;
     align-items: center;
     margin-left: 7px;
-    padding: 2px 6px;
+    padding: 2px 7px;
     border-radius: 6px;
     font-size: 9px;
     font-weight: 800;
-    letter-spacing: .06em;
+    letter-spacing: .07em;
     vertical-align: middle;
     color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 14%, transparent);
-    border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
 }
+/* Division leader row: tint plus a clean accent edge on the leading cell so the
+   winner of each group is unmistakable without adding noise to the rest. */
 .standings-table tr.st-div-leader td {
-    background: color-mix(in srgb, var(--accent) 4%, transparent);
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.standings-table tr.st-div-leader td:first-child {
+    box-shadow: inset 3px 0 0 var(--accent);
 }
 .standings-compact .st-div-head {
-    padding: 7px 10px;
-    border-radius: 8px;
-    gap: 8px;
+    padding: 8px 11px;
+    border-radius: 10px;
+    gap: 9px;
 }
 .standings-compact .st-div-label {
     font-size: 10.5px;
 }
 .standings-compact .st-div-meta {
-    font-size: 10px;
+    font-size: 9.5px;
+    padding: 2px 7px;
 }
 .standings-compact .st-div-mark {
-    width: 6px;
-    height: 6px;
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+    width: 3px;
+    height: 13px;
+    border-radius: 3px;
 }
 
 /* Eliminated rows: mute color, don't crush contrast with opacity. */
