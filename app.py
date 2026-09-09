@@ -11016,7 +11016,7 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
     try:
         if opponent and pos and not on_bye:
             _fmt = _scoring_format_from_settings(scoring_settings)
-            _fa = _compute_fpts_against(int(season), scoring=_fmt) or {}
+            _fa = _fpts_against_effective(int(season), scoring=_fmt) or {}
             _pa = float(_fa.get(opponent, {}).get(pos, 0.0))
             out["fpts_against"] = round(_pa, 1) if _pa > 0 else None
             _rank, _total = None, len(_fa) or 32
@@ -11113,7 +11113,9 @@ def api_start_sit_options():
     fpts_against: dict = {}
     try:
         _fa_fmt = _scoring_format_from_settings(ctx.get("scoring_settings"))
-        fpts_against = _compute_fpts_against(season, scoring=_fa_fmt)
+        # Blend from last season early in the year so "Def vs pos" is populated
+        # before the current season has games, then crossfade to current.
+        fpts_against = _fpts_against_effective(season, scoring=_fa_fmt)
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
@@ -14420,6 +14422,46 @@ def _compute_fpts_against(season: int, scoring: str = "ppr") -> dict:
     _FPTS_AGAINST_CACHE[cache_key] = result
     _FPTS_AGAINST_CACHE_TS[cache_key] = now
     return result
+
+
+# Weeks of current-season games after which defense-vs-position is trusted on its
+# own; below this it crossfades from last season, mirroring the consistency blend.
+_FPTS_BLEND_FULL = 6
+
+
+def _fpts_against_effective(season: int, scoring: str = "ppr") -> dict:
+    """Points allowed to each position, starting from last season and molding
+    toward the current one as games are played (same idea as the consistency
+    profile's blend). Early in the year the current season has no games, so this
+    returns last season's numbers instead of a blank; by ~week ``_FPTS_BLEND_FULL``
+    it is effectively the current season. Weight is ``min(1, games / full)``.
+    Falls back to whichever season actually has data.
+    """
+    cur = _compute_fpts_against(season, scoring) or {}
+    max_g = max((int(d.get("games", 0)) for d in cur.values()), default=0)
+    if max_g >= _FPTS_BLEND_FULL:
+        return cur
+    prior = _compute_fpts_against(int(season) - 1, scoring) or {}
+    if not prior:
+        return cur
+    if not cur:
+        return prior
+    w = max(0.0, min(1.0, max_g / float(_FPTS_BLEND_FULL)))
+    out: dict = {}
+    for team in set(cur) | set(prior):
+        c = cur.get(team) or {}
+        p = prior.get(team) or {}
+        row: dict = {"games": int(c.get("games", 0))}
+        for pos in ("QB", "RB", "WR", "TE", "K"):
+            cv, pv = c.get(pos), p.get(pos)
+            if cv is not None and pv is not None:
+                row[pos] = round(w * float(cv) + (1.0 - w) * float(pv), 1)
+            elif cv is not None:
+                row[pos] = cv
+            elif pv is not None:
+                row[pos] = pv
+        out[team] = row
+    return out
 
 
 _SCHED_POS_COLORS = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b",
