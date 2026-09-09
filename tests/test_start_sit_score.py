@@ -45,9 +45,20 @@ def test_matchup_optional_residual_when_explicitly_enabled():
 
 def test_questionable_availability():
     score, factors, demotion = compute_start_score(10.0, injury_status="Q")
-    assert factors["avail"] == 0.85
+    assert factors["avail"] == 0.95
     assert demotion == "questionable"
-    assert abs(score - 8.5) < 1e-9
+    assert abs(score - 9.5) < 1e-9
+
+
+def test_questionable_is_milder_than_other_soft_penalties():
+    """Q should not out-penalize typical Vegas/weather residuals on its own."""
+    _, q, _ = compute_start_score(10.0, injury_status="QUESTIONABLE")
+    _, vegas, _ = compute_start_score(10.0, implied_total=15, position="WR")
+    _, wind, _ = compute_start_score(10.0, weather_kind="wind", position="QB")
+    assert q["avail"] == 0.95
+    # Soft injury nudge stays at or above the harsher game-env haircuts.
+    assert q["avail"] >= vegas["vegas"]
+    assert q["avail"] >= wind["weather"]
 
 
 def test_low_implied_total_default_position():
