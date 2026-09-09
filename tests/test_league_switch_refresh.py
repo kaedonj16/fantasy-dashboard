@@ -5,8 +5,9 @@ used to keep a last-segment allowlist (dropping /draft and /draft/history) and
 navigate into a prewarmed DASHBOARD_CACHE snapshot of the destination. These
 tests lock the shipped JS/server contract:
 
-  * ``navigateToLeague`` POSTs ``/api/refresh-league`` for the destination,
-    then navigates. Nested paths after the league id are preserved.
+  * ``navigateToLeague`` POSTs ``/api/refresh-league`` for Sleeper/Yahoo
+    destinations, then navigates. ESPN skips that wait and navigates
+    immediately. Nested paths after the league id are preserved.
   * ``api_refresh_league`` drops ``_DRAFT_GRADES_CACHE`` entries for that room.
   * Teams lazy loaders re-read ``window.__teamsCfg`` when the league identity
     changes so they do not keep serving the previous room's flags/data.
