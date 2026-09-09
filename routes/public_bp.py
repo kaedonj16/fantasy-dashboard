@@ -832,6 +832,131 @@ def about_page(platform: Optional[str] = None, season: Optional[int] = None,
     )
 
 
+# ── Offensive-line rankings ─────────────────────────────────────────────────
+
+def _oline_index_color(v):
+    """Green (good) -> red (bad) for a 0-100 index."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "#6b7280"
+    # 0 -> red (0deg), 100 -> green (130deg)
+    hue = max(0, min(130, int(v * 1.3)))
+    return f"hsl({hue}, 62%, 42%)"
+
+
+@public_bp.route("/oline-rankings")
+@public_bp.route("/oline-rankings/<int:season>")
+def oline_rankings_page(season: Optional[int] = None):
+    """Public offensive-line unit rankings, derived from open nflverse
+    play-by-play (no licensed data). Reads the cron-built cache and renders a
+    sortable-by-link table; degrades to an explanatory empty state before the
+    first build."""
+    import json as _json
+    from datetime import datetime as _dt
+    from app import _oline_rank_table as _table, _load_oline_ratings as _load
+
+    metric = (request.args.get("metric") or "composite").strip()
+    if metric not in ("composite", "pass_block", "run_block"):
+        metric = "composite"
+
+    # Pick the season: explicit path arg, else the newest cache file, else now.
+    if season is None:
+        newest = None
+        try:
+            for fn in os.listdir("cache"):
+                if fn.startswith("oline_ratings_s") and fn.endswith(".json"):
+                    yr = int(fn[len("oline_ratings_s"):-len(".json")])
+                    newest = yr if newest is None else max(newest, yr)
+        except Exception:
+            newest = None
+        season = newest or _dt.now().year
+
+    rows = _table(season, metric)
+    generated = ""
+    try:
+        path = os.path.join("cache", f"oline_ratings_s{season}.json")
+        if os.path.exists(path):
+            generated = (_json.load(open(path)).get("generated_at") or "")[:10]
+    except Exception:
+        generated = ""
+
+    labels = {"composite": "Overall", "pass_block": "Pass Block", "run_block": "Run Block"}
+    tabs = "".join(
+        f'<a href="/oline-rankings/{season}?metric={m}" '
+        f'class="static-section-title" style="display:inline-block;margin-right:14px;'
+        f'padding:4px 10px;border-radius:8px;text-decoration:none;'
+        f'{"background:#1f2937;color:#fff;" if m == metric else "color:#6b7280;"}">'
+        f'{lbl}</a>'
+        for m, lbl in labels.items()
+    )
+
+    if not rows:
+        body = f"""
+        <div class="static-page"><div class="static-card-page">
+          <h1 class="static-hero-title">Offensive Line Rankings</h1>
+          <div class="static-section">
+            <p>Rankings for {season} aren't built yet. They're generated from public
+            play-by-play data by the daily update during the season. Check back after
+            the next build.</p>
+          </div>
+        </div></div>"""
+        return _render("Offensive Line Rankings", None, "", body,
+                       description="NFL offensive line unit rankings from public play-by-play data.")
+
+    def _cell(v, is_index=True, pct=False):
+        if v is None:
+            return '<td style="padding:6px 10px;color:#9ca3af;">—</td>'
+        if is_index:
+            return (f'<td style="padding:6px 10px;font-weight:600;'
+                    f'color:{_oline_index_color(v)};">{v:.0f}</td>')
+        suffix = "%" if pct else ""
+        return f'<td style="padding:6px 10px;color:#374151;">{v}{suffix}</td>'
+
+    trs = []
+    for r in rows:
+        trs.append(
+            "<tr style='border-top:1px solid #e5e7eb;'>"
+            f"<td style='padding:6px 10px;color:#9ca3af;'>{r['rank']}</td>"
+            f"<td style='padding:6px 10px;font-weight:600;'>{r['team']}</td>"
+            + _cell(r.get('composite')) + _cell(r.get('pass_block')) + _cell(r.get('run_block'))
+            + _cell(r.get('pressure_rate'), is_index=False, pct=True)
+            + _cell(r.get('sack_rate'), is_index=False, pct=True)
+            + _cell(r.get('line_yards'), is_index=False)
+            + "</tr>"
+        )
+
+    body = f"""
+    <div class="static-page"><div class="static-card-page">
+      <h1 class="static-hero-title">Offensive Line Rankings</h1>
+      <div class="static-section">
+        <p>Unit ratings on a 0&ndash;100 scale (100 = best), derived entirely from
+        public nflverse play-by-play &mdash; no licensed grades. Pass block blends
+        opponent-adjusted pressure and sack rate (residualised for the QB's time to
+        throw); run block uses opponent-adjusted Adjusted Line Yards. These are
+        directional <em>unit</em> tiers, not per-lineman grades.
+        {"<br><span style='color:#9ca3af;font-size:12px;'>Season " + str(season) + " &middot; updated " + generated + "</span>" if generated else ""}</p>
+      </div>
+      <div class="static-section">
+        <div style="margin-bottom:10px;">{tabs}</div>
+        <div style="overflow-x:auto;">
+        <table style="border-collapse:collapse;width:100%;font-size:14px;">
+          <thead><tr style="text-align:left;color:#6b7280;font-size:12px;text-transform:uppercase;">
+            <th style="padding:6px 10px;">#</th><th style="padding:6px 10px;">Team</th>
+            <th style="padding:6px 10px;">Overall</th><th style="padding:6px 10px;">Pass</th>
+            <th style="padding:6px 10px;">Run</th><th style="padding:6px 10px;">Pressure%</th>
+            <th style="padding:6px 10px;">Sack%</th><th style="padding:6px 10px;">Line Yds</th>
+          </tr></thead>
+          <tbody>{"".join(trs)}</tbody>
+        </table>
+        </div>
+      </div>
+    </div></div>"""
+    return _render("Offensive Line Rankings", None, "", body,
+                   description="NFL offensive line unit rankings (pass block, run block) "
+                               "from public play-by-play data.")
+
+
 # ── Terms ─────────────────────────────────────────────────────────────────────
 
 @public_bp.route("/terms")

@@ -14506,6 +14506,51 @@ def _load_matchup_ratings(season: int) -> dict:
     return data
 
 
+_OLINE_RATINGS_CACHE: dict = {}
+_OLINE_RATINGS_TS: dict = {}
+
+
+def _load_oline_ratings(season: int) -> dict:
+    """Load the cron-precomputed offensive-line ratings table.
+
+    Shape: {team: {"composite","pass_block","run_block","pressure_rate",
+    "sack_rate","line_yards","stuffed_rate",...}} on a 0-100 scale (100 = best).
+    Produced by data_building/oline_ratings.py via the daily cron. Returns {}
+    when the cache file is absent so callers can degrade gracefully. Cached
+    in-process with the same TTL as the matchup ratings."""
+    key = str(season)
+    now = time.time()
+    if (_OLINE_RATINGS_CACHE.get(key) is not None
+            and now - _OLINE_RATINGS_TS.get(key, 0) < _MATCHUP_RATINGS_TTL):
+        return _OLINE_RATINGS_CACHE[key]
+    data: dict = {}
+    try:
+        path = os.path.join("cache", f"oline_ratings_s{season}.json")
+        if os.path.exists(path):
+            blob = json.load(open(path))
+            data = blob.get("ratings") or {}
+    except Exception:
+        data = {}
+    _OLINE_RATINGS_CACHE[key] = data
+    _OLINE_RATINGS_TS[key] = now
+    return data
+
+
+def _oline_rank_table(season: int, metric: str = "composite"):
+    """Return a list of team rows sorted best-to-worst on `metric`.
+
+    metric is one of composite / pass_block / run_block. Each row is
+    {"rank","team", plus the stored per-team fields}. Empty when the cache
+    is absent (before the first cron build)."""
+    metric = metric if metric in ("composite", "pass_block", "run_block") else "composite"
+    ratings = _load_oline_ratings(season)
+    rows = [dict(team=t, **v) for t, v in ratings.items() if v.get(metric) is not None]
+    rows.sort(key=lambda r: r.get(metric, 0), reverse=True)
+    for i, r in enumerate(rows):
+        r["rank"] = i + 1
+    return rows
+
+
 def _matchup_rank_table(season: int, position: str):
     """Return (rank_map, total_teams, info_by_team, is_z).
 

@@ -31,6 +31,11 @@ def _matchup_cell_ease(*a, **k):
     from app import _matchup_cell_ease as _fn
     return _fn(*a, **k)
 
+def _oline_rank_table(*a, **k):
+    from app import _oline_rank_table as _fn
+    return _fn(*a, **k)
+
+
 def _matchup_rank_table(*a, **k):
     from app import _matchup_rank_table as _fn
     return _fn(*a, **k)
@@ -90,6 +95,28 @@ def api_schedule():
         return jsonify({"weeks": weeks, "players": players})
     except Exception as e:
         return _api_err("Schedule unavailable", e)
+
+
+@schedule_api_bp.route("/api/oline-rankings")
+def api_oline_rankings():
+    """Offensive-line unit rankings (0-100, 100 = best), sorted best-to-worst.
+
+    Query params: season (default current), metric (composite|pass_block|
+    run_block, default composite). Returns {} rows until the daily cron builds
+    the ratings, mirroring /api/schedule-rankings' graceful degradation."""
+    try:
+        season = int(request.args.get("season") or datetime.now().year)
+        metric = (request.args.get("metric") or "composite").strip()
+        rows = _oline_rank_table(season, metric)
+        return jsonify({
+            "season": season,
+            "metric": metric if metric in ("composite", "pass_block", "run_block") else "composite",
+            "count": len(rows),
+            "rows": rows,
+        })
+    except Exception as e:
+        logger.warning("[api_oline_rankings] failed: %s", e, exc_info=True)
+        return jsonify({"season": None, "metric": "composite", "count": 0, "rows": []})
 
 
 @schedule_api_bp.route("/api/schedule-rankings")
