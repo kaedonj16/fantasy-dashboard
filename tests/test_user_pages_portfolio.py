@@ -93,6 +93,32 @@ def test_portfolio_body_includes_moves_card():
     assert "pf-moves-list" in fn
 
 
+def test_portfolio_empty_digest_shows_all_caught_up_not_hidden():
+    """A PRO user whose leagues have nothing to do must still see the card with
+    an all-caught-up note, not have it vanish (which reads as 'missing')."""
+    source = (ROOT / "app.py").read_text()
+    fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
+    # The old behavior hid the card on an empty digest; that must be gone.
+    assert "if(!acts.length){card.hidden=true;return;}" not in fn
+    # New empty state renders inside a visible card.
+    assert "pf-moves-empty" in fn
+    assert "all caught up" in fn.lower()
+    assert ".pf-moves-empty{" in source  # style is defined
+
+
+def test_changelog_announces_portfolio_moves_empty_state():
+    from dashboard_services.changelog import CHANGELOG
+
+    entry = next(
+        e for e in CHANGELOG
+        if "this week's moves" in e.get("text", "").lower()
+        and "empty" in e.get("text", "").lower()
+    )
+    assert entry["tag"] == "fix"
+    assert "—" not in entry["text"]
+    assert "–" not in entry["text"]
+
+
 def test_portfolio_record_and_rank_accepts_seed_int_standings_map():
     from dashboard_services.ai.context_builders import portfolio_record_and_rank
 

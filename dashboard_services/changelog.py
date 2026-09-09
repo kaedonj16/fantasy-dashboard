@@ -7,6 +7,18 @@ CHANGELOG = [
     {
         "date": "2026-09-08",
         "tag": "fix",
+        "text": "My Leagues This week's moves no longer disappears when the digest is empty. PRO users now always see the section: it shows an all-caught-up note when nothing needs attention across your leagues instead of hiding the card so it looks missing.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-09-08",
+        "tag": "fix",
+        "text": "Season Hub Actions tab no longer shows up blank. When your team is not linked yet it prompts you to link it, and when your lineup, roster, and waivers are all clean it says you're all set for the week instead of rendering nothing.",
+        "link": "/dashboard"
+    },
+    {
+        "date": "2026-09-08",
+        "tag": "fix",
         "text": "Teams Schedule tab remaining-schedule ranking now uses the same SOS formula as standings (65% scoring + 35% win rate). Preseason uses projected starter scoring, then those projections fade in as a 4-game prior instead of dropping off after week 1.",
         "link": "/teams"
     },
