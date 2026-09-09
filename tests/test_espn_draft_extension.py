@@ -8,7 +8,7 @@ EXT = REPO / "extension"
 
 def test_extension_manifest_includes_draft_scripts():
     manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == "1.5.39"
+    assert manifest["version"] == "1.5.40"
     assert "cookies" in manifest["permissions"]
     assert "scripting" in manifest["permissions"]
     assert "tabs" in manifest["permissions"]
@@ -135,6 +135,33 @@ def test_extension_relay_message_contract():
     assert "detectedRounds" in main
     assert "resolveMySlot" in iso
     assert "BRDraftSlot" in iso
+
+
+def test_observer_scopes_detection_to_active_league():
+    """The ESPN observer must not let another league's data (sitting in the
+    same tab's React memory or a background API response) clobber the detected
+    team count, roster, scoring, or the user's slot. A wrong team count is what
+    made the assistant flip the roster and re-label the current pick (e.g. a
+    12-team draft rendering pick 68 as 4.11 under a stray 19-team count)."""
+    main = (EXT / "espn_draft_main.js").read_text(encoding="utf-8")
+    # League-identity helpers exist.
+    assert "function leagueIdOf(" in main
+    assert "function belongsToActiveLeague(" in main
+    assert "function leagueDetectionAllowed(" in main
+    assert "function activeLeagueId(" in main
+    # Settings/teams/user detection is gated by a positive league match.
+    assert "if (!leagueDetectionAllowed(obj)) return;" in main
+    # Pick ingestion drops responses that belong to a different league.
+    assert "if (!belongsToActiveLeague(data)) return;" in main
+    assert "if (!belongsToActiveLeague(data)) return best;" in main
+    assert "belongsToActiveLeague(cur)" in main
+    # The accumulator + detected metadata reset when the open league changes.
+    assert "function ensureLeagueScope(" in main
+    assert "function resetDetectedLeagueMeta(" in main
+    assert "ensureLeagueScope()" in main
+    # The draft URL's teamId anchors the user's own team.
+    assert "function teamIdFromUrl(" in main
+    assert "teamIdFromUrl()" in main
 
 
 def test_pack_extension_strips_localhost():
