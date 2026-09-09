@@ -823,13 +823,6 @@
     var safe = (pos || '').replace(/[^A-Z_]/g, '');
     return '<span class="rz-pos-badge rz-pos-' + safe + '">' + (pos || '?') + '</span>';
   }
-  // Site-wide position badge (same class + colors as the rest of the app:
-  // .pos-badge.QB/.RB/.WR/.TE/.K/.DEF), used where Redzone should match the
-  // global palette rather than its own rz-pos-* scheme.
-  function _posBadgeSite(pos) {
-    var safe = (pos || '').replace(/[^A-Za-z_]/g, '').toUpperCase();
-    return '<span class="pos-badge ' + safe + '">' + (safe || '?') + '</span>';
-  }
   function _injuryDot(pid) {
     var inj = ((_state.player_info || {})[pid] || {}).injury_status || '';
     if (!inj) return '';
@@ -1428,7 +1421,7 @@
       var playerChip = '';
       if (g.spot.length) {
         var rows = g.spot.slice(0, 3).map(function(pl) {
-          return '<span class="rz-pregame-player">' + _posBadgeSite(pl.pos)
+          return '<span class="rz-pregame-player">' + _posHtml(pl.pos)
             + '<span class="rz-pregame-pname">' + pl.name + '</span></span>';
         }).join('');
         var moreN = g.spot.length - 3;
