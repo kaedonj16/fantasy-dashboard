@@ -1058,7 +1058,7 @@ def build_oline_ratings(
         "seasons_used": sorted(
             {season}
             | ({season - 1} if run_ly_prior or prior_pass else set())
-            | ({season - 2} if y2w else set())
+            | ({season - 2} if (y2w and y2_raw is not None and not y2_raw.empty) else set())
         ),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "pressure_source": cur_pass["pressure_source"],
