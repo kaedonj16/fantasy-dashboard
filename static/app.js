@@ -16228,7 +16228,8 @@ function _ssVerdictReasons(win, lose) {
   const pw = fw.proj || 0, pl = fl.proj || 0;
   if (pw > pl) cand.push({ imp: pl > 0 ? pw / pl : 2, txt: 'higher projection (+' + (pw - pl).toFixed(1) + ')' });
   [['floor', 'a safer floor'], ['form', 'better recent form'], ['usage', 'a rising role'],
-   ['vegas', 'a higher team total'], ['weather', 'a cleaner forecast'], ['avail', 'fewer injury concerns']]
+   ['vegas', 'a higher team total'], ['weather', 'a cleaner forecast'], ['avail', 'fewer injury concerns'],
+   ['oline', 'a stronger offensive line']]
     .forEach(function (f) {
       const mw = fw[f[0]] != null ? fw[f[0]] : 1, ml = fl[f[0]] != null ? fl[f[0]] : 1;
       if (mw > ml + 1e-9) cand.push({ imp: ml > 0 ? mw / ml : 2, txt: f[1] });
@@ -16312,6 +16313,12 @@ function _buildStartSitTabHTML(players) {
     _ssTableRow('Opponent', players.map(p => { const o = ss(p).opponent; return { num: null, html: o ? _ssEsc(o) : (ss(p).on_bye ? 'BYE' : dash) }; }), null),
     _ssTableRow('Def vs pos', players.map(p => { const f = _ssNum(ss(p).fpts_against); return { num: null, cls: _ssMuClass(ss(p).def_rank, ss(p).def_total), html: f != null ? (f + ' pts') : (ss(p).on_bye ? 'BYE' : dash) }; }), null),
     _ssTableRow('Matchup', players.map(p => { const c = _ssMuChip(ss(p).def_rank, ss(p).def_total); return { num: null, html: c || dash }; }), null),
+    _ssTableRow('O-Line', players.map(p => {
+      const ol = ss(p).oline; if (!ol || ol.primary_value == null) return { num: null, html: dash };
+      const lbl = ol.primary === 'pass_block' ? 'pass blk' : ol.primary === 'run_block' ? 'run blk' : 'o-line';
+      const rk = ol.primary_rank ? ' (#' + ol.primary_rank + ')' : '';
+      return { num: _ssNum(ol.primary_value), html: Math.round(ol.primary_value) + ' ' + lbl + rk };
+    }), 'max'),
     _ssTableRow('Vegas total', players.map(p => { const n = _ssNum(ss(p).implied_total); return { num: n, html: n != null ? (n + ' implied') : dash }; }), 'max'),
     _ssTableRow('Venue', players.map(p => { const c = _ssVenueChip(ss(p)); return { num: null, html: c || dash }; }), null),
   ].join('');

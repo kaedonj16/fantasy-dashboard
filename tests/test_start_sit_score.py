@@ -92,6 +92,26 @@ def test_wind_hurts_qb_and_kicker_more_than_rb():
     assert s_k < s_qb
 
 
+def test_oline_residual_is_small_and_directional():
+    _, best, _ = compute_start_score(10.0, oline_index=100)
+    _, avg, _ = compute_start_score(10.0, oline_index=50)
+    _, worst, dem = compute_start_score(10.0, oline_index=0)
+    assert best["oline"] == 1.04          # best line, +4%
+    assert avg["oline"] == 1.0            # league-average is neutral
+    assert worst["oline"] == 0.96         # worst line, -4%
+    assert dem == "oline"                 # a below-average line flags a demotion
+    # None leaves the factor neutral and out of the way.
+    _, none_f, _ = compute_start_score(10.0)
+    assert none_f["oline"] == 1.0
+
+
+def test_oline_out_of_range_clamps():
+    _, hi, _ = compute_start_score(10.0, oline_index=250)
+    _, lo, _ = compute_start_score(10.0, oline_index=-40)
+    assert hi["oline"] == 1.04
+    assert lo["oline"] == 0.96
+
+
 def test_weather_and_vegas_stack():
     score, factors, demotion = compute_start_score(
         10.0,
