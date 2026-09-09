@@ -47,11 +47,43 @@ def test_espn_scoring_item_53_preserves_standard_half_full_and_custom(reception_
     assert normalized["rec"] == expected
 
 
-def test_espn_explicit_zero_points_override_is_not_discarded():
+def test_espn_explicit_zero_points_is_not_discarded():
+    normalized = espn_api.normalize_espn_scoring_items([
+        {"statId": 53, "points": 0},
+    ])
+    assert normalized["rec"] == 0
+
+
+def test_espn_dst_override_does_not_replace_league_ppr():
+    """pointsOverrides['16'] is D/ST, not the league reception rate."""
     normalized = espn_api.normalize_espn_scoring_items([
         {"statId": 53, "points": 1, "pointsOverrides": {"16": 0}},
     ])
-    assert normalized["rec"] == 0
+    assert normalized["rec"] == 1.0
+
+
+def test_espn_stat_id_41_fills_rec_when_53_missing():
+    normalized = espn_api.normalize_espn_scoring_items([
+        {"statId": 41, "points": 0.5},
+        {"statId": 42, "points": 0.1},
+    ])
+    assert normalized["rec"] == 0.5
+
+
+def test_espn_stat_id_53_wins_over_zero_stat_id_41():
+    normalized = espn_api.normalize_espn_scoring_items([
+        {"statId": 41, "points": 0},
+        {"statId": 53, "points": 1},
+    ])
+    assert normalized["rec"] == 1.0
+
+
+def test_espn_te_premium_from_te_position_override():
+    normalized = espn_api.normalize_espn_scoring_items([
+        {"statId": 53, "points": 1, "pointsOverrides": {"6": 1.5, "16": 0}},
+    ])
+    assert normalized["rec"] == 1.0
+    assert normalized["bonus_rec_te"] == 0.5
 
 
 def test_get_league_globals_reads_raw_msettings_not_coarse_scoring_type(monkeypatch):
@@ -253,6 +285,25 @@ def test_espn_standard_rec_zero_is_not_ppr_after_normalize():
     )
     assert scoring["rec"] == 0.0
     assert scoring["pointsPerReception"] == 0.0
+
+
+def test_espn_ppr_with_dst_override_scores_ppr_projections():
+    from utils.fantasy_scoring import projection_points, week_stat_points
+
+    scoring = normalize_league_scoring("espn", espn_api.normalize_espn_scoring_items([
+        {"statId": 53, "points": 1, "pointsOverrides": {"16": 0}},
+        {"statId": 3, "points": 0.04},
+        {"statId": 4, "points": 4},
+        {"statId": 42, "points": 0.1},
+        {"statId": 43, "points": 6},
+    ]))
+    stats = {
+        "rec": 10, "rec_yd": 100, "rec_td": 1,
+        "pts_ppr": 26.0, "pts_half_ppr": 21.0, "pts_std": 16.0,
+    }
+    assert scoring["rec"] == 1.0
+    assert projection_points({"raw_stats": stats}, scoring, "WR") == 26.0
+    assert week_stat_points(stats, scoring, "WR") == 26.0
 
 
 def test_espn_standard_weekly_proj_is_not_one_point_per_yard():

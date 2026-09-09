@@ -113,7 +113,10 @@ _FLEA_STAT_BY_GROUP_ABBREV = {
     ("receiving", "rey"): "rec_yd",
     ("receiving", "td"): "rec_td",
     ("receiving", "rec"): "rec",
+    ("receiving", "recs"): "rec",
+    ("receiving", "rec."): "rec",
     ("receiving", "catch"): "rec",
+    ("receiving", "c"): "rec",
     ("receiving", "2pc"): "rec_2pt",
     ("receiving", "fd"): "rec_fd",
     ("misc", "fum"): "fum_lost",
@@ -137,7 +140,11 @@ _FLEA_STAT_BY_NAME = {
     "receiving yard": "rec_yd",
     "receiving td": "rec_td",
     "catch": "rec",
+    "catches": "rec",
     "reception": "rec",
+    "receptions": "rec",
+    "rec": "rec",
+    "recs": "rec",
     "2 pt conversion receiving": "rec_2pt",
     "receiving first down": "rec_fd",
     "fumble": "fum_lost",
@@ -264,13 +271,22 @@ def _flea_pro_team(pro: dict) -> str:
     return ""
 
 
+def _flea_group_family(group_label: str) -> str:
+    """Normalize 'Receiving Stats' / 'Passing' onto the family used in the map."""
+    group = str(group_label or "").strip().lower()
+    for family in ("receiving", "rushing", "passing", "kicking", "defense", "misc"):
+        if family in group:
+            return family
+    return group
+
+
 def _flea_stat_key(group_label: str, category: dict) -> Optional[str]:
     """Sleeper key for one Fleaflicker scoring category, or None if ambiguous."""
     cat = category if isinstance(category, dict) else {}
-    group = str(group_label or "").strip().lower()
-    abbrev = str(_get(cat, "abbreviation") or "").strip().lower()
+    group = _flea_group_family(group_label)
+    abbrev = str(_get(cat, "abbreviation") or "").strip().lower().rstrip(".")
     name = str(
-        _get(cat, "nameSingular", "name_singular") or ""
+        _get(cat, "nameSingular", "name_singular", "namePlural", "name_plural") or ""
     ).strip().lower()
     if group and abbrev:
         mapped = _FLEA_STAT_BY_GROUP_ABBREV.get((group, abbrev))
@@ -287,6 +303,30 @@ def _flea_stat_key(group_label: str, category: dict) -> Optional[str]:
                 return "def_int"
             return None
     return None
+
+
+_FLEA_SKILL_POS = frozenset({"QB", "RB", "WR", "TE", "FB"})
+
+
+def _flea_rule_positions(rule: dict) -> Optional[set[str]]:
+    """Positions a Fleaflicker rule applies to, or None when it is league-wide."""
+    if _get(rule, "applyToAll", "apply_to_all"):
+        return None
+    raw = _get(rule, "applyTo", "apply_to")
+    if not raw:
+        return None
+    positions: set[str] = set()
+    rows = raw if isinstance(raw, list) else [raw]
+    for item in rows:
+        if isinstance(item, str):
+            label = item.strip().upper()
+        elif isinstance(item, dict):
+            label = str(item.get("label") or item.get("name") or "").strip().upper()
+        else:
+            continue
+        if label:
+            positions.add(label)
+    return positions or None
 
 
 def _flea_is_threshold_bonus(rule: dict) -> bool:
@@ -1746,6 +1786,7 @@ class FleaflickerProvider(ProviderAdapter):
         from utils.league_scoring import assign_scoring_rate
 
         out = {}
+        rec_by_pos: dict[str, float] = {}
         for group in rules.get("groups") or []:
             group_label = str(group.get("label") or group.get("name") or "").strip()
             for rule in group.get("scoringRules") or group.get("scoring_rules") or []:
@@ -1760,7 +1801,28 @@ class FleaflickerProvider(ProviderAdapter):
                 rate = _flea_points_per(rule)
                 if rate is None:
                     continue
+                positions = _flea_rule_positions(rule)
+                if positions and not (positions & _FLEA_SKILL_POS):
+                    # D/ST / K exceptions are not the league reception rate —
+                    # same class of bug as ESPN pointsOverrides["16"].
+                    continue
+                if key == "rec":
+                    skill = (positions & _FLEA_SKILL_POS) if positions else set(_FLEA_SKILL_POS)
+                    specific = len(skill) == 1
+                    for pos in skill:
+                        if specific or pos not in rec_by_pos:
+                            rec_by_pos[pos] = rate
+                    continue
                 assign_scoring_rate(out, key, rate)
+        rec = next(
+            (rec_by_pos[pos] for pos in ("WR", "RB", "QB", "TE", "FB") if pos in rec_by_pos),
+            None,
+        )
+        if rec is not None:
+            out["rec"] = rec
+            te_rate = rec_by_pos.get("TE")
+            if te_rate is not None and te_rate > rec:
+                out["bonus_rec_te"] = te_rate - rec
         return out
 
     def get_league_globals(self, league_id, season, *, token: Optional[str] = None):
