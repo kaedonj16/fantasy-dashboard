@@ -819,6 +819,13 @@
     var safe = (pos || '').replace(/[^A-Z_]/g, '');
     return '<span class="rz-pos-badge rz-pos-' + safe + '">' + (pos || '?') + '</span>';
   }
+  // Site-wide position badge (same class + colors as the rest of the app:
+  // .pos-badge.QB/.RB/.WR/.TE/.K/.DEF), used where Redzone should match the
+  // global palette rather than its own rz-pos-* scheme.
+  function _posBadgeSite(pos) {
+    var safe = (pos || '').replace(/[^A-Za-z_]/g, '').toUpperCase();
+    return '<span class="pos-badge ' + safe + '">' + (safe || '?') + '</span>';
+  }
   function _injuryDot(pid) {
     var inj = ((_state.player_info || {})[pid] || {}).injury_status || '';
     if (!inj) return '';
@@ -1343,10 +1350,21 @@
 
   function _pregameScheduleHtml() {
     var info = _state.player_info || {};
+    // When a matchup card is selected (hero), scope the schedule to that
+    // matchup's games so its upcoming kickoffs stay visible; otherwise show
+    // every game. focusPids is the selected matchup's player set (or null).
+    var focusPids = _heroMid ? _heroMatchupPids() : null;
     var myPids = new Set();
     _myMatchups().forEach(function(m) {
       (m.players || []).forEach(function(pid) { myPids.add(pid); });
     });
+    // Players to spotlight on each game card: the focused matchup's when one is
+    // selected, otherwise the viewer's own.
+    var spotPids = focusPids || myPids;
+    var heroIsMine = !!_heroMid && _myMatchups().some(function(m) {
+      return String(m.matchup_id) === _heroMid || String(m.roster_id) === _heroMid;
+    });
+    var spotLabel = (!focusPids || heroIsMine) ? 'My Players' : 'In Matchup';
 
     // Group scheduled/live players by game_id
     var gameMap = {};
@@ -1356,22 +1374,23 @@
       if (!gid || !p.home || !p.away) return;
       var code = String(p.game_code || '0');
       if (code === '2') return; // skip final games
-      if (!gameMap[gid]) gameMap[gid] = { home: p.home, away: p.away, status: p.game_status || '', code: code, kickoff: parseFloat(p.game_time_epoch || 0) || 0, mine: [], other: [] };
-      if (myPids.has(pid)) gameMap[gid].mine.push({ name: p.name || pid, pos: p.pos || '' });
-      else gameMap[gid].other.push(pid);
+      if (!gameMap[gid]) gameMap[gid] = { home: p.home, away: p.away, status: p.game_status || '', code: code, kickoff: parseFloat(p.game_time_epoch || 0) || 0, spot: [], hasFocus: false };
+      if (focusPids && focusPids.has(pid)) gameMap[gid].hasFocus = true;
+      if (spotPids.has(pid)) gameMap[gid].spot.push({ name: p.name || pid, pos: p.pos || '' });
     });
 
     var gameIds = Object.keys(gameMap);
+    // Focused matchup: keep only games that include one of its players.
+    if (focusPids) gameIds = gameIds.filter(function(gid) { return gameMap[gid].hasFocus; });
     if (!gameIds.length) {
       return '<div class="rz-pregame-empty-hint">Plays appear here as games unfold, targets, catches, carries and touchdowns with live fantasy points.</div>';
     }
 
-    // Sort: games with my players first
+    // Sort: games with spotlighted players first
     gameIds.sort(function(a, b) {
-      return (gameMap[b].mine.length > 0 ? 1 : 0) - (gameMap[a].mine.length > 0 ? 1 : 0);
+      return (gameMap[b].spot.length > 0 ? 1 : 0) - (gameMap[a].spot.length > 0 ? 1 : 0);
     });
 
-    var hasMyGames = gameIds.some(function(gid) { return gameMap[gid].mine.length > 0; });
     var html = '<div class="rz-pregame-wrap">'
       + '<div class="rz-pregame-label">' + (gameIds.some(function(g) { return gameMap[g].code === '1'; }) ? 'Games in Progress' : 'Upcoming Games') + '</div>';
 
@@ -1381,14 +1400,14 @@
         ? 'LIVE · ' + (g.status || '')
         : (g.kickoff ? _fmtKickoff(g.kickoff) : (g.status || 'Upcoming'));
       var playerChip = '';
-      if (g.mine.length) {
-        var rows = g.mine.slice(0, 3).map(function(pl) {
-          return '<span class="rz-pregame-player">' + _posHtml(pl.pos)
+      if (g.spot.length) {
+        var rows = g.spot.slice(0, 3).map(function(pl) {
+          return '<span class="rz-pregame-player">' + _posBadgeSite(pl.pos)
             + '<span class="rz-pregame-pname">' + pl.name + '</span></span>';
         }).join('');
-        var moreN = g.mine.length - 3;
+        var moreN = g.spot.length - 3;
         var more = moreN > 0 ? '<span class="rz-pregame-more">+' + moreN + ' more</span>' : '';
-        playerChip = '<div class="rz-pregame-players"><strong>My Players</strong>' + rows + more + '</div>';
+        playerChip = '<div class="rz-pregame-players"><strong>' + spotLabel + '</strong>' + rows + more + '</div>';
       }
       html += '<div class="rz-pregame-game">'
         + '<div class="rz-pregame-teams">'
