@@ -145,7 +145,10 @@ def compute_start_score(
         avail = 0.0
         demotion = "out"
     elif "QUESTION" in status or status in ("GTD", "Q"):
-        avail = 0.85
+        # Soft residual only (−5%). Questionable players usually play, starting
+        # them is normally fine, and weekly projections often already bake in
+        # some risk — a 15% haircut was flipping too many start/sit calls.
+        avail = 0.95
         demotion = "questionable"
 
     if implied_total is not None:
