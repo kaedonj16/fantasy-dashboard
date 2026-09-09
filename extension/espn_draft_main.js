@@ -716,6 +716,15 @@
     return String(source || "").indexOf("dom") >= 0;
   }
 
+  function pickHasTrustedSource(n) {
+    const sources = pickSources.get(Number(n));
+    if (!sources) return false;
+    for (const src of sources) {
+      if (!isDomSource(src)) return true;
+    }
+    return false;
+  }
+
   function trustedMaxOverall() {
     let max = 0;
     for (const [n, sources] of pickSources.entries()) {
@@ -729,6 +738,25 @@
       if (trusted && n > max) max = n;
     }
     return max;
+  }
+
+  // The largest overall pick reachable in an unbroken run from the earliest
+  // pick we hold. A live draft's made picks are contiguous, so anything inside
+  // this run is real even when only the DOM scraper saw it (ESPN's board is
+  // virtualized and the read API lags, so the freshest picks are DOM-only).
+  // A stray mislabeled DOM pick lands past a gap and stays outside the run.
+  function contiguousMaxOverall() {
+    if (!pickAccumulator.size) return 0;
+    const nums = Array.from(pickAccumulator.keys())
+      .map(Number)
+      .sort(function (a, b) { return a - b; });
+    let run = nums[0];
+    for (let i = 1; i < nums.length; i++) {
+      if (nums[i] === run) continue;
+      if (nums[i] === run + 1) run = nums[i];
+      else break;
+    }
+    return run;
   }
 
   function mergeIntoAccumulator(rawPicks, source) {
@@ -760,9 +788,14 @@
       (a, b) => a.overallPickNumber - b.overallPickNumber
     );
     clean = clean.filter(pickLooksMade);
-    if (trustedMax > 0) {
+    // Keep a pick when it is confirmed by a trusted source, or when it sits
+    // within the contiguous run of made picks (so DOM-only recent picks still
+    // register instead of showing their players as available). Only a DOM-only
+    // pick stranded past a gap in the sequence is dropped.
+    const ceiling = Math.max(trustedMax, contiguousMaxOverall());
+    if (ceiling > 0) {
       clean = clean.filter(function (p) {
-        return p.overallPickNumber <= trustedMax;
+        return p.overallPickNumber <= ceiling || pickHasTrustedSource(p.overallPickNumber);
       });
     }
     for (const n of Array.from(pickAccumulator.keys())) {
@@ -1046,7 +1079,7 @@
     const s = String(text || "").replace(/\s+/g, " ");
     const rd = s.match(/\b(\d+)\.\s*(\d{1,2})\b/);
     if (rd) {
-      const teams = guessTeamCount() || 12;
+      const teams = guessTeamCount() || detectedTeams || 12;
       return (parseInt(rd[1], 10) - 1) * teams + parseInt(rd[2], 10);
     }
     const ov = s.match(/(?:overall|pick)\s*#?\s*(\d{1,3})\b/i);
