@@ -10879,6 +10879,15 @@ _WEEKLY_PTS_CACHE: dict = {}
 _WEEKLY_PTS_TTL = 900  # 15 min; weekly stat files change at most once a week
 
 
+def _sleeper_stats_week_num(path: str) -> int:
+    """Numeric week from ``sleeper_stats_s{season}_w{week}.json`` (not lexical)."""
+    m = re.search(r"_w(\d+)", os.path.basename(str(path)))
+    try:
+        return int(m.group(1)) if m else -1
+    except (TypeError, ValueError):
+        return -1
+
+
 def _load_season_weekly_points(season: int, scoring_settings: dict) -> dict:
     """{player_id: [weekly fantasy points]} for a season's played games.
 
@@ -10899,7 +10908,7 @@ def _load_season_weekly_points(season: int, scoring_settings: dict) -> dict:
         # Absolute cache path: a relative "cache" glob silently yields nothing
         # when the server's working directory isn't the repo root.
         pattern = os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
-        for wf in glob.glob(pattern):
+        for wf in sorted(glob.glob(pattern), key=_sleeper_stats_week_num):
             try:
                 with open(wf) as f:
                     week_stats = json.load(f)
@@ -10973,10 +10982,14 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
         "game_env": None,
     }
 
-    # Last-4-week PPG (same window and Sleeper PPR source as the Start/Sit page).
+    # Last-4-week PPG scored with this league's settings (not hardcoded PPR).
     try:
-        _files = sorted(glob.glob(os.path.join(
-            CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{int(season)}_w*.json")))[-4:]
+        from utils.fantasy_scoring import week_stat_points as _ss_week_pts
+        _files = sorted(
+            glob.glob(os.path.join(
+                CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{int(season)}_w*.json")),
+            key=_sleeper_stats_week_num,
+        )[-4:]
         _vals = []
         for _wf in _files:
             try:
@@ -10985,7 +10998,7 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
                 continue
             _st = _ws.get(str(pid)) if isinstance(_ws, dict) else None
             if isinstance(_st, dict):
-                _p = float(_st.get("pts_ppr") or 0)
+                _p = float(_ss_week_pts(_st, scoring_settings, pos) or 0)
                 if _p > 0:
                     _vals.append(_p)
         if _vals:
@@ -11222,21 +11235,33 @@ def api_start_sit_options():
             prior_season=prior_season,
         )
 
-    # ── Weekly projections - SAME source as the player modal & matchups page ───
-    # build_projections_by_week() returns Sleeper weekly stat lines scored with
-    # the league's exact settings. Reuse the cached ctx bundle when present so
-    # start/sit shows the exact number the modal/matchups show.
+    # ── Weekly projections scored with this league's settings ────────────────
+    # Score the raw Sleeper week file the same way the player modal does
+    # (weekly_projection_points). A flattened ctx bundle can lag a scoring
+    # fix, so it is only a fallback.
+    from utils.fantasy_scoring import weekly_projection_points as _ss_wpp
+    _ss_scoring = ctx.get("raw_scoring_settings") or ctx.get("scoring_settings") or {}
+    _raw_week_map: dict = {}
+    try:
+        from utils.utils import load_week_projection as _ss_lwp
+        _raw_week_map = _ss_lwp(int(season), int(current_week)) or {}
+    except Exception:
+        _raw_week_map = {}
     proj_by_week = ctx.get("proj_by_week")
     if not proj_by_week:
         try:
-            proj_by_week = build_projections_by_week(
-                season, 18, ctx.get("raw_scoring_settings")
-            )
+            proj_by_week = build_projections_by_week(season, 18, _ss_scoring)
         except Exception:
             proj_by_week = {}
     _wk_proj = ((proj_by_week or {}).get(current_week) or {}).get("projections") or {}
 
-    def _lookup_proj(pid: str):
+    def _lookup_proj(pid: str, pos: str = ""):
+        pts = _ss_wpp(_raw_week_map, pid, _ss_scoring, pos)
+        if pts is not None:
+            try:
+                return round(float(pts), 1)
+            except (TypeError, ValueError):
+                pass
         v = _wk_proj.get(pid)
         if v is None:
             v = _wk_proj.get(str(pid))
@@ -11245,22 +11270,27 @@ def api_start_sit_options():
         except (TypeError, ValueError):
             return 0.0
 
-    # ── Season-long and recent-form PPG from Sleeper stat files ───────────────
+    # ── Season-long and recent-form PPG scored with this league's settings ──
     season_ppg: dict = {}
     recent_ppg_map: dict = {}  # last 4 weeks
     try:
+        from utils.fantasy_scoring import week_stat_points as _ss_week_pts
         import glob as _glob
-        _stat_files = sorted(_glob.glob(
-            os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
-        ))
+        _stat_files = sorted(
+            _glob.glob(os.path.join(
+                CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w*.json")),
+            key=_sleeper_stats_week_num,
+        )
         _season_pts: dict = {}
-        _recent_files = _stat_files[-4:]  # last 4 weeks for form
+        _recent_files = _stat_files[-4:]
         _recent_pts: dict = {}
         for _sf in _stat_files:
             try:
                 _sdata = json.load(open(_sf))
                 for pid, stats in _sdata.items():
-                    pts = float(stats.get("pts_ppr") or 0)
+                    if not isinstance(stats, dict):
+                        continue
+                    pts = float(_ss_week_pts(stats, _ss_scoring) or 0)
                     if pts > 0:
                         _season_pts.setdefault(str(pid), []).append(pts)
                         if _sf in _recent_files:
@@ -11313,7 +11343,7 @@ def api_start_sit_options():
         injury_status = None if raw_status in {"", "active", "Active", "ACT"} else raw_status
         # Projection = Sleeper weekly points for this week. Do not substitute
         # last-season or in-season actual PPG when Sleeper has 0 / no line.
-        proj_pts = _lookup_proj(pid)
+        proj_pts = _lookup_proj(pid, pos)
 
         fpts_vs = round(fpts_against.get(opponent, {}).get(pos, 0.0), 1) if opponent else 0.0
         # Z-score matchup rank (rank 1 = easiest); fall back to fpts-against rank.

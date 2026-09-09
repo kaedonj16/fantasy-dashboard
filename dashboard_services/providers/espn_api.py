@@ -1529,18 +1529,72 @@ _ESPN_SCORING_STAT_KEYS: Dict[int, str] = {
 }
 
 
+# pointsOverrides keys are ESPN position ids (0=QB, 2=RB, 4=WR, 6=TE, 16=D/ST).
+# They are exceptions for that position, not the league-wide rate. Key "16" is
+# D/ST — a PPR league commonly publishes points=1 with {"16": 0} because
+# defenses don't catch passes. Treating that override as the league rec rate
+# made start/sit (and every other projection consumer) show standard scoring.
+_ESPN_SKILL_POS_OVERRIDE_IDS = ("0", "2", "4", "6")
+_ESPN_NON_SKILL_POS_OVERRIDE_IDS = frozenset({"16", "17", "18", "19"})
+_ESPN_REC_STAT_IDS = frozenset({53, 41})  # 53 = each reception; 41 = receptions
+_ESPN_TE_POS_ID = "6"
+
+
 def _espn_scoring_item_points(item: dict):
-    """Read ESPN points without dropping an explicit zero override."""
-    overrides = item.get("pointsOverrides") or {}
-    if isinstance(overrides, dict) and "16" in overrides and overrides["16"] is not None:
-        return overrides["16"]
-    return item.get("points")
+    """League-wide points rate. Keep explicit zeroes; ignore D/ST overrides."""
+    if not isinstance(item, dict):
+        return None
+    if item.get("points") is not None:
+        return item.get("points")
+    raw_overrides = item.get("pointsOverrides") or {}
+    if not isinstance(raw_overrides, dict):
+        return None
+    overrides = {str(k): v for k, v in raw_overrides.items()}
+    for pid in _ESPN_SKILL_POS_OVERRIDE_IDS:
+        if pid in overrides and overrides[pid] is not None:
+            return overrides[pid]
+    for key, value in overrides.items():
+        if key in _ESPN_NON_SKILL_POS_OVERRIDE_IDS:
+            continue
+        if value is not None:
+            return value
+    return None
+
+
+def _espn_te_reception_premium(scoring_items: List[dict]) -> float:
+    """TE-premium from a TE-position reception override above the league rec rate."""
+    bonus = 0.0
+    for item in scoring_items or []:
+        if not isinstance(item, dict) or _espn_is_threshold_bonus(item):
+            continue
+        try:
+            stat_id = int(item.get("statId"))
+        except (TypeError, ValueError):
+            continue
+        if stat_id not in _ESPN_REC_STAT_IDS:
+            continue
+        overrides = item.get("pointsOverrides") or {}
+        if not isinstance(overrides, dict):
+            continue
+        te_val = overrides.get(_ESPN_TE_POS_ID)
+        if te_val is None:
+            te_val = overrides.get(6)
+        if te_val is None:
+            continue
+        base = _espn_scoring_item_points(item)
+        try:
+            extra = float(te_val) - float(base or 0)
+        except (TypeError, ValueError):
+            continue
+        if extra > bonus:
+            bonus = extra
+    return bonus
 
 
 # Passing / rushing / receiving yards (and receptions) publish both a per-unit
 # rate and a 300-yard / 9-catch extra under the same statId. DST points-allowed
 # and FG distance buckets also use rangeStart/rangeEnd — those *are* the rates.
-_ESPN_MILESTONE_RATE_STAT_IDS = frozenset({3, 24, 42, 53})
+_ESPN_MILESTONE_RATE_STAT_IDS = frozenset({3, 24, 42, 53, 41})
 
 
 def _espn_is_threshold_bonus(item: dict) -> bool:
@@ -1566,6 +1620,7 @@ def normalize_espn_scoring_items(scoring_items: List[dict]) -> Dict[str, float]:
     from utils.league_scoring import assign_scoring_rate
 
     normalized: Dict[str, float] = {}
+    rec_fallback = None
     for item in scoring_items or []:
         if not isinstance(item, dict) or _espn_is_threshold_bonus(item):
             continue
@@ -1575,12 +1630,25 @@ def normalize_espn_scoring_items(scoring_items: List[dict]) -> Dict[str, float]:
             continue
         key = _ESPN_SCORING_STAT_KEYS.get(stat_id)
         value = _espn_scoring_item_points(item)
+        if stat_id == 41 and value is not None:
+            rec_fallback = value
         if key is None or value is None:
             continue
         try:
             assign_scoring_rate(normalized, key, float(value))
         except (TypeError, ValueError):
             continue
+    # statId 41 ("Receptions") is the same rate as 53 ("Each reception") on some
+    # league templates. Prefer 53 when both exist so a leftover 41=0 cannot
+    # wipe a real PPR value (assign_scoring_rate keeps the first rec write).
+    if "rec" not in normalized and rec_fallback is not None:
+        try:
+            assign_scoring_rate(normalized, "rec", float(rec_fallback))
+        except (TypeError, ValueError):
+            pass
+    te_bonus = _espn_te_reception_premium(scoring_items)
+    if te_bonus > 0 and "bonus_rec_te" not in normalized:
+        normalized["bonus_rec_te"] = te_bonus
     return normalized
 
 

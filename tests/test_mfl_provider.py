@@ -110,3 +110,92 @@ def test_mfl_login_returns_cookie(mock_post):
     result.raise_for_status.return_value = None
     mock_post.return_value = result
     assert login("user", "pass", 2026) == "cookie-value"
+
+
+def _t(value):
+    return {"$t": value}
+
+
+def test_mfl_scoring_maps_ppr_from_rules_export():
+    rules = {"rules": {"positionRules": [{
+        "positions": "QB|RB|WR|TE",
+        "rule": [
+            {"event": _t("CC"), "points": _t("*1"), "range": _t("0-99")},
+            {"event": _t("CY"), "points": _t("*0.1"), "range": _t("-50-999")},
+            {"event": _t("CY"), "points": _t("3"), "range": _t("100-999")},
+            {"event": _t("#C"), "points": _t("*6"), "range": _t("0-10")},
+            {"event": _t("PY"), "points": _t("*0.04"), "range": _t("-50-999")},
+            {"event": _t("#P"), "points": _t("*4"), "range": _t("0-10")},
+        ],
+    }]}}
+    out = MFLProvider._scoring({}, rules)
+    assert out["rec"] == 1.0
+    assert out["rec_yd"] == 0.1
+    assert out["rec_td"] == 6.0
+    assert out["pass_yd"] == 0.04
+    assert out["pass_td"] == 4.0
+    assert "CC" not in out
+
+
+def test_mfl_def_only_reception_exception_does_not_replace_ppr():
+    rules = {"rules": {"positionRules": [
+        {"positions": "Def", "rule": [
+            {"event": _t("CC"), "points": _t("0"), "range": _t("0-99")},
+        ]},
+        {"positions": "QB|RB|WR|TE", "rule": [
+            {"event": _t("CC"), "points": _t("*1"), "range": _t("0-99")},
+        ]},
+    ]}}
+    assert MFLProvider._scoring({}, rules)["rec"] == 1.0
+
+
+def test_mfl_te_premium_is_bonus_not_league_rec():
+    rules = {"rules": {"positionRules": [
+        {"positions": "QB|RB|WR|TE", "rule": [
+            {"event": _t("CC"), "points": _t("*1"), "range": _t("0-99")},
+        ]},
+        {"positions": "TE", "rule": [
+            {"event": _t("CC"), "points": _t("*1.5"), "range": _t("0-99")},
+        ]},
+    ]}}
+    out = MFLProvider._scoring({}, rules)
+    assert out["rec"] == 1.0
+    assert out["bonus_rec_te"] == 0.5
+
+
+def test_mfl_ppr_start_sit_uses_ppr_not_standard():
+    from utils.fantasy_scoring import projection_points, week_stat_points
+    from utils.league_scoring import normalize_league_scoring
+
+    rules = {"rules": {"positionRules": [{
+        "positions": "WR|RB|TE",
+        "rule": [
+            {"event": _t("CC"), "points": _t("*1"), "range": _t("0-99")},
+            {"event": _t("CY"), "points": _t("*0.1"), "range": _t("0-999")},
+            {"event": _t("#C"), "points": _t("*6"), "range": _t("0-10")},
+        ],
+    }]}}
+    scoring = normalize_league_scoring("mfl", MFLProvider._scoring({}, rules))
+    stats = {
+        "rec": 8, "rec_yd": 95, "rec_td": 0.7,
+        "pts_ppr": 22.5, "pts_half_ppr": 18.5, "pts_std": 14.5,
+    }
+    assert scoring["rec"] == 1.0
+    assert projection_points({"raw_stats": stats}, scoring, "WR") == 22.5
+    assert week_stat_points(stats, scoring, "WR") == 22.5
+
+
+def test_mfl_get_league_fetches_rules_export(monkeypatch):
+    provider = MFLProvider()
+    payloads = {
+        "league": {"league": {"id": "123", "name": "PPR", "size": "2",
+                    "starters": "QB,RB,WR",
+                    "franchises": {"franchise": []}}},
+        "rules": {"rules": {"positionRules": [{
+            "positions": "QB|RB|WR|TE",
+            "rule": [{"event": _t("CC"), "points": _t("*1"), "range": _t("0-99")}],
+        }]}},
+    }
+    monkeypatch.setattr(provider, "_export", lambda kind, *a, **k: payloads[kind])
+    league = provider.get_league("123", 2026)
+    assert league["scoring_settings"]["rec"] == 1.0
