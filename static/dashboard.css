@@ -26956,9 +26956,11 @@ tr.team-clickable {
     color: var(--text-muted);
 }
 
+/* Position hues mirror the site-wide .pos-badge palette used on the matchups
+   page (QB blue, RB green, WR amber, TE purple). */
 .compare-chip-pos.pos-QB {
-    background: rgba(239, 68, 68, .14);
-    color: #ef4444;
+    background: rgba(59, 130, 246, .14);
+    color: var(--brand-blue);
 }
 
 .compare-chip-pos.pos-RB {
@@ -26967,13 +26969,13 @@ tr.team-clickable {
 }
 
 .compare-chip-pos.pos-WR {
-    background: rgba(59, 130, 246, .14);
-    color: var(--brand-blue);
+    background: rgba(245, 158, 11, .14);
+    color: #f59e0b;
 }
 
 .compare-chip-pos.pos-TE {
-    background: rgba(245, 158, 11, .14);
-    color: #f59e0b;
+    background: rgba(139, 92, 246, .14);
+    color: #8b5cf6;
 }
 
 /* Contextual "benchmark vs tier" suggestion under an empty picker slot: a soft
@@ -27030,9 +27032,9 @@ tr.team-clickable {
 }
 
 .compare-suggest-chip.pos-QB {
-    border-color: rgba(239, 68, 68, .45);
-    color: #ef4444;
-    background: rgba(239, 68, 68, .07);
+    border-color: rgba(59, 130, 246, .45);
+    color: var(--brand-blue);
+    background: rgba(59, 130, 246, .07);
 }
 
 .compare-suggest-chip.pos-RB {
@@ -27042,15 +27044,15 @@ tr.team-clickable {
 }
 
 .compare-suggest-chip.pos-WR {
-    border-color: rgba(59, 130, 246, .45);
-    color: var(--brand-blue);
-    background: rgba(59, 130, 246, .07);
-}
-
-.compare-suggest-chip.pos-TE {
     border-color: rgba(245, 158, 11, .45);
     color: #f59e0b;
     background: rgba(245, 158, 11, .07);
+}
+
+.compare-suggest-chip.pos-TE {
+    border-color: rgba(139, 92, 246, .45);
+    color: #8b5cf6;
+    background: rgba(139, 92, 246, .07);
 }
 
 /* Tier-vs-tier debate among the popular matchups: a dashed accent border so it
