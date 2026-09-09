@@ -773,48 +773,6 @@ function openPlayerModal(playerId, playerName, opts) {
         `;
       }
 
-      // ── Offensive Line section (skill positions only) ────────────────────
-      // Unit rating from public play-by-play. Pass block is highlighted for
-      // QB/WR/TE, run block for RB; the other two are shown for context.
-      const _olPos = String(data.position || '').toUpperCase();
-      if (data.oline && data.oline.primary_value != null &&
-          ['QB', 'RB', 'WR', 'TE'].includes(_olPos)) {
-        const ol = data.oline;
-        const _olColor = (v) => {
-          if (v == null) return 'var(--text-muted)';
-          const n = Math.max(0, Math.min(130, Math.round(v * 1.3)));
-          return `hsl(${n}, 62%, 45%)`;
-        };
-        const _olPrimaryLabel = ol.primary === 'pass_block' ? 'Pass Block'
-          : ol.primary === 'run_block' ? 'Run Block' : 'O-Line';
-        const _olRank = ol.primary_rank
-          ? `#${ol.primary_rank}${ol.total_teams ? ' of ' + ol.total_teams : ''}`
-          : '';
-        const _olVal = (v) => (v == null ? '—' : Math.round(v));
-        overviewHTML += `
-          <hr class="pm-section-divider">
-          <div class="pm-section-header"><span class="pm-section-label">Offensive Line <span style="font-size:12px;opacity:.6;">${escapeHtml(ol.team || '')}</span></span></div>
-          <div class="pm-hero-row">
-            <div class="pm-hero-stat pm-hero-primary">
-              <div class="pm-hero-label">${_olPrimaryLabel}</div>
-              <div class="pm-hero-val" style="color:${_olColor(ol.primary_value)};">${_olVal(ol.primary_value)}</div>
-              <div class="pm-hero-sub">${_olRank}</div>
-            </div>
-            <div class="pm-hero-stat">
-              <div class="pm-hero-label">Pass Block</div>
-              <div class="pm-hero-val" style="color:${_olColor(ol.pass_block)};">${_olVal(ol.pass_block)}</div>
-              <div class="pm-hero-sub">${ol.sack_rate != null ? ol.sack_rate + '% sack' : ''}</div>
-            </div>
-            <div class="pm-hero-stat">
-              <div class="pm-hero-label">Run Block</div>
-              <div class="pm-hero-val" style="color:${_olColor(ol.run_block)};">${_olVal(ol.run_block)}</div>
-              <div class="pm-hero-sub">${ol.line_yards != null ? ol.line_yards + ' ln yds' : ''}</div>
-            </div>
-          </div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">0&ndash;100 unit rating (100 = best), from public play-by-play.</div>
-        `;
-      }
-
       if (data.position && data.position !== 'PICK') {
         overviewHTML += `
           <hr class="pm-section-divider">
@@ -2153,6 +2111,36 @@ function _pmBuildTeamHTML(data) {
     seasonPills = `<span class="pm-team-season">${viewSeason} ${modeLabel}</span>`;
   }
 
+  // Offensive-line unit rating (0-100, 100 = best), from public play-by-play.
+  const ol = data.oline;
+  let olineSec = '';
+  if (ol && (ol.pass_block != null || ol.run_block != null)) {
+    const _olColor = (v) => {
+      if (v == null) return 'var(--text-muted)';
+      const n = Math.max(0, Math.min(130, Math.round(v * 1.3)));
+      return `hsl(${n}, 60%, 42%)`;
+    };
+    const _olVal = (v) => (v == null ? '&ndash;' : Math.round(v));
+    const _olRankNote = ol.primary_rank
+      ? `#${ol.primary_rank} of ${ol.total_teams} ` +
+        (ol.primary === 'run_block' ? 'run block' : ol.primary === 'pass_block' ? 'pass block' : 'o-line')
+      : 'rank of 32';
+    const _olCtx = [
+      ol.pressure_rate != null ? ol.pressure_rate + '% pressure' : '',
+      ol.sack_rate != null ? ol.sack_rate + '% sack' : '',
+      ol.line_yards != null ? ol.line_yards + ' line yds' : '',
+    ].filter(Boolean).join(' · ');
+    olineSec = `<div class="pm-team-sec">
+      <div class="pm-section-header"><span class="pm-section-label">Offensive Line</span><span class="pm-team-secnote">${_olRankNote}</span></div>
+      <div class="pm-team-herostats">
+        <div class="pm-hero-stat"><div class="pm-hero-label">Pass Block Grade</div><div class="pm-hero-val" style="color:${_olColor(ol.pass_block)}">${_olVal(ol.pass_block)}</div></div>
+        <div class="pm-hero-stat"><div class="pm-hero-label">Run Block Grade</div><div class="pm-hero-val" style="color:${_olColor(ol.run_block)}">${_olVal(ol.run_block)}</div></div>
+        <div class="pm-hero-stat"><div class="pm-hero-label">Overall Grade</div><div class="pm-hero-val" style="color:${_olColor(ol.composite)}">${_olVal(ol.composite)}</div></div>
+      </div>
+      <div class="pm-team-note">0&ndash;100 unit rating (100 = best), from public play-by-play.${_olCtx ? ' ' + _olCtx + '.' : ''}</div>
+    </div>`;
+  }
+
   return `<div class="pm-team-wrap">
     <div class="pm-team-header">
       ${wm}
@@ -2179,6 +2167,7 @@ function _pmBuildTeamHTML(data) {
         ${_pmTeamProfileAxis()}${moreProfile}
       </div>
     </div>
+    ${olineSec}
     <div class="pm-team-sec">
       <div class="pm-section-header"><span class="pm-section-label">${roleName}&#39;s Role</span><span class="pm-team-secnote">${pos} room</span></div>
       ${shareBar}
