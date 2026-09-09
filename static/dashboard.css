@@ -37703,6 +37703,29 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pm-tp-row { cursor: help; border-radius: 6px; }
 .pm-tp-row:hover, .pm-tp-row:focus-visible { background: var(--row); outline: none; }
 
+/* O-line section: highlight the position-relevant rating row */
+.pm-tp-primary { background: var(--accent-soft); }
+.pm-tp-row.pm-tp-primary:hover,
+.pm-tp-row.pm-tp-primary:focus-visible { background: var(--accent-soft); filter: brightness(0.97); }
+.pm-tp-for {
+  display: block;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-top: 1px;
+  line-height: 1.1;
+}
+.pm-oline-link {
+  color: var(--accent);
+  font-style: normal;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.pm-oline-link:hover { text-decoration: underline; }
+
 /* Team tab manages its own section padding — drop the modal body inset. */
 .player-modal-body.pm-body-flush { padding: 0; }
 

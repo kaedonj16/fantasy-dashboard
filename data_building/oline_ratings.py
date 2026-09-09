@@ -31,15 +31,19 @@ PASS BLOCK -- a blend of pressure rate allowed (nflverse `was_pressure`, a
         mean) by sample size, so early-season small samples don't spike.
     Where `was_pressure` is unavailable (pre-2022) the QB-hit rate stands in.
 
-RUN BLOCK -- Football Outsiders "Line Yards" (formula is public): each carry's
-    yardage is weighted by distance, crediting the line for the yards it
-    plausibly created and discounting the long runs that are mostly the back:
+RUN BLOCK -- a blend of Football Outsiders "Line Yards" and rush success rate.
+    Line yards weight each carry by distance, crediting the line for yards it
+    plausibly created and discounting long runs that are mostly the back:
         < 0 yds (stuffed) -> 1.20x    0-4 yds -> 1.00x
         5-10 yds          -> 0.50x    11+ yds -> 0.00x
-    Garbage time (win prob outside [0.05, 0.95]) and kneels are dropped, the
-    same opponent-adjust + prior-regression is applied, and a descriptive
-    interior/tackle/end split is exposed alongside the graded overall number.
-    We also track stuffed rate (runs at or behind the LOS).
+    Success rate (nflverse `success`) captures early-down efficiency the FO
+    curve alone misses. A 2023-2025 split-half sweep settled on 55% line yards /
+    45% success (see RUN_LY_WEIGHT); both inputs are opponent-adjusted and
+    prior-regressed like pass block. QB scrambles and designed QB keeps are
+    dropped so a mobile QB doesn't inflate (or deflate) the line's grade.
+    Garbage time (win prob outside [0.05, 0.95]) and kneels are also dropped.
+    A descriptive interior/tackle/end split and stuffed rate are exposed
+    alongside the graded overall number.
 
 SCALING -- each team's adjusted-and-regressed metric is turned into a 0-100
     league percentile (100 = best line), the honest scale for a cross-sectional
@@ -96,6 +100,12 @@ WP_LOW, WP_HIGH = 0.05, 0.95
 # initial guess. Re-run the sweep and update these two numbers if it moves.
 PRESSURE_WEIGHT = 0.4
 SACK_WEIGHT = 0.6
+# Run-block sub-weights, chosen by a 2023-2025 first-half -> second-half sweep
+# of opponent-adjusted components (QB runs excluded). 0.55 line-yards /
+# 0.45 success maximises mean Spearman vs future line yards AND future success;
+# pure line-yards scores ~0.05 rho worse. Re-sweep if the mix drifts.
+RUN_LY_WEIGHT = 0.55
+RUN_SUCCESS_WEIGHT = 0.45
 
 # Same alias table matchup_ratings uses, so the two caches key on identical codes.
 _TEAM_ALIAS = {
@@ -110,7 +120,8 @@ _PBP_COLS = [
     "rush_attempt", "pass_attempt", "qb_dropback",
     "rushing_yards", "yards_gained",
     "sack", "qb_hit", "was_pressure", "time_to_throw",
-    "qb_kneel", "qb_spike", "run_location", "run_gap",
+    "qb_kneel", "qb_spike", "qb_scramble", "run_location", "run_gap",
+    "success", "passer_player_id", "rusher_player_id",
     "wp", "score_differential",
 ]
 
@@ -295,23 +306,55 @@ def _prep_season(d, pd, season, through_week=None):
     return d
 
 
+def _is_qb_run(qb_scramble, passer_player_id, rusher_player_id) -> bool:
+    """True for scrambles and designed QB keeps — not an O-line grading play.
+
+    Mobile QBs inflate (Hurts/Allen keepers) or muddy line-yards; dropping them
+    isolates the blocking unit. Identification: charted scramble flag, or the
+    passer and rusher being the same player (designed QB run).
+    """
+    try:
+        if qb_scramble is not None and float(qb_scramble) == 1:
+            return True
+    except (TypeError, ValueError):
+        pass
+    if passer_player_id is None or rusher_player_id is None:
+        return False
+    # pandas NaN != NaN; require both present and equal.
+    if passer_player_id != passer_player_id or rusher_player_id != rusher_player_id:
+        return False
+    return passer_player_id == rusher_player_id
+
+
 def _season_run_metrics(d):
     """Return per-team run metrics for one season frame.
 
-    -> ({team: adj_line_yards}, {team: n}, league_ly,
-        {team: {overall, interior, tackle, end, stuffed, n}})
+    -> ({team: adj_line_yards}, {team: adj_success}, {team: n}, league_ly,
+        {team: {overall, interior, tackle, end, stuffed, success, n}})
+
+    QB scrambles / designed keeps are excluded so the grade reflects the line,
+    not the quarterback's legs. `success` may be missing on older frames; the
+    success dict is empty in that case and callers fall back to line-yards only.
     """
-    triples = []          # (off, def, line_yards) for opponent adjustment
-    raw = defaultdict(lambda: {"ly": 0.0, "stuff": 0.0, "n": 0,
+    ly_triples = []       # (off, def, line_yards) for opponent adjustment
+    success_triples = []  # (off, def, success 0/1)
+    raw = defaultdict(lambda: {"ly": 0.0, "stuff": 0.0, "success": 0.0, "n_success": 0, "n": 0,
                                "interior": [0.0, 0], "tackle": [0.0, 0], "end": [0.0, 0]})
     cols = {c: (d[c].tolist() if c in d else None) for c in
             ("posteam", "defteam", "rushing_yards", "yards_gained",
-             "rush_attempt", "qb_kneel", "run_location", "run_gap", "wp")}
+             "rush_attempt", "qb_kneel", "qb_scramble", "run_location", "run_gap",
+             "wp", "success", "passer_player_id", "rusher_player_id")}
     n = len(d)
     for i in range(n):
         if cols["rush_attempt"] is None or _f(cols["rush_attempt"][i]) != 1:
             continue
         if cols["qb_kneel"] and _f(cols["qb_kneel"][i]) == 1:
+            continue
+        if _is_qb_run(
+            cols["qb_scramble"][i] if cols["qb_scramble"] else None,
+            cols["passer_player_id"][i] if cols["passer_player_id"] else None,
+            cols["rusher_player_id"][i] if cols["rusher_player_id"] else None,
+        ):
             continue
         wp = _f(cols["wp"][i]) if cols["wp"] else None
         if wp is not None and not (WP_LOW <= wp <= WP_HIGH):
@@ -324,28 +367,37 @@ def _season_run_metrics(d):
         if not o or not dd or y is None:
             continue
         ly = _line_yards(y)
-        triples.append((o, dd, ly))
+        ly_triples.append((o, dd, ly))
         b = raw[o]
         b["ly"] += ly
         b["stuff"] += 1.0 if y <= 0 else 0.0
         b["n"] += 1
+        if cols["success"] is not None:
+            su = _f(cols["success"][i])
+            if su is not None:
+                success_triples.append((o, dd, su))
+                b["success"] += su
+                b["n_success"] += 1
         gap = _gap_of(cols["run_location"][i] if cols["run_location"] else None,
                       cols["run_gap"][i] if cols["run_gap"] else None)
         if gap:
             b[gap][0] += ly
             b[gap][1] += 1
-    adj, ncount, league = _alt_adjust(triples)
+    ly_adj, ncount, league = _alt_adjust(ly_triples)
+    success_adj, _, _ = _alt_adjust(success_triples) if success_triples else ({}, {}, 0.0)
     detail = {}
     for t, b in raw.items():
         row = {"n": b["n"]}
         if b["n"] > 0:
             row["line_yards"] = round(b["ly"] / b["n"], 3)
             row["stuffed_rate"] = round(b["stuff"] / b["n"] * 100.0, 1)
+        if b["n_success"] > 0:
+            row["success_rate"] = round(b["success"] / b["n_success"] * 100.0, 1)
         for g in ("interior", "tackle", "end"):
             s, c = b[g]
             row[g] = (s / c) if c else None
         detail[t] = row
-    return adj, ncount, league, detail
+    return ly_adj, success_adj, ncount, league, detail
 
 
 def _season_pass_metrics(d):
@@ -438,11 +490,15 @@ def build_oline_ratings(season: int, through_week: int | None = None, save: bool
     prior_raw = _prep_season(_load_pbp_year(season - 1, pd, nfl), pd, season - 1)
 
     # --- RUN ---
-    run_adj, run_n, run_league, run_detail = _season_run_metrics(cur_raw)
-    run_prior = {}
+    run_ly_adj, run_su_adj, run_n, run_league, run_detail = _season_run_metrics(cur_raw)
+    run_ly_prior, run_su_prior = {}, {}
     if prior_raw is not None and not prior_raw.empty:
-        run_prior, _, _, _ = _season_run_metrics(prior_raw)
-    run_final = _regress_to_prior(run_adj, run_n, run_prior, run_league, RUN_PRIOR_K)
+        run_ly_prior, run_su_prior, _, _, _ = _season_run_metrics(prior_raw)
+    run_ly_final = _regress_to_prior(run_ly_adj, run_n, run_ly_prior, run_league, RUN_PRIOR_K)
+    # Success prior: fall back to the current-season league mean of success_adj
+    # (not run_league, which is in line-yards units).
+    su_league = (sum(run_su_adj.values()) / len(run_su_adj)) if run_su_adj else 0.0
+    run_su_final = _regress_to_prior(run_su_adj, run_n, run_su_prior, su_league, RUN_PRIOR_K) if run_su_adj else {}
 
     # --- PASS ---
     cur_pass = _season_pass_metrics(cur_raw)
@@ -461,7 +517,19 @@ def build_oline_ratings(season: int, through_week: int | None = None, save: bool
     sack_resid = _residualize(sack_final, cur_pass["ttt"])
 
     # --- SCALE ---
-    run_index = _percentile_index(run_final, higher_is_better=True)   # more line yards = better
+    ly_index = _percentile_index(run_ly_final, higher_is_better=True)   # more line yards = better
+    su_index = _percentile_index(run_su_final, higher_is_better=True) if run_su_final else {}
+    # Blend line-yards + success into run_block (same pattern as pressure+sack).
+    # When success is unavailable (older pbp / synthetic frames), fall back to LY.
+    run_index = {}
+    for t in set(ly_index) | set(su_index):
+        ly_i, su_i = ly_index.get(t), su_index.get(t)
+        if ly_i is not None and su_i is not None:
+            run_index[t] = round(RUN_LY_WEIGHT * ly_i + RUN_SUCCESS_WEIGHT * su_i, 1)
+        elif ly_i is not None:
+            run_index[t] = ly_i
+        elif su_i is not None:
+            run_index[t] = su_i
     press_index = _percentile_index(press_resid, higher_is_better=False)  # less pressure = better
     sack_index = _percentile_index(sack_resid, higher_is_better=False)
 
@@ -472,7 +540,7 @@ def build_oline_ratings(season: int, through_week: int | None = None, save: bool
         gap_index[g] = _percentile_index(gv, higher_is_better=True)
 
     # --- ASSEMBLE ---
-    teams = set(run_final) | set(press_final)
+    teams = set(run_ly_final) | set(press_final)
     ratings = {}
     for t in teams:
         rd = run_detail.get(t, {})
@@ -496,6 +564,8 @@ def build_oline_ratings(season: int, through_week: int | None = None, save: bool
         if "line_yards" in rd:
             row["line_yards"] = rd["line_yards"]
             row["stuffed_rate"] = rd["stuffed_rate"]
+        if "success_rate" in rd:
+            row["success_rate"] = rd["success_rate"]
         for k in ("pressure_rate", "sack_rate", "qb_hit_rate", "avg_time_to_throw"):
             if pd_.get(k) is not None:
                 row[k] = pd_[k]
@@ -518,7 +588,7 @@ def build_oline_ratings(season: int, through_week: int | None = None, save: bool
     out = {
         "season": season,
         "through_week": through_week,
-        "seasons_used": sorted({season} | ({season - 1} if run_prior or prior_pass else set())),
+        "seasons_used": sorted({season} | ({season - 1} if run_ly_prior or prior_pass else set())),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "pressure_source": cur_pass["pressure_source"],
         "n_run_plays": int(sum(run_n.values())),
@@ -526,6 +596,7 @@ def build_oline_ratings(season: int, through_week: int | None = None, save: bool
         "weights": {
             "pass_block": PASS_BLOCK_WEIGHT, "run_block": RUN_BLOCK_WEIGHT,
             "pressure": PRESSURE_WEIGHT, "sack": SACK_WEIGHT,
+            "run_ly": RUN_LY_WEIGHT, "run_success": RUN_SUCCESS_WEIGHT,
             "run_prior_k": RUN_PRIOR_K, "pass_prior_k": PASS_PRIOR_K,
         },
         "ratings": ratings,

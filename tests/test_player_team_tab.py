@@ -49,6 +49,21 @@ def test_player_modal_team_tab_ui_wiring():
     assert "pm-team-season-pills" in js
     assert "available_seasons" in js
     assert "data_mode" in js
+    # O-line lives in its own Team-tab section (not mixed into Offense Profile
+    # volume ranks), with position-primary highlighting and short labels.
+    assert "pm-oline-sec" in js
+    assert "Offensive Line" in js
+    assert "pm-tp-primary" in js
+    assert "Pass Block Grade" not in js
+    assert "Run Block Grade" not in js
+    assert "mkOl('Pass Block'" in js
+    assert "mkOl('Run Block'" in js
+    assert "mkOl('Overall'" in js
+    assert "oline_' + metric" in js
+    # Must not append O-line rows into the Offense Profile volume block.
+    assert "${profile}${olineRows}" not in js
+    assert "${profile}" in js
+    assert "${olineSec}" in js
 
 
 def test_player_modal_team_tab_css():
@@ -57,6 +72,7 @@ def test_player_modal_team_tab_css():
         ".pm-team-header", ".pm-crest", ".pm-hero-stat", ".pm-team-depth",
         ".player-badge-inj-q", ".pm-team-adv-toggle", ".pm-team-usage",
         ".pm-team-season-pills", ".pm-team-season-pill",
+        ".pm-tp-primary", ".pm-tp-for", ".pm-oline-link",
     ):
         assert cls in css, cls
 
