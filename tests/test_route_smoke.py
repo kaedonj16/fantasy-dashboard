@@ -68,6 +68,23 @@ def test_oline_rankings_api(offline_client):
         assert comps == sorted(comps, reverse=True)
 
 
+def test_oline_for_player_helper():
+    # The player-modal O-line helper: position-aware primary metric, graceful
+    # nulls, and season fallback to the newest built cache. DB-free.
+    import app
+    rb = app._oline_for_player(2026, "PHI", "RB")
+    assert rb and rb["primary"] == "run_block"
+    assert rb["primary_value"] == rb["run_block"]
+    assert 1 <= rb["primary_rank"] <= rb["total_teams"]
+    qb = app._oline_for_player(2026, "BUF", "QB")
+    assert qb and qb["primary"] == "pass_block"
+    # 2026 isn't built in the seed; helper falls back to the newest season.
+    assert rb["season"] <= 2026
+    # No rating -> no section.
+    assert app._oline_for_player(2026, "", "WR") is None
+    assert app._oline_for_player(2026, "FA", "RB") is None
+
+
 def test_prewarm_league_requires_league_id(offline_client):
     # The switcher's background prewarm endpoint must exist and reject a call
     # with no league_id (rather than 404/500), so the route stays wired up.
