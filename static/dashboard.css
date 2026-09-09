@@ -38366,7 +38366,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 .st-div-meta {
     margin-left: auto;
     padding: 3px 9px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     font-size: 10.5px;
     font-weight: 700;
     letter-spacing: .01em;
