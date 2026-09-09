@@ -36,7 +36,7 @@ from data_building.oline_ratings import (
     _prep_season, _load_pbp_year, _season_run_metrics, _season_pass_metrics,
     _regress_to_prior, _residualize, _percentile_index,
     RUN_PRIOR_K, PASS_PRIOR_K, PRESSURE_WEIGHT, SACK_WEIGHT,
-    PASS_BLOCK_WEIGHT, RUN_BLOCK_WEIGHT,
+    PASS_BLOCK_WEIGHT, RUN_BLOCK_WEIGHT, RUN_LY_WEIGHT, RUN_SUCCESS_WEIGHT,
 )
 
 
@@ -84,18 +84,30 @@ def _ratings_from_frame(cur, pd):
     Used inside the backtest where each split is treated standalone. Returns
     {team: {pass_block, run_block, composite, pressure_rate, sack_rate, line_yards}}.
     """
-    run_adj, run_n, run_league, run_detail = _season_run_metrics(cur)
-    run_final = _regress_to_prior(run_adj, run_n, {}, run_league, RUN_PRIOR_K)
+    run_ly_adj, run_su_adj, run_n, run_league, run_detail = _season_run_metrics(cur)
+    run_ly_final = _regress_to_prior(run_ly_adj, run_n, {}, run_league, RUN_PRIOR_K)
+    su_league = (sum(run_su_adj.values()) / len(run_su_adj)) if run_su_adj else 0.0
+    run_su_final = _regress_to_prior(run_su_adj, run_n, {}, su_league, RUN_PRIOR_K) if run_su_adj else {}
     cp = _season_pass_metrics(cur)
     press_final = _regress_to_prior(cp["press_adj"], cp["n"], None, cp["press_league"], PASS_PRIOR_K)
     sack_final = _regress_to_prior(cp["sack_adj"], cp["n"], None, cp["sack_league"], PASS_PRIOR_K)
     press_resid = _residualize(press_final, cp["ttt"])
     sack_resid = _residualize(sack_final, cp["ttt"])
-    run_index = _percentile_index(run_final, higher_is_better=True)
+    ly_index = _percentile_index(run_ly_final, higher_is_better=True)
+    su_index = _percentile_index(run_su_final, higher_is_better=True) if run_su_final else {}
+    run_index = {}
+    for t in set(ly_index) | set(su_index):
+        ly_i, su_i = ly_index.get(t), su_index.get(t)
+        if ly_i is not None and su_i is not None:
+            run_index[t] = RUN_LY_WEIGHT * ly_i + RUN_SUCCESS_WEIGHT * su_i
+        elif ly_i is not None:
+            run_index[t] = ly_i
+        elif su_i is not None:
+            run_index[t] = su_i
     press_index = _percentile_index(press_resid, higher_is_better=False)
     sack_index = _percentile_index(sack_resid, higher_is_better=False)
     out = {}
-    for t in set(run_final) | set(press_final):
+    for t in set(run_ly_final) | set(press_final):
         p_idx, s_idx, r_idx = press_index.get(t), sack_index.get(t), run_index.get(t)
         pass_idx = None
         if p_idx is not None and s_idx is not None:
@@ -122,14 +134,26 @@ def _components_from_frame(cur, pd):
     pass-block blend, so the sweep can recombine them at different weights
     without recomputing the expensive opponent adjustment each time.
     """
-    run_adj, run_n, run_league, _ = _season_run_metrics(cur)
-    run_final = _regress_to_prior(run_adj, run_n, {}, run_league, RUN_PRIOR_K)
+    run_ly_adj, run_su_adj, run_n, run_league, _ = _season_run_metrics(cur)
+    run_ly_final = _regress_to_prior(run_ly_adj, run_n, {}, run_league, RUN_PRIOR_K)
+    su_league = (sum(run_su_adj.values()) / len(run_su_adj)) if run_su_adj else 0.0
+    run_su_final = _regress_to_prior(run_su_adj, run_n, {}, su_league, RUN_PRIOR_K) if run_su_adj else {}
     cp = _season_pass_metrics(cur)
     press_final = _regress_to_prior(cp["press_adj"], cp["n"], None, cp["press_league"], PASS_PRIOR_K)
     sack_final = _regress_to_prior(cp["sack_adj"], cp["n"], None, cp["sack_league"], PASS_PRIOR_K)
     press_index = _percentile_index(_residualize(press_final, cp["ttt"]), higher_is_better=False)
     sack_index = _percentile_index(_residualize(sack_final, cp["ttt"]), higher_is_better=False)
-    run_index = _percentile_index(run_final, higher_is_better=True)
+    ly_index = _percentile_index(run_ly_final, higher_is_better=True)
+    su_index = _percentile_index(run_su_final, higher_is_better=True) if run_su_final else {}
+    run_index = {}
+    for t in set(ly_index) | set(su_index):
+        ly_i, su_i = ly_index.get(t), su_index.get(t)
+        if ly_i is not None and su_i is not None:
+            run_index[t] = RUN_LY_WEIGHT * ly_i + RUN_SUCCESS_WEIGHT * su_i
+        elif ly_i is not None:
+            run_index[t] = ly_i
+        elif su_i is not None:
+            run_index[t] = su_i
     comp = {}
     for t in set(press_index) | set(sack_index) | set(run_index):
         comp[t] = {"press": press_index.get(t), "sack": sack_index.get(t),
@@ -243,7 +267,7 @@ def run_backtest(seasons, split_week=9, save=True):
         rate1, src = _ratings_from_frame(first, pd)
         pressure_sources.add(src)
         # Second-half OUTCOMES (raw rates, not indices) computed directly.
-        _, _, _, run2 = _season_run_metrics(second)
+        _, _, _, _, run2 = _season_run_metrics(second)
         cp2 = _season_pass_metrics(second)
         out2_pass = cp2["detail"]
 
@@ -258,7 +282,7 @@ def run_backtest(seasons, split_week=9, save=True):
                 pred_run.append((r1["run_block"], o2r["line_yards"]))
         # split-half stability of the raw inputs
         cp1 = _season_pass_metrics(first)["detail"]
-        _, _, _, run1 = _season_run_metrics(first)
+        _, _, _, _, run1 = _season_run_metrics(first)
         for t in set(cp1) & set(out2_pass):
             if cp1[t].get("pressure_rate") is not None and out2_pass[t].get("pressure_rate") is not None:
                 stab_pass_in.append((cp1[t]["pressure_rate"], out2_pass[t]["pressure_rate"]))
