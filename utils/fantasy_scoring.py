@@ -77,31 +77,30 @@ def _sleeper_standard_points(raw: dict, ss: dict):
     scored from the raw line.
     """
     ss = ss or {}
+    if "rec" not in ss:
+        return None
     try:
-        rec = float(ss.get("rec", 1.0)) if "rec" in ss else 1.0
+        rec = float(ss.get("rec"))
     except (TypeError, ValueError):
         return None
-    key = {1.0: "pts_ppr", 0.5: "pts_half_ppr", 0.0: "pts_std"}.get(rec)
-    if key is None:
+    pts_key = {1.0: "pts_ppr", 0.5: "pts_half_ppr", 0.0: "pts_std"}.get(rec)
+    if pts_key is None:
         return None  # custom reception value (e.g. 0.75) → recompute
     try:
         if float(ss.get("pass_td", 4.0) or 0) != 4.0:
             return None  # 6pt (or other) passing TD → recompute
     except (TypeError, ValueError):
         return None
-    # Reception format alone does not make a league standard. A league can be
-    # PPR while changing interceptions, yardage, fumbles, or another projected
-    # category. In that case Sleeper's generic pts_* total is not the league
-    # projection shown in its app, so score the raw line with league settings.
-    for stat in raw:
-        if stat == "rec" or stat.startswith("pts_") or stat not in ss:
+    # Compare league rates on settings, not just stats present on this player.
+    # Yahoo/Flea/MFL extras used to keep pts_ppr whenever the WR line omitted
+    # the custom category (INT, fumbles, 6-pt TDs already handled above).
+    for stat_key, standard_rate in _DEFAULT_RATES.items():
+        if stat_key == "rec" or stat_key not in ss:
             continue
         try:
-            league_rate = float(ss.get(stat) or 0)
-            standard_rate = float(_DEFAULT_RATES.get(stat, 0))
+            if float(ss.get(stat_key) or 0) != float(standard_rate):
+                return None
         except (TypeError, ValueError):
-            return None
-        if league_rate != standard_rate:
             return None
     # Any active yardage-milestone / first-down / TE-premium bonus makes
     # Sleeper's standard total wrong for this league.
@@ -113,7 +112,7 @@ def _sleeper_standard_points(raw: dict, ss: dict):
                 return None
         except (TypeError, ValueError):
             continue
-    val = raw.get(key)
+    val = raw.get(pts_key)
     if val is None:
         return None  # payload lacks the precomputed total → recompute
     try:

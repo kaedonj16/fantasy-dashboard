@@ -167,6 +167,45 @@ def test_yahoo_does_not_treat_head_scoring_type_as_standard_ppr():
     assert scoring["rec"] == 1.0
 
 
+def test_yahoo_reception_bonus_does_not_drop_ppr_rate():
+    settings = {
+        "stat_modifiers": {"stats": [{
+            "stat": {
+                "stat_id": 11, "value": "1.0",
+                "bonuses": {"bonus": [{"target": "9", "points": "3"}]},
+            },
+        }]},
+    }
+    scoring = yahoo_api._yahoo_scoring_settings({"scoring_type": "head"}, settings)
+    assert scoring["rec"] == 1.0
+
+
+def test_yahoo_ppr_start_sit_uses_ppr_not_standard():
+    from utils.fantasy_scoring import projection_points, week_stat_points
+    from utils.league_scoring import normalize_league_scoring
+
+    settings = {
+        "stat_modifiers": {"stats": [
+            {"stat": {
+                "stat_id": 11, "value": "1",
+                "bonuses": {"bonus": [{"target": "9", "points": "3"}]},
+            }},
+            {"stat": {"stat_id": 12, "value": "0.1"}},
+            {"stat": {"stat_id": 13, "value": "6"}},
+        ]},
+    }
+    scoring = normalize_league_scoring(
+        "yahoo", yahoo_api._yahoo_scoring_settings({"scoring_type": "head"}, settings),
+    )
+    stats = {
+        "rec": 8, "rec_yd": 95, "rec_td": 0.7,
+        "pts_ppr": 22.5, "pts_half_ppr": 18.5, "pts_std": 14.5,
+    }
+    assert scoring["rec"] == 1.0
+    assert projection_points({"raw_stats": stats}, scoring, "WR") == 22.5
+    assert week_stat_points(stats, scoring, "WR") == 22.5
+
+
 def test_yahoo_standard_reception_modifier_stays_zero():
     settings = {
         "stat_modifiers": {"stats": [{"stat": {"stat_id": 11, "value": "0"}}]},

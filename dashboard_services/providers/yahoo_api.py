@@ -2391,11 +2391,25 @@ _YAHOO_STAT_KEYS: Dict[int, str] = {
 }
 
 
+_YAHOO_YARD_STAT_IDS = frozenset({4, 9, 12})  # pass/rush/rec yards
+
+
 def _yahoo_is_threshold_bonus(stat: dict) -> bool:
-    """Skip a duplicate yardage row that is a 300-yard extra, not 0.04 / yard."""
+    """Skip a duplicate yardage row that is a 300-yard extra, not 0.04 / yard.
+
+    Reception rows (stat_id 11) often carry a 9-catch extra under ``bonuses``.
+    Treating that whole row as a bonus dropped PPR ``value=1`` and Start/Sit
+    scored the league as standard — the Yahoo analog of ESPN D/ST overrides.
+    """
     if not isinstance(stat, dict):
         return False
     if not (stat.get("bonuses") or stat.get("bonus")):
+        return False
+    try:
+        stat_id = int(stat.get("stat_id"))
+    except (TypeError, ValueError):
+        return False
+    if stat_id not in _YAHOO_YARD_STAT_IDS:
         return False
     try:
         return abs(float(stat.get("value"))) >= 1.0

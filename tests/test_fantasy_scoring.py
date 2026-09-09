@@ -172,3 +172,16 @@ def test_custom_interception_rate_ignores_standard_precomputed_total():
     }
     settings = {"rec": 1.0, "pass_yd": 0.04, "pass_td": 4, "pass_int": -1}
     assert projection_points(entry, settings, "QB") == pytest.approx(17.0)
+
+
+def test_missing_rec_does_not_assume_ppr_precomputed_total():
+    entry = {"raw_stats": {"rec": 8, "rec_yd": 100, "pts_ppr": 26.0, "pts_std": 18.0}}
+    # Missing rec used to default to PPR and show 26. Recompute with rec=0.
+    assert projection_points(entry, {"rec_yd": 0.1}, "WR") == 10.0
+
+
+def test_settings_wide_custom_rate_recomputes_for_skill_players():
+    entry = {"raw_stats": {"rec": 8, "rec_yd": 100, "pts_ppr": 26.0}}
+    settings = {"rec": 1.0, "pass_int": -1.0, "rec_yd": 0.1}
+    assert projection_points(entry, settings, "WR") == 18.0
+

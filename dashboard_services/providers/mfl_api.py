@@ -107,6 +107,113 @@ def _num(value, default=0.0):
     except (TypeError, ValueError): return default
 
 
+def _mfl_text(value) -> str:
+    """Unwrap MFL JSON-from-XML ``{"$t": "CC"}`` nodes."""
+    if isinstance(value, dict) and "$t" in value:
+        value = value.get("$t")
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _mfl_parse_points(raw) -> tuple[Optional[float], bool]:
+    """Return (rate, is_per_unit) for MFL points like ``*1``, ``0.04``, ``1/25``."""
+    text = _mfl_text(raw).replace(" ", "")
+    if not text:
+        return None, False
+    per_unit = text.startswith("*") or "/" in text
+    if text.startswith("*"):
+        text = text[1:]
+    if "/" in text:
+        left, _, right = text.partition("/")
+        try:
+            num, den = float(left), float(right)
+        except (TypeError, ValueError):
+            return None, False
+        if den == 0:
+            return None, False
+        return num / den, True
+    try:
+        return float(text), per_unit
+    except (TypeError, ValueError):
+        return None, False
+
+
+def _mfl_range_start(raw) -> Optional[float]:
+    text = _mfl_text(raw)
+    if not text:
+        return None
+    match = re.match(r"^(-?\d+(?:\.\d+)?)-(-?\d+(?:\.\d+)?)$", text)
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+# Offensive counting/yardage events used by Start/Sit. Length-of-TD and
+# kicker/IDP rules stay unmapped so they cannot overwrite rec / pass_yd.
+_MFL_EVENT_KEYS = {
+    "CC": "rec",
+    "CY": "rec_yd",
+    "#C": "rec_td",
+    "C2": "rec_2pt",
+    "1C": "rec_fd",
+    "#P": "pass_td",
+    "PY": "pass_yd",
+    "IN": "pass_int",
+    "PC": "pass_cmp",
+    "PA": "pass_att",
+    "P2": "pass_2pt",
+    "#R": "rush_td",
+    "RY": "rush_yd",
+    "R2": "rush_2pt",
+    "1R": "rush_fd",
+    "FL": "fum_lost",
+    "FLO": "fum_lost",
+}
+_MFL_SKILL_POS = frozenset({"QB", "RB", "WR", "TE", "FB"})
+
+
+def _mfl_positions(raw) -> set[str]:
+    text = _mfl_text(raw).upper().replace(",", "|")
+    return {part.strip() for part in text.split("|") if part.strip()}
+
+
+def _mfl_rule_rows(group: dict) -> list[dict]:
+    if not isinstance(group, dict):
+        return []
+    nested = group.get("rule")
+    if isinstance(nested, list):
+        return [row for row in nested if isinstance(row, dict)]
+    if isinstance(nested, dict):
+        return [nested]
+    if group.get("event") or group.get("id"):
+        return [group]
+    return []
+
+
+def _mfl_position_groups(lg, rules_raw=None) -> list[dict]:
+    """Prefer TYPE=rules; league export usually omits scoring entirely."""
+    blobs = []
+    if isinstance(rules_raw, dict):
+        blobs.append(rules_raw)
+    if isinstance(lg, dict):
+        blobs.append({"rules": lg.get("rules")} if lg.get("rules") is not None else lg)
+    for blob in blobs:
+        if not isinstance(blob, dict):
+            continue
+        rules = blob.get("rules") if isinstance(blob.get("rules"), dict) else blob
+        if not isinstance(rules, dict):
+            continue
+        node = rules.get("positionRules") or rules.get("positionRule")
+        groups = _items(node, "positionRules") or _items(node, "positionRule")
+        if groups:
+            return groups
+    return []
+
+
 def _int(value, default=0):
     try: return int(value)
     except (TypeError, ValueError): return default
@@ -273,6 +380,16 @@ class MFLProvider(ProviderAdapter):
         franchises = _items((lg.get("franchises") or {}).get("franchise", []), "franchise")
         raw_type = str(lg.get("type") or "redraft").strip().lower()
         sleeper_type, league_type_label = _mfl_sleeper_league_type(raw_type)
+        # League export does not include scoring. TYPE=rules is the analog of
+        # ESPN mSettings / Yahoo stat_modifiers; without it rec falls back to 0.
+        rules_raw = None
+        try:
+            rules_raw = self._export(
+                "rules", league_id, season, ttl=1800, cookie=cookie, apikey=apikey,
+            )
+        except Exception as exc:
+            logger.warning("MFL rules export unavailable league=%s error=%s",
+                           league_id, type(exc).__name__)
         return {
             "league_id": str(lg.get("id") or league_id), "season": int(season),
             "name": lg.get("name") or "MyFantasyLeague League",
@@ -284,7 +401,7 @@ class MFLProvider(ProviderAdapter):
                 "type": sleeper_type,
                 "league_type": league_type_label,
             },
-            "scoring_settings": self._scoring(lg),
+            "scoring_settings": self._scoring(lg, rules_raw),
             "roster_positions": self._positions(lg),
             "metadata": {"divisions": lg.get("divisions"), "conferences": lg.get("conferences")},
         }
@@ -588,9 +705,54 @@ class MFLProvider(ProviderAdapter):
         return out
 
     @staticmethod
-    def _scoring(lg):
-        rules = _items((lg.get("rules") or {}).get("positionRule", []), "positionRule")
-        return {str(r.get("event") or r.get("id")): _num(r.get("points")) for r in rules if r.get("event") or r.get("id")}
+    def _scoring(lg, rules_raw=None):
+        """Map MFL event codes onto Sleeper keys used by Start/Sit.
+
+        League export omits ``rules``, and JSON wraps values as ``{"$t": "CC"}``.
+        Storing those raw events left ``normalize_league_scoring`` with no
+        ``rec``, so every MFL PPR league painted standard (0 PPR).
+        """
+        from utils.league_scoring import assign_scoring_rate
+
+        out: dict[str, float] = {}
+        rec_by_pos: dict[str, float] = {}
+        for group in _mfl_position_groups(lg, rules_raw):
+            positions = _mfl_positions(group.get("positions") or group.get("position"))
+            skill_positions = positions & _MFL_SKILL_POS if positions else set(_MFL_SKILL_POS)
+            if positions and not skill_positions:
+                continue
+            for row in _mfl_rule_rows(group):
+                event = _mfl_text(row.get("event") or row.get("id")).upper()
+                key = _MFL_EVENT_KEYS.get(event)
+                if not key:
+                    continue
+                rate, per_unit = _mfl_parse_points(row.get("points"))
+                if rate is None:
+                    continue
+                start = _mfl_range_start(row.get("range"))
+                # Catch / yardage extras (5-9 rec = 6 pts, 300-yard bonus) are
+                # not the per-stat rate. Per-unit rows use ``*`` or ``/``.
+                if not per_unit and start is not None and start > 0:
+                    continue
+                if per_unit and start is not None and start > 0 and key != "rec":
+                    continue
+                if key == "rec" and skill_positions:
+                    specific = len(skill_positions) == 1
+                    for pos in skill_positions:
+                        if specific or pos not in rec_by_pos:
+                            rec_by_pos[pos] = rate
+                    continue
+                assign_scoring_rate(out, key, rate)
+        rec = next(
+            (rec_by_pos[pos] for pos in ("WR", "RB", "QB", "TE", "FB") if pos in rec_by_pos),
+            None,
+        )
+        if rec is not None:
+            out["rec"] = rec
+            te_rate = rec_by_pos.get("TE")
+            if te_rate is not None and te_rate > rec:
+                out["bonus_rec_te"] = te_rate - rec
+        return out
 
     def get_league_globals(self, league_id, season):
         league = self.get_league(league_id, season)

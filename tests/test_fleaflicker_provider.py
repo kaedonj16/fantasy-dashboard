@@ -739,6 +739,64 @@ def test_fleaflicker_scoring_maps_group_abbreviations():
     assert pts == 20.0
 
 
+def test_fleaflicker_receiving_stats_group_maps_ppr():
+    rules = {"groups": [{
+        "label": "Receiving Stats",
+        "scoringRules": [{
+            "category": {"abbreviation": "Rec", "nameSingular": "Receptions"},
+            "points": {"value": 1}, "pointsPer": {"value": 1.0}, "forEvery": 1,
+        }],
+    }]}
+    assert FleaflickerProvider._scoring(rules)["rec"] == 1.0
+
+
+def test_fleaflicker_dst_reception_exception_does_not_replace_ppr():
+    rules = {"groups": [{
+        "label": "Receiving",
+        "scoringRules": [
+            {
+                "category": {"abbreviation": "Rec", "nameSingular": "Catch"},
+                "pointsPer": {"value": 0}, "applyTo": ["D/ST"],
+            },
+            {
+                "category": {"abbreviation": "Rec", "nameSingular": "Catch"},
+                "pointsPer": {"value": 1.0}, "applyTo": ["WR", "RB", "TE"],
+            },
+        ],
+    }]}
+    out = FleaflickerProvider._scoring(rules)
+    assert out["rec"] == 1.0
+
+
+def test_fleaflicker_ppr_start_sit_uses_ppr_not_standard():
+    from utils.fantasy_scoring import projection_points, week_stat_points
+    from utils.league_scoring import normalize_league_scoring
+
+    rules = {"groups": [{"label": "Receiving Stats", "scoring_rules": [
+        {
+            "category": {"abbreviation": "Rec", "name_singular": "Catch"},
+            "points": {"value": 1}, "points_per": {"value": 1.0}, "for_every": 1,
+            "apply_to": ["WR", "RB", "TE"],
+        },
+        {
+            "category": {"abbreviation": "Yd", "name_singular": "Receiving Yard"},
+            "points_per": {"value": 0.1}, "for_every": 10,
+        },
+        {
+            "category": {"abbreviation": "TD", "name_singular": "Receiving TD"},
+            "points": {"value": 6}, "for_every": 1,
+        },
+    ]}]}
+    scoring = normalize_league_scoring("fleaflicker", FleaflickerProvider._scoring(rules))
+    stats = {
+        "rec": 8, "rec_yd": 95, "rec_td": 0.7,
+        "pts_ppr": 22.5, "pts_half_ppr": 18.5, "pts_std": 14.5,
+    }
+    assert scoring["rec"] == 1.0
+    assert projection_points({"raw_stats": stats}, scoring, "WR") == 22.5
+    assert week_stat_points(stats, scoring, "WR") == 22.5
+
+
 def test_fleaflicker_scoring_divides_points_by_for_every():
     rules = {"groups": [{"label": "Passing", "scoring_rules": [
         {"category": {"abbreviation": "Yd"}, "points": {"value": 1}, "for_every": 25},
