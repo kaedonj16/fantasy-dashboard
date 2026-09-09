@@ -119,6 +119,51 @@ def test_rankings_consensus_column_averages_displayed_sleeper_and_br_rank(monkey
     assert by["bijan"]["consensus"]["avg_pick"] == 1.6
 
 
+def test_rankings_brfantasy_live_column_is_kept_out_of_consensus(monkeypatch):
+    """BR Fantasy Live gets its own column but never feeds displayed Consensus.
+
+    Recent drafts are already inside season-long BR Fantasy, so blending the
+    live window in would double-count them (matches ADP_SELECTOR_EXTRA)."""
+    try:
+        from app import _attach_all_adp_sources
+    except Exception as exc:
+        pytest.skip(f"app not importable ({type(exc).__name__})")
+
+    players = [{"id": "a"}, {"id": "b"}]
+    sleeper = {"a": 1.0, "b": 2.0}
+    br_raw = {"a": 5.0, "b": 6.0}        # ordinal: a→1, b→2
+    br_live_raw = {"a": 9.0, "b": 8.0}   # ordinal: b→1, a→2 (a different signal)
+
+    def fake_resolve(season, is_sf, scoring_type="redraft", source="consensus",
+                     as_rank=False, fallback=True, **kwargs):
+        if source == "consensus":
+            raise AssertionError("rankings Cons must not use resolve_market_adp(consensus)")
+        if source == "sleeper":
+            return dict(sleeper)
+        if source == "brfantasy":
+            return dict(br_raw)
+        if source == "brfantasy_live":
+            return dict(br_live_raw)
+        return {}
+
+    monkeypatch.setattr(
+        "dashboard_services.adp_service.resolve_market_adp", fake_resolve,
+    )
+    cols = _attach_all_adp_sources(
+        players, 2026, ["sleeper", "brfantasy", "brfantasy_live", "consensus"],
+    )
+    assert [c["value"] for c in cols] == ["sleeper", "brfantasy", "brfantasy_live", "consensus"]
+    by = {p["id"]: p["adp_by_source"] for p in players}
+    # BR Fantasy Live is present as its own ordinal-ranked column.
+    assert by["a"]["brfantasy_live"]["avg_pick"] == 2.0
+    assert by["b"]["brfantasy_live"]["avg_pick"] == 1.0
+    # Consensus is the mean of Sleeper + BR Fantasy ONLY, not the live window.
+    # a: (1.0 + 1.0)/2 = 1.0 ; b: (2.0 + 2.0)/2 = 2.0. Folding live in would
+    # have pulled a→1.33 and b→1.67.
+    assert by["a"]["consensus"]["avg_pick"] == 1.0
+    assert by["b"]["consensus"]["avg_pick"] == 2.0
+
+
 def test_yahoo_overlay_rebuilds_consensus_from_all_displayed_columns(monkeypatch):
     try:
         from app import _attach_all_adp_sources

@@ -17110,12 +17110,21 @@ _ADP_COLUMN_AXES = (
 )
 
 
+# Columns that must never feed the displayed Consensus. ``consensus`` itself is
+# excluded (it is the output), and ``brfantasy_live`` is selector-only: recent
+# drafts are already inside season-long BR Fantasy, so blending the live window
+# in would double-count them (matches ADP_SELECTOR_EXTRA in adp_service).
+_CONSENSUS_EXCLUDED_COLUMNS = frozenset({"consensus", "brfantasy_live"})
+
+
 def _fill_displayed_consensus(players) -> bool:
     """Set ``adp_by_source['consensus']`` to the mean of the other source columns.
 
     BR Fantasy is stored as a 1..N rank; Sleeper/ESPN/Yahoo/MFL stay on raw ADP.
     Averaging those plotted numbers is what the Consensus column must show
-    (Gibbs 1.0 + 2.0 → 1.5), not the raw-ADP blend from resolve_market_adp."""
+    (Gibbs 1.0 + 2.0 → 1.5), not the raw-ADP blend from resolve_market_adp.
+
+    BR Fantasy Live is excluded from the blend (see _CONSENSUS_EXCLUDED_COLUMNS)."""
     from dashboard_services.adp_service import displayed_source_consensus
     fields = [field for _st, _sf, field in _ADP_COLUMN_AXES]
     any_cons = False
@@ -17126,7 +17135,8 @@ def _fill_displayed_consensus(players) -> bool:
         for field in fields:
             per_src = {
                 src: (row or {}).get(field)
-                for src, row in dest.items() if src != "consensus"
+                for src, row in dest.items()
+                if src not in _CONSENSUS_EXCLUDED_COLUMNS
             }
             v = displayed_source_consensus(per_src)
             cons[field] = v
@@ -17925,17 +17935,20 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     _adp_season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
     _adp_sources = _attach_adp_to_players(model_value_table, _adp_season)
     # Per-source ADP for the rankings "sort by ADP" view (one column per source).
-    # Tokenless, league-agnostic sources: Sleeper, BR Fantasy, and the global
-    # snapshot feeds ESPN + MFL + Yahoo (redraft-only; each is dropped by
-    # _attach_all_adp_sources when its snapshot has no data, so they never show as
-    # empty columns). Yahoo's *global* snapshot is tokenless; a connected Yahoo
-    # league additionally overlays its league-format Yahoo ADP per-request in the
-    # route (replacing this global column). Consensus stays last. Attached here so
-    # the memoized payload carries them.
+    # Tokenless, league-agnostic sources: Sleeper, BR Fantasy, BR Fantasy Live
+    # (past-7-days observed drafts), and the global snapshot feeds ESPN + MFL +
+    # Yahoo (redraft-only; each is dropped by _attach_all_adp_sources when its
+    # snapshot has no data, so they never show as empty columns). BR Fantasy Live
+    # is a selector-only column: it is deliberately kept out of the displayed
+    # Consensus (recent drafts are already inside season-long BR Fantasy, so
+    # blending it would double-count them). Yahoo's *global* snapshot is
+    # tokenless; a connected Yahoo league additionally overlays its league-format
+    # Yahoo ADP per-request in the route (replacing this global column). Consensus
+    # stays last. Attached here so the memoized payload carries them.
     try:
         _adp_columns = _attach_all_adp_sources(
             model_value_table, _adp_season,
-            ["sleeper", "brfantasy", "espn", "mfl", "yahoo", "consensus"])
+            ["sleeper", "brfantasy", "brfantasy_live", "espn", "mfl", "yahoo", "consensus"])
     except Exception as _e_adpcols:
         logger.info("[api/league-players] per-source ADP skipped: %s", _e_adpcols)
         _adp_columns = []
