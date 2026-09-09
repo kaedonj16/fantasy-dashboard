@@ -19847,12 +19847,45 @@ def api_player_details(player_id: str):
                 except Exception:
                     logger.debug("[api_player_details] start_score conditions skipped", exc_info=True)
             if _ss_proj > 0 or _ss_inj or _ss_bye:
+                # Build the Waivers-parity payload FIRST so the score can use the
+                # same form / usage / floor signals the Start/Sit page feeds in.
+                # Without them the compare score ignored recent form, usage trend
+                # and consistency and collapsed to raw projection whenever Vegas
+                # and weather were absent.
+                try:
+                    _start_sit_payload = _startsit_compare_extras(
+                        player_id, _ss_pos, _ss_team, season, _ss_week, scoring_settings,
+                        proj_pts=_ss_proj, on_bye=_ss_bye, opponent=_ss_opp,
+                        home_team=_ss_home, implied_total=_ss_imp, weather=_ss_wx,
+                    )
+                except Exception:
+                    logger.debug("[api_player_details] start_sit payload skipped", exc_info=True)
+                _ssp = _start_sit_payload or {}
+                _ss_recent = _ssp.get("recent_ppg") or 0.0
+                _ss_cons = _ssp.get("consistency") or {}
+                _ss_bust = (_ss_cons.get("bust_rate")
+                            if _ss_cons and not _ss_cons.get("small_sample") else None)
+                # Usage trend (last-3 vs season), same source as the Start/Sit page.
+                _ss_ud = _ss_usa = None
+                try:
+                    from data_building.weekly_metrics import get_usage_trends as _ss_gut
+                    _ss_ut = (_ss_gut(int(season)) or {}).get(str(player_id)) or {}
+                    _ss_ud = _ss_ut.get("delta")
+                    _ss_usa = _ss_ut.get("season_avg")
+                except Exception:
+                    logger.debug("[api_player_details] usage trend skipped", exc_info=True)
                 _ss_val, _ss_fac, _ss_dem = compute_start_score(
                     _ss_proj,
                     on_bye=_ss_bye,
+                    recent_ppg=_ss_recent,
                     season_ppg=float(_ppg or 0),
+                    def_rank=_ssp.get("def_rank"),
+                    def_total=_ssp.get("def_total") or 32,
+                    usage_delta=_ss_ud,
+                    usage_season_avg=_ss_usa,
                     injury_status=_ss_inj,
                     implied_total=_ss_imp,
+                    bust_rate=_ss_bust,
                     weather_kind=_ss_wx_kind,
                     position=_ss_pos,
                 )
@@ -19872,17 +19905,6 @@ def api_player_details(player_id: str):
                         ))))
                 except Exception:
                     logger.debug("[api_player_details] start_score_pct skipped", exc_info=True)
-                # Full Waivers-parity payload so the Compare Start/Sit tab shows
-                # the same rows the Start/Sit page compare shows (form, floor,
-                # boom/bust, matchup, Vegas, venue) on top of the unified score.
-                try:
-                    _start_sit_payload = _startsit_compare_extras(
-                        player_id, _ss_pos, _ss_team, season, _ss_week, scoring_settings,
-                        proj_pts=_ss_proj, on_bye=_ss_bye, opponent=_ss_opp,
-                        home_team=_ss_home, implied_total=_ss_imp, weather=_ss_wx,
-                    )
-                except Exception:
-                    logger.debug("[api_player_details] start_sit payload skipped", exc_info=True)
         except Exception:
             logger.debug("[api_player_details] start_score skipped", exc_info=True)
 
