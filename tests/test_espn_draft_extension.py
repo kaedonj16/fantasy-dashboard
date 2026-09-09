@@ -164,6 +164,21 @@ def test_observer_scopes_detection_to_active_league():
     assert "teamIdFromUrl()" in main
 
 
+def test_observer_registers_contiguous_dom_picks():
+    """Recent picks are frequently DOM-only (ESPN's board is virtualized and the
+    read API lags), so the emit filter must not drop a made pick just because a
+    trusted source has not caught up yet. It keeps picks confirmed by a trusted
+    source or sitting inside the contiguous run of made picks; only a DOM-only
+    pick stranded past a gap is dropped."""
+    main = (EXT / "espn_draft_main.js").read_text(encoding="utf-8")
+    assert "function contiguousMaxOverall(" in main
+    assert "function pickHasTrustedSource(" in main
+    assert "Math.max(trustedMax, contiguousMaxOverall())" in main
+    assert "pickHasTrustedSource(p.overallPickNumber)" in main
+    # DOM round.pick labels resolve with the real team count, not a bare 12.
+    assert "guessTeamCount() || detectedTeams || 12" in main
+
+
 def test_pack_extension_strips_localhost():
     import subprocess
     import sys
