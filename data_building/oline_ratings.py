@@ -14,6 +14,32 @@ to a specific lineman or fully separate scheme (quick game, max protect, chip
 help) from line talent. These are directional *unit* ratings and tiers, not
 lineman grades. For fantasy matchup swings that's the right altitude.
 
+Optional talent prior (off by default)
+--------------------------------------
+The grade is lagging: the only prior is last season's opponent-adjusted value,
+blended in by `_regress_to_prior` (RUN_PRIOR_K / PASS_PRIOR_K). That machinery
+stays. An optional *projection* — snap-weighted returning-OL continuity, draft
+capital added to the line, and snap-weighted veteran additions/losses — can
+nudge that prior term so week-1 grades reflect offseason roster change instead
+of last year's results alone. It does **not** replace the realized-results
+pipeline, and it does not keep a side-channel influence after current-season
+sample takes over: the adjustment lives inside the prior, so the existing
+n_cur/K blend decays it to ~0 by mid-season.
+
+Provenance is open nflverse only (PFR snap counts, weekly/seasonal rosters,
+draft_picks, Chase Stuart's public expected-AV chart). No PFF or other
+licensed grade is read, even as a hidden input. Coaching/scheme change is
+omitted — there is no clean redistributable encoding of OC / OL-coach
+turnover. See `oline_talent_prior.py` and `oline_backtest.sweep_talent_prior`.
+
+This is a projection, not a measurement. `use_talent_prior=False` (default)
+leaves the results-based composite byte-for-byte as it was. When the flag is
+on, the main `pass_block` / `run_block` / `composite` keys use the
+talent-shifted prior, and the unshifted measurement is stored alongside as
+`pass_block_realized` / `run_block_realized` / `composite_realized`, with a
+top-level `talent_prior` object describing sources, weights, and per-team
+components. Do not treat those two as interchangeable.
+
 Methodology
 -----------
 Two sub-ratings, each opponent-adjusted and regressed for sample size, then
@@ -69,7 +95,12 @@ cache/oline_ratings_s{season}.json:
       }
     }
 
-Run directly:  python -m data_building.oline_ratings [season] [through_week]
+    With --talent-prior / use_talent_prior=True the primary grade keys are the
+    projection and a labeled `talent_prior` object is added; the unshifted
+    measurement is stored as pass_block_realized / run_block_realized /
+    composite_realized. Default (flag off) JSON is unchanged.
+
+Run directly:  python -m data_building.oline_ratings [season] [through_week] [--talent-prior]
 """
 from __future__ import annotations
 
@@ -106,11 +137,27 @@ SACK_WEIGHT = 0.6
 # pure line-yards scores ~0.05 rho worse. Re-sweep if the mix drifts.
 RUN_LY_WEIGHT = 0.55
 RUN_SUCCESS_WEIGHT = 0.45
+# Talent-prior scale: last-year cross-sectional SDs of shift per 1 SD of the
+# roster/draft residual. Swept in oline_backtest.sweep_talent_prior on
+# 2022-2025, weeks 1-4 ratings -> rest-of-season (weeks 5-17) pressure / sack /
+# line-yards / success. Component mix swept on the same grid; see that function
+# for the table. FLAG DEFAULTS OFF — even at the tuned weight this is a
+# projection sitting on top of the results prior, not a replacement for it.
+# If the sweep does not beat weight=0 (last-season prior only), leave the flag
+# off and keep these as documentation of what was tried.
+TALENT_PRIOR_W = 0.3
+TALENT_W_CONTINUITY = 0.2
+TALENT_W_DRAFT = 0.4
+TALENT_W_VETERAN = 0.4
 
 # Same alias table matchup_ratings uses, so the two caches key on identical codes.
+# PFR codes (GNB/KAN/...) appear on snap-count dumps feeding the talent prior.
 _TEAM_ALIAS = {
     "JAC": "JAX", "LA": "LAR", "STL": "LAR", "OAK": "LV", "SD": "LAC",
     "WSH": "WAS", "ARZ": "ARI", "BLT": "BAL", "CLV": "CLE", "HST": "HOU",
+    "GNB": "GB", "GBP": "GB", "KAN": "KC", "KCC": "KC", "NWE": "NE", "NEP": "NE",
+    "NOR": "NO", "SFO": "SF", "TAM": "TB", "TBB": "TB", "LVR": "LV",
+    "SDG": "LAC", "RAM": "LAR", "OTI": "TEN", "RAI": "LV",
 }
 
 # Columns the builder actually reads. nfl_data_py returns the full frame anyway;
@@ -475,8 +522,119 @@ def _season_pass_metrics(d):
     }
 
 
-def build_oline_ratings(season: int, through_week: int | None = None, save: bool = True) -> dict:
-    """Compute and (optionally) cache opponent-adjusted, regressed O-line ratings."""
+def _blend_run_index(ly_index, su_index, round_to=1):
+    """Blend line-yards + success percentiles. Falls back to whichever exists."""
+    run_index = {}
+    for t in set(ly_index) | set(su_index):
+        ly_i, su_i = ly_index.get(t), su_index.get(t)
+        if ly_i is not None and su_i is not None:
+            v = RUN_LY_WEIGHT * ly_i + RUN_SUCCESS_WEIGHT * su_i
+            run_index[t] = round(v, round_to) if round_to is not None else v
+        elif ly_i is not None:
+            run_index[t] = ly_i
+        elif su_i is not None:
+            run_index[t] = su_i
+    return run_index
+
+
+def _blend_pass_index(press_index, sack_index, round_to=1):
+    pass_index = {}
+    for t in set(press_index) | set(sack_index):
+        p_idx, s_idx = press_index.get(t), sack_index.get(t)
+        if p_idx is not None and s_idx is not None:
+            v = PRESSURE_WEIGHT * p_idx + SACK_WEIGHT * s_idx
+            pass_index[t] = round(v, round_to) if round_to is not None else v
+        elif p_idx is not None:
+            pass_index[t] = p_idx
+        elif s_idx is not None:
+            pass_index[t] = s_idx
+    return pass_index
+
+
+def grade_indices(
+    run_ly_adj, run_n, run_ly_prior, run_league,
+    run_su_adj, run_su_prior,
+    cur_pass, prior_pass,
+    round_to=1,
+):
+    """Regress to prior, residualise pass vs time-to-throw, percentile-scale.
+
+    Shared by the builder and the backtest so a talent-shifted prior and the
+    unshifted last-season prior take the same path through `_regress_to_prior`.
+    """
+    run_ly_final = _regress_to_prior(run_ly_adj, run_n, run_ly_prior, run_league, RUN_PRIOR_K)
+    su_league = (sum(run_su_adj.values()) / len(run_su_adj)) if run_su_adj else 0.0
+    run_su_final = (
+        _regress_to_prior(run_su_adj, run_n, run_su_prior, su_league, RUN_PRIOR_K)
+        if run_su_adj else {}
+    )
+    prior_press = prior_pass["press_adj"] if prior_pass else None
+    prior_sack = prior_pass["sack_adj"] if prior_pass else None
+    press_final = _regress_to_prior(
+        cur_pass["press_adj"], cur_pass["n"], prior_press,
+        cur_pass["press_league"], PASS_PRIOR_K)
+    sack_final = _regress_to_prior(
+        cur_pass["sack_adj"], cur_pass["n"], prior_sack,
+        cur_pass["sack_league"], PASS_PRIOR_K)
+    press_resid = _residualize(press_final, cur_pass["ttt"])
+    sack_resid = _residualize(sack_final, cur_pass["ttt"])
+    ly_index = _percentile_index(run_ly_final, higher_is_better=True)
+    su_index = _percentile_index(run_su_final, higher_is_better=True) if run_su_final else {}
+    run_index = _blend_run_index(ly_index, su_index, round_to=round_to)
+    press_index = _percentile_index(press_resid, higher_is_better=False)
+    sack_index = _percentile_index(sack_resid, higher_is_better=False)
+    pass_index = _blend_pass_index(press_index, sack_index, round_to=round_to)
+    return {
+        "run_index": run_index,
+        "pass_index": pass_index,
+        "press_index": press_index,
+        "sack_index": sack_index,
+        "run_ly_final": run_ly_final,
+        "press_final": press_final,
+        "sack_final": sack_final,
+        "su_league": su_league,
+    }
+
+
+def _apply_talent_to_priors(
+    run_ly_prior, run_su_prior, prior_pass, talent_scores, weight,
+    run_league, su_league, cur_pass,
+):
+    """Shift last-season priors by the talent residual. Empty scores -> no-op."""
+    from data_building.oline_talent_prior import shift_prior
+    ly = shift_prior(run_ly_prior, talent_scores, weight, higher_is_better=True,
+                     league=run_league)
+    su = shift_prior(run_su_prior, talent_scores, weight, higher_is_better=True,
+                     league=su_league)
+    if not prior_pass:
+        return ly, su, None
+    shifted = dict(prior_pass)
+    shifted["press_adj"] = shift_prior(
+        prior_pass.get("press_adj"), talent_scores, weight,
+        higher_is_better=False, league=cur_pass.get("press_league"))
+    shifted["sack_adj"] = shift_prior(
+        prior_pass.get("sack_adj"), talent_scores, weight,
+        higher_is_better=False, league=cur_pass.get("sack_league"))
+    return ly, su, shifted
+
+
+def build_oline_ratings(
+    season: int,
+    through_week: int | None = None,
+    save: bool = True,
+    use_talent_prior: bool = False,
+    talent_weight: float | None = None,
+    talent_inputs=None,
+) -> dict:
+    """Compute and (optionally) cache opponent-adjusted, regressed O-line ratings.
+
+    `use_talent_prior` is off by default. When on, last-season priors are
+    nudged by the open-data roster/draft residual before `_regress_to_prior`;
+    the unshifted measurement is stored under `*_realized` keys. Missing
+    roster/draft/snap data falls back to the unshifted prior (today's
+    behavior). `talent_inputs` lets tests / the backtest inject already-parsed
+    frames without hitting the network.
+    """
     import pandas as pd
     try:
         import nfl_data_py as nfl
@@ -494,44 +652,45 @@ def build_oline_ratings(season: int, through_week: int | None = None, save: bool
     run_ly_prior, run_su_prior = {}, {}
     if prior_raw is not None and not prior_raw.empty:
         run_ly_prior, run_su_prior, _, _, _ = _season_run_metrics(prior_raw)
-    run_ly_final = _regress_to_prior(run_ly_adj, run_n, run_ly_prior, run_league, RUN_PRIOR_K)
-    # Success prior: fall back to the current-season league mean of success_adj
-    # (not run_league, which is in line-yards units).
     su_league = (sum(run_su_adj.values()) / len(run_su_adj)) if run_su_adj else 0.0
-    run_su_final = _regress_to_prior(run_su_adj, run_n, run_su_prior, su_league, RUN_PRIOR_K) if run_su_adj else {}
 
     # --- PASS ---
     cur_pass = _season_pass_metrics(cur_raw)
     prior_pass = _season_pass_metrics(prior_raw) if (prior_raw is not None and not prior_raw.empty) else None
-    press_final = _regress_to_prior(
-        cur_pass["press_adj"], cur_pass["n"],
-        prior_pass["press_adj"] if prior_pass else None,
-        cur_pass["press_league"], PASS_PRIOR_K)
-    sack_final = _regress_to_prior(
-        cur_pass["sack_adj"], cur_pass["n"],
-        prior_pass["sack_adj"] if prior_pass else None,
-        cur_pass["sack_league"], PASS_PRIOR_K)
 
-    # Residualise pressure & sacks against time to throw (isolate the line).
-    press_resid = _residualize(press_final, cur_pass["ttt"])
-    sack_resid = _residualize(sack_final, cur_pass["ttt"])
+    realized = grade_indices(
+        run_ly_adj, run_n, run_ly_prior, run_league,
+        run_su_adj, run_su_prior, cur_pass, prior_pass, round_to=1)
 
-    # --- SCALE ---
-    ly_index = _percentile_index(run_ly_final, higher_is_better=True)   # more line yards = better
-    su_index = _percentile_index(run_su_final, higher_is_better=True) if run_su_final else {}
-    # Blend line-yards + success into run_block (same pattern as pressure+sack).
-    # When success is unavailable (older pbp / synthetic frames), fall back to LY.
-    run_index = {}
-    for t in set(ly_index) | set(su_index):
-        ly_i, su_i = ly_index.get(t), su_index.get(t)
-        if ly_i is not None and su_i is not None:
-            run_index[t] = round(RUN_LY_WEIGHT * ly_i + RUN_SUCCESS_WEIGHT * su_i, 1)
-        elif ly_i is not None:
-            run_index[t] = ly_i
-        elif su_i is not None:
-            run_index[t] = su_i
-    press_index = _percentile_index(press_resid, higher_is_better=False)  # less pressure = better
-    sack_index = _percentile_index(sack_resid, higher_is_better=False)
+    talent_pack = None
+    graded = realized
+    tw = TALENT_PRIOR_W if talent_weight is None else talent_weight
+    if use_talent_prior:
+        from data_building.oline_talent_prior import compute_oline_talent_prior
+        talent_pack = compute_oline_talent_prior(
+            season, pd, nfl,
+            w_continuity=TALENT_W_CONTINUITY,
+            w_draft=TALENT_W_DRAFT,
+            w_veteran=TALENT_W_VETERAN,
+            inputs=talent_inputs,
+        )
+        if talent_pack and talent_pack.get("scores") and tw:
+            ly_p, su_p, pass_p = _apply_talent_to_priors(
+                run_ly_prior, run_su_prior, prior_pass,
+                talent_pack["scores"], tw,
+                run_league, su_league, cur_pass)
+            graded = grade_indices(
+                run_ly_adj, run_n, ly_p, run_league,
+                run_su_adj, su_p, cur_pass, pass_p, round_to=1)
+        else:
+            # Missing roster/draft/snap data: identical to the flag-off path.
+            talent_pack = None
+            graded = realized
+
+    run_index = graded["run_index"]
+    pass_index = graded["pass_index"]
+    run_ly_final = graded["run_ly_final"]
+    press_final = graded["press_final"]
 
     # Descriptive per-gap run indices (opponent-unadjusted; label as secondary).
     gap_index = {}
@@ -541,6 +700,9 @@ def build_oline_ratings(season: int, through_week: int | None = None, save: bool
 
     # --- ASSEMBLE ---
     teams = set(run_ly_final) | set(press_final)
+    realized_run = realized["run_index"]
+    realized_pass = realized["pass_index"]
+    label_realized = bool(talent_pack) and graded is not realized
     ratings = {}
     for t in teams:
         rd = run_detail.get(t, {})
@@ -550,15 +712,7 @@ def build_oline_ratings(season: int, through_week: int | None = None, save: bool
         if n_rush < MIN_TEAM_PLAYS and n_pass < MIN_TEAM_PLAYS:
             continue
         run_idx = run_index.get(t)
-        p_idx = press_index.get(t)
-        s_idx = sack_index.get(t)
-        pass_idx = None
-        if p_idx is not None and s_idx is not None:
-            pass_idx = round(PRESSURE_WEIGHT * p_idx + SACK_WEIGHT * s_idx, 1)
-        elif p_idx is not None:
-            pass_idx = p_idx
-        elif s_idx is not None:
-            pass_idx = s_idx
+        pass_idx = pass_index.get(t)
 
         row = {"n_rush": n_rush, "n_pass": n_pass}
         if "line_yards" in rd:
@@ -583,6 +737,21 @@ def build_oline_ratings(season: int, through_week: int | None = None, save: bool
             row["composite"] = run_idx
         elif pass_idx is not None:
             row["composite"] = pass_idx
+        if label_realized:
+            # Keep the results-based measurement distinguishable from the
+            # talent-shifted projection sitting in the primary keys.
+            rr, rp = realized_run.get(t), realized_pass.get(t)
+            if rr is not None:
+                row["run_block_realized"] = rr
+            if rp is not None:
+                row["pass_block_realized"] = rp
+            if rr is not None and rp is not None:
+                row["composite_realized"] = round(
+                    PASS_BLOCK_WEIGHT * rp + RUN_BLOCK_WEIGHT * rr, 1)
+            elif rr is not None:
+                row["composite_realized"] = rr
+            elif rp is not None:
+                row["composite_realized"] = rp
         ratings[t] = row
 
     out = {
@@ -601,6 +770,28 @@ def build_oline_ratings(season: int, through_week: int | None = None, save: bool
         },
         "ratings": ratings,
     }
+    if label_realized:
+        meta = talent_pack.get("meta") or {}
+        out["weights"]["talent_prior_w"] = tw
+        out["weights"]["talent_w_continuity"] = TALENT_W_CONTINUITY
+        out["weights"]["talent_w_draft"] = TALENT_W_DRAFT
+        out["weights"]["talent_w_veteran"] = TALENT_W_VETERAN
+        out["talent_prior"] = {
+            "enabled": True,
+            "applied_to_ratings": True,
+            "kind": "projection",
+            "note": (
+                "Offseason roster/draft residual applied to the last-season "
+                "prior only. Decays with n_cur via RUN_PRIOR_K / PASS_PRIOR_K. "
+                "Not a measurement; see *_realized for the results-based grade."
+            ),
+            "sources": meta.get("sources"),
+            "omitted": meta.get("omitted"),
+            "roster_source": meta.get("roster_source"),
+            "pick_chart": meta.get("pick_chart"),
+            "weights_used": talent_pack.get("weights_used"),
+            "teams": talent_pack.get("detail"),
+        }
     if save:
         os.makedirs(str(CACHE_DIR), exist_ok=True)
         tmp = out_path(season) + ".tmp"
@@ -612,16 +803,24 @@ def build_oline_ratings(season: int, through_week: int | None = None, save: bool
 
 if __name__ == "__main__":
     import sys
-    yr = int(sys.argv[1]) if len(sys.argv) > 1 else datetime.now().year
-    tw = int(sys.argv[2]) if len(sys.argv) > 2 else None
-    res = build_oline_ratings(yr, tw)
+    argv = sys.argv[1:]
+    flags = {a for a in argv if a.startswith("-")}
+    args = [a for a in argv if not a.startswith("-")]
+    yr = int(args[0]) if args else datetime.now().year
+    tw = int(args[1]) if len(args) > 1 else None
+    use_tp = "--talent-prior" in flags
+    res = build_oline_ratings(yr, tw, use_talent_prior=use_tp)
     r = res.get("ratings", {})
     print(f"[oline_ratings] season={yr} teams_rated={len(r)} "
           f"pressure_source={res.get('pressure_source')} "
+          f"talent_prior={bool(res.get('talent_prior'))} "
           f"run_plays={res.get('n_run_plays')} pass_plays={res.get('n_pass_plays')} "
           f"-> {out_path(yr)}")
     rows = sorted(r.items(), key=lambda kv: kv[1].get("composite", 0), reverse=True)
     for t, row in rows:
+        extra = ""
+        if row.get("composite_realized") is not None:
+            extra = f"  realized={row.get('composite_realized')}"
         print(f"  {t:>3} comp={row.get('composite'):>5}  pass={row.get('pass_block'):>5} "
               f"run={row.get('run_block'):>5}  press%={row.get('pressure_rate')} "
-              f"sack%={row.get('sack_rate')} ttt={row.get('avg_time_to_throw')}")
+              f"sack%={row.get('sack_rate')} ttt={row.get('avg_time_to_throw')}{extra}")

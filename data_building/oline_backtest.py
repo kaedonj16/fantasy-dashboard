@@ -35,8 +35,10 @@ from utils.paths import CACHE_DIR
 from data_building.oline_ratings import (
     _prep_season, _load_pbp_year, _season_run_metrics, _season_pass_metrics,
     _regress_to_prior, _residualize, _percentile_index,
+    grade_indices, _apply_talent_to_priors,
     RUN_PRIOR_K, PASS_PRIOR_K, PRESSURE_WEIGHT, SACK_WEIGHT,
     PASS_BLOCK_WEIGHT, RUN_BLOCK_WEIGHT, RUN_LY_WEIGHT, RUN_SUCCESS_WEIGHT,
+    TALENT_PRIOR_W, TALENT_W_CONTINUITY, TALENT_W_DRAFT, TALENT_W_VETERAN,
 )
 
 
@@ -239,6 +241,222 @@ def sweep_pressure_weight(seasons, split_week=9, grid=None, save=True):
     return report
 
 
+def _early_rest_frames(raw, pd, early_week):
+    wk = _week_bounds(raw, pd)
+    early, rest = raw[wk <= early_week], raw[wk > early_week]
+    return early, rest
+
+
+def _blocks_from_indices(g):
+    out = {}
+    for t in set(g["pass_index"]) | set(g["run_index"]):
+        out[t] = {
+            "pass_block": g["pass_index"].get(t),
+            "run_block": g["run_index"].get(t),
+        }
+    return out
+
+
+def sweep_talent_prior(seasons, early_week=4, save=True,
+                       weights=None, mixes=None):
+    """Sweep the talent-prior scale / mix on early-season out-of-sample prediction.
+
+    Ratings are built from weeks 1..early_week of season Y (plus last season's
+    realized prior, optionally shifted by the offseason roster/draft residual)
+    and scored against weeks early_week+1.. of the SAME season's raw pass-block
+    (pressure, sacks) and run-block (line yards, success) outcomes.
+
+    Weight 0 is the current last-season prior — the baseline to beat. If nothing
+    beats it, do not ship `use_talent_prior=True` by default.
+
+    Grid (documented here so a later re-sweep can reuse it):
+      weights: 0, 0.15, 0.3, 0.45, 0.6, 0.8, 1.0
+      mixes: equal 1/3s; 0.2/0.4/0.4 (less continuity); 0/0.5/0.5 (no continuity);
+             0.5/0.25/0.25 (continuity-heavy).
+    """
+    import pandas as pd
+    try:
+        import nfl_data_py as nfl
+    except Exception:
+        nfl = None
+    from data_building.oline_talent_prior import (
+        load_talent_inputs, compute_oline_talent_prior,
+    )
+
+    weights = weights if weights is not None else [0.0, 0.15, 0.3, 0.45, 0.6, 0.8, 1.0]
+    mixes = mixes if mixes is not None else [
+        {"name": "equal", "continuity": 1 / 3, "draft": 1 / 3, "veteran": 1 / 3},
+        {"name": "less_continuity", "continuity": 0.2, "draft": 0.4, "veteran": 0.4},
+        {"name": "draft_vet_only", "continuity": 0.0, "draft": 0.5, "veteran": 0.5},
+        {"name": "continuity_heavy", "continuity": 0.5, "draft": 0.25, "veteran": 0.25},
+    ]
+
+    seasons_data = []
+    for season in seasons:
+        raw = _prep_season(_load_pbp_year(season, pd, nfl), pd, season)
+        if raw is None or raw.empty:
+            print(f"[oline_backtest] talent sweep {season}: no current pbp")
+            continue
+        prior_raw = _prep_season(_load_pbp_year(season - 1, pd, nfl), pd, season - 1)
+        early, rest = _early_rest_frames(raw, pd, early_week)
+        if early.empty or rest.empty:
+            print(f"[oline_backtest] talent sweep {season}: not enough weeks around {early_week}")
+            continue
+        run_ly_adj, run_su_adj, run_n, run_league, _ = _season_run_metrics(early)
+        run_ly_prior, run_su_prior = {}, {}
+        if prior_raw is not None and not prior_raw.empty:
+            run_ly_prior, run_su_prior, _, _, _ = _season_run_metrics(prior_raw)
+        cur_pass = _season_pass_metrics(early)
+        prior_pass = (
+            _season_pass_metrics(prior_raw)
+            if prior_raw is not None and not prior_raw.empty else None
+        )
+        su_league = (sum(run_su_adj.values()) / len(run_su_adj)) if run_su_adj else 0.0
+        rest_pass = _season_pass_metrics(rest)["detail"]
+        _, _, _, _, rest_run = _season_run_metrics(rest)
+
+        inputs = load_talent_inputs(season, pd, nfl)
+        talent_by_mix = {}
+        for mix in mixes:
+            pack = compute_oline_talent_prior(
+                season, pd, nfl,
+                w_continuity=mix["continuity"],
+                w_draft=mix["draft"],
+                w_veteran=mix["veteran"],
+                inputs=inputs,
+            )
+            talent_by_mix[mix["name"]] = pack
+        seasons_data.append({
+            "season": season,
+            "run_ly_adj": run_ly_adj, "run_su_adj": run_su_adj, "run_n": run_n,
+            "run_league": run_league, "su_league": su_league,
+            "run_ly_prior": run_ly_prior, "run_su_prior": run_su_prior,
+            "cur_pass": cur_pass, "prior_pass": prior_pass,
+            "rest_pass": rest_pass, "rest_run": rest_run,
+            "talent_by_mix": talent_by_mix,
+        })
+        n_talent = sum(1 for p in talent_by_mix.values() if p)
+        print(f"[oline_backtest] talent sweep {season}: early/rest ready, "
+              f"talent_mixes_with_data={n_talent}/{len(mixes)}")
+
+    if not seasons_data:
+        print("[oline_backtest] talent sweep: no usable seasons")
+        return {}
+
+    results = []
+    for mix in mixes:
+        for w in weights:
+            # Pool pairs across seasons (32 teams x N seasons), same pattern
+            # as sweep_pressure_weight.
+            all_p, all_s, all_ly, all_su = [], [], [], []
+            for sd in seasons_data:
+                pack = sd["talent_by_mix"].get(mix["name"])
+                scores = (pack or {}).get("scores") if w else None
+                if w and scores:
+                    ly_p, su_p, pass_p = _apply_talent_to_priors(
+                        sd["run_ly_prior"], sd["run_su_prior"], sd["prior_pass"],
+                        scores, w, sd["run_league"], sd["su_league"], sd["cur_pass"])
+                else:
+                    ly_p, su_p, pass_p = sd["run_ly_prior"], sd["run_su_prior"], sd["prior_pass"]
+                g = grade_indices(
+                    sd["run_ly_adj"], sd["run_n"], ly_p, sd["run_league"],
+                    sd["run_su_adj"], su_p, sd["cur_pass"], pass_p, round_to=None)
+                blocks = _blocks_from_indices(g)
+                for t, b in blocks.items():
+                    pb, rb = b.get("pass_block"), b.get("run_block")
+                    o, r = sd["rest_pass"].get(t, {}), sd["rest_run"].get(t, {})
+                    if pb is not None and o.get("pressure_rate") is not None:
+                        all_p.append((pb, o["pressure_rate"]))
+                    if pb is not None and o.get("sack_rate") is not None:
+                        all_s.append((pb, o["sack_rate"]))
+                    if rb is not None and r.get("line_yards") is not None:
+                        all_ly.append((rb, r["line_yards"]))
+                    if rb is not None and r.get("success_rate") is not None:
+                        all_su.append((rb, r["success_rate"]))
+            rho_p, n_p = _spearman(all_p)
+            rho_s, n_s = _spearman(all_s)
+            rho_ly, n_ly = _spearman(all_ly)
+            rho_su, n_su = _spearman(all_su)
+            aligned = []
+            if rho_p is not None:
+                aligned.append(-rho_p)
+            if rho_s is not None:
+                aligned.append(-rho_s)
+            if rho_ly is not None:
+                aligned.append(rho_ly)
+            if rho_su is not None:
+                aligned.append(rho_su)
+            score = (sum(aligned) / len(aligned)) if aligned else None
+            results.append({
+                "mix": mix["name"],
+                "w_continuity": mix["continuity"],
+                "w_draft": mix["draft"],
+                "w_veteran": mix["veteran"],
+                "talent_w": w,
+                "rho_future_pressure": None if rho_p is None else round(rho_p, 3),
+                "rho_future_sack": None if rho_s is None else round(rho_s, 3),
+                "rho_future_line_yards": None if rho_ly is None else round(rho_ly, 3),
+                "rho_future_success": None if rho_su is None else round(rho_su, 3),
+                "n": n_p,
+                "score": None if score is None else round(score, 4),
+            })
+
+    results = [r for r in results if r["score"] is not None]
+    results.sort(key=lambda r: r["score"], reverse=True)
+    baseline = [r for r in results if r["talent_w"] == 0]
+    baseline_score = baseline[0]["score"] if baseline else None
+    print(f"\n[oline_backtest] talent-prior sweep "
+          f"(seasons={list(seasons)}, early_week={early_week})")
+    print(f"  {'mix':<18} {'w':>5} {'rho_pr':>8} {'rho_sk':>8} "
+          f"{'rho_ly':>8} {'rho_su':>8} {'score':>8}")
+    for r in results:
+        star = ""
+        if r is results[0]:
+            star = "  <- best"
+        if r["talent_w"] == 0 and r["mix"] == mixes[0]["name"]:
+            star += "  (baseline last-season prior)"
+        print(f"  {r['mix']:<18} {r['talent_w']:>5} "
+              f"{r['rho_future_pressure']!s:>8} {r['rho_future_sack']!s:>8} "
+              f"{r['rho_future_line_yards']!s:>8} {r['rho_future_success']!s:>8} "
+              f"{r['score']:>8}{star}")
+    best = results[0] if results else {}
+    beats = (
+        best.get("score") is not None
+        and baseline_score is not None
+        and best.get("talent_w", 0) > 0
+        and best["score"] > baseline_score
+    )
+    print(f"[oline_backtest] baseline (w=0) score={baseline_score}")
+    print(f"[oline_backtest] best={best.get('mix')} w={best.get('talent_w')} "
+          f"score={best.get('score')} beats_baseline={beats}")
+    print(f"[oline_backtest] shipped constants: w={TALENT_PRIOR_W} "
+          f"continuity={TALENT_W_CONTINUITY} draft={TALENT_W_DRAFT} "
+          f"veteran={TALENT_W_VETERAN}")
+    if not beats:
+        print("[oline_backtest] talent prior did NOT beat last-season prior; "
+              "leave use_talent_prior default off")
+    report = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "seasons": list(seasons),
+        "early_week": early_week,
+        "grid": results,
+        "best": best,
+        "baseline_score": baseline_score,
+        "beats_baseline": beats,
+    }
+    if save and results:
+        path = os.path.join(str(CACHE_DIR), "oline_talent_prior_sweep.json")
+        with open(path, "w") as f:
+            json.dump(report, f, indent=2)
+        print(f"[oline_backtest] talent sweep report -> {path}")
+    return report
+
+
+def run_talent_prior_backtest(seasons, early_week=4, save=True):
+    """Convenience: sweep, then evaluate the tuned constants vs w=0."""
+    return sweep_talent_prior(seasons, early_week=early_week, save=save)
+
+
 def run_backtest(seasons, split_week=9, save=True):
     import pandas as pd
     try:
@@ -342,6 +560,11 @@ def run_backtest(seasons, split_week=9, save=True):
 
 
 if __name__ == "__main__":
-    args = [int(a) for a in sys.argv[1:] if a.isdigit()]
-    seasons = args or [2022, 2023, 2024]
-    run_backtest(seasons)
+    raw = sys.argv[1:]
+    flags = {a for a in raw if a.startswith("-")}
+    args = [int(a) for a in raw if a.isdigit()]
+    seasons = args or [2022, 2023, 2024, 2025]
+    if "--talent-prior" in flags or "--sweep-talent" in flags:
+        sweep_talent_prior(seasons)
+    else:
+        run_backtest(seasons)
