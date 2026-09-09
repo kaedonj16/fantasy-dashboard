@@ -20,6 +20,7 @@ from utils.paths import DATA_DIR, CACHE_DIR
 CRON_STEPS = (
     "refresh_current_nfl_teams",
     "build_matchup_ratings",
+    "build_oline_ratings",
     "build_daily_model_values",
     "record_model_value_snapshot",
     "notify_value_drops",
@@ -620,6 +621,26 @@ from data_building.matchup_ratings import build_matchup_ratings, out_path
 res = build_matchup_ratings({season!r})
 print(f"[cron] Matchup ratings: {{len(res.get('ratings', {{}}))}} teams -> {{out_path({season!r})}}")
 """, "build_matchup_ratings", timeout=900)
+
+    # ------------------------------------------------------------------ #
+    # Step 4c: Offensive-line unit ratings (nflverse pbp, public-safe)    #
+    # Adjusted Line Yards (run) + sack/hit rate allowed (pass), scaled to #
+    # a 0-100 league percentile. Same Wednesday/in-season cadence as the  #
+    # matchup ratings above, for the same reason (fresh weekly game data).#
+    # ------------------------------------------------------------------ #
+    if not in_season:
+        print("[cron] O-line ratings skipped - offseason")
+        record_pipeline_health("build_oline_ratings", "skipped")
+    elif today_weekday != 2:  # 0=Mon … 2=Wed … 6=Sun
+        print(f"[cron] O-line ratings skipped - not Wednesday (weekday={today_weekday})")
+        record_pipeline_health("build_oline_ratings", "skipped")
+    else:
+        _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.oline_ratings import build_oline_ratings, out_path
+res = build_oline_ratings({season!r})
+print(f"[cron] O-line ratings: {{len(res.get('ratings', {{}}))}} teams -> {{out_path({season!r})}}")
+""", "build_oline_ratings", timeout=900)
 
     # ------------------------------------------------------------------ #
     # Step 5: Model values                                                #
