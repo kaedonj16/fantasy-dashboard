@@ -14642,20 +14642,29 @@ def _oline_for_player(season: int, team: str, position: str):
     primary = ("run_block" if pos == "RB"
                else "pass_block" if pos in ("QB", "WR", "TE")
                else "composite")
-    ranked = sorted(((t, v.get(primary)) for t, v in ratings.items()
-                     if v.get(primary) is not None),
-                    key=lambda x: x[1], reverse=True)
-    rank = next((i + 1 for i, (t, _v) in enumerate(ranked) if t == team), None)
+
+    def _rank_on(metric):
+        ranked = sorted(((t, v.get(metric)) for t, v in ratings.items()
+                         if v.get(metric) is not None),
+                        key=lambda x: x[1], reverse=True)
+        rk = next((i + 1 for i, (t, _v) in enumerate(ranked) if t == team), None)
+        return rk, len(ranked)
+
+    primary_rank, total = _rank_on(primary)
+    pass_rank, _ = _rank_on("pass_block")
+    run_rank, _ = _rank_on("run_block")
     return {
         "season": season,
         "team": team,
         "primary": primary,
         "primary_value": row.get(primary),
-        "primary_rank": rank,
-        "total_teams": len(ranked),
+        "primary_rank": primary_rank,
+        "total_teams": total,
         "composite": row.get("composite"),
         "pass_block": row.get("pass_block"),
         "run_block": row.get("run_block"),
+        "pass_block_rank": pass_rank,
+        "run_block_rank": run_rank,
         "pressure_rate": row.get("pressure_rate"),
         "sack_rate": row.get("sack_rate"),
         "line_yards": row.get("line_yards"),

@@ -2111,34 +2111,20 @@ function _pmBuildTeamHTML(data) {
     seasonPills = `<span class="pm-team-season">${viewSeason} ${modeLabel}</span>`;
   }
 
-  // Offensive-line unit rating (0-100, 100 = best), from public play-by-play.
+  // Offensive-line grades as Offense-Profile bars (0-100, 100 = best), from
+  // public play-by-play. Rendered with the same rank-bar format as the other
+  // profile rows; rank 1 = best line so the dot sits toward the "1ST" end.
   const ol = data.oline;
-  let olineSec = '';
-  if (ol && (ol.pass_block != null || ol.run_block != null)) {
-    const _olColor = (v) => {
-      if (v == null) return 'var(--text-muted)';
-      const n = Math.max(0, Math.min(130, Math.round(v * 1.3)));
-      return `hsl(${n}, 60%, 42%)`;
-    };
-    const _olVal = (v) => (v == null ? '&ndash;' : Math.round(v));
-    const _olRankNote = ol.primary_rank
-      ? `#${ol.primary_rank} of ${ol.total_teams} ` +
-        (ol.primary === 'run_block' ? 'run block' : ol.primary === 'pass_block' ? 'pass block' : 'o-line')
-      : 'rank of 32';
-    const _olCtx = [
-      ol.pressure_rate != null ? ol.pressure_rate + '% pressure' : '',
-      ol.sack_rate != null ? ol.sack_rate + '% sack' : '',
-      ol.line_yards != null ? ol.line_yards + ' line yds' : '',
-    ].filter(Boolean).join(' · ');
-    olineSec = `<div class="pm-team-sec">
-      <div class="pm-section-header"><span class="pm-section-label">Offensive Line</span><span class="pm-team-secnote">${_olRankNote}</span></div>
-      <div class="pm-team-herostats">
-        <div class="pm-hero-stat"><div class="pm-hero-label">Pass Block Grade</div><div class="pm-hero-val" style="color:${_olColor(ol.pass_block)}">${_olVal(ol.pass_block)}</div></div>
-        <div class="pm-hero-stat"><div class="pm-hero-label">Run Block Grade</div><div class="pm-hero-val" style="color:${_olColor(ol.run_block)}">${_olVal(ol.run_block)}</div></div>
-        <div class="pm-hero-stat"><div class="pm-hero-label">Overall Grade</div><div class="pm-hero-val" style="color:${_olColor(ol.composite)}">${_olVal(ol.composite)}</div></div>
-      </div>
-      <div class="pm-team-note">0&ndash;100 unit rating (100 = best), from public play-by-play.${_olCtx ? ' ' + _olCtx + '.' : ''}</div>
-    </div>`;
+  let olineRows = '';
+  if (ol) {
+    if (ol.pass_block != null) {
+      olineRows += _pmTeamProfileRow(pos, 'Pass Block Grade', 'oline_pass',
+        { rank: ol.pass_block_rank, total: ol.total_teams, value: Math.round(ol.pass_block) });
+    }
+    if (ol.run_block != null) {
+      olineRows += _pmTeamProfileRow(pos, 'Run Block Grade', 'oline_run',
+        { rank: ol.run_block_rank, total: ol.total_teams, value: Math.round(ol.run_block) });
+    }
   }
 
   return `<div class="pm-team-wrap">
@@ -2156,7 +2142,7 @@ function _pmBuildTeamHTML(data) {
     </div>
     <div class="pm-team-sec">
       <div class="pm-section-header"><span class="pm-section-label">Offense Profile</span><span class="pm-team-secnote">${seasonNote} · rank of 32</span></div>
-      ${_pmTeamProfileAxis()}${profile}
+      ${_pmTeamProfileAxis()}${profile}${olineRows}
       <div class="pm-team-note">Dot = team rank (right = 1st). Color = rank tier: <b style="color:var(--win)">green good</b>, <b style="color:var(--warning)">yellow mid</b>, <b style="color:var(--loss)">red bad</b>.${dataMode === 'projection' ? ' Values are Sleeper season projections aggregated by team.' : ''}</div>
       <div class="pm-section-header pm-section-collapsible pm-team-adv-toggle" role="button" tabindex="0" aria-expanded="${advOpen ? 'true' : 'false'}" aria-controls="pmTeamAdvBody">
         <span class="pm-collapse-chevron" aria-hidden="true">${advChev}</span>
@@ -2167,7 +2153,6 @@ function _pmBuildTeamHTML(data) {
         ${_pmTeamProfileAxis()}${moreProfile}
       </div>
     </div>
-    ${olineSec}
     <div class="pm-team-sec">
       <div class="pm-section-header"><span class="pm-section-label">${roleName}&#39;s Role</span><span class="pm-team-secnote">${pos} room</span></div>
       ${shareBar}
