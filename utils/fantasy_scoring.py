@@ -142,6 +142,21 @@ def projection_points(entry: dict, scoring_settings: dict, pos: str = "") -> flo
     return float(entry.get(variant) or entry.get("ppr") or 0.0)
 
 
+def week_stat_points(stats, scoring_settings=None, pos: str = "") -> float:
+    """Fantasy points for a played (or projected) stat line under league settings.
+
+    Start/Sit L4 / season PPG used to read ``pts_ppr`` for every league, so an
+    ESPN standard or half-PPR roster showed PPR form next to league-scored
+    projections. Reuse the same selection as ``projection_points``.
+    """
+    if not isinstance(stats, dict):
+        return 0.0
+    try:
+        return float(projection_points({"raw_stats": stats}, scoring_settings or {}, pos) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def weekly_projection_points(week_map, pid, scoring_settings=None, pos: str = ""):
     """Points for one player from a cached weekly projection map.
 

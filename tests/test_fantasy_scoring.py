@@ -138,6 +138,16 @@ def test_standard_league_uses_sleeper_precomputed_total():
     assert projection_points(entry, {"rec": 0.0}, "WR") == 15.7
 
 
+def test_week_stat_points_follows_league_reception_rate():
+    from utils.fantasy_scoring import week_stat_points
+
+    stats = {"rec": 8, "rec_yd": 100, "pts_ppr": 26.0, "pts_half_ppr": 22.0, "pts_std": 18.0}
+    assert week_stat_points(stats, {"rec": 1.0}, "WR") == 26.0
+    assert week_stat_points(stats, {"rec": 0.5}, "WR") == 22.0
+    assert week_stat_points(stats, {"rec": 0.0}, "WR") == 18.0
+    assert week_stat_points(None, {"rec": 1.0}) == 0.0
+
+
 def test_custom_reception_ignores_precomputed_total():
     # A 0.75-PPR league is not standard: recompute from the raw line.
     entry = {"raw_stats": {"rec": 8, "rec_yd": 100, "pts_ppr": 99.0}}

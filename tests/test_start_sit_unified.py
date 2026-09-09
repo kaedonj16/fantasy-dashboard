@@ -8,6 +8,8 @@ form, usage, availability, Vegas, floor and weather). These tests guard that
 wiring in the rendered page.
 """
 
+from pathlib import Path
+
 from dashboard_services.pages.waivers_page import build_waivers_body
 
 
@@ -46,3 +48,16 @@ def test_compare_reasons_come_from_the_score_factor_breakdown():
     for txt in ("a safer floor", "better recent form",
                 "a rising role", "a higher team total", "a cleaner forecast"):
         assert txt in body
+
+
+def test_start_sit_api_scores_proj_and_form_with_league_settings():
+    src = Path("app.py").read_text(encoding="utf-8")
+    start = src.find("def api_start_sit_options")
+    end = src.find("\n@app.route", start + 1)
+    body = src[start:end]
+    extras = src[src.find("def _startsit_compare_extras"):start]
+    assert "weekly_projection_points" in body
+    assert "week_stat_points" in body
+    assert 'stats.get("pts_ppr")' not in body
+    assert "week_stat_points" in extras
+    assert '_st.get("pts_ppr")' not in extras
