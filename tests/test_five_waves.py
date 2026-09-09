@@ -36,4 +36,5 @@ def test_keeper_mfl_banner():
 def test_compare_does_not_call_am_a_pro_feature():
     js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
     assert "Advanced metrics are a PRO feature" not in js
-    assert "Start/Sit score" in js
+    # The compare still carries the Start/Sit tab content.
+    assert "What drives the score" in js
