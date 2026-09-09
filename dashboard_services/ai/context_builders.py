@@ -1730,12 +1730,12 @@ def build_power_rankings_context(ctx: dict) -> dict:
     """
     Build context for AI-generated power rankings.
 
-    PowerScore comes from ``dashboard_services.power_score.blended_team_scores``:
-      phase-weighted Z(AVG) + Z(luck-adjusted win%) + Z(slot-legal starter value)
-      + Z(momentum) + Z(consistency) + Z(past SoS) + Z(ROS ease) + Z(playoff%)
-    when each signal is available. Weights shift preseason → early → mid → late.
-    Starter value fills real lineup slots when ``roster_positions`` are known.
-    Then pass top_assets, direction, and win_window to AI for narrative generation.
+    PowerScore comes from ``dashboard_services.power_score.blended_team_scores``.
+    In-season the sort is all-play win % with PPG as the tie-break. Momentum,
+    consistency, SoS, ROS ease, playoff odds, and starter value are still
+    computed for chips / narrative; they do not vote on in-season order.
+    Preseason remains value-weighted. Starter value fills real lineup slots
+    when ``roster_positions`` are known.
     """
 
     rosters = ctx.get("rosters") or []
@@ -1801,20 +1801,14 @@ def build_power_rankings_context(ctx: dict) -> dict:
     _dynasty_pct_fn = _make_pct_fn(_team_dynasty_total)
     _redraft_pct_fn = _make_pct_fn(_team_redraft_total)
 
-    # ── Luck-adjusted (all-play) win % per roster ──────────────────────────────
-    # Actual record is heavily schedule-luck-driven early in the season (a team
-    # can be 3-0 on middling scores). All-play — how you'd fare against every
-    # other team each week — is far more predictive of real strength, so the
-    # power score blends toward it. Falls back to actual win% if weekly scores
-    # aren't available (e.g. offseason / preseason).
-    # We also derive three schedule/form signals from the same weekly scores:
-    #   momentum    — recent all-play form (last ~3 wk) minus season all-play, so
-    #                 a team heating up outranks an identical résumé that's fading.
-    #   consistency — negative coefficient of variation of weekly points; a steady
-    #                 scorer is worth more than a boom/bust team with the same mean.
-    #   sos         — strength of schedule: the average season all-play strength of
-    #                 the opponents actually faced, so a résumé earned against tough
-    #                 teams is worth more than the same record against cupcakes.
+    # ── All-play win % per roster (the in-season rank signal) ──────────────────
+    # Actual record is heavily schedule-luck-driven. All-play — how you'd fare
+    # against every other team each week — is the live ranking. Falls back to
+    # actual win% if weekly scores aren't available (offseason / preseason).
+    # Form / schedule chips are derived from the same weekly scores for display:
+    #   momentum    — recent all-play (last ~3 wk) minus season all-play
+    #   consistency — negative coefficient of variation of weekly points
+    #   sos         — average season all-play of opponents actually faced
     _all_play_pct: dict[str, float] = {}
     _momentum: dict[str, float] = {}
     _consistency: dict[str, float] = {}
@@ -1938,10 +1932,11 @@ def build_power_rankings_context(ctx: dict) -> dict:
         pf = _safe_float(standing.get("PF") or fpts)
         avg_ppg = (pf / total_games) if total_games > 0 else pf
 
-        # Luck-adjusted win rate: mostly all-play (de-luffed strength), with a
-        # nod to the actual record you're living in. Falls back to raw win%.
+        # Record term for PowerScore: all-play when weekly scores exist.
+        # Mixing in actual win% made the live rank worse than raw all-play at
+        # predicting rest-of-season results (actual W-L is schedule luck).
         ap_pct = _all_play_pct.get(rid)
-        luck_adj_win = (0.70 * ap_pct + 0.30 * win_pct) if ap_pct is not None else win_pct
+        luck_adj_win = ap_pct if ap_pct is not None else win_pct
 
         # Recent form + steadiness (default neutral when no weekly data).
         momentum = _momentum.get(rid, 0.0)
@@ -2048,7 +2043,7 @@ def build_power_rankings_context(ctx: dict) -> dict:
     if not team_data:
         return {"teams": []}
 
-    # Canonical blended PowerScore (phase-weighted, shared engine).
+    # Canonical PowerScore (shared engine: in-season all-play, preseason value).
     _games_played = max((t["wins"] + t["losses"] for t in team_data), default=0)
     _phase = season_phase_from_progress(
         games_played=_games_played,

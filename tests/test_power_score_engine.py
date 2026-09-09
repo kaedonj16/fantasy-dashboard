@@ -139,7 +139,38 @@ def test_blended_includes_ros_and_playoff_when_present():
     out = blended_team_scores(teams, phase="mid")
     assert "ros" in out[0]["power_components"]
     assert "playoff" in out[0]["power_components"]
-    assert out[0]["power_score"] > out[1]["power_score"]
+    # Display-only in-season: they must not change the score.
+    assert out[0]["power_score"] == out[1]["power_score"]
+
+
+def test_in_season_ranks_by_all_play_then_ppg():
+    # Worse all-play but easier schedule / hotter form / juicier playoff %
+    # must not outrank the true all-play leader.
+    teams = [
+        {
+            "team": "Leader", "avg": 110.0, "luck_adj_win": 0.70,
+            "starter_value": 50.0, "momentum": -0.2, "consistency": 0.0,
+            "sos": 0.3, "ros_ease": 0.2, "playoff_pct": 20.0,
+        },
+        {
+            "team": "Noise", "avg": 130.0, "luck_adj_win": 0.40,
+            "starter_value": 300.0, "momentum": 0.3, "consistency": 0.0,
+            "sos": 0.7, "ros_ease": 0.9, "playoff_pct": 90.0,
+        },
+    ]
+    out = {t["team"]: t for t in blended_team_scores([dict(x) for x in teams], phase="mid")}
+    assert out["Leader"]["rank"] < out["Noise"]["rank"]
+
+    # Equal all-play → higher PPG wins the tie.
+    tied = [
+        {"team": "LowPPG", "avg": 90.0, "luck_adj_win": 0.5, "starter_value": 100.0,
+         "momentum": 0.0, "consistency": 0.0, "sos": 0.5},
+        {"team": "HighPPG", "avg": 140.0, "luck_adj_win": 0.5, "starter_value": 100.0,
+         "momentum": 0.0, "consistency": 0.0, "sos": 0.5},
+    ]
+    ranked = blended_team_scores(tied, phase="early")
+    assert ranked[0]["team"] == "HighPPG"
+    assert ranked[0]["power_score"] == ranked[1]["power_score"]
 
 
 def test_blended_uses_avg_not_total_pf_for_scoring_component():

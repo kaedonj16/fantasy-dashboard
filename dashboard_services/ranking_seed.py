@@ -122,9 +122,8 @@ def _seed_power(ctx, roster_map, league_id_str, season, today_s, owner_to_rid_fn
         if not teams:
             return
         o2r = owner_to_rid_fn(roster_map=roster_map)
-        ordered = [o2r.get(str(t.get("team_name")))
-                   for t in sorted(teams, key=lambda t: float(t.get("power_score") or 0.0),
-                                   reverse=True)]
+        # build_power_rankings_context already sorts best-first (all-play, PPG tie-break).
+        ordered = [o2r.get(str(t.get("team_name"))) for t in teams]
         record_ranks_for_date(league_id_str, season, "power",
                               [r for r in ordered if r is not None], today_s, overwrite=True)
     except Exception:

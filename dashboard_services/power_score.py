@@ -4,17 +4,14 @@ Two scoring modes share the same z-score math:
 
 1. ``performance_power_scores`` — results-only (standings, historical week
    views, career/tour graphs). Reconstructible from weekly scores alone.
-2. ``blended_team_scores`` — canonical live power rankings. Adds luck-adjusted
-   record, slot-legal starter value, momentum, consistency, past SoS, rest-of-
-   season schedule ease, and playoff odds. Weights shift by season phase.
+2. ``blended_team_scores`` — canonical live power rankings.
 
-Improvements vs the prior dual formulas:
-  - One shared z-score implementation
-  - Scoring volume uses AVG (PPG) instead of total PF (less double-count with
-    the luck-adjusted record term)
-  - Season-phase weights (preseason → early → mid → late)
-  - Starter value fills real lineup slots when available
-  - Past SoS + ROS ease + playoff odds enter the live blend
+In-season rank is all-play win % (the ``record`` term, which is all-play when
+weekly scores exist), with PPG as the tie-break. A walk-forward backtest of
+the previous eight-term ``PHASE_WEIGHTS`` table did not beat all-play out of
+sample; playoff / SoS / momentum / consistency remain on the team payload as
+display chips but do not vote on order. Preseason is still value-heavy
+(roster strength is the only real signal before games).
 """
 from __future__ import annotations
 
@@ -33,9 +30,24 @@ PERFORMANCE_WEIGHTS = {
     "sos": 0.10,
 }
 
-# Live blended rankings by season phase. Component key "pf" is the scoring
-# volume z-score (AVG/PPG). Weights sum to 1.0; missing optional components
+# Live rankings by season phase. Component key "pf" is the scoring-volume
+# z-score (AVG/PPG). Weights sum to 1.0; missing optional components
 # (playoff / ros / momentum) redistribute onto the remaining terms.
+#
+# In-season (early/mid/late): all-play only. PPG is applied as a sort
+# tie-break in ``blended_team_scores``, not as a competing z-weight — a
+# tiny pf weight would still reorder teams when all-play disagrees with PPG.
+# Zero-weight keys are still computed and returned on ``power_components``.
+_IN_SEASON_WEIGHTS = {
+    "pf": 0.00,
+    "record": 1.00,
+    "value": 0.00,
+    "momentum": 0.00,
+    "consistency": 0.00,
+    "sos": 0.00,
+    "ros": 0.00,
+    "playoff": 0.00,
+}
 PHASE_WEIGHTS: dict[str, dict[str, float]] = {
     "preseason": {
         "pf": 0.05,
@@ -47,36 +59,9 @@ PHASE_WEIGHTS: dict[str, dict[str, float]] = {
         "ros": 0.00,
         "playoff": 0.15,
     },
-    "early": {
-        "pf": 0.16,
-        "record": 0.18,
-        "value": 0.28,
-        "momentum": 0.08,
-        "consistency": 0.06,
-        "sos": 0.08,
-        "ros": 0.04,
-        "playoff": 0.12,
-    },
-    "mid": {
-        "pf": 0.16,
-        "record": 0.24,
-        "value": 0.18,
-        "momentum": 0.12,
-        "consistency": 0.08,
-        "sos": 0.08,
-        "ros": 0.04,
-        "playoff": 0.10,
-    },
-    "late": {
-        "pf": 0.14,
-        "record": 0.26,
-        "value": 0.12,
-        "momentum": 0.14,
-        "consistency": 0.08,
-        "sos": 0.08,
-        "ros": 0.06,
-        "playoff": 0.12,
-    },
+    "early": dict(_IN_SEASON_WEIGHTS),
+    "mid": dict(_IN_SEASON_WEIGHTS),
+    "late": dict(_IN_SEASON_WEIGHTS),
 }
 
 
@@ -311,6 +296,7 @@ def blended_team_scores(
 
     Writes ``power_score``, ``power_components``, and ``rank``.
     Component key ``pf`` is the scoring-volume z-score (AVG/PPG based).
+    In-season ``power_score`` is the all-play (record) z-score; PPG breaks ties.
     """
     if not teams:
         return teams
@@ -386,7 +372,10 @@ def blended_team_scores(
             3,
         )
 
-    teams.sort(key=lambda t: t.get("power_score") or 0.0, reverse=True)
+    teams.sort(
+        key=lambda t: (float(t.get("power_score") or 0.0), _avg_of(t)),
+        reverse=True,
+    )
     for rank, team in enumerate(teams, start=1):
         team["rank"] = rank
     return teams
