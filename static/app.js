@@ -16176,43 +16176,46 @@ function _cmpLoadGameLogs(pid, position, containerId) {
     });
 }
 
-// ── Start/Sit breakdown (shared) ────────────────────────────────────────────
-// The single start/sit score (utils/start_sit_score) is projected points scaled
-// by capped signal multipliers. This renders one player's score plus a chip for
-// every signal that actually moved it, so Compare explains the number instead of
-// just showing it. Used by both the two- and three-player Start/Sit tabs.
+// Start/Sit breakdown (shared). The single start/sit score
+// (utils/start_sit_score) is projected points scaled by capped signal
+// multipliers. This renders the whole pipeline for one player: the base
+// projection, every input that adjusts it (whether it moved the score or was
+// neutral this week), and the resulting score plus its position-relative index.
+// Used by both the two- and three-player Start/Sit tabs.
+// Order matches how the score is built: proj is the base, then each multiplier.
+const _SS_FACTOR_ORDER = ['form', 'usage', 'avail', 'vegas', 'floor', 'weather'];
 const _SS_FACTOR_LABELS = {
-  form: 'Form', matchup: 'Matchup', usage: 'Usage', avail: 'Availability',
-  vegas: 'Game total', floor: 'Floor', weather: 'Weather',
+  form: 'Recent form', usage: 'Usage trend', avail: 'Availability',
+  vegas: 'Game total', floor: 'Floor / consistency', weather: 'Weather',
 };
 const _SS_DEMOTION_NOTES = {
-  bye: 'On bye this week — score zeroed.',
-  out: 'Ruled out (OUT/IR/SUSP) — score zeroed.',
-  questionable: 'Questionable tag applied — score trimmed.',
-  low_total: 'Low implied team total drags the game environment.',
-  weather: 'Weather headwind for this matchup.',
+  bye: 'On bye this week, so the score is zeroed.',
+  out: 'Ruled out (OUT, IR, or SUSP), so the score is zeroed.',
+  questionable: 'Questionable tag applied, so the score is trimmed.',
+  low_total: 'Low implied team total drags down the game environment.',
+  weather: 'Weather headwind for this game.',
 };
 
-function _startSitFactorChips(fac) {
+// One row per input that goes into the score. Neutral inputs are shown too (as
+// "neutral"), so the tab lays out everything the score considers, not just the
+// signals that happened to move it this week.
+function _startSitFactorRows(fac) {
   if (!fac || typeof fac !== 'object') return '';
-  const chips = [];
-  Object.keys(_SS_FACTOR_LABELS).forEach(function (key) {
+  return _SS_FACTOR_ORDER.map(function (key) {
     const m = fac[key];
-    if (m == null || isNaN(m)) return;
+    if (m == null || isNaN(m)) return '';
     const label = _SS_FACTOR_LABELS[key];
-    // Availability of exactly 0 means ruled out; show a hard label, not −100%.
+    let eff, cls;
     if (key === 'avail' && Number(m) === 0) {
-      chips.push('<span class="ss-chip ss-chip-down">' + label + ': out</span>');
-      return;
+      eff = 'ruled out'; cls = 'ss-eff-down';
+    } else {
+      const delta = Math.round((Number(m) - 1) * 100);
+      if (delta === 0) { eff = 'neutral'; cls = 'ss-eff-flat'; }
+      else { cls = delta > 0 ? 'ss-eff-up' : 'ss-eff-down'; eff = (delta > 0 ? '+' : '') + delta + '%'; }
     }
-    const delta = Math.round((Number(m) - 1) * 100);
-    if (delta === 0) return; // neutral signal — nothing to explain
-    const cls = delta > 0 ? 'ss-chip-up' : 'ss-chip-down';
-    const sign = delta > 0 ? '+' : '';
-    chips.push('<span class="ss-chip ' + cls + '">' + label + ' ' + sign + delta + '%</span>');
-  });
-  if (!chips.length) return '<div class="ss-chips-empty">Projection only — no signals moved the score this week.</div>';
-  return '<div class="ss-chips">' + chips.join('') + '</div>';
+    return '<div class="ss-row"><span class="ss-row-label">' + label + '</span>'
+      + '<span class="ss-eff ' + cls + '">' + eff + '</span></div>';
+  }).join('');
 }
 
 function _buildStartSitBreakdownHTML(p) {
@@ -16233,20 +16236,25 @@ function _buildStartSitBreakdownHTML(p) {
   const pct = st.start_score_pct;
   const hasPct = pct != null && !isNaN(pct);
   const bigDisp = hasPct ? Math.round(Number(pct)) : rawDisp;
-  const cap = hasPct ? 'Start/Sit index (0&ndash;100) · this week' : 'Start/Sit score · this week';
-  const projParts = [];
-  if (proj != null) projParts.push('Projection <b>' + (Math.round(Number(proj) * 10) / 10) + '</b> pts');
-  if (hasPct) projParts.push('raw score <b>' + rawDisp + '</b>');
-  const projLine = projParts.length
-    ? '<div class="ss-proj">' + projParts.join(' · ') + '</div>' : '';
+  const cap = hasPct ? 'Start/Sit index (0 to 100), this week' : 'Start/Sit score, this week';
+
+  const rows = [];
+  if (proj != null) {
+    rows.push('<div class="ss-row ss-row-head"><span class="ss-row-label">Base projection</span>'
+      + '<span class="ss-eff">' + (Math.round(Number(proj) * 10) / 10) + ' pts</span></div>');
+  }
+  rows.push(_startSitFactorRows(fac));
+  rows.push('<div class="ss-row ss-row-total"><span class="ss-row-label">Start/Sit score</span>'
+    + '<span class="ss-eff">' + rawDisp + '</span></div>');
+  const inputs = '<div class="ss-inputs">' + rows.join('') + '</div>';
+
   const demoNote = (demo && _SS_DEMOTION_NOTES[demo])
     ? '<div class="ss-demo">' + _SS_DEMOTION_NOTES[demo] + '</div>' : '';
   return '<div class="ss-card">'
     + '<div class="ss-card-name">' + name + '</div>'
     + '<div class="ss-score">' + bigDisp + '</div>'
     + '<div class="ss-score-cap">' + cap + '</div>'
-    + projLine
-    + _startSitFactorChips(fac)
+    + inputs
     + demoNote
     + '</div>';
 }
@@ -16263,13 +16271,17 @@ const _SS_TAB_CSS =
   + '.ss-card-name{font-weight:800;font-size:13px;color:var(--text);margin-bottom:6px;}'
   + '.ss-score{font-size:34px;font-weight:800;color:var(--text);line-height:1;font-variant-numeric:tabular-nums;}'
   + '.ss-score-cap{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin-top:4px;}'
-  + '.ss-proj{font-size:12px;color:var(--muted);margin-top:10px;}'
-  + '.ss-chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:10px;}'
-  + '.ss-chip{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;white-space:nowrap;}'
-  + '.ss-chip-up{color:var(--win,#16a34a);background:color-mix(in srgb,var(--win,#16a34a) 14%,transparent);}'
-  + '.ss-chip-down{color:#dc2626;background:color-mix(in srgb,#dc2626 12%,transparent);}'
-  + '.ss-chips-empty{font-size:11px;color:var(--muted);margin-top:10px;}'
-  + '.ss-demo{font-size:11px;color:#dc2626;font-weight:600;margin-top:10px;}'
+  + '.ss-inputs{text-align:left;margin-top:12px;border-top:1px solid var(--border);padding-top:6px;}'
+  + '.ss-row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12px;padding:4px 0;}'
+  + '.ss-row-label{color:var(--muted);}'
+  + '.ss-eff{font-weight:700;font-variant-numeric:tabular-nums;color:var(--text);}'
+  + '.ss-eff-up{color:var(--win,#16a34a);}'
+  + '.ss-eff-down{color:#dc2626;}'
+  + '.ss-eff-flat{color:var(--muted);font-weight:600;}'
+  + '.ss-row-head .ss-row-label,.ss-row-head .ss-eff{color:var(--text);font-weight:700;}'
+  + '.ss-row-total{border-top:1px dashed var(--border);margin-top:4px;padding-top:7px;}'
+  + '.ss-row-total .ss-row-label,.ss-row-total .ss-eff{color:var(--text);font-weight:800;}'
+  + '.ss-demo{font-size:11px;color:#dc2626;font-weight:600;margin-top:10px;text-align:left;}'
   + '.ss-empty{font-size:12px;color:var(--muted);padding:18px 0;}'
   + '</style>';
 
@@ -16278,10 +16290,11 @@ function _buildStartSitTabHTML(players) {
   const cards = (players || []).map(_buildStartSitBreakdownHTML).join('');
   const gridCls = (players && players.length === 3) ? 'ss-cards-3' : 'ss-cards-2';
   return _SS_TAB_CSS
-    + '<div class="ss-tab-intro">A 0&ndash;100 start-confidence index for this week, relative to each '
-    + 'player&rsquo;s own position (100 = the top weekly projection at that position). It starts from '
-    + 'projected points and applies capped signal multipliers (form, usage, availability, game total, '
-    + 'floor, weather), so a QB&rsquo;s number and a WR&rsquo;s number are comparable. Higher is the stronger start.</div>'
+    + '<div class="ss-tab-intro">A 0 to 100 start-confidence score for this week, relative to each '
+    + "player's own position (100 is the top weekly projection at that position). It starts from the base "
+    + 'projection, which already reflects the opponent, then adjusts for the inputs listed on each card '
+    + '(recent form, usage trend, availability, game total, floor, and weather). A QB and a WR are '
+    + 'comparable this way, and higher is the stronger start.</div>'
     + '<div class="ss-cards ' + gridCls + '">' + cards + '</div>';
 }
 
