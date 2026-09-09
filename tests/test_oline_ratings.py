@@ -1,8 +1,9 @@
 """Unit tests for the nflverse-derived O-line ratings (no network).
 
-These guard the pure logic -- the line-yards weighting, the percentile scaling,
-and the end-to-end assembly on a synthetic play-by-play frame -- so a broken
-formula is caught without hitting nflverse.
+Guards the pure logic -- line-yards weighting, opponent adjustment, prior
+regression, time-to-throw residualisation, percentile scaling, and the
+end-to-end assembly on a synthetic play-by-play frame -- so a broken formula is
+caught without hitting nflverse.
 """
 import pytest
 
@@ -10,55 +11,96 @@ pd = pytest.importorskip("pandas")
 
 from data_building.oline_ratings import (  # noqa: E402
     _line_yards,
+    _gap_of,
+    _alt_adjust,
+    _regress_to_prior,
+    _residualize,
     _percentile_index,
     build_oline_ratings,
 )
 
 
 def test_line_yards_weighting():
-    # Football Outsiders buckets: stuffed 1.2x, 0-4 full, 5-10 half, 11+ capped.
-    assert _line_yards(-2) == pytest.approx(-2.4)   # 1.2 * -2
-    assert _line_yards(3) == pytest.approx(3.0)     # full credit
+    assert _line_yards(-2) == pytest.approx(-2.4)   # stuffed 1.2x
+    assert _line_yards(3) == pytest.approx(3.0)      # 0-4 full
     assert _line_yards(4) == pytest.approx(4.0)
-    assert _line_yards(10) == pytest.approx(7.0)    # 4 + 0.5*6
-    # long runs get no extra line credit past 11 yards
-    assert _line_yards(11) == _line_yards(80) == pytest.approx(7.0)
+    assert _line_yards(10) == pytest.approx(7.0)     # 4 + 0.5*6
+    assert _line_yards(11) == _line_yards(80) == pytest.approx(7.0)  # capped
+
+
+def test_gap_bucketing():
+    assert _gap_of("left", "guard") == "interior"
+    assert _gap_of("middle", None) == "interior"
+    assert _gap_of("right", "tackle") == "tackle"
+    assert _gap_of("left", "end") == "end"
+    assert _gap_of("left", None) is None
+
+
+def test_alt_adjust_recovers_offense_effect():
+    # Fully-crossed design (every offense faces every defense, so effects are
+    # identifiable) with a known additive structure:
+    #   value = 3 (league) + off_skill + def_effect
+    #   off_skill: GOOD +1, BAD -1, REF 0   def_effect: TOUGH -1, SOFT +1
+    league = 3.0
+    off_skill = {"GOOD": 1.0, "BAD": -1.0, "REF": 0.0}
+    def_eff = {"TOUGH": -1.0, "SOFT": 1.0}
+    triples = []
+    for o, os_ in off_skill.items():
+        for d, de in def_eff.items():
+            triples += [(o, d, league + os_ + de)] * 10
+    adj, n, lg = _alt_adjust(triples)
+    # adjusted value = league + off_skill, so ordering and magnitude recover
+    assert adj["GOOD"] > adj["REF"] > adj["BAD"]
+    assert adj["GOOD"] == pytest.approx(4.0, abs=0.05)
+    assert adj["BAD"] == pytest.approx(2.0, abs=0.05)
+
+
+def test_regress_to_prior_shrinks_small_samples():
+    cur = {"A": 10.0, "B": 10.0}
+    n = {"A": 200, "B": 5}          # A has a big sample, B tiny
+    prior = {"A": 0.0, "B": 0.0}
+    out = _regress_to_prior(cur, n, prior, league_cur=0.0, K=100.0)
+    assert out["A"] > out["B"]      # B pulled harder toward its prior
+    assert out["B"] < 5.0
+
+
+def test_residualize_removes_time_to_throw_effect():
+    # value rises purely with x; residuals should be ~0 (line not to blame).
+    value = {"A": 2.0, "B": 4.0, "C": 6.0, "D": 8.0, "E": 10.0}
+    x = {"A": 1.0, "B": 2.0, "C": 3.0, "D": 4.0, "E": 5.0}
+    resid = _residualize(value, x)
+    assert all(abs(v) < 1e-6 for v in resid.values())
 
 
 def test_percentile_index_orders_and_spreads():
     idx = _percentile_index({"A": 5.0, "B": 3.0, "C": 1.0}, higher_is_better=True)
     assert idx["A"] == 100.0 and idx["C"] == 0.0 and idx["B"] == 50.0
-    # lower-is-better flips it (fewer sacks = better line)
     inv = _percentile_index({"A": 5.0, "B": 3.0, "C": 1.0}, higher_is_better=False)
     assert inv["C"] == 100.0 and inv["A"] == 0.0
 
 
+def _row(**kw):
+    base = dict(season=2025, week=1, season_type="REG", posteam="GOOD",
+                defteam="DEF", rush_attempt=0, pass_attempt=0, qb_dropback=0,
+                rushing_yards=0, yards_gained=0, sack=0, qb_hit=0,
+                was_pressure=0, time_to_throw=2.6, qb_kneel=0, qb_spike=0,
+                run_location="middle", run_gap="guard", wp=0.5, score_differential=0)
+    base.update(kw)
+    return base
+
+
 def _synthetic_pbp():
-    """Two offenses vs one defense: GOOD blocks well, BAD blocks poorly."""
+    """GOOD blocks well; BAD gets stuffed and pressured. Same time to throw,
+    so the residualiser can't explain BAD's pressure away."""
     rows = []
-    # GOOD: consistent 3-4 yard runs, almost no sacks/hits
     for _ in range(60):
-        rows.append(dict(season=2025, week=1, season_type="REG", posteam="GOOD",
-                         defteam="DEF", rush_attempt=1, pass_attempt=0, qb_dropback=0,
-                         rushing_yards=4, yards_gained=4, sack=0, qb_hit=0,
-                         qb_kneel=0, qb_spike=0, two_point_attempt=0))
-    for _ in range(60):
-        rows.append(dict(season=2025, week=1, season_type="REG", posteam="GOOD",
-                         defteam="DEF", rush_attempt=0, pass_attempt=1, qb_dropback=1,
-                         rushing_yards=0, yards_gained=7, sack=0, qb_hit=0,
-                         qb_kneel=0, qb_spike=0, two_point_attempt=0))
-    # BAD: lots of stuffs, lots of sacks and hits
-    for _ in range(60):
-        rows.append(dict(season=2025, week=1, season_type="REG", posteam="BAD",
-                         defteam="DEF", rush_attempt=1, pass_attempt=0, qb_dropback=0,
-                         rushing_yards=-1, yards_gained=-1, sack=0, qb_hit=0,
-                         qb_kneel=0, qb_spike=0, two_point_attempt=0))
+        rows.append(_row(posteam="GOOD", rush_attempt=1, rushing_yards=4, yards_gained=4))
+        rows.append(_row(posteam="GOOD", qb_dropback=1, pass_attempt=1, was_pressure=0, sack=0))
     for i in range(60):
-        rows.append(dict(season=2025, week=1, season_type="REG", posteam="BAD",
-                         defteam="DEF", rush_attempt=0, pass_attempt=1, qb_dropback=1,
-                         rushing_yards=0, yards_gained=0,
-                         sack=1 if i < 15 else 0, qb_hit=1 if i < 30 else 0,
-                         qb_kneel=0, qb_spike=0, two_point_attempt=0))
+        rows.append(_row(posteam="BAD", rush_attempt=1, rushing_yards=-1, yards_gained=-1))
+        rows.append(_row(posteam="BAD", qb_dropback=1, pass_attempt=1,
+                         was_pressure=1 if i < 40 else 0,
+                         sack=1 if i < 15 else 0, qb_hit=1 if i < 30 else 0))
     return pd.DataFrame(rows)
 
 
@@ -70,10 +112,12 @@ def test_build_end_to_end_ranks_good_over_bad(monkeypatch):
     )
     out = build_oline_ratings(2025, through_week=1, save=False)
     r = out["ratings"]
-    assert set(r) == {"GOOD", "BAD", "DEF"} - {"DEF"} or "GOOD" in r
+    assert out["pressure_source"] == "was_pressure"
+    assert "GOOD" in r and "BAD" in r and "DEF" not in r
     assert r["GOOD"]["composite"] > r["BAD"]["composite"]
-    assert r["GOOD"]["sack_rate"] < r["BAD"]["sack_rate"]
+    assert r["GOOD"]["pass_block"] > r["BAD"]["pass_block"]
+    assert r["GOOD"]["run_block"] > r["BAD"]["run_block"]
     assert r["BAD"]["stuffed_rate"] > r["GOOD"]["stuffed_rate"]
-    # scale sanity: percentile indices land inside [0, 100]
+    assert r["BAD"]["pressure_rate"] > r["GOOD"]["pressure_rate"]
     for row in r.values():
         assert 0.0 <= row["composite"] <= 100.0
