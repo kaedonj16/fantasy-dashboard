@@ -21261,6 +21261,7 @@ def api_player_team(player_id: str):
             "ranks": ranks,
             "ranks_more": ranks_more,
             "depth_chart": depth_chart,
+            "oline": _oline_for_player(int(stats_season), team, position),
         }
         _TEAM_PAYLOAD_CACHE[_payload_key] = (time.time(), _payload)
         return jsonify(_payload)
