@@ -32634,34 +32634,37 @@ button:disabled {
     flex-shrink: 0;
 }
 
+/* Position hues mirror the site-wide .pos-badge palette (QB blue, RB green,
+   WR amber, TE purple, K pink, DEF slate) so Redzone shares one palette with
+   the rest of the app — rendered here as Redzone's soft tinted chips. */
 .rz-pos-QB {
     background: rgba(59, 130, 246, .14);
-    color: #2563eb;
+    color: var(--brand-blue);
 }
 
 .rz-pos-RB {
-    background: rgba(22, 163, 74, .14);
+    background: rgba(34, 197, 94, .14);
     color: #16a34a;
 }
 
 .rz-pos-WR {
-    background: rgba(168, 85, 247, .14);
-    color: #9333ea;
+    background: rgba(245, 158, 11, .16);
+    color: #d97706;
 }
 
 .rz-pos-TE {
-    background: rgba(234, 88, 12, .14);
-    color: #ea580c;
+    background: rgba(139, 92, 246, .14);
+    color: #7c3aed;
 }
 
 .rz-pos-K {
-    background: rgba(202, 138, 4, .16);
-    color: #ca8a04;
+    background: rgba(201, 44, 104, .14);
+    color: #c92c68;
 }
 
 .rz-pos-DEF {
-    background: rgba(220, 38, 38, .14);
-    color: #dc2626;
+    background: rgba(71, 85, 105, .16);
+    color: #475569;
 }
 
 .rz-pos-WRT, .rz-pos-FLEX, .rz-pos-SUPER_FLEX, .rz-pos-BN, .rz-pos-IR, .rz-pos- {
@@ -32678,19 +32681,19 @@ button:disabled {
 }
 
 :root[data-theme="dark"] .rz-pos-WR {
-    color: #c084fc;
+    color: #fbbf24;
 }
 
 :root[data-theme="dark"] .rz-pos-TE {
-    color: #fb923c;
+    color: #a78bfa;
 }
 
 :root[data-theme="dark"] .rz-pos-K {
-    color: #facc15;
+    color: #f472b6;
 }
 
 :root[data-theme="dark"] .rz-pos-DEF {
-    color: #f87171;
+    color: #94a3b8;
 }
 
 /* Roster / player rows */
@@ -33663,7 +33666,7 @@ button:disabled {
 
 .rz-pregame-player .rz-pos-badge {
     font-size: 8px;
-    min-width: 22px;
+    min-width: 24px;
     padding: 2px 4px;
 }
 

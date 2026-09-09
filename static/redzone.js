@@ -43,6 +43,10 @@
   var _prevLeader = {}; // matchup_id → leading roster_id (for lead-change events)
   var _scoreDelta = { me: 0, opp: 0 }; // pts gained since last poll (for hero card)
   var _loadingScope = false; // true while awaiting the first fetch after a scope switch
+  var _mlNames  = [];        // My Leagues: league display names by portfolio index
+  var _mlLoaded = null;      // My Leagues: Set of portfolio indices whose card has arrived (null = not streaming)
+  var _streaming = false;    // true while a progressive My Leagues stream is in flight
+  var _streamGen = 0;        // bumped on every scope switch so a stale stream can abort
 
   document.addEventListener('click', function() { _hadInteraction = true; }, { once: true });
 
@@ -1004,6 +1008,19 @@
       + cards + '</div></div></div>';
   }
 
+  // One placeholder My Leagues card, labeled with the league name, shown while
+  // that league's data is still streaming in.
+  function _mlPlaceholderCard(name) {
+    return '<div class="rz-mc-hero rz-mc-skel rz-mc-loading" aria-hidden="true">'
+      + '<div class="rz-mch-league">' + (name || 'League') + '</div>'
+      + '<div class="rz-mch-matchup">'
+      +   '<div class="rz-mch-side"><div class="rz-skel-line rz-skel-name"></div><div class="rz-skel-num"></div></div>'
+      +   '<div class="rz-mch-vs"><div class="rz-skel-badge"></div></div>'
+      +   '<div class="rz-mch-side right"><div class="rz-skel-line rz-skel-name"></div><div class="rz-skel-num"></div></div>'
+      + '</div>'
+      + '</div>';
+  }
+
   function _renderHeroCards() {
     // Score delta badge ("+N this update"): reflects the change from the most
     // recent poll. _detectChanges recomputes (and resets) _scoreDelta every
@@ -1019,7 +1036,16 @@
     }
     if (_scope === 'user') {
       var mine = _myMatchups();
-      if (!mine.length) {
+      // While streaming, show a named placeholder for every league whose card
+      // hasn't arrived yet (loaded-but-teamless leagues are in _mlLoaded and get
+      // no placeholder). Rendered after the real cards.
+      var pending = '';
+      if (_mlLoaded) {
+        for (var _pi = 0; _pi < _mlNames.length; _pi++) {
+          if (!_mlLoaded.has(_pi)) pending += _mlPlaceholderCard(_mlNames[_pi]);
+        }
+      }
+      if (!mine.length && !pending) {
         return '<div class="rz-no-matchup">No leagues found for your account.<br><a href="?demo=1" class="rz-demo-link">View Demo</a></div>';
       }
       var cards = mine.map(function(m) {
@@ -1054,7 +1080,7 @@
           + '</div>'
           + '</div>';
       }).join('');
-      return _heroCardsWrap(_deltaHtml, cards);
+      return _heroCardsWrap(_deltaHtml, cards + pending);
     }
 
     // This League mode: one card per matchup, viewer's first
@@ -1343,10 +1369,21 @@
 
   function _pregameScheduleHtml() {
     var info = _state.player_info || {};
+    // When a matchup card is selected (hero), scope the schedule to that
+    // matchup's games so its upcoming kickoffs stay visible; otherwise show
+    // every game. focusPids is the selected matchup's player set (or null).
+    var focusPids = _heroMid ? _heroMatchupPids() : null;
     var myPids = new Set();
     _myMatchups().forEach(function(m) {
       (m.players || []).forEach(function(pid) { myPids.add(pid); });
     });
+    // Players to spotlight on each game card: the focused matchup's when one is
+    // selected, otherwise the viewer's own.
+    var spotPids = focusPids || myPids;
+    var heroIsMine = !!_heroMid && _myMatchups().some(function(m) {
+      return String(m.matchup_id) === _heroMid || String(m.roster_id) === _heroMid;
+    });
+    var spotLabel = (!focusPids || heroIsMine) ? 'My Players' : 'In Matchup';
 
     // Group scheduled/live players by game_id
     var gameMap = {};
@@ -1356,22 +1393,23 @@
       if (!gid || !p.home || !p.away) return;
       var code = String(p.game_code || '0');
       if (code === '2') return; // skip final games
-      if (!gameMap[gid]) gameMap[gid] = { home: p.home, away: p.away, status: p.game_status || '', code: code, kickoff: parseFloat(p.game_time_epoch || 0) || 0, mine: [], other: [] };
-      if (myPids.has(pid)) gameMap[gid].mine.push({ name: p.name || pid, pos: p.pos || '' });
-      else gameMap[gid].other.push(pid);
+      if (!gameMap[gid]) gameMap[gid] = { home: p.home, away: p.away, status: p.game_status || '', code: code, kickoff: parseFloat(p.game_time_epoch || 0) || 0, spot: [], hasFocus: false };
+      if (focusPids && focusPids.has(pid)) gameMap[gid].hasFocus = true;
+      if (spotPids.has(pid)) gameMap[gid].spot.push({ name: p.name || pid, pos: p.pos || '' });
     });
 
     var gameIds = Object.keys(gameMap);
+    // Focused matchup: keep only games that include one of its players.
+    if (focusPids) gameIds = gameIds.filter(function(gid) { return gameMap[gid].hasFocus; });
     if (!gameIds.length) {
       return '<div class="rz-pregame-empty-hint">Plays appear here as games unfold, targets, catches, carries and touchdowns with live fantasy points.</div>';
     }
 
-    // Sort: games with my players first
+    // Sort: games with spotlighted players first
     gameIds.sort(function(a, b) {
-      return (gameMap[b].mine.length > 0 ? 1 : 0) - (gameMap[a].mine.length > 0 ? 1 : 0);
+      return (gameMap[b].spot.length > 0 ? 1 : 0) - (gameMap[a].spot.length > 0 ? 1 : 0);
     });
 
-    var hasMyGames = gameIds.some(function(gid) { return gameMap[gid].mine.length > 0; });
     var html = '<div class="rz-pregame-wrap">'
       + '<div class="rz-pregame-label">' + (gameIds.some(function(g) { return gameMap[g].code === '1'; }) ? 'Games in Progress' : 'Upcoming Games') + '</div>';
 
@@ -1381,14 +1419,14 @@
         ? 'LIVE · ' + (g.status || '')
         : (g.kickoff ? _fmtKickoff(g.kickoff) : (g.status || 'Upcoming'));
       var playerChip = '';
-      if (g.mine.length) {
-        var rows = g.mine.slice(0, 3).map(function(pl) {
+      if (g.spot.length) {
+        var rows = g.spot.slice(0, 3).map(function(pl) {
           return '<span class="rz-pregame-player">' + _posHtml(pl.pos)
             + '<span class="rz-pregame-pname">' + pl.name + '</span></span>';
         }).join('');
-        var moreN = g.mine.length - 3;
+        var moreN = g.spot.length - 3;
         var more = moreN > 0 ? '<span class="rz-pregame-more">+' + moreN + ' more</span>' : '';
-        playerChip = '<div class="rz-pregame-players"><strong>My Players</strong>' + rows + more + '</div>';
+        playerChip = '<div class="rz-pregame-players"><strong>' + spotLabel + '</strong>' + rows + more + '</div>';
       }
       html += '<div class="rz-pregame-game">'
         + '<div class="rz-pregame-teams">'
@@ -1883,6 +1921,9 @@
     root.querySelectorAll('.rz-scope-btn').forEach(function(btn) {
       btn.addEventListener('click', function() {
         if (btn.dataset.scope === _scope) return;
+        _streamGen++; // abort any in-flight My Leagues stream from a prior switch
+        _streaming = false;
+        _mlNames = []; _mlLoaded = null;
         _scope = btn.dataset.scope;
         _filters = { team: 'all', nfl: 'all', pos: 'all', stat: 'all' };
         _feed = [];
@@ -1896,7 +1937,9 @@
         // Show skeleton cards until this scope's (often multi-league) data lands.
         _loadingScope = true;
         _render();
-        _refresh();
+        // My Leagues streams a card at a time; This League is a single fetch.
+        if (_scope === 'user') _refreshUserStream();
+        else _refresh();
       });
     });
     root.querySelectorAll('.rz-tab-btn').forEach(function(btn) {
@@ -1979,6 +2022,7 @@
 
   // ── Polling ───────────────────────────────────────────────────────────────────
   async function _refresh() {
+    if (_streaming) return; // a progressive My Leagues stream owns the screen
     try {
       var parts = window.location.pathname.split('/');
       var apiBase = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3];
@@ -2032,6 +2076,112 @@
     } catch (_) { _lastPollFailed = true; if (_loadingScope) { _loadingScope = false; _render(); } }
   }
 
+  // ── Progressive My Leagues load ────────────────────────────────────────────
+  // Stream the viewer's leagues one card at a time (NDJSON from &stream=1) so
+  // each populates as it lands instead of waiting for the whole portfolio.
+  // Degrades to the aggregate _refresh() if streaming is unavailable, the
+  // response isn't a stream (server fell back), or the stream errors midway.
+  function _emptyUserState() {
+    return {
+      scope: 'user', week: _state.week, season: _state.season,
+      platform: _state.platform, league_id: _state.league_id,
+      games_today: _state.games_today,
+      matchups: [], rosters: [], users: [], leagues: [],
+      player_info: {}, scoring: {}, scoring_by_league: {}, pid_league: {},
+      viewer_roster_id: '', viewer_roster_ids: []
+    };
+  }
+
+  function _mergeLeagueSlice(base, s) {
+    (s.matchups || []).forEach(function(m) { base.matchups.push(m); });
+    (s.rosters  || []).forEach(function(r) { base.rosters.push(r); });
+    (s.users    || []).forEach(function(u) {
+      if (!base.users.some(function(x) { return x.user_id === u.user_id; })) base.users.push(u);
+    });
+    (s.leagues  || []).forEach(function(l) { base.leagues.push(l); });
+    Object.assign(base.player_info, s.player_info || {});
+    Object.assign(base.scoring_by_league, s.scoring_by_league || {});
+    Object.assign(base.pid_league, s.pid_league || {});
+    if (!base.scoring || !Object.keys(base.scoring).length) base.scoring = s.scoring || base.scoring;
+    if (s.viewer_roster_id) {
+      base.viewer_roster_ids.push(s.viewer_roster_id);
+      if (!base.viewer_roster_id) base.viewer_roster_id = s.viewer_roster_id;
+    }
+  }
+
+  async function _refreshUserStream() {
+    var myGen = ++_streamGen; // this stream owns the screen until the next scope switch
+    _streaming = true;
+    var parts = window.location.pathname.split('/');
+    var apiBase = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3];
+    var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=user&stream=1';
+    var resp;
+    try { resp = await fetch(url); } catch (_) { _streaming = false; return _refresh(); }
+    if (myGen !== _streamGen) { _streaming = false; return; } // superseded by a newer switch
+    var ctype = (resp.headers.get('content-type') || '');
+    // Server fell back to aggregate JSON (no portfolio / error) → use it directly.
+    if (!resp.ok || !resp.body || ctype.indexOf('ndjson') < 0) {
+      _streaming = false; _loadingScope = false; return _refresh();
+    }
+
+    var base = _emptyUserState();
+    _mlNames = []; _mlLoaded = new Set();
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    var buf = '', gotLeague = false;
+
+    function _handle(obj) {
+      if (myGen !== _streamGen) return; // a newer scope switch owns the screen now
+      if (obj.type === 'meta') {
+        base.week = obj.week; base.season = obj.season;
+        if (obj.games_today != null) base.games_today = obj.games_today;
+        _mlNames = (obj.leagues || []).map(function(l) { return l.name || 'League'; });
+        _state = base; _myRids = new Set(); _loadingScope = false;
+        _render();
+      } else if (obj.type === 'league') {
+        if (!obj.empty) { _mergeLeagueSlice(base, obj); gotLeague = true; }
+        if (obj.index != null) _mlLoaded.add(obj.index);
+        _state = base;
+        _myRids = _myRidSet(base);
+        // Seed snapshots for the arriving league so it fires no retroactive events.
+        _seedPrevStats(base); _seedMilestones(base); _seedInjuries(base); _seedLeaders(base);
+        (base.matchups || []).forEach(function(m) { _prevMatchupPts[String(m.roster_id)] = parseFloat(m.points || 0); });
+        _render();
+      }
+    }
+
+    try {
+      while (true) {
+        var chunk = await reader.read();
+        if (myGen !== _streamGen) { try { reader.cancel(); } catch (_) {} _streaming = false; return; }
+        if (chunk.done) break;
+        buf += decoder.decode(chunk.value, { stream: true });
+        var lines = buf.split('\n');
+        buf = lines.pop();
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i].trim();
+          if (!line) continue;
+          var obj; try { obj = JSON.parse(line); } catch (_) { continue; }
+          _handle(obj);
+        }
+      }
+    } catch (_) {
+      _mlNames = []; _mlLoaded = null; _streaming = false;
+      if (myGen === _streamGen) return _refresh();
+      return;
+    }
+
+    _mlNames = []; _mlLoaded = null; _streaming = false;
+    if (myGen !== _streamGen) return;
+    if (!gotLeague) { _loadingScope = false; return _refresh(); }
+    _state = base;
+    _myRids = _myRidSet(base);
+    _seedPrevStats(base);
+    _loadingScope = false;
+    _countdown = _pollInterval();
+    _render();
+  }
+
   function _isGameDay() {
     if (_isDemo) return true;
     if (_anyLive()) return true; // already in progress — always poll regardless of day/time
@@ -2070,6 +2220,7 @@
   }
 
   function _tick() {
+    if (_streaming) return; // hold the countdown/poll while a stream is loading cards
     // Offseason / non-game day: stay idle — no countdown, no polling, no live
     // look. Checked first so the timer never ticks down when nothing is on.
     if (!_isDemo && !_isGameDay()) {
