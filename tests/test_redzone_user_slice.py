@@ -97,10 +97,12 @@ def test_fetch_user_aggregates_slices(monkeypatch, fake_collect):
     uids = [u["user_id"] for u in out["users"]]
     assert uids.count("u1") == 1
     assert set(uids) == {"u1", "u2", "u3"}
-    # Per-league scoring + pid->league map cover both leagues.
+    # Per-league scoring + pid->league map cover both leagues. Every player on
+    # the viewer's matchup pair maps back to its league, opponents included.
     assert set(out["scoring_by_league"]) == {"LA", "LB"}
     assert out["pid_league"] == {
-        "p1": "LA", "p2": "LA", "p4": "LB", "p5": "LB",
+        "p1": "LA", "p2": "LA", "p3": "LA",
+        "p4": "LB", "p5": "LB", "p6": "LB",
     }
     assert set(out["player_info"]) == {"p1", "p2", "p3", "p4", "p5", "p6"}
     assert out["leagues"] == [
