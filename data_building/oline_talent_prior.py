@@ -20,6 +20,9 @@ Open-data provenance (nothing licensed)
     public expected-AV chart redistributed as the `stuart` column of
     github.com/nflverse/nfldata/blob/master/data/draft_values.csv.
     That CSV also carries a `pff` column; it is never read.
+  * Player id join — nflverse players file (PFR id ↔ GSIS id). Snap counts
+    identify linemen by PFR id; rosters identify them by GSIS. The join is
+    identity-only; the players file's `pff_id` column is ignored.
   * Veteran additions/losses — inferred from roster team changes, weighted by
     prior-season OL snaps. That captures free agency, trades, and cuts without
     a licensed transaction feed.
@@ -30,6 +33,11 @@ one would pretend to a precision we don't have.
 
 This prior is optional and labeled. `build_oline_ratings(use_talent_prior=False)`
 (the default) never calls it; the results-based composite is unchanged.
+
+A 2022-2025 weeks 1-4 -> rest-of-season backtest (see
+oline_backtest.sweep_talent_prior) found the residual is a wash vs last
+season's prior: equal-mix W=0.45 scored 0.3476 against 0.3474. That is
+not a real win, so the flag stays off.
 """
 from __future__ import annotations
 
@@ -87,6 +95,12 @@ _DRAFT_PICKS_URLS = (
 # Public Chase Stuart expected-AV chart. Do not use the `pff` column.
 _DRAFT_VALUES_URLS = (
     "https://raw.githubusercontent.com/nflverse/nfldata/master/data/draft_values.csv",
+)
+# nflverse players file is the public GSIS ↔ PFR id crosswalk. Snap counts
+# key on PFR ids; weekly/seasonal rosters key on GSIS. Without this join,
+# returning-starter continuity is always zero. PFF ids in that file are ignored.
+_PLAYERS_URLS = (
+    "https://github.com/nflverse/nflverse-data/releases/download/players/players.parquet",
 )
 
 # Exponential fallback calibrated to Stuart pick-1 = 34.6 (Football Perspective).
@@ -431,6 +445,65 @@ def _load_draft_picks(year, pd, nfl=None):
     return d
 
 
+def _load_id_xwalk(pd, nfl=None):
+    """PFR id / display name -> GSIS id from the public nflverse players file.
+
+    Snap counts identify players by PFR id; rosters identify them by GSIS.
+    This crosswalk is how we join the two. The players file also carries a
+    `pff_id` column — it is never read.
+    """
+    d = None
+    if nfl is not None:
+        try:
+            d = nfl.import_players()
+        except Exception as e:
+            print(f"[oline_talent_prior] nfl_data_py players failed ({e})")
+            d = None
+    if d is None or getattr(d, "empty", True):
+        d = _read_first_url(_PLAYERS_URLS, pd)
+    if d is None or getattr(d, "empty", True):
+        print("[oline_talent_prior] no players crosswalk; snap/roster match will be weak")
+        return {}
+    pfr_col = next((c for c in ("pfr_id", "pfr_player_id") if c in d.columns), None)
+    gsis_col = next((c for c in ("gsis_id", "player_id") if c in d.columns), None)
+    name_col = next((c for c in ("display_name", "full_name", "player_name")
+                     if c in d.columns), None)
+    if not gsis_col:
+        return {}
+    xwalk = {}
+    n = len(d)
+    gsiss = d[gsis_col].tolist()
+    pfrs = d[pfr_col].tolist() if pfr_col else [None] * n
+    names = d[name_col].tolist() if name_col else [None] * n
+    for i in range(n):
+        gsis = _pid(gsiss[i])
+        if not gsis:
+            continue
+        pfr = _pid(pfrs[i])
+        if pfr and pfr not in xwalk:
+            xwalk[pfr] = gsis
+        name = _pid(names[i])
+        if name:
+            key = name.lower()
+            xwalk.setdefault(key, gsis)
+    return xwalk
+
+
+def _canonical_pid(pfr, gsis, name, xwalk):
+    """Prefer GSIS so snap rows and roster rows share a key."""
+    gsis = _pid(gsis)
+    if gsis:
+        return gsis
+    pfr = _pid(pfr)
+    name = _pid(name)
+    if xwalk:
+        if pfr and pfr in xwalk:
+            return xwalk[pfr]
+        if name and name.lower() in xwalk:
+            return xwalk[name.lower()]
+    return pfr or name
+
+
 def _load_stuart_chart(pd, nfl=None):
     """Return {pick: stuart_value}. Never reads the PFF column."""
     d = None
@@ -458,8 +531,12 @@ def _load_stuart_chart(pd, nfl=None):
     return chart or None
 
 
-def _parse_prior_ol_snaps(snap_df, pd):
-    """-> list[{player_id, team, snaps}] for regular-season OL snaps."""
+def _parse_prior_ol_snaps(snap_df, pd, xwalk=None):
+    """-> list[{player_id, team, snaps}] for regular-season OL snaps.
+
+    `player_id` is GSIS when the public players crosswalk can resolve the
+    PFR id (the key snap counts actually carry).
+    """
     if snap_df is None or getattr(snap_df, "empty", True):
         return []
     d = snap_df
@@ -481,8 +558,10 @@ def _parse_prior_ol_snaps(snap_df, pd):
     snaps = d[snap_col].tolist()
     pids = d[pid_col].tolist() if pid_col else [None] * len(d)
     names = d[name_col].tolist() if name_col else [None] * len(d)
+    gsis_col = next((c for c in ("gsis_id",) if c in d.columns), None)
+    gsiss = d[gsis_col].tolist() if gsis_col else [None] * len(d)
     for i in range(len(d)):
-        pid = _pid(pids[i], names[i])
+        pid = _canonical_pid(pids[i], gsiss[i], names[i], xwalk)
         team = _norm_team(teams[i])
         n = _f(snaps[i])
         if not pid or not team or not n or n <= 0:
@@ -490,11 +569,9 @@ def _parse_prior_ol_snaps(snap_df, pd):
         out.append({"player_id": pid, "team": team, "snaps": n})
     # Aggregate to player-team in case the frame is weekly.
     agg = defaultdict(float)
-    meta = {}
     for row in out:
         k = (row["player_id"], row["team"])
         agg[k] += row["snaps"]
-        meta[k] = row
     return [{"player_id": pid, "team": team, "snaps": s}
             for (pid, team), s in agg.items()]
 
@@ -547,7 +624,12 @@ def _parse_current_ol_teams(roster_df, pd, prefer_week=1):
         team = _norm_team(teams[i])
         if not team:
             continue
-        for key in (_pid(pfrs[i]), _pid(gsiss[i]), _pid(names[i])):
+        for key in (
+            _canonical_pid(pfrs[i], gsiss[i], names[i], None),
+            _pid(gsiss[i]),
+            _pid(names[i]),
+            (_pid(names[i]) or "").lower() or None,
+        ):
             if key and key not in mapping:
                 mapping[key] = team
     return mapping, source
@@ -589,8 +671,9 @@ def load_talent_inputs(season, pd, nfl=None):
     (prior-season snaps AND current-season roster) are missing. Draft is
     optional: without it the draft component is simply dropped.
     """
+    xwalk = _load_id_xwalk(pd, nfl)
     snaps = _load_snaps(season - 1, pd, nfl)
-    prior_snaps = _parse_prior_ol_snaps(snaps, pd)
+    prior_snaps = _parse_prior_ol_snaps(snaps, pd, xwalk=xwalk)
     if not prior_snaps:
         print(f"[oline_talent_prior] no OL snaps for {season - 1}; skipping talent prior")
         return None
@@ -617,6 +700,7 @@ def load_talent_inputs(season, pd, nfl=None):
         "n_prior_ol_rows": len(prior_snaps),
         "n_current_ol": len(roster),
         "n_draft_rows": len(draft_picks),
+        "n_id_xwalk": len(xwalk),
     }
 
 
@@ -662,10 +746,12 @@ def compute_oline_talent_prior(
             "n_prior_ol_rows": inputs.get("n_prior_ol_rows"),
             "n_current_ol": inputs.get("n_current_ol"),
             "n_draft_rows": inputs.get("n_draft_rows"),
+            "n_id_xwalk": inputs.get("n_id_xwalk"),
             "pick_chart": "stuart" if inputs.get("pick_chart") else "exponential_fallback",
             "sources": [
                 "nflverse PFR snap_counts (prior season)",
                 "nflverse weekly/seasonal rosters (week-1 current vs prior snaps)",
+                "nflverse players file (PFR↔GSIS id join only; pff_id ignored)",
                 "nflverse draft_picks + nfldata draft_values.stuart "
                 "(Chase Stuart public expected-AV; PFF column ignored)",
             ],

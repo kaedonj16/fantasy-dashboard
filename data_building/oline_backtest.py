@@ -291,13 +291,20 @@ def sweep_talent_prior(seasons, early_week=4, save=True,
         {"name": "continuity_heavy", "continuity": 0.5, "draft": 0.25, "veteran": 0.25},
     ]
 
+    pbp_cache = {}
+
+    def load_year(year):
+        if year not in pbp_cache:
+            pbp_cache[year] = _load_pbp_year(year, pd, nfl)
+        return pbp_cache[year]
+
     seasons_data = []
     for season in seasons:
-        raw = _prep_season(_load_pbp_year(season, pd, nfl), pd, season)
+        raw = _prep_season(load_year(season), pd, season)
         if raw is None or raw.empty:
             print(f"[oline_backtest] talent sweep {season}: no current pbp")
             continue
-        prior_raw = _prep_season(_load_pbp_year(season - 1, pd, nfl), pd, season - 1)
+        prior_raw = _prep_season(load_year(season - 1), pd, season - 1)
         early, rest = _early_rest_frames(raw, pd, early_week)
         if early.empty or rest.empty:
             print(f"[oline_backtest] talent sweep {season}: not enough weeks around {early_week}")

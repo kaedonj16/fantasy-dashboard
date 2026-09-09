@@ -140,15 +140,14 @@ RUN_SUCCESS_WEIGHT = 0.45
 # Talent-prior scale: last-year cross-sectional SDs of shift per 1 SD of the
 # roster/draft residual. Swept in oline_backtest.sweep_talent_prior on
 # 2022-2025, weeks 1-4 ratings -> rest-of-season (weeks 5-17) pressure / sack /
-# line-yards / success. Component mix swept on the same grid; see that function
-# for the table. FLAG DEFAULTS OFF — even at the tuned weight this is a
-# projection sitting on top of the results prior, not a replacement for it.
-# If the sweep does not beat weight=0 (last-season prior only), leave the flag
-# off and keep these as documentation of what was tried.
-TALENT_PRIOR_W = 0.3
-TALENT_W_CONTINUITY = 0.2
-TALENT_W_DRAFT = 0.4
-TALENT_W_VETERAN = 0.4
+# line-yards / success (n=128 team-seasons). Equal mix, W=0.45 was the
+# nominal peak at score 0.3476 vs last-season-prior 0.3474 — a tie, not a
+# win (pressure rho improved ~0.03; sacks and run-blocking did not).
+# FLAG STAYS OFF. Any larger W monotonically hurt. Re-sweep if the mix drifts.
+TALENT_PRIOR_W = 0.45
+TALENT_W_CONTINUITY = 1.0 / 3.0
+TALENT_W_DRAFT = 1.0 / 3.0
+TALENT_W_VETERAN = 1.0 / 3.0
 
 # Same alias table matchup_ratings uses, so the two caches key on identical codes.
 # PFR codes (GNB/KAN/...) appear on snap-count dumps feeding the talent prior.

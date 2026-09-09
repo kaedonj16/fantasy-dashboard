@@ -265,6 +265,9 @@ def test_talent_scores_are_zscored_across_teams():
     # D drafted at 1 and lost its starter; A kept its starter and drafted late.
     # Continuity favors A; draft favors D. Just assert we produced a spread.
     assert max(scores.values()) - min(scores.values()) > 0.5
+
+
+def test_shift_prior_flips_sign_for_pressure():
     from data_building.oline_talent_prior import shift_prior
     prior = {"A": 0.30, "B": 0.30, "C": 0.30, "D": 0.32}
     scores = {"A": 1.0, "B": -1.0, "C": 0.0, "D": 0.0}
@@ -272,6 +275,25 @@ def test_talent_scores_are_zscored_across_teams():
     worse = shift_prior(prior, scores, weight=0.5, higher_is_better=False)
     assert better["A"] > prior["A"] > better["B"]
     assert worse["A"] < prior["A"] < worse["B"]
+
+
+def test_pfr_snaps_match_gsis_roster_via_xwalk():
+    """Snap counts key on PFR ids; rosters key on GSIS. The public players
+    file is the join — without it continuity is identically zero."""
+    from data_building.oline_talent_prior import (
+        _canonical_pid, ol_continuity_and_veteran_net,
+    )
+    xwalk = {"WyliAn00": "00-0030001"}
+    assert _canonical_pid("WyliAn00", None, "Andrew Wylie", xwalk) == "00-0030001"
+    prior = [
+        {"player_id": _canonical_pid("WyliAn00", None, "Andrew Wylie", xwalk),
+         "team": "WAS", "snaps": 900},
+        {"player_id": _canonical_pid("GoneXx00", None, "Gone Guy", xwalk),
+         "team": "WAS", "snaps": 100},
+    ]
+    current = {"00-0030001": "WAS"}
+    cont, vet, _ = ol_continuity_and_veteran_net(prior, current)
+    assert cont["WAS"] == pytest.approx(0.9)
 
 
 def test_flag_off_does_not_call_talent_loader(monkeypatch):
