@@ -956,6 +956,12 @@ function wvRenderCompare() {{
   const wVal  = wvWinPair(da.value, db.value, true);
   const wFl   = wvWinPair(da.floorNum, db.floorNum, true);
   const wVeg  = wvWinPair(da.vegasNum, db.vegasNum, true);
+  // Position-relative 0-100 Start/Sit index (same one the player modal / Compare
+  // page show), so a QB and a WR are comparable here too. Null when the week's
+  // position pool was unavailable to build the anchor.
+  const idxA = (a.start_score_pct == null ? null : Math.round(a.start_score_pct));
+  const idxB = (b.start_score_pct == null ? null : Math.round(b.start_score_pct));
+  const wIdx = wvWinPair(idxA, idxB, true);
 
   const sub = (p) => [p.team, p.opponent || (p.on_bye ? 'BYE' : '')].filter(Boolean).join(' · ');
 
@@ -993,6 +999,7 @@ function wvRenderCompare() {{
           <div class="wv-cmp-vs">VS</div>
           <div class="wv-cmp-hcol"><div class="wv-cmp-name">${{b.name}}</div><div class="wv-cmp-headmeta">${{wvPosChip(b)}}<span class="wv-cmp-sub">${{sub(b)}}</span></div></div>
         </div>
+        ${{row('Start/Sit index', dash(idxA), dash(idxB), wIdx[0], wIdx[1])}}
         ${{row('Proj PPG', dash(da.proj), dash(db.proj), wProj[0], wProj[1])}}
         ${{row('L4 PPG', dash(da.l4), dash(db.l4), wL4[0], wL4[1])}}
         ${{row('Value', dash(da.value), dash(db.value), wVal[0], wVal[1])}}

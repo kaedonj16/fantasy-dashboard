@@ -23,6 +23,10 @@ def test_player_details_returns_unified_start_score():
     # Position-relative 0-100 index rides alongside the raw score.
     assert '"start_score_pct": _start_score_pct' in details
     assert "def start_score_pos_anchors" in app
+    # Waivers-parity payload (form, consistency, matchup, Vegas, venue) so the
+    # Compare Start/Sit tab shows the same rows as the Start/Sit page compare.
+    assert '"start_sit": _start_sit_payload' in details
+    assert "def _startsit_compare_extras" in app
 
 
 def test_compare_surfaces_start_score_on_two_and_three_player_views():
@@ -33,6 +37,10 @@ def test_compare_surfaces_start_score_on_two_and_three_player_views():
     assert "_buildStartSitTabHTML([p1, p2])" in js
     assert "_buildStartSitTabHTML(players)" in js
     assert "st.start_score" in js
+    # The tab mirrors the waivers start/sit compare: a verdict plus the same rows.
+    assert "function _ssVerdict" in js
+    assert "'Floor&ndash;Ceil'" in js
+    assert "'Matchup'" in js
 
 
 def test_waiver_rows_show_return_source():

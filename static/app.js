@@ -16176,114 +16176,200 @@ function _cmpLoadGameLogs(pid, position, containerId) {
     });
 }
 
-// ── Start/Sit breakdown (shared) ────────────────────────────────────────────
-// The single start/sit score (utils/start_sit_score) is projected points scaled
-// by capped signal multipliers. This renders one player's score plus a chip for
-// every signal that actually moved it, so Compare explains the number instead of
-// just showing it. Used by both the two- and three-player Start/Sit tabs.
-const _SS_FACTOR_LABELS = {
-  form: 'Form', matchup: 'Matchup', usage: 'Usage', avail: 'Availability',
-  vegas: 'Game total', floor: 'Floor', weather: 'Weather',
-};
-const _SS_DEMOTION_NOTES = {
-  bye: 'On bye this week — score zeroed.',
-  out: 'Ruled out (OUT/IR/SUSP) — score zeroed.',
-  questionable: 'Questionable tag applied — score trimmed.',
-  low_total: 'Low implied team total drags the game environment.',
-  weather: 'Weather headwind for this matchup.',
-};
+// Start/Sit compare (shared). Mirrors the Waivers page start/sit compare: a
+// START/TOSS-UP verdict on the unified start_score, the 0-100 position index as
+// the headline, and a per-player table of the same rows the Waivers compare
+// shows (Proj PPG, L4 PPG, Value, raw score, Floor-Ceil, Profile, Boom/Bust,
+// Opponent, Def vs pos, Matchup, Vegas total, Venue). The row chips are ported
+// from dashboard_services/pages/waivers_page.py so the two surfaces read the
+// same; keep them in sync. Used by both the two- and three-player tabs.
+const _ssEsc = (s) => (typeof escapeHtml === 'function' ? escapeHtml(String(s == null ? '' : s)) : String(s == null ? '' : s));
+const _ssNum = (v) => (v == null || v === '' || isNaN(parseFloat(v)) ? null : parseFloat(v));
 
-function _startSitFactorChips(fac) {
-  if (!fac || typeof fac !== 'object') return '';
-  const chips = [];
-  Object.keys(_SS_FACTOR_LABELS).forEach(function (key) {
-    const m = fac[key];
-    if (m == null || isNaN(m)) return;
-    const label = _SS_FACTOR_LABELS[key];
-    // Availability of exactly 0 means ruled out; show a hard label, not −100%.
-    if (key === 'avail' && Number(m) === 0) {
-      chips.push('<span class="ss-chip ss-chip-down">' + label + ': out</span>');
-      return;
-    }
-    const delta = Math.round((Number(m) - 1) * 100);
-    if (delta === 0) return; // neutral signal — nothing to explain
-    const cls = delta > 0 ? 'ss-chip-up' : 'ss-chip-down';
-    const sign = delta > 0 ? '+' : '';
-    chips.push('<span class="ss-chip ' + cls + '">' + label + ' ' + sign + delta + '%</span>');
-  });
-  if (!chips.length) return '<div class="ss-chips-empty">Projection only — no signals moved the score this week.</div>';
-  return '<div class="ss-chips">' + chips.join('') + '</div>';
+// Matchup chip + defense-cell color, keyed off the opponent's rank vs position
+// (rank 1 = easiest). Same thresholds as wvMuChip / wvMuClass on the waivers page.
+function _ssMuChip(rank, total) {
+  if (!rank || !total) return '';
+  const pct = rank / total;
+  const t = pct <= 0.25 ? ['easy', 'easiest'] : pct <= 0.50 ? ['ok', 'favorable']
+    : pct <= 0.75 ? ['avg', 'tough'] : ['hard', 'hardest'];
+  return '<span class="ss-mu ss-mu-' + t[0] + '">#' + rank + ' ' + t[1] + '</span>';
+}
+function _ssMuClass(rank, total) {
+  if (!rank || !total) return '';
+  const pct = rank / total;
+  if (pct <= 0.25) return 'ss-best';
+  if (pct <= 0.75) return '';
+  return 'ss-worst';
+}
+// Live weather chip when present, else the static dome/cold venue tag.
+function _ssVenueChip(ss) {
+  const env = (ss && (ss.weather || ss.game_env)) || null;
+  if (!env || !env.kind) return '';
+  const note = _ssEsc(env.note || '');
+  return '<span class="ss-env ss-env-' + _ssEsc(env.kind) + '" title="' + note + '">' + _ssEsc(env.label || env.kind) + '</span>';
+}
+// Consistency profile label chip (Steady / Balanced / Volatile / Boom or bust).
+function _ssProfileChip(c) {
+  if (!c || c.small_sample || !c.label) return '';
+  const k = c.label === 'Steady' ? 'steady' : c.label === 'Volatile' ? 'volatile'
+    : c.label === 'Boom or bust' ? 'boombust' : 'balanced';
+  return '<span class="ss-cons ss-cons-' + k + '">' + _ssEsc(c.label) + '</span>';
 }
 
-function _buildStartSitBreakdownHTML(p) {
-  const st = (p && p.stats) || {};
-  const score = st.start_score;
-  const esc = (typeof escapeHtml === 'function') ? escapeHtml : (s => String(s == null ? '' : s));
-  const name = esc(p && (p.name || p.full_name) || 'Player');
-  if (score == null) {
-    return '<div class="ss-card"><div class="ss-card-name">' + name + '</div>'
-      + '<div class="ss-empty">No start/sit score this week.</div></div>';
+// The advisor's call, ported from wvVerdict / wvVerdictReasons: the unified
+// start_score decides it (same score behind the START badges), and the "why" is
+// drawn from the same score_factors so it can never disagree with the pick. For
+// three players it ranks them and explains the leader over the runner-up.
+function _ssVerdictReasons(win, lose) {
+  const fw = (win.stats && win.stats.start_score_factors) || {};
+  const fl = (lose.stats && lose.stats.start_score_factors) || {};
+  const cand = [];
+  const pw = fw.proj || 0, pl = fl.proj || 0;
+  if (pw > pl) cand.push({ imp: pl > 0 ? pw / pl : 2, txt: 'higher projection (+' + (pw - pl).toFixed(1) + ')' });
+  [['floor', 'a safer floor'], ['form', 'better recent form'], ['usage', 'a rising role'],
+   ['vegas', 'a higher team total'], ['weather', 'a cleaner forecast'], ['avail', 'fewer injury concerns']]
+    .forEach(function (f) {
+      const mw = fw[f[0]] != null ? fw[f[0]] : 1, ml = fl[f[0]] != null ? fl[f[0]] : 1;
+      if (mw > ml + 1e-9) cand.push({ imp: ml > 0 ? mw / ml : 2, txt: f[1] });
+    });
+  cand.sort((x, y) => y.imp - x.imp);
+  return cand.slice(0, 2).map(c => c.txt);
+}
+function _ssVerdict(players) {
+  const scored = (players || []).filter(p => p && p.stats && p.stats.start_score != null);
+  if (scored.length < 2) return null;
+  const ranked = scored.slice().sort((a, b) => b.stats.start_score - a.stats.start_score);
+  const top = ranked[0], next = ranked[1];
+  if (Math.abs(top.stats.start_score - next.stats.start_score) < 0.1) return { toss: true };
+  return { winner: top, reasons: _ssVerdictReasons(top, next) };
+}
+
+// One metric row across N player columns, with the best value highlighted when a
+// direction is given ('max' higher wins, 'min' lower wins; null = display only).
+function _ssTableRow(label, cells, dir) {
+  let best = null;
+  if (dir) {
+    const nums = cells.map(c => c.num).filter(v => v != null);
+    if (nums.length) best = dir === 'min' ? Math.min.apply(null, nums) : Math.max.apply(null, nums);
   }
-  const fac = st.start_score_factors || null;
-  const proj = fac && fac.proj != null ? fac.proj : null;
-  const demo = st.start_score_demotion || null;
-  const rawDisp = Math.round(Number(score) * 10) / 10;
-  // Position-relative 0-100 index is the headline when the server could build
-  // it (needs the week's position pool); otherwise fall back to the raw score.
-  const pct = st.start_score_pct;
-  const hasPct = pct != null && !isNaN(pct);
-  const bigDisp = hasPct ? Math.round(Number(pct)) : rawDisp;
-  const cap = hasPct ? 'Start/Sit index (0&ndash;100) · this week' : 'Start/Sit score · this week';
-  const projParts = [];
-  if (proj != null) projParts.push('Projection <b>' + (Math.round(Number(proj) * 10) / 10) + '</b> pts');
-  if (hasPct) projParts.push('raw score <b>' + rawDisp + '</b>');
-  const projLine = projParts.length
-    ? '<div class="ss-proj">' + projParts.join(' · ') + '</div>' : '';
-  const demoNote = (demo && _SS_DEMOTION_NOTES[demo])
-    ? '<div class="ss-demo">' + _SS_DEMOTION_NOTES[demo] + '</div>' : '';
-  return '<div class="ss-card">'
-    + '<div class="ss-card-name">' + name + '</div>'
-    + '<div class="ss-score">' + bigDisp + '</div>'
-    + '<div class="ss-score-cap">' + cap + '</div>'
-    + projLine
-    + _startSitFactorChips(fac)
-    + demoNote
-    + '</div>';
+  const tds = cells.map(function (c) {
+    const isBest = dir && best != null && c.num != null && c.num === best;
+    return '<td class="ss-cell ' + (c.cls || '') + (isBest ? ' ss-best' : '') + '">' + (c.html != null ? c.html : '&ndash;') + '</td>';
+  }).join('');
+  return '<tr><th class="ss-rowlbl">' + label + '</th>' + tds + '</tr>';
 }
-
-// One <style> block for the Start/Sit tab, injected once per surface render.
-const _SS_TAB_CSS =
-  '<style>'
-  + '.ss-tab-intro{font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.45;}'
-  + '.ss-cards{display:grid;gap:12px;}'
-  + '.ss-cards-2{grid-template-columns:1fr 1fr;}'
-  + '.ss-cards-3{grid-template-columns:1fr 1fr 1fr;}'
-  + '@media(max-width:600px){.ss-cards-2,.ss-cards-3{grid-template-columns:1fr;}}'
-  + '.ss-card{border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center;background:var(--surface2,rgba(127,127,127,.04));min-width:0;}'
-  + '.ss-card-name{font-weight:800;font-size:13px;color:var(--text);margin-bottom:6px;}'
-  + '.ss-score{font-size:34px;font-weight:800;color:var(--text);line-height:1;font-variant-numeric:tabular-nums;}'
-  + '.ss-score-cap{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin-top:4px;}'
-  + '.ss-proj{font-size:12px;color:var(--muted);margin-top:10px;}'
-  + '.ss-chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:10px;}'
-  + '.ss-chip{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;white-space:nowrap;}'
-  + '.ss-chip-up{color:var(--win,#16a34a);background:color-mix(in srgb,var(--win,#16a34a) 14%,transparent);}'
-  + '.ss-chip-down{color:#dc2626;background:color-mix(in srgb,#dc2626 12%,transparent);}'
-  + '.ss-chips-empty{font-size:11px;color:var(--muted);margin-top:10px;}'
-  + '.ss-demo{font-size:11px;color:#dc2626;font-weight:600;margin-top:10px;}'
-  + '.ss-empty{font-size:12px;color:var(--muted);padding:18px 0;}'
-  + '</style>';
 
 // Full Start/Sit tab body for N players (2 for compare/modal, 3 for the page).
 function _buildStartSitTabHTML(players) {
-  const cards = (players || []).map(_buildStartSitBreakdownHTML).join('');
-  const gridCls = (players && players.length === 3) ? 'ss-cards-3' : 'ss-cards-2';
+  players = (players || []).filter(Boolean);
+  const isSf = (typeof _cmpIsSf === 'function') ? _cmpIsSf() : false;
+  const dash = '&ndash;';
+
+  // Headline: the 0-100 position-relative index, one card per player.
+  const cards = players.map(function (p) {
+    const st = (p && p.stats) || {};
+    const nm = _ssEsc(p.name || p.full_name || 'Player');
+    if (st.start_score == null) {
+      return '<div class="ss-card"><div class="ss-card-name">' + nm + '</div><div class="ss-empty">No score this week</div></div>';
+    }
+    const pct = st.start_score_pct;
+    const hasPct = pct != null && !isNaN(pct);
+    const big = hasPct ? Math.round(Number(pct)) : (Math.round(Number(st.start_score) * 10) / 10);
+    const cap = hasPct ? 'Start/Sit index (0 to 100)' : 'Start/Sit score';
+    return '<div class="ss-card"><div class="ss-card-name">' + nm + '</div>'
+      + '<div class="ss-score">' + big + '</div><div class="ss-score-cap">' + cap + '</div></div>';
+  }).join('');
+  const gridCls = players.length === 3 ? 'ss-cards-3' : 'ss-cards-2';
+
+  // Verdict banner.
+  const v = _ssVerdict(players);
+  let verdictHtml = '';
+  if (v && v.winner) {
+    let why = v.reasons.join(' and ');
+    why = why ? (why.charAt(0).toUpperCase() + why.slice(1)) : 'Higher start/sit score';
+    verdictHtml = '<div class="ss-verdict"><span class="ss-verdict-pill">START</span>'
+      + '<span class="ss-verdict-name">' + _ssEsc(v.winner.name || v.winner.full_name) + '</span>'
+      + '<span class="ss-verdict-why">' + why + '</span></div>';
+  } else if (v && v.toss) {
+    verdictHtml = '<div class="ss-verdict toss"><span class="ss-verdict-pill">TOSS-UP</span>'
+      + '<span class="ss-verdict-why">Nearly identical outlook, go with your gut.</span></div>';
+  }
+
+  // Column headers + the same rows the waivers start/sit compare shows.
+  const heads = players.map(p => '<th class="ss-th">' + _ssEsc(p.name || p.full_name || 'Player') + '</th>').join('');
+  const s = (p) => (p && p.stats) || {};
+  const ss = (p) => (s(p).start_sit) || {};
+  const cons = (p) => ss(p).consistency || null;
+
+  const rows = [
+    _ssTableRow('Proj PPG', players.map(p => { const n = _ssNum(ss(p).proj_pts); return { num: n, html: n != null ? n : dash }; }), 'max'),
+    _ssTableRow('L4 PPG', players.map(p => { const n = _ssNum(ss(p).recent_ppg) != null ? _ssNum(ss(p).recent_ppg) : _ssNum(s(p).ppg); return { num: n, html: n != null ? n : dash }; }), 'max'),
+    _ssTableRow('Value', players.map(p => { const n = _ssNum(isSf ? s(p).sf_value : s(p).value); return { num: n, html: n != null ? Math.round(n) : dash }; }), 'max'),
+    _ssTableRow('Start/Sit score', players.map(p => { const n = _ssNum(s(p).start_score); return { num: n, html: n != null ? (Math.round(n * 10) / 10) : dash }; }), 'max'),
+    _ssTableRow('Floor&ndash;Ceil', players.map(p => { const c = cons(p); return { num: c ? _ssNum(c.floor) : null, html: c ? (c.floor + '&ndash;' + c.ceiling) : dash }; }), 'max'),
+    _ssTableRow('Profile', players.map(p => { const c = cons(p); return { num: null, html: _ssProfileChip(c) || dash }; }), null),
+    _ssTableRow('Boom / Bust', players.map(p => { const c = cons(p); return { num: null, html: (c && !c.small_sample) ? (Math.round(c.boom_rate * 100) + '% / ' + Math.round(c.bust_rate * 100) + '%') : dash }; }), null),
+    _ssTableRow('Opponent', players.map(p => { const o = ss(p).opponent; return { num: null, html: o ? _ssEsc(o) : (ss(p).on_bye ? 'BYE' : dash) }; }), null),
+    _ssTableRow('Def vs pos', players.map(p => { const f = _ssNum(ss(p).fpts_against); return { num: null, cls: _ssMuClass(ss(p).def_rank, ss(p).def_total), html: f != null ? (f + ' pts') : (ss(p).on_bye ? 'BYE' : dash) }; }), null),
+    _ssTableRow('Matchup', players.map(p => { const c = _ssMuChip(ss(p).def_rank, ss(p).def_total); return { num: null, html: c || dash }; }), null),
+    _ssTableRow('Vegas total', players.map(p => { const n = _ssNum(ss(p).implied_total); return { num: n, html: n != null ? (n + ' implied') : dash }; }), 'max'),
+    _ssTableRow('Venue', players.map(p => { const c = _ssVenueChip(ss(p)); return { num: null, html: c || dash }; }), null),
+  ].join('');
+
+  const table = '<div class="ss-tbl-wrap"><table class="ss-tbl"><thead><tr><th class="ss-rowlbl" aria-hidden="true"></th>' + heads + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+
   return _SS_TAB_CSS
-    + '<div class="ss-tab-intro">A 0&ndash;100 start-confidence index for this week, relative to each '
-    + 'player&rsquo;s own position (100 = the top weekly projection at that position). It starts from '
-    + 'projected points and applies capped signal multipliers (form, usage, availability, game total, '
-    + 'floor, weather), so a QB&rsquo;s number and a WR&rsquo;s number are comparable. Higher is the stronger start.</div>'
-    + '<div class="ss-cards ' + gridCls + '">' + cards + '</div>';
+    + '<div class="ss-tab-intro">The same read as the Start/Sit page compare: a call on the unified '
+    + 'start/sit score, plus the week\'s output, reliability, and matchup for each player. The headline '
+    + 'is a 0 to 100 index relative to each player\'s own position (100 is the top weekly projection there), '
+    + 'so a QB and a WR are comparable. Best in each row is highlighted.</div>'
+    + verdictHtml
+    + '<div class="ss-cards ' + gridCls + '">' + cards + '</div>'
+    + table;
 }
+
+// One <style> block for the Start/Sit tab, injected once per surface render.
+// Chip palettes mirror the waivers page start/sit compare.
+const _SS_TAB_CSS =
+  '<style>'
+  + '.ss-tab-intro{font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.45;}'
+  + '.ss-verdict{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--win,#16a34a) 10%,transparent);margin-bottom:12px;}'
+  + '.ss-verdict.toss{background:rgba(148,163,184,.12);}'
+  + '.ss-verdict-pill{font-size:11px;font-weight:800;letter-spacing:.04em;padding:2px 9px;border-radius:999px;background:var(--win,#16a34a);color:#fff;}'
+  + '.ss-verdict.toss .ss-verdict-pill{background:var(--muted,#64748b);}'
+  + '.ss-verdict-name{font-size:14px;font-weight:800;color:var(--text);}'
+  + '.ss-verdict-why{font-size:12px;color:var(--muted);}'
+  + '.ss-cards{display:grid;gap:12px;margin-bottom:14px;}'
+  + '.ss-cards-2{grid-template-columns:1fr 1fr;}'
+  + '.ss-cards-3{grid-template-columns:1fr 1fr 1fr;}'
+  + '@media(max-width:600px){.ss-cards-2,.ss-cards-3{grid-template-columns:1fr;}}'
+  + '.ss-card{border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center;background:var(--surface2,rgba(127,127,127,.04));min-width:0;}'
+  + '.ss-card-name{font-weight:800;font-size:13px;color:var(--text);margin-bottom:4px;}'
+  + '.ss-score{font-size:32px;font-weight:800;color:var(--text);line-height:1;font-variant-numeric:tabular-nums;}'
+  + '.ss-score-cap{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin-top:4px;}'
+  + '.ss-empty{font-size:12px;color:var(--muted);padding:16px 0;}'
+  + '.ss-tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}'
+  + '.ss-tbl{width:100%;border-collapse:collapse;min-width:320px;}'
+  + '.ss-th{text-align:center;font-weight:800;font-size:13px;color:var(--text);padding:6px 8px 10px;}'
+  + '.ss-rowlbl{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;padding:9px 10px;white-space:nowrap;}'
+  + '.ss-cell{text-align:center;padding:9px 8px;font-weight:700;font-size:14px;font-variant-numeric:tabular-nums;border-top:1px solid var(--border);color:var(--text);}'
+  + '.ss-best{color:var(--win,#16a34a);background:color-mix(in srgb,var(--win,#16a34a) 12%,transparent);}'
+  + '.ss-worst{color:var(--loss,#dc2626);}'
+  + '.ss-mu,.ss-env,.ss-cons{font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;display:inline-block;}'
+  + '.ss-mu-easy{background:color-mix(in srgb,var(--win,#16a34a) 16%,transparent);color:var(--win,#16a34a);}'
+  + '.ss-mu-ok{background:color-mix(in srgb,#84cc16 13%,transparent);color:#65a30d;}'
+  + '.ss-mu-avg{background:color-mix(in srgb,var(--warning,#f59e0b) 16%,transparent);color:var(--warning,#b45309);}'
+  + '.ss-mu-hard{background:color-mix(in srgb,var(--loss,#dc2626) 15%,transparent);color:var(--loss,#dc2626);}'
+  + '.ss-cons-steady{background:color-mix(in srgb,var(--win,#16a34a) 16%,transparent);color:var(--win,#16a34a);}'
+  + '.ss-cons-balanced{background:rgba(148,163,184,.16);color:var(--muted,#64748b);}'
+  + '.ss-cons-volatile{background:color-mix(in srgb,var(--warning,#f59e0b) 18%,transparent);color:var(--warning,#b45309);}'
+  + '.ss-cons-boombust{background:rgba(168,85,247,.16);color:#7e22ce;}'
+  + '.ss-env-dome{background:rgba(59,130,246,.14);color:#1d4ed8;}'
+  + '.ss-env-cold{background:rgba(56,189,248,.16);color:#0369a1;}'
+  + '.ss-env-wind{background:rgba(148,163,184,.20);color:#475569;}'
+  + '.ss-env-precip,.ss-env-weather{background:rgba(59,130,246,.14);color:#1d4ed8;}'
+  + '</style>';
 
 // Comparison body markup, shared by the player-modal compare view and the
 // standalone /compare page so the two never drift. opts.nav adds the modal-only

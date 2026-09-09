@@ -10942,6 +10942,112 @@ def _ss_game_env(home_team: "Optional[str]", week: int) -> "Optional[dict]":
     return None
 
 
+def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
+                             proj_pts=None, on_bye=False, opponent="",
+                             home_team="", implied_total=None, weather=None):
+    """Start/Sit compare fields the player-details response does not already
+    carry, matched to what the Waivers start/sit compare shows: projected
+    points, last-4-week form, blended consistency (floor/ceiling + boom/bust
+    profile), opponent, defense-vs-position rank and points allowed, the Vegas
+    implied total, and the venue chip.
+
+    Kept parallel to ``api_start_sit_options`` so the two compare surfaces show
+    the same numbers. Everything is best-effort: each field comes back ``None``
+    on failure so the tab degrades to a dash instead of erroring.
+    """
+    pos = (pos or "").upper()
+    team = (team or "").upper()
+    opponent = (opponent or "").upper()
+    out = {
+        "proj_pts": (round(float(proj_pts), 1) if proj_pts else None),
+        "recent_ppg": None,
+        "consistency": None,
+        "opponent": opponent or None,
+        "on_bye": bool(on_bye),
+        "fpts_against": None,
+        "def_rank": None,
+        "def_total": 32,
+        "implied_total": implied_total,
+        "weather": weather or None,
+        "game_env": None,
+    }
+
+    # Last-4-week PPG (same window and Sleeper PPR source as the Start/Sit page).
+    try:
+        _files = sorted(glob.glob(os.path.join(
+            CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{int(season)}_w*.json")))[-4:]
+        _vals = []
+        for _wf in _files:
+            try:
+                _ws = json.load(open(_wf))
+            except Exception:
+                continue
+            _st = _ws.get(str(pid)) if isinstance(_ws, dict) else None
+            if isinstance(_st, dict):
+                _p = float(_st.get("pts_ppr") or 0)
+                if _p > 0:
+                    _vals.append(_p)
+        if _vals:
+            out["recent_ppg"] = round(sum(_vals) / len(_vals), 1)
+    except Exception:
+        logger.debug("[startsit extras] recent_ppg failed", exc_info=True)
+
+    # Blended consistency: start from last season, mold toward the current one.
+    # Stamp scoring aliases first so the weekly-points signature matches the
+    # Start/Sit page and the two surfaces compute the same floor/ceiling.
+    try:
+        from utils.consistency import BLEND_FULL_SEASON as _BLEND_FULL
+        from utils.league_scoring import stamp_scoring_aliases as _stamp_ss
+        _eff = _stamp_ss(scoring_settings) if scoring_settings else {}
+        _cur = (_load_season_weekly_points(int(season), _eff) or {}).get(str(pid)) or []
+        _prior, _prior_season = [], None
+        if len(_cur) < _BLEND_FULL:
+            for _py in (int(season) - 1, int(season) - 2):
+                _pm = (_load_season_weekly_points(_py, _eff) or {}).get(str(pid)) or []
+                if _pm:
+                    _prior, _prior_season = _pm, _py
+                    break
+        out["consistency"] = _blended_consistency(_cur, _prior, pos, prior_season=_prior_season)
+    except Exception:
+        logger.debug("[startsit extras] consistency failed", exc_info=True)
+
+    # Defense vs position: points allowed to the position + rank (z-score table
+    # first, points-allowed ranking as the fallback), mirroring the Start/Sit page.
+    try:
+        if opponent and pos and not on_bye:
+            _fmt = _scoring_format_from_settings(scoring_settings)
+            _fa = _compute_fpts_against(int(season), scoring=_fmt) or {}
+            _pa = float(_fa.get(opponent, {}).get(pos, 0.0))
+            out["fpts_against"] = round(_pa, 1) if _pa > 0 else None
+            _rank, _total = None, len(_fa) or 32
+            try:
+                _rm, _tot, _ri, _iz = _matchup_rank_table(int(season), pos)
+                if _rm:
+                    _rank = _rm.get(_norm_sched_team(opponent)) or _rm.get(opponent)
+                    _total = _tot or _total
+            except Exception:
+                _rank = None
+            if _rank is None and _fa:
+                _sorted = sorted(
+                    ((t, _fa.get(t, {}).get(pos, 0.0)) for t in _fa),
+                    key=lambda x: x[1], reverse=True)
+                _rank = {t: i + 1 for i, (t, _) in enumerate(_sorted)}.get(opponent)
+                _total = len(_fa) or 32
+            out["def_rank"] = _rank
+            out["def_total"] = _total
+    except Exception:
+        logger.debug("[startsit extras] def rank failed", exc_info=True)
+
+    # Static venue chip (dome / cold), used when there is no live weather signal.
+    try:
+        if not on_bye and home_team:
+            out["game_env"] = _ss_game_env(home_team, int(week))
+    except Exception:
+        logger.debug("[startsit extras] game_env failed", exc_info=True)
+
+    return out
+
+
 @app.route("/api/start-sit-options")
 def api_start_sit_options():
     """
@@ -11165,6 +11271,18 @@ def api_start_sit_options():
     except Exception:
         _ss_usage_trends = {}
 
+    # Per-position 0-100 anchors so the compare can show the same position-
+    # relative Start/Sit index the player modal / Compare page show. Uses the
+    # same projection source and scoring the scores here are built from, so the
+    # denominator and numerator share a scale. Best-effort; empty on failure.
+    _ss_anchors = {}
+    try:
+        _ss_anchors = start_score_pos_anchors(
+            season, current_week, ctx.get("raw_scoring_settings")
+        ) or {}
+    except Exception:
+        logger.debug("[start-sit] position anchors skipped", exc_info=True)
+
     positions_out: dict = {pos: [] for pos in _ss_groups}
     for pid in player_ids:
         row = rows_by_id.get(pid) or {}
@@ -11286,6 +11404,10 @@ def api_start_sit_options():
             # per-factor multipliers behind it, so the Compare card can name which
             # signals decided the verdict.
             "start_score": round(score, 2),
+            "start_score_pct": (
+                int(max(0, min(100, round(100.0 * float(score) / float(_ss_anchors[pos])))))
+                if _ss_anchors.get(pos) else None
+            ),
             "score_factors": {
                 "proj": proj_pts, "form": round(_form, 3), "matchup": round(_mu, 3),
                 "usage": round(_ug, 3), "avail": round(_avail, 3),
@@ -19667,6 +19789,7 @@ def api_player_details(player_id: str):
         _start_score_pct = None
         _start_factors = None
         _start_demotion = None
+        _start_sit_payload = None
         try:
             from utils.start_sit_score import compute_start_score
             from dashboard_services.api import get_nfl_state as _ss_nfl_state
@@ -19695,6 +19818,9 @@ def api_player_details(player_id: str):
             _ss_pos = str(player_meta.get("pos") or "").upper()
             _ss_imp = None
             _ss_wx_kind = None
+            _ss_wx = None
+            _ss_opp = ""
+            _ss_home = ""
             # Best-effort Vegas/weather so Compare matches the Start/Sit page.
             if _ss_team and _ss_week and not _ss_bye:
                 try:
@@ -19706,6 +19832,12 @@ def api_player_details(player_id: str):
                         _a = str(_g.get("away") or "").upper()
                         if _h and _a:
                             _ss_games.append((_h, _a, str(_g.get("gameDate") or "")))
+                            # This player's opponent and the game's home team, for
+                            # the compare "Opponent" and venue rows.
+                            if _ss_team == _h:
+                                _ss_opp, _ss_home = _a, _h
+                            elif _ss_team == _a:
+                                _ss_opp, _ss_home = _h, _h
                     if _ss_games:
                         _ss_cond = (_ss_bwc(int(season), int(_ss_week), _ss_games) or {}).get(_ss_team) or {}
                         _ss_imp = _ss_cond.get("implied_total")
@@ -19740,6 +19872,17 @@ def api_player_details(player_id: str):
                         ))))
                 except Exception:
                     logger.debug("[api_player_details] start_score_pct skipped", exc_info=True)
+                # Full Waivers-parity payload so the Compare Start/Sit tab shows
+                # the same rows the Start/Sit page compare shows (form, floor,
+                # boom/bust, matchup, Vegas, venue) on top of the unified score.
+                try:
+                    _start_sit_payload = _startsit_compare_extras(
+                        player_id, _ss_pos, _ss_team, season, _ss_week, scoring_settings,
+                        proj_pts=_ss_proj, on_bye=_ss_bye, opponent=_ss_opp,
+                        home_team=_ss_home, implied_total=_ss_imp, weather=_ss_wx,
+                    )
+                except Exception:
+                    logger.debug("[api_player_details] start_sit payload skipped", exc_info=True)
         except Exception:
             logger.debug("[api_player_details] start_score skipped", exc_info=True)
 
@@ -19940,6 +20083,7 @@ def api_player_details(player_id: str):
                 "start_score_pct": _start_score_pct,
                 "start_score_factors": _start_factors,
                 "start_score_demotion": _start_demotion,
+                "start_sit": _start_sit_payload,
             },
             "value_history": value_history,
             "game_logs_by_year": game_logs_by_year,
