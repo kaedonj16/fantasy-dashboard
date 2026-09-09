@@ -130,10 +130,10 @@ def _mean(xs: Sequence[Optional[float]]) -> Optional[float]:
     return sum(vals) / len(vals)
 
 
-def _fmt(x: Optional[float], digits: int = 3) -> str:
+def _fmt(x: Optional[float], digits: int = 3, width: int = 8) -> str:
     if x is None:
-        return "  n/a"
-    return f"{x:+.{digits}f}"
+        return f"{'n/a':>{width}}"
+    return f"{x:+{width}.{digits}f}"
 
 
 # ---------------------------------------------------------------------------
@@ -804,10 +804,10 @@ def format_report(
 
     pair = pairwise_corr(component_rows, COMPONENTS)
     lines.append("Pairwise Spearman of live components (pooled team-weeks)")
-    hdr = "        " + "".join(f"{k:>10}" for k in COMPONENTS)
+    hdr = "          " + "".join(f"{k:>10}" for k in COMPONENTS)
     lines.append(hdr)
     for a in COMPONENTS:
-        row = f"  {a:<6}" + "".join(_fmt(pair.get((a, b)), 2).rjust(10) for b in COMPONENTS)
+        row = f"  {a:<8}" + "".join(_fmt(pair.get((a, b)), digits=2, width=10) for b in COMPONENTS)
         lines.append(row)
     lines.append("")
 
