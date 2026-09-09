@@ -733,9 +733,141 @@ def get_teams(season: int, league_id: str) -> List[Dict[str, Any]]:
     return out
 
 
+def _espn_current_scoring_week(lg) -> int:
+    """ESPN scoring period for the live roster / start-sit lineup."""
+    for attr in ("current_week", "scoringPeriodId", "nfl_week"):
+        try:
+            week = int(getattr(lg, attr, None) or 0)
+        except (TypeError, ValueError):
+            week = 0
+        if week > 0:
+            return week
+    return 0
+
+
+def _ensure_current_week_roster(lg) -> None:
+    """Reload mRoster for the current scoring period.
+
+    ``League()`` fetches bulk ``mRoster`` without ``scoringPeriodId``. ESPN
+    often omits or zeroes ``lineupSlotId`` on that payload (the same class of
+    bug Yahoo already guards: bulk roster drops live lineup slots). Start/Sit
+    then has an empty ``starters`` list and can only show the computed
+    optimal lineup, which will not match the ESPN app.
+    """
+    week = _espn_current_scoring_week(lg)
+    if week <= 0:
+        return
+    if getattr(lg, "_br_roster_week", None) == week:
+        return
+    loader = getattr(lg, "load_roster_week", None)
+    if not callable(loader):
+        return
+    try:
+        loader(week)
+        setattr(lg, "_br_roster_week", week)
+    except Exception:
+        logger.debug("[espn] load_roster_week failed week=%s", week, exc_info=True)
+
+
+def _raw_espn_lineup_slot_ids(lg, week: int) -> Dict[int, int]:
+    """Map ESPN playerId → lineupSlotId from week-scoped mRoster JSON.
+
+    Reads both the entry-level id and the nested ``playerPoolEntry`` copy so
+    a 2026 payload shape still yields starters. Returns {} on any failure.
+    """
+    if week <= 0:
+        return {}
+    req = getattr(lg, "espn_request", None)
+    if req is None or not hasattr(req, "league_get"):
+        return {}
+    try:
+        data = req.league_get(params={"view": "mRoster", "scoringPeriodId": week})
+    except Exception:
+        logger.debug("[espn] raw mRoster lineup slots unavailable week=%s", week, exc_info=True)
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out: Dict[int, int] = {}
+    for team in data.get("teams") or []:
+        if not isinstance(team, dict):
+            continue
+        entries = ((team.get("roster") or {}).get("entries") or [])
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            pid = entry.get("playerId")
+            ppe = entry.get("playerPoolEntry")
+            if pid is None and isinstance(ppe, dict):
+                pid = ppe.get("id") or (ppe.get("player") or {}).get("id")
+            slot_id = entry.get("lineupSlotId")
+            if slot_id is None and isinstance(ppe, dict):
+                slot_id = ppe.get("lineupSlotId")
+            try:
+                pid_i = int(pid)
+                slot_i = int(slot_id)
+            except (TypeError, ValueError):
+                continue
+            out[pid_i] = slot_i
+    return out
+
+
+def _starters_look_undetected(players: List[str], starters: List[str]) -> bool:
+    """True when ESPN gave us a roster but no usable starting lineup."""
+    if not players:
+        return False
+    if not starters:
+        return True
+    # Everyone "starting" on a full roster means slots were missing/zeroed.
+    return len(starters) >= len(players) and len(players) > 9
+
+
+def _split_espn_roster_players(
+        roster_players,
+        espn_to_canon: Dict[str, str],
+        slot_id_by_espn_pid: Optional[Dict[int, int]] = None,
+) -> Tuple[List[str], List[str], List[str]]:
+    """Return (players, starters, reserve) using live ESPN lineup slots."""
+    players: List[str] = []
+    starters: List[str] = []
+    reserve: List[str] = []
+    slot_ids = slot_id_by_espn_pid or {}
+
+    for p in roster_players or []:
+        pid = getattr(p, "playerId", None)
+        if pid is None:
+            continue
+        # Same D/ST + skill-player path as matchups — negative ESPN defense
+        # ids are never in the espnID crosswalk and must be team abbreviations.
+        cp = resolve_espn_player_id(pid, espn_to_canon, player=p)
+        if not cp:
+            continue
+
+        players.append(cp)
+        slot = _espn_slot_name(p)
+        if not _espn_slot_is_assigned(slot):
+            try:
+                pid_i = int(pid)
+            except (TypeError, ValueError):
+                pid_i = None
+            if pid_i is not None and pid_i in slot_ids:
+                slot = _espn_slot_label_from_id(slot_ids[pid_i])
+
+        if _espn_is_reserve_slot(slot):
+            reserve.append(cp)
+        elif _espn_is_starter_slot(slot):
+            starters.append(cp)
+
+    return players, starters, reserve
+
+
 def get_rosters(season: int, league_id: str) -> List[Dict[str, Any]]:
     lg = _league(season, league_id)
+    _ensure_current_week_roster(lg)
     espn_to_canon = _espn_to_canon_cached()
+    week = _espn_current_scoring_week(lg)
+    slot_id_by_espn_pid: Optional[Dict[int, int]] = None
 
     rosters: List[Dict[str, Any]] = []
 
@@ -755,36 +887,16 @@ def get_rosters(season: int, league_id: str) -> List[Dict[str, Any]]:
         fpts, fpts_dec = _split_points(getattr(t, "points_for", None))
         fpa, fpa_dec = _split_points(getattr(t, "points_against", None))
 
-        players: List[str] = []
-        starters: List[str] = []
-        reserve: List[str] = []
-
-        for p in getattr(t, "roster", None) or []:
-            pid = getattr(p, "playerId", None)
-            if pid is None:
-                continue
-            # Same D/ST + skill-player path as matchups — negative ESPN defense
-            # ids are never in the espnID crosswalk and must be team abbreviations.
-            cp = resolve_espn_player_id(pid, espn_to_canon, player=p)
-            if not cp:
-                continue
-
-            players.append(cp)
-            slot = (
-                    getattr(p, "slot_position", None)
-                    or getattr(p, "slotPosition", None)
-                    or getattr(p, "lineupSlot", None)
-            )
-
-            slot = (str(slot).strip().upper() if slot is not None else "")
-
-            if slot in ("IR", "RES"):
-                reserve.append(cp)
-            elif slot in ("", "BE", "BENCH", "INACTIVE"):
-                # IMPORTANT: if slot is missing/unknown, treat as bench
-                pass
-            else:
-                starters.append(cp)
+        players, starters, reserve = _split_espn_roster_players(
+            getattr(t, "roster", None), espn_to_canon, slot_id_by_espn_pid,
+        )
+        if _starters_look_undetected(players, starters) and week:
+            if slot_id_by_espn_pid is None:
+                slot_id_by_espn_pid = _raw_espn_lineup_slot_ids(lg, week)
+            if slot_id_by_espn_pid:
+                players, starters, reserve = _split_espn_roster_players(
+                    getattr(t, "roster", None), espn_to_canon, slot_id_by_espn_pid,
+                )
 
         meta: Dict[str, Any] = {"record": f"{wins}-{losses}", "streak": streak}
         if team_name:
@@ -965,15 +1077,12 @@ def get_matchups(season: int, league_id: str, week: int) -> List[Dict[str, Any]]
                     continue
 
                 pts = safe_float(getattr(bp, "points", None))
-                slot = getattr(bp, "slot_position", None) or getattr(bp, "slotPosition", None) or getattr(bp,
-                                                                                                          "lineupSlot",
-                                                                                                          None)
+                slot = _espn_slot_name(bp)
 
                 players.append(cp)
                 players_points[cp] = pts
 
-                # starter?
-                if slot not in ("BE", "Bench", "IR", "RES", "Inactive"):
+                if _espn_is_starter_slot(slot):
                     starter_entries.append((_slot_rank(slot), i, cp, pts))
 
             starter_entries.sort(key=lambda t: (t[0], t[1]))
@@ -1433,10 +1542,110 @@ def normalize_espn_scoring_items(scoring_items: List[dict]) -> Dict[str, float]:
 # Same ids as espn_draft._roster_positions_from_payload; kept here so league
 # globals (Standings Proj%, playoff odds) don't depend on the draft module.
 _ESPN_LINEUP_SLOT_IDS: Dict[int, str] = {
-    0: "QB", 2: "RB", 4: "WR", 6: "TE", 7: "OP",
-    16: "D/ST", 17: "K", 20: "BE", 21: "IR",
-    23: "RB/WR/TE", 3: "RB/WR", 5: "WR/TE",
+    0: "QB", 1: "TQB", 2: "RB", 3: "RB/WR", 4: "WR", 5: "WR/TE", 6: "TE", 7: "OP",
+    8: "DT", 9: "DE", 10: "LB", 11: "DL", 12: "CB", 13: "S", 14: "DB", 15: "DP",
+    16: "D/ST", 17: "K", 18: "P", 19: "HC",
+    20: "BE", 21: "IR", 23: "RB/WR/TE", 24: "ER",
 }
+
+# Names that are not a weekly starter. "FA" is espn-api's BoxPlayer default
+# when lineupSlotId is missing — treat as unassigned, not a starter.
+_ESPN_RESERVE_SLOT_NAMES = {"IR", "RES", "RESERVE", "ER"}
+_ESPN_BENCH_SLOT_NAMES = {
+    "BE", "BN", "BENCH", "INACTIVE", "NA", "FA", "NONE",
+}
+_ESPN_UNASSIGNED_SLOT_NAMES = {"", "FA", "NONE"}
+
+
+def _espn_slot_label_from_id(slot_id: Any) -> str:
+    """Map a numeric ESPN lineupSlotId to a display name.
+
+    QB is id 0, so this must not go through a truthiness check.
+    """
+    try:
+        sid = int(slot_id)
+    except (TypeError, ValueError):
+        return ""
+    return str(_ESPN_LINEUP_SLOT_IDS.get(sid) or "")
+
+
+def _espn_first_slot_value(*values: Any) -> Any:
+    """First slot candidate that is actually set.
+
+    Empty string and espn-api's ``FA`` default are skipped so a blank
+    ``slot_position`` can fall through to numeric ``lineupSlotId``.
+    Integer 0 (QB) is kept.
+    """
+    for value in values:
+        if value is None or value == "":
+            continue
+        if isinstance(value, str) and value.strip().upper() in _ESPN_UNASSIGNED_SLOT_NAMES:
+            continue
+        return value
+    return None
+
+
+def _espn_slot_name(player: Any) -> str:
+    """Canonical ESPN slot label for a roster or box-score player.
+
+    ESPN's QB slot id is 0. Using ``attr or attr or attr`` dropped every QB
+    (and anyone whose only signal was that id). Also accepts digit strings and
+    a nested ``playerPoolEntry.lineupSlotId`` dict.
+    """
+    if player is None:
+        return ""
+
+    def _get(key: str) -> Any:
+        if isinstance(player, dict):
+            return player.get(key)
+        return getattr(player, key, None)
+
+    raw = _espn_first_slot_value(
+        _get("slot_position"),
+        _get("slotPosition"),
+        _get("lineupSlot"),
+        _get("lineup_slot"),
+        _get("lineupSlotId"),
+        _get("lineup_slot_id"),
+    )
+    if raw is None:
+        ppe = _get("playerPoolEntry")
+        if isinstance(ppe, dict):
+            raw = _espn_first_slot_value(ppe.get("lineupSlotId"), ppe.get("lineup_slot_id"))
+
+    if raw is None:
+        return ""
+    if isinstance(raw, bool):
+        return ""
+    if isinstance(raw, (int, float)):
+        return _espn_slot_label_from_id(raw)
+    text = str(raw).strip()
+    if not text:
+        return ""
+    if text.isdigit() or (text.startswith("-") and text[1:].isdigit()):
+        return _espn_slot_label_from_id(text)
+    return text.upper()
+
+
+def _espn_slot_is_assigned(slot: Any) -> bool:
+    name = str(slot or "").strip().upper()
+    return name not in _ESPN_UNASSIGNED_SLOT_NAMES
+
+
+def _espn_is_reserve_slot(slot: Any) -> bool:
+    name = str(slot or "").strip().upper()
+    mapped = (_ESPN_SLOT_TO_SLEEPER.get(name) or name).upper()
+    return name in _ESPN_RESERVE_SLOT_NAMES or mapped == "IR"
+
+
+def _espn_is_starter_slot(slot: Any) -> bool:
+    name = str(slot or "").strip().upper()
+    if not _espn_slot_is_assigned(name):
+        return False
+    if name in _ESPN_BENCH_SLOT_NAMES or name in _ESPN_RESERVE_SLOT_NAMES:
+        return False
+    mapped = (_ESPN_SLOT_TO_SLEEPER.get(name) or name).upper()
+    return mapped not in {"BN", "BE", "BENCH", "IR"}
 
 
 def _map_espn_slot_name(slot: Any) -> Optional[str]:

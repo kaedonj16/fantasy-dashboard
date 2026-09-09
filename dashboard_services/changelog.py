@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-09-09",
+        "tag": "fix",
+        "text": "ESPN Start/Sit now reads your actual weekly lineup (including the QB slot) instead of treating missing ESPN slot ids as an empty lineup. The optimal-lineup banner compares against the same starters you see in the ESPN app.",
+        "link": "/waivers?tab=startsit"
+    },
+    {
         "date": "2026-09-08",
         "tag": "fix",
         "text": "My Leagues This week's moves no longer disappears when the digest is empty. PRO users now always see the section: it shows an all-caught-up note when nothing needs attention across your leagues instead of hiding the card so it looks missing.",
