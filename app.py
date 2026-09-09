@@ -2448,10 +2448,13 @@ def _ss_scoring_sig(scoring_settings) -> str:
 def start_score_pos_anchors(season, week, scoring_settings=None) -> dict:
     """Return ``{pos: anchor_points}`` for one week under one scoring config.
 
-    ``anchor`` is the 95th-percentile weekly projection at that position — high
-    enough that clamping the 0-100 index rarely bites, but robust to a single
-    boom-projection outlier the way a raw max would not be. Cached per key so
-    the pool is scanned at most once per week/scoring per process.
+    ``anchor`` is the position's TOP weekly projection, so the 0-100 index reads
+    as "share of the best startable option at your position" and 100 marks the
+    single top projection rather than the whole elite tier. (A 95th-percentile
+    anchor made every WR1-caliber player clamp to 100, because the projection
+    pool is dominated by low-projection bench players that drag the percentile
+    down.) Cached per key so the pool is scanned at most once per week/scoring
+    per process.
     """
     if not season or not week:
         return {}
@@ -2481,9 +2484,7 @@ def start_score_pos_anchors(season, week, scoring_settings=None) -> dict:
         for pos, vals in by_pos.items():
             if not vals:
                 continue
-            vals.sort()
-            idx = max(0, min(len(vals) - 1, int(round(0.95 * (len(vals) - 1)))))
-            anchor = vals[idx]
+            anchor = max(vals)  # the position's top weekly projection
             if anchor and anchor > 0:
                 anchors[pos] = round(anchor, 2)
     except Exception:
