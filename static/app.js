@@ -16248,7 +16248,14 @@ function _ssVerdict(players) {
 
 // One metric row across N player columns, with the best value highlighted when a
 // direction is given ('max' higher wins, 'min' lower wins; null = display only).
+// Returns '' when every cell is empty, so a signal with no data for any player
+// (e.g. Vegas total before lines are posted) drops out instead of showing a row
+// of dashes.
+function _ssRowIsEmpty(h) {
+  return h == null || h === '' || h === '&ndash;' || h === '–' || h === '-';
+}
 function _ssTableRow(label, cells, dir) {
+  if (cells.every(c => _ssRowIsEmpty(c.html))) return '';
   let best = null;
   if (dir) {
     const nums = cells.map(c => c.num).filter(v => v != null);
@@ -16303,33 +16310,50 @@ function _buildStartSitTabHTML(players) {
   const ss = (p) => (s(p).start_sit) || {};
   const cons = (p) => ss(p).consistency || null;
 
+  // Rows split into two groups: signals that actually feed the start/sit score,
+  // and context that does not (value, opponent, and matchup, since the weekly
+  // projection already reflects the opponent). The split stops the row
+  // highlights from implying a verdict the score does not make.
+  const nCols = players.length + 1;
+  const section = (label) => '<tr class="ss-section"><td class="ss-section-cell" colspan="' + nCols + '">' + label + '</td></tr>';
+
+  const rProj = _ssTableRow('Proj PPG', players.map(p => { const n = _ssNum(ss(p).proj_pts); return { num: n, html: n != null ? n : dash }; }), 'max');
+  const rL4 = _ssTableRow('L4 PPG', players.map(p => { const n = _ssNum(ss(p).recent_ppg) != null ? _ssNum(ss(p).recent_ppg) : _ssNum(s(p).ppg); return { num: n, html: n != null ? n : dash }; }), 'max');
+  const rFloor = _ssTableRow('Floor&ndash;Ceil', players.map(p => { const c = cons(p); return { num: c ? _ssNum(c.floor) : null, html: c ? (c.floor + '&ndash;' + c.ceiling) : dash }; }), 'max');
+  const rProfile = _ssTableRow('Profile', players.map(p => { const c = cons(p); return { num: null, html: _ssProfileChip(c) || dash }; }), null);
+  const rBoom = _ssTableRow('Boom / Bust', players.map(p => { const c = cons(p); return { num: null, html: (c && !c.small_sample) ? (Math.round(c.boom_rate * 100) + '% / ' + Math.round(c.bust_rate * 100) + '%') : dash }; }), null);
+  const rOline = _ssTableRow('O-Line', players.map(p => {
+    const ol = ss(p).oline; if (!ol || ol.primary_value == null) return { num: null, html: dash };
+    const lbl = ol.primary === 'pass_block' ? 'pass blk' : ol.primary === 'run_block' ? 'run blk' : 'o-line';
+    const rk = ol.primary_rank ? ' (#' + ol.primary_rank + ')' : '';
+    return { num: _ssNum(ol.primary_value), html: Math.round(ol.primary_value) + ' ' + lbl + rk };
+  }), 'max');
+  const rVegas = _ssTableRow('Vegas total', players.map(p => { const n = _ssNum(ss(p).implied_total); return { num: n, html: n != null ? (n + ' implied') : dash }; }), 'max');
+  const rVenue = _ssTableRow('Venue', players.map(p => { const c = _ssVenueChip(ss(p)); return { num: null, html: c || dash }; }), null);
+  const rValue = _ssTableRow('Value', players.map(p => { const n = _ssNum(isSf ? s(p).sf_value : s(p).value); return { num: n, html: n != null ? Math.round(n) : dash }; }), 'max');
+  const rOpp = _ssTableRow('Opponent', players.map(p => { const o = ss(p).opponent; return { num: null, html: o ? _ssEsc(o) : (ss(p).on_bye ? 'BYE' : dash) }; }), null);
+  const rDef = _ssTableRow('Def vs pos', players.map(p => { const f = _ssNum(ss(p).fpts_against); return { num: null, cls: _ssMuClass(ss(p).def_rank, ss(p).def_total), html: f != null ? (f + ' pts') : (ss(p).on_bye ? 'BYE' : dash) }; }), null);
+  const rMatchup = _ssTableRow('Matchup', players.map(p => { const c = _ssMuChip(ss(p).def_rank, ss(p).def_total); return { num: null, html: c || dash }; }), null);
+
+  // Empty rows return '' from _ssTableRow; drop them and skip a section header
+  // whose whole group hid out, so a missing signal leaves no trace.
+  const scoreRows = [rProj, rL4, rFloor, rProfile, rBoom, rOline, rVegas, rVenue].filter(Boolean);
+  const ctxRows = [rValue, rOpp, rDef, rMatchup].filter(Boolean);
   const rows = [
-    _ssTableRow('Proj PPG', players.map(p => { const n = _ssNum(ss(p).proj_pts); return { num: n, html: n != null ? n : dash }; }), 'max'),
-    _ssTableRow('L4 PPG', players.map(p => { const n = _ssNum(ss(p).recent_ppg) != null ? _ssNum(ss(p).recent_ppg) : _ssNum(s(p).ppg); return { num: n, html: n != null ? n : dash }; }), 'max'),
-    _ssTableRow('Value', players.map(p => { const n = _ssNum(isSf ? s(p).sf_value : s(p).value); return { num: n, html: n != null ? Math.round(n) : dash }; }), 'max'),
-    _ssTableRow('Floor&ndash;Ceil', players.map(p => { const c = cons(p); return { num: c ? _ssNum(c.floor) : null, html: c ? (c.floor + '&ndash;' + c.ceiling) : dash }; }), 'max'),
-    _ssTableRow('Profile', players.map(p => { const c = cons(p); return { num: null, html: _ssProfileChip(c) || dash }; }), null),
-    _ssTableRow('Boom / Bust', players.map(p => { const c = cons(p); return { num: null, html: (c && !c.small_sample) ? (Math.round(c.boom_rate * 100) + '% / ' + Math.round(c.bust_rate * 100) + '%') : dash }; }), null),
-    _ssTableRow('Opponent', players.map(p => { const o = ss(p).opponent; return { num: null, html: o ? _ssEsc(o) : (ss(p).on_bye ? 'BYE' : dash) }; }), null),
-    _ssTableRow('Def vs pos', players.map(p => { const f = _ssNum(ss(p).fpts_against); return { num: null, cls: _ssMuClass(ss(p).def_rank, ss(p).def_total), html: f != null ? (f + ' pts') : (ss(p).on_bye ? 'BYE' : dash) }; }), null),
-    _ssTableRow('Matchup', players.map(p => { const c = _ssMuChip(ss(p).def_rank, ss(p).def_total); return { num: null, html: c || dash }; }), null),
-    _ssTableRow('O-Line', players.map(p => {
-      const ol = ss(p).oline; if (!ol || ol.primary_value == null) return { num: null, html: dash };
-      const lbl = ol.primary === 'pass_block' ? 'pass blk' : ol.primary === 'run_block' ? 'run blk' : 'o-line';
-      const rk = ol.primary_rank ? ' (#' + ol.primary_rank + ')' : '';
-      return { num: _ssNum(ol.primary_value), html: Math.round(ol.primary_value) + ' ' + lbl + rk };
-    }), 'max'),
-    _ssTableRow('Vegas total', players.map(p => { const n = _ssNum(ss(p).implied_total); return { num: n, html: n != null ? (n + ' implied') : dash }; }), 'max'),
-    _ssTableRow('Venue', players.map(p => { const c = _ssVenueChip(ss(p)); return { num: null, html: c || dash }; }), null),
+    scoreRows.length ? section('What drives the score') : '',
+    scoreRows.join(''),
+    ctxRows.length ? section('Context (not in the score)') : '',
+    ctxRows.join(''),
   ].join('');
 
   const table = '<div class="ss-tbl-wrap"><table class="ss-tbl"><thead><tr><th class="ss-rowlbl" aria-hidden="true"></th>' + heads + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
 
   return _SS_TAB_CSS
-    + '<div class="ss-tab-intro">The same read as the Start/Sit page compare: a call on the unified '
-    + 'start/sit score, plus the week\'s output, reliability, and matchup for each player. The headline '
-    + 'is a 0 to 100 index relative to each player\'s own position (100 is the top weekly projection there), '
-    + 'so a QB and a WR are comparable. Best in each row is highlighted.</div>'
+    + '<div class="ss-tab-intro">The same read as the Start/Sit page compare, with a 0 to 100 index '
+    + 'relative to each player\'s own position (100 is the top weekly projection there) so a QB and a WR '
+    + 'are comparable. Rows are split into what actually moves the start/sit score and context that does not: '
+    + 'value, opponent, and matchup do not change the score, because the weekly projection already reflects '
+    + 'the opponent. Best in each row is highlighted.</div>'
     + verdictHtml
     + '<div class="ss-cards ' + gridCls + '">' + cards + '</div>'
     + table;
@@ -16358,6 +16382,7 @@ const _SS_TAB_CSS =
   + '.ss-tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}'
   + '.ss-tbl{width:100%;border-collapse:collapse;min-width:320px;}'
   + '.ss-th{text-align:center;font-weight:800;font-size:13px;color:var(--text);padding:6px 8px 10px;}'
+  + '.ss-section-cell{text-align:left;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:16px 10px 3px;border-top:none;}'
   + '.ss-rowlbl{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;padding:9px 10px;white-space:nowrap;}'
   + '.ss-cell{text-align:center;padding:9px 8px;font-weight:700;font-size:14px;font-variant-numeric:tabular-nums;border-top:1px solid var(--border);color:var(--text);}'
   + '.ss-best{color:var(--win,#16a34a);background:color-mix(in srgb,var(--win,#16a34a) 12%,transparent);}'
