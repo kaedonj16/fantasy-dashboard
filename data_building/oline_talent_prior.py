@@ -36,9 +36,12 @@ This prior is optional and labeled. `build_oline_ratings(use_talent_prior=False)
 (the default) never calls it; the results-based composite is unchanged.
 
 A 2022-2025 weeks 1-4 -> rest-of-season backtest (see
-oline_backtest.sweep_talent_prior) found the residual is a wash vs last
-season's prior: equal-mix W=0.45 scored 0.3476 against 0.3474. That is
-not a real win, so the flag stays off.
+oline_backtest.sweep_talent_prior) found the residual is still a wash vs
+the results-pipeline prior, even after APY-weighting veteran adds/losses
+and scoring on top of the shipped recency / Y-2 / K_MULT pipeline: one
+grid cell (less_continuity, W=0.15) scored 0.3627 against 0.3605, a
++0.002 blip; equal mix and every larger W lost. That is not a real win,
+so the flag stays off.
 """
 from __future__ import annotations
 
@@ -886,6 +889,9 @@ def compute_availability_scale(season, through_week, pd, nfl=None, prior_snaps=N
     except Exception as e:
         print(f"[oline_talent_prior] availability scale failed ({e})")
         return {}
+
+
+def load_talent_inputs(season, pd, nfl=None):
     """Load the open-data inputs for `season`'s offseason prior.
 
     Returns a dict with parsed lists, or None if the *required* pieces

@@ -31,12 +31,13 @@ nflverse players file as a PFR↔GSIS id join, draft_picks, Chase Stuart's
 public expected-AV chart). No PFF or other licensed grade is read, even as
 a hidden input. Coaching/scheme change is omitted — there is no clean
 redistributable encoding of OC / OL-coach turnover. See
-`oline_talent_prior.py` and `oline_backtest.sweep_talent_prior`. A 2022-2025
-weeks 1-4 backtest did not find a meaningful lift over last season's prior,
-so the flag stays off.
+`oline_talent_prior.py` and `oline_backtest.sweep_talent_prior`. Re-swept
+on top of the shipped recency / Y-2 / K_MULT pipeline with APY-weighted
+veteran net, one grid cell scored +0.002; equal mix and larger W lost.
+The flag stays off.
 
 This is a projection, not a measurement. `use_talent_prior=False` (default)
-leaves the results-based composite byte-for-byte as it was. When the flag is
+does not apply a roster/draft residual. When the flag is
 on, the main `pass_block` / `run_block` / `composite` keys use the
 talent-shifted prior, and the unshifted measurement is stored alongside as
 `pass_block_realized` / `run_block_realized` / `composite_realized`, with a
@@ -57,16 +58,21 @@ PASS BLOCK -- a blend of pressure rate allowed (nflverse `was_pressure`, a
       *     residualised against the QB's average time to throw, so a line isn't
         punished for a QB who holds the ball (the Hurts/scramble problem);
       * optionally residualised against average pass-rushers faced
-        (`PASS_RUSHERS_RESID`; off until the pipeline sweep says otherwise);
-      * regressed toward a prior (last season's adjusted value, optionally
-        mixed with Y-2 via `PRIOR_Y2_WEIGHT`, else league mean) by sample
-        size, so early-season small samples don't spike.
+        (`PASS_RUSHERS_RESID`; a 2022-2025 early-season sweep lost vs the
+        TTT-only residual, so this stays off);
+      * regressed toward a prior (last season mixed with 25% Y-2 via
+        `PRIOR_Y2_WEIGHT`, else league mean) by sample size, so early-season
+        small samples don't spike. `K_MULT=1.25` slightly lengthens that
+        blend (effective K = 125 run / 150 pass);
       * optionally shrunk toward league mean when last-year OL snaps are
-        Out/IR this week (`AVAILABILITY_SHRINK`).
+        Out/IR this week (`AVAILABILITY_SHRINK`; the same sweep lost, so
+        this stays off).
     Where `was_pressure` is unavailable (pre-2022) the QB-hit rate stands in.
-    Current-season point estimates can be recency-weighted (`RECENCY_HALF_LIFE`);
-    n_cur stays a raw play count so late-season grades are not pulled back
-    toward last year.
+    Current-season point estimates are recency-weighted with a 4-week
+    half-life (`RECENCY_HALF_LIFE`); n_cur stays a raw play count so
+    late-season grades are not pulled back toward last year. That recency
+    term was the largest single lift in the 2022-2025 weeks 1-4 backtest
+    (+0.010 Spearman vs unweighted plays).
 
 RUN BLOCK -- a blend of Football Outsiders "Line Yards" and rush success rate.
     Line yards weight each carry by distance, crediting the line for yards it
@@ -77,8 +83,8 @@ RUN BLOCK -- a blend of Football Outsiders "Line Yards" and rush success rate.
     curve alone misses. A 2023-2025 split-half sweep settled on 55% line yards /
     45% success (see RUN_LY_WEIGHT); both inputs are opponent-adjusted and
     prior-regressed like pass block. An optional opponent-adjusted stuffed-rate
-    term (`RUN_STUFF_WEIGHT`) can join that blend; 0 keeps the two-way mix.
-    QB scrambles and designed QB keeps are
+    term (`RUN_STUFF_WEIGHT`) can join that blend; a 2022-2025 sweep found
+    it a tie-or-loss, so the two-way mix stays. QB scrambles and designed QB keeps are
     dropped so a mobile QB doesn't inflate (or deflate) the line's grade.
     Garbage time (win prob outside [0.05, 0.95]) and kneels are also dropped.
     A descriptive interior/tackle/end split and stuffed rate are exposed
@@ -94,7 +100,7 @@ Output
 cache/oline_ratings_s{season}.json:
     {
       "season": 2025, "through_week": 6, "generated_at": "...",
-      "seasons_used": [2024, 2025], "n_run_plays": ..., "n_pass_plays": ...,
+      "seasons_used": [2023, 2024, 2025], "n_run_plays": ..., "n_pass_plays": ...,
       "pressure_source": "was_pressure",
       "ratings": {
         "PHI": {
@@ -111,7 +117,7 @@ cache/oline_ratings_s{season}.json:
     With --talent-prior / use_talent_prior=True the primary grade keys are the
     projection and a labeled `talent_prior` object is added; the unshifted
     measurement is stored as pass_block_realized / run_block_realized /
-    composite_realized. Default (flag off) JSON is unchanged.
+    composite_realized. Flag-off JSON has no talent_prior object.
 
 Run directly:  python -m data_building.oline_ratings [season] [through_week] [--talent-prior]
 """
@@ -151,36 +157,39 @@ SACK_WEIGHT = 0.6
 RUN_LY_WEIGHT = 0.55
 RUN_SUCCESS_WEIGHT = 0.45
 # Recency half-life in weeks for the *current-season point estimate*.
-# 0 = every play equal (legacy). n_cur for prior-regression stays raw play
-# counts so late-season grades are not shrunk back toward last year.
-# Swept in oline_backtest.sweep_results_pipeline; 0 until that sweep says else.
-RECENCY_HALF_LIFE = 0.0
+# 0 = every play equal. n_cur for prior-regression stays raw play counts
+# so late-season grades are not shrunk back toward last year.
+# Swept in oline_backtest.sweep_results_pipeline on 2022-2025, weeks 1-4
+# -> rest-of-season (n=128): half-life 4 scored 0.3579 vs unweighted 0.3474.
+RECENCY_HALF_LIFE = 4.0
 # Blend of Y-2 into the last-season prior: prior = (1-w)*Y-1 + w*Y-2.
-# 0 = last season only (legacy). Swept in sweep_results_pipeline.
-PRIOR_Y2_WEIGHT = 0.0
+# Swept in sweep_results_pipeline: w=0.25 scored 0.3532 vs last-season-only
+# 0.3474. w=0.4 lost. Combined with recency=4 and K_MULT=1.25 the no-stuff
+# combo scored 0.3645.
+PRIOR_Y2_WEIGHT = 0.25
 # Extra run-block component: opponent-adjusted stuffed rate (lower is better).
-# 0 = line-yards + success only (legacy). Remaining weight stays on LY/success
-# in their current ratio. Swept in sweep_results_pipeline.
+# Remaining weight stays on LY/success in their current ratio.
+# Solo w=0.15 was a 0.0001 tie; w=0.25 lost. FLAG STAYS OFF.
 RUN_STUFF_WEIGHT = 0.0
 # After time-to-throw residualisation, also residualise pressure/sacks against
-# average pass-rushers faced (nflverse `number_of_pass_rushers`). Isolates the
-# line from extra-rusher looks. Swept in sweep_results_pipeline.
+# average pass-rushers faced (nflverse `number_of_pass_rushers`).
+# Solo True scored 0.3407 vs 0.3474 — it lost. FLAG STAYS OFF.
 PASS_RUSHERS_RESID = False
 # When a last-year OL snap-share is Out/IR this week, shrink that team's
-# last-season prior toward league mean by the missing snap share. This is
-# "the prior unit isn't on the field", not a talent projection. Swept in
-# sweep_results_pipeline; off until the sweep says otherwise.
+# last-season prior toward league mean by the missing snap share.
+# Solo True scored 0.3447 vs 0.3474 — it lost. FLAG STAYS OFF.
 AVAILABILITY_SHRINK = False
-# Multiplier on RUN_PRIOR_K / PASS_PRIOR_K. 1.0 = shipped K (legacy).
-# Swept in sweep_results_pipeline.
-K_MULT = 1.0
+# Multiplier on RUN_PRIOR_K / PASS_PRIOR_K. Swept in sweep_results_pipeline:
+# 1.25 scored 0.3494 solo and was kept by the greedy combo (+0.004 on top
+# of recency+Y-2). 0.75 lost. Effective K = 125 run / 150 pass.
+K_MULT = 1.25
 # Talent-prior scale: last-year cross-sectional SDs of shift per 1 SD of the
 # roster/draft residual. Swept in oline_backtest.sweep_talent_prior on
 # 2022-2025, weeks 1-4 ratings -> rest-of-season (weeks 5-17) pressure / sack /
-# line-yards / success (n=128 team-seasons). Equal mix, W=0.45 was the
-# nominal peak at score 0.3476 vs last-season-prior 0.3474 — a tie, not a
-# win (pressure rho improved ~0.03; sacks and run-blocking did not).
-# FLAG STAYS OFF. Any larger W monotonically hurt. Re-sweep if the mix drifts.
+# line-yards / success (n=128 team-seasons). Re-swept on top of the shipped
+# recency / Y-2 / K_MULT pipeline with APY-weighted veteran net: one cell
+# (less_continuity W=0.15) scored 0.3627 vs 0.3605 — a +0.002 blip. Equal
+# mix and every larger W lost. FLAG STAYS OFF.
 TALENT_PRIOR_W = 0.45
 TALENT_W_CONTINUITY = 1.0 / 3.0
 TALENT_W_DRAFT = 1.0 / 3.0
@@ -872,8 +881,10 @@ def build_oline_ratings(
 
     Pipeline knobs (`recency_half_life`, `prior_y2_weight`, `run_stuff_weight`,
     `pass_rushers_resid`, `availability_shrink`, `k_mult`) default to the
-    module constants. Those stay at the legacy values until
-    `oline_backtest.sweep_results_pipeline` finds a real lift.
+    module constants. A 2022-2025 weeks 1-4 -> rest-of-season sweep shipped
+    recency half-life 4, 25% Y-2, and K_MULT=1.25 (score 0.3645 vs 0.3474
+    unweighted last-season prior). Stuffed-rate mix, pass-rusher residual,
+    and injury availability shrink did not beat that bar and stay off.
     """
     import pandas as pd
     try:

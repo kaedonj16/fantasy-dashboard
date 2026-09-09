@@ -283,16 +283,34 @@ def sweep_talent_prior(seasons, early_week=4, save=True,
             print(f"[oline_backtest] talent sweep {season}: not enough weeks around {early_week}")
             continue
         run_ly_adj, run_su_adj, run_n, run_league, _, run_st_adj = (
-            _season_run_metrics(early, recency_half_life=0.0))
+            _season_run_metrics(early))
         run_ly_prior, run_su_prior, run_st_prior = {}, {}, {}
         if prior_raw is not None and not prior_raw.empty:
             run_ly_prior, run_su_prior, _, _, _, run_st_prior = (
                 _season_run_metrics(prior_raw, recency_half_life=0.0))
-        cur_pass = _season_pass_metrics(early, recency_half_life=0.0)
+        if PRIOR_Y2_WEIGHT:
+            y2_raw = _prep_season(load_year(season - 2), pd, season - 2)
+            if y2_raw is not None and not y2_raw.empty:
+                ly2, su2, _, _, _, st2 = _season_run_metrics(y2_raw, recency_half_life=0.0)
+                run_ly_prior = _mix_prior(run_ly_prior, ly2, PRIOR_Y2_WEIGHT)
+                run_su_prior = _mix_prior(run_su_prior, su2, PRIOR_Y2_WEIGHT)
+                run_st_prior = _mix_prior(run_st_prior, st2, PRIOR_Y2_WEIGHT)
+        cur_pass = _season_pass_metrics(early)
         prior_pass = (
             _season_pass_metrics(prior_raw, recency_half_life=0.0)
             if prior_raw is not None and not prior_raw.empty else None
         )
+        if PRIOR_Y2_WEIGHT:
+            y2_raw = _prep_season(load_year(season - 2), pd, season - 2)
+            if y2_raw is not None and not y2_raw.empty:
+                y2_pass = _season_pass_metrics(y2_raw, recency_half_life=0.0)
+                if prior_pass:
+                    mixed = dict(prior_pass)
+                    mixed["press_adj"] = _mix_prior(
+                        prior_pass.get("press_adj"), y2_pass.get("press_adj"), PRIOR_Y2_WEIGHT)
+                    mixed["sack_adj"] = _mix_prior(
+                        prior_pass.get("sack_adj"), y2_pass.get("sack_adj"), PRIOR_Y2_WEIGHT)
+                    prior_pass = mixed
         su_league = (sum(run_su_adj.values()) / len(run_su_adj)) if run_su_adj else 0.0
         st_league = (sum(run_st_adj.values()) / len(run_st_adj)) if run_st_adj else 0.0
         rest_pass = _season_pass_metrics(rest, recency_half_life=0.0)["detail"]

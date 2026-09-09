@@ -598,7 +598,7 @@ def test_rushers_residual_does_not_punish_extra_rusher_looks():
     assert _maybe_resid_rushers(value, rushers, enabled=False) == value
 
 
-def test_legacy_kwargs_match_default_build(monkeypatch):
+def test_shipped_kwargs_match_default_build(monkeypatch):
     frame = _synthetic_pbp()
     monkeypatch.setattr(
         "data_building.oline_ratings._load_pbp_year",
@@ -607,7 +607,13 @@ def test_legacy_kwargs_match_default_build(monkeypatch):
     default = build_oline_ratings(2025, through_week=1, save=False)
     explicit = build_oline_ratings(
         2025, through_week=1, save=False,
-        recency_half_life=0.0, prior_y2_weight=0.0, run_stuff_weight=0.0,
-        pass_rushers_resid=False, availability_shrink=False, k_mult=1.0)
+        recency_half_life=4.0, prior_y2_weight=0.25, run_stuff_weight=0.0,
+        pass_rushers_resid=False, availability_shrink=False, k_mult=1.25)
     assert default["ratings"]["GOOD"]["composite"] == explicit["ratings"]["GOOD"]["composite"]
     assert default["ratings"]["BAD"]["composite"] == explicit["ratings"]["BAD"]["composite"]
+    # Legacy zeros still run and still rank GOOD over BAD.
+    legacy = build_oline_ratings(
+        2025, through_week=1, save=False,
+        recency_half_life=0.0, prior_y2_weight=0.0, run_stuff_weight=0.0,
+        pass_rushers_resid=False, availability_shrink=False, k_mult=1.0)
+    assert legacy["ratings"]["GOOD"]["composite"] > legacy["ratings"]["BAD"]["composite"]
