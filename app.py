@@ -14767,6 +14767,7 @@ def _oline_for_player(season: int, team: str, position: str):
     primary_rank, total = _rank_on(primary)
     pass_rank, _ = _rank_on("pass_block")
     run_rank, _ = _rank_on("run_block")
+    composite_rank, _ = _rank_on("composite")
     return {
         "season": season,
         "team": team,
@@ -14779,6 +14780,7 @@ def _oline_for_player(season: int, team: str, position: str):
         "run_block": row.get("run_block"),
         "pass_block_rank": pass_rank,
         "run_block_rank": run_rank,
+        "composite_rank": composite_rank,
         "pressure_rate": row.get("pressure_rate"),
         "sack_rate": row.get("sack_rate"),
         "line_yards": row.get("line_yards"),

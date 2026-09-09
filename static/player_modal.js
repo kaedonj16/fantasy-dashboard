@@ -1876,6 +1876,8 @@ function _pmFmtTeamVal(key, val) {
     return Math.round(n).toLocaleString();
   }
   if (key === 'pass_tds' || key === 'rush_tds') return String(Math.round(n));
+  // O-line unit ratings are 0-100 league percentiles (100 = best).
+  if (String(key || '').startsWith('oline_')) return String(Math.round(n));
   return String(n);
 }
 
@@ -1921,14 +1923,19 @@ function _pmTeamProfileRow(pos, label, key, entry) {
   const x = Math.max(3, Math.min(97, ((total - rank) / Math.max(1, total - 1)) * 100));
   const c = _pmTeamMetricColor(pos, key, rank, total);
   const val = _pmFmtTeamVal(key, entry.value);
-  const tip = `${label}: ${_pmTeamOrd(rank)} of ${total} · ${val}`.replace(/"/g, '&quot;');
+  const tipExtra = entry.tip_extra ? ` · ${entry.tip_extra}` : '';
+  const tip = `${label}: ${_pmTeamOrd(rank)} of ${total} · ${val}${tipExtra}`.replace(/"/g, '&quot;');
   // Whole row is hoverable/focusable (not just the 13px dot) so the detail is
   // reachable by pointer and keyboard. Uses the shared themed tooltip engine
   // (advEnterMetricDef/advShowMetricDef) rather than a native `title`: the
   // modal body clips overflow, so this fixed-position bubble actually shows
   // (and matches the app theme) where a native tooltip did not.
-  return `<div class="pm-tp-row" data-def="${tip}" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)" onclick="advShowMetricDef(event)" tabindex="0" aria-label="${tip}">
-    <span class="pm-tp-label">${label}</span>
+  const primaryCls = entry.primary ? ' pm-tp-primary' : '';
+  const forChip = entry.primary && entry.primary_for
+    ? `<span class="pm-tp-for">for ${String(entry.primary_for).replace(/</g, '')}</span>`
+    : '';
+  return `<div class="pm-tp-row${primaryCls}" data-def="${tip}" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)" onclick="advShowMetricDef(event)" tabindex="0" aria-label="${tip}">
+    <span class="pm-tp-label">${label}${forChip}</span>
     <span class="pm-tp-track"><span class="pm-tp-base"></span><span class="pm-tp-mid"></span>
       <span class="pm-tp-fill" style="width:${x}%;background:${c}"></span>
       <span class="pm-tp-dot" style="left:${x}%;background:${c}"></span></span>
@@ -2111,19 +2118,65 @@ function _pmBuildTeamHTML(data) {
     seasonPills = `<span class="pm-team-season">${viewSeason} ${modeLabel}</span>`;
   }
 
-  // Offensive-line grades as Offense-Profile bars (0-100, 100 = best), from
-  // public play-by-play. Rendered with the same rank-bar format as the other
-  // profile rows; rank 1 = best line so the dot sits toward the "1ST" end.
+  // Offensive-line unit ratings (0-100, 100 = best) from public play-by-play.
+  // Kept as their own section — not mixed into Offense Profile — because they
+  // are a different data source (not Sleeper volume/projections) and the
+  // position-relevant metric should be easy to spot. Rank bars match the
+  // Offense Profile visual language; "Grade" wording is avoided so these
+  // aren't read as PFF-style grades (they're league-percentile unit ratings).
   const ol = data.oline;
-  let olineRows = '';
-  if (ol) {
-    if (ol.pass_block != null) {
-      olineRows += _pmTeamProfileRow(pos, 'Pass Block Grade', 'oline_pass',
-        { rank: ol.pass_block_rank, total: ol.total_teams, value: Math.round(ol.pass_block) });
+  let olineSec = '';
+  if (ol && (ol.pass_block != null || ol.run_block != null || ol.composite != null)) {
+    const primaryKey = ol.primary || '';
+    const primaryLabel = primaryKey === 'run_block' ? 'run block'
+      : primaryKey === 'pass_block' ? 'pass block' : 'o-line';
+    const rankNote = ol.primary_rank
+      ? `#${ol.primary_rank} of ${ol.total_teams} ${primaryLabel}`
+      : 'rank of 32';
+    const ctx = [
+      ol.pressure_rate != null ? ol.pressure_rate + '% pressure' : '',
+      ol.sack_rate != null ? ol.sack_rate + '% sack' : '',
+      ol.line_yards != null ? ol.line_yards + ' line yds' : '',
+    ].filter(Boolean).join(' · ');
+    const seasonBit = (ol.season && viewSeason && Number(ol.season) !== Number(viewSeason))
+      ? ` Showing ${ol.season} ratings (latest available).`
+      : '';
+    const skillPos = ['QB', 'RB', 'WR', 'TE'].includes(pos);
+    const mkOl = (label, metric, value, rank) => {
+      if (value == null || rank == null) return '';
+      const isPrimary = skillPos && primaryKey === metric;
+      const tipExtra = metric === 'pass_block' && ol.sack_rate != null
+        ? ol.sack_rate + '% sack'
+        : metric === 'run_block' && ol.line_yards != null
+          ? ol.line_yards + ' line yds'
+          : '';
+      return _pmTeamProfileRow(pos, label, 'oline_' + metric, {
+        rank: rank,
+        total: ol.total_teams,
+        value: Math.round(value),
+        primary: isPrimary,
+        primary_for: isPrimary ? pos : '',
+        tip_extra: tipExtra,
+      });
+    };
+    // Primary metric first so the position-relevant signal is at the top,
+    // then the other half and overall for context.
+    let olineRows = '';
+    if (primaryKey === 'run_block') {
+      olineRows = mkOl('Run Block', 'run_block', ol.run_block, ol.run_block_rank)
+        + mkOl('Pass Block', 'pass_block', ol.pass_block, ol.pass_block_rank)
+        + mkOl('Overall', 'composite', ol.composite, ol.composite_rank);
+    } else {
+      olineRows = mkOl('Pass Block', 'pass_block', ol.pass_block, ol.pass_block_rank)
+        + mkOl('Run Block', 'run_block', ol.run_block, ol.run_block_rank)
+        + mkOl('Overall', 'composite', ol.composite, ol.composite_rank);
     }
-    if (ol.run_block != null) {
-      olineRows += _pmTeamProfileRow(pos, 'Run Block Grade', 'oline_run',
-        { rank: ol.run_block_rank, total: ol.total_teams, value: Math.round(ol.run_block) });
+    if (olineRows) {
+      olineSec = `<div class="pm-team-sec pm-oline-sec">
+      <div class="pm-section-header"><span class="pm-section-label">Offensive Line</span><span class="pm-team-secnote">${rankNote}</span></div>
+      ${_pmTeamProfileAxis()}${olineRows}
+      <div class="pm-team-note">0&ndash;100 unit rating (100 = best), from public play-by-play — not a commercial blocker grade. Dot = league rank (right = 1st).${ctx ? ' ' + ctx + '.' : ''}${seasonBit} <a class="pm-oline-link" href="/oline-rankings${ol.season ? '/' + ol.season : ''}" target="_blank" rel="noopener">Full rankings</a></div>
+    </div>`;
     }
   }
 
@@ -2142,7 +2195,7 @@ function _pmBuildTeamHTML(data) {
     </div>
     <div class="pm-team-sec">
       <div class="pm-section-header"><span class="pm-section-label">Offense Profile</span><span class="pm-team-secnote">${seasonNote} · rank of 32</span></div>
-      ${_pmTeamProfileAxis()}${profile}${olineRows}
+      ${_pmTeamProfileAxis()}${profile}
       <div class="pm-team-note">Dot = team rank (right = 1st). Color = rank tier: <b style="color:var(--win)">green good</b>, <b style="color:var(--warning)">yellow mid</b>, <b style="color:var(--loss)">red bad</b>.${dataMode === 'projection' ? ' Values are Sleeper season projections aggregated by team.' : ''}</div>
       <div class="pm-section-header pm-section-collapsible pm-team-adv-toggle" role="button" tabindex="0" aria-expanded="${advOpen ? 'true' : 'false'}" aria-controls="pmTeamAdvBody">
         <span class="pm-collapse-chevron" aria-hidden="true">${advChev}</span>
@@ -2153,6 +2206,7 @@ function _pmBuildTeamHTML(data) {
         ${_pmTeamProfileAxis()}${moreProfile}
       </div>
     </div>
+    ${olineSec}
     <div class="pm-team-sec">
       <div class="pm-section-header"><span class="pm-section-label">${roleName}&#39;s Role</span><span class="pm-team-secnote">${pos} room</span></div>
       ${shareBar}
