@@ -16274,22 +16274,6 @@ function _buildStartSitTabHTML(players) {
   const isSf = (typeof _cmpIsSf === 'function') ? _cmpIsSf() : false;
   const dash = '&ndash;';
 
-  // Headline: the 0-100 position-relative index, one card per player.
-  const cards = players.map(function (p) {
-    const st = (p && p.stats) || {};
-    const nm = _ssEsc(p.name || p.full_name || 'Player');
-    if (st.start_score == null) {
-      return '<div class="ss-card"><div class="ss-card-name">' + nm + '</div><div class="ss-empty">No score this week</div></div>';
-    }
-    const pct = st.start_score_pct;
-    const hasPct = pct != null && !isNaN(pct);
-    const big = hasPct ? Math.round(Number(pct)) : (Math.round(Number(st.start_score) * 10) / 10);
-    const cap = hasPct ? 'Start/Sit index (0 to 100)' : 'Start/Sit score';
-    return '<div class="ss-card"><div class="ss-card-name">' + nm + '</div>'
-      + '<div class="ss-score">' + big + '</div><div class="ss-score-cap">' + cap + '</div></div>';
-  }).join('');
-  const gridCls = players.length === 3 ? 'ss-cards-3' : 'ss-cards-2';
-
   // Verdict banner.
   const v = _ssVerdict(players);
   let verdictHtml = '';
@@ -16304,11 +16288,28 @@ function _buildStartSitTabHTML(players) {
       + '<span class="ss-verdict-why">Nearly identical outlook, go with your gut.</span></div>';
   }
 
-  // Column headers + the same rows the waivers start/sit compare shows.
-  const heads = players.map(p => '<th class="ss-th">' + _ssEsc(p.name || p.full_name || 'Player') + '</th>').join('');
   const s = (p) => (p && p.stats) || {};
   const ss = (p) => (s(p).start_sit) || {};
   const cons = (p) => ss(p).consistency || null;
+
+  // Column header per player: name, then the start/sit score at the top of the
+  // column (the 0-100 position-relative index, or the raw score when the index
+  // could not be built), replacing the separate hero cards.
+  const heads = players.map(function (p) {
+    const st = s(p);
+    const nm = _ssEsc(p.name || p.full_name || 'Player');
+    let scoreHtml;
+    if (st.start_score == null) {
+      scoreHtml = '<div class="ss-th-score ss-th-none">' + dash + '</div>';
+    } else {
+      const pct = st.start_score_pct;
+      const hasPct = pct != null && !isNaN(pct);
+      const big = hasPct ? Math.round(Number(pct)) : (Math.round(Number(st.start_score) * 10) / 10);
+      const cap = hasPct ? 'index (0 to 100)' : 'score';
+      scoreHtml = '<div class="ss-th-score">' + big + '</div><div class="ss-th-cap">' + cap + '</div>';
+    }
+    return '<th class="ss-th"><div class="ss-th-name">' + nm + '</div>' + scoreHtml + '</th>';
+  }).join('');
 
   // Rows split into two groups: signals that actually feed the start/sit score,
   // and context that does not (value, opponent, and matchup, since the weekly
@@ -16342,20 +16343,19 @@ function _buildStartSitTabHTML(players) {
   const rows = [
     scoreRows.length ? section('What drives the score') : '',
     scoreRows.join(''),
-    ctxRows.length ? section('Context (not in the score)') : '',
+    ctxRows.length ? section('Context') : '',
     ctxRows.join(''),
   ].join('');
 
   const table = '<div class="ss-tbl-wrap"><table class="ss-tbl"><thead><tr><th class="ss-rowlbl" aria-hidden="true"></th>' + heads + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
 
   return _SS_TAB_CSS
-    + '<div class="ss-tab-intro">The same read as the Start/Sit page compare, with a 0 to 100 index '
-    + 'relative to each player\'s own position (100 is the top weekly projection there) so a QB and a WR '
-    + 'are comparable. Rows are split into what actually moves the start/sit score and context that does not: '
-    + 'value, opponent, and matchup do not change the score, because the weekly projection already reflects '
-    + 'the opponent. Best in each row is highlighted.</div>'
+    + '<div class="ss-tab-intro">The same read as the Start/Sit page compare. The score at the top of each '
+    + 'column is a 0 to 100 index relative to that player\'s own position (100 is the top weekly projection '
+    + 'there), so a QB and a WR are comparable. Rows are split into what actually moves the start/sit score '
+    + 'and context that does not: value, opponent, and matchup do not change the score, because the weekly '
+    + 'projection already reflects the opponent. Best in each row is highlighted.</div>'
     + verdictHtml
-    + '<div class="ss-cards ' + gridCls + '">' + cards + '</div>'
     + table;
 }
 
@@ -16370,18 +16370,13 @@ const _SS_TAB_CSS =
   + '.ss-verdict.toss .ss-verdict-pill{background:var(--muted,#64748b);}'
   + '.ss-verdict-name{font-size:14px;font-weight:800;color:var(--text);}'
   + '.ss-verdict-why{font-size:12px;color:var(--muted);}'
-  + '.ss-cards{display:grid;gap:12px;margin-bottom:14px;}'
-  + '.ss-cards-2{grid-template-columns:1fr 1fr;}'
-  + '.ss-cards-3{grid-template-columns:1fr 1fr 1fr;}'
-  + '@media(max-width:600px){.ss-cards-2,.ss-cards-3{grid-template-columns:1fr;}}'
-  + '.ss-card{border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center;background:var(--surface2,rgba(127,127,127,.04));min-width:0;}'
-  + '.ss-card-name{font-weight:800;font-size:13px;color:var(--text);margin-bottom:4px;}'
-  + '.ss-score{font-size:32px;font-weight:800;color:var(--text);line-height:1;font-variant-numeric:tabular-nums;}'
-  + '.ss-score-cap{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin-top:4px;}'
-  + '.ss-empty{font-size:12px;color:var(--muted);padding:16px 0;}'
   + '.ss-tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}'
   + '.ss-tbl{width:100%;border-collapse:collapse;min-width:320px;}'
-  + '.ss-th{text-align:center;font-weight:800;font-size:13px;color:var(--text);padding:6px 8px 10px;}'
+  + '.ss-th{text-align:center;vertical-align:bottom;padding:4px 8px 12px;}'
+  + '.ss-th-name{font-weight:800;font-size:13px;color:var(--text);margin-bottom:4px;}'
+  + '.ss-th-score{font-size:30px;font-weight:800;color:var(--text);line-height:1;font-variant-numeric:tabular-nums;}'
+  + '.ss-th-none{color:var(--muted);}'
+  + '.ss-th-cap{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin-top:3px;}'
   + '.ss-section-cell{text-align:left;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:16px 10px 3px;border-top:none;}'
   + '.ss-rowlbl{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;padding:9px 10px;white-space:nowrap;}'
   + '.ss-cell{text-align:center;padding:9px 8px;font-weight:700;font-size:14px;font-variant-numeric:tabular-nums;border-top:1px solid var(--border);color:var(--text);}'
