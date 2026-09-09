@@ -115,6 +115,106 @@ def _ratings_from_frame(cur, pd):
     return out, cp["pressure_source"]
 
 
+def _components_from_frame(cur, pd):
+    """Per-team scaled component indices (press, sack, run) for one frame.
+
+    Same pipeline as _ratings_from_frame but returns the pieces before the
+    pass-block blend, so the sweep can recombine them at different weights
+    without recomputing the expensive opponent adjustment each time.
+    """
+    run_adj, run_n, run_league, _ = _season_run_metrics(cur)
+    run_final = _regress_to_prior(run_adj, run_n, {}, run_league, RUN_PRIOR_K)
+    cp = _season_pass_metrics(cur)
+    press_final = _regress_to_prior(cp["press_adj"], cp["n"], None, cp["press_league"], PASS_PRIOR_K)
+    sack_final = _regress_to_prior(cp["sack_adj"], cp["n"], None, cp["sack_league"], PASS_PRIOR_K)
+    press_index = _percentile_index(_residualize(press_final, cp["ttt"]), higher_is_better=False)
+    sack_index = _percentile_index(_residualize(sack_final, cp["ttt"]), higher_is_better=False)
+    run_index = _percentile_index(run_final, higher_is_better=True)
+    comp = {}
+    for t in set(press_index) | set(sack_index) | set(run_index):
+        comp[t] = {"press": press_index.get(t), "sack": sack_index.get(t),
+                   "run": run_index.get(t)}
+    return comp
+
+
+def sweep_pressure_weight(seasons, split_week=9, grid=None, save=True):
+    """Empirically pick the pressure-vs-sack weight for pass_block.
+
+    For each candidate weight w, pass_block = w*pressure_index + (1-w)*sack_index.
+    We score each w by how well that pass_block (from the first half of a season)
+    predicts the SAME team's second-half pressure and sack rates out of sample,
+    pooled across seasons. Lower future pressure/sacks = better line, so a good
+    weight makes both rank correlations strongly negative; the reported score is
+    the mean of the two negated rhos (higher = better).
+
+    This is the honest answer to "is pressure really worth more than sacks?" --
+    it replaces the 0.65 guess with a measured value.
+    """
+    import pandas as pd
+    try:
+        import nfl_data_py as nfl
+    except Exception:
+        nfl = None
+
+    grid = grid or [round(i / 10, 1) for i in range(11)]
+    # Gather first-half components and second-half outcomes once per season.
+    seasons_data = []
+    for season in seasons:
+        raw = _prep_season(_load_pbp_year(season, pd, nfl), pd, season)
+        if raw is None or raw.empty:
+            continue
+        wk = _week_bounds(raw, pd)
+        first, second = raw[wk <= split_week], raw[wk > split_week]
+        if first.empty or second.empty:
+            continue
+        comp1 = _components_from_frame(first, pd)
+        out2 = _season_pass_metrics(second)["detail"]
+        seasons_data.append((comp1, out2))
+    if not seasons_data:
+        print("[oline_backtest] sweep: no usable seasons")
+        return {}
+
+    results = []
+    for w in grid:
+        pairs_p, pairs_s = [], []
+        for comp1, out2 in seasons_data:
+            for t, c in comp1.items():
+                if c["press"] is None or c["sack"] is None:
+                    continue
+                pb = w * c["press"] + (1 - w) * c["sack"]
+                o = out2.get(t, {})
+                if o.get("pressure_rate") is not None:
+                    pairs_p.append((pb, o["pressure_rate"]))
+                if o.get("sack_rate") is not None:
+                    pairs_s.append((pb, o["sack_rate"]))
+        rho_p, _ = _spearman(pairs_p)
+        rho_s, _ = _spearman(pairs_s)
+        if rho_p is None or rho_s is None:
+            continue
+        score = -(rho_p + rho_s) / 2.0   # want both negative -> higher score better
+        results.append({"w_pressure": w, "rho_future_pressure": round(rho_p, 3),
+                        "rho_future_sack": round(rho_s, 3), "score": round(score, 4)})
+
+    results.sort(key=lambda r: r["score"], reverse=True)
+    print(f"\n[oline_backtest] pressure-weight sweep (seasons={list(seasons)}, split={split_week})")
+    print(f"  {'w_press':>8} {'rho_press':>10} {'rho_sack':>10} {'score':>8}")
+    for r in results:
+        star = "  <- best" if r is results[0] else ""
+        print(f"  {r['w_pressure']:>8} {r['rho_future_pressure']:>10} "
+              f"{r['rho_future_sack']:>10} {r['score']:>8}{star}")
+    best = results[0] if results else {}
+    report = {"generated_at": datetime.now(timezone.utc).isoformat(),
+              "seasons": list(seasons), "split_week": split_week,
+              "grid": results, "best": best}
+    if save and best:
+        path = os.path.join(str(CACHE_DIR), "oline_weight_sweep.json")
+        with open(path, "w") as f:
+            json.dump(report, f, indent=2)
+        print(f"[oline_backtest] sweep report -> {path}")
+        print(f"[oline_backtest] best pressure weight = {best.get('w_pressure')}")
+    return report
+
+
 def run_backtest(seasons, split_week=9, save=True):
     import pandas as pd
     try:

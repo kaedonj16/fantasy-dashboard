@@ -14548,6 +14548,110 @@ def _load_matchup_ratings(season: int) -> dict:
     return data
 
 
+_OLINE_RATINGS_CACHE: dict = {}
+_OLINE_RATINGS_TS: dict = {}
+
+
+def _load_oline_ratings(season: int) -> dict:
+    """Load the cron-precomputed offensive-line ratings table.
+
+    Shape: {team: {"composite","pass_block","run_block","pressure_rate",
+    "sack_rate","line_yards","stuffed_rate",...}} on a 0-100 scale (100 = best).
+    Produced by data_building/oline_ratings.py via the daily cron. Returns {}
+    when the cache file is absent so callers can degrade gracefully. Cached
+    in-process with the same TTL as the matchup ratings."""
+    key = str(season)
+    now = time.time()
+    if (_OLINE_RATINGS_CACHE.get(key) is not None
+            and now - _OLINE_RATINGS_TS.get(key, 0) < _MATCHUP_RATINGS_TTL):
+        return _OLINE_RATINGS_CACHE[key]
+    data: dict = {}
+    try:
+        path = os.path.join("cache", f"oline_ratings_s{season}.json")
+        if os.path.exists(path):
+            blob = json.load(open(path))
+            data = blob.get("ratings") or {}
+    except Exception:
+        data = {}
+    _OLINE_RATINGS_CACHE[key] = data
+    _OLINE_RATINGS_TS[key] = now
+    return data
+
+
+def _oline_rank_table(season: int, metric: str = "composite"):
+    """Return a list of team rows sorted best-to-worst on `metric`.
+
+    metric is one of composite / pass_block / run_block. Each row is
+    {"rank","team", plus the stored per-team fields}. Empty when the cache
+    is absent (before the first cron build)."""
+    metric = metric if metric in ("composite", "pass_block", "run_block") else "composite"
+    ratings = _load_oline_ratings(season)
+    rows = [dict(team=t, **v) for t, v in ratings.items() if v.get(metric) is not None]
+    rows.sort(key=lambda r: r.get(metric, 0), reverse=True)
+    for i, r in enumerate(rows):
+        r["rank"] = i + 1
+    return rows
+
+
+def _oline_for_player(season: int, team: str, position: str):
+    """O-line context for a player's modal: the unit metric that matters for the
+    player's position, its league rank, and the full set of indices.
+
+    Pass protection (pass_block) is what matters for QB/WR/TE; run blocking
+    (run_block) for RB; composite otherwise. Returns None when the team has no
+    rating (e.g. before the first cron build, or a non-NFL/free-agent team)."""
+    try:
+        from data_building.oline_ratings import _norm_team
+        team = _norm_team(team)
+    except Exception:
+        team = (team or "").upper().strip()
+    if not team:
+        return None
+    # Use the requested season's ratings, else fall back to the newest built
+    # cache: O-line quality carries across seasons (year-over-year rho ~0.43),
+    # so last season's rating beats showing nothing before the in-season build.
+    used_season = season
+    ratings = _load_oline_ratings(season)
+    if not ratings:
+        newest = None
+        try:
+            for fn in os.listdir("cache"):
+                if fn.startswith("oline_ratings_s") and fn.endswith(".json"):
+                    yr = int(fn[len("oline_ratings_s"):-len(".json")])
+                    newest = yr if newest is None else max(newest, yr)
+        except Exception:
+            newest = None
+        if newest is not None and newest != season:
+            used_season = newest
+            ratings = _load_oline_ratings(newest)
+    row = ratings.get(team) if ratings else None
+    if not row:
+        return None
+    season = used_season
+    pos = (position or "").upper().strip()
+    primary = ("run_block" if pos == "RB"
+               else "pass_block" if pos in ("QB", "WR", "TE")
+               else "composite")
+    ranked = sorted(((t, v.get(primary)) for t, v in ratings.items()
+                     if v.get(primary) is not None),
+                    key=lambda x: x[1], reverse=True)
+    rank = next((i + 1 for i, (t, _v) in enumerate(ranked) if t == team), None)
+    return {
+        "season": season,
+        "team": team,
+        "primary": primary,
+        "primary_value": row.get(primary),
+        "primary_rank": rank,
+        "total_teams": len(ranked),
+        "composite": row.get("composite"),
+        "pass_block": row.get("pass_block"),
+        "run_block": row.get("run_block"),
+        "pressure_rate": row.get("pressure_rate"),
+        "sack_rate": row.get("sack_rate"),
+        "line_yards": row.get("line_yards"),
+    }
+
+
 def _matchup_rank_table(season: int, position: str):
     """Return (rank_map, total_teams, info_by_team, is_z).
 
@@ -20107,6 +20211,7 @@ def api_player_details(player_id: str):
             "name": player_meta.get("name", "Unknown"),
             "position": player_meta.get("pos"),
             "team": player_meta.get("team"),
+            "oline": _oline_for_player(season, player_team, player_meta.get("pos")),
             "age": _modal_age,
             "te_premium": _modal_tep,
             "default_scoring_type": _default_scoring,

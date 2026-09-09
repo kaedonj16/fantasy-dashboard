@@ -19,8 +19,10 @@ Methodology
 Two sub-ratings, each opponent-adjusted and regressed for sample size, then
 blended into a composite.
 
-PASS BLOCK -- pressure rate allowed (nflverse `was_pressure`, a charted flag,
-    2022+) is the primary signal; sack rate allowed is secondary. Both are:
+PASS BLOCK -- a blend of pressure rate allowed (nflverse `was_pressure`, a
+    charted flag, 2022+) and sack rate allowed. A backtest sweep set the split
+    at 40% pressure / 60% sack (sacks proved the more transferable out-of-sample
+    signal; see oline_backtest.sweep_pressure_weight). Both inputs are:
       * opponent-adjusted by an alternating-means model (each team's effect net
         of the pass rushes it faced), iterated to convergence;
       * residualised against the QB's average time to throw, so a line isn't
@@ -87,9 +89,13 @@ OPP_ADJUST_ITERS = 8
 # Garbage-time filter: drop plays where the game is already decided, so blocking
 # in blowouts (backups, prevent fronts) doesn't distort the rating.
 WP_LOW, WP_HIGH = 0.05, 0.95
-# Pass block sub-weights: pressure is more predictive than sacks.
-PRESSURE_WEIGHT = 0.65
-SACK_WEIGHT = 0.35
+# Pass block sub-weights, chosen by oline_backtest.sweep_pressure_weight on
+# 2022-2024: 0.4 maximises out-of-sample prediction of future pressure+sacks
+# (a broad, flat optimum across 0.3-0.6). Sacks turn out to be the more
+# transferable signal, so they carry the larger share -- the opposite of the
+# initial guess. Re-run the sweep and update these two numbers if it moves.
+PRESSURE_WEIGHT = 0.4
+SACK_WEIGHT = 0.6
 
 # Same alias table matchup_ratings uses, so the two caches key on identical codes.
 _TEAM_ALIAS = {

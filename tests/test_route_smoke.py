@@ -23,6 +23,7 @@ PUBLIC_ROUTES = [
     "/guides/dynasty-rebuild-strategy", "/guides/startup-draft-guide",
     "/privacy", "/terms", "/about", "/contact", "/support", "/pricing",
     "/trade", "/top-movers", "/dynasty-trade-value-chart", "/players",
+    "/oline-rankings", "/oline-rankings?metric=pass_block", "/oline-rankings/2024",
     "/rankings/dynasty", "/rankings/dynasty-qb", "/rankings/dynasty-rb",
     "/rankings/dynasty-wr", "/rankings/dynasty-te",
     "/robots.txt", "/sitemap.xml", "/ads.txt",
@@ -48,6 +49,40 @@ def test_public_route_renders(offline_client, path):
 def test_league_route_renders(offline_client, path):
     r = offline_client.get(path)
     assert r.status_code == 200, f"{path} -> {r.status_code}"
+
+
+def test_oline_rankings_api(offline_client):
+    # The O-line rankings API returns the sorted ratings table (or an empty
+    # rows list before the first cron build), never a 500.
+    r = offline_client.get("/api/oline-rankings", query_string={"season": "2024"})
+    assert r.status_code == 200, r.status_code
+    body = r.get_json()
+    assert body.get("metric") == "composite"
+    assert isinstance(body.get("rows"), list)
+    if body["rows"]:
+        top = body["rows"][0]
+        assert top["rank"] == 1
+        assert 0.0 <= top["composite"] <= 100.0
+        # sorted best-to-worst
+        comps = [row["composite"] for row in body["rows"]]
+        assert comps == sorted(comps, reverse=True)
+
+
+def test_oline_for_player_helper():
+    # The player-modal O-line helper: position-aware primary metric, graceful
+    # nulls, and season fallback to the newest built cache. DB-free.
+    import app
+    rb = app._oline_for_player(2026, "PHI", "RB")
+    assert rb and rb["primary"] == "run_block"
+    assert rb["primary_value"] == rb["run_block"]
+    assert 1 <= rb["primary_rank"] <= rb["total_teams"]
+    qb = app._oline_for_player(2026, "BUF", "QB")
+    assert qb and qb["primary"] == "pass_block"
+    # 2026 isn't built in the seed; helper falls back to the newest season.
+    assert rb["season"] <= 2026
+    # No rating -> no section.
+    assert app._oline_for_player(2026, "", "WR") is None
+    assert app._oline_for_player(2026, "FA", "RB") is None
 
 
 def test_prewarm_league_requires_league_id(offline_client):
