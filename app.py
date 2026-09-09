@@ -11271,6 +11271,18 @@ def api_start_sit_options():
     except Exception:
         _ss_usage_trends = {}
 
+    # Per-position 0-100 anchors so the compare can show the same position-
+    # relative Start/Sit index the player modal / Compare page show. Uses the
+    # same projection source and scoring the scores here are built from, so the
+    # denominator and numerator share a scale. Best-effort; empty on failure.
+    _ss_anchors = {}
+    try:
+        _ss_anchors = start_score_pos_anchors(
+            season, current_week, ctx.get("raw_scoring_settings")
+        ) or {}
+    except Exception:
+        logger.debug("[start-sit] position anchors skipped", exc_info=True)
+
     positions_out: dict = {pos: [] for pos in _ss_groups}
     for pid in player_ids:
         row = rows_by_id.get(pid) or {}
@@ -11392,6 +11404,10 @@ def api_start_sit_options():
             # per-factor multipliers behind it, so the Compare card can name which
             # signals decided the verdict.
             "start_score": round(score, 2),
+            "start_score_pct": (
+                int(max(0, min(100, round(100.0 * float(score) / float(_ss_anchors[pos])))))
+                if _ss_anchors.get(pos) else None
+            ),
             "score_factors": {
                 "proj": proj_pts, "form": round(_form, 3), "matchup": round(_mu, 3),
                 "usage": round(_ug, 3), "avail": round(_avail, 3),
